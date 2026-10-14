@@ -1,0 +1,228 @@
+{#
+  A ETIQUETA DO RECONHECIMENTO DE FIRMA, no tamanho exato da tira.
+
+  NÃO ESTENDE O `base.html`, E É DE PROPÓSITO.
+      O menu, a barra de cima e a folha de estilo do sistema não podem existir
+      nesta página: o que o navegador manda para a impressora é o documento
+      inteiro. Herdando o layout, a térmica receberia 240 pixels de barra
+      lateral antes do teor — e o operador veria a etiqueta sair em branco sem
+      entender por quê.
+
+  O QUE FAZ A ETIQUETA CAIR CERTA
+      `@page { size: 100mm 30mm; margin: 0 }` diz ao navegador o tamanho real
+      do papel. Sem isso ele assume A4 e encolhe tudo num canto da tira.
+
+      As medidas vêm das configurações porque térmica nunca encaixa de
+      primeira — ver a tela Ajustar etiqueta.
+#}<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Etiqueta — {% if voltar and 'autenticacao' in voltar %}autenticação{% else %}reconhecimento{% endif %} nº {{ r.id }}</title>
+<style>
+  @page {
+    size: {{ m.etiqueta_largura_mm }}mm {{ m.etiqueta_altura_mm }}mm;
+    margin: 0;
+  }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body {
+    font-family: "Arial Narrow", Arial, Helvetica, sans-serif;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+  }
+  .etiqueta {
+    width: {{ m.etiqueta_largura_mm }}mm;
+    height: {{ m.etiqueta_altura_mm }}mm;
+    padding: {{ m.etiqueta_margem_mm }}mm;
+    /* O deslocamento corrige o driver que empurra a impressão para um lado.
+       É o único jeito de acertar sem mexer na impressora. */
+    transform: translate({{ m.etiqueta_deslocamento_x_mm }}mm,
+                         {{ m.etiqueta_deslocamento_y_mm }}mm);
+    box-sizing: border-box;
+    overflow: hidden;
+    /* O QR ocupa uma coluna própria à direita, de cima a baixo. Pô-lo no
+       rodapé junto do resto espremeria o teor por dois lados ao mesmo tempo. */
+    display: flex;
+    gap: 0.8mm;
+    font-size: {{ m.etiqueta_corpo_pt }}pt;
+    line-height: {{ m.etiqueta_entrelinha }};
+  }
+  .coluna {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; justify-content: flex-start; gap: 0.4mm;
+  }
+  .teor { font-weight: 700; text-align: justify; }
+  .rodape {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    gap: 3mm; font-size: {{ (m.etiqueta_corpo_pt * 0.86)|round(2) }}pt;
+  }
+  .selo { font-family: Consolas, "Courier New", monospace; font-weight: 700;
+          letter-spacing: -.15px; }
+  .codigo { font-family: Consolas, "Courier New", monospace; letter-spacing: -.2px; }
+
+  {# A LINHA DE VALORES DO SELO — pedido do oficial em 01/09/2026, e ela tem
+     precedente medido: nos 25.634 selos que esta casa imprimiu, o texto do
+     selo traz os valores em 25.634. Quem os escreve é o aparelho; o que
+     faltava era o papel imprimir o que o selo declara.
+
+     Menor que o número e sem quebra de palavra, porque a tira é estreita e
+     valor partido no meio é valor que ninguém confere. Ela é a primeira coisa
+     a estourar quando o teor é longo, e o aviso de estouro já existe.
+
+     **E ESTE COMENTÁRIO É JINJA, E NÃO CSS, DE PROPÓSITO.** Escrito como
+     `/* … */` ele viajaria para o navegador em toda etiqueta impressa — e,
+     por trazer os rótulos como exemplo, fez o teste de tela achar «Total R$»
+     numa etiqueta que não tinha valor nenhum. É a lição do varredor que bate
+     na própria prosa, pela sétima vez neste projeto. #}
+  .valores { font-family: Consolas, "Courier New", monospace;
+             font-size: {{ (m.etiqueta_corpo_pt * 0.70)|round(2) }}pt;
+             letter-spacing: -.2px; line-height: 1.15; }
+  .quem { text-align: right; white-space: nowrap; }
+
+  /* A coluna do QR. `flex: 0 0 auto` para ela não encolher quando o teor é
+     longo — QR espremido é QR que não lê, e aí não serviu para nada. */
+  .qr {
+    flex: 0 0 auto;
+    width: {{ m.etiqueta_qr_mm }}mm;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: .6mm;
+  }
+  .qr svg { display: block; width: {{ m.etiqueta_qr_mm }}mm;
+            height: {{ m.etiqueta_qr_mm }}mm; }
+  .qr-rotulo { font-size: {{ (m.etiqueta_corpo_pt * 0.62)|round(2) }}pt;
+               text-align: center; line-height: 1.1; }
+
+  /* Fora da impressão: a moldura de conferência e os botões. Somem no papel. */
+  .tela { padding: 18px; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }
+  .moldura { border: 1px dashed #b9c9d6; display: inline-block; background: #fff;
+             box-shadow: 0 1px 6px rgba(16,24,40,.12); }
+  .barra { margin-bottom: 14px; display: flex; gap: 8px; align-items: center;
+           flex-wrap: wrap; }
+  .barra a, .barra button { font: inherit; font-size: 13px; border: 1px solid #b9c5cd;
+    border-radius: 6px; background: #fff; color: #1d3443; padding: 8px 12px;
+    cursor: pointer; text-decoration: none; }
+  .barra .primary { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }
+  .aviso { color: #65727e; font-size: 12px; margin-top: 12px; max-width: 620px;
+           line-height: 1.5; }
+  @media print {
+    .tela { padding: 0; }
+    .barra, .aviso, .rotulo { display: none !important; }
+    .moldura { border: 0; box-shadow: none; display: block; }
+  }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="barra">
+    <button class="primary" onclick="window.print()">Imprimir</button>
+    <a href="{{ voltar }}">&larr; Voltar ao ato</a>
+    <span style="font-size:12px;color:#65727e">
+      {{ m.etiqueta_largura_mm|round|int }}&times;{{ m.etiqueta_altura_mm|round|int }} mm
+      {%- if vez > 1 %} · <strong>{{ vez }}ª impressão desta etiqueta</strong>{% endif %}
+    </span>
+  </div>
+
+  <div class="rotulo" style="font-size:12px;color:#65727e;margin-bottom:6px">
+    Assim vai sair na tira:</div>
+
+  <div class="moldura">
+    <div class="etiqueta">
+      <div class="coluna">
+        <div class="teor">{{ e.texto }}</div>
+        <div class="rodape">
+          <div>
+            {# O NÚMERO CONTINUA IMPRESSO, MESMO COM O QR AO LADO.
+               QR borrado na térmica, etiqueta amassada no bolso, câmera de
+               celular velho — o número legível é o que sobra quando o QR
+               falha. Num documento que vale por décadas, redundância não é
+               desperdício. #}
+            {% if e.selo %}<div class="selo">{{ e.selo }}</div>{% endif %}
+            {% if e.codigo %}<div class="codigo">{{ e.codigo }}</div>{% endif %}
+            {# OS EMOLUMENTOS SAEM DO PRÓPRIO SELO, e não de uma conta deste
+               sistema: o valor já vem escrito no texto que o aparelho
+               devolveu. Sem selo não há linha — e a linha só traz os fundos
+               que aquele selo declara, porque rótulo sem valor é ruído. #}
+            {% if e.valores %}<div class="valores">{{ e.valores }}</div>{% endif %}
+          </div>
+          <div class="quem">
+            {% if e.oficial %}<div>{{ e.oficial }}</div>{% endif %}
+            {% if e.funcao %}<div>{{ e.funcao }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% if e.qr %}
+      <div class="qr">
+        {{ e.qr|safe }}
+        <div class="qr-rotulo">confira o selo<br>selo.tjma.jus.br</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="aviso">
+    Na janela de impressão, escolha a impressora térmica e deixe a escala em
+    <strong>100%</strong> — “ajustar à página” encolhe a etiqueta e desalinha tudo.
+    Saindo torta ou cortada, use <a href="{{ url_for('notas_etiqueta_ajuste') }}">Ajustar
+    etiqueta</a>: lá dá para mexer nas medidas e imprimir uma página de teste com régua,
+    sem gastar a tira.
+    {% if not e.selo %}
+    <br><br><strong>Este ato ainda está sem selo.</strong> A etiqueta sai sem o número
+    e sem o QR — anote o selo na tela do ato antes de colar.
+    {% elif not e.qr and not e.qr_possivel %}
+    <br><br><strong>O QR não foi gerado:</strong> falta a biblioteca <code>segno</code> no
+    servidor. A etiqueta sai com o número do selo do mesmo jeito. Para o QR voltar,
+    rode o <code>ATUALIZAR_SISTEMA.cmd</code>, que instala o que falta.
+    {% elif e.qr %}
+    <br><br>O QR abre a <strong>consulta deste selo</strong> no portal do TJMA —
+    com o ato, o cartório, as partes e os valores. O número segue impresso ao
+    lado, para quem preferir digitar.
+    {% endif %}
+  </div>
+</div>
+
+<div class="aviso" id="estouro" style="display:none;color:#b42318;font-weight:600">
+  <span id="estouro-texto"></span>
+</div>
+
+<script>
+/* ---------------------------------------------------------------------------
+   NÃO DEIXAR O TEOR SER CORTADO EM SILÊNCIO.
+
+   A tira tem `overflow: hidden` — precisa ter, senão o texto que não coube
+   vaza por cima da etiqueta seguinte no rolo. Mas cortar o teor de um ato
+   notarial sem avisar é o pior defeito que esta tela poderia ter: a etiqueta
+   sai bonita, é colada no documento, e o "DOU FÉ" ficou de fora.
+
+   Três nomes na mesma etiqueta é o caso que estoura — e é justamente o caso
+   em que ninguém confere, porque a tira parece cheia de qualquer jeito.
+
+   Medir é barato: o navegador sabe a altura real do conteúdo depois de
+   desenhar. Se passou, a tela diz, em vermelho, e diz o que fazer.
+--------------------------------------------------------------------------- */
+window.addEventListener("load", function () {
+  var tira = document.querySelector(".etiqueta");
+  var sobra = tira.scrollHeight - tira.clientHeight;
+  var largura = tira.scrollWidth - tira.clientWidth;
+
+  if (sobra > 1 || largura > 1) {
+    var caixa = document.getElementById("estouro");
+    document.getElementById("estouro-texto").innerHTML =
+      "<strong>O teor não cabe nesta etiqueta e vai sair cortado.</strong> " +
+      "Faltam cerca de " + Math.ceil(sobra * 0.2646) + " mm de altura. " +
+      "Antes de imprimir, vá em <a href='{{ url_for('notas_etiqueta_ajuste') }}'>" +
+      "Ajustar etiqueta</a> e diminua o corpo da letra meio ponto, ou aumente a " +
+      "altura da tira. Etiqueta cortada num documento de terceiro não tem conserto " +
+      "depois de colada.";
+    caixa.style.display = "block";
+    caixa.scrollIntoView({ block: "center" });
+    return;                     // e NÃO abre a impressão sozinha
+  }
+
+  /* A janela de impressão abre sozinha, mas só depois de a página estar
+     montada. Chamando antes, o navegador imprime o que já desenhou — que às
+     vezes é meia etiqueta. */
+  setTimeout(function () { window.print(); }, 120);
+});
+</script>
+</body>
+</html>

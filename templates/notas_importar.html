@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Trazer o acervo de notas do E-Ofício</h1>{% endblock %}
+{% block content %}
+{% from "_manual_de_importacao.html" import manual_para_baixar %}
+{{ manual_para_baixar() }}
+<div class="actions"><a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a></div>
+
+<div class="notice">
+  Lê a pasta <code>EXPORT_NOTAS_EOFICIO</code>, gerada pelos scripts <code>EXPORTAR_NOTAS.cmd</code>
+  e <code>EXPORTAR_NOTAS_2.cmd</code>. <strong>Pode rodar quantas vezes precisar</strong>: o que já
+  entrou não entra de novo, e o que foi cadastrado à mão aqui dentro não se perde.
+</div>
+
+<section class="panel">
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="display:block">Pasta
+      <input name="pasta" value="{{ sugestao }}" style="width:100%"
+             placeholder="C:\Users\<usuario>\Downloads\EXPORT_NOTAS_EOFICIO"></label>
+    <div style="margin-top:10px"><button class="primary">Trazer agora</button>
+      <span class="small muted">Só lê os arquivos exportados — não toca no E-Ofício.</span></div>
+  </form>
+</section>
+
+{% if rejeitados %}
+<section class="panel">
+  <div class="panel-head"><span>Quarentena — o que não deu para aproveitar</span></div>
+  <table>
+    <thead><tr><th>Tabela</th><th>Linhas</th></tr></thead>
+    <tbody>{% for r in rejeitados %}<tr><td>{{ r.tabela }}</td><td>{{ r.n }}</td></tr>{% endfor %}</tbody>
+  </table>
+  <div style="padding:10px" class="small muted">Cada linha guarda o motivo e o conteúdo original.</div>
+</section>
+{% endif %}
+
+{% if anteriores %}
+<section class="panel">
+  <div class="panel-head"><span>Cargas anteriores</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Quando</th><th>Situação</th><th>Resumo</th></tr></thead>
+    <tbody>
+    {% for i in anteriores %}
+      <tr><td class="small">{{ i.iniciada_em }}</td><td class="small">{{ i.situacao }}</td>
+          <td class="small" style="max-width:600px">{{ i.resumo or '—' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

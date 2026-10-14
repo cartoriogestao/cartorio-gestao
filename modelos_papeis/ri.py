@@ -1,0 +1,16 @@
+"""Papéis do catálogo — Registro de Imóveis."""
+from __future__ import annotations
+
+PAPEIS: tuple[dict, ...] = (
+    {'chave': 'RI_CABECALHO', 'atribuicao': 'Registro de Imóveis', 'nome': 'Cabeçalho dos documentos', 'padrao': ('ri_odt', 'MODELO_CABECALHO_PADRAO'), 'explica': 'O timbre que abre a ficha e os demais papéis do RI.'},
+    {'chave': 'RI_FICHA', 'atribuicao': 'Registro de Imóveis', 'nome': 'Ficha da matrícula', 'padrao': ('ri_odt', 'MODELO_FICHA_PADRAO'), 'explica': 'A matrícula impressa, com os atos na ordem.'},
+    {'chave': 'RI_CERTIDAO', 'atribuicao': 'Registro de Imóveis', 'nome': 'Certidão — o molde', 'padrao': ('ri_odt', 'MODELO_CERTIDAO_PADRAO'), 'miolo': ('ri_odt', 'MARCADOR_DO_MIOLO'), 'explica': 'O que TODA certidão tem: a abertura («neles encontrei a MATRÍCULA Nº …»), a finalidade, a validade de 30 dias do art. 53 e quem assina. O texto do tipo escolhido entra onde o marcador manda — e é isto que o editar daqui ajusta.'},
+    {'chave': 'RI_CERTIDAO_INTEIRO_TEOR', 'atribuicao': 'Registro de Imóveis', 'nome': 'Certidão — o miolo do inteiro teor', 'padrao': ('ri_odt', 'MIOLO_CERTIDAO_INTEIRO_TEOR'), 'explica': 'O teor da ficha e os atos que não estão escritos nela, fechados por «Era o que nela continha.» A frase fecha o TEOR, e por isso mora aqui, e não no molde.'},
+    {'chave': 'RI_CERTIDAO_ONUS', 'atribuicao': 'Registro de Imóveis', 'nome': 'Certidão — o miolo dos ônus', 'padrao': ('ri_odt', 'MIOLO_CERTIDAO_ONUS'), 'explica': 'Os atos restritivos, ou o «NADA CONSTA» que é o que o banco, o comprador e o juiz leem. É afirmação sobre o IMÓVEL, e se conserta sozinha, sem arrastar a abertura nem a validade.'},
+    {'chave': 'RI_CERTIDAO_PROPRIEDADE', 'atribuicao': 'Registro de Imóveis', 'nome': 'Certidão — o miolo da propriedade', 'padrao': ('ri_odt', 'MIOLO_CERTIDAO_PROPRIEDADE'), 'explica': 'Quem é o dono hoje, na forma que esta casa escreve.'},
+    {'chave': 'RI_CERTIDAO_NEGATIVA_IMOVEL', 'atribuicao': 'Registro de Imóveis', 'nome': 'Certidão negativa de imóvel (busca)', 'padrao': ('ri_certidao_negativa', 'MODELO_PADRAO'), 'explica': 'Busca nos indicadores sem achado: NADA CONSTA em nome da pessoa ou sobre o imóvel indicado. Emite-se pelo Indicador Pessoal ou Real — nunca pela ficha da matrícula (#75).'},
+    {'chave': 'RI_NOTA', 'atribuicao': 'Registro de Imóveis', 'nome': 'Nota devolutiva', 'padrao': ('ri_odt', 'MODELO_NOTA_PADRAO'), 'explica': 'As exigências que devolvem o título ao apresentante.'},
+    {'chave': 'RI_PRENOTACAO', 'atribuicao': 'Registro de Imóveis', 'nome': 'Comprovante de prenotação', 'padrao': ('ri_web', 'MODELO_PRENOTACAO'), 'explica': 'O papel que o cliente leva ao prenotar, com o prazo.'},
+    {'chave': 'RI_LIVRO3_FICHA', 'atribuicao': 'Registro de Imóveis', 'nome': 'Ficha do registro do Livro 3 Auxiliar', 'padrao': ('ra_ficha_odt', 'MODELO_FICHA_LIVRO3_PADRAO'), 'formato': 'CHAVES', 'elementos_comuns': False, 'explica': 'A ficha do registro do Livro 3 impressa, com os atos na ordem.'},
+    {'chave': 'RI_LIVRO3_CERTIDAO', 'atribuicao': 'Registro de Imóveis', 'nome': 'Certidão do Livro 3 Auxiliar', 'padrao': ('atrib_certidao', 'MODELO_CERTIDAO_LIVRO3'), 'formato': 'CHAVES', 'elementos_comuns': False, 'explica': 'A certidão de inteiro teor de um registro do Livro 3 Auxiliar.'},
+)

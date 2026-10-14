@@ -1,0 +1,72 @@
+{#
+  As certidões de inteiro teor emitidas — RCPJ/RTD e Livro 3.
+
+  Emitir é na FICHA do registro, e não aqui: é ali que o escrevente está
+  quando o cliente pede, e é ali que ele acabou de ver o que o livro diz.
+  Esta tela consulta e reimprime.
+#}
+{% extends 'base.html' %}
+{% block title %}Certidões{% if atribuicao and atribuicao in paineis %} — {{ paineis[atribuicao].nome }}{% endif %}{% endblock %}
+{% block heading %}<h1>Certidões{% if atribuicao and atribuicao in paineis %} — {{ paineis[atribuicao].nome }}{% else %} — RCPJ, RTD e Livro 3{% endif %}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="notice">
+  A certidão <strong>reproduz o que está no livro</strong>: o teor não se digita aqui.
+  Para emitir, abra a ficha do registro — em
+  <a href="{{ url_for('rcpj_rtd_registros') }}">RCPJ e RTD</a> ou no
+  <a href="{{ url_for('livro3_registros') }}">Livro 3</a> — e peça a certidão lá.
+  <br><br>
+  <strong>Registro sem teor não gera certidão de inteiro teor.</strong> 24 dos 72
+  registros de RCPJ/RTD e 2 dos 14 do Livro 3 vieram do acervo sem o texto: eles
+  constam do livro, e a cópia se tira do livro físico.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Procurar</span></div>
+  <form method="get" class="grid2" style="padding:14px">
+    <label>Atribuição
+      <select name="atribuicao">
+        <option value="">todas</option>
+        {% for chave, p in paineis.items() %}
+          <option value="{{ chave }}" {% if chave == atribuicao %}selected{% endif %}>{{ p.nome }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Termo
+      <input name="q" value="{{ termo }}"
+             placeholder="número do registro, requerente ou número da certidão"></label>
+    <div class="actions">
+      <button class="button">Procurar</button>
+      <a class="button" href="{{ url_for('atribuicoes_certidoes') }}">Limpar</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Emitidas</span><small>{{ linhas | length }}</small>
+  </div>
+  {% if not linhas %}
+    <p style="padding:14px"><small>Nenhuma certidão emitida ainda.</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Nº</th><th>Atribuição</th><th>Registro</th><th>Requerente</th>
+               <th>Atos na emissão</th><th>Emitida em</th><th>Por quem</th></tr></thead>
+    <tbody>
+      {% for c in linhas %}
+      <tr{% if c.cancelada %} style="opacity:.55"{% endif %}>
+        <td><a href="{{ url_for('atribuicoes_certidao', certidao_id=c.id) }}">{{ c.numero }}/{{ c.ano }}</a></td>
+        <td>{{ paineis[c.atribuicao].nome if c.atribuicao in paineis else c.atribuicao }}
+            {%- if c.cancelada %} <small>(cancelada)</small>{% endif %}</td>
+        <td>n. {{ c.registro_numero or '—' }}</td>
+        <td>{{ c.requerente or '—' }}</td>
+        <td>{{ c.atos }}</td>
+        <td><small>{{ c.emitida_em }}</small></td>
+        <td><small>{{ c.emitida_por or '—' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

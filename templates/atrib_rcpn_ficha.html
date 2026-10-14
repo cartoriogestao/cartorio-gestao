@@ -1,0 +1,607 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>{{ assento.especie | capitalize }} de {{ assento.nome }}</h1>{% endblock %}
+{% block content %}
+{% from '_fraude.html' import alerta as alerta_fraude %}
+{# O ALERTA DE FRAUDE VEM NO ALTO, antes dos atos. #}
+{{ alerta_fraude(fraudes, csrf_token, 'Registro Civil — ficha do assento', assento.nome,
+                 url_for('rcpn_assento', assento_id=assento.id)) }}
+
+{% from '_cobrar.html' import quadro, cobrado %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_assentos') }}">&larr; Assentos</a>
+  {% if assento.situacao == 'ATIVO' and user.role in ['ADMIN','MANAGER','USER'] %}
+  <a class="button" href="{{ url_for('rcpn_assento_editar', assento_id=assento.id) }}" title="Corrigir livro, número do termo e folha (e demais campos da ficha)">Alterar livro / termo / folha</a>
+  {% endif %}
+</div>
+
+{% if habilitacao_vinculo and assento.especie in ['CASAMENTO', 'CASAMENTO_RELIGIOSO'] %}
+<section class="panel{% if habilitacao_vinculo.situacao == 'HABILITADO' %} critical{% endif %}">
+  <div class="panel-head"><span>Habilitação de casamento</span></div>
+  <div style="padding:14px">
+    <p>
+      <a href="{{ url_for('rcpn_habilitacao', habilitacao_id=habilitacao_vinculo.id) }}">
+        Habilitação {{ habilitacao_vinculo.numero }}/{{ habilitacao_vinculo.ano }}</a>
+      — {{ SITUACOES[habilitacao_vinculo.situacao] }}.
+      {% if habilitacao_vinculo.situacao == 'HABILITADO' %}
+      Falta amarrar este assento <strong>#{{ assento.id }}</strong> na habilitação.
+      {% elif habilitacao_vinculo.situacao == 'CELEBRADO' and habilitacao_vinculo.casamento_assento_id == assento.id %}
+      Celebração registrada{% if habilitacao_vinculo.celebrado_em %} em {{ habilitacao_vinculo.celebrado_em[:10] }}{% endif %}.
+      {% endif %}
+    </p>
+    {% if habilitacao_vinculo.situacao == 'HABILITADO' and user.role in ['ADMIN','MANAGER','USER'] %}
+    <p class="small">
+      Na ficha da habilitação, use «Registrar a celebração» e informe
+      <strong>{{ assento.id }}</strong> como número do assento.
+    </p>
+    <a class="button primary"
+       href="{{ url_for('rcpn_habilitacao', habilitacao_id=habilitacao_vinculo.id) }}#celebracao">
+      Abrir habilitação para celebrar</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>O assento</span><small>{{ assento.situacao }}</small></div>
+  <table class="table">
+    <tr><th>Espécie</th><td>{{ assento.especie }}</td>
+        <th>Livro</th><td>{{ assento.livro_volume or assento.serie }}
+          {%- if assento.livro_a_confirmar %}
+            <small><strong>— por confirmar</strong></small>
+          {%- elif assento.livro_conferido_em %}
+            {# Dizer que ALGUEM JA FOI poupa a proxima ida a estante. #}
+            <small>— conferido no livro de papel em
+              {{ assento.livro_conferido_em[:10] }}
+              {%- if assento.livro_conferido_por %},
+                por {{ assento.livro_conferido_por }}{% endif %}</small>
+          {%- endif %}</td></tr>
+    <tr><th>Número (termo)</th><td>{{ assento.numero or '—' }}</td>
+        <th>Matrícula</th><td>{{ assento.matricula or '—' }}</td></tr>
+    <tr><th>Folha</th><td colspan="3">{% set _atos_reg = blocos.get('REGISTRO') or [] %}{% set _ato_reg = _atos_reg[0] if _atos_reg else none %}{% if _ato_reg is not none and _ato_reg.folha is not none %}{{ _ato_reg.rotulo or _ato_reg.folha }}{% elif dados and dados.get('folha') not in (none, '') %}{{ dados.get('folha') }}{% else %}—{% endif %}</td></tr>
+    <tr><th>Data do assento</th><td>{{ assento.data_ato or '—' }}</td>
+        <th>Data do fato</th><td>{{ assento.data_fato or '—' }}</td></tr>
+    <tr><th>CPF do registrado</th>
+        <td colspan="3">{% if assento.cpf_registrado and (assento.cpf_registrado|length) == 11 %}
+          {{ assento.cpf_registrado[:3] }}.{{ assento.cpf_registrado[3:6] }}.{{ assento.cpf_registrado[6:9] }}-{{ assento.cpf_registrado[9:] }}
+        {% elif assento.cpf_registrado %}
+          {{ assento.cpf_registrado }}
+        {% else %}
+          <em>ainda não averbado</em>
+        {% endif %}</td></tr>
+    <tr><th>Origem</th><td>{{ assento.origem }}</td>
+        <th>Chave de origem</th><td><small>{{ assento.origem_chave or '—' }}</small></td></tr>
+  </table>
+  {% if not assento.matricula %}
+  <p style="padding:14px"><small>
+    Sem matrícula de 32 dígitos. O sistema guarda a que vier, mas ainda
+    <strong>não gera nem valida</strong> — o algoritmo oficial não foi medido.
+  </small></p>
+  {% endif %}
+</section>
+
+{# O TERMO ASSINADO, DIGITALIZADO — problema #121: logo abaixo do assento,
+   porque é a prova do que está escrito acima. #}
+{% include '_rc_digitalizacao.html' %}
+
+{% if assento.situacao == 'ATIVO' %}
+<section class="panel">
+  <div class="panel-head"><span>Lançar no assento</span><small>uma tela para cada ato</small></div>
+  <p style="padding:14px 14px 0"><small>
+    Os três são coisas juridicamente diferentes: a <strong>averbação</strong> altera o
+    conteúdo do assento (art. 97), a <strong>anotação</strong> remete a outro assento
+    (art. 106) e a <strong>retificação</strong> corrige erro (art. 109) — e só ela exige
+    fundamento. Nenhum ocupa folha nova: lançam-se no espaço do próprio assento.
+  </small></p>
+  <div class="cards" style="padding:14px">
+    <a class="card" href="{{ url_for('rcpn_averbar', assento_id=assento.id) }}"
+       style="text-decoration:none;color:inherit">
+      <strong>Averbação</strong><p><small>Alterar ou complementar o conteúdo.</small></p>
+    </a>
+    <a class="card" href="{{ url_for('rcpn_anotar', assento_id=assento.id) }}"
+       style="text-decoration:none;color:inherit">
+      <strong>Anotação</strong><p><small>Fazer remissão a outro assento.</small></p>
+    </a>
+    <a class="card" href="{{ url_for('rcpn_retificar', assento_id=assento.id) }}"
+       style="text-decoration:none;color:inherit">
+      <strong>Retificação</strong><p><small>Corrigir erro com fundamento.</small></p>
+    </a>
+  </div>
+</section>
+{% endif %}
+
+
+{% if assento.situacao == 'ATIVO' and cpf_pendentes and user.role in ['ADMIN','MANAGER','USER'] %}
+<section class="panel">
+  <div class="panel-head"><span>Averbar CPF</span>
+    <small>sempre gratuito — art. 347</small></div>
+  <p style="padding:14px 14px 0"><small>
+    Averbação do CPF na margem do assento, na forma do
+    <strong>art. 347 do Código de Normas do TJMA</strong>. É
+    <strong>gratuita</strong>: lança com zero e sela com selo gratuito.
+    O número é conferido pelo dígito verificador antes de gravar — não se
+    inventa dado de registro.
+    {% if cpf_pendentes|length > 1 %}
+    <br><br>
+    <strong>São {{ cpf_pendentes|length }} pessoas, {{ cpf_pendentes|length }}
+    averbações</strong> — uma para cada, e o texto de cada uma diz de quem é
+    o número.
+    {% endif %}
+  </small></p>
+  {% for quem in cpf_pendentes %}
+  <form method="post" class="grid2" style="padding:14px"
+        action="{{ url_for('rcpn_averbar_cpf', assento_id=assento.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if quem.papel %}<input type="hidden" name="papel" value="{{ quem.papel }}">{% endif %}
+    <label>{% if quem.papel %}CPF — {{ quem.rotulo }}{% if quem.nome %} ({{ quem.nome }}){% endif %}
+           {% else %}CPF do registrado{% endif %}
+      <input name="cpf" required inputmode="numeric"
+             placeholder="000.000.000-00"
+             pattern="[0-9.\-]{11,14}"
+             title="Informe o CPF com 11 dígitos"></label>
+    <label>Motivo da gratuidade <small>(opcional — padrão art. 347)</small>
+      <input name="motivo_gratuidade"
+             placeholder="art. 347 do Código de Normas do TJMA"></label>
+    <div class="actions" style="grid-column:1/-1;align-self:end">
+      <button class="button">Averbar CPF{% if quem.papel %} — {{ quem.rotulo|lower }}{% endif %} (gratuito)</button>
+    </div>
+  </form>
+  {% endfor %}
+</section>
+{% endif %}
+
+<div class="actions" style="margin:0 0 10px">
+  <a class="button" href="{{ url_for('rcpn_etiqueta_averbacao_ajuste') }}">Ajustar etiqueta de averbação (mm)</a>
+</div>
+{# A DIVISAO TRIPARTITE, que a inspecao de 12/08/2026 cobra: cada bloco no seu
+   campo proprio, e nao tres paragrafos de um campo de texto. #}
+{% for bloco, rotulo, vazio in [
+     ('REGISTRO',    'Registro',    'Sem ato de registro — assento veio do acervo em bloco.'),
+     ('AVERBACAO',   'Averbações',  'Nenhuma averbação.'),
+     ('ANOTACAO',    'Anotações',   'Nenhuma anotação.'),
+     ('RETIFICACAO', 'Retificações','Nenhuma retificação.')] %}
+<section class="panel">
+  <div class="panel-head"><span>{{ rotulo }}</span><small>{{ blocos[bloco] | length }}</small></div>
+  {% if not blocos[bloco] %}
+    <p style="padding:14px"><small>{{ vazio }}</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Data</th><th>Teor</th><th>Lavrou</th><th>Fundamento</th><th>Selo</th>
+               <th>Etiqueta</th><th>Cobrado</th></tr></thead>
+    <tbody>
+      {% for a in blocos[bloco] %}
+      <tr>
+        <td>{{ a.data_ato }}</td>
+        <td>{{ a.teor or '—' }}</td>
+        <td><small>{{ a.lavrou or a.criado_por or '—' }}</small></td>
+        <td>{{ a.fundamento or '—' }}</td>
+        <td><small>{{ a.selo or '—' }}</small>
+          {# FICHA_FOLHA_SEGURANCA_20261009: a folha de seguranca do registro
+             (a do TJMA). A linha «Folha» do quadro acima e a do LIVRO. #}
+          {% if bloco == 'REGISTRO' %}
+          <div data-folha-seguranca><small>Folha de segurança:
+            {% if a.folhas_seguranca %}{% for f in a.folhas_seguranca %}<strong>{% if f.serie %}{{ f.serie }} {% endif %}{{ f.codigo }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}{% else %}<em>nenhuma baixada</em>{% endif %}</small></div>
+          {% endif %}
+          {# HOTFIX-2026-10-09-05: averbacao sem selo (selo anterior cancelado) #}
+          {% if bloco == 'AVERBACAO' and not a.selo and (assento.situacao or '')|upper != 'CANCELADO' %}
+          {% set _eh_cpf = ((a.teor or '').strip().lower().startswith('averbo neste assento o cpf') or '347' in (a.fundamento or '')) %}
+          <form method="post" action="{{ url_for('rcpn_averbacao_selar_novamente', ato_id=a.id) }}"
+                style="margin-top:6px" onsubmit="return confirm('Selar novamente esta averbação? Sai um selo NOVO.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if _eh_cpf %}
+            <small>CPF: selo gratuito (art. 347)</small><br>
+            {% else %}
+            <select name="natureza_averbacao" required style="font-size:12px">
+              <option value="">- natureza da averbação -</option>
+              {% for n in naturezas_selar_novamente or [] %}
+              <option value="{{ n.codigo_form }}" {% if n.codigo_form == 'retificacao' and 'RETIFICA' in (a.teor or '')|upper %}selected{% endif %}>{{ n.rotulo }}</option>
+              {% endfor %}
+            </select>
+            <label style="display:flex;gap:6px;align-items:center;font-size:12px">
+              <input type="checkbox" name="ato_gratuito" value="1"> Ato / selo gratuito</label>
+            <select name="gratuidade_codigo" style="font-size:12px">
+              <option value="">- gratuidade (se gratuito) -</option>
+              {% for g_ in gratuidades_selar_novamente or [] %}
+              <option value="{{ g_.codigo }}">{{ g_.rotulo }}</option>
+              {% endfor %}
+            </select>
+            <input name="motivo_gratuidade" placeholder="motivo (obrigatório se gratuito)" style="font-size:12px">
+            {% endif %}
+            <button class="button" style="padding:4px 8px;font-size:12px">Selar novamente</button>
+          </form>
+          {% endif %}
+          {# FOLHA_DA_1A_VIA_20261009: registro pendente de selo (lavrado por
+             robo) - o escrevente sela escolhendo a folha que tem na mao. #}
+          {% if bloco == 'REGISTRO' and not a.selo and (assento.especie or '')|upper in ('NASCIMENTO','OBITO','NATIMORTO') and (assento.situacao or '')|upper != 'CANCELADO' %}
+          <form method="post" action="{{ url_for('rcpn_ato_selar', ato_id=a.id) }}" style="margin-top:6px">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <select name="folha_seguranca" required>
+              <option value="">- folha que está na sua mão -</option>
+              {% for f in folhas_disponiveis %}
+              <option value="{{ f.codigo }}">{% if f.serie %}{{ f.serie }} {% endif %}{{ f.codigo }}</option>
+              {% endfor %}
+            </select>
+            <button class="button" style="padding:4px 8px;font-size:12px">Selar registro</button>
+          </form>
+          {% endif %}</td>
+        <td>{% if bloco in ('AVERBACAO','ANOTACAO','RETIFICACAO') %}
+          <a class="button" style="padding:4px 8px;font-size:12px"
+             href="{{ url_for('rcpn_ato_etiqueta', ato_id=a.id) }}">ODT</a>
+        {% else %}—{% endif %}</td>
+        <td>{{ cobrado(a.id, cobrancas, csrf_token) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endfor %}
+
+{# O LIVRO POR CONFIRMAR — decisão do oficial em 26/08/2026: «deixe como o
+   E-Ofício guardou, pendente de confirmação quando forem consultados
+   efetivamente». O aviso mora AQUI, e não numa aba, porque é aqui que a
+   consulta acontece — e com um botão, porque aviso sem saída fica para
+   sempre. #}
+{% if assento.livro_a_confirmar %}
+<div class="notice" style="margin:0 0 14px">
+  <strong>O livro deste assento está por confirmar.</strong>
+  <p>{{ assento.livro_a_confirmar }}</p>
+  <form method="post" class="grid2"
+        action="{{ url_for('rcpn_confirmar_livro', assento_id=assento.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>O livro, como está escrito na capa
+      <input name="livro_volume" value="{{ assento.livro_volume or '' }}"
+             placeholder="B-1  ·  B-Auxiliar 1" required></label>
+    <div class="actions" style="align-self:end">
+      <button class="button">Confirmei no livro de papel</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{# ------------------------------------------- as pessoas do assento #}
+<section class="panel">
+  <div class="panel-head">
+    <span>Filiação e avoenga</span>
+    <small>{{ pessoas | length }} pessoa(s)</small>
+  </div>
+  {% if pessoas %}
+  <table class="table">
+    <thead><tr><th style="width:22%">Papel</th><th>Nome</th>
+               <th>Naturalidade</th><th>Origem</th></tr></thead>
+    <tbody>
+    {% for x in pessoas %}
+      <tr>
+        {# O ROTULO VEM DO MODULO, e nao de um `replace` na tela: `AVO_PATERNO`
+           virava «Avo paterno», sem acento e com o vocabulario que o E-Oficio
+           nao usa. Se o papel for antigo e nao tiver rotulo, cai no `replace`
+           de antes em vez de aparecer em branco. #}
+        <td>{{ rotulo_do_papel.get(x.papel)
+               or (x.papel | replace('_', ' ') | capitalize) }}</td>
+        <td>{{ x.nome }}</td>
+        <td>{{ x.naturalidade_cidade or '—' }}{% if x.naturalidade_uf %}/{{ x.naturalidade_uf }}{% endif %}</td>
+        <td><small>{{ x.origem }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="notice" style="margin:14px">
+    <strong>Este assento está sem filiação.</strong>
+    A filiação é o <strong>corpo</strong> da certidão de nascimento, e sem ela a
+    certidão não sai. O assento existe no livro; o que falta é trazer os nomes —
+    pela <a href="{{ url_for('atribuicoes_importar') }}">carga do acervo</a>, que abre
+    as tabelas de filiação e de avós, ou lançando à mão.
+  </div>
+  {% endif %}
+</section>
+
+{# ------------------------------------------- a certidão no modelo do CNJ #}
+<section class="panel">
+  <div class="panel-head">
+    <span>Certidão</span>
+    <small>{{ certidoes | length }} emitida(s) deste assento</small>
+  </div>
+
+  {# OS DOCUMENTOS DO REGISTRO (12/10/2026) — os que a leitura recebeu e os
+     guardados à parte. Antes ficavam só na leitura, e nenhuma tela os mostrava. #}
+  {% if anexos_registro %}
+  <div class="card">
+    <h2>Documentos do registro</h2>
+    <ul class="file-list">{% for a in anexos_registro %}<li><a href="{{ url_for('attachment_view', attachment_id=a.id) }}" target="_blank">{{ a.original_name }}</a>
+      · <a href="{{ url_for('attachment_download', attachment_id=a.id) }}">baixar</a>
+      <small class="muted">{{ a.description or '' }}</small></li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {# O TERMO VEM ANTES DA CERTIDAO na ordem do dia: primeiro se escreve no
+     livro, depois se certifica o que foi escrito. #}
+  <div class="card">
+    <h2>O termo do livro</h2>
+    {% if (assento.teor or '').strip() %}
+    <p class="small muted">Escrito. Ele não se reescreve — corrigir é averbar ao lado.</p>
+    {% else %}
+    <p class="small muted">Ainda não escrito. Veja como fica antes de gravar.</p>
+    {% endif %}
+    <a class="button" href="{{ url_for('rcpn_termo', assento_id=assento.id) }}">Ver o termo</a>
+    {# A FOLHA DO LIVRO — tres colunas, frente e verso. A exigencia e do
+       Relatorio de Inspecao de 12/08/2026, pags. 49 e 50: «campo proprio para
+       notas, averbacoes e retificacoes, INCLUSIVE NO VERSO DAS FOLHAS». #}
+        <a class="button" href="{{ url_for('rcpn_folha', assento_id=assento.id) }}"
+       target="_blank">Folha (HTML)</a>
+    <a class="button" href="{{ url_for('rcpn_folha_papel', assento_id=assento.id) }}">Folha PDF</a>
+    <a class="button" href="{{ url_for('rcpn_folha_papel', assento_id=assento.id, formato='odt') }}">Folha ODT</a>
+    {# O CHECKLIST QUE A INSPECAO MANDA APLICAR ANTES DE CONCLUIR — pag. 50,
+       prazo zero, critica. #}
+    <a class="button" href="{{ url_for('rcpn_checklist', assento_id=assento.id) }}">Checklist antes de concluir</a>
+    {# OS DOCUMENTOS AVULSOS deste assento — o modulo «Modelos» do E-Oficio,
+       copiado em 07/09/2026. Fica ao lado do termo porque e daqui que o
+       escrevente parte: ele esta com o assento aberto e precisa de um papel
+       sobre ele. **A tela existe desde a mesma versao; sem esta linha ela nao
+       teria porta a partir do assento**, que e o caminho que o balcao usa. #}
+    <a class="button" href="{{ url_for('rcpn_modelos_do_assento', assento_id=assento.id) }}"
+       >Montar um documento</a>
+  </div>
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  <p style="padding:14px 14px 0"><small>
+    Escolha o <strong>tipo</strong>: <em>resumo</em> (quadro CNJ, montado dos
+    campos) ou <em>inteiro teor</em> (reprodução do livro — texto colado ou
+    cópia reprográfica). O sistema <strong>não inventa</strong> o teor do
+    registro: nos assentos do acervo ele veio vazio.
+  </small></p>
+  <p style="padding:0 14px"><small>
+    A <strong>matrícula de 32 dígitos sai como está</strong> no assento. O sistema
+    não a gera — o dígito verificador dela não foi decifrado, e número chutado no
+    documento mais definitivo desta casa volta como erro em cartório de outro
+    estado, anos depois.
+  </small></p>
+  {% if assento.livro_a_confirmar %}
+  <p style="padding:0 14px"><small>
+    <strong>Confira o livro antes de assinar.</strong> O livro deste assento está
+    por confirmar no livro de papel, e a certidão sai com ele escrito —
+    certidão que diz o livro errado é o papel que alguém leva para outro
+    cartório.
+  </small></p>
+  {% endif %}
+  <form method="post" class="grid2" style="padding:14px" id="form-certidao-rcpn"
+        enctype="multipart/form-data"
+        action="{{ url_for('rcpn_certidao_emitir', assento_id=assento.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="grid-column:1/-1">Tipo da certidão
+      <select name="tipo_certidao" id="tipo_certidao">
+        <option value="resumo" selected>Resumo (quadro CNJ)</option>
+        <option value="inteiro_teor">Inteiro teor</option>
+      </select>
+    </label>
+    <fieldset id="bloco-inteiro" style="grid-column:1/-1;display:none;border:1px solid #ccc;padding:12px;margin:0">
+      <legend>Inteiro teor</legend>
+      <label>Modo
+        <select name="modo_inteiro" id="modo_inteiro">
+          <option value="texto">Texto corrido (colar o teor entre aspas)</option>
+          <option value="repro">Cópia reprográfica (imagem do assento)</option>
+        </select>
+      </label>
+      <div id="bloco-texto" style="margin-top:10px">
+        <label>Teor completo do registro <small>(cole do livro — não se inventa)</small>
+          <textarea name="teor_colado" rows="8"
+                    placeholder="Cole aqui o teor integral do assento, como está no livro de papel.">{% if assento.teor %}{{ assento.teor }}{% endif %}</textarea>
+        </label>
+        <p class="small muted">Se o assento tiver teor gravado, ele aparece como
+          sugestão editável. Confira no livro. Use «Prévia» antes de emitir.</p>
+      </div>
+      <div id="bloco-repro" style="margin-top:10px;display:none">
+        <label>Imagem do assento (foto/scan)
+          <input type="file" name="imagem_assento" accept="image/*,.png,.jpg,.jpeg,.tif,.tiff,.webp">
+        </label>
+        {% if anexos_termo %}
+        <label>Ou use um anexo já digitalizado
+          <select name="anexo_imagem_id">
+            <option value="">—</option>
+            {% for a in anexos_termo %}
+            <option value="{{ a.id }}">{{ a.original_name or a.stored_name }} ({{ a.uploaded_at }})</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        <div class="grid2" style="margin-top:8px">
+          <label>Largura (cm)
+            <input name="imagem_largura_cm" value="16" inputmode="decimal"></label>
+          <label>Altura (cm) <small>opcional</small>
+            <input name="imagem_altura_cm" placeholder="auto" inputmode="decimal"></label>
+          <label>Margem esquerda (cm)
+            <input name="imagem_margem_esq_cm" value="0,5" inputmode="decimal"></label>
+          <label>Margem superior (cm)
+            <input name="imagem_margem_sup_cm" value="0,3" inputmode="decimal"></label>
+        </div>
+      </div>
+    </fieldset>
+    <label>Requerente <small>(opcional)</small>
+      <input name="requerente"></label>
+    <label>Finalidade <small>(opcional)</small>
+      <input name="finalidade" placeholder="INSS · escola · casamento"></label>
+    <label>Selo <small>(opcional)</small>
+      <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
+    {% if folha_da_1a_via %}
+    {# FOLHA_DA_1A_VIA_20261009: a 1a via sai na folha do registro, travada. #}
+    <label>Folha de segurança da 1ª via
+      <input value="{% if folha_da_1a_via.serie %}{{ folha_da_1a_via.serie }} {% endif %}{{ folha_da_1a_via.codigo }}" readonly
+             id="folha_da_1a_via" style="font-weight:bold">
+      <input type="hidden" name="folha_seguranca" value="{{ folha_da_1a_via.codigo }}">
+      <small>travada: é a folha baixada no registro e informada ao TJMA no selo.
+        Imprima a 1ª via nela.</small>
+    </label>
+    {% else %}
+        <label>Folha de segurança <span class="danger">*</span>
+      <select name="folha_seguranca" id="folha_seguranca_select" required>
+        <option value="">— escolha a folha da gaveta —</option>
+        {% for f in folhas_disponiveis %}
+        <option value="{{ f.codigo }}">
+          {% if f.serie %}{{ f.serie }} {% endif %}{{ f.codigo }}{% if f.codigo==folha_sugerida %} (próxima em ordem){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <small>escolha a folha que está de fato na gaveta - a sugerida é só a
+        próxima em ordem. A lista mostra série + número (ex.: IA 033467007).</small>
+    </label>
+    <label>Ou digite o número impresso
+      <input name="folha_seguranca_digitada" id="folha_seguranca_digitada"
+             placeholder="IA 033467007" autocomplete="off"
+             title="Série e número como no papel (IA 033467007) ou só o número">
+      <small>se preencher, vale o digitado (aceita IA 033467007)</small>
+    </label>
+    {% endif %}
+
+    <div style="grid-column:1/-1;padding:8px 0;border-top:1px solid #e5e5e5;margin-top:4px">
+  {# ------------------------------------------------------------------ #}
+  {# **O AVISO DO SELO, ANTES DE EMITIR** — 10/09/2026. Ate hoje a tela ia
+     para segunda via calada e comprava um CERTID pago; o escrevente
+     descobria lendo o selo. E o «conferir e enviar sao dois botoes»
+     aplicado ao dinheiro. #}
+  {% if selagem %}
+  <div class="card {% if selagem.avisar %}warning{% endif %}"
+       style="grid-column:1/-1;margin:0 0 12px">
+    <p style="margin:0"><strong>
+      {% if selagem.cobra %}Este selo será COBRADO
+      {% else %}Este selo é gratuito{% endif %}
+      — {{ selagem.via|lower }} via.</strong></p>
+    <p class="small" style="margin:6px 0 0">{{ selagem.porque }}</p>
+  </div>
+  {% endif %}
+      <label style="display:flex;gap:8px;align-items:flex-start">
+        <input type="checkbox" name="ato_gratuito" value="1"
+               id="cert_ato_gratuito"
+               onchange="(function(cb){var b=document.getElementById('cert-bloco-gratuidade');var h=document.getElementById('cert_selo_gratuito');var m=document.getElementById('cert_motivo_gratuidade');if(b)b.style.display=cb.checked?'block':'none';if(h)h.value=cb.checked?'1':'';if(m)m.required=cb.checked;})(this)">
+        <span><strong>Selo gratuito / isento</strong><br>
+          <small>Marque para emitir o selo da certidão com
+          <em>isentoGratuito</em> (hipossuficiência, assistência judiciária,
+          etc.). Exige motivo escrito. A 1ª via de nascimento/óbito/natimorto
+          já usa o selo do registro (não compra CERTID).</small></span>
+      </label>
+      <div id="cert-bloco-gratuidade" style="display:none;margin-top:10px"
+           class="grid2">
+        <label>Tipo de gratuidade
+          <select name="gratuidade_codigo" id="cert_gratuidade_codigo">
+            <option value="">— escolha —</option>
+            {% for g in gratuidades or [] %}
+            <option value="{{ g.codigo }}">{{ g.rotulo }}</option>
+            {% endfor %}
+          </select></label>
+        {# **O MOTIVO E OBRIGATORIO, E AGORA O NAVEGADOR PEGA PRIMEIRO.**
+           O `required` entra e sai com a caixa (no `onchange` acima) —
+           deixa-lo fixo travaria o formulario inteiro enquanto o bloco
+           esta escondido, sem mostrar a mensagem a ninguem.
+           A rota recusa de novo, e antes de emitir: guarda que so
+           existe no navegador nao existe para quem tem o endereco. #}
+        <label>Motivo <small><strong>obrigatório</strong> se gratuito —
+            sem ele o selo não sai</small>
+          <input name="motivo_gratuidade" id="cert_motivo_gratuidade"
+                 placeholder="norma, decisão ou declaração que autoriza"></label>
+        <input type="hidden" name="selo_gratuito" id="cert_selo_gratuito" value="">
+      </div>
+    </div>
+
+    <div style="grid-column:1/-1"><small>
+      <strong>A cobrança do civil se lança pelo caixa</strong>, escolhendo o item
+      à mão. Inteiro teor usa o item medido <code>14.5.6</code> no selador quando
+      o selo sai automático; o resumo usa <code>14.5.1</code>.
+    </small></div>
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button" type="submit"
+              formaction="{{ url_for('rcpn_certidao_previa', assento_id=assento.id) }}"
+              formmethod="post">Ver prévia</button>
+      <button class="button primary" type="submit">Emitir certidão</button>
+      {# A CERTIDÃO REPROGRÁFICA DO TERMO DIGITALIZADO — problema #121: «pronto
+         para emitir certidão com um clique». O MESMO formulário (folha de
+         segurança, gratuidade, requerente), com este botão mandando a rota
+         usar a digitalização oficial em vez dos dois seletores acima. #}
+      {% if rc_digi_ficha and rc_digi_ficha.digi and rc_digi_ficha.digi.tem_arquivo %}
+      <button class="button primary" type="submit" name="usar_digitalizacao" value="1"
+              title="Inteiro teor por cópia reprográfica: as páginas do termo digitalizado e o selo">
+        Emitir reprográfica da digitalização</button>
+      {% endif %}
+    </div>
+  </form>
+
+  {# A CERTIDAO ELETRONICA DA CRC — pedido do oficial em 10/09/2026.
+     O caminho existia desde 03/09 e so tinha botao na ficha de um PEDIDO que
+     veio da Central: quem chega ao balcao pedindo certidao eletronica nao
+     passa por aquela fila. O botao vem para onde o escrevente esta.
+
+     **FORA DO FORMULARIO DE CIMA**, de proposito: aquele emite o papel, com
+     folha de seguranca e selo; este abre a conferencia do que subiria para a
+     Central. Um botao dentro daquele formulario mandaria os campos do papel
+     junto, e a conferencia mostraria o que ninguem pediu. #}
+  <p class="small" style="margin-top:1rem">
+    <a class="button"
+       href="{{ url_for('rcpn_certidao_eletronica_nova', assento_id=assento.id) }}"
+       >Certidão eletrônica na CRC</a>
+    <small class="muted">
+      Confere o que sobe, cria na Central e volta com o identificador —
+      <strong>é outra coisa que a certidão em papel</strong>: não gasta folha
+      de segurança e a assinatura acontece do lado de lá.
+    </small>
+  </p>
+  <script>
+  (function () {
+    var tipo = document.getElementById('tipo_certidao');
+    var modo = document.getElementById('modo_inteiro');
+    var bloco = document.getElementById('bloco-inteiro');
+    var bt = document.getElementById('bloco-texto');
+    var br = document.getElementById('bloco-repro');
+    function sync() {
+      var inteiro = tipo && tipo.value === 'inteiro_teor';
+      if (bloco) bloco.style.display = inteiro ? '' : 'none';
+      var repro = inteiro && modo && modo.value === 'repro';
+      if (bt) bt.style.display = repro ? 'none' : '';
+      if (br) br.style.display = repro ? '' : 'none';
+    }
+    if (tipo) tipo.addEventListener('change', sync);
+    if (modo) modo.addEventListener('change', sync);
+    sync();
+  })();
+  </script>
+
+  {% endif %}
+
+  {% if certidoes %}
+  <table class="table">
+    <thead><tr><th>Nº</th><th>Emitida em</th><th>Tipo</th><th>Requerente</th>
+               <th>Selo</th><th>Atos no assento</th></tr></thead>
+    <tbody>
+      {% for c in certidoes %}
+      <tr{% if c.cancelada_em %} style="opacity:.55"{% endif %}>
+        <td><a href="{{ url_for('rcpn_certidao', certidao_id=c.id) }}"
+              >{{ c.numero }}/{{ c.ano }}</a>
+            {%- if c.cancelada_em %} <small>(cancelada)</small>{% endif %}</td>
+        <td><small>{{ (c.emitida_em or '')[:10] or '—' }}</small></td>
+        <td><small>{% set m=(c.modalidade or 'RESUMO')|upper %}{% if m=='INTEIRO_TEXTO' %}inteiro texto{% elif m=='INTEIRO_REPRO' %}inteiro repro{% else %}resumo{% endif %}</small></td>
+        <td>{{ c.requerente or '—' }}</td>
+        <td><small>{{ c.selo or '—' }}</small></td>
+        <td>{{ c.atos_no_assento }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+{% if assento.teor %}
+<section class="panel">
+  <div class="panel-head"><span>Teor</span></div>
+  <div style="padding:14px; white-space:pre-wrap">{{ assento.teor }}</div>
+</section>
+{% endif %}
+
+{% if dados %}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que é próprio desta espécie</span>
+    <small>{{ dados | length }} campo(s) do acervo</small>
+  </div>
+  <table class="table">
+    {% for k, v in dados | dictsort %}
+      <tr><th style="width:34%">{{ k }}</th><td>{{ v }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}

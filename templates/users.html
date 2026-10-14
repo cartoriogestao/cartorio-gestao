@@ -1,0 +1,24 @@
+{% extends 'base.html' %}{% block heading %}<h1>Usuários</h1>{% endblock %}{% block content %}
+{#
+  O AVISO DE QUEM ESTÁ SEM FUNÇÃO.
+
+  A função é o que sai impresso embaixo da assinatura em todo ato: no
+  reconhecimento de firma, na autenticação de cópia, no recibo, no orçamento,
+  no protocolo de recepção e no comprovante de prenotação. Quem assina por
+  delegação tem de dizer em que qualidade o faz — Lei 8.935/94, arts. 20 e 21.
+
+  Ficar em branco não dá erro em lugar nenhum: sai o padrão da serventia, e o
+  ato fica com a função de outra pessoa sem ninguém perceber. É por isso que
+  esta tela precisa apontar, e não esperar que alguém confira a coluna.
+#}
+{% set sem_funcao = rows|selectattr('active')|rejectattr('funcao')|list %}
+{% if sem_funcao %}
+<div class="notice warning">
+  <strong>{{ sem_funcao|length }} usuário(s) ativo(s) sem função cadastrada:</strong>
+  {{ sem_funcao|map(attribute='full_name')|join(', ') }}.
+  <br><span class="small">Enquanto ficar em branco, os atos dessas pessoas saem com
+  a função padrão da serventia — não com a que elas exercem. A função sai impressa
+  embaixo da assinatura (Lei 8.935/94, arts. 20 e 21).</span>
+</div>
+{% endif %}
+<details class="panel"><summary>Novo usuário</summary><form method="post" class="form-grid"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="create"><label>Nome<input name="full_name" required></label><label>Usuário<input name="username" required></label><label>Perfil<select name="role">{% for r in roles %}<option>{{r}}</option>{% endfor %}</select></label><label>Senha<input type="password" name="password" required></label><label class="check"><input type="checkbox" name="eh_robo" value="1"> Conta de robô (não sela automaticamente)</label><div class="span2"><button class="primary">Criar usuário</button></div></form></details><details class="panel"><summary>Cargos</summary><form method="post" class="form-grid"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="cargos"><label class="span2">Um cargo por linha — é o que sai impresso embaixo da assinatura, e o que aparece para escolher na coluna Função<textarea name="funcoes_cargos" rows="6">{{ funcoes|join('\n') }}</textarea></label><div class="span2"><button class="primary">Salvar cargos</button></div></form></details><section class="panel"><table><thead><tr><th>Nome</th><th>Usuário</th><th>Perfil</th><th>Função</th><th>Robô</th><th>Status</th><th>Ações</th></tr></thead><tbody>{% for r in rows %}<tr><td colspan="3"><form method="post" class="inline-form"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="editar"><input type="hidden" name="user_id" value="{{r.id}}"><input name="full_name" value="{{r.full_name}}" required placeholder="Nome" size="24"><input name="username" value="{{r.username}}" required placeholder="Usuário" size="14"><select name="role">{% for rr in roles %}<option {% if rr==r.role %}selected{% endif %}>{{rr}}</option>{% endfor %}</select><label class="check"><input type="checkbox" name="eh_robo" value="1" {% if r.eh_robo %}checked{% endif %}> robô</label> <button class="small">Salvar</button></form></td><td><form method="post" class="inline-form"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="funcao"><input type="hidden" name="user_id" value="{{r.id}}"><select name="funcao"><option value="">—</option>{% for f in funcoes %}<option {% if f==r.funcao %}selected{% endif %}>{{f}}</option>{% endfor %}</select><button class="small">Guardar</button></form></td><td><form method="post" class="inline-form"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="eh_robo"><input type="hidden" name="user_id" value="{{r.id}}"><label class="check"><input type="checkbox" name="eh_robo" value="1" {% if r.eh_robo %}checked{% endif %}> robô</label> <button class="small">Guardar</button></form></td><td>{{'ATIVO' if r.active else 'INATIVO'}}</td><td><div class="actions-cell"><form method="post"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="toggle"><input type="hidden" name="user_id" value="{{r.id}}"><button>{{'Desativar' if r.active else 'Ativar'}}</button></form><form method="post"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="reset"><input type="hidden" name="user_id" value="{{r.id}}"><input type="password" name="new_password" placeholder="nova senha" required><button>Redefinir</button></form></div></td></tr>{% endfor %}</tbody></table></section>{% endblock %}

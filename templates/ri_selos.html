@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Livro de selos e emolumentos</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a></div>
+
+<div class="notice">
+  Esta tela <strong>não guarda selo</strong>: reúne o que já está gravado nos atos, nas
+  certidões e nas prenotações. Duplicar o dado criaria duas versões da verdade.
+</div>
+
+<form class="filters" method="get">
+  <label>De <input type="date" name="inicio" value="{{ inicio }}"></label>
+  <label>Até <input type="date" name="fim" value="{{ fim }}"></label>
+  <button>Filtrar período</button>
+</form>
+
+<section class="cards">
+  <div class="stat"><strong>{{ linhas|length }}</strong><small>selos no período</small></div>
+  <div class="stat"><strong>R$ {{ '%.2f'|format(total)|replace('.', ',') }}</strong><small>emolumentos</small></div>
+  <div class="stat"><strong>R$ {{ '%.2f'|format(total_geral)|replace('.', ',') }}</strong><small>total cobrado</small></div>
+  <div class="stat"><strong>{{ repetidos|length }}</strong><small>selos repetidos</small></div>
+  <div class="stat"><strong>{{ (sem_selo.atos or 0) + (sem_selo.certidoes or 0) + (sem_selo.prenotacoes or 0) }}</strong><small>lavrados sem selo</small></div>
+</section>
+
+{% if repetidos %}
+<div class="notice danger">
+  <strong>{{ repetidos|length }} selo(s) aparecem mais de uma vez.</strong>
+  Pode ser erro de digitação ou reaproveitamento indevido — nos dois casos precisa de conferência.
+  <ul class="small">
+    {% for codigo, usos in repetidos.items() %}
+    <li><code>{{ codigo }}</code> — {{ usos|length }} usos:
+      {% for u in usos %}{{ u.origem }} {{ u.referencia }}{% if not loop.last %}; {% endif %}{% endfor %}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{# O QUE FICOU SEM SELO SAI COM NOME E ENDEREÇO, e não como um número.
+   Até 14/09/2026 esta caixa dizia só «tantos atos estão sem selo», sobre uma
+   contagem própria que esquecia a prenotação e só olhava o período filtrado.
+   Um número não diz QUAL ato, e um ato sem selo é justamente o que alguém
+   precisa abrir para resolver. A lista agora é a da casa
+   (`ato_selado.atos_sem_selo`), sem janela de data: ato de março sem selo
+   continua sem selo em setembro. #}
+{% set total_sem_selo = (sem_selo.atos or 0) + (sem_selo.certidoes or 0) + (sem_selo.prenotacoes or 0) %}
+{% if total_sem_selo %}
+<section class="panel">
+  <div class="panel-head"><span>Lavrados sem selo — {{ total_sem_selo }}</span></div>
+  <div class="notice warning">
+    O ato está lavrado e vale; o que falta é o selo. Isso acontece quando o
+    selador não respondeu na hora — o ato não é derrubado por causa disso,
+    porque balcão parado é pior, e ato com selo inventado é pior ainda.
+    <strong>O que veio do E-Ofício não entra nesta conta</strong>, só o que
+    esta casa lavrou.
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>O quê</th><th>Referência</th><th>Data</th><th></th></tr></thead>
+      <tbody>
+      {% for rotulo, itens in sem_selo_lista.items() %}
+        {% for i in itens %}
+        <tr>
+          <td>{{ rotulo }}</td>
+          <td>
+            {% if rotulo == 'Ato' %}{{ i.tipo }}-{{ i.numero }}
+            {% elif rotulo == 'Certidão' %}nº {{ i.numero }}/{{ i.ano }}
+            {% else %}protocolo {{ i.numero }}{% endif %}
+          </td>
+          <td>{{ fmt_date(i.data_ato or i.data_emissao or i.data_prenotacao) }}</td>
+          <td>
+            {% if i.matricula_id %}
+              <a class="button small" href="{{ url_for('ri_ficha', matricula_id=i.matricula_id) }}">abrir a matrícula</a>
+            {% elif rotulo == 'Prenotação' %}
+              <a class="button small" href="{{ url_for('ri_protocolo') }}">abrir o protocolo</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Por origem</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Origem</th><th>Quantidade</th><th>Emolumentos</th></tr></thead>
+    <tbody>{% for origem, d in por_origem.items() %}
+      <tr><td>{{ origem }}</td><td>{{ d.qtd }}</td>
+          <td>R$ {{ '%.2f'|format(d.valor)|replace('.', ',') }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Selos do período</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Data</th><th>Origem</th><th>Referência</th><th>Selo</th><th>Emolumentos</th></tr></thead>
+      <tbody>
+      {% for l in linhas %}
+        <tr>
+          <td>{{ fmt_date(l.data) }}</td>
+          <td>{{ l.origem }}</td>
+          <td>{% if l.matricula_id %}<a href="{{ url_for('ri_ficha', matricula_id=l.matricula_id) }}">{{ l.referencia }}</a>
+              {% else %}{{ l.referencia }}{% endif %}</td>
+          <td class="small" style="word-break:break-all">{{ l.selo }}</td>
+          <td>{% if l.valor %}{% set v = valores(l.valor) %}{{ l.valor }}
+              <br><small class="muted">emol. R$ {{ '%.2f'|format(v.emolumentos)|replace('.', ',') }}
+              · total R$ {{ '%.2f'|format(v.total)|replace('.', ',') }}
+              {% if not v.rotulado %}<span class="badge alta">sem rótulo</span>{% endif %}</small>
+              {% else %}—{% endif %}</td>
+        </tr>
+      {% else %}<tr><td colspan="5">Nenhum selo no período.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="notice small">
+    Os valores são <strong>lidos pelo rótulo</strong> no texto que você cola junto com o selo
+    — "Total" e "Emol" — porque é assim que o TJMA entrega. Quando o selo não traz rótulo, a
+    linha aparece marcada e o mesmo número vale para os dois. {% if sem_rotulo %}<strong>{{ sem_rotulo }}
+    selo(s) no período estão sem rótulo.</strong>{% endif %} Confira antes de usar para prestação de contas.
+  </div>
+</section>
+{% endblock %}

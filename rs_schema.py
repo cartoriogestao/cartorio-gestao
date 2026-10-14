@@ -1,0 +1,73 @@
+# -*- coding: utf-8 -*-
+"""O que esta casa mandou à Intimação Digital, e o que voltou de lá.
+
+**UMA LINHA POR INTIMAÇÃO, E NÃO POR TÍTULO.** O mesmo título pode ser
+intimado mais de uma vez — a Central tem caminho próprio para isso
+(`/api/intimations/identificador/{identificador}`, que devolve `total` com uma
+lista). Guardar no título faria a segunda intimação apagar a primeira, e é a
+primeira que prova o que se tentou antes do edital.
+
+**O AMBIENTE ENTRA NA CHAVE**, pela mesma razão da CENPROT: testes, homologação
+e produção devolvem identificadores do mesmo formato, e sem ele a intimação de
+ensaio ocuparia o lugar da de verdade — que então não entraria, **sem erro em
+lugar nenhum**.
+
+**O TEOR DO QUE SUBIU FICA CONGELADO.** Quando a Central reclamar de uma
+intimação, é esse texto que se lê — e não o título como ele está hoje, que pode
+ter sido pago, retirado ou sustado no meio do caminho.
+"""
+from __future__ import annotations
+
+import sqlite3
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS rs_intimacoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- DE QUE TÍTULO DESTA CASA, e de que ambiente da Central.
+    titulo_id INTEGER NOT NULL REFERENCES pt_titulos(id),
+    ambiente TEXT NOT NULL,
+
+    -- COMO A CENTRAL CHAMA ISTO. `lote_id` é o `id` do lote (por onde se
+    -- cancela e se pegam os PDFs); `intimacao_id` é o `_id` de cada uma.
+    lote_id TEXT,
+    intimacao_id TEXT,
+    -- O NOSSO NÚMERO LÁ DENTRO — o `identificador`, que é «identificação
+    -- interna do cartório». É por ele que se acha do nosso lado.
+    identificador TEXT NOT NULL,
+
+    -- O QUE SUBIU, congelado, como foi montado.
+    teor TEXT NOT NULL,
+    -- A LINHA QUE O BALCÃO LÊ.
+    resumo TEXT NOT NULL DEFAULT '',
+
+    enviada_em TEXT NOT NULL,
+    enviada_por TEXT,
+    -- O QUE A CENTRAL RESPONDEU ao receber o lote.
+    resposta TEXT,
+
+    -- O ESTADO NA CENTRAL, e quando se perguntou. **Não é o estado do
+    -- título**: aquele mora em `pt_titulos.situacao` e muda por ato lavrado.
+    estado TEXT,
+    estado_em TEXT,
+    -- O histórico que ela devolve, congelado na última consulta.
+    historico TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_rs_intimacoes_titulo
+    ON rs_intimacoes(titulo_id);
+CREATE INDEX IF NOT EXISTS idx_rs_intimacoes_estado
+    ON rs_intimacoes(ambiente, estado);
+
+-- A MESMA INTIMAÇÃO NÃO ENTRA DUAS VEZES. O identificador é nosso e é único
+-- por envio; sem esta trava, reenviar o mesmo lote depois de uma queda de rede
+-- duplicaria a linha — e a duplicata faria o balcão achar que o devedor foi
+-- intimado duas vezes.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_rs_intimacoes_central
+    ON rs_intimacoes(ambiente, identificador);
+"""
+
+
+def init_rs_schema(con: sqlite3.Connection) -> None:
+    """Cria a tabela das intimações digitais. Idempotente."""
+    con.executescript(SCHEMA)

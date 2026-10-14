@@ -1,0 +1,495 @@
+{% extends 'base.html' %}
+{#
+  A FICHA DO TÍTULO — e é aqui que ele se LÊ.
+
+  «esteja disponível para analisar no visualizador de pdf direto no sistema,
+   disponível para baixar» — o oficial, 03/09/2026.
+
+  O QUADRO DO DOCUMENTO FICA AO LADO DA DECISÃO, E NÃO NOUTRA TELA. Quem
+  qualifica tem o papel na mão e a decisão em branco na frente; ir a outra tela
+  buscar o documento é largar o que se está decidindo. É o relato #25 do
+  oficial, na atribuição vizinha — e ali ele foi atendido pela metade, porque a
+  única rota que servia arquivo **baixava sempre**.
+
+  E O «BAIXAR» CONTINUA AO LADO DO «VER»: são duas coisas que ele pediu na
+  mesma frase, e há arquivo que o navegador não desenha.
+#}
+{% block heading %}<h1>Título n. {{ t.numero or '—' }} — {{ nome_da_atribuicao }}</h1>{% endblock %}
+{% block content %}
+{% if t.situacao not in ['REGISTRADO','DEVOLVIDO','CANCELADO'] and user.role in ['ADMIN','MANAGER','USER'] %}
+<section class="panel">
+  <details>
+    <summary class="panel-head"><span>Completar ou corrigir os dados do título</span></summary>
+    <form method="post" class="form" style="padding:14px"
+          action="{{ url_for('rcpj_rtd_titulo_editar', titulo_id=t.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Apresentante<input name="apresentante" value="{{ t.apresentante or '' }}"></label>
+      <label>CPF ou CNPJ<input name="apresentante_documento" value="{{ t.apresentante_documento or '' }}"></label>
+      <label>Telefone<input name="telefone" value="{{ t.telefone or '' }}"></label>
+      <label>E-mail<input type="email" name="email" value="{{ t.email or '' }}"></label>
+      <label>Natureza<input name="natureza" value="{{ t.natureza or '' }}"></label>
+      <label>Livro pretendido<select name="serie"><option value="">— decidir na qualificação —</option>{% for s in series %}<option value="{{ s.codigo }}"{% if t.serie == s.codigo %} selected{% endif %}>{{ s.nome }}</option>{% endfor %}</select></label>
+      <label>Forma<select name="forma">{% for chave, rotulo in formas.items() %}<option value="{{ chave }}"{% if t.forma == chave %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select></label>
+      <label>Vias<input type="number" min="1" name="vias" value="{{ t.vias or 1 }}"></label>
+      <label>Valor declarado<input name="valor_declarado" value="{{ t.valor_declarado or '' }}"></label>
+      <label>Observação<textarea name="observacao" rows="3">{{ t.observacao or '' }}</textarea></label>
+      <button class="button" type="submit">Salvar os dados</button>
+    </form>
+  </details>
+</section>
+{% endif %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpj_rtd_titulos', atribuicao=t.atribuicao) }}">&larr; Voltar à fila</a>
+  {% if registro %}
+  <a class="button" href="{{ url_for('rcpj_rtd_registro', registro_id=registro.id) }}">Ver o registro lavrado</a>
+  {% endif %}
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>O que foi apresentado</span>
+    <small>{{ situacoes.get(t.situacao, t.situacao) }}</small></div>
+  <div class="table-wrap">
+  <table>
+    <tbody>
+      <tr><th>Atendimento geral</th><td>
+        {% if protocolo_geral %}
+        <a href="{{ url_for('caixa_protocolo', protocolo_id=protocolo_geral.id) }}"><strong>{{ protocolo_geral.numero }}</strong></a>
+        {% else %}—{% endif %}
+      </td></tr>
+      <tr><th>Protocolo</th><td><strong>{{ t.numero or '—' }}</strong>
+        {% if t.rotulo %} — Livro de Protocolo, fl. {{ t.rotulo }}{% endif %}</td></tr>
+      <tr><th>Apresentado em</th><td>{{ fmt_date(t.data_apresentacao) }}{% if t.hora %} às {{ t.hora }}{% endif %}</td></tr>
+      <tr><th>Como veio</th><td>{{ formas.get(t.forma, t.forma) }}</td></tr>
+      <tr><th>Apresentante</th><td>{{ t.apresentante or '—' }}
+        {% if t.apresentante_documento %}<br><small class="muted">{{ t.apresentante_documento }}</small>{% endif %}</td></tr>
+      <tr><th>Natureza</th><td>{{ t.natureza or '—' }}</td></tr>
+      <tr><th>Livro pretendido</th><td>{{ t.serie or '— a decidir na qualificação —' }}</td></tr>
+      <tr><th>Valor declarado</th><td>{{ t.valor_declarado or '—' }}</td></tr>
+      <tr><th>Vias</th><td>{{ t.vias }}</td></tr>
+      {% if t.observacao %}<tr><th>Observação</th><td style="white-space:pre-wrap">{{ t.observacao }}</td></tr>{% endif %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+{# ==================================================== o documento na tela #}
+<section class="panel">
+  <div class="panel-head">
+    <span>O título</span>
+    <small>{{ anexos|length }} arquivo{{ '' if anexos|length == 1 else 's' }}</small>
+  </div>
+
+  {% if para_ver %}
+    <div style="padding:0 14px 12px">
+      <p><small class="muted">Mostrando <strong>{{ para_ver.original_name }}</strong>
+        {% if anexos|length > 1 %}— o mais recente que o navegador abre. Os demais estão na lista abaixo.{% endif %}</small></p>
+      {% if e_pdf(para_ver.original_name) %}
+      {#
+        O VISUALIZADOR É O DO PRÓPRIO NAVEGADOR. Ele já traz zoom, busca no
+        texto e o botão de imprimir; embutir um leitor de PDF em JavaScript
+        seria trazer uma biblioteca de fora para refazer o que já existe — e o
+        pacote da casa não carrega biblioteca de terceiro.
+      #}
+      {# Sem a coluna de miniaturas do visualizador — problema #80. Em imagem
+         o pedido é ignorado, e por isso vale para os dois. #}
+      <iframe src="{{ url_for('rcpj_rtd_titulo_ver', titulo_id=t.id, anexo_id=para_ver.id) }}#navpanes=0&amp;pagemode=none"
+              title="{{ para_ver.original_name }}"
+              style="width:100%;height:70vh;border:1px solid var(--linha, #d7dee4);border-radius:6px;background:#fff"></iframe>
+      {% else %}
+      <img src="{{ url_for('rcpj_rtd_titulo_ver', titulo_id=t.id, anexo_id=para_ver.id) }}"
+           alt="{{ para_ver.original_name }}"
+           style="max-width:100%;border:1px solid var(--linha, #d7dee4);border-radius:6px">
+      {% endif %}
+      <p style="margin-top:10px">
+        <a class="button" target="_blank" rel="noopener"
+           href="{{ url_for('rcpj_rtd_titulo_ver', titulo_id=t.id, anexo_id=para_ver.id) }}">Abrir em outra aba</a>
+        <a class="button" href="{{ url_for('attachment_download', attachment_id=para_ver.id) }}">Baixar</a>
+      </p>
+    </div>
+  {% else %}
+    <div class="notice" style="margin:14px">
+      {% if anexos %}
+        Nenhum dos arquivos anexados abre na tela — o sistema mostra
+        <strong>PDF e imagem</strong>, e os demais só se baixam.
+        {# A lista curta é de segurança: arquivo servido na própria tela roda na
+           origem do sistema, e um `.html` ou um `.svg` de terceiro traria o
+           script dele para dentro da sessão de quem está no balcão. #}
+      {% else %}
+        <strong>Nenhum arquivo anexado ainda.</strong> Anexe o PDF ou a
+        digitalização do título — é ele que aparece aqui na hora de qualificar.
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if anexos %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Arquivo</th><th>Enviado</th><th>Por</th><th></th></tr></thead>
+    <tbody>
+    {% for a in anexos %}
+      <tr>
+        <td>{{ a.original_name }}
+          {% if a.description %}<br><small class="muted">{{ a.description }}</small>{% endif %}</td>
+        <td><small>{{ fmt_date(a.uploaded_at[:10]) }}</small></td>
+        <td><small>{{ a.enviado_por_nome or '—' }}</small></td>
+        <td>
+          {% if abre_na_tela(a.original_name) %}
+          <a href="{{ url_for('rcpj_rtd_titulo_ver', titulo_id=t.id, anexo_id=a.id) }}"
+             target="_blank" rel="noopener">Ver</a> ·
+          {% endif %}
+          <a href="{{ url_for('attachment_download', attachment_id=a.id) }}">Baixar</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  <form method="post" enctype="multipart/form-data" style="padding:14px"
+        action="{{ url_for('rcpj_rtd_titulo_arquivo', titulo_id=t.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Anexar arquivo do título
+      <input type="file" name="arquivo" accept="application/pdf,image/*" required multiple></label>
+    <label>Descrição
+      <input name="descricao" placeholder="Título apresentado"></label>
+    <button class="button" type="submit">Anexar</button>
+  </form>
+  {% endif %}
+</section>
+
+{# ======================================================= a qualificação #}
+<section class="panel">
+  <div class="panel-head"><span>A qualificação</span>
+    <small>{{ qualificacoes|length }} decisão{{ '' if qualificacoes|length == 1 else 'ões' }}</small></div>
+
+  {% if qualificacoes %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>#</th><th>Data</th><th>Resultado</th><th>Exigências / fundamento</th><th>Prazo</th><th>Por</th></tr></thead>
+    <tbody>
+    {% for q in qualificacoes|reverse %}
+      <tr>
+        <td>{{ q.ordem }}ª</td>
+        <td>{{ fmt_date(q.data_qualificacao) }}</td>
+        <td><strong>{{ resultados.get(q.resultado, q.resultado).split(' —')[0] }}</strong></td>
+        <td style="white-space:pre-wrap">{{ q.exigencias or q.fundamentacao or '—' }}</td>
+        <td>{{ fmt_date(q.prazo_ate) if q.prazo_ate else '—' }}</td>
+        <td><small>{{ q.qualificada_por or '—' }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if t.situacao == 'EXIGENCIA' %}
+  <p style="padding:0 14px 14px">
+    <a class="button" href="{{ url_for('rcpj_rtd_titulo_nota', titulo_id=t.id) }}">Imprimir a nota devolutiva</a>
+  </p>
+  {% endif %}
+  {% endif %}
+
+  {% if pode_qualificar and user.role in ['ADMIN','MANAGER'] %}
+  <form method="post" class="form" style="padding:14px"
+        action="{{ url_for('rcpj_rtd_titulo_qualificar', titulo_id=t.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Resultado
+      <select name="resultado" required>
+        {% for chave, rotulo in resultados.items() %}
+        <option value="{{ chave }}">{{ rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Exigências <span class="muted">— obrigatórias na negativa</span>
+      <textarea name="exigencias" rows="4"
+        placeholder="O que o apresentante precisa fazer para o título ser registrado."></textarea></label>
+    <label>Fundamento
+      <textarea name="fundamentacao" rows="2"></textarea></label>
+    <label>Prazo para cumprir
+      <input type="date" name="prazo_ate"></label>
+    <button class="button primary" type="submit">Registrar a qualificação</button>
+    <p><small class="muted">Qualificar <strong>não registra</strong>: ela diz
+      que o título pode ser registrado. Quem toma o número do livro é o botão
+      abaixo.</small></p>
+  </form>
+  {% elif pode_qualificar %}
+  <div class="notice" style="margin:14px">
+    A qualificação é ato do oficial — quem decide sobre o título é quem
+    responde pela serventia.
+  </div>
+  {% endif %}
+</section>
+
+{# =========================================================== o registro #}
+{% if registro %}
+<section class="panel">
+  <div class="panel-head"><span>O registro lavrado</span>
+    <small>{{ registro.serie }}</small></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Ato</th><th>Livro</th><th>Folha</th><th>N.</th><th>Data</th><th>Selo</th><th></th></tr></thead>
+    <tbody>
+    {% for a in atos %}
+      <tr>
+        <td>{{ a.tipo|capitalize }}</td>
+        <td>{{ a.livro_id or '—' }}</td>
+        <td>{{ a.rotulo or a.folha or '—' }}</td>
+        <td>{{ a.numero_ordem or '—' }}</td>
+        <td>{{ fmt_date(a.data_ato[:10]) }}</td>
+        <td><small>{{ a.selo or '—' }}</small></td>
+        <td>
+          {% if user.role in ['ADMIN','MANAGER','USER'] %}
+          <a href="{{ url_for('rcpj_rtd_etiqueta', ato_id=a.id) }}">Etiqueta</a>
+          {% if a.etiqueta_impressoes %}<br><small class="muted">{{ a.etiqueta_impressoes }}ª impressão sai</small>{% endif %}
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+    {% if t.forma == 'PAPEL' %}
+  <p style="padding:0 14px 14px"><small>O título veio <strong>em papel</strong>:
+    imprima a etiqueta de registro e cole nele.</small></p>
+  {% endif %}
+  <form method="post" action="{{ url_for('rcpj_rtd_titulo_teor_previa', titulo_id=t.id) }}"
+        target="_blank" rel="noopener" style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="tipo" value="REGISTRO">
+    <p style="margin:0 0 8px"><small>
+      Prévia do <strong>teor de registro em PDF</strong> (modelo da casa,
+      intro com <strong>REGISTRADO</strong> no Registro nº {{ registro.numero }}).
+      Não altera o ato nem emite selo.
+    </small></p>
+    <button class="button" type="submit">Prévia do teor (PDF)</button>
+  </form>
+</section>
+
+{% elif t.situacao == 'QUALIFICADO' and user.role in ['ADMIN','MANAGER'] %}
+<section class="panel">
+  <div class="panel-head"><span>Registrar</span></div>
+  <form method="post" class="form" style="padding:14px"
+        action="{{ url_for('rcpj_rtd_titulo_registrar', titulo_id=t.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Livro
+      <select name="serie" required>
+        {% for s in series %}
+        <option value="{{ s.codigo }}"{% if t.serie == s.codigo %} selected{% endif %}>{{ s.nome }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Teor do registro
+      <textarea name="teor" rows="8"
+        placeholder="O texto que vai escrito no livro."></textarea></label>
+    {# Selo e custas — o mesmo padrão do /rcpj-rtd/novo. Domínio não sela;
+       a tela oferece, opcional, e o POST grava na mesma transação. #}
+    {% from '_cobrar.html' import quadro %}
+    <section style="grid-column:1/-1;margin-top:8px">
+      <div class="grid2">
+        <label>Selo <small>(opcional)</small>
+          <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
+        {{ quadro(receita, caixa, protocolos) }}
+      </div>
+    </section>
+    <button class="button primary" type="submit">Lavrar o registro</button>
+  </form>
+</section>
+
+{# O TÍTULO QUE VIROU AVERBAÇÃO (ou cancelamento) num registro que já existia.
+   Sem isto ele ficava «Qualificado» para sempre — medido no título n. 1 do
+   RCPJ, em 09/10/2026. Não lavra nada: o ato já está no livro. #}
+<section class="panel">
+  <div class="panel-head"><span>Já foi averbado? Concluir pelo ato lavrado</span></div>
+  {% if para_concluir %}
+  <form method="post" class="form" style="padding:14px"
+        action="{{ url_for('rcpj_rtd_titulo_concluir', titulo_id=t.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p style="margin:0 0 8px"><small>
+      Use quando este título foi atendido por <strong>averbação ou cancelamento
+      num registro que já existia</strong> — lavrado na ficha do registro. O
+      título passa a <strong>Registrado</strong>, apontando para esse registro.
+      Nada é lavrado, numerado, selado ou cobrado aqui.
+    </small></p>
+    <label>O ato que atendeu este título
+      <select name="ato_id" required>
+        {% for a in para_concluir %}
+        <option value="{{ a.id }}">{{ 'AV' if a.tipo == 'AVERBACAO' else 'Cancelamento' }} n. {{ a.numero_ordem or '?' }}
+          — registro n. {{ a.registro_numero or '?' }} ({{ a.serie }}), {{ fmt_date((a.data_ato or '')[:10]) }}
+          — {{ 'gastou o protocolo deste título' if a.pelo_protocolo else 'lavrado depois da apresentação' }}</option>
+        {% endfor %}
+      </select></label>
+    <button class="button" type="submit">Concluir o título por este ato</button>
+  </form>
+  {% else %}
+  <p style="padding:14px;margin:0"><small class="muted">
+    Nenhuma averbação ou cancelamento desta atribuição foi lavrado desde a
+    apresentação. Se o título é para averbar num registro existente, lavre a
+    averbação na ficha do registro, escolhendo o protocolo deste título, e
+    volte aqui.
+  </small></p>
+  {% endif %}
+</section>
+{% endif %}
+
+{# ================================================ a passagem pela Central #}
+<section class="panel">
+  <div class="panel-head"><span>ONRTDPJ — a passagem pela Central</span></div>
+
+  {% if protocolo_central %}
+  <div class="notice">
+    Este título veio da Central sob o protocolo
+    <strong>{{ protocolo_central }}</strong>.
+    {% if not tem_token_da_central %}
+    <br><strong>O token da Central não está informado</strong>, então os botões
+    de enviar não aparecem — informe-o em Administrativo → Configurações.
+    {% endif %}
+  </div>
+
+  {% if tem_token_da_central and user.role in ['ADMIN','MANAGER'] %}
+  <div class="actions" style="padding:0 14px 14px">
+    {% if t.situacao == 'EXIGENCIA' %}
+    <form method="post" action="{{ url_for('rcpj_rtd_onrtdpj_nota', titulo_id=t.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button primary" type="submit">Enviar a nota devolutiva à Central</button>
+    </form>
+    {% endif %}
+    {% if t.situacao == 'REGISTRADO' %}
+    <form method="post" action="{{ url_for('rcpj_rtd_onrtdpj_registro', titulo_id=t.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button primary" type="submit">Informar o registro à Central</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="actions" style="padding:0 14px 14px">
+    <form method="post" action="{{ url_for('rcpj_rtd_onrtdpj_orcamento', titulo_id=t.id) }}"
+          style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {# O VALOR É DIGITADO, E ISSO FICA DITO. As custas do RCPJ/RTD ainda não
+         estão amarradas ao ato nesta casa; um número somado por aproximação
+         num campo de dinheiro que sai para o cliente é pior que um em branco. #}
+      <label style="margin:0">Orçamento (R$)
+        <input name="valor" size="10" placeholder="0,00" required></label>
+      <button class="button" type="submit">Informar à Central</button>
+    </form>
+  </div>
+
+  {% if t.situacao in ['CANCELADO','DEVOLVIDO'] %}
+  <form method="post" class="form" style="padding:0 14px 14px"
+        action="{{ url_for('rcpj_rtd_onrtdpj_cancelar', titulo_id=t.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Motivo do cancelamento na Central <span class="muted">— pelo menos dez letras</span>
+      <textarea name="motivo" rows="2" required></textarea></label>
+    <button class="button" type="submit">Cancelar o pedido na Central</button>
+  </form>
+  {% endif %}
+
+  <p style="padding:0 14px 14px"><small class="muted">
+    O que sobe é <strong>o que já foi decidido e lavrado aqui</strong> — as
+    exigências desta ficha, e o número do registro deste livro. O sistema não
+    registra na Central: ele comunica o que a serventia fez.
+  </small></p>
+
+  {% if falha_da_central %}
+  <div class="notice" style="margin:0 14px 14px">
+    <strong>Não deu para ler as notas devolutivas da Central.</strong>
+    {{ falha_da_central }}
+    <br><span class="small muted">Isto <strong>não quer dizer que não há
+    notas</strong> — quer dizer que não deu para perguntar.</span>
+  </div>
+  {% elif notas_da_central %}
+  <div class="panel-head"><span>O que a Central tem registrado</span></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Descrição</th><th>Data</th><th>Arquivo</th></tr></thead>
+    <tbody>
+    {% for n in notas_da_central %}
+      <tr>
+        <td style="white-space:pre-wrap">{{ n.get('Descricao') or n.get('descricao') or '—' }}</td>
+        <td><small>{{ (n.get('Data') or n.get('data') or '')[:10] }}</small></td>
+        <td>
+          {% for a in (n.get('Arquivos') or n.get('arquivos') or []) %}
+          <a href="{{ a.get('Link') or a.get('link') }}" target="_blank" rel="noopener noreferrer">{{ a.get('Nome') or a.get('nome') or 'arquivo' }}</a><br>
+          {% endfor %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  {% endif %}
+  {% else %}
+  <div class="notice" style="margin:14px">
+    Este título <strong>não veio da Central</strong>. Se ele passou por lá
+    mesmo assim — recebido ou enviado pelo portal —, registre a passagem abaixo
+    com o número que a Central deu: é ela que amarra os dois lados.
+    {% if t.forma == 'ELETRONICO' %}
+    <br><br>Ele está marcado como <strong>eletrônico</strong>: a fila da
+    Central está em
+    <a href="{{ url_for('rcpj_rtd_onrtdpj', atribuicao=t.atribuicao) }}">Central ONRTDPJ</a>.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if encaminhamentos %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Data</th><th>Sentido</th><th>Protocolo da Central</th><th>Observação</th></tr></thead>
+    <tbody>
+    {% for e in encaminhamentos %}
+      <tr>
+        <td>{{ fmt_date(e.data_encaminhamento) }}</td>
+        <td>{{ sentidos.get(e.sentido, e.sentido) }}</td>
+        <td>{{ e.protocolo_central or '—' }}</td>
+        <td>{{ e.observacao or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  {# O REGISTRO DA PASSAGEM CONTINUA EXISTINDO, e nao e sobra: nem tudo o que
+     acontece na Central passa pela API. O que se fez pelo portal tambem
+     precisa ficar escrito, senao a correicao ve um titulo que sumiu por
+     semanas. #}
+  <form method="post" class="form" style="padding:14px"
+        action="{{ url_for('rcpj_rtd_titulo_encaminhar', titulo_id=t.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Sentido
+      <select name="sentido" required>
+        {% for chave, rotulo in sentidos.items() %}
+        <option value="{{ chave }}">{{ rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Data
+      <input type="date" name="data_encaminhamento"></label>
+    <label>Protocolo da Central
+      <input name="protocolo_central"></label>
+    <label>Observação
+      <input name="observacao"></label>
+    <button class="button" type="submit">Registrar a passagem</button>
+  </form>
+  {% endif %}
+</section>
+
+{# ============================================================== encerrar #}
+{% if t.situacao not in ['REGISTRADO','DEVOLVIDO','CANCELADO'] and user.role in ['ADMIN','MANAGER'] %}
+<section class="panel">
+  <div class="panel-head"><span>Encerrar sem registro</span></div>
+  <form method="post" class="form" style="padding:14px"
+        action="{{ url_for('rcpj_rtd_titulo_encerrar', titulo_id=t.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Como
+      <select name="situacao" required>
+        <option value="DEVOLVIDO">Devolvido — o apresentante levou de volta</option>
+        <option value="CANCELADO">Cancelado — não virou serviço</option>
+      </select></label>
+    <label>Motivo <span class="muted">— pelo menos dez letras</span>
+      <textarea name="motivo" rows="2" required></textarea></label>
+    <button class="button" type="submit">Encerrar</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

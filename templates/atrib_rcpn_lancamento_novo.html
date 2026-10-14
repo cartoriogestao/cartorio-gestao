@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{% from '_cobrar.html' import quadro %}
+{% block heading %}<h1>{{ rotulos[tipo] }} — {{ assento.nome }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_assento', assento_id=assento.id) }}">&larr; Ficha do assento</a>
+  {% if tipo == 'AVERBACAO' %}
+  <a class="button" href="{{ url_for('rcpn_averbacoes') }}">Localizar outro assento</a>
+  {% endif %}
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Assento que receberá o lançamento</span></div>
+  <table class="table">
+    <tr><th>Espécie</th><td>{{ assento.especie }}</td>
+        <th>Nome</th><td>{{ assento.nome }}</td></tr>
+    <tr><th>Livro</th><td>{{ assento.livro_volume or assento.serie }}</td>
+        <th>Número</th><td>{{ assento.numero or '—' }}</td></tr>
+    <tr><th>Matrícula</th><td colspan="3">{{ assento.matricula or '—' }}</td></tr>
+  </table>
+</section>
+
+<div class="notice">
+  {% if tipo == 'AVERBACAO' %}
+  A averbação altera ou complementa o conteúdo do assento. Ela é escrita na
+  margem do próprio registro e passa a constar nas certidões posteriores.
+  {% elif tipo == 'ANOTACAO' %}
+  A anotação faz remissão a outro assento. Ela não corrige o texto original.
+  {% else %}
+  A retificação corrige erro do assento e exige o fundamento que a autorizou.
+  {% endif %}
+</div>
+{# HOTFIX-2026-10-09-04: modelos com formulario proprio + texto levado do modelo #}
+{% set pre = session.get('rcpn_averbacao_preenchida') if tipo == 'AVERBACAO' else None %}
+{% if pre and pre.get('assento_id') != assento.id %}{% set pre = None %}{% endif %}
+{% if pre %}{% set _usado = session.pop('rcpn_averbacao_preenchida', None) %}{% endif %}
+{% if tipo == 'AVERBACAO' and modelos_de_averbacao is defined %}
+{% set _modelos = modelos_de_averbacao(assento.especie) %}
+{% if _modelos %}
+<section class="panel">
+  <div class="panel-head"><span>Modelos de averbação (formulário próprio)</span></div>
+  <div class="actions" style="padding:10px 14px">
+    {% for m in _modelos %}
+    <a class="button" title="{{ m.descricao }}" href="{{ url_for('rcpn_averbacao_modelo', assento_id=assento.id, slug=m.slug) }}">{{ m.nome }}</a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Dados da {{ rotulos[tipo] | lower }}</span></div>
+  {{ salvar_rascunho('rcpn_lancamento_novo', url_for({'AVERBACAO':'rcpn_averbar','ANOTACAO':'rcpn_anotar','RETIFICACAO':'rcpn_retificar'}[tipo], assento_id=assento.id),
+                   rotulos[tipo] ~ ' — ' ~ assento.nome, csrf_token,
+                   nome_em='teor') }}
+
+  <form method="post" action="{{ url_for('rcpn_lancar', assento_id=assento.id) }}"
+        class="grid2" style="padding:14px" id="form-do-ato">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="tipo" value="{{ tipo }}">
+    <label style="grid-column:1/-1">Teor
+      <textarea name="teor" rows="7" required minlength="10"
+                placeholder="texto que será lançado e constará na certidão">{{ pre.teor if pre else '' }}</textarea></label>
+    <label style="grid-column:1/-1">Fundamento
+      {% if tipo == 'RETIFICACAO' %}<small>(obrigatório)</small>
+      {% else %}<small>(opcional)</small>{% endif %}
+      <input name="fundamento" {% if tipo == 'RETIFICACAO' %}required{% endif %}
+             value="{{ pre.fundamento if pre else '' }}"
+             placeholder="ordem, pedido ou norma que autoriza o lançamento"></label>
+    {% if tipo == 'AVERBACAO' %}
+    <label>Natureza da averbação
+      <select name="natureza_averbacao">
+        <option value="">— escolha a natureza —</option>
+        {% for n in naturezas_averbacao or [] %}
+        <option value="{{ n.codigo_form }}" {% if pre and pre.natureza == n.codigo_form %}selected{% endif %}>{{ n.rotulo }}</option>
+        {% endfor %}
+      </select>
+      <small>Escolha a natureza. O selador desta casa usa o código já medido
+        neste caminho; o texto da averbação vai no teor.</small>
+    </label>
+    {% endif %}
+    <label>Selo <small>(opcional)</small><input name="selo"></label>
+    {% if tipo == 'AVERBACAO' %}
+    <div style="grid-column:1/-1;padding:8px 0">
+      <label style="display:flex;gap:8px;align-items:flex-start">
+        <input type="checkbox" name="ato_gratuito" value="1"
+               id="ato_gratuito"
+               onchange="document.getElementById('bloco-gratuidade').style.display=this.checked?'block':'none'">
+        <span><strong>Ato / selo gratuito</strong><br>
+          <small>Marque quando a averbação for gratuita (hipossuficiência,
+          assistência judiciária, art. 347 etc.). Lança com zero e sela com
+          <em>isentoGratuito</em>.</small></span>
+      </label>
+      <div id="bloco-gratuidade" style="display:none;margin-top:10px"
+           class="grid2">
+        <label>Tipo de gratuidade
+          <select name="gratuidade_codigo">
+            <option value="">— escolha —</option>
+            {% for g in gratuidades or [] %}
+            <option value="{{ g.codigo }}">{{ g.rotulo }}</option>
+            {% endfor %}
+          </select></label>
+        <label>Motivo <small>(obrigatório se gratuito)</small>
+          <input name="motivo_gratuidade" id="motivo_gratuidade"
+                 placeholder="norma, decisão ou declaração que autoriza"></label>
+        <input type="hidden" name="selo_gratuito" id="selo_gratuito" value="">
+      </div>
+    </div>
+    <script>
+      (function(){
+        var cb=document.getElementById('ato_gratuito');
+        var hid=document.getElementById('selo_gratuito');
+        if(cb&&hid){cb.addEventListener('change',function(){
+          hid.value=cb.checked?'1':'';
+        });}
+      })();
+    </script>
+    {% endif %}
+    {{ quadro(receita, caixa, protocolos) }}
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button">Lançar {{ rotulos[tipo] | lower }}</button>
+      <a class="button" href="{{ url_for('rcpn_assento', assento_id=assento.id) }}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{{ script_do_rascunho() }}
+{% endblock %}

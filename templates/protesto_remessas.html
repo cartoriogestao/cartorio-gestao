@@ -1,0 +1,112 @@
+{#
+  A remessa que CHEGA da CRA — o passo do meio-dia.
+
+  O roteiro do protesto que o oficial trouxe põe, nos passos elementares
+  diários: "MEIO DIA (das 11h às 13h): 1) recebimento de remessa, confirmação
+  e emissão do aviso".
+
+  93% dos títulos desta casa entram por aqui. Até esta tela existir, o arquivo
+  se lia no domínio e não havia por onde recebê-lo.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Remessa da CRA</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
+  <a class="button" href="{{ url_for('protesto_retornos') }}">Retorno à CRA</a>
+</div>
+
+<div class="notice">
+  É por aqui que entram <strong>93% dos títulos desta casa</strong>. O arquivo
+  que você baixou da CRA se confere primeiro — nada é gravado na conferência.
+  O sistema reconhece <strong>TXT de 600 posições</strong> (rotina diária) e
+  <strong>XML</strong> (comum quando você baixa pela tela da CRA API) no mesmo
+  fluxo: conferir, depois receber.
+  <br><br>
+  Ao receber, cada título é <strong>cadastrado e apontado</strong>, ganha
+  protocolo e lugar no Livro de Apontamento, e sai a
+  <strong>confirmação</strong> para subir na Central. O passo seguinte do
+  roteiro é o <strong>aviso de intimação</strong>, que se emite na ficha de
+  cada título.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Receber uma remessa</span></div>
+  <form method="post" action="{{ url_for('protesto_remessa_conferir') }}"
+        enctype="multipart/form-data" class="form" style="padding:14px">
+      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <div class="field">
+      <label for="arquivo">O arquivo que você baixou da CRA</label>
+      <input type="file" id="arquivo" name="arquivo" required
+             accept=".txt,.rem,.221,.222,.223,.231,.xml,text/plain,text/xml,application/xml">
+      <small>
+        Rotina diária: arquivo de 600 posições, com qualquer nome — a CRA usa
+        <code>B0001307.221</code> e parecidos. O sistema lê o tipo dentro do
+        arquivo e recusa se não for uma remessa: <strong>as pastas costumam
+        misturar os quatro tipos</strong>. XML baixado pela API CRA21 também
+        pode ser conferido e recebido aqui; o formato é detectado
+        automaticamente.
+      </small>
+    </div>
+    <div class="actions">
+      <button class="button primary" type="submit">Conferir</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Remessas recebidas</span><small>{{ recebidas | length }}</small>
+  </div>
+
+  {% if not recebidas %}
+    <p style="padding:14px">
+      Nenhuma remessa recebida ainda. Baixe o arquivo na CRA e escolha-o acima.
+    </p>
+  {% else %}
+  <table class="table">
+    <thead><tr>
+      <th>Quando</th><th>Apresentante</th><th>Remessa</th>
+      <th>Títulos</th><th>Confirmação</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for r in recebidas %}
+      <tr>
+        <td>{{ r.recebida_em[:16] | replace('T', ' ') }}
+            <div><small>{{ r.recebida_por or '—' }}</small></div></td>
+        <td><strong>{{ r.apresentante_codigo }}</strong>
+            <div><small>{{ r.apresentante_nome or 'sem nome' }}</small></div></td>
+        <td>{{ r.numero_da_remessa or '—' }}
+            <div><small>de {{ r.dia or '—' }}</small></div></td>
+        <td>
+          <strong>{{ r.recebidos }}</strong> de {{ r.titulos }}
+          {% if r.recusados %}
+            <div><small class="danger">{{ r.recusados }} recusado(s)</small></div>
+          {% endif %}
+          {% if r.apontados != r.recebidos %}
+            <div><small>{{ r.apontados }} apontado(s)</small></div>
+          {% endif %}
+        </td>
+        <td>
+          {% if r.confirmacao_id %}
+            <a href="{{ url_for('protesto_retorno_arquivo',
+                                retorno_id=r.confirmacao_id) }}">baixar</a>
+          {% else %}
+            <small>—</small>
+          {% endif %}
+        </td>
+        <td><a href="{{ url_for('protesto_remessa', remessa_id=r.id) }}">abrir</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<div class="notice">
+  <strong>O mesmo arquivo não entra duas vezes.</strong> Se você mandar de novo
+  a remessa que já entrou, o sistema recusa e diz quando ela entrou — receber
+  outra vez apontaria todos os títulos de novo, e apontamento não se desfaz.
+</div>
+{% endblock %}

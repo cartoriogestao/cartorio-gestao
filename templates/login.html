@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block title %}Entrar{% endblock %}
+{% block auth_content %}
+<h1>{{ APP_NAME }}</h1><p class="muted">{{ unit_name }}</p>
+<form method="post" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Usuário<input name="username" autofocus required></label>
+  <label>Senha<input type="password" name="password" required></label>
+  <button class="primary">Entrar</button>
+</form>
+<p class="muted small">Ações realizadas no sistema são registradas na trilha de auditoria.</p>
+{% endblock %}

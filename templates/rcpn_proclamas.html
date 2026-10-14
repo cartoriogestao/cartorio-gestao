@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+{% block title %}e-Proclamas — a fila da Central{% endblock %}
+{% block heading %}<h1>e-Proclamas — o que ainda não subiu</h1>{% endblock %}
+{% block content %}
+
+{#
+  ESTA TELA SUBSTITUI UM PASSO MANUAL, e vale dizer qual.
+
+  Até 03/09/2026 o escrevente publicava no portal do e-Proclamas e voltava aqui
+  para digitar o protocolo — era o que se podia fazer com verdade enquanto a
+  integração não existia. O caminho manual **continua valendo**, e é o de
+  quando a Central está fora do ar: ele está na ficha da habilitação.
+#}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_habilitacoes', situacao='EDITAL_PUBLICADO') }}">Editais publicados</a>
+  <form method="post" action="{{ url_for('rcpn_proclamas_testar') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">Testar a ligação com a Central</button>
+  </form>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# O ESTADO DA LIGAÇÃO, ANTES DA LISTA. Lista vazia sem esta faixa faz o
+   operador achar que não há trabalho, quando o que há é falta de credencial —
+   é a lição da tela de assinaturas, que custou três respostas. #}
+<section class="card {% if not tem_credencial %}warning{% endif %}">
+  <h2>A Central</h2>
+  <p>
+    Endereço: <code>{{ base }}</code> — ambiente <strong>{{ ambiente|lower }}</strong>.
+    CNS da serventia: <code>{{ cns or '—' }}</code>.
+  </p>
+  {% if tem_credencial %}
+    <p>O token do IdRC está informado.</p>
+  {% else %}
+    <p>
+      <strong>O token do IdRC ainda não foi informado</strong>, e sem ele nada
+      sobe. Ele se obtém no cadastro em
+      <code>integracao.idrc.registrocivil.org.br</code>, no botão <em>Novo
+      Client</em>, e se informa em <a href="{{ url_for('settings') }}">Administrativo →
+      Configurações</a>, na seção «Centrais — credenciais das APIs».
+      {# O ENDEREÇO ANTIGO FICOU AQUI ATÉ 18/09/2026 E ESTAVA MORTO — e ele veio
+         do FAQ do próprio manual do IdRC, que cita
+         `home.registrocivil.org.br/solicitacao`. Medido em 18/09/2026: aquele
+         host devolve **404 em todos os caminhos**, inclusive no que o FAQ cita,
+         e quem responde é o `homeh.`, **com «h»** (302, para o login). O corpo
+         do manual nomeia os endereços vivos; o morto estava no FAQ dele.
+         **Citar documento não é citar fonte viva: a URL envelhece dentro dele.** #}
+    </p>
+    <p>
+      <small>
+        {# O QUE O CADASTRO DEVOLVE FOI MEDIDO NO CÓDIGO DO PRÓPRIO IdRC, e não
+           é o que esta tela pede. Escondê-lo faria o oficial abrir a tela de
+           configurações com um ID e um segredo na mão, procurando um campo de
+           «token» que nada preenche. #}
+        <strong>Atenção ao que chega:</strong> o cadastro passa por aprovação e
+        devolve <strong>um par</strong> — <code>client_id</code> e
+        <code>client_secret</code>, num arquivo enviado ao e-mail do responsável
+        técnico —, e não um token pronto. <strong>O manual do IdRC chegou</strong>
+        (18/09/2026) e disse de onde o token sai: do próprio IdRC, por
+        <code>authorization_code</code> — <strong>depois de uma pessoa se
+        autenticar</strong>, na URL de retorno que o cadastro exige. E ele
+        <strong>vive 5 minutos</strong>; o de renovação, 30.
+        {# «EM ATÉ 2 DIAS ÚTEIS» FICOU AQUI ATÉ 18/09/2026 E NÃO TINHA FONTE: o
+           manual diz que a solicitação «será submetida aos responsáveis para
+           avaliação e aprovação» e que as chaves vão para o e-mail do
+           responsável técnico — **sem prazo nenhum**. Prazo inventado numa tela
+           que o oficial lê como instrução é o «número plausível sem medição» da
+           casa: quem esperasse dois dias e não recebesse nada concluiria que o
+           pedido falhou. #}
+      </small>
+    </p>
+    <p>
+      <small>
+        {# A ETAPA ZERO, e ela trava quem chega sem saber: a página do cadastro
+           só abre para quem já tem usuário no IdRC. Medido no manual, palavra
+           por palavra — não é dedução. O endereço onde o usuário se cria também
+           é medido (18/09/2026): `www.homeh.` responde 302 para o login. #}
+        <strong>Antes de tudo:</strong> a página do cadastro <strong>só abre
+        para quem tem usuário IdRC</strong> — o manual escreve que «o
+        solicitante precisa ter um usuário IdRC para se autenticar na página», e
+        o usuário se cria em
+        <code>www.homeh.registrocivil.org.br</code>. Sem ele, nem o botão «Novo
+        Client» aparece.
+        E o formulário pede uma <strong>URL de retorno</strong>, que
+        <strong>pode ser local</strong>: «para ambientes de teste local e
+        sistemas Desktop informe uma URL <code>localhost</code> com porta
+        definida e path específico» — este sistema atende na porta
+        <code>8765</code>.
+      </small>
+    </p>
+    <p>
+      <small>
+        {# O QUE ISSO MUDA PARA QUEM ESTÁ NO BALCÃO, e é o ponto: o par NÃO vira
+           token sozinho. Enquanto a Central não disser que aceita o fluxo de
+           máquina, o token é o que alguém colou — e ele vence. #}
+        <strong>O que isso muda aqui:</strong> o sistema guarda e usa o token
+        informado, e <strong>não o busca sozinho</strong> — o caminho medido
+        passa por login de gente. Como a URL de retorno pode ser a desta própria
+        máquina, esse login é construível aqui; o que ainda <strong>não se
+        mediu</strong> é se a Central aceita o fluxo de máquina
+        (<code>client_credentials</code>), que dispensaria a pessoa.
+        <strong>É a pergunta que está feita a ela.</strong>
+      </small>
+    </p>
+    <p>
+      <small>
+        <strong>No formulário, o «Ambiente de criação» é Homologação</strong> —
+        e não por preferência: escolhendo <em>Produção</em>, ele passa a exigir
+        «o protocolo do client de <strong>homologação</strong> já existente para
+        esta mesma plataforma». A ordem é uma só, e começa aqui.
+        {# MEDIDO NO CÓDIGO DO PRÓPRIO FORMULÁRIO DO IdRC, em 18/09/2026: o campo
+           se chama `protocoloHomologacao`, o rótulo é «Protocolo do client de
+           homologação», e a validação só o dispensa quando o ambiente NÃO é
+           `producao`. **O manual não cita esse campo** — quem o tem é o
+           formulário. Fica dito porque a afirmação estava sem fonte: eu a havia
+           escrito de memória, e o manual não a confirmava. #}
+      </small>
+    </p>
+    <p>
+      <small>
+        Ele fica em <code>{{ arquivo_da_credencial }}</code>, <strong>fora do
+        banco</strong> — o banco viaja no backup, e o backup já saiu da
+        serventia. <strong>É o mesmo token da API de Certidão Eletrônica</strong>:
+        um cadastro serve às duas.
+      </small>
+    </p>
+  {% endif %}
+  <p>
+    <small>
+      <strong>O ambiente é o de homologação</strong> — e não porque falte o
+      outro: os dois endereços de <strong>produção das duas APIs existem e respondem</strong>
+      (medido em 18/09/2026). Do <strong>IdRC</strong>, o que
+      se mediu é o portal de integração; e o cadastro <strong>exige a ordem</strong>:
+      o client de produção só se cria citando o protocolo do de
+      homologação.
+      (<code>servicos<b>h</b></code> → <code>servicos</code>,
+      <code>certidao<b>h</b></code> → <code>certidao</code>.) Enquanto o outro
+      não for criado, <strong>o que roda aqui é homologação</strong> — e quem lê
+      isso é quem vai conferir se o que apareceu é de verdade.
+    </small>
+  </p>
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section>
+  <h2>Habilitações com edital publicado ({{ fila|length }})</h2>
+  {% if not fila %}
+    <p class="muted">
+      Nenhuma habilitação está esperando a Central. A fila enche quando o
+      edital de proclamas é publicado aqui — em
+      <a href="{{ url_for('rcpn_habilitacoes') }}">Habilitação</a>, etapa 2.
+    </p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Habilitação</th><th>Os nubentes</th><th>Edital</th>
+          <th>Prazo até</th><th>Livro D</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in fila %}
+        <tr>
+          <td>{{ p.numero or '—' }}{% if p.ano %}/{{ p.ano }}{% endif %}</td>
+          <td>{{ p.nubente1_nome }} e {{ p.nubente2_nome }}</td>
+          <td>{{ p.edital_em or '—' }}</td>
+          <td>{{ p.edital_prazo_ate or '—' }}</td>
+          <td>
+            {% if p.proclamas_assento_id %}
+              registrado
+            {% else %}
+              {# SEM O ASSENTO NÃO HÁ MATRÍCULA, e sem matrícula a Central não
+                 tem como identificar o proclama. A coluna diz isso ANTES de
+                 alguém abrir a ficha e levar a recusa. #}
+              <strong>falta lavrar</strong>
+            {% endif %}
+          </td>
+          <td>
+            <a class="button" href="{{ url_for('rcpn_proclama', habilitacao_id=p.id) }}">Conferir</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h3>O que este envio faz</h3>
+  <p>
+    Uma chamada faz as duas coisas, e cada uma é uma caixa na ficha:
+    <strong>publicar no e-Proclamas</strong> e <strong>gerar o Livro D
+    Eletrônico</strong>. Elas vão no mesmo pedido, e o contrato as declara como
+    dois campos separados — dá para mandar uma sem a outra.
+  </p>
+  <p>
+    <small>
+      A publicação <strong>custa e sai no mundo</strong>. Por isso conferir e
+      enviar são dois botões, e o sistema recusa publicar duas vezes a mesma
+      habilitação — dizendo, na recusa, quando foi a primeira e qual número de
+      lote ela trouxe.
+    </small>
+  </p>
+</section>
+
+{% endblock %}

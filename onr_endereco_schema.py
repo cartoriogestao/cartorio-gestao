@@ -1,0 +1,97 @@
+# -*- coding: utf-8 -*-
+"""A fila da conferência do endereço — a tabela `ri_onr_enderecos`.
+
+**UMA PROPOSTA POR MATRÍCULA**, e não uma por rodada: rodar o extrator de novo
+sobre uma ficha que já foi conferida não pode apagar a conferência de ninguém.
+A `UNIQUE(matricula_id)` é o que impede isso, e é a forma de `ri_rascunhos`
+(`UNIQUE(matricula_id)`, um rascunho por ficha) — ali porque só se escreve um
+ato de cada vez, aqui porque a pergunta «qual é o endereço desta matrícula?»
+tem uma resposta só.
+
+**O QUE A TABELA GUARDA É A PROPOSTA E A PROVA**, e as duas versões: `antes` é
+como os campos estavam, `proposta` é como ficariam, e `bloco` é o pedaço do
+teor de onde a leitura saiu. É isso que permite a tela mostrar **as duas
+versões** — foi a escolha do oficial para as 67 divergentes — sem que ninguém
+precise abrir a ficha do OCR noutra janela.
+
+**ESTA TABELA NÃO É O ENDEREÇO DA MATRÍCULA.** O endereço da matrícula mora em
+`ri_matriculas`, e continua morando: o que está aqui é o que uma máquina leu e
+o que uma pessoa decidiu sobre a leitura. Duas fontes para o mesmo endereço
+divergiriam no primeiro conserto — e quem lê a divergente é o ONR.
+"""
+from __future__ import annotations
+
+import sqlite3
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS ri_onr_enderecos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- DE QUEM É A PROPOSTA. Uma por matrícula: ver o docstring.
+    matricula_id INTEGER NOT NULL UNIQUE REFERENCES ri_matriculas(id),
+
+    situacao TEXT NOT NULL DEFAULT 'A_CONFERIR',
+
+    -- O QUE SE PROPÕE GRAVAR, campo por campo (JSON).
+    proposta TEXT NOT NULL DEFAULT '{}',
+    -- DE ONDE CADA CAMPO SAIU — a frase do teor (JSON). É a prova da leitura.
+    de_onde TEXT NOT NULL DEFAULT '{}',
+    -- O QUE O CONTRATO EXIGE E O TEOR NÃO DEU (JSON, lista).
+    faltam TEXT NOT NULL DEFAULT '[]',
+    -- O QUE PRECISA SER OLHADO ANTES DE CONFIRMAR (JSON, lista).
+    avisos TEXT NOT NULL DEFAULT '[]',
+    -- O PEDAÇO DO TEOR — a leitura tem de ser conferível, e não afirmada.
+    bloco TEXT NOT NULL DEFAULT '',
+
+    -- COMO OS CAMPOS ESTAVAM QUANDO A PROPOSTA NASCEU (JSON). É a outra
+    -- versão da tela, e o que `confirmar` consulta para não sobrescrever.
+    antes TEXT NOT NULL DEFAULT '{}',
+
+    -- alta | media | baixa. `baixa` é o que vai à conferência primeiro.
+    confianca TEXT NOT NULL DEFAULT 'media',
+    -- Só sai pronta para o índice o que não tem divergência nem buraco.
+    pode_enviar INTEGER NOT NULL DEFAULT 0,
+
+    calculado_em TEXT NOT NULL,
+
+    decidido_em TEXT,
+    decidido_por TEXT,
+    -- POR QUE FOI DESCARTADA — exigido pelo domínio, e a régua da reabertura.
+    motivo TEXT,
+
+    -- O QUE FOI GRAVADO NA VERDADE, e o que já estava lá e foi preservado
+    -- (JSON). Fica porque a conferência pode gravar menos do que a proposta
+    -- dizia, e quem olhar a ficha depois precisa saber de onde veio cada campo.
+    gravado TEXT NOT NULL DEFAULT '{}',
+    preservado TEXT NOT NULL DEFAULT '[]'
+);
+"""
+
+# **NÃO HÁ MIGRAÇÃO NENHUMA NESTA TABELA ATÉ HOJE** — ela nasceu inteira, com
+# treze colunas, em 15/09/2026. Fica o lugar declarado para o dia em que
+# houver: `CREATE TABLE IF NOT EXISTS` não acrescenta coluna a uma tabela que
+# já existe, e é `ALTER TABLE ADD COLUMN` que resolve, como em todo esquema
+# desta casa. **Regra da casa que se respeita aqui:** o índice de uma coluna
+# nova mora em `INDICES_DEPOIS_DA_MIGRACAO`, e não no `SCHEMA` — no banco que
+# já existe a coluna só aparece no `ALTER TABLE`, e o `CREATE INDEX` estouraria
+# ao abrir o banco. É o defeito que o oficial cometeu duas vezes em 25/08/2026.
+MIGRACOES: tuple[str, ...] = ()
+
+INDICES_DEPOIS_DA_MIGRACAO = (
+    "CREATE INDEX IF NOT EXISTS idx_ri_onr_enderecos_situacao "
+    "ON ri_onr_enderecos(situacao, confianca)",
+)
+
+
+def init_ri_onr_endereco_schema(con: sqlite3.Connection) -> None:
+    """Cria a tabela, as colunas que chegarem depois e o índice."""
+    con.executescript(SCHEMA)
+    for sql in MIGRACOES:
+        try:
+            con.execute(sql)
+        except sqlite3.OperationalError:
+            # A coluna já existe — é o caso normal depois da primeira vez.
+            pass
+    for sql in INDICES_DEPOIS_DA_MIGRACAO:
+        con.execute(sql)
+    con.commit()

@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Últimos atos praticados — RCPJ e RTD</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="notice">
+  Registro, averbação e cancelamento juntos, na ordem em que foram
+  <strong>lavrados</strong> — e não na ordem em que o registro foi aberto.
+  Para lançar um ato novo, abra a ficha do registro pelo link da coluna
+  "Registro".
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ total }}</strong><small>no filtro atual</small></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Filtrar</span></div>
+  <form method="get" class="grid2" style="padding:14px">
+    <label>Atribuição
+      <select name="atribuicao">
+        <option value="">as duas</option>
+        <option value="3" {% if atribuicao == '3' %}selected{% endif %}>RCPJ</option>
+        <option value="4" {% if atribuicao == '4' %}selected{% endif %}>RTD</option>
+      </select></label>
+    <label>Tipo de ato
+      <select name="tipo">
+        <option value="">todos</option>
+        <option value="REGISTRO" {% if tipo == 'REGISTRO' %}selected{% endif %}>Registro</option>
+        <option value="AVERBACAO" {% if tipo == 'AVERBACAO' %}selected{% endif %}>Averbação</option>
+        <option value="CANCELAMENTO" {% if tipo == 'CANCELAMENTO' %}selected{% endif %}>Cancelamento</option>
+      </select></label>
+    <div class="actions">
+      <button class="button">Filtrar</button>
+      <a class="button" href="{{ url_for('rcpj_rtd_ultimos_atos') }}">Limpar</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Resultado</span>
+    <small>página {{ pagina }} de {{ paginas }}</small>
+  </div>
+  {% if not atos %}
+    <p style="padding:14px">Nenhum ato casou com o filtro.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Tipo</th><th>Data</th><th>Registro</th><th>Atribuição</th>
+        <th>Requerente</th><th>Livro / folha / ordem</th><th>Selo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in atos %}
+      <tr>
+        <td><strong>{{ a.tipo|capitalize }}</strong></td>
+        <td>{{ (a.data_ato or '')[:10] }}</td>
+        <td><a href="{{ url_for('rcpj_rtd_registro', registro_id=a.registro_id) }}">nº {{ a.registro_numero or '—' }}</a></td>
+        <td>{{ 'RCPJ' if a.atribuicao == 3 else 'RTD' }}</td>
+        <td>{{ a.requerente_nome or '—' }}</td>
+        <td>{% if a.numero_ordem %}fl. {{ a.rotulo or a.folha }} · nº {{ a.numero_ordem }}{% else %}—{% endif %}</td>
+        <td><small>{{ a.selo or 'sem selo' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  {% if paginas > 1 %}
+  <div class="actions" style="padding:14px">
+    {% if pagina > 1 %}
+      <a class="button" href="{{ url_for('rcpj_rtd_ultimos_atos', atribuicao=atribuicao or None, tipo=tipo or None, pagina=pagina-1) }}">&larr; anterior</a>
+    {% endif %}
+    {% if pagina < paginas %}
+      <a class="button" href="{{ url_for('rcpj_rtd_ultimos_atos', atribuicao=atribuicao or None, tipo=tipo or None, pagina=pagina+1) }}">próxima &rarr;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

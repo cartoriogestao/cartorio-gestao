@@ -1,0 +1,207 @@
+{#
+  O quadro da certidão de inteiro teor, escrito UMA vez e usado nas duas
+  fichas — RCPJ/RTD e Livro 3.
+
+  Escrevê-lo duas vezes daria duas versões divergentes do papel que a
+  serventia assina. É a mesma lição de _cobrar.html.
+
+  Uso:
+      {% from '_certidao.html' import quadro_certidao %}
+      {{ quadro_certidao(atribuicao, registro, certidao_receita, certidoes,
+                         caixa, protocolos, csrf_token, user, anexos=anexos,
+                         atos=atos, protocolo_escolhido=protocolo_escolhido,
+                         itens_do_protocolo=itens_do_protocolo,
+                         reload_url=reload_url) }}
+#}
+{#  `digitalizacao` e a varredura da ficha, quando ha uma — e ela chega
+    DECLARADA, e nao lida de `registro` por dentro: `rg_registros` (RCPJ/RTD)
+    nao tem coluna `digi_*`, e ler dali funcionaria por acidente, porque em
+    Jinja o que falta e falso. Coincidencia nao e razao. #}
+{% macro quadro_certidao(atribuicao, registro, receita, certidoes, caixa,
+                         protocolos, csrf_token, user, anexos=[], atos=[],
+                         protocolo_escolhido=None, itens_do_protocolo=None,
+                         reload_url=None, digitalizacao=None) %}
+{% from '_cobrar.html' import quadro %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Certidão de inteiro teor</span>
+    <small>{{ certidoes | length }} emitida(s) deste registro</small>
+  </div>
+
+  {% if not (registro.teor or '').strip() %}
+    <div class="notice" style="margin:14px">
+      <strong>Este registro veio do acervo sem o teor.</strong> Ele consta do livro —
+      a cópia se tira do <strong>livro físico</strong>. Certidão de inteiro teor sem o
+      teor seria papel que promete o que não entrega.
+    </div>
+  {% elif user.role in ['ADMIN','MANAGER','USER'] %}
+    <p style="padding:14px 14px 0"><small>
+      A certidão <strong>reproduz o que está no livro</strong>: o teor não se digita.
+      Ela sai numerada por exercício, com o teor congelado e o sha256 — protesto de
+      averbação lavrada amanhã não muda a certidão de hoje.
+    </small></p>
+    <form method="post" class="grid2" style="padding:14px"
+          action="{{ url_for('atribuicoes_certidao_emitir',
+                             atribuicao=atribuicao, registro_id=registro.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Requerente <small>(opcional)</small>
+        <input name="requerente"></label>
+      {#  O DOCUMENTO DE QUEM PEDE — 21/09/2026, «mesmas balizas para emissao
+          de certidao». O Livro 2 ja o guardava; aqui faltava, e nome sozinho
+          tem homonimo. #}
+      <label>CPF ou CNPJ do requerente <small>(opcional)</small>
+        <input name="requerente_documento"></label>
+      <label>Finalidade <small>(opcional)</small>
+        <input name="finalidade" placeholder="prova · licitação"></label>
+      <label>Selo <small>(opcional — digitado à mão; sem ele, o sistema pede
+        pelos itens marcados abaixo)</small>
+        <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
+      {{ quadro(receita, caixa, protocolos,
+                protocolo_escolhido=protocolo_escolhido,
+                itens_do_protocolo=itens_do_protocolo,
+                reload_url=reload_url) }}
+      {#  COMO SAI O TEOR — 21/09/2026, «aplique o mesmo codigo do livro 2
+          adaptado». O Livro 2 emite de dois modos, e o Livro 3 so tinha um.
+
+          **A REPRODUCAO SO SE OFERECE QUANDO HA ARQUIVO**, e quando nao ha a
+          caixa diz onde se consegue: opcao que se pode escolher e que recusa
+          depois faz o balcao descobrir o buraco com o cliente na frente. #}
+      {#  AS FOLHAS — 21/09/2026, medido nos 667 envelopes de certidão do
+          acervo: **92 deles cobraram mais de uma folha**, e até doze. O
+          sistema mandava uma, sempre. Na reprodução o número é contado do
+          arquivo e este campo não manda nada. #}
+      {% if atribuicao == 'LIVRO3' %}
+      <label>Folhas da certidão
+        <input type="number" name="folhas" value="" min="1" step="1" placeholder="auto">
+        <small>O sistema <strong>conta sozinho</strong> antes de emitir (arquivo na reprodução; papel no texto). Preencha só se precisar de um número <em>maior</em> (capa/anexo). Mais de uma folha cobra a <strong>folha acrescida</strong>.</small></label>
+      {% endif %}
+      {% if atribuicao == 'LIVRO3' %}
+      <label style="grid-column:1/-1">De onde sai o teor
+        <select name="fonte_corpo">
+          <option value="TEXTO" selected>Texto do livro — o teor escrito</option>
+          <option value="DIGITALIZACAO" {% if not digitalizacao %}disabled{% endif %}>
+            Reprodução da digitalização da ficha{% if not digitalizacao %}
+            — não há varredura neste registro{% endif %}</option>
+        </select>
+        <small>{% if digitalizacao %}A reprodução imprime as folhas varridas
+          ({{ digitalizacao.digi_nome }}) com o selo ao final, e congela uma
+          cópia do arquivo: varrer a ficha de novo amanhã não muda esta
+          certidão.{% else %}Para certificar por reprodução, anexe a varredura
+          da ficha no quadro «Digitalização oficial deste registro», acima.
+          {% endif %}</small></label>
+      {% endif %}
+      {% if atos %}
+      <div style="grid-column:1/-1; margin-top:4px">
+        <small><strong>Atos a incluir na certidão</strong>
+          (padrão: REGISTRO + todas as AVERBAÇÕES):</small><br>
+        {% for a in atos %}
+        {% set tipo_u = (a.tipo or '')|upper %}
+        {% if tipo_u == 'REGISTRO' or tipo_u.startswith('AVERB') %}
+        {% set nat = (a.teor or '')|replace('\n',' ')|replace('\r',' ') %}
+        {% set nat_curta = nat[:60] ~ ('…' if nat|length > 60 else '') %}
+        <label style="display:block; margin:4px 0">
+          <input type="checkbox" name="ato_id" value="{{ a.id }}" checked>
+          <strong>{{ a.tipo }}</strong>
+          {% if a.numero_ordem %}n. {{ a.numero_ordem }}{% endif %}
+          {% if nat_curta %} — <small>{{ nat_curta }}</small>{% endif %}
+        </label>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="actions" style="grid-column:1/-1">
+        <button class="button">Emitir certidão de inteiro teor</button>
+      </div>
+    </form>
+
+    {# Prévia PDF visual (capa + folhas) — só RCPJ/RTD; não emite nem sela. #}
+    {% if atribuicao == 'RCPJ_RTD' and registro.numero %}
+    <form method="post" target="_blank" rel="noopener"
+          action="{{ url_for('rcpj_rtd_certidao_previa', registro_id=registro.id) }}"
+          style="padding:0 14px 14px; border-top:1px solid #e5e7eb">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <p style="margin:12px 0 8px"><small>
+        <strong>Prévia da certidão (PDF)</strong> — capa + folhas internas com
+        faixa (modelos <code>RCPJ_CERTIDAO_CAPA</code> /
+        <code>RCPJ_CERTIDAO_FAIXA</code> ou RTD). Não emite certidão nem selo;
+        só monta o PDF para conferência. Emolumentos na capa saem como
+        placeholder (R\$ 0,00) até haver cálculo real.
+      </small></p>
+      <div class="grid2" style="margin-bottom:8px">
+        <label>Denominação
+          <input name="denominacao" value="{{ registro.requerente_nome or '' }}"></label>
+        <label>Natureza
+          <input name="natureza" value="{{ registro.natureza or '' }}"></label>
+        <label>Protocolo
+          <input name="protocolo" placeholder="ex.: 2026.09.17"></label>
+        <label>Data da apresentação
+          <input name="data_apresentacao" placeholder="aaaa-mm-dd"></label>
+      </div>
+      {% if atos %}
+      <div style="margin-bottom:8px">
+        <small><strong>Atos a incluir na certidão</strong>
+          — as folhas vêm dos anexos ligados a cada ato (RG_ATO); se não houver
+          vínculo, usa o mapeamento conhecido ou os anexos marcados abaixo:</small><br>
+        {% for a in atos %}
+        {% set tipo_u = (a.tipo or '')|upper %}
+        {% if tipo_u == 'REGISTRO' or tipo_u.startswith('AVERB') %}
+        {% set nat = (a.teor or '')|replace('\n',' ')|replace('\r',' ') %}
+        {% set nat_curta = nat[:60] ~ ('…' if nat|length > 60 else '') %}
+        <label style="display:block; margin:4px 0">
+          <input type="checkbox" name="ato_id" value="{{ a.id }}" checked>
+          <strong>{{ a.tipo }}</strong>
+          {% if a.numero_ordem %}n. {{ a.numero_ordem }}{% endif %}
+          {% if nat_curta %} — <small>{{ nat_curta }}</small>{% endif %}
+        </label>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if anexos %}
+      <div style="margin-bottom:8px">
+        <small>Anexos (só entram se os atos acima não tiverem vínculo RG_ATO /
+          fallback — pacotes mistos grandes vêm desmarcados):</small><br>
+        {% for a in anexos %}
+        {% set nome_u = (a.original_name or '')|upper %}
+        {% set desc_u = (a.description or '')|upper %}
+        {% set skip = ('DOCUMENTOS' in nome_u) or ('DOCUMENTOS' in desc_u)
+                      or ('REGISTRO_ORIGINARIO' in nome_u) or ('REGISTRO ORIGIN' in nome_u)
+                      or ('PACOTE' in nome_u and 'ORIGIN' in nome_u)
+                      or ('PARA AVERBA' in nome_u) or ('PARA AVERBA' in desc_u) %}
+        <label style="display:inline-block; margin-right:12px">
+          <input type="checkbox" name="anexo_id" value="{{ a.id }}"
+            {% if not skip %}checked{% endif %}>
+          {{ a.original_name }}
+        </label>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p><small class="muted">Sem anexos — anexe a folha do livro / peças antes.</small></p>
+      {% endif %}
+      <button class="button" type="submit">Prévia da certidão (PDF)</button>
+    </form>
+    {% endif %}
+  {% endif %}
+
+  {% if certidoes %}
+  <table class="table">
+    <thead><tr><th>Nº</th><th>Emitida em</th><th>Requerente</th><th>Vale até</th><th>Selo</th></tr></thead>
+    <tbody>
+      {% for c in certidoes %}
+      <tr{% if c.cancelada %} style="opacity:.55"{% endif %}>
+        <td><a href="{{ url_for('atribuicoes_certidao', certidao_id=c.id) }}">{{ c.numero }}/{{ c.ano }}</a>
+            {%- if c.cancelada %} <small>(cancelada)</small>{% endif %}</td>
+        <td><small>{{ c.emitida_em }}</small></td>
+        <td>{{ c.requerente or '—' }}</td>
+        {#  A VALIDADE E DO CODIGO DE NORMAS (art. 53, 30 dias). Ela passou a
+            ser gravada em 21/09/2026; as emitidas antes disso nao a tem, e a
+            tela diz «—» em vez de inventar uma data. #}
+        <td><small>{{ c.validade_ate or '—' }}</small></td>
+        <td><small>{{ c.selo or '—' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endmacro %}

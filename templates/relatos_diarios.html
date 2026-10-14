@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Relatos do dia{% endblock %}
+{% block heading %}<h1>Relatos do dia — {{ dia[8:10] }}/{{ dia[5:7] }}/{{ dia[:4] }}</h1>{% endblock %}
+{% block content %}
+<section class="card">
+  <p>O que os agentes têm a dizer a cada dia: o despacho do gestor, a cobrança
+    das tarefas vencidas, o boletim do Registro Civil e a carga da equipe. Não são
+    tarefas — não vencem nem se acumulam; o de cada dia se renova nas rodadas.</p>
+  {% if dias %}<p class="small">Outros dias:
+    {% for d in dias %}<a href="{{ url_for('relatos_diarios', dia=d) }}">{{ d[8:10] }}/{{ d[5:7] }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+</section>
+
+{% for r in relatos %}
+<section class="card">
+  <h2>{{ r.titulo }} {% if not r.lido_em %}<span class="badge warning">novo</span>{% endif %}</h2>
+  <p class="small muted">{{ r.nome_da_origem }} · atualizado às {{ r.atualizado_em[11:16] }}{% if r.lido_em %} · lido às {{ r.lido_em[11:16] }}{% endif %}</p>
+  <pre style="white-space:pre-wrap;font:inherit">{{ r.corpo }}</pre>
+  {% if not r.lido_em %}
+  <form method="post" action="{{ url_for('relato_lido', relato_id=r.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="voltar" value="{{ url_for('relatos_diarios', dia=dia) }}">
+    <button class="button" type="submit">Marcar como lido</button>
+  </form>
+  {% endif %}
+</section>
+{% else %}
+<section class="card"><p>Nenhum relato neste dia.</p></section>
+{% endfor %}
+
+{% if carga is not none %}
+<section class="card">
+  <h2>A carga da equipe agora</h2>
+  {% if inflada %}<p>{{ inflada.altas }} de {{ inflada.abertas }} tarefas abertas ({{ inflada.percentual }}%) estão em ALTA ou CRÍTICA.</p>{% endif %}
+  <div class="table-wrap"><table><thead><tr><th>Pessoa</th><th>Abertas</th><th>Vencidas</th><th>Alta/crítica</th><th>Pontos</th></tr></thead><tbody>
+  {% for c in carga %}<tr {% if c.vencidas %}class="danger"{% endif %}><td>{{ c.nome }}</td><td>{{ c.abertas }}</td><td>{{ c.vencidas }}</td><td>{{ c.altas }}</td><td><strong>{{ c.pontos }}</strong></td></tr>{% endfor %}
+  </tbody></table></div>
+  <h3>Poderiam passar ao substituto ({{ sugestoes|length }})</h3>
+  <p class="small muted">O titular carrega pelo menos 1,5× os pontos do substituto já gravado na tarefa. É sugestão: quem decide passa pela própria tarefa.</p>
+  <ul>{% for s in sugestoes %}<li><a href="{{ url_for('task_detail', task_id=s.id) }}">#{{ s.id }}</a> {{ s.titulo }} — de {{ s.de }} para {{ s.para }}{% if s.vencida %} — <strong>vencida</strong>{% endif %}</li>{% else %}<li>nenhuma</li>{% endfor %}</ul>
+  <h3>Poderiam virar uma tarefa só ({{ grupos|length }} grupo(s))</h3>
+  <ul>{% for g in grupos %}<li>{{ g.de }}: {% for t in g.tarefas %}<a href="{{ url_for('task_detail', task_id=t[0]) }}">#{{ t[0] }}</a>{% if not loop.last %}, {% endif %}{% endfor %} — «{{ g.tarefas[0][1] }}»</li>{% else %}<li>nenhum</li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}

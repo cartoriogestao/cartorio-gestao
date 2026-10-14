@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}Matrículas — Registro de Imóveis{% endblock %}
+{% block heading %}<h1>Registro de Imóveis</h1>{% endblock %}
+{% block content %}
+
+<section class="cards">
+  <div class="stat"><strong>{{ resumo.total }}</strong><small>matrículas</small></div>
+  <div class="stat"><strong>{{ resumo.estruturada }}</strong><small>estruturadas — atos navegáveis</small></div>
+  <div class="stat"><strong>{{ resumo.acervo }}</strong><small>acervo — bloco único</small></div>
+  <div class="stat"><strong>{{ resumo.conferidas }}</strong><small>conferidas contra o livro</small></div>
+</section>
+
+{% if resumo.conferidas < resumo.total %}
+<div class="notice warning">
+  <strong>{{ resumo.total - resumo.conferidas }} matrículas ainda não foram conferidas contra o livro físico.</strong>
+  O acervo veio do sistema anterior e pode conter falhas. Confira a ficha antes de usá-la para certidão.
+</div>
+{% endif %}
+
+<form class="filters" method="get">
+  <input name="busca" value="{{ busca }}" placeholder="Número ou CNM completos, endereço, nome ou CPF da parte" size="42">
+  <select name="tipo">
+    <option value="">Todos os tipos</option>
+    {% for k, v in ROTULO.items() %}<option value="{{k}}" {% if tipo==k %}selected{% endif %}>{{v}}</option>{% endfor %}
+  </select>
+  <select name="livro">
+    <option value="">Todos os livros</option>
+    {% for l in livros %}<option value="{{l.livro_norm}}" {% if livro==l.livro_norm %}selected{% endif %}>Livro {{l.livro_norm}} ({{l.c}})</option>{% endfor %}
+  </select>
+  {# `onchange` so serve a quem tem JavaScript: sem ele, o botao Buscar faz o
+     mesmo. Escolher a ordem e a mesma pergunta que filtrar, e por isso mora
+     no mesmo formulario. #}
+  <span class="muted small">Ordenar por</span>
+  <select name="ordem" onchange="this.form.submit()">
+    {% for k, v in ORDENS.items() %}<option value="{{k}}" {% if ordem==k %}selected{% endif %}>{{v}}</option>{% endfor %}
+  </select>
+  <button>Buscar</button>
+  <a class="button primary" href="{{ url_for('ri_nova_matricula') }}">Abrir matrícula</a>
+  {% if user.role in ['ADMIN','MANAGER'] %}<a class="button" href="{{ url_for('ri_numeracao') }}">Numeração</a>{% endif %}
+  <a class="button" href="{{ url_for('ri_importacoes') }}">Importações</a>
+</form>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ total }} matrícula(s)</span><span class="muted">página {{ pagina }} de {{ paginas }}</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Matrícula</th><th>Livro</th><th>Fls.</th><th>Tipo de ficha</th><th>Conferida</th><th>Aberta em</th><th>Último ato</th><th>Imóvel</th><th>Atos</th><th>Partes</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td><a href="{{ url_for('ri_ficha', matricula_id=r.id) }}"><strong>{{ r.numero }}</strong>{% if r.complemento %}-{{ r.complemento }}{% endif %}</a>
+              {% if r.cnm %}<br><small class="muted">{{ r.cnm }}</small>{% endif %}
+              {# HOTFIX-2026-10-09-07: encerrada à vista, e o atalho para selar o ato lavrado sem selo. #}
+              {% if r.encerrada %}<br><span class="badge critica">Encerrada</span>{% endif %}
+              {% if r.ato_sem_selo %}<br><a class="button small" href="{{ url_for('ri_ficha', matricula_id=r.id) }}#selar-ato-{{ r.ato_sem_selo }}">Selar {{ rotulos_sem_selo.get(r.ato_sem_selo, '') }}</a>{% endif %}</td>
+          <td>{{ r.livro_norm or '—' }}</td>
+          <td>{{ r.folha or '—' }}</td>
+          <td>{% if r.tipo_ficha == 'ACERVO' %}<span class="badge media">Acervo (bloco único)</span>{% else %}<span class="badge ok">Estruturada</span>{% endif %}</td>
+          <td>{% if r.conferido %}<span class="badge ok">Sim</span>{% else %}<span class="badge alta">Não</span>{% endif %}</td>
+          <td>{{ fmt_date(r.data_abertura) if r.data_abertura else '—' }}</td>
+          {# A data que ordena a lista, a vista — senao ela pede que a
+             acreditem. Vazio quer dizer «ainda nao lavrou ato nenhum», e a
+             coluna Atos diz quantos. #}
+          <td>{{ fmt_date(r.ultimo_ato) if r.ultimo_ato else '—' }}</td>
+          <td>{{ (r.logradouro or '—')[:44] }}{% if r.rural_urbano %}<br><small class="muted">{{ 'Rural' if r.rural_urbano == 'R' else 'Urbano' }}{% if r.area_valor %} — {{ r.area_valor }} {{ r.area_unidade or '' }}{% endif %}</small>{% endif %}</td>
+          <td>{{ r.n_atos or '—' }}</td>
+          <td>{{ r.n_partes or '—' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="10">Nenhuma matrícula encontrada.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if paginas > 1 %}
+  <div class="actions">
+    {% if pagina > 1 %}<a class="button" href="{{ url_for('ri_matriculas', busca=busca, tipo=tipo, livro=livro, ordem=ordem, pagina=pagina-1) }}">Anterior</a>{% endif %}
+    {% if pagina < paginas %}<a class="button" href="{{ url_for('ri_matriculas', busca=busca, tipo=tipo, livro=livro, ordem=ordem, pagina=pagina+1) }}">Próxima</a>{% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

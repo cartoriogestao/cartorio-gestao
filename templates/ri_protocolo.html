@@ -1,0 +1,205 @@
+{% extends 'base.html' %}
+{% block title %}Protocolo (Livro 1-A) — Registro de Imóveis{% endblock %}
+{% block heading %}<h1>Livro 1-A — Protocolo (Registro de Imóveis)</h1>{% endblock %}
+{% block content %}
+
+{% if p is defined and not (p.selo_prenotacao or "")|trim %}
+<div class="notice warning">
+  <strong>Pendente de selo — o escrevente deve selar.</strong>
+  <form method="post" action="{{ url_for('ri_selar_prenotacao', protocolo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <label>Natureza / título <input name="natureza_titulo" value="{{ p.natureza_titulo or p.objeto or '' }}" required></label>
+    <label>Item TJ <input name="codigo_tj" placeholder="ex.: 16.1"></label>
+    <button class="primary">Selar</button>
+  </form>
+</div>
+{% endif %}
+
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
+  <a class="button" href="{{ url_for('ri_cnib') }}">Consultar CNIB</a></div>
+
+<section class="panel" style="padding:14px 16px">
+  <p><strong>O que é esta página.</strong>
+    O Livro de Protocolo (Livro 1-A) é a fila oficial do Registro de Imóveis:
+    cada título que chega ao cartório (escritura, hipoteca, georreferenciamento…)
+    ganha um <strong>número de protocolo</strong> na ordem em que foi apresentado.
+    Esse número prova a entrada e inicia a <strong>prenotação</strong> — o prazo
+    legal em que a serventia analisa o título e decide registrar, devolver ou cancelar.
+  </p>
+  <p class="small muted" style="margin-top:8px">
+    <strong>Não confunda com o livro de destino.</strong>
+    O protocolo é sempre o Livro 1-A (esta tela). O “Livro de destino” no formulário
+    só diz para onde o ato vai depois, se for registrado:
+    <em>Livro 2</em> = matrículas; <em>Livro 3</em> = demais atos do RI.
+  </p>
+  <ol class="small" style="margin:10px 0 0 1.2em; line-height:1.5">
+    <li><strong>Prenotar</strong> — preencha o formulário quando alguém apresentar um título. O sistema gera o número e calcula o prazo.</li>
+    <li><strong>Acompanhar</strong> — use os cartões e a lista: “em aberto”, “vencida”, etc.</li>
+    <li><strong>Abrir o protocolo</strong> — clique no número (ou em “abrir”) para ver detalhes, comprovante, nota devolutiva, depósito e encerramento.</li>
+  </ol>
+</section>
+
+<section class="cards">
+  <div class="stat" title="Quantidade total de protocolos nesta lista"><strong>{{ resumo.total }}</strong><small>protocolos</small></div>
+  <div class="stat" title="Ainda em análise — prazo de prenotação em curso"><strong>{{ resumo.abertos }}</strong><small>em aberto (ainda em análise)</small></div>
+  <div class="stat" title="Prazo legal já passou e o protocolo continua aberto"><strong>{{ resumo.vencidos }}</strong><small>com prazo vencido</small></div>
+  <div class="stat" title="Vindos do E-Ofício sem apresentante — só histórico"><strong>{{ resumo.sem_apresentante }}</strong><small>sem apresentante (importados)</small></div>
+</section>
+
+{% if resumo.sem_apresentante %}
+<div class="notice warning">
+  <strong>{{ resumo.sem_apresentante }} protocolos importados não têm apresentante nem imóvel vinculado.</strong>
+  No E-Ofício esses campos vinham em branco em todos os registros — sobraram o objeto
+  em texto livre, o selo e a data limite. Servem como histórico da numeração;
+  não dá para reconstruir de quem era o título. Protocolos abertos aqui pedem esses dados.
+</div>
+{% endif %}
+
+<details class="panel" open>
+  <summary><strong>Prenotar novo título</strong> <span class="small muted">— use quando um título acaba de ser apresentado no balcão</span></summary>
+  <p class="small muted" style="padding:8px 14px 0">Preencha quem apresentou, o que veio e para qual livro o ato deve ir se for registrado. Ao clicar em <strong>Prenotar</strong>, o sistema grava no Livro 1-A, gera o número e a data limite do prazo.</p>
+  <form method="post" class="form-grid"
+        onsubmit="if(!(this.telefone.value||'').trim()&&!(this.email.value||'').trim()){alert('Informe o telefone ou o e-mail do cliente — pelo menos um.');this.telefone.focus();return false;}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if de_cx %}
+    {# VINDO DO PROTOCOLO GERAL — 12/10/2026: a prenotação se liga a ele e não
+       abre outro. Sem este campo, o sistema abre um protocolo geral sozinho. #}
+    <input type="hidden" name="cx_protocolo_id" value="{{ de_cx.id }}">
+    <p class="span2 notice small" style="margin:0">Prenotando o pedido do
+      <strong>protocolo geral {{ de_cx.numero }}</strong> — a prenotação fica ligada a ele.</p>
+    {% else %}
+    <p class="span2 small muted" style="margin:0">Ao prenotar, o sistema abre o protocolo
+      geral deste título e liga os dois.</p>
+    {% endif %}
+    {#
+      O LIVRO DE PROTOCOLO NAO SE ESCOLHE — e sempre o 1-A, e por isso saiu da
+      tela. Era campo livre, e o campo livre convidou ao erro: dos 784
+      protocolos, 783 dizem `1A` e um diz `2`, digitado por engano.
+
+      O que o balcao PRECISA dizer e outra coisa: para que livro vai o titulo.
+      «Livro 2 (matriculas) ou livro 3 (demais atos do RI)» — o oficial, em
+      27/08/2026.
+    #}
+    <label>Livro de destino (depois do protocolo)
+      <select name="livro_destino" required>
+        <option value="">— escolha para onde o ato vai se for registrado —</option>
+        <option value="2">Livro 2 — matrículas</option>
+        <option value="3">Livro 3 — demais atos do RI</option>
+      </select></label>
+    <label>Data<input type="date" name="data_prenotacao" value="{{ hoje }}"></label>
+    <label>Matrícula<input name="matricula_numero" placeholder="número"></label>
+    <label class="span2">Apresentante<input name="apresentante" required value="{{ de_cx.interessado or '' if de_cx else '' }}"></label>
+    <label>CPF/CNPJ<input name="apresentante_documento" value="{{ de_cx.interessado_documento or '' if de_cx else '' }}"></label>
+    <label class="span2">Natureza do título<input name="natureza_titulo" list="naturezas_sauin"
+      placeholder="Compra e venda, hipoteca, georreferenciamento..." autocomplete="off"></label>
+    <datalist id="naturezas_sauin">
+      {% for n in NATUREZAS_SAUIN %}<option value="{{ n }}">{% endfor %}
+    </datalist>
+    <label>Telefone *<input name="telefone" placeholder="(99) 99999-9999" value="{{ de_cx.telefone or '' if de_cx else '' }}"></label>
+    <label>E-mail *<input name="email" type="email" placeholder="cliente@exemplo.com" value="{{ de_cx.email or '' if de_cx else '' }}"></label>
+    <p class="span2 small muted" style="margin:0">* Telefone <strong>ou</strong> e-mail do cliente — pelo menos um é obrigatório: é por ele que se avisa da nota devolutiva e do prazo.</p>
+    <label class="span2">Documento apresentado
+      <input name="documento_descricao"
+             placeholder="ex.: escritura de compra e venda, 4 laudas, 2ª via"></label>
+    <label class="span2">Objeto<textarea name="objeto" rows="2" required></textarea></label>
+    <label class="span2">Anotação<input name="anotacao"></label>
+        <label class="span2">Modalidade REURB
+      <select name="reurb_tipo" id="prenot_reurb_tipo"
+              onchange="(function(s){var h=document.getElementById('prenot_reurb');if(h)h.value=(s.value==='S'?'1':'');var cb=document.getElementById('prenot_isento');var m=document.getElementById('prenot_motivo_isencao');var b=document.getElementById('prenot_bloco_gratuidade');var aviso=document.getElementById('prenot_selo_titulo');if(s.value==='S'){if(cb){cb.checked=true;cb.dispatchEvent(new Event('change'));}if(m&&!(m.value||'').trim())m.value='O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS PREVISTO NA LEI Nº 13.465, DE 2017.';if(aviso)aviso.textContent='Este selo será ISENTO (REURB-S / Lei 13.465/2017)';}else{if(aviso)aviso.textContent='Este selo será COBRADO (salvo marcação manual de isento)';}})(this)">
+        <option value="">Não é REURB</option>
+        <option value="S">REURB-S (interesse social) — 40 dias úteis + isento (Lei 13.465/2017)</option>
+        <option value="E">REURB-E (interesse específico) — cobrado</option>
+        <option value="MISTO">Misto (S + E) — cobrado; isento só se marcado à mão</option>
+      </select>
+      <small class="muted">REURB-S: prazo de {{ prazo_reurb }} dias úteis e isenção automática de emolumentos
+        (Lei 13.465/2017, art. 13, § 1º). REURB-E e misto: prazo comum de {{ prazo }} dias úteis;
+        isenção não é automática (misto exige discriminação das unidades S).</small>
+    </label>
+    <input type="hidden" name="reurb" id="prenot_reurb" value="">
+    <div class="span2 card" id="prenot_selo_aviso" style="margin:0">
+      <p style="margin:0"><strong id="prenot_selo_titulo">Este selo será COBRADO</strong>
+        — prenotação (ato 16.1).</p>
+    </div>
+    <label class="span2" style="display:flex;gap:8px;align-items:flex-start">
+      <input type="checkbox" name="isento" value="1" id="prenot_isento"
+             onchange="(function(cb){var b=document.getElementById('prenot_bloco_gratuidade');if(b)b.style.display=cb.checked?'block':'none';var m=document.getElementById('prenot_motivo_isencao');if(m)m.required=cb.checked;})(this)">
+      <span><strong>Selo gratuito / isento</strong><br>
+        <small>Em REURB-S o sistema marca sozinho. Em outros casos, marque e informe o motivo.</small></span>
+    </label>
+    <div id="prenot_bloco_gratuidade" class="span2" style="display:none">
+      <label>Motivo da gratuidade
+        <input name="motivo_isencao" id="prenot_motivo_isencao"
+               list="motivos_da_gratuidade_do_ri_prenot" autocomplete="off"
+               placeholder="O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS...">
+      </label>
+      <datalist id="motivos_da_gratuidade_do_ri_prenot">
+        {% for m in MOTIVOS_DA_GRATUIDADE_DO_RI %}
+          <option value="{{ m.texto }}">{{ m.rotulo }} — {{ m.fundamento }}</option>
+        {% endfor %}
+      </datalist>
+    </div>
+    <div class="span2 notice small">
+      A prenotação vale <strong>{{ prazo }} dias úteis</strong> — Lei 6.015/73, art. 205, na
+      redação da Lei 14.382/2022, e Código de Normas da CGJ/TJMA, arts. 436 e 452.
+      Em REURB-S são {{ prazo_reurb }} dias úteis. O sistema calcula a data limite pulando
+      sábados, domingos, feriados nacionais, os móveis e os locais cadastrados em Configurações.
+    </div>
+    <div class="span2"><button class="primary">Prenotar</button></div>
+  </form>
+</details>
+
+<p class="small muted" style="margin:12px 0 4px"><strong>Situações:</strong> <em>Aberto</em> = ainda em análise; <em>Encerrado</em> = ato concluído / prenotação consumida; <em>Devolvido</em> = título devolvido com nota; <em>Cancelado</em> = protocolo anulado.</p>
+<form class="filters" method="get">
+  <input name="busca" value="{{ busca }}" placeholder="Número, objeto, apresentante ou matrícula" size="38">
+  <select name="situacao">
+    <option value="">Todas as situações</option>
+    {% for s in ['ABERTO','ENCERRADO','DEVOLVIDO','CANCELADO'] %}
+      <option {% if situacao==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+  </select>
+  <button>Filtrar</button>
+</form>
+
+<section class="panel">
+  <div class="panel-head"><span>Protocolos do livro</span>
+    <span class="small muted">Clique no número para abrir o protocolo e ver o que fazer com ele</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Nº do protocolo</th><th>Destino</th><th>Data da entrada</th><th>Prazo até</th><th>Apresentante</th><th>Objeto</th><th>Matrícula</th><th></th><th>Situação</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          {# O número abre o título. É por onde se chega à reabertura, à
+             correção dos dados e ao depósito prévio — e é o primeiro lugar
+             onde alguém clica quando procura um protocolo. #}
+          <td><a href="{{ url_for('ri_protocolo_ver', protocolo_id=r.id) }}"><strong>{{ r.numero }}</strong></a></td>
+          <td>{{ r.livro_destino and ('Livro ' ~ r.livro_destino) or r.livro }}</td>
+          <td>{{ fmt_date(r.data_prenotacao) }}</td>
+          <td>{% if r.data_limite %}{{ fmt_date(r.data_limite) }}
+                {% if r.id in restam %}
+                  {% set d = restam[r.id] %}
+                  {% if d < 0 %}<br><span class="badge critica">vencida há {{ -d }} dia(s) útil(eis)</span>
+                  {% elif d == 0 %}<br><span class="badge critica">vence hoje</span>
+                  {% elif d <= 5 %}<br><span class="badge alta">faltam {{ d }} dia(s) útil(eis)</span>
+                  {% else %}<br><small class="muted">faltam {{ d }} dias úteis</small>{% endif %}
+                {% elif r.situacao == 'ABERTO' and r.prazo_suspenso_desde %}
+                  <br><span class="badge alta" title="TJMA 452, § 3º">prazo suspenso</span>
+                {% endif %}
+              {% else %}—{% endif %}</td>
+          <td>{{ r.apresentante or '—' }}</td>
+          <td class="small">{{ (r.objeto or '—')[:70] }}</td>
+          <td>{% if r.mid %}<a href="{{ url_for('ri_ficha', matricula_id=r.mid) }}">{{ r.matricula_numero }}</a>
+              {% else %}{{ r.matricula_numero or '—' }}{% endif %}</td>
+          <td class="small"><a href="{{ url_for('ri_protocolo_ver', protocolo_id=r.id) }}">abrir</a>
+            <br><a href="{{ url_for('ri_nota_devolutiva', protocolo_id=r.id) }}">nota devolutiva</a>
+            <br><a href="{{ url_for('ri_prenotacao_comprovante', protocolo_id=r.id) }}">comprovante</a></td>
+          <td>{% if r.situacao == 'ABERTO' %}<span class="badge ok">Aberto</span>
+              {% elif r.situacao == 'CANCELADO' %}<span class="badge critica">Cancelado</span>
+              {% else %}<span class="badge">{{ r.situacao|capitalize }}</span>{% endif %}</td>
+        </tr>
+      {% else %}<tr><td colspan="8">Nenhum protocolo.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,180 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>A protestar — intimados sem movimentação</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_avisos') }}">Avisos e editais</a>
+  <a class="button" href="{{ url_for('protesto_retornos') }}">Retorno à CRA</a>
+</div>
+
+<div class="notice">
+  <strong>O prazo não é calculado por este sistema.</strong> A coluna mostra
+  quantos dias correram desde a intimação — é <em>contagem</em>, e não juízo
+  sobre o tríduo. Quem decide se o prazo venceu, e se o protesto sai, é você.
+</div>
+
+{#
+  A ADVERTENCIA DA DESISTENCIA MORA AQUI, e nao so na ordem do menu: quem
+  chega a esta tela por link, por favorito ou pela volta de um lote nao passa
+  pelo menu. O roteiro do oficial manda conferir desistencia TRES VEZES POR
+  DIA, e protestar titulo de que o credor desistiu e o erro que menos se
+  desfaz nesta atribuicao.
+#}
+<div class="notice warning">
+  <strong>Antes de lavrar, aplique as desistências do dia.</strong> O arquivo
+  da CRA costuma chegar em dois turnos — metade de manhã, o resto ao meio-dia
+  —, e protestar um título de que o credor desistiu é o erro que não se
+  desfaz. <a href="{{ url_for('protesto_desistencias') }}">Ver desistências</a>
+</div>
+
+{% if revogados %}
+{#
+  ESTE BLOCO VEM ANTES DA LISTA COMUM, e a ordem e a coisa toda: e o unico
+  titulo do Protesto com prazo de UM DIA UTIL escrito na lei. Embaixo, ficaria
+  abaixo de trinta linhas sem pressa.
+#}
+<section class="panel">
+  <div class="panel-head">
+    <span>Sustação revogada — protestar até o primeiro dia útil seguinte</span>
+    <small>{{ revogados | length }}</small>
+  </div>
+  <div class="notice danger" style="margin:14px">
+    <strong>Lei 9.492/1997, art. 17, § 2º.</strong> Revogada a ordem de
+    sustação, <strong>não há nova intimação do devedor</strong> — ele já sabia
+    da apresentação quando entrou com a ação —, e a lavratura se efetiva
+    <strong>até o primeiro dia útil subsequente ao recebimento da
+    revogação</strong>. A coluna conta os dias corridos desde ele; quem diz se
+    o prazo venceu é você.
+  </div>
+  <table class="table">
+    <thead><tr>
+      <th>Título</th><th>Devedor</th><th>Revogação recebida</th>
+      <th>Dias</th><th>Juízo / processo</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for t in revogados %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}"
+              >{{ t.numero_titulo }}</a></td>
+        <td>{% for d in t.devedores %}{{ d.nome }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+        <td><small>{{ t.data_da_revogacao or '—' }}</small></td>
+        <td>{% if t.dias_desde_a_revogacao is none %}<small>—</small>
+            {% else %}{{ t.dias_desde_a_revogacao }}{% endif %}</td>
+        <td><small>{{ t.juizo or '—' }}{% if t.processo %}<br>{{ t.processo }}{% endif %}</small></td>
+        <td><a class="button" href="{{ url_for('protesto_titulo', titulo_id=t.id) }}"
+              >Abrir e protestar</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p style="padding:0 14px 14px"><small>
+    Eles não entram no lote abaixo de propósito: cada um vem de uma ordem
+    judicial, e merece a ficha aberta antes do ato.
+  </small></p>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Títulos intimados e sem movimentação</span>
+    <small>{{ linhas | length }}</small>
+  </div>
+
+  {% if linhas %}
+  <p style="padding:14px 14px 0"><small>
+    São os títulos que foram intimados e em que <strong>nada aconteceu
+    depois</strong> — nem pagamento, nem desistência do apresentante, nem
+    cancelamento. É a lista do passo da tarde: <em>sem movimentação, listar,
+    gerar</em>.
+  </small></p>
+
+  <form method="post" action="{{ url_for('protesto_a_protestar_lavrar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width:38px"></th>
+          <th>Título</th><th>Devedor</th><th>Protocolo</th>
+          <th>Intimação</th><th>Dias</th><th>Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for t in linhas %}
+        <tr>
+          <td><input type="checkbox" name="titulo_id" value="{{ t.id }}"
+                     style="width:auto"></td>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}"
+                >{{ t.numero_titulo }}</a>
+              <br><small>{{ t.especie }}</small></td>
+          <td>{% for d in t.devedores %}{{ d.nome }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+          <td><small>{{ t.protocolo or '—' }}</small></td>
+          <td><small>{{ t.data_da_intimacao or '—' }}
+            {%- if t.modo_da_intimacao %}<br>{{ t.modo_da_intimacao | lower }}{% endif %}</small></td>
+          <td>{% if t.dias_desde_a_intimacao is none %}
+                <small>—</small>
+              {% else %}{{ t.dias_desde_a_intimacao }}{% endif %}</td>
+          <td>R$ {{ '%.2f' | format((t.saldo_centavos or 0) / 100) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <div style="padding:14px">
+      <p><small>
+        <strong>Marque os que vão a protesto.</strong> A lista não protesta
+        sozinha, e cada marcado vira um ato próprio — com número de ordem,
+        lugar no livro e a sua data. O que se junta aqui é o trabalho de
+        clicar, e não o ato.
+      </small></p>
+      <p><small>
+        Eles saem <strong>sem selo e sem cobrança</strong>, de propósito: vinte
+        selos são vinte chamadas ao aparelho, e segurá-las aqui deixaria o
+        balcão inteiro esperando. Depois de protestar, passe em
+        <em>Atos sem selo</em> e <em>Atos sem cobrança</em> — e lembre de gerar
+        o <strong>retorno e o andamento</strong>.
+      </small></p>
+      <div class="actions">
+        <button class="button primary">Lavrar o protesto dos marcados</button>
+      </div>
+    </div>
+  </form>
+  {% else %}
+  <p style="padding:14px">
+    Nenhum título intimado está sem movimentação. Ou não há intimação
+    pendente, ou todos os intimados já foram pagos, desistidos ou protestados.
+  </p>
+  {% endif %}
+</section>
+
+{% if sustados %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Sustados por ordem judicial — à disposição do Juízo</span>
+    <small>{{ sustados | length }}</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    <strong>Não se protestam, não se pagam e não se retiram sem autorização
+    judicial</strong> (Lei 9.492/1997, art. 17, § 1º). Eles saíram da fila de
+    cima de propósito — e aparecem aqui porque título à disposição do Juízo
+    que ninguém enxerga é título esquecido.
+  </small></p>
+  <table class="table">
+    <thead><tr>
+      <th>Título</th><th>Devedor</th><th>Ordem recebida</th>
+      <th>Juízo / processo</th>
+    </tr></thead>
+    <tbody>
+    {% for t in sustados %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}"
+              >{{ t.numero_titulo }}</a></td>
+        <td>{% for d in t.devedores %}{{ d.nome }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+        <td><small>{{ t.data_da_sustacao or '—' }}</small></td>
+        <td><small>{{ t.juizo or '—' }}{% if t.processo %}<br>{{ t.processo }}{% endif %}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

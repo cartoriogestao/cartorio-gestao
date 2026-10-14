@@ -1,0 +1,140 @@
+{#
+  Registro novo no Livro 3 — o Registro Auxiliar do Registro de Imóveis.
+
+  O número sai do contador do RI (`ri_numeracao`, livro '3'), e não do núcleo:
+  duas fontes para o mesmo número é o defeito de 18/08/2026 outra vez. Esta
+  tela não escolhe número nenhum.
+#}
+{% extends 'base.html' %}
+{% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{% from '_cobrar.html' import quadro %}
+{% block heading %}<h1>Registro novo — Livro 3</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('livro3_registros') }}">&larr; Livro 3</a></div>
+
+<div class="notice">
+  O Livro 3 recebe o que o <strong>art. 178 da Lei 6.015/1973</strong> manda registrar
+  fora da matrícula — cédulas de crédito, convenção de condomínio, penhor rural,
+  pacto antenupcial. O ato nasce como <strong>R-1</strong>, e a numeração dos atos
+  seguintes é contínua com ele: depois do R-1 vem o AV-2.
+</div>
+
+{{ salvar_rascunho('livro3_registro_novo', url_for('livro3_registro_novo'),
+                   'Registro do Livro 3', csrf_token,
+                   nome_em='parte_nome') }}
+
+<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>O título</span></div>
+    <div class="grid2" style="padding:14px">
+      <label style="grid-column:1/-1">Natureza
+        <select name="natureza" required>
+          <option value="">— escolha —</option>
+          {% for k, v in naturezas.items() %}
+            <option value="{{ k }}" {% if form.get('natureza') == k %}selected{% endif %}>{{ v }}</option>
+          {% endfor %}
+        </select></label>
+
+      <label>Tipo do título
+        <input name="titulo_tipo" value="{{ form.get('titulo_tipo','') }}"
+               placeholder="CÉDULA RURAL PIGNORATÍCIA"></label>
+      <label>Número do título
+        <input name="titulo_numero" value="{{ form.get('titulo_numero','') }}"
+               placeholder="40/01800-8"></label>
+
+      <label>Data do título
+        <input type="date" name="data_titulo" value="{{ form.get('data_titulo','') }}"></label>
+      <label>Prenotação do RI
+        <input name="prenotacao" value="{{ form.get('prenotacao','') }}"
+               placeholder="número do protocolo, se houver"></label>
+      <label>Valor
+        <input name="valor" value="{{ form.get('valor','') }}" placeholder="299.809,50"></label>
+
+      <label>Parcelas
+        <input name="parcelas" inputmode="numeric" value="{{ form.get('parcelas','') }}"></label>
+      <label>Juros
+        <input name="juros" value="{{ form.get('juros','') }}" placeholder="8% a.a."></label>
+
+      <label>Primeiro vencimento
+        <input type="date" name="vencimento_inicial"
+               value="{{ form.get('vencimento_inicial','') }}"></label>
+      <label>Último vencimento
+        <input type="date" name="vencimento_final"
+               value="{{ form.get('vencimento_final','') }}"></label>
+
+      <label style="grid-column:1/-1">Garantia
+        <input name="garantia" value="{{ form.get('garantia','') }}"></label>
+      <label style="grid-column:1/-1">Condições
+        <textarea name="condicoes" rows="3">{{ form.get('condicoes','') }}</textarea></label>
+      <label style="grid-column:1/-1">Teor <small>(opcional agora)</small>
+        <textarea name="teor" rows="6">{{ form.get('teor','') }}</textarea></label>
+    </div>
+  </section>
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Partes</span><small>quem figura no título</small></div>
+    {% for i in [0, 1] %}
+    <div class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+      <label style="grid-column:1/-1">Nome
+        <input name="parte_nome"></label>
+      <label>Documento
+        <select name="parte_documento_tipo">
+          <option value="">—</option>
+          <option value="CPF">CPF</option>
+          <option value="CNPJ">CNPJ</option>
+        </select></label>
+      <label>Número <input name="parte_documento" inputmode="numeric"></label>
+      <label style="grid-column:1/-1">Papel
+        <input name="parte_papel" placeholder="emitente · credor · avalista"></label>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Selo e cobrança</span></div>
+    <div class="grid2" style="padding:14px">
+      <label style="grid-column:1/-1">Natureza do título no selo
+        <input name="natureza_titulo" value="{{ form.get('natureza_titulo','') }}"
+               placeholder="descrição do registro para o selo"></label>
+      <label>Item da tabela de custas
+        <select name="codigo_tj">
+          <option value="">— escolha o item exato —</option>
+          {% for codigo, rotulo in itens_tabela %}
+          <option value="{{ codigo }}" {% if form.get('codigo_tj') == codigo %}selected{% endif %}>
+            {{ codigo }} — {{ rotulo[:95] }}</option>
+          {% endfor %}
+        </select>
+        <small>16.45 é família por faixa; selecione o subitem 16.45.x aplicável.</small></label>
+      <label>Valor declarado no selo
+        <input name="base_calculo" value="{{ form.get('base_calculo','') }}"
+               placeholder="0,00"></label>
+      <label>Selo <small>(opcional)</small>
+        <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
+      {{ quadro(receita, caixa, protocolos) }}
+    </div>
+  </section>
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Arquivamento do documento</span><small>opcional — item 16.39</small></div>
+    <div class="grid2" style="padding:14px">
+      <label><input type="checkbox" name="gerar_arquivamento" value="1"
+                    {% if form.get('gerar_arquivamento') %}checked{% endif %}>
+        Gerar também o selo de arquivamento</label>
+      <label>Quantidade de folhas deste ato
+        <input type="number" name="folhas_arquivamento" min="1" step="1"
+               value="{{ form.get('folhas_arquivamento','') }}"></label>
+      <p class="small muted" style="grid-column:1/-1">O arquivamento só é pedido
+        após o selo principal. Quando o 16.39 sai, a prenotação vinculada é encerrada.</p>
+    </div>
+  </section>
+
+  <div class="actions" style="grid-column:1/-1">
+    <button class="button">Registrar no Livro 3</button>
+    <a class="button" href="{{ url_for('livro3_registros') }}">Cancelar</a>
+  </div>
+</form>
+{{ script_do_rascunho() }}
+{% endblock %}

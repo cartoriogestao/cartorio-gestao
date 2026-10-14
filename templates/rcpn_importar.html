@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Importar pré-cadastros — Registro Civil{% endblock %}
+{% block content %}
+<h1>Importar pré-cadastros do Registro Civil</h1>
+
+<div class="card">
+  <p class="small muted">
+    Pedido seu em 11/10/2026: <em>«uma forma mais intuitiva de importar esse
+    documento e uma forma fácil de baixar o manual de preenchimento, principalmente
+    relativo a dados das partes»</em>.
+  </p>
+  <p>
+    <strong>Nada é lavrado aqui.</strong> Cada registro do arquivo vira um
+    <strong>rascunho</strong> do assento novo, já conferido e com cada pessoa no
+    lugar dela. O balcão abre o rascunho, confere com o declarante e lavra pela
+    tela, com as travas de sempre. O termo que vier no arquivo é descartado: ele
+    sai do modelo da casa, a partir dos campos.
+  </p>
+</div>
+
+<h2>1. Baixe o manual e o modelo</h2>
+<div class="card">
+  <p>
+    <a class="button primary" href="{{ url_for('rcpn_importar_manual') }}">
+      Baixar o manual de preenchimento (as partes)</a>
+    <span class="small muted">abre no Bloco de Notas — quem é cada papel, o que vai
+      em cada campo da pessoa e o que faz a lavratura recusar</span>
+  </p>
+  <p>Modelos em branco, com uma pessoa por papel da espécie:</p>
+  <p>
+    {% for chave, nome in especies %}
+    <a class="button secondary" href="{{ url_for('rcpn_importar_modelo', especie=chave) }}">
+      {{ nome }}</a>
+    {% endfor %}
+  </p>
+</div>
+
+<h2>2. Envie o arquivo e veja a prévia</h2>
+{% if erro %}
+<div class="notice critical"><strong>Não deu para ler:</strong> {{ erro }}</div>
+{% endif %}
+<form method="post" class="card" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>O arquivo <code>.json</code>
+    <input type="file" name="arquivo" accept=".json,application/json"></label>
+  <p><button class="button" name="o_que" value="conferir">Ver a prévia</button>
+    <span class="small muted">não grava nada</span></p>
+</form>
+
+{% if previa %}
+<h2>3. Confira e ponha na fila</h2>
+<div class="card">
+  <p><strong>{{ previa.lidos }}</strong> registro(s) no arquivo
+    {% if previa.de_onde_veio %}— de <strong>{{ previa.de_onde_veio }}</strong>{% endif %}.
+    {% set com_trava = previa.itens | selectattr("travas") | list %}
+    <strong>{{ previa.itens|length }}</strong> entram na fila{% if com_trava %},
+    <strong class="danger">{{ com_trava|length }}</strong> com dado que a lavratura
+    vai recusar{% endif %}{% if previa.recusados %};
+    <strong class="danger">{{ previa.recusados|length }}</strong> recusado(s){% endif %}.</p>
+</div>
+
+<div class="card rolagem">
+  <table class="tabela">
+    <tr><th>linha</th><th>espécie</th><th>nome</th><th>pessoas</th><th>conferência</th></tr>
+    {% for it in previa.itens %}
+    <tr>
+      <td>{{ it.linha }}</td>
+      <td>{{ it.nome_especie }}</td>
+      <td><strong>{{ it.nome }}</strong><br><code class="small">{{ it.chave }}</code>
+        {% if it.ja_na_fila %}<br><span class="small muted">já está na fila</span>{% endif %}</td>
+      <td class="small">{% for p in it.pessoas %}{{ p.papel }}: {{ p.nome }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td class="small">
+        {% for p in it.travas %}<div class="danger">✖ {{ p.mensagem }}</div>{% endfor %}
+        {% for p in it.avisos %}<div class="warning">! {{ p.mensagem }}</div>{% endfor %}
+        {% for f in it.ficou_de_fora %}<div class="muted">fora: {{ f }}</div>{% endfor %}
+        {% if not it.travas and not it.avisos %}<span class="ok">sem problema</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if previa.recusados %}
+<div class="card rolagem">
+  <h3>Recusados — corrija no arquivo e mande de novo</h3>
+  <table class="tabela">
+    <tr><th>linha</th><th>chave</th><th>por quê</th></tr>
+    {% for r in previa.recusados %}
+    <tr class="danger"><td>{{ r.linha }}</td><td><code class="small">{{ r.chave }}</code></td>
+      <td class="small">{{ r.porque }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if previa.itens %}
+<form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="token_arquivo" value="{{ token }}">
+  <button class="button primary" name="o_que" value="fila">
+    Pôr os {{ previa.itens|length }} na fila de rascunhos</button>
+  <span class="small muted">O que tem ✖ entra também, e a tela do rascunho abre
+    só o campo a arrumar.</span>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

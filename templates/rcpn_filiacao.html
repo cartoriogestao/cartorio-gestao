@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Conferência da filiação{% endblock %}
+{% block content %}
+<h1>Conferência da filiação</h1>
+
+{% if trocadas %}
+<div class="alerta danger">
+  <p><strong>{{ resumo.trocadas }}
+     {{ 'assento parece' if resumo.trocadas == 1 else 'assentos parecem' }}
+     com a filiação invertida.</strong></p>
+  <p class="small">
+    O sinal é este: {{ motivo }}. Foi assim que o defeito apareceu — montando
+    o termo de um assento real, o texto saiu <em>«filho de VITÓRIA … e BRUNO
+    …»</em>, e o declarante era o BRUNO.
+  </p>
+  <p class="small">{{ o_que_fazer|forte }}</p>
+</div>
+
+<table class="tabela">
+  <tr><th>assento</th><th>nome</th><th>data</th>
+      <th>gravado como PAI</th><th>gravado como MÃE</th></tr>
+  {% for a in trocadas %}
+  <tr>
+    <td><a href="{{ url_for('rcpn_assento', assento_id=a.id) }}">nº {{ a.numero }}</a></td>
+    <td>{{ a.nome }}</td>
+    <td>{{ (a.data_ato or '')[:10] }}</td>
+    <td class="danger">{{ a.pai_nome }} <small>(sexo {{ a.pai_sexo }})</small></td>
+    <td class="danger">{{ a.mae_nome }} <small>(sexo {{ a.mae_sexo }})</small></td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="card">
+  <p class="small muted">
+    <strong>Os avós acompanham.</strong> Se o pai e a mãe estão trocados, o
+    «paterno» e o «materno» estão trocados junto — foi o que se viu no
+    nº 19.552, pelos sobrenomes. Consertar um sem o outro deixaria o assento
+    pior do que está.
+  </p>
+  <p class="small muted">
+    <strong>O sistema não corrige isso sozinho, e é decisão.</strong> Certidão
+    desses assentos pode já ter saído com a filiação invertida, e o papel que
+    está na mão de alguém não se conserta por dentro do banco. Além disso, a
+    carga mandou esses registros para a <strong>CRC</strong>: trocar aqui
+    deixaria o nosso banco discordando da Central, que é pior que discordar de
+    si mesmo.
+  </p>
+</div>
+{% else %}
+<div class="card">
+  <p><strong>Nenhum assento com sinal de filiação invertida.</strong></p>
+</div>
+{% endif %}
+
+{% if mesmo_sexo %}
+<h2>As duas filiações do mesmo sexo — {{ resumo.mesmo_sexo }}</h2>
+<div class="card">
+  <p class="small muted">
+    <strong>Estes não são suspeita de erro</strong>, e por isso têm lista
+    própria: casal do mesmo sexo é assento legítimo, e ali o sexo não denuncia
+    troca nenhuma. Separá-los é o que impede alguém de «corrigir» o que está
+    certo.
+  </p>
+  <table class="tabela">
+    <tr><th>assento</th><th>nome</th><th>filiação 1</th><th>filiação 2</th></tr>
+    {% for a in mesmo_sexo %}
+    <tr>
+      <td><a href="{{ url_for('rcpn_assento', assento_id=a.id) }}">nº {{ a.numero }}</a></td>
+      <td>{{ a.nome }}</td>
+      <td>{{ a.pai_nome }} <small>({{ a.pai_sexo }})</small></td>
+      <td>{{ a.mae_nome }} <small>({{ a.mae_sexo }})</small></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if faltando %}
+<h2>Filiação sem o sexo informado — {{ resumo.sem_sexo }}</h2>
+<div class="card">
+  <p class="small muted">
+    Sem o sexo não há sinal nenhum, e por isso estes não entram na lista de
+    suspeitas. Mas valem por si: <strong>é o sexo que decide como o termo
+    escreve a filiação</strong>, e é ele que a remessa do IBGE pede.
+  </p>
+  <table class="tabela">
+    <tr><th>assento</th><th>nome</th><th>papel</th><th>pessoa</th></tr>
+    {% for x in faltando %}
+    <tr>
+      <td><a href="{{ url_for('rcpn_assento', assento_id=x.id) }}">nº {{ x.numero }}</a></td>
+      <td>{{ x.nome }}</td>
+      <td>{{ x.papel }}</td>
+      <td>{{ x.pessoa_nome }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}

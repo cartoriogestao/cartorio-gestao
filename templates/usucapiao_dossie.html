@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Relatório para qualificação — usucapião {{ p.numero }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('usucapiao_processo', processo_id=p.id) }}">&larr; Os autos</a>
+  <a class="button" href="{{ url_for('usucapiao_dossie', processo_id=p.id, formato='txt', mascarar='sim' if mascarar else 'nao') }}">Baixar (.md)</a>
+  {% if mascarar %}
+    <a class="button" href="{{ url_for('usucapiao_dossie', processo_id=p.id, mascarar='nao') }}">Gerar sem mascarar</a>
+  {% else %}
+    <a class="button" href="{{ url_for('usucapiao_dossie', processo_id=p.id) }}">Gerar mascarado</a>
+  {% endif %}
+</div>
+
+{% if mascarar %}
+<div class="notice">
+  <strong>Documentos mascarados.</strong> CPF e CNPJ saem com o miolo escondido, como
+  em todo papel que deixa esta casa — e um relatório que vai para fora
+  é papel que deixa a casa. Se a análise depender do documento inteiro, gere sem
+  mascarar: o próprio relatório passa a avisar disso no rodapé.
+</div>
+{% else %}
+<div class="notice danger">
+  <strong>Este relatório NÃO está mascarado</strong> — leva CPF e CNPJ inteiros. Mande
+  só para onde você confia, e o rodapé do texto avisa quem receber.
+</div>
+{% endif %}
+
+<section class="cards">
+  <div class="stat"><strong>{{ d.pecas }}</strong><small>peça(s) no relatório</small></div>
+  <div class="stat"><strong>{{ d.texto | length }}</strong><small>caracteres</small></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>SHA-256 do que sai</span>
+  </div>
+  <p style="padding:14px">
+    <code>{{ d.sha256 }}</code><br>
+    <small>Cole este código ao juntar a análise que voltar. É ele que amarra o parecer
+    ao processo <em>como ele estava</em> — se uma peça entrar depois, o relatório muda e
+    o código também, e fica visível que a análise falou de outra versão dos autos.</small>
+  </p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O relatório</span>
+    <small>copie, ou baixe, e mande a quem vai opinar</small>
+  </div>
+  <textarea readonly rows="30" style="width:100%; font-family:monospace; font-size:12px; padding:12px; border:0">{{ d.texto }}</textarea>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Depois de receber a resposta</span></div>
+  <p style="padding:14px">
+    Volte aos autos e cole o parecer em <strong>Relatório de qualificação</strong>. Ele
+    entra <strong>por conferir</strong>: enquanto você não o ler, a decisão apoiada nele
+    é recusada — a decisão é ato do registrador, e ato de delegatário não se delega a
+    uma ferramenta.
+  </p>
+</section>
+{% endblock %}

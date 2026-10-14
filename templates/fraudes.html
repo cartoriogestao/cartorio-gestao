@@ -1,0 +1,206 @@
+{#
+  A lista de atenção para fraudes.
+
+  O oficial: "recebemos pelo malote continuamente comunicações de fraudes".
+  Esta tela é o que transforma papel que vira pasta em nome que o sistema
+  reconhece no balcão.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Atenção para fraudes</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('fraude_consultar') }}">Consultar um nome</a>
+</div>
+
+<div class="notice">
+  Aqui entram os nomes e documentos das comunicações de fraude que chegam pelo
+  malote. Quando um deles aparecer num ato — requerido ou lavrado — o sistema
+  <strong>avisa</strong> quem estiver atendendo.
+  <br><br>
+  <strong>O aviso não trava o ato</strong>, e é de propósito: homônimo é a
+  regra, não a exceção. Recusar um ato é decisão sua, não de uma lista.
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Como está</span>
+    <small>{{ contas.ativos }} na lista · {{ contas.conferencias }} conferência(s)</small>
+  </div>
+  <table class="table">
+    <tbody><tr>
+      {% for chave, p in papeis.items() %}
+        <th>{{ p.rotulo }}</th><td>{{ contas.por_papel.get(chave, 0) }}</td>
+      {% endfor %}
+    </tr></tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Incluir na lista</span></div>
+  <form method="post" action="{{ url_for('fraude_incluir') }}" class="form"
+        style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <label style="grid-column:1/-1">Papel na fraude
+      <select name="papel" required>
+        {% for chave, p in papeis.items() %}
+          <option value="{{ chave }}">{{ p.rotulo }}</option>
+        {% endfor %}
+      </select>
+      <small>
+        <strong>A vítima é quem se protege, e não quem se barra</strong> — o
+        aviso dela diz o contrário do aviso do envolvido.
+      </small>
+    </label>
+
+    <label>Nome
+      <input name="nome" placeholder="Como consta na comunicação"></label>
+    <label>CPF ou CNPJ
+      <input name="documento" placeholder="Com ou sem pontuação"></label>
+    <div style="grid-column:1/-1"><small>
+      Basta um dos dois — e os dois juntos são melhores:
+      <strong>documento não tem homônimo, nome tem</strong>.
+    </small></div>
+
+    <label style="grid-column:1/-1">De onde veio a comunicação
+      <input name="origem" required
+             placeholder="Ex.: Ofício 123/2026, recebido pelo malote em 20/08"></label>
+    <label>Quem comunicou
+      <input name="origem_orgao" placeholder="Ex.: Corregedoria-Geral"></label>
+    <label>Data da comunicação
+      <input name="origem_data" type="date"></label>
+    <label style="grid-column:1/-1">O que a comunicação diz, em resumo
+      <input name="observacao"
+             placeholder="Ex.: uso de CPF de terceiro em escritura de compra e venda"></label>
+
+    <div class="actions"><button class="button primary">Incluir</button></div>
+  </form>
+  <div class="notice" style="margin:0 14px 14px">
+    <strong>Sem dizer de onde veio, o nome não entra.</strong> "Fulano está na
+    lista" não ajuda ninguém a decidir nada; a comunicação, o órgão e a data
+    ajudam — e é quem está no balcão que vai precisar julgar.
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>{{ 'Na lista' if situacao == 'ATIVO' else 'Fora da lista' }}</span>
+    <small>{{ linhas | length }}</small>
+  </div>
+
+  <form method="get" class="form" style="padding:14px">
+    <label>Procurar <input name="q" value="{{ busca }}"
+           placeholder="nome ou documento"></label>
+    <label>Mostrar
+      <select name="situacao">
+        <option value="ATIVO"{% if situacao == 'ATIVO' %} selected{% endif %}>na lista</option>
+        <option value="INATIVO"{% if situacao == 'INATIVO' %} selected{% endif %}>fora da lista</option>
+      </select></label>
+    <div class="actions"><button class="button">Procurar</button></div>
+  </form>
+
+  {% if not linhas %}
+    <p style="padding:14px">
+      {% if busca %}
+        Nada com «{{ busca }}».
+      {% elif situacao == 'ATIVO' %}
+        A lista está vazia. Quando chegar uma comunicação pelo malote, inclua
+        o nome acima.
+      {% else %}
+        Ninguém foi tirado da lista.
+      {% endif %}
+    </p>
+  {% else %}
+  <table class="table">
+    <thead><tr>
+      <th>Quem</th><th>Papel</th><th>De onde veio</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for a in linhas %}
+      <tr>
+        <td>{{ a.nome or '—' }}
+            {% if a.documento %}
+              <div><small>{{ a.documento_tipo or 'documento' }}
+                {{ a.documento }}</small></div>
+            {% endif %}</td>
+        <td>{{ a.papel_rotulo }}</td>
+        <td>{{ a.origem }}
+            <div><small>
+              {% if a.origem_orgao %}{{ a.origem_orgao }}{% endif %}
+              {% if a.origem_data %} · {{ a.origem_data }}{% endif %}
+            </small></div>
+            {% if a.observacao %}
+              <div><small>{{ a.observacao }}</small></div>
+            {% endif %}
+            {% if a.situacao == 'INATIVO' and a.inativado_motivo %}
+              <div><small class="danger">Saiu da lista:
+                {{ a.inativado_motivo }}</small></div>
+            {% endif %}</td>
+        <td>
+          {% if a.situacao == 'ATIVO' %}
+          <details>
+            <summary><small>tirar da lista</small></summary>
+            <form method="post" class="form" style="padding-top:8px"
+                  action="{{ url_for('fraude_situacao', alerta_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label style="grid-column:1/-1">Por quê
+                <input name="motivo" required minlength="10"
+                       placeholder="A comunicação continua guardada"></input></label>
+              <div class="actions"><button class="button">Tirar</button></div>
+            </form>
+          </details>
+          {% else %}
+          <form method="post" style="display:inline"
+                action="{{ url_for('fraude_situacao', alerta_id=a.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="acao" value="reativar">
+            <button class="button"><small>devolver à lista</small></button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+{% if rastro %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Alertas que apareceram no balcão</span><small>{{ rastro | length }}</small>
+  </div>
+  <table class="table">
+    <thead><tr>
+      <th>Quando</th><th>Quem</th><th>Onde</th><th>O que se decidiu</th>
+    </tr></thead>
+    <tbody>
+      {% for c in rastro %}
+      <tr>
+        <td>{{ c.conferido_em[:16] | replace('T', ' ') }}
+            <div><small>{{ c.conferido_por or '—' }}</small></div></td>
+        <td>{{ c.nome_conferido or c.nome or '—' }}
+            {% if c.documento_conferido %}
+              <div><small>{{ c.documento_conferido }}</small></div>
+            {% endif %}</td>
+        <td>{{ c.onde or '—' }}
+            {% if c.referencia %}
+              <div><small>{{ c.referencia }}</small></div>
+            {% endif %}</td>
+        <td><strong>{{ c.decisao | lower }}</strong>
+            {% if c.observacao %}
+              <div><small>{{ c.observacao }}</small></div>
+            {% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="notice" style="margin:0 14px 14px">
+    <strong>O que protege a casa não é o aviso: é o registro de que ele foi
+    visto.</strong> Se um ato fraudado passar apesar do alerta, a pergunta que
+    vem é «o sistema avisou?» — e esta lista é a resposta escrita.
+  </div>
+</section>
+{% endif %}
+{% endblock %}

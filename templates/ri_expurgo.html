@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Expurgar {{ rotulo }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_ficha', matricula_id=matricula.id) }}">&larr; Voltar à ficha</a>
+  <a class="button" href="{{ url_for('ri_expurgos') }}">Atas de ocorrência</a>
+</div>
+
+<div class="notice danger">
+  <strong>Isto não é o cancelamento.</strong> O cancelamento por averbação serve ao ato que
+  <em>foi</em> praticado e depois se desconstitui: ele fica na ficha, riscado, e sai riscado em
+  toda certidão de inteiro teor pelos próximos cinquenta anos.
+  <br><br>
+  O <strong>expurgo</strong> serve a outra coisa: ato lavrado durante a implantação do sistema,
+  cujo selo foi cancelado no Tribunal — ou seja, ato que, para o Estado, não ocorreu. Lavrar
+  averbação de cancelamento afirmaria na ficha que houve ato onde não houve.
+  <br><br>
+  <strong>O ato sai da ficha e passa a existir na ata de ocorrência</strong>, com o teor íntegro,
+  o selo, o fundamento e quem ordenou. Não há como desfazer.
+</div>
+
+{% if impedimentos %}
+<section class="panel">
+  <div class="panel-head"><span>Não é possível expurgar</span></div>
+  <ul>
+    {% for razao in impedimentos %}<li>{{ razao }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>O que vai sair</span></div>
+  <div class="table-wrap"><table>
+    <tbody>
+      <tr><th>Ato</th><td><strong>{{ rotulo }}</strong></td></tr>
+      <tr><th>Matrícula</th><td>{{ matricula.numero }}{% if matricula.livro %}, Livro {{ matricula.livro }}{% endif %}</td></tr>
+      <tr><th>Data do ato</th><td>{{ ato.data_ato or '—' }}</td></tr>
+      <tr><th>Natureza</th><td>{{ ato.natureza_titulo or '—' }}</td></tr>
+      <tr><th>Prenotação</th><td>{{ ato.prenotacao or ato.protocolo or '—' }}</td></tr>
+      <tr><th>Lavrado em</th><td>{{ ato.lavrado_em or '—' }}</td></tr>
+      <tr><th>Praticado por</th><td>{{ ato.lavrado_nome or '—' }}</td></tr>
+      <tr><th>Emolumentos</th><td>{{ ato.emolumentos or '—' }}</td></tr>
+      <tr><th>Selo no sistema</th><td><code>{{ ato.selo_texto or '—' }}</code></td></tr>
+      <tr><th>Hash</th><td><small><code>{{ ato.hash_ato or '—' }}</code></small></td></tr>
+      <tr><th>Partes que saem</th><td>
+        {% if partes %}{% for p in partes %}{{ p.nome }}{% if p.papel %} ({{ p.papel }}){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}
+        {% else %}<span class="muted">nenhuma</span>{% endif %}</td></tr>
+      {% if competencias_ctp %}
+      <tr><th>Itens de CTP que saem</th><td>{{ competencias_ctp|join(', ') }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table></div>
+  <details style="padding:8px 14px">
+    <summary class="small">Ver o teor íntegro que será transcrito na ata</summary>
+    <pre style="white-space:pre-wrap">{{ ato.teor or '(o ato não tinha teor)' }}</pre>
+  </details>
+</section>
+
+{% if not impedimentos %}
+<section class="panel">
+  <div class="panel-head"><span>Confirmar o expurgo</span></div>
+  <form method="post" class="form-grid" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2">Fundamento <small class="muted">(mínimo quinze letras — é a única
+      explicação que vai restar do ato)</small>
+      <textarea name="motivo" rows="3" required minlength="15"
+        placeholder="Ato lavrado durante a implantação do sistema, antes da entrada em operação. Selo cancelado junto ao TJMA em __/__/____. O ato não subsistiu como ato de registro."></textarea>
+    </label>
+    <label class="span2">Selo cancelado no Tribunal
+      <input name="selo_cancelado" value="{{ ato.selo_texto or '' }}"
+        placeholder="o número do selo que foi cancelado no selador">
+      <small class="muted">O sistema não cancela selo. Cancele no selador do TJMA e anote aqui
+        o número, para que a conferência futura ligue as duas pontas.</small>
+    </label>
+    <label class="span2">Escreva <strong>EXPURGAR</strong> para confirmar
+      <input name="confirmacao" required autocomplete="off" placeholder="EXPURGAR">
+    </label>
+    <div class="span2"><button class="danger">Expurgar {{ rotulo }} e lavrar a ata</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

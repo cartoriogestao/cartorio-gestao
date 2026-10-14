@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Trazer o movimento do E-Ofício</h1>{% endblock %}
+{% block content %}
+{% from "_manual_de_importacao.html" import manual_para_baixar %}
+{{ manual_para_baixar() }}
+<div class="actions"><a class="button" href="{{ url_for('caixa_protocolos') }}">&larr; Protocolo geral</a></div>
+
+{% if ja_importado %}
+<div class="notice">
+  Já existem <strong>{{ ja_importado }}</strong> protocolos no sistema.
+  <strong>Pode importar de novo à vontade:</strong> a carga é incremental. Protocolo, custa e
+  movimento de caixa que já entraram são reconhecidos pela chave de origem e ignorados — só o
+  que é novo no E-Ofício entra. É assim que se traz o movimento recente.
+</div>
+<div class="notice">
+  <strong>O que você fez aqui não se perde.</strong> Item quitado à mão continua quitado, e
+  lançamento digitado no caixa não é tocado: a regra de duplicidade vale só para o que veio
+  de fora.
+</div>
+{% endif %}
+
+{% if not pasta %}
+<div class="notice warning">
+  <strong>Não encontrei a pasta EXPORT_CAIXA_EOFICIO.</strong>
+  Rode o <code>EXPORTAR_CAIXA.cmd</code>, que está no Downloads. Ele só lê o E-Ofício.
+</div>
+{% else %}
+<section class="panel">
+  <div class="panel-head"><span>Pronto para importar</span></div>
+  <div style="padding:14px">
+    <p class="small">Pasta: <code>{{ pasta }}</code></p>
+    <p class="small">A carga roda em transação única — ou grava tudo, ou não grava nada — e
+      faz uma cópia de segurança do banco antes de começar. O que não bater vai para
+      quarentena com o motivo, em vez de entrar torto.</p>
+    <p class="small"><strong>Para trazer o movimento recente:</strong> rode antes o
+      <code>EXPORTAR_CAIXA.cmd</code>, que relê o E-Ofício, e então importe aqui.</p>
+    <div class="notice">
+      <strong>A situação de cada protocolo é deduzida do movimento</strong>, não dos campos
+      de situação do E-Ofício: lá, <code>bitFinalizado</code> é falso nas 21.342 linhas e
+      <code>intSituacaoPG</code> é 1 em todas. Quem tem movimento no caixa fica como
+      <em>pago</em>; quem tem só custas, <em>a pagar</em>; quem não tem nada, <em>aberto</em>.
+    </div>
+    <form method="post" onsubmit="return confirm('Importar o movimento do E-Ofício? Só entra o que ainda não está no sistema.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="primary">Importar</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

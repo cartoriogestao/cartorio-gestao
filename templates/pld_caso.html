@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>PLD / COAF — caso {{ c.id }} <small class="muted">sigiloso</small></h1>{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('pld_painel') }}">← voltar à fila</a></p>
+
+<section class="panel">
+  <div class="grid2" style="padding:14px">
+    <div><small class="muted">Situação</small><div><strong>{{ SITUACOES.get(c.situacao, c.situacao) }}</strong></div></div>
+    <div><small class="muted">Fundamento</small><div>{{ c.fundamento }}</div></div>
+    <div><small class="muted">Atribuição e ato</small><div>{{ c.atribuicao }} —
+      {% if c.tabela == 'nt_atos' %}<a href="{{ url_for('notas_ato', ato_id=c.ato_id) }}">ato das Notas {{ c.ato_id }}</a>
+      {% elif c.tabela == 'manual' %}aberto à mão
+      {% else %}{{ c.tabela }} {{ c.ato_id }}{% endif %}</div></div>
+    <div><small class="muted">Data da operação · valor</small><div>{{ fmt_date(c.data_operacao) }} · {{ reais(c.valor_centavos) }}</div></div>
+    <div class="span2"><small class="muted">Por que foi selecionado</small><div>{{ c.descricao }}</div></div>
+    <div class="span2"><small class="muted">Trecho do título (de onde a seleção leu)</small>
+      <blockquote class="small" style="margin:4px 0">{{ c.trecho }}</blockquote></div>
+    <div class="span2">
+      {% if c.situacao in ('A_COMUNICAR','A_ANALISAR') and c.prazo.limite %}
+        {% if c.prazo.vencido %}<div class="notice danger">O prazo do art. 151 venceu em
+          {{ fmt_date(c.prazo.limite) }}. O atraso não dispensa a comunicação.</div>
+        {% else %}<div class="notice">Prazo: até {{ fmt_date(c.prazo.limite) }} ({{ c.prazo.dias }} dia(s)),
+          e a comunicação em 24 horas depois da conclusão.</div>{% endif %}
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+{% if c.analise %}
+<section class="panel">
+  <div class="panel-head"><span>Análise documentada</span></div>
+  <p style="padding:0 14px">{{ c.analise }}</p>
+  <p class="small muted" style="padding:0 14px">por {{ c.analisado_por }} em {{ c.analisado_em }}</p>
+</section>
+{% endif %}
+
+{# A comunicação sem análise (espécie de R$ 100 mil ou mais) não passa por aqui:
+   ela vai direto a «a comunicar». Se a seleção leu errado, o caminho é o
+   descarte, lá embaixo, com o que o título diz de fato. #}
+{% if c.situacao == 'A_ANALISAR' %}
+<section class="panel">
+  <div class="panel-head"><span>Conclusão da análise (CNN, art. 141, §§ 2º e 3º)</span></div>
+  <form method="post" action="{{ url_for('pld_analise', caso_id=c.id) }}" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Os elementos objetivos que levaram à conclusão (mínimo {{ minimo }} letras)
+      <textarea name="fundamentacao" rows="4" required></textarea></label>
+    <label class="check"><input type="radio" name="conclusao" value="COMUNICAR" required>
+      Há indício — <strong>comunicar</strong> ao COAF</label>
+    {% if c.especie != 'AUTOMATICA' %}
+    <label class="check"><input type="radio" name="conclusao" value="NAO_COMUNICAR">
+      Não há indício — a análise fica documentada, sem comunicação</label>
+    {% endif %}
+    <button class="primary">Gravar a análise</button>
+  </form>
+</section>
+{% endif %}
+
+{% if c.situacao in ('A_COMUNICAR', 'COMUNICADA') %}
+<section class="panel">
+  <div class="panel-head"><span>Texto da comunicação — campo «Informações adicionais» do Siscoaf (CNN, art. 154-A)</span></div>
+  <form method="post" action="{{ url_for('pld_texto', caso_id=c.id) }}" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <textarea name="texto" rows="16" style="width:100%" {% if c.situacao == 'COMUNICADA' %}readonly{% endif %}>{{ texto }}</textarea>
+    {% if c.situacao != 'COMUNICADA' %}
+    <p class="small muted">Rascunho montado do ato: confira, complete e guarde. Ele tem os
+      três itens que o art. 154-A exige — motivos, dados e fontes.</p>
+    <button>Guardar o texto</button>
+    <a class="button" href="{{ siscoaf }}" target="_blank" rel="noopener">Abrir o Siscoaf</a>
+    {% endif %}
+  </form>
+</section>
+{% endif %}
+
+{% if c.situacao == 'A_COMUNICAR' %}
+<section class="panel">
+  <div class="panel-head"><span>Registrar o envio</span></div>
+  <form method="post" action="{{ url_for('pld_enviado', caso_id=c.id) }}"
+        enctype="multipart/form-data" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Número da comunicação devolvido pelo Siscoaf <input name="numero_coaf" required></label>
+    <label>Data do envio <input type="date" name="data_envio" value="{{ hoje }}" required></label>
+    <label class="span2">Recibo (PDF) — fica arquivado (TJMA, art. 434, § 4º, «h»)
+      <input type="file" name="recibo" accept=".pdf,.png,.jpg"></label>
+    <div class="span2"><button class="primary">Registrar o envio</button></div>
+  </form>
+</section>
+{% endif %}
+
+{% if c.situacao == 'COMUNICADA' %}
+<section class="panel">
+  <div class="panel-head"><span>Comunicado</span></div>
+  <p style="padding:0 14px">Número no COAF: <strong>{{ c.numero_coaf }}</strong>, em
+    {{ fmt_date(c.comunicada_em) }}, por {{ c.comunicada_por }}.</p>
+  {% for r in recibos %}<p style="padding:0 14px"><a href="{{ url_for('attachment_download', attachment_id=r.id) }}">{{ r.original_name }}</a></p>{% endfor %}
+</section>
+{% endif %}
+
+{% if c.situacao in ('A_ANALISAR', 'A_COMUNICAR') %}
+<section class="panel">
+  <details style="padding:14px"><summary>A seleção leu errado o título</summary>
+  <form method="post" action="{{ url_for('pld_descartar', caso_id=c.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>O que o título diz de fato (mínimo {{ minimo }} letras) — fica documentado
+      <textarea name="motivo" rows="3" required></textarea></label>
+    <button>Descartar a seleção</button>
+  </form></details>
+</section>
+{% endif %}
+{% endblock %}

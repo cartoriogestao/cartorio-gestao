@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Termo do assento {{ a.numero }}{% endblock %}
+{% block content %}
+<h1>Termo do assento nº {{ a.numero }}</h1>
+<p class="muted">{{ a.especie }} · {{ a.nome }} · lavrado em {{ a.data_ato }}</p>
+
+{# ---------------------------------------------------------------------
+   O ASSENTO IMPORTADO MOSTRA A PRÉVIA, E NÃO CONGELA SÓ POR ABRIR —
+   relato #38, 31/08/2026. O termo original existe em papel; o que o sistema
+   guarda são as informações. A prévia é para conferir, não para fingir
+   ser a cópia. Anexar o PDF do livro continua aqui. #}
+{% if do_acervo and not escrito %}
+<div class="alerta">
+  <p><strong>Este assento veio do E-Ofício, e o termo dele existe em papel.</strong></p>
+  <p class="small">{{ norma.POR_QUE_O_ACERVO_NAO_ENTRA|forte }}.</p>
+  <p class="small muted">
+    A prévia abaixo é montada das informações importadas, e
+    <strong>não é a cópia do que foi escrito</strong>. Nada se grava só
+    por abri-la — gravar pede confirmação do oficial.
+  </p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">O termo digitalizado</h2>
+  {% if anexos %}
+    <ul>
+      {% for x in anexos %}
+        <li>{{ x.original_name }}
+          <span class="small muted">— {{ (x.uploaded_at or '')[:10] }},
+            {{ (x.size_bytes / 1024)|round|int }} KB
+            {% if x.uploader_name %}, por {{ x.uploader_name }}{% endif %}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="small muted">Nenhum ainda.</p>
+  {% endif %}
+  <form method="post" enctype="multipart/form-data"
+        action="{{ url_for('rcpn_termo_pdf', assento_id=a.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p><input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" required>
+       <input type="text" name="descricao" size="34"
+              placeholder="ex.: Livro A-24, fl. 166"></p>
+    <button class="button">Anexar o termo do livro</button>
+  </form>
+</div>
+
+{# A prévia agora sai sempre — relato #38. O bloco «gerar mesmo assim»
+   era o clique extra da ordem de 30/08; a página em branco mostrou que
+   esconder o texto tornava a tela inutilizável. #}
+{% endif %}
+
+{% if escrito %}
+<div class="card">
+  <p><strong>Este termo já está escrito.</strong> Ele é o papel que o declarante
+     leu e assinou, e por isso <strong>não se reescreve</strong> — corrigir é
+     <em>averbar ao lado</em>, na ficha do assento.</p>
+</div>
+<div class="card" style="background:#fff; white-space:pre-wrap">{{ escrito }}</div>
+<p>
+  <a class="button" href="{{ url_for('rcpn_termo_odt', assento_id=a.id) }}">Baixar em .odt para o livro</a>
+  <a class="button secondary" href="{{ url_for('rcpn_assento', assento_id=a.id) }}">Voltar à ficha</a>
+</p>
+
+{% elif erro %}
+<div class="alerta danger">
+  <p><strong>Não dá para montar o termo deste assento:</strong></p>
+  <p>{{ erro }}</p>
+</div>
+<p><a class="button secondary" href="{{ url_for('rcpn_assento', assento_id=a.id) }}">Voltar à ficha</a></p>
+
+{% elif previa %}
+<div class="card">
+  <p><strong>Como o termo vai ficar.</strong> Nada foi gravado ainda — ver como
+     fica é de graça, e você pode voltar, completar o assento e olhar de novo.</p>
+  <p class="small muted">Ao escrever, o texto fica <strong>congelado</strong> no
+     assento: é o que o declarante lê e assina, e a partir daí só se corrige por
+     averbação ao lado.</p>
+  {% if a.especie and a.especie|upper == 'OBITO' %}
+    <p class="small muted">Óbito — os <strong>doze incisos do art. 255</strong>
+       do Código de Normas. Campo exigido vazio vira claro visível
+       (<code>____________</code>), não página em branco.</p>
+  {% endif %}
+</div>
+
+<div class="card" style="background:#fff; white-space:pre-wrap">{{ previa }}</div>
+
+<form method="post" action="{{ url_for('rcpn_termo_escrever', assento_id=a.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p>
+    <label>Livro <input name="livro" value="{{ a.livro_volume or '' }}"></label>
+    <label>Folha <input name="folha"></label>
+  </p>
+  {% if do_acervo %}
+    <p class="small muted">Este texto <strong>não é o termo de papel</strong>.
+       Só grave se o oficial confirmar — o original existe no livro.</p>
+  {% endif %}
+  <p>
+    <button class="button"
+            onclick="return confirm({% if do_acervo %}'Gravar no assento um texto montado das informações importadas? Isso NÃO substitui o termo de papel, e depois não se reescreve.'{% else %}'Escrever o termo no assento? Ele não se reescreve depois.'{% endif %})"
+      >Escrever o termo no assento</button>
+    <a class="button secondary" href="{{ url_for('rcpn_termo_odt', assento_id=a.id) }}">Baixar em .odt sem escrever</a>
+    <a class="button secondary" href="{{ url_for('rcpn_assento', assento_id=a.id) }}">Voltar à ficha</a>
+  </p>
+</form>
+{% endif %}
+{% endblock %}

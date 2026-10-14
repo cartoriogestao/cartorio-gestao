@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}O que começou e não terminou{% endblock %}
+{% block content %}
+<h1>O que começou e não terminou</h1>
+
+<div class="card">
+  <p>Esta lista é <strong>medida na hora</strong>, das tabelas onde os atos já
+     moram. <strong>Ato concluído sai daqui sozinho</strong> — ela é a pergunta,
+     e não uma resposta guardada.</p>
+  <p class="small muted">
+    É por isso que não há um expediente para cada item: uma linha ao lado do ato
+    seriam dois lugares guardando o mesmo fato, e a cópia diverge no primeiro
+    conserto — o ato concluído e o expediente ainda aberto, que foi exatamente o
+    que você relatou. Esta tela <strong>não conclui nada</strong>: ela mostra e
+    leva à tela do ato, onde as regras estão.
+  </p>
+</div>
+
+<h2>Por onde ela olha</h2>
+<table>
+  <thead>
+    <tr><th>Fonte</th><th>Atribuição</th><th>Tem</th><th>Parados</th>
+        <th>Considera parado depois de</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for r in resumo %}
+    <tr {% if not r.ligada %}class="muted"{% endif %}>
+      <td>
+        <strong>{{ r.fonte }}</strong>
+        {% if not r.ligada %}<br><span class="small">desligada</span>{% endif %}
+      </td>
+      <td class="small">{{ r.atribuicao }}</td>
+      <td>
+        {% if r.erro %}
+          <span class="danger">não deu para medir</span><br>
+          <span class="small muted">{{ r.erro }}</span>
+        {% else %}{{ r.quantos }}{% endif %}
+      </td>
+      <td>{% if r.parados %}<strong class="danger">{{ r.parados }}</strong>
+          {% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="small">{{ r.dias }} dias</td>
+      <td class="small">
+        <a href="{{ url_for('inacabados_lista', fonte=r.chave) }}">ver</a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<div class="card">
+  <h2 style="margin-top:0">Moldar o que fica e o que sai</h2>
+  <p class="small muted">
+    Você liga, desliga e escolhe quantos dias — e isso mora no banco, não no
+    programa: dá para ajustar num sábado. <strong>A fonte em si continua no
+    código</strong>, porque saber onde o ato mora e o que o termina não se digita
+    numa tela. Esta tela liga e desliga o que existe; ela não inventa fonte.
+  </p>
+  <form method="post" action="{{ url_for('inacabados_ajustar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <table>
+      <thead><tr><th>Entra na lista</th><th>Fonte</th><th>Parado depois de</th>
+                 <th>Sai da lista</th></tr></thead>
+      <tbody>
+      {% for r in resumo %}
+        <tr>
+          <td><input type="checkbox" name="ligada_{{ r.chave }}"
+                     {% if r.ligada %}checked{% endif %}></td>
+          <td>{{ r.fonte }}</td>
+          <td><input type="number" name="dias_{{ r.chave }}" min="1" max="3650"
+                     value="{{ r.dias }}" size="4" style="width:5em"> dias</td>
+          <td class="small muted">{{ config[r.chave].terminou }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p><button class="button">Guardar o ajuste</button></p>
+  </form>
+  <p class="small muted">
+    Nada aqui se perde: <em>voltar ao padrão</em> é apagar o ajuste, e a fonte
+    volta ao que o programa traz de fábrica.
+  </p>
+</div>
+
+<h2>
+  {% if fonte_escolhida %}{{ fonte_escolhida.nome }}{% else %}Tudo{% endif %}
+  ({{ itens|length }})
+</h2>
+
+<form method="get">
+  <label>Atribuição
+    <select name="atribuicao" onchange="this.form.submit()">
+      <option value="">todas</option>
+      {% for a in atribuicoes %}
+        <option value="{{ a }}" {% if a == atribuicao %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label><input type="checkbox" name="so_parados" value="1"
+          {% if so_parados %}checked{% endif %} onchange="this.form.submit()">
+    só os parados</label>
+  {% if fonte_escolhida %}<input type="hidden" name="fonte" value="{{ fonte_escolhida.chave }}">{% endif %}
+  <noscript><button class="button">filtrar</button></noscript>
+</form>
+
+{% if itens %}
+<table>
+  <thead>
+    <tr><th>Fonte</th><th>Quem / o quê</th><th>Desde</th><th>Parado há</th>
+        <th>Anotação</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for x in itens %}
+    <tr>
+      <td class="small">{{ x.fonte }}</td>
+      <td>
+        {{ x.rotulo or '(sem nome)' }}
+        {% if x.erro %}<br><span class="danger small">{{ x.erro }}</span>{% endif %}
+      </td>
+      <td class="small">{{ x.quando or '—' }}</td>
+      <td class="small">
+        {% if x.dias is none %}
+          <span class="muted">não deu para contar</span>
+        {% elif x.parado %}
+          <strong class="danger">{{ x.dias }} dias</strong>
+        {% else %}
+          {{ x.dias }} dia(s)
+        {% endif %}
+      </td>
+      <td class="small">
+        {% if x.anotacao %}
+          {{ x.anotacao.texto }}
+          {% if x.anotacao.responsavel %}<br>com {{ x.anotacao.responsavel }}{% endif %}
+          {% if x.anotacao.ate %}<br>até {{ x.anotacao.ate }}{% endif %}
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+      <td class="small">
+        {% if x.id %}
+          <a href="{{ url_for(x.tela, **{x.parametro: x.id}) }}">abrir</a><br>
+          <a href="{{ url_for('inacabados_anotar', tabela=x.tabela, item_id=x.id) }}">anotar</a>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Nada em aberto por aqui.</p>
+<p class="small muted">
+  Se você esperava ver alguma coisa, confira acima se a fonte está ligada — lista
+  vazia por fonte desligada parece lista vazia por casa em dia.
+</p>
+{% endif %}
+{% endblock %}

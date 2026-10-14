@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Modelos — {{ q.nome }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='modelos-editor.css') }}">
+<header class="modelos-topo">
+  <div><p class="modelos-sobretitulo">CENTRAL DE MODELOS</p><h1>{{ q.nome }}</h1>
+    <p class="muted">Edite à esquerda e confira, à direita, como o documento ficará.</p>
+    {# **O CABECALHO NAO ESTA AQUI, E A TELA DIZ POR QUE.** Campo que some sem
+       explicacao faz procurar defeito onde ha decisao — e esta e do oficial,
+       de 07/09/2026. A rota sempre entregou `cabecalho_de_fora`; a reescrita
+       da tela na 3.6.75 deixou de mostra-lo. #}
+    <p class="small muted"><strong>O cabeçalho não se edita aqui.</strong>
+      {{ cabecalho_de_fora }}</p></div>
+  <div class="modelos-contagem"><strong>{{ q.atos|length }}</strong><span>modelo{{ 's' if q.atos|length != 1 }}</span></div>
+</header>
+<nav class="modelos-atribuicoes" aria-label="Atribuições">
+  <span class="ativo">{{ q.nome }}</span>
+  {% for o in outras %}<a href="{{ url_for(o.rota) }}">{{ o.nome }}</a>{% endfor %}
+</nav>
+{% if q.atribuicao == 'NOTAS' %}<div class="card"><p><strong>Modelos dos atos notariais</strong> — escrituras, procurações, atas, testamentos e termos ficam na biblioteca completa. <a class="button primary" href="{{ url_for('notas_modelos_de_atos') }}">Abrir modelos dos atos</a></p></div>{% elif q.atribuicao == 'RCPN' %}<div class="card"><p><strong>Documentos avulsos do Registro Civil</strong> — comunicações, requerimentos, declarações e ofícios cadastrados pela casa. <a class="button primary" href="{{ url_for('rcpn_modelos') }}">Abrir modelos avulsos</a></p><p><strong>Editor de versões (Marco 1)</strong> — termos e moldes ODT com rascunho, publicação e histórico. <a class="button secondary" href="{{ url_for('modelos_editor_lista') }}">Abrir editor de modelos</a></p></div>{% endif %}
+
+{% if not q.atos %}
+<div class="card warning"><p><strong>Ainda não há um documento desta atribuição ligado ao editor.</strong>
+  As certidões e atos que hoje são montados diretamente pelo módulo serão incorporados a este catálogo sem alterar os registros já emitidos.</p></div>
+{% else %}
+<div class="modelos-layout">
+  <aside class="modelos-lista">
+    <label class="modelos-busca"><span>Localizar modelo</span><input type="search" placeholder="Ato, termo, certidão…" data-modelo-busca></label>
+    <div data-modelo-lista>{% for a in q.atos %}
+      <a class="modelo-item {{ 'ativo' if q.editando and q.editando.chave == a.chave }}"
+         data-modelo-item data-modelo-nome="{{ a.nome|lower }} {{ a.explica|lower }}"
+         href="{{ url_for(rota, editar=a.chave) }}"><span>{{ a.nome }}</span>
+        <small>{{ a.formato }} · {{ a.partes|selectattr('proprio')|list|length }} ajuste(s)</small></a>
+    {% endfor %}</div>
+  </aside>
+
+  {% if q.editando %}
+  <section class="modelos-trabalho" data-modelo-editor data-previa-url="{{ url_for(rota ~ '_previa') }}">
+    <div class="modelo-identidade"><div><p class="modelos-sobretitulo">DOCUMENTO EM EDIÇÃO</p>
+      <h2>{{ q.editando.nome }}</h2><p class="small muted">{{ q.editando.explica }}</p></div>
+      <span class="badge">{{ q.editando.formato }}</span></div>
+    <div class="modelos-divisao">
+      <div class="modelos-edicao">
+        <div class="modelo-abas" role="tablist" aria-label="Partes do modelo">{% for e in q.editando.partes %}
+          <button type="button" role="tab" data-parte-aba="{{ e.parte }}" class="{{ 'ativo' if loop.first }}">{{ e.nome }}</button>{% endfor %}
+        </div>
+        {% for e in q.editando.partes %}
+        <form method="post" action="{{ url_for(rota) }}" class="modelo-parte" data-parte-painel="{{ e.parte }}" {{ 'hidden' if not loop.first }}>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="ato" value="{{ q.editando.chave }}"><input type="hidden" name="parte" value="{{ e.parte }}">
+          <div class="modelo-origem">{% if e.de_onde == 'ato' %}<span>Personalizado neste documento</span>{% elif e.de_onde == 'atribuicao' %}<span>Herdado de {{ q.nome }}</span>{% elif e.de_onde == 'legado' %}<span>Ajuste anterior desta casa</span>{% else %}<span>Padrão seguro do sistema</span>{% endif %}</div>
+          <div class="modelo-ferramentas" aria-label="Formatação"><button type="button" data-inserir="<b>|</b>" title="Negrito"><b>B</b></button><button type="button" data-inserir="<i>|</i>" title="Itálico"><i>I</i></button><button type="button" data-inserir="<u>|</u>" title="Sublinhado"><u>U</u></button><button type="button" data-inserir='<s style="color:#c62828">|</s>' title="Tachado vermelho" style="color:#c62828;text-decoration:line-through">S</button><button type="button" data-inserir='<mark style="background:#fff59d">|</mark>' title="Destaque amarelo" style="background:#fff59d">A</button><button type="button" data-inserir='<mark style="background:#ffcdd2">|</mark>' title="Destaque vermelho" style="background:#ffcdd2">V</button><button type="button" data-inserir="<p>|</p>" title="Parágrafo">¶</button><button type="button" data-inserir="<p align=&quot;center&quot;>|</p>" title="Centralizar">≡</button><button type="button" data-inserir="<br>" title="Quebra de linha">↵</button></div>
+          <textarea name="corpo" data-modelo-parte="{{ e.parte }}" spellcheck="true" rows="22">{{ e.texto }}</textarea>
+          {% if q.editando.legenda %}<div class="modelo-legenda"><div class="modelo-legenda-titulo"><strong>Legenda de preenchimento</strong><span>Clique para inserir no texto · padrão @ do E-Ofício</span></div><div class="modelo-marcadores">{% for m in q.editando.legenda %}<button type="button" data-marcador="{{ m.codigo }}" title="{{ m.nome }}"><code>{{ m.rotulo }}</code><small>{{ m.nome }}</small></button>{% endfor %}</div></div>{% endif %}
+          <div class="modelo-acoes"><span class="modelo-estado" data-modelo-estado>Prévia atualizada</span><button class="primary" name="acao" value="salvar" type="submit">Salvar {{ e.nome|lower }}</button>{% if e.proprio %}<button class="secondary" name="acao" value="restaurar" type="submit">Voltar ao herdado</button>{% endif %}</div>
+        </form>{% endfor %}
+
+        <details class="modelo-ajustes-comuns"><summary>Elementos compartilhados por {{ q.nome }}</summary>
+          <p class="small muted">Use com cuidado: estes trechos são herdados por todos os documentos da atribuição.</p>
+          {% for e in q.comuns %}<form method="post" action="{{ url_for(rota) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="ato" value=""><input type="hidden" name="parte" value="{{ e.parte }}"><label><strong>{{ e.nome }}</strong><textarea name="corpo" rows="5">{{ e.texto }}</textarea></label><button class="primary" name="acao" value="salvar">Salvar para todos</button>{% if e.proprio %}<button class="secondary" name="acao" value="restaurar">Remover ajuste comum</button>{% endif %}</form>{% endfor %}
+        </details>
+      </div>
+      <div class="modelos-previa-coluna"><div class="modelos-previa-topo"><strong>Prévia do documento</strong><span>Caso hipotético · atualização automática</span></div><div class="modelo-erro" data-modelo-erro hidden></div><iframe title="Prévia visual de {{ q.editando.nome }}" data-modelo-previa sandbox=""></iframe></div>
+    </div>
+  </section>{% endif %}
+</div>{% endif %}
+
+<div class="card modelos-rodape-info"><p class="small"><strong>Controle geral:</strong> os modelos cadastrados e os documentos especializados estão sendo reunidos nesta central. Nenhum modelo anterior é apagado; “voltar ao herdado” apenas volta ao padrão seguro.</p><p class="small muted">Para a visão administrativa, abra <a href="{{ url_for('modelos') }}">Modelos dos documentos</a>.</p></div>
+<script src="{{ url_for('static', filename='modelos-editor.js') }}"></script>
+{% endblock %}

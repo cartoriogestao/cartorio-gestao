@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{# HOTFIX-2026-10-09-04 - modelo de averbacao com formulario proprio. So monta texto. #}
+{% block heading %}<h1>{{ modelo.nome }} - {{ assento.nome }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_averbar', assento_id=assento.id) }}">&larr; Averbação (texto livre)</a>
+  <a class="button" href="{{ url_for('rcpn_assento', assento_id=assento.id) }}">Ficha do assento</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Assento</span></div>
+  <table class="table">
+    <tr><th>Espécie</th><td>{{ assento.especie }}</td><th>Nome</th><td>{{ assento.nome }}</td></tr>
+    <tr><th>Livro</th><td>{{ assento.livro_volume or assento.serie }}</td>
+        <th>Termo</th><td>{{ assento.numero or '-' }}</td></tr>
+    <tr><th>Matrícula</th><td colspan="3">{{ assento.matricula or '-' }}</td></tr>
+  </table>
+</section>
+
+<div class="notice">{{ modelo.descricao }} Este formulário <strong>só monta o texto</strong>:
+  nada é gravado nem selado aqui. Em «Levar para a averbação» o texto abre na tela
+  padrão, onde você confere e lança (o selo sai lá, como em qualquer averbação).</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Formulário do modelo</span></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for c in modelo.campos %}
+    <label {% if c.tipo == 'textarea' %}style="grid-column:1/-1"{% endif %}>{{ c.rotulo }}
+      {% if c.ajuda %}<small>({{ c.ajuda }})</small>{% endif %}
+      {% if c.tipo == 'textarea' %}
+      <textarea name="{{ c.nome }}" rows="3">{{ valores.get(c.nome, '') }}</textarea>
+      {% elif c.tipo == 'select' %}
+      <select name="{{ c.nome }}">
+        {% for val, rot in c.opcoes %}
+        <option value="{{ val }}" {% if valores.get(c.nome) == val %}selected{% endif %}>{{ rot }}</option>
+        {% endfor %}
+      </select>
+      {% else %}
+      <input type="{{ c.tipo }}" name="{{ c.nome }}" value="{{ valores.get(c.nome, '') }}">
+      {% endif %}
+    </label>
+    {% endfor %}
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button" name="acao" value="gerar">Gerar texto</button>
+      {% if previa %}<button class="button" name="acao" value="levar">Levar para a averbação</button>{% endif %}
+    </div>
+  </form>
+</section>
+
+{% if previa %}
+<section class="panel">
+  <div class="panel-head"><span>Texto gerado (prévia)</span></div>
+  <div style="padding:14px;white-space:pre-wrap">{{ previa.teor }}</div>
+  <div style="padding:0 14px 14px"><small>Fundamento do ato: {{ previa.fundamento }}</small></div>
+</section>
+{% endif %}
+{% endblock %}

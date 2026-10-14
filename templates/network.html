@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Rede e acesso ao servidor</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>Endereços deste servidor</h2>
+  {% if urls %}
+    <div class="network-urls">
+      {% for url in urls %}
+        <div class="network-url"><code>{{url}}</code><button type="button" onclick="navigator.clipboard.writeText('{{url}}')">Copiar</button></div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="notice critical">Não foi possível identificar um endereço IPv4 de rede. Verifique se o computador está conectado à rede local.</div>
+  {% endif %}
+  <dl class="detail">
+    <dt>Nome do computador</dt><dd>{{hostname}}</dd>
+    <dt>Porta do sistema</dt><dd>TCP {{port}}</dd>
+    <dt>Descoberta automática</dt><dd>{% if discovery_enabled %}Ativa — UDP {{discovery_port}}{% else %}Desativada{% endif %}</dd>
+    <dt>Pasta do programa</dt><dd>{{install_dir}}</dd>
+    <dt>Pasta de dados</dt><dd>{{data_dir}}</dd>
+  </dl>
+</section>
+<section class="panel">
+  <h2>Acesso nas outras máquinas</h2>
+  <p>Na instalação convencional, os computadores clientes usam o atalho <strong>Cartório Gestão</strong>. O localizador envia uma consulta na rede local e abre automaticamente o servidor encontrado, mesmo que o endereço IP tenha mudado.</p>
+  <div class="actions"><a class="button primary" href="{{url_for('client_installer_zip')}}">Baixar instalador do acesso cliente</a></div>
+  <p class="muted small">A descoberta depende de as máquinas estarem na mesma rede/VLAN e de a rede não bloquear comunicação entre clientes. O instalador do servidor cria automaticamente as regras do Firewall do Windows para as portas configuradas.</p>
+</section>
+<section class="panel">
+  <h2>Diagnóstico rápido</h2>
+  <ol>
+    <li>O servidor deve permanecer ligado.</li>
+    <li>O Windows deve classificar a rede como Privada ou Domínio.</li>
+    <li>Redes de visitantes ou com isolamento de clientes podem impedir a comunicação.</li>
+    <li>Se o atalho localizador não encontrar o servidor, tente um dos endereços acima no navegador do cliente.</li>
+  </ol>
+</section>
+{% endblock %}

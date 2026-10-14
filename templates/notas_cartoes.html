@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Cartões de autógrafo</h1>{% endblock %}
+{% block content %}
+{% set aqui = 'cartoes' %}
+{#
+  AS TRES TELAS DAS FIRMAS SAO UMA COISA SO, e agora dizem isso.
+
+  «Reconhecimento e reconhecer firma estao injustificadamente separados» — o
+  oficial, em 27/08/2026. Eram duas entradas de menu com quase o mesmo nome; a
+  pessoa escolhia no escuro e descobria qual era depois de abrir.
+
+  As abas resolvem sem fundir as telas: cada uma continua fazendo uma coisa —
+  lavrar, consultar, cadastrar — e o operador ve as tres de qualquer uma delas.
+  Fundir tudo numa pagina so poria a busca paginada por cima do balcao.
+#}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
+  <a class="button{% if aqui == 'reconhecer' %} primary{% endif %}"
+     href="{{ url_for('notas_reconhecimento') }}">Reconhecer firma</a>
+  <a class="button{% if aqui == 'consultar' %} primary{% endif %}"
+     href="{{ url_for('notas_reconhecimentos') }}">Reconhecimentos feitos</a>
+  <a class="button{% if aqui == 'cartoes' %} primary{% endif %}"
+     href="{{ url_for('notas_cartoes') }}">Cartões de autógrafo</a>
+  {% if user.role in ['ADMIN','MANAGER'] %}
+  <a class="button" href="{{ url_for('notas_assinaturas') }}">Trazer autógrafos do E-Ofício</a>
+  {% endif %}
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ resumo.total }}</strong><small>cartões</small></div>
+  <div class="stat"><strong>{{ resumo.bloqueados }}</strong><small>bloqueados</small></div>
+  <div class="stat"><strong>{{ resumo.inativos }}</strong><small>inativos</small></div>
+  {#
+    SEM AUTOGRAFO NAO SE RECONHECE POR SEMELHANCA, e por isso este numero fica
+    aqui e nao numa tela a parte.
+
+    «Assinaturas digitalizadas deveria ser campo dos cartoes» — o oficial, em
+    27/08/2026. A tela dela nao e um campo: e o mutirao que traz os arquivos do
+    E-Oficio para dentro. Saiu do menu e virou o botao abaixo, junto do numero
+    que diz quanto falta.
+  #}
+  <div class="stat{% if resumo.sem_assinatura %} warning{% endif %}">
+    <strong>{{ resumo.sem_assinatura }}</strong><small>sem autógrafo</small></div>
+</section>
+
+<form class="filters" method="get">
+  <input name="busca" value="{{ busca }}" size="40" autofocus
+         placeholder="Nome ou CPF — mínimo três letras">
+  <button class="primary">Procurar</button>
+</form>
+{% if aviso_busca %}<div class="notice warning">{{ aviso_busca }}</div>{% endif %}
+
+{% if achados %}
+<section class="panel">
+  <div class="panel-head"><span>{{ achados|length }} achado(s)</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Cidade</th><th>Aberto em</th><th>Assinatura</th><th></th></tr></thead>
+    <tbody>
+    {% for c in achados %}
+      <tr>
+        <td><a href="{{ url_for('notas_cartao', cartao_id=c.id) }}"><strong>{{ c.nome }}</strong></a>
+          {% if c.avisos %}{% for a in c.avisos %}<br><span class="badge alta small">{{ a }}</span>{% endfor %}{% endif %}</td>
+        <td class="small">{{ c.documento or '—' }}</td>
+        <td class="small">{{ c.cidade or '—' }}{% if c.uf %}/{{ c.uf }}{% endif %}</td>
+        <td class="small">{{ fmt_date(c.abertura) if c.abertura else '—' }}</td>
+        <td>{% if c.imagem_id %}<img class="ampliavel"
+               src="{{ url_for('notas_cartao_imagem', imagem_id=c.imagem_id, w=280) }}"
+               data-lupa-cheia="{{ url_for('notas_cartao_imagem', imagem_id=c.imagem_id) }}"
+               data-lupa-original="{{ url_for('notas_cartao_imagem_original', imagem_id=c.imagem_id) }}"
+               data-lupa-titulo="{{ c.nome }}{% if c.documento %} — {{ c.documento }}{% endif %}"
+               data-lupa-grupo="lista-cartoes"
+               alt="Assinatura de {{ c.nome }}" loading="lazy"
+               title="Clique para ampliar"
+               style="max-height:44px;max-width:190px;border:1px solid #ccc">
+            {% else %}<span class="muted small">sem imagem</span>{% endif %}</td>
+        <td><a class="button small" href="{{ url_for('notas_cartao', cartao_id=c.id) }}">abrir</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+<details class="panel" {% if busca and not achados %}open{% endif %}>
+  <summary>Cadastrar cartão novo</summary>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2">Nome <input name="nome" value="{{ busca if busca and not achados else '' }}" required></label>
+    <label>Pessoa <select name="tipo_pessoa"><option value="F">Física</option><option value="J">Jurídica</option></select></label>
+    <label>CPF/CNPJ <input name="documento"></label>
+    <label>RG <input name="rg"></label>
+    <label>Órgão emissor <input name="rg_orgao"></label>
+    <label>Nascimento <input type="date" name="nascimento"></label>
+    <label>Nacionalidade <input name="nacionalidade" value="BRASILEIRA"></label>
+    <label>Estado civil <input name="estado_civil"></label>
+    <label>Profissão <input name="profissao"></label>
+    <label>Pai <input name="pai"></label>
+    <label>Mãe <input name="mae"></label>
+    <label class="span2">Endereço <input name="endereco"></label>
+    <label>Número <input name="endereco_numero"></label>
+    <label>Bairro <input name="bairro"></label>
+    <label>Cidade <input name="cidade" value="{{ (sv.ri_cidade or '')|upper }}"></label>
+    <label>UF <input name="uf" value="{{ sv.ri_uf or '' }}" size="3"></label>
+    <label>CEP <input name="cep"></label>
+    <label>Celular <input name="celular"></label>
+    <label>E-mail <input name="email" type="email"></label>
+    <label>Como assina <input name="como_assina" placeholder="a forma abreviada"></label>
+    <label class="span2 check"><input type="checkbox" name="pessoa_exposta" value="1">
+      Pessoa politicamente exposta — Provimento CNJ 88/2019, art. 20</label>
+    <label class="span2 check"><input type="checkbox" name="confirmar_duplicata" value="1">
+      Já conferi: não é a mesma pessoa de um cartão existente</label>
+    <div class="span2"><button class="primary" name="acao" value="novo">Abrir cartão</button>
+      <span class="small muted">O sistema avisa duplicidade; se o selo de abertura falhar, o cartão não abre sem confirmação expressa.</span></div>
+  </form>
+</details>
+{% endblock %}

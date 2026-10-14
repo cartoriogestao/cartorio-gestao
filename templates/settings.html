@@ -1,0 +1,251 @@
+{% extends 'base.html' %}
+{% block title %}Configurações — Administrativo{% endblock %}
+{% block heading %}<h1>Configurações</h1>{% endblock %}
+{% block content %}
+<div class="pagina-configuracoes stack">
+<nav class="notice cfg-indice" aria-label="Nesta página">
+  <strong>Nesta página:</strong>
+  <a href="#cfg-serventia">Serventia e rede</a> ·
+  <a href="#cfg-centrais">Centrais (credenciais)</a> ·
+  <a href="#cfg-admin">Administração</a>
+</nav>
+<p class="notice">
+  O botão <strong>Salvar configurações</strong> abaixo grava só os campos desta
+  primeira seção (nome da unidade, pastas, rede, senhas, classificações).
+  Cada linha da tabela de <a href="#cfg-centrais">Centrais</a> tem o botão
+  <strong>Guardar</strong> próprio — ele não usa o botão geral.
+</p>
+<section class="panel" id="cfg-serventia">
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <label class="span2">Nome da unidade<input name="unit_name" value="{{s.unit_name}}"></label>
+    {# O NOME DO REGISTRADOR NÃO TINHA TELA — achado em 07/09/2026 ao
+       conferir a ficha nova do RI: a serventia já tinha corrigido
+       `serventia.PADRAO["serventia_titular"]` (o nome tinha uma letra a menos)
+       em 30/08/2026, mas `ri_registrador` é OUTRO valor, que a ficha do
+       Registro de Imóveis lê, e ele continuava errado — porque não havia
+       onde salvá-lo de novo. Sem tela, o valor errado gravado no banco
+       nunca se corrige sozinho: `DEFAULT_SETTINGS` só entra com `INSERT OR
+       IGNORE`. #}
+    <label>Registrador (RI) <input name="ri_registrador" value="{{s.ri_registrador}}"></label>
+    <label>Substituto(a) (RI) <input name="ri_substituta" value="{{s.ri_substituta}}"></label>
+    <label>Cidade (RI) <input name="ri_cidade" value="{{s.ri_cidade}}"></label>
+    <label>UF (RI) <input name="ri_uf" value="{{s.ri_uf}}" size="3" maxlength="2"></label>
+    <label>Pasta principal de arquivos<input name="archive_root" value="{{s.archive_root}}" placeholder="vazio = pasta padrão do sistema"></label>
+    <label>Pasta de backups<input name="backup_dir" value="{{s.backup_dir}}" placeholder="vazio = pasta padrão"></label>
+    <label>Dias de antecedência dos alertas<input type="number" name="alert_days" min="1" value="{{s.alert_days}}"></label>
+    {# RELATO #34 DO OFICIAL, em 30/08/2026: «colocar o encerrar por
+       inatividade para períodos superiores a 12h».
+
+       O sistema **já aceitava** — o mínimo é 10 minutos e nunca houve teto.
+       O que atrapalhava era o campo pedir MINUTOS, onde quem configura pensa
+       em horas: para 12 horas era preciso saber que são 720, e ninguém faz
+       essa conta no meio de outra coisa. As opções abaixo resolvem isso sem
+       tirar a possibilidade de digitar um número qualquer. #}
+    <label>Tempo de inatividade da sessão
+      <input type="number" name="session_timeout_minutes" min="10" step="10"
+             list="tempos_de_sessao" value="{{s.session_timeout_minutes}}">
+      <datalist id="tempos_de_sessao">
+        <option value="30" label="30 minutos"></option>
+        <option value="60" label="1 hora"></option>
+        <option value="240" label="4 horas"></option>
+        <option value="480" label="8 horas — uma jornada"></option>
+        <option value="720" label="12 horas"></option>
+        <option value="1440" label="24 horas"></option>
+      </datalist>
+      <small>Em <strong>minutos</strong>. 720 são 12 horas; 1440, um dia.
+        <strong>Sessão longa é comodidade com preço:</strong> se o balcão ficar
+        aberto e alguém passar pela máquina, o sistema não terá encerrado
+        sozinho. Quem escolhe é você.</small>
+    </label>
+    <label>Host do servidor<input name="network_host" value="{{s.network_host}}"></label>
+    <label>Porta HTTP<input type="number" name="network_port" value="{{s.network_port}}"></label>
+    <label class="checkbox-label span2"><input type="checkbox" name="discovery_enabled" {% if s.discovery_enabled!='0' %}checked{% endif %}> Descoberta automática na rede</label>
+    <label>Porta de descoberta<input type="number" name="discovery_port" value="{{s.discovery_port or '8766'}}"></label>
+    <label>Retenção de backups automáticos<input type="number" name="backup_retention" min="3" value="{{s.backup_retention}}"></label>
+    <label class="checkbox-label span2"><input type="checkbox" name="auto_backup" {% if s.auto_backup=='1' %}checked{% endif %}> Backup automático diário</label>
+    <label class="checkbox-label span2"><input type="checkbox" name="require_backup_assignee" {% if s.require_backup_assignee=='1' %}checked{% endif %}> Exigir substituto quando houver responsável</label>
+
+    {# O QUE O BOTAO DE IMPRIMIR ENTREGA — pedido do oficial em 01/09/2026.
+
+       O PDF abre no visualizador do navegador, com o botao de imprimir do
+       lado; o `.odt` baixa para abrir no LibreOffice. **Os dois botoes
+       continuam nas telas** em qualquer escolha — o que muda e qual deles o
+       botao principal usa.
+
+       E configuracao porque a conversao mediu de 1 s a 51 s nesta maquina, e
+       nao se achou o que separa os dois: se ficar lenta no balcao, o oficial
+       volta para o `.odt` numa tarde, sem esperar versao nova. #}
+    <label>Botão de imprimir — o que ele entrega
+      <select name="impressao_formato_padrao">
+        <option value="pdf" {% if s.impressao_formato_padrao in ('', None, 'pdf') %}selected{% endif %}>PDF, pronto para imprimir</option>
+        <option value="odt" {% if s.impressao_formato_padrao=='odt' %}selected{% endif %}>.odt, para abrir no LibreOffice</option>
+      </select>
+      <small class="muted small">Vale para as certidões, a ficha do imóvel e a nota devolutiva. O outro formato continua disponível ao lado.</small>
+    </label>
+
+    {# O ALCANCE DO MODULO DE PROTESTO — ordem do oficial em 01/09/2026:
+       «reabilite o protesto para o administrador, permitindo um botao em
+       configuracoes habilitar para todos usuarios».
+
+       Sao tres, e o do meio e o padrao de fabrica: fechado para todos, so
+       para o oficial, ou para o balcao inteiro. **O ADMIN nunca se tranca do
+       lado de fora** — quem muda isto e ele, e «ninguem» nao o alcanca.
+
+       O dado nao sai do banco em nenhum dos tres: o que o alcance governa e a
+       vista. Ver `modulos_ligados.py`. #}
+    <label>Módulo de Protesto — quem pode abrir
+      <select name="modulo_protesto_alcance">
+        <option value="ADMIN" {% if s.modulo_protesto_alcance in ('', None, 'ADMIN') %}selected{% endif %}>Somente o oficial (administrador)</option>
+        <option value="TODOS" {% if s.modulo_protesto_alcance=='TODOS' %}selected{% endif %}>Todos os usuários</option>
+        <option value="NINGUEM" {% if s.modulo_protesto_alcance=='NINGUEM' %}selected{% endif %}>Ninguém — módulo fechado</option>
+      </select>
+      <small class="muted small">Os títulos, protestos e selos continuam guardados em qualquer opção; o que muda é quem vê as telas.</small>
+    </label>
+
+    <fieldset class="cfg-bloco span2">
+      <legend>Política de senhas</legend>
+      <p class="muted small cfg-bloco-intro">O padrão agora é 6 caracteres, sem exigência de maiúscula, minúscula ou número. O administrador pode ajustar a regra abaixo.</p>
+      <label>Quantidade mínima de caracteres
+        <input type="number" name="password_min_length" min="4" max="64" value="{{s.password_min_length or '6'}}"></label>
+      <label class="checkbox-label span2"><input type="checkbox" name="password_require_upper" {% if s.password_require_upper=='1' %}checked{% endif %}> Exigir letra maiúscula</label>
+      <label class="checkbox-label span2"><input type="checkbox" name="password_require_lower" {% if s.password_require_lower=='1' %}checked{% endif %}> Exigir letra minúscula</label>
+      <label class="checkbox-label span2"><input type="checkbox" name="password_require_digit" {% if s.password_require_digit=='1' %}checked{% endif %}> Exigir número</label>
+    </fieldset>
+
+    <fieldset class="cfg-bloco cfg-listas span2">
+      <legend>Listas do balcão</legend>
+      <label class="cfg-lista">Classificações<textarea name="categories" rows="9">{{categories}}</textarea></label>
+      <label class="cfg-lista">Vias de entrada<textarea name="sources" rows="9">{{sources}}</textarea></label>
+      <label class="cfg-lista">Setores<textarea name="sectors" rows="7">{{sectors}}</textarea></label>
+    </fieldset>
+    <div class="span2"><button class="primary">Salvar configurações</button></div>
+  </form>
+  <p class="muted small">Pasta de dados interna: {{data_dir}}</p><p class="muted small">Para uso em rede, mantenha o host em <strong>0.0.0.0</strong>. O instalador oficial configura firewall e descoberta automática.</p>
+</section>
+<section class="panel" id="cfg-centrais">
+  <h2>Centrais — credenciais das APIs</h2>
+  {# O PAINEL DE STATUS (fila generica, falhas, log) mora em rota propria,
+     de leitura, aberta tambem ao MANAGER e ao AUDITOR — esta secao e so do
+     ADMIN e grava credencial. Marco (a) da base comum, 05/10/2026. #}
+  <p class="muted small">Fila de envio, últimas falhas e log das Centrais:
+    <a href="{{ url_for('centrais_status') }}">Centrais — status das filas</a>.</p>
+  {# O TITULO DIZIA «Centrais de Protesto», E DEIXOU DE SER VERDADE em
+     03/09/2026, quando a ONRTDPJ entrou nesta tabela: ela e do RCPJ e do
+     RTD, e nao do Protesto. Quem procurasse o token dela sob um titulo
+     de Protesto nao olharia aqui. #}
+  {# A SENHA NAO ENTRA NO BANCO, e por isso este formulario tem rota propria.
+     O de cima grava em `settings`, que viaja no backup; este grava num arquivo
+     em %PROGRAMDATA%, ao lado do do selador e do da chave do Claude.
+
+     E a tela NUNCA recebe a senha de volta — nem mascarada: senha mascarada
+     no HTML continua dizendo o tamanho dela. O que ela mostra e se ja foi
+     informada e qual e o usuario. #}
+  <p class="muted small">
+    A senha é gravada <strong>fora do banco</strong>, em
+    <code>%PROGRAMDATA%\CartorioGestao\</code> — o banco viaja no backup.
+    Ela nunca é mostrada de volta nesta tela.
+  </p>
+  <div class="table-wrap cfg-centrais-tabela">
+  <table class="tabela">
+    <thead><tr><th>Central</th><th>Ambiente</th><th>Situação</th><th>Usuário e senha</th></tr></thead>
+    <tbody>
+    {% for c in (centrais or []) %}
+      <tr>
+        <td>{{ c.nome }}</td>
+        <td>{% if c.ambiente == 'TESTES' %}Testes{% elif c.ambiente == 'HOMOLOGACAO' %}Homologação{% else %}Produção{% endif %}</td>
+        {# O QUE CADA CENTRAL GUARDA NÃO É A MESMA COISA. As duas de Protesto
+           guardam usuário e senha; a ONRTDPJ guarda um TOKEN, gerado pelo
+           próprio cartório na Central. Oferecer campo de usuário para ela faria
+           alguém preenchê-lo com o CNS só para a tela deixar salvar — e o
+           arquivo passaria a dizer que guarda uma coisa guardando outra. #}
+        <td>{% if c.informada %}<strong>{{ 'informado' if c.forma == 'TOKEN' else 'informada' }}</strong>{% if c.usuario %} — usuário <code>{{ c.usuario }}</code>{% endif %}{% else %}<span class="muted">{{ 'não informado' if c.forma == 'TOKEN' else 'não informada' }}</span>{% endif %}</td>
+        <td>
+          <form method="post" action="{{ url_for('configuracoes_central') }}" class="linha-credencial">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="central" value="{{ c.central }}">
+            <input type="hidden" name="ambiente" value="{{ c.ambiente }}">
+            {% if c.forma == 'TOKEN' %}
+            <input name="token" type="password" placeholder="token da Central" autocomplete="new-password" size="34">
+            {% else %}
+            {# O RÓTULO É O NOME QUE A CENTRAL USA. No ONR o par é
+               `client_id` + `client secret`, e escrever «usuário» ali manda o
+               oficial procurar na Central o que ela não tem. #}
+            <input name="usuario" placeholder="{{ c.rotulos[0] }}" autocomplete="off" value="{{ c.usuario }}">
+            <input name="senha" type="password" placeholder="{{ c.rotulos[1] }}" autocomplete="new-password">
+            {% endif %}
+            <button class="primary" name="acao" value="gravar">Guardar</button>
+            {% if c.informada %}<button name="acao" value="apagar">Retirar</button>{% endif %}
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small cfg-centrais-ajuda">
+    A do <strong>ONR</strong> é um <strong>par</strong> — `client_id` e
+    `client secret` —, e não usuário e senha: ele é a única das cinco cujo
+    contrato declara os dois endereços e o caminho que troca o par por um
+    token, de modo que o sistema o renova sozinho.
+    <br>    A da <strong>CENPROT</strong> é a que você cadastrou em Cadastro → Cadastro
+    do Cartório → «Informações de Autenticação da API». A da <strong>CRA</strong>
+    é a que o IEPTB-MA fornece — comece pela de homologação.
+    <br>A da <strong>Central ONRTDPJ</strong> é um <strong>token</strong>, e não
+    uma senha: entre em <code>rtdbrasil.org.br</code>, vá em
+    <strong>Serviços → Envio Extrato SINTER</strong> e copie o token de lá.
+    {#
+      O MENU CHAMA-SE «SINTER» E O SINTER FOI DESLIGADO — e isso precisa estar
+      escrito, senão quem souber da notícia conclui que o token morreu junto e
+      não vai procurar.
+
+      A Receita Federal comunicou em 24/08/2023 que **desabilitou o recebimento
+      de informações pelo SINTER no formato de então**, e que os cartórios não
+      devem mais enviar. O que foi desligado é o ENVIO ao SINTER; o token que
+      aquele menu gera **continua existindo e continua servindo à API da
+      Central** — conferido pelo oficial em 03/09/2026, que o encontrou lá.
+    #}
+    <br><span class="muted">O menu chama-se «SINTER» e isso confunde: a Receita
+    Federal desligou o <strong>envio</strong> ao SINTER em 24/08/2023, mas o
+    <strong>token</strong> gerado ali continua sendo o da API da Central —
+    conferido em 03/09/2026.</span>
+    <br>Se o cartório ainda não tiver acesso àquele ambiente,
+    cadastre-se como pessoa física e peça por e-mail a
+    <code>atendimento@onrtdpj.org.br</code> que o CPF seja vinculado à
+    serventia. <strong>Ela tem um ambiente só, e é o de produção</strong> — o
+    contrato dela não declara homologação, e o sistema não inventa uma.
+    {# **A LINHA DO SIRC NÃO TINHA UMA FRASE SEQUER — relatado pelo
+       oficial em 14/09/2026: "não achei onde colocar a credencial de
+       acesso ao sirc. eh a mesma que eu uso pra acessar?"** As outras
+       quatro Centrais desta lista têm parágrafo próprio dizendo de onde
+       vem a credencial; o SIRC só aparecia na tabela, com «usuário»/
+       «senha» genéricos e nenhuma explicação — a mesma tela silenciosa
+       que já fez o oficial procurar em vão a credencial do ONRTDPJ antes
+       de este parágrafo existir. #}
+    <div class="cfg-centrais-opcoes">
+    <label class="checkbox-label"><input type="checkbox" name="cra_auto_enviar_homolog"
+      {% if s.cra_auto_enviar_homolog != '0' %}checked{% endif %}>
+      Enviar confirmação e andamento à CRA automaticamente após receber remessa
+      (homologação)</label>
+    <label class="checkbox-label"><input type="checkbox" name="cra_auto_enviar_producao"
+      {% if s.cra_auto_enviar_producao == '1' %}checked{% endif %}>
+      O mesmo em produção (desligado por padrão — ligue só quando a operação
+      estiver validada)</label>
+    </div>
+    <br><strong>A do SIRC</strong> é a <strong>mesma senha que você já usa
+    para entrar no site <code>sirc.dataprev.gov.br</code></strong> pelo
+    navegador (o SIRC-Web) — não é a senha deste sistema, nem a de nenhuma
+    outra Central desta lista, que guardam cada uma a sua. Ela
+    <strong>tem um ambiente só, e é o de produção</strong> — o WSDL
+    público (<code>SircWs/Movimento?wsdl</code>) só declara um endereço.
+  </p>
+</section>
+<section class="panel" id="cfg-admin">
+  <h2>Administração</h2>
+  <div class="actions">
+    <form method="post" action="{{url_for('backup')}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button class="primary">Criar e baixar backup completo</button></form>
+    <a class="button" href="{{url_for('integrity')}}">Verificar integridade dos anexos</a>
+  </div>
+</section>
+</div>
+{% endblock %}

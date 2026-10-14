@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}O que a ajuda sabe do projeto{% endblock %}
+{% block content %}
+<h1>O que a ajuda sabe do projeto</h1>
+
+<p class="muted">
+  Esta tela <strong>só mostra</strong> — não pergunta nada e não gasta consulta.
+  É o que vai junto quando você pede à ajuda para ler um problema.
+</p>
+
+<div class="card">
+  <p><strong>Versão {{ versao }}</strong> ·
+     {{ r.quantos_documentos }} documentos do projeto ·
+     {{ r.relatos.quantos_abertos }} relatos em aberto de {{ r.relatos.quantos }} ·
+     {{ r.pendencias|length }} pendências que só você pode informar</p>
+  <p class="small muted">
+    <strong>«Em aberto» quer dizer que ninguém marcou como resolvido nesta
+    tela</strong> — e não que nada foi feito. Nada se fecha sozinho: quem fecha
+    é você, em <a href="{{ url_for('ajuda_problemas') }}">Problemas do sistema</a>.
+  </p>
+</div>
+
+{% if r.pendencias %}
+<h2>O que só você pode informar ({{ r.pendencias|length }})</h2>
+<ul>
+{% for p in r.pendencias %}
+  <li>{{ p.titulo or p.serie }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+
+<h2>Os documentos do projeto ({{ r.quantos_documentos }})</h2>
+<p class="muted small">
+  O que vai em toda leitura é esta <strong>lista</strong>, e não os textos: são
+  mais de um milhão de caracteres, e a API cobra por uso. O texto de um
+  documento vai quando é pedido pelo nome.
+</p>
+<table>
+  <thead><tr><th>Documento</th><th>O que é</th><th></th></tr></thead>
+  <tbody>
+  {% for d in r.documentos %}
+    <tr>
+      <td><code>{{ d.arquivo }}</code></td>
+      <td><strong>{{ d.titulo }}</strong>
+          {% if d.gancho %}<br><span class="small muted">{{ d.gancho }}</span>{% endif %}</td>
+      <td><a href="{{ url_for('ajuda_projeto', documento=d.arquivo) }}">ler</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if doc %}
+<hr>
+<h2>{{ doc.titulo }} <span class="small muted">— {{ doc.arquivo }}</span></h2>
+{% if doc.cortado %}
+<p class="small muted"><strong>Este documento foi cortado</strong> para caber
+numa consulta — o que está abaixo é o começo dele.</p>
+{% endif %}
+<pre style="white-space:pre-wrap">{{ doc.texto }}</pre>
+<p><a class="button secondary" href="{{ url_for('ajuda_projeto') }}">Fechar</a></p>
+{% endif %}
+
+<hr>
+<h2>O texto que sairia</h2>
+<p class="muted small">
+  É exatamente isto que acompanha a pergunta quando você pede à ajuda para ler
+  um problema — montado pela mesma função, e não por uma cópia parecida.
+  <strong>{{ texto|length }} caracteres.</strong>
+</p>
+<details>
+  <summary>ver o texto inteiro</summary>
+  <pre style="white-space:pre-wrap">{{ texto }}</pre>
+</details>
+{% endblock %}

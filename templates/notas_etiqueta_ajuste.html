@@ -1,0 +1,198 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Ajustar a etiqueta na impressora</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_reconhecimentos') }}">&larr; Reconhecimentos</a>
+</div>
+
+{#
+  POR QUE ESTA TELA EXISTE.
+
+  Impressora térmica nunca encaixa de primeira. O rolo vem com meio milímetro a
+  mais de entrelinha, o driver assume uma margem que não existe, e o texto sai
+  para cima — e nada disso se descobre antes de imprimir a primeira tira.
+
+  Se o ajuste morasse no código, cada meio milímetro seria uma atualização do
+  sistema. Aqui é a serventia que acerta, em dois minutos, com a régua ao lado.
+#}
+<div class="notice">
+  <strong>Como acertar sem gastar o rolo.</strong> Imprima a página de teste numa folha
+  comum, ponha uma etiqueta em cima contra a luz e veja o quanto está fora. Corrija aqui e
+  repita. Só depois de encaixar é que vale imprimir na tira.
+  <br><span class="small">Na janela de impressão, escala em <strong>100%</strong> — “ajustar
+  à página” encolhe tudo e o teste deixa de valer.</span>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Medidas</span>
+    <span class="small muted">padrão: {{ padrao.etiqueta_largura_mm }}&times;{{ padrao.etiqueta_altura_mm }} mm</span></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Largura (mm)
+      <input name="etiqueta_largura_mm" value="{{ m.etiqueta_largura_mm }}" required></label>
+    <label>Altura (mm)
+      <input name="etiqueta_altura_mm" value="{{ m.etiqueta_altura_mm }}" required></label>
+    <label>Margem interna (mm)
+      <input name="etiqueta_margem_mm" value="{{ m.etiqueta_margem_mm }}" required>
+      <span class="small muted">o quanto o texto se afasta da borda da tira</span></label>
+    <label>Corpo da letra (pt)
+      <input name="etiqueta_corpo_pt" value="{{ m.etiqueta_corpo_pt }}" required>
+      <span class="small muted">não cabendo o teor, diminua meio ponto por vez</span></label>
+    <label>Deslocar na horizontal (mm)
+      <input name="etiqueta_deslocamento_x_mm" value="{{ m.etiqueta_deslocamento_x_mm }}" required>
+      <span class="small muted">negativo puxa para a esquerda</span></label>
+    <label>Deslocar na vertical (mm)
+      <input name="etiqueta_deslocamento_y_mm" value="{{ m.etiqueta_deslocamento_y_mm }}" required>
+      <span class="small muted">negativo puxa para cima</span></label>
+    <label>Entrelinha
+      <input name="etiqueta_entrelinha" value="{{ m.etiqueta_entrelinha }}" required>
+      <span class="small muted">1,15 é o normal; 1,0 aperta as linhas</span></label>
+    <label>Tamanho do QR (mm)
+      <input name="etiqueta_qr_mm" value="{{ m.etiqueta_qr_mm }}" required>
+      <span class="small muted">testei a leitura em 14, 16 e 18 mm nas duas
+        resoluções de térmica; abaixo de 14 começa a falhar</span></label>
+
+    {#
+      O CONTEÚDO DO QR É CAMPO, E NÃO CÓDIGO. O porquê:
+
+      O portal do selo eletrônico do TJMA é o https://selo.tjma.jus.br/, e o
+      endereço que abre a consulta JÁ VALIDADA foi medido nele em 24/09/2026:
+      `#/resumo/<selo>`. A forma antiga, `?selo=<selo>`, abre a tela de
+      digitar — o portal é uma aplicação que só lê o que vem depois do «#».
+
+      O padrão abaixo leva ao portal certo nos dois casos — aceito o parâmetro,
+      abre preenchido; ignorado, abre a tela de consulta e o número está
+      impresso na etiqueta, ao lado do QR. Nenhum dos dois quebra.
+
+      No dia em que a corregedoria publicar o link oficial, é este campo.
+    #}
+    <label class="span2">O que o QR carrega
+      <input name="{{ qr_campo }}" value="{{ qr_url }}" style="font-family:Consolas,monospace">
+      <span class="small muted">
+        <code>{{ '{selo}' }}</code> vira o número do selo e <code>{{ '{codigo}' }}</code>
+        o código de segurança. Em branco, o QR carrega só o número do selo.
+        Padrão: <code>{{ qr_url_padrao }}</code>
+      </span></label>
+    <div class="span2">
+      <button class="primary">Guardar medidas</button>
+      <button type="button" onclick="window.print()">Imprimir página de teste</button>
+      <span class="small muted">O teste sai com régua e com a borda da etiqueta desenhada.</span>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Como vai sair</span>
+    <span class="small muted">{{ m.etiqueta_largura_mm }}&times;{{ m.etiqueta_altura_mm }} mm em tamanho real</span></div>
+  <div style="padding:14px">
+    <div class="etiqueta-teste">
+      <div class="etiqueta-regua"></div>
+      <div class="etiqueta-borda">
+        <div class="etiqueta-corpo">
+          <div class="etiqueta-coluna">
+            <div class="etiqueta-teor">{{ e.texto }}</div>
+            <div class="etiqueta-rodape">
+              <div>
+                <div class="etiqueta-selo">{{ e.selo }}</div>
+                <div class="etiqueta-codigo">{{ e.codigo }}</div>
+                {# A LINHA DE VALORES APARECE AQUI TAMBEM, e nao por capricho:
+                   e ela que mais estoura na tira, e ajustar o tamanho sem
+                   ve-la seria ajustar pela etiqueta errada.
+
+                   **E ESTE DESENHO E UMA SEGUNDA COPIA DO DE `notas_etiqueta.
+                   html`**, com as classes prefixadas — duplicacao anterior a
+                   esta passada, achada em 01/09/2026. Enquanto ela existir,
+                   toda mudanca no desenho tem de ser feita nos dois. #}
+                {% if e.valores %}<div class="etiqueta-valores">{{ e.valores }}</div>{% endif %}
+              </div>
+              <div style="text-align:right;white-space:nowrap">
+                <div>{{ e.oficial }}</div>
+                <div>{{ e.funcao }}</div>
+              </div>
+            </div>
+          </div>
+          {% if e.qr %}
+          <div class="etiqueta-qr">
+            {{ e.qr|safe }}
+            <div class="etiqueta-qr-rotulo">confira o selo<br>selo.tjma.jus.br</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <p class="small muted" style="margin-top:12px">
+      Exemplo com dados de mentira — nenhum ato de verdade é impresso aqui.
+    </p>
+    {% if e.qr %}
+    <p class="small muted">
+      <strong>Confira o QR com o celular antes de usar no balcão.</strong> Ele deve abrir
+      <code>{{ e.qr_texto }}</code>. Não abrindo a consulta que você espera, ajuste o
+      campo <em>O que o QR carrega</em> acima — o número do selo sai impresso ao lado de
+      qualquer forma.
+    </p>
+    {% elif not e.qr_possivel %}
+    <div class="notice warning" style="margin-top:12px">
+      <strong>O QR não pode ser gerado nesta instalação</strong> — falta a biblioteca
+      <code>segno</code> no servidor. As etiquetas saem com o número do selo, sem o QR.
+      Rode o <code>ATUALIZAR_SISTEMA.cmd</code>: ele instala o que falta.
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<style>
+  /* Tamanho real na tela depende do monitor; no papel, é exato — e é o papel
+     que interessa, porque é contra o papel que a etiqueta vai ser conferida. */
+  @media print {
+    @page { size: A4; margin: 12mm; }
+    .sidebar, .topbar, .actions, .notice, form, .panel-head, button { display: none !important; }
+    .main { margin: 0; width: 100%; }
+    .panel { border: 0; box-shadow: none; padding: 0; }
+  }
+  .etiqueta-teste { position: relative; padding-top: 7mm; }
+  /* A régua em milímetros: 10 em 10, para medir o desencontro sem chutar. */
+  .etiqueta-regua {
+    height: 5mm; width: {{ m.etiqueta_largura_mm }}mm;
+    background: repeating-linear-gradient(to right,
+      #17202a 0 .2mm, transparent .2mm 10mm);
+    border-bottom: .2mm solid #17202a;
+    margin-bottom: 2mm;
+  }
+  .etiqueta-borda {
+    width: {{ m.etiqueta_largura_mm }}mm;
+    height: {{ m.etiqueta_altura_mm }}mm;
+    border: .2mm dashed #b42318;
+    box-sizing: border-box;
+    background: #fff;
+  }
+  .etiqueta-corpo {
+    width: 100%; height: 100%;
+    padding: {{ m.etiqueta_margem_mm }}mm;
+    transform: translate({{ m.etiqueta_deslocamento_x_mm }}mm,
+                         {{ m.etiqueta_deslocamento_y_mm }}mm);
+    box-sizing: border-box; overflow: hidden;
+    display: flex; gap: 2mm;
+    font-family: "Arial Narrow", Arial, sans-serif;
+    font-size: {{ m.etiqueta_corpo_pt }}pt;
+    line-height: {{ m.etiqueta_entrelinha }};
+    color: #000;
+  }
+  .etiqueta-coluna { flex: 1; min-width: 0; display: flex;
+    flex-direction: column; justify-content: space-between; }
+  .etiqueta-qr { flex: 0 0 auto; width: {{ m.etiqueta_qr_mm }}mm;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: .6mm; }
+  .etiqueta-qr svg { display: block; width: {{ m.etiqueta_qr_mm }}mm;
+    height: {{ m.etiqueta_qr_mm }}mm; }
+  .etiqueta-qr-rotulo { font-size: {{ (m.etiqueta_corpo_pt * 0.62)|round(2) }}pt;
+    text-align: center; line-height: 1.1; }
+  .etiqueta-teor { font-weight: 700; text-align: justify; }
+  .etiqueta-rodape { display: flex; justify-content: space-between; align-items: flex-end;
+    gap: 3mm; font-size: {{ (m.etiqueta_corpo_pt * 0.86)|round(2) }}pt; }
+  .etiqueta-selo { font-family: Consolas, monospace; font-weight: 700; letter-spacing: -.15px; }
+  .etiqueta-codigo { font-family: Consolas, monospace; letter-spacing: -.2px; }
+  .etiqueta-valores { font-family: Consolas, monospace; letter-spacing: -.2px;
+                      font-size: {{ (m.etiqueta_corpo_pt * 0.70)|round(2) }}pt;
+                      line-height: 1.15; }
+</style>
+{% endblock %}

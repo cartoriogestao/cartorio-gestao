@@ -1,0 +1,17 @@
+/* Complemento do editor unificado (Marco 1) — coerente com modelos-editor.css */
+.me-hist{min-width:min(720px,92vw);max-width:920px;padding:12px 16px}
+.me-hist header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.me-hist-row{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #e8ebef;font-size:.85rem}
+.me-diff{max-height:280px;overflow:auto;background:#0f1720;color:#d7e2ef;padding:10px;border-radius:8px;font:12px/1.45 ui-monospace,Consolas,monospace}
+#me-hist-dialog{border:1px solid #cfd6de;border-radius:12px;padding:0}
+.modelos-previa-topo select{font-size:.75rem;margin:0 6px}
+.modelos-previa-topo button{font-size:.75rem}
+[data-me-erros], [data-me-aviso-previa]{white-space:pre-wrap}
+
+/* Marco 2 — trechos bloqueados e PDF fiel */
+.me-bloqueados-lista{display:flex;flex-direction:column;gap:8px;max-height:220px;overflow:auto}
+.me-bloco-travado{border:1px dashed #b08900;background:#fffbeb;border-radius:8px;padding:8px 10px;font-size:.8rem;user-select:none}
+.me-bloco-travado .me-cadeado{margin-right:6px}
+.me-bloco-travado code{color:#7a5b00;font-weight:700}
+.me-bloco-travado .me-bloco-texto{margin:4px 0;color:#3d3a2e;white-space:pre-wrap}
+.me-bloco-travado small{color:#8a7a40;display:block}

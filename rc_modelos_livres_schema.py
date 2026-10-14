@@ -1,0 +1,131 @@
+"""Onde moram os modelos que o escrevente escreve — o módulo Modelos do E-Ofício.
+
+    «copie o modulo de modelos do e-oficio e vamos implementar no nosso
+     sistema» — o oficial, 07/09/2026.
+
+O QUE SE MEDIU NO E-OFÍCIO, EM 07/09/2026
+    O módulo é **uma tabela só**, `tbModelosRCPN`, com **13 linhas** nesta
+    casa. Medido no `bdCartorio` do SQL Server, só leitura:
+
+    | coluna | o que é | usada? |
+    |---|---|---|
+    | `strDescricao` | o nome do modelo | **sim**, nas 13 |
+    | `intTipoRCPN` | 1 nascimento · 2 casamento · 3 óbito | **sim**, nas 13 |
+    | `memTexto` | o texto, em RTF | **sim**, nas 13 |
+    | `bitAtivo` | se aparece na lista | **sim** — as 13 ativas |
+    | `memTextoPadrao` | — | **NULA nas 13** |
+    | `memTextoInteiroTeor` | — | **NULA nas 13** |
+    | `memCertidaoInteiroTeor` | — | **NULA nas 13** |
+    | `bitGuiaCliente` · `intGuiaCliente` | — | **False/0 nas 13** |
+    | `intTipo` | — | **NULA nas 13** |
+
+    **Cinco das onze colunas nunca foram usadas, e por isso não foram
+    copiadas.** Copiar coluna vazia seria copiar a intenção de alguém, e não o
+    módulo: a tela teria campo que ninguém preenche e o escrevente perguntaria
+    para que serve. O que o módulo **é**, medido pelo que ele guarda, são
+    quatro coisas: **nome, espécie, texto e se está ativo.**
+
+    > **E `tbRI_Modelo_RA` existe, com duas linhas — «Modelo Registro» e
+    > «Modelo Averbação» — e as duas têm 820 bytes de cabeçalho RTF e TEXTO
+    > NENHUM.** São modelos em branco. O módulo de modelos do E-Ofício que
+    > funciona é o do Registro Civil, e é esse que está copiado aqui.
+
+A ESPÉCIE FAZ PARTE DA CHAVE, e não é enfeite: o claro `{causa_morte}` não
+existe no nascimento, e um modelo de óbito escolhido para um nascimento
+imprimiria um documento com buraco. A tela só oferece os modelos da espécie do
+assento, e `montar` recusa o que não bate.
+
+O TEXTO NÃO É RTF AQUI. No E-Ofício ele é, porque lá o editor é do Windows;
+aqui o modelo é texto com claros `{campo}`, o mesmo formato dos três termos do
+livro (`rc_modelos_do_livro`). **Dois formatos de claro na mesma casa seria a
+armadilha que `modelos_da_casa` já documenta** — quem escrevesse no formato
+errado descobriria pela recusa, e não antes dela.
+
+O QUE ESTE MÓDULO NÃO FAZ
+    **Não lavra ato, e não é o termo.** O termo do livro tem lugar próprio, é
+    montado dos requisitos legais e foi decisão do oficial em 30/08/2026 que
+    ele **não** saísse dos modelos do E-Ofício. Aqui é o outro lado: os papéis
+    avulsos que o balcão escreve em volta do ato — comunicação, requerimento,
+    declaração, ofício —, que no E-Ofício eram justamente estes 13.
+"""
+from __future__ import annotations
+
+import sqlite3
+
+# AS ESPÉCIES QUE UM MODELO PODE TER.
+#
+#   São as três do `intTipoRCPN` do E-Ofício — 1, 2 e 3 —, e são também as três
+#   para as quais **há vocabulário de claros medido** neste sistema. Acrescentar
+#   PROCLAMAS ou NATIMORTO aqui daria modelo que a tela oferece e `montar` não
+#   sabe preencher: função pronta que nenhuma tela chama, na versão pior, que é
+#   a tela que promete o que o sistema não faz.
+NASCIMENTO = "NASCIMENTO"
+CASAMENTO = "CASAMENTO"
+OBITO = "OBITO"
+
+ESPECIES: tuple[str, ...] = (NASCIMENTO, CASAMENTO, OBITO)
+
+# O de-para do `intTipoRCPN` do E-Ofício é **1 = nascimento, 2 = casamento,
+# 3 = óbito**, medido nas 13 linhas de `tbModelosRCPN`. Ele fica escrito aqui e
+# **não vira constante**: nada neste sistema lê aquela tabela, e constante que
+# ninguém usa é a mesma armadilha da função pronta que nenhuma tela chama.
+NOME_DA_ESPECIE: dict[str, str] = {
+    NASCIMENTO: "Nascimento",
+    CASAMENTO: "Casamento",
+    OBITO: "Óbito",
+}
+
+# O TAMANHO MÁXIMO DO NOME é o do E-Ofício: `strDescricao varchar(200)`.
+# **O maior dos 13 tem 58 caracteres** («Investigação da paternidade de filhos
+# - Modelo Oficial Juiz»), de modo que 200 sobra — e o limite existe para que
+# um nome colado por engano de um texto inteiro não vire o rótulo da lista.
+TAMANHO_DO_NOME = 200
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS rc_modelos_livres (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- NASCIMENTO | CASAMENTO | OBITO — o `intTipoRCPN` do E-Ofício, por nome.
+    especie TEXT NOT NULL,
+    nome TEXT NOT NULL,
+    corpo TEXT NOT NULL,
+
+    -- `bitAtivo`. Desativar não é apagar: o modelo sai da lista de quem emite
+    -- e continua existindo para quem administra. Apagar um modelo que já
+    -- imprimiu documento tira da casa a forma do que ela assinou.
+    ativo INTEGER NOT NULL DEFAULT 1,
+
+    criado_em TEXT NOT NULL,
+    criado_por TEXT,
+    atualizado_em TEXT,
+    atualizado_por TEXT
+);
+
+-- DOIS MODELOS COM O MESMO NOME NA MESMA ESPÉCIE não se distinguem na lista, e
+-- a lista é por onde o escrevente escolhe. A espécie entra na chave porque
+-- «Termo» existe no nascimento e no óbito do E-Ofício — medido: as linhas 11 e
+-- 14 de `tbModelosRCPN` se chamam as duas «Termo».
+CREATE UNIQUE INDEX IF NOT EXISTS ux_rc_modelos_livres_nome
+    ON rc_modelos_livres(especie, nome);
+
+CREATE INDEX IF NOT EXISTS idx_rc_modelos_livres_especie
+    ON rc_modelos_livres(especie, ativo, nome);
+"""
+
+# Colunas acrescentadas depois. Aditivo, no padrão do sistema — e índice sobre
+# coluna de migração **não vai aqui**: vai em `INDICES_DEPOIS_DA_MIGRACAO`.
+MIGRACOES: tuple[tuple[str, str, str], ...] = ()
+
+INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = ()
+
+
+def init_rc_modelos_livres_schema(con: sqlite3.Connection) -> None:
+    """Cria a tabela dos modelos do escrevente. Idempotente."""
+    con.executescript(SCHEMA)
+    for tabela, coluna, tipo in MIGRACOES:
+        existentes = {linha[1] for linha in con.execute(
+            f"PRAGMA table_info({tabela})")}
+        if coluna not in existentes:
+            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+    for comando in INDICES_DEPOIS_DA_MIGRACAO:
+        con.execute(comando)

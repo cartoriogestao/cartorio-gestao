@@ -1,0 +1,131 @@
+"""Onde mora a FILA GENÉRICA das Centrais, e o LOG estruturado delas.
+
+Construído em 05/10/2026, marco (a) da base comum das integrações.
+
+**A FILA É GENÉRICA E PARALELA.** As filas de hoje são por domínio —
+`cn_pendencias`, `pt_*`, `ri_onr_envios` — e continuam onde estão: esta etapa
+não migra nenhuma. A nova serve a quem chegar agora (CENPROT/CRA21 na etapa b,
+Notas/RI depois) e guarda só o que é comum a todas: **qual Central, qual
+operação, em que ambiente, o que mandar (por REFERÊNCIA), em que pé está,
+quantas tentativas, o último erro e os carimbos de hora.**
+
+**O PAYLOAD VAI POR REFERÊNCIA, e não por conteúdo.** `payload_ref` aponta
+para onde o corpo mora (`tabela:id`, caminho do arquivo no acervo) — e não
+traz o corpo. O banco viaja no backup, e corpo de remessa leva CPF, nome e
+endereço de gente; a fila não precisa ser mais um lugar onde isso mora.
+
+**O AMBIENTE FAZ PARTE DA CHAVE** — a lição da CENPROT e do ONR: sem ele, o
+primeiro envio de teste ocuparia o lugar do primeiro de verdade.
+
+**ENVIADO NÃO É CONFIRMADO** — a lição do ONR e do e-Proclamas (HTTP 200 lido
+como publicação feita). Por isso são duas situações.
+
+**O LOG TAMBÉM MORA AQUI**, numa tabela própria, porque é a mesma vida: o que
+se tentou, quando, com que resposta. Ele nunca guarda segredo nem corpo —
+quem garante é `centrais_log.sanitizar`.
+
+**SEM MIGRAÇÃO, E POR ISSO SEM LAÇO DE `ALTER TABLE`.** Este módulo nasce sem
+colunas acrescentadas; no dia em que precisar de uma, entra o padrão de
+`ri_onr_central_schema` (MIGRACOES + INDICES_DEPOIS_DA_MIGRACAO) **e o nome
+deste arquivo entra em `DONOS_DO_PRAGMA`** de `tests/test_portabilidade.py`.
+"""
+from __future__ import annotations
+
+import sqlite3
+
+# AS SITUAÇÕES DA FILA.
+#
+#   PENDENTE     espera a vez (inclusive depois de uma falha que se retenta)
+#   PROCESSANDO  alguém pegou e está falando com a Central agora
+#   ENVIADO      a Central recebeu (HTTP 2xx) — **não quer dizer aceito**
+#   CONFIRMADO   a Central confirmou o processamento (quando ela tem isso)
+#   FALHOU       esgotou as tentativas, ou a falha é definitiva (4xx de regra)
+#   CANCELADO    alguém tirou da fila de propósito
+PENDENTE = "PENDENTE"
+PROCESSANDO = "PROCESSANDO"
+ENVIADO = "ENVIADO"
+CONFIRMADO = "CONFIRMADO"
+FALHOU = "FALHOU"
+CANCELADO = "CANCELADO"
+
+SITUACOES: tuple[str, ...] = (PENDENTE, PROCESSANDO, ENVIADO, CONFIRMADO,
+                              FALHOU, CANCELADO)
+
+# O QUE AINDA PEDE TRABALHO — é o que o painel conta como «em aberto».
+SITUACOES_EM_ABERTO: frozenset[str] = frozenset({PENDENTE, PROCESSANDO})
+
+# O QUE SE PODE MANDAR DE VOLTA PARA A FILA À MÃO (reprocesso local).
+SITUACOES_REPROCESSAVEIS: frozenset[str] = frozenset({FALHOU, CANCELADO})
+
+# OS NÍVEIS DO LOG.
+INFO, AVISO, ERRO = "INFO", "AVISO", "ERRO"
+NIVEIS: tuple[str, ...] = (INFO, AVISO, ERRO)
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS centrais_fila (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    central TEXT NOT NULL,                  -- a chave de centrais_cred (CRA, CENPROT…)
+    operacao TEXT NOT NULL,                 -- o nome que o módulo de domínio dá
+    ambiente TEXT NOT NULL DEFAULT 'HOMOLOGACAO',
+
+    -- ONDE O CORPO MORA, e não o corpo. Ver o cabeçalho.
+    payload_ref TEXT NOT NULL,
+
+    -- O MESMO PEDIDO NÃO ENTRA DUAS VEZES, quando quem enfileira sabe dizer
+    -- o que o torna único (ex.: `remessa:B2370508.261`).
+    chave TEXT,
+
+    status TEXT NOT NULL DEFAULT 'PENDENTE',
+    tentativas INTEGER NOT NULL DEFAULT 0,
+    max_tentativas INTEGER NOT NULL DEFAULT 5,
+    erro TEXT,                              -- o último, já sanitizado
+    resposta_ref TEXT,                      -- protocolo/identificador devolvido
+
+    proxima_tentativa_em TEXT,              -- NULL = já pode
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL,
+    enviado_em TEXT,
+    confirmado_em TEXT,
+    criado_por TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_centrais_fila_vez
+    ON centrais_fila(status, central, proxima_tentativa_em);
+CREATE INDEX IF NOT EXISTS idx_centrais_fila_central
+    ON centrais_fila(central, operacao, atualizado_em);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_centrais_fila_chave
+    ON centrais_fila(central, operacao, ambiente, chave)
+    WHERE chave IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS centrais_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    quando TEXT NOT NULL,
+    central TEXT NOT NULL,
+    operacao TEXT NOT NULL,
+    ambiente TEXT,
+    nivel TEXT NOT NULL DEFAULT 'INFO',     -- INFO | AVISO | ERRO
+    evento TEXT NOT NULL,                   -- REQUISICAO, ENFILEIRADO, FALHA…
+    fila_id INTEGER REFERENCES centrais_fila(id) ON DELETE SET NULL,
+    status_http INTEGER,
+    duracao_ms INTEGER,
+    mensagem TEXT,
+    detalhe TEXT                            -- JSON sanitizado, sem segredo
+);
+
+CREATE INDEX IF NOT EXISTS idx_centrais_log_central
+    ON centrais_log(central, operacao, quando);
+CREATE INDEX IF NOT EXISTS idx_centrais_log_nivel
+    ON centrais_log(nivel, quando);
+CREATE INDEX IF NOT EXISTS idx_centrais_log_fila
+    ON centrais_log(fila_id);
+"""
+
+# Sem colunas de migração por enquanto — ver o cabeçalho.
+MIGRACOES: tuple[tuple[str, str, str], ...] = ()
+INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = ()
+
+
+def init_centrais_schema(con: sqlite3.Connection) -> None:
+    """Cria a fila genérica e o log das Centrais. Idempotente."""
+    con.executescript(SCHEMA)

@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Trazer protesto do E-Ofício <small>(ao vivo)</small></h1>{% endblock %}
+{% block content %}
+{% from "_manual_de_importacao.html" import manual_para_baixar %}
+{{ manual_para_baixar() }}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_painel') }}">&larr; O roteiro</a>
+  <a class="button" href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a>
+  <a class="button" href="{{ url_for('atribuicoes_importar') }}">Carga de todas as atribuições</a>
+</div>
+
+<div class="notice">
+  Traz os <strong>títulos de protesto</strong> do E-Ofício <strong>ao vivo</strong>
+  (MSSQL <code>bdCartorio</code> na instância <code>SERVER</code>), não do
+  snapshot <code>acervo_eoficio.sqlite3</code>. Antes da carga, o sistema puxa
+  <code>tbAvisoProtesto</code> e <code>tbPessoa</code> do banco ao vivo; a
+  <strong>chave CENPROT</strong> entra quando já está em
+  <code>strChaveUnicaCENPROT</code>, e <strong>PAGO</strong> quando
+  <code>strTipoPG</code> veio preenchido. Pode rodar quantas vezes precisar: o
+  que já entrou não entra de novo, e chave que já está no título não se
+  sobrescreve.
+</div>
+
+{% if not tem_acervo %}
+<div class="notice">
+  Ainda não há <code>{{ caminho_acervo }}</code> no disco. Na primeira carga ao
+  vivo ele será criado só com as tabelas de protesto puxadas do E-Ofício.
+</div>
+{% endif %}
+
+<section class="cards">
+  <div class="stat"><strong>{{ contagens.titulos }}</strong><small>Títulos</small></div>
+  <div class="stat"><strong>{{ contagens.com_chave }}</strong><small>Com chave CENPROT</small></div>
+  <div class="stat"><strong>{{ contagens.sem_chave }}</strong><small>Sem chave</small></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Rodar a carga do protesto (ao vivo)</span></div>
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="carga">
+    <p>Marque o que quer trazer. Nesta tela o foco é o Protesto <strong>ao
+       vivo</strong>; as outras cargas (ainda pelo snapshot) continuam em
+       <a href="{{ url_for('atribuicoes_importar') }}">Trazer o acervo do E-Ofício</a>.</p>
+    {% for nome, titulo in cargas.items() %}
+      <label style="display:block">
+        <input type="checkbox" name="quais" value="{{ nome }}"
+               {% if nome == 'protesto' %}checked{% endif %}>
+        {{ titulo }}{% if nome == 'protesto' %} — <em>ao vivo</em>{% endif %}
+      </label>
+    {% endfor %}
+    <div class="actions" style="margin-top:12px">
+      <button class="button">Trazer agora do E-Ofício ao vivo</button>
+    </div>
+  </form>
+</section>
+
+{% if sync_ao_vivo %}
+<section class="panel">
+  <div class="panel-head"><span>Puxada ao vivo (antes da carga)</span></div>
+  <div style="padding:14px">
+    <p>Conexão: <code>{{ sync_ao_vivo.conexao }}</code></p>
+    <ul>
+      {% for t, n in sync_ao_vivo.tabelas_aplicadas.items() %}
+      <li><code>{{ t }}</code>: {{ n }} linha(s)</li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}
+
+{% if resultado %}
+<section class="panel">
+  <div class="panel-head"><span>O que a carga fez</span></div>
+  <table class="table">
+    <thead>
+      <tr><th>Carga</th><th>Lidos</th><th>Entraram</th><th>Já estavam</th>
+          <th>Rejeitados</th><th>Avisados</th></tr>
+    </thead>
+    <tbody>
+      {% for nome, r in resultado.items() if nome != 'numeracao' %}
+      <tr>
+        <td><strong>{{ nome }}</strong></td>
+        {% if r.erro %}
+          <td colspan="5" class="danger">{{ r.erro }}</td>
+        {% else %}
+          <td>{{ r.lidos }}</td>
+          <td>{{ r.inseridos }}</td>
+          <td>{{ r.repetidos }}</td>
+          <td>{{ r.rejeitados }}</td>
+          <td>{{ r.avisados }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% for nome, r in resultado.items() if nome != 'numeracao' %}
+    {% if r.contagens %}
+      <div class="notice" style="margin:0 14px 10px">
+        <strong>{{ nome }} — o que se contou nesta rodada:</strong>
+        <ul>{% for m, n in r.contagens.items() %}<li>{{ n }} {{ m }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+    {% if r.motivos_da_rejeicao %}
+      <div class="notice" style="margin:0 14px 10px">
+        <strong>{{ nome }} — por que rejeitou:</strong>
+        <ul>{% for m in r.motivos_da_rejeicao %}<li>{{ m }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Atalhos para os leitores que já existem</span></div>
+  <div style="padding:14px">
+    <p>Não inventam layout: abrem as telas que já leem os arquivos medidos.</p>
+    <ul>
+      <li>
+        <a href="{{ url_for('protesto_cenprot') }}">XML do CENPROT</a>
+        — traz a chave de 23 dígitos pelo protocolo.
+      </li>
+      <li>
+        <a href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>
+        — arquivo de 600 posições. Pastas de referência na casa:
+        <code>{{ pastas.cra_remessa }}</code>
+      </li>
+      <li>
+        <a href="{{ url_for('protesto_desistencias') }}">Desistências</a>
+        — arquivo de 127 posições. Pasta de referência:
+        <code>{{ pastas.cra }}</code>
+      </li>
+      <li>
+        <a href="{{ url_for('protesto_imagens') }}">Imagens dos títulos</a>
+        — pacote .zip da CRA («Download imagens»).
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Instrumentos assinados (.p7s) no IPDigital</span>
+    <small>só casa por nome = chave</small>
+  </div>
+  <div style="padding:14px">
+    <p>Lista arquivos cujo <strong>nome</strong> é a chave de 23 dígitos já
+       gravada em <code>pt_titulos.chave_cenprot</code>. Não abre nem valida o
+       PKCS#7 — só caminho e chave.</p>
+    <p class="small muted">Pastas:
+      {% for p in pastas.ipdigital %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% if not ipdigital %}
+      <p>Nenhum <code>.p7s</code> casou com chave do banco nestas pastas
+         (ou as pastas não estão acessíveis nesta máquina).</p>
+    {% else %}
+      <table class="table">
+        <thead><tr><th>Chave CENPROT</th><th>Arquivo</th></tr></thead>
+        <tbody>
+          {% for item in ipdigital %}
+          <tr>
+            <td><code>{{ item.chave }}</code></td>
+            <td class="small"><code>{{ item.caminho }}</code></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

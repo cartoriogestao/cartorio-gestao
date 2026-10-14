@@ -1,0 +1,189 @@
+{#
+  A conferência da remessa — o primeiro dos dois passos.
+
+  NADA FOI GRAVADO até aqui. Esta tela existe para o lote não entrar sem
+  ninguém olhar: cinquenta títulos que entram sem conferência são cinquenta
+  atos para desfazer à mão.
+
+  O arquivo viaja no campo escondido `conteudo` para o passo seguinte não
+  pedir o arquivo de novo. A maior remessa real desta casa tem 10,6 KB e 16
+  títulos — a mediana tem um.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Conferir a remessa</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_remessas') }}">&larr; Remessas</a>
+</div>
+
+{% if xml_previa %}
+<div class="notice">
+  <strong>Remessa XML da CRA — nada foi gravado ainda.</strong>
+  Confira abaixo e receba no fim da página se estiver certo. Ambiente CRA:
+  <strong>{{ origem_xml_ambiente or 'HOMOLOGACAO' }}</strong>.
+  {% if xml_previa %}<small>SHA-256 do arquivo: {{ xml_previa.sha256[:16] }}…</small>{% endif %}
+</div>
+{% else %}
+<div class="notice">
+  <strong>Nada foi gravado ainda.</strong> Confira o que vem abaixo e, se
+  estiver certo, mande receber no fim da página.
+</div>
+{% endif %}
+
+{% if visto.ja_entrou %}
+<div class="notice danger">
+  <strong>Este arquivo já entrou.</strong>
+  {% for j in visto.ja_entrou %}
+    Lote do apresentante <strong>{{ j.apresentante_codigo }}</strong>, recebido
+    em {{ j.recebida_em[:16] | replace('T', ' ') }} com {{ j.recebidos }}
+    título(s).
+  {% endfor %}
+  Receber outra vez apontaria tudo de novo, e apontamento não se desfaz — o
+  sistema vai recusar.
+</div>
+{% endif %}
+
+{% if visto.quantidade_de_lotes > 1 %}
+<div class="notice warning">
+  <strong>Este arquivo traz {{ visto.quantidade_de_lotes }} lotes</strong>, dos
+  apresentantes {{ visto.apresentantes | join(', ') }}.
+  Cada lote entra como uma remessa própria, com a sua confirmação —
+  o retorno de cada título volta para quem o apresentou.
+</div>
+{% endif %}
+
+{% for lote in visto.lotes %}
+<section class="panel">
+  <div class="panel-head">
+    <span>
+      {% if visto.quantidade_de_lotes > 1 %}Lote {{ loop.index }} — {% endif %}
+      Apresentante {{ lote.apresentante_codigo }}
+      {{ lote.apresentante_nome }}
+    </span>
+    <small>{{ lote.quantidade }} título(s)</small>
+  </div>
+
+  <table class="table">
+    <tbody>
+      <tr><th>Tipo do arquivo</th>
+          <td>{{ lote.nome_do_tipo }} <small>({{ lote.tipo }})</small></td></tr>
+      <tr><th>Data do movimento</th><td>{{ lote.dia or '—' }}</td></tr>
+      <tr><th>Número da remessa</th><td>{{ lote.numero_da_remessa or '—' }}</td></tr>
+      <tr><th>{% if xml_previa %}Vão entrar (XML){% else %}Vão entrar{% endif %}</th>
+          <td><strong>{{ lote.aceitos }}</strong> de {{ lote.quantidade }}
+              {% if lote.recusados %}
+                — <span class="danger">{{ lote.recusados }} o contrato da CRA
+                recusa</span>
+              {% endif %}
+          </td></tr>
+    </tbody>
+  </table>
+
+  {% if lote.achados %}
+  <div class="notice warning" style="margin:0 14px 14px">
+    <strong>O arquivo não fecha com o que ele mesmo declara:</strong>
+    <ul>{% for a in lote.achados %}<li>{{ a }}</li>{% endfor %}</ul>
+    Isso não impede de receber — o rodapé da remessa conta de um jeito próprio
+    em 44 dos 197 arquivos reais desta casa. Mas confira antes, porque também
+    é assim que se parece um arquivo truncado.
+  </div>
+  {% endif %}
+
+  <table class="table">
+    <thead><tr>
+      <th>#</th><th>Título</th><th>Espécie</th><th>Devedor</th>
+      <th>Saldo</th><th>Situação</th>
+    </tr></thead>
+    <tbody>
+      {% for t in lote.titulos %}
+      <tr>
+        <td>{{ t.sequencial }}</td>
+        <td>{{ t.numero_titulo or '—' }}
+            {% if t.nosso_numero %}
+              <div><small>nosso nº {{ t.nosso_numero }}</small></div>
+            {% endif %}</td>
+        <td>{{ t.especie or '—' }}
+            <div><small>{{ t.especie_nome }}</small></div></td>
+        <td>{{ t.devedor or '—' }}
+            {% if t.devedor_documento %}
+              <div><small>{{ t.devedor_documento }}</small></div>
+            {% endif %}</td>
+        <td>{{ t.saldo or '—' }}</td>
+        <td>
+          {% if not t.aceito %}
+            <strong class="danger">não entra</strong>
+            <ul>{% for f in t.faltas %}<li><small>{{ f }}</small></li>{% endfor %}</ul>
+          {% elif t.iguais %}
+            <strong>entra, confira</strong>
+            <div><small>
+              Já existe título vivo com este nosso número deste apresentante:
+              {% for i in t.iguais %}
+                nº {{ i.numero_titulo }} ({{ i.situacao }}{% if i.protocolo %},
+                protocolo {{ i.protocolo }}{% endif %}){% if not loop.last %};{% endif %}
+              {% endfor %}.
+              Pode ser reapresentação, e pode ser engano.
+            </small></div>
+          {% else %}
+            entra
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+
+<section class="panel">
+  <div class="panel-head"><span>Receber</span></div>
+  <form method="post" action="{{ url_for('protesto_remessa_receber') }}"
+        class="form" style="padding:14px">
+      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <input type="hidden" name="conteudo" value="{{ conteudo }}">
+    <input type="hidden" name="nome_arquivo" value="{{ nome_arquivo }}">
+    {% if xml_previa %}
+    <input type="hidden" name="origem_xml_ambiente"
+           value="{{ origem_xml_ambiente or 'HOMOLOGACAO' }}">
+    {% endif %}
+
+    <div class="field">
+      <label>
+        <input type="checkbox" name="apontar" value="1" checked>
+        Apontar os títulos agora
+      </label>
+      <small>
+        O apontamento é o primeiro ato da vida do título — Lei 9.492/1997,
+        art. 3º. Cada um ganha protocolo e lugar no Livro de Apontamento, e só
+        depois de apontado se pode intimar. Desmarque só se o apontamento for
+        ficar para depois: os títulos ficam esperando na lista.
+      </small>
+    </div>
+
+    <div class="field">
+      <label for="marca">Letra da posição 566, se o apresentante for novo</label>
+      <input type="text" id="marca" name="marca" maxlength="1"
+             style="width:4em" placeholder="A ou P">
+      <small>
+        Só é pedida quando não há retorno anterior deste apresentante para
+        imitar — nos arquivos medidos o empate é exato, 74 «A» e 74 «P», e não
+        há padrão a seguir. Deixe em branco se o apresentante já é conhecido.
+      </small>
+    </div>
+
+    <div class="notice">
+      <strong>O lote não sela e não cobra.</strong> Selar cinquenta títulos são
+      cinquenta chamadas ao selador, e a casa inteira ficaria esperando o lote
+      terminar. Eles entram e aparecem em <em>atos sem selo</em> e <em>atos sem
+      cobrança</em>, para selar e cobrar no seu tempo.
+    </div>
+
+    <div class="actions">
+      <button class="button primary" type="submit">
+        Receber {{ visto.aceitos }} título(s) e gerar a confirmação
+      </button>
+      <a class="button" href="{{ url_for('protesto_remessas') }}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

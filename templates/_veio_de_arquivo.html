@@ -1,0 +1,28 @@
+{# O aviso de que a tela veio preenchida de um arquivo.
+
+   **UMA MACRO, E NAO DUAS COPIAS** — a regra de `_fraude.html`: sao duas telas
+   de ato novo hoje, e a terceira que nascer usa a mesma. #}
+
+{% macro veio_de_arquivo(a) %}
+<div class="notice warning">
+  <p>
+    <strong>Esta tela veio preenchida a partir de um arquivo</strong>
+    — registro <code>{{ a.chave }}</code>{% if a.de_onde_veio %},
+    de <em>{{ a.de_onde_veio }}</em>{% endif %}.
+  </p>
+  <p>
+    <strong>Confira campo por campo antes de lavrar.</strong> O arquivo adiantou
+    a digitação e não decidiu nada: o ato nasce novo aqui — toma número, ocupa
+    folha, sela e cobra — e quem assina é você.
+  </p>
+  {% if a.sem_campo_na_tela %}
+  <p class="small">
+    <strong>O arquivo trazia campos que esta tela não pergunta</strong>, e eles
+    <strong>não</strong> foram preenchidos:
+    {% for c in a.sem_campo_na_tela %}<code>{{ c }}</code>{% if not loop.last %},
+    {% endif %}{% endfor %}.
+    Se algum deles importa para este ato, ele entra depois, na ficha.
+  </p>
+  {% endif %}
+</div>
+{% endmacro %}

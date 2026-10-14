@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>{% if aviso_item %}Editar aviso{% else %}Novo aviso{% endif %}</h1>{% endblock %}
+{% block content %}
+<form method="post" class="form" style="max-width:40rem">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Título
+    <input name="titulo" required maxlength="200"
+           value="{{ aviso_item.titulo if aviso_item else '' }}"></label>
+  <label>Descrição (texto completo na página do aviso)
+    <textarea name="corpo" required rows="8">{{ aviso_item.corpo if aviso_item else '' }}</textarea></label>
+
+  <fieldset class="nu-avisos-admin-opcoes">
+    <legend class="muted"><small>Importância, recorrência e vigência</small></legend>
+    <label class="checkbox-label">
+      <input type="checkbox" name="critico" value="1"
+             {% if aviso_item and (aviso_item.prioridade or 0)|int >= 2 %}checked{% endif %}>
+      Crítico
+    </label>
+    <label class="checkbox-label">
+      <input type="checkbox" name="importante" value="1"
+             {% if aviso_item and (aviso_item.prioridade or 0)|int == 1 %}checked{% endif %}>
+      Importante
+    </label>
+    <label class="checkbox-label">
+      <input type="checkbox" name="recorrente" value="1"
+             {% if aviso_item and aviso_item.recorrente %}checked{% endif %}>
+      Aviso recorrente
+    </label>
+    <fieldset class="nu-avisos-dias-semana">
+      <legend class="muted"><small>Dias da recorrência</small></legend>
+      <div class="nu-avisos-dias-chips">
+        {% for abrev in ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'] %}
+        {% set d = loop.index0 %}
+        <label class="nu-avisos-dia-chip">
+          <input type="checkbox" name="recorrencia_dias" value="{{ d }}"
+            {% if aviso_item %}
+              {% if aviso_item.recorrencia_dias and ((aviso_item.recorrencia_dias|int) // (2 ** d)) % 2 %}checked{% endif %}
+              {% if not aviso_item.recorrencia_dias and aviso_item.recorrencia_dia_semana is not none and (aviso_item.recorrencia_dia_semana|int) == d %}checked{% endif %}
+            {% elif d == 0 %}checked{% endif %}>
+          <span>{{ abrev }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <label>Hora (HH:MM)
+      <input name="recorrencia_hora" pattern="[0-9]{2}:[0-9]{2}"
+             value="{{ aviso_item.recorrencia_hora if aviso_item and aviso_item.recorrencia_hora else '08:00' }}">
+    </label>
+    <div class="form-grid">
+      <label>Vigência — de (opcional)
+        <input type="date" name="vigencia_inicio"
+               value="{{ aviso_item.vigencia_inicio[:10] if aviso_item and aviso_item.vigencia_inicio else '' }}">
+      </label>
+      <label>Vigência — até (opcional)
+        <input type="date" name="vigencia_fim"
+               value="{{ aviso_item.vigencia_fim[:10] if aviso_item and aviso_item.vigencia_fim else '' }}">
+      </label>
+    </div>
+    <p class="muted"><small>Após encerrar um aviso importante recorrente, ele reativa nos dias marcados, na hora indicada.</small></p>
+  </fieldset>
+
+  <div class="actions">
+    <button type="submit" class="button primary">Salvar</button>
+    <a class="button" href="{{ url_for('nu_avisos_lista') }}">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

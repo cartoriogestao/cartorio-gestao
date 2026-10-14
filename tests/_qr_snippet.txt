@@ -1,0 +1,32 @@
+﻿def _odt_zip(casa, cartao_id: int):
+    r = casa["cliente"].get(f"/notas/cartoes/{cartao_id}/ficha")
+    assert r.status_code == 200
+    return zipfile.ZipFile(io.BytesIO(r.get_data()))
+
+
+def test_ficha_com_selo_traz_qr_no_odt(casa):
+    """Mesmo padrao da etiqueta: QR PNG embutido no .odt (07/09/2026)."""
+    cid = _cartao(casa, selo_abertura="RECFIR000000TESTESELO000001")
+    con = sqlite3.connect(casa["banco"])
+    with con:
+        con.execute(
+            """INSERT INTO sd_selos
+               (numero, texto, caminho, atribuicao, referencia, tabela, ato_id,
+                obtido_em, usado_em)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            ("RECFIR000000TESTESELO000001",
+             "Poder Judiciário — TJMA. Selo: RECFIR000000TESTESELO000001, "
+             "07/09/2026 15:00:00, Ato: 13.17.1, Parte(s): MARIA DAS DORES DA SILVA, "
+             "Total R$ 13,37 Emol R$ 11,93 FERC R$ 0,36 FADEP R$ 0,48 FEMP R$ 0,48 "
+             "FERRFIS R$ 0,12 Consulte em https://selo.tjma.jus.br",
+             "/selo/notas/cartao-assinatura", "NOTAS",
+             f"nt_cartoes:{cid}:13.17.1:1", "nt_cartoes", cid,
+             "2026-09-07T15:00:00", "2026-09-07T15:00:00"))
+    with _odt_zip(casa, cid) as z:
+        nomes = z.namelist()
+        assert "Pictures/qr_abertura.png" in nomes, nomes
+        png = z.read("Pictures/qr_abertura.png")
+        assert png[:8] == b"\x89PNG\r\n\x1a\n"
+        xml = z.read("content.xml").decode("utf-8")
+    assert "qr_abertura.png" in xml
+    assert "Selo de abertura" in re.sub(r"<[^>]+>", " ", xml)

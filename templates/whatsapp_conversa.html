@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}WhatsApp · {{ c.nome or c.wa_id }}{% endblock %}
+{% block content %}
+<p class="small">
+  <a href="{{ url_for('whatsapp_lista') }}">← fila do WhatsApp</a>
+  · <a href="{{ url_for('whatsapp_config') }}">configuração</a>
+</p>
+<h1>{{ c.nome or c.wa_id }}</h1>
+<p class="small muted">
+  {{ c.wa_id }}
+  · etiqueta <strong>{{ c.etiqueta or '—' }}</strong>
+  · {{ c.status }}
+</p>
+
+<div class="card">
+  <h2>Mensagens</h2>
+  {% for m in c.mensagens %}
+  <p class="small">
+    <strong>{{ m.direcao }}</strong>
+    · {{ (m.criado_em or '')[:16]|replace('T', ' ') }}
+    {% if m.meta_id %}<span class="muted">· {{ m.meta_id }}</span>{% endif %}
+    <br>{{ m.texto or '—' }}
+  </p>
+  {% else %}
+  <p class="small muted">Nenhuma mensagem nesta conversa.</p>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>Rascunho</h2>
+  <p class="small muted">
+    Guardar o rascunho <strong>não envia</strong> à Meta. Autoenvio desligado.
+  </p>
+  <form method="post" action="{{ url_for('whatsapp_salvar_rascunho', conversa_id=c.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <textarea name="rascunho" rows="8" style="width:100%">{{ c.rascunho or '' }}</textarea>
+    <p>
+      <button class="button">guardar rascunho</button>
+    </p>
+  </form>
+  <form method="post" action="{{ url_for('whatsapp_enviar', conversa_id=c.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if pode_enviar %}
+    <button class="button">Enviar no WhatsApp</button>
+    {% else %}
+    <button class="button" disabled>Enviar no WhatsApp</button>
+    <p class="small muted">Falta token: grave <code>access_token</code> e
+    <code>phone_number_id</code> em
+    <a href="{{ url_for('whatsapp_config') }}">configuração</a>.</p>
+    {% endif %}
+  </form>
+  {% if c.status != 'resolvida' %}
+  <form method="post" action="{{ url_for('whatsapp_resolver', conversa_id=c.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button secondary">marcar resolvida</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

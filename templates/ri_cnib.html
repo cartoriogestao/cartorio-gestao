@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>CNIB — Central Nacional de Indisponibilidade de Bens</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
+  <a class="button" href="{{ url_for('ri_protocolo') }}">Livro de Protocolo</a>
+  {# O relato #72 abriu aqui — consulta local, mas pediu atualização manual e
+     rotina diária; isso mora na tela da Central, não nesta busca. #}
+  <a class="button primary" href="{{ url_for('cnib_central') }}">Atualizar cópia local / Central</a></div>
+
+<div class="notice warning">
+  <strong>Esta é uma cópia local, não a central.</strong>
+  São {{ base_n }} ordens ativas, e a mais recente é de <strong>{{ fmt_date(base_data) }}</strong>.
+  Ordens posteriores a essa data <strong>não estão aqui</strong>. Esta consulta ajuda a
+  encontrar um impedimento, mas não substitui a consulta oficial à CNIB antes do registro:
+  não achar nada aqui não significa que não exista.
+</div>
+
+<form class="filters" method="get">
+  <input name="busca" value="{{ busca }}" placeholder="CPF, CNPJ ou nome completo" size="40" autofocus>
+  <button class="primary">Consultar</button>
+</form>
+
+{% if busca %}
+  {% if achados %}
+  <div class="notice danger">
+    <strong>{{ achados|length }} ordem(ns) de indisponibilidade encontrada(s) para "{{ busca }}".</strong>
+  </div>
+  <section class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Nome</th><th>Documento</th><th>Protocolo CNIB</th><th>Data</th><th>Processo</th><th>Juízo</th><th>Achado por</th></tr></thead>
+        <tbody>
+        {% for a in achados %}
+          <tr><td>{{ a.nome }}</td><td>{{ a.documento or '—' }}</td>
+              <td class="small">{{ a.protocolo_cnib }}</td><td>{{ fmt_date(a.data_pedido) }}</td>
+              <td class="small">{{ a.processo or '—' }}</td>
+              <td class="small">{{ (a.forum_vara or a.instituicao or '—')[:44] }}</td>
+              <td>{% if a.criterio == 'documento' %}<span class="badge ok">documento</span>
+                  {% else %}<span class="badge alta">nome</span>{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="notice small">
+      Achado por <strong>nome</strong> pode ser homônimo — confira o documento antes de concluir.
+      Achado por <strong>documento</strong> é identificação segura.
+    </div>
+  </section>
+  {% else %}
+  <div class="notice ok">
+    Nada encontrado para "{{ busca }}" nesta cópia local.
+    Lembre-se de que a base vai até {{ fmt_date(base_data) }}.
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

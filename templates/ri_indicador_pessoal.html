@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Livro 5 — Indicador Pessoal</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
+  <a class="button" href="{{ url_for('ri_indicador_real') }}">Indicador Real</a>
+  <a class="button" href="{{ url_for('ri_certidoes') }}">Certidões</a>
+</div>
+
+<div class="notice">
+  Livro obrigatório do art. 173, V da Lei 6.015/73. Mostra todas as matrículas em que
+  uma pessoa aparece e com que papel. O <strong>nome</strong> é procurado por trecho e
+  ignora acento e caixa; o <strong>documento</strong>, completo — «3110» não acha mais
+  o CPF de outra pessoa (relato #55, de 14/09/2026).
+</div>
+
+<form class="filters" method="get">
+  <input name="busca" value="{{ busca }}" placeholder="Nome (por trecho) ou CPF/CNPJ completo" size="38" autofocus>
+  <label class="check"><input type="checkbox" name="proprietarios" value="1" {% if so_proprietarios %}checked{% endif %}> Só proprietários atuais</label>
+  <button class="primary">Buscar</button>
+</form>
+
+{% if busca %}
+  {% if pessoas %}
+    <p class="muted small">{{ total }} pessoa(s) encontrada(s).</p>
+    {% for item in pessoas %}
+    <section class="panel">
+      <div class="panel-head">
+        <span><strong>{{ item.pessoa.nome }}</strong>
+          {% if item.pessoa.doc %}— {{ item.pessoa.doc_tipo or '' }} {{ item.pessoa.doc }}
+            {% if not item.pessoa.valido %}<span class="badge alta">dígito não confere</span>{% endif %}
+          {% else %}<span class="badge">sem documento</span>{% endif %}
+        </span>
+        <span class="muted">{{ item.matriculas|length }} matrícula(s)</span>
+      </div>
+      {% if item.pessoa.qualificacao %}<div class="small muted" style="padding:0 14px 8px">{{ item.pessoa.qualificacao }}</div>{% endif %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Matrícula</th><th>Livro</th><th>Imóvel</th><th>Bairro</th><th>Vínculo</th></tr></thead>
+          <tbody>
+          {% for m in item.matriculas %}
+            <tr><td><a href="{{ url_for('ri_ficha', matricula_id=m.id) }}"><strong>{{ m.numero }}</strong></a></td>
+                <td>{{ m.livro_norm or '—' }}</td>
+                <td>{{ (m.logradouro or '—')[:48] }}</td>
+                <td>{{ m.bairro or '—' }}</td>
+                <td>{% if m.ativo %}<span class="badge ok">Proprietário atual</span>
+                    {% elif m.papel %}{{ m.papel }}
+                    {% else %}<span class="badge">Parte anterior</span>{% endif %}
+                    {% if m.encerrada %}<span class="badge critica">matrícula encerrada</span>{% endif %}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endfor %}
+  {% else %}
+    <div class="notice">Nenhuma pessoa encontrada para "{{ busca }}".</div>
+    <section class="panel" style="margin-top:1rem">
+      <div class="panel-head"><span><strong>Emitir certidão negativa de imóvel</strong></span>
+        <span class="muted">busca sem achado nos indicadores</span></div>
+      <div class="notice small">A busca no Indicador Pessoal não achou matrícula/registro
+        em nome de <strong>{{ busca }}</strong>. A certidão negativa só sai neste caso —
+        se houver achado, o sistema recusa. O selo é automático (sem bypass).</div>
+      <form method="post" action="{{ url_for('ri_emitir_certidao_negativa') }}" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="modo" value="PESSOA">
+        <input type="hidden" name="busca" value="{{ busca }}">
+        {% if so_proprietarios %}<input type="hidden" name="proprietarios" value="1">{% endif %}
+        <label>Requerente
+          <input name="requerente" placeholder="Quem pede a certidão" size="40"></label>
+        <label>Documento do requerente
+          <input name="requerente_documento" placeholder="CPF/CNPJ" size="22"></label>
+        <label>Finalidade
+          <input name="finalidade" placeholder="Ex.: fins de direito" size="40"></label>
+        <label>Protocolo / prenotação
+          <input name="protocolo" placeholder="Se houver" size="22"></label>
+        <label class="check span2"><input type="checkbox" name="isento" value="1">
+          Selo gratuito / isento</label>
+        <label class="span2">Motivo da gratuidade (obrigatório se isento)
+          <input name="motivo_isencao" maxlength="500" size="60"></label>
+        <div class="span2"><button class="primary">Emitir certidão negativa</button></div>
+      </form>
+    </section>
+  {% endif %}
+{% else %}
+  <div class="notice small">
+    Informe um nome ou documento para consultar. O acervo tem <strong>71% das partes sem
+    documento</strong>, então o sistema agrupa por documento quando existe e por nome
+    normalizado quando não — sem isso, a maioria das pessoas ficaria de fora do índice.
+  </div>
+{% endif %}
+
+<section class="panel" style="margin-top:1.5rem">
+  <div class="panel-head"><span>Lançamentos de cancelamento (Livro 5)</span>
+    <span class="muted">histórico próprio — além da averbação no Livro 2 ou 3</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Data</th><th>Pessoa</th><th>Documento</th><th>Origem</th><th>Ato / registro</th><th>Averbação</th><th>Teor</th></tr></thead>
+      <tbody>
+      {% for L in lancamentos %}
+        <tr>
+          <td>{{ L.data_lancamento }}</td>
+          <td>{{ L.pessoa_nome or '—' }}</td>
+          <td>{% if L.pessoa_documento_numero %}{{ L.pessoa_documento_tipo or '' }} {{ L.pessoa_documento_numero }}{% else %}—{% endif %}</td>
+          <td>{% if L.origem_livro==2 %}Livro 2 — mat. {{ L.matricula_numero }}
+              {% elif L.origem_livro==3 %}Livro 3 — reg. {{ L.ra_registro_numero }}
+              {% else %}—{% endif %}</td>
+          <td>{{ L.ato_cancelado_rotulo or '—' }}</td>
+          <td>{{ L.averbacao_rotulo or '—' }}</td>
+          <td class="small">{{ (L.teor or '')[:120] }}{% if L.teor and L.teor|length > 120 %}…{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="muted">Nenhum lançamento de cancelamento ainda.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}

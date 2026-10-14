@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Processo {{ processo.numero }}/{{ processo.ano }}{% endblock %}
+{% block content %}
+<h1>{{ processo.instituto|capitalize }} {{ processo.numero }}/{{ processo.ano }}</h1>
+
+<div class="card">
+  <p><strong>{{ processo.requerente_nome }}</strong>
+     {% if processo.requerente_documento %}<span class="small muted">— {{ processo.requerente_documento }}</span>{% endif %}</p>
+  <p>{{ processo.o_que_se_pede }}</p>
+  <p class="small muted">
+    {% if processo.assento_descricao %}Assento: {{ processo.assento_descricao }}.{% endif %}
+    Pedido {{ processo.forma|lower }}
+    {% if processo.assinado_por %}, assinado por {{ processo.assinado_por }}{% endif %}.
+    {% if processo.prazo_ate %}
+      Prazo até <strong>{{ processo.prazo_ate }}</strong>.
+    {% else %}
+      <strong>Ainda não instruído</strong> — o prazo não começou a correr.
+    {% endif %}
+  </p>
+</div>
+
+<div class="alerta">
+  <h2 style="margin-top:0">O que fazer agora</h2>
+  <ul>
+    {% for p in passos %}<li>{{ p }}</li>{% endfor %}
+  </ul>
+</div>
+
+{% if processo.termo_verbal %}
+<div class="card">
+  <h3 style="margin-top:0">Termo do pedido verbal</h3>
+  <p class="small muted">Reduzido a termo em
+     {{ (processo.termo_verbal_em or '')[:10] }} — art. 348, § 1º, III.</p>
+  <pre style="white-space:pre-wrap">{{ processo.termo_verbal }}</pre>
+</div>
+{% endif %}
+
+{% if not processo.instruido_em %}
+<div class="card">
+  <h2 style="margin-top:0">Instruir</h2>
+  <p class="small muted">
+    <strong>É daqui que o prazo conta</strong> — o § 3º diz «contados do
+    protocolo do requerimento <em>devidamente instruído</em>». Marcar antes de o
+    pedido estar completo encurtaria o prazo do oficial por documento que o
+    requerente ainda não trouxe.
+  </p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="instruir">
+    <button class="button">O pedido está devidamente instruído</button>
+  </form>
+</div>
+{% endif %}
+
+<h2>Consulta à CRC ({{ consultas|length }})</h2>
+<div class="card">
+  <p class="small muted">
+    <strong>{{ norma.CONSULTA_CRC.por_que|capitalize|forte }}</strong>
+    ({{ norma.CONSULTA_CRC.artigo }}). Este sistema
+    <strong>não consulta a CRC</strong> — ele registra o que você consultou; um
+    botão que dissesse «consultado» sem consultar responderia, e responderia
+    errado.
+  </p>
+  {% if consultas %}
+  <table>
+    <thead><tr><th>Quando</th><th>O que se procurou</th><th>Resultado</th>
+               <th></th></tr></thead>
+    <tbody>
+    {% for c in consultas %}
+      <tr>
+        <td class="small">{{ c.consultada_em[:10] }}</td>
+        <td class="small">{{ c.o_que_se_procurou }}</td>
+        <td class="small">{{ c.resultado }}
+          {% if c.protocolo %}<br>protocolo {{ c.protocolo }}{% endif %}</td>
+        <td class="small">
+          {% if c.achou_duplicidade %}
+            <span class="danger"><strong>duplicidade</strong><br>
+            {{ norma.CONSULTA_CRC.se_achar|forte }}</span>
+          {% elif c.achou_ato_em_outra_serventia %}
+            <span class="danger">ato em outra serventia</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="crc">
+    <p><label>O que foi procurado
+      <input type="text" name="o_que_se_procurou" size="52"
+             placeholder="nome, data de nascimento e filiação"></label></p>
+    <p><label>O que a CRC devolveu<br>
+      <textarea name="resultado" rows="3" cols="72"
+        placeholder="nenhuma duplicidade; nenhum ato em outra serventia"></textarea>
+    </label></p>
+    <p>
+      <label><input type="checkbox" name="achou_duplicidade"> achou duplicidade</label>
+      <label><input type="checkbox" name="achou_outra"> achou ato em outra serventia</label>
+      <label>Protocolo <input type="text" name="protocolo" size="20"></label>
+    </p>
+    <button class="button">Registrar a consulta</button>
+  </form>
+</div>
+
+{% if not processo.decidido_em %}
+<div class="card">
+  <h2 style="margin-top:0">Decidir</h2>
+  {% if faltas %}
+    <div class="alerta danger">
+      <p><strong>Ainda não dá para decidir.</strong> Falta:</p>
+      <ul>{% for f in faltas %}<li>{{ f }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="decidir">
+    <p><label>Decisão
+      <select name="decisao">
+        <option value="DEFERIDO">Deferido</option>
+        <option value="INDEFERIDO">Indeferido</option>
+        <option value="JUDICIAL">Não cabe administrativo — remessa ao juiz corregedor</option>
+      </select></label>
+      <span class="small muted">{{ norma.CAMINHO_JUDICIAL.para_quem|forte }}
+        ({{ norma.CAMINHO_JUDICIAL.artigo }})</span></p>
+    <p><label>Fundamento<br>
+      <textarea name="fundamento" rows="4" cols="72"></textarea></label><br>
+      <span class="small muted">O § 3º exige decisão <strong>fundamentada</strong>
+        — decisão sem fundamento é a que se desfaz depois.</span></p>
+
+    <div class="alerta warning">
+      <p><label><input type="checkbox" name="erro_da_serventia">
+        <strong>O erro é imputável a esta serventia</strong> (art. 353)</label></p>
+      <p class="small">Marcar isto torna o ato <strong>gratuito</strong>, abre a
+        comunicação ao <strong>FERC e ao FERJ</strong>, e faz o FERJ
+        <strong>cobrar do delegatário titular da serventia à época</strong> do
+        ato incorreto. É juízo seu, não uma caixinha.</p>
+      <p><label>Fundamento dessa marca<br>
+        <textarea name="erro_fundamento" rows="3" cols="72"></textarea></label></p>
+    </div>
+
+    <p><button class="button">Decidir</button></p>
+  </form>
+</div>
+{% else %}
+<div class="card">
+  <h2 style="margin-top:0">Decisão: {{ processo.decisao|lower }}</h2>
+  <p class="small muted">Em {{ processo.decidido_em[:10] }}, por
+     {{ processo.decidido_por }}.</p>
+  <pre style="white-space:pre-wrap">{{ processo.fundamento }}</pre>
+  {% if processo.erro_da_serventia %}
+    <div class="alerta warning">
+      <p><strong>Erro imputável à serventia</strong> — art. 353: o ato é
+         gratuito, e o ressarcimento se pede ao FERC e ao FERJ.</p>
+      <pre style="white-space:pre-wrap">{{ processo.erro_fundamento }}</pre>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if comunicacoes %}
+<h2>Comunicações do art. 353</h2>
+<div class="card">
+  <p class="small muted">
+    <strong>São dois fundos, e não um.</strong> Comunicar só a um deixaria o
+    ressarcimento pela metade, e a norma nomeia os dois.
+  </p>
+  <table>
+    <thead><tr><th>Fundo</th><th>Situação</th><th>Quando</th><th></th></tr></thead>
+    <tbody>
+    {% for c in comunicacoes %}
+      <tr>
+        <td><strong>{{ c.fundo }}</strong></td>
+        <td class="small">
+          {% if c.situacao == 'ENVIADA' %}enviada{% if c.canal %} por {{ c.canal }}{% endif %}
+          {% else %}<span class="danger">pendente</span>{% endif %}
+        </td>
+        <td class="small">{{ (c.enviada_em or '')[:10] }}
+          {% if c.protocolo %}<br>protocolo {{ c.protocolo }}{% endif %}</td>
+        <td class="small">
+          {% if c.situacao != 'ENVIADA' %}
+            <details>
+              <summary>registrar</summary>
+              <form method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="acao" value="comunicar">
+                <input type="hidden" name="fundo" value="{{ c.fundo }}">
+                <p><textarea name="teor" rows="3" cols="50"
+                    placeholder="Ofício ao {{ c.fundo }} …"></textarea></p>
+                <p><label>Por onde <input type="text" name="canal" size="14"></label>
+                   <label>Protocolo <input type="text" name="protocolo" size="16"></label></p>
+                <button class="button">Já comuniquei</button>
+              </form>
+            </details>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if processo.decisao == 'DEFERIDO' and not processo.ato_id %}
+<div class="card">
+  <h2 style="margin-top:0">Amarrar o ato</h2>
+  <p class="small">
+    <strong>O deferido lança-se no {{ norma.ONDE_SE_LANCA.livro|forte }}</strong>
+    ({{ norma.ONDE_SE_LANCA.artigo }}), {{ norma.ONDE_SE_LANCA.remissoes|forte }} — e
+    pode ser {% for x in norma.ONDE_SE_LANCA.pode_ser %}{{ x }}{% if not loop.last %} ou {% endif %}{% endfor %}.
+  </p>
+  <p class="small muted">
+    Lavre o ato na ficha do assento — é lá que estão o livro, o selo e os
+    emolumentos — e traga o número dele para cá.
+  </p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="ato">
+    <label>Número do ato no sistema
+      <input type="number" name="ato_id" min="1" required></label>
+    <button class="button">Amarrar</button>
+  </form>
+</div>
+{% endif %}
+
+{% if andamento %}
+<h2>Andamento</h2>
+<table>
+  <tbody>
+  {% for a in andamento %}
+    <tr>
+      <td class="small">{{ a.quando[:16] }}</td>
+      <td>{{ a.o_que }}</td>
+      <td class="small muted">{{ a.quem or '' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<p><a href="{{ url_for('rcpn_retificacoes') }}">voltar à lista</a></p>
+{% endblock %}

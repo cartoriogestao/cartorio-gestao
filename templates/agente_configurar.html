@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Agente do sistema — configurar</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('agente_console') }}">&larr; Agente do sistema</a>
+  <a class="button" href="{{ url_for('ajuda_configurar') }}">Ajuda do sistema — configurar</a>
+</div>
+
+{#
+  A ESCRITA NASCE DESLIGADA, e o aviso fica AO LADO do botão que a liga — não
+  numa tela de ajuda em outro lugar. Quem liga isto tem de ler o que está
+  ligando, e no momento em que liga.
+#}
+<section class="panel">
+  <div class="panel-head">
+    <span>Quem responde e quanto pode gastar</span>
+    <small>escrita {% if config.escrita_ligada %}ligada{% else %}desligada{% endif %}</small>
+  </div>
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="config">
+    <div class="grid2">
+      <label>Provedor
+        <select name="provedor_padrao">
+          {% for pr in provedores %}
+          <option value="{{ pr.id }}" {% if pr.id == config.provedor_padrao %}selected{% endif %}>
+            {{ pr.nome }}{% if not pr.tem_chave %} — sem chave informada{% endif %}
+          </option>
+          {% endfor %}
+        </select></label>
+      <label>Modelo <small>(vazio = o padrão do provedor)</small>
+        <input name="modelo_padrao" value="{{ config.modelo_padrao }}"
+               placeholder="ex.: deepseek-chat"></label>
+      <label>Teto de turnos por rodada
+        <input type="number" name="teto_de_turnos" min="1"
+               max="{{ config.teto_maximo_de_turnos }}"
+               value="{{ config.teto_de_turnos }}">
+        <small>No máximo {{ config.teto_maximo_de_turnos }}. É o que impede um
+        agente que não fecha o raciocínio de ficar pensando até a conta chegar.</small></label>
+      <label>Teto de sessões por dia
+        <input type="number" name="teto_de_sessoes" min="1"
+               max="{{ config.teto_maximo_de_sessoes }}"
+               value="{{ config.teto_de_sessoes }}">
+        <small>No máximo {{ config.teto_maximo_de_sessoes }}. É o freio de gasto
+        que a casa controla — e ele não muda o que já foi feito hoje.</small></label>
+    </div>
+    <div style="margin-top:14px">
+      <label style="display:flex; gap:8px; align-items:flex-start">
+        <input type="checkbox" name="escrita_ligada" style="width:auto; margin-top:4px"
+               {% if config.escrita_ligada %}checked{% endif %}>
+        <span>Deixar o agente <strong>mudar o sistema</strong>, e não só olhar
+          <br><small class="muted">
+            Com isto ligado ele passa a poder: anotar o que apurou num problema,
+            registrar um achado da conferência, e abrir ou fechar um módulo para
+            os usuários. <strong>Nada disso toca em ato</strong> — e toda mudança
+            fica registrada com o antes e o depois, e volta com um clique.
+            É o contrato desta permissão: diz o que ela alcança e o que ela não
+            alcança.
+          </small>
+        </span>
+      </label>
+    </div>
+    <div class="actions"><button class="button primary">Guardar</button></div>
+  </form>
+  <p style="padding:0 14px 14px"><small>
+    Os tetos são presos nos limites acima mesmo que se digite um número maior —
+    o que a tela guarda é o que passou a valer. Uma sessão inteira também para
+    sozinha em {{ teto_de_tokens }} tokens, e cada resposta do modelo em
+    {{ teto_maximo_de_saida }}: são os freios que não estão aqui porque não são
+    decisão de quem opera, e sim o limite acima do qual alguma coisa saiu do
+    controle.
+  </small></p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>As chaves de API</span>
+    <small>{{ provedores | selectattr('tem_chave') | list | length }} de {{ provedores | length }} informadas</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    A chave <strong>não entra no banco</strong>. Ela é gravada em
+    <code>{{ caminho_da_chave }}</code> — o banco vai no backup, e o backup sai
+    da serventia. Chave dentro dele é chave publicada.
+    <br><br>
+    <strong>Campo vazio não apaga nada:</strong> quem apaga é o botão que diz
+    que apaga. E o uso é cobrado por token, então o que se gasta aparece em cada
+    sessão, no console.
+  </small></p>
+
+  {% for pr in provedores %}
+  <table class="table" style="margin-top:14px">
+    <tr>
+      <th style="width:26%">{{ pr.nome }}</th>
+      <td>
+        {% if pr.tem_chave %}
+          <span class="badge ok">gravada</span> <code>{{ pr.mascarada }}</code>
+          {% if pr.vem_da_ajuda %}
+            <br><small class="muted">
+              Esta é a chave que a <strong>Ajuda do sistema</strong> já usa
+              (<code>{{ arquivo_da_ajuda }}</code>), emprestada para o agente não
+              pedir de novo o que já foi informado. Se você gravar uma aqui, ela
+              passa a ser a do agente, e a da Ajuda continua sendo a dela.
+            </small>
+          {% endif %}
+        {% else %}
+          <span class="badge alta">não informada</span>
+        {% endif %}
+        <br><small class="muted">modelos do provedor:
+          {{ pr.modelos.PADRAO }} (padrão){% if pr.modelos.FORTE != pr.modelos.PADRAO %},
+          {{ pr.modelos.FORTE }} (o mais forte){% endif %} ·
+          <a href="{{ pr.endereco }}" target="_blank" rel="noopener">painel do provedor</a>
+        </small>
+      </td>
+    </tr>
+    <tr>
+      <th>Informar a chave</th>
+      <td>
+        <form method="post" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="acao" value="chave">
+          <input type="hidden" name="provedor" value="{{ pr.id }}">
+          <input type="password" name="api_key" placeholder="vazio = não altera"
+                 autocomplete="new-password" style="min-width:280px">
+          <button class="button">Gravar a chave</button>
+        </form>
+        {% if pr.tem_chave and not pr.vem_da_ajuda %}
+        <form method="post" style="margin-top:8px"
+              onsubmit="return confirm('Apagar a chave do {{ pr.nome }} do disco? O agente para de responder por este provedor até alguém informar outra.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="acao" value="apagar_chave">
+          <input type="hidden" name="provedor" value="{{ pr.id }}">
+          <button class="button danger small">apagar a chave deste provedor</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O que o agente tem nas mãos</span>
+    <small>{{ quantas_leitura }} de leitura · {{ quantas_escrita }} de escrita</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    Ele lê o <strong>código desta casa</strong> (só os arquivos do Cartório
+    Gestão, nunca nada fora dele), o <strong>banco</strong> (somente leitura:
+    só <code>SELECT</code>, com as colunas escritas, e nunca as tabelas de
+    chaves), a documentação do projeto e a lista de problemas anotados.
+    <strong>Ele não executa código e não abre terminal.</strong>
+    <br><br>
+    E tudo o que ele lê volta para o modelo passando pela barreira de
+    privacidade: CPF, e-mail, telefone, documento, endereço e nome de pessoa são
+    trocados por marcadores antes de sair daqui. O que ele vê aparece marcado,
+    como <code>[PESSOA_01]</code> — e ele é instruído a não tentar descobrir
+    quem é.
+  </small></p>
+</section>
+
+{% endblock %}

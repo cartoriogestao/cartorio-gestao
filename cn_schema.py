@@ -1,0 +1,149 @@
+"""Onde mora o que a CENPROT manda, e o que a casa respondeu.
+
+Construído em 02/09/2026, depois de o oficial mandar integrar a API:
+*«acho que agora poderemos resolver todos problemas do protesto»*.
+
+**UMA TABELA PARA AS CINCO ESPÉCIES, e não cinco tabelas.** A Central manda
+cinco coisas — anuência, pedido de certidão, pedido de cancelamento, decisão
+judicial e pedido de protesto —, e o que muda de uma para a outra é **o teor**;
+a vida delas é a mesma: chega, alguém decide, e a resposta sobe. Escrever isso
+cinco vezes daria cinco versões divergentes do pedaço que responde «esta
+pendência já foi respondida?». É a lição do núcleo, e a de `as_documentos`.
+
+**O AMBIENTE FAZ PARTE DA CHAVE, E ISSO NÃO É DETALHE.** A homologação e a
+produção devolvem códigos do **mesmo intervalo** — `cd_anuencia = 1` existe
+nas duas. Sem o ambiente na chave única, a primeira anuência de teste ocuparia
+o lugar da primeira anuência de verdade, e a de verdade **não entraria**, sem
+erro em lugar nenhum. E a tela precisa dizer qual é qual: pendência de teste
+com cara de real é o carimbo que mente na pior forma possível, porque quem a
+lê vai ao balcão dizer que existe.
+
+**O TEOR CONGELA**, como o do termo e o do instrumento. É o que a Central
+mandou **naquele dia**; ela pode mudar o dado dela amanhã, e o que a casa
+respondeu foi sobre isto aqui. Sem o teor congelado não há como explicar, seis
+meses depois, por que a casa aprovou.
+
+**E ESTA TABELA NÃO É ATO.** Nada aqui numera, ocupa folha, gasta selo, cobra
+ou entra na corrente de hash. O ato de cancelamento continua se lavrando na
+ficha do título, com hipótese do catálogo e fundamento escrito — é a regra do
+CNIB pela quarta vez: **avisar e preparar, ficando pendente o okay.**
+"""
+from __future__ import annotations
+
+import sqlite3
+
+# AS SEIS ESPÉCIES, e cada uma é um caminho medido no `swagger.yaml`.
+#
+# **A RENEGOCIAÇÃO ENTROU POR ÚLTIMO, e era a que mais faltava.** O
+# comunicado que criou esta API diz que ela existe para a Resolve
+# «aumentar a base de títulos que podem ser cobrados junto aos
+# devedores» — e a renegociação é a proposta do devedor para quitar e
+# cancelar. Os dois caminhos estavam declarados desde 02/09/2026 e
+# nenhuma função os chamava.
+ANUENCIA = "ANUENCIA"
+CERTIDAO = "CERTIDAO"
+CANCELAMENTO = "CANCELAMENTO"
+DECISAO_JUDICIAL = "DECISAO_JUDICIAL"
+PEDIDO_PROTESTO = "PEDIDO_PROTESTO"
+RENEGOCIACAO = "RENEGOCIACAO"
+
+ESPECIES: tuple[str, ...] = (
+    ANUENCIA, CERTIDAO, CANCELAMENTO, DECISAO_JUDICIAL, PEDIDO_PROTESTO,
+    RENEGOCIACAO)
+
+NOME_DA_ESPECIE: dict[str, str] = {
+    ANUENCIA: "Anuência do credor",
+    CERTIDAO: "Pedido de certidão",
+    CANCELAMENTO: "Pedido de cancelamento",
+    DECISAO_JUDICIAL: "Decisão judicial",
+    PEDIDO_PROTESTO: "Pedido de protesto (remessa)",
+    RENEGOCIACAO: "Renegociação de dívida (Resolve)",
+}
+
+# AS SITUAÇÕES. `DISPENSADA` existe porque **aviso sem saída é aviso que fica
+# para sempre** — a lição do livro a confirmar: sem um jeito de tirar da lista
+# o que não é desta casa, o balcão vê a mesma linha todo dia e para de ler.
+PENDENTE = "PENDENTE"
+DECIDIDA = "DECIDIDA"
+ENVIADA = "ENVIADA"
+DISPENSADA = "DISPENSADA"
+
+SITUACOES: tuple[str, ...] = (PENDENTE, DECIDIDA, ENVIADA, DISPENSADA)
+
+# O QUE JÁ NÃO ESPERA NINGUÉM. É o que a lista do balcão tira da frente.
+SITUACOES_TERMINAIS: frozenset[str] = frozenset({ENVIADA, DISPENSADA})
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS cn_pendencias (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- DE QUE ESPÉCIE, E DE QUE AMBIENTE. O ambiente entra na chave: os
+    -- códigos de homologação e de produção se repetem.
+    especie TEXT NOT NULL,
+    ambiente TEXT NOT NULL,
+
+    -- COMO A CENTRAL CHAMA ISTO. `codigo` é o `cd_*` dela, e é por ele que
+    -- se responde; `chave` é a chave única de 23 dígitos, quando vem.
+    codigo TEXT NOT NULL,
+    chave TEXT,
+
+    -- O TÍTULO DESTA CASA, quando se achou. **Fica vazio quando não se
+    -- achou**, e isso é informação: pendência que não casa com título nenhum
+    -- é o que o balcão precisa olhar primeiro.
+    titulo_id INTEGER REFERENCES pt_titulos(id),
+
+    -- O QUE A CENTRAL MANDOU, congelado. JSON, como veio.
+    teor TEXT NOT NULL,
+    -- A LINHA QUE O BALCÃO LÊ, montada na baixa. Sem ela a tela teria de
+    -- abrir o JSON de cada uma para desenhar a lista.
+    resumo TEXT NOT NULL DEFAULT '',
+
+    baixada_em TEXT NOT NULL,
+    baixada_por TEXT,
+
+    situacao TEXT NOT NULL DEFAULT 'PENDENTE',
+
+    -- O QUE O OFICIAL DECIDIU, e ainda não subiu. JSON.
+    decisao TEXT,
+    decidida_em TEXT,
+    decidida_por TEXT,
+
+    -- O QUE SUBIU, e o que a Central respondeu.
+    enviada_em TEXT,
+    enviada_por TEXT,
+    resposta TEXT,
+
+    -- POR QUE SAIU DA LISTA SEM RESPOSTA. Dispensar exige motivo escrito, como
+    -- no usucapião e na pendência de numeração.
+    dispensa_motivo TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_cn_pendencias_fila
+    ON cn_pendencias(situacao, especie);
+CREATE INDEX IF NOT EXISTS idx_cn_pendencias_titulo
+    ON cn_pendencias(titulo_id);
+
+-- A MESMA PENDÊNCIA NÃO ENTRA DUAS VEZES. Baixar de novo é rotina — o balcão
+-- baixa de manhã e ao meio-dia —, e sem esta trava a segunda baixa duplicaria
+-- a lista, com uma cópia já respondida e outra em branco.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_cn_pendencias_central
+    ON cn_pendencias(ambiente, especie, codigo);
+"""
+
+# Colunas acrescentadas depois. Aditivo, no padrão do sistema — e índice sobre
+# coluna de migração **não vai aqui**: vai em `INDICES_DEPOIS_DA_MIGRACAO`.
+MIGRACOES: tuple[tuple[str, str, str], ...] = ()
+
+INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = ()
+
+
+def init_cn_schema(con: sqlite3.Connection) -> None:
+    """Cria a tabela das pendências da CENPROT. Idempotente."""
+    con.executescript(SCHEMA)
+    for tabela, coluna, tipo in MIGRACOES:
+        existentes = {linha[1] for linha in con.execute(
+            f"PRAGMA table_info({tabela})")}
+        if coluna not in existentes:
+            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+    for comando in INDICES_DEPOIS_DA_MIGRACAO:
+        con.execute(comando)

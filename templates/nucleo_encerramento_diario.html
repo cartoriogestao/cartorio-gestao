@@ -1,0 +1,93 @@
+{#
+  O encerramento diário dos livros de protocolo — Protesto, RCPJ e RTD.
+
+  DIA SEM MOVIMENTO TAMBÉM SE ENCERRA, e o termo diz "não houve movimento".
+  É isso que distingue dia parado de dia não escriturado, e é a diferença que
+  a inspeção procura.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Encerramento diário</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('nucleo_livros') }}">&larr; Livros</a></div>
+
+<div class="notice">
+  Só os <strong>livros de protocolo</strong> se encerram por dia — os outros encerram
+  quando enchem. <strong>Dia sem movimento também se encerra</strong>: o termo diz "não
+  houve movimento", e é isso que distingue dia parado de dia não escriturado.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Encerrar o dia</span></div>
+  <table class="table">
+    <thead><tr><th>Livro</th><th>Hoje</th><th>Dias sem termo</th><th>Encerrar</th></tr></thead>
+    <tbody>
+      {% for p in painel %}
+      <tr>
+        <td><strong>{{ p.nome }}</strong><div><small>{{ p.serie }}</small></div></td>
+        <td>
+          {% if p.encerrado_hoje %}
+            <small>encerrado</small>
+          {% else %}
+            <small>em aberto</small>
+          {% endif %}
+        </td>
+        <td>
+          {% if p.atrasados %}
+            <span class="danger"><strong>{{ p.atrasados | length }}</strong></span>
+            <div><small>{{ p.atrasados[:8] | join(', ') }}{% if p.atrasados | length > 8 %} …{% endif %}</small></div>
+          {% else %}
+            <small>nenhum</small>
+          {% endif %}
+        </td>
+        <td>
+          {% if user.role in ['ADMIN','MANAGER','USER'] %}
+          <form method="post" class="grid2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="serie" value="{{ p.serie }}">
+            <label>Dia
+              <input type="date" name="dia" value="{{ p.atrasados[0] if p.atrasados else hoje }}"></label>
+            <div class="actions"><button class="button">Encerrar o dia</button></div>
+          </form>
+          {% else %}
+            <small>perfil de auditoria não encerra</small>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p style="padding:0 14px 14px"><small>
+    O campo já vem com o <strong>dia mais antigo em aberto</strong>, quando há um:
+    encerrar fora de ordem deixa buraco atrás, e é o buraco que a correição procura.
+  </small></p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Dias já encerrados</span><small>{{ feitos | length }} mais recente(s)</small>
+  </div>
+  {% if not feitos %}
+    <p style="padding:14px"><small>Nenhum dia encerrado ainda.</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Dia</th><th>Livro</th><th>Lançamentos</th><th>Do nº ao nº</th>
+               <th>Quando</th><th>Por quem</th></tr></thead>
+    <tbody>
+      {% for f in feitos %}
+      <tr>
+        <td><strong>{{ f.dia }}</strong></td>
+        <td><small>{{ f.serie }}</small></td>
+        <td>{{ f.quantidade }}{% if not f.quantidade %} <small>(sem movimento)</small>{% endif %}</td>
+        <td>
+          {% if f.primeiro %}{{ f.primeiro }} a {{ f.ultimo }}{% else %}—{% endif %}
+        </td>
+        <td><small>{{ f.encerrado_em }}</small></td>
+        <td><small>{{ f.encerrado_por or '—' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

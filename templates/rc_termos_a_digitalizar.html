@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Termos a digitalizar{% endblock %}
+{% block heading %}<h1>Termos a digitalizar</h1>{% endblock %}
+{% block content %}
+{# PROBLEMA #121 — o oficial, 07/10/2026: «a obrigatoriedade de digitalizar o
+   termo no sistema depois da lavratura de registro». A lista é MEDIDA na hora
+   (rc_digitalizacao.pendentes): o registro sai dela sozinho quando o termo
+   assinado é enviado na ficha. #}
+<div class="card">
+  <p><strong>{{ linhas|length }}</strong> registro{{ 's' if linhas|length != 1 }}
+     lavrado{{ 's' if linhas|length != 1 }} neste sistema
+     sem o termo assinado digitalizado.</p>
+  <p class="small muted">
+    Vale para o que foi <strong>lavrado aqui</strong> a partir de
+    {% if desde %}<strong>{{ desde[:10] }}</strong>{% else %}<em>(data de corte não configurada)</em>{% endif %}
+    — o acervo importado do E-Ofício e o que se digita do livro de papel
+    <strong>não entram</strong>: o termo deles já existe em papel. O prazo é de
+    <strong>{{ prazo_dias }} dias corridos</strong> depois da lavratura, como a
+    ficha do Registro de Imóveis. Vencido o prazo, o aviso fica vermelho nas
+    telas do Registro Civil. <strong>A certidão não é travada</strong>: quem a
+    pede não tem culpa de o termo não ter sido escaneado.
+  </p>
+</div>
+
+{% if linhas %}
+<table class="table">
+  <thead><tr><th>Assento</th><th>Espécie</th><th>Nº</th><th>Nome</th>
+             <th>Lavrado em</th><th>Prazo</th><th></th></tr></thead>
+  <tbody>
+  {% for x in linhas %}
+    <tr{% if x.vencida %} style="background:#fde7ea"{% endif %}>
+      <td>#{{ x.id }}</td>
+      <td class="small">{{ x.especie }}</td>
+      <td>{{ x.numero or '—' }}{% if x.livro_volume %} <small class="muted">({{ x.livro_volume }})</small>{% endif %}</td>
+      <td>{{ x.nome }}</td>
+      <td class="small">{{ x.lavrado_em.strftime('%d/%m/%Y') }}</td>
+      <td class="small">{% if x.vencida %}<strong>VENCIDO</strong> em {{ x.prazo.strftime('%d/%m') }}{% else %}até {{ x.prazo.strftime('%d/%m') }}{% endif %}</td>
+      <td><a class="button" href="{{ url_for('rcpn_assento', assento_id=x.id) }}#termo-digitalizado">Enviar o termo</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Nenhum registro esperando o termo digitalizado.</p>
+{% endif %}
+{% endblock %}

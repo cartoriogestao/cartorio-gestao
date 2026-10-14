@@ -1,0 +1,212 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>CENPROT — o que chegou e espera resposta</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_painel') }}">O roteiro do dia</a>
+  <a class="button" href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a>
+  <a class="button" href="{{ url_for('protesto_remessas') }}">Remessas da CRA</a>
+  <a class="button" href="{{ url_for('protesto_titulos') }}">Títulos</a>
+</div>
+
+{# O AMBIENTE TEM DE GRITAR. Pendência de homologação é DADO DE TESTE, e com
+   cara de real ela faz alguém ir ao balcão dizer que existe — o carimbo que
+   mente na pior forma. #}
+{% if ambiente == 'HOMOLOGACAO' %}
+<div class="alert alert-warning">
+  <strong>Você está no ambiente de HOMOLOGAÇÃO.</strong> Tudo o que aparece
+  aqui é <strong>dado de teste</strong> da Central, e o que for enviado
+  <strong>não vale</strong> para nenhum protesto de verdade. Para trabalhar,
+  troque para produção abaixo — e só depois de a credencial de produção estar
+  informada.
+</div>
+{% else %}
+<div class="alert alert-danger">
+  <strong>Ambiente de PRODUÇÃO.</strong> O que for enviado daqui muda a
+  situação dos títulos na Central, e não se desfaz por esta tela.
+</div>
+{% endif %}
+
+{% if not tem_credencial %}
+<div class="alert alert-danger">
+  A credencial da CENPROT para {{ ambiente|lower }} <strong>ainda não foi
+  informada</strong>. Ela se informa em
+  <a href="{{ url_for('settings') }}">Administrativo → Configurações →
+  Centrais de Protesto</a>, e fica guardada <strong>fora do banco</strong> —
+  o backup não a alcança.
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O que está esperando, por espécie</span>
+    <small>o número conta; ele não julga prazo</small>
+  </div>
+  <table class="table">
+    <thead>
+      <tr><th>Espécie</th><th style="text-align:right">Esperando</th>
+          <th>Última baixa</th></tr>
+    </thead>
+    <tbody>
+      {% for linha in quadro %}
+      <tr>
+        <td>
+          <a href="{{ url_for('protesto_pendencias', especie=linha.especie,
+                              ambiente=ambiente) }}">{{ linha.nome }}</a>
+        </td>
+        <td style="text-align:right">{{ linha.esperando }}</td>
+        <td>
+          {% if linha.ultima_baixa %}{{ linha.ultima_baixa[:16]|replace('T',' ') }}
+          {% else %}<em>nunca se baixou</em>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted" style="padding:.5rem .75rem">
+    <strong>Zero não quer dizer «em dia».</strong> Pode ser que nada tenha
+    chegado, ou que ninguém tenha baixado hoje — por isso a coluna da direita
+    mostra quando foi a última vez.
+  </p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Trazer da Central</span>
+    <small>baixar não responde nada</small>
+  </div>
+  <form method="post" action="{{ url_for('protesto_pendencias_baixar') }}"
+        class="form-grid" style="padding:.75rem">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Espécie
+      <select name="especie">
+        {% for e in especies %}
+        <option value="{{ e.chave }}" {% if e.chave == especie %}selected{% endif %}>
+          {{ e.nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Ambiente
+      <select name="ambiente">
+        {% for a in ambientes %}
+        <option value="{{ a }}" {% if a == ambiente %}selected{% endif %}>
+          {{ a|capitalize }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>De <input type="date" name="inicio"></label>
+    <label>Até <input type="date" name="fim"></label>
+    <div>
+      <button class="button" type="submit">Baixar da CENPROT</button>
+    </div>
+  </form>
+  <p class="muted" style="padding:0 .75rem .75rem">
+    O pedido de cancelamento <strong>exige as duas datas</strong>; nas demais
+    espécies o período é opcional. O pedido de protesto usa só a data.
+  </p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Testar a conexão</span>
+    <small>não baixa nem envia nada</small>
+  </div>
+  <form method="post" action="{{ url_for('protesto_cenprot_testar') }}"
+        style="padding:.75rem">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ambiente" value="{{ ambiente }}">
+    <button class="button" type="submit">Testar {{ ambiente|lower }}</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>{{ especies | selectattr('chave','equalto',especie)
+             | map(attribute='nome') | first }}</span>
+    <small>{{ fila|length }} esperando · {{ decididas }} decidida(s) sem enviar</small>
+  </div>
+
+  {% if especie == 'CANCELAMENTO' %}
+  <div class="alert alert-warning" style="margin:.75rem">
+    <strong>A conferir na homologação:</strong> {{ a_conferir }}
+  </div>
+  {% endif %}
+
+  {% if so_baixa %}
+  <div class="alert alert-warning" style="margin:.75rem">
+    <strong>Esta espécie só se baixa.</strong> A decisão judicial não se
+    responde pela API: quem registra a ordem — com o juízo, o processo e a
+    <strong>data do recebimento</strong>, que é de onde corre o prazo do § 2º
+    do art. 17 — é o oficial, na ficha do título. Ela aparece aqui para o
+    balcão saber que existe, e para o título não ser oferecido no
+    «A protestar» sem que ninguém veja a ordem.
+  </div>
+  {% endif %}
+
+  {% if fila %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Código na Central</th>
+        <th>O que é</th>
+        <th>Título desta casa</th>
+        <th>Baixada em</th>
+        <th>Situação</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in fila %}
+      <tr>
+        <td>
+          <a href="{{ url_for('protesto_pendencia', pendencia_id=p.id) }}">
+            {{ p.codigo }}</a>
+        </td>
+        <td>{{ p.resumo or '—' }}</td>
+        <td>
+          {% if p.titulo_id %}
+            <a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">
+              {{ p.numero_titulo }}</a>
+            {% if p.titulo_protocolo %}<small>· prot. {{ p.titulo_protocolo }}</small>{% endif %}
+          {% else %}
+            <span class="badge badge-warning">não casou</span>
+          {% endif %}
+        </td>
+        <td>{{ p.baixada_em[:16]|replace('T',' ') }}</td>
+        <td>{{ p.situacao|capitalize }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="padding:.75rem">
+    Nada esperando nesta espécie. Se você ainda não baixou hoje, use
+    <strong>Trazer da Central</strong> acima — lista vazia não quer dizer
+    Central vazia.
+  </p>
+  {% endif %}
+</section>
+
+{% if decididas and not so_baixa %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Enviar as decididas</span>
+    <small>isto MUDA coisa na Central</small>
+  </div>
+  <div style="padding:.75rem">
+    <p>
+      Há <strong>{{ decididas }}</strong> com decisão gravada e ainda não
+      enviada. O envio sobe todas de uma vez, e a resposta da Central fica
+      guardada em cada uma.
+    </p>
+    <form method="post" action="{{ url_for('protesto_pendencias_enviar') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="especie" value="{{ especie }}">
+      <input type="hidden" name="ambiente" value="{{ ambiente }}">
+      <button class="button" type="submit">
+        Enviar as {{ decididas }} à CENPROT ({{ ambiente|lower }})</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

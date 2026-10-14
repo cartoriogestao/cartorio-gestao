@@ -1,0 +1,38 @@
+{# OS RELATOS DO DIA NO PAINEL — ordem do oficial em 12/10/2026: o despacho,
+   o boletim e a cobrança diária deixaram de ser tarefa. Não vencem nem se
+   concluem: se leem. Os não lidos primeiro. #}
+{% if relatos_do_dia is not none %}
+<section class="panel">
+  <div class="panel-head"><h2>Relatos do dia</h2>
+    <a href="{{ url_for('relatos_diarios') }}">dias anteriores e a carga da equipe</a>
+  </div>
+  {% if not relatos_do_dia %}
+    <p class="small muted">Nenhum relato hoje ainda — a rodada do gestor sai às 07:30, 14:00 e 14:30.</p>
+  {% else %}
+  {% for r in relatos_do_dia %}
+  <details {% if not r.lido_em %}open{% endif %} style="margin:6px 0">
+    <summary><strong>{{ r.titulo }}</strong>
+      {% if not r.lido_em %}<span class="badge warning">novo</span>{% endif %}
+      <span class="small muted">atualizado às {{ r.atualizado_em[11:16] }}</span></summary>
+    <pre style="white-space:pre-wrap;font:inherit;margin:6px 0">{{ r.corpo }}</pre>
+    {% if not r.lido_em %}
+    <form method="post" action="{{ url_for('relato_lido', relato_id=r.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="voltar" value="{{ url_for('dashboard') }}">
+      <button class="button" type="submit">Marcar como lido</button>
+    </form>
+    {% endif %}
+  </details>
+  {% endfor %}
+  {% endif %}
+  {% if carga_da_equipe %}
+  <h3 style="margin-top:12px">Carga da equipe</h3>
+  <div class="table-wrap"><table><thead><tr><th>Pessoa</th><th>Abertas</th><th>Vencidas</th><th>Alta/crítica</th><th>Pontos</th></tr></thead><tbody>
+  {% for c in carga_da_equipe %}
+    <tr {% if c.vencidas %}class="danger"{% endif %}><td>{{ c.nome }}</td><td>{{ c.abertas }}</td><td>{{ c.vencidas }}</td><td>{{ c.altas }}</td><td><strong>{{ c.pontos }}</strong></td></tr>
+  {% endfor %}
+  </tbody></table></div>
+  <p class="small muted">Pontos: crítica 3, alta 2, média 1; vencida vale mais 2. As sugestões de quem pode assumir o quê estão na página dos relatos.</p>
+  {% endif %}
+</section>
+{% endif %}

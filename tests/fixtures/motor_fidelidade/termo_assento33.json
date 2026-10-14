@@ -1,0 +1,71 @@
+{
+  "_meta_fixture": "termo_assento33_stub",
+  "especie": "NASCIMENTO",
+  "id": 33,
+  "nome": "BEATRIZ DE EXEMPLO",
+  "sexo": "F",
+  "data_fato": "2026-09-10",
+  "data_ato": "2026-09-27",
+  "teor_html_cru": "<p>Em nove (9) de setembro (9) de dois mil e vinte e um, <strong>BEATRIZ DE EXEMPLO</strong>, sendo filho de MARIA e JOÃO. Eu, ____, Oficial.</p>",
+  "pessoas": [
+    {
+      "papel": "REGISTRADO",
+      "nome": "BEATRIZ DE EXEMPLO",
+      "sexo": "F",
+      "nacionalidade": "brasileira"
+    },
+    {
+      "papel": "MAE",
+      "nome": "MARIA DE EXEMPLO",
+      "sexo": "F",
+      "nacionalidade": "brasileiro",
+      "profissao": "professora",
+      "documento_tipo": "CPF",
+      "documento_numero": "000.000.048-55",
+      "naturalidade_cidade": "Cidade Ensaio",
+      "naturalidade_uf": "XX"
+    },
+    {
+      "papel": "PAI",
+      "nome": "JOÃO DE EXEMPLO",
+      "sexo": "M",
+      "nacionalidade": "brasileiro",
+      "profissao": "comerciante",
+      "documento_tipo": "CPF",
+      "documento_numero": "000.000.047-74",
+      "naturalidade_cidade": "Cidade Ensaio",
+      "naturalidade_uf": "XX"
+    },
+    {
+      "papel": "DECLARANTE",
+      "nome": "MARIA DE EXEMPLO",
+      "sexo": "F",
+      "documento_tipo": "CPF",
+      "documento_numero": "000.000.048-55"
+    }
+  ],
+  "descricao": "Termo 33 (sandbox, dados de ensaio). 2a: só strip. 2b: strip + gênero + fecho + datas + TRÊS. `teor_congelado` reproduz a forma do teor gravado no assento 33 do sandbox com nomes/cidade/matrícula de ensaio.",
+  "teor_congelado": "Aos vinte e sete (27) de setembro (9) de dois mil e vinte e seis (2026), neste Município de Cidade Ensaio, Estado do Maranhão, neste ofício, compareceu MARIA DE EXEMPLO, inscrita no CPF n.º 000.000.048-55, apresentou a DNV n.º 20260928001234567, e declarou que no dia dez (10) de setembro (9) de dois mil e vinte e seis (2026) - 10/09/2026, às 08:15, em Hospital de Ensaio, Av. Ensaio, 100, Cidade Ensaio/XX, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>BEATRIZ DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileiro, professora, inscrito no CPF n.º 000.000.048-55, natural de Cidade Ensaio/XX, e de JOÃO DE EXEMPLO, brasileiro, comerciante, inscrito no CPF n.º 000.000.047-74, natural de Cidade Ensaio/XX. A naturalidade declarada é de Cidade Ensaio/XX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Inscrito no CPF n.º 000.000.043-40. Lido e achado conforme, o(a) declarante assina. Eu, ____________, Oficial, dou fé e assino. Matrícula 00000001552026100001013000001317. Cidade Ensaio/XX, vinte e três (23) de setembro (9) de dois mil e vinte e seis (2026). VINTE E TRES DE SETEMBRO.",
+  "esperado_texto_contem": [
+    "sendo filha de MARIA DE EXEMPLO, brasileira, professora, inscrita no CPF",
+    "JOÃO DE EXEMPLO, brasileiro, comerciante, inscrito no CPF",
+    "Inscrita no CPF n.º 000.000.043-40",
+    "a declarante assina",
+    "Eu, OFICIAL DE ENSAIO, Oficial de Registro, dou fé e assino",
+    "vinte e sete (27) de setembro de dois mil e vinte e seis (2026)",
+    "dez (10) de setembro de dois mil e vinte e seis (2026) - 10/09/2026",
+    "vinte e três (23) de setembro",
+    "VINTE E TRÊS DE SETEMBRO",
+    "\"BEATRIZ DE EXEMPLO\""
+  ],
+  "esperado_texto_nao_contem": [
+    "<strong>",
+    "</strong>",
+    "sendo filho de",
+    "Eu, ____",
+    "setembro (9)",
+    "TRES DE",
+    "MARIA DE EXEMPLO, brasileiro",
+    "o(a) declarante"
+  ]
+}

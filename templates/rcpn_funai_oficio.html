@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Ofício à FUNAI{% endblock %}
+{% block content %}
+<h1>Ofício à FUNAI — {{ oficio.nome }}</h1>
+
+<div class="card">
+  <p class="small muted">
+    <strong>A etnia e a aldeia são perguntadas, e não deduzidas do sobrenome.</strong>
+    O § 1º permite que o povo indígena seja lançado como sobrenome <em>a pedido
+    do declarante</em> — permite, não obriga. Tirar a etnia do nome acertaria os
+    casos desta casa e erraria o primeiro que chegasse sem ela, ou tiraria de um
+    sobrenome comum uma etnia que não é. O sistema não guarda nenhuma das duas;
+    quem as sabe é quem atendeu o declarante.
+  </p>
+</div>
+
+<form method="get">
+  <p>
+  {% for campo in norma.O_QUE_SE_PERGUNTA %}
+    <label>{{ campo.rotulo }}
+      <input type="text" name="{{ campo.campo }}"
+             value="{{ etnia if campo.campo == 'etnia' else aldeia }}" size="30">
+    </label>
+  {% endfor %}
+  <button class="button">Refazer o ofício</button>
+  </p>
+</form>
+
+{% if oficio.faltando %}
+<div class="alerta warning">
+  <p>Falta preencher: {% for f in oficio.faltando %}<strong>{{ f }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+  <p class="small">O ofício sai assim mesmo, com o lugar marcado — que é honesto.
+     Vazio é melhor que inventado: o papel afirma a origem de uma criança a um
+     órgão federal.</p>
+</div>
+{% endif %}
+
+<pre style="white-space:pre-wrap">{{ oficio.teor }}</pre>
+
+<div class="card">
+  <h2 style="margin-top:0">Registrar que a comunicação saiu</h2>
+  <p class="small muted">
+    <strong>Aviso sem saída é aviso que fica para sempre</strong>, e na terceira
+    vez ninguém lê mais. É este botão que tira o nascimento da lista — e o teor
+    acima <strong>congela</strong>, porque numa correição é ele que se mostra.
+  </p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="enviei">
+    <input type="hidden" name="etnia" value="{{ etnia }}">
+    <input type="hidden" name="aldeia" value="{{ aldeia }}">
+    <label>Por onde saiu <input type="text" name="canal" size="16"
+           placeholder="malote, carta, e-mail"></label>
+    <label>Protocolo <input type="text" name="protocolo" size="20"></label>
+    <button class="button">Já comuniquei</button>
+  </form>
+</div>
+
+<details>
+  <summary>Esta comunicação não é devida</summary>
+  <div class="card">
+    <p class="small muted">Dispensar é decisão do oficial; ignorar não é. O que
+       você escrever <strong>fica</strong>, mesmo se a pendência voltar — engano
+       se conserta à vista.</p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="dispensar">
+      <p><textarea name="motivo" rows="3" cols="70"
+          placeholder="por que esta comunicação não é devida"></textarea></p>
+      <button class="button">Dispensar, com este motivo</button>
+    </form>
+  </div>
+</details>
+
+<p><a href="{{ url_for('rcpn_funai') }}">voltar à lista</a></p>
+{% endblock %}

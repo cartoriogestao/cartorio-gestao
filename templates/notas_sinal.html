@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Sinal público nº {{ s.id }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_sinais') }}">&larr; Sinais</a>
+  <a class="button" href="{{ url_for('notas_sinal_reconhecimento') }}?busca={{ s.titular|urlencode }}">Reconhecer este sinal</a>
+  {% if s.caminho_pdf %}
+  <a class="button primary" href="{{ url_for('notas_sinal_pdf', sinal_id=s.id) }}" target="_blank">Abrir PDF</a>
+  {% endif %}
+</div>
+
+{% if not s.caminho_pdf %}
+<div class="notice warning">Sem PDF anexado. Baixe o sinal na CNSIP/Censec e anexe abaixo — o sistema não redesenha o sinal.</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Cadastro (abertura sem selo)</span></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="salvar">
+    <label class="span2">Titular <input name="titular" value="{{ s.titular }}" required></label>
+    <label>Documento <input name="documento" value="{{ s.documento or '' }}"></label>
+    <label>Data da abertura <input type="date" name="data_abertura" value="{{ s.data_abertura or '' }}"></label>
+    <label>Origem
+      <select name="origem">
+        {% for cod, rotulo in origens.items() %}
+        <option value="{{ cod }}" {% if s.origem == cod %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Chave na central <input name="origem_chave" value="{{ s.origem_chave or '' }}"></label>
+    <label class="span2">Observação <input name="observacao" value="{{ s.observacao or '' }}"></label>
+    <label class="span2">Metadados <textarea name="metadados" rows="2">{{ s.metadados or '' }}</textarea></label>
+    <label class="span2 check"><input type="checkbox" name="inativo" value="1" {% if not s.ativo %}checked{% endif %}>
+      Inativo — não aparece no balcão de reconhecimento</label>
+    <div class="span2"><button class="primary">Salvar</button>
+      <span class="small muted">Criado em {{ s.criado_em }}{% if s.criado_por %} por {{ s.criado_por }}{% endif %}.</span></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>PDF da central</span></div>
+  <form method="post" enctype="multipart/form-data" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="pdf">
+    {% if s.caminho_pdf %}
+    <p class="small">Arquivo: <code>{{ s.nome_arquivo_pdf }}</code>
+      ({{ s.bytes }} bytes{% if s.sha256 %}, sha {{ s.sha256[:12] }}…{% endif %})
+      — caminho <code>{{ s.caminho_pdf }}</code></p>
+    {% endif %}
+    <label>Substituir / anexar PDF <input type="file" name="pdf" accept="application/pdf,.pdf" required></label>
+    <button class="primary">Guardar PDF</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Reconhecimentos autônomos</span></div>
+  {% if reconhecimentos %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Data</th><th>Selo</th><th>Oficial</th><th></th></tr></thead>
+    <tbody>
+    {% for r in reconhecimentos %}
+      <tr>
+        <td>{{ r.id }}</td>
+        <td class="small">{{ fmt_date(r.data) }} {% if r.hora %}{{ r.hora }}{% endif %}</td>
+        <td class="small">{{ r.selo or '—' }}</td>
+        <td class="small">{{ r.oficial or '—' }}</td>
+        <td><a class="button small" href="{{ url_for('notas_sinal_reconhecimento_ver', reconhecimento_id=r.id) }}">ver</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="muted" style="padding:14px">Nenhum reconhecimento autônomo ainda.</p>
+  {% endif %}
+</section>
+{% endblock %}

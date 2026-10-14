@@ -1,0 +1,69 @@
+{
+  "_meta_fixture": "obito_cert2_assento32_stub",
+  "especie": "OBITO",
+  "id": 32,
+  "nome": "PEDRO DE EXEMPLO FALECIDO",
+  "matricula": "00000003552015030009999000123456",
+  "cpf_registrado": "00000004774",
+  "data_fato": "2015-03-03",
+  "data_ato": "2015-03-04",
+  "hora_fato": "14:20",
+  "local_fato_nome": "Hospital Regional",
+  "causa_morte": "Infarto agudo do miocárdio",
+  "atestante": "Dr. Paulo de Exemplo",
+  "atestante_documento": "CRM/MA 12345",
+  "local_sepultamento": "Cemitério Municipal",
+  "cor_raca": "parda",
+  "numero_do": "DO-999888",
+  "dados": {
+    "strMunicipioObito": "Cidade Exemplo",
+    "strUFObito": "MA",
+    "strMunicipioSepultamento": "Cidade Exemplo",
+    "strUFSepultamento": "MA",
+    "strNomeConjuge": "ANA CÔNJUGE EXEMPLO",
+    "strBens": "SIM",
+    "strFilhos": "dois filhos",
+    "strProfissao": "agricultor",
+    "strRacaCor": "parda",
+    "strDomicilio": "Zona Rural, Cidade Exemplo/MA",
+    "strTituloEleitor": "123456789012",
+    "strNumeroDO": "DO-999888",
+    "intIdade": "72",
+    "strSexo": "M",
+    "strEstadoCivil": "casado"
+  },
+  "pessoas": [
+    {
+      "papel": "FALECIDO",
+      "nome": "PEDRO DE EXEMPLO FALECIDO",
+      "documento_tipo": "CPF",
+      "documento_numero": "00000004774",
+      "sexo": "M",
+      "estado_civil": "casado",
+      "data_nascimento": "1943-01-10",
+      "naturalidade_cidade": "Cidade Exemplo",
+      "naturalidade_uf": "MA",
+      "profissao": "agricultor",
+      "endereco": "Zona Rural"
+    },
+    {
+      "papel": "MAE",
+      "nome": "JOANA MÃE EXEMPLO"
+    },
+    {
+      "papel": "PAI",
+      "nome": "ANTÔNIO PAI EXEMPLO"
+    },
+    {
+      "papel": "DECLARANTE",
+      "nome": "CARLOS DECLARANTE EXEMPLO"
+    }
+  ],
+  "certidao": {
+    "id": 2,
+    "assento_id": 32,
+    "especie": "OBITO",
+    "numero": 2,
+    "ano": 2026
+  }
+}

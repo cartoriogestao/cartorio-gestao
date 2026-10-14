@@ -1,0 +1,168 @@
+"""As tabelas do gestor — o agente que confere a casa, cria e cobra as tarefas.
+
+    «preciso que faça tudo, eu fiscalizo e reviso depois» — o oficial, 06/10/2026
+
+QUATRO TABELAS, E A PRIMEIRA É A QUE FALTAVA À CASA INTEIRA
+    `ge_envios` guarda **o que saiu para cada Central**, com protocolo e recibo.
+    Medido em 02/10/2026 na produção: nada no sistema dizia o que já tinha ido ao
+    SIRC, à CENSEC, ao IBGE ou à DOI. Sem esse registro nenhuma conferência
+    distingue «não foi mandado» de «foi mandado pelo portal» — e um agente que
+    cobra prazo sem saber o que já foi cumprido cobra para sempre.
+
+    `ge_achados` é a fila de revisão do oficial: cada coisa que a conferência
+    acha, com a chave estável que a reconhece de um dia para o outro.
+
+    `ge_execucoes` é o diário do próprio agente — quando rodou, o que achou, o
+    que fechou e onde quebrou.
+
+    `ge_responsaveis` diz quem responde por cada setor. Nasce **inferido** de
+    quem lavrou os atos de cada setor, e o oficial troca depois: é o «revisa
+    depois» aplicado à distribuição do serviço.
+"""
+from __future__ import annotations
+
+import sqlite3
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS ge_envios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    central TEXT NOT NULL,
+    competencia TEXT,
+    referencia TEXT,
+    canal TEXT NOT NULL DEFAULT 'PORTAL',
+    situacao TEXT NOT NULL DEFAULT 'ENVIADO',
+    protocolo TEXT,
+    recibo_caminho TEXT,
+    quantos INTEGER,
+    mensagem TEXT,
+    enviado_em TEXT NOT NULL,
+    registrado_em TEXT NOT NULL,
+    registrado_por TEXT NOT NULL,
+    origem TEXT NOT NULL DEFAULT 'BALCAO'
+);
+CREATE INDEX IF NOT EXISTS ix_ge_envios_central
+    ON ge_envios (central, competencia, referencia);
+
+CREATE TABLE IF NOT EXISTS ge_achados (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chave TEXT NOT NULL UNIQUE,
+    regra TEXT NOT NULL,
+    gravidade TEXT NOT NULL,
+    setor TEXT NOT NULL,
+    titulo TEXT NOT NULL,
+    detalhe TEXT,
+    prazo TEXT,
+    fundamento TEXT,
+    primeiro_visto_em TEXT NOT NULL,
+    ultimo_visto_em TEXT NOT NULL,
+    resolvido_em TEXT,
+    revisado_em TEXT,
+    revisado_por TEXT,
+    revisao TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_ge_achados_abertos
+    ON ge_achados (resolvido_em, regra);
+
+CREATE TABLE IF NOT EXISTS ge_execucoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    iniciada_em TEXT NOT NULL,
+    terminada_em TEXT,
+    hoje TEXT NOT NULL,
+    achados INTEGER,
+    novos INTEGER,
+    resolvidos INTEGER,
+    tarefas_criadas INTEGER,
+    tarefas_fechadas INTEGER,
+    tarefas_cobradas INTEGER,
+    nao_mediu INTEGER,
+    relatorio TEXT,
+    erro TEXT
+);
+
+-- O LIVRO DE CARGAS DO ONR (gestor_cargas_ri, 09/10/2026): cada arquivo que o
+-- agente pôs numa pasta do ONR, com o sha que permite achá-lo depois em
+-- `Processados`, e cada rodada dele, com o que fez e onde quebrou.
+CREATE TABLE IF NOT EXISTS ge_onr_cargas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    canal TEXT NOT NULL,              -- IMAGENS | PESSOAL | REAL
+    tipo TEXT NOT NULL,               -- COMPLETA | INCREMENTAL | RODADA
+    periodo_de TEXT,
+    periodo_ate TEXT,
+    arquivo TEXT,
+    sha256 TEXT,
+    quantos INTEGER,
+    situacao TEXT NOT NULL,           -- PREPARADO | NA_PASTA | PROCESSADO | SUBSTITUIDO | OK | ERRO
+    gerado_em TEXT NOT NULL,
+    processado_em TEXT,
+    detalhe TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_ge_onr_cargas_canal
+    ON ge_onr_cargas (canal, tipo, situacao);
+
+-- O LIVRO DE CARGAS DO RCPN (gestor_cargas_rcpn, 09/10/2026): cada rodada do
+-- agente, por carga, com os arquivos que deixou na pasta (nome, caminho e
+-- sha), o que ficou de fora e por quê, e onde quebrou. É ele que a
+-- conferência lê — o agente não registra envio: isso é da tela de cada carga.
+CREATE TABLE IF NOT EXISTS ge_rcpn_cargas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    canal TEXT NOT NULL,              -- SIRC | CRC | FUNAI | OBITOS | IBGE
+    tipo TEXT NOT NULL,               -- RODADA
+    situacao TEXT NOT NULL,           -- OK | ERRO
+    gerado_em TEXT NOT NULL,
+    detalhe TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_ge_rcpn_cargas_canal
+    ON ge_rcpn_cargas (canal, tipo, id);
+
+-- O QUE O PORTAL DO SELO DISSE DE CADA SELO (gestor_fiscal, 09/10/2026): a
+-- consulta pública do TJMA, uma linha por selo, refeita enquanto o que ela diz
+-- pode mudar (gratuidade em análise, cancelamento que só um lado tem). A
+-- resposta inteira fica em `bruto`; as colunas são o que a conferência compara.
+CREATE TABLE IF NOT EXISTS ge_portal_selos (
+    numero TEXT PRIMARY KEY,
+    consultado_em TEXT NOT NULL,
+    situacao TEXT NOT NULL,           -- ACHADO | NAO_ACHADO | ERRO
+    cancelado INTEGER,
+    data_cancelado TEXT,
+    isento INTEGER,
+    motivo_isencao TEXT,
+    analise TEXT,                     -- DEFERIDA | INDEFERIDA | EM_ANALISE | CANCELADA | NULL (não isento)
+    motivo_indeferimento TEXT,
+    prazo_recurso TEXT,
+    codigo_ato TEXT,
+    valor_ato REAL,
+    emolumento REAL,
+    valor_selo REAL,
+    escrevente TEXT,
+    data_selo TEXT,
+    erro TEXT,
+    bruto TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ge_responsaveis (
+    setor TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    origem TEXT NOT NULL DEFAULT 'INFERIDO',
+    definido_em TEXT NOT NULL,
+    definido_por TEXT NOT NULL,
+    substituto_id INTEGER,
+    rodizio INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+#: Colunas que chegaram depois da tabela — o banco que já a tem ganha por ALTER.
+#: `rodizio=1`: titular e substituto se revezam tarefa a tarefa (ordem do
+#: oficial em 06/10/2026 para o RCPN: «distribuindo entre Elisa e Debora;
+#: quando uma for responsável, a outra fica como substituta»).
+_COLUNAS_TARDIAS = (
+    ("ge_responsaveis", "substituto_id", "INTEGER"),
+    ("ge_responsaveis", "rodizio", "INTEGER NOT NULL DEFAULT 0"),
+)
+
+
+def init_gestor_schema(con: sqlite3.Connection) -> None:
+    con.executescript(SCHEMA)
+    for tabela, coluna, tipo in _COLUNAS_TARDIAS:
+        existentes = {c[1] for c in con.execute(f"PRAGMA table_info({tabela})")}
+        if coluna not in existentes:
+            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")

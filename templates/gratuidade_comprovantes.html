@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Comprovantes de gratuidade{% endblock %}
+{% block heading %}<h1>Comprovantes de gratuidade que faltam</h1>{% endblock %}
+{% block content %}
+<section class="card">
+  <p>Atos gratuitos que <strong>você</strong> praticou desde {{ inicio[8:10] }}/{{ inicio[5:7] }}/{{ inicio[:4] }}
+    e que ainda estão sem o comprovante da gratuidade (declaração de pobreza, decisão
+    judicial, ofício…). O Portal do Selo pode pedi-lo a qualquer momento. O aviso
+    vermelho fica em todas as telas até o último ser guardado.</p>
+</section>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Selo</th><th>Ato</th><th>Data</th><th>Comprovante</th></tr></thead>
+  <tbody>
+  {% for p in lista %}
+    <tr>
+      <td><code>{{ p.numero }}</code></td>
+      <td>{% if p.rotulo %}<strong>{{ p.rotulo }}</strong> <small>({{ p.atribuicao or '' }})</small>{% else %}{{ p.atribuicao or '' }} {{ (p.tabela or '')|replace('_', ' ') }} {{ p.ato_id or '' }}{% endif %}{# HOTFIX-2026-10-13-08 #}</td>
+      <td>{{ (p.obtido_em or '')[:16]|replace('T', ' ') }}</td>
+      <td>
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('gratuidade_comprovante_subir', selo_id=p.id) }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" multiple required>
+          <button class="button primary" type="submit">Guardar</button>
+        </form>
+        {% if achados.get(p.numero|upper) %}
+        <form method="post" action="{{ url_for('gratuidade_comprovante_do_proton', selo_id=p.id) }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button" type="submit">Trazer do Proton: {{ achados[p.numero|upper] }}</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4">Nenhum comprovante faltando. Obrigado!</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{# HOTFIX-2026-10-13-07: ja comprovados - ver e acrescentar mais arquivos #}
+<h2 id="comprovados">Já comprovados (pode acrescentar mais arquivos)</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Selo</th><th>Ato</th><th>Data</th><th>Anexos</th><th>Acrescentar</th></tr></thead>
+  <tbody>
+  {% for p in feitos or [] %}
+    <tr id="selo-{{ p.id }}">
+      <td><code>{{ p.numero }}</code></td>
+      <td>{% if p.rotulo %}<strong>{{ p.rotulo }}</strong> <small>({{ p.atribuicao or '' }})</small>{% else %}{{ p.atribuicao or '' }} {{ (p.tabela or '')|replace('_', ' ') }} {{ p.ato_id or '' }}{% endif %}{# HOTFIX-2026-10-13-08 #}</td>
+      <td>{{ (p.obtido_em or '')[:16]|replace('T', ' ') }}</td>
+      <td>{% for a in p.anexos %}<a href="/arquivo/{{ a.id }}/ver" target="_blank">{{ a.nome }}</a>{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td>
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('gratuidade_comprovante_subir', selo_id=p.id) }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" multiple required>
+          <button class="button" type="submit">Acrescentar</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">Nenhum selo comprovado ainda.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

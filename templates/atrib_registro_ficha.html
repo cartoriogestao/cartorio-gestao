@@ -1,0 +1,360 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>{{ titulo }} nº {{ registro.numero or '—' }}</h1>{% endblock %}
+{% block content %}
+{% from '_fraude.html' import alerta as alerta_fraude %}
+{# O ALERTA DE FRAUDE VEM NO ALTO, antes dos atos. #}
+{{ alerta_fraude(fraudes, csrf_token, 'RCPJ/RTD — ficha do registro', registro.numero,
+                 url_for('rcpj_rtd_registro', registro_id=registro.id)) }}
+
+{% from '_cobrar.html' import quadro, cobrado %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for(voltar) }}">&larr; Registros</a></div>
+
+<section class="panel">
+  <div class="panel-head"><span>O registro</span><small>{{ registro.situacao }}</small></div>
+  <table class="table">
+    <tr><th>Atribuição</th><td>{{ 'RCPJ' if registro.atribuicao == 3 else 'RTD' }}</td>
+        <th>Série</th><td>{{ registro.serie }}</td></tr>
+    <tr><th>Natureza</th><td>{{ registro.natureza or '—' }}</td>
+        <th>Requerente</th><td>{{ registro.requerente_nome or '—' }}</td></tr>
+    <tr><th>Documento</th><td>{{ registro.requerente_documento or '—' }}</td>
+        <th>Origem</th><td>{{ registro.origem }}</td></tr>
+  </table>
+  {% if registro.atribuicao == 4 %}
+  <p style="padding:14px"><small>
+    No RTD a averbação <strong>consome protocolo</strong>; no RCPJ não. Está medido em
+    <code>tbTD_Propriedade</code> e registrado em <code>rg_registro.AVERBACAO_CONSOME_PROTOCOLO</code>,
+    mas ainda não vira número: falta a integração com o protocolo geral.
+  </small></p>
+  {% endif %}
+  {% if user.role in ['ADMIN','MANAGER'] %}
+  {# **CORRIGIR NÃO É EDITAR TEOR** — pedido do oficial em 12/09/2026: «uma
+     pj mudou de nome e preciso atualizar no sistema». O nome/documento do
+     requerente só se gravavam ao abrir o registro; quando a pessoa jurídica
+     muda de nome depois (por averbação já lavrada), o cadastro ficava com
+     o nome antigo para sempre, e quem procurasse pelo nome novo não achava
+     o registro. Isto corrige só o CADASTRO — o teor de cada ato continua
+     congelado — e exige motivo, sempre gravado na auditoria com o valor
+     anterior ao lado. #}
+  <details class="panel" style="margin-top:0">
+    <summary>Corrigir dados do requerente</summary>
+    <form method="post" class="form-grid" style="padding:14px"
+          action="{{ url_for('rcpj_rtd_corrigir_requerente', registro_id=registro.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Requerente
+        <input name="requerente_nome" value="{{ registro.requerente_nome or '' }}"></label>
+      <label>Documento
+        <input name="requerente_documento" value="{{ registro.requerente_documento or '' }}"></label>
+      <label class="span2">Motivo da correção
+        <textarea name="motivo" rows="2" required
+                  placeholder="Ex.: pessoa jurídica mudou de nome, conforme averbação nº X."></textarea></label>
+      <div class="span2">
+        <button class="button primary">Gravar correção</button>
+        <small class="muted">Não altera o teor de nenhum ato — só o cadastro
+          usado para achar o registro e para preencher a certidão e a
+          etiqueta.</small>
+      </div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
+{% if registro.situacao == 'ATIVO' %}
+<section class="panel">
+  <div class="panel-head"><span>Lançar</span></div>
+  <p style="padding:14px 14px 0"><small>
+    Aqui cada ato ocupa <strong>folha nova</strong>: no acervo do E-Ofício cada ato é
+    escritura à parte, e não anotação na folha do registro. É o oposto do RCPN.
+  </small></p>
+  {% for tipo, rotulo, campo, dica in [
+       ('AVERBACAO','Averbação','teor','O que se averba — sai impresso'),
+       ('CANCELAMENTO','Cancelamento','motivo','Por que se cancela')] %}
+  <form method="post" action="{{ url_for('rcpj_rtd_lancar', registro_id=registro.id) }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb"
+        {% if tipo == 'AVERBACAO' %}id="form-lancar-averbacao" enctype="multipart/form-data"{% endif %}>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="tipo" value="{{ tipo }}">
+    <div style="grid-column:1/-1"><strong>{{ rotulo }}</strong></div>
+    {# **O PROTOCOLO VEM PRIMEIRO** — pedido do oficial (11/09/2026): escolher
+       o protocolo recarrega a página (é assim que o checklist dos itens a
+       selar aparece, sem JavaScript nenhum) — e um recarregamento no MEIO do
+       formulário apaga o que já tivesse sido digitado embaixo. Escolhendo
+       antes de preencher qualquer outra coisa, nada se perde. #}
+    {{ quadro(receitas.get(tipo), caixa, protocolos,
+              protocolo_escolhido=protocolo_escolhido,
+              itens_do_protocolo=itens_do_protocolo,
+              reload_url=url_for('rcpj_rtd_registro', registro_id=registro.id)) }}
+    {% if tipo == 'AVERBACAO' %}
+    <label>Tipo do ato averbado
+      <input name="natureza_ato" id="natureza_ato_lancar" required
+             placeholder="Ex.: Estatuto social consolidado"></label>
+    <label>Data da assinatura do ato
+      <input name="data_assinatura" id="data_assinatura_lancar"
+             placeholder="dd/mm/aaaa"></label>
+    {% endif %}
+    <label style="grid-column:1/-1">{{ 'Teor' if campo == 'teor' else 'Motivo' }}
+      <input name="{{ campo }}" {% if tipo != 'AVERBACAO' %}required{% endif %} minlength="10" placeholder="{{ dica }}"
+        {% if tipo == 'AVERBACAO' and registro.numero %}
+        id="teor_lancar"
+        value="CERTIFICO que me foi apresentado para ser AVERBADO no Registro nº {{ registro.numero }} o documento digitalizado abaixo:"
+        {% endif %}></label>
+    {% if tipo == 'AVERBACAO' %}
+    <label style="grid-column:1/-1">Anexar arquivo(s) do documento a averbar
+      <small>(PDF ou imagem — sobe agora e já entra ligado a este ato)</small>
+      <input type="file" name="novo_arquivo" multiple
+             accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*"></label>
+    {% if anexos %}
+    <div style="grid-column:1/-1; margin-bottom:4px" id="anexos-averbacao">
+      <small>Imagens/PDF já no registro, a vincular a esta averbação (a prévia
+        do PDF abaixo usa os mesmos marcados aqui):</small><br>
+      {% for a in anexos %}
+      <label style="display:inline-block; margin-right:12px">
+        <input type="checkbox" name="anexo_id" value="{{ a.id }}" class="anexo-check" checked>
+        {{ a.original_name }}
+      </label>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endif %}
+    <label>Selo digitado à mão <small>(só se você já tem o número — sem
+      marcar nada, o sistema pede o selo sozinho pelos itens escolhidos
+      acima)</small><input name="selo"></label>
+    <div class="actions"><button class="button">Lançar {{ rotulo | lower }}</button></div>
+  </form>
+  {% if tipo == 'AVERBACAO' %}
+  <form method="post" action="{{ url_for('rcpj_rtd_teor_averbacao_previa', registro_id=registro.id) }}"
+        target="_blank" rel="noopener" id="form-previa-averbacao"
+        style="padding:0 14px 14px; border-top:none">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="tipo" value="AVERBACAO">
+    <p style="margin:0 0 8px"><small>
+      Prévia do <strong>teor de averbação em PDF</strong> (modelo editável em
+      Modelos - {{ 'RCPJ_TEOR_AVERBACAO' if (registro.serie or '')[:2] == 'PJ' else 'RTD_TEOR_AVERBACAO' }}):
+      cabeçalho com a atribuição da série ({{ registro.serie or '-' }}) em todas as folhas,
+      intro com <strong>AVERBADO</strong> no Registro nº {{ registro.numero or '-' }},
+      tipo do ato averbado + data da assinatura, imagens anexadas, faixa do selo
+      só na <strong>última</strong> página e encerramento com o lavrante da sessão.
+      Não lança o ato nem emite selo — só monta o PDF para conferência.
+    </small></p>
+    <div class="grid2" style="margin-bottom:8px">
+      <label>Tipo do ato averbado
+        <input name="natureza_ato" placeholder="Ex.: Estatuto social consolidado"></label>
+      <label>Data da assinatura do ato
+        <input name="data_assinatura" id="data_assinatura_previa" placeholder="dd/mm/aaaa"></label>
+    </div>
+    {% if anexos %}
+    <p style="margin:0 0 8px"><small class="muted">Usa os mesmos anexos
+      marcados acima, no formulário de lançar — não se escolhe de novo
+      aqui.</small></p>
+    {% endif %}
+    {# **UM PROTOCOLO SÓ NA TELA, E NÃO DOIS** — antes havia um segundo
+       campo "Protocolo" aqui, independente do de cima, e os dois se
+       chamavam igual: confuso, e só um dos dois realmente pedia selo. A
+       prévia usa o MESMO protocolo e os MESMOS itens marcados no
+       formulário de lançar — copiados por JavaScript no instante de
+       enviar (função abaixo), sem escolher de novo. #}
+    {% set pr_atual = (protocolos | selectattr('id', 'equalto', protocolo_escolhido|int)
+                       | list | first) if protocolo_escolhido else None %}
+    {% if protocolo_escolhido %}
+    <p style="margin:0 0 8px"><small class="muted">Protocolo:
+      <strong>{{ pr_atual.numero if pr_atual else protocolo_escolhido }}</strong>
+      — a faixa de arquivamento (TJ 15.22) só aparece na última página se
+      esse item estiver marcado, no formulário de lançar, para este
+      ato.</small></p>
+    {% else %}
+    <p style="margin:0 0 8px"><small class="muted">Sem protocolo escolhido:
+      a faixa de arquivamento não aparece — escolha um protocolo no
+      formulário de lançar, acima, se este pacote tiver esse item.</small></p>
+    {% endif %}
+    <button class="button" type="submit">Prévia do teor (PDF)</button>
+  </form>
+  {% endif %}
+  {% endfor %}
+  <script>
+  (function () {
+    // A BARRA ENTRA SOZINHA — pedido do oficial (11/09/2026): digitar
+    // "08052026" já mostra "08/05/2026", sem o operador precisar acertar a
+    // barra no meio da digitação.
+    function mascararData(input) {
+      if (!input) return;
+      input.addEventListener("input", function () {
+        var digitos = input.value.replace(/\D/g, "").slice(0, 8);
+        var partes = [];
+        if (digitos.length > 0) partes.push(digitos.slice(0, 2));
+        if (digitos.length > 2) partes.push(digitos.slice(2, 4));
+        if (digitos.length > 4) partes.push(digitos.slice(4, 8));
+        input.value = partes.join("/");
+      });
+    }
+    mascararData(document.getElementById("data_assinatura_lancar"));
+    mascararData(document.getElementById("data_assinatura_previa"));
+  })();
+  (function () {
+    var nat = document.getElementById("natureza_ato_lancar");
+    var dat = document.getElementById("data_assinatura_lancar");
+    var teor = document.getElementById("teor_lancar");
+    if (!nat || !dat || !teor) return;
+    var numero = {{ registro.numero|tojson }};
+    function rebuild() {
+      var base = "CERTIFICO que me foi apresentado para ser AVERBADO no Registro nº "
+        + numero + " o documento digitalizado abaixo:";
+      var lines = [base];
+      var n = (nat.value || "").trim();
+      var d = (dat.value || "").trim();
+      if (n) lines.push("Tipo do ato: " + n + ".");
+      if (d) lines.push("Data da assinatura: " + d + ".");
+      teor.value = lines.join("\n");
+    }
+    nat.addEventListener("input", rebuild);
+    nat.addEventListener("change", rebuild);
+    dat.addEventListener("input", rebuild);
+    dat.addEventListener("change", rebuild);
+  })();
+  (function () {
+    // A prévia não escolhe protocolo, item nem anexo de novo — ela usa
+    // exatamente o que está marcado no formulário de lançar (relato do
+    // oficial: dois campos iguais na mesma tela é que é confuso). Antes de
+    // abrir a prévia, copia para dentro dela, como campos ocultos.
+    var previa = document.getElementById("form-previa-averbacao");
+    var lancar = document.getElementById("form-lancar-averbacao");
+    if (!previa || !lancar) return;
+    function copiar(nome, valores) {
+      previa.querySelectorAll('input[name="' + nome + '"][type="hidden"]')
+        .forEach(function (el) { el.remove(); });
+      valores.forEach(function (v) {
+        var oculto = document.createElement("input");
+        oculto.type = "hidden";
+        oculto.name = nome;
+        oculto.value = v;
+        previa.appendChild(oculto);
+      });
+    }
+    previa.addEventListener("submit", function () {
+      copiar("anexo_id", Array.prototype.map.call(
+        document.querySelectorAll("#anexos-averbacao .anexo-check:checked"),
+        function (cx) { return cx.value; }));
+      var sel = lancar.querySelector("select.protocolo-select");
+      copiar("protocolo_id", sel && sel.value ? [sel.value] : []);
+      copiar("protocolo_item_id", Array.prototype.map.call(
+        lancar.querySelectorAll(".protocolo-item-check:checked"),
+        function (cx) { return cx.value; }));
+    });
+  })();
+  </script>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Atos</span><small>{{ atos | length }}</small></div>
+  {% if not atos %}
+    <p style="padding:14px"><small>Sem ato lançado. O registro veio do acervo como
+      bloco único.</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Tipo</th><th>Data</th><th>Livro / folha / ordem</th><th>Teor</th>
+               <th>Selos</th><th>PDF</th><th>Etiqueta</th><th>Cobrado</th></tr></thead>
+    <tbody>
+      {% for a in atos %}
+      {% set selos_do_a = (selos_por_ato or {}).get(a.id, []) %}
+      <tr>
+        <td><strong>{{ a.tipo }}</strong></td>
+        <td>{{ a.data_ato }}</td>
+        <td>{% if a.numero_ordem %}fl. {{ a.folha }}{% if a.verso %}v{% endif %} · nº {{ a.numero_ordem }}{% else %}—{% endif %}</td>
+        <td>{{ (a.teor or a.motivo_cancelamento or '—') }}</td>
+        <td>
+          {% if not selos_do_a %}
+          <small class="muted">sem selo</small>
+          {% else %}
+          <small><strong>{{ selos_do_a|length }}</strong> selo(s)</small>
+          <ul style="margin:2px 0 0; padding-left:16px">
+          {% for sel in selos_do_a %}
+            <li><small>{{ sel.numero }}</small></li>
+          {% endfor %}
+          </ul>
+          {% endif %}
+        </td>
+        <td>
+          {% set tipo_u = (a.tipo or '')|upper %}
+          {% if tipo_u.startswith('AVERB') or (tipo_u == 'REGISTRO' and a.id in (atos_com_imagem or [])) %}
+          <a class="button" style="padding:4px 8px; font-size:12px"
+             href="{{ url_for('rcpj_rtd_ato_teor', ato_id=a.id) }}"
+             target="_blank" rel="noopener">Ver teor (PDF)</a>
+          {% else %}
+          <small class="muted">—</small>
+          {% endif %}
+        </td>
+        <td>
+          {# **REIMPRIMIR A ETIQUETA DA AVERBAÇÃO** — pedido do oficial em
+             12/09/2026. A rota `rcpj_rtd_etiqueta` já serve qualquer ato
+             (REGISTRO ou AVERBAÇÃO) e já soma a cada impressão — só faltava
+             o link aqui na ficha, que é de onde as averbações se lavram.
+             Mesmo padrão de `rcpj_rtd_titulo.html`. #}
+          {% if user.role in ['ADMIN','MANAGER','USER'] %}
+          <a class="button" style="padding:4px 8px; font-size:12px"
+             href="{{ url_for('rcpj_rtd_etiqueta', ato_id=a.id) }}"
+             target="_blank" rel="noopener">Etiqueta</a>
+          {% if a.etiqueta_impressoes %}<br><small class="muted">{{ a.etiqueta_impressoes }}ª impressão sai</small>{% endif %}
+          {% else %}
+          <small class="muted">—</small>
+          {% endif %}
+        </td>
+        <td>{{ cobrado(a.id, cobrancas, csrf_token) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+{% if registro.teor %}
+<section class="panel">
+  <div class="panel-head"><span>Teor</span></div>
+  <div style="padding:14px; white-space:pre-wrap">{{ registro.teor }}</div>
+</section>
+{% endif %}
+
+
+<section class="panel">
+  <div class="panel-head"><span>Imagens / anexos do livro</span>
+    <small>{{ (anexos or [])|length }}</small></div>
+  {% if anexos %}
+  <table class="table">
+    <thead><tr><th>Arquivo</th><th>Descrição</th><th></th></tr></thead>
+    <tbody>
+    {% for a in anexos %}
+      <tr>
+        <td>{{ a.original_name }}</td>
+        <td><small class="muted">{{ a.description or '—' }}</small></td>
+        <td>
+          <a href="{{ url_for('attachment_view', attachment_id=a.id) }}"
+             target="_blank" rel="noopener">Ver</a>
+          ·
+          <a href="{{ url_for('attachment_download', attachment_id=a.id) }}">Baixar</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p style="padding:14px"><small class="muted">Nenhum anexo ainda.</small></p>
+  {% endif %}
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  <form method="post" enctype="multipart/form-data" style="padding:14px"
+        action="{{ url_for('rcpj_rtd_registro_arquivo', registro_id=registro.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Anexar arquivo do livro
+      <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" multiple></label>
+    <label>Descrição
+      <input name="descricao" placeholder="ex.: Folha 067 do livro"></label>
+    <button class="button" type="submit">Anexar</button>
+  </form>
+  {% endif %}
+</section>
+
+{% from '_certidao.html' import quadro_certidao %}
+{{ quadro_certidao(atribuicao, registro, certidao_receita, certidoes, caixa,
+                   protocolos, csrf_token, user, anexos=anexos, atos=atos,
+                   protocolo_escolhido=protocolo_escolhido,
+                   itens_do_protocolo=itens_do_protocolo,
+                   reload_url=url_for('rcpj_rtd_registro', registro_id=registro.id)) }}
+{% endblock %}

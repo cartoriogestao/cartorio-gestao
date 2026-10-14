@@ -1,0 +1,45 @@
+{#
+  A LISTA DE ATOS DA TABELA DO TRIBUNAL — a mesma nos dois caminhos.
+
+  RELATO #53 do oficial: «itens da tabela ao procurar o ato poderiam ser
+  listados automaticamente — para procurar um item para acrescentar da tabela
+  no protocolo precisa clicar em pesquisar, daí recarrega a página e vai lá pra
+  cima, fazendo perder tempo».
+
+  A macro é usada pela tela do protocolo (quando ela abre com `?busca_ato=`) e
+  pelo fragmento que a busca enquanto se digita pede. Duas cópias da mesma
+  lista divergiriam no primeiro conserto, e o operador veria uma coisa ao
+  clicar e outra ao digitar — a mesma razão do `_cobrar.html`, do `_fraude.html`
+  e do `_pessoa_do_assento.html`.
+
+  A LISTA VAZIA DIZ QUE ESTÁ VAZIA, e isso não é enfeite: numa busca que
+  responde enquanto se digita, a lista que some pode ser «não achei» ou «o
+  pedido falhou» — e as duas pedem providências diferentes de quem está no
+  balcão com o cliente na frente.
+#}
+{% macro lista(achados, protocolo_id, busca) %}
+  {% if achados %}
+  <div class="table-wrap" style="margin-top:10px"><table>
+    <thead><tr><th>Código TJ</th><th>Ato</th><th style="text-align:right">Total</th><th>Qtd</th><th></th></tr></thead>
+    <tbody>{% for r in achados %}
+            <tr>
+        <td>{{ r.codigo_tj or '-' }}</td>
+        <td class="small">{{ (r.descricao or '')[:64] }}</td>
+        <td style="text-align:right">{{ r.total or '-' }}</td>
+        <td colspan="2">
+          <form method="post" action="{{ url_for('caixa_protocolo_itens', protocolo_id=protocolo_id) }}" style="display:inline-flex;gap:6px;align-items:center">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="servico" value="{{ r.codigo }}">
+            <input name="quantidade" value="1" size="2" title="Quantidade">
+            <button class="small" name="acao" value="acrescentar">acrescentar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% elif busca %}
+  <p class="small muted" style="margin-top:10px" data-sem-resultado>Nenhum ato
+    da tabela com «{{ busca }}». Procure pelo código do TJ (por exemplo
+    <strong>16.24.4</strong>) ou por uma palavra da descrição.</p>
+  {% endif %}
+{% endmacro %}

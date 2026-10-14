@@ -1,0 +1,173 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Remessa às centrais &mdash; CENSEC</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a></div>
+
+<div class="notice">
+  A CENSEC fecha por <strong>quinzena</strong>, não por mês: 1ª do dia 01 ao 15, 2ª do dia 16 ao
+  fim do mês. O informe vai <strong>até o dia 20</strong> para a 1ª quinzena do mês corrente e
+  <strong>até o dia 5</strong> para a 2ª do mês anterior (Provimento CNJ 149/2023, art. 267).
+  Caindo em dia não útil, vale o próximo dia útil &mdash; isso o sistema não calcula, porque não
+  conhece o feriado municipal. Mês sem nenhum ato pede <strong>fechamento negativo</strong>,
+  feito na tela da CENSEC, sem arquivo.
+</div>
+
+{% if not envelope_conferido %}
+<div class="notice warning">
+  <strong>Um ponto do layout ainda não foi conferido contra fonte primária.</strong>
+  O cabeçalho da carga está conferido; os nomes das três listas dentro do envelope só aparecem
+  no Postman e no Swagger da CENSEC, que pedem login do cartório. Vale gerar e conferir o arquivo
+  agora; antes de marcar a remessa como enviada, confirme os três nomes.
+</div>
+{% endif %}
+
+<section class="panel">
+  <form method="get" style="padding:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+    <label>Ano <input name="ano" type="number" value="{{ ano }}" style="width:90px"></label>
+    <label>Mês
+      <select name="mes">
+        {% for i in range(1, 13) %}
+        <option value="{{ i }}" {% if i == mes %}selected{% endif %}>{{ MESES[i] }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Quinzena
+      <select name="quinzena">
+        <option value="1" {% if quinzena == 1 %}selected{% endif %}>1ª &mdash; dia 01 ao 15</option>
+        <option value="2" {% if quinzena == 2 %}selected{% endif %}>2ª &mdash; dia 16 ao fim</option>
+      </select></label>
+    <button class="primary">Ver a quinzena</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Enviar pela API da CENSEC</span>
+    <span class="small muted">POST /api/cargas/upload-json &mdash; as três centrais numa carga só</span></div>
+  <div style="padding:14px">
+    <p class="small">
+      Chave de integração (<code>X-Api-Key</code>):
+      {% for amb, tem in chaves_censec.items() %}
+        <strong>{{ 'homologação' if amb == 'HOMOLOGACAO' else 'produção' }}</strong>
+        {{ 'informada' if tem else 'falta' }}{{ ' · ' if not loop.last }}
+      {% endfor %}
+      &mdash; ela se gera dentro da CENSEC e se cadastra em Administrativo &rarr; Configurações.
+    </p>
+    {% if aptos_total %}
+    <form method="post" action="{{ url_for('notas_remessa_enviar_api') }}"
+          style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="ano" value="{{ ano }}">
+      <input type="hidden" name="mes" value="{{ mes }}">
+      <input type="hidden" name="quinzena" value="{{ quinzena }}">
+      <label>Ambiente
+        <select name="ambiente">
+          <option value="HOMOLOGACAO" selected>Homologação (teste &mdash; não marca nada)</option>
+          <option value="PRODUCAO">Produção (envio de verdade)</option>
+        </select></label>
+      <button class="primary">Enviar os {{ aptos_total }} atos aptos desta quinzena</button>
+    </form>
+    <p class="small muted" style="margin-top:8px">
+      Só vão os atos <strong>aptos</strong> (os impedidos ficam, com o motivo abaixo). Na produção a
+      remessa fica registrada com o que a CENSEC respondeu; ato recusado volta para a fila. O
+      fechamento da quinzena &mdash; inclusive o negativo &mdash; continua sendo na tela da CENSEC.
+    </p>
+    {% else %}
+    <p class="small muted">Nenhum ato apto nesta quinzena.</p>
+    {% endif %}
+  </div>
+</section>
+
+{% for c in painel %}
+<section class="panel">
+  <div class="panel-head">
+    <span>{{ c.nome }}</span>
+    <span class="small muted">{{ c.periodo_inicio }} a {{ c.periodo_fim }}</span>
+  </div>
+
+  <div style="padding:14px">
+    <p>
+      <strong style="font-size:1.4em">{{ c.aptos }}</strong> ato{{ '' if c.aptos == 1 else 's' }}
+      pronto{{ '' if c.aptos == 1 else 's' }} para ir
+      {% if c.impedidos %}
+        &mdash; <strong>{{ c.impedidos }}</strong> não {{ 'pode' if c.impedidos == 1 else 'podem' }},
+        e {{ 'o motivo está' if c.impedidos == 1 else 'os motivos estão' }} abaixo.
+      {% endif %}
+    </p>
+    <p class="small {% if atrasada %}danger{% else %}muted{% endif %}">
+      Fechar até {{ c.prazo }}{% if atrasada %} &mdash; <strong>o prazo já passou</strong>{% endif %}.
+    </p>
+
+    {% if c.resumo %}
+    <table style="margin-top:10px">
+      <thead><tr><th>Atos</th><th>Campo</th><th>O que falta</th></tr></thead>
+      <tbody>
+        {% for r in c.resumo %}
+        <tr><td style="text-align:right"><strong>{{ r.atos }}</strong></td>
+            <td class="small"><code>{{ r.campo }}</code></td>
+            <td class="small">{{ r.motivo }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      {% if c.impedidos %}
+      <a class="button" href="{{ url_for('notas_remessa_pendencias', central=c.central,
+                                          ano=ano, mes=mes, quinzena=quinzena) }}">
+        Ver ato por ato</a>
+      {% endif %}
+      {% if c.aptos %}
+      <form method="post" action="{{ url_for('notas_remessa_gerar', central=c.central) }}"
+            style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="ano" value="{{ ano }}">
+        <input type="hidden" name="mes" value="{{ mes }}">
+        <input type="hidden" name="quinzena" value="{{ quinzena }}">
+        <button class="primary">Gerar o arquivo dos {{ c.aptos }} atos</button>
+      </form>
+      {% endif %}
+    </div>
+    {% if c.aptos %}
+    <p class="small muted" style="margin-top:8px">
+      O arquivo baixa e a remessa fica registrada como gerada. O ato só deixa de aparecer aqui
+      depois que você marcar a remessa como confirmada pela central &mdash; rejeitada, ele volta.
+    </p>
+    {% endif %}
+  </div>
+</section>
+{% endfor %}
+
+{% if remessas %}
+<section class="panel">
+  <div class="panel-head"><span>Remessas já geradas</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Central</th><th>Quinzena</th><th>Atos</th><th>Situação</th>
+               <th>Protocolo</th><th>Arquivo</th><th>Registrar retorno</th></tr></thead>
+    <tbody>
+    {% for r in remessas %}
+      <tr>
+        <td>{{ r.central }}</td>
+        <td class="small">{{ r.quinzena }}ª de {{ MESES[r.mes_referencia] if r.mes_referencia else '' }}/{{ r.ano_referencia or '' }}</td>
+        <td style="text-align:right">{{ r.quantidade }}</td>
+        <td class="small">{{ SITUACOES_REMESSA.get(r.situacao, r.situacao) }}</td>
+        <td class="small">{{ r.protocolo_central or '—' }}</td>
+        <td class="small" title="sha256 {{ r.arquivo_sha256 }}">{{ r.arquivo_nome }}</td>
+        <td>
+          <form method="post" action="{{ url_for('notas_remessa_situacao', remessa_id=r.id) }}"
+                style="display:flex;gap:6px;align-items:center">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <select name="situacao">
+              {% for chave, rotulo in SITUACOES_REMESSA.items() %}
+              <option value="{{ chave }}" {% if chave == r.situacao %}selected{% endif %}>{{ rotulo }}</option>
+              {% endfor %}
+            </select>
+            <input name="protocolo" placeholder="protocolo" size="12" value="{{ r.protocolo_central or '' }}">
+            <button>Gravar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

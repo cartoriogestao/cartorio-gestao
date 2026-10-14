@@ -1,0 +1,37 @@
+{#
+  A LEITURA DOS DOCUMENTOS DENTRO DA TELA DO ATO — 12/10/2026, o oficial:
+  «vamos centralizar, não tem pq ter dois lugares para importar assentos pela
+  leitura, vamos deixar tudo na página de preenchimento do assento, já dando
+  opção de juntar os anexos e clicar no botão para processar os anexos para
+  preencher os campos».
+
+  Uma macro, e não três cópias (nascimento, óbito, habilitação) — a lição de
+  `_rascunho.html` e `_cobrar.html`.
+#}
+{% macro juntar(especie, csrf_token) %}
+<section class="panel" id="juntar-anexos">
+  <div class="panel-head"><h2>Juntar os documentos e preencher os campos</h2></div>
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('rcpn_leitura_preencher') }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="especie" value="{{ especie }}">
+    <label class="span2">{% if especie == 'NASCIMENTO' %}A DNV, os documentos dos pais e o comprovante de residência{% elif especie == 'OBITO' %}A DO, os documentos do falecido e do declarante{% else %}O requerimento e os documentos dos nubentes{% endif %} — PDF digitalizado ou fotos
+      <input type="file" name="arquivos" multiple required accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,image/*,application/pdf"></label>
+    <button class="button">Processar os anexos e preencher os campos</button>
+    <small class="span2 muted">A IA lê cada página e os campos voltam preenchidos nesta mesma tela, com o que não
+      fecha entre um documento e outro apontado. Nada é lavrado: quem confere com o original e lavra é você.
+      Os anexos ficam guardados e, ao lavrar, passam a acompanhar o ato.</small>
+  </form>
+</section>
+{% endmacro %}
+
+{% macro conferencia(leitura) %}
+<div class="notice warning">
+  <strong>Preenchido pela leitura nº {{ leitura.id }}</strong>
+  ({{ (leitura.arquivos or [])|length }} anexo(s)) — confira cada campo com os documentos originais.
+  {% if leitura.conferencia %}
+  <ul>{% for a in leitura.conferencia %}<li><strong>{{ a.gravidade }}</strong> — {{ a.texto }}{% if a.onde %} <span class="small muted">({{ a.onde }})</span>{% endif %}</li>{% endfor %}</ul>
+  {% else %}<br><span class="small">A leitura não apontou divergência — o que não dispensa a conferência.</span>{% endif %}
+  <span class="small"><a href="{{ url_for('rcpn_leitura_ficha', leitura_id=leitura.id) }}" target="_blank">ver o que cada documento disse</a>.
+    Ao lavrar, os anexos desta leitura passam a acompanhar o ato.</span>
+</div>
+{% endmacro %}

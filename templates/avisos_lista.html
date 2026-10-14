@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Avisos</h1>{% endblock %}
+{% block content %}
+<div class="notice">
+  Avisos ativos da serventia. Normais: dispensar só vale <strong>hoje</strong> (produção)
+  ou <strong>nesta sessão</strong> (sandbox).
+</div>
+
+{% if not avisos %}
+<p class="muted">Nenhum aviso ativo no momento.</p>
+{% else %}
+<section class="panel">
+  <div class="panel-head"><span>Ativos agora</span><small>{{ avisos|length }}</small></div>
+  <ul class="nu-avisos-lista-pagina">
+    {% for av in avisos %}
+    <li class="nu-avisos-linha {% if av.id in dispensados_hoje %}nu-avisos-lido{% endif %} {% if av.prioridade %}nu-avisos-linha-importante{% endif %}">
+      <h2>
+        <a href="{{ url_for('nu_avisos_detalhe', aviso_id=av.id) }}">{{ av.titulo }}</a>
+        {% if av.prioridade %}<span class="badge badge-danger">Importante</span>{% endif %}
+      </h2>
+      {% if not av.prioridade and av.id not in dispensados_hoje %}
+      <form method="post" action="{{ url_for('nu_avisos_dispensar', aviso_id=av.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ url_for('nu_avisos_lista') }}">
+        <button type="submit" class="button button-sm">Dispensar hoje</button>
+      </form>
+      {% elif not av.prioridade %}
+      <p class="muted"><small>Dispensado hoje ({{ hoje }}).</small></p>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

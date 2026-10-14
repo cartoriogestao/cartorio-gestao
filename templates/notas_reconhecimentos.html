@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Reconhecimentos</h1>{% endblock %}
+{% block content %}
+{% set aqui = 'consultar' %}
+{#
+  AS TRES TELAS DAS FIRMAS SAO UMA COISA SO, e agora dizem isso.
+
+  «Reconhecimento e reconhecer firma estao injustificadamente separados» — o
+  oficial, em 27/08/2026. Eram duas entradas de menu com quase o mesmo nome; a
+  pessoa escolhia no escuro e descobria qual era depois de abrir.
+
+  As abas resolvem sem fundir as telas: cada uma continua fazendo uma coisa —
+  lavrar, consultar, cadastrar — e o operador ve as tres de qualquer uma delas.
+  Fundir tudo numa pagina so poria a busca paginada por cima do balcao.
+#}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
+  <a class="button{% if aqui == 'reconhecer' %} primary{% endif %}"
+     href="{{ url_for('notas_reconhecimento') }}">Reconhecer firma</a>
+  <a class="button{% if aqui == 'consultar' %} primary{% endif %}"
+     href="{{ url_for('notas_reconhecimentos') }}">Reconhecimentos feitos</a>
+  <a class="button{% if aqui == 'cartoes' %} primary{% endif %}"
+     href="{{ url_for('notas_cartoes') }}">Cartões de autógrafo</a>
+</div>
+
+<form class="filters" method="get">
+  <input name="busca" value="{{ busca }}" size="32" placeholder="Nome ou selo">
+  <label>Espécie <select name="especie" onchange="this.form.submit()">
+    <option value="">todas</option>
+    {% for k, rot in ESPECIES.items() %}<option value="{{ k }}" {% if especie == k %}selected{% endif %}>{{ k }}</option>{% endfor %}
+  </select></label>
+  <button>Filtrar</button>
+</form>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ total }} reconhecimento(s)</span>
+    <span class="small muted">página {{ pagina }} de {{ paginas }}</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Data</th><th>Espécie</th><th>Quem</th><th>Selo</th><th>Oficial</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr {% if r.cancelado %}class="muted"{% endif %}>
+        <td><a href="{{ url_for('notas_reconhecimento_ver', reconhecimento_id=r.id) }}"><strong>{{ r.id }}</strong></a></td>
+        <td class="small">{{ fmt_date(r.data) }}</td>
+        <td class="small">{{ r.especie }}{% if r.cancelado %} <span class="badge alta">cancelado</span>{% endif %}</td>
+        <td class="small">{{ (r.nomes or '—')[:70] }}</td>
+        <td class="small">{% if r.selo %}{{ r.selo }}{% else %}<span class="badge media">sem selo</span>{% endif %}</td>
+        <td class="small">{{ r.oficial or '—' }}
+          {%- if not r.cancelado %}
+            {# Reimprimir do dia anterior é rotina: a etiqueta enrosca, sai
+               torta, ou o documento volta. Ter de abrir o ato para isso é um
+               clique a mais em algo que se faz o tempo todo. #}
+            <br><a class="small" target="_blank"
+               href="{{ url_for('notas_reconhecimento_etiqueta', reconhecimento_id=r.id) }}"
+               >{% if r.etiqueta_impressoes %}reimprimir{% else %}imprimir{% endif %} etiqueta</a>
+            {%- if r.etiqueta_impressoes %} <span class="muted">({{ r.etiqueta_impressoes }}&times;)</span>{% endif %}
+          {%- endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Nada encontrado.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{% if paginas > 1 %}
+<div class="actions">
+  {% if pagina > 1 %}<a class="button" href="{{ url_for('notas_reconhecimentos', pagina=pagina-1, busca=busca, especie=especie) }}">&larr; anterior</a>{% endif %}
+  {% if pagina < paginas %}<a class="button" href="{{ url_for('notas_reconhecimentos', pagina=pagina+1, busca=busca, especie=especie) }}">próxima &rarr;</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,243 @@
+{% extends 'base.html' %}
+{% block title %}Depósito prévio — Administrativo{% endblock %}
+{% block heading %}<h1>Depósito prévio</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('caixa') }}">&larr; Caixa</a></div>
+
+<div class="notice">
+  Dinheiro que o cliente deixa <strong>antes</strong> do ato e vai sendo consumido conforme os
+  serviços saem. O saldo é recalculado a partir do que entrou menos o que foi usado — nunca
+  guardado como número solto que alguém edita à mão.
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ total.n }}</strong><small>depósitos em aberto</small></div>
+  <div class="stat"><strong>{{ '%.2f'|format(total.s)|replace('.', ',') }}</strong><small>saldo total a consumir</small></div>
+  {# A LISTA SE DECLARA. O número de depósitos sem tipo fica à vista ao lado do
+     botão que preenche os que têm vínculo — sem ele, os antigos ficariam sem
+     tipo para sempre e ninguém saberia quantos são. #}
+  <div class="stat"><strong>{{ sem_tipo }}</strong><small>sem tipo de serviço</small></div>
+</section>
+
+{% if por_atribuicao %}
+<p class="small muted">Por atribuição:
+  {% for r in por_atribuicao %}<a href="{{ url_for('caixa_depositos', atribuicao=r.atribuicao, mostrar=mostrar) }}">{{ ATRIBUICOES.get(r.atribuicao, r.atribuicao) }} ({{ r.n }})</a>{% if not loop.last %} · {% endif %}{% endfor %}
+</p>
+{% endif %}
+
+{% if pode_gravar_tipos and sem_tipo %}
+{# PREENCHER O TIPO DOS ANTIGOS. Não é palpite: medido em 17/09/2026, seis dos
+   catorze depósitos estão amarrados a um protocolo, a uma prenotação ou a um
+   ato — e nesses o tipo é fato lido. O botão não pergunta nada porque não há o
+   que perguntar: o que o vínculo não declara fica sem tipo, e é um a um. #}
+<form method="post" style="margin:10px 0">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button class="small" name="acao" value="gravar_tipos">Preencher o tipo dos
+    depósitos que têm vínculo</button>
+  <span class="small muted">Só grava o que o protocolo, a prenotação ou o ato já
+    declaram. Quem não tem vínculo continua sem tipo.</span>
+</form>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Receber um depósito</span></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Depositante <input name="depositante" required></label>
+    <label>CPF/CNPJ <input name="depositante_documento"></label>
+    {# A DATA DO DEPÓSITO — RELATO #50 do oficial: «neste campo de depósito
+       prévio deve conter data do depósito». Até 15/09/2026 a data era sempre a
+       do registro, e o comprovante que o cliente traz pode ser de outro dia —
+       dinheiro deixado na sexta e registrado na segunda, que é o caso comum.
+       Vem preenchida com hoje: quem registra o papel de hoje não digita nada. #}
+    <label>Data do depósito <input type="date" name="data" value="{{ hoje }}"></label>
+    <label>Valor <input name="valor" placeholder="0,00" required></label>
+    <label>Forma de pagamento
+      <select name="forma_pagamento">
+        {% for cod, rotulo in FORMAS.items() %}<option value="{{ cod }}">{{ rotulo }}</option>{% endfor %}
+      </select></label>
+    <label class="span2">Observação <input name="observacao"></label>
+    {# O TIPO DO SERVIÇO — RELATO #50, a segunda metade da frase dele na tela:
+       «neste campo de depósito prévio deve conter data do depósito.
+       **informações do tipo de serviço**». A data foi a primeira metade.
+
+       SÃO DOIS CAMPOS PORQUE SÃO DUAS PERGUNTAS. A **atribuição** é «de que
+       cartório é este dinheiro», o que se soma num relatório; o **serviço** é
+       qual item do catálogo da casa ele adianta, o que se confere contra o que
+       foi cobrado. Com um campo só — a observação de texto livre —, nada disso
+       se somava, não se filtrava e não se conferia.
+
+       OS DOIS SÃO OPCIONAIS, e isso é decisão do oficial: medido em 17/09/2026,
+       **8 dos 14 depósitos não têm vínculo nenhum**, e o dinheiro deixado
+       «para quando o título chegar» é legítimo. A lista declara quantos estão
+       sem tipo em vez de recusar o que a casa sempre fez.
+
+       E ESTA É A ÚNICA TELA QUE PERGUNTA. Nas outras duas que criam depósito —
+       o título do Registro de Imóveis e o ato de livro das Notas —, o vínculo
+       já responde: o protocolo grava a própria atribuição, a prenotação é do
+       RI e o ato é das Notas. #}
+    <label>Atribuição
+      <select name="atribuicao">
+        <option value="">— sem tipo —</option>
+        {% for sigla in sugestao.atribuicoes %}
+        <option value="{{ sigla }}" {% if sigla == sugestao.atribuicao %}selected{% endif %}>{{ ATRIBUICOES[sigla] }}</option>
+        {% endfor %}
+      </select></label>
+    {# O SERVIÇO É UM CAMPO SÓ, e aceita as duas formas: o código do TJ e uma
+       palavra da descrição. Quem escreve «arquivamento» e há um só candidato
+       recebe o serviço; havendo vários, a recusa **lista os códigos** — dizer
+       «não achei» faria a pessoa procurar de novo pelo mesmo termo e receber o
+       mesmo silêncio. Não se escolhe sozinho: com dois candidatos, escolher o
+       primeiro seria a máquina decidindo em cima de dinheiro. #}
+    <label>Serviço do catálogo
+      <input name="servico_codigo" value="{{ servico_escolhido }}"
+             placeholder="13.17.2 ou «arquivamento»"></label>
+    {# O CAMPO QUE NÃO DIZ QUE É OPCIONAL SE LÊ COMO OBRIGATÓRIO — e medido em
+       17/09/2026 ele **é** opcional: 8 dos 14 depósitos não têm vínculo nenhum,
+       e o dinheiro deixado «para quando o título chegar» é legítimo. A frase
+       fica ao lado dos dois campos, e diz também o que acontece com quem fica
+       sem tipo — que a lista o conta, e não o esconde. #}
+    <p class="span2 small muted" style="margin:0">O tipo é <strong>opcional</strong>:
+      deixe em branco quando o dinheiro chega sem dizer a que veio. A lista conta
+      quantos estão assim, e quem não tem vínculo fica sem tipo até alguém
+      informar — o sistema não adivinha.</p>
+    {% if sugestao.de_onde %}
+    <p class="span2 small muted" style="margin:0">O tipo foi lido de
+      <strong>{{ sugestao.de_onde }}</strong>{% if sugestao.servico %} — serviço
+      {{ sugestao.servico.codigo_tj }} {{ sugestao.servico.descricao }}{% endif %}.</p>
+    {% endif %}
+    <p class="span2 small muted" style="margin:0">A data do depósito é a do
+      comprovante que o cliente traz, e pode não ser hoje — o lançamento no caixa
+      continua sendo o do dia em que o dinheiro entrou.</p>
+    <div class="span2"><button class="primary" name="acao" value="novo">Registrar depósito</button>
+      <span class="small muted">Entra no caixa do dia como entrada, porque é dinheiro que chegou.</span></div>
+  </form>
+</section>
+
+<form class="filters" method="get">
+  <label>Mostrar
+    <select name="mostrar" onchange="this.form.submit()">
+      <option value="ABERTOS" {% if mostrar == 'ABERTOS' %}selected{% endif %}>só com saldo</option>
+      <option value="TODOS" {% if mostrar == 'TODOS' %}selected{% endif %}>todos</option>
+    </select></label>
+  <label>Atribuição
+    <select name="atribuicao" onchange="this.form.submit()">
+      <option value="">todas</option>
+      {% for sigla in ATRIBUICOES %}
+      <option value="{{ sigla }}" {% if filtro == sigla %}selected{% endif %}>{{ ATRIBUICOES[sigla] }}</option>
+      {% endfor %}
+      {# O `SEM` é o que faz a lista prestar contas: sem ele, os depósitos sem
+         tipo sumiriam de qualquer filtro e ninguém saberia que faltam. #}
+      <option value="SEM" {% if filtro == 'SEM' %}selected{% endif %}>— sem tipo ({{ sem_tipo }})</option>
+    </select></label>
+  <label>Buscar <input name="busca" value="{{ busca }}" size="28" placeholder="depositante ou documento"></label>
+  <button>Filtrar</button>
+</form>
+
+{# PROCURAR O ITEM DO CATÁLOGO. É um formulário à parte, e não um botão dentro
+   do cadastro, por duas razões: a busca do protocolo (relato #53) é instantânea
+   porque aquele formulário não recarrega ao digitar — aqui o Enter manda
+   registrar depósito —, e aninhar formulário dentro de formulário é HTML que o
+   navegador desfaz por conta própria. Então procura-se, escolhe-se, e o código
+   volta preenchido no campo do serviço. #}
+<form class="filters" method="get">
+  <input type="hidden" name="mostrar" value="{{ mostrar }}">
+  <label>Procurar o serviço no catálogo
+    <input name="servico_termo" value="{{ termo_servico }}" size="30"
+           placeholder="13.17.2 ou «arquivamento»"></label>
+  <button>Procurar</button>
+  <span class="small muted">Escolha na lista: o código vem para o campo do serviço.</span>
+</form>
+{% if termo_servico %}
+  {% if achados_servico %}
+  <div class="table-wrap" style="margin-top:10px"><table>
+    <thead><tr><th>Código TJ</th><th>Ato</th><th style="text-align:right">Total</th><th>Atribuição</th><th></th></tr></thead>
+    <tbody>{% for r in achados_servico %}
+      <tr>
+        <td>{{ r.codigo_tj or '—' }}</td>
+        <td class="small">{{ (r.descricao or '')[:64] }}</td>
+        <td style="text-align:right">{{ r.total or '—' }}</td>
+        <td class="small">{{ ATRIBUICOES[r.atribuicao] if r.atribuicao else '—' }}</td>
+        <td><a class="button small"
+               href="{{ url_for('caixa_depositos', servico_termo=termo_servico, servico_codigo=r.codigo) }}">escolher</a></td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}
+  <p class="small muted" style="margin-top:10px">Nenhum serviço do catálogo com
+    «{{ termo_servico }}». Procure pelo código do TJ (por exemplo
+    <strong>13.17.2</strong>) ou por uma palavra da descrição.</p>
+  {% endif %}
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>{{ rows|length }} depósito(s)</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Controle</th><th>Data</th><th>Depositante</th><th style="text-align:right">Depositado</th>
+      <th style="text-align:right">Saldo</th><th>Protocolo</th><th>Tipo</th><th>Usar / devolver</th></tr></thead>
+    <tbody>
+    {% for d in rows %}
+      <tr {% if d.encerrado %}class="pendente"{% endif %}>
+        <td><strong>{{ d.numero or d.id }}</strong></td>
+        <td class="small">{{ fmt_date(d.data) }}</td>
+        <td class="small">{{ d.depositante }}{% if d.depositante_documento %}<br>
+          <span class="muted">{{ d.depositante_documento }}</span>{% endif %}</td>
+        <td style="text-align:right">{{ d.valor }}</td>
+        <td style="text-align:right">
+          {% if d.encerrado %}<span class="badge">encerrado</span>
+          {% else %}<strong>{{ d.saldo }}</strong>{% endif %}</td>
+        {# O ESPELHO. O depósito nasce em três telas — caixa, título do RI e ato
+           de livro — e aqui ele diz de qual veio, com link para lá. Sem isto o
+           dinheiro fica no caixa sem dizer a que veio. #}
+        <td class="small">
+          {% if d.vinculo.rota %}
+            <a href="{{ url_for(d.vinculo.rota, **d.vinculo.params) }}">{{ d.vinculo.rotulo }}</a>
+          {% else %}
+            <span class="muted">{{ d.vinculo.rotulo }}</span>
+          {% endif %}
+        </td>
+        {# O TIPO. **O que está gravado manda**; o que veio do vínculo aparece
+           marcado — e a marca não é enfeite: quem confere precisa saber se
+           aquilo alguém escolheu ou o sistema deduziu. Sem tipo, diz que está
+           sem tipo, em vez de ficar em branco — campo vazio se lê como «não se
+           sabe», e aqui se sabe: ninguém informou. #}
+        <td class="small">
+          {% if d.tipo.rotulo %}{{ d.tipo.rotulo }}
+            {% if d.tipo.origem == 'VINCULO' %}<span class="muted">(do vínculo)</span>{% endif %}
+          {% else %}<span class="muted">— sem tipo</span>{% endif %}
+          {% if d.tipo.rotulo_servico %}<br><span class="muted">{{ d.tipo.rotulo_servico }}</span>{% endif %}
+        </td>
+        <td>
+          {% if not d.encerrado %}
+          <form method="post" style="display:inline-block;margin-bottom:4px">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="deposito_id" value="{{ d.id }}">
+            <input name="valor_usar" placeholder="valor" size="8" required>
+            <input name="protocolo" placeholder="protocolo" size="12">
+            <button class="small" name="acao" value="usar">usar</button>
+          </form>
+          <form method="post" style="display:inline-block"
+                onsubmit="return confirm('Devolver o saldo de {{ d.saldo }} ao depositante?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="deposito_id" value="{{ d.id }}">
+            <input name="motivo" placeholder="motivo" size="14" required>
+            <button class="small" name="acao" value="devolver">devolver</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% if d.observacao %}<tr><td></td><td colspan="7" class="small muted">{{ d.observacao }}</td></tr>{% endif %}
+    {% else %}
+      <tr><td colspan="8" class="muted small">Nenhum depósito.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<div class="notice">
+  <strong>Consumir depósito não é entrada nova de dinheiro.</strong> O valor entrou na gaveta
+  quando foi depositado; o uso é lançado só para deixar rastro do que foi consumido e em qual
+  protocolo. A devolução, essa sim, tira dinheiro da gaveta.
+</div>
+{% endblock %}

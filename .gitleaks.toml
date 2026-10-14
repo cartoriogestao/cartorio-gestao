@@ -1,0 +1,51 @@
+# Cartório Gestão — configuração gitleaks (B1: credenciais / CI anti-vazamento)
+# Editor único: Robô Integrações RCPN e Protesto (B1). Exige gitleaks >= 8.25
+# (tabela [[allowlists]]). Validado com gitleaks 8.28.0.
+#
+# Mantém TODAS as regras padrão do gitleaks ([extend] useDefault) e só acrescenta
+# exceções estreitas para falsos positivos conhecidos: o nome do cabeçalho HTTP
+# "Authorization", o prefixo literal "Bearer " e as constantes CABECALHO_DO_TOKEN /
+# PREFIXO_DO_TOKEN / CABECALHO_DO_TOKEN_DO_PROTOCOLO dos clientes das centrais.
+# Nenhuma dessas linhas carrega segredo: o token real vem sempre do cofre
+# centrais_cred (%PROGRAMDATA%\CartorioGestao\*.cred), fora do repositório.
+
+title = "Cartório Gestão — gitleaks"
+
+[extend]
+useDefault = true
+
+# IMPORTANTE (medido com gitleaks 8.28): uma allowlist GLOBAL com `paths`
+# faz o gitleaks PULAR O ARQUIVO INTEIRO, mesmo com condition = "AND".
+# Por isso esta allowlist NÃO usa `paths`: ela vale só para LINHAS que casam
+# padrões estreitos (nome de constante, prefixo literal, f-string que só tem
+# placeholder, doc OpenAPI). Um token literal colado em qualquer arquivo,
+# inclusive onr_api.py / cnib_api.py / centrais_cred.py, continua sendo apontado.
+#
+# Arquivos onde esses padrões aparecem hoje (referência, não filtro):
+#   Notas/Imóveis: onr_api.py, cnib_api.py
+#   Cofre/base comum: centrais_cred.py, centrais_log.py (centrais_http.py)
+#   RCPN/Protesto/RTDPJ/Selador: onrcpn_api.py, onrcpn_certidao_api.py,
+#     onrtdpj_api.py, cenprot_api.py, cra21_api.py, resolve_api.py,
+#     selador.py, selador_cliente.py, tests/selador_falso.py
+
+[[allowlists]]
+description = "B1 — cabeçalhos HTTP dos clientes das centrais (Authorization/Bearer/CABECALHO_DO_TOKEN/PREFIXO_DO_TOKEN): nomes e prefixos, não segredos"
+regexTarget = "line"
+regexes = [
+  # Constantes com o NOME do cabeçalho:  CABECALHO_DO_TOKEN = "Authorization" / ..._DO_PROTOCOLO = "token"
+  '''^\s*CABECALHO_DO_TOKEN(?:_DO_PROTOCOLO)?\s*=\s*["'](?:Authorization|token)["']\s*(?:#.*)?$''',
+  # Prefixo literal:  PREFIXO_DO_TOKEN = "Bearer "
+  '''^\s*PREFIXO_DO_TOKEN\s*=\s*["']Bearer ?["']\s*(?:#.*)?$''',
+  # Montagem do cabeçalho só com as constantes + função do cofre (sem literal)
+  '''CABECALHO_DO_TOKEN(?:_DO_PROTOCOLO)?\]?\s*[:=]\s*(?:PREFIXO_DO_TOKEN\s*\+\s*token\(|_texto\(token_do_protocolo\))''',
+  # f-string cujo valor é SÓ placeholder:  f"Bearer {token(...)}"  /  f"Basic {credencial}"
+  '''Authorization["']?\]?\s*[:=]\s*f["'](?:Bearer|Basic) \{[A-Za-z_][A-Za-z0-9_.]*(?:\([^)"']*\))?\}["']''',
+  # f-string de comparação/montagem só com placeholder:  f"Bearer {servidor.token_valido}"
+  '''(?:^|[^A-Za-z0-9_])f["'](?:Bearer|Basic) \{[A-Za-z_][A-Za-z0-9_.]*\}["']''',
+  # Documentação OpenAPI / comentários com placeholder <...>
+  '''token_type:\s*["']?Bearer["']?\s*\}''',
+  '''Authorization:\s*Bearer\s*<[^>]{1,60}>''',
+  '''BearerAuth:\s*\{type:\s*http,\s*scheme:\s*bearer''',
+  # Regex de mascaramento do centrais_log (detecta Bearer/Basic em mensagens)
+  '''^_PORTADOR\s*=\s*re\.compile\(r"\(\?i\)\\b\(bearer\|basic\)''',
+]

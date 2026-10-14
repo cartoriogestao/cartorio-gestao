@@ -1,0 +1,361 @@
+{% extends 'base.html' %}
+{% block title %}Habilitação {{ h.numero }}/{{ h.ano }}{% endblock %}
+{% block heading %}
+<h1>Habilitação {{ h.numero }}/{{ h.ano }}</h1>
+<p class="small muted" style="margin:4px 0 0">
+  <a href="{{ url_for('rcpn_habilitacoes') }}">Habilitações</a>
+  &rarr; {{ h.numero }}/{{ h.ano }}
+  &middot; {{ SITUACOES[h.situacao] }}
+  {%- if h.casamento_assento_id %}
+  &middot; assento <a href="{{ url_for('rcpn_assento', assento_id=h.casamento_assento_id) }}">#{{ h.casamento_assento_id }}</a>
+  {%- endif %}
+</p>
+{% endblock %}
+{% block content %}
+<div class="notice" style="margin-bottom:12px;border-left:4px solid #c90">
+  <strong>Aviso jurídico-operacional</strong>
+  <p class="small" style="margin:6px 0 0">{{ AVISO_REVISAO_JURIDICA }}</p>
+</div>
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_habilitacoes') }}">&larr; Habilitações</a>
+  {% if h.edital_em %}
+  <a class="button" href="{{ url_for('rcpn_habilitacao_edital', habilitacao_id=h.id) }}">Edital de proclamas</a>
+  {% endif %}
+  {% if h.situacao in ('HABILITADO', 'CELEBRADO') %}
+  <a class="button primary" href="{{ url_for('rcpn_habilitacao_certidao', habilitacao_id=h.id) }}">Certidão de habilitação</a>
+  {% endif %}
+</div>
+{# OS DOCUMENTOS QUE A LEITURA RECEBEU (12/10/2026) acompanham a habilitação. #}
+{% if anexos_leitura %}
+<section class="panel"><div class="panel-head"><h2>Documentos anexados</h2></div>
+  <ul class="file-list">{% for a in anexos_leitura %}<li><a href="{{ url_for('attachment_view', attachment_id=a.id) }}" target="_blank">{{ a.original_name }}</a>
+    · <a href="{{ url_for('attachment_download', attachment_id=a.id) }}">baixar</a> <small class="muted">{{ a.description or '' }}</small></li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{#
+  O «E AGORA?» VEM PRIMEIRO. Num rito de semanas é a pergunta que mais se
+  repete, e ela merece resposta na tela e não na cabeça de quem lembra.
+#}
+<div class="notice{% if h.situacao == 'COM_OPOSICAO' or vencida %} critical{% endif %}">
+  <strong>{{ SITUACOES[h.situacao] }}</strong>
+  <ul style="margin:8px 0 0">
+    {% for p in passos %}<li>{{ p }}</li>{% endfor %}
+  </ul>
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <div class="panel-head"><span>Os nubentes</span></div>
+    <dl class="detail" style="padding:14px">
+      <dt>{{ h.nubente1_nome }}</dt>
+      <dd class="small">{{ h.nubente1_estado_civil or '—' }}
+        {%- if h.nubente1_documento %} · CPF {{ h.nubente1_documento }}{% endif %}
+        {%- if h.nubente1_nome_pos %}<br>passa a assinar {{ h.nubente1_nome_pos }}{% endif %}</dd>
+      <dt>{{ h.nubente2_nome }}</dt>
+      <dd class="small">{{ h.nubente2_estado_civil or '—' }}
+        {%- if h.nubente2_documento %} · CPF {{ h.nubente2_documento }}{% endif %}
+        {%- if h.nubente2_nome_pos %}<br>passa a assinar {{ h.nubente2_nome_pos }}{% endif %}</dd>
+      <dt>Tipo</dt><dd>{{ TIPOS.get(h.tipo, h.tipo) }}</dd>
+      <dt>Regime</dt><dd>{{ REGIMES.get(h.regime, '— a definir —') }}</dd>
+      <dt>Entrada</dt><dd>{{ fmt_date(h.data_entrada) }}</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><span>Documentos — art. 1.525 do Código Civil</span></div>
+    <div class="table-wrap"><table>
+      <tbody>
+      {% for d in documentos %}
+      <tr>
+        <td class="small">
+          {{ d.descricao }}
+          <br><span class="muted">{{ d.de_quem|replace('NUBENTE1', h.nubente1_nome)|replace('NUBENTE2', h.nubente2_nome) }} · {{ d.fundamento }}</span>
+          {% if d.dispensado %}<br><span class="badge">dispensado</span>
+            <span class="muted">{{ d.dispensado_motivo }}</span>{% endif %}
+        </td>
+        <td style="width:170px">
+          {% if d.dispensado %}—
+          {% else %}
+          <form method="post" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="acao" value="documento">
+            <input type="hidden" name="documento_id" value="{{ d.id }}">
+            <input type="hidden" name="apresentado" value="{{ 0 if d.apresentado else 1 }}">
+            <button class="small{% if d.apresentado %}{% else %} primary{% endif %}">
+              {{ 'Apresentado ✓' if d.apresentado else 'Marcar' }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% if falta %}
+    {# DISPENSAR EXIGE MOTIVO — dispensar é decisão do oficial; ignorar não é. #}
+    <details style="padding:14px">
+      <summary class="small">Dispensar um documento</summary>
+      <form method="post" class="stack compact" style="margin-top:10px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="acao" value="dispensar">
+        <label>Qual
+          <select name="documento_id">
+            {% for d in falta %}
+            <option value="{{ d.id }}">{{ d.descricao[:60] }} ({{ d.de_quem }})</option>
+            {% endfor %}
+          </select></label>
+        <label>Motivo
+          <textarea name="motivo" rows="2" required
+            placeholder="é ele que responde, depois, por que a habilitação correu sem este documento"></textarea></label>
+        <button>Dispensar</button>
+      </form>
+    </details>
+    {% endif %}
+  </section>
+</div>
+
+{% if h.situacao == 'EM_ANALISE' %}
+<section class="panel">
+  <div class="panel-head"><span>Publicar o edital de proclamas</span></div>
+  <div style="padding:14px" class="small muted">
+    O edital chama qualquer pessoa a opor impedimento, e abre o prazo de
+    <strong>{{ PRAZO }} dias</strong> (Lei 6.015/1973, art. 67, §1º — conferir
+    com o oficial; legado CC art. 1.527: quinze dias). Ele não sai
+    com documento faltando — chamar o público antes de a casa conferir é pedir
+    que ele faça a conferência que é do oficial.
+  </div>
+  <form method="post" class="stack" style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="edital">
+    <label>Teor
+      <textarea name="teor" rows="5">{{ modelo_edital }}</textarea></label>
+    <div><button class="primary" {% if falta %}disabled{% endif %}>Publicar edital</button>
+      {% if falta %}<span class="small muted">faltam {{ falta|length }} documento(s)</span>{% endif %}</div>
+  </form>
+</section>
+{% endif %}
+
+{% if h.edital_em %}
+<section class="panel">
+  <div class="panel-head"><span>Edital publicado em {{ fmt_date(h.edital_em) }}</span></div>
+  <div style="padding:14px">
+    <p>{{ h.edital_teor }}</p>
+    <p class="small muted">Prazo até <strong>{{ fmt_date(h.edital_prazo_ate) }}</strong>
+      {%- if prazo_venceu %} — vencido{% else %} — em curso{% endif %}.
+      Conferência: {{ h.edital_hash[:32] }}…</p>
+  </div>
+
+  {#
+    O EDITAL DESTA CASA VAI PARA O e-PROCLAMAS DA CRC — o oficial informou em
+    28/08/2026, quando perguntei se ele era afixado ou publicado na imprensa.
+    Não é nem um nem outro.
+
+    Edital afixado se prova com o papel na parede; edital publicado na Central
+    se prova com o PROTOCOLO que ela devolve. Sem esse número, meses depois,
+    ninguém mostra que a publicação aconteceu.
+  #}
+  <div style="padding:0 14px 14px">
+    {% if h.eproclamas_protocolo %}
+    <p class="small"><strong>Publicado no {{ ONDE_SE_PUBLICA }}</strong>
+      em {{ fmt_date(h.eproclamas_em) }}, protocolo
+      <strong>{{ h.eproclamas_protocolo }}</strong>.</p>
+    {% else %}
+    <div class="notice" style="margin:0">
+      <strong>Falta publicar no {{ ONDE_SE_PUBLICA }}.</strong>
+      <span class="small">O prazo já está correndo. Publique na Central e anote
+        aqui o protocolo que ela devolver — é ele que prova a publicação.</span>
+      <form method="post" class="inline-form" style="margin-top:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="acao" value="eproclamas">
+        <input name="protocolo" placeholder="protocolo do e-Proclamas" required>
+        <button>Anotar</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if h.tipo == 'CONVERSAO' %}
+<section class="panel">
+  <div class="panel-head"><span>A união estável que se converte</span></div>
+  <div style="padding:14px">
+    {% if uniao_estavel %}
+    <p><strong>{{ uniao_estavel }}</strong></p>
+    <p class="small">É este número que vai no selo da conversão — o Tribunal o
+      pede para ligar a conversão à união que ela converte.</p>
+    {% else %}
+    <div class="notice" style="margin:0">
+      <strong>Falta dizer que união estável está sendo convertida.</strong>
+      <span class="small">Anote o número da escritura, do processo ou do
+        registro que declarou a união. <strong>Sem ele o selo da conversão não
+        sai</strong> — é campo obrigatório do Tribunal, e não deste
+        sistema.</span>
+      <form method="post" class="inline-form" style="margin-top:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="acao" value="uniao_estavel">
+        <input name="processo" placeholder="escritura, processo ou registro"
+               required>
+        <button>Anotar</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if h.oposicao_em %}
+<section class="panel">
+  <div class="panel-head"><span>Impedimento oposto</span></div>
+  <div style="padding:14px">
+    <p><strong>{{ h.oposicao_quem }}</strong>, em {{ fmt_date(h.oposicao_em) }}:</p>
+    <p>{{ h.oposicao_teor }}</p>
+    {% if h.oposicao_decisao %}
+    <p class="small"><strong>{{ h.oposicao_decisao|capitalize }}</strong>
+      em {{ fmt_date(h.oposicao_decidida_em) }}: {{ h.oposicao_fundamento }}</p>
+    {% endif %}
+  </div>
+  {% if h.situacao == 'COM_OPOSICAO' %}
+  <form method="post" class="stack" style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="decidir">
+    <label>Decisão
+      <select name="decisao">
+        <option value="REJEITADA">Rejeitar o impedimento — a habilitação segue</option>
+        <option value="ACOLHIDA">Acolher o impedimento — o processo se arquiva</option>
+      </select></label>
+    <label>Fundamento
+      <textarea name="fundamento" rows="3" required
+        placeholder="é ele que responde ao que foi oposto, e é ele que o juiz lê se a decisão for questionada"></textarea></label>
+    <button class="primary">Decidir</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if h.situacao in ('EM_ANALISE', 'EDITAL_PUBLICADO') %}
+<div class="grid2">
+  <section class="panel">
+    <div class="panel-head"><span>Registrar impedimento oposto</span></div>
+    <form method="post" class="stack" style="padding:14px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="oposicao">
+      <label>Quem opõe<input name="quem" required></label>
+      <label>O que foi oposto<textarea name="teor" rows="3" required></textarea></label>
+      <button>Registrar</button>
+    </form>
+  </section>
+
+  {% if h.situacao == 'EDITAL_PUBLICADO' %}
+  <section class="panel">
+    <div class="panel-head"><span>Expedir a habilitação</span></div>
+    <div style="padding:14px" class="small muted">
+      Cumpridas as formalidades e verificada a inexistência de fato obstativo
+      (Código Civil, art. 1.531). A certidão vale <strong>{{ VALIDADE }} dias</strong>.
+    </div>
+    <form method="post" class="stack" style="padding:0 14px 14px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="habilitar">
+      <button class="primary">Habilitar</button>
+      {% if not prazo_venceu %}
+      <span class="small muted">prazo de oposição até {{ fmt_date(h.edital_prazo_ate) }} (em curso — não impede habilitar)</span>
+      {% else %}
+      <span class="small muted">prazo de oposição encerrado em {{ fmt_date(h.edital_prazo_ate) }}</span>
+      {% endif %}
+    </form>
+  </section>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if h.situacao == 'HABILITADO' %}
+<section class="panel{% if vencida %} critical{% endif %}" id="celebracao">
+  <div class="panel-head"><span>Habilitados desde {{ fmt_date(h.habilitado_em) }}</span></div>
+  <div style="padding:14px">
+    <p>Certidão <strong>{{ h.certidao_numero }}/{{ h.certidao_ano }}</strong>,
+      válida até <strong>{{ fmt_date(h.habilitacao_vale_ate) }}</strong>.
+      {% if h.selo %}<br>Selo <strong>{{ h.selo }}</strong>.
+      {% else %}<br><span class="muted small">Sem selo — ele aparece na lista de
+        atos sem selo.</span>{% endif %}
+      {# PEDIR O SELO DEPOIS — 18/09/2026. A habilitação não se desfaz por
+         causa do aparelho (o edital já correu), e por isso precisa de uma
+         porta para selar quando ele voltar. Sem ela, a habilitação expedida
+         num dia de aparelho fora do ar ficaria sem selo para sempre — e o
+         selo dela é o do casamento inteiro, reaproveitado no assento. #}
+      {% if not h.selo %}
+      <form method="post" class="inline-form"
+            action="{{ url_for('rcpn_habilitacao_selar', habilitacao_id=h.id) }}"
+            style="margin-top:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="primary">Pedir o selo ao aparelho</button>
+        <span class="small muted">É um selo só: ele vale pela habilitação e
+          pelo assento de casamento (item 14.1.1).</span>
+      </form>
+      {% endif %}
+      {% if vencida %}<br><strong>Vencida</strong> — o processo precisa ser
+      refeito (Código Civil, art. 1.532).{% endif %}</p>
+    {% if not vencida %}
+    <p style="margin:12px 0">
+      <a class="button primary"
+         href="{{ url_for('rcpn_assento_novo', especie_url='casamento', habilitacao_id=h.id) }}">
+        Registrar casamento (lavrar assento)</a>
+      <span class="small muted">Os nubentes desta habilitação entram pré-preenchidos.</span>
+    </p>
+    <form method="post" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="celebrado">
+      {% if casamentos %}
+      <label class="small">Casamento lavrado a partir desta habilitação:
+        <select name="assento_id" required>
+          {% for a in casamentos %}
+          <option value="{{ a.id }}">Livro {{ a.livro_volume or '?' }}, termo {{ a.numero or '?' }} — {{ a.nome }}</option>
+          {% endfor %}
+        </select></label>
+      {% else %}
+      <label class="small">Assento já lavrado? Código do assento
+        <input name="assento_id" size="10" placeholder="código" required></label>
+      <span class="small muted">É o número que aparece no endereço da ficha do
+        assento (/rcpn/<b>código</b>), e não o número do termo. Lavrando pelo
+        botão acima, o casamento aparece aqui para escolher.</span>
+      {% endif %}
+      <button>Registrar a celebração na habilitação</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if h.situacao == 'CELEBRADO' and h.casamento_assento_id %}
+<section class="panel">
+  <div class="panel-head"><span>Casamento registrado</span></div>
+  <div style="padding:14px">
+    <p>Celebração amarrada ao assento
+      <strong><a href="{{ url_for('rcpn_assento', assento_id=h.casamento_assento_id) }}">#{{ h.casamento_assento_id }}</a></strong>
+      {% if h.celebrado_em %} em {{ fmt_date(h.celebrado_em) }}{% endif %}.</p>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Andamento</span></div>
+  <div class="timeline" style="padding:14px">
+    {% for a in andamento %}
+    <div><strong>{{ a.quando[:16]|replace('T', ' ') }} · {{ a.o_que }}</strong>
+      {% if a.detalhe %}<span>{{ a.detalhe }}</span>{% endif %}
+      {% if a.quem %}<small>{{ a.quem }}</small>{% endif %}</div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if h.situacao not in ('CELEBRADO', 'ARQUIVADO') %}
+<details class="panel">
+  <summary style="padding:14px;cursor:pointer">Arquivar este processo</summary>
+  <form method="post" class="stack" style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="arquivar">
+    <label>Motivo<textarea name="motivo" rows="2" required></textarea></label>
+    <button>Arquivar</button>
+  </form>
+</details>
+{% endif %}
+{% endblock %}

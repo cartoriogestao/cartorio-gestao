@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}CPF no registro de nascimento{# UM CLIQUE POR CAMPO, em vez de selecionar com o mouse.
+   **E paliativo, e esta dito na tela que e.** O que resolve de verdade e
+   preencher o formulario da CRC de uma vez — e para isso preciso ver os nomes
+   dos campos daquela tela, que so aparece com o certificado do oficial. #}
+<script>
+document.addEventListener("click", function (e) {
+  var b = e.target.closest("[data-copiar]");
+  if (!b) return;
+  var texto = b.getAttribute("data-copiar");
+  var antes = b.textContent;
+  function avisa(ok) {
+    b.textContent = ok ? "copiado" : "não deu";
+    setTimeout(function () { b.textContent = antes; }, 1200);
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(texto).then(function () { avisa(true); },
+                                             function () { avisa(false); });
+  } else {
+    // O balcão roda em http na rede local, e ali `navigator.clipboard` não
+    // existe. Sem este caminho o botão não faria nada, calado.
+    var a = document.createElement("textarea");
+    a.value = texto; a.style.position = "fixed"; a.style.opacity = "0";
+    document.body.appendChild(a); a.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (x) { ok = false; }
+    document.body.removeChild(a);
+    avisa(ok);
+  }
+});
+</script>
+{% endblock %}
+{% block content %}
+<h1>CPF no registro de nascimento</h1>
+
+<div class="alerta danger">
+  <p><strong>A inscrição no CPF é obrigatória, e não opcional.</strong></p>
+  <p class="small">{{ norma.NORMA|forte }}. O manual da ARPEN diz, com todas
+     as letras, que «não é um ato discricionário dos usuários».</p>
+</div>
+
+<div class="alerta danger">
+  <p><strong>Quando se pode pedir</strong> — o aviso é da própria tela da CRC,
+     assinado pela Arpen-Brasil e pela Receita Federal:</p>
+  <p class="small">{{ norma.QUANDO_SE_PODE|forte }}</p>
+  <p class="small">{{ norma.QUANDO_NAO_SE_PODE|forte }}</p>
+  <p class="small">{{ norma.PENALIDADE|forte }}</p>
+  <p class="small muted">
+    É por isso que <strong>o acervo não aparece na lista abaixo</strong>: para
+    registro lavrado antes, pedir CPF não é apenas inútil — é proibido, com
+    penalidade nomeada. O caminho daqueles é o mutirão do art. 347.
+  </p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">O que falta para o sistema pedir sozinho</h2>
+  <table class="tabela">
+    <tr><th>o que falta</th><th>de quem</th></tr>
+    {% for f in norma.FALTA_PARA_INTEGRAR %}
+    <tr {% if f.trava_tudo %}class="danger"{% endif %}>
+      <td>{{ f.o_que|forte }}{% if f.trava_tudo %}
+          <br><strong>Trava os três caminhos</strong>, inclusive o formulário
+          manual: sem ele, nem a tela deles aparece.{% endif %}</td>
+      <td class="small">{{ f.de_quem|forte }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Os três caminhos</h2>
+  <table class="tabela">
+    <tr><th>caminho</th><th>onde</th><th>como</th></tr>
+    {% for c in norma.CAMINHOS %}
+    <tr>
+      <td><strong>{{ c.nome }}</strong></td>
+      <td class="small">{{ c.onde }}</td>
+      <td class="small">{{ c.como }}<br><em>{{ c.porque|forte }}</em></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="small muted">
+    <strong>O primeiro já funciona</strong> assim que o termo de adesão for
+    assinado — não depende de nenhum desenvolvimento nosso. O terceiro é o que
+    o oficial pediu, e é o que espera o manual de cargas com a parte do CPF.
+  </p>
+</div>
+
+<div class="card">
+  <p class="small"><strong>Quando a Receita recusar</strong>, o que fazer:</p>
+  <p class="small">{{ norma.O_QUE_FAZER_SE_ERRAR|forte }}</p>
+  <p class="small muted">Os erros que a Receita costuma devolver:</p>
+  <ul>
+    {% for e in norma.ERROS_CONHECIDOS %}
+      <li class="small">{{ e.o_que|forte }} — {{ e.como_evitar }}</li>
+    {% endfor %}
+  </ul>
+  <p class="small muted">
+    Erro de digitação no CPF já emitido se corrige na
+    <strong>{{ norma.ONDE_CORRIGIR }}</strong>, no prazo de
+    <strong>{{ norma.PRAZO_CORRECAO_DIAS }} dias</strong>.
+  </p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Preencher a CRC sem digitar de novo</h2>
+  <p class="small muted">{{ norma.COMO_USAR_O_PREENCHEDOR|forte }}</p>
+  <p>
+    {# **ARRASTE, NAO CLIQUE.** Navegador moderno bloqueia `javascript:` colado
+       na barra de endereco; como FAVORITO ele funciona. O `onclick` explica
+       isso a quem clicar por engano, em vez de nao fazer nada calado. #}
+    <a class="button" href="{{ norma.PREENCHEDOR }}"
+       onclick="alert('Este botão é para ARRASTAR até a barra de favoritos do navegador — não para clicar aqui. Depois de arrastado, você o usa lá na tela da CRC.'); return false;">
+      ⤵ Preencher CPF na CRC
+    </a>
+    <span class="small muted">arraste este botão para os favoritos, uma vez só</span>
+  </p>
+  <p class="small muted">
+    <strong>Ele preenche e para.</strong> Não envia nada: quem confere os
+    dados e clica «Avançar Formulario» é você, que responde pelo ato. E os
+    dados vão pela <strong>área de transferência</strong>, não pelo endereço —
+    nome, filiação e data de nascimento numa URL ficariam no histórico do
+    navegador e nos registros do servidor do outro lado.
+  </p>
+</div>
+
+<h2>{{ linhas|length }}
+    {{ 'nascimento sem CPF' if linhas|length == 1 else 'nascimentos sem CPF' }}</h2>
+
+<p class="small muted">
+  Só os lavrados por esta casa. <strong>O acervo fica de fora</strong>: o CPF
+  dos assentos antigos é o mutirão do art. 347, que tem tela e caminho próprios
+  — a averbação. Misturar faria uma lista de 244 linhas onde a de hoje tem
+  poucas, e lista assim ninguém abre duas vezes.
+</p>
+
+{% if not linhas %}
+<div class="card"><p><strong>Nenhum nascimento do balcão está sem CPF.</strong></p></div>
+{% endif %}
+
+{% for a in linhas %}
+<div class="card">
+  <p><strong>Nascimento nº {{ a.numero }}</strong> — {{ a.nome }}
+     <span class="small muted">({{ (a.data_ato or '')[:10] }})</span></p>
+
+  {% if a.falta %}
+    <p class="small danger">
+      <strong>O assento ainda não tem o que a Receita exige:</strong>
+      {% for f in a.falta %}{{ f.o_que }}{% if not loop.last %}, {% endif %}{% endfor %}.
+    </p>
+  {% else %}
+    <p class="small"><strong>Este assento tem tudo o que a Receita exige.</strong></p>
+  {% endif %}
+
+  {# OS DADOS DO ASSENTO, na ordem em que a CRC os pede.
+     **Eles nao vao pela URL**: nome, filiacao e data de nascimento numa
+     querystring ficariam no historico do navegador e nos registros do
+     servidor do outro lado. Ficam aqui, para copiar. #}
+  <table class="tabela">
+    {% for d in a.copiar %}
+    <tr>
+      <td class="small muted" style="width:13rem">{{ d.rotulo }}</td>
+      <td>{% if d.valor %}<code>{{ d.valor }}</code>
+          {% else %}<span class="danger small">falta no assento</span>{% endif %}</td>
+      <td style="width:6rem">
+        {% if d.valor %}
+        <button type="button" class="button secondary small"
+                data-copiar="{{ d.valor }}">copiar</button>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <p>
+    <a class="button" href="{{ norma.CRC_GERAR_CPF }}" target="crc_nacional"
+       rel="noopener noreferrer"
+       onclick="window.open(this.href,'crc_nacional','width=1100,height=760,menubar=no'); return false;">
+      Abrir a inscrição na CRC
+    </a>
+    <button type="button" class="button secondary"
+            data-copiar="{% for d in a.copiar %}{% if d.valor %}{{ d.rotulo }}: {{ d.valor }}&#10;{% endif %}{% endfor %}">
+      Copiar todos
+    </button>
+    <span class="small muted">a CRC abre em janela separada</span>
+  </p>
+
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="assento_id" value="{{ a.id }}">
+    <p>
+      <label>CPF que a Receita gerou
+        <input type="text" name="cpf" size="18" placeholder="000.000.000-00">
+      </label>
+      <button class="button">Gravar</button>
+    </p>
+  </form>
+</div>
+{% endfor %}
+
+<div class="card">
+  <p class="small muted">
+    <strong>Por que a CRC abre em janela separada, e não aqui dentro.</strong>
+    {{ norma.PORQUE_NAO_EMBUTE|forte }}
+  </p>
+  <p class="small muted">
+    <strong>O número é conferido antes de gravar.</strong> Um CPF com um dígito
+    trocado tem onze algarismos como qualquer outro: passa em conferência de
+    formato e só é descoberto quando alguém tenta usá-lo — e aí já saiu na
+    certidão.
+  </p>
+</div>
+{# UM CLIQUE POR CAMPO, em vez de selecionar com o mouse.
+   **E paliativo, e esta dito na tela que e.** O que resolve de verdade e
+   preencher o formulario da CRC de uma vez — e para isso preciso ver os nomes
+   dos campos daquela tela, que so aparece com o certificado do oficial. #}
+<script>
+document.addEventListener("click", function (e) {
+  var b = e.target.closest("[data-copiar]");
+  if (!b) return;
+  var texto = b.getAttribute("data-copiar");
+  var antes = b.textContent;
+  function avisa(ok) {
+    b.textContent = ok ? "copiado" : "não deu";
+    setTimeout(function () { b.textContent = antes; }, 1200);
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(texto).then(function () { avisa(true); },
+                                             function () { avisa(false); });
+  } else {
+    // O balcão roda em http na rede local, e ali `navigator.clipboard` não
+    // existe. Sem este caminho o botão não faria nada, calado.
+    var a = document.createElement("textarea");
+    a.value = texto; a.style.position = "fixed"; a.style.opacity = "0";
+    document.body.appendChild(a); a.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (x) { ok = false; }
+    document.body.removeChild(a);
+    avisa(ok);
+  }
+});
+</script>
+{% endblock %}

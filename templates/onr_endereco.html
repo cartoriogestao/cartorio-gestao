@@ -1,0 +1,227 @@
+{% extends 'base.html' %}
+{% block title %}Conferir o endereço — matrícula {{ p.matricula_numero }}{% endblock %}
+{% block heading %}<h1>Conferir o endereço — matrícula {{ p.matricula_numero }}</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_onr_enderecos') }}">Voltar à fila</a>
+  <a class="button" href="{{ url_for('ri_ficha', matricula_id=p.matricula_id) }}">A ficha do imóvel</a>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# **A TELA ABRE PELO QUE FOI LIDO, E NÃO POR UM FORMULÁRIO.** Quem confere
+   precisa primeiro ver as duas versões, e só depois mexer em campo. #}
+<section class="card">
+  <h2>A leitura</h2>
+  <p>
+    Confiança
+    <strong>{% if p.confianca == 'alta' %}alta{% elif p.confianca == 'media' %}média{% else %}baixa{% endif %}</strong>
+    {% if p.pode_enviar %}· <strong>não falta campo nenhum</strong>
+    {% elif p.faltam %}· falta {{ p.faltam|join(', ') }}
+    {% endif %}
+    {% if p.confianca == 'baixa' %}
+      · <strong>o teor discorda da ficha</strong>
+    {% endif %}
+  </p>
+  <p>Lida em {{ (p.calculado_em or '')[:16] }}.
+     {% if p.situacao != 'A_CONFERIR' %}
+     Decidida como <strong>{{ nome_da_situacao[p.situacao]|lower }}</strong>
+     por {{ p.decidido_por or '—' }}
+     em {{ (p.decidido_em or '')[:16] }}.
+     {% if p.motivo %}<br>Motivo escrito: {{ p.motivo }}{% endif %}
+     {% endif %}
+  </p>
+</section>
+
+{# ------------------------------------------------------------------ #}
+{# **AS DUAS VERSÕES, CAMPO A CAMPO, COM A FRASE DE ONDE SAIU.** Sem a frase
+   isto vira «confiar na máquina» — e a decisão que o oficial reservou para si
+   (o teor que discorda da ficha não sobe até alguém olhar) não teria como ser
+   tomada. #}
+<section class="card">
+  <h2>O que a leitura propõe, ao lado do que a ficha tem</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>campo</th><th>a ficha tem</th><th>o teor diz</th><th>de onde saiu</th></tr>
+      </thead>
+      <tbody>
+        {% for campo in campos %}
+        {% set da_ficha = atual.get(campo) %}
+        {% set proposto = p.proposta.get(campo) %}
+        {% set discordam = da_ficha and proposto and da_ficha|string != proposto|string %}
+        <tr>
+          <th>{{ rotulo_do_campo[campo] }}</th>
+          <td>{% if da_ficha %}{{ da_ficha }}{% else %}<span class="muted">— vazio —</span>{% endif %}</td>
+          <td>
+            {# **A DISCORDÂNCIA SE MARCA COM PALAVRA, E NÃO COM COR.** Cor
+               sem nome é adivinhação — e aqui o que ela quer dizer («o teor
+               desmente a ficha») é o motivo inteiro de a linha estar na fila
+               da conferência. #}
+            {% if proposto %}{{ proposto }}
+              {% if discordam %}<span class="badge alta">diverge</span>{% endif %}
+            {% else %}<span class="muted">— não leu —</span>{% endif %}
+          </td>
+          <td><small>{{ p.de_onde.get(campo) or '' }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><small>
+    A última coluna é a <strong>frase do teor</strong> de onde o valor saiu —
+    é ela que permite conferir a leitura sem abrir o texto inteiro. Quando as
+    duas colunas do meio discordam, a linha vem realçada: é ali que o teor
+    está desmentindo a ficha.
+  </small></p>
+</section>
+
+{# ------------------------------------------------------------------ #}
+{% if p.avisos %}
+<section class="card warning">
+  <h2>O que olhar antes de gravar</h2>
+  <ul>{% for a in p.avisos %}<li>{{ a }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{% if p.bloco %}
+<section class="card">
+  <h2>O trecho do teor de onde tudo isto saiu</h2>
+  <p><small>
+    O extrator lê o <strong>bloco do imóvel</strong>, e não a ficha inteira: o
+    endereço do proprietário, que aparece no meio do texto, não é o do imóvel —
+    e confundir os dois poria no índice nacional a rua de quem mora noutro
+    lugar.
+  </small></p>
+  <pre class="teor-texto" style="font-size:.88em">{{ p.bloco }}</pre>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{% if texto_do_teor %}
+<section class="card">
+  <h2>O teor inteiro</h2>
+  {#
+    **O TEOR NÃO VAI INTEIRO PARA A PÁGINA** — a lição de `rcpn_crc.html`, de
+    13/09/2026: com o acervo importado o texto chega a megabytes, e embuti-lo
+    num `<pre>`, mesmo dentro de um `<details>` fechado, infla a página e o
+    navegador parece travado. Vai o começo, com o tamanho ao lado; o resto
+    está na ficha, que o botão do alto abre.
+  #}
+  <details>
+    <summary>abrir o começo do teor</summary>
+    <pre class="teor-texto" style="font-size:.85em">{{ texto_do_teor[:4000] }}{% if texto_do_teor|length > 4000 %}
+
+… ({{ texto_do_teor|length }} caracteres ao todo — o resto está na ficha da matrícula){% endif %}</pre>
+  </details>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{% if p.situacao == 'A_CONFERIR' %}
+<section class="card">
+  <h2>Gravar na ficha</h2>
+  <p>
+    Corrija o que estiver errado e clique em gravar.
+    <strong>Só o que estiver vazio na ficha é preenchido</strong> — o que
+    alguém já digitou não é sobrescrito por uma leitura de máquina, e a tela
+    diz depois o que ficou como estava.
+  </p>
+  <p><small>
+    <strong>Campo esvaziado aqui não apaga nada</strong>: quer dizer «não
+    grave este». Apagar um dado da ficha se faz na própria ficha, com rastro.
+  </small></p>
+  <form method="post" action="{{ url_for('ri_onr_endereco_confirmar', proposta_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <label>Logradouro
+      <input type="text" name="logradouro" value="{{ p.proposta.get('logradouro') or '' }}">
+    </label>
+    <label>Número
+      <input type="text" name="numero_predial" value="{{ p.proposta.get('numero_predial') or '' }}">
+    </label>
+    <label>Bairro
+      <input type="text" name="bairro" value="{{ p.proposta.get('bairro') or '' }}">
+    </label>
+    <label>Cidade
+      <input type="text" name="cidade" value="{{ p.proposta.get('cidade') or '' }}">
+    </label>
+    <label>UF
+      <input type="text" name="uf" maxlength="2" value="{{ p.proposta.get('uf') or '' }}">
+    </label>
+    <label>CEP
+      <input type="text" name="cep" value="{{ p.proposta.get('cep') or '' }}">
+    </label>
+    <p><small>
+      <strong>O CEP é o da cidade que vai.</strong> Ele sai da própria ficha,
+      quando lá está; senão, do padrão daquela cidade — e quando não há CEP
+      conhecido para ela, o campo fica em branco em vez de receber o de outra,
+      porque um CEP errado põe o imóvel na rua de outra cidade.
+    </small></p>
+
+    <label>Urbano ou rural
+      <select name="rural_urbano">
+        <option value="">— não decidir —</option>
+        <option value="U" {% if p.proposta.get('rural_urbano') == 'U' %}selected{% endif %}>U · urbano</option>
+        <option value="R" {% if p.proposta.get('rural_urbano') == 'R' %}selected{% endif %}>R · rural</option>
+      </select>
+    </label>
+
+    <label>Área
+      <input type="text" name="area_valor" value="{{ p.proposta.get('area_valor') or '' }}">
+    </label>
+    <label>Unidade da área
+      <select name="area_unidade">
+        <option value="">—</option>
+        <option value="m2" {% if p.proposta.get('area_unidade') == 'm2' %}selected{% endif %}>m2 · metros quadrados (o que o ONR espera)</option>
+        <option value="ha" {% if p.proposta.get('area_unidade') == 'ha' %}selected{% endif %}>ha · hectares (como o acervo escreve)</option>
+        <option value="m" {% if p.proposta.get('area_unidade') == 'm' %}selected{% endif %}>m · metros</option>
+      </select>
+    </label>
+    <p><small>
+      A unidade do acervo <strong>mente com frequência</strong>: há ficha em que
+      ela diz «ha» e o número já está em metros. Por isso o valor que esta tela
+      propõe vem <strong>lido do teor</strong>, onde a área está escrita com a
+      unidade ao lado, e já convertido para metros quadrados.
+    </small></p>
+
+    <label>Tipo do imóvel
+      <input type="text" name="tipo_imovel" value="{{ p.proposta.get('tipo_imovel') or '' }}">
+    </label>
+
+    <button class="button primary" type="submit">Gravar na ficha</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Descartar esta leitura</h2>
+  <p><small>
+    Descartar diz «esta leitura não serve», e o motivo é obrigatório: quem
+    abrir esta ficha depois precisa saber por quê. <strong>A ficha não é
+    tocada.</strong>
+  </small></p>
+  <form method="post" action="{{ url_for('ri_onr_endereco_descartar', proposta_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Motivo
+      <input type="text" name="motivo" required>
+    </label>
+    <button class="button" type="submit">Descartar</button>
+  </form>
+</section>
+{% else %}
+<section class="card">
+  <p class="muted">
+    Esta proposta já foi decidida e não se confere de novo.
+    {% if p.situacao == 'CONFIRMADA' %}
+      O que está na ficha se corrige <strong>na própria ficha</strong>, com
+      rastro.
+    {% else %}
+      Rodar o extrator de novo cria outra proposta para esta matrícula — a
+      decisão anterior fica registrada.
+    {% endif %}
+  </p>
+</section>
+{% endif %}
+
+{% endblock %}

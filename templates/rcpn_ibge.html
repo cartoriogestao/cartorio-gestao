@@ -1,0 +1,214 @@
+{#
+  A remessa trimestral do IBGE — Lei 6.015/1973, art. 49.
+
+  A CONFERÊNCIA VEM ANTES DO BOTÃO DE BAIXAR, e é deliberado: o IBGE **aceita**
+  uma remessa inteira de noves, e ela não serve para nada. Cumprir a obrigação e
+  mandar papel em branco parecem a mesma coisa do lado de fora — este número é o
+  que separa os dois.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Remessa do IBGE</h1>{% endblock %}
+{% block content %}
+{% if entregue %}
+<section>
+  <div class="card">
+    <p><strong>O {{ trimestre }}º trimestre de {{ ano }} já está registrado como
+       entregue</strong> em {{ (entregue.enviada_em or '')[:10] }}
+       {% if entregue.canal %}por {{ entregue.canal }}{% endif %}
+       {% if entregue.protocolo %}, protocolo {{ entregue.protocolo }}{% endif %},
+       com {{ entregue.quantos }} linha(s).</p>
+    <p class="small muted">O arquivo daquele dia ficou guardado inteiro, com a
+       impressão digital — numa correição é ele que se mostra.</p>
+  </div>
+</section>
+{% endif %}
+{% if atrasados %}
+<section>
+  <div class="card">
+    <h2 style="margin-top:0">Trimestres em atraso ({{ atrasados|length }})</h2>
+    <p class="small danger">{{ norma.SANCAO }}.</p>
+    <table>
+      <thead><tr><th>Trimestre</th><th>Vencia em</th><th>Atrasado há</th>
+                 <th>Atos no trimestre</th></tr></thead>
+      <tbody>
+      {% for x in atrasados %}
+        <tr>
+          <td>{{ x.trimestre }}º de {{ x.ano }}</td>
+          <td class="small">{{ x.vencia_em }}</td>
+          <td class="small"><strong>{{ x.atrasado_ha }} dias</strong></td>
+          <td class="small">{{ x.do_sistema }} desta casa, de {{ x.quantos }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted">
+      A lista conta <strong>só o que este sistema lavrou</strong>: o que veio do
+      acervo o E-Ofício já entregou, e dizer o contrário seria acusar setenta
+      anos de livro.
+    </p>
+  </div>
+</section>
+{% endif %}
+
+{% include '_serventia.html' %}
+
+<section class="panel">
+  <div class="panel-head"><span>Qual trimestre</span></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Ano
+      <select name="ano">
+        {% for a in anos %}
+          <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Trimestre
+      <select name="trimestre">
+        {% for t in [1, 2, 3, 4] %}
+          <option value="{{ t }}" {% if t == trimestre %}selected{% endif %}>
+            {{ t }}º</option>
+        {% endfor %}
+      </select></label>
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button">Ver o que sairia</button>
+    </div>
+    <p style="grid-column:1/-1"><small>
+      Entra o que foi <strong>registrado</strong> no trimestre, e não o que
+      aconteceu nele: o registro tardio de um nascimento de 1990 é estatística
+      do trimestre em que foi lavrado.
+    </small></p>
+  </form>
+</section>
+
+{% if erro %}
+<section class="panel">
+  <div style="padding:14px">
+    <div class="notice" style="margin:0"><strong>{{ erro }}</strong></div>
+  </div>
+</section>
+{% elif r %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>{{ r.trimestre }}º trimestre de {{ r.ano }} —
+      {{ fmt_date(r.de) }} a {{ fmt_date(r.ate) }}</span>
+  </div>
+  <div style="padding:14px">
+    {% if not r.linhas %}
+      <div class="notice" style="margin:0">
+        <strong>Nenhum ato registrado neste trimestre.</strong>
+        <span class="small">Se você esperava atos aqui, confira se a carga do
+          acervo já rodou — em <em>Livros e acervo</em>.</span>
+      </div>
+    {% else %}
+      <table class="tabela">
+        <thead><tr>
+          <th>Arquivo</th><th>O que é</th><th class="num">Linhas</th>
+          <th class="num">Largura</th><th class="num">Posições ignoradas</th>
+        </tr></thead>
+        <tbody>
+        {% for nome, linhas in r.arquivos|dictsort %}
+          {% set c = r.conferencia[nome] %}
+          <tr>
+            <td><code>{{ nome }}</code></td>
+            <td>{% if nome.endswith('01.TXT') %}nascimentos
+                {% elif nome.endswith('02.TXT') %}casamentos
+                {% else %}óbitos{% endif %}</td>
+            <td class="num">{{ linhas|length }}</td>
+            <td class="num">{{ linhas[0]|length }}</td>
+            <td class="num">
+              {{ c.ignorados }} de {{ c.campos }}
+              {% if c.ignorados %}
+                <small>({{ (100 * c.ignorados / c.campos)|round(0)|int }}%)</small>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+
+      {% set total_ign = r.conferencia.values()|map(attribute='ignorados')|sum %}
+      {% if total_ign %}
+      <div class="notice" style="margin-top:14px">
+        <strong>{{ total_ign }} posições saem como «ignorado».</strong>
+        <span class="small">
+          O IBGE tem código próprio para «não sei» — `9` — e <strong>aceita a
+          remessa assim</strong>. Mas remessa cheia de nove é remessa aceita e
+          inútil: ela cumpre a obrigação e não informa nada.
+          <br><br>
+          O que mais falta, por campo:
+          {% for nome, c in r.conferencia.items() %}
+            {% for campo, quantos in c.por_campo.items() %}
+              {% if loop.index <= 4 %}<code>{{ campo }}</code> ({{ quantos }}){% if not loop.last %}, {% endif %}{% endif %}
+            {% endfor %}
+          {% endfor %}
+          <br><br>
+          Os assentos antigos trazem o que o acervo tinha. Nos atos
+          <strong>novos</strong>, isso se pergunta ao declarante na tela de
+          lavrar — depois vira telefonema para a família.
+        </span>
+      </div>
+      {% endif %}
+
+      {% if r.fora_da_pesquisa %}
+      <p style="margin-top:14px"><small>
+        <strong>{{ r.fora_da_pesquisa|length }} assento(s) fora da pesquisa.</strong>
+        O IBGE recolhe nascimento, casamento e óbito; proclamas e os atos do
+        Livro E não entram. Não é defeito.
+      </small></p>
+      {% endif %}
+
+      <form method="post" style="margin-top:14px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="ano" value="{{ r.ano }}">
+        <input type="hidden" name="trimestre" value="{{ r.trimestre }}">
+        <input type="hidden" name="acao" value="baixar">
+        <button class="button">Baixar CARTINF.ZIP</button>
+      </form>
+      <p><small>O arquivo sai em <strong>ISO-8859-1</strong>, como o IBGE pede:
+        acento em dois bytes empurraria todos os campos da linha para a
+        direita, e o arquivo é de largura fixa.</small></p>
+
+      {% if not entregue %}
+        <div class="card">
+          <h3 style="margin-top:0">Registrar que este trimestre foi entregue</h3>
+          <p class="small muted">
+            <strong>Gerar não é entregar</strong>, e por muito tempo o sistema só
+            sabia gerar — de modo que a pergunta «o trimestre passado foi
+            entregue?» não tinha resposta em lugar nenhum. O art. 224 pune o
+            descumprimento com <strong>multa de 1 a 5 salários mínimos</strong>,
+            «sem prejuízo da ação penal». Marque aqui depois de mandar, e o
+            arquivo fica guardado como prova.
+          </p>
+          <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="ano" value="{{ r.ano }}">
+            <input type="hidden" name="trimestre" value="{{ r.trimestre }}">
+            <input type="hidden" name="acao" value="entreguei">
+            <label>Por onde <input type="text" name="canal" size="18"
+                   placeholder="IBGE Coleta, malote, correio"></label>
+            <label>Protocolo <input type="text" name="protocolo" size="20"></label>
+            <button class="button">Já entreguei este trimestre</button>
+          </form>
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+</section>
+
+{% if r.linhas %}
+<section class="panel">
+  <div class="panel-head"><span>A primeira linha de cada arquivo</span></div>
+  <div style="padding:14px">
+    <p><small>Para conferir antes de mandar. Cada posição tem um significado
+      fixo, e o IBGE não avisa qual linha recusou.</small></p>
+    {% for nome, linhas in r.arquivos|dictsort %}
+      <p style="margin-bottom:4px"><code>{{ nome }}</code></p>
+      <pre style="overflow-x:auto"><code>{{ linhas[0] }}</code></pre>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% endif %}
+{% endblock %}

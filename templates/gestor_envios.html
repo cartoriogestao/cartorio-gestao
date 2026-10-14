@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Envios às Centrais</h1>{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <p>Esta lista é o que a <strong>conferência diária</strong> (07:30) cobra e só
+  some quando há <strong>registro do envio com o protocolo</strong>. Mande pelo
+  portal ou pela tela da Central, depois marque aqui o que foi e escreva o
+  protocolo que a Central devolveu. <strong>Esta tela não envia nada</strong>:
+  ela registra que foi enviado.</p>
+  <p class="muted">O item registrado continua na lista, marcado, até a próxima
+  conferência — é ela que confere o registro e fecha a cobrança.</p>
+</section>
+
+{% if not grupos %}
+<section class="panel">
+  <p><strong>Nenhum envio cobrado agora.</strong> Ou está tudo registrado, ou a
+  conferência diária ainda não rodou nesta instalação.</p>
+</section>
+{% endif %}
+
+{% for central, itens in grupos.items() %}
+<section class="panel">
+  <h2>{{ nomes.get(central, central) }}</h2>
+  <form method="post" action="{{ url_for('gestor_envios_registrar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="table-wrap">
+    <table>
+      <tr><th></th><th>O que é</th><th>Prazo</th><th>Situação</th></tr>
+      {% for i in itens %}
+      <tr>
+        <td>{% if not i.ja_registrado %}<input type="checkbox" name="chave" value="{{ i.chave }}">{% endif %}</td>
+        <td>{{ i.titulo }}{% if i.detalhe %}<br><small class="muted">{{ i.detalhe }}</small>{% endif %}</td>
+        <td>{{ i.prazo or '—' }}</td>
+        <td>{% if i.ja_registrado %}registrado — sai na próxima conferência
+            {% else %}{{ i.gravidade }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+    <div class="form-row">
+      <label>Protocolo devolvido pela Central
+        <input name="protocolo" required maxlength="120"></label>
+      <label>Por onde foi
+        <select name="canal">{% for c in canais %}<option value="{{ c }}"{% if c == 'PORTAL' %} selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
+      <label>Observação <input name="mensagem" maxlength="300"></label>
+      <button type="submit">Registrar os marcados</button>
+    </div>
+  </form>
+</section>
+{% endfor %}
+
+<section class="panel">
+  <h2>Últimos registros</h2>
+  {% if feitos %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Central</th><th>Competência / ato</th><th>Protocolo</th><th>Canal</th><th>Quem</th><th>Quando</th></tr>
+    {% for f in feitos %}
+    <tr><td>{{ nomes.get(f.central, f.central) }}</td>
+        <td>{{ f.competencia or f.referencia }}</td><td>{{ f.protocolo }}</td>
+        <td>{{ f.canal }}</td><td>{{ f.registrado_por }}</td>
+        <td>{{ (f.registrado_em or '')[:16]|replace('T', ' ') }}</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}<p class="muted">Nenhum envio registrado ainda.</p>{% endif %}
+</section>
+{% endblock %}

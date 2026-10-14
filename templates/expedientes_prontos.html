@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Expedientes prontos para encerrar{% endblock %}
+
+{% block content %}
+{# 12/10/2026 — Tarefas e Expedientes viraram Processos (ordem do oficial). #}
+<div class="notice">Esta lista agora faz parte de <a href="{{ url_for('processos_lista') }}"><strong>Processos</strong></a> — o que chega pelo malote, as tarefas e os pedidos numa lista só, com a pasta e o roteiro de cada um. Esta tela continua aberta enquanto a equipe se acostuma.</div>
+<div class="page-head">
+  <h1>Prontos para encerrar</h1>
+  <a class="button" href="{{ url_for('expedientes') }}">&larr; Expedientes</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ prontos|length }}
+    expediente{{ '' if prontos|length == 1 else 's' }} com tudo concluído</span></div>
+  <div style="padding:14px">
+    {% if not prontos %}
+      <p><strong>Nenhum expediente esperando encerramento.</strong> Todo expediente
+      aberto ainda tem tarefa em andamento &mdash; ou não tem tarefa nenhuma
+      ligada a ele.</p>
+    {% else %}
+      <p>Estes expedientes têm <strong>todas as tarefas concluídas</strong> e
+      continuam abertos. É o trabalho que acabou e ninguém fechou.</p>
+      <p class="small muted">Sem esta lista, cada um só apareceria a quem
+      abrisse aquele expediente por acaso.</p>
+    {% endif %}
+  </div>
+</section>
+
+{% if prontos %}
+<section class="panel">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Protocolo</th><th>Assunto</th><th>Etapa</th>
+      <th>Tarefas concluídas</th><th>Prazo</th><th></th></tr></thead>
+    <tbody>
+    {% for e in prontos %}
+      <tr>
+        <td class="small"><a href="{{ url_for('expediente_detail', expediente_id=e.id) }}">
+          {{ e.internal_protocol }}</a></td>
+        <td class="small">{{ (e.subject or '—')[:60] }}</td>
+        <td class="small"><span class="badge">{{ e.stage }}</span></td>
+        <td class="small">{{ e.concluidas }}</td>
+        <td class="small">{{ fmt_date(e.deadline_date) if e.deadline_date else '—' }}</td>
+        <td class="small actions-cell">
+          <a class="button" href="{{ url_for('expediente_detail', expediente_id=e.id) }}">Encerrar</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

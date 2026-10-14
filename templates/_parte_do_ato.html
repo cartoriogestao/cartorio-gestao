@@ -1,0 +1,103 @@
+{#- UMA PARTE DO ATO, NUM BLOCO SÓ — relato #86, 18/09/2026.
+
+    O relato, nas palavras dele: «a parte de partes que participam do ato
+    precisa ser revista, precisa ser possivel incluir tantas quantas as partes
+    do ato» e «precisa organizar melhor para separar dados de cada parte».
+
+    AS DUAS METADES DO RELATO, e as duas foram medidas na produção antes de
+    escrever a primeira linha:
+
+    1. O TETO DE TRÊS NÃO TINHA POR ONDE SE CUMPRIR. O formulário desenhava
+       TRÊS blocos e mais nenhum. Medido em 18/09/2026: **44 atos desta casa
+       têm mais de três partes**, e o maior tem **22** (R-1 da matrícula
+       3.757, de 1984); **251 fichas** têm mais de três. O ato de cinco partes
+       era impossível de escrever na ficha — e não havia caminho nenhum, nem
+       «acrescentar»: a resposta da tela era «parte entra ao lavrar o ato»,
+       que é justamente a tela onde ele estava.
+
+    2. E OS CAMPOS SAÍAM EM FILA. Nome, nome, nome, depois CPF, CPF, CPF,
+       depois papel, papel, papel — a grade do `.form-grid` lia por LINHA, e
+       quem digitasse a terceira parte tinha de contar as colunas para saber
+       de quem era cada campo. Agrupar por parte é a correção, e não estética:
+       parte do mesmo titular errada é titular a menos na certidão.
+
+    O BLOCO VALE PARA OS DOIS LADOS — a parte que veio guardada na minuta
+    (`pa` preenchida) e o bloco em branco (`pa` None). Dois desenhos fariam o
+    campo novo nascer de um lado só, e é o defeito de costume desta casa: o
+    rascunho ficou numa tela só até 07/09, e o selo do ato de livro não
+    existia até 17/09.
+
+    SEM `value` QUANDO O CAMPO ESTÁ VAZIO, e isto não é economia de
+    caractere: é o que mantém `_campos()` dos testes lendo «o que está DENTRO
+    dos campos». Com `value=""` em toda linha em branco, os ajudantes que
+    conferem «as partes não vazam de uma ficha para outra» passariam a contar
+    os blocos vazios como conteúdo.
+
+    E O `papel` USA A LISTA `papeis-ri` — a mesma da correção de parte. Ele
+    era o único campo de papel do sistema escrito à mão aqui: a tela de
+    corrigir já oferecia as doze palavras, e esta não, de modo que a mesma
+    casa escrevia «proprietario» num lugar e «proprietário» no outro. É o
+    papel que decide quem é o titular atual na certidão.
+
+    A QUALIFICAÇÃO VAI ESCONDIDA, E É O QUE FAZ A VOLTA SER INTEIRA. Quando o
+    selo recusa e o ato volta a ser minuta, `ri_minuta.voltar_do_ato` traz as
+    cinco colunas da parte — inclusive a qualificação. Sem este campo, quem
+    corrigisse uma vírgula no teor e clicasse em **Guardar revisão** apagaria a
+    qualificação de todo mundo sem ver: `getlist("parte_qualificacao")` viria
+    vazio, e o que a tela não mostrava sumiria na gravação. É o `None` do
+    formulário fazendo o papel do `None` do banco — «não mexi» — pelo lado
+    errado.
+
+    E ELA É ESCONDIDA, e não um campo a mais, de propósito: **este bloco não é
+    o lugar de requalificar ninguém.** Quem muda nome, documento, qualificação
+    ou papel de uma parte já lavrada é a tela **Corrigir** do painel das
+    partes, que exige motivo escrito e deixa o valor anterior na auditoria. O
+    que este bloco faz é levar a parte inteira para o ato que vai sair.
+
+    OS DOIS ESCONDIDOS SAEM SEMPRE, MESMO VAZIOS — e isto não é descuido, é o
+    que constrói o alinhamento. O formulário chega em cinco listas separadas
+    (`getlist`), e o leitor casa as listas POR POSIÇÃO. Se o campo escondido
+    saísse só nos blocos que têm valor, a terceira parte com qualificação e a
+    segunda sem fariam a lista começar na terceira: **a qualificação de um
+    cairia no nome do outro**, calada, num registro público. Saem em todo
+    bloco, então as cinco listas têm exatamente uma entrada por bloco — a
+    igualdade fica CONSTRUÍDA, e não suposta. Vazio quer dizer «não havia», e
+    o leitor transforma em `None` (`_partes_da_tela`, em `ri_web.py`).
+
+    `value=""` NOS DOIS ESCONDIDOS NÃO ATRAPALHA O QUE OS TESTES LEEM, e é por
+    isso que a privação de `value` vale só para os campos visíveis: `_campos()`
+    procura o nome do campo sem valor, e o nome do escondido é outro. -#}
+{% macro parte_do_ato(pa=None) -%}
+  {%- set nome = pa.nome if pa else '' -%}
+  {%- set doc = (pa.documento_numero or '') if pa else '' -%}
+  {%- set papel = (pa.papel or '') if pa else '' -%}
+  {%- set qual = (pa.qualificacao or '') if pa else '' -%}
+  {%- set tipo = (pa.documento_tipo or '') if pa else '' -%}
+<fieldset class="parte-do-ato" data-parte>
+  <legend>{{ nome or 'Parte' }}</legend>
+  <label>Nome
+    <input name="parte_nome"{% if nome %} value="{{ nome }}"{% endif %}
+           placeholder="nome completo, ou a razão social"></label>
+  <label>CPF/CNPJ
+    <input name="parte_documento"{% if doc %} value="{{ doc }}"{% endif %}
+           inputmode="numeric" placeholder="só os números"></label>
+  <label>Papel
+    <input name="parte_papel"{% if papel %} value="{{ papel }}"{% endif %}
+           list="papeis-ri" placeholder="proprietário, adquirente, credor...">
+    <small class="muted">o papel decide quem figura como titular atual na
+      certidão</small></label>
+  <small class="muted">bloco em branco não é gravado</small>
+  {# A QUALIFICAÇÃO GUARDADA VIAJA DE VOLTA — ver o comentário do alto. Ela
+     fica no FIM do bloco de propósito: os testes leem «o que está dentro dos
+     campos» com uma expressão que anda de `<input` até o `>` seguinte, e um
+     campo escondido no meio da fila mudaria o que eles enxergam.
+
+     SEMPRE, mesmo vazia — é o alinhamento por posição que depende disso. #}
+  <input type="hidden" name="parte_qualificacao" value="{{ qual }}">
+  {# O TIPO DE DOCUMENTO PELA MESMA RAZÃO, e ele é o segundo campo que a tela
+     não edita: `documento_tipo` diz se o número é CPF ou CNPJ, e a parte que
+     voltou de um ato suspenso o traz. Sem ele, guardar a revisão trocaria o
+     tipo por vazio — e quem lavrasse depois gravaria a linha sem tipo. #}
+  <input type="hidden" name="parte_documento_tipo" value="{{ tipo }}">
+</fieldset>
+{%- endmacro %}

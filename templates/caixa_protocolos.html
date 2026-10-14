@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+{% block title %}Protocolo geral — Administrativo{% endblock %}
+{% block heading %}<h1>Protocolo geral</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('caixa') }}">&larr; Caixa</a></div>
+
+<div class="notice">
+  O número que acompanha o serviço do balcão até a entrega, em todas as atribuições.
+  Não confundir com a <strong>prenotação</strong> do Registro de Imóveis, que é o Livro 1 e
+  tem prazo e efeito próprios.
+</div>
+
+<section class="cards">
+  {% for r in resumo %}
+    <div class="stat"><strong>{{ r.n }}</strong><small>{{ SITUACOES.get(r.situacao, r.situacao) }}</small></div>
+  {% endfor %}
+</section>
+
+{% if por_atrib %}
+<div class="notice">
+  <strong>Em aberto por atribuição:</strong>
+  {% for a in por_atrib %}{{ a.atribuicao }} {{ a.n }}{% if not loop.last %} · {% endif %}{% endfor %}
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Abrir protocolo</span></div>
+  <form method="post" class="grid2" style="padding:14px"
+        onsubmit="if(!(this.telefone.value||'').trim()&&!(this.email.value||'').trim()){alert('Informe o telefone ou o e-mail do cliente — pelo menos um.');this.telefone.focus();return false;}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Interessado <input name="interessado" required></label>
+    <label>CPF/CNPJ <input name="interessado_documento"></label>
+    <label>Telefone * <input name="telefone" placeholder="(99) 99999-9999"></label>
+    <label>E-mail * <input name="email" type="email" placeholder="cliente@exemplo.com"></label>
+    <p class="small muted" style="margin:0;grid-column:1/-1">* Telefone <strong>ou</strong> e-mail — pelo menos um é obrigatório.</p>
+    <label>Para que serve
+      <select name="tipo">
+        <option value="SERVICO">Serviço — ato a ser praticado</option>
+        <option value="ORCAMENTO">Mero cálculo de emolumentos (orçamento)</option>
+      </select></label>
+    <label>Atribuição
+      <select name="atribuicao">
+        {% for a in ['RI','NOTAS','PROTESTO','RCPN','RTD','RCPJ','FIRMAS','OUTROS'] %}
+          <option value="{{ a }}">{{ a }}</option>{% endfor %}
+      </select></label>
+    <label>Previsão de entrega <input type="date" name="previsao_entrega"></label>
+    <label>Documento apresentado
+      <select name="documento_tipo">
+        <option value="">— não informado —</option>
+        {% for t in TIPOS_DOCUMENTO %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select></label>
+    <label>Nº do documento <input name="documento_numero"></label>
+    <label class="span2">Descrição do documento
+      <input name="documento_descricao"
+             placeholder="ex.: escritura de compra e venda, 4 laudas, lavrada no 1º Tabelionato de Imperatriz"></label>
+    <label class="span2">Assunto <input name="assunto"></label>
+    <label class="span2">Observação <input name="observacao"></label>
+    {# Prenotacao do RI: so faz sentido quando a atribuicao e RI. O balcao
+       escolhe; o sistema nao junta por nome. #}
+    <label class="span2" id="bloco-prenotacao-ri">Prenotação do RI (Livro 1)
+      <select name="ri_protocolo_id">
+        <option value="">— sem vínculo (escolher depois) —</option>
+        {% for pr in prenotacoes_ri or [] %}
+          <option value="{{ pr.id }}">nº {{ pr.numero }}/{{ pr.livro or '1A' }}
+            {% if pr.apresentante %} — {{ pr.apresentante[:40] }}{% endif %}
+            {% if pr.matricula_numero %} — mat. {{ pr.matricula_numero }}{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      <span class="small muted">Preencha quando o atendimento for de título/
+        prenotação do Registro de Imóveis. É a ponte que o lavrar usa para
+        achar os itens deste protocolo.</span>
+    </label>
+    <div class="span2"><button class="primary" name="acao" value="novo">Abrir protocolo</button>
+      <span class="small muted">O número segue o padrão do E-Ofício: ano.mês.sequencial.</span></div>
+  </form>
+</section>
+
+<form class="filters" method="get">
+  <label>Situação
+    <select name="situacao" onchange="this.form.submit()">
+      <option value="ANDAMENTO" {% if situacao == 'ANDAMENTO' %}selected{% endif %}>Em andamento (aberto e a pagar)</option>
+      <option value="TODAS" {% if situacao == 'TODAS' %}selected{% endif %}>todas</option>
+      {% for cod, rotulo in SITUACOES.items() %}
+        <option value="{{ cod }}" {% if situacao == cod %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select></label>
+  <label>Atribuição
+    <select name="atribuicao" onchange="this.form.submit()">
+      <option value="">todas</option>
+      {% for a in ['RI','NOTAS','PROTESTO','RCPN','RTD','RCPJ','FIRMAS','OUTROS'] %}
+        <option value="{{ a }}" {% if atribuicao == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select></label>
+  <label>Buscar <input name="busca" value="{{ busca }}" size="28"
+    placeholder="número, interessado ou assunto"></label>
+  <button>Filtrar</button>
+</form>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ total }} protocolo(s)</span>
+    <span class="small muted">página {{ pagina }} de {{ paginas }}</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Número</th><th>Data</th><th>Atribuição</th><th>Interessado</th>
+      <th>Assunto</th><th>Contato</th><th>Situação</th><th style="text-align:right">Valor</th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr>
+        <td><a href="{{ url_for('caixa_protocolo', protocolo_id=r.id) }}">{{ r.numero }}</a>
+            {% if r.tipo == 'ORCAMENTO' %}<br><span class="badge media">cálculo</span>{% endif %}</td>
+        <td class="small">{{ fmt_date(r.data_abertura) }}</td>
+        <td class="small">{{ r.atribuicao }}</td>
+        <td class="small">{{ (r.interessado or '')[:34] }}</td>
+        <td class="small">{{ (r.assunto or '')[:40] }}</td>
+        <td class="small">{% if r.telefone %}{{ r.telefone }}{% endif %}
+          {% if r.email %}<br><span class="muted">{{ r.email }}</span>{% endif %}
+          {% if not r.telefone and not r.email %}—{% endif %}</td>
+        <td>{% if r.situacao == 'ABERTO' %}<span class="badge alta">aberto</span>
+            {% elif r.situacao == 'A_PAGAR' %}<span class="badge media">a pagar</span>
+            {% else %}<span class="badge ok">{{ r.situacao|lower }}</span>{% endif %}</td>
+        <td style="text-align:right">{{ r.valor_total or '—' }}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+
+{% if paginas > 1 %}
+<div class="actions">
+  {% if pagina > 1 %}<a class="button" href="{{ url_for('caixa_protocolos', pagina=pagina-1, situacao=situacao, atribuicao=atribuicao, busca=busca) }}">&larr; anterior</a>{% endif %}
+  {% if pagina < paginas %}<a class="button" href="{{ url_for('caixa_protocolos', pagina=pagina+1, situacao=situacao, atribuicao=atribuicao, busca=busca) }}">próxima &rarr;</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

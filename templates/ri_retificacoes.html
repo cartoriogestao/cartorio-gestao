@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Retificação de área{% endblock %}
+{% block content %}
+<h1>Retificação de área e georreferenciamento</h1>
+
+{% if sigef %}
+<div class="alerta danger">
+  <h2 style="margin-top:0">Prazo da serventia — {{ sigef|length }} processo{{ 's' if sigef|length > 1 }} aguardando o SIGEF</h2>
+  <p>Averbada a poligonal certificada, <strong>a serventia tem 30 dias</strong>
+     para requerer o registro no SIGEF, com o número da nova matrícula e os
+     dados dos proprietários (art. 620, § 2º do Código de Normas).</p>
+  <p class="small muted">Este é o único prazo deste rito que é <strong>nosso</strong>:
+     ele nasce depois do ato, com o cliente já fora do balcão, e não há ninguém
+     de fora para cobrá-lo.</p>
+  <table>
+    <thead><tr><th>Processo</th><th>Matrícula</th><th>Averbado em</th><th></th></tr></thead>
+    <tbody>
+    {% for s in sigef %}
+      <tr><td>{{ s.numero }}</td><td>{{ s.matricula_numero or s.matricula_id }}</td>
+          <td>{{ s.averbado_em }}</td>
+          <td><a href="{{ url_for('ri_retificacao', processo_id=s.id) }}">abrir</a></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<p>
+  <a class="button" href="{{ url_for('ri_retificacao_nova') }}">Novo processo</a>
+  <a class="button secondary" href="{{ url_for('ri_retificacao_normas') }}">O que o Código de Normas exige</a>
+</p>
+
+<h2>Processos em andamento ({{ processos|length }})</h2>
+{% if processos %}
+<table>
+  <thead><tr><th>Nº</th><th>Matrícula</th><th>Espécie</th><th>Fase</th><th>Requerente</th><th></th></tr></thead>
+  <tbody>
+  {% for p in processos %}
+    <tr>
+      <td>{{ p.numero }}</td>
+      <td>{{ p.matricula_numero or p.matricula_id }}</td>
+      <td class="small">{{ especies.get(p.especie, p.especie) }}</td>
+      <td class="small">{{ fases.get(p.fase, p.fase) }}</td>
+      <td class="small">{{ p.requerente_nome or '—' }}</td>
+      <td><a href="{{ url_for('ri_retificacao', processo_id=p.id) }}">abrir</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card">
+  <p>Nenhum processo de retificação aberto.</p>
+  <p class="small muted">A retificação de área é o procedimento dos
+     <strong>arts. 212 e 213 da Lei 6.015/1973</strong> e dos arts. 587 a 620 do
+     Código de Normas do TJMA. Ela leva meses, tem prazo em dias úteis e termina
+     numa averbação que <strong>encerra a matrícula e abre outra</strong>.</p>
+</div>
+{% endif %}
+{% endblock %}

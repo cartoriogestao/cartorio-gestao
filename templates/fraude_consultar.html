@@ -1,0 +1,110 @@
+{#
+  A consulta do balcão — e ela é de TODOS, não só de quem administra.
+
+  Quem atende digita o nome que o cliente deu e vê na hora. Pôr esta tela atrás
+  de perfil seria deixar a informação longe de quem precisa dela no momento em
+  que ela serve.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Consultar na lista de atenção</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="notice">
+  Digite o nome ou o documento de quem está no balcão. A consulta mostra se ele
+  consta de alguma comunicação de fraude — e <strong>o que esta casa já lavrou
+  com esse nome</strong>.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Quem está sendo atendido</span></div>
+  <form method="get" class="form" style="padding:14px">
+    <label>Nome <input name="nome" value="{{ nome }}"
+           placeholder="Como o cliente se identificou"></label>
+    <label>CPF ou CNPJ <input name="documento" value="{{ documento }}"
+           placeholder="Com ou sem pontuação"></label>
+    <div class="actions"><button class="button primary">Consultar</button></div>
+  </form>
+</section>
+
+{% if procurou %}
+  {% if not achados %}
+  <div class="flash success">
+    <strong>Nada na lista de atenção</strong> para
+    {{ nome or documento }}.
+  </div>
+  {% else %}
+    {% for a in achados %}
+    <div class="flash {{ 'danger' if a.forca == 'DOCUMENTO' else 'warning' }}">
+      <strong>{{ a.papel_rotulo }}</strong> —
+      {% if a.forca == 'DOCUMENTO' %}
+        bateu pelo <strong>documento</strong>, que não tem homônimo.
+      {% else %}
+        bateu pelo <strong>nome</strong>. Nome bate por coincidência: confira a
+        identificação antes de concluir que é a mesma pessoa.
+      {% endif %}
+      <br><br>
+      {{ a.aviso }}
+      <br><br>
+      <strong>De onde veio:</strong> {{ a.origem }}
+      {%- if a.origem_orgao %}, {{ a.origem_orgao }}{% endif %}
+      {%- if a.origem_data %}, de {{ a.origem_data }}{% endif %}.
+      {% if a.observacao %}<br>{{ a.observacao }}{% endif %}
+
+      <form method="post" class="form" style="margin-top:10px"
+            action="{{ url_for('fraude_conferir', alerta_id=a.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="nome" value="{{ nome }}">
+        <input type="hidden" name="documento" value="{{ documento }}">
+        <input type="hidden" name="onde" value="balcão — consulta">
+        <label>O que você decidiu
+          <select name="decisao">
+            <option value="ANOTOU">só anotei que vi</option>
+            <option value="PROSSEGUIU">conferi e o ato segue</option>
+            <option value="RECUSOU">não lavrei o ato</option>
+          </select></label>
+        <label>Referência <small>(protocolo, título…)</small>
+          <input name="referencia"></label>
+        <label style="grid-column:1/-1">O que você conferiu
+          <input name="observacao"
+                 placeholder="Ex.: conferi o RG; é outra pessoa, mesma homonímia"></label>
+        <div class="actions">
+          <button class="button">Registrar a conferência</button>
+        </div>
+      </form>
+    </div>
+    {% endfor %}
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel-head">
+      <span>O que esta casa já tem desse nome</span>
+      <small>{{ atos | length }}</small>
+    </div>
+    {% if not atos %}
+      <p style="padding:14px">
+        Nenhum ato desta casa com esse nome ou documento.
+      </p>
+    {% else %}
+    <table class="table">
+      <thead><tr><th>O que é</th><th>Nome como está gravado</th></tr></thead>
+      <tbody>
+        {% for a in atos %}
+        <tr><td>{{ a.o_que_e }}</td><td>{{ a.nome or '—' }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="notice" style="margin:0 14px 14px">
+      A comunicação de fraude chega <strong>depois</strong> do fato. Saber que
+      já há atos no nome é o que transforma um aviso numa diligência.
+    </div>
+    {% endif %}
+  </section>
+{% endif %}
+
+<div class="notice">
+  <strong>O aviso não trava nada.</strong> Homônimo é a regra, não a exceção —
+  e a vítima está na lista justamente porque o nome dela foi usado por outro.
+  Barrá-la seria fazer com o inocente o que o fraudador fez.
+</div>
+{% endblock %}

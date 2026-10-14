@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Instrumentos de protesto</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; TÃ­tulos</a>
+  <a class="button" href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
+</div>
+
+<div class="notice">
+  O <strong>instrumento</strong> Ã© o papel do art. 20 da Lei 9.492/1997 â€”
+  afirma que o protesto foi lavrado e vai ao apresentante. Emitir aqui
+  <strong>nÃ£o envia nada Ã  Central</strong>: sÃ³ grava o teor, o nÃºmero do
+  exercÃ­cio e coloca o documento na fila de assinatura da casa.
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ quadro.protestos }}</strong><small>Protestos lavrados</small></div>
+  <div class="stat"><strong>{{ quadro.com_instrumento }}</strong><small>Com instrumento</small></div>
+  <div class="stat"><strong>{{ quadro.sem_instrumento }}</strong><small>A emitir</small></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Protestos sem instrumento</span>
+    <small>{{ fila | length }}</small>
+  </div>
+  {% if not fila %}
+    <p style="padding:14px">Nenhum protesto lavrado aguardando instrumento.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr>
+      <th>Data do ato</th><th>Protocolo</th><th>TÃ­tulo</th>
+      <th>Apresentante</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for r in fila %}
+      <tr>
+        <td>{{ r.data_ato or 'â€”' }}</td>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=r.titulo_id) }}">{{ r.protocolo or r.titulo_id }}</a></td>
+        <td>{{ r.numero_titulo or 'â€”' }}</td>
+        <td>{{ r.apresentante_nome or 'â€”' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('protesto_instrumento_emitir', titulo_id=r.titulo_id) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button">Emitir</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}
+

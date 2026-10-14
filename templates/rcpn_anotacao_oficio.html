@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Comunicação para anotação{% endblock %}
+{% block content %}
+<h1>Comunicação para anotação</h1>
+<p class="muted">Termo {{ p.numero }} — {{ p.nome }} · para anotar no assento de
+   {{ p.especie_alvo|lower }}</p>
+
+<div class="card">
+  <p class="small muted">
+    O art. 367 manda ir <strong>o resumo do assento</strong>, e não o teor
+    inteiro. A diferença importa: o teor traz a qualificação de todo mundo, e
+    mandá-lo a outra serventia é espalhar dado pessoal que ela não precisa para
+    anotar à margem.
+  </p>
+</div>
+
+<div class="card" style="background:#fff">
+  <p><strong>{{ sv.nome }}</strong><br>
+     {{ sv.cidade }}/{{ sv.uf }}</p>
+
+  <p align="center"><b>COMUNICAÇÃO PARA ANOTAÇÃO</b></p>
+
+  <p>Ilmo(a). Sr(a). Oficial de Registro Civil das Pessoas Naturais,</p>
+
+  <p align="justify">Nos termos do art. 367 do Código de Normas da CGJ/TJMA e do
+     art. 106 da Lei nº 6.015/1973, comunicamos, para a devida
+     <strong>anotação no assento de {{ p.especie_alvo|lower }}</strong> ali
+     lavrado, o seguinte ato desta serventia:</p>
+
+  <p align="justify"><strong>{{ resumo }}</strong></p>
+
+  <p align="justify">Solicitamos a gentileza de confirmar o recebimento, na
+     forma do art. 226, § 1º, I, do mesmo Código.</p>
+
+  <p>{{ sv.cidade }}/{{ sv.uf }}.</p>
+
+  <p align="center">_________________________________<br>
+     {{ sv.registrador }}<br>
+     {{ sv.titulo }}</p>
+</div>
+
+<div class="card">
+  <p><strong>Por onde mandar</strong>, na ordem que a norma estabelece:</p>
+  <ol>
+  {% for c in norma.POR_ONDE_COMUNICAR %}
+    <li><strong>{{ c.canal }}</strong> — {{ c.o_que }}
+        <span class="small muted">({{ c.artigo }})</span></li>
+  {% endfor %}
+  </ol>
+</div>
+
+<p><a class="button secondary" href="{{ url_for('rcpn_anotacoes') }}">← voltar às anotações devidas</a></p>
+{% endblock %}

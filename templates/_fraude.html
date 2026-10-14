@@ -1,0 +1,63 @@
+{#
+  O ALERTA DA LISTA DE ATENÇÃO PARA FRAUDES, numa macro só.
+
+  Ela serve as quatro atribuições novas — e as outras duas quando forem
+  ligadas. Escrever o bloco em cada ficha daria quatro versões divergentes do
+  aviso que mais importa, e a consistência aqui não é estética: é o operador
+  achar a mesma coisa, com as mesmas palavras, em qualquer atribuição.
+
+  É a mesma lição de `_cobrar.html`, que já serve as quatro do lado do
+  dinheiro.
+
+  O ALERTA VEM NO ALTO da ficha, antes dos atos. Aviso que aparece depois de o
+  escrevente já ter lançado o ato é aviso que chegou tarde.
+#}
+
+{% macro alerta(fraudes, csrf_token, onde, referencia, volta) %}
+{% for f in fraudes %}
+<div class="flash {{ 'danger' if f.forca == 'DOCUMENTO' else 'warning' }}">
+  <strong>Atenção para fraudes — {{ f.papel_rotulo }}</strong>
+  {%- if f.papel_no_ato %} ({{ f.papel_no_ato }}:
+    {{ f.conferido_nome or f.conferido_documento }}){% endif %}
+  <br>
+  {% if f.forca == 'DOCUMENTO' %}
+    Bateu pelo <strong>documento</strong>, que não tem homônimo.
+  {% else %}
+    Bateu pelo <strong>nome</strong>. Nome bate por coincidência: confira a
+    identificação antes de concluir que é a mesma pessoa.
+  {% endif %}
+  <br><br>
+  {{ f.aviso }}
+  <br><br>
+  <strong>De onde veio:</strong> {{ f.origem }}
+  {%- if f.origem_orgao %}, {{ f.origem_orgao }}{% endif %}
+  {%- if f.origem_data %}, de {{ f.origem_data }}{% endif %}.
+  {% if f.observacao %}<br>{{ f.observacao }}{% endif %}
+
+  {#
+    O RASTRO SE GRAVA QUANDO O OPERADOR RECONHECE, e nunca ao mostrar.
+    Se um ato fraudado passar apesar do aviso, a pergunta que vem é "o
+    sistema avisou?" — e esta linha é a resposta escrita.
+  #}
+  <form method="post" class="form" style="margin-top:10px"
+        action="{{ url_for('fraude_conferir', alerta_id=f.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="onde" value="{{ onde }}">
+    <input type="hidden" name="referencia" value="{{ referencia or '' }}">
+    <input type="hidden" name="nome" value="{{ f.conferido_nome or '' }}">
+    <input type="hidden" name="documento" value="{{ f.conferido_documento or '' }}">
+    <input type="hidden" name="volta" value="{{ volta }}">
+    <label>O que você decidiu
+      <select name="decisao">
+        <option value="ANOTOU">só anotei que vi</option>
+        <option value="PROSSEGUIU">conferi e o ato segue</option>
+        <option value="RECUSOU">não lavrei o ato</option>
+      </select></label>
+    <label style="grid-column:1/-1">O que você conferiu
+      <input name="observacao"
+             placeholder="Ex.: conferi o RG; é outra pessoa, mesma homonímia"></label>
+    <div class="actions"><button class="button">Registrar a conferência</button></div>
+  </form>
+</div>
+{% endfor %}
+{% endmacro %}

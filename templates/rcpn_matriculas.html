@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Matrículas do registro civil{% endblock %}
+{% block content %}
+<h1>Matrículas</h1>
+
+<div class="card">
+  <p class="small muted">
+    A matrícula é o <strong>número nacional de 32 dígitos</strong> que identifica
+    o assento. Ela não é escolhida: é <strong>composta</strong> dos dados do
+    próprio registro — o CNS desta serventia, o ano, o livro, a folha e o termo
+    —, mais dois dígitos verificadores calculados. A regra está no
+    <strong>{{ fonte }}</strong>.
+  </p>
+</div>
+
+{% if erradas %}
+<div class="alerta danger">
+  <p><strong>{{ erradas|length }}
+     {{ 'matrícula não fecha' if erradas|length == 1 else 'matrículas não fecham' }}
+     o dígito verificador.</strong></p>
+  <table class="tabela">
+    <tr><th>assento</th><th>nome</th><th>data</th>
+        <th>está</th><th>devia ser</th></tr>
+    {% for a in erradas %}
+    <tr>
+      <td>{{ a.especie|capitalize }} nº {{ a.numero }}</td>
+      <td>{{ a.nome }}</td>
+      <td>{{ (a.data_ato or '')[:10] }}</td>
+      <td class="danger"><strong>{{ a.achado }}</strong></td>
+      <td><strong>{{ a.esperado }}</strong></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="small">
+    <strong>O sistema não corrige isso sozinho, e é decisão, não cautela.</strong>
+    Esse número pode já ter saído em certidão e ido para a <strong>CRC</strong> e
+    para o <strong>SIRC</strong>. Trocá-lo aqui calaria o problema sem resolver
+    nenhuma dessas pontas — a correção começa fora do sistema.
+  </p>
+</div>
+{% else %}
+<div class="card">
+  <p><strong>Todas as matrículas do acervo fecham o dígito verificador.</strong></p>
+</div>
+{% endif %}
+
+{% if sem %}
+<div class="card">
+  <p class="small"><strong>{{ sem }}</strong>
+     {{ 'assento está' if sem == 1 else 'assentos estão' }} sem matrícula.</p>
+</div>
+{% endif %}
+
+<h2>Conferir uma matrícula</h2>
+
+<div class="card">
+  <p class="small muted">
+    <strong>32 dígitos seguidos não se conferem a olho.</strong> Quando chegar
+    matrícula de fora — numa requisição de segunda via, num ofício —, cole aqui
+    antes de usar.
+  </p>
+  <form method="get">
+    <p>
+      <input type="text" name="matricula" size="46" value="{{ digitado }}"
+             placeholder="os 32 dígitos, com ou sem espaços">
+      <button class="button">Conferir</button>
+    </p>
+  </form>
+
+  {% if digitado %}
+    {% if conferido.ok %}
+      <p class="ok"><strong>Confere.</strong> O dígito verificador está certo.</p>
+    {% else %}
+      <p class="danger"><strong>Não confere.</strong> {{ conferido.motivo|forte }}</p>
+    {% endif %}
+    {% if linhas %}
+      <table class="tabela">
+        {% for l in linhas %}
+          <tr><td class="small">{{ l }}</td></tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+  {% endif %}
+</div>
+
+<h2>Como ela é composta</h2>
+
+<div class="card">
+  <table class="tabela">
+    <tr><th>campo</th><th>dígitos</th><th>de onde vem</th></tr>
+    {% for c in campos %}
+    <tr>
+      <td><strong>{{ c.titulo }}</strong></td>
+      <td>{{ c.digitos }}</td>
+      <td class="small">{{ c.de_onde|forte }}</td>
+    </tr>
+    {% endfor %}
+    <tr><td><strong>Dígito verificador</strong></td><td>2</td>
+        <td class="small">calculado dos 30 anteriores</td></tr>
+  </table>
+  <p class="small muted">
+    O CNS desta serventia é <strong>{{ cns }}</strong>.
+  </p>
+</div>
+
+<div class="card">
+  <p class="small"><strong>O tipo de livro</strong>, que é o dígito do meio:</p>
+  <table class="tabela">
+    <tr><th>dígito</th><th>livro</th><th>ato</th></tr>
+    {% for d, v in livros.items() %}
+    <tr><td><strong>{{ d }}</strong></td><td>Livro {{ v.livro }}</td>
+        <td class="small">{{ v.e }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

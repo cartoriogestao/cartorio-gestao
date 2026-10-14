@@ -1,0 +1,4 @@
+# Usa SO documentos da allowlist de ficticios: deve passar.
+parte = {"nome": "PESSOA DE TESTE", "cpf": "000.000.001-91"}
+empresa = {"cnpj": "00.000.001/0000-55"}
+selo = "PRENOT000000ABCD1234EFGH5678"

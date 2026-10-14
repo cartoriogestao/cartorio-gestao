@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Editor de modelos — RCPN{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='modelos-editor.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='modelos_editor.css') }}">
+<header class="modelos-topo">
+  <div>
+    <p class="modelos-sobretitulo">EDITOR DE MODELOS · MARCO 1</p>
+    <h1>Registro Civil — termos e moldes</h1>
+    <p class="muted">Edite à esquerda e confira à direita a prévia.
+      {% if chave_ligada %}<span class="badge">chave da área LIGADA</span>
+      {% else %}<span class="badge">chave da área desligada — emissão como hoje</span>{% endif %}
+    </p>
+    <p class="small muted"><strong>O cabeçalho não se edita aqui.</strong>
+      Use variáveis <code>{{ '{{' }}serventia.*{{ '}}' }}</code>. {{ cabecalho_de_fora }}</p>
+  </div>
+  <div class="modelos-contagem"><strong>{{ modelos|length }}</strong><span>modelo{{ 's' if modelos|length != 1 }}</span></div>
+</header>
+
+<div class="modelos-layout" id="me-root"
+     data-area="{{ area }}"
+     data-pode-publicar="{{ 1 if pode_publicar else 0 }}"
+     data-csrf="{{ csrf_token }}"
+     {% if modelo %}data-template="{{ modelo.template_id }}" data-tipo="{{ modelo.tipo }}"{% endif %}>
+
+  <aside class="modelos-lista">
+    <label class="modelos-busca"><span>Localizar modelo</span>
+      <input type="search" placeholder="Termo, molde…" data-modelo-busca></label>
+    <div data-modelo-lista>
+      {% for m in modelos %}
+      <a class="modelo-item {{ 'ativo' if modelo and modelo.template_id == m.template_id }}"
+         data-modelo-item data-modelo-nome="{{ m.nome|lower }} {{ m.template_id|lower }}"
+         href="{{ url_for('modelos_editor_editar', area=area, template_id=m.template_id) }}">
+        <span>{{ m.nome }}</span>
+        <small>{{ m.tipo }} · {% if m.tem_rascunho %}rascunho{% elif m.tem_publicada %}publicada{% else %}vigente{% endif %}</small>
+      </a>
+      {% endfor %}
+    </div>
+    <p class="small muted" style="padding:8px"><a href="{{ url_for('rcpn_modelos_papeis') }}">← papéis RCPN (tela atual)</a></p>
+  </aside>
+
+  {% if modo == 'lista' %}
+  <section class="modelos-trabalho">
+    <div class="modelo-identidade">
+      <div><p class="modelos-sobretitulo">ESCOLHA UM MODELO</p>
+        <h2>Termos e moldes do RCPN</h2>
+        <p class="small muted">Quatro termos em <code>mo_elementos</code> e três moldes ODT.
+          A primeira versão publicada é semeada byte a byte a partir do vigente.</p>
+      </div>
+    </div>
+    <div style="padding:20px">
+      <p>Selecione um modelo à esquerda para editar.</p>
+      {% if pode_publicar %}
+      <button type="button" class="primary" id="me-semear">Semear v1 de todos (vigente → publicada)</button>
+      {% endif %}
+    </div>
+  </section>
+  {% else %}
+  <section class="modelos-trabalho" data-me-editor>
+    <div class="modelo-identidade">
+      <div>
+        <p class="modelos-sobretitulo">DOCUMENTO EM EDIÇÃO</p>
+        <h2>{{ modelo.nome }}</h2>
+        <p class="small muted">{{ modelo.explica }} · <code>{{ modelo.template_id }}</code></p>
+      </div>
+      <span class="badge">{{ modelo.tipo }}</span>
+    </div>
+    <div class="modelos-divisao">
+      <div class="modelos-edicao">
+        <div class="modelo-abas" role="tablist">
+          {% for p in modelo.partes %}
+          <button type="button" role="tab" data-parte-aba="{{ p.parte }}"
+                  class="{{ 'ativo' if loop.first }}">{{ p.nome }}</button>
+          {% endfor %}
+        </div>
+        {% for p in modelo.partes %}
+        <div class="modelo-parte" data-parte-painel="{{ p.parte }}" {{ 'hidden' if not loop.first }}>
+          <div class="modelo-origem"><span>origem: {{ p.origem or 'vigente' }}{% if p.status %} · {{ p.status }}{% endif %}</span></div>
+          {% if p.binario %}
+          <p class="small">Molde ODT — baixe, edite no LibreOffice e envie de volta.</p>
+          <p>
+            <a class="button secondary" href="{{ url_for('modelos_editor_api_molde_baixar', template_id=modelo.template_id) }}">Baixar .odt</a>
+          </p>
+          <label class="small">Enviar .odt ajustado
+            <input type="file" accept=".odt" data-me-odt="{{ p.parte }}">
+          </label>
+          <p class="small muted">SHA-256 atual: <code data-me-sha>{{ p.sha256 }}</code></p>
+          {% else %}
+          <div class="modelo-ferramentas" aria-label="Formatação">
+            <button type="button" data-inserir="<b>|</b>" title="Negrito"><b>B</b></button>
+            <button type="button" data-inserir="<i>|</i>" title="Itálico"><i>I</i></button>
+            <button type="button" data-inserir="<u>|</u>" title="Sublinhado"><u>U</u></button>
+            <button type="button" data-inserir="<p>|</p>" title="Parágrafo">¶</button>
+          </div>
+          <textarea data-me-texto="{{ p.parte }}" spellcheck="true" rows="22">{{ p.conteudo }}</textarea>
+          {% endif %}
+        </div>
+        {% endfor %}
+
+        <div class="modelo-legenda" id="me-campos">
+          <div class="modelo-legenda-titulo">
+            <strong>Variáveis</strong>
+            <span>Clique para inserir <code>{{ '{{' }}campo{{ '}}' }}</code> · fonte do motor</span>
+          </div>
+          <div class="modelo-marcadores" data-me-campos-lista></div>
+        </div>
+
+        <div class="modelo-legenda me-bloqueados" id="me-bloqueados">
+          <div class="modelo-legenda-titulo">
+            <strong>Trechos bloqueados</strong>
+            <span>🔒 não editáveis · base legal ao passar o mouse</span>
+          </div>
+          <div data-me-bloqueados-lista class="me-bloqueados-lista"></div>
+          <p class="small muted" data-me-bloqueados-aviso hidden></p>
+        </div>
+
+        <div class="modelo-acoes">
+          <span class="modelo-estado" data-me-estado>Pronto</span>
+          <button type="button" class="primary" data-me-salvar>Salvar rascunho</button>
+          <button type="button" class="secondary" data-me-publicar
+                  {% if not pode_publicar %}disabled title="Somente ADMIN/MANAGER"{% endif %}>Publicar</button>
+          <button type="button" class="secondary" data-me-historico>Histórico</button>
+        </div>
+        <div class="modelo-erro" data-me-erros hidden></div>
+      </div>
+
+      <div class="modelos-previa-coluna">
+        <div class="modelos-previa-topo">
+          <strong>Prévia</strong>
+          <span>
+            <label>Papel
+              <select data-me-papel>
+                <option value="a4">A4</option>
+                <option value="seguranca">Papel de segurança (quadro branco, sem brasão)</option>
+              </select>
+            </label>
+            <button type="button" data-me-pdf title="Ver como sai">Ver como sai (PDF)</button>
+            <button type="button" data-me-odt title="Baixar ODT" hidden>Baixar ODT</button>
+          </span>
+        </div>
+        <div class="modelo-erro" data-me-aviso-previa hidden></div>
+        <iframe title="Prévia" data-me-previa sandbox=""></iframe>
+        <iframe title="PDF fiel" data-me-pdf-view hidden style="display:none;width:100%;height:760px;border:0;background:#333"></iframe>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+</div>
+
+<dialog id="me-hist-dialog">
+  <form method="dialog" class="me-hist">
+    <header><strong>Histórico</strong><button value="cancel">Fechar</button></header>
+    <div data-me-hist-lista></div>
+    <pre data-me-hist-diff class="me-diff"></pre>
+  </form>
+</dialog>
+
+<script src="{{ url_for('static', filename='modelos_editor.js') }}"></script>
+{% endblock %}

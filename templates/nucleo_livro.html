@@ -1,0 +1,155 @@
+{#
+  A ficha de um livro do núcleo.
+
+  A CONFERÊNCIA VEM JUNTO, e não numa tela separada: `conferir_livro` diz em
+  frases de balcão o que a inspeção acharia — folha em branco no meio sem termo
+  de inutilização, verso pulado, número de ordem repetido, dia sem encerramento.
+  Deixar isso noutro lugar é deixar para depois.
+#}
+{% extends 'base.html' %}
+{% block heading %}
+<h1>{{ serie.nome }} — Livro n. {{ livro.numero }}</h1>
+{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('nucleo_livros') }}">&larr; Livros</a>
+  <a class="button" href="{{ url_for('nucleo_livro_termo', livro_id=livro.id, qual='abertura') }}">Termo de abertura (.odt)</a>
+  {% if livro.encerrado %}
+    <a class="button" href="{{ url_for('nucleo_livro_termo', livro_id=livro.id, qual='encerramento') }}">Termo de encerramento (.odt)</a>
+  {% endif %}
+</div>
+
+{% if conferencia.achados %}
+<div class="notice danger">
+  <strong>O que a inspeção acharia neste livro:</strong>
+  <ul>{% for x in conferencia.achados %}<li>{{ x }}</li>{% endfor %}</ul>
+</div>
+{% else %}
+<div class="notice">Conferido: nada a apontar neste livro.</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O livro</span>
+    <small>{{ 'ENCERRADO' if livro.encerrado else 'ABERTO' }}</small>
+  </div>
+  <table class="table">
+    <tr><th>Série</th><td>{{ livro.serie }}</td>
+        <th>Número</th><td>{{ livro.numero }}{{ livro.complemento or '' }}</td></tr>
+    <tr><th>Folhas</th><td>{{ livro.folha_inicial }} a {{ ultima }} ({{ livro.folhas }})</td>
+        <th>Primeira folha livre</th><td>{{ folha_livre }}</td></tr>
+    <tr><th>Atos lavrados</th><td>{{ conferencia.atos }}</td>
+        <th>Faces inutilizadas</th><td>{{ conferencia.inutilizadas }}</td></tr>
+    <tr><th>Aberto em</th><td>{{ livro.abertura or '—' }}</td>
+        <th>Encerrado em</th><td>{{ livro.encerramento or '—' }}</td></tr>
+    {% if livro.dia %}
+    <tr><th>Dia</th><td colspan="3">{{ livro.dia }} — livro diário</td></tr>
+    {% endif %}
+    {% if livro.descricao %}
+    <tr><th>Descrição</th><td colspan="3">{{ livro.descricao }}</td></tr>
+    {% endif %}
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Termo de abertura</span></div>
+  <p style="padding:14px; white-space:pre-wrap">{{ livro.termo_abertura or 'Sem termo de abertura.' }}</p>
+</section>
+
+{% if livro.termo_encerramento %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Termo de encerramento</span>
+    <small>{{ livro.motivo_encerramento or '' }}</small>
+  </div>
+  <p style="padding:14px; white-space:pre-wrap">{{ livro.termo_encerramento }}</p>
+</section>
+{% endif %}
+
+{% if not livro.encerrado and user.role in ['ADMIN','MANAGER','USER'] %}
+<section class="panel">
+  <div class="panel-head"><span>Inutilizar uma face em branco</span></div>
+  <p style="padding:14px 14px 0"><small>
+    <strong>Folha escriturada não se inutiliza</strong> — o ato nela é que se cancela.
+    São coisas diferentes, e confundi-las apaga ato bom. O motivo sai impresso no termo,
+    e é o que a inspeção lê.
+  </small></p>
+  <form method="post" action="{{ url_for('nucleo_livro_inutilizar', livro_id=livro.id) }}"
+        class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Folha
+      <input name="rotulo" required placeholder="{{ folha_livre }}{{ 'v' if serie.usa_verso else '' }}">
+      <small>{% if serie.usa_verso %}Escreva <code>12</code> para a frente e
+        <code>12v</code> para o verso.{% else %}Esta série não escritura o verso.{% endif %}</small></label>
+    <label>Motivo
+      <input name="motivo" required minlength="10"
+             placeholder="folha danificada na impressão"></label>
+    <div class="actions"><button class="button">Inutilizar, com termo</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Encerrar o livro</span></div>
+  <p style="padding:14px 14px 0"><small>
+    O termo de encerramento diz a faixa de números que o livro recebeu, a última folha
+    usada e quantas ficaram inutilizadas — é o que se lê para saber que nada sumiu
+    entre um livro e o seguinte. Depois de encerrado, o livro não recebe mais ato.
+  </small></p>
+  <form method="post" action="{{ url_for('nucleo_livro_encerrar', livro_id=livro.id) }}"
+        class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Motivo <small>(opcional — sai no termo)</small>
+      <input name="motivo" placeholder="livro esgotado · mudança de série"></label>
+    <div class="actions"><button class="button">Encerrar o livro</button></div>
+  </form>
+</section>
+{% endif %}
+
+{% if inutilizadas %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Faces inutilizadas</span><small>{{ inutilizadas | length }}</small>
+  </div>
+  <table class="table">
+    <thead><tr><th>Folha</th><th>Motivo</th><th>Quando</th><th>Por quem</th></tr></thead>
+    <tbody>
+      {% for i in inutilizadas %}
+      <tr>
+        <td><strong>{{ i.rotulo }}</strong></td>
+        <td>{{ i.motivo }}{% if i.origem == 'SOBRA' %} <small>(sobra do ato)</small>{% endif %}</td>
+        <td>{{ i.inutilizado_em }}</td>
+        <td><small>{{ i.inutilizado_por or '—' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O que está escriturado</span>
+    <small>{{ lugares | length }} ato(s)</small>
+  </div>
+  {% if not lugares %}
+    <p style="padding:14px"><small>Nenhum ato neste livro ainda.</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Nº de ordem</th><th>Folha</th><th>Páginas</th><th>De onde</th>
+               <th>Quando</th></tr></thead>
+    <tbody>
+      {% for g in lugares %}
+      <tr>
+        <td><strong>{{ g.numero_ordem or '—' }}</strong></td>
+        <td>{{ g.rotulo }}</td>
+        <td>{{ g.paginas }}</td>
+        <td><small>{{ g.tabela }} #{{ g.referencia }}</small></td>
+        <td><small>{{ g.ocupado_em }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

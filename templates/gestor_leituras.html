@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Leitura dos textos pela IA</h1>{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <p>Todo dia, antes da conferência, a IA lê o texto <strong>mascarado</strong>
+  das minutas do RI, dos registros e das escrituras e aponta o que lhe parece
+  errado. <strong>Ela não decide</strong>: quem qualifica confere o apontamento
+  no texto e, se não for problema ou se já foi corrigido, marca «conferi».</p>
+  <p class="muted">Nome, CPF e matrícula a IA não vê por inteiro — esses a
+  conferência confere sozinha, por regra. Se o texto mudar depois de
+  conferido, ele é lido de novo.</p>
+</section>
+
+<section class="panel">
+  {% if itens %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Texto</th><th>O que a IA apontou</th><th>Trecho</th><th></th></tr>
+    {% for i in itens %}
+    <tr>
+      <td>{{ i.rotulo }}{% if i.grave %}<br><strong>grave</strong>{% endif %}</td>
+      <td>{{ i.o_que }}</td>
+      <td><small>{{ i.trecho }}</small></td>
+      <td><form method="post" action="{{ url_for('gestor_leitura_conferida', leitura_id=i.leitura_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit">Conferi</button></form></td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}
+  <p><strong>Nenhum apontamento esperando conferência.</strong></p>
+  {% endif %}
+</section>
+<section class="panel">
+  <h2>Revisão em lote dos atos já lavrados ({{ revisoes|length }})</h2>
+  <p class="muted">Feita por um agente sobre os atos passados (<code>tools/revisao_em_lote.py</code>).
+  O ato já está no livro: se o apontamento proceder, o caminho é a averbação de retificação.</p>
+  {% if revisoes %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Ato</th><th>O que o agente apontou</th><th></th></tr>
+    {% for r in revisoes %}
+    <tr><td>{{ r.rotulo }}{% if r.graves %}<br><strong>{{ r.graves }} grave(s)</strong>{% endif %}</td>
+      <td>{% for a in r.achados %}<strong>{{ a.gravidade }}</strong>: {{ a.o_que }}{% if a.trecho %}<br><small>«{{ a.trecho }}»</small>{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td><form method="post" action="{{ url_for('gestor_revisao_conferida', revisao_id=r.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input name="nota" placeholder="o que se decidiu" maxlength="300">
+        <button type="submit">Conferi</button></form></td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}<p class="muted">Nenhuma revisão em lote esperando conferência.</p>{% endif %}
+</section>
+{% endblock %}

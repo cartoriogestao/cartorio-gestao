@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}Importar acervo do RCPN{% endblock %}
+{% block heading %}<h1>Importar acervo do Registro Civil</h1>{% endblock %}
+{% block content %}
+{% from "_manual_de_importacao.html" import manual_para_baixar %}
+{{ manual_para_baixar() }}
+
+<div class="notice">
+  Traz os <strong>assentos</strong> de nascimento, casamento e óbito do
+  acervo do E-Ofício para o Cartório Gestão. Pode rodar quantas vezes
+  precisar: o que já entrou (mesma <code>origem_chave</code>) não entra de
+  novo, e o que foi digitado à mão fica intacto.
+</div>
+
+<section class="panel" style="border-left:3px solid var(--cor-do-modulo)">
+  <div class="panel-head">
+    <span>Prefere digitar?</span>
+    <small>um assento por vez</small>
+  </div>
+  <div style="padding:14px">
+    <p>
+      Se não tem arquivo de lote — só o papel do livro — digite as informações
+      no formulário de assento. Livro, folha e termo <strong>já existem</strong>
+      no papel; aqui você cadastra o que a certidão precisa.
+    </p>
+    <div class="actions" style="margin-bottom:0">
+      <a class="button primary" href="{{ url_for('rcpn_assento_novo', do_acervo=1) }}">
+        Digitar as informações → Novo assento
+      </a>
+      <a class="button" href="{{ url_for('rcpn_assentos') }}">Lista de assentos</a>
+      <a class="button" href="{{ url_for('rcpn_assento_novo', especie_url='nascimento', do_acervo=1) }}">Nascimento</a>
+      <a class="button" href="{{ url_for('rcpn_assento_novo', especie_url='casamento', do_acervo=1) }}">Casamento</a>
+      <a class="button" href="{{ url_for('rcpn_assento_novo', especie_url='obito', do_acervo=1) }}">Óbito</a>
+    </div>
+  </div>
+</section>
+
+
+<div class="notice">
+  <strong>Conferir e importar são dois passos.</strong> Aqui não há como
+  desfazer: assento importado vira o livro. Por isso a prévia aparece
+  <em>antes</em> de gravar.
+</div>
+
+{# ------------------------------------------------------------------ (A) #}
+<section class="panel">
+  <div class="panel-head">
+    <span>1 · Carregar o acervo (arquivo de importação)</span>
+    <small>ZIP, SQLite ou pasta da exportação</small>
+  </div>
+  <form method="post" enctype="multipart/form-data" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="o_que" value="carregar_arquivo">
+    <p>
+      Nos moldes da casa: o E-Ofício exporta as tabelas em <strong>.jsonl</strong>
+      (com <code>ESQUEMA.jsonl</code> e <code>MANIFESTO.jsonl</code>). Empacote
+      essa pasta num <strong>.zip</strong>, ou envie o
+      <code>acervo_eoficio.sqlite3</code> já montado. A carga refaz o acervo
+      no disco — não grava assento no livro ainda.
+    </p>
+    <label>Arquivo (.zip da exportação ou .sqlite3)
+      <input type="file" name="arquivo"
+             accept=".zip,.sqlite3,.sqlite,.db,application/zip">
+    </label>
+    <label style="margin-top:10px;display:block">Ou caminho da pasta / do SQLite nesta máquina
+      <input name="pasta" placeholder="C:\Users\<usuario>\Downloads\EXPORT_TUDO_EOFICIO"
+             style="width:100%">
+    </label>
+    <div class="actions" style="margin-top:12px">
+      <button class="button">Carregar acervo no disco</button>
+    </div>
+  </form>
+  {% if carga_acervo %}
+  <div class="notice ok" style="margin:0 14px 14px">
+    Acervo montado:
+    {% if carga_acervo.tabelas is not none %}<strong>{{ carga_acervo.tabelas }}</strong> tabela(s){% endif %}
+    {% if carga_acervo.linhas is not none %} · <strong>{{ carga_acervo.linhas }}</strong> linha(s){% endif %}
+    {% if carga_acervo.divergentes %}
+      · <strong class="danger">divergências no manifesto:</strong>
+      {{ carga_acervo.divergentes|length }}
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+{% if not tem_acervo %}
+<div class="notice danger">
+  <strong>O acervo não está no lugar.</strong> Procurei em
+  <code>{{ caminho_acervo }}</code>. Carregue o arquivo acima, ou use a carga
+  Admin em «Livros e acervo» se o acervo já foi montado noutro momento.
+</div>
+{% else %}
+<div class="notice ok">
+  Acervo no disco: <code>{{ caminho_acervo }}</code>
+</div>
+{% endif %}
+
+{% if erro_acervo %}
+<div class="notice danger"><strong>{{ erro_acervo }}</strong></div>
+{% endif %}
+
+{# ------------------------------------------------------------------ (B) #}
+<section class="panel">
+  <div class="panel-head">
+    <span>2 · Prévia e importação dos assentos</span>
+    <small>origem = EOFICIO · idempotente por origem_chave</small>
+  </div>
+
+  {% if previa %}
+  <section class="cards" style="padding:14px">
+    <div class="stat"><strong>{{ previa.total_no_acervo }}</strong><small>no acervo</small></div>
+    <div class="stat"><strong>{{ previa.total_novos }}</strong><small>entrariam agora</small></div>
+    <div class="stat"><strong>{{ previa.total_ja }}</strong><small>já importados</small></div>
+    <div class="stat"><strong>{{ previa.total_sem_nome }}</strong><small>sem nome (rejeitados)</small></div>
+  </section>
+
+  <table class="table">
+    <thead>
+      <tr><th>Espécie</th><th>Tabela</th><th>No acervo</th>
+          <th>Novos</th><th>Já estão</th><th>Sem nome</th></tr>
+    </thead>
+    <tbody>
+      {% for e in previa.por_especie %}
+      <tr>
+        <td><strong>{{ e.especie }}</strong></td>
+        <td class="small"><code>{{ e.tabela }}</code></td>
+        {% if e.tabela_ausente %}
+          <td colspan="4" class="muted">tabela ausente no acervo</td>
+        {% else %}
+          <td>{{ e.no_acervo }}</td>
+          <td>{{ e.novos }}</td>
+          <td>{{ e.ja_importados }}</td>
+          <td>{{ e.sem_nome }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if previa.amostras_novos %}
+  <div class="notice" style="margin:14px">
+    <strong>Amostra do que entraria:</strong>
+    <ul>
+      {% for a in previa.amostras_novos %}
+        <li>{{ a.especie }} — {{ a.nome }}
+            {% if a.numero %} nº {{ a.numero }}{% endif %}
+            <span class="small muted"> · {{ a.origem_chave }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if previa.amostras_ja %}
+  <div class="notice" style="margin:14px">
+    <strong>Amostra do que já está (seria pulado):</strong>
+    <ul>
+      {% for a in previa.amostras_ja %}
+        <li>{{ a.especie }} — {{ a.nome }}
+            <span class="small muted"> · {{ a.origem_chave }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if previa.amostras_sem_nome %}
+  <div class="notice danger" style="margin:14px">
+    <strong>Sem nome — a carga rejeitaria:</strong>
+    <ul>
+      {% for a in previa.amostras_sem_nome %}
+        <li>{{ a.especie }} · {{ a.origem_chave }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <form method="post" style="padding:0 14px 14px" class="actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" name="o_que" value="conferir">Atualizar prévia</button>
+    {% if previa.total_novos > 0 %}
+      <button class="button danger" name="o_que" value="importar"
+              onclick="return confirm('Importar {{ previa.total_novos }} assento(s) novo(s) do acervo? O que já está não entra de novo.');">
+        Importar os {{ previa.total_novos }} que faltam
+      </button>
+    {% else %}
+      <button class="button" name="o_que" value="importar" disabled>
+        Nada novo para importar
+      </button>
+    {% endif %}
+  </form>
+  {% elif tem_acervo %}
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" name="o_que" value="conferir">Montar a prévia</button>
+  </form>
+  {% else %}
+  <p style="padding:14px" class="muted">Carregue o acervo no passo 1 para ver a prévia.</p>
+  {% endif %}
+</section>
+
+{% if resultado %}
+<section class="panel">
+  <div class="panel-head"><span>O que a importação fez</span></div>
+  <table class="table">
+    <thead>
+      <tr><th>Carga</th><th>Lidos</th><th>Entraram</th><th>Já estavam</th>
+          <th>Rejeitados</th><th>Avisados</th></tr>
+    </thead>
+    <tbody>
+      {% for nome, r in resultado.items() if nome != 'numeracao' %}
+      <tr>
+        <td><strong>{{ nome }}</strong></td>
+        {% if r.erro %}
+          <td colspan="5" class="danger">{{ r.erro }}</td>
+        {% else %}
+          <td>{{ r.lidos }}</td>
+          <td>{{ r.inseridos }}</td>
+          <td>{{ r.repetidos }}</td>
+          <td>{{ r.rejeitados }}</td>
+          <td>{{ r.avisados }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% set rcpn = resultado.get('rcpn') %}
+  {% if rcpn and rcpn.motivos_da_rejeicao %}
+  <div class="notice" style="margin:14px">
+    <strong>Por que rejeitou:</strong>
+    <ul>{% for m in rcpn.motivos_da_rejeicao %}<li>{{ m }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  <div class="actions" style="padding:0 14px 14px">
+    <a class="button" href="{{ url_for('rcpn_informacoes_importadas') }}">Ver informações importadas</a>
+    <a class="button" href="{{ url_for('rcpn_assentos') }}">Lista de assentos</a>
+  </div>
+</section>
+{% endif %}
+
+{# -------------------------------------------------------- molde geral #}
+<section class="panel">
+  <div class="panel-head">
+    <span>De outro sistema (padrão geral da casa)</span>
+  </div>
+  <div style="padding:14px">
+    <p>
+      Se o arquivo <strong>não</strong> é a exportação do E-Ofício, e sim o
+      JSON do padrão de importação da casa (com <code>chave</code> por
+      registro), use a tela geral — a mesma de RI, Notas e Protesto. Lá
+      também há <strong>Conferir</strong> antes de <strong>Importar</strong>.
+    </p>
+    <a class="button" href="{{ url_for('importar_padrao_tela', especie=especies_padrao) }}">
+      Abrir «Importar de outro sistema» (assento RCPN)
+    </a>
+  </div>
+</section>
+{% endblock %}

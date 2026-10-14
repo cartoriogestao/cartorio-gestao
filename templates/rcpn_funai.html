@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Comunicação à FUNAI{% endblock %}
+{% block content %}
+<h1>Comunicação à FUNAI</h1>
+
+<div class="card">
+  <p><strong>O prazo é «{{ norma.PRAZO }}»</strong>
+     <span class="small muted">({{ norma.ARTIGO }})</span>.</p>
+  <p class="small">
+    É o único prazo desta casa que não se conta em dias — e <strong>prazo sem
+    número é prazo que ninguém sente vencer</strong>. Por isso a lista mostra
+    quantos dias já se passaram desde o assento: não para afirmar um vencimento
+    que a norma não deu, mas para que «imediatamente» deixe de ser palavra.
+  </p>
+  <p class="small muted">
+    A comunicação existe para o {{ norma.PARA_QUE_SERVE }}.
+    <strong>Não é estatística: é o papel de alguém.</strong>
+  </p>
+</div>
+
+<h2>Esperando comunicação ({{ esperando|length }})</h2>
+
+{% if esperando %}
+<table>
+  <thead>
+    <tr><th>Nome</th><th>Nº</th><th>Assento</th><th>Espera há</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for x in esperando %}
+    <tr>
+      <td>{{ x.nome }}</td>
+      <td class="small">{{ x.numero or '' }}</td>
+      <td class="small">{{ x.data_ato or '—' }}</td>
+      <td class="small">
+        {% if x.dias is none %}
+          <span class="muted">não deu para contar</span>
+        {% elif x.chama_atencao %}
+          <strong class="danger">{{ x.dias }} dias</strong>
+        {% else %}
+          {{ x.dias }} dia(s)
+        {% endif %}
+      </td>
+      <td class="small">
+        <a href="{{ url_for('rcpn_funai_oficio', assento_id=x.id) }}">o ofício</a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="small muted">
+  A partir de {{ norma.DIAS_PARA_CHAMAR_ATENCAO }} dias a linha fica em vermelho.
+  <strong>Esse número é da casa, e não da norma</strong> — a norma diz
+  «imediatamente» e não dá número nenhum.
+</p>
+{% else %}
+<p>Nenhum nascimento esperando comunicação.</p>
+<p class="small muted">
+  A lista sai da cor/raça declarada no assento. No acervo desta casa ela está
+  <strong>em branco em 178 dos 193</strong> nascimentos — de modo que esta lista
+  é do que o sistema <em>sabe</em>, e não necessariamente de tudo o que
+  aconteceu.
+</p>
+{% endif %}
+
+{% if historico %}
+<h2>Já resolvidas</h2>
+<table>
+  <thead><tr><th>Nome</th><th>O que houve</th><th>Quando</th><th>Quem</th></tr></thead>
+  <tbody>
+  {% for x in historico %}
+    <tr>
+      <td>{{ x.nome }}</td>
+      <td class="small">
+        {% if x.situacao == 'ENVIADA' %}
+          comunicada{% if x.canal %} por {{ x.canal }}{% endif %}
+          {% if x.protocolo %}<br>protocolo {{ x.protocolo }}{% endif %}
+        {% else %}
+          dispensada — {{ x.motivo }}
+        {% endif %}
+      </td>
+      <td class="small">{{ (x.enviada_em or x.criado_em)[:10] }}</td>
+      <td class="small">{{ x.criado_por or '' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

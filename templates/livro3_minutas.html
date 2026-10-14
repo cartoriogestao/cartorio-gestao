@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Livro 3 — minutas a revisar{% endblock %}
+{% block heading %}<h1>Livro 3 — minutas a revisar</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('livro3_registros') }}">&larr; Livro 3</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Esperando revisão</span>
+    <small>{{ minutas | length }}</small></div>
+  <div style="padding:14px">
+    {% if not minutas %}
+      <p><strong>Nada esperando revisão no Livro 3.</strong> Minuta é o ato já
+      escrito e ainda não lavrado: ela não toma número, não entra no livro,
+      não pede selo e não cobra.</p>
+    {% else %}
+    <p class="small muted">Esta lista existe pelo mesmo motivo que a dos
+      rascunhos do Livro 2: <strong>minuta esquecida num registro que ninguém
+      abre não aparece em lugar nenhum</strong>, e quem a escreveu lembra dela
+      por uma semana.</p>
+    <table class="tabela">
+      <thead><tr><th>Registro</th><th>Ato</th><th>Teor</th>
+        <th>Guardada em</th><th></th></tr></thead>
+      <tbody>
+      {% for m in minutas %}
+        <tr>
+          <td><strong>{{ m.registro_numero }}</strong></td>
+          <td>{{ m.tipo }}{% if m.numero_pretendido %}-{{ m.numero_pretendido }}
+              <small class="muted">(pretendido)</small>{% endif %}</td>
+          <td><small>{{ (m.teor or '')[:160] }}…</small></td>
+          <td><small class="muted">{{ fmt_date(m.criado_em) }}
+            {% if m.criado_por %}· {{ m.criado_por }}{% endif %}</small></td>
+          <td><a class="button" href="{{ url_for('livro3_registro',
+                     registro_id=m.registro_id) }}">abrir a ficha</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

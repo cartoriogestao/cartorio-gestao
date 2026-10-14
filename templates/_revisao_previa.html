@@ -1,0 +1,41 @@
+{# A REVISÃO ANTES DA LAVRATURA — ver revisao_previa.py. Entra DENTRO do
+   formulário de lavrar, para o botão mandar o texto que está na tela e para a
+   justificativa viajar junto com o pedido de lavrar.
+   Uso: {% with revisao_url=... %}{% include '_revisao_previa.html' %}{% endwith %} #}
+{% if revisao_ligada %}
+<div class="span2 revisao-previa" data-revisao-url="{{ revisao_url }}"
+     data-ultima-url="{{ revisao_url }}/ultima"
+     data-suprir-url="{{ url_for('revisao_previa_suprir', revisao_id=999999999) }}"
+     data-pode-suprir-grave="{{ '1' if user and user.role in ['ADMIN','MANAGER'] else '0' }}"
+     data-andamento-url="{{ url_for('revisao_previa_andamento', revisao_id=0) }}"
+     style="border:2px solid #5b3fa0;border-radius:8px;padding:10px 14px;margin:10px 0">
+  <strong>Revisão antes de lavrar (IA)</strong>
+  <p class="small muted" style="margin:4px 0">A IA lê o ato junto com a matrícula e aponta o
+  que não fecha. <strong>Revisão consultiva:</strong> para gerente/administrador e para
+  ato de ofício/encerramento/gratuito ela não impede a lavratura. Ela não decide: apontamento grave só se lavra com justificativa escrita (ou marcado como «já verificado/suprido» pelo gerente). Aviso de «atenção» <strong>não impede</strong> a lavratura.
+  Se você mudar o texto depois, revise de novo.</p>
+  <button type="button" class="button" data-revisar>Revisar com IA</button>
+  <span class="small" data-revisao-estado></span>
+  <div data-revisao-resultado></div>
+  {# HOTFIX-2026-10-13-01: revisão consultiva - um clique para prosseguir. #}
+  {% if user and user.role in ['ADMIN','MANAGER'] %}
+  <label class="check small"><input type="checkbox" name="revisao_prosseguir" value="1">
+    Prosseguir mesmo assim (a revisão é consultiva; se houver apontamento grave, ele fica registrado)</label>
+  {% endif %}
+  <label data-revisao-justificar hidden>Por que lavrar assim mesmo (fica gravado com o ato)
+    <textarea name="revisao_justificativa" rows="2"></textarea></label>
+  {# HOTFIX-2026-10-08-07: texto que mudou POUCO depois da revisão - o gerente
+     lavra com a revisão anterior, com justificativa (>= 90% igual, sem GRAVE pendente). #}
+  {% if user and user.role in ['ADMIN','MANAGER'] %}
+  <details class="small" style="margin-top:6px">
+    <summary>O texto mudou pouco depois da revisão? Lavrar com a revisão anterior (gerente)</summary>
+    <label class="check"><input type="checkbox" name="revisao_usar_anterior" value="1">
+      Lavrar com a última revisão deste ato (só vale se o texto continuar ao menos 90% igual
+      e sem apontamento GRAVE pendente)</label>
+    <label>Por que a mudança não pede revisão nova (fica gravado)
+      <textarea name="revisao_justificativa_anterior" rows="2"></textarea></label>
+  </details>
+  {% endif %}
+</div>
+<script src="{{ url_for('static', filename='revisao_previa.js') }}?v={{ VERSION }}" defer></script>
+{% endif %}

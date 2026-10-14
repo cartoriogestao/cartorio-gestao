@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Numeração dentro do teor{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Fichas com ato dentro do texto</h1>
+  <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Matrículas</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ lista|length }} fichas</span>
+    <span class="small muted">{{ estruturadas|length }} delas numeram sozinhas</span></div>
+  <div style="padding:14px">
+    <p>Nas fichas que vieram do E-Ofício, os atos moram <strong>dentro do texto
+    da matrícula</strong> &mdash; <code>R-33/314:-</code> &mdash; e não como
+    linhas na tabela de atos. O sistema conta a tabela; o papel conta o texto.</p>
+
+    {% if estruturadas %}
+    <div class="notice critical">
+      <strong>{{ estruturadas|length }} destas são fichas estruturadas</strong>, e
+      é só nelas que o sistema numera <em>sozinho</em>. Nas outras ele já exigia
+      o número à mão &mdash; nestas, o ato sairia com número repetido sem
+      ninguém digitar nada. Elas estão no topo da lista.
+    </div>
+    {% endif %}
+
+    <p class="small muted">O sistema <strong>não cria ato a partir do texto</strong>:
+    fabricar ato com data e conteúdo lidos por programa, e ainda pô-lo na corrente
+    de hash, seria pior que o problema. Ele só passou a <strong>recusar repetir</strong>
+    um número que está escrito na própria ficha, e a dizer qual é o certo.</p>
+  </div>
+</section>
+
+{% if lista %}
+<section class="panel">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Matrícula</th><th>Ficha</th><th>Texto traz até</th>
+      <th>Tabela tem</th><th>Próximo</th><th>Onde está escrito</th></tr></thead>
+    <tbody>
+    {% for x in lista %}
+      <tr>
+        <td class="small"><a href="{{ url_for('ri_ficha', matricula_id=x.matricula_id) }}">
+          {{ x.numero }}</a>{% if x.livro %} <span class="muted">liv. {{ x.livro }}</span>{% endif %}</td>
+        <td class="small">
+          {% if x.tipo_ficha == 'ESTRUTURADA' %}
+            <span class="badge alta">estruturada</span>
+          {% else %}<span class="badge">acervo</span>{% endif %}</td>
+        <td class="small"><strong>{{ x.no_teor }}</strong></td>
+        <td class="small">{{ x.em_atos }}</td>
+        <td class="small"><strong>{{ x.proximo }}</strong></td>
+        <td class="small">“…{{ x.citados[-1].trecho|truncate(70) }}…”</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

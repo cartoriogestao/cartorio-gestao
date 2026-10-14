@@ -1,0 +1,620 @@
+{# Uma tela por espécie. A rota fixa `especie`; o formulário não a escolhe. #}
+{% extends 'base.html' %}
+{% from '_cobrar.html' import quadro %}
+{% from '_pessoa_do_assento.html' import pessoa, progenitores %}
+{% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{% block heading %}<h1>Novo registro — {{ nome_especie }}</h1>{% endblock %}
+{% block content %}
+{% from '_veio_de_arquivo.html' import veio_de_arquivo %}
+{% if do_arquivo %}{{ veio_de_arquivo(do_arquivo) }}{% endif %}
+{# A LEITURA DOS DOCUMENTOS MORA AQUI (12/10/2026, o oficial: «vamos deixar tudo
+   na página de preenchimento do assento»). Antes era um atalho para outra tela. #}
+{% from '_leitura_dos_anexos.html' import juntar, conferencia %}
+{% if leitura_origem %}{{ conferencia(leitura_origem) }}
+{% elif especie in ('NASCIMENTO', 'OBITO', 'CASAMENTO') and not rascunho and not do_arquivo and not do_acervo %}{{ juntar(especie, csrf_token) }}
+{% endif %}
+{% if habilitacao_origem %}
+<div class="notice">
+  <strong>Casamento a partir da habilitação {{ habilitacao_origem.numero }}/{{ habilitacao_origem.ano }}</strong>
+  ({{ habilitacao_origem.nubente1_nome }} e {{ habilitacao_origem.nubente2_nome }}).
+  Confira os dados antes de lavrar; depois volte à
+  <a href="{{ url_for('rcpn_habilitacao', habilitacao_id=habilitacao_origem.id) }}">ficha da habilitação</a>
+  para registrar a celebração com o número deste assento.
+</div>
+{% endif %}
+{% if rascunho %}
+<div class="notice">
+  <strong>Continuando o rascunho «{{ rascunho.titulo }}»</strong>, salvo em
+  {{ (rascunho.atualizado_em or rascunho.criado_em or '')[:16]|replace('T', ' ') }}.
+  Confira os campos antes de lavrar — rascunho não passou por conferência
+  nenhuma.
+</div>
+{% endif %}
+
+{% set nascimento = especie == 'NASCIMENTO' %}
+{% set casamento = especie in ['CASAMENTO', 'CASAMENTO_RELIGIOSO'] %}
+{% set obito = especie == 'OBITO' %}
+{% set natimorto = especie == 'NATIMORTO' %}
+{% set pessoa_principal = nascimento or obito or natimorto %}
+
+{% include '_serventia.html' %}
+{% set do_acervo = do_acervo or request.args.get('do_acervo') or request.form.get('do_acervo') %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_assento_novo', do_acervo=do_acervo or None) }}">&larr; Escolher outro tipo</a>
+  <a class="button" href="{{ url_for('rcpn_assentos') }}">Consultar assentos</a>
+</div>
+
+{% if do_acervo %}
+<div class="notice">
+  <strong>Digitando assento já lavrado / do acervo.</strong>
+  Preencha só o que o livro de papel trouxer. Registro antigo costuma ter
+  poucos campos — o que faltar pode ficar em branco. Se a informação não
+  existe no livro, declare «IGNORADO» ou «não tem» (não invente). Livro,
+  folha e número saem da lavratura desta casa.
+</div>
+{% endif %}
+
+{# O LIVRO NÃO BAIXA A CAIXA — relato #37, item 1. O rótulo da espécie é
+   composto ("Nascimento — Livro A"), e `| lower` sobre ele inteiro escrevia
+   "livro a". A letra é o nome do livro, o mesmo que vai no termo e na
+   matrícula, e livro não tem minúscula. #}
+<div class="notice">
+  <strong>Esta tela é somente de {{ so_especie | lower }}{% if livro_da_especie %}
+    ({{ livro_da_especie }}){% endif %}.</strong>
+  Os campos de outras espécies não aparecem e a série do livro é definida
+  pelo tipo escolhido.
+</div>
+
+{# A MACRO, E NAO A COPIA — relato #36. Este bloco era escrito aqui, e era
+   o unico do sistema: as outras nove telas de ato novo nao tinham rascunho
+   nenhum. Ele virou `_rascunho.html`, e esta tela passou a chamar a mesma
+   coisa que as outras chamam. #}
+{{ salvar_rascunho('rcpn_assento_novo',
+                   url_for('rcpn_assento_novo', especie_url=especie_url),
+                   nome_especie, csrf_token,
+                   nome_em='nome,pessoa_nome,nubente1_nome',
+                   rascunho_id=rascunho_id) }}
+
+{# `data-gavetas` — relato #37, item 6: abrir uma gaveta de pessoa fecha as
+   outras QUE ESTAO VAZIAS, para a tela nao ficar com dez telas de altura. Ver
+   `static/gavetas.js`, que explica por que nao e o acordeao de fabrica. #}
+<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato"
+      data-gavetas
+      action="{{ url_for('rcpn_assento_novo', especie_url=especie_url) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="especie" value="{{ especie }}">
+  {% set _leitura_id = leitura_origem.id if leitura_origem else form.get('leitura_id') %}
+  {% if _leitura_id %}<input type="hidden" name="leitura_id" value="{{ _leitura_id }}">{% endif %}
+  {% if form.get('habilitacao_id') %}
+  <input type="hidden" name="habilitacao_id" value="{{ form.get('habilitacao_id') }}">
+  {% endif %}
+  {% if do_acervo %}<input type="hidden" name="do_acervo" value="1">{% endif %}
+
+  {# A ARRUMAÇÃO DESTA TELA — 13/10/2026, pedido do oficial: «vamos separar os
+     campos de preenchimento de forma racional e apenas por critério de
+     facilidade para o operador; a lógica deve ser cumprir os requisitos da Lei
+     6.015 e do Código de Normas do TJMA».
+
+     O CRITÉRIO É O PAPEL QUE O ESCREVENTE TEM NA MÃO, na ordem em que o usa:
+       1. o FATO, lido da DNV / da DO / da habilitação — com os campos do IBGE
+          ao lado do campo de que nascem (o «tipo de local» junto do local, a
+          natureza junto da causa), e não num painel separado por DESTINO;
+       2. a PESSOA de quem é o assento, com o que é dela (cor/raça,
+          naturalidade que o termo declara);
+       3. cada GENITOR com os seus pais — os avós moram na gaveta da mãe e na
+          do pai (art. 54, 8º), e não em duas gavetas soltas;
+       4. no óbito, as PERGUNTAS que o oficial é obrigado a fazer (art. 80;
+          art. 255 do Código de Normas) — antes ficavam numa tela à parte,
+          depois da lavratura, e o termo saía sem elas;
+       5. quem DECLARA e quem TESTEMUNHA;
+       6. por último o que o sistema faz sozinho: termo, matrícula e selo.
+     Nenhum `name=` mudou: a rota, o rascunho e a conferência leem os mesmos
+     campos. #}
+
+  {% if not pessoa_principal and not casamento %}
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Identificação do registro</span><small>{{ nome_especie }}</small></div>
+    <div class="grid2" style="padding:14px">
+      <label style="grid-column:1/-1">Nome ou identificação do registro
+        <input name="nome" {% if not do_acervo %}required{% endif %} value="{{ form.get('nome','') }}"
+               placeholder="como o registro será localizado"></label>
+      <label>Data do fato ou ato
+        <input type="date" name="data_fato" value="{{ form.get('data_fato','') }}"></label>
+    </div>
+  </section>
+  {% endif %}
+
+  {# O LIVRO E — 13/10/2026: o título e as pessoas moram em
+     `_livro_e.html`, porque a tela de corrigir a ficha usa o mesmo bloco. #}
+  {% from '_livro_e.html' import titulo_do_livro_e, pessoas_do_livro_e %}
+  {% if titulos_livro_e %}
+    {{ titulo_do_livro_e(especie, form, titulos_livro_e, nomes_do_titulo, regimes) }}
+    {{ pessoas_do_livro_e(especie, form) }}
+  {% endif %}
+
+  {# 1. O FATO — relato #37, item 8: o fato vem antes das pessoas. #}
+  {% if nascimento or casamento or obito or natimorto %}
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>
+      {% if nascimento %}Dados do nascimento
+      {% elif casamento %}Dados da celebração
+      {% elif natimorto %}Dados do natimorto
+      {% else %}Dados do óbito{% endif %}
+    </span><small>{% if nascimento %}o que está na DNV — art. 54, 1º, 3º e 9º
+      {% elif obito or natimorto %}o que está na DO — art. 80, 1º, 2º, 8º e 9º
+      {% else %}art. 70, 4º e 7º{% endif %}</small></div>
+    <div class="grid2" style="padding:14px">
+      <label>
+        {% if nascimento %}Data do nascimento
+        {% elif casamento %}Data da celebração
+        {% else %}Data do óbito{% endif %}
+        {# EXIGIDA NO NASCIMENTO — relato #37, item 5: é dela que sai a idade
+           da mãe na ocasião do parto. #}
+        <input type="date" name="data_fato" value="{{ form.get('data_fato','') }}"
+               {% if nascimento and not do_acervo %}required{% endif %}>
+      </label>
+      <label>Hora
+        <input name="hora_fato" placeholder="18:04"
+               value="{{ form.get('hora_fato','') }}"></label>
+
+      {% if nascimento %}
+      <label>DNV <small>número da Declaração de Nascido Vivo</small>
+        <input name="dnv" value="{{ form.get('dnv','') }}"></label>
+      <label>Tipo de parto <small>(gêmeos: a ordem vai no termo de cada um)</small>
+        <select name="ibge_gemeo">
+          <option value="">— não informado —</option>
+          {% for codigo, texto in gemeos.items() %}
+          <option value="{{ codigo }}"
+                  {% if form.get('ibge_gemeo') == codigo|string %}selected{% endif %}>{{ texto }}</option>
+          {% endfor %}
+        </select></label>
+      {% elif obito or natimorto %}
+      <label>DO <small>número da Declaração de Óbito</small>
+        <input name="numero_do" value="{{ form.get('numero_do','') }}"></label>
+      {% endif %}
+
+      <label>Nome do local
+        <input name="local_fato_nome"
+               value="{{ form.get('local_fato_nome','') }}"
+               placeholder="{% if casamento %}templo ou local da celebração{% elif nascimento or natimorto %}hospital ou maternidade{% else %}hospital ou local do óbito{% endif %}"></label>
+      <label style="align-self:end">
+        <input type="checkbox" name="nao_tem_local_fato" value="1"
+               {% if form.get('nao_tem_local_fato') or (form.get('local_fato_nome') or '')|upper == 'IGNORADO' %}checked{% endif %}>
+        não tem — ignorado
+      </label>
+      <label>Endereço do local
+        <input name="local_fato_endereco"
+               value="{{ form.get('local_fato_endereco','') }}"
+               placeholder="rua, número e bairro"></label>
+      {% if nascimento %}
+      <label>Tipo do local <small>(IBGE)</small>
+        <select name="ibge_local">
+          <option value="">— não informado —</option>
+          {% for codigo, texto in locais.items() %}
+          <option value="{{ codigo }}"
+                  {% if form.get('ibge_local') == codigo|string %}selected{% endif %}>{{ texto }}</option>
+          {% endfor %}
+        </select></label>
+      {% elif obito or natimorto %}
+      <label>Tipo do local <small>(IBGE)</small>
+        <select name="local_obito">
+          <option value="">— não informado —</option>
+          {% for codigo, texto in locais_obito.items() %}
+          <option value="{{ codigo }}"
+                  {% if form.get('local_obito') == codigo|string %}selected{% endif %}>{{ texto }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Natureza do óbito <small>(IBGE)</small>
+        <select name="natureza_obito">
+          <option value="">— não informada —</option>
+          {% for codigo, texto in naturezas.items() %}
+          <option value="{{ codigo }}"
+                  {% if form.get('natureza_obito') == codigo|string %}selected{% endif %}>{{ texto }}</option>
+          {% endfor %}
+        </select></label>
+      {% endif %}
+
+      {% if obito %}
+      <label style="grid-column:1/-1">Natureza e causa da morte <small>como vai no termo</small>
+        <input name="causa_morte" value="{{ form.get('causa_morte','') }}"
+               placeholder="natural ou violenta; causa conhecida conforme a DO"></label>
+      <label>Nome de quem atestou o óbito
+        <input name="atestante" value="{{ form.get('atestante','') }}"
+               placeholder="médico ou atestante qualificado"></label>
+      <label>CRM ou documento do atestante <small>(se houver)</small>
+        <input name="atestante_documento"
+               value="{{ form.get('atestante_documento','') }}"></label>
+      <label style="grid-column:1/-1">Local do sepultamento ou cremação
+        <input name="local_sepultamento"
+               value="{{ form.get('local_sepultamento','') }}"
+               placeholder="cemitério ou crematório, município/UF"></label>
+      {% endif %}
+
+      {% if casamento %}
+      <label>Regime de bens
+        <select name="regime_bens">
+          <option value="">— não informado —</option>
+          {% for codigo, texto in regimes.items() %}
+          <option value="{{ codigo }}"
+                  {% if form.get('regime_bens') == codigo %}selected{% endif %}>{{ texto }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Serventia da habilitação <small>(só quando veio de fora)</small>
+        <input name="habilitacao_serventia"
+               value="{{ form.get('habilitacao_serventia','') }}"
+               placeholder="em branco quando feita aqui"></label>
+      <label>Selo da habilitação externa <small>(opcional)</small>
+        <input name="habilitacao_selo"
+               value="{{ form.get('habilitacao_selo','') }}"></label>
+      <p style="grid-column:1/-1"><small>
+        Quando a habilitação é desta serventia, o casamento
+        <strong>não compra selo nenhum</strong>: reaproveita o selo já adquirido. Os dois últimos
+        campos só cabem quando o processo veio de outro cartório; nesse caso,
+        o registro <strong>compra selo próprio</strong> e referencia o selo de lá.
+      </small></p>
+      {# SÓ COM HABILITAÇÃO DE FORA — a desta casa já traz a data do edital e a
+         relação dos documentos (art. 70, 4º e 5º). Opcionais (13/10/2026). #}
+      <div class="grid2" style="grid-column:1/-1"
+           data-se-campo="habilitacao_serventia" data-se-valor="\S">
+        <label>Data da publicação dos proclamas
+          <input type="date" name="proclamas_data"
+                 value="{{ form.get('proclamas_data','') }}"></label>
+        <label style="grid-column:1/-1">Documentos apresentados
+          <small>(art. 70, 5º — como constam da certidão de habilitação)</small>
+          <textarea name="documentos_apresentados" rows="2">{{ form.get('documentos_apresentados','') }}</textarea></label>
+      </div>
+      {# SÓ NOS REGIMES QUE PEDEM ESCRITURA — art. 70, 7º: a data e a serventia
+         do pacto antenupcial, quando não é a comunhão parcial nem a separação
+         obrigatória. Opcionais. #}
+      <div class="grid2" style="grid-column:1/-1"
+           data-se-campo="regime_bens"
+           data-se-valor="^(COMUNHAO_UNIVERSAL|SEPARACAO_TOTAL|PARTICIPACAO_FINAL)$">
+        <label>Data da escritura de pacto antenupcial
+          <input type="date" name="pacto_data"
+                 value="{{ form.get('pacto_data','') }}"></label>
+        <label>Serventia em cujas notas foi lavrada
+          <input name="pacto_serventia" placeholder="tabelionato, município/UF"
+                 value="{{ form.get('pacto_serventia','') }}"></label>
+      </div>
+      {% endif %}
+
+      {% if nascimento or obito or natimorto %}
+      <p style="grid-column:1/-1"><small>Os campos marcados <strong>(IBGE)</strong>
+        vão para a remessa trimestral do IBGE e não sai na certidão; ficam aqui
+        porque é na DNV / DO que eles estão.</small></p>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {# 2. DE QUEM É O ASSENTO — com o que é dela. #}
+  {% if pessoa_principal %}
+    {% call pessoa('pessoa',
+              'Dados do registrado' if nascimento or natimorto else 'Dados do falecido',
+              'Este é o titular do assento e o nome usado para localizar o registro.',
+              false, form, true,
+              'completo' if obito else 'registrado',
+              false, obito) %}
+      {% if nascimento or obito %}
+      <label>Cor ou raça
+        <select name="cor_raca">
+          <option value="">— não informada —</option>
+          {% for codigo, texto in cores.items() %}
+          <option value="{{ codigo }}"
+                  {% if form.get('cor_raca') == codigo %}selected{% endif %}>{{ texto }}</option>
+          {% endfor %}
+        </select></label>
+      <label style="grid-column:1/-1">Naturalidade que o termo declara
+        <input name="naturalidade_declarada"
+               value="{{ form.get('naturalidade_declarada','') }}"
+               placeholder="Município/UF">
+        <small>{% if nascimento %}O município do nascimento ou, por opção do
+          declarante, o de residência da mãe (art. 54, § 4º). Em branco, o
+          termo não traz a frase.{% else %}Como o termo de óbito a escreve.{% endif %}
+          Quando a cidade e a UF acima estão vazias, o sistema as preenche
+          com este município — se ele constar do cadastro do IBGE.</small></label>
+      {% endif %}
+    {% endcall %}
+  {% endif %}
+
+  {% if casamento %}
+    {# CADA CÔNJUGE SEGUIDO DOS SEUS PAIS — art. 70, 1º e 2º. Antes vinham os
+       dois cônjuges e depois as quatro filiações, e o escrevente tinha de
+       contar gavetas para achar a mãe do segundo. #}
+    {% call pessoa('nubente1', 'Primeiro cônjuge',
+              'Dados pessoais e o nome adotado depois do casamento (art. 70, 1º e 8º).',
+              true, form, not do_acervo) %}
+      <div class="grid2" style="grid-column:1/-1"
+           data-se-campo="nubente1_estado_civil" data-se-valor="vi[uú]v|divorc">
+        <p style="grid-column:1/-1"><small><strong>Casamento anterior</strong> — o
+          cônjuge precedente e a data da dissolução (art. 70, 3º; CN art. 284,
+          III). Só aparece se o estado civil diz viúvo ou divorciado; opcional.</small></p>
+        <label>Cônjuge anterior
+          <input name="nubente1_conjuge_anterior"
+                 value="{{ form.get('nubente1_conjuge_anterior','') }}"></label>
+        <label>Data da dissolução <small>(divórcio ou óbito)</small>
+          <input type="date" name="nubente1_dissolucao_data"
+                 value="{{ form.get('nubente1_dissolucao_data','') }}"></label>
+      </div>
+    {% endcall %}
+    {{ pessoa('filiacao1n1', 'Mãe do primeiro cônjuge', '', false, form, false, 'completo', false, true) }}
+    {{ pessoa('filiacao2n1', 'Pai do primeiro cônjuge', '', false, form, false, 'completo', false, true) }}
+    {% call pessoa('nubente2', 'Segundo cônjuge',
+              'Dados pessoais e o nome adotado depois do casamento (art. 70, 1º e 8º).',
+              true, form, not do_acervo) %}
+      <div class="grid2" style="grid-column:1/-1"
+           data-se-campo="nubente2_estado_civil" data-se-valor="vi[uú]v|divorc">
+        <p style="grid-column:1/-1"><small><strong>Casamento anterior</strong> — o
+          cônjuge precedente e a data da dissolução (art. 70, 3º; CN art. 284,
+          III). Só aparece se o estado civil diz viúvo ou divorciado; opcional.</small></p>
+        <label>Cônjuge anterior
+          <input name="nubente2_conjuge_anterior"
+                 value="{{ form.get('nubente2_conjuge_anterior','') }}"></label>
+        <label>Data da dissolução <small>(divórcio ou óbito)</small>
+          <input type="date" name="nubente2_dissolucao_data"
+                 value="{{ form.get('nubente2_dissolucao_data','') }}"></label>
+      </div>
+    {% endcall %}
+    {{ pessoa('filiacao1n2', 'Mãe do segundo cônjuge', '', false, form, false, 'completo', false, true) }}
+    {{ pessoa('filiacao2n2', 'Pai do segundo cônjuge', '', false, form, false, 'completo', false, true) }}
+  {% endif %}
+
+  {# 3. OS GENITORES, CADA UM COM OS SEUS PAIS — relato #37, item 7: os dois
+     avós de cada lado numa gaveta só; agora a gaveta é a do próprio genitor.
+     A filiação 1 é a mãe (`PREFIXO_DO_PAPEL`), e por isso os progenitores
+     dela são os avós maternos. #}
+  {% if nascimento or obito or natimorto %}
+    {% call pessoa('filiacao1', 'Mãe — filiação 1' ~ (' e avós maternos' if nascimento else ''),
+              ('A data de nascimento dela é o que permite calcular a idade na '
+               'ocasião do parto, que vai escrita no termo.')
+              if nascimento else
+              ('Filiação do falecido — mãe. Informe os dados conhecidos para o '
+               'termo de óbito (art. 80, 5º).'),
+              false, form, false, 'completo',
+              nascimento and not do_acervo, true) %}
+      {% if nascimento %}
+      <p style="grid-column:1/-1"><small><strong>Avós maternos</strong> — os pais
+        da mãe (art. 54, 8º).</small></p>
+      <label>Avô materno
+        <input name="prog1f1_nome" value="{{ form.get('prog1f1_nome','') }}"></label>
+      <label>Avó materna
+        <input name="prog2f1_nome" value="{{ form.get('prog2f1_nome','') }}"></label>
+      {% endif %}
+    {% endcall %}
+    {% call pessoa('filiacao2', 'Pai — filiação 2' ~ (' e avós paternos' if nascimento else ''),
+              ('' if nascimento else
+               'Filiação do falecido — pai. Informe os dados conhecidos para o termo.'),
+              false, form, false, 'completo', false, true) %}
+      {% if nascimento %}
+      <p style="grid-column:1/-1"><small><strong>Avós paternos</strong> — os pais
+        do pai (art. 54, 8º).</small></p>
+      <label>Avô paterno
+        <input name="prog1f2_nome" value="{{ form.get('prog1f2_nome','') }}"></label>
+      <label>Avó paterna
+        <input name="prog2f2_nome" value="{{ form.get('prog2f2_nome','') }}"></label>
+      {# SÓ QUANDO OS PAIS SÃO CASADOS — art. 54, 7º («lugar e cartório onde
+         se casaram»). Condicional e opcional (13/10/2026). #}
+      <div class="grid2" style="grid-column:1/-1"
+           data-se-campo="filiacao1_estado_civil,filiacao2_estado_civil"
+           data-se-valor="casad">
+        <p style="grid-column:1/-1"><small><strong>Os pais são casados entre
+          si</strong> — onde se casaram (art. 54, 7º). Opcional.</small></p>
+        <label>Lugar do casamento dos pais
+          <input name="pais_casamento_lugar" placeholder="Município/UF"
+                 value="{{ form.get('pais_casamento_lugar','') }}"></label>
+        <label>Cartório do registro do casamento
+          <input name="pais_casamento_cartorio"
+                 value="{{ form.get('pais_casamento_cartorio','') }}"></label>
+      </div>
+      {% endif %}
+    {% endcall %}
+  {% endif %}
+
+  {# 4. AS PERGUNTAS DO ÓBITO — art. 80 da Lei 6.015/1973 e art. 255 do Código
+     de Normas. «O oficial indagará, obrigatoriamente, a respeito de todos os
+     itens» (§ 1º). Até 13/10/2026 as quatro marcas só se respondiam numa tela à
+     parte, DEPOIS de lavrar — e o termo, escrito na lavratura, saía sem elas.
+     Os nomes são as colunas de `rc_marcas_do_obito.MARCAS`; o branco é «o
+     declarante não sabe», que o termo declara na forma do § 1º. #}
+  {% if obito %}
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Perguntas obrigatórias do óbito</span>
+      <small>art. 80 da Lei 6.015/1973 · art. 255 do Código de Normas</small></div>
+    <div class="grid2" style="padding:14px">
+      <p style="grid-column:1/-1"><small>Pergunte todas. O que o declarante não
+        souber o termo declara assim (art. 255, § 1º) — e isso não impede o
+        registro (§ 2º).</small></p>
+      {% for m in marcas_do_obito %}
+      <label>{{ m.pergunta }}
+        <select name="{{ m.chave }}">
+          <option value="">o declarante não sabe</option>
+          <option value="SIM" {% if form.get(m.chave) == 'SIM' %}selected{% endif %}>sim</option>
+          <option value="NAO" {% if form.get(m.chave) == 'NAO' %}selected{% endif %}>não</option>
+        </select></label>
+      {% endfor %}
+      {# OS CAMPOS QUE DEPENDEM DE UMA RESPOSTA — 13/10/2026. Opcionais e
+         condicionais: só aparecem quando a situação existe. #}
+      <div class="grid2" style="grid-column:1/-1"
+           data-se-campo="obito_possui_filho" data-se-valor="^SIM$">
+        <label style="grid-column:1/-1">Filhos — nome e idade de cada um
+          <small>(art. 80, 7º; um por linha, ex.: «JOÃO DA SILVA, 20 anos»)</small>
+          <textarea name="obito_filhos" rows="3">{{ form.get('obito_filhos','') }}</textarea></label>
+      </div>
+      <div class="grid2" style="grid-column:1/-1"
+           data-se-campo="obito_possui_bens" data-se-valor="^SIM$">
+        <label>Deixou herdeiros menores ou interditados? <small>(CN art. 255, XI)</small>
+          <select name="obito_herdeiros_menores">
+            <option value="">o declarante não sabe</option>
+            <option value="SIM" {% if form.get('obito_herdeiros_menores') == 'SIM' %}selected{% endif %}>sim</option>
+            <option value="NAO" {% if form.get('obito_herdeiros_menores') == 'NAO' %}selected{% endif %}>não</option>
+          </select></label>
+      </div>
+      <div class="grid2" style="grid-column:1/-1"
+           data-se-campo="pessoa_estado_civil"
+           data-se-valor="casad|vi[uú]v|divorc|separad">
+        <p style="grid-column:1/-1"><small><strong>Cônjuge</strong> — se casado,
+          o sobrevivente, mesmo separado ou divorciado; se viúvo, o pré-morto; e o
+          cartório do casamento (art. 80, 4º; CN art. 255, IV). Opcional.</small></p>
+        <label>Cônjuge
+          <select name="obito_conjuge_situacao">
+            <option value="SOBREVIVENTE" {% if form.get('obito_conjuge_situacao') != 'PRE_MORTO' %}selected{% endif %}>sobrevivente</option>
+            <option value="PRE_MORTO" {% if form.get('obito_conjuge_situacao') == 'PRE_MORTO' %}selected{% endif %}>pré-morto (era viúvo)</option>
+          </select></label>
+        <label>Nome do cônjuge
+          <input name="obito_conjuge_nome" value="{{ form.get('obito_conjuge_nome','') }}"></label>
+        <label style="grid-column:1/-1">Cartório onde o casamento foi registrado
+          <input name="obito_conjuge_cartorio" placeholder="serventia, município/UF"
+                 value="{{ form.get('obito_conjuge_cartorio','') }}"></label>
+      </div>
+      <label style="grid-column:1/-1">Testamento conhecido <small>(se houver — art. 80, 6º)</small>
+        <input name="testamento" value="{{ form.get('testamento','') }}"
+               placeholder="identificação ou informação declarada"></label>
+    </div>
+  </section>
+  {% endif %}
+
+  {# 5. QUEM DECLARA E QUEM TESTEMUNHA.
+     No NASCIMENTO o declarante costuma ser a mãe ou o pai — relato #46: os
+     botões só copiam a filiação; não decidem quem declarou. No ÓBITO
+     (problemas #100/#101) os botões Mãe/Pai não fazem sentido. #}
+  {% if nascimento %}
+    {{ pessoa('declarante', 'Declarante',
+              'Quem prestou as informações para a lavratura.', false, form,
+              false, 'completo', false, false,
+              [('filiacao1', 'Mãe (filiação 1)'), ('filiacao2', 'Pai (filiação 2)')]) }}
+  {% elif obito or natimorto %}
+    {{ pessoa('declarante', 'Declarante',
+              'Quem prestou as informações do óbito para a lavratura '
+              '(preencha os dados do declarante; não copie da filiação).',
+              false, form, false, 'completo', false, false) }}
+  {% endif %}
+  {% if nascimento or casamento or obito or natimorto %}
+    {{ pessoa('testemunha', 'Testemunha', '', false, form) }}
+  {% endif %}
+
+  {# 6. O QUE O SISTEMA FAZ SOZINHO — termo, matrícula e selo, por último:
+     é o que o escrevente normalmente deixa em branco. #}
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Termo, matrícula e selo</span>
+      <small>o sistema faz sozinho ao lavrar</small></div>
+    <div class="grid2" style="padding:14px">
+      <label style="grid-column:1/-1">Teor do registro <small>(opcional)</small>
+        <textarea name="teor" rows="6">{{ form.get('teor','') }}</textarea>
+        <small>Em branco, o termo é escrito pelo modelo da casa a partir dos
+          campos acima, na lavratura.</small></label>
+      <label>Matrícula de 32 dígitos <small>(opcional)</small>
+        <input name="matricula" value="{{ form.get('matricula','') }}"
+               placeholder="deixe em branco para compor ao lavrar"></label>
+      <p><small>
+        Em branco, a matrícula é composta depois que livro, folha e número são
+        reservados. Se já existir uma matrícula nacional, digite-a: ela não é
+        substituída.
+      </small></p>
+      {# O SELO SAI SOZINHO — relato #37, item 2. #}
+      <p style="grid-column:1/-1"><small>
+        <strong>Você não precisa digitar selo</strong> — o selo sai sozinho ao lavrar.
+        Assim que o assento for lavrado, o sistema pede o selo ao aparelho e o
+        amarra a este ato. O número aparece na mensagem verde e na ficha.
+        {% if nascimento or obito or natimorto %}
+        O registro de {{ so_especie | lower }} é <strong>isento</strong>, e o
+        selo sai do mesmo jeito: isenção é gratuidade, não é ausência de ato.
+        {% endif %}
+        Se o aparelho não responder, <strong>o assento não é mantido sem
+        autorização expressa</strong>.
+      </small></p>
+      <label style="grid-column:1/-1">Selo já tirado no portal
+        <small>(só quando o aparelho está fora do ar)</small>
+        <input name="selo" value="{{ form.get('selo','') }}"
+               placeholder="deixe em branco — o sistema tira sozinho"
+               pattern="[A-Za-z0-9]*">
+        <small>Preenchido, o sistema <strong>não pede outro</strong>: dois selos
+        no mesmo ato é o dinheiro da serventia saindo duas vezes.</small></label>
+      {# NASCIMENTO, ÓBITO E NATIMORTO SÃO GRATUITOS — 13/10/2026, o oficial:
+         «tire esse campo de protocolo para cobrança de selo nos registros
+         gratuitos, de nascimento e óbito». O selo deles sai pelo caminho do
+         registro, sem protocolo nem item de cobrança (o termo 19582, lavrado
+         hoje, saiu assim). O quadro fica para o casamento e as demais. #}
+      {% if not (nascimento or obito or natimorto) %}
+      {{ quadro(receita, caixa, protocolos) }}
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="actions" style="grid-column:1/-1">
+    <button class="button primary" name="acao" value="conferir">
+      Conferir {{ so_especie | lower }}</button>
+    <a class="button" href="{{ url_for('rcpn_assento_novo') }}">Cancelar</a>
+    <p style="grid-column:1/-1"><small>
+      <strong>Conferir não lavra.</strong> Abre a tela em que você escolhe a
+      folha de segurança e o livro, imprime o rascunho para o declarante e
+      vê os dados do CPF — só lá se lavra.
+    </small></p>
+  </div>
+</form>
+<script src="{{ url_for('static', filename='gavetas.js') }}"></script>
+{{ script_do_rascunho() }}
+
+<script>
+(function () {
+  function aplica(cb) {
+    var nomeCampo = cb.getAttribute("name") || "";
+    if (nomeCampo === "nao_tem_local_fato") {
+      var local = document.querySelector("[name=local_fato_nome]");
+      if (!local) return;
+      if (cb.checked) {
+        if (!local.value) local.value = "IGNORADO";
+      } else if ((local.value || "").toUpperCase() === "IGNORADO") {
+        local.value = "";
+      }
+      return;
+    }
+    if (nomeCampo.indexOf("nao_tem_") !== 0) return;
+    var p = nomeCampo.slice(8);
+    var nome = document.querySelector('[name="' + p + '_nome"]');
+    var data = document.querySelector('[name="' + p + '_data_nascimento"]');
+    if (cb.checked) {
+      if (nome && !nome.value) nome.value = "IGNORADO";
+      if (data) data.required = false;
+    } else {
+      if (nome && (nome.value || "").toUpperCase() === "IGNORADO") nome.value = "";
+    }
+  }
+  document.querySelectorAll('input[name^="nao_tem_"]').forEach(function (cb) {
+    cb.addEventListener("change", function () { aplica(cb); });
+    if (cb.checked) aplica(cb);
+  });
+})();
+
+/* OS BLOCOS CONDICIONAIS — 13/10/2026, o oficial: «tem campos condicionais,
+   cuidar para não exigir o preenchimento deles para todos os casos».
+   `data-se-campo` lista os campos que decidem; `data-se-valor` é a expressão
+   que algum deles tem de casar. Escondido, o bloco tem os campos DESLIGADOS —
+   não vão no envio, e um dado digitado e depois desfeito não chega ao termo.
+   Sem script, tudo aparece e nada é exigido. */
+(function () {
+  var blocos = document.querySelectorAll("[data-se-campo]");
+  function confere(bloco) {
+    var nomes = bloco.getAttribute("data-se-campo").split(",");
+    var re = new RegExp(bloco.getAttribute("data-se-valor"), "i");
+    var vale = nomes.some(function (n) {
+      var el = document.querySelector('[name="' + n.trim() + '"]');
+      return el && re.test(el.value || "");
+    });
+    bloco.hidden = !vale;
+    bloco.querySelectorAll("input, select, textarea").forEach(function (c) {
+      c.disabled = !vale;
+    });
+  }
+  blocos.forEach(function (bloco) {
+    bloco.getAttribute("data-se-campo").split(",").forEach(function (n) {
+      var el = document.querySelector('[name="' + n.trim() + '"]');
+      if (el) {
+        el.addEventListener("input", function () { confere(bloco); });
+        el.addEventListener("change", function () { confere(bloco); });
+      }
+    });
+    confere(bloco);
+  });
+})();
+</script>
+{% endblock %}

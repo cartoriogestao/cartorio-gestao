@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Modelos de atos do Registro de Imóveis</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a></div>
+
+<div class="notice warning">
+  <strong>Estes são modelos de trabalho, não pareceres.</strong> Cada ato registral produz
+  efeito jurídico próprio e a qualificação do título é indelegável: confira o texto contra o
+  título apresentado antes de lavrar. Os requisitos listados servem de conferência prévia,
+  não são exaustivos, e a ausência de uma exigência na lista não dispensa a análise.
+</div>
+
+<div class="notice">
+  Fundamento: Lei 6.015/73 com as alterações da Lei 14.382/2022, Código Civil,
+  Provimento CNJ 149/2023 e alterações posteriores (171, 174, 189, 190, 192, 195 e 224),
+  e Código de Normas da CGJ/TJMA — com destaque para o art. 479, que detalha a qualificação
+  das partes.
+</div>
+
+<form class="filters" method="get">
+  <input name="busca" value="{{ busca }}" placeholder="compra e venda, hipoteca, penhora..." size="34">
+  <select name="tipo">
+    <option value="">Registros e averbações</option>
+    <option value="R" {% if tipo=='R' %}selected{% endif %}>Só registros (R)</option>
+    <option value="AV" {% if tipo=='AV' %}selected{% endif %}>Só averbações (AV)</option>
+  </select>
+  <button>Filtrar</button>
+</form>
+
+<p class="muted small">{{ modelos|length }} de {{ total }} modelos.</p>
+
+{% for m in modelos %}
+<details class="panel">
+  <summary>
+    <span class="badge {{ 'ok' if m.tipo == 'R' else 'media' }}">{{ m.tipo }}</span>
+    <strong>{{ m.nome }}</strong>
+    <small class="muted">— {{ m.fundamentacao }}</small>
+  </summary>
+  <div style="padding:14px 18px">
+    <p><strong>Requisitos a conferir antes de lavrar</strong></p>
+    <ol class="small">{% for r in m.requisitos %}<li>{{ r }}</li>{% endfor %}</ol>
+    <p><strong>Teor do modelo</strong>
+      <small class="muted">o que está entre [colchetes] é preenchimento manual</small></p>
+    <div class="teor">{{ m.corpo|safe }}</div>
+    {% if matricula_id %}
+    <div class="actions">
+      <a class="button primary" href="{{ url_for('ri_preencher_modelo', matricula_id=matricula_id, codigo=m.codigo) }}">
+        Usar este modelo na matrícula {{ matricula_numero }}</a>
+    </div>
+    {% endif %}
+  </div>
+</details>
+{% else %}
+<div class="notice">Nenhum modelo encontrado.</div>
+{% endfor %}
+{% endblock %}

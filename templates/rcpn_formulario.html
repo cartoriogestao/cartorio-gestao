@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Preencher o {{ modelo.nome|lower }}{% endblock %}
+{% block content %}
+<h1>{{ modelo.nome }}</h1>
+
+<div class="card">
+  <p><strong>Livro {{ modelo.livro }}</strong>
+     <span class="small muted">— {{ modelo.artigo }}</span></p>
+  {% if modelo.conferido_no_papel %}
+    <p class="small muted">
+      O texto é <strong>construído dos requisitos da norma</strong> —
+      {{ modelo.artigo }} — e foi <strong>conferido</strong> contra um termo em
+      papel desta casa: {{ modelo.fonte }}.
+    </p>
+  {% else %}
+    <p class="small muted">
+      O texto é <strong>construído dos requisitos da norma</strong>:
+      {{ modelo.artigo }}. {{ modelo.fonte }}
+    </p>
+    <p class="small muted">
+      Não há termo em papel desta casa para conferir este ato — e, por decisão
+      do oficial em 30/08/2026, <strong>não se usam os modelos do E-Ofício nem
+      o papel como fonte</strong>: o que manda são os requisitos legais e
+      regulamentares.
+    </p>
+  {% endif %}
+</div>
+
+{% if faltas %}
+<div class="alerta danger">
+  <p><strong>O modelo e o formulário não batem:</strong></p>
+  <ul>{% for f in faltas %}<li class="small">{{ f }}</li>{% endfor %}</ul>
+  <p class="small">Claro no texto sem campo sairia <code>{assim}</code> no papel
+     assinado; campo sem claro é pergunta que não vai a lugar nenhum.</p>
+</div>
+{% endif %}
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <div class="card">
+    {% for c in campos %}
+      <p>
+        <label><strong>{{ c.rotulo }}</strong>
+          {% if c.exigido %}<span class="danger">*</span>{% endif %}<br>
+          {% if c.tipo == 'sexo' %}
+            <select name="{{ c.nome }}">
+              <option value="">—</option>
+              <option value="masculino">masculino</option>
+              <option value="feminino">feminino</option>
+            </select>
+          {% elif c.nome.startswith('frase_') or 'qualificacao' in c.nome
+                  or 'filiacao' in c.nome %}
+            <textarea name="{{ c.nome }}" rows="2" cols="72"
+              >{{ valores.get(c.nome, '') }}</textarea>
+          {% else %}
+            <input type="text" name="{{ c.nome }}" size="52"
+                   value="{{ valores.get(c.nome, '') }}">
+          {% endif %}
+        </label>
+        <span class="small muted">
+          {% if c.de_onde %}Vem de: {{ c.de_onde|forte }}.{% endif %}
+          {% if c.artigo %} <em>{{ c.artigo }}</em>.{% endif %}
+          {% if c.ajuda %}<br>{{ c.ajuda|forte }}{% endif %}
+        </span>
+      </p>
+    {% endfor %}
+  </div>
+
+  <p>
+    <button class="button" name="acao" value="ver">Ver como fica</button>
+    <a class="button secondary" href="{{ url_for('rcpn_assentos') }}">Voltar</a>
+  </p>
+</form>
+
+{% if montado %}
+<div class="card" style="background:#fff">
+  <h2 style="margin-top:0">Como o termo fica</h2>
+  <pre style="white-space:pre-wrap; font-family: Georgia, serif">{{ montado }}</pre>
+  {% if em_branco %}
+    <p class="small danger">
+      <strong>Ainda em branco:</strong>
+      {% for x in em_branco %}{{ x }}{% if not loop.last %}, {% endif %}{% endfor %}.
+      Campo em branco num termo assinado é claro que ficou por preencher — e o
+      livro não aceita rasura depois.
+    </p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if modelo.chave == 'NASCIMENTO' %}
+<div class="card">
+  <h2 style="margin-top:0">Conferir com um assento real</h2>
+  <p class="small muted">
+    Preencha o modelo com um assento de verdade, para ver se ele descreve o
+    ato certo. <strong>Conferir modelo com dado inventado não confere nada</strong>:
+    o campo que falta só aparece num caso que a casa lavrou.
+    <br><br>
+    <strong>Este ainda não é o texto que se congela no assento.</strong> Aquele
+    caminho passa hoje pelos modelos do E-Ofício, e por decisão do oficial em
+    30/08/2026 ele tem de ser trocado por este. A troca mexe no teor que vai ao
+    livro, e será feita de propósito — não de passagem.
+  </p>
+  <form method="get">
+    <p>
+      <label>Número do assento de nascimento
+        <input type="text" name="assento" size="10" value="{{ numero_conf }}">
+      </label>
+      <button class="button">Preencher com este</button>
+    </p>
+  </form>
+
+  {% if aviso_conf %}
+    <p class="danger small">{{ aviso_conf }}</p>
+  {% endif %}
+
+  {% if conferindo %}
+    <p class="small"><strong>Nascimento nº {{ conferindo.assento.numero }}</strong>
+       — {{ conferindo.assento.nome }}</p>
+    <pre style="white-space:pre-wrap; font-family: Georgia, serif; background:#fff">{{ conferindo.texto }}</pre>
+    {% if conferindo.em_branco %}
+      <p class="small danger">
+        <strong>O assento não tem:</strong>
+        {% for x in conferindo.em_branco %}{{ x }}{% if not loop.last %}, {% endif %}{% endfor %}.
+      </p>
+      <p class="small muted">
+        Isso não quer dizer que o modelo esteja errado — pode ser que o assento
+        é que não guarde esse dado ainda. É justamente essa diferença que esta
+        conferência serve para mostrar.
+      </p>
+    {% else %}
+      <p class="small"><strong>O assento preenche o modelo inteiro.</strong></p>
+    {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
+{% if tipos %}
+<div class="card">
+  <h2 style="margin-top:0">Os teores deste ato</h2>
+  <p class="small muted">
+    Um ato tem <strong>vários teores</strong>, e não um: na tela de lavratura do
+    E-Ofício isso é o campo <em>Tipo de Teor</em>. Abaixo estão os deste ato —
+    <strong>os que já têm texto e os que ainda não têm</strong>. Mostrar só os
+    prontos faria esta tela dizer que há um teor onde há vários.
+  </p>
+  <table class="tabela">
+    <tr><th>teor</th><th>quando se usa</th><th></th></tr>
+    {% for t in tipos %}
+    <tr>
+      <td><strong>{{ t.nome }}</strong></td>
+      <td class="small">{{ t.quando }}</td>
+      <td class="small">
+        {% if tem_texto(t) %}
+          <a href="{{ url_for('rcpn_formulario', chave=t.chave) }}">abrir</a>
+        {% else %}
+          <span class="danger">sem texto</span> — {{ t.porque_falta|forte }}
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="small muted">
+    No total: <strong>{{ conta.prontos }}</strong> de
+    <strong>{{ conta.total }}</strong> teores têm texto.
+    Os que faltam serão construídos <strong>dos requisitos legais e
+    regulamentares</strong>, como os três primeiros — é o que o oficial
+    determinou em 30/08/2026. Cada um tem, ao lado, o que ainda impede: o do
+    registro tardio esperava a regra das testemunhas, que ele já decidiu.
+  </p>
+</div>
+{% endif %}
+
+<div class="card">
+  <p class="small muted">
+    <strong>Os campos deste formulário saem do próprio modelo</strong>, e não de
+    uma lista escrita ao lado: duas listas divergem no primeiro conserto, e a
+    tela passaria a perguntar uma coisa e o texto a esperar outra. É a lição da
+    <code>normalizar_nome</code>, aplicada ao formulário.
+  </p>
+</div>
+{% endblock %}

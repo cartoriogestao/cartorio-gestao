@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Robôs{% endblock %}
+{% block content %}
+<h1>Robôs</h1>
+<p class="small">
+  <a href="{{ url_for('robos_novo') }}">novo robô</a>
+  ·
+  <a href="{{ url_for('robos_config') }}">configuração de API</a>
+</p>
+
+<div class="card">
+  <p class="small muted">
+    Um robô = um tipo de ato (certidão, firma, protesto, proclamas…).
+    Treino = prompt + exemplos — <strong>sem fine-tune</strong> nesta fatia.
+    Rascunho de teste <strong>não grava no livro</strong> e
+    <strong>não envia WhatsApp</strong>. Humano no loop.
+  </p>
+</div>
+
+{% if not linhas %}
+<div class="card">
+  <p><strong>Nenhum robô ainda.</strong></p>
+  <p class="small muted">
+    Crie o primeiro em <a href="{{ url_for('robos_novo') }}">novo robô</a>.
+  </p>
+</div>
+{% else %}
+<table class="tabela">
+  <tr>
+    <th>nome</th>
+    <th>ato</th>
+    <th>provedor</th>
+    <th>ativo</th>
+    <th>atualizado</th>
+  </tr>
+  {% for r in linhas %}
+  <tr>
+    <td>
+      <a href="{{ url_for('robos_editar', robo_id=r.id) }}">
+        <strong>{{ r.nome }}</strong>
+      </a>
+    </td>
+    <td class="small">{{ r.ato }}</td>
+    <td class="small">{{ r.provedor }}</td>
+    <td class="small">{% if r.ativo %}sim{% else %}não{% endif %}</td>
+    <td class="small">{{ (r.atualizado_em or '')[:16]|replace('T', ' ') }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

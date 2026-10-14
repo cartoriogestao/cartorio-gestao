@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}WhatsApp{% endblock %}
+{% block content %}
+<h1>WhatsApp</h1>
+<p class="small">
+  <a href="{{ url_for('whatsapp_config') }}">Configuração Meta</a>
+</p>
+
+<div class="card">
+  <p class="small muted">
+    Fila do balcão pelo WhatsApp — API oficial da Meta. Autoenvio desligado.
+    CPF, valor, protesto, certidão, instrumento e dado de livro
+    <strong>não saem por aqui</strong>. O SERVIDOR do Cartório Gestão
+    <strong>não fica na internet</strong>: a Meta entrega no Apache de
+    <code>equipetextual.com.br</code>; esta casa puxa. Porta 8765 fechada para o mundo.
+  </p>
+</div>
+
+<form method="post" action="{{ url_for('whatsapp_puxar') }}" style="margin:0 0 1em">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button class="button secondary">puxar caixa-postal</button>
+  <span class="small muted">
+    {% if cfg and cfg.caixa_url %}URL gravada (host XMPP).{% else %}
+    Ainda sem URL — documentada: https://equipetextual.com.br/pendentes{% endif %}
+  </span>
+</form>
+
+{% if not linhas %}
+<div class="card">
+  <p><strong>Nenhuma conversa ainda.</strong></p>
+  <p class="small muted">
+    Em desenvolvimento: POST local em <code>/whatsapp/webhook</code> com
+    header <code>X-Wa-Test: 1</code>. Em produção: puxar da caixa-postal.
+  </p>
+</div>
+{% else %}
+<table class="tabela">
+  <tr>
+    <th>quando</th>
+    <th>quem</th>
+    <th>etiqueta</th>
+    <th>último texto</th>
+    <th>rascunho</th>
+    <th>status</th>
+  </tr>
+  {% for r in linhas %}
+  <tr>
+    <td class="small">{{ (r.atualizado_em or '')[:16]|replace('T', ' ') }}</td>
+    <td>
+      <a href="{{ url_for('whatsapp_conversa', conversa_id=r.id) }}">
+        <strong>{{ r.nome or r.wa_id }}</strong>
+      </a>
+      <br><span class="small muted">{{ r.wa_id }}</span>
+    </td>
+    <td class="small">{{ r.etiqueta or '—' }}</td>
+    <td class="small">{{ (r.ultimo_texto or '')[:140] }}</td>
+    <td class="small">{{ (r.rascunho or '')[:140] }}</td>
+    <td class="small">{{ r.status }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

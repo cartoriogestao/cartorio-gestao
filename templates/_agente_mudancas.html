@@ -1,0 +1,45 @@
+{#
+  AS LINHAS DO QUADRO DE MUDANÇAS — as mesmas na tela da sessão e no que chega
+  ao vivo.
+
+  POR QUE É UM PEDAÇO, E NÃO DUAS VEZES O MESMO HTML
+      O quadro de mudanças é o mais perigoso desta tela: é onde está o botão de
+      DESFAZER, e o que ele mostra é «o agente mexeu nisto, e está de pé». Duas
+      versões dele — uma escrita no modelo e outra montada em JavaScript quando
+      a mudança chega com a sessão rodando — divergiriam no primeiro campo novo,
+      e a linha que chegasse ao vivo apareceria sem o botão ou com o alvo
+      trocado. Quem paga esse erro é quem clica.
+
+  QUEM CHAMA
+      `agente_sessao.html`, dentro do `<tbody>`; e o `andamento`, que devolve as
+      linhas prontas em `mudancas_html` para a tela ao vivo. A gaveta NÃO as
+      desenha de propósito: ela é estreita e conta as mudanças, levando ao
+      console, que é onde se desfaz com o antes e o depois à vista.
+
+  `mudancas` E `sessao_id` VÊM DO CHAMADOR, e não são lidos do `r` ou do
+  `request`: assim o mesmo arquivo serve aos dois.
+#}
+{% for m in mudancas %}
+<tr>
+  <td><code>{{ m.ferramenta }}</code></td>
+  <td><small>{{ m.alvo }}: {{ m.antes or '(vazio)' }} &rarr; {{ m.depois }}</small></td>
+  <td>
+    {% if m.revertida_em %}<span class="badge">desfeita</span>
+      <br><small class="muted">{{ (m.revertida_em or '')[:16] | replace('T', ' ') }}
+      {% if m.revertida_por %} · {{ m.revertida_por }}{% endif %}</small>
+    {% elif not m.reversivel %}<span class="badge media">só acréscimo</span>
+    {% else %}<span class="badge alta">de pé</span>{% endif %}
+  </td>
+  <td>
+    {% if m.reversivel and not m.revertida_em %}
+    <form method="post" style="display:inline"
+          action="{{ url_for('agente_desfazer', mudanca_id=m.id) }}"
+          onsubmit="return confirm('Voltar «{{ m.alvo }}» para «{{ m.antes }}»?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="sessao_id" value="{{ sessao_id }}">
+      <button class="button small">desfazer</button>
+    </form>
+    {% endif %}
+  </td>
+</tr>
+{% endfor %}

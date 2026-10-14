@@ -1,0 +1,378 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Cartão nº {{ c.id }} — {{ c.nome }}</h1>{% endblock %}
+{% block content %}
+
+{% if not (c.selo_abertura or "")|trim %}
+<section class="panel notice warning">
+  <strong>Pendente de selo — o escrevente deve selar.</strong>
+  {% if not (user.eh_robo if user is defined and user.eh_robo is defined else false) %}
+  <form method="post" action="{{ url_for('notas_cartao_selar', cartao_id=c.id) }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <button class="primary">Selar</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_cartoes') }}">&larr; Cartões</a>
+  <a class="button primary" href="{{ url_for('notas_reconhecimento', busca=c.documento or c.nome) }}">Reconhecer firma desta pessoa</a>
+  {# A FICHA PARA O CLIENTE ASSINAR. Ela sai em `.odt` como os outros papéis
+     da casa — abre no mesmo programa, imprime com a mesma margem e se arquiva
+     do mesmo jeito. #}
+  <a class="button" href="{{ url_for('notas_cartao_ficha', cartao_id=c.id) }}">Imprimir ficha para assinar</a>
+</div>
+
+{% for a in avisos %}<div class="notice warning">{{ a }}</div>{% endfor %}
+{% if faltando %}
+<div class="notice">
+  <strong>Falta para qualificar em escritura:</strong> {{ faltando|join(', ') }}.
+  <span class="small">Art. 215, § 1º do Código Civil. Para reconhecimento de firma não impede.</span>
+</div>
+{% endif %}
+{% if bio and bio.faltando %}
+<div class="notice">
+  <strong>Falta no cadastro (foto e digitais):</strong> {{ bio.faltando|join(', ') }}.
+  <span class="small">Não impede abrir o cartão nem selar. Colhe-se quando a pessoa voltar.</span>
+</div>
+{% endif %}
+
+{#
+  A ASSINATURA É A RAZÃO DESTA TELA EXISTIR, e por muito tempo foi a coisa
+  menos utilizável dela: uma miniatura de 200 pixels, parada, que não abria.
+
+  Reconhecimento por semelhança é o tabelião confrontando o traço com o cartão
+  de autógrafo. O que se confere é a inclinação, o ponto onde a caneta levanta,
+  o laço do sobrenome. Nada disso cabe em 200 pixels.
+
+  Agora a miniatura é a porta: um clique e ela abre sobreposta à tela, com
+  zoom, giro e contraste. `data-lupa-grupo` liga as vias da mesma pessoa — é
+  daí que saem as setas e o botão de comparar duas lado a lado.
+#}
+<section class="panel">
+  <div class="panel-head"><span>Assinatura</span>
+    <span class="small muted">{{ imagens|length }} imagem(ns){% if imagens %} ·
+      clique para ampliar{% endif %}</span></div>
+  <div style="padding:14px;display:flex;gap:14px;flex-wrap:wrap">
+    {% for i in imagens %}
+      <div style="text-align:center">
+        {% if i.disponivel %}
+          <img class="ampliavel"
+               src="{{ url_for('notas_cartao_imagem', imagem_id=i.id, w=560) }}"
+               data-lupa-cheia="{{ url_for('notas_cartao_imagem', imagem_id=i.id) }}"
+               data-lupa-original="{{ url_for('notas_cartao_imagem_original', imagem_id=i.id) }}"
+               data-lupa-titulo="{{ c.nome }} — {{ i.nome_arquivo }}"
+               data-lupa-grupo="cartao-{{ c.id }}"
+               alt="Assinatura de {{ c.nome }}" loading="lazy"
+               title="Clique para ampliar"
+               style="max-height:200px;max-width:420px;border:1px solid #bbb">
+        {% else %}
+          <div class="notice warning small" style="max-width:320px">
+            Arquivo <code>{{ i.nome_arquivo }}</code> não foi encontrado nesta máquina.</div>
+        {% endif %}
+        <div class="small muted">{{ i.nome_arquivo }}{% if i.favorita %} · favorita{% endif %}</div>
+      </div>
+    {% else %}
+      <div class="muted">Sem assinatura digitalizada — confira no cartão físico.</div>
+    {% endfor %}
+  </div>
+  {% if imagens %}
+  {# As três coisas que se faz com uma via depois de enviada. Ficam por baixo
+     de cada imagem, e não num menu: quem precisa trocar a favorita está
+     olhando para a imagem, não procurando onde se troca. #}
+  <div class="fichas-gerir">
+    {% for i in imagens %}
+      <form method="post" class="ficha-linha"
+            action="{{ url_for('notas_cartao_imagem_gerir', imagem_id=i.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <span class="small"><strong>{{ i.nome_arquivo }}</strong>
+          {% if i.bytes %}<span class="muted">· {{ (i.bytes / 1024)|round|int }} KB</span>{% endif %}</span>
+        {% if i.favorita %}
+          <span class="badge ok">é a que aparece no balcão</span>
+        {% else %}
+          <button class="small" name="acao" value="favorita">Usar esta no balcão</button>
+        {% endif %}
+        <label class="small muted" style="display:flex;align-items:center;gap:6px">
+          firma colhida em
+          <input type="date" name="data_coleta" value="{{ i.data or '' }}"
+                 style="width:150px" title="Quando esta via foi assinada — não é a data em que foi digitalizada">
+          <button class="small" name="acao" value="data">Anotar</button>
+        </label>
+        <button class="small" name="acao" value="remover"
+                onclick="return confirm('Retirar {{ i.nome_arquivo }} deste cartão?\n\nO arquivo continua guardado no acervo e a auditoria registra a retirada.')">
+          Retirar do cartão</button>
+      </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if imagens|length > 1 %}
+    <div class="small muted" style="padding:0 14px 12px">
+      Esta pessoa tem {{ imagens|length }} vias no cartão. Dentro da lupa,
+      <strong>Comparar</strong> mostra duas ao mesmo tempo, com o mesmo zoom nas duas.
+    </div>
+  {% endif %}
+</section>
+
+{#
+  ENVIAR A FICHA DIGITALIZADA.
+
+  As 3.637 assinaturas do acervo vieram do E-Ofício. Para as firmas NOVAS não
+  havia por onde entrar: a ficha era assinada, digitalizada, e o cartão
+  continuava sem assinatura — que é o mesmo que não ter cartão, porque o
+  reconhecimento por semelhança não tem com o que confrontar.
+#}
+<section class="panel" data-envio-ficha>
+  <div class="panel-head"><span>Enviar ficha digitalizada</span>
+    <span class="small muted">JPG, PNG ou PDF · até 25 MB</span></div>
+
+  <form method="post" enctype="multipart/form-data"
+        action="{{ url_for('notas_cartao_ficha_enviar', cartao_id=c.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <div class="envio-area" data-area>
+      <strong>Arraste os arquivos aqui</strong>
+      <span class="small muted">frente e verso de uma vez, ou um de cada vez —
+        clique para escolher, ou digitalize e cole com <kbd>Ctrl</kbd>+<kbd>V</kbd></span>
+      <input type="file" name="ficha" accept="image/*,application/pdf,.tif,.tiff" multiple
+             style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+    </div>
+
+    {# A FILA. Escolher de novo acrescenta, não substitui: digitalizar a frente,
+       escolher, digitalizar o verso e escolher outra vez é o caminho normal do
+       balcão, porque o scanner faz uma folha por vez. #}
+    <div class="envio-fila" data-fila hidden></div>
+
+    <div class="envio-recado small" data-recado hidden></div>
+
+    <div data-editor hidden>
+      <div class="envio-ferramentas">
+        <button type="button" class="small" data-acao="girar">Girar 90°</button>
+        <label class="small muted" style="display:flex;align-items:center;gap:8px;font-weight:400">
+          endireitar
+          <input type="range" data-angulo min="-15" max="15" step="0.2" value="0" style="width:190px">
+          <span data-angulo-valor style="min-width:46px;font-variant-numeric:tabular-nums">0.0°</span>
+        </label>
+        <button type="button" class="small" data-acao="limpar-corte">Desfazer corte</button>
+        <button type="button" class="small" data-acao="recomecar">Recomeçar</button>
+      </div>
+      <div class="envio-lona"><canvas></canvas></div>
+      <div class="small muted" style="margin-top:6px">
+        Arraste sobre a imagem para cortar só a área da assinatura. O arquivo que
+        você escolheu não é alterado — o corte vale para a cópia que fica no cartão.
+      </div>
+    </div>
+
+    <div class="envio-rodape">
+      <label class="small muted" style="font-weight:400">Firma colhida em
+        <input type="date" name="data_coleta" style="width:160px">
+      </label>
+      <label class="check small" style="font-weight:400">
+        <input type="checkbox" name="favorita" value="1"> usar esta como a do balcão</label>
+      <button class="primary" data-enviar disabled>Guardar no cartão</button>
+    </div>
+  </form>
+</section>
+
+{#
+  FOTOGRAFIA DO CADASTRO.
+
+  A ficha impressa nao muda: foto e digital moram no cartao. Colher e POST
+  /notas/cartoes/<id>/foto, JPEG, pela webcam no Chrome. GET nao grava.
+  Digitais: a colheita tem tela desde 07/09/2026 (relato #39) — o dominio
+  ja existia e nenhuma tela o chamava. O APARELHO NAO E' ESTE SISTEMA: o
+  leitor entrega uma imagem, e o que a tela faz e' guarda-la. Dizer que o
+  sistema «le a digital» seria prometer driver que ele nao tem.
+#}
+<section class="panel" data-captura-foto>
+  <div class="panel-head"><span>Fotografia</span>
+    <span class="small muted">colhida no balcao, pela webcam</span></div>
+  <div style="padding:14px">
+    {% if bio and bio.tem_foto %}
+      <p>
+        <img src="{{ url_for('notas_cartao_foto', cartao_id=c.id) }}"
+             alt="Fotografia de {{ c.nome }}"
+             style="max-height:240px;max-width:320px;border:1px solid #bbb">
+      </p>
+    {% else %}
+      <p class="muted">Ainda sem fotografia neste cadastro.</p>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data"
+          action="{{ url_for('notas_cartao_foto_colher', cartao_id=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <video data-camera autoplay playsinline muted
+             style="max-width:320px;background:#111;display:block"></video>
+      <canvas data-quadro hidden></canvas>
+      <div class="envio-recado small" data-recado hidden></div>
+      <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button type="submit" class="primary" data-colher>Colher</button>
+        <label class="small muted" style="font-weight:400">
+          ou um JPEG
+          <input type="file" name="foto" accept="image/jpeg">
+        </label>
+      </div>
+    </form>
+  </div>
+</section>
+
+{#
+  A DIGITAL DOS DEDOS — relato #39.
+
+  A CASA COLHE QUATRO, E NAO DEZ: polegar e indicador de cada mao. Quem
+  escolheu foi o dominio (`DEDOS_DA_CASA`), e a tela nao inventa um quinto.
+
+  E RECOLHER O MESMO DEDO SUBSTITUI: quem colhe de novo e porque a primeira
+  saiu ruim, e guardar as duas faria a conferencia ter de escolher entre elas.
+#}
+<section class="panel">
+  <div class="panel-head"><span>Digitais</span>
+    <span class="small muted">quatro dedos — polegar e indicador de cada mão</span></div>
+  <div style="padding:14px">
+    <p class="small muted">
+      <strong>DigitalPersona:</strong> a integração direta com o leitor é a
+      próxima etapa. Por enquanto, exporte a imagem pelo programa do aparelho
+      e envie-a no dedo correspondente.
+    </p>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      {% for dedo, nome in dedos.items() %}
+      <div style="text-align:center">
+        <div class="small muted" style="margin-bottom:4px">{{ nome }}</div>
+        {% if bio and dedo in bio.dedos %}
+          <img src="{{ url_for('notas_cartao_digital', cartao_id=c.id, dedo=dedo) }}"
+               alt="Digital do {{ nome }} de {{ c.nome }}"
+               style="height:150px;border:1px solid #bbb;background:#fff">
+        {% else %}
+          <div style="height:150px;width:120px;border:1px dashed #bbb;
+                      display:flex;align-items:center;justify-content:center"
+               class="small muted">sem digital</div>
+        {% endif %}
+        <form method="post" enctype="multipart/form-data" style="margin-top:6px"
+              action="{{ url_for('notas_cartao_digital_colher', cartao_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="dedo" value="{{ dedo }}">
+          <input type="file" name="digital" accept="image/png,image/jpeg"
+                 required style="width:120px" class="small">
+          <button class="small" style="margin-top:4px">
+            {% if bio and dedo in bio.dedos %}Recolher{% else %}Colher{% endif %}</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="small muted" style="margin-top:12px">
+      <strong>O aparelho não é este sistema.</strong> O leitor de digital
+      entrega uma imagem; o que esta tela faz é <strong>guardá-la no
+      cadastro</strong>. Recolher o mesmo dedo substitui o anterior.
+    </p>
+  </div>
+</section>
+
+{#
+  AQUI FICAVA UM SEGUNDO QUADRO «Digitais», QUE DIZIA O CONTRARIO DO DE CIMA.
+
+  Ele era o resto do estado anterior — de quando a colheita do dedo ainda nao
+  tinha tela — e trazia escrito «ainda nao se colhe digital por esta tela»
+  embaixo de um quadro que colhe. Quem lesse a tela inteira encontrava as duas
+  frases, e a de baixo era a que mentia.
+
+  As duas vistas do mesmo fato precisam do mesmo texto: ficou a que faz.
+  Apagado em 15/09/2026, ao escrever a nota do relato #39.
+#}
+<section class="panel">
+  <div class="panel-head"><span>Cadastro</span>
+    <span class="small muted">{{ total_rec }} reconhecimento(s) no acervo</span></div>
+  <div class="grid2" style="padding:14px">
+    <div><small class="muted">CPF/CNPJ</small><div>{{ c.documento or '—' }}
+      {% if doc_valido is false %}<span class="badge alta">dígito não confere</span>{% endif %}</div></div>
+    <div><small class="muted">RG</small><div>{{ c.rg or '—' }} {{ c.rg_orgao or '' }}</div></div>
+    <div><small class="muted">Nascimento</small><div>{{ fmt_date(c.nascimento) if c.nascimento else '—' }}</div></div>
+    <div><small class="muted">Estado civil</small><div>{{ c.estado_civil or '—' }}</div></div>
+    <div><small class="muted">Profissão</small><div>{{ c.profissao or '—' }}</div></div>
+    <div><small class="muted">Nacionalidade</small><div>{{ c.nacionalidade or '—' }}</div></div>
+    <div><small class="muted">Pai</small><div>{{ c.pai or '—' }}</div></div>
+    <div><small class="muted">Mãe</small><div>{{ c.mae or '—' }}</div></div>
+    <div class="span2"><small class="muted">Endereço</small><div>{{ c.endereco or '—' }}
+      {% if c.endereco_numero %}, {{ c.endereco_numero }}{% endif %}
+      {% if c.bairro %} — {{ c.bairro }}{% endif %}
+      {% if c.cidade %} — {{ c.cidade }}/{{ c.uf or '' }}{% endif %}</div></div>
+    <div><small class="muted">Celular</small><div>{{ c.celular or c.telefone or '—' }}</div></div>
+    <div><small class="muted">E-mail</small><div>{{ c.email or '—' }}</div></div>
+    <div><small class="muted">Cartão aberto em</small><div>{{ fmt_date(c.abertura) if c.abertura else '—' }}</div></div>
+    <div><small class="muted">Origem</small><div>{{ c.origem }}{% if c.origem_chave %} · nº {{ c.origem_chave }} no E-Ofício{% endif %}</div></div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Últimos reconhecimentos</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Data</th><th>Espécie</th><th>Selo</th></tr></thead>
+    <tbody>
+    {% for r in recentes %}
+      <tr><td><a href="{{ url_for('notas_reconhecimento_ver', reconhecimento_id=r.id) }}">{{ r.id }}</a></td>
+          <td class="small">{{ fmt_date(r.data) }}</td><td class="small">{{ r.especie }}</td>
+          <td class="small">{{ r.selo or '—' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">Nenhum.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{% if atos %}
+<section class="panel">
+  <div class="panel-head"><span>Atos de livro em que aparece</span></div>
+  <table>
+    <thead><tr><th>Tipo</th><th>Data</th><th>Livro/folha</th><th>Como</th></tr></thead>
+    <tbody>
+    {% for a in atos %}
+      <tr><td>{{ TIPOS_ATO.get(a.tipo, a.tipo) }}</td><td class="small">{{ fmt_date(a.data) }}</td>
+          <td class="small">{{ a.livro or '—' }}/{{ a.folha or '—' }}</td>
+          <td class="small">{{ a.qualificacao or '—' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<details class="panel">
+  <summary>Corrigir cadastro</summary>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2">Nome <input name="nome" value="{{ c.nome }}" required></label>
+    <label>CPF/CNPJ <input name="documento" value="{{ c.documento or '' }}"></label>
+    <label>RG <input name="rg" value="{{ c.rg or '' }}"></label>
+    <label>Órgão <input name="rg_orgao" value="{{ c.rg_orgao or '' }}"></label>
+    <label>Nascimento <input type="date" name="nascimento" value="{{ c.nascimento or '' }}"></label>
+    <label>Nacionalidade <input name="nacionalidade" value="{{ c.nacionalidade or '' }}"></label>
+    <label>Estado civil <input name="estado_civil" value="{{ c.estado_civil or '' }}"></label>
+    <label>Profissão <input name="profissao" value="{{ c.profissao or '' }}"></label>
+    <label>Cônjuge <input name="conjuge" value="{{ c.conjuge or '' }}"></label>
+    <label>Pai <input name="pai" value="{{ c.pai or '' }}"></label>
+    <label>Mãe <input name="mae" value="{{ c.mae or '' }}"></label>
+    <label class="span2">Endereço <input name="endereco" value="{{ c.endereco or '' }}"></label>
+    <label>Número <input name="endereco_numero" value="{{ c.endereco_numero or '' }}"></label>
+    <label>Bairro <input name="bairro" value="{{ c.bairro or '' }}"></label>
+    <label>Cidade <input name="cidade" value="{{ c.cidade or '' }}"></label>
+    <label>UF <input name="uf" value="{{ c.uf or '' }}" size="3"></label>
+    <label>Celular <input name="celular" value="{{ c.celular or '' }}"></label>
+    <label>E-mail <input name="email" type="email" value="{{ c.email or '' }}"></label>
+    <label class="span2">Observação <input name="observacao" value="{{ c.observacao or '' }}"></label>
+    <div class="span2"><button name="acao" value="editar">Guardar</button>
+      <span class="small muted">Toda alteração fica na auditoria.</span></div>
+  </form>
+</details>
+
+<details class="panel">
+  <summary>{{ 'Desbloquear' if c.bloqueado else 'Bloquear' }} este cartão</summary>
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if c.bloqueado %}
+      <p class="small">Bloqueado em {{ c.bloqueado_em }} por {{ c.bloqueado_por }}.
+        Motivo: {{ c.motivo_bloqueio }}</p>
+      <button name="acao" value="desbloquear">Desbloquear</button>
+    {% else %}
+      <label style="display:block">Motivo <input name="motivo" style="width:100%" required></label>
+      <div style="margin-top:10px"><button name="acao" value="bloquear">Bloquear</button>
+        <span class="small muted">Cartão bloqueado continua aparecendo na busca, com aviso.</span></div>
+    {% endif %}
+  </form>
+</details>
+{% endblock %}

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Etiquetas de selos externos — RCPJ e RTD</title>
+<style>
+  @page {
+    size: {{ m.etiqueta_largura_mm }}mm {{ m.etiqueta_altura_mm }}mm;
+    margin: 0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { font-family: "Arial Narrow", Arial, Helvetica, sans-serif; color: #000;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .etiqueta {
+    width: {{ m.etiqueta_largura_mm }}mm;
+    height: {{ m.etiqueta_altura_mm }}mm;
+    padding: {{ m.etiqueta_margem_mm }}mm;
+    transform: translate({{ m.etiqueta_deslocamento_x_mm }}mm,
+                         {{ m.etiqueta_deslocamento_y_mm }}mm);
+    overflow: hidden; display: flex; gap: 2mm;
+    font-size: {{ m.etiqueta_corpo_pt }}pt;
+    line-height: {{ m.etiqueta_entrelinha }};
+    break-after: page; page-break-after: always;
+  }
+  .etiqueta:last-child { break-after: auto; page-break-after: auto; }
+  .conteudo { flex: 1; min-width: 0; display: flex; flex-direction: column;
+              justify-content: space-between; }
+  .cartorio { font-weight: 700; text-transform: uppercase;
+              font-size: {{ (m.etiqueta_corpo_pt * 1.05)|round(2) }}pt;
+              line-height: 1.08; }
+  .titulo { font-weight: 700; margin-top: .4mm; }
+  .detalhe { margin-top: .5mm; white-space: pre-line; }
+  .selo { font-family: Consolas, "Courier New", monospace; font-weight: 700;
+          letter-spacing: -.15px; white-space: nowrap; }
+  .valores { font-family: Consolas, "Courier New", monospace;
+             font-size: {{ (m.etiqueta_corpo_pt * 0.78)|round(2) }}pt;
+             letter-spacing: -.2px; line-height: 1.12; }
+  .qr { flex: 0 0 {{ m.etiqueta_qr_mm }}mm; display: flex;
+        flex-direction: column; justify-content: center; align-items: center;
+        gap: .5mm; }
+  .qr svg { display: block; width: {{ m.etiqueta_qr_mm }}mm;
+            height: {{ m.etiqueta_qr_mm }}mm; }
+  .qr-rotulo { font-size: {{ (m.etiqueta_corpo_pt * 0.62)|round(2) }}pt;
+               text-align: center; line-height: 1.05; }
+  .controles { padding: 18px; font: 14px Segoe UI, Arial, sans-serif;
+               background: #f3f6f8; }
+  .controles button, .controles a { display: inline-block; margin-right: 8px;
+    border: 1px solid #b9c5cd; border-radius: 6px; background: #fff;
+    color: #1d3443; padding: 8px 12px; cursor: pointer; text-decoration: none; }
+  .controles button { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }
+  .aviso-estouro { color: #b42318; font-weight: 600; margin-top: 10px; }
+  .previews { background: #edf1f4; padding: 18px; }
+  .previews .etiqueta { background: #fff; margin-bottom: 14px;
+                        box-shadow: 0 1px 6px rgba(16,24,40,.18); }
+  @media print {
+    .controles { display: none !important; }
+    .previews { padding: 0; background: #fff; }
+    .previews .etiqueta { margin: 0; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="controles">
+  <button type="button" id="imprimir">Imprimir {{ etiquetas|length }} etiqueta(s)</button>
+  <a href="{{ url_for('rcpj_rtd_etiquetas_selos_externos') }}">&larr; Voltar à seleção</a>
+  <span>{{ m.etiqueta_largura_mm|round|int }}&times;{{ m.etiqueta_altura_mm|round|int }} mm · escala 100%</span>
+  <div id="estouro" class="aviso-estouro" hidden></div>
+</div>
+<div class="previews">
+{% for e in etiquetas %}
+  <section class="etiqueta">
+    <div class="conteudo">
+      <div>
+        <div class="cartorio">{{ serventia.unit_name }}</div>
+        <div class="titulo">{{ e.titulo }}</div>
+        {% if e.detalhe %}<div class="detalhe">{{ e.detalhe }}</div>{% endif %}
+      </div>
+      <div>
+        <div class="selo">{{ e.numero }}</div>
+        {% if e.valores %}<div class="valores">{{ e.valores }}</div>{% endif %}
+      </div>
+    </div>
+    {% if e.qr %}
+    <div class="qr">
+      {{ e.qr|safe }}
+      <div class="qr-rotulo">confira o selo<br>selo.tjma.jus.br</div>
+    </div>
+    {% endif %}
+  </section>
+{% endfor %}
+</div>
+<script>
+function etiquetasQueNaoCabem() {
+  return Array.from(document.querySelectorAll(".etiqueta")).filter(function (x) {
+    return x.scrollHeight - x.clientHeight > 1 || x.scrollWidth - x.clientWidth > 1;
+  });
+}
+document.getElementById("imprimir").addEventListener("click", function () {
+  var ruins = etiquetasQueNaoCabem();
+  if (ruins.length) {
+    var aviso = document.getElementById("estouro");
+    aviso.textContent = ruins.length + " etiqueta(s) não cabem na tira. " +
+      "Ajuste as medidas antes de imprimir.";
+    aviso.hidden = false;
+    return;
+  }
+  window.print();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Lote {{ lote.id }} do CCN</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_ccn', ambiente=lote.ambiente) }}">&larr; Cadastro no CCN</a>
+  <a class="button" href="{{ url_for('notas_ccn_arquivo', lote_id=lote.id) }}">Baixar o arquivo ({{ (lote.bytes / 1000000) | round(1) }} MB)</a>
+</div>
+
+<section class="panel">
+  <table>
+    <tr><th>Ambiente</th><td>{{ 'Homologação' if lote.ambiente == 'HOMOLOGACAO' else 'Produção' }} &mdash; <code>{{ host }}</code></td></tr>
+    <tr><th>Situação</th><td><strong>{{ lote.situacao }}</strong>{% if lote.descartado_motivo %} &mdash; {{ lote.descartado_motivo }}{% endif %}</td></tr>
+    <tr><th>Gerado</th><td>{{ lote.gerado_em[:16].replace('T', ' ') }} por {{ lote.gerado_por or '—' }}</td></tr>
+    <tr><th>Pessoas</th><td>{{ lote.quantidade }}</td></tr>
+    <tr><th>Arquivo</th><td><code>{{ lote.arquivo_nome }}</code> &middot; sha256 <code>{{ lote.sha256[:16] }}…</code></td></tr>
+    {% if codigo %}<tr><th>Código de envio</th><td><code style="font-size:1.2em">{{ codigo }}</code>
+      <span class="muted">&mdash; cole na extensão «CG CCN Assistente»</span></td></tr>{% endif %}
+    <tr><th>Importação no CCN</th><td>{{ lote.import_id or '—' }} &middot; {{ lote.import_status or 'ainda não enviada' }}{% if lote.processados is not none %} &middot; {{ lote.processados }} processados, {{ lote.falhas or 0 }} com erro{% endif %}</td></tr>
+    {% if lote.erro %}<tr><th>Erro</th><td>{{ lote.erro }}</td></tr>{% endif %}
+  </table>
+  {% if lote.situacao == 'GERADO' %}
+  <form method="post" action="{{ url_for('notas_ccn_descartar', lote_id=lote.id) }}" style="padding:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Motivo do descarte <input name="motivo" size="50" minlength="10" required></label>
+    <button>Descartar este lote</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Pessoas do lote</h2>
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>Cartão</th><th>Nome</th><th>Situação no CCN</th><th>Erro</th></tr>
+    {% for i in itens %}
+    <tr>
+      <td>{{ i.posicao + 1 }}</td>
+      <td>{{ i.numero or i.cartao_id }}</td>
+      <td>{{ i.nome }}</td>
+      <td>{{ i.situacao }}</td>
+      <td>{{ i.erro or '' }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endblock %}

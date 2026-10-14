@@ -1,0 +1,22 @@
+{% macro resolver(c, matricula_id, csrf_token) %}
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 16px;color:#222">
+{% for decisao,rotulo in [('NAO_E_A_PESSOA','Não é a mesma pessoa'),('ORDEM_BAIXADA','Ordem já baixada')] %}
+<details style="background:#fff;border-radius:5px;padding:8px 12px;max-width:650px">
+  <summary class="button" style="color:#222;background:#fff;cursor:pointer;font-weight:bold">{{ rotulo }}</summary>
+  <form method="post" action="{{ url_for('ri_cnib_resolver', matricula_id=matricula_id) }}" class="stack" style="margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="decisao" value="{{ decisao }}">
+    <input type="hidden" name="protocolo_cnib" value="{{ c.protocolo_cnib }}">
+    <input type="hidden" name="pessoa_nome" value="{{ c.nome }}">
+    <input type="hidden" name="pessoa_documento" value="{{ c.documento or '' }}">
+    <label>{% if decisao == 'NAO_E_A_PESSOA' %}O que comprova que são pessoas diferentes{% else %}Como confirmou a baixa — protocolo, data e consulta ou documento{% endif %}
+      <textarea name="motivo" required minlength="10" rows="3" style="width:100%;color:#222;background:#fff"></textarea>
+    </label>
+    <p class="small">A confirmação resolve somente esta ocorrência nesta matrícula e registra seu nome e o motivo.
+    {% if decisao == 'ORDEM_BAIXADA' %}Confira a baixa na Central ou no documento correspondente antes de confirmar.{% endif %}</p>
+    <button class="primary" type="submit">Confirmar: {{ rotulo|lower }}</button>
+  </form>
+</details>
+{% endfor %}
+</div>
+{% endmacro %}

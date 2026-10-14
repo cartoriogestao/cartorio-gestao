@@ -1,0 +1,419 @@
+{% extends 'base.html' %}
+{% block heading %}
+<h1>Título {{ p.numero }} <span class="small muted">Livro {{ p.livro }} — Protocolo</span></h1>
+{% endblock %}
+
+{% block content %}
+
+{% if p is defined and not (p.selo_prenotacao or "")|trim %}
+<div class="notice warning">
+  <strong>Pendente de selo — o escrevente deve selar.</strong>
+  <form method="post" action="{{ url_for('ri_selar_prenotacao', protocolo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <label>Natureza / título <input name="natureza_titulo" value="{{ p.natureza_titulo or p.objeto or '' }}" required></label>
+    <label>Item TJ <input name="codigo_tj" placeholder="ex.: 16.1"></label>
+    <button class="primary">Selar</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_protocolo') }}">&larr; Protocolo</a>
+  <a class="button" href="{{ url_for('ri_prenotacao_comprovante', protocolo_id=p.id) }}">Comprovante de prenotação</a>
+  {% if p.matricula_id %}
+    <a class="button" href="{{ url_for('ri_ficha', matricula_id=p.matricula_id) }}">Abrir a matrícula</a>
+  {% endif %}
+</div>
+
+{# ================= O TÍTULO APRESENTADO =================
+
+   Relato #25 do oficial: «protocolo precisa permitir anexar documentos e
+   visualizar esses documentos. E o ato em que se vincula a esse determinado
+   protocolo precisa poder visualizar os documentos anexos ao protocolo, até
+   para facilitar a lavratura do ato».
+
+   Os arquivos vão para a mesma tabela `attachments` do expediente e da tarefa.
+   Uma segunda tabela de anexo faria dois lugares para procurar o mesmo papel. #}
+{# REGRESSÃO 15/09/2026 — relato ajuda #60 (Carla): o painel «Documentos do título» NÃO pode ficar em {% block heading %} — heading só tem o <h1> (como as outras telas RI). Painel em heading ia para .page-heading no topbar e quebrava a tela do recibo/comprovante. Fica em {% block content %}, depois da barra de ações. #}
+<section class="panel">
+  <div class="panel-head"><span>Documentos do título</span>
+    <span class="small muted">{{ documentos|length }}
+      anexo{{ '' if documentos|length == 1 else 's' }}</span></div>
+  <div style="padding:14px">
+    {% if documentos %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Arquivo</th><th>Descrição</th><th>Quem enviou</th>
+        <th>Quando</th><th></th></tr></thead>
+      <tbody>
+      {% for d in documentos %}
+        <tr>
+          <td class="small">{{ d.original_name }}</td>
+          <td class="small">{{ d.description or '—' }}</td>
+          <td class="small">{{ d.enviado_por_nome or '—' }}</td>
+          <td class="small">{{ fmt_dt(d.uploaded_at) }}</td>
+          <td class="small"><a class="button"
+             href="{{ url_for('attachment_download', attachment_id=d.id) }}">Abrir</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <p><strong>Nenhum documento anexado a esta prenotação.</strong> O título
+    apresentado, anexado aqui, aparece na tela da matrícula na hora de lavrar
+    o ato &mdash; sem precisar sair do teor para buscá-lo.</p>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" class="grid2"
+          action="{{ url_for('ri_prenotacao_documento', protocolo_id=p.id) }}"
+          style="margin-top:12px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Arquivos<input type="file" name="documento" multiple></label>
+      <label>O que é<input name="descricao"
+             placeholder="escritura de compra e venda, ITBI, certidão…"></label>
+      <div class="actions span2"><button class="primary">Anexar</button>
+        <span class="small muted">Ele fica dentro da pasta de arquivos que o
+          backup já varre.</span></div>
+    </form>
+  </div>
+</section>
+
+{#
+  A SITUAÇÃO PRIMEIRO, e com o prazo junto.
+
+  Prenotação é prioridade de direito (Lei 6.015/73, art. 186): o que importa
+  saber ao abrir a tela é se o título ainda está correndo e quanto falta.
+#}
+<section class="panel">
+  <div class="panel-head">
+    <span>{{ p.situacao }}
+      {% if p.situacao == 'ABERTO' and restam is not none %}
+        {% if restam < 0 %}<span class="badge critica">prazo vencido</span>
+        {% elif restam <= 3 %}<span class="badge alta">faltam {{ restam }} dia(s) úteis</span>
+        {% else %}<span class="badge baixa">faltam {{ restam }} dias úteis</span>{% endif %}
+      {% endif %}
+      {% if prazo_suspenso %}<span class="badge alta">prazo suspenso</span>{% endif %}
+    </span>
+    <span class="small muted">prenotado em {{ fmt_date(p.data_prenotacao) }}
+      {%- if p.data_limite %} · vence em {{ fmt_date(p.data_limite) }}{% endif %}
+      {%- if p.reurb %} · <strong>REURB-S</strong>, e é por isso que o prazo é de
+      40 dias úteis e não de 20{% endif %}</span>
+  {% if p.reurb %}
+  {# A MARCA APARECE PORQUE ELA EXPLICA O PRAZO.
+     A tela de prenotar já perguntava e já calculava os 40 dias — e jogava a
+     resposta fora. O prazo ficava sem dizer por quê, e numa correição a
+     pergunta é exatamente essa: por que este tem 40 e o vizinho tem 20. #}
+  {% endif %}
+  </div>
+
+  {# SUSPENSÃO DO PRAZO — TJMA 452, § 3º. Enquanto suspenso o prazo não corre;
+     ao retomar, o limite avança os dias úteis parados. #}
+  {% if prazo_suspenso %}
+  <div class="notice warning">
+    <strong>Prazo suspenso desde {{ fmt_date(p.prazo_suspenso_desde) }}</strong>
+    — {{ MOTIVOS_SUSPENSAO.get(p.prazo_suspenso_motivo, p.prazo_suspenso_motivo) }}{% if p.prazo_suspenso_por %}, por {{ p.prazo_suspenso_por }}{% endif %}.
+    {% if user.role in ['ADMIN','MANAGER'] %}
+    <form method="post" action="{{ url_for('ri_protocolo_prazo', protocolo_id=p.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="retomar">
+      <button class="button">Retomar a contagem</button>
+    </form>
+    {% endif %}
+  </div>
+  {% elif p.situacao == 'ABERTO' and user.role in ['ADMIN','MANAGER'] %}
+  <details style="margin:8px 0">
+    <summary class="small">Suspender o prazo (dúvida, usucapião, retificação…)</summary>
+    <form method="post" action="{{ url_for('ri_protocolo_prazo', protocolo_id=p.id) }}" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="suspender">
+      <label>Hipótese do TJMA 452, § 3º
+        <select name="motivo" required>
+          {% for chave, rotulo in MOTIVOS_SUSPENSAO.items() %}<option value="{{ chave }}">{{ rotulo }}</option>{% endfor %}
+        </select></label>
+      <div><button class="button">Suspender o prazo</button></div>
+    </form>
+  </details>
+  {% endif %}
+
+  {% if p.reaberto_em %}
+  {# O encerramento desfeito NÃO some da tela. Correição pergunta o que houve,
+     e a resposta tem de estar onde o ato está. #}
+  <div class="notice warning">
+    <strong>Este protocolo foi reaberto.</strong> Estava como
+    <strong>{{ p.situacao_anterior or '—' }}</strong> e voltou a ABERTO em
+    {{ p.reaberto_em[:16].replace('T', ' ') }}, por {{ p.reaberto_por or '—' }}.
+    <br><span class="small">Motivo: {{ p.motivo_reabertura }}</span>
+    <br><span class="small muted">O prazo não foi reiniciado — a prenotação continua
+      correndo desde {{ fmt_date(p.data_prenotacao) }}.</span>
+  </div>
+  {% endif %}
+
+  <div class="grid2" style="padding:4px 0">
+    <div><small class="muted">Apresentante</small>
+      <div>{{ p.apresentante or '—' }}
+        {%- if p.apresentante_documento %} <span class="small muted">· {{ p.apresentante_documento }}</span>{% endif %}</div></div>
+    <div><small class="muted">Natureza do título</small><div>{{ p.natureza_titulo or '—' }}</div></div>
+    <div class="span2"><small class="muted">Objeto</small><div>{{ p.objeto or '—' }}</div></div>
+    <div><small class="muted">Matrícula</small><div>{{ p.matricula_numero or '—' }}
+      {% if p.matricula_numero and not p.matricula_id %}
+        <span class="badge alta">não encontrada no acervo</span>{% endif %}</div></div>
+    <div><small class="muted">Contato</small><div>{{ p.telefone or '—' }}
+      {%- if p.email %} · {{ p.email }}{% endif %}</div></div>
+    {% if p.anotacao %}<div class="span2"><small class="muted">Anotação</small>
+      <div>{{ p.anotacao }}</div></div>{% endif %}
+  </div>
+</section>
+
+{% if p.situacao != 'ABERTO' %}
+{#
+  REABRIR — a razão desta tela existir.
+
+  Um título encerrado por engano é uma prenotação que sumiu do prazo sem ter
+  perdido o prazo. Não adianta "abrir outro": o número de ordem é o que garante
+  a prioridade do direito, e um protocolo novo joga o título para o fim da fila.
+#}
+<section class="panel">
+  <div class="panel-head"><span>Desfazer o encerramento</span>
+    <span class="small muted">para engano de digitação, não para reabrir prazo</span></div>
+  <form method="post" style="padding:6px 0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="display:block">Por que está reabrindo
+      <input name="motivo" style="width:100%" required minlength="10"
+             placeholder="ex.: encerrado por engano — o título 11548 não chegou a ser registrado">
+      <span class="small muted">Mínimo de dez letras. Fica na auditoria e aparece
+        nesta tela — é o que se mostra na correição.</span></label>
+    <div style="margin-top:12px">
+      <button class="primary" name="acao" value="reabrir">Reabrir o protocolo</button>
+      <span class="small muted">O prazo <strong>não</strong> é reiniciado: a prenotação
+        continua correndo desde {{ fmt_date(p.data_prenotacao) }}. Reabrir corrige o
+        engano, não devolve prazo.</span>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+{#
+  DEPÓSITO PRÉVIO — na tela do título, e não só na do caixa.
+
+  É aqui que o apresentante deixa o adiantamento. Obrigar a sair do título,
+  abrir o caixa e procurar o protocolo é um passo que se esquece — e depois
+  ninguém sabe a que título o dinheiro pertencia.
+#}
+<section class="panel">
+  <div class="panel-head"><span>Depósito prévio</span>
+    <span class="small muted">
+      {% if depositos %}saldo disponível neste título: <strong>R$ {{ saldo }}</strong>
+      {% else %}nenhum depósito neste título{% endif %}</span></div>
+
+  {% if depositos %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Data</th><th>Depositante</th><th>Valor</th><th>Saldo</th><th></th></tr></thead>
+    <tbody>
+    {% for d in depositos %}
+      <tr>
+        <td class="small"><strong>{{ d.numero }}</strong></td>
+        <td class="small">{{ fmt_date(d.data) }}</td>
+        <td class="small">{{ d.depositante }}</td>
+        <td class="small">R$ {{ d.valor }}</td>
+        <td class="small">R$ {{ d.saldo }}</td>
+        <td class="small">{% if d.encerrado %}<span class="badge">consumido</span>
+          {% else %}<span class="badge baixa">com saldo</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <div class="small muted" style="padding:8px 0">
+    Para consumir o saldo num protocolo do caixa, use
+    <a href="{{ url_for('caixa_depositos') }}">Depósito prévio</a> no menu Administrativo.
+  </div>
+  {% endif %}
+
+  <form method="post" class="grid2" style="padding:12px 0 0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Valor (R$)
+      <input name="valor" required placeholder="0,00" inputmode="decimal"></label>
+    <label>Forma de pagamento
+      <select name="forma_pagamento">
+        <option>DINHEIRO</option><option>PIX</option><option>CARTAO_DEBITO</option>
+        <option>CARTAO_CREDITO</option><option>TRANSFERENCIA</option><option>CHEQUE</option>
+      </select></label>
+    <label>Depositante
+      <input name="depositante" value="{{ p.apresentante or '' }}"
+             placeholder="em branco, usa o apresentante"></label>
+    <label>CPF/CNPJ do depositante
+      <input name="depositante_documento" value="{{ p.apresentante_documento or '' }}"></label>
+    <label class="span2">Observação
+      <input name="observacao"
+             placeholder="em branco, anota que é do título {{ p.numero }}/{{ p.livro }}"></label>
+    <div class="span2">
+      <button class="primary" name="acao" value="deposito">Registrar depósito</button>
+      <span class="small muted">Entra no caixa do dia do operador. Não havendo caixa
+        aberto, o depósito é gravado assim mesmo e a tela avisa — o dinheiro entrou,
+        e perder o registro seria pior.</span>
+    </div>
+  </form>
+</section>
+
+{#
+  EMOLUMENTOS E ORÇAMENTO — sugestão #89 (Beatriz, 21/09/2026): trazer o
+  cálculo para dentro da prenotação. A tabela TJMA e a quitação continuam no
+  protocolo de caixa (`cx_protocolos.ri_protocolo_id`); aqui fica o painel na
+  prenotação, com resumo, atalho e emissão do orçamento — sem duplicar a tela
+  inteira do balcão nesta passada.
+#}
+<section class="panel" id="emolumentos-orcamento">
+  <div class="panel-head"><span>Emolumentos e orçamento</span>
+    <span class="small muted">
+      {% if caixa_ligado %}protocolo de caixa {{ caixa_ligado.numero }}
+      {% else %}sem protocolo de caixa vinculado{% endif %}</span></div>
+  <div style="padding:14px">
+    {% if caixa_ligado %}
+    <p class="small muted">Os serviços e fundos ficam no protocolo
+      <strong>{{ caixa_ligado.numero }}</strong>, ligado a este título pela
+      coluna <code>ri_protocolo_id</code>. O lavrar e a certidão acham estes
+      itens sozinhos quando a ponte está preenchida.</p>
+    {% if caixa_atos %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Ato</th><th>Descrição</th><th>Qtd</th><th>Total</th></tr></thead>
+      <tbody>
+      {% for a in caixa_atos %}
+        <tr>
+          <td class="small">{{ a.codigo_ato or '—' }}</td>
+          <td class="small">{{ a.descricao or '—' }}</td>
+          <td class="small">{{ a.quantidade or 1 }}</td>
+          <td class="small">R$ {{ a.valor_total or '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% if caixa_soma and caixa_soma.total %}
+    <p><strong>Total orçado:</strong> R$ {{ caixa_soma.total }}</p>
+    {% endif %}
+    <div class="actions" style="margin-top:10px">
+      <a class="button primary"
+         href="{{ url_for('caixa_orcamento', protocolo_id=caixa_protocolo_id) }}">
+        Emitir orçamento / cálculo de emolumentos</a>
+      <a class="button"
+         href="{{ url_for('caixa_protocolo', protocolo_id=caixa_protocolo_id) }}">
+        Acrescentar ou quitar serviços</a>
+    </div>
+    {% else %}
+    <p><strong>Ainda não há serviços neste protocolo.</strong> Sem itens não
+      há o que orçar — a mesma regra do balcão (#90).</p>
+    <div class="actions" style="margin-top:8px">
+      <a class="button primary"
+         href="{{ url_for('caixa_protocolo', protocolo_id=caixa_protocolo_id) }}#acrescentar-item">
+        Acrescentar serviços</a>
+    </div>
+    {% endif %}
+    {% else %}
+    <p>Neste título ainda não existe protocolo de caixa com
+      <code>ri_protocolo_id</code> apontando para esta prenotação. O depósito
+      prévio acima já fica ligado ao título; para orçar emolumentos, abra o
+      protocolo de caixa da prenotação — ele nasce já vinculado.</p>
+    <form method="post" style="margin-top:10px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="primary" name="acao" value="abrir_caixa">
+        Abrir protocolo de caixa deste título</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+{#
+  A QUALIFICAÇÃO — 12/10/2026, pedido do oficial («saber o que está pendente
+  de qualificação e o que está pendente de registro»). A positiva grava aqui;
+  a negativa É a nota devolutiva, que tem tela própria e grava a qualificação
+  junto. A etapa sai do que está gravado — ver o painel dos pedidos.
+#}
+<section class="panel" id="qualificacao">
+  <div class="panel-head"><span>Qualificação</span>
+    <span class="small muted">etapa: <strong>{{ ROTULO_DA_ETAPA.get(etapa_do_pedido, etapa_do_pedido) }}</strong>
+      · <a href="{{ url_for('ri_pedidos') }}">painel dos pedidos</a></span></div>
+  {% if qualificacoes %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Ordem</th><th>Data</th><th>Resultado</th><th>Quem</th><th>Fundamentação</th></tr></thead>
+    <tbody>
+    {% for qq in qualificacoes %}
+      <tr><td class="small">{{ qq.ordem }}ª</td>
+          <td class="small">{{ fmt_date(qq.data_qualificacao) }}</td>
+          <td class="small">{% if qq.resultado == 'POSITIVA' %}<span class="badge baixa">positiva</span>
+            {% else %}<span class="badge alta">negativa</span>{% endif %}</td>
+          <td class="small">{{ qq.qualificada_por or '—' }}</td>
+          <td class="small">{{ qq.fundamentacao or ('nota devolutiva' if qq.nota_id else '—') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="small muted" style="padding:6px 0">Nenhuma qualificação registrada ainda.</p>
+  {% endif %}
+  {% if p.situacao == 'ABERTO' and not p.ato_id and user.role in ['ADMIN','MANAGER','USER'] %}
+  <div class="grid2" style="padding:6px 0">
+    <form method="post" action="{{ url_for('ri_qualificar', protocolo_id=p.id) }}" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Fundamentação (opcional)
+        <input name="fundamentacao" placeholder="ex.: título em ordem; ITBI quitado; matrícula confere"></label>
+      <button class="primary">Qualificação positiva — apto para registro</button>
+    </form>
+    <div>
+      <a class="button" href="{{ url_for('ri_nota_devolutiva', protocolo_id=p.id) }}">Qualificação negativa — emitir nota devolutiva</a>
+      <p class="small muted">A nota devolutiva registra a qualificação negativa junto, e o
+        título passa a «em exigência» enquanto a prenotação corre.</p>
+    </div>
+  </div>
+  {% endif %}
+</section>
+
+{% if notas %}
+<section class="panel">
+  <div class="panel-head"><span>Notas devolutivas</span>
+    <span class="small muted"><a href="{{ url_for('ri_nota_devolutiva', protocolo_id=p.id) }}">abrir as notas e o reingresso</a></span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Data</th><th>Situação</th><th>Reingresso</th></tr></thead>
+    <tbody>
+    {% for n in notas %}
+      <tr><td class="small">{{ n.numero }}</td><td class="small">{{ fmt_date(n.data_nota) }}</td>
+          <td class="small">{{ n.situacao }}</td>
+          <td class="small">{{ fmt_date(n.data_reingresso) if n.data_reingresso else '—' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+<details class="panel">
+  <summary>Corrigir os dados do título</summary>
+  <div class="notice small">
+    Correção de dado do protocolo. O que estava escrito antes fica na auditoria —
+    o registro não se apaga, se documenta.
+  </div>
+  <form method="post" class="grid2" style="padding:6px 0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for campo, rotulo in campos %}
+      <label{% if campo in ('objeto', 'anotacao') %} class="span2"{% endif %}>{{ rotulo }}
+        <input name="{{ campo }}" value="{{ p[campo] or '' }}"></label>
+    {% endfor %}
+    <div class="span2">
+      <button name="acao" value="editar">Guardar correção</button>
+      <span class="small muted">O número de ordem, o livro e a data da prenotação não
+        se corrigem por aqui: são o que dá prioridade ao título.</span>
+    </div>
+  </form>
+</details>
+
+{% if historico %}
+<details class="panel">
+  <summary>Histórico deste protocolo ({{ historico|length }})</summary>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Detalhe</th></tr></thead>
+    <tbody>
+    {% for h in historico %}
+      <tr><td class="small">{{ (h.ts or '')[:16].replace('T', ' ') }}</td>
+          <td class="small">{{ h.quem or '—' }}</td>
+          <td class="small">{{ h.action }}</td>
+          <td class="small" style="word-break:break-word">{{ (h.details or '')[:220] }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</details>
+{% endif %}
+{% endblock %}

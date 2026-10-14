@@ -1,0 +1,282 @@
+"""
+Usucapião extrajudicial — o processo, como processo.
+
+POR QUE ISTO NAO E UM MODELO DE TEXTO
+    `REVISAO_MODULO_RI.md`, secao 3: "estes nao se resolvem com um modelo de
+    texto. Sao fluxos com prazo, notificacao e decisao". O usucapiao
+    extrajudicial e o maior deles — pode levar meses, passa por notificacao de
+    confrontante, ciencia a tres entes publicos, edital, diligencia e termina
+    numa DECISAO FUNDAMENTADA do oficial.
+
+    Guardar isso como um ato com teor perderia justamente o que importa: onde
+    o processo esta, o que falta, que prazo corre e o que ja foi respondido.
+
+O DESENHO VEM DO PROCESSO JUDICIAL ELETRONICO, e de proposito
+    Quem trabalha em cartorio ja leu autos eletronicos, e a forma e conhecida:
+
+      AUTUACAO       o processo nasce com numero e partes
+      PECAS          cada documento juntado, com data, tipo e quem juntou
+      MOVIMENTOS     o andamento, em ordem, sem apagar nada
+      PRAZOS         o que corre, de quando, e quando vence
+      CONCLUSAO      os autos vao ao oficial para decidir
+      DECISAO        a peca que resolve — e que aqui e do OFICIAL, nao do juiz
+
+    A diferenca de um processo judicial e uma so, e e a que muda tudo: aqui
+    quem decide e o registrador, e a decisao dele e registravel. Por isso a
+    decisao tem modelo, fundamento e assinatura — nao e despacho.
+
+AS CINCO MODALIDADES SAO DO ACERVO
+    `tb_natureza_ata_notarial_usucapiao`, do E-Oficio: Ordinaria,
+    Extraordinaria, Especial Rural, Especial Urbana e Especial Familiar. Sao
+    os nomes que o TJMA reconhece na ata notarial, e nao uma lista minha.
+
+O QUE SE GUARDA E O QUE NAO SE GUARDA
+    O ARQUIVO em si nao entra no banco: entra o caminho, o sha256 e o tamanho,
+    como as fichas digitalizadas do RI ja fazem. Banco que guarda PDF vira
+    banco que nao cabe no backup diario.
+
+FUNDAMENTO
+    Lei 6.015/1973, art. 216-A — o rito do usucapiao extrajudicial.
+    Codigo de Normas do Foro Extrajudicial do Maranhao — Provimento TJMA n. 28,
+        de 23/04/2026, arts. 747 a 761.
+    Provimento CNJ n. 65/2017.
+
+    Como no resto do sistema: onde o artigo nao foi lido em fonte primaria,
+    cita-se a FAIXA. As etapas abaixo saem de `REVISAO_MODULO_RI.md`, que
+    listou o que este procedimento tem de controlar: "ata notarial, anuencias,
+    notificacoes, edital, prazos, decisao do oficial".
+"""
+from __future__ import annotations
+
+import sqlite3
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS us_processos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero TEXT NOT NULL,                   -- o número dos autos nesta casa
+    ano INTEGER,
+    modalidade TEXT NOT NULL,               -- ver usucapiao.MODALIDADES
+    etapa TEXT NOT NULL DEFAULT 'AUTUACAO', -- ver usucapiao.ETAPAS
+    situacao TEXT NOT NULL DEFAULT 'EM_ANDAMENTO',
+
+    requerente_nome TEXT,
+    requerente_documento TEXT,
+    advogado_nome TEXT,
+    advogado_oab TEXT,
+
+    -- O imóvel. `matricula_id` só existe quando já há matrícula; usucapião de
+    -- imóvel não matriculado é caso comum, e por isso o campo aceita nulo e há
+    -- a descrição por extenso ao lado.
+    matricula_id INTEGER REFERENCES ri_matriculas(id),
+    imovel_descricao TEXT,
+    imovel_area TEXT,
+    imovel_endereco TEXT,
+    imovel_municipio TEXT,
+    imovel_uf TEXT,
+    valor_centavos INTEGER,
+
+    prenotacao TEXT,
+    protocolo_id INTEGER,
+
+    -- A ata notarial é o documento que abre o rito (art. 216-A, caput).
+    ata_notarial_livro TEXT,
+    ata_notarial_folha TEXT,
+    ata_notarial_data TEXT,
+    ata_notarial_cartorio TEXT,
+
+    posse_inicio TEXT,                      -- desde quando se alega a posse
+    posse_tempo_alegado TEXT,
+
+    observacao TEXT,
+    criado_em TEXT NOT NULL,
+    criado_por TEXT,
+    atualizado_em TEXT,
+    encerrado_em TEXT,
+    UNIQUE(numero)
+);
+
+CREATE INDEX IF NOT EXISTS ix_us_proc_etapa ON us_processos(etapa, situacao);
+CREATE INDEX IF NOT EXISTS ix_us_proc_requerente
+    ON us_processos(requerente_documento);
+
+-- ------------------------------------------------------------ as peças
+--
+-- O documento juntado. O ARQUIVO fica em disco; aqui fica o caminho e o
+-- sha256 — banco que guarda PDF não cabe no backup diário.
+
+CREATE TABLE IF NOT EXISTS us_pecas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    processo_id INTEGER NOT NULL REFERENCES us_processos(id),
+    tipo TEXT NOT NULL,                     -- ver usucapiao.TIPOS_DE_PECA
+    descricao TEXT,
+    nome_arquivo TEXT,
+    caminho TEXT,
+    sha256 TEXT,
+    bytes INTEGER,
+    paginas INTEGER,
+    -- O teor em texto, quando houver. É ele que vai no relatório:
+    -- mandar o PDF seria mandar o que ela não lê tão bem quanto o texto.
+    teor TEXT,
+    juntada_em TEXT NOT NULL,
+    juntada_por TEXT,
+    conferida INTEGER NOT NULL DEFAULT 0,
+    conferida_em TEXT,
+    conferida_por TEXT,
+    observacao TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_us_pecas_processo ON us_pecas(processo_id, tipo);
+
+-- --------------------------------------------------------- os movimentos
+--
+-- O andamento, em ordem e sem apagar nada — como nos autos eletrônicos. Um
+-- movimento pode abrir prazo; quando abre, `prazo_dias` e `prazo_fim` dizem
+-- qual e até quando.
+
+CREATE TABLE IF NOT EXISTS us_movimentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    processo_id INTEGER NOT NULL REFERENCES us_processos(id),
+    tipo TEXT NOT NULL,                     -- ver usucapiao.TIPOS_DE_MOVIMENTO
+    etapa TEXT,                             -- a etapa em que o processo estava
+    descricao TEXT NOT NULL,
+
+    -- Quando o movimento é dirigido a alguém: notificação, ciência, edital.
+    destinatario TEXT,
+    destinatario_papel TEXT,                -- CONFRONTANTE, UNIAO, ESTADO...
+
+    prazo_dias INTEGER,
+    prazo_inicio TEXT,
+    prazo_fim TEXT,
+    prazo_uteis INTEGER NOT NULL DEFAULT 0,
+    respondido_em TEXT,
+    resposta TEXT,                          -- ANUIU | IMPUGNOU | SILENCIO
+    resposta_teor TEXT,
+
+    data_movimento TEXT NOT NULL,
+    criado_em TEXT NOT NULL,
+    criado_por TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_us_mov_processo
+    ON us_movimentos(processo_id, data_movimento);
+CREATE INDEX IF NOT EXISTS ix_us_mov_prazo
+    ON us_movimentos(prazo_fim, respondido_em);
+
+-- ---------------------------------------------------------- a conferência
+--
+-- O checklist. Cada item é uma exigência do rito; o estado dele diz se está
+-- cumprida, dispensada (com motivo) ou pendente.
+--
+-- POR QUE GRAVAR O CHECKLIST, e não calculá-lo sempre
+--     Porque a dispensa é decisão do oficial e tem motivo escrito. Calcular
+--     do zero apagaria a dispensa a cada abertura de tela.
+
+CREATE TABLE IF NOT EXISTS us_conferencia (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    processo_id INTEGER NOT NULL REFERENCES us_processos(id),
+    item TEXT NOT NULL,                     -- chave de usucapiao.CHECKLIST
+    estado TEXT NOT NULL DEFAULT 'PENDENTE',-- PENDENTE | CUMPRIDO | DISPENSADO
+    motivo TEXT,                            -- obrigatório para dispensar
+    anotacao TEXT,
+    atualizado_em TEXT NOT NULL,
+    atualizado_por TEXT,
+    UNIQUE(processo_id, item)
+);
+
+-- ------------------------------------------------------------- a decisão
+--
+-- A peça que resolve, e que aqui é do OFICIAL — não é despacho de juiz. Por
+-- isso tem modelo, fundamento e o nome de quem assina.
+
+CREATE TABLE IF NOT EXISTS us_decisoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    processo_id INTEGER NOT NULL REFERENCES us_processos(id),
+    sentido TEXT NOT NULL,                  -- ver usucapiao.SENTIDOS
+    modelo TEXT,                            -- qual modelo serviu de base
+    fundamento TEXT NOT NULL,
+    teor TEXT NOT NULL,
+    -- Quando a decisão vira registro, aqui fica o ato que ela gerou.
+    ato_id INTEGER REFERENCES ri_atos(id),
+    selo TEXT,
+    decidida_em TEXT NOT NULL,
+    decidida_por TEXT,
+    -- A decisão é imutável depois de assinada: retratar-se é decidir de novo,
+    -- com nova linha, e não editar a anterior.
+    assinada_em TEXT,
+    assinada_por TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_us_dec_processo ON us_decisoes(processo_id);
+
+-- ------------------------------------ o parecer de qualificação recebido
+--
+-- O relatório sai daqui para quem vai opinar sobre a qualificação — advogado,
+-- assessoria, outra serventia ou ferramenta —, e o parecer
+-- volta para cá. Guardar os dois lados é o que permite conferir depois o que
+-- a máquina disse e o que o oficial fez com aquilo.
+--
+-- A ANÁLISE NÃO É DECISÃO, E O ESQUEMA IMPÕE ISSO
+--     `us_analises` não tem campo de sentido nem de registro. Ela ACONSELHA;
+--     quem decide é o oficial, em `us_decisoes`, e a decisão referencia a
+--     análise que leu — nunca o contrário.
+
+CREATE TABLE IF NOT EXISTS us_analises (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    processo_id INTEGER NOT NULL REFERENCES us_processos(id),
+    origem TEXT NOT NULL DEFAULT 'IA_EXTERNA',
+    ferramenta TEXT,                        -- de quem veio o parecer, e quando
+    -- O que foi mandado: guardado para se poder repetir a pergunta e conferir
+    -- que ela não mudou entre uma análise e outra.
+    dossie_sha256 TEXT,
+    dossie_pecas INTEGER,
+    parecer TEXT,                           -- o texto que voltou
+    achados_json TEXT,                      -- lista estruturada, quando vier
+    recebida_em TEXT NOT NULL,
+    recebida_por TEXT,
+    conferida_por_humano INTEGER NOT NULL DEFAULT 0,
+    conferida_em TEXT,
+    observacao TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_us_analises_processo ON us_analises(processo_id);
+"""
+
+# OS CAMPOS QUE FALTAVAM PARA A NOTIFICACAO SER UM ATO PRATICADO — relato #30
+# do oficial, 30/08/2026: «campo para subir as informacoes necessarias aos atos
+# que o cartorio precisara praticar, como as notificacoes».
+#
+#   A notificacao **ja existia como movimento**: `us_movimentos` guardava o
+#   destinatario, o papel dele, o prazo e a resposta. O que nao existia era o
+#   que faz dela um ato praticado — e sao tres coisas.
+#
+#   `endereco`: a norma da **tres lugares possiveis** (art. 598, § 1º) e o
+#   sistema nao guardava nenhum. Quem fosse expedir teria de ir procurar, e
+#   quem conferisse depois nao saberia para onde o papel foi.
+#
+#   `forma` e `tentativa`: sao **quatro formas, em ordem**, e o edital so cabe
+#   «caso frustradas as tentativas anteriores». **Sem registrar a tentativa,
+#   ninguem prova que as anteriores se frustraram** — e o edital custa, demora,
+#   e sem essa prova ele e nulo.
+#
+#   `resultado_da_entrega` e `entregue_em`: notificacao expedida nao e
+#   notificacao recebida, e o prazo conta **do recebimento**. Guardar so a
+#   expedicao faria o prazo comecar no dia errado, para menos — que e o lado
+#   caro do erro, porque produz anuencia por silencio de quem ainda podia
+#   impugnar.
+MIGRACOES: tuple[tuple[str, str, str], ...] = (
+    ("us_movimentos", "endereco", "TEXT"),
+    ("us_movimentos", "forma", "TEXT"),
+    ("us_movimentos", "tentativa", "INTEGER"),
+    ("us_movimentos", "resultado_da_entrega", "TEXT"),
+    ("us_movimentos", "entregue_em", "TEXT"),
+    ("us_movimentos", "teor_expedido", "TEXT"),
+)
+
+
+def init_us_schema(con: sqlite3.Connection) -> None:
+    """Cria as tabelas do usucapião. Idempotente. Chamar DEPOIS do `ri_schema`."""
+    con.executescript(SCHEMA)
+    for tabela, coluna, tipo in MIGRACOES:
+        existentes = {linha[1] for linha in con.execute(f"PRAGMA table_info({tabela})")}
+        if coluna not in existentes:
+            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")

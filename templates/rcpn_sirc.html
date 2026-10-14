@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+{% block title %}Remessa do SIRC{% endblock %}
+{% block content %}
+<h1>Remessa do SIRC</h1>
+
+<div class="alerta danger">
+  <p><strong>É o prazo mais curto desta casa: {{ norma.PRAZO_DIAS_UTEIS }} dia
+     útil</strong> <span class="small muted">({{ norma.ARTIGO }})</span>.</p>
+  <p class="small">{{ norma.SANCAO }}</p>
+</div>
+
+<div class="card">
+  <p>O SIRC recebe <strong>sete coisas</strong> — mais do que qualquer outra
+     central:</p>
+  <p>{% for x in norma.O_QUE_VAI %}<strong>{{ x.nome }}</strong>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  <p class="small muted">
+    A averbação, a anotação e a retificação vão junto — e é isso que liga esta
+    remessa ao módulo de anotações. Municípios sem provedor de internet têm
+    {{ norma.PRAZO_SEM_INTERNET_DIAS_UTEIS }} dias úteis (§ 1º); e
+    <strong>mês sem registro nenhum também se comunica</strong>, até o
+    {{ norma.PRAZO_DA_INEXISTENCIA_DIAS_UTEIS }}º dia útil do mês seguinte
+    (§ 3º).
+  </p>
+</div>
+
+{# **O NÚMERO PEQUENO PRECISA DIZER POR QUE É PEQUENO — relato do oficial em
+   13/09/2026: "remessa sirc não aparece todos registros do sistema para
+   envio".** A lista caiu de milhares (o acervo importado inteiro) para
+   poucos depois do conserto de 13/09 — e é o número CERTO: o SIRC conta o
+   prazo do REGISTRO, e o acervo (E-Ofício, arquivo) foi registrado há
+   décadas, antes de o SIRC existir. É a mesma regra da carga da CRC, ao
+   contrário: lá o número grande é o esperado porque é carga de histórico;
+   aqui o número pequeno é o esperado porque é só o que se registrou agora.
+   **O lote em .docx (IMPORTACAO) não fica de fora — ele vai pela carga do
+   acervo, logo abaixo**, decisão do oficial em 14/09/2026: o SIRC nunca o
+   recebeu, porque o E-Ofício nunca o enviou. #}
+{% if do_acervo %}
+<div class="card">
+  <p class="small muted">
+    <strong>{{ do_acervo }} assento(s) do acervo ficam de fora desta
+    lista</strong> — vieram do E-Ofício ou de arquivo, e foram registrados há
+    décadas: o prazo do SIRC conta do <em>registro</em>, e mandá-los agora
+    pela remessa do dia seria afirmar que aconteceram hoje. Só entra aqui o
+    que <strong>este sistema</strong> registrou.
+  </p>
+</div>
+{% endif %}
+
+{# **A CARGA DO ACERVO EM .DOCX — decisão do oficial em 14/09/2026.** O
+   número grande AQUI é o esperado, ao contrário da lista de baixo: é
+   justamente a subida do que nunca foi enviado. Mesma lógica da carga da
+   CRC, mesmo envelope da remessa — só a fonte dos assentos muda. #}
+{% if carga %}
+<div class="panel" style="border-left:4px solid var(--warning)">
+  <h2 style="margin-top:0">Carga do acervo em .docx ({{ carga|length }})</h2>
+  <p class="small muted">
+    <strong>Um número grande aqui é o esperado, e não atraso</strong> — é a
+    subida do lote que o E-Ofício nunca enviou ao SIRC (papel antigo,
+    digitado agora). Não tem o prazo de 1 dia útil da remessa acima: é
+    carga de histórico, uma vez só.
+  </p>
+  {% if montado_carga.quantos %}
+  <p><strong>{{ montado_carga.lotes|length }} arquivo(s)</strong>, no mesmo
+     limite de {{ norma.MAXIMO_DE_REGISTROS }} registros e
+     {{ norma.MAXIMO_DE_BYTES // 1024 }} KB por arquivo.</p>
+  <p>
+  {% for x in montado_carga.lotes %}
+    <form method="post"
+          action="{{ url_for('rcpn_sirc_carga_arquivo', lote=x.numero) }}"
+          style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button">Baixar o lote {{ x.numero }}{% if x.especie %} — {{ x.especie|title }}{% endif %} ({{ x.quantos }} registros,
+        {{ x.bytes }} bytes)</button>
+    </form>
+  {% endfor %}
+  </p>
+  {% for x in montado_carga.lotes %}
+    {% for aviso in x.avisos %}
+      <p class="danger small">Lote {{ x.numero }}: {{ aviso }}</p>
+    {% endfor %}
+    {% if not x.cabe %}
+      <p class="danger small">O lote {{ x.numero }} passou de
+         {{ norma.MAXIMO_DE_BYTES // 1024 }} KB e a Dataprev recusaria o arquivo
+         inteiro.</p>
+    {% endif %}
+  {% endfor %}
+  {% else %}
+  <p class="danger"><strong>Nenhum arquivo pronto para baixar ainda.</strong>
+     O mesmo motivo da remessa acima: o envelope de cada espécie precisa
+     estar medido contra o XSD antes de sair.</p>
+  {% endif %}
+
+  {% if montado_carga.retidos %}
+  <p class="danger"><strong>{{ montado_carga.retidos|length }} ficaram de
+     fora da carga</strong>, e nenhum some calado.</p>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Quem</th><th>O quê</th><th>Por que ficou retido</th>
+                <th></th></tr></thead>
+      <tbody>
+      {% for x in montado_carga.retidos %}
+        <tr>
+          <td>{{ x.nome or '—' }}</td>
+          <td class="small">{{ x.tipo }}</td>
+          <td class="small">{% for f in x.faltas %}{{ f }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+          <td>{% if x.assento_id %}<a class="button secondary"
+                href="{{ url_for('rcpn_assento', assento_id=x.assento_id) }}"
+                >abrir e corrigir</a>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<h2>Esperando remessa ({{ devendo|length }})</h2>
+
+{% if devendo %}
+{% if montado.quantos %}
+<div class="card">
+  <p><strong>{{ montado.lotes|length }} arquivo(s)</strong>, porque o SIRC aceita no
+     máximo <strong>{{ norma.MAXIMO_DE_REGISTROS }} registros</strong> e
+     <strong>{{ norma.MAXIMO_DE_BYTES // 1024 }} KB</strong> por arquivo, com
+     <strong>{{ norma.INTERVALO_MINIMO_SEGUNDOS }} segundos</strong> entre um
+     envio e outro.</p>
+  <p class="small muted">Não é detalhe de transporte: estourar o teto não faz a
+     Dataprev aceitar 250 e recusar o resto — ela recusa o arquivo inteiro.</p>
+
+  <form method="post" action="{{ url_for('rcpn_sirc_arquivo', lote=1) }}"
+        style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="small">Competência
+      <input type="text" name="competencia" placeholder="2026-08" size="8">
+    </label>
+  </form>
+  <p>
+  {% for x in montado.lotes %}
+    <form method="post" action="{{ url_for('rcpn_sirc_arquivo', lote=x.numero) }}"
+          style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button" title="XML puro — para conferir, ou para colar no caminho por senha">Baixar o lote {{ x.numero }}{% if x.especie %} — {{ x.especie|title }}{% endif %} ({{ x.quantos }} registros,
+        {{ x.bytes }} bytes)</button>
+    </form>
+    {# **O `.mrc` É PARA O UPLOAD MANUAL NO SIRC-WEB, E NÃO O `.xml`** —
+       achado em 14/09/2026, quando a API recusou a credencial e o
+       oficial decidiu tentar a importação manual: o SIRC-Web (seção 3.4
+       do manual) só aceita o arquivo comprimido (GZIP) e cifrado (AES,
+       chave = MD5 do CNS sem zeros à esquerda), com extensão `.mrc`. O
+       `.xml` cru acima seria recusado no upload — ele serve para
+       conferência e para o caminho por senha, que recebe texto puro. #}
+    <form method="post" action="{{ url_for('rcpn_sirc_arquivo_mrc', lote=x.numero) }}"
+          style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button secondary" title="Comprimido e cifrado — o formato que o SIRC-Web aceita no upload">Baixar o lote {{ x.numero }} para upload manual (.mrc)</button>
+    </form>
+    {# **O ENVIO PELA API — construído em 14/09/2026, junto com
+       `sirc_cliente.py`.** É o caminho por usuário e senha, sem A3 (ver
+       `sirc_api_nao_exige_a3` na memória do projeto); sem a credencial
+       informada em Administrativo → Configurações, o botão devolve a
+       explicação de onde informá-la, em vez de estourar. #}
+    <form method="post" action="{{ url_for('rcpn_sirc_arquivo_validar', lote=x.numero) }}"
+          style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button secondary" title="Confere o lote na Central, sem enviar de verdade">Validar o lote {{ x.numero }} na API</button>
+    </form>
+    <form method="post" action="{{ url_for('rcpn_sirc_arquivo_enviar', lote=x.numero) }}"
+          style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button" title="Manda o lote de verdade, pela API do SIRC">Enviar o lote {{ x.numero }} pela API</button>
+    </form>
+  {% endfor %}
+  </p>
+
+  {% for x in montado.lotes %}
+    {% for aviso in x.avisos %}
+      <p class="danger small">Lote {{ x.numero }}: {{ aviso }}</p>
+    {% endfor %}
+    {% if not x.cabe %}
+      <p class="danger small">O lote {{ x.numero }} passou de
+         {{ norma.MAXIMO_DE_BYTES // 1024 }} KB e a Dataprev recusaria o arquivo
+         inteiro.</p>
+    {% endif %}
+  {% endfor %}
+</div>
+{% else %}
+{# **NASCIMENTO, CASAMENTO, ÓBITO, NATIMORTO E OS TRÊS ATOS (averbação/
+   anotação/retificação, como Alteração — seção 6.1 do manual) JÁ TÊM
+   ENVELOPE CONSTRUÍDO E VALIDADO CONTRA O XSD DA DATAPREV.** Chegar aqui
+   com `montado.quantos == 0` quer dizer que os pendentes de hoje falharam
+   por outro motivo (matrícula ausente, nome faltando…) — a tabela de
+   baixo lista cada um com o motivo, e não é mais «espécie sem envelope». #}
+<div class="card">
+  <p class="danger"><strong>Nenhum arquivo pronto para baixar ainda.</strong>
+     Todas as espécies do art. 225 já têm envelope construído contra o
+     XSD do manual — os pendentes de hoje ficaram retidos por outro
+     motivo (matrícula, nome, data…). Mandar o registro errado é pior que
+     não mandar; os pendentes abaixo estão todos retidos, com o motivo de
+     cada um.</p>
+</div>
+{% endif %}
+
+{% if montado.retidos %}
+<div class="card">
+  <p class="danger"><strong>{{ montado.retidos|length }} ficaram de fora</strong>,
+     e nenhum some calado. O § 4º pune <strong>o fornecimento de informação
+     inexata</strong> com a penalidade do art. 92 da Lei nº 8.212/1991 e ação
+     regressiva do INSS: mandar errado é pior que não mandar.</p>
+  <table>
+    <thead><tr><th>Quem</th><th>O quê</th><th>Por que ficou retido</th>
+              <th></th></tr></thead>
+    <tbody>
+    {% for x in montado.retidos %}
+      <tr>
+        <td>{{ x.nome or '—' }}</td>
+        <td class="small">{{ x.tipo }}</td>
+        <td class="small">{% for f in x.faltas %}{{ f }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+        {# O CAMINHO PARA O CONSERTO — relato #13. E ele leva ao ASSENTO, que e
+           onde o campo se preenche, mesmo quando o retido e um ato. #}
+        <td>{% if x.assento_id %}<a class="button secondary"
+              href="{{ url_for('rcpn_assento', assento_id=x.assento_id) }}"
+              >abrir e corrigir</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<table>
+  <thead><tr><th>Data</th><th>Tipo</th><th>Nome</th><th>Nº</th><th>O quê</th></tr></thead>
+  <tbody>
+  {% for x in devendo[:250] %}
+    <tr>
+      <td class="small">{{ x.data_ato or '—' }}</td>
+      <td class="small">{{ x.tipo }}</td>
+      <td>{{ x.nome }}</td>
+      <td class="small">{{ x.numero or '' }}</td>
+      {# **DESDE 14/09/2026, «Tipo» É A ESPÉCIE (NASCIMENTO, CASAMENTO...),
+         não mais «AVERBACAO»** — o manual manda reenviar o registro
+         inteiro como Alteração, e não um envelope de ato à parte (ver
+         `_bloco_dos_atos`, em `sirc_remessa.py`). Sem esta coluna, duas
+         linhas «NASCIMENTO» pareceriam a mesma coisa — uma é o registro
+         novo, a outra é uma averbação sobre um registro já existente. #}
+      <td class="small muted">
+        {% if x.atos %}
+          Alteração ({{ x.atos|length }} ato{{ 's' if x.atos|length != 1 }}:
+          {{ x.atos|map(attribute='tipo')|map('title')|join(', ') }})
+        {% else %}
+          Registro novo
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if devendo|length > 250 %}
+<p class="small muted">Mostrando os 250 do primeiro lote, de {{ devendo|length }}.</p>
+{% endif %}
+{% else %}
+<p>Nada esperando remessa.</p>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">Mês sem movimento</h2>
+  <p><strong>Mês sem registro nenhum também se comunica</strong> — art. 225,
+     § 3º, até o {{ norma.PRAZO_DA_INEXISTENCIA_DIAS_UTEIS }}º dia útil do mês
+     seguinte.</p>
+  <p class="small muted">É a obrigação que mais se esquece, e justamente porque
+     não há trabalho que a lembre: não houve registro, não houve remessa, e
+     ninguém repara na falta.</p>
+  <form method="post" action="{{ url_for('rcpn_sirc_inexistencia') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>De que mês
+      <input type="text" name="competencia" placeholder="2026-07" size="8">
+    </label>
+    <button class="button" formaction="{{ url_for('rcpn_sirc_inexistencia') }}">Gerar a declaração</button>
+    <button class="button secondary" formaction="{{ url_for('rcpn_sirc_inexistencia_enviar') }}">Enviar agora pela API</button>
+  </form>
+</div>
+
+{# **O CANCELAMENTO DE TERMO NÃO É UM DOS SETE DO ART. 225** — seção 5.7
+   do manual: um termo que nunca valeu (lavrado no livro errado, por
+   exemplo), e não um registro que existe e mudou. Por isso tem envelope,
+   operação e versão de layout PRÓPRIOS, e uma seção à parte na tela. #}
+<div class="card">
+  <h2 style="margin-top:0">Cancelamento de termo ({{ cancelamentos|length }})</h2>
+  <p class="small muted">Só para termos que <strong>não foram usados</strong> para
+     registro civil, ou que a serventia cancelou no livro — o manual (seção 5.7)
+     não é para corrigir um registro que existe: isso é a Alteração, acima.</p>
+  {% if cancelamentos %}
+    {% if montado_cancelamento.quantos %}
+    <p>
+    {% for x in montado_cancelamento.lotes %}
+      <form method="post"
+            action="{{ url_for('rcpn_sirc_cancelamento_arquivo', lote=x.numero) }}"
+            style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button">Baixar o lote {{ x.numero }} ({{ x.quantos }}
+          registros, {{ x.bytes }} bytes)</button>
+      </form>
+      <form method="post"
+            action="{{ url_for('rcpn_sirc_cancelamento_validar', lote=x.numero) }}"
+            style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button secondary">Validar o lote {{ x.numero }} na API</button>
+      </form>
+      <form method="post"
+            action="{{ url_for('rcpn_sirc_cancelamento_enviar', lote=x.numero) }}"
+            style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button secondary">Enviar o lote {{ x.numero }} pela API</button>
+      </form>
+    {% endfor %}
+    </p>
+    {% endif %}
+    {% if montado_cancelamento.retidos %}
+    <div class="table-wrap">
+      <table class="tabela">
+        <thead><tr><th>Nome</th><th>Espécie</th><th>Por que ficou retido</th></tr></thead>
+        <tbody>
+        {% for x in montado_cancelamento.retidos %}
+          <tr>
+            <td>{{ x.nome or '—' }}</td>
+            <td class="small">{{ x.especie }}</td>
+            <td class="small">{% for f in x.faltas %}{{ f }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  {% else %}
+    <p class="muted">Nenhum termo cancelado pendente.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  {# **CORRIGIDO EM 14/09/2026 — o que estava escrito aqui deixou de ser
+     verdade.** Havia UM web service que exige A3; o outro, `/SircWs/
+     Movimento`, é usuário e senha, SOAP/HTTPS simples, WSDL público — e é
+     esse que os botões «Enviar» e «Validar» acima já usam, com
+     `sirc_cliente.py`. Ver `sirc_api_nao_exige_a3` na memória do projeto.
+
+     **E A FRASE «INFORME EM…» NÃO TINHA LINK NENHUM** — o oficial relatou
+     "não achei onde colocar a credencial": todas as outras telas que
+     pedem credencial de Central (`protesto_cra_api.html`,
+     `rcpn_proclamas.html`, etc.) já linkam direto para `settings`, e esta
+     só tinha o caminho em texto. Corrigido no mesmo padrão. #}
+  <p class="small muted">
+    <strong>Este sistema envia</strong>, pelo caminho de usuário e senha
+    (sem certificado A3) — informe a credencial em
+    <a href="{{ url_for('settings') }}">Administrativo → Configurações</a>,
+    na seção «Centrais — credenciais das APIs», linha SIRC.
+    <strong>É a mesma senha que você já usa para entrar no site do SIRC</strong>
+    (<code>sirc.dataprev.gov.br</code>) pelo navegador — não é a senha
+    deste sistema, e não é a de nenhuma outra Central (CRA, CENPROT…), que
+    guardam cada uma a sua. Só o <strong>outro</strong> web service do SIRC
+    (<code>MovimentoCertificadoDigital</code>) exige certificado A3 da
+    ICP-Brasil com WS-Security; este sistema não fala com ele.
+  </p>
+</div>
+{% endblock %}

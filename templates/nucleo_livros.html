@@ -1,0 +1,131 @@
+{#
+  O panorama dos 24 livros do núcleo — um por série, as seis atribuições numa
+  tela só.
+
+  Antes de 25/08/2026 o núcleo não tinha tela nenhuma: abrir livro, encerrar
+  livro e inutilizar folha eram funções de domínio testadas que ninguém
+  chamava. Termo de abertura é o primeiro papel que a inspeção pede.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Livros e termos</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="notice">
+  Cada série tem <strong>um livro aberto por vez</strong>. Dois livros abertos na mesma
+  série fazem o mesmo número de ordem sair em dois lugares — é o defeito de 18/08/2026,
+  e o sistema recusa.
+  <br><br>
+  O <strong>termo de abertura</strong> e o de <strong>encerramento</strong> não são
+  formalidade: são o que diz o que o livro é, quantas folhas tem, quais foram usadas e
+  quais ficaram inutilizadas (Lei 8.935/1994, art. 30, I). Os dois saem em
+  <strong>.odt</strong>, para colar no livro de papel.
+</div>
+
+{% if atrasados %}
+<div class="notice danger">
+  <strong>Há dia com movimento e sem termo de encerramento.</strong>
+  <ul>
+    {% for serie, dias in atrasados.items() %}
+      <li>{{ series[serie].nome }} — {{ dias | length }} dia(s):
+        {{ dias[:6] | join(', ') }}{% if dias | length > 6 %} …{% endif %}</li>
+    {% endfor %}
+  </ul>
+  <a class="button" href="{{ url_for('nucleo_encerramento_diario') }}">Encerrar os dias</a>
+</div>
+{% endif %}
+
+{% for numero, a in atribuicoes.items() %}
+  {% set do_grupo = linhas | selectattr('atribuicao', 'equalto', numero) | list %}
+  {% if do_grupo %}
+  <section class="panel">
+    <div class="panel-head"><span>{{ a.nome }}</span><small>{{ do_grupo | length }} série(s)</small></div>
+    <table class="table">
+      <thead>
+        <tr><th>Série</th><th>Livro aberto</th><th>Folha</th><th>Próximo nº</th>
+            <th>Livros</th><th>Atos</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for l in do_grupo %}
+        <tr>
+          <td>
+            <strong>{{ l.nome }}</strong>
+            <div><small>{{ l.serie }}{% if l.diario %} · livro por dia{% endif %}</small></div>
+          </td>
+          <td>
+            {% if l.livro_id %}
+              <a href="{{ url_for('nucleo_livro', livro_id=l.livro_id) }}">
+                n. {{ l.livro_numero }}</a>
+              {%- if l.dia %} <small>({{ l.dia }})</small>{% endif %}
+            {% else %}
+              <small>nenhum aberto</small>
+            {% endif %}
+          </td>
+          <td>
+            {% if l.livro_id %}
+              {{ l.folha_livre }} de {{ l.folhas }}
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ l.proximo_numero }}</td>
+          <td>{{ l.livros }}</td>
+          <td>{{ l.atos }}</td>
+          <td>
+            {% if not l.livro_id and user.role in ['ADMIN','MANAGER','USER'] %}
+            <form method="post" action="{{ url_for('nucleo_livro_abrir') }}" class="grid2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="serie" value="{{ l.serie }}">
+              {% if l.diario %}
+              <label>Dia <input type="date" name="dia" required></label>
+              {% endif %}
+              <label>Folhas <input name="folhas" inputmode="numeric"
+                                   placeholder="{{ l.folhas }}"></label>
+              <div class="actions"><button class="button">Abrir livro</button></div>
+            </form>
+            {% elif not l.livro_id %}
+              <small>sem livro aberto</small>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+{% endfor %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Livros encerrados</span>
+    <small>{{ fechados | length }} mais recente(s)</small>
+  </div>
+  {% if not fechados %}
+    <p style="padding:14px"><small>Nenhum livro encerrado ainda.</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Série</th><th>Livro</th><th>Atos</th><th>Encerrado em</th>
+               <th>Motivo</th><th>Termos</th></tr></thead>
+    <tbody>
+      {% for l in fechados %}
+      <tr>
+        <td><small>{{ l.serie }}</small></td>
+        <td><a href="{{ url_for('nucleo_livro', livro_id=l.id) }}">n. {{ l.numero }}</a></td>
+        <td>{{ l.atos }}</td>
+        <td>{{ l.encerramento or '—' }}</td>
+        <td><small>{{ l.motivo_encerramento or '—' }}</small></td>
+        <td>
+          <a href="{{ url_for('nucleo_livro_termo', livro_id=l.id, qual='abertura') }}">abertura</a>
+          ·
+          <a href="{{ url_for('nucleo_livro_termo', livro_id=l.id, qual='encerramento') }}">encerramento</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<p style="padding:0 14px 14px"><small>
+  O número do livro <strong>não se digita</strong>: é o maior já usado na série mais um.
+  Digitar abriria a porta para dois Livros 3 na mesma série.
+</small></p>
+{% endblock %}

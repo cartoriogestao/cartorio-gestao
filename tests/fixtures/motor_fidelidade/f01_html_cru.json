@@ -1,0 +1,16 @@
+{
+  "_meta_fixture": "F01_html_cru_ri_livro3",
+  "descricao": "Certidão RI / Livro 3 / ficha imprimem tags HTML no PDF quando o teor do acervo está em HTML (escape duplo). Relatório Beatriz 2026-10-05. Fix RI completo = 2c; helper strip/html_para_texto = 2a.",
+  "teor_html": "<!-- ensaio-acervo-v220 --> <div class=\"acervo-ensaio\"> <p><strong>MATRÍCULA nº 1</strong> — imóvel urbano de teste.</p> </div>",
+  "teor_livro3": "<p>Cedula de credito rural de teste do sandbox.</p>",
+  "esperado_texto_contem": [
+    "MATRÍCULA nº 1",
+    "imóvel urbano de teste"
+  ],
+  "esperado_texto_nao_contem": [
+    "<div",
+    "<p>",
+    "<strong>",
+    "<!--"
+  ]
+}

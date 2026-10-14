@@ -1,0 +1,236 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Escrituras do acervo &mdash; o que só você pode resolver</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
+  <a class="button" href="{{ url_for('notas_remessas') }}">Remessa às centrais</a>
+</div>
+
+<div class="notice">
+  Duas pendências seguram as escrituras na fila da CEP, e nenhuma delas o sistema pode decidir.
+  O <strong>valor</strong> veio vazio do E-Ofício em todas as escrituras &mdash; e na escritura o
+  valor é o conteúdo econômico do ato, não dá para zerar como se faz na procuração. As
+  <strong>partes de protocolo repetido</strong> estão na quarentena porque o protocolo rendeu mais
+  de um ato e ninguém sabe quem compareceu a qual.
+</div>
+
+{% if sem_natureza %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Sem natureza da CENSEC &mdash; {{ sem_natureza|length }} escritura{{ '' if sem_natureza|length == 1 else 's' }}</span>
+  </div>
+  <div style="padding:14px" class="small muted">
+    Vieram do E-Ofício com um modelo genérico que aponta para
+    <strong>ACORDO EXTRAJUDICIAL</strong>, e nenhuma é isso. A lista abaixo é do que o teor
+    <strong>contradiz</strong> — não do que está em branco, porque em branco não há nenhuma: elas
+    já estão classificadas, e classificadas errado. A sugestão sai do que cada ato diz de si
+    mesmo, e a coluna <em>o que o ato diz</em> é o trecho que a produziu. Confira e marque;
+    o sistema não classifica sozinho.
+  </div>
+
+  {% if resumo_natureza %}
+  <div style="padding:0 14px 8px">
+    <table>
+      <thead><tr><th>Atos</th><th>Sugestão</th></tr></thead>
+      <tbody>
+        {% for r in resumo_natureza %}
+        <tr>
+          <td style="text-align:right"><strong>{{ r.atos }}</strong></td>
+          <td class="small">
+            {% if r.natureza_censec %}CEP {{ r.natureza_censec }} &mdash; {{ NATUREZA[r.natureza_censec] }}
+            {% elif r.tipo_cesdi %}CESDI {{ r.tipo_cesdi }} &mdash; {{ TIPO_CESDI[r.tipo_cesdi] }}
+            {% elif r.outro_tipo %}<span class="danger">{{ r.descricao }}</span>
+            {% else %}<em>sem sugestão &mdash; classificar do zero</em>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('notas_escrituras_natureza') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="table-wrap"><table>
+      <thead><tr><th style="width:40px">Confirmo</th><th>Ato</th><th>Data</th>
+                 <th>Livro/folha</th><th>Sugestão</th><th>O que o ato diz</th></tr></thead>
+      <tbody>
+      {% for x in sem_natureza %}
+        <tr>
+          <td style="text-align:center">
+            {% if x.sugestao.natureza_censec %}
+              <input type="checkbox" name="ato" value="{{ x.ato.id }}|cep|{{ x.sugestao.natureza_censec }}" checked>
+            {% elif x.sugestao.tipo_cesdi %}
+              <input type="checkbox" name="ato" value="{{ x.ato.id }}|cesdi|{{ x.sugestao.tipo_cesdi }}" checked>
+            {% elif x.sugestao.outro_tipo %}
+              <input type="checkbox" name="ato" value="{{ x.ato.id }}|tipo|{{ x.sugestao.outro_tipo }}">
+            {% else %}&mdash;{% endif %}
+          </td>
+          <td><a href="{{ url_for('notas_ato', ato_id=x.ato.id) }}">{{ x.ato.id }}</a></td>
+          <td class="small">{{ x.ato.data }}</td>
+          <td class="small">{{ x.ato.livro or '—' }} / {{ x.ato.folha or '—' }}</td>
+          <td class="small">
+            {% if x.sugestao.natureza_censec %}
+              CEP {{ x.sugestao.natureza_censec }} &mdash; {{ NATUREZA[x.sugestao.natureza_censec] }}
+            {% elif x.sugestao.tipo_cesdi %}
+              CESDI {{ x.sugestao.tipo_cesdi }} &mdash; {{ TIPO_CESDI[x.sugestao.tipo_cesdi] }}
+            {% elif x.sugestao.outro_tipo %}
+              <span class="danger">{{ x.sugestao.descricao }}</span>
+            {% else %}
+              <em class="muted">nenhuma &mdash; abra o ato e classifique</em>
+            {% endif %}
+          </td>
+          <td class="small muted" style="max-width:380px">
+            {{ x.sugestao.evidencia or '— sem teor legível —' }}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <div style="padding:12px">
+      <button class="primary">Gravar as classificações marcadas</button>
+      <span class="small muted">As marcadas já vêm com a sugestão. Desmarque o que não conferir.</span>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+{% if ambiguas %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Partes em disputa &mdash; {{ ambiguas|length }} escritura{{ '' if ambiguas|length == 1 else 's' }}</span>
+  </div>
+  <div style="padding:14px" class="small muted">
+    O protocolo liga as partes ao ato, mas não diz a qual deles. Marque quem compareceu a esta
+    escritura e confirme. As não marcadas continuam na quarentena, para o ato seguinte.
+  </div>
+
+  {% for a in ambiguas %}
+  <div style="padding:14px;border-top:1px solid #e5e5e5">
+    <p><strong>Protocolo {{ a.protocolo }}</strong>
+       &mdash; livro {{ a.livro or '—' }}, folha {{ a.folha or '—' }}</p>
+    <p class="small muted">{{ a.motivo }}</p>
+
+    <form method="post" action="{{ url_for('notas_escritura_partes_ambiguas', rejeitado_id=a.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <label class="small">Lançar na escritura
+        <select name="ato_id">
+          {% for irmao in a.irmaos %}
+          <option value="{{ irmao.id }}" {% if irmao.id == a.ato_id %}selected{% endif %}>
+            ato {{ irmao.id }} &mdash; {{ irmao.data }}, livro {{ irmao.livro }}, folha {{ irmao.folha }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <table style="margin-top:10px">
+        <thead><tr><th style="width:40px">Entra</th><th>Parte</th><th>Papel no ato</th></tr></thead>
+        <tbody>
+          {% for p in a.partes %}
+          <tr>
+            <td style="text-align:center">
+              {% if p.cartao_id %}
+              <input type="checkbox" name="parte" value="{{ p.cartao_id }}|{{ p.papel }}">
+              {% else %}—{% endif %}
+            </td>
+            <td class="small">{{ p.nome }}</td>
+            <td class="small">{{ p.papel }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="margin-top:10px"><button class="primary">Lançar as partes marcadas</button></div>
+    </form>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if sem_valor %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Sem valor declarado &mdash; {{ sem_valor|length }} escritura{{ '' if sem_valor|length == 1 else 's' }}</span>
+  </div>
+  <div style="padding:14px" class="small muted">
+    O valor a informar é o <strong>discriminado no ato</strong>, e não o pago pela lavratura.
+    Digite em reais e centavos, sem ponto nem vírgula &mdash; 185000,00 entra como
+    <code>18500000</code>.
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Ato</th><th>Data</th><th>Livro/folha</th><th>Natureza</th>
+               <th>Partes</th><th>Valor declarado</th></tr></thead>
+    <tbody>
+    {% for e in sem_valor %}
+      <tr>
+        <td><a href="{{ url_for('notas_ato', ato_id=e.id) }}">{{ e.id }}</a></td>
+        <td class="small">{{ e.data }}</td>
+        <td class="small">{{ e.livro or '—' }} / {{ e.folha or '—' }}</td>
+        <td class="small">{{ e.natureza or '—' }}</td>
+        <td class="small" style="text-align:center">
+          {% if e.partes %}{{ e.partes }}{% else %}<span class="danger">nenhuma</span>{% endif %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('notas_escritura_valor', ato_id=e.id) }}"
+                style="display:flex;gap:6px">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="valor" size="12" placeholder="em centavos" inputmode="numeric">
+            <button>Gravar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{#
+  O QUE VEIO DO E-OFICIO FICA SEPARADO, E FECHADO.
+
+  «Pendências antigas e do e-ofício não devem aparecer. São atos que já
+  passaram, não têm mais relevância e não devem constar mais como pendências
+  atuais» — o oficial, em 27/08/2026.
+
+  Medido: das 47 escrituras sem valor, **45 vieram do E-Ofício** — 25 de 2020,
+  17 de 2022, 1 de 2023. A remessa daquelas saiu no tempo delas. As duas que
+  este sistema lavrou eram a pendência de verdade, e se perdiam no meio.
+
+  Não se esconde, separa-se: lista que nunca diminui faz ninguém olhar a lista,
+  e apagar faria perder o que ainda pode ser corrigido no dia em que alguém
+  precisar.
+#}
+{% if do_acervo %}
+<details class="panel">
+  <summary style="padding:14px;cursor:pointer">
+    <strong>{{ do_acervo|length }} escritura(s) do acervo do E-Ofício</strong>
+    <span class="small muted">— remetidas no tempo delas; não são pendência de hoje</span>
+  </summary>
+  <div style="padding:0 14px 14px" class="small muted">
+    Estes atos vieram do E-Ofício e a remessa deles saiu naquela época. Ficam
+    aqui para quem precisar consultá-los ou completá-los um dia — clique no
+    número para abrir a ficha.
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Ato</th><th>Data</th><th>Livro/folha</th><th>O que falta</th></tr></thead>
+    <tbody>
+      {% for x in do_acervo %}
+      <tr>
+        <td><a href="{{ url_for('notas_ato', ato_id=x.ato.id) }}">{{ x.ato.id }}</a></td>
+        <td class="small">{{ x.ato.data }}</td>
+        <td class="small">{{ x.ato.livro or '—' }} / {{ x.ato.folha or '—' }}</td>
+        <td class="small">{{ x.falta | join(' · ') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</details>
+{% endif %}
+
+{% if not sem_valor and not ambiguas and not sem_natureza %}
+<section class="panel">
+  <div style="padding:20px">Nenhuma pendência nos atos lavrados neste sistema.
+    {% if do_acervo %}As {{ do_acervo|length }} do acervo estão no quadro acima, e não contam como pendência.{% else %}Todas as escrituras têm valor e partes.{% endif %}</div>
+</section>
+{% endif %}
+{% endblock %}

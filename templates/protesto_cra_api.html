@@ -1,0 +1,233 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>CRA — falar com a Central pela API</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="cra-api stack">
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_painel') }}">O roteiro do dia</a>
+  <a class="button" href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>
+  <a class="button" href="{{ url_for('protesto_pendencias') }}">Pendências da CENPROT</a>
+</div>
+
+{% if ambiente == 'HOMOLOGACAO' %}
+<div class="alert alert-warning">
+  <strong>Ambiente de HOMOLOGAÇÃO.</strong> O que vier daqui é
+  <strong>dado de teste</strong>, e não vale para protesto nenhum.
+</div>
+{% else %}
+<div class="alert alert-danger">
+  <strong>Ambiente de PRODUÇÃO.</strong> Baixar aqui <strong>marca do lado de
+  lá</strong>: a remessa vem uma vez, e pedir de novo não traz a mesma coisa.
+</div>
+{% endif %}
+
+{% if not tem_credencial %}
+<div class="alert alert-danger">
+  A credencial da CRA para {{ ambiente|lower }} <strong>ainda não foi
+  informada</strong>. Ela se informa em
+  <a href="{{ url_for('settings') }}">Administrativo → Configurações →
+  Centrais de Protesto</a>, e é a que o <strong>IEPTB-MA</strong> fornece —
+  quem a cadastra é o Tabelião ou o Substituto. Comece pela de homologação.
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Ligação e teste</span>
+    <small>{{ endereco }}</small>
+  </div>
+  <div class="cra-panel-body">
+    <table class="table">
+      <tbody>
+        <tr><td><strong>Ambiente</strong></td>
+            <td>{{ 'Homologação' if ambiente == 'HOMOLOGACAO' else 'Produção' }}</td></tr>
+        <tr><td><strong>Credencial</strong></td>
+            <td>{% if tem_credencial %}informada — usuário <code>{{ usuario }}</code>
+                {% else %}<span class="muted">não informada</span>{% endif %}</td></tr>
+        <tr><td><strong>Como ela viaja</strong></td>
+            <td>HTTP Basic, <strong>sempre por https</strong></td></tr>
+      </tbody>
+    </table>
+    {#
+      O ACHADO DE SEGURANCA FICA A VISTA, e nao so no codigo: quem opera a
+      Central precisa saber por que o sistema nao faz o que o arquivo dela manda.
+    #}
+    <p class="muted">
+      <strong>O sistema força o https, e não segue o que o WSDL declara.</strong>
+      O arquivo de homologação da Central declara <code>http://</code>, sem o S —
+      e como a autenticação é HTTP Basic, a senha do cartório viajaria legível na
+      rede. É a mesma decisão do selador, onde o certificado se confere em vez de
+      se ignorar.
+    </p>
+    <form method="post" action="{{ url_for('protesto_cra_api_testar') }}"
+          class="form-grid cra-form-teste">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="cra-form-linha-teste">
+        <label>Ambiente
+          <select name="ambiente">
+            {% for a in ambientes %}
+            <option value="{{ a }}" {% if a == ambiente %}selected{% endif %}>
+              {{ 'Homologação' if a == 'HOMOLOGACAO' else 'Produção' }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="button primary cra-btn-teste" type="submit">Testar a ligação</button>
+      </div>
+      <p class="muted cra-form-nota span2"><small>
+        O teste usa <code>BuscarApresentante</code>, que é a
+        <strong>única operação sem parâmetro nenhum</strong> — um teste que
+        pedisse uma remessa a marcaria como baixada, e o dia seguinte começaria
+        com o arquivo faltando.
+      </small></p>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Trazer um arquivo</span>
+    <small>vem cru, como a Central mandou</small>
+  </div>
+  <div class="cra-panel-body">
+    <div class="alert alert-info">
+      <strong>O arquivo baixa; ele não aponta nada.</strong> A remessa XML de
+      homologação já foi medida e pode ser conferida na tela
+      <a href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>.
+      A conferência XML é somente leitura: não recebe títulos, não gera
+      confirmação e não deve ser usada com dados de homologação em produção.
+    </div>
+    <form method="post" action="{{ url_for('protesto_cra_api_baixar') }}"
+          class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="ambiente" value="{{ ambiente }}">
+      <label>O que trazer
+        <select name="o_que">
+          {% for chave, rotulo, dica in o_que_se_traz %}
+          <option value="{{ chave }}">{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Nome do arquivo
+        <input name="nome" placeholder="C0013110.141" autocomplete="off">
+      </label>
+      <label class="checkbox-label span2">
+        <input type="checkbox" name="com_imagem" value="1">
+        Trazer também a imagem do título</label>
+      <div class="cra-form-acoes span2">
+        <button class="button" type="submit">Trazer da CRA</button>
+      </div>
+    </form>
+  </div>
+  <div class="table-wrap cra-opcoes">
+    <table class="table">
+      <thead><tr><th>Opção</th><th>O que é o nome</th></tr></thead>
+      <tbody>
+        {% for chave, rotulo, dica in o_que_se_traz %}
+        <tr><td>{{ rotulo }}</td><td>{{ dica }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted" style="padding:0 16px 14px">
+    <strong>O que a CRA espera é o NOME do arquivo, e não o conteúdo dele</strong>
+    — no formato FEBRABAN. O sistema recusa um «nome» que pareça arquivo
+    inteiro, porque a viagem até a Central custa mais que a recusa aqui.
+  </p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Consultar na CRA</span>
+    <small>as quatro consultas do contrato</small>
+  </div>
+
+  {# A QUE MUDA COISA DO LADO DE LA TEM AVISO PROPRIO. #}
+  <div class="cra-panel-body">
+    <div class="alert alert-warning">
+      <strong>Consultar autorização MARCA como baixada</strong>, salvo se se
+      disser que não — está no manual. O sistema <strong>não marca por
+      padrão</strong>: uma consulta que muda o estado da Central não pode ser o
+      que um botão de olhar faz calado. Quem quiser marcar, marca de propósito,
+      na caixa abaixo.
+    </div>
+
+    <form method="post" action="{{ url_for('protesto_cra_api_consultar') }}"
+          class="form-grid" data-cra-consulta-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="ambiente" value="{{ ambiente }}">
+      <label>O que consultar
+        <select name="consulta">
+          <option value="slip">O slip de um protocolo</option>
+          <option value="autorizacao">Uma autorização</option>
+          <option value="imagem">A imagem de um título</option>
+          <option value="autorizacoes_periodo">Autorizações de um período</option>
+        </select>
+      </label>
+
+      <fieldset class="cra-consulta-grupo" data-cra-consulta-grupo="slip-autorizacao">
+        <legend>Slip e autorização — protocolo</legend>
+        <label>Protocolo <input name="protocolo" autocomplete="off"></label>
+        <label>Data do protocolo <input name="data_protocolo"></label>
+        <label>Nome do arquivo <small>(só na autorização)</small>
+          <input name="nome" autocomplete="off"></label>
+        <label class="checkbox-label">
+          <input type="checkbox" name="marcar_baixado" value="1">
+          <strong>Marcar a autorização como baixada</strong> na Central</label>
+      </fieldset>
+
+      <fieldset class="cra-consulta-grupo" data-cra-consulta-grupo="imagem">
+        <legend>Imagem do título</legend>
+        <label>Nosso número <input name="nosso_numero" autocomplete="off"></label>
+        <label>Número do título <input name="numero_titulo" autocomplete="off"></label>
+        <label>Documento do devedor <input name="documento_devedor" autocomplete="off"></label>
+        <label>Saldo <input name="saldo" autocomplete="off"></label>
+        <label>Vencimento <input name="vencimento" autocomplete="off"></label>
+        <label>Remessa <input name="remessa" autocomplete="off"></label>
+      </fieldset>
+
+      <fieldset class="cra-consulta-grupo" data-cra-consulta-grupo="autorizacoes_periodo">
+        <legend>Autorizações de um período</legend>
+        <label>Solicitação — de <input name="solicitacao_de"></label>
+        <label>Solicitação — até <input name="solicitacao_ate"></label>
+        <label>Remessa — de <input name="remessa_de"></label>
+        <label>Remessa — até <input name="remessa_ate"></label>
+      </fieldset>
+
+      <div class="cra-form-acoes span2">
+        <button class="button" type="submit">Consultar na CRA</button>
+      </div>
+    </form>
+    <p class="muted cra-form-nota">
+      A resposta baixa <strong>crua</strong>, como a Central mandou — o sistema
+      ainda não interpreta o que volta, e dizer que interpreta seria pior que
+      não fazer.
+    </p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Referência — WSDL e operações sem botão</span>
+    <small>{{ operacoes|length }} operações no WSDL</small>
+  </div>
+  <div class="cra-panel-body">
+    <p style="margin:0 0 8px">
+      <strong>{{ sem_sentido_medido|length }} das {{ operacoes|length }} operações
+      dependem de um parâmetro que o manual não descreve</strong>
+      (<code>userDados</code>), e por isso não têm botão nesta tela. Elas
+      existem, e o sistema sabe os nomes dos parâmetros de cada uma — o que não
+      se sabe é <em>o que mandar dentro</em>. As operações
+      <code>Confirmacao</code> e <code>Retorno</code> — os dois passos com hora
+      marcada no roteiro (11h30 e 14h10) — já saem pelo recebimento de remessa,
+      com <code>userDados</code> medido; aqui continuam listadas só as demais.
+    </p>
+    <p class="muted" style="margin:0">
+      {{ sem_sentido_medido|join(' · ') }}
+    </p>
+  </div>
+</section>
+</div>
+
+<script defer src="{{ url_for('static', filename='cra_api.js') }}?v={{ VERSION }}"></script>
+{% endblock %}

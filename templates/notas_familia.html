@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block title %}{{ familia.titulo }} — Notas{% endblock %}
+{% block heading %}<h1>{{ familia.titulo }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
+  <a class="button primary" href="{{ url_for('notas_ato_novo', familia=familia.chave) }}">Lavrar {{ familia.singular|lower }}</a>
+  <a class="button" href="{{ url_for('notas_atos', familia=familia.chave) }}">Ver todos</a>
+  <a class="button" href="{{ url_for('notas_livros') }}">Livro de {{ familia.livro|lower }}</a>
+  <a class="button" href="{{ url_for('notas_remessas') }}">Remessas às centrais</a>
+  {% if familia.chave == 'escrituras' %}
+    <a class="button" href="{{ url_for('notas_escrituras_pendentes') }}">Pendências específicas</a>
+  {% endif %}
+</div>
+
+<div class="notice">
+  <strong>Um único fluxo de instrumentos notariais.</strong> {{ familia.descricao }}
+  Melhorias feitas nas etapas compartilhadas de Escrituras também atendem as Atas,
+  sem duplicar telas nem regras.
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ resumo.total }}</strong><small>atos</small></div>
+  <div class="stat"><strong>{{ resumo.em_lavratura }}</strong><small>em lavratura</small></div>
+  <div class="stat"><strong>{{ resumo.lavrados }}</strong><small>lavrados</small></div>
+  <div class="stat"><strong>{{ resumo.documentos }}</strong><small>documentos/evidências</small></div>
+</section>
+
+{% if resumo.sem_selo or resumo.sem_teor or resumo.sem_partes %}
+<div class="notice warning">
+  <strong>Conferência:</strong>
+  {{ resumo.sem_selo }} lavrado(s) sem selo,
+  {{ resumo.sem_teor }} sem teor e
+  {{ resumo.sem_partes }} sem parte cadastrada.
+  <a href="{{ url_for('notas_atos', familia=familia.chave) }}">Abrir a lista</a>.
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Próximo lançamento</span>
+    <span class="small muted">a numeração só é reservada ao lançar</span></div>
+  <div class="grid2" style="padding:14px">
+    <div><small class="muted">Livro</small><div>
+      {% if previsao.livro %}<strong>{{ previsao.livro }}</strong>
+      {% elif previsao.abrira_livro %}<strong>abrirá o nº {{ previsao.proximo_livro }}</strong>
+      {% else %}—{% endif %}</div></div>
+    <div><small class="muted">Folha / termo</small><div>
+      folha {{ previsao.folha_inicial or '—' }} · termo {{ previsao.termo or '—' }}</div></div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Modelos ativos</span>
+    <span class="small muted">{{ modelos|length }} modelo(s)</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Modelo</th><th>Fundamento e conferência</th><th></th></tr></thead>
+    <tbody>
+    {% for m in modelos %}
+      <tr>
+        <td><strong>{{ m.nome }}</strong><br><span class="small muted">{{ m.codigo }}</span></td>
+        <td class="small">
+          {{ m.fundamento or 'Fundamento descrito no próprio modelo.' }}
+          {% if m.requisitos %}
+          <details><summary>{{ m.requisitos|length }} item(ns) para conferir</summary>
+            <ul>{% for item in m.requisitos %}<li>{{ item }}</li>{% endfor %}</ul>
+          </details>
+          {% endif %}
+        </td>
+        <td><a class="button primary" href="{{ url_for('notas_ato_novo', familia=familia.chave, modelo=m.codigo) }}">Usar modelo</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3" class="muted">Nenhum modelo ativo nesta família.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Trabalho recente</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Ato</th><th>Data</th><th>Livro/folha</th><th>Partes</th><th>Selo</th><th>Situação</th></tr></thead>
+    <tbody>
+    {% for a in recentes %}
+      <tr>
+        <td><a href="{{ url_for('notas_ato', ato_id=a.id) }}"><strong>
+          {% if a.termo %}termo {{ a.termo }}{% else %}rascunho {{ a.id }}{% endif %}
+        </strong></a><br><span class="small muted">{{ TIPOS_ATO.get(a.tipo, a.tipo) }}</span></td>
+        <td class="small">{{ fmt_date(a.data) }}</td>
+        <td class="small">{% if a.livro %}{{ a.livro }}/{{ a.folha or '—' }}{% else %}—{% endif %}</td>
+        <td class="small">{{ (a.nomes or a.interessado or '—')[:60] }}</td>
+        <td class="small">{{ a.selo or '—' }}</td>
+        <td class="small">{{ a.situacao }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Nenhum ato desta família ainda.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

@@ -1,0 +1,460 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Título {{ titulo.numero_titulo }}</h1>{% endblock %}
+{% block content %}
+{% from '_cobrar.html' import quadro, cobrado %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
+
+{% if titulo.numero_titulo == 'SEM NÚMERO NO ACERVO' %}
+<div class="notice">
+  <strong>Este título entrou sem número.</strong> O acervo do E-Ofício não guardou o
+  número dele, mas o protesto aconteceu — tem espécie, valor e situação. Entrou
+  marcado, e não foi descartado, porque protesto que existiu e não aparece faz a
+  certidão dizer que a pessoa está limpa quando não está.
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>O título</span><small>{{ titulo.situacao }}</small></div>
+  <table class="table">
+    <tr><th>Espécie</th><td>{{ titulo.especie }}</td>
+        <th>Nosso número</th><td>{{ titulo.nosso_numero or '—' }}</td></tr>
+    <tr><th>Emissão</th><td>{{ titulo.data_emissao or '—' }}</td>
+        <th>Vencimento</th><td>{{ titulo.data_vencimento or '—' }}</td></tr>
+    <tr><th>Valor</th><td>{{ titulo.valor_centavos | centavos_reais }}</td>
+        <th>Saldo a protestar</th><td>{{ titulo.saldo_centavos | centavos_reais }}</td></tr>
+    <tr><th>Praça</th><td>{{ titulo.praca_protesto or '—' }}</td>
+        <th>Endosso</th><td>{{ titulo.tipo_endosso or '—' }}</td></tr>
+    <tr><th>Origem</th><td>{{ titulo.origem }}</td>
+        <th>Chave de origem</th><td><small>{{ titulo.origem_chave or '—' }}</small></td></tr>
+  </table>
+</section>
+
+{% if titulo.cedente_nome %}
+<section class="panel">
+  <div class="panel-head"><span>Cedente</span></div>
+  <table class="table">
+    <tr><th>Nome</th><td>{{ titulo.cedente_nome }}</td>
+        <th>Documento</th><td>{{ titulo.cedente_documento or '—' }}</td></tr>
+    <tr><th>Cidade</th><td>{{ titulo.cedente_cidade or '—' }}</td>
+        <th>UF</th><td>{{ titulo.cedente_uf or '—' }}</td></tr>
+  </table>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Devedores</span><small>{{ devedores | length }}</small></div>
+  {% if not devedores %}
+    {#
+      ISTO AQUI DIZIA que o E-Ofício guardava o devedor noutra tabela e que a
+      carga trazia só o que vinha junto — e era verdade até 25/08/2026, quando
+      a carga passou a ler `tbPessoa`. Hoje os 1.366 títulos do acervo entram
+      com devedor. Lista vazia aqui virou sinal de que falta rodar a carga, e
+      não de que o dado não existe.
+    #}
+    <p style="padding:14px">Sem devedor cadastrado. Se este título veio do acervo,
+      rode <a href="{{ url_for('atribuicoes_importar') }}">Trazer das atribuições</a>
+      de novo: desde 25/08/2026 a carga traz o devedor de <code>tbPessoa</code>, e
+      antes disso não trazia.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Nome</th><th>Documento</th><th>Endereço</th><th>Cidade</th></tr></thead>
+    <tbody>
+      {% for d in devedores %}
+      <tr>
+        <td>{{ d.nome }}</td>
+        <td>{{ d.documento_tipo or '' }} {{ d.documento_numero or '—' }}</td>
+        <td>{{ d.endereco or '—' }}{% if d.bairro %}, {{ d.bairro }}{% endif %}</td>
+        <td>{{ d.cidade or '—' }}{% if d.uf %}/{{ d.uf }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+{% from '_fraude.html' import alerta as alerta_fraude %}
+{#
+  O ALERTA DE FRAUDE VEM PRIMEIRO, e no alto — antes dos atos, antes de tudo.
+  Aviso que aparece depois de o escrevente já ter lançado o ato chegou tarde.
+
+  O bloco mora em `_fraude.html` e serve as quatro atribuições: escrevê-lo
+  quatro vezes daria quatro versões divergentes do aviso que mais importa.
+#}
+{{ alerta_fraude(fraudes, csrf_token, 'protesto — ficha do título',
+                 titulo.numero_titulo,
+                 url_for('protesto_titulo', titulo_id=titulo.id)) }}
+
+{#
+  O AVISO DE INTIMAÇÃO fica aqui, e não numa tela à parte: é nesta ficha que o
+  escrevente vê o devedor, o endereço e o protocolo — e é aqui que ele corrige
+  o endereço quando o cliente traz um melhor no guichê.
+
+  O AVISO É LISTA, e não um só: 255 dos 1.361 títulos do acervo têm mais de um.
+#}
+<section class="panel">
+  <div class="panel-head">
+    <span>Avisos de intimação</span><small>{{ avisos | length }}</small>
+  </div>
+
+  {% if avisos %}
+  <table class="table">
+    <thead><tr>
+      <th>Aviso</th><th>Foi para</th><th>O que aconteceu</th><th>Edital</th>
+    </tr></thead>
+    <tbody>
+      {% for a in avisos %}
+      <tr>
+        <td><strong>{{ a.numero }}/{{ a.ano }}</strong>
+            <div><small>{{ a.emitido_em[:10] }}
+                 {{ a.emitido_por or '' }}</small></div></td>
+        <td>{{ a.devedor_nome or '—' }}
+            <div><small>{{ a.endereco or 'sem endereço' }}{% if a.bairro %},
+                 {{ a.bairro }}{% endif %}</small></div></td>
+        <td>
+          {% if a.situacao == 'EMITIDO' %}
+            saiu, esperando desfecho
+          {% elif a.situacao == 'ENTREGUE' %}
+            <strong>entregue</strong> em {{ a.entrega_em[:10] }}
+            {% if a.recebido_por %}
+              <div><small>recebido por {{ a.recebido_por }}</small></div>
+            {% endif %}
+          {% elif a.situacao == 'NAO_ENTREGUE' %}
+            <strong class="danger">não entregue</strong>
+            {% for m in motivos_aviso %}{% if m.codigo == a.motivo %}
+              — {{ m.motivo }}{% endif %}{% endfor %}
+          {% else %}
+            {{ a.situacao | lower }}
+          {% endif %}
+          {% if a.tentativas | length > 1 %}
+            {# Mais de uma tentativa é 3,6% dos casos — e são os que a
+               inspeção lê com atenção, porque é o rastro delas que justifica
+               o edital. #}
+            {% for x in a.tentativas %}
+              <div><small>
+                {{ loop.index }}ª — {{ x.quando[:10] }}:
+                {% if x.entregue %}entregue{% else %}
+                  {% for m in motivos_aviso %}{% if m.codigo == x.motivo %}{{ m.motivo }}{% endif %}{% endfor %}
+                {% endif %}
+                {% if x.observacao %}({{ x.observacao }}){% endif %}
+              </small></div>
+            {% endfor %}
+          {% elif a.observacao %}
+            <div><small>{{ a.observacao }}</small></div>
+          {% endif %}
+        </td>
+        <td>
+          {% if a.edital_numero %}
+            <strong>ED-{{ a.ano }}-{{ '%04d' % a.edital_numero }}</strong>
+            <div><small>{{ a.edital_em }}</small></div>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if cabe_aviso %}
+  <form method="post" class="form" style="padding:14px"
+        action="{{ url_for('protesto_aviso_emitir', titulo_id=titulo.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div style="grid-column:1/-1">
+      <strong>Emitir aviso</strong>
+      <div><small>
+        Sai com o endereço do devedor <strong>como está hoje</strong>, e ele
+        congela no aviso: o papel foi para um lugar, e cadastro que mudar
+        depois não muda a tentativa que já saiu. Se o cliente trouxe endereço
+        melhor, escreva-o abaixo — vale só para este aviso.
+      </small></div>
+    </div>
+    <label style="grid-column:1/-1">Outro endereço <small>(opcional)</small>
+      <input name="endereco" placeholder="Deixe em branco para usar o do cadastro"></label>
+    <label>Bairro <input name="bairro"></label>
+    <label>CEP <input name="cep"></label>
+    <label>Cidade <input name="cidade"></label>
+    <label>UF <input name="uf" maxlength="2" style="width:5em"></label>
+    <div class="actions"><button class="button">Emitir aviso</button></div>
+  </form>
+  {% else %}
+  <p style="padding:14px">
+    <small>
+      Só se emite aviso de título <strong>apontado</strong> — o apontamento é o
+      primeiro ato, e é ele que dá o protocolo que vai no aviso. Este título
+      está {{ titulo.situacao }}.
+    </small>
+  </p>
+  {% endif %}
+
+  {% if avisos %}
+  <div class="actions" style="padding:0 14px 14px">
+    <a class="button" href="{{ url_for('protesto_avisos') }}">
+      Registrar entrega e publicar edital</a>
+  </div>
+  {% endif %}
+</section>
+
+{% if suspensao %}
+{#
+  ELE NAO ESCONDE BOTAO NENHUM — nao bloqueia ato. O que ele para e a
+  PUBLICIDADE do protesto, e por isso o aviso existe: quem olha a ficha
+  precisa saber que a certidao vai sair dizendo que os efeitos estao
+  suspensos.
+#}
+<div class="notice warning">
+  <p><strong>EFEITOS DO PROTESTO SUSPENSOS POR ORDEM JUDICIAL.</strong>
+  O registro continua no livro — o que parou foi a publicidade dele.</p>
+  <p>
+    {% if suspensao.juizo %}<strong>Juízo:</strong> {{ suspensao.juizo }}<br>{% endif %}
+    {% if suspensao.processo %}<strong>Processo:</strong> {{ suspensao.processo }}<br>{% endif %}
+    <strong>Ordem recebida em:</strong> {{ suspensao.data_ato or '—' }}
+    {% if suspensao.observacao %}<br><small>{{ suspensao.observacao }}</small>{% endif %}
+  </p>
+  <p><small>
+    A certidão deste devedor sai <strong>com o protesto e com a nota de que
+    seus efeitos estão suspensos</strong>. Ele não some da certidão: sumir
+    seria dizer que não há protesto, e há.
+  </small></p>
+</div>
+{% endif %}
+
+{% if sustacao %}
+{#
+  O AVISO VEM ANTES DOS BOTOES, e nao ao lado deles. Esconder o botao do
+  protesto sem dizer por que faria o escrevente achar que o sistema quebrou —
+  e o motivo aqui e ordem judicial, que ele precisa saber para explicar ao
+  cliente e para pedir a autorizacao que o § 1o exige.
+#}
+<div class="notice danger">
+  <p><strong>PROTESTO SUSTADO POR ORDEM JUDICIAL.</strong>
+  Este título está à disposição do Juízo — Lei 9.492/1997, art. 17.</p>
+  <p>
+    {% if sustacao.juizo %}<strong>Juízo:</strong> {{ sustacao.juizo }}<br>{% endif %}
+    {% if sustacao.processo %}<strong>Processo:</strong> {{ sustacao.processo }}<br>{% endif %}
+    <strong>Ordem recebida em:</strong> {{ sustacao.data_ato or '—' }}
+    {% if sustacao.observacao %}<br><small>{{ sustacao.observacao }}</small>{% endif %}
+  </p>
+  <p><small>
+    Enquanto ela valer, o título <strong>só pode ser pago, protestado ou
+    retirado com autorização judicial</strong> (art. 17, § 1º) — e por isso
+    esses três atos não aparecem abaixo. Chegando a revogação, registre-a: o
+    protesto volta a caber, <strong>sem nova intimação</strong>, e a lei manda
+    lavrá-lo até o primeiro dia útil seguinte ao recebimento (art. 17, § 2º).
+  </small></p>
+</div>
+{% endif %}
+
+{% if cabem %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Lançar o próximo ato</span>
+    <small>situação: {{ titulo.situacao }}</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    Só aparecem os atos que cabem nesta situação. Se o selo falhar, o ato
+    não é mantido sem decisão expressa de quem está lavrando, e a tela mostra
+    o motivo da falha.
+  </small></p>
+
+  {% for ato in cabem %}
+  <form method="post" action="{{ url_for('protesto_lancar', titulo_id=titulo.id) }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ato" value="{{ ato }}">
+    <div style="grid-column:1/-1"><strong>{{ ato | capitalize }}</strong></div>
+
+    {% if ato == 'INTIMACAO' %}
+      <label>Como foi intimado
+        <select name="modo">
+          {% for m in modos %}<option value="{{ m }}">{{ m | capitalize }}</option>{% endfor %}
+        </select></label>
+      <label>Código do edital <small>(só na intimação por edital)</small>
+        <input name="codigo_edital" placeholder="ED-2026-014"></label>
+      <label style="grid-column:1/-1">Comprovante / o que aconteceu
+        <input name="comprovante" placeholder="AR 123, assinado por João — ou: não encontrado no endereço"></label>
+      <label><input type="checkbox" name="digital"> Intimação eletrônica</label>
+    {% elif ato == 'DESISTENCIA' %}
+      <label style="grid-column:1/-1">Motivo da desistência
+        <input name="motivo" required placeholder="Credor desistiu antes do protesto"></label>
+    {% elif ato == 'PAGAMENTO' %}
+      <label>Valor pago <input name="valor_pago" placeholder="1.482,78"></label>
+    {% elif ato == 'SUSTACAO' %}
+      <label>Juízo <small>(de onde veio a ordem)</small>
+        <input name="juizo" required
+               placeholder="1ª Vara Cível da Comarca de {{ sv.cidade_uf }}"></label>
+      <label>Processo <small>(o número dos autos)</small>
+        <input name="processo" required
+               placeholder="0800123-45.2026.8.10.0100"></label>
+      <label>Recebida em <small>(quando o mandado chegou aqui)</small>
+        <input name="recebido_em" type="date"></label>
+      <label style="grid-column:1/-1">Observação
+        <input name="observacao"
+               placeholder="Mandado recebido por e-mail, original a caminho"></label>
+      <p style="grid-column:1/-1"><small>
+        O juízo e o processo são obrigatórios: é por eles que se confere a
+        procedência do mandado e se pede depois a autorização judicial do
+        art. 17, § 1º. <strong>Este registro não sela e não cobra</strong> —
+        não é ato da serventia, é o cumprimento de uma ordem de fora.
+      </small></p>
+    {% elif ato == 'EFEITO_SUSPENSIVO' %}
+      <label>Juízo <small>(de onde veio a ordem)</small>
+        <input name="juizo" required
+               placeholder="1ª Vara Cível da Comarca de {{ sv.cidade_uf }}"></label>
+      <label>Processo <input name="processo" required
+               placeholder="0800123-45.2026.8.10.0100"></label>
+      <label>Recebida em <input name="recebido_em" type="date"></label>
+      <label style="grid-column:1/-1">Observação
+        <input name="observacao" placeholder="Protestado por engano"></label>
+      <p style="grid-column:1/-1"><small>
+        O protesto <strong>continua no livro</strong>: o que para é a
+        publicidade dele. A certidão passa a sair com o protesto <em>e</em> com
+        a nota de que os efeitos estão suspensos por esta ordem.
+      </small></p>
+    {% elif ato == 'REVOGACAO_EFEITO_SUSPENSIVO' %}
+      <label>Recebida em <input name="recebido_em" type="date"></label>
+      <label style="grid-column:1/-1">Observação
+        <input name="observacao"></label>
+      <p style="grid-column:1/-1"><small>
+        Revogada a ordem, <strong>o protesto volta a publicar</strong> — e o
+        dia em que isso aconteceu fica registrado, porque a certidão de amanhã
+        pode ter de explicá-lo.
+      </small></p>
+    {% elif ato == 'REVOGACAO_SUSTACAO' %}
+      <label>Recebida em <small>(quando a revogação chegou aqui)</small>
+        <input name="recebido_em" type="date"></label>
+      <label style="grid-column:1/-1">Observação
+        <input name="observacao" placeholder="Decisão de fl. 120 dos autos"></label>
+      <p style="grid-column:1/-1"><small>
+        <strong>A data que conta é a do recebimento</strong>, e não a da
+        decisão: é dela que a lei faz correr o prazo. Revogada a ordem,
+        <strong>não há nova intimação do devedor</strong>, e o protesto se
+        lavra até o <strong>primeiro dia útil seguinte</strong> (art. 17,
+        § 2º). O título aparece em <em>A protestar</em>, no alto.
+      </small></p>
+    {% elif ato == 'CANCELAMENTO' %}
+      <label>Hipótese <small>(Lei 9.492/1997)</small>
+        {# Vem preparado do pedido de cancelamento da CENPROT (13/10/2026):
+           a hipótese e o fundamento chegam pelo endereço, e quem lança confere. #}
+        <select name="hipotese" required>
+          {% for k, v in catalogo.items() %}
+            <option value="{{ k }}"{% if request.args.get('hipotese') == k %} selected{% endif %}>{{ v.rotulo }}</option>
+          {% endfor %}
+        </select></label>
+      <label style="grid-column:1/-1">Fundamento deste caso
+        <input name="fundamento" required minlength="10"
+               value="{{ request.args.get('fundamento', '') }}"
+               placeholder="O que aconteceu neste título — não basta a hipótese"></label>
+    {% endif %}
+
+    {% if ato not in ('SUSTACAO', 'REVOGACAO_SUSTACAO',
+                  'EFEITO_SUSPENSIVO', 'REVOGACAO_EFEITO_SUSPENSIVO') %}
+    <label>Selo <small>(opcional)</small>
+      <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
+    {% endif %}
+    <div class="actions"><button class="button">Lançar {{ ato | lower }}</button></div>
+
+    {{ quadro(receitas.get(ato), caixa, protocolos) }}
+  </form>
+  {% endfor %}
+</section>
+{% else %}
+<div class="notice">
+  Não há ato a lançar: o título está <strong>{{ titulo.situacao }}</strong>, que é
+  situação final para este módulo.
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>A vida do título</span><small>{{ atos | length }} ato(s)</small></div>
+  <table class="table">
+    <thead><tr><th>Ato</th><th>Data</th><th>Livro / folha / ordem</th><th>Selo</th>
+               <th>Cobrado</th><th>Detalhe</th></tr></thead>
+    <tbody>
+      {% for a in atos %}
+      <tr>
+        <td><strong>{{ a.tipo }}</strong></td>
+        <td>{{ a.data_ato }}</td>
+        <td>
+          {% if a.numero_ordem %}
+            fl. {{ a.folha or '?' }}{% if a.verso %}v{% endif %} · nº {{ a.numero_ordem }}
+          {% else %}—{% endif %}
+        </td>
+        <td><small>{{ a.selo or '—' }}</small></td>
+        <td>{{ cobrado(a.id, cobrancas, csrf_token) }}</td>
+        <td>
+          {% if a.detalhe %}
+            {% for k, v in a.detalhe.items() %}<div><small>{{ k }}: {{ v }}</small></div>{% endfor %}
+          {% endif %}
+          {% if a.observacao %}<div><small>{{ a.observacao }}</small></div>{% endif %}
+          {% if a.motivo_cancelamento %}<div><small>{{ a.motivo_cancelamento }}</small></div>{% endif %}
+        </td>
+      </tr>
+      {% if a.teor %}
+      {#
+        O TEXTO QUE FOI ESCRITO NO LIVRO, e ele tem de estar à vista.
+        Gravá-lo e não mostrá-lo seria a «peça pronta sem chamador» outra vez —
+        e aqui o preço é alto: numa correição a pergunta é o que o registro do
+        protesto diz, e a resposta estaria só dentro do banco.
+
+        Ele CONGELOU no dia da lavratura: é o que se escreveu, e não o que se
+        escreveria hoje.
+      #}
+      <tr>
+        <td colspan="6" style="padding-top:0">
+          <details>
+            <summary><small>O texto que foi ao livro</small></summary>
+            <div style="white-space:pre-wrap; padding:8px 0 4px; font-size:.92em">{{ a.teor }}</div>
+            <small>Congelado em {{ a.data_ato }} — corrigir protesto é averbar
+            ao lado, e não reescrever este texto.</small>
+          </details>
+        </td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  <p style="padding:0 14px 14px"><small>
+    O recibo sai pelo Caixa — numeração por exercício, teor congelado e hash —, e a
+    ficha só aponta para lá: duas versões da peça que o cliente leva para casa seria
+    uma a mais.
+  </small></p>
+</section>
+{# A IMAGEM DO TÍTULO — o documento que se protesta.
+
+   Ela vem da CRA num `.zip` à parte, e entra por *Protesto → Imagens dos
+   títulos*. Aqui ela aparece porque é aqui que o ato acontece: quem lavra
+   precisa do papel à vista, e não a duas telas de distância. #}
+<section class="panel">
+  <div class="panel-head">
+    <span>Imagem do título</span>
+    <small>{{ imagens | length }} arquivo(s)</small>
+  </div>
+  {% if imagens %}
+  <table class="table">
+    <thead><tr><th>Arquivo</th><th>Recebida em</th><th></th></tr></thead>
+    <tbody>
+    {% for i in imagens %}
+      <tr>
+        <td>{{ i.original_name }}
+          <br><small>{{ i.description or '' }}</small></td>
+        <td><small>{{ (i.uploaded_at or '')[:16] | replace('T', ' ') }}</small></td>
+        <td><a class="button" target="_blank"
+               href="{{ url_for('protesto_imagem', anexo_id=i.id) }}">Abrir</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="padding:14px">
+    Sem imagem. Ela vem da CRA em <strong>Pendências → Download imagens</strong>
+    e entra em <a href="{{ url_for('protesto_imagens') }}">Imagens dos
+    títulos</a>.
+    {% if titulo.origem == 'EOFICIO' %}
+    <br><small>Este título veio do acervo do E-Ofício: a imagem dele está em
+      papel, na pasta — a CRA não a reenvia.</small>
+    {% endif %}
+  </p>
+  {% endif %}
+</section>
+
+{% endblock %}

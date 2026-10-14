@@ -1,0 +1,81 @@
+{#
+  O CANCELAMENTO DA CERTIDÃO EMITIDA DO RI — escrito UMA vez, usado nas DUAS
+  telas.
+
+  **O PEDIDO, e ele chegou pela ficha.** Relato #81, 17/09/2026, na ficha da
+  matrícula (`/registro-imoveis/5378`): «dar a possibilidade de cancelar
+  certidao emitida, nos termos que ja temos no RCPN, cancelar depois de baixar
+  o selo e declarar», e a segunda metade — «ter mais controle das certidoes
+  emitidas».
+
+  A ROTA EXISTIA e a lista de certidões tinha o formulário desde 15/09. O que
+  faltava era **a ficha**: quem abria a matrícula via as certidões emitidas
+  (número, tipo, requerente, selo) e **não tinha o que fazer com elas** — a
+  sessão mostrava `(cancelada)` e mais nada, nem o motivo. É o defeito de
+  costume pelo outro lado: não «função pronta que ninguém chama», e sim
+  **formulário pronto que uma tela tem e a outra não** — o relato #36 outra vez.
+
+  **E O FORMULÁRIO TEM DE SER O MESMO NOS DOIS LUGARES.** Duas cópias
+  divergiriam no primeiro conserto — é a lição de `_cobrar.html` e de
+  `_fraude.html`, e aqui o que diverge é o cancelamento de um papel que já está
+  na mão de alguém: campo que só uma das telas cobra é campo que a outra deixa
+  passar em branco.
+
+  **O MOTIVO VAI NAS DUAS VISTAS, com o mesmo texto** — «duas vistas do mesmo
+  fato precisam do mesmo texto» (relato #23). A lista mostrava o motivo e a
+  ficha calava; quem lesse só a ficha concluiria que ninguém sabe por quê.
+
+  Uso, nas duas telas:
+
+      {% from '_cancelar_certidao.html' import formulario as cancelar_certidao,
+                                              motivo as motivo_do_cancelamento %}
+      ...
+      <td>{{ cancelar_certidao(c, csrf_token, user, 'ficha') }}</td>
+      ...
+      <tr><td colspan="7">{{ motivo_do_cancelamento(c) }}</td></tr>
+
+  `voltar` diz para onde a rota devolve quem cancelou: a palavra `'ficha'` volta
+  para a ficha da matrícula, qualquer outro valor volta para a lista de
+  certidões. A rota **só aceita essa palavra** — destino que vem de fora não é
+  destino (`fora` da casa nunca abriu porta).
+
+  QUEM PODE CANCELAR NÃO SE REPETE AQUI COMO REGRA: a lista de perfis é a mesma
+  da rota (`@roles_required("ADMIN","MANAGER")` — paridade RCPN/Protesto desde
+  3.6.194). A tela esconde o botão por educação; quem recusa é a rota — e há
+  teste que manda o POST direto.
+#}
+
+{% macro formulario(c, csrf_token, user, voltar='certidoes') %}
+{% if not c.cancelada and user.role in ['ADMIN','MANAGER'] %}
+<details>
+  <summary class="small" title="cancelar esta certidão">cancelar</summary>
+  <form method="post"
+        action="{{ url_for('ri_cancelar_certidao', certidao_id=c.id) }}"
+        class="stack" style="margin-top:6px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="voltar" value="{{ voltar }}">
+    <input name="motivo" required maxlength="300"
+           placeholder="por que está sendo cancelada">
+    <label class="small" style="display:flex; gap:6px; align-items:flex-start">
+      <input type="checkbox" name="selo_cancelado_tjma" value="1" required style="width:auto; margin-top:3px">
+      <span>Declaro que eventual selo desta certidão já foi cancelado no portal do Selo Eletrônico do TJMA.</span>
+    </label>
+    <button class="button">Cancelar esta certidão</button>
+    <small>O registro <strong>permanece no livro</strong>, com o
+      motivo à vista — cancelar não apaga, declara.</small>
+  </form>
+</details>
+{% endif %}
+{% endmacro %}
+
+
+{% macro motivo(c) %}
+{# O MOTIVO, QUEM CANCELOU E A DECLARAÇÃO — a mesma frase nas duas telas.
+   `cancelada_em` e `cancelada_por` são gravados pela rota desde 15/09, e
+   nenhuma tela os mostrava: na correição, «quem cancelou esta certidão e
+   quando» é pergunta que se responde pelo livro, e o sistema tinha a resposta
+   guardada e calada. #}
+Motivo: {{ c.motivo_cancelamento or '—' }}
+{%- if c.cancelada_em %}<br><small>Cancelada em {{ c.cancelada_em }}{% if c.cancelada_por %} por {{ c.cancelada_por }}{% endif %}.</small>{% endif %}
+{%- if c.declaracao_selo_tjma_em %}<br><small>Declaração registrada em {{ c.declaracao_selo_tjma_em }}{% if c.declaracao_selo_tjma_por %} por {{ c.declaracao_selo_tjma_por }}{% endif %}: eventual selo próprio desta certidão já foi cancelado no portal do Selo Eletrônico do TJMA.</small>{% endif %}
+{% endmacro %}

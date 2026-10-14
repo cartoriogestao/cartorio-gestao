@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Robôs — configuração{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ url_for('robos_lista') }}">← robôs</a></p>
+<h1>Configuração de API dos robôs</h1>
+
+<div class="card">
+  <p class="small muted">
+    Chaves só no servidor (<code>robo_config</code>).
+    Campo vazio = <strong>não altera</strong>.
+    A UI mostra mascarado (últimos 4). <strong>Nunca</strong> colar chave no código-fonte.
+    Nunca logar API key.
+  </p>
+</div>
+
+<form method="post" action="{{ url_for('robos_config') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <div class="card">
+    <p>
+      <label>provedor padrão<br>
+        <select name="provedor_padrao">
+          {% for p in cfg.provedores %}
+          <option value="{{ p }}" {% if cfg.provedor_padrao == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </p>
+
+    <p>
+      <label>api_key_grok (xAI)<br>
+        <input type="password" name="api_key_grok" value="" autocomplete="new-password"
+               style="width:100%" placeholder="vazio = não altera">
+      </label>
+    </p>
+    <p class="small muted">
+      {% if cfg.tem_grok %}Já gravado: {{ cfg.grok_mascarado }}
+      {% else %}Ainda não gravado.{% endif %}
+    </p>
+
+    <p>
+      <label>api_key_gpt (OpenAI)<br>
+        <input type="password" name="api_key_gpt" value="" autocomplete="new-password"
+               style="width:100%" placeholder="vazio = não altera">
+      </label>
+    </p>
+    <p class="small muted">
+      {% if cfg.tem_gpt %}Já gravado: {{ cfg.gpt_mascarado }}
+      {% else %}Ainda não gravado.{% endif %}
+    </p>
+
+    <p>
+      <label>api_key_claude (Anthropic)<br>
+        <input type="password" name="api_key_claude" value="" autocomplete="new-password"
+               style="width:100%" placeholder="vazio = não altera">
+      </label>
+    </p>
+    <p class="small muted">
+      {% if cfg.tem_claude %}Já gravado: {{ cfg.claude_mascarado }}
+      {% else %}Ainda não gravado.{% endif %}
+    </p>
+
+    <p>
+      <label>api_key_deepseek<br>
+        <input type="password" name="api_key_deepseek" value="" autocomplete="new-password"
+               style="width:100%" placeholder="vazio = não altera">
+      </label>
+    </p>
+    <p class="small muted">
+      {% if cfg.tem_deepseek %}Já gravado: {{ cfg.deepseek_mascarado }}
+      {% else %}Ainda não gravado.{% endif %}
+    </p>
+  </div>
+
+  <p><button class="button">guardar</button></p>
+</form>
+{% endblock %}

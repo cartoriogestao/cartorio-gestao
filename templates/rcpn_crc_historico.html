@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Histórico de envios à CRC{% endblock %}
+{% block content %}
+<h1>Histórico de envios à CRC</h1>
+
+<p><a href="{{ url_for('rcpn_crc') }}">← voltar para a carga da CRC</a></p>
+
+<div class="card">
+  <p class="small muted">
+    Cada linha é um lote — um clique em <strong>«Enviar à CRC agora»</strong>
+    ou em <strong>«Marcar como já enviado»</strong>. <strong>WEBSERVICE</strong>
+    é o envio direto, assinado com o A3, com a resposta da Central guardada
+    abaixo; <strong>MANUAL</strong> é o upload feito à mão no site da CRC, que
+    o sistema não vê — só o que o oficial confirmou aqui.
+  </p>
+</div>
+
+{% if lotes %}
+{% for lote in lotes %}
+<div class="card">
+  <h3 style="margin-top:0">
+    {{ lote.enviado_em }} — {{ lote.canal }}
+    {% if lote.ambiente %}({{ lote.ambiente.lower() }}){% endif %}
+    — {{ lote.quantos }} assento(s)
+  </h3>
+  <p class="small muted">
+    por {{ lote.enviado_por or '—' }}
+    {% if lote.nota %}· {{ lote.nota }}{% endif %}
+  </p>
+  <table>
+    <thead><tr><th>Nº</th><th>Espécie</th><th>Nome</th><th>Lavrado</th><th>Matrícula</th></tr></thead>
+    <tbody>
+    {% for a in lote.assentos %}
+      <tr>
+        <td>{{ a.numero }}</td>
+        <td class="small">{{ a.especie }}</td>
+        <td>{{ a.nome }}</td>
+        <td class="small">{{ a.data_ato or '—' }}</td>
+        <td class="small">{{ a.matricula or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if lote.resposta %}
+  <details>
+    <summary>ver a resposta da Central</summary>
+    <pre style="white-space:pre-wrap;font-size:11px">{{ lote.resposta }}</pre>
+  </details>
+  {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<div class="card">
+  <p>Nenhum envio registrado ainda.</p>
+</div>
+{% endif %}
+{% endblock %}

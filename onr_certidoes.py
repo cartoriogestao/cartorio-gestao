@@ -1,0 +1,377 @@
+"""As certidões do RI pedidas pelo ONR — a fila, o preparo e a resposta.
+
+    «faça a da onr certidões»                       — o oficial, 11/10/2026
+
+O CAMINHO É O OFÍCIO ELETRÔNICO (WSOficio), SERVIÇO «Certidoes.asmx»
+    E não a API REST. O `/v1/atendimento/eletronico` da REST, que a documentação
+    desta casa chamava de «SAEC por onde chega a certidão», é o fale-conosco do
+    portal (tipos: Contato, WhatsApp, LGPD, Help Desk…) — medido no contrato em
+    11/10/2026. O pedido de certidão está no «Certidões a Emitir / Exportar» do
+    Ofício Eletrônico, e o manual 4.43 (cap. 3.6) dá o ciclo inteiro:
+
+        ObterXMLSolicitacoes_v6 → (InformarCustasCertidao) →
+        EnviarAnexoCertidao (PDF ou P7S, base64) → FinalizarRespostaCertidao
+        — ou DevolverCertidao, com motivo.
+
+    A credencial é a mesma que já entra em produção desde 09/10 (`wsoficio.cred`).
+
+O FORMATO DO XML DOS PEDIDOS NÃO ESTÁ NO MANUAL — E FOI MEDIDO EM PRODUÇÃO
+    O manual diz só «equivalente ao Exportar do portal». Medido em 11/10/2026,
+    por ordem do oficial, só leitura (ObterXMLSolicitacoes_v6, 90 dias): 97
+    pedidos, cada um um `<PEDIDO_CERTIDAO>` com PROTOCOLO_SOLICITACAO (ex.:
+    «S99000000001D»), DATA_PEDIDO («dd/mm/aaaa hh:mm:ss»), STATUS_SOLICITACAO
+    POR EXTENSO («Respondido» 76, «Cancelado» 19, «Aguardando pagamento» 1, «Em
+    aberto» 1), VALOR, TIPO_COBRANCA, NUMERO_PROCESSO e três blocos:
+    SOLICITANTE (nome, contato, endereço), CERTIDAO (TIPO em código — 3 em 63,
+    1 em 25 —, PEDIDO_POR 4 = matrícula em 72 ou 6 = pessoa em 25, MATRICULA/
+    NUMERO, PESSOA, OBSERVACAO, TIPOFINALIDADE). Os campos vão achatados com o
+    caminho («CERTIDAO/MATRICULA/NUMERO») para `dados_json` e para a tela, e o
+    pedido inteiro fica congelado em `xml_pedido`.
+
+ESTE MÓDULO NÃO FALA COM A REDE
+    Recebe o que a sessão do WSOficio trouxe e registra o que a tela fez lá. A
+    rede acontece em `onr_certidoes_web`, FORA de `db.transaction()`. E ele não
+    emite a certidão: a certidão é a do sistema (tela da matrícula), com selo;
+    aqui se guarda o arquivo ASSINADO que vai ao ONR e o que o ONR respondeu.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import re
+import sqlite3
+import xml.etree.ElementTree as ET
+from pathlib import Path
+from typing import Any
+
+import onr_wsoficio as WS
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS onr_cert_pedidos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ambiente TEXT NOT NULL,
+    protocolo TEXT NOT NULL,
+    tipo_certidao TEXT,
+    data_pedido TEXT,
+    valor TEXT,
+    pesquisa_por TEXT,
+    status_onr TEXT,
+    solicitante TEXT,
+    matricula_numero TEXT,
+    matricula_id INTEGER,
+    dados_json TEXT NOT NULL,
+    xml_pedido TEXT NOT NULL,
+    situacao TEXT NOT NULL DEFAULT 'NOVO',
+    custas_informadas TEXT,
+    custas_em TEXT,
+    custas_por TEXT,
+    enviado_em TEXT,
+    enviado_por TEXT,
+    anexos_enviados TEXT,
+    finalizado_em TEXT,
+    finalizado_por TEXT,
+    interesse_social INTEGER,
+    devolvido_em TEXT,
+    devolvido_por TEXT,
+    motivo_devolucao TEXT,
+    recebido_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL,
+    UNIQUE(ambiente, protocolo)
+);
+"""
+
+#: NOVO (chegou) → PRONTO (tem anexo guardado) → ENVIADO (anexos no ONR)
+#: → RESPONDIDO (finalizado) | DEVOLVIDO. FECHADO_NO_ONR: o ONR diz que acabou
+#: (respondido por fora, cancelado) e o sistema só registra.
+SITUACOES = ("NOVO", "PRONTO", "ENVIADO", "RESPONDIDO", "DEVOLVIDO", "FECHADO_NO_ONR")
+ENTIDADE_DO_ANEXO = "ONR_CERTIDAO"
+#: O status vem POR EXTENSO no XML (medido); os códigos são os do filtro.
+STATUS_FECHADOS_NO_ONR = {"3", "12", "23", "respondido", "cancelado",
+                          "cancelado pelo solicitante", "devolvido"}
+
+
+class CertidaoOnrError(ValueError):
+    """Recusa com frase de balcão."""
+
+
+def init_schema(con: sqlite3.Connection) -> None:
+    con.executescript(SCHEMA)
+
+
+# ------------------------------------------------------------ ler o XML
+
+def _sem_declaracao(texto: str) -> str:
+    # O ONR declara encoding="UTF-16" dentro de uma string já decodificada; o
+    # ElementTree recusa string com declaração de encoding.
+    return re.sub(r"^\s*<\?xml[^>]*\?>", "", texto or "").strip()
+
+
+def _local(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _campo(dados: dict, *padroes: str) -> str:
+    """Primeiro campo cujo NOME casa um dos padrões (na ordem dada)."""
+    for padrao in padroes:
+        rx = re.compile(padrao, re.I)
+        for nome, valor in dados.items():
+            if rx.search(nome) and str(valor or "").strip():
+                return str(valor).strip()
+    return ""
+
+
+def _achatar(el: ET.Element, prefixo: str = "") -> dict[str, str]:
+    """Os campos folha, com o caminho: «CERTIDAO/MATRICULA/NUMERO»."""
+    saida: dict[str, str] = {}
+    for f in el:
+        nome = f"{prefixo}{_local(f.tag)}"
+        if len(f):
+            saida.update(_achatar(f, nome + "/"))
+        else:
+            saida.setdefault(nome, (f.text or "").strip())
+    return saida
+
+
+def _data_iso(texto: str) -> str:
+    m = re.match(r"(\d{2})/(\d{2})/(\d{4})(?:\s+(\d{2}:\d{2}(?::\d{2})?))?", texto or "")
+    if not m:
+        return (texto or "").strip()
+    return f"{m.group(3)}-{m.group(2)}-{m.group(1)}" + (f"T{m.group(4)}" if m.group(4) else "")
+
+
+def ler_pedidos(xml: str) -> list[dict]:
+    """Os pedidos do XML do «Exportar». Cada um: os campos que o sistema usa,
+    todos os campos (`dados`, achatados) e o XML dele, congelado.
+
+    O pedido é o elemento com PROTOCOLO_SOLICITACAO (formato medido); se o ONR
+    mudar o nome, cai na regra genérica: elemento cujo filho tem PROTOCOLO."""
+    texto = _sem_declaracao(xml)
+    if not texto:
+        return []
+    try:
+        raiz = ET.fromstring(texto)
+    except ET.ParseError as erro:
+        raise CertidaoOnrError(f"O XML de certidões do ONR não se leu: {erro}") from erro
+    candidatos = [el for el in raiz.iter()
+                  if any(_local(f.tag) == "PROTOCOLO_SOLICITACAO" for f in el)]
+    if not candidatos:
+        candidatos = [el for el in raiz.iter()
+                      if any(re.search(r"PROTOCOLO", _local(f.tag), re.I) and len(f) == 0
+                             and (f.text or "").strip() for f in el)]
+    pedidos = []
+    for el in candidatos:
+        dados = _achatar(el)
+        protocolo = (dados.get("PROTOCOLO_SOLICITACAO")
+                     or _campo(dados, r"^PROTOCOLO", r"PROTOCOLO"))
+        if not protocolo:
+            continue
+        pedidos.append({
+            "protocolo": protocolo,
+            "data_pedido": _data_iso(dados.get("DATA_PEDIDO") or _campo(dados, r"DATA.?PEDIDO")),
+            "valor": dados.get("VALOR") or "",
+            "tipo_certidao": dados.get("CERTIDAO/TIPO") or _campo(dados, r"TIPO.?CERTIDAO"),
+            "pesquisa_por": dados.get("CERTIDAO/PEDIDO_POR") or _campo(dados, r"PEDIDO.?POR", r"PESQUISA"),
+            "status_onr": dados.get("STATUS_SOLICITACAO") or _campo(dados, r"^STATUS"),
+            "solicitante": dados.get("SOLICITANTE/NOME") or _campo(dados, r"SOLICITANTE.*NOME", r"NOME.?SOLIC"),
+            "matricula_numero": re.sub(r"\D", "", dados.get("CERTIDAO/MATRICULA/NUMERO")
+                                       or _campo(dados, r"MATRICULA/NUMERO", r"^MATRICULA$")),
+            "dados": dados,
+            "xml": ET.tostring(el, encoding="unicode"),
+        })
+    return pedidos
+
+
+def _matricula_id(con: sqlite3.Connection, numero: str) -> int | None:
+    if not numero:
+        return None
+    row = con.execute("SELECT id FROM ri_matriculas WHERE CAST(numero AS TEXT)=? "
+                      "AND COALESCE(numero,'')<>'' ORDER BY id LIMIT 1",
+                      (str(int(numero)),)).fetchone()
+    return int(row[0]) if row else None
+
+
+def guardar_pedidos(con: sqlite3.Connection, ambiente: str, xml: str, agora: str) -> dict:
+    """Grava os pedidos novos e atualiza o status dos que já estavam.
+
+    O teor (`xml_pedido`) do que já estava NÃO é regravado: foi sobre ele que a
+    casa trabalhou. Muda só o status do ONR, e o pedido que o ONR deu por
+    acabado sai da fila como FECHADO_NO_ONR (se aqui ainda não tinha acabado)."""
+    init_schema(con)
+    novos = atualizados = 0
+    for p in ler_pedidos(xml):
+        row = con.execute("SELECT id, situacao FROM onr_cert_pedidos WHERE ambiente=? AND protocolo=?",
+                          (ambiente, p["protocolo"])).fetchone()
+        if row is None:
+            ja_fechado = str(p["status_onr"]).strip().lower() in STATUS_FECHADOS_NO_ONR
+            con.execute(
+                "INSERT INTO onr_cert_pedidos(ambiente, protocolo, tipo_certidao, data_pedido, valor, "
+                "pesquisa_por, status_onr, solicitante, matricula_numero, matricula_id, dados_json, "
+                "xml_pedido, situacao, recebido_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (ambiente, p["protocolo"], p["tipo_certidao"], p["data_pedido"], p["valor"],
+                 p["pesquisa_por"], p["status_onr"],
+                 p["solicitante"], p["matricula_numero"],
+                 _matricula_id(con, p["matricula_numero"]),
+                 json.dumps(p["dados"], ensure_ascii=False), p["xml"],
+                 # O que chega já respondido ou cancelado (o histórico de 90 dias:
+                 # 95 dos 97 medidos) entra como registro, e não como trabalho.
+                 "FECHADO_NO_ONR" if ja_fechado else "NOVO", agora, agora))
+            novos += 1
+            continue
+        situacao = row[1]
+        if (str(p["status_onr"]).strip().lower() in STATUS_FECHADOS_NO_ONR
+                and situacao in ("NOVO", "PRONTO", "ENVIADO")):
+            situacao = "FECHADO_NO_ONR"
+        con.execute("UPDATE onr_cert_pedidos SET status_onr=?, situacao=?, atualizado_em=? WHERE id=?",
+                    (p["status_onr"], situacao, agora, row[0]))
+        atualizados += 1
+    return {"novos": novos, "atualizados": atualizados}
+
+
+# -------------------------------------------------------- a fila e a ficha
+
+def rotulo_do_tipo(valor: Any) -> str:
+    try:
+        return WS.TIPO_CERTIDAO.get(int(valor), str(valor))
+    except (TypeError, ValueError):
+        return str(valor or "")
+
+
+def rotulo_do_status(valor: Any) -> str:
+    """O XML traz o status por extenso; o código só aparece no filtro."""
+    try:
+        return WS.STATUS_CERTIDAO.get(int(valor), str(valor))
+    except (TypeError, ValueError):
+        return str(valor or "")
+
+
+def fila(con: sqlite3.Connection, *, todos: bool = False) -> list[dict]:
+    init_schema(con)
+    con.row_factory = sqlite3.Row
+    sql = "SELECT * FROM onr_cert_pedidos"
+    if not todos:
+        sql += " WHERE situacao IN ('NOVO','PRONTO','ENVIADO')"
+    sql += " ORDER BY COALESCE(data_pedido, recebido_em) DESC, id DESC"
+    return [dict(r) for r in con.execute(sql).fetchall()]
+
+
+def pedido(con: sqlite3.Connection, pedido_id: int) -> dict:
+    init_schema(con)
+    con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM onr_cert_pedidos WHERE id=?", (int(pedido_id),)).fetchone()
+    if not row:
+        raise CertidaoOnrError("Pedido de certidão do ONR não encontrado.")
+    d = dict(row)
+    d["dados"] = json.loads(d.get("dados_json") or "{}")
+    return d
+
+
+def anexos(con: sqlite3.Connection, pedido_id: int) -> list[dict]:
+    con.row_factory = sqlite3.Row
+    return [dict(r) for r in con.execute(
+        "SELECT id, original_name, stored_path, sha256, size_bytes, uploaded_at FROM attachments "
+        "WHERE entity_type=? AND entity_id=? ORDER BY id", (ENTIDADE_DO_ANEXO, int(pedido_id)))]
+
+
+def _aberto(p: dict) -> None:
+    if p["situacao"] in ("RESPONDIDO", "DEVOLVIDO", "FECHADO_NO_ONR"):
+        raise CertidaoOnrError(f"Este pedido já está {p['situacao'].lower().replace('_', ' ')}.")
+
+
+# ---------------------------------------------------- o preparo e a resposta
+
+def guardar_anexo(con: sqlite3.Connection, pedido_id: int, *, nome: str, conteudo: bytes,
+                  pasta: Path, usuario_id: int | None, agora: str) -> int:
+    """Guarda o arquivo assinado que vai ao ONR. Só .pdf ou .p7s (erro 25)."""
+    p = pedido(con, pedido_id)
+    _aberto(p)
+    nome = Path(nome or "").name
+    if not nome.lower().endswith(WS.EXTENSOES_ACEITAS_NA_CERTIDAO):
+        raise CertidaoOnrError("O ONR só aceita a certidão em .pdf ou .p7s.")
+    if not conteudo:
+        raise CertidaoOnrError("O arquivo veio vazio.")
+    sha = hashlib.sha256(conteudo).hexdigest()
+    pasta.mkdir(parents=True, exist_ok=True)
+    guardado = pasta / f"{sha[:16]}_{nome}"
+    guardado.write_bytes(conteudo)
+    cur = con.execute(
+        "INSERT INTO attachments(entity_type, entity_id, original_name, stored_name, stored_path, "
+        "sha256, size_bytes, description, uploaded_by, uploaded_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (ENTIDADE_DO_ANEXO, int(pedido_id), nome, guardado.name, str(guardado), sha,
+         len(conteudo), f"Certidão para o pedido ONR {p['protocolo']}", usuario_id, agora))
+    if p["situacao"] == "NOVO":
+        con.execute("UPDATE onr_cert_pedidos SET situacao='PRONTO', atualizado_em=? WHERE id=?",
+                    (agora, int(pedido_id)))
+    return int(cur.lastrowid)
+
+
+def anexos_para_enviar(con: sqlite3.Connection, pedido_id: int) -> list[dict]:
+    """Os anexos guardados, no formato que o WSOficio pede."""
+    p = pedido(con, pedido_id)
+    _aberto(p)
+    lista = anexos(con, pedido_id)
+    if not lista:
+        raise CertidaoOnrError("Guarde antes o arquivo assinado da certidão (PDF ou P7S).")
+    saida = []
+    for a in lista:
+        conteudo = Path(a["stored_path"]).read_bytes()
+        if hashlib.sha256(conteudo).hexdigest() != a["sha256"]:
+            raise CertidaoOnrError(f"O arquivo {a['original_name']} mudou depois de guardado — "
+                                   "guarde-o de novo antes de enviar.")
+        saida.append({"NomeArquivo": a["original_name"],
+                      "ArquivoBase64": base64.b64encode(conteudo).decode("ascii")})
+    return saida
+
+
+def registrar_envio(con, pedido_id: int, nomes: list[str], usuario: str, agora: str) -> None:
+    con.execute("UPDATE onr_cert_pedidos SET situacao='ENVIADO', enviado_em=?, enviado_por=?, "
+                "anexos_enviados=?, atualizado_em=? WHERE id=?",
+                (agora, usuario, json.dumps(nomes, ensure_ascii=False), agora, int(pedido_id)))
+
+
+def conferir_finalizacao(con, pedido_id: int) -> dict:
+    p = pedido(con, pedido_id)
+    _aberto(p)
+    if p["situacao"] != "ENVIADO":
+        raise CertidaoOnrError("Envie o arquivo ao ONR antes de finalizar — o ONR recusa "
+                               "finalizar sem anexo (erro 17).")
+    return p
+
+
+def registrar_finalizacao(con, pedido_id: int, interesse_social: bool, usuario: str, agora: str) -> None:
+    con.execute("UPDATE onr_cert_pedidos SET situacao='RESPONDIDO', finalizado_em=?, finalizado_por=?, "
+                "interesse_social=?, atualizado_em=? WHERE id=?",
+                (agora, usuario, 1 if interesse_social else 0, agora, int(pedido_id)))
+
+
+def conferir_devolucao(con, pedido_id: int, motivo: str) -> dict:
+    p = pedido(con, pedido_id)
+    _aberto(p)
+    if len((motivo or "").strip()) < 10:
+        raise CertidaoOnrError("Escreva o motivo da devolução (pelo menos dez letras) — "
+                               "é o que o solicitante vai ler.")
+    return p
+
+
+def registrar_devolucao(con, pedido_id: int, motivo: str, usuario: str, agora: str) -> None:
+    con.execute("UPDATE onr_cert_pedidos SET situacao='DEVOLVIDO', devolvido_em=?, devolvido_por=?, "
+                "motivo_devolucao=?, atualizado_em=? WHERE id=?",
+                (agora, usuario, motivo.strip(), agora, int(pedido_id)))
+
+
+def conferir_custas(valor: str) -> str:
+    v = (valor or "").strip().replace("R$", "").replace(" ", "")
+    if "," in v:
+        v = v.replace(".", "").replace(",", ".")
+    try:
+        numero = float(v)
+    except ValueError as erro:
+        raise CertidaoOnrError("Valor das custas inválido — use, por exemplo, 102,15.") from erro
+    if numero <= 0:
+        raise CertidaoOnrError("O valor das custas precisa ser maior que zero.")
+    return f"{numero:.2f}"
+
+
+def registrar_custas(con, pedido_id: int, valor: str, usuario: str, agora: str) -> None:
+    con.execute("UPDATE onr_cert_pedidos SET custas_informadas=?, custas_em=?, custas_por=?, "
+                "atualizado_em=? WHERE id=?", (valor, agora, usuario, agora, int(pedido_id)))

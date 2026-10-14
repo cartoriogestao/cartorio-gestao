@@ -1,0 +1,447 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>{{ 'Problemas do sistema' if gere else 'Os problemas que você relatou' }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="cards">
+  <div class="card stat{% if quadro.abertos %} danger{% endif %}">
+    <span>Abertos</span><strong>{{ quadro.abertos }}</strong></div>
+  <div class="card stat{% if quadro.voltaram %} danger{% endif %}">
+    <span>Voltaram depois de relatados</span><strong>{{ quadro.voltaram }}</strong></div>
+  <div class="card stat"><span>Já mandados para conserto</span>
+    <strong>{{ quadro.relatados }}</strong></div>
+  <div class="card stat"><span>Resolvidos</span>
+    <strong>{{ quadro.resolvidos }}</strong></div>
+</div>
+
+{# O BALCÃO VÊ OS SEUS — relato #87, 23/09/2026. Quem não gere a lista vê só
+   o que ele mesmo relatou (ou onde a tela dele estourou), e pode reabrir o
+   seu depois de resolvido, dizendo por quê. O que é de gestão — conferir a
+   casa, o relatório, a nota do desenvolvimento, fechar — continua só de ADMIN
+   e gerente, e a rota recusa mesmo que alguém monte o pedido à mão. #}
+{% if not gere %}
+<section class="panel">
+  <div class="panel-head"><span>O que esta tela é</span></div>
+  <p style="padding:0 0 8px"><small>
+    Aqui estão <strong>os problemas que você relatou</strong> pela janela da
+    ajuda, e os erros que apareceram na sua tela. Em cada um você vê a
+    situação e, quando houver, o que o desenvolvimento respondeu.
+    <br><br>
+    Se um problema foi dado por <strong>resolvido</strong> e ainda não está
+    certo, use <strong>Reabrir</strong> e escreva o que continua errado — é
+    isso que diz a quem conserta onde procurar.
+  </small></p>
+</section>
+{% else %}
+<section class="panel">
+  <div class="panel-head"><span>O que esta tela é</span></div>
+  <p style="padding:0 0 8px"><small>
+    Toda tela que estoura vira uma linha aqui, sozinha, com a hora e o ponto do
+    programa onde parou — ninguém precisa lembrar de anotar. Quem estiver no
+    balcão também pode contar o que viu, pela <strong>janela da ajuda</strong>
+    que existe em qualquer tela: defeito que <em>não</em> derruba o programa —
+    o botão que não faz nada, o número que sai errado — é justamente o que
+    máquina nenhuma percebe.
+    <br><br>
+    <strong>Conferir a casa</strong> mede o que o sistema já sabe medir: se o
+    banco travou, se a integridade está boa, o que falta você informar, se a
+    manutenção diária terminou. Ela demora alguns segundos e não conserta nada:
+    escreve o que mediu.
+    <br><br>
+    <strong>Gerar o relatório</strong> monta um arquivo de texto com tudo isto
+    para quem for consertar o sistema. Ele sai <strong>com dados pessoais,
+    sensíveis e segredos substituídos</strong>, porque nasce para deixar a serventia — e o que conserta
+    o programa é o ponto onde ele parou, não de quem era o dado.
+  </small></p>
+  <div class="actions">
+    <form method="post" action="{{ url_for('ajuda_conferir') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button" type="submit">Conferir a casa</button>
+    </form>
+    <form method="post" action="{{ url_for('ajuda_relatorio') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button primary" type="submit">Gerar o relatório para conserto</button>
+    </form>
+    {% if user.role == 'ADMIN' %}
+      <a class="button" href="{{ url_for('updates') }}">Revisar pacote de correção</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Os problemas</span>
+    <small>{{ problemas|length }} na lista</small>
+  </div>
+
+  {# AS TRÊS VISTAS — relato #82, de 17/09/2026. «Organizar problemas concluidos
+     e em aberto. Lista apresenta todos problemas já criados e está longa,
+     separar itens concluidos dos itens em aberto».
+
+     A LISTA ABRE NO QUE AINDA PEDE ALGUMA COISA, e não em tudo: quem abre esta
+     tela quer saber o que dói. O número ao lado de cada botão vem do quadro,
+     pela mesma régua que filtra a lista — contagem que não acompanha o filtro
+     é o carimbo que mente sobre o próprio filtro.
+
+     É LINK, E NÃO BOTÃO DE FORMULÁRIO: o filtro é pergunta, e não gravação —
+     fica no endereço, entra nos favoritos e o botão de voltar do navegador
+     funciona, como em todas as listas da casa. #}
+  <div class="actions">
+    {% for chave, v in vistas.items() %}
+      <a class="modo-botao{% if chave == vista %} ativo{% endif %}"
+         href="{{ url_for('ajuda_problemas', **params_url_lista_problemas(vista=vista, so_meus=so_meus, gere=gere, ambiente=ambiente_filtro, exibir_filtro_ambiente=exibir_filtro_ambiente, vista_alvo=chave)) }}"
+         {% if chave == vista %}aria-current="page"{% endif %}
+         >{{ v.rotulo }} ({{ quadro.por_vista.get(chave, 0) }})</a>
+    {% endfor %}
+    {# «SÓ OS MEUS» — relato #87. Para quem gere a lista é um botão que liga e
+       desliga; para o balcão não há botão, porque ele só vê os seus. #}
+    {% if gere %}
+      <a class="modo-botao{% if so_meus %} ativo{% endif %}"
+         href="{{ url_for('ajuda_problemas', **params_url_lista_problemas(vista=vista, so_meus=so_meus, gere=gere, ambiente=ambiente_filtro, exibir_filtro_ambiente=exibir_filtro_ambiente, alternar_meus=True)) }}"
+         {% if so_meus %}aria-current="true"{% endif %}
+         >{{ 'Só os meus ✓' if so_meus else 'Só os meus' }}</a>
+    {% endif %}
+    {# ONDE ABRIU — sandbox :8899; ?ambiente=oficial|sandbox|todas (3.6.214). #}
+    {% if exibir_filtro_ambiente %}
+    {% for chave, af in ambientes_filtro.items() %}
+      <a class="modo-botao{% if chave == ambiente_filtro %} ativo{% endif %}"
+         href="{{ url_for('ajuda_problemas', **params_url_lista_problemas(vista=vista, so_meus=so_meus, gere=gere, ambiente=ambiente_filtro, exibir_filtro_ambiente=True, ambiente_alvo=chave)) }}"
+         {% if chave == ambiente_filtro %}aria-current="page"{% endif %}
+         >{{ af.rotulo }}</a>
+    {% endfor %}
+    {% endif %}
+    {% if quadro.fora_do_vocabulario %}
+    <small class="muted" style="margin-left:auto">
+      {{ quadro.fora_do_vocabulario }} fora das vistas — veja em «Todos».
+    </small>
+    {% endif %}
+  </div>
+
+  {% if not problemas %}
+  <p style="padding:10px 0"><small>
+    {%- if so_meus -%}
+      {%- if vista == 'resolvidos' -%}Nenhum problema seu foi marcado como resolvido ainda.
+      {%- elif vista == 'todos' -%}Você ainda não relatou nenhum problema pela janela da ajuda.
+      {%- else -%}Nenhum problema seu em aberto.
+        {% if not gere %}Para conferir os que já foram resolvidos, veja
+        <a href="{{ url_for('ajuda_problemas', vista='resolvidos') }}">os resolvidos</a>.{% endif %}
+      {%- endif -%}
+    {%- elif vista == 'resolvidos' -%}
+      Nenhum problema marcado como resolvido ainda.
+    {%- elif vista == 'todos' -%}
+      Nada anotado até agora. Isso quer dizer que
+      nenhuma tela estourou desde que a versão foi aplicada, e que ninguém
+      avisou nada pela janela da ajuda.
+    {%- else -%}
+      Nada em aberto. Isso quer dizer que nenhuma tela estourou desde que a
+      versão foi aplicada, que ninguém avisou nada pela janela da ajuda e que
+      o que já foi anotado está resolvido — para conferir, veja
+      <a href="{{ url_for('ajuda_problemas', vista='resolvidos') }}">os
+      resolvidos</a>.
+    {%- endif -%}
+  </small></p>
+  {% else %}
+  {% if gere %}
+  {# IMPORTAR AS NOTAS POR DOCUMENTO — pedido do oficial em 30/08/2026.
+     Existe porque o banco de producao nao aceita escrita de quem desenvolve
+     (so do SISTEMA, que roda o servidor), e essa permissao esta certa: ela e
+     o que impede um processo qualquer da maquina de escrever no livro. #}
+  <details class="cancelar-ato" style="margin:10px 0">
+    <summary><small>Importar notas do desenvolvimento por documento</small></summary>
+    <form method="post" enctype="multipart/form-data"
+          action="{{ url_for('ajuda_importar_notas') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <p><small>Um bloco por nota. <strong>Linha em branco separa os blocos</strong>,
+         e linha começando por <code>#</code> é comentário:</small></p>
+      <pre style="font-size:.85em">[#35] ATENDIDO
+prova: tests/test_x.py
+O texto da nota, que pode
+ter várias linhas.</pre>
+      <p><small>Estados possíveis:
+        {% for chave in estados_dev %}<code>{{ chave }}</code>{% if not loop.last %} · {% endif %}{% endfor %}.
+        Para <code>ATENDIDO</code> e <code>NECESSARIO_TESTE</code> a prova é
+        obrigatória.</small></p>
+      <p><input type="file" name="documento" accept=".txt,.md,text/plain"></p>
+      <p><small>ou cole o texto aqui:</small><br>
+         <textarea name="texto" rows="6" cols="72"></textarea></p>
+      <p><button class="button" type="submit">Importar</button>
+         <small>Isto <strong>não fecha</strong> problema nenhum.</small></p>
+    </form>
+  </details>
+  {% endif %}
+
+  <div class="table-wrap">
+  <table class="table">
+    {# O NÚMERO VEM PRIMEIRO, e é o relato #23 do próprio oficial:
+
+         «claude relacionou o problema 8, 9 e 20 como finalizados, mas não sei
+          quais são esses — não há número nos problemas, não consigo saber qual
+          o claude se refere como 8, 9 e 20»
+
+         Ele estava certo, e o defeito era meu: o RELATÓRIO que sai da casa
+         numera cada problema («### #8 — …»), e a TELA não numerava nada. Eu lia
+         o relatório e falava por número; ele lia a tela e não tinha por onde
+         achar. Duas vistas do mesmo fato, e só uma com endereço. #}
+    <thead><tr><th>Nº</th><th>Situação</th><th>O que aconteceu</th><th>Onde</th>
+               <th>Vezes</th><th>Última</th><th></th></tr></thead>
+    <tbody>
+    {% for p in problemas %}
+      {# A âncora deixa apontar para um problema pelo endereço:
+         `/ajuda/problemas#problema-8`. Sem ela, «veja o 8» ainda obriga a
+         procurar a linha com o olho numa lista de vinte e oito. #}
+      <tr id="problema-{{ p.id }}">
+        <td>
+          <strong>#{{ p.id }}</strong>
+          {% if exibir_badge_ambiente and p.ambiente_abertura %}
+          <br><span class="badge amb-{{ p.ambiente_abertura|lower }}"
+                    title="{% if p.ambiente_abertura == 'OFICIAL' %}Replicado da produção (8765){% else %}Aberto neste sandbox (:8899){% endif %}"
+                    >{% if p.ambiente_abertura == 'OFICIAL' %}Oficial{% else %}Sandbox{% endif %}</span>
+          {% endif %}
+        </td>
+        <td class="problema-situacao-celula">
+          {# A PALAVRA DESCONHECIDA SAI COMO ELA É — achado do relato #82, em
+             17/09/2026. Esta cadeia terminava num `else` que pintava
+             «RESOLVIDO» para qualquer coisa: o problema #77, gravado como
+             «FECHADO», aparecia na lista como resolvido, e quem lesse não
+             tinha por onde desconfiar. A tela afirmava um estado que o
+             sistema não conhece.
+
+             Resolvido e a última alternativa da régua são coisas diferentes:
+             a última diz «não sei o que é isto», e é o que ela passa a dizer. #}
+          <div class="problema-situacao-badges">
+          {% if p.situacao == 'ABERTO' and p.relatado_em %}
+            <span class="badge critica">VOLTOU</span>
+          {% elif p.situacao == 'ABERTO' %}
+            <span class="badge alta">ABERTO</span>
+          {% elif p.situacao == 'RELATADO' %}
+            <span class="badge media">MANDADO</span>
+          {% elif p.situacao == 'RESOLVIDO' %}
+            <span class="badge ok">RESOLVIDO</span>
+          {% else %}
+            <span class="badge critica"
+                  title="Esta situação não é nenhuma das três que o sistema conhece. Ele não sabe se isto pede alguma coisa ou não — marque como resolvido escrevando o que houve, ou reabra."
+                  >{{ p.situacao or 'SEM SITUAÇÃO' }}</span>
+            <small class="muted problema-situacao-nota">palavra fora do vocabulário</small>
+          {% endif %}
+          {% if p.nota_dev_estado %}
+          <span class="badge dev-sub dev-{{ p.nota_dev_estado|lower }}"
+                title="{{ estados_dev.get(p.nota_dev_estado, p.nota_dev_estado) }}"
+                >{{ rotulo_curto_dev.get(p.nota_dev_estado, p.nota_dev_estado) }}</span>
+          {% endif %}
+          </div>
+        </td>
+        <td>
+          <strong>{{ p.titulo }}</strong>
+          <br><small>{{ origens.get(p.origem, p.origem) }}</small>
+          {% if p.detalhe %}
+          <details class="cancelar-ato">
+            <summary><small>Ver o que ficou escrito</small></summary>
+            <pre class="teor-texto" style="font-size:11px; max-height:280px; overflow:auto">{{ p.detalhe }}</pre>
+          </details>
+          {% endif %}
+          {% if p.diagnostico %}
+          <details class="cancelar-ato">
+            <summary><small>O que a ajuda respondeu — conselho, não laudo</small></summary>
+            <div style="white-space:pre-wrap; font-size:12px; padding:6px 0">{{ p.diagnostico }}</div>
+            {% if p.diagnostico_codigo_arquivo %}
+            <p class="small"><strong>Código lido em modo somente leitura:</strong>
+              <code>{{ p.diagnostico_codigo_arquivo }}</code>, linhas
+              {{ p.diagnostico_codigo_linhas or '—' }}.<br>
+              SHA-256 local: <code>{{ p.diagnostico_codigo_sha256 }}</code>.
+              O programa não foi executado nem alterado.</p>
+            {% else %}
+            <p class="small muted">Nenhum trecho do código pôde ser localizado
+              com segurança para esta leitura.</p>
+            {% endif %}
+          </details>
+          {% endif %}
+          {% if p.fechado_nota and p.situacao == 'RESOLVIDO' %}
+          {# QUEM FECHOU E QUANDO. A coluna «Última» mostra o último
+             acontecimento do problema — que num resolvido é a abertura, meses
+             atrás —, e é justamente por isso que ela não responde «quando isto
+             foi dado por resolvido». Desde o relato #82 a lista dos resolvidos
+             é ordenada por essa data, e a data que ordena tem de estar à
+             vista: ordem por um número que não se vê é adivinhação. #}
+          <br><small><strong>Resolvido:</strong> {{ p.fechado_nota }}
+            {%- if p.fechado_por %} — {{ p.fechado_por }}{% endif %}
+            {%- if p.fechado_em %} em {{ p.fechado_em[:16]|replace('T', ' ') }}{% endif %}</small>
+          {% elif p.fechado_nota %}
+          {# FOI DADO POR RESOLVIDO E VOLTOU. A nota fica, e fica DIZENDO o que
+             é: sem esta metade, a linha reaberta mostraria «Resolvido:…» com o
+             distintivo «ABERTO» ao lado — duas vistas do mesmo fato se
+             contradizendo na mesma linha. #}
+          <br><small class="muted"><strong>Já foi dado por resolvido:</strong>
+            {{ p.fechado_nota }}
+            {%- if p.fechado_por %} — {{ p.fechado_por }}{% endif %}
+            {%- if p.fechado_em %} em {{ p.fechado_em[:16]|replace('T', ' ') }}{% endif %}</small>
+          {% elif p.situacao == 'RESOLVIDO' %}
+          {# RESOLVIDO SEM UMA LINHA DE EXPLICAÇÃO — o vazio que a exigência
+             do relato #82 existe para não produzir de novo. Medido em
+             17/09/2026, quando a nota passou a ser obrigatória: das 65 linhas
+             resolvidas, 58 estavam assim — fechadas antes de a regra existir.
+
+             O SILÊNCIO AQUI É O CARIMBO QUE MENTE AO CONTRÁRIO: a linha diz
+             «RESOLVIDO» e não diz o quê, e quem abre a lista em dezembro
+             conclui que alguém cuidou daquilo. A frase não inventa o que
+             houve — ela diz que ninguém escreveu. #}
+          <br><small class="muted">Sem explicação registrada — quem deu isto
+            por resolvido não escreveu o que foi feito.</small>
+          {% endif %}
+          {% if p.reaberto_nota %}
+          {# POR QUE VOLTOU — relato #87. Quem relatou reabre dizendo o que
+             continua errado, e isso tem de estar à vista de quem conserta. #}
+          <br><small><strong>Reaberto:</strong> {{ p.reaberto_nota }}
+            {%- if p.reaberto_por %} — {{ p.reaberto_por }}{% endif %}
+            {%- if p.reaberto_em %} em {{ p.reaberto_em[:16]|replace('T', ' ') }}{% endif %}</small>
+          {% endif %}
+        </td>
+        <td><small>{{ p.onde or '—' }}{% if p.caminho %}<br>{{ p.caminho }}{% endif %}</small></td>
+        <td>{{ p.vezes }}</td>
+        <td><small>{{ p.ultima_em[:16]|replace('T', ' ') }}
+          {%- if p.ultimo_usuario %}<br>{{ p.ultimo_usuario }}{% endif %}</small></td>
+        <td class="actions-cell">
+          {# O RETORNO DO DESENVOLVIMENTO — relato #35. **Vem antes das outras
+             ações** porque é o que o oficial procura ao abrir esta tela:
+             saber em que pé está cada coisa que ele relatou.
+
+             NÃO É O `diagnostico`, e a tela distingue os dois: aquele é o
+             conselho da ajuda, que pode ter lido um trecho em modo somente
+             leitura, mas não alterou nem testou o programa;
+             este é de quem mexeu no código. #}
+          {% if p.nota_dev %}
+          <div class="alerta dev-estado-{{ p.nota_dev_estado|lower }}"
+               style="margin-bottom:.5rem">
+            <p style="margin:0"><strong>{{ estados_dev.get(p.nota_dev_estado, p.nota_dev_estado) }}</strong></p>
+            <p class="small" style="margin:.25rem 0">{{ p.nota_dev }}</p>
+            {% if p.nota_dev_prova %}
+              <p class="small" style="margin:0"><strong>Confira em:</strong>
+                 <code>{{ p.nota_dev_prova }}</code></p>
+            {% endif %}
+            <p class="small muted" style="margin:.25rem 0 0">
+              {{ (p.nota_dev_em or '')[:16]|replace('T',' ') }}
+              {%- if p.nota_dev_por %} · {{ p.nota_dev_por }}{% endif %}
+              {%- if gere %} — <strong>isto não fecha o problema</strong>; fechar é o seu clique.{% endif %}
+            </p>
+          </div>
+          {% endif %}
+
+          {% if gere %}
+          <details class="cancelar-ato">
+            <summary><small>{{ 'Atualizar' if p.nota_dev else 'Anotar' }} o retorno do desenvolvimento</small></summary>
+            <form method="post" action="{{ url_for('ajuda_problema_nota_dev', problema_id=p.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="vista" value="{{ vista }}">
+              {% if exibir_filtro_ambiente and ambiente_filtro != 'todas' %}
+              <input type="hidden" name="ambiente" value="{{ ambiente_filtro }}">
+              {% endif %}
+              <select name="estado">
+                {% for chave, texto in estados_dev.items() %}
+                  <option value="{{ chave }}"
+                          {% if p.nota_dev_estado == chave %}selected{% endif %}>
+                    {{ texto }}</option>
+                {% endfor %}
+              </select>
+              <textarea name="nota_dev" rows="3" cols="46"
+                        placeholder="O que foi feito, ou o que falta e por quê"
+                        >{{ p.nota_dev or '' }}</textarea>
+              <input name="prova" size="46"
+                     value="{{ p.nota_dev_prova or '' }}"
+                     placeholder="onde conferir: teste, arquivo, tela">
+              <small>Para dizer <strong>atendido</strong> é preciso dizer onde
+                conferir — sem isso é promessa, e promessa não se confere.</small>
+              <button class="button" type="submit">Gravar o retorno</button>
+            </form>
+          </details>
+          {% endif %}
+
+          {% if liberado and tem_chave and not p.diagnostico %}
+          <form method="post" action="{{ url_for('ajuda_problema_diagnosticar', problema_id=p.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="vista" value="{{ vista }}">
+            {% if exibir_filtro_ambiente and ambiente_filtro != 'todas' %}
+            <input type="hidden" name="ambiente" value="{{ ambiente_filtro }}">
+            {% endif %}
+            <input type="hidden" name="onde" value="{{ p.onde or '' }}">
+            <button class="button" type="submit">Pedir a leitura da ajuda</button>
+          </form>
+          {% endif %}
+          {% if p.situacao == 'RESOLVIDO' %}
+          {% if p.pode_reabrir %}
+          <form method="post" action="{{ url_for('ajuda_problema_situacao', problema_id=p.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="vista" value="{{ vista }}">
+            {% if so_meus %}<input type="hidden" name="meus" value="1">{% endif %}
+            {% if exibir_filtro_ambiente and ambiente_filtro != 'todas' %}
+            <input type="hidden" name="ambiente" value="{{ ambiente_filtro }}">
+            {% endif %}
+            <input type="hidden" name="acao" value="reabrir">
+            {# Para quem relatou, o motivo é obrigatório (relato #87); para quem
+               gere a lista ele continua opcional, como era. #}
+            <input name="motivo" size="40"
+                   {% if not gere %}required minlength="10"{% endif %}
+                   placeholder="{{ 'O que ainda não ficou certo? (pelo menos dez letras)' if not gere else 'Por que volta? (opcional)' }}">
+            <button class="button" type="submit">Reabrir</button>
+          </form>
+          {% endif %}
+          {% elif gere %}
+          {# QUEM FECHA DIZ POR QUE — e desde 17/09/2026 isso é exigência, e
+             não estilo: das 65 linhas resolvidas, 58 não tinham uma linha de
+             explicação, e 27 foram fechadas numa tarde. A lista dizia
+             «resolvido» e não dizia o quê.
+
+             O CAMPO É OBRIGATÓRIO NOS DOIS LADOS: aqui, para quem digita
+             saber antes de clicar; e no módulo (`ajuda_problemas.fechar`),
+             porque guarda de tela se contorna e a regra é do domínio. #}
+          <details class="cancelar-ato">
+            <summary><small>Marcar como resolvido</small></summary>
+            <form method="post" action="{{ url_for('ajuda_problema_situacao', problema_id=p.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="vista" value="{{ vista }}">
+              {% if so_meus %}<input type="hidden" name="meus" value="1">{% endif %}
+              {% if exibir_filtro_ambiente and ambiente_filtro != 'todas' %}
+              <input type="hidden" name="ambiente" value="{{ ambiente_filtro }}">
+              {% endif %}
+              <input name="nota" required minlength="10" size="46"
+                     placeholder="O que resolveu isto? (pelo menos dez letras)">
+              <small>Quem abrir esta lista em dezembro precisa saber o que foi
+                feito — «ok» não responde.</small>
+              <button class="button" type="submit">Resolvido</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+
+{% if relatorios %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Os relatórios que já saíram</span>
+    <small>o arquivo fica também na máquina</small>
+  </div>
+  <table class="table">
+    <thead><tr><th>Quando</th><th>Quantos</th><th>Arquivo</th>
+               <th>Impressão digital</th><th>Quem</th></tr></thead>
+    <tbody>
+    {% for r in relatorios %}
+      <tr>
+        <td><small>{{ r.gerado_em[:16]|replace('T', ' ') }}</small></td>
+        <td>{{ r.quantos }}</td>
+        <td><small>{{ r.arquivo }}</small></td>
+        {# A impressão digital é para conferir que o arquivo que chegou é o que
+           saiu — a mesma conferência que o roteiro de atualização pede. #}
+        <td><small style="word-break:break-all">{{ (r.sha256 or '')[:32] }}…</small></td>
+        <td><small>{{ r.gerado_por or '—' }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,743 @@
+"""
+O ESTOQUE DAS FOLHAS DE SEGURANÇA — o papel em que a certidão é impressa.
+
+POR QUE ESTE MÓDULO EXISTE, E COMO ELE APARECEU
+    Medindo o selo do Registro Civil em 27/08/2026, os 175 selos das espécies
+    do civil carregavam um campo que este sistema não sabia preencher:
+
+        "papelMoeda": {"codigo": "7225319", "fornecedor": "ARPENBRASIL"}
+
+    O E-Ofício controlava isso numa tabela própria — `tbPapelMoedaRCPN`, com
+    **510 folhas numeradas**, série, remessa e a marca de usada. **Sem o número
+    da folha, o selo do civil não se monta.**
+
+    Não é acessório do selo: é a folha física, numerada, que sai da gaveta e vai
+    para a mão do cliente. O oficial pediu o controle em 27/08/2026.
+
+O QUE O ACERVO MOSTRA, MEDIDO
+    510 folhas em 5 remessas e 3 séries — HA (371), BA (136), GB (3). Das 510,
+    **161 usadas e 349 em branco**: é o estoque que a casa tinha quando o
+    E-Ofício parou. O fornecedor é um só, ARPENBRASIL, e o cadastro de tipos
+    lista doze — TJMA, Casa da Moeda, gráficas — dos quais a casa usou um.
+
+A FOLHA É ÚNICA, E A REGRA MORA NO BANCO
+    `UNIQUE(codigo)`. Duas folhas com o mesmo número é o defeito que ninguém vê
+    até a inspeção pedir a numeração seguida — e aí são duas certidões no mundo
+    dizendo ser a mesma folha. Onde a regra pode morar no banco, ela mora no
+    banco.
+
+A FOLHA NÃO SE APAGA: INUTILIZA-SE, COM MOTIVO
+    É a mesma regra da folha do livro (`nu_inutilizacoes`), e pelo mesmo motivo:
+    a numeração tem de fechar. Folha que sumiu do sistema é folha que a
+    inspeção vai cobrar e ninguém vai saber explicar — «estragou na impressora»
+    escrito no dia é o que responde por ela cinco anos depois.
+
+A ORDEM É A DA GAVETA, E NÃO A DA ESCOLHA — mas na CERTIDÃO, desde 08/09/2026,
+o oficial escolhe
+    `proxima_folha` continua devolvendo a MENOR em branco, e continua sendo a
+    sugestão pré-selecionada na tela: para quem lança REGISTRO/AVERBAÇÃO/
+    ANOTAÇÃO nada mudou, e a numeração salteada continua sendo o que a
+    inspeção pergunta.
+
+    Mas o oficial relatou em 08/09/2026 que a folha sugerida às vezes não é a
+    que está fisicamente na gaveta — a certidão saía com o papel errado.
+    Investigado no `pp_folhas` real: **não havia defeito no estoque** (as
+    últimas cinco baixas seguiam a ordem certa, feitas por pessoas diferentes
+    entre 01 e 08/09/2026) — o descompasso é de manuseio do papel, não de
+    conta. Apresentada a escolha, ele decidiu **escolha livre, sem exigir
+    motivo**: na tela de emitir certidão do RCPN, `folha_seguranca` pode
+    escolher qualquer folha EM BRANCO do estoque, e `_selar_o_ato` valida e
+    usa a escolhida em vez de chamar `proxima_folha`. **A numeração pode
+    saltar sem explicação registrada** — foi a consequência que ele aceitou,
+    de olhos abertos, em troca de velocidade no balcão. Quem quiser inutilizar
+    a folha da frente em vez de escolher continua podendo, com o motivo.
+
+O ESTOQUE AVISA ANTES DE ACABAR
+    Papel de segurança se compra de fornecedor e demora a chegar. Acabar no
+    meio do expediente é o balcão parado sem certidão — por isso há um piso, e
+    o aviso aparece na tela como o das outras pendências da casa.
+
+FUNDAMENTO
+    Código de Normas do Foro Extrajudicial do TJMA — a certidão do Registro
+    Civil sai em papel de segurança, e o papel é numerado e prestado contas.
+"""
+from __future__ import annotations
+
+import sqlite3
+import re
+from typing import Any
+
+# O piso do estoque. Abaixo disto a tela avisa. Medido pelo uso da casa: 161
+# folhas em pouco mais de três anos de E-Ofício — cerca de quatro por mês. Cem
+# folhas são dois anos de movimento, e é tempo de sobra para uma remessa chegar.
+PISO_DO_ESTOQUE = 100
+
+SITUACOES = ("EM BRANCO", "USADA", "INUTILIZADA")
+
+# Quantas folhas uma remessa pode trazer de uma vez. Não é limite do mundo: é a
+# trava contra o zero a mais na hora de digitar a faixa — `1` a `1000000`
+# criaria um milhão de linhas e travaria o banco por minutos.
+LIMITE_DA_REMESSA = 5_000
+
+
+class PapelError(ValueError):
+    """Erro de regra do papel, com a mensagem pronta para o balcão."""
+
+
+SCHEMA = """
+-- A REMESSA QUE CHEGOU DO FORNECEDOR.
+--
+-- Ela existe para o dia em que a inspecao perguntar de onde veio a folha
+-- numero tal: a resposta e a nota fiscal e a data em que a caixa chegou.
+CREATE TABLE IF NOT EXISTS pp_remessas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fornecedor TEXT NOT NULL,               -- ARPENBRASIL, TJMA, Casa da Moeda
+    serie TEXT,                             -- HA, BA, GB — a letra da caixa
+    tipo TEXT,                              -- "Papel de Seguranca - ARPEN"
+    codigo_de TEXT NOT NULL,
+    codigo_ate TEXT NOT NULL,
+    quantas INTEGER NOT NULL,
+    nota_fiscal TEXT,
+    observacao TEXT,
+    recebida_em TEXT NOT NULL,
+    recebida_por TEXT
+);
+
+-- CADA FOLHA, UMA LINHA.
+--
+-- Parece muito para uma caixa de papel, e e o contrario: e o unico jeito de
+-- responder "onde esta a folha 7225319?" sem abrir a gaveta. O E-Oficio fazia
+-- igual, e por isso deu para medir o estoque dele seis anos depois.
+CREATE TABLE IF NOT EXISTS pp_folhas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- A FOLHA E UNICA. Duas com o mesmo numero sao duas certidoes no mundo
+    -- dizendo ser a mesma folha — e ninguem descobre ate a inspecao pedir a
+    -- numeracao seguida.
+    codigo TEXT NOT NULL UNIQUE,
+    serie TEXT,
+    remessa_id INTEGER NOT NULL,
+
+    situacao TEXT NOT NULL DEFAULT 'EM BRANCO',  -- EM BRANCO | USADA | INUTILIZADA
+
+    -- ONDE ELA FOI PARAR. `tabela` e `ato_id` sao a mesma amarracao que o razao
+    -- dos selos usa — a folha e o selo saem juntos, no mesmo ato.
+    tabela TEXT,
+    ato_id INTEGER,
+    selo TEXT,
+    usada_em TEXT,
+    usada_por TEXT,
+
+    -- FOLHA NAO SE APAGA: inutiliza-se, com motivo escrito.
+    inutilizada_em TEXT,
+    inutilizada_por TEXT,
+    inutilizada_motivo TEXT,
+
+    criada_em TEXT NOT NULL,
+    FOREIGN KEY(remessa_id) REFERENCES pp_remessas(id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_pp_folhas_situacao
+    ON pp_folhas(situacao, codigo);
+CREATE INDEX IF NOT EXISTS ix_pp_folhas_ato
+    ON pp_folhas(tabela, ato_id);
+
+-- O HISTORICO NAO VOLTA PARA A GAVETA COM A FOLHA. A linha da folha precisa
+-- ficar livre para um novo ato, mas a inspecao continua podendo responder em
+-- que ato ela esteve, quem a recuperou e por que.
+CREATE TABLE IF NOT EXISTS pp_movimentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    folha_id INTEGER NOT NULL REFERENCES pp_folhas(id),
+    codigo TEXT NOT NULL,
+    situacao_anterior TEXT NOT NULL,
+    situacao_nova TEXT NOT NULL,
+    tabela TEXT,
+    ato_id INTEGER,
+    selo TEXT,
+    motivo TEXT,
+    ocorrido_em TEXT NOT NULL,
+    ocorrido_por TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_pp_movimentos_folha
+    ON pp_movimentos(folha_id, id);
+CREATE INDEX IF NOT EXISTS ix_pp_movimentos_ato
+    ON pp_movimentos(tabela, ato_id);
+"""
+
+
+def init_papel_schema(con: sqlite3.Connection) -> None:
+    """Cria as tabelas do papel de segurança. Idempotente."""
+    con.executescript(SCHEMA)
+
+
+# ------------------------------------------------------------ a remessa
+
+
+def _numero(codigo: Any, o_que: str) -> int:
+    texto = str(codigo or "").strip()
+    if not texto.isdigit():
+        raise PapelError(
+            f"O {o_que} da folha só tem algarismos, e veio {texto!r}. "
+            f"É o número impresso na folha, como 7225136.")
+    return int(texto)
+
+
+def faixa(codigo_de: Any, codigo_ate: Any) -> list[str]:
+    """Os números da caixa, do primeiro ao último. Só calcula.
+
+    A LARGURA DO PRIMEIRO MANDA. `0725061` e `725061` são a mesma folha para o
+    fornecedor e dois códigos diferentes para um `UNIQUE` — então a faixa toda
+    sai com a largura do primeiro, que é como ela vem impressa.
+    """
+    de, ate = _numero(codigo_de, "número inicial"), _numero(codigo_ate, "número final")
+    if ate < de:
+        raise PapelError(
+            f"O número final ({ate}) é menor que o inicial ({de}). "
+            f"Confira a faixa da caixa.")
+    quantas = ate - de + 1
+    if quantas > LIMITE_DA_REMESSA:
+        raise PapelError(
+            f"Essa faixa tem {quantas} folhas, e o limite de uma remessa é "
+            f"{LIMITE_DA_REMESSA}. Isso quase sempre é um zero a mais no "
+            f"número final — confira a caixa.")
+    largura = len(str(codigo_de).strip())
+    return [str(n).zfill(largura) for n in range(de, ate + 1)]
+
+
+def receber_remessa(con: sqlite3.Connection, *, fornecedor: str,
+                    codigo_de: Any, codigo_ate: Any, agora: str,
+                    serie: Any = None, tipo: Any = None,
+                    nota_fiscal: Any = None, observacao: Any = None,
+                    usuario: str | None = None) -> dict:
+    """A caixa chegou: cadastra a remessa e cada folha dela. ESCREVE.
+
+    RECUSA A FOLHA REPETIDA, e diz qual é. Receber duas vezes a mesma caixa é o
+    engano comum — e sem a recusa ele criaria folhas que já existem, com a
+    numeração andando duas vezes pelo mesmo lugar.
+
+    A COMPARAÇÃO É PELO NÚMERO, E NÃO PELO TEXTO — correção de 09/09/2026,
+    achada com uma remessa real. `faixa()` já sabia que `0725061` e `725061`
+    são a mesma folha para o fornecedor (a largura do primeiro manda dentro de
+    UMA remessa), mas a recusa aqui comparava `codigo IN (...)` como TEXTO
+    contra o que já estava na tabela — e a carga do E-Ofício tinha gravado
+    `7225136`..`7225500` sem zero à esquerda. Uma remessa nova da MESMA faixa,
+    digitada como `007225415`..`007225500` (9 dígitos, como veio impressa na
+    caixa), não batia com nenhum `7225415` já cadastrado: **86 folhas entraram
+    duplicadas**, contando como estoque em dobro para o mesmo papel físico. A
+    recusa agora olha o valor (`CAST(codigo AS INTEGER)`), como `proxima_folha`
+    e `listar` já faziam para a ORDEM — a mesma régua para ordenar e para
+    comparar.
+    """
+    quem = (fornecedor or "").strip()
+    if not quem:
+        raise PapelError("Diga de quem veio o papel — ARPENBRASIL, TJMA, "
+                         "Casa da Moeda, a gráfica.")
+    codigos = faixa(codigo_de, codigo_ate)
+
+    numeros = [int(c) for c in codigos]
+    lugares = ",".join("?" * len(numeros))
+    ja = [c for (c,) in con.execute(
+        f"""SELECT codigo FROM pp_folhas
+            WHERE CAST(codigo AS INTEGER) IN ({lugares})""", numeros)]
+    if ja:
+        raise PapelError(
+            f"{len(ja)} folha(s) desta faixa já estão cadastradas — a primeira "
+            f"é a {ja[0]}. Esta caixa já foi recebida, ou a faixa se sobrepõe a "
+            f"uma anterior.")
+
+    cur = con.execute(
+        """INSERT INTO pp_remessas(fornecedor, serie, tipo, codigo_de,
+               codigo_ate, quantas, nota_fiscal, observacao, recebida_em,
+               recebida_por)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (quem, str(serie or "").strip().upper() or None,
+         str(tipo or "").strip() or None, codigos[0], codigos[-1],
+         len(codigos), str(nota_fiscal or "").strip() or None,
+         str(observacao or "").strip() or None, agora,
+         str(usuario or "").strip() or None))
+    remessa_id = int(cur.lastrowid)
+    con.executemany(
+        """INSERT INTO pp_folhas(codigo, serie, remessa_id, situacao, criada_em)
+           VALUES (?,?,?,'EM BRANCO',?)""",
+        [(c, str(serie or "").strip().upper() or None, remessa_id, agora)
+         for c in codigos])
+    return {"remessa_id": remessa_id, "quantas": len(codigos),
+            "de": codigos[0], "ate": codigos[-1]}
+
+
+def estornar_remessa(con: sqlite3.Connection, remessa_id: Any, *, motivo: str,
+                     agora: str, usuario: str | None = None) -> dict:
+    """Desfaz uma remessa recebida por engano. ESCREVE.
+
+    NASCEU DO MESMO INCIDENTE QUE CORRIGIU O DEDUP ACIMA — a remessa 21 de
+    09/09/2026, que duplicou 86 folhas já cadastradas por causa do zero à
+    esquerda. Corrigido o dedup, sobrava o estrago já feito: 86 linhas EM
+    BRANCO que não correspondem a papel nenhum a mais na gaveta. Inutilizar
+    uma a uma pela tela comum seria 86 cliques para um engano só.
+
+    INUTILIZA CADA FOLHA EM BRANCO DA REMESSA, com o MESMO motivo — é o
+    caminho que já existe (`inutilizar`), só que para o lote inteiro. **Folha
+    já USADA não se toca**: ela virou um ato de verdade, e desfazer a remessa
+    não desfaz o ato. Por isso o retorno diz separado o que foi inutilizado do
+    que já estava gasto — se sobrar usada, a remessa não estava toda errada.
+    """
+    texto = (motivo or "").strip()
+    if not texto:
+        raise PapelError(
+            "Escreva por que esta remessa está sendo estornada — duplicou "
+            "outra já cadastrada, foi digitada duas vezes, veio com o número "
+            "errado. É isso que explica o estoque depois.")
+    texto_id = str(remessa_id or "").strip()
+    if not texto_id.isdigit():
+        raise PapelError(f"Remessa {remessa_id!r} não é um número válido.")
+    remessa_id = int(texto_id)
+    linha = con.execute("SELECT id FROM pp_remessas WHERE id=?",
+                       (remessa_id,)).fetchone()
+    if not linha:
+        raise PapelError(f"Remessa {remessa_id} não encontrada.")
+    codigos = [c for (c,) in con.execute(
+        """SELECT codigo FROM pp_folhas
+            WHERE remessa_id=? AND situacao='EM BRANCO'""", (remessa_id,))]
+    ja_usadas = con.execute(
+        """SELECT COUNT(*) FROM pp_folhas
+            WHERE remessa_id=? AND situacao!='EM BRANCO'""",
+        (remessa_id,)).fetchone()[0]
+    for codigo in codigos:
+        inutilizar(con, codigo, motivo=texto, agora=agora, usuario=usuario)
+    return {"remessa_id": remessa_id, "inutilizadas": len(codigos),
+            "ja_usadas": int(ja_usadas)}
+
+
+# -------------------------------------------------------------- o uso
+
+
+def proxima_folha(con: sqlite3.Connection,
+                  serie: Any = None) -> sqlite3.Row | None:
+    """A próxima folha da gaveta — a MENOR em branco. Só LÊ.
+
+    A ORDEM NÃO É ESCOLHA DO OPERADOR. Deixar escolher faria a numeração andar
+    salteada, e numeração salteada é o que a inspeção pergunta. Quem precisar de
+    outra folha inutiliza a da frente, com o motivo — o que é a verdade, porque
+    ela foi para o lixo.
+
+    ORDENA PELO NÚMERO, E NÃO PELO TEXTO: os códigos desta casa têm larguras
+    diferentes (`725061` e `7225136`), e em ordem de texto `7225136` viria antes
+    de `725061`. A gaveta não é alfabética.
+    """
+    if serie:
+        return con.execute(
+            """SELECT * FROM pp_folhas WHERE situacao='EM BRANCO' AND serie=?
+                ORDER BY CAST(codigo AS INTEGER) LIMIT 1""",
+            (str(serie).strip().upper(),)).fetchone()
+    return con.execute(
+        """SELECT * FROM pp_folhas WHERE situacao='EM BRANCO'
+            ORDER BY CAST(codigo AS INTEGER) LIMIT 1""").fetchone()
+
+
+
+def resolver_codigo(codigo: Any) -> str:
+    """Aceita o numero impresso com ou sem serie (IA 033467007 / 033467007).
+
+    O estoque guarda so os digitos em `codigo` e a letra em `serie`. No balcao
+    a folha costuma ser lida como "IA 033467007"; sem este normalizador a
+    escolha digitada nao batia com o estoque.
+    """
+    bruto = str(codigo or "").strip().upper()
+    if not bruto:
+        return ""
+    m = re.match(r"^([A-Z]{1,3})[\s\-]*([0-9]+)$", bruto)
+    if m:
+        return m.group(2)
+    dig = "".join(c for c in bruto if c.isdigit())
+    return dig or bruto
+
+
+def ler(con: sqlite3.Connection, codigo: Any) -> sqlite3.Row | None:
+    """Uma folha pelo número. Só LÊ."""
+    return con.execute("SELECT * FROM pp_folhas WHERE codigo=?",
+                       (resolver_codigo(codigo),)).fetchone()
+
+
+def usar(con: sqlite3.Connection, codigo: Any, *, tabela: str, ato_id: int,
+         agora: str, selo: Any = None, usuario: str | None = None) -> dict:
+    """Gasta a folha num ato. ESCREVE.
+
+    RECUSA FOLHA QUE JÁ FOI GASTA, e diz em que ato ela está. Duas certidões na
+    mesma folha é o defeito que só aparece quando as duas estão na rua.
+    """
+    linha = ler(con, codigo)
+    if not linha:
+        raise PapelError(
+            f"A folha {codigo} não está no estoque. Confira o número impresso, "
+            f"ou receba a remessa dela primeiro.")
+    if linha["situacao"] == "USADA":
+        onde = f" (está no ato {linha['tabela']} nº {linha['ato_id']})" \
+            if linha["tabela"] else ""
+        raise PapelError(f"A folha {codigo} já foi usada{onde}.")
+    if linha["situacao"] == "INUTILIZADA":
+        raise PapelError(
+            f"A folha {codigo} foi inutilizada em "
+            f"{str(linha['inutilizada_em'] or '')[:10]}: "
+            f"{linha['inutilizada_motivo'] or 'sem motivo escrito'}.")
+    con.execute(
+        """UPDATE pp_folhas SET situacao='USADA', tabela=?, ato_id=?, selo=?,
+               usada_em=?, usada_por=? WHERE id=?""",
+        (str(tabela), int(ato_id), str(selo or "") or None, agora,
+         str(usuario or "") or None, int(linha["id"])))
+    con.execute(
+        """INSERT INTO pp_movimentos(
+               folha_id, codigo, situacao_anterior, situacao_nova, tabela,
+               ato_id, selo, motivo, ocorrido_em, ocorrido_por)
+           VALUES (?,?, 'EM BRANCO', 'USADA', ?,?,?,NULL,?,?)""",
+        (int(linha["id"]), linha["codigo"], str(tabela), int(ato_id),
+         str(selo or "") or None, agora, str(usuario or "") or None))
+    return {"codigo": linha["codigo"], "situacao": "USADA"}
+
+
+def recuperar_do_ato(con: sqlite3.Connection, *, tabela: str, ato_id: int,
+                     agora: str, usuario: str | None = None,
+                     motivo: str | None = None) -> dict:
+    """Devolve ao estoque todas as folhas de um ato cancelado. ESCREVE.
+
+    E idempotente: depois da primeira devolucao nao existe mais folha USADA
+    ligada ao ato, logo uma repeticao devolve zero e nao duplica o historico.
+    A ligacao antiga vai para ``pp_movimentos`` antes de ser limpa da folha.
+    """
+    linhas = con.execute(
+        """SELECT * FROM pp_folhas
+             WHERE situacao='USADA' AND tabela=? AND ato_id=?
+             ORDER BY CAST(codigo AS INTEGER)""",
+        (str(tabela), int(ato_id))).fetchall()
+    codigos: list[str] = []
+    for linha in linhas:
+        con.execute(
+            """INSERT INTO pp_movimentos(
+                   folha_id, codigo, situacao_anterior, situacao_nova, tabela,
+                   ato_id, selo, motivo, ocorrido_em, ocorrido_por)
+               VALUES (?,?, 'USADA', 'EM BRANCO', ?,?,?,?,?,?)""",
+            (int(linha["id"]), linha["codigo"], linha["tabela"],
+             int(linha["ato_id"]), linha["selo"],
+             str(motivo or "").strip() or "ato ou certidao cancelado",
+             agora, str(usuario or "").strip() or None))
+        con.execute(
+            """UPDATE pp_folhas
+                  SET situacao='EM BRANCO', tabela=NULL, ato_id=NULL, selo=NULL,
+                      usada_em=NULL, usada_por=NULL
+                WHERE id=? AND situacao='USADA'""",
+            (int(linha["id"]),))
+        codigos.append(str(linha["codigo"]))
+    return {"quantas": len(codigos), "codigos": codigos}
+
+
+def movimentos_da_folha(con: sqlite3.Connection, codigo: Any) -> list[dict]:
+    """O caminho completo de uma folha, inclusive recuperacoes. So LE."""
+    return [dict(r) for r in con.execute(
+        """SELECT * FROM pp_movimentos WHERE codigo=? ORDER BY id""",
+        (str(codigo or "").strip(),)).fetchall()]
+
+
+def recuperar_cancelados_existentes(con: sqlite3.Connection, *, agora: str,
+                                    usuario: str = "SISTEMA") -> dict:
+    """Reconcilia folhas ainda presas a itens ja cancelados. ESCREVE.
+
+    Chamada depois que todos os esquemas foram criados. Serve tanto para a
+    primeira atualizacao (cancelamentos antigos) quanto como rede de seguranca
+    a cada abertura. Consultas sem tabela sao ignoradas apenas para permitir
+    bancos unitarios menores; qualquer outro erro continua sendo erro.
+    """
+    alvos = (
+        ("rc_certidoes", "SELECT id FROM rc_certidoes WHERE cancelada_em IS NOT NULL"),
+        ("pt_certidoes", "SELECT id FROM pt_certidoes WHERE COALESCE(cancelada,0)=1"),
+        ("at_certidoes", "SELECT id FROM at_certidoes WHERE COALESCE(cancelada,0)=1"),
+        ("ri_certidoes", "SELECT id FROM ri_certidoes WHERE COALESCE(cancelada,0)=1"),
+        ("ri_atos", "SELECT id FROM ri_atos WHERE COALESCE(cancelado,0)=1"),
+        ("rc_atos", """SELECT a.id FROM rc_atos a
+                         JOIN rc_assentos r ON r.id=a.assento_id
+                        WHERE UPPER(COALESCE(r.situacao,''))='CANCELADO'"""),
+    )
+    por_tabela: dict[str, list[str]] = {}
+    for tabela, consulta in alvos:
+        try:
+            ids = [int(r[0]) for r in con.execute(consulta).fetchall()]
+        except sqlite3.OperationalError as erro:
+            if "no such table" in str(erro).lower():
+                continue
+            raise
+        for ato_id in ids:
+            r = recuperar_do_ato(
+                con, tabela=tabela, ato_id=ato_id, agora=agora,
+                usuario=usuario, motivo="recuperacao automatica de item cancelado")
+            if r["codigos"]:
+                por_tabela.setdefault(tabela, []).extend(r["codigos"])
+    return {
+        "quantas": sum(len(v) for v in por_tabela.values()),
+        "por_tabela": por_tabela,
+    }
+
+
+def inutilizar(con: sqlite3.Connection, codigo: Any, *, motivo: str,
+               agora: str, usuario: str | None = None) -> dict:
+    """Tira a folha de circulação, com o motivo escrito. ESCREVE.
+
+    O MOTIVO É OBRIGATÓRIO, como no livro. Folha que some do estoque sem
+    explicação é folha que a inspeção cobra e ninguém sabe responder —
+    «estragou na impressora», escrito no dia, responde por ela cinco anos
+    depois.
+    """
+    texto = (motivo or "").strip()
+    if not texto:
+        raise PapelError(
+            "Escreva por que a folha está sendo inutilizada — estragou na "
+            "impressora, rasgou, saiu borrada. É isso que responde pela "
+            "numeração quando alguém perguntar.")
+    linha = ler(con, codigo)
+    if not linha:
+        raise PapelError(f"A folha {codigo} não está no estoque.")
+    if linha["situacao"] == "USADA":
+        raise PapelError(
+            f"A folha {codigo} já foi usada num ato e não se inutiliza. Se a "
+            f"certidão saiu errada, o caminho é cancelar a certidão.")
+    con.execute(
+        """UPDATE pp_folhas SET situacao='INUTILIZADA', inutilizada_em=?,
+               inutilizada_por=?, inutilizada_motivo=? WHERE id=?""",
+        (agora, str(usuario or "") or None, texto, int(linha["id"])))
+    return {"codigo": linha["codigo"], "situacao": "INUTILIZADA"}
+
+
+# ------------------------------------------------------------ o estoque
+
+
+def estoque(con: sqlite3.Connection) -> dict:
+    """Quantas folhas há, por situação e por série. Só LÊ.
+
+    Chamada em tela; uma consulta sobre índice, e nenhuma transação de escrita.
+    """
+    por_situacao = {r["situacao"]: int(r["n"]) for r in con.execute(
+        "SELECT situacao, COUNT(*) n FROM pp_folhas GROUP BY situacao")}
+    em_branco = int(por_situacao.get("EM BRANCO", 0))
+    proxima = proxima_folha(con)
+    return {
+        "em_branco": em_branco,
+        "usadas": int(por_situacao.get("USADA", 0)),
+        "inutilizadas": int(por_situacao.get("INUTILIZADA", 0)),
+        "total": sum(por_situacao.values()),
+        "por_serie": [dict(r) for r in con.execute(
+            """SELECT serie, situacao, COUNT(*) n FROM pp_folhas
+                GROUP BY serie, situacao ORDER BY serie, situacao""")],
+        "proxima": (proxima["codigo"] if proxima else None),
+        "piso": PISO_DO_ESTOQUE,
+        "acabando": em_branco < PISO_DO_ESTOQUE,
+        # SEM PAPEL NENHUM É OUTRA COISA, e a tela diz outra coisa: não é
+        # «vá comprando», é «a certidão não sai hoje».
+        "acabou": em_branco == 0,
+    }
+
+
+def listar(con: sqlite3.Connection, *, situacao: Any = None,
+           limite: int | None = 200) -> list[dict]:
+    """As folhas, da menor para a maior. Só LÊ.
+
+    `limite=None` TRAZ TODAS, sem teto — achado em 09/09/2026. A tela da
+    escolha livre da certidão chamava `listar(situacao="EM BRANCO")` com o
+    teto padrão de 200, e a folha 7225441 — em branco de verdade, remessa 5 —
+    estava na posição 285 de 344: escondida do escrevente, que tinha o papel
+    físico na mão e não achava o número dele na lista. **Teto de 200 serve ao
+    HISTÓRICO** (`usadas`, `inutilizadas` em `/rcpn/papel`, onde ninguém
+    precisa ver a milésima folha já gasta); **não serve à ESCOLHA**, onde a
+    folha que falta é exatamente a que importa.
+    """
+    lugar = "" if limite is None else "LIMIT ?"
+    parametros: tuple = () if limite is None else (int(limite),)
+    if situacao:
+        return [dict(r) for r in con.execute(
+            f"""SELECT * FROM pp_folhas WHERE situacao=?
+                ORDER BY CAST(codigo AS INTEGER) {lugar}""",
+            (str(situacao).upper(), *parametros))]
+    return [dict(r) for r in con.execute(
+        f"""SELECT * FROM pp_folhas ORDER BY CAST(codigo AS INTEGER)
+            {lugar}""", parametros)]
+
+
+def remessas(con: sqlite3.Connection, limite: int = 50) -> list[dict]:
+    """As caixas que chegaram, da mais nova. Só LÊ."""
+    return [dict(r) for r in con.execute(
+        """SELECT r.*,
+                  (SELECT COUNT(*) FROM pp_folhas f
+                    WHERE f.remessa_id = r.id AND f.situacao='EM BRANCO') restam
+             FROM pp_remessas r ORDER BY r.id DESC LIMIT ?""", (int(limite),))]
+
+
+def do_ato(con: sqlite3.Connection, tabela: str, ato_id: int) -> list[dict]:
+    """As folhas gastas num ato. Só LÊ — para a ficha mostrar."""
+    return [dict(r) for r in con.execute(
+        """SELECT * FROM pp_folhas WHERE tabela=? AND ato_id=?
+            ORDER BY CAST(codigo AS INTEGER)""", (str(tabela), int(ato_id)))]
+
+
+# ------------------------------------------------ a folha da 1a via (09/10/2026)
+#
+# FOLHA_DA_1A_VIA_20261009 - pedido da escrevente Elisa, relatado pelo Robo
+# Certidao Nascimento: em 16 assentos desde 09/09/2026 a lavratura do registro
+# deu baixa numa folha (que foi ao TJMA no `papelMoeda` do selo), e a 1a via
+# pediu OUTRA folha EM BRANCO, imprimiu nela e nao deu baixa em nada. O
+# escrevente imprimia numa folha; o sistema e o Tribunal ficavam com outra.
+#
+# A API DO SELADOR NAO DEIXA INFORMAR A FOLHA DEPOIS. Medido na documentacao
+# oficial (C:\ARPNET\C11\Selo Eletronico\selador-doc, 2017): sao 181 servicos,
+# TODOS `POST /selo/...` de gerar selo, mais `POST /auth`; nao ha GET, PUT,
+# PATCH nem DELETE, nem servico de papel, retificacao de papel ou cancelamento.
+# `DadosSeloNascimento`, `DadosSeloObito`, `DadosSeloNatimorto` e
+# `DadosSeloCasamento` tem `papelMoeda` **required**; `DadosPapelMoeda` so tem
+# `codigo` e `fornecedor`. Entao a folha do registro E a folha da 1a via - e a
+# unica coisa honesta e imprimir a 1a via nela.
+#
+# Por isso a 1a via NAO da baixa de novo (a folha ja esta USADA no rc_atos do
+# registro): ela se AMARRA a certidao por um movimento proprio, sem mudar a
+# situacao. Baixa dupla nao existe por construcao.
+
+MOTIVO_VINCULO_1A_VIA = ("1a via impressa nesta folha - a mesma baixada no "
+                         "registro e informada ao TJMA no selo do registro")
+
+
+def folha_do_registro(con: sqlite3.Connection, assento_id: int) -> dict | None:
+    """A folha USADA pelo ato REGISTRO do assento, ou None. So LE.
+
+    E a folha que foi ao TJMA no `papelMoeda` do selo do registro - e,
+    portanto, a folha em que a 1a via tem de ser impressa.
+    """
+    linha = con.execute(
+        """SELECT f.* FROM pp_folhas f
+             JOIN rc_atos a ON a.id = f.ato_id
+            WHERE f.tabela='rc_atos' AND f.situacao='USADA'
+              AND a.assento_id=? AND UPPER(a.tipo)='REGISTRO'
+         ORDER BY f.id DESC LIMIT 1""", (int(assento_id),)).fetchone()
+    return dict(linha) if linha else None
+
+
+def vincular_primeira_via(con: sqlite3.Connection, codigo: Any, *,
+                          certidao_id: int, agora: str, selo: Any = None,
+                          usuario: str | None = None) -> dict:
+    """Amarra a 1a via a folha do registro. ESCREVE so em `pp_movimentos`.
+
+    NAO MUDA A SITUACAO DA FOLHA: ela ja esta USADA no registro, e e assim
+    que o TJMA a conhece. Recusa folha que nao esteja USADA num REGISTRO do
+    civil - amarrar a 1a via a folha em branco seria o defeito de volta.
+    Idempotente: a mesma certidao nao ganha dois vinculos.
+    """
+    linha = ler(con, codigo)
+    if not linha:
+        raise PapelError(f"A folha {codigo} nao esta no estoque.")
+    if linha["situacao"] != "USADA" or linha["tabela"] != "rc_atos":
+        raise PapelError(
+            f"A folha {codigo} nao e a folha baixada no registro "
+            f"(situacao {str(linha['situacao']).lower()}).")
+    ja = con.execute(
+        """SELECT 1 FROM pp_movimentos
+            WHERE folha_id=? AND tabela='rc_certidoes' AND ato_id=?""",
+        (int(linha["id"]), int(certidao_id))).fetchone()
+    if not ja:
+        con.execute(
+            """INSERT INTO pp_movimentos(
+                   folha_id, codigo, situacao_anterior, situacao_nova, tabela,
+                   ato_id, selo, motivo, ocorrido_em, ocorrido_por)
+               VALUES (?,?, 'USADA', 'USADA', 'rc_certidoes', ?,?,?,?,?)""",
+            (int(linha["id"]), linha["codigo"], int(certidao_id),
+             str(selo or linha["selo"] or "") or None, MOTIVO_VINCULO_1A_VIA,
+             agora, str(usuario or "") or None))
+    return {"codigo": linha["codigo"], "situacao": "USADA",
+            "vinculo": "rc_certidoes", "certidao_id": int(certidao_id)}
+
+
+def folha_da_certidao(con: sqlite3.Connection, certidao_id: int) -> str | None:
+    """O numero da folha em que a certidao do RCPN saiu, ou None. So LE.
+
+    2a via: a folha baixada na propria certidao. 1a via: a do registro,
+    amarrada por `vincular_primeira_via`.
+    """
+    linha = con.execute(
+        """SELECT codigo FROM pp_folhas
+            WHERE tabela='rc_certidoes' AND ato_id=? AND situacao='USADA'
+         ORDER BY id DESC LIMIT 1""", (int(certidao_id),)).fetchone()
+    if linha:
+        return linha[0]
+    linha = con.execute(
+        """SELECT codigo FROM pp_movimentos
+            WHERE tabela='rc_certidoes' AND ato_id=? AND motivo=?
+         ORDER BY id DESC LIMIT 1""",
+        (int(certidao_id), MOTIVO_VINCULO_1A_VIA)).fetchone()
+    return linha[0] if linha else None
+
+# ------------------------------------- as folhas gastas, com o assento (09/10/2026)
+#
+# FICHA_FOLHA_SEGURANCA_20261009 - pedido da escrevente Elisa: a tabela de
+# usadas em /rcpn/papel dizia so «rc_atos nº 428» e parava nas 60 primeiras
+# (pela NUMERACAO, nao pela data). Aqui ela traz o assento (nome, especie,
+# termo, id para o link da ficha), da mais recente, com busca e paginas.
+# SO LE.
+def usadas_com_assento(con: sqlite3.Connection, *, busca: Any = "",
+                       pagina: Any = 1, por_pagina: int = 60) -> dict:
+    """As folhas USADAS com o assento de cada uma, da mais recente. SO LE.
+
+    `busca` acha pelo numero da folha (com ou sem serie/zeros), pelo selo,
+    pelo nome do registrado e - so digitos - pelo id do assento ou termo.
+    """
+    import math
+    import re as _re
+    busca = str(busca or "").strip()
+    try:
+        pagina = max(1, int(pagina or 1))
+    except (TypeError, ValueError):
+        pagina = 1
+    por_pagina = max(1, int(por_pagina or 60))
+    tabelas = {r[0] for r in con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    tem_rc = {"rc_atos", "rc_certidoes", "rc_assentos"} <= tabelas
+    if tem_rc:
+        colunas = ("f.*, a.id AS assento_id, a.nome AS assento_nome, "
+                   "a.especie AS assento_especie, a.numero AS assento_numero, "
+                   "ra.tipo AS ato_tipo, rcc.numero AS certidao_numero, "
+                   "rcc.ano AS certidao_ano")
+        base = ("FROM pp_folhas f "
+                "LEFT JOIN rc_atos ra ON f.tabela='rc_atos' AND ra.id=f.ato_id "
+                "LEFT JOIN rc_certidoes rcc ON f.tabela='rc_certidoes' "
+                "AND rcc.id=f.ato_id "
+                "LEFT JOIN rc_assentos a "
+                "ON a.id=COALESCE(ra.assento_id, rcc.assento_id) "
+                "WHERE f.situacao='USADA'")
+    else:
+        colunas = ("f.*, NULL AS assento_id, NULL AS assento_nome, "
+                   "NULL AS assento_especie, NULL AS assento_numero, "
+                   "NULL AS ato_tipo, NULL AS certidao_numero, "
+                   "NULL AS certidao_ano")
+        base = "FROM pp_folhas f WHERE f.situacao='USADA'"
+    params: list = []
+    if busca:
+        # «série código» se procura sem juntar as colunas no SQL (12/10/2026):
+        # sem espaço, a busca cabe numa coluna só; com espaço, a série termina
+        # com a primeira parte e o código começa com a segunda.
+        conds = ["f.codigo LIKE ?", "COALESCE(f.serie,'') LIKE ?", "COALESCE(f.selo,'') LIKE ?"]
+        params += [f"%{busca}%"] * 3
+        if " " in busca.strip():
+            serie_b, codigo_b = busca.strip().split(None, 1)
+            conds.append("(COALESCE(f.serie,'') LIKE ? AND f.codigo LIKE ?)")
+            params += [f"%{serie_b}", f"{codigo_b}%"]
+        digitos = _re.sub(r"\D", "", busca)
+        if digitos:
+            conds.append("f.codigo LIKE ?")
+            params.append(f"%{digitos}%")
+        if tem_rc:
+            conds.append("COALESCE(a.nome,'') LIKE ?")
+            params.append(f"%{busca}%")
+            if digitos and digitos == busca.lstrip("#").strip():
+                conds += ["a.id = ?", "CAST(a.numero AS TEXT) = ?"]
+                params += [int(digitos), digitos]
+        base += " AND (" + " OR ".join(conds) + ")"
+    total = con.execute(f"SELECT COUNT(*) {base}", params).fetchone()[0]
+    paginas = max(1, math.ceil(total / por_pagina))
+    pagina = min(pagina, paginas)
+    linhas = [dict(r) for r in con.execute(
+        f"SELECT {colunas} {base} "
+        "ORDER BY COALESCE(f.usada_em,'') DESC, CAST(f.codigo AS INTEGER) DESC "
+        "LIMIT ? OFFSET ?", (*params, por_pagina, (pagina - 1) * por_pagina))]
+    return {"linhas": linhas, "total": int(total), "pagina": pagina,
+            "paginas": paginas, "busca": busca, "por_pagina": por_pagina}

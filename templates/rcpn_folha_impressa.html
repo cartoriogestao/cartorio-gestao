@@ -1,0 +1,216 @@
+{# A FOLHA DO LIVRO — três colunas, frente e verso, PAPEL RETRATO.
+
+   Oficial 01/09/2026: retrato (carta 215 × 279 mm). 1ª coluna estreita, SÓ o número de ordem.
+   3ª coluna: um só título «Notas, Averbações e Retificações» em cima (fora da pauta)
+   e linhas seguidas abaixo. Livro/termo/folha no topo compacto. #}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>{{ titulo }}</title>
+<style>
+  * { box-sizing: border-box; }
+  /* RETRATO — 215 x 279 mm (carta em pe). Topo curto, mas o cabecalho da casa
+     (termo, livro, folha) tem de caber: nao cortar identificacao do livro. */
+  @page {
+    size: {{ folha.LARGURA_MM }}mm {{ folha.ALTURA_MM }}mm;
+    margin-top: {{ folha.MARGEM_TOPO_MM }}mm;
+    margin-right: 5mm;
+    margin-bottom: 5mm;
+    margin-left: 5mm;
+  }
+  body { font-family: Georgia, "Times New Roman", serif; font-size: 10.5pt;
+         color: #000; margin: 0; padding: 0; }
+
+  .folha { width: 100%; page-break-after: always; }
+  .folha:last-child { page-break-after: auto; }
+
+  .cabecalho { text-align: center; line-height: 1.12; margin: 0 0 1mm 0; }
+  .cabecalho img { height: 15mm; width: auto; display: block; margin: 0 auto 0.6mm; }
+  .cabecalho .titulo-ato { margin-top: 0.5mm; }
+  .cabecalho .localizacao { display: flex; justify-content: space-between;
+                            margin-top: 0.5mm; font-size: 9.5pt; }
+
+  .assinaturas-topo { height: 5mm; border-bottom: 1.2pt solid #000;
+                      display: flex; }
+  .assinaturas-topo div { flex: 1; border-right: .6pt solid #000; }
+  .assinaturas-topo div:last-child { border-right: none; }
+
+  table.colunas { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.colunas th { font-family: Arial, Helvetica, sans-serif;
+                     font-size: 8pt; font-weight: normal; text-align: center;
+                     padding: 0.8mm 1mm; border-bottom: 1.2pt solid #000; }
+  table.colunas td { vertical-align: top; padding: 1.2mm 1.2mm;
+                     border-right: 1.2pt solid #000; }
+  table.colunas td:last-child { border-right: none; }
+  table.colunas td.col-margem { padding: 0; }
+
+  /* PAUTA: um so bloco na 3a coluna. Titulo no <th>, fora da caixa.
+     Ciclo = PAUTA_PASSO_MM. background-size/position 0: o 1o vao = os demais. */
+  .campo-notas.pautado {
+    position: relative;
+    padding-top: 0;
+    padding-left: 1.2mm;
+    padding-right: 1.2mm;
+    min-height: 155mm;
+  }
+  /* SVG imprime mesmo quando o navegador omite imagens de fundo. A pauta
+     não participa do fluxo: as anotações mantêm o HTML e seus espaçamentos. */
+  .pauta-linhas { position: absolute; inset: 0; width: 100%; height: 100%;
+                  pointer-events: none; }
+  .campo-notas p { position: relative; }
+
+  .col-numero { text-align: center; padding-left: 0.4mm; padding-right: 0.4mm; }
+  /* Numero de ordem numa so linha na 1a coluna estreita (oficial 07/09/2026). */
+  .col-numero .n { font-size: 8.5pt; letter-spacing: 0; margin-top: 2mm;
+                   white-space: nowrap; word-break: normal; overflow: visible; }
+
+  .termo { text-align: justify; line-height: 1.35; white-space: pre-wrap; }
+  .claro { border-bottom: .8pt solid #000; padding: 0 2mm; }
+  .vazio { display: inline-block; min-width: 30mm; }
+
+  .marca-face { font-family: Arial, sans-serif; font-size: 7.5pt;
+                color: #555; text-align: right; padding-top: 0.8mm; }
+
+  /* CARIMBO DO SELO NA MARGEM - Elisa 09/10/2026 (termo 19579): a URL de
+     consulta do selo nao tinha onde quebrar e invadia a 3a coluna. Quebra
+     dentro da caixa; QR e codigo do selo nao mudam. */
+  .carimbo-do-selo { max-width: 100%; }
+  .carimbo-do-selo .carimbo-com-qr { max-width: 100%; box-sizing: border-box; }
+  .carimbo-do-selo .carimbo-texto { min-width: 0; overflow-wrap: anywhere; }
+  .carimbo-do-selo .carimbo-link { font-size: 8pt; overflow-wrap: anywhere;
+                                   word-break: break-all; }
+
+  /* LINHAS DE ASSINATURA - folha do NASCIMENTO (Elisa 09/10/2026): declarante
+     e quem lavrou, nomes vindos do ato (face.assinaturas). */
+  .assinaturas-do-termo { margin-top: 8mm; }
+  .assinaturas-do-termo .assinatura { margin: 9mm 6mm 0; text-align: center;
+                                     page-break-inside: avoid; }
+  .assinaturas-do-termo .linha-ass { border-top: .8pt solid #000; height: 0; }
+  .assinaturas-do-termo .nome-ass { font-size: 9.5pt; margin-top: .8mm;
+                                    min-height: 1.2em; overflow-wrap: anywhere; }
+
+  @media screen {
+    body { background: #eceff3; padding: 8px 14px 14px; }
+    .folha { background: #fff;
+             padding: {{ folha.MARGEM_TOPO_MM }}mm {{ margem }}mm {{ margem }}mm {{ margem }}mm;
+             width: {{ folha.LARGURA_MM }}mm; margin: 0 auto 14px;
+             box-shadow: 0 1px 6px rgba(0,0,0,.25); }
+    .aviso { max-width: {{ folha.LARGURA_MM }}mm; margin: 0 auto 10px;
+             font-family: Arial, sans-serif; font-size: 12px; color: #333;
+             background: #fff; padding: 12px; border-left: 4px solid #8a6d3b; }
+    .naoimprime { }
+  }
+  @media print {
+    .naoimprime { display: none !important; }
+    /* Amplia o desenho inteiro, sem recompor as linhas do termo. A largura
+       de composição é a mesma da prévia; o zoom ocupa a área útil do papel. */
+    .folha {
+      width: {{ folha.LARGURA_MM - 2 * margem }}mm;
+      zoom: {{ (folha.LARGURA_MM - 10) / (folha.LARGURA_MM - 2 * margem) }};
+    }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+{# A aula das três colunas saiu da tela de uso — relato #38, 31/08/2026. #}
+{% if erro_termo %}
+<div class="aviso naoimprime">
+  <p><strong>Não deu para montar o termo:</strong> {{ erro_termo }}</p>
+</div>
+{% elif not congelado and faces and faces[0].termo %}
+<div class="aviso naoimprime">
+  <p><strong>Prévia dos campos do assento.</strong> Nada foi gravado —
+     gravar o termo é outro passo, com confirmação.
+     {% if do_acervo %}Este assento veio do E-Ofício: o termo original
+     existe em papel.{% endif %}
+     Ao imprimir, use <strong>retrato</strong> e <strong>frente e verso</strong>.</p>
+</div>
+{% elif not congelado %}
+<div class="aviso naoimprime">
+  <p>Ao imprimir, use <strong>retrato</strong> e <strong>frente e verso</strong>.</p>
+</div>
+{% endif %}
+
+{% for face in faces %}
+<div class="folha">
+  {% if cabecalho %}
+  <div class="cabecalho">
+    <div><img src="{{ url_for('static', filename='brasao.jpg') }}"
+              alt="Brasão da República Federativa do Brasil"></div>
+    <div>{{ cabecalho.pais }}</div>
+    <div><strong>{{ cabecalho.unidade }}</strong></div>
+    <div><strong>{{ cabecalho.titular }}</strong>
+         {% if cabecalho.titular_qualidade %}— {{ cabecalho.titular_qualidade }}{% endif %}</div>
+    <div>{{ cabecalho.endereco }}</div>
+    <div>{{ cabecalho.contato }}</div>
+    <div class="titulo-ato"><strong>{{ cabecalho.titulo_do_ato }}</strong></div>
+    <div class="localizacao">
+      <span><strong>Termo:</strong> <strong>{{ cabecalho.termo }}</strong></span>
+      <span><strong>Livro:</strong> <strong>{{ cabecalho.livro }}</strong></span>
+      <span><strong>Folha:</strong> <strong>{{ cabecalho.folha }}</strong></span>
+    </div>
+  </div>
+  {% endif %}
+  {% if falta_no_cabecalho %}
+    <p class="naoimprime" style="color:#8a2540; font-size:11px">
+      O cabeçalho sai incompleto — falta
+      {% for x in falta_no_cabecalho %}{{ x }}{% if not loop.last %}, {% endif %}{% endfor %}.
+      Confira em Administrativo → Configurações.</p>
+  {% endif %}
+  {% if folha.FAIXA_DE_ASSINATURAS_NO_TOPO %}
+    <div class="assinaturas-topo"><div></div><div></div><div></div></div>
+  {% endif %}
+
+  <table class="colunas">
+    <colgroup>
+      {% for c in folha.COLUNAS %}
+        <col style="width: {{ (c.largura * 100)|round(2) }}%">
+      {% endfor %}
+    </colgroup>
+    <thead>
+      <tr>{% for c in folha.COLUNAS %}<th>{{ c.titulo }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-numero">
+          {% if face.numero %}<div class="n">{{ face.numero }}</div>{% endif %}
+        </td>
+
+        <td class="col-termo">
+          <div class="termo">{{ face.termo|safe }}</div>
+          {% if face.carimbo %}<div class="carimbo-do-selo">{{ face.carimbo|safe }}</div>{% endif %}
+          {% if face.assinaturas %}<div class="assinaturas-do-termo">
+            {% for a in face.assinaturas %}<div class="assinatura"><div class="linha-ass"></div>
+              <div class="nome-ass">{{ a.nome }}{% if a.nome and a.qualidade %}, {% endif %}{{ a.qualidade }}</div></div>
+            {% endfor %}</div>{% endif %}
+        </td>
+
+        {# Terceira coluna: um título (no th) e um recanto pautado contínuo. #}
+        <td class="col-margem">
+          <div class="campo-notas pautado">
+            <svg class="pauta-linhas" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <defs><pattern id="pauta-{{ loop.index }}" width="100%"
+                height="{{ folha.PAUTA_PASSO_MM }}mm" patternUnits="userSpaceOnUse">
+                <rect x="0" y="{{ folha.PAUTA_PASSO_MM - 0.12 }}mm"
+                      width="100%" height="0.12mm" fill="#999"/>
+              </pattern></defs>
+              <rect width="100%" height="100%" fill="url(#pauta-{{ loop.index }})"/>
+            </svg>
+            {% for item in face.notas_coluna %}
+              <p>{{ item }}</p>
+            {% endfor %}
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="marca-face">{{ face.rotulo }}</div>
+</div>
+{% endfor %}
+
+</body>
+</html>

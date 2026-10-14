@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Exportação para o ONR</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a></div>
+
+<div class="notice">
+  O formato destes arquivos foi levantado <strong>dos envios que esta serventia já fez</strong>,
+  encontrados na pasta do E-Ofício — não de documentação inferida. O ONR trocou a
+  especificação antiga em XML por modelos em JSON, e o Indicador Real já sai no formato novo.
+</div>
+
+<div class="notice warning">
+  <strong>O sistema gera o arquivo, não transmite.</strong> Confira e envie pelos canais do
+  ONR. Transmissão automática exigiria credencial da serventia, que não está configurada aqui.
+</div>
+
+<form class="filters" method="get">
+  <label>De <input type="date" name="inicio" value="{{ inicio }}"></label>
+  <label>Até <input type="date" name="fim" value="{{ fim }}"></label>
+  <button>Conferir período</button>
+</form>
+
+<section class="cards">
+  <div class="stat"><strong>{{ vinculos|length }}</strong><small>vínculos no Indicador Pessoal</small></div>
+  <div class="stat"><strong>{{ matriculas|length }}</strong><small>matrículas no Indicador Real</small></div>
+  <div class="stat"><strong>{{ sem_doc }}</strong><small>sem CPF/CNPJ válido</small></div>
+  <div class="stat"><strong>{{ cns }}</strong><small>CNS da serventia</small></div>
+</section>
+
+{% if sem_doc %}
+<div class="notice warning">
+  <strong>{{ sem_doc }} vínculos sairão com documento <code>00000000000</code>.</strong>
+  É a convenção que a própria serventia já usava — no histórico, 7.772 de 10.685 registros
+  foram enviados assim, porque o acervo não tem o CPF. O arquivo é aceito, mas cada um
+  desses é uma pessoa que o ONR não consegue identificar.
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Gerar arquivos</span></div>
+  <div class="grid2" style="padding:14px;gap:14px">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="inicio" value="{{ inicio }}">
+      <input type="hidden" name="fim" value="{{ fim }}">
+      <input type="hidden" name="tipo" value="PESSOAL">
+      <button class="primary" {% if not vinculos %}disabled{% endif %}>
+        Indicador Pessoal (.XML)</button>
+      <div class="small muted">{{ vinculos|length }} registro(s) — formato BANCOLIGHT</div>
+    </form>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="inicio" value="{{ inicio }}">
+      <input type="hidden" name="fim" value="{{ fim }}">
+      <input type="hidden" name="tipo" value="REAL">
+      <button class="primary" {% if not matriculas %}disabled{% endif %}>
+        Indicador Real (.json)</button>
+      <div class="small muted">{{ matriculas|length }} matrícula(s) — formato novo do ONR</div>
+    </form>
+  </div>
+</section>
+
+{% if vinculos %}
+<section class="panel">
+  <div class="panel-head"><span>Prévia do Indicador Pessoal (20 primeiros)</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Matrícula</th><th>Tipo de ato</th><th>Data</th></tr></thead>
+    <tbody>{% for v in vinculos[:20] %}
+      <tr><td>{{ v.nome }}</td>
+          <td>{% if v.documento %}{{ v.documento }}{% else %}<span class="badge alta">00000000000</span>{% endif %}</td>
+          <td>{{ v.matricula }}</td><td class="small">{{ v.tipo_ato }}</td>
+          <td>{{ fmt_date(v.data_ato) }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

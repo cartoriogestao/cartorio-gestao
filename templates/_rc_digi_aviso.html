@@ -1,0 +1,13 @@
+{# O REGISTRO DO RCPN SEM O TERMO ASSINADO DEPOIS DE 7 DIAS — problema #121.
+   A mesma forma do aviso do RI (_digi_aviso.html). Só nas telas do Registro
+   Civil; avisa e não trava. #}
+{% if rc_digi_aviso %}
+<div role="alert" style="background:#b00020;color:#fff;padding:12px 18px;font-size:16px;
+     font-weight:700;border-bottom:4px solid #6d0014">
+  {{ rc_digi_aviso.vencidas|length }} registro(s) lavrado(s) sem o termo assinado
+  digitalizado há mais de 7 dias:
+  {% for p in rc_digi_aviso.vencidas[:12] %}<a style="color:#fff;text-decoration:underline"
+    href="{{ url_for('rcpn_assento', assento_id=p.id) }}#termo-digitalizado">{{ p.especie|lower }} nº {{ p.numero or p.id }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if rc_digi_aviso.vencidas|length > 12 %}…{% endif %}.
+  <a style="color:#fff;text-decoration:underline" href="{{ url_for('rcpn_termos_a_digitalizar') }}">Ver a lista</a>.
+</div>
+{% endif %}

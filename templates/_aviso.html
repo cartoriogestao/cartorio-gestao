@@ -1,0 +1,32 @@
+{#
+  O BOTAO DE FECHAR O AVISO — relato #62, de 15/09/2026, construido em 17/09.
+
+  Pedido do Analista de Sistemas, na tela do painel: «dar opcao de baixar os
+  avisos em todas as telas». O oficial completou o que ele quis dizer: o aviso
+  SAI DA TELA e VOLTA quando a tela for carregada de novo — e NAO HA «excluir
+  para sempre».
+
+  E a razao de nao haver e a mesma que fez este projeto nunca esconder aviso por
+  padrao: o aviso de prazo e o da disputa de escrita existem justamente para nao
+  ser ignorados. Um botao que os apagasse de vez faria o problema sumir da vista
+  sem resolver — e a tela passaria a afirmar uma casa em ordem que nao e a casa.
+
+  NAO SE GUARDA NADA AO FECHAR — nem no banco, nem no navegador. O aviso e
+  desenhado pelo SERVIDOR a cada carregamento (`templates/base.html`), e este
+  botao so o tira da frente de quem ja o leu (ver `static/avisos.js`). Enquanto
+  o fato que o acende existir, ele volta no proximo carregamento; quando o fato
+  passar, ele some sozinho, sem ninguem clicar em nada.
+
+  E UMA MACRO PORQUE O MESMO BOTAO SERVE QUATRO AVISOS, e quatro copias
+  divergiriam na primeira vez que alguem mudasse o rotulo de um deles — a licao
+  de `_fraude.html` e de `_cobrar.html`, que tambem sao uma macro e nao sete
+  pedacos iguais.
+
+  O `title` diz o que o clique faz, e nao so «fechar»: o operador precisa saber
+  que o aviso volta, senao ele acha que resolveu o problema dele.
+#}
+{% macro fechar() -%}
+<button type="button" class="aviso-fechar" data-aviso-fechar
+        title="Fechar este aviso — ele volta ao carregar a tela de novo"
+        aria-label="Fechar este aviso">×</button>
+{%- endmacro %}

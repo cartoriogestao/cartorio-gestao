@@ -1,0 +1,210 @@
+{#
+  O aviso de intimação, a entrega e o edital.
+
+  A ORDEM DAS LISTAS NÃO É ALFABÉTICA NEM CRONOLÓGICA: o edital vem primeiro
+  porque é a que mais enche. Medido no acervo: 1.092 dos 1.618 avisos
+  terminaram publicados, e 1.068 das 1.139 não-entregas dizem "Ausente".
+  Quem trata edital como exceção desenha a tela errada.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Avisos de intimação</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
+  <a class="button" href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>
+</div>
+
+<div class="notice">
+  O aviso é o papel que vai até o devedor; a <strong>intimação é o ato</strong>,
+  e ela só se lavra quando o papel chega. Entrega que não achou ninguém
+  <strong>não intima</strong> — ela abre o caminho do edital.
+  <br><br>
+  <strong>O aviso sai na ficha do título</strong>, que é onde você vê o devedor,
+  o endereço e o protocolo. Aqui você registra o que aconteceu com ele.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Como está</span></div>
+  <table class="table">
+    <tbody>
+      <tr>
+        <th>Saíram e esperam desfecho</th><td>{{ contas.EMITIDO }}</td>
+        <th>Entregues</th><td>{{ contas.ENTREGUE }}</td>
+      </tr>
+      <tr>
+        <th>Não entregues</th><td>{{ contas.NAO_ENTREGUE }}</td>
+        <th>Em edital</th><td>{{ contas.EDITAL }}</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Esperando edital</span><small>{{ para_edital | length }}</small>
+  </div>
+
+  {% if not para_edital %}
+    <p style="padding:14px">
+      Nenhum aviso esperando edital. Quando uma entrega não der certo, ela
+      aparece aqui.
+    </p>
+  {% else %}
+  <table class="table">
+    <thead><tr>
+      <th>Aviso</th><th>Devedor</th><th>Título</th><th>Não entregue porque</th>
+      <th>Publicar</th>
+    </tr></thead>
+    <tbody>
+      {% for a in para_edital %}
+      <tr>
+        <td><strong>{{ a.numero }}/{{ a.ano }}</strong>
+            <div><small>{{ a.emitido_em[:10] }}</small></div></td>
+        <td>{{ a.devedor_nome or '—' }}
+            <div><small>{{ a.endereco or 'sem endereço' }}</small></div></td>
+        <td>{{ a.numero_titulo or '—' }}
+            {% if a.protocolo %}
+              <div><small>protocolo {{ a.protocolo }}</small></div>
+            {% endif %}</td>
+        <td>
+          {#
+            O RASTRO DAS TENTATIVAS E O QUE JUSTIFICA O EDITAL. "Tentou-se
+            duas vezes e não havia ninguém" é o que a inspeção lê; "não
+            entregue" sozinho não conta essa história.
+          #}
+          {% for x in a.tentativas %}
+            <div>
+              {{ loop.index }}ª — {{ x.quando[:10] }}:
+              {% for m in motivos %}{% if m.codigo == x.motivo %}{{ m.motivo }}{% endif %}{% endfor %}
+              {% if x.observacao %}<small>({{ x.observacao }})</small>{% endif %}
+            </div>
+          {% else %}
+            {% for m in motivos %}{% if m.codigo == a.motivo %}{{ m.motivo }}{% endif %}{% endfor %}
+          {% endfor %}
+        </td>
+        <td>
+          <form method="post" style="display:inline"
+                action="{{ url_for('protesto_aviso_edital', aviso_id=a.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button primary">Publicar edital</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Saíram e esperam desfecho</span><small>{{ esperando | length }}</small>
+  </div>
+
+  {% if not esperando %}
+    <p style="padding:14px">
+      Nenhum aviso esperando. Emita na ficha do título.
+    </p>
+  {% else %}
+  <table class="table">
+    <thead><tr>
+      <th>Aviso</th><th>Devedor</th><th>Título</th><th>O que aconteceu</th>
+    </tr></thead>
+    <tbody>
+      {% for a in esperando %}
+      <tr>
+        <td><strong>{{ a.numero }}/{{ a.ano }}</strong>
+            <div><small>{{ a.emitido_em[:10] }}</small></div></td>
+        <td>{{ a.devedor_nome or '—' }}
+            <div><small>{{ a.endereco or 'sem endereço' }}{% if a.bairro %},
+                 {{ a.bairro }}{% endif %}</small></div></td>
+        <td>{{ a.numero_titulo or '—' }}
+            {% if a.protocolo %}
+              <div><small>protocolo {{ a.protocolo }}</small></div>
+            {% endif %}
+            {% if a.tentativas %}
+              <div><small>{{ a.tentativas | length }} tentativa(s) antes</small></div>
+            {% endif %}</td>
+        <td>
+          <form method="post" class="form"
+                action="{{ url_for('protesto_aviso_entrega', aviso_id=a.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Desfecho
+              <select name="entregue">
+                <option value="0">Não foi entregue</option>
+                <option value="1">Entregue em mão</option>
+              </select></label>
+            <label>Se não foi, por quê
+              <select name="motivo">
+                <option value="">—</option>
+                {% for m in motivos %}
+                  <option value="{{ m.codigo }}">{{ m.motivo }}</option>
+                {% endfor %}
+              </select></label>
+            <label>Quem recebeu <small>(se foi entregue)</small>
+              <input name="recebido_por" placeholder="Nome de quem assinou"></label>
+            <label>Quem entregou
+              <select name="entregador">
+                {% for e in entregadores %}<option>{{ e }}</option>{% endfor %}
+              </select></label>
+            <label style="grid-column:1/-1">Observação
+              <input name="observacao"
+                     placeholder="O que o entregador contou"></label>
+            <div class="actions"><button class="button">Registrar</button></div>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="notice" style="margin:0 14px 14px">
+    <strong>Dois motivos mandam direto ao edital</strong> — «Mudou-se» e «Não é
+    o número indicado» —, porque nos dois o endereço deixou de servir e
+    insistir nele é perder tempo. <strong>Dois contam tentativa e pedem
+    outra</strong> — «Ausente» e «Fechado» —, porque a pessoa mora ali, só não
+    estava. As quatro marcas são do catálogo desta casa.
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Editais publicados hoje</span><small>{{ do_dia | length }}</small>
+  </div>
+  {% if not do_dia %}
+    <p style="padding:14px">Nenhum edital publicado hoje.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Edital</th><th>Título</th><th>Imprimir</th></tr></thead>
+    <tbody>
+      {% for e in do_dia %}
+      <tr>
+        <td><strong>ED-{{ e.ano }}-{{ '%04d' % e.numero }}</strong>
+            <div><small>por {{ e.publicado_por or '—' }}</small></div></td>
+        <td>{{ e.numero_titulo or '—' }}
+            {% if e.protocolo %}
+              <div><small>protocolo {{ e.protocolo }}</small></div>
+            {% endif %}</td>
+        <td><a href="{{ url_for('protesto_edital_odt', edital_id=e.id) }}">.odt</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="actions" style="padding:0 14px 14px">
+    <a class="button primary"
+       href="{{ url_for('protesto_editais_do_dia_odt', dia=hoje) }}">
+      A folha do dia, para afixar</a>
+  </div>
+  {% endif %}
+</section>
+
+<div class="notice">
+  <strong>O aviso desta casa era também o boleto</strong>, e o boleto não está
+  aqui. O código de barras do E-Ofício tem duas coisas que não se explicam — o
+  verificador do nosso número e a origem do fator de vencimento —, e código de
+  barras errado é boleto que o leitor aceita e o dinheiro cai no lugar errado.
+  O que está medido e o que falta estão em
+  <code>DOCUMENTACAO/AVISO_DE_INTIMACAO_MEDIDO.md</code>.
+</div>
+{% endblock %}

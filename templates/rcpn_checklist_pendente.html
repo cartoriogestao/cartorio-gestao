@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Atos sem checklist{% endblock %}
+{% block content %}
+<h1>Atos sem checklist</h1>
+
+{% if linhas %}
+<div class="alerta danger">
+  <p><strong>{{ linhas|length }}
+     {{ 'ato ainda não passou' if linhas|length == 1 else 'atos ainda não passaram' }}
+     pelo checklist obrigatório.</strong></p>
+  <p class="small">
+    O Relatório de Inspeção Ordinária de 12/08/2026 manda, na <strong>página
+    50</strong>, <strong>aplicar checklist obrigatório antes da conclusão de
+    novos atos</strong>. Prazo: <strong>zero dias</strong>. Prioridade:
+    <strong>crítica</strong>.
+  </p>
+</div>
+{% else %}
+<div class="card">
+  <p><strong>Todos os atos lavrados por esta casa passaram pelo checklist.</strong></p>
+</div>
+{% endif %}
+
+<div class="card">
+  <p class="small muted">
+    <strong>O acervo não entra nesta lista.</strong> A exigência é para os
+    <strong>atos futuros</strong>, e um assento de 1955 não podia ter passado
+    por um checklist criado em 2026. Contá-lo poria setenta anos de livro numa
+    lista com prazo zero — e uma lista assim, ninguém abre duas vezes.
+  </p>
+</div>
+
+{% if linhas %}
+<table class="tabela">
+  <tr><th>assento</th><th>nome</th><th>data</th><th></th></tr>
+  {% for a in linhas %}
+  <tr>
+    <td>{{ a.especie|capitalize }} nº {{ a.numero }}</td>
+    <td>{{ a.nome }}</td>
+    <td>{{ (a.data_ato or '')[:10] }}</td>
+    <td><a class="button" href="{{ url_for('rcpn_checklist', assento_id=a.id) }}">Conferir</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<div class="card">
+  <p class="small muted">
+    <strong>O checklist avisa, e não trava.</strong> Um ato urgente às 17h50
+    não fica parado porque uma caixa não foi marcada — mas <strong>o que ficou
+    por conferir fica escrito</strong>, e não só o que foi conferido: uma marca
+    que registra apenas o bom deixa o silêncio significar duas coisas, «não
+    faltou nada» e «ninguém olhou».
+  </p>
+</div>
+{% endblock %}

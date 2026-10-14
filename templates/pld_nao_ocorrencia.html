@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Comunicação de não ocorrência — {{ r.ano }}</h1>{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('pld_painel') }}">← voltar</a></p>
+<section class="panel">
+  <p>O CNN, art. 153, manda apresentar à Corregedoria-Geral, <strong>até
+  {{ fmt_date(r.prazo) }}</strong>, a comunicação de que no ano de {{ r.ano }} nenhuma
+  operação devia ser comunicada ao COAF. Confira, ajuste e assine.</p>
+  <pre style="white-space:pre-wrap;padding:14px;border:1px solid #ccc">{{ r.texto }}</pre>
+</section>
+{% endblock %}

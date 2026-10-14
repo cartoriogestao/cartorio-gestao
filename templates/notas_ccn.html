@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Cadastro no CCN &mdash; e-Notariado</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a></div>
+
+<div class="notice">
+  O <strong>CCN</strong> (Cadastro Único de Clientes do Notariado) recebe o cadastro das pessoas
+  com firma aberta nesta casa, em até <strong>{{ prazo }} dias</strong> da abertura ou da
+  atualização (Provimento CNJ 149/2023, art. 166). O sistema monta o lote; <strong>quem envia é a
+  extensão «CG CCN Assistente»</strong>, no navegador deste servidor, depois de você entrar no
+  portal do CCN &mdash; a Cloudflare do e-Notariado só deixa passar navegador.
+</div>
+
+{% if not formato.pronto %}
+<div class="notice warning">
+  <strong>Ainda não dá para gerar lote:</strong> {{ formato.motivo }}
+</div>
+{% endif %}
+
+<section class="panel">
+  <form method="get" style="padding:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+    <label>Ambiente
+      <select name="ambiente">
+        {% for chave, host in ambientes.items() %}
+        <option value="{{ chave }}" {% if chave == ambiente %}selected{% endif %}>{{ 'Homologação' if chave == 'HOMOLOGACAO' else 'Produção' }} ({{ host }})</option>
+        {% endfor %}
+      </select></label>
+    <button>Ver</button>
+  </form>
+  <table>
+    <tr><th>Cartões de firma</th><td>{{ resumo.cartoes }}</td></tr>
+    <tr><th>Pessoas com CPF válido (uma por CPF)</th><td>{{ resumo.com_cpf }}</td></tr>
+    <tr><th>Cartões sem CPF válido &mdash; não vão</th><td>{{ resumo.sem_cpf }}</td></tr>
+    <tr><th>Nunca aceitos pelo CCN neste ambiente</th><td><strong>{{ resumo.nunca_enviados }}</strong></td></tr>
+  </table>
+  {% if formato.pronto %}
+  <form method="post" action="{{ url_for('notas_ccn_gerar') }}" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ambiente" value="{{ ambiente }}">
+    <label>Quantas pessoas (no máximo) <input name="maximo" type="number" min="1" max="500" value="{{ 1 if ambiente == 'PRODUCAO' else 500 }}" style="width:90px"></label>
+    {% if ambiente == 'PRODUCAO' %}<p class="notice warning" style="margin:8px 0"><strong>Produção:</strong> o lote vai para a base nacional de verdade. Para o primeiro envio, uma pessoa só.</p>{% endif %}
+    <button class="primary">Gerar lote para {{ 'homologação' if ambiente == 'HOMOLOGACAO' else 'produção' }}</button>
+    <span class="muted">O lote para antes do teto de 30.000 KB do CCN; quem não couber vai no próximo.</span>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Lotes</h2>
+  {% if lotes %}
+  <div class="table-wrap"><table>
+    <tr><th>Lote</th><th>Ambiente</th><th>Gerado</th><th>Pessoas</th><th>Situação</th><th>CCN</th><th>Código de envio</th></tr>
+    {% for l in lotes %}
+    <tr>
+      <td><a href="{{ url_for('notas_ccn_lote', lote_id=l.id) }}">{{ l.id }}</a></td>
+      <td>{{ 'Homologação' if l.ambiente == 'HOMOLOGACAO' else 'Produção' }}</td>
+      <td>{{ l.gerado_em[:16].replace('T', ' ') }} &middot; {{ l.gerado_por or '' }}</td>
+      <td>{{ l.quantidade }}</td>
+      <td>{{ l.situacao }}</td>
+      <td>{{ l.import_status or '—' }}{% if l.falhas %} &middot; {{ l.falhas }} com erro{% endif %}</td>
+      <td>{% if l.codigo %}<code>{{ l.codigo }}</code>{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}
+  <p class="muted" style="padding:0 14px 14px">Nenhum lote gerado ainda.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Como enviar</h2>
+  <ol style="padding:0 14px 14px 34px">
+    <li>No navegador <strong>deste servidor</strong>, a extensão «CG CCN Assistente» instalada
+      (pasta <code>ccn_assistente\extensao</code>, «Carregar sem compactação» em
+      <code>chrome://extensions</code>).</li>
+    <li>Entre no portal do CCN do ambiente do lote e faça o login normalmente.</li>
+    <li>No painel da extensão, cole o <strong>código de envio</strong> do lote e clique em
+      «Enviar». A extensão sobe o arquivo, cria a importação, acompanha até o CCN terminar e
+      traz o resultado para cá.</li>
+    <li>Sem a extensão, o arquivo do lote se baixa na ficha dele e se sobe pela tela
+      «Importações» do CCN; nesse caso o resultado não volta sozinho.</li>
+  </ol>
+</section>
+{% endblock %}

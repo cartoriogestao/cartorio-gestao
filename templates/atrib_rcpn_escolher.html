@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Assento novo — escolha o tipo de registro</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+{% set do_acervo = request.args.get('do_acervo') %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_assentos') }}">&larr; Consultar assentos</a>
+  <a class="button" href="{{ url_for('rcpn_averbacoes') }}">Averbações</a>
+  <a class="small" href="{{ url_for('rcpn_leitura') }}">histórico das leituras de documentos</a>
+</div>
+
+{% if do_acervo %}
+<div class="notice">
+  <strong>Assento já lavrado / do acervo.</strong>
+  Livro, folha e termo já existem no papel — digite aqui as informações
+  que a certidão precisa. Não invente número de livro: use o que está
+  escrito no assento.
+</div>
+{% else %}
+<div class="notice">
+  Cada tipo abre uma tela própria. A escolha define o livro e mostra somente
+  os dados que pertencem àquele registro.
+  Se o declarante trouxe os documentos, escolha o tipo: a tela de nascimento, a de
+  óbito e a da habilitação têm o quadro «Juntar os documentos e preencher os
+  campos», e voltam preenchidas.
+</div>
+{% endif %}
+
+{% for titulo, especies in grupos %}
+<section class="panel">
+  <div class="panel-head"><span>{{ titulo }}</span></div>
+  <div class="cards" style="padding:14px">
+    {% for especie in especies %}
+    <a class="card" href="{{ url_for('rcpn_assento_novo', especie_url=slugs[especie], do_acervo=do_acervo or None) }}"
+       style="text-decoration:none; color:inherit">
+      <strong>{{ nomes[especie] }}</strong>
+      <p><small>{% if do_acervo %}Digitar informações deste tipo{% else %}Abrir a tela deste registro{% endif %}</small></p>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endblock %}

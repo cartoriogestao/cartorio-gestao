@@ -1,0 +1,170 @@
+{% extends 'base.html' %}
+{% from '_ordenar.html' import cabecalho, seletor %}
+{% block title %}Processos{% endblock %}
+{% block heading %}<h1>Processos</h1>{% endblock %}
+{% block content %}
+{# A LISTA ÚNICA — 12/10/2026, ordem do oficial: tarefas e expedientes num módulo
+   só. Vira processo o que não se resolve na hora; firma, autenticação,
+   nascimento e certidão do balcão não entram aqui. #}
+<section class="card">
+  <p>Tudo o que a casa tem a cumprir e não se resolve na hora: o que chega pelo malote, o que a inspeção
+    cobra, o que o agente gestor aponta, o ato que ficou para outro dia e as tarefas internas.
+    Cada processo tem a pasta (os documentos de tudo o que está ligado a ele) e um tipo, que serve para filtrar.</p>
+  <div class="actions">
+    {% for k, rot in vistas.items() %}
+    <a class="button{% if k != vista %} secondary{% endif %}" href="{{ url_for('processos_lista', vista=k, origem=origem, q=q) }}">{{ rot }}{% if contagem[k] is defined %} ({{ contagem[k] }}){% endif %}</a>
+    {% endfor %}
+  </div>
+  {# OS FILTROS DE CONTROLE E FISCALIZAÇÃO (12/10/2026) — «preciso poder filtrar
+     os processos por responsável, por prazo, por setor e por outras
+     informações relevantes». Ficam no endereço: entram nos favoritos e na
+     planilha. #}
+  <form method="get" class="form-grid" style="margin-top:8px">
+    <input type="hidden" name="vista" value="{{ vista }}">
+    <label>Responsável <select name="responsavel"><option value="">todos</option><option value="{{ SEM_RESPONSAVEL }}" {% if filtros.responsavel == SEM_RESPONSAVEL %}selected{% endif %}>sem responsável</option>{% for u in usuarios %}<option value="{{ u.id }}" {% if filtros.responsavel == u.id|string %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
+    <label>Prazo <select name="prazo"><option value="">qualquer</option>{% for k, rot in PRAZOS.items() %}<option value="{{ k }}" {% if filtros.prazo == k %}selected{% endif %}>{{ rot }}</option>{% endfor %}</select></label>
+    <label>Setor <select name="setor"><option value="">todos</option>{% for x in setores %}<option {% if x == setor %}selected{% endif %}>{{ x }}</option>{% endfor %}</select></label>
+    <label>Prioridade <select name="prioridade"><option value="">todas</option>{% for p in PRIORITIES %}<option {% if filtros.prioridade == p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
+    <label>Situação <select name="situacao"><option value="">todas</option>{% for st in TASK_STATUSES %}<option {% if filtros.situacao == st %}selected{% endif %}>{{ st }}</option>{% endfor %}</select></label>
+    <label>Procurar <input name="q" value="{{ q }}" placeholder="título, protocolo, remetente"></label>
+    {{ seletor(ORDENS, ordem_atual, filtros.inverter) }}
+    <details class="span2" {% if filtros.substituto or filtros.origem or filtros.especie or filtros.parado or filtros.prazo_de or filtros.prazo_ate or filtros.abertura_de or filtros.abertura_ate or origem %}open{% endif %}><summary>Mais filtros</summary>
+      <div class="form-grid">
+        <label>Substituto <select name="substituto"><option value="">todos</option>{% for u in usuarios %}<option value="{{ u.id }}" {% if filtros.substituto == u.id|string %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
+        <label>Origem <select name="origem"><option value="">todas</option>{% for k, rot in origens.items() %}<option value="{{ k }}" {% if k == origem %}selected{% endif %}>{{ rot }}</option>{% endfor %}</select></label>
+        <label>Tipo <select name="especie"><option value="">todos</option><option value="SEM_TIPO" {% if filtros.especie == 'SEM_TIPO' %}selected{% endif %}>sem tipo definido</option>{% for k, c in catalogo.items() %}<option value="{{ k }}" {% if filtros.especie == k %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}</select></label>
+        <label>Sem andamento <select name="parado"><option value="">qualquer</option>{% for k, rot in PARADOS.items() %}<option value="{{ k }}" {% if filtros.parado == k %}selected{% endif %}>{{ rot }}</option>{% endfor %}</select></label>
+        <label>Prazo de <input type="date" name="prazo_de" value="{{ filtros.prazo_de }}"></label>
+        <label>Prazo até <input type="date" name="prazo_ate" value="{{ filtros.prazo_ate }}"></label>
+        <label>Aberto de <input type="date" name="abertura_de" value="{{ filtros.abertura_de }}"></label>
+        <label>Aberto até <input type="date" name="abertura_ate" value="{{ filtros.abertura_ate }}"></label>
+      </div>
+    </details>
+    <button class="button secondary">Filtrar</button>
+    <a class="button secondary" href="{{ url_for('processos_lista', vista=vista) }}">Limpar</a>
+    {% if fiscaliza %}<a class="button secondary" href="{{ url_for('processos_planilha', **request.args) }}">Baixar planilha</a>{% endif %}
+  </form>
+  {# OS DOIS CADASTROS QUE MORAVAM NAS TELAS ANTIGAS (12/10/2026): o processo
+     interno (era «criar tarefa») e a entrada do malote (era o cadastro de
+     expediente, que continua guardando o documento recebido). #}
+  {# O MESMO CADASTRO DA TELA DE TAREFAS (rota `tasks`), com todos os campos dela
+     e mais o tipo do processo — uma regra só de criar. #}
+  <details style="margin-top:8px"><summary><strong>Abrir processo interno</strong></summary>
+    <form method="post" action="{{ url_for('tasks') }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="span2">Do que se trata <input name="title" required></label>
+      <label>Tipo <select name="especie"><option value="">decidir depois</option>{% for k, c in catalogo.items() %}<option value="{{ k }}">{{ c.nome }}</option>{% endfor %}</select></label>
+      <label>Setor <select name="sector"><option value=""></option>{% for x in setores %}<option>{{ x }}</option>{% endfor %}</select></label>
+      <label>Sistema/tema <input name="system_name"></label>
+      <label>Prioridade <select name="priority">{% for p in PRIORITIES %}<option {% if p == 'MEDIA' %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
+      <label>Data-base <input type="date" name="start_date"></label>
+      <label>Prazo em dias <input type="number" min="0" name="due_days"></label>
+      <label>Vencimento direto <input type="date" name="due_date"></label>
+      <label>Responsável <select name="assigned_user_id"><option value=""></option>{% for u in usuarios %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></label>
+      <label>Substituto <select name="backup_user_id"><option value=""></option>{% for u in usuarios %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></label>
+      <label class="checkbox-label span2"><input type="checkbox" name="evidence_required" value="1"> Exigir evidência para concluir</label>
+      <label class="span2">Referência normativa <input name="legal_ref"></label>
+      <label class="span2">Descrição <textarea name="description" rows="3"></textarea></label>
+      <label>Tipo do andamento inicial <select name="tipo_andamento">{% for codigo, rotulo in TIPOS_ANDAMENTO %}<option value="{{ codigo }}"{% if codigo == 'OBSERVACAO' %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select></label>
+      <label class="span2">Andamento inicial (opcional) <input name="andamento" placeholder="Ex.: emitida nota de exigência; aguardando o cliente…"></label>
+      <button class="button">Abrir processo</button>
+    </form>
+  </details>
+  <details><summary><strong>Registrar entrada do malote</strong></summary>
+    <form method="post" action="{{ url_for('expedientes') }}" enctype="multipart/form-data" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="voltar" value="processos">
+      <label>Via de entrada <select name="source">{% for x in vias %}<option>{{ x }}</option>{% endfor %}</select></label>
+      <label>Nº externo <input name="external_reference"></label>
+      <label>Remetente <input name="sender"></label>
+      <label>Classificação <select name="category">{% for x in categorias %}<option>{{ x }}</option>{% endfor %}</select></label>
+      <label class="span2">Assunto <input name="subject" required></label>
+      <label>Recebido em <input type="date" name="received_at" value="{{ hoje }}"></label>
+      <label>Setor <select name="sector"><option value=""></option>{% for x in setores %}<option>{{ x }}</option>{% endfor %}</select></label>
+      <label>Prazo (dias) <input type="number" name="deadline_days" min="0"></label>
+      <label>Contar a partir de <input type="date" name="deadline_start" value="{{ hoje }}"></label>
+      <label>Responsável <select name="assigned_user_id"><option value=""></option>{% for u in usuarios %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></label>
+      <label>Substituto <select name="backup_user_id"><option value=""></option>{% for u in usuarios %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></label>
+      <label class="span2">Documento recebido <input type="file" name="files" multiple></label>
+      <button class="button">Registrar entrada</button>
+      <small class="span2 muted">Com prazo ou classificada «Para Cumprimento», a entrada já nasce como processo; sem isso, ela aparece no alto da lista esperando a decisão.</small>
+    </form>
+  </details>
+  <p class="small">Também: <a href="{{ url_for('rascunhos') }}">rascunhos de ato</a></p>
+</section>
+
+{% if quadro %}
+{# O CONTROLE DO ADMINISTRADOR — só o oficial e o gerente veem. Cada número é um
+   filtro: clicar mostra os processos daquela pessoa ou daquele setor. #}
+<section class="card">
+  <h2>Controle e fiscalização</h2>
+  <p class="small">{{ quadro.total }} abertos ·
+    <a href="{{ url_for('processos_lista', vista='VENCIDOS') }}"><strong>{{ quadro.vencidos }}</strong> vencidos</a> ·
+    <a href="{{ url_for('processos_lista', parado='7') }}"><strong>{{ quadro.parados }}</strong> sem andamento há 7 dias ou mais</a> ·
+    <a href="{{ url_for('processos_lista', responsavel=SEM_RESPONSAVEL) }}"><strong>{{ quadro.sem_responsavel }}</strong> sem responsável</a> ·
+    <a href="{{ url_for('processos_lista', prazo='SEM_PRAZO') }}"><strong>{{ quadro.sem_prazo }}</strong> sem prazo</a> ·
+    <a href="{{ url_for('processos_lista', especie='SEM_TIPO') }}"><strong>{{ quadro.sem_tipo }}</strong> sem tipo</a></p>
+  <div class="grid2">
+    <div class="table-wrap"><table><thead><tr><th>Responsável</th><th>Abertos</th><th>Vencidos</th><th>Parados 7d+</th><th>Críticos</th></tr></thead><tbody>
+    {% for p in quadro.por_pessoa %}<tr {% if p.vencidos %}class="danger"{% endif %}>
+      <td><a href="{{ url_for('processos_lista', responsavel=p.chave) }}">{{ p.nome }}</a></td>
+      <td>{{ p.abertos }}</td>
+      <td><a href="{{ url_for('processos_lista', responsavel=p.chave, prazo='VENCIDO') }}">{{ p.vencidos }}</a></td>
+      <td><a href="{{ url_for('processos_lista', responsavel=p.chave, parado='7') }}">{{ p.parados }}</a></td>
+      <td><a href="{{ url_for('processos_lista', responsavel=p.chave, prioridade='CRITICA') }}">{{ p.criticos }}</a></td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Setor</th><th>Abertos</th><th>Vencidos</th><th>Parados 7d+</th></tr></thead><tbody>
+    {% for s in quadro.por_setor %}<tr {% if s.vencidos %}class="danger"{% endif %}>
+      <td><a href="{{ url_for('processos_lista', setor=s.chave) }}">{{ s.nome }}</a></td><td>{{ s.abertos }}</td>
+      <td><a href="{{ url_for('processos_lista', setor=s.chave, prazo='VENCIDO') }}">{{ s.vencidos }}</a></td>
+      <td><a href="{{ url_for('processos_lista', setor=s.chave, parado='7') }}">{{ s.parados }}</a></td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+</section>
+{% endif %}
+
+{% if entradas %}
+<section class="card">
+  <h2>Chegou pelo malote e espera decisão ({{ entradas|length }})</h2>
+  <p class="small muted">Ou vira processo — com pasta, tipo e responsável —, ou recebe «só ciência», quando veio para conhecimento e não pede nada à casa.</p>
+  <div class="table-wrap"><table><thead><tr><th>Entrada</th><th>Assunto</th><th>De</th><th>Chegou</th><th>Docs</th><th>Decisão</th></tr></thead><tbody>
+  {% for e in entradas %}<tr>
+    <td><a href="{{ url_for('expediente_detail', expediente_id=e.id) }}">{{ e.internal_protocol }}</a><br><small class="muted">{{ e.category or '' }}</small></td>
+    <td>{{ e.subject }}</td><td class="small">{{ e.sender or '—' }}</td><td class="small">{{ fmt_date(e.received_at) }}</td>
+    <td>{{ e.documentos }}{% if not e.documentos %} <span class="badge warning">nenhum</span>{% endif %}</td>
+    <td>
+      <form method="post" action="{{ url_for('processos_abrir_da_entrada', expediente_id=e.id) }}" class="stack compact">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <select name="especie"><option value="">tipo: decidir depois</option>{% for k, c in catalogo.items() %}<option value="{{ k }}" {% if k == e.especie_sugerida %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}</select>
+        <button class="button small">Abrir processo</button>
+      </form>
+      <form method="post" action="{{ url_for('processos_so_ciencia', expediente_id=e.id) }}" class="stack compact">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input name="nota" placeholder="observação da ciência (opcional)">
+        <button class="button secondary small">Só ciência</button>
+      </form>
+    </td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>{{ vistas[vista] }} ({{ linhas|length }})</h2>
+  {% if fora_do_vocabulario %}<p class="small muted"><strong>{{ fora_do_vocabulario }}</strong> fora das vistas — a
+    situação não é nenhuma das que o sistema conhece. Veja em «Todos», com a palavra como ela é.</p>{% endif %}
+  <div class="table-wrap"><table><thead><tr>{% set oa, inv, ep = ordem_atual, filtros.inverter, 'processos_lista' %}<th>{{ cabecalho('Processo', 'NUMERO', oa, inv, ep) }}</th><th>{{ cabecalho('Prioridade', 'PRIORIDADE', oa, inv, ep) }}</th><th>{{ cabecalho('Assunto', 'ASSUNTO', oa, inv, ep) }}</th><th>{{ cabecalho('Origem', 'ORIGEM', oa, inv, ep) }}</th><th>{{ cabecalho('Tipo', 'TIPO', oa, inv, ep) }}</th><th>{{ cabecalho('Setor / sistema', 'SETOR', oa, inv, ep) }}</th><th>{{ cabecalho('Responsável', 'RESPONSAVEL', oa, inv, ep) }}</th><th>{{ cabecalho('Prazo', 'PRAZO', oa, inv, ep) }}</th><th>{{ cabecalho('Situação', 'SITUACAO', oa, inv, ep) }}</th><th>{{ cabecalho('Último andamento', 'ANDAMENTO', oa, inv, ep) }}</th><th>Evid.</th></tr></thead><tbody>
+  {% for p in linhas %}<tr {% if p.vencido %}class="danger"{% endif %}>
+    <td><a href="{{ url_for('task_detail', task_id=p.id) }}">{{ p.numero }}</a></td>
+    <td><span class="badge {{ (p.priority or '')|lower }}">{{ p.priority }}</span></td>
+    <td>{{ p.title }}{% if p.evidence_required %} <span class="badge tarefa-exige-evidencia" title="Exige evidência anexada para concluir">Exige evidência</span>{% endif %}</td>
+    <td class="small">{{ p.origem }}{% if p.expediente %}<br>{{ p.expediente }}{% endif %}</td>
+    <td class="small">{{ p.especie_nome or '—' }}</td>
+    <td class="small">{{ p.sector or '—' }}{% if p.system_name %}<br>{{ p.system_name }}{% endif %}</td>
+    <td class="small">{{ p.responsavel or 'sem responsável' }}{% if p.substituto %}<br><span class="muted">subst. {{ p.substituto }}</span>{% endif %}</td>
+    <td class="small">{{ fmt_date(p.due_date) if p.due_date else '—' }}{% if p.vencido %} <strong>vencido</strong>{% endif %}</td>
+    <td class="small">{% if p.status in TASK_STATUSES %}{{ p.status }}{% else %}<span class="badge critica" title="Esta situação não é nenhuma das que o sistema conhece — abra o processo e escolha a situação.">{{ p.status or 'SEM SITUAÇÃO' }}</span>{% endif %}</td>
+    <td class="small">{{ fmt_date(p.ultimo_andamento) if p.ultimo_andamento else '—' }}{% if p.dias_parado is not none and p.dias_parado >= 7 %}<br><strong>{{ p.dias_parado }} dias parado</strong>{% endif %}</td>
+    <td class="small">{{ p.evidencias }}</td>
+  </tr>{% else %}<tr><td colspan="11">Nenhum processo com estes filtros.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}Livro 3 — como a ficha vai ficar{% endblock %}
+{% block heading %}<h1>Livro 3 — registro nº {{ registro.numero }}, como vai ficar</h1>{% endblock %}
+{% block content %}
+
+{#  A MARCA APARECE EM TRES LUGARES, e nenhum deles e um botao: ela continua
+    na impressao, porque quem imprime pode entregar — e um papel que afirma um
+    ato que nao existe e pior que papel nenhum. #}
+<p class="danger" style="font-weight:700; font-size:1.05em">{{ MARCA }}</p>
+
+<div class="actions">
+  <a class="button" href="{{ url_for('livro3_registro', registro_id=registro.id) }}">&larr; voltar à ficha</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>O título</span>
+    <small>{{ registro.situacao }}</small></div>
+  <div style="padding:14px; white-space:pre-wrap">{{ registro.teor or '—' }}</div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Os atos, na ordem do livro</span>
+    <small>{{ atos | length }} lavrado(s) + 1 em minuta</small></div>
+  <div style="padding:14px">
+    {% for a in atos %}
+    <div style="border-top:1px solid #e5e7eb; padding:10px 0">
+      <p style="margin:0 0 4px"><strong>{{ a.tipo }}-{{ a.numero }}</strong>
+        <small class="muted">{{ a.data_ato }}
+          {% if a.selo %}· selo {{ a.selo }}{% else %}· sem selo{% endif %}</small></p>
+      <div style="white-space:pre-wrap">{{ a.teor or a.motivo_cancelamento or '—' }}</div>
+    </div>
+    {% endfor %}
+
+    <div style="border-top:3px solid #b45309; padding:10px 0; background:#fffbeb">
+      <p style="margin:0 0 4px">
+        <strong>{{ minuta.rotulo }}</strong>
+        <span class="danger" style="font-weight:700">— {{ MARCA }}</span></p>
+      <div style="white-space:pre-wrap">{{ minuta.teor }}</div>
+    </div>
+  </div>
+</section>
+
+<p class="small muted">O número <strong>{{ minuta.numero_previsto }}</strong> é
+  o que este ato receberia <em>se fosse lavrado agora</em> — a numeração do
+  Livro 3 é contínua com o registro. Ele não está reservado: quem tomar o
+  número primeiro fica com ele.</p>
+
+<p class="danger" style="font-weight:700">{{ MARCA }}</p>
+{% endblock %}

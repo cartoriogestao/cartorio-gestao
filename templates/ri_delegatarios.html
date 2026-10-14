@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Quem assina os atos</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a></div>
+
+<div class="notice">
+  Esta lista alimenta a caixa <strong>“Ato praticado por”</strong> na hora de lavrar. O nome
+  escolhido fica <strong>gravado dentro do próprio ato</strong> e não muda depois, mesmo que esta
+  lista mude.
+</div>
+
+<div class="notice">
+  <strong>Não há período aqui, e é de propósito.</strong> Ao longo dos anos a serventia teve
+  delegatários, substitutos, interinos e escreventes que se alternaram e se misturaram no mesmo
+  intervalo. Deduzir pela data acertaria umas vezes e erraria outras, sem avisar qual foi qual.
+</div>
+
+<div class="notice ok">
+  <strong>E o acervo não precisa disto.</strong> Em
+  {{ acervo.com_fecho }} dos {{ acervo.total }} atos herdados, o fecho com o nome de quem praticou
+  <strong>já está escrito dentro do próprio teor</strong> — ele sai na impressão porque o teor sai.
+  Nos poucos que não têm, o ato sai sem fecho: melhor faltar o nome do que atribuir o ato a quem
+  não o praticou.
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ lista|length }}</strong><small>na lista</small></div>
+  <div class="stat"><strong>{{ acervo.com_fecho }}</strong><small>atos que já trazem o nome no teor</small></div>
+  <div class="stat"><strong>{{ acervo.total - acervo.com_fecho }}</strong><small>atos sem fecho no teor</small></div>
+  <div class="stat"><small>acervo de</small><strong style="font-size:15px">
+    {{ fmt_date(faixa.primeiro) }} a {{ fmt_date(faixa.ultimo) }}</strong></div>
+</section>
+
+{% if not lista %}
+<section class="panel">
+  <div class="panel-head"><span>O cadastro está vazio</span></div>
+  <div style="padding:14px">
+    <p class="small">Posso criar um começo com os três nomes que já apareceram no material da serventia. Depois é só acrescentar quem mais assina.</p>
+    <ul class="small">
+      {% for nome, cargo, trat, titulo, ini, fim, obs in sugestao %}
+        <li><strong>{{ nome }}</strong> — {{ titulo }}. <span class="muted">{{ obs }}</span></li>
+      {% endfor %}
+    </ul>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="primary" name="acao" value="sugerir">Criar o cadastro inicial</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+{% if lista %}
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="panel">
+    <div class="panel-head"><span>Cadastro</span></div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Nome</th><th>Cargo</th><th>Trat.</th><th>Como assina</th>
+        <th>Observação</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for d in lista %}
+        <tr {% if not d.confirmado %}class="pendente"{% endif %}>
+          <td><input name="d{{ d.id }}_nome" value="{{ d.nome }}" size="34"></td>
+          <td><select name="d{{ d.id }}_cargo">
+            {% for c in ['TITULAR','SUBSTITUTO','INTERINO','ESCREVENTE'] %}
+              <option value="{{ c }}" {% if d.cargo == c %}selected{% endif %}>{{ c|capitalize }}</option>
+            {% endfor %}
+          </select></td>
+          <td><select name="d{{ d.id }}_tratamento">
+            <option value="O" {% if d.tratamento == 'O' %}selected{% endif %}>O</option>
+            <option value="A" {% if d.tratamento == 'A' %}selected{% endif %}>A</option>
+          </select></td>
+          <td><input name="d{{ d.id }}_titulo" value="{{ d.titulo or '' }}" size="30"></td>
+          <td><input name="d{{ d.id }}_observacao" value="{{ d.observacao or '' }}" size="34"></td>
+          <td><button name="acao" value="excluir" formnovalidate
+                onclick="return confirm('Remover {{ d.nome }} do cadastro?')">remover</button>
+              <input type="hidden" name="id" value="{{ d.id }}"></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <div style="padding:12px">
+      <button class="primary" name="acao" value="salvar">Guardar</button>
+      <span class="small muted">O nome escolhido na lavratura fica gravado no ato.</span>
+    </div>
+  </section>
+</form>
+
+<section class="panel">
+  <div class="panel-head"><span>Acrescentar</span></div>
+  <form method="post" style="padding:14px" class="grid2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Nome<input name="nome" required size="34"></label>
+    <label>Cargo<select name="cargo">
+      {% for c in ['TITULAR','SUBSTITUTO','INTERINO','ESCREVENTE'] %}
+        <option value="{{ c }}">{{ c|capitalize }}</option>{% endfor %}
+    </select></label>
+    <label>Tratamento<select name="tratamento"><option value="O">O</option><option value="A">A</option></select></label>
+    <label>Como assina<input name="titulo" placeholder="Tabelião Registrador" size="30"></label>
+    <label class="span2">Observação<input name="observacao" size="60"></label>
+    <div><button class="primary" name="acao" value="novo">Cadastrar</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block title %}Autenticar cópia — Notas{% endblock %}
+{% block heading %}<h1>Autenticar cópia</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a></div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ hoje.n }}</strong><small>autenticações hoje</small></div>
+  <div class="stat"><strong>{{ hoje.folhas }}</strong><small>folhas hoje</small></div>
+  {% if preco %}<div class="stat"><strong>{{ preco.total }}</strong><small>por folha — TJ {{ preco.codigo_tj }}</small></div>{% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Nova autenticação</span></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Folhas <input type="number" name="folhas" value="1" min="1" required autofocus></label>
+    <label>Tipo
+      <select name="tipo">
+        {% for k, v in TIPOS.items() %}<option value="{{ k }}">{{ k|capitalize }} — item {{ v[1] }}</option>{% endfor %}
+      </select></label>
+    <label>Tipo do documento <input name="documento_tipo" placeholder="RG, CPF, contrato..."></label>
+    <label>Apresentante <input name="apresentante"></label>
+    <label>CPF do apresentante <input name="apresentante_documento"></label>
+    <label class="span2">Descrição <input name="documento_descricao"></label>
+    <div class="span2"><button class="primary" name="acao" value="autenticar">Autenticar</button>
+      <span class="small muted">A tabela cobra por página; se o selo falhar, o ato não é lavrado e a tela informa o motivo.</span></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Últimas autenticações</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Data</th><th>Tipo</th><th>Folhas</th><th>Documento</th><th>Selo</th><th>Etiqueta</th></tr></thead>
+    <tbody>
+    {% for a in ultimas %}
+      <tr>
+        <td><strong>{{ a.id }}</strong></td>
+        <td class="small">{{ fmt_date(a.data) }} {{ a.hora or '' }}</td>
+        <td class="small">{{ a.tipo }}</td>
+        <td>{{ a.folhas }}</td>
+        <td class="small">{{ a.documento_tipo or a.documento_descricao or '—' }}</td>
+        <td class="small">
+          {% if a.selo %}{{ a.selo }}
+          {% else %}
+            <form method="post" action="{{ url_for('notas_autenticacao_selo', autenticacao_id=a.id) }}" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input name="selo" size="16" placeholder="AUTENT000000..."><button class="small">Anotar</button></form>
+            <form method="post" action="{{ url_for('notas_autenticacao_selar', autenticacao_id=a.id) }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+              <button class="small primary">Selar</button>
+            </form>
+          {% endif %}</td>
+        {# A ETIQUETA DA AUTENTICACAO, que faltava — o selo saia e nao havia
+           onde imprimir. Sem selo nao se oferece: etiqueta sem numero e papel
+           que parece conferivel e nao e. #}
+        <td class="small">
+          {% if a.selo %}
+            <a class="button small" target="_blank"
+               href="{{ url_for('notas_autenticacao_etiqueta', autenticacao_id=a.id) }}">
+              {% if a.etiqueta_impressoes %}Reimprimir{% else %}Imprimir{% endif %}</a>
+            {% if a.etiqueta_impressoes %}<span class="muted">{{ a.etiqueta_impressoes }}&times;</span>{% endif %}
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">Nenhuma ainda.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Gêmeos — ordem de nascimento{% endblock %}
+{% block content %}
+<h1>Gêmeos — ordem de nascimento</h1>
+
+<div class="card">
+  <p><strong>{{ norma.ORDEM_OBRIGATORIA|forte }}.</strong></p>
+  <p class="small muted">{{ norma.E_REQUISITO_DO_ASSENTO|forte }}.</p>
+</div>
+
+<div class="alerta">
+  <p><strong>O campo do IBGE não responde a esta pergunta.</strong></p>
+  <p class="small">{{ norma.O_CAMPO_DO_IBGE_NAO_SERVE|forte }}. Usar um pelo
+     outro faria o assento cumprir a remessa do IBGE e descumprir a lei.</p>
+</div>
+
+<div class="alerta warning">
+  <p><strong>E gêmeos com o mesmo nome não se distinguem.</strong></p>
+  <p class="small">{{ norma.PRENOME_IGUAL|forte }}.</p>
+  <p class="small muted">
+    Dois irmãos com nome idêntico, mesma filiação e mesma data de nascimento são
+    duas pessoas que <strong>nenhum documento separa</strong> — e o estrago
+    aparece a vida inteira: matrícula de escola, conta de banco, benefício. O
+    sistema avisa antes de lavrar; <strong>recusar não</strong>, porque registro
+    de nascimento é imperativo legal e quem decide é o oficial.
+  </p>
+</div>
+
+<h2>Sem a ordem de nascimento ({{ faltando|length }})</h2>
+
+{% if faltando %}
+<table>
+  <thead>
+    <tr><th>Lavrado</th><th>Nº</th><th>Nome</th><th>O que falta</th>
+        <th>Registrar a ordem</th></tr>
+  </thead>
+  <tbody>
+  {% for a in faltando %}
+    <tr>
+      <td class="small">{{ a.data_ato or '—' }}</td>
+      <td class="small">{{ a.numero or '' }}</td>
+      <td>{{ a.nome }}</td>
+      <td class="small danger">
+        {% for f in a.faltas %}{{ f }}{% if not loop.last %}<br>{% endif %}{% endfor %}
+      </td>
+      <td class="small">
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="assento_id" value="{{ a.id }}">
+          <label>é o
+            <input type="number" name="ordem" min="1" max="9" size="2"
+                   style="width:4em" required>º a nascer</label>
+          <label>irmão de
+            <select name="irmao_id" required>
+              <option value="">escolha</option>
+              {% for c in candidatos %}
+                {% if c.id != a.id %}
+                  <option value="{{ c.id }}">{{ c.nome }}
+                    {% if c.numero %}(nº {{ c.numero }}){% endif %}</option>
+                {% endif %}
+              {% endfor %}
+            </select></label>
+          <button class="button">Gravar</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="small muted">
+  <strong>A ordem é de cada um</strong>, e por isso se grava um por vez: o art.
+  234 manda que ela conste no assento de cada um dos gêmeos. Amarrar A a B já faz
+  B apontar para A — a ligação é recíproca, e depender de duas amarrações
+  produziria o par pela metade.
+</p>
+{% else %}
+<p>Nenhum assento de parto múltiplo sem a ordem de nascimento.</p>
+<p class="small muted">
+  A lista sai dos nascimentos em que o campo do IBGE diz <em>gêmeo</em> ou
+  <em>trigêmeo ou mais</em>. Assento de parto múltiplo em que ninguém marcou esse
+  campo não aparece aqui — e nesse caso o que falta é a marca, na ficha do
+  assento.
+</p>
+{% endif %}
+
+<details>
+  <summary>Os artigos citados nesta tela</summary>
+  <div class="card">
+    <p class="small">Régua que ninguém confere é régua que se acredita.</p>
+    <p class="small">
+      {% for a in norma.artigos_citados() %}{{ a }}{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+  </div>
+</details>
+{% endblock %}

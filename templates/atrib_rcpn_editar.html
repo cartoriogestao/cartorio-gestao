@@ -1,0 +1,263 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Editar informações — {{ assento.especie | capitalize }} de {{ assento.nome }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+{% from '_pessoa_do_assento.html' import pessoa, progenitores %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_assento', assento_id=assento.id) }}">&larr; Voltar à ficha</a>
+</div>
+
+<div class="notice" style="margin:0 0 14px">
+  <strong>Correção direta dos campos da ficha</strong>
+  <p>Isto <strong>não</strong> é a retificação do art. 109 (que lança ato com
+    fundamento). Serve para corrigir o que veio errado ou incompleto do
+    acervo — nome, filiação, datas, livro/folha/termo, teor — e grava no
+    próprio assento. Informe o <strong>motivo</strong>; a auditoria guarda
+    quem alterou (nunca nomes de robô).</p>
+  <p><small>Origem atual: <strong>{{ assento.origem }}</strong>
+    {% if assento.origem_chave %}· chave {{ assento.origem_chave }}{% endif %}
+  </small></p>
+</div>
+
+<form method="post" class="grid2" style="padding:0">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Motivo da correção</span><small>obrigatório</small></div>
+    <div class="grid2" style="padding:14px">
+      <label style="grid-column:1/-1">Por que está corrigindo?
+        <input name="motivo" required minlength="10"
+               value="{{ form.get('motivo','') }}"
+               placeholder="Ex.: tipografia na carga do acervo — conferido no livro de papel"></label>
+    </div>
+  </section>
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>O assento</span></div>
+    <div class="grid2" style="padding:14px">
+      <label>Nome
+        <input name="nome" required value="{{ form.get('nome','') }}"></label>
+      <label>Sexo (dados da espécie)
+        <select name="sexo">
+          <option value="">— não informado —</option>
+          <option value="M" {% if form.get('sexo') == 'M' %}selected{% endif %}>Masculino</option>
+          <option value="F" {% if form.get('sexo') == 'F' %}selected{% endif %}>Feminino</option>
+        </select></label>
+      <label>Data do assento
+        <input type="date" name="data_ato" value="{{ form.get('data_ato','') }}"></label>
+      <label>Data do fato
+        <input type="date" name="data_fato" value="{{ form.get('data_fato','') }}"></label>
+      <label>Matrícula (32 dígitos, se houver)
+        <input name="matricula" value="{{ form.get('matricula','') }}"
+               inputmode="numeric" maxlength="32"></label>
+      <label>Livro (volume, como na capa) <small>editável</small>
+        <input name="livro_volume" value="{{ form.get('livro_volume','') }}"
+               placeholder="A-1  ·  B-Auxiliar 1"></label>
+      <label>Número do termo <small>editável</small>
+        <input name="numero" value="{{ form.get('numero','') }}"
+               inputmode="numeric"></label>
+      <label>Folha (ato de registro) <small>editável</small>
+        <input name="folha" value="{{ form.get('folha','') }}"
+               placeholder="102  ·  102V"></label>
+    </div>
+  </section>
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Campos do termo</span>
+      <small>o que a certidão imprime</small></div>
+    <div class="grid2" style="padding:14px">
+      {% if 'cor_raca' in campos_termo %}
+      <label>Cor ou raça
+        <select name="cor_raca">
+          <option value="">— não informado —</option>
+          {% for codigo, rotulo in cores.items() %}
+          <option value="{{ codigo }}"
+            {% if form.get('cor_raca') == codigo %}selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select></label>
+      {% endif %}
+      {% if 'hora_fato' in campos_termo %}
+      <label>Hora do fato
+        <input name="hora_fato" value="{{ form.get('hora_fato','') }}"
+               placeholder="18:04"></label>
+      {% endif %}
+      {% if 'local_fato_nome' in campos_termo %}
+      <label>Local do fato (nome)
+        <input name="local_fato_nome" value="{{ form.get('local_fato_nome','') }}"></label>
+      {% endif %}
+      {% if 'local_fato_endereco' in campos_termo %}
+      <label>Local do fato (endereço)
+        <input name="local_fato_endereco" value="{{ form.get('local_fato_endereco','') }}"></label>
+      {% endif %}
+      {% if 'naturalidade_declarada' in campos_termo %}
+      <label>Naturalidade declarada
+        <input name="naturalidade_declarada"
+               value="{{ form.get('naturalidade_declarada','') }}"></label>
+      {% endif %}
+      {% if 'causa_morte' in campos_termo %}
+      <label>Causa da morte
+        <input name="causa_morte" value="{{ form.get('causa_morte','') }}"></label>
+      {% endif %}
+      {% if 'atestante' in campos_termo %}
+      <label>Atestante
+        <input name="atestante" value="{{ form.get('atestante','') }}"></label>
+      {% endif %}
+      {% if 'atestante_documento' in campos_termo %}
+      <label>Documento do atestante
+        <input name="atestante_documento"
+               value="{{ form.get('atestante_documento','') }}"></label>
+      {% endif %}
+      {% if 'local_sepultamento' in campos_termo %}
+      <label>Local do sepultamento
+        <input name="local_sepultamento"
+               value="{{ form.get('local_sepultamento','') }}"></label>
+      {% endif %}
+      {% if 'testamento' in campos_termo %}
+      <label>Testamento
+        <input name="testamento" value="{{ form.get('testamento','') }}"></label>
+      {% endif %}
+      {% if assento.especie == 'NASCIMENTO' and locais %}
+      <label>Onde nasceu <small>(o SIRC recusa o registro sem isto)</small>
+        <select name="ibge_local">
+          <option value="">— não informado —</option>
+          {% for codigo, texto in locais.items() %}
+          <option value="{{ codigo }}"
+                  {% if form.get('ibge_local','')|string == codigo|string %}selected{% endif %}>{{ texto }}</option>
+          {% endfor %}
+        </select></label>
+      {% endif %}
+    </div>
+  </section>
+
+  {# O QUE A LEI PEDE E NÃO TINHA ONDE SER CORRIGIDO — 13/10/2026, o oficial:
+     «tela corrigir registro é importante fazer». São os campos que a tela de
+     lavrar ganhou no mesmo dia; sem eles aqui, um dado esquecido na lavratura
+     não tinha volta. Só aparecem os da espécie (`campos_termo`). #}
+  {% if 'pais_casamento_lugar' in campos_termo or 'obito_conjuge_nome' in campos_termo
+        or 'nubente1_conjuge_anterior' in campos_termo or assento.especie in ('CASAMENTO', 'CASAMENTO_RELIGIOSO') %}
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>O que a lei pede</span>
+      <small>todos opcionais; o que estiver vazio não sai no papel</small></div>
+    <div class="grid2" style="padding:14px">
+      {% if 'pais_casamento_lugar' in campos_termo %}
+      <label>Lugar do casamento dos pais <small>(art. 54, 7º)</small>
+        <input name="pais_casamento_lugar" value="{{ form.get('pais_casamento_lugar','') }}"></label>
+      <label>Cartório do casamento dos pais
+        <input name="pais_casamento_cartorio" value="{{ form.get('pais_casamento_cartorio','') }}"></label>
+      {% endif %}
+      {% if 'obito_conjuge_nome' in campos_termo %}
+      <label>Cônjuge do falecido <small>(art. 80, 4º)</small>
+        <input name="obito_conjuge_nome" value="{{ form.get('obito_conjuge_nome','') }}"></label>
+      <label>O cônjuge é
+        <select name="obito_conjuge_situacao">
+          <option value="">— não informado —</option>
+          <option value="SOBREVIVENTE" {% if form.get('obito_conjuge_situacao') == 'SOBREVIVENTE' %}selected{% endif %}>sobrevivente</option>
+          <option value="PRE_MORTO" {% if form.get('obito_conjuge_situacao') == 'PRE_MORTO' %}selected{% endif %}>pré-morto</option>
+        </select></label>
+      <label>Cartório do casamento
+        <input name="obito_conjuge_cartorio" value="{{ form.get('obito_conjuge_cartorio','') }}"></label>
+      <label>Herdeiros menores ou interditados <small>(CN art. 255, XI)</small>
+        <select name="obito_herdeiros_menores">
+          <option value="">— não perguntado —</option>
+          <option value="SIM" {% if form.get('obito_herdeiros_menores') == 'SIM' %}selected{% endif %}>sim</option>
+          <option value="NAO" {% if form.get('obito_herdeiros_menores') == 'NAO' %}selected{% endif %}>não</option>
+        </select></label>
+      <label style="grid-column:1/-1">Filhos — nome e idade, um por linha <small>(art. 80, 7º)</small>
+        <textarea name="obito_filhos" rows="3">{{ form.get('obito_filhos','') }}</textarea></label>
+      {% endif %}
+      {% if assento.especie in ('CASAMENTO', 'CASAMENTO_RELIGIOSO') %}
+      <label>Regime de bens <small>(art. 70, 7º)</small>
+        <select name="regime_bens">
+          <option value="">— não informado —</option>
+          {% for codigo, texto in regimes.items() %}
+          <option value="{{ codigo }}"
+                  {% if form.get('regime_bens') == codigo %}selected{% endif %}>{{ texto }}</option>
+          {% endfor %}
+        </select></label>
+      {% endif %}
+      {% if 'nubente1_conjuge_anterior' in campos_termo %}
+      <label>Cônjuge anterior do primeiro nubente <small>(art. 70, 3º)</small>
+        <input name="nubente1_conjuge_anterior" value="{{ form.get('nubente1_conjuge_anterior','') }}"></label>
+      <label>Data da dissolução
+        <input type="date" name="nubente1_dissolucao_data" value="{{ form.get('nubente1_dissolucao_data','') }}"></label>
+      <label>Cônjuge anterior do segundo nubente
+        <input name="nubente2_conjuge_anterior" value="{{ form.get('nubente2_conjuge_anterior','') }}"></label>
+      <label>Data da dissolução
+        <input type="date" name="nubente2_dissolucao_data" value="{{ form.get('nubente2_dissolucao_data','') }}"></label>
+      <label>Data dos proclamas <small>(habilitação de fora)</small>
+        <input type="date" name="proclamas_data" value="{{ form.get('proclamas_data','') }}"></label>
+      <label>Documentos apresentados
+        <input name="documentos_apresentados" value="{{ form.get('documentos_apresentados','') }}"></label>
+      <label>Data do pacto antenupcial <small>(art. 70, 7º)</small>
+        <input type="date" name="pacto_data" value="{{ form.get('pacto_data','') }}"></label>
+      <label>Serventia do pacto
+        <input name="pacto_serventia" value="{{ form.get('pacto_serventia','') }}"></label>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {# O LIVRO E — o mesmo bloco da tela de lavrar (`_livro_e.html`). #}
+  {% from '_livro_e.html' import titulo_do_livro_e, pessoas_do_livro_e %}
+  {% if titulos_livro_e %}
+    {{ titulo_do_livro_e(assento.especie, form, titulos_livro_e, nomes_do_titulo, regimes) }}
+  {% endif %}
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Teor</span>
+      <small>texto do assento / termo</small></div>
+    <div style="padding:14px">
+      <label style="display:block">Teor
+        <textarea name="teor" rows="10" style="width:100%">{{ form.get('teor','') }}</textarea>
+        <small>Nos assentos do acervo o teor muitas vezes veio vazio — pode
+          colar aqui o texto conferido no livro.</small></label>
+    </div>
+  </section>
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Filiação e pessoas</span>
+      <small>corrija nomes e naturalidade</small></div>
+    <div class="grid2" style="padding:14px">
+      {% if assento.especie in ('NASCIMENTO', 'NATIMORTO') %}
+        {{ pessoa('pessoa', 'Registrado', '', false, form, true, 'completo') }}
+        {{ pessoa('filiacao1', 'Filiação 1 — mãe', '', false, form, false, 'completo', false, true) }}
+        {{ pessoa('filiacao2', 'Filiação 2 — pai', '', false, form, false, 'completo', false, true) }}
+        {% if assento.especie == 'NASCIMENTO' %}
+          {{ progenitores('prog1f1', 'prog2f1',
+                          'Progenitores da filiação 1 — avós maternos',
+                          'Os pais de quem está na filiação 1.', form) }}
+          {{ progenitores('prog1f2', 'prog2f2',
+                          'Progenitores da filiação 2 — avós paternos',
+                          'Os pais de quem está na filiação 2.', form) }}
+        {% endif %}
+        {{ pessoa('declarante', 'Declarante', '', false, form) }}
+        {{ pessoa('testemunha', 'Testemunha', '', false, form) }}
+      {% elif assento.especie in ('CASAMENTO', 'CASAMENTO_RELIGIOSO') %}
+        {{ pessoa('nubente1', 'Primeiro nubente', '', true, form, true, 'completo') }}
+        {{ pessoa('nubente2', 'Segundo nubente', '', true, form, true, 'completo') }}
+        {{ pessoa('filiacao1n1', 'Filiação 1 do primeiro nubente', '', false, form, false, 'completo', false, true) }}
+        {{ pessoa('filiacao2n1', 'Filiação 2 do primeiro nubente', '', false, form, false, 'completo', false, true) }}
+        {{ pessoa('filiacao1n2', 'Filiação 1 do segundo nubente', '', false, form, false, 'completo', false, true) }}
+        {{ pessoa('filiacao2n2', 'Filiação 2 do segundo nubente', '', false, form, false, 'completo', false, true) }}
+        {{ pessoa('testemunha', 'Testemunha', '', false, form) }}
+      {% elif assento.especie == 'OBITO' %}
+        {{ pessoa('pessoa', 'Falecido', '', false, form, true, 'completo') }}
+        {{ pessoa('filiacao1', 'Filiação 1 — mãe', '', false, form, false, 'completo', false, true) }}
+        {{ pessoa('filiacao2', 'Filiação 2 — pai', '', false, form, false, 'completo', false, true) }}
+        {{ pessoa('declarante', 'Declarante', '', false, form) }}
+        {{ pessoa('testemunha', 'Testemunha', '', false, form) }}
+      {% elif titulos_livro_e or assento.especie == 'OUTRO' %}
+        {{ pessoas_do_livro_e(assento.especie, form) }}
+      {% else %}
+        <p style="grid-column:1/-1"><small>Esta espécie não tem bloco de
+          pessoas na correção — ajuste os campos do assento acima.</small></p>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="actions" style="grid-column:1/-1">
+    <button class="button">Salvar correções</button>
+    <a class="button" href="{{ url_for('rcpn_assento', assento_id=assento.id) }}">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

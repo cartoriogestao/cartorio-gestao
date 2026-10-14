@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+{% block title %}Central de Certidões — a fila de pedidos{% endblock %}
+{% block heading %}<h1>Central de Certidões — pedidos</h1>{% endblock %}
+{% block content %}
+
+{#
+  ESTA TELA SUBSTITUI SETE FILAS QUE ESTAVAM FORA DO SISTEMA.
+
+  Até 03/09/2026 os pedidos de certidão da Central se olhavam no portal dela,
+  um módulo de cada vez, e a certidão saía por fora. Aqui eles entram na casa,
+  casam com o assento pela matrícula, e a resposta sobe pela API.
+#}
+
+{# ------------------------------------------------------------------ #}
+{# O ESTADO DA LIGAÇÃO, ANTES DA LISTA. Fila vazia sem esta faixa faz o
+   operador achar que não há trabalho, quando o que há é falta de credencial. #}
+<section class="card {% if not tem_credencial %}warning{% endif %}">
+  <h2>A Central</h2>
+  <p>
+    Endereço: <code>{{ base }}</code> — ambiente <strong>{{ ambiente|lower }}</strong>.
+    CNS da serventia: <code>{{ cns or '—' }}</code>.
+  </p>
+  {% if tem_credencial %}
+    <p>O token do IdRC está informado. <strong>É o mesmo do e-Proclamas</strong> —
+    um cadastro serve às duas APIs do ON-RCPN.</p>
+  {% else %}
+    <p>
+      <strong>O token do IdRC ainda não foi informado</strong>, e sem ele nada
+      sobe nem desce. Informe em <a href="{{ url_for('settings') }}">Administrativo
+      → Configurações</a>, na seção «Centrais — credenciais das APIs»; o arquivo
+      é <code>{{ arquivo_da_credencial }}</code>, <strong>fora do banco</strong>.
+    </p>
+  {% endif %}
+  <p><small>
+    <strong>O ambiente é o de homologação</strong> — e não porque falte o outro:
+    o endereço de produção <strong>existe e responde</strong> (medido em
+    18/09/2026), com o mesmo contrato. É porque o cadastro <strong>exige a
+    ordem</strong>: o client de produção só se cria citando o protocolo do de
+    homologação (<code>certidao<b>h</b></code> →
+    <code>certidao</code>). Enquanto o outro não for criado, o que roda aqui é
+    homologação — e a faixa de cima diz qual está em uso.
+  </small></p>
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>Baixar os pedidos</h2>
+  <p><small>
+    Baixar <strong>não responde a pedido nenhum</strong> — só traz para cá o que
+    está esperando. O mesmo pedido não entra duas vezes.
+  </small></p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Módulo</th><th>O que é</th><th>Na fila</th><th></th></tr></thead>
+      <tbody>
+        {% for m in modulos %}
+        <tr>
+          <td><code>{{ m }}</code>
+            {% if m in modulos_de_registro %}
+              <br><small><strong>pede registro</strong></small>
+            {% endif %}
+          </td>
+          <td>{{ nome_do_modulo[m] }}</td>
+          <td>{{ contagem.get(m, 0) }}</td>
+          <td>
+            <form method="post" action="{{ url_for('rcpn_pedidos_baixar') }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="modulo" value="{{ m }}">
+              <button class="button" type="submit">Baixar</button>
+            </form>
+            <a class="button" href="{{ url_for('rcpn_pedidos', modulo=m) }}">Ver</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><small>
+    {# DOIS DOS SETE NÃO PEDEM CERTIDÃO, e a diferença muda o que o balcão faz. #}
+    <strong>P13</strong> e <strong>EOB</strong> não pedem certidão: pedem que a
+    serventia <strong>lavre um registro</strong> — de nascimento (Unidades
+    Interligadas) e de óbito (e-Óbito). Registro toma número, ocupa folha, gasta
+    selo e entra na corrente de hash, e por isso <strong>ele se lavra na tela do
+    Registro Civil</strong>; aqui o pedido só se marca como registrado depois.
+  </small></p>
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section>
+  <h2>
+    {{ situacao|lower }} ({{ fila|length }})
+    {% if modulo %} · módulo <code>{{ modulo }}</code>{% endif %}
+  </h2>
+  <div class="actions">
+    {% for s in situacoes %}
+      <a class="button" href="{{ url_for('rcpn_pedidos', modulo=modulo, situacao=s) }}">{{ s|lower }}</a>
+    {% endfor %}
+    {% if modulo %}
+      <a class="button" href="{{ url_for('rcpn_pedidos', situacao=situacao) }}">todos os módulos</a>
+    {% endif %}
+  </div>
+
+  {% if not fila %}
+    <p class="muted">
+      Nada nesta lista. A fila enche quando alguém clica em <em>Baixar</em>
+      acima — e ela só traz o que a Central tem esperando.
+    </p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Módulo</th><th>Nº do pedido</th><th>Quem é</th>
+          <th>Assento desta casa</th><th>Depósito prévio</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in fila %}
+        <tr>
+          <td><code>{{ p.modulo }}</code></td>
+          <td>{{ p.numero_pedido }}</td>
+          <td>{{ p.resumo }}</td>
+          <td>
+            {% if p.assento_id %}
+              assento {{ p.assento_id }}
+            {% else %}
+              {# SEM ASSENTO NÃO HÁ O QUE CERTIFICAR, e a coluna diz isso ANTES
+                 de alguém abrir a ficha e levar a recusa. #}
+              <strong>não casou</strong>
+            {% endif %}
+          </td>
+          <td>{{ p.deposito_previo or '—' }}</td>
+          <td><a class="button" href="{{ url_for('rcpn_pedido', pedido_id=p.id) }}">Abrir</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h3>O que esta tela faz, e o que ela não faz</h3>
+  <p><small>
+    Ela <strong>não lavra ato nenhum</strong>. Cumprir um pedido de certidão
+    cria a certidão eletrônica na Central, manda assiná-la lá e entrega — a
+    certidão de papel continua saindo pela ficha do assento, com o molde que o
+    oficial desenhou. E o registro pedido por P13 e EOB se lavra no livro, como
+    qualquer outro.
+  </small></p>
+  <p><small>
+    <strong>Rejeitar sobe o motivo para a Central</strong>, e é ele que o
+    requerente lê. <strong>Dispensar não sobe nada</strong>: tira da fila daqui
+    e a Central continua com o pedido em aberto — por isso exige motivo escrito.
+  </small></p>
+</section>
+
+{% endblock %}

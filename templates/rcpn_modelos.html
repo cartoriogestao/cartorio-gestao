@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Modelos do Registro Civil{% endblock %}
+{% block content %}
+{#
+  A TELA QUE COPIA O MÓDULO «MODELOS» DO E-OFÍCIO.
+
+  Lá são 13 linhas de `tbModelosRCPN`, presas a uma espécie, com claros
+  escritos `@campo`. Aqui a lista é a mesma coisa, e o claro se escreve
+  {assim} — o formato que o resto desta casa já usa.
+#}
+
+{% if assento %}
+<h1>Modelos para este assento</h1>
+<p class="muted">
+  Assento n.º {{ assento.numero or assento.id }} — <strong>{{ assento.nome }}</strong>,
+  {{ nome_da_especie.get(assento.especie, assento.especie) }}.
+  Só aparecem aqui os modelos <strong>desta espécie</strong> e ativos.
+</p>
+{% else %}
+<h1>Modelos do Registro Civil</h1>
+<p class="muted">
+  São os <strong>documentos avulsos</strong> que o balcão escreve em volta do
+  ato — comunicação, requerimento, declaração, ofício. É o módulo
+  <em>Modelos</em> do E-Ofício, onde estes papéis moravam.
+</p>
+
+<div class="card">
+  <p>
+    <strong>Isto não é o termo do livro.</strong> O termo tem lugar próprio,
+    é montado dos requisitos da Lei n.º 6.015/1973 e do Código de Normas, e
+    fica em <em>Teores</em> de cada ato.
+  </p>
+  <p class="small">
+    <strong>E não é aqui que se ajusta o cabeçalho da casa.</strong> O timbre,
+    o recibo e os papéis que o sistema já emite ficam em
+    <a href="{{ url_for('modelos') }}">Administrativo → Modelos dos
+    documentos</a>.
+  </p>
+  <p class="small muted">
+    Ativos hoje:
+    {% for e in especies %}
+      {{ quantos.get(e.chave, 0) }} de {{ e.nome|lower }}{{ ', ' if not loop.last }}
+    {% endfor %}.
+  </p>
+</div>
+
+{# O FILTRO POR ESPÉCIE, e ele DIZ quando está filtrando: lista filtrada que
+   parece a lista inteira faz quem a lê concluir que a casa tem menos modelos
+   do que tem. #}
+<div class="card">
+  <p class="small">
+    <strong>Mostrando:</strong>
+    <a class="button {% if not especie %}primary{% else %}secondary{% endif %}"
+       href="{{ url_for('rcpn_modelos') }}">todas as espécies</a>
+    {% for e in especies %}
+      <a class="button {% if especie == e.chave %}primary{% else %}secondary{% endif %}"
+         href="{{ url_for('rcpn_modelos', especie=e.chave) }}">{{ e.nome }}</a>
+    {% endfor %}
+  </p>
+</div>
+{% endif %}
+
+{% if not modelos %}
+<div class="card warning">
+  {% if assento %}
+  <p>
+    <strong>Não há modelo cadastrado para
+    {{ nome_da_especie.get(assento.especie, assento.especie)|lower }}.</strong>
+    Nada está quebrado — a casa ainda não escreveu nenhum.
+  </p>
+  {% if pode_escrever %}
+  <p class="small"><a href="{{ url_for('rcpn_modelos') }}">Cadastrar um modelo</a></p>
+  {% endif %}
+  {% else %}
+  <p><strong>Nenhum modelo cadastrado ainda.</strong>
+  {% if pode_escrever %}Use o formulário abaixo para escrever o primeiro.
+  {% else %}Quem cadastra é o oficial ou o gerente.{% endif %}</p>
+  {% endif %}
+</div>
+{% else %}
+<table>
+  <thead><tr>
+    <th>Modelo</th><th>Espécie</th><th>Situação</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for m in modelos %}
+    <tr>
+      <td><strong>{{ m.nome }}</strong></td>
+      <td>{{ nome_da_especie.get(m.especie, m.especie) }}</td>
+      <td>
+        {% if m.ativo %}<span class="badge">ativo</span>
+        {% else %}<span class="badge muted">desativado</span>{% endif %}
+      </td>
+      <td>
+        {% if assento %}
+          <a class="button primary"
+             href="{{ url_for('rcpn_modelo_emitir', assento_id=assento.id, modelo_id=m.id) }}">Montar</a>
+        {% endif %}
+        <a class="button secondary"
+           href="{{ url_for('rcpn_modelo', modelo_id=m.id) }}">
+          {{ 'Abrir' if pode_escrever else 'Ver' }}</a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if pode_escrever and not assento %}
+<h2>Cadastrar um modelo</h2>
+<div class="card">
+  <form method="post" action="{{ url_for('rcpn_modelos') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p>
+      <label>Espécie<br>
+        <select name="especie" required>
+          {% for e in especies %}
+            <option value="{{ e.chave }}"
+              {% if especie == e.chave %}selected{% endif %}>{{ e.nome }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </p>
+    <p>
+      <label>Nome do modelo<br>
+        <input type="text" name="nome" maxlength="200" required
+               style="width: 32em; max-width: 100%"
+               placeholder="Termo de gêmeos"></label>
+    </p>
+    <p>
+      <label>Texto<br>
+        <textarea name="corpo" rows="10" style="width: 100%" required
+          placeholder="Certifico que {nome}, matrícula {matricula}, ..."></textarea>
+      </label>
+    </p>
+    {# **A ESPÉCIE NÃO MUDA DEPOIS**, e por isso a tela diz aqui: os claros de
+       óbito não existem no nascimento, e trocar a espécie deixaria o texto com
+       claro que o sistema não sabe preencher. #}
+    <p class="small muted">
+      A <strong>espécie não muda</strong> depois de gravado: é ela que decide
+      quais claros o modelo pode usar. Para o mesmo texto na outra espécie,
+      cadastre outro modelo.
+    </p>
+    <p><button class="primary" type="submit">Cadastrar</button></p>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

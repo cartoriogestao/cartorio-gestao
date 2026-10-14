@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Notificação — usucapião {{ p.numero }}{% endblock %}
+{% block content %}
+<h1>Notificação expedida</h1>
+
+<div class="actions no-print">
+  <a class="button secondary"
+     href="{{ url_for('usucapiao_processo', processo_id=p.id) }}">&larr; voltar ao processo</a>
+  <a class="button secondary"
+     href="{{ url_for('usucapiao_manual_notificacao') }}">como efetuar</a>
+  {#  O ARQUIVO VEM ANTES DO «Imprimir» DO NAVEGADOR — relato #88,
+      21/09/2026: «aparece que gerou porém não consigo acessar».
+
+      O botão abaixo chama a caixa de impressão DO NAVEGADOR, e quem trabalha
+      por acesso remoto clica nele e a caixa abre **na outra máquina**. O
+      arquivo, não: ele se baixa, se anexa e se leva. Ele fica primeiro, que é
+      a ordem em que se usa. #}
+  <a class="button primary"
+     href="{{ url_for('usucapiao_notificacao_arquivo', processo_id=p.id,
+                      movimento_id=mov.id) }}">Imprimir em PDF</a>
+  <a class="button secondary"
+     href="{{ url_for('usucapiao_notificacao_arquivo', processo_id=p.id,
+                      movimento_id=mov.id) }}?formato=odt">Baixar em .odt</a>
+  <button class="button" onclick="window.print()">Imprimir pela tela</button>
+</div>
+
+<div class="card no-print">
+  <p>
+    <strong>Imprima e entregue.</strong> O que prova a notificação é o
+    <strong>comprovante que volta assinado</strong> — e não esta linha no
+    sistema. O recibo está no pé do papel, na mesma folha: recibo em folha
+    separada é o recibo que se perde.
+  </p>
+  <p class="small muted">
+    Quando o comprovante voltar, junte-o ao processo como peça, no tipo
+    <em>Comprovante de notificação</em>. Sem ele, a notificação existe no papel
+    e não existe nos autos.
+  </p>
+  <p class="small muted">
+    <strong>O prazo conta do recebimento</strong>, e individualmente para cada
+    notificado — não de um marco comum. Contar de uma data só encurta o prazo de
+    quem recebeu depois.
+  </p>
+</div>
+
+<div class="card no-print">
+  <table class="tabela">
+    <tr><th>Notificado</th><td>{{ mov.destinatario }}</td>
+        <th>Na qualidade de</th><td>{{ mov.destinatario_papel }}</td></tr>
+    <tr><th>Endereço</th><td colspan="3">{{ mov.endereco }}</td></tr>
+    <tr><th>Forma</th><td>{{ mov.forma }}</td>
+        <th>Prazo</th><td>{{ mov.prazo_dias }} dias
+          {%- if mov.prazo_uteis %} úteis{% endif %}</td></tr>
+    <tr><th>Expedida em</th><td colspan="3">{{ mov.data_movimento }}</td></tr>
+  </table>
+</div>
+
+{# O TEOR SAI COMO FOI GUARDADO, e não remontado agora: o que o notificado leu
+   é o de então. Mesma regra do termo do Registro Civil. #}
+<div class="folha">
+  <pre style="white-space:pre-wrap;font-family:serif;font-size:1rem;line-height:1.5">{{ teor }}</pre>
+</div>
+
+<style>
+  @media print {
+    .no-print, nav, header, footer { display: none !important; }
+    .folha { border: 0; box-shadow: none; }
+  }
+</style>
+{% endblock %}

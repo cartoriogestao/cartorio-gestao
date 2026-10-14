@@ -1,0 +1,259 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Chave do CENPROT — trazer do XML</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_remessas') }}">Remessas da CRA</a>
+  <a class="button" href="{{ url_for('protesto_imagens') }}">Imagens dos títulos</a>
+  <a class="button" href="{{ url_for('protesto_titulos') }}">Títulos</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Como está a casa hoje</span>
+    <small>{{ quadro.total }} título(s)</small>
+  </div>
+  <table class="table">
+    <tbody>
+      <tr>
+        <td><strong>Já têm a chave do CENPROT</strong></td>
+        <td style="text-align:right">{{ quadro.com_chave }}</td>
+      </tr>
+      <tr>
+        <td><strong>Esperando a chave</strong> — têm protocolo, e é por ele que
+          o arquivo casa</td>
+        <td style="text-align:right">{{ quadro.a_preencher }}</td>
+      </tr>
+      <tr>
+        <td><strong>Sem protocolo</strong> — estes o arquivo não alcança, e o
+          conserto é outro: o protocolo vem da carga do acervo</td>
+        <td style="text-align:right">{{ quadro.sem_protocolo }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% if quadro.sem_protocolo %}
+  <p style="padding:0 14px 14px"><small>
+    Os <strong>{{ quadro.sem_protocolo }}</strong> sem protocolo não são defeito
+    desta tela: sem o número do protocolo não há por onde casar o título com o
+    que o arquivo traz. Eles se resolvem em
+    {# O LINK SÓ PARA QUEM PODE ENTRAR: a carga é do ADMIN, e link que devolve
+       403 faz o escrevente achar que o sistema quebrou. #}
+    {% if user.role == 'ADMIN' %}
+    <a href="{{ url_for('atribuicoes_importar') }}">Livros e acervo — Trazer o
+    acervo do E-Ofício</a>{% else %}<strong>Livros e acervo — Trazer o acervo
+    do E-Ofício</strong>, que só o administrador abre{% endif %},
+    que traz o protocolo de cada um.
+  </small></p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Trazer o arquivo do CENPROT</span></div>
+  <p style="padding:14px 14px 0"><small>
+    No CENPROT, gere o arquivo de <strong>protestados</strong> — o do nome com a
+    letra <strong>P</strong>, como
+    <code>MA-2198765-01-P-20260831-01.xml</code> — e mande aqui como ele veio.
+  </small></p>
+  <p style="padding:0 14px"><small>
+    A Central conhece cada título por uma <strong>chave de 23 dígitos</strong>,
+    e ela vem escrita no arquivo <strong>ao lado do nosso número de
+    protocolo</strong>. É por isso que a serventia não precisa compor a chave:
+    basta guardar a que a Central devolveu.
+  </small></p>
+  <p style="padding:0 14px"><small>
+    <strong>Nada aqui é lavrado.</strong> Não toma número, não ocupa folha, não
+    gasta selo e não muda a situação de título nenhum — o que se guarda é a
+    chave. Título que já tem chave <strong>não é sobrescrito</strong>, e o que
+    não casa não impede os outros de entrar.
+  </small></p>
+  <form method="post" enctype="multipart/form-data" class="grid2"
+        style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="grid-column:1/-1">O arquivo do CENPROT
+      <input type="file" name="arquivo" accept=".xml" required></label>
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button primary">Guardar as chaves</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Arquivo de emolumentos — o que o devedor paga para limpar o nome</span>
+    <small>{{ do_arquivo }} título(s) entram</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    A Central publica, para cada protesto vivo, dois valores: o que se paga
+    para <strong>retirar</strong> (antes de o protesto ser lavrado) e para
+    <strong>cancelar</strong> (depois). Entram os protestos ainda vivos
+    <strong>que já tenham a chave do CENPROT</strong> — ela é o primeiro campo
+    do arquivo, e vem do XML aqui de cima.
+  </small></p>
+  <p style="padding:0 14px"><small>
+    Os dois valores saem da <strong>faixa de valor do título</strong> na tabela
+    do TJMA, e a conta foi conferida contra o arquivo de um ano inteiro:
+    <strong>166 de 173</strong> títulos batem no centavo.
+  </small></p>
+  {% if not do_arquivo %}
+  <p style="padding:0 14px 14px"><small>
+    <strong>Nenhum título entra hoje.</strong> Ou não há protesto vivo, ou eles
+    ainda não têm a chave do CENPROT — traga o XML na parte de cima desta tela.
+  </small></p>
+  {% else %}
+  <form method="post" action="{{ url_for('protesto_cenprot_emolumentos') }}"
+        style="padding:14px 14px 0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button primary">Baixar o arquivo de emolumentos</button>
+  </form>
+  {#
+    E O MESMO ARQUIVO SOBE PELA API, quando a credencial estiver informada —
+    o passo 8 do roteiro das Centrais, que ate aqui se fazia a mao no site. O
+    arquivo e o MESMO que o botao de cima baixa, pela MESMA funcao: uma
+    segunda montagem parecida divergiria no primeiro conserto, e a casa
+    passaria a mandar a Central um arquivo diferente do que confere na tela.
+  #}
+  <form method="post"
+        action="{{ url_for('protesto_cenprot_emolumentos_enviar') }}"
+        style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label><small>Ambiente</small>
+      <select name="ambiente">
+        <option value="HOMOLOGACAO">Homologação (teste)</option>
+        <option value="PRODUCAO">Produção</option>
+      </select>
+    </label>
+    <button class="button">Enviar à CENPROT pela API</button>
+    <p><small>
+      <strong>Enviar muda coisa na Central.</strong> O roteiro diz que a
+      aprovação da anuência é <strong>automática por meio deste arquivo</strong>
+      — mandá-lo em dia é o que faz a anuência andar sozinha.
+    </small></p>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Edital eletrônico — o arquivo do dia</span>
+    <small>{{ editais_hoje }} edital(is) publicado(s) hoje</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    <strong>O ato vem antes do arquivo.</strong> Ele sai do que já foi
+    <strong>publicado</strong> — quem publica é
+    <a href="{{ url_for('protesto_avisos') }}">Avisos e editais</a>, que numera,
+    congela o teor e amarra ao aviso. Gerar o arquivo não publica edital nenhum.
+  </small></p>
+  <p style="padding:0 14px"><small>
+    Art. 15, § 1º, da Lei 9.492/1997, e Resolução nº 8 do IEPTB-BR.
+  </small></p>
+  <form method="post" action="{{ url_for('protesto_cenprot_edital') }}"
+        class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {# O DIA E ESCOLHIDO, e nao fixo em hoje: quem esqueceu ontem precisa
+       poder mandar hoje, e a Central aceita o arquivo de dia anterior. #}
+    <label>Dia dos editais
+      <input type="date" name="dia" value="{{ hoje }}"></label>
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button primary">Gerar o edital eletrônico</button>
+    </div>
+  </form>
+</section>
+
+{% if resultado %}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que aconteceu</span>
+    <small>{{ resultado.total }} título(s) no arquivo</small>
+  </div>
+
+  {% if not resultado.versao_conhecida %}
+  <p style="padding:14px 14px 0"><small>
+    Este arquivo é da versão <strong>{{ resultado.versao }}</strong>, e a que
+    foi medida nesta casa é a <strong>{{ versao_medida }}</strong>. As chaves
+    foram lidas assim mesmo — ler versão mais nova é seguro. Vale avisar quem
+    cuida do sistema, porque <strong>gerar</strong> arquivo numa versão que
+    ninguém conferiu é que não se pode.
+  </small></p>
+  {% endif %}
+
+  {% if resultado.entram %}
+  <div class="panel-head"><span>Chaves guardadas</span>
+    <small>{{ resultado.gravadas }}</small></div>
+  <table class="table">
+    <thead><tr>
+      <th>Título</th><th>Protocolo</th><th>Chave do CENPROT</th>
+      <th>Apresentante</th>
+    </tr></thead>
+    <tbody>
+    {% for g in resultado.entram %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=g.titulo_id) }}">{{ g.numero_do_sistema }}</a></td>
+        <td><small>{{ g.protocolo }}</small></td>
+        <td><small><code>{{ g.chave }}</code></small></td>
+        <td><small>{{ g.apresentante_codigo }} — {{ g.apresentante_nome }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if resultado.ja_tem %}
+  <div class="panel-head"><span>Já tinham esta mesma chave</span>
+    <small>{{ resultado.ja_tem|length }}</small></div>
+  <p style="padding:0 14px"><small>
+    Nada a fazer: o arquivo confirma o que já estava guardado. É o que
+    acontece quando o mesmo arquivo é trazido duas vezes.
+  </small></p>
+  {% endif %}
+
+  {% if resultado.divergem %}
+  <div class="panel-head"><span>Divergem — nada foi gravado nestes</span>
+    <small>{{ resultado.divergem|length }}</small></div>
+  <p style="padding:14px 14px 0"><small>
+    Aqui o sistema <strong>parou de propósito</strong>. A chave é como a Central
+    conhece o título, e escrever a chave errada num título faria os dois lados
+    falarem de coisas diferentes com o mesmo nome. Cada linha diz o que não
+    bateu.
+  </small></p>
+  <table class="table">
+    <thead><tr><th>Título</th><th>O que não bateu</th></tr></thead>
+    <tbody>
+    {% for d in resultado.divergem %}
+      <tr>
+        <td>
+          {% if d.titulo_id %}
+          <a href="{{ url_for('protesto_titulo', titulo_id=d.titulo_id) }}">#{{ d.titulo_id }}</a>
+          {% else %}<small>{{ d.numero_titulo }}</small>{% endif %}
+        </td>
+        <td><small>{{ d.motivo }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if resultado.fora %}
+  <div class="panel-head"><span>Não casaram com título nenhum desta casa</span>
+    <small>{{ resultado.fora|length }}</small></div>
+  <table class="table">
+    <thead><tr>
+      <th>Título no arquivo</th><th>Protocolo</th><th>Por quê</th>
+    </tr></thead>
+    <tbody>
+    {% for f in resultado.fora %}
+      <tr>
+        <td><small>{{ f.numero_titulo }}</small></td>
+        <td><small>{{ f.protocolo }}</small></td>
+        <td><small>{{ f.motivo }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p style="padding:0 14px 14px"><small>
+    O caso comum aqui é o título ainda estar <strong>sem protocolo</strong> no
+    sistema — veja o quadro no alto desta tela.
+  </small></p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

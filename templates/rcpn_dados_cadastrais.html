@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}CPF nos assentos antigos{% endblock %}
+{% block content %}
+<h1>CPF nos assentos antigos</h1>
+
+<div class="card">
+  <p><strong>{{ norma.ARTIGO }}</strong> — nos assentos de nascimento, casamento
+     e óbito lavrados <strong>antes de {{ norma.PROVIMENTO_63 }}</strong> serão
+     <strong>averbados</strong>, quando possível, de forma gratuita e mediante
+     conferência, o número do <strong>CPF</strong>, e <strong>anotados</strong>
+     os números do DNI ou do RG, do título de eleitor e de outro dado cadastral
+     público.</p>
+  <p class="small muted">
+    <strong>São dois verbos, e dois atos.</strong> O CPF se <em>averba</em>; o
+    resto se <em>anota</em> — e são exatamente os dois atos que a inspeção cobra
+    separados. Trocar um pelo outro é lavrar o ato errado no assento, e ninguém
+    percebe: os dois aparecem à margem.
+  </p>
+  <p class="small muted">
+    A data é a vigência do Provimento nº 63/2017 do CNJ — {{ norma.POR_QUE_ESSA_DATA }}.
+  </p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">As três condições, e nenhuma é enfeite</h2>
+  {% for c in norma.CONDICOES %}
+    <p><strong>«{{ c.texto }}»</strong> — {{ c.o_que_quer_dizer|forte }}.</p>
+  {% endfor %}
+</div>
+
+<h2>O tamanho do mutirão</h2>
+<table>
+  <thead><tr><th>Espécie</th><th>Assentos com algo a fazer</th></tr></thead>
+  <tbody>
+  {% for especie, quantos in quadro.por_especie.items() %}
+    <tr><td>{{ especie|capitalize }}</td><td>{{ quantos }}</td></tr>
+  {% endfor %}
+    <tr><td><strong>Total</strong></td>
+        <td><strong>{{ quadro.total }}</strong></td></tr>
+  </tbody>
+</table>
+<p class="small muted">
+  Destes, <strong>{{ quadro.so_cpf }}</strong> precisam só da averbação do CPF —
+  o resto já está anotado. São dois trabalhos diferentes, e vale começar pelo
+  menor.
+</p>
+
+{% if lista %}
+<h2>Os assentos ({{ lista|length }})</h2>
+<table>
+  <thead>
+    <tr><th>Lavrado</th><th>Espécie</th><th>Nº</th><th>Nome</th>
+        <th>Averbar</th><th>Anotar</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for a in lista %}
+    <tr>
+      <td class="small">{{ a.data_ato }}</td>
+      <td class="small">{{ a.especie|capitalize }}</td>
+      <td class="small">{{ a.numero or '' }}</td>
+      <td>{{ a.nome }}</td>
+      <td class="small">
+        {% if a.averbar %}<strong class="danger">{{ a.averbar|join(', ') }}</strong>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+      <td class="small">
+        {% if a.anotar %}{{ a.anotar|join(', ') }}
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+      <td class="small">
+        <a href="{{ url_for('rcpn_assento', assento_id=a.id) }}">abrir</a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Nenhum assento antigo com dado cadastral faltando.</p>
+<p class="small muted">
+  A lista sai dos assentos que estão no sistema. <strong>O acervo trazido do
+  E-Ofício é cerca de 1% do livro desta casa</strong> — 193 nascimentos de
+  19.552 registrados —, de modo que o mutirão de verdade só aparece à medida que
+  os assentos entrarem.
+</p>
+{% endif %}
+
+<div class="card">
+  <p class="small muted">
+    <strong>Este sistema não busca CPF em lugar nenhum</strong>, e é de
+    propósito: o artigo exige <em>conferência</em>, e um programa que buscasse o
+    número numa base e o averbasse estaria dispensando exatamente a conferência
+    que a norma manda fazer. Ele mostra o que falta; conferir e lavrar é de quem
+    responde pela serventia — na ficha do assento, onde estão o livro, o selo e
+    os emolumentos.
+  </p>
+</div>
+{% endblock %}

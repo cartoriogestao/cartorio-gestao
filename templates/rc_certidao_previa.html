@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Prévia da certidão — assento {{ assento.numero or assento.id }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_assento', assento_id=assento.id) }}">&larr; Voltar ao assento</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Prévia</span>
+    <small>nada foi gravado — confira no livro antes de emitir</small>
+  </div>
+  <div style="padding:14px">
+    {{ previa_html | safe }}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Emitir com estes dados</span></div>
+  <form method="post" enctype="multipart/form-data" style="padding:14px"
+        action="{{ url_for('rcpn_certidao_emitir', assento_id=assento.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="tipo_certidao" value="{{ tipo_certidao or 'inteiro_teor' }}">
+    <input type="hidden" name="modo_inteiro" value="{{ modo_inteiro or modalidade }}">
+    <input type="hidden" name="modalidade" value="{{ modalidade }}">
+    <label>Teor colado
+      <textarea name="teor_colado" rows="10">{{ teor_colado or '' }}</textarea>
+    </label>
+    {% if folha_da_1a_via %}
+    {# FOLHA_DA_1A_VIA_20261009: a 1a via sai na folha do registro, travada. #}
+    <label>Folha de segurança da 1ª via
+      <input value="{% if folha_da_1a_via.serie %}{{ folha_da_1a_via.serie }} {% endif %}{{ folha_da_1a_via.codigo }}" readonly
+             id="folha_da_1a_via" style="font-weight:bold">
+      <input type="hidden" name="folha_seguranca" value="{{ folha_da_1a_via.codigo }}">
+      <small>travada: é a folha baixada no registro e informada ao TJMA no selo.</small>
+    </label>
+    {% else %}
+        <label>Folha de segurança
+      <select name="folha_seguranca" id="folha_seguranca_select">
+        {% for f in folhas_disponiveis %}
+        <option value="{{ f.codigo }}" {% if f.codigo==folha_sugerida %}selected{% endif %}>
+          {% if f.serie %}{{ f.serie }} {% endif %}{{ f.codigo }}{% if f.codigo==folha_sugerida %} (sugerida){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <small>escolha a folha que está de fato na gaveta - a sugerida é só a
+        próxima em ordem. A lista mostra série + número (ex.: IA 033467007).</small>
+    </label>
+    <label>Ou digite o número impresso
+      <input name="folha_seguranca_digitada" id="folha_seguranca_digitada"
+             placeholder="IA 033467007" autocomplete="off"
+             title="Série e número como no papel (IA 033467007) ou só o número">
+      <small>se preencher, vale o digitado (aceita IA 033467007)</small>
+    </label>
+    {% endif %}
+
+    <div style="grid-column:1/-1;padding:8px 0;border-top:1px solid #e5e5e5;margin-top:4px">
+  {# ------------------------------------------------------------------ #}
+  {# **O AVISO DO SELO, ANTES DE EMITIR** — 10/09/2026. Ate hoje a tela ia
+     para segunda via calada e comprava um CERTID pago; o escrevente
+     descobria lendo o selo. E o «conferir e enviar sao dois botoes»
+     aplicado ao dinheiro. #}
+  {% if selagem %}
+  <div class="card {% if selagem.avisar %}warning{% endif %}"
+       style="grid-column:1/-1;margin:0 0 12px">
+    <p style="margin:0"><strong>
+      {% if selagem.cobra %}Este selo será COBRADO
+      {% else %}Este selo é gratuito{% endif %}
+      — {{ selagem.via|lower }} via.</strong></p>
+    <p class="small" style="margin:6px 0 0">{{ selagem.porque }}</p>
+  </div>
+  {% endif %}
+      <label style="display:flex;gap:8px;align-items:flex-start">
+        <input type="checkbox" name="ato_gratuito" value="1"
+               id="cert_ato_gratuito"
+               onchange="(function(cb){var b=document.getElementById('cert-bloco-gratuidade');var h=document.getElementById('cert_selo_gratuito');if(b)b.style.display=cb.checked?'block':'none';if(h)h.value=cb.checked?'1':'';})(this)">
+        <span><strong>Selo gratuito / isento</strong><br>
+          <small>Marque para emitir o selo da certidão com
+          <em>isentoGratuito</em> (hipossuficiência, assistência judiciária,
+          etc.). Exige motivo escrito. A 1ª via de nascimento/óbito/natimorto
+          já usa o selo do registro (não compra CERTID).</small></span>
+      </label>
+      <div id="cert-bloco-gratuidade" style="display:none;margin-top:10px"
+           class="grid2">
+        <label>Tipo de gratuidade
+          <select name="gratuidade_codigo" id="cert_gratuidade_codigo">
+            <option value="">— escolha —</option>
+            {% for g in gratuidades or [] %}
+            <option value="{{ g.codigo }}">{{ g.rotulo }}</option>
+            {% endfor %}
+          </select></label>
+        <label>Motivo <small>(obrigatório se gratuito)</small>
+          <input name="motivo_gratuidade" id="cert_motivo_gratuidade"
+                 placeholder="norma, decisão ou declaração que autoriza"></label>
+        <input type="hidden" name="selo_gratuito" id="cert_selo_gratuito" value="">
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="button primary" type="submit">Emitir certidão</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

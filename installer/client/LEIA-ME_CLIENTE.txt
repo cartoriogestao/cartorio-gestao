@@ -1,0 +1,11 @@
+ACESSO CLIENTE - CARTORIO GESTAO 3.2.1
+
+1. Extraia todo o pacote em uma pasta local.
+2. Execute INSTALAR_CLIENTE.cmd.
+3. Use o atalho Cartorio Gestao criado na Area de Trabalho.
+4. O cliente procura o servidor automaticamente pela rede local.
+5. Se nao localizar, execute CONFIGURAR_SERVIDOR.cmd e informe uma unica vez:
+   - o IP do servidor, por exemplo 192.168.1.10; ou
+   - o nome do computador servidor, por exemplo SERVIDOR-CARTORIO.
+
+O computador cliente nao precisa de Python e nao recebe copia do banco de dados.

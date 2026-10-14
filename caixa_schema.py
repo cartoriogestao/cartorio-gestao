@@ -1,0 +1,874 @@
+"""
+Esquema do fluxo de caixa e do protocolo geral.
+
+O QUE ESTE MODULO GUARDA
+    O dinheiro que entra e sai da serventia, quem recebeu, por qual ato, com
+    qual selo, e o recibo entregue ao cliente. E tambem o protocolo geral —
+    o numero unico que acompanha o servico desde o balcao ate a entrega,
+    valendo para todas as atribuicoes, nao so para o Registro de Imoveis.
+
+DUAS DECISOES DE ESTRUTURA, E O PORQUE DELAS
+
+    1. CAIXA POR OPERADOR E POR DIA.
+       Cada pessoa abre o seu caixa, lanca, e fecha conferindo o que tem em
+       maos contra o que o sistema diz. Sem isso nao ha como responsabilizar
+       ninguem por diferenca, e a correicao pergunta exatamente isso. O
+       fechamento guarda o valor CONTADO ao lado do valor ESPERADO — a
+       diferenca fica registrada, nao corrigida por cima.
+
+    2. LANCAMENTO NAO SE APAGA.
+       Erro se conserta por estorno, que e outro lancamento apontando para o
+       primeiro. Mesmo principio do ato registral: o que foi lancado fica, e a
+       correcao aparece ao lado. Um caixa que se edita nao prova nada.
+
+O QUE ESTE MODULO NAO FAZ
+    Nao calcula emolumentos. A tabela do TJMA muda por ato normativo e por
+    exercicio; quem sabe o valor e o selo emitido pelo tribunal. Aqui se
+    guarda o que foi cobrado, com a discriminacao que veio do selo.
+"""
+from __future__ import annotations
+
+import hashlib
+import sqlite3
+from typing import Any
+
+# Formas de pagamento aceitas no balcao.
+FORMAS_PAGAMENTO = {
+    "DINHEIRO": "Dinheiro",
+    "PIX": "PIX",
+    "DEBITO": "Cartão de débito",
+    "CREDITO": "Cartão de crédito",
+    "TRANSFERENCIA": "Transferência bancária",
+    "DEPOSITO": "Depósito bancário",
+    "BOLETO": "Boleto",
+    "GRATUITO": "Ato gratuito",
+    "DEPOSITO_PREVIO": "Depósito prévio",
+}
+
+# Natureza do lancamento. ENTRADA e SAIDA movimentam; ESTORNO desfaz.
+NATUREZAS = {
+    "RECEBIMENTO": ("ENTRADA", "Recebimento de ato"),
+    "DEPOSITO_PREVIO": ("ENTRADA", "Depósito prévio"),
+    "COMPLEMENTO": ("ENTRADA", "Complemento de emolumentos"),
+    "OUTRA_ENTRADA": ("ENTRADA", "Outra entrada"),
+    "DEVOLUCAO": ("SAIDA", "Devolução ao cliente"),
+    "SANGRIA": ("SAIDA", "Sangria / retirada"),
+    "DESPESA": ("SAIDA", "Despesa da serventia"),
+    "OUTRA_SAIDA": ("SAIDA", "Outra saída"),
+    "ESTORNO": ("ESTORNO", "Estorno de lançamento"),
+}
+
+# Fundos do selo do TJMA, na ordem em que aparecem no proprio selo.
+FUNDOS = ("emolumentos", "ferc", "fadep", "femp", "ferrfis", "fermoju", "outros")
+
+# Para que serve o protocolo.
+TIPOS_PROTOCOLO = {
+    "SERVICO": "Serviço — ato a ser praticado",
+    "ORCAMENTO": "Mero cálculo de emolumentos — orçamento, sem prática de ato",
+}
+
+# Frase que vai no recibo do protocolo de orcamento. Fica aqui, e nao no
+# modelo, porque e afirmacao juridica: o cliente nao pode sair do balcao com
+# um papel que pareca comprovante de ato praticado.
+AVISO_ORCAMENTO = (
+    "Este documento corresponde a MERO CÁLCULO DE EMOLUMENTOS, feito a pedido "
+    "do interessado. NÃO representa a prática de ato, não gera direito à "
+    "prenotação nem à reserva de valores, e os emolumentos indicados são os "
+    "vigentes na data de emissão, sujeitos a alteração por ato normativo."
+)
+
+
+SCHEMA = """
+-- Protocolo geral: o numero que acompanha o servico do balcao ate a entrega.
+-- Vale para todas as atribuicoes. Nao confundir com ri_protocolos, que e a
+-- prenotacao do Registro de Imoveis (Livro 1) e tem prazo e efeito proprios.
+CREATE TABLE IF NOT EXISTS cx_protocolos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero TEXT NOT NULL,
+    data_abertura TEXT NOT NULL,
+    hora TEXT,
+    atribuicao TEXT,                 -- RI | NOTAS | PROTESTO | RCPN | RTD | RCPJ | FIRMAS
+    interessado TEXT,
+    interessado_documento TEXT,
+    telefone TEXT,
+    email TEXT,
+    assunto TEXT,
+    observacao TEXT,
+    prazo TEXT,
+    previsao_entrega TEXT,
+    situacao TEXT NOT NULL DEFAULT 'ABERTO',   -- ABERTO | ENTREGUE | CANCELADO
+    finalizado INTEGER NOT NULL DEFAULT 0,
+    data_finalizacao TEXT,
+    gratuito INTEGER NOT NULL DEFAULT 0,
+    motivo_gratuidade TEXT,
+    deposito_previo INTEGER NOT NULL DEFAULT 0,
+    base_calculo TEXT,
+    valor_total TEXT,
+    valor_pago TEXT,
+    ri_protocolo_id INTEGER,          -- ponte com a prenotacao do RI, quando houver
+    ri_matricula_id INTEGER,
+    origem TEXT NOT NULL DEFAULT 'MANUAL',
+    origem_chave TEXT,
+    importacao_id INTEGER,
+    criado_em TEXT NOT NULL,
+    criado_por INTEGER,
+    UNIQUE(numero),
+    FOREIGN KEY(ri_protocolo_id) REFERENCES ri_protocolos(id),
+    FOREIGN KEY(ri_matricula_id) REFERENCES ri_matriculas(id),
+    FOREIGN KEY(criado_por) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS ix_cx_prot_situacao ON cx_protocolos(situacao, data_abertura);
+CREATE INDEX IF NOT EXISTS ix_cx_prot_interessado ON cx_protocolos(interessado);
+-- Ponte com a prenotacao: o lavrar do RI consulta por ri_protocolo_id.
+CREATE INDEX IF NOT EXISTS ix_cx_prot_ri ON cx_protocolos(ri_protocolo_id);
+
+-- Os atos de um protocolo: e aqui que mora o selo e a discriminacao do que
+-- foi cobrado. Um protocolo pode ter varios atos selados.
+CREATE TABLE IF NOT EXISTS cx_protocolo_atos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    protocolo_id INTEGER NOT NULL,
+    descricao TEXT,
+    codigo_ato TEXT,                  -- codigo da tabela do TJMA (ex.: 16.3)
+    quantidade INTEGER NOT NULL DEFAULT 1,
+    selo TEXT,
+    selo_texto TEXT,
+    valor_total TEXT,
+    emolumentos TEXT,
+    ferc TEXT, fadep TEXT, femp TEXT, ferrfis TEXT, fermoju TEXT, outros TEXT,
+    gratuito INTEGER NOT NULL DEFAULT 0,
+    origem TEXT NOT NULL DEFAULT 'MANUAL',
+    origem_chave TEXT,
+    FOREIGN KEY(protocolo_id) REFERENCES cx_protocolos(id)
+);
+CREATE INDEX IF NOT EXISTS ix_cx_prot_atos ON cx_protocolo_atos(protocolo_id);
+-- Impede que a mesma custa do E-Oficio entre duas vezes quando a carga for
+-- repetida para trazer o movimento recente. Indice PARCIAL: vale so para o
+-- que veio de fora; item digitado aqui nao tem chave de origem e nao entra
+-- na regra.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_cx_prot_atos_origem
+    ON cx_protocolo_atos(origem, origem_chave)
+    WHERE origem <> 'MANUAL' AND origem_chave IS NOT NULL;
+
+-- Caixa de uma pessoa num dia. Fecha conferindo o contado contra o esperado.
+CREATE TABLE IF NOT EXISTS cx_caixas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data TEXT NOT NULL,
+    operador_id INTEGER,
+    operador_nome TEXT NOT NULL,
+    saldo_inicial TEXT NOT NULL DEFAULT '0',
+    aberto_em TEXT NOT NULL,
+    aberto_por INTEGER,
+    situacao TEXT NOT NULL DEFAULT 'ABERTO',   -- ABERTO | FECHADO
+    -- O que o sistema calculou e o que a pessoa contou. A diferenca fica
+    -- gravada; nao se ajusta o esperado para bater com o contado.
+    valor_esperado TEXT,
+    valor_contado TEXT,
+    diferenca TEXT,
+    justificativa TEXT,
+    fechado_em TEXT,
+    fechado_por INTEGER,
+    conferido_por INTEGER,
+    conferido_em TEXT,
+    UNIQUE(data, operador_nome),
+    FOREIGN KEY(operador_id) REFERENCES users(id),
+    FOREIGN KEY(aberto_por) REFERENCES users(id),
+    FOREIGN KEY(fechado_por) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS ix_cx_caixas_data ON cx_caixas(data, situacao);
+
+-- Cada entrada e cada saida. Nao se apaga: erro se conserta por estorno.
+CREATE TABLE IF NOT EXISTS cx_lancamentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    caixa_id INTEGER,
+    protocolo_id INTEGER,
+    data TEXT NOT NULL,
+    hora TEXT,
+    natureza TEXT NOT NULL,           -- ver NATUREZAS
+    sentido TEXT NOT NULL,            -- ENTRADA | SAIDA | ESTORNO
+    forma_pagamento TEXT,
+    descricao TEXT,
+    pagador TEXT,
+    pagador_documento TEXT,
+    valor TEXT NOT NULL,
+    emolumentos TEXT,
+    ferc TEXT, fadep TEXT, femp TEXT, ferrfis TEXT, fermoju TEXT, outros TEXT,
+    selo TEXT,
+    recibo_id INTEGER,
+    -- Estorno aponta para o lancamento que desfaz, e o original recebe a marca.
+    estorna_id INTEGER,
+    estornado INTEGER NOT NULL DEFAULT 0,
+    estornado_por_id INTEGER,
+    motivo_estorno TEXT,
+    hash_lancamento TEXT,
+    origem TEXT NOT NULL DEFAULT 'MANUAL',
+    origem_chave TEXT,
+    importacao_id INTEGER,
+    criado_em TEXT NOT NULL,
+    criado_por INTEGER,
+    FOREIGN KEY(caixa_id) REFERENCES cx_caixas(id),
+    FOREIGN KEY(protocolo_id) REFERENCES cx_protocolos(id),
+    FOREIGN KEY(estorna_id) REFERENCES cx_lancamentos(id),
+    FOREIGN KEY(estornado_por_id) REFERENCES cx_lancamentos(id),
+    FOREIGN KEY(criado_por) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS ix_cx_lanc_caixa ON cx_lancamentos(caixa_id);
+CREATE INDEX IF NOT EXISTS ix_cx_lanc_data ON cx_lancamentos(data);
+CREATE INDEX IF NOT EXISTS ix_cx_lanc_prot ON cx_lancamentos(protocolo_id);
+-- Mesma razao: recarregar o caixa nao pode dobrar o movimento ja importado.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_cx_lanc_origem
+    ON cx_lancamentos(origem, origem_chave)
+    WHERE origem <> 'MANUAL' AND origem_chave IS NOT NULL;
+
+-- Recibo entregue ao cliente. Numeracao propria por exercicio, e o teor fica
+-- congelado: reimpressao anos depois tem de sair identica a primeira via.
+CREATE TABLE IF NOT EXISTS cx_recibos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero INTEGER NOT NULL,
+    ano INTEGER NOT NULL,
+    data_emissao TEXT NOT NULL,
+    protocolo_id INTEGER,
+    protocolo_numero TEXT,
+    pagador TEXT NOT NULL,
+    pagador_documento TEXT,
+    endereco TEXT,
+    valor_total TEXT NOT NULL,
+    valor_extenso TEXT,
+    forma_pagamento TEXT,
+    discriminacao TEXT,               -- JSON com os atos e os fundos
+    corpo TEXT,                       -- teor congelado na emissao
+    observacao TEXT,
+    cancelado INTEGER NOT NULL DEFAULT 0,
+    motivo_cancelamento TEXT,
+    cancelado_em TEXT,
+    cancelado_por INTEGER,
+    hash_recibo TEXT,
+    vias INTEGER NOT NULL DEFAULT 1,
+    emitido_por INTEGER,
+    criado_em TEXT NOT NULL,
+    UNIQUE(numero, ano),
+    FOREIGN KEY(protocolo_id) REFERENCES cx_protocolos(id),
+    FOREIGN KEY(emitido_por) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS ix_cx_recibos_data ON cx_recibos(data_emissao);
+CREATE INDEX IF NOT EXISTS ix_cx_recibos_pagador ON cx_recibos(pagador);
+
+-- Depósito prévio: dinheiro que entra antes do ato e vai sendo consumido.
+CREATE TABLE IF NOT EXISTS cx_depositos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data TEXT NOT NULL,
+    depositante TEXT NOT NULL,
+    depositante_documento TEXT,
+    valor TEXT NOT NULL,
+    saldo TEXT NOT NULL,
+    protocolo_id INTEGER,
+    observacao TEXT,
+    encerrado INTEGER NOT NULL DEFAULT 0,
+    origem TEXT NOT NULL DEFAULT 'MANUAL',
+    origem_chave TEXT,
+    criado_em TEXT NOT NULL,
+    criado_por INTEGER,
+    FOREIGN KEY(protocolo_id) REFERENCES cx_protocolos(id)
+);
+
+-- ------------------------------------------------ tabela de emolumentos
+--
+-- Vem do E-Oficio, que a mantem atualizada. Nao se digita aqui: a tabela do
+-- TJMA muda por ato normativo e por exercicio, e manter uma copia editavel a
+-- mao seria criar uma segunda verdade.
+CREATE TABLE IF NOT EXISTS cx_vigencias (
+    codigo INTEGER PRIMARY KEY,
+    descricao TEXT,
+    vigente INTEGER NOT NULL DEFAULT 0,
+    servicos INTEGER NOT NULL DEFAULT 0,
+    faixas INTEGER NOT NULL DEFAULT 0,
+    importado_em TEXT
+);
+
+-- O catalogo de atos: descricao e codigo do TJ. O VALOR nao mora aqui.
+CREATE TABLE IF NOT EXISTS cx_servicos (
+    codigo INTEGER PRIMARY KEY,
+    codigo_tj TEXT,
+    descricao TEXT,
+    descricao_norm TEXT,
+    grupo INTEGER,
+    tipo_selo INTEGER,
+    id_tj INTEGER,
+    ativo INTEGER NOT NULL DEFAULT 1,
+    emolumento INTEGER NOT NULL DEFAULT 1,
+    selo_fiscal INTEGER NOT NULL DEFAULT 1,
+    observacao TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_cx_serv_tj ON cx_servicos(codigo_tj);
+CREATE INDEX IF NOT EXISTS ix_cx_serv_norm ON cx_servicos(descricao_norm);
+
+-- O valor de cada ato em cada vigencia, com os fundos ja discriminados.
+CREATE TABLE IF NOT EXISTS cx_servico_valores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    servico INTEGER NOT NULL,
+    vigencia INTEGER NOT NULL,
+    emolumentos TEXT,
+    ferc TEXT,          -- FERMOJU na origem; FERC no selo do TJMA
+    femp TEXT,          -- curValor_MP  — Ministerio Publico
+    fadep TEXT,         -- curValor_DP  — Defensoria Publica
+    ferrfis TEXT,
+    total TEXT,
+    id_tj INTEGER,
+    UNIQUE(servico, vigencia),
+    FOREIGN KEY(servico) REFERENCES cx_servicos(codigo),
+    FOREIGN KEY(vigencia) REFERENCES cx_vigencias(codigo)
+);
+
+-- Atos cobrados por faixa de valor do negocio (compra e venda, hipoteca...).
+CREATE TABLE IF NOT EXISTS cx_faixas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tabela INTEGER NOT NULL,
+    vigencia INTEGER NOT NULL,
+    de TEXT NOT NULL,
+    ate TEXT NOT NULL,
+    codigo_tj TEXT,
+    emolumentos TEXT,
+    ferc TEXT, femp TEXT, fadep TEXT, ferrfis TEXT,
+    total TEXT,
+    id_tj INTEGER,
+    FOREIGN KEY(vigencia) REFERENCES cx_vigencias(codigo)
+);
+CREATE INDEX IF NOT EXISTS ix_cx_faixas ON cx_faixas(vigencia, tabela);
+
+-- Quarentena propria. A do Registro de Imoveis fica so com o que e do RI:
+-- misturar as duas faria a tela de importacao do acervo mostrar problema de
+-- caixa, e ninguem saberia de onde veio.
+CREATE TABLE IF NOT EXISTS cx_rejeitados (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    importacao_id INTEGER,
+    entidade TEXT NOT NULL,
+    chave_origem TEXT,
+    motivo TEXT NOT NULL,
+    conteudo TEXT,
+    FOREIGN KEY(importacao_id) REFERENCES cx_importacoes(id)
+);
+CREATE INDEX IF NOT EXISTS ix_cx_rej ON cx_rejeitados(entidade);
+
+CREATE TABLE IF NOT EXISTS cx_importacoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    arquivo TEXT,
+    executada_em TEXT NOT NULL,
+    executada_por INTEGER,
+    relatorio TEXT
+);
+"""
+
+MIGRACOES: tuple[tuple[str, str, str], ...] = (
+    # ENCERRAR O PROTOCOLO DO BALCAO — o debito que estava no `CLAUDE.md`.
+    #
+    #   Medido em 28/08/2026: **640 protocolos ABERTOS**, todos vindos do
+    #   E-Oficio e **nenhum com um unico item**. Sao atendimentos que
+    #   comecaram e nunca viraram servico — «orcamento», «CERTIDAO», «2a VIA
+    #   NASCIMENTO». O cliente perguntou o preco e nao voltou.
+    #
+    #   O MOTIVO E COLUNA, E NAO UM `1`: quem ler daqui a dois anos precisa
+    #   saber POR QUE aquele protocolo ficou em branco — a mesma razao pela
+    #   qual `rc_assentos.livro_a_confirmar` guarda texto.
+    ("cx_protocolos", "encerramento_motivo", "TEXT"),
+    ("cx_protocolos", "encerrado_por", "TEXT"),
+    # O PERIODO de cada vigencia da tabela de emolumentos.
+    #
+    # A tabela nascia so com a marca `vigente`, e por isso o sistema so sabia
+    # responder "quanto custa hoje". Quem relavra ato de marco de 2023, ou
+    # reimprime recibo de 2024, precisa de "quanto custava naquele dia" — e
+    # cobrar pela tabela de outro ano e devolucao de emolumento. O E-Oficio
+    # tem os periodos em `tbVigencia`, com data de inicio e fim; sao eles que
+    # entram aqui.
+    ("cx_vigencias", "inicio", "TEXT"),
+    ("cx_vigencias", "fim", "TEXT"),
+    # O deposito previo passou a poder ser lancado direto na tela do titulo do
+    # Registro de Imoveis — e la que o apresentante deixa o adiantamento. Sem
+    # esta coluna, o dinheiro ficaria no caixa sem dizer a que titulo pertence,
+    # e a pergunta "quanto ja foi pago neste titulo?" nao teria resposta.
+    ("cx_depositos", "ri_protocolo_id", "INTEGER"),
+    # E o ato de livro do Tabelionato de Notas: escritura tambem tem
+    # adiantamento, e o dinheiro precisa dizer a que ato pertence — senao a
+    # pergunta "quanto ja foi pago nesta escritura?" nao tem resposta.
+    ("cx_depositos", "nt_ato_id", "INTEGER"),
+    # (declarada uma vez so: ela estava repetida mais abaixo ate
+    #  25/08/2026 — o `init_*` a ignorava, mas lista de migracao com
+    #  linha repetida faz quem le contar errado)
+    ("cx_depositos", "atualizado_em", "TEXT"),
+    # Edicao e exclusao de lancamento, pedidas pela serventia. O lancamento
+    # sai das contas e das listas, mas o registro fica: quem excluiu, quando e
+    # por que. Caixa que perde linha sem deixar rastro nao se defende em
+    # correicao — e quem pergunta nao aceita "sumiu".
+    ("cx_lancamentos", "excluido", "INTEGER NOT NULL DEFAULT 0"),
+    ("cx_lancamentos", "motivo_exclusao", "TEXT"),
+    ("cx_lancamentos", "excluido_em", "TEXT"),
+    ("cx_lancamentos", "excluido_por", "TEXT"),
+    ("cx_lancamentos", "editado_em", "TEXT"),
+    ("cx_lancamentos", "editado_por", "TEXT"),
+    ("cx_lancamentos", "historico", "TEXT"),   # JSON com os valores anteriores
+    # Deposito previo: quanto ainda resta e a que protocolo foi consumido.
+    # Numero de ordem do lancamento, continuo por exercicio. O id interno nao
+    # serve para isso: ele nao reinicia no ano, nao aparece em relatorio e nao
+    # e o que se cita quando alguem pergunta "qual lancamento?".
+    ("cx_lancamentos", "numero", "INTEGER"),
+    ("cx_lancamentos", "ano", "INTEGER"),
+    # Protocolo de mero calculo de emolumentos: nasce so para orcar, e o
+    # recibo tem de dizer isso com todas as letras, para nao ser confundido
+    # com pagamento de ato.
+    ("cx_protocolos", "tipo", "TEXT NOT NULL DEFAULT 'SERVICO'"),
+    # Quitacao item a item. Um protocolo pode ter tres atos e so um pago; sem
+    # isto, "a pagar" e "pago" so existem no protocolo inteiro, e o balcao
+    # perde a conta do que falta.
+    ("cx_protocolo_atos", "quitado", "INTEGER NOT NULL DEFAULT 0"),
+    ("cx_protocolo_atos", "quitado_em", "TEXT"),
+    ("cx_protocolo_atos", "quitado_por", "TEXT"),
+    ("cx_protocolo_atos", "lancamento_id", "INTEGER"),
+    ("cx_protocolo_atos", "servico_codigo", "INTEGER"),
+    ("cx_protocolo_atos", "base_calculo", "TEXT"),
+    ("cx_protocolo_atos", "origem_valor", "TEXT"),   # TABELA | FAIXA | MANUAL
+    # Numero de controle do deposito, no mesmo padrao do protocolo.
+    ("cx_depositos", "numero", "TEXT"),
+    # O que foi recebido no balcao. O protocolo de recepcao e o comprovante de
+    # que o papel entrou: sem descrever o documento, o cartorio nao consegue
+    # provar o que recebeu nem o cliente cobrar o que entregou (Codigo de
+    # Normas CGJ/MA, dever de recibo da documentacao apresentada).
+    ("cx_protocolos", "documento_tipo", "TEXT"),
+    ("cx_protocolos", "documento_numero", "TEXT"),
+    ("cx_protocolos", "documento_descricao", "TEXT"),
+    ("cx_protocolos", "recepcao_em", "TEXT"),
+    # Funcao de quem atende. Vai impressa embaixo da assinatura no orcamento e
+    # no protocolo de recepcao: quem assina por delegacao tem de dizer em que
+    # qualidade assina.
+    ("users", "funcao", "TEXT"),
+    # Conta de robo (Grok Bot): nao sela automaticamente. 05/10/2026.
+    ("users", "eh_robo", "INTEGER NOT NULL DEFAULT 0"),
+    # **UM PROTOCOLO, VÁRIOS ATOS — pedido do oficial em 11/09/2026: "o
+    # normal é um protocolo para todo o trabalho pedido pelo cliente".**
+    #
+    # Até aqui, escolher um protocolo na tela de lançar pegava TODOS os
+    # itens dele de uma vez — certo quando o protocolo cobre um ato só
+    # (a maioria: 101 de 120 medidos), errado quando cobre vários (duas
+    # averbações do mesmo pacote RCPJ/RTD, por exemplo): a segunda
+    # averbação pediria de novo os selos da primeira.
+    #
+    # `usado_em` marca que aquele item JÁ foi apontado a um ato — fica
+    # fora da lista na próxima vez que o mesmo protocolo for escolhido.
+    # `usado_por_ato_id` é o rastro de qual ato o consumiu, para quem for
+    # conferir depois. Sem coluna nenhuma marcada, o item continua
+    # disponível — exatamente como sempre foi.
+    # **O ITEM TEM QUANTIDADE, E ELA SE GASTA POR UNIDADE** — relato do
+    # oficial em 15/09/2026: «a prenotacao 11571 e o protocolo 2026.09.23 nao
+    # estao permitindo que eu use um selo de averbacao para o ato que preciso,
+    # ainda que conste no protocolo 5 atos de averbacao sem valor».
+    #
+    #   `usado_em` é um SIM/NÃO, e o item do protocolo dele tem
+    #   **quantidade 5**: a primeira averbação marcou a linha inteira, e as
+    #   outras quatro sumiram da tela. Medido na produção no mesmo dia: **4
+    #   itens** com quantidade > 1 já marcados, e **83 unidades perdidas** —
+    #   uma delas de quantidade **66** (arquivamento do RTD/RCPJ), consumida
+    #   por um ato só.
+    #
+    #   E A REGRA DA CASA JÁ DIZIA ISSO: «a conta é por unidade — o protocolo
+    #   2026.08.103 abriu um item 13.18 com quantidade 10, e saíram 10 selos».
+    #   O contador é que faltava.
+    #
+    #   `usado_em` FICA, e passa a querer dizer «a última unidade foi gasta».
+    #   Apagá-lo perderia a data de quem já consumiu, e a ficha do protocolo o
+    #   mostra.
+    ("cx_protocolo_atos", "quantidade_usada", "INTEGER"),
+    ("cx_protocolo_atos", "usado_em", "TEXT"),
+    ("cx_protocolo_atos", "usado_por_ato_id", "INTEGER"),
+    # **`usado_por_ato_id` SOZINHO É AMBÍGUO** — achado em 12/09/2026, ao
+    # tentar mostrar na ficha do protocolo QUEM consumiu cada item: o
+    # mesmo protocolo RCPJ/RTD grava aí tanto o `id` de `rg_atos` (quando
+    # uma averbação consome o item) quanto o `id` de `at_certidoes` (quando
+    # uma certidão consome — `_selar_a_certidao_rtdpj`), e os dois IDs
+    # colidem (existe `rg_atos` id=2 E `at_certidoes` id=2, sem relação
+    # nenhuma um com o outro). `usado_por_tabela` diz em qual das duas
+    # tabelas procurar — sem ela, mostrar "consumido pelo ato nº 2" corre
+    # o risco de apontar para o ato errado.
+    ("cx_protocolo_atos", "usado_por_tabela", "TEXT"),
+    # **O TIPO DE SERVIÇO DO DEPÓSITO — RELATO #50, SEGUNDA METADE.**
+    #
+    # A frase do oficial, de 11/09/2026, na tela do depósito prévio: «neste
+    # campo de depósito prévio deve conter data do depósito. **informações do
+    # tipo de serviço**». A data foi a primeira metade (feita em 15/09); esta
+    # é a segunda.
+    #
+    # MEDIDO na produção em 17/09/2026, nos 14 depósitos: **8 não têm vínculo
+    # nenhum** — nem protocolo, nem prenotação, nem ato —, e nesses o serviço
+    # foi escrito à mão na observação: «REGISTRO ESCRITURA DE COMPRA E VENDA
+    # LAVRADA NESTA», «AVERBAÇÕES CADASTROS RURAIS», «GEORREFERENCIAMENTO
+    # AGUARDANDO CUMPRIMENTO DE NOTA». **Texto livre não se soma, não se
+    # filtra e não se confere** — foi por isso que o pedido veio.
+    #
+    # `atribuicao` fala a MESMA língua de `cx_protocolos.atribuicao`, que é a
+    # que esta casa já usa para dizer de que atribuição é o atendimento. O
+    # vocabulário é medido, e são oito valores em 17/09/2026: FIRMAS 13.168 ·
+    # RCPN 4.882 · RI 2.848 · NOTAS 235 · PROTESTO 212 · RTD 38 · OUTROS 3 ·
+    # RCPJ 1. Escrever menos do que isso faria a tela recusar atendimento que
+    # a casa faz todos os dias.
+    #
+    # `servico_codigo` é o item do catálogo da casa (`cx_servicos`), com o
+    # mesmo nome e o mesmo tipo de `cx_protocolo_atos.servico_codigo`: a mesma
+    # palavra quer dizer a mesma coisa nos dois lugares.
+    #
+    # AS DUAS SÃO OPCIONAIS, e é decisão do oficial: **8 dos 14 depósitos são
+    # soltos**, e o dinheiro deixado «para quando o título chegar» é legítimo.
+    # A lista declara quantos estão sem tipo em vez de recusar o que a casa
+    # sempre fez.
+    ("cx_depositos", "atribuicao", "TEXT"),
+    ("cx_depositos", "servico_codigo", "INTEGER"),
+)
+
+# Funcoes possiveis de quem atende ao balcao, na nomenclatura da Lei 8.935/94
+# (arts. 20 e 21) e do Codigo de Normas.
+#
+# **AS QUATRO FORMAS FEMININAS ENTRARAM EM 15/09/2026, e o relato #45 e' a
+# razao.** A Lei nomeia o cargo no masculino, e ate 12/09/2026 esta lista era
+# a UNICA que a tela oferecia — de modo que a Beatriz, substituta desta casa,
+# so' podia ser cadastrada como «Substituto», e foi: medido na auditoria de
+# 14/08/2026 19:37, `USER_FUNCAO_ALTERADA {"funcao": "Substituto"}`, e o oficial
+# relatou em 09/09 que a funcao saia no protocolo do caixa no masculino.
+#
+# Ele corrigiu isso na tela em 12/09/2026 01:47 (`CARGOS_ALTERADOS`, com as
+# oito formas) — e a correcao ficou SO' na instalacao dele, porque
+# `DEFAULT_SETTINGS` semeia esta lista com `INSERT OR IGNORE`: o que ja esta
+# gravado nao se corrige, e o que e' semeado e' o de fabrica. **Instalacao nova
+# nascia oferecendo o masculino para todas as mulheres da casa**, e o defeito
+# que ele relatou voltaria — pelo mesmo caminho e sem ninguem ver.
+#
+# A lista daqui passa a ser a DELE, na ordem em que ele a deixou: e' o piso de
+# quem instala, e a tela continua mandando depois.
+FUNCOES = (
+    "Tabelião e Oficial de Registro",
+    "Tabeliã e Oficial de Registro",
+    "Substituto",
+    "Substituta",
+    "Escrevente Autorizado",
+    "Escrevente Autorizada",
+    "Escrevente",
+    "Auxiliar",
+)
+
+TIPOS_DOCUMENTO = (
+    "Escritura pública", "Instrumento particular", "Contrato", "Procuração",
+    "Formal de partilha", "Carta de sentença", "Mandado judicial",
+    "Ofício", "Certidão", "Requerimento", "Título de crédito",
+    "Documento pessoal", "Outro",
+)
+
+
+def init_caixa_schema(con: sqlite3.Connection) -> None:
+    """Cria as tabelas do caixa. Idempotente, como o resto do sistema."""
+    con.executescript(SCHEMA)
+    for tabela, coluna, tipo in MIGRACOES:
+        colunas = {r[1] for r in con.execute(f"PRAGMA table_info({tabela})")}
+        if coluna not in colunas:
+            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+    marcar_usuarios_robo_por_nome(con)
+
+
+def marcar_usuarios_robo_por_nome(con: sqlite3.Connection) -> list:
+    """Marca eh_robo=1 quem o nome/login indica (Robo/Robô/grok). Idempotente.
+
+    So preenche quem ainda esta em 0: o ADMIN pode desmarcar a mao.
+    """
+    import nome_humano as NOMEHUM
+    cols = {r[1] for r in con.execute("PRAGMA table_info(users)")}
+    # Banco minimo (testes de custas/caixa) tem `users` sem login/nome:
+    # sem as tres colunas nao ha o que marcar, e o caixa sobe assim mesmo.
+    if not {"eh_robo", "username", "full_name"} <= cols:
+        return []
+    marcados = []
+    rows = con.execute(
+        "SELECT id, username, full_name, COALESCE(eh_robo,0) AS eh_robo "
+        "FROM users"
+    ).fetchall()
+    for row in rows:
+        if hasattr(row, "keys"):
+            uid = row["id"]
+            login = row["username"]
+            nome = row["full_name"]
+            ja = row["eh_robo"]
+        else:
+            uid, login, nome, ja = row[0], row[1], row[2], row[3]
+        if int(ja or 0) == 1:
+            continue
+        nome_s = (nome or "").strip()
+        login_s = (login or "").strip()
+        forma = (login_s + " " + nome_s).casefold()
+        if (NOMEHUM.eh_rotulo_de_maquina(nome_s)
+                or NOMEHUM.eh_rotulo_de_maquina(login_s)
+                or "grok" in forma):
+            con.execute("UPDATE users SET eh_robo=1 WHERE id=?", (uid,))
+            marcados.append((uid, login_s, nome_s))
+    return marcados
+
+
+# ------------------------------------------------------------- dinheiro
+
+def centavos(valor: Any) -> int:
+    """Le valor a brasileira e devolve CENTAVOS, como inteiro.
+
+    Dinheiro em ponto flutuante erra: 0,1 + 0,2 nao da 0,3. Aqui tudo o que e
+    conta acontece em centavos inteiros, e a virgula so aparece na tela.
+    """
+    if valor is None:
+        return 0
+    if isinstance(valor, int):
+        return valor * 100 if abs(valor) < 10 ** 7 else valor
+    s = str(valor).strip()
+    if not s:
+        return 0
+    negativo = s.startswith("-") or "(" in s
+    s = "".join(c for c in s if c.isdigit() or c in ",.")
+    if not s:
+        return 0
+    if "," in s:                      # 1.234,56
+        s = s.replace(".", "").replace(",", ".")
+    elif s.count(".") > 1:            # 1.234.567
+        s = s.replace(".", "")
+    try:
+        total = int(round(float(s) * 100))
+    except ValueError:
+        return 0
+    return -total if negativo else total
+
+
+def reais(cents: int) -> str:
+    """Centavos -> '1.234,56'."""
+    sinal = "-" if cents < 0 else ""
+    c = abs(int(cents))
+    inteiro, resto = divmod(c, 100)
+    return f"{sinal}{inteiro:,}".replace(",", ".") + f",{resto:02d}"
+
+
+_UNIDADES = ("", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove",
+             "dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis",
+             "dezessete", "dezoito", "dezenove")
+_DEZENAS = ("", "", "vinte", "trinta", "quarenta", "cinquenta", "sessenta",
+            "setenta", "oitenta", "noventa")
+_CENTENAS = ("", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos",
+             "seiscentos", "setecentos", "oitocentos", "novecentos")
+
+
+def _ate_999(n: int) -> str:
+    if n == 100:
+        return "cem"
+    partes = []
+    c, resto = divmod(n, 100)
+    if c:
+        partes.append(_CENTENAS[c])
+    if resto < 20:
+        if resto:
+            partes.append(_UNIDADES[resto])
+    else:
+        d, u = divmod(resto, 10)
+        partes.append(_DEZENAS[d] + (f" e {_UNIDADES[u]}" if u else ""))
+    return " e ".join(p for p in partes if p)
+
+
+def por_extenso(cents: int) -> str:
+    """'R$ 1.234,56' -> 'mil, duzentos e trinta e quatro reais e cinquenta e seis centavos'.
+
+    O recibo precisa do valor por extenso: e o que impede alteracao do
+    algarismo depois de entregue.
+    """
+    cents = int(cents)
+    inteiro, centavos_ = divmod(abs(cents), 100)
+    blocos = []
+    for divisor, singular, plural in ((10 ** 9, "bilhão", "bilhões"),
+                                      (10 ** 6, "milhão", "milhões"),
+                                      (1000, "mil", "mil")):
+        quant, inteiro = divmod(inteiro, divisor)
+        if quant:
+            nome = singular if quant == 1 else plural
+            prefixo = "" if (divisor == 1000 and quant == 1) else _ate_999(quant) + " "
+            blocos.append(f"{prefixo}{nome}".strip())
+    if inteiro:
+        blocos.append(_ate_999(inteiro))
+    inteiros = abs(cents) // 100
+    if not inteiros:
+        # Valor de centavos apenas: "cinquenta centavos", nao "zero reais e
+        # cinquenta centavos".
+        if not centavos_:
+            return "zero reais"
+        return f"{_ate_999(centavos_)} {'centavo' if centavos_ == 1 else 'centavos'}"
+
+    texto = ", ".join(blocos)
+    # "dois milhoes DE reais": a preposicao entra quando o valor termina em
+    # milhao ou bilhao redondo, sem parcela menor depois.
+    redondo = len(blocos) == 1 and blocos[0].endswith(("milhão", "milhões",
+                                                       "bilhão", "bilhões"))
+    moeda = "real" if inteiros == 1 else "reais"
+    reais_txt = f"{texto} {'de ' if redondo else ''}{moeda}"
+    if centavos_:
+        reais_txt += (f" e {_ate_999(centavos_)} "
+                      f"{'centavo' if centavos_ == 1 else 'centavos'}")
+    return reais_txt
+
+
+def hash_recibo(numero: int, ano: int, pagador: str, valor: str,
+                data: str, corpo: str) -> str:
+    """Impressao digital do recibo, para provar que a via reimpressa e a mesma."""
+    bruto = f"{numero}|{ano}|{pagador}|{valor}|{data}|{corpo or ''}"
+    return hashlib.sha256(bruto.encode("utf-8")).hexdigest()
+
+
+def hash_lancamento(caixa_id: Any, data: str, natureza: str, valor: str,
+                    descricao: str, anterior: str | None) -> str:
+    """Encadeia os lancamentos, como se faz com os atos da matricula."""
+    bruto = f"{caixa_id}|{data}|{natureza}|{valor}|{descricao or ''}|{anterior or ''}"
+    return hashlib.sha256(bruto.encode("utf-8")).hexdigest()
+
+
+class CaixaError(ValueError):
+    """Impedimento de regra do caixa, com a mensagem pronta para o balcao."""
+
+
+# --------------------------- o protocolo e o caixa sao a mesma coisa
+#
+# A DECISAO DO OFICIAL, EM 27/08/2026
+#     «Juntemos protocolo geral com o caixa. No caixa/protocolo geral colocamos
+#     os servicos prestados.»
+#
+# O QUE HAVIA ANTES, E POR QUE ERA DEFEITO
+#     O protocolo guardava os servicos com os valores da tabela do tribunal, e
+#     quitar um item **so marcava uma bandeira**: `quitado=1`. O dinheiro
+#     entrava no caixa por OUTRO caminho — o botao «cobrar» da ficha do ato.
+#
+#     Dois trilhos para o mesmo dinheiro e como eles divergem: o protocolo dizia
+#     que o cliente pagou, o caixa nao tinha o lancamento, e a conferencia do
+#     dia fechava com uma diferenca que ninguem sabia de onde vinha.
+#
+#     Medido em 27/08/2026: `cx_protocolo_atos.lancamento_id` era NULL em
+#     **32.416 de 32.416**. Nenhum item de protocolo jamais virou dinheiro.
+#
+# O VALOR NAO SE RECALCULA AQUI
+#     Ele ja foi calculado quando o item entrou no protocolo, pela tabela
+#     vigente na data. Recalcular na quitacao faria o cliente pagar um preco
+#     diferente do que lhe foi dito no balcao — e tabela nova entre uma coisa e
+#     outra e exatamente o caso em que isso aconteceria.
+
+
+def cobrar_item_do_protocolo(con: sqlite3.Connection, item_id: int, *,
+                             caixa_id: int, agora: str, hoje: str, hora: str,
+                             pagador: Any = None, pagador_documento: Any = None,
+                             forma_pagamento: Any = None,
+                             usuario_id: Any = None,
+                             usuario: str | None = None) -> dict:
+    """Quita o item do protocolo E lanca no caixa. ESCREVE.
+
+    UM LANCAMENTO POR ITEM, e nao um pelo protocolo inteiro: e o item que tem
+    o valor da tabela, os fundos separados e o selo. Somar tudo num lancamento
+    so faria a conferencia de fundos deixar de fechar.
+
+    RECUSA COBRAR DUAS VEZES, e a trava mora no banco: `UNIQUE(origem,
+    origem_chave)` em `cx_lancamentos`. Aqui a mensagem so diz o que houve, em
+    vez de deixar estourar.
+    """
+    item = con.execute(
+        "SELECT * FROM cx_protocolo_atos WHERE id=?", (int(item_id),)).fetchone()
+    if not item:
+        raise CaixaError(f"Item {item_id} não está em protocolo nenhum.")
+    if item["lancamento_id"]:
+        raise CaixaError(
+            f"Este item já entrou no caixa (lançamento "
+            f"{item['lancamento_id']}). Cobrar duas vezes o mesmo serviço é o "
+            f"que o cliente descobre no extrato.")
+    if not caixa_id:
+        raise CaixaError(
+            "Você não tem caixa aberto, e sem caixa o lançamento não aparece "
+            "na conferência do dia. Abra o caixa em Administrativo → Caixa.")
+
+    chave = f"cx_protocolo_atos:{int(item_id)}"
+    protocolo = con.execute("SELECT * FROM cx_protocolos WHERE id=?",
+                            (item["protocolo_id"],)).fetchone()
+    descricao = (item["descricao"] or item["codigo_ato"] or "Serviço")
+    # Numero de ordem + hash: a tela promete numeracao continua no ano, e a
+    # quitacao pelo protocolo tambem precisa cumprir (F07 Beatriz 05/10/2026).
+    ano = int(str(hoje)[:4]) if hoje else int(__import__('datetime').date.today().year)
+    ultimo = con.execute(
+        "SELECT MAX(numero) n FROM cx_lancamentos WHERE ano=?", (ano,)).fetchone()
+    try:
+        numero_ordem = int((ultimo["n"] if ultimo else 0) or 0) + 1
+    except (TypeError, ValueError, KeyError, IndexError):
+        numero_ordem = int((ultimo[0] if ultimo else 0) or 0) + 1
+    anterior = con.execute(
+        """SELECT hash_lancamento FROM cx_lancamentos
+           WHERE ano=? AND hash_lancamento IS NOT NULL
+           ORDER BY id DESC LIMIT 1""", (ano,)).fetchone()
+    try:
+        hash_ant = anterior["hash_lancamento"] if anterior else None
+    except (TypeError, KeyError, IndexError):
+        hash_ant = anterior[0] if anterior else None
+    h = hash_lancamento(
+        int(caixa_id), hoje, 'RECEBIMENTO',
+        str(item['valor_total'] or ''), str(descricao or ''), hash_ant)
+    cur = con.execute(
+        """INSERT INTO cx_lancamentos(caixa_id, protocolo_id, data, hora,
+               natureza, sentido, forma_pagamento, descricao, pagador,
+               pagador_documento, valor, emolumentos, ferc, fadep, femp,
+               ferrfis, selo, origem, origem_chave, criado_em, criado_por,
+               numero, ano, hash_lancamento)
+           VALUES (?,?,?,?, 'RECEBIMENTO','ENTRADA', ?,?,?,?,?,?,?,?,?,?,?,
+                   'PROTOCOLO', ?, ?, ?, ?, ?, ?)""",
+        (int(caixa_id), item["protocolo_id"], hoje, hora,
+         (str(forma_pagamento or "").strip() or None),
+         f"{descricao} (protocolo {protocolo['numero'] if protocolo else ''})",
+         (str(pagador or "").strip()
+          or (protocolo["interessado"] if protocolo else None)),
+         (str(pagador_documento or "").strip()
+          or (protocolo["interessado_documento"] if protocolo else None)),
+         item["valor_total"], item["emolumentos"], item["ferc"],
+         item["fadep"], item["femp"], item["ferrfis"],
+         (str(item["selo"] or "").strip() or None), chave, agora, usuario_id,
+         numero_ordem, ano, h))
+    lancamento_id = int(cur.lastrowid)
+    con.execute(
+        """UPDATE cx_protocolo_atos SET quitado=1, quitado_em=?, quitado_por=?,
+               lancamento_id=? WHERE id=?""",
+        (agora, usuario, lancamento_id, int(item_id)))
+    return {"lancamento_id": lancamento_id, "item_id": int(item_id),
+            "valor": item["valor_total"]}
+
+
+def itens_do_protocolo(con: sqlite3.Connection, protocolo_id: int) -> list[dict]:
+    """Os servicos daquele protocolo, com o que ja entrou no caixa. So LE."""
+    return [dict(r) for r in con.execute(
+        """SELECT a.*, l.id lancamento, l.data data_lancamento
+             FROM cx_protocolo_atos a
+             LEFT JOIN cx_lancamentos l ON l.id = a.lancamento_id
+            WHERE a.protocolo_id=? ORDER BY a.id""", (int(protocolo_id),))]
+
+
+def resumo_caixa(lancamentos: list[dict], saldo_inicial: Any = 0) -> dict:
+    """Soma o caixa: entradas, saidas, saldo e quebra por forma de pagamento.
+
+    Lancamento estornado nao entra na conta — nem ele, nem o estorno. Os dois
+    continuam visiveis na tela; o que sai e o efeito, nao o registro.
+    """
+    entradas = saidas = 0
+    por_forma: dict[str, int] = {}
+    for l in lancamentos:
+        # Fora da conta: o estornado, o proprio estorno e o excluido. Os tres
+        # continuam na tela, marcados — o que sai e o efeito, nao o registro.
+        if l.get("estornado") or l.get("sentido") == "ESTORNO" or l.get("excluido"):
+            continue
+        v = centavos(l.get("valor"))
+        if l.get("sentido") == "SAIDA":
+            saidas += v
+        else:
+            entradas += v
+            forma = l.get("forma_pagamento") or "OUTROS"
+            por_forma[forma] = por_forma.get(forma, 0) + v
+    inicial = centavos(saldo_inicial)
+    return {
+        "saldo_inicial": inicial,
+        "entradas": entradas,
+        "saidas": saidas,
+        "saldo": inicial + entradas - saidas,
+        # Só o dinheiro vivo fica na gaveta: PIX e cartão não se conferem
+        # contando cédula.
+        "em_especie": inicial + por_forma.get("DINHEIRO", 0) - saidas,
+        "por_forma": por_forma,
+    }

@@ -1,0 +1,225 @@
+{% extends 'base.html' %}
+{% block title %}e-Proclamas — conferir antes de enviar{% endblock %}
+{% block heading %}<h1>e-Proclamas — {{ h.nubente1_nome }} e {{ h.nubente2_nome }}</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_proclamas') }}">Voltar à fila</a>
+  <a class="button" href="{{ url_for('rcpn_habilitacao', habilitacao_id=h.id) }}">A habilitação</a>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{# O QUE IMPEDE VEM PRIMEIRO, e cada linha diz ONDE se conserta — recusa que
+   não diz onde manda o escrevente procurar. #}
+{% if c.impedem %}
+<section class="card danger">
+  <h2>Isto ainda não pode subir</h2>
+  <ul>{% for i in c.impedem %}<li>{{ i }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>A matrícula do proclama</h2>
+  {% if c.matricula.matricula %}
+    <p><code style="font-size:1.1em">{{ c.matricula.matricula }}</code></p>
+    <p><small>{{ c.matricula.de_onde }}.</small></p>
+    {% if c.matricula.procedencia %}
+    {# A PROCEDÊNCIA DO DÍGITO DO LIVRO FICA À VISTA DE QUEM ASSINA.
+       As outras seis letras vieram do guia do SIRC ou dos assentos desta casa;
+       o «6» do Livro D veio do EXEMPLO de um contrato — e o exemplo é
+       fabricado (CNS 999999, dígito que não confere). Ele mostra a posição,
+       e não prova a conta. Esconder isso seria carimbo que mente dentro da
+       identidade nacional do ato. #}
+    <p class="muted">
+      <small>
+        O dígito do livro (<strong>6 = Livro D</strong>) tem procedência mais
+        fraca que as outras: ele vem do <strong>{{ c.matricula.procedencia }}</strong>,
+        e não do guia do SIRC — que não trata de proclamas. O exemplo do
+        contrato é fabricado e mostra a <em>posição</em>, não a conta. Se você
+        confirmar o dígito noutra fonte, ele passa a valer com aquela
+        procedência.
+      </small>
+    </p>
+    {% endif %}
+  {% else %}
+    <p class="muted">{{ c.matricula.motivo }}</p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+<form method="post" action="{{ url_for('rcpn_proclama', habilitacao_id=h.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="card">
+    <h2>O que mandar</h2>
+    <label>
+      <input type="checkbox" name="publicacao" {% if publicacao %}checked{% endif %}>
+      Publicar no e-Proclamas
+    </label>
+    <label>
+      <input type="checkbox" name="livro_eletronico" {% if livro_eletronico %}checked{% endif %}>
+      Gerar o Livro D Eletrônico
+    </label>
+    <p><small>
+      As duas vão no mesmo pedido, e o contrato as declara separadas — dá para
+      mandar uma sem a outra.
+    </small></p>
+
+    <h3>Quem paga a publicação</h3>
+    <label>CPF
+      <input name="cpf_fatura" value="{{ cpf_fatura }}"
+             placeholder="{{ c.proclama.cpf_fatura }}"></label>
+    <label>Nome
+      <input name="nome_fatura" value="{{ nome_fatura }}"
+             placeholder="{{ c.proclama.nome_fatura }}"></label>
+    <p><small>
+      {# QUEM PAGA É RESPOSTA DE BALCÃO, E NÃO DEDUÇÃO. Vem sugerido do
+         primeiro cônjuge, que é quem a habilitação tem à mão. #}
+      Vem sugerido do primeiro cônjuge. Se quem paga for outra pessoa, escreva
+      aqui.
+    </small></p>
+    <button class="button" type="submit">Refazer a conferência</button>
+  </section>
+</form>
+
+{# ------------------------------------------------------------------ #}
+{% if c.avisos %}
+<section class="card warning">
+  <h2>O que vai em branco, e por quê</h2>
+  <ul>{% for a in c.avisos %}<li>{{ a }}</li>{% endfor %}</ul>
+  <p><small>
+    Nada disto impede o envio: <strong>o contrato da Central não declara campo
+    obrigatório nenhum</strong>, e inventar obrigação que ele não declara seria
+    o erro do outro lado. O que a casa faz é mostrar, antes, o que vai vazio.
+  </small></p>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>O proclama, como ele vai</h2>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><th>data dos proclamas</th><td>{{ c.proclama.data_proclamas or '—' }}</td></tr>
+        <tr><th>tipo de casamento</th><td>{{ c.proclama.tipo_casamento or '—' }}</td></tr>
+        <tr><th>publicar · Livro D</th>
+            <td>{{ 'sim' if c.proclama.publicacao else 'não' }} ·
+                {{ 'sim' if c.proclama.livro_eletronico else 'não' }}</td></tr>
+        <tr><th>quem paga</th>
+            <td>{{ c.proclama.nome_fatura or '—' }}
+                {% if c.proclama.cpf_fatura %}({{ c.proclama.cpf_fatura }}){% endif %}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th></th><th>1º cônjuge</th><th>2º cônjuge</th></tr></thead>
+      <tbody>
+        {% for rotulo, campo in [
+             ('nome', 'nome'), ('nome que passa a usar', 'novo_nome'),
+             ('CPF', 'cpf'), ('sexo', 'sexo'),
+             ('nascimento', 'data_nascimento'),
+             ('estado civil', 'estado_civil'), ('ocupação', 'ocupacao'),
+             ('naturalidade (IBGE)', 'ibge_municipio_naturalidade'),
+             ('nacionalidade (M49)', 'nacionalidade')] %}
+        <tr>
+          <th>{{ rotulo }}</th>
+          <td>{{ c.proclama.conjuge_1[campo] or '—' }}</td>
+          <td>{{ c.proclama.conjuge_2[campo] or '—' }}</td>
+        </tr>
+        {% endfor %}
+        <tr>
+          <th>filiação</th>
+          {% for qual in ['conjuge_1', 'conjuge_2'] %}
+          <td>
+            {% for f in c.proclama[qual].filiacao %}
+              {{ f.nome_genitor }} <small>({{ f.sexo_genitor }})</small><br>
+            {% else %}—{% endfor %}
+          </td>
+          {% endfor %}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{# ------------------------------------------------------------------ #}
+{# O BOTÃO QUE PUBLICA FICA POR ÚLTIMO, DEPOIS DE TUDO O QUE HÁ PARA LER. #}
+<section class="card">
+  <h2>Enviar</h2>
+  {% if not tem_credencial %}
+    <p>
+      <strong>O token do IdRC não foi informado</strong>, e sem ele nada sobe.
+      Informe em <a href="{{ url_for('settings') }}">Administrativo →
+      Configurações</a>; o arquivo é <code>{{ arquivo_da_credencial }}</code>,
+      fora do banco.
+    </p>
+    {# O DETALHE DO CADASTRO MORA NUMA TELA SÓ. Repeti-lo aqui daria duas
+       versões para divergirem no primeiro conserto. O manual do IdRC chegou em
+       18/09/2026 e o texto de lá foi atualizado — o que ainda pode mudar é a
+       resposta da Central sobre o fluxo de máquina, e é lá que se muda. #}
+    <p><small>
+      Como preencher o cadastro, e o que ele devolve, está em
+      <a href="{{ url_for('rcpn_proclamas') }}">e-Proclamas — a fila</a>.
+    </small></p>
+  {% elif not c.pronto %}
+    <p class="muted">Resolva o que está listado acima antes de enviar.</p>
+  {% else %}
+    <form method="post" action="{{ url_for('rcpn_proclama_enviar', habilitacao_id=h.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="publicacao" value="{{ '1' if publicacao else '' }}">
+      <input type="hidden" name="livro_eletronico" value="{{ '1' if livro_eletronico else '' }}">
+      <input type="hidden" name="cpf_fatura" value="{{ cpf_fatura }}">
+      <input type="hidden" name="nome_fatura" value="{{ nome_fatura }}">
+      <p>
+        Vai para <code>{{ base }}</code> — ambiente
+        <strong>{{ c.ambiente|lower }}</strong>.
+      </p>
+      <button class="button primary" type="submit">Enviar ao e-Proclamas</button>
+    </form>
+    <p><small>
+      {# HTTP 200 NÃO QUER DIZER QUE SUBIU, e a tela diz isso antes. #}
+      A Central responde com <strong>duas listas</strong> — o que ela aceitou e
+      o que recusou, por matrícula. Se este proclama voltar recusado, o envio
+      fica registrado, a tela mostra qual campo ela apontou, e a publicação
+      <strong>não</strong> conta como feita.
+    </small></p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+{% if enviados %}
+<section>
+  <h2>O que já se mandou</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>quando</th><th>ambiente</th><th>publicação</th><th>Livro D</th>
+        <th>lote</th><th>quem</th>
+      </tr></thead>
+      <tbody>
+        {% for e in enviados %}
+        <tr>
+          <td>{{ e.enviado_em }}</td>
+          <td>{{ e.ambiente|lower }}</td>
+          <td>{{ 'sim' if e.publicacao else 'não' }}</td>
+          <td>{{ 'sim' if e.livro_eletronico else 'não' }}</td>
+          {# LOTE VAZIO QUER DIZER QUE A CENTRAL NÃO ACEITOU — e a coluna diz
+             isso em vez de mostrar um traço que se lê como «não sei». #}
+          <td>{{ e.protocolo or 'recusado' }}</td>
+          <td>{{ e.enviado_por or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><small>
+    O que foi mandado fica <strong>congelado</strong>, com hash: a Central pode
+    mudar o dado dela amanhã, e o que a casa mandou foi aquilo.
+  </small></p>
+</section>
+{% endif %}
+
+{% endblock %}

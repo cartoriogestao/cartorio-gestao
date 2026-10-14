@@ -1,0 +1,33 @@
+Flask>=3.0,<4
+waitress>=3.0,<4
+# Converte as fichas digitalizadas (TIFF Grupo 4) para PNG, que o navegador exibe.
+Pillow>=10,<12
+# Converte a ficha de firma digitalizada em PDF para imagem, na hora do envio.
+# PDF dentro de um <img> nao amplia nem gira; convertido, comporta-se como as
+# outras e a lupa funciona igual. Faltando, o PDF e guardado como veio e a tela
+# diz o que instalar - o envio da ficha nao para por causa disto.
+pypdfium2>=4,<5
+# Gera o QR do selo de fiscalizacao na etiqueta de reconhecimento de firma.
+# Puro Python, sem dependencia de sistema. Faltando, a etiqueta sai com o
+# numero do selo do mesmo jeito - o QR e conveniencia, nao requisito.
+segno>=1.6,<2
+# Le o `.p7s` que o delegatario devolve assinado (PKCS#7/CMS) — quem assinou,
+# e se o documento embrulhado e byte a byte o que a casa emitiu. Nao assina
+# nada: a chave A3 nao sai do token, e carregar o driver PKCS#11 desta maquina
+# derruba o processo (segfault, codigo 139, medido nos dois drivers).
+#
+# ELA E EXIGIDA, E NAO OPCIONAL — ao contrario da `cryptography`. A recusa de
+# `assinatura_digital` diz ao balcao «ela vem no pacote do sistema; se esta
+# faltando, a instalacao esta incompleta», e essa frase so e verdade com esta
+# linha aqui. Sem ela seria carimbo que mente.
+asn1crypto>=1.5,<2
+# Fala com o driver PKCS#11 do token A3 (eTPKCS11.dll, IDPrimePKCS1164.dll).
+# So e carregada dentro de `crc_a3_assinador.py`, o processo ISOLADO que o
+# `crc_a3.py` chama por `subprocess.run` — nunca dentro do processo do
+# Flask/waitress, onde carregar o driver derruba o servidor (segfault,
+# codigo 139, medido nos dois drivers desta casa).
+PyKCS11>=1.0.6,<2
+# Faz o C14N exclusivo (Exclusive XML Canonicalization) que a assinatura
+# WS-Security da carga da CRC exige — `crc_soap.py`. Sem ela o cabecalho
+# `ds:Signature` do pacote SOAP nao se monta.
+lxml>=5,<7

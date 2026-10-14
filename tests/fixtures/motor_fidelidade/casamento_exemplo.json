@@ -1,0 +1,37 @@
+{
+  "especie": "CASAMENTO",
+  "nome": "JOÃO DE EXEMPLO",
+  "matricula": "00000002552018020005678000123456",
+  "data_fato": "2018-09-27",
+  "data_ato": "2018-09-27",
+  "regime_bens": "Comunhão parcial de bens",
+  "dados": {
+    "strRegimeCasamento": "Comunhão parcial de bens"
+  },
+  "pessoas": [
+    {
+      "papel": "NUBENTE1",
+      "nome": "JOÃO DE EXEMPLO",
+      "documento_tipo": "CPF",
+      "documento_numero": "00000004774",
+      "data_nascimento": "1990-05-12",
+      "nacionalidade": "Brasileiro",
+      "estado_civil": "solteiro",
+      "naturalidade_cidade": "Cidade A",
+      "naturalidade_uf": "MA",
+      "nome_pos": "JOÃO DE EXEMPLO"
+    },
+    {
+      "papel": "NUBENTE2",
+      "nome": "MARIA DE EXEMPLO",
+      "documento_tipo": "CPF",
+      "documento_numero": "00000004855",
+      "data_nascimento": "1992-03-03",
+      "nacionalidade": "Brasileira",
+      "estado_civil": "solteira",
+      "naturalidade_cidade": "Cidade B",
+      "naturalidade_uf": "MA",
+      "nome_pos": "MARIA DE EXEMPLO SILVA"
+    }
+  ]
+}

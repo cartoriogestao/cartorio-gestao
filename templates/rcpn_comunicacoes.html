@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Comunicações mensais de óbito{% endblock %}
+{% block content %}
+<h1>Comunicações mensais de óbito</h1>
+
+<div class="card">
+  <p><strong>Todo mês esta casa deve comunicar os óbitos lavrados a cinco
+     destinos</strong>, até o <strong>{{ norma.PRAZO_DIAS_UTEIS }}º dia útil do
+     mês seguinte</strong> <span class="small muted">({{ norma.ARTIGO_DO_PRAZO }})</span>.</p>
+  <table>
+    <thead><tr><th>Destino</th><th>Quem entra</th><th>Fundamento</th></tr></thead>
+    <tbody>
+    {% for d in norma.DESTINOS %}
+      <tr>
+        <td>{{ d.nome }}</td>
+        <td class="small">{{ d.porque }}</td>
+        <td class="small muted">{{ d.artigo }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="small muted">{{ norma.TEXTO_DA_OMISSAO }}</p>
+</div>
+
+{% if atrasadas %}
+<div class="alerta danger">
+  <h2 style="margin-top:0">Meses com óbito e sem as cinco comunicações</h2>
+  <table>
+    <thead><tr><th>Competência</th><th>Óbitos</th><th>Abertas</th><th>Faltam</th><th></th></tr></thead>
+    <tbody>
+    {% for m in atrasadas %}
+      <tr>
+        <td>{{ m.competencia }}</td>
+        <td>{{ m.obitos }}</td>
+        <td>{{ m.abertas }}</td>
+        <td><strong>{{ m.faltam }}</strong></td>
+        <td>
+          <form method="post" action="{{ url_for('rcpn_comunicacoes_abrir') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="competencia" value="{{ m.competencia }}">
+            <button class="link-button">abrir as cinco</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">Abrir um mês</h2>
+  <p class="small muted">
+    <strong>Abra também o mês sem óbito nenhum.</strong> A obrigação continua: o
+    art. 225, § 3º manda comunicar o fato, e o SIRC tem «declaração de
+    inexistência de movimento». Comunicação que não se abre por estar vazia é
+    comunicação que ninguém lembra de mandar.
+  </p>
+  <form method="post" action="{{ url_for('rcpn_comunicacoes_abrir') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Competência <input name="competencia" placeholder="2026-07" required></label>
+    <button class="button">Abrir as cinco</button>
+  </form>
+</div>
+
+<h2>Pendentes ({{ devendo|length }})</h2>
+{% if devendo %}
+<table>
+  <thead><tr><th>Competência</th><th>Destino</th><th>Prazo até</th><th></th></tr></thead>
+  <tbody>
+  {% for c in devendo %}
+    <tr>
+      <td>{{ c.competencia }}</td>
+      <td>{{ nomes.get(c.destino, c.destino) }}</td>
+      <td class="small">{{ c.prazo_ate or '—' }}</td>
+      <td><a href="{{ url_for('rcpn_comunicacao', comunicacao_id=c.id) }}">ver o texto</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Nenhuma comunicação pendente.</p>
+{% endif %}
+
+<div class="card">
+  <p class="small muted"><strong>Guarda-se por dois anos.</strong>
+     {{ norma.TEXTO_DO_ARQUIVO }}
+     <span class="muted">({{ norma.ARTIGO_DO_ARQUIVO }})</span></p>
+</div>
+{% endblock %}

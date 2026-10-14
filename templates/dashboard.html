@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{# O botao de fechar o aviso — relato #62. A macro e a razao dela estao em
+   `_aviso.html`; aqui so se chama. #}
+{% import '_aviso.html' as aviso %}
+{% block title %}Painel geral{% endblock %}
+{% block heading %}<h1>Painel geral</h1>{% endblock %}
+{% block content %}
+{# O PAINEL REORGANIZADO — ordem do oficial em 13/10/2026: «deixando como
+   prioridade o campo de tarefas, ocupando todo espaço horizontal (...) já
+   podemos tirar o campo de expedientes (substituído por processos), erros
+   abertos pode deixar para o final da página, atos em andamento também ao
+   final». Isto inverte a ordem do relato #29 (atos antes das tarefas), por
+   decisão dele. O expediente que espera decisão aparece em Processos. #}
+{% if stats.inspection_without_start %}<div class="notice critical" data-aviso><strong>Ação necessária:</strong> {{ stats.inspection_without_start }} recomendações da inspeção ainda estão sem data-base. Defina a data de ciência/intimação na aba Inspeções.{{ aviso.fechar() }}</div>{% endif %}
+<div class="cards">
+  <div class="card stat danger"><span>Vencidos</span><strong>{{ stats.overdue }}</strong></div>
+  <div class="card stat warning"><span>Vencem em {{ alert_days }} dias</span><strong>{{ stats.soon }}</strong></div>
+  <div class="card stat"><span>Processos abertos</span><strong>{{ stats.open_tasks }}</strong></div>
+  {# A TAREFA QUE O SISTEMA NÃO SABE LER NÃO ENTRA NA CONTA ACIMA e não some do
+     painel: ela aparece aqui, contada, apontando para a lista onde a palavra sai
+     como ela é. Sem isto, o número de cima ficaria menor que a realidade sem
+     dizer por quê — o carimbo que mente ao contrário. #}
+  {% if stats.tarefas_fora_do_vocabulario %}
+  <div class="card stat warning" title="A situação do processo não é nenhuma das que o sistema conhece. Ele não sabe se ainda pede alguma coisa — abra em «Processos», vista «Todos»."><span>Fora das vistas</span><strong>{{ stats.tarefas_fora_do_vocabulario }}</strong></div>
+  {% endif %}
+  <div class="card stat"><span>Aguardando terceiro</span><strong>{{ stats.waiting }}</strong></div>
+</div>
+
+<section class="panel"><div class="panel-head"><h2>Processos em aberto</h2><a href="{{ url_for('processos_lista') }}">ver todos</a></div>
+<div class="table-wrap"><table><thead><tr><th>Prioridade</th><th>Processo</th><th>Responsável</th><th>Prazo</th><th>Situação</th><th>Setor</th></tr></thead><tbody>
+{% for r in tasks %}<tr class="due-{{ r.priority|lower }}"><td><span class="badge {{ r.priority|lower }}">{{ r.priority }}</span></td><td><a href="{{ url_for('task_detail', task_id=r.id) }}">{{ r.title }}</a></td><td>{{ r.assigned_name or 'sem responsável' }}</td><td>{{ fmt_date(r.due_date) if r.due_date else 'sem prazo' }}</td><td class="small">{{ r.status }}</td><td class="small muted">{{ r.sector or '—' }}</td></tr>{% else %}<tr><td colspan="6">Nenhum processo em aberto.</td></tr>{% endfor %}
+</tbody></table></div></section>
+
+{% include '_relatos_do_dia.html' %}
+
+<div class="{% if erros_no_painel %}grid2{% endif %}">
+{# OS ATOS EM ANDAMENTO — relato #29: o ato é o que a casa faz. Desde 13/10/2026
+   ficam no fim do painel, por ordem do oficial. #}
+<section class="panel">
+  <div class="panel-head"><h2>Atos em andamento</h2>
+    <a href="{{ url_for('inacabados_lista') }}">ver o que ficou pelo caminho</a>
+  </div>
+  {% if andamento_erro %}
+    <p class="small danger">{{ andamento_erro }}</p>
+  {% elif not andamento %}
+    <p class="small muted">Nenhum ato começado e não terminado.</p>
+  {% else %}
+  <div class="table-wrap"><table><thead><tr><th>O que é</th><th>Atribuição</th><th>Em aberto</th>
+    <th>Parados</th></tr></thead><tbody>
+  {% for a in andamento %}
+    <tr {% if a.parados %}class="danger"{% endif %}>
+      <td>{% if a.erro %}{{ a.fonte }}
+            <br><span class="small danger">{{ a.erro }}</span>
+          {% else %}
+            <a href="{{ url_for('inacabados_lista', fonte=a.chave) }}">{{ a.fonte }}</a>
+          {% endif %}</td>
+      <td class="small muted">{{ a.atribuicao }}</td>
+      <td><strong>{{ a.quantos }}</strong></td>
+      <td>{% if a.parados %}
+            <a href="{{ url_for('inacabados_lista', fonte=a.chave, so_parados=1) }}"
+               class="danger"><strong>{{ a.parados }}</strong></a>
+            <span class="small muted">há mais de {{ a.dias }} dias</span>
+          {% else %}—{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody></table></div>
+  <p class="small muted">Medido na hora, das tabelas onde os atos moram; ato concluído sai daqui sozinho.</p>
+  {% endif %}
+</section>
+{# O RELATÓRIO DE ERROS NO PAINEL — pedido do oficial em 06/10/2026. Só o
+   ADMIN o recebe (o contexto vem vazio para os demais), e é o resumo: quem tem
+   erro aberto e quantos são críticos. O resto mora na tela própria. #}
+{% if erros_no_painel %}
+<section class="panel"><div class="panel-head"><h2>Erros abertos de quem praticou ({{ erros_no_painel.abertos }})</h2><a href="{{ url_for('gestor_erros') }}">ver o relatório</a></div>
+  {% if erros_no_painel.por_pessoa %}
+  <div class="table-wrap"><table>
+    <tr><th>Quem praticou</th><th>Abertos</th><th>Críticos</th></tr>
+    {% for p in erros_no_painel.por_pessoa %}
+    <tr {% if p.criticos %}class="danger"{% endif %}><td><a href="{{ url_for('gestor_erros', pessoa=p.quem) }}">{{ p.quem }}</a></td><td>{{ p.abertos }}</td><td>{{ p.criticos }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">Nenhum erro aberto.</p>{% endif %}
+</section>
+{% endif %}
+</div>
+{% endblock %}

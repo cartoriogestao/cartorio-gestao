@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Anotações devidas{% endblock %}
+{% block content %}
+<h1>Anotações devidas</h1>
+
+<div class="card">
+  <p><strong>Quando esta casa lavra um casamento ou um óbito, os assentos
+     anteriores daquela pessoa têm de ser anotados</strong> — o casamento no
+     nascimento e nos casamentos anteriores; o óbito no nascimento e no
+     casamento <span class="small muted">(art. 372)</span>. Se o assento
+     anterior é daqui, anota-se aqui; se é de outra serventia, manda-se
+     comunicação.</p>
+  <p><strong>O prazo é de {{ norma.PRAZO_DIAS }} dias, contados do ato</strong>
+     <span class="small muted">({{ norma.ARTIGO_DO_PRAZO }})</span> — e são dias
+     corridos, porque o artigo escreve «cinco dias» sem qualificar.</p>
+  <p class="small muted">
+    Este é o <strong>terceiro prazo da casa que ninguém de fora cobra</strong>,
+    depois do SIGEF (30 dias) e da relação da Junta Militar (mensal). É o mais
+    curto e o mais frequente: nasce em todo casamento e em todo óbito.
+  </p>
+</div>
+
+{% if vencidas %}
+<div class="alerta danger">
+  <h2 style="margin-top:0">{{ vencidas|length }} passou dos {{ norma.PRAZO_DIAS }} dias</h2>
+  <p class="small muted">Elas aparecem também na lista abaixo, marcadas.</p>
+</div>
+{% endif %}
+
+{% if devendo %}
+<p class="muted">{{ devendo|length }} pendente{{ 's' if devendo|length > 1 }},
+   da mais antiga para a mais nova.</p>
+
+{% for x in devendo %}
+<div class="card{% if x.id in ids_vencidas %} danger{% endif %}">
+  <h2 style="margin-top:0">
+    Anotar o {{ x.especie|lower }} no assento de {{ x.especie_alvo|lower }}
+    {% if x.id in ids_vencidas %}<span class="badge">fora do prazo</span>{% endif %}
+  </h2>
+  <p>Termo {{ x.numero }} — <strong>{{ x.nome }}</strong>, lavrado em
+     {{ x.data_ato or '(sem data)' }}.</p>
+
+  <p><a href="{{ url_for('rcpn_anotacao_oficio', pendencia_id=x.id) }}">Ver o texto da comunicação</a></p>
+
+  <details>
+    <summary>O assento anterior é <strong>desta serventia</strong> — anotei nele</summary>
+    <form method="post" action="{{ url_for('rcpn_anotacao_resolver', pendencia_id=x.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="ANOTAR">
+      <p class="small muted">Antes de anotar, o art. 370 manda conferir a
+         compatibilidade dos atos. O sistema não anota sozinho: quem decide que
+         dois assentos são da mesma pessoa é você.</p>
+      <label>Nº do assento anotado (id) <input name="assento_alvo_id" required></label>
+      <button class="button">Registrar que anotei</button>
+    </form>
+  </details>
+
+  <details>
+    <summary>É de <strong>outra serventia</strong> — mandei comunicação</summary>
+    <form method="post" action="{{ url_for('rcpn_anotacao_resolver', pendencia_id=x.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="COMUNICAR">
+      <p><label>Por onde<br>
+        <select name="canal">
+          {% for c in norma.POR_ONDE_COMUNICAR %}
+          <option value="{{ c.canal }}">{{ c.canal }} — {{ c.o_que[:70] }}…</option>
+          {% endfor %}
+        </select></label>
+        <br><span class="small muted">A CRC vem primeiro por determinação do
+        Provimento 46/2015 do CNJ.</span></p>
+      <p><label>Serventia de destino<br><input name="serventia" size="50" required></label></p>
+      <p><label>Protocolo ou comprovante de recebimento<br><input name="protocolo" required></label>
+        <br><span class="small muted">A norma exige confirmação de recebimento —
+        comunicação sem confirmação é a que ninguém prova ter mandado.</span></p>
+      <button class="button">Registrar a comunicação</button>
+    </form>
+  </details>
+
+  <details>
+    <summary>Não há assento anterior a anotar — dispensar</summary>
+    <form method="post" action="{{ url_for('rcpn_anotacao_resolver', pendencia_id=x.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="DISPENSAR">
+      <p><label>Motivo<br><input name="motivo" size="60" required
+         placeholder="não há casamento anterior; nascimento registrado no exterior"></label></p>
+      <button class="button secondary">Dispensar com motivo</button>
+    </form>
+  </details>
+</div>
+{% endfor %}
+
+{% else %}
+<div class="card">
+  <p>Nenhuma anotação pendente.</p>
+  <p class="small muted">Elas nascem sozinhas quando um casamento, um óbito, uma
+     interdição, uma emancipação ou uma ausência é lavrado — no momento do ato,
+     porque o prazo conta dali.</p>
+</div>
+{% endif %}
+
+<hr>
+<h2>O que a norma exige</h2>
+<div class="card">
+  <p><strong>A anotação contém</strong> <span class="small muted">(art. 369)</span>:</p>
+  <ul>{% for c in norma.CONTEUDO_DA_ANOTACAO %}<li>{{ c.o_que }}
+      <span class="small muted">({{ c.artigo }})</span></li>{% endfor %}</ul>
+  <p>{{ norma.QUEM_SUBSCREVE.o_que }}
+     <span class="small muted">({{ norma.QUEM_SUBSCREVE.artigo }})</span></p>
+  <p>{{ norma.CONFERIR_ANTES.o_que }}
+     <span class="small muted">({{ norma.CONFERIR_ANTES.artigo }})</span></p>
+  <p><strong>A parte pode pedir a anotação sem esperar o ofício:</strong>
+     {{ norma.A_PEDIDO_DA_PARTE.o_que }}
+     <span class="small muted">({{ norma.A_PEDIDO_DA_PARTE.artigo }})</span></p>
+  <p>{{ norma.CERTIFICAR_NA_HABILITACAO.o_que }}
+     <span class="small muted">({{ norma.CERTIFICAR_NA_HABILITACAO.artigo }})</span></p>
+  <p><strong>Nas três do Livro E há uma segunda comunicação:</strong>
+     {{ norma.AVISAR_O_JUIZ.o_que }}
+     <span class="small muted">({{ norma.AVISAR_O_JUIZ.artigo }})</span></p>
+</div>
+{% endblock %}

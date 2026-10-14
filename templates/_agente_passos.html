@@ -1,0 +1,52 @@
+{#
+  UM PEDAÇO DA CONVERSA — e o MESMO pedaço nos dois lugares que a desenham.
+
+  POR QUE ELE NÃO MORA NA TELA DA SESSÃO
+      A gaveta do agente aparece em toda tela e desenha a mesma conversa que a
+      tela da sessão. Escrito duas vezes, o segundo desenho divergiria no
+      primeiro conserto — e a gaveta mostraria uma coisa e a tela outra, que é
+      justamente o defeito que a pré-visualização da ajuda custou para não ter.
+
+  O QUE ENTRA AQUI É O QUE JÁ ESTÁ GRAVADO
+      Cada passo vem de `ag_passos`, com o tipo que o agente lhe deu. O
+      resultado de ferramenta vai FECHADO (`<details>`), porque uma leitura de
+      tabela pode ter dezenas de linhas e empurrar a resposta para longe.
+
+  O `pre` DO ARGUMENTO E DO RESULTADO É TEXTO, E NÃO HTML
+      O Jinja escapa por padrão, e é o que se quer: o que volta de uma
+      ferramenta é dado da casa, e desenhá-lo como marcação seria deixar o dado
+      escrever na tela do cartório.
+#}
+{% for passo in passos %}
+  {% if passo.tipo == 'PEDIDO' %}
+  <div class="ag-fala ag-fala-eu">
+    <strong class="ag-quem">VOCÊ PEDIU</strong>
+    <div class="ag-conteudo">{{ passo.conteudo }}</div>
+  </div>
+  {% elif passo.tipo == 'TEXTO' %}
+  <div class="ag-fala ag-fala-ele">
+    <strong class="ag-quem">O AGENTE</strong>
+    <div class="ag-conteudo">{{ passo.conteudo }}</div>
+  </div>
+  {% elif passo.tipo == 'FERRAMENTA' %}
+  <details class="ag-ferramenta">
+    <summary>
+      <span class="ag-selo">pediu</span>
+      <code>{{ passo.ferramenta }}</code>
+    </summary>
+    <pre class="ag-pre">{{ passo.argumentos or '{}' }}</pre>
+  </details>
+  {% elif passo.tipo == 'RESULTADO' %}
+  <details class="ag-ferramenta">
+    <summary>
+      <span class="ag-selo{{ ' ruim' if passo.erro else '' }}">{{
+        'recusou' if passo.erro else 'devolveu' }}</span>
+      <code>{{ passo.ferramenta }}</code>
+      <small class="muted">{{ (passo.conteudo or '')|length }} caracteres</small>
+    </summary>
+    <pre class="ag-pre">{{ passo.conteudo }}</pre>
+  </details>
+  {% elif passo.tipo == 'AVISO' %}
+  <p class="ag-aviso">{{ passo.conteudo }}</p>
+  {% endif %}
+{% endfor %}

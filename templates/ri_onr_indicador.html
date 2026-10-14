@@ -1,0 +1,186 @@
+{% extends 'base.html' %}
+{% block title %}Indicador real — matrícula {{ c.matricula.numero }}{% endblock %}
+{% block heading %}<h1>Indicador real — matrícula {{ c.matricula.numero }}</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_onr_painel') }}">Voltar ao ONR</a>
+  <a class="button" href="{{ url_for('ri_ficha', matricula_id=matricula_id) }}">A ficha do imóvel</a>
+</div>
+
+{# ------------------------------------------------------------------ #}
+{% if c.impedem %}
+<section class="card danger">
+  <h2>Isto ainda não pode subir</h2>
+  <ul>{% for i in c.impedem %}<li>{{ i }}</li>{% endfor %}</ul>
+  <p><small>
+    Cada linha diz <strong>onde</strong> se conserta — o endereço é na ficha do
+    imóvel, o CNS é em Configurações, e o tipo é a caixa abaixo.
+  </small></p>
+
+  {# ------------------------------------------------------------------ #}
+  {# **A PORTA DO EXTRATOR FICA NA TELA ONDE O BLOQUEIO APARECE** —
+     16/09/2026. O endereço é o que mais trava o índice (das 434 matrículas desta
+     casa que o painel não consegue publicar, **367** param aqui), e o texto que
+     o descreve **já está no banco**: é o teor da digitalização. Dizer «o
+     endereço é na ficha do imóvel» sem dizer **o que ler na ficha** mandava o
+     balcão procurar numa ficha cuja coluna está vazia.
+
+     **E O BOTÃO SÓ APARECE ONDE ELE PODE FAZER ALGO**, a mesma régua do botão da
+     ficha: com teor e sem logradouro. Sem teor não há o que ler, e com logradouro
+     a coluna já está preenchida — oferecer ali seria oferecer uma recusa.
+
+     **É POST, E NÃO UM LINK**, porque cria proposta: nesta casa um GET não abre
+     transação de escrita. #}
+  {% if c.matricula.teor and not c.matricula.logradouro %}
+  <p>
+    <strong>O endereço desta matrícula está escrito dentro do teor</strong>, que
+    é o texto que a digitalização trouxe — a coluna da ficha está vazia. A tela
+    da conferência lê esse texto e propõe o endereço, mostrando ao lado de cada
+    campo <strong>a frase de onde ele saiu</strong>:
+  </p>
+  {# O FORMULÁRIO FORA DO PARÁGRAFO: `<form>` dentro de `<p>` é HTML inválido,
+     e o navegador fecha o parágrafo antes — a frase e o botão ficariam em
+     blocos separados sem ninguém entender por quê. #}
+  <form method="post"
+        action="{{ url_for('ri_onr_endereco_da_matricula', matricula_id=matricula_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button primary" type="submit">o que o teor diz</button>
+  </form>
+  <p><small>
+    Nada é gravado na matrícula sem a sua conferência, e <strong>nada sobe ao
+    ONR por ali</strong> — a conferência grava o endereço na ficha, e o envio
+    continua sendo o botão desta tela, depois.
+  </small></p>
+  {% endif %}
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+<form method="post" action="{{ url_for('ri_onr_indicador', matricula_id=matricula_id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="card">
+    <h2>O que o contrato exige e a ficha não tem</h2>
+    <label>Situação da construção
+      <select name="situacao_construcao">
+        <option value="">— usar «Não se aplica» —</option>
+        {% for codigo, nome in situacoes_de_construcao.items() %}
+        <option value="{{ codigo }}" {% if situacao_escolhida == codigo|string %}selected{% endif %}>{{ codigo }} · {{ nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p><small>
+      {# ESTA CASA NÃO GUARDA ISSO EM COLUNA NENHUMA, e o contrato o exige. #}
+      <strong>Esta casa não guarda a situação da construção em coluna
+      nenhuma</strong> — medido nas 50 colunas da matrícula —, e o ONR a declara
+      obrigatória. Sem escolha ela vai como <strong>«Não se aplica»</strong>,
+      que é o menos afirmativo dos três.
+    </small></p>
+
+    <label>Tipo do imóvel
+      <select name="tipo_imovel">
+        <option value="">— o que está na ficha: {{ c.matricula.tipo_imovel or 'nada' }} —</option>
+        {% for codigo, nome in tipos_de_imovel.items() %}
+        <option value="{{ nome }}" {% if tipo_escolhido == nome %}selected{% endif %}>{{ codigo }} · {{ nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p><small>
+      O ONR aceita <strong>dez</strong>, e o de-para casa pelo nome — sem acento
+      e sem caixa. O que a ficha tiver escrito de outro jeito não vira código
+      por semelhança: escolha aqui.
+    </small></p>
+
+    <button class="button" type="submit">Refazer a conferência</button>
+  </section>
+</form>
+
+{# ------------------------------------------------------------------ #}
+{% if c.avisos %}
+<section class="card warning">
+  <h2>O que vai assim, e por quê</h2>
+  <ul>{% for a in c.avisos %}<li>{{ a }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>O indicador, como ele vai</h2>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for chave, valor in c.corpo.items() %}
+        <tr>
+          <th>{{ chave }}</th>
+          <td>
+            {% if valor is string or valor is number %}{{ valor }}
+            {% else %}<code>{{ valor }}</code>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><small>
+    {# O TIPO DO LOGRADOURO É UM CÓDIGO AQUI E UM NOME NO EDITAL. #}
+    O <code>tipoLogradouro</code> vai como <strong>número</strong> aqui e como
+    <strong>nome</strong> no edital — mesmo campo, dois tipos, no mesmo
+    contrato. Ele sai da primeira palavra do logradouro da ficha.
+  </small></p>
+</section>
+
+{# ------------------------------------------------------------------ #}
+{# O BOTÃO QUE PUBLICA FICA POR ÚLTIMO, DEPOIS DE TUDO O QUE HÁ PARA LER. #}
+<section class="card">
+  <h2>Enviar ao índice real</h2>
+  {% if not tem_credencial %}
+    <p><strong>A credencial do ONR não foi informada</strong>, e sem ela nada sobe.</p>
+  {% elif not c.pronto %}
+    <p class="muted">Resolva o que está listado acima antes de enviar.</p>
+  {% else %}
+    <form method="post" action="{{ url_for('ri_onr_indicador_enviar', matricula_id=matricula_id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="situacao_construcao" value="{{ situacao_escolhida }}">
+      <input type="hidden" name="tipo_imovel" value="{{ tipo_escolhido }}">
+      <p>Vai para <code>{{ base }}</code> — ambiente <strong>{{ ambiente|lower }}</strong>.</p>
+      <button class="button primary" type="submit">Enviar o indicador real</button>
+    </form>
+    <p><small>
+      O que sobe é <strong>quem é dono do imóvel hoje</strong>, para o índice
+      que o país consulta. <strong>Enviado não é aceito</strong>: o ONR processa
+      depois, e quem diz o resultado é a fila.
+    </small></p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+{% if ja %}
+<section>
+  <h2>O que já se mandou desta matrícula</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>identificador</th><th>situação</th><th>a fila disse</th><th>quando</th><th>quem</th></tr></thead>
+      <tbody>
+        {% for e in ja %}
+        <tr>
+          <td>{{ e.id }}</td>
+          <td><code>{{ e.identificador or '—' }}</code></td>
+          <td>{{ e.situacao|lower }}</td>
+          <td>{{ e.fila_situacao or '—' }}</td>
+          <td>{{ e.enviado_em }}</td>
+          <td>{{ e.enviado_por or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><small>
+    O que foi mandado fica <strong>congelado</strong>, com hash: o ONR pode
+    mudar o dado dele amanhã, e o que a casa mandou foi aquilo — e o hash
+    responde à pergunta da correição, «este indicador foi enviado depois da
+    última averbação?».
+  </small></p>
+</section>
+{% endif %}
+
+{% endblock %}

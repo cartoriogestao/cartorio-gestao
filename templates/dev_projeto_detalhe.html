@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>{{ projeto.titulo }}</h1>{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('dev_projetos_lista') }}">↩ Voltar à lista</a></p>
+
+<section class="panel dev-projetos-panel dev-projetos-pendencia-panel">
+  <div class="panel-head"><span>Próximo passo / pendência</span></div>
+  {% if projeto.proximo_passo %}
+  <p class="dev-projetos-pendencia-texto">{{ projeto.proximo_passo }}</p>
+  {% else %}
+  <p class="muted dev-projetos-pendencia-vazio">Nenhuma pendência registrada.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('dev_projetos_alterar_proximo_passo', projeto_id=projeto.id) }}" class="dev-projetos-pendencia-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="block">
+      Editar
+      <textarea name="proximo_passo" rows="4" placeholder="O que bloqueia ou qual é o próximo passo?">{{ projeto.proximo_passo or '' }}</textarea>
+    </label>
+    <button type="submit" class="button primary">Salvar pendência</button>
+  </form>
+</section>
+
+<section class="panel dev-projetos-panel">
+  <div class="panel-head"><span>Status geral</span></div>
+  <form method="post" action="{{ url_for('dev_projetos_alterar_status', projeto_id=projeto.id) }}" class="dev-projetos-status-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      Status
+      <select name="status_geral">
+        {% for cod in status_validos %}
+        <option value="{{ cod }}" {% if projeto.status_geral == cod %}selected{% endif %}>{{ status_rotulo.get(cod, cod) }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="button primary">Salvar status</button>
+  </form>
+</section>
+
+<section class="panel dev-projetos-panel">
+  <div class="panel-head"><span>Novo andamento</span></div>
+  <form method="post" action="{{ url_for('dev_projetos_novo_andamento', projeto_id=projeto.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="block">
+      Texto
+      <textarea name="texto" rows="4" required placeholder="O que mudou neste projeto?"></textarea>
+    </label>
+    <button type="submit" class="button primary">Registrar</button>
+  </form>
+</section>
+
+<section class="panel dev-projetos-panel">
+  <div class="panel-head"><span>Histórico</span></div>
+  <ul class="dev-projetos-historico">
+    {% for a in andamentos %}
+    <li>
+      <time class="muted">{{ a.criado_em[:16] if a.criado_em else '' }}</time>
+      {% if a.autor %}<span class="dev-projetos-autor">{{ a.autor }}</span>{% endif %}
+      <p>{{ a.texto }}</p>
+    </li>
+    {% else %}
+    <li class="muted">Sem andamentos ainda.</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Numeração das matrículas</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a></div>
+
+<div class="notice">
+  <strong>O número da matrícula é único na serventia, não no volume.</strong> Os livros
+  2, 2-A … 2-S são <em>volumes</em> do mesmo Livro 2 de Registro Geral: a letra é o volume,
+  não uma série própria. O Livro 3 (Registro Auxiliar) é série distinta e conta separado.
+  <br><br>
+  Por isso a coluna que manda é <strong>Próximo da série</strong>: é dela que sai o número da
+  matrícula nova. O sistema recusa fixar número igual ou menor que o maior já usado
+  <em>na série</em>.
+</div>
+
+<div class="notice warn">
+  <strong>O erro que isto corrigiu.</strong> Em 18/08/2026 o sistema contava por volume:
+  o livro 2 estava em 4010, deu 4011 — e a serventia já tinha a 4013 no volume 2-S.
+  Volume que aparecer com <span class="badge warn">desalinhado</span> abaixo está com a
+  contagem antiga e será acertado no próximo lançamento.
+</div>
+
+{#
+  A SÉRIE VEM PRIMEIRO, porque é ela que manda.
+
+  Abaixo há vinte linhas de volume com números diferentes — sobras da
+  importação de 13/08/2026, que nada usa. Quem lesse só a tabela crua concluiria
+  que escolher `2A` abriria a matrícula 714; **não abriria**, porque o próximo
+  número conta pela série. Eu mesmo me enganei lendo a coluna crua antes de
+  perguntar à função.
+
+  Tela que mostra só o dado cru deixa quem a lê tirar a conclusão errada
+  sozinho.
+#}
+<section class="panel">
+  <div class="panel-head"><span>O que vale — a série</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Série</th><th>Matrículas</th><th>Maior usado</th>
+        <th>Próximo número</th><th>Volumes de papel</th></tr></thead>
+      <tbody>
+      {% for x in series %}
+      <tr>
+        <td><strong>Livro {{ x.serie }}</strong></td>
+        <td>{{ x.matriculas }}</td>
+        <td>{{ x.maior }}</td>
+        <td><strong>{{ x.proximo }}</strong></td>
+        <td class="small muted">{{ x.volumes }} volume(s) no acervo</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted" style="margin:10px 14px">
+    Matrícula nova entra na série, com o próximo número acima. Os volumes
+    abaixo dizem em que livro de papel cada ficha do acervo está arquivada —
+    ficha nova não vai para volume nenhum.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Os volumes de papel, como o acervo os guardou</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Livro</th><th>Série</th><th>Matrículas</th><th>Maior no volume</th>
+        <th>Maior na série</th><th>Próximo da série</th><th>Gravado no volume</th>
+        <th>Fixado em</th><th>Observação</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr><td><strong>{{ r.livro }}</strong></td>
+            <td class="small">{{ r.serie }}</td>
+            <td>{{ r.matriculas }}</td>
+            <td>{{ r.maior_em_uso or '—' }}</td>
+            <td>{{ r.maior_da_serie }}</td>
+            <td><strong>{{ r.proximo_da_serie }}</strong></td>
+            <td class="small">{{ r.proximo_numero }}
+              {% if r.desalinhado %}<span class="badge warn" title="a contagem gravada neste volume não é a da série">desalinhado</span>{% endif %}</td>
+            <td class="small">{{ fmt_dt(r.fixado_em) }}</td>
+            <td class="small muted">{{ r.observacao or '—' }}</td></tr>
+      {% else %}<tr><td colspan="9">Nenhum livro registrado.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<details class="panel"><summary>Fixar número manualmente</summary>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Livro<input name="livro" required placeholder="2S"></label>
+    <label>Próximo número<input type="number" name="proximo_numero" min="1" required></label>
+    <label class="span2">Motivo<input name="observacao" placeholder="Por que a numeração está sendo alterada"></label>
+    <div class="span2"><button class="primary">Fixar</button></div>
+  </form>
+</details>
+{% endblock %}

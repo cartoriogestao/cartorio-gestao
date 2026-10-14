@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{#
+  A FILA DA CENTRAL ONRTDPJ — por onde o título eletrônico chega.
+
+  A TELA MOSTRA O QUE ESTÁ LÁ; O QUE ENTRA NA CASA É O QUE SE TRAZ. Baixar a
+  fila não é receber título: receber é lançar no Livro de Protocolo, com número
+  de ordem — e isso é ato, com quem o praticou.
+
+  E ELA NÃO JULGA PRAZO. Um zero aqui pode ser «hoje não veio nada» ou «a
+  Central está fora do ar», e o sistema não tem como saber qual — por isso a
+  falha aparece escrita, em vez de virar uma lista vazia.
+#}
+{% block heading %}<h1>Central ONRTDPJ — o que está esperando</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpj_rtd_titulos', atribuicao=atribuicao) }}">&larr; Títulos apresentados</a>
+  {% if tem_token and user.role in ['ADMIN','MANAGER'] %}
+  <form method="post" action="{{ url_for('rcpj_rtd_onrtdpj_testar') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">Testar a ligação</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if not tem_token %}
+<div class="notice">
+  <strong>O token da Central ainda não foi informado.</strong> Ele não é uma
+  senha: entre em <code>rtdbrasil.org.br</code>, vá em
+  <strong>Serviços → Envio Extrato SINTER</strong> e copie o token de lá.
+  <br><span class="small muted">O nome do menu confunde: a Receita Federal
+  desligou o <strong>envio</strong> ao SINTER em 24/08/2023, mas o
+  <strong>token</strong> gerado ali continua sendo o da API da Central.</span>
+  <br>Depois informe-o em
+  {% if user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}">Administrativo → Configurações</a>{% else %}Administrativo → Configurações (o oficial faz isso){% endif %}.
+  <br><br>Se a serventia ainda não tiver acesso àquele ambiente, cadastre-se
+  como pessoa física e peça por e-mail a <code>atendimento@onrtdpj.org.br</code>
+  que o CPF seja vinculado ao cartório.
+</div>
+{% elif falha %}
+<div class="notice" style="border-left:3px solid var(--danger, #b42318)">
+  <strong>Não deu para falar com a Central.</strong> {{ falha }}
+  <br><span class="small muted">A lista abaixo está vazia <strong>por causa
+  disto</strong>, e não porque não haja pedidos.</span>
+</div>
+{% endif %}
+
+<div class="notice">
+  <strong>A Central tem um ambiente só, e é o de produção</strong> —
+  <code>{{ base }}</code>. O contrato dela não declara homologação, e o sistema
+  não inventa uma: o que você fizer aqui acontece de verdade.
+</div>
+
+{% if fila %}
+<div class="actions">
+  {% for a in atribuicoes %}
+    <a class="button{% if a.codigo == atribuicao %} primary{% endif %}"
+       href="{{ url_for('rcpj_rtd_onrtdpj', atribuicao=a.codigo) }}">Trazer para {{ a.nome }}</a>
+  {% endfor %}
+</div>
+<p><small class="muted">
+  <strong>A atribuição é escolhida por você, e não deduzida.</strong> O contrato
+  da Central traz uma «especialidade» no serviço, e o que ela vale para separar
+  RTD de RCPJ não foi medido — não há um pedido real desta serventia para
+  conferir. Deduzir por semelhança poria o título no livro errado, e livro
+  errado só aparece quando a certidão sai.
+</small></p>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>Protocolo</th><th>Cadastrado</th><th>Cliente</th><th>Serviço</th>
+      <th>Situação lá</th><th>Orçamento</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in fila %}
+    {% set protocolo = p.get('Protocolo') or '' %}
+    <tr>
+      <td><strong>{{ protocolo }}</strong>
+        {% if p.get('NotaDevolutivaAtiva') %}<br><small class="muted">com nota devolutiva ativa</small>{% endif %}</td>
+      <td><small>{{ (p.get('DataCadastro') or '')[:10] }}</small></td>
+      <td>{{ (p.get('Cliente') or {}).get('Nome') or p.get('NomeRazaoSocialRtd') or '—' }}
+        {% set doc = (p.get('Cliente') or {}).get('CPFCNPJ') or p.get('CpfCnpjRtd') %}
+        {% if doc %}<br><small class="muted">{{ doc }}</small>{% endif %}</td>
+      <td><small>{{ (p.get('Servico') or {}).get('Nome') or '—' }}
+        {% if p.get('DescricaoResumida') %}<br>{{ p.get('DescricaoResumida') }}{% endif %}</small></td>
+      <td><small>{{ (p.get('Situacao') or {}).get('Nome') or '—' }}</small></td>
+      <td><small>{{ p.get('ValorOrcamento') if p.get('ValorOrcamento') else '—' }}</small></td>
+      <td>
+        {% if protocolo in ja_na_casa %}
+          {% set local = ja_na_casa[protocolo] %}
+          <small class="muted">já está no protocolo</small>
+          <br><a href="{{ url_for('rcpj_rtd_titulo', titulo_id=local.titulo_id) }}"><small>abrir protocolo n. {{ local.numero }}</small></a>
+        {% else %}
+          <form method="post" action="{{ url_for('rcpj_rtd_onrtdpj_trazer', atribuicao=atribuicao) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="protocolo" value="{{ protocolo }}">
+            <button class="button primary" type="submit">Trazer</button>
+          </form>
+        {% endif %}
+        {% if p.get('LinkArquivoEnviado') %}
+        {# O LINK É DA CENTRAL, E ABRE FORA DO SISTEMA. Ele vem no
+           `PedidoModel`, e é onde está o título que o cliente mandou. Baixá-lo
+           por dentro exigiria decidir o que fazer com um endereço que veio de
+           fora — e isso não foi medido. #}
+        <br><a href="{{ p.get('LinkArquivoEnviado') }}" target="_blank" rel="noopener noreferrer"><small>o arquivo, na Central</small></a>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p><small class="muted">A Central devolve no máximo 1.200 pedidos por
+  consulta — é o teto declarado no contrato dela, e não deste sistema.</small></p>
+
+{% elif tem_token and not falha %}
+<div class="notice">
+  <strong>Nada esperando na Central agora.</strong> Isto quer dizer que a
+  consulta funcionou e não trouxe pedido nenhum — se tivesse falhado, a
+  mensagem seria outra.
+</div>
+{% endif %}
+{% endblock %}

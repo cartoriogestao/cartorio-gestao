@@ -1,0 +1,63 @@
+{#
+  SALVAR O PREENCHIMENTO E CONTINUAR DEPOIS — uma macro, e não dez cópias.
+
+  Relato #36 do oficial, 31/08/2026: «em todos os atos do cartório, durante o
+  preenchimento, é preciso ter um campo para salvar o progresso e continuar
+  depois».
+
+  O mecanismo já existia — `rascunho_de_tela.py`, a rota `/rascunhos/salvar` e
+  a tela de rascunhos — e estava ligado em UMA tela: a de assento novo do
+  Registro Civil. É o defeito de costume deste projeto: peça pronta que quase
+  nenhuma tela chama.
+
+  Escrever o bloco em cada uma das dez telas de ato novo daria dez versões
+  divergindo no primeiro conserto. É a lição de `_cobrar.html` e de
+  `_fraude.html`.
+
+  Uso:
+      {% from '_rascunho.html' import salvar_rascunho %}
+      {{ salvar_rascunho('notas_ato_novo', url_for('notas_ato_novo'),
+                         'Escritura', csrf_token,
+                         nome_em='nome,parte1_nome', do_ato='form-do-ato') }}
+
+  `nome_em` são os campos de onde sai o nome que dá título ao rascunho, na
+  ordem em que se tenta. Sem ele o rascunho fica «Assunto sem nome ainda», que
+  ainda é achável na lista, só menos.
+
+  `rascunho_id` — **quando a tela abriu A PARTIR de um rascunho salvo**
+  (`?rascunho_id=`), passe-o aqui: sem ele, salvar de novo cria um SEGUNDO
+  rascunho em vez de atualizar o primeiro, e o escrevente vê a mesma
+  certidão duplicada na lista. Achado em 09/09/2026, junto com o próprio
+  "abrir" — ver `rascunhos.html` e a rota de destino de cada tela.
+
+  O QUE ELE NÃO É, e a tela diz: rascunho **não é ato**. Não toma número, não
+  ocupa folha, não sela e não cobra. É por isso que ele pode existir sem o
+  formulário estar válido — que é a razão de ele existir.
+#}
+{% macro salvar_rascunho(tela, volta, assunto, csrf_token, nome_em='',
+                         do_ato='form-do-ato', rascunho_id=None) %}
+<form method="post" action="{{ url_for('rascunho_salvar') }}"
+      data-rascunho data-do-ato="{{ do_ato }}"
+      data-assunto="{{ assunto }}" data-nome-em="{{ nome_em }}"
+      hidden
+      style="padding:0 0 6px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="_tela" value="{{ tela }}">
+  <input type="hidden" name="_volta" value="{{ volta }}">
+  <input type="hidden" name="_titulo" data-titulo value="">
+  {% if rascunho_id %}<input type="hidden" name="_rascunho_id" value="{{ rascunho_id }}">{% endif %}
+  <button class="button secondary" type="submit">Salvar rascunho e continuar depois</button>
+  {# NÃO TERMINA HOJE (12/10/2026, o oficial): o mesmo rascunho, e um processo
+     aberto para ele — com responsável e prazo, em vez de esquecido na lista. #}
+  <button class="button secondary" type="submit"
+          formaction="{{ url_for('rascunho_salvar_e_abrir_processo') }}">Não termina hoje: salvar e abrir processo</button>
+  <small>Guarda o preenchimento; <strong>não lavra</strong> e não toma número.</small>
+</form>
+{% endmacro %}
+
+{# O ARQUIVO VAI UMA VEZ POR TELA, e por isso é macro separada: duas chamadas
+   de `salvar_rascunho` na mesma página não podem carregar o script duas
+   vezes. #}
+{% macro script_do_rascunho() %}
+<script src="{{ url_for('static', filename='rascunho.js') }}"></script>
+{% endmacro %}

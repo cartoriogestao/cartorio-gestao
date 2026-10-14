@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Ajuda do sistema</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+{% if not liberado %}
+{# QUEM RECUSA É O DOMÍNIO; esta tela só explica. #}
+<section class="panel">
+  <div class="panel-head"><span>A ajuda não está liberada para o seu perfil</span></div>
+  <p style="padding:14px">
+    Hoje ela vale para: <strong>{{ acesso.perfis_lista | join(', ') }}</strong>.
+    Quem pode abrir para mais perfis é o administrador, em
+    <em>Administrativo → Ajuda do sistema → Configurar</em>.
+  </p>
+</section>
+{% else %}
+
+{% if not tem_chave %}
+<div class="alert danger">
+  <strong>A chave da API ainda não foi informada</strong>, então nenhuma
+  consulta sai. Quem responde hoje é o {{ escolha.provedor_nome }} — é a chave
+  dele que falta.
+  {% if user.role == 'ADMIN' %}
+    Informe em <a href="{{ url_for('ajuda_configurar') }}">Configurar</a>.
+  {% else %}
+    Peça ao administrador para informá-la.
+  {% endif %}
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Perguntar</span>
+    <small>{{ quadro.consultas or 0 }} de {{ quadro.teto }} consultas hoje</small>
+  </div>
+
+  <p style="padding:14px 14px 0"><small>
+    <strong>A ajuda auxilia; não decide.</strong> Qualificar, recusar, lavrar e
+    cancelar são atos seus. Ela não gera número, selo nem matrícula — e se não
+    souber, diz que não sabe.
+  </small></p>
+
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="grid-column:1/-1">Sua pergunta
+      <textarea name="pergunta" rows="3" required
+                placeholder="Ex.: a CRA recusou um título com irregularidade 33. O que ela quer dizer e o que eu faço?"
+                >{{ pergunta }}</textarea></label>
+
+    <label>Assunto
+      <select name="assunto">
+        {% for chave, rotulo in assuntos.items() %}
+          <option value="{{ chave }}" {% if chave == assunto %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select></label>
+
+    <label>Quem responde
+      <select name="modelo">
+        {# **A PRIMEIRA OPÇÃO É A CONFIGURAÇÃO, E ELA VEM MARCADA.** Quem não
+           quer escolher não escolhe; quem quer o modelo mais forte para uma
+           dúvida difícil acha aqui, sem passar pela tela de configuração — e a
+           escolha vale só para esta pergunta. #}
+        <option value="">O configurado — {{ escolha.provedor_nome }}, {{ escolha.modelo }}</option>
+        {% for chave, m in modelos.items() %}
+          <option value="{{ chave }}">{{ m.rotulo }}</option>
+        {% endfor %}
+      </select></label>
+
+    <label style="grid-column:1/-1">O que o sistema mostra agora <small>(opcional — cole a mensagem de erro, o teor, o trecho do arquivo)</small>
+      <textarea name="contexto" rows="4"
+                placeholder="Cole aqui o que está na tela."></textarea></label>
+
+    {# DE ONDE VEM A DÚVIDA, já preenchido quando a pessoa chegou pela janela
+       de outra tela. É com este campo que a ajuda sabe qual é a tela, o
+       arquivo e as tabelas de que se está falando — campo que o operador tem
+       de preencher para a resposta ficar boa é campo que fica vazio. #}
+    <label>De onde vem a dúvida <small>(opcional)</small>
+      <input name="onde" value="{{ onde }}"
+             placeholder="Protesto — ficha do título"></label>
+    <label>Referência <small>(opcional)</small>
+      <input name="referencia" placeholder="título 84713/1"></label>
+
+    <div class="alert info" style="grid-column:1/-1">
+      <strong>Proteção obrigatória de dados.</strong>
+      Dados pessoais, dados sensíveis e segredos são substituídos antes de
+      qualquer consulta sair da serventia. Essa proteção não pode ser desativada
+      por usuário ou administrador.
+    </div>
+
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button" name="acao" value="prever" type="submit">Ver o que sairia</button>
+      <button class="button primary" name="acao" value="perguntar" type="submit">Perguntar</button>
+    </div>
+  </form>
+</section>
+
+{% if previa and not resposta %}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que sairia da serventia</span>
+    <small>nada foi enviado</small>
+  </div>
+  <div style="padding:14px; white-space:pre-wrap; font-family:monospace"
+       >{{ previa }}</div>
+</section>
+{% endif %}
+
+{% if resposta %}
+<section class="panel">
+  <div class="panel-head">
+    <span>A resposta</span>
+    <small>{{ resposta.modelo }}</small>
+  </div>
+  <div style="padding:14px; white-space:pre-wrap">{{ resposta.resposta }}</div>
+  <p style="padding:0 14px 14px"><small>
+    Isto é conselho, e não decisão. Confira antes de lavrar — e se a resposta
+    citar número, lei ou prazo, confira a fonte.
+    <a href="{{ url_for('ajuda_consulta', consulta_id=resposta.consulta_id) }}">Ver o que foi enviado</a>.
+  </small></p>
+</section>
+{% endif %}
+
+{% if user.role == 'ADMIN' %}
+<section class="panel">
+  <div class="panel-head"><span>Do diagnóstico à correção</span></div>
+  <p style="padding:14px 14px 0"><small>
+    A Ajuda pode analisar o relato, arquivos permitidos e trechos do próprio
+    sistema em modo somente leitura. Quando a correção chegar em pacote
+    oficial, a aplicação ocorre em outro fluxo: cópia isolada, revisão do
+    impacto, nova autenticação do administrador, backup e rollback.
+  </small></p>
+  <div class="actions" style="padding:0 14px 14px">
+    <a class="button" href="{{ url_for('ajuda_problemas') }}">Ver problemas diagnosticados</a>
+    <a class="button primary" href="{{ url_for('updates') }}">Revisar correções e atualizações</a>
+  </div>
+</section>
+{% endif %}
+
+{% if recentes %}
+<section class="panel">
+  <div class="panel-head"><span>As últimas consultas</span></div>
+  <table class="table">
+    <thead><tr><th>Quando</th><th>Assunto</th><th>Pergunta</th>
+               <th>Quem</th><th></th></tr></thead>
+    <tbody>
+    {% for c in recentes %}
+      <tr>
+        <td><small>{{ c.perguntada_em[:16] | replace('T', ' ') }}</small></td>
+        <td>{{ assuntos.get(c.assunto, c.assunto) }}</td>
+        <td>{{ c.pergunta[:70] }}{% if c.pergunta|length > 70 %}…{% endif %}
+            {%- if c.falha %} <small><strong>(não respondeu)</strong></small>{% endif %}
+            {%- if not c.mascarado %} <small><strong>(consulta histórica anterior à proteção obrigatória)</strong></small>{% endif %}</td>
+        <td><small>{{ c.perguntada_por or '—' }}</small></td>
+        <td><a class="button" href="{{ url_for('ajuda_consulta', consulta_id=c.id) }}">Ver</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

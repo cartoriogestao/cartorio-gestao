@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Livro 3 — modelos da ficha e certidão{% endblock %}
+{% block content %}
+<h1>Livro 3 — modelos</h1>
+<p class="muted">
+  Ajuste aqui o texto da <strong>ficha impressa</strong> e da
+  <strong>certidão</strong> do Livro 3 Auxiliar. À direita, a visualização
+  usa o mesmo motor da emissão, com <strong>dados de ensaio</strong> (registro
+  n.º 1243).
+</p>
+<p class="small muted">
+  O ajuste vale também em
+  <a href="{{ url_for('modelos', atribuicao='Registro de Imóveis', editar=editando.chave) }}">Administrativo → Modelos</a>
+  e em <a href="{{ url_for('ri_modelos_papeis', editar=editando.chave) }}">Registro de Imóveis → Modelos</a>
+  — é o mesmo catálogo da casa.
+</p>
+
+<div class="card">
+  <p><strong>O padrão não se perde.</strong> «Voltar ao padrão» apaga o ajuste
+  desta serventia; o texto de fábrica continua no programa.</p>
+  <p class="small muted">
+    {% if quantos_ajustados %}
+      {{ quantos_ajustados }} modelo{{ 's' if quantos_ajustados > 1 }} com ajuste;
+      os demais saem do padrão.
+    {% else %}
+      Nenhum modelo do Livro 3 foi ajustado ainda.
+    {% endif %}
+  </p>
+</div>
+
+<div class="actions">
+  <a class="button" href="{{ url_for('livro3_registros') }}">&larr; Registros do Livro 3</a>
+</div>
+
+<table>
+  <thead><tr><th>Papel</th><th>Origem hoje</th><th></th></tr></thead>
+  <tbody>
+  {% for m in itens %}
+    <tr>
+      <td><strong>{{ m.nome }}</strong><br><span class="small muted">{{ m.explica }}</span></td>
+      <td>{% if m.ajustado %}<span class="badge">ajustado</span>{% else %}<span class="small muted">padrão</span>{% endif %}</td>
+      <td><a href="{{ url_for('livro3_modelos', editar=m.chave) }}">editar</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if editando %}
+<link rel="stylesheet" href="{{ url_for('static', filename='modelos-editor.css') }}">
+<hr id="modelo-em-edicao">
+<section class="modelos-trabalho" data-modelo-editor
+         data-previa-url="{{ url_for('livro3_modelos_previa') }}">
+  <div class="modelo-identidade">
+    <div>
+      <p class="modelos-sobretitulo">DOCUMENTO EM EDIÇÃO</p>
+      <h2>{{ editando.nome }}</h2>
+      <p class="small muted">{{ editando.explica }}</p>
+    </div>
+    <span class="badge">{{ editando.formato }}</span>
+  </div>
+
+  {% if editando.erro %}
+  <div class="alerta danger" style="margin:0 18px 12px">
+    <strong>Este modelo está com um erro e o papel não vai sair:</strong>
+    {{ editando.erro }}
+  </div>
+  {% endif %}
+
+  <div class="modelos-divisao">
+    <div class="modelos-edicao">
+      <form class="modelo-parte" data-parte-painel="CORPO" hidden aria-hidden="true">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="ato" value="{{ editando.chave }}">
+      </form>
+      <p class="small muted" style="margin:0 0 10px">
+        Os claros se escrevem com <strong>chaves simples</strong> —
+        <code>{numero}</code>, <code>{teor}</code>, <code>{atos}</code> — como
+        na certidão e na ficha em papel.
+      </p>
+      <form method="post" action="{{ url_for('livro3_modelos') }}" class="modelo-parte"
+            data-parte-painel="CORPO">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="chave" value="{{ editando.chave }}">
+        <input type="hidden" name="ato" value="{{ editando.chave }}">
+        <textarea name="corpo" data-modelo-parte="CORPO" spellcheck="true" rows="22"
+                  >{{ editando.corpo }}</textarea>
+        {% if editando.legenda %}
+        <div class="modelo-legenda">
+          <div class="modelo-legenda-titulo">
+            <strong>Legenda de preenchimento</strong>
+            <span>Clique para inserir · ensaio registro 1243</span>
+          </div>
+          <div class="modelo-marcadores">
+            {% for m in editando.legenda %}
+            <button type="button" data-marcador="{{ m.codigo }}" title="{{ m.nome }}">
+              <code>{{ m.rotulo }}</code><small>{{ m.nome }}</small>
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        <p class="small muted">Padrão de fábrica: <code>{{ editando.onde }}</code></p>
+        <div class="modelo-acoes">
+          <span class="modelo-estado" data-modelo-estado>Prévia atualizada</span>
+          <button name="acao" value="salvar" class="primary" type="submit">Gravar o ajuste</button>
+          {% if editando.ajustado %}
+          <button name="acao" value="restaurar" class="secondary" type="submit"
+                  onclick="return confirm('Apagar o ajuste e voltar ao padrão do sistema?')"
+            >Voltar ao padrão</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+    <div class="modelos-previa-coluna">
+      <div class="modelos-previa-topo">
+        <strong>Visualização real</strong>
+        <span>Registro 1243 · atualização automática</span>
+      </div>
+      <div class="modelo-erro" data-modelo-erro hidden></div>
+      <iframe title="Prévia — {{ editando.nome }}" data-modelo-previa sandbox=""></iframe>
+    </div>
+  </div>
+</section>
+<script src="{{ url_for('static', filename='modelos-editor.js') }}"></script>
+<script>
+document.getElementById("modelo-em-edicao")?.scrollIntoView({behavior: "instant", block: "start"});
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Rascunhos{% endblock %}
+{% block content %}
+<h1>Rascunhos</h1>
+
+<div class="card">
+  <p class="small muted">
+    O que foi digitado numa tela e guardado para continuar depois — pedido seu
+    em 30/08/2026: <em>«em todos os atos do cartório, durante o preenchimento,
+    é preciso ter um campo para salvar o progresso e continuar depois»</em>.
+  </p>
+  <p class="small muted">
+    <strong>Rascunho não é ato.</strong> Ele não tomou número, não reservou
+    folha e não entrou em corrente nenhuma — pode ser abandonado sem que fique
+    nada devendo. Quem cobra o que está pela metade de verdade é
+    <em>Administrativo → Atendimento → O que ficou pelo caminho</em>, que mede
+    atos que já existem.
+  </p>
+</div>
+
+{% if not linhas %}
+<div class="card">
+  <p><strong>Nenhum rascunho guardado.</strong></p>
+  <p class="small muted">
+    Eles aparecem aqui quando alguém clica em <em>Salvar rascunho</em> no meio
+    do preenchimento de um ato.
+  </p>
+</div>
+{% else %}
+
+<table class="tabela">
+  <tr><th>o que é</th><th>tela</th><th>quem</th><th>última vez</th><th></th></tr>
+  {% for r in linhas %}
+  <tr {% if r.dias_parado %}class="danger"{% endif %}>
+    <td><strong>{{ r.titulo }}</strong>
+        {% if r.dias_parado %}
+          <br><span class="small">parado há <strong>{{ r.dias_parado }} dias</strong></span>
+        {% endif %}</td>
+    <td class="small muted">{{ r.tela }}{% if r.chave %} · {{ r.chave }}{% endif %}</td>
+    <td class="small">{{ r.atualizado_por or r.criado_por or '—' }}</td>
+    <td class="small">{{ (r.atualizado_em or r.criado_em or '')[:16]|replace('T', ' ') }}</td>
+    <td>
+      {% if r.abrir_url %}
+      <a class="button small" href="{{ r.abrir_url }}">abrir</a>
+      {% endif %}
+      <form method="post" action="{{ url_for('rascunho_virar_processo', rascunho_id=r.id) }}"
+            style="display:inline" title="Abre um processo com você de responsável e prazo no próximo dia útil">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button secondary small">virar processo</button>
+      </form>
+      <form method="post" action="{{ url_for('rascunho_apagar', rascunho_id=r.id) }}"
+            style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button secondary small">apagar</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="card">
+  <p class="small muted">
+    <strong>Rascunho parado há mais de {{ dias }} dias aparece marcado</strong>,
+    e o sistema <strong>não o apaga sozinho</strong>: seria jogar fora trabalho
+    de alguém sem avisar. Mas vale limpar — rascunho tem dado de cliente
+    dentro, e não deve virar um arquivo paralelo que ninguém sabe que existe.
+  </p>
+  <p class="small muted">
+    <strong>Senha, PIN e o código de segurança do formulário nunca são
+    guardados.</strong> O código, se fosse, voltaria inválido e faria o próprio
+    formulário recusar o rascunho — sem que ninguém entendesse por quê.
+  </p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Consulta {{ consulta.id }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('ajuda_consultar') }}">&larr; Ajuda do sistema</a>
+</div>
+
+{% if sanitizacao.historica_sem_protecao %}
+<div class="alert danger">
+  <strong>Consulta histórica anterior à proteção obrigatória.</strong>
+  Este registro foi preservado como prova do que ocorreu. A versão atual não
+  permite desativar a sanitização em nenhuma circunstância.
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>A pergunta</span>
+    <small>{{ consulta.perguntada_em[:16] | replace('T', ' ') }}</small>
+  </div>
+  <table class="table">
+    <tr><th style="width:22%">Quem perguntou</th><td>{{ consulta.perguntada_por or '—' }}</td></tr>
+    <tr><th>Assunto</th><td>{{ consulta.assunto }}</td></tr>
+    <tr><th>De onde</th><td>{{ consulta.onde or '—' }}</td></tr>
+    <tr><th>Referência</th><td>{{ consulta.referencia or '—' }}</td></tr>
+    <tr><th>Modelo</th><td>{{ consulta.modelo or '—' }}</td></tr>
+    {% if consulta.anexo_sha256 %}
+    <tr><th>Arquivo analisado</th><td>
+      {{ consulta.anexo_nome or 'arquivo sem nome' }}
+      — {{ consulta.anexo_tipo or consulta.anexo_extensao }}
+      — {{ consulta.anexo_bytes or 0 }} bytes
+      {% if consulta.anexo_cortado %}<strong>(texto cortado no limite local)</strong>{% endif %}
+      <br><small>O binário ficou na serventia; SHA-256 local:
+        <code>{{ consulta.anexo_sha256 }}</code></small>
+    </td></tr>
+    {% endif %}
+    <tr><th>Barreira de privacidade</th>
+        <td>{% if sanitizacao.versao %}regras v{{ sanitizacao.versao }}
+            {% elif sanitizacao.historica_sem_protecao %}não aplicada — registro histórico
+            {% else %}registro anterior à medição da versão{% endif %}</td></tr>
+    {% if sanitizacao.sha256 %}
+    <tr><th>SHA-256 do conteúdo enviado</th>
+        <td><code>{{ sanitizacao.sha256 }}</code></td></tr>
+    {% endif %}
+    {% if sanitizacao.contagens %}
+    <tr><th>Substituições</th><td>
+      {% for tipo, quantidade in sanitizacao.contagens.items() %}
+        <span class="tag">{{ tipo }}: {{ quantidade }}</span>
+      {% endfor %}
+    </td></tr>
+    {% endif %}
+    <tr><th>Tamanho</th>
+        <td>{{ consulta.tokens_entrada }} de entrada,
+            {{ consulta.tokens_saida }} de saída</td></tr>
+  </table>
+</section>
+
+{# O QUE SAIU DA SERVENTIA, INTEIRO. Guardar só a pergunta esconderia o
+   contexto que o sistema juntou sozinho — e é ele que explica por que a
+   resposta veio como veio. #}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que saiu da serventia</span>
+    <small>{% if sanitizacao.versao %}sanitizado — regras v{{ sanitizacao.versao }}
+           {% elif sanitizacao.historica_sem_protecao %}histórico sem proteção obrigatória
+           {% else %}registro histórico{% endif %}</small>
+  </div>
+  <div style="padding:14px; white-space:pre-wrap; font-family:monospace"
+       >{{ consulta.enviado }}</div>
+</section>
+
+{% if passos %}
+{# O RASTRO DO QUE FOI LIDO, FERRAMENTA POR FERRAMENTA. Sem ele, uma resposta
+   que diz «o sistema está com dois problemas abertos» não se distingue de uma
+   inventada — e a diferença entre as duas é justamente o motivo de a ajuda ter
+   ganhado ferramentas. #}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que a ajuda leu para responder</span>
+    <small>{{ passos | length }} turno{{ 's' if passos | length != 1 }}</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    A ajuda não responde só com o que sabe: ela <strong>lê esta
+    instalação</strong> antes de falar. O que ela pediu fica registrado aqui, e
+    o que voltou não é guardado — já está, mascarado, no que o modelo viu.
+    {% if consulta.perguntada_por and consulta.perguntada_por != '—' %}
+    Quem lê o banco e o código-fonte é só o perfil ADMIN: o balcão lê o estado
+    da casa, os problemas, a documentação e as telas.
+    {% endif %}
+  </small></p>
+  <table class="table">
+    <thead><tr><th style="width:10%">Turno</th><th>O que ela leu</th></tr></thead>
+    <tbody>
+    {% for passo in passos %}
+      <tr>
+        <td>{{ passo.turno }}</td>
+        <td>
+          {% if passo.leituras %}
+            {% for leitura in passo.leituras %}
+              <div><code>{{ leitura.ferramenta }}</code>
+                {% if leitura.erro %}
+                  <span class="badge alta">recusou</span>
+                {% else %}
+                  <small class="muted">{{ leitura.caracteres }} caracteres</small>
+                {% endif %}
+                {% if leitura.argumentos %}
+                  <br><small class="muted">{{ leitura.argumentos }}</small>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% else %}
+            <small class="muted">respondeu sem ler mais nada</small>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if consulta.falha %}
+<section class="panel">
+  <div class="panel-head"><span>Não houve resposta</span></div>
+  <p style="padding:14px">{{ consulta.falha }}</p>
+  <p style="padding:0 14px 14px"><small>
+    A falha fica guardada de propósito: um dia em que a internet caiu não pode
+    parecer um dia em que ninguém perguntou.
+  </small></p>
+</section>
+{% else %}
+<section class="panel">
+  <div class="panel-head"><span>A resposta</span></div>
+  <div style="padding:14px; white-space:pre-wrap">{{ consulta.resposta }}</div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Isto ajudou?</span>
+    {% if consulta.util is not none %}
+      <small>{% if consulta.util %}sim{% else %}não{% endif %}</small>
+    {% endif %}
+  </div>
+  {% if consulta.util is none %}
+  <form method="post" class="grid2" style="padding:14px"
+        action="{{ url_for('ajuda_avaliar', consulta_id=consulta.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="grid-column:1/-1">O que faltou, ou o que prestou <small>(opcional)</small>
+      <input name="observacao"></label>
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button primary" name="util" value="1">Ajudou</button>
+      <button class="button" name="util" value="0">Não ajudou</button>
+    </div>
+    <p style="grid-column:1/-1"><small>
+      Resposta marcada como ruim é por onde se descobre que a ajuda está mal
+      informada sobre esta casa — e é assim que ela melhora.
+    </small></p>
+  </form>
+  {% elif consulta.util_observacao %}
+  <p style="padding:14px">{{ consulta.util_observacao }}</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

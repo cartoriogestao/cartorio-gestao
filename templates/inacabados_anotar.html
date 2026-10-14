@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Anotar{% endblock %}
+{% block content %}
+<h1>Anotar</h1>
+
+{% if item %}
+<div class="card">
+  <p><strong>{{ item.fonte }}</strong> — {{ item.rotulo or '(sem nome)' }}</p>
+  <p class="small muted">
+    Desde {{ item.quando or '—' }}{% if item.dias is not none %},
+    há {{ item.dias }} dia(s){% endif %}.
+    Sai da lista {{ item.terminou }}.
+  </p>
+  <p class="small">
+    <a href="{{ url_for(item.tela, **{item.parametro: item.id}) }}">abrir a
+    tela deste ato</a> — <strong>é lá que se conclui</strong>, com as regras de
+    lá. Aqui só se anota.
+  </p>
+</div>
+{% endif %}
+
+<div class="card">
+  <p class="small muted">
+    A anotação é <strong>o único dado que esta lista guarda</strong> — quem está
+    cuidando, até quando, o que falta. Todo o resto ela mede das tabelas onde os
+    atos já moram.
+  </p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="voltar" value="{{ request.args.get('voltar', '') }}">
+    <p><label>O que falta<br>
+      <textarea name="texto" rows="3" cols="70"
+        >{{ atual.texto if atual else '' }}</textarea></label></p>
+    <p>
+      <label>Quem está cuidando
+        <input type="text" name="responsavel" size="28"
+               value="{{ atual.responsavel if atual else '' }}"></label>
+      <label>Até quando
+        <input type="date" name="ate"
+               value="{{ atual.ate if atual else '' }}"></label>
+    </p>
+    <p><button class="button">Guardar a anotação</button></p>
+  </form>
+</div>
+
+{% if atual %}
+<details>
+  <summary>Apagar esta anotação</summary>
+  <div class="card">
+    <p class="small muted">
+      <strong>O item continua na lista.</strong> Quem o tira de lá é a conclusão
+      do ato, na tela dele — se apagar a anotação sumisse com o item, esta lista
+      viraria uma gaveta, que é exatamente o que ela não é.
+    </p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="apagar">
+      <button class="button">Apagar</button>
+    </form>
+  </div>
+</details>
+{% endif %}
+
+<p><a href="{{ url_for('inacabados_lista') }}">voltar à lista</a></p>
+{% endblock %}

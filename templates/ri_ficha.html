@@ -1,0 +1,2425 @@
+﻿{% extends 'base.html' %}
+{% block title %}Matrícula {{ m.numero }}{% if m.complemento %}-{{ m.complemento }}{% endif %} — Registro de Imóveis{% endblock %}
+{% block heading %}<h1>Matrícula {{ m.numero }}{% if m.complemento %}-{{ m.complemento }}{% endif %}</h1>{% endblock %}
+{% block content %}
+{% from '_fraude.html' import alerta as alerta_fraude %}
+{% from '_cancelar_certidao.html' import formulario as cancelar_certidao,
+                                          motivo as motivo_do_cancelamento %}
+{% from '_parte_do_ato.html' import parte_do_ato %}
+{% from '_cnib_decidir.html' import resolver as resolver_cnib %}
+{% if cnib_pendencias %}
+<section id="cnib-pendente" role="alert" aria-label="Possivel indisponibilidade pendente"
+  style="background:#a40016;color:#fff;border:3px solid #69000e;border-radius:8px;padding:18px 22px;margin:0 0 20px;box-shadow:0 3px 10px #69000e40">
+  <strong style="display:block;font-size:1.3rem">ATENÇÃO — POSSÍVEL INDISPONIBILIDADE PENDENTE</strong>
+  <p>{{ cnib_pendencias|length }} ocorrência(s) da CNIB aguardando conferência ou lavratura nesta matrícula.</p>
+  <ul>
+  {% for c in cnib_pendencias %}
+    <li>{{ c.nome }}{% if c.documento %} — {{ c.documento }}{% endif %}; ordem {{ c.protocolo_cnib }}.
+    <strong>{% if c.criterio == 'documento' %}Coincidência por CPF/CNPJ — revisar a minuta e lavrar.{% else %}Coincidência apenas por nome — conferir possível homônimo.{% endif %}</strong>
+    {{ resolver_cnib(c, m.id, csrf_token) }}
+    </li>
+  {% endfor %}
+  </ul>
+  <p>O aviso permanece até a lavratura ou decisão registrada sobre a ocorrência.</p>
+  <a style="color:#fff;text-decoration:underline;font-weight:bold" href="{{ url_for('ri_cnib_pendentes') }}">Conferir pendências da CNIB</a>
+  {% if minutas %}<span> · </span><a style="color:#fff;text-decoration:underline;font-weight:bold" href="#minutas-para-lavrar">Revisar minutas desta matrícula</a>{% endif %}
+</section>
+{% endif %}
+
+
+
+{% if cnib_decisoes %}
+<details class="panel" id="cnib-historico" open>
+  <summary><strong>Conferências da CNIB registradas nesta matrícula</strong></summary>
+  {% for d in cnib_decisoes %}
+  <div style="padding:10px 14px;border-top:1px solid var(--linha,#ddd)">
+    <strong>{{ {'NAO_E_A_PESSOA':'Não é a mesma pessoa','ORDEM_BAIXADA':'Ordem confirmada como baixada','AVERBADA':'Averbada'}.get(d.decisao,d.decisao) }}</strong>
+    — {{ d.pessoa_nome }}; ordem {{ d.protocolo_cnib }}.
+    <p>{{ d.motivo or '' }}</p>
+    <small>Conferido por {{ d.decidido_por }} em {{ fmt_date(d.decidido_em) }}.</small>
+  </div>
+  {% endfor %}
+</details>
+{% endif %}
+
+{# O ALERTA DE FRAUDE VEM NO ALTO, antes dos atos. #}
+{{ alerta_fraude(fraudes, csrf_token, 'Registro de Imóveis — ficha', m.numero,
+                 url_for('ri_ficha', matricula_id=m.id)) }}
+
+{# AVISO_STUB_ARQUIVADO — 22/09/2026: stub do lote PDF_OCR_FATIADO (ex. 1009). #}
+{% if stub_arquivado %}
+<div class="notice warning" style="border-left:4px solid #b00020">
+  <strong>Esta ficha foi arquivada — não use o número {{ m.numero }} para o acervo.</strong>
+  <p style="margin:8px 0 0 0">Ela nasceu de um PDF OCR com número errado. A digitalização e os atos
+  <strong>não estão aqui</strong> (foram removidos de propósito). Por isso a tela parece “vazia”
+  e falta “o resto”.</p>
+  {% if matricula_corrigida %}
+  <p style="margin:8px 0 0 0">O conteúdo que parecia desta matrícula está na
+    <a href="{{ url_for('ri_ficha', matricula_id=matricula_corrigida.id) }}"><strong>matrícula {{ matricula_corrigida.numero }}</strong></a>.</p>
+  {% else %}
+  <p style="margin:8px 0 0 0">Veja a observação abaixo (Identificação) para saber para onde o conteúdo foi.</p>
+  {% endif %}
+  {% if m.observacao %}
+  <details style="margin-top:8px"><summary>Observação gravada na ficha</summary>
+    <pre style="white-space:pre-wrap;margin:6px 0 0 0">{{ m.observacao }}</pre>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
+{# O QUE FALTA NA ABERTURA VEM NO ALTO — 16/09/2026, e é correção minha.
+
+   Ele pediu duas coisas e disse duas vezes que não as achava: o nome de quem
+   abriu a matrícula e o selo da abertura. **As duas existiam**, e eu medi
+   onde: o botão de selar está a 71% desta página, dentro de uma gaveta
+   FECHADA no painel Identificação — que fica lá embaixo —, e quem abriu está
+   noutra tela, atrás de «Editar cadastro».
+
+   **Peça que existe e ninguém acha é, para quem está no balcão, peça que não
+   existe.** E eu ainda o mandei procurar «no painel Identificação», que é
+   justamente o que fica fora da vista. Por isso o que falta aparece aqui, no
+   alto, com o caminho de cada coisa ao lado — a mesma forma do alerta de
+   fraude e do «revisar antes de selar».
+
+   **E ele só aparece quando falta**: ficha selada e com quem a abriu não
+   mostra nada. Alarme que soa sempre é alarme que ninguém ouve. #}
+{% if m.tipo_ficha != 'ACERVO' and not m.encerrada and (not m.selo_abertura_texto or not m.aberta_nome) %}
+<div class="notice warning">
+  <strong>A abertura desta matrícula ainda não está completa.</strong>
+  <ul style="margin:6px 0 0 18px">
+    {% if not m.selo_abertura_texto %}
+    <li><strong>Falta o selo da abertura.</strong>
+      <a href="#selo-da-abertura">Selar agora</a> — o formulário está aberto no
+      fim da página, em «Identificação».</li>
+    {% endif %}
+    {% if not m.aberta_nome %}
+    <li><strong>Não consta quem abriu a matrícula</strong>, e por isso a ficha
+      impressa sai com a linha de assinatura em branco.
+      {% if user.role in ['ADMIN','MANAGER'] %}
+      <a href="{{ url_for('ri_editar_matricula', matricula_id=m.id) }}">Informar
+        quem abriu</a> — escolhe-se do cadastro de delegatários, e o título e o
+      tratamento saem de lá.
+      {% else %}
+      Quem informa é o oficial ou o gerente, em «Editar cadastro».
+      {% endif %}</li>
+    {% endif %}
+  </ul>
+</div>
+{% endif %}
+
+{# O QUE A REVISÃO APONTOU vem no alto, junto do alerta de fraude e antes
+   dos atos: quem abre esta ficha para selar precisa ver que há o que olhar
+   antes de rolar a página. Não trava nada — o ato já está lavrado. #}
+<section class="panel"{% if revisoes_abertas %} style="border-left:4px solid var(--warning,#b8860b)"{% endif %}>
+  <div class="panel-head"><span>Revisar antes de selar{% if revisoes_abertas %} &mdash;
+    {{ revisoes_abertas|length }}
+    nota{{ '' if revisoes_abertas|length == 1 else 's' }}{% endif %}</span></div>
+  <div style="padding:14px">
+    {% if not revisoes_abertas %}
+      <p class="small muted">Nada esperando conferência nesta matrícula.</p>
+    {% else %}
+    <p class="small muted">Apontado na revisão e ainda não conferido.
+    Nenhuma delas impede lavrar ou selar &mdash; o que elas fazem é não
+    deixar esquecer.</p>
+    {% endif %}
+    {% for r in revisoes_abertas %}
+    <div style="padding:10px 0;border-top:1px solid var(--linha,#ddd)">
+      <strong>{{ r['assunto'] }}</strong>
+      {% if r['ato_tipo'] %}<span class="badge">{{ r['ato_tipo'] }}-{{ '%02d'|format(r['ato_numero']) }}</span>{% endif %}
+      <p style="margin:6px 0">{{ r['nota'] }}</p>
+      {% if user.role not in ['ADMIN','MANAGER'] %}
+      <small class="muted">A baixa desta nota é do oficial ou do substituto.</small>
+      {% else %}
+      <details>
+        <summary class="button">Conferi</summary>
+        <form method="post" class="stack"
+              action="{{ url_for('ri_revisao_baixar', revisao_id=r['id']) }}">
+          {# nesta ficha `csrf_token` chega como VALOR, e não como a função
+             global do Jinja — quem escrever `csrf_token()` aqui derruba a
+             tela inteira com «'str' object is not callable». #}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="voltar"
+                 value="{{ url_for('ri_ficha', matricula_id=m.id) }}">
+          <label>O que você conferiu e decidiu
+            <textarea name="decisao" rows="3" required minlength="10"></textarea></label>
+          <div><button class="primary">Baixar a nota</button></div>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    {# ANOTAR À MÃO: quem está com o processo na frente vê algo e anota aqui,
+       sem esperar uma importação. Sem este formulário a rota de anotar
+       ficaria órfã — o defeito que mais se repetiu neste projeto. #}
+    <details style="margin-top:12px">
+      <summary class="button">Anotar algo a revisar</summary>
+      <form method="post" class="stack"
+            action="{{ url_for('ri_revisao_anotar', matricula_id=m.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Assunto
+          <input name="assunto" required minlength="3"
+                 placeholder="Ex.: conferir o memorial com o confrontante"></label>
+        <label>O que precisa ser conferido
+          <textarea name="nota" rows="3" required minlength="10"></textarea></label>
+        <label>De qual ato (deixe em branco se for da matrícula inteira)
+          <select name="ato_id">
+            <option value="">— a matrícula inteira —</option>
+            {% for a in atos %}
+            <option value="{{ a.id }}">{{ a.tipo }}-{{ '%02d'|format(a.numero) }}
+              {% if a.data_ato %}· {{ fmt_date(a.data_ato) }}{% endif %}</option>
+            {% endfor %}
+          </select></label>
+        <div><button class="primary">Anotar</button></div>
+      </form>
+    </details>
+  </div>
+</section>
+
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Todas as matrículas</a>
+  {% if m.tipo_ficha == 'ACERVO' %}<span class="badge media">Acervo — bloco único</span>{% else %}<span class="badge ok">Estruturada — {{ atos|length }} ato(s)</span>{% endif %}
+  {% if m.conferido %}<span class="badge ok">Conferida contra o livro</span>{% else %}<span class="badge alta">Não conferida</span>{% endif %}
+  {% if m.encerrada %}<span class="badge critica">Encerrada</span>{% endif %}
+  {% if not m.encerrada %}
+  <a class="button primary" href="{{ url_for('ri_ficha', matricula_id=m.id, lavrar=1) }}#novo-ato">
+    + Lavrar registro ou averbação
+  </a>
+  {% endif %}
+  {% if not m.encerrada %}
+  <a class="button" href="{{ url_for('ri_modelos_atos', matricula=m.id) }}">Lavrar a partir de modelo</a>
+  {% endif %}
+  <a class="button" href="{{ url_for('ri_ficha_odt', matricula_id=m.id, formato='pdf') }}">Imprimir ficha (PDF)</a>
+  <a class="button" href="{{ url_for('ri_ficha_odt', matricula_id=m.id, formato='odt') }}">.odt</a>
+  <a class="button" href="{{ url_for('ri_conferir_ficha', matricula_id=m.id) }}">Conferir com a digitalização</a>
+  {% if user.role in ['ADMIN','MANAGER'] and not m.encerrada %}
+  <a class="button" href="{{ url_for('ri_editar_matricula', matricula_id=m.id) }}">Editar cadastro</a>{% endif %}
+</div>
+
+{% if not m.conferido %}
+<div class="notice warning">
+  <strong>Ficha ainda não conferida contra o livro físico.</strong>
+  Veio importada do sistema anterior. O livro continua sendo a fonte legal:
+  confira antes de emitir certidão sobre esta matrícula.
+  {% if user.role in ['ADMIN','MANAGER'] %}
+  <form method="post" action="{{ url_for('ri_conferir', matricula_id=m.id) }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="primary">Marcar como conferida</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if m.tipo_ficha == 'ACERVO' %}
+<div class="notice">
+  <strong>Esta ficha não tem atos destacados.</strong>
+  O acervo antigo foi importado como um único bloco de teor, do jeito que estava
+  no sistema anterior. Os registros e averbações estão dentro do texto abaixo,
+  mas o sistema não consegue navegá-los um a um — nem deduzir daí qual é o
+  próximo número de ato. Ao lavrar um ato novo nesta matrícula, o número terá
+  de ser informado a partir do livro.
+</div>
+{% endif %}
+
+{% if quebras %}
+<div class="notice danger">
+  <strong>Integridade comprometida.</strong> {{ quebras|length }} ato(s) desta matrícula
+  não conferem com a cadeia de hash registrada na lavratura. Isso indica alteração
+  posterior do teor. Comunique a administração.
+</div>
+{% endif %}
+
+
+
+{# A CÓPIA DA CNIB DIZ A SUA IDADE SEMPRE, e não só quando acha ordem.
+
+   «Sistema pode melhorar o módulo do CNIB, cobrando atualizações frequentes»
+   — o oficial, 27/08/2026. Medido no mesmo dia: a ordem mais recente desta
+   cópia é de **19/03/2023**.
+
+   O defeito não era a cópia estar velha: era a ficha CALAR quando não achava
+   nada. A data só aparecia dentro do aviso vermelho — justamente quando o
+   escrevente já está alerta. Sem ordem, a ficha ficava limpa; e **limpa parece
+   "nada consta" quando na verdade é "não sei, minha cópia é de 2023"**.
+
+   É a mesma regra da lista vazia que diz onde trazer o acervo: ausência de
+   achado e ausência de busca parecem iguais na tela, e não são. #}
+{% if not cnib %}
+  {% if cnib_idade is not none and cnib_idade > cnib_dias_para_avisar %}
+  <div class="notice">
+    <strong>Nenhuma indisponibilidade nesta cópia da CNIB — mas ela tem
+      {{ cnib_idade }} dias.</strong>
+    <span class="small">As {{ cnib_base_n }} ordens desta cópia vão até
+      {{ fmt_date(cnib_base_data) }}. Ordem publicada depois disso
+      <strong>não aparece aqui</strong>, e a ficha limpa não quer dizer que não
+      existe: quer dizer que esta cópia não sabe. Traga a base atualizada da
+      Central antes de registrar.</span>
+  </div>
+  {% elif cnib_base_data %}
+  <p class="small muted">Nenhuma indisponibilidade nesta cópia da CNIB
+    ({{ cnib_base_n }} ordens, até {{ fmt_date(cnib_base_data) }}).</p>
+  {% else %}
+  <div class="notice">
+    <strong>Não há cópia da CNIB neste sistema.</strong>
+    <span class="small">A ficha não tem como avisar sobre indisponibilidade —
+      consulte a Central diretamente antes de registrar.</span>
+  </div>
+  {% endif %}
+{% endif %}
+
+{% if protocolos %}
+<section class="panel">
+  <div class="panel-head"><span>Protocolos desta matrícula ({{ protocolos|length }})</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Data</th><th>Prazo até</th><th>Objeto</th><th>Situação</th></tr></thead>
+    <tbody>{% for p in protocolos %}<tr><td>{{ p.numero }}</td><td>{{ fmt_date(p.data_prenotacao) }}</td>
+      <td>{{ fmt_date(p.data_limite) }}</td><td class="small">{{ (p.objeto or '—')[:60] }}</td>
+      <td>{{ p.situacao|capitalize }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{# MINUTAS A REVISAR — pedido do oficial em 15/09/2026: «aquela av 4, 5 e 6 não
+   podem ficar como atos prontos, precisam ficar como atos para serem revistos
+   e lavrados».
+
+   O QUE ELAS SÃO: texto de ato pronto, esperando revisão. Não têm número, não
+   estão na corrente de hash, não têm selo e não custaram nada — nada disso
+   acontece antes de a minuta virar ato, e quem a transforma é a **mesma** tela
+   de lavrar de sempre, com os campos já preenchidos.
+
+   POR QUE ELA APARECE ANTES DO «LAVRAR NOVO ATO»: é o que espera decisão.
+   Embaixo do formulário, quem abrisse a ficha não veria que há trabalho
+   parado — e minuta que ninguém vê é a averbação que não saiu. #}
+<span id="minutas-para-lavrar"></span>
+{% if minutas %}
+<section class="panel">
+  <h2 class="small">Minutas a revisar e lavrar
+    <span class="badge warning">{{ minutas|length }}</span></h2>
+  <p class="small muted">Texto pronto, <strong>ainda não lavrado</strong>: sem
+    número, sem selo e fora da ficha. «Revisar e lavrar» abre o formulário de
+    lavrar com o texto já dentro — o ato só existe quando você o lavrar ali.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Ato pretendido</th><th>Natureza</th><th>Origem</th>
+      <th>Teor</th><th></th></tr></thead>
+    <tbody>
+      {% for mi in minutas %}
+      <tr{% if minuta_aberta and minuta_aberta.id == mi.id %} class="destaque"{% endif %}>
+        <td><strong>{{ mi.tipo }}{% if mi.numero_pretendido %}-{{ '%02d'|format(mi.numero_pretendido) }}{% endif %}</strong>
+          {% if mi.data_pretendida %}<br><small class="muted">{{ fmt_date(mi.data_pretendida) }}</small>{% endif %}</td>
+        <td class="small">{{ mi.natureza_titulo or '—' }}</td>
+        <td class="small muted">{{ mi.origem }}
+          {%- if mi.origem_chave %}<br>{{ mi.origem_chave }}{% endif %}
+          {# O RASTRO DA REVISÃO FICA À VISTA. Ele é gravado com o NOME, e não
+             com o login, porque quem o lê é uma pessoa que abre esta ficha
+             meses depois e pergunta «quem revisou este texto?» — a mesma
+             convenção de «Ficha reaberta em … por …», logo acima. #}
+          {%- if mi.atualizado_em %}<br>revisada em
+            {{ fmt_date(mi.atualizado_em[:10]) }}
+            {%- if mi.atualizado_por %} por {{ mi.atualizado_por }}{% endif %}
+          {%- endif %}</td>
+        <td class="small">{{ mi.teor[:180] }}{% if mi.teor|length > 180 %}…{% endif %}</td>
+        <td>
+          {% if not m.encerrada %}
+          <a class="button" href="{{ url_for('ri_ficha', matricula_id=m.id, minuta=mi.id) }}#novo-ato">Revisar e lavrar</a>
+          {% else %}
+          <small class="muted">ficha encerrada — reabra para lavrar</small>
+          {% endif %}
+          {% if user.role in ['ADMIN','MANAGER'] %}
+          <details style="margin-top:6px">
+            <summary class="small">Descartar</summary>
+            <form method="post" class="stack"
+                  action="{{ url_for('ri_descartar_minuta', minuta_id=mi.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label class="small">Por que não vai virar ato
+                <textarea name="motivo" rows="2" required minlength="10"
+                          placeholder="Ex.: o título foi devolvido ao apresentante."></textarea></label>
+              <div><button class="danger">Descartar minuta</button></div>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if not m.encerrada %}
+{# NOVA MINUTA DIGITADA NA FICHA. `RIMIN.criar` existia com origem MANUAL e
+   nenhuma tela a chamava — função pronta sem porta, o defeito que este
+   projeto já pagou seis vezes. O rascunho é outra coisa: ele não entra na
+   fila de revisão. Esta minuta entra, e quem lavra é a rota de sempre.
+
+   O PAINEL «Minutas a revisar e lavrar» SÓ APARECE QUANDO HÁ FILA. Por isso
+   o formulário mora aqui, e não lá dentro: sem ele, a primeira minuta da
+   ficha não teria por onde nascer. Depois de guardada, ela cai naquele
+   painel, com os mesmos botões. #}
+<details class="panel" id="nova-minuta">
+  <summary><strong>Nova minuta</strong></summary>
+  <div style="padding:4px 2px 8px">
+    <p class="small muted">Texto pronto para revisar depois.
+      <strong>Não lavra, não toma número e não pede selo</strong> — entra na
+      fila desta ficha, com os mesmos botões das que já estão lá.</p>
+    <form method="post" action="{{ url_for('ri_minuta_criar', matricula_id=m.id) }}"
+          class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Tipo de ato
+        <select name="tipo" required>
+          <option value="AV">Averbação (AV)</option>
+          <option value="R">Registro (R)</option>
+        </select>
+      </label>
+      <label>Número pretendido
+        <input type="number" name="numero" min="1"
+               placeholder="se já souber — não é reserva">
+        <small>Deixe em branco se ainda não souber. O número só é tomado
+          quando alguém lavrar.</small>
+      </label>
+      <label>Data
+        <input type="date" name="data_ato" value="{{ hoje }}"></label>
+      <label>Natureza
+        <input name="natureza_titulo" placeholder="Compra e venda, hipoteca..."
+               autocomplete="off"></label>
+      <label>Protocolo
+        <input name="protocolo" placeholder="número da prenotação, se houver"></label>
+      <label class="span2">Teor
+        <textarea name="teor" rows="6" required minlength="20"
+                  placeholder="O texto que vai ser revisado e lavrado."></textarea></label>
+      <div class="actions span2">
+        <button class="primary">Guardar na fila de revisão</button>
+      </div>
+    </form>
+  </div>
+</details>
+{% set mn = minuta_aberta %}
+<details class="panel" id="novo-ato"{% if abrir_form or mn %} open{% endif %}>
+  <summary><strong>Lavrar novo ato nesta matrícula</strong></summary>
+  {% if mn %}
+  <div class="notice warning">
+    <strong>Revisando a minuta {{ mn.tipo }}{% if mn.numero_pretendido %}-{{ '%02d'|format(mn.numero_pretendido) }}{% endif %}.</strong>
+    Os campos vieram dela — <strong>confira tudo</strong> antes de lavrar. O ato
+    só passa a existir quando você clicar em «Lavrar ato»: é aí que ele toma
+    número, entra na corrente de integridade e o selo é pedido ao aparelho.
+    {% if mn.observacao %}<br><small class="muted">{{ mn.observacao }}</small>{% endif %}
+    {# AVISO, E NÃO DECISÃO: quem diz se o ato encerra a ficha é quem assina.
+       A régua é a palavra no teor, e ela só LEMBRA de marcar a caixa — marcar
+       sozinho fecharia uma ficha por causa de uma palavra no texto. #}
+    {% if 'ENCERRAMENTO' in (mn.teor or '')|upper and user.role in ['ADMIN','MANAGER'] %}
+    <br><strong>O teor desta minuta fala de ENCERRAMENTO.</strong> Se este ato
+    é a averbação que encerra a ficha, marque «Este ato encerra a matrícula»
+    mais abaixo — assim ele encerra no mesmo passo, sem lavrar uma segunda
+    averbação de encerramento.
+    {% endif %}
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('ri_lavrar_ato', matricula_id=m.id) }}" class="form-grid" id="form-lavrar-ato" data-rascunho-chave="cg-lavrar-ri-{{ m.id }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if enc_pre and not mn %}
+    {# ENCERRAMENTO PELO FORMULÁRIO DE LAVRAR — HOTFIX-2026-10-08-08. #}
+    <div class="span2 notice warning" id="encerramento-pre">
+      <strong>Encerramento da matrícula {{ m.numero }}.</strong> O texto do ato abaixo é um
+      <strong>modelo sugerido</strong>: escolha o tipo de encerramento, confira e edite tudo
+      (a prévia ao lado mostra como sai). Os trechos «PREENCHER…» precisam ser trocados —
+      com eles o ato não é lavrado. «Este ato encerra a matrícula?» já vem marcado.
+      <label style="margin-top:6px">Modelo de encerramento
+        <select data-encerramento-modelo>
+          {% for mo in enc_pre.modelos %}<option value="{{ mo.codigo }}"{% if mo.codigo == enc_pre.escolhido %} selected{% endif %}>{{ mo.rotulo }}</option>{% endfor %}
+        </select></label>
+      {% for mo in enc_pre.modelos %}<template data-encerramento-teor="{{ mo.codigo }}" data-motivo="{{ mo.motivo }}" data-natureza="{{ mo.natureza }}">{{ mo.teor }}</template>{% endfor %}
+      <small>Selo: escolha o item abaixo (averbação sem valor declarado costuma ser
+        <strong>16.22.2</strong>). Ato de ofício / sem ônus: marque «Selo gratuito / isento» e
+        escreva o motivo. O arquivamento é opcional.</small>
+    </div>
+    <script defer src="{{ url_for('static', filename='ri_encerramento.js') }}"></script>
+    {% endif %}
+    {# A PROCEDÊNCIA VIAJA COM O FORMULÁRIO. É por este campo que a rota sabe
+       qual minuta sai da fila quando o ato entra — na MESMA transação do ato,
+       de modo que ato que não entra deixa a minuta onde estava. #}
+    {% if mn %}<input type="hidden" name="minuta_id" value="{{ mn.id }}">
+      {% if mn.modelo_codigo %}<input type="hidden" name="modelo_codigo"
+        value="{{ mn.modelo_codigo }}">{% endif %}
+    {% endif %}
+
+    {# O PROTOCOLO VEM PRIMEIRO, E A RAZAO E QUE ESCOLHE-LO RECARREGA A
+       TELA — relato do oficial em 15/09/2026: «quando clica em protocolo
+       ele zera a natureza do titulo que veio antes. faz mais sentido o
+       protocolo e prenotacao ser em cima pra nao ocorrer de apagar parte
+       ja preenchida».
+
+       Ele esta certo, e o defeito era real: a caixa do protocolo de caixa
+       navega por `location.href` (é o GET que traz os ITENS daquele
+       protocolo), e o navegador monta o formulario de novo — tudo o que
+       estava digitado acima se perde, calado. A natureza do titulo ficava
+       logo acima, e era ela que sumia; a rota entao recusava por falta de
+       um campo que ele tinha preenchido.
+
+       POR QUE MUDAR A ORDEM E NAO GUARDAR O QUE FOI DIGITADO: guardar
+       tambem se faz, e se fara; mas a ordem e o conserto que nao depende
+       de nenhum campo novo lembrar de se repor — campo que nasca amanha
+       nesta tela ja nasce protegido. Primeiro se escolhe de onde vem a
+       cobranca, depois se escreve o ato. #}
+        {# PROTOCOLO UNIFICADO (15/09/2026 — «faça isso»).
+       Dois papéis, um fluxo: a prenotação (Livro 1) fixa a PRIORIDADE
+       (Lei 6.015/1973, art. 186) e ao lavrar encerra/amarra o ato; o
+       protocolo de caixa carrega os ITENS a selar. A ponte do esquema é
+       `cx_protocolos.ri_protocolo_id`. Enquanto ela não estiver
+       preenchida, mostra-se o depósito prévio (ponte da casa). Não se
+       inventa join por número. #}
+    <div class="span2" id="protocolo-unificado-ri">
+      <strong>Protocolo desta lavratura</strong>
+      <small class="muted">um fluxo só — prenotação (prioridade) e cobrança (itens)</small>
+
+      <label>Prenotação (Livro 1 — prioridade)
+        <select name="prenotacao_id_ui" id="prenotacao-select-ri"
+          onchange="(function(s){var v=s.value;var base='{{ url_for('ri_ficha', matricula_id=m.id, lavrar=1) }}';var q=[];if(v)q.push('prenotacao_id='+encodeURIComponent(v));{% if mn %}q.push('minuta={{ mn.id }}');{% endif %}location.href=base+(q.length?('&'+q.join('&')):'')+'#novo-ato';})(this)">
+          <option value="">— sem prenotação —</option>
+          {% for p in protocolos_abertos %}
+            <option value="{{ p.id }}"
+              data-numero="{{ p.numero }}"
+              {%- if prenotacao_escolhida_id and (prenotacao_escolhida_id|string) == (p.id|string) %} selected{% endif %}>
+              {{ p.numero }} — {{ fmt_date(p.data_prenotacao) }}
+              — {{ p.apresentante or 'sem apresentante' }}
+              {%- if p.cx_numero %} · caixa {{ p.cx_numero }}{% endif %}
+              {%- if p.depositos_n %} · {{ p.depositos_n }} depósito(s){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        <small>Escolha da lista para amarrar o ato à prenotação. Ela permanece aberta para atos seguintes do mesmo título; encerre na ficha do protocolo quando o título estiver esgotado</small>
+      </label>
+
+      <label>Número da prenotação no ato
+        <input name="protocolo" id="protocolo-numero-ri" list="prenotacoes-abertas"
+               value="{% if prenotacao_escolhida %}{{ prenotacao_escolhida.numero }}{% elif mn %}{{ mn.protocolo or '' }}{% endif %}"
+               placeholder="2026.08.146">
+      </label>
+      <datalist id="prenotacoes-abertas">
+        {% for p in protocolos_abertos %}
+          <option value="{{ p.numero }}">{{ fmt_date(p.data_prenotacao) }}
+            — {{ p.apresentante or 'sem apresentante' }}</option>
+        {% endfor %}
+      </datalist>
+      <label>Observação / data da prenotação (campo do ato)
+        <input name="prenotacao"
+          value="{{ mn.prenotacao or '' if mn else '' }}">
+      </label>
+
+      <div class="notice small" style="margin-top:8px">
+        <strong>Cobrança (protocolo de caixa)</strong> —
+        diz de onde vêm os itens a selar (mesmo padrão do RCPJ/RTD).
+        {% if caixa_origem == 'ligado' and caixa_ligado %}
+          Ligado automaticamente à prenotação: caixa
+          <strong>{{ caixa_ligado.numero }}</strong>
+          {% if caixa_ligado.interessado %} — {{ caixa_ligado.interessado }}{% endif %}.
+          Os itens aparecem abaixo; o que não marcar fica para o próximo ato.
+        {% elif caixa_origem == 'escolhido' and caixa_ligado %}
+          Caixa escolhido neste formulário:
+          <strong>{{ caixa_ligado.numero }}</strong>
+          {% if caixa_ligado.interessado %} — {{ caixa_ligado.interessado }}{% endif %}.
+          {% if prenotacao_escolhida_id and caixa_ligado.ri_protocolo_id
+                and (caixa_ligado.ri_protocolo_id|string) != (prenotacao_escolhida_id|string) %}
+            <em>Atenção: este caixa não está amarrado (FK) à prenotação
+            escolhida — a ligação `ri_protocolo_id` ainda não foi preenchida
+            nele.</em>
+          {% endif %}
+        {% elif prenotacao_escolhida_id %}
+          Esta prenotação ainda <strong>não tem protocolo de caixa ligado</strong>
+          (`cx_protocolos.ri_protocolo_id` vazio). Escolha o caixa abaixo, se
+          houver, ou use o catálogo com texto completo.
+        {% else %}
+          Sem prenotação: escolha o protocolo de caixa abaixo, ou os itens
+          pelo texto completo.
+        {% endif %}
+      </div>
+
+      {% if depositos_da_prenotacao %}
+      <div class="small" style="margin-top:6px">
+        <strong>Depósito(s) prévio(s) deste título</strong>
+        (ponte operacional da casa enquanto a FK do caixa não for preenchida):
+        <ul style="margin:4px 0 0 1.2em">
+          {% for d in depositos_da_prenotacao %}
+          <li>{{ d.numero }} — R$ {{ d.valor }}
+            {% if d.saldo is not none %} (saldo R$ {{ d.saldo }}){% endif %}
+            {% if d.encerrado %} · encerrado{% endif %}
+            {% if d.protocolo_id %} · já no caixa #{{ d.protocolo_id }}{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if protocolos_caixa %}
+      <label>Protocolo de caixa
+        <small>(override — se a prenotação já trouxe um ligado, pode trocar)</small>
+        <select name="protocolo_id" class="protocolo-select" id="protocolo-caixa-ri"
+          onchange="(function(s){var base='{{ url_for('ri_ficha', matricula_id=m.id, lavrar=1) }}';var q=[];{% if prenotacao_escolhida_id %}q.push('prenotacao_id={{ prenotacao_escolhida_id }}');{% endif %}if(s.value)q.push('protocolo_id='+encodeURIComponent(s.value));{% if mn %}q.push('minuta={{ mn.id }}');{% endif %}location.href=base+(q.length?('&'+q.join('&')):'')+'#novo-ato';})(this)">
+          <option value="">— sem protocolo de caixa —</option>
+          {% for pr in protocolos_caixa %}
+            <option value="{{ pr.id }}"
+              {%- if protocolo_caixa_escolhido and (protocolo_caixa_escolhido|string) == (pr.id|string) %} selected{% endif %}>
+              {{ pr.numero }} — {{ pr.interessado or '—' }}
+              {%- if pr.prenotacao_numero %} · prenot. {{ pr.prenotacao_numero }}{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      {% else %}
+      <input type="hidden" name="protocolo_id" value="">
+      <p class="small muted">Não há protocolo de caixa aberto nesta base —
+        use o catálogo com texto completo abaixo.</p>
+      {% endif %}
+    </div>
+
+    <label>Tipo de ato
+      <select name="tipo" required>
+        <option value="R"{% if mn and mn.tipo == 'R' %} selected{% endif %}>Registro (R)</option>
+        <option value="AV"{% if (mn and mn.tipo == 'AV') or (enc_pre and not mn) %} selected{% endif %}>Averbação (AV)</option>
+      </select>
+    </label>
+
+    {% if m.tipo_ficha == 'ACERVO' %}
+      <label>Número do ato
+        <input type="number" name="numero" min="1" required
+                 value="{{ (mn.numero_pretendido if mn and mn.numero_pretendido else (enc_pre.numero if enc_pre else (piso.proximo if piso and piso.divergente else ''))) }}"
+                 placeholder="conforme o livro">
+        {% if enc_pre and not mn %}<small>Sugerido: o próximo livre ({{ enc_pre.numero }}). Confira o livro físico — pode alterar.</small>{% endif %}
+        {% if mn and mn.numero_pretendido %}
+        <small>Veio da minuta. <strong>Confira o livro físico</strong> — o
+          número pretendido não é reserva: se outro ato já o tomou, o sistema
+          recusa.</small>
+        {% endif %}
+      </label>
+      <div class="span2 notice warning small">
+        Ficha de acervo: os atos anteriores estão dentro do bloco de teor e o sistema
+        não consegue deduzir a sequência. <strong>Confira o livro físico</strong> e informe
+        o número correto — o sistema só recusa se esse número já tiver sido lavrado aqui.
+      </div>
+    {% else %}
+      <label>Número do ato
+        <input value="automático — próximo da sequência" disabled>
+      </label>
+    {% endif %}
+
+    <label>Data do ato<input type="date" name="data_ato"
+      value="{{ (mn.data_pretendida[:10] if mn and mn.data_pretendida else hoje) }}"></label>
+    {# Lista do SAUIN — mesma tabela do selo eletrônico. É datalist, não select:
+       o escrevente pode escrever algo fora da lista, mas o que está na lista sai
+       com o nome exato que o selo reconhece. #}
+    {# O SELO EXIGE A NATUREZA, E A TELA PRECISA DIZER ISSO — relato do
+       oficial em 15/09/2026: a AV-05 foi lavrada e cancelada por falta dela,
+       e o campo estava aqui, com cara de opcional. Agora a rota recusa ANTES
+       de lavrar, e o rótulo avisa por quê. #}
+    <label>Natureza do título <span class="obrigatorio">— o selo exige</span>
+      <input name="natureza_titulo" list="naturezas_sauin"
+      value="{{ mn.natureza_titulo or '' if mn else (enc_pre.natureza if enc_pre else '') }}"
+      placeholder="Compra e venda, hipoteca..." autocomplete="off">
+      <small>Sem ela o selo não sai, e o ato <strong>não é lavrado</strong> —
+        escolha da lista para sair com o nome que o selo reconhece.</small></label>
+    <datalist id="naturezas_sauin">
+      {% for n in NATUREZAS_SAUIN %}<option value="{{ n }}">{% endfor %}
+    </datalist>
+    <label>Consulta CNIB na Central (protocolo){% if cnib_exige_protocolo %} <span class="obrigatorio">— exigido em alienação/oneração</span>{% endif %}
+      <input name="cnib_protocolo" maxlength="120" autocomplete="off"
+             placeholder="protocolo/hash da consulta, se feita na Central">
+      <small>A consulta à cópia local da CNIB{% if cnib_base_data %} (até {{ fmt_date(cnib_base_data) }}){% endif %}
+        pelas partes deste ato e pelos titulares atuais é <strong>gravada no
+        ato</strong> ao lavrar (TJMA 506). Informe aqui o protocolo quando a
+        consulta tiver sido feita na Central.</small></label>
+    {# Quem pratica o ato NÃO se escolhe — relato #65 do oficial, 15/09/2026:
+       «tirar a opção de escolher ato praticado por, atos novos são sempre
+       praticados pelo delegatário ou escrevente atual do sistema». Sai do
+       cadastro de quem está logado, e fica gravado no próprio ato: se a
+       função mudar depois, este ato continua dizendo o que dizia.
+       O cadastro de delegatários continua de pé para o timbre e para os atos
+       antigos — o que saiu foi o campo de ESCOLHA. #}
+    <div class="span2" id="quem-pratica-o-ato">
+      <strong>Quem pratica este ato</strong>
+      <div>{{ quem_assina[0] or '—' }}{% if quem_assina[1] %} — {{ quem_assina[1] }}{% endif %}</div>
+        <div class="small muted">É quem está logado, e não se escolhe por ato:
+          quem assina responde por ele. O nome fica gravado <strong>neste
+          ato</strong> e sai no fecho do papel — no <code>.odt</code> da ficha e
+          na certidão. A função é a do cadastro de Usuários
+          (Administrativo), que avisa quem está sem ela.</div>
+    </div>
+
+{# O TEOR EM DUAS COLUNAS: o que se edita e o que vai sair.
+       A mesma forma da tela de escritura das Notas — pedido do oficial em
+       14/09/2026: «incorpore o visualizador em tempo real do registro/
+       averbação (nos moldes que temos nas escrituras)».
+       A prévia acompanha a digitação pelo `teor-marcas.js`, que o `base.html`
+       já carrega em toda tela: o que a liga são os dois atributos abaixo
+       (`data-teor` na caixa e `data-teor-previa` no quadro). #}
+    <div class="span2">
+      <div class="grid2">
+        <div>
+          <label class="small muted" style="display:block;margin-bottom:4px">O texto do ato</label>
+          <textarea name="teor" rows="16" required data-teor="texto"
+                    style="width:100%;font-family:Georgia,serif"
+                    placeholder="Texto do registro ou da averbação, como sairá na ficha.">{{ mn.teor if mn else (enc_pre.teor if enc_pre else '') }}</textarea>
+        </div>
+        <div>
+          <label class="small muted" style="display:block;margin-bottom:4px">Como vai sair</label>
+          {# `teor-texto` é a MESMA classe com que a ficha desenha o teor
+             gravado (`teor_seguro` o põe num `<pre class="teor-texto">`): a
+             prévia e o ato ficam com a mesma quebra de linha e a mesma fonte. #}
+          <div class="teor-previa teor-texto" data-teor-previa="texto">
+            <p class="muted">Escreva ao lado — o texto aparece aqui como vai
+              sair na ficha.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# O SELO SAI DO SELADOR, e não da área de transferência — ordem do oficial
+       em 14/09/2026. Medido antes de tirar o campo antigo: em 1.245 atos,
+       **zero** tinham QR colado. O que a tela pergunta agora é o que o
+       envelope do selo precisa e que o sistema não tem como adivinhar. #}
+    <div class="span2"><strong>Selo digital do TJMA</strong>
+      <small class="muted">sai automático do selador, ao lavrar</small></div>
+    {# O ITEM NÃO SAI DO TIPO DO ATO, e por isso se pergunta: nos 120 envelopes
+       que esta casa mandou, o mesmo «sem valor» saiu com seis itens
+       diferentes. A lista vem na ordem de uso — item de um uso em cinquenta
+       não pode ficar na frente do que responde pela maioria —, e é datalist e
+       não select, porque quem atende pode precisar de um que a casa ainda não
+       usou. #}
+                {# ITENS DA TABELA DE EMOLUMENTOS — espelho do RCPJ (_cobrar.html).
+       Com protocolo de caixa (escolhido ou ligado à prenotação): a tabela
+       acompanha os itens dele. Sem protocolo: escolhe-se pelo texto completo.
+       A versao final lavrada ganha no fim a relacao de emolumentos + espaco
+       do selo; a relacao tambem pode constar no carimbo do selo.
+       O seletor de caixa ficou no painel «Protocolo desta lavratura» acima. #}
+    <div class="span2" id="itens-emolumentos-ri">
+      <strong>Itens da tabela de emolumentos</strong>
+      <small class="muted">o que vira selo e a conta do fecho do teor</small>
+
+      {% if protocolo_caixa_escolhido %}
+        {% if itens_do_protocolo_caixa %}
+        <p class="small"><strong>Marque os itens deste protocolo que valem para este ato</strong>
+          — o que não marcar fica para o próximo ato do mesmo protocolo.</p>
+        <table class="table">
+          {# «QTD» DIZIA O QUE FOI COMPRADO, E NÃO O QUE SOBRA — relato do
+             oficial em 15/09/2026: «selei o ato, mas o numero de atos sem
+             valor declarado no protocolo permanece em 5».
+
+             Ele estava certo, e o banco estava certo: o item tem quantidade 5
+             e `quantidade_usada` 3 — **saldo 2**. A coluna imprimia
+             `i.quantidade`, que é a quantidade CONTRATADA e nunca muda, de
+             modo que a tela dizia «5» depois da primeira averbação e diria
+             «5» depois da quinta. Número que não se mexe numa coluna que
+             deveria diminuir é o carimbo que mente: quem lê conclui que o
+             consumo não foi registrado.
+
+             `itens_disponiveis` já devolve `saldo` e `quantidade_usada`
+             recalculados; era a tela que não os usava. #}
+          <thead><tr><th>Selar</th><th>Item</th><th>Descrição</th>
+            <th>Ainda cabem</th><th>Valor</th></tr></thead>
+          <tbody>
+          {% for i in itens_do_protocolo_caixa %}
+          <tr>
+            <td><input type="checkbox" name="protocolo_item_id" value="{{ i.id }}" checked></td>
+            <td>{{ i.codigo_ato }}</td>
+            <td><small>{{ i.descricao or '—' }}</small></td>
+            <td><strong>{{ i.saldo if i.saldo is defined else i.quantidade }}</strong>
+              <small class="muted">de {{ i.quantidade }}</small></td>
+            <td>{% if i.valor_total %}R$ {{ i.valor_total }}{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="small muted">Este protocolo não tem mais itens disponíveis —
+          escolha outro caixa acima ou use o catálogo abaixo.</p>
+        {% endif %}
+      {% endif %}
+
+      {% if not protocolo_caixa_escolhido or not itens_do_protocolo_caixa %}
+      <p class="small"><strong>{% if protocolo_caixa_escolhido %}Complemento / catálogo:{% else %}Sem protocolo de caixa:{% endif %}</strong>
+        escolha pelo texto completo do item (ou digite um código fora da lista).</p>
+      <table class="table">
+        <thead><tr><th></th><th>Item</th><th>Descrição completa</th><th>Usos</th><th>Emol.</th></tr></thead>
+        <tbody>
+        {% for i in itens_ri_texto_completo or [] %}
+        <tr>
+          <td><input type="checkbox" name="codigo_tj_item" value="{{ i.codigo_tj }}"></td>
+          <td>{{ i.codigo_tj }}</td>
+          <td><small>{{ i.descricao or '—' }}</small></td>
+          <td>{{ i.usos }}</td>
+          <td>{% if i.emolumentos %}R$ {{ i.emolumentos }}{% else %}—{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5"><small class="muted">Catálogo sem descrições nesta base —
+          use o campo livre abaixo.</small></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <label>Outro código (fora da lista)
+        <input name="codigo_tj" list="itens_do_ato_do_ri" autocomplete="off"
+               placeholder="16.22.2">
+        <small>Sem item marcado acima e sem código aqui o ato não é lavrado,
+          salvo autorização expressa.</small></label>
+      <datalist id="itens_do_ato_do_ri">
+        {% for codigo, usos in ITENS_DO_ATO_DO_RI %}
+          <option value="{{ codigo }}">{{ codigo }} — {{ usos }} uso(s) nesta casa</option>
+        {% endfor %}
+      </datalist>
+      {% else %}
+      <input type="hidden" name="codigo_tj" value="">
+      {% endif %}
+
+      {# VARIOS SELOS NA LAVRATURA — Beatriz 24/09/2026 (matricula 4001).
+         O «+ Adicionar outro selo» existia so em «Selar este ato». Na 4001 o
+         desmembramento ainda e minuta: ela procura multi-selo no campo de
+         item ao lavrar. Mesmos names codigo_tj_selo/qtd_selo da rota de selar. #}
+      <datalist id="itens_do_ato_do_ri_lavrar_multi">
+        {% for codigo, usos in ITENS_DO_ATO_DO_RI %}
+          <option value="{{ codigo }}">{{ codigo }} — {{ usos }} uso(s) nesta casa</option>
+        {% endfor %}
+      </datalist>
+      <div id="lista-selos-lavrar" style="margin-top:10px">
+        <strong>Varios selos neste ato</strong>
+        <small class="muted">um ou varios itens — ex.: 16.22.8.1 + 16.5 duas vezes</small>
+        <div class="linha-selo" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:6px">
+          <label style="flex:2;min-width:10em">Item da tabela de custas
+            <input name="codigo_tj_selo" value=""
+                   list="itens_do_ato_do_ri_lavrar_multi" autocomplete="off"
+                   placeholder="Ex.: 16.22.8.1"></label>
+          <label style="width:5em">Qtd
+            <input name="qtd_selo" type="number" min="1" max="50" value="1"></label>
+          <button type="button" class="small" title="Remover esta linha"
+                  onclick="(function(b){var L=b.closest('#lista-selos-lavrar');if(L&&L.querySelectorAll('.linha-selo').length>1)b.closest('.linha-selo').remove();})(this)">×</button>
+        </div>
+      </div>
+      <div style="margin-top:6px">
+        <button type="button" class="small"
+                onclick="(function(btn){var L=document.getElementById('lista-selos-lavrar');if(!L)return;var m=L.querySelector('.linha-selo');if(!m)return;var c=m.cloneNode(true);c.querySelectorAll('input').forEach(function(i){if(i.name==='qtd_selo')i.value='1';else i.value='';});L.appendChild(c);})(this)">+ Adicionar outro selo</button>
+        <small class="muted">Se preencher aqui, estes itens mandam no selo (sobrepoe o catalogo acima).</small>
+      </div>
+    </div>
+{# O VALOR ESCOLHE O CAMINHO DO SELO, e não o tipo do ato: há averbação com
+       valor e registro sem. Em branco, o selo sai pelo caminho «sem valor
+       declarado». #}
+    <label>Valor declarado (base de cálculo)
+      <input name="base_calculo" placeholder="0,00">
+      <small>Obrigatório no item <strong>16.3</strong> (registro com valor declarado) — use o valor do título (ex.: «valor do imóvel e benfeitorias»). Em branco só serve a atos sem valor; isento/gratuito <strong>não</strong> dispensa este campo.</small></label>
+    <label class="span2">Emolumentos
+      <input name="emolumentos" placeholder="preenchido pelo selo, quando ele sai">
+    </label>
+    {# A GRATUIDADE É EXCEÇÃO NO RI, E A TELA DIZ ISSO COM O NÚMERO — pedido do
+       oficial em 14/09/2026. Medido: 48 das 829 prenotações saíram isentas
+       (5,8%) e **nenhum dos 120 atos**; quase todas por REURB-S.
+       Fica fechada por padrão: quem marca está declarando que aquele ato não
+       se cobra, e o motivo vai impresso dentro do selo. #}
+    {# GRATUIDADE DO ATO — 23/09/2026 (Beatriz, R-01/4019).
+       Antes ficava num <details> fechado: bastava digitar o motivo sem
+       marcar o checkbox e o selo saía COBRADO (~R$ 1.173) com isento=0.
+       Agora o aviso COBRADO/GRATUITO fica à vista (espelho da certidão RI)
+       e digitar o motivo marca o checkbox sozinho. #}
+    <label class="span2">Modalidade REURB (este ato)
+      <select name="reurb_tipo" id="ato_ri_reurb_tipo"
+              onchange="(function(s){var cb=document.getElementById('ato_ri_isento');var m=document.getElementById('ato_ri_motivo_isencao');if(s.value==='S'){if(cb&&!cb.checked){cb.checked=true;cb.dispatchEvent(new Event('change'));}if(m&&!(m.value||'').trim())m.value='O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS PREVISTO NA LEI Nº 13.465, DE 2017.';}})(this)">
+        <option value="">Não é REURB / não se aplica</option>
+        <option value="S">REURB-S — isento (Lei 13.465/2017, art. 13 § 1º)</option>
+        <option value="E">REURB-E — cobrado</option>
+        <option value="MISTO">Misto — cobrado (isento só se marcado à mão)</option>
+      </select>
+      <small class="muted">Pedido Beatriz 30/09/2026: identificar S / E / misto em todos os atos RI.
+        REURB-S marca isento automaticamente; E e misto seguem cobrados.</small>
+    </label>
+    <div class="span2 card" id="ato-ri-selo-aviso" style="margin:0">
+      <p style="margin:0"><strong id="ato-ri-selo-titulo">Este selo será COBRADO</strong>
+        — registro/averbação desta matrícula.</p>
+      <p class="small" style="margin:6px 0 0" id="ato-ri-selo-porque">
+        Emolumentos conforme a tabela do TJMA. Marque abaixo só se houver
+        norma que dispense o pagamento (art. 290-A, REURB, etc.).</p>
+    </div>
+    <label class="span2" style="display:flex;gap:8px;align-items:flex-start">
+      <input type="checkbox" name="isento" value="1" id="ato_ri_isento"
+             onchange="(function(cb){var t=document.getElementById('ato-ri-selo-titulo');var p=document.getElementById('ato-ri-selo-porque');var m=document.getElementById('ato_ri_motivo_isencao');var a=document.getElementById('ato-ri-selo-aviso');var b=document.getElementById('ato-ri-bloco-gratuidade');if(b)b.style.display=cb.checked?'block':'none';if(t)t.textContent=cb.checked?'Este selo é gratuito':'Este selo será COBRADO';if(p)p.textContent=cb.checked?'Selo isento: o motivo vai escrito dentro do selo (motivoIsentoGratuito) e é o que a correição lê.':'Emolumentos conforme a tabela do TJMA. Marque abaixo só se houver norma que dispense o pagamento (art. 290-A, REURB, etc.).';if(a){if(cb.checked)a.classList.add('warning');else a.classList.remove('warning');}if(m)m.required=cb.checked;})(this)">
+      <span><strong>Selo gratuito / isento</strong><br>
+        <small>Exige motivo escrito. Sem o motivo o ato não é lavrado.
+          Se você só digitar o motivo, o sistema também trata como isento.</small></span>
+    </label>
+    <div id="ato-ri-bloco-gratuidade" class="span2" style="display:none">
+      <label>Motivo da gratuidade
+        <small><strong>obrigatório</strong> se gratuito — vai escrito dentro do selo</small>
+        <input name="motivo_isencao" id="ato_ri_motivo_isencao"
+               list="motivos_da_gratuidade_do_ri"
+               autocomplete="off"
+               placeholder="O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS..."
+               oninput="(function(inp){var cb=document.getElementById('ato_ri_isento');if(!cb)return;if((inp.value||'').trim()){if(!cb.checked){cb.checked=true;cb.dispatchEvent(new Event('change'));}}})(this)">
+      </label>
+      <datalist id="motivos_da_gratuidade_do_ri">
+        {% for m in MOTIVOS_DA_GRATUIDADE_DO_RI %}
+          <option value="{{ m.texto }}">{{ m.rotulo }} — {{ m.fundamento }}</option>
+        {% endfor %}
+      </datalist>
+      <small class="muted">A lista traz o que esta casa já escreveu; pode escrever outro
+        (art. 290-A / reforma agrária / REURB…).</small>
+    </div>
+    {# O SELO À MÃO SAIU EM 15/09/2026 — relato #66, ordem do oficial:
+       «precisamos remover a opção de digitar a etiqueta completa do selo dos
+       atos (…) nao trabalhamos com essa hipotese (…) o selo sera emitido
+       apenas pelo selador no sistema».
+       Aqui havia um `<details>` «O selador não respondeu? Digitar o selo à mão»
+       com a etiqueta completa num `<textarea name="selo_texto">`. **A ROTA
+       CONTINUA ACEITANDO O CAMPO** — `selo_texto` é o nome da coluna em
+       `ri_atos`, é por ele que os testes põem um selo à mão, e é a rota que faz
+       a guarda (selo digitado é conferido dentro da transação do ato) —, mas a
+       tela não o oferece mais.
+       **E a etiqueta completa não existia em nenhuma outra tela da casa**:
+       medido nos templates, ela estava só nesta ficha (duas vezes) e na
+       abertura da matrícula. O que as outras pedem é o NÚMERO do selo
+       (`name="selo"`), que é outra coisa e fica: é ele que o leitor do selo
+       digita. **E a tela das etiquetas do RCPJ/RTD não é exceção** — lá se
+       monta a etiqueta de um selo EXTERNO, e nela o número e o texto vêm do
+       papel, que não é desta casa nem deste aparelho.
+       Fica no lugar a saída que já existe e é a correta: o ato entra sem selo,
+       aparece em «atos sem selo», e o botão «Selar este ato» o sela depois. #}
+    {#- ESTA CAIXA DIZIA O CONTRÁRIO DO QUE O MOTOR FAZ, e ficou de pé de 16/09
+        a 18/09/2026: afirmava, sem condição, que o ato «entra **sem selo** e
+        aparece na lista de atos sem selo». **Medido em 18/09/2026**, repetindo
+        o POST de lavratura nesta instalação sem aparelho apontado: `ri_atos`
+        fica em **zero** e o ato volta a ser minuta — que é o item 1 da decisão
+        dele, «se falhar o selo, SEMPRE suspender o ato para corrigir o
+        problema». Quem lesse a caixa acreditaria que selo que falha não custa
+        nada, e ele custa o ato inteiro de volta para a fila.
+
+        O ATO SEM SELO CONTINUA NA FRASE, e a razão é medida: ele existe — é o
+        de acervo sem item de custa, que o oficial dispensou em 16/09 —, e as
+        duas âncoras «atos sem selo» e «Selar este ato» são cobradas por
+        `tests/test_relato_66_etiqueta_do_selo.py`, que guarda a saída que
+        sobrou quando a etiqueta completa saiu da tela. O que muda aqui é a
+        CONDIÇÃO: elas valem para o ato que ficou, e não para o selo que
+        falhou — esse volta para a fila. #}
+        {# ARQUIVAMENTO OPCIONAL (16.39) — Beatriz 23/09/2026.
+       Nao obrigatorio: sem marcar, a lavratura flui igual. Com marcar,
+       pede folhas e gera o selo de arquivamento apos o selo do ato. #}
+    <details class="span2" open>
+      <summary><strong>Arquivamento do documento/processo</strong>
+        <small class="muted">(opcional — item 16.39)</small></summary>
+      <label class="check">
+        <input type="checkbox" name="gerar_arquivamento" value="1"
+               id="gerar_arquivamento_ri"
+               onchange="(function(c){var f=document.getElementById('folhas_arquivamento_ri'); if(!f)return; f.required=!!c.checked; f.disabled=!c.checked; if(!c.checked){f.value='';}})(this)">
+        Gerar também o <strong>selo de arquivamento</strong>
+      </label>
+      <label>Folhas do documento / processo apresentado
+        <input type="number" name="folhas_arquivamento" id="folhas_arquivamento_ri"
+               min="1" step="1" placeholder="ex.: 12" disabled
+               title="Obrigatorio somente se marcar arquivamento">
+        <small>Quantidade de folhas a arquivar (ex.: processo na abertura da
+          matrícula). Só é obrigatório se a caixa acima estiver marcada.
+          Sem marcar, o ato sela e segue normalmente.</small>
+      </label>
+    </details>
+
+<div class="notice small span2">
+      O selo é pedido ao aparelho da rede local. Se ele não responder, o ato
+      <strong>não é lavrado</strong>: ele volta para a fila de <strong>minutas
+      a revisar e lavrar</strong> com tudo o que você digitou — nada do trabalho
+      se perde, e nem o número nem o selo são tomados. E o ato que entrar
+      <strong>sem selo</strong> aparece na lista de <strong>atos sem
+      selo</strong>, com o botão <strong>Selar este ato</strong> ao lado — o
+      mesmo selo sai depois, sem comprar outro.
+    </div>
+    {# A CAIXA «lavrar mesmo se o selo falhar» SAIU EM 16/09/2026, pelo
+       relato #77: «se falhar o selo, sempre suspender o ato para corrigir o
+       problema». O motor já recusava sempre (`ri_web`, sem bypass); o que
+       ficou aqui foi o desenho dela, e caixa que não faz nada é pior que
+       caixa nenhuma — o balcão marca, leva a mesma recusa, e a recusa mandava
+       marcar. #}
+
+    {#- AS PARTES DO ATO — relato #86, 18/09/2026, e o relato tem duas metades.
+
+        «precisa ser possivel incluir tantas quantas as partes do ato» — e o
+        TETO DE TRÊS NÃO TINHA POR ONDE SE CUMPRIR. Medido na produção antes de
+        mexer: **44 atos desta casa têm mais de três partes**, o maior tem
+        **22** (R-1 da matrícula 3.757, de 1984), e **251 fichas** têm mais de
+        três. O formulário desenhava três blocos e mais nenhum, e a resposta da
+        tela era «parte entra ao lavrar o ato» — que é esta tela.
+
+        «precisa organizar melhor para separar dados de cada parte» — e os
+        campos saíam EM FILA: nome, nome, nome, CPF, CPF, CPF, papel, papel,
+        papel, porque a grade lê por linha. Quem digitasse a terceira parte
+        contava as colunas para saber de quem era cada campo.
+
+        O BLOCO POR PARTE MORA EM `_parte_do_ato.html`, e é o mesmo para a
+        parte guardada e para a linha em branco — dois desenhos fariam o campo
+        novo nascer de um lado só.
+
+        AS PARTES DA MINUTA CONTINUAM VOLTANDO PREENCHIDAS (16/09/2026): é o
+        que faz a minuta suspensa pelo selo voltar inteira, sem redigitar. -#}
+    {% set guardadas = minuta_partes or [] %}
+    {% if guardadas %}
+    <div class="span2"><small class="muted">As
+      {{ guardadas|length }} parte(s) abaixo vieram guardadas nesta minuta —
+      confira antes de lavrar.</small></div>
+    {% endif %}
+    <section class="partes-do-ato span2" data-partes-do-ato>
+      <div class="partes-cabeca">
+        <strong>Partes do ato</strong>
+        <small class="muted" data-contagem>bloco sem nome não é gravado</small>
+      </div>
+      {% for pa in guardadas %}{{ parte_do_ato(pa) }}{% endfor %}
+      {# A PRIMEIRA LINHA EM BRANCO VEM DO SERVIDOR, e isto é a régua da
+         janela da ajuda aplicada aqui: **a tela continua utilizável sem
+         JavaScript** — com uma parte nova, que é o que ela fazia antes do
+         relato. O primeiro bloco não depende de script nenhum; o
+         `ri_partes_do_ato.js` é que acrescenta os outros. #}
+      {{ parte_do_ato() }}
+      {# O MOLDE DO BLOCO NOVO, e `<template>` é de propósito: o conteúdo dele
+         é inerte — não é desenhado, não entra no formulário e o Tab não passa
+         por ele. Bloco escondido com CSS seria um campo de verdade, que
+         alguém preenche sem ver.
+
+         É este molde que o `ri_partes_do_ato.js` clona. Escrever o mesmo bloco
+         duas vezes — uma aqui e outra dentro do script — faria o bloco
+         acrescentado divergir do primeiro no dia em que a tela ganhasse um
+         campo. #}
+      <template data-modelo-parte>{{ parte_do_ato() }}</template>
+      <div data-partes-vazias></div>
+      {# SEM TETO, e de propósito: o pedido é «tantas quantas as partes do
+         ato», e um número aqui seria eu escolhendo por quem lavra.
+
+         Ele NASCE ESCONDIDO e o script o revela: botão que parece acrescentar
+         e não acrescenta é pior que botão nenhum — é a mesma razão do botão
+         de rascunho, em `rascunho.js`. #}
+      <button type="button" class="ghost" data-acrescentar-parte hidden>
+        Acrescentar parte</button>
+    </section>
+
+    {# ESTE ATO ENCERRA A FICHA? — pedido do oficial em 15/09/2026: «deixe tudo
+       pronto para começar, revisar e encerrar qualquer ato no ri».
+
+       O CASO QUE FEZ ISTO NASCER: a AV-06 da 3.110 **é** a averbação de
+       encerramento — o teor dela diz «ENCERRAMENTO DA ESCRITURAÇÃO NO LIVRO E
+       TRANSPORTE PARA FICHA». Lavrá-la aqui deixava a ficha aberta, e fechá-la
+       depois pelo botão «Encerrar esta matrícula» **lavraria outra averbação**:
+       a ficha terminaria com dois encerramentos, e quem a lesse não saberia
+       qual vale.
+
+       Fica fechada por padrão, e é só do oficial: quem marca está dizendo que
+       esta ficha não recebe mais ato nenhum. #}
+    {% if user.role in ['ADMIN','MANAGER'] %}
+    <details class="span2" id="encerra-este-ato"{% if enc_pre and not mn %} open{% endif %}>
+      <summary class="small muted">Este ato <strong>encerra</strong> a
+        matrícula? <strong>É exceção</strong> — marque só quando o próprio ato
+        for a averbação de encerramento</summary>
+      <div class="form-grid">
+        <label class="check span2">
+          <input type="checkbox" name="encerra" value="1"{% if enc_pre and not mn %} checked{% endif %}>
+          Sim: este ato encerra a escrituração desta matrícula
+        </label>
+        <label class="span2">Motivo do encerramento
+          <input name="encerra_motivo" minlength="10" value="{{ enc_pre.motivo if enc_pre and not mn else '' }}"
+                 placeholder="Desmembramento, fusão, unificação, transporte para ficha...">
+          <small>Vai para a ficha no lugar do balcão, e é o que a correição lê.
+            Sem ele o ato <strong>não</strong> é lavrado.</small></label>
+        <label class="span2">Matrícula(s) de destino
+          <input name="encerra_destino" placeholder="4016">
+          {% if enc_pre and not mn %}<small>Digitado aqui, vai também para o trecho «PREENCHER: … matrícula» do texto.</small>{% endif %}
+          <small>Se o imóvel passa a constar de outra ficha.</small></label>
+        <div class="span2 notice warning small">
+          Marcado, o ato é lavrado <strong>e</strong> a ficha é encerrada no
+          mesmo passo — <strong>nenhuma averbação adicional é lavrada</strong>.
+          Depois dele a matrícula não recebe mais atos e os proprietários
+          deixam de constar como atuais. Selar continua possível.
+        </div>
+      </div>
+    </details>
+    {% endif %}
+
+    <div class="span2 notice small">
+      Ao salvar, o ato entra na cadeia de integridade e <strong>não pode mais ser
+      editado nem apagado</strong>. É assim que deve ser num registro público:
+      correção de ato lavrado se faz por averbação, não por alteração do texto.
+    </div>
+    <div class="span2">
+      <button class="primary">Lavrar ato</button>
+      {# GUARDAR A REVISÃO SEM LAVRAR — pedido do oficial em 15/09/2026:
+         revisar pode levar mais de uma sentada. Sem isto, a correção de uma
+         vírgula só existia dentro deste formulário: quem saísse da tela
+         perdia o trabalho, e no dia seguinte ou redigitava ou lavrava com o
+         erro dentro. **Ato lavrado não se edita.**
+
+         É O MESMO FORMULÁRIO, com `formaction` — e não um segundo com os
+         mesmos campos. Dois formulários divergiriam no dia em que a tela
+         ganhasse um campo, e o «guardar» passaria a perder justamente o
+         campo novo. #}
+      {% with revisao_url=url_for('revisao_previa_ri', matricula_id=m.id) %}{% include '_revisao_previa.html' %}{% endwith %}
+      {% if mn %}
+      <button class="ghost" formaction="{{ url_for('ri_minuta_guardar', minuta_id=mn.id) }}"
+              formnovalidate>Guardar a revisão sem lavrar</button>
+      <small class="muted">Guardar deixa a minuta na fila: nenhum número é
+        tomado e nenhum selo é pedido.</small>
+      {% endif %}
+    </div>
+  </form>
+<script>
+/* HOTFIX-2026-10-13-01 - pedido da Leidiane 13/10: recusa da revisão/selo não
+   pode perder o que foi preenchido. Rascunho local (localStorage) do formulário
+   de lavrar; volta sozinho quando a página traz aviso de recusa. */
+(function () {
+  var f = document.getElementById('form-lavrar-ato'); if (!f || !window.localStorage) return;
+  var chave = f.getAttribute('data-rascunho-chave'), PULA = {csrf_token: 1};
+  function ler() { var d = {}; Array.prototype.forEach.call(f.elements, function (e, i) {
+      if (!e.name || PULA[e.name] || e.type === 'file' || e.type === 'submit' || e.type === 'button') return;
+      d[e.name + '#' + i] = (e.type === 'checkbox' || e.type === 'radio') ? (e.checked ? '1' : '') : e.value; });
+    return d; }
+  function guardar() { try { localStorage.setItem(chave, JSON.stringify({em: Date.now(), d: ler()})); } catch (x) {} }
+  f.addEventListener('input', guardar); f.addEventListener('change', guardar); f.addEventListener('submit', guardar);
+  var flashes = document.querySelectorAll('.flash'), recusa = false, sucesso = false;
+  Array.prototype.forEach.call(flashes, function (x) {
+    if (/danger|error/.test(x.className) || /não foi lavrado|NÃO foi lavrado|Nada foi lavrado|não saiu/i.test(x.textContent)) recusa = true;
+    else if (/success/.test(x.className)) sucesso = true; });
+  var bruto = null; try { bruto = JSON.parse(localStorage.getItem(chave) || 'null'); } catch (x) {}
+  if (sucesso && !recusa) { localStorage.removeItem(chave); return; }
+  if (!recusa || !bruto || Date.now() - bruto.em > 6 * 3600 * 1000) return;
+  Array.prototype.forEach.call(f.elements, function (e, i) {
+    var k = e.name + '#' + i; if (!(k in bruto.d)) return;
+    if (e.type === 'checkbox' || e.type === 'radio') e.checked = bruto.d[k] === '1';
+    else if (e.type !== 'hidden' || e.name.indexOf('encerra') === 0) e.value = bruto.d[k];
+    e.dispatchEvent(new Event('input', {bubbles: true})); e.dispatchEvent(new Event('change', {bubbles: true})); });
+  var det = f.closest('details'); if (det) det.open = true;
+  var aviso = document.createElement('div'); aviso.className = 'span2 notice warning';
+  aviso.textContent = 'O ato NÃO foi lavrado. Os campos foram restaurados como você deixou - confira o aviso acima, ajuste e clique em lavrar de novo.';
+  f.insertBefore(aviso, f.firstChild); f.scrollIntoView({behavior: 'smooth', block: 'start'});
+})();
+</script>
+</details>
+{% else %}
+<div class="notice">
+  <strong>Matrícula encerrada em {{ fmt_date(m.data_encerramento) }}.</strong>
+  {% if m.motivo_encerramento %}<br>{{ m.motivo_encerramento }}{% endif %}
+  {# SELAR CONTINUA POSSÍVEL, e esta frase dizia o contrário. Selar não lavra,
+     não toma número e não entra na corrente de hash — o botão «Selar este
+     ato» está na lista de atos, abaixo, e funciona com a ficha fechada. O que
+     o encerramento tranca é o ato NOVO. #}
+  <br>Não é possível lavrar novos atos. <strong>Selar os que ficaram sem selo
+  continua possível</strong> — o botão está em cada ato, na lista abaixo.
+  {# HOTFIX-2026-10-09-07: o atalho para o ato lavrado aqui que ficou sem selo
+     (o encerramento, quase sempre) — item, arquivamento, gratuito e REURB. #}
+  {% set _sem_selo = atos|selectattr('origem', 'equalto', 'MANUAL')|rejectattr('selo_texto')|rejectattr('cancelado')|rejectattr('ja_selado')|list %}{# HOTFIX-2026-10-09-08 #}
+  {% if _sem_selo and user.role in ['ADMIN','MANAGER','USER'] %}
+  <div class="notice warning small" style="margin-top:8px" id="encerramento-sem-selo">
+    <strong>Ato(s) desta ficha sem selo:</strong>
+    {% for _a in _sem_selo %}
+      <a class="button small primary" href="#selar-ato-{{ _a.id }}">Selar {{ _a.tipo }}-{{ '%02d'|format(_a.numero) }}</a>
+    {% endfor %}
+    <br><small>Selo do item, arquivamento (opcional, com folhas), gratuito/isento com motivo e REURB-S/E/misto.</small>
+  </div>
+  {% endif %}
+  {# O CAMINHO DE VOLTA, pedido do oficial em 15/09/2026. Sem ele, a ficha
+     fechada tranca também o selo do próprio ato que a fechou: foi o que
+     aconteceu com a 3.110, encerrada pela AV-06 com os três atos do dia
+     sem selo e nenhum botão na tela. #}
+  {% if user.role in ['ADMIN','MANAGER'] %}
+  <details style="margin-top:10px">
+    <summary class="button">Reabrir esta matrícula</summary>
+    <form method="post" class="stack"
+          action="{{ url_for('ri_reabrir_matricula', matricula_id=m.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Por que está sendo reaberta
+        <textarea name="motivo" rows="2" required minlength="10"
+                  placeholder="Ex.: selar os atos de 14/09, que ficaram sem selo."></textarea></label>
+      <p class="small muted">
+        O ato de encerramento <strong>continua no livro</strong> — reabrir não
+        o apaga nem o cancela. E a titularidade ativa <strong>não volta
+        sozinha</strong>: o encerramento a zerou, e quem sabe quem é o dono de
+        hoje é quem lê o livro.
+      </p>
+      <div><button class="primary">Reabrir</button></div>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
+{# A FICHA REABERTA DIZ QUE FOI REABERTA. Sem isto ela fica idêntica a uma
+   que nunca foi encerrada, com um ato de encerramento no meio da lista e
+   ninguém sabendo por que ela aceita atos. #}
+{% if not m.encerrada and m.reaberta_em %}
+<div class="notice warning">
+  <strong>Ficha reaberta em {{ fmt_date(m.reaberta_em[:10]) }}{% if m.reaberta_por %}
+    por {{ m.reaberta_por }}{% endif %}.</strong>
+  {% if m.motivo_reabertura %}<br>{{ m.motivo_reabertura }}{% endif %}
+  {% if m.data_encerramento %}
+  <br><small class="muted">Estava encerrada desde {{ fmt_date(m.data_encerramento) }}
+    {%- if m.motivo_encerramento %} — {{ m.motivo_encerramento }}{% endif %}</small>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if not m.encerrada and user.role in ['ADMIN','MANAGER'] and m.reaberta_em
+      and m.data_encerramento %}
+{# VOLTAR A FECHAR O QUE JÁ ESTAVA FECHADO NÃO LAVRA ATO NOVO. O encerramento
+   anterior continua no livro; lavrar outro poria dois «ENCERRAMENTO DESTA
+   MATRÍCULA» na mesma ficha, e quem a lesse depois não saberia qual vale. #}
+<details class="panel">
+  <summary class="small">Voltar a encerrar esta matrícula</summary>
+  <form method="post" class="stack"
+        action="{{ url_for('ri_encerrar_matricula', matricula_id=m.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="small muted">Ela volta ao encerramento que <strong>já está no
+      livro</strong>, de {{ fmt_date(m.data_encerramento) }} — sem lavrar ato
+      novo.</p>
+    <div><button class="danger">Voltar a encerrar</button></div>
+  </form>
+</details>
+{% elif not m.encerrada and user.role in ['ADMIN','MANAGER'] %}
+{# ENCERRAR É LAVRAR UM ATO — HOTFIX-2026-10-08-08 (Beatriz, 08/10/2026:
+   «não permite colocar/conferir o texto do ato, e nem todo encerramento é
+   igual»). O formulário próprio, que lavrava sozinho um teor de duas
+   linhas sem selo, saiu: o botão abre o de lavrar, com «encerra = Sim» e
+   um modelo de texto que se escolhe e se edita. #}
+<details class="panel" id="encerrar-matricula">
+  <summary class="small">Encerrar esta matrícula</summary>
+  <div class="stack">
+    <p class="small">O encerramento é lavrado como <strong>averbação</strong>, pelo
+      mesmo formulário de «Lavrar novo ato»: texto do ato com modelo sugerido
+      (editável, com a prévia de como sai), número, selo com o item da tabela,
+      gratuidade com motivo, arquivamento opcional e revisão com IA. Ao lavrar,
+      a ficha é encerrada no mesmo passo — <strong>sem segunda averbação</strong>.</p>
+    <div><a class="button danger" href="{{ url_for('ri_ficha', matricula_id=m.id, lavrar=1, encerrar=1) }}#novo-ato">Encerrar matrícula — abrir o formulário do ato</a></div>
+    <p class="small muted">Depois de lavrado não tem desfazer: a matrícula não recebe
+      mais atos e os proprietários deixam de constar como atuais.</p>
+  </div>
+</details>
+{% endif %}
+
+{# AS CERTIDÕES DESTA FICHA, para reimprimir — pedido do oficial em
+   16/09/2026: «para permitir imprimir de novo, caso ocorra algum problema na
+   impressão». **Reimprimir não é emitir**: a segunda via sai do mesmo `id`,
+   com o mesmo teor congelado e o mesmo selo; emitir de novo tomaria outro
+   número, pediria outro selo e cobraria outra vez. #}
+{% if certidoes %}
+<details class="panel" open>
+  <summary><strong>Certidões emitidas desta matrícula</strong>
+    <small class="muted">({{ certidoes_emitidas }}{% if certidoes_canceladas %},
+      {{ certidoes_canceladas }} cancelada{{ 's' if certidoes_canceladas > 1 }}{% endif %})</small></summary>
+  {% if certidoes_emitidas > certidoes|length %}
+  <p class="small muted" style="padding:0 14px">
+    Mostrando as <strong>{{ certidoes|length }} mais recentes</strong> —
+    o número acima é o desta matrícula inteira.
+  </p>
+  {% endif %}
+  <table class="table">
+    <thead><tr><th>Nº</th><th>Emitida em</th><th>Tipo</th><th>Requerente</th>
+               <th>Quem expediu</th><th>Selo</th><th></th></tr></thead>
+    <tbody>
+      {% for c in certidoes %}
+      <tr{% if c.cancelada %} style="opacity:.55"{% endif %}>
+        <td><a href="{{ url_for('ri_certidao_odt', certidao_id=c.id) }}"
+              >{{ c.numero }}/{{ c.ano }}</a>
+          {%- if c.cancelada %} <small>(cancelada)</small>{% endif %}</td>
+        <td><small>{{ fmt_date(c.data_emissao) }}</small></td>
+        <td><small>{{ TIPOS_CERTIDAO.get(c.tipo, c.tipo) }}</small></td>
+        <td>{{ c.requerente or '—' }}</td>
+        <td><small>{{ c.emitida_por_nome or '—' }}
+          {%- if c.emitida_por_funcao %}<br>{{ c.emitida_por_funcao }}{% endif %}</small></td>
+        <td><small>{{ c.selo_texto and c.selo_texto[:28] or '—' }}</small></td>
+        {# CANCELAR DAQUI, DA FICHA — relato #81, 17/09/2026.
+           «dar a possibilidade de cancelar certidao emitida, nos termos que ja
+           temos no RCPN (...) ter mais controle das certidoes emitidas», e o
+           pedido veio com o endereço desta tela: `/registro-imoveis/5378`.
+           Quem abre a matrícula e vê a certidão errada é quem sabe que ela está
+           errada — mandá-lo à tela de certidões para cancelá-la é largar o
+           imóvel que ele estava conferindo.
+
+           O formulário é o MESMO da lista (a macro `_cancelar_certidao.html`),
+           e o `'ficha'` é o que faz a rota devolvê-lo para cá. #}
+        <td>{{ cancelar_certidao(c, csrf_token, user, 'ficha') }}</td>
+      </tr>
+      {% if c.cancelada and c.motivo_cancelamento %}
+      <tr><td colspan="7" class="small muted">{{ motivo_do_cancelamento(c) }}</td></tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="small muted" style="padding:0 14px 12px">
+    Clicar no número <strong>reimprime a mesma certidão</strong> — mesmo teor,
+    mesmo selo, sem tomar número novo e sem cobrar de novo.
+    Cancelar <strong>não apaga</strong>: o registro permanece no livro, com o
+    motivo à vista, porque a certidão já saiu e está na mão de alguém.
+  </p>
+</details>
+{% endif %}
+
+{# ABRE QUANDO HÁ ARQUIVO — 17/09/2026. Fechado, o nome, a impressão
+   digital e o link de baixar ficavam invisíveis para quem acabou de enviar:
+   «peça que existe e ninguém acha é, para quem está no balcão, peça que não
+   existe». Sem arquivo ele continua fechado — alarme que soa sempre é alarme
+   que ninguém ouve. #}
+<details class="panel" {% if m.digi_nome %}open{% endif %}>
+  <summary><strong>Digitalização oficial desta matrícula</strong></summary>
+  <form method="post" enctype="multipart/form-data" class="form-grid"
+        action="{{ url_for('ri_upload_digitalizacao', matricula_id=m.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if m.digi_nome %}
+    <div class="span2 small">
+      Arquivo de hoje: <strong>{{ m.digi_nome }}</strong>
+      {% if m.digi_sha256 %}
+      <br><span class="muted">impressão digital
+        <code>{{ m.digi_sha256[:16] }}…</code></span>
+      {% endif %}
+      &middot; <a href="{{ url_for('ri_baixar_digitalizacao', matricula_id=m.id) }}">baixar</a>
+    </div>
+    {# A cópia em TIFF para o ONR (10/10/2026): nasce logo depois do envio, e a
+       rodada das 07:30 refaz o que falhar. Quem sobe é o programa CSL2. #}
+    {% set onr = situacao_da_imagem_onr(m.id) %}
+    {% if onr.estado == 'NA_PASTA' %}
+    <div class="span2 notice small">
+      Cópia para o <strong>ONR</strong> pronta: {{ onr.paginas }} página(s) em TIFF
+      na pasta do CSL2{% if onr.em %} desde {{ onr.em|replace('T', ' ') }}{% endif %}.
+      {% if not onr.csl2_em_uso %}O programa CSL2 leva da pasta no horário dele.{% endif %}
+    </div>
+    {% elif onr.estado == 'CONVERTENDO' %}
+    <div class="span2 notice small">
+      Preparando a cópia para o <strong>ONR</strong> (TIFF)… Atualize a ficha em
+      alguns segundos.
+    </div>
+    {% elif onr.estado == 'ERRO' %}
+    <div class="span2 notice danger small">
+      A cópia para o <strong>ONR</strong> não saiu: {{ onr.motivo }}.
+      <button class="secondary" formnovalidate
+              formaction="{{ url_for('ri_onr_imagem_converter', matricula_id=m.id) }}">Converter de novo</button>
+    </div>
+    {% elif onr.estado == 'AGUARDANDO' %}
+    <div class="span2 notice warning small">
+      A cópia para o <strong>ONR</strong> ainda não foi feita — a rodada das 07:30
+      faz, ou agora:
+      <button class="secondary" formnovalidate
+              formaction="{{ url_for('ri_onr_imagem_converter', matricula_id=m.id) }}">Converter agora</button>
+    </div>
+    {% elif onr.estado == 'DESCONHECIDO' %}
+    <div class="span2 notice warning small">
+      Não deu para ler a situação da cópia para o ONR: {{ onr.motivo }}.
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="span2 notice small">
+      Esta matrícula <strong>ainda não tem digitalização oficial</strong>. Sem
+      ela, a certidão de inteiro teor só sai pelo <strong>texto
+      extraído</strong>.
+    </div>
+    {% endif %}
+    <label class="span2">Arquivo da varredura
+      <input type="file" name="arquivo" required
+             accept=".png,.jpg,.jpeg,.tif,.tiff,.pdf"></label>
+    <div class="span2 notice warning small">
+      O arquivo enviado <strong>substitui</strong> o anterior e volta a marcar
+      a pendência do ONR. É ele que a certidão por reprodução copia.
+    </div>
+    <div class="span2"><button class="primary">Enviar digitalização</button></div>
+  </form>
+</details>
+
+<form id="form-onus-ia" method="post" hidden
+      action="{{ url_for('ri_onus_sugerir', matricula_id=m.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}"></form>
+<details class="panel">
+  <summary><strong>Emitir certidão desta matrícula</strong></summary>
+  <form method="post" action="{{ url_for('ri_emitir_certidao', matricula_id=m.id) }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Tipo
+      <select name="tipo" required>
+        {# AS OPÇÕES SAEM DA LISTA DA CASA, e não escritas aqui — problema #75,
+           18/09/2026. A «certidão negativa de matrícula» saiu porque não
+           certifica ESTA matrícula: o texto dela busca o NOME da pessoa nos
+           livros todos, que é outra pergunta e de outra tela. Lista escrita à
+           mão no molde envelheceria na tarde em que fosse escrita — quem tira
+           um tipo do sistema é `ri_schema.TIPOS_CERTIDAO`, e é ele que manda. #}
+        {% for chave, nome in TIPOS_CERTIDAO.items() %}
+        <option value="{{ chave }}">{{ nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {# A CERTIDÃO DE ÔNUS É POSITIVA OU NEGATIVA — 13/10/2026, pedido do oficial:
+       «contemplar tanto a positiva e a negativa, ... a api da ia para fazer a
+       sugestao de qual certidao se trata para aquela matricula e escolher o teor
+       correto». A IA SUGERE; quem escolhe é quem emite, e a rota confere a
+       escolha (`ri_onus_ia.decidir`). Nenhuma das duas perguntas vem marcada
+       quando ninguém sabe a resposta: a escolha tem de ser feita, e não caída. #}
+    {# OS VALORES VÃO EM MINÚSCULAS («positiva», «negativa») de propósito: o
+       valor em maiúsculas é a marca que o guarda do #75 procura —
+       a «certidão negativa de matrícula», que saiu da lista de tipos. A rota lê
+       as duas formas (`ri_onus_ia.decidir` passa a maiúsculas). #}
+    {% set op = onus_painel %}{% set s = op.sugestao %}
+    <fieldset class="span2" id="certidao-onus" style="border:1px solid var(--line,#ccc);padding:10px">
+      <legend><strong>Certidão de ônus — positiva ou negativa</strong>
+        <small class="muted">(só vale para a certidão de ônus)</small></legend>
+      <input type="hidden" name="onus_formulario" value="1">
+
+      <div class="card" style="margin:0 0 8px">
+        {% if op.ia_ligada %}
+        {# O botão pertence a OUTRO formulário (`form=`), e não a este: o primeiro
+           botão de envio de um formulário é o que o Enter aperta, e o Enter no
+           campo do requerente pediria leitura à IA em vez de emitir. #}
+        <button type="submit" class="secondary" form="form-onus-ia">
+          Sugerir com IA (lê a ficha inteira)</button>
+        {% endif %}
+        {% if not s %}
+          <p class="small" style="margin:6px 0 0">{% if op.ia_ligada %}A IA ainda não leu esta ficha.
+          {% elif op.no_sandbox %}No sistema de teste (SANDBOX) a sugestão por IA não existe — ordem do oficial.{% else %}A sugestão por IA não está ligada nesta instalação.{% endif %}
+          Leia o teor e escolha abaixo.</p>
+        {% elif s.situacao in ('PENDENTE', 'LENDO') %}
+          <p class="small" style="margin:6px 0 0"><strong>A IA está lendo a ficha</strong>
+          (pedido em {{ s.pedido_em }}). Atualize a página em instantes.</p>
+        {% elif s.situacao == 'ERRO' %}
+          <p class="small" style="margin:6px 0 0">A leitura da IA não terminou
+          ({{ s.erro or 'sem resposta' }}). Peça de novo, ou escolha lendo a ficha —
+          o balcão não depende dela.</p>
+        {% elif not s.vale %}
+          <p class="small" style="margin:6px 0 0"><strong>A sugestão da IA é de antes de a ficha
+          mudar</strong> (ato lavrado ou cancelado depois dela) e não vale mais. Peça de novo.</p>
+        {% else %}
+          <p style="margin:6px 0 0"><strong>Sugestão da IA:</strong>
+            ônus <strong>{{ s.onus }}</strong> · ações <strong>{{ s.acoes }}</strong>.</p>
+          {% if s.parecer %}<p class="small" style="margin:4px 0 0">{{ s.parecer }}</p>{% endif %}
+          {% if s.cancelados %}<p class="small muted" style="margin:4px 0 0">Cancelados, segundo a leitura:
+            {% for c in s.cancelados %}{{ c.ato }}{% if c.cancelado_por %} (por {{ c.cancelado_por }}){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.</p>{% endif %}
+          <p class="small muted" style="margin:4px 0 0">É sugestão: confira no teor antes de emitir.</p>
+        {% endif %}
+      </div>
+
+      <div class="form-grid" style="margin:0">
+        <div>
+          <strong>Ônus reais</strong><br>
+          {% for r in RESULTADOS_ONUS %}
+          <label style="display:inline-flex;gap:4px;margin-right:12px">
+            <input type="radio" name="resultado_onus" value="{{ r|lower }}"
+                   {% if op.sugerido.onus == r %}checked{% endif %}> {{ r|capitalize }}</label>
+          {% endfor %}
+        </div>
+        <div>
+          <strong>Citação de ações reais ou pessoais reipersecutórias</strong><br>
+          {% for r in RESULTADOS_ONUS %}
+          <label style="display:inline-flex;gap:4px;margin-right:12px">
+            <input type="radio" name="resultado_acoes" value="{{ r|lower }}"
+                   {% if op.sugerido.acoes == r %}checked{% endif %}> {{ r|capitalize }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      {% if op.sugerido.por %}<p class="small muted" style="margin:4px 0">Marcado conforme
+        {{ 'a sugestão da IA' if op.sugerido.por == 'IA' else 'os atos lavrados no sistema' }}.</p>{% endif %}
+
+      {% set candidatos = op.sistema + op.ia %}
+      {% if candidatos %}
+      <p style="margin:8px 0 4px"><strong>O que vai transcrito na positiva</strong>
+        <small class="muted">— o texto sai do livro, palavra por palavra</small></p>
+      {% for i in candidatos %}
+      <label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0">
+        <input type="checkbox" name="onus_item" value="{{ i.chave }}"
+               {% if not i.literal %}disabled{% elif i.origem == 'SISTEMA' or (op.sugerido.por == 'IA') %}checked{% endif %}>
+        <span><strong>{{ i.rotulo or '—' }}</strong>
+          {% if i.natureza %}({{ i.natureza }}){% endif %}
+          <small class="muted">· {{ 'ação' if i.categoria == 'ACAO' else 'ônus' }} ·
+            {{ 'ato lavrado no sistema' if i.origem == 'SISTEMA' else 'apontado pela IA no teor' }}</small>
+          {% if i.conferir %}<br><small class="warning">entrou pela palavra do teor, sem natureza reconhecida — confira</small>{% endif %}
+          {% if not i.literal %}<br><small class="warning">o trecho que a IA indicou não está escrito na ficha
+            palavra por palavra — não pode ir à certidão; se o ônus existe, cole o texto abaixo</small>{% endif %}
+          <br><small>{{ i.texto[:600] }}{% if i.texto|length > 600 %}…{% endif %}</small></span>
+      </label>
+      {% endfor %}
+      {% endif %}
+
+      <label class="span2" style="margin-top:8px">Transcrever outro ônus
+        <small class="muted">— cole o texto do ato como está no teor (um por parágrafo, separados
+        por uma linha em branco). O sistema confere que ele está escrito na ficha.</small>
+        <textarea name="onus_transcricao" rows="3"></textarea></label>
+      <label class="span2">Transcrever citação de ação
+        <textarea name="acao_transcricao" rows="2"></textarea></label>
+      <label class="span2">Justificativa
+        <small class="muted">— obrigatória só para emitir NEGATIVA quando a IA sugeriu POSITIVA;
+        fica gravada na certidão</small>
+        <input name="onus_justificativa" maxlength="500"
+               placeholder="ex.: hipoteca R-2 cancelada pela AV-5"></label>
+    </fieldset>
+    <script>
+      (function () {
+        var campo = document.getElementById('certidao-onus');
+        var tipo = campo && campo.closest('form').querySelector('select[name=tipo]');
+        function mostrar() { if (campo && tipo) campo.style.display = tipo.value === 'ONUS' ? '' : 'none'; }
+        if (location.hash === '#certidao-onus' && campo) {
+          var d = campo.closest('details'); if (d) d.open = true;
+          if (tipo) tipo.value = 'ONUS';
+        }
+        if (tipo) { tipo.addEventListener('change', mostrar); mostrar(); }
+      })();
+    </script>
+    <label>Corpo da certidão de inteiro teor
+      {# A ESCOLHA É DO BALCÃO, e as duas existem por motivos diferentes:
+         a REPRODUÇÃO é a varredura da ficha, com o selo ao final; o TEXTO
+         EXTRAÍDO serve o livro antigo e o manuscrito, onde a varredura não se
+         lê. Nos outros tipos de certidão a rota usa sempre o texto, e por
+         isso este campo só vale para o inteiro teor. #}
+      {# A PRIMEIRA OPÇÃO É A QUE ESTA FICHA CONSEGUE CUMPRIR. Oferecer a
+         reprodução em primeiro lugar numa ficha sem arquivo faria a tela
+         sugerir justamente o que a rota vai recusar. #}
+      <select name="fonte_corpo">
+        <option value="DIGITALIZACAO" {% if not m.digi_path %}disabled{% endif %}>
+          Reprodução da digitalização oficial{% if not m.digi_path %} — não há arquivo nesta ficha{% endif %}</option>
+        <option value="TEXTO" {% if not m.digi_path %}selected{% endif %}>
+          Texto extraído (livro antigo ou manuscrito)</option>
+      </select>
+    </label>
+    {#  AS FOLHAS DA CERTIDÃO — 21/09/2026, e o campo não existia.
+
+        A rota lê `folhas` desde sempre e **nenhum modelo de tela o mandava**:
+        toda certidão desta casa selava UMA folha. É «argumento sem quem o
+        passe», a mesma família do defeito que travou o CNIB inteiro — e que o
+        varredor de função órfã não pega, porque a função tem chamador.
+
+        MEDIDO nos 667 envelopes de certidão do acervo: **92 cobraram mais de
+        uma folha**, e até doze. E a casa cobrou isso em DOIS itens — o item
+        base com uma folha e o da folha acrescida com o resto (99 protocolos
+        com `16.24.4` + `16.24.4.1`; 94 com `16.24.1` + `16.24.2`).
+
+        NA REPRODUÇÃO DA DIGITALIZAÇÃO ELE VALE IGUAL: o que a rota reproduz é
+        o arquivo inteiro, e quantas folhas a via tem é o que se cobra. #}
+    <label>Folhas da certidão
+      <input type="number" name="folhas" value="" min="1" step="1" placeholder="auto">
+      <small>O sistema <strong>conta sozinho</strong> antes de emitir (arquivo na reprodução; papel no texto). Preencha só se precisar de um número <em>maior</em> (capa/anexo). Mais de uma folha cobra a <strong>folha acrescida</strong>.</small>
+    </label>
+    <label>Protocolo
+      <input name="protocolo" list="protocolos-da-certidao"
+             autocomplete="off" placeholder="2026.09.17 ou 11571">
+      <small>Escolha da lista; protocolo antigo se digita.</small>
+    </label>
+    {# O PROTOCOLO SE ESCOLHE DA LISTA — relato #76, 17/09/2026: «ter que
+       lembrar o numero do protocolo de determinado cliente pode atrasar a
+       emissao da certidao, melhor mostrar os protocolos abertos e aguardando
+       pagamento como opcao de escolha». **O CAMPO CONTINUA LIVRE**: protocolo
+       fora da janela dos 80 mais recentes digita-se.
+
+       A LISTA TEM AS DUAS COISAS QUE ESTA CASA CHAMOU DE «PROTOCOLO» AQUI, e
+       cada uma diz qual e — medido nas 372 certidoes desta casa que tem
+       protocolo gravado: 368 citam o protocolo de CAIXA (o acervo) e 4 citam
+       a PRENOTACAO, e as quatro sao as que este sistema emitiu (11571, 11559).
+       Ordem: caixa primeiro, que e o pedido que ele descreveu.
+
+       O ROTULO NAO REPETE O NUMERO — e por isso ele vai no `label` E no texto
+       de dentro, iguais: o navegador desenha o `value` e, ao lado dele, o
+       rotulo da opcao (o `label`, ou o texto de dentro quando nao ha `label`).
+       Com o numero tambem no rotulo, a lista sairia
+       `2026.09.23    2026.09.23 — EDILSON FIGUEIREDO BARROS`, o mesmo numero
+       duas vezes. Os dois lugares ficam iguais para o molde nao depender de
+       qual dos dois aquele navegador le.
+
+       **A CONFERENCIA VISUAL FICOU PENDENTE, e esta escrito para nao se
+       supor que foi feita**: a lista do `datalist` e desenhada pelo navegador
+       FORA da pagina, e a captura de tela da pagina nao a pega — medido em
+       17/09/2026, a imagem da previa (308 px de largura) nao tem faixa
+       nenhuma da lista. Quem confere o que aparece e quem usa a tela. #}
+    <datalist id="protocolos-da-certidao">
+      {% for pr in protocolos_da_certidao %}
+        <option value="{{ pr.numero }}" label="{{ pr.interessado or '—' }}{% if pr.prenotacao_numero %} · prenot. {{ pr.prenotacao_numero }}{% endif %}">{{ pr.interessado or '—' }}{% if pr.prenotacao_numero %} · prenot. {{ pr.prenotacao_numero }}{% endif %}</option>
+      {% endfor %}
+      {% for p in protocolos_abertos %}
+        <option value="{{ p.numero }}" label="prenotação · {{ fmt_date(p.data_prenotacao) }} · {{ p.apresentante or 'sem apresentante' }}{% if p.cx_numero %} · caixa {{ p.cx_numero }}{% endif %}">prenotação · {{ fmt_date(p.data_prenotacao) }} · {{ p.apresentante or 'sem apresentante' }}{% if p.cx_numero %} · caixa {{ p.cx_numero }}{% endif %}</option>
+      {% endfor %}
+    </datalist>
+    <label class="span2">Requerente<input name="requerente" required></label>
+    <label>CPF/CNPJ do requerente<input name="requerente_documento"></label>
+    <label>Emolumentos<input name="emolumentos"></label>
+    <label class="span2">Finalidade<input name="finalidade" placeholder="Para fins de..."></label>
+    {# GRATUIDADE NA CERTIDAO DO RI — 23/09/2026, Beatriz (matricula 582).
+       Espelho do RCPN (aviso COBRADO/gratuito + caixa) e dos atos do RI
+       (motivo com datalist medido). Sem marcar: cobrado, como hoje.
+       Sem bypass de selo. #}
+    <div class="span2 card" id="cert-ri-selo-aviso" style="margin:0">
+      <p style="margin:0"><strong id="cert-ri-selo-titulo">Este selo será COBRADO</strong>
+        — certidão desta matrícula.</p>
+      <p class="small" style="margin:6px 0 0" id="cert-ri-selo-porque">
+        Emolumentos conforme a tabela do TJMA. Marque abaixo só se houver
+        norma ou decisão que dispense o pagamento.</p>
+    </div>
+    <label class="span2" style="display:flex;gap:8px;align-items:flex-start">
+      <input type="checkbox" name="isento" value="1" id="cert_ri_isento"
+             onchange="(function(cb){var b=document.getElementById('cert-ri-bloco-gratuidade');var t=document.getElementById('cert-ri-selo-titulo');var p=document.getElementById('cert-ri-selo-porque');var m=document.getElementById('cert_ri_motivo_isencao');var a=document.getElementById('cert-ri-selo-aviso');if(b)b.style.display=cb.checked?'block':'none';if(t)t.textContent=cb.checked?'Este selo é gratuito':'Este selo será COBRADO';if(p)p.textContent=cb.checked?'Selo isento: o motivo vai escrito dentro do selo (motivoIsentoGratuito) e é o que a correição lê.':'Emolumentos conforme a tabela do TJMA. Marque abaixo só se houver norma ou decisão que dispense o pagamento.';if(a){if(cb.checked)a.classList.add('warning');else a.classList.remove('warning');}if(m)m.required=cb.checked;})(this)">
+      <span><strong>Selo gratuito / isento</strong><br>
+        <small>Marque para emitir o selo da certidão isento de emolumentos.
+        Exige motivo escrito (máx. <strong>500</strong> caracteres — limite do TJ).
+        Sem ele o selo não sai.</small></span>
+    </label>
+    <div id="cert-ri-bloco-gratuidade" class="span2" style="display:none">
+      <label>Motivo da gratuidade
+        <small><strong>obrigatório</strong> se gratuito — sem ele o selo não sai</small>
+        <input name="motivo_isencao" id="cert_ri_motivo_isencao"
+               list="motivos_da_gratuidade_do_ri_cert"
+               maxlength="500" autocomplete="off"
+               placeholder="O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS...">
+      </label>
+      <datalist id="motivos_da_gratuidade_do_ri_cert">
+        {% for m in MOTIVOS_DA_GRATUIDADE_DO_RI %}
+          <option value="{{ m.texto }}">{{ m.rotulo }} — {{ m.fundamento }}</option>
+        {% endfor %}
+      </datalist>
+      <small class="muted">Máximo 500 caracteres (campo <em>motivoIsentoGratuito</em> do TJ).
+        A lista traz o que esta casa já escreveu; pode escrever outro.</small>
+    </div>
+    {# A CERTIDÃO JÁ SELAVA SOZINHA — o campo é que estava em destaque, como se
+       alguém tivesse de preenchê-lo. A rota pede o selo ao aparelho quando
+       este campo vem vazio (é a mesma guarda do ato), e o caminho está medido:
+       `/selo/imovel/certidao`, 667 usos desta casa.
+       **O CAMPO À MÃO SAIU DAQUI EM 15/09/2026**, pelo relato #66.
+       **E A CAIXA «emitir mesmo se o selo falhar» SAIU EM 16/09/2026**, pelo
+       relato #77 — este parágrafo dizia que ela «continua, e é ela a decisão
+       de quem está no balcão», e isso deixou de valer no dia seguinte: ele
+       mandou tirá-la «em nenhum serviço ou módulo», e a certidão sem selo
+       passou a ser sempre cancelada, com o motivo na tela. #}
+    {% if not m.conferido %}
+    <div class="span2 notice warning small">
+      Esta matrícula <strong>ainda não foi conferida contra o livro físico</strong>.
+      Certidão é documento com fé pública: confira a ficha antes de expedir.
+    </div>
+    {% endif %}
+    <div class="span2"><button class="primary">Emitir certidão</button></div>
+  </form>
+</details>
+
+<section class="panel">
+  <div class="panel-head"><span>Identificação</span>
+    {% if user.role in ['ADMIN','MANAGER'] and m.origem == 'MANUAL' and not m.encerrada %}
+    <details style="margin-left:auto">
+      <summary class="small muted">corrigir o número</summary>
+      <form method="post" action="{{ url_for('ri_renumerar_matricula', matricula_id=m.id) }}" class="form-grid" style="padding:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Número novo<input name="novo_numero" required inputmode="numeric" placeholder="ex.: 4014"></label>
+        <label class="span2">Motivo<input name="motivo" required minlength="10"
+          placeholder="Por que o número está sendo corrigido"></label>
+        <div class="span2 notice small">
+          O número da matrícula é <strong>único na serventia</strong>, não no volume: os
+          livros 2, 2-A … 2-S são volumes do mesmo Livro 2. Renumerar <strong>refaz a cadeia
+          de integridade</strong> dos atos, porque o hash de cada ato inclui o número da
+          matrícula — os dois hashes ficam na auditoria. O teor não é tocado.
+        </div>
+        <div class="span2"><button class="primary">Renumerar</button></div>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  <div class="grid2 detail">
+    <div><small class="muted">Livro / folha</small><div>{{ m.livro or '—' }} {% if m.folha %}fls. {{ m.folha }}{% endif %}</div></div>
+    {# O CÓDIGO NACIONAL DA MATRÍCULA.
+       Ele é **derivado**: CNS + livro + número, com verificador ISO 7064
+       MOD 97-10 — a conta do IBAN, que reproduz 1.656 dos 1.656 CNM que esta
+       casa emitiu. Quando ele não está gravado, a tela mostra o que ele É, e
+       diz que ainda não foi gravado: número que se calcula não precisa ser
+       adivinhado, mas o que está no banco é o que os outros lugares leem. #}
+    <div><small class="muted">CNM</small><div>
+      {% if m.cnm %}{{ m.cnm }}
+      {% elif cnm_calculado %}<span class="muted">{{ cnm_calculado }}</span>
+        <form method="post" action="{{ url_for('ri_gravar_cnm', matricula_id=m.id) }}"
+              class="inline-form" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button small">gravar</button>
+        </form>
+        <br><small class="muted">calculado, ainda não gravado</small>
+      {% else %}—{% endif %}</div></div>
+    <div><small class="muted">Abertura</small><div>{{ fmt_date(m.data_abertura) }}</div></div>
+    <div><small class="muted">Situação</small><div>{{ m.situacao }}</div></div>
+    <div><small class="muted">Localização</small><div>{{ 'Rural' if m.rural_urbano == 'R' else ('Urbano' if m.rural_urbano else '—') }}</div></div>
+    <div><small class="muted">Área</small><div>{{ m.area_valor or '—' }} {{ m.area_unidade or '' }}</div></div>
+    <div class="span2"><small class="muted">Endereço</small><div>{{ m.logradouro or '—' }}{% if m.numero_predial %}, {{ m.numero_predial }}{% endif %}{% if m.bairro %} — {{ m.bairro }}{% endif %}{% if m.cidade %} — {{ m.cidade }}/{{ m.uf or '' }}{% endif %}
+      {# O ENDEREÇO QUE O ÍNDICE NACIONAL PEDE, LIDO DO PRÓPRIO TEOR —
+         16/09/2026. O caminho existia desde 15/09 (`propor_do_banco`) e
+         **nenhuma tela o chamava**: a fila se abre de propósito, roda sobre as
+         1.443 e é o trabalho de um dia; quem está nesta ficha agora quer a
+         leitura desta ficha.
+
+         **É FORMULÁRIO, E NÃO LINK, PORQUE ESCREVE** — criar a proposta grava
+         no banco, e um GET não abre transação de escrita nesta casa. É a mesma
+         forma do botão de gravar o CNM, aqui em cima.
+
+         **E ELE SÓ APARECE QUANDO HÁ O QUE LER:** sem teor não há texto, e sem
+         endereço não há o que completar. O botão que não pode fazer nada não
+         se oferece — quem clica e recebe uma recusa aprende a não clicar. #}
+      {% if m.teor and not m.logradouro %}
+        <form method="post" class="inline-form" style="display:inline"
+              action="{{ url_for('ri_onr_endereco_da_matricula', matricula_id=m.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button small">o que o teor diz</button>
+        </form>
+      {% endif %}
+    </div></div>
+    {# registro-antes-do-selo-abertura: ordem da ficha — descrição e registro anterior antes do carimbo (23/09/2026, mat. 4019). #}
+    {% if m.descricao_perimetro %}<div class="span2"><small class="muted">Descrição do imóvel</small><div class="small" style="max-height:12em;overflow:auto;white-space:pre-wrap">{{ m.descricao_perimetro }}</div></div>{% endif %}
+    {% if m.registro_anterior %}<div class="span2"><small class="muted">Registro anterior</small><div>{{ m.registro_anterior }}</div></div>{% endif %}
+    {# O SELO DA ABERTURA — pedido do oficial em 16/09/2026: «como emito e
+       coloco o selo de abertura de matricula nessa 4016».
+
+       ELE NAO TINHA COMO. Medido: das 1.982 matriculas desta casa, ZERO tem
+       `selo_abertura_texto`; a coluna era lida para o `.odt` da ficha e
+       escrita por uma linha que le um campo de formulario que nenhuma tela
+       oferecia. Nao faltava um botao — faltava o caminho inteiro. #}
+    {% if m.tipo_ficha != 'ACERVO' %}
+    <div class="span2"><small class="muted">Selo da abertura</small><div>
+      {% if m.selo_abertura_texto %}
+        {# O MESMO CARIMBO DO ATO — 16/09/2026. Aqui saía o código de 28
+           caracteres cru, com o resumo colado embaixo: sem QR, sem os fundos
+           e sem rótulo. É o defeito que ele relatou no ato em 15/09,
+           sobrevivendo neste canto. #}
+        {{ carimbo_abertura|safe }}
+      {% else %}
+        <span class="muted">— não selada —</span>
+        {% if not m.encerrada %}
+        {# ABERTA DE PROPÓSITO quando falta o selo, e com endereço próprio:
+           a gaveta fechada foi o motivo de ele não achar o botão duas vezes.
+           Gaveta serve para guardar o que raramente se usa; **enquanto a
+           abertura não está selada, isto é o que há para fazer aqui**. #}
+        <details id="selo-da-abertura" open style="margin-top:6px">
+          <summary class="small">Selar a abertura desta matrícula</summary>
+          <form method="post" class="form-grid" style="padding:8px"
+                action="{{ url_for('ri_selar_abertura', matricula_id=m.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+            <label>Item da tabela de custas <span class="obrigatorio">— o selo exige</span>
+              <input name="codigo_tj" value="16.2" list="itens_da_abertura"
+                     autocomplete="off">
+              <small>O padrão é <strong>16.2</strong>, «Matrícula de imóveis no
+                Registro Geral» — o item que esta casa usou <strong>41
+                vezes</strong> para abrir matrícula.</small></label>
+            <datalist id="itens_da_abertura"><option value="16.2"></datalist>
+
+            <label>Prenotação <span class="obrigatorio">— vai dentro do selo</span>
+              <input name="prenotacao" list="prenotacoes_da_abertura"
+                     placeholder="número da prenotação" autocomplete="off">
+              <small>É o número que o Tribunal recebe como protocolo deste
+                selo. O sistema <strong>não escolhe por você</strong>: confira
+                qual prenotação paga esta abertura.</small></label>
+            <datalist id="prenotacoes_da_abertura">
+              {% for p in protocolos_abertos or [] %}
+                <option value="{{ p.numero }}">{{ p.numero }}{% if p.apresentante %} — {{ p.apresentante }}{% endif %}</option>
+              {% endfor %}
+            </datalist>
+
+            <label>Folha (opcional)
+              <input name="folha" placeholder="0">
+              <small>Apareceu em 15 dos 41 selos reais, sempre como
+                <code>0</code>; nos outros 26 o campo não vai.</small></label>
+
+            <label>Relação de emolumentos (opcional)
+              <input name="emolumentos_abertura"
+                     value="{{ m.emolumentos_abertura or '' }}"
+                     placeholder="Ato 16.2 — Emolumentos R$ …; Total R$ …">
+              <small>Fica gravada na ficha <strong>antes</strong> de o selo ser
+                pedido: se o aparelho não responder, o que foi digitado não se
+                perde.</small></label>
+
+            <label class="span2"><input type="checkbox" name="isento" value="1">
+              Abertura gratuita</label>
+            <label class="span2">Motivo da gratuidade
+              <input name="motivo_isencao"
+                     placeholder="obrigatório quando gratuita">
+              <small>É ele que sai dentro do selo e que a correição lê.</small></label>
+
+                        {% set _abert = (partes or [])|selectattr('ato_id','none')|list %}
+            <div class="span2 notice small">
+              Selar a abertura <strong>não lavra ato</strong>, não toma número
+              e não mexe na cadeia de integridade — a abertura não é ato do
+              livro de atos. O que ela exige é <strong>quem é o dono</strong>
+              (parte com ato em branco): a ficha tem
+              <strong>{{ _abert|length }}</strong>
+              {{ 'parte de abertura' if _abert|length == 1 else 'partes de abertura' }}.
+              {% if not _abert %}
+              <br><span class="badge alta">Sem dono cadastrado a selagem vai recusar.</span>
+              Use o formulário <em>Cadastrar o proprietário da abertura</em> abaixo.
+              {% endif %}
+            </div>
+
+            <div class="span2"><button class="primary">Pedir o selo ao aparelho</button></div>
+
+            {# A ETIQUETA COMPLETA NÃO SE DIGITA — relato #66, 15/09/2026:
+               «precisamos remover a opção de digitar a etiqueta completa do
+               selo dos atos (…) o selo será emitido apenas pelo selador no
+               sistema». Aqui havia um `<details>` «o aparelho não respondeu —
+               digitar o selo à mão», com um `<input name=
+               "selo_abertura_texto">`; ele voltou nesta árvore depois de
+               16/09 e saiu de novo em 16/09, apanhado pelo varredor de
+               `test_relato_66_etiqueta_do_selo`.
+               **A ROTA CONTINUA ACEITANDO O CAMPO** — `selo_abertura_texto` é
+               o nome da coluna em `ri_matriculas`, e é por ele que os testes
+               põem um selo à mão —, mas a tela não o oferece.
+               **E O RELATO #77 FECHOU A PORTA DE VEZ** no dia seguinte:
+               nenhum ato fica de pé sem selo, em atribuição nenhuma. Caixa
+               que não leva a lugar nenhum é pior que caixa nenhuma. #}
+          </form>
+          {% set _abert2 = (partes or [])|selectattr('ato_id','none')|list %}
+          {% if not _abert2 %}
+          <form method="post" class="form-grid" style="padding:4px;margin-top:2px;border-top:1px dashed #bbb"
+                action="{{ url_for('ri_incluir_parte_abertura', matricula_id=m.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="span2"><strong>Cadastrar o proprietário da abertura</strong>
+              <small class="muted"> — necessário antes de pedir o selo</small></div>
+            <label class="span2">Nome
+              <input name="nome" required placeholder="nome completo" autocomplete="off"></label>
+            <label>CPF ou CNPJ
+              <input name="documento" placeholder="opcional" autocomplete="off"></label>
+            <label>Papel
+              <input name="papel" value="proprietario" list="papeis-ri"></label>
+            <div class="span2"><button class="primary">Cadastrar proprietário</button></div>
+          </form>
+          {% endif %}
+
+        </details>
+        {% endif %}
+      {% endif %}</div></div>
+    {% endif %}
+    {% if m.cib or m.car or m.nirf or m.incra or m.sigef or m.ccir %}
+    <div class="span2"><small class="muted">Identificadores rurais</small><div class="small">
+      {% if m.car %}CAR {{ m.car }} · {% endif %}{% if m.nirf %}NIRF {{ m.nirf }} · {% endif %}
+      {% if m.cib %}CIB {{ m.cib }} · {% endif %}
+      {% if m.incra %}INCRA {{ m.incra }} · {% endif %}{% if m.sigef %}SIGEF {{ m.sigef }} · {% endif %}
+      {% if m.ccir %}CCIR {{ m.ccir }}{% endif %}</div></div>
+    {% endif %}
+  </div>
+</section>
+
+<datalist id="papeis-ri">
+  {% for x in PAPEIS_RI %}<option value="{{ x }}">{% endfor %}
+</datalist>
+<section class="panel">
+  <div class="panel-head"><span>Partes ({{ partes|length }})</span></div>
+  {% if user.role in ['ADMIN','MANAGER'] and partes %}
+  {# O CAMINHO DITO NO ALTO DO PAINEL — 16/09/2026, e é correção minha.
+
+     Ele perguntou por que não conseguiu editar os dados da proprietária da
+     4.016. O mecanismo funciona (repliquei o POST: grava, e a auditoria
+     guarda o valor anterior); o que não funciona é achar — o painel fica a
+     77% da página e o controle era a palavra «corrigir» em cinza, na última
+     coluna, dentro de uma gaveta fechada.
+
+     **Peça que existe e ninguém acha é, para quem está no balcão, peça que
+     não existe** — terceira vez em dois dias. #}
+  <p class="small muted" style="margin:6px 0 0">
+    Para mudar <strong>nome, documento, qualificação, papel</strong> ou quem é
+    o <strong>titular atual</strong>, use <strong>Corrigir</strong> na linha da
+    pessoa. Isto é qualificação, não teor: o ato não é tocado, e o valor
+    anterior fica na auditoria.
+    <br>Esta lista é do que <strong>já está escrito no livro</strong>, e por
+    isso não se acrescenta nem se tira parte aqui: quem manda na parte é o ato.
+    Para o ato que está sendo escrito agora, os blocos estão no formulário
+    acima, e vão <strong>quantas partes forem</strong> — o botão
+    <strong>Acrescentar parte</strong> põe mais um. Depois de lavrado, parte se
+    inclui ou se retira por <strong>averbação</strong>, com o motivo escrito.
+  </p>
+  {% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Nome</th><th>Documento</th><th>Qualificação</th><th>Papel</th><th>Ato</th><th>Proprietário</th>{% if user.role in ['ADMIN','MANAGER'] %}<th></th>{% endif %}</tr></thead>
+      <tbody>
+      {% for p in partes %}
+        <tr>
+          <td>{{ p.nome }}</td>
+          <td>{% if p.documento_numero %}{{ p.documento_tipo or '' }} {{ p.documento_numero }}
+              {% if not p.documento_valido %}<br><small class="badge alta">dígito não confere</small>{% endif %}
+              {% else %}<small class="muted">sem documento</small>{% endif %}</td>
+          <td>{{ p.qualificacao or '—' }}</td>
+          <td>{% if p.papel %}{{ p.papel }}{% else %}<span class="badge alta" title="sem papel, esta parte não conta como titular em nenhum lugar do sistema">sem papel</span>{% endif %}</td>
+          <td>{% if p.ato_id %}{% for a in atos %}{% if a.id == p.ato_id %}{{ a.tipo }}-{{ a.numero }}{% endif %}{% endfor %}{% else %}<small class="muted">—</small>{% endif %}</td>
+          <td>{% if p.proprietario_ativo %}<span class="badge ok">Ativo</span>{% elif p.proprietario %}<span class="badge">Anterior</span>{% else %}—{% endif %}</td>
+          {% if user.role in ['ADMIN','MANAGER'] %}
+          <td>
+            <details class="corrigir-parte">
+              <summary>Corrigir</summary>
+              <form method="post" action="{{ url_for('ri_corrigir_parte', parte_id=p.id) }}" class="form-grid" style="padding:8px">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label class="span2">Nome<input name="nome" value="{{ p.nome or '' }}"></label>
+                <label>Documento<input name="documento" value="{{ p.documento_numero or '' }}" placeholder="CPF ou CNPJ"></label>
+                <label>Papel
+                  <input name="papel" value="{{ p.papel or '' }}" list="papeis-ri" placeholder="transmitente, adquirente...">
+                </label>
+                <label class="span2">Qualificação<input name="qualificacao" value="{{ p.qualificacao or '' }}"></label>
+                <label class="span2">Titular atual
+                  <select name="titular">
+                    <option value="papel">deduzir do papel</option>
+                    <option value="1">sim, é titular atual</option>
+                    <option value="0">não</option>
+                  </select>
+                </label>
+                <label class="span2">Motivo <input name="motivo" required minlength="10"
+                  placeholder="Por que a qualificação está sendo corrigida"></label>
+                <div class="span2 notice small">
+                  Isto é <strong>qualificação</strong>, não teor. O teor do ato não é tocado.
+                  O papel decide quem é <strong>titular atual</strong>: parte sem papel de
+                  titular deixa a certidão de propriedade em branco.
+                </div>
+                <div class="span2"><button class="primary">Corrigir</button></div>
+              </form>
+            </details>
+          </td>
+          {% endif %}
+        </tr>
+      {% else %}<tr><td colspan="7">Nenhuma parte registrada.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{# RELATO #85 (18/09/2026): «nao faz sentido esse campo de documentos das
+   prenotacoes abertas — pode tirar». O anexo continua na ficha do protocolo
+   (`ri_protocolo_ver.html`, relato #25); repetir o mesmo bloco na matricula
+   era ruído na ficha 4969 e em todas as outras. #}
+
+{# ============ O NÚMERO QUE A FICHA JÁ USOU ============
+
+   O relato foi «AV-28 aparecendo no teor de ficha do acervo», e parecia
+   layout. Não era: nas fichas do E-Ofício os atos moram DENTRO do texto, e a
+   tabela de atos não os tem. O sistema contava só a tabela.
+
+   A tela não dizia qual era o número certo, e quem digitava tinha de ir ao
+   papel para descobrir. Agora ela diz, e mostra a frase de onde tirou. #}
+{% if piso and piso.divergente %}
+<div class="notice critical">
+  <strong>O próximo ato desta matrícula é o número {{ piso.proximo }}.</strong>
+  A tabela de atos do sistema vai até
+  {{ piso.em_atos if piso.em_atos else 'nenhum' }}, mas
+  <strong>o texto da ficha já traz atos até o {{ piso.no_teor }}</strong> &mdash;
+  eles vieram do E-Ofício dentro do próprio teor, e não como linhas.
+  <details style="margin-top:8px">
+    <summary class="small">Onde isso está escrito na ficha</summary>
+    <ul class="small">
+      {% for c in piso.citados[-6:] %}
+      <li><strong>{{ c.rotulo }}</strong> &mdash; “…{{ c.trecho }}…”</li>
+      {% endfor %}
+    </ul>
+    <p class="small muted">Se alguma dessas frases não for ato desta ficha,
+    o número certo é outro &mdash; quem confere é você, no livro físico. O
+    sistema <strong>não cria ato a partir do texto</strong>: ele só recusa
+    repetir um número que está escrito ali.</p>
+  </details>
+</div>
+{% endif %}
+
+{# ================= O ATO ANTES DE SER ATO =================
+
+   «Pré-visualizar matrícula com o ato novo» e «rascunho de ato sem consumir
+   número» — os dois débitos do balcão são a mesma necessidade.
+
+   O rascunho NÃO mora em `ri_atos`: ali todo ato já entra tomando o número e
+   entrando na corrente de hash, e um rascunho seria um ato que existe e não
+   devia. #}
+<details class="panel"{% if rascunho %} open{% endif %}>
+  <summary>Rascunho do ato
+    {% if rascunho %}<span class="badge alta">{{ rascunho.tipo }} guardado</span>{% endif %}
+  </summary>
+  <div style="padding:4px 2px 8px">
+    <p class="small muted">Escreva o texto, guarde, e veja como a matrícula vai
+    ler com ele dentro &mdash; <strong>sem lavrar e sem tomar número</strong>.
+    O número fica com quem lavrar primeiro.</p>
+    <form method="post" action="{{ url_for('ri_rascunho_guardar', matricula_id=m.id) }}"
+          class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Tipo
+        <select name="tipo">
+          <option value="AV" {% if rascunho and rascunho.tipo == 'AV' %}selected{% endif %}>AV — averbação</option>
+          <option value="R" {% if rascunho and rascunho.tipo == 'R' %}selected{% endif %}>R — registro</option>
+        </select></label>
+      <label>Data do ato
+        <input type="date" name="data_ato"
+               value="{{ rascunho.data_ato if rascunho else hoje }}"></label>
+      <label class="span2">Texto do ato
+        <textarea name="teor" rows="6">{{ rascunho.teor if rascunho else '' }}</textarea></label>
+      <div class="actions span2">
+        <button class="primary">Guardar rascunho</button>
+        {% if rascunho %}
+        <a class="button" href="{{ url_for('ri_rascunho_ver', matricula_id=m.id) }}">
+          Ver como a matrícula fica</a>
+        <button name="acao" value="apagar_rascunho">Jogar fora</button>
+        {% endif %}
+        <span class="small muted">Rascunho não é ato: não tem número, não está
+          na matrícula e não vale como registro.</span>
+      </div>
+    </form>
+  </div>
+</details>
+
+{# O PAINEL DO ALTO É O ÍNDICE DOS ATOS — relato #71, 18/09/2026.
+
+   «mostra duas vezes as 3 averbaçoes feitas» — Carla, na matrícula 3.110.
+   Medido no HTML que o balcão recebe: os três textos saíam DUAS vezes cada,
+   aqui e na seção que o relato #67 criou depois do teor. Na casa inteira são
+   **291 fichas** e **717 atos** assim.
+
+   **A culpa não era da seção de baixo: foi este painel ter ficado como estava
+   quando ela nasceu**, em 15/09. As duas vistas ficaram mostrando o mesmo
+   texto.
+
+   Aqui fica o ÍNDICE — rótulo, data, distintivos, o carimbo do selo e os
+   BOTÕES (cancelar, selar, expurgar), porque é neste ponto da página que se
+   age sobre o ato, e mandá-los para baixo de um teor de 60 mil caracteres
+   seria escondê-los. O **texto** do ato saiu daqui: aparece uma vez só, na
+   sequência do teor, que é a ordem do papel — `ri_odt.MODELO_FICHA_PADRAO` e
+   a certidão de inteiro teor sempre imprimiram cada ato uma vez.
+
+   A linha abaixo de cada ato diz ao leitor ONDE ler o texto dele: dentro do
+   teor (o E-Ofício já o escreveu lá — 531 atos nesta casa) ou abaixo dele. #}
+{# HOTFIX-2026-10-09-07: link «#selar-ato-N» (ficha encerrada, lista de
+   matrículas) abre o «Selar este ato» daquele ato e rola até ele. #}
+<script>
+(function(){function abrir(){var h=location.hash||'';if(h.indexOf('#selar-ato-')!==0)return;var d=document.getElementById(h.slice(1));if(d){d.open=true;d.scrollIntoView({block:'start'});}}
+document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('hashchange',abrir);})();
+</script>
+{% if atos %}
+<section class="panel">
+  <div class="panel-head"><span>Atos ({{ atos|length }})</span>
+    <span class="muted small">índice &mdash; cada ato com o seu selo e os seus
+      botões; o texto de cada um está no teor, abaixo, ou logo depois dele</span>
+  </div>
+  <div class="timeline">
+    {% for a in atos %}
+    <article class="card{% if a.cancelado %} muted{% endif %}">
+      <h3>{{ a.tipo }}-{{ a.numero }}
+        <small class="muted">{{ fmt_date(a.data_ato) }}</small>
+        {%- set doc = docs_por_ato.get(a.id) %}
+        {%- if doc and doc.documentos %}
+        <span class="badge">{{ doc.documentos|length }} doc.</span>
+        {%- endif %}
+        {% if a.cancelado %}<span class="badge critica">Cancelado</span>{% endif %}
+        {% if a.acervo %}<span class="badge">Acervo</span>{% endif %}
+        {% if a.id in quebras %}<span class="badge critica">Hash divergente</span>{% endif %}
+      </h3>
+      {% if not a.teor %}
+      <div class="small muted">Este ato não tem texto gravado.</div>
+      {% elif a.texto_no_teor %}
+      <div class="small muted">O texto deste ato está dentro do teor, abaixo.</div>
+      {% else %}
+      <div class="small"><a href="#texto-do-ato-{{ a.id }}">Ler o texto deste ato &mdash; abaixo do teor</a></div>
+      {% endif %}
+      {% if user.role in ['ADMIN','MANAGER'] and not a.cancelado and not m.encerrada %}
+      <details class="cancelar-ato">
+        <summary class="small muted">Cancelar este ato</summary>
+        <form method="post" action="{{ url_for('ri_cancelar_ato', ato_id=a.id) }}" class="form-grid">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label class="span2">Fundamento do cancelamento
+            <input name="motivo" required placeholder="Decisão judicial, requerimento, erro material...">
+          </label>
+          <label>Data<input type="date" name="data_ato" value="{{ hoje }}"></label>
+          <label>Protocolo<input name="protocolo"></label>
+          <div class="span2 notice small">
+            O cancelamento é lavrado como <strong>nova averbação</strong>. Este ato continua
+            na ficha, marcado — assento não se apaga.
+          </div>
+          <div class="span2"><button class="danger">Cancelar o ato por averbação</button></div>
+        </form>
+      </details>
+      {% endif %}
+      {% if a.cancelado and a.cancelado_por_ato_id %}
+        <div class="small muted">Cancelado por averbação lavrada neste sistema.</div>
+      {% endif %}
+      {# A RAZAO DO CANCELAMENTO, QUANDO NAO HA AVERBACAO QUE A CARREGUE.
+         O caminho mais comum disto e o selo que nao saiu e o operador nao
+         autorizou seguir: o ato nao volta atras (ja entrou na corrente de
+         hash), e fica marcado. Sem esta linha a ficha dizia so «Cancelado», e
+         quem a abrisse meses depois nao tinha como saber por que. #}
+      {% if a.cancelado and a.motivo_cancelamento %}
+        <div class="notice danger small">
+          <strong>Cancelado — motivo:</strong> {{ a.motivo_cancelamento }}
+        </div>
+      {% endif %}
+      {% if user.role == 'ADMIN' and a.id == ultimo_ato_id and a.origem == 'MANUAL' and not a.cancelado %}
+        <div class="small"><a href="{{ url_for('ri_expurgar_ato', ato_id=a.id) }}">Expurgar este ato (lavrado em teste)</a></div>
+      {% endif %}
+      {# O ATO GRATUITO FICA ASSINALADO NA FICHA, com o motivo à vista.
+         «Assinalando que é exceção dentro do RI» — pedido do oficial em
+         14/09/2026. Marca sem o porquê não responde à pergunta que a
+         correição faz, e por isso os dois saem juntos. #}
+      {% if a.isento %}
+      <div class="notice warning small">
+        <strong>Ato gratuito — não se cobrou emolumentos.</strong>
+        {% if a.motivo_isencao %}<br>{{ a.motivo_isencao }}{% endif %}
+      </div>
+      {% endif %}
+      {# SELAR ATO JÁ LAVRADO — pedido do oficial em 15/09/2026. O selo do RI só
+         existia dentro da lavratura: ato que nascesse sem selo (máquina fora do
+         ar, ou minuta que entrou como ato) não tinha por onde ser selado
+         depois. Funciona com a ficha encerrada de propósito — selar não lavra,
+         não numera e não entra na corrente de hash. #}
+      {# HOTFIX-2026-10-09-08: ato que ja tem selo (razao/teor/acervo) nao e
+         pendencia — etiqueta; o selar fica so para ADMIN/MANAGER, como
+         «Selar mesmo assim» com confirmacao de duplicidade. #}
+      {% if not a.selo_texto and not a.cancelado and a.ja_selado %}
+        <span class="badge ok" title="Não aparece como pendência de selo">{{ a.ja_selado[1] }}</span>
+      {% endif %}
+      {% if not a.selo_texto and not a.cancelado
+            and user.role in ['ADMIN','MANAGER','USER']
+            and (not a.ja_selado or user.role in ['ADMIN','MANAGER']) %}
+            {# datalist compartilhado — o do lavrar some quando a ficha esta
+         encerrada, e «Selar este ato» continua disponivel justamente nesse
+         caso (pedido do oficial). id unico na pagina. #}
+      <datalist id="itens_do_ato_do_ri_selar">
+        {% for codigo, usos in ITENS_DO_ATO_DO_RI %}
+          <option value="{{ codigo }}">{{ codigo }} — {{ usos }} uso(s) nesta casa</option>
+        {% endfor %}
+      </datalist>
+<details id="selar-ato-{{ a.id }}" class="selar-ato">
+        <summary class="button{% if a.ja_selado %} small{% endif %}">{% if a.ja_selado %}Selar mesmo assim{% else %}Selar este ato{% endif %}</summary>
+        <form method="post" class="form-grid"
+              action="{{ url_for('ri_selar_ato', ato_id=a.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {% if a.ja_selado %}
+          <div class="span2 notice critical small">
+            <strong>Atenção — possível selo em duplicidade.</strong> Este ato já consta
+            como selado ({{ a.ja_selado[1] }}). Só continue se tiver certeza de que
+            ele nunca recebeu selo.
+            <label style="display:flex;gap:8px;margin-top:6px">
+              <input type="checkbox" name="confirmar_ressele" value="1" required>
+              <span>Confirmo que este ato NÃO tem selo e quero selar mesmo assim.</span>
+            </label>
+          </div>
+          {% endif %}
+          <p class="span2 small muted">O selo exige três coisas que este ato
+            não tem gravadas — elas ficam no ato depois de informadas.</p>
+          <label class="span2">Natureza do título
+            <input name="natureza_titulo" value="{{ a.natureza_titulo or '' }}"
+                   placeholder="Ex.: cancelamento de hipoteca cedular"></label>
+          {# VARIOS SELOS NO MESMO ATO — Beatriz 23/09/2026 (desmembramento).
+             Continua dando para selar um só; a novidade é poder acrescentar
+             linhas (ex.: 16.22.8.1 ×1 + 16.5 ×2). Cada unidade vira um selo. #}
+          <div class="span2" id="lista-selos-ato-{{ a.id }}">
+            <strong>Selos deste ato</strong>
+            <small class="muted">um ou vários itens da tabela de emolumentos</small>
+            <div class="linha-selo" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:6px">
+              <label style="flex:2;min-width:10em">Item da tabela de custas
+                <input name="codigo_tj_selo" value="{{ a.codigo_tj or ('16.22.2' if 'ENCERRAMENTO' in ((a.natureza_titulo or '')|upper) else '') }}"
+                       list="itens_do_ato_do_ri_selar" autocomplete="off"
+                       placeholder="Ex.: 16.22.8.1"></label>
+              <label style="width:5em">Qtd
+                <input name="qtd_selo" type="number" min="1" max="50" value="1"></label>
+              <button type="button" class="small" title="Remover esta linha"
+                      onclick="(function(b){var L=b.closest('#lista-selos-ato-{{ a.id }}');if(L&&L.querySelectorAll('.linha-selo').length>1)b.closest('.linha-selo').remove();})(this)">×</button>
+            </div>
+          </div>
+          <div class="span2">
+            <button type="button" class="small"
+                    onclick="(function(btn){var L=document.getElementById('lista-selos-ato-{{ a.id }}');if(!L)return;var m=L.querySelector('.linha-selo');if(!m)return;var c=m.cloneNode(true);c.querySelectorAll('input').forEach(function(i){if(i.name==='qtd_selo')i.value='1';else i.value='';});L.appendChild(c);})(this)">+ Adicionar outro selo</button>
+            <small class="muted">Ex.: retificação 16.22.8.1 + desmembramento 16.5 duas vezes.</small>
+          </div>
+          {# campo legado: testes e clientes antigos ainda podem mandar codigo_tj #}
+          <input type="hidden" name="codigo_tj" value="">
+          <label>Valor declarado (R$)
+            <input name="base_calculo" placeholder="0,00"
+                   value="{{ '%.2f'|format((a.base_calculo_centavos or 0)/100)|replace('.', ',') if a.base_calculo_centavos else '' }}">
+            <small class="muted">é ele que escolhe o caminho do selo</small></label>
+          <label class="span2" style="display:flex;gap:8px;align-items:flex-start">
+            <input type="checkbox" name="isento" value="1" id="selar_ato_isento"{% if a.isento %} checked{% endif %}
+                   onchange="(function(cb){var b=document.getElementById('selar_ato_motivo_wrap');if(b)b.style.display=cb.checked?'block':'none';})(this)">
+            <span><strong>Sair isento / gratuito</strong><br>
+              <small>Se digitar o motivo abaixo, o sistema trata como isento
+                mesmo sem marcar (guarda do R-01/4019).</small></span>
+          </label>
+          <div id="selar_ato_motivo_wrap" class="span2 selar-motivo-wrap" style="display:{{ 'block' if a.isento else 'none' }}">
+            <label>Motivo da gratuidade
+              <input name="motivo_isencao" id="selar_ato_motivo" value="{{ a.motivo_isencao or '' }}"
+                     placeholder="Ex.: art. 290-A, REURB-S, Lei 13.465/2017"
+                     oninput="(function(inp){var cb=document.getElementById('selar_ato_isento');if(cb && (inp.value||'').trim() && !cb.checked){cb.checked=true;cb.dispatchEvent(new Event('change'));}})(this)">
+            </label>
+          </div>
+          {# HOTFIX-2026-10-09-07 — Beatriz 09/10/2026 13:55 (mat. 1130/1196):
+             «onde tem encerramento, insira o campo de selar o ato, tanto pra selar
+             o item quanto o de arquivamento e a opção de gratuito, inclusive a
+             informação de gratuito pelo REURB». O lavrar já tinha os quatro;
+             o «Selar este ato» (ato lavrado sem selo, inclusive o encerramento,
+             com a ficha fechada) só tinha item e gratuidade. Seletores presos ao
+             próprio formulário: há um formulário destes por ato na página. #}
+          <label class="span2">Modalidade REURB (este ato)
+            <select name="reurb_tipo"
+                    onchange="(function(s){var f=s.form;var cb=f.querySelector('[name=isento]');var w=f.querySelector('.selar-motivo-wrap');var m=f.querySelector('[name=motivo_isencao]');if(s.value==='S'){if(cb)cb.checked=true;if(w)w.style.display='block';if(m&&!(m.value||'').trim())m.value='O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS PREVISTO NA LEI Nº 13.465, DE 2017.';}})(this)">
+              <option value="">Não é REURB / não se aplica</option>
+              <option value="S">REURB-S — isento (Lei 13.465/2017, art. 13 § 1º)</option>
+              <option value="E">REURB-E — cobrado</option>
+              <option value="MISTO">Misto — cobrado (isento só se marcado à mão)</option>
+            </select>
+            <small class="muted">REURB-S marca isento e preenche o motivo; E e misto seguem cobrados.</small></label>
+          <label class="span2" style="display:flex;gap:8px;align-items:flex-start">
+            <input type="checkbox" name="gerar_arquivamento" value="1"
+                   onchange="(function(c){var f=c.form.querySelector('[name=folhas_arquivamento]');if(!f)return;f.disabled=!c.checked;f.required=!!c.checked;if(!c.checked)f.value='';})(this)">
+            <span><strong>Selar também o arquivamento</strong> (16.39, opcional)<br>
+              <small>Sai depois do selo do ato, com a mesma gratuidade dele.</small></span>
+          </label>
+          <label>Folhas do arquivamento
+            <input type="number" name="folhas_arquivamento" min="1" step="1" disabled
+                   placeholder="ex.: 12"></label>
+          {# O SELO À MÃO SAIU DESTE FORMULÁRIO EM 15/09/2026 — relato #66.
+             Havia aqui a etiqueta completa e a linha de emolumentos digitadas
+             à mão, para quando o aparelho não respondesse. O oficial decidiu
+             que essa hipótese não existe: o selo é emitido pelo selador.
+             **E a linha de emolumentos sai junto de propósito** — ela era o
+             resumo curto que se colava ao lado da etiqueta digitada; com o
+             selo vindo do aparelho, os valores saem do razão (`sd_selos`), que
+             é quem os declara. #}
+          <div class="span2"><button class="primary">Selar {{ a.tipo }}-{{ '%02d'|format(a.numero) }}</button></div>
+        </form>
+      </details>
+      {% endif %}
+
+      {# ARQUIVAMENTO DEPOIS — ato ja selado, arquivamento ainda nao. #}
+      {% if a.selo_texto and not a.selo_arquivamento and not a.cancelado
+            and user.role in ['ADMIN','MANAGER','USER'] %}
+      <details>
+        <summary class="button">Selar arquivamento</summary>
+        <form method="post" class="form-grid"
+              action="{{ url_for('ri_selar_arquivamento', ato_id=a.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <p class="span2 small muted">Gera o selo <strong>16.39</strong>
+            (arquivamento por folha) sem alterar o selo do ato.</p>
+          <label>Folhas do documento / processo
+            <input type="number" name="folhas_arquivamento" min="1" step="1"
+                   required placeholder="ex.: 12"></label>
+          <div class="span2"><button class="primary">Selar arquivamento
+            {{ a.tipo }}-{{ '%02d'|format(a.numero) }}</button></div>
+        </form>
+      </details>
+      {% endif %}
+      {% if a.selo_arquivamento %}
+      <div class="notice small">
+        <strong>Arquivamento:</strong> {{ a.selo_arquivamento }}
+        {% if a.folhas_arquivamento %} — {{ a.folhas_arquivamento }} folha(s){% endif %}
+      </div>
+      {% endif %}
+      {# O CARIMBO DA TELA É O MESMO DO PAPEL — ordem do oficial em 15/09/2026.
+         Ele é montado na rota por `ri_odt.carimbo_compacto_html`, que lê a
+         mesma `partes_do_carimbo` que monta o `.odt`.
+
+         **UMA LINHA, SEM QR E SEM LINK — ordem dele em 16/09/2026**: «não faz
+         sentido qr code de selo e link de acesso a consulta de selo no livro».
+         E o QR COLADO saiu junto: ele aparecia aqui embaixo, como imagem, e
+         seria o mesmo atalho por outro caminho. Medido em 14/09: `selo_qr`
+         está vazio em 1.245 de 1.245 atos — ninguém deixa de ver nada.
+
+         O que responde «este selo é real?» continua na linha: o número de 28
+         caracteres, inteiro. #}
+      {% if a.carimbo %}{{ a.carimbo|safe }}{% endif %}
+      {% set cn = (cnib_dos_atos or {}).get(a.id) %}
+      {% if cn %}
+      <div class="small {{ 'danger' if cn.resultado == 'POSITIVO' else 'muted' }}">
+        <strong>CNIB na lavratura:</strong>
+        {{ 'ordem(ns) ativa(s) coincidem — conferir' if cn.resultado == 'POSITIVO' else 'nada consta' }}
+        · {% if cn.fonte == 'CENTRAL' %}Central, protocolo {{ cn.protocolo_consulta }}{% else %}cópia local{% if cn.base_ate %} até {{ fmt_date(cn.base_ate) }}{% endif %}{% endif %}
+        · {{ cn.consultado_em[:16] }}{% if cn.consultado_por %} por {{ cn.consultado_por }}{% endif %}
+      </div>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Teor da ficha</span>{% if m.teor %}<span class="muted small">{{ m.teor|length }} caracteres</span>{% endif %}</div>
+  {% if m.teor %}
+  <div class="teor">{{ teor_seguro(m.teor, m.teor_formato)|safe }}</div>
+  {% else %}
+  <p class="muted small" style="margin:10px">Esta ficha não tem texto gravado —
+    o que ela tem são os atos abaixo.</p>
+  {% endif %}
+
+  {# O QUE O TEOR AINDA NÃO CONTA — relato #67, 15/09/2026: «precisa atualizar
+     o teor da ficha com os atos recém lavrados», e o detalhe dele: «ato novo
+     não atualiza automático no teor».
+
+     **O PEDIDO NÃO SE CUMPRE ESCREVENDO NO TEXTO**, e a medição diz por quê:
+     o teor da ficha não é feito só de atos — das 1.554 fichas com teor
+     gravado, 426 têm ato, e em **295** delas o teor é maior que a soma dos
+     atos que ela tem (a descrição do imóvel, as confrontações) —, e o teor do
+     acervo é o que o E-Ofício gravou. Acrescentar-lhe texto hoje faria a
+     ficha da tela discordar do papel que está na estante, que é o carimbo que
+     mente.
+
+     **E FOI A LEITURA QUE FALTOU, E O PAPEL MOSTRA ISSO.** A ficha impressa
+     (`ri_odt.MODELO_FICHA_PADRAO`) imprime o teor e, depois dele, **todos** os
+     atos, cada um com o seu rótulo e a sua linha `-.-.-`; a certidão de
+     inteiro teor, o mesmo. A tela mostrava o teor e parava ali: quem lia o
+     teor — que é o que se lê para saber o que a ficha diz — não encontrava o
+     ato novo, e precisava subir até o cartão dos atos para achá-lo.
+
+     **AQUI O TEXTO DO ATO SAI UMA VEZ SÓ** — e isto é o conserto do relato
+     #71, de 18/09/2026. Até então ele saía duas vezes: aqui e no painel do
+     alto, que continuou mostrando o texto quando esta seção nasceu. Medido na
+     produção: dos 1.248 atos desta casa (1.246 com teor), **531** já estão
+     escritos inteiros dentro do teor — todos em ficha **ACERVO**, onde o
+     E-Ofício escrevia o ato dentro do texto da matrícula (as 6 fichas
+     ESTRUTURADA desta casa não têm um único ato, e o comentário daqui dizia o
+     contrário: era o carimbo que mente) — e **717** não estão, em **291**
+     fichas. Agora só estes têm cartão de texto, e o painel do alto é o
+     índice.
+
+     **O CARIMBO DO SELO NÃO VEM PARA CÁ**, embora no papel ele saia depois do
+     ato: ele fica no índice, junto do rótulo e dos botões daquele ato. Aqui
+     fica só o que o título promete — o TEXTO que o teor ainda não conta.
+
+     O ato sem teor também entra, e são 2 nesta casa: sem texto não há o que
+     comparar, e ele ainda tem rótulo e data para mostrar — e é o cartão dele,
+     na seção do índice, que diz que não há texto gravado.
+
+     `id="texto-do-ato-{{ a.id }}"` é o destino do link do índice. Um só
+     lugar mostra o texto, e o link leva a ele: dois caminhos para a mesma
+     pergunta fariam o índice dizer «leia abaixo» sem ter para onde apontar. #}
+  {% if fora_do_teor %}
+  <div class="panel-head" style="margin-top:12px;border-top:1px solid var(--linha,#ddd)">
+    <span>O que o teor acima não conta ({{ fora_do_teor|length }})</span>
+    <span class="muted small">atos desta ficha cujo texto não está no teor
+      gravado &mdash; na ficha impressa eles saem depois dele</span>
+  </div>
+  <div class="timeline">
+    {% for a in fora_do_teor %}
+    <article class="card{% if a.cancelado %} muted{% endif %}"
+             id="texto-do-ato-{{ a.id }}">
+      <h3>{{ a.rotulo }}
+        <small class="muted">{{ fmt_date(a.data_ato) }}</small>
+        {% if a.natureza_titulo %}<small class="muted">{{ a.natureza_titulo }}</small>{% endif %}
+        {% if a.cancelado %}<span class="badge critica">Cancelado</span>{% endif %}
+      </h3>
+      {% if a.teor %}<div class="teor">{{ teor_seguro(a.teor, a.teor_formato)|safe }}</div>{% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{# A DIGITALIZAÇÃO OFICIAL APARECE AQUI QUANDO NÃO HÁ PÁGINAS DO ACERVO —
+   17/09/2026: «anexei uma digitalização da matrícula 4016 e não mostra na
+   parte principal».
+   **São duas coisas com o mesmo nome**: `ri_imagens` são as páginas que
+   vieram do acervo digitalizado (11.251 nesta casa), e `ri_matriculas.digi_*`
+   é o arquivo oficial que o balcão envia. A galeria abaixo lê a primeira; a
+   4016 tem zero linhas nela, e por isso o que ele mandou não aparecia em
+   lugar nenhum da parte principal.
+   CORREÇÃO DE 03/10/2026 — a condição era «digi_nome and not imagens», e com
+   ela a digitalização oficial SUMIA em toda ficha que tinha páginas do
+   acervo do E-Ofício: medido na 977 (digitalização nova gravada às 12h48,
+   20 páginas antigas do E-Ofício) — a tela mostrava as antigas e escondia a
+   nova. Ordem do oficial no mesmo dia: «nossa referência atual são as
+   digitalizações». A oficial aparece sempre que existir, e ANTES das antigas. #}
+{% if m.digi_nome %}
+<section class="panel">
+  <div class="panel-head"><span>Digitalização oficial</span></div>
+  <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;padding:12px">
+    {# A CAPA E A RESPOSTA VISUAL — 17/09/2026. Nome de arquivo confirma que
+       algo foi salvo; a miniatura permite reconhecer que e a ficha certa sem
+       sair da tela inicial. O hash entra na URL para a troca do arquivo
+       invalidar o cache do navegador imediatamente. #}
+    <a href="{{ url_for('ri_conferir_ficha', matricula_id=m.id) }}"
+       title="Abrir a digitalização para conferir"
+       style="display:block;flex:0 0 auto;text-decoration:none">
+      <img src="{{ url_for('ri_miniatura_digitalizacao', matricula_id=m.id,
+                           w=420, v=(m.digi_sha256 or '')[:12]) }}"
+           alt="Miniatura da digitalização oficial da matrícula {{ m.numero }}"
+           loading="lazy"
+           style="display:block;width:min(100%,420px);max-height:520px;object-fit:contain;border:1px solid #bbb;background:#fff">
+      <span class="small">clique na miniatura para conferir</span>
+    </a>
+    <div style="flex:1 1 260px;min-width:0">
+      <strong>{{ m.digi_nome }}</strong>
+      <span class="small muted">
+        {%- if m.digi_em %} — enviada em {{ fmt_date(m.digi_em[:10]) }}{% endif %}
+        {%- if m.digi_por %}, por {{ m.digi_por }}{% endif %}</span>
+      <div style="margin-top:6px">
+        <a href="{{ url_for('ri_baixar_digitalizacao', matricula_id=m.id) }}">baixar o arquivo</a>
+        · <a href="{{ url_for('ri_conferir_ficha', matricula_id=m.id) }}">abrir para conferir</a>
+      </div>
+      <p class="small muted" style="margin:8px 0 0">
+        Este é o <strong>arquivo oficial da matrícula</strong> — é dele que sai a
+        certidão de inteiro teor por reprodução{% if imagens %}. As páginas
+        mais abaixo vieram do acervo do E-Ofício e ficam só como referência
+        antiga{% endif %}.
+      </p>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if imagens %}
+{# Antes esta lista era só o nome do arquivo, em texto. Quem abria a matrícula
+   via "Fichas digitalizadas (6)" e seis nomes que não clicavam em lugar nenhum
+   — e concluía, com razão, que as imagens não abrem. A digitalização só era
+   visível na tela de conferência, que ninguém adivinha que existe. #}
+{% set localizadas = imagens|selectattr('caminho')|list
+                   + imagens|rejectattr('caminho')|selectattr('caminho_interno')|list %}
+<section class="panel">
+  <div class="panel-head">
+    <span>{% if m.digi_nome %}Páginas do acervo do E-Ofício — referência antiga{% else %}Fichas digitalizadas{% endif %} ({{ imagens|length }})</span>
+    <a class="small" href="{{ url_for('ri_conferir_ficha', matricula_id=m.id) }}">
+      abrir lado a lado com o teor</a>
+  </div>
+
+  {% if not localizadas %}
+  <div class="notice danger" style="margin:10px">
+    <strong>Nenhum destes {{ imagens|length }} arquivos foi localizado no disco</strong>,
+    por isso não há o que abrir. O nome está registrado, o arquivo não foi encontrado.
+    Vá em {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_resolver_imagens') }}">Fichas digitalizadas</a>{% else %}«Fichas digitalizadas» (oficial/substituto){% endif %} e clique em
+    <strong>Localizar arquivos</strong> &mdash; a tela mostra o que o banco procura e o que o
+    disco tem.
+  </div>
+  <ul class="file-list">
+    {% for i in imagens %}<li class="muted">{{ i.nome_arquivo or '(sem nome)' }}</li>{% endfor %}
+  </ul>
+  {% else %}
+  <div style="display:flex;flex-wrap:wrap;gap:12px;padding:12px">
+    {% for i in imagens %}
+      {% if i.caminho or i.caminho_interno %}
+      {# O <a> continua aqui de propósito: se o `lupa.js` não carregar — máquina
+         com script desligado, arquivo que não veio na atualização — o clique
+         volta a abrir a ficha numa aba, como sempre fez. A lupa é melhoria,
+         não é a única saída. #}
+      <a href="{{ url_for('ri_imagem', imagem_id=i.id) }}" target="_blank"
+         title="{{ i.nome_arquivo }} — clique para ampliar"
+         style="display:block;text-align:center;text-decoration:none">
+        <img class="ampliavel" src="{{ url_for('ri_imagem', imagem_id=i.id, w=260) }}"
+             data-lupa-cheia="{{ url_for('ri_imagem', imagem_id=i.id, w=2400) }}"
+             data-lupa-titulo="Matrícula {{ m.numero }} — página {{ i.ordem or loop.index }} ({{ i.nome_arquivo }})"
+             data-lupa-grupo="ficha-{{ m.id }}"
+             loading="lazy"
+             alt="Ficha {{ i.ordem or loop.index }} da matrícula {{ m.numero }}"
+             style="width:200px;border:1px solid #d0d0d0;background:#fff">
+        <span class="small muted" style="display:block;margin-top:4px">
+          página {{ i.ordem or loop.index }}</span>
+      </a>
+      {% if user.role in ['ADMIN','MANAGER'] %}
+      {# ORGANIZAR É DE QUEM GUARDA O ACERVO — pedido do oficial em
+         17/09/2026: «preciso de poderes para, caso necessário, editar e
+         excluir e alterar ordem das digitalizações nas matrículas».
+         As setas servem o ajuste de uma casa; o campo de número serve o
+         salto, porque há ficha com 69 páginas nesta casa (medido). #}
+      <details class="small" style="margin-top:4px">
+        <summary class="muted">organizar</summary>
+        <form method="post" class="stack"
+              action="{{ url_for('ri_organizar_imagens', matricula_id=m.id) }}"
+              style="gap:4px;margin-top:4px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="imagem_id" value="{{ i.id }}">
+          <div style="display:flex;gap:4px;align-items:center">
+            <button name="acao" value="subir" title="uma página acima">↑</button>
+            <button name="acao" value="descer" title="uma página abaixo">↓</button>
+            <input name="ordem" type="number" min="1" style="width:4.5em"
+                   value="{{ i.ordem or loop.index }}" aria-label="página">
+            <button name="acao" value="ordem">ir</button>
+          </div>
+          <input name="nome_arquivo" value="{{ i.nome_arquivo or '' }}"
+                 aria-label="nome do arquivo">
+          <div style="display:flex;gap:4px">
+            <button name="acao" value="renomear">renomear</button>
+            <button name="acao" value="excluir" class="danger"
+                    onclick="return confirm('Tirar a página {{ i.ordem or loop.index }} desta ficha? O arquivo continua no disco.')"
+                    >tirar da ficha</button>
+          </div>
+        </form>
+      </details>
+      {% endif %}
+      {% else %}
+      <div style="width:200px;text-align:center" class="small muted">
+        <div style="height:260px;border:1px dashed #c0c0c0;display:flex;
+                    align-items:center;justify-content:center;padding:8px">
+          arquivo não localizado
+        </div>
+        <span style="display:block;margin-top:4px">{{ i.nome_arquivo }}</span>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

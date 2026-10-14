@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Como a matrícula {{ matricula.numero }} vai ficar{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Matrícula {{ matricula.numero }} — como ela vai ficar</h1>
+  <a class="button" href="{{ url_for('ri_ficha', matricula_id=matricula.id) }}">&larr; A ficha</a>
+</div>
+
+{# ESTA TELA PARECE CERTIDÃO, E NÃO É.
+
+   O risco é real: alguém imprime e entrega, e a casa teria posto no mundo um
+   papel afirmando um ato que não existe. Por isso a marca aparece em três
+   lugares — aqui no alto, ao lado do número previsto, e dentro do próprio
+   corpo do ato — e ela continua na impressão, porque não está num botão. #}
+<div class="notice critical">
+  <strong>{{ MARCA }}.</strong> Esta tela mostra como a matrícula vai <em>ler</em>
+  depois que o ato for lavrado. <strong>O ato ainda não existe</strong>: ele não
+  tem número, não está na matrícula e não vale como registro.
+  Isto <strong>não é certidão</strong> e não se entrega a ninguém.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>A matrícula</span>
+    <span class="small muted">Livro {{ matricula.livro or '—' }}{% if matricula.folha %},
+      folha {{ matricula.folha }}{% endif %}</span></div>
+  <div class="grid2" style="padding:14px">
+    <div><small class="muted">Número</small><div><strong>{{ matricula.numero }}</strong></div></div>
+    <div><small class="muted">Aberta em</small><div>{{ fmt_date(matricula.data_abertura) if matricula.data_abertura else '—' }}</div></div>
+    <div><small class="muted">Atos lavrados</small><div>{{ atos|length }}</div></div>
+    <div><small class="muted">O próximo número seria</small>
+      <div><strong>{{ numero_previsto }}</strong>
+        <span class="small muted">— de quem lavrar primeiro</span></div></div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Os atos, na ordem</span></div>
+  <div style="padding:14px">
+    {% for a in atos %}
+    <article class="card{% if a.cancelado %} muted{% endif %}" style="margin-bottom:12px;padding:14px">
+      <h3 style="margin-top:0">{{ a.tipo }}-{{ a.numero }}
+        <small class="muted">{{ fmt_date(a.data_ato) }}</small>
+        {% if a.cancelado %}<span class="badge alta">cancelado</span>{% endif %}</h3>
+      <div class="teor">{{ (a.teor or '')|safe }}</div>
+    </article>
+    {% endfor %}
+
+    {% if rascunho %}
+    {# O RASCUNHO VEM NO FIM, porque é ali que ele entraria. Mostrá-lo no meio
+       responderia a pergunta errada: a pergunta é «como esta ficha vai ler
+       depois deste ato», e não «onde este texto caberia». #}
+    <article class="card" style="margin-bottom: 4px;padding:14px;
+              border:2px dashed var(--danger)">
+      <h3 style="margin-top:0">{{ rascunho.rotulo }}
+        <span class="badge alta">{{ rascunho.marca }}</span>
+        <small class="muted">{{ fmt_date(rascunho.data_ato) if rascunho.data_ato else 'sem data' }}</small>
+      </h3>
+      <p class="small danger" style="margin-top:0">
+        O número <strong>{{ rascunho.numero_previsto }}</strong> ainda não é deste
+        ato: ele fica com quem lavrar primeiro nesta matrícula.</p>
+      <div class="teor">{{ (rascunho.teor or '')|safe }}</div>
+      <p class="small muted" style="margin-top:10px">
+        Rascunho guardado em {{ fmt_dt(rascunho.atualizado_em) }}
+        {%- if rascunho.criado_por %} por {{ rascunho.criado_por }}{% endif %}.
+      </p>
+    </article>
+    {% else %}
+    <p><strong>Não há rascunho nesta matrícula.</strong> Escreva o texto do ato na
+    ficha, guarde como rascunho, e volte aqui para ver como ela vai ler.</p>
+    {% endif %}
+  </div>
+</section>
+
+{% if rascunho %}
+<section class="panel">
+  <div class="panel-head"><span>E agora</span></div>
+  <div style="padding:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <a class="button primary"
+       href="{{ url_for('ri_ficha', matricula_id=matricula.id, lavrar=1) }}">
+      Voltar à ficha para lavrar</a>
+    <form method="post"
+          action="{{ url_for('ri_rascunho_guardar', matricula_id=matricula.id) }}"
+          style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button name="acao" value="apagar_rascunho">Jogar o rascunho fora</button>
+    </form>
+    <span class="small muted">Lavrar é na ficha, onde estão o selo, os
+      emolumentos, o delegatário e a prenotação &mdash; um atalho daqui pularia
+      os quatro.</span>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

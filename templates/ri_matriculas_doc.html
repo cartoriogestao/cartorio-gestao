@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Matrículas digitadas em Word</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a></div>
+
+{% if not arquivo %}
+<div class="notice">
+  <strong>Ainda não li a pasta.</strong>
+  <p class="small">Informe abaixo onde estão os arquivos digitados e mande ler. Enquanto o
+  Proton Drive mantinha os documentos <em>sob demanda</em>, a leitura só funcionava na máquina
+  da serventia; com a pasta baixada, funciona daqui.</p>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Ler a pasta das matrículas digitadas</span></div>
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2" style="display:block">Pasta
+      <input name="pasta" value="{{ pasta or '' }}" style="width:100%"
+             placeholder="C:\Users\<usuario>\Proton Drive\...\1. RI\LIVRO- 2\MATRICULAS ANTIGAS EM DOC"></label>
+    <div style="margin-top:10px">
+      <button class="primary" name="acao" value="extrair">Ler a pasta agora</button>
+      <span class="small muted">Só lê: não altera, não move e não apaga nada na origem.
+        Os <code>.doc</code> antigos passam pelo LibreOffice, se ele estiver instalado.</span>
+    </div>
+  </form>
+</section>
+{% else %}
+
+<div class="notice">
+  Conferência entre o que está digitado em Word e o que está no sistema. Leitura guardada em
+  <code>{{ arquivo }}</code>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Ler a pasta das matrículas digitadas</span></div>
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2" style="display:block">Pasta
+      <input name="pasta" value="{{ pasta or '' }}" style="width:100%"
+             placeholder="C:\Users\<usuario>\Proton Drive\...\1. RI\LIVRO- 2\MATRICULAS ANTIGAS EM DOC"></label>
+    <div style="margin-top:10px">
+      <button class="primary" name="acao" value="extrair">Ler a pasta agora</button>
+      <span class="small muted">Só lê: não altera, não move e não apaga nada na origem.
+        Os <code>.doc</code> antigos passam pelo LibreOffice, se ele estiver instalado.</span>
+    </div>
+  </form>
+</section>
+
+
+<section class="cards">
+  <div class="stat"><strong>{{ resumo.get('NOVA', 0) }}</strong><small>não existem no sistema</small></div>
+  <div class="stat"><strong>{{ resumo.get('SO_NO_DOC', 0) }}</strong><small>existem, mas sem teor</small></div>
+  <div class="stat"><strong>{{ resumo.get('AMPLIADA', 0) }}</strong><small>o Word continua o texto</small></div>
+  <div class="stat"><strong>{{ resumo.get('DIVERGENTE', 0) }}</strong><small>textos se contradizem</small></div>
+  {% if resumo.get('AMBIGUA') %}<div class="stat"><strong>{{ resumo.get('AMBIGUA') }}</strong><small>número em dois livros</small></div>{% endif %}
+  <div class="stat"><strong>{{ resumo.get('IGUAL', 0) }}</strong><small>textos batem</small></div>
+  <div class="stat"><strong>{{ resumo.get('VAZIA', 0) }}</strong><small>documento sem texto</small></div>
+</section>
+
+<div class="notice warning">
+  <strong>O que entra, entra como não conferido.</strong> O texto vai para a ficha exatamente
+  como estava no Word, sem interpretação. Isso resolve o acesso à informação, não a fé pública:
+  a conferência contra o livro físico continua sendo obrigatória, matrícula por matrícula.
+  <br><strong>Divergente não se traz daqui.</strong> Quando os dois lados têm texto e eles se
+  contradizem, quem decide é o registrador — o sistema mostra os dois e para por aí.
+  <br><strong>Ampliada, sim.</strong> Nessas, tudo o que o sistema já tinha reaparece dentro do
+  texto digitado, que segue adiante com o título aquisitivo, o fecho e as averbações. Substituir
+  acrescenta e não apaga. A matrícula volta a constar como não conferida.
+  <br><strong>Número em dois livros também fica de fora.</strong> Cada livro reinicia a
+  numeração, então o número sozinho deixa de identificar a matrícula. Escolher o livro é ato do
+  registrador, não do sistema.
+</div>
+
+<form class="filters" method="get">
+  <label>Mostrar
+    <select name="situacao" onchange="this.form.submit()">
+      <option value="">todas ({{ total }})</option>
+      {% for s, rot in [('NOVA','não existem no sistema'), ('SO_NO_DOC','existem sem teor'),
+                        ('AMPLIADA','o Word continua o texto'),
+                        ('DIVERGENTE','textos se contradizem'), ('AMBIGUA','número em dois livros'),
+                        ('IGUAL','textos batem'),
+                        ('VAZIA','documento sem texto')] %}
+        <option value="{{ s }}" {% if filtro == s %}selected{% endif %}>{{ rot }} ({{ resumo.get(s, 0) }})</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button>Filtrar</button>
+</form>
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="panel">
+    <div class="panel-head">
+      <span>{{ total }} matrícula(s){% if filtro %} — {{ filtro }}{% endif %}</span>
+      <span class="small muted">página {{ pagina }} de {{ paginas }}</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th></th><th>Nº</th><th>Situação</th><th>Semelhança</th>
+        <th>Letras (Word / sistema)</th><th>Arquivo</th><th>Início do texto</th>
+      </tr></thead>
+      <tbody>
+      {% for l in linhas %}
+        <tr>
+          <td>{% if l.situacao in ['NOVA','SO_NO_DOC','AMPLIADA'] %}
+                <input type="checkbox" name="numero" value="{{ l.numero }}" checked>
+              {% endif %}</td>
+          <td><strong>{{ l.numero }}</strong>
+              {% if l.matricula_id %}<br><a class="small" href="{{ url_for('ri_ficha', matricula_id=l.matricula_id) }}">ver ficha</a>{% endif %}</td>
+          <td>
+            {% if l.situacao == 'NOVA' %}<span class="badge alta">não existe</span>
+            {% elif l.situacao == 'SO_NO_DOC' %}<span class="badge media">sem teor</span>
+            {% elif l.situacao == 'AMPLIADA' %}<span class="badge media">continua o texto</span>
+            {% elif l.situacao == 'DIVERGENTE' %}<span class="badge alta">se contradizem</span>
+            {% elif l.situacao == 'AMBIGUA' %}<span class="badge alta">dois livros</span>
+            {% elif l.situacao == 'IGUAL' %}<span class="badge ok">bate</span>
+            {% else %}<span class="badge">sem texto</span>{% endif %}
+          </td>
+          <td>{% if l.semelhanca %}{{ (l.semelhanca * 100)|round|int }}%{% else %}—{% endif %}
+            {% if l.situacao == 'AMPLIADA' %}<br><span class="small muted">{{ (l.contido * 100)|round|int }}% do sistema reaparece</span>{% endif %}</td>
+          <td class="small">{{ l.letras_doc }} / {{ l.letras_sistema }}</td>
+          <td class="small">{{ l.arquivo }}
+              {% if l.versoes and l.versoes > 1 %}<br><span class="muted">{{ l.versoes }} versões na pasta</span>{% endif %}</td>
+          <td class="small" style="max-width:420px">{{ l.previa }}{% if l.previa and l.previa|length >= 600 %}…{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <div style="padding:12px">
+      <button class="primary" name="acao" value="importar">
+        Trazer as marcadas para o sistema</button>
+      <span class="small muted">Entram as que não existem, as que existem sem teor e as
+        ampliadas. As que se contradizem, não.</span>
+    </div>
+  </section>
+</form>
+
+{% if paginas > 1 %}
+<div class="actions">
+  {% if pagina > 1 %}<a class="button" href="{{ url_for('ri_matriculas_doc', pagina=pagina-1, situacao=filtro) }}">&larr; anterior</a>{% endif %}
+  {% if pagina < paginas %}<a class="button" href="{{ url_for('ri_matriculas_doc', pagina=pagina+1, situacao=filtro) }}">próxima &rarr;</a>{% endif %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

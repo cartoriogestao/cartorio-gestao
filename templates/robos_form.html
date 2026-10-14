@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}{% if novo %}Novo robô{% else %}Robô — {{ robo.nome }}{% endif %}{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ url_for('robos_lista') }}">← robôs</a></p>
+<h1>{% if novo %}Novo robô{% else %}{{ robo.nome }}{% endif %}</h1>
+
+<div class="card">
+  <p class="small muted">
+    Rascunho é sugestão. <strong>Nunca</strong> grava no livro/RCPN nesta fatia.
+    <strong>Nunca</strong> autoenvia WhatsApp.
+  </p>
+</div>
+
+<form method="post" action="{% if novo %}{{ url_for('robos_novo') }}{% else %}{{ url_for('robos_editar', robo_id=robo.id) }}{% endif %}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="card">
+    <p>
+      <label>nome<br>
+        <input type="text" name="nome" value="{{ robo.nome or '' }}" required style="width:100%">
+      </label>
+    </p>
+    <p>
+      <label>ato (texto curto)<br>
+        <input type="text" name="ato" value="{{ robo.ato or '' }}" required
+               placeholder="certidão, firma, protesto…" style="width:100%">
+      </label>
+    </p>
+    <p>
+      <label>provedor<br>
+        <select name="provedor">
+          {% for p in provedores %}
+          <option value="{{ p }}" {% if (robo.provedor or '') == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </p>
+    <p>
+      <label>prompt<br>
+        <textarea name="prompt" rows="8" style="width:100%">{{ robo.prompt or '' }}</textarea>
+      </label>
+    </p>
+    <p>
+      <label>
+        <input type="checkbox" name="ativo" value="1"
+               {% if robo.ativo in (1, '1', True) or (novo and robo.ativo != 0) %}checked{% endif %}>
+        ativo
+      </label>
+    </p>
+    <p><button class="button">guardar</button></p>
+  </div>
+</form>
+
+{% if not novo %}
+<div class="card">
+  <h2>Exemplos de treino</h2>
+  <p class="small muted">Entrada → saída esperada. Sem fine-tune nesta fatia.</p>
+  {% if exemplos %}
+  <table class="tabela">
+    <tr><th>entrada</th><th>saída</th><th>peso</th><th></th></tr>
+    {% for e in exemplos %}
+    <tr>
+      <td class="small">{{ e.entrada }}</td>
+      <td class="small">{{ e.saida_esperada }}</td>
+      <td class="small">{{ e.peso }}</td>
+      <td>
+        <form method="post" action="{{ url_for('robos_exemplo_apagar', robo_id=robo.id, exemplo_id=e.id) }}"
+              style="margin:0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button secondary" type="submit">apagar</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="small muted">Nenhum exemplo ainda.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('robos_exemplo_add', robo_id=robo.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p>
+      <label>entrada<br>
+        <textarea name="entrada" rows="2" style="width:100%" required></textarea>
+      </label>
+    </p>
+    <p>
+      <label>saída esperada<br>
+        <textarea name="saida_esperada" rows="2" style="width:100%" required></textarea>
+      </label>
+    </p>
+    <p>
+      <label>peso
+        <input type="number" name="peso" value="1" min="1" style="width:4em">
+      </label>
+    </p>
+    <p><button class="button secondary">adicionar exemplo</button></p>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Testar rascunho</h2>
+  <p class="small muted">
+    Sem chave de API: modo local (eco do prompt + pedido).
+    Com chave: tenta o provedor; se falhar, cai no local.
+    O teste fica em log (quem testou) — <strong>sem</strong> gravar chave.
+  </p>
+  <form method="post" action="{{ url_for('robos_testar', robo_id=robo.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p>
+      <label>pedido<br>
+        <textarea name="pedido" rows="4" style="width:100%" required
+                  placeholder="Descreva o que o público pediu…">{{ (ultimo_teste.pedido if ultimo_teste else '') }}</textarea>
+      </label>
+    </p>
+    <p><button class="button">testar</button></p>
+  </form>
+  {% if ultimo_teste %}
+  <div class="card" style="margin-top:1em">
+    <p class="small">
+      modo: <strong>{{ ultimo_teste.modo }}</strong>
+      {% if ultimo_teste.aviso %} — {{ ultimo_teste.aviso }}{% endif %}
+    </p>
+    <pre style="white-space:pre-wrap">{{ ultimo_teste.rascunho }}</pre>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

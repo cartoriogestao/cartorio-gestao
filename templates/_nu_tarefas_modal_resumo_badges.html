@@ -1,0 +1,12 @@
+{# Resumo de tarefas no modal - mesmas badges da lista /tarefas. #}
+<p class="nu-tarefas-modal-resumo nu-tarefas-modal-media-baixa{% if extra_class %} {{ extra_class }}{% endif %}">
+  <span class="nu-tarefas-faixa-resumo">
+    <strong>{{ tarefas_resumo.intro }}</strong>
+    <span class="nu-tarefas-prioridade-badges">
+      {% if tarefas_resumo.alta %}<span class="badge alta">{{ tarefas_resumo.alta }} Alta</span>{% endif %}
+      {% if tarefas_resumo.media %}<span class="badge media">{{ tarefas_resumo.media }} Média</span>{% endif %}
+      {% if tarefas_resumo.baixa %}<span class="badge baixa">{{ tarefas_resumo.baixa }} Baixa</span>{% endif %}
+    </span>
+  </span>
+  <a href="{{ tarefas_resumo.url }}" class="nu-avisos-link-lista">Ver tarefas</a>
+</p>

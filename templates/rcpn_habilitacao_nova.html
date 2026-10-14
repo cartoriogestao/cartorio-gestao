@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{% block title %}Abrir habilitação{% endblock %}
+{% block heading %}<h1>Abrir habilitação de casamento</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_habilitacoes') }}">&larr; Habilitações</a>
+</div>
+
+<div class="notice">
+  O checklist do <strong>artigo 1.525 do Código Civil</strong> é montado
+  automaticamente ao abrir, e vale <strong>para cada nubente</strong> — a
+  certidão de nascimento de um não supre a do outro.
+  <br><span class="small">A prova de dissolução do casamento anterior (inciso V)
+  só entra para quem não é solteiro — por isso vale informar o estado civil
+  agora.</span>
+</div>
+
+{{ salvar_rascunho('rcpn_habilitacao_nova', url_for('rcpn_habilitacao_nova'),
+                   'Habilitação de casamento', csrf_token,
+                   nome_em='nubente1_nome,nubente2_nome', rascunho_id=rascunho_id) }}
+
+{% from '_leitura_dos_anexos.html' import juntar, conferencia %}
+{% if leitura_origem %}{{ conferencia(leitura_origem) }}
+{% elif rascunho_id %}
+<div class="notice warning">
+  <strong>Aberto do rascunho #{{ rascunho_id }}.</strong> Se veio da leitura dos
+  documentos, confira cada campo com os originais antes de abrir — a leitura
+  adiantou a digitação, e não decidiu nada.
+</div>
+{% else %}
+{{ juntar('HABILITACAO', csrf_token) }}
+{% endif %}
+
+<form method="post" id="form-do-ato">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if leitura_origem %}<input type="hidden" name="leitura_id" value="{{ leitura_origem.id }}">{% endif %}
+
+  <section class="panel">
+    <div class="panel-head"><span>O casamento pretendido</span></div>
+    <div class="form-grid" style="padding:14px">
+      <label>Data de entrada
+        <input type="date" name="data_entrada" value="{{ v.get('data_entrada') or hoje }}"></label>
+      <label>Tipo
+        <select name="tipo">
+          {% for chave, rotulo in TIPOS.items() %}
+          <option value="{{ chave }}"{% if v.get('tipo') == chave %} selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select></label>
+      <label class="span2">Regime de bens
+        <select name="regime">
+          <option value="">— a definir —</option>
+          {% for chave, rotulo in REGIMES.items() %}
+          <option value="{{ chave }}"{% if v.get('regime') == chave %} selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select></label>
+    </div>
+  </section>
+
+  {#
+    OS DOIS NUBENTES LADO A LADO, com os mesmos campos. É como o balcão os
+    atende — os dois estão ali, e a conferência é de um contra o outro.
+  #}
+  <div class="grid2">
+  {% for lado, titulo in [('nubente1', 'Primeiro nubente'), ('nubente2', 'Segundo nubente')] %}
+    <section class="panel">
+      <div class="panel-head"><span>{{ titulo }}</span></div>
+      <div class="form-grid" style="padding:14px">
+        <label class="span2">Nome<input name="{{ lado }}_nome" value="{{ v.get(lado ~ '_nome', '') }}" required></label>
+        <label class="span2">Como passa a assinar
+          <input name="{{ lado }}_nome_pos" value="{{ v.get(lado ~ '_nome_pos', '') }}"
+                 placeholder="deixe vazio se não muda o nome"></label>
+        {% set sexo = v.get(lado ~ '_sexo', '') %}
+        <label>Sexo
+          <select name="{{ lado }}_sexo">
+            <option value=""></option><option value="M"{% if sexo == 'M' %} selected{% endif %}>Masculino</option>
+            <option value="F"{% if sexo == 'F' %} selected{% endif %}>Feminino</option></select></label>
+        <label>Nascimento<input type="date" name="{{ lado }}_nascimento" value="{{ v.get(lado ~ '_nascimento', '') }}"></label>
+        <label>CPF<input name="{{ lado }}_documento" value="{{ v.get(lado ~ '_documento', '') }}"></label>
+        {% set ec = v.get(lado ~ '_estado_civil', '') %}
+        <label>Estado civil
+          <select name="{{ lado }}_estado_civil">
+            <option value="SOLTEIRO"{% if ec == 'SOLTEIRO' %} selected{% endif %}>Solteiro(a)</option>
+            <option value="VIUVO"{% if ec == 'VIUVO' %} selected{% endif %}>Viúvo(a)</option>
+            <option value="DIVORCIADO"{% if ec == 'DIVORCIADO' %} selected{% endif %}>Divorciado(a)</option>
+          </select></label>
+        <label>Profissão<input name="{{ lado }}_profissao" value="{{ v.get(lado ~ '_profissao', '') }}"></label>
+        <label>Nacionalidade<input name="{{ lado }}_nacionalidade" value="{{ v.get(lado ~ '_nacionalidade') or 'brasileira' }}"></label>
+        <label class="span2">Naturalidade<input name="{{ lado }}_naturalidade" value="{{ v.get(lado ~ '_naturalidade', '') }}"></label>
+        <label class="span2">Endereço<input name="{{ lado }}_endereco" value="{{ v.get(lado ~ '_endereco', '') }}"></label>
+        <label class="span2">Pai<input name="{{ lado }}_pai" value="{{ v.get(lado ~ '_pai', '') }}"></label>
+        <label class="span2">Mãe<input name="{{ lado }}_mae" value="{{ v.get(lado ~ '_mae', '') }}"></label>
+      </div>
+    </section>
+  {% endfor %}
+  </div>
+
+  <section class="panel">
+    <div class="form-grid" style="padding:14px">
+      <label class="span2">Observação
+        <textarea name="observacao" rows="2">{{ v.get('observacao', '') }}</textarea></label>
+      <div class="span2"><button class="primary">Abrir habilitação</button></div>
+    </div>
+  </section>
+</form>
+{{ script_do_rascunho() }}
+{% endblock %}

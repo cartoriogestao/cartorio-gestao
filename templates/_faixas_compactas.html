@@ -1,0 +1,172 @@
+﻿{% if global_stats.implantacao_abertas and user.role in ['ADMIN','MANAGER'] %}
+<div class="flash warning flash-compact" data-aviso>
+  <div class="flash-compact-linha">
+    <strong>{{ global_stats.implantacao_abertas }} coisa(s) esperando você informar</strong>
+    <button type="button" class="flash-compact-expandir link-button"
+            data-aviso-expand aria-expanded="false"
+            aria-controls="aviso-implantacao-detalhe">Ver detalhes</button>
+    <a href="{{ url_for('implantacao') }}">Ver implantação</a>
+  </div>
+  <div id="aviso-implantacao-detalhe" class="flash-compact-detalhe" hidden>
+    <p>Antes de o balcão andar.</p>
+    <p>São coisas que o acervo não sabe dizer e que só quem conhece o livro
+    físico responde — o próximo número de um livro que o E-Ofício nunca
+    guardou, por exemplo. Enquanto ficarem sem resposta, o primeiro ato de
+    cada série nasce com o <strong>número 1</strong> sobre um acervo que já
+    passou disso.</p>
+  </div>
+  {{ aviso.fechar() }}
+</div>
+{% endif %}
+
+{% if global_stats.disputas_de_escrita and user.role in ['ADMIN','MANAGER'] %}
+<div class="flash warning flash-compact" data-aviso>
+  <div class="flash-compact-linha">
+    <strong>O banco travou {{ global_stats.disputas_de_escrita }}
+    vez(es){% if global_stats.disputas_recentes %} — {{ global_stats.disputas_recentes }}
+    nos últimos 30 dias{% endif %}</strong>
+    <button type="button" class="flash-compact-expandir link-button"
+            data-aviso-expand aria-expanded="false"
+            aria-controls="aviso-disputa-detalhe">Ver detalhes</button>
+  </div>
+  <div id="aviso-disputa-detalhe" class="flash-compact-detalhe" hidden>
+    {% if global_stats.disputas_desde %}
+    <p>A primeira ocorrência registrada foi em {{ global_stats.disputas_desde[:10] }}.</p>
+    {% endif %}
+    <p>Quando dois balcões gravam ao mesmo tempo, um espera; se a espera estoura,
+    o sistema devolve erro em vez de gravar. <strong>Nada se perde</strong> — o
+    ato volta atrás inteiro —, mas quem estava atendendo leva o erro.</p>
+    <p>Uma vez ou outra é normal.
+    {% if global_stats.disputas_recentes >= 5 %}
+    <strong>Cinco ou mais em trinta dias já é rotina</strong>, e é o sinal medido
+    de que o banco atual deixou de bastar para esta casa: vale conversar sobre
+    trocar de banco de dados.
+    {% else %}
+    Se virar rotina — cinco ou mais em trinta dias —, é o sinal medido de que
+    vale conversar sobre trocar de banco de dados.
+    {% endif %}
+    Está tudo explicado, com o custo e o risco, em
+    <code>DOCUMENTACAO/MIGRAR_DE_BANCO.md</code>.</p>
+  </div>
+  {{ aviso.fechar() }}
+</div>
+{% endif %}
+
+
+{% if nu_avisos_faixa_critica %}
+<div class="flash flash-compact flash-compact-aviso-critico" data-aviso>
+  <div class="flash-compact-linha flash-compact-linha-avisos-criticos">
+    <span class="nu-avisos-icone-critico nu-avisos-faixa-icone-critico" role="img" aria-label="Crítico">
+      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path fill="currentColor" d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+      </svg>
+    </span>
+    <strong class="nu-avisos-faixa-critico-titulo">Crítico</strong>
+    {% if nu_avisos_faixa_critica.count_avisos %}
+    <span class="nu-avisos-faixa-critico-contagem">{{ nu_avisos_faixa_critica.count_avisos }} aviso(s) crítico(s)</span>
+    {% endif %}
+  </div>
+  {% if nu_avisos_faixa_critica.avisos %}
+  <ul class="nu-avisos-faixa-titulos nu-avisos-faixa-titulos-criticos" aria-label="Títulos dos avisos críticos">
+    {% for item in nu_avisos_faixa_critica.avisos %}
+    <li><a href="{{ url_for('nu_avisos_detalhe', aviso_id=item.id) }}">{{ item.titulo }}</a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if nu_avisos_faixa_critica.tarefas_texto %}
+  <div class="flash-compact-linha nu-avisos-faixa-tarefas-linha nu-avisos-faixa-tarefas-linha-critica">
+    <span class="nu-avisos-faixa-tarefas-criticas">{{ nu_avisos_faixa_critica.tarefas_texto }}</span>
+    <a href="{{ nu_avisos_faixa_critica.tarefas_url }}" class="nu-avisos-link-lista">Ver tarefas</a>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if nu_avisos_faixa_vermelha %}
+<div class="flash flash-compact flash-compact-aviso-importante" data-aviso>
+  <div class="flash-compact-linha flash-compact-linha-avisos-importantes">
+    {% if nu_avisos_faixa_vermelha.itens %}
+    <strong class="nu-avisos-faixa-importante-titulo">{{ nu_avisos_faixa_vermelha.count }} aviso(s) importante(s)</strong>
+    <a href="{{ url_for('nu_avisos_lista') }}" class="nu-avisos-link-lista">Ver todos</a>
+    {% else %}
+    <strong class="nu-avisos-faixa-importante-titulo">Importante</strong>
+    {% endif %}
+    {% if user.role == 'ADMIN' %}
+    <form method="post" action="{{ url_for('nu_avisos_dispensar_importantes_faixa') }}"
+          class="nu-avisos-faixa-dispensar-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <button type="submit" class="link-button nu-avisos-faixa-dispensar">Dispensar importantes</button>
+    </form>
+    {% endif %}
+  </div>
+  {% for item in nu_avisos_faixa_vermelha.itens %}
+  <div class="nu-avisos-faixa-aviso-item">
+    <div class="flash-compact-linha nu-avisos-faixa-aviso-linha">
+      <a class="nu-avisos-faixa-aviso-titulo"
+         href="{{ url_for('nu_avisos_detalhe', aviso_id=item.id) }}">{{ item.titulo }}</a>
+      <button type="button" class="flash-compact-expandir link-button"
+              data-aviso-expand aria-expanded="false"
+              aria-controls="aviso-importante-{{ item.id }}-detalhe">Ver detalhes</button>
+    </div>
+    <div id="aviso-importante-{{ item.id }}-detalhe" class="flash-compact-detalhe" hidden>
+      <p>{{ item.corpo }}</p>
+    </div>
+  </div>
+  {% endfor %}
+  {% if nu_avisos_faixa_vermelha.tarefas_texto %}
+  <div class="flash-compact-linha nu-avisos-faixa-tarefas-linha">
+    <span class="nu-avisos-faixa-tarefas-importantes">{{ nu_avisos_faixa_vermelha.tarefas_texto }}</span>
+    <a href="{{ nu_avisos_faixa_vermelha.tarefas_url }}" class="nu-avisos-link-lista">Ver tarefas</a>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if nu_avisos_faixa_verde %}
+<div class="flash flash-compact flash-compact-aviso-normal" data-aviso>
+  <div class="flash-compact-linha">
+    <strong>{{ nu_avisos_faixa_verde.count }} aviso(s)</strong>
+    <button type="button" class="flash-compact-expandir link-button"
+            data-aviso-expand aria-expanded="false"
+            aria-controls="aviso-avisos-normais-detalhe">Ver detalhes</button>
+    <form method="post" action="{{ url_for('nu_avisos_dispensar_normais_faixa') }}"
+          class="nu-avisos-faixa-dispensar-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <button type="submit" class="link-button nu-avisos-faixa-dispensar">Dispensar resto do dia</button>
+    </form>
+  </div>
+  <div id="aviso-avisos-normais-detalhe" class="flash-compact-detalhe" hidden>
+    <ul class="nu-avisos-banner-lista">
+      {% for item in nu_avisos_faixa_verde.itens %}
+      <li><a href="{{ url_for('nu_avisos_detalhe', aviso_id=item.id) }}">{{ item.titulo }}</a></li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{% if nu_tarefas_faixa %}
+<div class="flash flash-compact flash-compact-tarefas" data-aviso>
+  <div class="flash-compact-linha flash-compact-linha-tarefas-media-baixa">
+    <span class="nu-tarefas-faixa-resumo">
+      <strong>{{ nu_tarefas_faixa.intro }}</strong>
+      <span class="nu-tarefas-prioridade-badges">
+        {% if nu_tarefas_faixa.media %}<span class="badge media">{{ nu_tarefas_faixa.media }} Média</span>{% endif %}
+        {% if nu_tarefas_faixa.baixa %}<span class="badge baixa">{{ nu_tarefas_faixa.baixa }} Baixa</span>{% endif %}
+      </span>
+    </span>
+    <a href="{{ nu_tarefas_faixa.url }}" class="nu-avisos-link-lista">Ver tarefas</a>
+  </div>
+</div>
+{% endif %}
+
+{% if nu_tarefas_faixa_sem_responsavel %}
+<div class="flash flash-compact flash-compact-tarefas-sem-responsavel" data-aviso>
+  <div class="flash-compact-linha">
+    <strong>{{ nu_tarefas_faixa_sem_responsavel.texto }}</strong>
+    <a href="{{ nu_tarefas_faixa_sem_responsavel.url }}" class="nu-avisos-link-lista">Ver tarefas</a>
+  </div>
+</div>
+{% endif %}

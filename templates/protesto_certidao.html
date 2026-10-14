@@ -1,0 +1,114 @@
+{#
+  A certidão como saiu — para conferir e reimprimir.
+
+  O TEOR NÃO SE RECALCULA. O que está aqui é o que foi congelado na emissão,
+  com o sha256 ao lado: é por ele que se confere depois se a via apresentada
+  é a que saiu daqui. Protesto lavrado amanhã não muda esta folha.
+#}
+{% extends 'base.html' %}
+{% block heading %}
+<h1>Certidão {{ certidao.tipo | lower }} n. {{ certidao.numero }}/{{ certidao.ano }}</h1>
+{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_certidoes') }}">&larr; Certidões</a>
+  <a class="button primary" href="{{ url_for('protesto_certidao_odt', certidao_id=certidao.id) }}">Imprimir (PDF)</a>
+  <a class="button" href="{{ url_for('protesto_certidao_odt', certidao_id=certidao.id, formato='odt') }}">Baixar em .odt</a>
+</div>
+
+{% if certidao.cancelada %}
+<div class="notice danger">
+  <strong>Esta certidão foi cancelada</strong> em {{ certidao.cancelada_em }}
+  {%- if certidao.cancelada_por %}, por {{ certidao.cancelada_por }}{% endif %}.
+  <br>Motivo: {{ certidao.motivo_cancelamento }}
+  {% if certidao.declaracao_selo_tjma_em %}
+  <br><small>Declaração registrada em {{ certidao.declaracao_selo_tjma_em }}
+    {% if certidao.declaracao_selo_tjma_por %}por {{ certidao.declaracao_selo_tjma_por }}{% endif %}:
+    eventual selo próprio desta certidão já foi cancelado no portal do Selo Eletrônico do TJMA.</small>
+  {% endif %}
+  <br><br>
+  <small>O teor fica gravado como saiu: a via que o cliente levou não desaparece por
+  ter sido cancelada aqui, e é justamente essa via que alguém vai conferir.</small>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>O teor</span><small>congelado na emissão</small></div>
+  <p style="padding:18px; line-height:1.7; text-align:justify">{{ certidao.teor }}</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>A certidão</span></div>
+  <table class="table">
+    <tr><th>Número</th><td>{{ certidao.numero }}/{{ certidao.ano }}</td>
+        <th>Tipo</th><td>{{ certidao.tipo }}</td></tr>
+    <tr><th>De quem</th><td>{{ certidao.nome }}</td>
+        <th>Documento</th><td>{{ certidao.documento_tipo or '' }} {{ certidao.documento or '—' }}</td></tr>
+    <tr><th>Requerente</th><td>{{ certidao.requerente or 'não informado' }}</td>
+        <th>Finalidade</th><td>{{ certidao.finalidade or '—' }}</td></tr>
+    <tr><th>Período</th><td>{{ certidao.periodo_anos }} anos, a partir de {{ certidao.desde }}</td>
+        <th>Protestos</th><td>{{ certidao.achados }}</td></tr>
+    <tr><th>Emitida em</th><td>{{ certidao.emitida_em }}</td>
+        <th>Por quem</th><td>{{ certidao.emitida_por or '—' }}</td></tr>
+    <tr><th>Selo</th><td>{{ certidao.selo or 'sem selo' }}</td>
+        <th>Cobrança</th>
+        <td>
+          {% if certidao.lancamento_id %}
+            lançamento {{ certidao.lancamento_id }}
+          {% else %}<small>não cobrada</small>{% endif %}
+        </td></tr>
+    <tr><th>Autenticidade</th>
+        <td colspan="3"><small style="word-break:break-all">{{ certidao.hash_certidao }}</small>
+          <div><small>É por este número que se confere se a via apresentada é a que saiu
+            daqui.</small></div></td></tr>
+  </table>
+</section>
+
+{% if certidao.achados_lista %}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que ela certificou</span>
+    <small>como estava na emissão</small>
+  </div>
+  <table class="table">
+    <thead><tr><th>Título</th><th>Valor</th><th>Protestado em</th>
+               <th>Livro / folha</th><th>Baixa</th></tr></thead>
+    <tbody>
+      {% for a in certidao.achados_lista %}
+      <tr>
+        <td>{{ a.numero_titulo }}<div><small>{{ a.especie }}</small></div></td>
+        <td>R$ {{ a.valor }}</td>
+        <td>{{ a.data_protesto }}</td>
+        <td>{% if a.livro %}Livro {{ a.livro }}{% endif %}
+            {%- if a.folha %}, fl. {{ a.folha }}{% endif %}</td>
+        <td>{% if a.cancelado %}{{ a.data_cancelamento }}{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if not certidao.cancelada and user.role in ['ADMIN','MANAGER','USER'] %}
+<section class="panel">
+  <div class="panel-head"><span>Cancelar esta certidão</span></div>
+  <p style="padding:14px 14px 0"><small>
+    Cancelar não apaga: o teor fica gravado como saiu, e o motivo entra ao lado dele.
+    Use quando a certidão foi emitida com erro — o nome trocado, o período errado.
+  </small></p>
+  <form method="post" action="{{ url_for('protesto_certidao_cancelar', certidao_id=certidao.id) }}"
+        class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="grid-column:1/-1">Por que está sendo cancelada
+      <input name="motivo" required minlength="10"
+             placeholder="emitida com o nome errado"></label>
+    <label style="grid-column:1/-1; display:flex; gap:8px; align-items:flex-start">
+      <input type="checkbox" name="selo_cancelado_tjma" value="1" required style="width:auto; margin-top:3px">
+      <span>Declaro que eventual selo emitido especificamente para esta certidão já foi cancelado no portal do Selo Eletrônico do TJMA.</span>
+    </label>
+    <div class="actions"><button class="button">Cancelar a certidão</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}O que revisar antes de selar{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>O que revisar antes de selar</h1>
+  <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Matrículas</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ notas|length }}
+    nota{{ '' if notas|length == 1 else 's' }}
+    esperando conferência</span></div>
+  <div style="padding:14px">
+    {% if not notas %}
+      <p><strong>Nada esperando conferência.</strong> As notas de revisão
+      aparecem aqui quando um ato entra por importação com algo a olhar, ou
+      quando alguém anota na ficha da matrícula.</p>
+    {% else %}
+      <p>Cada linha é algo que a revisão apontou e que ainda não foi
+      conferido. <strong>Nenhuma delas trava o ato</strong> &mdash; o ato já
+      está lavrado; o que falta é alguém olhar e dizer o que decidiu.</p>
+      <p class="small muted">Baixar uma nota exige escrever o que você
+      conferiu. É esse texto que fica no lugar da pergunta.</p>
+    {% endif %}
+  </div>
+</section>
+
+{% if notas %}
+<section class="panel">
+  <div class="panel-head"><span>Abertas</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr>
+      <th>Matrícula</th><th>Ato</th><th>Assunto</th>
+      <th>O que conferir</th><th>Anotada</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for n in notas %}
+      <tr>
+        <td><a href="{{ url_for('ri_ficha', matricula_id=n['matricula_id']) }}">
+          {{ n['matricula_numero'] }}</a>
+          {% if n['matricula_livro'] %}<br><span class="small muted">Livro
+          {{ n['matricula_livro'] }}</span>{% endif %}</td>
+        <td>{% if n['ato_tipo'] %}{{ n['ato_tipo'] }}-{{ '%02d'|format(n['ato_numero']) }}
+            {% else %}<span class="muted small">a matrícula</span>{% endif %}</td>
+        <td><strong>{{ n['assunto'] }}</strong>
+            {% if n['origem'] != 'MANUAL' %}
+            <br><span class="small muted">{{ n['origem']|lower }}</span>{% endif %}</td>
+        <td class="small">{{ n['nota'] }}</td>
+        <td class="small muted">{{ fmt_date(n['anotada_em']) }}</td>
+        <td>
+          {% if user.role not in ['ADMIN','MANAGER'] %}
+          <small class="muted">Baixa: oficial ou substituto.</small>
+          {% else %}
+          <details>
+            <summary class="button">Conferi</summary>
+            <form method="post" class="stack"
+                  action="{{ url_for('ri_revisao_baixar', revisao_id=n['id']) }}">
+              {# nesta tela `csrf_token` chega como VALOR, e não como a função
+                 global do Jinja — quem escrever `csrf_token()` aqui derruba a
+                 tela inteira com «'str' object is not callable». Foi o que
+                 aconteceu em 16/09/2026 (relato #69), e é por isso que a
+                 forma sem parênteses é a única que existe nesta casa. #}
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="voltar" value="{{ url_for('ri_revisoes') }}">
+              <label>O que você conferiu e decidiu
+                <textarea name="decisao" rows="3" required minlength="10"
+                  placeholder="Ex.: conferido o memorial com o confrontante; a área bate com a certificação do SIGEF."></textarea></label>
+              <div><button class="primary">Baixar a nota</button></div>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if baixadas %}
+<section class="panel">
+  <div class="panel-head"><span>Já conferidas &mdash; as 30 últimas</span></div>
+  <div style="padding:14px">
+    <p class="small muted">Ficam à vista de propósito: o que se decidiu é o
+    que a correição lê no lugar da pergunta.</p>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr>
+      <th>Matrícula</th><th>Ato</th><th>Assunto</th>
+      <th>O que foi decidido</th><th>Baixada</th>
+    </tr></thead>
+    <tbody>
+    {% for n in baixadas %}
+      <tr>
+        <td><a href="{{ url_for('ri_ficha', matricula_id=n['matricula_id']) }}">
+          {{ n['matricula_numero'] }}</a></td>
+        <td>{% if n['ato_tipo'] %}{{ n['ato_tipo'] }}-{{ '%02d'|format(n['ato_numero']) }}
+            {% else %}<span class="muted small">&mdash;</span>{% endif %}</td>
+        <td>{{ n['assunto'] }}</td>
+        <td class="small">{{ n['baixa_decisao'] }}</td>
+        <td class="small muted">{{ fmt_date(n['baixada_em']) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

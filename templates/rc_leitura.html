@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Ler documentos — Registro Civil{% endblock %}
+{% block content %}
+<h1>Ler documentos do registro</h1>
+
+<div class="card">
+  <p>
+    <strong>A leitura agora se faz na própria tela de preenchimento</strong>
+    (12/10/2026): no
+    <a href="{{ url_for('rcpn_assento_novo', especie_url='nascimento') }}">{{ rotulos.get('NASCIMENTO', 'nascimento') }}</a>, no
+    <a href="{{ url_for('rcpn_assento_novo', especie_url='obito') }}">{{ rotulos.get('OBITO', 'óbito') }}</a> e na
+    <a href="{{ url_for('rcpn_habilitacao_nova') }}">{{ rotulos.get('HABILITACAO', 'habilitação de casamento') }}</a>, o quadro
+    «Juntar os documentos e preencher os campos» lê os anexos e a tela volta preenchida,
+    com o que não fecha apontado. Ao lavrar, os anexos acompanham o ato.
+  </p>
+  <p>Esta página guarda o histórico das leituras: o que cada documento disse e para onde foi.</p>
+  <p class="small muted">
+    Triagem: <code>{{ modelos.triagem }}</code> · escrito à mão (DNV, DO, certidão):
+    <code>{{ modelos.manuscrito }}</code> · impresso (RG, CPF, residência):
+    <code>{{ modelos.impresso }}</code>.
+  </p>
+</div>
+
+{% if zdr.situacao == 'NEGADO' %}
+<div class="notice">
+  <strong>Retenção pela Anthropic: {{ zdr.retencao_padrao_dias }} dias.</strong>
+  Regra padrão da API: o que é enviado é apagado em até
+  {{ zdr.retencao_padrao_dias }} dias, salvo violação da política de uso ou
+  obrigação legal. A justificativa está em
+  <code>DOCUMENTACAO/LGPD_LEITURA_DE_DOCUMENTOS.md</code>.
+</div>
+{% elif zdr.situacao != 'ACORDADO' %}
+<div class="notice warning">
+  <strong>Falta o acordo de «zero data retention» com a Anthropic</strong>
+  (situação: {{ zdr.situacao|lower }}). Decisão do oficial em 12/10/2026: os
+  documentos vão sem máscara, e este acordo é parte da garantia. O texto do
+  pedido está em <code>DOCUMENTACAO/LGPD_LEITURA_DE_DOCUMENTOS.md</code>.
+</div>
+{% endif %}
+
+{% if not tem_chave %}
+<div class="notice danger">
+  A chave da API da Claude não está configurada nesta instalação — sem ela a
+  leitura não tem com quem falar.
+</div>
+{% endif %}
+
+
+<details class="panel">
+  <summary class="panel-head">O que sai da casa, e com que base (LGPD)</summary>
+  <div style="padding:12px">
+    <p>{{ o_que_sai }}</p>
+    <p class="small">{{ base_legal }}</p>
+    <p class="small"><strong>Retenção pela Anthropic:</strong>
+      {{ zdr.observacao }}</p>
+  </div>
+</details>
+
+<h2>Leituras feitas</h2>
+{% if not leituras %}
+<p class="muted">Nenhuma leitura ainda. A primeira aparece aqui assim que terminar.</p>
+{% else %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Nº</th><th>Registro</th><th>Quem foi lido</th><th>Situação</th>
+    <th>O que conferir</th><th>Custo estimado</th><th>Quando</th><th>Por</th></tr></thead>
+  <tbody>
+  {% for l in leituras %}
+  <tr>
+    <td><a href="{{ url_for('rcpn_leitura_ficha', leitura_id=l.id) }}">{{ l.id }}</a></td>
+    <td>{{ rotulos.get(l.especie, l.especie) }}</td>
+    <td>{{ l.registro.get('nome') or ([l.registro.get('nubente1_nome'), l.registro.get('nubente2_nome')]|select|join(' e ')) }}</td>
+    <td>{{ {'LENDO': 'lendo', 'LIDA': 'lida', 'FALHOU': 'falhou',
+            'NO_RASCUNHO': 'virou rascunho'}.get(l.situacao, l.situacao) }}</td>
+    <td>{{ l.conferencia|length }}</td>
+    <td>US$ {{ '%.2f'|format(l.custo_estimado or 0) }}</td>
+    <td>{{ l.criada_em }}</td>
+    <td>{{ l.criada_por or '' }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

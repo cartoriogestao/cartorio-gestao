@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% block title %}Retificação {{ p.numero }}{% endblock %}
+{% block content %}
+<h1>Retificação nº {{ p.numero }}</h1>
+<p class="muted">
+  {{ especies.get(p.especie, p.especie) }} ·
+  {{ fundamentos.get(p.fundamento, p.fundamento) }} ·
+  matrícula {{ p.matricula_id }} ·
+  {{ 'imóvel rural' if p.rural else 'imóvel urbano' }}
+</p>
+
+{# O QUE FAZER AGORA. Num rito de meses, «e agora?» e a pergunta que mais se
+   repete, e ela merece resposta na tela e nao na cabeca de quem lembra. #}
+<div class="card">
+  <h2 style="margin-top:0">O que fazer agora</h2>
+  <ul>
+  {% for passo in passos %}
+    <li{% if passo.urgente %} class="danger"{% endif %}>
+      {{ passo.o_que }}
+      {% if passo.artigo %}<span class="small muted">({{ passo.artigo }})</span>{% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+
+{% if p.averbado_em and not p.sigef_requerido_em and p.especie == 'GEORREFERENCIADA' %}
+<div class="alerta danger">
+  <h2 style="margin-top:0">Requerer o registro no SIGEF</h2>
+  <p>Averbado em <strong>{{ p.averbado_em }}</strong>. A serventia tem
+     <strong>30 dias</strong> (art. 620, § 2º) para requerer o registro no
+     SIGEF, com o número da nova matrícula e os dados dos proprietários,
+     anexando a certidão de inteiro teor da nova matrícula e da anterior
+     encerrada.</p>
+  <form method="post" action="{{ url_for('ri_retificacao_sigef', processo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Data do requerimento <input type="date" name="quando"></label>
+    <label>Protocolo que o SIGEF devolveu <input name="protocolo" required></label>
+    <button class="button">Registrar</button>
+  </form>
+</div>
+{% endif %}
+
+<h2>Peças e documentos</h2>
+{% if pecas %}
+<table>
+  <thead><tr><th>Tipo</th><th>Descrição</th><th>Arquivo</th><th>Juntada</th></tr></thead>
+  <tbody>
+  {% for peca in pecas %}
+    <tr>
+      <td>{{ peca.tipo }}</td>
+      <td>{{ peca.descricao or '—' }}</td>
+      <td class="small">
+        {{ peca.arquivo or 'sem arquivo' }}
+        {% if peca.sha256 %}<br><span class="muted">SHA-256 {{ peca.sha256[:12] }}…</span>{% endif %}
+        {% for a in anexos_pecas.get(peca.id, []) %}
+          <br>
+          <a href="{{ url_for('attachment_view', attachment_id=a.id) }}" target="_blank">ver</a>
+          · <a href="{{ url_for('attachment_download', attachment_id=a.id) }}">baixar</a>
+        {% endfor %}
+      </td>
+      <td class="small">{{ peca.criado_em[:10] if peca.criado_em else '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<details>
+  <summary>Juntar documento</summary>
+  <form method="post" enctype="multipart/form-data"
+        action="{{ url_for('ri_retificacao_peca', processo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p><label>Tipo<br>
+      <select name="tipo">
+        {% for c in conferencia %}
+          <option value="{{ c.item }}">{{ c.item }} — {{ c.artigo }}</option>
+        {% endfor %}
+        <option value="OUTRO">Outro documento</option>
+      </select>
+    </label></p>
+    <p><label>Arquivo digitalizado<br>
+      <input type="file" name="documento" multiple>
+    </label></p>
+    <p><label>Caminho já existente, se não houver upload<br>
+      <input name="arquivo" size="70">
+    </label></p>
+    <p><label>Descrição<br>
+      <input name="descricao" size="70">
+    </label></p>
+    <p><label>Entregue em<br>
+      <input type="date" name="entregue_em">
+    </label></p>
+    <p><button class="button">Juntar documento</button></p>
+  </form>
+</details>
+
+<h2>A conferência do art. 592</h2>
+<table>
+  <thead><tr><th>Item</th><th>Artigo</th><th>Situação</th><th></th></tr></thead>
+  <tbody>
+  {% for c in conferencia %}
+    <tr>
+      <td>{{ c.item }}{% if c.nota %}<br><span class="small muted">{{ c.nota }}</span>{% endif %}</td>
+      <td class="small muted">{{ c.artigo }}</td>
+      <td>{{ c.situacao }}</td>
+      <td>
+        <form method="post" action="{{ url_for('ri_retificacao_item', processo_id=p.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="item" value="{{ c.item }}">
+          <select name="situacao">
+            <option value="PENDENTE">pendente</option>
+            <option value="ATENDIDO">atendido</option>
+            <option value="DISPENSADO">dispensado</option>
+          </select>
+          <input name="nota" placeholder="motivo, se dispensar">
+          <button class="link-button">marcar</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Os confrontantes</h2>
+
+{% if dispensados %}
+<div class="card">
+  <p><strong>Estes não precisam ser notificados</strong>, e a norma diz por quê:</p>
+  <ul>
+  {% for d in dispensados %}
+    <li>{{ d.nome }} — {{ d.porque }} <span class="small muted">({{ d.artigo }})</span></li>
+  {% endfor %}
+  </ul>
+  <p class="small muted">Notificar quem a norma dispensa é trabalho, custo e
+     espera à toa num rito que já leva meses.</p>
+</div>
+{% endif %}
+
+<table>
+  <thead><tr><th>Nome</th><th>Papel</th><th>Notificado</th><th>Prazo até</th><th>Resposta</th><th></th></tr></thead>
+  <tbody>
+  {% for c in confrontantes %}
+    <tr>
+      <td>{{ c.nome }}
+        {% if not c.divisa_afetada %}<br><span class="small muted">divisa não afetada</span>{% endif %}
+        {% if c.assinou_planta %}<br><span class="small muted">assinou a planta</span>{% endif %}
+      </td>
+      <td class="small">{{ papeis.get(c.papel, c.papel) }}</td>
+      <td class="small">{{ c.notificado_em or '—' }}{% if c.forma %}<br>{{ c.forma }}{% endif %}
+        {#  O PAPEL DA NOTIFICAÇÃO — 21/09/2026, ordem do oficial. Até aqui
+            este módulo registrava QUE notificou, e o texto entregue ao
+            confrontante era escrito fora do sistema. Quem foi notificado
+            antes desta versão não tem papel, e por isso o link só aparece
+            onde há teor congelado: oferecer o que a rota recusa é o mesmo
+            defeito do problema #90, pelo outro lado. #}
+        {% if c.teor_expedido %}
+        <br><a href="{{ url_for('ri_retificacao_notificacao_papel',
+                                processo_id=p.id, confrontante_id=c.id) }}">
+          imprimir em PDF</a>
+        <span class="muted">·</span>
+        <a href="{{ url_for('ri_retificacao_notificacao_papel',
+                            processo_id=p.id, confrontante_id=c.id) }}?formato=odt">.odt</a>
+        {% endif %}</td>
+      <td class="small">{{ c.prazo_ate or '—' }}</td>
+      <td class="small">
+        {% if c.resposta %}{{ respostas.get(c.resposta, c.resposta) }}
+          {% if c.impugnacao %}<br><span class="muted">{{ c.impugnacao }}</span>{% endif %}
+        {% else %}—{% endif %}
+      </td>
+      <td>
+        {% if not c.notificado_em and c.divisa_afetada and not c.assinou_planta and not c.carta_anuencia %}
+        <form method="post" action="{{ url_for('ri_retificacao_notificar', processo_id=p.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="confrontante_id" value="{{ c.id }}">
+          <select name="forma">
+            {% for f in norma.COMO_NOTIFICAR %}<option value="{{ f.forma }}">{{ f.forma }}</option>{% endfor %}
+          </select>
+          <input type="date" name="quando" required>
+          <input type="date" name="prazo_ate" value="{{ prazo_sugerido }}" required>
+          <button class="link-button">notificar</button>
+        </form>
+        {% elif not c.resposta %}
+        <form method="post" action="{{ url_for('ri_retificacao_resposta', processo_id=p.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="confrontante_id" value="{{ c.id }}">
+          <select name="resposta">
+            {% for k, v in respostas.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+          </select>
+          <input name="impugnacao" placeholder="o que ele alegou">
+          <button class="link-button">responder</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<details>
+  <summary>Anotar confrontante</summary>
+  <form method="post" action="{{ url_for('ri_retificacao_confrontante', processo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p><label>Nome<br><input name="nome" required></label></p>
+    <p><label>Papel<br>
+      <select name="papel">
+        {% for k, v in papeis.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select></label></p>
+    <p><label>Documento<br><input name="documento"></label></p>
+    <p><label>Endereço<br><input name="endereco" size="60"></label></p>
+    <p><label>Matrícula contígua<br><input name="matricula_contigua"></label>
+       <label>Serventia<br><input name="serventia_contigua"></label></p>
+    <p>
+      <label><input type="checkbox" name="divisa_afetada" value="1" checked> A divisa dele é afetada</label><br>
+      <label><input type="checkbox" name="assinou_planta" value="1"> Assinou a planta e o memorial</label><br>
+      <label><input type="checkbox" name="carta_anuencia" value="1"> Trouxe carta de anuência apartada</label>
+    </p>
+    <p><button class="button">Anotar</button></p>
+  </form>
+</details>
+
+<h2>A decisão</h2>
+{% if p.decidido_em %}
+<div class="card">
+  <p><strong>{{ p.decisao }}</strong> em {{ p.decidido_em }}, por {{ p.decidido_por }}.</p>
+  <p>{{ p.decisao_fundamento }}</p>
+</div>
+  {% if p.decisao == 'PROCEDENTE' and not p.averbado_em %}
+  <div class="card">
+    <p>Falta lavrar a averbação na matrícula, <strong>encerrá-la e abrir a
+       nova</strong>, transportando os ônus e averbações não cancelados
+       (art. 604, § 1º). Lavre na tela da matrícula e informe aqui qual foi o
+       ato.</p>
+    <form method="post" action="{{ url_for('ri_retificacao_averbacao', processo_id=p.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Nº do ato (id) <input name="ato_id" required></label>
+      <label>Nº da matrícula nova (id) <input name="matricula_nova_id"></label>
+      <button class="button">Amarrar ao processo</button>
+    </form>
+  </div>
+  {% endif %}
+{% else %}
+  {% if falta_decidir %}
+  <div class="card">
+    <p><strong>Ainda não dá para julgar procedente:</strong></p>
+    <ul>{% for f in falta_decidir %}<li>{{ f }}</li>{% endfor %}</ul>
+    <p class="small muted">Decidir com alguém ainda no prazo tira dele o direito
+       de opor a divisa — e é a notificação malfeita que anula a averbação
+       depois.</p>
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('ri_retificacao_decidir', processo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p><label>Sentido<br>
+      <select name="sentido">
+        <option value="PROCEDENTE">Procedente</option>
+        <option value="IMPROCEDENTE">Improcedente</option>
+      </select></label></p>
+    <p><label>Fundamento<br>
+      <textarea name="fundamento" rows="5" cols="80" required></textarea></label><br>
+      <span class="small muted">O art. 604 pede decisão <strong>fundamentada</strong>.
+      É o fundamento que sustenta a averbação se alguém a questionar depois.</span></p>
+    <p><button class="button">Decidir</button></p>
+  </form>
+{% endif %}
+
+<h2>Andamento</h2>
+<table>
+  <thead><tr><th>Quando</th><th>O quê</th><th>Artigo</th><th>Quem</th></tr></thead>
+  <tbody>
+  {% for a in andamento %}
+    <tr><td class="small">{{ a.quando }}</td><td>{{ a.o_que }}</td>
+        <td class="small muted">{{ a.artigo or '' }}</td>
+        <td class="small">{{ a.quem or '' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<p><a href="{{ url_for('ri_retificacoes') }}">← voltar</a> ·
+   <a href="{{ url_for('ri_retificacao_normas') }}">o que o Código de Normas exige</a></p>
+{% endblock %}

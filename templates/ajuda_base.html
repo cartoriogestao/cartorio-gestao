@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Base de conhecimento da ajuda{% endblock %}
+{% block content %}
+<h1>Base de conhecimento da ajuda</h1>
+
+<p class="muted">
+  A ajuda <strong>lê esta base antes de responder</strong>. É o que faz uma
+  pergunta custar <strong>uma</strong> busca em vez de três — nos documentos do
+  projeto, nas regras da casa e no que você escreve aqui embaixo.
+  Esta tela <strong>não pergunta nada e não gasta consulta</strong>.
+</p>
+
+{# O ESTADO DA BASE, E A VERDADE QUANDO ELA NÃO TEM O QUE SE ESPERA. #}
+<div class="card">
+{% if not r.pronta %}
+  <p><strong>A base não carregou nesta instalação.</strong></p>
+  <p class="small">
+    {% if r.falha %}Motivo medido: <code>{{ r.falha }}</code>.{% else %}Nenhum
+    arquivo de documento ou de regra foi encontrado.{% endif %}
+    Enquanto ela não carregar, a ajuda continua respondendo pelo mapa das telas
+    e pela leitura do código.
+  </p>
+{% else %}
+  <p><strong>Carregada em {{ r.construida_em }}, em {{ r.segundos }} s.</strong>
+     {{ r.fontes|length }} fonte(s) ·
+     {{ r.total_de_linhas }} linhas ·
+     {{ "{:,}".format(r.total_de_caracteres).replace(",", ".") }} caracteres</p>
+  <p class="small muted">
+    Carregar custa meio segundo, e ela <strong>se recarrega sozinha</strong>
+    quando algum arquivo muda — a conferência custa 45 ms e não roda em toda
+    busca, e sim a cada poucos segundos.
+  </p>
+  {% set documentos = r.por_fonte.get('DOCUMENTO', {}) %}
+  {% if documentos.get('origens', 0) < piso %}
+    <p class="small">
+      <strong>Atenção: só {{ documentos.get('origens', 0) }} documentos do
+      projeto foram encontrados</strong> (o esperado é pelo menos {{ piso }}).
+      Numa instalação nova isso quer dizer que a pasta
+      <code>DOCUMENTACAO</code> não chegou junto com o programa — e não que o
+      projeto tenha pouca coisa escrita.
+    </p>
+  {% endif %}
+{% endif %}
+</div>
+
+<h2>O que está indexado</h2>
+<table>
+  <thead><tr><th>Fonte</th><th>O que é</th><th>Linhas</th><th>Seções</th><th>Tamanho</th></tr></thead>
+  <tbody>
+  {% for f in r.fontes %}
+    <tr>
+      <td><code>{{ f.origem }}</code></td>
+      <td><strong>{{ f.titulo }}</strong></td>
+      <td>{{ f.linhas }}</td>
+      <td>{{ f.blocos }}</td>
+      <td class="small muted">{{ "{:,}".format(f.caracteres).replace(",", ".") }} car.</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<hr>
+<h2>Experimentar uma busca</h2>
+<p class="muted small">
+  É <strong>a mesma função</strong> que a ajuda usa — o que aparecer aqui é o
+  que ela receberia. Se você procura por algo que a casa já decidiu e isto não
+  acha, é aqui que se escreve o que falta.
+</p>
+<form method="get" action="{{ url_for('ajuda_base') }}" class="inline">
+  <input type="search" name="procurar" value="{{ procura }}"
+         placeholder="ex.: carimbo que mente, selo, matrícula de 32 dígitos">
+  <button type="submit">Procurar na base</button>
+</form>
+{% if procura %}
+  <pre style="white-space:pre-wrap">{{ achado }}</pre>
+{% endif %}
+
+<hr>
+<h2>O que você escreve ({{ r.verbetes|length }})</h2>
+<p class="muted small">
+  <strong>O que só você sabe entra por aqui.</strong> A ajuda lê os verbetes
+  como lê os documentos — com a mesma convicção. Por isso o piso de dez letras,
+  e por isso esta porta é da gerência: verbete errado não fica no caderno de
+  quem o escreveu, fica na resposta que o balcão recebe.
+</p>
+
+{% if r.verbetes %}
+<table>
+  <thead><tr><th>Verbete</th><th>Assunto</th><th>Onde</th><th>Escrito por</th><th></th></tr></thead>
+  <tbody>
+  {% for v in r.verbetes %}
+    <tr>
+      <td><strong>{{ v.titulo }}</strong>
+          <br><span class="small muted">{{ v.texto[:160] }}{% if v.texto|length > 160 %}…{% endif %}</span></td>
+      <td class="small">{{ v.assunto or '—' }}</td>
+      <td class="small"><code>{{ v.onde or '—' }}</code></td>
+      <td class="small muted">{{ v.alterado_por or v.criado_por }}<br>{{ v.alterado_em or v.criado_em }}</td>
+      <td>
+        <a href="{{ url_for('ajuda_base', editar=v.id) }}">editar</a>
+        <form method="post" action="{{ url_for('ajuda_base_apagar', verbete_id=v.id) }}"
+              style="display:inline"
+              onsubmit="return confirm('Tirar «{{ v.titulo }}» da base?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="danger small">apagar</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">
+  Nenhum verbete escrito ainda. Os
+  <strong>{{ r.por_fonte.get('DOCUMENTO', {}).get('origens', 0) }} documentos</strong>
+  e as <strong>{{ r.por_fonte.get('REGRA', {}).get('linhas', 0) }} linhas de
+  regras</strong> já respondem pelo que está escrito no projeto — o verbete é
+  para o que <em>não</em> está.
+</p>
+{% endif %}
+
+<h3>{% if em_edicao %}Alterar o verbete{% else %}Escrever um verbete{% endif %}</h3>
+<form method="post" action="{{ url_for('ajuda_base_gravar') }}" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if em_edicao %}<input type="hidden" name="id" value="{{ em_edicao.id }}">{% endif %}
+  <p>
+    <label for="titulo">Título</label><br>
+    <input type="text" id="titulo" name="titulo" size="70" required
+           value="{{ em_edicao.titulo if em_edicao else '' }}"
+           placeholder="ex.: por que o selo do casamento é um só">
+  </p>
+  <p>
+    <label for="assunto">Assunto <span class="small muted">(opcional)</span></label><br>
+    <input type="text" id="assunto" name="assunto" size="50"
+           value="{{ em_edicao.assunto if em_edicao else '' }}"
+           placeholder="ex.: selo">
+  </p>
+  <p>
+    <label for="onde">Onde isto mora no sistema <span class="small muted">(opcional)</span></label><br>
+    <input type="text" id="onde" name="onde" size="50"
+           value="{{ em_edicao.onde if em_edicao else '' }}"
+           placeholder="ex.: /notas/selo, ou o nome do módulo">
+  </p>
+  <p>
+    <label for="texto">O que se sabe</label><br>
+    <textarea id="texto" name="texto" rows="10" cols="100" required
+              placeholder="Escreva como se estivesse explicando a quem chega amanhã.">{{ em_edicao.texto if em_edicao else '' }}</textarea>
+  </p>
+  <p>
+    <button type="submit">{% if em_edicao %}Salvar a alteração{% else %}Gravar na base{% endif %}</button>
+    {% if em_edicao %}<a class="button secondary" href="{{ url_for('ajuda_base') }}">Cancelar</a>{% endif %}
+  </p>
+</form>
+
+<hr>
+<h2>O que a ajuda recebe em toda pergunta</h2>
+<p class="muted small">
+  São estas linhas — e não o texto da base inteira, que são
+  {{ "{:,}".format(r.total_de_caracteres).replace(",", ".") }} caracteres. O
+  conteúdo vem <strong>quando a busca é feita</strong>, e é por isso que a
+  conta fecha. Os títulos dos seus verbetes vão por inteiro
+  (até {{ limite }}), porque é por eles que se pede o resto.
+</p>
+<details>
+  <summary>ver as linhas que a ajuda recebe</summary>
+  <pre style="white-space:pre-wrap">{{ contexto }}</pre>
+</details>
+{% endblock %}

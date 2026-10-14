@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}WhatsApp · configuração{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ url_for('whatsapp_lista') }}">← fila do WhatsApp</a></p>
+<h1>Configuração Meta</h1>
+
+<div class="card">
+  <p class="small muted">
+    Tokens da Cloud API e da caixa-postal. <strong>Nunca</strong> colar no
+    código-fonte. O SERVIDOR do Cartório Gestão não publica webhook: a Meta
+    aponta para <code>{{ cfg.webhook_publico }}</code> (Apache da VPS,
+    TLS do site — <strong>não</strong> o nome hstgr.cloud). HTTPS de
+    <em>saída</em> daqui até a Graph (enviar) e até a caixa (puxar).
+    Não abra a porta 8765. Não instale túnel neste Windows.
+  </p>
+</div>
+
+<form method="post" action="{{ url_for('whatsapp_config') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <div class="card">
+    <h2>Cloud API</h2>
+    <p>
+      <label>verify_token<br>
+        <input type="text" name="verify_token" value="{{ cfg.verify_token or '' }}"
+               autocomplete="off" style="width:100%">
+      </label>
+    </p>
+    <p class="small muted">
+      Vazio = o GET do webhook (só teste local) aceita <code>cartorio-teste</code>.
+      O valor oficial, quando gravado, passa a ser o único aceito. O mesmo
+      token vai no worker da VPS.
+    </p>
+    <p>
+      <label>phone_number_id<br>
+        <input type="text" name="phone_number_id"
+               value="{{ cfg.phone_number_id or '' }}"
+               autocomplete="off" style="width:100%">
+      </label>
+    </p>
+    <p>
+      <label>access_token<br>
+        <input type="password" name="access_token" value="" autocomplete="new-password"
+               style="width:100%" placeholder="vazio = não altera">
+      </label>
+    </p>
+    <p class="small muted">
+      {% if cfg.tem_access_token %}Já gravado: {{ cfg.access_token_mascarado }}
+      {% else %}Ainda não gravado.{% endif %}
+    </p>
+    <p>
+      <label>app_secret (opcional — HMAC do webhook)<br>
+        <input type="password" name="app_secret" value="" autocomplete="new-password"
+               style="width:100%" placeholder="vazio = não altera">
+      </label>
+    </p>
+    <p class="small muted">
+      {% if cfg.tem_app_secret %}Já gravado: {{ cfg.app_secret_mascarado }}.
+      Com secret, o POST local só entra com <code>X-Hub-Signature-256</code> válido.
+      {% else %}Sem secret, o POST daqui aceita só <code>X-Wa-Test: 1</code>
+      (desenvolvimento). Produção não deve expor este Flask.{% endif %}
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Caixa-postal (VPS / Apache)</h2>
+    <p class="small muted">
+      Worker Flask em <code>127.0.0.1</code> na VPS; Apache faz proxy só de
+      <code>/whatsapp/webhook</code> e <code>/pendentes</code>.
+      URL documentada para puxar:
+      <code>{{ cfg.caixa_url_documentada }}</code>
+      (alternativa: prefixo <code>/wa-caixa</code>).
+      Deploy SSH do worker: o oficial ainda não pediu.
+    </p>
+    <p>
+      <label>caixa_url<br>
+        <input type="text" name="caixa_url" value="{{ cfg.caixa_url or '' }}"
+               autocomplete="off" style="width:100%"
+               placeholder="{{ cfg.caixa_url_documentada }}">
+      </label>
+    </p>
+    <p>
+      <label>caixa_segredo<br>
+        <input type="password" name="caixa_segredo" value="" autocomplete="new-password"
+               style="width:100%" placeholder="vazio = não altera">
+      </label>
+    </p>
+    <p class="small muted">
+      {% if cfg.tem_caixa_segredo %}Já gravado: {{ cfg.caixa_segredo_mascarado }}
+      {% else %}Ainda não gravado.{% endif %}
+    </p>
+  </div>
+
+  <p><button class="button">guardar</button></p>
+</form>
+{% endblock %}

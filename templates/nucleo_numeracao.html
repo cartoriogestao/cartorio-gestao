@@ -1,0 +1,106 @@
+{#
+  O contador de ordem de cada livro do núcleo.
+
+  Esta tela faltava. A carga semeia sozinha sete séries do acervo e declara
+  duas que o acervo NÃO SABE informar — o Registro de Protestos e o de
+  Pagamentos —, e informá-las é decisão de quem lê o livro físico. Sem
+  informar, o primeiro ato de cada uma nasce com o número 1 sobre acervo que
+  já passou disso: o defeito de 18/08/2026 outra vez.
+
+  Quem recusa baixar o contador é `escrituracao.fixar_numeracao`, e não esta
+  tela.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Numeração dos livros</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="notice">
+  <strong>O número de ordem não repete.</strong> Cada livro tem o seu contador, e ele
+  só anda para a frente: informar um número igual ou menor que o maior já usado é
+  recusado, porque repetir número de ordem foi o que aconteceu em 18/08/2026 — a
+  matrícula 4011 aberta depois de a 4013 existir.
+  <br><br>
+  A <a href="{{ url_for('atribuicoes_importar') }}">carga do acervo</a> semeia sozinha
+  o contador das séries que o E-Ofício sabe informar. As que ele não sabe aparecem
+  abaixo marcadas em vermelho, e são as que <strong>você</strong> tem de informar,
+  lendo o livro físico, <em>antes</em> do primeiro ato daquela série.
+</div>
+
+{% set pendentes = series | selectattr('pendente') | rejectattr('diaria') | list %}
+{% if pendentes %}
+<div class="notice danger">
+  <strong>{{ pendentes | length }} série(s) esperam o número que só você pode dizer.</strong>
+  <ul>
+    {% for s in pendentes %}
+      <li><strong>{{ s.nome }}</strong> — {{ s.pendente }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% for numero, a in atribuicoes.items() %}
+  {% set do_grupo = series | selectattr('atribuicao', 'equalto', numero) | list %}
+  {% if do_grupo %}
+  <section class="panel">
+    <div class="panel-head"><span>{{ a.nome }}</span><small>{{ do_grupo | length }} livro(s)</small></div>
+    <table class="table">
+      <thead>
+        <tr><th>Livro</th><th>Maior em uso</th><th>Próximo</th><th>De onde veio</th>
+            <th>Informar outro</th></tr>
+      </thead>
+      <tbody>
+        {% for s in do_grupo %}
+        <tr>
+          <td>
+            <strong>{{ s.nome }}</strong>
+            <div><small>{{ s.codigo }}</small></div>
+            {% if s.pendente and not s.diaria %}
+              <div><small class="danger">{{ s.pendente }}</small></div>
+            {% endif %}
+          </td>
+          <td>{{ s.maior_em_uso if s.maior_em_uso is not none else '—' }}</td>
+          <td>
+            {% if s.diaria %}
+              <small>numeração diária — reinicia sozinha a cada dia</small>
+            {% else %}
+              <strong>{{ s.proximo }}</strong>
+            {% endif %}
+          </td>
+          <td>
+            <small>{{ s.semeado_de or 'ainda não semeado' }}</small>
+            {% if s.fixado_por %}
+              <div><small>informado por {{ s.fixado_por }} em {{ s.fixado_em }}</small></div>
+            {% endif %}
+            {% if s.observacao %}<div><small>{{ s.observacao }}</small></div>{% endif %}
+          </td>
+          <td>
+            {% if s.diaria %}
+              <small>não há contador a corrigir</small>
+            {% else %}
+            <form method="post" class="grid2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="serie" value="{{ s.codigo }}">
+              <label>Próximo número
+                <input name="proximo" inputmode="numeric" required
+                       placeholder="{{ (s.proximo or 1) }}"></label>
+              <label>Por quê
+                <input name="motivo" placeholder="lido no Livro 9, fl. 187"></label>
+              <div class="actions"><button class="button">Informar</button></div>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+{% endfor %}
+
+<p style="padding:0 14px 14px"><small>
+  <strong>Esta tela só lê até você mandar gravar.</strong> Abrir a conferência não
+  consome número: tela de leitura que consome contador fica presa esperando quem está
+  lavrando, e devolve erro no balcão do lado.
+</small></p>
+{% endblock %}

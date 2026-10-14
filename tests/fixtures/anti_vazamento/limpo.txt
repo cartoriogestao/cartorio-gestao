@@ -1,0 +1,5 @@
+# Arquivo sintetico LIMPO: nenhum documento real, nenhum CNS, nenhum selo.
+SERVENTIA = "NOME DA SERVENTIA"
+CNS = "000000"
+telefone = "(00) 0000-0000"
+caminho = r"C:\Users\<usuario>\Documentos"

@@ -1,0 +1,142 @@
+{#
+  O retorno à CRA — o que a Central ainda não sabe.
+
+  93% dos títulos desta casa entram pela CRA. Sem o retorno, eles entram e
+  nunca voltam: a Central fica sem saber o que aconteceu com o título que
+  mandou.
+
+  O RETORNO E O ANDAMENTO SAEM EM PAR, e isso é regra desta casa — o roteiro
+  do protesto que o oficial trouxe diz, em maiúscula: "SEMPRE QUE GERAR
+  RETORNO (FINAL), GERAR ANDAMENTO".
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Retorno à CRA</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
+
+<div class="notice">
+  O retorno devolve ao apresentante o que a casa fez com o título que ele mandou:
+  protestado, pago, retirado ou cancelado. <strong>O andamento sai junto</strong> —
+  são dois arquivos, e os dois sobem na CRA.
+  <br><br>
+  <strong>Nada sai duas vezes.</strong> Ato informado some desta lista; mandar o mesmo
+  protesto de novo faz a Central registrar dois.
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Esperando retorno</span>
+    <small>{{ atos | length }} ato(s), {{ grupos | length }} apresentante(s)</small>
+  </div>
+
+  {% if not grupos %}
+    <p style="padding:14px">
+      Nada a informar. Todo ato lavrado sobre título vindo da CRA já entrou num
+      retorno anterior.
+    </p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Apresentante</th><th>Atos</th><th>Letra da posição 566</th>
+               <th>Gerar</th></tr></thead>
+    <tbody>
+      {% for g in grupos %}
+      <tr>
+        <td><strong>{{ g.apresentante_codigo or '—' }}</strong>
+            <div><small>{{ g.apresentante_nome or 'sem nome no cadastro' }}</small></div></td>
+        <td>{{ g.atos }}</td>
+        <td>
+          {% if g.marca %}
+            <strong>{{ g.marca }}</strong>
+            <div><small>a que este apresentante já aceitou</small></div>
+          {% else %}
+            <small class="danger">sem retorno anterior — informe a letra</small>
+          {% endif %}
+        </td>
+        <td>
+          {% if user.role in ['ADMIN','MANAGER','USER'] %}
+          <form method="post" action="{{ url_for('protesto_retorno_gerar') }}" class="grid2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="apresentante_codigo" value="{{ g.apresentante_codigo }}">
+            <label>Dia <input type="date" name="dia" value="{{ hoje }}"></label>
+            <label>Remessa nº <input name="numero_da_remessa" value="1" inputmode="numeric"></label>
+            {% if not g.marca %}
+            <label>Letra da 566
+              <select name="marca">
+                <option value="">— escolha —</option>
+                <option value="A">A</option>
+                <option value="P">P</option>
+              </select>
+              <small>Nos arquivos medidos o empate é exato: 74 «A» e 74 «P».
+                Confira num retorno recente que a Central aceitou deste
+                apresentante.</small></label>
+            {% endif %}
+            <div class="actions">
+              <button class="button">Gerar retorno + andamento</button>
+            </div>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="panel-head" style="border-top:1px solid #e5e7eb"><span>O que vai neles</span></div>
+  <table class="table">
+    <thead><tr><th>Título</th><th>Nosso número</th><th>Protocolo</th><th>Ato</th>
+               <th>Data</th><th>Apresentante</th></tr></thead>
+    <tbody>
+      {% for a in atos %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=a.titulo_id) }}">{{ a.numero_titulo }}</a></td>
+        <td><small>{{ a.nosso_numero or '—' }}</small></td>
+        <td>
+          {% if a.protocolo %}{{ a.protocolo }}
+          {% else %}<small class="danger">sem protocolo</small>{% endif %}
+        </td>
+        <td>{{ a.tipo }}</td>
+        <td>{{ a.data_ato }}</td>
+        <td><small>{{ a.apresentante_codigo or '—' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Arquivos gerados</span><small>{{ gerados | length }}</small>
+  </div>
+  {% if not gerados %}
+    <p style="padding:14px"><small>Nenhum arquivo gerado ainda.</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Arquivo</th><th>Tipo</th><th>Apresentante</th><th>Dia</th>
+               <th>Títulos</th><th>Soma</th><th>Gerado em</th></tr></thead>
+    <tbody>
+      {% for g in gerados %}
+      <tr>
+        <td><a href="{{ url_for('protesto_retorno_arquivo', retorno_id=g.id) }}">{{ g.nome_arquivo }}</a></td>
+        <td>
+          {% if g.tipo == 'SDTBFOAND' %}andamento
+          {% elif g.tipo == 'SDTBFOCRT' %}confirmação
+          {% else %}retorno{% endif %}
+        </td>
+        <td>{{ g.apresentante_codigo }}<div><small>{{ g.apresentante_nome or '—' }}</small></div></td>
+        <td>{{ g.dia }}</td>
+        <td>{{ g.titulos }}</td>
+        <td>R$ {{ g.soma_centavos | centavos_reais }}</td>
+        <td><small>{{ g.gerado_em }}<br>{{ g.gerado_por or '—' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p style="padding:0 14px 14px"><small>
+    O arquivo fica gravado inteiro, e não só o nome: o que saiu daqui é o que a Central
+    recebeu, e quando ela reclamar de um título é este teor que se lê.
+  </small></p>
+  {% endif %}
+</section>
+{% endblock %}

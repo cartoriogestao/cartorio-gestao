@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+{% block title %}Pedidos em andamento — Registro de Imóveis{% endblock %}
+{% block heading %}<h1>Pedidos em andamento — Registro de Imóveis</h1>{% endblock %}
+{% block content %}
+{#
+  OS PEDIDOS DE ATO, NUMA TELA SÓ — pedido do oficial em 12/10/2026.
+
+  A ETAPA NÃO SE DIGITA: sai do que já está gravado — o protocolo geral, a
+  prenotação, a qualificação, a nota devolutiva, o ato e o prazo. O que se
+  grava aqui é só a anotação de quem está cuidando e do próximo passo, e a
+  qualificação, na ficha da prenotação.
+
+  Os Expedientes continuam sendo o que chega do Malote e do PJe; pedido de
+  cliente mora aqui.
+#}
+<div class="notice small">
+  Cada título aparece na etapa em que está, calculada do que já está gravado.
+  <strong>Para mudar de etapa, faça o ato na tela dele</strong>: qualificar e
+  emitir nota devolutiva na ficha da prenotação, lavrar na matrícula. Aqui se
+  acompanha e se anota quem está cuidando.
+</div>
+
+<section class="cards">
+  <a class="stat" href="{{ url_for('ri_pedidos') }}"{% if not filtro %} style="outline:2px solid var(--accent,#456)"{% endif %}>
+    <strong>{{ contagem.values()|sum }}</strong><small>todos</small></a>
+  {% for chave, rotulo, explica in ETAPAS %}
+  <a class="stat" href="{{ url_for('ri_pedidos', etapa=chave) }}" title="{{ explica }}"{% if filtro == chave %} style="outline:2px solid var(--accent,#456)"{% endif %}>
+    <strong>{{ contagem[chave] }}</strong><small>{{ rotulo }}</small></a>
+  {% endfor %}
+</section>
+
+{% for chave, rotulo, explica in ETAPAS %}
+{% set desta = pedidos | selectattr('etapa', 'equalto', chave) | list %}
+{% if desta %}
+<section class="panel" id="etapa-{{ chave }}">
+  <div class="panel-head"><span>{{ rotulo }} ({{ desta|length }})</span>
+    <span class="small muted">{{ explica }}</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr>
+      <th>Prenotação</th><th>Protocolo geral</th><th>Apresentante</th>
+      <th>Título · matrícula</th><th>Prazo</th><th>Depósito</th>
+      <th>Qualificação</th><th>Quem cuida · próximo passo</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for x in desta %}
+      <tr>
+        <td class="small">
+          {% if x.tipo == 'PRENOTACAO' %}
+            <a href="{{ url_for('ri_protocolo_ver', protocolo_id=x.id) }}"><strong>{{ x.numero }}</strong></a>
+            <br><span class="muted">{{ fmt_date(x.data) }}</span>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td class="small">
+          {% if x.geral_id %}<a href="{{ url_for('caixa_protocolo', protocolo_id=x.geral_id) }}">{{ x.geral_numero }}</a>
+            {% if x.tipo == 'PROTOCOLO_GERAL' %}<br><span class="muted">{{ fmt_date(x.data) }}{% if x.orcamento %} · orçamento{% endif %}</span>{% endif %}
+          {% else %}<span class="badge media">sem protocolo geral</span>{% endif %}
+          {# SUGESTÃO PELO NOME, e não ligação: quem liga é a pessoa, na ficha do
+             protocolo geral — homônimo é a regra, e não a exceção. #}
+          {% for par in x.pares or [] %}
+            <br><span class="muted">mesmo nome {% if x.tipo == 'PRENOTACAO' %}no geral
+              <a href="{{ url_for('caixa_protocolo', protocolo_id=par.id) }}">{{ par.numero }}</a>
+              {% else %}na prenotação
+              <a href="{{ url_for('caixa_protocolo', protocolo_id=x.id) }}">{{ par.numero }}</a>{% endif %}
+              — conferir e ligar</span>
+          {% endfor %}
+        </td>
+        <td class="small">{{ x.apresentante or '—' }}
+          {% if x.telefone or x.email %}<br><span class="muted">{{ x.telefone or '' }}{% if x.telefone and x.email %} · {% endif %}{{ x.email or '' }}</span>{% endif %}
+        </td>
+        <td class="small">{{ (x.titulo or '—')[:90] }}
+          {% if x.matricula %}<br><span class="muted">mat. {{ x.matricula }}</span>{% endif %}
+          {% if x.minutas %}<br><span class="badge baixa">{{ x.minutas }} minuta(s) em revisão</span>{% endif %}
+        </td>
+        <td class="small">
+          {% if x.tipo == 'PRENOTACAO' %}
+            {% if x.prazo_suspenso %}<span class="badge alta">prazo suspenso</span>
+            {% elif x.restam is not none %}
+              {% if x.restam < 0 %}<span class="badge critica">venceu há {{ -x.restam }} dia(s) úteis</span>
+              {% elif x.restam <= 3 %}<span class="badge alta">faltam {{ x.restam }} dia(s) úteis</span>
+              {% else %}<span class="badge baixa">faltam {{ x.restam }} dias úteis</span>{% endif %}
+            {% endif %}
+            {% if x.data_limite %}<br><span class="muted">vence {{ fmt_date(x.data_limite) }}</span>{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td class="small">{% if x.saldo_deposito %}R$ {{ reais(x.saldo_deposito) }}{% else %}—{% endif %}</td>
+        <td class="small">
+          {% if x.ultima %}{{ x.ultima.ordem }}ª {{ x.ultima.resultado|lower }}
+            <br><span class="muted">{{ fmt_date(x.ultima.data_qualificacao) }}{% if x.ultima.qualificada_por %} · {{ x.ultima.qualificada_por }}{% endif %}</span>
+            {% if x.reingresso %}<br><span class="badge alta">reingressou</span>{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td class="small">
+          {% if x.anotacao %}{{ x.anotacao.texto }}
+            {% if x.anotacao.responsavel %}<br><strong>{{ x.anotacao.responsavel }}</strong>{% endif %}
+            {% if x.anotacao.ate %}<span class="muted"> até {{ fmt_date(x.anotacao.ate) }}</span>{% endif %}
+          {% else %}<span class="muted">ninguém anotado</span>{% endif %}
+          <br><a href="{{ url_for('inacabados_anotar', tabela='ri_protocolos' if x.tipo == 'PRENOTACAO' else 'cx_protocolos', item_id=x.id, voltar='ri_pedidos') }}">anotar</a>
+        </td>
+        <td class="small">
+          {% if x.etapa == 'SEM_PRENOTACAO' %}
+            <a class="button" href="{{ url_for('ri_protocolo', cx=x.id) }}">Prenotar</a>
+          {% elif x.etapa == 'A_QUALIFICAR' %}
+            <a class="button" href="{{ url_for('ri_protocolo_ver', protocolo_id=x.id) }}#qualificacao">Qualificar</a>
+          {% elif x.etapa == 'EM_EXIGENCIA' %}
+            <a class="button" href="{{ url_for('ri_nota_devolutiva', protocolo_id=x.id) }}">Nota e reingresso</a>
+          {% elif x.etapa == 'APTO' %}
+            <a class="button" href="{{ url_for('ri_protocolo_ver', protocolo_id=x.id) }}">Abrir</a>
+          {% elif x.etapa == 'REGISTRADO' %}
+            <a class="button" href="{{ url_for('ri_protocolo_ver', protocolo_id=x.id) }}">Arquivar</a>
+          {% elif x.etapa == 'VENCIDA' %}
+            {% if user.role in ['ADMIN', 'MANAGER'] %}
+            <details><summary>Decidir</summary>
+              <form method="post" action="{{ url_for('ri_protocolo') }}" class="stack">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="acao" value="encerrar">
+                <input type="hidden" name="protocolo_id" value="{{ x.id }}">
+                <input type="hidden" name="situacao" value="CANCELADO">
+                <input type="hidden" name="voltar" value="pedidos">
+                <label>Motivo
+                  <input name="motivo" required minlength="5"
+                         value="Decurso do prazo da prenotação sem registro (Lei 6.015/73, art. 205)."></label>
+                <button class="button">Encerrar por decurso do prazo</button>
+              </form>
+              <span class="muted">Se houve suspensão ou reingresso, registre-os na
+                <a href="{{ url_for('ri_protocolo_ver', protocolo_id=x.id) }}">ficha</a> em vez de encerrar.</span>
+            </details>
+            {% else %}<a href="{{ url_for('ri_protocolo_ver', protocolo_id=x.id) }}">abrir</a>
+              <br><span class="muted">quem encerra é o oficial ou o gerente</span>{% endif %}
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endfor %}
+
+{% if not pedidos %}
+<div class="notice">Nenhum pedido {% if filtro %}nesta etapa{% else %}em andamento{% endif %}.</div>
+{% endif %}
+{% endblock %}

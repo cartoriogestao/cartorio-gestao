@@ -1,0 +1,356 @@
+{% extends "base.html" %}
+{% block title %}Carga da CRC Nacional{% endblock %}
+{% block content %}
+<h1>Carga da CRC Nacional</h1>
+
+{# **O RASTRO DO ENVIO — relato do oficial em 11/09/2026: "os assentos não
+   ficaram lá nas cargas [e] já foram enviados", sem opção de dizer isso ao
+   sistema.** Por padrão a lista abaixo esconde quem já tem lote registrado
+   (`rc_crc_lotes`); este link volta a mostrá-los, para quem quiser reenviar
+   de propósito. #}
+<p class="small muted">
+  <a href="{{ url_for('rcpn_crc_historico') }}">ver o histórico de envios</a>
+  {% if quantos_ja_enviados %}
+   — <strong>{{ quantos_ja_enviados }}</strong> assento(s) já enviado(s) não
+  aparecem na lista abaixo.
+  {% if not ver_enviados %}
+  <a href="{{ url_for('rcpn_crc', ver_enviados=1) }}">ver os já enviados</a>
+  {% else %}
+  <a href="{{ url_for('rcpn_crc') }}">esconder os já enviados de novo</a>
+  {% endif %}
+  {% endif %}
+</p>
+
+<div class="card">
+  <p>A CRC é <strong>o canal que a norma manda usar primeiro</strong>: o art. 243
+     manda que as comunicações entre serventias sejam feitas preferencialmente
+     por ela; o art. 226, § 1º, I, que a comunicação de óbito vá
+     <em>primeiramente pelo sistema CRC</em>; e o art. 348, § 2º exige consulta
+     obrigatória a ela antes de decidir restauração ou suprimento.</p>
+  <p class="small muted">
+    O arquivo sai no layout do <strong>manual oficial versão
+    {{ norma.VERSAO }}</strong>. Você pode <strong>baixar o XML</strong> e
+    subir pelo modelo de upload do próprio site da CRC (não exige
+    assinatura), ou <strong>enviar direto daqui</strong> pelo web service —
+    que assina com o seu certificado A3 e manda pela rede.
+  </p>
+  <p class="small muted">
+    <strong>O envio pelo web service ainda não foi confirmado contra a
+    Central</strong> — a forma do pedido foi medida por analogia num
+    endpoint irmão do mesmo servidor, e só um envio de teste em homologação
+    confirma se ela está certa. Prefira a homologação primeiro.
+  </p>
+</div>
+
+{% if resultado %}
+<div class="card">
+  <h2 style="margin-top:0">{{ resultado.quantos }} registro(s) no arquivo</h2>
+
+  {# **O BOTÃO DE BAIXAR VEM LOGO AQUI, ANTES DAS TABELAS DE ACHADO — relato
+     do oficial em 13/09/2026: "cliquei de novo e não baixou nada".**
+
+     Medido na produção: ele clicou "Montar o arquivo" duas vezes (22h10 e
+     22h20), as duas vezes com sucesso (6.737 registros no arquivo) — e
+     NUNCA clicou em "Baixar o XML" nenhuma das duas (zero linhas de
+     auditoria de download, sempre). **O botão existia, e existia longe
+     demais**: com 22 retidos e 453 "sobem incompletos", ele ficava depois
+     de quase 500 linhas de tabela — quem clicou "Montar" uma vez e não viu
+     nada acontecer na hora clicou de novo, achando que o primeiro clique
+     não tinha funcionado.
+
+     O botão não muda de lugar por causa disso — ele SEMPRE fica logo depois
+     do resumo, tenha ou não tenha achado. #}
+  {% if resultado.quantos %}
+  <div class="actions">
+    <form method="post" action="{{ url_for('rcpn_crc_arquivo') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="token_escolhidos" value="{{ token_escolhidos }}">
+      <button class="button">Baixar o XML</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if resultado.retidos %}
+  <p class="danger"><strong>{{ resultado.retidos|length }} ficaram de fora</strong>,
+     e nenhum some calado — mandar só o que deu certo produziria um arquivo bem
+     formado e incompleto, e a Central o aceitaria.</p>
+  <table>
+    <thead><tr><th>Assento</th><th>Por que ficou retido</th><th></th></tr></thead>
+    <tbody>
+    {% for x in resultado.retidos %}
+      <tr>
+        <td>{{ x.nome or x.assento_id }}</td>
+        <td class="small">{% for f in x.faltas %}{{ f }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+        {# O CAMINHO PARA O CONSERTO — relato #13. Motivo sem caminho e
+           diagnostico sem tratamento: aparece toda vez e ninguem conserta.
+
+           **E ELE LEVA A TELA QUE TEM OS CAMPOS** — correcao de 10/09/2026,
+           do relato «permitir retificar no arquivo e no assento». Ele levava a
+           FICHA, que so mostra; quem corrige o sexo do genitor e o nome que a
+           carga nao trouxe e `/rcpn/<id>/editar`, que grava em `rc_pessoas`
+           com motivo e auditoria — e **nao e** a retificacao do art. 109.
+
+           Um clique a menos importa aqui: sao vinte assentos retidos, e o
+           caminho antigo pedia dois cliques em cada. #}
+        <td>{% if x.assento_id %}<a class="button secondary"
+              href="{{ url_for('rcpn_assento_editar', assento_id=x.assento_id) }}"
+              >abrir e corrigir</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {# ------------------------------------------------------------------ #}
+  {# O QUE VAI E PRECISA DE CONSERTO — relato do oficial em 10/09/2026:
+     «precisa avisar quais informacoes precisam ser arrumadas para adequar a
+     crc json».
+
+     **E ELE NAO TRAVA, DE PROPOSITO.** O manual nao poe a filiacao entre os
+     obrigatorios do nascimento (`NOMEREGISTRADO`, `MATRICULA`,
+     `DATAREGISTRO`, `SEXO`), e reter por ela deixaria 20 registros validos
+     fora da Central. Sao duas listas com consequencias diferentes: a de cima
+     RETEM, esta AVISA. #}
+  {% if resultado.a_arrumar %}
+  <h3>{{ resultado.a_arrumar|length }} registro(s) sobem incompletos</h3>
+  <p class="small">Estes <strong>vão</strong> no arquivo — a CRC não exige
+     estes campos —, e o que falta neles fica <strong>dito aqui</strong> em vez
+     de sumir calado. Até 10/09/2026 sumiam: <strong>24 filiações de 420</strong>
+     não subiam e nada avisava.</p>
+  <table>
+    <thead><tr><th>Assento</th><th>O que arrumar para ficar completo</th><th></th></tr></thead>
+    <tbody>
+    {% for x in resultado.a_arrumar %}
+      <tr>
+        <td>{{ x.nome or x.assento_id }}</td>
+        <td class="small">{% for f in x.arrumar %}{{ f }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+        <td>{% if x.assento_id %}<a class="button secondary"
+              href="{{ url_for('rcpn_assento_editar', assento_id=x.assento_id) }}"
+              >abrir e corrigir</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+{% if resultado.quantos %}
+{# **O XML NÃO VAI MAIS INTEIRO NA PÁGINA — relato do oficial em 13/09/2026,
+   "monto o arquivo com todos, mas não acontece nada depois".** Com o acervo
+   importado, o XML chega a 9 MB; embuti-lo num `<pre>` (mesmo dentro de um
+   `<details>` fechado) inflava a página inteira, e o navegador parecia
+   travado. Quem quer o arquivo completo já tem o botão "Baixar o XML"
+   acima — este trecho é só para conferir a forma, sem carregar tudo. #}
+<details>
+  <summary>ver o começo do XML</summary>
+  <pre style="white-space:pre-wrap;font-size:11px">{{ resultado.xml[:4000] }}{% if resultado.xml|length > 4000 %}
+
+… ({{ resultado.xml|length }} caracteres ao todo — o resto está no arquivo baixado){% endif %}</pre>
+</details>
+
+{# **"CONFIRMEI NO LIVRO DE PAPEL", APLICADO À CARGA DA CRC — relato do
+   oficial em 11/09/2026.** Quem manda o XML baixado pelo modelo de upload,
+   no próprio site da CRC, sai desta tela e volta só para dizer que deu
+   certo — o sistema não tem como saber sozinho. Sem este clique, a próxima
+   vez que esta tela abrisse mostraria os mesmos assentos de novo. #}
+<div class="card">
+  <h3 style="margin-top:0">Já subi este arquivo no site da CRC</h3>
+  <p class="small muted">Depois de fazer o upload manual no site da CRC,
+     marque aqui para estes assentos não aparecerem mais como pendentes.</p>
+  <form method="post" action="{{ url_for('rcpn_crc_marcar_enviado') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="token_escolhidos" value="{{ token_escolhidos }}">
+    <p>
+      <label for="crc_nota">Onde e quando fez o upload (opcional)</label>
+      <input type="text" id="crc_nota" name="nota" placeholder="ex.: site da CRC, hoje de manhã">
+    </p>
+    <p><button class="button secondary">Marcar como já enviado</button></p>
+  </form>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Enviar direto pelo web service, assinado com o A3</h3>
+  <form method="post" action="{{ url_for('rcpn_crc_enviar') }}"
+        onsubmit="return confirm('Enviar ' + {{ resultado.quantos }} + ' registro(s) para a Central agora? Isto fala com a rede de verdade.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="token_escolhidos" value="{{ token_escolhidos }}">
+
+    <p>
+      <label for="crc_ambiente">Ambiente</label>
+      <select id="crc_ambiente" name="ambiente">
+        {% for amb in ambientes %}
+        <option value="{{ amb }}">{{ amb.title() }}{% if amb == 'HOMOLOGACAO' %} — não valida a assinatura{% endif %}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="crc_driver">Driver do certificado A3</label>
+      <select id="crc_driver" name="driver" required>
+        <option value="">— escolha —</option>
+        {% for d in drivers %}
+        <option value="{{ d.nome }}">{{ d.nome }}{% if not d.achado %} (não encontrado nesta máquina){% endif %}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="crc_pin">PIN do certificado</label>
+      <input type="password" id="crc_pin" name="pin" autocomplete="off" required>
+      <span class="small muted">Não fica guardado em lugar nenhum — é pedido a cada envio.</span>
+    </p>
+
+    <p><button class="button">Enviar à CRC agora</button></p>
+  </form>
+</div>
+{% endif %}
+{% endif %}
+
+<div class="card">
+  <p class="small muted">
+    <strong>Um número grande aqui é o esperado, e não atraso.</strong> A carga da
+    CRC é justamente a <em>carga</em> — a subida do acervo histórico desta casa
+    para a Central. Medido na produção em 30/08/2026: são <strong>243
+    assentos</strong>, o mais antigo de 1955.
+  </p>
+  <p class="small muted">
+    É por isso que esta tela <strong>não</strong> filtra o que veio do E-Ofício,
+    enquanto a <a href="{{ url_for('rcpn_sirc') }}">remessa do SIRC</a> filtra: lá
+    o prazo é de um dia útil e conta do <em>registro</em>, e um nascimento de 1955
+    apareceria com vinte e cinco mil dias de atraso. <strong>Mesmo número, duas
+    telas, sentidos opostos.</strong>
+  </p>
+</div>
+
+{# A QUARENTENA VEM ANTES DA LISTA DE ENVIO, e nao depois — decisao do oficial
+   em 12/09/2026: «os que foram importados sem elemento essencial para a CRC,
+   deixar em quarentena pendente de complemento; nao entra nas cargas de
+   envio».
+
+   **Ela aparece PRIMEIRO porque e trabalho a fazer**; a lista de baixo e o que
+   ja esta pronto para ir. E o assento retido sumiu da lista de envio: sem este
+   quadro, «nao esta na carga» seria lido como «ja foi». #}
+{% if retidos %}
+<div class="panel" style="border-left:4px solid var(--warning)">
+  <h2>Em quarentena, esperando complemento ({{ retidos|length }})</h2>
+  <p class="small muted">
+    Estes <strong>não entram na carga</strong>: falta neles alguma coisa que a
+    Central exige, e o lote inteiro voltaria recusado por causa deles. Complete
+    o que está apontado na ficha de cada um e eles <strong>voltam sozinhos</strong>
+    para a lista de envio — não há nada para desmarcar aqui.
+  </p>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Assento</th><th>Nome</th><th>Data</th>
+                 <th>O que falta</th></tr></thead>
+      <tbody>
+      {% for a in retidos %}
+        <tr>
+          <td><a href="{{ url_for('rcpn_assento', assento_id=a.id) }}">{{ a.especie }} n. {{ a.numero or '—' }}</a></td>
+          <td>{{ a.nome or '—' }}</td>
+          <td>{{ a.data_ato or '—' }}</td>
+          <td><ul style="margin:0;padding-left:18px">
+            {% for f in a.o_que_falta %}<li class="small">{{ f|forte }}</li>{% endfor %}
+          </ul></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<h2>Assentos ({{ candidatos|length }})</h2>
+{# **O NÚMERO ACIMA JÁ FOI UM CORTE DISFARÇADO DE TOTAL** — até 13/09/2026 a
+   consulta parava em 500, e esta contagem mostrava "500" mesmo havendo
+   milhares. `pendentes_de_carga`/`em_quarentena` agora vão até 20.000; este
+   aviso só aparece se um dia a carga real passar disso — para o corte nunca
+   mais mentir calado. #}
+{% if candidatos|length >= 20000 %}
+<div class="notice"><strong>Atenção:</strong> há pelo menos 20.000 assentos
+  pendentes — a lista pode estar cortada. Fale com quem mantém o sistema
+  antes de assumir que é tudo.</div>
+{% endif %}
+{% if candidatos %}
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p class="small muted">Marque os assentos e clique em <strong>«Montar o
+     arquivo»</strong> — é ali que aparecem o que ficou retido, o botão de
+     baixar o XML e o de <strong>enviar direto pela rede</strong>.</p>
+  <p class="small muted">
+     Já subiu este arquivo à mão no site da CRC, noutra ocasião? Marque os
+     mesmos assentos e clique em <strong>«Já enviei estes, no site da
+     CRC»</strong> — sem precisar montar o arquivo de novo.
+  </p>
+  <div class="actions">
+    <button class="button">Montar o arquivo</button>
+    <button class="button secondary" type="button" id="marcar-todos">Desmarcar todos</button>
+    <button class="button secondary" type="submit"
+            formaction="{{ url_for('rcpn_crc_marcar_enviado') }}"
+            formnovalidate>Já enviei estes, no site da CRC</button>
+  </div>
+  <table>
+    <thead><tr><th></th><th>Nº</th><th>Espécie</th><th>Nome</th><th>Lavrado</th><th>Matrícula</th></tr></thead>
+    <tbody>
+    {% for a in candidatos %}
+      <tr>
+        <td><input type="checkbox" name="assento" value="{{ a.id }}"
+                   aria-label="Selecionar assento {{ a.id }}" checked></td>
+        <td>{{ a.numero }}</td>
+        <td class="small">{{ a.especie }}</td>
+        <td>{{ a.nome }}</td>
+        <td class="small">{{ a.data_ato or '—' }}</td>
+        <td class="small">
+          {% if a.matricula %}{{ a.matricula }}
+          {% else %}<span class="danger">sem matrícula</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p><button class="button">Montar o arquivo</button></p>
+</form>
+<script>
+document.getElementById("marcar-todos")?.addEventListener("click", function () {
+  var caixas = Array.from(document.querySelectorAll('input[name="assento"]'));
+  var marcar = caixas.some(function (x) { return !x.checked; });
+  caixas.forEach(function (x) { x.checked = marcar; });
+  this.textContent = marcar ? "Desmarcar todos" : "Marcar todos";
+});
+</script>
+{% else %}
+<div class="card">
+  <p>Nenhum assento para carregar.</p>
+  <p class="small muted">A carga leva nascimento, casamento e óbito. As espécies
+     do Livro E não vão por aqui.</p>
+</div>
+{% endif %}
+
+<div class="card">
+  {% if norma.SEM_VOCABULARIO %}
+  <p class="small muted">
+    <strong>O que ainda não sabemos preencher</strong>, porque o manual manda ver
+    o XSD e ele não veio junto:
+    {% for x in norma.SEM_VOCABULARIO %}<code>{{ x.tag }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+    Esses campos saem vazios em vez de serem preenchidos por semelhança —
+    escolher por semelhança seria assinar por quem preencheu.
+  </p>
+  {% else %}
+  <p class="small muted">
+    <strong>Todos os campos de vocabulário fechado estão preenchidos</strong> —
+    conferidos um a um contra as enumerações do XSD do manual v2.6, que está na
+    casa. Até 10/09/2026 cinco deles saíam vazios aqui, com a nota de que «o XSD
+    não veio junto»: ele veio, e tem 344 enumerações dentro.
+  </p>
+  <p class="small muted">
+    <strong>O que isso corrigiu, medido na produção:</strong> o local do
+    nascimento saía como <code>número</code> onde a Central quer palavra
+    (212 registros); a marca de gêmeo dizia <code>S</code> para quem
+    <em>não</em> é gêmeo (210); o tipo e o local do óbito, o estado civil do
+    falecido e o regime de bens do casamento <strong>não saíam</strong>; e os 4
+    óbitos violentos ficavam retidos por uma frase de recomendação que o XSD
+    desmente — ele enumera <code>VIOLENTA</code>.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

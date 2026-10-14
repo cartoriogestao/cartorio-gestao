@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block title %}ONR — pedido {{ p.protocolo }}{% endblock %}
+{% block heading %}<h1>Pedido de certidão ONR {{ p.protocolo }}</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('onr_certidoes') }}">&larr; Certidões do ONR</a></div>
+
+<section class="card">
+  <p>
+    <strong>{{ rotulo_do_tipo(p.tipo_certidao) or 'Tipo não informado' }}</strong>
+    · status no ONR: {{ rotulo_do_status(p.status_onr) or '—' }}
+    · aqui: <strong>{{ p.situacao|replace('_', ' ')|lower }}</strong>
+  </p>
+  <p>Solicitante: {{ p.solicitante or '—' }}.
+    Matrícula: {% if p.matricula_id %}<a href="{{ url_for('ri_ficha', matricula_id=p.matricula_id) }}">{{ p.matricula_numero }} — abrir a ficha e emitir a certidão</a>{% else %}{{ p.matricula_numero or 'não identificada no pedido' }}{% endif %}.</p>
+  {% if p.custas_informadas %}<p>Custas informadas ao ONR: R$ {{ p.custas_informadas }} ({{ p.custas_por }}).</p>{% endif %}
+  {% if p.enviado_em %}<p>Enviado em {{ p.enviado_em[:16]|replace('T',' ') }} por {{ p.enviado_por }}.</p>{% endif %}
+  {% if p.finalizado_em %}<p>Finalizado em {{ p.finalizado_em[:16]|replace('T',' ') }} por {{ p.finalizado_por }}.</p>{% endif %}
+  {% if p.devolvido_em %}<p>Devolvido em {{ p.devolvido_em[:16]|replace('T',' ') }} por {{ p.devolvido_por }}: {{ p.motivo_devolucao }}</p>{% endif %}
+</section>
+
+{% if p.situacao in ['NOVO', 'PRONTO', 'ENVIADO'] %}
+<section class="card">
+  <h2>1. O arquivo assinado</h2>
+  {% if anexos %}
+  <ul>{% for a in anexos %}<li>{{ a.original_name }} — {{ (a.size_bytes / 1024)|round(0)|int }} KB, guardado em {{ a.uploaded_at[:16]|replace('T',' ') }}</li>{% endfor %}</ul>
+  {% endif %}
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('onr_certidao_anexo', pedido_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="file" name="arquivo" accept=".pdf,.p7s" required>
+    <button class="button" type="submit">Guardar o arquivo</button>
+    <span class="small muted">Só PDF ou P7S — é o que o ONR aceita. Guardar não envia nada.</span>
+  </form>
+</section>
+
+<section class="card">
+  <h2>2. Custas (só quando o ONR pedir «informar valor dos emolumentos»)</h2>
+  <form method="post" action="{{ url_for('onr_certidao_custas', pedido_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input name="valor" placeholder="ex.: 102,15" required style="width:8em">
+    <button class="button" type="submit" {% if p.custas_informadas %}disabled{% endif %}>Informar custas ao ONR</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>3. Enviar e finalizar</h2>
+  <form method="post" action="{{ url_for('onr_certidao_enviar', pedido_id=p.id) }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button primary" type="submit" {% if not anexos %}disabled{% endif %}>Enviar o arquivo ao ONR</button>
+  </form>
+  <form method="post" action="{{ url_for('onr_certidao_finalizar', pedido_id=p.id) }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label><input type="checkbox" name="interesse_social" value="1"> interesse social</label>
+    <button class="button primary" type="submit" {% if p.situacao != 'ENVIADO' %}disabled{% endif %}>Finalizar o pedido no ONR</button>
+  </form>
+  <p class="small muted">Finalizar entrega a certidão ao solicitante e não se desfaz.</p>
+</section>
+
+<section class="card">
+  <h2>Ou devolver</h2>
+  <form method="post" action="{{ url_for('onr_certidao_devolver', pedido_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <textarea name="motivo" rows="2" style="width:100%" placeholder="Motivo da devolução — o solicitante vai ler" required></textarea>
+    <button class="button" type="submit">Devolver o pedido no ONR</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Tudo o que o ONR mandou neste pedido</h2>
+  <table>{% for k, v in p.dados.items() %}<tr><th>{{ k }}</th><td>{{ v }}</td></tr>{% endfor %}</table>
+</section>
+{% endblock %}

@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Folhas de segurança</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+{% if quadro.acabou %}
+<div class="flash danger">
+  <strong>Não há folha de segurança em branco no estoque.</strong> Enquanto não
+  entrar uma remessa, a certidão do Registro Civil não sai — o papel é o
+  documento, e o selo do civil leva o número dele.
+</div>
+{% elif quadro.acabando %}
+<div class="flash warning">
+  <strong>Restam {{ quadro.em_branco }} folhas em branco</strong>, abaixo das
+  {{ quadro.piso }} que esta casa toma como piso. Papel de segurança se compra
+  de fornecedor e demora a chegar; pedir agora é o que evita o balcão parado.
+</div>
+{% endif %}
+
+<div class="cards">
+  <div class="card stat{% if quadro.acabando %} warning{% endif %}">
+    <span>Em branco</span><strong>{{ quadro.em_branco }}</strong></div>
+  <div class="card stat"><span>Usadas</span><strong>{{ quadro.usadas }}</strong></div>
+  <div class="card stat"><span>Inutilizadas</span>
+    <strong>{{ quadro.inutilizadas }}</strong></div>
+  <div class="card stat"><span>A próxima da gaveta</span>
+    <strong style="font-size:20px">{{ quadro.proxima or '—' }}</strong></div>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Como isto funciona</span></div>
+  <p style="padding:0 0 8px"><small>
+    A folha <strong>não se marca como usada aqui</strong>: quem gasta é o ato.
+    Ao emitir a certidão, o escrevente <strong>escolhe na ficha qual folha está
+    na gaveta</strong>; o sistema amarra esse número ao ato e ao selo — não
+    escolhe sozinho.
+    <br><br>
+    A ordem não é escolha de quem atende, e isso é de propósito: numeração
+    salteada é o que a inspeção pergunta. Quem precisar de outra folha
+    <strong>inutiliza a da frente</strong>, com o motivo — que é a verdade,
+    porque ela foi para o lixo.
+  </small></p>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>A folha estragou</span></div>
+  <p style="padding:0 0 8px"><small>
+    Saiu borrada, rasgou, a impressora comeu. Escreva o que houve: é isso que
+    responde pela numeração quando alguém perguntar, daqui a cinco anos.
+  </small></p>
+  <form method="post" action="{{ url_for('rcpn_papel_inutilizar') }}" class="grid2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>O número da folha
+      <input name="codigo" required placeholder="{{ quadro.proxima or '7225136' }}"></label>
+    <label>O que aconteceu
+      <input name="motivo" required placeholder="saiu borrada na impressora"></label>
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button">Inutilizar a folha</button>
+    </div>
+  </form>
+</section>
+
+{% if user.role in ['ADMIN','MANAGER'] %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Chegou uma caixa</span>
+    <small>de quem responde pela serventia</small>
+  </div>
+  <p style="padding:0 0 8px"><small>
+    A faixa é a que está impressa na caixa, do primeiro ao último número. Cada
+    folha vira uma linha no estoque — é o que permite responder «onde está a
+    folha 7225319?» sem abrir a gaveta.
+  </small></p>
+  <form method="post" action="{{ url_for('rcpn_papel_receber') }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Fornecedor
+      <input name="fornecedor" required value="ARPENBRASIL"></label>
+    <label>Série <small>(a letra da caixa)</small>
+      <input name="serie" placeholder="HA"></label>
+    <label>Do número
+      <input name="codigo_de" required placeholder="7225136"></label>
+    <label>Ao número
+      <input name="codigo_ate" required placeholder="7225500"></label>
+    <label>Nota fiscal <small>(opcional)</small>
+      <input name="nota_fiscal"></label>
+    <label>Tipo do papel <small>(opcional)</small>
+      <input name="tipo" placeholder="Papel de Segurança - ARPEN"></label>
+    <label class="span2">Observação <small>(opcional)</small>
+      <input name="observacao"></label>
+    <div class="actions span2"><button class="button primary">Dar entrada na caixa</button></div>
+  </form>
+</section>
+{% endif %}
+
+{% if caixas %}
+<section class="panel">
+  <div class="panel-head"><span>As caixas que chegaram</span></div>
+  <table class="table">
+    <thead><tr><th>Quando</th><th>Fornecedor</th><th>Série</th><th>Faixa</th>
+               <th>Quantas</th><th>Restam</th><th>Nota</th>
+               {% if user.role in ['ADMIN','MANAGER'] %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for c in caixas %}
+      <tr>
+        <td><small>{{ c.recebida_em[:10] }}</small></td>
+        <td>{{ c.fornecedor }}</td>
+        <td>{{ c.serie or '—' }}</td>
+        <td>{{ c.codigo_de }} a {{ c.codigo_ate }}</td>
+        <td>{{ c.quantas }}</td>
+        <td>{{ c.restam }}</td>
+        <td><small>{{ c.nota_fiscal or '—' }}</small></td>
+        {% if user.role in ['ADMIN','MANAGER'] %}
+        <td>
+          {% if c.restam > 0 %}
+          <details>
+            <summary><small>Estornar</small></summary>
+            <form method="post" action="{{ url_for('rcpn_papel_estornar') }}"
+                  style="margin-top:6px">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="remessa_id" value="{{ c.id }}">
+              <label><small>Por quê</small>
+                <input name="motivo" required
+                       placeholder="duplicou a remessa 5, já cadastrada"></label>
+              <button class="button" style="margin-top:4px">
+                Inutilizar as {{ c.restam }} em branco desta remessa</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if inutilizadas %}
+<section class="panel">
+  <div class="panel-head">
+    <span>As folhas inutilizadas</span>
+    <small>{{ inutilizadas|length }}</small>
+  </div>
+  <table class="table">
+    <thead><tr><th>Folha</th><th>Quando</th><th>Quem</th><th>Por quê</th></tr></thead>
+    <tbody>
+    {% for f in inutilizadas %}
+      <tr>
+        <td>{{ f.codigo }}</td>
+        <td><small>{{ (f.inutilizada_em or '')[:16]|replace('T',' ') }}</small></td>
+        <td><small>{{ f.inutilizada_por or '—' }}</small></td>
+        <td>{{ f.inutilizada_motivo }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{# FICHA_FOLHA_SEGURANCA_20261009: com o registrado e o assento (link para a
+   ficha), da mais recente, com busca e paginas. #}
+<section class="panel" id="usadas">
+  <div class="panel-head">
+    <span>As folhas gastas</span>
+    <small>{{ pagina_usadas.total }} {% if pagina_usadas.busca %}achada(s){% else %}no total{% endif %}, da mais recente</small>
+  </div>
+  <form method="get" action="{{ url_for('rcpn_papel') }}#usadas" class="actions" style="padding:8px 14px">
+    <input name="q" value="{{ pagina_usadas.busca }}" style="min-width:320px"
+           placeholder="folha, nome do registrado, nº do assento, termo ou selo">
+    <button class="button">Buscar</button>
+    {% if pagina_usadas.busca %}<a class="button" href="{{ url_for('rcpn_papel') }}#usadas">Limpar</a>{% endif %}
+  </form>
+  {% if usadas %}
+  <table class="table">
+    <thead><tr><th>Folha</th><th>Quando</th><th>Registrado / assento</th><th>No ato</th><th>Selo</th><th>Quem</th></tr></thead>
+    <tbody>
+    {% for f in usadas %}
+      <tr>
+        <td>{% if f.serie %}{{ f.serie }} {% endif %}{{ f.codigo }}</td>
+        <td><small>{{ (f.usada_em or '')[:16]|replace('T',' ') }}</small></td>
+        <td>{% if f.assento_id %}<a href="{{ url_for('rcpn_assento', assento_id=f.assento_id) }}">{{ f.assento_nome or ('assento ' ~ f.assento_id) }}</a>
+          <br><small>{{ (f.assento_especie or '')|capitalize }}{% if f.assento_numero %}, termo {{ f.assento_numero }}{% endif %} - assento nº {{ f.assento_id }}</small>
+          {% else %}-{% endif %}</td>
+        <td><small>{% if f.tabela == 'rc_atos' %}registro{% if f.ato_tipo and f.ato_tipo != 'REGISTRO' %} ({{ f.ato_tipo|lower }}){% endif %}{% elif f.tabela == 'rc_certidoes' %}certidão{% if f.certidao_numero %} {{ f.certidao_numero }}/{{ f.certidao_ano }}{% endif %}{% elif f.tabela %}{{ f.tabela }} nº {{ f.ato_id }}{% else %}-{% endif %}</small></td>
+        <td><small>{{ f.selo or '-' }}</small></td>
+        <td><small>{{ f.usada_por or '-' }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if pagina_usadas.paginas > 1 %}
+  <div class="actions" style="padding:8px 14px">
+    {% if pagina_usadas.pagina > 1 %}<a class="button" href="{{ url_for('rcpn_papel', q=pagina_usadas.busca or none, pagina=pagina_usadas.pagina - 1) }}#usadas">&larr; mais recentes</a>{% endif %}
+    <small>página {{ pagina_usadas.pagina }} de {{ pagina_usadas.paginas }}</small>
+    {% if pagina_usadas.pagina < pagina_usadas.paginas %}<a class="button" href="{{ url_for('rcpn_papel', q=pagina_usadas.busca or none, pagina=pagina_usadas.pagina + 1) }}#usadas">mais antigas &rarr;</a>{% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <p style="padding:14px"><small>{% if pagina_usadas.busca %}Nenhuma folha gasta com «{{ pagina_usadas.busca }}».{% else %}Nenhuma folha gasta ainda.{% endif %}</small></p>
+  {% endif %}
+</section>
+{% endblock %}

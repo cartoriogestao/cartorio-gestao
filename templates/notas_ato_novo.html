@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{% block heading %}<h1>Lavrar {% if familia %}{{ familia.singular|lower }}{% else %}ato{% endif %}</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{% if familia %}{{ url_for(familia.endpoint) }}{% else %}{{ url_for('notas_atos') }}{% endif %}">&larr; {% if familia %}{{ familia.titulo }}{% else %}Atos{% endif %}</a>
+  <a class="button" href="{{ url_for('notas_livros') }}">Livros</a></div>
+
+<div class="notice">
+  O ato abre <strong>em lavratura</strong>. Livro, folha e termo são atribuídos pelo sistema no
+  <strong>lançamento</strong>, depois que o teor estiver pronto e se souber quantas páginas ele tem
+  — folha reservada para ato que não se lavrou vira buraco no livro.
+</div>
+
+<section class="panel">
+  {{ salvar_rascunho('notas_ato_novo', url_for('notas_ato_novo'),
+                   'Ato das Notas', csrf_token,
+                   nome_em='interessado') }}
+
+<form method="post" class="grid2" style="padding:14px" id="form-do-ato">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="familia" value="{{ familia_chave }}">
+    <label>Tipo do ato <select name="tipo" id="tipo-do-ato" required>
+      {% for k, rot in TIPOS_ATO.items() %}<option value="{{ k }}">{{ rot }}</option>{% endfor %}
+    </select></label>
+    <label>Data <input type="date" name="data" value="{{ hoje }}"></label>
+    <label class="span2">Modelo de texto
+      <select name="modelo_codigo" id="modelo-do-ato">
+        <option value="">— sem modelo, teor livre —</option>
+        {% for m in modelos %}<option value="{{ m.codigo }}" data-tipo-ato="{{ m.tipo_ato }}"
+          {% if modelo_escolhido == m.codigo %}selected{% endif %}>[{{ m.tipo }}] {{ m.nome }}</option>{% endfor %}
+      </select></label>
+    <label class="span2">Interessado <input name="interessado"></label>
+    <label class="span2">Natureza (quando não usar modelo) <input name="natureza"></label>
+    <div class="span2"><button class="primary">Abrir o ato</button>
+      <span class="small muted">Depois vêm as partes, o teor e o lançamento no livro.</span></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Para onde cada ato vai</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Tipo do ato</th><th>Série</th><th>Livro</th><th>Próxima folha</th><th>Próximo termo</th></tr></thead>
+    <tbody>
+    {% for k, rot in TIPOS_ATO.items() %}
+      {% set p = previsoes.get(k) %}
+      <tr>
+        <td>{{ rot }}</td>
+        <td class="small">{{ p.serie_nome if p and p.serie_nome else '—' }}</td>
+        <td>{% if p and p.livro %}<strong>{{ p.livro }}</strong>
+            {% elif p and p.abrira_livro %}<span class="badge">abrirá o nº {{ p.proximo_livro }}</span>
+            {% else %}—{% endif %}</td>
+        <td class="small">{% if p %}{{ p.folha_inicial }}{% endif %}
+            {% if p and p.restam and p.restam <= 10 and not p.abrira_livro %}
+              <span class="badge warn">restam {{ p.restam }}</span>{% endif %}</td>
+        <td class="small">{{ p.termo if p and p.termo else '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <div class="small muted" style="padding:8px 14px">
+    Nenhum número acima está reservado — são apenas os próximos da fila. Quem reserva é o
+    lançamento.
+  </div>
+</section>
+{{ script_do_rascunho() }}
+<script>
+(function () {
+  const modelo = document.getElementById('modelo-do-ato');
+  const tipo = document.getElementById('tipo-do-ato');
+  function alinharTipo() {
+    const opcao = modelo.options[modelo.selectedIndex];
+    if (opcao && opcao.dataset.tipoAto) tipo.value = opcao.dataset.tipoAto;
+  }
+  modelo.addEventListener('change', alinharTipo);
+  alinharTipo();
+})();
+</script>
+{% endblock %}

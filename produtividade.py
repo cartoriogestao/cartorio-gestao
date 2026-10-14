@@ -1,0 +1,1559 @@
+"""Controle diário de produtividade — planilha CARLA (SANDBOX)."""
+from __future__ import annotations
+
+import csv
+import io
+import re
+import sqlite3
+from datetime import date, datetime, timedelta
+from typing import Any
+
+CAPACIDADE_DIA_MIN = 8 * 60  # 8 h
+STATUS_CONCLUIDA = "Concluída"
+STATUS_EM_ANDAMENTO = "Em andamento"
+STATUS_PAUSADA = "Pausada"
+
+# Três categorias gerais (rótulos estáveis; ordem = teclas 1/2/3).
+CATEGORIAS_ATIVAS = (
+    "1 - Operacional",
+    "2 - Administrativo",
+    "3 - Não relacionada ao cartório",
+)
+CATEGORIA_PADRAO = CATEGORIAS_ATIVAS[0]
+CATEGORIAS_PADRAO = CATEGORIAS_ATIVAS
+
+# Limites de duração de uma atividade (minutos). Evita digitação absurda
+# (ex.: 100000) e o "pula meia-noite" silencioso que virava horas a mais.
+DURACAO_MIN_MIN = 1
+DURACAO_MAX_MIN = 24 * 60  # 1 dia
+
+MAPA_CATEGORIAS_ANTIGAS = {
+    "Operacional": "1 - Operacional",
+    "Atendimento": "1 - Operacional",
+    "Suporte": "1 - Operacional",
+    "Comercial": "1 - Operacional",
+    "Outro": "1 - Operacional",
+    "Administrativo": "2 - Administrativo",
+    "Financeiro": "2 - Administrativo",
+    "Planejamento": "2 - Administrativo",
+    "Reunião": "2 - Administrativo",
+    "Treinamento": "2 - Administrativo",
+    "Atividades não produtivas": "3 - Não relacionada ao cartório",
+    "Atividades não produtivas e não ligadas ao cartório": "3 - Não relacionada ao cartório",
+}
+STATUS_PADRAO = (
+    "Não iniciada",
+    "Em andamento",
+    "Concluída",
+    "Pausada",
+    "Cancelada",
+)
+PRIORIDADES_PADRAO = ("Alta", "Média", "Baixa")
+
+
+def init_produtividade_schema(con: sqlite3.Connection) -> None:
+    con.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS prod_lista_categorias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rotulo TEXT NOT NULL UNIQUE,
+            ativo INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE IF NOT EXISTS prod_lista_status (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rotulo TEXT NOT NULL UNIQUE,
+            ativo INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE IF NOT EXISTS prod_lista_prioridades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rotulo TEXT NOT NULL UNIQUE,
+            ativo INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS prod_registros (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_registro TEXT NOT NULL,
+            responsavel_user_id INTEGER,
+            responsavel_nome TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            tarefa TEXT NOT NULL,
+            prioridade TEXT NOT NULL,
+            status TEXT NOT NULL,
+            hora_inicio TEXT,
+            hora_fim TEXT,
+            pausas_min INTEGER NOT NULL DEFAULT 0,
+            tempo_planejado_min REAL,
+            observacoes TEXT,
+            criado_em TEXT NOT NULL,
+            criado_por TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_prod_reg_data
+            ON prod_registros(data_registro DESC);
+        CREATE INDEX IF NOT EXISTS idx_prod_reg_resp
+            ON prod_registros(responsavel_user_id, data_registro DESC);
+
+        CREATE TABLE IF NOT EXISTS prod_tipos_servico (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL UNIQUE,
+            rotulo TEXT NOT NULL,
+            ativo INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE IF NOT EXISTS prod_lancamentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_registro TEXT NOT NULL,
+            escrevente_user_id INTEGER,
+            escrevente_nome TEXT NOT NULL,
+            atribuicao TEXT,
+            tipo_servico TEXT NOT NULL,
+            quantidade REAL NOT NULL DEFAULT 1,
+            protocolo_ref TEXT,
+            tarefa_ref TEXT,
+            ato_ref TEXT,
+            observacao TEXT,
+            criado_em TEXT NOT NULL,
+            criado_por TEXT
+        );
+        """
+    )
+    _ensure_colunas(con)
+    _seed_listas(con)
+    migrar_categorias_tres(con)
+
+
+def _ensure_colunas(con: sqlite3.Connection) -> None:
+    """Migração aditiva: colunas usadas pelo cronômetro (sem destruição)."""
+    import sqlite_esquema
+    cols = sqlite_esquema.colunas(con, "prod_registros")
+    if "pausado_em" not in cols:
+        con.execute("ALTER TABLE prod_registros ADD COLUMN pausado_em TEXT")
+    if "confirmado_em" not in cols:
+        # Quando a pessoa disse «ainda estou trabalhando» depois do aviso das
+        # 14h15. Sem isto, o cronômetro é encerrado às 14h30 com hora 14h15.
+        con.execute("ALTER TABLE prod_registros ADD COLUMN confirmado_em TEXT")
+    if "ciencia_em" not in cols:
+        # Quando a pessoa viu o aviso de que o cronômetro dela foi encerrado
+        # automaticamente. Enquanto vazio, a tela continua avisando.
+        con.execute("ALTER TABLE prod_registros ADD COLUMN ciencia_em TEXT")
+
+
+def _seed_listas(con: sqlite3.Connection) -> None:
+    for rotulo in CATEGORIAS_ATIVAS:
+        con.execute(
+            "INSERT OR IGNORE INTO prod_lista_categorias (rotulo, ativo) VALUES (?,1)",
+            (rotulo,),
+        )
+        con.execute(
+            "UPDATE prod_lista_categorias SET ativo=1 WHERE rotulo=?",
+            (rotulo,),
+        )
+    for rotulo in STATUS_PADRAO:
+        con.execute(
+            "INSERT OR IGNORE INTO prod_lista_status (rotulo, ativo) VALUES (?,1)",
+            (rotulo,),
+        )
+    for rotulo in PRIORIDADES_PADRAO:
+        con.execute(
+            "INSERT OR IGNORE INTO prod_lista_prioridades (rotulo, ativo) VALUES (?,1)",
+            (rotulo,),
+        )
+
+
+def migrar_categorias_tres(con: sqlite3.Connection) -> dict[str, int]:
+    """Mapeia rótulos antigos → 1/2/3; desativa categorias fora da lista ativa."""
+    _seed_listas(con)
+    contagens: dict[str, int] = {}
+    for antigo, novo in MAPA_CATEGORIAS_ANTIGAS.items():
+        cur = con.execute(
+            "UPDATE prod_registros SET categoria=? WHERE categoria=?",
+            (novo, antigo),
+        )
+        if cur.rowcount:
+            contagens[f"{antigo} → {novo}"] = int(cur.rowcount)
+    placeholders = ",".join("?" for _ in CATEGORIAS_ATIVAS)
+    con.execute(
+        f"UPDATE prod_lista_categorias SET ativo=0 WHERE rotulo NOT IN ({placeholders})",
+        tuple(CATEGORIAS_ATIVAS),
+    )
+    for novo in CATEGORIAS_ATIVAS:
+        n = con.execute(
+            "SELECT COUNT(*) FROM prod_registros WHERE categoria=?", (novo,)
+        ).fetchone()[0]
+        contagens[f"total agora: {novo}"] = int(n)
+    return contagens
+
+
+def _agora_iso(agora: datetime | str | None) -> str:
+    if agora is None:
+        return datetime.now().isoformat(timespec="seconds")
+    if isinstance(agora, datetime):
+        return agora.isoformat(timespec="seconds")
+    return str(agora).strip()
+
+
+def data_hoje_iso() -> str:
+    return date.today().isoformat()
+
+
+def _data_hoje_iso() -> str:
+    return data_hoje_iso()
+
+
+def hora_agora_hhmm(agora: datetime | None = None) -> str:
+    dt = agora or datetime.now()
+    return f"{dt.hour:02d}:{dt.minute:02d}"
+
+
+def semana_iso(data_iso: str | None) -> int | None:
+    if not data_iso:
+        return None
+    try:
+        d = date.fromisoformat(str(data_iso).strip()[:10])
+    except ValueError:
+        return None
+    return int(d.isocalendar()[1])
+
+
+def format_hhmm_de_minutos(minutos: int | float | None) -> str:
+    if minutos is None:
+        return ""
+    try:
+        total = int(round(float(minutos)))
+    except (TypeError, ValueError):
+        return ""
+    if total < 0:
+        total = 0
+    h, m = divmod(total, 60)
+    return f"{h}:{m:02d}"
+
+
+_HORA_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
+
+
+def _parse_hora(texto: str | None) -> tuple[int, int] | None:
+    if not texto or not str(texto).strip():
+        return None
+    m = _HORA_RE.match(str(texto).strip())
+    if not m:
+        raise ValueError("Hora inválida. Use o formato HH:MM (ex.: 09:30).")
+    h, mi = int(m.group(1)), int(m.group(2))
+    if h > 23 or mi > 59:
+        raise ValueError("Hora inválida. Use o formato HH:MM (ex.: 09:30).")
+    return h, mi
+
+
+def minutos_entre_horas(hora_inicio: str | None, hora_fim: str | None) -> int | None:
+    """Minutos brutos no mesmo dia. Recusa início depois do fim (sem virar a meia-noite)."""
+    ini = _parse_hora(hora_inicio) if hora_inicio else None
+    fim = _parse_hora(hora_fim) if hora_fim else None
+    if ini is None or fim is None:
+        return None
+    min_ini = ini[0] * 60 + ini[1]
+    min_fim = fim[0] * 60 + fim[1]
+    if min_fim < min_ini:
+        raise ValueError(
+            "Hora início deve ser anterior à hora fim (no mesmo dia)."
+        )
+    return min_fim - min_ini
+
+
+def validar_duracao_minutos(duracao_min: int | float | str | None, *, obrigatorio: bool = False) -> int | None:
+    """Converte e limita duração informada pelo usuário (1..DURACAO_MAX_MIN)."""
+    if duracao_min is None or str(duracao_min).strip() == "":
+        if obrigatorio:
+            raise ValueError(
+                f"Informe a duração em minutos ({DURACAO_MIN_MIN} a {DURACAO_MAX_MIN})."
+            )
+        return None
+    try:
+        dur = int(duracao_min)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Duração inválida (minutos).") from exc
+    if dur < DURACAO_MIN_MIN or dur > DURACAO_MAX_MIN:
+        raise ValueError(
+            f"Duração deve ser entre {DURACAO_MIN_MIN} e {DURACAO_MAX_MIN} minutos "
+            f"(recebido: {dur})."
+        )
+    return dur
+
+
+def validar_intervalo_atividade(
+    *,
+    hora_inicio: str | None,
+    hora_fim: str | None,
+    pausas_min: int | float = 0,
+) -> int | None:
+    """Valida horários quando início E fim existem; cronômetro (só início) passa."""
+    tem_ini = bool(hora_inicio and str(hora_inicio).strip())
+    tem_fim = bool(hora_fim and str(hora_fim).strip())
+    if not tem_ini and not tem_fim:
+        return None
+    if tem_ini and not tem_fim:
+        # Em andamento / pausado: ainda sem fim.
+        return None
+    if tem_fim and not tem_ini:
+        raise ValueError("Informe a hora início.")
+    bruto = minutos_entre_horas(hora_inicio, hora_fim)
+    if bruto is None:
+        return None
+    if bruto > DURACAO_MAX_MIN:
+        raise ValueError(
+            f"Intervalo entre início e fim não pode passar de {DURACAO_MAX_MIN} minutos."
+        )
+    try:
+        pausas = int(pausas_min or 0)
+    except (TypeError, ValueError):
+        pausas = 0
+    if pausas < 0:
+        raise ValueError("Pausas não podem ser negativas.")
+    if pausas > bruto:
+        raise ValueError("Pausas não podem ser maiores que o intervalo início–fim.")
+    return bruto - pausas
+
+
+def calcular_metricas_tempo(
+    *,
+    hora_inicio: str | None,
+    hora_fim: str | None,
+    pausas_min: int | float,
+    tempo_planejado_min: float | None,
+) -> dict[str, Any]:
+    try:
+        pausas = int(pausas_min or 0)
+    except (TypeError, ValueError):
+        pausas = 0
+    if pausas < 0:
+        pausas = 0
+    bruto = minutos_entre_horas(hora_inicio, hora_fim)
+    liquido: int | None = None
+    if bruto is not None:
+        liquido = max(0, bruto - pausas)
+    planejado = None
+    if tempo_planejado_min is not None and str(tempo_planejado_min).strip() != "":
+        try:
+            planejado = float(tempo_planejado_min)
+        except (TypeError, ValueError):
+            planejado = None
+    desvio: float | None = None
+    eficiencia: float | None = None
+    if liquido is not None and planejado is not None:
+        desvio = float(liquido) - planejado
+        if liquido > 0:
+            eficiencia = round(planejado / liquido * 100.0, 1)
+    return {
+        "tempo_liquido_min": liquido,
+        "tempo_liquido_hhmm": format_hhmm_de_minutos(liquido),
+        "desvio_min": desvio,
+        "eficiencia_pct": eficiencia,
+    }
+
+
+def listar_escreventes_ativos(con: sqlite3.Connection) -> list[dict[str, Any]]:
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT id, username, full_name, role FROM users WHERE active=1 "
+        "ORDER BY full_name COLLATE NOCASE"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def listar_categorias(con: sqlite3.Connection) -> list[str]:
+    """Só as ativas, na ordem 1/2/3 (não alfabética)."""
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT rotulo FROM prod_lista_categorias WHERE ativo=1"
+    ).fetchall()
+    presentes = {r["rotulo"] for r in rows}
+    ordenadas = [c for c in CATEGORIAS_ATIVAS if c in presentes]
+    extras = sorted(presentes - set(CATEGORIAS_ATIVAS))
+    return ordenadas + extras
+
+
+def listar_status(con: sqlite3.Connection) -> list[str]:
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT rotulo FROM prod_lista_status WHERE ativo=1 ORDER BY id"
+    ).fetchall()
+    return [r["rotulo"] for r in rows]
+
+
+def listar_prioridades(con: sqlite3.Connection) -> list[str]:
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT rotulo FROM prod_lista_prioridades WHERE ativo=1 ORDER BY id"
+    ).fetchall()
+    return [r["rotulo"] for r in rows]
+
+
+def _exigir_da_lista(valor: str, permitidos: tuple[str, ...] | list[str], rotulo: str) -> str:
+    v = (valor or "").strip()
+    if v not in permitidos:
+        raise ValueError(f"{rotulo} inválida: escolha um valor da lista.")
+    return v
+
+
+def registrar_registro(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int | None,
+    responsavel_nome: str,
+    categoria: str,
+    tarefa: str,
+    prioridade: str,
+    status: str,
+    data_registro: str | None = None,
+    hora_inicio: str | None = None,
+    hora_fim: str | None = None,
+    pausas_min: int | float = 0,
+    tempo_planejado_min: float | None = None,
+    observacoes: str | None = None,
+    criado_por: str | None = None,
+    agora: datetime | str | None = None,
+    pausado_em: str | None = None,
+) -> int:
+    nome = (responsavel_nome or "").strip()
+    if not nome:
+        raise ValueError("Informe o responsável.")
+    tarefa_txt = (tarefa or "").strip()
+    if not tarefa_txt:
+        raise ValueError("Informe a tarefa.")
+    cats = listar_categorias(con)
+    stats = listar_status(con)
+    prios = listar_prioridades(con)
+    cat = _exigir_da_lista(categoria, cats, "Categoria")
+    st = _exigir_da_lista(status, stats, "Status")
+    pr = _exigir_da_lista(prioridade, prios, "Prioridade")
+    data = (data_registro or _data_hoje_iso()).strip()[:10]
+    if hora_inicio:
+        _parse_hora(hora_inicio)
+    if hora_fim:
+        _parse_hora(hora_fim)
+    # Valida ordem/duração só com início e fim juntos (cronômetro tem só início).
+    if (hora_inicio and str(hora_inicio).strip()) and (hora_fim and str(hora_fim).strip()):
+        validar_intervalo_atividade(
+            hora_inicio=hora_inicio,
+            hora_fim=hora_fim,
+            pausas_min=pausas_min,
+        )
+    elif (hora_fim and str(hora_fim).strip()) and not (hora_inicio and str(hora_inicio).strip()):
+        raise ValueError("Informe a hora início.")
+    if tempo_planejado_min is not None and str(tempo_planejado_min).strip() != "":
+        try:
+            planejado_chk = float(tempo_planejado_min)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Tempo planejado inválido.") from exc
+        if planejado_chk < 0 or planejado_chk > DURACAO_MAX_MIN:
+            raise ValueError(
+                f"Tempo planejado deve ser entre 0 e {DURACAO_MAX_MIN} minutos."
+            )
+    _ensure_colunas(con)
+    cur = con.execute(
+        """
+        INSERT INTO prod_registros (
+            data_registro, responsavel_user_id, responsavel_nome,
+            categoria, tarefa, prioridade, status,
+            hora_inicio, hora_fim, pausas_min, tempo_planejado_min,
+            observacoes, criado_em, criado_por, pausado_em
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            data,
+            responsavel_user_id,
+            nome,
+            cat,
+            tarefa_txt,
+            pr,
+            st,
+            (hora_inicio or "").strip() or None,
+            (hora_fim or "").strip() or None,
+            int(pausas_min or 0),
+            tempo_planejado_min,
+            (observacoes or "").strip() or None,
+            _agora_iso(agora),
+            (criado_por or "").strip() or None,
+            (pausado_em or "").strip() or None,
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def excluir_registro(con: sqlite3.Connection, registro_id: int) -> None:
+    cur = con.execute("DELETE FROM prod_registros WHERE id=?", (int(registro_id),))
+    if cur.rowcount == 0:
+        raise LookupError("Registro não encontrado.")
+
+
+def _enriquecer_registro(row: dict[str, Any]) -> dict[str, Any]:
+    # REGISTRO GRAVADO COM HORÁRIO INCONSISTENTE NÃO DERRUBA A TELA — 06/10/2026.
+    # A recusa de `minutos_entre_horas` é para quem DIGITA; aplicada a uma
+    # linha que já está no banco, ela virava HTTP 500 no status e no contexto
+    # do botão de produtividade, e o usuário ficava sem ver nem parar o
+    # cronômetro. A linha sai sem a métrica, marcada, para alguém corrigir.
+    try:
+        m = calcular_metricas_tempo(
+            hora_inicio=row.get("hora_inicio"),
+            hora_fim=row.get("hora_fim"),
+            pausas_min=row.get("pausas_min") or 0,
+            tempo_planejado_min=row.get("tempo_planejado_min"),
+        )
+    except ValueError:
+        m = {"tempo_liquido_min": None, "tempo_liquido_hhmm": format_hhmm_de_minutos(None),
+             "desvio_min": None, "eficiencia_pct": None, "horario_inconsistente": True}
+    out = dict(row)
+    out.update(m)
+    out["semana"] = semana_iso(out.get("data_registro"))
+    return out
+
+
+#: AS ORDENS DA LISTA DO CONTROLE DIÁRIO — pedido do oficial em 13/10/2026:
+#: «também quero esses filtros e ordenar na produtividade». O rótulo diz o
+#: sentido normal; «inverter» vira ao contrário. Tempo, desvio e eficiência são
+#: CALCULADOS (`calcular_metricas_tempo`), e por isso a ordem se faz em Python,
+#: depois de ler — no SQL elas não existem.
+ORDENS_DO_REGISTRO = {
+    "DATA": "pela data (a mais nova primeiro)",
+    "INICIO": "pelo horário de início",
+    "ESCREVENTE": "pelo escrevente (A→Z)",
+    "CATEGORIA": "pela categoria (A→Z)",
+    "TAREFA": "pela tarefa (A→Z)",
+    "PRIORIDADE": "pela prioridade (a mais alta primeiro)",
+    "STATUS": "pela situação (A→Z)",
+    "LIQUIDO": "pelo tempo líquido (o maior primeiro)",
+    "PLANEJADO": "pelo tempo planejado (o maior primeiro)",
+    "DESVIO": "pelo desvio (o maior primeiro)",
+    "EFICIENCIA": "pela eficiência (a maior primeiro)",
+}
+_CAMPO_DA_ORDEM = {
+    "INICIO": ("hora_inicio", False), "ESCREVENTE": ("responsavel_nome", False),
+    "CATEGORIA": ("categoria", False), "TAREFA": ("tarefa", False),
+    "STATUS": ("status", False), "LIQUIDO": ("tempo_liquido_min", True),
+    "PLANEJADO": ("tempo_planejado_min", True), "DESVIO": ("desvio_min", True),
+    "EFICIENCIA": ("eficiencia_pct", True),
+}
+
+
+def ordenar_registros(registros: list[dict[str, Any]], ordem: str | None,
+                      inverter: Any = False,
+                      prioridades: list[str] | tuple[str, ...] = PRIORIDADES_PADRAO
+                      ) -> list[dict[str, Any]]:
+    """Os registros na ordem pedida. Só calcula. Valor vazio vai para o FIM nos
+    dois sentidos — lista que começa por linhas sem horário esconde o resto."""
+    chave = (ordem or "").upper()
+    if chave not in ORDENS_DO_REGISTRO:
+        chave = "DATA"
+    inverte = str(inverter or "").strip().lower() in ("1", "true", "sim", "on")
+    if chave == "DATA":
+        def valor(r):
+            return (r.get("data_registro") or "", r.get("hora_inicio") or "", r.get("id") or 0)
+        decrescente = True
+    elif chave == "PRIORIDADE":
+        ordem_p = {str(x).lower(): i for i, x in enumerate(prioridades)}
+
+        def valor(r):
+            v = str(r.get("prioridade") or "").lower()
+            return ordem_p.get(v) if v else None
+        decrescente = False
+    else:
+        campo, decrescente = _CAMPO_DA_ORDEM[chave]
+
+        def valor(r):
+            v = r.get(campo)
+            if v is None or v == "":
+                return None
+            return v.lower() if isinstance(v, str) else v
+    if inverte:
+        decrescente = not decrescente
+    cheios = [r for r in registros if valor(r) is not None]
+    vazios = [r for r in registros if valor(r) is None]
+    cheios.sort(key=valor, reverse=decrescente)
+    return cheios + vazios
+
+
+def listar_registros(
+    con: sqlite3.Connection,
+    *,
+    limite: int = 100,
+    responsavel_user_id: int | None = None,
+    data_de: str | None = None,
+    data_ate: str | None = None,
+    data_exata: str | None = None,
+    categoria: str | None = None,
+    prioridade: str | None = None,
+    status: str | None = None,
+    texto: str | None = None,
+    ordem: str | None = None,
+    inverter: Any = False,
+) -> list[dict[str, Any]]:
+    con.row_factory = sqlite3.Row
+    _ensure_colunas(con)
+    sql = (
+        "SELECT id, data_registro, responsavel_user_id, responsavel_nome, "
+        "categoria, tarefa, prioridade, status, hora_inicio, hora_fim, "
+        "pausas_min, tempo_planejado_min, observacoes, criado_em, criado_por, "
+        "pausado_em "
+        "FROM prod_registros WHERE 1=1"
+    )
+    params: list[Any] = []
+    if responsavel_user_id is not None:
+        sql += " AND responsavel_user_id=?"
+        params.append(int(responsavel_user_id))
+    if data_exata:
+        sql += " AND data_registro=?"
+        params.append(data_exata[:10])
+    else:
+        if data_de:
+            sql += " AND data_registro >= ?"
+            params.append(data_de[:10])
+        if data_ate:
+            sql += " AND data_registro <= ?"
+            params.append(data_ate[:10])
+    for coluna, valor in (("categoria", categoria), ("prioridade", prioridade),
+                          ("status", status)):
+        if valor:
+            sql += f" AND {coluna}=?"
+            params.append(valor)
+    if texto:
+        sql += " AND (tarefa LIKE ? OR observacoes LIKE ?)"
+        params += [f"%{texto}%"] * 2
+    sql += " ORDER BY data_registro DESC, id DESC LIMIT ?"
+    # COM ORDEM ESCOLHIDA, lê-se mais antes de ordenar: a ordem é feita depois
+    # de ler, e cortar em 500 primeiro ordenaria só os 500 mais novos.
+    teto = 5000 if ordem else 500
+    params.append(max(1, min(int(limite), teto)))
+    registros = [_enriquecer_registro(dict(r)) for r in con.execute(sql, params).fetchall()]
+    if ordem:
+        registros = ordenar_registros(registros, ordem, inverter, listar_prioridades(con))
+    return registros
+
+
+def _semana_de(ref: date) -> tuple[str, str]:
+    segunda = ref - timedelta(days=ref.weekday())
+    return segunda.isoformat(), (segunda + timedelta(days=6)).isoformat()
+
+
+def painel_kpis(
+    con: sqlite3.Connection,
+    *,
+    data_filtro: str | None = None,
+    responsavel_user_id: int | None = None,
+    referencia: date | None = None,
+) -> dict[str, Any]:
+    ref = referencia or date.today()
+    dia = (data_filtro or ref.isoformat()).strip()[:10]
+    inicio_semana, fim_semana = _semana_de(ref)
+
+    filtro_resp = ""
+    params: list[Any] = [dia]
+    if responsavel_user_id is not None:
+        filtro_resp = " AND responsavel_user_id=?"
+        params.append(int(responsavel_user_id))
+
+    con.row_factory = sqlite3.Row
+    _ensure_colunas(con)
+    rows = con.execute(
+        f"SELECT * FROM prod_registros WHERE data_registro=?{filtro_resp}",
+        tuple(params),
+    ).fetchall()
+    registros = [_enriquecer_registro(dict(r)) for r in rows]
+
+    total = len(registros)
+    concluidas = sum(1 for r in registros if r.get("status") == STATUS_CONCLUIDA)
+    taxa = round(concluidas / total * 100.0, 1) if total else 0.0
+
+    tempos = [r["tempo_liquido_min"] for r in registros if r.get("tempo_liquido_min")]
+    tempo_prod_min = sum(tempos)
+    tempo_medio = round(tempo_prod_min / len(tempos), 1) if tempos else None
+    concluidas_por_hora = (
+        round(concluidas / (tempo_prod_min / 60.0), 2) if tempo_prod_min > 0 else None
+    )
+
+    n_resp = len({r["responsavel_user_id"] for r in registros if r.get("responsavel_user_id")})
+    if responsavel_user_id is not None:
+        capacidade_base = CAPACIDADE_DIA_MIN
+    else:
+        capacidade_base = CAPACIDADE_DIA_MIN * max(1, n_resp)
+    uso_capacidade = (
+        round(tempo_prod_min / capacidade_base * 100.0, 1) if capacidade_base else 0.0
+    )
+
+    eficiencias = [
+        r["eficiencia_pct"]
+        for r in registros
+        if r.get("eficiencia_pct") is not None
+    ]
+    eficiencia_media = round(sum(eficiencias) / len(eficiencias), 1) if eficiencias else None
+
+    por_categoria: dict[str, dict[str, Any]] = {}
+    for r in registros:
+        cat = r["categoria"]
+        if cat not in por_categoria:
+            por_categoria[cat] = {
+                "tarefas": 0,
+                "concluidas": 0,
+                "tempo_min": 0,
+                "eficiencias": [],
+            }
+        por_categoria[cat]["tarefas"] += 1
+        if r.get("status") == STATUS_CONCLUIDA:
+            por_categoria[cat]["concluidas"] += 1
+        por_categoria[cat]["tempo_min"] += r.get("tempo_liquido_min") or 0
+        if r.get("eficiencia_pct") is not None:
+            por_categoria[cat]["eficiencias"].append(r["eficiencia_pct"])
+
+    por_categoria_view: dict[str, dict[str, Any]] = {}
+    for cat, info in por_categoria.items():
+        efs = info["eficiencias"]
+        por_categoria_view[cat] = {
+            "tarefas": info["tarefas"],
+            "concluidas": info["concluidas"],
+            "tempo_min": info["tempo_min"],
+            "eficiencia_media_pct": (
+                round(sum(efs) / len(efs), 1) if efs else None
+            ),
+        }
+
+    por_status: dict[str, int] = {}
+    for r in registros:
+        st = r["status"]
+        por_status[st] = por_status.get(st, 0) + 1
+
+    params_sem = [inicio_semana, fim_semana]
+    filtro_sem = ""
+    if responsavel_user_id is not None:
+        filtro_sem = " AND responsavel_user_id=?"
+        params_sem.append(int(responsavel_user_id))
+    sem_rows = con.execute(
+        f"SELECT * FROM prod_registros WHERE data_registro >= ? AND data_registro <= ?{filtro_sem}",
+        tuple(params_sem),
+    ).fetchall()
+    sem_enr = [_enriquecer_registro(dict(r)) for r in sem_rows]
+    resumo_semana = {
+        "tarefas": len(sem_enr),
+        "concluidas": sum(1 for r in sem_enr if r.get("status") == STATUS_CONCLUIDA),
+        "tempo_produtivo_min": sum(
+            r["tempo_liquido_min"] or 0 for r in sem_enr if r.get("tempo_liquido_min")
+        ),
+        "inicio": inicio_semana,
+        "fim": fim_semana,
+    }
+
+    return {
+        "data_filtro": dia,
+        "tarefas_registradas": total,
+        "tarefas_concluidas": concluidas,
+        "taxa_conclusao_pct": taxa,
+        "tempo_produtivo_min": tempo_prod_min,
+        "tempo_produtivo_h": round(tempo_prod_min / 60.0, 2),
+        "uso_capacidade_pct": uso_capacidade,
+        "eficiencia_media_pct": eficiencia_media,
+        "tempo_medio_min": tempo_medio,
+        "concluidas_por_hora": concluidas_por_hora,
+        "por_categoria": por_categoria_view,
+        "por_status": por_status,
+        "resumo_semana": resumo_semana,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Preenchimento rápido e cronômetro
+# ---------------------------------------------------------------------------
+
+
+def tarefas_recentes(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int,
+    limite: int = 30,
+) -> list[dict[str, str]]:
+    """Últimas tarefas distintas do usuário (para autocomplete)."""
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        """
+        SELECT tarefa, categoria, MAX(id) AS mid
+        FROM prod_registros
+        WHERE responsavel_user_id=? AND TRIM(tarefa) <> ''
+        GROUP BY tarefa, categoria
+        ORDER BY mid DESC
+        LIMIT ?
+        """,
+        (int(responsavel_user_id), max(1, min(int(limite), 100))),
+    ).fetchall()
+    return [{"tarefa": r["tarefa"], "categoria": r["categoria"]} for r in rows]
+
+
+def ultimo_fim_hoje(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int,
+    data_registro: str | None = None,
+) -> str | None:
+    """Hora fim da última atividade concluída hoje (HH:MM), se houver."""
+    dia = (data_registro or _data_hoje_iso())[:10]
+    con.row_factory = sqlite3.Row
+    row = con.execute(
+        """
+        SELECT hora_fim FROM prod_registros
+        WHERE responsavel_user_id=? AND data_registro=?
+          AND hora_fim IS NOT NULL AND TRIM(hora_fim) <> ''
+        ORDER BY id DESC LIMIT 1
+        """,
+        (int(responsavel_user_id), dia),
+    ).fetchone()
+    return row["hora_fim"] if row else None
+
+
+def _minutos_para_hhmm(base: datetime, minutos: int) -> str:
+    dt = base - timedelta(minutes=max(0, int(minutos)))
+    return f"{dt.hour:02d}:{dt.minute:02d}"
+
+
+def _hhmm_mais_minutos(hora: str, minutos: int) -> str:
+    p = _parse_hora(hora)
+    if p is None:
+        raise ValueError("Hora inválida.")
+    total = (p[0] * 60 + p[1] + int(minutos)) % (24 * 60)
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def lancar_rapido(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int,
+    responsavel_nome: str,
+    categoria: str,
+    tarefa: str,
+    duracao_min: int | None = None,
+    hora_inicio: str | None = None,
+    hora_fim: str | None = None,
+    criado_por: str | None = None,
+    agora: datetime | None = None,
+) -> int:
+    """Lança atividade concluída com o mínimo de campos (modelo planilha).
+
+    Se o usuário informa duração em minutos, essa duração é respeitada:
+    ou encadeia a partir do fim da última (início=último, fim=último+duração),
+    ou usa fim informado/agora e início = fim − duração.
+    Nunca usa o vão até "agora" no lugar da duração digitada.
+    """
+    agora_dt = agora or datetime.now()
+    ini = (hora_inicio or "").strip() or None
+    fim_info = (hora_fim or "").strip() or None
+    if ini:
+        _parse_hora(ini)
+    if fim_info:
+        _parse_hora(fim_info)
+
+    dur = None
+    if duracao_min is not None and str(duracao_min).strip() != "":
+        dur = validar_duracao_minutos(duracao_min, obrigatorio=True)
+
+    if ini and fim_info:
+        # Horários explícitos mandam; duração (se veio) só confere o tamanho.
+        bruto = minutos_entre_horas(ini, fim_info)
+        if dur is not None and bruto is not None and bruto != dur:
+            raise ValueError(
+                f"Duração informada ({dur} min) não fecha com início–fim "
+                f"({bruto} min). Ajuste os horários ou a duração."
+            )
+        fim = fim_info
+    elif ini and dur is not None:
+        fim = _hhmm_mais_minutos(ini, dur)
+    elif fim_info and dur is not None:
+        fim = fim_info
+        fim_dt = datetime.combine(
+            agora_dt.date(), datetime.strptime(fim, "%H:%M").time()
+        )
+        ini = _minutos_para_hhmm(fim_dt, dur)
+    elif dur is not None:
+        # Só duração: encadeia no último fim de hoje, senão termina em "agora".
+        ultimo = ultimo_fim_hoje(con, responsavel_user_id=responsavel_user_id)
+        if ultimo:
+            ini = ultimo
+            fim = _hhmm_mais_minutos(ultimo, dur)
+        else:
+            fim = hora_agora_hhmm(agora_dt)
+            ini = _minutos_para_hhmm(agora_dt, dur)
+    elif ini and not fim_info:
+        raise ValueError("Informe a hora fim ou a duração em minutos.")
+    elif fim_info and not ini:
+        raise ValueError("Informe a hora início ou a duração em minutos.")
+    else:
+        # Sem duração nem horários: 1 minuto a partir do último fim ou agora−1.
+        ultimo = ultimo_fim_hoje(con, responsavel_user_id=responsavel_user_id)
+        if ultimo:
+            ini = ultimo
+            fim = _hhmm_mais_minutos(ultimo, 1)
+        else:
+            fim = hora_agora_hhmm(agora_dt)
+            ini = _minutos_para_hhmm(agora_dt, 1)
+
+    return registrar_registro(
+        con,
+        responsavel_user_id=responsavel_user_id,
+        responsavel_nome=responsavel_nome,
+        categoria=categoria,
+        tarefa=tarefa,
+        prioridade="Média",
+        status=STATUS_CONCLUIDA,
+        data_registro=_data_hoje_iso(),
+        hora_inicio=ini,
+        hora_fim=fim,
+        pausas_min=0,
+        criado_por=criado_por,
+        agora=agora_dt,
+    )
+
+
+
+def _minutos_desde_o_inicio(registro: dict[str, Any], agora: datetime) -> int | None:
+    """Minutos de `data_registro` + `hora_inicio` até `agora` (atravessa a meia-noite)."""
+    try:
+        hi = _parse_hora(registro.get("hora_inicio"))
+        if not hi:
+            return None
+        dia = date.fromisoformat(str(registro.get("data_registro") or "")[:10])
+    except ValueError:
+        return None
+    inicio = datetime.combine(dia, datetime.min.time()).replace(hour=hi[0], minute=hi[1])
+    return max(0, int((agora - inicio).total_seconds() // 60))
+
+
+def cronometro_em_andamento(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int,
+) -> dict[str, Any] | None:
+    """Único cronômetro aberto do usuário (Em andamento ou Pausada, sem fim)."""
+    con.row_factory = sqlite3.Row
+    _ensure_colunas(con)
+    row = con.execute(
+        """
+        SELECT * FROM prod_registros
+        WHERE responsavel_user_id=?
+          AND status IN (?, ?)
+          AND (hora_fim IS NULL OR TRIM(hora_fim) = '')
+        ORDER BY id DESC LIMIT 1
+        """,
+        (int(responsavel_user_id), STATUS_EM_ANDAMENTO, STATUS_PAUSADA),
+    ).fetchone()
+    if not row:
+        return None
+    out = _enriquecer_registro(dict(row))
+    agora = datetime.now()
+    # Tempo decorrido líquido até agora (descontando pausas já acumuladas
+    # e a pausa corrente se estiver pausado).
+    pausas = int(out.get("pausas_min") or 0)
+    if out.get("status") == STATUS_PAUSADA and out.get("pausado_em"):
+        try:
+            pausado_dt = datetime.fromisoformat(str(out["pausado_em"]))
+            pausas += max(0, int((agora - pausado_dt).total_seconds() // 60))
+        except ValueError:
+            pass
+    # Com DATA e hora, e não só com o relógio: o cronômetro aberto ontem às
+    # 15h, lido hoje às 10h, fazia `minutos_entre_horas` recusar («início
+    # depois do fim»), e status e contexto davam HTTP 500 — o botão ficava
+    # inerte, sem mostrar nem deixar parar o cronômetro (relato de 06/10/2026).
+    bruto = _minutos_desde_o_inicio(out, agora)
+    decorrido = max(0, (bruto or 0) - pausas) if bruto is not None else 0
+    out["decorrido_min"] = decorrido
+    out["decorrido_hhmm"] = format_hhmm_de_minutos(decorrido)
+    out["decorrido_seg"] = decorrido * 60
+    if out.get("hora_inicio") and out.get("criado_em"):
+        try:
+            # Segundos mais precisos a partir do criado_em / pausado
+            inicio_dt = datetime.fromisoformat(str(out["criado_em"]))
+            # Preferir data_registro + hora_inicio se possível
+            hi = _parse_hora(out["hora_inicio"])
+            if hi:
+                inicio_dt = datetime.combine(
+                    date.fromisoformat(out["data_registro"][:10]),
+                    datetime.strptime(f"{hi[0]:02d}:{hi[1]:02d}", "%H:%M").time(),
+                )
+            decorrido_s = int((agora - inicio_dt).total_seconds()) - pausas * 60
+            if out.get("status") == STATUS_PAUSADA and out.get("pausado_em"):
+                try:
+                    # pausas já inclui a corrente em minutos; ajustar segundos
+                    pass
+                except Exception:
+                    pass
+            out["decorrido_seg"] = max(0, decorrido_s)
+            out["decorrido_min"] = max(0, decorrido_s // 60)
+            out["decorrido_hhmm"] = format_hhmm_de_minutos(out["decorrido_min"])
+        except ValueError:
+            pass
+    s = situacao_do_cronometro(con, out, agora)
+    out["expediente"] = {chave: (valor.strftime("%H:%M") if isinstance(valor, datetime) else valor)
+                         for chave, valor in s.items()}
+    return out
+
+
+# --------------------------------------------------- o cronômetro esquecido
+#
+#   «crie alertas para cronômetros esquecidos aos usuários (...) avisa
+#    fechamento 14h15, mas encerra 14h30, com horário retroativo a 14h15,
+#    se não tivermos confirmação do usuário»      — o oficial, 11/10/2026
+#
+# MEDIDO ANTES: de 06 a 09/10/2026, três cronômetros ficaram abertos de um dia
+# para o outro e foram fechados às 23:59 — 1.705 minutos (28 h) que ninguém
+# trabalhou, somados ao painel como se fossem trabalho.
+#
+# A REGRA, por ordem dele:
+#   - às 14h15 (aviso) a tela pergunta se a pessoa ainda está trabalhando;
+#   - quem confirma segue com o cronômetro aberto;
+#   - sem confirmação, às 14h30 (encerramento) o cronômetro fecha com a hora
+#     de 14h15 (retroativa) — é a hora em que ele foi avisado e não respondeu.
+#
+# DUAS DECISÕES QUE A ORDEM NÃO DIZ, E FICAM DITAS:
+#   - cronômetro INICIADO depois das 14h15 conta como confirmado: quem liga o
+#     cronômetro às 15h está dizendo, com o clique, que trabalha depois do
+#     expediente (a Beatriz trabalha). Fechá-lo às 14h15 daria fim antes do
+#     início;
+#   - o confirmado que atravessa a noite fecha na ÚLTIMA AÇÃO que a pessoa fez
+#     no sistema naquele dia (audit_logs) — é a última hora em que se sabe que
+#     ela estava lá. Sem ação depois do início, fecha com duração zero e diz
+#     «confira»: 23:59 inventava trabalho, e zero não afirma nada.
+
+HORARIOS_PADRAO = {"aviso": "14:15", "encerramento": "14:30", "retroativo": "14:15"}
+_CHAVES_DOS_HORARIOS = {
+    "aviso": "produtividade_aviso_expediente",
+    "encerramento": "produtividade_encerramento_automatico",
+    "retroativo": "produtividade_hora_retroativa",
+}
+MARCA_ENCERRAMENTO_AUTOMATICO = "Encerrado automaticamente"
+
+
+def horarios_do_expediente(con: sqlite3.Connection) -> dict[str, str]:
+    """Os três horários da regra. O código é o piso; `settings` é o ajuste."""
+    saida = dict(HORARIOS_PADRAO)
+    try:
+        for nome, chave in _CHAVES_DOS_HORARIOS.items():
+            row = con.execute("SELECT value FROM settings WHERE key=?", (chave,)).fetchone()
+            valor = (row[0] if row else "") or ""
+            if _parse_hora(str(valor).strip()):
+                saida[nome] = str(valor).strip()[:5]
+    except sqlite3.OperationalError:
+        pass  # instalação sem a tabela settings: vale o padrão
+    return saida
+
+
+def _inicio_do_registro(registro: dict[str, Any]) -> datetime | None:
+    try:
+        hi = _parse_hora(registro.get("hora_inicio"))
+        dia = date.fromisoformat(str(registro.get("data_registro") or "")[:10])
+    except ValueError:
+        return None
+    if not hi:
+        return None
+    return datetime.combine(dia, datetime.min.time()).replace(hour=hi[0], minute=hi[1])
+
+
+def _no_dia(dia: date, hhmm: str) -> datetime:
+    h, m = _parse_hora(hhmm) or (0, 0)
+    return datetime.combine(dia, datetime.min.time()).replace(hour=h, minute=m)
+
+
+def _conta_como_confirmado(registro: dict[str, Any], horarios: dict[str, str]) -> bool:
+    if (registro.get("confirmado_em") or "").strip():
+        return True
+    inicio = _inicio_do_registro(registro)
+    return bool(inicio and inicio >= _no_dia(inicio.date(), horarios["aviso"]))
+
+
+def _ultima_acao_do_dia(con: sqlite3.Connection, user_id: int, depois_de: datetime) -> datetime | None:
+    """Última ação da pessoa no sistema no dia de `depois_de`, depois dele."""
+    dia = depois_de.date().isoformat()
+    try:
+        row = con.execute(
+            "SELECT MAX(ts) FROM audit_logs WHERE user_id=? AND ts >= ? AND ts < ?",
+            (int(user_id), depois_de.isoformat(timespec="seconds"), dia + "~"),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None  # instalação sem audit_logs
+    try:
+        return datetime.fromisoformat(str(row[0])[:19]) if row and row[0] else None
+    except ValueError:
+        return None
+
+
+def situacao_do_cronometro(
+    con: sqlite3.Connection,
+    registro: dict[str, Any] | None,
+    agora: datetime | None = None,
+) -> dict[str, Any]:
+    """O que a regra do expediente diz deste cronômetro aberto, agora. Só lê.
+
+    `situacao`: NORMAL · AVISO (pergunte se ainda trabalha) · ENCERRAR (feche
+    já, em `fim`, pelo `motivo`).
+    """
+    agora = agora or datetime.now()
+    if not registro:
+        return {"situacao": "NORMAL"}
+    horarios = horarios_do_expediente(con)
+    inicio = _inicio_do_registro(registro)
+    if inicio is None:
+        return {"situacao": "NORMAL"}
+    dia = inicio.date()
+    confirmado = _conta_como_confirmado(registro, horarios)
+    if not confirmado:
+        aviso = _no_dia(dia, horarios["aviso"])
+        encerra = _no_dia(dia, horarios["encerramento"])
+        if agora >= encerra:
+            return {
+                "situacao": "ENCERRAR",
+                "fim": _no_dia(dia, horarios["retroativo"]),
+                "motivo": (
+                    f"{MARCA_ENCERRAMENTO_AUTOMATICO} às {horarios['encerramento']} de "
+                    f"{dia.strftime('%d/%m/%Y')}, com horário retroativo às "
+                    f"{horarios['retroativo']}: o aviso de fim de expediente não foi "
+                    "confirmado."),
+                "horarios": horarios,
+            }
+        if agora >= aviso:
+            return {"situacao": "AVISO", "encerra_as": horarios["encerramento"],
+                    "retroativo": horarios["retroativo"], "horarios": horarios}
+        return {"situacao": "NORMAL", "horarios": horarios}
+    if agora.date() > dia:
+        ultima = _ultima_acao_do_dia(con, int(registro.get("responsavel_user_id") or 0), inicio)
+        if ultima:
+            fim, como = ultima, f"na última ação no sistema ({ultima.strftime('%H:%M')})"
+        else:
+            fim, como = inicio, "com duração zero (nenhuma ação no sistema depois do início) — confira"
+        return {
+            "situacao": "ENCERRAR",
+            "fim": fim,
+            "motivo": (f"{MARCA_ENCERRAMENTO_AUTOMATICO}: ficou aberto de "
+                       f"{dia.strftime('%d/%m/%Y')} para o dia seguinte e foi fechado {como}."),
+            "horarios": horarios,
+        }
+    return {"situacao": "NORMAL", "horarios": horarios}
+
+
+def _fechar_em(con: sqlite3.Connection, registro: dict[str, Any], fim: datetime, motivo: str) -> None:
+    """Fecha o registro na hora `fim`, contando a pausa corrente só até ali."""
+    pausas = int(registro.get("pausas_min") or 0)
+    if registro.get("status") == STATUS_PAUSADA and registro.get("pausado_em"):
+        try:
+            pausado = datetime.fromisoformat(str(registro["pausado_em"])[:19])
+            if pausado < fim:
+                pausas += int((fim - pausado).total_seconds() // 60)
+        except ValueError:
+            pass
+    inicio = _inicio_do_registro(registro)
+    bruto = int((fim - inicio).total_seconds() // 60) if inicio else 0
+    pausas = max(0, min(pausas, max(0, bruto)))
+    obs = " ".join(p for p in (str(registro.get("observacoes") or "").strip(), motivo) if p)
+    con.execute(
+        "UPDATE prod_registros SET status=?, hora_fim=?, pausas_min=?, pausado_em=NULL, "
+        "observacoes=? WHERE id=?",
+        (STATUS_CONCLUIDA, fim.strftime("%H:%M"), pausas, obs, int(registro["id"])),
+    )
+
+
+def encerrar_esquecidos(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int | None = None,
+    agora: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Fecha os cronômetros que a regra do expediente manda fechar.
+
+    Sem `responsavel_user_id`, varre todos (é o que roda pelo Agendador às
+    14h31). Devolve o que fechou, para a tela avisar a pessoa.
+    """
+    agora = agora or datetime.now()
+    _ensure_colunas(con)
+    con.row_factory = sqlite3.Row
+    sql = ("SELECT * FROM prod_registros WHERE status IN (?, ?) "
+           "AND (hora_fim IS NULL OR TRIM(hora_fim) = '')")
+    args: list[Any] = [STATUS_EM_ANDAMENTO, STATUS_PAUSADA]
+    if responsavel_user_id is not None:
+        sql += " AND responsavel_user_id=?"
+        args.append(int(responsavel_user_id))
+    fechados = []
+    for row in con.execute(sql, args).fetchall():
+        reg = dict(row)
+        s = situacao_do_cronometro(con, reg, agora)
+        if s["situacao"] != "ENCERRAR":
+            continue
+        _fechar_em(con, reg, s["fim"], s["motivo"])
+        fechados.append({"id": reg["id"], "tarefa": reg.get("tarefa"),
+                         "data_registro": reg.get("data_registro"),
+                         "hora_inicio": reg.get("hora_inicio"),
+                         "hora_fim": s["fim"].strftime("%H:%M"),
+                         "responsavel_user_id": reg.get("responsavel_user_id"),
+                         "responsavel_nome": reg.get("responsavel_nome"),
+                         "motivo": s["motivo"]})
+    return fechados
+
+
+def encerrados_sem_ciencia(con: sqlite3.Connection, *, responsavel_user_id: int) -> list[dict[str, Any]]:
+    """Os encerramentos automáticos que a pessoa ainda não viu. Só lê."""
+    _ensure_colunas(con)
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT id, data_registro, hora_inicio, hora_fim, tarefa, observacoes FROM prod_registros "
+        "WHERE responsavel_user_id=? AND observacoes LIKE ? AND ciencia_em IS NULL ORDER BY id",
+        (int(responsavel_user_id), "%" + MARCA_ENCERRAMENTO_AUTOMATICO + "%"),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def dar_ciencia(con: sqlite3.Connection, *, responsavel_user_id: int,
+                agora: datetime | None = None) -> int:
+    """A pessoa viu os avisos: some da tela. Devolve quantos."""
+    _ensure_colunas(con)
+    cur = con.execute(
+        "UPDATE prod_registros SET ciencia_em=? WHERE responsavel_user_id=? "
+        "AND observacoes LIKE ? AND ciencia_em IS NULL",
+        (_agora_iso(agora), int(responsavel_user_id), "%" + MARCA_ENCERRAMENTO_AUTOMATICO + "%"),
+    )
+    return int(cur.rowcount or 0)
+
+
+def confirmar_cronometro(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int,
+    agora: datetime | None = None,
+) -> dict[str, Any]:
+    """«Ainda estou trabalhando»: o cronômetro não fecha às 14h30."""
+    agora = agora or datetime.now()
+    encerrar_esquecidos(con, responsavel_user_id=responsavel_user_id, agora=agora)
+    ativo = cronometro_em_andamento(con, responsavel_user_id=responsavel_user_id)
+    if not ativo:
+        raise LookupError(
+            "Nenhum cronômetro aberto — se passou das 14h30 sem confirmação, ele já "
+            "foi encerrado com horário de 14h15.")
+    con.execute("UPDATE prod_registros SET confirmado_em=? WHERE id=?",
+                (_agora_iso(agora), int(ativo["id"])))
+    return cronometro_em_andamento(con, responsavel_user_id=responsavel_user_id) or ativo
+
+
+def iniciar_cronometro(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int,
+    responsavel_nome: str,
+    categoria: str,
+    tarefa: str,
+    criado_por: str | None = None,
+    agora: datetime | None = None,
+) -> int:
+    encerrar_esquecidos(con, responsavel_user_id=responsavel_user_id, agora=agora)
+    ativo = cronometro_em_andamento(con, responsavel_user_id=responsavel_user_id)
+    if ativo:
+        raise ValueError(
+            "Já existe um cronômetro em andamento. Pare ou pause o atual antes de iniciar outro."
+        )
+    agora_dt = agora or datetime.now()
+    return registrar_registro(
+        con,
+        responsavel_user_id=responsavel_user_id,
+        responsavel_nome=responsavel_nome,
+        categoria=categoria,
+        tarefa=tarefa,
+        prioridade="Média",
+        status=STATUS_EM_ANDAMENTO,
+        data_registro=agora_dt.date().isoformat(),
+        hora_inicio=hora_agora_hhmm(agora_dt),
+        hora_fim=None,
+        pausas_min=0,
+        criado_por=criado_por,
+        agora=agora_dt,
+    )
+
+
+def pausar_cronometro(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int,
+    agora: datetime | None = None,
+) -> dict[str, Any]:
+    encerrar_esquecidos(con, responsavel_user_id=responsavel_user_id, agora=agora)
+    ativo = cronometro_em_andamento(con, responsavel_user_id=responsavel_user_id)
+    if not ativo:
+        raise LookupError("Nenhum cronômetro em andamento.")
+    if ativo.get("status") == STATUS_PAUSADA:
+        raise ValueError("O cronômetro já está pausado.")
+    agora_dt = agora or datetime.now()
+    _ensure_colunas(con)
+    con.execute(
+        "UPDATE prod_registros SET status=?, pausado_em=? WHERE id=?",
+        (STATUS_PAUSADA, _agora_iso(agora_dt), int(ativo["id"])),
+    )
+    return cronometro_em_andamento(con, responsavel_user_id=responsavel_user_id) or ativo
+
+
+def retomar_cronometro(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int,
+    agora: datetime | None = None,
+) -> dict[str, Any]:
+    encerrar_esquecidos(con, responsavel_user_id=responsavel_user_id, agora=agora)
+    ativo = cronometro_em_andamento(con, responsavel_user_id=responsavel_user_id)
+    if not ativo:
+        raise LookupError("Nenhum cronômetro em andamento.")
+    if ativo.get("status") != STATUS_PAUSADA:
+        raise ValueError("O cronômetro não está pausado.")
+    agora_dt = agora or datetime.now()
+    pausas = int(ativo.get("pausas_min") or 0)
+    if ativo.get("pausado_em"):
+        try:
+            pausado_dt = datetime.fromisoformat(str(ativo["pausado_em"]))
+            pausas += max(0, int((agora_dt - pausado_dt).total_seconds() // 60))
+        except ValueError:
+            pass
+    _ensure_colunas(con)
+    con.execute(
+        "UPDATE prod_registros SET status=?, pausas_min=?, pausado_em=NULL WHERE id=?",
+        (STATUS_EM_ANDAMENTO, pausas, int(ativo["id"])),
+    )
+    return cronometro_em_andamento(con, responsavel_user_id=responsavel_user_id) or ativo
+
+
+def parar_cronometro(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int,
+    agora: datetime | None = None,
+) -> dict[str, Any]:
+    fechados = encerrar_esquecidos(con, responsavel_user_id=responsavel_user_id, agora=agora)
+    if fechados:
+        # A regra do expediente já o fechou (aviso não confirmado, ou aberto de
+        # um dia para o outro): devolve o que ficou gravado, com o motivo.
+        con.row_factory = sqlite3.Row
+        row = con.execute("SELECT * FROM prod_registros WHERE id=?",
+                          (int(fechados[-1]["id"]),)).fetchone()
+        reg = _enriquecer_registro(dict(row))
+        reg["encerrado_automaticamente"] = fechados[-1]["motivo"]
+        return reg
+    ativo = cronometro_em_andamento(con, responsavel_user_id=responsavel_user_id)
+    if not ativo:
+        raise LookupError("Nenhum cronômetro em andamento.")
+    agora_dt = agora or datetime.now()
+    pausas = int(ativo.get("pausas_min") or 0)
+    if ativo.get("status") == STATUS_PAUSADA and ativo.get("pausado_em"):
+        try:
+            pausado_dt = datetime.fromisoformat(str(ativo["pausado_em"]))
+            pausas += max(0, int((agora_dt - pausado_dt).total_seconds() // 60))
+        except ValueError:
+            pass
+    fim = hora_agora_hhmm(agora_dt)
+    # O ramo «de ontem → 23:59» (06/10/2026) saiu em 11/10/2026: ele somava ao
+    # painel horas que ninguém trabalhou (28 h em quatro dias). Quem chega aqui
+    # aberto de outro dia já foi fechado por `encerrar_esquecidos`, acima.
+    observacoes = ativo.get("observacoes")
+    _ensure_colunas(con)
+    con.execute(
+        """
+        UPDATE prod_registros
+        SET status=?, hora_fim=?, pausas_min=?, pausado_em=NULL, observacoes=?
+        WHERE id=?
+        """,
+        (STATUS_CONCLUIDA, fim, pausas, observacoes, int(ativo["id"])),
+    )
+    con.row_factory = sqlite3.Row
+    row = con.execute(
+        "SELECT * FROM prod_registros WHERE id=?", (int(ativo["id"]),)
+    ).fetchone()
+    return _enriquecer_registro(dict(row)) if row else ativo
+
+
+def linhas_exportacao(
+    con: sqlite3.Connection,
+    *,
+    data_filtro: str | None = None,
+    responsavel_user_id: int | None = None,
+    limite: int = 500,
+) -> list[dict[str, Any]]:
+    regs = listar_registros(
+        con,
+        limite=limite,
+        responsavel_user_id=responsavel_user_id,
+        data_exata=data_filtro,
+    )
+    # Ordenar cronológico para export (planilha)
+    regs = sorted(regs, key=lambda r: (r.get("data_registro") or "", r.get("id") or 0))
+    out = []
+    for r in regs:
+        efic = r.get("eficiencia_pct")
+        out.append(
+            {
+                "Data": r.get("data_registro") or "",
+                "Responsável": r.get("responsavel_nome") or "",
+                "Categoria": r.get("categoria") or "",
+                "Tarefa": r.get("tarefa") or "",
+                "Prioridade": r.get("prioridade") or "",
+                "Status": r.get("status") or "",
+                "Hora início": r.get("hora_inicio") or "",
+                "Hora fim": r.get("hora_fim") or "",
+                "Pausas (min)": r.get("pausas_min") if r.get("pausas_min") is not None else "",
+                "Tempo líquido (h:mm)": r.get("tempo_liquido_hhmm") or "",
+                "Tempo líquido (min)": (
+                    r["tempo_liquido_min"] if r.get("tempo_liquido_min") is not None else ""
+                ),
+                "Tempo planejado (min)": (
+                    r["tempo_planejado_min"]
+                    if r.get("tempo_planejado_min") is not None
+                    else ""
+                ),
+                "Desvio (min)": r["desvio_min"] if r.get("desvio_min") is not None else "",
+                "Eficiência": (f"{efic}%" if efic is not None else ""),
+                "Observações": r.get("observacoes") or "",
+                "Semana": r.get("semana") if r.get("semana") is not None else "",
+            }
+        )
+    return out
+
+
+EXPORT_COLUNAS = (
+    "Data",
+    "Responsável",
+    "Categoria",
+    "Tarefa",
+    "Prioridade",
+    "Status",
+    "Hora início",
+    "Hora fim",
+    "Pausas (min)",
+    "Tempo líquido (h:mm)",
+    "Tempo líquido (min)",
+    "Tempo planejado (min)",
+    "Desvio (min)",
+    "Eficiência",
+    "Observações",
+    "Semana",
+)
+
+
+def exportar_csv(
+    con: sqlite3.Connection,
+    *,
+    data_filtro: str | None = None,
+    responsavel_user_id: int | None = None,
+) -> str:
+    linhas = linhas_exportacao(
+        con, data_filtro=data_filtro, responsavel_user_id=responsavel_user_id
+    )
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=list(EXPORT_COLUNAS), delimiter=";")
+    writer.writeheader()
+    for row in linhas:
+        writer.writerow(row)
+    return buf.getvalue()
+
+def exportar_xlsx(
+    con: sqlite3.Connection,
+    *,
+    data_filtro: str | None = None,
+    responsavel_user_id: int | None = None,
+) -> bytes:
+    """Gera .xlsx (OOXML) sem openpyxl — mesmas colunas da planilha + aba Painel."""
+    from xlsx_simples import (
+        build_xlsx,
+        parse_data_iso,
+        parse_hora_para_time,
+    )
+
+    linhas = linhas_exportacao(
+        con, data_filtro=data_filtro, responsavel_user_id=responsavel_user_id
+    )
+    # Colunas: 1=Data(date), 7=início(time), 8=fim(time),
+    # 9/11/12/13 numéricos
+    col_styles = {1: 2, 7: 3, 8: 3}
+    header = list(EXPORT_COLUNAS)
+    rows: list[list[Any]] = [header]
+    for L in linhas:
+        data_v = parse_data_iso(str(L.get("Data") or "")) or (L.get("Data") or "")
+        ini_v = parse_hora_para_time(str(L.get("Hora início") or ""))
+        if ini_v is None:
+            ini_v = L.get("Hora início") or ""
+        fim_v = parse_hora_para_time(str(L.get("Hora fim") or ""))
+        if fim_v is None:
+            fim_v = L.get("Hora fim") or ""
+
+        def _num(v: Any) -> Any:
+            if v == "" or v is None:
+                return ""
+            try:
+                f = float(v)
+                return int(f) if f == int(f) else f
+            except (TypeError, ValueError):
+                return v
+
+        rows.append(
+            [
+                data_v,
+                L.get("Responsável") or "",
+                L.get("Categoria") or "",
+                L.get("Tarefa") or "",
+                L.get("Prioridade") or "",
+                L.get("Status") or "",
+                ini_v,
+                fim_v,
+                _num(L.get("Pausas (min)")),
+                L.get("Tempo líquido (h:mm)") or "",
+                _num(L.get("Tempo líquido (min)")),
+                _num(L.get("Tempo planejado (min)")),
+                _num(L.get("Desvio (min)")),
+                L.get("Eficiência") or "",
+                L.get("Observações") or "",
+                _num(L.get("Semana")),
+            ]
+        )
+
+    kpis = painel_kpis(
+        con,
+        data_filtro=data_filtro,
+        responsavel_user_id=responsavel_user_id,
+    )
+    painel_rows: list[list[Any]] = [
+        ["PAINEL DE PRODUTIVIDADE"],
+        ["Data analisada", parse_data_iso(kpis.get("data_filtro")) or kpis.get("data_filtro") or ""],
+        ["Responsável", "Todos" if responsavel_user_id is None else f"user_id={responsavel_user_id}"],
+        ["Capacidade disponível (h)", CAPACIDADE_DIA_MIN / 60.0],
+        [],
+        ["Indicador", "Valor"],
+        ["Tarefas registradas", kpis.get("tarefas_registradas")],
+        ["Tarefas concluídas", kpis.get("tarefas_concluidas")],
+        ["Taxa de conclusão (%)", kpis.get("taxa_conclusao_pct")],
+        ["Tempo produtivo (h)", kpis.get("tempo_produtivo_h")],
+        ["Uso da capacidade (%)", kpis.get("uso_capacidade_pct")],
+        [
+            "Eficiência vs planejado (%)",
+            kpis.get("eficiencia_media_pct")
+            if kpis.get("eficiencia_media_pct") is not None
+            else "",
+        ],
+        [
+            "Tempo médio por tarefa (min)",
+            kpis.get("tempo_medio_min") if kpis.get("tempo_medio_min") is not None else "",
+        ],
+        [
+            "Concluídas por hora",
+            kpis.get("concluidas_por_hora")
+            if kpis.get("concluidas_por_hora") is not None
+            else "",
+        ],
+        [],
+        ["Categoria", "Tarefas", "Concluídas", "Horas", "Eficiência (%)"],
+    ]
+    for cat, info in (kpis.get("por_categoria") or {}).items():
+        efic = info.get("eficiencia_media_pct")
+        painel_rows.append(
+            [
+                cat,
+                info.get("tarefas") or 0,
+                info.get("concluidas") or 0,
+                round((info.get("tempo_min") or 0) / 60.0, 2),
+                efic if efic is not None else "",
+            ]
+        )
+
+    return build_xlsx(
+        [
+            ("Registro Diário", rows, col_styles),
+            ("Painel", painel_rows, {2: 2}),  # data no painel col B row2 usa date style only if we set; optional
+        ]
+    )

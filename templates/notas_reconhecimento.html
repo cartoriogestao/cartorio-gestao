@@ -1,0 +1,168 @@
+{% extends 'base.html' %}
+{% block title %}Reconhecer firma — Notas{% endblock %}
+{% block heading %}<h1>Reconhecer firma</h1>{% endblock %}
+{% block content %}
+{% set aqui = 'reconhecer' %}
+{# cg-notas-nav-duplicata: abas internas já marcam a seção; suaviza item duplicado no menu lateral #}
+<style>
+body[data-notas-firma-aqui="reconhecer"] .sidebar a[href$="/notas/reconhecimento"],
+body[data-notas-firma-aqui="reconhecer"] .sidebar a[href*="/notas/reconhecimento"] {
+  opacity: 0.72;
+}
+</style>
+<script>document.body.dataset.notasFirmaAqui = "reconhecer";</script>
+{#
+  AS TRES TELAS DAS FIRMAS SAO UMA COISA SO, e agora dizem isso.
+
+  «Reconhecimento e reconhecer firma estao injustificadamente separados» — o
+  oficial, em 27/08/2026. Eram duas entradas de menu com quase o mesmo nome; a
+  pessoa escolhia no escuro e descobria qual era depois de abrir.
+
+  As abas resolvem sem fundir as telas: cada uma continua fazendo uma coisa —
+  lavrar, consultar, cadastrar — e o operador ve as tres de qualquer uma delas.
+  Fundir tudo numa pagina so poria a busca paginada por cima do balcao.
+#}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
+  <a class="button{% if aqui == 'reconhecer' %} primary{% endif %}"
+     href="{{ url_for('notas_reconhecimento') }}" {% if aqui == 'reconhecer' %}aria-current="page"{% endif %}>Reconhecer firma</a>
+  <a class="button{% if aqui == 'consultar' %} primary{% endif %}"
+     href="{{ url_for('notas_reconhecimentos') }}">Reconhecimentos feitos</a>
+  <a class="button{% if aqui == 'cartoes' %} primary{% endif %}"
+     href="{{ url_for('notas_cartoes') }}">Cartões de autógrafo</a>
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ hoje.n }}</strong><small>atos hoje</small></div>
+  <div class="stat"><strong>{{ hoje.firmas }}</strong><small>firmas hoje</small></div>
+  {% for nome, p in precos.items() %}
+    {% if p %}<div class="stat"><strong>{{ p.total }}</strong><small>{{ nome }} — TJ {{ p.codigo_tj }}</small></div>{% endif %}
+  {% endfor %}
+</section>
+
+<form class="filters" method="get">
+  <input name="busca" value="{{ busca }}" size="42" autofocus
+         placeholder="Nome ou CPF de quem assinou — mínimo três letras">
+  <button class="primary">Procurar cartão</button>
+</form>
+
+{% if busca and not achados %}
+<div class="notice warning">
+  Nenhum cartão encontrado para <strong>{{ busca }}</strong>.
+  <a href="{{ url_for('notas_cartoes', busca=busca) }}">Abrir cartão novo</a> — depois volte aqui.
+</div>
+{% endif %}
+
+{% if achados %}
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="panel">
+    <div class="panel-head"><span>Confira a assinatura e marque quem está reconhecendo</span>
+      <span class="small muted">Clique na assinatura para ampliar — as setas passam
+        de um cartão a outro, e <strong>Comparar</strong> põe dois lado a lado</span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Quem</th><th>Assinatura no cartão</th><th>Avisos</th></tr></thead>
+      <tbody>
+      {% for c in achados %}
+        <tr>
+          <td><input type="checkbox" name="cartao_id" value="{{ c.id }}"></td>
+          <td><a href="{{ url_for('notas_cartao', cartao_id=c.id) }}"><strong>{{ c.nome }}</strong></a>
+            <br><span class="small muted">{{ c.documento or 'sem CPF' }}
+            {% if c.abertura %} · cartão de {{ fmt_date(c.abertura) }}{% endif %}</span></td>
+          {# É AQUI QUE A CONFERÊNCIA ACONTECE DE VERDADE — a tela do balcão,
+             com a pessoa na frente. Os 80 pixels de altura servem para achar
+             o cartão certo na lista; para conferir o traço é preciso ampliar,
+             e é o clique que abre a lupa. #}
+          <td>{% if c.imagem %}<img class="ampliavel"
+                 src="{{ url_for('notas_cartao_imagem', imagem_id=c.imagem.id, w=420) }}"
+                 data-lupa-cheia="{{ url_for('notas_cartao_imagem', imagem_id=c.imagem.id) }}"
+                 data-lupa-original="{{ url_for('notas_cartao_imagem_original', imagem_id=c.imagem.id) }}"
+                 data-lupa-titulo="{{ c.nome }}{% if c.documento %} — {{ c.documento }}{% endif %}"
+                 data-lupa-grupo="busca-firma"
+                 alt="Assinatura de {{ c.nome }}" loading="lazy"
+                 title="Clique para ampliar e conferir o traço"
+                 style="max-height:80px;max-width:320px;border:1px solid #ccc">
+              {% else %}<span class="muted small">sem imagem digitalizada — confira no cartão físico</span>{% endif %}</td>
+          <td class="small">{% for a in c.avisos %}<span class="badge alta">{{ a }}</span><br>{% endfor %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+
+    <div class="grid2" style="padding:14px">
+      <label>Espécie
+        <select name="especie">
+          {% for k, rot in ESPECIES.items() %}<option value="{{ k }}">{{ rot }}</option>{% endfor %}
+        </select></label>
+      <label>Tipo do documento <input name="documento_tipo" placeholder="contrato, requerimento, DUT..."></label>
+      <label class="span2">Descrição do documento <input name="documento_descricao"></label>
+      <label class="check"><input type="checkbox" name="veiculo" value="1"> Documento de veículo (item 13.17.3)</label>
+      <label class="check"><input type="checkbox" name="financeiro" value="1"> Conteúdo financeiro (item 13.17.4)</label>
+      <label>Placa <input name="veiculo_placa" size="10"></label>
+      <label class="check"><input type="checkbox" name="sinal_publico" value="1"> Reconhecer também o sinal público</label>
+      <label class="span2 check"><input type="checkbox" name="confirmar_bloqueio" value="1">
+        Ciente de cartão bloqueado, reconheço assim mesmo</label>
+      <div class="span2">
+        <button class="primary" name="acao" value="reconhecer">Reconhecer</button>
+        <span class="small muted">O emolumento sai da tabela do tribunal; se o selo falhar, o ato não é lavrado e a tela informa o motivo.</span>
+      </div>
+    </div>
+  </section>
+</form>
+{% endif %}
+
+      <div id="cg-notas-recon-didatica" class="notice info cg-didatica-recolhivel" data-chave="cg_notas_recon_didatica">
+        <div class="cg-didatica-corpo">
+      <strong>Por semelhança</strong> o tabelião confronta com o cartão de autógrafo.
+<strong>Por autenticidade</strong> a pessoa assina na presença dele. Dizer uma pela outra não é
+questão de estilo — é falsidade.
+        </div>
+        <p class="cg-didatica-acoes">
+          <button type="button" class="secondary cg-didatica-recolher">Recolher explicação</button>
+        </p>
+        <p class="cg-didatica-toggle" hidden>
+          <a href="#" class="cg-didatica-mostrar">Mostrar explicação</a>
+        </p>
+      </div>
+      <style>
+      .cg-didatica-recolhivel.cg-didatica-fechada .cg-didatica-corpo,
+      .cg-didatica-recolhivel.cg-didatica-fechada .cg-didatica-acoes { display: none; }
+      .cg-didatica-recolhivel.cg-didatica-fechada .cg-didatica-toggle { display: block; margin: 0; }
+      .cg-didatica-recolhivel .cg-didatica-toggle a { font-size: 0.95em; }
+      .cg-didatica-recolhivel .cg-didatica-acoes { margin: 0.75em 0 0; }
+      </style>
+      <script>
+      (function () {
+        var chave = 'cg_notas_recon_didatica';
+        var root = document.getElementById('cg-notas-recon-didatica');
+        if (!root) return;
+        var corpo = root.querySelector('.cg-didatica-corpo');
+        var toggle = root.querySelector('.cg-didatica-toggle');
+        var link = root.querySelector('.cg-didatica-mostrar');
+        var recolher = root.querySelector('.cg-didatica-recolher');
+        function fechar(persistir) {
+          root.classList.add('cg-didatica-fechada');
+          if (toggle) toggle.hidden = false;
+          if (persistir) {
+            try { localStorage.setItem(chave, '1'); } catch (e) {}
+          }
+        }
+        function abrir() {
+          root.classList.remove('cg-didatica-fechada');
+          if (toggle) toggle.hidden = true;
+        }
+        try {
+          if (localStorage.getItem(chave) === '1') fechar(false);
+        } catch (e) {}
+        if (recolher) {
+          recolher.addEventListener('click', function () { fechar(true); });
+        }
+        if (link) {
+          link.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            abrir();
+          });
+        }
+      })();
+      </script>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Rascunhos de ato{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Rascunhos de ato</h1>
+  <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Matrículas</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ rascunhos|length }}
+    rascunho{{ '' if rascunhos|length == 1 else 's' }} aberto{{ '' if rascunhos|length == 1 else 's' }}</span></div>
+  <div style="padding:14px">
+    {% if not rascunhos %}
+      <p><strong>Nenhum rascunho aberto.</strong> Rascunho é o texto do ato
+      guardado antes de lavrar &mdash; ele não toma número e não entra na
+      matrícula.</p>
+    {% else %}
+      <p>Trabalho que alguém começou e não terminou. <strong>Nenhum destes é
+      ato</strong>: não têm número, não estão na matrícula e não valem como
+      registro.</p>
+      <p class="small muted">Do mais antigo para o mais novo. Sem esta lista o
+      rascunho só apareceria a quem abrisse aquela matrícula por acaso.</p>
+    {% endif %}
+  </div>
+</section>
+
+{% if rascunhos %}
+<section class="panel">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Matrícula</th><th>Tipo</th><th>Guardado em</th><th>Por</th>
+      <th>Começo do texto</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rascunhos %}
+      <tr>
+        <td class="small"><a href="{{ url_for('ri_ficha', matricula_id=r.matricula_id) }}">
+          {{ r.matricula_numero }}</a>
+          {%- if r.matricula_livro %} <span class="muted">liv. {{ r.matricula_livro }}</span>{% endif %}</td>
+        <td class="small"><span class="badge">{{ r.tipo }}</span></td>
+        <td class="small">{{ fmt_dt(r.atualizado_em) }}</td>
+        <td class="small">{{ r.criado_por or '—' }}</td>
+        <td class="small">{{ (r.teor or '')|striptags|truncate(60) }}</td>
+        <td class="small actions-cell">
+          <a class="button" href="{{ url_for('ri_rascunho_ver', matricula_id=r.matricula_id) }}">
+            Ver como fica</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

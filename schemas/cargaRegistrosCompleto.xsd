@@ -1,0 +1,2828 @@
+<xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" 
+xmlns:xs="http://www.w3.org/2001/XMLSchema"> 
+   <xs:element name="CARGAREGISTROS"> 
+      <xs:complexType> 
+         <xs:sequence> 
+            <xs:element maxOccurs="1" name="VERSAO" /> 
+            <xs:element maxOccurs="1" name="ACAO"> 
+               <xs:simpleType> 
+                  <xs:restriction base="xs:string"> 
+                     <xs:enumeration value="CARGA"/> 
+                     <xs:enumeration value="CONSULTA"/> 
+                     <xs:enumeration value="INSCRICAOC"/> 
+                     <xs:enumeration value="INSCRICAOR"/> 
+                     <xs:enumeration value="INSCRICAOCR"/> 
+                  </xs:restriction> 
+               </xs:simpleType> 
+            </xs:element> 
+            <xs:element maxOccurs="1" name="CNS" /> 
+            <xs:element minOccurs="0" maxOccurs="unbounded" name="MOVIMENTONASCIMENTOTN">  
+               <xs:complexType> 
+                  <xs:sequence> 
+                     <xs:element minOccurs="0" maxOccurs="unbounded" name="REGISTRONASCIMENTOINCLUSAO">  
+                        <xs:complexType> 
+                           <xs:sequence> 
+                              <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEREGISTRADO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFREGISTRADO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="MATRICULA" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:length value="32"/> 
+                                       <xs:pattern value="[0-9]{32}"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATAREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DNV" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATANASCIMENTO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="HORANASCIMENTO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="5" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="LOCALNASCIMENTO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                      <xs:enumeration value="IGNORADO"/> 
+                                      <xs:enumeration value="UNIDADE_SAUDE" /> 
+                                       <xs:enumeration value="FORA_UNIDADE_SAUDE" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="I" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="POSSUIGEMEOS" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="S" /> 
+                                       <xs:enumeration value="N"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NUMEROGEMEOS" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="" /> 
+                                       <xs:enumeration value="1" /> 
+                                       <xs:enumeration value="2"/> 
+                                       <xs:enumeration value="3" /> 
+                                       <xs:enumeration value="4" /> 
+                                       <xs:enumeration value="5" /> 
+                                       <xs:enumeration value="6" /> 
+                                       <xs:enumeration value="7" /> 
+                                       <xs:enumeration value="8" /> 
+                                       <xs:enumeration value="9" /> 
+                                       <xs:enumeration value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNNASCIMENTO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="PAISNASCIMENTO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NACIONALIDADE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="TEXTONACIONALIDADEESTRANGEIRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element minOccurs="0" maxOccurs="unbounded" name="FILIACAONASCIMENTO">  
+                                 <xs:complexType> 
+                                    <xs:sequence> 
+                                       <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="INDICEFILIACAO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NOME" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="SEXO" minOccurs="0" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value="M" /> 
+                                                <xs:enumeration value="F" /> 
+                                                <xs:enumeration value="" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CPF" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="11" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DATANASCIMENTO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="10" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="IDADE" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="3" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="IDADE_DIAS_MESES_ANOS" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="D"/> 
+                                                <xs:enumeration value="M"/> 
+                                                <xs:enumeration value="A"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CODIGOIBGEMUNLOGRADOURO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="7" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="LOGRADOURO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="255" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMEROLOGRADOURO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="20" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="COMPLEMENTOLOGRADOURO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="BAIRRO" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NACIONALIDADE" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="3" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DOMICILIOESTRANGEIRO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="255" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CODIGOIBGEMUNNATURALIDADE" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="7" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="TEXTOLIVREMUNICIPIONAT" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                      <xs:element name="CODIGOOCUPACAOSDC" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="6" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                    </xs:sequence> 
+                                 </xs:complexType> 
+                              </xs:element> 
+                              <xs:element minOccurs="0" maxOccurs="unbounded" name="DOCUMENTOS"> 
+                                 <xs:complexType> 
+                                    <xs:sequence> 
+                                       <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="INDICEFILIACAO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DONO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="FILIACAO_NASCIMENTO"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="TIPO_DOC" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="RG"/> 
+                                                <xs:enumeration value="NIT"/> 
+                                                <xs:enumeration value="RIC"/> 
+                                                <xs:enumeration value="RNE"/> 
+                                                <xs:enumeration value="TITULO_DE_ELEITOR"/> 
+                                                <xs:enumeration value="PASSAPORTE"/> 
+                                                <xs:enumeration value="CNH"/> 
+                                                <xs:enumeration value="CTPS"/> 
+                                                <xs:enumeration value="CARTEIRA_DE_MARITIMO"/> 
+                                                <xs:enumeration value="DOC_ESTRANGEIRO"/> 
+                                                <xs:enumeration value="CERT_DE_NASCIMENTO"/> 
+                                                <xs:enumeration value="CERT_DE_RESERVISTA"/> 
+                                                <xs:enumeration value="NAO_IDENTIFICADO"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DESCRICAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO_SERIE" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="5" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CODIGOORGAOEMISSOR" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="UF_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DATA_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="10" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                    </xs:sequence> 
+                                 </xs:complexType> 
+                              </xs:element> 
+                              <xs:element name="ORGAOEMISSOREXTERIOR" nillable="false" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="INFORMACOESCONSULADO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="OBSERVACOES" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="4000" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                           </xs:sequence> 
+                        </xs:complexType> 
+                     </xs:element> 
+                     <xs:element minOccurs="0" maxOccurs="unbounded" name="REGISTRONASCIMENTOALTERACAO">  
+                        <xs:complexType> 
+                           <xs:sequence> 
+                              <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="REGISTROINVISIVEL" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="S" /> 
+                                       <xs:enumeration value="N" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOMOTIVOALTERACAO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="" /> 
+                                       <xs:enumeration value="10" /> 
+                                       <xs:enumeration value="20" /> 
+                                       <xs:enumeration value="30" /> 
+                                       <xs:enumeration value="40" /> 
+                                       <xs:enumeration value="50" /> 
+                                       <xs:enumeration value="60" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATAAVERBACAO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEREGISTRADO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFREGISTRADO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="MATRICULA" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:length value="32"/> 
+                                       <xs:pattern value="[0-9]{32}"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATAREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DNV" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATANASCIMENTO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="HORANASCIMENTO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="5" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="LOCALNASCIMENTO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="IGNORADO"/> 
+                                       <xs:enumeration value="UNIDADE_SAUDE" /> 
+                                       <xs:enumeration value="FORA_UNIDADE_SAUDE" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="I" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="POSSUIGEMEOS" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="S" /> 
+                                       <xs:enumeration value="N"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NUMEROGEMEOS" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="" /> 
+                                       <xs:enumeration value="1" /> 
+                                       <xs:enumeration value="2"/> 
+                                       <xs:enumeration value="3" /> 
+                                       <xs:enumeration value="4" /> 
+                                       <xs:enumeration value="5" /> 
+                                       <xs:enumeration value="6" /> 
+                                       <xs:enumeration value="7" /> 
+                                       <xs:enumeration value="8" /> 
+                                       <xs:enumeration value="9" /> 
+                                       <xs:enumeration value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNNASCIMENTO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="PAISNASCIMENTO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NACIONALIDADE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="TEXTONACIONALIDADEESTRANGEIRO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element minOccurs="0" maxOccurs="unbounded" name="FILIACAONASCIMENTO"> 
+                                 <xs:complexType> 
+                                    <xs:sequence> 
+                                       <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="INDICEFILIACAO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NOME" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="SEXO" minOccurs="0" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value="M" /> 
+                                                <xs:enumeration value="F" /> 
+                                                <xs:enumeration value="" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CPF" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="11" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DATANASCIMENTO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="10" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="IDADE" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="3" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="IDADE_DIAS_MESES_ANOS" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="D"/> 
+                                                <xs:enumeration value="M"/> 
+                                                <xs:enumeration value="A"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CODIGOIBGEMUNLOGRADOURO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="7" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="LOGRADOURO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="255" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMEROLOGRADOURO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="20" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="COMPLEMENTOLOGRADOURO" minOccurs="0" nillable="false" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="BAIRRO" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NACIONALIDADE" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="3" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DOMICILIOESTRANGEIRO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="255" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CODIGOIBGEMUNNATURALIDADE" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="7" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="TEXTOLIVREMUNICIPIONAT" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                      <xs:element name="CODIGOOCUPACAOSDC" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="6" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                    </xs:sequence> 
+                                 </xs:complexType> 
+                              </xs:element> 
+                              <xs:element minOccurs="0" maxOccurs="unbounded" name="DOCUMENTOS">  
+                                 <xs:complexType> 
+                                    <xs:sequence> 
+                                       <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="INDICEFILIACAO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DONO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="FILIACAO_NASCIMENTO"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="TIPO_DOC" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="RG"/> 
+                                                <xs:enumeration value="NIT"/> 
+                                                <xs:enumeration value="RIC"/> 
+                                                <xs:enumeration value="RNE"/> 
+                                                <xs:enumeration value="TITULO_DE_ELEITOR"/> 
+                                                <xs:enumeration value="PASSAPORTE"/> 
+                                                <xs:enumeration value="CNH"/> 
+                                                <xs:enumeration value="CTPS"/> 
+                                                <xs:enumeration value="CARTEIRA_DE_MARITIMO"/> 
+                                                <xs:enumeration value="DOC_ESTRANGEIRO"/> 
+                                                <xs:enumeration value="CERT_DE_NASCIMENTO"/> 
+                                                <xs:enumeration value="CERT_DE_RESERVISTA"/> 
+                                                <xs:enumeration value="NAO_IDENTIFICADO"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DESCRICAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO_SERIE" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="5" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CODIGOORGAOEMISSOR" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="UF_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DATA_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="10" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                    </xs:sequence> 
+                                 </xs:complexType> 
+                              </xs:element> 
+                              <xs:element name="ORGAOEMISSOREXTERIOR" nillable="false" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="INFORMACOESCONSULADO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="OBSERVACOES" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="4000" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                           </xs:sequence> 
+                        </xs:complexType> 
+                     </xs:element> 
+                  </xs:sequence> 
+               </xs:complexType> 
+            </xs:element> 
+            <xs:element minOccurs="0" maxOccurs="unbounded" name="MOVIMENTOCASAMENTOTC">  
+               <xs:complexType> 
+                  <xs:sequence> 
+                     <xs:element minOccurs="0" maxOccurs="unbounded" name="REGISTROCASAMENTOINCLUSAO">  
+                        <xs:complexType> 
+                           <xs:sequence> 
+                              <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMECONJUGE1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOVONOMECONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFCONJUGE1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOCONJUGE1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="I" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATANASCIMENTOCONJUGE1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEPAICONJUGE1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOPAICONJUGE1" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEMAECONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOMAECONJUGE1" minOccurs="0" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOOCUPACAOSDCCONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="6" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="PAISNASCIMENTOCONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NACIONALIDADECONJUGE1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNNATCONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="TEXTOLIVREMUNNATCONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNLOGRADOURO1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DOMICILIOESTRANGEIRO1" nillable="false" maxOccurs="1" > 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="255" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMECONJUGE2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOVONOMECONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFCONJUGE2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOCONJUGE2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="I" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATANASCIMENTOCONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEPAICONJUGE2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOPAICONJUGE2" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEMAECONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOMAECONJUGE2" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOOCUPACAOSDCCONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="6" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="PAISNASCIMENTOCONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NACIONALIDADECONJUGE2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNNATCONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="TEXTOLIVREMUNNATCONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNLOGRADOURO2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DOMICILIOESTRANGEIRO2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="255" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="MATRICULA" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:length value="32"/> 
+                                       <xs:pattern value="[0-9]{32}"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATAREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATACASAMENTO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="REGIMECASAMENTO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="COMUNHAO_PARCIAL"/> 
+                                       <xs:enumeration value="COMUNHAO_UNIVERSAL"/> 
+                                       <xs:enumeration value="PARTICIPACAO_FINAL_AQUESTOS"/> 
+                                       <xs:enumeration value="SEPARACAO_BENS"/> 
+                                       <xs:enumeration value="SEPARACAO_LEGAL_BENS"/> 
+                                       <xs:enumeration value="OUTROS"/> 
+                                       <xs:enumeration value="IGNORADO"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element minOccurs="0" maxOccurs="unbounded" name="DOCUMENTOS">  
+                                 <xs:complexType> 
+                                    <xs:sequence> 
+                                       <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DONO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="CONJUGE1"/> 
+                                                <xs:enumeration value="CONJUGE2"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="TIPO_DOC" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="RG"/> 
+                                                <xs:enumeration value="NIT"/> 
+                                                <xs:enumeration value="RIC"/> 
+                                                <xs:enumeration value="RNE"/> 
+                                                <xs:enumeration value="TITULO_DE_ELEITOR"/> 
+                                                <xs:enumeration value="PASSAPORTE"/> 
+                                                <xs:enumeration value="CNH"/> 
+                                                <xs:enumeration value="CTPS"/> 
+                                                <xs:enumeration value="CARTEIRA_DE_MARITIMO"/> 
+                                                <xs:enumeration value="DOC_ESTRANGEIRO"/> 
+                                                <xs:enumeration value="CERT_DE_NASCIMENTO"/> 
+                                                <xs:enumeration value="CERT_DE_RESERVISTA"/> 
+                                                <xs:enumeration value="NAO_IDENTIFICADO"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DESCRICAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO_SERIE" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="5" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CODIGOORGAOEMISSOR" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="UF_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DATA_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="10" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                    </xs:sequence> 
+                                 </xs:complexType> 
+                              </xs:element> 
+                              <xs:element name="ORGAOEMISSOREXTERIOR" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="INFORMACOESCONSULADO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="OBSERVACOES" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="4000" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                           </xs:sequence> 
+                        </xs:complexType> 
+                     </xs:element> 
+                     <xs:element minOccurs="0" maxOccurs="unbounded" name="REGISTROCASAMENTOALTERACAO">  
+                        <xs:complexType> 
+                           <xs:sequence> 
+                              <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="REGISTROINVISIVEL" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="S" /> 
+                                       <xs:enumeration value="N" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOMOTIVOALTERACAO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="" /> 
+                                       <xs:enumeration value="10" /> 
+                                       <xs:enumeration value="20" /> 
+                                       <xs:enumeration value="30" /> 
+                                       <xs:enumeration value="40" /> 
+                                       <xs:enumeration value="50" /> 
+                                       <xs:enumeration value="60" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATAAVERBACAO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMECONJUGE1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOVONOMECONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFCONJUGE1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOCONJUGE1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="I" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATANASCIMENTOCONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEPAICONJUGE1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOPAICONJUGE1" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEMAECONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOMAECONJUGE1" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOOCUPACAOSDCCONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="6" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="PAISNASCIMENTOCONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NACIONALIDADECONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNNATCONJUGE1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="TEXTOLIVREMUNNATCONJUGE1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNLOGRADOURO1" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DOMICILIOESTRANGEIRO1" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="255" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMECONJUGE2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOVONOMECONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFCONJUGE2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOCONJUGE2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="I" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATANASCIMENTOCONJUGE2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEPAICONJUGE2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOPAICONJUGE2" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEMAECONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOMAECONJUGE2" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOOCUPACAOSDCCONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="6" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="PAISNASCIMENTOCONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NACIONALIDADECONJUGE2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNNATCONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="TEXTOLIVREMUNNATCONJUGE2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNLOGRADOURO2" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DOMICILIOESTRANGEIRO2" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="255" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="MATRICULA" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:length value="32"/> 
+                                       <xs:pattern value="[0-9]{32}"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATAREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATACASAMENTO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="REGIMECASAMENTO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="COMUNHAO_PARCIAL"/> 
+                                       <xs:enumeration value="COMUNHAO_UNIVERSAL"/> 
+                                       <xs:enumeration value="PARTICIPACAO_FINAL_AQUESTOS"/> 
+                                       <xs:enumeration value="SEPARACAO_BENS"/> 
+                                       <xs:enumeration value="SEPARACAO_LEGAL_BENS"/> 
+                                       <xs:enumeration value="OUTROS"/> 
+                                       <xs:enumeration value="IGNORADO"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element minOccurs="0" maxOccurs="unbounded" name="DOCUMENTOS">  
+                                 <xs:complexType> 
+                                    <xs:sequence> 
+                                       <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DONO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="CONJUGE1"/> 
+                                                <xs:enumeration value="CONJUGE2"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="TIPO_DOC" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="RG"/> 
+                                                <xs:enumeration value="NIT"/> 
+                                                <xs:enumeration value="RIC"/> 
+                                                <xs:enumeration value="RNE"/> 
+                                                <xs:enumeration value="TITULO_DE_ELEITOR"/> 
+                                                <xs:enumeration value="PASSAPORTE"/> 
+                                                <xs:enumeration value="CNH"/> 
+                                                <xs:enumeration value="CTPS"/> 
+                                                <xs:enumeration value="CARTEIRA_DE_MARITIMO"/> 
+                                                <xs:enumeration value="DOC_ESTRANGEIRO"/> 
+                                                <xs:enumeration value="CERT_DE_NASCIMENTO"/> 
+                                                <xs:enumeration value="CERT_DE_RESERVISTA"/> 
+                                                <xs:enumeration value="NAO_IDENTIFICADO"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DESCRICAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO_SERIE" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="5" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CODIGOORGAOEMISSOR" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="UF_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DATA_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="10" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                    </xs:sequence> 
+                                 </xs:complexType> 
+                              </xs:element> 
+                              <xs:element name="ORGAOEMISSOREXTERIOR" nillable="false" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="INFORMACOESCONSULADO" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="OBSERVACOES" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="4000" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                           </xs:sequence> 
+                        </xs:complexType> 
+                     </xs:element> 
+                  </xs:sequence> 
+               </xs:complexType> 
+            </xs:element> 
+            <xs:element minOccurs="0" maxOccurs="unbounded" name="MOVIMENTOOBITOTO"> 
+               <xs:complexType> 
+                  <xs:sequence> 
+                     <xs:element minOccurs="0" maxOccurs="unbounded" name="REGISTROOBITOINCLUSAO">  
+                        <xs:complexType> 
+                           <xs:sequence> 
+                              <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="FLAGDESCONHECIDO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="S" /> 
+                                       <xs:enumeration value="N" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEFALECIDO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFFALECIDO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="MATRICULA" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:length value="32"/> 
+                                       <xs:pattern value="[0-9]{32}"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATAREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEPAI" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFPAI" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOPAI" nillable="true" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="M"/> 
+                                       <xs:enumeration value="F"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEMAE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFMAE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOMAE" nillable="true" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="M"/> 
+                                       <xs:enumeration value="F"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATAOBITO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="HORAOBITO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="5" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="I" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CORPELE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="IGNORADA"/> 
+                                       <xs:enumeration value="BRANCA"/> 
+                                       <xs:enumeration value="PRETA"/> 
+                                       <xs:enumeration value="AMARELA"/> 
+                                       <xs:enumeration value="PARDA"/> 
+                                       <xs:enumeration value="INDIGENA"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="ESTADOCIVIL" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="IGNORADO"/> 
+                                       <xs:enumeration value="SOLTEIRO"/> 
+                                       <xs:enumeration value="CASADO"/> 
+                                       <xs:enumeration value="VIUVO"/> 
+                                       <xs:enumeration value="DIVORCIADO"/> 
+                                       <xs:enumeration value="SEPARADO"/> 
+                                       <xs:enumeration value="OUTROS"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATANASCIMENTOFALECIDO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="IDADE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="IDADE_DIAS_MESES_ANOS" nillable="false" maxOccurs=" 1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="D"/> 
+                                       <xs:enumeration value="M"/> 
+                                       <xs:enumeration value="A"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="ELEITOR" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="I"/> 
+                                       <xs:enumeration value="S"/> 
+                                       <xs:enumeration value="N"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="POSSUIBENS" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="I"/> 
+                                       <xs:enumeration value="S"/> 
+                                       <xs:enumeration value="N"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOOCUPACAOSDC" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="6" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="PAISNASCIMENTO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NACIONALIDADE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNNATURALIDADE" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="TEXTOLIVREMUNICIPIONAT" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNLOGRADOURO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DOMICILIOESTRANGEIROFALECIDO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="500" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="LOGRADOURO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="255" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NUMEROLOGRADOURO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="20" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="COMPLEMENTOLOGRADOURO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="BAIRRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element minOccurs="0" maxOccurs="unbounded" name="BENEFICIOS_PREVIDENCIARIOS"> 
+                                 <xs:complexType> 
+                                    <xs:sequence> 
+                                       <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMEROBENEFICIO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="20" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                    </xs:sequence> 
+                                 </xs:complexType> 
+                              </xs:element> 
+                              <xs:element minOccurs="0" maxOccurs="unbounded" name="DOCUMENTOS">  
+                                 <xs:complexType> 
+                                    <xs:sequence> 
+                                       <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DONO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="FALECIDO"/> 
+                                                <xs:enumeration value="DECLARANTE"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="TIPO_DOC" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="RG"/> 
+                                                <xs:enumeration value="NIT"/> 
+                                                <xs:enumeration value="RIC"/> 
+                                                <xs:enumeration value="RNE"/> 
+                                                <xs:enumeration value="TITULO_DE_ELEITOR"/> 
+                                                <xs:enumeration value="PASSAPORTE"/> 
+                                                <xs:enumeration value="CNH"/> 
+                                                <xs:enumeration value="CTPS"/> 
+                                                <xs:enumeration value="CARTEIRA_DE_MARITIMO"/> 
+                                                <xs:enumeration value="DOC_ESTRANGEIRO"/> 
+                                                <xs:enumeration value="CERT_DE_NASCIMENTO"/> 
+                                                <xs:enumeration value="CERT_DE_RESERVISTA"/> 
+                                                <xs:enumeration value="NAO_IDENTIFICADO"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DESCRICAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO_SERIE" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="5" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CODIGOORGAOEMISSOR" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="UF_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DATA_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="10" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                    </xs:sequence> 
+                                 </xs:complexType> 
+                              </xs:element> 
+                              <xs:element name="TIPOLOCALOBITO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="IGNORADO"/> 
+                                       <xs:enumeration value="AMBULANCIA" /> 
+                                       <xs:enumeration value="DOMICILIO" /> 
+                                       <xs:enumeration value="HOSPITAL" /> 
+                                       <xs:enumeration value="OUTRO" /> 
+                                       <xs:enumeration value="OUTROS_SERVICOS_SAUDE" /> 
+                                       <xs:enumeration value="POSTO_SAUDE" /> 
+                                       <xs:enumeration value="SAMU" /> 
+                                       <xs:enumeration value="VIA_PUBLICA" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="TIPOMORTE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="NATURAL" /> 
+                                       <xs:enumeration value="VIOLENTA" /> 
+                                       <xs:enumeration value="IGNORADA" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NUMDECLARACAOOBITO" nillable="true" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="9" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NUMDECLARACAOOBITOIGNORADA" nillable="true" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="S"/> 
+                                       <xs:enumeration value="N"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="PAISOBITO" nillable="true" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNLOGRADOUROOBITO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="ENDERECOLOCALOBITOESTRANGEIRO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="500" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="LOGRADOUROOBITO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NUMEROLOGRADOUROOBITO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="20" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="COMPLEMENTOLOGRADOUROOBITO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="BAIRROOBITO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEANTECEDENTES_A" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEANTECEDENTES_B" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEANTECEDENTES_C" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEANTECEDENTES_D" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEOUTRASCOND_A" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEOUTRASCOND_B" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="LUGARFALECIMENTO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="500" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="LUGARSEPULTAMENTOCEMITERIO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="255" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEATESTANTEPRIMARIO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CRMATESTANTEPRIMARIO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="13" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEATESTANTESECUNDARIO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CRMATESTANTESECUNDARIO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="13" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEDECLARANTE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFDECLARANTE" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="ORGAOEMISSOREXTERIOR" nillable="false" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="INFORMACOESCONSULADO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="OBSERVACOES" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="4000" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                           </xs:sequence> 
+                        </xs:complexType> 
+                     </xs:element> 
+                     <xs:element minOccurs="0" maxOccurs="unbounded" name="REGISTROOBITOALTERACAO">  
+                        <xs:complexType> 
+                           <xs:sequence> 
+                              <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="REGISTROINVISIVEL" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="S" /> 
+                                       <xs:enumeration value="N" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOMOTIVOALTERACAO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="" /> 
+                                       <xs:enumeration value="10" /> 
+                                       <xs:enumeration value="20" /> 
+                                       <xs:enumeration value="30" /> 
+                                       <xs:enumeration value="40" /> 
+                                       <xs:enumeration value="50" /> 
+                                       <xs:enumeration value="60" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATAAVERBACAO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="FLAGDESCONHECIDO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="S" /> 
+                                       <xs:enumeration value="N" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEFALECIDO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFFALECIDO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="MATRICULA" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:length value="32"/> 
+                                       <xs:pattern value="[0-9]{32}"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATAREGISTRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEPAI" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFPAI" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOPAI" nillable="true" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="M"/> 
+                                       <xs:enumeration value="F"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEMAE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFMAE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXOMAE" nillable="true" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="M"/> 
+                                       <xs:enumeration value="F"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATAOBITO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="HORAOBITO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="5" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="SEXO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="M" /> 
+                                       <xs:enumeration value="F" /> 
+                                       <xs:enumeration value="I" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CORPELE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="IGNORADA"/> 
+                                       <xs:enumeration value="BRANCA"/> 
+                                       <xs:enumeration value="PRETA"/> 
+                                       <xs:enumeration value="AMARELA"/> 
+                                       <xs:enumeration value="PARDA"/> 
+                                       <xs:enumeration value="INDIGENA"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="ESTADOCIVIL" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="IGNORADO"/> 
+                                       <xs:enumeration value="SOLTEIRO"/> 
+                                       <xs:enumeration value="CASADO"/> 
+                                       <xs:enumeration value="VIUVO"/> 
+                                       <xs:enumeration value="DIVORCIADO"/> 
+                                       <xs:enumeration value="SEPARADO"/> 
+                                       <xs:enumeration value="OUTROS"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DATANASCIMENTOFALECIDO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="10" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="IDADE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="IDADE_DIAS_MESES_ANOS" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="D"/> 
+                                       <xs:enumeration value="M"/> 
+                                       <xs:enumeration value="A"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="ELEITOR" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="I"/> 
+                                       <xs:enumeration value="S"/> 
+                                       <xs:enumeration value="N"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="POSSUIBENS" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="I"/> 
+                                       <xs:enumeration value="S"/> 
+                                       <xs:enumeration value="N"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOOCUPACAOSDC" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="6" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="PAISNASCIMENTO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NACIONALIDADE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNNATURALIDADE" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="TEXTOLIVREMUNICIPIONAT" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNLOGRADOURO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="DOMICILIOESTRANGEIROFALECIDO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="500" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="LOGRADOURO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="255" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NUMEROLOGRADOURO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="20" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="COMPLEMENTOLOGRADOURO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="BAIRRO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element minOccurs="0" maxOccurs="unbounded" name="BENEFICIOS_PREVIDENCIARIOS">  
+                                 <xs:complexType> 
+                                    <xs:sequence> 
+                                       <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMEROBENEFICIO" nillable="false" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="20" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                    </xs:sequence> 
+                                 </xs:complexType> 
+                              </xs:element> 
+                              <xs:element minOccurs="0" maxOccurs="unbounded" name="DOCUMENTOS">  
+                                 <xs:complexType> 
+                                    <xs:sequence> 
+                                       <xs:element name="INDICEREGISTRO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DONO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="FALECIDO"/> 
+                                                <xs:enumeration value="DECLARANTE"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="TIPO_DOC" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:enumeration value=""/> 
+                                                <xs:enumeration value="RG"/> 
+                                                <xs:enumeration value="NIT"/> 
+                                                <xs:enumeration value="RIC"/> 
+                                                <xs:enumeration value="RNE"/> 
+                                                <xs:enumeration value="TITULO_DE_ELEITOR"/> 
+                                                <xs:enumeration value="PASSAPORTE"/> 
+                                                <xs:enumeration value="CNH"/> 
+                                                <xs:enumeration value="CTPS"/> 
+                                                <xs:enumeration value="CARTEIRA_DE_MARITIMO"/> 
+                                                <xs:enumeration value="DOC_ESTRANGEIRO"/> 
+                                                <xs:enumeration value="CERT_DE_NASCIMENTO"/> 
+                                                <xs:enumeration value="CERT_DE_RESERVISTA"/> 
+                                                <xs:enumeration value="NAO_IDENTIFICADO"/> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DESCRICAO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO" nillable="false" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="100" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="NUMERO_SERIE" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="5" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="CODIGOORGAOEMISSOR" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="UF_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="2" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                       <xs:element name="DATA_EMISSAO" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                          <xs:simpleType> 
+                                             <xs:restriction base="xs:string"> 
+                                                <xs:maxLength value="10" /> 
+                                             </xs:restriction> 
+                                          </xs:simpleType> 
+                                       </xs:element> 
+                                    </xs:sequence> 
+                                 </xs:complexType> 
+                              </xs:element> 
+                              <xs:element name="TIPOLOCALOBITO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="IGNORADO"/> 
+                                       <xs:enumeration value="AMBULANCIA" /> 
+                                       <xs:enumeration value="DOMICILIO" /> 
+                                       <xs:enumeration value="HOSPITAL" /> 
+                                       <xs:enumeration value="OUTRO" /> 
+                                       <xs:enumeration value="OUTROS_SERVICOS_SAUDE" /> 
+                                       <xs:enumeration value="POSTO_SAUDE" /> 
+                                       <xs:enumeration value="SAMU" /> 
+                                       <xs:enumeration value="VIA_PUBLICA" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="TIPOMORTE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value=""/> 
+                                       <xs:enumeration value="NATURAL" /> 
+                                       <xs:enumeration value="VIOLENTA" /> 
+                                       <xs:enumeration value="IGNORADA" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NUMDECLARACAOOBITO" nillable="true" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="9" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NUMDECLARACAOOBITOIGNORADA" nillable="true" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:enumeration value="S"/> 
+                                       <xs:enumeration value="N"/> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="PAISOBITO" nillable="true" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="3" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CODIGOIBGEMUNLOGRADOUROOBITO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="7" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="ENDERECOLOCALOBITOESTRANGEIRO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="500" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="LOGRADOUROOBITO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NUMEROLOGRADOUROOBITO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="20" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="COMPLEMENTOLOGRADOUROOBITO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="BAIRROOBITO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEANTECEDENTES_A" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEANTECEDENTES_B" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEANTECEDENTES_C" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEANTECEDENTES_D" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEOUTRASCOND_A" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CAUSAMORTEOUTRASCOND_B" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="170" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="LUGARFALECIMENTO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="500" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="LUGARSEPULTAMENTOCEMITERIO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="255" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEATESTANTEPRIMARIO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CRMATESTANTEPRIMARIO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="13" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEATESTANTESECUNDARIO" nillable="false" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CRMATESTANTESECUNDARIO" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="13" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="NOMEDECLARANTE" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="100" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="CPFDECLARANTE" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="11" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="ORGAOEMISSOREXTERIOR" nillable="false" minOccurs="0" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="INFORMACOESCONSULADO" nillable="false" minOccurs="0" maxOccurs="1">  
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="200" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                              <xs:element name="OBSERVACOES" nillable="false" maxOccurs="1"> 
+                                 <xs:simpleType> 
+                                    <xs:restriction base="xs:string"> 
+                                       <xs:maxLength value="4000" /> 
+                                    </xs:restriction> 
+                                 </xs:simpleType> 
+                              </xs:element> 
+                           </xs:sequence> 
+                        </xs:complexType> 
+                     </xs:element> 
+                  </xs:sequence> 
+               </xs:complexType> 
+            </xs:element> 
+         </xs:sequence> 
+      </xs:complexType> 
+   </xs:element> 
+</xs:schema> 

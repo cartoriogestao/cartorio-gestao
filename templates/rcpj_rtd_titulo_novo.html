@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{#
+  RECEBER O TÍTULO — o balcão.
+
+  SÓ A DATA É OBRIGATÓRIA, e é de propósito: o art. 12 da Lei 6.015/1973 diz
+  que nenhuma exigência obsta a apresentação do título e o seu lançamento no
+  protocolo com o respectivo número de ordem. Campo obrigatório a mais aqui é
+  título que espera na bancada enquanto alguém procura um dado — e perde a
+  ordem de chegada, que é a única coisa que o protocolo garante.
+#}
+{% block heading %}<h1>Receber título — {{ nome_da_atribuicao }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  {% for a in atribuicoes %}
+    <a class="button{% if a.codigo == atribuicao %} primary{% endif %}"
+       href="{{ url_for('rcpj_rtd_titulo_novo', atribuicao=a.codigo) }}">{{ a.nome }}</a>
+  {% endfor %}
+</div>
+
+<div class="notice">
+  Os dois números <strong>não se digitam</strong>: o sistema abre o protocolo
+  geral do atendimento e lança o título no Livro de Protocolo da atribuição,
+  com contadores separados como no E-Ofício.
+  Depois de receber, <strong>anexe o arquivo do título</strong> — é ele que
+  aparece no visualizador na hora de qualificar.
+</div>
+
+{{ salvar_rascunho('rcpj_rtd_titulo_novo', url_for('rcpj_rtd_titulo_novo'),
+                   'Título apresentado', csrf_token,
+                   nome_em='apresentante') }}
+
+<form method="post" class="form" id="form-do-ato">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="atribuicao" value="{{ atribuicao }}">
+
+  <fieldset>
+    <legend>A apresentação</legend>
+    <label>Data <span class="muted">(obrigatória)</span>
+      <input type="date" name="data_apresentacao" required
+             value="{{ form.data_apresentacao or hoje }}"></label>
+    <label>Hora
+      <input type="time" name="hora" step="1" value="{{ form.hora or '' }}"></label>
+    <label>Como veio
+      <select name="forma">
+        {% for chave, rotulo in formas.items() %}
+        <option value="{{ chave }}"{% if form.forma == chave %} selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Vias
+      <input type="number" name="vias" min="1" value="{{ form.vias or 1 }}"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Quem apresentou</legend>
+    <label>Nome
+      <input name="apresentante" value="{{ form.apresentante or '' }}"></label>
+    <label>CPF ou CNPJ
+      <input name="apresentante_documento" value="{{ form.apresentante_documento or '' }}"></label>
+    <label>Telefone
+      <input name="telefone" value="{{ form.telefone or '' }}"></label>
+    <label>E-mail
+      <input type="email" name="email" value="{{ form.email or '' }}"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>O título</legend>
+    <label>Natureza <span class="muted">— o que é o documento</span>
+      <input name="natureza" value="{{ form.natureza or '' }}"
+             placeholder="Estatuto de associação, contrato de cessão, notificação…"></label>
+    <label>Livro pretendido
+      <select name="serie">
+        {# EM BRANCO É RESPOSTA, e não falta: quem atende nem sempre sabe em
+           qual livro o título entra, e quem sabe é quem qualifica. #}
+        <option value="">— decidir na qualificação —</option>
+        {% for s in series %}
+        <option value="{{ s.codigo }}"{% if form.serie == s.codigo %} selected{% endif %}>{{ s.nome }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Valor declarado
+      <input name="valor_declarado" value="{{ form.valor_declarado or '' }}"></label>
+    <label>Observação
+      <textarea name="observacao" rows="3">{{ form.observacao or '' }}</textarea></label>
+  </fieldset>
+
+  <div class="actions">
+    <button class="button primary" type="submit">Receber e protocolar</button>
+    <a class="button" href="{{ url_for('rcpj_rtd_titulos', atribuicao=atribuicao) }}">Cancelar</a>
+  </div>
+</form>
+{{ script_do_rascunho() }}
+{% endblock %}

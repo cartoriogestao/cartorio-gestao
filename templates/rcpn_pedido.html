@@ -1,0 +1,430 @@
+{% extends 'base.html' %}
+{% block title %}Pedido {{ p.numero_pedido }} — Central de Certidões{% endblock %}
+{% block heading %}<h1>Pedido {{ p.numero_pedido }} · <code>{{ p.modulo }}</code></h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_pedidos', modulo=p.modulo) }}">Voltar à fila</a>
+  {% if p.assento_id %}
+    <a class="button" href="{{ url_for('rcpn_assento', assento_id=p.assento_id) }}">O assento</a>
+  {% endif %}
+</div>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>De onde veio</h2>
+  <p>
+    <strong>{{ p.nome_do_modulo }}</strong> · situação
+    <strong>{{ p.situacao|lower }}</strong>
+    {% if p.respondido_em %} em {{ p.respondido_em }}{% endif %}.
+  </p>
+  {% if p.pede_registro %}
+  {# A DIFERENÇA QUE MUDA O ATO. Um se emite; o outro se LAVRA. #}
+  <p class="warning">
+    <strong>Este módulo não pede certidão: pede que a serventia lavre um
+    registro</strong> de {{ (p.especie_a_lavrar or '')|lower }}. O registro toma
+    número, ocupa folha, gasta selo e entra na corrente de hash — e por isso ele
+    <strong>não sai daqui</strong>. Lavre-o na tela do Registro Civil e volte
+    para marcar este pedido.
+  </p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>O assento desta casa</h2>
+  <p><small>{{ p.casamento_motivo or 'Sem informação sobre o casamento.' }}</small></p>
+  {% if p.assento %}
+    <p>
+      <strong>{{ p.assento.nome }}</strong> — {{ p.assento.especie|lower }},
+      matrícula <code>{{ p.assento.matricula or '—' }}</code>.
+    </p>
+  {% else %}
+    <p class="muted">
+      {# O CASAMENTO É PELA MATRÍCULA E SÓ POR ELA — casar por livro/folha
+         mostraria o registro de outra pessoa, e ninguém desconfia de uma ficha
+         que abre. #}
+      Nenhum assento casou. O sistema procura <strong>pela matrícula de 32
+      dígitos, e só por ela</strong>: os números de livro e folha reiniciam por
+      volume nesta casa, e casar por eles abriria a ficha de outra pessoa.
+    </p>
+    <form method="post" action="{{ url_for('rcpn_pedido_amarrar', pedido_id=p.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Número do assento
+        <input name="assento_id" inputmode="numeric"></label>
+      <label>Como se achou
+        <input name="motivo" placeholder="ex.: conferido no livro A-12, fl. 34"></label>
+      <button class="button" type="submit">Amarrar este assento</button>
+    </form>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section>
+  <h2>O que a Central mandou</h2>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for rotulo, campo in [
+             ('quem pediu', 'nome_requerente'),
+             ('documento de quem pediu', 'documento_requerente'),
+             ('data do pedido', 'data_pedido'),
+             ('de quem é o registro', 'nome_registrado'),
+             ('data do ato/fato', 'data_ato_fato'),
+             ('data do registro', 'data_registro'),
+             ('livro · folha · nº', 'num_livro'),
+             ('matrícula', 'matricula'),
+             ('observação', 'obs_pedido'),
+             ('depósito prévio', 'deposito_previo')] %}
+        <tr>
+          <th>{{ rotulo }}</th>
+          <td>
+            {% if campo == 'num_livro' %}
+              {{ p.teor_aberto.get('num_livro') or '—' }} ·
+              {{ p.teor_aberto.get('num_folha') or '—' }} ·
+              {{ p.teor_aberto.get('num_registro') or '—' }}
+            {% else %}
+              {{ p.teor_aberto.get(campo) or '—' }}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        <tr>
+          <th>espécie</th>
+          <td>
+            {% if p.especie %}
+              {{ p.especie }}
+            {% else %}
+              {# SÓ O «N» ESTÁ MEDIDO no contrato — as outras letras seriam
+                 palpite, e palpite aqui diria «casamento» sobre um pedido que
+                 ninguém conferiu. #}
+              a Central mandou a letra <code>{{ p.letra_registro or '—' }}</code>,
+              e <strong>só o «N» está medido no contrato</strong> — as outras
+              não se adivinham.
+            {% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p><small>O que a Central mandou fica <strong>congelado</strong>: ela pode
+  mudar o dado dela amanhã, e o que a casa respondeu foi sobre isto.</small></p>
+</section>
+
+{# ------------------------------------------------------------------ #}
+{% if p.pede_registro %}
+<section class="card">
+  <h2>Marcar como registrado</h2>
+  <p><small>
+    Depois de lavrar o assento na tela do Registro Civil, informe o número dele
+    aqui. <strong>Este botão não lavra nada</strong> — ele só tira da fila o que
+    já virou livro.
+  </small></p>
+  <form method="post" action="{{ url_for('rcpn_pedido_registrado', pedido_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Número do assento lavrado
+      <input name="assento_id" inputmode="numeric" value="{{ p.assento_id or '' }}"></label>
+    <button class="button" type="submit">Marcar como registrado</button>
+  </form>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{% if erro_da_conferencia %}
+<section class="card danger">
+  <h2>Não deu para montar a certidão</h2>
+  <p>{{ erro_da_conferencia }}</p>
+</section>
+{% endif %}
+
+{% if c %}
+{% if c.impedem %}
+<section class="card danger">
+  <h2>Isto ainda não pode subir</h2>
+  <ul>{% for i in c.impedem %}<li>{{ i }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+<form method="post" action="{{ url_for('rcpn_pedido', pedido_id=p.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="card">
+    <h2>Como a certidão vai</h2>
+    <label>Tipo de registro
+      <select name="tipo_registro">
+        {% for t in tipos %}
+        <option value="{{ t }}" {% if c.tipo_registro == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Selo <input name="selo" value="{{ campos.selo }}"></label>
+    <label>Código do selo <input name="cod_selo" value="{{ campos.cod_selo }}"></label>
+    <label>Cota de emolumentos
+      <input name="cota_emolumentos" value="{{ campos.cota_emolumentos }}"
+             placeholder="ex.: 43,76"></label>
+    <label>
+      <input type="checkbox" name="cota_isento" {% if campos.cota_isento %}checked{% endif %}>
+      Isento de emolumentos
+    </label>
+    <button class="button" type="submit">Refazer a conferência</button>
+    <p><small>
+      {# NÃO SE COMPRA SELO POR CAMINHO QUE A CASA NUNCA USOU. #}
+      O sistema <strong>não compra selo</strong> por aqui: esta casa nunca selou
+      certidão eletrônica, e escolher um caminho de selo por semelhança seria
+      assinar por quem selou. Se já houver selo, digite-o.
+    </small></p>
+  </section>
+</form>
+
+{% if c.avisos %}
+<section class="card warning">
+  <h2>O que vai em branco, e por quê</h2>
+  <ul>{% for a in c.avisos %}<li>{{ a }}</li>{% endfor %}</ul>
+  <p><small>
+    Nada disto impede o envio: <strong>o contrato da Central não declara campo
+    obrigatório nenhum</strong> nos cinco esquemas, e inventar obrigação que ele
+    não declara seria o erro do outro lado.
+  </small></p>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>O registro, como ele vai</h2>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for chave, valor in c.registro.items() %}
+        <tr><th>{{ chave }}</th>
+            <td>{% if valor is string %}{{ valor }}{% else %}<code>{{ valor }}</code>{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{# ------------------------------------------------------------------ #}
+
+{# Opção local enquanto a API CRC não está em uso operacional. #}
+<section class="card">
+  <h2>Emitir JSON (CRC)</h2>
+  <p>Baixa o JSON no formato da documentação CRC/ON-RCPN
+     (<code>certificate-json</code>). <strong>Não chama a API da CRC</strong>
+     — opção local enquanto a integração API não está em uso operacional.</p>
+  <form method="get"
+        action="{{ url_for('rcpn_certidao_eletronica_json', assento_id=p.assento_id) }}">
+    <input type="hidden" name="tipo_registro" value="{{ c.tipo_registro }}">
+    {% for nome in ['selo', 'cod_selo', 'cota_emolumentos'] %}
+      <input type="hidden" name="{{ nome }}" value="{{ campos[nome] }}">
+    {% endfor %}
+    <input type="hidden" name="cota_isento" value="{{ '1' if campos.cota_isento else '' }}">
+    <button class="button" type="submit">Emitir JSON (CRC)</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Criar a certidão eletrônica</h2>
+  {% if not tem_credencial %}
+    <p><strong>O token do IdRC não foi informado</strong>, e sem ele nada sobe.</p>
+  {% elif not c.pronto %}
+    <p class="muted">Resolva o que está listado acima antes de criar.</p>
+  {% else %}
+    <form method="post" action="{{ url_for('rcpn_pedido_emitir', pedido_id=p.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% for nome in ['selo', 'cod_selo', 'cota_emolumentos'] %}
+        <input type="hidden" name="{{ nome }}" value="{{ campos[nome] }}">
+      {% endfor %}
+      <input type="hidden" name="cota_isento" value="{{ '1' if campos.cota_isento else '' }}">
+      <input type="hidden" name="tipo_registro" value="{{ c.tipo_registro }}">
+      <p>Vai para <code>{{ base }}</code> — ambiente <strong>{{ ambiente|lower }}</strong>.</p>
+      <button class="button primary" type="submit">Criar na Central</button>
+    </form>
+    <p><small>
+      {# HTTP 201 NÃO BASTA, e a tela diz isso antes. #}
+      A Central responde com um campo <code>success</code>, e o sistema
+      <strong>exige que ele seja verdadeiro</strong> — código HTTP bom com
+      <code>success: false</code> não conta como certidão criada.
+    </small></p>
+  {% endif %}
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{% if p.eletronicas %}
+<section>
+  <h2>As certidões eletrônicas deste pedido</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>#</th><th>identificador na Central</th><th>situação</th>
+        <th>criada</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for e in p.eletronicas %}
+        <tr>
+          <td>{{ e.id }}</td>
+          <td><code>{{ e.certidao_id or '—' }}</code></td>
+          <td>{{ e.situacao|lower }}
+            {% if e.assinatura_link %}
+              <br><a href="{{ e.assinatura_link }}" rel="noopener noreferrer" target="_blank">link da assinatura</a>
+            {% endif %}
+          </td>
+          <td>{{ e.criada_em }}</td>
+          <td>
+            <a class="button" href="{{ url_for('rcpn_certidao_eletronica_json_gravado', eletronica_id=e.id) }}">Baixar JSON</a>
+            <a class="button" href="{{ url_for('rcpn_certidao_eletronica_pdf', eletronica_id=e.id) }}">Ver o PDF</a>
+            {% if e.situacao != 'CANCELADA' %}
+            <form method="post" action="{{ url_for('rcpn_certidao_eletronica_assinar', eletronica_id=e.id) }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="volta_para" value="{{ p.id }}">
+              <button class="button" type="submit">Assinar</button>
+            </form>
+            {# CORRIGIR NAO QUEIMA O IDENTIFICADOR, e cancelar-e-criar queima:
+               o pedido pode ja ter recebido o antigo como verificador. #}
+            <form method="post" action="{{ url_for('rcpn_certidao_eletronica_atualizar', eletronica_id=e.id) }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="volta_para" value="{{ p.id }}">
+              {% for nome in ['selo', 'cod_selo', 'cota_emolumentos'] %}
+                <input type="hidden" name="{{ nome }}" value="{{ campos[nome] }}">
+              {% endfor %}
+              <input type="hidden" name="cota_isento" value="{{ '1' if campos.cota_isento else '' }}">
+              <button class="button" type="submit">Corrigir na Central</button>
+            </form>
+            <form method="post" action="{{ url_for('rcpn_certidao_eletronica_cancelar', eletronica_id=e.id) }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="volta_para" value="{{ p.id }}">
+              <button class="button" type="submit">Cancelar</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><small>
+    A assinatura acontece <strong>na Central</strong>, e não aqui: o certificado
+    A3 do delegatário não pode ser carregado dentro do servidor sem derrubá-lo —
+    está medido em <code>assinatura_digital.py</code>. O que volta é o link.
+  </small></p>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{% if p.outras_do_registro %}
+<section class="card warning">
+  <h2>Já saiu certidão eletrônica deste mesmo registro</h2>
+  <p><small>
+    {# QUEM NAO VE ISTO CRIA OUTRA — e outra custa, e deixa dois
+       identificadores vivos para o mesmo registro. #}
+    Estas nasceram de <strong>outro pedido</strong> (ou de emissão avulsa) sobre
+    o mesmo assento. Confira antes de criar mais uma.
+  </small></p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>identificador</th><th>situação</th><th>criada</th><th>de que pedido</th></tr></thead>
+      <tbody>
+        {% for e in p.outras_do_registro %}
+        <tr>
+          <td>{{ e.id }}</td>
+          <td><code>{{ e.certidao_id or '—' }}</code></td>
+          <td>{{ e.situacao|lower }}</td>
+          <td>{{ e.criada_em }}</td>
+          <td>{{ e.pedido_id or 'avulsa' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{# O BOTÃO QUE ENTREGA FICA POR ÚLTIMO, DEPOIS DE TUDO O QUE HÁ PARA LER. #}
+{% if p.eletronicas and not p.pede_registro and p.situacao == 'PENDENTE' %}
+<section class="card">
+  <h2>Entregar ao requerente</h2>
+  <form method="post" action="{{ url_for('rcpn_pedido_atender', pedido_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Qual certidão entregar
+      <select name="eletronica_id">
+        {% for e in p.eletronicas %}
+          {% if e.certidao_id and e.situacao != 'CANCELADA' %}
+          <option value="{{ e.id }}">#{{ e.id }} · {{ e.certidao_id }} · {{ e.situacao|lower }}</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <label>Valor dos emolumentos
+      <input name="valor_emolumentos" value="{{ request.values.get('valor_emolumentos', '') }}"
+             placeholder="ex.: 43,76"></label>
+    <label>Valor adicional
+      <input name="valor_adicional"
+             value="{{ '%.2f'|format(sugestao.valor_adicional) }}"></label>
+    <label>Observações da emissão
+      <input name="observacoes"></label>
+    {% if uf == uf_que_conta %}
+    <label>Quantidade de averbações/anotações
+      <input name="quantidade_averbacao" inputmode="numeric"></label>
+    {% endif %}
+    <button class="button primary" type="submit">Cumprir o pedido na Central</button>
+  </form>
+  <p><small>
+    {# A SUGESTÃO DIZ DE ONDE VEIO, e não é orçamento fechado. #}
+    O <strong>valor adicional</strong> vem sugerido: é a diferença entre o
+    depósito prévio que a Central informou
+    (<strong>{{ '%.2f'|format(sugestao.deposito_previo) }}</strong>) e o valor
+    que você escreveu acima. Confira — onde o erro custa dinheiro do cliente,
+    quem responde é quem atende.
+    {% if sugestao.houve_devolucao %}
+      <br><strong>O depósito foi maior que o valor final</strong>
+      ({{ '%.2f'|format(sugestao.diferenca) }}). O adicional vai zero, e o que
+      fazer com a diferença é decisão do balcão.
+    {% endif %}
+  </small></p>
+  <p><small>
+    {% if uf == uf_que_conta %}
+      A quantidade de averbações vale porque esta serventia é de
+      <strong>{{ uf }}</strong>.
+    {% else %}
+      A <strong>quantidade de averbações não vai</strong>: a Central pede o
+      número só para serventias de <strong>{{ uf_que_conta }}</strong> e manda
+      enviar nulo nas demais. Está na descrição do próprio caminho.
+    {% endif %}
+  </small></p>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{% if p.situacao == 'PENDENTE' %}
+<section class="card">
+  <h2>Se não der para atender</h2>
+
+  <h3>Rejeitar na Central</h3>
+  <p><small><strong>O requerente lê este motivo.</strong> «Não foi possível
+  atender» não diz o que fazer; «o registro não é desta serventia» diz.</small></p>
+  <form method="post" action="{{ url_for('rcpn_pedido_rejeitar', pedido_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Motivo <input name="motivo" size="60"></label>
+    <button class="button" type="submit">Rejeitar na Central</button>
+  </form>
+
+  <h3>Tirar da fila daqui</h3>
+  <p><small>Dispensar <strong>não avisa a Central</strong>: ela continua com o
+  pedido em aberto. Por isso exige motivo escrito.</small></p>
+  <form method="post" action="{{ url_for('rcpn_pedido_dispensar', pedido_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Motivo <input name="motivo" size="60"></label>
+    <button class="button" type="submit">Dispensar</button>
+  </form>
+</section>
+{% endif %}
+
+{% if p.rejeicao_motivo or p.dispensa_motivo %}
+<section class="card">
+  <h2>Por que saiu da fila</h2>
+  {% if p.rejeicao_motivo %}<p><strong>Rejeitado na Central:</strong> {{ p.rejeicao_motivo }}</p>{% endif %}
+  {% if p.dispensa_motivo %}<p><strong>Dispensado aqui:</strong> {{ p.dispensa_motivo }}</p>{% endif %}
+</section>
+{% endif %}
+
+{% endblock %}

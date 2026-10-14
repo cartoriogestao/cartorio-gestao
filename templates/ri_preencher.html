@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>{{ modelo.nome }} — matrícula {{ m.numero }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_ficha', matricula_id=m.id) }}">&larr; Ficha</a>
+  <span class="badge {{ 'ok' if modelo.tipo == 'R' else 'media' }}">{{ modelo.tipo }}-{{ '%02d'|format(numero) }}/{{ m.numero }}</span>
+  <span class="muted small">{{ modelo.fundamentacao }}</span>
+</div>
+
+<form method="post" id="form-ato">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <div class="modo-abas">
+    <button type="button" class="modo-botao ativo" data-modo="abas">Preencher em abas</button>
+    <button type="button" class="modo-botao" data-modo="documento">Preencher no documento</button>
+    <button type="submit" class="modo-botao">Atualizar prévia</button>
+  </div>
+
+  <!-- ------------------------------------------------ MODO ABAS -->
+  <section id="modo-abas" class="panel">
+    <div class="abas-cabecalho">
+      {% for aba, campos in abas %}
+      <button type="button" class="aba-botao {% if loop.first %}ativa{% endif %}"
+              data-aba="aba{{ loop.index }}">{{ aba }} <small>({{ campos|length }})</small></button>
+      {% endfor %}
+    </div>
+    {% for aba, campos in abas %}
+    <div class="aba-conteudo {% if not loop.first %}oculta{% endif %}" id="aba{{ loop.index }}">
+      <div class="form-grid">
+        {% for c in campos %}
+        {% if c.natureza == 'condicao' %}
+          {# Cláusula que pode não existir. Desmarcada, some do texto inteira —
+             com os campos que tinha dentro. #}
+          <label class="span2 clausula">
+            <input type="checkbox" name="c_{{ c.chave }}" value="1"
+                   data-campo="{{ c.chave }}"
+                   {% if valores.get(c.chave) %}checked{% endif %}>
+            <strong>{{ c.rotulo }}</strong>
+            <div class="small muted" style="margin-left:26px">{{ c.trecho }}</div>
+          </label>
+        {% elif c.natureza == 'escolha' %}
+          <label>
+            {{ c.rotulo }} <small class="muted">(escolha)</small>
+            <select name="c_{{ c.chave }}" data-campo="{{ c.chave }}">
+              <option value="">— escolher —</option>
+              {% for o in c.opcoes %}
+                <option value="{{ o }}" {% if valores.get(c.chave) == o %}selected{% endif %}>{{ o }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        {% else %}
+        <label class="{{ 'span2' if c.tipo == 'longo' else '' }}">
+          {{ c.rotulo }}{% if c.opcional %} <small class="muted">(só se a cláusula entrar)</small>{% endif %}
+          {% if c.tipo == 'longo' %}
+            <textarea name="c_{{ c.chave }}" rows="3" data-campo="{{ c.chave }}">{{ valores.get(c.chave, '') }}</textarea>
+          {% elif c.tipo == 'data' %}
+            <input name="c_{{ c.chave }}" data-campo="{{ c.chave }}" value="{{ valores.get(c.chave, '') }}"
+                   placeholder="12 de agosto de 2026">
+          {% elif c.tipo == 'moeda' %}
+            <input name="c_{{ c.chave }}" data-campo="{{ c.chave }}" value="{{ valores.get(c.chave, '') }}"
+                   placeholder="R$ 0,00 (cem reais)">
+          {% else %}
+            <input name="c_{{ c.chave }}" data-campo="{{ c.chave }}" value="{{ valores.get(c.chave, '') }}">
+          {% endif %}
+        </label>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <!-- ------------------------------------------- MODO DOCUMENTO -->
+  <section id="modo-documento" class="panel oculta">
+    <div class="notice small">
+      Clique em cada trecho <span class="lacuna-exemplo">destacado</span> e escreva por cima.
+      O que ficar em branco continua aparecendo como pendência.
+    </div>
+    <div class="teor" id="documento-editavel"></div>
+  </section>
+
+  <!-- ------------------------------------------------- PRÉVIA -->
+  <section class="panel">
+    <div class="panel-head"><span>Prévia do ato</span>
+      {% if pendentes %}<span class="badge alta">{{ pendentes|length }} pendência(s)</span>
+      {% else %}<span class="badge ok">completo</span>{% endif %}</div>
+    <div class="teor"><pre class="teor-texto" id="previa">{{ texto }}</pre></div>
+  </section>
+
+  {% if pendentes %}
+  <div class="notice warning">
+    <strong>Ainda faltam {{ pendentes|length }} campo(s):</strong>
+    {{ pendentes|join(' · ') }}
+    <label class="check"><input type="checkbox" name="confirmar_pendencias" value="1">
+      Lavrar mesmo assim — assumo que o texto está correto</label>
+  </div>
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel-head"><span>Requisitos a conferir antes de lavrar</span></div>
+    <ol class="small" style="padding:8px 34px">{% for r in modelo.requisitos %}<li>{{ r }}</li>{% endfor %}</ol>
+  </section>
+
+  <div class="actions">
+    <button type="submit" name="acao" value="previa" class="button">Atualizar prévia</button>
+    <button type="submit" name="acao" value="lavrar" class="primary">Enviar para a lavratura</button>
+  </div>
+</form>
+
+{% if enviar %}
+<form method="post" action="{{ url_for('ri_lavrar_ato', matricula_id=m.id) }}" id="form-lavrar">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="tipo" value="{{ modelo.tipo }}">
+  <input type="hidden" name="natureza_titulo" value="{{ modelo.natureza }}">
+  {# Guarda qual modelo gerou o ato: a exportação da CTP usa isso para saber a
+     operação imobiliária sem depender do texto livre da natureza. #}
+  <input type="hidden" name="modelo_codigo" value="{{ modelo.codigo }}">
+  <input type="hidden" name="data_ato" value="{{ hoje }}">
+  <textarea name="teor" class="oculta">{{ texto }}</textarea>
+  {% with revisao_url=url_for('revisao_previa_ri', matricula_id=m.id) %}{% include '_revisao_previa.html' %}{% endwith %}
+  <div class="notice ok">
+    <strong>Texto pronto.</strong> Confira acima e conclua a lavratura — o ato entra na
+    cadeia de integridade e não poderá mais ser editado.
+    <button class="primary">Lavrar {{ modelo.tipo }}-{{ '%02d'|format(numero) }}</button>
+  </div>
+</form>
+{% endif %}
+
+<script>
+(function () {
+  var texto = {{ texto|tojson }};
+
+  // Alternancia entre os dois modos.
+  document.querySelectorAll('.modo-botao[data-modo]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var modo = b.dataset.modo;
+      document.querySelectorAll('.modo-botao[data-modo]').forEach(function (o) {
+        o.classList.toggle('ativo', o === b);
+      });
+      document.getElementById('modo-abas').classList.toggle('oculta', modo !== 'abas');
+      document.getElementById('modo-documento').classList.toggle('oculta', modo !== 'documento');
+      if (modo === 'documento') montarDocumento();
+    });
+  });
+
+  // Abas internas do formulario.
+  document.querySelectorAll('.aba-botao').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.aba-botao').forEach(function (o) { o.classList.remove('ativa'); });
+      document.querySelectorAll('.aba-conteudo').forEach(function (o) { o.classList.add('oculta'); });
+      b.classList.add('ativa');
+      document.getElementById(b.dataset.aba).classList.remove('oculta');
+    });
+  });
+
+  function campoPorMarcador(marcador) {
+    var alvo = null;
+    document.querySelectorAll('[data-campo]').forEach(function (e) {
+      if (!alvo && e.closest('label') &&
+          e.closest('label').textContent.trim().toLowerCase()
+            .indexOf(marcador.toLowerCase().slice(0, 18)) === 0) alvo = e;
+    });
+    return alvo;
+  }
+
+  // Documento com as lacunas editaveis no lugar.
+  function montarDocumento() {
+    var alvo = document.getElementById('documento-editavel');
+    var partes = texto.split(/(\[[^\]]+\])/g);
+    alvo.innerHTML = '';
+    partes.forEach(function (p) {
+      if (/^\[.+\]$/.test(p)) {
+        var marcador = p.slice(1, -1);
+        var s = document.createElement('span');
+        s.className = 'lacuna';
+        s.contentEditable = 'true';
+        s.textContent = marcador;
+        s.title = 'Clique e escreva por cima';
+        s.addEventListener('focus', function () {
+          if (s.textContent === marcador) s.textContent = '';
+          s.classList.add('editando');
+        });
+        s.addEventListener('blur', function () {
+          s.classList.remove('editando');
+          var v = s.textContent.trim();
+          var campo = campoPorMarcador(marcador);
+          if (campo) campo.value = v;
+          if (!v) { s.textContent = marcador; s.classList.remove('preenchida'); }
+          else s.classList.add('preenchida');
+        });
+        alvo.appendChild(s);
+      } else {
+        alvo.appendChild(document.createTextNode(p));
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

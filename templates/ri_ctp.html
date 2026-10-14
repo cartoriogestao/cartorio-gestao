@@ -1,0 +1,250 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>CTP — Comunicação de Transações às Prefeituras</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
+  {% if user.role in ['ADMIN','MANAGER'] %}<a class="button" href="{{ url_for('ri_onr') }}">Exportação ONR</a>{% endif %}
+</div>
+
+<div class="notice">
+  Carga mensal para a <strong>CENSEC</strong>, que a repassa aos municípios. É o dever de
+  comunicar as transações imobiliárias ao Município (Lei 8.935/1994, art. 30, XI),
+  canalizado pelo módulo CTP por força do <strong>Provimento CNJ 174/2024</strong>.
+  Layout conforme a especificação do CNB-CF, versão 1.3, de 24/10/2025.
+</div>
+
+<div class="notice warning">
+  <strong>Confira duas coisas com a CENSEC antes da primeira remessa.</strong>
+  (1) O sistema <strong>gera o arquivo, não transmite</strong> — o envio é pela tela da CENSEC.
+  (2) A tabela de domínio publicada só traz <em>tipo de serviço «Notarial»</em> e
+  <em>tipo de ato «Escritura / Procuração»</em>; os códigos registrais não estão publicados.
+  O arquivo sai com o padrão notarial e isso pode precisar de ajuste.
+</div>
+
+<form class="filters" method="get">
+  <label>Competência
+    <select name="competencia" onchange="this.form.submit()">
+      {% for mes in meses %}
+        <option value="{{ mes.c }}" {% if mes.c == competencia %}selected{% endif %}>
+          {{ mes.c }} — {{ mes.qtd }} ato(s)</option>
+      {% endfor %}
+      {% if competencia not in meses|map(attribute='c')|list %}
+        <option value="{{ competencia }}" selected>{{ competencia }} — sem atos</option>
+      {% endif %}
+    </select>
+  </label>
+  <button>Abrir competência</button>
+</form>
+
+<section class="cards">
+  <div class="stat"><strong>{{ linhas|length }}</strong><small>atos na competência</small></div>
+  <div class="stat"><strong>{{ prontos }}</strong><small>prontos para a carga</small></div>
+  <div class="stat"><strong>{{ com_pendencia }}</strong><small>com pendência</small></div>
+  <div class="stat"><strong>{{ cns }}</strong><small>CNS · IBGE {{ ibge }}</small></div>
+</section>
+
+{% if fechada %}
+<div class="notice warning">
+  <strong>Competência {{ competencia }} fechada.</strong>
+  {% if remessa.sem_transacoes %}
+    Fechada como <strong>sem transações no mês</strong> em {{ fmt_date(remessa.fechado_em) }}.
+    Guarde o comprovante do fechamento na CENSEC — declaração negativa também é comprovação.
+  {% else %}
+    {{ remessa.quantidade }} registro(s), gerados em {{ fmt_date(remessa.gerado_em) }}.
+    <br><small class="muted">SHA-256 do arquivo: <code>{{ remessa.arquivo_hash }}</code></small>
+    <br><a href="{{ url_for('ri_ctp_arquivo', competencia=competencia) }}">Baixar o arquivo como foi gerado</a>
+  {% endif %}
+</div>
+{% endif %}
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="competencia" value="{{ competencia }}">
+
+  {% if not linhas %}
+    <section class="panel">
+      <div class="panel-head"><span>Nenhum ato nesta competência</span></div>
+      <div style="padding:14px">
+        <p class="small">Mês sem ato lavrado ainda precisa de fechamento na CENSEC.
+           Feche como «sem transações» para ter o comprovante.</p>
+        {% if not fechada %}
+          <label>Observação <input name="observacao" size="60"
+            placeholder="ex.: nenhuma transação imobiliária no período"></label>
+          <button class="primary" name="acao" value="sem_transacoes">
+            Fechar como «sem transações no mês»</button>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% for l in linhas %}
+  <section class="panel">
+    <div class="panel-head">
+      <span>
+        <strong>{{ l.rotulo }}</strong> — matrícula {{ l.m.numero }}
+        {% if l.entra %}<span class="badge ok">entra na carga</span>
+        {% elif not l.dados.operacao and l.ato.natureza_titulo %}
+          <span class="badge">não é transação imobiliária</span>
+        {% elif not l.dados.operacao %}<span class="badge media">operação não definida</span>
+        {% elif not l.incluir %}<span class="badge">excluído a pedido</span>
+        {% else %}<span class="badge alta">{{ l.pendencias|length }} pendência(s)</span>{% endif %}
+      </span>
+      <span class="small muted">{{ fmt_date(l.ato.data_ato) }}
+        {% if l.ato.natureza_titulo %}· {{ l.ato.natureza_titulo }}{% endif %}</span>
+    </div>
+
+    <div style="padding:12px">
+      {% if l.origem_sugestao == 'natureza' %}
+        <div class="small muted" style="margin-bottom:8px">
+          A operação abaixo foi <strong>deduzida do texto</strong> da natureza do título, não
+          de um modelo nem da tabela do SAUIN. Confira antes de gerar.
+        </div>
+      {% elif l.origem_sugestao == 'sauin' %}
+        <div class="small muted" style="margin-bottom:8px">
+          Operação vinda da natureza do <strong>SAUIN</strong>, a mesma tabela do selo eletrônico.
+        </div>
+      {% endif %}
+
+      <div class="grid2" style="gap:10px">
+        <label>Operação imobiliária
+          <select name="i{{ l.ato.id }}_operacao" {% if fechada %}disabled{% endif %}>
+            <option value="">— não é transação imobiliária —</option>
+            {% for cod, desc in TIPO_OPERACAO.items() %}
+              <option value="{{ cod }}" {% if l.dados.operacao == cod %}selected{% endif %}>
+                {{ cod }} — {{ desc }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Data do negócio jurídico
+          <input type="date" name="i{{ l.ato.id }}_data_negocio"
+                 value="{{ l.dados.data_negocio or '' }}" {% if fechada %}disabled{% endif %}>
+        </label>
+        <label>Valor da operação
+          <input name="i{{ l.ato.id }}_valor_operacao" value="{{ l.dados.valor_operacao or '' }}"
+                 placeholder="0,00" {% if fechada %}disabled{% endif %}>
+        </label>
+        <label class="small"><input type="checkbox" name="i{{ l.ato.id }}_valor_operacao_nao_consta"
+          value="1" {% if l.dados.valor_operacao_nao_consta %}checked{% endif %}
+          {% if fechada %}disabled{% endif %}> valor não consta nos documentos</label>
+        <label>Base de cálculo do ITBI/ITCMD
+          <input name="i{{ l.ato.id }}_valor_base_itbi" value="{{ l.dados.valor_base_itbi or '' }}"
+                 placeholder="0,00" {% if fechada %}disabled{% endif %}>
+        </label>
+        <label class="small"><input type="checkbox" name="i{{ l.ato.id }}_valor_base_itbi_nao_consta"
+          value="1" {% if l.dados.valor_base_itbi_nao_consta %}checked{% endif %}
+          {% if fechada %}disabled{% endif %}> base não consta nos documentos</label>
+        <label>Forma de pagamento
+          <select name="i{{ l.ato.id }}_forma_pagamento" {% if fechada %}disabled{% endif %}>
+            <option value="">—</option>
+            {% for cod, desc in FORMA_PAGAMENTO.items() %}
+              <option value="{{ cod }}" {% if l.dados.forma_pagamento == cod %}selected{% endif %}>
+                {{ desc }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Parte transacionada
+          <select name="i{{ l.ato.id }}_tipo_parte" {% if fechada %}disabled{% endif %}>
+            {% for cod, desc in TIPO_PARTE.items() %}
+              <option value="{{ cod }}" {% if (l.dados.tipo_parte or '1') == cod %}selected{% endif %}>
+                {{ desc }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Quanto foi transacionado
+          <input name="i{{ l.ato.id }}_valor_parte" value="{{ l.dados.valor_parte or '100' }}"
+                 {% if fechada %}disabled{% endif %}>
+        </label>
+        {% if not (l.m.rural_urbano or '').upper().startswith('R') %}
+        <label>Tipo do imóvel
+          <select name="i{{ l.ato.id }}_tipo_imovel" {% if fechada %}disabled{% endif %}>
+            {% for cod, desc in TIPO_IMOVEL_CTP.items() %}
+              <option value="{{ cod }}" {% if (l.dados.tipo_imovel or '71') == cod %}selected{% endif %}>
+                {{ desc }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Área construída (m²)
+          <input name="i{{ l.ato.id }}_area_construida" value="{{ l.dados.area_construida or '' }}"
+                 {% if fechada %}disabled{% endif %}>
+        </label>
+        {% else %}
+        <label>Localização (distrito, povoado, gleba…)
+          <input name="i{{ l.ato.id }}_localizacao" value="{{ l.dados.localizacao or '' }}"
+                 {% if fechada %}disabled{% endif %}>
+        </label>
+        {% endif %}
+        <label>Motivo, se faltar CPF/CNPJ de alguma parte
+          <select name="i{{ l.ato.id }}_motivo_sem_ni" {% if fechada %}disabled{% endif %}>
+            <option value="">—</option>
+            {% for cod, desc in MOTIVO_SEM_NI.items() %}
+              <option value="{{ cod }}" {% if l.dados.motivo_sem_ni == cod %}selected{% endif %}>
+                {{ desc }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="small">
+          <input type="checkbox" name="incluir_{{ l.ato.id }}" value="1"
+                 {% if l.incluir %}checked{% endif %} {% if fechada %}disabled{% endif %}>
+          incluir este ato na carga
+        </label>
+      </div>
+
+      <div class="small muted" style="margin-top:8px">
+        Partes:
+        {% for p in l.partes %}{{ p.nome }}{% if p.papel %} ({{ p.papel }}){% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+      </div>
+
+      {% if l.pendencias %}
+      <div class="notice warning" style="margin-top:10px">
+        <strong>Falta para este ato entrar na carga:</strong>
+        <ul class="small">{% for p in l.pendencias %}<li>{{ p }}</li>{% endfor %}</ul>
+        {% if l.acervo %}
+        <p class="small">Este ato <strong>veio do acervo do E-Ofício</strong>. Lá as partes
+        foram gravadas todas como «proprietário», sem separar quem transmitiu de quem
+        adquiriu, e o valor do negócio não foi importado. A CTP é para os atos lavrados
+        deste ponto em diante; para incluir um ato antigo é preciso completar os dados à mão.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  {% endfor %}
+
+  {% if linhas and not fechada %}
+  <section class="panel">
+    <div class="panel-head"><span>Gerar e fechar</span></div>
+    <div style="padding:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+      <button name="acao" value="salvar">Guardar o que foi digitado</button>
+      <button class="primary" name="acao" value="gerar" {% if not prontos %}disabled{% endif %}>
+        Gerar arquivo ({{ prontos }} registro(s))</button>
+      <button name="acao" value="fechar" {% if not prontos %}disabled{% endif %}
+              onclick="return confirm('Fechar a competência {{ competencia }}? Depois de fechada ela não se edita.')">
+        Gerar e fechar a competência</button>
+      <span class="small muted">Fechar guarda o arquivo e o SHA-256 dele, para conferência futura.</span>
+    </div>
+  </section>
+  {% endif %}
+</form>
+
+{% if remessas %}
+<section class="panel">
+  <div class="panel-head"><span>Remessas</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Competência</th><th>Situação</th><th>Registros</th><th>Gerado em</th><th>Arquivo</th></tr></thead>
+    <tbody>{% for r in remessas %}
+      <tr>
+        <td>{{ r.competencia }}</td>
+        <td>{% if r.situacao == 'FECHADA' %}<span class="badge ok">fechada</span>
+            {% else %}<span class="badge">aberta</span>{% endif %}
+            {% if r.sem_transacoes %} <span class="badge">sem transações</span>{% endif %}</td>
+        <td>{{ r.quantidade }}</td>
+        <td>{{ fmt_date(r.gerado_em) }}</td>
+        <td>{% if r.conteudo %}
+              <a href="{{ url_for('ri_ctp_arquivo', competencia=r.competencia) }}">{{ r.arquivo_nome }}</a>
+            {% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

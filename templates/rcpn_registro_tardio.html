@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Registro de nascimento tardio{% endblock %}
+{% block content %}
+<h1>Registro de nascimento tardio</h1>
+
+<div class="alerta danger">
+  <p><strong>O modelo que esta casa usava afirma o que a norma condiciona.</strong></p>
+  <p>O modelo do E-Ofício traz impresso, em toda folha: <em>«Dispensada a
+     presença de testemunhas nos termos do Artigo 3º do Provimento 28/2018 –
+     CGJ-MA»</em>. O <strong>art. 249, II</strong> do Código de Normas diz que a
+     regra é colher <strong>duas testemunhas</strong>, com dispensa
+     <strong>num caso só</strong>: registrando <strong>menor de 12 anos</strong>
+     <em>e</em> com <strong>DNV apresentada</strong>.</p>
+  <p class="small">
+    Um papel que afirma a dispensa sempre faz deixar de colher testemunha onde
+    ela é obrigatória — e é o declarante quem assina «sob as penas da lei». Por
+    isso o sistema <strong>calcula</strong> a dispensa, e diz por quê.
+  </p>
+  <p class="small muted">
+    Isto não afirma que o Provimento 28/2018 não exista — ele não foi lido. Diz
+    que o Código de Normas vigente condiciona, e que afirmar sem condição num
+    papel assinado é o que não se pode fazer. Sabendo você de norma posterior que
+    amplie a dispensa, a régua muda num lugar só.
+  </p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Onde se registra</h2>
+  <p>{{ norma.ONDE_SE_REGISTRA|forte }} <span class="small muted">({{ norma.LEI }})</span></p>
+  <p class="small muted">{{ norma.DNV_NO_TARDIO|forte }}.</p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Precisa de testemunha neste caso?</h2>
+  <form method="get">
+    <p>
+      <label>Idade do registrando
+        <input type="number" name="idade" min="0" max="130" size="4"
+               value="{{ idade }}"></label>
+      <label><input type="checkbox" name="tem_dnv"
+             {% if tem_dnv %}checked{% endif %}> tem DNV (ou documento
+             equivalente de estabelecimento de saúde)</label>
+      <label>Testemunhas já colhidas
+        <input type="number" name="testemunhas" min="0" max="9" size="3"
+               value="{{ testemunhas }}"></label>
+    </p>
+    <input type="hidden" name="conferir" value="1">
+    <button class="button">Conferir</button>
+  </form>
+
+  {% if perguntou %}
+    <div class="alerta {% if regra.dispensada %}warning{% else %}{% endif %}">
+      {% if regra.dispensada %}
+        <p><strong>Testemunhas dispensadas</strong> — e a
+           <strong>entrevista do registrando</strong> também.</p>
+      {% else %}
+        <p><strong>Colha as {{ regra.quantas }} testemunhas</strong>, na forma do
+           art. 249, II.</p>
+      {% endif %}
+      <p class="small">{{ regra.porque|forte }}.</p>
+    </div>
+
+    {% if faltas %}
+      <p><strong>O que ainda falta:</strong></p>
+      <ul>{% for f in faltas %}<li class="small">{{ f|forte }}</li>{% endfor %}</ul>
+    {% else %}
+      <p class="small">Nada faltando nesta conferência.</p>
+    {% endif %}
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">O rito — art. 249</h2>
+  <ol>
+    {% for x in norma.O_RITO %}
+      <li>{{ x.o_que|forte }} <span class="small muted">(inciso {{ x.inciso }})</span></li>
+    {% endfor %}
+  </ol>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">O que acompanha o requerimento</h2>
+  <p class="small muted">{{ norma.SAO_DESEJAVEIS_E_NAO_CONDICAO|forte }}.</p>
+  <ul>
+    {% for d in norma.DOCUMENTOS_DESEJAVEIS %}
+      <li>{{ d.nome|forte }} <span class="small muted">(§ 2º, {{ d.inciso }})</span></li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">O arquivo</h2>
+  <p>{{ norma.ARQUIVO_OBRIGATORIO|forte }}.</p>
+  <p><strong>{{ norma.ARQUIVO_ANOS }} anos</strong>, e {{ norma.COMO_SE_DESCARTA|forte }}.</p>
+</div>
+
+<details>
+  <summary>Os artigos citados nesta tela</summary>
+  <div class="card">
+    <p class="small">Para conferir contra o Código de Normas — régua que ninguém
+       confere é régua que se acredita.</p>
+    <p class="small">
+      {% for a in norma.artigos_citados() %}{{ a }}{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+  </div>
+</details>
+{% endblock %}

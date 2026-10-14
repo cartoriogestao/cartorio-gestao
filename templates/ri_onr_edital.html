@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+{% block title %}Edital na Central — usucapião {{ c.processo.numero }}{% endblock %}
+{% block heading %}<h1>Edital na Central — usucapião {{ c.processo.numero }}/{{ c.processo.ano }}</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_onr_painel') }}">Voltar ao ONR</a>
+  <a class="button" href="{{ url_for('usucapiao_processo', processo_id=processo_id) }}">O processo</a>
+</div>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>Por que este botão existe</h2>
+  <p><small>
+    {# O SISTEMA JÁ CALCULAVA O PRAZO E NÃO TINHA COMO DISPONIBILIZAR. #}
+    O art. 755, § 1º do Código de Normas do TJMA conta a publicação a partir do
+    <strong>primeiro dia útil depois da disponibilização na Central</strong>, e
+    os prazos correm do primeiro dia útil depois dessa data. O sistema já
+    calculava esse prazo desde 28/08/2026 — <strong>e não tinha como
+    disponibilizar nada</strong>. Esta chamada é a disponibilização.
+  </small></p>
+</section>
+
+{# ------------------------------------------------------------------ #}
+{% if c.impedem %}
+<section class="card danger">
+  <h2>Isto ainda não pode subir</h2>
+  <ul>{% for i in c.impedem %}<li>{{ i }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{% if c.avisos %}
+<section class="card warning">
+  <h2>O que vai assim, e por quê</h2>
+  <ul>{% for a in c.avisos %}<li>{{ a }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+<form method="post" action="{{ url_for('ri_onr_edital', processo_id=processo_id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="card">
+    <h2>Como o edital vai</h2>
+    <label>Tipo de edital (código do ONR)
+      <input name="tipo_edital" inputmode="numeric" value="{{ tipo_escolhido }}"></label>
+    <label>Texto do edital
+      <textarea name="texto" rows="6" cols="80">{{ texto or c.corpo.get('textoEdital', '') }}</textarea></label>
+    <button class="button" type="submit">Refazer a conferência</button>
+  </section>
+</form>
+
+<section class="card">
+  <h3>De onde sai o tipo</h3>
+  <p><small>
+    {# A CASA NÃO ESCREVE ESTA LISTA — ela vem da Central. #}
+    <strong>A casa não escreve a lista dos tipos de edital.</strong> Ela vem da
+    própria Central, e escrevê-la no código seria a lista à mão que envelhece na
+    tarde em que se escreve — a lição do menu, pela enésima vez.
+  </small></p>
+  <form method="post" action="{{ url_for('ri_onr_edital_tipos', processo_id=processo_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">Trazer os tipos da Central</button>
+  </form>
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>O edital, como ele vai</h2>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        {% for chave, valor in c.corpo.items() %}
+        <tr><th>{{ chave }}</th>
+            <td>{% if valor is string or valor is number %}{{ valor }}{% else %}<code>{{ valor }}</code>{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>Publicar</h2>
+  {% if not tem_credencial %}
+    <p><strong>A credencial do ONR não foi informada</strong>, e sem ela nada sobe.</p>
+  {% elif not c.pronto %}
+    <p class="muted">Resolva o que está listado acima antes de publicar.</p>
+  {% else %}
+    <form method="post" action="{{ url_for('ri_onr_edital_publicar', processo_id=processo_id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="tipo_edital" value="{{ tipo_escolhido }}">
+      <input type="hidden" name="texto" value="{{ texto }}">
+      <p>Vai para <code>{{ base }}</code> — ambiente <strong>{{ ambiente|lower }}</strong>.</p>
+      <button class="button primary" type="submit">Disponibilizar na Central</button>
+    </form>
+    <p><small>
+      Publicar <strong>custa e sai no mundo</strong>, e faz o prazo correr para
+      terceiros. Por isso conferir e publicar são dois botões.
+    </small></p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+{% if ja %}
+<section>
+  <h2>Os editais já publicados deste processo</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>número</th><th>situação</th><th>quando</th><th></th></tr></thead>
+      <tbody>
+        {% for e in ja %}
+        <tr>
+          <td>{{ e.id }}</td>
+          <td><code>{{ e.identificador or '—' }}</code></td>
+          <td>{{ e.situacao|lower }}
+            {% if e.cancelado_motivo %}<br><small>{{ e.cancelado_motivo }}</small>{% endif %}</td>
+          <td>{{ e.enviado_em }}</td>
+          <td>
+            {% if e.situacao != 'CANCELADO' %}
+            <form method="post" action="{{ url_for('ri_onr_edital_cancelar', envio_id=e.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label>Motivo <input name="motivo" size="34"></label>
+              <button class="button" type="submit">Cancelar na Central</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><small>
+    Cancelar o edital <strong>não desfaz o processo de usucapião</strong> — ele
+    continua onde está, e a decisão sobre ele é do oficial. E o motivo é
+    obrigatório: o edital foi publicado, e o prazo correu para quem o leu.
+  </small></p>
+</section>
+{% endif %}
+
+{% endblock %}

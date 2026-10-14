@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Projetos de desenvolvimento</h1>{% endblock %}
+{% block content %}
+<p class="muted">Andamento técnico de integrações e homologações — separado de Ajuda → Problemas.</p>
+<section class="panel dev-projetos-panel">
+  <div class="panel-head"><span>Projetos</span></div>
+  <table class="table dev-projetos-table">
+    <thead>
+      <tr>
+        <th>Título</th>
+        <th>Pendência</th>
+        <th>Status</th>
+        <th>Atualizado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in projetos %}
+      <tr>
+        <td class="dev-projetos-titulo-cel">
+          <a href="{{ url_for('dev_projetos_detalhe', projeto_id=p.id) }}">{{ p.titulo }}</a>
+        </td>
+        <td class="dev-projetos-pendencia-cel muted">
+          {% if p.proximo_passo %}
+          {{ p.proximo_passo[:120] }}{% if p.proximo_passo|length > 120 %}…{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td><span class="dev-projeto-status dev-projeto-status-{{ p.status_geral|lower }}">{{ status_rotulo.get(p.status_geral, p.status_geral) }}</span></td>
+        <td class="muted dev-projetos-atualizado-cel">{{ p.atualizado_em_exibicao or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">Nenhum projeto cadastrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

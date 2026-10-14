@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>{% if familia %}{{ familia.titulo }}{% else %}Atos de livro{% endif %}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{% if familia %}{{ url_for(familia.endpoint) }}{% else %}{{ url_for('notas_painel') }}{% endif %}">&larr; {% if familia %}Painel{% else %}Tabelionato{% endif %}</a>
+  <a class="button primary" href="{{ url_for('notas_ato_novo', familia=familia_chave) }}">Lavrar {% if familia %}{{ familia.singular|lower }}{% else %}ato{% endif %}</a>
+  <a class="button" href="{{ url_for('notas_livros') }}">Livros</a>
+</div>
+
+{% if livro_ctx %}
+<div class="notice">Atos do livro <strong>{{ livro_ctx.numero }}</strong>
+  {% if livro_ctx.complemento %}{{ livro_ctx.complemento }}{% endif %}
+  — {{ TIPOS_LIVRO.get(livro_ctx.tipo, livro_ctx.tipo) }}.
+  <a href="{{ url_for('notas_livros') }}">Todos os livros</a></div>
+{% endif %}
+
+<form class="filters" method="get">
+  {% if familia %}<input type="hidden" name="familia" value="{{ familia_chave }}">{% endif %}
+  {% if livro_id %}<input type="hidden" name="livro_id" value="{{ livro_id }}">{% endif %}
+  <input name="busca" value="{{ busca }}" size="28"
+         placeholder="Parte, selo, termo ou livro/folha (ex.: 3/45)">
+  <label class="small">Livro <input name="livro" value="{{ livro_q }}" size="4"
+         {% if livro_id %}readonly{% endif %}></label>
+  <label class="small">Folha <input name="folha" value="{{ folha_q }}" size="4"></label>
+  <label class="small">Termo <input name="termo" value="{{ termo_q }}" size="6"></label>
+  {% if not familia %}<label>Tipo <select name="tipo" onchange="this.form.submit()">
+    <option value="">todos</option>
+    {% for k, rot in TIPOS_ATO.items() %}<option value="{{ k }}" {% if tipo == k %}selected{% endif %}>{{ rot }}</option>{% endfor %}
+  </select></label>{% endif %}
+  <button>Filtrar</button>
+</form>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ total }} ato(s)</span>
+    <span class="small muted">página {{ pagina }} de {{ paginas }}</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Termo</th><th>Tipo</th><th>Data</th><th>Livro/folha</th><th>Partes</th><th>Selo</th><th>Situação</th><th></th></tr></thead>
+    <tbody>
+    {% for a in rows %}
+      <tr>
+        <td><a href="{{ url_for('notas_ato', ato_id=a.id) }}">
+          {%- if a.termo %}<strong>{{ a.termo }}</strong>
+          {%- elif a.numero_ordem %}<strong>{{ a.numero_ordem }}</strong>
+          {%- else %}<span class="muted">rascunho {{ a.id }}</span>{% endif %}</a></td>
+        <td class="small">{{ TIPOS_ATO.get(a.tipo, a.tipo) }}
+          {% if a.natureza %}<br><span class="muted">{{ a.natureza[:40] }}</span>{% endif %}</td>
+        <td class="small">{{ fmt_date(a.data) }}</td>
+        <td class="small">{% if a.livro %}{{ a.livro }}/{{ a.folha or '—' }}
+            {%- if a.folha_final and a.folha_final != a.folha %} a {{ a.folha_final }}{% endif %}
+          {%- else %}<span class="muted">sem livro</span>{% endif %}</td>
+        <td class="small">{{ (a.nomes or a.interessado or '—')[:56] }}</td>
+        <td class="small">{% if a.selo %}{{ a.selo }}{% else %}<span class="badge media">sem selo</span>{% endif %}</td>
+        <td class="small">{% if a.situacao == 'EM_LAVRATURA' %}<span class="badge media">em lavratura</span>
+          {% elif a.situacao != 'LAVRADO' %}<span class="badge alta">{{ a.situacao }}</span>
+          {% else %}<span class="badge ok">lavrado</span>{% endif %}</td>
+        {# APAGAR O RASCUNHO, AQUI NA LISTA — relato #78, 17/09/2026: «precisa
+           ser possível apagar rascunhos, direto na página de atos de livro».
+           **Só para o rascunho**: no ato lavrado a célula fica vazia, porque
+           botão que o servidor recusaria é o balcão descobrindo a regra no
+           clique. Ato no livro se cancela, com rastro, e não se apaga. #}
+        <td class="small">
+          {% if a.situacao == 'EM_LAVRATURA' %}
+          <form method="post" style="display:inline"
+                action="{{ url_for('notas_ato_apagar_rascunho', ato_id=a.id) }}"
+                onsubmit="return confirm('Apagar o rascunho {{ a.id }} — {{ TIPOS_ATO.get(a.tipo, a.tipo) }}{% if a.interessado %}, {{ a.interessado[:40] }}{% endif %}?\n\nO texto fica guardado na auditoria.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="danger small">apagar</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted">Nada encontrado.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{% if paginas > 1 %}
+<div class="actions">
+  {% if pagina > 1 %}<a class="button" href="{{ url_for('notas_atos', pagina=pagina-1, busca=busca, tipo=tipo, familia=familia_chave, livro_id=livro_id, livro=livro_q, folha=folha_q, termo=termo_q) }}">&larr; anterior</a>{% endif %}
+  {% if pagina < paginas %}<a class="button" href="{{ url_for('notas_atos', pagina=pagina+1, busca=busca, tipo=tipo, familia=familia_chave, livro_id=livro_id, livro=livro_q, folha=folha_q, termo=termo_q) }}">próxima &rarr;</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

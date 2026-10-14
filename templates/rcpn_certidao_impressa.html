@@ -1,0 +1,177 @@
+{#
+  Impressão pelos modelos 1/15, 10 e 12 do E-Ofício (tbModelosRCPN desta casa).
+  Papel de segurança já traz o brasão. Selo/QR no rodapé.
+#}<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>{{ quadro.titulo }} n. {{ certidao.numero }}/{{ certidao.ano }}</title>
+<style>
+  @page { size: A4 portrait; margin: 8mm 10mm 8mm 10mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; }
+  .folha { width: 190mm; margin: 0 auto; }
+  .titulo { text-align: center; font-size: 14.5pt; font-weight: 700;
+            letter-spacing: .5pt; margin: 0 0 3mm; }
+  table.m { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.m td { border: 0.7pt solid #000; vertical-align: top;
+               padding: 1.1mm 1.8mm 1.6mm; }
+  .rot { display: block; font-size: 7pt; font-weight: 700; letter-spacing: .2pt;
+         margin-bottom: .4mm; }
+  .val { font-size: 10.5pt; min-height: 3.4mm; }
+  .c { text-align: center; }
+  .mat { font-family: "Courier New", Consolas, monospace; font-weight: 700;
+         font-size: 11pt; letter-spacing: .2pt; }
+  .dma { display: flex; gap: 4mm; justify-content: space-around; }
+  .dma span { display: inline-block; min-width: 8mm; text-align: center; }
+  .alta { min-height: 16mm; }
+  .pe { margin-top: 4mm; font-size: 8.5pt; line-height: 1.35; }
+  .pe .casa { font-weight: 700; text-align: center; margin-bottom: 1mm; }
+  .cols { display: grid; grid-template-columns: 1fr 48mm; gap: 4mm; align-items: end; }
+  .qr svg { width: 22mm; height: 22mm; display: block; margin: 0 auto; }
+  .selo-n { font-family: "Courier New", monospace; font-weight: 700; font-size: 8pt;
+            text-align: center; margin-top: 1mm; }
+  .ass { margin-top: 8mm; text-align: center; }
+  .ass .ln { border-top: 0.7pt solid #000; width: 70mm; margin: 0 auto 1.5mm; }
+  .cancelada { text-align: center; font-weight: 700; border: 1.2pt solid #7a1f1f;
+               color: #7a1f1f; padding: 2mm; margin-bottom: 3mm; }
+  @media screen {
+    body { background: #cfd6de; padding: 10px; }
+    .folha { background: #fff; padding: 8mm 10mm; box-shadow: 0 1px 8px rgba(0,0,0,.28); }
+    .aviso { width: 190mm; margin: 0 auto 8px; background: #fff; padding: 10px 12px;
+             font-size: 12px; border-left: 4px solid #1f5e8c; }
+    .barra { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+    .barra a, .barra button { font: 13px Arial, sans-serif; border: 1px solid #b9c5cd;
+      border-radius: 6px; background: #fff; padding: 8px 12px; cursor: pointer;
+      text-decoration: none; color: #1d3443; }
+    .barra .primary { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }
+  }
+  @media print { .naoimprime { display: none !important; } }
+</style>
+</head>
+<body>
+<div class="naoimprime aviso">
+  <div class="barra">
+    <button class="primary" onclick="window.print()">Imprimir</button>
+    <a href="{{ url_for('rcpn_certidao', certidao_id=certidao.id) }}">&larr; Voltar</a>
+  </div>
+  Modelo da casa (E-Ofício). A4 retrato, 100%, papel de segurança.
+</div>
+<div class="folha">
+  {% if certidao.cancelada_em %}
+  <div class="cancelada">CERTIDÃO CANCELADA — {{ certidao.cancelada_motivo or '' }}</div>
+  {% endif %}
+  <div class="titulo">{{ quadro.titulo }}</div>
+
+{% if quadro.especie == 'NASCIMENTO' %}
+  <table class="m">
+    <tr><td colspan="12"><span class="rot">NOME:</span><div class="val c">{{ quadro.nome }}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">CPF</span><div class="val c">{{ quadro.cpf }}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">MATRÍCULA N°</span><div class="val mat c">{{ quadro.matricula }}</div></td></tr>
+    <tr>
+      <td colspan="8"><span class="rot">DATA DE NASCIMENTO POR EXTENSO</span><div class="val">{{ quadro.data_fato_extenso }}</div></td>
+      <td colspan="4"><span class="rot">DIA &nbsp; MÊS &nbsp; ANO</span>
+        <div class="val dma"><span>{{ quadro.dma_fato.dia }}</span><span>{{ quadro.dma_fato.mes }}</span><span>{{ quadro.dma_fato.ano }}</span></div></td>
+    </tr>
+    <tr>
+      <td colspan="4"><span class="rot">HORA DE NASCIMENTO</span><div class="val">{{ quadro.hora }}</div></td>
+      <td colspan="5"><span class="rot">NATURALIDADE</span><div class="val">{% if quadro.naturalidade %}{{ quadro.naturalidade }}{% if quadro.naturalidade_uf %}/{{ quadro.naturalidade_uf }}{% endif %}{% endif %}</div></td>
+      <td colspan="3"><span class="rot">SEXO</span><div class="val">{{ quadro.sexo }}</div></td>
+    </tr>
+    <tr>
+      <td colspan="5"><span class="rot">MUNICÍPIO DE REGISTRO E UNIDADE DA FEDERAÇÃO</span><div class="val">{{ quadro.municipio_registro }}</div></td>
+      <td colspan="7"><span class="rot">LOCAL, MUNICÍPIO DE NASCIMENTO E UF</span><div class="val">{{ quadro.local_nascimento }}{% if quadro.municipio_nascimento %}{{ ', ' if quadro.local_nascimento else '' }}{{ quadro.municipio_nascimento }}{% if quadro.municipio_nascimento_uf %}/{{ quadro.municipio_nascimento_uf }}{% endif %}{% endif %}</div></td>
+    </tr>
+    <tr><td colspan="12"><span class="rot">FILIAÇÃO:</span><div class="val">{{ quadro.filiacao }}</div></td></tr>
+    <tr>
+      <td colspan="6"><span class="rot">AVÓS MATERNOS:</span><div class="val">{{ quadro.avos_maternos }}</div></td>
+      <td colspan="6"><span class="rot">AVÓS PATERNOS:</span><div class="val">{{ quadro.avos_paternos }}</div></td>
+    </tr>
+    <tr><td colspan="12"><span class="rot">GÊMEO NOME E MATRÍCULA DOS GÊMEOS</span><div class="val">{{ quadro.gemeo or 'NÃO' }}</div></td></tr>
+    <tr>
+      <td colspan="7"><span class="rot">DATA DO REGISTRO POR EXTENSO</span><div class="val">{{ quadro.data_registro_extenso }}</div></td>
+      <td colspan="5"><span class="rot">NÚMERO DA DECLARAÇÃO DE NASCIDO VIVO</span><div class="val">{{ quadro.dnv }}</div></td>
+    </tr>
+    <tr><td colspan="12" class="alta"><span class="rot">OBSERVAÇÕES/AVERBAÇÕES A ACRESCER:</span><div class="val">{{ quadro.anotacoes or 'Não há.' }}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">ANOTAÇÕES DE CADASTRO:</span><div class="val">{{ quadro.anotacoes_cadastro or 'Não há.' }}</div></td></tr>
+  </table>
+
+{% elif quadro.especie in ('CASAMENTO','CASAMENTO_RELIGIOSO') %}
+  <table class="m">
+    <tr><td colspan="12"><span class="rot">NOMES</span>
+      {% for c in quadro.conjuges %}
+      <div class="val">{{ c.nome_atual }}{% if c.cpf %} &nbsp; CPF: {{ c.cpf }}{% endif %}</div>
+      {% endfor %}
+    </td></tr>
+    <tr><td colspan="12"><span class="rot">MATRÍCULA N°</span><div class="val mat c">{{ quadro.matricula }}</div></td></tr>
+    <tr><td colspan="12" class="alta"><span class="rot">NOMES COMPLETOS DE SOLTEIRO, DATAS E LOCALIDADES DE NASCIMENTO, NACIONALIDADE E FILIAÇÃO DOS CÔNJUGES</span>
+      <div class="val">{{ quadro.qualificacao_conjuges }}</div></td></tr>
+    <tr>
+      <td colspan="8"><span class="rot">DATA DE REGISTRO DO CASAMENTO</span><div class="val">{{ quadro.data_registro_extenso }}</div></td>
+      <td colspan="4"><span class="rot">DIA &nbsp; MÊS &nbsp; ANO</span>
+        <div class="val dma"><span>{{ quadro.dma_registro.dia }}</span><span>{{ quadro.dma_registro.mes }}</span><span>{{ quadro.dma_registro.ano }}</span></div></td>
+    </tr>
+    <tr><td colspan="12"><span class="rot">REGIME DE BENS DO CASAMENTO</span><div class="val c">{{ quadro.regime }}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">NOME QUE CADA UM DOS CÔNJUGES PASSOU A UTILIZAR</span>
+      {% for c in quadro.conjuges %}<div class="val">{{ c.nome_pos }}</div>{% endfor %}</td></tr>
+    <tr><td colspan="12" class="alta"><span class="rot">OBSERVAÇÕES E AVERBAÇÕES:</span><div class="val">{{ quadro.anotacoes or 'Não há.' }}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">ANOTAÇÕES DE CADASTRO</span><div class="val">{{ quadro.anotacoes_cadastro or 'Não há.' }}</div></td></tr>
+  </table>
+
+{% else %}
+  <table class="m">
+    <tr><td colspan="12"><span class="rot">NOME:</span><div class="val c">{{ quadro.nome }}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">CPF Nº</span><div class="val c">{{ quadro.cpf }}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">MATRÍCULA:</span><div class="val mat c">{{ quadro.matricula }}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">SEXO COR ESTADO CIVIL E IDADE</span>
+      <div class="val">{{ quadro.sexo }}{% if quadro.idade %} {{ quadro.idade }}{% endif %}{% if quadro.estado_civil %}, {{ quadro.estado_civil }}{% endif %}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">NATURALIDADE DOCUMENTO DE IDENTIFICAÇÃO TÍTULO DE ELEITOR</span>
+      <div class="val">{% if quadro.naturalidade %}{{ quadro.naturalidade }}{% if quadro.naturalidade_uf %}/{{ quadro.naturalidade_uf }}{% endif %}{% endif %}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">FILIAÇÃO E RESIDÊNCIA</span><div class="val">{{ quadro.genitores }}</div></td></tr>
+    <tr>
+      <td colspan="8"><span class="rot">DATA E HORA DE FALECIMENTO</span><div class="val">{{ quadro.data_fato_extenso }}{% if quadro.hora %} às {{ quadro.hora }}{% endif %}</div></td>
+      <td colspan="4"><span class="rot">DIA &nbsp; MÊS &nbsp; ANO</span>
+        <div class="val dma"><span>{{ quadro.dma_fato.dia }}</span><span>{{ quadro.dma_fato.mes }}</span><span>{{ quadro.dma_fato.ano }}</span></div></td>
+    </tr>
+    <tr><td colspan="12"><span class="rot">LOCAL DE FALECIMENTO</span><div class="val">{{ quadro.local_falecimento }}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">CAUSA DA MORTE</span><div class="val">{{ quadro.causa }}</div></td></tr>
+    <tr>
+      <td colspan="6"><span class="rot">SEPULTAMENTO/CREMAÇÃO (MUNICÍPIO E CEMITÉRIO, SE CONHECIDO)</span><div class="val">{{ quadro.sepultamento }}</div></td>
+      <td colspan="6"><span class="rot">DECLARANTE</span><div class="val">{{ quadro.declarante }}</div></td>
+    </tr>
+    <tr><td colspan="12"><span class="rot">NOME E NÚMERO DE DOCUMENTO DO MÉDICO QUE ATESTOU O ÓBITO</span><div class="val">{{ quadro.medico }} {{ quadro.crm }}</div></td></tr>
+    <tr><td colspan="12" class="alta"><span class="rot">OBSERVAÇÕES AVERBAÇÕES:</span><div class="val">{{ quadro.anotacoes or 'Não há.' }}</div></td></tr>
+    <tr><td colspan="12"><span class="rot">ANOTAÇÕES DE CADASTRO</span><div class="val">{{ quadro.anotacoes_cadastro or 'Não há.' }}</div></td></tr>
+  </table>
+{% endif %}
+
+  <div class="pe">
+    <div class="casa">O Conteúdo da Certidão é verdadeiro. Dou fé.</div>
+    <div class="cols">
+      <div>
+        <div class="casa">{{ quadro.casa }}</div>
+        <div class="c">COMARCA DE {{ quadro.cidade|upper }} – {{ quadro.uf }}</div>
+        <div class="c">{{ quadro.cidade }}/{{ quadro.uf }}, {{ quadro.data_comercial }}.</div>
+        <div>ENDEREÇO: {{ quadro.rua }}</div>
+        <div>E-mail: {{ quadro.email }}{% if quadro.telefone %} / TELEFONE: {{ quadro.telefone }}{% endif %}</div>
+        <div class="ass">
+          <div class="ln"></div>
+          <div>{{ quadro.oficial }}</div>
+          <div>{{ quadro.cargo }}</div>
+        </div>
+      </div>
+      <div>
+        {% if marca.qr %}<div class="qr">{{ marca.qr|safe }}</div>{% endif %}
+        {% if marca.selo %}<div class="selo-n">{{ marca.selo }}</div>
+        <div class="c" style="font-size:7pt">selo.tjma.jus.br</div>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+window.addEventListener("load", function () {
+  setTimeout(function () { window.print(); }, 180);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,250 @@
+{% extends 'base.html' %}
+{% block title %}Caixa — Administrativo{% endblock %}
+{% block heading %}<h1>Caixa — {{ operador }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('caixa_protocolos') }}">Protocolo geral</a>
+  <a class="button" href="{{ url_for('caixa_recibos') }}">Recibos</a>
+  <a class="button" href="{{ url_for('caixa_emolumentos') }}">Tabela de emolumentos</a>
+</div>
+
+{% if not aberto %}
+<section class="panel">
+  <div class="panel-head"><span>Caixa fechado</span></div>
+  <div style="padding:14px">
+    <p class="small">Cada pessoa tem o seu caixa, e ele é aberto uma vez por dia.
+      O saldo inicial é o dinheiro que já está na gaveta quando o expediente começa.</p>
+    <form method="post" class="grid2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Saldo inicial (dinheiro em caixa)
+        <input name="saldo_inicial" placeholder="0,00"></label>
+      <div style="align-self:end"><button class="primary" name="acao" value="abrir">
+        Abrir o caixa de hoje</button></div>
+    </form>
+  </div>
+</section>
+{% else %}
+
+<section class="cards">
+  <div class="stat"><strong>{{ resumo.saldo_inicial|centavos_reais }}</strong><small>saldo inicial</small></div>
+  <div class="stat"><strong>{{ resumo.entradas|centavos_reais }}</strong><small>entradas</small></div>
+  <div class="stat"><strong>{{ resumo.saidas|centavos_reais }}</strong><small>saídas</small></div>
+  <div class="stat"><strong>{{ resumo.saldo|centavos_reais }}</strong><small>saldo</small></div>
+  <div class="stat"><strong>{{ resumo.em_especie|centavos_reais }}</strong><small>em espécie na gaveta</small></div>
+</section>
+
+<div class="notice">
+  <strong>Em espécie</strong> é o que deve estar na gaveta: só dinheiro. PIX e cartão entram
+  no saldo, mas não se conferem contando cédula.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Lançar</span></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Natureza
+      <select name="natureza">
+        {% for cod, (sentido, rotulo) in NATUREZAS.items() %}
+          {% if cod != 'ESTORNO' %}<option value="{{ cod }}">{{ rotulo }} ({{ sentido|lower }})</option>{% endif %}
+        {% endfor %}
+      </select></label>
+    <label>Forma de pagamento
+      <select name="forma_pagamento">
+        {% for cod, rotulo in FORMAS.items() %}<option value="{{ cod }}">{{ rotulo }}</option>{% endfor %}
+      </select></label>
+    <label>Valor <input name="valor" placeholder="0,00" required></label>
+    <label>Protocolo <input name="protocolo" placeholder="2026.08.146"></label>
+    <label>Pagador <input name="pagador"></label>
+    <label>CPF/CNPJ <input name="pagador_documento"></label>
+    <label class="span2">Descrição <input name="descricao"></label>
+    <details class="span2">
+      <summary class="small muted">Detalhar emolumentos e fundos (opcional)</summary>
+      <div class="form-grid" style="margin-top:10px">
+        <label>Emolumentos <input name="emolumentos" placeholder="0,00"></label>
+        <label>Selo <input name="selo"></label>
+        <label>FERC <input name="ferc" placeholder="0,00"></label>
+        <label>FADEP <input name="fadep" placeholder="0,00"></label>
+        <label>FEMP <input name="femp" placeholder="0,00"></label>
+        <label>FERRFIS <input name="ferrfis" placeholder="0,00"></label>
+      </div>
+      <p class="small muted">Só preencha se o ato foi selado. O protocolo do caixa é de
+        controle e recibo — não gera selo, e o recibo sai sem a linha de composição
+        quando não há nada aqui.</p>
+    </details>
+    <div class="span2"><button class="primary" name="acao" value="lancar">Lançar</button>
+      <span class="small muted">O lançamento recebe número de ordem próprio, contínuo no ano.</span></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Movimento de hoje</span>
+    <span class="small muted">{{ lancamentos|length }} lançamento(s)</span>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Hora</th><th>Natureza</th><th>Protocolo</th><th>Pagador</th>
+      <th>Forma</th><th style="text-align:right">Valor</th><th></th></tr></thead>
+    <tbody>
+    {% for l in lancamentos %}
+      <tr {% if l.estornado or l.excluido %}class="pendente"{% endif %}>
+        <td><strong>{% if l.numero %}{{ l.numero }}/{{ l.ano }}{% else %}—{% endif %}</strong></td>
+        <td class="small">{{ l.hora or '—' }}</td>
+        <td>{{ NATUREZAS.get(l.natureza, [l.sentido, l.natureza])[1] }}
+            {% if l.estornado %}<br><span class="badge alta">estornado</span>{% endif %}
+            {% if l.excluido %}<br><span class="badge alta">excluído</span>
+              <br><span class="small muted">{{ l.motivo_exclusao }}</span>{% endif %}
+            {% if l.editado_em %}<br><span class="badge media">editado</span>{% endif %}
+            {% if l.sentido == 'ESTORNO' %}<br><span class="badge">estorno</span>{% endif %}</td>
+        <td class="small">{{ l.protocolo_numero or '—' }}</td>
+        <td class="small">{{ l.pagador or '—' }}</td>
+        <td class="small">{{ FORMAS.get(l.forma_pagamento, l.forma_pagamento or '—') }}</td>
+        <td style="text-align:right">{% if l.sentido == 'SAIDA' %}−{% endif %}{{ l.valor }}</td>
+        <td>
+          {% if not l.estornado and not l.excluido and l.sentido != 'ESTORNO' %}
+            {% if l.recibo_id %}
+              <a class="small" href="{{ url_for('caixa_recibo_odt', recibo_id=l.recibo_id) }}">recibo</a>
+            {% else %}
+              <form method="post" action="{{ url_for('caixa_recibo', lancamento_id=l.id) }}" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="small">emitir recibo</button>
+              </form>
+            {% endif %}
+            <details style="display:inline-block;vertical-align:top">
+              <summary class="small">alterar</summary>
+              <form method="post" class="form-grid" style="margin-top:8px;min-width:340px">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="lancamento_id" value="{{ l.id }}">
+                <label>Valor <input name="valor" value="{{ l.valor }}" required></label>
+                <label>Natureza
+                  <select name="natureza">
+                    {% for cod, (sent, rot) in NATUREZAS.items() %}
+                      {% if cod != 'ESTORNO' %}
+                      <option value="{{ cod }}" {% if l.natureza == cod %}selected{% endif %}>{{ rot }}</option>
+                      {% endif %}
+                    {% endfor %}
+                  </select></label>
+                <label>Forma
+                  <select name="forma_pagamento">
+                    {% for cod, rot in FORMAS.items() %}
+                      <option value="{{ cod }}" {% if l.forma_pagamento == cod %}selected{% endif %}>{{ rot }}</option>
+                    {% endfor %}
+                  </select></label>
+                <label>Pagador <input name="pagador" value="{{ l.pagador or '' }}"></label>
+                <label class="span2">Descrição <input name="descricao" value="{{ l.descricao or '' }}"></label>
+                <div class="span2"><button class="small" name="acao" value="editar">salvar alteração</button>
+                  <span class="small muted">O valor anterior fica no histórico.</span></div>
+              </form>
+            </details>
+            <form method="post" style="display:inline"
+                  onsubmit="return confirm('Estornar este lançamento? Ele continua na lista, marcado.')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="lancamento_id" value="{{ l.id }}">
+              <input name="motivo" placeholder="motivo do estorno" size="16" required>
+              <button class="small" name="acao" value="estornar">estornar</button>
+            </form>
+            <form method="post" style="display:inline"
+                  onsubmit="return confirm('Excluir o lançamento {% if l.numero %}{{ l.numero }}/{{ l.ano }}{% else %}sem número de ordem{% endif %}? Ele sai das contas, mas o registro fica guardado com o motivo.')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="lancamento_id" value="{{ l.id }}">
+              <input name="motivo" placeholder="motivo da exclusão" size="16" required>
+              <button class="small" name="acao" value="excluir">excluir</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted small">Nenhum lançamento ainda.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Fechar o caixa</span></div>
+  <div style="padding:14px">
+    <p class="small">Conte o dinheiro da gaveta e informe o que encontrou. O sistema
+      guarda <strong>o contado ao lado do esperado</strong> — a diferença fica registrada,
+      não é corrigida por cima.</p>
+    <form method="post" class="grid2"
+          onsubmit="return confirm('Fechar o caixa? Depois de fechado não se lança mais nele.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Esperado em espécie <input value="{{ resumo.em_especie|centavos_reais }}" disabled></label>
+      <label>Contado <input name="valor_contado" placeholder="0,00" required></label>
+      <label class="span2">Justificativa (obrigatória se houver diferença)
+        <input name="justificativa"></label>
+      <div><button name="acao" value="fechar">Fechar o caixa</button></div>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+{# A CONFERÊNCIA DO CAIXA — um ato que não existia até 28/08/2026.
+   `conferido_por` e `conferido_em` estavam no esquema desde o começo e nunca
+   foram escritos: NULL em 2.758 de 2.758. Não era campo esquecido — era ato
+   que faltava. #}
+{% if a_conferir and user.role in ['ADMIN','MANAGER'] %}
+<section class="panel">
+  <div class="panel-head"><span>Caixas fechados esperando conferência</span></div>
+  <div style="padding:14px 14px 0"><small>
+    <strong>Fechar não é conferir</strong>, e são duas pessoas: quem atende
+    fecha o próprio caixa e conta o próprio dinheiro; quem confere é você,
+    depois. Se fossem a mesma pessoa, a conferência não valeria nada — e é
+    justamente «quem conferiu este dia» que a correição pergunta.
+  </small></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Data</th><th>Operador</th>
+      <th style="text-align:right">Esperado</th>
+      <th style="text-align:right">Contado</th>
+      <th style="text-align:right">Diferença</th>
+      <th>Justificativa</th><th></th></tr></thead>
+    <tbody>{% for c in a_conferir %}
+      <tr>
+        <td>{{ fmt_date(c.data) }}</td>
+        <td class="small">{{ c.operador_nome }}</td>
+        <td style="text-align:right">{{ c.valor_esperado or '—' }}</td>
+        <td style="text-align:right">{{ c.valor_contado or '—' }}</td>
+        <td style="text-align:right">
+          {% if c.diferenca and c.diferenca not in ['0,00','0'] %}
+            <span class="badge alta">{{ c.diferenca }}</span>
+          {% else %}{{ c.diferenca or '—' }}{% endif %}</td>
+        <td class="small">{{ c.justificativa or '' }}</td>
+        <td>
+          <form method="post" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="acao" value="conferir">
+            <input type="hidden" name="caixa_id" value="{{ c.id }}">
+            <button class="button">Conferi</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if anteriores %}
+<section class="panel">
+  <div class="panel-head"><span>Seus caixas anteriores</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Data</th><th>Situação</th><th style="text-align:right">Esperado</th>
+      <th style="text-align:right">Contado</th><th style="text-align:right">Diferença</th>
+      <th>Justificativa</th></tr></thead>
+    <tbody>{% for c in anteriores %}
+      <tr>
+        <td>{{ fmt_date(c.data) }}</td>
+        <td>{% if c.situacao == 'ABERTO' %}<span class="badge media">aberto</span>
+            {% else %}<span class="badge ok">fechado</span>{% endif %}</td>
+        <td style="text-align:right">{{ c.valor_esperado or '—' }}</td>
+        <td style="text-align:right">{{ c.valor_contado or '—' }}</td>
+        <td style="text-align:right">
+          {% if c.diferenca and c.diferenca not in ['0,00','0'] %}
+            <span class="badge alta">{{ c.diferenca }}</span>
+          {% else %}{{ c.diferenca or '—' }}{% endif %}</td>
+        <td class="small">{{ c.justificativa or '' }}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

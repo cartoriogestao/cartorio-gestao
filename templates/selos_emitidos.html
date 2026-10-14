@@ -1,0 +1,206 @@
+{% extends 'base.html' %}
+{% block title %}Selos emitidos — Administrativo{% endblock %}
+{% block heading %}<h1>Selos emitidos</h1>{% endblock %}
+{% block content %}
+
+{# CADA TELA DIZ A QUE VEIO — «duas portas para a mesma sala» é o relato #12, e
+   a saída dele não foi apagar uma porta: foi cada uma dizer o que faz. #}
+<p class="muted">
+  Este é o <strong>razão dos selos</strong> — as seis atribuições juntas, que é
+  a tabela que responde «este selo já foi usado?».
+  A <a href="{{ url_for('ri_selos') }}">tela de selos do Registro de Imóveis</a>
+  responde outra pergunta: ela reúne o selo de dentro dos atos daquela
+  atribuição.
+</p>
+
+<section class="cartao">
+  <h2>Procurar</h2>
+  <form method="get" action="{{ url_for('selos_emitidos_lista') }}">
+    <div class="grid">
+      <label>De <small class="muted">(data)</small>
+        <input type="date" name="inicio" value="{{ f.inicio }}"></label>
+      <label>Até
+        <input type="date" name="fim" value="{{ f.fim }}"></label>
+      <label>Especialidade
+        <select name="atribuicao">
+          <option value="">todas</option>
+          {% for a in escolhas.atribuicoes %}
+          <option value="{{ a }}" {% if f.atribuicao == a %}selected{% endif %}>
+            {{ a }}{% if norma.ATRIBUICOES.get(a) %} — {{ norma.ATRIBUICOES[a] }}{% endif %}
+          </option>
+          {% endfor %}
+        </select></label>
+      <label>Usuário
+        <select name="quem">
+          <option value="">todos</option>
+          {% for u in escolhas.usuarios %}
+          <option value="{{ u }}" {% if f.quem == u %}selected{% endif %}>{{ u }}</option>
+          {% endfor %}
+        </select></label>
+      {# O TIPO DO ATO PELO PREFIXO DO NÚMERO: é a especialidade FINA, e é o que
+         o selo impresso carrega. «Quantos selos de notas» quase não separa nada;
+         «quantos de reconhecimento de firma» responde. #}
+      <label>Tipo do ato <small class="muted">(pelo selo)</small>
+        <select name="tipo">
+          <option value="">todos</option>
+          {% for t in escolhas.tipos %}
+          <option value="{{ t.codigo }}" {% if f.tipo == t.codigo %}selected{% endif %}>
+            {{ t.rotulo }} <small class="muted">({{ t.codigo }} · {{ t.quantos }})</small>
+          </option>
+          {% endfor %}
+        </select></label>
+      <label>Ato <small class="muted">(caminho do selador)</small>
+        <select name="caminho">
+          <option value="">todos</option>
+          {% for c in escolhas.caminhos %}
+          <option value="{{ c }}" {% if f.caminho == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Situação
+        <select name="situacao">
+          {% for k, rotulo in escolhas.situacoes.items() %}
+          <option value="{{ k }}" {% if f.situacao == k %}selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Número do selo
+        <input type="text" name="numero" value="{{ f.numero }}"
+               placeholder="parte do código"></label>
+      <label>Agrupar
+        <select name="agrupar">
+          {% for k, rotulo in escolhas.agrupamentos.items() %}
+          <option value="{{ k }}" {% if agrupar == k %}selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select></label>
+    </div>
+    <button class="button" type="submit">Procurar</button>
+    <a class="button secondary" href="{{ url_for('selos_emitidos_lista') }}">Limpar</a>
+  </form>
+  <p class="small muted">
+    As caixas trazem <strong>o que existe no razão</strong> — as
+    {{ escolhas.atribuicoes|length }} atribuições, os {{ escolhas.tipos|length }}
+    tipos de ato, os {{ escolhas.caminhos|length }} caminhos e os
+    {{ escolhas.usuarios|length }} usuários são medidos, e não escritos: lista
+    escrita à mão envelhece na tarde em que se escreve.
+  </p>
+</section>
+
+{# OS NÚMEROS ACOMPANHAM O FILTRO. Contar o razão inteiro embaixo de uma busca
+   por «setembro, da Beatriz» seria o carimbo que mente. #}
+<section class="cartao">
+  <h2>O que este filtro alcança</h2>
+  <div class="table-wrap">
+    <table class="tabela">
+      <tbody>
+        <tr><th>Selos</th><td><strong>{{ conta.total }}</strong></td></tr>
+        <tr><th>Usados num ato</th><td>{{ conta.usados }}</td></tr>
+        {# «NÃO USADO» É O SELO SEM NENHUMA DAS DUAS MARCAS. A primeira versão
+           media só `ato_id` e publicava 9.062 onde são 1.300: sete mil e
+           setecentos selos que a casa usou apareciam como comprados e
+           jogados fora. #}
+        <tr>
+          <th>Obtidos e <strong>não usados</strong></th>
+          <td><strong>{{ conta.orfaos }}</strong>
+              <small class="muted">— selo comprado que não está em ato nenhum</small></td>
+        </tr>
+        <tr><th>Cancelados</th><td>{{ conta.cancelados }}</td></tr>
+        {% if conta.primeiro %}
+        <tr><th>Do primeiro ao último</th>
+            <td>{{ conta.primeiro[:10] }} a {{ conta.ultimo[:10] }}</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {# UM QUADRO SÓ, E NÃO DOIS. O resumo contava «por usuário» por um jeito e o
+     agrupamento da tela por outro — e era assim que os dois podiam discordar.
+     Agora os dois são `por_grupo`. #}
+  {% if grupos|length > 1 %}
+  <h3>{{ escolhas.agrupamentos.get(agrupar, agrupar) }}</h3>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Grupo</th><th>Selos</th><th>Cancelados</th></tr></thead>
+      <tbody>
+      {% for g in grupos %}
+        <tr>
+          <td>{{ g.chave }}</td>
+          <td>{{ g.quantos }}</td>
+          <td>{% if g.cancelados %}{{ g.cancelados }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="cartao">
+  <h2>Os selos</h2>
+  {% if not lista.linhas %}
+    <div class="alert alert-info">
+      Nenhum selo com esses filtros. <strong>Isto não quer dizer que não há
+      selos</strong> — quer dizer que nenhum casa com o que foi pedido.
+    </div>
+  {% else %}
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead>
+        <tr><th>Selo</th><th>Obtido em</th><th>Por</th><th>Especialidade</th>
+            <th>Ato</th><th>Situação</th></tr>
+      </thead>
+      <tbody>
+      {% for x in lista.linhas %}
+        <tr>
+          <td><code class="small">{{ x.numero }}</code><br>
+              <small class="muted">{{ x.tipo_do_ato }}</small></td>
+          <td>{{ (x.obtido_em or '')[:10] }}
+              <small class="muted">{{ (x.obtido_em or '')[11:19] }}</small></td>
+          <td>{{ x.obtido_por or '—' }}</td>
+          <td>{{ x.atribuicao_legivel }}<br>
+              <small class="muted">{{ x.caminho or '' }}</small></td>
+          <td>{% if x.ato_id %}{{ x.tabela }} nº {{ x.ato_id }}
+              {% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>
+            {% if x.situacao == 'CANCELADO' %}
+              <strong>cancelado</strong>
+              <small class="muted">{{ (x.cancelado_em or '')[:10] }}
+                {{ x.motivo_cancelamento or '' }}</small>
+            {% elif x.situacao == 'ORFAO' %}
+              <strong>não usado</strong>
+            {% else %}usado{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="small muted">
+    Página {{ lista.pagina }} de {{ lista.paginas }} —
+    {{ lista.total }} selo(s), {{ lista.por_pagina }} por página.
+  </p>
+  <div class="actions">
+    {# O `agrupar` VAI JUNTO nas duas pontas: sem ele, passar de página trocaria
+       o agrupamento que a pessoa escolheu — e o de baixo é o campo que o
+       redirecionamento precisa ler. #}
+    {% if lista.pagina > 1 %}
+      <a class="button secondary" href="{{ url_for('selos_emitidos_lista',
+         pagina=lista.pagina - 1, agrupar=agrupar, **f) }}">&larr; anterior</a>
+    {% endif %}
+    {% if lista.pagina < lista.paginas %}
+      <a class="button secondary" href="{{ url_for('selos_emitidos_lista',
+         pagina=lista.pagina + 1, agrupar=agrupar, **f) }}">próxima &rarr;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+{# A TELA DIZ QUE NÃO FAZ — e isto vinha do relatório antigo, que foi
+   incorporado em 15/09/2026. Emitir, cancelar ou corrigir selo tem
+   consequência no razão da serventia, e isso se faz no ATO, não numa tela de
+   consulta. Sem esta frase, a tela é a mesma e o que ela NÃO faz some. #}
+<p class="small muted">
+  <strong>Esta tela só lê.</strong> Emitir, cancelar ou corrigir selo se faz no
+  ato da atribuição — aqui se pesquisa o que já aconteceu.
+</p>
+
+{% endblock %}

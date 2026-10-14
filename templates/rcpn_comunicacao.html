@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Comunicação {{ c.competencia }}{% endblock %}
+{% block content %}
+<h1>{{ d.nome }}</h1>
+<p class="muted">Competência {{ c.competencia }} · {{ d.artigo }}</p>
+
+{% if c.teor %}
+<div class="card">
+  <p><strong>Enviada em {{ c.enviada_em }}</strong>
+     {% if c.canal %}por {{ c.canal }}{% endif %}
+     — protocolo <strong>{{ c.protocolo }}</strong>, com {{ c.quantos }} óbito(s).</p>
+  <p class="small muted">O texto abaixo está <strong>congelado</strong>: é o que
+     saiu, e é o que se mostra numa correição. Guarda-se por dois anos
+     ({{ norma.ARTIGO_DO_ARQUIVO }}).</p>
+  <p class="small muted">Autenticidade: {{ c.hash_teor }}</p>
+</div>
+<pre class="card" style="white-space:pre-wrap;background:#fff">{{ c.teor }}</pre>
+
+{% elif c.situacao == 'DISPENSADA' %}
+<div class="card">
+  <p><strong>Dispensada.</strong> {{ c.motivo }}</p>
+</div>
+
+{% elif erro %}
+<div class="alerta danger"><p>{{ erro }}</p></div>
+
+{% else %}
+<div class="card">
+  <p><strong>Como a comunicação vai ficar.</strong> Nada foi gravado ainda.</p>
+  <p>{{ previa.quantos }} de {{ previa.quantos_no_mes }} óbito(s) do mês entram
+     neste destino.</p>
+  {% if previa.ficam_de_fora %}
+  <p class="small muted">Ficam de fora, pelo filtro do {{ d.artigo }}:
+     {{ previa.ficam_de_fora | map(attribute='nome') | join(', ') }}.</p>
+  {% endif %}
+</div>
+
+<pre class="card" style="white-space:pre-wrap;background:#fff">{{ previa.texto }}</pre>
+
+<form method="post" action="{{ url_for('rcpn_comunicacao_resolver', comunicacao_id=c.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="acao" value="ENVIADA">
+  <h2>Registrar que saiu</h2>
+  <p><label>Por onde <input name="canal" placeholder="ofício, INFODIP, malote"></label>
+     <label>Data <input type="date" name="quando"></label></p>
+  <p><label>Protocolo ou comprovante <input name="protocolo" required></label><br>
+     <span class="small muted">Sem ele não há como mostrar, numa correição, que
+     a comunicação saiu — e {{ norma.TEXTO_DA_OMISSAO|lower }}</span></p>
+  <p><button class="button">Registrar o envio</button></p>
+</form>
+
+<details>
+  <summary>Dispensar esta comunicação</summary>
+  <form method="post" action="{{ url_for('rcpn_comunicacao_resolver', comunicacao_id=c.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="DISPENSAR">
+    <p><label>Motivo<br><input name="motivo" size="60" required></label></p>
+    <button class="button secondary">Dispensar com motivo</button>
+  </form>
+</details>
+{% endif %}
+
+{% if d.onde %}
+<div class="card"><p class="small muted"><strong>Onde mandar:</strong> {{ d.onde }}</p></div>
+{% endif %}
+
+<p><a href="{{ url_for('rcpn_comunicacoes') }}">← voltar</a></p>
+{% endblock %}

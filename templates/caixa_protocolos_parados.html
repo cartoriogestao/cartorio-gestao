@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Protocolos parados — Administrativo{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Protocolos parados</h1>
+  <a class="button" href="{{ url_for('caixa_protocolos') }}">&larr; Todos os protocolos</a>
+</div>
+
+{# Sem esta tela a função de encerrar não existiria na prática: são centenas,
+   perdidos numa lista de mais de vinte mil. Procurar um a um seria o mesmo que
+   não ter por onde encerrar. #}
+
+<section class="panel">
+  <div class="panel-head"><span>{{ total }}
+    protocolo{{ '' if total == 1 else 's' }} aberto{{ '' if total == 1 else 's' }}
+    que nunca ganhou item</span></div>
+  <div style="padding:14px">
+    {% if not parados %}
+      <p><strong>Nenhum protocolo parado.</strong> Todo atendimento aberto já tem
+      pelo menos um item lançado.</p>
+    {% else %}
+      <p>Estes atendimentos foram abertos e <strong>nunca ganharam um item</strong>:
+      ninguém lançou custa neles, e nada foi cobrado. Quase sempre é o orçamento
+      que o cliente pediu e não voltou para fazer.</p>
+      <p class="small muted">Estão do mais antigo para o mais novo &mdash; quem
+      está parado há mais tempo é quem menos vai voltar. Encerrar é na ficha de
+      cada um, com o motivo escrito.</p>
+      {% if total > parados|length %}
+      <p class="small"><strong>Mostrando {{ parados|length }} de {{ total }}.</strong>
+        Os {{ total - parados|length }} restantes aparecem depois que estes
+        saírem da lista &mdash; lista cortada que não diz que cortou faz quem a
+        lê achar que acabou.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+</section>
+
+{% if parados %}
+<section class="panel">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Protocolo</th><th>Aberto em</th><th>Atribuição</th>
+      <th>Interessado</th><th>Assunto</th><th></th></tr></thead>
+    <tbody>
+    {% for p in parados %}
+      <tr>
+        <td class="small"><a href="{{ url_for('caixa_protocolo', protocolo_id=p.id) }}">
+          {{ p.numero }}</a></td>
+        <td class="small">{{ fmt_date(p.data_abertura) }}</td>
+        <td class="small">{{ p.atribuicao or '—' }}</td>
+        <td class="small">{{ (p.interessado or '—')[:34] }}</td>
+        <td class="small">{{ (p.assunto or '—')[:44] }}</td>
+        <td class="small actions-cell">
+          <a class="button" href="{{ url_for('caixa_protocolo', protocolo_id=p.id) }}">Abrir</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Retificação, restauração e suprimento{% endblock %}
+{% block content %}
+<h1>Retificação, restauração e suprimento</h1>
+
+<div class="card">
+  <p>Os três <strong>não são a mesma coisa</strong>, e cada um tem o seu
+     requisito:</p>
+  <table>
+    <thead><tr><th>Instituto</th><th>O quê</th><th>Artigo</th>
+               <th>Requisito</th></tr></thead>
+    <tbody>
+    {% for x in norma.INSTITUTOS %}
+      <tr>
+        <td><strong>{{ x.nome }}</strong></td>
+        <td class="small">{{ x.o_que }}</td>
+        <td class="small">{{ x.artigo }}</td>
+        <td class="small">{{ x.requisito|forte }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="small muted">
+    Juntá-los num «corrigir assento» faria escolher o caminho errado — e o
+    caminho errado só aparece meses depois.
+  </p>
+</div>
+
+<div class="alerta">
+  <p><strong>A consulta à CRC é condição de validade da decisão</strong>
+     <span class="small">({{ norma.CONSULTA_CRC.artigo }})</span>. Sem ela o
+     sistema não deixa decidir — não é aviso, é recusa.</p>
+  <p class="small muted">
+    {{ norma.CONSULTA_CRC.texto|forte }} Se achar duplicidade,
+    {{ norma.CONSULTA_CRC.se_achar|forte }}.
+  </p>
+</div>
+
+<p><a class="button" href="{{ url_for('rcpn_retificacao_nova') }}">Abrir processo</a></p>
+
+<h2>Em andamento ({{ abertos|length }})</h2>
+{% if abertos %}
+<table>
+  <thead>
+    <tr><th>Nº</th><th>Instituto</th><th>Requerente</th><th>O que se pede</th>
+        <th>Prazo</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for p in abertos %}
+    <tr>
+      <td>{{ p.numero }}/{{ p.ano }}</td>
+      <td class="small">{{ p.instituto|capitalize }}</td>
+      <td>{{ p.requerente_nome }}</td>
+      <td class="small">{{ p.o_que_se_pede }}</td>
+      <td class="small">
+        {% if not p.prazo_ate %}
+          <span class="muted">ainda não instruído</span>
+        {% elif p.id in estourados %}
+          <strong class="danger">venceu em {{ p.prazo_ate }}</strong>
+        {% else %}
+          até {{ p.prazo_ate }}
+        {% endif %}
+      </td>
+      <td class="small">
+        <a href="{{ url_for('rcpn_retificacao', processo_id=p.id) }}">abrir</a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Nenhum processo em andamento.</p>
+{% endif %}
+
+{# O PRAZO FICA FORA DO `if`: quem abre a tela vazia tambem precisa saber de
+   quantos dias ele e e de quando conta. Dentro, a norma so apareceria para quem
+   ja tem processo — e quem esta abrindo o primeiro e justamente quem nao sabe. #}
+<p class="small muted">
+  O prazo é de <strong>{{ norma.PRAZO_DECISAO_DIAS_UTEIS }} dias úteis</strong>,
+  contados {{ norma.DE_QUANDO_CONTA|forte }}.
+</p>
+
+<div class="card">
+  <h2 style="margin-top:0">Duas coisas que evitam recusa errada no balcão</h2>
+  <p><strong>O pedido pode ser verbal</strong> — art. 348, § 1º, III. Quem chega
+     dizendo «meu nome está errado na certidão» está formulando um requerimento,
+     e o oficial ou preposto o reduz a termo <strong>na hora</strong>, colhendo a
+     assinatura do declarante. Mandar a pessoa voltar com petição é negar o que a
+     norma permite.</p>
+  <p><strong>Mandado de outra comarca não precisa de «cumpra-se» daqui</strong> —
+     {{ norma.MANDADO_DE_OUTRA_COMARCA.artigo }}:
+     {{ norma.MANDADO_DE_OUTRA_COMARCA.no_balcao|forte }}.</p>
+  <p class="small muted">E a petição pode ser assinada por
+     {% for q in norma.QUEM_ASSINA %}{{ q }}{% if not loop.last %}, {% endif %}{% endfor %}
+     (art. 352, redação do Provimento nº 8/2023).</p>
+</div>
+{% endblock %}

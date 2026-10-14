@@ -1,0 +1,147 @@
+{#
+  A JANELA DA AJUDA — em TODA tela, e não numa só.
+
+  POR QUE ELA NÃO É UM ITEM DE MENU
+      A ajuda tinha uma tela, no menu Administrativo. Quem estava com dúvida no
+      meio de um ato precisava sair do que estava fazendo para chegar até ela —
+      e perder o que tinha digitado. Ajuda que cobra o abandono da tarefa é
+      ajuda que ninguém usa na hora em que precisa dela.
+
+  POR QUE ELA MORA NO `base.html`
+      É a mesma decisão da lupa das assinaturas, e pelo mesmo motivo escrito
+      lá: ligada tela a tela, a primeira que alguém criasse amanhã nasceria sem
+      ajuda — e sem aviso nenhum de que nasceu.
+
+  SEM JAVASCRIPT ELA CONTINUA FUNCIONANDO
+      O botão é um LINK para a tela inteira, já com a tela de origem no
+      endereço, e os dois formulários apontam para rotas que respondem página.
+      O `ajuda.js` só transforma isso numa gaveta que não faz a página recarregar.
+
+  QUEM PODE PERGUNTAR É O DOMÍNIO QUEM DIZ
+      `ajuda_liberada` vem do banco (`aj_config`), e não de um papel escrito
+      aqui. Esconder o formulário é educação de tela; a recusa de verdade está
+      em `ajuda.exigir_permissao`.
+
+  AVISAR PROBLEMA APARECE PARA TODOS, e isso é deliberado: perguntar à API
+  gasta e manda dado para fora, avisar um problema não faz nem uma coisa nem
+  outra. Quem topa com o defeito é o balcão.
+#}
+<div class="ajuda-caixa" data-ajuda
+     data-tela="{{ ajuda_tela }}"
+     data-caminho="{{ request.path }}"
+     data-liberada="{{ '1' if ajuda_liberada else '0' }}"
+     data-url-janela="{{ url_for('ajuda_janela') }}"
+     data-url-problema="{{ url_for('ajuda_problema') }}">
+
+  <a class="ajuda-chamar" href="{{ url_for('ajuda_consultar') }}?onde={{ ajuda_tela }}"
+     data-ajuda-abrir>
+    Ajuda desta tela{% if ajuda_problemas_aqui %}
+    {# O NUMERO SOZINHO NAO DIZ NADA, e o oficial disse isso em 27/08/2026:
+       «a aba ajuda fica acumulando itens de notificacao que eu nao entendo.
+       Esta com 2 e nao sei o que e». O rotulo estava no `title`, que so
+       aparece se a pessoa parar o mouse em cima — e ninguem para o mouse em
+       cima de um numero que nao sabe o que e.
+
+       Agora ele traz a palavra junto. Marca que nao se explica sozinha e
+       marca que assusta. #}
+    <span class="ajuda-marca"
+          title="relatos de problema feitos nesta tela, ainda em aberto">{{
+      ajuda_problemas_aqui|length }} relato{{ '' if ajuda_problemas_aqui|length == 1 else 's' }}</span>{% endif %}
+  </a>
+
+  <section class="ajuda-gaveta" data-ajuda-gaveta hidden>
+    <header class="ajuda-gaveta-topo">
+      <strong>Ajuda desta tela</strong>
+      <button type="button" class="ajuda-fechar" data-ajuda-fechar
+              aria-label="Fechar">×</button>
+    </header>
+
+    <div class="ajuda-gaveta-corpo">
+
+      {% if ajuda_problemas_aqui %}
+      {# O QUE JA DEU ERRADO AQUI. Quem topa hoje com o defeito que outro topou
+         ontem merece saber que não é ele que está fazendo errado. #}
+      <div class="ajuda-avisos">
+        <strong>Já houve problema nesta tela</strong>
+        {# DE ONDE SAI ESTA LISTA, e como ela some — as duas perguntas que o
+           numero sozinho deixava sem resposta. #}
+        <p class="small muted">São os relatos que alguém mandou daqui, ainda em
+          aberto. Eles ficam à vista para que quem topar com o mesmo defeito
+          saiba que não é ele que está fazendo errado.{% if user.role in ['ADMIN','MANAGER'] %}
+          Depois de corrigido, marque como resolvido em
+          <a href="{{ url_for('ajuda_problemas') }}">Administrativo → Ajuda →
+          Problemas do sistema</a>.{% endif %}</p>
+        <ul>
+          {# O RESUMO, E NÃO O TÍTULO. O título é técnico de propósito — é o
+             que serve a quem conserta e é o que vai no relatório. Aqui quem lê
+             é o balcão, e `KeyError` na cara de quem já levou um erro é
+             jargão em cima de susto. #}
+          {% for p in ajuda_problemas_aqui %}
+          <li>{{ p.resumo[:110] }}{% if p.resumo|length > 110 %}…{% endif %}
+            <small>({{ p.vezes }}×, a última em {{ p.ultima_em[:16]|replace('T',' ') }})</small></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if ajuda_liberada %}
+      <form method="post"
+            action="{{ url_for('ajuda_consultar') }}"
+            data-ajuda-perguntar>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="onde" value="{{ ajuda_tela }}">
+        <input type="hidden" name="acao" value="perguntar">
+        <label>Sua pergunta
+          <textarea name="pergunta" rows="3" required
+                    placeholder="Ex.: o que faço quando a CRA recusa com irregularidade 33?"></textarea></label>
+        <label>Assunto
+          <select name="assunto">
+            <option value="USO">Como fazer algo no sistema</option>
+            <option value="ERRO">Entender uma mensagem de erro</option>
+            <option value="ATO">Dúvida sobre um ato ou registro</option>
+            <option value="CRA">Recusa ou arquivo da Central de Protesto</option>
+            <option value="OUTRO">Outro assunto</option>
+          </select></label>
+        <div class="ajuda-acoes">
+          <button class="button primary" type="submit">Perguntar</button>
+          <a class="button" href="{{ url_for('ajuda_consultar') }}?onde={{ ajuda_tela }}">Abrir a ajuda inteira</a>
+        </div>
+        <p class="ajuda-nota">
+          <strong>A ajuda auxilia; não decide.</strong> Dados pessoais,
+          sensíveis e segredos são substituídos antes de qualquer envio. Ela
+          sabe em que tela você está — não precisa explicar.
+        </p>
+      </form>
+      <div class="ajuda-resposta" data-ajuda-resposta hidden></div>
+      {% else %}
+      <p class="ajuda-nota">
+        Perguntar à ajuda ainda não está liberado para o seu perfil. Avisar um
+        problema, sim — é o quadro abaixo, e ele não manda nada para fora.
+      </p>
+      {% endif %}
+
+      <details class="ajuda-problema">
+        <summary>Avisar um problema desta tela</summary>
+        <form method="post" action="{{ url_for('ajuda_problema') }}"
+              data-ajuda-problema>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="onde" value="{{ ajuda_tela }}">
+          <input type="hidden" name="caminho" value="{{ request.path }}">
+          <label>O que aconteceu
+            <input name="titulo" required maxlength="200"
+                   placeholder="Ex.: o botão de emitir certidão não faz nada"></label>
+          <label>O que você estava fazendo <small>(ajuda muito)</small>
+            <textarea name="detalhe" rows="3"
+                      placeholder="Abri a ficha do título 84713/1, marquei pagamento e cliquei em lançar."></textarea></label>
+          <div class="ajuda-acoes">
+            <button class="button" type="submit">Anotar o problema</button>
+          </div>
+          <p class="ajuda-nota">
+            Isto fica <strong>nesta máquina</strong>: nada é enviado para fora.
+            Entra na lista que o administrador manda para conserto.
+          </p>
+        </form>
+      </details>
+    </div>
+  </section>
+</div>

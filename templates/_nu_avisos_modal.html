@@ -1,0 +1,133 @@
+{#
+  Modal de avisos pendentes (nao dispensados hoje / sessao em modo teste).
+  Colunas: Pendências (crítico, importante, tarefas) | Avisos (normais).
+#}
+{% if nu_avisos_modal %}
+<div class="nu-avisos-overlay" data-nu-avisos-overlay role="presentation">
+  <div class="nu-avisos-modal nu-avisos-modal-duas-colunas" role="alertdialog"
+       aria-modal="true"
+       aria-labelledby="nu-avisos-modal-titulo"
+       tabindex="-1"
+       data-nu-avisos-modal>
+    <form method="post"
+          action="{{ nu_avisos_modal.url_fechar }}"
+          class="nu-avisos-modal-fechar-form"
+          data-nu-avisos-fechar>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <button type="submit"
+              class="nu-avisos-modal-fechar aviso-fechar"
+              aria-label="Fechar avisos"
+              title="Fechar">&times;</button>
+    </form>
+    {% if nu_avisos_modal_teste %}
+    <p class="nu-avisos-modal-aviso-teste muted"><small>Sandbox: modal a cada login (fechar vale nesta sessão).</small></p>
+    {% endif %}
+
+    <div class="nu-avisos-modal-grid">
+      <div class="nu-avisos-modal-col nu-avisos-modal-col-pendencias">
+        <h2 id="nu-avisos-modal-titulo" class="nu-avisos-modal-col-titulo">Pendências</h2>
+        <div class="nu-avisos-modal-col-corpo">
+          {% if nu_avisos_modal.criticos or nu_avisos_modal.tarefas_criticas %}
+          <section class="nu-avisos-bloco nu-avisos-bloco-critico" aria-label="Crítico">
+            <h3 class="nu-avisos-modal-secao-titulo">Crítico</h3>
+            {% for item in nu_avisos_modal.criticos %}
+            <article class="nu-avisos-item nu-avisos-item-critico">
+              <h4 class="nu-avisos-item-titulo">
+                <span class="nu-avisos-icone-critico" role="img" aria-label="Crítico">
+                  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path fill="currentColor" d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                  </svg>
+                </span>
+                <a href="{{ url_for('nu_avisos_detalhe', aviso_id=item.id) }}">{{ item.titulo }}</a>
+              </h4>
+              {% if user.role == 'ADMIN' %}
+              <form method="post" action="{{ url_for('nu_avisos_dispensar', aviso_id=item.id) }}" class="nu-avisos-modal-dispensar-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="next" value="{{ request.path }}">
+                <button type="submit" class="button button-sm nu-avisos-modal-dispensar">Dispensar</button>
+              </form>
+              {% endif %}
+            </article>
+            {% endfor %}
+            {% if nu_avisos_modal.tarefas_criticas %}
+            <p class="nu-tarefas-modal-resumo nu-tarefas-modal-critico">
+              <strong>{{ nu_avisos_modal.tarefas_criticas.texto }}</strong>
+              <a href="{{ nu_avisos_modal.tarefas_criticas.url }}" class="nu-avisos-link-lista">Ver tarefas</a>
+            </p>
+            {% endif %}
+          </section>
+          {% endif %}
+
+          {% if nu_avisos_modal.importantes or nu_avisos_modal.tarefas_alta %}
+          <section class="nu-avisos-bloco nu-avisos-bloco-importante" aria-label="Importante">
+            <h3 class="nu-avisos-modal-secao-titulo">Importante</h3>
+            {% for item in nu_avisos_modal.importantes %}
+            <article class="nu-avisos-item nu-avisos-item-importante">
+              <h4 class="nu-avisos-item-titulo">
+                <span class="nu-avisos-icone-importante" role="img" aria-label="Importante">
+                  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path fill="currentColor" d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                  </svg>
+                </span>
+                <a href="{{ url_for('nu_avisos_detalhe', aviso_id=item.id) }}">{{ item.titulo }}</a>
+              </h4>
+              {% if user.role == 'ADMIN' %}
+              <form method="post" action="{{ url_for('nu_avisos_dispensar', aviso_id=item.id) }}" class="nu-avisos-modal-dispensar-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="next" value="{{ request.path }}">
+                <button type="submit" class="button button-sm nu-avisos-modal-dispensar">Dispensar</button>
+              </form>
+              {% endif %}
+            </article>
+            {% endfor %}
+            {% if nu_avisos_modal.tarefas_alta %}
+            {% with tarefas_resumo=nu_avisos_modal.tarefas_alta, extra_class='nu-tarefas-modal-alta' %}
+            {% include '_nu_tarefas_modal_resumo_badges.html' %}
+            {% endwith %}
+            {% endif %}
+          </section>
+          {% endif %}
+
+          {% if nu_avisos_modal.tarefas %}
+          <section class="nu-avisos-bloco nu-avisos-bloco-tarefas" aria-label="Tarefas pendentes">
+            <h3 class="nu-avisos-modal-secao-titulo">Tarefas pendentes</h3>
+            {% with tarefas_resumo=nu_avisos_modal.tarefas %}
+            {% include '_nu_tarefas_modal_resumo_badges.html' %}
+            {% endwith %}
+          </section>
+          {% endif %}
+
+          {% if nu_avisos_modal.sem_responsavel %}
+          <p class="nu-tarefas-modal-resumo nu-tarefas-modal-media-baixa nu-tarefas-modal-sem-responsavel">
+            <span class="nu-tarefas-faixa-resumo">
+              <strong>{{ nu_avisos_modal.sem_responsavel.texto }}</strong>
+            </span>
+            <a href="{{ nu_avisos_modal.sem_responsavel.url }}" class="nu-avisos-link-lista">Ver tarefas</a>
+          </p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="nu-avisos-modal-col nu-avisos-modal-col-avisos">
+        <h2 class="nu-avisos-modal-col-titulo">Avisos</h2>
+        <div class="nu-avisos-modal-col-corpo">
+          {% if nu_avisos_modal.normais %}
+          <div class="nu-avisos-modal-lista">
+            {% for item in nu_avisos_modal.normais %}
+            <article class="nu-avisos-item nu-avisos-item-normal">
+              <h4 class="nu-avisos-item-titulo">
+                <a href="{{ url_for('nu_avisos_detalhe', aviso_id=item.id) }}">{{ item.titulo }}</a>
+              </h4>
+            </article>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="muted nu-avisos-modal-vazio">Não há avisos</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}

@@ -1,0 +1,59 @@
+{# O AVISO DO CAIXA QUE NÃO FECHA — ver caixa_aviso.py.
+   Sem JavaScript de propósito: o «Entendi» é uma caixa de marcar escondida, e
+   a janela volta na tela seguinte. A janela do BLOQUEIO não tem «Entendi». #}
+{% if caixa_aviso %}
+{% set a = caixa_aviso %}
+<style>
+  .caixa-aviso-faixa{background:#b00020;color:#fff;padding:14px 18px;font-size:17px;
+    font-weight:700;border-bottom:4px solid #6d0014;position:sticky;top:0;z-index:30}
+  .caixa-aviso-faixa a{color:#fff;text-decoration:underline}
+  .caixa-aviso-fundo{position:fixed;inset:0;background:rgba(80,0,10,.72);z-index:1000;
+    display:flex;align-items:center;justify-content:center}
+  .caixa-aviso-janela{background:#fff;border:6px solid #b00020;border-radius:10px;
+    max-width:560px;padding:28px 32px;text-align:center;color:#3a0008}
+  .caixa-aviso-janela h2{color:#b00020;font-size:26px;margin:0 0 12px}
+  .caixa-aviso-janela p{font-size:17px}
+  .caixa-aviso-botao{display:inline-block;background:#b00020;color:#fff;font-size:18px;
+    font-weight:700;padding:12px 22px;border-radius:6px;text-decoration:none;margin:8px}
+  .caixa-aviso-entendi{display:inline-block;margin:8px;cursor:pointer;text-decoration:underline}
+  #caixa-aviso-ok{display:none}
+  #caixa-aviso-ok:checked ~ .caixa-aviso-fundo{display:none}
+</style>
+
+<div class="caixa-aviso-faixa" role="alert">
+  {% if a.nivel == 'OUTROS' %}
+    Caixas de dias anteriores ainda abertos:
+    {% for o in a.outros %}{{ o.operador }} ({{ o.data[8:10] }}/{{ o.data[5:7] }}){% if not loop.last %}, {% endif %}{% endfor %}.
+    Cobre o fechamento.
+  {% elif a.nivel in ('BLOQUEIO', 'VENCIDO') %}
+    O SEU CAIXA DE {% for d in a.dias %}{{ d[8:10] }}/{{ d[5:7] }}{% if not loop.last %}, {% endif %}{% endfor %} AINDA ESTÁ ABERTO.
+    <a href="{{ url_for('caixa') }}">Feche agora</a> — caixa que atravessa a noite mistura o dinheiro de dois dias.
+  {% else %}
+    O EXPEDIENTE ACABOU ÀS {{ a.fim }} E O SEU CAIXA DE HOJE CONTINUA ABERTO.
+    <a href="{{ url_for('caixa') }}">Feche o caixa antes de sair</a>.
+  {% endif %}
+  {% if a.outros and a.nivel != 'OUTROS' %}<br><small>Também abertos de outros dias:
+    {% for o in a.outros %}{{ o.operador }} ({{ o.data[8:10] }}/{{ o.data[5:7] }}){% if not loop.last %}, {% endif %}{% endfor %}.</small>{% endif %}
+</div>
+
+{% if not a.na_tela_do_caixa and a.nivel in ('BLOQUEIO', 'FIM_DO_EXPEDIENTE') %}
+{% if a.nivel == 'FIM_DO_EXPEDIENTE' %}<input type="checkbox" id="caixa-aviso-ok">{% endif %}
+<div class="caixa-aviso-fundo" role="alertdialog" aria-modal="true" aria-labelledby="caixa-aviso-titulo">
+  <div class="caixa-aviso-janela">
+    {% if a.nivel == 'BLOQUEIO' %}
+      <h2 id="caixa-aviso-titulo">Feche o caixa de ontem antes de continuar</h2>
+      <p>O seu caixa de {% for d in a.dias %}{{ d[8:10] }}/{{ d[5:7] }}{% if not loop.last %}, {% endif %}{% endfor %}
+      continua aberto. <strong>O sistema só libera as outras telas depois que ele for fechado</strong>
+      — conte o dinheiro e feche na tela do caixa.</p>
+      <a class="caixa-aviso-botao" href="{{ url_for('caixa') }}">Ir para o caixa e fechar</a>
+    {% else %}
+      <h2 id="caixa-aviso-titulo">Fim do expediente: feche o caixa</h2>
+      <p>Já passou das {{ a.fim }} e o seu caixa de hoje está aberto. Caixa que fica
+      aberto de um dia para o outro <strong>trava o sistema amanhã</strong> até ser fechado.</p>
+      <a class="caixa-aviso-botao" href="{{ url_for('caixa') }}">Fechar o caixa agora</a>
+      <label class="caixa-aviso-entendi" for="caixa-aviso-ok">Entendi — vou fechar já</label>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endif %}

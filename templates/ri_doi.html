@@ -1,0 +1,231 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>DOI da serventia &mdash; Declaração sobre Operações Imobiliárias</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
+  <a class="button" href="{{ url_for('ri_ctp') }}">CTP &mdash; prefeituras</a>
+</div>
+
+<div class="notice">
+  Vai à <strong>Receita Federal</strong> pela DOI-Web, até as 23h59min59s do
+  <strong>último dia útil do mês seguinte</strong> ao da lavratura, anotação, matrícula, registro
+  ou averbação. Fora do prazo incide a Multa por Atraso na Entrega de Declaração.
+  <strong>Uma declaração para cada imóvel</strong> &mdash; escritura com vários imóveis rende
+  uma DOI por unidade, e permuta rende uma para cada imóvel permutado.
+  Os dados vêm do que você já digitou na <strong>CTP</strong>: são a mesma informação para dois
+  destinatários diferentes, e digitar duas vezes só faria as duas divergirem.
+</div>
+
+{% if not esquema_conferido %}
+<div class="notice warning">
+  <strong>O envelope do arquivo ainda não foi conferido contra fonte primária.</strong>
+  Os campos de cada declaração vêm da especificação publicada, a mesma que a CTP usa. O invólucro
+  do arquivo, não &mdash; a página que publica o esquema JSON da Receita não abriu. Vale gerar e
+  conferir agora; antes da primeira transmissão, baixe o esquema e confira.
+</div>
+{% endif %}
+
+{% if em_aberto %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Meses que ainda devem satisfação &mdash; {{ em_aberto|length }}</span>
+  </div>
+  <div style="padding:14px" class="small muted">
+    A inspeção cobra comprovação de DOI <strong>ou declaração negativa</strong> dos meses sem ato
+    imobiliário. Mês vazio também precisa de prova, e é o que mais escapa &mdash; justamente por
+    não aparecer em lista nenhuma. Esta lista sai do calendário, não dos atos.
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Competência</th><th>Teve ato?</th><th>Prazo</th><th></th></tr></thead>
+    <tbody>
+    {% for c in em_aberto %}
+      <tr>
+        <td><a href="{{ url_for('ri_doi', competencia=c.competencia) }}">{{ c.competencia }}</a></td>
+        <td class="small">{{ 'sim' if c.tem_ato else 'não' }}</td>
+        <td class="small {% if c.vencida %}danger{% endif %}">
+          {{ c.prazo }}{% if c.vencida %} &mdash; <strong>vencido</strong>{% endif %}
+        </td>
+        <td class="small">
+          {% if not c.tem_ato %}
+          <form method="post" action="{{ url_for('ri_doi', competencia=c.competencia) }}"
+                style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="acao" value="negativa">
+            <input type="hidden" name="competencia" value="{{ c.competencia }}">
+            <button>Registrar como mês sem ato</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <form method="get" style="padding:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+    <label>Competência
+      <select name="competencia">
+        {% for m in meses %}
+        <option value="{{ m.c }}" {% if m.c == competencia %}selected{% endif %}>
+          {{ m.c }} &mdash; {{ m.qtd }} ato{{ '' if m.qtd == 1 else 's' }}
+        </option>
+        {% endfor %}
+      </select></label>
+    <button class="primary">Ver a competência</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>{{ competencia }}</span>
+    <span class="small {% if prazo < hoje and not (remessa and remessa.situacao == 'ENTREGUE') %}danger{% else %}muted{% endif %}">
+      entregar até {{ prazo }}{% if prazo < hoje %} &mdash; <strong>prazo vencido</strong>{% endif %}
+    </span>
+  </div>
+  <div style="padding:14px">
+    {% if remessa and remessa.negativa %}
+      <p><strong>Mês registrado como sem ato imobiliário.</strong>
+         {% if remessa.observacao %}<br><span class="small muted">{{ remessa.observacao }}</span>{% endif %}</p>
+    {% else %}
+      <p><strong style="font-size:1.4em">{{ prontas }}</strong>
+         declaraç{{ 'ão pronta' if prontas == 1 else 'ões prontas' }}
+         {% if resumo %}&mdash; e {{ linhas|length - prontas }} parada{{ '' if (linhas|length - prontas) == 1 else 's' }}{% endif %}.
+      </p>
+    {% endif %}
+
+    {% if remessa and remessa.arquivo_nome %}
+      <p class="small muted">
+        Arquivo {{ remessa.arquivo_nome }}, {{ remessa.quantidade }} declaraç{{ 'ão' if remessa.quantidade == 1 else 'ões' }},
+        gerado em {{ remessa.gerado_em }}
+        &mdash; <a href="{{ url_for('ri_doi_arquivo', competencia=competencia) }}">baixar de novo</a>.
+        <br>sha256 {{ remessa.arquivo_hash }}
+      </p>
+    {% endif %}
+
+    {% if resumo %}
+    <table style="margin-top:10px">
+      <thead><tr><th>Atos</th><th>Campo</th><th>O que falta</th></tr></thead>
+      <tbody>
+        {% for r in resumo %}
+        <tr><td style="text-align:right"><strong>{{ r.declaracoes }}</strong></td>
+            <td class="small"><code>{{ r.campo }}</code></td>
+            <td class="small">{{ r.motivo }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted" style="margin-top:8px">
+      O que falta nos atos do <strong>Registro de Imóveis</strong> é digitado na
+      <a href="{{ url_for('ri_ctp', competencia=competencia) }}">tela da CTP</a> &mdash; é o mesmo
+      dado. O que falta numa <strong>escritura</strong> é digitado na ficha dela, no painel
+      <em>O imóvel — para a DOI</em>.
+    </p>
+    {% endif %}
+
+    {% if not entregue %}
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      {% if prontas %}
+      <form method="post" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="acao" value="gerar">
+        <input type="hidden" name="competencia" value="{{ competencia }}">
+        <button class="primary">Gerar o arquivo das {{ prontas }} declarações</button>
+      </form>
+      {% endif %}
+      {% if not linhas %}
+      <form method="post" style="display:flex;gap:6px;align-items:center">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="acao" value="negativa">
+        <input type="hidden" name="competencia" value="{{ competencia }}">
+        <input name="observacao" size="40" placeholder="observação (opcional)">
+        <button>Registrar como mês sem ato imobiliário</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if remessa and remessa.arquivo_nome and not remessa.negativa %}
+    <form method="post" style="margin-top:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="recibo">
+      <input type="hidden" name="competencia" value="{{ competencia }}">
+      <input name="recibo" size="24" placeholder="número do recibo" value="{{ remessa.recibo or '' }}">
+      <input name="protocolo" size="20" placeholder="protocolo" value="{{ remessa.protocolo or '' }}">
+      <button>Registrar a entrega</button>
+      <span class="small muted">Guarde o recibo: é a comprovação que o AUDITUS pede.</span>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+{% if linhas %}
+<section class="panel">
+  {# A DOI É DA SERVENTIA, e não do Registro de Imóveis.
+
+     «Com intercomunicabilidade para que o arquivo da DOI seja possível gerar
+      único, com tudo da serventia» — o oficial, 27/08/2026; decidido em 28/08.
+
+     É uma declaração por serventia por mês, e esta casa tem um CNS só, de
+     ofício único. Duas telas gerariam dois arquivos e alguém mandaria um só. #}
+  <div class="panel-head"><span>Atos da competência — Registro de Imóveis e
+    Tabelionato</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Ato</th><th>Onde</th><th>Data</th><th>Operação</th>
+      <th>Entra?</th><th>O que falta</th></tr></thead>
+    <tbody>
+    {% for l in linhas %}
+      <tr>
+        <td class="small">{{ l.rotulo }}</td>
+        {# DE ONDE O ATO VEIO. As duas atribuições saem no mesmo arquivo, e
+           quem confere precisa saber qual linha é de qual — senão a conferência
+           vira procurar o ato em duas telas. #}
+        <td class="small">{% if l.do_tabelionato %}<span class="badge">Tabelionato</span>
+            {% else %}<span class="badge">Reg. Imóveis</span>{% endif %}</td>
+        <td class="small">{{ l.ato.data_ato or l.ato.data }}</td>
+        <td class="small">
+          {% set op = l.dados.get('operacao') or l.ato.doi_transacao %}
+          {{ TIPO_OPERACAO.get(op, op or '—') }}
+        </td>
+        <td class="small">{{ 'sim' if l.entra else ('não' if l.incluir else 'excluído') }}</td>
+        <td class="small">
+          {% if l.problemas %}
+          <ul style="margin:0;padding-left:18px">
+            {% for p in l.problemas %}<li>{{ p.motivo }}</li>{% endfor %}
+          </ul>
+          {% else %}&mdash;{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if remessas %}
+<section class="panel">
+  <div class="panel-head"><span>Competências já resolvidas</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Competência</th><th>Situação</th><th>Declarações</th>
+               <th>Recibo</th><th>Arquivo</th></tr></thead>
+    <tbody>
+    {% for r in remessas %}
+      <tr>
+        <td><a href="{{ url_for('ri_doi', competencia=r.competencia) }}">{{ r.competencia }}</a></td>
+        <td class="small">
+          {% if r.negativa %}sem ato imobiliário{% else %}{{ r.situacao|lower }}{% endif %}
+        </td>
+        <td style="text-align:right">{{ r.quantidade }}</td>
+        <td class="small">{{ r.recibo or '—' }}</td>
+        <td class="small">
+          {% if r.arquivo_nome %}
+          <a href="{{ url_for('ri_doi_arquivo', competencia=r.competencia) }}">{{ r.arquivo_nome }}</a>
+          {% else %}&mdash;{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

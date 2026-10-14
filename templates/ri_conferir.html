@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Conferir matrícula {{ m.numero }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_ficha', matricula_id=m.id) }}">&larr; Ficha</a>
+  {% if m.conferido %}<span class="badge ok">Conferida</span>{% else %}<span class="badge alta">Não conferida</span>{% endif %}
+  {% if user.role in ['ADMIN','MANAGER'] %}
+  <form method="post" action="{{ url_for('ri_conferir', matricula_id=m.id) }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="primary">{{ 'Revogar conferência' if m.conferido else 'Marcar como conferida' }}</button>
+  </form>
+  {% endif %}
+  {% if proxima %}<a class="button" href="{{ url_for('ri_conferir_ficha', matricula_id=proxima.id) }}">Próxima não conferida ({{ proxima.numero }}) &rarr;</a>{% endif %}
+</div>
+
+<div class="notice">
+  Compare o dado importado com a imagem do livro. O acervo veio do sistema anterior e
+  <strong>não foi verificado</strong> — a conferência é o que autoriza usar esta ficha para certidão.
+</div>
+
+<div class="conferir">
+  <div class="conferir-dados">
+    <section class="panel">
+      <div class="panel-head"><span>Dado importado</span></div>
+      <div class="grid2 detail">
+        <div><small class="muted">Livro / folha</small><div>{{ m.livro or '—' }} {% if m.folha %}fls. {{ m.folha }}{% endif %}</div></div>
+        <div><small class="muted">CNM</small><div>{{ m.cnm or '—' }}</div></div>
+        <div><small class="muted">Abertura</small><div>{{ fmt_date(m.data_abertura) }}</div></div>
+        <div><small class="muted">Área</small><div>{{ m.area_valor or '—' }} {{ m.area_unidade or '' }}</div></div>
+        <div class="span2"><small class="muted">Imóvel</small><div>{{ m.logradouro or '—' }}{% if m.bairro %} — {{ m.bairro }}{% endif %}</div></div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><span>Partes ({{ partes|length }})</span></div>
+      <div class="table-wrap"><table>
+        <tbody>{% for p in partes %}<tr><td>{{ p.nome }}</td>
+          <td class="small">{{ p.documento_numero or 'sem documento' }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><span>Atos ({{ atos|length }})</span></div>
+      <div class="table-wrap"><table>
+        <tbody>{% for a in atos %}<tr><td>{{ a.tipo }}-{{ '%02d'|format(a.numero) }}</td>
+          <td class="small">{{ fmt_date(a.data_ato) }}</td></tr>{% endfor %}
+          {% if not atos %}<tr><td colspan="2" class="small muted">Ficha de acervo, sem atos destacados.</td></tr>{% endif %}
+        </tbody>
+      </table></div>
+    </section>
+  </div>
+
+  <div class="conferir-imagem">
+    <section class="panel">
+      {% if digitalizacao %}
+      <div class="panel-head"><span>Digitalização oficial</span></div>
+      <div class="small" style="padding:10px 10px 0">
+        <strong>{{ digitalizacao.nome }}</strong>
+        {% if digitalizacao.em %} — enviada em {{ fmt_date(digitalizacao.em[:10]) }}{% endif %}
+        {% if digitalizacao.por %}, por {{ digitalizacao.por }}{% endif %}
+        {% if digitalizacao.existe %}
+        · <a href="{{ url_for('ri_baixar_digitalizacao', matricula_id=m.id) }}">baixar</a>
+        {% endif %}
+      </div>
+      {% if imagens %}
+      <div class="notice small" style="margin:10px">
+        Esta matrícula também possui {{ imagens|length }} página(s) do acervo importado.
+        A conferência mostra o <strong>arquivo oficial atual</strong>; as duas fontes não são
+        misturadas.
+      </div>
+      {% endif %}
+      {% if not digitalizacao.existe %}
+      <div class="notice danger" style="margin:10px">
+        <strong>O cadastro aponta para uma digitalização, mas o arquivo não está no disco.</strong>
+        Envie novamente o arquivo oficial pela ficha da matrícula.
+      </div>
+      {% elif digitalizacao.pdf %}
+      {# SEM A COLUNA DE MINIATURAS — problema #80, 23/09/2026. O visualizador
+         de PDF do navegador abre sozinho, em quadro largo, uma coluna com as
+         páginas à esquerda, e ela tomava o espaço da matrícula. O pedido no
+         fim do endereço a mantém fechada; a barra de cima (zoom, imprimir,
+         baixar) continua. Conferido no motor do Chrome/Edge. #}
+      <iframe
+        src="{{ url_for('ri_baixar_digitalizacao', matricula_id=m.id, visualizar=1) }}#navpanes=0&amp;pagemode=none"
+        title="Digitalização oficial da matrícula {{ m.numero }}"
+        style="display:block;width:100%;height:78vh;min-height:640px;border:0;margin-top:10px">
+        Seu navegador não exibiu o PDF.
+        <a href="{{ url_for('ri_baixar_digitalizacao', matricula_id=m.id) }}">Baixe o arquivo.</a>
+      </iframe>
+      {% elif digitalizacao.imagem_navegador %}
+      <figure style="margin:10px">
+        <img class="ampliavel"
+             src="{{ url_for('ri_baixar_digitalizacao', matricula_id=m.id, visualizar=1) }}"
+             data-lupa-cheia="{{ url_for('ri_baixar_digitalizacao', matricula_id=m.id, visualizar=1) }}"
+             data-lupa-titulo="Matrícula {{ m.numero }} — digitalização oficial"
+             data-lupa-grupo="digitalizacao-oficial-{{ m.id }}"
+             alt="Digitalização oficial da matrícula {{ m.numero }}"
+             title="Clique para ampliar" style="display:block;max-width:100%;height:auto">
+        <figcaption class="small muted">Clique na imagem para ampliar.</figcaption>
+      </figure>
+      {% else %}
+      <div class="notice warning" style="margin:10px">
+        O arquivo oficial está salvo, mas o navegador não exibe {{ digitalizacao.extensao or 'este formato' }}
+        diretamente. <a href="{{ url_for('ri_baixar_digitalizacao', matricula_id=m.id) }}">Baixe para conferir.</a>
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="panel-head"><span>Ficha digitalizada ({{ imagens|length }})</span></div>
+      {% if imagens and not pillow %}
+      <div class="notice danger" style="margin:10px">
+        <strong>Falta o Pillow neste servidor.</strong> As fichas estão no disco e localizadas,
+        mas são TIFF Grupo 4 — formato que navegador nenhum exibe. Sem essa biblioteca o sistema
+        não converte para PNG, e só resta entregar o arquivo para download.
+        <br>Rode o <code>INSTALAR_PILLOW.cmd</code>, na pasta Downloads. Ele instala, reinicia o
+        servidor e confere. Depois, Ctrl+F5 aqui.
+      </div>
+      {% endif %}
+      {% if imagens %}
+        {# `caminho_interno` também vale, e a rota da imagem até o prefere: é a
+           cópia do próprio sistema, que sobrevive ao desligamento do E-Ofício.
+           Olhar só o `caminho` fazia a tela dizer "não localizado" para ficha
+           que abria normalmente pela outra tela. #}
+        {% set faltando = imagens|rejectattr('caminho')|rejectattr('caminho_interno')|list %}
+        {% if faltando|length == imagens|length %}
+        <div class="notice danger" style="margin:10px">
+          <strong>Nenhum dos {{ imagens|length }} arquivos desta matrícula foi localizado no
+          disco.</strong> Os nomes estão registrados; os arquivos, não foram encontrados.
+          Abra {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_resolver_imagens') }}">Fichas digitalizadas</a>{% else %}«Fichas digitalizadas» (oficial/substituto){% endif %} e clique
+          em <strong>Localizar arquivos</strong> — aquela tela mostra o que o banco procura e o
+          que o disco tem, lado a lado.
+        </div>
+        {% endif %}
+        {% for i in imagens %}
+          {% if i.caminho or i.caminho_interno %}
+            {# Conferir dado importado contra ficha manuscrita é ler letra de
+               1978 numa tela. `w=1600` porque a lupa amplia a imagem que já
+               está aqui: pedir a miniatura e ampliar 8x mostra o borrão do
+               redimensionamento, não a ficha. #}
+            <figure>
+              <img class="ampliavel" src="{{ url_for('ri_imagem', imagem_id=i.id) }}"
+                   data-lupa-cheia="{{ url_for('ri_imagem', imagem_id=i.id, w=2400) }}"
+                   data-lupa-titulo="Matrícula {{ m.numero }} — página {{ i.ordem or loop.index }} ({{ i.nome_arquivo }})"
+                   data-lupa-grupo="ficha-{{ m.id }}"
+                   loading="lazy" alt="Ficha {{ i.ordem or loop.index }}"
+                   title="Clique para ampliar">
+              <figcaption class="small muted">
+                página {{ i.ordem or loop.index }} — {{ i.nome_arquivo }} ·
+                clique na imagem para ampliar
+                <a href="{{ url_for('ri_imagem', imagem_id=i.id) }}" target="_blank">abrir sozinha</a>
+              </figcaption>
+            </figure>
+          {% else %}
+            <div class="notice warning small">{{ i.nome_arquivo }} — arquivo não localizado no disco.</div>
+          {% endif %}
+        {% endfor %}
+      {% else %}
+        <div class="notice small">Nenhuma imagem vinculada a esta matrícula.</div>
+      {% endif %}
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

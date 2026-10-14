@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{#
+  AJUSTAR A ETIQUETA DE AVERBAÇÃO DO RCPN (margem do livro).
+
+  A faixa do livro é mais justa que a térmica de firma/RTD. Por isso as
+  chaves são próprias (etiqueta_averbacao_*) e esta tela não mexe nas
+  outras etiquetas.
+#}
+{% block heading %}<h1>{{ nome }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_assentos') }}">&larr; Assentos RCPN</a>
+</div>
+
+<div class="notice">
+  <strong>Para colar na margem do livro.</strong> A etiqueta sai em
+  <strong>ODT</strong> (LibreOffice), no tamanho abaixo. Ajuste largura,
+  altura e margem até caber na faixa — o balcão costuma usar só parte da
+  tira. Imprima a partir da ficha do assento (botão <em>ODT</em> em cada
+  averbação).
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Medidas</span>
+    <span class="small muted">padrão: {{ padrao.etiqueta_largura_mm }}&times;{{ padrao.etiqueta_altura_mm }} mm</span></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Largura (mm)
+      <input name="{{ chave('etiqueta_largura_mm') }}" value="{{ m.etiqueta_largura_mm }}" required>
+      <span class="small muted">a faixa da margem do livro costuma ser estreita</span></label>
+    <label>Altura (mm)
+      <input name="{{ chave('etiqueta_altura_mm') }}" value="{{ m.etiqueta_altura_mm }}" required></label>
+    <label>Margem / área útil (mm)
+      <input name="{{ chave('etiqueta_margem_mm') }}" value="{{ m.etiqueta_margem_mm }}" required>
+      <span class="small muted">quanto o texto se afasta da borda — o livro é justo</span></label>
+    <label>Corpo da letra (pt)
+      <input name="{{ chave('etiqueta_corpo_pt') }}" value="{{ m.etiqueta_corpo_pt }}" required></label>
+    <label>Deslocar na horizontal (mm)
+      <input name="{{ chave('etiqueta_deslocamento_x_mm') }}" value="{{ m.etiqueta_deslocamento_x_mm }}" required>
+      <span class="small muted">negativo puxa para a esquerda</span></label>
+    <label>Deslocar na vertical (mm)
+      <input name="{{ chave('etiqueta_deslocamento_y_mm') }}" value="{{ m.etiqueta_deslocamento_y_mm }}" required>
+      <span class="small muted">negativo puxa para cima</span></label>
+    <label>Entrelinha
+      <input name="{{ chave('etiqueta_entrelinha') }}" value="{{ m.etiqueta_entrelinha }}" required></label>
+    <label>Tamanho do QR (mm)
+      <input name="{{ chave('etiqueta_qr_mm') }}" value="{{ m.etiqueta_qr_mm }}" required>
+      <span class="small muted">0 = sem QR (padrão da margem do livro)</span></label>
+    <div style="grid-column:1/-1">
+      <button class="button primary" type="submit">Guardar as medidas</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

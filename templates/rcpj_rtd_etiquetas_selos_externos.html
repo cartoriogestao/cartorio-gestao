@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Etiquetas de selos externos — RCPJ e RTD</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<p class="muted">
+  Informe diretamente o selo e o texto do registro ou escolha um selo já
+  trazido para o razão do Cartório Gestão. A tela imprime uma etiqueta por selo
+  para colar nas páginas dos documentos registrados ou averbados, na mesma tira de
+  <strong>100 × 30 mm</strong> usada no reconhecimento de firma; nenhum ato é
+  criado ou alterado.
+</p>
+
+<section class="cartao">
+  <h2>Montar uma etiqueta</h2>
+  <form method="post" action="{{ url_for('rcpj_rtd_etiquetas_selos_externos') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Número do selo
+      <input type="text" name="selo_manual" required maxlength="40"
+             autocomplete="off" placeholder="Digite ou use o leitor do selo">
+    </label>
+    <label>Texto do registro ou da averbação
+      <textarea name="texto_registro" required maxlength="700" rows="5"
+                placeholder="Digite exatamente o texto que deve sair na etiqueta"></textarea>
+      <span class="small muted">As quebras de linha serão preservadas.</span>
+    </label>
+    <button class="button" type="submit">Montar etiqueta para imprimir</button>
+  </form>
+</section>
+
+<section class="cartao">
+  <h2>Ou localizar um selo já importado</h2>
+  <form method="get" action="{{ url_for('rcpj_rtd_etiquetas_selos_externos') }}">
+    <div class="grid">
+      <label>De
+        <input type="date" name="inicio" value="{{ f.inicio }}"></label>
+      <label>Até
+        <input type="date" name="fim" value="{{ f.fim }}"></label>
+      <label>Parte, ato ou número do selo
+        <input type="text" name="busca" value="{{ f.busca }}"
+               placeholder="nome ou parte do código"></label>
+    </div>
+    <button class="button" type="submit">Procurar</button>
+    <a class="button secondary"
+       href="{{ url_for('rcpj_rtd_etiquetas_selos_externos') }}">Limpar</a>
+  </form>
+</section>
+
+<section class="cartao">
+  <h2>Selos disponíveis</h2>
+  {% if not selos %}
+  <div class="alert alert-info">
+    Nenhum selo externo de RCPJ/RTD foi encontrado com esses filtros.
+  </div>
+  {% else %}
+  <form method="post" action="{{ url_for('rcpj_rtd_etiquetas_selos_externos') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="small muted">Marque os selos das páginas que serão etiquetadas.</p>
+    <div class="actions">
+      <button class="button" type="submit">Imprimir etiquetas marcadas</button>
+      <button class="button secondary" type="button" id="marcar-todos">Marcar todos</button>
+      <span class="muted small">Até {{ selos|length }} resultados nesta busca.</span>
+    </div>
+    <div class="table-wrap">
+      <table class="tabela">
+        <thead>
+          <tr><th></th><th>Selo</th><th>Data</th><th>Ato e partes</th><th>Emitido por</th></tr>
+        </thead>
+        <tbody>
+        {% for selo in selos %}
+          <tr>
+            <td><input type="checkbox" name="selo" value="{{ selo.numero }}"
+                       aria-label="Selecionar selo {{ selo.numero }}"></td>
+            <td><code class="small">{{ selo.numero }}</code></td>
+            <td>{{ (selo.obtido_em or '')[:10] }}<br>
+                <small class="muted">{{ (selo.obtido_em or '')[11:19] }}</small></td>
+            <td>{{ selo.detalhe or 'O texto do selo não trouxe o detalhe do ato.' }}</td>
+            <td>{{ selo.obtido_por or '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button class="button" type="submit">Imprimir etiquetas marcadas</button>
+  </form>
+  {% endif %}
+</section>
+
+<p class="small muted">
+  Selos cancelados e selos já vinculados a atos internos não aparecem aqui.
+  Para um ato criado no Cartório Gestão, use a etiqueta disponível na própria
+  ficha do registro.
+</p>
+
+<script>
+document.getElementById("marcar-todos")?.addEventListener("click", function () {
+  var caixas = Array.from(document.querySelectorAll('input[name="selo"]'));
+  var marcar = caixas.some(function (x) { return !x.checked; });
+  caixas.forEach(function (x) { x.checked = marcar; });
+  this.textContent = marcar ? "Desmarcar todos" : "Marcar todos";
+});
+</script>
+{% endblock %}

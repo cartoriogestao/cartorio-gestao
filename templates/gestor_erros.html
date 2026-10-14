@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}Relatório de erros{% endblock %}
+{% block heading %}<h1>Relatório de erros</h1>{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <p>O que a conferência diária achou de <strong>errado no que alguém praticou</strong> —
+  texto com campo de modelo, ato sem selo, registro sem CNIB, caixa com ponto,
+  comunicação não feita, ficha sem digitalização — e quem praticou. As pendências da
+  casa (backup, IBGE, fechamento do mês, caixa esperando o seu visto) ficam de fora:
+  não têm autor.</p>
+  <p class="muted">Quem praticou vem da coluna do próprio ato; vazia, da auditoria da
+  lavratura, do lançamento ou da abertura. A coluna «como se soube» diz qual das duas.
+  «Não identificado» é o que nenhuma das duas responde — não se adivinha.</p>
+</section>
+
+<section class="panel">
+  <form method="get" class="filtros">
+    <label>De <input type="date" name="desde" value="{{ f.desde }}"></label>
+    <label>Até <input type="date" name="ate" value="{{ f.ate or '' }}"></label>
+    <label>Quem
+      <select name="pessoa"><option value="">todos</option>
+        {% for p in r.pessoas %}<option {% if p == f.pessoa %}selected{% endif %}>{{ p }}</option>{% endfor %}
+      </select></label>
+    <label>Tipo
+      <select name="categoria"><option value="">todos</option>
+        {% for c in r.categorias %}<option {% if c == f.categoria %}selected{% endif %}>{{ c }}</option>{% endfor %}
+      </select></label>
+    <label>Situação
+      <select name="situacao">
+        {% for v, n in [('abertos','abertos'),('resolvidos','já resolvidos'),('todos','todos')] %}
+        <option value="{{ v }}" {% if v == f.situacao %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select></label>
+    <button type="submit">Filtrar</button>
+    <a href="{{ url_for('gestor_erros_csv', **request.args) }}">Baixar em planilha (CSV)</a>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Por pessoa</h2>
+  {% if r.por_pessoa %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Quem praticou</th><th>Abertos</th><th>Críticos abertos</th><th>Total no filtro</th><th>Por tipo</th></tr>
+    {% for p in r.por_pessoa %}
+    <tr>
+      <td><a href="{{ url_for('gestor_erros', **dict(request.args, pessoa=p.quem)) }}">{{ p.quem }}</a></td>
+      <td>{{ p.abertos }}</td>
+      <td>{% if p.criticos %}<strong>{{ p.criticos }}</strong>{% else %}0{% endif %}</td>
+      <td>{{ p.total }}</td>
+      <td><small>{% for k, v in p.categorias|dictsort %}{{ k }}: {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</small></td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}<p class="muted">Nenhum erro neste filtro.</p>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Os erros ({{ r.linhas|length }})</h2>
+  {% if r.linhas %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Visto em</th><th>Gravidade</th><th>Tipo</th><th>Quem praticou</th><th>Ato</th><th>O que é</th><th>Situação</th></tr>
+    {% for l in r.linhas %}
+    <tr {% if not l.resolvido_em and l.gravidade in ('CRITICO','VENCIDO') %}class="danger"{% endif %}>
+      <td>{{ l.visto_em[8:10] }}/{{ l.visto_em[5:7] }}/{{ l.visto_em[:4] }}</td>
+      <td>{{ l.gravidade }}</td>
+      <td>{{ l.categoria }}</td>
+      <td>{{ l.quem }}{% if l.como %}<br><small class="muted">{{ l.como }}</small>{% endif %}</td>
+      <td>{% if l.link %}<a href="{{ l.link }}">{{ l.ato }}</a>{% else %}{{ l.ato }}{% endif %}</td>
+      <td><strong>{{ l.titulo }}</strong>
+        {% if l.detalhe %}<details><summary>detalhes</summary><small style="white-space:pre-wrap">{{ l.detalhe }}</small></details>{% endif %}
+        {% if l.revisao %}<br><small class="muted">revisão: {{ l.revisao }}</small>{% endif %}</td>
+      <td>{% if l.resolvido_em %}resolvido em {{ l.resolvido_em[8:10] }}/{{ l.resolvido_em[5:7] }}{% else %}<strong>aberto</strong>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}<p class="muted">Nenhum erro neste filtro.</p>{% endif %}
+</section>
+{% endblock %}

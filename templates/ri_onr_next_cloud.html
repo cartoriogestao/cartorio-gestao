@@ -1,0 +1,343 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Carga do Next Cloud SAS — ONR</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button secondary" href="{{ url_for('ri_onr') }}">&larr; Arquivos do ONR</a>
+  <a class="button secondary" href="{{ url_for('ri_fichas_do_disco') }}">Páginas que faltam nas fichas</a>
+</div>
+
+{# A PERGUNTA QUE O OFICIAL FEZ, RESPONDIDA ANTES DE QUALQUER NÚMERO.
+   Quem lesse «Next Cloud SAS ligado» concluiria que o Registro de Imóveis
+   inteiro está integrado — e o índice real pararia sem ninguém ver. #}
+<section class="cartao">
+  <h2>São três coisas, e o Next Cloud SAS leva duas</h2>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>O quê</th><th>Por onde vai</th><th>Onde se faz</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Indicador Pessoal</strong> <small class="muted">(Livro 5)</small></td>
+          <td>Next Cloud SAS — banco <em>Firestore</em>, pelo programa <strong>IPS</strong></td>
+          <td>nesta tela</td>
+        </tr>
+        <tr>
+          <td><strong>Imagens das matrículas</strong> <small class="muted">(Livro 2)</small></td>
+          <td>Next Cloud SAS — <em>Bucket</em>, pelo programa <strong>CSL2</strong></td>
+          <td>nesta tela <small class="muted">(conferência)</small></td>
+        </tr>
+        <tr>
+          <td><strong>Indicador Real</strong> <small class="muted">(o índice do imóvel)</small></td>
+          <td><strong>não passa pelo Next Cloud SAS</strong> — vai pela API,
+              <code>/v1/indicador/real</code></td>
+          <td><a href="{{ url_for('ri_onr_painel') }}">Central do ONR</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="alert alert-info">
+    <strong>Aderir ao Next Cloud SAS não desliga o indicador real.</strong>
+    Medido nos seis documentos do ONR que estão na casa: a expressão
+    «indicador real» aparece <strong>zero vezes em todos</strong>. O Next Cloud
+    SAS é <em>armazenamento</em> — um balde de arquivos e um banco de pesquisa
+    que o ONR lê. O indicador real é <em>envio</em>, matrícula por matrícula,
+    e continua no caminho dele.
+  </div>
+</section>
+
+{# =============================================== o formulario de adesao #}
+{#
+  O FORMULÁRIO DE ADESÃO É UMA DECLARAÇÃO ASSINADA, E NÃO UM CADASTRO — e o
+  oficial descobriu isso perguntando, porque eu o havia recomendado sem lê-lo.
+  Por isso ele vem ANTES do resto: as caixas que ele manda assinalar são as
+  mesmas coisas que a conferência abaixo mede.
+#}
+<section class="cartao">
+  <h2>O formulário de adesão — o que copiar</h2>
+
+  <div class="alert alert-warning">
+    <strong>Ele não é cadastro: é uma declaração assinada com o seu e-CPF.</strong>
+    Na página 5 há duas caixas — «declaro que o Indicador Pessoal está com a
+    base completa desde 1º/01/1976» e «declaro que esta serventia possui
+    <em>todas</em> as matrículas digitalizadas do livro 2».
+    <strong>Confira a conferência abaixo antes de assinalar qualquer uma.</strong>
+  </div>
+
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Campo do formulário</th><th>O que o sistema mede</th></tr></thead>
+      <tbody>
+        <tr><th>CNS</th><td><code>{{ formulario.cns }}</code></td></tr>
+        <tr>
+          <th>Gmail do Cartório ou Oficial
+              <small class="muted">(para o Console do Google Cloud)</small></th>
+          <td><code>{{ formulario.conta_google }}</code></td>
+        </tr>
+        <tr><th>Total de Matrículas</th>
+            <td><strong>{{ formulario.total_de_matriculas }}</strong></td></tr>
+        <tr><th>Última Matrícula</th>
+            <td>{% if formulario.ultima_matricula %}
+                <strong>{{ formulario.ultima_matricula.numero }}</strong>
+                <small class="muted">(Livro {{ formulario.ultima_matricula.livro or '—' }})</small>
+                {% else %}—{% endif %}</td></tr>
+        <tr><th>Espaço utilizado pelo Livro 2</th>
+            <td>{% if formulario.espaco %}<strong>{{ formulario.espaco.gb }} GB</strong>
+                {% else %}<span class="muted">{{ formulario.erro_do_espaco }}</span>{% endif %}</td></tr>
+        <tr><th>Diretórios a incluir no backup</th>
+            <td><code>{{ formulario.diretorio }}</code></td></tr>
+        <tr><th>Qual sistema utiliza?</th><td>{{ formulario.sistema }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="alert alert-info">
+    <strong>A conta do Google não é o e-mail de contato do cartório.</strong>
+    Ela serve {{ formulario.conta_google_e_para }}
+    Vale ser conta da serventia, e não pessoal de quem pode sair — e
+    <strong>a senha dela não entra neste sistema</strong>, em lugar nenhum.
+  </div>
+
+  <div class="alert alert-warning">
+    <strong>O que só você tem</strong>, e que eu não invento:
+    {{ formulario.so_o_oficial_sabe }}. O formulário avisa ainda que
+    <strong>será necessária a liberação de rota do backup no firewall</strong> —
+    isso é providência, e não papel.
+  </div>
+</section>
+
+{# =============================================== o que o ONR recusa #}
+<section class="cartao">
+  <h2>A base está completa?</h2>
+  <p class="small muted">
+    O manual do ONR diz, em maiúsculas: <strong>«Não serão aceitas base de
+    dados ou de imagens parciais ou incompletas»</strong> — e a base deve
+    abranger desde <strong>1º/01/1976</strong>, ou desde o início das
+    atividades da serventia.
+  </p>
+
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>O que o ONR exige</th><th>Como estamos</th></tr></thead>
+      <tbody>
+        <tr>
+          <th>base desde 1º/01/1976</th>
+          <td>
+            {% if q.alcanca_1976 %}
+              <strong>alcança</strong> — a matrícula mais antiga é de
+              {{ q.mais_antiga }}{% if q.ato_mais_antigo %}, e o ato mais antigo de
+              {{ q.ato_mais_antigo }}{% endif %}
+            {% else %}
+              a mais antiga do sistema é de <strong>{{ q.mais_antiga or '—' }}</strong>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>toda matrícula com imagem</th>
+          <td>
+            {% if q.sem_imagem is none %}
+              <span class="muted">não deu para medir — veja o aviso abaixo</span>
+            {% elif q.sem_imagem %}
+              <strong>{{ q.sem_imagem }}</strong> das {{ q.matriculas }} matrículas
+              <strong>não têm uma única página no disco</strong>
+            {% else %}
+              as {{ q.matriculas }} matrículas têm imagem
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>Indicador Pessoal com CPF/CNPJ</th>
+          <td>
+            <strong>{{ q.indicador_pessoal.com_documento }}</strong> de
+            {{ q.indicador_pessoal.vinculos }} vínculos têm documento —
+            <strong>{{ q.indicador_pessoal.sem_documento }}</strong> não têm
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% if q.erro_do_disco %}
+  {# ZERO MEDIDO E ZERO POR ENGANO SÃO COISAS DIFERENTES. #}
+  <div class="alert alert-danger">
+    <strong>Não deu para ler a pasta das imagens</strong>, e por isso os
+    números dela não aparecem — em vez de aparecerem zerados, que seria pior.
+    <br>{{ q.erro_do_disco }}
+  </div>
+  {% endif %}
+</section>
+
+{# =============================================== o Indicador Pessoal #}
+<section class="cartao">
+  <h2>1. Indicador Pessoal — a carga completa</h2>
+
+  <table class="tabela">
+    <tbody>
+      <tr><th>Vínculos pessoa–matrícula</th><td>{{ q.indicador_pessoal.vinculos }}</td></tr>
+      <tr><th>Pessoas distintas</th><td>{{ q.indicador_pessoal.pessoas }}</td></tr>
+      <tr><th>Matrículas alcançadas</th><td>{{ q.indicador_pessoal.matriculas }}</td></tr>
+      <tr><th>Com CPF ou CNPJ</th><td>{{ q.indicador_pessoal.com_documento }}</td></tr>
+      <tr><th>Sem documento</th><td><strong>{{ q.indicador_pessoal.sem_documento }}</strong></td></tr>
+      {% if q.indicador_pessoal.sem_data %}
+      <tr><th>Sem data</th><td>{{ q.indicador_pessoal.sem_data }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  {% if q.indicador_pessoal.sem_documento %}
+  <div class="alert alert-warning">
+    <strong>{{ q.indicador_pessoal.sem_documento }} vínculos sairão com o
+    documento zerado</strong> (<code>{{ q.indicador_pessoal.zerado_vai_assim }}</code>),
+    e isto é uma decisão sua, não do sistema:
+    <ul class="small">
+      <li>o <strong>modelo do ONR</strong> diz, em comentário dentro do próprio
+          XML, que o CPF/CNPJ «deve ser maior que zero»;</li>
+      <li>os <strong>arquivos que esta casa já mandou</strong> dizem o
+          contrário — {{ q.indicador_pessoal.precedente_da_casa }}</li>
+    </ul>
+    Vale a regra da casa — fazer como o E-Ofício fazia —, e a divergência fica
+    escrita aqui em vez de ser escolhida em silêncio.
+  </div>
+  {% endif %}
+
+  {% if q.indicador_pessoal.quantos_nomes_estranhos %}
+  {# NOME COM LIXO NA FRENTE SE DECLARA, E NÃO SE LIMPA — os arquivos que o
+     E-Ofício mandou têm 19 iguais: é sujeira do acervo. #}
+  <div class="alert alert-warning">
+    <strong>{{ q.indicador_pessoal.quantos_nomes_estranhos }} nome(s) começam
+    com sinal em vez de letra</strong>, e vão assim:
+    <ul class="small">
+      {% for n in q.indicador_pessoal.nomes_estranhos %}<li><code>{{ n }}</code></li>{% endfor %}
+    </ul>
+    <strong>O sistema não os limpa</strong>, e é de propósito: tirar
+    «<code>: </code>» parece seguro, mas cortar o começo de
+    «<code>1ª SUEZ ENERGIA RENOVÁVEL S/A</code>» estragaria a razão social. O
+    nome é o que identifica a pessoa na pesquisa nacional de bens — quem
+    corrige é quem tem o livro na frente. Os arquivos que o E-Ofício mandou
+    trazem <strong>19</strong> iguais.
+  </div>
+  {% endif %}
+
+  <form method="post"
+        action="{{ url_for('ri_onr_next_cloud_ips') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">
+      Gerar o XML da carga completa ({{ q.indicador_pessoal.vinculos }} vínculos)
+    </button>
+  </form>
+  <p class="small muted">
+    O arquivo é para o programa <strong>IPS</strong>, que o ONR instala no
+    servidor. <strong>Este sistema não transmite nada</strong> — quem sobe ao
+    Firestore é o programa deles.
+  </p>
+</section>
+
+{# =============================================== as imagens #}
+{% if q.imagens %}
+<section class="cartao">
+  <h2>2. Imagens do Livro 2 — a pasta contra o padrão do ONR</h2>
+  <p class="small muted">Varrido em <code>{{ raiz }}</code>.</p>
+
+  <table class="tabela">
+    <tbody>
+      <tr><th>Arquivos na pasta</th><td>{{ q.imagens.arquivos }}</td></tr>
+      <tr><th>No padrão do ONR <small class="muted">(pasta de 8 dígitos, nome
+          <code>99999999.9999</code>)</small></th>
+          <td><strong>{{ q.imagens.no_padrao }}</strong></td></tr>
+      <tr><th>Matrículas alcançadas</th><td>{{ q.imagens.matriculas }}</td></tr>
+      <tr><th>200 × 200 dpi</th>
+          <td>{{ q.imagens.resolucao_ok }} de {{ q.imagens.amostra }}
+              <small class="muted">conferidos por amostra</small></td></tr>
+      <tr><th>Compressão sem perdas</th>
+          <td>{{ q.imagens.compressao_ok }} de {{ q.imagens.amostra }}
+              <small class="muted">conferidos por amostra</small></td></tr>
+    </tbody>
+  </table>
+
+  {% if q.imagens.quantos_fora_do_nome or q.imagens.quantos_fora_da_pasta %}
+  <div class="alert alert-warning">
+    {% if q.imagens.quantos_fora_da_pasta %}
+    <strong>{{ q.imagens.quantos_fora_da_pasta }} arquivo(s) na pasta
+    errada</strong> — o ONR agrupa de mil em mil, e a pasta
+    <code>00000000</code> guarda as matrículas 1 a 999:
+    <small>{{ q.imagens.fora_da_pasta[:6]|join(', ') }}</small><br>
+    {% endif %}
+    {% if q.imagens.quantos_fora_do_nome %}
+    <strong>{{ q.imagens.quantos_fora_do_nome }} arquivo(s) com nome fora do
+    padrão</strong>, ignorados:
+    <small>{{ q.imagens.fora_do_nome[:6]|join(', ') }}</small>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if q.imagens.achados %}
+  <div class="alert alert-danger">
+    <strong>O que a amostra achou:</strong>
+    <ul class="small">{% for a in q.imagens.achados %}<li>{{ a }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <div class="alert alert-info">
+    A pasta é lida <strong>direto pelo programa CSL2</strong>, que o ONR
+    instala no servidor. Não há nada para gerar aqui — o que esta tela faz é
+    <strong>conferir</strong> que ela está no formato que ele espera.
+  </div>
+</section>
+{% endif %}
+
+{# =============================================== o que falta digitalizar #}
+{% if faltando %}
+<section class="cartao">
+  <h2>As matrículas sem imagem nenhuma</h2>
+  <p class="small muted">
+    São estas que fazem a base ser «incompleta» para o ONR. Ficha pela metade
+    não entra nesta conta — para o Bucket, matrícula com uma página é matrícula
+    que existe; a ficha incompleta é assunto da
+    <a href="{{ url_for('ri_fichas_do_disco') }}">outra tela</a>.
+  </p>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Matrícula</th><th>Livro</th><th>Folha</th><th>Ficha</th><th>Aberta em</th></tr></thead>
+      <tbody>
+      {% for m in faltando %}
+        <tr>
+          <td><a href="{{ url_for('ri_ficha', matricula_id=m.id) }}">{{ m.numero }}</a></td>
+          <td>{{ m.livro or '—' }}</td>
+          <td>{{ m.folha or '—' }}</td>
+          <td>{{ m.tipo_ficha or '—' }}</td>
+          <td>{{ m.data_abertura or '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if q.sem_imagem and q.sem_imagem > faltando|length %}
+  <p class="small muted">
+    Mostrando {{ faltando|length }} das {{ q.sem_imagem }}.
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+
+{# =============================================== o roteiro #}
+<section class="cartao">
+  <h2>O caminho, na ordem</h2>
+  <ol class="small">
+    <li><strong>Pedir a adesão.</strong> Formulário assinado para
+        <code>integrar-onr@onr.org.br</code>, assunto «Opção 2 – Cartório de
+        Registro de Imóveis de Cidade Exemplo/MA».</li>
+    <li><strong>Decidir sobre o que falta</strong> — digitalizar as
+        {{ q.sem_imagem if q.sem_imagem is not none else '—' }} matrículas sem
+        imagem, ou mandar a declaração de base incompleta assinada com o
+        e-CPF.</li>
+    <li><strong>Agendar a instalação</strong> do IPS e do CSL2 com o suporte do
+        ONR. <strong>Antes de deixar alguém mexer</strong>, confira o código de
+        segurança no Ofício Eletrônico, menu «Cartórios» → «Validação
+        Atendimento»: o analista tem de dizer o mesmo código que aparece na sua
+        tela.</li>
+    <li><strong>Gerar o XML acima</strong> e entregá-lo ao programa IPS.</li>
+    <li><strong>Homologação primeiro.</strong> Só peça o GoLive — a produção —
+        quando a equipe estiver familiarizada.</li>
+  </ol>
+</section>
+
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Leitura nº {{ leitura.id }} — Registro Civil{% endblock %}
+{% block content %}
+<h1>Leitura de documentos nº {{ leitura.id }}
+  — {{ rotulos.get(leitura.especie, leitura.especie) }}</h1>
+
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_leitura') }}">&larr; Leituras</a>
+</div>
+
+{% if leitura.erro %}
+<div class="notice danger"><strong>A leitura não terminou:</strong> {{ leitura.erro }}</div>
+{% endif %}
+
+{% if leitura.registro %}
+<div class="card">
+  <h2>O que será levado à tela de lavrar</h2>
+  {% set reg = leitura.registro %}
+  <table>
+    <tbody>
+    {% for k, v in reg.items() if k not in ('pessoas', 'chave') %}
+      <tr><th>{{ k }}</th><td>{{ v }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <h3>As pessoas</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Papel</th><th>Nome</th><th>Documento</th><th>Nascimento</th>
+      <th>Naturalidade</th><th>Endereço</th></tr></thead>
+    <tbody>
+    {% for p in reg.get('pessoas', []) %}
+      <tr>
+        <td>{{ p.papel }}</td><td>{{ p.nome }}</td>
+        <td>{{ p.get('documento_tipo', '') }} {{ p.get('documento_numero', '') }}
+            {{ p.get('documento_orgao', '') }}</td>
+        <td>{{ p.get('data_nascimento', '') }}{% if p.get('idade_no_fato') %}
+            ({{ p.idade_no_fato }} anos no fato){% endif %}</td>
+        <td>{{ p.get('naturalidade_cidade', '') }}{% if p.get('naturalidade_uf') %}/{{ p.naturalidade_uf }}{% endif %}</td>
+        <td>{{ p.get('endereco', '') }} {{ p.get('bairro', '') }} {{ p.get('cidade', '') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+<h2>O que conferir antes de lavrar</h2>
+{% if leitura.conferencia %}
+<ul class="card">
+  {% for a in leitura.conferencia %}
+  <li><strong>{{ a.gravidade }}</strong> — {{ a.texto }}
+    {% if a.onde %}<span class="small muted">({{ a.onde }})</span>{% endif %}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">A leitura não apontou nada — o que não quer dizer que esteja tudo
+  certo: confira com os originais assim mesmo.</p>
+{% endif %}
+
+{% if leitura.registro %}
+{% if leitura.rascunho_id %}
+<p>Esta leitura já virou rascunho:
+  <a class="button primary" href="{{ abrir_url }}">
+    abrir a tela de lavrar</a></p>
+{% else %}
+<form method="post" action="{{ url_for('rcpn_leitura_rascunho', leitura_id=leitura.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button class="button primary" type="submit">Criar o rascunho e abrir a tela de lavrar</button>
+</form>
+{% endif %}
+{% endif %}
+
+<h2>Documento por documento</h2>
+{% for d in leitura.documentos %}
+<details class="panel" {% if loop.first %}open{% endif %}>
+  <summary class="panel-head">{{ tipos.get(d.tipo, {}).get('nome', d.tipo) }} —
+    {{ d.arquivo }}, folha {{ d.n }}</summary>
+  <div style="padding:12px">
+    {% if d.attachment_id %}
+    <p><a href="{{ url_for('attachment_view', attachment_id=d.attachment_id) }}" target="_blank">
+      Abrir o documento original</a></p>
+    {% endif %}
+    <table>
+      <tbody>
+      {% for k, v in d.dados.items() %}
+        <tr><th>{{ k }}</th><td>{{ v if v is not none else '' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endfor %}
+
+<details class="panel">
+  <summary class="panel-head">O que saiu da casa nesta leitura
+    (custo estimado US$ {{ '%.3f'|format(leitura.custo_estimado or 0) }})</summary>
+  <div style="padding:12px">
+    <table>
+      <thead><tr><th>Etapa</th><th>Modelo</th><th>Páginas</th><th>Entrada</th><th>Saída</th></tr></thead>
+      <tbody>
+      {% for e in leitura.envios %}
+        <tr><td>{{ e.etapa }}{% if e.tipo %} ({{ e.tipo }}){% endif %}</td><td>{{ e.modelo }}</td>
+          <td>{{ e.paginas|join(', ') }}</td><td>{{ e.entrada }}</td><td>{{ e.saida }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="small">{{ base_legal }}</p>
+    <p class="small"><strong>Retenção pela Anthropic:</strong>
+      {{ zdr.observacao }}</p>
+    <p class="small muted">Páginas vistas e classificadas:
+      {% for p in leitura.paginas %}{{ p.arquivo }} p{{ p.n }} = {{ p.tipo }}{% if not loop.last %}; {% endif %}{% endfor %}</p>
+  </div>
+</details>
+{% endblock %}

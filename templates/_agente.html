@@ -1,0 +1,95 @@
+{#
+  A GAVETA DO AGENTE — em TODA tela, para quem responde pela serventia.
+
+  POR QUE UMA GAVETA, E NÃO SÓ A TELA DO CONSOLE
+      A tela do console é onde se configura e onde se lê o histórico. Mas a
+      pergunta que se faz ao agente nasce NO MEIO DE OUTRO TRABALHO — «esta
+      matrícula está como?», «por que este selo não saiu?» —, e sair da tela
+      para perguntar custa o que estava sendo feito. É a mesma razão da janela
+      da ajuda, e é por isso que as duas moram no `base.html`.
+
+  A DIFERENÇA COM A JANELA DA AJUDA, EM UMA LINHA
+      A ajuda aconselha e não escreve nada; esta opera: lê o código, consulta o
+      banco, anota num problema e abre ou fecha um módulo. Por isso ela é do
+      ADMIN, e por isso ela diz de quem é a sessão e leva ao console, onde cada
+      mudança volta com um clique.
+
+  NADA AQUI SABE O QUE O AGENTE PODE FAZER
+      O catálogo de ferramentas, o teto de turnos e o que está ligado vêm do
+      servidor, em `/agente/gaveta` e em `/agente/andamento/<id>`. Escritos
+      aqui, a gaveta ofereceria o que a instalação não tem — e oferecer e
+      recusar depois ensina quem opera a pedir o que não pode.
+
+  SEM JAVASCRIPT ELA CONTINUA FUNCIONANDO
+      O botão é um LINK para o console, e o formulário é um formulário que
+      responde página: ele posta em `agente_pedir` e cai na sessão. O
+      `agente.js` só troca isso por uma gaveta que não faz a página recarregar.
+#}
+<div class="agente-caixa" data-agente
+     data-tela="{{ request.endpoint or '' }}"
+     data-caminho="{{ request.path }}"
+     data-url-console="{{ url_for('agente_console') }}"
+     {# OS DOIS ENDEREÇOS QUE LEVAM O ID VÃO COM `-1`, e a gaveta o troca. É o
+        jeito de o Jinja montar o endereço sem inventar um id que exista. #}
+     data-url-gaveta="{{ url_for('agente_gaveta') }}"
+     data-url-andamento="{{ url_for('agente_andamento', sessao_id=-1) }}"
+     data-url-sessao="{{ url_for('agente_sessao', sessao_id=-1) }}"
+     data-url-pedir="{{ url_for('agente_pedir') }}"
+     data-url-responder="{{ url_for('agente_responder', sessao_id=-1) }}"
+     data-csrf="{{ csrf_token }}">
+
+  <a class="agente-chamar" href="{{ url_for('agente_console') }}"
+     data-agente-abrir>
+    <span class="agente-ponto" data-agente-ponto hidden></span>
+    Agente do sistema
+  </a>
+
+  <section class="agente-gaveta" data-agente-gaveta hidden
+           role="dialog" aria-label="Agente do sistema">
+    <header class="agente-topo">
+      <div>
+        <strong>Agente do sistema</strong>
+        <small class="muted" data-agente-provedor>carregando…</small>
+      </div>
+      <button type="button" class="agente-fechar" data-agente-fechar
+              aria-label="Fechar">×</button>
+    </header>
+
+    <div class="agente-corpo">
+      {# O QUE ELE AVISA ANTES DE ALGUÉM PEDIR: chave que falta, escrita
+         desligada, teto do dia. Quem descobre isso DEPOIS de escrever perdeu o
+         que escreveu. #}
+      <div class="agente-avisos" data-agente-avisos hidden></div>
+
+      <p class="agente-estado" data-agente-estado></p>
+
+      {# A CONVERSA. O que já está gravado entra aqui pelo servidor na primeira
+         carga; o que chega depois é anexado sem recarregar a tela. #}
+      <div class="agente-conversa" data-agente-conversa></div>
+
+      <form method="post" action="{{ url_for('agente_pedir') }}"
+            data-agente-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="sessao_id" value="" data-agente-sessao-id>
+        <label>O que você quer que ele apure
+          <textarea name="pedido" rows="2" required
+                    placeholder="Ex.: por que o ato 3728 da matrícula 3110 ficou sem selo?"></textarea>
+        </label>
+        <div class="agente-acoes">
+          <button class="button primary" type="submit" data-agente-enviar>
+            Pedir</button>
+          <button class="button" type="button" data-agente-parar hidden>
+            Começar outra</button>
+          <a class="button" href="{{ url_for('agente_console') }}">Console</a>
+        </div>
+        <p class="agente-nota">
+          Ele <strong>lê esta instalação</strong> e opera o que é pequeno:
+          anota num problema, registra o achado da conferência, abre ou fecha um
+          módulo. <strong>Não lavra ato</strong>, e tudo o que ele muda volta
+          com um clique — no console. Dados pessoais são mascarados antes de
+          qualquer envio.
+        </p>
+      </form>
+    </div>
+  </section>
+</div>

@@ -1,0 +1,235 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Ajuda do sistema — configurar</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('ajuda_consultar') }}">&larr; Ajuda do sistema</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Quem responde</span>
+    <small>{{ escolha.provedor_nome }} — {{ escolha.modelo }}</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    A lista de provedores e de modelos é a <strong>mesma do Agente do
+    sistema</strong>: um lugar só, para as duas listas não divergirem — foi o
+    que já aconteceu neste projeto com o menu e com as cargas. O padrão é o
+    Claude, que é quem respondia antes de existir escolha: quem não mexer em
+    nada fica exatamente como estava.
+  </small></p>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="provedor">
+    <label>Provedor
+      <select name="provedor">
+        {% for pr in provedores %}
+        <option value="{{ pr.id }}" {% if pr.id == escolha.provedor %}selected{% endif %}>
+          {{ pr.nome }}{% if not pr.tem_chave %} — sem chave informada{% endif %}
+        </option>
+        {% endfor %}
+      </select></label>
+    <label>Modelo
+      <select name="modelo">
+        <option value="">o padrão do provedor</option>
+        {% for chave, m in escolha.modelos.items() %}
+        <option value="{{ m.id }}" {% if m.id == escolha.modelo %}selected{% endif %}>
+          {{ m.rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button primary">Passar a responder por este provedor</button>
+    </div>
+  </form>
+  {% if escolha.escolha_em %}
+  <p style="padding:0 14px 14px"><small>
+    Última troca em {{ escolha.escolha_em[:16] | replace('T', ' ') }}
+    {% if escolha.escolha_por %}por {{ escolha.escolha_por }}{% endif %}.
+  </small></p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>As chaves de API</span>
+    <small>{{ provedores | selectattr('tem_chave') | list | length }} de
+      {{ provedores | length }} informadas</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    A chave <strong>não entra no banco</strong>. Ela é gravada em
+    <code>{{ caminho_da_chave }}</code>, ao lado da senha do selador e do
+    <code>secret.key</code> — o banco vai no backup, e o backup sai da
+    serventia. Chave dentro dele é chave publicada.
+    <br><br>
+    <strong>É o mesmo arquivo do Agente do sistema</strong>, e o mesmo lugar de
+    antes: quem já tinha a chave da Anthropic não digita de novo.
+  </small></p>
+  <p style="padding:0 14px"><small>
+    O uso é <strong>cobrado por token</strong>, e não por consulta. Os dois
+    tetos — {{ teto }} consultas e {{ teto_de_tokens }} tokens por dia —
+    existem para que um erro que repita a chamada sozinho não gaste sem
+    ninguém ver.
+  </small></p>
+  <table class="table" style="margin-top:14px">
+    {% for pr in provedores %}
+    <tr>
+      <th style="width:26%">{{ pr.nome }}</th>
+      <td>
+        {% if pr.tem_chave %}
+          <span class="badge ok">gravada</span> <code>{{ pr.mascarada }}</code>
+          {% if pr.vem_da_ajuda %}
+            <br><small class="muted">
+              Aproveitada do arquivo antigo da Ajuda (<code>claude.cred</code>) —
+              nada a digitar.
+            </small>
+          {% endif %}
+        {% else %}
+          <span class="badge alta">não informada</span>
+        {% endif %}
+        <br><small class="muted">modelos do provedor:
+          {{ pr.modelos.PADRAO }} (padrão){% if pr.modelos.FORTE != pr.modelos.PADRAO %},
+          {{ pr.modelos.FORTE }} (o mais forte){% endif %} ·
+          <a href="{{ pr.endereco }}" target="_blank" rel="noopener">painel do provedor</a>
+        </small>
+        <form method="post" style="margin-top:8px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="acao" value="chave">
+          <input type="hidden" name="provedor" value="{{ pr.id }}">
+          <input name="api_key" type="password" placeholder="vazio = não altera"
+                 autocomplete="off" style="min-width:280px">
+          <button class="button">Gravar a chave</button>
+        </form>
+        {% if pr.tem_chave and not pr.vem_da_ajuda %}
+        <form method="post" style="margin-top:8px"
+              onsubmit="return confirm('Apagar a chave do {{ pr.nome }} do disco? Nem a ajuda nem o agente respondem por este provedor até alguém informar outra.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="acao" value="apagar_chave">
+          <input type="hidden" name="provedor" value="{{ pr.id }}">
+          <button class="button">Apagar a chave</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Quem pode consultar</span>
+    <small>{{ acesso.perfis_lista | join(', ') }}</small>
+  </div>
+
+  {% if acesso.so_o_administrador %}
+  <div class="notice" style="margin:14px">
+    <strong>Hoje só o administrador consulta.</strong> Foi como você pediu em
+    26/08/2026 — e a lista abaixo é a “opção de expandir”: quando quiser abrir
+    para o balcão, marque aqui, sem precisar de ninguém mexer no sistema.
+  </div>
+  {% endif %}
+
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="perfis">
+    {% for p in acesso.todos_os_perfis %}
+      <label style="display:flex; gap:8px; align-items:center; padding:4px 0">
+        <input type="checkbox" name="perfis" value="{{ p }}" style="width:auto"
+               {% if p in acesso.perfis_lista %}checked{% endif %}
+               {% if p == 'ADMIN' %}disabled checked{% endif %}>
+        <span>{{ p }}{% if p == 'ADMIN' %}
+          <small> — sempre; quem muda esta regra não pode se trancar do lado de fora</small>
+        {% endif %}</span>
+      </label>
+    {% endfor %}
+    <label style="display:block; margin-top:10px">Por que está mudando <small>(opcional, mas fica registrado)</small>
+      <input name="motivo" placeholder="Ex.: abrir para o balcão depois de duas semanas de uso."></label>
+    <div class="actions"><button class="button primary">Salvar quem pode consultar</button></div>
+  </form>
+
+  {% if acesso.alterada_em %}
+  <p style="padding:0 14px 14px"><small>
+    Última mudança em {{ acesso.alterada_em[:16] | replace('T', ' ') }}
+    {% if acesso.alterada_por %}por {{ acesso.alterada_por }}{% endif %}.
+    {% if acesso.alterada_motivo %}<br>{{ acesso.alterada_motivo }}{% endif %}
+  </small></p>
+  {% endif %}
+</section>
+
+{% if mapa %}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que a ajuda sabe desta instalação</span>
+    <small>medido nesta máquina</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    A ajuda não responde sobre “cartório” em tese: junto de cada pergunta vai o
+    mapa <strong>medido</strong> desta instalação — as telas com o nome que
+    elas têm no menu daqui, o arquivo de programa onde cada uma mora e as
+    tabelas do banco desta máquina. <strong>Nenhum dado de cliente vai
+    junto</strong>: vão nomes de tela, de arquivo e de coluna, nunca o conteúdo
+    delas.
+    <br><br>
+    O mapa é medido, e não escrito à mão. Uma lista escrita envelheceria na
+    mesma tarde — e quem a leria não é alguém que estranha, é uma máquina que
+    responde com convicção.
+  </small></p>
+  <table class="table">
+    <tr><th style="width:34%">Telas</th><td>{{ mapa.quantas_telas }}</td></tr>
+    <tr><th>Tabelas do banco</th><td>{{ mapa.quantas_tabelas }}</td></tr>
+    <tr><th>Arquivos de programa</th><td>{{ mapa.quantos_arquivos }}</td></tr>
+    <tr><th>Telas com nome no menu</th><td>{{ mapa.menu | length }}</td></tr>
+  </table>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O uso de hoje</span>
+    <small>restam {{ quadro.restam }} de {{ quadro.teto }} consultas</small>
+  </div>
+  <table class="table">
+    <tr><th style="width:34%">Consultas</th><td>{{ quadro.consultas or 0 }}</td></tr>
+    <tr><th>Que não obtiveram resposta</th><td>{{ quadro.falhas }}</td></tr>
+    {# **O QUE A API COBRA É O TOKEN, E NÃO A CONSULTA.** A linha de consultas
+       sozinha dizia quantas vezes se perguntou, e não quanto se gastou — e a
+       conta que chega no fim do mês é a de baixo. #}
+    <tr><th>Tokens no dia <small>(entrada + saída)</small></th>
+        <td>{{ quadro.tokens }} de {{ quadro.teto_de_tokens }}
+          <small>— restam {{ quadro.restam_tokens }}</small></td></tr>
+    <tr><th>Tamanho enviado / recebido <small>(tokens)</small></th>
+        <td>{{ quadro.entrada }} / {{ quadro.saida }}</td></tr>
+    <tr><th>Históricas anteriores à proteção obrigatória</th>
+        <td>{{ quadro.historicas_sem_protecao }}</td></tr>
+    {% if quadro.sem_provedor %}
+    <tr><th>Sem provedor registrado <small>(de antes do seletor)</small></th>
+        <td>{{ quadro.sem_provedor }}</td></tr>
+    {% endif %}
+  </table>
+</section>
+
+{% if historicas %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Consultas históricas anteriores à proteção obrigatória</span>
+    <small>{{ historicas | length }}</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    Estes registros foram preservados para auditoria. A versão atual não
+    permite envio identificável, mesmo por administrador.
+  </small></p>
+  <table class="table">
+    <thead><tr><th>Quando</th><th>Quem</th><th>Referência</th><th></th></tr></thead>
+    <tbody>
+    {% for c in historicas %}
+      <tr>
+        <td><small>{{ c.perguntada_em[:16] | replace('T', ' ') }}</small></td>
+        <td>{{ c.perguntada_por or '—' }}</td>
+        <td>{{ c.referencia or c.onde or '—' }}</td>
+        <td><a class="button" href="{{ url_for('ajuda_consulta', consulta_id=c.id) }}">Ver</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

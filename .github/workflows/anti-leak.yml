@@ -1,0 +1,60 @@
+# CI anti-vazamento do Cartório Gestão (sanitização B0).
+# Falha o build se entrar no repositório: CPF/CNPJ com DV válido (exceto
+# fictícios declarados), CNS/selo TJMA reais, C:\Users\<perfil>, arquivos
+# proibidos (*.cred, *.key, secret.key, *.sqlite3 ...), segredos (gitleaks)
+# ou qualquer item da deny-list nominal da serventia.
+#
+# A deny-list nominal NÃO está no repo: é o secret CG_DENYLIST_LOCAL
+# (conteúdo de ci/denylist.local.txt), cadastrado pelo oficial na publicação.
+name: anti-leak
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  anti-leak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Deny-list local a partir do secret
+        env:
+          CG_DENYLIST_LOCAL: ${{ secrets.CG_DENYLIST_LOCAL }}
+        run: |
+          if [ -n "$CG_DENYLIST_LOCAL" ]; then
+            printf '%s\n' "$CG_DENYLIST_LOCAL" > ci/denylist.local.txt
+            echo "deny-list local carregada do secret"
+          else
+            echo "::warning::secret CG_DENYLIST_LOCAL ausente — só detectores genéricos"
+          fi
+
+      - name: Varredura anti-vazamento (arquivos versionados)
+        run: python ci/anti_vazamento.py --modo git
+
+      - name: Testes do motor anti-vazamento
+        env:
+          CG_ANTI_VAZAMENTO_ESTRITO: "1"
+        run: |
+          pip install pytest
+          python -m pytest -p no:cacheprovider -o addopts="" tests/test_anti_vazamento.py -q
+
+      - name: Apagar a deny-list local do runner
+        if: always()
+        run: rm -f ci/denylist.local.txt
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml   # config do B1 na raiz; nao duplicar

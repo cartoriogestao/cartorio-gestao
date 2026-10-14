@@ -1,0 +1,510 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Usucapião {{ p.numero }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('usucapiao_processos') }}">&larr; Processos</a>
+  <a class="button" href="{{ url_for('usucapiao_dossie', processo_id=p.id) }}">Relatório para qualificação</a>
+</div>
+
+{# ---------------------------------------------------- o que fazer agora #}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que fazer agora</span>
+    <small>{{ NOME_DA_ETAPA.get(p.etapa, p.etapa) }} · {{ p.situacao }}</small>
+  </div>
+  {% if not passos %}
+    <p style="padding:14px">Nada pendente.</p>
+  {% else %}
+  <ul style="padding:14px 30px">
+    {% for x in passos %}
+      <li style="margin-bottom:8px">
+        {% if x.urgencia >= 3 %}<strong class="danger">{{ x.passo }}</strong>
+        {% else %}<strong>{{ x.passo }}</strong>{% endif %}
+        <br><small>{{ x.porque }}</small>
+      </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+{# --------------------------------------------------------------- a capa #}
+<section class="panel">
+  <div class="panel-head"><span>A capa</span></div>
+  <table class="table">
+    <tr><th>Modalidade</th><td>{{ MODALIDADES.get(p.modalidade, p.modalidade) }}</td>
+        <th>Prenotação</th><td>{{ p.prenotacao or '—' }}</td></tr>
+    <tr><th>Requerente</th><td>{{ p.requerente_nome or '—' }}</td>
+        <th>CPF/CNPJ</th><td>{{ p.requerente_documento or '—' }}</td></tr>
+    <tr><th>Imóvel</th><td colspan="3">{{ p.imovel_descricao or '—' }}</td></tr>
+    <tr><th>Área</th><td>{{ p.imovel_area or '—' }}</td>
+        <th>Município</th><td>{{ p.imovel_municipio or '—' }}</td></tr>
+    <tr><th>Posse desde</th><td>{{ p.posse_inicio or '—' }}</td>
+        <th>Matrícula</th><td>{{ p.matricula_id or 'sem matrícula' }}</td></tr>
+  </table>
+</section>
+
+{# --------------------------------------------------- as etapas do rito #}
+<section class="panel">
+  <div class="panel-head"><span>O rito</span><small>{{ faltantes | length }} etapa(s) pela frente</small></div>
+  <table class="table">
+    <tbody>
+      {% for e, nome in ETAPAS %}
+      <tr>
+        <td style="width:34px">
+          {% if ORDEM[e] < ORDEM[p.etapa] %}✓
+          {% elif e == p.etapa %}<strong>→</strong>
+          {% endif %}
+        </td>
+        <td{% if e == p.etapa %} style="font-weight:600"{% endif %}>{{ nome }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if p.situacao not in ['REGISTRADO','REJEITADO','REMETIDO_AO_JUIZO'] %}
+  <form method="post" action="{{ url_for('usucapiao_etapa', processo_id=p.id) }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Mudar para
+      <select name="etapa">
+        {% for e, nome in ETAPAS %}<option value="{{ e }}">{{ nome }}</option>{% endfor %}
+      </select></label>
+    <div class="actions"><button class="button">Mudar etapa</button></div>
+    <p style="grid-column:1/-1"><small>Não dá para pular etapa: cada fase do rito
+      protege alguém, e registro com fase pulada nasce nulo. Voltar é permitido.</small></p>
+  </form>
+  {% endif %}
+</section>
+
+{# ----------------------------------------------------- a conferência #}
+<section class="panel">
+  <div class="panel-head">
+    <span>Conferência do rito</span>
+    <small>{{ conferencia.pendentes | length }} pendente(s)</small>
+  </div>
+  <table class="table">
+    <thead><tr><th></th><th>Item</th><th>Base</th><th>Estado</th><th></th></tr></thead>
+    <tbody>
+      {% for i in conferencia.itens %}
+      <tr>
+        <td>{% if i.estado == 'CUMPRIDO' %}✓{% elif i.estado == 'DISPENSADO' %}~{% else %}&nbsp;{% endif %}</td>
+        <td>{{ i.rotulo }}{% if i.nota %}<br><small>{{ i.nota }}</small>{% endif %}</td>
+        <td><small>{{ i.base }}</small></td>
+        <td>{{ i.estado }}{% if i.motivo %}<br><small>{{ i.motivo }}</small>{% endif %}</td>
+        <td>
+          {% if p.situacao not in ['REGISTRADO','REJEITADO','REMETIDO_AO_JUIZO'] %}
+          <details>
+            <summary><small>marcar</small></summary>
+            <form method="post" action="{{ url_for('usucapiao_conferencia', processo_id=p.id) }}"
+                  style="margin-top:6px">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="item" value="{{ i.item }}">
+              <select name="estado">
+                <option value="CUMPRIDO">Cumprido</option>
+                <option value="DISPENSADO">Dispensado</option>
+                <option value="PENDENTE">Pendente</option>
+              </select>
+              <input name="motivo" placeholder="motivo — obrigatório para dispensar">
+              <button class="button">Gravar</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{# --------------------------------------------------------- as peças #}
+<section class="panel">
+  <div class="panel-head"><span>Peças</span><small>{{ pecas | length }}</small></div>
+  {% if pecas %}
+  <table class="table">
+    <thead><tr><th>#</th><th>Tipo</th><th>Descrição</th><th>Juntada</th><th>Teor</th></tr></thead>
+    <tbody>
+      {% for x in pecas %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ TIPOS_DE_PECA.get(x.tipo, x.tipo) }}</td>
+        <td>{{ x.descricao or '—' }}
+          {% if x.nome_arquivo %}<br><small>{{ x.nome_arquivo }}</small>{% endif %}
+          {% if x.caminho %}<br><small class="muted">{{ x.caminho }}</small>{% endif %}
+          {% for a in anexos_pecas.get(x.id, []) %}
+            <br><small>
+              <a href="{{ url_for('attachment_view', attachment_id=a.id) }}" target="_blank">ver</a>
+              · <a href="{{ url_for('attachment_download', attachment_id=a.id) }}">baixar</a>
+            </small>
+          {% endfor %}
+        </td>
+        <td><small>{{ x.juntada_em[:10] }}</small></td>
+        <td>{% if x.teor %}✓{% else %}<small>só o arquivo</small>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if p.situacao not in ['REGISTRADO','REJEITADO','REMETIDO_AO_JUIZO'] %}
+  <form method="post" enctype="multipart/form-data"
+        action="{{ url_for('usucapiao_juntar', processo_id=p.id) }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Tipo
+      <select name="tipo">
+        {% for k, v in TIPOS_DE_PECA.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select></label>
+    <label>Descrição <input name="descricao"></label>
+    <label>Arquivo digitalizado
+      <small>(PDF, imagem ou documento que ficará no arquivo do sistema)</small>
+      <input type="file" name="documento" multiple></label>
+    <label>Nome avulso <small>(se não houver upload)</small><input name="nome_arquivo"></label>
+    <label>Caminho já existente <small>(se o arquivo já estiver em disco)</small><input name="caminho"></label>
+    <label style="grid-column:1/-1">Teor em texto
+      <small>(é o que vai no relatório — o PDF se lê pior)</small>
+      <textarea name="teor" rows="4"></textarea></label>
+    <div class="actions"><button class="button">Juntar</button></div>
+  </form>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------ os movimentos #}
+<section class="panel" id="andamento">
+  <div class="panel-head"><span>Andamento</span><small>{{ movimentos | length }}</small></div>
+  <table class="table">
+    <thead><tr><th>Data</th><th>Movimento</th><th>Prazo</th><th>Resposta</th></tr></thead>
+    <tbody>
+      {% for m in movimentos %}
+      <tr>
+        <td><small>{{ m.data_movimento[:10] }}</small></td>
+        <td>
+          <strong>{{ TIPOS_DE_MOVIMENTO.get(m.tipo, m.tipo) }}</strong>
+          {% if m.destinatario %} — {{ m.destinatario }}
+            {%- if m.destinatario_papel %} ({{ m.destinatario_papel }}){% endif %}{% endif %}
+          <br><small>{{ m.descricao }}</small>
+          {% if m.teor_expedido %}
+            {#  O PDF PRIMEIRO — relato #88, 21/09/2026: os três ofícios de
+                ciência estavam gravados, com teor, e ela não conseguia
+                «acessar». A tela dependia da caixa de impressão do
+                navegador; o arquivo se leva. #}
+            <br><a class="button" style="margin-top:6px"
+                   href="{{ url_for('usucapiao_notificacao_arquivo', processo_id=p.id, movimento_id=m.id) }}">
+              Imprimir em PDF
+            </a>
+            <a class="button secondary" style="margin-top:6px"
+               target="_blank" rel="noopener"
+               href="{{ url_for('usucapiao_notificacao_papel', processo_id=p.id, movimento_id=m.id) }}">
+              ver na tela
+            </a>
+          {% endif %}
+        </td>
+        <td>
+          {% if m.prazo_fim %}
+            até {{ m.prazo_fim }}
+            {% if not m.respondido_em and m.prazo_fim < hoje %}
+              <br><strong class="danger">vencido</strong>
+            {% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if m.resposta %}{{ RESPOSTAS.get(m.resposta, m.resposta) }}
+          {% elif m.prazo_fim %}
+            <details><summary><small>responder</small></summary>
+              <form method="post" style="margin-top:6px"
+                    action="{{ url_for('usucapiao_responder', processo_id=p.id, movimento_id=m.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <select name="resposta">
+                  {% for k, v in RESPOSTAS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+                </select>
+                <input name="resposta_teor" placeholder="o que disseram">
+                <button class="button">Gravar</button>
+              </form>
+            </details>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# ------------------------------------- O EDITAL E A CIENCIA AOS ENTES
+     Relatos #30 e #21. Os outros dois atos do rito que produzem papel — e ate
+     30/08/2026 nenhum dos dois tinha modelo: eram etapas com nome e sem papel,
+     e quem chegasse nelas escrevia o documento a mao. #}
+  {% if p.situacao not in ['REGISTRADO','REJEITADO','REMETIDO_AO_JUIZO'] %}
+  <details style="padding:14px; border-top:1px solid #e5e7eb">
+    <summary><strong>Edital e ciência aos entes públicos</strong>
+      <span class="small muted">— os outros dois papéis do rito</span>
+    </summary>
+
+    <div class="card" style="margin-top:12px">
+      <p><strong>Edital para terceiros interessados</strong>
+        <span class="small muted">(LRP, art. 216-A, § 4º)</span></p>
+      <form method="post"
+            action="{{ url_for('usucapiao_edital', processo_id=p.id) }}"
+            class="grid2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="check">
+          <input type="checkbox" name="sem_origem" value="1">
+          O imóvel <strong>não tem origem registrária</strong>, ou ela não foi
+          encontrada
+        </label>
+        <label>Disponibilizado na Central em
+          <input type="date" name="disponibilizado_em">
+          <small class="muted">A data que a Central devolveu —
+            <strong>não é a data da publicação</strong>, e não é de onde o prazo
+            conta.</small></label>
+        <div class="actions" style="grid-column:1/-1">
+          <button class="button">Montar o edital</button>
+        </div>
+      </form>
+      <p class="small muted">
+        Sem origem registrária, o edital <strong>tem de consignar isso
+        expressamente</strong> (Código de Normas, art. 755, § 2º) — um edital
+        que cala sobre isso é edital que se refaz.
+      </p>
+      <p class="small muted">
+        <strong>O prazo não conta da disponibilização.</strong> São dois
+        «primeiro dia útil seguinte» encadeados: um para achar a data da
+        publicação, outro para começar a contar (art. 755, § 1º). Num edital,
+        errar por um dia é recomeçar o edital.
+      </p>
+    </div>
+
+    <div class="card">
+      <p><strong>Ciência à União, ao Estado e ao Município</strong>
+        <span class="small muted">(LRP, art. 216-A, § 3º)</span></p>
+      <form method="post"
+            action="{{ url_for('usucapiao_ciencia_entes', processo_id=p.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button">Montar os três ofícios</button>
+      </form>
+      <p class="small muted">
+        <strong>São três, e os três de uma vez.</strong> Avisar dois e esquecer
+        o terceiro é vício que só aparece quando o que faltou reclamar — depois
+        de o registro estar feito.
+      </p>
+      <p class="small muted">
+        O prazo deles pode dobrar, <strong>mediante solicitação justificada
+        dentro do prazo original</strong> — não é automático, e não é de ofício.
+      </p>
+    </div>
+  </details>
+  {% endif %}
+
+  {# ------------------------------------------------ EXPEDIR NOTIFICACAO
+     Relato #30 do oficial. É formulário próprio, e não o de movimento genérico:
+     a notificação **produz um papel** que a serventia assina e entrega, e ele
+     exige coisas que um movimento qualquer não exige — endereço, forma da
+     norma e prazo do destinatario. #}
+  {% if p.situacao not in ['REGISTRADO','REJEITADO','REMETIDO_AO_JUIZO'] %}
+  <details style="padding:14px; border-top:1px solid #e5e7eb">
+    <summary><strong>Expedir notificação</strong>
+      <span class="small muted">— monta o papel, com o recibo junto</span>
+    </summary>
+    {% if TENTATIVAS %}
+    <div class="card" style="margin-top:12px">
+      <p class="small"><strong>Quem já foi notificado, e o que já se tentou</strong>
+        — <em>o edital só cabe depois de frustradas as anteriores</em>.</p>
+      <table class="tabela">
+        <tr><th>quem</th><th>já se tentou</th><th>a próxima forma é</th></tr>
+        {% for quem, x in TENTATIVAS.items() %}
+        <tr>
+          <td>{{ quem }}<br><span class="small muted">{{ x.papel }}</span></td>
+          <td class="small">{{ x.formas | join(', ') }}</td>
+          <td class="small">
+            {% if x.seguinte %}<strong>{{ x.seguinte }}</strong>
+              <br><span class="muted">{{ x.seguinte_rotulo }}</span>
+            {% else %}<span class="danger">as quatro se esgotaram</span>
+              <br><span class="small muted">aí não é a vez de escolher forma:
+                é a vez de o oficial decidir</span>
+            {% endif %}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('usucapiao_notificar', processo_id=p.id) }}"
+          class="grid2" style="margin-top:12px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Quem se notifica <input name="destinatario" required></label>
+      <label>Na qualidade de
+        <input name="destinatario_papel" required
+               placeholder="Confrontante ao norte, Titular do registro..."></label>
+      <label style="grid-column:1/-1">Endereço para onde o papel vai
+        <input name="endereco" required>
+        <small class="muted">{{ ONDE_NOTIFICAR.o_que }}
+          ({{ ONDE_NOTIFICAR.artigo }})</small></label>
+      <label>Por qual forma
+        <select name="forma">
+          {% for f in FORMAS_DE_NOTIFICAR %}
+            <option value="{{ f.forma }}">{{ loop.index }}. {{ f.o_que }}</option>
+          {% endfor %}
+        </select>
+        <small class="muted">A ordem é da norma — <strong>o edital só cabe
+          depois de frustradas as anteriores</strong>.</small></label>
+      <label>Prazo de quem
+        <select name="prazo_chave">
+          {% for pz in PRAZOS_DA_NOTIFICACAO %}
+            <option value="{{ pz.chave }}">{{ pz.de_quem }} — {{ pz.dias }} dias
+              {%- if pz.uteis %} úteis{% endif %}</option>
+          {% endfor %}
+        </select>
+        <small class="muted">O prazo sai da norma, e não de campo livre.</small></label>
+      <label>Que tentativa é esta
+        <input name="tentativa" type="number" min="1" placeholder="1">
+        <small class="muted">Sem registrar a tentativa, ninguém prova que as
+          anteriores se frustraram.</small></label>
+      <div class="actions" style="grid-column:1/-1">
+        <button class="button">Expedir e montar o papel</button>
+        <a class="button secondary"
+           href="{{ url_for('usucapiao_manual_notificacao') }}">como efetuar</a>
+      </div>
+    </form>
+  </details>
+  {% endif %}
+
+  {% if p.situacao not in ['REGISTRADO','REJEITADO','REMETIDO_AO_JUIZO'] %}
+  <form method="post" action="{{ url_for('usucapiao_movimentar', processo_id=p.id) }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Movimento
+      <select name="tipo">
+        {% for k, v in TIPOS_DE_MOVIMENTO.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select></label>
+    <label>Destinatário <input name="destinatario"></label>
+    <label>Papel
+      <select name="destinatario_papel">
+        <option value="">—</option>
+        <option value="CONFRONTANTE">Confrontante</option>
+        <option value="TITULAR">Titular de direito registrado</option>
+        {% for e in ENTES %}<option value="{{ e }}">{{ e | capitalize }}</option>{% endfor %}
+        <option value="TERCEIRO">Terceiro</option>
+      </select></label>
+    <label>Prazo em dias <input name="prazo_dias" type="number" min="1" placeholder="15"></label>
+    <label>Prazo começa <input name="prazo_inicio" type="date"></label>
+    <label>Prazo vence <input name="prazo_fim" type="date"></label>
+    <label style="grid-column:1/-1">Descrição <input name="descricao" required></label>
+    <div class="actions"><button class="button">Lançar movimento</button></div>
+  </form>
+  {% endif %}
+</section>
+
+{# ------------------------------------ o relatório de qualificação #}
+<section class="panel">
+  <div class="panel-head"><span>Relatório de qualificação</span><small>{{ analises | length }}</small></div>
+  <p style="padding:14px 14px 0"><small>
+    O parecer <strong>auxilia; não decide</strong>. Ele entra por conferir, e enquanto
+    o oficial não a ler, a decisão apoiada nela é recusada. Conferir não é concordar:
+    é ter lido, e assumir o que se faz com aquilo.
+  </small></p>
+
+  {% for a in analises %}
+  <div style="padding:14px; border-top:1px solid #e5e7eb">
+    <strong>{{ a.ferramenta or 'origem não informada' }}</strong>
+    <small>· recebida em {{ a.recebida_em[:10] }}
+      {%- if a.dossie_sha256 %} · dossiê {{ a.dossie_sha256[:12] }}…{% endif %}</small>
+    {% if a.conferida_por_humano %}
+      <span> — <strong>conferida</strong> em {{ (a.conferida_em or '')[:10] }}</span>
+    {% else %}
+      <form method="post" style="display:inline"
+            action="{{ url_for('usucapiao_conferir_analise', processo_id=p.id, analise_id=a.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button">Conferi esta análise</button>
+      </form>
+    {% endif %}
+    <div style="white-space:pre-wrap; margin-top:8px">{{ a.parecer }}</div>
+  </div>
+  {% endfor %}
+
+  {% if p.situacao not in ['REGISTRADO','REJEITADO','REMETIDO_AO_JUIZO'] %}
+  <form method="post" action="{{ url_for('usucapiao_analise', processo_id=p.id) }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>De quem veio <input name="ferramenta"
+             placeholder="advogado, assessoria, ferramenta — e a data"></label>
+    <label>SHA-256 do dossiê <input name="dossie_sha256"
+      placeholder="cole o do dossiê que você mandou"></label>
+    <label style="grid-column:1/-1">Parecer recebido
+      <textarea name="parecer" rows="8" required
+        placeholder="Cole aqui o parecer recebido"></textarea></label>
+    <label style="grid-column:1/-1">Achados em JSON <small>(opcional)</small>
+      <textarea name="achados_json" rows="3"></textarea></label>
+    <div class="actions"><button class="button">Juntar a análise</button></div>
+  </form>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------ a decisão #}
+<section class="panel">
+  <div class="panel-head"><span>Decisão do oficial</span><small>{{ decisoes | length }}</small></div>
+  {% for d in decisoes %}
+  <div style="padding:14px; border-top:1px solid #e5e7eb">
+    <strong>{{ SENTIDOS.get(d.sentido, d.sentido) }}</strong>
+    <small>· {{ d.decidida_em[:10] }} · {{ d.decidida_por or '—' }}
+      {%- if d.ato_id %} · registrada no ato {{ d.ato_id }}{% endif %}</small>
+    <p><small><strong>Fundamento:</strong> {{ d.fundamento }}</small></p>
+    <div style="white-space:pre-wrap">{{ d.teor }}</div>
+  </div>
+  {% endfor %}
+
+  {% if p.situacao not in ['REGISTRADO','REJEITADO','REMETIDO_AO_JUIZO'] %}
+    {% if not conferencia.pronto_para_decidir %}
+    <div class="notice" style="margin:14px">
+      Há <strong>{{ conferencia.pendentes | length }} item(ns) pendente(s)</strong> na
+      conferência. Decisão <em>procedente</em> será recusada: reconhecer usucapião com
+      item do rito em aberto faz nascer registro nulo. Cumpra ou dispense com motivo —
+      dispensar é decisão, ignorar não é.
+    </div>
+    {% endif %}
+  <form method="post" action="{{ url_for('usucapiao_decidir', processo_id=p.id) }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Sentido
+      <select name="sentido" id="sentido">
+        {% for k, v in SENTIDOS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select></label>
+    <label>Apoiada na análise <small>(opcional)</small>
+      <select name="analise_id">
+        <option value="">—</option>
+        {% for a in analises %}
+          <option value="{{ a.id }}">#{{ a.id }} {{ a.ferramenta or 'sem origem' }}
+            {%- if not a.conferida_por_humano %} (por conferir){% endif %}</option>
+        {% endfor %}
+      </select></label>
+    <label style="grid-column:1/-1">Fundamento
+      <textarea name="fundamento" rows="3" required
+        placeholder="O que dos autos leva a esta decisão. Fundamento genérico não serve."></textarea></label>
+    <label style="grid-column:1/-1">Teor
+      <textarea name="teor" id="teor" rows="12" required></textarea></label>
+    <div style="grid-column:1/-1">
+      <small>Modelos — clique para carregar no teor, e complete o que está marcado:</small><br>
+      {% for k, v in modelos.items() %}
+        <button type="button" class="button" onclick="usarModelo('{{ k }}')">{{ k | capitalize }}</button>
+      {% endfor %}
+    </div>
+    <div class="actions"><button class="button">Lavrar decisão</button></div>
+  </form>
+  <script>
+    const MODELOS = {{ modelos | tojson }};
+    function usarModelo(k) {
+      document.getElementById('teor').value = MODELOS[k];
+      document.getElementById('sentido').value = k;
+    }
+  </script>
+  {% endif %}
+
+  {% if decisoes and decisoes[0].sentido == 'PROCEDENTE' and p.situacao != 'REGISTRADO' %}
+  <form method="post" action="{{ url_for('usucapiao_registrar', processo_id=p.id) }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div style="grid-column:1/-1"><strong>Registrar o reconhecimento</strong>
+      <br><small>Decidir não é registrar: a decisão procedente deixa o processo
+      andando até o registro sair.</small></div>
+    <label>Ato do RI <input name="ato_id" type="number" required></label>
+    <label>Selo <input name="selo"></label>
+    <div class="actions"><button class="button">Registrar e encerrar</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

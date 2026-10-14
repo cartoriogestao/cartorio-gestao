@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Certidões do Registro Civil</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_assentos') }}">&larr; Assentos</a>
+</div>
+
+{# A BUSCA VEM PRIMEIRO, e não a lista. Quem chega ao guichê pede "a certidão
+   de fulano" — a lista do que já saiu serve para reimprimir, que é o caso
+   menos comum. #}
+<section class="panel">
+  <div class="panel-head"><span>Achar o assento</span></div>
+  <form method="get" style="padding:14px">
+    <label>Nome ou matrícula
+      <input type="search" name="q" value="{{ termo }}" autofocus
+             placeholder="Ex.: joao antonio, ou os 32 dígitos"></label>
+    <button class="button primary" type="submit">Procurar</button>
+    <p><small>
+      A busca é <strong>sem acento e sem caixa</strong>: escrever
+      <em>joao conceicao</em> acha <em>JOÃO CONCEIÇÃO</em>.
+    </small></p>
+  </form>
+  {% if termo %}
+    {% if achados %}
+    <table class="table">
+      <thead><tr><th>Nome</th><th>Espécie</th><th>Termo</th>
+                 <th>Matrícula</th><th></th></tr></thead>
+      <tbody>
+      {% for a in achados %}
+        <tr>
+          <td>{{ a.nome }}</td>
+          <td>{{ a.especie | capitalize }}</td>
+          <td>{{ a.numero or '—' }}</td>
+          <td><small>{{ a.matricula or '—' }}</small></td>
+          <td><a class="button" href="{{ url_for('rcpn_assento', assento_id=a.id) }}">Abrir</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p style="padding:0 14px 14px"><small>
+      A certidão se emite <strong>na ficha do assento</strong>: é lá que o
+      escrevente vê o que o livro diz antes de assinar o papel.
+    </small></p>
+    {% else %}
+    <p style="padding:0 14px 14px">
+      Nenhum assento com <strong>{{ termo }}</strong>.
+      Se o registro é desta serventia e não aparece, ele pode não ter vindo do
+      acervo ainda — veja <a href="{{ url_for('atribuicoes_importar') }}">Carga do acervo</a>.
+    </p>
+    {% endif %}
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>As certidões emitidas</span>
+    <small>{{ linhas | length }} mais recente(s)</small>
+  </div>
+  {% if linhas %}
+  <table class="table">
+    <thead><tr><th>N.</th><th>Nome</th><th>Espécie</th><th>Requerente</th>
+               <th>Emitida</th><th></th></tr></thead>
+    <tbody>
+    {% for c in linhas %}
+      <tr{% if c.cancelada_em %} class="muted"{% endif %}>
+        <td>{{ c.numero }}/{{ c.ano }}</td>
+        <td>{{ c.nome }}{% if c.cancelada_em %} <small>(cancelada)</small>{% endif %}</td>
+        <td>{{ c.especie | capitalize }}</td>
+        <td>{{ c.requerente or '—' }}</td>
+        <td><small>{{ c.emitida_em }}</small></td>
+        <td><a class="button" href="{{ url_for('rcpn_certidao', certidao_id=c.id) }}">Ver</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="padding:14px">
+    Nenhuma certidão emitida ainda. Procure o assento acima e emita na ficha dele.
+  </p>
+  {% endif %}
+</section>
+{% endblock %}

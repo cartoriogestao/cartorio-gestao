@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Fichas digitalizadas</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a></div>
+
+{# O CAMINHO PARA O QUE ESTA TELA NAO VE. Ela conta o que ja esta no banco; o
+   disco pode ter mais, e ate 04/09/2026 nada dizia isso. #}
+<div class="alert alert-info">
+  Esta tela cuida das fichas que o sistema <strong>já conhece</strong>. Para ver
+  o que existe <strong>no disco e o banco não conhece</strong> —
+  <a href="{{ url_for('ri_fichas_do_disco') }}">páginas que faltam</a>.
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ total }}</strong><small>imagens registradas</small></div>
+  <div class="stat"><strong>{{ resolvidas }}</strong><small>com arquivo localizado</small></div>
+  <div class="stat"><strong>{{ copiadas }}</strong><small>no acervo do sistema</small></div>
+  <div class="stat"><strong>{{ megabytes }} MB</strong><small>copiados</small></div>
+</section>
+
+<div class="notice">
+  O E-Ofício guarda o <code>id_path</code> das imagens, mas ele não corresponde ao nome da
+  pasta no disco — o caminho 1 aponta para <code>00000000</code>, o 2 para <code>00000003</code>.
+  Como os nomes de arquivo são únicos entre as pastas, o sistema indexa por nome.
+  O nome vem como <code>00003967.0001</code>, onde o <code>.0001</code> é o
+  <strong>número da página</strong> e não extensão &mdash; no disco o arquivo costuma ser
+  <code>00003967.0001.TIF</code>. O sistema procura das duas formas, e sem distinguir maiúscula
+  de minúscula.
+</div>
+
+{% if not pillow %}
+<div class="notice danger">
+  <strong>Falta o Pillow neste servidor, e sem ele a ficha não abre na tela.</strong>
+  Os arquivos são TIFF Grupo 4, que navegador nenhum exibe: o sistema converte para PNG na hora,
+  e sem a biblioteca só resta entregar o TIFF para download. Instale com
+  <code>pip install Pillow</code> e reinicie o serviço. Isto é independente de localizar os
+  arquivos &mdash; são dois problemas com o mesmo sintoma.
+</div>
+{% endif %}
+
+{% if diag %}
+<section class="panel">
+  <div class="panel-head"><span>Por que as fichas não estão abrindo</span></div>
+  <div style="padding:14px">
+    {% if not diag.raiz_existe %}
+      <p class="danger"><strong>O servidor não consegue abrir {{ diag.raiz }}.</strong>
+         Lembre que ele roda como SYSTEM: caminho local funciona, unidade mapeada não.</p>
+    {% elif diag.achadas == 0 %}
+      <p class="danger"><strong>Nenhuma das fichas foi localizada</strong>, e varri
+         {{ diag.arquivos }} arquivo(s) em {{ diag.raiz }}.</p>
+      <table style="margin-top:10px">
+        <thead><tr><th>O banco procura por</th><th>O disco tem</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="small"><code>{{ diag.exemplos_perdidos|join('</code><br><code>')|safe }}</code></td>
+            <td class="small">
+              {% if diag.exemplos_disco %}
+              <code>{{ diag.exemplos_disco|join('</code><br><code>')|safe }}</code>
+              {% else %}<em>a pasta está vazia</em>{% endif %}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="small muted" style="margin-top:8px">
+        Se os nomes das duas colunas não se parecem, a pasta é outra. O sistema não adivinha
+        onde as fichas estão &mdash; quem sabe isso é a serventia.
+      </p>
+    {% else %}
+      <p><strong>{{ diag.achadas }}</strong> localizadas e
+         <strong>{{ diag.perdidas }}</strong> ainda não, entre {{ diag.arquivos }} arquivos
+         em {{ diag.raiz }}.</p>
+      {% if diag.exemplos_perdidos %}
+      <p class="small muted">Não achei, por exemplo:
+         <code>{{ diag.exemplos_perdidos|join('</code>, <code>')|safe }}</code>.</p>
+      {% endif %}
+    {% endif %}
+    {% if diag.duplicados %}
+    <p class="small danger" style="margin-top:8px">
+      <strong>{{ diag.duplicados }} nome(s) aparecem em mais de uma pasta.</strong>
+      A carga assume nome único entre as pastas &mdash; é a razão de indexar por nome, já que o
+      <code>id_path</code> não foi exportado. Confira antes de confiar: ficha trocada abre a
+      matrícula errada.
+    </p>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<div class="notice warning">
+  <strong>O servidor roda como SYSTEM.</strong> Informe o caminho <strong>local</strong>
+  (<code>C:\...</code>), nunca unidade mapeada nem <code>\\servidor\...</code>:
+  conta de sistema não enxerga mapeamento de usuário.
+</div>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2">Pasta raiz das digitalizações
+      <input name="raiz" value="{{ raiz }}" required>
+      <small class="{{ 'ok' if existe else 'muted' }}">
+        {% if existe %}O servidor consegue abrir esta pasta.{% else %}O servidor NÃO consegue abrir esta pasta.{% endif %}
+      </small>
+    </label>
+    <div class="span2"><button class="primary">1. Localizar arquivos</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Trazer para o acervo do sistema</span></div>
+  <div class="notice warning">
+    <strong>Enquanto as imagens moram na pasta do E-Ofício, elas não são nossas.</strong>
+    Desligar aquele sistema levaria as fichas junto, e o backup daqui não as alcança.
+    Copiando para <code>arquivos\ri\fichas</code>, elas passam a viver onde o sistema roda
+    e entram automaticamente no backup — que já varre essa pasta.
+  </div>
+  <div class="notice small">
+    São cerca de <strong>161 MB</strong> em 3.667 arquivos. Cada imagem recebe SHA-256 na cópia,
+    para detectar corrupção depois. A operação é idempotente: rodar de novo só copia o que faltar.
+  </div>
+  {% if copiadas is defined %}
+  <div class="notice ok">{{ copiadas }} de {{ total }} imagens já estão no acervo do sistema.</div>
+  {% endif %}
+  <form method="post" action="{{ url_for('ri_copiar_imagens') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="primary">2. Copiar para o nosso acervo</button>
+  </form>
+</section>
+{% endblock %}

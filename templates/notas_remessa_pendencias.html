@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>{{ nome }} &mdash; o que falta, ato por ato</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_remessas', ano=ano, mes=mes, quinzena=quinzena) }}">
+    &larr; Remessas</a>
+</div>
+
+<div class="notice">
+  {{ quinzena }}ª quinzena de {{ MESES[mes] }}/{{ ano }} &mdash;
+  {{ separado.periodo_inicio }} a {{ separado.periodo_fim }}, fechar até {{ separado.prazo }}.
+  <strong>{{ separado.aptos|length }}</strong> pronto{{ '' if separado.aptos|length == 1 else 's' }},
+  <strong>{{ separado.impedidos|length }}</strong> parado{{ '' if separado.impedidos|length == 1 else 's' }}.
+  Nenhum ato é corrigido aqui: esta tela mostra o que falta, e a correção é feita na ficha do ato.
+</div>
+
+{% if separado.impedidos %}
+<section class="panel">
+  <div class="panel-head"><span>Parados</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Ato</th><th>Tipo</th><th>Data</th><th>Livro/folha</th><th>O que falta</th></tr></thead>
+    <tbody>
+    {% for item in separado.impedidos %}
+      <tr>
+        <td><a href="{{ url_for('notas_ato', ato_id=item.ato.id) }}">
+            {{ item.ato.termo or item.ato.numero_ordem or item.ato.id }}</a></td>
+        <td class="small">{{ item.ato.tipo }}</td>
+        <td class="small">{{ item.ato.data }}</td>
+        <td class="small">
+          {{ item.ato.livro or '—' }}{{ item.ato.livro_complemento or '' }} /
+          {{ item.ato.folha or '—' }}{{ item.ato.folha_complemento or '' }}</td>
+        <td class="small">
+          <ul style="margin:0;padding-left:18px">
+            {% for p in item.problemas %}<li>{{ p.motivo }}</li>{% endfor %}
+          </ul>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if separado.aptos %}
+<section class="panel">
+  <div class="panel-head"><span>Prontos para ir</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Ato</th><th>Tipo</th><th>Data</th><th>Livro/folha</th><th>Partes</th></tr></thead>
+    <tbody>
+    {% for item in separado.aptos %}
+      <tr>
+        <td><a href="{{ url_for('notas_ato', ato_id=item.ato.id) }}">
+            {{ item.ato.termo or item.ato.numero_ordem or item.ato.id }}</a></td>
+        <td class="small">{{ item.ato.tipo }}</td>
+        <td class="small">{{ item.ato.data }}</td>
+        <td class="small">
+          {{ item.ato.livro }}{{ item.ato.livro_complemento or '' }} /
+          {{ item.ato.folha }}{{ item.ato.folha_complemento or '' }}</td>
+        <td class="small">{{ item.linha.partes|length if item.linha and item.linha.partes else 0 }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

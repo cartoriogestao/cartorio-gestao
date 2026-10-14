@@ -1,0 +1,189 @@
+{% extends 'base.html' %}
+{% block title %}ONR — o índice real e os editais{% endblock %}
+{% block heading %}<h1>ONR — Registro de Imóveis do Brasil</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <form method="post" action="{{ url_for('ri_onr_testar') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">Testar a credencial</button>
+  </form>
+  <form method="post" action="{{ url_for('ri_onr_fila') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">Conferir a fila do ONR</button>
+  </form>
+  {# O QUE ELE TEM DO LADO DELE. Se divergir do rastro daqui, quem manda e la —
+     e e por isso que a tela mostra as duas coisas. #}
+  <form method="post" action="{{ url_for('ri_onr_la') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">O que o ONR tem</button>
+  </form>
+</div>
+
+{# ------------------------------------------------------------------ #}
+<section class="card {% if not tem_credencial %}warning{% endif %}">
+  <h2>A Central</h2>
+  <p>
+    Endereço: <code>{{ base }}</code> — ambiente <strong>{{ ambiente|lower }}</strong>.
+    CNS da serventia: <code>{{ cns or '—' }}</code>.
+  </p>
+  {% if tem_credencial %}
+    <p>A credencial do ONR está informada.</p>
+  {% else %}
+    <p>
+      <strong>A credencial do ONR ainda não foi informada</strong>, e sem ela
+      nada sobe nem desce. Ela é um <strong>par</strong> —
+      <code>client_id</code> e <code>client secret</code> —, e não usuário e
+      senha; informe em <a href="{{ url_for('settings') }}">Administrativo →
+      Configurações</a>, na seção «Centrais — credenciais das APIs».
+    </p>
+    <p><small>
+      Ela fica em <code>{{ arquivo_da_credencial }}</code>, <strong>fora do
+      banco</strong> — o banco viaja no backup, e o backup já saiu da serventia.
+    </small></p>
+  {% endif %}
+  <p><small>
+    {# OS DOIS AMBIENTES VÊM DO CONTRATO, e isso é o oposto do ON-RCPN. #}
+    <strong>Os dois ambientes vêm do próprio contrato</strong> — o ONR declara
+    <code>api.</code> e <code>testes-api.</code> em <code>servers</code>. Aqui
+    não se adivinha endereço nenhum, e a casa começa na de testes.
+  </small></p>
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section>
+  <h2>O que já subiu ({{ envios|length }})</h2>
+  {% if not envios %}
+    <p class="muted">Nada subiu ao ONR ainda.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>#</th><th>o quê</th><th>de onde</th><th>identificador</th>
+        <th>situação</th><th>a fila disse</th><th>quando</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for e in envios %}
+        <tr>
+          <td>{{ e.id }}</td>
+          <td>{{ nome_da_especie.get(e.especie, e.especie) }}</td>
+          <td>
+            {% if e.matricula_id %}matrícula {{ e.matricula_id }}{% endif %}
+            {% if e.processo_id %}usucapião {{ e.processo_id }}{% endif %}
+          </td>
+          <td><code>{{ e.identificador or '—' }}</code></td>
+          <td>{{ e.situacao|lower }}</td>
+          <td>{{ e.fila_situacao or '—' }}</td>
+          <td>{{ e.enviado_em }}</td>
+          <td>
+            {% if e.situacao == 'RECUSADO' %}
+            {# RECUSADO SEM MOTIVO E RECUSA QUE NAO DIZ O QUE CONSERTAR. #}
+            <form method="post" action="{{ url_for('ri_onr_porque', envio_id=e.id) }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button" type="submit">Por quê?</button>
+            </form>
+            {% endif %}
+            {% if e.especie == 'INDICADOR' and e.situacao != 'CANCELADO' %}
+            {# CORRIGIR NAO QUEIMA O IDENTIFICADOR; excluir-e-mandar-de-novo
+               queima, e quem consultou o indice fica com um numero morto. #}
+            <form method="post" action="{{ url_for('ri_onr_indicador_atualizar', envio_id=e.id) }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button" type="submit">Corrigir no ONR</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><small>
+    {# ENVIAR NÃO É SER ACEITO, e a tela separa as duas colunas. #}
+    <strong>«Enviado» não é «aceito».</strong> O ONR recebe e processa depois,
+    numa fila própria — o botão «Conferir a fila» pergunta a ele o que
+    aconteceu, e é ele que muda a situação. Tratar as duas como a mesma coisa
+    seria dar por publicado o que ele recusou.
+  </small></p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section>
+  <h2>Matrículas cujo indicador o ONR ainda não tem ({{ faltam|length }})</h2>
+  {% if not faltam %}
+    <p class="muted">Nenhuma. Toda matrícula lavrada por esta casa já subiu.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Matrícula</th><th>Livro</th><th>Imóvel</th><th>Onde</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for m in faltam %}
+        <tr>
+          <td>{{ m.numero }}{% if m.cnm %}<br><small>{{ m.cnm }}</small>{% endif %}</td>
+          <td>{{ m.livro or '—' }}</td>
+          <td>{{ m.tipo_imovel or '—' }} · {{ m.rural_urbano or '—' }}</td>
+          <td>{{ m.cidade or '—' }}/{{ m.uf or '—' }}</td>
+          <td><a class="button" href="{{ url_for('ri_onr_indicador', matricula_id=m.id) }}">Conferir</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <p><small>
+    {# O ACERVO NÃO VIRA ATRASO — a regra da casa aplicada ao ONR. #}
+    <strong>As fichas do acervo não entram nesta lista.</strong> Elas vieram de
+    um sistema que já respondia ao ONR, e mandar setenta anos de livro como
+    novidade encheria a fila deles com o que já está lá.
+  </small></p>
+
+  {# ------------------------------------------------------------------ #}
+  {# A PORTA DO ENDEREÇO — 16/09/2026. E ela fica AQUI, e não só no menu,
+     porque é aqui que o problema aparece: quem abre esta lista procurando o que
+     falta para publicar descobre, na linha da matrícula, que o que falta é o
+     endereço — e o endereço está escrito dentro do texto que veio da
+     digitalização. A pergunta seguinte («de onde eu tiro isso?») precisa ter
+     resposta na mesma tela; sem ela o caminho é o balcão adivinhar.
+
+     **O NÚMERO NÃO VEM PARA CÁ, e isso é deliberado.** A fila do endereço conta
+     as fichas da casa E do acervo — são listas diferentes, e trazer um número de
+     1.443 para o lado de 434 faria quem lê concluir que esta lista é aquela. O
+     que esta tela diz é o que ela sabe: que existe uma tela onde o teor vira
+     endereço, com o número lá, onde ele é o número da fila. #}
+  <p>
+    <strong>Muita matrícula desta lista não sobe por falta de endereço</strong> —
+    a coluna da ficha está vazia, e o endereço está escrito dentro do teor, que é
+    o texto que a digitalização trouxe. Há uma tela que lê esse texto e propõe o
+    endereço para conferência:
+    <a class="button" href="{{ url_for('ri_onr_enderecos') }}">Conferir os endereços</a>
+  </p>
+  <p><small>
+    A conferência mostra <strong>as duas versões, lado a lado</strong> — o que a
+    ficha tem hoje e o que o teor diz —, com a frase de onde cada campo saiu, e
+    <strong>grava na ficha só o que você confirmar</strong>. Ela não publica nada
+    no ONR: quem publica é esta tela, depois, com o indicador montado.
+  </small></p>
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h3>O que este módulo faz, e o que ele não faz</h3>
+  <p><small>
+    Ele <strong>não lavra ato nenhum</strong>. O que faz é dar
+    <strong>publicidade</strong> ao que já está no livro: o indicador real é o
+    índice que o país consulta para saber de quem é o imóvel, e o edital é a
+    publicação que faz o prazo correr. Excluir um indicador no ONR não apaga
+    matrícula nenhuma aqui; cancelar um edital não desfaz o usucapião.
+  </small></p>
+  <p><small>
+    De <strong>53 operações</strong> que o contrato do ONR declara, o sistema
+    liga <strong>20</strong> — as outras servem coisas que esta casa não faz
+    por ali (cobrança PIX e boleto pelo ONR, edital de leilão, extração de
+    dados, atendimento eletrônico). Elas ficam declaradas no código, com o
+    nome, para ninguém as reinventar achando que sumiram.
+  </small></p>
+</section>
+
+{% endblock %}

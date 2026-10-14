@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}{{ m.nome }} — modelo de {{ nome_da_especie|lower }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='modelos-editor.css') }}">
+
+<h1>{{ m.nome }}</h1>
+<p class="muted">
+  Modelo de <strong>{{ nome_da_especie|lower }}</strong> ·
+  {% if m.ativo %}<span class="badge">ativo</span>
+  {% else %}<span class="badge muted">desativado</span>{% endif %}
+  {% if m.atualizado_em %}
+    · alterado em {{ m.atualizado_em }}{% if m.atualizado_por %} por
+    {{ m.atualizado_por }}{% endif %}
+  {% endif %}
+</p>
+
+{% if erro %}
+{# **O ERRO APARECE PARA QUEM EDITA**, e não na hora de imprimir com o cliente
+   na frente. É a mesma razão da conferência antes de gravar. #}
+<div class="card danger">
+  <p><strong>Este modelo não está bom:</strong> {{ erro }}</p>
+</div>
+{% endif %}
+
+<div class="grid2">
+<div>
+  <h2>O texto</h2>
+  {% if pode_escrever %}
+  <form method="post" action="{{ url_for('rcpn_modelo', modelo_id=m.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p>
+      <label>Nome<br>
+        <input type="text" name="nome" maxlength="200" required
+               style="width: 100%" value="{{ m.nome }}"></label>
+    </p>
+    <p>
+      <textarea name="corpo" rows="24" style="width: 100%; font-family: monospace" data-modelo-livre
+        >{{ convertido.texto if convertido else m.corpo }}</textarea>
+    </p>
+    <p>
+      <button class="primary" name="acao" value="salvar" type="submit">Gravar</button>
+      {% if m.ativo %}
+      <button class="secondary" name="acao" value="desativar" type="submit"
+        >Desativar</button>
+      {% else %}
+      <button class="secondary" name="acao" value="ativar" type="submit"
+        >Ativar</button>
+      {% endif %}
+    </p>
+    <p class="small muted">
+      <strong>Desativar não apaga.</strong> O modelo sai da lista de quem emite
+      e continua guardado — o que já imprimiu documento é a forma do que a casa
+      assinou.
+    </p>
+  </form>
+  {% else %}
+  <pre style="white-space: pre-wrap">{{ m.corpo }}</pre>
+  <p class="small muted">Só o oficial e o gerente mexem no texto do modelo.</p>
+  {% endif %}
+
+  {% if pode_escrever %}
+  {# ------------------------------------------------------------------ #}
+  {# A CONVERSÃO DO E-OFÍCIO. Ela NÃO GRAVA: devolve o texto convertido no
+     campo acima e a lista do que não soube converter. Gravar direto
+     esconderia essa lista atrás de uma recusa genérica. #}
+  <h2>Colar um texto do E-Ofício</h2>
+  <div class="card">
+    <form method="post"
+          action="{{ url_for('rcpn_modelo_converter', modelo_id=m.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <p class="small">
+        Cole aqui o texto do modelo do E-Ofício, com os claros
+        <code>@assim</code>. O sistema os troca pelos desta casa e
+        <strong>diz quais não soube converter</strong> — ele não apaga nenhum.
+      </p>
+      <p>
+        <textarea name="do_eoficio" rows="8" style="width: 100%"
+          placeholder="CERTIDÃO DE NASCIMENTO&#10;NOME: @nomenascido&#10;CPF: @cpfnascido"></textarea>
+      </p>
+      <p><button class="secondary" type="submit">Converter — não grava</button></p>
+    </form>
+    {% if convertido %}
+      <p class="small">
+        <strong>{{ convertido.convertidos|length }}</strong> claros convertidos.
+        {% if convertido.nao_convertidos %}
+        <br><strong>Não convertidos, e ainda escritos no texto:</strong>
+        {% for c in convertido.nao_convertidos %}<code>@{{ c }}</code>{{ ', ' if not loop.last }}{% endfor %}.
+        Esta casa não tem de onde tirar esses — troque à mão pelo claro certo,
+        ou apague a linha.
+        {% endif %}
+      </p>
+      <p class="small muted">
+        <strong>O texto acima ainda não foi gravado.</strong> Confira e clique
+        em Gravar.
+      </p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<div>
+  <h2>Prévia do documento</h2>
+  <p class="small muted">Caso hipotético, atualizado enquanto você digita.</p>
+  <div class="modelo-livre-previa" data-modelo-livre-previa></div>
+  {# ------------------------------------------------------------------ #}
+  {# A LISTA DE CLAROS. Ela vem do PRÓPRIO módulo, e não de uma segunda lista
+     escrita na tela: duas listas divergiriam no primeiro conserto, e a tela
+     ofereceria claro que `montar` não conhece. #}
+  <h2>Os claros desta espécie</h2>
+  <p class="small muted">
+    Use a legenda <code>@nome</code> como no E-Ofício. Ao clicar, o sistema
+    insere o claro correto no texto. São
+    <strong>{{ vocabulario|length }}</strong> claros no
+    {{ nome_da_especie|lower }}. Os que este modelo já usa estão marcados.
+  </p>
+  <table class="small" data-modelo-vocabulario>
+    <thead><tr><th>Claro</th><th>O que é</th><th>De onde sai</th></tr></thead>
+    <tbody>
+    {% for c in vocabulario %}
+      <tr>
+        <td><button type="button" class="modelo-claro-eoficio"
+                    data-claro="{{ '{' }}{{ c.nome }}{{ '}' }}"
+                    data-rotulo="{{ c.rotulo }}"><code>@{{ c.nome }}</code></button>
+          {% if c.nome in escritos %}<span class="badge">em uso</span>{% endif %}</td>
+        <td>{{ c.rotulo }}</td>
+        <td class="muted">{{ c.de_onde }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+</div>
+
+<p><a href="{{ url_for('rcpn_modelos', especie=m.especie) }}">← Voltar aos modelos</a></p>
+<script src="{{ url_for('static', filename='modelo-livre-editor.js') }}"></script>
+{% endblock %}

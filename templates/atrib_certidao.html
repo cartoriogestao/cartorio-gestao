@@ -1,0 +1,100 @@
+{#
+  A certidão de inteiro teor como saiu.
+
+  O TEOR NÃO SE RECALCULA. O que está aqui foi congelado na emissão, com o
+  sha256 ao lado e com quantos atos o registro tinha naquele dia — quem
+  confere depois sabe se o registro andou.
+#}
+{% extends 'base.html' %}
+{% block title %}Certidão {{ certidao.numero }}/{{ certidao.ano }} — {{ painel.nome }}{% endblock %}
+{% block heading %}
+<h1>Certidão n. {{ certidao.numero }}/{{ certidao.ano }} — {{ painel.nome }}</h1>
+{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('atribuicoes_certidoes') }}">&larr; Certidões</a>
+  <a class="button primary" href="{{ url_for('atribuicoes_certidao_imprimir', certidao_id=certidao.id) }}">Imprimir (PDF)</a>
+  <a class="button" href="{{ url_for('atribuicoes_certidao_odt', certidao_id=certidao.id, formato='odt') }}">Baixar em .odt</a>
+  <a class="button" href="{{ url_for(painel.rota_ficha, registro_id=certidao.registro_id) }}">Abrir o registro</a>
+</div>
+
+{% if certidao.cancelada %}
+<div class="notice danger">
+  <strong>Esta certidão foi cancelada</strong> em {{ certidao.cancelada_em }}
+  {%- if certidao.cancelada_por %}, por {{ certidao.cancelada_por }}{% endif %}.
+  <br>Motivo: {{ certidao.motivo_cancelamento }}
+  {% if certidao.declaracao_selo_tjma_em %}
+  <br><small>Declaração registrada em {{ certidao.declaracao_selo_tjma_em }}
+    {% if certidao.declaracao_selo_tjma_por %}por {{ certidao.declaracao_selo_tjma_por }}{% endif %}:
+    eventual selo próprio desta certidão já foi cancelado no portal do Selo Eletrônico do TJMA.</small>
+  {% endif %}
+  <br><br>
+  <small>O teor fica gravado como saiu: a via que o cliente levou não desaparece por
+  ter sido cancelada aqui, e é essa via que alguém vai conferir.</small>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>O teor</span><small>congelado na emissão</small></div>
+  <p style="padding:18px; line-height:1.7; text-align:justify; white-space:pre-wrap">{{ certidao.teor }}</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>A certidão</span></div>
+  <table class="table">
+    <tr><th>Número</th><td>{{ certidao.numero }}/{{ certidao.ano }}</td>
+        <th>Atribuição</th><td>{{ painel.nome }}</td></tr>
+    <tr><th>Registro</th><td>n. {{ certidao.registro_numero or '—' }}</td>
+        <th>Atos na emissão</th><td>{{ certidao.atos }}</td></tr>
+    <tr><th>Requerente</th>
+        <td>{{ certidao.requerente or 'não informado' }}
+            {%- if certidao.requerente_documento %}
+            <small class="muted">{{ certidao.requerente_documento }}</small>
+            {%- endif %}</td>
+        <th>Finalidade</th><td>{{ certidao.finalidade or '—' }}</td></tr>
+    <tr><th>Emitida em</th><td>{{ certidao.emitida_em }}</td>
+        {#  A VALIDADE E DO CODIGO DE NORMAS — art. 53, 30 dias. As emitidas
+            antes de 21/09/2026 nao a tem gravada, e a tela diz isso em vez de
+            calcular uma data que a certidao nao afirma. #}
+        <th>Vale até</th>
+        <td>{% if certidao.validade_ate %}{{ certidao.validade_ate }}
+            <small class="muted">(30 dias, art. 53 do Código de Normas)</small>
+            {% else %}<small class="muted">não gravada nesta certidão</small>
+            {% endif %}</td></tr>
+    <tr><th>Por quem</th>
+        <td colspan="3">{{ certidao.emitida_por_nome or certidao.emitida_por or '—' }}
+            {%- if certidao.emitida_por_funcao %},
+            {{ certidao.emitida_por_funcao }}{% endif %}</td></tr>
+    <tr><th>Selo</th><td>{{ certidao.selo or 'sem selo' }}</td>
+        <th>Cobrança</th>
+        <td>{% if certidao.lancamento_id %}lançamento {{ certidao.lancamento_id }}
+            {% else %}<small>não cobrada</small>{% endif %}</td></tr>
+    <tr><th>Autenticidade</th>
+        <td colspan="3"><small style="word-break:break-all">{{ certidao.hash_certidao }}</small>
+          <div><small>É por este número que se confere se a via apresentada é a que saiu
+            daqui.</small></div></td></tr>
+  </table>
+</section>
+
+{% if not certidao.cancelada and user.role in ['ADMIN','MANAGER','USER'] %}
+<section class="panel">
+  <div class="panel-head"><span>Cancelar esta certidão</span></div>
+  <p style="padding:14px 14px 0"><small>
+    Cancelar não apaga: o teor fica gravado como saiu, e o motivo entra ao lado dele.
+  </small></p>
+  <form method="post" action="{{ url_for('atribuicoes_certidao_cancelar', certidao_id=certidao.id) }}"
+        class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="grid-column:1/-1">Por que está sendo cancelada
+      <input name="motivo" required minlength="10"
+             placeholder="emitida sobre o registro errado"></label>
+    <label style="grid-column:1/-1; display:flex; gap:8px; align-items:flex-start">
+      <input type="checkbox" name="selo_cancelado_tjma" value="1" required style="width:auto; margin-top:3px">
+      <span>Declaro que eventual selo emitido especificamente para esta certidão já foi cancelado no portal do Selo Eletrônico do TJMA.</span>
+    </label>
+    <div class="actions"><button class="button">Cancelar a certidão</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

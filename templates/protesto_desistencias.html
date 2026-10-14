@@ -1,0 +1,88 @@
+{#
+  A desistência da CRA — o passo que o roteiro do oficial confere TRÊS VEZES
+  POR DIA. É a única coisa que aparece nos três turnos, e o motivo está na
+  consequência: título de que o apresentante desistiu e a casa protestou é
+  protesto que se cancela depois, com carta.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Desistências</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
+  <a class="button" href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>
+</div>
+
+<div class="notice">
+  A desistência é o apresentante dizendo que <strong>não quer mais o
+  protesto</strong>. O arquivo se confere primeiro e só depois se aplica — e
+  <strong>título por título</strong>, marcando o que entra.
+  <br><br>
+  <strong>É o passo que o seu roteiro confere nos três turnos</strong>: manhã,
+  meio-dia e tarde. Protestar título de que o credor desistiu é protesto que se
+  cancela depois, com carta.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Receber um arquivo de desistência</span></div>
+  <form method="post" action="{{ url_for('protesto_desistencia_conferir') }}"
+        enctype="multipart/form-data" class="form" style="padding:14px">
+      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <div class="field">
+      <label for="arquivo">O arquivo que você baixou da CRA</label>
+      <input type="file" id="arquivo" name="arquivo" required
+             accept=".txt,.221,.232,.233,.261,text/plain">
+      <small>
+        É o arquivo de <strong>127 posições</strong> — o único da CRA que não
+        tem 600. Nos que esta casa recebeu ele se chama <code>DP</code> mais
+        números, mas quem manda é o conteúdo: se você escolher um de 600 por
+        engano, o sistema diz onde ele se abre.
+      </small>
+    </div>
+    <div class="actions">
+      <button class="button primary" type="submit">Conferir</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Arquivos recebidos</span><small>{{ recebidas | length }}</small>
+  </div>
+
+  {% if not recebidas %}
+    <p style="padding:14px">
+      Nenhum arquivo de desistência recebido ainda. Baixe na CRA e escolha-o
+      acima.
+    </p>
+  {% else %}
+  <table class="table">
+    <thead><tr>
+      <th>Quando</th><th>Apresentante</th><th>Do dia</th>
+      <th>Títulos</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for r in recebidas %}
+      <tr>
+        <td>{{ r.recebida_em[:16] | replace('T', ' ') }}
+            <div><small>{{ r.recebida_por or '—' }}</small></div></td>
+        <td><strong>{{ r.apresentante_codigo or '—' }}</strong>
+            <div><small>{{ r.apresentante_nome or 'sem nome' }}</small></div></td>
+        <td>{{ r.dia or '—' }}
+            <div><small>{{ r.nome_arquivo or '' }}</small></div></td>
+        <td><strong>{{ r.aplicados }}</strong> de {{ r.titulos }} aplicado(s)</td>
+        <td><a href="{{ url_for('protesto_desistencia', desistencia_id=r.id) }}">abrir</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<div class="notice">
+  <strong>O mesmo arquivo pode voltar, e isso é normal aqui.</strong> Se você
+  aplicou metade de manhã e volta ao meio-dia para o resto, mande o arquivo de
+  novo: ele fica gravado uma vez só, e o que já foi desistido aparece como já
+  desistido.
+</div>
+{% endblock %}

@@ -1,0 +1,127 @@
+{#
+  O lote recebido: o que entrou, o que foi recusado e a confirmação.
+
+  O ARQUIVO FICA GUARDADO INTEIRO, e não só o nome — mesma regra do retorno:
+  quando a Central reclamar de um título, é este teor que se lê.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Remessa recebida</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_remessas') }}">&larr; Remessas</a>
+  <a class="button" href="{{ url_for('protesto_titulos') }}">Títulos</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Apresentante {{ remessa.apresentante_codigo }}
+          {{ remessa.apresentante_nome or '' }}</span>
+    <small>remessa {{ remessa.numero_da_remessa or '—' }}</small>
+  </div>
+  <table class="table">
+    <tbody>
+      <tr><th>Recebida em</th>
+          <td>{{ remessa.recebida_em[:16] | replace('T', ' ') }}
+              por {{ remessa.recebida_por or '—' }}</td></tr>
+      <tr><th>Data do movimento</th><td>{{ remessa.dia or '—' }}</td></tr>
+      <tr><th>Arquivo</th>
+          <td>{{ remessa.nome_arquivo or 'sem nome' }}
+              — <a href="{{ url_for('protesto_remessa_arquivo',
+                                    remessa_id=remessa.id) }}">baixar como chegou</a>
+              <div><small>impressão digital
+                {{ remessa.hash_arquivo[:16] }}…</small></div></td></tr>
+      <tr><th>Títulos</th>
+          <td><strong>{{ remessa.recebidos }}</strong> entraram de
+              {{ remessa.titulos }} que vieram
+              {% if remessa.recusados %}
+                — <span class="danger">{{ remessa.recusados }} recusado(s)</span>
+              {% endif %}
+              <div><small>{{ remessa.apontados }} apontado(s)</small></div></td></tr>
+      <tr><th>Confirmação</th>
+          <td>
+            {% if confirmacao %}
+              {{ confirmacao.nome_arquivo }}, {{ confirmacao.titulos }} título(s)
+              — <a href="{{ url_for('protesto_retorno_arquivo',
+                                    retorno_id=confirmacao.id) }}">baixar</a>
+              <div><small>Suba na CRA. Ela confirma <strong>o que
+                entrou</strong> — medido em 138 pares reais desta casa: 130
+                confirmações trazem exatamente os títulos da remessa, 8 trazem
+                menos, e nenhuma traz título que não veio.</small></div>
+            {% else %}
+              <small>Não houve confirmação: nenhum título entrou. Confirmar
+              zero título seria mandar à Central um recibo de nada.</small>
+            {% endif %}
+          </td></tr>
+    </tbody>
+  </table>
+</section>
+
+{% if achados %}
+<div class="notice warning">
+  <strong>O que o arquivo declarava e não fechava, quando ele chegou:</strong>
+  <ul>{% for a in achados %}<li>{{ a }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Títulos que entraram</span><small>{{ titulos | length }}</small>
+  </div>
+  {% if not titulos %}
+    <p style="padding:14px">Nenhum título deste lote entrou.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr>
+      <th>Título</th><th>Espécie</th><th>Devedor</th><th>Protocolo</th>
+      <th>Situação</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for t in titulos %}
+      <tr>
+        <td>{{ t.numero_titulo or '—' }}
+            {% if t.nosso_numero %}
+              <div><small>nosso nº {{ t.nosso_numero }}</small></div>
+            {% endif %}</td>
+        <td>{{ t.especie or '—' }}</td>
+        <td>{{ t.devedor_nome or '—' }}</td>
+        <td>{{ t.protocolo or '—' }}</td>
+        <td>{{ t.situacao }}</td>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}">abrir</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="notice" style="margin:0 14px 14px">
+    O passo seguinte do roteiro é o <strong>aviso de intimação</strong>, e ele
+    se emite na ficha de cada título.
+  </div>
+  {% endif %}
+</section>
+
+{% if recusas %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Títulos que o contrato da CRA recusou</span>
+    <small>{{ recusas | length }}</small>
+  </div>
+  <table class="table">
+    <thead><tr><th>#</th><th>Título</th><th>Devedor</th><th>Por quê</th></tr></thead>
+    <tbody>
+      {% for r in recusas %}
+      <tr>
+        <td>{{ r.sequencial }}</td>
+        <td>{{ r.numero_titulo or '—' }}</td>
+        <td>{{ r.devedor or '—' }}</td>
+        <td><ul>{% for f in r.faltas %}<li>{{ f }}</li>{% endfor %}</ul></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="notice" style="margin:0 14px 14px">
+    O motivo fica guardado no lote de propósito: quando o apresentante ligar
+    perguntando por que aquele título não voltou, é esta a resposta.
+  </div>
+</section>
+{% endif %}
+{% endblock %}

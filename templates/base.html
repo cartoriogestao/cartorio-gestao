@@ -1,0 +1,980 @@
+{# O botao de fechar o aviso — relato #62. A macro e a razao dela estao em
+   `_aviso.html`; aqui so se chama. #}
+{% import '_aviso.html' as aviso %}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ titulo_aba or unit_name }}{% endblock %} - {{ APP_NAME }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ VERSION }}">
+  {#
+    AS CORES DOS MODULOS — relato #32 do oficial, 30/08/2026.
+
+    Elas sao GERADAS por `modulos.py` a partir do matiz de cada modulo, e nao
+    escritas no `app.css`: escritas la, seriam a segunda fonte, e modulo novo
+    entraria no menu com a cor de outro porque alguem copiaria a linha vizinha.
+    Ha teste que recusa cor de modulo escrita a mao no CSS.
+  #}
+  <style>{{ cores_dos_modulos }}
+  {% if modulo_cor %}:root{--mod-cor:{{ modulo_cor }};
+    --mod-cor-clara:{{ modulo_cor_clara }};
+    --mod-cor-escura:{{ modulo_cor_escura }}}{% endif %}</style>
+  {#
+    A lupa das assinaturas e das fichas digitalizadas.
+
+    Vai no `base` e não em cada tela: a assinatura aparece no cartão, no
+    balcão do reconhecimento, no reconhecimento gravado, na lista de cartões e
+    na montagem do ato de livro. Ligada tela a tela, a primeira que alguém
+    criasse amanhã nasceria sem lupa — e sem aviso nenhum de que nasceu.
+
+    `defer` porque ela não desenha nada: só escuta o clique. Não vale segurar
+    a página por causa dela.
+  #}
+  <script defer src="{{ url_for('static', filename='lupa.js') }}"></script>
+  {# Enviar a ficha de firma digitalizada: escolher, arrastar, colar com
+     Ctrl+V, endireitar e cortar. Só age onde existe `[data-envio-ficha]`. #}
+  <script defer src="{{ url_for('static', filename='ficha-envio.js') }}"></script>
+  {# Fotografia do cadastro: webcam no Chrome, botao Colher. So age onde
+     existe `[data-captura-foto]`. Sem JS, o formulario ainda envia o JPEG. #}
+  <script defer src="{{ url_for('static', filename='cadastro_captura.js') }}"></script>
+  {#
+    A janela da ajuda, que existe em toda tela.
+
+    Pelo mesmo motivo da lupa: ligada tela a tela, a próxima tela nasceria sem
+    ajuda e ninguém notaria. `defer` porque ela não desenha nada — o botão e a
+    gaveta já vêm no HTML, e o script só troca a navegação por abrir e fechar.
+  #}
+  <script defer src="{{ url_for('static', filename='ajuda.js') }}"></script>
+  {#
+    A gaveta do agente, que também existe em toda tela — para quem responde
+    pela serventia.
+
+    IRMÃ DA AJUDA E DO OUTRO LADO DA TELA: a ajuda fica à direita e esta à
+    esquerda, porque as duas podem estar abertas ao mesmo tempo e uma em cima
+    da outra obrigaria a fechar uma para ler a outra. Aqui também `defer`: o
+    botão e a gaveta já vêm no HTML, e o script só troca a ida ao console por
+    uma caixa que não recarrega a página.
+  #}
+  {% if agente_na_tela %}<script defer src="{{ url_for('static', filename='agente.js') }}"></script>{% endif %}
+  {#
+    Os botões de negrito, itálico e sublinhado do teor, e a prévia que acompanha
+    o que se digita. Só agem onde existe `textarea[data-teor]` — hoje, a tela do
+    ato de livro. `defer` porque a caixa e a prévia já vêm no HTML: sem o
+    script, quem souber escrever `<b>` continua podendo.
+  #}
+  <script defer src="{{ url_for('static', filename='teor-marcas.js') }}"></script>
+  {# Copiar os dados de uma pessoa do assento para outra (ex.: mãe -> declarante).
+     Só age onde existe `[data-copiar-de]`. `defer` porque não desenha nada. #}
+  <script defer src="{{ url_for('static', filename='copiar_pessoa.js') }}"></script>
+  {# A BUSCA QUE NÃO RECARREGA A PÁGINA — RELATO #53. Ela só age onde existe
+     `[data-busca-ato]`, que hoje é a tela do protocolo do caixa; nas outras
+     não faz nada. #}
+  <script defer src="{{ url_for('static', filename='busca_ato.js') }}"></script>
+  {# Navegacao progressiva: busca, acordeao e menu compacto no celular. O
+     <details> continua sendo a base, portanto nenhum link depende do script. #}
+  <script defer src="{{ url_for('static', filename='navegacao.js') }}?v={{ VERSION }}"></script>
+  {#
+    FECHAR O AVISO DA FAIXA DO ALTO — relato #62, de 17/09/2026.
+
+    So age onde existe `[data-aviso-fechar]`, e o botao ja vem no HTML pela
+    macro `_aviso.html`: sem o script, o aviso continua inteiro na tela, que e
+    o comportamento certo — o que se perde e o conforto de tirar da frente o
+    que ja foi lido.
+
+    Ele NAO GUARDA NADA: fecha e ponto. O aviso volta no proximo carregamento,
+    e ha teste que confere isso (a tela e servida com o aviso duas vezes
+    seguidas) e que varre este arquivo procurando qualquer coisa que grave.
+  #}
+  <script defer src="{{ url_for('static', filename='avisos.js') }}?v={{ VERSION }}"></script>
+  {# Modal de avisos gerenciáveis (nu_avisos): fecha ao ir para /avisos ou /admin/avisos. #}
+  <script defer src="{{ url_for('static', filename='nu_avisos_modal.js') }}?v={{ VERSION }}"></script>
+  <script defer src="{{ url_for('static', filename='produtividade_rapida.js') }}?v={{ VERSION }}"></script>
+  {#
+    ACRESCENTAR PARTE NO ATO — relato #86, de 18/09/2026.
+
+    Só age onde existe `[data-partes-do-ato]`, que hoje é a ficha da matrícula
+    com minuta aberta. Ele clona o bloco que está no `<template>` e o põe no
+    fim da lista — e não guarda nada: quem grava é a rota, que lê os `getlist`.
+
+    O BOTÃO NASCE ESCONDIDO e é este arquivo que o revela, porque botão que
+    parece acrescentar e não acrescenta é pior que botão nenhum. Sem ele, a
+    tela continua servindo: o primeiro bloco em branco vem do servidor.
+  #}
+  <script defer src="{{ url_for('static', filename='ri_partes_do_ato.js') }}"></script>
+</head>
+<body>
+{% if user %}
+<div class="layout">
+  <aside class="sidebar" id="app-sidebar" aria-label="Navegação principal">
+    <div class="brand">
+      <a class="brand-home" href="{{ url_for('dashboard') }}">
+        <span class="brand-mark" aria-hidden="true">CG</span>
+        <span class="brand-copy"><strong>{{ APP_NAME }}</strong><small>{{ unit_name }}</small></span>
+      </a>
+      <button type="button" class="sidebar-collapse" aria-expanded="true"
+              aria-controls="app-sidebar" aria-label="Recolher menu" title="Recolher menu">
+        <span class="sidebar-collapse-icon" aria-hidden="true"></span>
+        <span class="sidebar-collapse-text">Recolher menu</span>
+      </button>
+    </div>
+    <div class="sidebar-tools">
+      <label class="nav-search-label" for="nav-search">Encontrar no sistema</label>
+      <div class="nav-search-wrap">
+        <span class="nav-search-icon" aria-hidden="true"></span>
+        <input id="nav-search" type="search" placeholder="Buscar módulo ou ferramenta"
+               autocomplete="off" spellcheck="false">
+      </div>
+      <p class="nav-search-status" id="nav-search-status" aria-live="polite"></p>
+    </div>
+    {#
+      MENU POR MÓDULO, e não uma lista de 43 links.
+
+      Eram quarenta e três itens em coluna única, na ordem em que foram sendo
+      escritos: notas no meio do registro de imóveis, caixa no fim, e o
+      operador do balcão rolando a barra para achar "Reconhecer firma".
+
+      Cada módulo é um <details>. O que contém a página aberta vem ABERTO —
+      quem está numa tela de notas vê as telas de notas, e não as dos outros.
+      Sem JavaScript: <details> é do próprio HTML, funciona sem rede e não
+      quebra se o navegador for antigo.
+
+      O MÓDULO SAI DO PREFIXO DA ROTA, E NÃO DE UMA LISTA.
+        A primeira versão listava as rotas de cada módulo à mão. Envelheceu na
+        mesma tarde em que foi escrita: nove nomes que eu supus e não existiam,
+        e vinte e três rotas reais de fora — cada uma delas uma tela onde o
+        menu fecharia sozinho.
+
+        Pelo prefixo, `ri_qualquer_coisa` cai no Registro de Imóveis no dia em
+        que for criada, sem ninguém lembrar de nada. Só as rotas sem prefixo
+        precisam de menção, e são poucas.
+    #}
+    {% set aqui = request.endpoint or '' %}
+    {% set rotas_malote = ['expedientes', 'tasks', 'inspections'] %}
+    {#
+      O LIVRO 3 CONTA COMO REGISTRO DE IMOVEIS, e nao como atribuicao a parte:
+      ele e o Registro Auxiliar DO RI, e o numero dele ja saia de
+      `ri_numeracao`. Estava fora do modulo de que faz parte.
+    #}
+    {% set mod_ri = aqui.startswith('ri_') or aqui.startswith('usucapiao')
+                    or aqui.startswith('livro3')
+                    or (aqui.startswith('atribuicoes_certid')
+                        and request.args.get('atribuicao') == 'LIVRO3') %}
+    {% set mod_notas = aqui.startswith('notas_') %}
+    {% set mod_malote = aqui.split('_')[0] in ['expediente', 'expedientes', 'task',
+                                               'tasks', 'inspection', 'inspections',
+                                               'processos', 'processo'] %}
+    {% set mod_protesto = aqui.startswith('protesto') %}
+    {% set mod_rcpn = aqui.startswith('rcpn') %}
+    {#
+      A CERTIDAO SERVE TRES ATRIBUICOES, E ABRE O GRUPO DA QUE ELA ESTA
+      MOSTRANDO.
+
+      Ate 27/08/2026 ela abria sempre o grupo de RCPJ e RTD, e quem estava no
+      Livro 3 via o menu pular para outro modulo ao pedir a certidao. O oficial
+      corrigiu: **o Livro 3 e do Registro de Imoveis**, e e la que ele fica —
+      inclusive quando o que se olha e a certidao dele.
+
+      Quem decide e o filtro da tela, que ja existia.
+    #}
+    {% set certidao_do_livro3 = aqui.startswith('atribuicoes_certid')
+                                and request.args.get('atribuicao') == 'LIVRO3' %}
+    {% set mod_rcpj_rtd = aqui.startswith('rcpj_rtd')
+                          or (aqui.startswith('atribuicoes_certid')
+                              and not certidao_do_livro3) %}
+    {#
+      O NUCLEO E A CARGA SERVEM AS SEIS, e por isso nao moram dentro de
+      nenhuma. Ate 27/08/2026 eles nao tinham grupo: os links ficavam em
+      «Demais atribuicoes» e a pagina abria o «Administrativo» — o menu se
+      fechava em cima de quem o estava usando.
+    #}
+    {% set mod_livros = aqui.startswith('nucleo_') or aqui.startswith('implantacao')
+                        or aqui == 'atribuicoes_importar' %}
+    {% set mod_adm = aqui and not mod_ri and not mod_notas and not mod_malote
+                     and not mod_protesto and not mod_rcpn and not mod_rcpj_rtd
+                     and not mod_livros and aqui != 'dashboard' %}
+    <nav>
+      <div class="nav-grupo">Atalhos</div>
+      <a class="nav-inicio{% if aqui == 'dashboard' %} atual{% endif %}" href="{{ url_for('dashboard') }}">Visão geral</a>
+      {% if user.role == 'ADMIN' %}
+      <a class="nav-inicio{% if aqui and aqui.startswith('dev_projetos') %} atual{% endif %}" href="{{ url_for('dev_projetos_lista') }}">Projetos</a>
+      {% endif %}
+
+      <div class="nav-grupo">Atribuições</div>
+
+      <details class="nav-modulo" style="--cor-do-grupo:{{ MODULOS | selectattr('chave','equalto','NOTAS') | map(attribute='cor') | first }}"{% if mod_notas %} open{% endif %}>{% set cor_do_grupo = MODULOS | selectattr('chave','equalto','NOTAS') | map(attribute='cor') | first %}{% set nsec = namespace(n=0) %}
+        <summary>Tabelionato de Notas</summary>
+        <a href="{{ url_for('notas_painel') }}">Painel do tabelionato</a>
+        {# O RECONHECIMENTO DE FIRMA VEM PRIMEIRO PORQUE E METADE DA CASA:
+           `/selo/notas/reconhecimento-firma` sozinho responde por metade dos
+           26.130 selos medidos. Ordem de menu se decide por movimento. #}
+        {#
+          AS FIRMAS SAO UMA COISA SO, E ESTAVAM EM TRES LUGARES — pedido do
+          oficial em 27/08/2026: «reconhecimento e reconhecer firma estao
+          injustificadamente separados… ha que fazer uma organizacao racional»,
+          e «assinaturas digitalizadas deveria ser campo dos cartoes».
+
+          «Reconhecimentos» era a LISTA do que ja foi reconhecido, e vivia no
+          menu ao lado do ATO de reconhecer — duas entradas com quase o mesmo
+          nome, e o operador escolhendo no escuro. Agora a lista e uma aba
+          dentro da tela do ato, e o menu tem uma porta so.
+
+          «Assinaturas digitalizadas» nao e um campo nem uma tela de consulta:
+          e o MUTIRAO que traz os arquivos do E-Oficio para dentro. O lugar
+          dele e junto dos cartoes, que e o que ele abastece.
+        #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O balcão</div>
+        <a href="{{ url_for('notas_reconhecimento') }}">Reconhecer firma</a>
+        <a href="{{ url_for('notas_autenticacao') }}">Autenticar cópia</a>
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Instrumentos</div>
+        <a href="{{ url_for('notas_escrituras') }}">Escrituras públicas</a>
+        <a href="{{ url_for('notas_atas') }}">Atas notariais</a>
+        <a href="{{ url_for('notas_atos') }}">Atos de livro</a>
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Consulta</div>
+        <a href="{{ url_for('notas_cartoes') }}">Cartões de autógrafo</a>
+        {# Sinais publicos: tabela propria (nao sobrecarrega nt_cartoes).
+           Abertura nao sela; reconhecimento autonomo em /notas/sinais/reconhecimento. #}
+        <a href="{{ url_for('notas_sinais') }}">Sinais públicos</a>
+        <a href="{{ url_for('notas_sinal_reconhecimento') }}">Reconhecer sinal</a>
+        <a href="{{ url_for('notas_escrituras_pendentes') }}">Pendências das escrituras</a>
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Livros e remessas</div>
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('notas_livros') }}">Livros do tabelionato</a>{% endif %}
+        <a href="{{ url_for('notas_remessas') }}">Remessa às centrais</a>
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('notas_ccn') }}">Cadastro no CCN</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Configuração</div>
+        <a href="{{ url_for('notas_etiqueta_ajuste') }}">Ajustar etiqueta</a>{% endif %}
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('notas_importar') }}">Trazer notas do E-Ofício</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
+        {# O SUBMODULO DE MODELOS DESTA ATRIBUICAO — 07/09/2026, ordem do
+           oficial. Cada papel e corpo + encerramento + rodape, e o que se
+           escreve «em toda a atribuicao» vale para os papeis todos.
+           **O cabecalho nao entra**, por decisao dele no mesmo dia: fica onde
+           esta, para manter a forma. #}
+        <a href="{{ url_for('notas_modelos_papeis') }}">Modelos dos documentos</a>{% endif %}
+      </details>
+
+      <details class="nav-modulo" style="--cor-do-grupo:{{ MODULOS | selectattr('chave','equalto','RI') | map(attribute='cor') | first }}"{% if mod_ri %} open{% endif %}>{% set cor_do_grupo = MODULOS | selectattr('chave','equalto','RI') | map(attribute='cor') | first %}{% set nsec = namespace(n=0) %}
+        <summary>Registro de Imóveis</summary>
+        {#
+          A ORDEM E A DO DIA, e nao a ordem em que as telas foram escritas.
+          O titulo chega e se prenota; o ato entra na matricula; a certidao
+          sai. Era «Matriculas» primeiro porque foi a primeira tela feita.
+        #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O dia</div>
+        <a href="{{ url_for('ri_protocolo') }}">Protocolo / prenotação</a>
+        <a href="{{ url_for('ri_pedidos') }}">Pedidos em andamento</a>
+        <a href="{{ url_for('ri_matriculas') }}">Matrículas</a>
+        <a href="{{ url_for('ri_certidoes') }}">Certidões</a>
+        <a href="{{ url_for('ri_rascunhos') }}">Rascunhos de ato</a>
+        <a href="{{ url_for('ri_revisoes') }}">O que revisar antes de selar</a>
+        <a href="{{ url_for('ri_numeracao_no_teor') }}">Numeração dentro do teor</a>
+                {# GEORREFERENCIAMENTO NAO E EXCECAO NESTA CASA — medido nas 1.508
+           fichas com teor: 767 citam o INCRA, 182 o georreferenciamento. Numa
+           serventia rural, ele e o pao de cada dia. #}
+        {# O REGISTRO AUXILIAR E O LIVRO 3 DO RI, e nao uma atribuicao a parte.
+           Ele estava em «Demais atribuicoes» desde que nasceu, longe do modulo
+           de cujo contador ele conta. A secao propria e para ele ser ACHADO
+           aqui dentro por quem o procurava no menu de fora. #}
+        {#
+          PROCESSOS QUE LEVAM MESES — separados de «O dia» em 30/08/2026,
+          relato #32.
+
+          Eles estavam na mesma lista do protocolo e das matriculas, e nao sao
+          a mesma coisa: usucapiao e retificacao de area tem prazo,
+          notificacao, edital e decisao fundamentada — ninguem os «faz» num
+          dia. Quem abria «O dia» procurando o que fazer agora lia oito linhas
+          e achava quatro.
+        #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Processos que levam meses</div>
+        <a href="{{ url_for('usucapiao_processos') }}">Usucapião extrajudicial</a>
+        <a href="{{ url_for('ri_retificacoes') }}">Retificação de área</a>
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Livro 3 — Registro Auxiliar</div>
+        <a href="{{ url_for('livro3_registros') }}">Registros do Livro 3</a>
+        {# MINUTA ESQUECIDA NUM REGISTRO QUE NINGUEM ABRE nao aparece em lugar
+           nenhum — e por isso ela tem porta propria, como os rascunhos do
+           Livro 2. #}
+        <a href="{{ url_for('livro3_minutas') }}">Livro 3 — minutas a revisar</a>
+        <a href="{{ url_for('livro3_revisoes') }}">Livro 3 — o que revisar antes de selar</a>
+        <a href="{{ url_for('livro3_por_conferir') }}">Livro 3 — o que falta conferir</a>
+        {# A certidao do Livro 3, filtrada — a tela e a mesma das outras duas
+           atribuicoes, e o filtro e que a faz ser a deste livro. #}
+        <a href="{{ url_for('atribuicoes_certidoes', atribuicao='LIVRO3') }}">Certidões do Livro 3</a>
+        <a href="{{ url_for('livro3_modelos') }}">Livro 3 — modelos (ficha e certidão)</a>
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Consulta e acervo</div>
+                <a href="{{ url_for('usucapiao_codigo_de_normas') }}">Usucapião &mdash; o que o Código de Normas exige</a>
+        
+        <a href="{{ url_for('ri_indicador_real') }}">Indicador Real</a>
+        <a href="{{ url_for('ri_indicador_pessoal') }}">Indicador Pessoal</a>
+        <a href="{{ url_for('ri_cnib') }}">CNIB — indisponibilidade</a>
+        {# O ONR E A CENTRAL DO REGISTRO DE IMOVEIS, e ele faz duas coisas
+           diferentes: recebe o **indicador real** (o indice que o pais consulta
+           para saber de quem e o imovel) e publica o **edital** do usucapiao —
+           que e o que faz o prazo do art. 755, § 1º correr.
+
+           Fica no RI, e nao nas comunicacoes, porque as duas nascem de um ato
+           deste livro: uma matricula e um processo. #}
+        <a href="{{ url_for('ri_onr_painel') }}">ONR — índice real e editais</a>
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('onr_certidoes') }}">ONR — certidões a emitir</a>{% endif %}
+        {#
+          A CONFERENCIA DO ENDERECO VEM AO LADO, E ANTES — e a ordem nao e por
+          acaso: e o passo anterior ao envio. O indicador real exige cep, tipo
+          de logradouro, logradouro, numero, bairro, cidade e uf; **1.443
+          fichas desta casa tem o teor e nao tem isso digitado**, e sem esta
+          tela a fila nao tinha por onde ser despachada.
+
+          `USER` entra porque conferir aqui e' operacao de balcao — quem
+          publica o indice e' o oficial, em `ri_onr_painel`. O `AUDITOR` fica
+          de fora: esta tela GRAVA na ficha, e ele nao pratica ato.
+        #}
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('ri_onr_enderecos') }}">ONR — endereços a conferir</a>{% endif %}
+        <a href="{{ url_for('ri_cnib_pendentes') }}">CNIB — o que espera seu okay</a>
+        {# A COPIA LOCAL DA CNIB TEM DE TER UM LUGAR ONDE SE OLHA DE QUANDO ELA
+           E. Sem esta porta, o atualizador seria mais uma peca pronta que
+           nenhuma tela alcanca — o defeito que mais se repetiu neste projeto. #}
+        <a href="{{ url_for('cnib_central') }}">CNIB — a cópia local e a Central</a>
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('ri_expurgos') }}">Atas de ocorrência</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_resolver_imagens') }}">Fichas digitalizadas</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('ri_matriculas_doc') }}">Matrículas em Word</a>{% endif %}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
+        <a href="{{ url_for('ri_modelos_atos') }}">Modelos de atos</a>
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}{#
+          O LINK DO RI VAI FILTRADO — relato #32. Ate 30/08/2026 ele era
+          `/modelos` puro, **exatamente o mesmo endereco** do item do
+          Administrativo, com nome quase igual: «Modelos de documento» aqui e
+          «Modelos dos documentos» la. Duas portas para a mesma sala, e o
+          operador escolhendo no escuro.
+
+          Tirar o daqui seria a saida preguicosa: quem esta no RI passaria a ter
+          de sair do modulo para ver o modelo da certidao do RI. O catalogo ja
+          sabia de qual atribuicao e cada modelo — o campo estava la e nenhuma
+          tela o usava.
+        #}
+        <a href="{{ url_for('modelos', atribuicao='Registro de Imóveis') }}">Modelos de documento do RI</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Remessas e obrigações</div>
+        <a href="{{ url_for('ri_selos') }}">Selos e emolumentos</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_onr') }}">Exportação ONR</a>
+        {#
+          A CARGA DO NEXT CLOUD SAS FICA AO LADO DA EXPORTACAO, e nao numa
+          secao nova: as duas mandam a mesma coisa ao mesmo destino — o que
+          muda e' que uma e' o mes e a outra e' a base inteira. Item novo
+          entra onde e' comodo ACHAR, e nao onde e' comodo escrever.
+        #}
+        <a href="{{ url_for('ri_onr_next_cloud') }}">Carga do Next Cloud SAS</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('ri_ctp') }}">CTP — prefeituras</a>
+        <a href="{{ url_for('ri_doi') }}">DOI — Receita Federal</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Configuração</div>
+        <a href="{{ url_for('ri_delegatarios') }}">Delegatários</a>
+        <a href="{{ url_for('ri_numeracao') }}">Numeração das matrículas</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
+        {# O SUBMODULO DE MODELOS DESTA ATRIBUICAO — 07/09/2026, ordem do
+           oficial. Cada papel e corpo + encerramento + rodape, e o que se
+           escreve «em toda a atribuicao» vale para os papeis todos.
+           **O cabecalho nao entra**, por decisao dele no mesmo dia: fica onde
+           esta, para manter a forma. #}
+        <a href="{{ url_for('ri_modelos_papeis') }}">Modelos dos documentos</a>{% endif %}
+      </details>
+
+      {#
+        CADA ATRIBUIÇÃO NO SEU PRÓPRIO LUGAR — pedido do oficial em 27/08/2026.
+
+        Antes, quatro atribuições moravam dentro de um item chamado «Demais
+        atribuições»: o Registro Civil desta casa aparecia como «demais», ao
+        lado do Protesto, e quem trabalha no balcão do civil abria um menu que
+        não tem o nome do que ele faz. Atribuição é o que a serventia É — não
+        uma categoria de sobra.
+
+        O QUE MUDOU DE LUGAR, E POR QUÊ
+          - o **Livro 3** foi para o Registro de Imóveis: ele é o Registro
+            Auxiliar DO RI, e a numeração dele já vinha de `ri_numeracao`. Ele
+            estava fora do módulo de que faz parte;
+          - o **núcleo** (livros, termos, encerramento, numeração), a aba do
+            que falta informar e a carga do acervo foram para um grupo próprio:
+            eles servem as SEIS, e por isso não cabem dentro de uma;
+          - o **RCPJ** e o **RTD** ganharam cada um a sua lista, filtrada pela
+            atribuição. A tabela é a mesma porque o acervo do E-Ofício já os
+            guardava juntos, e a ficha continua sendo a mesma — o livro tem a
+            mesma forma nas duas. O que se separou foi o que o balcão vê.
+
+        A CERTIDÃO DE RCPJ, RTD E LIVRO 3 é uma tela só para três atribuições,
+        e por isso ela abre o grupo de RCPJ e RTD, que é de onde ela é mais
+        usada — 72 registros contra 14 do Livro 3. Onde uma tela serve mais de
+        um módulo, ela abre o de quem mais a procura.
+      #}
+      {# O PROTESTO SO APARECE PARA QUEM O ALCANCE DEIXA entrar — ordem do
+         oficial em 01/09/2026. Quem TRANCA a porta e a guarda do
+         `before_request`; aqui so se deixa de oferecer o que nao se pode
+         fazer. Ver `modulos_ligados.py`. #}
+      {% if 'PROTESTO' not in (MODULOS_ESCONDIDOS or []) %}
+      <details class="nav-modulo" style="--cor-do-grupo:{{ MODULOS | selectattr('chave','equalto','PROTESTO') | map(attribute='cor') | first }}"{% if mod_protesto %} open{% endif %}>{% set cor_do_grupo = MODULOS | selectattr('chave','equalto','PROTESTO') | map(attribute='cor') | first %}{% set nsec = namespace(n=0) %}
+        <summary>Protesto</summary>
+        {#
+          DUAS COISAS DIFERENTES ACONTECEM AQUI, e por isso as duas secoes.
+          O balcao atende o dia inteiro; a CRA tem um DIA, com hora marcada, e
+          a ordem dele e a do roteiro que o oficial trouxe em 25/08/2026:
+          a remessa chega, os avisos saem, as desistencias se aplicam, e o
+          retorno vai embora no fim — «SEMPRE QUE GERAR RETORNO, GERAR
+          ANDAMENTO».
+        #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O balcão</div>
+        {#
+          O ROTEIRO VEM PRIMEIRO — pedido do oficial em 01/09/2026, «na pagina
+          principal do protesto, para amplo acesso dos escreventes». E a unica
+          tela do modulo que diz o que fazer e ATE QUE HORA; as outras fazem.
+        #}
+        <a href="{{ url_for('protesto_painel') }}">O roteiro das Centrais</a>
+        <a href="{{ url_for('protesto_titulos') }}">Títulos</a>
+        <a href="{{ url_for('protesto_certidoes') }}">Certidões</a>
+        <a href="{{ url_for('protesto_instrumentos') }}">Instrumentos</a>
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O dia da CRA</div>
+        <a href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>
+        <a href="{{ url_for('protesto_imagens') }}">Imagens dos títulos</a>
+        <a href="{{ url_for('protesto_avisos') }}">Avisos e editais</a>
+        {#
+          A DESISTENCIA VEM ANTES DO «A PROTESTAR», E NAO E ORDEM DE MENU: e a
+          ordem do roteiro dele, nos DOIS turnos — «MEIO DIA: 2) verificacao de
+          desistencias» e «TARDE: 1) verificar desistencias; 2) gerar
+          protesto». Quem gerar o protesto antes de aplicar a desistencia do
+          dia protesta titulo de que o credor desistiu — o erro que o roteiro
+          manda conferir TRES VEZES POR DIA, e o que menos se desfaz.
+        #}
+        <a href="{{ url_for('protesto_desistencias') }}">Desistências</a>
+        <a href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
+        <a href="{{ url_for('protesto_retornos') }}">Retorno à CRA</a>
+        {#
+          A LINHA DIRETA COM A CRA VEM NO FIM DA SECAO DELA, e nao no meio: o
+          que o escrevente le de cima para baixo e a CORRENTE DO DIA — a
+          remessa chega, os avisos saem, as desistencias se aplicam, o
+          protesto se lavra e o retorno vai embora. Esta tela nao e um passo
+          dessa corrente: e por onde se FALA com a Central, e ela e de
+          ADMIN/MANAGER porque a consulta pode marcar coisa la dentro.
+        #}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('protesto_cra_api') }}">CRA — falar pela API</a>{% endif %}
+        {#
+          A CENPROT GANHOU SECAO PROPRIA, e o motivo e o roteiro que o oficial
+          trouxe: ele tem DUAS listas de passos, uma por Central, e nao uma
+          so. Ate 02/09/2026 havia um item da CENPROT dentro do dia da CRA e
+          ninguem estranhava; com quatro, a secao passaria de NOVE itens e
+          metade dela nao seria da CRA — que e o defeito que o oficial ja
+          apontou uma vez: **item novo entra onde e comodo escrever, e nao
+          onde e comodo achar**.
+        #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O dia da CENPROT</div>
+        <a href="{{ url_for('protesto_pendencias') }}">Pendências da CENPROT</a>
+        <a href="{{ url_for('protesto_resolve') }}">Intimação Digital</a>
+        <a href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a>
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('protesto_importar_eoficio') }}">Trazer protesto do E-Ofício</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
+        {# O SUBMODULO DE MODELOS DESTA ATRIBUICAO — 07/09/2026, ordem do
+           oficial. Cada papel e corpo + encerramento + rodape, e o que se
+           escreve «em toda a atribuicao» vale para os papeis todos.
+           **O cabecalho nao entra**, por decisao dele no mesmo dia: fica onde
+           esta, para manter a forma. #}
+        <a href="{{ url_for('protesto_modelos_papeis') }}">Modelos dos documentos</a>{% endif %}
+      </details>
+      {% endif %}
+
+      <details class="nav-modulo" style="--cor-do-grupo:{{ MODULOS | selectattr('chave','equalto','RCPN') | map(attribute='cor') | first }}"{% if mod_rcpn %} open{% endif %}>{% set cor_do_grupo = MODULOS | selectattr('chave','equalto','RCPN') | map(attribute='cor') | first %}{% set nsec = namespace(n=0) %}
+        {# O NOME É O DA ATRIBUIÇÃO, E NÃO O APELIDO — relatado pelo oficial em
+           28/08/2026: «módulo de registro civil deveria se chamar Registro
+           Civil das Pessoas Naturais; temos outra competência de registro
+           civil, que é o RCPJ, e pode confundir».
+
+           Ele está certo, e a confusão é real: **RCPJ é Registro Civil de
+           Pessoas Jurídicas**, e as duas atribuições vivem lado a lado neste
+           menu. «Registro Civil» sozinho não diz qual das duas — e quem
+           trabalha no balcão do civil tem de achar a sua pelo nome dela.
+
+           `atribuicoes.ATRIBUICOES[6]` já dizia o nome certo desde o começo; o
+           menu é que abreviava. #}
+        <summary>Registro Civil das Pessoas Naturais</summary>
+
+        {# A ORDEM DENTRO DO MODULO E A DO DIA — pedido do oficial em
+           27/08/2026: «nao tem uma logica para encontrar». Primeiro o que o
+           balcao faz o dia inteiro, depois o que se mexe em assento ja lavrado,
+           e por ultimo as obrigacoes que saem da casa.
+
+           **E FUI EU QUE QUEBREI ISSO OUTRA VEZ.** Em 29 e 30/08 acrescentei
+           sete itens a este menu, um a um, cada um logo abaixo do anterior — e
+           ele passou de nove para dezesseis em coluna unica, sem uma secao.
+           E o mesmo defeito que ele apontou, reintroduzido pelo mesmo caminho:
+           **item novo entra onde e comodo escrever, e nao onde e comodo
+           achar.** #}
+
+        {# ---------------------------------------------------------------- #}
+        {# **REORGANIZADO POR ATO EM 30/08/2026**, por ordem do oficial, depois
+           dos prints do E-Oficio. La o menu do RCPN e `Nascimento > Casamento >
+           Obito` e so depois os transversais; o nosso era por FASE do trabalho
+           («O balcao», «Assento ja lavrado»), que e um arranjo meu.
+
+           **O arranjo dele o oficial conhece de cor; o meu ele tem de
+           aprender.** Entre um mapa que descreve bem o territorio e um mapa que
+           o leitor ja tem na cabeca, ganha o segundo.
+
+           O QUE **NAO** FOI MOVIDO, e por que: as comunicacoes e remessas
+           ficam juntas, e nao repartidas pelos atos. Elas pensam-se por
+           PRAZO — de um dia util a trimestral —, e quem chega de manha
+           pergunta «o que vence hoje», nao «o que devo do nascimento». A unica
+           que mudou de lugar foi a comunicacao mensal de obito, que e do obito
+           por definicao (art. 226). #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O balcão</div>
+        <a href="{{ url_for('rcpn_assentos') }}">Assentos</a>
+        {# A FILA DE PRÉ-CADASTROS (11/10/2026): o arquivo de assentos novos
+           vira rascunhos conferidos — com o manual das partes para baixar. #}
+        <a href="{{ url_for('rcpn_importar') }}">Importar pré-cadastros</a>
+        {# A LEITURA DOS DOCUMENTOS (12/10/2026): DNV, DO e documentos de
+           identidade lidos pela IA, que viram rascunho do assento novo. #}
+        <a href="{{ url_for('rcpn_averbacoes') }}">Averbações</a>
+        <a href="{{ url_for('rcpn_certidoes') }}">Certidões</a>
+        {# A FOLHA DE SEGURANCA e do civil: e nela que a certidao e impressa, e
+           o selo do civil leva o numero dela. Fica no balcao porque quem
+           descobre que acabou e quem esta emitindo. #}
+        <a href="{{ url_for('rcpn_papel') }}">Folhas de segurança</a>
+        {# A FILA DA CENTRAL DE CERTIDOES FICA NO BALCAO, e nao com as
+           comunicacoes. As comunicacoes sao o que a casa DEVE mandar, e se
+           pensam por prazo; esta e trabalho que CHEGOU e espera resposta —
+           quem abre o sistema de manha pergunta «o que me pediram».
+
+           Sao SETE modulos numa tela so, e dois deles (P13 e EOB) pedem
+           **registro**, e nao certidao. #}
+        <a href="{{ url_for('rcpn_pedidos') }}">Pedidos da Central</a>
+        {# OS MODELOS DO ESCREVENTE — o modulo «Modelos» do E-Oficio, copiado
+           em 07/09/2026 por ordem do oficial. Sao os DOCUMENTOS AVULSOS que o
+           balcao escreve em volta do ato, e nao o termo do livro: o termo tem
+           lugar proprio, em «Teores» de cada ato.
+
+           Fica no balcao porque e trabalho do dia — quem monta o documento e
+           quem esta atendendo. #}
+        <a href="{{ url_for('rcpn_modelos') }}">Documentos avulsos (modelos do E-Ofício)</a>
+
+        {# ---------------------------------------------------------------- #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Nascimento</div>
+        <a href="{{ url_for('rcpn_assento_novo', especie_url='nascimento') }}">Novo registro de nascimento</a>
+        <a href="{{ url_for('rcpn_assento_novo', especie_url='nascimento', do_acervo=1) }}">Digitar nascimento já lavrado</a>
+        {# OS TEORES DO ATO. Sao quatro no nascimento — comum, tardio, gemeos e
+           sem filiacao paterna — e so o comum tem texto medido (termo 8.369).
+           A tela mostra os quatro, inclusive os que faltam. #}
+        <a href="{{ url_for('rcpn_formulario', chave='NASCIMENTO') }}">Teores do nascimento</a>
+        {# A REGUA DO REGISTRO TARDIO. Ela existe porque o modelo desta casa
+           afirmava uma dispensa que o art. 249, II condiciona. #}
+        <a href="{{ url_for('rcpn_registro_tardio') }}">Registro tardio</a>
+        {# A ORDEM DE NASCIMENTO DOS GEMEOS — art. 234. O campo do IBGE diz SE e
+           gemeo; o artigo exige QUAL e a ordem, e sao coisas diferentes. #}
+        <a href="{{ url_for('rcpn_gemeos') }}">Gêmeos</a>
+        {# O CPF DO REGISTRADO — **obrigatorio**, e nao opcional: a IN RFB
+           1.548/2015, art. 3º, V manda inscrever no momento da lavratura. Fica
+           no NASCIMENTO, e nao no mutirao do art. 347: aquele e dos assentos
+           antigos, este e do recem-nascido. #}
+        <a href="{{ url_for('rcpn_cpf') }}">CPF do registrado</a>
+
+        {# ---------------------------------------------------------------- #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Casamento</div>
+        <a href="{{ url_for('rcpn_assento_novo', especie_url='casamento') }}">Registro do casamento</a>
+        <a href="{{ url_for('rcpn_assento_novo', especie_url='casamento', do_acervo=1) }}">Digitar casamento já lavrado</a>
+        {# AS TRES ETAPAS DO CASAMENTO, numeradas como no E-Oficio: 1
+           habilitacao, 2 edital de proclamas, 3 registro. Nao e enfeite — e a
+           ordem que a lei impoe (arts. 67 a 69 da Lei 6.015/1973), e um
+           casamento registrado sem o edital ter corrido e nulo de origem.
+
+           **AQUI DIVERGIMOS DO E-OFICIO DE PROPOSITO, e vale dizer por que.**
+           La sao tres TELAS separadas; aqui e **um processo com tres etapas**,
+           numa tela so, com `proximos_passos` dizendo o que falta. Tres telas
+           obrigariam o escrevente a saber em que etapa o processo esta ANTES de
+           escolher a porta — e quem sabe disso ja nao precisava do menu.
+
+           O que estes tres links fazem e **filtrar a mesma lista pela
+           situacao**: cada um responde «quem espera por mim nesta fase». As
+           chaves saem de `hc_schema.SITUACOES`, e ha teste que confere — link
+           com situacao inexistente devolveria lista vazia, e lista vazia se le
+           como «nada a fazer». #}
+        <a href="{{ url_for('rcpn_habilitacoes') }}">1 · Habilitação</a>
+        <a href="{{ url_for('rcpn_habilitacoes', situacao='EDITAL_PUBLICADO') }}">2 · Edital de proclamas</a>
+        {# O e-PROCLAMAS E A METADE DA ETAPA 2 QUE ACONTECE FORA DA CASA, e por
+           isso fica colado nela em vez de ir para «comunicacoes e remessas».
+           O edital desta casa nao e afixado nem publicado na imprensa: e
+           publicado na Central (informacao do oficial em 28/08/2026), e a
+           prova dele e o numero que ela devolve.
+
+           **Ate 03/09/2026 este passo era manual** — o escrevente publicava no
+           portal e voltava para digitar o protocolo. O caminho manual continua
+           na ficha da habilitacao, para quando a Central estiver fora do ar. #}
+        <a href="{{ url_for('rcpn_proclamas') }}">2b · Enviar ao e-Proclamas</a>
+        <a href="{{ url_for('rcpn_habilitacoes', situacao='HABILITADO') }}">3 · Prontas para casar</a>
+        <a href="{{ url_for('rcpn_formulario', chave='CASAMENTO') }}">Teores do casamento</a>
+
+        {# ---------------------------------------------------------------- #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Óbito</div>
+        <a href="{{ url_for('rcpn_assento_novo', especie_url='obito') }}">Novo registro de óbito</a>
+        <a href="{{ url_for('rcpn_assento_novo', especie_url='obito', do_acervo=1) }}">Digitar óbito já lavrado</a>
+        <a href="{{ url_for('rcpn_formulario', chave='OBITO') }}">Teores do óbito</a>
+        {# AS COMUNICACOES MENSAIS SAO DO OBITO — art. 226, ate o 5o dia util.
+           Estavam com as remessas, agrupadas por prazo; vieram para ca porque
+           sao do ato por definicao, e quem as faz esta pensando em obito. A
+           omissao responsabiliza o delegatario (§ 2o). #}
+        <a href="{{ url_for('rcpn_comunicacoes') }}">Comunicações mensais</a>
+        {# AS QUATRO PERGUNTAS DO OBITO — eleitor, bens, filhos, nao
+           identificado. Lidas no print do E-Oficio: la sao quatro caixas
+           soltas na tela de lavratura. **Nao sao estatistica, sao gatilhos**:
+           marcar «eleitor» e o que faz a comunicacao a Justica Eleitoral
+           existir, e nenhuma delas se deduz do assento. #}
+        <a href="{{ url_for('rcpn_marcas_do_obito') }}">O que falta perguntar</a>
+
+        {# ---------------------------------------------------------------- #}
+        {# O QUE SE MEXE EM ASSENTO JA LAVRADO. As quatro pensam-se juntas no
+           balcao: alguem chega dizendo que ha algo errado, ou faltando, no que
+           ja esta escrito. #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Assento já lavrado</div>
+        {# RETIFICACAO, RESTAURACAO E SUPRIMENTO — os tres nao sao a mesma
+           coisa, e por isso a porta e uma so, com a escolha dentro. #}
+        <a href="{{ url_for('rcpn_retificacoes') }}">Retificação e suprimento</a>
+        {# O CHECKLIST OBRIGATORIO DA INSPECAO — pag. 50, prazo ZERO, critica.
+           Ele funcionava um a um, pela ficha do assento; faltava o lugar que
+           responde «QUAIS FALTAM», e sem essa pergunta a exigencia nao se
+           cumpre: atende-se por acaso. #}
+        <a href="{{ url_for('rcpn_checklist_pendente') }}">Atos sem checklist</a>
+        {# O TERMO E O TEXTO QUE VAI NO LIVRO. Fica aqui, e nao no balcao,
+           porque a lista e de assentos JA lavrados que ainda nao tem o teor. #}
+        <a href="{{ url_for('rcpn_termos_a_escrever') }}">Termos a escrever</a>
+        {# O TERMO ASSINADO, DIGITALIZADO — problema #121. Ao lado do «a
+           escrever» porque é o passo seguinte do mesmo papel: escreve-se,
+           assina-se no livro, escaneia-se. #}
+        <a href="{{ url_for('rcpn_termos_a_digitalizar') }}">Termos a digitalizar</a>
+        {# OS 244 DO ACERVO. **ESTA ENTRADA FALTAVA E A FALTA ERA MINHA**: em
+           30/08/2026 eu os tirei de «Termos a escrever» — certissimo — e disse
+           ao oficial que passavam a ter «lista propria». Escrevi a funcao e nao
+           liguei tela nenhuma. **Tirar de uma lista nao e dar um lugar.** #}
+        <a href="{{ url_for('rcpn_informacoes_importadas') }}">Informações importadas</a>
+        {# IMPORTAR OU DIGITAR — pedido do oficial em 07/09/2026: a importacao
+           do acervo fica JUNTO com a porta de digitar, e nao isolada. As duas
+           vivem em «Assento ja lavrado» e tambem no topo da lista de Assentos.
+           E EM 12/10/2026 A IMPORTACAO SAIU DO MENU, por ordem dele: «tire
+           aquela aba de importar do e-oficio, nao faz mais sentido». O acervo
+           ja entrou; a rota fica, sem link. E a DIGITACAO foi para dentro de
+           cada especie, ao lado do registro novo: «mantenha, mas nos itens
+           de baixo, ao lado de assento, nascimento, casamento». #}
+        {# O MUTIRAO DO ART. 347: o CPF dos assentos anteriores a 14/11/2017. #}
+        <a href="{{ url_for('rcpn_dados_cadastrais') }}">CPF nos assentos antigos</a>
+        {# A MATRICULA DE 32 DIGITOS — o numero nacional do assento. Fica aqui,
+           e nao no balcao, porque o que esta tela faz e CONFERIR o que ja
+           existe: ela achou uma matricula errada no acervo (o nascimento nº
+           19.132), herdada do E-Oficio. A regra do digito e do Anexo IV do
+           manual de carga da CRC. #}
+        <a href="{{ url_for('rcpn_matriculas') }}">Matrículas</a>
+        {# A FILIACAO TROCADA — achada em 30/08/2026 montando o termo de um
+           assento real: o texto saiu «filho de VITORIA ... e BRUNO ...» e o
+           declarante era o BRUNO. Sao 23 assentos, todos vindos da carga.
+           A tela MOSTRA e nao corrige: certidao deles pode ja ter saido, e os
+           dados foram para a CRC. A correcao e retificacao (art. 352). #}
+        <a href="{{ url_for('rcpn_filiacao') }}">Conferência da filiação</a>
+
+        {# ---------------------------------------------------------------- #}
+        {# AS NOVE OBRIGACOES, e a porta da frente vem primeiro. Sao cinco
+           prazos diferentes, de um dia util a trimestral — e quem chega de
+           manha precisa de UMA tela que diga o que venceu, e nao de sete. #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Comunicações e remessas</div>
+        {# A PORTA DA FRENTE: seis linhas, nove destinos, cinco prazos. #}
+        <a href="{{ url_for('rcpn_painel') }}">O que comunicar hoje</a>
+        {# UM DIA UTIL — o prazo mais curto da casa, e o que alcanca mais coisa. #}
+        <a href="{{ url_for('rcpn_sirc') }}">Remessa do SIRC</a>
+        {# IMEDIATAMENTE — art. 253, § 2o, o unico prazo da casa sem numero. #}
+        <a href="{{ url_for('rcpn_funai') }}">Comunicação à FUNAI</a>
+        {# A CRC E O CANAL QUE A NORMA MANDA USAR PRIMEIRO — arts. 243, 226 § 1o
+           I, e 348 § 2o. #}
+        <a href="{{ url_for('rcpn_crc') }}">Carga da CRC</a>
+        {# O PRAZO DE CINCO DIAS DO ART. 367 — as anotacoes saem pela CRC, e por
+           isso ficam ao lado dela. #}
+        <a href="{{ url_for('rcpn_anotacoes') }}">Anotações devidas</a>
+        {# PREVIA DO TEXTO a partir do HTML da CRC recebida — so copia; nao
+           anota sozinho na margem (art. 370). #}
+        <a href="{{ url_for('rcpn_anotacao_crc') }}">Anotação da CRC</a>
+        {# AS COMUNICACOES MENSAIS DE OBITO saiam daqui em 30/08/2026 e foram
+           para a secao «Obito», onde estao pelo ATO. O painel «O que comunicar
+           hoje» continua contando-as, e e ele que responde «o que vence». #}
+        {# A REMESSA DO IBGE e obrigacao trimestral da serventia (Lei
+           6.015/1973, art. 49), e por isso fica no menu do civil e nao no
+           administrativo: quem a manda e quem lavra. E o unico destino com
+           multa em dinheiro — por isso fica por ultimo, e nao por menos
+           importante: o prazo dele e o mais folgado. #}
+        <a href="{{ url_for('rcpn_ibge') }}">Remessa do IBGE</a>
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
+        {# O SUBMODULO DE MODELOS DESTA ATRIBUICAO — 07/09/2026, ordem do
+           oficial. Cada papel e corpo + encerramento + rodape, e o que se
+           escreve «em toda a atribuicao» vale para os papeis todos.
+           **O cabecalho nao entra**, por decisao dele no mesmo dia: fica onde
+           esta, para manter a forma. #}
+        <a href="{{ url_for('rcpn_modelos_papeis') }}">Modelos dos documentos (papéis da casa)</a>{% endif %}
+      </details>
+
+      <details class="nav-modulo" style="--cor-do-grupo:{{ MODULOS | selectattr('chave','equalto','RCPJ_RTD') | map(attribute='cor') | first }}"{% if mod_rcpj_rtd %} open{% endif %}>{% set cor_do_grupo = MODULOS | selectattr('chave','equalto','RCPJ_RTD') | map(attribute='cor') | first %}{% set nsec = namespace(n=0) %}
+        {# E o vizinho ganha o nome inteiro pelo mesmo motivo: as siglas só
+           dizem alguma coisa a quem já sabe o que elas querem dizer. #}
+        {# 13/10/2026: o nome legal entrou em 06/10 (3.6.286) pela metade — «das Pessoas
+           Jurídicas e títulos». Consertado na mesma direção, a do nome legal. #}
+        <summary>RCPJ e RTD — Pessoas Jurídicas, Títulos e Documentos</summary>
+        {#
+          TRES SECOES, E ELAS NASCERAM COM O SETIMO ITEM.
+
+          A regra da casa e medida: **modulo com mais de seis itens exige
+          secao** — e este grupo tinha tres ate 03/09/2026. Com o titulo
+          apresentado, a fila da Central e o ajuste da etiqueta ele passou a
+          sete, e sete em coluna unica e o defeito que o oficial apontou no
+          relato #12: «nao tem uma logica para encontrar».
+
+          A ORDEM E A DO DIA: primeiro o que o balcao faz o dia inteiro — e o
+          TITULO CHEGA ANTES DE O REGISTRO EXISTIR, por isso as duas filas de
+          protocolo vem na frente das listas de registro. Depois o que se
+          consulta. Por ultimo o que so o oficial mexe.
+        #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O balcão</div>
+        <a href="{{ url_for('rcpj_rtd_titulos', atribuicao=4) }}">RTD — títulos apresentados</a>
+        <a href="{{ url_for('rcpj_rtd_titulos', atribuicao=3) }}">RCPJ — títulos apresentados</a>
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('rcpj_rtd_etiquetas_selos_externos') }}">Etiquetas de selos externos</a>{% endif %}
+        {# O MENU NAO OFERECE O QUE AQUELE OPERADOR NAO PODE FAZER. A fila da
+           Central e `@roles_required(QUEM_OPERA)`; o AUDITOR consulta as
+           listas e nao traz pedido. Oferecer o link a ele seria uma porta que
+           recusa depois do clique. #}
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('rcpj_rtd_onrtdpj') }}">Central ONRTDPJ — a fila de lá</a>{% endif %}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Registro já lavrado</div>
+        <a href="{{ url_for('rcpj_rtd_registros', atribuicao=3) }}">RCPJ — registros lavrados</a>
+        <a href="{{ url_for('rcpj_rtd_registros', atribuicao=4) }}">RTD — registros lavrados</a>
+        <a href="{{ url_for('rcpj_rtd_ultimos_atos') }}">Últimos atos praticados</a>
+        <a href="{{ url_for('atribuicoes_certidoes') }}">Certidões de inteiro teor</a>
+        {% if user.role in ['ADMIN','MANAGER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Configuração</div>
+        <a href="{{ url_for('rcpj_rtd_etiqueta_ajuste') }}">Ajustar a etiqueta de registro</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
+        {# O SUBMODULO DE MODELOS DESTA ATRIBUICAO — 07/09/2026, ordem do
+           oficial. Cada papel e corpo + encerramento + rodape, e o que se
+           escreve «em toda a atribuicao» vale para os papeis todos.
+           **O cabecalho nao entra**, por decisao dele no mesmo dia: fica onde
+           esta, para manter a forma. #}
+        <a href="{{ url_for('rcpj_rtd_modelos_papeis') }}">Modelos dos documentos</a>{% endif %}
+      </details>
+
+      {#
+        O QUE SERVE AS SEIS, e por isso não mora dentro de nenhuma. É o mesmo
+        motivo de o núcleo ser um módulo próprio no código: escrever seis vezes
+        produziria seis versões divergentes do código mais difícil do sistema.
+      #}
+      <div class="nav-grupo">Operação</div>
+      <details class="nav-modulo" style="--cor-do-grupo:{{ MODULOS | selectattr('chave','equalto','LIVROS') | map(attribute='cor') | first }}"{% if mod_livros %} open{% endif %}>{% set cor_do_grupo = MODULOS | selectattr('chave','equalto','LIVROS') | map(attribute='cor') | first %}{% set nsec = namespace(n=0) %}
+        <summary>Livros e acervo</summary>
+        <a href="{{ url_for('nucleo_livros') }}">Livros e termos</a>
+        <a href="{{ url_for('nucleo_encerramento_diario') }}">Encerramento diário</a>
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('nucleo_numeracao') }}">Numeração dos livros</a>{% endif %}
+        {# A ABA DO QUE FALTA INFORMAR serve as SEIS atribuições, e por isso
+           fica aqui e não dentro de uma delas. #}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('implantacao') }}">O que falta informar</a>{% endif %}
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('atribuicoes_importar') }}">Trazer o acervo do E-Ofício</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('importar_padrao_tela') }}">Importar de outro sistema</a>{% endif %}
+        {% if user.role == 'USER' %}<a href="{{ url_for('importar_padrao_tela', especie='RI_MATRICULA') }}">Importar matrícula do RI</a>{% endif %}
+      </details>
+
+      <details class="nav-modulo" style="--cor-do-grupo:{{ MODULOS | selectattr('chave','equalto','MALOTE') | map(attribute='cor') | first }}"{% if mod_malote %} open{% endif %}>{% set cor_do_grupo = MODULOS | selectattr('chave','equalto','MALOTE') | map(attribute='cor') | first %}{% set nsec = namespace(n=0) %}
+        <summary>Processos e malote
+          {%- if global_stats.overdue %} <span class="nav-alert">{{ global_stats.overdue }}</span>{% endif %}
+        </summary>
+        {# PROCESSOS (12/10/2026): a lista única de tarefas e expedientes. As
+           telas antigas continuam abaixo enquanto a equipe se acostuma. #}
+        <a href="{{ url_for('processos_lista') }}">Processos{% if global_stats.overdue %} <span class="nav-alert">{{ global_stats.overdue }}</span>{% endif %}</a>
+        {# «Expedientes / Malote», «Expedientes prontos para encerrar» e «Tarefas e
+           pendências» saíram do menu em 12/10/2026: viraram a lista de Processos.
+           Os endereços antigos continuam abrindo, com o aviso no alto. #}
+        <a href="{{ url_for('inspections') }}">Inspeções</a>
+      </details>
+
+      <div class="nav-grupo">Gestão</div>
+      <details class="nav-modulo" style="--cor-do-grupo:{{ MODULOS | selectattr('chave','equalto','ADM') | map(attribute='cor') | first }}"{% if mod_adm %} open{% endif %}>{% set cor_do_grupo = MODULOS | selectattr('chave','equalto','ADM') | map(attribute='cor') | first %}{% set nsec = namespace(n=0) %}
+        <summary>Administrativo</summary>
+        {#
+          VINTE E SETE ITENS NA ORDEM EM QUE FORAM ESCRITOS, ate 27/08/2026 —
+          e o oficial disse o que isso e: «nao tem uma logica para encontrar».
+          Agora sao cinco secoes, na ordem do dia: o dinheiro que entra, quem
+          esta no balcao, o que a casa deve, a ajuda, e o que so se mexe uma
+          vez. O que muda e onde a pessoa PROCURA; nenhuma tela saiu.
+        #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Dinheiro</div>
+        {# CAIXA E PROTOCOLO GERAL SAO A MESMA COISA desde 27/08/2026, e por
+           isso ficam juntos e nesta ordem. #}
+        <a href="{{ url_for('caixa') }}">Caixa</a>
+        <a href="{{ url_for('caixa_protocolos') }}">Protocolo geral</a>
+        <a href="{{ url_for('caixa_protocolos_parados') }}">Protocolos parados</a>
+        <a href="{{ url_for('caixa_depositos') }}">Depósito prévio</a>
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('caixa_recibos') }}">Recibos</a>
+        <a href="{{ url_for('caixa_emolumentos') }}">Emolumentos</a>
+        {# O RAZAO DOS SELOS — relato #33. Fica no dinheiro porque selo se
+           compra. **É UM LINK SÓ desde 15/09/2026**: havia dois com este mesmo
+           rótulo, e eles discordavam em 7.762 selos sobre o que é «não usado»
+           — 26.279 no razão, e os comprados que ainda não entraram em ato
+           nenhum (**1.300** medidos em 15/09/2026 — e este número anda todo
+           dia, porque selo se compra todo dia). O antigo `/relatorios/selos`
+           continua respondendo, e leva para cá. Não é a tela de selos do RI,
+           que reune o selo de dentro dos atos daquela atribuição. #}
+        <a href="{{ url_for('selos_emitidos_lista') }}">Selos emitidos</a>{% endif %}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Atendimento</div>
+        <a href="{{ url_for('service_queue') }}">Atendimento / senhas</a>
+        <a href="{{ url_for('whatsapp_lista') }}">WhatsApp</a>
+        <a href="{{ url_for('robos_lista') }}">Robôs</a>
+        {# A LISTA E DE TODOS, e ela atravessa as seis atribuicoes: e o unico
+           lugar onde o que comecou e nao terminou aparece junto. Sem ela sao
+           nove telas para saber o que a casa deve. #}
+        <a href="{{ url_for('inacabados_lista') }}">O que ficou pelo caminho</a>
+        {# OS ENVIOS ÀS CENTRAIS — o que a conferência diária cobra e só some
+           com o protocolo registrado. Fica ao lado de «O que ficou pelo
+           caminho» porque é a mesma pergunta: o que a casa ainda deve. #}
+        <a href="{{ url_for('gestor_envios') }}">Envios às Centrais</a>
+        <a href="{{ url_for('gestor_leituras') }}">Leitura dos textos (IA)</a>
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('gestor_caixas') }}">Caixas para o visto</a>{% endif %}
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('gestor_erros') }}">Relatório de erros</a>{% endif %}
+        {# OS RASCUNHOS — relato #36. Ficam AO LADO de «O que ficou pelo
+           caminho», e nao dentro: aquele mede ATOS que ja existem e estao
+           parados; este guarda o que ainda nao virou ato nenhum. Juntar os
+           dois faria papel de anotacao aparecer como pendencia da casa. #}
+        <a href="{{ url_for('rascunhos') }}">Rascunhos</a>
+        <a href="{{ url_for('produtividade_lista') }}">Produtividade</a>
+        {# A CONSULTA E DE TODOS, e a lista e de quem recebe as
+           comunicacoes. Por isso os dois links, com perfis diferentes — e em
+           secoes diferentes, porque consultar e do balcao e manter a lista e
+           de quem responde pela serventia. #}
+        <a href="{{ url_for('fraude_consultar') }}">Consultar fraudes</a>
+        <a href="{{ url_for('reports') }}">Relatórios</a>
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">A casa</div>
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('fraudes') }}">Atenção para fraudes</a>{% endif %}
+        <a href="{{ url_for('checklists') }}">Checklists</a>
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('recurrences') }}">Obrigações recorrentes</a>{% endif %}
+        <a href="{{ url_for('lgpd') }}">LGPD e governança</a>
+        <a href="{{ url_for('assets') }}">TI e infraestrutura</a>
+        {% if user.role in ['ADMIN','AUDITOR'] %}<a href="{{ url_for('audit_logs') }}">Auditoria</a>
+        <a href="{{ url_for('integrity') }}">Integridade</a>{% endif %}
+        {# O TITULO SO APARECE SE ALGUMA COISA APARECER EMBAIXO DELE.
+           A ajuda depende de `ajuda_liberada`, que mora no banco: para quem
+           nao a tem liberada e nao e gerente, o titulo ficaria sozinho — e
+           titulo de secao vazia faz a pessoa procurar o que nao esta ali. #}
+        {# A SEÇÃO AJUDA É DE TODOS desde o relato #87 (23/09/2026): todo
+           usuário tem nela, pelo menos, os problemas que ele mesmo relatou. #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Ajuda</div>
+        {# A AJUDA SÓ APARECE PARA QUEM PODE — e quem pode mora no banco, não
+           aqui. Isto é educação de menu; a recusa de verdade é do domínio. #}
+        {% if ajuda_liberada %}<a href="{{ url_for('ajuda_consultar') }}">Ajuda do sistema</a>{% endif %}
+        <a href="{{ url_for('nu_avisos_lista') }}">Avisos da serventia</a>
+        {# OS PROBLEMAS SÃO DE QUEM RESPONDE PELA SERVENTIA — a mesma régua do
+           aviso de disputa de escrita, que já aparece para ADMIN e gerente. #}
+        {# O BALCÃO VÊ OS SEUS — relato #87. A mesma tela, com o nome do que
+           ela mostra a quem não gere a lista; para cada papel só um dos dois
+           links aparece. #}
+        {% if user.role not in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ajuda_problemas') }}">Os problemas que você relatou</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ajuda_problemas') }}">Problemas do sistema</a>
+        {# O QUE A AJUDA SABE DO PROJETO — relato #26. So le, e nao gasta
+           consulta: ver o que a ajuda sabe nao pode custar uma pergunta. #}
+        <a href="{{ url_for('ajuda_projeto') }}">O que a ajuda sabe do projeto</a>
+        {# A BASE DE CONHECIMENTO — pedido dele, 18/09/2026: «preciso que o
+           modulo de ajuda tenha uma base de conhecimento pre-carregada, nao da
+           pra buscar as respostas de tudo para cada problema». Aqui se ve o que
+           esta indexado e se escreve o que so o oficial sabe.
+           So le a base, e nao gasta consulta — a mesma regua da de cima. #}
+        <a href="{{ url_for('ajuda_base') }}">Base de conhecimento da ajuda</a>{% endif %}
+        {# O AGENTE É SÓ DO ADMIN, e SEM opção de expandir — a diferença com a
+           ajuda é o ponto. Aqui não é dúvida de balcão: é gente com permissão
+           de mudar o sistema, lendo o código da casa. Quem responde pela
+           serventia é o oficial, e é ele quem clica.
+
+           Isto é educação de menu; a recusa de verdade é do `roles_required`
+           da rota e das funções de domínio. #}
+        {% if user.role == 'ADMIN' and agente_no_menu %}<a href="{{ url_for('agente_console') }}">Agente do sistema</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
+        {# OS MODELOS SAO DA CASA INTEIRA, e por isso moram aqui — relato #28.
+           Havia dois lugares para editar modelo, os dois dentro do Registro de
+           Imoveis, e cinco papeis que nao tinham lugar nenhum. #}
+        <a href="{{ url_for('modelos') }}">Modelos dos documentos</a>
+        {# O SUBMODULO DO CAIXA. Ele mora aqui, e nao numa atribuicao, porque
+           «Caixa e protocolo» nao e atribuicao — e tem tres papeis reais
+           (recibo, orcamento e recepcao). #}
+        <a href="{{ url_for('caixa_modelos_papeis') }}">Modelos do caixa</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Configuração</div>
+        <a href="{{ url_for('selador_config') }}">Selador — configuração</a>
+        <a href="{{ url_for('network_status') }}">Rede / acesso</a>{% endif %}
+        {# O PLD/COAF É SIGILOSO (CNN, art. 154): só o ADMIN o vê no menu, e a rota
+           recusa os outros perfis de todo jeito. #}
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('pld_painel') }}">PLD / COAF (sigiloso)</a>
+        <a href="{{ url_for('users') }}">Usuários</a>
+        <a href="{{ url_for('acervo_corrigir') }}">Corrigir dado do acervo</a>
+        {# O AGENTE — CONFIGURAR FICA JUNTO DA AJUDA — CONFIGURAR, e não lá em
+           cima com o console: quem procura a chave da API do agente procura
+           onde já achou a da ajuda. E é aqui que se liga a escrita. #}
+        {% if agente_no_menu %}<a href="{{ url_for('agente_configurar') }}">Agente — configurar</a>{% endif %}
+        <a href="{{ url_for('ajuda_configurar') }}">Ajuda — configurar</a>
+        <a href="{{ url_for('caixa_importar') }}">Trazer caixa do E-Ofício</a>
+        <a href="{{ url_for('updates') }}">Correções e atualizações</a>
+        <a href="{{ url_for('settings') }}">Configurações</a>{% endif %}
+      </details>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="user-avatar" aria-hidden="true" title="{{ user.full_name }}">{{ user.full_name[:1] | upper }}</span>
+      <div class="user-copy"><strong>{{ user.full_name }}</strong><small>{{ user.role }} · v{{ VERSION }}</small></div>
+      <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" title="Sair do sistema">Sair</button></form>
+    </div>
+  </aside>
+  <button class="sidebar-scrim" type="button" aria-label="Fechar menu" tabindex="-1"></button>
+  <main class="main">
+    {% include '_caixa_aviso.html' %}
+    {% include '_digi_aviso.html' %}
+    {% include '_rc_digi_aviso.html' %}
+    {% include '_gratuidade_aviso.html' %}
+    <div class="main-compact-banners" data-main-compact-banners{% if nu_avisos_modal %} hidden{% endif %}>
+      {% include '_faixas_compactas.html' %}
+    </div>
+    <header class="topbar">
+      <button class="sidebar-toggle" type="button" aria-controls="app-sidebar"
+              aria-expanded="false" aria-label="Abrir menu">
+        <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+      </button>
+      <div class="page-heading">{% block heading %}{% endblock %}
+      {#
+        O NOME DO MODULO, ao lado do titulo. A cor sozinha diz «mudou de
+        modulo»; ela nao diz PARA QUAL — e quem chega numa tela pelo link de
+        outra precisa das duas coisas. Cor sem nome e adivinhacao.
+      #}
+      {% if modulo_nome %}<span class="modulo-etiqueta">{{ modulo_nome }}</span>{% endif %}</div>
+      <div class="today">{{ fmt_date((namespace(today='') or {}).today) if false else '' }}</div>
+    </header>
+    <div class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message }}{{ aviso.fechar() }}</div>{% endfor %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+  {#
+    A JANELA DA AJUDA, EM TODA TELA.
+
+    Fora do `<main>` de propósito: ela fica presa no canto da janela do
+    navegador, e não rola com o conteúdo — a dúvida aparece no meio da tela,
+    não no fim dela.
+  #}
+  {% if ajuda_tela %}{% include '_ajuda.html' %}{% endif %}
+  {#
+    A GAVETA DO AGENTE, EM TODA TELA — para quem responde pela serventia.
+
+    FORA DO `<main>` PELO MESMO MOTIVO, e do outro lado: as duas ficam presas
+    no canto e não rolam com a página. A ajuda à direita, esta à esquerda,
+    porque as duas podem estar abertas ao mesmo tempo.
+
+    QUEM DECIDE SE APARECE É O SERVIDOR (`agente_na_tela`), e ele responde com
+    o papel de quem está logado: o balcão não tem o que fazer com uma gaveta
+    que OPERA o sistema, e a lista de ferramentas dela não chega até ele.
+  #}
+  {% if agente_na_tela %}{% include '_agente.html' %}{% endif %}
+  {% include '_nu_avisos_modal.html' %}
+  {% include '_produtividade_rapida.html' %}
+</div>
+{% else %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message }}{{ aviso.fechar() }}</div>{% endfor %}
+    {% endwith %}
+    {% block auth_content %}{% endblock %}
+  </div>
+</div>
+{% endif %}
+</body>
+</html>

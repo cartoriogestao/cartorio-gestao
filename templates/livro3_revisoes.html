@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Livro 3 — o que revisar antes de selar{% endblock %}
+{% block heading %}<h1>Livro 3 — o que revisar antes de selar</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('livro3_registros') }}">&larr; Livro 3</a>
+  <a class="button" href="{{ url_for('livro3_minutas') }}">Minutas a revisar</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Esperando conferência</span>
+    <small>{{ notas | length }}</small></div>
+  <div style="padding:14px">
+    {% if not notas %}
+      <p><strong>Nada esperando conferência no Livro 3.</strong></p>
+    {% else %}
+    <p class="small muted">A nota <strong>não impede lavrar nem selar</strong> —
+      ela avisa. Quem decide é quem assina. E baixar exige escrever o que se
+      decidiu: sem isso a baixa apaga a pergunta sem respondê-la.</p>
+    <table class="tabela">
+      <thead><tr><th>Registro</th><th>Assunto</th><th>Nota</th>
+        <th>Anotada em</th><th></th></tr></thead>
+      <tbody>
+      {% for n in notas %}
+        <tr>
+          <td><strong>{{ n.registro_numero }}</strong></td>
+          <td>{{ n.assunto }}</td>
+          <td><small>{{ n.nota }}</small></td>
+          <td><small class="muted">{{ fmt_date(n.anotada_em) }}
+            {% if n.anotada_por %}· {{ n.anotada_por }}{% endif %}</small></td>
+          <td><a class="button" href="{{ url_for('livro3_registro',
+                     registro_id=n.registro_id) }}">abrir a ficha</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

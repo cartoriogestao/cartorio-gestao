@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Reconhecer sinal público</h1>{% endblock %}
+{% block content %}
+{#
+  Reconhecimento AUTONOMO — item TJMA 413.
+  Distinto do checkbox «reconhecer tambem o sinal» na firma.
+#}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_sinais') }}">&larr; Sinais públicos</a>
+  <a class="button primary" href="{{ url_for('notas_sinal_reconhecimento') }}">Reconhecer sinal</a>
+  <a class="button" href="{{ url_for('notas_reconhecimento') }}">Reconhecer firma</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Procurar sinal cadastrado</span></div>
+  <form class="filters" method="get" style="padding:14px">
+    <input name="busca" value="{{ busca }}" size="40" autofocus
+           placeholder="Titular — mínimo duas letras">
+    <button class="primary">Procurar</button>
+  </form>
+  {% if sinais %}
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="reconhecer">
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Titular</th><th>Documento</th><th>PDF</th></tr></thead>
+      <tbody>
+      {% for s in sinais %}
+        <tr>
+          <td><input type="radio" name="sinal_id" value="{{ s.id }}" required></td>
+          <td><strong>{{ s.titular }}</strong></td>
+          <td class="small">{{ s.documento or '—' }}</td>
+          <td class="small">{% if s.caminho_pdf %}ok{% else %}<span class="badge alta small">sem PDF</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <label>Documento apresentado <input name="documento_descricao" size="50"
+           placeholder="ex.: procuração, contrato…"></label>
+    <p class="small muted">Emolumento previsto (item 413):
+      {% if preco and preco.get('total') %}R$ {{ '%.2f'|format(preco.total) }}{% else %}conforme tabela{% endif %}.</p>
+    <button class="primary">Reconhecer sinal</button>
+  </form>
+  {% elif busca %}
+  <p class="muted" style="padding:14px">Nenhum sinal ativo para «{{ busca }}».
+    <a href="{{ url_for('notas_sinais', busca=busca) }}">Cadastrar</a></p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Últimos reconhecimentos de sinal</span></div>
+  {% if lista %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Data</th><th>Titular</th><th>Selo</th><th></th></tr></thead>
+    <tbody>
+    {% for r in lista %}
+      <tr>
+        <td>{{ r.id }}</td>
+        <td class="small">{{ fmt_date(r.data) }}</td>
+        <td>{{ r.titular }}</td>
+        <td class="small">{{ r.selo or '—' }}</td>
+        <td><a class="button small" href="{{ url_for('notas_sinal_reconhecimento_ver', reconhecimento_id=r.id) }}">ver</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="muted" style="padding:14px">Nenhum ainda.</p>
+  {% endif %}
+</section>
+{% endblock %}

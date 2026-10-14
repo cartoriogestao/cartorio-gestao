@@ -1,0 +1,79 @@
+{#
+  O DOCUMENTO MONTADO — conferir primeiro, imprimir depois.
+
+  **A LISTA DOS CLAROS VAZIOS VEM ANTES DO PAPEL**, e é a metade que o
+  E-Ofício não tinha: lá o claro sem dado virava espaço em branco no
+  impresso, e quem descobria era quem lia o documento depois de assinado.
+
+  A folha segue o desenho das outras impressões da casa (`@page` A4, barra
+  `.naoimprime` que some no papel).
+#}<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>{{ r.modelo.nome }} — {{ r.assento.nome }}</title>
+<style>
+  @page { size: A4 portrait; margin: 20mm 20mm 20mm 25mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 11pt;
+         color: #000; }
+  .folha { width: 190mm; margin: 0 auto; }
+  .corpo { white-space: pre-wrap; text-align: justify; line-height: 1.55; }
+  @media screen {
+    body { background: #cfd6de; padding: 10px; }
+    .folha { background: #fff; padding: 20mm 20mm 20mm 25mm;
+             box-shadow: 0 1px 8px rgba(0,0,0,.28); }
+    .aviso { width: 190mm; margin: 0 auto 8px; background: #fff;
+             padding: 10px 12px; font-size: 12px; border-left: 4px solid #1f5e8c; }
+    .aviso.falta { border-left-color: #a5762a; }
+    .aviso h2 { font-size: 13px; margin: 0 0 6px; }
+    .aviso ul { margin: 4px 0 0 18px; padding: 0; }
+    .barra { width: 190mm; margin: 0 auto 6px; display: flex; gap: 8px;
+             flex-wrap: wrap; }
+    .barra a, .barra button { font: 13px Arial, sans-serif;
+      border: 1px solid #b9c5cd; border-radius: 6px; background: #fff;
+      padding: 8px 12px; cursor: pointer; text-decoration: none; color: #1d3443; }
+    .barra .primary { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }
+  }
+  @media print { .naoimprime { display: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="barra naoimprime">
+  <a href="{{ url_for('rcpn_modelos_do_assento', assento_id=assento_id) }}"
+     >← Outros modelos</a>
+  <button class="primary" type="button" onclick="window.print()">Imprimir</button>
+  <a href="{{ url_for('rcpn_modelo', modelo_id=r.modelo.id) }}">Editar o modelo</a>
+</div>
+
+<div class="aviso naoimprime">
+  <h2>{{ r.modelo.nome }}</h2>
+  Assento n.º {{ r.assento.numero or r.assento.id }} —
+  <strong>{{ r.assento.nome }}</strong>.
+  Este é um <strong>documento avulso</strong>: não é o termo do livro, e o
+  sistema não o numera nem o sela.
+</div>
+
+{% if r.vazios %}
+{# **CONFERIR E IMPRIMIR SÃO DOIS BOTÕES.** O claro sem dado sai em branco no
+   papel; aqui ele aparece com nome antes de qualquer impressão. #}
+<div class="aviso falta naoimprime">
+  <h2>{{ r.vazios|length }} claro{{ 's' if r.vazios|length > 1 }} sem dado —
+      {{ 'eles saem' if r.vazios|length > 1 else 'ele sai' }} em branco no papel</h2>
+  <ul>
+    {% for c in r.vazios %}
+    <li><code>{{ '{' }}{{ c }}{{ '}' }}</code> — {{ rotulos.get(c, c) }}</li>
+    {% endfor %}
+  </ul>
+  Complete o assento, ou tire {{ 'esses claros' if r.vazios|length > 1
+  else 'esse claro' }} do modelo, antes de assinar.
+</div>
+{% endif %}
+
+<div class="folha">
+  <div class="corpo">{{ r.texto }}</div>
+</div>
+
+</body>
+</html>

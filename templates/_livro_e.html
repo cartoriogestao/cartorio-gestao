@@ -1,0 +1,136 @@
+{# O LIVRO E — o título que se registra e as pessoas que a lei põe ao lado do
+   titular. 13/10/2026, ordem do oficial: «preparemos o ambiente para
+   viabilizar o próximo registro e todos os modelos, nos moldes da casa», e
+   depois «tela corrigir registro é importante fazer».
+
+   MORA NUMA MACRO PORQUE SÃO DUAS TELAS — a de lavrar e a de corrigir a
+   ficha. Duas cópias do mesmo bloco divergiriam no primeiro conserto, e a
+   correção passaria a perder justamente o campo novo.
+
+   A ordem é a do papel que o balcão tem na mão: primeiro o TÍTULO (a
+   sentença, a escritura ou o termo), depois quem é o titular, e por fim quem
+   a lei põe ao lado dele. O que é condicional só aparece quando o título ou
+   a espécie pedem, e nada daqui é exigido pela tela — quem recusa o que
+   falta é a lavratura, com o artigo da espécie. #}
+{% from '_pessoa_do_assento.html' import pessoa %}
+
+{% macro titulo_do_livro_e(especie, form, titulos, nomes_do_titulo, regimes) %}
+<section class="panel" style="grid-column:1/-1">
+  <div class="panel-head"><span>O título que se registra</span>
+    <small>{% if especie == 'EMANCIPACAO' %}art. 90 da Lei 6.015/1973
+      {% elif especie == 'INTERDICAO' %}art. 92 da Lei 6.015/1973
+      {% elif especie == 'AUSENCIA' %}art. 94 da Lei 6.015/1973
+      {% elif especie == 'UNIAO_ESTAVEL' %}art. 94-A da Lei 6.015/1973
+      {% elif especie == 'OPCAO_NACIONALIDADE' %}art. 32, § 4º, da Lei 6.015/1973
+      {% else %}por analogia ao art. 92 da Lei 6.015/1973{% endif %}</small></div>
+  <div class="grid2" style="padding:14px">
+    <label>O que foi apresentado
+      <select name="livro_e_titulo">
+        {% if titulos|length > 1 %}<option value="">— escolha —</option>{% endif %}
+        {% for t in titulos %}
+        <option value="{{ t }}" {% if form.get('livro_e_titulo') == t %}selected{% endif %}>{{ nomes_do_titulo[t] }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Data do título <small>(da sentença, da escritura ou do termo)</small>
+      <input type="date" name="livro_e_titulo_data" value="{{ form.get('livro_e_titulo_data','') }}"></label>
+    <div class="grid2" style="grid-column:1/-1"
+         data-se-campo="livro_e_titulo" data-se-valor="^SENTENCA$">
+      <label>Juízo (vara) que proferiu a sentença
+        <input name="livro_e_juizo" value="{{ form.get('livro_e_juizo','') }}"
+               placeholder="ex.: Vara Única da Comarca de Cidade Exemplo"></label>
+      <label>Nome do juiz
+        <input name="livro_e_juiz" value="{{ form.get('livro_e_juiz','') }}"></label>
+      <label>Número do processo
+        <input name="livro_e_processo" value="{{ form.get('livro_e_processo','') }}"></label>
+      <label>Trânsito em julgado
+        <input type="date" name="livro_e_transito" value="{{ form.get('livro_e_transito','') }}"></label>
+    </div>
+    <div class="grid2" style="grid-column:1/-1"
+         data-se-campo="livro_e_titulo" data-se-valor="^ESCRITURA$">
+      <label>Tabelionato em que foi lavrada
+        <input name="livro_e_tabelionato" value="{{ form.get('livro_e_tabelionato','') }}"></label>
+      <label>Livro
+        <input name="livro_e_escritura_livro" value="{{ form.get('livro_e_escritura_livro','') }}"></label>
+      <label>Folha
+        <input name="livro_e_escritura_folha" value="{{ form.get('livro_e_escritura_folha','') }}"></label>
+    </div>
+    <label style="grid-column:1/-1">{% if especie == 'UNIAO_ESTAVEL' %}Registros de nascimento dos companheiros
+      {% else %}Registro de nascimento do titular{% endif %} <small>(data e cartório)</small>
+      <input name="livro_e_registro_nascimento" value="{{ form.get('livro_e_registro_nascimento','') }}"
+             placeholder="ex.: Livro A-1, fl. 10, termo 1.234, nesta serventia"></label>
+    {% if especie in ['INTERDICAO', 'AUSENCIA', 'UNIAO_ESTAVEL'] %}
+    <label style="grid-column:1/-1">{% if especie == 'UNIAO_ESTAVEL' %}Casamentos e uniões estáveis anteriores, e óbitos de cônjuges ou companheiros
+      {% else %}Registro do casamento{% endif %} <small>(data e cartório; só se houver)</small>
+      <input name="livro_e_registro_casamento" value="{{ form.get('livro_e_registro_casamento','') }}"></label>
+    {% endif %}
+    {% if especie in ['INTERDICAO', 'AUSENCIA'] %}
+    <label>Nome do cônjuge <small>(se for casado)</small>
+      <input name="livro_e_conjuge" value="{{ form.get('livro_e_conjuge','') }}"></label>
+    <label>Limites da curatela <small>(quando parcial)</small>
+      <input name="livro_e_limites" value="{{ form.get('livro_e_limites','') }}"></label>
+    {% endif %}
+    {% if especie == 'INTERDICAO' %}
+    <label>Causa da interdição
+      <input name="livro_e_causa" value="{{ form.get('livro_e_causa','') }}"></label>
+    <label>Lugar em que está internado <small>(só se houver)</small>
+      <input name="livro_e_internacao" value="{{ form.get('livro_e_internacao','') }}"></label>
+    {% endif %}
+    {% if especie == 'AUSENCIA' %}
+    <label>Tempo de ausência até a sentença
+      <input name="livro_e_ausencia_tempo" value="{{ form.get('livro_e_ausencia_tempo','') }}"
+             placeholder="ex.: 3 (três) anos"></label>
+    {% endif %}
+    {% if especie == 'UNIAO_ESTAVEL' %}
+    <label>Início da união
+      <input type="date" name="livro_e_uniao_inicio" value="{{ form.get('livro_e_uniao_inicio','') }}"></label>
+    <label>Regime de bens
+      <select name="regime_bens">
+        <option value="">— não informado —</option>
+        {% for codigo, texto in regimes.items() %}
+        <option value="{{ codigo }}"
+                {% if form.get('regime_bens') == codigo %}selected{% endif %}>{{ texto }}</option>
+        {% endfor %}
+      </select></label>
+    {% endif %}
+  </div>
+</section>
+{% endmacro %}
+
+{% macro pessoas_do_livro_e(especie, form) %}
+{% if especie == 'UNIAO_ESTAVEL' %}
+  {{ pessoa('companheiro1', 'Primeiro(a) companheiro(a)',
+            'Qualificação, CPF e o nome que passa a usar (art. 94-A, II e VIII).',
+            true, form) }}
+  {{ pessoa('filiacao1c1', 'Mãe do primeiro companheiro', '', false, form, false, 'completo', false, true) }}
+  {{ pessoa('filiacao2c1', 'Pai do primeiro companheiro', '', false, form, false, 'completo', false, true) }}
+  {{ pessoa('companheiro2', 'Segundo(a) companheiro(a)',
+            'Qualificação, CPF e o nome que passa a usar (art. 94-A, II e VIII).',
+            true, form) }}
+  {{ pessoa('filiacao1c2', 'Mãe do segundo companheiro', '', false, form, false, 'completo', false, true) }}
+  {{ pessoa('filiacao2c2', 'Pai do segundo companheiro', '', false, form, false, 'completo', false, true) }}
+{% else %}
+  {{ pessoa('pessoa',
+            {'EMANCIPACAO': 'O emancipado', 'INTERDICAO': 'O interdito',
+             'AUSENCIA': 'O ausente', 'TUTELA': 'O tutelado',
+             'OPCAO_NACIONALIDADE': 'O optante'}.get(especie, 'O registrado'),
+            ('O endereço é o do último domicílio do ausente (art. 94, 2º).'
+             if especie == 'AUSENCIA' else
+             'Nome, idade, estado civil, profissão, naturalidade e residência.'),
+            false, form) }}
+  {% if especie in ['EMANCIPACAO', 'TUTELA', 'OPCAO_NACIONALIDADE'] %}
+  {{ pessoa('filiacao1', 'Mãe — filiação 1', '', false, form, false, 'completo', false, true) }}
+  {{ pessoa('filiacao2', 'Pai — filiação 2', '', false, form, false, 'completo', false, true) }}
+  {% endif %}
+  {% if especie in ['EMANCIPACAO', 'TUTELA'] %}
+  {{ pessoa('tutor', 'Tutor(a)' ~ (' — quando a emancipação não for dada pelos pais' if especie == 'EMANCIPACAO' else ' nomeado(a)'),
+            '', false, form) }}
+  {% endif %}
+  {% if especie in ['INTERDICAO', 'AUSENCIA'] %}
+  {{ pessoa('curador', 'Curador(a) nomeado(a)',
+            'Nome, profissão, estado civil, domicílio e residência (art. 92, 4º; art. 94, 6º).',
+            false, form) }}
+  {{ pessoa('requerente', 'Quem requereu' if especie == 'INTERDICAO' else 'Quem promoveu o processo',
+            '', false, form) }}
+  {% endif %}
+{% endif %}
+{% endmacro %}

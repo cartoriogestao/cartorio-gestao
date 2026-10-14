@@ -1,0 +1,223 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Páginas que faltam nas fichas</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button secondary" href="{{ url_for('ri_resolver_imagens') }}">&larr; Fichas digitalizadas</a>
+</div>
+
+<p class="muted">
+  A outra tela cuida do que o sistema <strong>já conhece</strong>. Esta varre o
+  disco e mostra <strong>o que existe lá e o banco não sabe</strong> — porque a
+  importação gravou o que a lista do E-Ofício trazia, e o disco tem mais.
+</p>
+
+{% if atrasadas %}
+{#
+  ISTO VEM PRIMEIRO PORQUE É O QUE CRESCE. As 55 fichas de 1977 esperam
+  decisão do oficial; estas são trabalho de hoje, e cada matrícula nova que a
+  casa abrir entra aqui se ninguém digitalizar.
+#}
+<section class="cartao">
+  <h2>Fichas novas sem digitalização</h2>
+  <div class="alert alert-warning">
+    <strong>{{ atrasadas|length }} matrícula(s) abertas há mais de
+    {{ dias_para_digitalizar }} dias e sem uma única página no disco.</strong>
+    Não são acervo: são ficha nova que ninguém escaneou — e este número
+    <strong>cresce</strong> a cada matrícula que a casa abre.
+  </div>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Matrícula</th><th>Livro</th><th>Aberta em</th>
+                 <th>Há</th><th>Ficha</th></tr></thead>
+      <tbody>
+      {% for m in atrasadas %}
+        <tr>
+          <td><a href="{{ url_for('ri_ficha', matricula_id=m.id) }}">{{ m.numero }}</a></td>
+          <td>{{ m.livro or '—' }}</td>
+          <td>{{ m.data_abertura }}</td>
+          <td><strong>{{ m.dias if m.dias is not none else '—' }}</strong> dias</td>
+          <td>{{ m.tipo_ficha or '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted">
+    A lista <strong>mede na hora</strong>: a ficha sai dela sozinha no dia em
+    que a página aparecer no disco — nada aqui grava marca nenhuma. O prazo de
+    {{ dias_para_digitalizar }} dias é configuração, e não número escrito no
+    programa.
+  </p>
+</section>
+{% endif %}
+
+<section class="cartao">
+  <h2>Como estão as fichas hoje</h2>
+  <table class="tabela">
+    <tbody>
+      <tr><th>Matrículas</th><td>{{ quadro.matriculas }}</td></tr>
+      <tr><th>Com alguma página no sistema</th><td>{{ quadro.com_ficha }}</td></tr>
+      <tr><th>Sem nenhuma página</th><td>{{ quadro.sem_ficha }}</td></tr>
+      <tr><th>Páginas no sistema</th><td>{{ quadro.paginas }}</td></tr>
+      <tr><th>Já copiadas para dentro</th><td>{{ quadro.copiadas }}</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="cartao">
+  <h2>O que o disco tem</h2>
+  <p class="small muted">Varrido em <code>{{ raiz }}</code>.</p>
+  <table class="tabela">
+    <tbody>
+      <tr><th>Arquivos no disco</th><td>{{ a.no_disco }}</td></tr>
+      <tr><th>Já no banco</th><td>{{ a.ja_no_banco }}</td></tr>
+      <tr>
+        <th>Faltando</th>
+        <td><strong>{{ a.quantas_novas }}</strong>
+            {% if a.quantas_novas %}
+            — em {{ a.matriculas_alcancadas }} matrícula(s)
+            {% endif %}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  {% if a.quantas_novas %}
+  <div class="alert alert-warning">
+    <strong>{{ a.matriculas_alcancadas }} fichas estão incompletas no sistema.</strong>
+    Quem abrir uma delas no balcão vê parte da matrícula — e nada na tela da
+    ficha avisa que falta o resto.
+  </div>
+  {% else %}
+  <div class="alert alert-info">
+    Nenhuma página nova no disco: o que está lá o sistema já conhece.
+  </div>
+  {% endif %}
+
+  {% if a.ambiguas %}
+  <div class="alert alert-danger">
+    <strong>{{ a.ambiguas|length }} página(s) NÃO entram, e é de propósito.</strong>
+    O número do arquivo é o número da matrícula — mas há números repetidos nesta
+    casa, e um programa que escolhesse sozinho poria a ficha de um imóvel na de
+    outro. <strong>Ninguém desconfia de uma ficha que abre.</strong>
+    Elas não entram na trazida em massa; <strong>quem escolhe é você</strong>,
+    uma a uma, no quadro «Escolher a matrícula» mais abaixo.
+    <details>
+      <summary><small>quais</small></summary>
+      <ul class="small">
+        {% for x in a.ambiguas[:20] %}<li>{{ x }}</li>{% endfor %}
+      </ul>
+    </details>
+  </div>
+  {% endif %}
+
+  {% if a.sem_matricula %}
+  <p class="small muted">
+    {{ a.sem_matricula|length }} arquivo(s) com número que não existe em
+    matrícula nenhuma: {{ a.sem_matricula[:5]|join(', ') }}.
+  </p>
+  {% endif %}
+  {% if a.fora_do_padrao %}
+  <p class="small muted">
+    {{ a.fora_do_padrao|length }} arquivo(s) com nome fora do padrão
+    <code>matrícula.página</code>, ignorados.
+  </p>
+  {% endif %}
+</section>
+
+{% if escolher %}
+<section class="cartao">
+  <h2>Escolher a matrícula</h2>
+
+  {# AVISO SEM SAIDA E' AVISO QUE FICA PARA SEMPRE — a licao do livro a
+     confirmar. Sem este quadro, estas paginas apareceriam na conferencia
+     todo dia, para sempre, sem ninguem poder resolver. #}
+  <p class="small muted">
+    Estas páginas têm número que serve a mais de uma matrícula. O sistema
+    <strong>não escolhe</strong>: mostra as candidatas com livro, folha e
+    quantas páginas cada uma já tem, e grava a que você marcar.
+  </p>
+
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead>
+        <tr><th>Página</th><th>Matrículas possíveis</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for x in escolher %}
+        <tr>
+          <td>
+            <strong>{{ x.arquivo }}</strong><br>
+            <small class="muted">matrícula {{ x.numero }}, página {{ x.pagina }}</small>
+          </td>
+          <td>
+            <form method="post"
+                  action="{{ url_for('ri_fichas_do_disco_escolher') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="nome" value="{{ x.nome }}">
+              {% for o in x.opcoes %}
+              <label class="bloco">
+                <input type="radio" name="matricula_id" value="{{ o.id }}">
+                Matrícula <strong>{{ o.numero }}</strong> —
+                Livro {{ o.livro or '—' }}, folha {{ o.folha or '—' }},
+                {{ o.tipo_ficha or '—' }}
+                {%- if o.data_abertura %}, aberta em {{ o.data_abertura }}{% endif %},
+                com {{ o.paginas }} página(s) no sistema
+              </label>
+              {% endfor %}
+          </td>
+          <td>
+              <button class="button" type="submit">Ligar a esta</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if faltando %}
+<section class="cartao">
+  <h2>As fichas mais incompletas</h2>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Matrícula</th><th>Livro</th><th>Tem</th><th>Faltam</th></tr></thead>
+      <tbody>
+      {% for f in faltando %}
+        <tr>
+          <td><a href="{{ url_for('ri_ficha', matricula_id=f.id) }}">{{ f.numero }}</a></td>
+          <td>{{ f.livro or '—' }}</td>
+          <td>{{ f.tem }}</td>
+          <td><strong>{{ f.faltam }}</strong></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if a.quantas_novas %}
+<section class="cartao">
+  <h2>Trazer para dentro do sistema</h2>
+  <p class="small muted">
+    As páginas são <strong>copiadas</strong> para a pasta de arquivos do
+    sistema, que o backup já varre — é a mesma pasta que as
+    {{ quadro.copiadas }} de hoje usam. Duas pastas para a mesma coisa fariam
+    metade das fichas sumir do backup sem ninguém ver.
+  </p>
+  <form method="post" action="{{ url_for('ri_fichas_do_disco_trazer') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Quantas de uma vez <small>(vazio ou 0 traz todas)</small>
+      <input type="number" name="limite" min="0" step="100" value="0">
+    </label>
+    <button class="button" type="submit">
+      Trazer {{ a.quantas_novas }} página(s)
+    </button>
+  </form>
+</section>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends 'base.html' %}{% block heading %}<h1>Corrigir dado do acervo</h1>{% endblock %}{% block content %}
+<div class="notice warning">
+  <strong>Só para erro de transcrição da carga do acervo</strong> — nome, endereço,
+  RG digitados errado ao trazer o dado do E-Ofício. Não é para corrigir ato que
+  este sistema lavrou: aquele segue o caminho da averbação/retificação da
+  própria atribuição, e esta tela recusa se a linha não vier do acervo.
+</div>
+<section class="panel">
+  <div class="panel-head"><span>Buscar</span></div>
+  <form method="get" class="form-grid" style="padding:14px">
+    <label>Tabela<select name="tabela" onchange="this.form.submit()">
+      <option value="">— escolha —</option>
+      {% for t in tabelas %}<option value="{{t.nome}}" {% if t.nome==tabela %}selected{% endif %}>{{t.rotulo}}</option>{% endfor %}
+    </select></label>
+    <label>Buscar por<input name="termo" value="{{termo}}" placeholder="nome, número..."></label>
+    <div class="span2"><button class="primary">Buscar</button></div>
+  </form>
+</section>
+{% if achados %}
+<section class="panel">
+  <div class="panel-head"><span>{{achados|length}} encontrado(s)</span></div>
+  <div class="table-wrap"><table><tbody>
+    {% for a in achados %}<tr>
+      <td>#{{a.id}}</td>
+      {% for chave in a.keys() if chave != 'id' %}<td>{{a[chave]}}</td>{% endfor %}
+      <td><a href="{{ url_for('acervo_corrigir', tabela=tabela, termo=termo, id=a.id) }}">Corrigir</a></td>
+    </tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% elif tabela and termo %}
+<div class="notice">Nada encontrado no acervo com esse termo.</div>
+{% endif %}
+{% if linha %}
+<section class="panel">
+  <div class="panel-head"><span>Corrigindo #{{linha.id}}</span></div>
+  <form method="post" class="form-grid" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <input type="hidden" name="acao" value="salvar">
+    <input type="hidden" name="tabela" value="{{tabela}}">
+    <input type="hidden" name="id" value="{{row_id}}">
+    {% for campo in campos %}
+    <label>{{ campo.replace('_', ' ')|capitalize }}
+      <input name="campo_{{campo}}" value="{{ linha[campo] or '' }}"></label>
+    {% endfor %}
+    <label class="span2">Motivo da correção — obrigatório
+      <input name="motivo" required placeholder="ex.: nome estava com erro de digitação na carga do acervo"></label>
+    <div class="span2"><button class="primary">Salvar correção</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

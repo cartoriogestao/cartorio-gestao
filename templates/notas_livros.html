@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Livros do tabelionato</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a></div>
+
+<div class="notice">
+  O termo de abertura e o de encerramento dizem o que o livro é, quantas folhas tem, quais foram
+  usadas e quais ficaram inutilizadas — Lei 8.935/1994, art. 30, I, e o Código de Normas do Foro
+  Extrajudicial do Maranhão (Prov. TJMA 28/2026), Seção III, "Dos Livros e da sua Escrituração".
+  <strong>Deixando o campo em branco, o sistema escreve o termo.</strong>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ livros|length }} livro(s)</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Tipo</th><th>Nº</th><th>Folhas usadas</th><th>Próxima</th><th>Atos</th>
+      <th>Abertura</th><th>Situação</th><th></th></tr></thead>
+    <tbody>
+    {% for l in livros %}
+      <tr {% if l.encerrado %}class="muted"{% endif %}>
+        <td>{{ TIPOS_LIVRO.get(l.tipo, l.tipo) }}</td>
+        <td><strong>{{ l.numero }}</strong>{% if l.complemento %} {{ l.complemento }}{% endif %}
+            {% if l.automatico %}<span class="badge" title="aberto pelo sistema quando o anterior encheu">auto</span>{% endif %}</td>
+        <td class="small">{{ l.usadas }} de {{ l.capacidade }}
+            {% if l.sem_capacidade %}<span class="badge warn" title="o livro não declara quantas folhas tem; vale o padrão">sem capacidade declarada</span>{% endif %}
+            {% if l.quase_cheio %}<span class="badge warn">restam {{ l.restam }}</span>{% endif %}</td>
+        <td class="small">{% if l.encerrado %}—{% else %}<strong>{{ l.folha_atual or '—' }}</strong>{% endif %}</td>
+        <td>{% if l.atos %}<a href="{{ url_for('notas_atos', livro_id=l.id) }}">{{ l.atos }}</a>
+            {% else %}0{% endif %}</td>
+        <td class="small">{{ fmt_date(l.abertura) if l.abertura else '—' }}</td>
+        <td>{% if l.encerrado %}<span class="badge">encerrado em {{ fmt_date(l.encerramento) }}</span>
+              {% if l.folhas_inutilizadas %}<br><span class="small">folhas {{ l.folhas_inutilizadas }} inutilizadas</span>{% endif %}
+            {% else %}<span class="badge ok">aberto</span>{% endif %}</td>
+        <td class="small">
+          <a href="{{ url_for('notas_livro_conferir', livro_id=l.id) }}">conferir</a>
+          {% if l.termo_abertura %} ·
+            <a href="{{ url_for('notas_livro_termo', livro_id=l.id, qual='abertura') }}">termo de abertura</a>
+          {% endif %}
+          {% if l.termo_encerramento %} ·
+            <a href="{{ url_for('notas_livro_termo', livro_id=l.id, qual='encerramento') }}">termo de encerramento</a>
+          {% endif %}
+          {% if l.folhas_inutilizadas %} ·
+            <a href="{{ url_for('notas_livro_inutilizacao', livro_id=l.id) }}">imprimir as folhas inutilizadas</a>
+          {% endif %}
+          {% if not l.encerrado %}
+          <details><summary>encerrar</summary>
+            <form method="post" style="padding:8px">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="livro_id" value="{{ l.id }}">
+              <input name="motivo" placeholder="Motivo (opcional)" style="width:100%">
+              <textarea name="termo_encerramento" rows="3" style="width:100%"
+                placeholder="Em branco, o sistema escreve o termo, dizendo até que folha foi usada e quais ficam inutilizadas."></textarea>
+              <button name="acao" value="encerrar" class="small">Encerrar</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted">Nenhum livro cadastrado. O primeiro ato lançado abre um.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Numeração dos termos</span></div>
+  <div class="small muted" style="padding:8px 14px">
+    O termo é <strong>contínuo por série</strong> e não reinicia a cada livro novo. O sistema
+    recusa fixar um número igual ou menor que o maior já usado — isso criaria termo repetido.
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Série</th><th>Próximo termo</th><th>Maior em uso</th><th>Observação</th></tr></thead>
+    <tbody>
+    {% for s in series %}
+      <tr>
+        <td>{{ s.nome }}</td>
+        <td><strong>{{ s.proximo if s.proximo else '— ainda não usada —' }}</strong></td>
+        <td class="small">{{ s.maior_em_uso if s.maior_em_uso is not none else '—' }}</td>
+        <td class="small muted">{{ s.observacao or '' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <details style="padding:8px 14px">
+    <summary class="small">Corrigir a numeração de uma série</summary>
+    <form method="post" class="grid2" style="padding:8px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Série <select name="serie" required>
+        {% for s in series %}<option value="{{ s.serie }}">{{ s.nome }}</option>{% endfor %}
+      </select></label>
+      <label>Próximo termo <input type="number" name="proximo" min="1" required></label>
+      <label class="span2">Motivo <input name="observacao" placeholder="Por que a numeração está sendo alterada"></label>
+      <div class="span2"><button class="primary" name="acao" value="fixar_termo">Fixar</button></div>
+    </form>
+  </details>
+</section>
+
+<details class="panel">
+  <summary>Abrir livro</summary>
+  <div class="small muted" style="padding:8px 14px">
+    Não é preciso abrir livro à mão: quando o livro em uso enche, o sistema encerra aquele e abre
+    o seguinte sozinho, sem parar o atendimento. Isto aqui serve para o primeiro livro de uma
+    série, ou para um livro com número ou tamanho fora do padrão.
+  </div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Tipo <select name="tipo" required>
+      {% for k, rot in TIPOS_LIVRO.items() %}<option value="{{ k }}">{{ rot }}</option>{% endfor %}
+    </select></label>
+    <label>Número <input name="numero" placeholder="em branco: o próximo da série"></label>
+    <label>Complemento <input name="complemento" placeholder="opcional"></label>
+    <label>Folhas <input type="number" name="folhas" value="{{ capacidade_padrao }}" min="1"></label>
+    <label>Abertura <input type="date" name="abertura"></label>
+    <label class="span2">Termo de abertura
+      <textarea name="termo_abertura" rows="3"
+        placeholder="Em branco, o sistema escreve o termo padrão, com o número do livro, a quantidade de folhas por extenso e a identificação da serventia."></textarea></label>
+    <div class="span2"><button class="primary" name="acao" value="abrir">Abrir livro</button></div>
+  </form>
+</details>
+{% endblock %}

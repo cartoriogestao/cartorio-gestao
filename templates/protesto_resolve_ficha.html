@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Intimação Digital — {{ i.identificador }}</h1>{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('protesto_resolve', ambiente=i.ambiente) }}">← voltar à lista</a></p>
+
+<section class="cartao">
+  <h2>O que é</h2>
+  <table class="tabela">
+    <tbody>
+      <tr><th>Devedor</th><td>{{ i.devedor_nome or '—' }}</td></tr>
+      <tr><th>Título</th><td>{{ i.numero_titulo or '—' }}</td></tr>
+      <tr><th>Protocolo desta casa</th><td>{{ i.protocolo or '—' }}</td></tr>
+      <tr><th>Situação do título aqui</th><td>{{ i.situacao or '—' }}</td></tr>
+      <tr><th>Ambiente</th><td>{{ i.ambiente }}</td></tr>
+      <tr><th>Número na Central</th>
+          <td>{{ i.intimacao_id or 'não veio' }}</td></tr>
+      <tr><th>Lote</th><td>{{ i.lote_id or '—' }}</td></tr>
+      <tr><th>Estado na Central</th>
+          <td>
+            {% if i.estado %}<strong>{{ i.estado }}</strong>
+              <small class="muted">({{ (i.estado_em or '')[:16] }})</small>
+            {% else %}<span class="muted">ainda não perguntado</span>{% endif %}
+          </td></tr>
+      <tr><th>Mandada em</th>
+          <td>{{ (i.enviada_em or '')[:16] }} {{ i.enviada_por or '' }}</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="cartao">
+  <h2>A prova</h2>
+  <p class="small muted">
+    O histórico traz, por tentativa, o canal, o destinatário, a data e uma
+    assinatura. <strong>É o que se lê quando alguém perguntar por que o título
+    foi a edital.</strong>
+  </p>
+  <form method="post" style="display:inline"
+        action="{{ url_for('protesto_resolve_historico', intimacao_id=i.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button secondary" type="submit"
+            {% if not tem_credencial %}disabled{% endif %}>
+      Trazer o histórico
+    </button>
+  </form>
+  <form method="post" style="display:inline"
+        action="{{ url_for('protesto_resolve_pdf', intimacao_id=i.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button secondary" type="submit"
+            {% if not tem_credencial %}disabled{% endif %}>
+      Link do comprovante (PDF)
+    </button>
+  </form>
+
+  {% if i.historico_aberto %}
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Quando</th><th>Canal</th><th>Estado</th>
+                 <th>Para quem</th><th>O que diz</th></tr></thead>
+      <tbody>
+      {% for h in (i.historico_aberto.data or []) %}
+        <tr>
+          <td><small>{{ (h.dataCriacao or '')[:16] }}</small></td>
+          <td>{{ h.canal or '—' }}</td>
+          <td>{{ h.status or '—' }}</td>
+          <td><small>{{ h.recipient or '—' }}</small></td>
+          <td><small>{{ h.comentario or '' }}</small></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="cartao">
+  <h2>Avisar a Central do que aconteceu aqui</h2>
+  <div class="alert alert-info">
+    <strong>Isto não lavra ato nenhum.</strong> O pagamento, a intimação e a
+    baixa se lavram na ficha do título, com selo, custas e lugar no livro. Aqui
+    só se avisa quem está mandando as mensagens — para ela parar de cobrar quem
+    já pagou, ou de mandar mensagem a quem já foi intimado em mãos.
+  </div>
+  {% for qual, dados in avisos.items() %}
+  <form method="post" style="display:inline"
+        action="{{ url_for('protesto_resolve_avisar', intimacao_id=i.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="qual" value="{{ qual }}">
+    <button class="button secondary" type="submit"
+            {% if not tem_credencial or not i.intimacao_id %}disabled{% endif %}>
+      Avisar {{ dados[2] }}
+    </button>
+  </form>
+  {% endfor %}
+</section>
+
+<details>
+  <summary>O que subiu para a Central (congelado)</summary>
+  <pre class="small">{{ teor_bonito }}</pre>
+</details>
+
+{% endblock %}

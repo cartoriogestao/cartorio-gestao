@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Caixas para o visto</h1>{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <p>O agente refez a conta de cada caixa fechado e ainda não conferido, com a
+  mesma conta da tela do caixa: esperado, contado, diferença e lançamentos.
+  <strong>Os que fecham esperam o seu visto</strong>; os que têm ponto ficam
+  embaixo, com o ponto escrito. O visto grava o seu usuário e a hora — e
+  ninguém dá visto no próprio caixa.</p>
+</section>
+
+<section class="panel">
+  <h2>Fecham — falta o visto ({{ prontos|length }})</h2>
+  {% if prontos %}
+  <form method="post" action="{{ url_for('gestor_caixas_visto') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="table-wrap">
+    <table>
+      <tr><th></th><th>Dia</th><th>Quem atendeu</th></tr>
+      {% for c in prontos %}
+      <tr><td>{% if c.operador != eu %}<input type="checkbox" name="caixa_id" value="{{ c.id }}" checked>{% endif %}</td>
+          <td>{{ c.data[8:10] }}/{{ c.data[5:7] }}/{{ c.data[:4] }}</td>
+          <td>{{ c.operador }}{% if c.operador == eu %} <small class="muted">(o seu — outra pessoa confere)</small>{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+    </div>
+    <button type="submit">Dar o visto nos marcados</button>
+  </form>
+  {% else %}<p class="muted">Nenhum caixa esperando visto.</p>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Com ponto a explicar ({{ com_pontos|length }})</h2>
+  {% if com_pontos %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Dia</th><th>Quem atendeu</th><th>O que o agente achou</th></tr>
+    {% for c in com_pontos %}
+    <tr><td>{{ c.data[8:10] }}/{{ c.data[5:7] }}/{{ c.data[:4] }}</td><td>{{ c.operador }}</td>
+        <td>{% for p in c.pontos %}{{ p }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  <p class="muted">Estes se conferem na tela do caixa, depois de perguntar a quem contou.</p>
+  {% else %}<p class="muted">Nenhum.</p>{% endif %}
+</section>
+{% endblock %}

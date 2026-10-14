@@ -1,0 +1,40 @@
+{
+  "especie": "NASCIMENTO",
+  "nome": "ANA CLARA DE EXEMPLO",
+  "matricula": "00000001552020010001234000123456",
+  "cpf_registrado": "000.000.048-55",
+  "data_fato": "2020-01-03",
+  "data_ato": "2020-01-10",
+  "hora_fato": "08:15",
+  "local_fato_nome": "Hospital Municipal de Exemplo",
+  "local_fato_endereco": "Av. Principal, nº 100, Centro",
+  "ibge_gemeo": 1,
+  "dnv": "1234567890",
+  "dados": {
+    "strMunicipioNascimento": "Cidade Exemplo",
+    "strUFNascimento": "MA",
+    "strSexo": "F",
+    "bitGemeos": "0",
+    "strCidade": "Cidade Exemplo",
+    "strUF": "MA"
+  },
+  "pessoas": [
+    {
+      "papel": "REGISTRADO",
+      "nome": "ANA CLARA DE EXEMPLO",
+      "documento_tipo": "CPF",
+      "documento_numero": "00000004855",
+      "sexo": "F",
+      "naturalidade_cidade": "Cidade Exemplo",
+      "naturalidade_uf": "MA"
+    },
+    {
+      "papel": "MAE",
+      "nome": "MARIA DE EXEMPLO"
+    },
+    {
+      "papel": "PAI",
+      "nome": "JOÃO DE EXEMPLO"
+    }
+  ]
+}

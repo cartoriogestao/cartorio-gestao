@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Recibos — Administrativo{% endblock %}
+{% block heading %}<h1>Recibos</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('caixa') }}">&larr; Caixa</a></div>
+<div class="notice">
+  O teor do recibo fica <strong>congelado na emissão</strong>: a segunda via sai idêntica à
+  primeira, anos depois. A conferência é pelo resumo criptográfico gravado junto.
+</div>
+<form class="filters" method="get">
+  <label>Buscar <input name="busca" value="{{ busca }}" size="34"
+    placeholder="pagador, protocolo ou número"></label>
+  <button>Procurar</button>
+</form>
+<section class="panel">
+  <div class="panel-head"><span>{{ rows|length }} recibo(s)</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Número</th><th>Data</th><th>Pagador</th><th>Protocolo</th>
+      <th style="text-align:right">Valor</th><th></th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr {% if r.cancelado %}class="pendente"{% endif %}>
+        <td>{{ r.numero }}/{{ r.ano }}{% if r.cancelado %}<br><span class="badge alta">cancelado</span>{% endif %}</td>
+        <td class="small">{{ fmt_date(r.data_emissao) }}</td>
+        <td class="small">{{ r.pagador }}</td>
+        <td class="small">{{ r.protocolo_numero or '—' }}</td>
+        <td style="text-align:right">{{ r.valor_total }}</td>
+        <td><a class="small" href="{{ url_for('caixa_recibo_odt', recibo_id=r.id) }}">2ª via</a></td>
+      </tr>
+    {% else %}<tr><td colspan="6" class="muted small">Nenhum recibo ainda.</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}

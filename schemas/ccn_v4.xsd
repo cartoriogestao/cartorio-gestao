@@ -1,0 +1,164 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" version="1.0">
+
+	<xs:element name="pessoas" type="Pessoas"/>
+
+	<xs:complexType name="Pessoas">
+		<xs:sequence>
+			<xs:element name="pessoa" type="xmlPessoa" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="xmlPessoa">
+		<xs:sequence>
+			<xs:element name="chaveRegistro" type="xs:string" minOccurs="0"/>
+			<xs:element name="dataRegistro" type="xs:string" minOccurs="0"/>
+			<xs:element name="estadoCivil" type="xs:string" minOccurs="0"/>
+			<xs:element name="ibgeCidadeNaturalidade" type="xs:string" minOccurs="0"/>
+			<xs:element name="nacionalidade" type="xs:string" minOccurs="0"/>
+			<xs:element name="nacionalidadeTipo" type="xmlTipoNacionalidade" minOccurs="0"/>
+			<xs:element name="ufNaturalidade" type="xs:string" minOccurs="0"/>
+			<xs:element name="cidadeNaturalidade" type="xs:string" minOccurs="0"/>
+			<xs:element name="cpf" type="xs:string"/>
+			<xs:element name="nome" type="xs:string"/>
+			<xs:element name="sexo" type="xs:string" minOccurs="0"/>
+			<xs:element name="mae" type="xs:string" minOccurs="0"/>
+			<xs:element name="pai" type="xs:string" minOccurs="0"/>
+			<xs:element name="telefone" type="xs:string" minOccurs="0"/>
+			<xs:element name="celular" type="xs:string" minOccurs="0"/>
+			<xs:element name="profissao" type="xs:string" minOccurs="0"/>
+			<xs:element name="dataNascimento" type="xs:string" minOccurs="0"/>
+			<xs:element name="email" type="xs:string" minOccurs="0"/>
+			<xs:element name="endereco" type="xmlEndereco" minOccurs="0"/>
+			<xs:element name="observacao" type="xs:string" minOccurs="0"/>
+			<xs:element name="documento" type="xmlDocumento" minOccurs="0"/>
+			<xs:element name="carteiraHabilitacao" type="xmlCarteiraHabilitacao" minOccurs="0"/>
+			<xs:element name="biometria" type="xmlBiometria" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="ficha" type="xmlFicha" minOccurs="0"/>
+			<xs:element name="imagemFoto" type="xs:string" minOccurs="0"/>
+			<xs:element name="cartorio" type="xmlCartorio" minOccurs="0"/>
+			<xs:element name="termoTitularidade" type="xmlTermoTitularidade" minOccurs="0"/>
+			<xs:element name="certidaoCasamento" type="xmlCertidaoCasamento" minOccurs="0"/>
+			<xs:element name="anexo" type="xmlAnexo" minOccurs="0"/>
+			<xs:element name="enderecoTrabalho" type="xmlEndereco" minOccurs="0"/>
+			<xs:element name="politicamenteExposta" type="xs:boolean" minOccurs="0"/>
+			<xs:element name="investigadaAcusadaTerrorismo" type="xs:boolean" minOccurs="0"/>
+			<xs:element name="conjuge" type="xmlConjuge" minOccurs="0"/>
+			<xs:element name="fichaBloqueada" type="xs:boolean" minOccurs="0"/>
+			<xs:element name="fotoVerificada" type="xs:boolean" minOccurs="0" default="true"/>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="xmlEndereco">
+		<xs:sequence>
+			<xs:element name="ibgeCidade" type="xs:string"/>
+			<xs:element name="cep" type="xs:string" minOccurs="0"/>
+			<xs:element name="bairro" type="xs:string" minOccurs="0"/>
+			<xs:element name="cidade" type="xs:string" minOccurs="0"/>
+			<xs:element name="uf" type="xs:string" minOccurs="0"/>
+			<xs:element name="complemento" type="xs:string" minOccurs="0"/>
+			<xs:element name="endereco" type="xs:string" minOccurs="0"/>
+			<xs:element name="numero" type="xs:string" minOccurs="0"/>
+			<xs:element name="imagemComprovanteResidencia" type="xs:base64Binary" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="xmlCarteiraHabilitacao">
+		<xs:sequence>
+			<xs:element name="numeroCarteiraHabilitacao" type="xs:string"/>
+			<xs:element name="categoriaCarteiraHabilitacao" type="xs:string" minOccurs="0"/>
+			<xs:element name="dataPrimeiraHabilitacao" type="xs:string" minOccurs="0"/>
+			<xs:element name="dataExpiracaoHabilitacao" type="xs:string" minOccurs="0"/>
+			<xs:element name="imagemDocumento" type="xs:base64Binary" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+	
+	<xs:complexType name="xmlDocumento">
+		<xs:sequence>
+			<xs:element name="tipo" type="xmlTipoDocumento" minOccurs="0"/>
+			<xs:element name="docIdentidade" type="xs:string"/>
+			<xs:element name="orgaoEmissor" type="xs:string"/>
+			<xs:element name="ufOrgaoEmissor" type="xs:string" minOccurs="0"/>
+			<xs:element name="dataEmissao" type="xs:string"/>
+			<xs:element name="imagemDocumento" type="xs:base64Binary" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+	
+	<xs:complexType name="xmlConjuge">
+		<xs:sequence>
+			<xs:element name="cpf" type="xs:string" />
+			<xs:element name="nome" type="xs:string" />
+			<xs:element name="regimeBem" type="xmlRegimeBem" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="xmlBiometria">
+		<xs:sequence>
+			<xs:element name="dedo" type="xs:positiveInteger"/>
+			<xs:element name="imagemBiometria" type="xs:base64Binary"/>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="xmlFicha">
+		<xs:sequence>
+			<xs:element name="dataFicha" type="xs:string"/>
+			<xs:element name="numeroFicha" type="xs:string"/>
+			<xs:element name="imagensFicha" type="xs:base64Binary" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="xmlCartorio">
+		<xs:sequence>
+			<xs:element name="cdCnj" type="xs:long" minOccurs="0"/>
+			<xs:element name="nome" type="xs:string" minOccurs="0"/>
+			<xs:element name="cidade" type="xs:string" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	
+	<xs:complexType name="xmlTermoTitularidade">
+		<xs:sequence>
+			<xs:element name="imagemTermoTitularidade" type="xs:base64Binary" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+	
+	<xs:complexType name="xmlCertidaoCasamento">
+		<xs:sequence>
+			<xs:element name="imagemCertidaoCasamento" type="xs:base64Binary" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+	
+	<xs:complexType name="xmlAnexo">
+		<xs:sequence>
+			<xs:element name="imagemAnexo" type="xs:base64Binary" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+	
+	<xs:simpleType name="xmlTipoDocumento">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="RG"/>
+			<xs:enumeration value="Carteira Profissional"/>
+			<xs:enumeration value="Passaporte"/>
+			<xs:enumeration value="Carteira de Reservista"/>
+			<xs:enumeration value="RNE"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<xs:simpleType name="xmlTipoNacionalidade">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Brasileiro Nato"/>
+			<xs:enumeration value="Brasileiro Naturalizado"/>
+			<xs:enumeration value="Estrangeiro"/>
+			<xs:enumeration value="Brasileiro Nascido no Exterior"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<xs:simpleType name="xmlRegimeBem">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Comunhao Parcial"/>
+			<xs:enumeration value="Comunhao Universal"/>
+			<xs:enumeration value="Participacao Final nos Aquestos"/>
+			<xs:enumeration value="Separacao Total"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+</xs:schema>

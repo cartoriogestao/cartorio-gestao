@@ -1,0 +1,700 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Livro 3 — registro nº {{ registro.numero }}</h1>{% endblock %}
+{% block content %}
+{% from '_fraude.html' import alerta as alerta_fraude %}
+{# O ALERTA DE FRAUDE VEM NO ALTO, antes dos atos. #}
+{{ alerta_fraude(fraudes, csrf_token, 'Livro 3 — ficha do registro', registro.numero,
+                 url_for('livro3_registro', registro_id=registro.id)) }}
+
+{% from '_cobrar.html' import quadro, cobrado %}
+
+{#  O QUE O SELO DO LIVRO 3 PRECISA SABER — 20/09/2026, relato do oficial:
+    «fiz a averbacao da 1243 e nao emitiu selo».
+
+    Sao tres campos, e a tela pergunta os tres porque NENHUM sai do tipo do
+    ato: o item da tabela de custas, a natureza do titulo (a frase que sai
+    dentro do selo) e o valor declarado — e e o VALOR quem escolhe entre os
+    caminhos `com-valor` e `sem-valor` do selador.
+
+    MACRO, e nao tres copias: os mesmos campos aparecem na averbacao, no
+    cancelamento e no botao de selar ato ja lavrado. Tres copias divergiriam
+    no primeiro conserto, e o que muda aqui e o que vai ao Tribunal.
+
+    O ITEM VEM SUGERIDO, e nao decidido: `ra_selo.ITENS_MEDIDOS` traz o que
+    esta casa usou (16.9 no registro, 16.22.2 na averbacao), e quem atende
+    troca se o caso for outro. #}
+{% macro campos_do_selo(itens, prefixo='', codigo_atual='', base_atual='') %}
+  <label style="grid-column:1/-1">Natureza do título <small>(sai dentro do selo)</small>
+    <input name="natureza_titulo" value="{{ prefixo }}"
+           placeholder="AVERBACAO DE BAIXA DE HIPOTECA NO LIVRO 3-AUX, SOB REGISTRO N. ..."></label>
+  <label>Item da tabela de custas
+    <select name="codigo_tj">
+      <option value="">— escolher —</option>
+      {% for codigo, rotulo in (itens or []) %}
+      <option value="{{ codigo }}" title="{{ rotulo }}" {% if codigo_atual == codigo %}selected{% endif %}>{{ codigo }} — sugestão</option>
+      {% endfor %}
+      {% for codigo, rotulo in (itens_tabela or []) %}
+      <option value="{{ codigo }}" {% if codigo_atual == codigo %}selected{% endif %}>{{ codigo }} — {{ rotulo[:95] }}</option>
+      {% endfor %}
+    </select></label>
+  <p class="small muted" style="grid-column:1/-1">16.45 é cabeçalho por faixa:
+    escolha o subitem 16.45.x correspondente ao valor do título.</p>
+  <label>Valor declarado <small>(vazio = sem valor)</small>
+    <input name="base_calculo" value="{{ base_atual }}" placeholder="0,00"></label>
+{% endmacro %}
+
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('livro3_registros') }}">&larr; Livro 3</a>
+  {# CONFERIR A FICHA CONTRA O PAPEL — e o lugar onde a digitalizacao aparece. #}
+  <a class="button" href="{{ url_for('livro3_conferir', registro_id=registro.id) }}">
+    Conferir com a digitalização{% if registro.conferido %} ✓{% endif %}</a>
+  {# A FICHA IMPRESSA NAO E CERTIDAO, e o rodape dela diz isso: a certidao vai
+     para fora e afirma; a ficha e o livro, e serve para ler e conferir. #}
+  <a class="button" href="{{ url_for('livro3_ficha_odt', registro_id=registro.id) }}">
+    Ficha em .odt</a>
+  <a class="button" href="{{ url_for('livro3_modelos', editar='RI_LIVRO3_FICHA') }}">
+    Modelo da ficha</a>
+  <a class="button" href="{{ url_for('livro3_modelos', editar='RI_LIVRO3_CERTIDAO') }}">
+    Modelo da certidão</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>O título</span><small>{{ registro.situacao }}</small></div>
+  <table class="table">
+    <tr><th>Natureza</th><td>{{ registro.natureza }}</td>
+        <th>Número do título</th><td>{{ registro.titulo_numero or '—' }}</td></tr>
+    <tr><th>Espécie</th><td colspan="3">{{ registro.titulo_tipo or '—' }}</td></tr>
+    <tr><th>Valor</th><td>{{ registro.valor_centavos | centavos_reais if registro.valor_centavos else '—' }}</td>
+        <th>Parcelas</th><td>{{ registro.parcelas or '—' }}</td></tr>
+    <tr><th>Vencimento inicial</th><td>{{ registro.vencimento_inicial or '—' }}</td>
+        <th>Vencimento final</th><td>{{ registro.vencimento_final or '—' }}</td></tr>
+    <tr><th>Juros</th><td>{{ registro.juros or '—' }}</td>
+        <th>CNM</th><td>{{ registro.cnm or '—' }}</td></tr>
+    <tr><th>Origem</th><td>{{ registro.origem }}</td>
+        <th>Chave de origem</th><td><small>{{ registro.origem_chave or '—' }}</small></td></tr>
+  </table>
+</section>
+
+{#  O TEOR DO REGISTRO PRIMÁRIO — pedido do oficial em 22/09/2026: «acrescente
+    o campo de teor do registro primário do livro 3, assim como temos no livro
+    2».
+
+    **O TEXTO ESTAVA GRAVADO E A TELA NUNCA O MOSTROU.** Medido antes de
+    escrever: `ra_registros.teor` está preenchido em **14 dos 16** registros
+    desta casa, de 2.500 a 29.140 caracteres — o teor inteiro do título, que
+    veio na carga do acervo e que a tela de registro novo também pergunta e
+    grava. O que esta ficha mostrava de `teor` era o da MINUTA e o dos ATOS;
+    o do registro em si não aparecia em lugar nenhum, e quem quisesse lê-lo
+    tinha de abrir o banco.
+
+    É o mesmo painel «Teor da ficha» que o Livro 2 tem, com as mesmas duas
+    faces: o texto quando existe, e a frase que diz que não existe quando não
+    — porque painel vazio se lê como tela quebrada.
+
+    **O TEXTO SAI ESCAPADO, SEMPRE.** O `<pre>` com a marcação do Jinja nunca
+    executa o que estiver dentro, e o teor deste livro é texto colado de fora.
+    Medido: os 14 estão gravados como `texto`, e nenhum como `html` — mas a
+    coluna aceita os dois, e o dia em que um `html` entrar o pior desfecho
+    possível aqui é o operador ver as marcas escritas, e não o navegador
+    executá-las. A nota abaixo diz isso a quem topar com o caso.
+
+    **E A CLASSE É `teor-texto`**, a mesma com que o Livro 2 desenha o teor
+    gravado (`teor_seguro` põe o texto num `<pre class="teor-texto">`): as
+    duas fichas ficam com a mesma quebra de linha e a mesma fonte. #}
+<section class="panel">
+  <div class="panel-head"><span>Teor do registro</span>
+    {% if registro.teor %}<span class="muted small">{{ registro.teor|length }} caracteres</span>{% endif %}</div>
+  {% if registro.teor %}
+    {% if (registro.teor_formato or 'texto') != 'texto' %}
+    <p class="small muted" style="margin:10px 10px 0">Este teor está gravado
+      como <strong>{{ registro.teor_formato }}</strong>, e aqui ele aparece
+      como texto — as marcas ficam à vista em vez de serem interpretadas.</p>
+    {% endif %}
+  <div class="teor"><pre class="teor-texto">{{ registro.teor }}</pre></div>
+  {% else %}
+  <p class="muted small" style="margin:10px">Este registro não tem texto gravado — o que ele tem são os atos abaixo.</p>
+  {% endif %}
+</section>
+
+{#  A DIGITALIZAÇÃO DA FICHA — 21/09/2026, relato do oficial: «na 1243 não tem
+    digitalização da ficha».
+
+    **ELA EXISTIA E NÃO ESTAVA AQUI.** A rota nasceu na 3.6.158 e a única tela
+    que a chamava era a de conferir — um clique adiante, atrás de um botão que
+    diz «Conferir», que é outra coisa. No Livro 2 o envio e a miniatura estão
+    na própria ficha desde sempre, e foi por isso que ele estranhou.
+
+    **A MINIATURA NÃO É ENFEITE**: nome de arquivo prova que algo foi salvo; a
+    capa prova que é a ficha CERTA, sem sair da tela. O sha256 entra no
+    endereço para a troca do arquivo invalidar o cache do navegador na hora.
+
+    **E AQUI NÃO HÁ ONR**, ao contrário do Livro 2: o índice que o país
+    consulta é de imóvel, e este livro registra título de crédito. Ver
+    `ra_schema.MIGRACOES`, onde a ausência está declarada. #}
+<section class="panel">
+  <div class="panel-head"><span>Digitalização oficial deste registro</span>
+    <small>{% if registro.digi_nome %}{{ registro.digi_nome }}{% else %}não enviada{% endif %}</small></div>
+  <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;padding:12px">
+    {% if registro.digi_nome %}
+    <a href="{{ url_for('livro3_conferir', registro_id=registro.id) }}"
+       title="Abrir a digitalização para conferir"
+       style="display:block;flex:0 0 auto;text-decoration:none">
+      <img src="{{ url_for('livro3_miniatura_digitalizacao', registro_id=registro.id,
+                           w=420, v=(registro.digi_sha256 or '')[:12]) }}"
+           alt="Miniatura da digitalização do registro {{ registro.numero }}"
+           loading="lazy"
+           style="display:block;width:min(100%,420px);max-height:520px;object-fit:contain;border:1px solid #bbb;background:#fff">
+      <span class="small">clique na miniatura para conferir</span>
+    </a>
+    {% endif %}
+    <div style="flex:1 1 260px;min-width:0">
+      {% if registro.digi_nome %}
+      <strong>{{ registro.digi_nome }}</strong>
+      <span class="small muted">
+        {%- if registro.digi_em %} — enviada em {{ fmt_date(registro.digi_em[:10]) }}{% endif %}
+        {%- if registro.digi_por %}, por {{ registro.digi_por }}{% endif %}</span>
+      {% if registro.digi_sha256 %}
+      <div class="small muted">impressão digital
+        <code>{{ registro.digi_sha256[:16] }}…</code></div>
+      {% endif %}
+      <div style="margin-top:6px">
+        <a href="{{ url_for('livro3_baixar_digitalizacao', registro_id=registro.id) }}">baixar o arquivo</a>
+        · <a href="{{ url_for('livro3_conferir', registro_id=registro.id) }}">abrir para conferir</a>
+      </div>
+      {% else %}
+      <div class="notice small">
+        Este registro <strong>ainda não tem a varredura da ficha</strong>. Ela é
+        o livro em imagem — não se confunde com o <strong>papel do termo</strong>,
+        que fica na linha de cada ato, mais abaixo.
+      </div>
+      {% endif %}
+      <form method="post" enctype="multipart/form-data" style="padding-top:10px"
+            action="{{ url_for('livro3_upload_digitalizacao', registro_id=registro.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>{{ 'Trocar a varredura da ficha' if registro.digi_nome else 'Anexar a varredura da ficha' }}
+          <input type="file" name="arquivo" required
+                 accept=".pdf,.tif,.tiff,.png,.jpg,.jpeg"></label>
+        <button class="primary">Enviar digitalização</button>
+        <span class="small muted">PDF, TIFF, PNG ou JPEG — a mesma lista do
+          Livro 2. O arquivo anterior <strong>não some</strong>: vai para o
+          histórico, com carimbo de tempo.</span>
+      </form>
+      {% if registro.digi_path %}
+      <form method="post" action="{{ url_for('livro3_remover_digitalizacao', registro_id=registro.id) }}"
+            onsubmit="return confirm('Retirar esta digitalização da ficha? Uma cópia ficará no histórico.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input name="motivo" required minlength="5" placeholder="motivo da retirada">
+        <button class="button">Retirar arquivo enviado por engano</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+{#  AS PARTES — 21/09/2026, relato do oficial: «não tem campo para partes».
+
+    A tabela existia desde que o Livro 3 nasceu e NENHUMA TELA escrevia nela:
+    vazia nos 14 registros. E sem partes O SELO NÃO SAI — o aparelho recusa
+    com «Os nomes das partes devem ser informados», que foi o que ele recebeu
+    ao tentar selar a AV-01 do 1.243. #}
+<section class="panel">
+  <div class="panel-head"><span>Partes</span>
+    <small>{{ partes | length }}</small></div>
+  <div style="padding:14px">
+    {% if not partes %}
+    <p class="danger"><strong>Este registro não tem partes informadas, e sem
+      elas o selo não sai.</strong> O aparelho recusa o ato dizendo «Os nomes
+      das partes devem ser informados».</p>
+    {% else %}
+    <table class="tabela">
+      <thead><tr><th>Nome</th><th>Documento</th><th>Papel</th><th></th></tr></thead>
+      <tbody>
+        {% for p in partes %}
+        <tr><td>{{ p.nome }}</td>
+            <td>{{ p.documento_tipo or '' }} {{ p.documento_numero or '—' }}</td>
+            <td>{{ p.papel or '—' }}</td>
+            <td>
+              <form method="post" action="{{ url_for('livro3_parte_remover', parte_id=p.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="small">retirar</button>
+              </form>
+            </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <form method="post" class="grid2" style="padding-top:10px"
+          action="{{ url_for('livro3_parte_acrescentar', registro_id=registro.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label style="grid-column:1/-1">Nome
+        <input name="nome" required minlength="3"
+               placeholder="como está escrito no título"></label>
+      <label>CPF ou CNPJ <small>(opcional)</small><input name="documento"></label>
+      <label>Papel
+        <select name="papel" required>
+          {% for codigo, rotulo in (papeis or []) %}
+          <option value="{{ codigo }}" title="{{ rotulo }}">{{ rotulo.split(' — ')[0] }}</option>
+          {% endfor %}
+        </select></label>
+      <div class="actions"><button class="primary">Acrescentar parte</button></div>
+    </form>
+    <p class="small muted">Os papéis vêm do que esta casa usou: nas 25 partes
+      que o E-Ofício guardou no Livro 3 são <strong>Emitente/Creditado</strong>
+      (14), <strong>Credor(a)</strong> (9) e <strong>Proprietário(a)</strong>
+      (2); os demais vêm do catálogo do próprio E-Ofício.</p>
+
+    {% if registro.condicoes %}
+    {#  O TEXTO DO REGISTRO FICA AO LADO DO FORMULARIO, e nao noutra tela: no
+        1.243 as partes estao escritas ali — emitente, credor e os dois
+        avalistas, com os CPFs. Digitar de cabeca e como se erra nome. #}
+    <details>
+      <summary class="small">o que o registro diz sobre as partes</summary>
+      <div style="padding:8px 0; white-space:pre-wrap"><small>{{ registro.condicoes }}</small></div>
+    </details>
+    {% endif %}
+  </div>
+</section>
+
+{#  O QUE REVISAR ANTES DE SELAR — item 2 da fila.
+
+    A NOTA NAO TRAVA NADA: quem decide se o ato sai e quem assina. E a
+    baixada NAO SOME, porque a decisao escrita e o que a correicao le. #}
+<section class="panel">
+  <div class="panel-head"><span>Revisar antes de selar</span>
+    <small>{{ revisoes | selectattr('situacao', 'equalto', 'ABERTA')
+              | list | length }} esperando</small></div>
+  <div style="padding:14px">
+    {% set abertas = revisoes | selectattr('situacao', 'equalto', 'ABERTA') | list %}
+    {% if not abertas %}
+      <p class="small muted">Nada esperando conferência neste registro.</p>
+    {% endif %}
+    {% for n in abertas %}
+    <div style="border-top:1px solid #e5e7eb; padding:8px 0">
+      <p style="margin:0"><strong>{{ n.assunto }}</strong>
+        {% if n.minuta_id %}<small class="muted">· na minuta {{ n.minuta_id }}</small>
+        {% elif n.ato_id %}<small class="muted">· no ato {{ n.ato_id }}</small>{% endif %}</p>
+      <p class="small" style="margin:2px 0 6px; white-space:pre-wrap">{{ n.nota }}</p>
+      <details>
+        <summary class="small">conferi</summary>
+        <form method="post" class="linha-credencial"
+              action="{{ url_for('livro3_revisao_baixar', revisao_id=n.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input name="decisao" size="60" minlength="10"
+                 placeholder="o que você decidiu — é esta linha que a correição lê">
+          <button>Baixar a nota</button>
+        </form>
+      </details>
+    </div>
+    {% endfor %}
+
+    {% set baixadas = revisoes | selectattr('situacao', 'equalto', 'BAIXADA') | list %}
+    {% if baixadas %}
+    <details style="margin-top:10px">
+      <summary class="small muted">{{ baixadas | length }} já conferida(s)</summary>
+      {% for n in baixadas %}
+      <p class="small" style="margin:6px 0"><strong>{{ n.assunto }}</strong> —
+        {{ n.baixa_decisao }}
+        <span class="muted">({{ fmt_date(n.baixada_em) }}{% if n.baixada_por %},
+          {{ n.baixada_por }}{% endif %})</span></p>
+      {% endfor %}
+    </details>
+    {% endif %}
+
+    <details style="margin-top:10px">
+      <summary class="small">anotar algo a revisar</summary>
+      <form method="post" class="grid2" style="padding:8px 0"
+            action="{{ url_for('livro3_revisao_anotar', registro_id=registro.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Assunto <input name="assunto" minlength="3"
+               placeholder="o que aparece na lista"></label>
+        <label>Na minuta <small>(opcional)</small>
+          <select name="minuta_id">
+            <option value="">— o registro inteiro —</option>
+            {% for m in minutas %}{% if m.situacao == 'A_REVISAR' %}
+            <option value="{{ m.id }}">{{ m.tipo }}{% if m.numero_pretendido %}-{{ m.numero_pretendido }}{% endif %}</option>
+            {% endif %}{% endfor %}
+          </select></label>
+        <label style="grid-column:1/-1">Nota
+          <textarea name="nota" rows="3" minlength="10"
+                    placeholder="o que precisa ser conferido, e por quê"></textarea></label>
+        <div class="actions"><button>Anotar</button></div>
+      </form>
+      <p class="small muted">A nota <strong>não impede lavrar nem selar</strong>
+        — ela avisa. Quem decide é quem assina.</p>
+    </details>
+  </div>
+</section>
+
+{#  AS MINUTAS — item 1 da fila de 20/09/2026.
+
+    Minuta e o ato JA ESCRITO e AINDA NAO LAVRADO: nao toma numero, nao entra
+    no livro, nao pede selo e nao cobra. Ela guarda tambem os tres campos que
+    o selo exige, porque aqui ela existe para ser «revisada E selada». #}
+<section class="panel">
+  <div class="panel-head"><span>Minutas — a revisar e lavrar</span>
+    <small>{{ minutas | selectattr('situacao', 'equalto', 'A_REVISAR')
+              | list | length }} esperando</small></div>
+  <div style="padding:14px">
+    {% if not minutas %}
+      <p class="small muted">Nenhuma minuta neste registro. Escreva uma no
+        quadro «Lançar», abaixo, se o ato ainda vai ser revisado antes de ir
+        ao livro.</p>
+    {% endif %}
+    {% for m in minutas %}
+    <div style="border-top:1px solid #e5e7eb; padding:10px 0">
+      <p style="margin:0 0 6px">
+        <strong>{{ m.tipo }}{% if m.numero_pretendido %}-{{ m.numero_pretendido }}{% endif %}</strong>
+        — {{ situacoes.get(m.situacao, m.situacao) }}
+        {% if m.situacao == 'LAVRADA' %}<small class="muted">(ato {{ m.ato_id }})</small>{% endif %}
+        {% if m.origem != 'MANUAL' %}<small class="muted">· {{ m.origem }}</small>{% endif %}
+      </p>
+      {% if m.situacao == 'DESCARTADA' %}
+        {# DESCARTADA NAO SOME, e o motivo fica a vista: a pergunta que
+           aparece meses depois e «e aquela averbacao que estava para sair?». #}
+        <p class="small muted" style="margin:0">Descartada: {{ m.observacao }}</p>
+      {% else %}
+      <details {% if m.situacao == 'A_REVISAR' %}open{% endif %}>
+        <summary class="small">ver e revisar o teor</summary>
+        <form method="post" class="grid2" style="padding:8px 0"
+              action="{{ url_for('livro3_minuta_guardar', minuta_id=m.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label style="grid-column:1/-1">Teor
+            <textarea name="teor" rows="10" minlength="20">{{ m.teor }}</textarea></label>
+          <label>Número pretendido <small>(sugestão, não reserva)</small>
+            <input name="numero_pretendido" value="{{ m.numero_pretendido or '' }}"></label>
+          {{ campos_do_selo(itens_de_selo.get(m.tipo), m.natureza_titulo or '') }}
+          {% if m.tipo == 'AV' %}
+          <label><input type="checkbox" name="gerar_arquivamento" value="1">
+            Arquivar documentos desta averbação</label>
+          <label>Folhas a arquivar
+            <input type="number" name="folhas_arquivamento" min="1" inputmode="numeric"></label>
+          {% endif %}
+          {#  O MESMO FORMULARIO LAVRA, POR `formaction` — e nao um segundo
+              com os mesmos campos. Dois formularios divergiriam no dia em que
+              a tela ganhasse um campo, e o «guardar» passaria a perder
+              justamente o campo novo. E a regra do Livro 2. #}
+          <input type="hidden" name="minuta_id" value="{{ m.id }}">
+          <input type="hidden" name="tipo" value="AVERBACAO">
+          <div class="actions">
+            {% if m.situacao == 'A_REVISAR' %}
+            <button class="button">Guardar a revisão (não lavra)</button>
+            {% if m.tipo == 'AV' %}
+            <button class="primary"
+                    formaction="{{ url_for('livro3_lancar', registro_id=registro.id) }}">
+              Lavrar esta averbação</button>
+            {% endif %}
+            <a class="button" href="{{ url_for('livro3_como_ficara',
+                 registro_id=registro.id, minuta_id=m.id) }}">Como a ficha vai ficar</a>
+            {% endif %}
+          </div>
+        </form>
+        {% if m.situacao == 'A_REVISAR' and m.tipo == 'R' %}
+        <p class="small muted">Minuta de <strong>registro</strong> não se lavra
+          por aqui: o registro nasce na tela «Livro 3 → novo registro», que é
+          quem abre a ficha. Esta minuta serve para revisar o texto antes.</p>
+        {% endif %}
+        {% if m.situacao == 'A_REVISAR' and user.role in ['ADMIN','MANAGER'] %}
+        <form method="post" class="linha-credencial"
+              action="{{ url_for('livro3_minuta_descartar', minuta_id=m.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input name="motivo" minlength="10" size="52"
+                 placeholder="Por que esta minuta não vai ao livro">
+          <button>Descartar</button>
+        </form>
+        {% endif %}
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if minuta_av and minuta_av.teor %}
+<section class="panel" style="border-left:3px solid #b45309">
+  <div class="panel-head"><span>Rascunho de tela — anterior às minutas</span>
+    <small>{{ minuta_av.rotulo_origem or 'AV' }}</small></div>
+  <div style="padding:14px">
+    {#  A PONTE COM O QUE JA EXISTIA, e ela e um BOTAO e nao uma migracao
+        calada. Ate 20/09/2026 as minutas do Livro 3 moravam em
+        `rascunhos_de_tela`, que nao tem situacao nem descarte: a do registro
+        1.243 virou a AV-01 e CONTINUOU LA, como se ainda esperasse alguem.
+
+        Mover isso sozinho seria o sistema decidindo que aquele rascunho e
+        uma minuta. Quem decide e quem escreveu o texto. #}
+    <p class="small">Este texto foi guardado como <strong>rascunho de
+      tela</strong>, antes de o Livro 3 ter minutas. Ali ele não tem situação,
+      não sabe se já virou ato e não se descarta com motivo — a do registro
+      1.243 virou a AV-01 e continuou aparecendo como se esperasse alguém.</p>
+    <form method="post" action="{{ url_for('livro3_minuta_do_rascunho',
+              registro_id=registro.id, rascunho_id=minuta_av.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="primary">Trazer para as minutas</button>
+      <span class="small muted">O rascunho fica onde está; o que nasce é a
+        minuta, com situação e descarte.</span>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+{% if registro.situacao == 'ATIVO' %}
+<section class="panel">
+  <div class="panel-head"><span>Lançar</span></div>
+  <p style="padding:14px 14px 0"><small>
+    A numeração é contínua com o registro: depois do R-1 vem o AV-2. O
+    <strong>cancelamento é uma averbação</strong> — o registro fica na ficha, com a
+    averbação dizendo que foi cancelado e por quê.
+  </small></p>
+
+  <form method="post" action="{{ url_for('livro3_lancar', registro_id=registro.id) }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="tipo" value="AVERBACAO">
+    <div style="grid-column:1/-1"><strong>Averbação</strong></div>
+    <label style="grid-column:1/-1">Teor
+      <textarea name="teor" required minlength="10" rows="12"
+                placeholder="Averbacao...">{% if minuta_av %}{{ minuta_av.teor }}{% endif %}</textarea></label>
+    <label>Natureza <small>(opcional)</small>
+      <select name="natureza">
+        <option value="">— manter a do registro —</option>
+        {% for k, v in naturezas.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select></label>
+    {{ campos_do_selo(itens_de_selo.get('AV')) }}
+    <label><input type="checkbox" name="gerar_arquivamento" value="1"> Gerar também arquivamento (16.39)</label>
+    <label>Folhas deste ato <input type="number" name="folhas_arquivamento" min="1" step="1"></label>
+    <label>Selo já obtido <small>(só se o aparelho estiver fora do ar)</small>
+      <input name="selo"></label>
+    <div class="actions">
+      <button class="button">Lançar averbação</button>
+      {#  GUARDAR COMO MINUTA É O MESMO FORMULÁRIO, por `formaction`: o ato
+          que ainda vai ser revisado não deve ir ao livro para ser corrigido
+          por averbação depois. #}
+      <button formaction="{{ url_for('livro3_minuta_criar', registro_id=registro.id) }}"
+              formnovalidate>Guardar como minuta (não lavra)</button>
+    </div>
+    {{ quadro(receitas.get('AV'), caixa, protocolos) }}
+  </form>
+
+  <form method="post" action="{{ url_for('livro3_lancar', registro_id=registro.id) }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="tipo" value="CANCELAMENTO">
+    <div style="grid-column:1/-1"><strong>Cancelamento</strong></div>
+    <label style="grid-column:1/-1">Motivo
+      <input name="motivo" required minlength="10"
+             placeholder="Liquidação integral da cédula, ordem judicial..."></label>
+    {{ campos_do_selo(itens_de_selo.get('AV')) }}
+    <label><input type="checkbox" name="gerar_arquivamento" value="1"> Gerar também arquivamento (16.39)</label>
+    <label>Folhas deste ato <input type="number" name="folhas_arquivamento" min="1" step="1"></label>
+    <label>Selo já obtido <small>(só se o aparelho estiver fora do ar)</small>
+      <input name="selo"></label>
+    <div class="actions"><button class="button">Cancelar o registro</button></div>
+    {# O cancelamento no Livro 3 É uma averbação, e cobra como ela. #}
+    {{ quadro(receitas.get('AV'), caixa, protocolos) }}
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Atos</span><small>{{ atos | length }}</small></div>
+  <table class="table">
+    <thead><tr><th>Ato</th><th>Data</th><th>Teor</th><th>Selo</th>
+               <th>Cobrado</th><th>Papel do termo</th></tr></thead>
+    <tbody>
+      {% for a in atos %}
+      <tr>
+        <td><strong>{{ a.tipo }}-{{ a.numero }}</strong></td>
+        <td>{{ a.data_ato }}</td>
+        <td>{{ (a.teor or a.motivo_cancelamento or '—') }}</td>
+        <td>
+          {% if a.selo %}<small>{{ a.selo }}</small>
+          {% else %}
+          {#  O ATO QUE NASCEU SEM SELO TEM DE TER POR ONDE SER SELADO —
+              20/09/2026. Ate aqui o Livro 3 nao tinha: a tela «Selos» e
+              razao, lista o que JA tem selo, e o ato sem selo nao aparecia
+              em lugar nenhum com um botao. E o mesmo buraco que o Livro 2
+              fechou em 15/09, e a mesma saida.
+
+              SELAR NAO LAVRA ATO e nao toma numero — por isso o botao
+              aparece inclusive no registro CANCELADO: la fora, o ato que
+              fechou a ficha e justamente o que mais precisa de selo. #}
+          <details>
+            <summary class="small">selar este ato</summary>
+            <form method="post" class="grid2" style="padding:8px 0"
+                  action="{{ url_for('livro3_selar_ato', ato_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              {{ campos_do_selo(itens_de_selo.get(a.tipo),
+                                a.natureza_titulo or '', a.codigo_tj or '',
+                                ('%.2f'|format(a.base_calculo_centavos / 100)) if a.base_calculo_centavos else '') }}
+              <label>Selo já obtido <small>(digitado à mão)</small>
+                <input name="selo"></label>
+              <div class="actions"><button class="button">Selar</button></div>
+            </form>
+            {% if user.role in ['ADMIN','MANAGER'] %}
+            {#  DEVOLVER A MINUTA NAO E O CAMINHO DE TODO DIA, e a frase diz
+                isso: ato sem selo SE SELA ONDE ESTA, pelo botao acima. Isto
+                aqui e para quando o proprio ato tem de ser reescrito. #}
+            <form method="post" class="linha-credencial"
+                  action="{{ url_for('livro3_ato_para_minuta', ato_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input name="motivo" size="44"
+                     placeholder="por que este ato volta a ser minuta">
+              <button>Devolver à minuta</button>
+              <span class="small muted">só se o texto do ato tiver de ser
+                reescrito — para selar, use o botão acima.</span>
+            </form>
+            {% endif %}
+          </details>
+          {% endif %}
+          {% if a.selo_arquivamento %}
+          <p class="small">Arquivamento: {{ a.selo_arquivamento }}
+            ({{ a.folhas_arquivamento }} folha(s)).</p>
+          {% else %}
+          <form method="post" action="{{ url_for('livro3_selar_arquivamento', ato_id=a.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="small">Arquivamento 16.39 — folhas deste ato
+              <input type="number" name="folhas_arquivamento" min="1" step="1"
+                     value="{{ a.folhas_arquivamento or '' }}" required></label>
+            <button class="small">Selar arquivamento</button>
+          </form>
+          {% endif %}
+        </td>
+        <td>{{ cobrado(a.id, cobrancas, csrf_token) }}</td>
+        <td>
+          {#  O PAPEL DO TERMO — 21/09/2026, «precisa ter digitalizacao do
+              termo». Nao e a varredura da ficha: e o papel DAQUELE ato — o
+              instrumento de baixa, a procuracao, o aditivo. #}
+          {% if a.digi_path %}
+          <a href="{{ url_for('livro3_baixar_digitalizacao_do_ato', ato_id=a.id) }}">
+            <small>{{ a.digi_nome }}</small></a>
+          <form method="post" action="{{ url_for('livro3_remover_digitalizacao_do_ato', ato_id=a.id) }}"
+                onsubmit="return confirm('Retirar este arquivo do ato? Uma cópia ficará no histórico.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="motivo" required minlength="5" placeholder="motivo">
+            <button class="small">retirar arquivo</button>
+          </form>
+          {% endif %}
+          <details>
+            <summary class="small">{{ 'trocar o papel' if a.digi_path else 'anexar o papel do termo' }}</summary>
+            <form method="post" enctype="multipart/form-data" style="padding:6px 0"
+                  action="{{ url_for('livro3_upload_digitalizacao_do_ato', ato_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="file" name="arquivo"
+                     accept=".pdf,.tif,.tiff,.png,.jpg,.jpeg">
+              <button>Guardar</button>
+            </form>
+          </details>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if registro.garantia %}
+<section class="panel">
+  <div class="panel-head"><span>Garantia</span></div>
+  <div style="padding:14px; white-space:pre-wrap">{{ registro.garantia }}</div>
+</section>
+{% endif %}
+
+{% if registro.condicoes %}
+<section class="panel">
+  <div class="panel-head"><span>Condições</span></div>
+  <div style="padding:14px; white-space:pre-wrap">{{ registro.condicoes }}</div>
+</section>
+{% endif %}
+
+{#  CORRIGIR O REGISTRO — itens 4, 5 e 7 da fila.
+
+    O QUE SE CORRIGE AQUI E O CADASTRO, e nao o ato: ato errado se desfaz por
+    averbacao, ou volta para a minuta. O numero do registro, o livro, a
+    situacao e a origem NAO se editam — eles dizem onde o ato esta no livro. #}
+{% if user.role in ['ADMIN','MANAGER'] %}
+<section class="panel">
+  <div class="panel-head"><span>Corrigir o registro</span></div>
+  <div style="padding:14px">
+    <details>
+      <summary class="small">o que o registro diz de si mesmo</summary>
+      <p class="small muted" style="margin:6px 0">O que mudar fica na
+        auditoria com o <strong>antes e o depois</strong>. Campo esvaziado
+        apaga o que estava lá — às vezes é a correção certa.</p>
+      <form method="post" class="grid2" style="padding:8px 0"
+            action="{{ url_for('livro3_editar_registro', registro_id=registro.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Tipo do título<input name="titulo_tipo" value="{{ registro.titulo_tipo or '' }}"></label>
+        <label>Número do título<input name="titulo_numero" value="{{ registro.titulo_numero or '' }}"></label>
+        <label>Data do título<input name="data_titulo" value="{{ registro.data_titulo or '' }}"></label>
+        <label>Valor <small>(em reais)</small>
+          <input name="valor_centavos"
+                 value="{% if registro.valor_centavos %}{{ '%.2f'|format(registro.valor_centavos / 100) }}{% endif %}"></label>
+        <label>Primeiro vencimento<input name="vencimento_inicial" value="{{ registro.vencimento_inicial or '' }}"></label>
+        <label>Vencimento final<input name="vencimento_final" value="{{ registro.vencimento_final or '' }}"></label>
+        <label>Parcelas<input name="parcelas" value="{{ registro.parcelas or '' }}"></label>
+        <label>Juros<input name="juros" value="{{ registro.juros or '' }}"></label>
+        <label>Prenotação<input name="prenotacao" value="{{ registro.prenotacao or '' }}"></label>
+        <label>Folha<input name="folha" value="{{ registro.folha or '' }}"></label>
+        <label style="grid-column:1/-1">Garantia
+          <textarea name="garantia" rows="3">{{ registro.garantia or '' }}</textarea></label>
+        <label style="grid-column:1/-1">Condições
+          <textarea name="condicoes" rows="5">{{ registro.condicoes or '' }}</textarea></label>
+        <div class="actions"><button class="primary">Guardar a correção</button></div>
+      </form>
+    </details>
+
+    {% set fora = numeracao | selectattr('fora_do_lugar') | list %}
+    {% if fora %}
+    <form method="post" style="padding-top:10px"
+          action="{{ url_for('livro3_renumerar', registro_id=registro.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <p class="small danger" style="margin:0 0 6px">A numeração deste
+        registro tem {{ fora | length }} ato(s) fora do lugar:
+        {% for a in fora %}{{ a.tipo }}-{{ a.numero }} deveria ser
+        {{ a.deveria_ser }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+      <button>Renumerar na ordem em que foram lavrados</button>
+      <span class="small muted">ato que já tem selo não se renumera — o selo
+        carrega o número dentro dele.</span>
+    </form>
+    {% endif %}
+
+    {% if registro.situacao == 'CANCELADO' %}
+    <form method="post" class="linha-credencial" style="padding-top:10px"
+          action="{{ url_for('livro3_descancelar', registro_id=registro.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input name="motivo" size="52" minlength="10"
+             placeholder="por que este registro volta a ativo">
+      <button>Descancelar o registro</button>
+      <span class="small muted">a averbação que o cancelou continua no livro;
+        o que muda é a marca da ficha.</span>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if expurgos %}
+<section class="panel">
+  <div class="panel-head"><span>Atas de ocorrência</span>
+    <small>{{ expurgos | length }}</small></div>
+  <div style="padding:14px">
+    <p class="small muted">Cada uma é o papel de um ato que deixou de existir.
+      A auditoria responde «quem e quando»; a ata responde
+      <strong>o que estava escrito naquele ato</strong> — e é a única cópia do
+      que saiu do livro.</p>
+    {% for e in expurgos %}
+    <p style="margin:4px 0"><strong>{{ e.ato_rotulo }}</strong>
+      <small class="muted">{{ fmt_date(e.expurgado_em) }}
+        {% if e.expurgado_por %}· {{ e.expurgado_por }}{% endif %}</small>
+      — <a href="{{ url_for('livro3_expurgo_ata', expurgo_id=e.id) }}">ata em .odt</a>
+      {% if e.motivo %}<br><small>{{ e.motivo }}</small>{% endif %}</p>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% from '_certidao.html' import quadro_certidao %}
+{{ quadro_certidao(atribuicao, registro, certidao_receita, certidoes, caixa,
+                   protocolos, csrf_token, user, atos=atos,
+                   digitalizacao=(registro if registro.digi_path else None)) }}
+{% endblock %}

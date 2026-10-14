@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}Painel do tabelionato — Notas{% endblock %}
+{% block heading %}<h1>Tabelionato de Notas</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  <a class="button primary" href="{{ url_for('notas_reconhecimento') }}">Reconhecer firma</a>
+  <a class="button primary" href="{{ url_for('notas_autenticacao') }}">Autenticar cópia</a>
+  <a class="button" href="{{ url_for('notas_cartoes') }}">Cartões de autógrafo</a>
+  <a class="button" href="{{ url_for('notas_reconhecimentos') }}">Reconhecimentos</a>
+  <a class="button" href="{{ url_for('notas_escrituras') }}">Escrituras</a>
+  <a class="button" href="{{ url_for('notas_atas') }}">Atas notariais</a>
+  <a class="button" href="{{ url_for('notas_atos') }}">Atos de livro</a>
+  <a class="button" href="{{ url_for('notas_livros') }}">Livros</a>
+  <a class="button" href="{{ url_for('notas_anotacoes_pendentes') }}">Anotações pendentes</a>
+  <a class="button" href="{{ url_for('notas_remessas') }}">Remessa às centrais</a>
+  <a class="button" href="{{ url_for('notas_escrituras_pendentes') }}">Pendências das escrituras</a>
+  {% if user.role in ['ADMIN','MANAGER'] %}<a class="button" href="{{ url_for('notas_assinaturas') }}">Assinaturas digitalizadas</a>{% endif %}
+  {% if user.role == 'ADMIN' %}<a class="button" href="{{ url_for('notas_importar') }}">Trazer acervo do E-Ofício</a>{% endif %}
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ resumo.rec_hoje }}</strong><small>reconhecimentos hoje</small></div>
+  <div class="stat"><strong>{{ resumo.aut_hoje }}</strong><small>autenticações hoje</small></div>
+  <div class="stat"><strong>{{ resumo.cartoes }}</strong><small>cartões de autógrafo</small></div>
+  <div class="stat"><strong>{{ resumo.reconhecimentos }}</strong><small>reconhecimentos no acervo</small></div>
+  <div class="stat"><strong>{{ resumo.autenticacoes }}</strong><small>autenticações no acervo</small></div>
+  <div class="stat"><strong>{{ resumo.atos }}</strong><small>atos de livro</small></div>
+</section>
+
+{% if resumo.sem_selo %}
+<div class="notice warning">
+  <strong>{{ resumo.sem_selo }} reconhecimento(s) sem selo registrado.</strong>
+  O ato existe no livro, mas o selo não foi anotado — sem ele a prestação de contas ao tribunal
+  não fecha. <a href="{{ url_for('notas_reconhecimentos') }}">Ver a lista</a>.
+</div>
+{% endif %}
+
+{% if resumo.em_lavratura %}
+<div class="notice warning">
+  <strong>{{ resumo.em_lavratura }} ato(s) em lavratura.</strong>
+  Foram abertos e nunca lançados no livro: não ocupam folha, não têm termo e não vão a central
+  nenhuma. <a href="{{ url_for('notas_atos', tipo='') }}">Ver os atos</a>.
+</div>
+{% endif %}
+
+{% if resumo.anotacao_pendente %}
+<div class="notice danger">
+  <strong>{{ resumo.anotacao_pendente }} ato(s) sem anotação à margem.</strong>
+  Revogação, renúncia ou substabelecimento lavrado e o ato que ele desfaz ainda intacto no livro
+  anterior. A certidão daquele ato sai sem dizer o que aconteceu com ele.
+  <a href="{{ url_for('notas_anotacoes_pendentes') }}">Ver a lista</a>.
+</div>
+{% endif %}
+
+{% if resumo.livro_acabando %}
+<div class="notice warning">
+  <strong>{{ resumo.livro_acabando }} livro(s) com dez folhas ou menos.</strong>
+  O sistema vira o livro sozinho quando encher, mas o papel do próximo precisa estar pronto e
+  rubricado antes disso. <a href="{{ url_for('notas_livros') }}">Ver os livros</a>.
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Atos de livro</span>
+    <span class="small muted">{{ resumo.modelos }} modelos de texto disponíveis</span></div>
+  <table>
+    <thead><tr><th>Tipo</th><th>Quantos</th></tr></thead>
+    <tbody>
+    {% for a in atos %}
+      <tr><td>{{ TIPOS_ATO.get(a.tipo, a.tipo) }}</td><td>{{ a.n }}</td></tr>
+    {% else %}
+      <tr><td colspan="2" class="muted">Nenhum ato de livro ainda.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

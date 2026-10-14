@@ -1,0 +1,974 @@
+{% macro campos_do_selo(caminhos, sem_caminho, aviso=none) %}
+  {# O ITEM DA TABELA DE EMOLUMENTOS — é por ele que o selo sai, e ele é a
+     única coisa que o sistema não tem como saber sozinho. Os itens são os que
+     esta casa usou NAQUELE caminho, medidos nos 283 envelopes reais e em
+     ordem de frequência: item de um uso em duzentos é exceção, não regra. #}
+  {% if sem_caminho %}
+  <div class="notice warning span2">
+    <strong>Este ato ainda não pode pedir o selo.</strong>
+    {{ aviso or 'Não há caminho de selo configurado para esta espécie.' }}
+  </div>
+  {% else %}
+  {% if aviso %}<div class="notice small span2">{{ aviso }}</div>{% endif %}
+  {% if caminhos|length > 1 %}
+  <label class="span2">Qual procuração é esta?
+    <select name="especie_procuracao">
+      <option value="">— escolha, para o selo sair —</option>
+      {% for c in caminhos %}
+      <option value="{{ c.chave }}">{{ c.chave|replace('_', ' ')|capitalize }}
+        ({{ c.caminho }})</option>
+      {% endfor %}
+    </select>
+    <small class="muted">A natureza gravada no ato não separa as três: as
+      mesmas naturezas aparecem nos três caminhos, e quem escolhe é quem
+      atende.</small></label>
+  {% endif %}
+  <label class="span2">Item da tabela de emolumentos
+    <select name="codigo_tj">
+      <option value="">— escolha o item para emitir o selo —</option>
+      {% for c in caminhos %}
+      {% for i in c.itens %}
+      <option value="{{ i.codigo }}">{{ i.codigo }} — {{ i.descricao or 'sem descrição no cadastro' }}
+        {% if i.usos %}({{ i.usos }} uso{{ 's' if i.usos != 1 }} nesta casa){% else %}(item próprio desta espécie){% endif %}</option>
+      {% endfor %}
+      {% endfor %}
+    </select></label>
+  <label>Selo isento?
+    <select name="selo_isento"><option value="">não</option>
+      <option value="1">sim</option></select></label>
+  <label>Motivo da isenção
+    <input name="motivo_isencao" placeholder="art. 68-A da Lei 8.212/1991..."></label>
+  {% endif %}
+{% endmacro %}
+{% extends 'base.html' %}
+{% block heading %}<h1>{{ TIPOS_ATO.get(a.tipo, a.tipo) }}
+  {%- if a.termo %} — termo nº {{ a.termo }}
+  {%- elif a.numero_ordem %} nº {{ a.numero_ordem }} (acervo)
+  {%- elif a.situacao == 'EM_LAVRATURA' %} em lavratura (nº interno {{ a.id }})
+  {%- else %} nº interno {{ a.id }}{% endif %}</h1>{% endblock %}
+{% block content %}
+{% from '_fraude.html' import alerta as alerta_fraude %}
+{# O ALERTA DE FRAUDE VEM NO ALTO, antes dos atos. #}
+{{ alerta_fraude(fraudes, csrf_token, 'Notas — ficha do ato', a.numero_ordem,
+                 url_for('notas_ato', ato_id=a.id)) }}
+<div class="actions">
+  <a class="button" href="{% if familia %}{{ url_for(familia.endpoint) }}{% else %}{{ url_for('notas_atos') }}{% endif %}">&larr; {% if familia %}{{ familia.titulo }}{% else %}Atos{% endif %}</a>
+  {% if a.teor and a.situacao != 'EM_LAVRATURA' %}
+  <a class="button" href="{{ url_for('notas_ato_termo_livro', ato_id=a.id) }}">Termo do livro (.odt)</a>
+  <a class="button primary" href="{{ url_for('notas_ato_traslado', ato_id=a.id) }}">Traslado (.odt)</a>
+  {% endif %}
+</div>
+
+{# A ANOTAÇÃO ANTES DA LAVRATURA — 17/09/2026, pedido do oficial:
+   «acrescenta o campo de anotações antes da lavratura também para as
+   escrituras e atas notariais».
+   **ELA NÃO É A ANOTAÇÃO À MARGEM**, que é ato e entra no livro. Esta é nota
+   de trabalho, e por isso fica ANTES do teor: é o que quem vai lançar precisa
+   ler antes de clicar. #}
+{% if a.situacao == 'EM_LAVRATURA' or a.observacao %}
+<section class="panel">
+  <div class="panel-head"><span>Anotações antes da lavratura</span></div>
+  {% if a.situacao == 'EM_LAVRATURA' %}
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <textarea name="observacao" rows="3" style="width:100%"
+      placeholder="o que falta conferir antes de lançar no livro">{{ a.observacao or '' }}</textarea>
+    <div style="margin-top:8px">
+      <button class="primary" name="acao" value="anotacao_de_lavratura">Guardar a anotação</button>
+      {% if a.observacao_por %}<span class="small muted">Escrita por
+        {{ a.observacao_por }}{% if a.observacao_em %}, em
+        {{ fmt_date(a.observacao_em[:10]) }}{% endif %}.</span>{% endif %}
+    </div>
+    <p class="small muted" style="margin:8px 0 0">Isto é nota de trabalho, e
+      não vai para o livro. O que se escreve no livro depois de lavrado é a
+      <strong>anotação à margem</strong>, que é ato e tem selo.</p>
+  </form>
+  {% else %}
+  <div style="padding:14px">
+    {{ a.observacao }}
+    <p class="small muted" style="margin:6px 0 0">Anotada antes da lavratura
+      {%- if a.observacao_por %} por {{ a.observacao_por }}{% endif %}
+      {%- if a.observacao_em %}, em {{ fmt_date(a.observacao_em[:10]) }}{% endif %}.
+      Ela fica como registro do que foi conferido.</p>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if a.situacao == 'EM_LAVRATURA' %}
+<div class="notice warning"><strong>EM LAVRATURA.</strong>
+  Este ato ainda não ocupa folha de livro nenhum e não vai a central nenhuma. Termine o teor e
+  use <em>Lançar no livro</em>, no fim desta página.</div>
+{% elif a.situacao != 'LAVRADO' %}
+<div class="notice danger"><strong>{{ SITUACOES.get(a.situacao, a.situacao)|upper }}.</strong>
+  {{ a.sem_efeito_motivo or '' }}
+  {% if a.termo %}A folha {{ a.folha }} do livro {{ a.livro }} continua ocupada por ele: o papel
+  foi escrito, e folha usada não volta para a fila.{% endif %}</div>
+{% endif %}
+{% if anotacoes %}
+<div class="notice danger"><strong>ESTE ATO TEM ANOTAÇÃO À MARGEM.</strong>
+  {% for n in anotacoes %}<br>{{ fmt_date(n.data) }} — {{ n.texto }}{% endfor %}
+  <br><span class="small">Sai transcrita em todo traslado e certidão deste ato.</span></div>
+{% endif %}
+{% if pendencias %}
+<div class="notice warning"><strong>O teor tem {{ pendencias|length }} campo(s) em branco:</strong>
+  {{ pendencias[:8]|join(', ') }}. Não dá para trasladar assim.</div>
+{% endif %}
+{% if requisitos_modelo %}
+<section class="panel">
+  <details>
+    <summary class="panel-head" style="cursor:pointer">
+      <span>Conferência jurídica do modelo</span>
+      <span class="small muted">{{ requisitos_modelo|length }} item(ns)</span>
+    </summary>
+    <div style="padding:4px 18px 14px">
+      <p class="small muted">Roteiro do mesmo modelo usado para montar o teor;
+        auxilia a conferência e não substitui a qualificação de quem lavra.</p>
+      <ul>{% for item in requisitos_modelo %}<li>{{ item }}</li>{% endfor %}</ul>
+    </div>
+  </details>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>{{ fmt_date(a.data) }} {{ a.hora or '' }}</span>
+    <span class="small muted">
+      {%- if a.livro -%}
+        livro {{ a.livro }}, folha {{ a.folha or '—' }}{% if a.folha_final and a.folha_final != a.folha %} a {{ a.folha_final }}{% endif %}
+        {%- if a.termo %}, termo nº {{ a.termo }}{% endif -%}
+      {%- else -%}
+        sem livro — ainda em lavratura
+      {%- endif -%}
+    </span></div>
+  <div class="grid2" style="padding:14px">
+    <div><small class="muted">Natureza</small><div>{{ a.natureza or '—' }}</div></div>
+    <div><small class="muted">Interessado</small><div>{{ a.interessado or '—' }}</div></div>
+    <div><small class="muted">Selo</small><div>{{ a.selo or '— não anotado —' }}</div></div>
+    <div><small class="muted">Lavrado por</small><div>{{ a.lavrado_nome or '—' }}{% if a.lavrado_titulo %} — {{ a.lavrado_titulo }}{% endif %}</div></div>
+  </div>
+</section>
+
+<!-- DOCUMENTOS E EVIDÊNCIAS: painel compartilhado por escrituras e atas. -->
+<section class="panel">
+  <div class="panel-head"><span>{% if a.tipo in ('ATA', 'ATA_USUCAPIAO') %}Evidências da constatação{% else %}Documentos do ato{% endif %}</span>
+    <span class="small muted">{{ anexos|length }} arquivo(s), com SHA-256</span></div>
+  {% if anexos %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Arquivo</th><th>Descrição</th><th>Integridade</th><th>Enviado por</th><th></th></tr></thead>
+    <tbody>{% for x in anexos %}
+      <tr>
+        <td><strong>{{ x.original_name }}</strong><br><span class="small muted">{{ (x.size_bytes / 1024)|round(1) }} KB</span></td>
+        <td class="small">{{ x.description or '—' }}</td>
+        <td class="small"><code title="{{ x.sha256 }}">{{ x.sha256[:16] }}…</code></td>
+        <td class="small">{{ x.uploader_name or '—' }}<br>{{ x.uploaded_at }}</td>
+                <td class="small"><a href="{{ url_for('attachment_view', attachment_id=x.id) }}" target="_blank">ver</a> ·
+          <a href="{{ url_for('attachment_download', attachment_id=x.id) }}">baixar</a>
+          {% if user.role in ['ADMIN','MANAGER','USER'] %}
+          <form method="post" class="inline-form" style="display:inline"
+                action="{{ url_for('notas_ato_anexo_retirar', ato_id=a.id, attachment_id=x.id) }}"
+                onsubmit="return confirm('Retirar ' + {{ x.original_name|tojson }} + ' deste ato?\n\nO arquivo continua guardado no acervo e a auditoria registra a retirada.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="small">Retirar</button>
+          </form>
+          {% endif %}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}
+  <p class="muted" style="padding:0 14px">Nenhum arquivo guardado.</p>
+  {% endif %}
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  <form method="post" enctype="multipart/form-data" class="grid2" style="padding:14px"
+        action="{{ url_for('notas_ato_anexo', ato_id=a.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Arquivos <input type="file" name="arquivo" multiple></label>
+    <label>Descrição{% if a.tipo in ('ATA', 'ATA_USUCAPIAO') %} (obrigatória){% endif %}
+      <input name="descricao" {% if a.tipo in ('ATA', 'ATA_USUCAPIAO') %}required
+             placeholder="o que comprova, origem/local e momento da constatação"{% else %}
+             placeholder="o que é este documento"{% endif %}></label>
+    <div class="span2"><button>Guardar arquivo</button>
+      <span class="small muted">O sistema registra autoria, data, tamanho e impressão digital do arquivo.</span></div>
+  </form>
+  {% endif %}
+</section>
+
+<!-- ============================ PARTES ============================ -->
+<section class="panel">
+  <div class="panel-head"><span>Partes</span><span class="small muted">{{ partes|length }}</span></div>
+<div class="table-wrap"><table>
+    <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Qualificação</th><th>Origem</th><th></th></tr></thead>
+    <tbody>
+    {% for p in partes %}
+      <tr>
+        <td>{% if p.cartao_id %}<a href="{{ url_for('notas_cartao', cartao_id=p.cartao_id) }}">{{ p.nome }}</a>
+            {% else %}{{ p.nome }}{% endif %}{% if p.testemunha %} <span class="badge">testemunha</span>{% endif %}</td>
+        <td class="small">{{ p.documento or '—' }}</td>
+        <td class="small">{{ p.qualificacao or '—' }}
+          {# CORRIGIR A QUALIFICAÇÃO SEM TIRAR A PARTE — 09/10/2026: a trava da
+             lavratura exige qualificação que a CENSEC entenda. #}
+          <form method="post" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="parte_id" value="{{ p.id }}">
+            <input name="qualificacao" size="14" list="qualificacoes-censec"
+                   value="{{ p.qualificacao or '' }}" aria-label="Qualificação de {{ p.nome }}">
+            <button name="acao" value="qualificacao_parte" class="small">Salvar qualificação</button>
+          </form>
+          <form method="post" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="parte_id" value="{{ p.id }}">
+            <select name="doi_lado" aria-label="Papel DOI de {{ p.nome }}">
+              <option value="" {% if not p.doi_lado %}selected{% endif %}>Pelo texto da qualificação</option>
+              {% for codigo, rotulo in [('ALIENANTE','Alienante'),('ADQUIRENTE','Adquirente'),('FORA','Fora da DOI')] %}
+              <option value="{{ codigo }}" {% if p.doi_lado == codigo %}selected{% endif %}>{{ rotulo }}</option>
+              {% endfor %}
+            </select>
+            <button name="acao" value="papel_doi" class="small">Salvar papel</button>
+          </form></td>
+        <td class="small">{% if p.cartao_id %}ficha de firma{% else %}digitada{% endif %}</td>
+        <td><form method="post" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="parte_id" value="{{ p.id }}">
+              <button name="acao" value="remover_parte" class="small">remover</button>
+            </form></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">Nenhuma parte ainda.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <datalist id="qualificacoes-censec">
+    {% for q in ['OUTORGANTE', 'OUTORGADO', 'INTERVENIENTE', 'TESTEMUNHA', 'ASSINA A ROGO',
+                 'ANUENTE', 'REQUERENTE', 'REQUERIDO', 'VENDEDOR(A)', 'COMPRADOR(A)',
+                 'DOADOR(A)', 'DONATÁRIO(A)', 'USUFRUTUÁRIO'] %}
+    <option value="{{ q }}">
+    {% endfor %}
+  </datalist>
+  <div class="panel-subhead" style="padding:10px 14px 0;border-top:1px solid var(--border, #e5e5e5)">
+    <strong>Incluir parte</strong>
+  </div>
+<div style="padding:14px">
+    <p class="small muted">Dois caminhos: aproveitar a ficha de firma, que já tem o cadastro
+      completo, ou digitar do zero. São 4.061 fichas — quem comparece quase sempre já assinou aqui.</p>
+
+    <form class="filters" method="get">
+      <input name="busca_parte" value="{{ busca_parte }}" size="34"
+             placeholder="Nome ou CPF na ficha de firma">
+      <button class="primary">Procurar ficha</button>
+    </form>
+
+    {% if busca_parte and not achados %}
+      <div class="notice warning">Nenhuma ficha encontrada. Use o cadastro abaixo.</div>
+    {% endif %}
+
+    {% if achados %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Quem</th><th>Assinatura</th><th>Avisos</th><th>Incluir como</th></tr></thead>
+      <tbody>
+      {% for c in achados %}
+        <tr>
+          <td><strong>{{ c.nome }}</strong><br><span class="small muted">{{ c.documento or 'sem CPF' }}
+            · {{ c.estado_civil or '—' }} · {{ c.profissao or '—' }}</span></td>
+          <td>{% if c.imagem_id %}<img class="ampliavel"
+                 src="{{ url_for('notas_cartao_imagem', imagem_id=c.imagem_id, w=320) }}"
+                 data-lupa-cheia="{{ url_for('notas_cartao_imagem', imagem_id=c.imagem_id) }}"
+                 data-lupa-original="{{ url_for('notas_cartao_imagem_original', imagem_id=c.imagem_id) }}"
+                 data-lupa-titulo="{{ c.nome }}{% if c.documento %} — {{ c.documento }}{% endif %}"
+                 data-lupa-grupo="ato-partes"
+                 alt="Assinatura de {{ c.nome }}" loading="lazy"
+                 title="Clique para ampliar"
+                 style="max-height:56px;max-width:220px;border:1px solid #ccc">{% else %}—{% endif %}</td>
+          <td class="small">{% for x in c.avisos %}<span class="badge alta">{{ x }}</span><br>{% endfor %}</td>
+          <td>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="cartao_id" value="{{ c.id }}">
+              <input name="qualificacao" size="16" placeholder="outorgante...">
+              <label class="check small"><input type="checkbox" name="testemunha" value="1"> testemunha</label>
+              <button class="primary small" name="acao" value="parte_cartao">Incluir</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% endif %}
+
+    <details style="margin-top:14px" {% if busca_parte and not achados %}open{% endif %}>
+      <summary>Cadastrar parte do zero</summary>
+      <form method="post" class="grid2" style="padding:10px 0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="span2">Nome <input name="nome" required></label>
+        <label>Pessoa <select name="tipo_pessoa"><option value="F">Física</option><option value="J">Jurídica</option></select></label>
+        <label>CPF/CNPJ <input name="documento"></label>
+        <label>Nacionalidade <input name="nacionalidade" value="BRASILEIRA"></label>
+        <label>Estado civil <input name="estado_civil"></label>
+        <label>Profissão <input name="profissao"></label>
+        <label>Qualificação no ato <input name="qualificacao" placeholder="outorgante, herdeiro..."></label>
+        <label class="span2">Endereço <input name="endereco"></label>
+        <label>Cidade <input name="cidade" value="{{ (sv.ri_cidade or '')|upper }}"></label>
+        <label>UF <input name="uf" value="{{ sv.ri_uf or '' }}" size="3"></label>
+        <label class="check"><input type="checkbox" name="testemunha" value="1"> É testemunha</label>
+        <label class="check"><input type="checkbox" name="abrir_cartao" value="1">
+          Abrir também a ficha de firma</label>
+        <div class="span2"><button class="primary" name="acao" value="parte_nova">Incluir parte</button>
+          <span class="small muted">Abrindo a ficha, da próxima vez é só procurar.</span></div>
+      </form>
+    </details>
+  </div>
+</section>
+
+<!-- ============================ TEOR ============================ -->
+{# PREENCHER CONTINUA À MÃO DEPOIS DE SALVO — relato #78, 17/09/2026:
+   «depois que avança e salva o rascunho da escritura, não consegue voltar
+   pra página intermediária de preenchimento de dados».
+   COM TEOR ELE SAI FECHADO, e com o aviso: preencher **substitui** o teor,
+   e quem tiver editado o texto à mão perde a edição. #}
+{% if campos %}
+{% set ja_tem_teor = (a.teor or '').strip() %}
+<section class="panel">
+  <details {% if not ja_tem_teor %}open{% endif %}>
+    <summary class="panel-head" style="cursor:pointer">
+      <span>Preencher a partir do modelo: {{ modelo.nome }}</span>
+      {% if ja_tem_teor %}<small class="muted"> — para corrigir um campo</small>{% endif %}
+    </summary>
+  {% if ja_tem_teor %}
+  <div class="notice warning small" style="margin:12px 14px 0">
+    O teor deste ato <strong>já está escrito</strong>. Preencher de novo
+    <strong>substitui o texto inteiro</strong> pelo modelo com estes campos —
+    se você editou o teor à mão depois de preencher, essa edição se perde.
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('notas_ato_preencher', ato_id=a.id) }}"
+        class="grid2" style="padding:14px"
+        {% if ja_tem_teor %}onsubmit="return confirm('Preencher de novo substitui o teor inteiro. Continuar?')"{% endif %}>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for c in campos %}
+      {% set escolhido = valores_do_modelo.get(c.chave, '') %}
+      {% if c.tipo == 'escolha' %}
+        <label>{{ c.rotulo }} <select name="{{ c.chave }}">
+          {% for o in c.opcoes %}
+          <option value="{{ o }}" {% if o == escolhido %}selected{% endif %}>{{ o }}</option>
+          {% endfor %}
+        </select></label>
+      {% elif c.tipo == 'condicao' %}
+        <label class="check span2"><input type="checkbox" name="{{ c.chave }}" value="1"
+          {% if escolhido %}checked{% endif %}> {{ c.rotulo }}</label>
+      {% else %}
+        <label>{{ c.rotulo }} <input name="{{ c.chave }}" value="{{ escolhido }}"></label>
+      {% endif %}
+    {% endfor %}
+    <div class="span2"><button class="primary">Preencher o teor</button>
+      <span class="small muted">O que ficar em branco aparece marcado no texto.</span></div>
+  </form>
+  </details>
+</section>
+{% endif %}
+
+{% if falta_qualificar %}
+<div class="notice warning">
+  <strong>Qualificação incompleta</strong> — art. 215, § 1º do Código Civil:
+  <ul>{% for f in falta_qualificar %}<li>{{ f }}</li>{% endfor %}</ul>
+  Complete na ficha de firma da pessoa e monte o teor de novo.
+</div>
+{% endif %}
+
+{% if not modelo or modelo.origem != 'SISTEMA' %}
+<section class="panel">
+  <div class="panel-head"><span>Montar o teor</span></div>
+  <form method="post" action="{{ url_for('notas_ato_montar', ato_id=a.id) }}" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="primary" {% if not partes %}disabled{% endif %}>Montar com as partes</button>
+    <span class="small muted">Monta o comparecimento, a qualificação de cada parte
+      {% if modelo %}e a cláusula do modelo <strong>{{ modelo.nome }}</strong>{% else %}e deixa o objeto em branco{% endif %},
+      mais o fecho. O que faltar na qualificação aparece marcado entre colchetes.</span>
+  </form>
+</section>
+{% endif %}
+
+{#
+  O TEOR EM DUAS COLUNAS: o que se edita e o que vai sair.
+
+  «O teor do ato não sai formatado e visível como ficará completo pra quem
+  lavra» — o oficial, em 27/08/2026, na segunda vez que apontou isto.
+
+  A prévia é o MESMO texto, com a forma do papel: fonte com serifa, texto
+  justificado, entrelinha do documento. Ela não é enfeite — é o que responde
+  «como isto vai ficar», que era a pergunta.
+#}
+<section class="panel">
+  <div class="panel-head"><span>Teor do ato</span>
+    {% if modelo %}<span class="small muted">modelo: {{ modelo.nome }}</span>{% endif %}</div>
+
+  <div class="actions" style="padding:14px 14px 0">
+    <a class="button" href="{{ url_for('notas_ato_teor_odt', ato_id=a.id) }}">Exportar para editar (.odt)</a>
+    <span class="small muted">abre no LibreOffice ou no Word; depois volte com o arquivo abaixo</span>
+  </div>
+
+  <div class="grid2" style="padding:14px">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="small muted" style="display:block;margin-bottom:4px">O texto</label>
+      <textarea name="teor" rows="20" data-teor
+                style="width:100%;font-family:Georgia,serif">{{ a.teor or '' }}</textarea>
+      <div style="margin-top:10px">
+        <button class="primary" name="acao" value="teor">Guardar o teor</button>
+        <span class="small muted">A folha não se digita mais aqui: ela é atribuída no lançamento.</span>
+      </div>
+    </form>
+
+    <div>
+      <label class="small muted" style="display:block;margin-bottom:4px">Como vai sair</label>
+      {# A PRÉVIA MOSTRA O TEOR COMO ELE ESTÁ GRAVADO, e não uma segunda
+         montagem: uma versão «parecida» divergiria no primeiro conserto, e a
+         tela passaria a mostrar uma coisa e o papel a levar outra. #}
+      <div class="teor-previa" data-teor-previa>
+        {% if a.teor %}{{ a.teor | safe }}
+        {% else %}<p class="muted">Sem teor ainda. Monte com as partes, escreva
+          ao lado, ou traga de um arquivo.</p>{% endif %}
+      </div>
+      {# 07/10/2026: a «estimativa de N páginas» saiu daqui. A conta de
+         verdade se faz no termo, ao lançar; mostrar um palpite ao lado dela
+         era a informação confusa que o oficial pediu para tirar. #}
+    </div>
+  </div>
+
+  {% if a.situacao == 'EM_LAVRATURA' %}
+  {# TRAZER DE VOLTA SÓ ENQUANTO O ATO ESTÁ EM LAVRATURA. Ato lançado tem teor
+     que foi para o papel; trocar o texto depois faria o sistema e o livro
+     divergirem, e quem confere lê o livro. #}
+  <details style="padding:0 14px 14px">
+    <summary class="small">Trazer o teor de um arquivo editado</summary>
+    <form method="post" enctype="multipart/form-data" class="inline-form"
+          action="{{ url_for('notas_ato_teor_importar', ato_id=a.id) }}"
+          style="margin-top:10px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="file" name="arquivo" accept=".odt,.docx" required>
+      <button>Substituir o teor</button>
+    </form>
+    <p class="small muted" style="margin-top:8px">
+      Entram <strong>.odt</strong> e <strong>.docx</strong>. Voltam os
+      parágrafos, na ordem — negrito, tabela e imagem não voltam, e a tela diz
+      quantos parágrafos entraram e quantos ficaram iguais.</p>
+  </details>
+  {% else %}
+  {# O PDF ASSINADO É DEPOIS DO ATO LANÇADO: assinatura de coisa que ainda pode
+     mudar não prova nada. #}
+  <details style="padding:0 14px 14px">
+    <summary class="small">Guardar o PDF assinado deste ato</summary>
+    <form method="post" enctype="multipart/form-data" class="inline-form"
+          action="{{ url_for('notas_ato_pdf_assinado', ato_id=a.id) }}"
+          style="margin-top:10px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="file" name="arquivo" accept=".pdf" required>
+      <button>Guardar</button>
+    </form>
+    <p class="small muted" style="margin-top:8px">
+      O arquivo fica guardado com a impressão digital SHA-256, como toda
+      evidência desta casa.</p>
+  </details>
+  {% endif %}
+</section>
+
+<!-- ====================== O IMÓVEL, PARA A DOI ====================== -->
+{#
+  «Consta apenas DOI e CTP no registro de imóveis, deveríamos ter para as
+   escrituras também, com intercomunicabilidade para que o arquivo da DOI seja
+   possível gerar único, com tudo da serventia.» — o oficial, 27/08/2026.
+
+  As colunas `com_imovel`, `doi_transacao`, `doi_matricula`, `doi_endereco` e
+  `doi_area` **já existiam** em `nt_atos` desde a importação, e nenhuma tela as
+  preenchia: zero em 260 escrituras. O módulo da DOI também já estava inteiro —
+  e só o Registro de Imóveis o chamava.
+
+  A DOI é obrigação com multa da Receita Federal, e uma escritura de compra e
+  venda a gera do mesmo jeito que um registro.
+#}
+{% if a.tipo == 'ESCRITURA' %}
+<section class="panel">
+  <div class="panel-head"><span>O imóvel — para a DOI</span>
+    {% if a.com_imovel %}<span class="badge ok">entra na DOI</span>
+    {% elif a.com_imovel is not none and a.com_imovel == 0 %}
+      <span class="badge">sem imóvel</span>{% endif %}</div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="imovel">
+
+    <p style="grid-column:1/-1"><small>
+      A <strong>Declaração sobre Operações Imobiliárias</strong> é obrigação da
+      serventia perante a Receita Federal, e vence no fim do mês seguinte. Ela
+      sai num <strong>arquivo só</strong>, juntando estas escrituras com os atos
+      do Registro de Imóveis — decisão do oficial em 28/08/2026.
+      <br><br>
+      Escritura que não transmite imóvel — procuração, ata, declaração — deve
+      ficar <strong>marcada como sem imóvel</strong>: assim ela some da lista do
+      que falta, em vez de ficar cobrando para sempre.
+    </small></p>
+
+    <label class="check span2">
+      <input type="checkbox" name="com_imovel" value="1"
+             {% if a.com_imovel %}checked{% endif %}>
+      Esta escritura transmite imóvel e entra na DOI</label>
+
+    <label>Operação
+      <select name="doi_transacao">
+        <option value="">— não informada —</option>
+        {% for codigo, texto in DOI_OPERACOES.items() %}
+          <option value="{{ codigo }}"
+                  {% if a.doi_transacao|string == codigo|string %}selected{% endif %}>
+            {{ texto }}</option>
+        {% endfor %}
+      </select></label>
+
+    <label>Torna em dinheiro (R$), se houver
+      <input name="doi_torna_dinheiro" value="{{ '%.2f'|format(a.doi_torna_dinheiro / 100) if a.doi_torna_dinheiro is not none else '' }}"
+             placeholder="10000,00"></label>
+
+    <label>Tipo do imóvel
+      <select name="doi_tipo_imovel">
+        <option value="">— não informado —</option>
+        {% for codigo, texto in DOI_IMOVEIS.items() %}
+          <option value="{{ codigo }}"
+                  {% if a.doi_tipo_imovel|string == codigo|string %}selected{% endif %}>
+            {{ texto }}</option>
+        {% endfor %}
+      </select></label>
+
+    <label>Matrícula do imóvel
+      <input name="doi_matricula" value="{{ a.doi_matricula or '' }}"
+             placeholder="o número da matrícula no RI"></label>
+
+    <label>Área
+      <input name="doi_area" value="{{ a.doi_area or '' }}"
+             placeholder="em m² ou hectares, como no título"></label>
+
+    <label class="span2">Endereço ou denominação
+      <input name="doi_endereco" value="{{ a.doi_endereco or '' }}"></label>
+
+    {# ===================== AS PARTES, E DE QUE LADO CADA UMA ESTÁ =========
+
+       A DOI separa quem alienou de quem adquiriu, e a Receita soma a
+       participação de cada lado: fora da faixa de 99% a 100% ela recusa o
+       ARQUIVO INTEIRO, e não a linha.
+
+       O lado sai da QUALIFICAÇÃO que se escreveu na parte, pela mesma régua
+       que monta a declaração. Mostrá-lo aqui não é enfeite: é como quem lavra
+       descobre, ainda na ficha, que escreveu «Declarante» onde precisava de
+       «Vendedor» — em vez de descobrir no fim do mês, na tela da DOI.
+
+       O percentual vem SUGERIDO em partes iguais e fica à vista, por decisão
+       do oficial em 28/08/2026: ninguém manda um número sem ver qual é.
+
+       A tabela abaixo usa `partes` (painel de cima), não um segundo cadastro:
+       se ela sumia quando a lista vinha vazia, parecia que «não dá para
+       selecionar parte nenhuma» — e quem já tinha cadastrado não via o nome
+       na DOI porque o bloco inteiro ficava oculto. #}
+    {% set linhas_doi = doi_partes if doi_partes is defined else [] %}
+    <div class="span2" style="margin-top:6px">
+      <p><small class="muted">Quem alienou e quem adquiriu, conforme o papel DOI
+        escolhido nesta escritura ou a qualificação da parte. O percentual vem sugerido em partes iguais
+        &mdash; <strong>corrija quando não for assim</strong>, e ele só vale
+        depois de você clicar em Anotar.</small></p>
+      {% if partes and linhas_doi %}
+      <div class="table-wrap"><table>
+        <thead><tr><th>Parte</th><th>Qualificação</th><th>Na DOI</th>
+          <th style="width:9em">Participação</th></tr></thead>
+        <tbody>
+        {% for d in linhas_doi %}
+          <tr>
+            <td class="small">{{ d.p.nome }}</td>
+            <td class="small">{{ d.p.qualificacao or '—' }}{% if d.p.doi_lado %}<br><small>Papel DOI: {{ d.p.doi_lado }}</small>{% endif %}</td>
+            <td class="small">
+              {% if d.lado == 'ALIENANTE' %}<span class="badge">alienou</span>
+              {% elif d.lado == 'ADQUIRENTE' %}<span class="badge">adquiriu</span>
+              {% elif d.lado == 'FORA' %}<span class="small muted">não é parte do negócio</span>
+              {% else %}<span class="badge warn">não dá para saber o lado</span>{% endif %}
+            </td>
+            <td>
+              {% if d.lado in ('ALIENANTE', 'ADQUIRENTE') %}
+                <input name="participacao_{{ d.p.id }}" size="7"
+                       value="{{ d.p.participacao or d.sugerido }}"
+                       {% if not d.p.participacao %}title="sugestão: partes iguais"{% endif %}> %
+              {% else %}&mdash;{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% if linhas_doi | selectattr('lado', 'equalto', 'DUVIDA') | list %}
+      <p class="small"><strong>Uma parte ficou sem lado.</strong> Defina o papel
+        DOI no painel Partes após conferir o título. Para domínio direto municipal,
+        confirme se o Município efetivamente transmite esta unidade antes de
+        escolher um lado; o sistema não presume isso pelo nome.</p>
+      {% endif %}
+      {% elif partes %}
+      <p class="notice warning small">As partes estão cadastradas, mas a tela
+        não montou a conferência da DOI. Recarregue a ficha; se continuar,
+        sincronize o sandbox com o pacote mais recente.</p>
+      {% else %}
+      <p class="notice warning small"><strong>Nenhuma parte nesta
+        escritura.</strong> Cadastre vendedor, comprador e demais qualificações
+        no painel <strong>Partes</strong>, acima — a DOI usa a mesma lista, e
+        sem ela não há participação para conferir nem CPF para a Receita.</p>
+      {% endif %}
+    </div>
+
+    <div class="actions span2"><button class="button">Anotar</button></div>
+  </form>
+</section>
+{% endif %}
+
+<!-- ====================== LANÇAMENTO NO LIVRO ====================== -->
+<section class="panel">
+  <div class="panel-head"><span>Livro, folha e termo</span></div>
+  {% if a.livro or a.termo %}
+  <div class="grid2" style="padding:14px">
+    <div><small class="muted">Livro</small><div><strong>{{ a.livro or '—' }}</strong>
+      {%- if a.livro_complemento %} {{ a.livro_complemento }}{% endif %}</div></div>
+    <div><small class="muted">Termo</small><div><strong>{{ a.termo or a.numero_ordem or '— acervo, sem termo —' }}</strong></div></div>
+    <div><small class="muted">Folha</small><div>{{ a.folha or '—' }}{% if a.folha_final and a.folha_final != a.folha %} a {{ a.folha_final }}{% endif %}</div></div>
+    <div><small class="muted">Ocupa</small><div>{{ a.folhas or '—' }} folha(s), {{ a.paginas or '—' }} página(s)</div></div>
+    <div class="span2 small muted">{% if a.lancado_em %}Lançado em {{ a.lancado_em }}{% if a.lancado_por %} por {{ a.lancado_por }}{% endif %}.{% else %}Ato do acervo, trazido do E-Ofício com o livro e a folha que já tinha.{% endif %}
+      {% if face_em_branco %}O texto termina na frente da folha {{ a.folha_final }}; o verso
+      <strong>{{ face_em_branco[0] }}</strong> já sai inutilizado na última página do
+      <a href="{{ url_for('notas_ato_termo_livro', ato_id=a.id) }}">Termo do livro</a>.{% endif %}</div>
+    {% if face_em_branco %}
+    <div class="span2">
+      <a class="button" href="{{ url_for('notas_ato_inutilizacao', ato_id=a.id) }}">
+        Só a face {{ face_em_branco[0] }} já inutilizada (.odt)</a>
+      <span class="small muted">Para reimprimir apenas o verso. Ele já vai no fim do Termo do
+        livro, com o traço, o dizer e a linha de assinatura — ninguém risca nada à mão.
+        Escrituração seguida, sem claros: art. 795, § 2º.</span>
+    </div>
+    {% endif %}
+  </div>
+  {% elif previsao and previsao.erro %}
+  <div class="notice danger" style="margin:14px">{{ previsao.erro }}</div>
+  {% elif a.situacao != 'EM_LAVRATURA' %}
+  <div class="notice warning" style="margin:14px">
+    Este ato não está em lavratura ({{ SITUACOES.get(a.situacao, a.situacao) }}) e não tem livro.
+    Só se lança no livro o ato em lavratura.
+  </div>
+  {% else %}
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if previsao %}
+    <div class="notice">
+      Vai para o <strong>{{ previsao.serie_nome }}</strong>
+      {%- if previsao.abrira_livro %}, em livro <strong>novo</strong> (nº {{ previsao.proximo_livro }}) —
+        o atual não comporta mais este ato
+      {%- else %}, livro <strong>{{ previsao.livro }}</strong>{% endif %},
+      a partir da folha <strong>{{ previsao.folha_inicial }}</strong>, com o termo
+      <strong>nº {{ previsao.termo }}</strong>.
+      {% if previsao.restam and previsao.restam <= 10 and not previsao.abrira_livro %}
+        Restam {{ previsao.restam }} folha(s) neste livro.{% endif %}
+    </div>
+    {% endif %}
+    <div class="grid2">
+      {% if paginas_a_mao %}
+      {# Só quando o LibreOffice não respondeu ao lançar: aí quem conta é o
+         escrevente, no papel impresso. #}
+      <label>Páginas escritas no termo impresso (frente e verso contam separado)
+        <input type="number" name="paginas" min="1" required></label>
+      {% endif %}
+      {% with revisao_url=url_for('revisao_previa_notas', ato_id=a.id) %}{% include '_revisao_previa.html' %}{% endwith %}
+      {# O SELO SAI COM O ATO — decisão do oficial em 27/08/2026, «o selo é
+         emitido quando praticado o ato, igual o E-Ofício». O pedido leva o
+         livro e a folha, que só existem depois do lançamento: por isso ele
+         acontece logo em seguida, na mesma tela e no mesmo clique. #}
+      {{ campos_do_selo(selo_caminhos, selo_sem_caminho, selo_aviso) }}
+      <details class="span2" style="margin-top:8px">
+        <summary class="small"><strong>Arquivamento do documento (13.30)</strong>
+          — opcional, junto com o selo da escritura</summary>
+        <p class="small muted">Marque para pedir também o selo de arquivamento
+          por folha, logo após o selo do ato — como no Registro de Imóveis.</p>
+        <label class="check"><input type="checkbox" name="gerar_arquivamento" value="1"
+               id="gerar_arquivamento_nt"
+               onchange="(function(c){var f=document.getElementById('folhas_arquivamento_nt'); if(!f)return; f.required=!!c.checked; f.disabled=!c.checked; if(!c.checked){f.value='';}})(this)">
+          Gerar também o <strong>selo de arquivamento</strong></label>
+        <label>Folhas arquivadas
+          <input type="number" name="folhas_arquivamento" id="folhas_arquivamento_nt"
+                 min="1" step="1" disabled placeholder="quantidade de folhas"></label>
+      </details>
+      {% if a.valor_transacao %}
+      <div class="notice small span2">O ato declara valor, e o selo sai pelo
+        caminho <strong>com valor declarado</strong> — é o valor que decide, e
+        não o tipo do ato.</div>
+      {% endif %}
+      {# O BOTÃO VEM POR ÚLTIMO — ordem do oficial em 07/10/2026: «a opção
+         de inclusão do selo de arquivamento deve vir antes do botão de
+         lavratura do ato. lançar no livro deve ser depois». Tudo o que o
+         clique leva (revisão, item do selo, arquivamento) se preenche antes.
+         #}
+      <div class="span2"><button class="primary" name="acao" value="lancar"
+             {% if not a.teor %}disabled title="Escreva o teor antes de lançar"{% endif %}>Lançar no livro</button></div>
+    </div>
+    {% if entrelinha and entrelinha.precisa %}
+    <div class="notice {% if entrelinha.cabe_na_banda %}warning{% endif %}">
+      Com {{ entrelinha.paginas_texto }} página(s) o texto termina na <strong>frente</strong> da
+      última folha, e o verso fica sem uso.
+      {% if entrelinha.cabe_na_banda %}
+        Uma entrelinha de <strong>{{ entrelinha.entrelinha_sugerida }}</strong> (contra
+        {{ entrelinha.entrelinha_atual }}) provavelmente o levaria ao verso — {{ entrelinha.motivo }}.
+        <strong>É sugestão, não medição:</strong> o sistema estima por tamanho do texto, e quem
+        decide a quebra é o LibreOffice ao imprimir. Confira no que sair.
+      {% else %}
+        {{ entrelinha.motivo|capitalize }}. O caminho é imprimir a face já inutilizada, com o
+        botão que aparece depois do lançamento.
+      {% endif %}
+    </div>
+    {% endif %}
+    <p class="small muted">
+      <strong>As páginas o sistema conta sozinho</strong>: ao lançar, ele monta o termo como vai
+      ao livro e conta as páginas que saem. O ato começa sempre em folha nova e ocupa folhas
+      inteiras; se o texto terminar na frente da última folha, o verso já sai
+      <strong>inutilizado na última página do Termo do livro</strong> — é só imprimir o termo
+      inteiro, frente e verso, e o ato seguinte nunca começa no verso deste.
+      Depois de lançado, <strong>não se relança</strong>: a folha foi gasta.
+    </p>
+  </form>
+  {% endif %}
+</section>
+
+<!-- ====================== ANOTAÇÕES À MARGEM ====================== -->
+<section class="panel">
+  <div class="panel-head"><span>Anotações à margem</span>
+    <span class="small muted">{{ anotacoes|length }}</span></div>
+
+  {% if anotacoes %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Data</th><th>Tipo</th><th>Texto</th><th>Ato que a gerou</th></tr></thead>
+    <tbody>
+    {% for n in anotacoes %}
+      <tr>
+        <td class="small">{{ fmt_date(n.data) }}</td>
+        <td class="small">{{ TIPOS_ANOTACAO.get(n.tipo, n.tipo) }}</td>
+        <td class="small">{{ n.texto }}</td>
+        <td class="small">
+          {%- if n.ato_relacionado_id %}<a href="{{ url_for('notas_ato', ato_id=n.ato_relacionado_id) }}">livro
+            {{ n.livro_relacionado or '—' }}, folha {{ n.folha_relacionada or '—' }}</a>
+          {%- elif n.origem_externa %}{{ n.serventia_externa or 'outra serventia' }}
+          {%- else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="small muted" style="padding:14px">Nenhuma anotação. A margem está limpa.</p>
+  {% endif %}
+
+  {% if a.situacao != 'EM_LAVRATURA' %}
+  <details style="padding:0 14px 14px">
+    <summary class="small">Anotar à margem</summary>
+    <p class="small muted">Para o que vem de fora: revogação lavrada em outra serventia, ordem
+      judicial, retificação. A revogação lavrada <em>aqui</em> anota sozinha, no lançamento.
+      <strong>Anotação não se apaga</strong> — errada, corrige-se com outra.</p>
+    <form method="post" class="grid2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Tipo <select name="tipo" required>
+        {% for k, rot in TIPOS_ANOTACAO.items() %}<option value="{{ k }}">{{ rot }}</option>{% endfor %}
+      </select></label>
+      <label>Data do ato que gerou <input type="date" name="data"></label>
+      <label>Selo <input name="selo_anotacao"></label>
+      <label class="check"><input type="checkbox" name="externa" value="1"> Lavrado em outra serventia</label>
+      <label>Serventia <input name="serventia_externa" placeholder="quando for de fora"></label>
+      <label>CNS <input name="cns_externa" placeholder="quando for de fora"></label>
+      <label class="span2">Texto <textarea name="texto" rows="2"
+        placeholder="Em branco, o sistema escreve a fórmula padrão a partir do tipo."></textarea></label>
+      <div class="span2"><button class="primary" name="acao" value="anotar">Anotar à margem</button></div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
+{% if pede_anotacao %}
+<!-- ====================== O ATO ANTERIOR ====================== -->
+<section class="panel">
+  <div class="panel-head"><span>Ato anterior — o que este ato desfaz</span></div>
+  {% if anterior %}
+  <div style="padding:14px">
+    <p>Vinculado a <a href="{{ url_for('notas_ato', ato_id=anterior.id) }}"><strong>{{ TIPOS_ATO.get(anterior.tipo, anterior.tipo) }}</strong></a>
+      — livro {{ anterior.livro or '—' }}, folha {{ anterior.folha or '—' }}{% if anterior.termo %}, termo nº {{ anterior.termo }}{% endif %},
+      de {{ fmt_date(anterior.data) }}. Situação: {{ SITUACOES.get(anterior.situacao, anterior.situacao) }}.</p>
+  </div>
+  {% else %}
+  <div class="notice warning" style="margin:14px">
+    Este ato <strong>{{ TIPOS_ATO.get(a.tipo, a.tipo)|lower }}</strong> e ainda não aponta para o ato
+    que ele desfaz. Sem o vínculo, a anotação à margem não sai — e a certidão daquele ato continuará
+    dizendo que ele está íntegro.
+  </div>
+  <div style="padding:0 14px 14px">
+    <form class="filters" method="get">
+      <input name="busca_anterior" value="{{ busca_anterior }}" size="34"
+             placeholder="Nome da parte, livro, termo ou selo">
+      <button class="primary">Procurar o ato anterior</button>
+    </form>
+    {% if busca_anterior and not candidatos %}
+      <div class="notice warning">Nada encontrado. Sendo de outra serventia, use
+        <em>Anotar à margem</em> lá, e aqui registre os dados do ato anterior.</div>
+    {% endif %}
+    {% if candidatos %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Tipo</th><th>Data</th><th>Livro/folha</th><th>Partes</th><th>Situação</th><th></th></tr></thead>
+      <tbody>
+      {% for c in candidatos %}
+        <tr>
+          <td class="small">{{ TIPOS_ATO.get(c.tipo, c.tipo) }}</td>
+          <td class="small">{{ fmt_date(c.data) }}</td>
+          <td class="small">{{ c.livro or '—' }}/{{ c.folha or '—' }}</td>
+          <td class="small">{{ (c.nomes or c.interessado or '—')[:44] }}</td>
+          <td class="small">{{ SITUACOES.get(c.situacao, c.situacao) }}
+            {%- if c.anotacoes %} <span class="badge">{{ c.anotacoes }} anotação(ões)</span>{% endif %}</td>
+          <td><form method="post" class="inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="anterior_id" value="{{ c.id }}">
+                <button class="primary small" name="acao" value="vincular_anterior">Vincular</button>
+              </form></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{#
+  DEPÓSITO PRÉVIO — o mesmo depósito, na tela onde o ato está.
+
+  Escritura tem adiantamento como qualquer título. Lançar pelo caixa e depois
+  tentar lembrar a que ato pertencia é como o dinheiro deixa de ter dono.
+
+  O que aparece aqui é o MESMO registro que aparece no caixa: um depósito só,
+  visto de dois lugares. Não é uma segunda anotação.
+#}
+<section class="panel">
+  <div class="panel-head"><span>{% if a.situacao == 'EM_LAVRATURA' %}Adiantamento vinculado{% else %}Depósito prévio{% endif %}</span>
+    <span class="small muted">
+      {% if depositos %}saldo disponível neste ato: <strong>R$ {{ saldo }}</strong>
+      {% else %}nenhum depósito neste ato{% endif %}</span></div>
+
+  {% if depositos %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Data</th><th>Depositante</th>
+      <th style="text-align:right">Valor</th><th style="text-align:right">Saldo</th><th></th></tr></thead>
+    <tbody>
+    {% for d in depositos %}
+      <tr><td class="small"><strong>{{ d.numero }}</strong></td>
+          <td class="small">{{ fmt_date(d.data) }}</td>
+          <td class="small">{{ d.depositante }}</td>
+          <td class="small" style="text-align:right">R$ {{ d.valor }}</td>
+          <td class="small" style="text-align:right">R$ {{ d.saldo }}</td>
+          <td class="small">{% if d.encerrado %}<span class="badge">consumido</span>
+            {% else %}<span class="badge baixa">com saldo</span>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+
+  {% if a.situacao == 'EM_LAVRATURA' %}
+  <div style="padding:12px 14px">
+    <p class="small">Na lavratura você <strong>baixa</strong> o adiantamento que
+      o cliente já deixou — não cadastra depósito novo nesta tela. Abra
+      <a href="{{ url_for('caixa_depositos') }}">Depósito prévio</a> e use
+      «consumir» no depósito vinculado a este ato (coluna Protocolo aponta
+      para cá).</p>
+    {% if saldo != '0,00' and depositos %}
+    <p class="notice warning small">Ainda há <strong>R$ {{ saldo }}</strong> de
+      saldo neste ato — confira a baixa no caixa antes de concluir.</p>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="small muted" style="padding:8px 14px">
+    Aparece também em <a href="{{ url_for('caixa_depositos') }}">Depósito prévio</a>.
+    Para <strong>quitar</strong> saldo, consuma o depósito lá — não registre outro aqui.
+  </div>
+  <form method="post" class="grid2" style="padding:12px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Valor (R$) <input name="valor" required placeholder="0,00" inputmode="decimal"></label>
+    <label>Forma de pagamento
+      <select name="forma_pagamento">
+        {% for k in FORMAS %}<option value="{{ k }}">{{ k.replace('_', ' ')|capitalize }}</option>{% endfor %}
+      </select></label>
+    <label>Depositante
+      <input name="depositante" placeholder="em branco, usa a primeira parte do ato"></label>
+    <label>CPF/CNPJ do depositante <input name="depositante_documento"></label>
+    <label class="span2">Observação
+      <input name="observacao" placeholder="em branco, anota que é do ato nº {{ a.id }}"></label>
+    <div class="span2">
+      <button class="primary" name="acao" value="deposito">Registrar depósito</button>
+      <span class="small muted">Use só se ainda não existir adiantamento vinculado.</span>
+    </div>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Selo</span></div>
+  {% if a.selo %}
+  <div style="padding:14px">
+    <strong>{{ a.selo }}</strong>
+    {% if a.selo_arquivamento %}
+    <p class="small" style="margin:8px 0 0"><strong>Arquivamento:</strong>
+      {{ a.selo_arquivamento }}{% if a.folhas_arquivamento %} — {{ a.folhas_arquivamento }} folha(s){% endif %}</p>
+    {% endif %}
+    <p class="small muted" style="margin:6px 0 0">Este ato já está selado.
+      Pedir outro seria o dinheiro da serventia saindo duas vezes.</p>
+  </div>
+  {% if a.selo and not a.selo_arquivamento and a.situacao == 'LAVRADO' %}
+  <details style="padding:0 14px 14px">
+    <summary class="small">Selar arquivamento (13.30)</summary>
+    <form method="post" action="{{ url_for('notas_selar_arquivamento', ato_id=a.id) }}" class="grid2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Folhas arquivadas
+        <input type="number" name="folhas_arquivamento" min="1" step="1" required></label>
+      <div><button class="primary">Pedir selo de arquivamento</button></div>
+    </form>
+  </details>
+  {% endif %}
+  {% else %}
+  {% if a.livro and not selo_sem_caminho %}
+  {# PEDIR O SELO DE UM ATO JÁ LANÇADO — a saída de quando o aparelho estava
+     fora do ar na hora do lançamento. Sem ela o ato ficaria sem selo para
+     sempre: o livro já foi escrito, e desfazê-lo é o que o sistema recusa. #}
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="notice small span2">O ato está no livro
+      {{ a.livro }}, folha {{ a.folha }}{% if a.termo %}, termo {{ a.termo }}{% endif %}
+      e <strong>sem selo</strong>. Peça-o ao aparelho da rede local:</div>
+    {{ campos_do_selo(selo_caminhos, selo_sem_caminho, selo_aviso) }}
+    <div class="span2"><button class="primary" name="acao" value="selar">Pedir o selo ao aparelho</button></div>
+  </form>
+  {% elif selo_sem_caminho %}
+  <div class="notice warning" style="margin:14px">
+    <strong>O selo automático está bloqueado para este ato.</strong>
+    {{ selo_aviso or 'Não há caminho de selo configurado para esta espécie.' }}
+  </div>
+  {% endif %}
+  <form method="post" class="grid2" style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Selo tirado no portal
+      <input name="selo" size="34" placeholder="número do selo colado"></label>
+    <label>Etiqueta do selo (opcional)
+      <input name="selo_texto" placeholder="cole aqui o texto do selo, se houver"></label>
+    <div class="span2"><button name="acao" value="selo">Anotar o selo à mão</button>
+      <span class="small muted">O número é lido, o CNS é conferido contra o
+        desta serventia, o selo repetido é recusado dizendo em que ato ele já
+        está — e ele entra no razão dos selos.</span></div>
+  </form>
+  {% endif %}
+</section>
+
+<details class="panel">
+  <summary>Tornar sem efeito, revogar ou cancelar</summary>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Situação <select name="situacao">
+      {% for k, rot in SITUACOES.items() %}<option value="{{ k }}" {% if a.situacao == k %}selected{% endif %}>{{ rot }}</option>{% endfor %}
+    </select></label>
+    <label>Motivo <input name="motivo" value="{{ a.sem_efeito_motivo or '' }}"></label>
+    <div class="span2"><button name="acao" value="situacao">Guardar</button>
+      <span class="small muted">O ato não some do livro: fica com a anotação e a data.</span></div>
+  </form>
+</details>
+{% endblock %}

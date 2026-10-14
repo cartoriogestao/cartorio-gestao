@@ -1,0 +1,300 @@
+{% extends 'base.html' %}
+{% from '_ordenar.html' import cabecalho, seletor %}
+{% block title %}Produtividade — Administrativo{% endblock %}
+{% block heading %}<h1>Controle diário de produtividade</h1>{% endblock %}
+{% block content %}
+<p class="muted">Preencha só o essencial (categoria, tarefa, horários). Tempo líquido, desvio, eficiência e semana são calculados automaticamente. Use o botão <strong>⏱ Produtividade</strong> em qualquer tela para lançar rápido ou iniciar o cronômetro.</p>
+
+<section class="panel">
+  <div class="panel-head"><span>Painel — {{ painel.data_filtro }}</span>
+    <span class="actions" style="margin:0">
+      <a class="button secondary" href="{{ url_for('produtividade_exportar_csv', data=filtro_data, responsavel=filtro_responsavel) }}">Exportar CSV</a>
+      <a class="button secondary" href="{{ url_for('produtividade_exportar_xlsx', data=filtro_data, responsavel=filtro_responsavel) }}">Exportar Excel</a>
+    </span>
+  </div>
+  <form method="get" class="grid2" style="padding:14px">
+    <label>Data
+      <input type="date" name="data" value="{{ filtro_data }}" required>
+    </label>
+    {% if user_role in ('ADMIN', 'MANAGER') %}
+    <label>Responsável
+      <select name="responsavel">
+        <option value="Todos" {% if filtro_responsavel == 'Todos' %}selected{% endif %}>Todos</option>
+        {% for u in escreventes %}
+        <option value="{{ u['id'] }}" {% if filtro_responsavel|string == u['id']|string %}selected{% endif %}>
+          {{ u['full_name'] or u['username'] }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    {% else %}
+    <label>Responsável
+      <input readonly value="{{ defaults.responsavel_nome }}">
+    </label>
+    {% endif %}
+    {# OS FILTROS DA LISTA — 13/10/2026, «também quero esses filtros e ordenar
+       na produtividade». O período vale para a lista; o painel é o do dia. #}
+    <label>Categoria
+      <select name="categoria"><option value="">todas</option>{% for c in categorias %}<option {% if lista.categoria == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+    </label>
+    <label>Prioridade
+      <select name="prioridade"><option value="">todas</option>{% for p in prioridades %}<option {% if lista.prioridade == p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select>
+    </label>
+    <label>Situação
+      <select name="status"><option value="">todas</option>{% for s in status_list %}<option {% if lista.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    </label>
+    <label>Procurar <input name="q" value="{{ lista.q }}" placeholder="tarefa ou observação"></label>
+    <label>Lista de <input type="date" name="data_de" value="{{ lista.data_de }}"></label>
+    <label>Lista até <input type="date" name="data_ate" value="{{ lista.data_ate }}"></label>
+    {{ seletor(ORDENS, ordem_atual, lista.inverter) }}
+    <p class="span2 small muted" style="margin:0">Com «Lista de/até» preenchido, a lista mostra o período inteiro; sem ele, só o dia escolhido. O painel é sempre o do dia.</p>
+    <div class="span2 actions">
+      <button type="submit" class="button secondary">Atualizar painel e lista</button>
+      <a class="button secondary" href="{{ url_for('produtividade_lista', data=filtro_data, responsavel=filtro_responsavel) }}">Limpar filtros</a>
+    </div>
+  </form>
+  <section class="cards" style="padding:0 14px 14px">
+    <div class="card stat"><span>Tarefas registradas</span><strong>{{ painel.tarefas_registradas }}</strong></div>
+    <div class="card stat"><span>Concluídas</span><strong>{{ painel.tarefas_concluidas }}</strong></div>
+    <div class="card stat"><span>Taxa conclusão</span><strong>{{ painel.taxa_conclusao_pct }}%</strong></div>
+    <div class="card stat"><span>Tempo produtivo</span><strong>{{ painel.tempo_produtivo_h }} h</strong></div>
+    <div class="card stat"><span>Uso capacidade (8 h)</span><strong>{{ painel.uso_capacidade_pct }}%</strong></div>
+    <div class="card stat"><span>Eficiência vs planejado</span><strong>{% if painel.eficiencia_media_pct is not none %}{{ painel.eficiencia_media_pct }}%{% else %}—{% endif %}</strong></div>
+    <div class="card stat"><span>Tempo médio / tarefa</span><strong>{% if painel.tempo_medio_min is not none %}{{ painel.tempo_medio_min }} min{% else %}—{% endif %}</strong></div>
+    <div class="card stat"><span>Concluídas / hora</span><strong>{% if painel.concluidas_por_hora is not none %}{{ painel.concluidas_por_hora }}{% else %}—{% endif %}</strong></div>
+  </section>
+  <div class="grid2" style="padding:0 14px 14px">
+    <div>
+      <h3 class="small">Por categoria</h3>
+      <ul class="small">
+        {% for cat, info in painel.por_categoria.items() %}
+        <li>{{ cat }}: {{ info.tarefas }} tarefa(s), {{ info.concluidas }} concluída(s), {{ (info.tempo_min / 60)|round(2) }} h{% if info.eficiencia_media_pct is not none %}, efic. {{ info.eficiencia_media_pct }}%{% endif %}</li>
+        {% else %}
+        <li class="muted">Nenhuma tarefa nesta data.</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div>
+      <h3 class="small">Por status</h3>
+      <ul class="small">
+        {% for st, qtd in painel.por_status.items() %}
+        <li>{{ st }}: {{ qtd }}</li>
+        {% else %}
+        <li class="muted">—</li>
+        {% endfor %}
+      </ul>
+      <p class="small muted">Semana {{ painel.resumo_semana.inicio }} a {{ painel.resumo_semana.fim }}:
+        {{ painel.resumo_semana.tarefas }} tarefa(s),
+        {{ painel.resumo_semana.concluidas }} concluída(s),
+        {{ (painel.resumo_semana.tempo_produtivo_min / 60)|round(2) }} h produtivas.</p>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Novo registro diário</span></div>
+  <form method="post" class="grid2" style="padding:14px" id="form-produtividade">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="filtro_data" value="{{ filtro_data }}">
+    <input type="hidden" name="filtro_responsavel" value="{{ filtro_responsavel }}">
+    <input type="hidden" name="data_registro" value="{{ defaults.data_registro }}">
+    {% if user_role in ('ADMIN', 'MANAGER') %}
+    <label class="span2">Responsável
+      <select name="responsavel_user_id" id="sel-responsavel" required>
+        {% for u in escreventes %}
+        <option value="{{ u['id'] }}"
+                data-nome="{{ (u['full_name'] or u['username'])|e }}"
+                {% if u['id'] == defaults.responsavel_user_id %}selected{% endif %}>
+          {{ u['full_name'] or u['username'] }} ({{ u['username'] }})
+        </option>
+        {% endfor %}
+      </select>
+      <input type="hidden" name="responsavel_nome" id="responsavel_nome" value="{{ defaults.responsavel_nome|e }}">
+    </label>
+    {% else %}
+    <p class="span2 muted small">Responsável: <strong>{{ defaults.responsavel_nome }}</strong> (automático) · Data: {{ defaults.data_registro }}</p>
+    {% endif %}
+    <label>Categoria
+      <select name="categoria" required id="prod-categoria-principal">
+        {% for c in categorias %}
+        <option value="{{ c }}" {% if c == defaults.get('categoria', categorias[0] if categorias else '') %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="span2 small muted">Atalho: digite 1, 2 ou 3 para escolher a categoria.</p>
+    <label class="span2">Tarefa
+      <input name="tarefa" required maxlength="300" list="lista-tarefas-prod"
+             placeholder="Ex.: CLIENTE RCPN, IMPRESSÃO SELO, MALOTE…">
+    </label>
+    <datalist id="lista-tarefas-prod">
+      {% for t in tarefas_recentes %}
+      <option value="{{ t.tarefa }}">{{ t.categoria }}</option>
+      {% endfor %}
+    </datalist>
+    <label>Prioridade
+      <select name="prioridade" required>
+        {% for p in prioridades %}
+        <option value="{{ p }}" {% if p == defaults.prioridade %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Status
+      <select name="status" required>
+        {% for s in status_list %}
+        <option value="{{ s }}" {% if s == defaults.status %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Hora início <input type="time" name="hora_inicio" data-prod-hora-ini></label>
+    <label>Hora fim <input type="time" name="hora_fim" data-prod-hora-fim></label>
+    <label>Pausas (min) <input type="number" name="pausas_min" value="0" min="0" step="1"></label>
+    <label>Tempo planejado (min) <input type="number" name="tempo_planejado_min" min="0" max="1440" step="1" placeholder="opcional" title="0 a 1440 minutos"></label>
+    <label class="span2">Observações <input name="observacoes" maxlength="500"></label>
+    <div class="span2 actions">
+      <button type="submit" class="button">Registrar</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>{% if periodo %}Registros de {{ lista.data_de or 'o início' }} a {{ lista.data_ate or 'hoje' }}{% else %}Registro diário — {{ filtro_data }}{% endif %} ({{ registros|length }})</span></div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          {% set oa, inv, ep = ordem_atual, lista.inverter, 'produtividade_lista' %}
+          <th>{{ cabecalho('Data', 'DATA', oa, inv, ep) }}</th>
+          <th>{{ cabecalho('Resp.', 'ESCREVENTE', oa, inv, ep) }}</th>
+          <th>{{ cabecalho('Categoria', 'CATEGORIA', oa, inv, ep) }}</th>
+          <th>{{ cabecalho('Tarefa', 'TAREFA', oa, inv, ep) }}</th>
+          <th>{{ cabecalho('Prior.', 'PRIORIDADE', oa, inv, ep) }}</th>
+          <th>{{ cabecalho('Status', 'STATUS', oa, inv, ep) }}</th>
+          <th>{{ cabecalho('Início', 'INICIO', oa, inv, ep) }}</th>
+          <th>Fim</th>
+          <th>Pausas</th>
+          <th>{{ cabecalho('Líquido', 'LIQUIDO', oa, inv, ep) }}</th>
+          <th>{{ cabecalho('Plan.', 'PLANEJADO', oa, inv, ep) }}</th>
+          <th>{{ cabecalho('Desvio', 'DESVIO', oa, inv, ep) }}</th>
+          <th>{{ cabecalho('Efic.%', 'EFICIENCIA', oa, inv, ep) }}</th>
+          <th>Sem.</th>
+          <th>Obs.</th>
+          {% if user_role in ('ADMIN', 'MANAGER') %}<th></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in registros %}
+        <tr>
+          <td>{{ fmt_date(r.data_registro) }}</td>
+          <td>{{ r.responsavel_nome }}</td>
+          <td>{{ r.categoria }}</td>
+          <td>{{ r.tarefa }}</td>
+          <td>{{ r.prioridade }}</td>
+          <td>{{ r.status }}</td>
+          <td>{{ r.hora_inicio or '—' }}</td>
+          <td>{{ r.hora_fim or '—' }}</td>
+          <td>{{ r.pausas_min }}</td>
+          <td>{% if r.tempo_liquido_min is not none %}{{ r.tempo_liquido_hhmm or r.tempo_liquido_min }}{% else %}—{% endif %}</td>
+          <td>{% if r.tempo_planejado_min is not none %}{{ r.tempo_planejado_min|int }}{% else %}—{% endif %}</td>
+          <td>{% if r.desvio_min is not none %}{{ r.desvio_min|round(1) }}{% else %}—{% endif %}</td>
+          <td>{% if r.eficiencia_pct is not none %}{{ r.eficiencia_pct }}{% else %}—{% endif %}</td>
+          <td>{% if r.semana is not none %}{{ r.semana }}{% else %}—{% endif %}</td>
+          <td class="small muted">{{ r.observacoes or '—' }}</td>
+          {% if user_role in ('ADMIN', 'MANAGER') %}
+          <td>
+            <form method="post" style="display:inline" onsubmit="return confirm('Remover este registro?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="acao" value="excluir">
+              <input type="hidden" name="registro_id" value="{{ r.id }}">
+              <input type="hidden" name="filtro_data" value="{{ filtro_data }}">
+              <input type="hidden" name="filtro_responsavel" value="{{ filtro_responsavel }}">
+              <button type="submit" class="small danger">Excluir</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{% if user_role in ('ADMIN', 'MANAGER') %}16{% else %}15{% endif %}" class="muted">Nenhum registro com esses filtros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if user_role in ('ADMIN', 'MANAGER') %}
+<script>
+(function () {
+  var sel = document.getElementById('sel-responsavel');
+  var hid = document.getElementById('responsavel_nome');
+  if (!sel || !hid) return;
+  function sync() {
+    var opt = sel.options[sel.selectedIndex];
+    hid.value = opt ? (opt.getAttribute('data-nome') || opt.textContent || '') : '';
+  }
+  sel.addEventListener('change', sync);
+  sync();
+})();
+</script>
+{% endif %}
+
+<script>
+(function(){
+  var sel=document.getElementById('prod-categoria-principal');
+  if(!sel) return;
+  document.addEventListener('keydown', function(ev){
+    if(ev.target && (ev.target.tagName==='INPUT'||ev.target.tagName==='TEXTAREA'||ev.target.tagName==='SELECT')) return;
+    var k=ev.key;
+    if(k==='1'||k==='2'||k==='3'){
+      var want=k+' -';
+      for(var i=0;i<sel.options.length;i++){
+        if((sel.options[i].value||'').indexOf(want)===0){ sel.selectedIndex=i; break; }
+      }
+    }
+  });
+})();
+</script>
+
+
+<script>
+(function(){
+  function parseHM(v){
+    if(!v) return null;
+    var p = String(v).split(":");
+    if(p.length < 2) return null;
+    var h = parseInt(p[0],10), m = parseInt(p[1],10);
+    if(isNaN(h)||isNaN(m)) return null;
+    return h*60+m;
+  }
+  function validarForm(form){
+    var ini = form.querySelector("[name=hora_inicio]");
+    var fim = form.querySelector("[name=hora_fim]");
+    var plan = form.querySelector("[name=tempo_planejado_min]");
+    var a = ini ? parseHM(ini.value) : null;
+    var b = fim ? parseHM(fim.value) : null;
+    if(a != null && b != null && b < a){
+      alert("Hora início deve ser anterior à hora fim (no mesmo dia).");
+      return false;
+    }
+    if(a != null && b != null && (b - a) > 1440){
+      alert("Intervalo início–fim não pode passar de 1440 minutos.");
+      return false;
+    }
+    if(plan && plan.value !== "" && plan.value != null){
+      var n = parseInt(plan.value, 10);
+      if(isNaN(n) || n < 0 || n > 1440){
+        alert("Tempo planejado deve ser entre 0 e 1440 minutos.");
+        return false;
+      }
+    }
+    return true;
+  }
+  var form = document.getElementById("form-produtividade");
+  if(form){
+    form.setAttribute("data-prod-validar-horas", "1");
+    form.addEventListener("submit", function(ev){
+      if(!validarForm(form)) ev.preventDefault();
+    });
+  }
+})();
+</script>
+
+{% endblock %}

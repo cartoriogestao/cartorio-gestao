@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Modelos dos documentos{% endblock %}
+{% block content %}
+{# O FILTRO POR ATRIBUICAO — relato #32.
+
+   **E ele diz quando esta filtrando.** Uma lista filtrada que parece a lista
+   inteira faz quem a le concluir que a casa tem menos modelos do que tem — o
+   mesmo defeito da lista que encolhe em silencio. #}
+<div class="card">
+  <p class="small">
+    <strong>Mostrando:</strong>
+    <a class="button {% if not atribuicao %}primary{% else %}secondary{% endif %}"
+       href="{{ url_for('modelos') }}">todas as atribuições</a>
+    {% for a in atribuicoes %}
+      <a class="button {% if atribuicao == a %}primary{% else %}secondary{% endif %}"
+         href="{{ url_for('modelos', atribuicao=a) }}">{{ a }}</a>
+    {% endfor %}
+  </p>
+  {% if atribuicao %}
+  <p class="small muted">
+    Esta lista está <strong>filtrada</strong> por «{{ atribuicao }}» — a casa
+    tem modelos de outras atribuições, e eles estão em <em>todas as
+    atribuições</em>.
+  </p>
+  {% endif %}
+</div>
+
+<h1>Modelos dos documentos</h1>
+
+<p class="muted">
+  Aqui está <strong>todo papel que esta casa emite</strong>, das seis
+  atribuições. Cada um sai de um modelo escrito no sistema — o
+  <em>padrão</em> —, e o que você gravar aqui passa a valer no lugar dele.
+</p>
+
+{# DUAS TELAS SE CHAMAM «MODELOS», e o relato #28 foi exatamente «onde eu mudo
+   o cabecalho?». Sem esta linha a pergunta volta com duas respostas certas e
+   nenhuma pista de qual e qual. #}
+<p class="small muted">
+  <strong>Não é aqui que se escreve documento avulso.</strong> Comunicação,
+  requerimento e declaração sobre um assento do Registro Civil ficam em
+  <a href="{{ url_for('rcpn_modelos') }}">Documentos avulsos (modelos do E-Ofício)</a> — lá você <em>cria</em> modelos; aqui você <em>ajusta</em> os
+  papéis que o sistema já emite.
+</p>
+
+<div class="card">
+  <p><strong>O padrão não se perde.</strong> Ele mora no programa, e não no
+  banco: por isso «voltar ao padrão» é apagar o seu ajuste, e o papel volta a
+  sair do jeito de fábrica. Não há como uma edição deixar a casa sem modelo.</p>
+  <p class="small muted">
+    {% if quantos_ajustados %}
+      {{ quantos_ajustados }} modelo{{ 's' if quantos_ajustados > 1 }} com
+      ajuste desta casa; os demais saem do padrão do sistema.
+    {% else %}
+      Nenhum modelo foi ajustado ainda — todos saem do padrão do sistema.
+    {% endif %}
+  </p>
+</div>
+
+{% for g in grupos %}
+<h2>{{ g.atribuicao }}</h2>
+<table>
+  <thead><tr><th>Papel</th><th>O que é</th><th>De onde sai hoje</th><th></th></tr></thead>
+  <tbody>
+  {% for m in g.itens %}
+    <tr>
+      <td><strong>{{ m.nome }}</strong></td>
+      <td class="small muted">{{ m.explica }}</td>
+      <td>
+        {% if m.ajustado %}<span class="badge">ajustado por esta casa</span>
+        {% else %}<span class="small muted">padrão do sistema</span>{% endif %}
+      </td>
+      <td><a href="{{ url_for('modelos', editar=m.chave, atribuicao=atribuicao) if atribuicao else url_for('modelos', editar=m.chave) }}">ver e editar</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+
+{# OS PAPÉIS QUE SÃO FORMULÁRIO, e não texto — pedido do oficial em
+   10/09/2026: «atualizar esses modelos no modulo de modelos, para poder
+   editar por la».
+
+   Eles ficam num bloco próprio porque **o que se faz com eles é outra coisa**:
+   não há caixa de texto para editar um `.odt` com tabelas e larguras em
+   centímetros. Baixa, ajusta no LibreOffice, envia de volta. #}
+{% if moldes %}
+<h2>Papéis das certidões do Registro Civil</h2>
+<div class="card">
+  <p>
+    Estes três são <strong>formulários</strong>, e não texto: são os do
+    Provimento CNJ 182/2024, com as caixas, as colunas e as duas caixas de
+    selo. <strong>Baixe, ajuste no LibreOffice e envie de volta.</strong>
+  </p>
+  <p class="small muted">
+    <strong>Por que passar por aqui, e não mexer no arquivo direto:</strong> a
+    atualização do sistema copia a pasta <code>modelos</code> por cima, e um
+    ajuste feito só no arquivo instalado <em>seria apagado na próxima
+    atualização</em>. O que você enviar aqui fica no banco, e a atualização
+    não o alcança.
+  </p>
+</div>
+<table>
+  <thead><tr><th>Papel</th><th>O que é</th><th>De onde sai hoje</th><th></th></tr></thead>
+  <tbody>
+  {% for m in moldes %}
+    <tr>
+      <td><strong>{{ m.nome }}</strong>
+        {% if m.falta_no_disco %}
+        <br><span class="small muted">o arquivo do pacote não está nesta
+        instalação</span>
+        {% endif %}
+      </td>
+      <td class="small muted">{{ m.explica }}</td>
+      <td>
+        {% if m.ajustado %}
+          <span class="badge">ajustado por esta casa</span>
+          <br><span class="small muted">
+            {{ m.nome_arquivo }} · {{ (m.tamanho / 1024) | round | int }} KB
+            {% if m.atualizado_em %}<br>em {{ m.atualizado_em[:10] }}
+            {% if m.atualizado_por %}por {{ m.atualizado_por }}{% endif %}{% endif %}
+          </span>
+        {% else %}
+          <span class="small muted">padrão do sistema<br>{{ m.nome_arquivo }} ·
+          {{ (m.tamanho / 1024) | round | int }} KB</span>
+        {% endif %}
+      </td>
+      <td>
+        <a class="button small"
+           href="{{ url_for('modelos_molde_baixar', chave=m.chave) }}"
+           >baixar o que vale hoje</a>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="4">
+        <form method="post" enctype="multipart/form-data"
+              action="{{ url_for('modelos_molde') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="chave" value="{{ m.chave }}">
+          <p class="small">
+            <label>Enviar o papel ajustado
+              <input type="file" name="arquivo" accept=".odt"
+                     required></label>
+            <button class="button" name="acao" value="enviar">Enviar</button>
+            {% if m.ajustado %}
+            <button class="button secondary" name="acao" value="restaurar"
+                    formnovalidate
+                    onclick="return confirm('Apagar o papel ajustado e voltar ao do pacote?')"
+              >Voltar ao papel do pacote</button>
+            {% endif %}
+          </p>
+          <p class="small muted">
+            Antes de gravar, o sistema confere o arquivo e <strong>recusa</strong>
+            se ele não for um <code>.odt</code>, se usar um claro que o sistema
+            não sabe preencher — ele sairia escrito na certidão — ou se estiver
+            sem a matrícula.
+          </p>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if editando %}
+<link rel="stylesheet" href="{{ url_for('static', filename='modelos-editor.css') }}">
+<hr id="modelo-em-edicao">
+<section class="modelos-trabalho" data-modelo-editor
+         data-previa-url="{{ url_for('modelos_previa') }}">
+  <div class="modelo-identidade">
+    <div>
+      <p class="modelos-sobretitulo">DOCUMENTO EM EDIÇÃO</p>
+      <h2>{{ editando.nome }} <span class="small muted">— {{ editando.atribuicao }}</span></h2>
+      <p class="small muted">{{ editando.explica }}</p>
+    </div>
+    <span class="badge">{{ editando.formato }}</span>
+  </div>
+
+  {% if editando.erro %}
+  <div class="alerta danger" style="margin:0 18px 12px">
+    <strong>Este modelo está com um erro e o papel não vai sair:</strong>
+    {{ editando.erro }}
+  </div>
+  {% endif %}
+
+  {% if not editando.ajustado %}
+  <p class="small muted" style="margin:0 18px 12px">
+    Este é o <strong>padrão do sistema</strong>, como ele está escrito hoje
+    ({{ editando.onde }}). Gravar aqui cria o ajuste desta casa.
+  </p>
+  {% endif %}
+
+  <div class="modelos-divisao">
+    <div class="modelos-edicao">
+      {# Metadados que o JS da prévia lê — o POST de gravar fica no form abaixo. #}
+      <form class="modelo-parte" data-parte-painel="CORPO" hidden aria-hidden="true">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="ato" value="{{ editando.chave }}">
+      </form>
+      <p class="small muted" style="margin:0 0 10px">
+        {% if editando.formato == "CHAVES" %}
+          Os claros deste modelo se escrevem com <strong>uma chave</strong> —
+          <code>{nome}</code> —, e não com duas.
+        {% else %}
+          Os claros deste modelo se escrevem com <strong>duas chaves</strong> —
+          <code>{% raw %}{{ a.numero }}{% endraw %}</code> —, e ele aceita
+          <code>{% raw %}{% if %}{% endraw %}</code> e repetição.
+        {% endif %}
+      </p>
+      <form method="post" action="{{ url_for('modelos') }}" class="modelo-parte"
+            data-parte-painel="CORPO">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="chave" value="{{ editando.chave }}">
+        <input type="hidden" name="ato" value="{{ editando.chave }}">
+        {% if atribuicao %}<input type="hidden" name="atribuicao" value="{{ atribuicao }}">{% endif %}
+        <textarea name="corpo" data-modelo-parte="CORPO" spellcheck="true" rows="22"
+                  >{{ editando.corpo }}</textarea>
+        <p class="small muted">
+          O que está entre <code>{{ '{{' }}</code> e <code>{{ '}}' }}</code> é
+          preenchido pelo sistema na hora de emitir.
+        </p>
+        <div class="modelo-acoes">
+          <span class="modelo-estado" data-modelo-estado>Prévia atualizada</span>
+          <button name="acao" value="salvar" class="primary" type="submit">Gravar o ajuste</button>
+          {% if editando.ajustado %}
+          <button name="acao" value="restaurar" class="secondary" type="submit"
+                  onclick="return confirm('Apagar o ajuste desta casa e voltar ao padrão do sistema?')"
+            >Voltar ao padrão do sistema</button>
+          {% endif %}
+          <a class="button secondary"
+             href="{{ url_for('modelos', atribuicao=atribuicao) if atribuicao else url_for('modelos') }}">Fechar</a>
+        </div>
+        <p class="small muted">
+          À direita, a <strong>visualização real</strong> usa o mesmo motor da
+          emissão, com <strong>dados de ensaio</strong> — conferência da
+          <em>forma</em>, não do conteúdo de um ato específico. Ao gravar, o
+          sistema repete essa conferência e recusa modelo quebrado.
+        </p>
+      </form>
+    </div>
+    <div class="modelos-previa-coluna">
+      <div class="modelos-previa-topo">
+        <strong>Visualização real</strong>
+        <span>Caso hipotético · atualização automática</span>
+      </div>
+      <div class="modelo-erro" data-modelo-erro hidden></div>
+      <iframe title="Prévia visual de {{ editando.nome }}" data-modelo-previa sandbox=""></iframe>
+    </div>
+  </div>
+</section>
+<script src="{{ url_for('static', filename='modelos-editor.js') }}"></script>
+<script>
+document.getElementById("modelo-em-edicao")?.scrollIntoView({behavior: "instant", block: "start"});
+</script>
+{% endif %}
+{% endblock %}

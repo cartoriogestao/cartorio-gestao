@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Anotações à margem pendentes</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
+  <a class="button" href="{{ url_for('notas_atos') }}">Atos de livro</a></div>
+
+<div class="notice">
+  A revogação lavrada num livro e a procuração intacta no outro são duas verdades no mesmo acervo.
+  Quem pede certidão da procuração recebe uma certidão que não diz que ela foi revogada — e a
+  certidão do ato notarial vale pelo que o livro diz. Esta lista é a pergunta que a correição faz:
+  <strong>toda revogação lavrada foi anotada na margem do ato que ela desfaz?</strong>
+</div>
+
+{% if not faltando %}
+<div class="notice ok" style="background:#e8f5e9">
+  Nenhuma pendência. Toda revogação, renúncia e substabelecimento lavrado já está anotado à margem
+  do ato anterior.
+</div>
+{% else %}
+<section class="panel">
+  <div class="panel-head"><span>{{ faltando|length }} ato(s) sem a anotação</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Termo</th><th>Tipo</th><th>Data</th><th>Livro/folha</th><th>Partes</th>
+      <th>Por que falta</th></tr></thead>
+    <tbody>
+    {% for a in faltando %}
+      <tr>
+        <td><a href="{{ url_for('notas_ato', ato_id=a.id) }}"><strong>{{ a.termo or a.numero_ordem or a.id }}</strong></a></td>
+        <td class="small">{{ TIPOS_ATO.get(a.tipo, a.tipo) }}</td>
+        <td class="small">{{ fmt_date(a.data) }}</td>
+        <td class="small">{{ a.livro or '—' }}/{{ a.folha or '—' }}</td>
+        <td class="small">{{ (a.nomes or a.interessado or '—')[:48] }}</td>
+        <td class="small"><span class="badge media">{{ a.motivo }}</span>
+          {% if a.anterior_livro %}<br><span class="muted">anterior: livro {{ a.anterior_livro }},
+            folha {{ a.anterior_folha or '—' }}{% if a.anterior_cartorio %} — {{ a.anterior_cartorio }}{% endif %}</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <div class="small muted" style="padding:8px 14px">
+    Ato anterior de <strong>outra serventia</strong> não se anota por aqui: a anotação é feita
+    naquele cartório, por ofício. O que se faz aqui é guardar o ofício e registrar a comunicação.
+  </div>
+</section>
+{% endif %}
+{% endblock %}

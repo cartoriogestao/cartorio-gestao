@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{% block title %}Abrir processo{% endblock %}
+{% block content %}
+<h1>Abrir processo</h1>
+
+{{ salvar_rascunho('rcpn_retificacao_nova', url_for('rcpn_retificacao_nova'),
+                   'Retificação do Registro Civil', csrf_token,
+                   nome_em='requerente_nome') }}
+
+<form method="post" id="form-do-ato">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <div class="card">
+    <h2 style="margin-top:0">Qual dos três</h2>
+    {% for x in norma.INSTITUTOS %}
+      <p>
+        <label>
+          <input type="radio" name="instituto" value="{{ x.chave }}"
+                 {% if loop.first %}checked{% endif %}>
+          <strong>{{ x.nome }}</strong> — {{ x.o_que }}
+          <span class="small muted">({{ x.artigo }})</span>
+        </label><br>
+        <span class="small muted" style="margin-left:22px">Requisito:
+          {{ x.requisito|forte }}</span>
+      </p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Como o pedido chegou</h2>
+    <p class="small muted">Art. 348, § 1º — e as três valem.</p>
+    {% for f in norma.FORMAS_DO_PEDIDO %}
+      <p>
+        <label>
+          <input type="radio" name="forma" value="{{ f.chave }}"
+                 {% if loop.first %}checked{% endif %}>
+          {{ f.nome }} <span class="small muted">(inciso {{ f.inciso }})</span>
+        </label>
+        {% if f.exige %}
+          <br><span class="small danger" style="margin-left:22px">{{ f.exige|forte }}</span>
+        {% endif %}
+      </p>
+    {% endfor %}
+    <p><label>Se foi verbal, o termo — com a assinatura do declarante<br>
+      <textarea name="termo_verbal" rows="4" cols="72"
+        placeholder="Compareceu … e declarou que …"></textarea></label></p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Quem pede, e o quê</h2>
+    <p>
+      <label>Nome do requerente
+        <input type="text" name="requerente_nome" size="40" required></label>
+      <label>Documento
+        <input type="text" name="requerente_documento" size="20"></label>
+    </p>
+    <p><label>Quem assinou a petição
+      <select name="assinado_por">
+        {% for q in norma.QUEM_ASSINA %}
+          <option value="{{ q }}">{{ q }}</option>
+        {% endfor %}
+      </select></label>
+      <span class="small muted">art. 352 — recusar a procuração no balcão seria
+        negar o que a norma permite</span></p>
+    <p><label>O que se pede<br>
+      <textarea name="o_que_se_pede" rows="3" cols="72" required
+        placeholder="corrigir o nome da genitora, que está grafado …"></textarea>
+    </label></p>
+    <p><label>De que assento se trata
+      <input type="text" name="assento_descricao" size="52"
+             placeholder="Livro A-24, fl. 166, termo 19552"></label><br>
+      <span class="small muted">Só no <strong>suprimento</strong> o assento ainda
+        não existe — é o que se supre.</span></p>
+  </div>
+
+  <p><button class="button">Abrir o processo</button></p>
+</form>
+
+<div class="card">
+  <p class="small muted">
+    Depois de aberto, o rito é: instruir (e <strong>é daí que os
+    {{ norma.PRAZO_DECISAO_DIAS_UTEIS }} dias úteis contam</strong>), registrar a
+    <strong>consulta obrigatória à CRC</strong>, e decidir de forma fundamentada.
+    A tela do processo diz, a cada momento, o que fazer agora.
+  </p>
+</div>
+{{ script_do_rascunho() }}
+{% endblock %}

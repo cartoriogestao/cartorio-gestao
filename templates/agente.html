@@ -1,0 +1,168 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Agente do sistema</h1>{% endblock %}
+{% block content %}
+
+{#
+  OS AVISOS VÊM ANTES DE TUDO, e não depois do formulário. O que se avisa aqui
+  é o que não pode surpreender depois: que a escrita está ligada, que o teto do
+  dia acabou, que o provedor escolhido não tem chave. Cada aviso é uma frase que
+  alguém leria depois e diria «eu não sabia» — a tela existe para ninguém
+  precisar dizer isso.
+#}
+{% for aviso in p.avisos %}
+<div class="notice" style="margin:0 0 12px"><strong>Atenção.</strong> {{ aviso }}</div>
+{% endfor %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('agente_configurar') }}">Configuração do agente</a>
+  <a class="button" href="{{ url_for('ajuda_problemas') }}">Problemas do sistema</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Pedir ao agente</span>
+    <small>
+      {{ p.config.provedor_padrao }} ·
+      escrita {% if p.config.escrita_ligada %}ligada{% else %}desligada{% endif %} ·
+      hoje: {{ p.do_dia.sessoes }}/{{ p.config.teto_de_sessoes }} sessões
+      ({{ p.do_dia.entrada + p.do_dia.saida }} tokens)
+    </small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    Ele lê o código desta casa, o banco, a documentação e a lista de problemas,
+    e responde o que achou. <strong>O que chega até ele já passou pela barreira
+    de privacidade</strong>: dados de pessoa são trocados por marcadores antes
+    de sair daqui. Cada rodada é limitada por um teto de turnos, e o que ele
+    gastou aparece na sessão.
+  </small></p>
+  <form method="post" action="{{ url_for('agente_pedir') }}" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="display:block">O que você quer que ele apure
+      <textarea name="pedido" rows="4" required style="width:100%"
+        placeholder="Ex.: confira se há problema anotado sobre o selo do protesto, veja o que a conferência mede sobre isso e diga o que fazer."></textarea></label>
+    <div class="grid2" style="margin-top:10px">
+      <label>Provedor
+        <select name="provedor">
+          {% for pr in p.provedores %}
+          <option value="{{ pr.id }}" {% if pr.id == p.config.provedor_padrao %}selected{% endif %}>
+            {{ pr.nome }}{% if not pr.tem_chave %} — sem chave informada{% endif %}
+          </option>
+          {% endfor %}
+        </select></label>
+      <label>Modelo <small>(vazio = o padrão do provedor)</small>
+        <input name="modelo" value="{{ p.config.modelo_padrao }}"></label>
+    </div>
+    <div class="actions"><button class="button primary">Pedir</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O que ele pode fazer</span>
+    <small>{{ catalogo_leitura|length }} de leitura · {{ catalogo_escrita|length }} de escrita</small>
+  </div>
+  {#
+    AS DE ESCRITA APARECEM MESMO DESLIGADAS, com o aviso ao lado. Escondê-las
+    faria o oficial não saber que existe o que ligar — e o que ele não vê, ele
+    não decide.
+  #}
+  <table class="table">
+    <thead><tr><th style="width:30%">Ferramenta</th><th>O que ela faz</th><th style="width:12%">Classe</th></tr></thead>
+    <tbody>
+      {% for f in catalogo_leitura %}
+      <tr><td><code>{{ f.nome }}</code></td><td><small>{{ f.descricao }}</small></td>
+          <td><span class="badge ok">leitura</span></td></tr>
+      {% endfor %}
+      {% for f in catalogo_escrita %}
+      <tr><td><code>{{ f.nome }}</code></td><td><small>{{ f.descricao }}</small></td>
+          <td>{% if p.config.escrita_ligada %}<span class="badge media">escrita</span>
+              {% else %}<span class="badge alta">desligada</span>{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p style="padding:0 14px 14px"><small>
+    <strong>Não há ferramenta que toque em ato</strong> — nada escreve em livro,
+    matrícula, escritura, título, selo, cobrança ou caixa. Não é esquecimento: é
+    a regra da casa. O que ele resolve é o pequeno e objetivo: anotar o que
+    apurou num problema, registrar um achado da conferência, abrir ou fechar um
+    módulo. E toda mudança que ele faz volta com um clique.
+  </small></p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Últimas sessões</span>
+    <small>{{ p.sessoes | length }}</small>
+  </div>
+  <table class="table">
+    <thead><tr><th style="width:6%">#</th><th>O que se pediu</th><th style="width:14%">Estado</th>
+      <th style="width:12%">Turnos / tokens</th><th style="width:16%">Quando</th></tr></thead>
+    <tbody>
+      {% for s in p.sessoes %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td><a href="{{ url_for('agente_sessao', sessao_id=s.id) }}">{{ s.titulo or '(sem título)' }}</a>
+          <br><small class="muted">{{ s.provedor }} · {{ s.modelo or 'modelo padrão' }}
+          {% if s.criada_por %} · {{ s.criada_por }}{% endif %}</small></td>
+        <td>
+          {% if s.estado == 'CONCLUIDA' %}<span class="badge ok">terminou</span>
+          {% elif s.estado == 'LIMITE' %}<span class="badge media">parou no teto</span>
+          {% elif s.estado == 'ERRO' %}<span class="badge critica">falhou</span>
+          {% elif s.estado == 'INTERROMPIDA' %}<span class="badge media">interrompida</span>
+          {% elif s.estado == 'RECUSADA' %}<span class="badge alta">recusada</span>
+          {% else %}<span class="badge">em curso</span>{% endif %}
+          {% if s.erro %}<br><small class="muted">{{ s.erro[:120] }}</small>{% endif %}
+        </td>
+        <td>{{ s.turnos }}<br><small class="muted">{{ s.tokens_de_entrada + s.tokens_de_saida }}</small></td>
+        <td><small>{{ (s.criada_em or '')[:16] | replace('T', ' ') }}</small></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">Nenhuma sessão ainda. O agente nunca foi usado nesta instalação.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O que ele mudou, e o que dá para voltar</span>
+    <small>{{ p.mudancas | length }}</small>
+  </div>
+  <table class="table">
+    <thead><tr><th style="width:6%">#</th><th style="width:22%">Ferramenta</th><th>Alvo</th>
+      <th style="width:20%">Antes ? depois</th><th style="width:14%">Situação</th><th></th></tr></thead>
+    <tbody>
+      {% for m in p.mudancas %}
+      <tr>
+        <td>{{ m.id }}</td>
+        <td><code>{{ m.ferramenta }}</code><br>
+            <small class="muted">sessão <a href="{{ url_for('agente_sessao', sessao_id=m.sessao_id) }}">#{{ m.sessao_id }}</a></small></td>
+        <td><small>{{ m.alvo or '—' }}</small></td>
+        <td><small>{{ m.antes or '(vazio)' }} ? {{ m.depois }}</small></td>
+        <td>
+          {% if m.revertida_em %}<span class="badge">desfeita</span>
+            <br><small class="muted">{{ (m.revertida_em or '')[:16] | replace('T', ' ') }}
+            {% if m.revertida_por %} · {{ m.revertida_por }}{% endif %}</small>
+          {% elif not m.reversivel %}<span class="badge media">só acréscimo</span>
+            <br><small class="muted">acrescentou informação: não há o que voltar</small>
+          {% else %}<span class="badge alta">de pé</span>{% endif %}
+        </td>
+        <td>
+          {% if m.reversivel and not m.revertida_em %}
+          <form method="post" style="display:inline"
+                action="{{ url_for('agente_desfazer', mudanca_id=m.id) }}"
+                onsubmit="return confirm('Voltar «{{ m.alvo }}» para «{{ m.antes }}»?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button small">desfazer</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">Nada foi mudado por agente nesta instalação.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% endblock %}

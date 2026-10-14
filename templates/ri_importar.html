@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Carregar acervo do E-Ofício</h1>{% endblock %}
+{% block content %}
+{% from "_manual_de_importacao.html" import manual_para_baixar %}
+{{ manual_para_baixar() }}
+<div class="actions"><a class="button" href="{{ url_for('ri_importacoes') }}">&larr; Importações</a></div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ atual.matriculas }}</strong><small>matrículas do E-Ofício</small></div>
+  <div class="stat"><strong>{{ atual.atos }}</strong><small>atos importados</small></div>
+  <div class="stat"><strong>{{ atual.protocolos }}</strong><small>protocolos</small></div>
+  <div class="stat"><strong>{{ atual.cnib }}</strong><small>ordens CNIB</small></div>
+</section>
+
+{% if atual.manuais or atual.atos_manuais %}
+<div class="notice ok">
+  <strong>{{ atual.manuais }} matrícula(s) e {{ atual.atos_manuais }} ato(s) foram lavrados neste sistema.</strong>
+  Substituir a carga do E-Ofício <strong>não</strong> mexe neles — a limpeza atinge apenas
+  o que veio importado.
+</div>
+{% endif %}
+
+<div class="notice">
+  A carga roda dentro do servidor, com o mesmo travamento de banco que o resto do sistema,
+  e faz uma <strong>cópia de segurança do banco antes de começar</strong>, gravada em
+  <code>C:\ProgramData\CartorioGestao\backups</code>. Se algo falhar no meio, nada é gravado:
+  a importação inteira acontece numa única transação.
+</div>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2">Pasta com os arquivos exportados
+      <input name="pasta" id="pasta" value="{{ candidatas[0].caminho if candidatas else '' }}"
+             required placeholder="C:\Users\<usuario>\Downloads\EXPORT_RI_EOFICIO">
+      <small class="muted">Deve conter matriculas.jsonl, atos.jsonl, partes.jsonl, ortoga.jsonl,
+        protocolos.jsonl, cnib_registro.jsonl e cnib_individuo.jsonl</small>
+    </label>
+
+    {% if candidatas %}
+    <div class="span2">
+      <strong>Exportações encontradas nesta máquina</strong>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Pasta</th><th>Arquivos</th><th>Exportada em</th><th></th></tr></thead>
+        <tbody>{% for c in candidatas %}
+          <tr><td class="small">{{ c.caminho }}</td><td>{{ c.arquivos }}</td><td>{{ c.quando }}</td>
+              <td><button type="button" class="link-button"
+                    onclick="document.getElementById('pasta').value={{ c.caminho|tojson }}">usar esta</button></td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    </div>
+    {% else %}
+    <div class="span2 notice warning">
+      Não encontrei nenhuma pasta de exportação nos perfis desta máquina.
+      Informe o caminho completo à mão — por exemplo
+      <code>C:\Users\<usuario>\Downloads\EXPORT_RI_EOFICIO</code>.
+    </div>
+    {% endif %}
+    {% if atual.matriculas or atual.protocolos or atual.cnib %}
+    <label class="check span2"><input type="checkbox" name="substituir" value="1" required>
+      <strong>Substituir a carga anterior do E-Ofício</strong> — apaga o que foi importado
+      e refaz do zero, preservando o que foi lavrado aqui</label>
+    {% endif %}
+    <div class="span2"><button class="primary">Carregar acervo</button></div>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,162 @@
+{#
+  A certidão de protesto — buscar e emitir.
+
+  É o que o balcão mais pede, e por muito tempo não teve resposta: a carga do
+  acervo trazia os 1.366 títulos e nenhum devedor.
+
+  O GET NÃO EMITE NADA. Ele mostra o que a busca achou e qual certidão cabe;
+  emitir é o botão. Buscar e emitir na mesma ação faria sair certidão de quem
+  só quis conferir.
+#}
+{% extends 'base.html' %}
+{% from '_cobrar.html' import quadro %}
+{% block heading %}<h1>Certidão de protesto</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
+
+<section class="panel">
+  <div class="panel-head"><span>Procurar</span><small>por nome ou por documento</small></div>
+  <form method="get" class="grid2" style="padding:14px">
+    <label>Nome
+      <input name="nome" value="{{ nome }}" placeholder="JOSÉ DA SILVA">
+      <small>Acha sem acento e sem caixa: <em>josé</em> acha <em>JOSÉ</em>.</small></label>
+    <label>CPF ou CNPJ
+      <input name="documento" value="{{ documento }}" placeholder="047.855.123-88">
+      <small>Com ponto e traço ou sem — tanto faz.</small></label>
+    <label>Período de busca
+      <select name="anos">
+        {% for n in [5, 10, 20, 30] %}
+          <option value="{{ n }}" {% if anos == n %}selected{% endif %}>{{ n }} anos</option>
+        {% endfor %}
+      </select>
+      <small>As 44 negativas do acervo dizem <em>5 anos</em>.</small></label>
+    <div class="actions">
+      <button class="button">Procurar</button>
+      <a class="button" href="{{ url_for('protesto_certidoes') }}">Limpar</a>
+    </div>
+  </form>
+</section>
+
+{% if buscou %}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que a busca achou</span>
+    <small>a partir de {{ desde }}</small>
+  </div>
+
+  {% if not achados %}
+    <div class="notice" style="margin:14px">
+      <strong>Nenhum protesto</strong> contra {{ nome or documento }} no período.
+      A certidão que cabe é a <strong>NEGATIVA</strong>.
+      <br><br>
+      <small>Só entra título que <strong>chegou a protesto</strong>. Apontamento não é
+      protesto: título apontado e pago no tríduo nunca foi protestado, e certidão que o
+      mostrasse mentiria contra a pessoa.</small>
+    </div>
+  {% else %}
+    <div class="notice danger" style="margin:14px">
+      <strong>{{ achados | length }} protesto(s)</strong> encontrado(s). A certidão que
+      cabe é a <strong>{{ cabivel }}</strong>.
+    </div>
+    <table class="table">
+      <thead><tr><th>Título</th><th>Devedor</th><th>Valor</th><th>Protestado em</th>
+                 <th>Livro / folha</th><th>Situação</th></tr></thead>
+      <tbody>
+        {% for a in achados %}
+        <tr>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=a.titulo_id) }}">{{ a.numero_titulo }}</a>
+              <div><small>{{ a.especie }}</small></div></td>
+          <td>{{ a.devedor }}<div><small>{{ a.devedor_documento }}</small></div></td>
+          <td>R$ {{ a.valor }}</td>
+          <td>{{ a.data_protesto }}</td>
+          <td>{% if a.livro %}Livro {{ a.livro }}{% endif %}
+              {%- if a.folha %}, fl. {{ a.folha }}{% endif %}
+              {%- if not a.livro and not a.folha %}<small>não consta do acervo</small>{% endif %}</td>
+          <td>
+            {% if a.cancelado %}
+              <strong>CANCELADO</strong><div><small>{{ a.data_cancelamento }}</small></div>
+            {% else %}{{ a.situacao }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Emitir a certidão</span></div>
+  <form method="post" action="{{ url_for('protesto_certidao_emitir') }}"
+        class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="nome" value="{{ nome }}">
+    <input type="hidden" name="documento" value="{{ documento }}">
+    <input type="hidden" name="anos" value="{{ anos }}">
+
+    <label>Tipo
+      <select name="tipo">
+        {% for tp in tipos %}
+          <option value="{{ tp }}" {% if tp == cabivel %}selected{% endif %}>{{ tp }}</option>
+        {% endfor %}
+      </select>
+      <small>Vem escolhido o que cabe no que se achou. <strong>Negativa sobre quem tem
+        protesto é recusada</strong> — é ela que faz o banco emprestar para quem não
+        devia.</small></label>
+    <label>Requerente <small>(opcional)</small>
+      <input name="requerente" placeholder="deixe em branco para “a requerimento verbal”">
+      </label>
+    <label style="grid-column:1/-1">Finalidade <small>(opcional)</small>
+      <input name="finalidade" placeholder="crédito bancário · licitação"></label>
+
+    <label>Selo <small>(opcional)</small>
+      <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
+    {{ quadro(receita, caixa, protocolos) }}
+
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button">Emitir certidão</button>
+    </div>
+    <p style="grid-column:1/-1"><small>
+      A busca <strong>roda de novo</strong> ao emitir: entre procurar e emitir alguém
+      pode ter lavrado protesto, e certidão negativa sobre busca velha é certidão que
+      mente. O teor <strong>congela</strong> na emissão — protesto de amanhã não muda a
+      certidão de hoje.
+    </small></p>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Certidões emitidas</span>
+    <small>{{ emitidas | length }}</small>
+  </div>
+  <form method="get" class="grid2" style="padding:14px 14px 0">
+    <input type="hidden" name="nome" value="{{ nome }}">
+    <input type="hidden" name="documento" value="{{ documento }}">
+    <label>Procurar nas emitidas
+      <input name="q" value="{{ q }}" placeholder="nome, documento ou número"></label>
+    <div class="actions"><button class="button">Procurar</button></div>
+  </form>
+  {% if not emitidas %}
+    <p style="padding:14px"><small>Nenhuma certidão emitida ainda.</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Nº</th><th>Tipo</th><th>De quem</th><th>Protestos</th>
+               <th>Emitida em</th><th>Por quem</th></tr></thead>
+    <tbody>
+      {% for c in emitidas %}
+      <tr{% if c.cancelada %} style="opacity:.55"{% endif %}>
+        <td><a href="{{ url_for('protesto_certidao', certidao_id=c.id) }}">{{ c.numero }}/{{ c.ano }}</a></td>
+        <td>{{ c.tipo }}{% if c.cancelada %} <small>(cancelada)</small>{% endif %}</td>
+        <td>{{ c.nome }}<div><small>{{ c.documento or '—' }}</small></div></td>
+        <td>{{ c.achados }}</td>
+        <td><small>{{ c.emitida_em }}</small></td>
+        <td><small>{{ c.emitida_por or '—' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

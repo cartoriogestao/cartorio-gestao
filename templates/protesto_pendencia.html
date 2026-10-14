@@ -1,0 +1,272 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>{{ nome_da_especie }} — {{ p.codigo }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_pendencias',
+                                     especie=p.especie,
+                                     ambiente=p.ambiente) }}">Voltar à fila</a>
+  {% if p.titulo_id %}
+  <a class="button" href="{{ url_for('protesto_titulo',
+                                     titulo_id=p.titulo_id) }}">
+    Ficha do título {{ p.numero_titulo }}</a>
+  {% endif %}
+  {#
+    A ANUENCIA VEM ASSINADA COM e-CPF DA ICP-BRASIL, e e ela que prova que o
+    credor consentiu — o papel que fundamenta o cancelamento. Sem este botao o
+    oficial teria de ir ao site da Central buscá-lo.
+  #}
+  {% if p.especie == 'ANUENCIA' %}
+  <a class="button" href="{{ url_for('protesto_pendencia_arquivos',
+                                     pendencia_id=p.id) }}">
+    Baixar os arquivos assinados</a>
+  {% endif %}
+</div>
+
+{% if p.ambiente == 'HOMOLOGACAO' %}
+<div class="alert alert-warning">
+  <strong>HOMOLOGAÇÃO — dado de teste.</strong> Esta pendência não é de nenhum
+  protesto de verdade, e o que for enviado aqui não vale.
+</div>
+{% endif %}
+
+{% if not p.titulo_id %}
+<div class="alert alert-warning">
+  <strong>Esta pendência não casou com título nenhum desta casa.</strong> Pode
+  ser título que ainda não entrou (confira a remessa da CRA), pedido de outra
+  serventia, ou título sem a chave do CENPROT gravada. <strong>Responder assim
+  seria responder sobre o que a casa não tem</strong> — confira antes, ou
+  dispense com o motivo escrito.
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Como está</span></div>
+  <table class="table">
+    <tbody>
+      <tr><td><strong>Situação</strong></td><td>{{ p.situacao|capitalize }}</td></tr>
+      <tr><td><strong>Código na Central</strong></td><td>{{ p.codigo }}</td></tr>
+      <tr><td><strong>Chave do CENPROT</strong></td>
+          <td>{{ p.chave or '—' }}</td></tr>
+      <tr><td><strong>Baixada em</strong></td>
+          <td>{{ p.baixada_em[:16]|replace('T',' ') }}
+              {% if p.baixada_por %}por {{ p.baixada_por }}{% endif %}</td></tr>
+      {% if p.decidida_em %}
+      <tr><td><strong>Decidida em</strong></td>
+          <td>{{ p.decidida_em[:16]|replace('T',' ') }}
+              {% if p.decidida_por %}por {{ p.decidida_por }}{% endif %}</td></tr>
+      {% endif %}
+      {% if p.enviada_em %}
+      <tr><td><strong>Enviada em</strong></td>
+          <td>{{ p.enviada_em[:16]|replace('T',' ') }}
+              {% if p.enviada_por %}por {{ p.enviada_por }}{% endif %}</td></tr>
+      <tr><td><strong>O que a Central respondeu</strong></td>
+          <td><code>{{ p.resposta }}</code></td></tr>
+      {% endif %}
+      {% if p.dispensa_motivo %}
+      <tr><td><strong>Dispensada porque</strong></td>
+          <td>{{ p.dispensa_motivo }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O que a Central mandou</span>
+    <small>congelado como veio — ela pode mudar o dado dela amanhã</small>
+  </div>
+  <pre style="padding:.75rem;overflow:auto;max-height:28rem">{{ teor_bonito }}</pre>
+</section>
+
+{% if p.situacao == 'ENVIADA' %}
+<div class="alert alert-info">
+  Esta pendência <strong>já foi respondida à CENPROT</strong>, e a resposta não
+  se refaz por aqui. Se a decisão mudou, trate com a Central.
+</div>
+
+{% elif so_baixa %}
+<div class="alert alert-warning">
+  <strong>Decisão judicial não se responde por esta tela.</strong> Quem
+  registra a ordem — com o juízo, o processo e a <strong>data do
+  recebimento</strong>, que é de onde corre o prazo do § 2º do art. 17 da Lei
+  9.492/1997 — é o oficial, na ficha do título. O sistema não julga ordem de
+  juiz.
+</div>
+
+{% else %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Decidir</span>
+    <small>gravar a decisão NÃO manda nada à Central</small>
+  </div>
+  <form method="post"
+        action="{{ url_for('protesto_pendencia_decidir', pendencia_id=p.id) }}"
+        class="form-grid" style="padding:.75rem">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    {% if p.especie == 'ANUENCIA' %}
+    <label>O que fazer
+      <select name="decisao">
+        <option value="aprovar">Aprovar a anuência</option>
+        <option value="recusar">Recusar</option>
+      </select>
+    </label>
+    <label>Valor das custas <small>(se aprovada; zero é gratuita)</small>
+      <input type="text" name="vl_custas"
+             value="{{ retirada.reais }}" placeholder="82,64">
+    </label>
+    {% if retirada.centavos %}
+    <p class="muted">
+      <strong>Sugerido pelo sistema — a custa de cancelamento:</strong>
+      {{ retirada.motivo }}. Confira antes de enviar — o valor vai para a
+      Central, e é o que o devedor paga para cancelar.
+    </p>
+    {% else %}
+    <p class="muted">
+      <strong>O sistema não sugeriu valor</strong>{% if retirada.motivo %} —
+      {{ retirada.motivo }}{% endif %}. Digite a custa conferindo a tabela.
+    </p>
+    {% endif %}
+    <label>Motivo da recusa <small>(se recusada — quem lê é quem pediu)</small>
+      <input type="text" name="motivo_recusa"
+             placeholder="ex.: título não pertence a esta serventia">
+    </label>
+    <p class="muted">
+      Os doze campos que a CENPROT exige de volta saem do <strong>teor
+      congelado</strong> acima, e não são redigitados aqui — redigitar um deles
+      é como o dado da casa passa a discordar do dela.
+    </p>
+
+    {% elif p.especie == 'CERTIDAO' %}
+    <label>Valor do orçamento <small>(a CENPROT exige; é o que o solicitante vê)</small>
+      <input type="text" name="vl_orcamento" placeholder="45,00">
+    </label>
+    <label>Certidão em base64 <small>(só quando ela já estiver pronta)</small>
+      <textarea name="arquivo_certidao" rows="3"></textarea>
+    </label>
+
+    {% elif p.especie == 'CANCELAMENTO' %}
+    <div class="alert alert-warning">
+      <strong>Isto informa a Central; não cancela o protesto aqui.</strong> O
+      ato de cancelamento se lavra na <strong>ficha do título</strong>, com
+      hipótese do catálogo e fundamento escrito. Informe à Central depois de
+      ele estar lavrado.<br>
+      <small>{{ a_conferir }}</small>
+    </div>
+    {% if pedido %}
+    <div style="grid-column:1/-1">
+      <p><strong>O caminho do contrato:</strong> o credor anuiu, a casa cotou,
+      o interessado pediu o cancelamento — <strong>quem pede é quem paga os
+      emolumentos</strong>. Lavre o cancelamento com os emolumentos pagos, e só
+      depois informe a Central: o sistema recusa informar antes.</p>
+      <table>
+        <tr><th>Anuência do credor</th>
+            <td>{{ pedido.nr_anuencia or '—' }}{% if pedido.status %} · {{ pedido.status }}{% endif %}</td></tr>
+        <tr><th>Emolumentos no pedido</th>
+            <td>{% if pedido.emolumentos not in (None, '') %}R$ {{ pedido.emolumentos }}{% else %}—{% endif %}</td></tr>
+        <tr><th>Custa de cancelamento pela tabela da casa</th>
+            <td>{% if retirada.centavos %}R$ {{ retirada.reais }}{% else %}não calculada{% if retirada.motivo %} — {{ retirada.motivo }}{% endif %}{% endif %}</td></tr>
+      </table>
+      {% if pedido.ficha %}
+      <p><a class="button" href="{{ pedido.ficha }}">Lavrar o cancelamento na ficha do título</a>
+        <small>— abre a ficha com a hipótese «Anuência do credor» e o fundamento
+        já escritos; confira antes de lançar.</small></p>
+      {% endif %}
+    </div>
+    {% endif %}
+    <label>Certidão de cancelamento em base64 <small>(opcional, só PDF)</small>
+      <textarea name="certidao_cancelamento_b64" rows="3"></textarea>
+    </label>
+
+    {% elif p.especie == 'RENEGOCIACAO' %}
+    <div class="alert alert-info">
+      O devedor propôs quitar e cancelar este protesto. <strong>Esta casa não
+      aceita nem recusa a proposta</strong> — ela informa <strong>quanto custa
+      cancelar</strong>, e é esse valor que a Resolve mostra a ele.
+    </div>
+    <label>Valor da custa de cancelamento
+      <input type="text" name="vl_custa"
+             value="{{ retirada.reais }}" placeholder="82,64">
+    </label>
+    {% if retirada.centavos %}
+    <p class="muted">
+      <strong>Sugerido pelo sistema:</strong> {{ retirada.motivo }}. Confira
+      antes de enviar — o valor vai para a Central, e é o que o devedor paga.
+    </p>
+    {% else %}
+    <p class="muted">
+      <strong>O sistema não sugeriu valor</strong>{% if retirada.motivo %} —
+      {{ retirada.motivo }}{% endif %}. Digite a custa conferindo a tabela: um
+      valor em branco a Central recusa, e um valor errado o devedor paga.
+    </p>
+    {% endif %}
+
+    {% elif p.especie == 'PEDIDO_PROTESTO' %}
+    <div class="alert alert-info">
+      Aqui a casa devolve à Central <strong>o protocolo do apontamento</strong>
+      — o que faz os dois lados falarem do mesmo título. Aponte o título antes:
+      protocolo que não existe é protocolo inventado.
+    </div>
+    <label>Chave única (23 dígitos)
+      <input type="text" name="cd_chave_unica" value="{{ p.chave or '' }}">
+    </label>
+    <label>Número do protocolo desta casa
+      <input type="text" name="nm_nr_protocolo"
+             value="{{ p.titulo_protocolo or '' }}">
+    </label>
+    <label>Data do protocolo
+      <input type="date" name="dt_protocolo">
+    </label>
+    <label>Valor da retirada
+      <input type="text" name="vl_retirada"
+             value="{{ retirada.reais }}" placeholder="82,64">
+    </label>
+    {#
+      SUGESTAO, E NAO ORCAMENTO FECHADO — a mesma regra da receita de custas.
+      O numero vem do que a casa cobra; quem confirma e quem atende.
+    #}
+    {% if retirada.centavos %}
+    <p class="muted">
+      <strong>Sugerido pelo sistema:</strong> {{ retirada.motivo }}. Confira
+      antes de enviar — o valor vai para a Central, e é o que o devedor vê.
+    </p>
+    {% else %}
+    <p class="muted">
+      <strong>O sistema não sugeriu valor</strong>{% if retirada.motivo %} —
+      {{ retirada.motivo }}{% endif %}. Informe-o à mão; campo em branco a
+      Central recusa, e <strong>zero seria uma afirmação</strong>: «não custa
+      nada».
+    </p>
+    {% endif %}
+    {% endif %}
+
+    <div>
+      <button class="button" type="submit">Gravar a decisão</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Dispensar</span>
+    <small>sai da fila sem resposta, com motivo escrito</small>
+  </div>
+  <form method="post"
+        action="{{ url_for('protesto_pendencia_dispensar', pendencia_id=p.id) }}"
+        style="padding:.75rem">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Por que esta pendência sai da lista
+      <input type="text" name="motivo" style="width:100%"
+             placeholder="ex.: pedido é de outra serventia">
+    </label>
+    <p class="muted">
+      Sem o motivo, quem olhar daqui a seis meses não terá como saber por que
+      ela sumiu — e aviso sem saída é aviso que ninguém lê mais.
+    </p>
+    <button class="button" type="submit">Dispensar</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

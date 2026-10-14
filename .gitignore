@@ -1,0 +1,96 @@
+# Cartório Gestão — .gitignore do tree a publicar (SANDBOX\sistema)
+# Editor único: Robô Integrações RCPN e Protesto (B1), 05/10/2026.
+# Base: GITIGNORE_CONSOLIDADO_B0_B1_B6.txt (B0 Migração + B1 Notas/Imóveis + B6 Auditoria)
+# + acréscimos B1 RCPN/Protesto marcados com [B1-RCPN].
+# NADA aqui apaga ou move arquivo do disco: só impede versionar.
+# NÃO ignorar static/brasao.jpg (Brasão da República — público).
+
+# --- Segredos / ambiente ---
+# Cofre real: centrais_cred -> %PROGRAMDATA%\CartorioGestao\*.cred (fora do tree)
+.env
+.env.*
+!.env.example
+*.cred
+*.cred.*
+*.pem
+*.pfx
+*.p12
+*.key
+# [B1-RCPN] outros formatos de chave/certificado de cliente
+*.jks
+*.keystore
+*.ppk
+id_rsa*
+id_ed25519*
+# [B1-RCPN] par de teste do selador: o .pem tem PRIVATE KEY -> fora do git
+# (o arquivo continua no disco; tests/selador_falso.py agora gera o par na hora)
+tests/selador_teste.pem
+tests/selador_teste.crt
+# Exceção SÓ para fixtures autoassinadas GERADAS para teste, sem chave real.
+# Nunca usar para reintroduzir tests/selador_teste.pem nem chave de produção.
+!tests/fixtures/**/*.pem
+secret.key
+secret_key
+*.secret
+ci/denylist.local.txt
+# [B1-RCPN] pastas de dados/ProgramData caso o repo suba um nível
+/dados/
+/programdata/
+CARTORIO_GESTAO_DATA/
+
+# --- Bancos e dados locais ---
+*.sqlite3
+*.sqlite
+*.db
+
+# --- Backups e cópias intermediárias ---
+*.bak
+*.bak_*
+*.bak-*
+**/*.bak*
+*.new
+*.original
+backups_patch/
+
+# --- Dumps / lixo operacional ---
+# _layout_test_dump.txt: dump de teste com senha de fixture e nome de operador
+_layout_test_dump.txt
+tmp/
+tmp_*
+*_log.txt
+*.out.txt
+verify_*.out.txt
+ato_*.txt
+ato_*_ANTES.txt
+teor_*.txt
+_ocr_*
+_digi_*
+_scan_*_out.txt
+tests/selos_reais.json
+# [09/10/2026] o irmão do de cima — o varredor o proíbe pelo nome, e o
+# .gitignore não o cobria (achado por tools/exportar_publico.py)
+tests/selador_reais.json
+
+# --- DOCUMENTACAO: dumps OCR/CSV/JSONL (manter só .md sanitizados) ---
+DOCUMENTACAO/**/*.csv
+DOCUMENTACAO/**/*.jsonl
+DOCUMENTACAO/**/*ocr*
+DOCUMENTACAO/FILA_INDICADORES_OCR/
+DOCUMENTACAO/PACOTE_IMPORTACAO_OCR/
+DOCUMENTACAO/PACOTE_TESTE_ONR_52_PRONTAS/
+DOCUMENTACAO/cra-arquivos-teste/
+
+# --- CI local ---
+!ci/denylist.example.txt
+
+# --- Terceiros / caches ---
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+
+# --- Logs ---
+*.log
+_tmp_*.py

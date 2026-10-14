@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Termos a escrever{% endblock %}
+{% block content %}
+<div class="card">
+  <p><strong>{{ quadro.a_escrever }}</strong> termo(s) a escrever de verdade
+     {% if quadro.do_acervo %}
+       — dos {{ quadro.total }} assentos sem termo,
+       <strong>{{ quadro.do_acervo }}</strong> vieram do E-Ofício e
+       <strong>ficam sem termo de propósito</strong>.
+     {% endif %}
+  </p>
+  {% if quadro.do_acervo %}
+  <p class="small muted">
+    Número que parece trabalho e não é faz planejar o que não existe. A tela já
+    dizia isto em palavras; a conta acima passou a dizer o mesmo em 30/08/2026,
+    depois do ensaio contra a produção.
+  </p>
+  {% endif %}
+</div>
+
+<h1>Assentos sem o texto do livro</h1>
+
+<div class="card">
+  <p><strong>O termo é o texto que vai escrito no livro</strong> — o que o
+     declarante lê e assina. É diferente da certidão, que sai depois e quantas
+     vezes se pedir.</p>
+  <p class="small muted">
+    <strong>Os assentos trazidos do E-Ofício vão aparecer aqui, e isso está
+    certo.</strong> Eles não têm o teor porque o E-Ofício não o guardava — ele
+    montava o texto do modelo na hora de imprimir. Escrever um termo hoje para
+    um assento lido e assinado há anos poria no livro um texto que não é o que
+    está no papel. Para eles o caminho é a <strong>certidão</strong>, que se
+    monta dos campos e diz o que o assento contém, sem fingir ser a cópia do que
+    foi escrito.
+  </p>
+</div>
+
+{% if faltando %}
+<p class="muted">{{ faltando|length }} assento{{ 's' if faltando|length > 1 }} sem termo.</p>
+<table>
+  <thead><tr><th>Nº</th><th>Espécie</th><th>Nome</th><th>Lavrado em</th><th>Origem</th><th></th></tr></thead>
+  <tbody>
+  {% for x in faltando %}
+    <tr>
+      <td>{{ x.numero }}</td>
+      <td class="small">{{ x.especie }}</td>
+      <td>{{ x.nome }}</td>
+      <td class="small">{{ x.data_ato or '—' }}</td>
+      <td class="small muted">{{ x.origem }}</td>
+      <td><a href="{{ url_for('rcpn_termo', assento_id=x.id) }}">ver o termo</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Todos os assentos têm o texto do livro escrito.</p>
+{% endif %}
+{% endblock %}

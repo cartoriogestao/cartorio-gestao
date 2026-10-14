@@ -1,0 +1,13 @@
+{# Identificacao da serventia. Aparece no caixa, no protocolo geral e na
+   prenotacao — as telas cujo papel sai do cartorio com o cliente, e onde o
+   balcao precisa conferir o timbre antes de imprimir. #}
+<section class="panel" style="margin-bottom:12px">
+  <div style="padding:10px 14px;text-align:center;line-height:1.45">
+    <strong>{{ sv.unit_name }}</strong><br>
+    <span class="small">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</span><br>
+    <span class="small muted">CNPJ {{ sv.serventia_cnpj }} &middot; CNS {{ sv.ri_cns }}
+      &middot; Telefone {{ sv.serventia_telefone }}</span><br>
+    <span class="small muted">{{ sv.endereco_completo }}</span>
+    {% if sv.serventia_email %}<span class="small muted"> &middot; {{ sv.serventia_email }}</span>{% endif %}
+  </div>
+</section>

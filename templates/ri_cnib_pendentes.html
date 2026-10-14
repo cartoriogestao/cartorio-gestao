@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Indisponibilidade — o que espera o seu okay{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Indisponibilidade — o que espera o seu okay</h1>
+  <a class="button" href="{{ url_for('ri_cnib') }}">&larr; Consultar a CNIB</a>
+</div>
+
+{#  «avisar e preparar a averbação, ficando pendente okay do cartório»
+    — o oficial, 28/08/2026.
+
+    O sistema deixa o texto pronto; quem assina decide. Averbar sozinho tiraria
+    de um homônimo inocente o direito de dispor do imóvel dele — e isso não se
+    desfaz sozinho: para sair, precisa de ordem de cancelamento pela mesma via. #}
+
+<section class="panel">
+  <div class="panel-head"><span>{{ pendentes|length }}
+    ordem{{ '' if pendentes|length == 1 else 'ns' }} a resolver</span>
+    <span class="small muted">cópia da CNIB com {{ base_n }} ordens, até {{ fmt_date(base_data) }}</span>
+  </div>
+  <div style="padding:14px">
+    {% if cnib_idade is not none and cnib_idade > cnib_dias_para_avisar %}
+    <p class="danger"><strong>Esta cópia da CNIB tem {{ cnib_idade }} dias.</strong>
+      Ordem publicada depois de {{ fmt_date(base_data) }} não está aqui &mdash; confirme
+      na central antes de registrar qualquer ato.</p>
+    {% endif %}
+
+    {% if not pendentes %}
+      <p><strong>Nada esperando decisão.</strong> Nenhuma ordem ativa da CNIB atinge
+      parte de matrícula desta serventia, ou todas já foram resolvidas.</p>
+    {% else %}
+      <p>Cada linha abaixo é uma ordem de indisponibilidade que atinge uma pessoa
+      com o mesmo nome ou documento de parte de uma matrícula desta casa.
+      <strong>O texto da averbação já está pronto</strong> &mdash; falta você dizer
+      se é a mesma pessoa.</p>
+      <p class="small muted">Achado <strong>por documento</strong> vem primeiro:
+      documento não tem homônimo, nome tem. Achado por nome é quase sempre outra
+      pessoa &mdash; há muitos José da Silva &mdash;, e por isso ele não vira ato
+      sem alguém olhar.</p>
+    {% endif %}
+  </div>
+</section>
+
+{% for p in pendentes %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Matrícula {{ p.matricula_numero }}{% if p.matricula_livro %},
+      livro {{ p.matricula_livro }}{% endif %}</span>
+    <span>
+      {% if p.criterio == 'documento' %}
+        <span class="badge danger">achado pelo documento</span>
+      {% else %}
+        <span class="badge warn">achado só pelo nome</span>
+      {% endif %}
+    </span>
+  </div>
+  <div style="padding:14px">
+    <div class="grid2">
+      <div><small class="muted">Atingido na ordem</small>
+        <div><strong>{{ p.ordem.nome }}</strong></div>
+        <div class="small">{{ p.ordem.documento or '—' }}</div></div>
+      <div><small class="muted">Protocolo na CNIB</small>
+        <div><strong>{{ p.ordem.protocolo_cnib }}</strong></div>
+        <div class="small">{{ fmt_date(p.ordem.data_pedido) }}</div></div>
+      <div class="span2"><small class="muted">Juízo e processo</small>
+        <div class="small">{{ p.ordem.instituicao or '—' }}
+          {%- if p.ordem.forum_vara %} &mdash; {{ p.ordem.forum_vara }}{% endif %}</div>
+        <div class="small">autos n. {{ p.ordem.processo or '—' }}</div></div>
+    </div>
+
+    <details style="margin-top:12px">
+      <summary><strong>A averbação preparada</strong> &mdash; leia antes de decidir</summary>
+      <div class="teor" style="margin-top:8px;padding:10px;border:1px solid var(--linha)">
+        {{ p.teor|safe }}
+      </div>
+      <p class="small muted" style="margin-top:6px">
+        O que ficou entre colchetes é o que a ordem da CNIB não trouxe, e você
+        completa ao lavrar. Campo vazio tem de saltar aos olhos de quem confere
+        &mdash; por isso ele não some do texto.
+      </p>
+    </details>
+
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
+      <a class="button primary"
+         href="{{ url_for('ri_ficha', matricula_id=p.matricula_id) }}">
+        Abrir a matrícula para averbar</a>
+
+      <form method="post" style="display:flex;gap:6px;align-items:center;flex:1;min-width:320px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="matricula_id" value="{{ p.matricula_id }}">
+        <input type="hidden" name="protocolo_cnib" value="{{ p.ordem.protocolo_cnib }}">
+        <input type="hidden" name="pessoa_nome" value="{{ p.ordem.nome }}">
+        <input type="hidden" name="pessoa_documento" value="{{ p.ordem.documento or '' }}">
+        <input type="hidden" name="criterio" value="{{ p.criterio }}">
+        <input name="motivo" style="flex:1"
+               placeholder="por que não é a mesma pessoa — o que você conferiu">
+        <button>Não é a mesma pessoa</button>
+      </form>
+    </div>
+    <p class="small muted" style="margin-top:6px">
+      Escreva o que separa as duas pessoas &mdash; o documento que você conferiu, a
+      naturalidade, a data de nascimento. Daqui a dois anos, numa correição, essa
+      frase é a única coisa que vai explicar por que a indisponibilidade não foi
+      averbada.
+    </p>
+  </div>
+</section>
+{% endfor %}
+{% endblock %}

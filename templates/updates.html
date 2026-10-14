@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Correções e atualizações</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>Versão instalada: {{current_version}}</h2>
+  <p>Este é o canal controlado para transformar uma correção preparada fora da serventia em atualização do sistema. A Ajuda pode diagnosticar e reunir evidências, mas não altera o código diretamente.</p>
+  <ol>
+    <li><strong>Integridade:</strong> o pacote e o SHA-256 recebido por canal separado precisam coincidir.</li>
+    <li><strong>Preparação isolada:</strong> os arquivos são montados numa cópia candidata e passam por análise estrutural sem executar o código recebido.</li>
+    <li><strong>Aprovação humana:</strong> um administrador revisa o impacto, repete o SHA-256, confirma a versão e informa novamente sua senha.</li>
+    <li><strong>Aplicação recuperável:</strong> o sistema cria backup, mantém cópia de rollback, reinicia e testa a saúde da nova versão.</li>
+  </ol>
+  {% if not automatic_apply_available %}
+    <div class="notice critical">
+      <strong>Este computador não aplica a atualização sozinho — e diz por quê:</strong>
+      <br>{{automatic_apply_reason or 'A aplicação automática só fica disponível na instalação convencional do Windows.'}}
+    </div>
+  {% endif %}
+  {% if last_result %}
+    <div class="notice {% if last_result.status not in ['SUCCESS','SUCESSO'] %}critical{% endif %}">
+      <strong>Última aplicação:</strong> {{last_result.message or last_result.status}}
+      {% if last_result.version %}<br>Versão: {{last_result.version}}{% endif %}
+      {% if last_result.at %}<br><small>{{last_result.at}}</small>{% endif %}
+      {% if last_result.status not in ['SUCCESS','SUCESSO'] %}
+        <br><small>O log de cada tentativa fica em
+        <code>%PROGRAMDATA%\CartorioGestao\updates\update.log</code>.</small>
+      {% endif %}
+    </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>1. Preparar pacote para revisão</h2>
+  <form method="post" enctype="multipart/form-data" class="stack">
+    <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <input type="hidden" name="action" value="prepare">
+    <label>Arquivo oficial de atualização (.cgu)
+      <input type="file" name="update_file" accept=".cgu" required>
+    </label>
+    <label>SHA-256 recebido por canal separado
+      <input name="expected_sha256" minlength="64" maxlength="64" pattern="[0-9A-Fa-f]{64}" autocomplete="off" placeholder="64 caracteres hexadecimais" required>
+    </label>
+    <div><button class="primary">Validar e preparar — sem aplicar</button></div>
+  </form>
+  <p class="muted small">A preparação não executa scripts, não reinicia o servidor e não modifica a instalação ativa. Use somente pacote e impressão digital provenientes de canais autorizados.</p>
+</section>
+
+{% if staged_updates %}
+<section class="panel">
+  <h2>2. Revisar impacto e aprovar</h2>
+  {% for item in staged_updates %}
+    {% set ins = item.inspection or {} %}
+    <article class="panel">
+      <h3>Versão {{item.version or 'desconhecida'}}</h3>
+      <p>
+        <strong>Estado:</strong>
+        {% if item.state == 'READY_FOR_APPROVAL' %}PRONTA PARA APROVAÇÃO
+        {% elif item.state == 'REJECTED' %}REJEITADA NA INSPEÇÃO
+        {% elif item.state == 'APPROVED' %}APROVADA / AGUARDANDO APLICAÇÃO
+        {% elif item.state == 'APPLYING' %}EM APLICAÇÃO
+        {% elif item.state == 'APPLIED' %}APLICADA
+        {% elif item.state == 'ROLLED_BACK' %}ROLLBACK CONCLUÍDO
+        {% elif item.state == 'ROLLBACK_FAILED' %}FALHA CRÍTICA NO ROLLBACK
+        {% elif item.state == 'INVALID' %}PREPARAÇÃO INVÁLIDA
+        {% else %}{{item.state or 'DESCONHECIDO'}}{% endif %}
+      </p>
+      {% if item.load_error %}<div class="notice critical">{{item.load_error}}</div>{% endif %}
+      {% if item.package_sha256 %}
+        <p class="small"><strong>SHA-256 do pacote:</strong><br><code>{{item.package_sha256}}</code></p>
+      {% endif %}
+      {% if item.impact_counts %}
+        <p>
+          Novos: <strong>{{item.impact_counts.NOVO}}</strong> ·
+          Alterados: <strong>{{item.impact_counts.ALTERADO}}</strong> ·
+          Excluídos: <strong>{{item.impact_counts.EXCLUIDO}}</strong> ·
+          Iguais: <strong>{{item.impact_counts.IGUAL}}</strong>
+        </p>
+      {% endif %}
+      {% if ins.warnings %}
+        <div class="notice"><strong>Avisos de impacto</strong><ul>{% for aviso in ins.warnings %}<li>{{aviso}}</li>{% endfor %}</ul></div>
+      {% endif %}
+      {% if ins.problems %}
+        <div class="notice critical"><strong>Problemas que impedem a aprovação</strong><ul>{% for problema in ins.problems %}<li>{{problema}}</li>{% endfor %}</ul></div>
+      {% endif %}
+      {% if ins.impact %}
+        <details>
+          <summary>Ver arquivos analisados</summary>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Arquivo</th><th>Impacto</th><th>Observação</th></tr></thead>
+            <tbody>{% for arquivo in ins.impact %}<tr>
+              <td><code>{{arquivo.path}}</code></td><td>{{arquivo.status}}</td>
+              <td>{% if arquivo.critical %}<strong>Componente crítico</strong>{% else %}—{% endif %}</td>
+            </tr>{% endfor %}</tbody>
+          </table></div>
+        </details>
+      {% endif %}
+      {% if ins.assinatura %}
+        {% if ins.assinatura.situacao == 'ASSINADO' %}
+          <p class="small"><strong>Assinatura:</strong> conferida — pacote assinado pela chave do oficial <code>{{ins.assinatura.chave}}</code>.</p>
+        {% else %}
+          <p class="small"><strong>Assinatura:</strong> este pacote <strong>não é assinado</strong>{% if ins.assinatura.observacao %} ({{ins.assinatura.observacao}}){% endif %}. Esta instalação ainda não exige assinatura; confira o SHA-256 por um canal separado antes de aprovar.</p>
+        {% endif %}
+      {% endif %}
+      {% if ins.source_commit %}
+        <p class="small"><strong>Origem no versionamento:</strong> commit <code>{{ins.source_commit[:12]}}</code> do ramo <code>main</code>.</p>
+      {% endif %}
+      {% if ins.validation_claim %}
+        <details>
+          <summary>Declaração de testes do desenvolvedor</summary>
+          <p>{{ins.validation_claim.summary or 'Sem resumo.'}}</p>
+          {% if ins.validation_claim.command %}<p class="small"><strong>Comando declarado:</strong> <code>{{ins.validation_claim.command}}</code></p>{% endif %}
+          {% if ins.validation_claim.passed_count %}<p class="small"><strong>Testes declarados como aprovados:</strong> {{ins.validation_claim.passed_count}}</p>{% endif %}
+          <p class="muted small">Esta é uma evidência declarada no pacote. O servidor faz sua própria inspeção estática, mas não executa código recebido antes da aprovação.</p>
+        </details>
+      {% endif %}
+
+      {% if item.state == 'READY_FOR_APPROVAL' %}
+        <form method="post" class="stack" onsubmit="return confirm('Confirma a aprovação final desta atualização? O servidor será reiniciado.');">
+          <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+          <input type="hidden" name="action" value="approve">
+          <input type="hidden" name="stage_version" value="{{item.version}}">
+          <label>Repita o SHA-256 exibido acima
+            <input name="approval_sha256" minlength="64" maxlength="64" pattern="[0-9A-Fa-f]{64}" autocomplete="off" required>
+          </label>
+          <label>Digite exatamente <code>APLICAR {{item.version}}</code>
+            <input name="confirmation" autocomplete="off" required>
+          </label>
+          <label>Senha atual do administrador {{user.username}}
+            <input type="password" name="admin_password" autocomplete="current-password" required>
+          </label>
+          <label><input type="checkbox" name="review_ack" value="yes" required> Revisei os arquivos críticos, os avisos e o plano de rollback.</label>
+          <div><button class="danger" {% if not automatic_apply_available %}disabled title="{{automatic_apply_reason}}"{% endif %}>Criar backup, aprovar e aplicar</button></div>
+        </form>
+      {% endif %}
+    </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if recent_packages %}
+<section class="panel">
+  <h2>Pacotes recebidos recentemente</h2>
+  <div class="table-wrap"><table><thead><tr><th>Arquivo</th><th>Tamanho</th></tr></thead><tbody>
+  {% for p in recent_packages %}<tr><td>{{p.name}}</td><td>{{(p.stat().st_size/1024)|round(1)}} KB</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
+{% endblock %}

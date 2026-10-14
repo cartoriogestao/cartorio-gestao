@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Importar de outro sistema{% endblock %}
+{% block content %}
+{% from "_manual_de_importacao.html" import manual_para_baixar %}
+<h1>Importar de outro sistema</h1>
+
+<div class="card">
+  <p class="small muted">
+    Pedido seu em 30/08/2026: <em>«criar manual e padrão de importação de acervo
+    antigo (…) para importar atos de outros sistemas, seja no RI (matrículas),
+    seja no RCPN (nascimentos, etc)»</em>.
+  </p>
+  <p class="small muted">
+    <strong>Esta tela não é a do E-Ofício.</strong> O acervo desta casa vem por
+    <em>Trazer o acervo do E-Ofício</em>, que lê o banco dele direto. Esta serve
+    para o que vem <strong>de fora</strong> — outra serventia, outro programa,
+    uma planilha que alguém converteu.
+  </p>
+  <p class="small muted">
+    <strong>Ela traz acervo, e não lavra ato.</strong> O registro que chega já
+    tem número, livro e folha, vindos do livro de papel de onde ele veio — não
+    toma número novo, não ocupa folha, não sela e não cobra.
+  </p>
+</div>
+
+{{ manual_para_baixar(true) }}
+
+<form method="get" class="card">
+  <label>O que você vai importar
+    <select name="especie" onchange="this.form.submit()">
+      {% for chave, m in modelos.items() %}
+        <option value="{{ chave }}" {% if especie == chave %}selected{% endif %}>
+          {{ m.nome }}</option>
+      {% endfor %}
+    </select></label>
+  <noscript><button class="button">escolher</button></noscript>
+</form>
+
+<h2>Como é o arquivo</h2>
+
+<div class="card">
+  <p>
+    Um arquivo <strong>JSON</strong>, um só, com esta forma. Os nomes dos campos
+    são os mesmos do banco desta casa — quem prepara o arquivo escreve
+    <code>nome</code>, <code>data_ato</code>, e não um código.
+  </p>
+  <p class="small muted">
+    <strong>Todo registro precisa de um <code>{{ campo_da_chave }}</code></strong>:
+    é o número dele no sistema de onde veio. É ele que impede o mesmo registro
+    entrar duas vezes se você mandar o arquivo de novo — e mandar de novo é
+    justamente o que se faz depois de corrigir o que foi recusado.
+  </p>
+  <div class="rolagem">
+    <pre style="font-size:.8rem">{{ modelo }}</pre>
+  </div>
+  <p class="small muted">
+    Este exemplo é <strong>montado do banco na hora</strong>, e não copiado de um
+    manual: campo novo aparece aqui no dia em que nasce.
+  </p>
+</div>
+
+<h2>Os campos desta espécie <span class="small muted">— {{ campos|length }}</span></h2>
+<div class="card rolagem">
+  <table class="tabela">
+    <tr><th>campo</th><th>é obrigatório?</th><th>forma</th></tr>
+    {% for c in campos %}
+    <tr>
+      <td><code>{{ c.nome }}</code></td>
+      <td>{% if c.obrigatorio %}<strong class="danger">sim</strong>
+          {% else %}não{% endif %}</td>
+      <td class="small muted">{% if c.data %}data, em AAAA-MM-DD{% else %}texto{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<h2>O arquivo</h2>
+
+{% if erro %}
+<div class="notice critical"><strong>Não deu para ler:</strong> {{ erro }}</div>
+{% endif %}
+
+<form method="post" class="card" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="especie" value="{{ especie }}">
+  {# O TOKEN É O QUE SOBREVIVE AO CLIQUE EM "IMPORTAR" — o navegador nunca
+     reenvia sozinho o `input type="file"`, e o texto conferido fica
+     guardado no servidor sob este número; sem ele, o segundo clique não
+     teria o que importar. #}
+  <input type="hidden" name="token_arquivo" value="{{ token_arquivo }}">
+  {# ARQUIVO GRANDE NÃO SE COLA — relato do oficial em 13/09/2026: o lote do
+     .docx sai com 6 mil e tantos registros, e um arquivo desse tamanho não
+     cabe (nem deveria) num textarea. O upload é o caminho normal; o
+     textarea fica para um exemplo pequeno digitado à mão. #}
+  <label>Envie o arquivo <code>.json</code>
+    <input type="file" name="arquivo" accept=".json,application/json"></label>
+  <p class="small muted">Ou cole aqui o conteúdo, se for pequeno:</p>
+  <label>
+    <textarea name="texto" rows="12" style="font-family:monospace;font-size:.8rem"
+              placeholder="{ &quot;formato&quot;: &quot;{{ formato }}&quot;, … }">{{ texto }}</textarea>
+  </label>
+  <p>
+    <button class="button" name="o_que" value="conferir">Conferir</button>
+    {# PREENCHER O FORMULARIO e caminho DIFERENTE de importar, e o botao diz
+       isso: la o registro entra como acervo; aqui o ato nasce novo, toma
+       numero, ocupa folha, sela e cobra. #}
+    <button class="button secondary" formaction="{{ url_for('importar_padrao_preencher') }}">
+      Preencher o formulário do ato novo</button>
+    {% if especie == "RCPN_ASSENTO" %}
+    {# A FILA DE PRÉ-CADASTROS (11/10/2026): vários registros de uma vez,
+       cada um vira um rascunho conferido; ninguém lavra por aqui. #}
+    <button class="button primary" name="o_que" value="rascunhos">
+      Pôr na fila de rascunhos (atos novos)</button>
+    {% endif %}
+    {% if quadro and quadro.entram and not quadro.entraram %}
+      <button class="button danger" name="o_que" value="importar">
+        Importar os {{ quadro.entram|length }} que passaram</button>
+    {% endif %}
+  </p>
+  <p class="small muted">
+    <strong>São dois caminhos diferentes.</strong> <em>Importar</em> traz
+    <strong>acervo</strong>: o registro entra no livro como ele veio, com o
+    número que já tinha. <em>Preencher o formulário</em> leva os dados para a
+    tela de <strong>lavrar um ato novo</strong>, que vai tomar número, ocupar
+    folha, selar e cobrar — e ali é um registro de cada vez.
+    {% if especie == "RCPN_ASSENTO" %}<em>Pôr na fila</em> faz o mesmo para
+    <strong>vários registros de uma vez</strong>: cada um vira um rascunho em
+    Rascunhos, já conferido, com as pessoas nas gavetas certas. O termo que
+    viesse no arquivo é descartado — ele sai do modelo da casa ao lavrar.{% endif %}
+  </p>
+  <p class="small muted">
+    <strong>Conferir não grava nada.</strong> Confira primeiro: aqui não há como
+    desfazer, porque o que entra vira acervo do livro.
+  </p>
+</form>
+
+{% if quadro %}
+<h2>{% if quadro.entraram is defined %}O que entrou{% else %}O que entraria{% endif %}</h2>
+
+<div class="card">
+  <table class="tabela">
+    <tr>
+      <td><strong style="font-size:1.4rem">{{ quadro.lidos }}</strong><br>
+          <span class="small muted">registros no arquivo</span></td>
+      <td><strong style="font-size:1.4rem">{{ quadro.entraram if quadro.entraram is defined else quadro.entram|length }}</strong><br>
+          <span class="small muted">{% if quadro.entraram is defined %}entraram{% else %}entram{% endif %}</span></td>
+      <td><strong style="font-size:1.4rem" class="danger">{{ quadro.recusados|length }}</strong><br>
+          <span class="small muted">recusados</span></td>
+      <td><strong style="font-size:1.4rem">{{ quadro.repetidos|length }}</strong><br>
+          <span class="small muted">já estavam aqui</span></td>
+    </tr>
+  </table>
+  {% if quadro.de_onde_veio %}
+  <p class="small muted">De onde veio: <strong>{{ quadro.de_onde_veio }}</strong></p>
+  {% endif %}
+</div>
+
+{% if quadro.recusados %}
+<h3>Os recusados <span class="small muted">— com a linha e o motivo</span></h3>
+<div class="card rolagem">
+  <table class="tabela">
+    <tr><th>linha</th><th>{{ campo_da_chave }}</th><th>por quê</th></tr>
+    {% for r in quadro.recusados %}
+    <tr class="danger"><td>{{ r.linha }}</td><td class="small"><code>{{ r.chave }}</code></td>
+        <td class="small">{{ r.porque }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="small muted">
+    <strong>O recusado não derrubou o que passou.</strong> Corrija estes no
+    arquivo e mande de novo — o que já entrou não entra duas vezes.
+  </p>
+</div>
+{% endif %}
+
+{% if quadro.repetidos %}
+<h3>Os que já estavam aqui</h3>
+<div class="card rolagem">
+  <table class="tabela">
+    <tr><th>linha</th><th>{{ campo_da_chave }}</th></tr>
+    {% for r in quadro.repetidos %}
+    <tr><td>{{ r.linha }}</td><td class="small"><code>{{ r.chave }}</code></td></tr>
+    {% endfor %}
+  </table>
+  <p class="small muted">
+    Não são erro: é a chave de origem fazendo o que ela existe para fazer.
+  </p>
+</div>
+{% endif %}
+
+{% if quadro.entram and not quadro.entraram is defined %}
+<h3>Os que entram <span class="small muted">— confira antes</span></h3>
+<div class="card rolagem">
+  <table class="tabela">
+    <tr><th>linha</th><th>{{ campo_da_chave }}</th><th>o que vem preenchido</th></tr>
+    {% for r in quadro.entram[:50] %}
+    <tr><td>{{ r.linha }}</td><td class="small"><code>{{ r.chave }}</code></td>
+        <td class="small muted">{{ r.valores|length }} campo(s):
+          {{ r.valores.keys()|list|join(', ') }}</td></tr>
+    {% endfor %}
+  </table>
+  {% if quadro.entram|length > 50 %}
+  <p class="small danger">A lista foi cortada em 50; o número acima conta todos.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

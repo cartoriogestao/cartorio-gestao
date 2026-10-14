@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{#
+  A FILA DOS TÍTULOS APRESENTADOS no RCPJ e no RTD.
+
+  O PAINEL MOSTRA AS SEIS SITUAÇÕES, MESMO EM ZERO. Coluna que só aparece
+  quando tem número faz o painel mudar de forma conforme o dia, e quem o lê
+  todo dia perde a referência de onde olhar.
+
+  E ELE NÃO JULGA PRAZO: conta e mostra a data. Um zero aqui pode ser «hoje não
+  veio nada» ou «ainda não lancei», e o sistema não tem como saber qual.
+#}
+{% block heading %}<h1>Títulos apresentados — {{ nome_da_atribuicao }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  <a class="button" href="{{ url_for('rcpj_rtd_titulo_novo', atribuicao=atribuicao) }}">+ Receber título</a>
+  {% endif %}
+  {% for a in atribuicoes %}
+    <a class="button{% if a.codigo == atribuicao %} primary{% endif %}"
+       href="{{ url_for('rcpj_rtd_titulos', atribuicao=a.codigo) }}">{{ a.nome }}</a>
+  {% endfor %}
+  <a class="button" href="{{ url_for('rcpj_rtd_registros', atribuicao=atribuicao) }}">Registros já lavrados</a>
+</div>
+
+<div class="notice">
+  O título entra <strong>antes de qualquer exigência</strong> — Lei 6.015/1973,
+  art. 12: basta a data para ele tomar o número de ordem no Livro de Protocolo.
+  Natureza, livro e apresentante podem ser completados depois; <strong>a ordem
+  de chegada é o que ele perde se esperar.</strong>
+</div>
+
+<section class="cards">
+  {% for chave, rotulo in situacoes.items() %}
+  <div class="stat">
+    <strong>{{ quadro.get(chave, 0) }}</strong>
+    <small><a href="{{ url_for('rcpj_rtd_titulos', atribuicao=atribuicao, situacao=chave) }}">{{ rotulo.split(' —')[0] }}</a></small>
+  </div>
+  {% endfor %}
+</section>
+
+{% if situacao %}
+<p><small>Filtrando por <strong>{{ situacoes[situacao] }}</strong> —
+  <a href="{{ url_for('rcpj_rtd_titulos', atribuicao=atribuicao) }}">ver todos</a></small></p>
+{% endif %}
+
+{% if fila %}
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>Protocolo</th><th>Apresentado</th><th>Apresentante</th>
+      <th>Natureza</th><th>Forma</th><th>Livro</th><th>Situação</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for t in fila %}
+    <tr>
+      <td><a href="{{ url_for('rcpj_rtd_titulo', titulo_id=t.id) }}"><strong>{{ t.numero or '—' }}</strong></a>
+        {% if t.rotulo %}<br><small class="muted">fl. {{ t.rotulo }}</small>{% endif %}</td>
+      <td>{{ fmt_date(t.data_apresentacao) }}{% if t.hora %}<br><small class="muted">{{ t.hora }}</small>{% endif %}</td>
+      <td>{{ t.apresentante or '—' }}</td>
+      <td>{{ t.natureza or '—' }}</td>
+      <td><small>{{ formas.get(t.forma, t.forma) }}</small></td>
+      <td>{{ t.serie or '—' }}</td>
+      <td><small>{{ situacoes.get(t.situacao, t.situacao) }}</small></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="notice">
+  {# LISTA VAZIA QUE SÓ MOSTRA NADA FAZ O OPERADOR ACHAR QUE QUEBROU — foi o
+     que custou três respostas na tela de assinaturas. #}
+  Nenhum título nesta lista.
+  {% if situacao %}Tire o filtro de situação para ver os demais.
+  {% else %}Quando o balcão receber um título de {{ nome_da_atribuicao }},
+  ele aparece aqui com o número do protocolo.{% endif %}
+</div>
+{% endif %}
+{% endblock %}

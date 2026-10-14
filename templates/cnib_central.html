@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}CNIB — a cópia local e a Central{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>CNIB — a cópia local e a Central</h1>
+  <a class="button" href="{{ url_for('ri_cnib_pendentes') }}">Ordens esperando okay &rarr;</a>
+</div>
+
+{#  `csrf_token` CHEGA COMO VALOR nesta casa, e não como a função global do
+    Jinja: escrever `csrf_token()` aqui derruba a tela inteira com
+    «'str' object is not callable». Já custou uma tela uma vez. #}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>A cópia local</span>
+    <span class="small muted">{{ espelho.total }} ordens &mdash;
+      {{ espelho.ativas }} ativas, {{ espelho.da_central }} vindas da Central</span>
+  </div>
+  <div style="padding:14px">
+    {% if ultima %}
+      <p><strong>Última janela concluída até {{ fmt_date(ultima.ate) }}</strong>
+        &mdash; foi até onde a Central respondeu e este sistema entendeu
+        (leitura de {{ fmt_date(ultima.terminada_em) }}).</p>
+      {% if faltam %}
+      <p><strong>A recuperação ainda tem {{ faltam|length }} meses pendentes.</strong></p>
+      {% else %}
+      <p><strong>Todos os meses desde o acervo foram consultados.</strong></p>
+      {% endif %}
+    {% else %}
+      <p class="danger"><strong>Esta cópia nunca foi atualizada pela Central.</strong>
+        Tudo o que está aqui veio do acervo do E-Ofício, e é um retrato de
+        {{ fmt_date(espelho.retrato_do_acervo) }}.</p>
+    {% endif %}
+    <p class="small muted">A data acima <strong>não é</strong> a da ordem mais
+      recente. A janela da Central filtra pela data da <em>atividade</em>: uma
+      ordem pedida em 2012 chega hoje quando é hoje que ela é cancelada. Quem
+      olhasse a data do pedido veria a cópia envelhecer a cada leitura.</p>
+  </div>
+</section>
+
+{% if not pronto.pronto %}
+<section class="panel">
+  <div class="panel-head"><span>Falta isto para poder buscar</span></div>
+  <div style="padding:14px">
+    <ul>{% for f in pronto.falta %}<li>{{ f }}</li>{% endfor %}</ul>
+    {% if not tem_credencial and tem_acervo %}
+    <form method="post" action="{{ url_for('cnib_credencial_do_acervo') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="primary">Trazer o par do CNIB do acervo do E-Ofício</button>
+      <span class="small muted">O par desta serventia está dentro do acervo, e
+        não em papel nenhum. Ele é lido e guardado fora do banco no mesmo
+        passo &mdash; a senha não passa por esta tela.</span>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Buscar ordens na Central</span></div>
+  <div style="padding:14px">
+    {% if leu_hoje %}
+      <p class="small muted">Já houve leitura hoje. Buscar de novo não faz mal
+        &mdash; a gravação é por protocolo, e ordem repetida não vira linha
+        repetida.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('cnib_buscar') }}" class="linha-credencial">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>De <input type="date" name="de" value="{{ de }}" required></label>
+      <label>Até <input type="date" name="ate" value="{{ ate }}" required></label>
+      <button class="primary">Buscar agora</button>
+    </form>
+    <p class="small muted">A janela já vem uma semana atrás do fim da última
+      leitura, de propósito: a resposta vazia da Central <strong>não prova que
+      não há ordem</strong> &mdash; a mesma resposta já veio para dias que
+      tinham ordens, e horas depois elas apareceram. Reler é barato; não ler é
+      perder.</p>
+    <p class="small muted">A leitura <strong>não consome a fila</strong> da
+      serventia. Essa é a única forma que este sistema sabe pedir.</p>
+  </div>
+</section>
+
+{% if faltam %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Pôr em dia o atraso</span>
+    <span class="small muted">{{ faltam|length }} de {{ pedacos|length }} pedaços ainda por ler</span>
+  </div>
+  <div style="padding:14px">
+    <p>O atraso não cabe numa varredura só: a fila desta serventia tinha
+      <strong>341.697 ordens</strong> em 18/09/2026, e a 500 por página isso são
+      684 páginas &mdash; acima do freio que impede o servidor da serventia de
+      varrer o país num pedido. Por isso a recuperação anda <strong>mês a
+      mês</strong>, e cada mês fica anotado.</p>
+    <table class="tabela">
+      <thead><tr><th>Mês</th><th>Janela</th><th></th></tr></thead>
+      <tbody>
+      {% for p in pedacos %}
+        <tr>
+          <td>{{ p.titulo }}</td>
+          <td class="small muted">{{ fmt_date(p.de) }} a {{ fmt_date(p.ate) }}</td>
+          <td>
+            {% if p.feita %}<span class="muted">lido</span>{% else %}
+            <form method="post" action="{{ url_for('cnib_buscar') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="de" value="{{ p.de }}">
+              <input type="hidden" name="ate" value="{{ p.ate }}">
+              <button>Ler {{ p.titulo }}</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Como a rotina roda</span></div>
+  <div style="padding:14px">
+    {% if user.role in ['ADMIN','MANAGER'] %}
+    <form method="post" action="{{ url_for('cnib_ajustes') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>CPF de quem consulta
+        <input name="cpf" value="{{ cpf }}" placeholder="somente números" size="16">
+      </label>
+      <label><input type="checkbox" name="rotina" {% if rotina %}checked{% endif %}>
+        Buscar uma vez por dia, sozinho</label>
+      <button class="primary">Guardar</button>
+    </form>
+    {% else %}
+    <p class="small">Rotina diária: <strong>{{ 'ligada' if rotina else 'desligada' }}</strong>.
+      O CPF de quem consulta e a rotina são ajustados pelo oficial ou substituto.</p>
+    {% endif %}
+    <p class="small muted">A Central <strong>exige</strong> o CPF de quem
+      consulta em todo pedido: é por ele que ela registra quem pediu a lista.
+      Ele não é segredo e fica no banco; o <code>client_secret</code> não &mdash;
+      esse mora fora, em <code>%PROGRAMDATA%</code>, porque o banco viaja no
+      backup.</p>
+    <p class="small muted">A rotina roda quando alguém abre o sistema, uma vez
+      por dia, numa linha de fundo &mdash; ela não segura a tela. Dia em que
+      ninguém abrir o sistema é dia sem leitura, e é por isso que a janela
+      volta uma semana atrás. <strong>Ela não faz a posta em dia acima</strong>:
+      o tamanho do que se pede à Central é decisão de gente.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>As últimas leituras</span></div>
+  <div style="padding:14px">
+    {% if not historico %}
+      <p>Nenhuma leitura ainda.</p>
+    {% else %}
+    <table class="tabela">
+      <thead><tr><th>Quando</th><th>Janela</th><th>Situação</th>
+        <th>Lidas</th><th>Novas</th><th>Atualizadas</th><th>Canceladas</th><th></th></tr></thead>
+      <tbody>
+      {% for l in historico %}
+        <tr>
+          <td>{{ fmt_date(l.pedida_em) }}{% if l.automatica %}
+            <span class="small muted">sozinho</span>{% endif %}</td>
+          <td class="small muted">{{ fmt_date(l.de) }} a {{ fmt_date(l.ate) }}</td>
+          <td>{% if l.situacao in ('RECUSADA', 'ERRO') %}
+              <strong class="danger">{{ l.situacao }}</strong>
+            {% else %}{{ l.situacao }}{% endif %}</td>
+          <td>{{ l.lidas }}</td><td>{{ l.novas }}</td>
+          <td>{{ l.atualizadas }}</td><td>{{ l.canceladas }}</td>
+          <td class="small muted">{% if l.parou_no_teto %}parou no teto de páginas{% endif %}
+            {{ l.mensagem or '' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted">As que deram errado ficam na lista de propósito:
+      «não há ordem nova» e «faz uma semana que não se fala com a Central» são
+      coisas diferentes, e a segunda é a que precisa de gente.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

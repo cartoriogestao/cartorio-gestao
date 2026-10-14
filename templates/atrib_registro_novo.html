@@ -1,0 +1,77 @@
+{#
+  Registro novo de RCPJ ou de RTD.
+
+  AQUI A SÉRIE É ESCOLHIDA, e no RCPN não. Não é incoerência: no RCPN a
+  espécie do fato manda no livro — nascimento vai no A, óbito no C —, e aqui
+  é a natureza jurídica do que se registra que decide qual livro recebe, e
+  quem a conhece é quem está atendendo.
+
+  A atribuição não se pergunta: vem da série, em `livro_nucleo.SERIES`.
+#}
+{% extends 'base.html' %}
+{% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{% from '_cobrar.html' import quadro %}
+{% block heading %}<h1>Registro novo — RCPJ / RTD</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('rcpj_rtd_registros') }}">&larr; Registros</a></div>
+
+<div class="notice">
+  <strong>Cada ato aqui ocupa folha nova.</strong> É o oposto do Registro Civil, onde
+  averbação e anotação se lançam no espaço do próprio assento. O registro nasce já
+  ocupando o seu lugar no livro.
+</div>
+
+{{ salvar_rascunho('rcpj_rtd_registro_novo', url_for('rcpj_rtd_registro_novo'),
+                   'Registro RCPJ/RTD', csrf_token,
+                   nome_em='requerente_nome') }}
+
+<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>O registro</span></div>
+    <div class="grid2" style="padding:14px">
+      <label style="grid-column:1/-1">Livro
+        <select name="serie" required>
+          <option value="">— escolha —</option>
+          {% for s in series %}
+            <option value="{{ s.codigo }}"
+                    {% if form.get('serie') == s.codigo %}selected{% endif %}>
+              {{ s.atribuicao }} — {{ s.nome }}
+            </option>
+          {% endfor %}
+        </select></label>
+
+      <label style="grid-column:1/-1">Natureza
+        <input name="natureza" value="{{ form.get('natureza','') }}"
+               placeholder="Estatuto de associação · Contrato de locação · Ata"></label>
+
+      <label>Requerente
+        <input name="requerente_nome" value="{{ form.get('requerente_nome','') }}"></label>
+      <label>Documento do requerente
+        <input name="requerente_documento"
+               value="{{ form.get('requerente_documento','') }}"
+               placeholder="CPF ou CNPJ"></label>
+
+      <label style="grid-column:1/-1">Teor <small>(opcional agora)</small>
+        <textarea name="teor" rows="8">{{ form.get('teor','') }}</textarea></label>
+    </div>
+  </section>
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Selo e cobrança</span></div>
+    <div class="grid2" style="padding:14px">
+      <label>Selo <small>(opcional)</small>
+        <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
+      {{ quadro(receita, caixa, protocolos) }}
+    </div>
+  </section>
+
+  <div class="actions" style="grid-column:1/-1">
+    <button class="button">Abrir registro</button>
+    <a class="button" href="{{ url_for('rcpj_rtd_registros') }}">Cancelar</a>
+  </div>
+</form>
+{{ script_do_rascunho() }}
+{% endblock %}

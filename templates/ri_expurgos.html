@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Atas de ocorrência — atos expurgados</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Matrículas</a></div>
+
+<div class="notice">
+  Aqui mora o que saiu da ficha. Cada ata guarda o <strong>teor íntegro</strong> do ato
+  expurgado, o selo que estava no sistema, o selo cancelado no Tribunal, o fundamento e quem
+  ordenou. É o documento que, junto com a auditoria e o cancelamento do selo, prova o que houve.
+  <strong>Imprima e arquive.</strong>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ rows|length }} ata(s)</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Ato</th><th>Matrícula</th><th>Data do ato</th>
+      <th>Selo no sistema</th><th>Selo cancelado</th><th>Quando</th><th>Por</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><strong>{{ r.id }}</strong></td>
+        <td>{{ r.ato_rotulo }}</td>
+        <td>{% if r.matricula_atual %}<a href="{{ url_for('ri_ficha', matricula_id=r.matricula_atual) }}">{{ r.matricula_numero }}</a>
+            {% else %}{{ r.matricula_numero or '—' }}{% endif %}</td>
+        <td class="small">{{ r.ato_data or '—' }}</td>
+        <td class="small"><code>{{ r.ato_selo or '—' }}</code></td>
+        <td class="small"><code>{{ r.selo_cancelado or '—' }}</code></td>
+        <td class="small">{{ r.expurgado_em }}</td>
+        <td class="small">{{ r.expurgado_por or '—' }}</td>
+        <td class="small">
+          <a href="{{ url_for('ri_expurgo_ata', expurgo_id=r.id) }}">baixar a ata (.odt)</a>
+          <details><summary class="small muted">ler aqui</summary>
+            <pre style="white-space:pre-wrap">{{ r.ata }}</pre>
+          </details>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="muted">Nenhum ato foi expurgado. É como deve ser.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

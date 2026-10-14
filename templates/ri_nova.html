@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+{% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{% block heading %}<h1>Abrir matrícula</h1>{% endblock %}
+{% block content %}
+{% from "_veio_de_arquivo.html" import veio_de_arquivo %}
+{# VEIO DE ARQUIVO — relato #31, segunda metade. O aviso e o mesmo nas duas
+   telas, e por isso mora na macro `_veio_de_arquivo.html`. #}
+{% if do_arquivo %}{{ veio_de_arquivo(do_arquivo) }}{% endif %}
+
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a></div>
+
+{#
+  SEM ESCOLHA DE VOLUME — decisão do oficial em 27/08/2026: «não faz sentido
+  livro 2-S se estamos com sistema de fichas».
+
+  Eram vinte opções que devolviam todas o MESMO número, com a única diferença de
+  carimbar na matrícula nova o nome de um livro de papel fechado há décadas. O
+  volume continua nas 1.701 matrículas do acervo, porque ali ele é informação
+  real: diz em que volume a ficha de papel está guardada.
+#}
+<div class="notice">
+  A matrícula entra no <strong>Livro {{ livro }}</strong>, com o número
+  <strong>{{ proximo }}</strong> — o próximo da serventia.
+  <br><span class="small">A numeração é uma só, e não por volume: os volumes
+  <em>2-A</em>, <em>2-S</em> e os outros dizem onde a ficha de papel do acervo
+  está arquivada, e ficha nova não vai para volume nenhum.</span>
+</div>
+
+{% if e_acervo %}
+<div class="notice warning">
+  O número <strong>{{ proximo }}</strong> é anterior a 4.015 e será aberto
+  automaticamente como <strong>acervo</strong>. O sistema preservará o teor
+  importado e não pedirá selo nem responsável pela abertura histórica.
+</div>
+{% endif %}
+
+<section class="panel">
+  {{ salvar_rascunho('ri_nova_matricula', url_for('ri_nova_matricula'),
+                   'Matrícula nova', csrf_token,
+                   nome_em='logradouro', rascunho_id=rascunho_id) }}
+
+<form method="post" class="form-grid" id="form-do-ato">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if rascunho_id %}<input type="hidden" name="_rascunho_id_tela" value="{{ rascunho_id }}">{% endif %}{# HOTFIX-2026-10-13-06 #}
+    {# A FOLHA TAMBEM E DO PAPEL, e por isso deixou de ser obrigatoria de fato:
+       ficha nova nao ocupa folha de livro encadernado. Fica no formulario para
+       quem estiver cadastrando ficha antiga que ainda nao entrou. #}
+    <label>Folha <span class="small muted">(só para ficha do acervo)</span>
+      <input name="folha" placeholder="deixe vazio para ficha nova"
+             value="{{ form.get('folha','') }}"></label>
+    <label>Data de abertura<input type="date" name="data_abertura"
+             value="{{ form.get('data_abertura','') }}"></label>
+    <label>Localização
+      <select name="rural_urbano"><option value="">—</option><option value="U" {% if form.get('rural_urbano') == 'U' %}selected{% endif %}>Urbano</option><option value="R" {% if form.get('rural_urbano') == 'R' %}selected{% endif %}>Rural</option></select>
+    </label>
+    <label>CIB <small>(8 dígitos, obrigatório se rural)</small>
+      <input name="cib" value="{{ form.get('cib','') }}" inputmode="numeric"></label>
+    <label class="span2">Logradouro / denominação<input name="logradouro" value="{{ form.get('logradouro','') }}"></label>
+    <label>Número<input name="numero_predial" value="{{ form.get('numero_predial','') }}"></label>
+    <label>Bairro<input name="bairro" value="{{ form.get('bairro','') }}"></label>
+    <label>Cidade<input name="cidade" value="{{ form.get('cidade','') or sv.ri_cidade }}"></label>
+    <label>UF<input name="uf" value="{{ form.get('uf','') or 'MA' }}" maxlength="2"></label>
+    <label>CEP<input name="cep" value="{{ form.get('cep','') }}"></label>
+    <label>Área<input name="area_valor" value="{{ form.get('area_valor','') }}"></label>
+    <label>Unidade<select name="area_unidade"><option {% if form.get('area_unidade') == 'm2' %}selected{% endif %}>m2</option><option {% if form.get('area_unidade') == 'ha' %}selected{% endif %}>ha</option></select></label>
+    <label class="span2">Descrição do perímetro<textarea name="descricao_perimetro" rows="4">{{ form.get('descricao_perimetro','') }}</textarea></label>
+    <label class="span2">Registro anterior<input name="registro_anterior" value="{{ form.get('registro_anterior','') }}"></label>
+    <label class="span2">Teor de abertura<textarea name="teor" rows="6">{{ form.get('teor','') }}</textarea></label>
+    {# PROPRIETARIO DA ABERTURA — 23/09/2026, pedido Beatriz (4018/4019).
+       ri_selar_abertura exige ri_partes com ato_id IS NULL. A tela de nova
+       matrícula não pedia dono; o painel Partes não deixa incluir à mão. #}
+    {% if not e_acervo %}
+    <label class="span2">Proprietário / titular da abertura
+      <span class="obrigatorio">— o selo da abertura exige</span>
+      <input name="proprietario_nome" value="{{ form.get('proprietario_nome','') }}"
+             placeholder="nome completo de quem figura como dono na abertura"
+             autocomplete="off">
+    </label>
+    <label>CPF ou CNPJ do proprietário
+      <input name="proprietario_documento" value="{{ form.get('proprietario_documento','') }}"
+             placeholder="somente números ou com pontuação" autocomplete="off">
+    </label>
+    <div class="notice small span2">
+      Sem o proprietário cadastrado aqui, a matrícula nasce <strong>sem partes</strong>
+      e o botão «Selar a abertura» (Identificação → Selar a abertura) recusa
+      pedindo o dono. O painel Partes da ficha <strong>não acrescenta</strong>
+      titular de abertura — ele só corrige o que já está no livro.
+    </div>
+    {% endif %}
+
+    {# O SELO DA ABERTURA NÃO SE PEDE AQUI, e isso é medido: das 1.701
+       matrículas, **zero** têm selo de abertura, e o acervo não tem um único
+       envelope de «abertura de matrícula» em caminho nenhum do selador.
+       Quem sela é o ATO — o R-1 que se lavra em seguida na ficha —, e lá o
+       selo sai sozinho do selador desde 14/09/2026.
+       **E O CAMPO À MÃO SAIU EM 15/09/2026**, por ordem do oficial (relato
+       #66): «o selo sera emitido apenas pelo selador no sistema». Ele existia
+       «para o caso raro de a abertura ter selo próprio vindo de fora» — caso
+       que, medido, nunca aconteceu: zero em 1.701. O QR colado já tinha saído:
+       nunca foi usado uma vez. #}
+    {% if not e_acervo %}
+    <div class="notice small span2">
+      O selo do Registro de Imóveis sai no <strong>ato</strong>: abra a
+      matrícula e lavre o R-1 na ficha — ali o selador responde sozinho.
+    </div>
+    {% else %}
+    <div class="notice small span2">Ficha de acervo: transcreva ou importe o
+      teor como consta no documento. A abertura histórica não recebe selo nem
+      identificação de usuário do sistema.</div>
+    {% endif %}
+    <div class="span2"><button class="primary">Abrir matrícula</button></div>
+  </form>
+</section>
+
+<div class="notice small">
+  {% if e_acervo %}
+  A matrícula nasce como <strong>acervo não conferido</strong> e conserva o
+  conteúdo importado. A conferência posterior é feita contra o livro físico.
+  {% else %}
+  A matrícula nasce marcada como <strong>conferida</strong>, por ser lavrada aqui e não
+  importada do acervo. O aviso de conferência pendente vale só para o que veio do sistema anterior.
+  {% endif %}
+</div>
+{{ script_do_rascunho() }}
+{% endblock %}

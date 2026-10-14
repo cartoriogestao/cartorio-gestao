@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}O que falta perguntar nos óbitos{% endblock %}
+{% block content %}
+<h1>O que falta perguntar nos óbitos</h1>
+
+<div class="card">
+  <p class="small muted">
+    São quatro perguntas que <strong>não se deduzem do assento</strong>: ninguém
+    descobre por conta própria que o falecido votava ou que deixou bens. É o
+    declarante que diz, no balcão, com a família na frente — depois disso vira
+    telefonema, ou não vira nada.
+  </p>
+  <p class="small muted">
+    Por isso cada uma tem <strong>três respostas, e não duas</strong>: sim, não
+    e <strong>não perguntado</strong>. Caixa desmarcada significaria as duas
+    últimas ao mesmo tempo, e é essa confusão que faz a obrigação sumir sem
+    ninguém notar.
+  </p>
+</div>
+
+<div class="card">
+  <p class="small"><strong>O que cada uma faz nascer:</strong></p>
+  <table class="tabela">
+    <tr><th>pergunta</th><th>obriga a</th><th>por que importa</th></tr>
+    {% for m in marcas %}
+    <tr>
+      <td><strong>{{ m.rotulo }}</strong><br>
+          <span class="small muted">{{ m.artigo }}</span></td>
+      <td class="small">{{ m.obriga }}
+          {% if m.prazo %}<br><em>{{ m.prazo }}</em>{% endif %}</td>
+      <td class="small">{{ m.porque_importa|forte }}
+        {% if m.pendencia_da_casa %}
+          <br><span class="danger"><strong>Pendência desta casa:</strong>
+          {{ m.pendencia_da_casa|forte }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if eleitores %}
+<div class="card">
+  <p><strong>{{ eleitores|length }}</strong>
+     {{ 'óbito marcado' if eleitores|length == 1 else 'óbitos marcados' }}
+     como <strong>de eleitor</strong> — a Justiça Eleitoral espera por
+     {{ 'ele' if eleitores|length == 1 else 'eles' }}.</p>
+  <p class="small">
+    {% for e in eleitores %}{{ e.nome }} (nº {{ e.numero }}){% if not loop.last %} · {% endif %}{% endfor %}
+  </p>
+</div>
+{% endif %}
+
+<h2>{{ linhas|length }}
+    {{ 'óbito espera' if linhas|length == 1 else 'óbitos esperam' }} resposta</h2>
+
+{% if not linhas %}
+<div class="card">
+  <p><strong>Nenhum óbito com pergunta em aberto.</strong></p>
+  <p class="small muted">
+    O acervo não entra nesta conta: ninguém vai telefonar para a família de um
+    óbito de 2009 para perguntar se o falecido era eleitor.
+  </p>
+</div>
+{% endif %}
+
+{% for a in linhas %}
+<div class="card">
+  <p><strong>Óbito nº {{ a.numero }}</strong> — {{ a.nome }}
+     <span class="small muted">({{ (a.data_ato or '')[:10] }})</span></p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="assento_id" value="{{ a.id }}">
+    <table class="tabela">
+      {% for m in marcas %}
+      <tr>
+        <td class="small">{{ m.pergunta }}</td>
+        <td>
+          {% set atual = a[m.chave] or '' %}
+          {% for valor, nome in estados.items() %}
+            <label style="margin-right:12px">
+              <input type="radio" name="{{ m.chave }}" value="{{ valor }}"
+                     {% if (atual|upper) == valor %}checked{% endif %}>
+              {{ nome }}
+            </label>
+          {% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p><button class="button">Gravar as respostas deste óbito</button></p>
+  </form>
+
+  {% if a.abertas %}
+  <div class="alerta danger">
+    <p class="small"><strong>Este óbito já deve:</strong></p>
+    <ul>
+      {% for o in a.abertas %}
+        <li class="small"><strong>{{ o.obriga }}</strong>
+          {% if o.prazo %} — {{ o.prazo }}{% endif %}
+          <br><span class="muted">{{ o.artigo }}</span>
+          {% if o.pendencia_da_casa %}
+            <br><span class="danger">{{ o.pendencia_da_casa|forte }}</span>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% set respondidas = [] %}
+  {% for m in marcas %}{% if (a[m.chave] or '') %}{% set _ = respondidas.append(m) %}{% endif %}{% endfor %}
+  {% if respondidas %}
+  <p class="small muted">
+    Marcou por engano? Dá para desfazer uma resposta — ela volta a ficar
+    <em>por perguntar</em>:
+    {% for m in respondidas %}
+      <form method="post" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="assento_id" value="{{ a.id }}">
+        <input type="hidden" name="desfazer" value="{{ m.chave }}">
+        <button class="button secondary small">desfazer «{{ m.rotulo }}»</button>
+      </form>
+    {% endfor %}
+  </p>
+  {% endif %}
+</div>
+{% endfor %}
+
+<div class="card">
+  <p class="small muted">
+    <strong>Resposta gravada não se apaga por descuido.</strong> Se o
+    formulário voltar sem uma das perguntas, a resposta que estava lá fica —
+    um envio que perde campo não pode transformar «ele respondeu que não» de
+    volta em «ninguém perguntou».
+  </p>
+</div>
+{% endblock %}

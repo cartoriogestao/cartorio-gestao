@@ -1,0 +1,154 @@
+{#
+  O que só o oficial pode informar — nas seis atribuições.
+
+  O sistema esteve suspenso e vai voltar. Estas são as coisas que o acervo não
+  sabe dizer e que só quem conhece o livro físico responde. Até 26/08/2026 elas
+  moravam numa lista dentro da documentação, e o balcão não as via —
+  documentação não avisa ninguém.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>O que falta você informar</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('nucleo_livros') }}">Livros e termos</a>
+  <a class="button" href="{{ url_for('nucleo_numeracao') }}">Numeração dos livros</a>
+</div>
+
+<div class="notice">
+  Aqui fica o que o <strong>acervo não sabe dizer</strong> e só você pode
+  responder — o próximo número de um livro que o E-Ofício nunca guardou, por
+  exemplo. Enquanto ficarem sem resposta, o primeiro ato de cada série nasce com
+  o <strong>número 1</strong> sobre um acervo que já passou disso. Cada linha
+  diz <strong>por que</strong> ninguém mais sabe e <strong>o que acontece</strong>
+  se ficar sem resposta.
+  <br><br>
+  Vale para as <strong>seis atribuições</strong>. Quando alguma parte do sistema
+  descobrir que precisa de uma resposta sua, ela aparece aqui.
+</div>
+
+{% if not abertas %}
+<section class="panel">
+  <div class="panel-head"><span>Nada esperando você</span></div>
+  <p style="padding:14px">
+    Nenhuma pendência aberta. Se você ainda não trouxe o acervo do E-Ofício,
+    é normal esta lista estar vazia: as pendências aparecem quando a carga
+    descobre o que ela não soube informar sozinha.
+  </p>
+</section>
+{% else %}
+
+{% set atribuicoes = abertas | map(attribute='atribuicao_nome') | unique | list %}
+{% for nome in atribuicoes %}
+<section class="panel">
+  <div class="panel-head">
+    <span>{{ nome }}</span>
+    <small>{{ abertas | selectattr('atribuicao_nome', 'equalto', nome)
+              | list | length }} pendência(s)</small>
+  </div>
+
+  {% for p in abertas if p.atribuicao_nome == nome %}
+  <div style="padding:14px; border-top:1px solid rgba(128,128,128,.25)">
+    <div><strong>{{ p.titulo }}</strong></div>
+    <p><small>{{ p.motivo }}</small></p>
+    {% if p.consequencia %}
+      <p><small class="danger">{{ p.consequencia }}</small></p>
+    {% endif %}
+
+    {% if p.tipo == 'NUMERO' %}
+      {% set n = numeros.get(p.chave) %}
+      {% if n %}
+        <p><small>
+          Hoje o contador desta série está em <strong>{{ n.proximo }}</strong>
+          {% if n.semeado_de %}({{ n.semeado_de }}){% endif %}.
+        </small></p>
+      {% else %}
+        <p><small>
+          <strong>Esta série não tem contador nenhum</strong> — o primeiro ato
+          nasceria com o número 1.
+        </small></p>
+      {% endif %}
+
+      <form method="post" class="form"
+            action="{{ url_for('implantacao_informar', chave=p.chave) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="acao" value="informar">
+        <label>Próximo número
+          <input name="proximo" type="number" min="1" required
+                 style="width:10em"
+                 placeholder="o que está no livro físico"></label>
+        <label style="grid-column:1/-1">De onde saiu esse número
+          <input name="observacao"
+                 placeholder="Ex.: conferido no Livro 4, folha 200"></label>
+        <div class="actions"><button class="button primary">Informar</button></div>
+      </form>
+    {% else %}
+      <form method="post" class="form"
+            action="{{ url_for('implantacao_informar', chave=p.chave) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="acao" value="informar">
+        <label style="grid-column:1/-1">O que foi decidido
+          <input name="observacao" required minlength="10"
+                 placeholder="Ex.: encerrei o Livro 6 com termo de que nada foi lançado"></label>
+        <div class="actions"><button class="button primary">Registrar a decisão</button></div>
+      </form>
+    {% endif %}
+
+    <details style="margin-top:8px">
+      <summary><small>Isto não se aplica a esta casa</small></summary>
+      <form method="post" class="form" style="padding-top:8px"
+            action="{{ url_for('implantacao_informar', chave=p.chave) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="acao" value="dispensar">
+        <label style="grid-column:1/-1">Por que não se aplica
+          <input name="motivo" required minlength="10"
+                 placeholder="Dispensar é decisão sua; ignorar não é"></label>
+        <div class="actions"><button class="button">Dispensar</button></div>
+      </form>
+    </details>
+  </div>
+  {% endfor %}
+</section>
+{% endfor %}
+{% endif %}
+
+{% if fechadas %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Já respondidas</span><small>{{ fechadas | length }}</small>
+  </div>
+  <table class="table">
+    <thead><tr>
+      <th>Atribuição</th><th>O que era</th><th>Resposta</th><th>Quando</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for p in fechadas %}
+      <tr>
+        <td>{{ p.atribuicao_nome }}</td>
+        <td>{{ p.titulo }}
+            <div><small>{{ 'dispensada' if p.situacao == 'DISPENSADA'
+                            else 'resolvida' }}</small></div></td>
+        <td>{% if p.valor %}<strong>{{ p.valor }}</strong><br>{% endif %}
+            <small>{{ p.observacao or '' }}</small></td>
+        <td>{{ (p.resolvida_em or '')[:16] | replace('T', ' ') }}
+            <div><small>{{ p.resolvida_por or '' }}</small></div></td>
+        <td>
+          <form method="post" style="display:inline"
+                action="{{ url_for('implantacao_informar', chave=p.chave) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="acao" value="reabrir">
+            <button class="button"><small>reabrir</small></button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="notice" style="margin:0 14px 14px">
+    O que você escreveu ao responder <strong>fica</strong>, mesmo se a pendência
+    for reaberta. Engano se conserta à vista, e não apagando o que se disse
+    antes.
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,123 @@
+"""Onde mora o que esta casa mandou ao ONR, e o que ele respondeu.
+
+Construído em 03/09/2026, item 3 do cronograma.
+
+**UMA TABELA PARA AS DUAS ESPÉCIES, e não duas.** A casa manda ao ONR duas
+coisas — o **indicador real** de uma matrícula e o **edital** de um usucapião —,
+e o que muda de uma para a outra é **o corpo**; a vida delas é a mesma: monta,
+sobe, o ONR processa numa fila, e volta um número. É a lição do núcleo, a de
+`as_documentos` e a de `cn_pendencias`.
+
+**O AMBIENTE FAZ PARTE DA CHAVE.** É a lição da CENPROT, e aqui ela pesa mais:
+o ONR é a **única das cinco Centrais cujo contrato declara os dois endereços**,
+de modo que a casa vai mesmo falar com os dois. Sem o ambiente na chave, o
+primeiro indicador de teste ocuparia o lugar do primeiro de verdade.
+
+**O QUE SUBIU FICA CONGELADO, COM HASH.** O ONR pode mudar o dado dele amanhã;
+o que a casa mandou foi aquilo. E o `hash` responde à pergunta que a correição
+faz: «este indicador foi enviado depois da última averbação?» — corpo diferente,
+hash diferente.
+
+**E O ENVIO NÃO É O ACEITE.** O ONR recebe e processa **depois**, numa fila
+própria (`/v1/fila/processamento/protocolo`). Por isso a situação `ENVIADO` é
+diferente de `ACEITO`, e há uma coluna para o que a fila respondeu. Tratar as
+duas como a mesma seria o defeito do e-Proclamas noutra forma — lá era HTTP 200
+lido como publicação feita.
+"""
+from __future__ import annotations
+
+import sqlite3
+
+# AS DUAS ESPÉCIES.
+INDICADOR = "INDICADOR"
+EDITAL = "EDITAL"
+
+ESPECIES: tuple[str, ...] = (INDICADOR, EDITAL)
+
+NOME_DA_ESPECIE: dict[str, str] = {
+    INDICADOR: "Indicador real (índice real nacional)",
+    EDITAL: "Edital na Central do ONR",
+}
+
+# AS SITUAÇÕES.
+#
+#   `ENVIADO` e `ACEITO` são **duas**, e a razão está no cabeçalho: o ONR
+#   processa depois. `RECUSADO` guarda o que a fila apontou.
+ENVIADO = "ENVIADO"
+ACEITO = "ACEITO"
+RECUSADO = "RECUSADO"
+CANCELADO = "CANCELADO"
+
+SITUACOES: tuple[str, ...] = (ENVIADO, ACEITO, RECUSADO, CANCELADO)
+
+# O QUE AINDA ESPERA RESPOSTA DA FILA.
+SITUACOES_EM_ABERTO: frozenset[str] = frozenset({ENVIADO})
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS ri_onr_envios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    especie TEXT NOT NULL,                  -- INDICADOR | EDITAL
+    ambiente TEXT NOT NULL,                 -- HOMOLOGACAO | PRODUCAO
+
+    -- DE QUE ATO DESTA CASA ELE É. Um dos dois, e nunca os dois: o indicador
+    -- é de uma matrícula, o edital é de um processo de usucapião.
+    matricula_id INTEGER REFERENCES ri_matriculas(id),
+    processo_id INTEGER REFERENCES us_processos(id),
+
+    -- COMO O ONR CHAMA ISTO. `hash` no indicador, `numeroEdital` no edital —
+    -- guarda-se como TEXTO, que é a forma que não perde zero à esquerda.
+    identificador TEXT,
+
+    -- O QUE A CASA MANDOU, congelado, com hash.
+    corpo_enviado TEXT NOT NULL,
+    corpo_hash TEXT NOT NULL,
+    resposta TEXT,
+
+    situacao TEXT NOT NULL DEFAULT 'ENVIADO',
+
+    -- O QUE A FILA DO ONR DISSE DEPOIS. **Enviado não é aceito.**
+    fila_hash TEXT,
+    fila_situacao TEXT,
+    fila_conferida_em TEXT,
+    fila_resposta TEXT,
+
+    enviado_em TEXT NOT NULL,
+    enviado_por TEXT,
+
+    cancelado_em TEXT,
+    cancelado_por TEXT,
+    cancelado_motivo TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_ri_onr_envios_fila
+    ON ri_onr_envios(situacao, especie);
+CREATE INDEX IF NOT EXISTS idx_ri_onr_envios_matricula
+    ON ri_onr_envios(matricula_id, enviado_em);
+CREATE INDEX IF NOT EXISTS idx_ri_onr_envios_processo
+    ON ri_onr_envios(processo_id, enviado_em);
+
+-- O MESMO IDENTIFICADOR NÃO SE GUARDA DUAS VEZES, por ambiente e por espécie.
+-- Ver o cabeçalho: os dois ambientes existem e a casa fala com os dois.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_ri_onr_envios_central
+    ON ri_onr_envios(ambiente, especie, identificador)
+    WHERE identificador IS NOT NULL;
+"""
+
+# Colunas acrescentadas depois. Aditivo, no padrão do sistema — e índice sobre
+# coluna de migração **não vai aqui**: vai em `INDICES_DEPOIS_DA_MIGRACAO`.
+MIGRACOES: tuple[tuple[str, str, str], ...] = ()
+
+INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = ()
+
+
+def init_ri_onr_central_schema(con: sqlite3.Connection) -> None:
+    """Cria o rastro do que sobe ao ONR. Idempotente."""
+    con.executescript(SCHEMA)
+    for tabela, coluna, tipo in MIGRACOES:
+        existentes = {linha[1] for linha in con.execute(
+            f"PRAGMA table_info({tabela})")}
+        if coluna not in existentes:
+            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+    for comando in INDICES_DEPOIS_DA_MIGRACAO:
+        con.execute(comando)

@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Certidão n. {{ certidao.numero }}/{{ certidao.ano }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_certidoes') }}">&larr; Certidões</a>
+  <a class="button" href="{{ url_for('rcpn_assento', assento_id=certidao.assento_id) }}">O assento</a>
+  <a class="button primary" href="{{ url_for('rcpn_certidao_imprimir', certidao_id=certidao.id) }}">Imprimir (PDF)</a>
+  <a class="button" href="{{ url_for('rcpn_certidao_odt', certidao_id=certidao.id, formato='odt') }}">Baixar em .odt</a>
+</div>
+
+{% if certidao.cancelada_em %}
+<div class="alert danger">
+  <strong>Certidão cancelada</strong> em {{ certidao.cancelada_em }}
+  {% if certidao.cancelada_por %}por {{ certidao.cancelada_por }}{% endif %}.
+  <br>{{ certidao.cancelada_motivo }}
+  {% if certidao.declaracao_selo_tjma_em %}
+  <br><small>Declaração registrada em {{ certidao.declaracao_selo_tjma_em }}
+    {% if certidao.declaracao_selo_tjma_por %}por {{ certidao.declaracao_selo_tjma_por }}{% endif %}:
+    eventual selo próprio desta certidão já foi cancelado no portal do Selo Eletrônico do TJMA.</small>
+  {% endif %}
+  {# O TEOR FICA À VISTA mesmo cancelada: ela está na mão de alguém, e quem
+     confere precisa ver o que aquele papel diz. #}
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>{{ certidao.especie | capitalize }} de {{ certidao.nome }}</span>
+    <small>emitida em {{ certidao.emitida_em }}</small>
+  </div>
+  <table class="table">
+    <tr><th style="width:24%">Matrícula</th><td>{{ certidao.matricula or '—' }}</td></tr>
+    <tr><th>Selo</th><td>{% if certidao.selo %}<code>{{ certidao.selo }}</code>{% else %}—{% endif %}</td></tr>
+    <tr><th>Requerente</th><td>{{ certidao.requerente or '—' }}</td></tr>
+    <tr><th>Finalidade</th><td>{{ certidao.finalidade or '—' }}</td></tr>
+    <tr><th>Modalidade</th><td>
+      {% set m = (certidao.modalidade or 'RESUMO')|upper %}
+      {% if m == 'INTEIRO_TEXTO' %}Inteiro teor — texto corrido
+      {% elif m == 'INTEIRO_REPRO' %}Inteiro teor — cópia reprográfica
+      {% else %}Resumo (quadro CNJ){% endif %}
+    </td></tr>
+    <tr><th>Atos no assento</th>
+        <td>{{ certidao.atos_no_assento }}
+          <small>— quantos o assento tinha quando esta certidão saiu. Se hoje
+          houver mais, o assento andou depois dela.</small></td></tr>
+    <tr><th>Autenticidade</th><td><small>{{ certidao.hash_teor }}</small></td></tr>
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O teor</span>
+    <small>congelado — averbação posterior não muda esta certidão</small>
+  </div>
+  <div style="padding:14px; white-space:pre-wrap; font-family:monospace"
+       >{{ certidao.teor }}</div>
+</section>
+
+{% if user.role in ['ADMIN','MANAGER','USER'] and not certidao.cancelada_em %}
+<section class="panel">
+  <div class="panel-head"><span>Cancelar esta certidão</span></div>
+  <form method="post" action="{{ url_for('rcpn_certidao_cancelar', certidao_id=certidao.id) }}"
+        style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p><small>
+      O teor <strong>não se apaga</strong>: a certidão saiu e está na mão de alguém.
+      O que se registra é que esta serventia a cancelou, e por quê — e é o motivo
+      que explica a segunda via para quem conferir depois.
+    </small></p>
+    <label>Por que está sendo cancelada
+      <textarea name="motivo" rows="2" required
+                placeholder="Ex.: erro no nome da mãe, conferido no livro."></textarea></label>
+    <label style="display:flex; gap:8px; align-items:flex-start; margin:12px 0">
+      <input type="checkbox" name="selo_cancelado_tjma" value="1" required style="width:auto; margin-top:3px">
+      <span>Declaro que eventual selo emitido especificamente para esta certidão já foi cancelado no portal do Selo Eletrônico do TJMA.</span>
+    </label>
+    <button class="button danger" type="submit">Cancelar a certidão</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

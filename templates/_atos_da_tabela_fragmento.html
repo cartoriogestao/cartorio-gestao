@@ -1,0 +1,16 @@
+{# Fragmento da busca de atos — SEM a faixa SANDBOX de proposito:
+   e pedaco de HTML injetado por JS dentro da tela que JA tem a faixa. #}
+{% if vazio_sem_busca %}
+<p class="muted small" data-sandbox-fragmento="1">Digite o código ou o nome do ato para listar a tabela.</p>
+{% elif achados is defined and not achados and busca %}
+<p class="muted small" data-sandbox-fragmento="1">Nenhum ato encontrado para «{{ busca }}».</p>
+{% endif %}
+{#
+  O FRAGMENTO DA LISTA — só a lista, sem a página em volta.
+
+  É o que `busca_ato.js` pede enquanto se digita (RELATO #53). Ele importa a
+  MESMA macro que a tela do protocolo usa, e não desenha uma lista própria: se
+  fossem duas, a que aparece ao digitar deixaria de ser a que aparece ao
+  clicar.
+#}
+{% import "_atos_da_tabela.html" as T with context %}{{ T.lista(achados, protocolo_id, busca) }}

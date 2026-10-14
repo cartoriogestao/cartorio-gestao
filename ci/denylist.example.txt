@@ -1,0 +1,22 @@
+# Deny-list NOMINAL da serventia — EXEMPLO (placeholders).
+#
+# A lista REAL fica em `ci/denylist.local.txt` (no .gitignore, nunca no Git),
+# preenchida pela Auditoria no SERVIDOR. Na publicação no GitHub, o conteúdo
+# do .local vira o secret `CG_DENYLIST_LOCAL` do repositório, cadastrado pelo
+# oficial; o workflow `.github/workflows/anti-leak.yml` o escreve em disco
+# antes de varrer.
+#
+# Formato: uma entrada por linha. `#` comenta. Literal = sem diferenciar
+# maiúsculas nem acento. Prefixo `re:` = expressão regular.
+#
+# O que entra no .local: nome da serventia e da cidade, CNS, CNPJ (com e sem
+# máscara), nomes do titular/substituta/colaboradores, e-mail e telefone da
+# casa, IPs da rede interna, pasta do usuário do Windows.
+# O que NÃO entra: CPF de ninguém (o detector genérico de DV já cobre CPF).
+NOME DA SERVENTIA EXEMPLO
+Cidade Exemplo
+re:\b00\.?000\.?000/?0000-?00\b
+Fulano de Tal Exemplo
+contato@serventia.exemplo
+re:\b192\.0\.2\.\d{1,3}\b
+re:C:[\\/]+Users[\\/]+usuario_exemplo

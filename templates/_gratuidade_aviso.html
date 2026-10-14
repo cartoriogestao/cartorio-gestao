@@ -1,0 +1,10 @@
+{# O COMPROVANTE DA GRATUIDADE — ordem do oficial em 11/10/2026: aviso ao
+   usuário, insistente, em toda tela, até guardar o comprovante. Não trava o
+   ato e não se fecha: some quando o último comprovante for guardado. #}
+{% if gratuidade_aviso %}
+<div role="alert" style="background:#b00020;color:#fff;padding:12px 18px;font-size:16px;
+     font-weight:700;border-bottom:4px solid #6d0014">
+  Você tem {{ gratuidade_aviso }} ato(s) gratuito(s) sem o comprovante da gratuidade.
+  <a style="color:#fff;text-decoration:underline" href="{{ url_for('gratuidade_comprovantes') }}">Guardar os comprovantes agora</a>.
+</div>
+{% endif %}

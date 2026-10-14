@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Usucapião — o que o Código de Normas exige{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Usucapião — o que o Código de Normas do TJMA exige</h1>
+  <a class="button" href="{{ url_for('usucapiao_processos') }}">&larr; Os processos</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>De onde isto saiu</span></div>
+  <div style="padding:14px">
+    <p>Da <strong>Seção XIV — Da Usucapião Extrajudicial</strong>, arts. 747 a 761
+    do Código de Normas do TJMA, mais os arts. 738 e 739, que tratam dela dentro
+    da regularização fundiária rural. São <strong>{{ artigos|length }} artigos</strong>:
+    {{ artigos|join(', ') }}.</p>
+    <p class="small muted">Cada regra abaixo traz o artigo de onde saiu, para você
+    abrir o Código e ler. Esta tela não decide nada e não guarda nada &mdash; ela
+    só mostra o que o Código manda perguntar.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>A justificação do óbice &mdash; art. 748</span></div>
+  <div style="padding:14px">
+    <p>É a pergunta que separa a usucapião de uma compra e venda que ninguém quis
+    registrar para não pagar ITBI. <strong>O requerente declara por que a
+    transação não pôde ser escriturada</strong>, e o registrador alerta a ele e às
+    testemunhas de que declaração falsa é crime.</p>
+    <p class="small"><em>{{ T.ALERTA_DO_ART_748 }}</em></p>
+    <p>As hipóteses que o Código dá como já justificadas (§ 1º) &mdash; e a lista
+    é <strong>«entre outras»</strong>, não é fechada:</p>
+    <ul>
+      {% for codigo, texto in T.OBICES_DO_ART_748.items() %}
+        {% if codigo != 'OUTRO' %}<li>{{ texto }}</li>{% endif %}
+      {% endfor %}
+    </ul>
+    <p class="small danger">{{ T.VEDACAO_EXIGENCIA_TRIBUTARIA }}</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>O que <strong>não</strong> impede o reconhecimento</span></div>
+  <div style="padding:14px">
+    <p class="small muted">Esta é a lista mais importante da tela: é onde um balcão
+    inseguro trava um pedido bom. Em cada um destes casos a intuição diz «isto
+    derruba», e o Código diz que não derruba.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Situação</th><th>O que o Código diz</th><th>Artigo</th></tr></thead>
+      <tbody>
+      {% for x in T.NAO_IMPEDEM %}
+        <tr><td class="small"><strong>{{ x.rotulo }}</strong></td>
+            <td class="small">{{ x.texto }}</td>
+            <td class="small"><code>{{ x.base }}</code></td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <p class="small" style="margin-top:10px">{{ T.PERMITIDO_DOMINIO_UTIL }}</p>
+    <p class="danger" style="margin-top:10px"><strong>A única vedação absoluta:</strong>
+      {{ T.VEDACAO_SFH.rotulo }}. {{ T.VEDACAO_SFH.texto }}
+      <span class="small"><code>{{ T.VEDACAO_SFH.base }}</code></span></p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Quando há indisponibilidade &mdash; art. 760</span></div>
+  <div style="padding:14px">
+    <p>Indisponibilidade averbada <strong>depois</strong> do início comprovado da
+    posse não impede a usucapião. Mas cria três deveres, e eles acontecem em
+    <strong>momentos diferentes</strong> do rito:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Quando</th><th>O dever</th><th>Artigo</th></tr></thead>
+      <tbody>
+      {% for d in T.DEVERES_DA_INDISPONIBILIDADE %}
+        <tr><td class="small"><span class="badge">{{ d.quando }}</span></td>
+            <td class="small">{{ d.rotulo }}<br>
+              <span class="muted">{{ d.nota }}</span></td>
+            <td class="small"><code>{{ d.base }}</code></td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <p class="small muted" style="margin-top:8px">
+      O do meio é o único que pode indeferir o pedido, e num parágrafo corrido ele
+      se perde &mdash; por isso os três estão separados aqui.
+      Ver também <a href="{{ url_for('ri_cnib_pendentes') }}">CNIB — o que espera
+      seu okay</a>.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>A planta e o memorial &mdash; art. 753</span></div>
+  <div style="padding:14px">
+    <p>Para imóvel <strong>sem origem registrária</strong>, a planta e o memorial
+    têm de trazer:</p>
+    <ul>{% for x in T.CONTEUDO_DA_PLANTA %}<li>{{ x }}</li>{% endfor %}</ul>
+    <p class="small muted">É aqui que um pedido volta em exigência depois de
+    semanas. <code>{{ T.BASE_DA_PLANTA }}</code></p>
+
+    <h3 style="margin-top:16px">E quando a área não bate com a matrícula</h3>
+    <p class="small muted">Cada resposta leva o registro a um lugar diferente.
+    Perguntar isto na entrada evita a diligência do terceiro mês.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Situação</th><th>O que acontece</th><th>Artigo</th></tr></thead>
+      <tbody>
+      {% for a in T.AREA_CONTRA_A_MATRICULA %}
+        <tr><td class="small"><strong>{{ a.rotulo }}</strong></td>
+            <td class="small">{{ a.efeito }}</td>
+            <td class="small"><code>{{ a.base }}</code></td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Imóvel edificado &mdash; art. 761</span></div>
+  <div style="padding:14px">
+    <p>São <strong>dois atos, nesta ordem</strong> &mdash; o que resolve a dúvida
+    de quem tem um pedido sobre casa construída e não sabe se abre a matrícula da
+    casa ou do terreno:</p>
+    <ol>{% for p in T.IMOVEL_EDIFICADO %}<li>{{ p.rotulo }}</li>{% endfor %}</ol>
+    <ul>
+      {% for c in T.CONSTRUCAO_NO_IMOVEL %}
+      <li class="small">{{ c.texto }} <code>{{ c.base }}</code></li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>As certidões &mdash; arts. 751 e 752</span></div>
+  <div style="padding:14px">
+    <p class="small">{{ T.DISPENSA_DE_CERTIDAO.texto }}
+      <code>{{ T.DISPENSA_DE_CERTIDAO.base }}</code></p>
+    <p class="small">{{ T.EQUIVALE_A_QUITACAO.texto }}
+      <code>{{ T.EQUIVALE_A_QUITACAO.base }}</code></p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>O edital, e de quando se conta o prazo &mdash; art. 755</span></div>
+  <div style="padding:14px">
+    <p class="small">{{ T.EDITAL_NA_CENTRAL.texto }}
+      <code>{{ T.EDITAL_NA_CENTRAL.base }}</code></p>
+    <p class="small">{{ T.EDITAL_SEM_ORIGEM.texto }}
+      <code>{{ T.EDITAL_SEM_ORIGEM.base }}</code></p>
+    <p><strong>São dois saltos, e não um.</strong> A data da publicação é o
+    primeiro dia útil <em>depois</em> da disponibilização no meio eletrônico; e os
+    prazos só começam a contar no primeiro dia útil <em>depois</em> dessa data de
+    publicação. Quem ler o § 1º com pressa conta o prazo da disponibilização
+    &mdash; e num edital, errar por um dia é recomeçar o edital.</p>
+    <p class="small">{{ T.NOTIFICACAO_DE_CONFRONTANTE.texto }}
+      <code>{{ T.NOTIFICACAO_DE_CONFRONTANTE.base }}</code></p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>A impugnação &mdash; arts. 739 e 756</span></div>
+  <div style="padding:14px">
+    <p class="small muted">O que o oficial faz com uma impugnação não é decidir se
+    ela procede: é tentar conciliar e, num caso só, remeter ao juízo.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Caso</th><th>O que se faz</th><th>Artigo</th></tr></thead>
+      <tbody>
+      {% for i in T.IMPUGNACAO_CAMINHOS %}
+        <tr><td class="small"><strong>{{ i.rotulo }}</strong></td>
+            <td class="small">{{ i.efeito }}</td>
+            <td class="small"><code>{{ i.base }}</code></td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <h3 style="margin-top:16px">Quando quem impugna é órgão público</h3>
+    <p class="small muted">Esta distinção existe para impedir que um pedido bom
+    morra numa frase de duas linhas.</p>
+    <ul>
+      {% for x in T.IMPUGNACAO_DE_ORGAO_PUBLICO %}
+      <li class="small"><strong>{{ x.quando }}:</strong> {{ x.texto }}
+        <code>{{ x.base }}</code></li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>A decisão &mdash; art. 757</span></div>
+  <div style="padding:14px">
+    <p>{{ T.A_DECISAO_E_O_TITULO }}</p>
+    <p class="small">{{ T.CONDOMINIO_NAO_INSTITUIDO.texto }}
+      <code>{{ T.CONDOMINIO_NAO_INSTITUIDO.base }}</code></p>
+    <p class="small muted"><strong>«Sem pendência de diligências complementares»</strong>
+    é condição do artigo, e não conselho: o sistema já recusa decidir procedente
+    com item do checklist pendente.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Onde o pedido corre &mdash; art. 747</span></div>
+  <div style="padding:14px">
+    <p class="small">{{ T.ONDE_CORRE.texto }} <code>{{ T.ONDE_CORRE.base }}</code></p>
+    <p class="small muted"><strong>«Sem prejuízo da via jurisdicional»</strong> é a
+    frase para ter na ponta da língua no balcão: o interessado não perde o direito
+    de ir a juízo por ter começado aqui, e uma recusa aqui não fecha a porta dele.</p>
+  </div>
+</section>
+{% endblock %}

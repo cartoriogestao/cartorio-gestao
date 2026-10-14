@@ -1,0 +1,415 @@
+{% extends 'base.html' %}
+{% block title %}Protocolo {{ p.numero }} — Administrativo{% endblock %}
+{% block heading %}<h1>Protocolo {{ p.numero }}</h1>{% endblock %}
+{% block content %}
+{% from '_fraude.html' import alerta as alerta_fraude %}
+{# O ALERTA DE FRAUDE VEM NO ALTO — antes de a casa trabalhar. #}
+{{ alerta_fraude(fraudes, csrf_token, 'balcão — protocolo', p.numero,
+                 url_for('caixa_protocolo', protocolo_id=p.id)) }}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('caixa_protocolos') }}">&larr; Protocolo geral</a>
+  {#  O BOTÃO DO ORÇAMENTO, E O QUE FICA NO LUGAR DELE — problema #90,
+      relatado por Beatriz em 21/09/2026 às 14h39: «ESTOU TENTANDO GERAR UM
+      ORÇAMENTO PORÉM O SISTEMA NÃO ESTÁ RESPONDENDO AOS MEUS COMANDOS».
+
+      **O SISTEMA RESPONDIA: ELE É QUE NÃO DIZIA NADA.** Medido na auditoria
+      daquela tarde: às 14h34 ela emitiu o orçamento do protocolo 21183 sem
+      problema; às 14h37 abriu o 21394, novo, **sem um único item**; às 14h39
+      relatou. Neste o botão simplesmente NÃO EXISTIA — o `{% if atos %}` o
+      escondia —, e quem acabou de usá-lo dois minutos antes procura o botão,
+      não acha, e conclui que a tela travou.
+
+      **ESCONDER SEM DIZER POR QUÊ É O DEFEITO**, e a régua já estava escrita
+      nesta casa: *lista vazia que só mostra nada faz o operador achar que
+      quebrou*. O lugar do botão passa a explicar e a apontar onde se resolve —
+      e ele volta a aparecer sozinho assim que o primeiro item entrar. #}
+  {% if atos %}<a class="button" href="{{ url_for('caixa_orcamento', protocolo_id=p.id) }}">
+    {% if p.tipo == 'ORCAMENTO' %}Emitir cálculo de emolumentos{% else %}Emitir orçamento{% endif %}</a>
+  {% else %}
+  <span class="small muted" style="align-self:center">
+    Sem itens não há o que orçar —
+    <a href="#acrescentar-item">acrescente os serviços</a> e o botão do
+    {% if p.tipo == 'ORCAMENTO' %}cálculo de emolumentos{% else %}orçamento{% endif %}
+    aparece aqui.</span>
+  {% endif %}
+  {% if p.tipo != 'ORCAMENTO' %}
+  <a class="button" href="{{ url_for('caixa_recepcao', protocolo_id=p.id) }}">Protocolo de recepção</a>
+  {#
+    UM RECIBO SÓ, DO ATENDIMENTO INTEIRO — decisão do oficial em 27/08/2026.
+    Quem pede três cópias autenticadas e uma certidão na mesma ida ao balcão
+    espera UM papel, e não quatro.
+
+    Só aparece quando algum serviço já entrou no caixa: recibo é prova de
+    pagamento, e não de orçamento.
+  #}
+  {% if atos | selectattr('lancamento_id') | list %}
+  <form method="post" action="{{ url_for('caixa_recibo_do_protocolo', protocolo_id=p.id) }}"
+        style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button primary">Recibo do atendimento</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+
+{% if p.tipo == 'ORCAMENTO' %}
+<div class="notice warning">
+  <strong>Protocolo de mero cálculo de emolumentos.</strong> Serve para orçar, não para praticar
+  ato. O documento emitido diz isso com todas as letras — não gera prenotação, não reserva
+  valores, e os emolumentos são os vigentes na data.
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>{{ SITUACOES.get(p.situacao, p.situacao) }}</span>
+    <span class="small muted">{{ p.atribuicao }}</span></div>
+  <div class="grid2" style="padding:14px">
+    <div><small class="muted">Aberto em</small><div>{{ fmt_date(p.data_abertura) }} {{ p.hora or '' }}</div></div>
+    <div><small class="muted">Interessado</small><div>{{ p.interessado or '—' }}</div></div>
+    <div><small class="muted">Documento</small><div>{{ p.interessado_documento or '—' }}</div></div>
+    <div><small class="muted">Assunto</small><div>{{ p.assunto or '—' }}</div></div>
+    <div><small class="muted">Telefone</small><div>{{ p.telefone or '—' }}</div></div>
+    <div><small class="muted">E-mail</small><div>{{ p.email or '—' }}</div></div>
+    <div><small class="muted">Previsão de entrega</small><div>{{ fmt_date(p.previsao_entrega) if p.previsao_entrega else '—' }}</div></div>
+    <div><small class="muted">Gratuito</small><div>{{ 'sim' if p.gratuito else 'não' }}</div></div>
+    <div><small class="muted">Documento apresentado</small><div>{{ p.documento_tipo or '—' }}{% if p.documento_numero %} nº {{ p.documento_numero }}{% endif %}</div></div>
+    <div><small class="muted">Recepção impressa em</small><div>{{ p.recepcao_em or '—' }}</div></div>
+    {% if p.documento_descricao %}<div class="span2"><small class="muted">Descrição do documento</small><div>{{ p.documento_descricao }}</div></div>{% endif %}
+    {% if p.observacao %}<div class="span2"><small class="muted">Anotação</small><div>{{ p.observacao }}</div></div>{% endif %}
+    {% if p.ri_protocolo_id or (p.atribuicao or '')|upper == 'RI' %}
+    <div class="span2"><small class="muted">Prenotação do RI</small>
+      <div>{% if prenotacao_ligada %}
+        <a href="{{ url_for('ri_protocolo_ver', protocolo_id=prenotacao_ligada.id) }}">
+          nº {{ prenotacao_ligada.numero }}/{{ prenotacao_ligada.livro or '1A' }}</a>
+        {% if prenotacao_ligada.apresentante %}
+          — {{ prenotacao_ligada.apresentante[:40] }}{% endif %}
+        {% if prenotacao_ligada.matricula_numero %}
+          — mat. {{ prenotacao_ligada.matricula_numero }}{% endif %}
+        {% else %}
+          <span class="badge media">sem vínculo</span>
+          <span class="small muted"> — o lavrar não acha os itens sozinho
+            enquanto a ponte estiver vazia.</span>
+          {# 12/10/2026 — o título que vai a registro se prenota a partir daqui,
+             e a prenotação já nasce ligada a este protocolo geral. #}
+          {% if (p.atribuicao or '')|upper == 'RI' and not p.ri_protocolo_id %}
+          <a class="button" href="{{ url_for('ri_protocolo', cx=p.id) }}">Prenotar este título</a>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+{% if p.ri_protocolo_id or (p.atribuicao or '')|upper == 'RI' %}
+<section class="panel">
+  <div class="panel-head"><span>Vínculo com a prenotação (Livro 1)</span></div>
+  <div style="padding:14px">
+    <p class="small muted">A coluna <code>ri_protocolo_id</code> liga este
+      protocolo de caixa à prenotação do RI. O balcão escolhe; não se inventa
+      junção por nome do interessado.</p>
+    <form method="post" class="grid2" style="margin-top:8px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="span2">Prenotação
+        <select name="ri_protocolo_id">
+          <option value="">— escolha a prenotação —</option>
+          {% for pr in prenotacoes_ri or [] %}
+            <option value="{{ pr.id }}"
+              {% if p.ri_protocolo_id and (p.ri_protocolo_id|string) == (pr.id|string) %}selected{% endif %}>
+              nº {{ pr.numero }}/{{ pr.livro or '1A' }}
+              {% if pr.apresentante %} — {{ pr.apresentante[:40] }}{% endif %}
+              {% if pr.matricula_numero %} — mat. {{ pr.matricula_numero }}{% endif %}
+            </option>
+          {% endfor %}
+        </select></label>
+      <div class="span2">
+        <button class="primary" name="acao" value="vincular_ri">Vincular</button>
+      </div>
+    </form>
+    {% if p.ri_protocolo_id %}
+    <form method="post" style="margin-top:8px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button name="acao" value="desvincular_ri"
+              onclick="return confirm('Remover o vínculo com a prenotação?')">Desvincular</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="cards">
+  <div class="stat"><strong>{{ soma.total }}</strong><small>total do protocolo</small></div>
+  <div class="stat"><strong>{{ pendente.total }}</strong><small>ainda a quitar</small></div>
+  <div class="stat"><strong>{{ atos|selectattr('quitado')|list|length }}/{{ atos|length }}</strong><small>itens quitados</small></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Itens e quitação</span>
+    {# QUITAR TUDO COM UM BOTÃO SÓ — RELATO #52 do oficial.
+
+       «caixa, permitir que um botao quite todos os itens — permitir quitar
+       tudo com um botao so». Medido antes de construir: há protocolo desta
+       casa em `A_PAGAR` com 37 itens, e cada um custava um clique mais uma ida
+       e volta de página.
+
+       O BOTÃO SÓ APARECE QUANDO HÁ O QUE QUITAR, e o rótulo diz quantos e
+       quanto: quem está no balcão precisa saber o que vai sair da gaveta antes
+       de clicar. A confirmação existe pelo mesmo motivo — quitação não se
+       desfaz apagando; desfaz-se por estorno, que deixa rastro.
+
+       A FORMA DE PAGAMENTO é do LOTE, porque o pagamento é um só. Em branco,
+       grava em branco, como o botão de um item: não se adivinha como o cliente
+       pagou. #}
+    {% if faltam %}
+    <form method="post" action="{{ url_for('caixa_protocolo_itens', protocolo_id=p.id) }}"
+          style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="small">Forma de pagamento do lote
+        <select name="forma_pagamento">
+          <option value="">— não informar —</option>
+          {% for cod, rotulo in FORMAS.items() %}<option value="{{ cod }}">{{ rotulo }}</option>{% endfor %}
+        </select></label>
+      <button class="primary" name="acao" value="quitar_todos"
+        onclick="return confirm('Quitar os {{ faltam }} itens que faltam, quitando-os e lançando cada um no caixa? O total a receber é {{ pendente.total }}.')">
+        Quitar os {{ faltam }} que faltam — {{ pendente.total }}</button>
+    </form>
+    {% endif %}
+  </div>
+  {# O TETO DO ART. 37 SOBRE OS REGISTROS DE GARANTIA — item 16.31.
+
+     A tela AVISA e não corta. Como o teto se conta está em disputa entre os
+     colegas: se ele vale para cada tipo de garantia (hipoteca de um lado,
+     penhor do outro — e aí uma cédula com duas garantias tem dois tetos) ou
+     para a soma de todos os registros do mesmo título. Há ofício na
+     corregedoria sobre isso, e decidir tese jurídica não é do sistema.
+
+     O aviso diz os dois números — o que a tabela deu e o que o teto daria —
+     para quem assina escolher sabendo quanto está em jogo. #}
+  {% if acima_do_teto %}
+  <div class="flash warning">
+    <strong>Os registros de garantia passam do teto do art. 37.</strong>
+    São {{ acima_do_teto.registros }} registros somando
+    <strong>R$ {{ acima_do_teto.emolumentos }}</strong> de emolumentos, e o teto
+    da vigência é R$ {{ acima_do_teto.teto }} — R$ {{ acima_do_teto.excesso }}
+    acima. Limitado ao teto, o cliente pagaria
+    <strong>R$ {{ acima_do_teto.total_no_teto }}</strong> por esses registros.
+    <br><span class="small">O sistema não corta nada: o item 16.31 não diz com
+    todas as letras se o teto é de cada tipo de garantia ou da soma de todos os
+    registros do mesmo título, e a decisão é de quem assina. Se for o caso de
+    limitar, remova os itens e acrescente o valor no teto.</span>
+  </div>
+  {% endif %}
+  {% if atos %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Código TJ</th><th>Ato</th><th>Qtd</th><th>Base de cálculo</th>
+      <th style="text-align:right">Emolumentos</th><th style="text-align:right">Total</th>
+      <th>Quitação</th></tr></thead>
+    <tbody>{% for a in atos %}
+      <tr>
+        <td>{{ a.codigo_ato or '—' }}
+          {% if a.origem_valor %}<br><span class="small muted">{{ a.origem_valor|lower }}</span>{% endif %}</td>
+        <td class="small">{{ (a.descricao or '—')[:70] }}
+          {% if a.usado_em %}<br><span class="small muted">já lançado na
+            {{ a.usado_rotulo or 'lavratura' }}, em {{ fmt_date(a.usado_em) }}</span>{% endif %}</td>
+        <td>{{ a.quantidade }}</td>
+        <td class="small">{{ a.base_calculo or '—' }}</td>
+        <td style="text-align:right">{{ a.emolumentos }}</td>
+        <td style="text-align:right"><strong>{{ a.valor_total }}</strong></td>
+        <td>
+          <form method="post" action="{{ url_for('caixa_protocolo_itens', protocolo_id=p.id) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="item_id" value="{{ a.id }}">
+            {% if a.quitado %}
+              <span class="badge ok">quitado</span>
+              {% if a.quitado_em %}<br><span class="small muted">{{ fmt_date(a.quitado_em) }}
+                {% if a.quitado_por %}· {{ a.quitado_por }}{% endif %}</span>{% endif %}
+              <button class="small" name="acao" value="desquitar">reabrir</button>
+            {% else %}
+              <span class="badge alta">a quitar</span>
+              <button class="small" name="acao" value="quitar">quitar</button>
+              <button class="small" name="acao" value="remover"
+                onclick="return confirm('Remover este item do protocolo?')">remover</button>
+            {% endif %}
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    <tr><td colspan="4"><strong>Composição</strong></td>
+      <td colspan="3" class="small">emolumentos {{ soma.emolumentos }} · FERC {{ soma.ferc }} ·
+        FADEP {{ soma.fadep }} · FEMP {{ soma.femp }} · FERRFIS {{ soma.ferrfis }}</td></tr>
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="small muted" style="padding:14px">Nenhum item ainda. Acrescente abaixo, pela tabela
+    do tribunal — o valor não se digita.</p>
+  {% endif %}
+</section>
+
+<section class="panel" id="acrescentar-item">
+  <div class="panel-head"><span>Acrescentar item pela tabela</span></div>
+  <div style="padding:14px">
+    {# A BUSCA — RELATO #53.
+
+       Antes: digitar, clicar em «Procurar», a página recarregava e voltava ao
+       alto, e o balcão rolava de novo até aqui. Agora `busca_ato.js` pede só a
+       lista enquanto se digita, e a página não sai do lugar.
+
+       O FORMULÁRIO CONTINUA DE PÉ, e não é sobra: sem JavaScript ele é o único
+       caminho, e é ele que faz o `?busca_ato=` que a página já sabe desenhar.
+       A frase «a lista aparece enquanto você digita» só é mostrada quando o
+       script está ativo — prometer na tela o que não acontece é o defeito que
+       este projeto persegue. #}
+    <form class="filters" method="get"
+          action="{{ url_for('caixa_protocolo', protocolo_id=p.id) }}"
+          data-busca-ato-form>
+      <label>Procurar o ato <input name="busca_ato" value="{{ busca_ato }}" size="34"
+        placeholder="código do TJ ou palavra da descrição"
+        autocomplete="off"
+        data-busca-ato
+        data-url="{{ url_for('caixa_protocolo_atos_da_tabela', protocolo_id=p.id) }}"
+        data-alvo="#atos-da-tabela"></label>
+      <button>Procurar</button>
+      <span class="small muted" data-busca-ato-recado hidden>a lista aparece
+        enquanto você digita</span>
+    </form>
+
+    <div id="atos-da-tabela" data-atos-da-tabela>
+      {% import "_atos_da_tabela.html" as T with context %}{{ T.lista(achados, p.id, busca_ato) }}
+    </div>
+
+    <form method="post" action="{{ url_for('caixa_protocolo_itens', protocolo_id=p.id) }}"
+          class="grid2" style="margin-top:14px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="span2"><strong class="small">Ato que depende do valor do negócio</strong></div>
+      <label>Tabela
+        <select name="tabela">
+          {% for cod, nome in TABELAS.items() %}
+            <option value="{{ cod }}" {% if cod == 5 %}selected{% endif %}>{{ nome }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Valor do negócio
+        <input name="base_calculo" placeholder="100.000,00" required
+               title="Obrigatório na faixa: sem valor cai na primeira faixa do RI">
+        <span class="small muted">obrigatório nesta faixa — sem valor o sistema
+          cairia na primeira faixa do RI (errada para certidão / 2ª via)</span></label>
+      {# O ITEM 16.31 — a MESMA garantia estipulada em mais de um imóvel.
+
+         Quem conta os imóveis é quem leu a cédula: o título não está dentro do
+         sistema, e adivinhar pelo número de matrículas ligadas ao protocolo
+         daria o número errado no dia em que houvesse duas garantias.
+
+         NÃO É O NÚMERO DE GARANTIAS. Hipoteca, penhor e alienação fiduciária
+         da mesma cédula entram como itens separados, cada um sobre o valor
+         cheio — é o item 16.29. O que se divide é cada garantia pelos imóveis
+         em que ela está. #}
+      <label>Imóveis em que esta garantia está
+        <input name="imoveis" value="1" size="3" inputmode="numeric">
+        <span class="small muted">o valor do negócio é dividido por eles, e sai
+          um registro para cada (item 16.31). Garantia de outra natureza é
+          outro item, pelo valor cheio.</span></label>
+      <label>Quantidade <input name="quantidade" value="1" size="3"></label>
+      <div style="align-self:end"><button class="primary" name="acao" value="acrescentar">
+        Acrescentar pela faixa</button></div>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Corrigir contato</span></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Telefone <input name="telefone" value="{{ p.telefone or '' }}"></label>
+    <label>E-mail <input name="email" type="email" value="{{ p.email or '' }}"></label>
+    <label>CPF/CNPJ <input name="interessado_documento" value="{{ p.interessado_documento or '' }}"></label>
+    <label>Previsão de entrega <input type="date" name="previsao_entrega" value="{{ p.previsao_entrega or '' }}"></label>
+    <label>Documento apresentado
+      <select name="documento_tipo">
+        <option value="">— não informado —</option>
+        {% for t in TIPOS_DOCUMENTO %}<option value="{{ t }}"{% if p.documento_tipo == t %} selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select></label>
+    <label>Nº do documento <input name="documento_numero" value="{{ p.documento_numero or '' }}"></label>
+    <label class="span2">Descrição do documento
+      <input name="documento_descricao" value="{{ p.documento_descricao or '' }}"></label>
+    <div class="span2"><button name="acao" value="contato">Guardar</button>
+      <span class="small muted">Contato e documento não são ato: corrigem-se direto, com registro na auditoria.
+        No que sai do cartório, CPF e telefone saem mascarados (LGPD).</span></div>
+  </form>
+</section>
+
+{# ================= ENCERRAR O ATENDIMENTO QUE NÃO VIROU ATO =================
+
+   O débito «encerrar protocolo», de agosto. Medido em 28/08/2026: 640
+   protocolos abertos, todos do E-Ofício e nenhum com um único item — o cliente
+   perguntou o preço e não voltou.
+
+   O painel só aparece quando não há dinheiro dentro: protocolo com item
+   quitado tem lançamento no caixa, e encerrá-lo faria o serviço sumir da lista
+   e o valor ficar. Quem recusa é o domínio; a tela só não oferece. #}
+<section class="panel">
+  <div class="panel-head"><span>Encerramento</span>
+    {% if encerrado %}<span class="badge">{{ SITUACOES.get(p.situacao, p.situacao) }}</span>{% endif %}
+  </div>
+  <div style="padding:14px">
+  {% if encerrado %}
+    <p><strong>Este protocolo está encerrado</strong> em
+      {{ fmt_dt(p.data_finalizacao) if p.data_finalizacao else '—' }}
+      {%- if p.encerrado_por %} por {{ p.encerrado_por }}{% endif %}.</p>
+    {% if p.encerramento_motivo %}
+    <p class="source-note" style="white-space:pre-wrap">{{ p.encerramento_motivo }}</p>
+    {% endif %}
+    <form method="post" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input name="motivo" style="flex:1;min-width:280px"
+             placeholder="por que está reabrindo">
+      <button name="acao" value="reabrir">Reabrir</button>
+    </form>
+    <p class="small muted" style="margin-top:6px">
+      Ao reabrir, a situação volta a sair dos itens &mdash; ela não se escolhe.
+      E o motivo do encerramento <strong>fica gravado</strong>, com a marca de
+      que foi reaberto: engano se conserta à vista, não se esconde.</p>
+  {% elif atos | selectattr('quitado') | list %}
+    <p><strong>Este protocolo já tem item quitado</strong>, e por isso não se
+    encerra por aqui: esse dinheiro entrou no caixa. Para desfazer, estorne o
+    lançamento &mdash; o estorno deixa rastro, e apagar não.</p>
+  {% else %}
+    <p>Atendimento que não virou ato &mdash; foi só um orçamento, o cliente não
+    voltou, resolveu-se por outro caminho &mdash; se encerra aqui, com o motivo
+    escrito.</p>
+    <form method="post" class="grid2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Como encerrar
+        <select name="encerramento">
+          {% for codigo, texto in ENCERRAMENTOS.items() %}
+            <option value="{{ codigo }}">{{ texto }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Por quê
+        <input name="motivo" placeholder="o que aconteceu com este atendimento"></label>
+      <div class="span2"><button name="acao" value="encerrar">Encerrar</button>
+        <span class="small muted">Daqui a dois anos essa frase é a única coisa
+          que vai explicar o protocolo em branco.</span></div>
+    </form>
+  {% endif %}
+  </div>
+</section>
+
+{% if lancamentos %}
+<section class="panel">
+  <div class="panel-head"><span>Movimento no caixa</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Data</th><th>Natureza</th><th>Descrição</th>
+      <th style="text-align:right">Valor</th></tr></thead>
+    <tbody>{% for l in lancamentos %}
+      <tr {% if l.estornado or l.excluido %}class="pendente"{% endif %}>
+        <td class="small">{% if l.numero %}{{ l.numero }}/{{ l.ano }}{% else %}—{% endif %}</td>
+        <td class="small">{{ fmt_date(l.data) }}</td>
+        <td class="small">{{ l.natureza }}{% if l.estornado %} <span class="badge alta">estornado</span>{% endif %}
+          {% if l.excluido %} <span class="badge alta">excluído</span>{% endif %}</td>
+        <td class="small">{{ (l.descricao or '')[:60] }}</td>
+        <td style="text-align:right">{{ l.valor }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

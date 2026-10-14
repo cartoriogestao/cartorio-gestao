@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Informações importadas do E-Ofício{% endblock %}
+{% block content %}
+<h1>Informações importadas do E-Ofício</h1>
+
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_assento_novo') }}">Preencher pelos documentos</a>
+  <a class="button" href="{{ url_for('rcpn_assento_novo', do_acervo=1) }}">Digitar as informações</a>
+  <a class="button" href="{{ url_for('rcpn_assentos') }}">Lista de assentos</a>
+</div>
+
+<div class="card">
+  <p><strong>{{ quadro.importados }}</strong>
+     {{ 'assento veio' if quadro.importados == 1 else 'assentos vieram' }}
+     do acervo do E-Ofício.</p>
+  <p class="small muted">
+    <strong>Isto não é uma lista de trabalho.</strong> O termo destes assentos
+    já existe — <strong>em papel, assinado, no livro</strong> — e não será
+    lavrado de novo. O que a carga trouxe foram as <strong>informações</strong>,
+    e elas servem à <strong>certidão</strong>, que é para o que foram
+    importadas.
+  </p>
+  <p class="small muted">
+    Por isso eles <strong>não aparecem</strong> em «Termos a escrever»: aquela
+    lista é de serviço a fazer, e enfileirar {{ quadro.importados }} linhas lá
+    prometeria {{ quadro.importados }} termos que ninguém vai escrever.
+  </p>
+</div>
+
+<div class="card">
+  <p class="small">
+    <strong>O que ainda pode vir do papel</strong> é o PDF do termo. Anexá-lo
+    é conveniência, não obrigação: a certidão sai das informações. Quem tem o
+    PDF anexado aparece marcado abaixo.
+  </p>
+</div>
+
+<table class="tabela">
+  <tr>
+    <th>assento</th><th>nome</th><th>data</th>
+    <th>livro</th><th>matrícula</th><th>PDF do termo</th>
+  </tr>
+  {% for a in linhas %}
+  <tr>
+    <td><a href="{{ url_for('rcpn_assento', assento_id=a.id) }}">{{ a.especie|capitalize }} nº {{ a.numero }}</a></td>
+    <td>{{ a.nome }}</td>
+    <td>{{ (a.data_ato or '')[:10] }}</td>
+    <td>{{ a.livro_volume or '—' }}</td>
+    <td class="small">{{ a.matricula or '—' }}</td>
+    <td>
+      {% if a.anexos %}
+        <strong>{{ a.anexos }}</strong> anexado{{ '' if a.anexos == 1 else 's' }}
+      {% else %}
+        <span class="muted small">—</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+{% if not linhas %}
+<div class="card"><p>Nenhum assento importado.</p></div>
+{% endif %}
+{% endblock %}

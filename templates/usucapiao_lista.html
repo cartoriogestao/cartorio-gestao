@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Usucapião extrajudicial</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="notice">
+  Processo, e não ato: o rito do <strong>art. 216-A da Lei 6.015/1973</strong> leva
+  meses e passa por notificação, ciência aos três entes públicos, edital e decisão
+  fundamentada do oficial. A ficha mostra onde cada um está, o que falta e o que
+  fazer agora.
+</div>
+
+<section class="cards">
+  {% for e in por_etapa %}
+    <div class="stat"><strong>{{ e.n }}</strong><small>{{ NOME_DA_ETAPA.get(e.etapa, e.etapa) }}</small></div>
+  {% endfor %}
+  {% if vencidos %}
+    <div class="stat"><strong>{{ vencidos | length }}</strong><small>com prazo vencido</small></div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Procurar</span></div>
+  <form method="get" class="grid2" style="padding:14px">
+    <label>Termo <input name="q" value="{{ termo }}" placeholder="número, requerente, imóvel"></label>
+    <label>Etapa
+      <select name="etapa">
+        <option value="">todas</option>
+        {% for e, nome in ETAPAS %}
+          <option value="{{ e }}" {% if e == etapa %}selected{% endif %}>{{ nome }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Situação
+      <select name="situacao">
+        <option value="">todas</option>
+        {% for s in SITUACOES %}
+          <option value="{{ s }}" {% if s == situacao %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select></label>
+    <div class="actions">
+      <button class="button">Procurar</button>
+      <a class="button" href="{{ url_for('usucapiao_processos') }}">Limpar</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Autuar novo processo</span></div>
+  <form method="post" action="{{ url_for('usucapiao_novo') }}" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Número dos autos <input name="numero" required placeholder="US-2026-001"></label>
+    <label>Modalidade
+      <select name="modalidade" required>
+        {% for k, v in MODALIDADES.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select></label>
+    <label>Requerente <input name="requerente_nome"></label>
+    <label>CPF/CNPJ <input name="requerente_documento"></label>
+    <label style="grid-column:1/-1">Imóvel <input name="imovel_descricao"
+      placeholder="Lote, quadra, loteamento — ou a descrição do memorial"></label>
+    <label>Área <input name="imovel_area" placeholder="250 m²"></label>
+    <label>Município <input name="imovel_municipio" value="{{ sv.ri_cidade }}"></label>
+    <label>Prenotação <input name="prenotacao"></label>
+    <label>Posse desde <input name="posse_inicio" type="date"></label>
+    <div class="actions"><button class="button">Autuar</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Processos</span><small>{{ linhas | length }}</small></div>
+  {% if not linhas %}
+    <p style="padding:14px">Nenhum processo. Autue o primeiro no formulário acima.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr>
+      <th>Número</th><th>Modalidade</th><th>Requerente</th><th>Etapa</th>
+      <th>Situação</th><th>Prazo</th>
+    </tr></thead>
+    <tbody>
+      {% for l in linhas %}
+      <tr>
+        <td><a href="{{ url_for('usucapiao_processo', processo_id=l.id) }}">{{ l.numero }}</a></td>
+        <td>{{ MODALIDADES.get(l.modalidade, l.modalidade) }}</td>
+        <td>{{ l.requerente_nome or '—' }}</td>
+        <td>{{ NOME_DA_ETAPA.get(l.etapa, l.etapa) }}</td>
+        <td>{{ l.situacao }}</td>
+        <td>{% if l.id in vencidos %}<strong class="danger">vencido</strong>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

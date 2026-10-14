@@ -1,0 +1,239 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Selador — configuração</h1>{% endblock %}
+{% block content %}
+
+<div class="notice">
+  <strong>O selador desta serventia não está na internet.</strong> A configuração do
+  E-Ofício aponta para um endereço como <code>https://IP-DO-SELADOR:443</code> — uma máquina da
+  <em>rede local</em> do escritório, que é quem guarda o estoque de selo e conversa com
+  o TJMA. Por isso o endereço se configura aqui, e o sistema nunca cai sozinho no
+  endereço de fábrica (<code>{{ padrao_de_fabrica }}</code>): mandar o pedido para a
+  nuvem quando a casa sela num aparelho da sala ao lado dá erro no meio do
+  atendimento — ou selo comprado duas vezes.
+</div>
+
+<section class="panel">
+  <h2>Como está agora</h2>
+  <table>
+    <tbody>
+      <tr><th>Ambiente</th><td><strong>{{ estado.ambiente }}</strong></td></tr>
+      <tr><th>Endereço em uso</th>
+          <td>{% if estado.base_em_uso %}<code>{{ estado.base_em_uso }}</code>
+                {% if estado.na_rede_local %}<span class="badge">rede local</span>{% endif %}
+              {% else %}<span class="badge warn">não configurado</span>{% endif %}</td></tr>
+      <tr><th>Usuário</th>
+          <td>{% if estado.usuario %}<code>{{ estado.usuario }}</code>
+              {% else %}<span class="badge warn">não informado</span>{% endif %}</td></tr>
+      <tr><th>Senha</th>
+          <td>{% if estado.tem_credencial %}
+                gravada em {{ fmt_dt(estado.credencial_em) }}, <strong>fora do banco</strong>
+              {% else %}<span class="badge warn">não gravada</span>{% endif %}</td></tr>
+      <tr><th>Autenticação</th>
+          <td>{% if estado.auth_em_uso %}<code>{{ estado.auth_em_uso }}</code>
+                {% if not estado.auth_url %}<span class="small muted">(presumido:
+                  o token vem do próprio selador)</span>{% endif %}
+              {% else %}—{% endif %}</td></tr>
+      <tr><th>Certificado</th>
+          <td>{% if certificado.sha256 %}
+                <code class="small">{{ certificado.legivel }}</code>
+                <span class="badge">conferido</span>
+                <div class="small muted">
+                  {{ certificado.assunto or 'assunto não legível' }}
+                  {% if certificado.fixado_em %} · fixado em
+                    {{ fmt_dt(certificado.fixado_em) }}
+                    por {{ certificado.fixado_por or '—' }}{% endif %}
+                </div>
+              {% else %}<span class="badge warn">não conferido</span>{% endif %}</td></tr>
+      <tr><th>Origem</th>
+          <td class="small muted">{{ estado.origem or '—' }}
+              {% if estado.atualizado_em %} · {{ fmt_dt(estado.atualizado_em) }}
+                por {{ estado.atualizado_por or '—' }}{% endif %}</td></tr>
+      <tr><th>Último teste</th>
+          <td class="small">
+            {% if estado.ultimo_teste_em %}
+              {{ fmt_dt(estado.ultimo_teste_em) }} —
+              {% if estado.ultimo_teste_ok %}<span class="badge">respondeu</span>
+              {% else %}<span class="badge warn">falhou</span>{% endif %}
+              <span class="muted">{{ estado.ultimo_teste_mensagem or '' }}</span>
+            {% else %}<span class="muted">nunca testado</span>{% endif %}</td></tr>
+      <tr><th>Contrato carregado</th>
+          <td class="small muted">{{ endpoints }} serviços, nos espaços
+              {{ espacos|join(', ') }}</td></tr>
+    </tbody>
+  </table>
+
+  {% if not estado.pronto %}
+    <div class="notice warn">
+      <strong>Falta para o sistema poder selar:</strong>
+      <ul>{% for f in estado.faltas %}<li>{{ f }}</li>{% endfor %}</ul>
+    </div>
+  {% elif estado.na_rede_local %}
+    <div class="notice">
+      Tudo no lugar. Como o selador é da rede local, o sistema só sela de dentro do
+      escritório — de fora, mesmo com o sistema no ar, o pedido não chega.
+    </div>
+  {% else %}
+    <div class="notice">Tudo no lugar.</div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Trazer do E-Ofício</h2>
+  <p>
+    A configuração já está na casa, na tabela <code>tbSeladorConfiguracao</code> do
+    acervo do E-Ofício — endereço, usuário e senha. Trazer daqui evita o pior caminho,
+    que é abrir a tela do E-Ofício, ler a senha e redigitar.
+  </p>
+  {% if tem_acervo %}
+    <form method="post" onsubmit="return confirm('Isto substitui o endereço, o usuário e a senha do selador pelos do E-Ofício. Continuar?')">
+      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+      <input type="hidden" name="acao" value="importar">
+      <button class="button" type="submit">Importar do E-Ofício</button>
+    </form>
+  {% else %}
+    <div class="notice warn">
+      Não achei <code>acervo_eoficio.sqlite3</code> na pasta de dados. Sem ele,
+      preencha abaixo à mão.
+    </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Conferir o certificado</h2>
+  <p>
+    O selador desta casa é uma máquina da rede local, e máquina de rede local tem
+    <strong>certificado próprio</strong> — não assinado por autoridade. Validar pela
+    cadeia falharia sempre, e simplesmente desligar a validação deixaria qualquer
+    máquina da rede se passar pelo selador e receber a senha da serventia.
+  </p>
+  <p>
+    Então o certificado se <strong>fixa</strong>: veja abaixo a impressão digital que a
+    máquina apresenta, confira com quem instalou o selador, e confirme. Daí em diante o
+    sistema só fala com quem apresentar exatamente esse certificado — o que é mais
+    forte que validar cadeia, e não menos.
+  </p>
+  <div class="actions">
+    <form method="post" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+      <input type="hidden" name="acao" value="ver_certificado">
+      <button class="button" type="submit">Ver a impressão digital</button>
+    </form>
+  </div>
+  <form method="post">
+      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <input type="hidden" name="acao" value="fixar_certificado">
+    <label>Impressão digital (SHA-256) apresentada pelo selador
+      <input type="text" name="sha256" autocomplete="off"
+             placeholder="cole aqui o valor que apareceu acima">
+    </label>
+    <div class="actions">
+      <button class="button" type="submit">Conferi — pode fixar</button>
+    </div>
+  </form>
+  {% if not certificado.sha256 %}
+    <div class="notice warn">
+      Enquanto o certificado não for conferido, <strong>o sistema não manda a senha da
+      serventia</strong> para essa máquina. É de propósito.
+    </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Testar</h2>
+  <p class="small muted">
+    Confere rede, certificado e credencial — sem selar nada. É o que responde
+    «por que não está selando?» antes de o balcão descobrir com a parte na frente.
+  </p>
+  <form method="post">
+      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <input type="hidden" name="acao" value="testar">
+    <button class="button" type="submit">Testar a conexão</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Preencher à mão</h2>
+  <form method="post">
+      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <input type="hidden" name="acao" value="gravar">
+    <label>Endereço do selador
+      <input type="text" name="base_url" value="{{ estado.base_url or '' }}"
+             placeholder="https://IP-DO-SELADOR:443" autocomplete="off">
+    </label>
+    <label>Endereço de homologação
+      <input type="text" name="base_homologacao"
+             value="{{ estado.base_homologacao or '' }}"
+             placeholder="no E-Ofício, campo «URL de Homologação»" autocomplete="off">
+    </label>
+    <label>Endereço de autenticação
+      <input type="text" name="auth_url" value="{{ estado.auth_url or '' }}"
+             placeholder="em branco = o próprio selador, em /auth" autocomplete="off">
+    </label>
+    <label>Ambiente
+      <select name="ambiente">
+        {% for a in ambientes %}
+          <option value="{{ a }}" {% if estado.ambiente == a %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Usuário
+      <input type="text" name="usuario" placeholder="nome.sobrenome" autocomplete="off">
+    </label>
+    <label>Senha
+      <input type="password" name="senha" autocomplete="new-password"
+             placeholder="{% if estado.tem_credencial %}deixe em branco para manter a atual{% else %}a senha do selador{% endif %}">
+    </label>
+    <div class="actions"><button class="button" type="submit">Gravar</button></div>
+  </form>
+  <p class="small muted">
+    A senha <strong>não vai para o banco de dados</strong>. Ela fica num arquivo próprio
+    da pasta de dados, ao lado do <code>secret.key</code> — que é o que o backup não
+    leva. O banco viaja em backup e em cópia; a senha não vai junto.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>Selos obtidos e não usados</h2>
+  <p class="small muted">
+    No acervo do E-Ofício há <strong>1.304 selos assim</strong> — 5% de todos —, e
+    apenas cinco foram cancelados. É o rastro de quem obteve selo e perdeu o ato no
+    meio. Aqui o selo entra no razão na hora em que chega, antes de o ato terminar,
+    justamente para aparecer nesta lista em vez de sumir.
+  </p>
+  {% if orfaos %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Selo</th><th>Atribuição</th><th>Referência</th>
+          <th>Obtido em</th><th>Por</th></tr></thead>
+        <tbody>
+        {% for s in orfaos %}
+          <tr><td><code class="small">{{ s.numero }}</code></td>
+              <td>{{ s.atribuicao or '—' }}</td>
+              <td class="small">{{ s.referencia or '—' }}</td>
+              <td class="small">{{ fmt_dt(s.obtido_em) }}</td>
+              <td class="small muted">{{ s.obtido_por or '—' }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">Nenhum. Todo selo obtido está vinculado a um ato ou cancelado.</p>
+  {% endif %}
+</section>
+
+{% if estado.tem_credencial %}
+<section class="panel">
+  <h2>Apagar usuário e senha</h2>
+  <p class="small muted">
+    O sistema deixa de selar até que sejam informados de novo. O endereço e o ambiente
+    continuam gravados.
+  </p>
+  <form method="post" onsubmit="return confirm('Apagar o usuário e a senha do selador?')">
+      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <input type="hidden" name="acao" value="apagar_credencial">
+    <button class="button" type="submit">Apagar credencial</button>
+  </form>
+</section>
+{% endif %}
+
+{% endblock %}

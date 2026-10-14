@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>PLD / COAF <small class="muted">— sigiloso</small></h1>{% endblock %}
+{% block content %}
+{# SIGILO: esta tela é só do ADMIN (CNN, art. 154; TJMA, art. 954, parágrafo
+   único). Nada daqui vai a tarefa, aviso ou relatório que o balcão veja. #}
+<section class="panel">
+  <p>O sistema <strong>seleciona</strong> nos atos lavrados o que o Código Nacional de
+  Normas manda comunicar ao COAF, <strong>prepara</strong> o texto da comunicação e
+  <strong>conta o prazo</strong>. O envio é feito por você no
+  <a href="{{ siscoaf }}" target="_blank" rel="noopener">Siscoaf</a>; aqui se registra
+  o número que ele devolve e se guarda o recibo.</p>
+  <ul class="small">
+    <li><strong>Sem análise</strong> (CNN, art. 151, II): pagamento em espécie ou por
+      título ao portador de R$ 100.000,00 ou mais — Notas (art. 171), RI (art. 161),
+      RTD/RCPJ (art. 163). Seleção em 30 dias da operação, comunicação em 24 horas.</li>
+    <li><strong>Com análise</strong> (art. 151, I): doação acima de R$ 100 mil, garantia
+      entre particulares, transmissões sucessivas (art. 162) e procuração ampla
+      irrevogável (art. 155-A, XVI). Análise em 60 dias, documentada mesmo sem
+      comunicação (art. 141, § 3º).</li>
+    <li><strong>«Moeda corrente» não é espécie</strong> (CNN, art. 140, VII; TJMA, art.
+      476, III): só conta o que o título discrimina como espécie.</li>
+  </ul>
+  <p class="small muted">Por que não sai sozinho: o leiaute do arquivo do segmento de
+  notários e registradores só se baixa dentro do Siscoaf, por usuário habilitado, e o
+  envio pelo serviço exige cada chamada assinada com o seu e-CPF. Quando a habilitação
+  sair, baixe o manual em «Comunicar em Lote» e ele entra aqui.</p>
+  <form method="post" action="{{ url_for('pld_selecionar') }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Ler os atos lavrados desde <input type="date" name="desde" value="{{ corte }}"></label>
+    <button class="primary">Selecionar agora</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Fila</span>
+    <span class="small">
+      <a href="{{ url_for('pld_painel') }}">todos</a>
+      {% for k, v in SITUACOES.items() %} · <a href="{{ url_for('pld_painel', situacao=k) }}">{{ v }}
+        ({{ resumo.por_situacao.get(k, 0) }})</a>{% endfor %}
+    </span></div>
+  {% if resumo.vencidos %}
+  <div class="notice danger">{{ resumo.vencidos }} caso(s) pendente(s) com o prazo do
+    art. 151 já passado. Conclua e comunique o quanto antes — o atraso não dispensa a
+    comunicação.</div>
+  {% endif %}
+  {% if not casos %}
+  <p class="muted" style="padding:10px">Nenhum caso{% if situacao %} nesta situação{% endif %}.
+    Clique em «Selecionar agora» para ler os atos lavrados.</p>
+  {% else %}
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>Atribuição</th><th>O que é</th><th>Data</th><th>Valor</th>
+        <th>Prazo</th><th>Situação</th></tr>
+    {% for c in casos %}
+    <tr>
+      <td><a href="{{ url_for('pld_caso', caso_id=c.id) }}">{{ c.id }}</a></td>
+      <td>{{ c.atribuicao }}</td>
+      <td class="small">{{ c.descricao }}<br><span class="muted">{{ c.fundamento }}</span></td>
+      <td>{{ fmt_date(c.data_operacao) }}</td>
+      <td>{{ reais(c.valor_centavos) }}</td>
+      <td class="small">{% if c.situacao in ('A_COMUNICAR','A_ANALISAR') %}
+        {% if c.prazo.vencido %}<strong style="color:#b00">vencido em {{ fmt_date(c.prazo.limite) }}</strong>
+        {% elif c.prazo.limite %}até {{ fmt_date(c.prazo.limite) }}{% endif %}{% else %}—{% endif %}</td>
+      <td>{{ SITUACOES.get(c.situacao, c.situacao) }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Abrir caso à mão</span></div>
+  <p class="small muted" style="padding:0 14px">Para o que a seleção não alcança — por
+  exemplo, as escrituras de 2025 que estão só no acervo do E-Ofício (pelo selo).</p>
+  <form method="post" action="{{ url_for('pld_abrir') }}" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Qual é o ato (selo, livro, folha) <input name="referencia" required></label>
+    <label>Data do ato <input type="date" name="data" required></label>
+    <label>Atribuição <select name="atribuicao"><option>NOTAS</option><option>RI</option>
+      <option>RTD</option><option>RCPJ</option></select></label>
+    <label>Valor (R$) <input name="valor" placeholder="150.000,00"></label>
+    <label class="span2">Por que vai à análise <input name="motivo" required></label>
+    <div class="span2"><button>Abrir caso</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Comunicação de não ocorrência (CNN, art. 153)</span></div>
+  <div style="padding:14px">
+  {% for a in anos %}
+    <p><strong>{{ a.ano }}</strong>: {{ a.comunicadas }} comunicada(s), {{ a.pendentes }} pendente(s).
+    {% if a.cabe %}Ano sem comunicação — a declaração à Corregedoria-Geral vence em
+      {{ fmt_date(a.prazo) }}. <a href="{{ url_for('pld_nao_ocorrencia', ano=a.ano) }}">Ver o texto</a>
+    {% else %}Não cabe declaração de não ocorrência{% if a.pendentes %} enquanto houver caso pendente{% endif %}.{% endif %}</p>
+  {% endfor %}
+  </div>
+</section>
+{% endblock %}

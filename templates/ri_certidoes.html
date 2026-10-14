@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% from '_cancelar_certidao.html' import formulario as cancelar_certidao,
+                                          motivo as motivo_do_cancelamento %}
+{% block title %}Certidões — Registro de Imóveis{% endblock %}
+{% block heading %}<h1>Certidões</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a></div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ resumo.total }}</strong><small>certidões no livro</small></div>
+  <div class="stat"><strong>{{ resumo.emitidas }}</strong><small>emitidas neste sistema</small></div>
+  <div class="stat"><strong>{{ resumo.importadas }}</strong><small>importadas do E-Ofício</small></div>
+  <div class="stat"><strong>{{ resumo.canceladas }}</strong><small>canceladas</small></div>
+</section>
+
+<div class="notice">
+  Certidão de inteiro teor, de ônus e de propriedade se emite pela <strong>ficha da matrícula</strong>.
+  A <strong>certidão negativa de imóvel</strong> (nada consta em nome da pessoa ou sobre o imóvel)
+  se emite pelo <a href="{{ url_for('ri_indicador_pessoal') }}">Indicador Pessoal</a>
+  ou pelo <a href="{{ url_for('ri_indicador_real') }}">Indicador Real</a>,
+  somente quando a busca não acha nada. O teor é <strong>congelado no momento da
+  emissão</strong>. Validade de 30 dias, na forma do Código de Normas.
+</div>
+
+{% if resumo.importadas %}
+<div class="notice warning">
+  As {{ resumo.importadas }} certidões vindas do E-Ofício entraram <strong>sem o teor</strong> —
+  a coluna do texto não veio na exportação. Constam no livro como histórico, mas não podem
+  ser reimpressas aqui. Elas são identificadas pelo <strong>protocolo e via</strong>, como no
+  sistema de origem: lá a numeração não era única por ano, e renumerá-las aqui seria inventar dado.
+</div>
+{% endif %}
+
+<form class="filters" method="get">
+  <input name="busca" value="{{ busca }}" placeholder="Número, matrícula ou requerente" size="34">
+  <button>Buscar</button>
+</form>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Nº</th><th>Tipo</th><th>Matrícula</th><th>Requerente</th><th>Emissão</th><th>Válida até</th><th>Origem</th><th></th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr{% if r.cancelada %} class="muted"{% endif %}>
+          <td>{% if r.origem == 'EOFICIO' %}
+                <small class="muted">Prot. {{ r.protocolo or '—' }}</small><br>
+                <small>via {{ r.numero }}</small>
+              {% else %}<strong>{{ r.numero }}/{{ r.ano }}</strong>{% endif %}</td>
+          <td class="small">{{ TIPOS.get(r.tipo, r.tipo) }}</td>
+          <td>{% if r.mid %}<a href="{{ url_for('ri_ficha', matricula_id=r.mid) }}">{{ r.matricula_numero }}</a>{% else %}{{ r.matricula_numero or '—' }}{% endif %}</td>
+          <td class="small">{{ r.requerente or '—' }}</td>
+          <td>{{ fmt_date(r.data_emissao) }}</td>
+          <td>{% if r.validade_ate %}{{ fmt_date(r.validade_ate) }}
+                {% if r.validade_ate < hoje %}<br><span class="badge alta">vencida</span>{% endif %}
+              {% else %}—{% endif %}</td>
+          <td>{% if r.origem == 'EOFICIO' %}<span class="badge">E-Ofício</span>{% else %}<span class="badge ok">Sistema</span>{% endif %}</td>
+          <td>
+            {# O BOTÃO DE CANCELAR FALTAVA, e a rota existia desde sempre.
+               Certidão emitida por engano — matrícula errada, requerente
+               trocado — não tinha como ser cancelada pela tela: ficava válida
+               no mundo, com o sistema sabendo cancelá-la e ninguém podendo
+               mandar. É o defeito recorrente desta casa (função pronta que
+               nenhuma tela chama), e este é o último dele: das 143 rotas que
+               gravam, esta era a única órfã.
+
+               E O FORMULÁRIO PASSOU A MORAR NUMA MACRO — 17/09/2026, relato
+               #81. Ele é o mesmo na ficha da matrícula, e duas cópias
+               divergiriam no primeiro conserto. #}
+            {% if r.cancelada %}<span class="badge critica">Cancelada</span>
+            {% elif r.corpo %}<a href="{{ url_for('ri_certidao_odt', certidao_id=r.id) }}">PDF</a>
+              · <a href="{{ url_for('ri_certidao_odt', certidao_id=r.id, formato='odt') }}">.odt</a>{% endif %}
+            {{ cancelar_certidao(r, csrf_token, user) }}
+          </td>
+        </tr>
+        {% if r.cancelada and r.motivo_cancelamento %}
+        <tr class="muted"><td></td><td colspan="7" class="small">{{ motivo_do_cancelamento(r) }}</td></tr>
+        {% endif %}
+      {% else %}<tr><td colspan="8">Nenhuma certidão.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Sessão do agente #{{ r.sessao.id }}</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('agente_console') }}">&larr; Agente do sistema</a>
+  <a class="button" href="{{ url_for('ajuda_problemas') }}">Problemas do sistema</a>
+</div>
+
+{#
+  O CABEÇALHO MOSTRA O PREÇO. Sessão que consome dinheiro de verdade diz de
+  qual provedor veio, quanto gastou e por que parou — oficial que não vê o preço
+  não pode decidir sobre ele, e a conta chega no fim do mês de qualquer jeito.
+
+  E ELE SE ATUALIZA SOZINHO. O selo, os turnos e os tokens têm endereço
+  (`data-agente-*`) porque a sessão continua rodando DEPOIS de a página abrir —
+  e um cabeçalho que dissesse «em curso · 0 turnos» com a sessão já terminada
+  seria o carimbo que mente, na tela em que ele é mais fácil de acreditar. A
+  palavra e a cor do selo vêm de `agente_schema.selo_do_estado`, as mesmas que
+  a tela ao vivo recebe a cada segundo.
+#}
+<section class="panel">
+  <div class="panel-head">
+    <span>{{ r.sessao.titulo or '(sem título)' }}</span>
+    <small>
+      <span class="badge {{ r.selo.classe }}" data-agente-selo>{{ r.selo.texto }}</span>
+    </small>
+  </div>
+  <table class="table">
+    <tr><th style="width:30%">Pedido</th><td>{{ r.sessao.pedido }}</td></tr>
+    <tr><th>Provedor e modelo</th><td>{{ r.sessao.provedor }} · {{ r.sessao.modelo or '(padrão do provedor)' }}</td></tr>
+    <tr><th>Turnos e tokens</th>
+        <td><span data-agente-turnos>{{ r.sessao.turnos }}</span> turno(s) ·
+            <span data-agente-tokens-entrada>{{ r.sessao.tokens_de_entrada }}</span> de entrada,
+            <span data-agente-tokens-saida>{{ r.sessao.tokens_de_saida }}</span> de saída</td></tr>
+    <tr><th>Quando</th>
+        <td>{{ (r.sessao.criada_em or '')[:16] | replace('T', ' ') }}
+            {% if r.sessao.mexida_em %} — última mexida em
+            {{ (r.sessao.mexida_em or '')[:16] | replace('T', ' ') }}{% endif %}
+            {% if r.sessao.criada_por %} · por {{ r.sessao.criada_por }}{% endif %}</td></tr>
+    {% if r.sessao.erro %}
+    <tr><th>Por que parou</th><td>{{ r.sessao.erro }}</td></tr>
+    {% endif %}
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>A conversa</span>
+    <small>o que se disse, o que ele pediu e o que cada ferramenta devolveu</small>
+  </div>
+  {#
+    A CONVERSA CRESCE SOZINHA, E ESTE BLOCO É O QUE A FAZ CRESCER.
+
+    O QUE ESTÁ AQUI JÁ SAI DESENHADO PELO SERVIDOR — o mesmo
+    `_agente_passos.html` que a gaveta usa —, e `data-rodando` diz se há uma
+    linha viva. Se há, o `agente.js` pergunta a `/agente/andamento/<id>` a cada
+    segundo e ANEXA só o que veio depois, usando os cursores que vieram do
+    `retrato`. Sem os cursores, a página releria a conversa inteira para
+    descobrir que nada mudou, e o resultado de uma ferramenta pode ter dezenas
+    de linhas.
+
+    SEM JAVASCRIPT A PÁGINA NÃO PERDE NADA: ela mostra a conversa até onde ela
+    estava quando abriu, e quem quiser ver o resto recarrega. O que se ganha
+    aqui é não precisar recarregar.
+  #}
+  <div data-agente-vivo
+       data-sessao="{{ r.sessao.id }}"
+       data-rodando="{{ '1' if r.rodando else '0' }}"
+       data-url-andamento="{{ url_for('agente_andamento', sessao_id=r.sessao.id) }}"
+       data-desde="{{ r.proximo }}"
+       data-mudanca-desde="{{ r.mudanca_proxima }}">
+    <p class="agente-estado" style="padding:12px 14px 0" data-agente-estado></p>
+    <div style="padding:14px" class="agente-conversa" data-agente-conversa>
+      {% if not r.passos %}
+      <p class="muted">Esta sessão não tem passo nenhum registrado.</p>
+      {% endif %}
+      {% with passos=r.passos %}{% include '_agente_passos.html' %}{% endwith %}
+    </div>
+  </div>
+  <p style="padding:0 14px 14px"><small>
+    O que está escrito aqui é <strong>exatamente o que saiu desta casa e o que
+    voltou</strong> — inclusive os resultados já passados pela barreira de
+    privacidade. Não há uma segunda versão do que foi dito.
+  </small></p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O que esta sessão mudou</span>
+    <small><span data-agente-mudancas-conta>{{ r.mudancas | length }}</span></small>
+  </div>
+  {#
+    O QUADRO FICA SEMPRE, MESMO VAZIO. Escondido quando não havia mudança, ele
+    apareceria só depois de recarregar a página — e a mudança que o agente faz
+    enquanto a sessão roda é justamente a que ele precisa mostrar na hora, com
+    o botão de desfazer do lado. A linha de «ainda não mexeu em nada» some na
+    primeira que chegar.
+  #}
+  <table class="table">
+    <thead><tr><th style="width:22%">Ferramenta</th><th>Alvo e mudança</th>
+      <th style="width:16%">Situação</th><th></th></tr></thead>
+    <tbody data-agente-mudancas>
+      {% if not r.mudancas %}
+      <tr data-agente-mudancas-vazio><td colspan="4"><small class="muted">
+        Ele ainda não mudou nada nesta conversa.</small></td></tr>
+      {% endif %}
+      {% with mudancas=r.mudancas, sessao_id=r.sessao.id %}
+        {% include '_agente_mudancas.html' %}
+      {% endwith %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Continuar a conversa</span>
+    <small>a sessão retoma com tudo o que já foi lido</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    Escreva aqui quando ele parou no teto, quando ele pediu uma informação, ou
+    quando você quiser apurar outra coisa do mesmo assunto — <strong>o que já foi
+    lido nesta sessão continua na conversa</strong>, e não se paga de novo.
+    {% if r.sessao.estado == 'ABERTA' %}Esta sessão está marcada como em curso;
+    se ninguém a está rodando, comece outra.{% endif %}
+    Para um assunto diferente, comece uma sessão nova no console: assim o
+    histórico conta uma história só, e não uma lista de assuntos misturados.
+  </small></p>
+  <form method="post" style="padding:14px"
+        action="{{ url_for('agente_responder', sessao_id=r.sessao.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="display:block">O que você quer acrescentar
+      <textarea name="pedido" rows="3" required style="width:100%"></textarea></label>
+    <div class="actions"><button class="button primary">Continuar</button></div>
+  </form>
+</section>
+
+{% endblock %}

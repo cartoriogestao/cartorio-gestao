@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Como notificar no usucapião{% endblock %}
+{% block content %}
+<h1>Como efetuar a notificação</h1>
+
+<div class="card">
+  <p class="small muted">
+    Pedido seu em 30/08/2026: <em>«o módulo de processo de usucapião precisa ter
+    campo para subir as informações necessárias aos atos que o cartório
+    precisará praticar, como as notificações, e gerar modelo e manual de como
+    efetuar»</em>.
+  </p>
+  <p>
+    <strong>{{ base.o_que|forte }}</strong>
+    <span class="small muted">({{ base.artigo }})</span>
+  </p>
+  <p class="small muted">
+    Por isso as formas e os endereços desta tela <strong>são os mesmos</strong>
+    da retificação de área — não uma segunda lista. Duas listas divergiriam no
+    primeiro conserto, e a notificação passaria a seguir uma regra que o Código
+    não tem.
+  </p>
+</div>
+
+<h2>O passo a passo</h2>
+{% for p in manual %}
+<div class="card">
+  <p><strong>{{ p.passo }}. {{ p.o_que }}</strong></p>
+  <p>{{ p.como|forte }}</p>
+  {% if p.base and p.base != '—' %}
+    <p class="small muted">{{ p.base }}</p>
+  {% endif %}
+</div>
+{% endfor %}
+
+<h2>As quatro formas — e a ordem é da norma</h2>
+<div class="card">
+  <table class="tabela">
+    <tr><th>#</th><th>forma</th><th>o que é</th><th>artigo</th></tr>
+    {% for f in formas %}
+    <tr {% if f.forma == 'EDITAL' %}class="danger"{% endif %}>
+      <td>{{ loop.index }}</td>
+      <td><strong>{{ f.forma }}</strong></td>
+      <td>{{ f.o_que }}</td>
+      <td class="small muted">{{ f.artigo }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="small muted">
+    <strong>O edital é o último</strong>, e só cabe «caso frustradas as
+    tentativas anteriores». Publicar sem ter tentado é gastar e demorar por um
+    caminho que a norma não abriu — e sem a frustração registrada, ninguém prova
+    que houve tentativa.
+  </p>
+</div>
+
+<h2>Onde notificar</h2>
+<div class="card">
+  <p>{{ onde.o_que }}</p>
+  <p class="small muted">{{ onde.artigo }}</p>
+</div>
+
+<h2>Os prazos</h2>
+<div class="card">
+  <table class="tabela">
+    <tr><th>de quem</th><th>prazo</th><th>o quê</th><th>de onde vem</th></tr>
+    {% for p in prazos %}
+    <tr>
+      <td>{{ p.de_quem }}</td>
+      <td><strong>{{ p.dias }}</strong> dias{% if p.uteis %} úteis{% endif %}</td>
+      <td class="small">{{ p.o_que|forte }}</td>
+      <td class="small">
+        {% if p.procedencia == medido %}
+          <strong>lido</strong> no Código de Normas
+        {% else %}
+          <strong class="danger">citado</strong> da Lei de Registros Públicos
+        {% endif %}
+        <br><span class="muted">{{ p.base }}</span>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="small muted">
+    <strong>A procedência de cada prazo fica à vista, e não é zelo.</strong>
+    «Lido» é o que se conferiu no PDF do Código de Normas, que está nesta casa.
+    «Citado» vem da Lei de Registros Públicos, cujo texto oficial
+    <strong>não foi lido aqui dentro</strong> — o sistema mostra o prazo e não o
+    impõe: confirme com a lei aberta antes de expedir.
+  </p>
+</div>
+
+<div class="card">
+  <p><strong>O silêncio tem efeito.</strong> {{ silencio.o_que|forte }}</p>
+  <p class="small muted">{{ silencio.base }}</p>
+</div>
+{% endblock %}

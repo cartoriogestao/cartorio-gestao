@@ -1,0 +1,38 @@
+{# O manual do padrão de importação, na tela de quem vai importar.
+
+   **UMA MACRO, E NÃO CINCO CÓPIAS** — a regra de `_fraude.html` e `_cobrar.html`.
+   São cinco telas de importação nesta casa, e a consistência aqui não é
+   estética: é o operador achar a mesma coisa, com as mesmas palavras, em
+   qualquer uma delas. Cinco cópias divergiriam no primeiro conserto.
+
+   Pedido do oficial em 30/08/2026: «coloque o manual disponível para baixar nas
+   páginas de importação». #}
+
+{% macro manual_para_baixar(esta_tela_e_a_do_padrao=false) %}
+<div class="card">
+  {% if esta_tela_e_a_do_padrao %}
+    <p><strong>O manual deste padrão</strong> — para entregar a quem vai gerar o
+      arquivo: o técnico do outro sistema, a serventia de origem, quem converteu
+      a planilha.</p>
+  {% else %}
+    <p><strong>Vai trazer dados de OUTRO sistema?</strong> Esta tela não é o
+      caminho — ela lê o que já foi exportado do E-Ofício. O que vem de fora
+      entra por
+      <a href="{{ url_for('importar_padrao_tela') }}">Importar de outro
+        sistema</a>, que tem um padrão próprio.</p>
+  {% endif %}
+  <p>
+    <a class="button" href="{{ url_for('importar_padrao_manual') }}">
+      Baixar o manual do padrão de importação</a>
+  </p>
+  <p class="small muted">
+    <strong>O arquivo baixado vem mais completo que o documento do sistema</strong>:
+    ele leva junto a lista de campos de cada espécie e um exemplo pronto,
+    montados do banco desta serventia no momento do download. Quem o recebe está
+    fora daqui e não tem a tela onde essa lista mora.
+  </p>
+  <p class="small muted">
+    Abre no Bloco de Notas ou em qualquer editor de texto.
+  </p>
+</div>
+{% endmacro %}

@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+{% block title %}Endereços para o índice real — conferência{% endblock %}
+{% block heading %}<h1>Endereço para o índice real — a fila da conferência</h1>{% endblock %}
+{% block content %}
+
+{# ------------------------------------------------------------------ #}
+{# O QUE A TELA É, E O QUE ELA NÃO É — antes dos números. #}
+<section class="card">
+  <p>
+    O <strong>índice real</strong> do ONR é onde o país consulta de quem é um
+    imóvel. Para uma matrícula subir, o endereço dela precisa estar completo —
+    e <strong>{{ contagem.a_conferir }}</strong> desta casa não estão, porque o
+    teor que veio do OCR nunca foi lido para virar endereço.
+  </p>
+  <p>
+    <strong>Esta tela lê o teor e propõe o endereço. Ela não grava na ficha e
+    não manda nada ao ONR</strong> — quem grava é você, conferindo; quem
+    publica o índice é a tela do ONR, com perfil de oficial.
+  </p>
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>O que a fila tem hoje</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>situação</th><th>quantas</th><th></th></tr></thead>
+      <tbody>
+        {% for s in situacoes %}
+        <tr>
+          <td>{{ nome_da_situacao[s] }}</td>
+          <td>{{ contagem.por_situacao.get(s, 0) }}</td>
+          <td>
+            {% if s == situacao %}<strong>é a que você está vendo</strong>
+            {% else %}<a href="{{ url_for('ri_onr_enderecos', situacao=s) }}">ver</a>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><small>
+    Das que esperam conferência, <strong>{{ contagem.prontas }}</strong> estão
+    prontas para ir — não falta campo nenhum —, e
+    <strong>{{ contagem.divergentes }}</strong> o teor discorda da ficha: são
+    as que precisam de olho, e a coluna «por quê» diz onde está a discordância.
+  </small></p>
+
+  <form method="post" action="{{ url_for('ri_onr_enderecos_gerar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      <input type="checkbox" name="so_do_ocr" value="1">
+      Ler somente as fichas do OCR novo
+    </label>
+    <p><small>
+      Sem a caixa, o extrator lê <strong>tudo o que tem teor e não tem
+      endereço</strong> — inclusive o acervo do E-Ofício, que é a maior parte
+      e o que o índice nacional não vê. Com a caixa, ele lê só o que veio nas
+      importações do OCR, que é o que se quer <em>depois</em> de o acervo já
+      estar conferido: sem ela, cada rodada reproporia as mesmas fichas (o que
+      você já decidiu <strong>não</strong> é desfeito).
+    </small></p>
+    <button class="button" type="submit">Ler o teor e propor</button>
+  </form>
+</section>
+
+{# ------------------------------------------------------------------ #}
+{% if situacao == 'A_CONFERIR' %}
+<section class="card">
+  <h2>O filtro</h2>
+  <p>
+    <a class="button {% if so_prontas %}primary{% endif %}"
+       href="{{ url_for('ri_onr_enderecos', prontas='' if so_prontas else '1') }}">só as prontas</a>
+    <a class="button {% if so_divergentes %}primary{% endif %}"
+       href="{{ url_for('ri_onr_enderecos', divergentes='' if so_divergentes else '1') }}">só as que divergem</a>
+    {% if so_prontas or so_divergentes %}
+    <a class="button" href="{{ url_for('ri_onr_enderecos') }}">todas</a>
+    {% endif %}
+  </p>
+  <p><small>
+    <strong>A ordem é a da confiança</strong>, e não a do número: primeiro o
+    que a leitura achou com segurança, depois o resto. Quem abre esta tela
+    quer despachar o que não precisa de olho.
+  </small></p>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{% if not fila %}
+<section class="card">
+  <p class="muted">
+    {% if situacao == 'A_CONFERIR' %}
+      Não há proposta esperando conferência
+      {%- if so_prontas or so_divergentes %} com este filtro{% endif %}.
+      {% if contagem.prontas or contagem.divergentes %}
+        Limpe o filtro para ver as outras — ou clique em
+        <strong>Ler o teor e propor</strong>, acima.
+      {% else %}
+        Rode <strong>Ler o teor e propor</strong>, acima: é ele que lê o teor
+        das fichas sem endereço.
+      {% endif %}
+    {% else %}
+      Nada nesta situação.
+    {% endif %}
+  </p>
+</section>
+{% else %}
+
+<section>
+  <h2>{{ fila|length }} proposta{{ '' if fila|length == 1 else 's' }}
+      ({{ nome_da_situacao[situacao]|lower }})</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>matrícula</th><th>confiança</th><th>por quê</th>
+          <th>o que o teor diz</th><th>falta</th><th>conferido</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in fila %}
+        {% set c = p.proposta %}
+        <tr>
+          <td>
+            {{ p.matricula_numero }}
+            {% if p.livro %}<br><small>livro {{ p.livro }}</small>{% endif %}
+          </td>
+          <td>
+            {% if p.confianca == 'alta' %}alta
+            {% elif p.confianca == 'media' %}média
+            {% else %}<strong>baixa</strong>{% endif %}
+          </td>
+          <td>
+            {# **A DISCORDÂNCIA SE DIZ EM UMA PALAVRA.** Sem ela a coluna
+               «confiança» seria um adjetivo sem consequência, e a pessoa não
+               saberia se abre a ficha ou se segue adiante. #}
+            {% if p.pode_enviar %}<span title="não falta campo nenhum">pronta</span>
+            {% elif p.confianca == 'baixa' %}o teor discorda da ficha
+            {% else %}falta campo{% endif %}
+          </td>
+          <td>
+            {# **SÓ O QUE HÁ, E NA ORDEM EM QUE SE LÊ UM ENDEREÇO.** #}
+            {% if c.logradouro %}{{ c.logradouro }}{% endif %}
+            {% if c.numero_predial %}, {{ c.numero_predial }}{% endif %}
+            {% if c.bairro %}<br>{{ c.bairro }}{% endif %}
+            {% if c.cidade %}<br>{{ c.cidade }}{% if c.uf %}/{{ c.uf }}{% endif %}{% endif %}
+            {% if not c.logradouro and not c.bairro and not c.cidade %}
+              <span class="muted">— nada lido —</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if p.faltam %}{{ p.faltam|join(', ') }}
+            {% else %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td>{{ (p.decidido_em or '')[:16] or '—' }}<br><small>{{ p.decidido_por or '' }}</small></td>
+          <td><a class="button" href="{{ url_for('ri_onr_endereco', proposta_id=p.id) }}">conferir</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

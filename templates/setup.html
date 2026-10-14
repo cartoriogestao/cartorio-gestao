@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Configuração inicial{% endblock %}
+{% block auth_content %}
+<h1>Configuração inicial</h1>
+<p>Crie o administrador inicial. Não há senha padrão. A política inicial aceita senhas com 6 ou mais caracteres.</p>
+<form method="post" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Nome completo<input name="full_name" required></label>
+  <label>Usuário<input name="username" required></label>
+  <label>Senha<input type="password" name="password" required></label>
+  <label>Confirmar senha<input type="password" name="confirm" required></label>
+  <button class="primary">Criar administrador e iniciar</button>
+</form>
+<p class="muted small">Ao concluir, o plano de ação do relatório de inspeção será importado sem assumir a data inicial dos prazos.</p>
+{% endblock %}

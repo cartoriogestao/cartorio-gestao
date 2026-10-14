@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Importações do acervo</h1>{% endblock %}
+{% block content %}
+{% if sem_tipo %}
+<section class="panel">
+  <div class="panel-head"><span>Tipo do imóvel</span></div>
+  <div style="padding:14px">
+    <p class="small">
+      <strong>{{ sem_tipo }} matrícula(s) estão sem o tipo do imóvel.</strong>
+      O dado existe no E-Ofício em quase todas elas — a carga do acervo o descartou.
+      Sem ele, o Indicador Real do ONR sai com o tipo genérico e a CTP manda
+      “Terreno/fração” para tudo.
+    </p>
+    <form method="post" onsubmit="return confirm('Completar o tipo do imóvel nas {{ sem_tipo }} matrículas?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="primary" name="acao" value="tipo_imovel">
+        Completar o tipo do imóvel</button>
+      <span class="small muted">Só preenche onde está vazio. Não toca em teor, ato nem parte.</span>
+    </form>
+  </div>
+</section>
+{% endif %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}<a class="button primary" href="{{ url_for('ri_importar') }}">Carregar acervo</a>{% endif %}
+  {% if user.role in ['ADMIN','MANAGER'] %}<a class="button" href="{{ url_for('livro3_importar_acervo') }}">Livro 3 — importar do acervo</a>{% endif %}
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}<a class="button" href="{{ url_for('ri_matriculas_doc') }}">Matrículas em Word</a>{% endif %}
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}<a class="button" href="{{ url_for('ri_importacao_manual', especie='RI_MATRICULA') }}">Importar matrícula (manual)</a>
+  <a class="button" href="{{ url_for('ri_importacao_manual', especie='LIVRO3_REGISTRO') }}">Importar registro do Livro 3 (manual)</a>{% endif %}</div>
+
+<div class="notice">
+  <strong>«Carregar acervo» é a carga inteira do E-Ofício.</strong> As duas
+  «(manual)» acima são para um documento avulso de cada vez — um contrato, uma
+  matrícula que chegou digitalizada — sem escrever JSON: mesmo caminho de
+  <em>Importar de outro sistema</em>, campo por campo.
+  <br>
+  <strong>O Livro 3 tem porta própria</strong>, com o campo do acervo, a prévia
+  do que falta e as <strong>partes e averbações</strong> de cada registro:
+  <a href="{{ url_for('livro3_importar_acervo') }}">Livro 3 — importar do acervo</a>.
+  A «Carregar acervo» é o caminho do Livro 2 e não traz o Livro 3.
+</div>
+
+{% if manuais_matricula or manuais_livro3 %}
+<section class="panel">
+  <div class="panel-head"><span>Importados manualmente</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Espécie</th><th>Número</th><th>Detalhe</th><th>Quando</th></tr></thead>
+      <tbody>
+      {% for m in manuais_matricula %}
+        <tr><td>Matrícula</td><td>{{ m.numero }}</td>
+            <td class="small muted">Livro {{ m.livro or '—' }}, fl. {{ m.folha or '—' }}</td>
+            <td>{{ fmt_dt(m.criado_em) }}</td></tr>
+      {% endfor %}
+      {% for r in manuais_livro3 %}
+        <tr><td>Livro 3</td><td>{{ r.numero }}</td>
+            <td class="small muted">{{ r.natureza or '—' }} — {{ r.titulo_numero or '—' }}</td>
+            <td>{{ fmt_dt(r.criado_em) }}</td></tr>
+      {% endfor %}
+      {% if not manuais_matricula and not manuais_livro3 %}
+        <tr><td colspan="4">Nenhum registro importado por aqui ainda.</td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Importações realizadas</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Quando</th><th>Origem</th><th>Matrículas</th><th>Atos</th><th>Partes</th><th>Quarentena</th></tr></thead>
+      <tbody>
+      {% for i in imps %}
+        <tr><td>{{ i.id }}</td><td>{{ fmt_dt(i.concluida_em or i.iniciada_em) }}</td><td>{{ i.origem }}</td>
+            <td>{{ i.matriculas_gravadas }} / {{ i.matriculas_lidas }}</td>
+            <td>{{ i.atos_gravados }} / {{ i.atos_lidos }}</td>
+            <td>{{ i.partes_gravadas }} / {{ i.partes_lidas }}</td>
+            <td>{% if i.rejeitados %}<span class="badge alta">{{ i.rejeitados }}</span>{% else %}0{% endif %}</td></tr>
+      {% else %}<tr><td colspan="7">Nenhuma importação registrada.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="notice">
+  Nada é descartado na importação. O que não entrou está aqui, com o motivo,
+  e pode ser reprocessado depois de corrigido na origem.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Quarentena por motivo</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Entidade</th><th>Motivo</th><th>Quantidade</th></tr></thead>
+      <tbody>{% for r in rej %}<tr><td>{{ r.entidade }}</td><td>{{ r.motivo }}</td><td>{{ r.qtd }}</td></tr>
+      {% else %}<tr><td colspan="3">Nada em quarentena.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Últimos 300 registros em quarentena</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Entidade</th><th>Chave na origem</th><th>Motivo</th></tr></thead>
+      <tbody>{% for d in detalhe %}<tr><td>{{ d.entidade }}</td><td>{{ d.chave_origem }}</td><td class="small">{{ d.motivo }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

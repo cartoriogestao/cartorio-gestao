@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}Habilitações de casamento{% endblock %}
+{% block heading %}<h1>Habilitações de casamento</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button primary" href="{{ url_for('rcpn_habilitacao_nova') }}">Abrir habilitação</a>
+  <a class="button" href="{{ url_for('rcpn_assentos') }}">Assentos do Registro Civil</a>
+</div>
+
+{#
+  O QUADRO DIZ QUANTAS ESPERAM POR ALGUÉM, e não só quantas existem. Num rito de
+  semanas a pergunta do balcão é «qual delas está parada comigo».
+#}
+<section class="cards">
+  {% for chave, rotulo in SITUACOES.items() %}
+  <a class="card stat{% if situacao == chave %} warning{% endif %}"
+     href="{{ url_for('rcpn_habilitacoes', situacao=chave) }}"
+     style="text-decoration:none">
+    <strong>{{ resumo.get(chave, 0) }}</strong>
+    <small>{{ rotulo.split('—')[0].strip() }}</small></a>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <form class="filters" method="get">
+    <input name="busca" value="{{ busca }}" placeholder="nome de qualquer um dos nubentes, ou número">
+    <select name="situacao">
+      <option value="">todas as situações</option>
+      {% for chave, rotulo in SITUACOES.items() %}
+      <option value="{{ chave }}" {% if situacao == chave %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select>
+    <button>Procurar</button>
+    {% if busca or situacao %}<a class="button" href="{{ url_for('rcpn_habilitacoes') }}">Limpar</a>{% endif %}
+  </form>
+
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Nubentes</th><th>Entrada</th><th>Situação</th>
+               <th>O que falta fazer</th></tr></thead>
+    <tbody>
+    {% for h in linhas %}
+      <tr>
+        <td><a href="{{ url_for('rcpn_habilitacao', habilitacao_id=h.id) }}">
+          <strong>{{ h.numero }}/{{ h.ano }}</strong></a></td>
+        <td>{{ h.nubente1_nome }}<br><span class="small muted">e {{ h.nubente2_nome }}</span></td>
+        <td class="small">{{ fmt_date(h.data_entrada) }}</td>
+        <td class="small">
+          {% if h.situacao == 'COM_OPOSICAO' %}<span class="badge critica">Com oposição</span>
+          {% elif h.situacao == 'HABILITADO' %}<span class="badge ok">Habilitado</span>
+          {% elif h.situacao == 'CELEBRADO' %}<span class="badge">Celebrado</span>
+          {% elif h.situacao == 'ARQUIVADO' %}<span class="badge">Arquivado</span>
+          {% else %}<span class="badge media">{{ SITUACOES[h.situacao].split('—')[0].strip() }}</span>{% endif %}
+        </td>
+        {# O «e agora?» vem na lista, e não só na ficha. #}
+        <td class="small">{{ h.passos | join(' · ') }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted" style="padding:20px">
+        Nenhuma habilitação{% if busca or situacao %} com esse filtro{% endif %}.
+        {% if not busca and not situacao %}
+        A habilitação é o processo que antecede todo casamento — documentos,
+        edital de proclamas, prazo de {{ PRAZO_EDITAL }} dias e certidão.
+        {% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

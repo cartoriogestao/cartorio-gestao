@@ -1,0 +1,194 @@
+{#
+  Título de protesto apresentado no BALCÃO.
+
+  93% dos títulos desta casa entram pelo arquivo — 1.268 pela CRA e 91 pelo
+  CENPROT, contra 7 digitados em seis anos. Esta tela é para esses sete, e é
+  por isso que ela avisa logo no alto: quem digita o que o arquivo traria
+  digita errado mais cedo ou mais tarde.
+
+  Quem recusa campo faltando é `protesto_cra.conferir_titulo`, e não este
+  formulário. O `required` daqui é educação com quem digita; a regra é lá.
+#}
+{% extends 'base.html' %}
+{% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{% block heading %}<h1>Título novo — apresentado no balcão</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
+
+<div class="notice">
+  <strong>93% dos títulos desta casa entram pelo arquivo da CRA</strong> — 7 em seis
+  anos foram digitados. Se este título veio em arquivo, traga-o pelo arquivo: o que
+  se digita à mão é o que sai diferente do que a Central tem.
+  <br><br>
+  O título entra como <strong>RECEBIDO</strong>. O apontamento é o ato seguinte, e
+  sai na ficha dele — com lugar no Livro de Apontamento, número de ordem, selo e
+  custas próprios.
+</div>
+
+{{ salvar_rascunho('protesto_titulo_novo', url_for('protesto_titulo_novo'),
+                   'Título de protesto', csrf_token,
+                   nome_em='devedor_nome,cedente_nome') }}
+
+<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>O título</span></div>
+    <div class="grid2" style="padding:14px">
+      <label style="grid-column:1/-1">Espécie
+        <select name="especie" required>
+          <option value="">— escolha —</option>
+          <optgroup label="As que esta casa usa">
+            {% for e in especies if e.desta_casa %}
+              <option value="{{ e.codigo }}"
+                      {% if form.get('especie') == e.codigo %}selected{% endif %}>
+                {{ e.codigo }} — {{ e.rotulo[:70] }} ({{ e.vezes }}×{% if not e.no_esquema %}, fora do esquema da CRA{% endif %})
+              </option>
+            {% endfor %}
+          </optgroup>
+          <optgroup label="As demais do contrato da CRA">
+            {% for e in especies if not e.desta_casa %}
+              <option value="{{ e.codigo }}"
+                      {% if form.get('especie') == e.codigo %}selected{% endif %}>
+                {{ e.codigo }} — {{ e.rotulo[:70] }}
+              </option>
+            {% endfor %}
+          </optgroup>
+        </select>
+        <small>Dois terços dos títulos desta serventia são DMI — por isso as usadas
+          vêm primeiro, com quantas vezes cada uma apareceu no acervo.</small></label>
+
+      <label>Número do título
+        <input name="numero_titulo" required value="{{ form.get('numero_titulo','') }}"
+               placeholder="84713/1"></label>
+      <label>Nosso número <small>(opcional)</small>
+        <input name="nosso_numero" value="{{ form.get('nosso_numero','') }}"
+               placeholder="00200000991"></label>
+
+      <label>Emissão
+        <input type="date" name="data_emissao" required
+               value="{{ form.get('data_emissao','') }}"></label>
+      <label>Vencimento
+        <input type="date" name="data_vencimento" required
+               value="{{ form.get('data_vencimento','') }}"></label>
+
+      <label>Valor do título
+        <input name="valor" required value="{{ form.get('valor','') }}"
+               placeholder="1.482,78"></label>
+      <label>Saldo a protestar
+        <input name="saldo" required value="{{ form.get('saldo','') }}"
+               placeholder="1.482,78"></label>
+      <p style="grid-column:1/-1"><small>
+        <strong>O saldo não é copiado do valor.</strong> Nos 102 títulos desta casa que
+        não vieram da CRA, 31 têm saldo diferente do valor de face — juros e encargos
+        entram nele. O saldo é o que a certidão diz e o que o devedor paga: preenchê-lo
+        sozinho poria o protesto no valor errado.
+      </small></p>
+
+      <label>Praça de protesto
+        <input name="praca_protesto" required
+               value="{{ form.get('praca_protesto', cidade_da_casa) }}">
+        <small>1.360 dos 1.366 títulos do acervo dizem {{ cidade_da_casa }}.</small></label>
+      <label>Moeda
+        <select name="tipo_moeda">
+          {% for k, v in moedas.items() %}
+            <option value="{{ k }}" {% if form.get('tipo_moeda', '1') == k %}selected{% endif %}>{{ v }}</option>
+          {% endfor %}
+        </select></label>
+
+      <label>Motivo do protesto
+        <select name="motivo_protesto">
+          <option value="">—</option>
+          {% for k, v in motivos.items() %}
+            <option value="{{ k }}" {% if form.get('motivo_protesto', '1') == k %}selected{% endif %}>{{ v }}</option>
+          {% endfor %}
+        </select>
+        <small>1.155 dos que trazem motivo dizem “falta de pagamento”.</small></label>
+      <label>Tipo de protesto
+        <select name="tipo_protesto">
+          <option value="">—</option>
+          {% for k, v in tipos_protesto.items() %}
+            <option value="{{ k }}" {% if form.get('tipo_protesto') == k %}selected{% endif %}>{{ v }}</option>
+          {% endfor %}
+        </select></label>
+
+      <label>Endosso
+        <select name="tipo_endosso">
+          <option value="">—</option>
+          {% for k, v in endossos.items() %}
+            <option value="{{ k }}" {% if form.get('tipo_endosso') == k %}selected{% endif %}>{{ v }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Aceite <small>(opcional)</small>
+        <input name="aceite" value="{{ form.get('aceite','') }}"></label>
+    </div>
+  </section>
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Devedor</span><small>quem vai ser protestado</small></div>
+    <p style="padding:14px 14px 0"><small>
+      É por aqui que a certidão acha a pessoa depois. Sem nome, sem documento e sem
+      endereço não há como intimar — e o protesto sairia por edital. Nos 1.366 do
+      acervo, 980 devedores são pessoa física e 386 jurídica.
+    </small></p>
+    {% for i in [0, 1] %}
+    <div class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+      <div style="grid-column:1/-1"><strong>
+        {% if i == 0 %}Devedor{% else %}Segundo devedor <small>(se houver)</small>{% endif %}
+      </strong></div>
+      <label style="grid-column:1/-1">Nome
+        <input name="devedor_nome" {% if i == 0 %}required{% endif %}
+               value="{{ (form.getlist('devedor_nome')[i] if form.getlist('devedor_nome')|length > i else '') }}"></label>
+      <label>Documento
+        <select name="devedor_documento_tipo">
+          <option value="CPF">CPF</option>
+          <option value="CNPJ">CNPJ</option>
+        </select></label>
+      <label>Número
+        <input name="devedor_documento" {% if i == 0 %}required{% endif %}
+               inputmode="numeric"></label>
+      <label style="grid-column:1/-1">Endereço
+        <input name="devedor_endereco" {% if i == 0 %}required{% endif %}
+               placeholder="Rua, número"></label>
+      <label>Bairro <input name="devedor_bairro"></label>
+      <label>CEP <input name="devedor_cep" inputmode="numeric" placeholder="65936000"></label>
+      <label>Cidade <input name="devedor_cidade" value="{{ cidade_da_casa if i == 0 else '' }}"></label>
+      <label>UF
+        <select name="devedor_uf">
+          {% for uf in ufs %}
+            <option value="{{ uf }}" {% if uf == uf_da_casa %}selected{% endif %}>{{ uf }}</option>
+          {% endfor %}
+        </select></label>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Cedente</span><small>quem apresenta — opcional</small></div>
+    <div class="grid2" style="padding:14px">
+      <label style="grid-column:1/-1">Nome
+        <input name="cedente_nome" value="{{ form.get('cedente_nome','') }}"></label>
+      <label>Documento
+        <input name="cedente_documento" value="{{ form.get('cedente_documento','') }}"></label>
+      <label>CEP <input name="cedente_cep" value="{{ form.get('cedente_cep','') }}"></label>
+      <label style="grid-column:1/-1">Endereço
+        <input name="cedente_endereco" value="{{ form.get('cedente_endereco','') }}"></label>
+      <label>Cidade <input name="cedente_cidade" value="{{ form.get('cedente_cidade','') }}"></label>
+      <label>UF
+        <select name="cedente_uf">
+          <option value="">—</option>
+          {% for uf in ufs %}
+            <option value="{{ uf }}" {% if form.get('cedente_uf') == uf %}selected{% endif %}>{{ uf }}</option>
+          {% endfor %}
+        </select></label>
+    </div>
+  </section>
+
+  <div class="actions" style="grid-column:1/-1">
+    <button class="button">Cadastrar título</button>
+    <a class="button" href="{{ url_for('protesto_titulos') }}">Cancelar</a>
+  </div>
+</form>
+{{ script_do_rascunho() }}
+{% endblock %}

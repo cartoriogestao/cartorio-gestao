@@ -1,0 +1,199 @@
+{#
+  O quadro de cobrança, escrito UMA vez e usado nas quatro atribuições.
+
+  Escrever isto quatro vezes daria quatro versões divergentes do pedaço que
+  mexe em dinheiro — a mesma lição do núcleo, agora no template.
+
+  Uso, dentro do <form> que lança o ato:
+      {% from '_cobrar.html' import quadro %}
+      {{ quadro(receitas.get(TIPO), caixa, protocolos) }}
+#}
+{#
+  A célula "Cobrado" da tabela de atos, escrita UMA vez.
+
+  O RECIBO NÃO SAI DAQUI: `/caixa/recibo/<lancamento_id>` já faz isso, com
+  numeração por exercício, teor congelado e hash. Duas versões da peça que o
+  cliente leva para casa seria uma a mais — esta célula aponta para lá.
+
+  Uso, dentro do <td>:
+      {% from '_cobrar.html' import cobrado %}
+      {{ cobrado(a.id, cobrancas, csrf_token) }}
+#}
+{% macro cobrado(ato_id, cobrancas, csrf_token) %}
+{% set lancados = (cobrancas or {}).get(ato_id) %}
+{% if not lancados %}
+  <small>não cobrado</small>
+{% else %}
+  {% for l in lancados %}
+  <div>
+    R$ {{ l.valor }}
+    {% if l.recibo_id %}
+      <small>· recibo emitido</small>
+    {% else %}
+      <form method="post" style="display:inline"
+            action="{{ url_for('caixa_recibo', lancamento_id=l.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="link-button"><small>emitir recibo</small></button>
+      </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+{% endif %}
+{% endmacro %}
+
+{% macro quadro(r, caixa, protocolos=None, protocolo_escolhido=None, itens_do_protocolo=None, reload_url=None) %}
+{# **O PROTOCOLO E OS ITENS A SELAR VÊM PRIMEIRO, E NÃO DEPENDEM DE CAIXA
+   NEM DE RECEITA MEDIDA** — correção de 11/09/2026: estava dentro de
+   `{% if caixa %}` dentro de `{% if r and r.itens %}`, e por isso, num ato
+   cujo caminho não tem receita de COBRANÇA medida (`r.itens` vazio — não é
+   raro: é medido por caminho exato, sem espécie), o operador não via a
+   escolha do protocolo nem os itens a selar — mesmo tendo caixa aberto e
+   protocolo de sobra. Selar não depende de cobrar: o protocolo aqui existe
+   para dizer QUAIS ITENS DA TABELA DE EMOLUMENTOS SAEM COM SELO, o que é
+   completamente independente de haver ou não uma cobrança medida para o
+   quadro abaixo. #}
+{% if protocolos %}
+<div style="grid-column:1/-1">
+  <label>Protocolo <small>(o mesmo protocolo do trabalho inteiro do cliente —
+    diz de onde vêm os itens a selar, e amarra a cobrança se houver caixa aberto)</small>
+    <select name="protocolo_id" class="protocolo-select"
+      {%- if reload_url %} onchange="location.href='{{ reload_url }}?protocolo_id='+this.value"{% endif %}>
+      <option value="">— sem protocolo —</option>
+      {% for pr in protocolos %}
+        <option value="{{ pr.id }}"
+          {%- if protocolo_escolhido and (protocolo_escolhido|string) == (pr.id|string) %} selected{% endif %}>
+          {{ pr.numero }} — {{ pr.interessado or '—' }}</option>
+      {% endfor %}
+    </select></label>
+  {% if protocolo_escolhido %}
+    {# **UM PROTOCOLO, VÁRIOS ATOS** — pedido do oficial em 11/09/2026: cada
+       vez que se lança um ato deste protocolo, escolhe-se quais dos itens
+       ainda disponíveis valem para ESTE ato. O que não for marcado fica
+       para o próximo ato do mesmo protocolo. Arquivamento (15.22, quando
+       houver) é só mais um item nesta lista — não há regra que o ligue a
+       "a 1ª averbação do pacote". #}
+    {% if itens_do_protocolo %}
+    <div style="margin-top:8px">
+      <small><strong>Marque os itens deste protocolo que valem para este ato</strong>
+        — o que não marcar fica disponível para o próximo ato do mesmo protocolo.
+        {% if caixa %}A coluna <strong>Cobrar</strong> lança o item no caixa
+        (recalculado pela tabela vigente); nada marcado ali, nada cobrado.
+        {% endif %}</small>
+      <table class="table" style="margin-top:4px">
+        <thead><tr><th>Selar</th><th>Item</th><th>Descrição</th><th>Qtd</th>
+          <th>Valor</th>{% if caixa %}<th>Cobrar</th>{% endif %}</tr></thead>
+        <tbody>
+        {% for i in itens_do_protocolo %}
+        <tr>
+          <td><input type="checkbox" name="protocolo_item_id" value="{{ i.id }}"
+                     class="protocolo-item-check" checked></td>
+          <td>{{ i.codigo_ato }}</td>
+          <td><small>{{ (i.descricao or '—')[:70] }}</small></td>
+          <td>{{ i.quantidade }}</td>
+          <td>{% if i.valor_total %}R$ {{ i.valor_total }}{% else %}—{% endif %}</td>
+          {% if caixa %}
+          <td>
+            {% if i.servico_codigo %}
+            <input type="checkbox" name="cobrar_protocolo_item" value="{{ i.id }}">
+            {% else %}
+            <small class="muted" title="este item não tem código de serviço do caixa">—</small>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if caixa and not (r and r.itens) %}
+      {# Pagador/forma de pagamento só aparecem AQUI quando o quadro de
+         "Cobrar no caixa" de baixo não existir — os dois juntos na mesma
+         tela seriam dois campos iguais, o defeito que esta tela já teve. #}
+      <label>Pagador <input name="pagador"></label>
+      <label>Forma de pagamento
+        <select name="forma_pagamento">
+          <option value="">—</option>
+          <option value="DINHEIRO">Dinheiro</option>
+          <option value="PIX">PIX</option>
+          <option value="CARTAO">Cartão</option>
+          <option value="DEPOSITO_PREVIO">Depósito prévio</option>
+        </select></label>
+      {% endif %}
+    </div>
+    {% else %}
+    <div><small class="muted">Este protocolo não tem mais
+      itens disponíveis — todos já foram usados por outro ato, ou ele não tem item
+      nenhum.</small></div>
+    {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+{% if r and r.itens %}
+<div style="grid-column:1/-1">
+  <details>
+    <summary><small>Cobrar no caixa
+      {%- if r.total_centavos %} — a casa costuma cobrar R$ {{ r.total_centavos | centavos_reais }}{% endif %}</small></summary>
+
+    {% if not caixa %}
+    <div class="notice danger" style="margin:8px 0">
+      <strong>Você não tem caixa aberto.</strong> Sem caixa o lançamento não aparece na
+      conferência do dia — e a diferença apareceria no fechamento sem ter de onde vir.
+      Abra o caixa em <em>Administrativo → Caixa</em>, ou lance o ato sem marcar
+      cobrança e cobre depois.
+    </div>
+    {% endif %}
+
+    <table class="table" style="margin-top:8px">
+      <thead><tr><th></th><th>Item</th><th>Descrição</th><th>Vezes</th><th>Valor</th></tr></thead>
+      <tbody>
+        {% for i in r.itens %}
+        <tr>
+          <td>
+            {% if i.preco is not none %}
+              <input type="checkbox" name="cobrar" value="{{ i.servico }}"
+                     {% if not caixa %}disabled{% endif %}>
+            {% endif %}
+          </td>
+          <td>{{ i.codigo_tj }}</td>
+          <td><small>{{ (i.descricao or '—')[:70] }}</small></td>
+          <td>{{ i.vezes }}</td>
+          <td>
+            {% if i.preco is not none %}R$ {{ i.preco | centavos_reais }}
+            {% else %}<small>{{ i.motivo }}</small>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p><small>
+      <strong>Marque o que cobrar.</strong> A lista é o que a casa cobrou antes, em
+      {{ r.medido_em }}, em ordem de frequência — item de um uso em oitocentos é
+      exceção, e cobrar sozinho pela média em vez de pelo caso seria errado. Nada marcado, nada lançado.
+      {% if r.por_faixa %}
+        Os itens {{ r.por_faixa | join(', ') }} são <strong>de faixa</strong>: o preço
+        depende do valor e está nos subitens, e por isso não dá para marcar aqui.
+      {% endif %}
+    </small></p>
+
+    {% if caixa %}
+    <label>Pagador <input name="pagador"></label>
+    <label>Forma de pagamento
+      <select name="forma_pagamento">
+        <option value="">—</option>
+        <option value="DINHEIRO">Dinheiro</option>
+        <option value="PIX">PIX</option>
+        <option value="CARTAO">Cartão</option>
+        <option value="DEPOSITO_PREVIO">Depósito prévio</option>
+      </select></label>
+    <p style="grid-column:1/-1"><small>Vai para o caixa
+      <strong>{{ caixa.id }}</strong>, aberto em {{ caixa.data }}. O recibo se emite
+      depois, na linha do ato.</small></p>
+    {% endif %}
+  </details>
+</div>
+{% elif r %}
+<div style="grid-column:1/-1"><small>
+  Não há receita medida para este ato: o E-Ofício não guardou o item da tabela nos
+  atos deste tipo. Cobre pelo Caixa, escolhendo o item à mão.
+</small></div>
+{% endif %}
+{% endmacro %}

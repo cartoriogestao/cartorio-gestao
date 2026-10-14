@@ -1,0 +1,91 @@
+{# O TERMO ASSINADO, DIGITALIZADO — problema #121, 07/10/2026. O molde do RI:
+   um arquivo oficial por assento, o anterior no histórico, a miniatura da
+   primeira página e o arquivo que abre na tela. `rc_digi_ficha` vem de
+   rc_digitalizacao_web (context processor), e não da rota da ficha. #}
+{% set f = rc_digi_ficha %}
+{% if f %}
+<section class="panel{% if f.pendente and f.vencida %} critical{% endif %}" id="termo-digitalizado">
+  <div class="panel-head"><span>Termo assinado — digitalização</span>
+    <small>{% if f.digi and f.digi.tem_arquivo %}no sistema{% elif f.pendente %}PENDENTE{% else %}sem arquivo{% endif %}</small></div>
+  <div style="padding:14px">
+  {% if f.pendente %}
+    <div class="notice" style="margin:0 0 12px{% if f.vencida %};border-color:#b00020{% endif %}">
+      <strong>{% if f.vencida %}PRAZO VENCIDO: {% endif %}este registro foi lavrado
+        em {{ f.lavrado_em.strftime('%d/%m/%Y') }} e o termo assinado ainda não foi
+        digitalizado.</strong>
+      {% if f.vencida %}O prazo de 7 dias venceu em {{ f.prazo.strftime('%d/%m') }}.
+      {% else %}Prazo: até {{ f.prazo.strftime('%d/%m') }} (7 dias corridos).{% endif %}
+      <br><small>Depois de assinado no livro, escaneie a folha e envie aqui. A
+      certidão continua podendo sair — o aviso não trava o balcão.</small>
+    </div>
+  {% endif %}
+
+  {% if f.digi and f.digi.tem_arquivo %}
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+      <a href="{{ url_for('rcpn_digitalizacao_arquivo', assento_id=assento.id, visualizar=1) }}"
+         target="_blank" title="Abrir o termo digitalizado">
+        <img src="{{ url_for('rcpn_digitalizacao_miniatura', assento_id=assento.id, w=260) }}"
+             alt="Primeira página do termo digitalizado" loading="lazy"
+             style="max-width:260px;border:1px solid #ccc;background:#fff"></a>
+      <div>
+        <p style="margin:0 0 6px"><strong>{{ f.digi.digi_nome }}</strong></p>
+        <p class="small muted" style="margin:0 0 6px">
+          Enviado em {{ (f.digi.digi_em or '')[:16]|replace('T', ' ') }}
+          {%- if f.digi.digi_por %} por {{ f.digi.digi_por }}{% endif %}
+          {%- if not f.digi.e_de_pessoa %} — <strong>carga {{ f.digi.digi_origem|lower|replace('_', ' ') }}</strong>{% endif %}.
+          <br>sha256 {{ (f.digi.digi_sha256 or '')[:16] }}…
+        </p>
+        <p class="actions" style="margin:0">
+          <a class="button" target="_blank"
+             href="{{ url_for('rcpn_digitalizacao_arquivo', assento_id=assento.id, visualizar=1) }}">Abrir o termo</a>
+          <a class="button"
+             href="{{ url_for('rcpn_digitalizacao_arquivo', assento_id=assento.id) }}">Baixar</a>
+        </p>
+        <p class="small muted" style="margin:8px 0 0">
+          Pronto para a <strong>certidão reprográfica</strong>: no quadro
+          «Certidão», escolha a folha de segurança e use
+          «Emitir reprográfica da digitalização».
+        </p>
+      </div>
+    </div>
+    <details style="margin-top:12px">
+      <summary>Ver o termo nesta tela</summary>
+      <iframe src="{{ url_for('rcpn_digitalizacao_arquivo', assento_id=assento.id, visualizar=1) }}"
+              loading="lazy" title="Termo digitalizado"
+              style="width:100%;height:80vh;border:1px solid #ccc;background:#fff;margin-top:8px"></iframe>
+    </details>
+  {% elif f.digi %}
+    <p class="small"><strong>O arquivo registrado não está no disco</strong>
+      ({{ f.digi.digi_nome }}). Envie o termo de novo.</p>
+  {% elif not f.pendente %}
+    <p class="small muted" style="margin:0 0 10px">
+      {% if f.obrigatoria %}Sem termo digitalizado.{% else %}Este assento não tem o
+      termo digitalizado. Para o acervo não é obrigatório — mas, com o arquivo
+      aqui, a certidão reprográfica sai daqui mesmo.{% endif %}</p>
+  {% endif %}
+
+  {% if f.guardados and (f.guardados.historico or f.guardados.referencia) %}
+    <p class="small muted" style="margin:10px 0 0">
+      {% if f.guardados.historico %}Versões anteriores guardadas: {{ f.guardados.historico|length }}.{% endif %}
+      {% if f.guardados.referencia %}Arquivos da carga do acervo guardados como referência
+      (o enviado pelo balcão continua sendo o oficial): {{ f.guardados.referencia|length }}.{% endif %}
+    </p>
+  {% endif %}
+
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+    <form method="post" enctype="multipart/form-data" class="grid2" style="margin-top:12px"
+          action="{{ url_for('rcpn_digitalizacao_enviar', assento_id=assento.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>{% if f.digi %}Substituir pelo termo escaneado de novo{% else %}O termo assinado, escaneado{% endif %}
+        <input type="file" name="arquivo" required
+               accept=".pdf,.tif,.tiff,.png,.jpg,.jpeg,application/pdf,image/*"></label>
+      <div class="actions" style="align-self:end">
+        <button class="button primary">{% if f.digi %}Substituir o termo{% else %}Enviar o termo{% endif %}</button>
+      </div>
+      <p class="small muted" style="grid-column:1/-1;margin:0">PDF, TIFF, PNG ou JPEG.
+        O arquivo anterior não se apaga: vai para o histórico do assento.</p>
+    </form>
+  {% endif %}
+  </div>
+</section>
+{% endif %}

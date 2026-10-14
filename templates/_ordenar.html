@@ -1,0 +1,25 @@
+{#
+  ORDENAR POR QUALQUER COLUNA — pedido do oficial em 13/10/2026: «quero todas
+  opções». Duas peças, as mesmas em Processos, Tarefas e Produtividade:
+
+  - `cabecalho`: o título da coluna vira link; clicar ordena por ela, e clicar
+    de novo inverte. A seta diz qual coluna manda e em que sentido.
+  - `seletor`: a mesma escolha no formulário, para quem filtra e ordena de uma
+    vez — o formulário manda o estado inteiro, e a ordem não pode se perder.
+
+  É LINK, e não botão de formulário: ordenar é pergunta, e não gravação — fica
+  no endereço, entra nos favoritos e o «voltar» do navegador funciona.
+#}
+{% macro cabecalho(rotulo, chave, ordem_atual, inverter_atual, endpoint) -%}
+{%- set a = request.args.to_dict() -%}
+{%- set ativa = (ordem_atual or '') == chave -%}
+{%- set _ = a.update({'ordem': chave, 'inverter': ('' if (ativa and inverter_atual) else ('1' if ativa else ''))}) -%}
+{%- if not a.get('inverter') %}{% set _ = a.pop('inverter') %}{% endif -%}
+<a href="{{ url_for(endpoint, **a) }}" class="ordenar{% if ativa %} ativa{% endif %}"
+   title="Ordenar por {{ rotulo|lower }}{% if ativa %} — clique de novo para inverter{% endif %}">{{ rotulo }}{% if ativa %} {{ '▲' if inverter_atual else '▼' }}{% endif %}</a>
+{%- endmacro %}
+
+{% macro seletor(ordens, ordem_atual, inverter_atual) -%}
+<label>Ordenar <select name="ordem">{% for k, rot in ordens.items() %}<option value="{{ k }}" {% if (ordem_atual or '') == k %}selected{% endif %}>{{ rot }}</option>{% endfor %}</select></label>
+<label class="checkbox-label"><input type="checkbox" name="inverter" value="1" {% if inverter_atual %}checked{% endif %}> Inverter a ordem</label>
+{%- endmacro %}

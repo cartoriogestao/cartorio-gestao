@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Anotação da CRC{% endblock %}
+{% block content %}
+<h1>Anotação da CRC</h1>
+
+<div class="card">
+  <p>Recebeu comunicações pela <strong>Central do Registro Civil</strong>?
+     Envie o HTML exportado e o sistema monta o <strong>texto da anotação</strong>
+     para você conferir e copiar.</p>
+  <p class="small muted">
+    <strong>O sistema não anota sozinho na margem</strong>
+    <span class="small muted">(art. 370)</span>: antes de colar no assento,
+    confira a compatibilidade dos atos registrários. Use este texto depois de
+    conferir. Nada é gravado no banco nesta tela — só prévia e cópia.
+  </p>
+  <p><a href="{{ url_for('rcpn_anotacoes') }}">← Voltar às Anotações devidas</a></p>
+</div>
+
+<div class="card">
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <p><label>Arquivo HTML da CRC (.html / .htm)<br>
+      <input type="file" name="arquivo" accept=".html,.htm,text/html" required>
+    </label></p>
+
+    <p><strong>Modelo do texto</strong></p>
+    {% for mid, m in modelos.items() %}
+    <p style="margin:0.25em 0">
+      <label>
+        <input type="radio" name="modelo" value="{{ mid }}"
+               {% if modelo == mid %}checked{% endif %}>
+        {{ m.rotulo }}
+        <span class="small muted">— {{ m.descricao }}</span>
+      </label>
+    </p>
+    {% endfor %}
+
+    <p><label>Filtrar por espécie<br>
+      <select name="especie">
+        <option value="" {% if not especie %}selected{% endif %}>Todas</option>
+        <option value="OBITO" {% if especie == 'OBITO' %}selected{% endif %}>Só óbitos</option>
+        <option value="CASAMENTO" {% if especie == 'CASAMENTO' %}selected{% endif %}>Só casamentos</option>
+      </select>
+    </label></p>
+
+    <p><label>Cidade (fechamento)<br>
+      <input name="cidade_destino" size="40" value="{{ cidade_destino or '' }}">
+    </label></p>
+    <p><label>Assinatura (placeholder)<br>
+      <input name="assinatura" size="60" value="{{ assinatura or '' }}">
+    </label></p>
+
+    <p><button class="button">Montar prévia</button></p>
+  </form>
+</div>
+
+{% if previa %}
+<div class="card">
+  <h2 style="margin-top:0">{{ previa.itens|length }} texto(s) — {{ previa.rotulo }}</h2>
+  <p>
+    <button type="button" class="button secondary" id="btn-copiar-tudo">
+      Selecionar e copiar todos
+    </button>
+  </p>
+  <textarea id="textos-todos" readonly rows="12"
+            style="width:100%;font-family:inherit;white-space:pre-wrap">{{ previa.texto }}</textarea>
+</div>
+
+{% for item in previa.itens %}
+<div class="card">
+  <h3 style="margin-top:0">
+    {{ item.titulo or item.tipo }}
+    <span class="small muted">nº {{ item.codigo }}</span>
+    {% if item.nome_principal %}— {{ item.nome_principal }}{% endif %}
+  </h3>
+  <textarea readonly rows="6"
+            style="width:100%;font-family:inherit;white-space:pre-wrap"
+            class="texto-item">{{ item.texto }}</textarea>
+</div>
+{% endfor %}
+
+<script>
+(function () {
+  var btn = document.getElementById("btn-copiar-tudo");
+  var ta = document.getElementById("textos-todos");
+  if (!btn || !ta) return;
+  btn.addEventListener("click", function () {
+    ta.focus();
+    ta.select();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ta.value);
+      } else {
+        document.execCommand("copy");
+      }
+      btn.textContent = "Copiado!";
+      setTimeout(function () { btn.textContent = "Selecionar e copiar todos"; }, 1500);
+    } catch (e) {
+      btn.textContent = "Selecione e copie com Ctrl+C";
+    }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,131 @@
+{#
+  Botão flutuante de produtividade rápida — em toda tela logada.
+
+  Dois modos:
+    1) Lançar última atividade (categoria + tarefa + duração ou início/fim)
+    2) Cronômetro (persiste no servidor como registro Em andamento)
+
+  Escondido na impressão (@media print em app.css .prod-rapida).
+  Sem bibliotecas externas. CSRF via campo oculto + header X-CSRF-Token.
+#}
+{% if user and user.role in ['ADMIN','MANAGER','USER'] %}
+<div class="prod-rapida" data-prod-rapida
+     data-url-contexto="{{ url_for('produtividade_api_contexto') }}"
+     data-url-lancar="{{ url_for('produtividade_api_lancar') }}"
+     data-url-iniciar="{{ url_for('produtividade_api_crono_iniciar') }}"
+     data-url-pausar="{{ url_for('produtividade_api_crono_pausar') }}"
+     data-url-retomar="{{ url_for('produtividade_api_crono_retomar') }}"
+     data-url-parar="{{ url_for('produtividade_api_crono_parar') }}"
+     data-url-status="{{ url_for('produtividade_api_crono_status') }}"
+     data-url-confirmar="{{ url_for('produtividade_api_crono_confirmar') }}"
+     data-url-encerrar="{{ url_for('produtividade_api_crono_encerrar_esquecidos') }}"
+     data-url-ciencia="{{ url_for('produtividade_api_crono_ciencia') }}"
+     data-url-painel="{{ url_for('produtividade_lista') }}">
+  <button type="button" class="prod-rapida-btn" data-prod-abrir
+          title="Registrar produtividade ou iniciar cronômetro"
+          aria-expanded="false" aria-controls="prod-rapida-painel">
+    <span class="prod-rapida-ico" aria-hidden="true">⏱</span>
+    <span class="prod-rapida-rotulo" data-prod-rotulo>Produtividade</span>
+    <span class="prod-rapida-tempo" data-prod-tempo hidden></span>
+  </button>
+
+  {# O aviso do fim do expediente e o do cronômetro encerrado sozinho
+     (ordem do oficial, 11/10/2026). Fica FORA do painel: tem de aparecer com o
+     painel fechado, que é quando a pessoa esqueceu o cronômetro. #}
+  <div class="prod-rapida-alerta" data-prod-alerta role="alertdialog" aria-live="assertive" hidden>
+    <form data-prod-form-alerta>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <p data-prod-alerta-texto></p>
+      <div class="prod-rapida-acoes">
+        <button type="button" class="button primary" data-prod-alerta-confirmar hidden>Ainda estou trabalhando</button>
+        <button type="button" class="button" data-prod-alerta-parar hidden>Parar o cronômetro agora</button>
+        <button type="button" class="button primary" data-prod-alerta-ciencia hidden>Entendi</button>
+      </div>
+    </form>
+  </div>
+
+  <section class="prod-rapida-painel" id="prod-rapida-painel" data-prod-painel hidden>
+    <header class="prod-rapida-topo">
+      <strong>Produtividade rápida</strong>
+      <button type="button" class="prod-rapida-fechar" data-prod-fechar aria-label="Fechar">×</button>
+    </header>
+
+    <p class="prod-rapida-dica small muted" style="margin:8px 14px 0">Categoria: teclas <strong>1</strong> / <strong>2</strong> / <strong>3</strong> escolhem Operacional / Administrativo / Não relacionada.</p>
+    <div class="prod-rapida-modos" role="tablist">
+      <button type="button" class="prod-rapida-modo ativo" data-prod-modo="lancar" role="tab" aria-selected="true">Lançar atividade</button>
+      <button type="button" class="prod-rapida-modo" data-prod-modo="crono" role="tab" aria-selected="false">Cronômetro</button>
+    </div>
+
+    <p class="prod-rapida-msg" data-prod-msg hidden></p>
+
+    <form class="prod-rapida-form" data-prod-form-lancar autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Categoria
+        <select name="categoria" data-prod-categorias required>
+          <option value="1 - Operacional" selected>1 - Operacional</option>
+          <option value="2 - Administrativo">2 - Administrativo</option>
+          <option value="3 - Não relacionada ao cartório">3 - Não relacionada ao cartório</option>
+        </select>
+      </label>
+      <label>Tarefa
+        <input name="tarefa" list="prod-rapida-tarefas" required maxlength="300"
+               placeholder="Ex.: CLIENTE RCPN, MALOTE…">
+      </label>
+      <datalist id="prod-rapida-tarefas" data-prod-datalist></datalist>
+      <div class="prod-rapida-linha">
+        <label>Duração (min)
+          <input type="number" name="duracao_min" min="1" max="1440" step="1" placeholder="ex.: 5" title="1 a 1440 minutos (1 dia)">
+          <span class="small muted">1 a 1440 min (não inventa o vão até agora)</span>
+        </label>
+        <span class="prod-rapida-ou">ou</span>
+        <label>Início
+          <input type="time" name="hora_inicio">
+        </label>
+        <label>Fim
+          <input type="time" name="hora_fim">
+        </label>
+      </div>
+      <p class="prod-rapida-dica small muted">
+        Sem horário: usa o fim da última atividade de hoje (ou agora − duração).
+        Responsável e data são automáticos.
+      </p>
+      <div class="prod-rapida-acoes">
+        <button type="submit" class="button primary">Salvar</button>
+        <a class="button secondary" href="{{ url_for('produtividade_lista') }}">Abrir painel</a>
+      </div>
+    </form>
+
+    <form class="prod-rapida-form" data-prod-form-crono hidden autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div data-prod-crono-idle>
+        <label>Categoria
+          <select name="categoria" data-prod-categorias-crono required>
+          <option value="1 - Operacional" selected>1 - Operacional</option>
+          <option value="2 - Administrativo">2 - Administrativo</option>
+          <option value="3 - Não relacionada ao cartório">3 - Não relacionada ao cartório</option>
+          </select>
+        </label>
+        <label>Tarefa
+          <input name="tarefa" list="prod-rapida-tarefas" required maxlength="300"
+                 placeholder="O que você vai fazer agora?">
+        </label>
+        <div class="prod-rapida-acoes">
+          <button type="submit" class="button primary">Iniciar cronômetro</button>
+        </div>
+      </div>
+      <div data-prod-crono-ativo hidden>
+        <p class="prod-rapida-crono-info">
+          <strong data-prod-crono-tarefa></strong><br>
+          <span class="muted small" data-prod-crono-cat></span>
+        </p>
+        <p class="prod-rapida-crono-relogio" data-prod-crono-relogio>0:00</p>
+        <div class="prod-rapida-acoes">
+          <button type="button" class="button" data-prod-pausar>Pausar</button>
+          <button type="button" class="button" data-prod-retomar hidden>Retomar</button>
+          <button type="button" class="button primary" data-prod-parar>Parar e salvar</button>
+        </div>
+      </div>
+    </form>
+  </section>
+</div>
+{% endif %}

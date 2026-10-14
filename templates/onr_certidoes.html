@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}ONR — certidões a emitir{% endblock %}
+{% block heading %}<h1>ONR — certidões pedidas pelo Ofício Eletrônico</h1>{% endblock %}
+{% block content %}
+
+<section class="card">
+  <p>
+    Os pedidos de certidão que chegam pelo ONR («Certidões a Emitir» do Ofício
+    Eletrônico). Para cada um: emita a certidão na ficha da matrícula, como de
+    costume, guarde aqui o arquivo <strong>assinado</strong> (PDF ou P7S),
+    envie ao ONR e finalize. Ambiente: <strong>{{ ambiente|lower }}</strong>.
+  </p>
+  {% if not credencial.tem_chave %}
+  <p class="warning">Falta a credencial do Ofício Eletrônico (wsoficio.cred) neste ambiente.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('onr_certidoes_buscar') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Pedidos dos últimos
+      <input type="number" name="dias" value="30" min="1" max="90" style="width:5em"> dias</label>
+    <button class="button primary" type="submit">Buscar pedidos no ONR</button>
+  </form>
+  {% if todos %}
+    <a class="button" href="{{ url_for('onr_certidoes') }}">Só os em aberto</a>
+  {% else %}
+    <a class="button" href="{{ url_for('onr_certidoes', todos=1) }}">Ver todos, inclusive respondidos</a>
+  {% endif %}
+  <p class="small muted">Buscar só lê do ONR. O formato da lista que o ONR devolve
+    não está no manual: na primeira busca real, confira se os campos vieram certos
+    (a ficha de cada pedido mostra tudo o que chegou).</p>
+</section>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Protocolo ONR</th><th>Tipo</th><th>Solicitante</th><th>Matrícula</th>
+    <th>Status no ONR</th><th>Aqui</th><th>Chegou</th></tr></thead>
+  <tbody>
+  {% for p in lista %}
+    <tr>
+      <td><a href="{{ url_for('onr_certidao_ficha', pedido_id=p.id) }}">{{ p.protocolo }}</a></td>
+      <td>{{ rotulo_do_tipo(p.tipo_certidao) }}</td>
+      <td>{{ p.solicitante or '—' }}</td>
+      <td>{% if p.matricula_id %}<a href="{{ url_for('ri_ficha', matricula_id=p.matricula_id) }}">{{ p.matricula_numero }}</a>{% else %}{{ p.matricula_numero or '—' }}{% endif %}</td>
+      <td>{{ rotulo_do_status(p.status_onr) or '—' }}</td>
+      <td>{{ p.situacao|replace('_', ' ')|lower }}</td>
+      <td>{{ p.recebido_em[:16]|replace('T', ' ') }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7">Nenhum pedido {{ 'registrado' if todos else 'em aberto' }}. Clique em «Buscar pedidos no ONR».</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

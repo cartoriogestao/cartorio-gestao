@@ -1,0 +1,253 @@
+{% extends 'base.html' %}
+{% block title %}Importar do acervo — Livro 3{% endblock %}
+{% block heading %}<h1>Livro 3 — importar do acervo</h1>{% endblock %}
+{% block content %}
+{% from "_manual_de_importacao.html" import manual_para_baixar %}
+{{ manual_para_baixar() }}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('livro3_registros') }}">&larr; Registros do Livro 3</a>
+  <a class="button" href="{{ url_for('ri_importacoes') }}">Importações do RI</a>
+</div>
+
+{# -------------------------------------------------------------------------
+   O MESMO CAMINHO DO LIVRO 2 — pedido do oficial em 18/09/2026:
+   «preciso que tenha campo para importar do acervo registro do livro 3 do RI,
+    igual temos no livro 2».
+
+   A lista das matrículas tem a porta «Importações» desde sempre; a do Livro 3
+   só oferecia o registro manual, um de cada vez. Aqui está o campo do acervo,
+   a prévia do que falta e o botão — no molde da carga do RCPN: CONFERIR e
+   IMPORTAR são dois botões, porque acervo importado vira o livro e não há
+   como desfazer.
+   ------------------------------------------------------------------------- #}
+<div class="notice">
+  Traz os <strong>registros do Livro 3</strong> — o Registro Auxiliar — do
+  acervo do E-Ofício, com as <strong>partes</strong> de cada um e as
+  <strong>averbações</strong> que o registro teve depois. Pode rodar quantas
+  vezes precisar: o que já entrou (mesma <code>origem_chave</code>) não entra de
+  novo, e o que foi digitado à mão fica intacto.
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>1 · O acervo, e o que falta dele</span>
+    <small>conferir não grava nada</small>
+  </div>
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Caminho do acervo (o arquivo ou a pasta que o contém)
+      <input name="caminho" value="{{ caminho }}" size="90" spellcheck="false"
+             autocomplete="off" style="width:100%">
+    </label>
+    <p class="small muted" style="margin:8px 0 0">
+      Vem preenchido com o acervo desta casa
+      (<code>%PROGRAMDATA%\CartorioGestao\acervo_eoficio.sqlite3</code>).
+      <strong>Troque o caminho para conferir outra cópia</strong> — a de outra
+      máquina, a que acabou de chegar — antes de importar.
+    </p>
+    <div class="actions" style="margin-top:12px">
+      <button class="button" name="o_que" value="conferir">Conferir o que falta</button>
+      {% if previa and previa.faltam %}
+        <button class="button danger" name="o_que" value="importar"
+                onclick="return confirm('Importar {{ previa.faltam }} item(ns) do Livro 3?\n\n{{ previa.total_novos }} registro(s), {{ previa.averbacoes_novas }} averbação(ões) e {{ previa.partes_que_entram }} parte(s). O que já está não entra de novo.');">
+          Importar os {{ previa.faltam }} que faltam
+        </button>
+      {% else %}
+        <button class="button" name="o_que" value="importar" disabled>
+          {% if previa %}Nada novo para importar{% else %}Importar{% endif %}
+        </button>
+      {% endif %}
+    </div>
+  </form>
+
+  {% if not tem_acervo %}
+  <div class="notice danger" style="margin:0 14px 14px">
+    <strong>O acervo não está nesse caminho.</strong> Procurei em
+    <code>{{ caminho }}</code>. Confira o caminho no campo acima, ou carregue o
+    arquivo do E-Ofício antes, em
+    <a href="{{ url_for('rcpn_importar_acervo') }}">RCPN → Importar arquivo</a>.
+  </div>
+  {% endif %}
+
+  {% if erro %}
+  <div class="notice danger" style="margin:0 14px 14px"><strong>{{ erro }}</strong></div>
+  {% endif %}
+</section>
+
+{% if previa %}
+{# A PRÉVIA — os mesmos números das outras cargas da casa, e ela aparece ANTES
+   de gravar. O que NÃO entra também é contado: parte que o `tbOrtoga` não
+   resolve fica declarada, em vez de virar um «0» com cara de medição. #}
+<section class="panel">
+  <div class="panel-head">
+    <span>2 · A prévia</span>
+    <small>lida agora · nada foi gravado</small>
+  </div>
+
+  <section class="cards" style="padding:14px">
+    <div class="stat"><strong>{{ previa.total_no_acervo }}</strong><small>registros no acervo</small></div>
+    <div class="stat"><strong>{{ previa.total_ja }}</strong><small>já importados</small></div>
+    <div class="stat"><strong>{{ previa.total_novos }}</strong><small>registros novos</small></div>
+    <div class="stat"><strong>{{ previa.averbacoes_novas }}</strong><small>averbações novas</small></div>
+    <div class="stat"><strong>{{ previa.partes_que_entram }}</strong><small>partes a importar</small></div>
+    {% if previa.partes_sem_pessoa %}
+    <div class="stat"><strong>{{ previa.partes_sem_pessoa }}</strong>
+      <small>partes sem pessoa (não entram)</small></div>
+    {% endif %}
+  </section>
+
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>Do Livro 3</th><th>De onde vem</th><th class="num">No acervo</th>
+            <th class="num">Já estão</th><th class="num">Faltam</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Registros</strong></td>
+            <td class="small"><code>LivroAuxiliar</code></td>
+            <td class="num">{{ previa.total_no_acervo }}</td>
+            <td class="num">{{ previa.total_ja }}</td>
+            <td class="num">{{ previa.total_novos }}</td></tr>
+        <tr><td><strong>Averbações</strong>
+                <span class="small muted">— cada uma é um ato</span></td>
+            <td class="small"><code>LivroAuxiliarAverbacao</code></td>
+            <td class="num">{{ previa.averbacoes_no_acervo }}</td>
+            <td class="num">{{ previa.averbacoes_no_acervo - previa.averbacoes_novas }}</td>
+            <td class="num">{{ previa.averbacoes_novas }}</td></tr>
+        <tr><td><strong>Partes</strong>
+                <span class="small muted">— com o papel de cada uma</span></td>
+            <td class="small"><code>LivroAuxiliarPartes</code>
+                + <code>tbOrtoga</code> (a pessoa)</td>
+            <td class="num">{{ previa.partes_no_acervo }}</td>
+            <td class="num">{{ previa.partes_no_acervo - previa.partes_novas }}</td>
+            <td class="num">{{ previa.partes_que_entram }}
+              {%- if previa.partes_sem_pessoa %}
+                <span class="small muted">(+{{ previa.partes_sem_pessoa }} que não entram)</span>
+              {%- endif %}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% if not previa.tem_ortoga %}
+  <div class="notice danger" style="margin:14px">
+    <strong>Este acervo não tem <code>tbOrtoga</code></strong> — a tabela de
+    onde saem as pessoas das partes. Sem ela ninguém entra como parte, e o
+    número aparece na contagem em vez de a tela dizer «0 partes» como se
+    estivesse tudo lá.
+  </div>
+  {% endif %}
+
+  {% if previa.partes_sem_pessoa %}
+  <div class="notice danger" style="margin:14px">
+    <strong>{{ previa.partes_sem_pessoa }} parte(s) o <code>tbOrtoga</code> não resolve</strong>
+    — elas <strong>não entram</strong>, e ficam aqui contadas.
+    Nome trocado é pior que nome faltando: o <code>tbPessoa</code> do mesmo
+    acervo guarda <em>outra pessoa</em> no mesmo id, e escolher a tabela pelo
+    nome traria o credor errado para a ficha.
+  </div>
+  {% endif %}
+
+  {% if previa.amostras_novos %}
+  <div class="notice" style="margin:14px">
+    <strong>Amostra do que entraria:</strong>
+    <ul>
+      {% for a in previa.amostras_novos %}
+        <li>nº {{ a.numero }} — {{ a.titulo or '—' }}
+            <span class="small muted"> · {{ a.origem_chave }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if previa.amostras_ja %}
+  <div class="notice" style="margin:14px">
+    <strong>Amostra do que já está (seria pulado):</strong>
+    <ul>
+      {% for a in previa.amostras_ja %}
+        <li>nº {{ a.numero }} — {{ a.titulo or '—' }}
+            <span class="small muted"> · {{ a.origem_chave }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if resultado %}
+{# O QUE A CARGA FEZ. As CONTAGENS vêm inteiras, inclusive o que NÃO entrou —
+   parte sem pessoa, número de ato já ocupado. Contador que só informa o que
+   entrou faz a tela parecer completa quando metade ficou de fora. #}
+<section class="panel">
+  <div class="panel-head"><span>3 · O que a importação fez</span></div>
+  <section class="cards" style="padding:14px">
+    <div class="stat"><strong>{{ resultado.lidos }}</strong><small>lidos no acervo</small></div>
+    <div class="stat"><strong>{{ resultado.inseridos }}</strong><small>entraram agora</small></div>
+    <div class="stat"><strong>{{ resultado.repetidos }}</strong><small>já estavam</small></div>
+    <div class="stat"><strong>{{ resultado.rejeitados }}</strong><small>rejeitados</small></div>
+    <div class="stat"><strong>{{ resultado.avisados }}</strong><small>entraram com aviso</small></div>
+  </section>
+
+  {% if resultado.contagens %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Contagem</th><th class="num">Quantos</th></tr></thead>
+      <tbody>
+        {% for rotulo, quantos in resultado.contagens.items() %}
+          <tr><td>{{ rotulo }}</td><td class="num">{{ quantos }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if resultado.motivos_da_rejeicao %}
+  <div class="notice danger" style="margin:14px">
+    <strong>Por que rejeitou:</strong>
+    <ul>{% for m in resultado.motivos_da_rejeicao %}<li>{{ m }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  {% if resultado.motivos_do_aviso %}
+  <div class="notice" style="margin:14px">
+    <strong>Entraram, com isto anotado:</strong>
+    <ul>{% for m in resultado.motivos_do_aviso %}<li>{{ m }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <div class="actions" style="padding:0 14px 14px">
+    <a class="button" href="{{ url_for('livro3_registros') }}">Ver os registros do Livro 3</a>
+    <a class="button" href="{{ url_for('ri_importacoes') }}">Importações do RI</a>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Prefere digitar?</span>
+    <small>um registro por vez</small>
+  </div>
+  <div style="padding:14px">
+    <p>
+      Se a cédula já tem número no papel e você só precisa cadastrá-la aqui —
+      ou se é um registro avulso que não veio no acervo — use o formulário
+      manual. Ele <strong>não toma número nem sela</strong>: acervo entra com o
+      número que já tem.
+    </p>
+    <div class="actions" style="margin-bottom:0">
+      <a class="button primary" href="{{ url_for('ri_importacao_manual', especie='LIVRO3_REGISTRO') }}">
+        Importar registro do Livro 3 (manual)</a>
+      <a class="button" href="{{ url_for('livro3_registros') }}">Lista do Livro 3</a>
+    </div>
+  </div>
+</section>
+
+<div class="notice">
+  <strong>O que esta carga não decide:</strong> a marca de cancelado. Três das
+  averbações do acervo são de baixa (registros 1.315, 1.409 e 1.560) e os três
+  registros continuam <em>ATIVO</em> aqui — o acervo não tem coluna que diga
+  isso, e mudar a situação a partir do texto da averbação seria a máquina
+  lavrando o ato. O texto entra inteiro na ficha; quem decide é o oficial.
+</div>
+
+{% endblock %}

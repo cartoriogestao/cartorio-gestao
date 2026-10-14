@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{#
+  AJUSTAR A ETIQUETA DE REGISTRO DO RCPJ/RTD.
+
+  POR QUE ESTA TELA EXISTE — e a razão é medida, não teórica: impressora
+  térmica nunca encaixa de primeira. O rolo vem com meio milímetro a mais de
+  entrelinha, o driver assume uma margem que não existe, e o texto sai para
+  cima. Se o ajuste morasse no código, cada meio milímetro seria uma
+  atualização do sistema.
+
+  A tira física é a mesma de 100 × 30 mm usada no reconhecimento de firma.
+  Largura, altura, margem e deslocamento calibram essa bobina para os dois
+  usos; corpo, entrelinha e QR continuam próprios do teor registral.
+#}
+{% block heading %}<h1>{{ nome }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpj_rtd_titulos') }}">&larr; Títulos apresentados</a>
+</div>
+
+<div class="notice">
+  <strong>Bobina compartilhada.</strong> Esta etiqueta usa a mesma tira de
+  <strong>100 × 30 mm</strong> dos reconhecimentos de firma. Alterar largura,
+  altura, margem ou deslocamento calibra essa bobina nos dois usos. Corpo da
+  letra, entrelinha e QR são ajustes próprios do registro.
+  <br><span class="small">Na janela de impressão, escala em <strong>100%</strong>
+  — “ajustar à página” encolhe tudo e o encaixe deixa de valer.</span>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Medidas</span>
+    <span class="small muted">padrão: {{ padrao.etiqueta_largura_mm }}&times;{{ padrao.etiqueta_altura_mm }} mm</span></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Largura (mm)
+      <input name="{{ chave('etiqueta_largura_mm') }}" value="{{ m.etiqueta_largura_mm }}" required></label>
+    <label>Altura (mm)
+      <input name="{{ chave('etiqueta_altura_mm') }}" value="{{ m.etiqueta_altura_mm }}" required></label>
+    <label>Margem interna (mm)
+      <input name="{{ chave('etiqueta_margem_mm') }}" value="{{ m.etiqueta_margem_mm }}" required>
+      <span class="small muted">o quanto o texto se afasta da borda da tira</span></label>
+    <label>Corpo da letra (pt)
+      <input name="{{ chave('etiqueta_corpo_pt') }}" value="{{ m.etiqueta_corpo_pt }}" required>
+      <span class="small muted">não cabendo o teor, diminua meio ponto por vez</span></label>
+    <label>Deslocar na horizontal (mm)
+      <input name="{{ chave('etiqueta_deslocamento_x_mm') }}" value="{{ m.etiqueta_deslocamento_x_mm }}" required>
+      <span class="small muted">negativo puxa para a esquerda</span></label>
+    <label>Deslocar na vertical (mm)
+      <input name="{{ chave('etiqueta_deslocamento_y_mm') }}" value="{{ m.etiqueta_deslocamento_y_mm }}" required>
+      <span class="small muted">negativo puxa para cima</span></label>
+    <label>Entrelinha
+      <input name="{{ chave('etiqueta_entrelinha') }}" value="{{ m.etiqueta_entrelinha }}" required>
+      <span class="small muted">1,15 é o normal; 1,0 aperta as linhas</span></label>
+    <label>Tamanho do QR (mm)
+      <input name="{{ chave('etiqueta_qr_mm') }}" value="{{ m.etiqueta_qr_mm }}" required>
+      <span class="small muted">16 mm foi lido de volta a 203 e a 300 pontos por polegada</span></label>
+    <div style="grid-column:1/-1">
+      <button class="button primary" type="submit">Guardar as medidas</button>
+    </div>
+  </form>
+</section>
+
+<div class="notice">
+  <strong>Como conferir sem gastar a tira.</strong> Abra a etiqueta de um
+  registro já lavrado — a tela mostra o desenho no tamanho real, com moldura
+  tracejada. Imprima numa folha comum, ponha uma etiqueta em cima contra a luz
+  e veja o quanto está fora. Corrija aqui e repita.
+  <br><span class="small">A tela da etiqueta <strong>avisa em vermelho</strong>
+  quando o teor não cabe, e nesse caso não manda imprimir sozinha.</span>
+</div>
+{% endblock %}

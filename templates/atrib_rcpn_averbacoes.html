@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Averbações — localizar assento</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_assentos') }}">&larr; Assentos</a>
+  <a class="button" href="{{ url_for('rcpn_assento_novo') }}">Novo registro</a>
+</div>
+
+<div class="notice">
+  Primeiro localize o assento. O botão <strong>Averbar</strong> abre uma tela
+  somente com os campos da averbação; dados de nascimento, casamento ou óbito
+  não são repetidos nem alterados aqui.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Procurar assento</span></div>
+  <form method="get" class="grid2" style="padding:14px">
+    <label>Nome ou matrícula
+      <input name="q" value="{{ termo }}" placeholder="nome ou matrícula"></label>
+    <label>Situação
+      <select name="situacao">
+        <option value="">todas</option>
+        {% for s in painel.situacoes %}
+        <option value="{{ s }}" {% if s == situacao %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select></label>
+    <div class="actions">
+      <button class="button">Procurar</button>
+      <a class="button" href="{{ url_for('rcpn_averbacoes') }}">Limpar</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Assentos</span>
+    <small>{{ total }} resultado(s) · página {{ pagina }} de {{ paginas }}</small></div>
+  {% if not linhas %}
+  <p style="padding:14px">Nenhum assento encontrado.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Nº</th><th>Espécie</th><th>Nome</th><th>Matrícula</th>
+      <th>Situação</th><th></th></tr></thead>
+    <tbody>
+    {% for a in linhas %}
+    <tr>
+      <td><a href="{{ url_for('rcpn_assento', assento_id=a.id) }}">{{ a.numero or '—' }}</a></td>
+      <td>{{ a.especie }}</td><td>{{ a.nome }}</td><td>{{ a.matricula or '—' }}</td>
+      <td>{{ a.situacao }}</td>
+      <td>{% if a.situacao == 'ATIVO' %}
+        <a class="button" href="{{ url_for('rcpn_averbar', assento_id=a.id) }}">Averbar</a>
+      {% else %}<small>não recebe lançamento</small>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if paginas > 1 %}
+  <div class="actions" style="padding:14px">
+    {% if pagina > 1 %}<a class="button" href="{{ url_for('rcpn_averbacoes', q=termo, situacao=situacao, pagina=pagina-1) }}">&larr; anterior</a>{% endif %}
+    {% if pagina < paginas %}<a class="button" href="{{ url_for('rcpn_averbacoes', q=termo, situacao=situacao, pagina=pagina+1) }}">próxima &rarr;</a>{% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

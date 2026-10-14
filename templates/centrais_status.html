@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% block title %}Centrais — status das filas — Administrativo{% endblock %}
+{% block heading %}<h1>Centrais — status das filas e das falhas</h1>{% endblock %}
+{% block content %}
+{# O PAINEL SÓ LÊ. O único botão que grava é «Reprocessar», e ele é LOCAL:
+   devolve o item à fila, e não fala com Central nenhuma. Ver o cabeçalho de
+   `centrais_web.py`. #}
+<div class="pagina-centrais-status stack">
+
+<nav class="notice" aria-label="Filtrar por Central">
+  <strong>Central:</strong>
+  <a href="{{ url_for('centrais_status') }}">{% if not central %}<strong>todas</strong>{% else %}todas{% endif %}</a>
+  {% for c in centrais %} · <a href="{{ url_for('centrais_status', central=c) }}">{% if c == central %}<strong>{{ c }}</strong>{% else %}{{ c }}{% endif %}</a>{% endfor %}
+  · <a href="{{ url_for('settings') }}#cfg-centrais">credenciais (Configurações)</a>
+</nav>
+
+<section class="panel" id="centrais-resumo">
+  <h2>Fila genérica — por Central</h2>
+  {% if resumo %}
+  <div class="table-wrap">
+  <table class="tabela">
+    <thead><tr><th>Central</th>{% for s in situacoes %}<th>{{ s|lower }}</th>{% endfor %}<th>total</th></tr></thead>
+    <tbody>
+    {% for r in resumo %}
+      <tr><td>{{ nomes.get(r.central, r.central) }}</td>
+      {% for s in situacoes %}<td>{{ r[s] }}</td>{% endfor %}<td><strong>{{ r.total }}</strong></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">A fila genérica ainda está vazia — nenhuma integração a usa por enquanto.
+  As filas por domínio (CENPROT, CRA, ONR) continuam nas telas de cada uma.</p>
+  {% endif %}
+</section>
+
+<section class="panel" id="centrais-falhas">
+  <h2>Últimas falhas</h2>
+  {% if falhas %}
+  <div class="table-wrap">
+  <table class="tabela">
+    <thead><tr><th>#</th><th>Central</th><th>Operação</th><th>Ambiente</th><th>Situação</th><th>Tentativas</th><th>Erro</th><th>Atualizado</th><th></th></tr></thead>
+    <tbody>
+    {% for f in falhas %}
+      <tr>
+        <td>{{ f.id }}</td><td>{{ f.central }}</td><td>{{ f.operacao }}</td>
+        <td>{% if f.ambiente == 'PRODUCAO' %}<strong>produção</strong>{% else %}{{ f.ambiente|lower }}{% endif %}</td>
+        <td>{{ f.status|lower }}</td><td>{{ f.tentativas }}/{{ f.max_tentativas }}</td>
+        <td class="small">{{ f.erro or '' }}</td><td>{{ f.atualizado_em }}</td>
+        <td>
+          {% if f.status in reprocessaveis %}
+          <form method="post" action="{{ url_for('centrais_status_reprocessar', item_id=f.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="central" value="{{ central }}">
+            <button title="Devolve à fila; não envia nada agora">Reprocessar</button>
+          </form>
+          {% elif f.proxima_tentativa_em %}<span class="muted small">nova tentativa {{ f.proxima_tentativa_em }}</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">Nenhuma falha registrada{% if central %} para {{ central }}{% endif %}.</p>
+  {% endif %}
+</section>
+
+<section class="panel" id="centrais-fila">
+  <h2>Itens recentes da fila</h2>
+  {% if fila %}
+  <div class="table-wrap">
+  <table class="tabela">
+    <thead><tr><th>#</th><th>Central</th><th>Operação</th><th>Ambiente</th><th>Referência</th><th>Situação</th><th>Protocolo</th><th>Criado</th></tr></thead>
+    <tbody>
+    {% for i in fila %}
+      <tr><td>{{ i.id }}</td><td>{{ i.central }}</td><td>{{ i.operacao }}</td><td>{{ i.ambiente|lower }}</td>
+      <td><code>{{ i.payload_ref }}</code></td><td>{{ i.status|lower }}</td><td>{{ i.resposta_ref or '' }}</td><td>{{ i.criado_em }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">Sem itens{% if central %} para {{ central }}{% endif %}.</p>
+  {% endif %}
+</section>
+
+<section class="panel" id="centrais-erros">
+  <h2>Últimos erros do log</h2>
+  {% if erros %}
+  <div class="table-wrap">
+  <table class="tabela">
+    <thead><tr><th>Quando</th><th>Central</th><th>Operação</th><th>Evento</th><th>HTTP</th><th>Mensagem</th></tr></thead>
+    <tbody>
+    {% for e in erros %}
+      <tr><td>{{ e.quando }}</td><td>{{ e.central }}</td><td>{{ e.operacao }}</td><td>{{ e.evento }}</td><td>{{ e.status_http or '' }}</td><td class="small">{{ e.mensagem or '' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">Nenhum erro no log{% if central %} para {{ central }}{% endif %}.</p>
+  {% endif %}
+</section>
+
+<section class="panel" id="centrais-credenciais">
+  <h2>Credenciais — só se estão informadas</h2>
+  {# Vem de `centrais_cred.situacao()`, que NUNCA devolve senha nem token. #}
+  <div class="table-wrap">
+  <table class="tabela">
+    <thead><tr><th>Central</th><th>Ambiente</th><th>Forma</th><th>Situação</th></tr></thead>
+    <tbody>
+    {% for c in credenciais %}{% if not central or c.central == central %}
+      <tr><td>{{ c.nome }}</td><td>{{ c.ambiente|lower }}</td><td>{{ 'token' if c.forma == 'TOKEN' else 'par' }}</td>
+      <td>{% if c.informada %}<strong>informada</strong>{% else %}<span class="muted">não informada</span>{% endif %}</td></tr>
+    {% endif %}{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="panel" id="centrais-cliente-http">
+  <h2>Cliente HTTP comum</h2>
+  <p class="muted small">
+    Prazo padrão {{ http.prazo_padrao_s }} s · {{ http.tentativas_padrao }} retentativas
+    (só em {{ http.retenta_sozinho|join(', ') }}) · mínimo {{ http.tls_minimo }} ·
+    validação: {{ http.validacao }} · {{ http.openssl }}
+  </p>
+</section>
+
+</div>
+{% endblock %}

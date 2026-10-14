@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Livro 3 — o que falta conferir{% endblock %}
+{% block heading %}<h1>Livro 3 — o que falta conferir contra o papel</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('livro3_registros') }}">&larr; Livro 3</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Ninguém leu contra o livro de papel</span>
+    <small>{{ registros | length }}</small></div>
+  <div style="padding:14px">
+    {% if not registros %}
+      <p><strong>Todos os registros do Livro 3 foram conferidos.</strong></p>
+    {% else %}
+    <p class="small muted">Conferir é ler a ficha ao lado da digitalização e
+      dizer que o que está escrito é o que está no papel. Vale mais neste
+      livro que no 2: uns registros vieram da carga do acervo e outros da
+      importação dos documentos — e um deles carrega uma divergência que o
+      <strong>próprio importador declarou</strong>.</p>
+    <table class="tabela">
+      <thead><tr><th>Registro</th><th>Situação</th><th>Origem</th><th></th></tr></thead>
+      <tbody>
+      {% for r in registros %}
+        <tr>
+          <td><strong>{{ r.numero }}</strong></td>
+          <td>{{ r.situacao }}</td>
+          <td><small class="muted">{{ r.origem }}</small></td>
+          <td><a class="button" href="{{ url_for('livro3_conferir',
+                     registro_id=r.id) }}">conferir</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

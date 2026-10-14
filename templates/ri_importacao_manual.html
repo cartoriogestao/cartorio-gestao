@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block title %}Importação manual — {{ nome_da_especie }}{% endblock %}
+{% block heading %}<h1>Importação manual — {{ nome_da_especie }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_importacoes') }}">&larr; Importações do RI</a>
+  <a class="button {% if especie == 'RI_MATRICULA' %}primary{% endif %}"
+     href="{{ url_for('ri_importacao_manual', especie='RI_MATRICULA') }}">Matrícula</a>
+  <a class="button {% if especie == 'LIVRO3_REGISTRO' %}primary{% endif %}"
+     href="{{ url_for('ri_importacao_manual', especie='LIVRO3_REGISTRO') }}">Registro do Livro 3</a>
+</div>
+
+<div class="notice">
+  <strong>É o mesmo caminho de «Importar de outro sistema», campo por campo.</strong>
+  O registro entra como <strong>acervo</strong> — com o número que já tem,
+  sem tomar folha nova, sem selar e sem cobrar. Se o número já existir aqui,
+  o registro não entra de novo.
+</div>
+
+{% if erro %}
+<div class="notice critical"><strong>Não deu:</strong> {{ erro }}</div>
+{% endif %}
+
+<form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="acao" value="conferir">
+
+  {% for c in campos %}
+  <label>{{ c.nome }}{% if c.obrigatorio %} <span class="danger">*</span>{% endif %}
+    {% if c.nome in vocabularios %}
+      <select name="campo_{{ c.nome }}">
+        <option value="">—</option>
+        {% for chave, rotulo in vocabularios[c.nome].items() %}
+        <option value="{{ chave }}" {% if valores.get(c.nome) == chave %}selected{% endif %}>
+          {{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    {% elif c.nome in ('teor', 'condicoes', 'garantia', 'observacao',
+                       'descricao_perimetro', 'confrontacoes') %}
+      <textarea name="campo_{{ c.nome }}" rows="{{ 10 if c.nome == 'teor' else 4 }}"
+                style="font-family:monospace;font-size:.85rem">{{ valores.get(c.nome, '') }}</textarea>
+    {% elif c.data %}
+      <input type="date" name="campo_{{ c.nome }}" value="{{ valores.get(c.nome, '') }}">
+    {% elif c.nome == 'parcelas' %}
+      <input type="number" min="0" name="campo_{{ c.nome }}" value="{{ valores.get(c.nome, '') }}">
+    {% else %}
+      <input type="text" name="campo_{{ c.nome }}" value="{{ valores.get(c.nome, '') }}">
+    {% endif %}
+  </label>
+  {% endfor %}
+
+  {% if tem_valor %}
+  <label>valor (R$) <span class="small muted">— formato brasileiro, ex.: 23.999,99</span>
+    <input type="text" name="campo_valor_reais" value="{{ valores.get('valor_reais', '') }}"
+           placeholder="0,00"></label>
+  {% endif %}
+
+  <p><button class="button" type="submit">Conferir</button></p>
+  <p class="small muted">Conferir não grava nada — mostra o que entraria.</p>
+</form>
+
+{% if quadro %}
+<div class="card">
+  {% if quadro.entram %}
+  <p><strong class="ok">O registro passou na conferência.</strong>
+     {{ quadro.entram[0].valores|length }} campo(s) preenchido(s):
+     {{ quadro.entram[0].valores.keys()|list|join(', ') }}.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="importar">
+    <input type="hidden" name="texto_pronto" value="{{ texto }}">
+    <button class="button danger" type="submit"
+            onclick="return confirm('Importar este registro? Não há como desfazer pela tela.')">
+      Importar</button>
+  </form>
+  {% elif quadro.repetidos %}
+  <p class="small muted">Este número já está importado — nada a fazer.</p>
+  {% elif quadro.recusados %}
+  <p class="danger"><strong>Recusado:</strong> {{ quadro.recusados[0].porque }}</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

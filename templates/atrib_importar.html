@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Trazer as atribuições do E-Ofício</h1>{% endblock %}
+{% block content %}
+{% from "_manual_de_importacao.html" import manual_para_baixar %}
+{{ manual_para_baixar() }}
+{% include '_serventia.html' %}
+
+<div class="notice">
+  Traz o acervo de <strong>Protesto</strong>, <strong>RCPN</strong>,
+  <strong>RCPJ/RTD</strong> e <strong>Livro 3</strong>. Pode rodar quantas vezes
+  precisar: o que já entrou não entra de novo, e o que foi digitado à mão fica
+  intacto.
+</div>
+
+{% if not tem_acervo %}
+<div class="notice danger">
+  <strong>O acervo não está no lugar.</strong> Procurei em
+  <code>{{ caminho_acervo }}</code>. Ele é carregado da exportação do E-Ofício e
+  fica ao lado do banco do sistema.
+</div>
+{% endif %}
+
+<section class="cards">
+  {% for nome, p in paineis.items() %}
+    <div class="stat"><strong>{{ contagens[nome] }}</strong><small>{{ p.titulo.split('—')[0] }}</small></div>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Rodar a carga</span></div>
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p>Deixe tudo marcado. A ordem é a de baixo para cima do acervo: as
+       folhas de segurança vêm depois do Registro Civil, e os selos por
+       último, porque eles se amarram aos atos que as outras trouxeram.</p>
+    {# As caixinhas saem de `acervo_carga.TITULO_DA_CARGA`, que mora junto da
+       carga. Montá-las da lista de TELAS foi o que quebrou a carga do Livro 3
+       em 27/08/2026, e o que deixou as folhas e os selos sem caixinha. #}
+    {% for nome, titulo in cargas.items() %}
+      <label style="display:block">
+        <input type="checkbox" name="quais" value="{{ nome }}" checked>
+        {{ titulo }}
+      </label>
+    {% endfor %}
+    <div class="actions" style="margin-top:12px">
+      <button class="button" {% if not tem_acervo %}disabled{% endif %}>Trazer do E-Ofício</button>
+    </div>
+  </form>
+</section>
+
+{% if resultado %}
+<section class="panel">
+  <div class="panel-head"><span>O que a carga fez</span></div>
+  <table class="table">
+    <thead>
+      <tr><th>Carga</th><th>Lidos</th><th>Entraram</th><th>Já estavam</th>
+          <th>Rejeitados</th><th>Avisados</th></tr>
+    </thead>
+    <tbody>
+      {#
+        `numeracao` vem no mesmo dicionário e NÃO é uma carga: tem outra forma
+        (`semeadas` e `pendentes`) e caía aqui como uma linha com o nome
+        "numeracao" e todas as células vazias. Ela tem quadro próprio abaixo.
+      #}
+      {% for nome, r in resultado.items() if nome != 'numeracao' %}
+      <tr>
+        <td><strong>{{ nome }}</strong></td>
+        {% if r.erro %}
+          <td colspan="5" class="danger">{{ r.erro }}</td>
+        {% else %}
+          <td>{{ r.lidos }}</td>
+          <td>{{ r.inseridos }}</td>
+          <td>{{ r.repetidos }}</td>
+          <td>{{ r.rejeitados }}</td>
+          <td>{{ r.avisados }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p style="padding:14px"><small>
+    <strong>Rejeitado não entrou; avisado entrou com uma anotação.</strong> São
+    contadores diferentes de propósito: somá-los faria a tela dizer que rejeitou
+    o que na verdade gravou. <em>Lidos</em> é sempre <em>entraram</em> mais
+    <em>rejeitados</em>.
+  </small></p>
+
+  {% for nome, r in resultado.items() if nome != 'numeracao' %}
+    {% if r.motivos_da_rejeicao %}
+      <div class="notice" style="margin:0 14px 10px">
+        <strong>{{ nome }} — por que rejeitou:</strong>
+        <ul>{% for m in r.motivos_da_rejeicao %}<li>{{ m }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+    {% if r.motivos_do_aviso %}
+      <div class="notice" style="margin:0 14px 10px">
+        <strong>{{ nome }} — entrou, com isto anotado:</strong>
+        <ul>{% for m in r.motivos_do_aviso %}<li>{{ m }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+    {% if r.contagens %}
+      <div class="notice" style="margin:0 14px 10px">
+        <strong>{{ nome }} — o que se contou nesta rodada:</strong>
+        <ul>{% for m, n in r.contagens.items() %}<li>{{ n }} {{ m }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+  {% endfor %}
+</section>
+
+{#
+  O QUADRO DA NUMERAÇÃO — é o passo seguinte à carga, e o mais importante
+  dela. Sem ele o operador termina a carga achando que acabou, e o primeiro
+  ato de duas séries nasce com o número 1 sobre um acervo que chegou a 2.156.
+#}
+{% set numeracao = resultado.get('numeracao') %}
+{% if numeracao %}
+<section class="panel">
+  <div class="panel-head">
+    <span>A numeração, que é o passo seguinte</span>
+    <small>o contador de cada livro</small>
+  </div>
+
+  {% if numeracao.semeadas %}
+  <p style="padding:14px 14px 0"><strong>Semeadas sozinhas, do que o acervo trouxe:</strong></p>
+  <table class="table">
+    <thead><tr><th>Livro</th><th>Maior em uso</th><th>Próximo</th></tr></thead>
+    <tbody>
+      {% for s in numeracao.semeadas %}
+      <tr><td>{{ s.serie }}</td><td>{{ s.maior_em_uso }}</td>
+          <td><strong>{{ s.proximo }}</strong></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if numeracao.pendentes %}
+  <div class="notice danger" style="margin:14px">
+    <strong>Estas o acervo não sabe informar — o número só sai do livro físico:</strong>
+    <ul>
+      {% for s in numeracao.pendentes %}
+        <li><strong>{{ s.serie }}</strong> — {{ s.motivo }}</li>
+      {% endfor %}
+    </ul>
+    Informe cada uma em
+    <a href="{{ url_for('nucleo_numeracao') }}">Numeração dos livros</a>
+    <strong>antes</strong> do primeiro ato daquela série. Sem informar, ele nasce
+    com o número 1 — e número de ordem que repete o que a serventia já usou é o
+    defeito de 18/08/2026.
+  </div>
+  {% endif %}
+
+  <div class="actions" style="padding:0 14px 14px">
+    <a class="button" href="{{ url_for('nucleo_numeracao') }}">Abrir a numeração dos livros</a>
+  </div>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

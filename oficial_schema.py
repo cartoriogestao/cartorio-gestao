@@ -1,0 +1,67 @@
+"""As tabelas do robô oficial — o robô que opera os outros robôs e cuida da mesa do oficial.
+
+    «robo responsavel por operacionalizar os outros robos, gerir as pendencias
+     pessoais no cartorio gestao e lidar com toda complexidade de atos e
+     responsabilidades que este oficial de cartorio carrega» — o oficial, 09/10/2026
+
+DUAS TABELAS, E CADA UMA RESPONDE A UMA PERGUNTA QUE A CASA NÃO SABIA RESPONDER
+
+    `of_batidas` — **o robô rodou, e rodou bem?** Medido em 09/10/2026 na
+    produção: a leitura dos textos pela IA do gestor falhou em TODAS as rodadas
+    desde 08/10 08:28 (o modelo configurado era «Opus 5.5», nome de vitrine que
+    a API recusa), e a única pista era uma linha `'erros': 10` no log do
+    Agendador, que ninguém lê. Robô que quebra calado é pior que robô nenhum:
+    a casa acha que está conferida. Cada robô bate aqui ao terminar; o oficial
+    (o robô) lê as batidas e cobra quem não bateu ou bateu com erro.
+
+    `of_decisoes` — **o que espera o oficial (a pessoa) decidir.** A regra da
+    casa é «na dúvida, recuse e pergunte» e «a pergunta espera, o trabalho
+    não». Até aqui a pergunta ficava espalhada: no fim de uma conversa, numa
+    descrição de tarefa, numa nota de memória. Aqui cada robô deixa a sua
+    pergunta com chave estável (a mesma pergunta não entra duas vezes), as
+    opções, o que ele recomenda e o que fica parado enquanto ninguém responde.
+"""
+from __future__ import annotations
+
+import sqlite3
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS of_batidas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    robo TEXT NOT NULL,
+    iniciada_em TEXT NOT NULL,
+    terminada_em TEXT,
+    situacao TEXT NOT NULL DEFAULT 'RODANDO',
+    resumo_json TEXT,
+    erro TEXT,
+    quem_rodou TEXT NOT NULL DEFAULT 'PROPRIO'
+);
+CREATE INDEX IF NOT EXISTS ix_of_batidas_robo ON of_batidas (robo, iniciada_em);
+
+CREATE TABLE IF NOT EXISTS of_decisoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chave TEXT NOT NULL UNIQUE,
+    origem TEXT NOT NULL,
+    pergunta TEXT NOT NULL,
+    contexto TEXT,
+    opcoes_json TEXT,
+    recomendacao TEXT,
+    o_que_espera TEXT,
+    gravidade TEXT NOT NULL DEFAULT 'ATENCAO',
+    prazo TEXT,
+    criada_em TEXT NOT NULL,
+    vista_em TEXT NOT NULL,
+    respondida_em TEXT,
+    respondida_por TEXT,
+    resposta TEXT,
+    retirada_em TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_of_decisoes_abertas ON of_decisoes (respondida_em, retirada_em);
+"""
+
+#: Situações de uma batida. NAO_MEDIU é a do gestor: a regra que quebra não vira zero.
+SITUACOES = ("RODANDO", "OK", "AVISO", "ERRO")
+
+
+def init_oficial_schema(con: sqlite3.Connection) -> None:
+    con.executescript(SCHEMA)

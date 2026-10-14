@@ -1,0 +1,322 @@
+"""
+Registro Auxiliar — o Livro 3 do Registro de Imoveis.
+
+A LACUNA QUE ISTO FECHA
+    `LEVANTAMENTO_QUATRO_ATRIBUICOES.md`, secao 6: a numeracao ja traz o livro
+    3 com 1.650 em uso, mas o modulo de RI nao tinha onde guardar isso. E uma
+    lacuna DENTRO de uma atribuicao que se considerava pronta.
+
+    ONDE ESTA O ACERVO DO LIVRO 3, E O QUE EU ERREI ANTES
+    Esta em `LivroAuxiliar`: 14 linhas, 13 delas com `Livro = '3'`, registros
+    de 1315 a 1636, todas cedulas de credito rural ou bancario — mais
+    `LivroAuxiliarAverbacao` (5), `LivroAuxiliarPartes` (25) e
+    `LivroAuxiliarCertidao` (9).
+
+    Este cabecalho dizia "1.273 linhas em `tbRI_Auxiliar`", e estava ERRADO.
+    `tbRI_Auxiliar` nao e o Registro Auxiliar: os `strLivro` dela sao `2`,
+    `2-A`, `2-B`, `2-C`, `2-D` e `2S` — volumes do Livro 2, o Registro Geral.
+    Confundi as duas pelo nome, e o que desfez a confusao foi olhar a coluna
+    em vez do nome da tabela. Deixo o erro escrito porque ele explica por que
+    a contagem certa e 13 e nao 1.273.
+
+POR QUE TABELA PROPRIA, E NAO `ri_matriculas`
+    O Registro Auxiliar nao registra IMOVEL. Medido no acervo desta casa, o
+    que entra ali e sobretudo cedula de credito rural — pignoraticia e
+    hipotecaria —, com titulo, valor, parcelas, vencimento inicial e final,
+    juros, garantia e condicoes. Nenhum desses campos existe em
+    `ri_matriculas`, que descreve um imovel (area, confrontacoes, CAR, NIRF).
+
+    Forcar um no outro daria uma matricula sem imovel e uma cedula sem
+    vencimento.
+
+A NUMERACAO NAO E NOVA, E ISSO E DELIBERADO
+    O numero do Registro Auxiliar sai de `ri_numeracao`, pelo contador do
+    livro '3', com `ri_correcoes.proximo_numero(con, 3)` — o MESMO caminho
+    que a matricula do Livro 2 usa. O Livro 3 e serie distinta do Livro 2
+    (`ri_correcoes.serie_do_livro`) e conta separado, mas conta pelo mesmo
+    mecanismo.
+
+    NAO usa `nu_numeracao` do nucleo. Seria uma segunda fonte de verdade
+    para o mesmo livro, e duas fontes para o mesmo numero e exatamente o
+    defeito de 18/08/2026 — contar de dois jeitos e abrir o mesmo numero
+    duas vezes.
+
+FUNDAMENTO
+    Lei 6.015/1973, arts. 177 e 178 — o Livro 3, Registro Auxiliar, e o que
+        nele se registra.
+"""
+from __future__ import annotations
+
+import sqlite3
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS ra_registros (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero INTEGER NOT NULL,                -- do contador do livro '3'
+    livro TEXT NOT NULL DEFAULT '3',
+    folha TEXT,
+
+    natureza TEXT,                          -- ver ra_registro.NATUREZAS
+    titulo_tipo TEXT,                       -- "Cédula Rural Pignoratícia..."
+    titulo_numero TEXT,                     -- "40/01800-8"
+    data_titulo TEXT,
+
+    -- Medidos em `LivroAuxiliar` do acervo: é disto que a cédula é feita.
+    valor_centavos INTEGER,
+    parcelas INTEGER,
+    vencimento_inicial TEXT,
+    vencimento_final TEXT,
+    juros TEXT,                             -- percentual como texto: "9,00"
+    garantia TEXT,
+    condicoes TEXT,
+
+    protocolo_id INTEGER,
+    prenotacao TEXT,
+    cnm TEXT,
+
+    teor TEXT,
+    teor_formato TEXT NOT NULL DEFAULT 'texto',
+
+    situacao TEXT NOT NULL DEFAULT 'ATIVO', -- ATIVO | CANCELADO
+    origem TEXT NOT NULL DEFAULT 'MANUAL',  -- MANUAL | EOFICIO
+    origem_chave TEXT,
+    importacao_id INTEGER,
+
+    criado_em TEXT NOT NULL,
+    criado_por INTEGER,
+    UNIQUE(livro, numero),
+    UNIQUE(origem, origem_chave)
+);
+
+CREATE INDEX IF NOT EXISTS ix_ra_registros_titulo ON ra_registros(titulo_numero);
+CREATE INDEX IF NOT EXISTS ix_ra_registros_situacao ON ra_registros(situacao);
+
+CREATE TABLE IF NOT EXISTS ra_atos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registro_id INTEGER NOT NULL REFERENCES ra_registros(id),
+    tipo TEXT NOT NULL,                     -- R (registro) | AV (averbação)
+    numero INTEGER NOT NULL,                -- 1, 2, 3... dentro do registro
+
+    servico_codigo INTEGER,
+    selo TEXT,
+    lancamento_id INTEGER,
+
+    data_ato TEXT NOT NULL,
+    teor TEXT,
+    teor_formato TEXT NOT NULL DEFAULT 'texto',
+    natureza TEXT,
+    motivo_cancelamento TEXT,
+
+    origem TEXT NOT NULL DEFAULT 'MANUAL',
+    origem_chave TEXT,
+    importacao_id INTEGER,
+
+    criado_em TEXT NOT NULL,
+    criado_por INTEGER,
+    UNIQUE(registro_id, tipo, numero)
+);
+
+CREATE INDEX IF NOT EXISTS ix_ra_atos_registro ON ra_atos(registro_id, tipo, numero);
+CREATE INDEX IF NOT EXISTS ix_ra_atos_selo ON ra_atos(selo);
+
+CREATE TABLE IF NOT EXISTS ra_partes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registro_id INTEGER NOT NULL REFERENCES ra_registros(id),
+    ato_id INTEGER REFERENCES ra_atos(id),
+    nome TEXT NOT NULL,
+    documento_tipo TEXT,
+    documento_numero TEXT,
+    papel TEXT,                             -- emitente, credor, avalista...
+    origem TEXT NOT NULL DEFAULT 'MANUAL',
+    origem_chave TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_ra_partes_registro ON ra_partes(registro_id);
+CREATE INDEX IF NOT EXISTS ix_ra_partes_doc ON ra_partes(documento_numero);
+
+-- A MINUTA DO LIVRO 3 — o ato escrito e AINDA NAO LAVRADO.
+--
+--   Item 1 da fila do oficial (20/09/2026): «deixe o livro 3 com as mesmas
+--   ferramentas do livro 2». No Livro 2 ela e `ri_minutas`, e nasceu em
+--   15/09 porque uma importacao lavrou tres atos que deviam estar esperando
+--   revisao.
+--
+--   O LIVRO 3 JA TINHA MEIA PECA, e ela mostrava o buraco: as duas minutas de
+--   cancelamento (registros 1.198 e 1.243) moravam em `rascunhos_de_tela`,
+--   que e a gaveta de rascunho de QUALQUER tela — sem situacao, sem numero
+--   pretendido, sem descarte com motivo escrito e sem saber se ja viraram
+--   ato. A do 1.243 virou AV-01 e continuou la, do mesmo jeito que estava.
+--
+--   TABELA PROPRIA, E NAO `ri_minutas`: a chave estrangeira aponta para
+--   `ra_registros`, e a numeracao daqui e CONTINUA com o registro (depois do
+--   R-1 vem o AV-2) — nao sao duas series como no Livro 2.
+--
+--   E ELA CARREGA OS TRES CAMPOS DO SELO, o que a do Livro 2 nao faz: aqui a
+--   minuta existe para ser «revisada e selada», e o item da tabela de custas,
+--   a natureza do titulo e o valor declarado sao justamente o que o selo
+--   exige e o que nao sai do tipo do ato. Guardados na minuta, eles chegam
+--   preenchidos na hora de lavrar.
+--
+--   O NUMERO E PRETENDIDO, E NAO RESERVADO. Guarda-lo como reserva faria a
+--   minuta trancar um numero do livro sem ato nenhum; ele vai para o
+--   formulario como sugestao, e se outro ato ja o tomou a rota recusa.
+CREATE TABLE IF NOT EXISTS ra_minutas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registro_id INTEGER NOT NULL REFERENCES ra_registros(id),
+    tipo TEXT NOT NULL,                      -- R | AV
+    numero_pretendido INTEGER,
+    data_pretendida TEXT,
+    teor TEXT NOT NULL,
+
+    -- o que o selo exige, e que nao sai do tipo do ato
+    natureza_titulo TEXT,
+    codigo_tj TEXT,
+    base_calculo_centavos INTEGER,
+
+    protocolo TEXT,
+    -- MANUAL | IMPORTACAO | RASCUNHO_DE_TELA | DESFEITO_DE_ATO
+    origem TEXT NOT NULL DEFAULT 'MANUAL',
+    origem_chave TEXT,
+    observacao TEXT,
+    situacao TEXT NOT NULL DEFAULT 'A_REVISAR',  -- A_REVISAR | LAVRADA | DESCARTADA
+    ato_id INTEGER REFERENCES ra_atos(id),
+
+    criado_em TEXT NOT NULL,
+    criado_por TEXT,
+    atualizado_em TEXT,
+    atualizado_por TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_ra_minutas_ficha
+    ON ra_minutas(registro_id, situacao);
+
+-- O QUE REVISAR ANTES DE SELAR, no Livro 3 — item 2 da fila de 20/09/2026.
+--
+--   No Livro 2 e `ri_revisoes`, de 15/09. TABELA PROPRIA aqui, e a razao e a
+--   chave: la as duas estrangeiras apontam para `ri_matriculas` e `ri_atos`,
+--   e uma nota do Livro 3 nao tem matricula nenhuma. Dar a `ri_revisoes` um
+--   par livro/registro faria a chave estrangeira do RI deixar de valer para
+--   metade das linhas — e chave estrangeira que so vale as vezes nao vale.
+--
+--   **A REGRA E A MESMA, E ISSO SE GUARDA POR TESTE**: os pisos do assunto e
+--   da nota e as palavras das situacoes se comparam contra `ri_revisao`, para
+--   as duas nao divergirem no primeiro conserto.
+--
+--   A NOTA NAO TRAVA NADA: quem decide se o ato sai e quem assina. Baixar
+--   exige escrever o que se decidiu — sem isso a baixa apaga a pergunta sem
+--   responde-la, e a mesma volta amanha.
+CREATE TABLE IF NOT EXISTS ra_revisoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registro_id INTEGER NOT NULL REFERENCES ra_registros(id),
+    ato_id INTEGER REFERENCES ra_atos(id),
+    minuta_id INTEGER REFERENCES ra_minutas(id),
+    assunto TEXT NOT NULL,
+    nota TEXT NOT NULL,
+    origem TEXT NOT NULL DEFAULT 'MANUAL',
+    situacao TEXT NOT NULL DEFAULT 'ABERTA',
+    anotada_em TEXT NOT NULL,
+    anotada_por TEXT,
+    baixada_em TEXT,
+    baixada_por TEXT,
+    baixa_decisao TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_ra_revisoes_ficha
+    ON ra_revisoes(registro_id, situacao);
+
+-- A ATA DE OCORRENCIA DO LIVRO 3 — o papel de quando um ato deixa de existir.
+--
+--   No Livro 2 e `ri_expurgos`, e o desenho e o mesmo pela mesma razao: o
+--   rastro na auditoria responde «quem e quando», e a correicao pergunta «o
+--   que estava escrito naquele ato». Por isso a ata guarda o TEOR INTEIRO —
+--   ela e a unica copia do que saiu do livro.
+--
+--   AQUI ELA NASCE DO «DEVOLVER A MINUTA», que e o desfazer deste livro: o
+--   ato volta a ser minuta e a ata fica dizendo que ele existiu. As duas
+--   coisas na MESMA transacao — ata sem ato desfeito, ou ato desfeito sem
+--   ata, sao os dois jeitos de isto dar errado.
+CREATE TABLE IF NOT EXISTS ra_expurgos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registro_id INTEGER,
+    registro_numero INTEGER,
+    ato_rotulo TEXT NOT NULL,
+    ato_tipo TEXT,
+    ato_numero INTEGER,
+    ato_data TEXT,
+    ato_selo TEXT,
+    ato_teor TEXT,
+    minuta_id INTEGER,
+    motivo TEXT,
+    ata TEXT NOT NULL,
+    expurgado_em TEXT NOT NULL,
+    expurgado_por TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_ra_expurgos_registro
+    ON ra_expurgos(registro_id);
+"""
+
+# O QUE O SELO DO LIVRO 3 EXIGE E A FICHA NAO GUARDAVA — 20/09/2026, depois
+# de o oficial relatar que a averbacao do registro 1.243 saiu sem selo.
+#
+#   O envelope do ato (o mesmo do Livro 2, medido) pede **item da tabela de
+#   custas**, **natureza do titulo** e **valor declarado** — e o valor e quem
+#   escolhe entre `com-valor` e `sem-valor`. Nenhuma das tres morava aqui:
+#   `servico_codigo` e o id do servico do CAIXA, e nao o `16.22.2` do
+#   Tribunal, e `natureza` e a natureza da averbacao, e nao a frase que sai
+#   dentro do selo. Guardar o que foi informado e o que faz a proxima
+#   tentativa abrir preenchida quando o aparelho nao responde.
+# E A FICHA GANHOU A CONFERENCIA E A DIGITALIZACAO — 21/09/2026, as duas por
+# ordem dele («termine o desenvolvimento do livro 3» e «digitalizacao de
+# imagens deve ter igual ao livro 2»).
+#
+#   A CONFERENCIA e a marca de que alguem LEU a ficha contra o livro de papel.
+#   Ela vale mais aqui do que no Livro 2: dos registros deste livro, uns vieram
+#   da carga do acervo e outros da importacao dos documentos — e um deles, o
+#   1.243, carrega dentro do proprio campo de condicoes uma divergencia de data
+#   que o importador declarou e mandou conferir contra o papel.
+#
+#   A DIGITALIZACAO copia as colunas do Livro 2, MENOS AS DO ONR
+#   (`digi_onr_pendente`, `digi_onr_em`): o indice que o pais consulta e de
+#   IMOVEL, e o Livro 3 registra titulo de credito. Levar as duas colunas
+#   junto seria prometer um envio que nao existe.
+MIGRACOES: tuple[tuple[str, str, str], ...] = (
+    ("ra_atos", "codigo_tj", "TEXT"),
+    ("ra_atos", "selo_arquivamento", "TEXT"),
+    ("ra_atos", "folhas_arquivamento", "INTEGER"),
+    ("ra_atos", "natureza_titulo", "TEXT"),
+    ("ra_atos", "base_calculo_centavos", "INTEGER"),
+    ("ra_atos", "isento", "INTEGER"),
+    ("ra_atos", "motivo_isencao", "TEXT"),
+    ("ra_registros", "conferido", "INTEGER"),
+    ("ra_registros", "conferido_em", "TEXT"),
+    ("ra_registros", "conferido_por", "TEXT"),
+    ("ra_registros", "conferido_nota", "TEXT"),
+    ("ra_registros", "digi_path", "TEXT"),
+    ("ra_registros", "digi_nome", "TEXT"),
+    ("ra_registros", "digi_sha256", "TEXT"),
+    ("ra_registros", "digi_em", "TEXT"),
+    ("ra_registros", "digi_por", "TEXT"),
+    # **E A DIGITALIZACAO DO TERMO, e nao so a do registro** — 21/09/2026,
+    # ordem dele: «precisa ter digitalizacao do termo».
+    #
+    #   SAO DUAS COISAS DIFERENTES, e por isso sao duas colunas e nao uma. A
+    #   do REGISTRO e a varredura da ficha inteira; a do TERMO e o papel
+    #   daquele ato — o instrumento de baixa que o credor expediu, a
+    #   procuracao que o representou, o aditivo que a averbacao registrou.
+    #   Guardar os dois no mesmo lugar faria a segunda apagar a primeira.
+    ("ra_atos", "digi_path", "TEXT"),
+    ("ra_atos", "digi_nome", "TEXT"),
+    ("ra_atos", "digi_sha256", "TEXT"),
+    ("ra_atos", "digi_em", "TEXT"),
+    ("ra_atos", "digi_por", "TEXT"),
+)
+
+
+def init_ra_schema(con: sqlite3.Connection) -> None:
+    """Cria as tabelas do Registro Auxiliar. Idempotente."""
+    con.executescript(SCHEMA)
+    for tabela, coluna, tipo in MIGRACOES:
+        existentes = {linha[1] for linha in con.execute(f"PRAGMA table_info({tabela})")}
+        if coluna not in existentes:
+            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")

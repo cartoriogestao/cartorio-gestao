@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}O que o Registro Civil deve comunicar{% endblock %}
+{% block content %}
+<h1>O que o Registro Civil deve comunicar</h1>
+
+<div class="card">
+  <p><strong>{{ linhas|length }} obrigações, {{ destinos }} destinos, cinco
+     prazos diferentes</strong> — de um dia útil a trimestral.</p>
+  <p class="small muted">
+    Elas já têm as suas telas, e é justamente esse o problema: quem chega de
+    manhã não vai abrir {{ linhas|length }} telas para saber se alguma venceu.
+    Abriria a que lembrasse — e <strong>a que se esquece é a que não tem trabalho
+    para lembrá-la</strong>: a declaração de mês sem movimento, a relação da
+    Junta Militar num mês em que não morreu ninguém.
+  </p>
+  <p class="small muted">
+    Esta tela <strong>não faz comunicação nenhuma</strong>. Ela pergunta a cada
+    módulo quantas estão esperando; onde há trabalho, a linha leva à tela que o
+    faz. A ordem é a do <strong>aperto</strong>, e não a de como o sistema foi
+    escrito.
+  </p>
+</div>
+
+<table>
+  <thead>
+    <tr><th>Destino</th><th>O quê</th><th>Prazo</th><th>Esperando</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for x in linhas %}
+    <tr>
+      <td>
+        <strong>{{ x.destino }}</strong><br>
+        <span class="small muted">{{ x.artigo }}</span>
+        {% if x.fora_do_codigo %}
+          <br><span class="small danger">não está no Código de Normas — quem lê
+          só o Código não a encontra</span>
+        {% endif %}
+      </td>
+      <td class="small">{{ x.o_que }}</td>
+      <td class="small">
+        <strong>{{ x.prazo }}</strong>
+        {% if x.vence_em %}
+          <br>vence em {{ x.vence_em }}
+          <br><span class="muted">entrega o {{ x.trimestre_reportado }}º
+            trimestre de {{ x.ano_reportado }}</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if x.erro %}
+          <span class="danger">não deu para medir</span><br>
+          <span class="small muted">{{ x.erro }}</span>
+        {% elif x.quantas is none %}
+          <span class="muted">—</span>
+        {% elif x.quantas %}
+          <strong class="danger">{{ x.quantas }}</strong>
+        {% else %}
+          <span class="muted">nada</span>
+        {% endif %}
+      </td>
+      <td class="small">
+        <a href="{{ url_for(x.tela) }}">abrir</a>
+        {% if x.tambem %}<br><a href="{{ url_for(x.tambem[0]) }}">{{ x.tambem[1] }}</a>{% endif %}
+      </td>
+    </tr>
+    {% if x.buraco %}
+    <tr>
+      <td colspan="5" class="small muted" style="padding-top:0">
+        <strong>O que ainda não se acompanha:</strong> {{ x.buraco }}.
+      </td>
+    </tr>
+    {% endif %}
+    {% if x.sancao %}
+    <tr>
+      <td colspan="5" class="small muted" style="padding-top:0">
+        <strong>Sanção:</strong> {{ x.sancao }}.
+      </td>
+    </tr>
+    {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+
+<div class="card">
+  <p class="small muted">
+    <strong>Zero medido e zero por engano são a mesma tela e coisas
+    diferentes.</strong> Quando um módulo não souber responder, a linha diz
+    «não deu para medir» e mostra o motivo — nunca zero. Este painel já se
+    provou assim: no primeiro dia ele acusou uma consulta minha que pedia uma
+    coluna que não existe, em vez de dizer que não havia nada esperando.
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,354 @@
+﻿{% extends "base.html" %}
+{% block title %}Conferir {{ nome_especie }} — sem lavrar{% endblock %}
+{% block heading %}<h1>Conferência — {{ nome_especie }}</h1>{% endblock %}
+{% block content %}
+<script>
+document.addEventListener("click", function (e) {
+  var b = e.target.closest("[data-copiar]");
+  if (!b) return;
+  var texto = b.getAttribute("data-copiar");
+  var antes = b.textContent;
+  function avisa(ok) {
+    b.textContent = ok ? "copiado" : "não deu";
+    setTimeout(function () { b.textContent = antes; }, 1200);
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(texto).then(function () { avisa(true); },
+                                             function () { avisa(false); });
+  } else {
+    var a = document.createElement("textarea");
+    a.value = texto; a.style.position = "fixed"; a.style.opacity = "0";
+    document.body.appendChild(a); a.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (x) { ok = false; }
+    document.body.removeChild(a);
+    avisa(ok);
+  }
+});
+</script>
+
+<div class="notice">
+  <strong>Esta tela não lavra.</strong>
+  Confira com o declarante, veja o <em>próximo assento</em> (livro/folha/termo),
+  escolha a <em>folha de segurança</em>, imprima o rascunho e use o bloco do CPF.
+  Só o botão <strong>Lavrar</strong> grava no livro.
+</div>
+
+{# A CONFERÊNCIA DOS DADOS (11/10/2026): o termo contra os campos e as pessoas.
+   O que está em vermelho a lavratura recusa; o amarelo é para olhar. #}
+{% if conferencia_dos_dados %}
+  {% set trava = conferencia_dos_dados | selectattr("gravidade", "equalto", "BLOQUEIA") | list %}
+  {% set olha = conferencia_dos_dados | selectattr("gravidade", "equalto", "AVISA") | list %}
+  {% if trava %}
+  <div class="notice danger">
+    <strong>{% if veio_da_recusa %}A lavratura recusou — nada foi gravado.{% else %}Corrija antes de lavrar.{% endif %}
+      {{ trava|length }} dado(s) se contradizem:</strong>
+    <ul>{% for p in trava %}<li>{{ p.mensagem }}</li>{% endfor %}</ul>
+  </div>
+  {# ARRUMAR SÓ O PROBLEMA (pedido do oficial, 11/10/2026): abrem-se apenas os
+     campos que resolvem o que travou; todo o resto viaja escondido, como
+     estava. Um campo deixado em branco aqui sai do formulário. #}
+  {% if para_corrigir %}
+  <form method="post" action="{{ url_for('rcpn_assento_novo', especie_url=especie_url) }}"
+        class="card no-print" id="arrumar">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% set abertos = para_corrigir | map(attribute="campo") | list %}
+    {% for k, v in form.items() %}{% if k not in abertos and k not in ("acao", "forcar_motivo") %}
+    <input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+    <h3>Arrume aqui</h3>
+    {% for c in para_corrigir %}
+    <label style="display:block;margin-bottom:.6rem">{{ c.rotulo }}
+      <small style="display:block">{{ c.por_que | join(" ") }}</small>
+      {% if c.campo == "teor" %}
+      <textarea name="teor" rows="8" style="width:100%">{{ form.get('teor','') }}</textarea>
+      {% elif c.campo.endswith("_sexo") %}
+      <select name="{{ c.campo }}">
+        {% for valor, nome in (("", "—"), ("F", "feminino"), ("M", "masculino"), ("IGNORADO", "ignorado")) %}
+        <option value="{{ valor }}" {% if form.get(c.campo,'') == valor %}selected{% endif %}>{{ nome }}</option>
+        {% endfor %}
+      </select>
+      {% else %}
+      <input name="{{ c.campo }}" value="{{ form.get(c.campo,'') }}" style="width:100%">
+      {% endif %}
+    </label>
+    {% endfor %}
+    <button class="button primary" name="acao" value="conferir">Conferir de novo</button>
+  </form>
+  {% endif %}
+  {% endif %}
+  {% if olha %}
+  <div class="notice warning">
+    <strong>Confira com o declarante ({{ olha|length }}).</strong>
+    Não impede a lavratura, mas pode ser erro de leitura do documento:
+    <ul>{% for p in olha %}<li>{{ p.mensagem }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+{% endif %}
+
+<div class="actions no-print">
+  <form method="post" action="{{ url_for('rcpn_assento_novo', especie_url=especie_url) }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for k, v in form.items() %}
+      {% if k not in ('csrf_token', 'acao', 'folha_seguranca', 'forcar_motivo') %}
+      <input type="hidden" name="{{ k }}" value="{{ v }}">
+      {% endif %}
+    {% endfor %}
+    <button class="button" name="acao" value="voltar_editar">Voltar e editar</button>
+  </form>
+  <button class="button" type="button" onclick="window.print()">Imprimir rascunho</button>
+  <a class="button" href="{{ url_for('rcpn_assentos') }}">Consultar assentos</a>
+</div>
+
+<section class="panel" style="margin-top:14px">
+  <div class="panel-head"><span>Rascunho para o declarante</span>
+    <small>não é assento lavrado</small></div>
+  <div style="padding:14px; font-family: Georgia, serif" id="rascunho-declarante">
+    {% if especie == 'OBITO' %}
+    <p align="center"><strong>RASCUNHO DE REGISTRO DE ÓBITO</strong><br>
+      <span class="small">{{ sv.unit_name }} — CNS {{ sv.ri_cns }} — conferência prévia</span></p>
+    <p><strong>Falecido(a):</strong> {{ form.get('pessoa_nome') or form.get('nome') }}</p>
+    <p><strong>Sexo:</strong> {{ form.get('pessoa_sexo') }}
+       &nbsp;|&nbsp; <strong>Óbito:</strong> {{ form.get('data_fato') }}
+       {% if form.get('hora_fato') %} às {{ form.get('hora_fato') }}{% endif %}
+       &nbsp;|&nbsp; <strong>Cor/raça:</strong> {{ form.get('cor_raca') }}</p>
+    <p><strong>Local do óbito:</strong> {{ form.get('local_fato_nome') }}
+       — {{ form.get('local_fato_endereco') }}</p>
+    <p><strong>Naturalidade declarada:</strong> {{ form.get('naturalidade_declarada') }}</p>
+    <p><strong>DO:</strong> {{ form.get('numero_do') }}
+       {% if form.get('natureza_obito') %}&nbsp;|&nbsp; <strong>Natureza:</strong> {{ form.get('natureza_obito') }}{% endif %}</p>
+    <p><strong>Causa da morte:</strong> {{ form.get('causa_morte') or '—' }}</p>
+    <p><strong>Atestante:</strong> {{ form.get('atestante') or '—' }}
+       {% if form.get('atestante_documento') %} ({{ form.get('atestante_documento') }}){% endif %}</p>
+    <p><strong>Sepultamento/cremação:</strong> {{ form.get('local_sepultamento') or '—' }}</p>
+    <p><strong>Mãe:</strong> {{ form.get('filiacao1_nome') or '—' }}
+       {% if form.get('filiacao1_data_nascimento') or form.get('filiacao1_documento_numero') %}
+       (nasc. {{ form.get('filiacao1_data_nascimento') }},
+       {{ form.get('filiacao1_estado_civil') }}, {{ form.get('filiacao1_profissao') }},
+       CPF {{ form.get('filiacao1_documento_numero') }}){% endif %}</p>
+    <p><strong>Pai:</strong> {{ form.get('filiacao2_nome') or '—' }}
+       {% if form.get('filiacao2_data_nascimento') or form.get('filiacao2_documento_numero') %}
+       (nasc. {{ form.get('filiacao2_data_nascimento') }},
+       {{ form.get('filiacao2_estado_civil') }}, {{ form.get('filiacao2_profissao') }},
+       CPF {{ form.get('filiacao2_documento_numero') }}){% endif %}</p>
+    {% if form.get('filiacao1_endereco') or form.get('filiacao1_cidade') %}
+    <p><strong>Residência (filiação 1):</strong> {{ form.get('filiacao1_endereco') }},
+       {{ form.get('filiacao1_bairro') }}, {{ form.get('filiacao1_cidade') }}/{{ form.get('filiacao1_uf') }}
+       CEP {{ form.get('filiacao1_cep') }}</p>
+    {% endif %}
+    <p><strong>Declarante:</strong> {{ form.get('declarante_nome') or '—' }}
+       {% if form.get('declarante_documento_numero') %}
+       — doc. {{ form.get('declarante_documento_numero') }}{% endif %}</p>
+    <p class="small muted">Assinatura do declarante: ______________________________________</p>
+
+    {% elif especie in ['CASAMENTO', 'CASAMENTO_RELIGIOSO'] %}
+    <p align="center"><strong>RASCUNHO DE REGISTRO DE CASAMENTO</strong><br>
+      <span class="small">{{ sv.unit_name }} — CNS {{ sv.ri_cns }} — conferência prévia</span></p>
+    <p><strong>Celebração:</strong> {{ form.get('data_fato') }}
+       {% if form.get('hora_fato') %} às {{ form.get('hora_fato') }}{% endif %}</p>
+    <p><strong>Local:</strong> {{ form.get('local_fato_nome') }}
+       — {{ form.get('local_fato_endereco') }}</p>
+    <p><strong>1º nubente:</strong> {{ form.get('nubente1_nome') or form.get('pessoa_nome') or '—' }}</p>
+    <p><strong>2º nubente:</strong> {{ form.get('nubente2_nome') or '—' }}</p>
+    <p><strong>Declarante:</strong> {{ form.get('declarante_nome') or '—' }}</p>
+    <p class="small muted">Assinatura: ______________________________________</p>
+
+    {% else %}
+    {# NASCIMENTO (e demais espécies sem bloco próprio) — comportamento atual #}
+    <p align="center"><strong>RASCUNHO DE REGISTRO DE NASCIMENTO</strong><br>
+      <span class="small">{{ sv.unit_name }} — CNS {{ sv.ri_cns }} — conferência prévia</span></p>
+    <p><strong>Registrando(a):</strong> {{ form.get('pessoa_nome') or form.get('nome') }}</p>
+    <p><strong>Sexo:</strong> {{ form.get('pessoa_sexo') }}
+       &nbsp;|&nbsp; <strong>Nascimento:</strong> {{ form.get('data_fato') }}
+       {% if form.get('hora_fato') %} às {{ form.get('hora_fato') }}{% endif %}
+       &nbsp;|&nbsp; <strong>Cor/raça:</strong> {{ form.get('cor_raca') }}</p>
+    <p><strong>Local:</strong> {{ form.get('local_fato_nome') }}
+       — {{ form.get('local_fato_endereco') }}</p>
+    <p><strong>Naturalidade declarada:</strong> {{ form.get('naturalidade_declarada') }}</p>
+    <p><strong>DNV:</strong> {{ form.get('dnv') }}</p>
+    <p><strong>Mãe:</strong> {{ form.get('filiacao1_nome') }}
+       (nasc. {{ form.get('filiacao1_data_nascimento') }},
+       {{ form.get('filiacao1_estado_civil') }}, {{ form.get('filiacao1_profissao') }},
+       CPF {{ form.get('filiacao1_documento_numero') }})</p>
+    <p><strong>Pai:</strong> {{ form.get('filiacao2_nome') }}
+       (nasc. {{ form.get('filiacao2_data_nascimento') }},
+       {{ form.get('filiacao2_estado_civil') }}, {{ form.get('filiacao2_profissao') }},
+       CPF {{ form.get('filiacao2_documento_numero') }})</p>
+    <p><strong>Residência:</strong> {{ form.get('filiacao1_endereco') }},
+       {{ form.get('filiacao1_bairro') }}, {{ form.get('filiacao1_cidade') }}/{{ form.get('filiacao1_uf') }}
+       CEP {{ form.get('filiacao1_cep') }}</p>
+    <p><strong>Avós maternos:</strong> {{ form.get('prog1f1_nome') }} e {{ form.get('prog2f1_nome') }}</p>
+    <p><strong>Avós paternos:</strong> {{ form.get('prog1f2_nome') }} e {{ form.get('prog2f2_nome') }}</p>
+    <p><strong>Declarante:</strong> {{ form.get('declarante_nome') or '—' }}</p>
+    <p class="small muted">Assinatura do declarante: ______________________________________</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Assento em conferência</span>
+    <small>próximo a lavrar — separado da folha de segurança</small></div>
+  <div class="grid2" style="padding:14px">
+    <p style="grid-column:1/-1"><small>
+      Estes três números são os do <strong>próximo assento</strong> neste
+      formulário (o que você está conferindo agora). A folha de segurança
+      (papel impresso) é escolhida no bloco de baixo — são coisas diferentes.
+    </small></p>
+    {% if proximo_assento %}
+    <p><strong>Livro:</strong> {{ proximo_assento.serie }}
+       n.º {{ proximo_assento.livro }}{% if proximo_assento.complemento %} {{ proximo_assento.complemento }}{% endif %}</p>
+    <p><strong>Folha do livro:</strong> {{ proximo_assento.folha }}</p>
+    <p><strong>Termo (n.º de ordem):</strong> {{ proximo_assento.termo }}</p>
+    <p><strong>Data do registro (prevista):</strong> {{ proximo_assento.data_registro }}</p>
+    <p style="grid-column:1/-1" class="small muted">
+      PDF/ODT da folha do livro saem na ficha do assento depois de lavrar
+      (botoes Folha PDF e Folha ODT). Aqui use Imprimir rascunho para o declarante.
+    </p>
+    {% else %}
+    <p class="danger" style="grid-column:1/-1">Não há livro ativo desta série no núcleo —
+      ajuste em <em>Livros e acervo → Numeração dos livros</em> antes de lavrar.</p>
+    {% endif %}
+  </div>
+</section>
+
+<form method="post" action="{{ url_for('rcpn_assento_novo', especie_url=especie_url) }}" class="no-print">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="especie" value="{{ especie }}">
+  {% for k, v in form.items() %}
+    {% if k not in ('csrf_token', 'acao', 'folha_seguranca', 'especie', 'cpf_registrado', 'forcar_motivo') %}
+    <input type="hidden" name="{{ k }}" value="{{ v }}">
+    {% endif %}
+  {% endfor %}
+
+  <section class="panel">
+    <div class="panel-head"><span>Folha de segurança</span>
+      <small>papel em que a certidão / ato é impresso — escolha obrigatória</small></div>
+    <div class="grid2" style="padding:14px">
+      <label style="grid-column:1/-1">Folha de segurança *
+        <select name="folha_seguranca" required>
+          <option value="">— escolha a folha que está na gaveta —</option>
+          {% for f in folhas_disponiveis %}
+          <option value="{{ f.codigo }}"
+            {# FOLHA_DA_1A_VIA_20261009: SEM pre-selecao. A sugerida vinha
+               marcada e era lavrada sem ninguem olhar - 16 casos desde 09/09. #}
+            {% if form.get('folha_seguranca') == f.codigo %}selected{% endif %}>
+            {{ f.codigo }}{% if f.codigo == folha_sugerida %} (próxima em ordem){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+        <small>Não se escolhe sozinha. A sugerida é só a menor em branco do estoque;
+          use a que está de fato na gaveta.</small>
+        <small><strong>Esta folha vai ao TJMA no selo do registro e é nela que a
+          1ª via será impressa</strong> - a emissão da 1ª via a mostra travada.</small>
+      </label>
+      {% if not folhas_disponiveis %}
+      <p class="danger" style="grid-column:1/-1">Não há folha em branco no estoque.
+        Receba remessa em <a href="{{ url_for('rcpn_papel') }}">Papel de segurança</a>.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><span>{% if especie == 'OBITO' %}CPF do falecido — inclusão na conferência{% else %}CPF do registrado — inclusão na conferência{% endif %}</span>
+      <small>com livro e folha do próximo assento já indicados</small></div>
+    <div style="padding:14px">
+      <p class="small muted">
+        Os campos abaixo já trazem <strong>Livro</strong>, <strong>Folha</strong> e
+        <strong>Número</strong> do assento em conferência
+        {% if proximo_assento %}
+          ({{ proximo_assento.serie }} n.º {{ proximo_assento.livro }},
+           fl. {{ proximo_assento.folha }}, termo {{ proximo_assento.termo }}).
+        {% endif %}
+        A matrícula completa só nasce na lavratura — se a CRC exigir, termine
+        o pedido depois de lavrar.
+      </p>
+
+      <table class="tabela">
+        <tr><th>campo</th><th>valor</th><th></th></tr>
+        {% for c in cpf_copiar %}
+        <tr>
+          <td class="small muted">{{ c.rotulo }}</td>
+          <td>{% if c.valor %}<code>{{ c.valor }}</code>{% else %}<span class="danger">faltando</span>{% endif %}</td>
+          <td style="width:6rem">
+            {% if c.valor %}
+            <button type="button" class="button secondary small"
+                    data-copiar="{{ c.valor }}">copiar</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+
+      {% if cpf_faltas %}
+      <p class="small danger"><strong>Ainda falta para o pedido completo:</strong>
+        {% for f in cpf_faltas %}{{ f.o_que }}{% if not loop.last %}; {% endif %}{% endfor %}.
+      </p>
+      {% endif %}
+
+      <p style="margin-top:12px">
+        <a class="button" href="{{ norma.CRC_GERAR_CPF }}" target="crc_nacional"
+           rel="noopener noreferrer"
+           onclick="window.open(this.href,'crc_nacional','width=1100,height=760,menubar=no'); return false;">
+          Abrir a inscrição na CRC
+        </a>
+        <button type="button" class="button secondary"
+                data-copiar="{% for d in cpf_copiar %}{% if d.valor %}{{ d.rotulo }}: {{ d.valor }}&#10;{% endif %}{% endfor %}">
+          Copiar todos
+        </button>
+        <span class="small muted">CRC em janela separada</span>
+      </p>
+
+      <p style="margin-top:14px">
+        <label>CPF gerado pela Receita (grava ao lavrar)
+          <input type="text" name="cpf_registrado" size="18"
+                 placeholder="000.000.000-00"
+                 value="{{ form.get('cpf_registrado') or '' }}">
+        </label>
+        <small class="muted">Opcional na conferência. Se preencher, o sistema
+          grava no assento assim que lavrar. Sem número ainda, lave e averbe
+          depois em <a href="{{ url_for('rcpn_cpf') }}">{% if especie == 'OBITO' %}CPF do falecido{% else %}CPF do registrado{% endif %}</a>.</small>
+      </p>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="button primary" name="acao" value="lavrar"
+            {% if not folhas_disponiveis or trava %}disabled{% endif %}>
+      Lavrar {{ so_especie | lower }}</button>
+    {% if trava %}<span class="small">Arrume o que está em vermelho acima para liberar.</span>{% endif %}
+    <span class="small muted">Com a folha escolhida. O selo sai em seguida
+      ({% if especie == 'OBITO' %}isento no óbito{% elif especie in ['CASAMENTO', 'CASAMENTO_RELIGIOSO'] %}conforme a espécie{% else %}isento no nascimento{% endif %}).</span>
+  </div>
+
+  {# A SAÍDA DE EMERGÊNCIA (11/10/2026): o caminho certo é arrumar o que está em
+     vermelho. Quando não dá — o documento diz assim e o declarante está na
+     frente —, o oficial ou o substituto lavra por cima, com o motivo escrito.
+     A trava fica gravada ao lado do assento e o agente do RCPN a mostra todo
+     dia até a retificação. O balcão não vê este quadro. #}
+  {% if trava and pode_forcar %}
+  <details class="card" id="forcar" style="margin-top:10px">
+    <summary><strong>Emergência — lavrar mesmo assim</strong>
+      <span class="small muted">só o oficial ou o substituto</span></summary>
+    <p class="small">Use apenas quando o dado em vermelho é mesmo o que o
+      documento diz e não há como esperar a correção. O assento sai com o que
+      travou, <strong>o motivo fica gravado ao lado dele</strong>, e a
+      fiscalização do RCPN o mostra todo dia até ele ser arrumado por
+      retificação ou averbação.</p>
+    <label style="display:block">Motivo (pelo menos {{ motivo_minimo }} letras)
+      <textarea name="forcar_motivo" rows="3" style="width:100%"
+                minlength="{{ motivo_minimo }}">{{ form.get('forcar_motivo','') }}</textarea>
+    </label>
+    <button class="button danger" name="acao" value="lavrar_forcado"
+            {% if not folhas_disponiveis %}disabled{% endif %}>
+      Lavrar por cima da trava</button>
+  </details>
+  {% endif %}
+</form>
+
+<style>
+@media print {
+  .no-print, nav, .nav-modulo, header, .actions { display: none !important; }
+  body { background: #fff; }
+  .panel { break-inside: avoid; }
+}
+</style>
+{% endblock %}

@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Retificação — Código de Normas{% endblock %}
+{% block content %}
+<h1>O que o Código de Normas do TJMA exige</h1>
+<p class="muted">
+  Lido no <code>Código de normas TJMA atualizado.pdf</code>. <strong>Cada regra
+  traz o artigo ao lado</strong>, para você conferir — regra sem endereço é
+  regra que ninguém confere, e numa correição quem confere é o juiz.
+</p>
+
+<div class="card">
+  <p><strong>As três seções</strong>, com as faixas saindo do índice do próprio
+     Código:</p>
+  <ul>
+  {% for s in norma.SECOES %}
+    <li>Seção {{ s.secao }} — {{ s.titulo }} <strong>(arts. {{ s.do }} a {{ s.ao }})</strong></li>
+  {% endfor %}
+  </ul>
+  {% if fora %}
+  <p class="danger">Atenção: há artigos citados fora dessas faixas — {{ fora|join(', ') }}.</p>
+  {% else %}
+  <p class="small muted">Nenhum artigo citado aqui cai fora dessas faixas — a
+     leitura fecha, e há teste que confere isso a cada versão.</p>
+  {% endif %}
+</div>
+
+<h2>O que contraria a intuição</h2>
+<div class="card">
+  <p><strong>Não há limite de área.</strong> {{ norma.SEM_LIMITE_DE_AREA.o_que }}
+     <span class="small muted">({{ norma.SEM_LIMITE_DE_AREA.artigo }})</span></p>
+  <p><strong>Não gera prioridade.</strong> {{ norma.NAO_GERA_PRIORIDADE.o_que }}
+     <span class="small muted">({{ norma.NAO_GERA_PRIORIDADE.artigo }})</span></p>
+</div>
+
+<h2>O que instrui o pedido — art. 592</h2>
+<table>
+  <thead><tr><th>Inciso</th><th>O quê</th></tr></thead>
+  <tbody>
+  {% for d in norma.DOCUMENTOS_DO_ART_592 %}
+    <tr><td>{{ d.inciso }}</td>
+        <td><strong>{{ d.o_que }}</strong><br><span class="small muted">{{ d.detalhe }}</span></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>O que o georreferenciamento acrescenta</h2>
+<table>
+  <thead><tr><th>Artigo</th><th>O quê</th></tr></thead>
+  <tbody>
+  {% for d in norma.DOCUMENTOS_DO_GEORREFERENCIAMENTO %}
+    <tr><td class="small">{{ d.artigo }}</td>
+        <td><strong>{{ d.o_que }}</strong><br><span class="small muted">{{ d.detalhe }}</span></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>O que a norma DISPENSA</h2>
+<p class="small muted">Esta lista existe para o balcão não exigir o que a norma
+   não pede — é a mesma razão da lista do «o que não impede» do usucapião.</p>
+<table>
+  <thead><tr><th>Artigo</th><th>O quê</th></tr></thead>
+  <tbody>
+  {% for d in norma.DISPENSAS %}
+    <tr><td class="small">{{ d.artigo }}</td><td>{{ d.o_que }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Os prazos</h2>
+<table>
+  <thead><tr><th>O quê</th><th>Prazo</th><th>De quem</th><th>Artigo</th></tr></thead>
+  <tbody>
+  {% for p in norma.PRAZOS %}
+    <tr><td>{{ p.o_que }}</td>
+        <td><strong>{{ p.dias }}</strong> dias {{ 'úteis' if p.uteis else 'corridos' }}</td>
+        <td class="small">{{ p.de_quem }}</td>
+        <td class="small muted">{{ p.artigo }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<div class="card">
+  <p><strong>As duas regras que parecem contradição e não são:</strong></p>
+  <p>{{ norma.SILENCIO_VALE_ANUENCIA.o_que }}
+     <span class="small muted">({{ norma.SILENCIO_VALE_ANUENCIA.artigo }})</span></p>
+  <p>{{ norma.IMPUGNACAO_ATRASADA_ENTRA.o_que }}
+     <span class="small muted">({{ norma.IMPUGNACAO_ATRASADA_ENTRA.artigo }})</span></p>
+  <p class="small muted">O silêncio vale anuência, <strong>mas a porta só fecha
+     quando a averbação sai</strong>. Um sistema que tratasse «prazo vencido»
+     como «acabou» erraria — e erraria contra quem não foi ouvido.</p>
+</div>
+
+<h2>Como se notifica — art. 598</h2>
+<p class="small muted">É uma <strong>ordem</strong>, e não uma lista de opções:
+   o edital só cabe «caso frustradas as tentativas anteriores».</p>
+<ol>
+{% for f in norma.COMO_NOTIFICAR %}<li>{{ f.o_que }}</li>{% endfor %}
+</ol>
+<p class="small muted">{{ norma.ONDE_NOTIFICAR.o_que }}
+   ({{ norma.ONDE_NOTIFICAR.artigo }})</p>
+
+<h2>Quem é confrontante</h2>
+<ul>
+{% for q in norma.QUEM_E_CONFRONTANTE %}
+  <li>{{ q.o_que }} <span class="small muted">({{ q.artigo }})</span></li>
+{% endfor %}
+  <li>{{ norma.IMPOSSIVEL_IDENTIFICAR.o_que }}
+      <span class="small muted">({{ norma.IMPOSSIVEL_IDENTIFICAR.artigo }})</span></li>
+</ul>
+
+<h2>O desfecho</h2>
+<h3>Retificação</h3>
+<ol>{% for d in norma.DESFECHO_DA_RETIFICACAO %}<li>{{ d.o_que }}
+  <span class="small muted">({{ d.artigo }})</span></li>{% endfor %}</ol>
+<h3>Georreferenciamento</h3>
+<ol>{% for d in norma.DESFECHO_DO_GEORREFERENCIAMENTO %}<li>{{ d.o_que }}
+  <span class="small muted">({{ d.artigo }})</span></li>{% endfor %}</ol>
+
+<h2>A circunscrição</h2>
+<ul>{% for c in norma.CIRCUNSCRICAO %}<li>{{ c.o_que }}
+  <span class="small muted">({{ c.artigo }})</span></li>{% endfor %}</ul>
+
+<p><a href="{{ url_for('ri_retificacoes') }}">← voltar</a></p>
+{% endblock %}

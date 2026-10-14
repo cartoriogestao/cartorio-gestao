@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Reconhecimento nº {{ r.id }}</h1>{% endblock %}
+{% block content %}
+
+{% if not (r.selo or "")|trim %}
+<div class="notice warning">
+  <strong>Pendente de selo — o escrevente deve selar.</strong>
+  <form method="post" action="{{ url_for('notas_reconhecimento_selar', reconhecimento_id=r.id) }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <button class="primary">Selar</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_reconhecimento') }}">&larr; Reconhecer outra</a>
+  <a class="button" href="{{ url_for('notas_reconhecimentos') }}">Lista</a>
+  {% if not r.cancelado %}
+    {# Abre noutra aba: a janela de impressão sai por cima, e o operador volta
+       para o ato sem perder o lugar nem recarregar a tela. #}
+    <a class="button primary" target="_blank"
+       href="{{ url_for('notas_reconhecimento_etiqueta', reconhecimento_id=r.id) }}">
+      {% if r.etiqueta_impressoes %}Reimprimir etiqueta{% else %}Imprimir etiqueta{% endif %}</a>
+    {% if r.etiqueta_impressoes %}
+      <span class="small muted">já impressa {{ r.etiqueta_impressoes }}&times;{% if r.etiqueta_impressa_em %},
+        a última em {{ r.etiqueta_impressa_em[:16].replace('T', ' ') }}{% endif %}</span>
+    {% endif %}
+  {% endif %}
+</div>
+
+{% if not r.cancelado and not r.selo %}
+{# Etiqueta sem selo cola no documento um reconhecimento que não se consegue
+   conferir depois. Avisar aqui é mais barato que descolar. #}
+<div class="notice warning">
+  <strong>Selo ainda não anotado.</strong> A etiqueta sai sem o número do selo —
+  anote embaixo antes de imprimir e colar.
+</div>
+{% endif %}
+
+{% if r.cancelado %}
+<div class="notice danger"><strong>CANCELADO.</strong> {{ r.motivo_cancelamento }}
+  <br><span class="small">Em {{ r.cancelado_em }} por {{ r.cancelado_por }}.</span></div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>{{ fmt_date(r.data) }} {{ r.hora or '' }}</span>
+    <span class="small muted">{{ r.especie }}</span></div>
+  <div class="grid2" style="padding:14px">
+    <div class="span2"><small class="muted">Teor que sai na etiqueta</small>
+      <div style="font-size:1.05em"><strong>{{ r.texto }}</strong></div></div>
+    <div><small class="muted">Selo</small><div>{{ r.selo or '— ainda não anotado —' }}</div></div>
+    <div><small class="muted">Firmas</small><div>{{ r.quantidade }}</div></div>
+    <div><small class="muted">Oficial</small><div>{{ r.oficial or '—' }}{% if r.oficial_funcao %} — {{ r.oficial_funcao }}{% endif %}</div></div>
+    <div><small class="muted">Documento</small><div>{{ r.documento_tipo or '—' }}{% if r.veiculo_placa %} · placa {{ r.veiculo_placa }}{% endif %}</div></div>
+    {% if r.documento_descricao %}<div class="span2"><small class="muted">Descrição</small><div>{{ r.documento_descricao }}</div></div>{% endif %}
+  </div>
+</section>
+
+{% if emolumento %}
+<section class="panel">
+  <div class="panel-head"><span>Emolumentos — item {{ emolumento.codigo_tj }} da tabela do TJMA</span></div>
+  <div style="padding:14px">
+    <strong>Total: R$ {{ emolumento.total }}</strong>
+    <div class="small muted">emolumentos R$ {{ emolumento.emolumentos }};
+      FERC R$ {{ emolumento.ferc }}; FADEP R$ {{ emolumento.fadep }};
+      FEMP R$ {{ emolumento.femp }}; FERRFIS R$ {{ emolumento.ferrfis }}</div>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Quem assinou</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Assinatura no cartão</th>
+      {% if r.especie == 'AUTENTICIDADE' %}<th>Termo</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for p in partes %}
+      <tr>
+        <td>{% if p.cartao_id %}<a href="{{ url_for('notas_cartao', cartao_id=p.cartao_id) }}">{{ p.nome or p.nome_cartao }}</a>
+            {% else %}{{ p.nome or '—' }}{% endif %}</td>
+        <td class="small">{{ p.documento or p.documento_cartao or '—' }}</td>
+        {# O reconhecimento já gravado é o que se reabre quando alguém
+           questiona depois. Poder ampliar aqui é o que permite responder. #}
+        <td>{% if p.imagem_id %}<img class="ampliavel"
+               src="{{ url_for('notas_cartao_imagem', imagem_id=p.imagem_id, w=400) }}"
+               data-lupa-cheia="{{ url_for('notas_cartao_imagem', imagem_id=p.imagem_id) }}"
+               data-lupa-original="{{ url_for('notas_cartao_imagem_original', imagem_id=p.imagem_id) }}"
+               data-lupa-titulo="{{ p.nome or p.nome_cartao or 'assinatura' }}"
+               data-lupa-grupo="reconhecimento-{{ r.id }}"
+               alt="Assinatura de {{ p.nome or p.nome_cartao or '—' }}" loading="lazy"
+               title="Clique para ampliar"
+               style="max-height:70px;max-width:300px;border:1px solid #ccc">{% else %}—{% endif %}</td>
+        {% if r.especie == 'AUTENTICIDADE' %}
+        <td class="small">
+          <a class="button small" target="_blank"
+             href="{{ url_for('notas_reconhecimento_termo_comparecimento',
+                              reconhecimento_id=r.id, parte_id=p.id) }}">
+            {% if presencas.get('%s:%s' % (r.id, p.id)) %}Reimprimir{% else %}Gerar{% endif %}
+            termo</a>
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{% if not r.cancelado %}
+<section class="panel">
+  <div class="panel-head"><span>Selo</span></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2">Número do selo colado
+      <input name="selo" value="{{ r.selo or '' }}" placeholder="RECFIR000000..."></label>
+    <div class="span2"><button name="acao" value="selo">Anotar selo</button>
+      <span class="small muted">O sistema recusa selo já usado em outro ato.</span></div>
+  </form>
+</section>
+
+<details class="panel">
+  <summary>Cancelar este reconhecimento</summary>
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="display:block">Motivo <input name="motivo" style="width:100%" required></label>
+    <div style="margin-top:10px"><button name="acao" value="cancelar">Cancelar o ato</button>
+      <span class="small muted">O registro não some: fica com o motivo e a data, para a correição.</span></div>
+  </form>
+</details>
+{% endif %}
+{% endblock %}

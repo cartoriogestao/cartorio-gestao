@@ -1,0 +1,208 @@
+{#
+  A ETIQUETA DE REGISTRO DO RCPJ/RTD — a que se cola no título de papel.
+
+  «se positiva a qualificação possa imprimir a etiqueta de registro para o
+   título apresentado em papel» — o oficial, 03/09/2026.
+
+  NÃO ESTENDE O `base.html`, PELA MESMA RAZÃO DA ETIQUETA DE FIRMA: o que o
+  navegador manda para a impressora é o documento inteiro, e a térmica
+  receberia 240 pixels de barra lateral antes do teor.
+
+  A etiqueta usa a mesma tira física de 100 × 30 mm do reconhecimento de
+  firma. Largura, altura, margem e deslocamento compartilham a calibração da
+  impressora; corpo, entrelinha e QR são próprios do teor registral.
+#}<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Etiqueta de registro — n. {{ e.numero or '' }}</title>
+<style>
+  @page {
+    size: {{ m.etiqueta_largura_mm }}mm {{ m.etiqueta_altura_mm }}mm;
+    margin: 0;
+  }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body {
+    font-family: "Arial Narrow", Arial, Helvetica, sans-serif;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+  }
+  .etiqueta {
+    width: {{ m.etiqueta_largura_mm }}mm;
+    height: {{ m.etiqueta_altura_mm }}mm;
+    padding: {{ m.etiqueta_margem_mm }}mm;
+    /* O deslocamento corrige o driver que empurra a impressão para um lado.
+       É o único jeito de acertar sem mexer na impressora. */
+    transform: translate({{ m.etiqueta_deslocamento_x_mm }}mm,
+                         {{ m.etiqueta_deslocamento_y_mm }}mm);
+    box-sizing: border-box;
+    overflow: hidden;
+    display: flex;
+    gap: 2mm;
+    font-size: {{ m.etiqueta_corpo_pt }}pt;
+    line-height: {{ m.etiqueta_entrelinha }};
+  }
+  {# **`space-between` ERA O ESPAÇO DO MEIO, E ELE EMPURRAVA O RODAPÉ PARA
+     FORA** — achado do oficial em 12/09/2026: «tire um pouco dos espaços do
+     meio... parece que tem campos (nome e função do oficial) que estão
+     saindo fora». Com `space-between`, o bloco de cima (cartório/onde/
+     data/natureza/requerente) e o `.rodape` (selo/valores/quem) sempre se
+     empurravam para as DUAS PONTAS da coluna — e quando o texto de cima era
+     comprido (natureza longa, requerente longo), o `.rodape` era empurrado
+     para BAIXO do fundo visível da etiqueta, cortado pelo `overflow:hidden`
+     do `.etiqueta`. A última linha do `.rodape` é justamente `.quem`
+     (oficial + função): a que sumia primeiro. Um `gap` fixo e pequeno deixa
+     o rodapé colado ao que vem antes — compacto, e nunca empurrado para
+     fora do que já coube. #}
+  .coluna { flex: 1; min-width: 0;
+            display: flex; flex-direction: column; justify-content: flex-start;
+            gap: 1mm; }
+  .cartorio { font-weight: 700; text-transform: uppercase;
+              font-size: {{ (m.etiqueta_corpo_pt * 1.05)|round(2) }}pt;
+              line-height: 1.1; }
+  .onde { font-weight: 700; }
+  .linha { display: flex; gap: 2mm; flex-wrap: wrap; }
+  .rodape { font-size: {{ (m.etiqueta_corpo_pt * 0.88)|round(2) }}pt; }
+  .selo { font-family: Consolas, "Courier New", monospace; font-weight: 700;
+          letter-spacing: -.15px; }
+  {# A LINHA DE VALORES SAI DO QUE O SELO DECLARA, e não de uma conta feita
+     aqui — a régua é `selo_no_papel`, a mesma da certidão do RCPN e da
+     etiqueta de firma. E ESTE COMENTÁRIO É JINJA, e não CSS: escrito como
+     `/* … */` ele viajaria para o navegador em toda etiqueta impressa, e já
+     fez um teste de tela achar «Total R$» numa etiqueta sem valor nenhum. #}
+  .valores { font-family: Consolas, "Courier New", monospace;
+             font-size: {{ (m.etiqueta_corpo_pt * 0.78)|round(2) }}pt;
+             letter-spacing: -.2px; line-height: 1.15; }
+  .quem { text-align: right; white-space: nowrap; }
+  .qr { flex: 0 0 auto; width: {{ m.etiqueta_qr_mm }}mm;
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: .6mm; }
+  .qr svg { display: block; width: {{ m.etiqueta_qr_mm }}mm;
+            height: {{ m.etiqueta_qr_mm }}mm; }
+  .qr-rotulo { font-size: {{ (m.etiqueta_corpo_pt * 0.62)|round(2) }}pt;
+               text-align: center; line-height: 1.1; }
+
+  .tela { padding: 18px; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }
+  .moldura { border: 1px dashed #b9c9d6; display: inline-block; background: #fff;
+             box-shadow: 0 1px 6px rgba(16,24,40,.12); }
+  .barra { margin-bottom: 14px; display: flex; gap: 8px; align-items: center;
+           flex-wrap: wrap; }
+  .barra a, .barra button { font: inherit; font-size: 13px; border: 1px solid #b9c5cd;
+    border-radius: 6px; background: #fff; color: #1d3443; padding: 8px 12px;
+    cursor: pointer; text-decoration: none; }
+  .barra .primary { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }
+  .aviso { color: #65727e; font-size: 12px; margin-top: 12px; max-width: 620px;
+           line-height: 1.5; }
+  @media print {
+    .tela { padding: 0; }
+    .barra, .aviso, .rotulo { display: none !important; }
+    .moldura { border: 0; box-shadow: none; display: block; }
+  }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="barra">
+    <button class="primary" onclick="window.print()">Imprimir</button>
+    <a href="{{ voltar }}">&larr; Voltar ao título</a>
+    <span style="font-size:12px;color:#65727e">
+      {{ m.etiqueta_largura_mm|round|int }}&times;{{ m.etiqueta_altura_mm|round|int }} mm
+      {%- if vez > 1 %} · <strong>{{ vez }}ª impressão desta etiqueta</strong>{% endif %}
+    </span>
+  </div>
+
+  <div class="rotulo" style="font-size:12px;color:#65727e;margin-bottom:6px">
+    Assim vai sair na tira:</div>
+
+  <div class="moldura">
+    <div class="etiqueta">
+      <div class="coluna">
+        <div>
+          <div class="cartorio">{{ e.cartorio }}</div>
+          <div class="onde">
+            {{ e.tipo|capitalize }} — Livro {{ e.serie }}{% if e.livro %} n. {{ e.livro }}{% endif %},
+            fl. {{ e.folha }}, sob o n. {{ e.numero }}
+          </div>
+          <div>{{ e.data }}{% if e.protocolo %} · protocolo n. {{ e.protocolo }}{% endif %}</div>
+          {% if e.natureza %}<div>{{ e.natureza }}</div>{% endif %}
+          {% if e.requerente %}<div>{{ e.requerente }}</div>{% endif %}
+        </div>
+        <div class="rodape">
+          {# O NÚMERO CONTINUA IMPRESSO, MESMO COM O QR AO LADO: QR borrado na
+             térmica, etiqueta amassada, câmera de celular velho — o número
+             legível é o que sobra quando o QR falha. #}
+          {% if e.selo %}<div class="selo">{{ e.selo }}</div>{% endif %}
+          {% if e.valores %}<div class="valores">{{ e.valores }}</div>{% endif %}
+          <div class="quem">
+            {% if e.oficial %}<div>{{ e.oficial }}{% if e.funcao %} — {{ e.funcao }}{% endif %}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% if e.qr %}
+      <div class="qr">
+        {{ e.qr|safe }}
+        <div class="qr-rotulo">confira o selo<br>selo.tjma.jus.br</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="aviso">
+    Na janela de impressão, escolha a impressora térmica e deixe a escala em
+    <strong>100%</strong> — “ajustar à página” encolhe a etiqueta e desalinha tudo.
+    Saindo torta ou cortada, use
+    <a href="{{ url_for('rcpj_rtd_etiqueta_ajuste') }}">Ajustar a etiqueta de
+    registro</a>: lá dá para mexer nas medidas sem gastar a tira.
+    {% if not e.selo %}
+    <br><br><strong>Este registro ainda está sem selo.</strong> A etiqueta sai sem
+    o número e sem o QR — anote o selo no ato antes de colar.
+    {% elif not e.qr and not e.qr_possivel %}
+    <br><br><strong>O QR não foi gerado:</strong> falta a biblioteca <code>segno</code>
+    no servidor. A etiqueta sai com o número do selo do mesmo jeito.
+    {% elif e.qr %}
+    <br><br>O QR leva a <strong>selo.tjma.jus.br</strong>, o portal do selo eletrônico
+    do TJMA. O número segue impresso ao lado, para quem preferir digitar.
+    {% endif %}
+  </div>
+</div>
+
+<div class="aviso" id="estouro" style="display:none;color:#b42318;font-weight:600">
+  <span id="estouro-texto"></span>
+</div>
+
+<script>
+/* ---------------------------------------------------------------------------
+   NÃO DEIXAR O TEOR SER CORTADO EM SILÊNCIO.
+
+   A tira tem `overflow: hidden` — precisa ter, senão o texto que não coube
+   vaza por cima da etiqueta seguinte no rolo. Mas cortar em silêncio é o pior
+   defeito que esta tela poderia ter: a etiqueta sai bonita, é colada no
+   título, e o número do registro ficou de fora.
+
+   É a mesma medição da etiqueta de firma, e aqui ela pesa mais: o teor daqui
+   tem natureza e requerente, que são campos de texto livre e podem ser longos.
+--------------------------------------------------------------------------- */
+window.addEventListener("load", function () {
+  var tira = document.querySelector(".etiqueta");
+  var sobra = tira.scrollHeight - tira.clientHeight;
+  var largura = tira.scrollWidth - tira.clientWidth;
+
+  if (sobra > 1 || largura > 1) {
+    var caixa = document.getElementById("estouro");
+    document.getElementById("estouro-texto").innerHTML =
+      "<strong>O teor não cabe nesta etiqueta e vai sair cortado.</strong> " +
+      "Faltam cerca de " + Math.ceil(sobra * 0.2646) + " mm de altura. " +
+      "Encurte a natureza do registro, ou aumente a altura da tira em " +
+      "<a href='{{ url_for('rcpj_rtd_etiqueta_ajuste') }}'>Ajustar a etiqueta " +
+      "de registro</a>. Etiqueta cortada colada num título de terceiro não tem " +
+      "conserto depois.";
+    caixa.style.display = "block";
+    caixa.scrollIntoView({ block: "center" });
+    return;                     /* e NÃO abre a impressão sozinha */
+  }
+
+  setTimeout(function () { window.print(); }, 120);
+});
+</script>
+</body>
+</html>

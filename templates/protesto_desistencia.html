@@ -1,0 +1,82 @@
+{#
+  O arquivo de desistência recebido, e os títulos que ele desistiu.
+
+  O ARQUIVO FICA GUARDADO INTEIRO — mesma regra da remessa e do retorno:
+  quando o apresentante ligar perguntando por que aquele título não foi
+  protestado, é este teor que se lê.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Desistência recebida</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_desistencias') }}">&larr; Desistências</a>
+  <a class="button" href="{{ url_for('protesto_titulos') }}">Títulos</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Apresentante {{ desistencia.apresentante_codigo or '—' }}
+          {{ desistencia.apresentante_nome or '' }}</span>
+    <small>{{ desistencia.dia or '—' }}</small>
+  </div>
+  <table class="table">
+    <tbody>
+      <tr><th>Recebida em</th>
+          <td>{{ desistencia.recebida_em[:16] | replace('T', ' ') }}
+              por {{ desistencia.recebida_por or '—' }}</td></tr>
+      <tr><th>Arquivo</th>
+          <td>{{ desistencia.nome_arquivo or 'sem nome' }}
+              — <a href="{{ url_for('protesto_desistencia_arquivo',
+                                    desistencia_id=desistencia.id) }}">baixar
+                como chegou</a>
+              <div><small>impressão digital
+                {{ desistencia.hash_arquivo[:16] }}…</small></div></td></tr>
+      <tr><th>Títulos</th>
+          <td><strong>{{ desistencia.aplicados }}</strong> aplicado(s) de
+              {{ desistencia.titulos }} que vieram</td></tr>
+      <tr><th>Soma do arquivo</th>
+          <td>R$ {{ '%.2f' % ((desistencia.soma_centavos or 0) / 100) }}</td></tr>
+    </tbody>
+  </table>
+</section>
+
+{% if achados %}
+<div class="notice warning">
+  <strong>O que o arquivo declarava e não fechava, quando ele chegou:</strong>
+  <ul>{% for a in achados %}<li>{{ a }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Títulos desistidos por este arquivo</span>
+    <small>{{ atos | length }}</small>
+  </div>
+  {% if not atos %}
+    <p style="padding:14px">
+      Nenhum título deste arquivo foi aplicado ainda. Mande o arquivo de novo
+      em <a href="{{ url_for('protesto_desistencias') }}">Desistências</a> para
+      escolher o que entra.
+    </p>
+  {% else %}
+  <table class="table">
+    <thead><tr>
+      <th>Protocolo</th><th>Título</th><th>Quando</th><th>Motivo</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for a in atos %}
+      <tr>
+        <td>{{ a.protocolo or '—' }}</td>
+        <td>{{ a.numero_titulo or '—' }}
+            <div><small>{{ a.situacao }}</small></div></td>
+        <td>{{ a.data_ato[:16] | replace('T', ' ') }}</td>
+        <td><small>{{ a.detalhe.motivo or '' }}</small></td>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=a.titulo_id) }}">abrir</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

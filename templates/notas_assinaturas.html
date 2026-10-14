@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Assinaturas digitalizadas</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
+  <a class="button" href="{{ url_for('notas_cartoes') }}">Cartões de autógrafo</a>
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ total }}</strong><small>assinaturas registradas</small></div>
+  <div class="stat"><strong>{{ copiadas }}</strong><small>no acervo do sistema</small></div>
+  <div class="stat"><strong>{{ megabytes }} MB</strong><small>copiados</small></div>
+</section>
+
+<div class="notice warning">
+  <strong>O E-Ofício grava o caminho como <code>\\servidor\C11\Firmas\</code>, e é por isso que
+  elas não abrem.</strong>
+  Esse endereço existe para quem está logado no computador, mas o servidor roda como
+  <strong>SYSTEM</strong>, e conta de sistema não enxerga compartilhamento montado na sessão do
+  usuário. O caminho está gravado, o arquivo está lá, e mesmo assim o sistema não alcança.
+  <br><br>
+  Informe o caminho <strong>local</strong> da pasta de firmas — algo como
+  <code>C:\ARPNET\C11\Firmas</code> — e depois traga as imagens para dentro do acervo. Copiadas,
+  param de depender da rede e passam a entrar no backup.
+</div>
+
+{% if diag %}
+<section class="panel">
+  <div class="panel-head"><span>Por que as assinaturas não estão abrindo</span></div>
+  <div style="padding:14px">
+    {% if not diag.raiz_existe %}
+      <p class="danger"><strong>O servidor não consegue abrir {{ diag.raiz }}.</strong>
+         Se for <code>\\servidor\...</code> ou unidade mapeada, ele nunca vai conseguir:
+         precisa ser caminho local do próprio servidor.</p>
+    {% elif diag.achadas == 0 %}
+      <p class="danger"><strong>Nenhuma assinatura foi localizada</strong>, e varri
+         {{ diag.arquivos }} arquivo(s) em {{ diag.raiz }}.</p>
+      <table style="margin-top:10px">
+        <thead><tr><th>O banco procura por</th><th>O disco tem</th></tr></thead>
+        <tbody><tr>
+          <td class="small"><code>{{ diag.exemplos_perdidos|join('</code><br><code>')|safe }}</code></td>
+          <td class="small">
+            {% if diag.exemplos_disco %}<code>{{ diag.exemplos_disco|join('</code><br><code>')|safe }}</code>
+            {% else %}<em>a pasta está vazia</em>{% endif %}
+          </td>
+        </tr></tbody>
+      </table>
+      <p class="small muted" style="margin-top:8px">
+        Se os nomes das duas colunas não se parecem, a pasta é outra.
+      </p>
+    {% else %}
+      <p><strong>{{ diag.achadas }}</strong> localizadas e <strong>{{ diag.perdidas }}</strong>
+         ainda não, entre {{ diag.arquivos }} arquivos em {{ diag.raiz }}.</p>
+      {% if diag.exemplos_perdidos %}
+      <p class="small muted">Não achei, por exemplo:
+        <code>{{ diag.exemplos_perdidos|join('</code>, <code>')|safe }}</code>.
+        O diário já registrava sete imagens descasadas no acervo: duas citadas no banco que não
+        existem em disco, cinco em disco sem registro.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="resolver">
+    <label class="span2">Pasta local das assinaturas
+      <input name="raiz" value="{{ raiz }}" required>
+      <small class="{{ 'ok' if existe else 'muted' }}">
+        {% if existe %}O servidor consegue abrir esta pasta.
+        {% else %}O servidor NÃO consegue abrir esta pasta.{% endif %}
+      </small>
+    </label>
+    <div class="span2 small muted">
+      Onde o sistema procura por padrão:
+      {% for p in padroes %}<code>{{ p }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+    <div class="span2"><button class="primary">1. Localizar as assinaturas</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Trazer para o acervo do sistema</span></div>
+  <div class="notice">
+    Enquanto as assinaturas moram na pasta do E-Ofício, elas não são nossas — e, sendo caminho de
+    rede, o servidor sequer as alcança. Copiadas para <code>arquivos\notas\firmas</code>, passam a
+    viver onde o sistema roda e entram no backup, que já varre essa pasta. Cada uma recebe SHA-256
+    na cópia. Rodar de novo só copia o que faltar.
+  </div>
+  {% if copiadas %}
+  <div class="notice ok">{{ copiadas }} de {{ total }} já estão no acervo do sistema.</div>
+  {% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="copiar">
+    <input type="hidden" name="raiz" value="{{ raiz }}">
+    <button class="primary">2. Copiar para o nosso acervo</button>
+  </form>
+</section>
+{% endblock %}

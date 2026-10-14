@@ -1,0 +1,291 @@
+{# ---------------------------------------------------------------------------
+   A PESSOA DE QUEM O ASSENTO É — uma macro, e não três cópias.
+
+   O registrado, o falecido e cada nubente pedem exatamente os mesmos campos.
+   Escrever o bloco três vezes daria três versões divergentes do pedaço que a
+   certidão imprime — é a lição de `_cobrar.html` e da macro do alerta de
+   fraudes, agora no Registro Civil.
+
+   E a consistência aqui não é estética: é o escrevente achar a mesma coisa,
+   com as mesmas palavras, em qualquer espécie.
+--------------------------------------------------------------------------- #}
+{# `data_obrigatoria` — relato #37, item 5: no nascimento, a data de
+   nascimento da MÃE é exigida, porque é dela que sai a idade na ocasião do
+   parto que o termo afirma. Nas outras espécies e nas outras pessoas ela
+   continua opcional: exigir o que não se sabe faria o balcão inventar. #}
+{% macro pessoa(prefixo, titulo, explicacao='', com_nome_pos=false, form={},
+                 nome_obrigatorio=false, perfil='completo',
+                 data_obrigatoria=false, pode_declarar_ausente=false,
+                 copiar_de=[]) %}
+<details class="panel" style="grid-column:1/-1"
+         {% if nome_obrigatorio or form.get(prefixo ~ '_nome') %}open{% endif %}>
+  <summary class="panel-head" style="cursor:pointer">
+    <span>{{ titulo }}</span>
+    <small>{% if nome_obrigatorio %}dados principais{% else %}abrir para preencher{% endif %}</small>
+  </summary>
+  <div class="grid2" style="padding:14px">
+    {% if explicacao %}
+    <p style="grid-column:1/-1"><small>{{ explicacao }}</small></p>
+    {% endif %}
+
+    {# COPIAR EM VEZ DE REDIGITAR — pedido do oficial: quem já está no
+       formulário (a mãe, o pai...) costuma ser também o declarante. O botão
+       só copia; o escrevente confere e edita depois. #}
+    {% if copiar_de %}
+    <p style="grid-column:1/-1">
+      <small>Usar os dados de já preenchidos:</small><br>
+      {% for de_prefixo, de_rotulo in copiar_de %}
+      <button type="button" class="button" style="margin:4px 6px 0 0"
+              data-copiar-de="{{ de_prefixo }}"
+              onclick="copiarDadosDaPessoa('{{ de_prefixo }}', '{{ prefixo }}')">{{ de_rotulo }}</button>
+      {% endfor %}
+    </p>
+    {% endif %}
+
+    <label>Nome
+      <input name="{{ prefixo }}_nome"
+             value="{{ form.get(prefixo ~ '_nome','') }}"
+             {% if nome_obrigatorio %}required{% endif %}>
+      {% if not nome_obrigatorio %}
+      <small>Preencha quando essa pessoa constar no assento.</small>
+      {% endif %}</label>
+    {% if pode_declarar_ausente %}
+    <label style="align-self:end">
+      <input type="checkbox" name="nao_tem_{{ prefixo }}" value="1"
+             {% if form.get('nao_tem_' ~ prefixo) or (form.get(prefixo ~ '_nome') or '')|upper == 'IGNORADO' %}checked{% endif %}>
+      não tem — ignorado
+    </label>
+    {% endif %}
+
+    {% if com_nome_pos %}
+    <label>Nome depois do casamento
+      <input name="{{ prefixo }}_nome_pos"
+             value="{{ form.get(prefixo ~ '_nome_pos','') }}">
+      <small>É o nome que a certidão vai mostrar. Nos casamentos desta casa
+        ele muda em 17 de cada 20 para o segundo cônjuge.</small></label>
+    {% endif %}
+
+    <label>Sexo
+      <select name="{{ prefixo }}_sexo">
+        <option value="">— não informado —</option>
+        <option value="M" {% if form.get(prefixo ~ '_sexo') == 'M' %}selected{% endif %}>Masculino</option>
+        <option value="F" {% if form.get(prefixo ~ '_sexo') == 'F' %}selected{% endif %}>Feminino</option>
+        <option value="IGNORADO" {% if (form.get(prefixo ~ '_sexo') or '')|upper == 'IGNORADO' %}selected{% endif %}>ignorado</option>
+      </select></label>
+
+    <label>Data de nascimento{% if data_obrigatoria %} <small>(exigida)</small>{% endif %}
+      <input type="date" name="{{ prefixo }}_data_nascimento"
+             value="{{ form.get(prefixo ~ '_data_nascimento','') }}"
+             {% if data_obrigatoria %}required{% endif %}></label>
+
+    {% if perfil == 'completo' %}
+    <label>Estado civil
+      <input name="{{ prefixo }}_estado_civil"
+             value="{{ form.get(prefixo ~ '_estado_civil','') }}"
+             placeholder="solteiro, viúvo, divorciado…"></label>
+
+    <label>Profissão
+      <input name="{{ prefixo }}_profissao"
+             value="{{ form.get(prefixo ~ '_profissao','') }}"></label>
+    {% endif %}
+
+    {# O TIPO DO DOCUMENTO FALTAVA, e a coluna existia. O rotulo dizia «CPF»
+       e gravava em `documento_numero`, que aceita qualquer documento — entao
+       um RG digitado ali ficava guardado como se fosse CPF, e a carga da CRC
+       recebe os dois campos separados.
+
+       01/09/2026 — NO REGISTRADO DE NASCIMENTO (e NATIMORTO, a mesma gaveta)
+       esses campos NAO FAZEM SENTIDO. Documento e CPF se geram no fim; o CPF
+       sai na CRC depois da adesao à RFB. Pedir CPF aqui faz o balcao inventar.
+       Pais, declarante e testemunhas CONTINUAM com documento: a CRC precisa do
+       CPF da filiacao. O falecido (perfil completo) tambem continua, porque ja
+       viveu com RG/CPF. Nao se gera numero nesta tela e nao se chama a Receita. #}
+    {% if perfil == 'registrado' %}
+    <p style="grid-column:1/-1"><small>O CPF se gera na CRC no fim do
+      registro — não se pede nem se inventa no balcão.
+      {% if url_for is defined %}
+      <a href="{{ url_for('rcpn_cpf') }}">CPF do registrado</a>
+      {% endif %}
+      </small></p>
+    {% else %}
+    <label>Documento
+      <select name="{{ prefixo }}_documento_tipo">
+        {% for codigo, texto in {'CPF': 'CPF', 'RG': 'RG',
+                                 'CNH': 'CNH', 'PASSAPORTE': 'Passaporte',
+                                 'OUTRO': 'Outro'}.items() %}
+          <option value="{{ codigo }}"
+                  {% if form.get(prefixo ~ '_documento_tipo') == codigo %}selected{% endif %}>
+            {{ texto }}</option>
+        {% endfor %}
+      </select></label>
+
+    <label>Número do documento
+      <input name="{{ prefixo }}_documento_numero"
+             value="{{ form.get(prefixo ~ '_documento_numero','') }}"></label>
+
+    <label>Órgão emissor <small>(quando não for CPF)</small>
+      <input name="{{ prefixo }}_documento_orgao"
+             value="{{ form.get(prefixo ~ '_documento_orgao','') }}"
+             placeholder="SSP/MA"></label>
+    {% endif %}
+
+    <label>Nacionalidade
+      <input name="{{ prefixo }}_nacionalidade"
+             value="{{ form.get(prefixo ~ '_nacionalidade','') }}"
+             placeholder="brasileira"></label>
+
+    {# A IDADE NA OCASIAO DO FATO — **agora se calcula, e ate 31/08/2026 nao
+       se calculava**. Esta no termo desta casa: «A genitora na ocasiao do
+       parto contava 29 anos de idade» (termo nº 8.369).
+
+       O QUE ESTAVA ESCRITO AQUI, e por que deixou de valer: «nao e calculada:
+       onde a data de nascimento falta, o calculo erraria num papel assinado».
+       A objecao era sobre O CAMPO FALTAR — e o relato #37, item 5, tornou as
+       duas datas obrigatorias no nascimento. Onde elas existem, a conta acerta
+       e o balcao para de faze-la de cabeca; onde falta uma, `idade_na_data`
+       devolve None e o campo continua sendo perguntado, como antes.
+
+       E O QUE O DECLARANTE DISSER MANDA: a conta so preenche o campo vazio. #}
+    {% if perfil == 'completo' %}
+    <label>Idade na ocasião do fato
+      <input name="{{ prefixo }}_idade_no_fato" size="6"
+             data-idade-de="{{ prefixo }}_data_nascimento"
+             value="{{ form.get(prefixo ~ '_idade_no_fato','') }}">
+      <small>Vai no termo por extenso. <strong>Calculada</strong> da data de
+      nascimento e da data do fato, quando as duas estiverem preenchidas — e o
+      que você digitar aqui manda sobre o cálculo.</small></label>
+    {% endif %}
+
+    {# NATURALIDADE NAO E O LOCAL DO PARTO — relato #37, item 3, de
+       31/08/2026: «o registrado pode nascer em um local e ser natural de
+       outro, precisa constar os dois campos».
+
+       E o caso comum desta regiao: a mae mora em Cidade Exemplo e tem o filho no
+       hospital de Imperatriz. O parto foi em Imperatriz; a naturalidade e
+       Cidade Exemplo. Sao duas coisas, e escrever uma no lugar da outra sai na
+       certidao da pessoa para o resto da vida.
+
+       O lugar do parto mora no bloco «Dados do nascimento»; aqui esta a
+       naturalidade — que e de onde sai o codigo de municipio do IBGE. #}
+    <p style="grid-column:1/-1"><small><strong>Naturalidade</strong> — município
+      que vai no termo e na certidão. <strong>Não é o lugar do parto</strong>
+      nem o «Onde nasceu» da remessa do IBGE (hospital, domicílio). Cidade e UF
+      vão separados: há três «Bom Jesus» no Brasil.</small></p>
+    <label>Cidade
+      <input name="{{ prefixo }}_naturalidade_cidade"
+             value="{{ form.get(prefixo ~ '_naturalidade_cidade','') }}"></label>
+    <label>UF
+      <input name="{{ prefixo }}_naturalidade_uf" maxlength="2"
+             value="{{ form.get(prefixo ~ '_naturalidade_uf','') }}"
+             placeholder="MA"></label>
+    {# O PAIS SO SE PERGUNTA A QUEM NAO NASCEU AQUI, e por isso vem depois e
+       com o padrao dito: preenche-lo sempre faria o balcao digitar «Brasil»
+       trezentas vezes por ano para nada.
+
+       E NAO SE PERGUNTA AO REGISTRADO — relato #37, item 4, de 31/08/2026:
+       «ocultar referencia a nascimento fora do brasil, o cartorio nao vai
+       registrar isso numa perspectiva real». O registrado nasceu aqui: e o
+       nascimento que esta serventia esta lavrando. Nascimento ocorrido no
+       exterior se registra em reparticao consular, e o traslado e outro ato.
+
+       PARA OS DEMAIS O CAMPO FICA, e a diferenca nao e descuido: pai, mae,
+       nubente e falecido **podem** ter nascido fora, e a naturalidade deles e
+       o que vai escrito no termo. Esconder ali faria a tela deixar de
+       perguntar o que o livro pede. #}
+    {% if perfil != 'registrado' %}
+    <label>País onde nasceu <small>(só se não for o Brasil)</small>
+      <input name="{{ prefixo }}_naturalidade_pais"
+             value="{{ form.get(prefixo ~ '_naturalidade_pais','') }}"
+             placeholder="deixe em branco para Brasil"></label>
+    {% endif %}
+
+    {% if perfil == 'completo' %}
+    <p style="grid-column:1/-1"><small><strong>Residência</strong> — onde
+      mora.</small></p>
+    <label>Endereço
+      <input name="{{ prefixo }}_endereco"
+             value="{{ form.get(prefixo ~ '_endereco','') }}"></label>
+    <label>Bairro
+      <input name="{{ prefixo }}_bairro"
+             value="{{ form.get(prefixo ~ '_bairro','') }}"></label>
+    <label>Cidade
+      <input name="{{ prefixo }}_cidade"
+             value="{{ form.get(prefixo ~ '_cidade','') }}"></label>
+    <label>UF
+      <input name="{{ prefixo }}_uf" maxlength="2"
+             value="{{ form.get(prefixo ~ '_uf','') }}" placeholder="MA"></label>
+    {# O CEP FALTAVA, e a coluna existia desde 28/08/2026. Ele e o que a carga
+       da CRC usa para localizar a residencia; sem ele a Central fica com o
+       endereco por extenso e sem chave nenhuma. #}
+    <label>CEP
+      <input name="{{ prefixo }}_cep" maxlength="9"
+             value="{{ form.get(prefixo ~ '_cep','') }}"
+             placeholder="65936-000"></label>
+    {% endif %}
+
+    {# O QUE É DESTA PESSOA E MORA NOUTRA COLUNA — 13/10/2026, pedido do
+       oficial: «separar os campos de forma racional, por facilidade para o
+       operador». A cor/raça e a naturalidade declarada são do registrado; os
+       avós são os pais da mãe ou do pai. Quem chama com `{% call %}` põe aqui
+       dentro o que é da mesma pessoa, em vez de outro painel. #}
+    {% if caller is defined %}{{ caller() }}{% endif %}
+  </div>
+</details>
+{% endmacro %}
+
+{# OS DOIS PROGENITORES DE UMA FILIACAO, NUMA GAVETA SO — relato #37, item 7,
+   de 31/08/2026: «progenitor 1 e 2 de cada filiacao poderiam estar na mesma
+   aba».
+
+   Eram QUATRO paineis para quatro nomes de avos, e o balcao abria quatro
+   gavetas para escrever quatro linhas. Quem preenche pensa «os pais da mae», e
+   nao «progenitor 1» e «progenitor 2» separados por dois cliques.
+
+   OS DOIS PREFIXOS VEM DE FORA, e nao se compoem aqui: eles sao `prog1f1` e
+   `prog2f1` — progenitor N da filiacao M —, e `PREFIXO_DO_PAPEL` e quem manda.
+   Compor `prefixo ~ '1'` acertaria por acaso num par e erraria no outro.
+
+   E O TITULO DIZ DE QUEM SAO OS AVOS, porque `PREFIXO_DO_PAPEL` ja decide
+   isso: a filiacao 1 e a MAE, entao os progenitores dela sao os avos
+   MATERNOS. Escrever so «filiacao 1» faria o balcao guardar essa
+   correspondencia de cabeca. #}
+{% macro progenitores(prefixo1, prefixo2, titulo, explicacao, form={}) %}
+<details class="panel" style="grid-column:1/-1"
+         {% if form.get(prefixo1 ~ '_nome') or form.get(prefixo2 ~ '_nome') %}open{% endif %}>
+  <summary class="panel-head" style="cursor:pointer">
+    <span>{{ titulo }}</span><small>abrir para preencher</small>
+  </summary>
+  <div class="grid2" style="padding:14px">
+    {% if explicacao %}
+    <p style="grid-column:1/-1"><small>{{ explicacao }}</small></p>
+    {% endif %}
+    <label>Nome
+      <input name="{{ prefixo1 }}_nome"
+             value="{{ form.get(prefixo1 ~ '_nome','') }}"></label>
+    <label>Nome
+      <input name="{{ prefixo2 }}_nome"
+             value="{{ form.get(prefixo2 ~ '_nome','') }}"></label>
+  </div>
+</details>
+{% endmacro %}
+
+{# Os progenitores dos pais entram no termo como nomes de avós. A tela antiga
+   também os pede assim, dentro das filiações; repetir profissão, endereço e
+   estado civil do bloco completo aqui misturaria dados que não pertencem ao
+   assento de nascimento.
+
+   CONTINUA EXISTINDO para quem precise de um progenitor sozinho; a tela de
+   nascimento usa `progenitores`, acima. #}
+{% macro pessoa_resumida(prefixo, titulo, form={}) %}
+<details class="panel" style="grid-column:1/-1"
+         {% if form.get(prefixo ~ '_nome') %}open{% endif %}>
+  <summary class="panel-head" style="cursor:pointer">
+    <span>{{ titulo }}</span><small>abrir para preencher</small>
+  </summary>
+  <div class="grid2" style="padding:14px">
+    <label style="grid-column:1/-1">Nome
+      <input name="{{ prefixo }}_nome"
+             value="{{ form.get(prefixo ~ '_nome','') }}"></label>
+  </div>
+</details>
+{% endmacro %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{% block title %}Novo processo de retificação{% endblock %}
+{% block content %}
+<h1>Novo processo de retificação de área</h1>
+
+<div class="card">
+  <p><strong>Os dois fundamentos do art. 213 não são a mesma coisa.</strong>
+     O inciso I é <em>de ofício</em>, para erro evidente que não altera direito
+     de ninguém. O inciso II é <em>a requerimento</em>, e exige planta, memorial
+     com ART e a anuência dos confrontantes.</p>
+  <p class="small muted">Escolher o I onde cabe o II seria corrigir sem ouvir o
+     vizinho — e o vizinho descobre quando for vender.</p>
+</div>
+
+{{ salvar_rascunho('ri_retificacao_nova', url_for('ri_retificacao_nova'),
+                   'Retificação de área', csrf_token,
+                   nome_em='requerente_nome,profissional_nome') }}
+
+<form method="post" id="form-do-ato">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <p><label>Número do processo<br>
+    <input name="numero" required placeholder="1/2026"></label></p>
+
+  <p><label>Matrícula a retificar<br>
+    <select name="matricula_id" required>
+      <option value="">— escolha —</option>
+      {% for m in matriculas %}
+      <option value="{{ m.id }}">{{ m.numero }} (livro {{ m.livro }})</option>
+      {% endfor %}
+    </select></label></p>
+
+  <p><label>Espécie<br>
+    <select name="especie" required>
+      {% for k, v in especies.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+    </select></label>
+    <span class="small muted">Esta casa já escreveu as duas no rótulo do ato.</span></p>
+
+  <p><label>Fundamento<br>
+    <select name="fundamento" required>
+      {% for k, v in fundamentos.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+    </select></label></p>
+
+  <p><label><input type="radio" name="rural" value="1" checked> Imóvel rural</label>
+     <label><input type="radio" name="rural" value="0"> Imóvel urbano</label><br>
+     <span class="small muted">O rural pede CCIR, ITR de 5 exercícios, CAR e
+     SIGEF (art. 592, VII); o urbano pede o boletim de cadastro imobiliário
+     (inciso IX). O checklist já nasce certo.</span></p>
+
+  <h2>O requerente</h2>
+  <p><label>Nome<br><input name="requerente_nome"></label></p>
+  <p><label>CPF ou CNPJ<br><input name="requerente_documento"></label></p>
+
+  <h2>O profissional</h2>
+  <p class="small muted">Ele responde pelos trabalhos técnicos, e é intimado
+     junto com o requerente se houver impugnação (art. 600).</p>
+  <p><label>Nome<br><input name="profissional_nome"></label></p>
+  <p><label>Conselho<br>
+    <select name="profissional_conselho">
+      <option value="">—</option><option>CREA</option><option>CAU</option><option>CFT</option>
+    </select></label>
+    <label>Registro<br><input name="profissional_registro"></label></p>
+  <p><label>ART, RRT ou TRT<br><input name="art_numero"></label></p>
+
+  <h2>A área</h2>
+  <p class="small muted">Escreva com a unidade, como está no memorial — «12,4567 ha», «3.450,00 m²».
+     <strong>Não há limite de aumento nem de redução</strong> (art. 589, § 2º),
+     desde que reflita as reais divisas.</p>
+  <p><label>Como está na matrícula<br><input name="area_na_matricula"></label></p>
+  <p><label>Como fica<br><input name="area_pretendida"></label></p>
+
+  <h2>Georreferenciamento</h2>
+  <p><label>Nº da certificação do INCRA<br><input name="certificacao_incra"></label></p>
+  <p><label>Código no SIGEF<br><input name="sigef_codigo"></label></p>
+
+  <p><button class="button">Autuar o processo</button>
+     <a class="button secondary" href="{{ url_for('ri_retificacoes') }}">Cancelar</a></p>
+</form>
+{{ script_do_rascunho() }}
+{% endblock %}

@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block title %}Roteiro das Centrais — Protesto{% endblock %}
+{% block heading %}<h1>Protesto — o roteiro das Centrais</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<nav class="notice" aria-label="Nesta página" style="margin-bottom:12px">
+  <strong>Nesta página:</strong>
+  <a href="#horarios-cra">Horários da CRA</a> ·
+  <a href="#roteiro-cra">CRA — o dia</a> ·
+  <a href="#roteiro-cenprot">CENPROT</a> ·
+  <a href="#coluna-hoje">Coluna «Hoje»</a> ·
+  <a href="#so-tabeliao">Só tabelião/substituto</a> ·
+  <a href="#fontes-roteiro">Fontes do roteiro</a>
+</nav>
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_titulos') }}">Títulos</a>
+  <a class="button" href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>
+  <a class="button" href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
+  <a class="button" href="{{ url_for('protesto_retornos') }}">Retorno à CRA</a>
+</div>
+
+{# OS HORARIOS PRIMEIRO, e nao no fim: e a unica coisa desta tela que tem
+   HORA MARCADA. Perder as 11h30 do retorno nao e atraso de um dia — e o
+   apresentante sem resposta, e o titulo pago aparecendo como protestado. #}
+<section class="panel" id="horarios-cra">
+  <div class="panel-head">
+    <span>Horários da CRA</span>
+    <small>hoje é {{ r.hoje }}</small>
+  </div>
+  <table class="table">
+    <thead><tr><th>O quê</th><th>Hora</th><th>Quem manda</th></tr></thead>
+    <tbody>
+    {% for h in r.horarios %}
+      <tr>
+        <td>{{ h.o_que }}</td>
+        <td><strong>{{ h.hora }}</strong></td>
+        <td><small>{% if h.nosso %}<strong>a casa manda</strong>{% else %}{{ h.quem }}{% endif %}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p style="padding:0 14px 14px"><small>
+    Três dos quatro horários são de arquivo que <strong>sai daqui</strong>. O
+    envio da remessa, às 12:30, é a CRA quem manda — é a hora em que o arquivo
+    do dia fica disponível para baixar.
+  </small></p>
+</section>
+
+{% macro lista(passos, titulo, quantos, total, ancora='') %}
+<section class="panel"{% if ancora %} id="{{ ancora }}"{% endif %}>
+  <div class="panel-head">
+    <span>{{ titulo }}</span>
+    <small>{{ quantos }} dos {{ total }} passos têm tela neste sistema</small>
+  </div>
+  <table class="table">
+    <thead><tr>
+      <th style="width:38%">O passo</th><th>Onde se faz</th>
+      <th style="width:14%">Hoje</th>
+    </tr></thead>
+    <tbody>
+    {% for p in passos %}
+      <tr>
+        <td>
+          <strong>{{ p.passo }}</strong>
+          {% if p.norma %}<br><small>{{ p.norma }}</small>{% endif %}
+          {% if p.nota %}<br><small style="opacity:.8">{{ p.nota }}</small>{% endif %}
+        </td>
+        <td>
+          {% if p.o_sistema_faz %}
+            <a class="button" href="{{ url_for(p.tela) }}">Abrir a tela</a>
+            {% if p.onde %}<br><small>{{ p.onde }}</small>{% endif %}
+          {% else %}
+            {# O PASSO SEM TELA DIZ ONDE SE FAZ. Calar aqui faria o escrevente
+               procurar no sistema o que nao existe, e concluir que errou o
+               caminho. #}
+            <small><strong>o sistema não faz este passo</strong><br>
+            {{ p.onde }}</small>
+          {% endif %}
+        </td>
+        <td>
+          {% if p.quantos_hoje is none %}
+            <small>—</small>
+          {% else %}
+            <strong>{{ p.quantos_hoje }}</strong>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endmacro %}
+
+{{ lista(r.cra, 'CRA — o dia', cobertura.cra_com_tela, cobertura.cra_total, 'roteiro-cra') }}
+{{ lista(r.cenprot, 'CENPROT — a alimentação diária',
+         cobertura.cenprot_com_tela, cobertura.cenprot_total, 'roteiro-cenprot') }}
+
+<section class="panel" id="coluna-hoje">
+  <div class="panel-head"><span>A coluna «Hoje»</span></div>
+  <p style="padding:14px"><small>
+    Ela <strong>conta, e não julga</strong>. Um zero pode ser «ainda não fiz»
+    ou «hoje não veio nada da Central», e o sistema não tem como saber qual —
+    dizer «atrasado» sobre um dia em que nada chegou seria alarme que soa
+    sempre. O traço <strong>—</strong> quer dizer que aquele passo não deixa
+    rastro no banco, e por isso não há o que contar.
+  </small></p>
+</section>
+
+<section class="panel" id="so-tabeliao">
+  <div class="panel-head"><span>O que só o tabelião ou o substituto faz</span></div>
+  <ul style="padding:14px 30px">
+    {% for x in r.so_o_tabeliao %}<li><small>{{ x }}</small></li>{% endfor %}
+  </ul>
+</section>
+
+<section class="panel" id="fontes-roteiro">
+  <div class="panel-head"><span>De onde saiu este roteiro</span></div>
+  <ul style="padding:14px 30px">
+    {% for f in r.fontes %}<li><small>{{ f }}</small></li>{% endfor %}
+  </ul>
+  <p style="padding:0 14px 14px"><small>
+    <strong>Isto não está no acervo, e não se descobre medindo.</strong> O
+    acervo guarda o que foi lavrado; a ordem em que se faz, e a hora até a qual
+    se pode fazer, são combinação com a Central.
+  </small></p>
+</section>
+{% endblock %}

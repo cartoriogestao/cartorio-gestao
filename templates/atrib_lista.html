@@ -1,0 +1,281 @@
+{% extends 'base.html' %}
+{% block title %}{{ painel.titulo }}{% if chave == 'rcpn' %} — Registro Civil{% elif chave == 'protesto' %} — Protesto{% endif %}{% endblock %}
+{% block heading %}<h1>{{ painel.titulo }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+{% if chave == 'rcpn' %}
+{# DOIS CAMINHOS NO MESMO LUGAR — pedido do oficial em 07/09/2026:
+   «coloca a parte da importacao do acervo junto com os assentos e organiza
+   tudo para poder clicar em importar arquivo ou digitar as informacoes».
+
+   A lista de assentos e a porta do balcao; daqui se ve as duas portas:
+   arquivo (lote / E-Oficio) ou digitar um assento. #}
+<section class="panel" style="border-left:3px solid var(--cor-do-modulo)">
+  <div class="panel-head">
+    <span>Entrar com assento</span>
+    <small>arquivo em lote · ou digitar um a um</small>
+  </div>
+  <div class="cards" style="padding:14px; margin-bottom:0">
+    {# A IMPORTAÇÃO DO E-OFÍCIO SAIU DAQUI — ordem do oficial em 12/10/2026:
+       «tire aquela aba de importar do e-oficio, nao faz mais sentido». O
+       acervo já entrou; quem chega hoje traz documentos, e a porta é a
+       leitura. A rota `rcpn_importar_acervo` fica, sem link. #}
+    {# A LEITURA MORA NA TELA DE PREENCHER (12/10/2026, o oficial: «não tem pq ter
+       dois lugares»): o card leva à escolha do tipo, e a tela do tipo tem o quadro. #}
+    <a class="card" href="{{ url_for('rcpn_assento_novo') }}"
+       style="text-decoration:none; color:inherit">
+      <strong>Preencher pelos documentos</strong>
+      <p><small>Escolha o tipo e junte a DNV, a DO ou os documentos da habilitação: a IA lê e a tela volta preenchida.</small></p>
+    </a>
+    <a class="card" href="{{ url_for('rcpn_assento_novo', do_acervo=1) }}"
+       style="text-decoration:none; color:inherit">
+      <strong>Digitar as informações</strong>
+      <p><small>Um assento por vez — nascimento, casamento ou óbito (já lavrado ou novo).</small></p>
+    </a>
+  </div>
+  <p style="padding:0 14px 14px" class="small muted">
+    <strong>São dois caminhos.</strong>
+    <em>Ler documentos</em> preenche o rascunho a partir do que o declarante trouxe.
+    <em>Digitar</em> abre o formulário — use quando o assento já tem livro, folha e termo no papel
+    e você só precisa cadastrar as informações aqui.
+  </p>
+</section>
+{% endif %}
+
+{% if chave == 'livro3' %}
+{# O MESMO DESENHO DO RCPN, E ELE FALTAVA AQUI — pedido do oficial em
+   18/09/2026: «preciso que tenha campo para importar do acervo registro do
+   livro 3 do RI, igual temos no livro 2».
+
+   A lista das matrículas tem a porta «Importações»; a do Livro 3 só oferecia o
+   registro manual, um de cada vez. Aqui ficam as duas portas: o LOTE do acervo
+   (com o campo do caminho e a prévia) e o registro digitado um a um. #}
+<section class="panel" style="border-left:3px solid var(--cor-do-modulo)">
+  <div class="panel-head">
+    <span>Entrar com registro</span>
+    <small>acervo em lote · ou digitar um a um</small>
+  </div>
+  <div class="cards" style="padding:14px; margin-bottom:0">
+    {% if user.role in ['ADMIN','MANAGER'] %}
+    <a class="card" href="{{ url_for('livro3_importar_acervo') }}"
+       style="text-decoration:none; color:inherit">
+      <strong>Importar do acervo</strong>
+      <p><small>O acervo do E-Ofício (com o campo do caminho). Traz o registro,
+        as <strong>partes</strong> e as <strong>averbações</strong> — com prévia
+        antes de gravar.</small></p>
+    </a>
+    {% endif %}
+    <a class="card" href="{{ url_for('ri_importacao_manual', especie='LIVRO3_REGISTRO') }}"
+       style="text-decoration:none; color:inherit">
+      <strong>Digitar as informações</strong>
+      <p><small>Um registro por vez — para quando a cédula já tem número no
+        papel e você só precisa cadastrá-la aqui.</small></p>
+    </a>
+    <a class="card" href="{{ url_for('ri_importacoes') }}"
+       style="text-decoration:none; color:inherit">
+      <strong>Importações do RI</strong>
+      <p><small>O que já foi importado, o que ficou em quarentena e por
+        quê.</small></p>
+    </a>
+  </div>
+  <p style="padding:0 14px 14px" class="small muted">
+    <strong>São dois caminhos, e eles não se confundem.</strong>
+    <em>Importar do acervo</em> é o lote — o acervo que já veio do E-Ofício, com
+    as partes e as averbações que o registro teve depois. <em>Digitar</em> abre o
+    formulário de um registro só, e ele <strong>não toma número nem sela</strong>:
+    aqui é acervo, e acervo entra com o número que já tem no papel.
+  </p>
+</section>
+{% endif %}
+
+{% if chave == 'protesto' %}
+{#
+  OS HORARIOS DA CRA NA TELA ONDE O BALCAO CHEGA — pedido do oficial em
+  01/09/2026, «na pagina principal do protesto, para amplo acesso dos
+  escreventes».
+
+  AQUI VAI SO A PARTE COM HORA MARCADA, e nao o roteiro inteiro: esta e a tela
+  de trabalho do dia, e um checklist de dezesseis passos empurraria a lista
+  para baixo toda vez que alguem a abrisse. O roteiro inteiro fica a um clique,
+  e o menu o poe em primeiro.
+#}
+<section class="panel" style="border-left:3px solid var(--cor-do-modulo)">
+  <div class="panel-head">
+    <span>Horários da CRA</span>
+    <small><a href="{{ url_for('protesto_painel') }}">o roteiro inteiro das
+      Centrais</a></small>
+  </div>
+  <p style="padding:14px"><small>
+    <strong>Retorno 11:30</strong> · <strong>Andamento 11:30</strong> ·
+    <strong>Confirmação 14:10</strong> — estes três <strong>saem daqui</strong>.
+    A remessa a CRA disponibiliza às <strong>12:30</strong>.
+  </small></p>
+</section>
+{% endif %}
+
+{% set rota_ficha = {'protesto': 'protesto_titulo', 'rcpn': 'rcpn_assento',
+                     'rcpj_rtd': 'rcpj_rtd_registro', 'livro3': 'livro3_registro'}[chave] %}
+{% set rota_novo = {'protesto': 'protesto_titulo_novo', 'rcpn': 'rcpn_assento_novo',
+                    'rcpj_rtd': 'rcpj_rtd_registro_novo',
+                    'livro3': 'livro3_registro_novo'}[chave] %}
+{% set diz_novo = {'protesto': 'Título novo', 'rcpn': 'Assento novo',
+                   'rcpj_rtd': 'Registro novo', 'livro3': 'Registro novo'}[chave] %}
+
+{% if user.role in ['ADMIN','MANAGER','USER'] %}
+<div class="actions">
+  <a class="button" href="{{ url_for(rota_novo) }}">+ {{ diz_novo }}</a>
+  {% if chave == 'protesto' %}
+    <a class="button" href="{{ url_for('protesto_certidoes') }}">Certidão de protesto</a>
+  {% elif chave == 'rcpn' %}
+    <a class="button" href="{{ url_for('rcpn_assento_novo', especie_url='nascimento') }}">+ Nascimento</a>
+    <a class="button" href="{{ url_for('rcpn_assento_novo', especie_url='casamento') }}">+ Casamento</a>
+    <a class="button" href="{{ url_for('rcpn_assento_novo', especie_url='obito') }}">+ Óbito</a>
+    <a class="button" href="{{ url_for('rcpn_averbacoes') }}">Averbações</a>
+  {% elif chave == 'livro3' and user.role in ['ADMIN','MANAGER'] %}
+    <a class="button" href="{{ url_for('livro3_importar_acervo') }}">Importar do acervo</a>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="notice">
+  Esta tela <strong>consulta</strong>. Para lançar ato — averbar, intimar, protestar,
+  cancelar — abra a ficha do registro: os atos que cabem aparecem lá, e só os que
+  cabem.
+  {% if chave == 'rcpn' %}
+  Para <strong>entrar com assento</strong>, use acima:
+  <em>Ler documentos</em> ou <em>Digitar as informações</em>.
+  {% else %}
+  Para abrir registro <strong>novo</strong>, use o botão acima.
+  {% endif %}
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ total }}</strong><small>no filtro atual</small></div>
+  {% for s in por_situacao %}
+    <div class="stat"><strong>{{ s.n }}</strong><small>{{ s.situacao }}</small></div>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Procurar</span></div>
+  <form method="get" class="grid2" style="padding:14px">
+    {# A ATRIBUICAO VIAJA JUNTO. Sem isto, procurar dentro do RTD devolvia a
+       lista das duas atribuicoes — o filtro se perdia no primeiro «Procurar». #}
+    {% if atribuicao %}<input type="hidden" name="atribuicao" value="{{ atribuicao }}">{% endif %}
+    <label>Termo
+      <input name="q" value="{{ termo }}"
+             placeholder="{{ painel.busca_diz or (painel.busca | join(', ') | replace('_', ' ')) }}"></label>
+    <label>Situação
+      <select name="situacao">
+        <option value="">todas</option>
+        {% for s in painel.situacoes %}
+          <option value="{{ s }}" {% if s == situacao %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select></label>
+    <div class="actions">
+      <button class="button">Procurar</button>
+      <a class="button" href="{{ url_for(request.endpoint, atribuicao=atribuicao or None) }}">Limpar</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Resultado</span>
+    <small>página {{ pagina }} de {{ paginas }}</small>
+  </div>
+  {% if not linhas %}
+    <p style="padding:14px">
+      Nada aqui.
+      {% if not termo and not situacao %}
+        O acervo do E-Ofício entra pela tela
+        {% if chave == 'rcpn' %}
+          da carga Admin,
+          <a href="{{ url_for('atribuicoes_importar') }}">Trazer das atribuições</a>.
+        {% elif chave == 'livro3' %}
+          <a href="{{ url_for('livro3_importar_acervo') }}">Importar do acervo
+          (Livro 3)</a> — é por onde entram os registros com as partes e as
+          averbações (ou pela carga Admin em
+          <a href="{{ url_for('atribuicoes_importar') }}">Trazer das atribuições</a>).
+        {% else %}
+          <a href="{{ url_for('atribuicoes_importar') }}">Trazer das atribuições</a>.
+        {% endif %}
+      {% else %}
+        Nenhum registro casou com o filtro.
+      {% endif %}
+    </p>
+  {% else %}
+  <table class="table">
+    <thead>
+      <tr>
+        {% if chave == 'protesto' %}
+          <th>Título</th><th>Espécie</th><th>Devedor</th>
+          <th>Saldo</th><th>Situação</th><th>Origem</th>
+        {% elif chave == 'rcpn' %}
+          <th>Nº</th><th>Espécie</th><th>Nome</th><th>Data do fato</th>
+          <th>Matrícula</th><th>Situação</th>
+        {% elif chave == 'rcpj_rtd' %}
+          {# A COLUNA DA ATRIBUICAO SO APARECE QUANDO AS DUAS ESTAO NA LISTA.
+             Numa lista que ja e so do RTD, ela repetiria «RTD» em toda linha. #}
+          <th>Nº</th>{% if not atribuicao %}<th>Atribuição</th>{% endif %}
+          <th>Série</th><th>Requerente</th><th>Natureza</th><th>Situação</th>
+        {% else %}
+          <th>Nº</th><th>Título</th><th>Número do título</th><th>Valor</th>
+          <th>Vencimento</th><th>Situação</th>
+        {% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+      <tr>
+        {% if chave == 'protesto' %}
+          <td><a href="{{ url_for(rota_ficha, titulo_id=l.id) }}">{{ l.numero_titulo }}</a></td>
+          <td>{{ l.especie }}</td>
+          <td>
+            {{ l.devedores or '—' }}
+            {%- if l.nosso_numero %}<div><small>nosso nº {{ l.nosso_numero }}</small></div>{% endif %}
+          </td>
+          <td>{{ l.saldo_centavos | centavos_reais }}</td>
+          <td>{{ l.situacao }}</td>
+          <td>{{ l.origem }}</td>
+        {% elif chave == 'rcpn' %}
+          <td><a href="{{ url_for(rota_ficha, assento_id=l.id) }}">{{ l.numero or '—' }}</a></td>
+          <td>{{ l.especie }}</td>
+          <td>{{ l.nome }}</td>
+          <td>{{ l.data_fato or '—' }}</td>
+          <td>{{ l.matricula or '—' }}</td>
+          <td>{{ l.situacao }}</td>
+        {% elif chave == 'rcpj_rtd' %}
+          <td><a href="{{ url_for(rota_ficha, registro_id=l.id) }}">{{ l.numero or '—' }}</a></td>
+          {% if not atribuicao %}<td>{{ 'RCPJ' if l.atribuicao == 3 else 'RTD' }}</td>{% endif %}
+          <td>{{ l.serie }}</td>
+          <td>{{ l.requerente_nome or '—' }}</td>
+          <td>{{ l.natureza or '—' }}</td>
+          <td>{{ l.situacao }}</td>
+        {% else %}
+          <td><a href="{{ url_for(rota_ficha, registro_id=l.id) }}">{{ l.numero }}</a></td>
+          <td>{{ (l.titulo_tipo or '—')[:52] }}</td>
+          <td>{{ l.titulo_numero or '—' }}</td>
+          <td>{{ l.valor_centavos | centavos_reais if l.valor_centavos else '—' }}</td>
+          <td>{{ l.vencimento_final or '—' }}</td>
+          <td>{{ l.situacao }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if paginas > 1 %}
+  <div class="actions" style="padding:14px">
+    {% if pagina > 1 %}
+      <a class="button" href="{{ url_for(request.endpoint, q=termo, situacao=situacao, atribuicao=atribuicao or None, pagina=pagina-1) }}">&larr; anterior</a>
+    {% endif %}
+    {% if pagina < paginas %}
+      <a class="button" href="{{ url_for(request.endpoint, q=termo, situacao=situacao, atribuicao=atribuicao or None, pagina=pagina+1) }}">próxima &rarr;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

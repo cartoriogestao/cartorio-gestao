@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Intimação Digital — Resolve</h1>{% endblock %}
+{% block content %}
+
+<p class="muted">
+  A <strong>Intimação Digital</strong> é a ferramenta oficial dos Cartórios de
+  Protesto para intimar o devedor por e-mail e WhatsApp. Esta tela escolhe os
+  títulos, manda, e acompanha o que a Central responde.
+</p>
+
+{# O QUE A CASA NAO FAZ AQUI, dito antes de qualquer botao. #}
+<div class="alert alert-info">
+  <strong>Isto não lavra a intimação no livro.</strong> O que a plataforma
+  chama de «intimado» é a ciência do devedor; a intimação que faz o protesto
+  poder sair continua sendo o ato que se lavra na ficha do título.
+</div>
+
+<form method="get" action="{{ url_for('protesto_resolve') }}" class="form-inline">
+  <label>Ambiente
+    <select name="ambiente" onchange="this.form.submit()">
+      {% for a in ambientes %}
+      <option value="{{ a }}" {% if a == ambiente %}selected{% endif %}>
+        {{ 'Testes' if a == 'TESTES' else ('Homologação' if a == 'HOMOLOGACAO' else 'Produção') }}
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+  <noscript><button class="button secondary" type="submit">Trocar</button></noscript>
+</form>
+
+{% if ambiente == 'PRODUCAO' %}
+<div class="alert alert-warning">
+  <strong>Este é o ambiente de PRODUÇÃO.</strong> O que sair daqui chega ao
+  devedor de verdade, e tem custo.
+</div>
+{% endif %}
+
+{% if not tem_credencial %}
+<div class="alert alert-warning">
+  <strong>A chave da Resolve ainda não foi informada para este ambiente.</strong>
+  Ela é a <code>x-api-key</code> que a plataforma entrega depois da adesão à
+  Intimação Digital, e se cadastra em
+  <a href="{{ url_for('settings') }}">Administrativo → Configurações</a>, na
+  tabela das Centrais.
+  <br><small>
+    A adesão é feita no site da CENPROT (<code>pesquisaprotesto.com.br</code>),
+    em <strong>SSO – Resolve → Adesão – Intimação Digital</strong>.
+  </small>
+</div>
+{% endif %}
+
+<section class="cartao">
+  <h2>O que há para intimar</h2>
+  <table class="tabela">
+    <tbody>
+      <tr><th>Títulos olhados</th><td>{{ quadro.titulos }}</td></tr>
+      <tr><th>Podem ir</th><td><strong>{{ quadro.podem_ir }}</strong></td></tr>
+      <tr>
+        <th>Sem a chave do CENPROT</th>
+        <td>
+          {{ quadro.sem_chave }}
+          {% if quadro.sem_chave %}
+          — <a href="{{ url_for('protesto_cenprot') }}">carregue o XML diário</a>,
+          que é de onde ela vem
+          {% endif %}
+        </td>
+      </tr>
+      <tr><th>Já mandados</th><td>{{ quadro.ja_enviados }}</td></tr>
+    </tbody>
+  </table>
+
+  {% if quadro.podem_ir == 0 and quadro.sem_chave %}
+  <div class="alert alert-info">
+    <strong>Nenhum título pode ir, e o motivo é um só:</strong> falta a chave
+    única de 23 dígitos que a Central exige. Ela não se inventa — vem no
+    arquivo XML que o CENPROT devolve todo dia, e a tela
+    <a href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a> a grava.
+  </div>
+  {% endif %}
+</section>
+
+<section class="cartao">
+  <h2>Escolher e mandar</h2>
+  <form method="post" action="{{ url_for('protesto_resolve_enviar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ambiente" value="{{ ambiente }}">
+    <div class="table-wrap">
+      <table class="tabela">
+        <thead>
+          <tr>
+            <th></th><th>Título</th><th>Devedor</th><th>Protocolo</th>
+            <th>Situação</th><th>Por que não pode ir</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for t in titulos %}
+          <tr>
+            <td>
+              {% if t.pode_ir %}
+              <input type="checkbox" name="titulo_id" value="{{ t.id }}">
+              {% endif %}
+            </td>
+            <td>{{ t.numero_titulo or '—' }}</td>
+            <td>{{ t.devedor_nome or '—' }}</td>
+            <td>{{ t.protocolo or '—' }}</td>
+            <td>{{ t.situacao or '—' }}</td>
+            <td class="small muted">{{ t.porque_nao }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="muted">Nenhum título no Protesto.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="small muted">
+      A Central aceita até <strong>{{ maximo }}</strong> por envio. Marque só o
+      que deve ser intimado: <strong>intimação chega na casa do devedor</strong>
+      e tem custo.
+    </p>
+    <button class="button" type="submit"
+            {% if not tem_credencial %}disabled{% endif %}>
+      Mandar os marcados
+    </button>
+  </form>
+</section>
+
+<section class="cartao">
+  <h2>O que já foi mandado</h2>
+  <form method="post" action="{{ url_for('protesto_resolve_atualizar') }}"
+        style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ambiente" value="{{ ambiente }}">
+    <button class="button secondary" type="submit"
+            {% if not tem_credencial %}disabled{% endif %}>
+      Perguntar o estado à Central
+    </button>
+  </form>
+  <form method="post" action="{{ url_for('protesto_resolve_testar') }}"
+        style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ambiente" value="{{ ambiente }}">
+    <button class="button secondary" type="submit">Testar a ligação</button>
+  </form>
+
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead>
+        <tr><th>Quando</th><th>Quem</th><th>Estado na Central</th>
+            <th>Identificador</th><th>Lote</th></tr>
+      </thead>
+      <tbody>
+      {% for i in enviadas %}
+        <tr>
+          <td><small>{{ (i.enviada_em or '')[:16] }}</small></td>
+          <td>{{ i.resumo }}</td>
+          <td>
+            {% if i.estado %}<strong>{{ i.estado }}</strong>
+            <br><small class="muted">{{ (i.estado_em or '')[:16] }}</small>
+            {% else %}<span class="muted">ainda não perguntado</span>{% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('protesto_resolve_ficha', intimacao_id=i.id) }}">
+              <small>{{ i.identificador }}</small></a>
+          </td>
+          <td>
+            <small>{{ i.lote_id or '—' }}</small>
+            {% if i.lote_id %}
+            {# OS COMPROVANTES DO LOTE INTEIRO, de uma vez — e nao um a um.
+               Com duzentas intimacoes num lote, pedir de uma em uma sao
+               duzentos cliques. #}
+            <form method="post" style="display:inline"
+                  action="{{ url_for('protesto_resolve_pdfs_do_lote', lote_id=i.lote_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="ambiente" value="{{ ambiente }}">
+              <button class="button secondary" type="submit"
+                      {% if not tem_credencial %}disabled{% endif %}>
+                <small>comprovantes</small>
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">
+          Nada foi mandado ainda neste ambiente.
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <details>
+    <summary><small>Os doze estados que a Central usa</small></summary>
+    <p class="small muted">{{ estados|join(' · ') }}</p>
+    <p class="small muted">
+      Eles são <strong>da Central</strong>, e não desta casa. O que faz a
+      intimação valer no livro é o ato lavrado aqui.
+    </p>
+  </details>
+</section>
+
+{% endblock %}

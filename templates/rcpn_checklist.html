@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Checklist antes de concluir{% endblock %}
+{% block content %}
+<h1>Checklist antes de concluir</h1>
+
+<div class="card">
+  <p><strong>{{ assento.especie|capitalize }}</strong> nº {{ assento.numero or '—' }}
+     — {{ assento.nome }}</p>
+</div>
+
+<div class="alerta danger">
+  <p><strong>Isto não é conveniência: é exigência com prazo vencido.</strong></p>
+  <p class="small">
+    O Relatório de Inspeção Ordinária de 12/08/2026 manda, na <strong>página
+    50</strong>, «padronizar imediatamente assinaturas, gratuidade e categoria do
+    selo nos atos futuros — <strong>aplicar checklist obrigatório antes da
+    conclusão de novos atos</strong>». Prazo: <strong>zero dias</strong>.
+    Prioridade: <strong>crítica</strong>. A da página 49 diz o mesmo para os
+    emolumentos e destinações dos nascimentos.
+  </p>
+</div>
+
+{% if ja %}
+<div class="card">
+  <p><strong>Este ato já passou pelo checklist</strong> em
+     {{ (ja.criado_em or '')[:10] }}, por {{ ja.criado_por or '' }}:</p>
+  <p class="small">{{ ja.resumo|forte }}</p>
+</div>
+{% endif %}
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="card">
+    {% for x in itens %}
+      <p>
+        <label>
+          <input type="checkbox" name="item" value="{{ x.chave }}">
+          <strong>{{ x.rotulo }}</strong>
+          <span class="small muted">(pág. {{ x.pagina }})</span>
+        </label><br>
+        <span class="small muted" style="margin-left:22px">
+          A exigência diz: «{{ x.da_exigencia|forte }}». {{ x.por_que|forte }}.
+        </span>
+      </p>
+    {% endfor %}
+  </div>
+
+  <p><button class="button">Gravar o que foi conferido</button></p>
+</form>
+
+<div class="card">
+  <p class="small muted">
+    <strong>O checklist avisa, e não trava.</strong> {{ norma.AVISA_E_NAO_TRAVA|forte }}.
+  </p>
+  <p class="small muted">
+    E <strong>o que ficou por conferir fica escrito</strong>, e não só o que foi
+    conferido: uma marca que registra apenas o bom deixa o silêncio significar
+    duas coisas — «não faltou nada» e «ninguém olhou».
+  </p>
+</div>
+
+<p><a href="{{ url_for('rcpn_assento', assento_id=assento.id) }}">voltar ao assento</a></p>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Reconhecimento de sinal nº {{ r.id }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_sinal_reconhecimento') }}">&larr; Reconhecimentos</a>
+  <a class="button" href="{{ url_for('notas_sinal', sinal_id=r.sinal_id) }}">Sinal nº {{ r.sinal_id }}</a>
+  {% if r.caminho_pdf %}
+  <a class="button" href="{{ url_for('notas_sinal_pdf', sinal_id=r.sinal_id) }}" target="_blank">PDF do sinal</a>
+  {% endif %}
+</div>
+<section class="panel" style="padding:14px">
+  <p><strong>Titular:</strong> {{ r.titular }}</p>
+  <p><strong>Documento:</strong> {{ r.documento or '—' }}</p>
+  <p><strong>Data:</strong> {{ fmt_date(r.data) }} {% if r.hora %}{{ r.hora }}{% endif %}</p>
+  <p><strong>Oficial:</strong> {{ r.oficial or '—' }}{% if r.oficial_funcao %} ({{ r.oficial_funcao }}){% endif %}</p>
+  <p><strong>Serviço:</strong> {{ r.servico_codigo or '—' }}</p>
+  <p><strong>Selo:</strong> {{ r.selo or '— (ato lavrado; selo pendente se o aparelho falhou)' }}</p>
+  <p><strong>Documento apresentado:</strong> {{ r.documento_descricao or '—' }}</p>
+  <p><strong>Teor:</strong> {{ r.texto }}</p>
+</section>
+{% endblock %}

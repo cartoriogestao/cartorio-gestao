@@ -192,7 +192,7 @@ def test_a_proposta_decidida_nao_e_refeita_e_a_tela_diz_por_que(cg_casa_logada):
             decidido_por, motivo)
            VALUES (?,'CONFIRMADA','{"logradouro": "Rua Antiga"}','{}','[]','[]',
                    '','{}','alta',1,'2026-09-16 08:00','2026-09-16 09:00',
-                   'JEAN','')""", (mid,))
+                   'MARIO','')""", (mid,))
     antiga = con.execute("SELECT MAX(id) i FROM ri_onr_enderecos").fetchone()["i"]
     con.commit()
     con.close()

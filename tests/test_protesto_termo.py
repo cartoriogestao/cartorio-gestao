@@ -64,9 +64,10 @@ def banco() -> sqlite3.Connection:
 def titulo(con) -> int:
     cur = con.execute(
         """INSERT INTO pt_titulos(especie, numero_titulo, nosso_numero,
-               valor_centavos, saldo_centavos, situacao, origem, criado_em)
+               valor_centavos, saldo_centavos, situacao, origem, criado_em,
+               motivo_protesto)
            VALUES ('DMI','84713/1','00200000991',148278,148278,'RECEBIDO',
-                   'CRA',?)""", (AGORA,))
+                   'CRA',?,'1')""", (AGORA,))
     tid = int(cur.lastrowid)
     con.execute(
         """INSERT INTO pt_devedores(titulo_id, nome, documento_tipo,
@@ -80,16 +81,19 @@ def titulo(con) -> int:
 
 def test_o_texto_sai_na_forma_que_a_casa_escreveu():
     """A forma mais comum das 23: base + a posteriori + edital com motivo —
-    912 das 1.132 linhas medidas."""
-    texto = TERMO.montar(edital_data="2023-05-26", edital_motivo="Ausente")
+    912 das 1.132 linhas medidas — menos o art. 9º-A, que a inspeção
+    reprovou (tarefa #49), e com o tipo e o motivo DESTE título."""
+    texto = TERMO.montar(edital_data="2023-05-26", edital_motivo="Ausente",
+                         motivo_protesto="1")
     assert "CERTIFICO que não houve manifestação" in texto
-    assert "ART. 9º-A DA LEI Nº 9.430/1996" in texto
+    assert "PROTESTO COMUM LAVRADO POR FALTA DE PAGAMENTO." in texto
+    assert "9.430" not in texto
     assert "pagamento a posteriori" in texto
-    assert "O Sacado foi intimado por Edital em 26/05/2023 pelo motivo Ausente." in texto
+    assert "O devedor foi intimado por Edital em 26/05/2023 pelo motivo Ausente." in texto
 
 
 def test_sem_edital_a_frase_NAO_entra_e_nao_sobra_linha_vazia():
-    texto = TERMO.montar(edital_data=None)
+    texto = TERMO.montar(edital_data=None, motivo_protesto="1")
     assert "Edital" not in texto
     assert "\n\n" not in texto
     assert texto.strip() == texto
@@ -105,13 +109,15 @@ def test_sem_edital_a_frase_NAO_entra_e_nao_sobra_linha_vazia():
 # proíbe, e a mesma regra que `notas_modelos.py` já cumpre.
 
 def test_o_termo_MONTADO_nao_tem_quebra_de_linha():
-    texto = TERMO.montar(edital_data="2023-05-26", edital_motivo="Ausente")
+    texto = TERMO.montar(edital_data="2023-05-26", edital_motivo="Ausente",
+                         motivo_protesto="1")
     assert "\n" not in texto
 
 
 def test_o_termo_MONTADO_nao_tem_espaco_duplo_nem_antes_de_pontuacao():
-    for dados in ({"edital_data": "2023-05-26", "edital_motivo": "Ausente"},
-                  {"edital_data": None}):
+    for dados in ({"edital_data": "2023-05-26", "edital_motivo": "Ausente",
+                   "motivo_protesto": "1"},
+                  {"edital_data": None, "motivo_protesto": "2"}):
         texto = TERMO.montar(**dados)
         assert "  " not in texto, dados
         assert not re.search(r"\s[,.;:]", texto), dados
@@ -242,17 +248,46 @@ def test_o_MODELO_E_O_TEXTO_e_nao_o_esqueleto():
     padrao = MOD.padrao_de("PT_TERMO_PROTESTO")
     assert len(padrao) > 200
     assert "CERTIFICO" in padrao
-    assert "9.430/1996" in padrao
-    assert "{edital}" in padrao
+    # Até 13/10/2026 o padrão afirmava o art. 9º-A da Lei 9.430/1996 em todo
+    # protesto — o motivo genérico que a inspeção reprovou (tarefa #49).
+    assert "9.430" not in padrao
+    assert "{edital}" in padrao and "{motivo}" in padrao and "{tipo}" in padrao
 
 
-def test_um_marcador_so_e_ele_e_o_edital():
+def test_os_marcadores_sao_o_tipo_o_motivo_e_o_edital():
     """As demais frases são texto, e se escrevem inteiras no modelo — quem
     escreve o termo não deveria precisar de condição para dizer que houve
     edital. É a razão de o formato ser `CHAVES` e não Jinja."""
     padrao = MOD.padrao_de("PT_TERMO_PROTESTO")
     import re
-    assert set(re.findall(r"\{(\w+)\}", padrao)) == {"edital"}
+    assert set(re.findall(r"\{(\w+)\}", padrao)) == {"edital", "tipo", "motivo"}
+
+
+def test_sem_motivo_o_termo_RECUSA_e_nao_inventa():
+    """Escrever um motivo no lugar do que não se sabe seria o motivo
+    genérico que a inspeção reprovou, agora inventado."""
+    with pytest.raises(TERMO.TermoError, match="motivo do protesto"):
+        TERMO.montar(edital_data=None)
+    with pytest.raises(TERMO.TermoError, match="motivo do protesto"):
+        TERMO.montar(edital_data=None, motivo_protesto="0")
+
+
+def test_o_motivo_e_o_tipo_sao_os_do_titulo():
+    texto = TERMO.montar(motivo_protesto="2", tipo_protesto="F")
+    assert "PROTESTO PARA FINS FALIMENTARES LAVRADO POR FALTA DE ACEITE." in texto
+
+
+def test_o_protesto_lavrado_leva_o_motivo_do_titulo():
+    con = banco()
+    tid = titulo(con)
+    con.execute("UPDATE pt_titulos SET motivo_protesto='3' WHERE id=?", (tid,))
+    PT.lancar_apontamento(con, tid, sv=SV, agora=AGORA, data_extenso="x")
+    PT.lancar_intimacao(con, tid, modo="EDITAL", agora="2026-08-20",
+                        codigo_edital="ED-2026-014")
+    r = PT.lancar_protesto(con, tid, sv=SV, agora=AGORA, data_extenso="x")
+    teor = con.execute("SELECT teor FROM pt_atos WHERE id=?",
+                       (r["ato_id"],)).fetchone()[0]
+    assert "PROTESTO COMUM LAVRADO POR FALTA DE DEVOLUÇÃO." in teor
 
 
 def test_o_catalogo_declara_o_formato_CHAVES():
@@ -295,7 +330,7 @@ def test_a_ficha_MOSTRA_o_texto_que_foi_ao_livro(cg_casa):
     app = cg_casa['app']
     banco_ = cg_casa['banco']
     dados = cg_casa['dados']
-    cg_casa['db'].create_user("tabeliao", "JEAN", senha, "ADMIN")
+    cg_casa['db'].create_user("tabeliao", "MARIO", senha, "ADMIN")
     # O PROTESTO ESTA DESLIGADO DE FABRICA desde 01/09/2026 — ordem do
     # oficial. Estes testes exercitam as TELAS dele, e por isso o LIGAM
     # aqui, de proposito e a vista: eles provam que o modulo funciona

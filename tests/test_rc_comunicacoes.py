@@ -52,7 +52,7 @@ def _token(html: str) -> str:
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     return cg_casa
 
 def _con(casa):
@@ -295,7 +295,7 @@ def test_o_teor_fica_guardado_inteiro(casa):
         alguma = [x for x in CM.pendentes(con) if x["destino"] == "RECEITA"][0]
         CM.registrar_envio(con, alguma["id"], canal="OFICIO",
                            protocolo="OF-2026-0099", quando="2026-08-05",
-                           agora=AGORA, serventia=SERVENTIA, usuario="jean")
+                           agora=AGORA, serventia=SERVENTIA, usuario="mario")
     linha = con.execute("SELECT * FROM rc_comunicacoes WHERE id=?",
                         (alguma["id"],)).fetchone()
     assert linha["situacao"] == CM.ENVIADA

@@ -15,33 +15,26 @@
   poder sair continua sendo o ato que se lavra na ficha do título.
 </div>
 
-<form method="get" action="{{ url_for('protesto_resolve') }}" class="form-inline">
-  <label>Ambiente
-    <select name="ambiente" onchange="this.form.submit()">
-      {% for a in ambientes %}
-      <option value="{{ a }}" {% if a == ambiente %}selected{% endif %}>
-        {{ 'Testes' if a == 'TESTES' else ('Homologação' if a == 'HOMOLOGACAO' else 'Produção') }}
-      </option>
-      {% endfor %}
-    </select>
-  </label>
-  <noscript><button class="button secondary" type="submit">Trocar</button></noscript>
-</form>
-
-{% if ambiente == 'PRODUCAO' %}
+{# SÓ PRODUÇÃO DESDE 14/10/2026 — ordem do oficial: «tire a opção de
+   funcionar na homologação, agora é tudo produção». O seletor (testes,
+   homologação, produção) saiu; as intimações de outro ambiente que ficaram no
+   banco continuam lá, e não aparecem nesta lista. #}
 <div class="alert alert-warning">
-  <strong>Este é o ambiente de PRODUÇÃO.</strong> O que sair daqui chega ao
-  devedor de verdade, e tem custo.
+  <strong>Este é o ambiente de PRODUÇÃO</strong> — o único que o sistema usa.
+  O que sair daqui chega ao devedor de verdade, e tem custo.
 </div>
-{% endif %}
 
 {% if not tem_credencial %}
 <div class="alert alert-warning">
-  <strong>A chave da Resolve ainda não foi informada para este ambiente.</strong>
-  Ela é a <code>x-api-key</code> que a plataforma entrega depois da adesão à
-  Intimação Digital, e se cadastra em
+  <strong>A chave da Resolve ainda não foi informada para a PRODUÇÃO.</strong>
+  Sem ela nada se manda nem se consulta. Ela é a <code>x-api-key</code> que a
+  plataforma entrega depois da adesão à Intimação Digital, e se cadastra em
   <a href="{{ url_for('settings') }}">Administrativo → Configurações</a>, na
   tabela das Centrais.
+  {% if fora_de_uso %}
+  A de homologação continua guardada, mas não é usada e não serve no lugar
+  da de produção.
+  {% endif %}
   <br><small>
     A adesão é feita no site da CENPROT (<code>pesquisaprotesto.com.br</code>),
     em <strong>SSO – Resolve → Adesão – Intimação Digital</strong>.
@@ -51,17 +44,36 @@
 
 <section class="cartao">
   <h2>O que há para intimar</h2>
+  {# O QUADRO MEDE ENTRE OS QUE PODERIAM IR — correção de 14/10/2026, pelo
+     relato do oficial («diz erroneamente na intimação digital que não tem
+     chave da CENPROT»). Até 13/10 «Sem a chave» contava todo título sem ela,
+     inclusive pagos e desistidos, que não vão de jeito nenhum: 148, quando
+     entre os que poderiam ir faltavam 11. Agora o número é desses, e a lista
+     diz quais são. #}
   <table class="tabela">
     <tbody>
-      <tr><th>Títulos olhados</th><td>{{ quadro.titulos }}</td></tr>
+      <tr><th>Títulos no Protesto</th><td>{{ quadro.titulos }}</td></tr>
+      <tr>
+        <th>Em situação de ir</th>
+        <td>
+          {{ quadro.elegiveis }}
+          <small class="muted">— os que não estão pagos, retirados,
+          protestados, cancelados, desistidos nem sustados, e têm devedor
+          ({{ quadro.fora_pela_situacao }} ficam de fora pela situação)</small>
+        </td>
+      </tr>
       <tr><th>Podem ir</th><td><strong>{{ quadro.podem_ir }}</strong></td></tr>
       <tr>
         <th>Sem a chave do CENPROT</th>
         <td>
-          {{ quadro.sem_chave }}
           {% if quadro.sem_chave %}
-          — <a href="{{ url_for('protesto_cenprot') }}">carregue o XML diário</a>,
-          que é de onde ela vem
+          <strong>{{ quadro.sem_chave }}</strong> dos {{ quadro.elegiveis }} em
+          situação de ir — <a href="{{ url_for('protesto_cenprot') }}">carregue
+          o XML diário</a>, que é de onde ela vem. Eles estão listados abaixo.
+          {% elif quadro.elegiveis %}
+          nenhum — os {{ quadro.elegiveis }} em situação de ir têm a chave
+          {% else %}
+          <span class="muted">não há título em situação de ir</span>
           {% endif %}
         </td>
       </tr>
@@ -69,13 +81,51 @@
     </tbody>
   </table>
 
-  {% if quadro.podem_ir == 0 and quadro.sem_chave %}
+  {% if quadro.podem_ir == 0 and quadro.elegiveis
+        and quadro.sem_chave == quadro.elegiveis %}
   <div class="alert alert-info">
     <strong>Nenhum título pode ir, e o motivo é um só:</strong> falta a chave
-    única de 23 dígitos que a Central exige. Ela não se inventa — vem no
-    arquivo XML que o CENPROT devolve todo dia, e a tela
+    única de 23 dígitos que a Central exige, nos {{ quadro.sem_chave }} que
+    estão em situação de ir. Ela não se inventa — vem no arquivo XML que o
+    CENPROT devolve todo dia, e a tela
     <a href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a> a grava.
   </div>
+  {% elif quadro.podem_ir == 0 and not quadro.elegiveis %}
+  <div class="alert alert-info">
+    <strong>Nenhum título está em situação de ir.</strong> Todos os títulos do
+    Protesto estão pagos, retirados, protestados, cancelados, desistidos,
+    sustados ou sem devedor — não é falta de chave.
+  </div>
+  {% endif %}
+
+  {% if quadro.sem_chave %}
+  <h3>Quais estão sem a chave do CENPROT</h3>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead>
+        <tr><th>Protocolo</th><th>Título</th><th>Devedor</th>
+            <th>Situação</th><th>O que falta</th></tr>
+      </thead>
+      <tbody>
+      {% for t in quadro.sem_chave_lista %}
+        <tr>
+          <td>{{ t.protocolo or '—' }}</td>
+          <td>
+            <a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}">
+              {{ t.numero_titulo or ('#' ~ t.id) }}</a>
+          </td>
+          <td>{{ t.devedor_nome or '—' }}</td>
+          <td>{{ t.situacao or '—' }}</td>
+          <td class="small muted">{{ t.motivo }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if quadro.sem_chave > quadro.sem_chave_lista|length %}
+  <p class="small muted">Mostrando {{ quadro.sem_chave_lista|length }} de
+    {{ quadro.sem_chave }}.</p>
+  {% endif %}
   {% endif %}
 </section>
 

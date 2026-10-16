@@ -51,7 +51,7 @@ def casa(tmp_path):
 def _salvar_rascunho(casa, **dados) -> int:
     con = sqlite3.connect(casa["banco"])
     RASC.init_rascunho_schema(con)
-    r = RASC.salvar(con, tela="rcpn_assento_novo", titulo="Nascimento — ÁGATA",
+    r = RASC.salvar(con, tela="rcpn_assento_novo", titulo="Nascimento — ÁUREA",
                      dados=dados, agora="2026-09-09T14:19:45",
                      por="Robô Nascimento RCPN")
     con.commit()
@@ -61,7 +61,7 @@ def _salvar_rascunho(casa, **dados) -> int:
 
 def test_a_lista_de_rascunhos_oferece_abrir(casa):
     """O achado do relato: a lista tinha «apagar» e não tinha «abrir»."""
-    rid = _salvar_rascunho(casa, especie="NASCIMENTO", pessoa_nome="ÁGATA")
+    rid = _salvar_rascunho(casa, especie="NASCIMENTO", pessoa_nome="ÁUREA")
     html = casa["c"].get("/rascunhos").get_data(as_text=True)
     assert f"rascunho_id={rid}" in html, (
         "a lista de rascunhos não oferece um jeito de reabrir o que foi salvo")
@@ -72,7 +72,7 @@ def test_abrir_o_rascunho_leva_direto_para_a_especie_certa(casa):
     espécie (ele mesmo a guardou) — por isso o redirecionamento tem de levar
     direto ao formulário de nascimento, e não ao seletor."""
     rid = _salvar_rascunho(
-        casa, especie="NASCIMENTO", pessoa_nome="ÁGATA SOFIA LEÃO BORGES",
+        casa, especie="NASCIMENTO", pessoa_nome="ÁUREA EXEMPLO LEÃO",
         filiacao1_nome="DIOGO BITENCOURT BARROS", cor_raca="PARDA")
     r = casa["c"].get(f"/rcpn/novo?rascunho_id={rid}", follow_redirects=False)
     assert r.status_code in (301, 302, 303, 307, 308), (
@@ -86,12 +86,12 @@ def test_abrir_o_rascunho_preenche_o_formulario(casa):
     """**O teste que prova o relato resolvido**: o nome que o robô digitou
     tem de aparecer no campo da tela, não só existir no banco."""
     rid = _salvar_rascunho(
-        casa, especie="NASCIMENTO", pessoa_nome="ÁGATA SOFIA LEÃO BORGES",
+        casa, especie="NASCIMENTO", pessoa_nome="ÁUREA EXEMPLO LEÃO",
         filiacao1_nome="DIOGO BITENCOURT BARROS", cor_raca="PARDA")
     html = casa["c"].get(
         f"/rcpn/novo/nascimento?rascunho_id={rid}",
         follow_redirects=True).get_data(as_text=True)
-    assert "ÁGATA SOFIA LEÃO BORGES" in html, (
+    assert "ÁUREA EXEMPLO LEÃO" in html, (
         "o rascunho abriu, mas o nome da pessoa não veio para o campo")
     assert "DIOGO BITENCOURT BARROS" in html
     assert "Continuando o rascunho" in html
@@ -117,7 +117,7 @@ def test_rascunho_de_outra_tela_nao_abre_aqui(casa):
 def test_salvar_de_novo_atualiza_em_vez_de_duplicar(casa):
     """Sem `_rascunho_id` no botão de salvar, reabrir e salvar de novo criava
     um SEGUNDO rascunho — o escrevente veria a mesma certidão duplicada."""
-    rid = _salvar_rascunho(casa, especie="NASCIMENTO", pessoa_nome="ÁGATA")
+    rid = _salvar_rascunho(casa, especie="NASCIMENTO", pessoa_nome="ÁUREA")
     html = casa["c"].get(
         f"/rcpn/novo/nascimento?rascunho_id={rid}").get_data(as_text=True)
     assert f'name="_rascunho_id" value="{rid}"' in html, (

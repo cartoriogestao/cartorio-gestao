@@ -118,6 +118,15 @@ LISTAS: tuple[dict, ...] = (
                "III), e a falta é real mesmo num assento de 1990 — mas ali o "
                "caminho é a **retificação** (art. 352, I), e não editar o "
                "campo: a tela diz isso"},
+    # A DIGITALIZAÇÃO DO TERMO NASCEU EM 08/10/2026 (problema #121, pacote
+    # 3.6.288) E NÃO SE DECLAROU — declarada em 14/10/2026, cobrada por este
+    # varredor. O módulo já excluía o acervo; faltava dizer aqui.
+    {"modulo": "rc_digitalizacao", "funcao": "pendentes",
+     "conta_o_acervo": False,
+     "porque": "a obrigação de digitalizar o termo assinado vale só para o que "
+               "ESTE sistema lavra (`origem='MANUAL'`) depois do corte "
+               "`rc_digitalizacao_obrigatoria_desde`; o acervo (EOFICIO, "
+               "IMPORTACAO, ARQUIVO) fica de fora por construção"},
 )
 
 
@@ -125,7 +134,7 @@ LISTAS: tuple[dict, ...] = (
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
     return cg_casa
 
 def _con(casa):

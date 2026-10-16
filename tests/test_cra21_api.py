@@ -276,6 +276,8 @@ def _finge_a_rede(monkeypatch, tmp_path, *, resposta="", estoura=False):
             pass
 
     monkeypatch.setattr(hc, "HTTPSConnection", Conexao)
+    # Sem ambiente, a credencial vai para a gaveta de PRODUÇÃO desde
+    # 14/10/2026 — e é ela que as chamadas abaixo usam.
     CRED.gravar(CRED.CRA, usuario="cartorio", senha="segredo",
                 pasta=tmp_path)
     return tentativas, Conexao
@@ -285,13 +287,13 @@ def test_operacao_que_muda_estado_remoto_nao_se_repete_sozinha(monkeypatch, tmp_
     """Envio e download podem ter sido aceitos mesmo após falha de rede."""
     tentativas, _ = _finge_a_rede(monkeypatch, tmp_path, estoura=True)
     with pytest.raises(API.CraError):
-        API.chamar("Desistencia", CRED.HOMOLOGACAO, pasta=tmp_path,
+        API.chamar("Desistencia", CRED.PRODUCAO, pasta=tmp_path,
                    userArq="DP001.txt")
     with pytest.raises(API.CraError):
-        API.chamar("Confirmacao", CRED.HOMOLOGACAO, pasta=tmp_path,
+        API.chamar("Confirmacao", CRED.PRODUCAO, pasta=tmp_path,
                    userArq="C001.141", userDados="")
     with pytest.raises(API.CraError, match="marcou o arquivo como baixado"):
-        API.chamar("RemessaPendente", CRED.HOMOLOGACAO, pasta=tmp_path,
+        API.chamar("RemessaPendente", CRED.PRODUCAO, pasta=tmp_path,
                    userArq="", downloadImagem="2")
     assert tentativas["Desistencia"] == 1
     assert tentativas["Confirmacao"] == 1
@@ -305,14 +307,16 @@ def test_a_credencial_vai_em_HTTP_Basic_e_nenhuma_operacao_a_recebe(
     _, conexao = _finge_a_rede(
         monkeypatch, tmp_path,
         resposta="<return>ok</return>")
-    API.apresentantes(CRED.HOMOLOGACAO, pasta=tmp_path)
+    API.apresentantes(CRED.PRODUCAO, pasta=tmp_path)
     cabecas = conexao.ultimo_cabecalho
     assert cabecas["Authorization"].startswith("Basic ")
     import base64
     assert base64.b64decode(
         cabecas["Authorization"].split()[1]).decode() == "cartorio:segredo"
-    # e o SOAPAction leva o namespace do ambiente
-    assert "cra21.com.br#BuscarApresentante" in cabecas["SOAPAction"]
+    # e o SOAPAction leva o namespace do ambiente — o de PRODUÇÃO desde
+    # 14/10/2026 («agora é tudo produção»; até 13/10 este teste chamava a
+    # homologação e cobrava `cra21.com.br`).
+    assert "crabr.com.br#BuscarApresentante" in cabecas["SOAPAction"]
     for parametros in API.OPERACOES.values():
         for nome in parametros:
             assert nome not in ("login", "senha", "usuario", "cartorio")
@@ -321,7 +325,7 @@ def test_a_credencial_vai_em_HTTP_Basic_e_nenhuma_operacao_a_recebe(
 def test_sem_credencial_a_chamada_nem_sai(tmp_path):
     """A recusa é no balcão, e não na rede."""
     with pytest.raises(CRED.CredencialError) as e:
-        API.apresentantes(CRED.HOMOLOGACAO, pasta=tmp_path)
+        API.apresentantes(CRED.PRODUCAO, pasta=tmp_path)
     assert "não foi informada" in str(e.value)
 
 
@@ -348,10 +352,12 @@ def test_consultar_autorizacao_NAO_marca_como_baixada_por_padrao(
                                resposta="<return>ok</return>")
     # **NAO BASTA O PADRAO DA ASSINATURA SER `False`** — o que a Central
     # recebe e o `marcarBaixado` do envelope, e e ele que este teste le.
-    API.consultar_autorizacao("A.txt", "123", "2026-09-02", CRED.HOMOLOGACAO,
+    # PRODUCAO desde 14/10/2026 (era HOMOLOGACAO): a credencial de mesa vai
+    # para a gaveta de produção, que é a única que o sistema usa.
+    API.consultar_autorizacao("A.txt", "123", "2026-09-02", CRED.PRODUCAO,
                               pasta=tmp_path)
     assert "<marcarBaixado>0</marcarBaixado>" in conexao.ultimo_corpo.decode()
-    API.consultar_autorizacao("A.txt", "123", "2026-09-02", CRED.HOMOLOGACAO,
+    API.consultar_autorizacao("A.txt", "123", "2026-09-02", CRED.PRODUCAO,
                               marcar_baixado=True, pasta=tmp_path)
     assert "<marcarBaixado>1</marcarBaixado>" in conexao.ultimo_corpo.decode()
 
@@ -422,14 +428,31 @@ def test_o_diagnostico_usa_a_operacao_QUE_NAO_MARCA_NADA(tmp_path):
     assert API.OPERACOES["BuscarApresentante"] == ()
     fonte = inspect.getsource(API.diagnostico)
     assert "apresentantes(" in fonte
-    d = API.diagnostico(CRED.HOMOLOGACAO, pasta=tmp_path)
+    d = API.diagnostico(CRED.PRODUCAO, pasta=tmp_path)
     assert d["ok"] is False
     assert "não foi informada" in d["motivo"]
 
 
-def test_a_homologacao_e_o_padrao():
-    """Onde se começa — e o engano cai para o lado seguro."""
+def test_a_producao_e_o_padrao():
+    """**CONTRATO MUDADO EM 14/10/2026** — ordem do oficial: «tire a opção de
+    funcionar na homologação, agora é tudo produção». Este teste se chamava
+    `test_a_homologacao_e_o_padrao` e cobrava que o vazio e o desconhecido
+    caíssem na homologação; agora caem na produção. O endereço e o namespace
+    de homologação continuam declarados e alcançáveis PELO NOME."""
     assert API.endereco_do_ambiente(None) == (
-        API.ENDERECO_DO_AMBIENTE[CRED.HOMOLOGACAO])
+        API.ENDERECO_DO_AMBIENTE[CRED.PRODUCAO])
     assert API.namespace_do_ambiente("sei la") == (
-        API.NAMESPACE_DO_AMBIENTE[CRED.HOMOLOGACAO])
+        API.NAMESPACE_DO_AMBIENTE[CRED.PRODUCAO])
+    assert API.endereco_do_ambiente(CRED.HOMOLOGACAO) == (
+        API.ENDERECO_DO_AMBIENTE[CRED.HOMOLOGACAO])
+    import inspect as _insp
+    for nome in ("chamar", "apresentantes", "remessa", "enviar_confirmacao",
+                 "enviar_retorno", "diagnostico"):
+        padrao = _insp.signature(getattr(API, nome)).parameters["ambiente"]
+        assert padrao.default == CRED.PRODUCAO, nome
+
+
+def test_sem_credencial_de_producao_o_diagnostico_diz_qual_falta(tmp_path):
+    d = API.diagnostico(pasta=tmp_path)
+    assert d["ok"] is False and d["ambiente"] == CRED.PRODUCAO
+    assert "PRODUÇÃO" in d["motivo"]

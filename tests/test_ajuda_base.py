@@ -98,10 +98,10 @@ def casa(tmp_path):
     app = create_app({"DATA_DIR": str(dados)})
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
     db = Database(banco)
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c = app.test_client()
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return {"app": app, "cliente": c, "banco": banco, "db": db}
@@ -298,7 +298,7 @@ def test_buscar_em_tudo_procura_nas_tres_fontes_numa_chamada_so():
         BASE.init_ajuda_base_schema(con)
         BASE.gravar_verbete(con, titulo="A prova da busca única da ajuda",
                             texto=f"Este verbete fala do {termo}, e de mais nada.",
-                            por="JEAN", agora="2026-09-18 15:00:00")
+                            por="MARIO", agora="2026-09-18 15:00:00")
         texto = BASE.buscar_em_tudo(termo, con=con)
     assert "verbete" in BASE.sem_acento(texto), texto
     # E as três fontes são varridas na mesma leitura: o número sai repartido.
@@ -375,7 +375,7 @@ def test_o_contexto_leva_o_titulo_do_verbete_e_nao_o_texto_dele():
             con, titulo="Como se confere a folha de segurança do civil",
             texto="A folha é única e a próxima é a MENOR em branco, por número. "
                   "Este texto não pode ir no contexto de toda pergunta.",
-            por="JEAN", agora="2026-09-18 15:00:00")
+            por="MARIO", agora="2026-09-18 15:00:00")
         contexto = BASE.para_o_contexto(con)
     assert "Como se confere a folha de segurança do civil" in contexto
     assert "MENOR em branco" not in contexto
@@ -399,11 +399,11 @@ def test_verbete_curto_e_recusado_pelo_mesmo_piso_das_notas():
     with sqlite3.connect(":memory:") as con:
         BASE.init_ajuda_base_schema(con)
         with pytest.raises(BASE.BaseError) as erro:
-            BASE.gravar_verbete(con, titulo="ok", texto="sim", por="JEAN")
+            BASE.gravar_verbete(con, titulo="ok", texto="sim", por="MARIO")
         assert "dez letras" in str(erro.value)
         with pytest.raises(BASE.BaseError) as erro:
             BASE.gravar_verbete(con, titulo="Um título bem formado",
-                                texto="curto", por="JEAN")
+                                texto="curto", por="MARIO")
         assert "dez letras" in str(erro.value)
 
 
@@ -412,7 +412,7 @@ def test_alterar_verbete_que_nao_existe_recusa_em_vez_de_criar_outro():
         BASE.init_ajuda_base_schema(con)
         with pytest.raises(BASE.BaseError) as erro:
             BASE.gravar_verbete(con, id_=999, titulo="Título trocado por engano",
-                                texto="Este texto é longo o bastante.", por="JEAN")
+                                texto="Este texto é longo o bastante.", por="MARIO")
         assert "não existe mais" in str(erro.value)
 
 
@@ -429,14 +429,14 @@ def test_verbete_gravado_alterado_e_apagado_na_base():
         n = BASE.gravar_verbete(con, titulo="O selo do casamento é um só",
                                 texto="Ele é emitido na habilitação e "
                                       "espelhado no assento.", assunto="selo",
-                                onde="/notas/selo", por="JEAN",
+                                onde="/notas/selo", por="MARIO",
                                 agora="2026-09-18 15:00:00")
         assert n > 0
         v = BASE.verbete(con, n)
         assert v["titulo"] == "O selo do casamento é um só"
         BASE.gravar_verbete(con, id_=n, titulo="O selo do casamento é um só",
                             texto="Texto corrigido, e mais longo que o piso.",
-                            por="JEAN", agora="2026-09-18 15:10:00")
+                            por="MARIO", agora="2026-09-18 15:10:00")
         assert "corrigido" in BASE.verbete(con, n)["texto"]
         assert BASE.apagar_verbete(con, id_=n) is True
         assert BASE.verbete(con, n) is None
@@ -448,11 +448,11 @@ def test_o_verbete_entra_na_busca_como_uma_fonte_a_mais():
         BASE.init_ajuda_base_schema(con)
         BASE.gravar_verbete(con, titulo="O caminho do selo da escritura",
                             texto="O ato de livro não estava em CAMINHO_DAS_NOTAS.",
-                            por="JEAN", agora="2026-09-18 15:00:00")
+                            por="MARIO", agora="2026-09-18 15:00:00")
         achado = BASE.buscar("CAMINHO_DAS_NOTAS", fonte=BASE.FONTE_MANUAL, con=con)
     assert achado["total"] == 1
     assert achado["achados"][0]["verbete"] == 1
-    assert "escrito por JEAN" in BASE._endereco(achado["achados"][0])
+    assert "escrito por MARIO" in BASE._endereco(achado["achados"][0])
 
 
 # ------------------------------------------- o cache não mente, e não trava

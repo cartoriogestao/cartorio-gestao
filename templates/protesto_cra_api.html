@@ -10,25 +10,27 @@
   <a class="button" href="{{ url_for('protesto_pendencias') }}">Pendências da CENPROT</a>
 </div>
 
-{% if ambiente == 'HOMOLOGACAO' %}
-<div class="alert alert-warning">
-  <strong>Ambiente de HOMOLOGAÇÃO.</strong> O que vier daqui é
-  <strong>dado de teste</strong>, e não vale para protesto nenhum.
-</div>
-{% else %}
+{# SÓ PRODUÇÃO DESDE 14/10/2026 — ordem do oficial: «tire a opção de
+   funcionar na homologação, agora é tudo produção». O seletor de ambiente e
+   o aviso de homologação saíram; o endereço de homologação continua só no
+   código, para o teste automatizado. #}
 <div class="alert alert-danger">
-  <strong>Ambiente de PRODUÇÃO.</strong> Baixar aqui <strong>marca do lado de
-  lá</strong>: a remessa vem uma vez, e pedir de novo não traz a mesma coisa.
+  <strong>Ambiente de PRODUÇÃO</strong> — o único que o sistema usa. Baixar
+  aqui <strong>marca do lado de lá</strong>: a remessa vem uma vez, e pedir de
+  novo não traz a mesma coisa.
 </div>
-{% endif %}
 
 {% if not tem_credencial %}
 <div class="alert alert-danger">
-  A credencial da CRA para {{ ambiente|lower }} <strong>ainda não foi
-  informada</strong>. Ela se informa em
+  A credencial <strong>de PRODUÇÃO</strong> da CRA <strong>ainda não foi
+  informada</strong> — sem ela nada sai daqui. Ela se informa em
   <a href="{{ url_for('settings') }}">Administrativo → Configurações →
-  Centrais de Protesto</a>, e é a que o <strong>IEPTB-MA</strong> fornece —
-  quem a cadastra é o Tabelião ou o Substituto. Comece pela de homologação.
+  Centrais</a>, e é a que o <strong>IEPTB-MA</strong> fornece — quem a
+  cadastra é o Tabelião ou o Substituto.
+  {% if fora_de_uso %}
+  A de homologação continua guardada, mas não é usada e não serve no lugar
+  da de produção.
+  {% endif %}
 </div>
 {% endif %}
 
@@ -41,7 +43,7 @@
     <table class="table">
       <tbody>
         <tr><td><strong>Ambiente</strong></td>
-            <td>{{ 'Homologação' if ambiente == 'HOMOLOGACAO' else 'Produção' }}</td></tr>
+            <td>Produção</td></tr>
         <tr><td><strong>Credencial</strong></td>
             <td>{% if tem_credencial %}informada — usuário <code>{{ usuario }}</code>
                 {% else %}<span class="muted">não informada</span>{% endif %}</td></tr>
@@ -64,15 +66,7 @@
           class="form-grid cra-form-teste">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="cra-form-linha-teste">
-        <label>Ambiente
-          <select name="ambiente">
-            {% for a in ambientes %}
-            <option value="{{ a }}" {% if a == ambiente %}selected{% endif %}>
-              {{ 'Homologação' if a == 'HOMOLOGACAO' else 'Produção' }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <button class="button primary cra-btn-teste" type="submit">Testar a ligação</button>
+        <button class="button primary cra-btn-teste" type="submit">Testar a ligação com a produção</button>
       </div>
       <p class="muted cra-form-nota span2"><small>
         O teste usa <code>BuscarApresentante</code>, que é a
@@ -91,11 +85,9 @@
   </div>
   <div class="cra-panel-body">
     <div class="alert alert-info">
-      <strong>O arquivo baixa; ele não aponta nada.</strong> A remessa XML de
-      homologação já foi medida e pode ser conferida na tela
-      <a href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>.
-      A conferência XML é somente leitura: não recebe títulos, não gera
-      confirmação e não deve ser usada com dados de homologação em produção.
+      <strong>O arquivo baixa; ele não aponta nada.</strong> Quem o recebe é a
+      tela <a href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>,
+      que confere antes de gravar.
     </div>
     <form method="post" action="{{ url_for('protesto_cra_api_baixar') }}"
           class="form-grid">

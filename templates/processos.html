@@ -26,7 +26,9 @@
     <label>Setor <select name="setor"><option value="">todos</option>{% for x in setores %}<option {% if x == setor %}selected{% endif %}>{{ x }}</option>{% endfor %}</select></label>
     <label>Prioridade <select name="prioridade"><option value="">todas</option>{% for p in PRIORITIES %}<option {% if filtros.prioridade == p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
     <label>Situação <select name="situacao"><option value="">todas</option>{% for st in TASK_STATUSES %}<option {% if filtros.situacao == st %}selected{% endif %}>{{ st }}</option>{% endfor %}</select></label>
-    <label>Procurar <input name="q" value="{{ q }}" placeholder="título, protocolo, remetente"></label>
+    <label>Procurar <input name="q" value="{{ q }}" placeholder="número, título, descrição, responsável, protocolo, remetente"></label>
+    {# A SUSPENSÃO — relato #132: vazio mostra a suspensa com o selo. #}
+    <label>Suspensos <select name="suspensas"><option value="">mostrar, com o selo</option><option value="OCULTAR" {% if filtros.suspensas == 'OCULTAR' %}selected{% endif %}>esconder os suspensos</option><option value="SO" {% if filtros.suspensas == 'SO' %}selected{% endif %}>só os suspensos</option></select></label>
     {{ seletor(ORDENS, ordem_atual, filtros.inverter) }}
     <details class="span2" {% if filtros.substituto or filtros.origem or filtros.especie or filtros.parado or filtros.prazo_de or filtros.prazo_ate or filtros.abertura_de or filtros.abertura_ate or origem %}open{% endif %}><summary>Mais filtros</summary>
       <div class="form-grid">
@@ -102,7 +104,8 @@
     <a href="{{ url_for('processos_lista', parado='7') }}"><strong>{{ quadro.parados }}</strong> sem andamento há 7 dias ou mais</a> ·
     <a href="{{ url_for('processos_lista', responsavel=SEM_RESPONSAVEL) }}"><strong>{{ quadro.sem_responsavel }}</strong> sem responsável</a> ·
     <a href="{{ url_for('processos_lista', prazo='SEM_PRAZO') }}"><strong>{{ quadro.sem_prazo }}</strong> sem prazo</a> ·
-    <a href="{{ url_for('processos_lista', especie='SEM_TIPO') }}"><strong>{{ quadro.sem_tipo }}</strong> sem tipo</a></p>
+    <a href="{{ url_for('processos_lista', especie='SEM_TIPO') }}"><strong>{{ quadro.sem_tipo }}</strong> sem tipo</a>{% if quadro.suspensas %} ·
+    <a href="{{ url_for('processos_lista', suspensas='SO') }}"><strong>{{ quadro.suspensas }}</strong> suspenso(s) — fora da cobrança</a>{% endif %}</p>
   <div class="grid2">
     <div class="table-wrap"><table><thead><tr><th>Responsável</th><th>Abertos</th><th>Vencidos</th><th>Parados 7d+</th><th>Críticos</th></tr></thead><tbody>
     {% for p in quadro.por_pessoa %}<tr {% if p.vencidos %}class="danger"{% endif %}>
@@ -161,7 +164,7 @@
     <td class="small">{{ p.sector or '—' }}{% if p.system_name %}<br>{{ p.system_name }}{% endif %}</td>
     <td class="small">{{ p.responsavel or 'sem responsável' }}{% if p.substituto %}<br><span class="muted">subst. {{ p.substituto }}</span>{% endif %}</td>
     <td class="small">{{ fmt_date(p.due_date) if p.due_date else '—' }}{% if p.vencido %} <strong>vencido</strong>{% endif %}</td>
-    <td class="small">{% if p.status in TASK_STATUSES %}{{ p.status }}{% else %}<span class="badge critica" title="Esta situação não é nenhuma das que o sistema conhece — abra o processo e escolha a situação.">{{ p.status or 'SEM SITUAÇÃO' }}</span>{% endif %}</td>
+    <td class="small">{% if p.status in TASK_STATUSES %}{{ p.status }}{% else %}<span class="badge critica" title="Esta situação não é nenhuma das que o sistema conhece — abra o processo e escolha a situação.">{{ p.status or 'SEM SITUAÇÃO' }}</span>{% endif %}{% if p.suspensao %}<br><span class="badge warning tarefa-suspensa" title="{{ p.suspensao.motivo }}">{{ p.suspensao.rotulo }}</span>{% endif %}</td>
     <td class="small">{{ fmt_date(p.ultimo_andamento) if p.ultimo_andamento else '—' }}{% if p.dias_parado is not none and p.dias_parado >= 7 %}<br><strong>{{ p.dias_parado }} dias parado</strong>{% endif %}</td>
     <td class="small">{{ p.evidencias }}</td>
   </tr>{% else %}<tr><td colspan="11">Nenhum processo com estes filtros.</td></tr>{% endfor %}

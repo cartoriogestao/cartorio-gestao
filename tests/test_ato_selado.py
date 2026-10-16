@@ -1349,7 +1349,7 @@ def test_o_envelope_aceita_o_codigo_do_item_de_folha():
     do mesmo pedido, com o mesmo corpo e outra linha da tabela."""
     import ato_selado as AS
     envelope = AS.envelope_da_certidao_do_ri(
-        tipo="INTEIRO_TEOR", escrevente="JEAN", versao_tabela="0520260101",
+        tipo="INTEIRO_TEOR", escrevente="MARIO", versao_tabela="0520260101",
         quantidade=4, codigo_do_item="16.24.4.1", matricula="1116")
     assert envelope["codigoTipoAto"] == "16.24.4.1"
     assert envelope["quantidade"] == 4

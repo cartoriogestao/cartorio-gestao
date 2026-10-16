@@ -130,20 +130,24 @@ def s(cg_casa):
     return _sessao(cg_casa)
 
 
-def test_txt_conferir_receber_apontar_dispara_envio_cra_homolog(
+def test_txt_conferir_receber_apontar_dispara_envio_cra_producao(
         monkeypatch, cg_casa, tmp_path, s):
+    """**CONTRATO MUDADO EM 14/10/2026** — «agora é tudo produção». Este
+    teste se chamava `..._dispara_envio_cra_homolog`: a remessa TXT, sem
+    ambiente, caía na homologação, com a caixa dela ligada. Agora cai na
+    produção, e o envio sai com a credencial e a caixa da produção."""
     monkeypatch.setattr(CRED, "pasta_de_dados", lambda: tmp_path)
     CRED.gravar(
         CRED.CRA, usuario="sandbox", senha="Sandbox@Sandbox1", pasta=tmp_path,
-        ambiente=CRED.HOMOLOGACAO,
+        ambiente=CRED.PRODUCAO,
     )
     chamadas = _mock_cra_soap(monkeypatch)
-    cg_casa["db"].set_settings({"cra_auto_enviar_homolog": "1"})
+    cg_casa["db"].set_settings({"cra_auto_enviar_producao": "1"})
 
     html = _receber(s["c"]).get_data(as_text=True)
     assert "Remessa recebida" in html
     assert (
-        "A CRA (homologacao) recebeu" in html
+        "A CRA (producao) recebeu" in html
         or "confirmacao e andamento enviados" in html
         or "confirmação e andamento enviados" in html
     )
@@ -160,7 +164,7 @@ def test_txt_conferir_receber_apontar_dispara_envio_cra_homolog(
     ).fetchone()
     assert confirmacao["tipo"] == "SDTBFOCRT"
     assert confirmacao["cra_enviado_em"]
-    assert confirmacao["cra_enviado_ambiente"] == "HOMOLOGACAO"
+    assert confirmacao["cra_enviado_ambiente"] == "PRODUCAO"
     assert not confirmacao["cra_envio_erro"]
 
     andamento = con.execute(
@@ -178,17 +182,19 @@ def test_txt_conferir_receber_apontar_dispara_envio_cra_homolog(
 
 def test_txt_auto_envio_desligado_nao_chama_cra(monkeypatch, cg_casa, tmp_path):
     monkeypatch.setattr(CRED, "pasta_de_dados", lambda: tmp_path)
+    # 14/10/2026: produção, com a caixa da produção desligada (era a da
+    # homologação, que saiu da tela).
     CRED.gravar(
         CRED.CRA, usuario="sandbox", senha="Sandbox@Sandbox1", pasta=tmp_path,
-        ambiente=CRED.HOMOLOGACAO,
+        ambiente=CRED.PRODUCAO,
     )
     chamadas = _mock_cra_soap(monkeypatch)
-    cg_casa["db"].set_settings({"cra_auto_enviar_homolog": "0"})
+    cg_casa["db"].set_settings({"cra_auto_enviar_producao": "0"})
     sess = _sessao(cg_casa)
 
     html = _receber(sess["c"]).get_data(as_text=True)
     assert "Remessa recebida" in html
-    assert "A CRA (homologacao) recebeu" not in html
+    assert "A CRA (producao) recebeu" not in html
 
     con = _con(sess["banco"])
     confirmacao_id = con.execute(

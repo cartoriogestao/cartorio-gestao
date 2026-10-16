@@ -104,11 +104,14 @@ CATALOGO_CANCELAMENTO: dict[str, dict[str, str]] = {
             "de dívida protestado, com prova da quitação."),
     },
     "ANUENCIA_CREDOR": {
-        "rotulo": "Anuência do credor",
+        "rotulo": "Anuência do credor ou do apresentante",
         "fundamento_legal": (
-            "Lei 9.492/1997, art. 26, § 1º — declaração de anuência, com "
-            "firma reconhecida, de quem figurou como credor no registro do "
-            "protesto, na impossibilidade de apresentar o título original."),
+            "Lei 9.492/1997, art. 26, § 1º; Código de Normas do TJMA, art. "
+            "942, § 2º — declaração de anuência, com identificação completa e "
+            "firma reconhecida, de quem figurou como credor (ou endossatário, "
+            "no endosso translativo), na impossibilidade de apresentar o "
+            "título original. O pedido de cancelamento do APRESENTANTE entra "
+            "por aqui (decisão do oficial em 14/10/2026)."),
     },
     "ORDEM_JUDICIAL": {
         "rotulo": "Ordem judicial",
@@ -116,19 +119,30 @@ CATALOGO_CANCELAMENTO: dict[str, dict[str, str]] = {
             "Decisão judicial determinando o cancelamento do registro do "
             "protesto."),
     },
-    "ERRO_APRESENTANTE": {
-        "rotulo": "Erro do apresentante",
-        "fundamento_legal": (
-            "Protesto lavrado por erro do apresentante ou do próprio "
-            "cartório — título já pago, duplicado, ou encaminhado "
-            "indevidamente a protesto."),
-    },
 }
+# «ERRO DO APRESENTANTE» SAIU DO CATÁLOGO EM 14/10/2026 — decisão do oficial:
+# «pedido do apresentante entra como anuência». O Código de Normas do TJMA,
+# art. 943: «o cancelamento do protesto fundado em motivo diverso do pagamento
+# somente será realizado mediante ordem judicial»; a hipótese cancelava sem
+# anuência e sem ordem. O apresentante pede pela ANUENCIA_CREDOR (art. 942,
+# § 2º); o erro material da própria serventia se corrige de ofício (art. 940).
+# Nenhum cancelamento gravado a usava (medido na produção em 14/10/2026: zero).
 
 # Como o titulo foi intimado. Diligencia (pessoal, por preposto ou correio
 # com AR) primeiro; edital so quando a diligencia nao teve exito — mas este
 # modulo nao impõe a ordem, so registra o que o balcao diz que aconteceu.
 MODOS_INTIMACAO = ("PESSOAL", "EDITAL")
+
+# As formas de pagamento do Livro de Pagamentos (CN-MA art. 930, III, e os
+# meios do art. 925, §§ 1º e 2º). Espécie e cheque são as que o artigo nomeia.
+FORMAS_DE_PAGAMENTO = {
+    "ESPECIE": "em espécie",
+    "CHEQUE": "por cheque",
+    "PIX": "por PIX",
+    "TRANSFERENCIA": "por transferência bancária",
+    "BOLETO": "por boleto",
+    "CARTAO": "por cartão",
+}
 
 # O vocabulario inteiro dos atos da vida de um titulo — de tbAvisoProtesto e
 # de atribuicoes.ATOS (atribuicao 2). So APONTAMENTO tem funcao nesta versao.
@@ -908,9 +922,8 @@ def lancar_protesto(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
     Recusa protestar de novo o que já foi protestado ou desistido.
 
     O lugar sai de `escrituracao.reservar()` na série PT_PROTESTO — um
-    registro por FACE, sem folha nova: medido no acervo, os livros 7 e 8
-    fecharam com 207 e 219 registros em 200 folhas, o que só fecha se o
-    verso leva o protesto seguinte.
+    protesto por FACE, frente e verso (decisão do oficial em 14/10/2026; ver
+    `livro_nucleo`).
     """
     tit = titulo(con, titulo_id)
     if not tit:
@@ -932,7 +945,11 @@ def lancar_protesto(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
     fatos = TERMO.dados_do_titulo(con, titulo_id)
     texto = TERMO.montar(modelo=modelo_do_termo,
                          edital_data=fatos["edital_data"],
-                         edital_motivo=fatos["edital_motivo"])
+                         edital_motivo=fatos["edital_motivo"],
+                         motivo_protesto=fatos["motivo_protesto"],
+                         tipo_protesto=fatos["tipo_protesto"],
+                         pessoal_data=fatos.get("pessoal_data"),
+                         pessoal_digital=bool(fatos.get("pessoal_digital")))
     cur = con.execute(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, teor, origem,
                criado_em, criado_por)
@@ -995,8 +1012,17 @@ def lancar_desistencia(con: sqlite3.Connection, titulo_id: int, *,
 def lancar_pagamento(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
                      agora: str, data_extenso: str,
                      valor_pago: Any = None, usuario: str | None = None,
-                     origem: str = "MANUAL") -> dict:
+                     origem: str = "MANUAL", forma_pagamento: Any = None,
+                     forma_identificacao: Any = None,
+                     emolumentos: Any = None) -> dict:
     """Registra o pagamento do título, com baixa. ESCREVE.
+
+    O LIVRO DE PAGAMENTOS TEM COLUNAS QUE O ATO NÃO GUARDAVA — Código de
+    Normas do TJMA (Prov. 28/2026), art. 930: valor do pagamento, valor dos
+    EMOLUMENTOS, e nas ocorrências «se o pagamento se dará em espécie ou por
+    cheque, com a correspondente identificação». Até 14/10/2026 só o valor
+    entrava, e opcional. `forma_pagamento` é do vocabulário
+    `FORMAS_DE_PAGAMENTO`; forma desconhecida recusa.
 
     Cabe em QUALQUER ponto do ciclo — apontado, intimado ou já protestado —,
     decisão do oficial em 24/08/2026: o devedor nem sempre espera o
@@ -1027,6 +1053,23 @@ def lancar_pagamento(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
     detalhe: dict[str, Any] = {}
     if valor_pago is not None:
         detalhe["valor_pago_centavos"] = centavos(valor_pago)
+    forma = str(forma_pagamento or "").strip().upper()
+    if forma:
+        if forma not in FORMAS_DE_PAGAMENTO:
+            raise ProtestoError(
+                f"Forma de pagamento desconhecida: {forma!r}. As que existem "
+                f"são: {', '.join(FORMAS_DE_PAGAMENTO.values())}.")
+        detalhe["forma_pagamento"] = forma
+        ident = str(forma_identificacao or "").strip()
+        if forma == "CHEQUE" and not ident:
+            raise ProtestoError(
+                "Pagamento em cheque: informe o banco e o número do cheque — "
+                "o Livro de Pagamentos exige a identificação (Código de "
+                "Normas, art. 930, III).")
+        if ident:
+            detalhe["forma_identificacao"] = ident
+    if emolumentos is not None and str(emolumentos).strip():
+        detalhe["emolumentos_centavos"] = centavos(emolumentos)
 
     cur = con.execute(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,

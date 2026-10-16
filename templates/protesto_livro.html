@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>{{ livro.titulo }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_painel') }}">&larr; Painel do dia</a>
+  <a class="button {% if qual == 'pagamentos' %}primary{% endif %}" href="{{ url_for('protesto_livro', qual='pagamentos', de=de, ate=ate) }}">Livro de Pagamentos</a>
+  <a class="button {% if qual == 'protocolo' %}primary{% endif %}" href="{{ url_for('protesto_livro', qual='protocolo', de=de, ate=ate) }}">Livro de Protocolo</a>
+</div>
+
+<div class="notice">
+  Montado do que foi lavrado — {{ livro.artigo }}. O que o ato não guardou aparece
+  como «não consta», e não inventado: os pagamentos trazidos do E-Ofício não têm
+  emolumentos nem forma de pagamento.
+</div>
+
+<section class="panel">
+  <form method="get" class="grid2" style="padding:14px">
+    <label>De <input type="date" name="de" value="{{ de }}"></label>
+    <label>Até <input type="date" name="ate" value="{{ ate }}"></label>
+    <div class="actions" style="grid-column:1/-1">
+      <button class="button">Mostrar</button>
+      <a class="button" href="{{ url_for('protesto_livro', qual=qual, de=de, ate=ate, formato='odt') }}">Imprimir o livro do período</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ linhas | length }} lançamento(s)</span></div>
+  {% if not linhas %}
+    <p style="padding:14px">Nada no período.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr>{% for c, rotulo in livro.colunas %}<th>{{ rotulo }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for l in linhas %}
+      <tr>{% for c, rotulo in livro.colunas %}<td>{{ l[c] if l[c] is not none else '—' }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

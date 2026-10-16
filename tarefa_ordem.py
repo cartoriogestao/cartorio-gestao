@@ -9,7 +9,7 @@ POR QUE UM MÓDULO, E NÃO DUAS LISTAS
     e não ordenava; a de Processos (`processos.listar`) tinha mais filtros e
     quatro ordens. Escrever a régua duas vezes faria as duas telas divergirem
     no primeiro conserto — a mesma pergunta («o que vence esta semana, da
-    Leidiane?») daria duas respostas. Aqui moram os filtros que as duas têm em
+    escrevente X?») daria duas respostas. Aqui moram os filtros que as duas têm em
     comum e TODAS as ordens; cada tela só diz como se chamam, na consulta
     dela, o nome do responsável e o último andamento.
 
@@ -22,6 +22,7 @@ limites de data são feitos em Python e chegam como texto ISO.
 """
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from typing import Any
 
@@ -33,10 +34,15 @@ PRAZOS = {"VENCIDO": "vencido", "HOJE": "vence hoje", "SEMANA": "vence em 7 dias
 PARADOS = {"7": "sem andamento há 7 dias ou mais", "15": "há 15 dias ou mais",
            "30": "há 30 dias ou mais"}
 
+#: A SUSPENSÃO NA LISTA — relato #132, 15/10/2026. Vazio mostra a suspensa com
+#: o selo, onde ela estiver: esconder por padrão seria a tarefa sumir da mão de
+#: quem espera o cliente, e o que some não volta a ser lembrado.
+SUSPENSAS = {"OCULTAR": "esconder as suspensas", "SO": "só as suspensas"}
+
 #: Os filtros que esta régua sabe aplicar, pelo nome que vai no endereço.
 FILTROS = ("responsavel", "substituto", "prazo", "prazo_de", "prazo_ate",
            "abertura_de", "abertura_ate", "prioridade", "situacao", "parado",
-           "ordem", "inverter")
+           "suspensas", "ordem", "inverter")
 
 #: TODAS AS ORDENS. O rótulo diz o sentido normal; «inverter» vira ao contrário.
 ORDENS = {
@@ -130,10 +136,14 @@ def filtros_sql(filtros: dict[str, Any], *, hoje: date, cond_aberta: str,
     if (f.get("substituto") or "").isdigit():
         where.append("t.backup_user_id = ?")
         args.append(int(f["substituto"]))
+    import tarefa_suspensao as TS
     prazo = f.get("prazo")
     if prazo == "VENCIDO":
-        where += ["t.due_date IS NOT NULL AND t.due_date < ?", cond_aberta]
-        args += [hoje_iso, *args_aberta]
+        # A SUSPENSA NÃO ESTÁ VENCIDA (relato #132): enquanto ela espera, o
+        # prazo não corre — e «vencido» é a palavra da cobrança.
+        nao_suspensa, args_suspensao = TS.condicao_nao_suspensa("t", hoje)
+        where += ["t.due_date IS NOT NULL AND t.due_date < ?", cond_aberta, nao_suspensa]
+        args += [hoje_iso, *args_aberta, *args_suspensao]
     elif prazo == "HOJE":
         where.append("t.due_date = ?")
         args.append(hoje_iso)
@@ -168,4 +178,36 @@ def filtros_sql(filtros: dict[str, Any], *, hoje: date, cond_aberta: str,
         limite_ts = (hoje - timedelta(days=int(f["parado"]))).isoformat()
         where.append(f"{andamento} < ?")
         args.append(limite_ts)
+    if f.get("suspensas") in SUSPENSAS:
+        sql, params = (TS.condicao_suspensa("t", hoje) if f["suspensas"] == "SO"
+                       else TS.condicao_nao_suspensa("t", hoje))
+        where.append(sql)
+        args += params
     return where, args
+
+
+#: O número do processo como a tela o escreve (`PROC-2026-000318`) ou como o
+#: balcão o diz (`#318`, `318`).
+_NUMERO = re.compile(r"^\s*(?:PROC-\d{4}-|#)?0*(\d+)\s*$", re.IGNORECASE)
+
+
+def busca_sql(q: str | None, *, responsavel: str,
+              extras: tuple[str, ...] = ()) -> tuple[list[str], list[Any]]:
+    """A BUSCA POR TEXTO — relato #122, 07/10/2026: «precisa ser possível
+    ordenar e pesquisar melhor entre as tarefas».
+
+    Procura no número, no título, na descrição e no nome do responsável — e,
+    em Processos, também no que `extras` traz (o protocolo e o remetente do
+    expediente). Uma régua só para as duas telas: a mesma palavra procurada não
+    pode achar a tarefa numa e não achá-la na outra. Vazio = não filtra."""
+    texto = (q or "").strip()
+    if not texto:
+        return [], []
+    campos = ["t.title", "t.description", responsavel, *extras]
+    partes = [f"{c} LIKE ?" for c in campos]
+    args: list[Any] = [f"%{texto}%"] * len(campos)
+    numero = _NUMERO.match(texto)
+    if numero:
+        partes.insert(0, "t.id = ?")
+        args.insert(0, int(numero.group(1)))
+    return [f"({' OR '.join(partes)})"], args

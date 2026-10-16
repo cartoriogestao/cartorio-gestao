@@ -13,6 +13,8 @@
 <div class="actions">
   <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
   <a class="button" href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>
+  <a class="button primary" href="{{ url_for('protesto_avisos_lote') }}">
+    Subir PDF com várias intimações entregues</a>
 </div>
 
 <div class="notice">
@@ -42,31 +44,130 @@
 
 <section class="panel">
   <div class="panel-head">
-    <span>Esperando edital</span><small>{{ para_edital | length }}</small>
+    <span>Saíram e esperam desfecho</span><small>{{ esperando | length }}</small>
+  </div>
+
+  {% if not esperando %}
+    <p style="padding:14px">
+      Nenhum aviso esperando. Emita na ficha do título.
+    </p>
+  {% else %}
+  {#
+    DOIS BOTÕES, E NÃO UMA CAIXA DE «DESFECHO» (15/10/2026). Pedido do
+    oficial: «botão para avisar que não pode ser entregue (seja por ser fora
+    da zona de entrega ou por negativa em receber)». Entregue e não entregue
+    pedem coisas diferentes — quem recebeu e o comprovante num, o motivo no
+    outro —, e um formulário só deixava os dois meio preenchidos.
+  #}
+  <table class="table">
+    <thead><tr>
+      <th>Aviso</th><th>Devedor</th><th>Foi entregue</th><th>Não pôde ser entregue</th>
+    </tr></thead>
+    <tbody>
+      {% for a in esperando %}
+      <tr>
+        <td><strong>{{ a.numero }}/{{ a.ano }}</strong>
+            <div><small>{{ a.emitido_em[:10] }}</small></div>
+            <div><small>título {{ a.numero_titulo or '—' }}{% if a.protocolo %},
+                 protocolo {{ a.protocolo }}{% endif %}</small></div>
+            {% if a.tentativas %}
+              <div><small>{{ a.tentativas | length }} tentativa(s) antes</small></div>
+            {% endif %}
+            <div><a class="button small"
+                    href="{{ url_for('protesto_aviso_odt', aviso_id=a.id) }}">Imprimir</a></div></td>
+        <td>{{ a.devedor_nome or '—' }}
+            <div><small>{{ a.endereco or 'sem endereço' }}{% if a.bairro %},
+                 {{ a.bairro }}{% endif %}</small></div></td>
+        <td>
+          <form method="post" class="form" enctype="multipart/form-data"
+                action="{{ url_for('protesto_aviso_entrega', aviso_id=a.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="entregue" value="1">
+            <label>Quem recebeu
+              <input name="recebido_por" placeholder="Nome de quem assinou"></label>
+            <label>Quando
+              <input type="date" name="quando" value="{{ hoje }}"></label>
+            <label>Quem entregou
+              <select name="entregador">
+                {% for e in entregadores %}<option>{{ e }}</option>{% endfor %}
+              </select></label>
+            <label>Comprovante assinado <small>(PDF, PNG ou JPG — pode anexar depois)</small>
+              <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg"></label>
+            <div class="actions">
+              <button class="button primary">Entregue — lavrar a intimação</button></div>
+          </form>
+        </td>
+        <td>
+          <form method="post" class="form"
+                action="{{ url_for('protesto_aviso_entrega', aviso_id=a.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="entregue" value="0">
+            <label>Por quê
+              <select name="motivo" required>
+                <option value="">— escolha —</option>
+                {% for m in motivos_destaque %}
+                  <option value="{{ m.codigo }}">{{ m.motivo }}</option>
+                {% endfor %}
+                <option disabled>──────────</option>
+                {% for m in motivos_outros %}
+                  <option value="{{ m.codigo }}">{{ m.motivo }}</option>
+                {% endfor %}
+              </select></label>
+            <label>Quando
+              <input type="date" name="quando" value="{{ hoje }}"></label>
+            <label>Observação
+              <input name="observacao" placeholder="O que o entregador contou"></label>
+            <div class="actions">
+              <button class="button danger">Não pôde ser entregue</button></div>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="notice" style="margin:0 14px 14px">
+    <strong>Entregue lavra a intimação pessoal</strong>; o comprovante assinado
+    é a prova dela (CN-MA art. 921, § 6º, I). <strong>Não entregue não intima
+    ninguém</strong>: o aviso desce para a lista de baixo, onde o caminho é a
+    Intimação Digital pela Resolve e, não dando, o edital (art. 922). «Ausente»
+    e «Fechado» contam tentativa — a pessoa mora ali —, e pode valer emitir
+    outro aviso na ficha antes de desistir do endereço.
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Não entregues — Resolve, e depois edital</span><small>{{ para_edital | length }}</small>
   </div>
 
   {% if not para_edital %}
     <p style="padding:14px">
-      Nenhum aviso esperando edital. Quando uma entrega não der certo, ela
+      Nenhum aviso não entregue esperando. Quando uma entrega não der certo, ele
       aparece aqui.
     </p>
   {% else %}
+  <div class="actions" style="padding:0 14px">
+    <form method="post" style="display:inline"
+          action="{{ url_for('protesto_resolve_atualizar') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button">Atualizar os estados na Resolve</button>
+    </form>
+  </div>
   <table class="table">
     <thead><tr>
-      <th>Aviso</th><th>Devedor</th><th>Título</th><th>Não entregue porque</th>
-      <th>Publicar</th>
+      <th>Aviso</th><th>Devedor</th><th>Não entregue porque</th>
+      <th>Próximo passo</th>
     </tr></thead>
     <tbody>
       {% for a in para_edital %}
-      <tr>
+      {% set c = a.caminho %}
+      <tr id="aviso-{{ a.id }}">
         <td><strong>{{ a.numero }}/{{ a.ano }}</strong>
-            <div><small>{{ a.emitido_em[:10] }}</small></div></td>
+            <div><small>título {{ a.numero_titulo or '—' }}{% if a.protocolo %},
+                 protocolo {{ a.protocolo }}{% endif %}</small></div></td>
         <td>{{ a.devedor_nome or '—' }}
             <div><small>{{ a.endereco or 'sem endereço' }}</small></div></td>
-        <td>{{ a.numero_titulo or '—' }}
-            {% if a.protocolo %}
-              <div><small>protocolo {{ a.protocolo }}</small></div>
-            {% endif %}</td>
         <td>
           {#
             O RASTRO DAS TENTATIVAS E O QUE JUSTIFICA O EDITAL. "Tentou-se
@@ -82,13 +183,78 @@
           {% else %}
             {% for m in motivos %}{% if m.codigo == a.motivo %}{{ m.motivo }}{% endif %}{% endfor %}
           {% endfor %}
+          {# A PROVA DA TENTATIVA: o canhoto escaneado, que fundamenta o edital. #}
+          {% for x in a.comprovantes %}
+            <div><small>prova: <a href="{{ url_for('attachment_view', attachment_id=x.id) }}"
+                 target="_blank" rel="noopener">{{ x.original_name }}</a></small></div>
+          {% endfor %}
+          {#
+            A BASE NACIONAL DE ENDEREÇOS DA CENPROT (15/10/2026): antes do
+            edital, procurar o devedor onde outros cartórios já o acharam. O
+            que volta fica guardado; reemitir o aviso noutro endereço é decisão
+            do balcão, e o telefone ou e-mail serve à Intimação Digital.
+          #}
+          {% if a.base %}
+            <details style="margin-top:6px" {% if a.base.novos %}open{% endif %}>
+              <summary>Base da CENPROT ({{ a.base.feito_em[:10] }}):
+                {{ a.base.achados | length }} endereço(s),
+                <strong>{{ a.base.novos }} diferente(s) do aviso</strong>,
+                {{ a.base.com_contato }} com contato</summary>
+              {% for x in a.base.achados %}
+                <div><small>{% if x.novo %}<strong>novo:</strong> {% endif %}
+                  {{ x.nm_endereco }}{% if x.nm_nr_endereco %}, {{ x.nm_nr_endereco }}{% endif %}
+                  {% if x.nm_bairro %} — {{ x.nm_bairro }}{% endif %},
+                  {{ x.nm_cidade }}/{{ x.nm_uf }} {{ x.nm_nr_cep }}
+                  {% if x.nm_nr_celular or x.nm_nr_telefone %} · tel. {{ x.nm_nr_celular or x.nm_nr_telefone }}{% endif %}
+                  {% if x.nm_email %} · {{ x.nm_email }}{% endif %}
+                  <span style="color:var(--muted)">({{ x.origem or 'origem não dita' }}{% if x.data_cadastro %}, {{ x.data_cadastro }}{% endif %})</span>
+                </small></div>
+              {% endfor %}
+            </details>
+          {% endif %}
+          <form method="post" style="margin-top:4px"
+                action="{{ url_for('protesto_aviso_base_consultar', aviso_id=a.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button small">{% if a.base %}Procurar de novo{% else %}Procurar endereço na base da CENPROT{% endif %}</button>
+          </form>
         </td>
         <td>
-          <form method="post" style="display:inline"
-                action="{{ url_for('protesto_aviso_edital', aviso_id=a.id) }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="button primary">Publicar edital</button>
-          </form>
+          <p style="margin:0 0 6px">{{ c.frase }}</p>
+          {% if c.passo == 'RESOLVE' %}
+            <form method="post" style="display:inline"
+                  action="{{ url_for('protesto_aviso_resolve', aviso_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button primary">Intimar pela Resolve</button>
+            </form>
+          {% elif c.passo == 'LAVRAR_DIGITAL' %}
+            <form method="post" style="display:inline"
+                  action="{{ url_for('protesto_aviso_digital', aviso_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button primary">Lavrar a intimação digital</button>
+            </form>
+          {% elif c.passo == 'PAGO' %}
+            <a class="button" href="{{ url_for('protesto_titulo', titulo_id=a.titulo_id) }}">
+              Abrir a ficha do título</a>
+          {% endif %}
+          {% if c.edital == 'LIBERADO' %}
+            <form method="post" style="display:inline"
+                  action="{{ url_for('protesto_aviso_edital', aviso_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button primary">Publicar edital</button>
+            </form>
+          {% elif c.edital == 'JUSTIFICAR' %}
+            <details style="margin-top:6px">
+              <summary>Publicar o edital mesmo assim</summary>
+              <form method="post" class="form"
+                    action="{{ url_for('protesto_aviso_edital', aviso_id=a.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label style="grid-column:1/-1">Por que o edital agora
+                  <input name="justificativa" required minlength="10"
+                         placeholder="Ex.: sem e-mail nem telefone do devedor; o prazo não comporta esperar a Resolve"></label>
+                <div class="actions"><button class="button">Publicar edital</button></div>
+              </form>
+            </details>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -97,74 +263,54 @@
   {% endif %}
 </section>
 
-<section class="panel">
+<section class="panel" id="entregues">
   <div class="panel-head">
-    <span>Saíram e esperam desfecho</span><small>{{ esperando | length }}</small>
+    <span>Entregues — comprovante da intimação</span><small>{{ entregues | length }}</small>
   </div>
-
-  {% if not esperando %}
-    <p style="padding:14px">
-      Nenhum aviso esperando. Emita na ficha do título.
-    </p>
+  {% if not entregues %}
+    <p style="padding:14px">Nenhum aviso entregue ainda.</p>
   {% else %}
   <table class="table">
     <thead><tr>
-      <th>Aviso</th><th>Devedor</th><th>Título</th><th>O que aconteceu</th>
+      <th>Aviso</th><th>Devedor</th><th>Recebido</th><th>Comprovante</th>
     </tr></thead>
     <tbody>
-      {% for a in esperando %}
-      <tr>
+      {% for a in entregues %}
+      <tr id="aviso-{{ a.id }}">
         <td><strong>{{ a.numero }}/{{ a.ano }}</strong>
-            <div><small>{{ a.emitido_em[:10] }}</small></div></td>
-        <td>{{ a.devedor_nome or '—' }}
-            <div><small>{{ a.endereco or 'sem endereço' }}{% if a.bairro %},
-                 {{ a.bairro }}{% endif %}</small></div></td>
-        <td>{{ a.numero_titulo or '—' }}
-            {% if a.protocolo %}
-              <div><small>protocolo {{ a.protocolo }}</small></div>
-            {% endif %}
-            {% if a.tentativas %}
-              <div><small>{{ a.tentativas | length }} tentativa(s) antes</small></div>
-            {% endif %}</td>
+            <div><small>título {{ a.numero_titulo or '—' }}{% if a.protocolo %},
+                 protocolo {{ a.protocolo }}{% endif %}</small></div></td>
+        <td>{{ a.devedor_nome or '—' }}</td>
+        <td>{{ (a.entrega_em or '')[:10] }}
+            {% if a.recebido_por %}<div><small>por {{ a.recebido_por }}</small></div>{% endif %}</td>
         <td>
-          <form method="post" class="form"
-                action="{{ url_for('protesto_aviso_entrega', aviso_id=a.id) }}">
+          {% for x in a.comprovantes %}
+            <div><a href="{{ url_for('attachment_view', attachment_id=x.id) }}"
+                    target="_blank" rel="noopener">{{ x.original_name }}</a>
+                 · <a href="{{ url_for('attachment_download', attachment_id=x.id) }}">baixar</a></div>
+          {% else %}
+            <div><strong>falta o comprovante</strong></div>
+          {% endfor %}
+          <form method="post" class="form" enctype="multipart/form-data"
+                action="{{ url_for('protesto_aviso_comprovante', aviso_id=a.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <label>Desfecho
-              <select name="entregue">
-                <option value="0">Não foi entregue</option>
-                <option value="1">Entregue em mão</option>
-              </select></label>
-            <label>Se não foi, por quê
-              <select name="motivo">
-                <option value="">—</option>
-                {% for m in motivos %}
-                  <option value="{{ m.codigo }}">{{ m.motivo }}</option>
-                {% endfor %}
-              </select></label>
-            <label>Quem recebeu <small>(se foi entregue)</small>
-              <input name="recebido_por" placeholder="Nome de quem assinou"></label>
-            <label>Quem entregou
-              <select name="entregador">
-                {% for e in entregadores %}<option>{{ e }}</option>{% endfor %}
-              </select></label>
-            <label style="grid-column:1/-1">Observação
-              <input name="observacao"
-                     placeholder="O que o entregador contou"></label>
-            <div class="actions"><button class="button">Registrar</button></div>
+            <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg" required>
+            <button class="button small">Anexar</button>
           </form>
+          {% if a.base_cadastro %}
+            <div><small>endereço na base da CENPROT desde {{ a.base_cadastro.feito_em[:10] }}</small></div>
+          {% else %}
+            <form method="post" style="margin-top:4px"
+                  action="{{ url_for('protesto_aviso_base_cadastrar', aviso_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button small">Cadastrar este endereço na base da CENPROT</button>
+            </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  <div class="notice" style="margin:0 14px 14px">
-    <strong>Dois motivos mandam direto ao edital</strong> — «Mudou-se» e «Não é
-    o número indicado» —, porque nos dois o endereço deixou de servir e
-    insistir nele é perder tempo. <strong>Dois contam tentativa e pedem
-    outra</strong> — «Ausente» e «Fechado» —, porque a pessoa mora ali, só não
-    estava. As quatro marcas são do catálogo desta casa.
-  </div>
   {% endif %}
 </section>
 

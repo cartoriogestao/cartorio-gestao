@@ -128,7 +128,9 @@ def test_a_lista_abre_e_diz_o_que_fazer(s):
 
 
 def test_a_desistencia_esta_no_menu(s):
-    html = s["c"].get("/protesto/titulos").get_data(as_text=True)
+    # A lista mora em `/protesto` desde a 3.6.193 (24/09/2026); o endereço
+    # antigo só redireciona, e o redirecionamento não traz menu — 14/10/2026.
+    html = s["c"].get("/protesto").get_data(as_text=True)
     assert "/protesto/desistencias" in html
 
 

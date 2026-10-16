@@ -42,9 +42,9 @@ def _entrar(app, usuario: str):
 @pytest.fixture()
 def casa(cg_casa):
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.create_user("balcao", "QUEM ATENDE", SENHA, "USER")
-    return {**cg_casa, "oficial": _entrar(cg_casa["app"], "jean"),
+    return {**cg_casa, "oficial": _entrar(cg_casa["app"], "mario"),
             "balcao": _entrar(cg_casa["app"], "balcao")}
 
 

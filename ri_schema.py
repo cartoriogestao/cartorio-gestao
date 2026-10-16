@@ -1094,6 +1094,11 @@ MIGRACOES = (
     ("ri_certidoes", "onus_sugestao_id", "INTEGER"),
     ("ri_certidoes", "onus_justificativa", "TEXT"),
     ("ri_certidoes", "onus_escolhido_por", "TEXT"),
+    # A IA CONFERE O PROPRIETÁRIO — 15/10/2026, ordem do oficial depois da
+    #   certidão de ônus 64/2026 (matrícula 3371) sair com o dono da
+    #   matrícula-mãe: CONFERE | DIVERGE | CONFERIDO_NO_BALCAO, e por quê.
+    ("ri_certidoes", "onus_proprietario_conferencia", "TEXT"),
+    ("ri_certidoes", "onus_proprietario_justificativa", "TEXT"),
 
 )
 
@@ -1370,10 +1375,20 @@ VALIDADE_CERTIDAO_DIAS = 30
 # Os tres que ficam respondem todos a mesma pergunta — o que esta nesta
 # matricula: o inteiro teor dela, os onus que a atingem, e quem e o dono.
 # Ver `DOCUMENTACAO/PROBLEMA_75_A_CERTIDAO_DA_MATRICULA.md`.
+#
+# E A DOMINIAL E A VINTENARIA RESPONDEM A MESMA PERGUNTA, olhando para tras —
+# 28/09/2026, construidas direto na producao (3.6.233, `_apply_dominial_patch`)
+# e PERDIDAS quando os pacotes da 3.6.282 em diante sobrescreveram aquele
+# codigo, que nunca entrou na arvore. Reconstituidas em 14/10/2026 a partir das
+# copias de seguranca de `backups_patch/dominial_*` e do corpo da certidao
+# 394/2026 (31/2026, matricula 3472), a unica emitida. A chave `DOMINIAL` e a
+# que a 394 tem gravada em `ri_certidoes.tipo`: mudar o nome a deixaria orfa.
 TIPOS_CERTIDAO = {
     "INTEIRO_TEOR": "Certidão de inteiro teor",
     "ONUS": "Certidão de ônus reais (positiva ou negativa)",
     "PROPRIEDADE": "Certidão de propriedade",
+    "DOMINIAL": "Certidão dominial / cadeia dominial",
+    "VINTENARIA": "Certidão vintenária",
 }
 
 # Rotulos do LIVRO de certidoes (lista + PDF). Inclui a negativa de imovel,

@@ -43,7 +43,7 @@ AGORA = "2026-09-03T10:00:00"
 CNS = "000000"
 MATRICULA = "00000001552026100001001000012345"
 SV = {"ri_cns": CNS, "ri_cidade": "Cidade Exemplo", "ri_uf": "MA",
-      "escrevente": "JEAN", "funcao": "Escrevente"}
+      "escrevente": "MARIO", "funcao": "Escrevente"}
 
 
 @pytest.fixture()
@@ -118,10 +118,17 @@ def _assento(con, especie="NASCIMENTO", nome=None, matricula=MATRICULA,
     extras = {}
     if especie in ("OBITO", "NATIMORTO"):
         extras["ibge"] = {"numero_do": "123456789"}
+    # O QUE A CRC E O SIRC EXIGEM — desde o relato #130 (14/10/2026) a
+    # lavratura recusa sem eles: «onde nasceu» e «deixou bens». As colunas que
+    # o teste pede em `campos` continuam por cima, como antes.
+    if especie == "NASCIMENTO":
+        extras["ibge"] = {"local_nascimento": 1}
+    if especie == "OBITO":
+        extras["marcas_do_obito"] = {"obito_possui_bens": "NAO"}
     feito = RC.lavrar_assento(
         con, especie=especie, nome=(nome or titular), sv=SV, agora=AGORA,
         data_extenso="tres de setembro de dois mil e vinte e seis",
-        data_fato="2020-01-15", usuario="JEAN", pessoas=lista,
+        data_fato="2020-01-15", usuario="MARIO", pessoas=lista,
         termo_dados=TERMO_DA_ESPECIE[especie],
         regime_bens=("Comunhao parcial de bens"
                      if especie == "CASAMENTO" else None),
@@ -471,7 +478,7 @@ def test_a_averbacao_sai_de_rc_atos_e_nao_de_coluna_do_assento(con):
     assert "averbacao_anotacao" not in colunas
     ident = _assento(con)
     RC.averbar(con, ident, teor="Averbado o divorcio dos genitores.",
-               agora=AGORA, usuario="JEAN")
+               agora=AGORA, usuario="MARIO")
     m = PED.montar(con, ident, cns=CNS)
     assert "divorcio" in m["registro"]["averbacao_anotacao"]
 

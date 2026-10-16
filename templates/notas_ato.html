@@ -40,6 +40,44 @@
     <input name="motivo_isencao" placeholder="art. 68-A da Lei 8.212/1991..."></label>
   {% endif %}
 {% endmacro %}
+{% macro confirmar_arquivamento(a, arq, csrf_token) %}
+  {# O ARQUIVAMENTO OBRIGATÓRIO — pedido do oficial, 15/10/2026: na procuração,
+     no substabelecimento e na revogação o selo 13.30 vai junto, a quantidade
+     é a das folhas do documento anexado, e o escrevente confirma (podendo
+     corrigir) antes de selar. Formulário próprio: confirmar não lança nem
+     sela nada. #}
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="notice span2 {% if not arq.confirmado %}warning{% endif %}">
+      <strong>Selo de arquivamento (13.30) — obrigatório neste ato.</strong>
+      {% if not arq.contagem.anexos %}
+        <strong>Anexe o documento arquivado</strong> (em «Documentos do ato»):
+        o número de folhas sai dele, e sem ele o selo não sai.
+      {% else %}
+        Contagem dos anexos: <strong>{{ arq.contagem.texto }}</strong>.
+        {% if arq.anexos_mudaram %}
+          Os anexos mudaram depois da confirmação (eram {{ arq.sugeridas }}
+          folha(s)): <strong>confirme de novo</strong>.
+        {% elif arq.confirmado %}
+          Confirmado: <strong>{{ arq.folhas }} folha(s)</strong>, por
+          {{ arq.confirmado_por }} em {{ arq.confirmado_em }}
+          {%- if arq.sugeridas is not none and arq.sugeridas != arq.folhas %}
+          (a contagem sugeria {{ arq.sugeridas }}){% endif %}.
+        {% else %}
+          <strong>Pendente de confirmação:</strong> confira o número abaixo
+          contra o papel e confirme — pode corrigir.
+        {% endif %}
+      {% endif %}
+    </div>
+    {% if arq.contagem.anexos %}
+    <label>Folhas arquivadas
+      <input type="number" name="folhas_arquivamento" min="1" step="1" required
+             value="{{ arq.folhas if arq.confirmado else (arq.contagem.total or '') }}"></label>
+    <div><button name="acao" value="confirmar_arquivamento">
+      {%- if arq.confirmado %}Confirmar de novo{% else %}Confirmar as folhas{% endif %}</button></div>
+    {% endif %}
+  </form>
+{% endmacro %}
 {% extends 'base.html' %}
 {% block heading %}<h1>{{ TIPOS_ATO.get(a.tipo, a.tipo) }}
   {%- if a.termo %} — termo nº {{ a.termo }}
@@ -56,6 +94,8 @@
   {% if a.teor and a.situacao != 'EM_LAVRATURA' %}
   <a class="button" href="{{ url_for('notas_ato_termo_livro', ato_id=a.id) }}">Termo do livro (.odt)</a>
   <a class="button primary" href="{{ url_for('notas_ato_traslado', ato_id=a.id) }}">Traslado (.odt)</a>
+  {# A certidão do ato identificado — pedido do oficial, 15/10/2026. #}
+  <a class="button" href="{{ url_for('notas_certidoes', ato_id=a.id) }}">Emitir certidão</a>
   {% endif %}
 </div>
 
@@ -109,6 +149,22 @@
 <div class="notice danger"><strong>ESTE ATO TEM ANOTAÇÃO À MARGEM.</strong>
   {% for n in anotacoes %}<br>{{ fmt_date(n.data) }} — {{ n.texto }}{% endfor %}
   <br><span class="small">Sai transcrita em todo traslado e certidão deste ato.</span></div>
+{% endif %}
+{# A COMUNICAÇÃO À SERVENTIA DE ORIGEM — relato #129. O aviso é PERSISTENTE:
+   não tem botão de fechar, e só some quando a providência é registrada no
+   quadro «Comunicação à serventia de origem», mais abaixo. #}
+{% if comunicacao and comunicacao.aberta %}
+<div class="notice danger" id="aviso-comunicacao-origem"><strong>COMUNICAÇÃO À SERVENTIA DE ORIGEM PENDENTE.</strong>
+  A procuração substabelecida foi lavrada em <strong>{{ comunicacao.destinatario }}</strong>, e a
+  comunicação a ela ainda não está comprovada nem anotada ({{ COMUNICACAO_FUNDAMENTO }}).
+  Obrigação lançada em {{ fmt_date(comunicacao.nascida_em) }}.
+  <a href="#comunicacao-origem">Registrar a providência</a>.</div>
+{% elif comunicacao_devida and not comunicacao %}
+<div class="notice danger" id="aviso-comunicacao-origem"><strong>SUBSTABELECIMENTO DE PROCURAÇÃO DE OUTRA SERVENTIA SEM OBRIGAÇÃO DE COMUNICAÇÃO LANÇADA.</strong>
+  <a href="#comunicacao-origem">Lançar a obrigação</a> ({{ COMUNICACAO_FUNDAMENTO }}).</div>
+{% elif comunicacao and comunicacao.falta_comprovante %}
+<div class="notice warning" id="aviso-comunicacao-origem"><strong>Comunicação à serventia de origem: envio anotado, comprovante de recebimento ainda não juntado.</strong>
+  <a href="#comunicacao-origem">Juntar o comprovante</a>.</div>
 {% endif %}
 {% if pendencias %}
 <div class="notice warning"><strong>O teor tem {{ pendencias|length }} campo(s) em branco:</strong>
@@ -189,6 +245,56 @@
     <div class="span2"><button>Guardar arquivo</button>
       <span class="small muted">O sistema registra autoria, data, tamanho e impressão digital do arquivo.</span></div>
   </form>
+  {% endif %}
+</section>
+
+{# DOCUMENTOS PARA QUALIFICAÇÃO — relato #135, 15/10/2026. Vêm do Protocolo
+   Geral ligado a este ato; anexar e retirar é lá, para servir qualquer ato
+   que saia do mesmo atendimento. Aqui se vê e se liga. #}
+<section class="panel" id="documentos-qualificacao">
+  <div class="panel-head"><span>Documentos para qualificação (Protocolo Geral)</span>
+    <span class="small muted">{% if qualificacao.protocolo %}protocolo
+      <a href="{{ url_for('caixa_protocolo', protocolo_id=qualificacao.protocolo.id) }}#documentos-qualificacao">{{ qualificacao.protocolo.numero }}</a>
+      ({{ qualificacao.protocolo.atribuicao or 'sem atribuição' }}{% if qualificacao.protocolo.interessado %} — {{ qualificacao.protocolo.interessado }}{% endif %})
+      · {{ qualificacao.do_protocolo|length }} documento(s){% else %}sem protocolo ligado{% endif %}</span></div>
+  {% if qualificacao.protocolo %}
+    {% if qualificacao.do_protocolo %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Documento</th><th>Tipo e descrição</th><th>Anexado por</th><th></th></tr></thead>
+      <tbody>{% for d in qualificacao.do_protocolo %}
+        <tr>
+          <td><strong>{{ d.original_name }}</strong><br><span class="small muted">{{ (d.size_bytes / 1024)|round(1) }} KB</span></td>
+          <td class="small">{{ d.tipo_rotulo or '—' }}{% if d.description %}<br>{{ d.description }}{% endif %}</td>
+          <td class="small">{{ d.enviado_por_nome or '—' }}<br>{{ (d.uploaded_at or '')[:16]|replace('T', ' ') }}</td>
+          <td class="small"><a href="{{ url_for('attachment_view', attachment_id=d.id) }}" target="_blank">ver</a> ·
+            <a href="{{ url_for('attachment_download', attachment_id=d.id) }}">baixar</a></td>
+        </tr>
+      {% endfor %}</tbody>
+    </table></div>
+    {% else %}
+    <p class="muted" style="padding:0 14px">O protocolo ainda não tem documento anexado.
+      <a href="{{ url_for('caixa_protocolo', protocolo_id=qualificacao.protocolo.id) }}#documentos-qualificacao">Anexar no protocolo</a>.</p>
+    {% endif %}
+    {% if a.situacao == 'EM_LAVRATURA' and user.role in ['ADMIN','MANAGER','USER'] %}
+    <form method="post" style="padding:0 14px 14px"
+          action="{{ url_for('notas_ato_protocolo_geral', ato_id=a.id) }}"
+          onsubmit="return confirm('Desfazer a ligação deste ato com o protocolo {{ qualificacao.protocolo.numero }}?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="small" name="acao" value="desvincular">Desfazer a ligação</button>
+    </form>
+    {% endif %}
+  {% else %}
+    <p class="muted" style="padding:0 14px">Ligue este ato ao protocolo do balcão para ver aqui os documentos
+      que o cliente entregou (identidade, certidões, procuração anterior, matrícula…).</p>
+    {% if a.situacao == 'EM_LAVRATURA' and user.role in ['ADMIN','MANAGER','USER'] %}
+    <form method="post" class="grid2" style="padding:14px"
+          action="{{ url_for('notas_ato_protocolo_geral', ato_id=a.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Número do protocolo geral (de qualquer atribuição)
+        <input name="numero" required placeholder="ex.: 2026.10.42"></label>
+      <div><button name="acao" value="vincular">Ligar ao protocolo</button></div>
+    </form>
+    {% endif %}
   {% endif %}
 </section>
 
@@ -649,6 +755,9 @@
     Só se lança no livro o ato em lavratura.
   </div>
   {% else %}
+  {% if arquivamento and arquivamento.obrigatorio %}
+  {{ confirmar_arquivamento(a, arquivamento, csrf_token) }}
+  {% endif %}
   <form method="post" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if previsao %}
@@ -676,6 +785,22 @@
          livro e a folha, que só existem depois do lançamento: por isso ele
          acontece logo em seguida, na mesma tela e no mesmo clique. #}
       {{ campos_do_selo(selo_caminhos, selo_sem_caminho, selo_aviso) }}
+      {% if arquivamento and arquivamento.obrigatorio %}
+      {# OBRIGATÓRIO: a caixa vem marcada e não se desmarca, e a quantidade é a
+         CONFIRMADA no quadro acima — o servidor lê a confirmação gravada, e
+         não este formulário. O campo escondido só diz o que a caixa diz. #}
+      <div class="span2" style="margin-top:8px">
+        <input type="hidden" name="gerar_arquivamento" value="1">
+        <label class="check"><input type="checkbox" checked disabled>
+          Gerar também o <strong>selo de arquivamento (13.30)</strong> —
+          obrigatório neste ato</label>
+        <p class="small muted">Folhas arquivadas:
+          {% if arquivamento.confirmado %}<strong>{{ arquivamento.folhas }}</strong>
+            (confirmadas por {{ arquivamento.confirmado_por }}).
+          {% else %}<strong>pendente de confirmação</strong> — confirme no quadro
+            acima; sem isso o ato não se lança.{% endif %}</p>
+      </div>
+      {% else %}
       <details class="span2" style="margin-top:8px">
         <summary class="small"><strong>Arquivamento do documento (13.30)</strong>
           — opcional, junto com o selo da escritura</summary>
@@ -689,6 +814,7 @@
           <input type="number" name="folhas_arquivamento" id="folhas_arquivamento_nt"
                  min="1" step="1" disabled placeholder="quantidade de folhas"></label>
       </details>
+      {% endif %}
       {% if a.valor_transacao %}
       <div class="notice small span2">O ato declara valor, e o selo sai pelo
         caminho <strong>com valor declarado</strong> — é o valor que decide, e
@@ -700,7 +826,8 @@
          clique leva (revisão, item do selo, arquivamento) se preenche antes.
          #}
       <div class="span2"><button class="primary" name="acao" value="lancar"
-             {% if not a.teor %}disabled title="Escreva o teor antes de lançar"{% endif %}>Lançar no livro</button></div>
+             {% if not a.teor %}disabled title="Escreva o teor antes de lançar"
+             {% elif arquivamento and arquivamento.obrigatorio and not arquivamento.confirmado %}disabled title="Confirme as folhas do arquivamento antes de lançar"{% endif %}>Lançar no livro</button></div>
     </div>
     {% if entrelinha and entrelinha.precisa %}
     <div class="notice {% if entrelinha.cabe_na_banda %}warning{% endif %}">
@@ -833,6 +960,108 @@
 </section>
 {% endif %}
 
+{% if comunicacao_cabe %}
+<!-- ============ A COMUNICAÇÃO À SERVENTIA DE ORIGEM (relato #129) ============ -->
+<section class="panel" id="comunicacao-origem">
+  <div class="panel-head"><span>Comunicação à serventia de origem da procuração</span>
+    <span class="small muted">{{ COMUNICACAO_FUNDAMENTO }}</span></div>
+  <div style="padding:14px">
+    <p class="small muted">Substabelecimento de mandato lavrado em <strong>outra</strong> serventia se
+      comunica imediatamente ao tabelião que o lavrou, por qualquer meio, <strong>desde que haja
+      comprovante de recebimento</strong>. A obrigação nasce quando o ato é lançado no livro (ou quando
+      a origem é informada num ato já lançado) e o aviso só sai com uma das duas providências:
+      juntar o comprovante, ou anotar o envio do ofício. Nada aqui se apaga.</p>
+
+    {% if a.anterior_ato_id %}
+      <p class="small">Este ato está vinculado a uma procuração <strong>desta</strong> serventia: a
+        providência é a anotação à margem, e não a comunicação.</p>
+    {% else %}
+
+    {% if not comunicacao or comunicacao.aberta %}
+    <details {% if not a.anterior_cartorio %}open{% endif %}>
+      <summary class="small"><strong>De onde veio a procuração substabelecida</strong>
+        {% if a.anterior_cartorio %} — {{ a.anterior_cartorio }}{% if a.anterior_livro %}, livro {{ a.anterior_livro }}{% endif %}{% if a.anterior_folha %}, folha {{ a.anterior_folha }}{% endif %}{% endif %}</summary>
+      <form method="post" action="{{ url_for('notas_ato_comunicacao_origem', ato_id=a.id) }}" class="grid2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="span2">Serventia que lavrou a procuração
+          <input name="cartorio" required value="{{ a.anterior_cartorio or '' }}"
+                 placeholder="ex.: 4º Ofício Extrajudicial de Imperatriz/MA"></label>
+        <label>CNS <input name="cns" value="{{ a.anterior_cns or '' }}" placeholder="se souber"></label>
+        <label>Cidade <input name="cidade" value="{{ a.anterior_cidade or '' }}"></label>
+        <label>UF <input name="uf" maxlength="2" value="{{ a.anterior_uf or '' }}"></label>
+        <label>Livro da procuração <input name="livro" value="{{ a.anterior_livro or '' }}"></label>
+        <label>Folha <input name="folha" value="{{ a.anterior_folha or '' }}"></label>
+        <label>Data da procuração <input type="date" name="data" value="{{ (a.anterior_data or '')[:10] }}"></label>
+        <div class="span2"><button class="primary" name="acao" value="origem">Gravar a origem</button></div>
+      </form>
+    </details>
+    {% endif %}
+
+    {% if comunicacao_devida and not comunicacao %}
+      <div class="notice danger">A procuração é de outra serventia e a obrigação de comunicar ainda não
+        foi lançada (ato anterior à regra, ou do acervo).</div>
+      <form method="post" action="{{ url_for('notas_ato_comunicacao_origem', ato_id=a.id) }}" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="primary" name="acao" value="abrir">Lançar a obrigação de comunicar</button>
+      </form>
+    {% elif not comunicacao and a.situacao == 'EM_LAVRATURA' and a.anterior_cartorio %}
+      <p class="small">A obrigação nasce sozinha quando este ato for lançado no livro.</p>
+    {% endif %}
+
+    {% if comunicacao %}
+      <table class="small" style="margin:10px 0">
+        <tr><th>Destinatário</th><td>{{ comunicacao.destinatario }}{% if comunicacao.destinatario_cns %} — CNS {{ comunicacao.destinatario_cns }}{% endif %}</td></tr>
+        <tr><th>Obrigação</th><td>lançada em {{ fmt_date(comunicacao.nascida_em) }} por {{ comunicacao.nascida_por or '—' }}
+          ({{ 'no lançamento do ato' if comunicacao.nascida_como == 'LAVRATURA' else 'pela tela' }})</td></tr>
+        <tr><th>Situação</th><td>{% if comunicacao.aberta %}<span class="badge alta">ABERTA</span>{% else %}<span class="badge">CUMPRIDA</span>
+          — {{ COMUNICACAO_PROVIDENCIAS.get(comunicacao.providencia, comunicacao.providencia) }},
+          em {{ fmt_date(comunicacao.cumprida_em) }} por {{ comunicacao.cumprida_por or '—' }}{% endif %}</td></tr>
+        {% if comunicacao.envio_numero %}
+        <tr><th>Ofício</th><td>nº/rastreio {{ comunicacao.envio_numero }}, enviado em {{ fmt_date(comunicacao.envio_data) }}
+          por {{ COMUNICACAO_MEIOS.get(comunicacao.envio_meio, comunicacao.envio_meio) }}, por {{ comunicacao.envio_por }}</td></tr>
+        {% endif %}
+        {% if comunicacao.comprovante_attachment_id %}
+        <tr><th>Comprovante</th><td><a href="{{ url_for('attachment_view', attachment_id=comunicacao.comprovante_attachment_id) }}" target="_blank">{{ comunicacao.comprovante_nome }}</a>
+          — recebido em {{ fmt_date(comunicacao.comprovante_recebido_em) }}; juntado por {{ comunicacao.comprovante_por or '—' }}
+          <span class="muted">(SHA-256 {{ (comunicacao.comprovante_sha256 or '')[:16] }}…)</span></td></tr>
+        {% endif %}
+        {% if comunicacao.observacao %}<tr><th>Observação</th><td>{{ comunicacao.observacao }}</td></tr>{% endif %}
+      </table>
+
+      {% if not comunicacao.comprovante_attachment_id %}
+      <form method="post" enctype="multipart/form-data" class="grid2"
+            action="{{ url_for('notas_ato_comunicacao_origem', ato_id=a.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="span2"><strong>(a) Comunicação comprovada</strong> — junte o comprovante de recebimento
+          (AR, recibo, confirmação do malote ou do e-mail).</div>
+        <label>Arquivo <input type="file" name="comprovante" required></label>
+        <label>Recebido em <input type="date" name="recebido_em" required></label>
+        <label class="span2">Observação <input name="observacao"></label>
+        <div class="span2"><button class="primary" name="acao" value="comprovante">Juntar o comprovante{% if comunicacao.aberta %} e baixar{% endif %}</button></div>
+      </form>
+      {% endif %}
+
+      {% if comunicacao.aberta %}
+      <form method="post" class="grid2" action="{{ url_for('notas_ato_comunicacao_origem', ato_id=a.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="span2"><strong>(b) Envio do ofício anotado</strong> — os quatro campos são exigidos.</div>
+        <label>Data do envio <input type="date" name="envio_data" required></label>
+        <label>Meio <select name="envio_meio" required>
+          <option value="">— escolha —</option>
+          {% for k, rot in COMUNICACAO_MEIOS.items() %}<option value="{{ k }}">{{ rot }}</option>{% endfor %}
+        </select></label>
+        <label>Nº do ofício ou rastreio <input name="envio_numero" required></label>
+        <label>Quem enviou <input name="envio_por" required></label>
+        <label class="span2">Observação <input name="observacao"></label>
+        <div class="span2"><button class="primary" name="acao" value="oficio">Anotar o envio e baixar</button></div>
+      </form>
+      {% endif %}
+    {% endif %}
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 {#
   DEPÓSITO PRÉVIO — o mesmo depósito, na tela onde o ato está.
 
@@ -915,7 +1144,55 @@
     <p class="small muted" style="margin:6px 0 0">Este ato já está selado.
       Pedir outro seria o dinheiro da serventia saindo duas vezes.</p>
   </div>
-  {% if a.selo and not a.selo_arquivamento and a.situacao == 'LAVRADO' %}
+  {% if arquivamento and arquivamento.obrigatorio and a.selo and not a.selo_arquivamento
+        and a.situacao in ('LAVRADO', 'SUSPENSO_SELO') %}
+  {# OBRIGATÓRIO E AINDA NÃO SELADO: o quadro vem aberto, e a quantidade é a
+     confirmada — o ato só sai da suspensão com os dois selos. #}
+  {{ confirmar_arquivamento(a, arquivamento, csrf_token) }}
+  <form method="post" action="{{ url_for('notas_selar_arquivamento', ato_id=a.id) }}"
+        class="grid2" style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {# A GRATUIDADE NÃO VEM SOZINHA (decisão do oficial, 15/10/2026: fica à
+       mão, com o aviso claro). O ato não guarda se foi isento. #}
+    <div class="notice warning small span2"><strong>Atenção à gratuidade:</strong>
+      o sistema não sabe se o selo do ato saiu isento. Se saiu, marque «sim»
+      abaixo e escreva o mesmo motivo; <strong>sem marcar, o arquivamento sai
+      COBRADO</strong>.</div>
+    <label>Selo isento, como o do ato?
+      <select name="selo_isento"><option value="">não</option>
+        <option value="1">sim</option></select></label>
+    <label>Motivo da isenção
+      <input name="motivo_isencao" placeholder="o mesmo do selo do ato"></label>
+    <div class="span2"><button class="primary"
+      {% if not arquivamento.confirmado %}disabled title="Confirme as folhas antes"{% endif %}>
+      Pedir selo de arquivamento ({{ arquivamento.folhas or '?' }} folha(s))</button></div>
+  </form>
+  {% endif %}
+  {% if a.selo and not a.selo_arquivamento and a.situacao in ('LAVRADO', 'SUSPENSO_SELO') %}
+  {# O SELO DE ARQUIVAMENTO À MÃO — decisão do oficial, 15/10/2026, para quem
+     tirou o 13.30 fora do sistema. Mesmo molde da entrada à mão do selo do ato. #}
+  <details style="padding:0 14px 14px">
+    <summary class="small">Anotar à mão o selo de arquivamento (13.30) tirado fora do sistema</summary>
+    <form method="post" class="grid2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Selo de arquivamento
+        <input name="selo_arquivamento" size="34" placeholder="ARQUIV..." required></label>
+      <label>Etiqueta do selo (opcional)
+        <input name="selo_arquivamento_texto" placeholder="cole o texto do selo, se houver"></label>
+      {% if not (arquivamento and arquivamento.obrigatorio) %}
+      <label>Folhas arquivadas
+        <input type="number" name="folhas_arquivamento" min="1" step="1" required></label>
+      {% endif %}
+      <div class="span2"><button name="acao" value="selo_arquivamento"
+        {% if arquivamento and arquivamento.obrigatorio and not arquivamento.confirmado %}disabled title="Confirme as folhas antes"{% endif %}>
+        Anotar o selo de arquivamento</button>
+        <span class="small muted">O número é lido, o CNS conferido, o repetido
+          recusado — e ele entra no razão dos selos.</span></div>
+    </form>
+  </details>
+  {% endif %}
+  {% if not (arquivamento and arquivamento.obrigatorio)
+        and a.selo and not a.selo_arquivamento and a.situacao == 'LAVRADO' %}
   <details style="padding:0 14px 14px">
     <summary class="small">Selar arquivamento (13.30)</summary>
     <form method="post" action="{{ url_for('notas_selar_arquivamento', ato_id=a.id) }}" class="grid2">
@@ -927,6 +1204,9 @@
   </details>
   {% endif %}
   {% else %}
+  {% if a.livro and not selo_sem_caminho and arquivamento and arquivamento.obrigatorio %}
+  {{ confirmar_arquivamento(a, arquivamento, csrf_token) }}
+  {% endif %}
   {% if a.livro and not selo_sem_caminho %}
   {# PEDIR O SELO DE UM ATO JÁ LANÇADO — a saída de quando o aparelho estava
      fora do ar na hora do lançamento. Sem ela o ato ficaria sem selo para

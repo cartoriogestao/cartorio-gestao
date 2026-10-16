@@ -32,7 +32,7 @@ def _as(h: int, m: int, dia: datetime = DIA) -> datetime:
 
 
 def _inicia(con, quando, tarefa="REGISTRO DE ÓBITO"):
-    return PR.iniciar_cronometro(con, responsavel_user_id=UID, responsavel_nome="Andreia",
+    return PR.iniciar_cronometro(con, responsavel_user_id=UID, responsavel_nome="Beatriz",
                                  categoria=PR.CATEGORIA_PADRAO, tarefa=tarefa, agora=quando)
 
 

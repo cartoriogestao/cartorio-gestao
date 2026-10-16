@@ -30,6 +30,46 @@
 </section>
 
 <section class="panel">
+  <h2>Conferência da instalação</h2>
+  <p>Compara cada arquivo do programa instalado com o que a última atualização instalou. Arquivo mudado fora de uma atualização — cópia direta na pasta do programa — aparece aqui, e um pacote novo que o sobrescreveria fica bloqueado até alguém decidir.</p>
+  {% set c = conferencia_instalacao %}
+  {% if c %}
+    <div class="notice {% if not c.limpo or c.pendencias %}critical{% endif %}">
+      <strong>{% if c.limpo %}Nada mudou fora de uma atualização.{% else %}Há arquivos mudados fora de uma atualização.{% endif %}</strong>
+      <br><small>Conferido em {{c.conferido_em}} · versão {{c.versao}} · base: {{ {'PACOTE':'o pacote aplicado','MEDIDO':'a medição da instalação','ACEITO':'o estado aceito pelo oficial','EMERGENCIA':'a atualização de emergência'}.get(c.origem, c.origem) }}{% if c.commit %} (commit <code>{{c.commit[:12]}}</code>){% endif %}</small>
+      {% for titulo, lista in [('Alterados', c.alterados), ('Novos (não vieram de atualização)', c.novos), ('Sumidos', c.sumidos)] %}
+        {% if lista %}<details><summary>{{titulo}}: {{lista|length}}</summary><ul>{% for rel in lista %}<li><code>{{rel}}</code></li>{% endfor %}</ul></details>{% endif %}
+      {% endfor %}
+      {% if c.pendencias %}
+        <details open><summary>Pendências de espelhamento: {{c.pendencias|length}}</summary>
+          <p class="small">Arquivos que entraram pela atualização de emergência e ainda não estão iguais no SANDBOX. Enquanto não estiverem, levar o SANDBOX ao INSTALAR apagaria o conserto.</p>
+          <ul>{% for p in c.pendencias %}<li><code>{{p.path}}</code> — desde {{p.desde}}{% if p.commit %}, commit <code>{{p.commit[:12]}}</code>{% endif %}</li>{% endfor %}</ul>
+        </details>
+      {% endif %}
+    </div>
+  {% else %}
+    <p class="muted small">Ainda não conferida. A primeira conferência lê todos os arquivos e pode levar alguns minutos; as seguintes leem só o que mudou.</p>
+  {% endif %}
+  <form method="post" class="inline">
+    <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <input type="hidden" name="action" value="conferir_instalacao">
+    <button>Conferir a instalação agora</button>
+  </form>
+  {% if c and not c.limpo %}
+    <details>
+      <summary>Aceitar o estado instalado como base</summary>
+      <p class="small">Use quando a mudança feita por fora já foi levada ao INSTALAR, ou deve mesmo ser descartada pelo próximo pacote. Fica registrado na auditoria, com o motivo.</p>
+      <form method="post" class="stack">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+        <input type="hidden" name="action" value="aceitar_retrato">
+        <label>Motivo (obrigatório)<textarea name="motivo" rows="2" required minlength="10"></textarea></label>
+        <button>Aceitar o estado instalado</button>
+      </form>
+    </details>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>1. Preparar pacote para revisão</h2>
   <form method="post" enctype="multipart/form-data" class="stack">
     <input type="hidden" name="csrf_token" value="{{csrf_token}}">

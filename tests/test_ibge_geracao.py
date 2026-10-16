@@ -285,12 +285,12 @@ def casa(tmp_path):
     app = create_app({"DATA_DIR": str(dados)})
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
     db = Database(banco)
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.set_settings({"ibge_uf": "21", "ibge_municipio": "98765",
                      "ibge_distrito": "05", "ibge_cartorio": "01"})
     c = app.test_client()
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return {"app": app, "cliente": c, "banco": banco, "db": db}

@@ -12,6 +12,9 @@
 <section class="panel">
   <form method="post" class="form-grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {# A versão do cadastro que esta tela mostrou: se outra pessoa gravar
+       antes, a rota recusa em vez de sobrescrever a correção dela. #}
+    <input type="hidden" name="versao_edicao" value="{{ versao_edicao or '' }}">
 
     <div class="span2"><strong>Identificação</strong></div>
     <label>CNM<input name="cnm" value="{{ m.cnm or '' }}"></label>
@@ -94,8 +97,8 @@
 
     <label class="span2">Observação<textarea name="observacao" rows="2">{{ m.observacao or '' }}</textarea></label>
 
-    <label class="span2">Motivo da alteração
-      <input name="motivo" required placeholder="Conferência com o livro, retificação administrativa, certificação SIGEF...">
+    <label class="span2">Motivo da retificação cadastral
+      <input name="motivo" required minlength="10" placeholder="Conferência com o livro, retificação administrativa, certificação SIGEF...">
     </label>
     <div class="span2"><button class="primary">Salvar alterações</button></div>
   </form>

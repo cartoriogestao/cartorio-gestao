@@ -41,7 +41,7 @@ AGORA = "2026-09-03T10:00:00"
 CNS = "000000"
 MATRICULA = "00000001552026100001001000012345"
 SV = {"ri_cns": CNS, "ri_cidade": "Cidade Exemplo", "ri_uf": "MA",
-      "escrevente": "JEAN", "funcao": "Escrevente"}
+      "escrevente": "MARIO", "funcao": "Escrevente"}
 
 PESSOAS = [
     {"papel": "REGISTRADO", "nome": "FULANO DE TAL", "sexo": "M",
@@ -105,8 +105,9 @@ def _assento(s) -> int:
     feito = RC.lavrar_assento(
         con, especie="NASCIMENTO", nome="FULANO DE TAL", sv=SV, agora=AGORA,
         data_extenso="tres de setembro de dois mil e vinte e seis",
-        data_fato="2020-01-15", usuario="JEAN", pessoas=PESSOAS,
-        termo_dados={"local_fato_nome": "Hospital Municipal"})
+        data_fato="2020-01-15", usuario="MARIO", pessoas=PESSOAS,
+        termo_dados={"local_fato_nome": "Hospital Municipal"},
+        ibge={"local_nascimento": 1})     # relato #130: o SIRC exige
     con.execute("UPDATE rc_assentos SET matricula=? WHERE id=?",
                 (MATRICULA, feito["assento_id"]))
     con.commit()

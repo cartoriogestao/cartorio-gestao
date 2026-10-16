@@ -39,9 +39,9 @@ def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -130,11 +130,15 @@ def test_a_tela_marca_o_parado_em_vermelho(casa):
 
 
 def test_so_os_parados(casa):
-    _tarefa(casa, "de hoje", quando=casa["db"].now()[:10])
-    _tarefa(casa, "de janeiro", quando="2026-01-05")
+    # TÍTULOS QUE NÃO CABEM NUMA FRASE — 14/10/2026. «de hoje» solto passou a
+    # aparecer em TODA tela, na prosa do registro rápido da produtividade
+    # («atividade de hoje (ou agora − duração)»), e o teste acusava a prosa.
+    # O que se mede é a TAREFA, e por isso o título tem de ser só dela.
+    _tarefa(casa, "TAREFA-PARADA-DE-HOJE", quando=casa["db"].now()[:10])
+    _tarefa(casa, "TAREFA-PARADA-DE-JANEIRO", quando="2026-01-05")
     html = _abrir(casa, "/inacabados?so_parados=1")
-    assert "de janeiro" in html
-    assert "de hoje" not in html
+    assert "TAREFA-PARADA-DE-JANEIRO" in html
+    assert "TAREFA-PARADA-DE-HOJE" not in html
 
 
 def test_filtrar_por_fonte(casa):
@@ -210,7 +214,7 @@ def test_a_pagina_monta_com_item_em_TODA_fonte(casa):
                            subject, category, received_at, created_by,
                            created_at, updated_at)
                        VALUES ('1','MALOTE','oficio do juiz','JUDICIAL',
-                               '2026-01-05','jean',?,?)""", (AGORA, AGORA))
+                               '2026-01-05','mario',?,?)""", (AGORA, AGORA))
         con.execute("""INSERT INTO tasks (title, created_at, updated_at)
                        VALUES ('uma tarefa','2026-01-05','2026-01-05')""")
 

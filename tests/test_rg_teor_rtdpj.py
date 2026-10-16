@@ -147,7 +147,7 @@ def test_modelo_lido_do_banco_com_fallback():
     con = _con_com_mo()
     # Sem linha → piso
     textos = TEOR.textos_prontos(
-        numero_registro=148, lavrante_nome="JEAN",
+        numero_registro=148, lavrante_nome="MARIO",
         lavrante_funcao="Oficial", serie="PJ_A", tipo_ato="AVERBACAO",
         con=con)
     assert "AVERBADO" in textos["intro"]
@@ -169,7 +169,7 @@ def test_modelo_lido_do_banco_com_fallback():
         ),
         quem="teste", agora="2026-09-11T12:00:00")
     textos2 = TEOR.textos_prontos(
-        numero_registro=148, lavrante_nome="JEAN",
+        numero_registro=148, lavrante_nome="MARIO",
         lavrante_funcao="Oficial", serie="PJ_A", tipo_ato="AVERBACAO",
         con=con)
     assert "TEXTO AJUSTADO pela casa" in textos2["intro"]
@@ -178,7 +178,7 @@ def test_modelo_lido_do_banco_com_fallback():
     # Voltar ao padrão = apagar
     CASA.restaurar(con, "RCPJ_TEOR_AVERBACAO")
     textos3 = TEOR.textos_prontos(
-        numero_registro=148, lavrante_nome="JEAN",
+        numero_registro=148, lavrante_nome="MARIO",
         lavrante_funcao="Oficial", serie="PJ_A", tipo_ato="AVERBACAO",
         con=con)
     assert "TEXTO AJUSTADO" not in textos3["intro"]
@@ -231,7 +231,7 @@ def test_pdf_ultima_folha_reserva_faixa_do_selo():
             "linhas_cabecalho": TEOR.linhas_cabecalho(serie="PJ_A"),
             "intro": TEOR.intro(148),
             "encerramento": TEOR.encerramento(
-                lavrante_nome="JEAN", lavrante_funcao="Oficial"),
+                lavrante_nome="MARIO", lavrante_funcao="Oficial"),
             "data": TEOR.linha_data(),
             "ctx": {"funcao": "Oficial"},
         },
@@ -257,7 +257,7 @@ def test_pdf_faixa_so_na_ultima_pagina():
         "linhas_cabecalho": TEOR.linhas_cabecalho(serie="PJ_A"),
         "intro": TEOR.intro(148),
         "encerramento": TEOR.encerramento(
-            lavrante_nome="JEAN", lavrante_funcao="Oficial"),
+            lavrante_nome="MARIO", lavrante_funcao="Oficial"),
         "data": TEOR.linha_data(),
         "ctx": {"funcao": "Oficial"},
     }
@@ -282,7 +282,7 @@ def test_pdf_com_arquivamento_duas_areas():
             "linhas_cabecalho": TEOR.linhas_cabecalho(serie="PJ_A"),
             "intro": TEOR.intro(148),
             "encerramento": TEOR.encerramento(
-                lavrante_nome="JEAN", lavrante_funcao="Oficial"),
+                lavrante_nome="MARIO", lavrante_funcao="Oficial"),
             "data": TEOR.linha_data(),
             "ctx": {"funcao": "Oficial"},
         },
@@ -304,7 +304,7 @@ def test_pdf_com_arquivamento_duas_areas():
 def test_gerar_pdf_com_arquivamento_aceita_parametro():
     pdf = TEOR.gerar_pdf(
         numero_registro=148, imagens=[_folha(), _folha((200, 200, 200))],
-        lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        lavrante_nome="MARIO", lavrante_funcao="Oficial",
         serie="PJ_A", tipo_ato="AVERBACAO",
         com_arquivamento=True)
     assert pdf.startswith(b"%PDF")
@@ -318,7 +318,7 @@ def test_gerar_pdf_escala_individual_por_pagina():
         "linhas_cabecalho": TEOR.linhas_cabecalho(serie="PJ_A"),
         "intro": TEOR.intro(148),
         "encerramento": TEOR.encerramento(
-            lavrante_nome="JEAN", lavrante_funcao="Oficial"),
+            lavrante_nome="MARIO", lavrante_funcao="Oficial"),
         "data": TEOR.linha_data(),
         "ctx": {"funcao": "Oficial"},
     }
@@ -332,7 +332,7 @@ def test_gerar_pdf_escala_individual_por_pagina():
     assert not hasattr(TEOR, "_caixa_baliza_pela_menor")
     pdf = TEOR.gerar_pdf(
         numero_registro=148, imagens=[pequena, grande],
-        lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        lavrante_nome="MARIO", lavrante_funcao="Oficial",
         serie="PJ_A", tipo_ato="AVERBACAO")
     assert pdf.startswith(b"%PDF")
     assert pdf.count(b"/Type /Page /Parent") == 2
@@ -361,7 +361,7 @@ def test_com_selo_o_carimbo_sai_no_papel_no_modelo_do_ri():
         "linhas_cabecalho": TEOR.linhas_cabecalho(serie="PJ_A"),
         "intro": TEOR.intro(148),
         "encerramento": TEOR.encerramento(
-            lavrante_nome="JEAN", lavrante_funcao="Oficial"),
+            lavrante_nome="MARIO", lavrante_funcao="Oficial"),
         "data": TEOR.linha_data(),
         "ctx": {"funcao": "Oficial"},
     }
@@ -400,7 +400,7 @@ def test_o_qr_do_selo_nao_toma_quase_toda_a_faixa():
         "linhas_cabecalho": TEOR.linhas_cabecalho(serie="PJ_A"),
         "intro": TEOR.intro(148),
         "encerramento": TEOR.encerramento(
-            lavrante_nome="JEAN", lavrante_funcao="Oficial"),
+            lavrante_nome="MARIO", lavrante_funcao="Oficial"),
         "data": TEOR.linha_data(),
         "ctx": {"funcao": "Oficial"},
     }
@@ -423,7 +423,7 @@ def test_gerar_pdf_aceita_selo_averbacao_e_arquivamento():
     """`gerar_pdf` só desenha o que já saiu — não pede selo a ninguém."""
     pdf = TEOR.gerar_pdf(
         numero_registro=148, imagens=[_folha(), _folha((200, 200, 200))],
-        lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        lavrante_nome="MARIO", lavrante_funcao="Oficial",
         serie="PJ_A", tipo_ato="AVERBACAO", com_arquivamento=True,
         selo_averbacao=_selo_de_teste("AVERBA000000UM0000000000001"),
         selo_arquivamento=_selo_de_teste("ARQUIV000000DOIS000000002"))
@@ -439,7 +439,7 @@ def test_sem_selo_continua_a_moldura_tracejada_de_sempre():
     """
     pdf = TEOR.gerar_pdf(
         numero_registro=148, imagens=[_folha()],
-        lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        lavrante_nome="MARIO", lavrante_funcao="Oficial",
         serie="PJ_A", tipo_ato="AVERBACAO")
     assert pdf.startswith(b"%PDF")
 
@@ -504,7 +504,7 @@ def test_selos_extra_nao_quebra_e_reserva_mais_altura():
         "linhas_cabecalho": TEOR.linhas_cabecalho(serie="PJ_A"),
         "intro": TEOR.intro(148),
         "encerramento": TEOR.encerramento(
-            lavrante_nome="JEAN", lavrante_funcao="Oficial"),
+            lavrante_nome="MARIO", lavrante_funcao="Oficial"),
         "data": TEOR.linha_data(),
         "ctx": {"funcao": "Oficial"},
     }
@@ -538,7 +538,7 @@ def test_selos_extra_aparecem_de_verdade_dentro_da_pagina():
         "linhas_cabecalho": TEOR.linhas_cabecalho(serie="PJ_A"),
         "intro": TEOR.intro(148),
         "encerramento": TEOR.encerramento(
-            lavrante_nome="JEAN", lavrante_funcao="Oficial"),
+            lavrante_nome="MARIO", lavrante_funcao="Oficial"),
         "data": TEOR.linha_data(),
         "ctx": {"funcao": "Oficial"},
     }
@@ -577,7 +577,7 @@ def test_gerar_pdf_com_selos_extra_produz_pdf_valido(tmp_path):
     extras = [{"rotulo": "15.1", **_selo_de_teste("PRENOT000000UM0000000000A")}]
     pdf = TEOR.gerar_pdf(
         numero_registro=148, imagens=[caminho],
-        lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        lavrante_nome="MARIO", lavrante_funcao="Oficial",
         serie="PJ_A", tipo_ato="AVERBACAO",
         selo_averbacao=_selo_de_teste(),
         selos_extra=extras)

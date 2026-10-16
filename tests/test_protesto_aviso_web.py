@@ -173,12 +173,15 @@ def test_a_ficha_mostra_os_avisos_ja_emitidos(s):
 def test_a_tela_abre_e_diz_o_que_fazer(s):
     html = s["c"].get("/protesto/avisos").get_data(as_text=True)
     assert "Avisos de intimação" in html
-    assert "Nenhum aviso esperando edital" in html
+    # o título da lista mudou em 15/10/2026: Resolve antes do edital
+    assert "Nenhum aviso não entregue esperando" in html
     assert "Nenhum aviso esperando." in html
 
 
 def test_a_tela_esta_no_menu(s):
-    html = s["c"].get("/protesto/titulos").get_data(as_text=True)
+    # A lista mora em `/protesto` desde a 3.6.193 (24/09/2026); o endereço
+    # antigo só redireciona, e o redirecionamento não traz menu — 14/10/2026.
+    html = s["c"].get("/protesto").get_data(as_text=True)
     assert "/protesto/avisos" in html
 
 
@@ -203,14 +206,14 @@ def test_entrega_sem_exito_NAO_intima_e_manda_para_o_edital(s):
     html = registrar(s, aviso_id(s), entregue="0", motivo="11",
                      observacao="ninguém em casa").get_data(as_text=True)
     assert "Ausente" in html
-    assert "lista do edital" in html
+    assert "Resolve, e depois edital" in html
 
     con = _con(s)
     assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
                        (tid,)).fetchone()[0] == "APONTADO"
     assert con.execute("SELECT COUNT(*) c FROM pt_atos WHERE tipo='INTIMACAO'"
                        ).fetchone()["c"] == 0
-    assert "Esperando edital" in html
+    assert "Não entregues — Resolve, e depois edital" in html
 
 
 def test_nao_entrega_sem_motivo_avisa_e_nao_grava(s):

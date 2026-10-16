@@ -45,9 +45,10 @@ O QUE ELE NÃO FAZ
     nem apaga nada no Proton (a pasta é da equipe), não guarda senha e não digita
     senha. `expedientes.created_by` é NOT NULL e o sistema não tem usuário-robô
     (decisão dele de 06/10: não criar conta para agente); o oficial decidiu em
-    11/10/2026 que o agente cadastra **em nome dele, jean**, e que **só ele**
+    11/10/2026 que o agente cadastra **em nome dele**, e que **só ele**
     acessa o malote, com a ajuda do agente. A configuração
-    `settings.malote_cadastra_em_nome_de` ganha do padrão.
+    O login vai em `settings.malote_cadastra_em_nome_de` (gravada na produção
+    em 14/10/2026); o código não traz login nenhum.
 """
 from __future__ import annotations
 
@@ -100,11 +101,13 @@ SETOR_PADRAO = "Gestão"
 _IGNORAR = {".ds_store", "desktop.ini", "thumbs.db"}
 
 #: EM NOME DE QUEM O AGENTE CADASTRA — decisão do oficial em 11/10/2026: «o
-#   agente vai cadastrar no meu nome, jean. agora apenas eu vou acessar o malote
+#   agente vai cadastrar no meu nome. agora apenas eu vou acessar o malote
 #   com sua ajuda para triagem». A configuração
 #   `settings.malote_cadastra_em_nome_de` continua ganhando deste padrão: mudar
 #   de ideia não exige versão nova.
-EM_NOME_DE_PADRAO = "jean"
+# 14/10/2026: o padrão era o login do oficial escrito aqui; saiu porque o
+# código vai ao GitHub. Sem a configuração, o agente mede e não cadastra.
+EM_NOME_DE_PADRAO = ""
 
 #: A CAPA QUE O MALOTE DIGITAL PÕE NO PDF — medida em 11/10/2026 nos PDFs do
 #   Proton: 137 de 153 a têm, e nas 137 vêm os mesmos campos na mesma ordem

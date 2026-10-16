@@ -30,9 +30,7 @@ from __future__ import annotations
 from flask import Response, flash, redirect, render_template, request, url_for
 
 import centrais_cred as CENTCRED
-import centrais_fila as FILA
 import cra21_api as CRA
-import protesto_centrais_fila as PFILA
 
 # QUEM ENTRA. Falar com a CRA é ato de quem responde pela serventia — o balcão
 # baixa arquivo pela tela de remessa, que já existe; **aqui se fala direto com
@@ -71,8 +69,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     """Pendura a tela da CRA no app já construído."""
 
     def ambiente_pedido() -> str:
-        pedido = str(request.values.get("ambiente") or "").strip().upper()
-        return pedido if pedido in CENTCRED.AMBIENTES else CENTCRED.HOMOLOGACAO
+        """**Sempre PRODUÇÃO, desde 14/10/2026** — ordem do oficial: «tire a
+        opção de funcionar na homologação, agora é tudo produção». Até 13/10
+        a tela lia `ambiente` do pedido e caía na homologação por padrão; o
+        que vier no endereço agora não muda nada."""
+        return CENTCRED.PRODUCAO
 
     @app.route("/protesto/cra/api")
     @roles_required(*QUEM_FALA_COM_A_CRA)
@@ -81,7 +82,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         ambiente = ambiente_pedido()
         return render_template(
             "protesto_cra_api.html",
-            ambiente=ambiente, ambientes=CENTCRED.AMBIENTES,
+            ambiente=ambiente,
+            fora_de_uso=CENTCRED.fora_de_uso(CENTCRED.CRA),
             tem_credencial=CENTCRED.tem(CENTCRED.CRA, ambiente),
             usuario=CENTCRED.usuario(CENTCRED.CRA, ambiente),
             endereco=CRA.endereco_do_ambiente(ambiente),
@@ -95,22 +97,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         """Fala com a CRA e diz o que aconteceu. **Não baixa nem envia nada.**"""
         ambiente = ambiente_pedido()
         try:
-            # HOMOLOGAÇÃO PASSA PELA FILA COMUM DAS CENTRAIS (marco b,
-            # 05/10/2026): o mesmo `BuscarApresentante`, agora enfileirado,
-            # processado e anotado — e visível em /centrais/status. PRODUÇÃO
-            # continua direto: a fila deste marco não fala com produção.
-            if ambiente == CENTCRED.HOMOLOGACAO:
-                d = PFILA.testar_pela_fila(db, CENTCRED.CRA, ambiente,
-                                           por=_quem_esta(app))
-            else:
-                d = CRA.diagnostico(ambiente)
-        except RECUSAS_DO_BALCAO + (FILA.FilaError,) as erro:
+            # SÓ PRODUÇÃO, E DIRETO (14/10/2026). Até 13/10 a homologação
+            # passava pela fila comum das Centrais (marco b, 05/10/2026), que
+            # não fala com produção; com a homologação fora da tela, o teste
+            # é o `BuscarApresentante` de produção, direto, como já era.
+            d = CRA.diagnostico(ambiente)
+        except RECUSAS_DO_BALCAO as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_cra_api", ambiente=ambiente))
         audit("cra_diagnostico", None, None,
               {"ambiente": ambiente, "ok": d["ok"],
                "fila_id": d.get("fila_id")})
-        flash(d["motivo"] + _nota_da_fila(d), "success" if d["ok"] else "danger")
+        flash(d["motivo"], "success" if d["ok"] else "danger")
         return redirect(url_for("protesto_cra_api", ambiente=ambiente))
 
     @app.route("/protesto/cra/api/baixar", methods=["POST"])
@@ -207,21 +205,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                      f'consulta-{qual}.txt"'})
 
 
-def _quem_esta(app) -> str | None:
-    """O nome de quem clicou, para a fila. Sem usuário, None."""
-    try:
-        nome = app.extensions.get("usuario_nome")
-        return (nome() or None) if nome else None
-    except Exception:
-        return None
-
-
-def _nota_da_fila(d: dict) -> str:
-    """O pedaço da frase que diz onde ver o item da fila. Só calcula."""
-    if not d.get("fila_id"):
-        return ""
-    return (f" (teste nº {d['fila_id']} da fila das Centrais — veja em "
-            f"Configurações → Centrais → status.)")
+# `_quem_esta` e `_nota_da_fila` FORAM APAGADAS EM 14/10/2026, e não
+# desligadas: só serviam ao teste de homologação pela fila comum das
+# Centrais, que saiu da tela com a ordem «agora é tudo produção». Função sem
+# chamador é a peça que alguém religa sem saber por que existia.
 
 
 def _trazer(qual: str, nome: str, ambiente: str, *, com_imagem: bool) -> str:

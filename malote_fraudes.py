@@ -269,7 +269,7 @@ Responda SÓ com um objeto JSON, sem texto em volta:
 {
   "aviso_de_fraude": true | false,
   "resumo": "até 400 caracteres: quem comunica, o que aconteceu e onde",
-  "processos": ["números de processo, SEI, ofício ou boletim de ocorrência citados"],
+  "processos": ["números de processo, SEI, ofício ou plinio de vasco citados"],
   "pessoas": [
     {"nome": "nome completo, como está no texto", "documento": "marca do CPF/CNPJ, ou vazio",
      "papel": "VITIMA" | "ENVOLVIDO" | "DOCUMENTO",
@@ -306,7 +306,7 @@ def mascarar_numeros(texto: str) -> tuple[str, dict[str, str]]:
 
     No ensaio de 13/10/2026 a máscara inteira (`gestor_expedientes.mascarar`,
     a da triagem) estragou o que este caminho existe para fazer: juntou
-    «vendedor Maicom Manica e como outorgado comprador Walter da Silva Campos»
+    «vendedor Maicom Manica e como outorgado comprador Lauro da Silva Tavares»
     numa marca só, e num aviso de Santa Catarina a IA não achou ninguém. Tirar
     nome de pessoa de um texto em que todo nome virou marca não funciona.
 
@@ -622,10 +622,17 @@ def main(argv=None) -> int:
     ap.add_argument("--descartar", help="ids separados por vírgula")
     ap.add_argument("--motivo", help="motivo do descarte")
     ap.add_argument("--aplicar", action="store_true", help="leva as aprovadas à lista de fraudes")
-    ap.add_argument("--em-nome-de", default="jean")
+    ap.add_argument("--em-nome-de", default=None,
+                    help="login; sem ele vale settings.malote_cadastra_em_nome_de")
     ap.add_argument("--pagina", help="grava a página de revisão (HTML)")
     a = ap.parse_args(argv)
     con = sqlite3.connect(a.banco, timeout=60)
+    if not a.em_nome_de:
+        r = con.execute("SELECT value FROM settings WHERE key='malote_cadastra_em_nome_de'").fetchone()
+        a.em_nome_de = str(r[0] or "").strip() if r else ""
+        if not a.em_nome_de:
+            raise SystemExit("Diga em nome de quem: --em-nome-de LOGIN, ou grave "
+                             "settings.malote_cadastra_em_nome_de.")
     con.row_factory = sqlite3.Row
     try:
         if a.carregar or a.aprovar or a.descartar or a.aplicar:

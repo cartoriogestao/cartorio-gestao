@@ -1,4 +1,9 @@
-﻿{% if global_stats.implantacao_abertas and user.role in ['ADMIN','MANAGER'] %}
+﻿{% import '_aviso.html' as aviso %}
+{# Toda faixa daqui é aviso da CASA, desenhado em toda tela pelo `base.html`
+   — e por isso cada uma tem o botão de fechar (relato #62): sai da frente e
+   volta na próxima carga. Os «Dispensar» do ADMIN continuam sendo outra
+   coisa: aqueles gravam. 14/10/2026. #}
+{% if global_stats.implantacao_abertas and user.role in ['ADMIN','MANAGER'] %}
 <div class="flash warning flash-compact" data-aviso>
   <div class="flash-compact-linha">
     <strong>{{ global_stats.implantacao_abertas }} coisa(s) esperando você informar</strong>
@@ -79,6 +84,7 @@
     <a href="{{ nu_avisos_faixa_critica.tarefas_url }}" class="nu-avisos-link-lista">Ver tarefas</a>
   </div>
   {% endif %}
+  {{ aviso.fechar() }}
 </div>
 {% endif %}
 
@@ -120,6 +126,7 @@
     <a href="{{ nu_avisos_faixa_vermelha.tarefas_url }}" class="nu-avisos-link-lista">Ver tarefas</a>
   </div>
   {% endif %}
+  {{ aviso.fechar() }}
 </div>
 {% endif %}
 
@@ -144,6 +151,7 @@
       {% endfor %}
     </ul>
   </div>
+  {{ aviso.fechar() }}
 </div>
 {% endif %}
 
@@ -159,6 +167,7 @@
     </span>
     <a href="{{ nu_tarefas_faixa.url }}" class="nu-avisos-link-lista">Ver tarefas</a>
   </div>
+  {{ aviso.fechar() }}
 </div>
 {% endif %}
 
@@ -168,5 +177,6 @@
     <strong>{{ nu_tarefas_faixa_sem_responsavel.texto }}</strong>
     <a href="{{ nu_tarefas_faixa_sem_responsavel.url }}" class="nu-avisos-link-lista">Ver tarefas</a>
   </div>
+  {{ aviso.fechar() }}
 </div>
 {% endif %}

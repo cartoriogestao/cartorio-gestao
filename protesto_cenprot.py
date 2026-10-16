@@ -850,8 +850,20 @@ def _motivo_do_edital(con: sqlite3.Connection, titulo_id: int) -> str:
     try:
         detalhe = json.loads(linha["detalhe_json"] or "{}")
     except (TypeError, ValueError):
-        return ""
-    return str(detalhe.get("motivo") or "").strip()
+        detalhe = {}
+    motivo = str(detalhe.get("motivo") or "").strip()
+    if motivo:
+        return motivo
+    # O EDITAL QUE ESTE SISTEMA PUBLICA guarda o motivo no AVISO, e não no ato
+    # — achado em 15/10/2026, ao levar o motivo ao XML diário: até aqui o
+    # edital eletrônico dos editais novos sairia com este campo vazio. Ele
+    # vem do catálogo medido (`tbMotivoNEntrega`), como «Ausente».
+    import protesto_aviso as AV
+    aviso = con.execute(
+        """SELECT motivo FROM pt_avisos WHERE titulo_id = ? AND
+               situacao = 'EDITAL' AND motivo IS NOT NULL
+            ORDER BY id DESC LIMIT 1""", (int(titulo_id),)).fetchone()
+    return AV.motivo_rotulo(aviso[0]) if aviso else ""
 
 
 def gerar_edital_eletronico(con: sqlite3.Connection, *, dia: str,

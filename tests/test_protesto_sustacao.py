@@ -73,8 +73,9 @@ def banco() -> sqlite3.Connection:
 def titulo(con, *, numero="84713/1") -> int:
     cur = con.execute(
         """INSERT INTO pt_titulos(especie, numero_titulo, nosso_numero,
-               valor_centavos, saldo_centavos, situacao, origem, criado_em)
-           VALUES ('DMI',?,'00200000991',148278,148278,'RECEBIDO','CRA',?)""",
+               valor_centavos, saldo_centavos, situacao, origem, criado_em,
+               motivo_protesto)
+           VALUES ('DMI',?,'00200000991',148278,148278,'RECEBIDO','CRA',?,'1')""",
         (numero, AGORA))
     tid = int(cur.lastrowid)
     con.execute(
@@ -443,8 +444,15 @@ def test_a_CERTIDAO_diz_que_os_efeitos_estao_suspensos():
     assert achados[0]["efeitos_suspensos"] is False
 
     suspender(con, tid)
-    achados = PC.buscar(con, documento="04785512388")
-    assert len(achados) == 1, "o protesto não pode sumir da certidão"
+    # MUDOU EM 14/10/2026, por decisão do oficial que é a letra da lei (Lei
+    # 9.492, art. 27, § 2º; CN-MA arts. 944 e 948; Gentil, cap. 7, [p. 2693]):
+    # suspensos os efeitos, a publicidade para — o protesto NÃO entra na
+    # certidão comum. Até aqui este teste exigia o contrário («o protesto não
+    # pode sumir»). Com ordem judicial expressa, ele entra, com a nota.
+    assert PC.buscar(con, documento="04785512388") == []
+    achados = PC.buscar(con, documento="04785512388",
+                        autorizacao="ORDEM_JUDICIAL")
+    assert len(achados) == 1
     assert achados[0]["efeitos_suspensos"] is True
     assert achados[0]["suspensao_juizo"] == JUIZO
     assert achados[0]["suspensao_processo"] == PROCESSO

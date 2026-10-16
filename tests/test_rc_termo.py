@@ -53,9 +53,9 @@ def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -417,7 +417,7 @@ def test_quem_assina_vem_de_fora_do_modelo(casa):
     texto = TERMO.montar(con, aid, serventia=outra)
     assert "BEATRIZ EXEMPLO DE SOUZA" in texto
     assert "Tabeliã Registradora Substituta" in texto
-    assert "JEAN" not in texto
+    assert "MARIO" not in texto
 
 
 # ------------------------------------------------ o catálogo e o acervo
@@ -445,7 +445,7 @@ def test_o_ajuste_da_casa_vence_o_padrao_tambem_no_termo(casa):
         # que fica vermelho.
         MOD.salvar(con, "RC_TERMO_NASCIMENTO",
                    corpo="TERMO AJUSTADO — {nome}",
-                   quem="jean", agora=AGORA)
+                   quem="mario", agora=AGORA)
     texto = TERMO.montar(con, aid, serventia=SERVENTIA)
     assert "TERMO AJUSTADO —" in texto
     assert "MARIA NUNES SANTOS ARAÚJO" in texto
@@ -475,7 +475,7 @@ def test_modelo_quebrado_vira_erro_de_regra_e_nao_HTTP_500(casa):
     with con:
         aid = _nascimento_completo(con)
         MOD.salvar(con, "RC_TERMO_NASCIMENTO", corpo="Aos {nao_existe} dias.",
-                   quem="jean", agora=AGORA)
+                   quem="mario", agora=AGORA)
     with pytest.raises(TERMO.TermoError) as erro:
         TERMO.montar(con, aid, serventia=SERVENTIA)
     # A intenção é a mesma: **modelo torto é erro de regra, com frase de balcão,
@@ -500,7 +500,7 @@ def test_modelo_do_formato_antigo_e_RECUSADO_e_nao_sai_torto(casa):
     with con:
         aid = _nascimento_completo(con)
         MOD.salvar(con, "RC_TERMO_NASCIMENTO",
-                   corpo="<p>TERMO — {{ a.nome }}</p>", quem="jean",
+                   corpo="<p>TERMO — {{ a.nome }}</p>", quem="mario",
                    agora=AGORA)
     with pytest.raises(TERMO.TermoError) as erro:
         TERMO.montar(con, aid, serventia=SERVENTIA)

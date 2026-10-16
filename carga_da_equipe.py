@@ -4,8 +4,8 @@
      e consolidar os relatos diários»               — o oficial, 12/10/2026
 
 MEDIDO ANTES (produção, 12/10/2026, só leitura):
-    - 149 tarefas abertas; Leidiane 44 (17 vencidas), jean 26, Vanessa 22,
-      Gerlany 18, Andreia 15, alessandro 13, Matheus 11;
+    - 149 tarefas abertas; escrevente A 44 (17 vencidas), oficial 26, escrevente B 22,
+      escrevente C 18, escrevente D 15, escrevente E 13, escrevente F 11;
     - 124 das 149 marcadas ALTA ou CRÍTICA — quando quase tudo é crítico, a
       prioridade deixa de ordenar;
     - «repetidas» de verdade quase não há: as seis do CNIB com o mesmo título
@@ -87,9 +87,13 @@ def carga(con: sqlite3.Connection, hoje: date | None = None) -> list[dict]:
     hoje_iso = (hoje or date.today()).isoformat()
     por: dict[int, dict] = {}
     nomes = {r[0]: (r[1] or r[2]) for r in con.execute("SELECT id, full_name, username FROM users")}
+    # A SUSPENSA NÃO PESA NA CARGA (relato #132): enquanto espera o cliente ou
+    # a data, ela não é serviço na mão de ninguém, nem vencida.
+    import tarefa_suspensao as TS
+    nao_suspensa, params_suspensao = TS.condicao_nao_suspensa(None, hoje_iso, con=con)
     for uid, prio, venc in con.execute(
             "SELECT assigned_user_id, priority, due_date FROM tasks WHERE status NOT IN (?, ?) "
-            "AND assigned_user_id IS NOT NULL", FECHADAS):
+            f"AND assigned_user_id IS NOT NULL AND {nao_suspensa}", (*FECHADAS, *params_suspensao)):
         d = por.setdefault(uid, {"usuario_id": uid, "nome": nomes.get(uid, str(uid)), "abertas": 0,
                                  "vencidas": 0, "altas": 0, "pontos": 0})
         d["abertas"] += 1
@@ -111,11 +115,14 @@ def sugestoes_de_passagem(con: sqlite3.Connection, hoje: date | None = None,
     nomes = {r[0]: (r[1] or r[2]) for r in con.execute("SELECT id, full_name, username FROM users")}
     hoje_iso = (hoje or date.today()).isoformat()
     saida = []
+    import tarefa_suspensao as TS
+    nao_suspensa, params_suspensao = TS.condicao_nao_suspensa(None, hoje_iso, con=con)
     for tid, titulo, dono, sub, venc, prio in con.execute(
             "SELECT id, title, assigned_user_id, backup_user_id, due_date, priority FROM tasks "
             "WHERE status NOT IN (?, ?) AND backup_user_id IS NOT NULL "
-            "AND backup_user_id <> assigned_user_id "
-            "ORDER BY CASE WHEN due_date < ? THEN 0 ELSE 1 END, due_date", (*FECHADAS, hoje_iso)):
+            f"AND backup_user_id <> assigned_user_id AND {nao_suspensa} "
+            "ORDER BY CASE WHEN due_date < ? THEN 0 ELSE 1 END, due_date",
+            (*FECHADAS, *params_suspensao, hoje_iso)):
         p_dono, p_sub = pontos.get(dono, 0), pontos.get(sub, 0)
         if p_dono and p_dono >= FOLGA_PARA_SUGERIR * max(p_sub, 1):
             saida.append({"id": tid, "titulo": titulo, "de": nomes.get(dono, dono),

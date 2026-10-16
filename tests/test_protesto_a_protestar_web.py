@@ -82,9 +82,9 @@ def intimado(s, *, numero="84713/1", nome="MARIA SANTOS",
         cur = con.execute(
             """INSERT INTO pt_titulos(especie, numero_titulo, nosso_numero,
                    valor_centavos, saldo_centavos, situacao, protocolo,
-                   origem, criado_em)
+                   origem, criado_em, motivo_protesto)
                VALUES ('DMI',?,'00200000991',148278,148278,'INTIMADO',
-                       '2608310001','CRA',?)""", (numero, AGORA))
+                       '2608310001','CRA',?,'1')""", (numero, AGORA))
         tid = int(cur.lastrowid)
         con.execute(
             """INSERT INTO pt_devedores(titulo_id, nome, documento_tipo,

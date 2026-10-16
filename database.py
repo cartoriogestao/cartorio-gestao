@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import banco_pg
 from ajuda import init_ajuda_schema
 from ajuda_base import init_ajuda_base_schema
 from ajuda_problemas import init_problemas_schema
@@ -36,6 +37,7 @@ try:
 except ImportError:
     RECOMMENDATIONS, REPORT_DATE, REPORT_SOURCE, REPORT_TITLE = [], "", "", ""
 from notas_schema import init_notas_schema
+from notas_certidao import init_notas_certidao_schema
 import notas_modelos
 from nucleo_schema import init_nucleo_schema
 from cn_schema import init_cn_schema
@@ -58,8 +60,11 @@ from selador_config import init_selador_schema
 from rt_schema import init_rt_schema
 from us_schema import init_us_schema
 from ex_schema import init_ex_schema
+from tarefa_suspensao import init_suspensao_schema
+import tarefa_suspensao as TS
 from nu_avisos_gestao import init_nu_avisos_schema
 from rascunho_de_tela import init_rascunho_schema
+from protocolo_documentos import init_protocolo_documentos_schema
 from rr_schema import init_rr_schema
 from wa_schema import init_wa_schema
 from robo_schema import init_robo_schema
@@ -167,9 +172,43 @@ class Database:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if banco_pg.ativo():
+            banco_pg.registrar_banco(self.db_path)
+            banco_pg.instalar_desvio()
+            # O ARQUIVO VAZIO É MARCA, E NÃO BANCO: 45 testes (e quem mais
+            # procurar) acham o banco pelo arquivo `*.sqlite3` na pasta de
+            # dados, e no PostgreSQL ele não nascia (medido pelo L6, 15/10
+            # 20h). Quem o abre pelo sqlite3 cai no desvio e vai ao schema.
+            if not self.db_path.exists():
+                self.db_path.touch()
+            # Banco novo: reproduz a criação gravada (ver banco_pg); o primeiro
+            # do processo roda o init_schema e grava. Banco existente migra
+            # pelo init_schema de sempre.
+            if not banco_pg.schema_existe(self.db_path):
+                if banco_pg.tomar_da_reserva(self.db_path):
+                    return
+                if banco_pg.criar_por_reproducao(self.db_path):
+                    return
+                banco_pg.comecar_gravacao(self.db_path)
+                deu_certo = False
+                try:
+                    self.init_schema()
+                    deu_certo = True
+                finally:
+                    banco_pg.terminar_gravacao(deu_certo)
+                if deu_certo:
+                    banco_pg.guardar_semente(self.db_path)
+                return
         self.init_schema()
 
     def connect(self) -> sqlite3.Connection:
+        # COM `CG_PG_DSN` O BANCO É O POSTGRESQL (migração de 15/10/2026,
+        # `banco_pg.py`): a conexão devolvida se comporta como esta, e o resto
+        # do sistema não precisa saber. Sem a variável, nada muda.
+        if banco_pg.ativo():
+            con = banco_pg.conectar(self.db_path, fechar_no_with=True)
+            con.row_factory = sqlite3.Row
+            return con
         con = sqlite3.connect(self.db_path, timeout=15, factory=ClosingConnection)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA foreign_keys=ON")
@@ -680,10 +719,17 @@ class Database:
         # por ultimo: nenhuma aponta para tabela nenhuma — `ex_anotacoes`
         # guarda o nome da tabela como TEXTO, porque serve nove delas.
         init_ex_schema(con)
+        # A SUSPENSÃO DA TAREFA — relato #132, 15/10/2026: colunas novas em
+        # `tasks`, só acrescentadas, e a produção migra ao subir.
+        init_suspensao_schema(con)
         # O RASCUNHO DE QUALQUER TELA — relato #36 do oficial:
         # «em todos os atos (...) um campo para salvar o
         # progresso e continuar depois».
         init_rascunho_schema(con)
+        # OS DOCUMENTOS PARA QUALIFICACAO DO PROTOCOLO GERAL — relato #135,
+        # 15/10/2026. So `ADD COLUMN` em `attachments` (o tipo do documento e a
+        # retirada com motivo): a tabela de anexo continua sendo uma so.
+        init_protocolo_documentos_schema(con)
         # A FILA DO WHATSAPP mora DENTRO desta casa (mesmo SQLite).
         init_wa_schema(con)
         # ROBOS DE RASCUNHO (fatia 1) — mesmo SQLite, nunca livro.
@@ -709,6 +755,9 @@ class Database:
         init_atrib_certidao_schema(con)
         init_caixa_schema(con)
         init_notas_schema(con)
+        # A certidao das Notas (15/10/2026) depende de `nt_atos`, e por isso
+        # vem logo depois do esquema das Notas.
+        init_notas_certidao_schema(con)
         # FOLHA PRESA A ITEM JA CANCELADO VOLTA SOZINHA AO ESTOQUE. Esta
         # reconciliacao vem depois de TODOS os esquemas porque alcanca as
         # certidoes das quatro atribuicoes, os atos do RI e os assentos do
@@ -1085,7 +1134,7 @@ class Database:
             return task_id
 
     def list_tasks(self, status: str | None = None, sector: str | None = None, limit: int = 1000, usuario_id: int | None = None,
-                   filtros: dict | None = None) -> list[sqlite3.Row]:
+                   filtros: dict | None = None, busca: str | None = None) -> list[sqlite3.Row]:
         # AS VISTAS SAO DO RELATO #59 — o oficial pediu que a tarefa funcione
         # como processo, com transito de responsabilidade:
         #
@@ -1113,6 +1162,11 @@ class Database:
                                          args_aberta=list(args_aberta), andamento=andamento)
             filters += conds
             params += args
+        # A BUSCA POR TEXTO — relato #122, 07/10/2026: número, título,
+        # descrição e responsável, pela régua que Processos também usa.
+        conds, args = TO.busca_sql(busca, responsavel="u.full_name")
+        filters += conds
+        params += args
         where = ("WHERE " + " AND ".join(filters)) if filters else ""
         # A ORDEM usa a MESMA lista de situacoes em aberto da vista. Escrita a
         # mao aqui, ela envelheceria sozinha no dia em que a sexta situacao
@@ -1217,6 +1271,14 @@ class Database:
                 updates += ["completed_at=NULL", "completed_by=NULL"]
             params.append(task_id)
             con.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id=?", params)
+            # A SUSPENSÃO ACOMPANHA A TAREFA — relato #132. Concluir ou cancelar
+            # encerra a suspensão junto; mudar o vencimento à mão durante ela
+            # move também o vencimento de antes, de onde a retomada recalcula —
+            # senão retomar desfaria a correção de quem editou.
+            if situacao is not None and not TP.tem_servico_em_andamento(situacao):
+                TS.encerrar_pelo_fim_da_tarefa(con, task_id, situacao, user_id, now)
+            elif "due_date" in fields and old["due_date"] != fields["due_date"]:
+                TS.vencimento_editado(con, task_id, old["due_date"], fields["due_date"])
 
     def add_task_note(self, task_id: int, user_id: int, note: str, tipo: str | None = None) -> None:
         """Registra andamento (NOTA). `tipo` vai em new_value (código TIPOS_ANDAMENTO)."""
@@ -1318,8 +1380,11 @@ class Database:
 
     def ensure_overdue_escalations(self, today: date | None = None) -> int:
         today = today or date.today()
+        # A SUSPENSA NÃO SE ESCALONA — relato #132: enquanto ela espera o
+        # cliente (ou a data), o substituto não tem o que regularizar.
+        nao_suspensa, params_suspensao = TS.condicao_nao_suspensa(None, today)
         with self.transaction() as con:
-            rows = con.execute("SELECT id,due_date,backup_user_id FROM tasks WHERE status NOT IN ('CONCLUIDA','CANCELADA') AND due_date IS NOT NULL AND due_date < ? AND backup_user_id IS NOT NULL", (today.isoformat(),)).fetchall()
+            rows = con.execute(f"SELECT id,due_date,backup_user_id FROM tasks WHERE status NOT IN ('CONCLUIDA','CANCELADA') AND due_date IS NOT NULL AND due_date < ? AND backup_user_id IS NOT NULL AND {nao_suspensa}", (today.isoformat(), *params_suspensao)).fetchall()
             count = 0
             for r in rows:
                 key = f"vencimento:{r['due_date']}"
@@ -1335,6 +1400,15 @@ class Database:
                 con.execute("INSERT INTO task_history(task_id,ts,user_id,action,new_value,note) VALUES (?,?,NULL,'ESCALONAMENTO_AUTOMATICO',?,?)", (r["id"], self.now(), key, f"Tarefa vencida. Responsável substituto {substituto} deve acompanhar a regularização."))
                 count += 1
             return count
+
+    def encerrar_suspensoes_vencidas(self, today: date | None = None) -> int:
+        """A volta automática das suspensões por prazo — relato #132.
+
+        A cobrança já volta sozinha no dia, na leitura; esta passada da
+        manutenção diária só escreve o rastro («retomada automática») e limpa
+        as colunas. Idempotente."""
+        with self.transaction() as con:
+            return TS.encerrar_as_vencidas(con, agora=self.now(), hoje=today)
 
     def create_recurrence(self, data: dict[str, Any], user_id: int) -> int:
         now = self.now()
@@ -1584,18 +1658,26 @@ class Database:
         # Duas telas discordando sobre a mesma palavra é o carimbo que mente — e
         # o número que fica fora é declarado logo abaixo.
         aberta, params_abertas = TP.condicao_aberta()
+        # A SUSPENSA SAI DA COBRANÇA — relato #132, 15/10/2026: não é aberta a
+        # cobrar nem vencida, e aparece contada à parte («suspensas»), para o
+        # número de cima não ficar menor sem dizer por quê.
+        suspensa, params_suspensa = TS.condicao_suspensa(None, today)
+        cobravel = f"{aberta} AND NOT {suspensa}"
+        params_cobravel = [*params_abertas, *params_suspensa]
         with self.connect() as con:
             row = con.execute(
                 f"""SELECT
-                SUM(CASE WHEN {aberta} THEN 1 ELSE 0 END) open_tasks,
-                SUM(CASE WHEN {aberta} AND due_date < ? THEN 1 ELSE 0 END) overdue,
-                SUM(CASE WHEN {aberta} AND due_date >= ? AND due_date <= ? THEN 1 ELSE 0 END) soon,
-                SUM(CASE WHEN status='AGUARDANDO_TERCEIRO' THEN 1 ELSE 0 END) waiting
+                SUM(CASE WHEN {cobravel} THEN 1 ELSE 0 END) open_tasks,
+                SUM(CASE WHEN {cobravel} AND due_date < ? THEN 1 ELSE 0 END) overdue,
+                SUM(CASE WHEN {cobravel} AND due_date >= ? AND due_date <= ? THEN 1 ELSE 0 END) soon,
+                SUM(CASE WHEN status='AGUARDANDO_TERCEIRO' THEN 1 ELSE 0 END) waiting,
+                SUM(CASE WHEN {aberta} AND {suspensa} THEN 1 ELSE 0 END) suspensas
                 FROM tasks""",
                 (
-                    *params_abertas,
-                    *params_abertas, today.isoformat(),
-                    *params_abertas, today.isoformat(), soon,
+                    *params_cobravel,
+                    *params_cobravel, today.isoformat(),
+                    *params_cobravel, today.isoformat(), soon,
+                    *params_abertas, *params_suspensa,
                 ),
             ).fetchone()
             # A MESMA RÉGUA DA LISTA — problema #96: o contador «Expedientes
@@ -1626,6 +1708,7 @@ class Database:
             falta = 0
         return {"open_tasks": int(row["open_tasks"] or 0), "overdue": int(row["overdue"] or 0), "soon": int(row["soon"] or 0), "waiting": int(row["waiting"] or 0), "open_expedientes": int(exp), "inspection_without_start": int(pending_base),
                 "tarefas_fora_do_vocabulario": int(fora_do_vocabulario or 0),
+                "tarefas_suspensas": int(row["suspensas"] or 0),
                 "disputas_de_escrita": int(disputas["total"]),
                 "disputas_recentes": int(disputas["recentes"]),
                 "disputas_desde": disputas["primeira"],
@@ -1633,6 +1716,9 @@ class Database:
 
     def backup_database(self, dest_path: Path) -> Path:
         dest_path.parent.mkdir(parents=True, exist_ok=True)
+        if banco_pg.ativo():
+            # No PostgreSQL a cópia é um pg_dump do schema deste banco.
+            return banco_pg.copiar_para_arquivo(self.db_path, dest_path)
         source = self.connect()
         target = sqlite3.connect(dest_path)
         try:

@@ -266,7 +266,7 @@ def test_o_modulo_nao_guarda_texto_de_regra_dentro_dele():
 
 def _contexto():
     return AF.Contexto(db=None, raiz=RAIZ, pasta_de_dados=RAIZ, agora="2026-09-15T14:00",
-                       usuario="jean", sessao_id=1, versao=REGRAS.carimbo()["versao"])
+                       usuario="mario", sessao_id=1, versao=REGRAS.carimbo()["versao"])
 
 
 def test_a_ferramenta_de_regras_e_de_LEITURA_e_vai_para_todo_mundo():

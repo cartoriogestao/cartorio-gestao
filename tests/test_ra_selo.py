@@ -322,7 +322,7 @@ class SeloDaCertidaoDoLivroTresTests(unittest.TestCase):
     def test_o_envelope_e_o_do_imovel_com_o_item_da_tabela(self):
         import ra_selo as RS
         envelope = RS.envelope_da_certidao(
-            escrevente="JEAN", versao_tabela="0520260101",
+            escrevente="MARIO", versao_tabela="0520260101",
             registro_numero=1243, quantidade=3)
         self.assertEqual(envelope["codigoTipoAto"], "16.24.4")
         self.assertEqual(envelope["quantidade"], 3,
@@ -338,7 +338,7 @@ class SeloDaCertidaoDoLivroTresTests(unittest.TestCase):
         próprio ato (`AV - 1 do Registro 1332`, medido)."""
         import ra_selo as RS
         parte = RS.envelope_da_certidao(
-            escrevente="JEAN", versao_tabela="0520260101",
+            escrevente="MARIO", versao_tabela="0520260101",
             registro_numero=1243)["partes"]["parteAto"][0]
         self.assertEqual(parte["documento"], "00000000000")
         self.assertIn("Registro 1243", parte["nome"])
@@ -348,7 +348,7 @@ class SeloDaCertidaoDoLivroTresTests(unittest.TestCase):
     def test_com_requerente_quem_vai_e_o_requerente(self):
         import ra_selo as RS
         parte = RS.envelope_da_certidao(
-            escrevente="JEAN", versao_tabela="0520260101",
+            escrevente="MARIO", versao_tabela="0520260101",
             registro_numero=1243, requerente="FULANA DE TAL",
             requerente_documento="000.000.012-44")["partes"]["parteAto"][0]
         self.assertEqual(parte["nome"], "FULANA DE TAL")
@@ -360,7 +360,7 @@ class SeloDaCertidaoDoLivroTresTests(unittest.TestCase):
         import ato_selado as AS
         import ra_selo as RS
         with self.assertRaises(AS.AtoError) as caso:
-            RS.envelope_da_certidao(escrevente="JEAN", versao_tabela="",
+            RS.envelope_da_certidao(escrevente="MARIO", versao_tabela="",
                                     registro_numero=1243)
         self.assertIn("tabela de custas", str(caso.exception))
 
@@ -396,7 +396,7 @@ class SeloDaCertidaoDoLivroTresTests(unittest.TestCase):
     def test_o_codigo_do_item_manda_no_envelope(self):
         import ra_selo as RS
         envelope = RS.envelope_da_certidao(
-            escrevente="JEAN", versao_tabela="0520260101",
+            escrevente="MARIO", versao_tabela="0520260101",
             registro_numero=1243, quantidade=4, codigo="16.24.4.1")
         self.assertEqual(envelope["codigoTipoAto"], "16.24.4.1")
         self.assertEqual(envelope["quantidade"], 4)

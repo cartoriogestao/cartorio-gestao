@@ -23,7 +23,8 @@ import malote_agente as MA                                       # noqa: E402
 @pytest.fixture()
 def casa(cg_casa, tmp_path):
     cg_casa["db"].create_user("elisa", "Elisa Exemplo Lima", "Senha#12345", "USER")
-    cg_casa["db"].set_settings({"serventia_cns": "000000"})
+    cg_casa["db"].set_settings({"serventia_cns": "000000",
+                                 "malote_cadastra_em_nome_de": "mario"})
     proton = tmp_path / "6. MALOTE DIGITAL"
     (proton / "PARA CADASTRAR").mkdir(parents=True)
     (proton / "2026" / "CIRCULARES").mkdir(parents=True)
@@ -40,24 +41,25 @@ def _pdf(caminho: Path, texto: str) -> Path:
 
 
 def test_sem_o_usuario_do_oficial_mede_e_nao_cadastra(casa):
-    # o padrão é «jean» (ordem de 11/10); aqui ele não existe, e o agente não cai
+    # a configuração diz «mario» (como a produção diz o login do oficial); aqui
+    # ele não existe, e o agente não cai
     # para outro usuário: declara em cada grupo e não derruba a rodada
     _pdf(casa["proton"] / "PARA CADASTRAR" / "DECISAO-COGEx_14102026.pdf", "a")
     r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True)
     assert r["cadastrados"] == 0
     assert r["grupos"][0]["situacao"] == "SEM_RESPONSAVEL"
-    assert "jean" in r["grupos"][0]["nota"] and "não existe" in r["grupos"][0]["nota"]
+    assert "mario" in r["grupos"][0]["nota"] and "não existe" in r["grupos"][0]["nota"]
     assert casa["con"].execute("SELECT count(*) FROM expedientes").fetchone()[0] == 0
 
 
 def test_por_padrao_cadastra_em_nome_do_oficial(casa):
-    casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
     _pdf(casa["proton"] / "PARA CADASTRAR" / "PORTARIA-COGEX_1942026.pdf", "p")
     r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True)
     assert r["cadastrados"] == 1
     e = casa["con"].execute(
         "SELECT e.category, u.username FROM expedientes e JOIN users u ON u.id = e.created_by").fetchone()
-    assert tuple(e) == ("Portarias", "jean")
+    assert tuple(e) == ("Portarias", "mario")
 
 
 def test_cadastra_com_anexo_na_forma_da_tela_e_nao_repete(casa):
@@ -180,7 +182,7 @@ def test_sem_capa_e_none():
 
 
 def test_capa_preenche_o_expediente_e_copia_repetida_nao_entra(casa, monkeypatch):
-    casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
     _pdf(casa["proton"] / "PARA CADASTRAR" / "Recomendacao.pdf", "a")
     _pdf(casa["proton"] / "PARA CADASTRAR" / "Recomendacao (1).pdf", "b")
     monkeypatch.setattr(MA, "capa_do_pdf", lambda p: MA.ler_capa(CAPA_REAL))
@@ -200,12 +202,12 @@ def test_capa_preenche_o_expediente_e_copia_repetida_nao_entra(casa, monkeypatch
 def test_o_comando_tira_copia_antes_de_gravar_e_gera_o_relatorio(casa, tmp_path, monkeypatch):
     # a cópia vai para a pasta das cópias, LONGE do banco (ordem de 11/10/2026)
     monkeypatch.setenv("CARTORIO_GESTAO_COPIAS", str(tmp_path / "copias"))
-    casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
     _pdf(casa["proton"] / "PARA CADASTRAR" / "OFC-COGEX_1.pdf", "c")
     dados = tmp_path / "dados"
     saida = tmp_path / "rel.html"
     assert MA.main(["--banco", str(casa["db"].db_path), "--pasta-dados", str(dados),
-                    "--proton", str(casa["proton"]), "--confirmar", "--em-nome-de", "jean",
+                    "--proton", str(casa["proton"]), "--confirmar", "--em-nome-de", "mario",
                     "--saida", str(saida)]) == 0
     copias = list((tmp_path / "copias" / "antes_de_mexer").glob("antes_malote_agente_*.sqlite3"))
     assert len(copias) == 1 and copias[0].stat().st_size > 0

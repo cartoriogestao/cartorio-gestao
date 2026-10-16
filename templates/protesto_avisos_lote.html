@@ -1,0 +1,121 @@
+{#
+  O PDF com várias intimações entregues — 15/10/2026.
+
+  Pedido do oficial: juntar num PDF só os avisos que voltaram assinados, e o
+  sistema separar e subir cada um no seu título. Quem separa é o QR impresso
+  no aviso (`protesto_intimacoes_lote`), sem IA. CONFERIR E REGISTRAR SÃO DOIS
+  PASSOS: esta tela mostra o que o PDF traz, e nada é lavrado até o clique.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Intimações entregues — PDF com várias</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_avisos') }}">&larr; Avisos de intimação</a>
+</div>
+
+{% if not visto %}
+<div class="notice">
+  Escaneie num PDF só os avisos que voltaram <strong>assinados</strong> — a
+  frente e o verso de cada um, na ordem. O sistema lê o <strong>QR impresso no
+  alto do aviso</strong> e separa as folhas de cada um; a folha sem QR (o
+  verso) fica com o aviso de antes. Nada é registrado antes da conferência.
+  <br><br>
+  Só avisos impressos <strong>a partir de 15/10/2026</strong> trazem o QR. Os
+  impressos antes se registram um a um, na tela de avisos.
+</div>
+<section class="panel">
+  <form method="post" class="form" enctype="multipart/form-data"
+        action="{{ url_for('protesto_avisos_lote') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>PDF das intimações
+      <input type="file" name="pdf" accept=".pdf" required></label>
+    <div class="actions"><button class="button primary">Ler e conferir</button></div>
+  </form>
+</section>
+{% else %}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que o PDF traz</span>
+    <small>{{ visto.paginas }} folha(s) · {{ visto.grupos | length }} aviso(s) ·
+      {{ visto.prontos }} pronto(s) para registrar</small>
+  </div>
+  {% if nome %}<p style="padding:0 14px"><small>arquivo: {{ nome }}</small></p>{% endif %}
+
+  {% if visto.soltas %}
+  <div class="notice" style="margin:0 14px 14px">
+    <strong>{{ visto.soltas | length }} folha(s) sem aviso</strong>:
+    {{ visto.soltas | join(', ') }}. Ou o QR não se leu (papel amassado,
+    escaneado torto, aviso impresso antes de 15/10/2026), ou a folha veio
+    antes de qualquer aviso. Elas <strong>não entram</strong> — registre esses
+    avisos um a um na tela de avisos.
+  </div>
+  {% endif %}
+
+  {% if not visto.grupos %}
+    <p style="padding:14px">
+      Nenhum QR de aviso foi achado neste PDF. Confira se os avisos foram
+      impressos com o QR (a partir de 15/10/2026) e se o scanner está em pelo
+      menos 150 dpi.
+    </p>
+  {% else %}
+  <form method="post"
+        action="{{ url_for('protesto_avisos_lote_registrar', sha=visto.sha256) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <table class="table">
+      <thead><tr>
+        <th>Registrar</th><th>Aviso</th><th>Devedor</th><th>Folhas</th>
+        <th>O que acontece</th><th>Desfecho</th><th>Data</th>
+      </tr></thead>
+      <tbody>
+        {% for g in visto.grupos %}
+        <tr>
+          <td>{% if g.acao != 'RECUSA' %}
+                <input type="checkbox" name="aviso_id" value="{{ g.aviso_id }}" checked>
+              {% else %}—{% endif %}</td>
+          <td><strong>{{ g.numero }}/{{ g.ano }}</strong>
+              <div><small>título {{ g.numero_titulo or '—' }}{% if g.protocolo_titulo %},
+                   protocolo {{ g.protocolo_titulo }}{% endif %}</small></div></td>
+          <td>{{ g.devedor_nome or '—' }}</td>
+          <td><a href="{{ url_for('protesto_avisos_lote_folhas', sha=visto.sha256, p=g.paginas | join(',')) }}"
+                 target="_blank" rel="noopener">{{ g.paginas | join(', ') }}</a></td>
+          <td>{% if g.acao == 'RECUSA' %}<strong>não entra:</strong> {% endif %}{{ g.porque }}</td>
+          <td>{% if g.acao == 'REGISTRA' %}
+                {#
+                  O DESFECHO É ESCOLHIDO, E NÃO DEDUZIDO: o canhoto volta
+                  assinado (entregue) ou com as tentativas anotadas, e quem
+                  lê o papel é quem confere — o sistema não lê a letra.
+                #}
+                <select name="desfecho_{{ g.aviso_id }}" required>
+                  <option value="">— conforme o canhoto —</option>
+                  <option value="ENTREGUE">Entregue — lavrar a intimação</option>
+                  <optgroup label="Não entregue — registrar a tentativa">
+                    {% for m in motivos_destaque %}<option value="{{ m.codigo }}">{{ m.motivo }}</option>{% endfor %}
+                    {% for m in motivos_outros %}<option value="{{ m.codigo }}">{{ m.motivo }}</option>{% endfor %}
+                  </optgroup>
+                </select>
+              {% else %}—{% endif %}</td>
+          <td>{% if g.acao == 'REGISTRA' %}
+                <input type="date" name="quando_{{ g.aviso_id }}" value="{{ hoje }}">
+              {% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="notice" style="margin:0 14px 14px">
+      Abra as folhas de cada aviso (o número das folhas é um link) e escolha o
+      desfecho pelo que o canhoto diz. <strong>Entregue lavra a intimação
+      pessoal</strong> (CN-MA art. 921, § 6º, I); <strong>não entregue registra
+      a tentativa</strong> com a data — use a data anotada no canhoto —, e é
+      esse rastro, com o canhoto anexado, que fundamenta o edital (art. 922).
+      Em todos os casos as folhas ficam anexadas ao aviso.
+    </div>
+    <div class="actions" style="padding:0 14px 14px">
+      <button class="button primary">Registrar os marcados</button>
+      <a class="button" href="{{ url_for('protesto_avisos_lote') }}">Enviar outro PDF</a>
+    </div>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

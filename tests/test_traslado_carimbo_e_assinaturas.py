@@ -146,13 +146,13 @@ def test_bloco_de_assinaturas_lista_partes_testemunhas_e_lavrado():
             {"nome": "MARIA", "qualificacao": "OUTORGADO", "testemunha": 0},
             {"nome": "PEDRO", "testemunha": 1},
         ],
-        lavrado_nome="JEAN",
+        lavrado_nome="MARIO",
         lavrado_titulo="Tabelião",
     )
     assert "JOAO" in html and "OUTORGANTE" in html
     assert "MARIA" in html and "OUTORGADO" in html
     assert "PEDRO" in html and "Testemunha" in html
-    assert "JEAN" in html and "Tabelião" in html
+    assert "MARIO" in html and "Tabelião" in html
     assert html.count("_________________________________") == 4
 
 

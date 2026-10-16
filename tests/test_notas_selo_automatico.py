@@ -188,7 +188,7 @@ def test_a_natureza_da_firma_e_a_do_contrato(especie, tipo):
     import ato_selado as AS
     envelope = AS.envelope_das_notas(
         tabela="nt_reconhecimentos", codigo_tj="13.17.2",
-        escrevente="JEAN", versao_tabela="0520260101", especie=especie,
+        escrevente="MARIO", versao_tabela="0520260101", especie=especie,
         partes=[{"nome": "MARIA", "documento": "000.000.010-82"}])
     assert envelope["natureza"] == {"tipo": tipo}
     # O documento vai só com dígitos — é assim nos 13.776 medidos.

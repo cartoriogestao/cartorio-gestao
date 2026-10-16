@@ -297,12 +297,16 @@ _registrar(Serie(
 _registrar(Serie(
     codigo="PT_PROTESTO", atribuicao=2, nome="Livro de Registro de Protestos", folhas=200,
     por_face=1, usa_verso=True, folha_nova=False, termo_continuo=True,
-    observacao="Do acervo: 1.163 protestos nos livros 4 a 9. De 1.131 folhas "
-               "escrituradas, 1.099 têm um registro e 32 têm dois — e os "
-               "livros 7 e 8 fecharam com 207 e 219 registros em 200 folhas. "
-               "Logo NÃO é folha nova: é um por FACE, e o verso recebe o "
-               "protesto seguinte. Eu havia declarado folha nova, e a conta "
-               "dos livros 7 e 8 não fechava.",
+    observacao="UM PROTESTO POR FACE, frente e verso — decisão do oficial "
+               "em 14/10/2026: «podemos fazer um protesto por face de "
+               "página a partir de agora, não tem por que deixar o verso em "
+               "branco». O E-Ofício fazia diferente, e foi medido em 13/10: "
+               "um título por FOLHA com o verso em branco (das 34 folhas com "
+               "dois registros, 33 são o mesmo protocolo com dois devedores, "
+               "e `tbPropProtesto.PFA` anda uma folha por protesto). Essa "
+               "medição serviu para CONTAR o número de ordem atual (Livros 1 "
+               "a 8 de 200 folhas + Livro 9 até a 182 = 1.782; o próximo, "
+               "1.783), e não para a regra daqui em diante.",
     exigencias=("termo de abertura e de encerramento",
                 "tipo e motivo individualizados, nunca genéricos"),
 ))

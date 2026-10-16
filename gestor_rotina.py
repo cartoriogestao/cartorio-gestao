@@ -612,6 +612,10 @@ def cobrar_vencidas(con: sqlite3.Connection, hoje: date) -> int:
     mão tem a prioridade que ele deu, e o agente não a muda.
     """
     import relatos_diarios as RD
+    import tarefa_suspensao as TS
+    # A SUSPENSA NÃO SE COBRA — relato #132, 15/10/2026: a suspensão existe
+    # para isto, e a prioridade dela também não sobe enquanto espera.
+    nao_suspensa, params_suspensao = TS.condicao_nao_suspensa("t", hoje, con=con)
     cobradas = 0
     por_pessoa: dict[int, list[str]] = {}
     for t in con.execute(
@@ -621,8 +625,9 @@ def cobrar_vencidas(con: sqlite3.Connection, hoje: date) -> int:
                  WHERE t.source_type IN ({','.join('?' * len(ORIGENS_COBRADAS))})
                    AND t.status NOT IN ('CONCLUIDA','CANCELADA')
                    AND (u.role <> 'ADMIN' OR t.source_type = 'GESTOR')
-                   AND t.due_date IS NOT NULL AND t.due_date < ?""",
-            (*ORIGENS_COBRADAS, hoje.isoformat())).fetchall():
+                   AND t.due_date IS NOT NULL AND t.due_date < ?
+                   AND {nao_suspensa}""",
+            (*ORIGENS_COBRADAS, hoje.isoformat(), *params_suspensao)).fetchall():
         dias = (hoje - GC._dia(t["due_date"])).days
         if t["priority"] != "CRITICA" and t["source_type"] == SOURCE_TYPE:
             con.execute("UPDATE tasks SET priority='CRITICA', updated_at=? WHERE id=?",
@@ -741,14 +746,19 @@ def despacho_do_oficial(con: sqlite3.Connection, hoje: date, resumo: dict,
                         dono: int | None) -> str:
     import gestor_expedientes as GX
     linhas = [f"Despacho do agente gestor — {hoje:%d/%m/%Y}", ""]
+    import tarefa_suspensao as TS
+    # A SUSPENSA FICA FORA DO DESPACHO (relato #132): ela não pede decisão
+    # enquanto espera, e não é vencida de ninguém.
+    nao_suspensa, params_suspensao = TS.condicao_nao_suspensa(None, hoje, con=con)
+    nao_suspensa_t, params_suspensao_t = TS.condicao_nao_suspensa("t", hoje, con=con)
     if dono is not None:
         minhas = con.execute(
-            """SELECT id, title, priority, due_date FROM tasks
+            f"""SELECT id, title, priority, due_date FROM tasks
                 WHERE assigned_user_id = ? AND status NOT IN ('CONCLUIDA','CANCELADA')
-                  AND source_type <> ?
+                  AND source_type <> ? AND {nao_suspensa}
                 ORDER BY CASE priority WHEN 'CRITICA' THEN 0 WHEN 'ALTA' THEN 1
                          WHEN 'MEDIA' THEN 2 ELSE 3 END, due_date""",
-            (dono, DESPACHO)).fetchall()
+            (dono, DESPACHO, *params_suspensao)).fetchall()
         linhas.append(f"1. O QUE SÓ VOCÊ DECIDE ({len(minhas)} tarefa(s) com você)")
         for m in minhas[:25]:
             prazo = f" — prazo {m['due_date'][8:10]}/{m['due_date'][5:7]}" if m["due_date"] else ""
@@ -769,11 +779,13 @@ def despacho_do_oficial(con: sqlite3.Connection, hoje: date, resumo: dict,
     linhas.append("")
     linhas.append("4. A EQUIPE — tarefas abertas e vencidas de cada um")
     for nome, abertas, vencidas in con.execute(
-            """SELECT u.full_name, count(*),
+            f"""SELECT u.full_name, count(*),
                       sum(CASE WHEN t.due_date < ? THEN 1 ELSE 0 END)
                  FROM tasks t JOIN users u ON u.id = t.assigned_user_id
                 WHERE t.status NOT IN ('CONCLUIDA','CANCELADA') AND t.source_type <> ?
-                GROUP BY u.id ORDER BY 3 DESC, 2 DESC""", (hoje.isoformat(), DESPACHO)):
+                  AND {nao_suspensa_t}
+                GROUP BY u.id ORDER BY 3 DESC, 2 DESC""",
+            (hoje.isoformat(), DESPACHO, *params_suspensao_t)):
         linhas.append(f"   {nome}: {abertas} aberta(s), {vencidas or 0} vencida(s)")
     linhas.append("")
     envios = con.execute(

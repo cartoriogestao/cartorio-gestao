@@ -31,3 +31,13 @@ PyKCS11>=1.0.6,<2
 # WS-Security da carga da CRC exige — `crc_soap.py`. Sem ela o cabecalho
 # `ds:Signature` do pacote SOAP nao se monta.
 lxml>=5,<7
+# Cifra o arquivo .mrc do SIRC (AES) e confere assinaturas: a do pacote de
+# atualizacao (Ed25519) e a CAdES. EXIGIDA: o modulo do SIRC a importa no
+# topo, e sem ela o sistema nao sobe; a atualizacao assinada tambem nao se
+# confere. Faltava aqui (15/10/2026) — as instalacoes antigas a tinham por
+# instalacao manual.
+cryptography>=41,<51
+# Le PDF (paginas e texto) nas intimacoes em lote do Protesto e nas imagens
+# enviadas ao ONR. Importada so na hora do uso; faltando, essas duas funcoes
+# avisam e o resto do sistema segue.
+PyMuPDF>=1.24,<2

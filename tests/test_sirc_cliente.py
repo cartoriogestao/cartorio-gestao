@@ -142,10 +142,10 @@ def test_endereco_https_passa():
 
 
 def test_o_envelope_leva_os_quatro_campos_por_nome():
-    xml = SC.envelope("enviarMovimentoObito", cns="000000", usuario="jean",
+    xml = SC.envelope("enviarMovimentoObito", cns="000000", usuario="mario",
                       senha="Senha#1", conteudo="<lote/>")
     assert "<cns>000000</cns>" in xml.decode()
-    assert "<usuario>jean</usuario>" in xml.decode()
+    assert "<usuario>mario</usuario>" in xml.decode()
     assert "<senha>Senha#1</senha>" in xml.decode()
     assert "<conteudo>&lt;lote/&gt;</conteudo>" in xml.decode()
     assert f'<enviarMovimentoObito xmlns="{SC.NAMESPACE}">' in xml.decode()
@@ -247,7 +247,7 @@ def test_o_sirc_e_par_com_ambiente_unico():
 def test_a_senha_nunca_aparece_em_erro_de_rede(tmp_path, monkeypatch):
     """A credencial vai no CORPO, e não em HTTP Basic — um erro que
     ecoasse a requisição vazaria a senha."""
-    CRED.gravar(CRED.SIRC, usuario="jean", senha="Senha#Secreta9",
+    CRED.gravar(CRED.SIRC, usuario="mario", senha="Senha#Secreta9",
                ambiente=CRED.PRODUCAO, pasta=tmp_path)
 
     def _falha(*a, **k):
@@ -276,7 +276,7 @@ def test_enviar_e_validar_cancelamento_usam_as_operacoes_certas(
 
 def test_cancelamento_usa_o_envelope_certo():
     xml = SC.envelope("enviarMovimentoCancelamento", cns="000000",
-                      usuario="jean", senha="Senha#1",
+                      usuario="mario", senha="Senha#1",
                       conteudo="<movimentoCancelamentoTO/>")
     assert b"<enviarMovimentoCancelamento" in xml
     # `conteudo` vai escapado — é uma string, como qualquer outro campo.
@@ -291,7 +291,7 @@ def test_o_minuto_entre_envios_recusa_o_segundo_muito_cedo(tmp_path, monkeypatch
     clique duplo) poderiam furá-lo, porque só havia botão de baixar antes
     de este cliente existir."""
     monkeypatch.setattr(CRED, "pasta_de_dados", lambda: tmp_path)
-    CRED.gravar(CRED.SIRC, usuario="jean", senha="Senha#12345",
+    CRED.gravar(CRED.SIRC, usuario="mario", senha="Senha#12345",
                ambiente=CRED.PRODUCAO, pasta=tmp_path)
 
     def _resposta_falsa(*a, **k):

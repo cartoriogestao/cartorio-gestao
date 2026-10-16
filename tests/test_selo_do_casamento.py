@@ -100,7 +100,7 @@ def _conferir(schema: str, envelope: dict) -> None:
 
 def test_o_envelope_da_habilitacao_cabe_no_schema_do_contrato():
     _conferir("DadosSeloHabilitacaoCasamento", AS.envelope_da_habilitacao(
-        escrevente="JEAN", versao_tabela="0120260101", tipo="CIVIL",
+        escrevente="MARIO", versao_tabela="0120260101", tipo="CIVIL",
         numero_processo="12/2026",
         nubente1={"nome": "FULANO", "documento": "000.000.010-82"},
         nubente2={"nome": "BELTRANA"}))
@@ -109,7 +109,7 @@ def test_o_envelope_da_habilitacao_cabe_no_schema_do_contrato():
 def test_o_envelope_da_conversao_cabe_no_schema_dela():
     _conferir("DadosSeloHabilitacaoCasamentoConversao",
               AS.envelope_da_habilitacao(
-                  escrevente="JEAN", versao_tabela="0120260101",
+                  escrevente="MARIO", versao_tabela="0120260101",
                   tipo="CONVERSAO", numero_processo="ESCRITURA 123",
                   nubente1={"nome": "FULANO"}, nubente2={"nome": "BELTRANA"}))
 
@@ -140,7 +140,7 @@ def test_o_assento_so_compra_selo_quando_a_habilitacao_e_de_fora():
 def test_o_envelope_de_fora_cita_o_selo_e_o_cartorio_de_la():
     """Os dois campos existem no contrato exatamente para este caso."""
     e = AS.envelope_do_casamento(
-        escrevente="JEAN", versao_tabela="0120260101", tipo="CIVIL",
+        escrevente="MARIO", versao_tabela="0120260101", tipo="CIVIL",
         livro="B-4", folha="39", termo="40", papel="725061",
         selo_da_habilitacao="DELA0000000000000000000AAAA",
         local_da_habilitacao="CARTÓRIO DE IMPERATRIZ/MA",
@@ -155,7 +155,7 @@ def test_o_assento_de_fora_nao_sela_sem_folha_de_seguranca():
     primeira certidão, e por isso este é um dos 19 caminhos que gastam folha."""
     with pytest.raises(AS.AtoError, match="folha de segurança"):
         AS.envelope_do_casamento(
-            escrevente="JEAN", versao_tabela="0120260101", tipo="CIVIL",
+            escrevente="MARIO", versao_tabela="0120260101", tipo="CIVIL",
             livro="B-4", folha="39", termo="40", papel=None)
     assert AS.gasta_folha_de_seguranca("/selo/civil/casamento")
 
@@ -163,7 +163,7 @@ def test_os_tres_tipos_de_casamento_sao_os_do_contrato():
     """0 civil, 1 religioso com efeito civil, 2 conversão."""
     for tipo, esperado in (("CIVIL", 0), ("RELIGIOSO", 1), ("CONVERSAO", 2)):
         e = AS.envelope_da_habilitacao(
-            escrevente="JEAN", versao_tabela="0120260101", tipo=tipo,
+            escrevente="MARIO", versao_tabela="0120260101", tipo=tipo,
             numero_processo="12/2026", nubente1={"nome": "FULANO"})
         assert e["tipoCasamento"] == esperado
 
@@ -190,10 +190,10 @@ def test_a_conversao_exige_o_processo_da_uniao_estavel():
     """O contrato o pede com todas as letras, e ele não é o desta habilitação."""
     with pytest.raises(AS.AtoError, match="união estável"):
         AS.envelope_da_habilitacao(
-            escrevente="JEAN", versao_tabela="0120260101", tipo="CONVERSAO",
+            escrevente="MARIO", versao_tabela="0120260101", tipo="CONVERSAO",
             nubente1={"nome": "FULANO"}, nubente2={"nome": "BELTRANA"})
     e = AS.envelope_da_habilitacao(
-        escrevente="JEAN", versao_tabela="0120260101", tipo="CONVERSAO",
+        escrevente="MARIO", versao_tabela="0120260101", tipo="CONVERSAO",
         numero_processo="ESCRITURA 123, LIVRO 40, FL. 12",
         nubente1={"nome": "FULANO"})
     assert e["numeroProcesso"] == "ESCRITURA 123, LIVRO 40, FL. 12"
@@ -202,7 +202,7 @@ def test_a_conversao_exige_o_processo_da_uniao_estavel():
 def test_a_habilitacao_comum_nao_exige_processo():
     """Só a conversão o tem como obrigatório — nas outras ele é `optional`."""
     e = AS.envelope_da_habilitacao(
-        escrevente="JEAN", versao_tabela="0120260101", tipo="CIVIL",
+        escrevente="MARIO", versao_tabela="0120260101", tipo="CIVIL",
         nubente1={"nome": "FULANO"})
     assert "numeroProcesso" not in e
 

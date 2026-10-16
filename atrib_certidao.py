@@ -903,7 +903,7 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     #   sozinho tem homonimo, e e o documento que diz quem pediu.
     #
     #   `emitida_por_nome` e `emitida_por_funcao` sao quem assina, por
-    #   extenso — `emitida_por` guarda o login, e «jean» nao responde «quem
+    #   extenso — `emitida_por` guarda o login, e «mario» nao responde «quem
     #   assinou esta certidao?».
     ("at_certidoes", "validade_ate", "TEXT"),
     ("at_certidoes", "requerente_documento", "TEXT"),

@@ -117,7 +117,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not uid:
             return vazio
         try:
-            with db.transaction() as con:
+            # GET NÃO ABRE TRANSAÇÃO DE ESCRITA — regra da casa, guardada por
+            # `tests/test_manutencao_diaria.py`. Este bloco roda em TODA tela, e
+            # `db.transaction()` é `BEGIN IMMEDIATE`: com outro balcão gravando,
+            # qualquer tela esperava o `busy_timeout` (medido em 14/10/2026: 83 s
+            # para abrir cinco telas das Notas). Na conexão comum o SELECT não
+            # trava nada; a trava só é pedida no UPDATE, quando há aviso
+            # recorrente para reativar — e o `with` faz o commit.
+            with db.connect() as con:
                 con.row_factory = sqlite3.Row
                 NAV.processar_recorrencias(con, agora=agora())
             with db.connect() as con:

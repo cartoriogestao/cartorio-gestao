@@ -17,6 +17,17 @@ def _rotulo_atribuicao(atribuicao: str) -> str:
     chave = (atribuicao or "").strip()
     if not chave:
         return ""
+    # RCPJ (3) e RTD (4) chegam como CÓDIGO no endereço (`?atribuicao=4`), e o
+    # nome deles mora em `rg_titulo` — a sigla é a primeira palavra dele.
+    if chave.isdigit():
+        try:
+            import rg_titulo as TIT
+
+            nome = TIT.NOME_DA_ATRIBUICAO.get(int(chave))
+            if nome:
+                return nome.split()[0]
+        except Exception:
+            pass
     try:
         import atrib_certidao as CE
 
@@ -55,6 +66,16 @@ def sugerir(
         return (modulo_nome or "").strip()
 
     extra = _rotulo_atribuicao(atribuicao)
+    # A MESMA TELA EM DOIS ITENS DO MENU — 14/10/2026. Desde que o RCPJ e o
+    # RTD ganharam cada um o seu item (`rcpj_rtd_titulos`, com
+    # `atribuicao=3` e `=4`), o mapa junta os dois rótulos com « · ». A aba
+    # fica com o item DAQUELA atribuição; sem atribuição, com o primeiro.
+    if " · " in rotulo:
+        opcoes = [o.strip() for o in rotulo.split(" · ") if o.strip()]
+        escolhida = next((o for o in opcoes
+                          if extra and o.lower().startswith(extra.lower())),
+                         opcoes[0] if opcoes else rotulo)
+        rotulo = escolhida
     if not extra and modulo_nome:
         extra = modulo_nome.strip()
     if extra and extra.lower() not in rotulo.lower():

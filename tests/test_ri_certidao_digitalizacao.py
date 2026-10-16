@@ -30,11 +30,11 @@ def _token(html: str) -> str:
 def casa(cg_casa):
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.set_settings({"ri_cns": "000000", "ri_cidade": "Cidade Exemplo",
                      "ri_uf": "MA"})
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa

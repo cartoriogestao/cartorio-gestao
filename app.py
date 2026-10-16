@@ -30,6 +30,7 @@ import robo_web
 import modulos_ligados as MODLIG
 import ri_web
 import tarefa_processo as TP
+import tarefa_suspensao as TS
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 import backup as BKP
 from waitress import serve
@@ -58,7 +59,7 @@ APP_NAME = "Gestão Integrada da Serventia"
 # servidor avisou «quem respondeu está na versão 3.6.137, e a instalada é
 # 3.6.138» sobre uma atualização que tinha funcionado (504 de 505 arquivos
 # batendo byte a byte). `tests/test_os_dois_carimbos_da_versao.py` guarda isso.
-VERSION = "3.6.291"
+VERSION = "3.6.293"
 # 3.6.286 - 06/10/2026 Release do sandbox para o oficial: centrais (fila/log/trava), A3, editor/motor de modelos, produtividade, selo robo, F10-F12 do RI, SIRC (cancelados)
 # 3.6.285 - CENPROT: POST /token com form usuario/senha (x-www-form-urlencoded)
 # 3.6.284 - Projetos lista: coluna Atualizado (DD/MM/AA - HH:MM, fuso local)
@@ -647,6 +648,9 @@ def create_app(test_config: dict | None = None) -> Flask:
                 if not novas:
                     break
             db.ensure_overdue_escalations()
+            # A VOLTA DAS SUSPENSÕES POR PRAZO (relato #132): a cobrança já
+            # volta na leitura; aqui fica o rastro e se limpam as colunas.
+            db.encerrar_suspensoes_vencidas()
             if criadas:
                 app.logger.info("manutenção diária: %s tarefa(s) recorrente(s)",
                                 criadas)
@@ -707,6 +711,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             #   `fmt_dt`: o dossiê da tarefa também desenha a linha do tempo, e
             #   ligada tela a tela a segunda nasceria em jargão.
             "rotulo_da_acao": TP.rotulo_da_acao,
+            # O SELO DA SUSPENSÃO (relato #132) — global pelo mesmo motivo: a
+            # lista de tarefas, a de processos, o expediente e a ficha o
+            # desenham, e ligado tela a tela a próxima nasceria sem ele.
+            "suspensao_de": TS.situacao,
         "TIPOS_ANDAMENTO": TP.TIPOS_ANDAMENTO,
         "rotulo_do_tipo_andamento": TP.rotulo_do_tipo_andamento,
             "EXPEDIENT_STAGES": EXPEDIENT_STAGES,
@@ -841,7 +849,9 @@ def create_app(test_config: dict | None = None) -> Flask:
     def dashboard():
         alert_days = parse_int(db.get_setting("alert_days", "5")) or 5
         stats = db.dashboard_stats(alert_days)
-        tasks = db.list_tasks("ABERTAS", limit=20)
+        # O PAINEL É COBRANÇA: a suspensa sai desta lista (relato #132) e
+        # aparece contada à parte, no cartão «Suspensos».
+        tasks = db.list_tasks("ABERTAS", limit=20, filtros={"suspensas": "OCULTAR"})
         inspections = db.list_inspections()
         # OS ATOS EM ANDAMENTO — relato #29 do oficial: «o painel deve focar
         # nos atos em andamento e tarefas pendentes, tudo em ordem de
@@ -1063,12 +1073,16 @@ def create_app(test_config: dict | None = None) -> Flask:
         # parado e ordenar por qualquer coluna.
         import tarefa_ordem as TO
         filtros = {k: (request.args.get(k) or "").strip() for k in TO.FILTROS}
+        # A BUSCA POR TEXTO — relato #122 (07/10/2026): número, título,
+        # descrição e responsável, convivendo com os filtros e a ordem.
+        busca = (request.args.get("q") or "").strip()
         rows = db.list_tasks(status, sector, usuario_id=usuario_id,
-                             filtros={k: v for k, v in filtros.items() if v})
+                             filtros={k: v for k, v in filtros.items() if v}, busca=busca)
         ordem_pedida = TO.APELIDOS.get(filtros["ordem"].upper(), filtros["ordem"].upper())
         return render_template("tasks.html", rows=rows, sectors=sectors, users=users,
                                status_filter=status, sector_filter=sector or "",
                                filtros=filtros, ORDENS=TO.ordens_da_tela(tem_tipo=False),
+                               busca=busca, SUSPENSAS=TO.SUSPENSAS,
                                PRAZOS=TO.PRAZOS, PARADOS=TO.PARADOS,
                                SEM_RESPONSAVEL=TO.SEM_RESPONSAVEL,
                                ordem_atual=ordem_pedida if ordem_pedida in TO.ORDENS else "",
@@ -1102,6 +1116,50 @@ def create_app(test_config: dict | None = None) -> Flask:
                     audit("TASK_UPDATED", "TASK", task_id, fields)
                     flash("Tarefa atualizada.", "success")
                     return redirect(url_for("task_detail", task_id=task_id))
+            elif action in ("suspender", "retomar"):
+                # SUSPENDER A COBRANÇA — relato #132, 14/10/2026: «permitir
+                # suspender a exigência da tarefa ou expediente por tempo, ou
+                # condicionar ao retorno de algo». Quem pode é quem edita a
+                # tarefa (esta rota inteira é `login_required`); a regra mora em
+                # `tarefa_suspensao`, e o rastro na linha do tempo e na auditoria.
+                uid = int(current_user()["id"])
+                # O AUDITOR SÓ VÊ — decisão do oficial em 15/10/2026: suspender
+                # e retomar mudam a cobrança da casa, e quem fiscaliza não a
+                # move. A guarda é aqui, na ação, porque a ficha ele precisa ver.
+                if current_user()["role"] == "AUDITOR":
+                    flash("O perfil de auditor só consulta: suspender ou retomar a "
+                          "cobrança é de quem trabalha a tarefa.", "danger")
+                    return redirect(url_for("task_detail", task_id=task_id))
+                try:
+                    with db.transaction() as con:
+                        if action == "suspender":
+                            feito = TS.suspender(
+                                con, task_id, modo=request.form.get("modo", ""),
+                                motivo=request.form.get("motivo", ""),
+                                ate=request.form.get("ate") or None,
+                                condicao=request.form.get("condicao") or None,
+                                usuario_id=uid, agora=db.now())
+                        else:
+                            feito = TS.retomar(con, task_id, motivo=request.form.get("motivo", ""),
+                                               usuario_id=uid, agora=db.now())
+                except TS.SuspensaoError as erro:
+                    flash(str(erro), "danger")
+                else:
+                    # `audit` abre transação própria: chame FORA do `with`.
+                    audit("TASK_SUSPENSA" if action == "suspender" else "TASK_RETOMADA",
+                          "TASK", task_id, feito)
+                    if action == "suspender":
+                        flash("Tarefa suspensa: ela sai da cobrança (painel, avisos, vencidas) "
+                              + (f"até {feito['ate'][8:10]}/{feito['ate'][5:7]}/{feito['ate'][:4]}."
+                                 if feito["ate"] else "até alguém marcar que a condição se cumpriu."),
+                              "success")
+                    elif feito.get("ja_tinha_voltado"):
+                        flash("A suspensão já tinha terminado sozinha na data marcada; "
+                              "o registro foi fechado.", "info")
+                    else:
+                        flash(f"Tarefa retomada depois de {feito['dias']} dia(s) suspensa — "
+                              "o prazo voltou a correr.", "success")
+                return redirect(url_for("task_detail", task_id=task_id))
             elif action == "evidencia":
                 # EXIGIR OU NÃO A EVIDÊNCIA, COM UM CLIQUE — hotfix de 06/10/2026
                 # («facilite a edicao para nao exigir mais evidencia quando
@@ -1387,7 +1445,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         history = db.task_history(task_id)
         attachments = db.get_attachments("TASK", task_id)
         # OS DOCUMENTOS DO EXPEDIENTE À VISTA DE QUEM CUMPRE (12/10/2026): a
-        # tarefa da averbação de divórcio da Vanessa (#318) nasceu do malote, e o
+        # tarefa da averbação de divórcio de uma escrevente (#318) nasceu do malote, e o
         # mandado estava guardado no expediente — a tarefa não o mostrava e não
         # dizia onde procurar.
         # A PASTA DO PROCESSO (fase 1, mesmo dia): não só o expediente, mas o
@@ -1397,6 +1455,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         with db.connect() as _c:
             pasta_vinculos = PASTA.vinculos(_c, task_id)
             pasta_docs = PASTA.documentos(_c, task_id)
+            # Os retirados com motivo (relato #135) vêm à parte, e não somem.
+            pasta_retirados = PASTA.documentos_retirados(_c, task_id)
             import processo_especies as ESP
             tipo = ESP.tipo_do_processo(_c, dict(row))
         for v in pasta_vinculos:
@@ -1407,7 +1467,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                 v["url"] = None
         return render_template("task_detail.html", row=row, history=history, attachments=attachments, users=users,
                                sectors=sectors, pasta_vinculos=pasta_vinculos, pasta_docs=pasta_docs,
-                               pasta_tipos=PASTA.TIPOS, tipo=tipo)
+                               pasta_retirados=pasta_retirados,
+                               pasta_tipos=PASTA.TIPOS, tipo=tipo,
+                               suspensao=TS.situacao(row), MODOS_DE_SUSPENDER=TS.MODOS,
+                               amanha=(date.today() + timedelta(days=1)).isoformat())
 
     @app.route("/tarefas/<int:task_id>/evidence", methods=["POST"])
     @login_required
@@ -1913,6 +1976,29 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         if request.method == "POST":
             action = request.form.get("action", "prepare")
+            # O RETRATO DA INSTALACAO (14/10/2026): conferir o que mudou fora de
+            # uma atualizacao, e o oficial assumir o estado instalado como base.
+            if action in ("conferir_instalacao", "aceitar_retrato"):
+                import retrato_da_instalacao as RET
+                try:
+                    if action == "conferir_instalacao":
+                        r = RET.conferir(updates_root, installed_app_dir(), VERSION)
+                        flash("Instalacao conferida: nada mudou fora de uma atualizacao."
+                              if r["limpo"] else
+                              f"Instalacao conferida: {len(r['alterados'])} alterado(s), "
+                              f"{len(r['novos'])} novo(s) e {len(r['sumidos'])} "
+                              "sumido(s) fora de uma atualizacao — veja a lista.",
+                              "success" if r["limpo"] else "warning")
+                    else:
+                        RET.aceitar(updates_root, installed_app_dir(), VERSION,
+                                    por=usuario_nome(),
+                                    motivo=request.form.get("motivo", ""))
+                        audit("INSTALACAO_RETRATO_ACEITO", "SYSTEM", None, {
+                            "versao": VERSION, "motivo": request.form.get("motivo", "")})
+                        flash("O estado instalado virou a base da conferencia.", "success")
+                except (ValueError, OSError) as exc:
+                    flash(str(exc), "danger")
+                return redirect(url_for("updates"))
             if action == "prepare":
                 upload = request.files.get("update_file")
                 if not upload or not upload.filename:
@@ -2074,7 +2160,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             staged_updates=preparacoes(),
             automatic_apply_available=pode_aplicar,
             automatic_apply_reason=por_que_nao,
+            conferencia_instalacao=_ultima_conferencia_da_instalacao(updates_root),
         )
+
+    def _ultima_conferencia_da_instalacao(updates_root):
+        import retrato_da_instalacao as RET
+        return RET.ultima_conferencia(updates_root)
 
     @app.route("/auditoria")
     @login_required
@@ -2090,7 +2181,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             values = {
                 "unit_name": request.form.get("unit_name", "").strip() or "Serventia Extrajudicial",
                 # O NOME DO REGISTRADOR (RI) NÃO TINHA TELA — achado em
-                # 07/09/2026: `ri_registrador` ficou gravado como «JEAN
+                # 07/09/2026: `ri_registrador` ficou gravado como «MARIO
                 # EXEMPLO DOS SANTOS» desde a instalação, e nenhuma tela
                 # deixava corrigir. Vazio não se salva por cima do que já
                 # está lá — apagaria o nome do registrador sem querer.
@@ -2106,10 +2197,15 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "session_timeout_minutes": str(max(10, parse_int(request.form.get("session_timeout_minutes")) or 60)),
                 "require_backup_assignee": "1" if request.form.get("require_backup_assignee") else "0",
                 "auto_backup": "1" if request.form.get("auto_backup") else "0",
-                "cra_auto_enviar_homolog": (
-                    "1" if request.form.get("cra_auto_enviar_homolog") else "0"),
-                "cra_auto_enviar_producao": (
-                    "1" if request.form.get("cra_auto_enviar_producao") else "0"),
+                # `cra_auto_enviar_homolog` SAIU DAQUI EM 14/10/2026 — a caixa
+                # saiu da tela com a ordem «agora é tudo produção», e gravar
+                # o «0» de um campo que não vem mais seria mexer num valor que
+                # ninguém pediu para mexer. Ele fica como estava, sem uso.
+                # `cra_auto_enviar_producao` SAIU DAQUI EM 15/10/2026: a caixa
+                # mora FORA deste formulário (na seção das Centrais), e por
+                # isso nunca chegava — e cada «salvar» gravava «0» por cima,
+                # desligando o envio que o oficial tentava ligar. Ela tem rota
+                # própria agora: `configuracoes_cra_envio`.
                 "backup_retention": str(max(3, parse_int(request.form.get("backup_retention")) or 30)),
                 "archive_root": request.form.get("archive_root", "").strip(),
                 "backup_dir": request.form.get("backup_dir", "").strip(),
@@ -2153,6 +2249,26 @@ def create_app(test_config: dict | None = None) -> Flask:
         return render_template("settings.html", s=s,
                                centrais=CENTCRED.situacao(), categories="\n".join(json_list(s.get("categories","[]"), [])), sources="\n".join(json_list(s.get("sources","[]"), [])), sectors="\n".join(json_list(s.get("sectors","[]"), [])), data_dir=data_dir)
 
+    @app.route("/configuracoes/cra-envio", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN")
+    def configuracoes_cra_envio():
+        """Liga ou desliga o envio automático à CRA. ESCREVE só esta chave.
+
+        Relato do oficial, 15/10/2026: «não consegui salvar o check de mandar
+        automaticamente para a CRA». A caixa estava fora do formulário da tela;
+        agora tem formulário e botão próprios, e só mexe nela.
+        """
+        valor = "1" if request.form.get("cra_auto_enviar_producao") else "0"
+        db.set_settings({"cra_auto_enviar_producao": valor})
+        audit("SETTINGS_CHANGED", "SETTINGS", None,
+              {"cra_auto_enviar_producao": valor})
+        flash("Envio automático à CRA " + ("LIGADO: a confirmação e o andamento "
+              "sobem sozinhos logo depois de receber a remessa." if valor == "1"
+              else "desligado: confirmação e andamento sobem pelo botão "
+              "«Enviar à CRA»."), "success")
+        return redirect(url_for("settings"))
+
     @app.route("/configuracoes/central", methods=["POST"])
     @login_required
     @roles_required("ADMIN")
@@ -2171,6 +2287,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         ambiente = (request.form.get("ambiente") or "").strip().upper()
         acao = (request.form.get("acao") or "gravar").strip().lower()
         try:
+            # AS TRÊS DO PROTESTO SÓ TÊM PRODUÇÃO NA TELA (14/10/2026): um
+            # formulário antigo, ou o endereço digitado à mão, não grava nem
+            # retira a gaveta de homologação — ela fica como está.
+            if central in CENTCRED.CENTRAIS_SO_EM_PRODUCAO and ambiente:
+                CENTCRED.ambiente_de_uso(central, ambiente)
             if acao == "apagar":
                 tirou = CENTCRED.apagar(central, ambiente)
                 flash("Credencial retirada." if tirou

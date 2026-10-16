@@ -115,7 +115,7 @@ def test_pendencia_da_casa_nao_entra_e_o_filtro_de_situacao_vale(cg_casa):
 
 def test_so_o_administrador_ve_a_tela_e_o_painel(cg_casa_logada):
     con = _con(cg_casa_logada)
-    _, aid = _ato_do_ri(con, lavrado_por="jean")
+    _, aid = _ato_do_ri(con, lavrado_por="mario")
     _achado(con, f"CNIB_ATO:{aid}", "REGISTRO_SEM_CNIB")
     con.commit()
     c = cg_casa_logada["c"]

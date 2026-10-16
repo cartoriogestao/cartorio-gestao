@@ -212,7 +212,10 @@ def _rascunho_obito() -> dict:
             "pessoa_data_nascimento": "1950-01-01",
             "filiacao1_nome": "IGNORADO", "filiacao2_nome": "IGNORADO",
             "declarante_nome": "FILHO DECLARANTE TESTE",
-            "declarante_documento_tipo": "CPF"}
+            "declarante_documento_tipo": "CPF",
+            # «Deixou bens» — a CRC recusa o óbito sem S ou N, e desde o
+            # relato #130 (14/10/2026) a lavratura também.
+            "obito_possui_bens": "NAO"}
 
 
 def _salvar_rascunho(casa, dados) -> int:

@@ -32,7 +32,32 @@
 </div>
 
 <section class="panel">
-  <div class="panel-head"><span>Receber uma remessa</span></div>
+  <div class="panel-head"><span>Trazer a remessa da CRA</span><small>direto da Central, em produção</small></div>
+  <form method="post" action="{{ url_for('protesto_remessa_da_cra') }}"
+        class="form" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <div class="field">
+      <label for="o_que">O que trazer</label>
+      <select id="o_que" name="o_que">
+        <option value="remessa">a remessa do dia (mais as pendentes de datas anteriores)</option>
+        <option value="pendentes">só as remessas pendentes</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="nome">Nome do arquivo <small>(formato FEBRABAN, ex.: B2371410.261)</small></label>
+      <input id="nome" name="nome" required placeholder="B2371410.261">
+      <small>Ela vai para a <strong>conferência</strong> — nada entra antes de você conferir
+        e clicar em Receber. Baixar marca a remessa como baixada na CRA: por isso é
+        botão, e não automático. Só o oficial e o gerente trazem.</small>
+    </div>
+    <div class="actions">
+      <button class="button primary" type="submit">Trazer e conferir</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Receber uma remessa</span><small>pelo arquivo, se ele já estiver no computador</small></div>
   <form method="post" action="{{ url_for('protesto_remessa_conferir') }}"
         enctype="multipart/form-data" class="form" style="padding:14px">
       <input type="hidden" name="csrf_token" value="{{csrf_token}}">

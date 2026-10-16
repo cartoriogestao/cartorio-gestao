@@ -38,7 +38,7 @@ def _token(html: str) -> str:
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); cartao+login por teste."""
     d = cg_casa["db"]
-    d.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    d.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     d.set_settings({"archive_root": str(cg_casa["acervo"])})
 
     con = sqlite3.connect(cg_casa["banco"])
@@ -53,7 +53,7 @@ def casa(cg_casa):
 
     c = cg_casa["cliente"]
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     token = _token(c.get(f"/notas/cartoes/{cartao}").get_data(as_text=True))

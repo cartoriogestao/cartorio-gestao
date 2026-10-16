@@ -48,9 +48,9 @@ def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -89,14 +89,14 @@ def test_encerrar_grava_a_situacao_o_motivo_e_quem_fez(casa):
         pid = _protocolo(con)
         CXP.encerrar(con, pid, situacao=CXP.CANCELADO,
                      motivo="era só orçamento; o cliente não voltou",
-                     quem="jean", agora="2026-08-28T15:00")
+                     quem="mario", agora="2026-08-28T15:00")
     r = _con(casa).execute("SELECT * FROM cx_protocolos WHERE id=?",
                            (pid,)).fetchone()
     assert r["situacao"] == "CANCELADO"
     assert r["finalizado"] == 1
     assert r["data_finalizacao"] == "2026-08-28T15:00"
     assert "não voltou" in r["encerramento_motivo"]
-    assert r["encerrado_por"] == "jean"
+    assert r["encerrado_por"] == "mario"
 
 
 def test_as_duas_palavras_dizem_coisas_diferentes():
@@ -134,7 +134,7 @@ def test_protocolo_com_item_quitado_nao_se_encerra(casa):
         with _con(casa) as c:
             CXP.encerrar(c, pid, situacao=CXP.CANCELADO,
                          motivo="o cliente desistiu do serviço todo",
-                         quem="jean", agora="2026-08-28T15:00")
+                         quem="mario", agora="2026-08-28T15:00")
     assert "estorne" in str(e.value).lower()
     assert _con(casa).execute(
         "SELECT situacao FROM cx_protocolos WHERE id=?",
@@ -151,7 +151,7 @@ def test_encerrar_exige_motivo_escrito(casa):
         with pytest.raises(CXP.ProtocoloError) as e:
             with _con(casa) as c:
                 CXP.encerrar(c, pid, situacao=CXP.CANCELADO, motivo=vazio,
-                             quem="jean", agora="2026-08-28T15:00")
+                             quem="mario", agora="2026-08-28T15:00")
         assert "Escreva por que" in str(e.value)
 
 
@@ -163,12 +163,12 @@ def test_encerrado_nao_se_encerra_de_novo(casa):
         pid = _protocolo(con)
         CXP.encerrar(con, pid, situacao=CXP.CANCELADO,
                      motivo="era só orçamento; o cliente não voltou",
-                     quem="jean", agora="2026-08-28T15:00")
+                     quem="mario", agora="2026-08-28T15:00")
     with pytest.raises(CXP.ProtocoloError) as e:
         with _con(casa) as c:
             CXP.encerrar(c, pid, situacao=CXP.ENTREGUE,
                          motivo="na verdade foi entregue por outro caminho",
-                         quem="jean", agora="2026-08-28T16:00")
+                         quem="mario", agora="2026-08-28T16:00")
     assert "reabra primeiro" in str(e.value)
 
 
@@ -180,7 +180,7 @@ def test_encerramento_fora_do_catalogo_e_recusado(casa):
         with _con(casa) as c:
             CXP.encerrar(c, pid, situacao="ARQUIVADO",
                          motivo="um motivo suficientemente longo",
-                         quem="jean", agora="2026-08-28T15:00")
+                         quem="mario", agora="2026-08-28T15:00")
     assert "não é um jeito de encerrar" in str(e.value)
 
 
@@ -195,9 +195,9 @@ def test_reabrir_recalcula_a_situacao_dos_itens_e_nao_a_deixa_escolher(casa):
         pid = _protocolo(con, itens=(("13.18", 0),))
         CXP.encerrar(con, pid, situacao=CXP.CANCELADO,
                      motivo="o cliente desistiu antes de pagar",
-                     quem="jean", agora="2026-08-28T15:00")
+                     quem="mario", agora="2026-08-28T15:00")
         CXP.reabrir(con, pid, motivo="o cliente voltou no dia seguinte",
-                    quem="jean", agora="2026-08-29T09:00")
+                    quem="mario", agora="2026-08-29T09:00")
     r = _con(casa).execute("SELECT * FROM cx_protocolos WHERE id=?",
                            (pid,)).fetchone()
     assert r["situacao"] == "A_PAGAR"        # tem item, nenhum quitado
@@ -213,9 +213,9 @@ def test_o_motivo_do_encerramento_fica_gravado_depois_de_reabrir(casa):
         pid = _protocolo(con)
         CXP.encerrar(con, pid, situacao=CXP.CANCELADO,
                      motivo="era só orçamento; o cliente não voltou",
-                     quem="jean", agora="2026-08-28T15:00")
+                     quem="mario", agora="2026-08-28T15:00")
         CXP.reabrir(con, pid, motivo="ele voltou e quer fazer",
-                    quem="jean", agora="2026-08-29T09:00")
+                    quem="mario", agora="2026-08-29T09:00")
     guardado = _con(casa).execute(
         "SELECT encerramento_motivo m FROM cx_protocolos WHERE id=?",
         (pid,)).fetchone()["m"]
@@ -230,7 +230,7 @@ def test_reabrir_o_que_nao_esta_encerrado_e_recusado(casa):
     with pytest.raises(CXP.ProtocoloError) as e:
         with _con(casa) as c:
             CXP.reabrir(c, pid, motivo="um motivo suficientemente longo",
-                        quem="jean", agora="2026-08-29T09:00")
+                        quem="mario", agora="2026-08-29T09:00")
     assert "não está encerrado" in str(e.value)
 
 
@@ -324,7 +324,7 @@ def test_quem_encerrou_sai_da_sessao_e_nao_de_um_campo(casa):
         "motivo": "resolvido no balcão sem custas"}, follow_redirects=True)
     assert _con(casa).execute(
         "SELECT encerrado_por FROM cx_protocolos WHERE id=?",
-        (pid,)).fetchone()["encerrado_por"] == "jean"
+        (pid,)).fetchone()["encerrado_por"] == "mario"
 
 
 def test_o_encerramento_fica_na_auditoria(casa):

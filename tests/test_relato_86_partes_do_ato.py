@@ -150,8 +150,12 @@ def _lavrar(casa, mid, **campos) -> str:
 
     with ligar_o_selador(casa):
         html = _tela(casa, f"/registro-imoveis/{mid}")
+        # O ITEM 16.3 EXIGE O VALOR DECLARADO desde a 3.6.185 (23/09/2026,
+        # R-01/4019 recusado pelo TJ): sem `base_calculo` a rota recusa antes
+        # de o ato nascer, e nenhuma parte era gravada.
         dados = {"tipo": "AV", "teor": TEOR, "data_ato": "2026-08-18",
                  "natureza_titulo": "Compra e venda", "codigo_tj": "16.3",
+                 "base_calculo": "100.000,00",
                  "csrf_token": _token(html)}
         dados.update(campos)
         r = casa["c"].post(f"/registro-imoveis/{mid}/atos", data=dados,

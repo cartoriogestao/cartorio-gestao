@@ -78,7 +78,7 @@ def casa(cg_casa):
     """Um rascunho de escritura com modelo, e duas pessoas."""
     db = cg_casa["db"]
     db.create_user("carla", "CARLA EXEMPLO LIMA", SENHA, "USER")
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.set_settings({"ri_cidade": "Cidade Exemplo", "ri_uf": "MA"})
     con = sqlite3.connect(cg_casa["banco"])
     with con:
@@ -265,7 +265,7 @@ def test_rascunho_com_dinheiro_no_caixa_nao_se_apaga(casa):
 
 def test_o_rascunho_de_outra_pessoa_e_do_oficial(casa):
     """Quem abriu apaga o seu; o de outra pessoa é do oficial e do gerente."""
-    outra = _entrar(casa["app"], "jean")   # ADMIN: pode
+    outra = _entrar(casa["app"], "mario")   # ADMIN: pode
     con = sqlite3.connect(casa["banco"])
     with con:
         con.execute("UPDATE nt_atos SET lavrado_nome=? WHERE id=?",

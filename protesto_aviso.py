@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 import protesto as PT
@@ -335,9 +336,133 @@ def registrar_entrega(con: sqlite3.Connection, aviso_id: int, *,
 # ----------------------------------------------------------------- o edital
 
 
+# ------------------------------------------------------- o papel do aviso
+#
+# O AVISO NÃO TINHA PAPEL — a tela dizia «imprima e mande entregar» e não havia
+# o que imprimir (conferência de 14/10/2026). O conteúdo é o que o Código de
+# Normas do TJMA (Prov. 28/2026) manda, lido no texto:
+#
+#   art. 920 — «o número do protocolo; o nome e o endereço do devedor, bem como
+#   o número de seu documento de identificação; a espécie do título, por
+#   extenso, seu número, valor e data de vencimento; a indicação da existência,
+#   ou não, de aceite; o nome do sacador ou do favorecido e o do apresentante;
+#   o prazo-limite para pagamento; e o endereço e horário de funcionamento do
+#   tabelionato»;
+#   art. 923 — mais os nomes do credor e do apresentante com CPF/CNPJ, e o
+#   telefone do tabelionato;
+#   art. 925, § 4º — «o prazo-limite para pagamento é o dia previsto para a
+#   lavratura do protesto»: o terceiro dia útil depois da protocolização
+#   (Lei 9.492/1997, art. 12; CN art. 913, I), a mesma conta que o gestor do
+#   protesto já faz (`gestor_protesto.ART_12`).
+#
+# O HORÁRIO DE FUNCIONAMENTO NÃO EXISTE EM LUGAR NENHUM — nem em `settings`,
+# nem no E-Ofício (`tbSetupBoleto.strHorarioAtendimento` vazio). Ele é
+# configuração (`serventia_horario`), e sem ele o aviso RECUSA: papel oficial
+# com um claro no lugar do horário é o que o artigo existe para impedir.
+
+CHAVE_DO_HORARIO = "serventia_horario"
+
+
+def prazo_limite(con: sqlite3.Connection, titulo: Any) -> str | None:
+    """O dia previsto para a lavratura — 3 dias úteis da protocolização. Só LÊ.
+
+    `None` quando o protocolo não diz a data: prazo inventado num papel que
+    vai ao devedor é pior que a recusa.
+    """
+    from datetime import date as _date
+    from ri_schema import ler_feriados_locais, soma_dias_uteis
+    s = "".join(c for c in str(dict(titulo).get("protocolo") or "") if c.isdigit())
+    if len(s) < 6:
+        return None
+    try:
+        dia = _date(2000 + int(s[:2]), int(s[2:4]), int(s[4:6]))
+    except ValueError:
+        return None
+    linha = con.execute("SELECT value FROM settings WHERE key='ri_feriados_locais'"
+                        ).fetchone()
+    feriados = ler_feriados_locais((linha[0] if linha else "") or "")
+    return soma_dias_uteis(dia, 3, feriados).isoformat()
+
+
+def _br(iso: Any) -> str:
+    s = str(iso or "")[:10]
+    return f"{s[8:10]}/{s[5:7]}/{s[:4]}" if len(s) == 10 and s[4] == "-" else s
+
+
+def montar_teor_do_aviso(con: sqlite3.Connection, aviso: Any, *,
+                         sv: dict) -> str:
+    """O texto do aviso de intimação, com os itens dos arts. 920 e 923. Só calcula.
+
+    O endereço é o que CONGELOU no aviso, e não o do cadastro de hoje.
+    """
+    import protesto_cra as CRA
+    av = dict(aviso)
+    tit = PT.titulo(con, int(av["titulo_id"]))
+    if not tit:
+        raise AvisoError("O título deste aviso não foi encontrado.")
+    t = dict(tit)
+    horario = (con.execute("SELECT value FROM settings WHERE key=?",
+                           (CHAVE_DO_HORARIO,)).fetchone() or [""])[0] or ""
+    if not horario.strip():
+        raise AvisoError(
+            "O aviso precisa do horário de funcionamento do tabelionato "
+            "(Código de Normas, art. 920), e ele não está configurado. "
+            "Informe-o em Administrativo → Configurações "
+            f"(«{CHAVE_DO_HORARIO}»).")
+    limite = prazo_limite(con, t)
+    if not limite:
+        raise AvisoError(
+            f"O protocolo do título ({t.get('protocolo') or 'vazio'}) não diz a "
+            f"data da protocolização, e sem ela não há prazo-limite — o aviso "
+            f"não sai sem o prazo (Código de Normas, art. 920).")
+    especie = CRA.ESPECIES.get(str(t.get("especie") or "").upper(),
+                               t.get("especie") or "")
+    aceite = {"A": "com aceite", "N": "sem aceite"}.get(
+        str(t.get("aceite") or "").upper()[:1], "aceite não informado")
+    endereco = ", ".join(x for x in (av.get("endereco"), av.get("bairro"),
+                                     av.get("cidade") and (
+                                         f"{av['cidade']}/{av.get('uf') or ''}"),
+                                     av.get("cep") and f"CEP {av['cep']}") if x)
+    credor = (t.get("cedente_nome") or "").strip()
+    if credor and t.get("cedente_documento"):
+        credor += f", CPF/CNPJ {formatar_documento(t['cedente_documento'])}"
+    apresentante = (t.get("apresentante_nome") or t.get("apresentante_codigo")
+                    or "").strip()
+    casa = str(sv.get("unit_name") or "").strip()
+    linhas = [
+        "AVISO DE INTIMAÇÃO PARA PAGAMENTO",
+        "",
+        f"Aviso n. {av['numero']}/{av['ano']} — Protocolo n. {t.get('protocolo')}",
+        "",
+        (f"Fica V. Sa. INTIMADO(A) a pagar, ou a apresentar as razões que tiver, "
+         f"até {_br(limite)}, o título abaixo apresentado para protesto neste "
+         f"tabelionato. Não havendo pagamento nem manifestação até essa data, "
+         f"o título será protestado na forma da Lei nº 9.492/1997."),
+        "",
+        f"Devedor: {av.get('devedor_nome') or ''}"
+        + (f", CPF/CNPJ {formatar_documento(av['devedor_documento'])}"
+           if av.get("devedor_documento") else ""),
+        f"Endereço: {endereco or 'não informado pelo apresentante'}",
+        f"Título: {especie}, n. {t.get('numero_titulo') or 'sem número'}",
+        f"Valor: R$ {_reais(t.get('saldo_centavos') or t.get('valor_centavos'))}"
+        + (f" — vencimento em {_br(t['data_vencimento'])}"
+           if t.get("data_vencimento") else ""),
+        f"Aceite: {aceite}",
+        f"Credor (sacador/favorecido): {credor or 'não informado'}",
+        f"Apresentante: {apresentante or 'não informado'}",
+        f"Prazo-limite para pagamento: {_br(limite)}",
+        "",
+        (f"{casa} — {sv.get('endereco_completo') or ''}. Telefone "
+         f"{sv.get('serventia_telefone') or sv.get('telefone') or ''}. "
+         f"Horário de funcionamento: {horario.strip()}."),
+    ]
+    return "\n".join(linhas)
+
+
 def montar_teor_do_edital(*, aviso: sqlite3.Row | dict, titulo: sqlite3.Row,
                           sv: dict, hoje: str,
-                          data_extenso: str | None = None) -> str:
+                          data_extenso: str | None = None,
+                          limite: str | None = None) -> str:
     """O teor do edital. So calcula.
 
     O ACERVO NAO GUARDA O TEXTO — `tbEdital` tem a data, quem publicou e o
@@ -371,19 +496,26 @@ def montar_teor_do_edital(*, aviso: sqlite3.Row | dict, titulo: sqlite3.Row,
         f"{devedor}" + (f", inscrito(a) no CPF/CNPJ sob o nº {documento}"
                         if documento else ""),
         "",
-        ("do apontamento para protesto do título abaixo, para que, no prazo "
-         "legal, compareça a esta Serventia a fim de pagá-lo, ou, querendo, "
-         "apresente as razões que tiver:"),
+        # O EDITAL SE LIMITA AO QUE O CN-MA, art. 922, § 3º, MANDA: devedor,
+        # identificação do título, valor, PRAZO-LIMITE e o tabelionato com
+        # endereço e telefone. Até 14/10/2026 ele dizia «no prazo legal» sem
+        # data e trazia apresentante e credor, que o parágrafo não pede.
+        ("do apontamento para protesto do título abaixo, para que, até "
+         f"{_br(limite) if limite else 'o prazo legal'}, compareça a esta "
+         "Serventia a fim de pagá-lo, ou, querendo, apresente as razões que "
+         "tiver:"),
         "",
         f"Protocolo: {protocolo or 'A CONFERIR'}",
         f"Título: {titulo['numero_titulo'] or 'sem número'}"
         + (f" — espécie {titulo['especie']}" if titulo["especie"] else ""),
-        f"Apresentante: {titulo['apresentante_nome'] or titulo['apresentante_codigo'] or '—'}",
-        f"Credor: {titulo['cedente_nome'] or '—'}",
         f"Valor: R$ {valor}",
+        f"Prazo-limite para pagamento: {_br(limite)}" if limite else "",
         "",
         ("Decorrido o prazo sem manifestação, o título será protestado na "
          "forma da Lei nº 9.492, de 10 de setembro de 1997."),
+        "",
+        (f"{casa} — {sv.get('endereco_completo') or ''}. Telefone "
+         f"{sv.get('serventia_telefone') or sv.get('telefone') or ''}."),
         "",
         # A DATA POR EXTENSO, como em todo papel que esta casa assina.
         # `2026-08-25` e formato de banco de dados, e nao de edital afixado.
@@ -415,7 +547,8 @@ def proximo_numero_do_edital(con: sqlite3.Connection, ano: int) -> int:
 
 def publicar_edital(con: sqlite3.Connection, aviso_id: int, *, sv: dict,
                     hoje: str, agora: str, data_extenso: str | None = None,
-                    usuario: str | None = None) -> dict:
+                    usuario: str | None = None,
+                    justificativa: str | None = None) -> dict:
     """Publica o edital do aviso que nao foi entregue. ESCREVE.
 
     E ELE QUE LAVRA A INTIMACAO POR EDITAL — modo `EDITAL`, com o codigo do
@@ -437,6 +570,21 @@ def publicar_edital(con: sqlite3.Connection, aviso_id: int, *, sv: dict,
             f"entregue — o edital substitui a intimação pessoal que não deu "
             f"certo, e não a que nem se tentou.")
 
+    # O EDITAL VEM DEPOIS DA RESOLVE (15/10/2026): CN-MA art. 922, «após
+    # esgotados todos os meios de localização razoavelmente disponíveis». Onde
+    # a Intimação Digital cabe e não foi tentada, ou ainda está correndo, o
+    # edital pede o motivo escrito; onde ela confirmou, o edital não cabe.
+    caminho = depois_da_nao_entrega(con, aviso)
+    if caminho["edital"] == "RECUSADO":
+        raise AvisoError(caminho["frase"])
+    porque = " ".join(str(justificativa or "").split())
+    if caminho["edital"] == "JUSTIFICAR" and len(porque) < 10:
+        raise AvisoError(
+            caminho["frase"] + " Para publicar o edital agora, escreva o "
+            "motivo (pelo menos dez letras) — ele fica no ato da intimação.")
+    sobre_a_resolve = caminho["resumo"] + (f"; motivo: {porque}" if porque
+                                           else "")
+
     tit = PT.titulo(con, int(aviso["titulo_id"]))
     if not tit:
         raise AvisoError(f"Título {aviso['titulo_id']} não encontrado.")
@@ -444,6 +592,7 @@ def publicar_edital(con: sqlite3.Connection, aviso_id: int, *, sv: dict,
     ano = int(str(hoje)[:4])
     numero = proximo_numero_do_edital(con, ano)
     teor = montar_teor_do_edital(aviso=aviso, titulo=tit, sv=sv, hoje=hoje,
+                                 limite=prazo_limite(con, tit),
                                  data_extenso=data_extenso)
     codigo = f"ED-{ano}-{numero:04d}"
 
@@ -451,7 +600,8 @@ def publicar_edital(con: sqlite3.Connection, aviso_id: int, *, sv: dict,
         con, int(aviso["titulo_id"]), modo="EDITAL", agora=agora,
         usuario=usuario, codigo_edital=codigo,
         comprovante=(f"Aviso {aviso['numero']}/{aviso['ano']} não entregue: "
-                     f"{motivo_rotulo(aviso['motivo'])}"))
+                     f"{motivo_rotulo(aviso['motivo'])}; Intimação Digital: "
+                     f"{sobre_a_resolve}"))
     try:
         cur = con.execute(
             """INSERT INTO pt_editais(numero, ano, aviso_id, titulo_id,
@@ -519,11 +669,17 @@ def esperando_edital(con: sqlite3.Connection, limite: int = 200) -> list[dict]:
 
     E A LISTA QUE MAIS ENCHE nesta casa: 1.092 dos 1.618 avisos do acervo
     terminaram em edital, e 94% das nao-entregas sao "Ausente".
+
+    SO TITULO AINDA APONTADO (15/10/2026): o que ja foi intimado por outro
+    caminho — a Intimacao Digital confirmada, ou um segundo aviso entregue —
+    nao espera edital, e ficar na lista convidaria a publicar um edital que
+    nao cabe.
     """
     return [dict(r) for r in con.execute(
         """SELECT a.*, t.numero_titulo, t.protocolo, t.saldo_centavos
              FROM pt_avisos a JOIN pt_titulos t ON t.id = a.titulo_id
-            WHERE a.situacao='NAO_ENTREGUE' ORDER BY a.entrega_em, a.id
+            WHERE a.situacao='NAO_ENTREGUE' AND t.situacao='APONTADO'
+            ORDER BY a.entrega_em, a.id
             LIMIT ?""", (int(limite),))]
 
 
@@ -546,3 +702,372 @@ def contagens(con: sqlite3.Connection) -> dict:
     achado = {r["situacao"]: r["n"] for r in con.execute(
         "SELECT situacao, COUNT(*) n FROM pt_avisos GROUP BY situacao")}
     return {s: int(achado.get(s, 0)) for s in SITUACOES}
+
+
+# ------------------------------------- o que vem depois da não-entrega
+#
+# PEDIDO DO OFICIAL, 15/10/2026: «botão para avisar que não pode ser entregue
+# (seja por ser fora da zona de entrega ou por negativa em receber),
+# possibilitando mandar para intimação pela Resolve e, não rolando pela
+# Resolve, por edital». É a ordem do Código de Normas (Prov. 28/2026):
+#
+#   art. 919, § 1º — a intimação pode ir por meio eletrônico quando houver os
+#   dados do devedor;
+#   art. 921, § 6º, II — a intimação digital se cumpre «quando comprovado o
+#   seu recebimento por meio de confirmação de recebimento da plataforma»;
+#   art. 922 — o edital vem quando ninguém se dispõe a receber, ou o devedor
+#   não é localizado, «após esgotados todos os meios de localização
+#   razoavelmente disponíveis ao tabelionato».
+#
+# OS DOIS MOTIVOS DO PEDIDO JÁ ESTÃO NO CATÁLOGO DA CASA: «Fora do perímetro»
+# (14) é a zona de entrega, e «Recusou-se a receber» (3). O rótulo do catálogo
+# fica como foi transcrito; a tela os põe primeiro, com o nome do pedido.
+MOTIVO_FORA_DA_ZONA = 14
+MOTIVO_RECUSOU = 3
+MOTIVOS_EM_DESTAQUE = (MOTIVO_FORA_DA_ZONA, MOTIVO_RECUSOU)
+ROTULO_DO_DESTAQUE = {
+    MOTIVO_FORA_DA_ZONA: "Fora da zona de entrega",
+    MOTIVO_RECUSOU: "Recusou-se a receber",
+}
+
+# OS ESTADOS DA RESOLVE, lidos do lado desta casa. Os doze são do contrato
+# (`resolve_api.ESTADOS`); o que se decide aqui é o que cada um quer dizer
+# para o edital.
+#
+#   confirmou — a plataforma considera o devedor cientificado (art. 921,
+#   § 6º, II): lavra-se a intimação digital, e edital não cabe;
+#   pagou — o devedor pagou pela plataforma: o caminho é a baixa na ficha;
+#   não deu — terminou sem intimar: o edital está liberado;
+#   o resto — está correndo: o edital espera, ou vai com o motivo escrito.
+RESOLVE_CONFIRMOU = frozenset({"INTIMADO"})
+RESOLVE_PAGOU = frozenset({"PAGO"})
+RESOLVE_NAO_DEU = frozenset({"NAO_ENRIQUECIDO", "SEM_RESPOSTA", "REJEITADO",
+                             "CANCELADO"})
+
+
+def _ultima_na_resolve(con: sqlite3.Connection, titulo_id: int) -> dict | None:
+    """A última Intimação Digital deste título, em PRODUÇÃO. Só LÊ."""
+    if not con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='rs_intimacoes'").fetchone():
+        return None
+    import centrais_cred as CRED
+    linha = con.execute(
+        """SELECT id, identificador, intimacao_id, estado, estado_em,
+                  enviada_em
+             FROM rs_intimacoes
+            WHERE titulo_id = ? AND ambiente = ?
+            ORDER BY id DESC LIMIT 1""",
+        (int(titulo_id), CRED.PRODUCAO)).fetchone()
+    return dict(linha) if linha else None
+
+
+def depois_da_nao_entrega(con: sqlite3.Connection, aviso: Any) -> dict:
+    """O próximo passo do aviso que não foi entregue. Só LÊ.
+
+    Devolve `passo` (RESOLVE, AGUARDAR, LAVRAR_DIGITAL, PAGO ou EDITAL),
+    `edital` (LIBERADO, JUSTIFICAR ou RECUSADO), a `frase` para a tela e o
+    `resumo` que vai escrito no ato da intimação por edital.
+
+    **NÃO JULGA PRAZO.** Quando a Resolve ainda está correndo, o edital não é
+    recusado: ele pede o motivo escrito. Quem decide se dá para esperar a
+    plataforma dentro do tríduo é o oficial — a regra de 24/08/2026.
+    """
+    import resolve_intimacao as RS
+    titulo_id = int(aviso["titulo_id"])
+    tit = con.execute(
+        """SELECT t.id, t.situacao, t.chave_cenprot,
+                  (SELECT d.nome FROM pt_devedores d
+                    WHERE d.titulo_id = t.id ORDER BY d.id LIMIT 1)
+                      AS devedor_nome
+             FROM pt_titulos t WHERE t.id = ?""", (titulo_id,)).fetchone()
+    classe = (RS.situacao_do_titulo(dict(tit)) if tit
+              else {"pode_ir": False, "porque_nao": "o título não existe"})
+    ultima = _ultima_na_resolve(con, titulo_id)
+    estado = str((ultima or {}).get("estado") or "").strip().upper()
+
+    if ultima is None and classe["pode_ir"]:
+        passo, edital = "RESOLVE", "JUSTIFICAR"
+        frase = ("A Intimação Digital (Resolve) ainda não foi tentada. O "
+                 "edital vem depois de esgotados os meios disponíveis "
+                 "(CN-MA art. 922): mande pela Resolve primeiro.")
+        resumo = "não tentada"
+    elif ultima is None:
+        passo, edital = "EDITAL", "LIBERADO"
+        frase = (f"A Intimação Digital não serve a este título — "
+                 f"{classe['porque_nao']}. O caminho é o edital.")
+        resumo = f"não se aplica ({classe['porque_nao']})"
+    elif estado in RESOLVE_CONFIRMOU:
+        passo, edital = "LAVRAR_DIGITAL", "RECUSADO"
+        frase = ("A Resolve confirmou a intimação do devedor (CN-MA art. "
+                 "921, § 6º, II). Lavre a intimação digital — o edital não "
+                 "cabe.")
+        resumo = f"confirmada ({ultima['identificador']})"
+    elif estado in RESOLVE_PAGOU:
+        passo, edital = "PAGO", "RECUSADO"
+        frase = ("A Resolve informa que o título foi PAGO. Confira e lance o "
+                 "pagamento na ficha do título — o edital não cabe.")
+        resumo = f"pago ({ultima['identificador']})"
+    elif estado in RESOLVE_NAO_DEU:
+        passo, edital = "EDITAL", "LIBERADO"
+        frase = (f"A Intimação Digital não deu certo (a Resolve diz "
+                 f"«{estado}»). O caminho é o edital.")
+        resumo = f"não deu ({ultima['identificador']}, {estado})"
+    else:
+        passo, edital = "AGUARDAR", "JUSTIFICAR"
+        enviada = str(ultima.get("enviada_em") or "")[:10]
+        frase = (f"A Intimação Digital foi enviada em {_br(enviada)} e está "
+                 f"«{estado or 'sem resposta ainda'}». Espere a confirmação "
+                 f"(atualize os estados) — se ela não vier a tempo, publique "
+                 f"o edital dizendo por quê.")
+        resumo = (f"em curso ({ultima['identificador']}, "
+                  f"{estado or 'sem resposta'})")
+    return {"passo": passo, "edital": edital, "frase": frase,
+            "resumo": resumo, "resolve": ultima, "estado": estado,
+            "pode_ir": bool(classe.get("pode_ir")),
+            "porque_nao": classe.get("porque_nao") or ""}
+
+
+def lavrar_intimacao_digital(con: sqlite3.Connection, aviso_id: int, *,
+                             agora: str, usuario: str | None = None) -> dict:
+    """Lavra a intimação que a Resolve confirmou. ESCREVE.
+
+    **SÓ COM A CONFIRMAÇÃO DA PLATAFORMA** (CN-MA art. 921, § 6º, II): o
+    estado tem de ser o que a Resolve chama de INTIMADO. Antes dele, o que há
+    é mensagem enviada, e mensagem enviada não é intimação. Quem lavra é
+    `protesto.lancar_intimacao`, modo pessoal **digital** — é a marca que faz o
+    termo do protesto dizer «intimado por meio eletrônico».
+    """
+    aviso = ler(con, aviso_id)
+    if not aviso:
+        raise AvisoError(f"Aviso {aviso_id} não encontrado.")
+    if aviso["situacao"] != "NAO_ENTREGUE":
+        raise AvisoError(
+            f"O aviso {aviso['numero']}/{aviso['ano']} está "
+            f"{aviso['situacao']}. A intimação digital entra no lugar do "
+            f"aviso que não foi entregue.")
+    caminho = depois_da_nao_entrega(con, aviso)
+    if caminho["passo"] != "LAVRAR_DIGITAL":
+        raise AvisoError(
+            "A Resolve ainda não confirmou a intimação deste devedor. "
+            + caminho["frase"])
+    ultima = caminho["resolve"] or {}
+    quando = str(ultima.get("estado_em") or "")[:10]
+    lavrado = PT.lancar_intimacao(
+        con, int(aviso["titulo_id"]), modo="PESSOAL", digital=True,
+        agora=agora, usuario=usuario,
+        comprovante=(f"Intimação Digital (Resolve) {ultima.get('identificador')}"
+                     f", confirmada pela plataforma"
+                     + (f" em {_br(quando)}" if quando else "")
+                     + f" (CN-MA art. 921, § 6º, II); aviso "
+                       f"{aviso['numero']}/{aviso['ano']} não entregue: "
+                       f"{motivo_rotulo(aviso['motivo'])}"))
+    con.execute("UPDATE pt_avisos SET ato_id=? WHERE id=?",
+                (lavrado["ato_id"], int(aviso_id)))
+    return {"aviso_id": int(aviso_id), "ato_id": lavrado["ato_id"],
+            "identificador": ultima.get("identificador")}
+
+
+# --------------------------------------- o comprovante da intimação entregue
+#
+# PEDIDO DO OFICIAL, 15/10/2026: «lugar de upload das intimações dos títulos
+# entregues». É o que o CN-MA exige: a intimação se comprova «mediante
+# protocolo, aviso de recebimento — AR, ou documento equivalente» (art. 921)
+# e se considera cumprida quando comprovado o recebimento no endereço do
+# devedor (art. 921, § 6º, I). Até aqui o sistema guardava só o nome de quem
+# recebeu; o papel assinado ficava na gaveta.
+#
+# MORA EM `attachments`, como a imagem do título — a tabela geral da casa —,
+# com dono próprio: o AVISO, e não o título. Um título tem vários avisos
+# (255 no acervo), e o comprovante é daquele que chegou.
+ENTIDADE_DO_COMPROVANTE = "PT_AVISO"
+# De que situações o aviso aceita comprovante: a entrega e a tentativa (que
+# segue valendo depois do edital, porque é ela que o fundamenta).
+SITUACOES_COM_COMPROVANTE = ("ENTREGUE", "NAO_ENTREGUE", "EDITAL")
+
+
+def ja_tem_este_comprovante(con: sqlite3.Connection, aviso_id: int,
+                            conteudo: bytes) -> bool:
+    """Se este mesmo arquivo já está anexado a este aviso. Só LÊ."""
+    return con.execute(
+        """SELECT 1 FROM attachments
+            WHERE entity_type=? AND entity_id=? AND sha256=?""",
+        (ENTIDADE_DO_COMPROVANTE, int(aviso_id),
+         hashlib.sha256(bytes(conteudo or b"")).hexdigest())).fetchone() \
+        is not None
+# O que se aceita, e a assinatura de cada tipo nos primeiros bytes: a lista é
+# curta porque o arquivo abre NA TELA (`/arquivo/<id>/ver`), e arquivo de fora
+# servido em linha roda na origem do sistema — a régua de `arquivo_visivel`.
+ASSINATURA_DO_COMPROVANTE = {
+    ".pdf": (b"%PDF",),
+    ".png": (b"\x89PNG",),
+    ".jpg": (b"\xff\xd8",),
+    ".jpeg": (b"\xff\xd8",),
+}
+LIMITE_DO_COMPROVANTE = 25 * 1024 * 1024     # 25 MB, o da imagem do título
+
+
+def guardar_comprovante(con: sqlite3.Connection, aviso_id: int, *, nome: Any,
+                        conteudo: bytes, pasta_de_arquivos: Any, agora: str,
+                        usuario_id: int | None = None) -> dict:
+    """Anexa ao aviso o comprovante da intimação entregue. ESCREVE, e grava
+    arquivo em disco.
+
+    **SÓ AVISO ENTREGUE.** O comprovante prova uma entrega; anexá-lo a um
+    aviso sem entrega registrada faria o papel dizer uma coisa e o sistema
+    outra. **E NÃO SE SOBRESCREVE**: o segundo arquivo do mesmo aviso é outro
+    anexo — a frente e o verso, ou a via corrigida —, e o mesmo arquivo duas
+    vezes é recusado pelo conteúdo.
+    """
+    aviso = ler(con, aviso_id)
+    if not aviso:
+        raise AvisoError(f"Aviso {aviso_id} não encontrado.")
+    # A TENTATIVA TAMBÉM SE PROVA (15/10/2026, pedido do oficial: «um campo de
+    # tentativa, onde se coloca quando tentou, para fundamentar a expedição de
+    # edital»). O canhoto que volta com as tentativas anotadas é a prova de
+    # que se tentou — CN-MA art. 922, «esgotados todos os meios» —, e fica
+    # anexado ao aviso não entregue, inclusive depois do edital.
+    if aviso["situacao"] not in SITUACOES_COM_COMPROVANTE:
+        raise AvisoError(
+            f"O aviso {aviso['numero']}/{aviso['ano']} está "
+            f"{aviso['situacao']}. O comprovante é da entrega ou da tentativa "
+            f"— registre o desfecho do aviso primeiro.")
+    nome_limpo = Path(str(nome or "")).name.strip()
+    ext = Path(nome_limpo).suffix.lower()
+    if ext not in ASSINATURA_DO_COMPROVANTE:
+        raise AvisoError(
+            "O comprovante tem de ser PDF, PNG ou JPG — o papel assinado, "
+            "escaneado ou fotografado.")
+    conteudo = bytes(conteudo or b"")
+    if not conteudo:
+        raise AvisoError("O arquivo do comprovante está vazio.")
+    if len(conteudo) > LIMITE_DO_COMPROVANTE:
+        raise AvisoError(
+            f"O comprovante passa de "
+            f"{LIMITE_DO_COMPROVANTE // 1024 // 1024} MB. Escaneie com "
+            f"resolução menor.")
+    if not conteudo.startswith(ASSINATURA_DO_COMPROVANTE[ext]):
+        raise AvisoError(
+            f"O arquivo diz ser {ext} e não é — o conteúdo não começa como um "
+            f"{ext[1:].upper()}. Salve de novo do scanner e anexe.")
+    sha = hashlib.sha256(conteudo).hexdigest()
+    if con.execute(
+            """SELECT id FROM attachments
+                WHERE entity_type=? AND entity_id=? AND sha256=?""",
+            (ENTIDADE_DO_COMPROVANTE, int(aviso_id), sha)).fetchone():
+        raise AvisoError("Este arquivo já está anexado a este aviso.")
+
+    destino = (Path(pasta_de_arquivos) / "Protesto" / "Intimacoes"
+               / str(int(aviso["titulo_id"])))
+    destino.mkdir(parents=True, exist_ok=True)
+    n = len(comprovantes(con, aviso_id)) + 1
+    arquivo = destino / f"aviso-{aviso['numero']}-{aviso['ano']}-{n}{ext}"
+    while arquivo.exists():
+        n += 1
+        arquivo = destino / f"aviso-{aviso['numero']}-{aviso['ano']}-{n}{ext}"
+    arquivo.write_bytes(conteudo)
+    cur = con.execute(
+        """INSERT INTO attachments(entity_type, entity_id, original_name,
+               stored_name, stored_path, sha256, size_bytes, description,
+               uploaded_by, uploaded_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (ENTIDADE_DO_COMPROVANTE, int(aviso_id), nome_limpo or arquivo.name,
+         arquivo.name, str(arquivo), sha, len(conteudo),
+         (f"Comprovante da intimação — aviso {aviso['numero']}/{aviso['ano']}"
+          if aviso["situacao"] == "ENTREGUE" else
+          f"Comprovante da tentativa de entrega — aviso "
+          f"{aviso['numero']}/{aviso['ano']}"),
+         usuario_id, agora))
+    return {"anexo_id": int(cur.lastrowid), "aviso_id": int(aviso_id),
+            "nome": arquivo.name}
+
+
+def comprovantes(con: sqlite3.Connection, aviso_id: int) -> list[dict]:
+    """Os comprovantes daquele aviso. Só LÊ."""
+    return [dict(r) for r in con.execute(
+        """SELECT id, original_name, size_bytes, uploaded_at
+             FROM attachments WHERE entity_type=? AND entity_id=?
+            ORDER BY id""", (ENTIDADE_DO_COMPROVANTE, int(aviso_id)))]
+
+
+def entregues(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
+    """Os avisos entregues, os SEM comprovante primeiro. Só LÊ.
+
+    A lista de trabalho do upload: o que foi entregue e ainda não tem o papel
+    anexado vem no alto, porque é o que a correição pergunta.
+    """
+    linhas = [dict(r) for r in con.execute(
+        """SELECT a.*, t.numero_titulo, t.protocolo,
+                  (SELECT COUNT(*) FROM attachments x
+                    WHERE x.entity_type = ? AND x.entity_id = a.id)
+                      AS n_comprovantes
+             FROM pt_avisos a JOIN pt_titulos t ON t.id = a.titulo_id
+            WHERE a.situacao = 'ENTREGUE'
+            ORDER BY CASE WHEN (SELECT COUNT(*) FROM attachments x
+                                 WHERE x.entity_type = ?
+                                   AND x.entity_id = a.id) = 0
+                          THEN 0 ELSE 1 END,
+                     a.entrega_em DESC, a.id DESC
+            LIMIT ?""",
+        (ENTIDADE_DO_COMPROVANTE, ENTIDADE_DO_COMPROVANTE, int(limite)))]
+    for linha in linhas:
+        linha["comprovantes"] = comprovantes(con, linha["id"])
+    return linhas
+
+
+# ------------------------------------------- o canhoto que volta ao cartório
+#
+# PEDIDO DO OFICIAL, 15/10/2026: «ter uma parte destacável para o cartório
+# levar apenas a confirmação de recebimento, com a assinatura, e não precisar
+# imprimir duas vezes todas as folhas». O aviso fica com o devedor; o canhoto,
+# destacado, volta assinado — e é ELE que se escaneia no PDF com várias
+# intimações. Por isso o QR do aviso mora no canhoto, e não no alto da folha.
+#
+# O QUE ELE LEVA é o que prova o recebimento no endereço (CN-MA art. 921,
+# § 6º, I): de que aviso é, de que título, e quem recebeu, quando e com que
+# assinatura. O nome e o documento de quem recebeu ficam no PAPEL — o sistema
+# não os digita (decisão do oficial, 15/10/2026: «acho que não precisa»).
+
+
+def canhoto_do_aviso(con: sqlite3.Connection, aviso: Any) -> dict:
+    """O comprovante destacável do aviso. Só calcula."""
+    import protesto_cra as CRA
+    av = dict(aviso)
+    tit = PT.titulo(con, int(av["titulo_id"]))
+    if not tit:
+        raise AvisoError("O título deste aviso não foi encontrado.")
+    t = dict(tit)
+    especie = CRA.ESPECIES.get(str(t.get("especie") or "").upper(),
+                               t.get("especie") or "")
+    return {
+        "titulo": "COMPROVANTE DE RECEBIMENTO DA INTIMAÇÃO",
+        "identificacao": [
+            f"Aviso n. {av['numero']}/{av['ano']} — Protocolo n. "
+            f"{t.get('protocolo') or '—'}",
+            f"Devedor: {av.get('devedor_nome') or ''}",
+            f"Título: {especie}, n. {t.get('numero_titulo') or 'sem número'} "
+            f"— R$ {_reais(t.get('saldo_centavos') or t.get('valor_centavos'))}",
+        ],
+        # TRÊS LINHAS, E CURTAS: o canhoto cabe no pé da MESMA folha do aviso
+        # (medido no PDF do LibreOffice: com cinco linhas ele passava para a
+        # segunda folha, que é exatamente o que o pedido quer evitar).
+        "campos": [
+            "Recebido em ___/___/______ às ___:___   Assinatura: "
+            "__________________________",
+            "Nome legível: _____________________________   Documento: "
+            "_______________",
+            "Relação com o devedor: ( ) o próprio ( ) outra: ___________   "
+            "Entregador: _______________",
+        ],
+        # AS TENTATIVAS (15/10/2026): «um campo de tentativa, onde se coloca
+        # quando tentou, para fundamentar a expedição de edital». São o
+        # rastro que o art. 922 pede — «esgotados todos os meios» — escrito
+        # por quem foi ao endereço, no mesmo papel que volta ao cartório.
+        "tentativas_titulo": ("TENTATIVAS DE ENTREGA — preencha se não "
+                              "entregou (fundamenta o edital)"),
+        "tentativas": [
+            f"{n}ª: ___/___/___ ___:___ ( ) ausente ( ) recusou ( ) fora da "
+            f"zona ( ) outro ________ Entregador: _________"
+            for n in (1, 2)
+        ],
+    }

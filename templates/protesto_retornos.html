@@ -114,7 +114,7 @@
   {% else %}
   <table class="table">
     <thead><tr><th>Arquivo</th><th>Tipo</th><th>Apresentante</th><th>Dia</th>
-               <th>Títulos</th><th>Soma</th><th>Gerado em</th></tr></thead>
+               <th>Títulos</th><th>Soma</th><th>Gerado em</th><th>CRA</th></tr></thead>
     <tbody>
       {% for g in gerados %}
       <tr>
@@ -129,6 +129,19 @@
         <td>{{ g.titulos }}</td>
         <td>R$ {{ g.soma_centavos | centavos_reais }}</td>
         <td><small>{{ g.gerado_em }}<br>{{ g.gerado_por or '—' }}</small></td>
+        <td>
+          {% if g.cra_enviado_ambiente == 'EOFICIO' %}
+            <small>informado pelo E-Ofício antes da virada</small>
+          {% elif g.cra_enviado_em %}
+            <strong>enviado</strong><div><small>{{ g.cra_enviado_em[:16] }}</small></div>
+          {% else %}
+            {% if g.cra_envio_erro %}<div class="danger"><small>{{ g.cra_envio_erro[:160] }}</small></div>{% endif %}
+            <form method="post" action="{{ url_for('protesto_retorno_enviar', retorno_id=g.id) }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button primary">Enviar à CRA</button>
+            </form>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>

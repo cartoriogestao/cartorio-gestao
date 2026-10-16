@@ -1,10 +1,161 @@
 {% extends 'base.html' %}
-{% block title %}Roteiro das Centrais — Protesto{% endblock %}
-{% block heading %}<h1>Protesto — o roteiro das Centrais</h1>{% endblock %}
+{% block title %}Painel do dia — Protesto{% endblock %}
+{% block heading %}<h1>Protesto — o painel do dia</h1>{% endblock %}
 {% block content %}
 {% include '_serventia.html' %}
+{# O PAINEL DO DIA — pedido do oficial em 14/10/2026, o primeiro dia operando o
+   protesto no sistema: «botão claro e bem posicionado para cada parte da
+   rotina do protesto» e «um fluxo natural». As etapas vêm de
+   protesto_roteiro.ETAPAS_DO_DIA, na ordem em que o título anda; o roteiro do
+   TJMA (o papel) continua embaixo, recolhido — ele é a fonte, e o painel é por
+   onde se trabalha. A contagem CONTA e não julga: o traço quer dizer «não deu
+   para medir», e zero é medido. #}
+<style>
+  .pd-relogio{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px}
+  .pd-relogio a{display:flex;flex-direction:column;gap:2px;min-width:180px;
+    padding:10px 14px;border:1px solid var(--border);border-radius:12px;
+    background:var(--panel);color:var(--text);text-decoration:none}
+  .pd-relogio a:hover{border-color:var(--accent)}
+  .pd-relogio strong{font-size:1.5em;line-height:1.1}
+  .pd-relogio small{color:var(--muted)}
+  .pd-estado{margin:0 0 14px}
+  .pd-estado ul{margin:6px 0 0 18px;padding:0}
+  .pd-sim{color:var(--ok);font-weight:700}
+  .pd-nao{color:var(--warning);font-weight:700}
+  .pd-etapas{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px}
+  .pd-etapa{margin:0}
+  .pd-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px 6px}
+  .pd-num{display:inline-flex;align-items:center;justify-content:center;
+    width:34px;height:34px;border-radius:50%;background:var(--accent);
+    color:#fff;font-weight:700;flex:0 0 auto}
+  .pd-cab h2{margin:0;font-size:1.15em;flex:1 1 auto}
+  .pd-hora{padding:4px 10px;border-radius:999px;border:1px solid var(--border);
+    font-size:.9em;white-space:nowrap}
+  .pd-hora strong{font-size:1.05em}
+  .pd-corpo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;padding:6px 16px 4px}
+  @media (max-width:760px){.pd-corpo{grid-template-columns:1fr}}
+  .pd-acoes{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+  .pd-acoes .button{font-size:1.02em}
+  .pd-acoes .button.primary{padding:11px 18px;font-weight:700;width:auto}
+  .pd-quem{color:var(--muted);font-size:.85em;margin-left:4px}
+  .pd-sem{border:1px dashed var(--warning);border-radius:8px;padding:8px 10px;
+    color:var(--warning);font-size:.92em;max-width:100%}
+  .pd-contagens{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-content:start}
+  .pd-contagens dt{font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+  .pd-contagens dd{margin:0;color:var(--muted)}
+  .pd-texto{padding:4px 16px 14px;margin:0}
+  .pd-texto p{margin:6px 0}
+  .pd-falta{border-left:3px solid var(--warning);padding-left:10px}
+  details.pd-papel{margin-top:22px}
+  details.pd-papel > summary{cursor:pointer;font-weight:700;padding:8px 0}
+</style>
+
 <nav class="notice" aria-label="Nesta página" style="margin-bottom:12px">
-  <strong>Nesta página:</strong>
+  <strong>As etapas:</strong>
+  {% for e in r.etapas %}<a href="#{{ e.ancora }}">{{ e.n }}. {{ e.titulo }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
+  · <a href="#roteiro-das-centrais">O roteiro das Centrais (o papel)</a>
+</nav>
+
+{# O RELÓGIO PRIMEIRO: é a única parte do dia com HORA MARCADA. Cada cartão
+   leva à etapa daquele horário. #}
+<section class="pd-relogio" aria-label="Horários da CRA de hoje" id="relogio">
+  {% for h in r.relogio %}
+    <a href="#{{ h.ancora }}">
+      <strong>{{ h.hora }}</strong>
+      <span>{{ h.o_que }}</span>
+      <small>{% if h.nosso %}a casa envia até esta hora{% else %}a CRA disponibiliza a esta hora{% endif %}</small>
+    </a>
+  {% endfor %}
+</section>
+
+{# O QUE DECIDE SE A CONFIRMAÇÃO E O ANDAMENTO SOBEM SOZINHOS. Sem isto o
+   escrevente supõe que subiram — e a Central não sabe de nada. #}
+{% set est = r.estado %}
+<section class="notice pd-estado" aria-label="Envio às Centrais">
+  <strong>Envio automático à CRA (produção):</strong>
+  {% if est.cra_envio_automatico_producao is none %}
+    <span>não deu para ler a configuração.</span>
+  {% elif est.cra_envio_automatico_producao %}
+    <span class="pd-sim">ligado</span> — a confirmação e o andamento sobem pela
+    API logo depois de receber a remessa.
+  {% else %}
+    <span class="pd-nao">desligado</span> — a confirmação e o andamento são
+    gerados, mas <strong>não sobem sozinhos</strong>: baixe-os na ficha da
+    remessa e suba no site da CRA. Quem liga é o administrador, em
+    <a href="{{ url_for('settings') }}">Configurações</a>.
+  {% endif %}
+  <ul>
+    {% for nome, tem in est.credenciais_de_producao.items() %}
+      <li>Credencial de produção da {{ nome }}:
+        {% if tem is none %}não deu para conferir
+        {% elif tem %}<span class="pd-sim">informada</span>
+        {% else %}<span class="pd-nao">não informada</span> — sem ela nada sobe pela API{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+
+<ol class="pd-etapas">
+{% for e in r.etapas %}
+  <li>
+  <section class="panel pd-etapa" id="{{ e.ancora }}">
+    <div class="pd-cab">
+      <span class="pd-num" aria-hidden="true">{{ e.n }}</span>
+      <h2>{{ e.titulo }}</h2>
+      {% if e.hora_limite %}
+        <span class="pd-hora">
+          {% if e.hora_quem == 'a CRA manda' %}a CRA disponibiliza às <strong>{{ e.hora_limite }}</strong>
+          {% else %}enviar até <strong>{{ e.hora_limite }}</strong>{% endif %}
+        </span>
+      {% endif %}
+    </div>
+    <div class="pd-corpo">
+      <div class="pd-acoes">
+        {% for b in e.botoes %}
+          <span>
+            <a class="button {{ 'primary' if loop.first else 'secondary' }}"
+               href="{{ url_for(b.tela, **b.args) }}">{{ b.rotulo }}</a>
+            {% if b.quem %}<span class="pd-quem">({{ b.quem }})</span>{% endif %}
+          </span>
+        {% endfor %}
+        {% if e.sem_botao %}
+          {# SEM BOTÃO, DE PROPÓSITO: a peça não existe no sistema, e um botão
+             que baixasse um arquivo faria o passo parecer feito. #}
+          <div class="pd-sem"><strong>Sem botão:</strong> {{ e.sem_botao }}.</div>
+        {% endif %}
+      </div>
+      <dl class="pd-contagens" aria-label="O que espera nesta etapa">
+        {% for c in e.contagens %}
+          <dt>{% if c.valor is none %}—{% else %}{{ c.valor }}{% endif %}</dt>
+          <dd>{{ c.rotulo }}</dd>
+        {% endfor %}
+      </dl>
+    </div>
+    <div class="pd-texto">
+      <p><strong>O que esta tela faz:</strong> {{ e.faz }}</p>
+      {% if e.falta %}<p class="pd-falta"><strong>O que ela não faz:</strong> {{ e.falta }}</p>{% endif %}
+      {% if e.mostra_envio_automatico %}
+        <p><small>Envio automático à CRA em produção:
+          {% if est.cra_envio_automatico_producao is none %}não deu para ler
+          {% elif est.cra_envio_automatico_producao %}ligado{% else %}<strong>desligado</strong>{% endif %}.
+        </small></p>
+      {% endif %}
+    </div>
+  </section>
+  </li>
+{% endfor %}
+</ol>
+
+<p><small>
+  Os números <strong>contam, e não julgam</strong>: um zero pode ser «ainda não
+  fiz» ou «hoje não veio nada da Central», e o sistema não tem como saber qual.
+  O traço <strong>—</strong> quer dizer que não deu para medir nesta instalação.
+</small></p>
+
+<details class="pd-papel" id="roteiro-das-centrais">
+<summary>O roteiro das Centrais — o papel do TJMA e do IEPTB-MA, passo a passo</summary>
+
+<nav class="notice" aria-label="No roteiro" style="margin:8px 0 12px">
   <a href="#horarios-cra">Horários da CRA</a> ·
   <a href="#roteiro-cra">CRA — o dia</a> ·
   <a href="#roteiro-cenprot">CENPROT</a> ·
@@ -12,12 +163,6 @@
   <a href="#so-tabeliao">Só tabelião/substituto</a> ·
   <a href="#fontes-roteiro">Fontes do roteiro</a>
 </nav>
-<div class="actions">
-  <a class="button" href="{{ url_for('protesto_titulos') }}">Títulos</a>
-  <a class="button" href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>
-  <a class="button" href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
-  <a class="button" href="{{ url_for('protesto_retornos') }}">Retorno à CRA</a>
-</div>
 
 {# OS HORARIOS PRIMEIRO, e nao no fim: e a unica coisa desta tela que tem
    HORA MARCADA. Perder as 11h30 do retorno nao e atraso de um dia — e o
@@ -124,4 +269,5 @@
     se pode fazer, são combinação com a Central.
   </small></p>
 </section>
+</details>
 {% endblock %}

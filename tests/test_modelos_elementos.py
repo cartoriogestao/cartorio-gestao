@@ -50,7 +50,7 @@ def con(tmp_path):
 
 
 def _salvar(con, **campos):
-    ELEM.salvar(con, quem="JEAN", agora=AGORA, **campos)
+    ELEM.salvar(con, quem="MARIO", agora=AGORA, **campos)
 
 
 # ================================================ a promessa: nada mudou de forma
@@ -281,8 +281,9 @@ def test_o_quadro_traz_os_papeis_e_as_partes(con):
     # **ONZE PAPÉIS DO RI** — catálogo `modelos_papeis` (3.6.221+): miolos de
     # certidão, negativa de imóvel, prenotação e Livro 3, além de cabeçalho,
     # ficha, molde e nota. O número vem do catálogo; se alguém acrescentar ou
-    # retirar um papel editável, este assert avisa.
-    assert len(q["atos"]) == 11
+    # retirar um papel editável, este assert avisa. 14/10/2026: 11 → 13, com
+    # os miolos da certidão dominial e da vintenária reconstituídos.
+    assert len(q["atos"]) == 13
     for a in q["atos"]:
         assert [p["parte"] for p in a["partes"]] == list(ESQ.PARTES)
 
@@ -318,7 +319,7 @@ def test_o_ajuste_antigo_do_papel_ganha_do_da_atribuicao(con):
     avisar. Medido: `mo_modelos` tem zero linhas nesta casa, mas uma
     instalação que já tivesse ajustado não pode perder o ajuste.
     """
-    CASA.salvar(con, "RI_NOTA", corpo="A nota antiga.", quem="JEAN",
+    CASA.salvar(con, "RI_NOTA", corpo="A nota antiga.", quem="MARIO",
                 agora=AGORA)
     e = ELEM.elemento(con, atribuicao=ESQ.RI, ato="RI_NOTA", parte=ESQ.CORPO)
     assert e["de_onde"] == ELEM.DO_LEGADO
@@ -326,7 +327,7 @@ def test_o_ajuste_antigo_do_papel_ganha_do_da_atribuicao(con):
 
 
 def test_o_elemento_novo_ganha_do_legado(con):
-    CASA.salvar(con, "RI_NOTA", corpo="A nota antiga.", quem="JEAN",
+    CASA.salvar(con, "RI_NOTA", corpo="A nota antiga.", quem="MARIO",
                 agora=AGORA)
     _salvar(con, atribuicao=ESQ.RI, ato="RI_NOTA", parte=ESQ.CORPO,
             corpo="A nota nova.")

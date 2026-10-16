@@ -470,6 +470,7 @@ def status_payload() -> dict[str, Any]:
         "ccn": False,
         "cades": True,
         "rotas": ["GET /saude", "GET /certificados", "POST /assinar/pdf",
+                  "POST /assinar/pdf-windows",
                   "POST /assinar/cades"],
         "aviso": "este serviço só assina — não fala com e-Notariado/CCN; "
                  "dois tokens: SafeID (aetpkss1) e A3 SafeNet/Gemalto",
@@ -579,6 +580,30 @@ class Manipulador(BaseHTTPRequestHandler):
                     "thumbprint": resultado.get("thumbprint"),
                     "mecanismo": resultado.get("mecanismo"),
                 })
+                return
+            if caminho == "/assinar/pdf-windows":
+                # ACRÉSCIMO DE 15/10/2026 (sessão do protesto): assina pelo
+                # REPOSITÓRIO DO WINDOWS, o caminho que os sites usam — o
+                # PKCS#11 do SafeSign falha nesta casa (código 6) e o mesmo
+                # token assina por aqui. O PIN NÃO passa por este serviço: é a
+                # janela do próprio token que o pede ao titular. Ver
+                # `a3_windows`. As rotas antigas não mudaram.
+                import a3_windows
+                corpo = _ler_json(self)
+                pdf_b64 = corpo.get("pdf_b64") or ""
+                if not pdf_b64:
+                    raise ServicoA3Error("informe pdf_b64 no corpo JSON")
+                try:
+                    feito = a3_windows.assinar_pdf(
+                        base64.b64decode(pdf_b64),
+                        thumbprint=str(corpo.get("thumbprint") or ""))
+                except a3_windows.A3WindowsError as exc:
+                    raise ServicoA3Error(str(exc)) from exc
+                _json_resposta(self, 200, {
+                    "ok": True, "formato": "pkcs7-anexado-windows",
+                    "cms_b64": base64.b64encode(feito["p7s"]).decode("ascii"),
+                    "thumbprint": feito["thumbprint"],
+                    "mecanismo": "windows-cryptoapi"})
                 return
             if caminho != "/assinar/pdf":
                 _json_resposta(self, 404, {

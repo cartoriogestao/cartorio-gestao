@@ -87,12 +87,32 @@ def _assento_registrado_aqui(casa) -> int:
                        'ATIVO','MANUAL','2026-09-18T09:00:00')""",
             (M32,))
         aid = int(cur.lastrowid)
-        con.execute(
+        cur = con.execute(
             """INSERT INTO rc_atos(assento_id, tipo, folha, numero_ordem,
                    rotulo, data_ato, selo, origem, criado_em)
                VALUES (?,'REGISTRO',154,19553,'154','2026-09-18',?,'MANUAL',
                        '2026-09-18T09:00:00')""",
             (aid, SELO_REGISTRO))
+        registro_id = int(cur.lastrowid)
+        # TESTE VELHO, ATUALIZADO EM 14/10/2026. Este arquivo é de 18/09 e
+        # emitia a 1ª via SEM folha de segurança. Depois dele vieram duas
+        # regras de propósito, as duas em `rcpn_certidao_emitir`:
+        #   · relato #92 (22/09/2026, 3.6.240) — FOLHA OBRIGATÓRIA EM TODA
+        #     EMISSÃO, inclusive a 1ª via: sem folha a rota recusa antes de
+        #     emitir (e a certidão nem chegava a existir aqui);
+        #   · FOLHA_DA_1A_VIA (09/10/2026) — a 1ª via sai na folha que o
+        #     REGISTRO baixou e mandou ao TJMA no `papelMoeda`, amarrada sem
+        #     baixa dupla.
+        # O assento ganha, então, o que o registro desta casa tem hoje: a
+        # folha 840001 USADA no ato de registro (e uma 840002 em branco na
+        # gaveta, que a 1ª via não pode gastar).
+        import papel_seguranca as PP
+        PP.receber_remessa(con, fornecedor="ARPENBRASIL", serie="HA",
+                           codigo_de="840001", codigo_ate="840002",
+                           agora="2026-09-18T08:00:00", usuario="ENSAIO")
+        PP.usar(con, "840001", tabela="rc_atos", ato_id=registro_id,
+                agora="2026-09-18T09:00:00", selo=SELO_REGISTRO,
+                usuario="ENSAIO")
         for papel, quem, ordem in (
                 ("PAI", "JOSÉ DA SILVA", 1),
                 ("MAE", "MARIA DAS GRAÇAS SILVA", 2)):
@@ -178,10 +198,18 @@ def test_a_primeira_certidao_gratuita_nao_compra_selo_nem_gasta_folha(
     selos = con.execute(
         """SELECT COUNT(*) FROM sd_selos
             WHERE COALESCE(referencia,'') LIKE '%rc_certidoes%'""").fetchone()[0]
-    folhas = con.execute("SELECT COUNT(*) FROM pp_folhas").fetchone()[0]
+    # Desde 09/10/2026 a 1ª via sai na folha que o REGISTRO já baixou (ver
+    # `_assento_registrado_aqui`): «não consome folha» passou a querer dizer
+    # nenhuma baixa NOVA — a do registro continua no registro, e a da gaveta
+    # continua em branco. Antes o teste contava `pp_folhas` vazia.
+    folhas = {r["codigo"]: (r["situacao"], r["tabela"]) for r in con.execute(
+        "SELECT codigo, situacao, tabela FROM pp_folhas")}
     con.close()
+    assert len(_certidoes(casa, aid)) == 1, "a 1ª via gratuita não saiu"
     assert int(selos) == 0, "a 1ª via gratuita não pede selo ao aparelho"
-    assert int(folhas) == 0, "a 1ª via gratuita não reserva folha de segurança"
+    assert folhas == {"840001": ("USADA", "rc_atos"),
+                      "840002": ("EM BRANCO", None)}, (
+        "a 1ª via gratuita não pode baixar folha nova nem tirar a do registro")
 
 
 def test_a_primeira_certidao_gratuita_deixa_auditoria(cg_casa_logada):

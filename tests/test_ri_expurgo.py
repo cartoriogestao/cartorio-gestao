@@ -184,7 +184,7 @@ def test_o_ato_sai_a_ata_fica_e_a_cadeia_continua_conferindo(con):
 
     saida = EX.expurgar(con, terceiro, sv=SV, agora=AGORA, data_extenso=EXTENSO,
                         motivo=MOTIVO, selo_cancelado="AVESVD000000FGG3MHVL8PU1JW52",
-                        usuario="jean")
+                        usuario="mario")
 
     assert con.execute("SELECT COUNT(*) c FROM ri_atos WHERE id=?",
                        (terceiro,)).fetchone()["c"] == 0
@@ -211,11 +211,11 @@ def test_a_ata_diz_o_que_um_corregedor_precisa_saber(con):
     a = ato(con, m, "AV", 3, teor="AV-03/4014 FLORESTA PUBLICA TIPO B",
             selo="AVESVD000000FGG3MHVL8PU1JW52")
     saida = EX.expurgar(con, a, sv=SV, agora=AGORA, data_extenso=EXTENSO, motivo=MOTIVO,
-                        selo_cancelado="AVESVD000000FGG3MHVL8PU1JW52", usuario="jean")
+                        selo_cancelado="AVESVD000000FGG3MHVL8PU1JW52", usuario="mario")
     ata = saida["ata"]
     for esperado in ("ATA DE OCORRÊNCIA", "AV-03/4011", "4011", "BEATRIZ",
                      "AVESVD000000FGG3MHVL8PU1JW52", MOTIVO,
-                     "FLORESTA PUBLICA TIPO B", "jean", "CNS 000000", EXTENSO):
+                     "FLORESTA PUBLICA TIPO B", "mario", "CNS 000000", EXTENSO):
         assert esperado in ata, f"a ata tem de dizer {esperado!r}"
 
 

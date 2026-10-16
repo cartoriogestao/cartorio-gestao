@@ -298,7 +298,16 @@ def test_o_cabecalho_da_certidao_e_o_completo(casa):
     endereço, contato, titular, substituta e CNS — no cabeçalho da página, o
     mesmo da certidão do Livro 3. E os valores são os de hoje (`serventia`),
     e não os do E-Ofício, que trazem o oficial anterior.
+
+    A BANCADA DIZ O CNPJ E A SUBSTITUTA — 14/10/2026. Desde a sanitização B0
+    (3.6.286, 05/10/2026) `serventia.PADRAO` é semente genérica: CNPJ e
+    substituta vêm VAZIOS, e o dado real mora só em `settings`. Este teste
+    contava com o padrão antigo do código; agora grava os dois como a
+    produção os guarda. A regra cobrada é a mesma: campo configurado sai no
+    cabeçalho.
     """
+    casa["db"].set_settings({"serventia_cnpj": "00.000.000/0001-00",
+                             "ri_substituta": "BEATRIZ EXEMPLO DE SOUZA"})
     cid = _emitir(casa)
     r = casa["cliente"].get(
         f"/registro-imoveis/certidoes/{cid}.odt?formato=odt")

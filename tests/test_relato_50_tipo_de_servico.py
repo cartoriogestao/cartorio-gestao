@@ -104,12 +104,34 @@ def _semear_catalogo(banco) -> None:
     con = _con(banco)
     try:
         import emolumentos as EMOL
+        # TESTE VELHO, ATUALIZADO EM 14/10/2026: desde a 3.6.198 (24/09/2026)
+        # `emolumentos.buscar` — a busca que o depósito reusa de propósito —
+        # NÃO LISTA serviço sem preço na vigência vigente (o clique nele dava
+        # «Não encontrei esse ato na tabela vigente»). O catálogo de ensaio
+        # nascia sem preço, e a busca passou a não achar nenhum dos cinco.
+        # O ensaio agora tem o que a casa tem: um preço na vigência vigente.
+        vigente = con.execute(
+            "SELECT codigo FROM cx_vigencias WHERE vigente=1").fetchone()
+        if vigente:
+            vigencia = vigente[0]
+        else:
+            vigencia = 990099
+            con.execute("""INSERT OR IGNORE INTO cx_vigencias (codigo, descricao,
+                                                             vigente)
+                           VALUES (?, 'VIGENCIA DE ENSAIO', 1)""", (vigencia,))
         for codigo, codigo_tj, descricao, grupo in SERVICOS:
             con.execute(
                 """INSERT OR REPLACE INTO cx_servicos
                        (codigo, codigo_tj, descricao, descricao_norm, grupo, ativo)
                    VALUES (?,?,?,?,?,1)""",
                 (codigo, codigo_tj, descricao, EMOL._norm(descricao), grupo))
+            con.execute(
+                """INSERT OR REPLACE INTO cx_servico_valores
+                       (servico, vigencia, emolumentos, ferc, femp, fadep,
+                        ferrfis, total)
+                   VALUES (?, ?, '10,00', '0,00', '0,00', '0,00', '0,00',
+                           '10,00')""",
+                (codigo, vigencia))
         con.commit()
     finally:
         con.close()

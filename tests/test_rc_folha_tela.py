@@ -44,13 +44,13 @@ def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.set_settings({"ri_registrador": "MARIO EXEMPLO DOS SANTOS",
                      "serventia_titular": "MARIO EXEMPLO DOS SANTOS",
                      "ri_cidade": "Cidade Exemplo", "ri_uf": "MA",
                      "ri_estado": "Maranhão"})
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -282,7 +282,9 @@ def test_so_a_terceira_coluna_leva_um_bloco_pautado(casa):
     assert "rotulo-campo" not in html
     assert html.count('class="pauta-linhas"') == 2
     assert html.count("campo-notas pautado") == 2  # frente e verso
-    assert "min-height: 155mm" in html or "min-height:155mm" in html
+    # Relato #124, 15/10/2026: a pauta desce até a margem de baixo — a altura
+    # sai da conta de `rc_folha` (eram 155 mm fixos; hoje 180).
+    assert f"min-height: {FOLHA.PAUTA_ALTURA_MM}mm" in html
 
 
 def test_o_topo_da_folha_nao_desperdica_papel(casa):

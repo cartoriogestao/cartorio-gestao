@@ -36,7 +36,7 @@ AGORA = "2026-08-20T09:00"
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     return cg_casa
 
 def _con(casa):
@@ -317,7 +317,7 @@ def _token(html):
 def logado(casa):
     c = casa["app"].test_client()
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     casa["cliente"] = c

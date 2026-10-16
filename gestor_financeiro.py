@@ -339,19 +339,24 @@ def resumo_semanal_html(con: sqlite3.Connection, hoje: date) -> str:
         (desde,)).fetchall()
     abertos = con.execute(
         "SELECT count(*) FROM ge_achados WHERE resolvido_em IS NULL").fetchone()[0]
+    # A SUSPENSA NÃO É VENCIDA (relato #132): enquanto espera, o prazo não corre.
+    import tarefa_suspensao as TS
+    nao_suspensa, params_suspensao = TS.condicao_nao_suspensa("t", hoje, con=con)
     pessoas = con.execute(
-        """SELECT COALESCE(u.full_name, '— sem responsável —') AS quem,
+        f"""SELECT COALESCE(u.full_name, '— sem responsável —') AS quem,
                   sum(t.status NOT IN ('CONCLUIDA','CANCELADA')) AS abertas,
-                  sum(t.status NOT IN ('CONCLUIDA','CANCELADA') AND t.due_date < ?) AS vencidas,
+                  sum(t.status NOT IN ('CONCLUIDA','CANCELADA') AND t.due_date < ?
+                      AND {nao_suspensa}) AS vencidas,
                   sum(t.status = 'CONCLUIDA' AND t.completed_at >= ?) AS concluidas
              FROM tasks t LEFT JOIN users u ON u.id = t.assigned_user_id
          GROUP BY 1 ORDER BY vencidas DESC, abertas DESC""",
-        (hoje.isoformat(), desde)).fetchall()
+        (hoje.isoformat(), *params_suspensao, desde)).fetchall()
     vencidas = con.execute(
-        """SELECT t.title, t.due_date, COALESCE(u.full_name,'—') AS quem
+        f"""SELECT t.title, t.due_date, COALESCE(u.full_name,'—') AS quem
              FROM tasks t LEFT JOIN users u ON u.id = t.assigned_user_id
             WHERE t.source_type = 'GESTOR' AND t.status NOT IN ('CONCLUIDA','CANCELADA')
-              AND t.due_date < ? ORDER BY t.due_date""", (hoje.isoformat(),)).fetchall()
+              AND t.due_date < ? AND {nao_suspensa} ORDER BY t.due_date""",
+        (hoje.isoformat(), *params_suspensao)).fetchall()
     linhas_p = "".join(
         f"<tr><td>{e(p['quem'])}</td><td class=n>{p['abertas'] or 0}</td>"
         f"<td class=n>{p['vencidas'] or 0}</td><td class=n>{p['concluidas'] or 0}</td></tr>"

@@ -234,8 +234,18 @@ def test_a_ficha_de_papel_continua_com_a_regra_dela(cg_casa_logada):
     Este teste guarda a metade que NÃO se mexeu — quem ler o conserto do #79
     e "uniformizar" as duas apaga o comportamento que o oficial pediu.
     """
+    # A REGRA DA FICHA SE AFINOU EM 23/09/2026 (3.6.185): a ESTRUTURADA SEM
+    # `descricao_perimetro` passou a imprimir o teor como miolo — sem ele a
+    # ficha sairia sem nada sobre o imóvel (`usa_teor_como_miolo` em
+    # `MODELO_FICHA_PADRAO`). A metade que este teste guarda continua: a
+    # ESTRUTURADA que TEM a descrição do imóvel não imprime o teor.
     casa = cg_casa_logada
     mid = _abrir(casa, numero="4020", teor=TEOR_DA_FICHA)
+    con = _con(casa)
+    with con:
+        con.execute("UPDATE ri_matriculas SET descricao_perimetro=? WHERE id=?",
+                    ("Um imóvel rural com 38,55,55 ha.", mid))
+    con.close()
     conteudo = _ficha_odt(casa, mid)
     assert DENOMINACAO not in conteudo, (
         "a ficha de papel de uma ESTRUTURADA passou a imprimir o teor — a "
@@ -294,7 +304,11 @@ def test_a_ficha_de_papel_mantem_a_guarda_do_acervo_no_molde():
     """A outra metade, no molde: `ACERVO and teor_odf`, com o teste do
     `test_ri_assinatura_da_abertura.py` ao lado."""
     molde = ri_odt.MODELO_FICHA_PADRAO
-    assert '{% if m.tipo_ficha == "ACERVO" and teor_odf %}' in molde
+    # Desde 23/09/2026 (3.6.185) a guarda tem a segunda metade: a ESTRUTURADA
+    # sem descrição do imóvel também leva o teor (ver o teste acima).
+    assert ('{% set usa_teor_como_miolo = (m.tipo_ficha == "ACERVO" or '
+            '(m.tipo_ficha == "ESTRUTURADA" and not m.descricao_perimetro)) '
+            'and teor_odf %}') in molde
 
 
 def test_o_teor_que_ja_tem_a_assinatura_nao_ganha_outra_na_certidao(
@@ -328,9 +342,16 @@ def test_o_teor_que_ja_tem_a_assinatura_nao_ganha_outra_na_certidao(
         f"o «dou fé» saiu {corpo.count('dou fé')} vezes: uma é a do teor, e a "
         f"outra só pode ter vindo de um fecho da abertura posto no molde da "
         f"certidão")
-    assert len(re.findall(r"_{8,}", corpo)) == 1, (
-        "saíram duas linhas de assinatura no mesmo papel — a que veio dentro "
-        "do teor e outra acrescentada por baixo")
+    # DESDE 22/09/2026 (3.6.185) A CERTIDÃO TIRA A LINHA DE ASSINAR DA FICHA:
+    # o corpo passa por `certidao_texto.sem_linha_de_assinatura_a_mao`, que
+    # apaga os traços e mantém o nome de quem lavrou («sem espaço de
+    # assinatura da FICHA no papel da certidão»). Logo a linha que veio no
+    # teor também sai — e a régua deste teste, «nunca DUAS», vira «nenhuma».
+    assert len(re.findall(r"_{8,}", corpo)) == 0, (
+        "sobrou linha de assinatura no papel da certidão — a da ficha (dentro "
+        "do teor) ou outra acrescentada por baixo")
+    assert "BEATRIZ EXEMPLO DE SOUZA" in corpo, (
+        "tirar os traços não pode levar junto o nome de quem lavrou")
 
 
 def test_a_conta_dos_atos_e_uma_so_e_mora_no_contexto():

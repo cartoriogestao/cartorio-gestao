@@ -44,9 +44,9 @@ def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -71,7 +71,7 @@ def _processo(con, *, especie=NORMA.GEORREFERENCIADA,
     pid = RT.autuar(con, numero=numero, especie=especie, fundamento=fundamento,
                     matricula_id=m, rural=rural, agora=AGORA,
                     requerente_nome="ANTONIO JARDINEIRO PEREIRA",
-                    usuario="jean")
+                    usuario="mario")
     return pid, m
 
 

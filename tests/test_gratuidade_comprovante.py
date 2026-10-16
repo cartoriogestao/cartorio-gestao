@@ -90,4 +90,6 @@ def test_o_aviso_aparece_em_toda_tela_e_some_ao_guardar(cg_casa_logada):
     r = c.post(f"/gratuidades/comprovantes/{selo_id}",
                data={"csrf_token": tok, "arquivo": (io.BytesIO(b"%PDF-1.4"), "declaracao.pdf")},
                content_type="multipart/form-data", follow_redirects=True).get_data(as_text=True)
-    assert "Comprovante guardado" in r and "ato(s) gratuito(s) sem o comprovante" not in r
+    # O recado passou a contar os arquivos — HOTFIX-2026-10-13-07 (vários
+    # arquivos por envio): «1 comprovante(s) guardado(s).» — 14/10/2026.
+    assert "1 comprovante(s) guardado(s)" in r and "ato(s) gratuito(s) sem o comprovante" not in r

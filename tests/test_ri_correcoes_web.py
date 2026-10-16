@@ -122,9 +122,14 @@ def lavrar(s, matricula_id, tipo="R", teor="TEOR DO ATO", **campos) -> int:
     # A NATUREZA E EXIGIDA ANTES DE O ATO NASCER — 15/09/2026. Sem ela a
     # rota recusa e nada se lavra; e por isso que estes testes ficaram
     # vermelhos naquela data, e nao por defeito do que eles medem.
+    #
+    # E O ITEM 16.3 EXIGE O VALOR DECLARADO — 3.6.185, 23/09/2026 (R-01/4019,
+    # o TJ recusou duas vezes «nenhuma das informacoes sobre a base de calculo
+    # do valor declarado foi preenchida»). A recusa e antes do ato nascer; sem
+    # `base_calculo` nada se lavrava aqui e o MAX(id) voltava None.
     dados = {"tipo": tipo, "teor": teor, "data_ato": "2026-08-18",
              "natureza_titulo": "Compra e venda",
-             "codigo_tj": "16.3"} | campos
+             "codigo_tj": "16.3", "base_calculo": "100.000,00"} | campos
     postar(s, f"/registro-imoveis/{matricula_id}/atos", dados,
            origem=f"/registro-imoveis/{matricula_id}")
     con = banco(s)
@@ -352,11 +357,18 @@ def test_a_certidao_nao_leva_marcacao_de_odt_no_corpo(s):
     assert "@@ODF" not in corpo, "nem a marca do fragmento pode ser gravada"
     assert "TITULO DE DOMINIO SOB CONDICAO RESOLUTIVA" in corpo, "o teor tem de estar la"
     assert "<p>" in corpo, "o teor tem de sair em paragrafo HTML"
-    # O selo do ATO nao entra no corpo da certidao: o modelo padrao transcreve
-    # o teor, e o selo que a certidao carrega e o DELA, acrescentado na
-    # impressao. No acervo do E-Oficio os selos aparecem porque estao escritos
-    # dentro do proprio teor importado.
-    assert "REGAVD000000OD1Q8BV5TOOZE492" not in corpo
+    # O SELO DO ATO PASSOU A ENTRAR NO CORPO — MAS SO NO CARIMBO. Ate 21/09 o
+    # corpo transcrevia so o teor e este teste exigia o selo de fora. Desde a
+    # 3.6.185 (pedido da substituta em 22/09/2026, «mesma estrutura da
+    # ficha», e a ordem da Corregedoria de 24/09: QR em todos os selos) cada
+    # ato leva o seu `carimbo_compacto_html`, congelado no corpo e trocado
+    # pelo carimbo ODF na impressao (`carimbos_do_html_para_odf`). O que este
+    # teste continua guardando e que o selo nao vaza para o TEXTO certificado:
+    # tirados os carimbos, ele nao pode aparecer.
+    from ri_odt import carimbos_do_html_para_odf
+    assert 'class="carimbo-com-qr"' in corpo
+    sem_carimbos, _fragmentos, _imagens = carimbos_do_html_para_odf(corpo)
+    assert "REGAVD000000OD1Q8BV5TOOZE492" not in sem_carimbos
 
 
 def test_a_certidao_de_ficha_de_acervo_tambem_sai_limpa(s):

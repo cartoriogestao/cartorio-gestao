@@ -67,8 +67,18 @@ ENTIDADE = "PT_TITULO"
 #   (`17375280/041` aparece em 46 registros de 2026) — mas no nome do arquivo
 #   ele vem só com dígitos. Por isso a comparação é feita **por dígitos**, e
 #   não pelo texto cru.
+#
+# **O SEQUENCIAL É OPCIONAL — correção de 15/10/2026.** O pacote de
+# 15/07/2026 trazia `<nosso>_<documento>_01.pdf`, e foi por ele que o nome se
+# mediu; o de 07/10/2026 traz os CINCO arquivos sem ele
+# (`<nosso>_<documento>.pdf`), e com o sequencial obrigatório nenhum dos cinco
+# casava — o pacote inteiro voltava «não casa com título nenhum». A dupla
+# chave (nosso número + documento) continua inteira nos dois formatos; o
+# sequencial só separava a frente do verso, e quem o perde é o nome, não o
+# título.
 NOME_DA_IMAGEM = re.compile(
-    r"^(?P<nosso_numero>[^_]+)_(?P<documento>[^_]+)_(?P<sequencia>[^_.]+)"
+    r"^(?P<nosso_numero>[^_]+)_(?P<documento>[^_.]+)"
+    r"(?:_(?P<sequencia>[^_.]+))?"
     r"\.(?P<extensao>[A-Za-z0-9]+)$")
 
 # O que a CRA manda. PDF em 1 de 1 medido; os outros entram porque imagem de
@@ -134,7 +144,7 @@ def ler_pacote(conteudo: bytes) -> list[dict]:
             partes = {
                 "nosso_numero": achado.group("nosso_numero"),
                 "documento": achado.group("documento"),
-                "sequencia": achado.group("sequencia"),
+                "sequencia": achado.group("sequencia") or "",
                 "extensao": achado.group("extensao").lower(),
             }
         itens.append({"nome": nome, "apresentante_pasta": pasta,

@@ -36,6 +36,16 @@ def con():
 
 
 def test_montar_eoficio_atualiza_data_no_teor(con):
+    # O TEOR ENTRA MONTADO, e não vazio — correção de 14/10/2026. Este teste
+    # gravava teor '' e cobrava que a função o montasse do modelo; era a
+    # remontagem que apagou o texto editado das procurações 788, 791 e 802.
+    # A data continua passando para o dia do selo: trocada no texto gravado.
+    teor = NT.montar("ESCRITURA", [
+        {"nome": "JOAO", "documento": "123", "qualificacao": "OUTORGANTE",
+         "tipo_pessoa": "F", "nacionalidade": "br", "estado_civil": "sol",
+         "profissao": "adv", "endereco": "rua", "testemunha": 0}],
+        "<p>clausula de poderes</p>", data_extenso="20 de setembro de 2026",
+        cidade="Cidade Exemplo", uf="MA")
     con.execute(
         "INSERT INTO nt_modelos (codigo, corpo, origem, ativo) VALUES (?,?,?,1)",
         ("M1", "<p>clausula de poderes</p>", "EOFICIO"),
@@ -43,7 +53,8 @@ def test_montar_eoficio_atualiza_data_no_teor(con):
     con.execute(
         """INSERT INTO nt_atos
            (id, tipo, data, hora, teor, modelo_codigo, lavrado_nome, lavrado_titulo)
-           VALUES (1, 'ESCRITURA', '2026-09-20', '10:00', '', 'M1', 'Tabeliao', 'Tabeliao')"""
+           VALUES (1, 'ESCRITURA', '2026-09-20', '10:00', ?, 'M1', 'Tabeliao', 'Tabeliao')""",
+        (teor,)
     )
     con.execute(
         """INSERT INTO nt_ato_partes

@@ -47,7 +47,7 @@ def casa(tmp_path):
     app = create_app({"DATA_DIR": str(dados)})
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
     db = Database(banco)
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     return {"app": app, "banco": banco, "db": db}
 
 
@@ -137,7 +137,7 @@ def test_desligar_uma_fonte_a_tira_da_lista(casa):
                for x in IN.lista(con, hoje=HOJE))
     with con:
         IN.ajustar(con, "BALCAO_PROTOCOLO", ligada=False, dias=30,
-                   agora=AGORA, por="jean")
+                   agora=AGORA, por="mario")
     assert not any(x["chave"] == "BALCAO_PROTOCOLO"
                    for x in IN.lista(con, hoje=HOJE))
 
@@ -150,7 +150,7 @@ def test_desligada_nao_volta_a_ligar_sozinha(casa):
     con = _con(casa)
     with con:
         IN.ajustar(con, "TAREFA", ligada=False, dias=15, agora=AGORA,
-                   por="jean")
+                   por="mario")
     assert IN.configuracao(con)["TAREFA"]["ligada"] is False
 
 
@@ -168,7 +168,7 @@ def test_mudar_os_dias_muda_quem_esta_parado(casa):
     assert not _parado()                       # 15 dias, limite de 30
     with con:
         IN.ajustar(con, "BALCAO_PROTOCOLO", ligada=True, dias=10, agora=AGORA,
-                   por="jean")
+                   por="mario")
     assert _parado()
 
 
@@ -178,7 +178,7 @@ def test_prazo_de_zero_dias_recusa(casa):
     with pytest.raises(IN.InacabadoError):
         with con:
             IN.ajustar(con, "TAREFA", ligada=True, dias=0, agora=AGORA,
-                       por="jean")
+                       por="mario")
 
 
 def test_fonte_que_nao_existe_recusa(casa):
@@ -186,14 +186,14 @@ def test_fonte_que_nao_existe_recusa(casa):
     with pytest.raises(IN.InacabadoError):
         with con:
             IN.ajustar(con, "NAO_EXISTE", ligada=True, dias=5, agora=AGORA,
-                       por="jean")
+                       por="mario")
 
 
 def test_voltar_ao_padrao_apaga_a_linha(casa):
     con = _con(casa)
     with con:
         IN.ajustar(con, "TAREFA", ligada=False, dias=99, agora=AGORA,
-                   por="jean")
+                   por="mario")
     assert IN.configuracao(con)["TAREFA"]["ajustada"]
     with con:
         IN.voltar_ao_padrao(con, "TAREFA")
@@ -320,7 +320,7 @@ def test_anotar_e_o_unico_dado_novo(casa):
         IN.anotar(con, tabela="tasks", item_id=tid,
                   texto="esperando o documento do requerente",
                   responsavel="Debora", ate="2026-09-10",
-                  agora=AGORA, por="jean")
+                  agora=AGORA, por="mario")
     item = [x for x in IN.lista(con, hoje=HOJE) if x["id"] == tid][0]
     assert item["anotacao"]["texto"] == "esperando o documento do requerente"
     assert item["anotacao"]["responsavel"] == "Debora"
@@ -335,9 +335,9 @@ def test_anotar_duas_vezes_atualiza_em_vez_de_duplicar(casa):
                              VALUES ('conferir','2026-08-19','2026-08-19')""")
         tid = int(cur.lastrowid)
         IN.anotar(con, tabela="tasks", item_id=tid, texto="primeira",
-                  agora=AGORA, por="jean")
+                  agora=AGORA, por="mario")
         IN.anotar(con, tabela="tasks", item_id=tid, texto="segunda",
-                  agora=AGORA, por="jean")
+                  agora=AGORA, por="mario")
     assert con.execute("SELECT COUNT(*) FROM ex_anotacoes").fetchone()[0] == 1
     item = [x for x in IN.lista(con, hoje=HOJE) if x["id"] == tid][0]
     assert item["anotacao"]["texto"] == "segunda"
@@ -348,7 +348,7 @@ def test_anotacao_vazia_recusa(casa):
     with pytest.raises(IN.InacabadoError):
         with con:
             IN.anotar(con, tabela="tasks", item_id=1, texto="  ",
-                      agora=AGORA, por="jean")
+                      agora=AGORA, por="mario")
 
 
 def test_nao_se_anota_em_tabela_que_nao_e_fonte(casa):
@@ -358,7 +358,7 @@ def test_nao_se_anota_em_tabela_que_nao_e_fonte(casa):
     with pytest.raises(IN.InacabadoError) as erro:
         with con:
             IN.anotar(con, tabela="users", item_id=1, texto="qualquer",
-                      agora=AGORA, por="jean")
+                      agora=AGORA, por="mario")
     assert "não é uma das fontes" in str(erro.value)
 
 
@@ -372,7 +372,7 @@ def test_apagar_a_anotacao_nao_tira_o_item_da_lista(casa):
                              VALUES ('conferir','2026-08-19','2026-08-19')""")
         tid = int(cur.lastrowid)
         IN.anotar(con, tabela="tasks", item_id=tid, texto="algo",
-                  agora=AGORA, por="jean")
+                  agora=AGORA, por="mario")
         IN.apagar_anotacao(con, tabela="tasks", item_id=tid)
     item = [x for x in IN.lista(con, hoje=HOJE) if x["id"] == tid][0]
     assert item["anotacao"] is None

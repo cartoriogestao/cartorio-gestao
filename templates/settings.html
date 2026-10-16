@@ -159,7 +159,11 @@
            próprio cartório na Central. Oferecer campo de usuário para ela faria
            alguém preenchê-lo com o CNS só para a tela deixar salvar — e o
            arquivo passaria a dizer que guarda uma coisa guardando outra. #}
-        <td>{% if c.informada %}<strong>{{ 'informado' if c.forma == 'TOKEN' else 'informada' }}</strong>{% if c.usuario %} — usuário <code>{{ c.usuario }}</code>{% endif %}{% else %}<span class="muted">{{ 'não informado' if c.forma == 'TOKEN' else 'não informada' }}</span>{% endif %}</td>
+        <td>{% if c.informada %}<strong>{{ 'informado' if c.forma == 'TOKEN' else 'informada' }}</strong>{% if c.usuario %} — usuário <code>{{ c.usuario }}</code>{% endif %}{% else %}<span class="muted">{{ 'não informado' if c.forma == 'TOKEN' else 'não informada' }}</span>{% endif %}
+          {# A DE HOMOLOGAÇÃO QUE FICOU GUARDADA (14/10/2026): a linha dela
+             saiu da tabela, e sem esta nota quem a cadastrou acharia que o
+             sistema a perdeu. Ela não se apaga e não se usa. #}
+          {% if c.fora_de_uso %}<br><small class="muted">A de {{ c.fora_de_uso|map('lower')|join(' e ')|replace('homologacao','homologação') }} continua guardada, mas não é usada — só a produção vale.</small>{% endif %}</td>
         <td>
           <form method="post" action="{{ url_for('configuracoes_central') }}" class="linha-credencial">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -185,12 +189,14 @@
   </div>
   <p class="muted small cfg-centrais-ajuda">
     A do <strong>ONR</strong> é um <strong>par</strong> — `client_id` e
-    `client secret` —, e não usuário e senha: ele é a única das cinco cujo
-    contrato declara os dois endereços e o caminho que troca o par por um
-    token, de modo que o sistema o renova sozinho.
+    `client secret` —, e não usuário e senha: o contrato declara o caminho
+    que troca o par por um token, de modo que o sistema o renova sozinho.
     <br>    A da <strong>CENPROT</strong> é a que você cadastrou em Cadastro → Cadastro
     do Cartório → «Informações de Autenticação da API». A da <strong>CRA</strong>
-    é a que o IEPTB-MA fornece — comece pela de homologação.
+    é a que o IEPTB-MA fornece. <strong>A CRA, a CENPROT e a Resolve (desde
+    14/10/2026) e a CENSEC e o ONR (desde 15/10/2026) têm só a linha de
+    produção</strong> — a produção delas já está configurada; a de homologação
+    que estiver guardada fica no arquivo, sem uso.
     <br>A da <strong>Central ONRTDPJ</strong> é um <strong>token</strong>, e não
     uma senha: entre em <code>rtdbrasil.org.br</code>, vá em
     <strong>Serviços → Envio Extrato SINTER</strong> e copie o token de lá.
@@ -223,14 +229,19 @@
        que já fez o oficial procurar em vão a credencial do ONRTDPJ antes
        de este parágrafo existir. #}
     <div class="cfg-centrais-opcoes">
-    <label class="checkbox-label"><input type="checkbox" name="cra_auto_enviar_homolog"
-      {% if s.cra_auto_enviar_homolog != '0' %}checked{% endif %}>
-      Enviar confirmação e andamento à CRA automaticamente após receber remessa
-      (homologação)</label>
-    <label class="checkbox-label"><input type="checkbox" name="cra_auto_enviar_producao"
-      {% if s.cra_auto_enviar_producao == '1' %}checked{% endif %}>
-      O mesmo em produção (desligado por padrão — ligue só quando a operação
-      estiver validada)</label>
+    {# A CAIXA DA HOMOLOGAÇÃO SAIU EM 14/10/2026 («agora é tudo produção»);
+       o valor `cra_auto_enviar_homolog` fica gravado e não se lê mais. #}
+    {# A CAIXA TEM FORMULÁRIO PRÓPRIO desde 15/10/2026: até aí ela ficava fora
+       de qualquer <form> e não salvava (relato do oficial). #}
+    <form method="post" action="{{ url_for('configuracoes_cra_envio') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="checkbox-label"><input type="checkbox" name="cra_auto_enviar_producao"
+        {% if s.cra_auto_enviar_producao == '1' %}checked{% endif %}>
+        Enviar confirmação e andamento à CRA (produção) automaticamente após
+        receber remessa — desligado, eles sobem pelo botão «Enviar à CRA» da
+        tela do retorno</label>
+      <button class="button primary" type="submit">Salvar o envio à CRA</button>
+    </form>
     </div>
     <br><strong>A do SIRC</strong> é a <strong>mesma senha que você já usa
     para entrar no site <code>sirc.dataprev.gov.br</code></strong> pelo

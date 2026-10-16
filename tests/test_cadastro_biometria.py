@@ -25,7 +25,7 @@ import cadastro_biometria as CB
 from notas_partes import criar_cartao
 
 AGORA = "2026-08-31T19:10:00"
-POR = "jean"
+POR = "mario"
 
 
 def _png(marca: bytes) -> bytes:

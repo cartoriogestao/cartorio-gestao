@@ -62,8 +62,8 @@ def _token(html: str) -> str:
 @pytest.fixture()
 def casa(cg_casa):
     c = cg_casa["cliente"]
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
-    c.post("/login", data={"username": "jean", "password": SENHA,
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    c.post("/login", data={"username": "mario", "password": SENHA,
                            "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa

@@ -547,9 +547,14 @@ CLAROS_CASAMENTO: tuple[dict, ...] = (
     # ele em `rc_assentos`. O claro existe para servir aos 20 casamentos
     # importados; num casamento lavrado aqui ele sai vazio — e vazio aparece na
     # conferência, que é onde o escrevente decide.
+    #
+    #   **E A COLUNA PRÓPRIA NASCEU EM 15/10/2026** — `juiz_de_paz`, decisão do
+    #   oficial (relato #124): o casamento civil lavrado aqui passa a guardar
+    #   quem presidiu, e é o MESMO valor que sai na linha de assinatura da
+    #   folha. A coluna vem primeiro; o acervo continua lido do blob.
     claro("celebrante", "Quem celebrou",
-          lambda ctx: _texto(ctx["d"].get("strNomeCelebrante")),
-          de_onde="`strNomeCelebrante` do acervo — **não há coluna própria**"),
+          lambda ctx: _do_assento(ctx, "juiz_de_paz", "strNomeCelebrante"),
+          de_onde="`juiz_de_paz` do assento, ou `strNomeCelebrante` do acervo"),
     claro("testemunhas", "Testemunhas",
           lambda ctx: _todos_de(ctx, "TESTEMUNHA"),
           de_onde="as pessoas de papel TESTEMUNHA"),

@@ -70,9 +70,9 @@ def test_mesmo_nome_vira_sugestao_e_nao_ligacao():
     # ELIAS na produção: geral 2026.08.172 sem prenotação, prenotação 11554 sem geral.
     pedidos = [
         {"tipo": "PROTOCOLO_GERAL", "id": 9, "numero": "2026.08.172",
-         "apresentante": "Elias Bispo dos Santos", "geral_id": 9},
+         "apresentante": "Braulio Neiva dos Santos", "geral_id": 9},
         {"tipo": "PRENOTACAO", "id": 3, "numero": 11554,
-         "apresentante": "ELIAS BISPO DOS SANTOS", "geral_id": None},
+         "apresentante": "BRAULIO NEIVA DOS SANTOS", "geral_id": None},
         {"tipo": "PRENOTACAO", "id": 4, "numero": 11555,
          "apresentante": "EDUARDO", "geral_id": None},
     ]
@@ -100,8 +100,8 @@ def _token(html: str) -> str:
 @pytest.fixture()
 def casa(cg_casa):
     c = cg_casa["cliente"]
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
-    c.post("/login", data={"username": "jean", "password": SENHA,
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    c.post("/login", data={"username": "mario", "password": SENHA,
                            "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -260,8 +260,8 @@ def test_anotar_quem_cuida_volta_ao_painel(casa):
         f"/inacabados/anotar/ri_protocolos/{p['id']}?voltar=ri_pedidos").get_data(as_text=True)
     assert 'name="voltar" value="ri_pedidos"' in tela
     resp = casa["cliente"].post(f"/inacabados/anotar/ri_protocolos/{p['id']}", data={
-        "texto": "Conferir a guia do ITBI", "responsavel": "LEIDIANE",
+        "texto": "Conferir a guia do ITBI", "responsavel": "BEATRIZ",
         "voltar": "ri_pedidos", "csrf_token": _token(tela)})
     assert resp.headers["Location"].endswith("/registro-imoveis/pedidos")
     html = casa["cliente"].get("/registro-imoveis/pedidos").get_data(as_text=True)
-    assert "Conferir a guia do ITBI" in html and "LEIDIANE" in html
+    assert "Conferir a guia do ITBI" in html and "BEATRIZ" in html

@@ -376,7 +376,7 @@ def _texto(v: Any) -> str:
     de 31 testes passarem.
 
     **E NORMALIZA O ACENTO SOLTO QUE VIROU LETRA ERRADA** — "NOMEREGISTRADO
-    está inválido", relato da CRC em 11/09/2026, em LUCIANA HYH´TYHC KRIKATI.
+    está inválido", relato da CRC em 11/09/2026, num nome Krikati grafado com o «´».
     Medido: dos 15+ nomes Krikati no acervo, todos os outros escrevem a marca
     fonética com o apóstrofo comum (`'`, em "A'CAHUC", "CRY'CRY", "HYC'CRY") —
     só este tem um acento agudo solto (U+00B4), sozinho, sem letra para
@@ -575,8 +575,17 @@ def _ibge_carregado(con: sqlite3.Connection) -> bool:
     instalação nova, mesmo com a naturalidade certa na ficha. Só quando a
     tabela existe de verdade é que "não achou" vira sinal de grafia errada,
     e passa a reter.
+
+    **E SEM A TABELA É «NÃO CARREGADO», E NÃO EXCEÇÃO** — 14/10/2026, ao
+    passar a conferência a rodar na lavratura (relato #130): banco que nunca
+    criou `ib_municipios` estourava aqui, e a lavratura inteira cairia por uma
+    tabela de apoio que a própria docstring diz não dever travar nada.
     """
-    return con.execute("SELECT 1 FROM ib_municipios LIMIT 1").fetchone() is not None
+    try:
+        return con.execute(
+            "SELECT 1 FROM ib_municipios LIMIT 1").fetchone() is not None
+    except sqlite3.OperationalError:
+        return False
 
 
 
@@ -1151,8 +1160,8 @@ def _filiacao(con: sqlite3.Connection, pessoa: dict, indice: int,
     # `_codigo_ibge_municipio`; o texto livre é o que já se monta para o
     # óbito — cidade mais UF.
     #
-    # **E SEM CIDADE TAMBÉM NÃO SE OMITEM OS DOIS** — medido em Edimar de
-    # Sousa Pimentel / Hilda da Silva Lima (assento 1239): os dois
+    # **E SEM CIDADE TAMBÉM NÃO SE OMITEM OS DOIS** — medido nos genitores
+    # do assento 1239: os dois
     # genitores têm `naturalidade_cidade`/`uf` nulos, a carga não emitia
     # tag nenhuma, e a CRC mostrava «Município: undefined / UF: undefined»,
     # a interpolação JS do campo ausente. Óbito e casamento já emitem a

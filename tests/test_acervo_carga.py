@@ -667,7 +667,11 @@ def test_contra_o_acervo_real():
     assert con.execute(
         "SELECT COUNT(*) FROM pt_titulos WHERE cedente_nome IS NOT NULL"
         ).fetchone()[0] == 908
-    assert r["protesto"]["contagens"] == {
+    # A VIDA DOS TÍTULOS (14/10/2026, virada do protesto) acrescenta as suas
+    # contagens — pagamentos, desistências, situações acertadas, o motivo da
+    # remessa da CRA —, e elas são medidas em `test_vida_dos_titulos_*`. Aqui
+    # se confere que as de antes continuam IGUAIS, e não que não há outras.
+    esperado = {
         "devedores trazidos do acervo": 1374,
         "títulos sem cedente em `tbPessoa` no acervo": 466,
         "títulos em que o acervo traz o mesmo cedente e devedor": 28,
@@ -696,6 +700,8 @@ def test_contra_o_acervo_real():
         "títulos sem intimação no acervo do E-Ofício (198) — a maioria foi "
         "paga ou desistida antes dela": 1,
     }
+    contagens = r["protesto"]["contagens"]
+    assert {k: contagens.get(k) for k in esperado} == esperado
 
     # OS ATOS DE PROTESTO E DE CANCELAMENTO, que a carga passou a trazer em
     # 25/08/2026 porque a CERTIDAO os cobrou: certidao positiva diz
@@ -1144,9 +1150,9 @@ def test_o_contador_do_acervo_nao_baixa_o_que_ja_andou():
 # A MATRÍCULA DECIDE A ESPÉCIE, E NÃO A LETRA DO ACERVO
 #
 # A carga mandava para o Livro E todo assento com `strTipoLivro = 'E'`, e há
-# exatamente um. Fui conferi-lo em 27/08/2026: é o nascimento de RAFAEL SANTANA
-# DE SOUSA, Livro 9, folha 102, número 8686 — um nascimento comum de 1994. **A
-# matrícula dele diz tipo de livro `1`**, que é o Livro A.
+# exatamente um. Fui conferi-lo em 27/08/2026: é um nascimento
+# do Livro 9, folha 102, número 8686 — um nascimento comum de 1994. **A
+# matrícula diz tipo de livro `1`**, que é o Livro A.
 #
 # Medido: `strTipoLivro` traz 'A' em 192 e 'E' em 1; a matrícula traz `1` em
 # **192 de 192**. A letra é erro de digitação, e a carga confiava nela.

@@ -312,6 +312,23 @@ def montar(con: sqlite3.Connection, assento_id: int, *, serventia: dict,
     pode fazer quantas vezes quiser para ver como fica; **gravar acontece uma
     vez, na lavratura**, e depois o texto nao muda mais.
     """
+    return montar_para_conferir(con, assento_id, serventia=serventia,
+                                livro=livro, folha=folha, selo=selo)["texto"]
+
+
+def montar_para_conferir(con: sqlite3.Connection, assento_id: int, *,
+                         serventia: dict, livro: str = "", folha: str = "",
+                         selo: str = "") -> dict:
+    """O termo montado E o que ficou em branco nele. Só calcula — NÃO grava.
+
+    **A CONFERÊNCIA DO MODELO CONTRA UM ASSENTO REAL USA ESTA, E NÃO UMA CÓPIA**
+    — relato #123, 15/10/2026. A tela dos teores (`/rcpn/formulario/<chave>`)
+    chamava a ponte do nascimento à mão, com dois parâmetros que ela não
+    aceita: «Preencher com este» virava HTTP 500, e casamento e óbito nem
+    tinham o botão. Conferir com uma régua e lavrar com outra é como a tela
+    aprova o que o livro não monta; por isso `montar` passou a chamar esta, e
+    a tela também.
+    """
     import modelos_motor_versao as VERSAO
     import rc_modelos_do_livro as LIVRO
 
@@ -397,7 +414,7 @@ def montar(con: sqlite3.Connection, assento_id: int, *, serventia: dict,
             f"O modelo do termo tem um claro que o sistema não sabe preencher: "
             f"{erro}. Confira o modelo em Configuração → Modelos dos "
             f"documentos.") from erro
-    return r["texto"]
+    return r
 
 
 # ===================================================== quem assina, e de onde

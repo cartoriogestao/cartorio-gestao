@@ -91,7 +91,7 @@ def test_usuario_e_robo_e_pode_selar():
     assert SR.usuario_e_robo({"eh_robo": 1, "full_name": "X", "username": "x"})
     assert not SR.pode_selar_automatico({"eh_robo": 1})
     assert SR.pode_selar_automatico(
-        {"eh_robo": 0, "full_name": "JEAN", "username": "jean"})
+        {"eh_robo": 0, "full_name": "MARIO", "username": "mario"})
     assert SR.usuario_e_robo(
         {"eh_robo": 0, "full_name": "Robo Debora", "username": "x"})
 

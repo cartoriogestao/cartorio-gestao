@@ -175,8 +175,12 @@ def test_o_botao_so_existe_nas_telas_da_casa():
     de propósito: ela anda a cada tela nova, e número que anda em teste vira
     teste vermelho sem defeito.
     """
+    # A FAIXA DO ALTO MUDOU DE ARQUIVO, E NÃO DE NATUREZA — 14/10/2026. Desde
+    # a 3.6.259 (avisos v2, 29–30/09/2026) as faixas da casa moram em
+    # `_faixas_compactas.html`, que o `base.html` inclui em TODA tela; é o
+    # mesmo lugar da tela, num arquivo à parte.
     onde = sorted(tela.name for tela in TELAS.glob("*.html") if BOTAO in _texto(tela))
-    assert onde == ["base.html", "dashboard.html"], (
+    assert onde == ["_faixas_compactas.html", "base.html", "dashboard.html"], (
         f"o botão de fechar o aviso está em {onde}. Ele existe na faixa do alto "
         f"(`base.html`) e no painel (`dashboard.html`), que avisam da CASA; o "
         f"aviso que explica a tela não se fecha, porque quem chega depois perde "
@@ -271,14 +275,14 @@ def test_o_aviso_do_retorno_da_tela_tambem_tem_o_botao(cg_casa):
     entrar só existe depois que existe quem entre.
     """
     casa = cg_casa
-    casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
 
     html = casa["c"].get("/login").get_data(as_text=True)
     achado = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
     assert achado, "a tela de login não trouxe o csrf_token"
 
     resposta = casa["c"].post("/login", data={
-        "username": "jean", "password": "errada-de-proposito",
+        "username": "mario", "password": "errada-de-proposito",
         "csrf_token": achado.group(1),
     }, follow_redirects=True).get_data(as_text=True)
 

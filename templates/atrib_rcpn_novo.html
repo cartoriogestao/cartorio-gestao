@@ -276,6 +276,15 @@
           <input name="pacto_serventia" placeholder="tabelionato, município/UF"
                  value="{{ form.get('pacto_serventia','') }}"></label>
       </div>
+      {% if especie == 'CASAMENTO' %}
+      {# QUEM PRESIDIU — decisão do oficial, 15/10/2026 (relato #124). Só o
+         civil: no religioso quem presidiu foi o celebrante. Opcional: sem o
+         nome, a linha de assinatura da folha sai só com o rótulo. #}
+      <label style="grid-column:1/-1">Juiz(a) de Paz que presidiu o ato
+        <small>(nome — opcional; sem ele a linha de assinatura sai só com
+        «Juiz(a) de Paz»)</small>
+        <input name="juiz_de_paz" value="{{ form.get('juiz_de_paz','') }}"></label>
+      {% endif %}
       {% endif %}
 
       {% if nascimento or obito or natimorto %}

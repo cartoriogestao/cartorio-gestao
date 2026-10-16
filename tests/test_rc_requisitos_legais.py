@@ -76,6 +76,7 @@ def test_nascimento_com_mae_declarada_ignorada_lavra():
         agora=AGORA, data_extenso=EXTENSO,
         data_fato="2026-08-20", dados={"sexo": "M"},
         termo_dados={"local_fato_nome": "Hospital Municipal"},
+        ibge={"local_nascimento": 1},        # relato #130: o SIRC exige
         pessoas=pessoas_nascimento(mae="IGNORADO"))
     assert r["assento_id"]
     mae = con.execute(
@@ -92,6 +93,7 @@ def test_nascimento_com_pai_nao_tem_lavra():
         agora=AGORA, data_extenso=EXTENSO,
         data_fato="2026-08-20", dados={"sexo": "M"},
         termo_dados={"local_fato_nome": "Hospital Municipal"},
+        ibge={"local_nascimento": 1},        # relato #130: o SIRC exige
         pessoas=pessoas_nascimento(pai="não tem"))
     assert r["serie"] == "RC_A"
 

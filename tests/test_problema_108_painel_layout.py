@@ -1,6 +1,6 @@
 """Relato #108 - painel / com overflow horizontal (impressao a5746009ec77de86).
 
-Jean pediu layout fixo no painel geral: tudo cabendo na tela, sem arrastar
+Mario pediu layout fixo no painel geral: tudo cabendo na tela, sem arrastar
 para a direita para ver o fim das tabelas.
 """
 from pathlib import Path

@@ -440,6 +440,35 @@ def inspect_staged(stage_dir: Path, install_dir: Path) -> dict[str, Any]:
             avisos.append(f"Arquivo critico alterado: {rel}")
         problemas.extend(_validar_texto(rel, dados))
 
+    # O PACOTE NÃO APAGA CALADO O CONSERTO FEITO POR FORA — 14/10/2026.
+    # Arquivo instalado que mudou depois da última atualização (cópia direta)
+    # e que o pacote substituiria por outra coisa é BLOQUEIO: o conserto da
+    # produção não chegou ao INSTALAR, e se perderia. Ver retrato_da_instalacao.
+    conflitos: list[dict[str, Any]] = []
+    try:
+        import retrato_da_instalacao as RET
+        versao_instalada = ""
+        versao_txt = install_dir / "VERSAO.txt"
+        if versao_txt.is_file():
+            versao_instalada = versao_txt.read_text(encoding="utf-8").strip()
+        if not versao_instalada and (install_dir / "app.py").is_file():
+            versao_instalada = _versao_de_app_py((install_dir / "app.py").read_bytes())
+        if versao_instalada:
+            conflitos = RET.conflitos_do_pacote(
+                stage_dir.parent.parent, install_dir, versao_instalada,
+                {i["path"]: i["sha256"] for i in meta.get("checked_files", [])})
+    except (OSError, ValueError, KeyError) as erro:
+        avisos.append(f"A conferência do retrato da instalação não rodou: {erro}")
+    if conflitos:
+        nomes = ", ".join(c["path"] for c in conflitos[:8])
+        problemas.append(
+            f"{len(conflitos)} arquivo(s) da produção foram mudados depois da "
+            f"última atualização e este pacote os sobrescreveria: {nomes}"
+            + ("…" if len(conflitos) > 8 else "")
+            + ". Leve a mudança ao INSTALAR e gere o pacote de novo — ou, se "
+              "ela deve mesmo ser descartada, aceite o estado instalado nesta "
+              "tela, com o motivo, e prepare de novo.")
+
     for rel in meta.get("delete", []):
         alvo = candidato / Path(_safe_rel(rel))
         if alvo.is_dir():
@@ -494,6 +523,7 @@ def inspect_staged(stage_dir: Path, install_dir: Path) -> dict[str, Any]:
         # quem fez o pacote e de que estado do git ele saiu (12/10/2026)
         "assinatura": meta.get("assinatura") or {"situacao": "NAO_ASSINADO"},
         "source_commit": str((meta.get("manifest") or {}).get("source_commit") or ""),
+        "conflitos": conflitos,
     }
     meta["inspection"] = inspecao
     meta["state"] = "READY_FOR_APPROVAL" if inspecao["ok"] else "REJECTED"

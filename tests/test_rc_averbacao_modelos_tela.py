@@ -70,11 +70,14 @@ def test_fluxo_completo_usuario_user(casa):
              "cidade": "Cidade Exemplo/MA", "subscritor_nome": "Debora Teste",
              "subscritor_funcao": "Escrevente Autorizada"}
     prev = c.post(f"/rcpn/{aid}/averbar/modelo/{SLUG}", data=dados).get_data(as_text=True)
-    m = re.search(r'white-space:pre-wrap">(.*?)</div>', prev, re.S)
+    # Desde 15/10/2026 (relato #127) a prévia é uma caixa editável, e não texto fixo.
+    m = re.search(r'<textarea name="teor"[^>]*>(.*?)</textarea>', prev, re.S)
     assert m, prev[:2000]
     texto = m.group(1)
     Path(__import__("tempfile").gettempdir(), "_saida_averb_amanda.txt").write_text(texto, encoding="utf-8")
-    assert texto.startswith("AVERBAÇÃO 01/13.706 – RETIFICAÇÃO: Em 9 de Outubro de 2026, de ofício")
+    # Título com o elemento: decisão do oficial em 15/10/2026 (relato #127).
+    assert texto.startswith("AVERBAÇÃO 01/13.706 – RETIFICAÇÃO DA DATA DO REGISTRO: "
+                            "Em 9 de Outubro de 2026, de ofício")
     assert "Levar para a averbação" in prev
 
     dados["acao"] = "levar"

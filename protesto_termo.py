@@ -94,13 +94,38 @@ from typing import Any
 # real, que e o que a regra do oficial manda imitar quando nao ha norma que
 # decida a forma.
 
+# O TIPO E O MOTIVO SÃO DE CADA TÍTULO — inspeção da Corregedoria, tarefa #49:
+# «deixar de usar motivo genérico e registrar tipo/motivo de forma clara e
+# individualizada». Até 13/10/2026 a base terminava com «PROTESTO LAVRADO
+# PARA FINS E EFEITOS DO ART. 9º-A DA LEI Nº 9.430/1996» — o único motivo do
+# catálogo do E-Ofício (`tbmotivoprotesto`, uma linha), escrito em 1.126 de
+# 1.132 protestos, inclusive nos que não são de dívida ativa. É exatamente o
+# motivo genérico que a inspeção reprovou.
+#
+# O DADO INDIVIDUAL JÁ EXISTIA: é o campo «motivo do protesto» da remessa da
+# CRA (posição 297; `tbSDT.Campo22` no acervo — «1» em 1.403 títulos e «2» em
+# 34), com o vocabulário oficial de `protesto_cra.MOTIVOS_DE_PROTESTO`. O tipo
+# é comum ou para fins falimentares (`TIPOS_DE_PROTESTO`); o falimentar é o
+# que se pede expressamente, e no acervo não há um só
+# (`strProtestoFalimentar` vazio nos 1.414).
 TEXTO_BASE = (
     "CERTIFICO que não houve manifestação e que o responsável acima "
     "mencionado e qualificado foi intimado conforme preceitua a Lei Federal "
     "específica de Protesto e normas determinadas pela Corregedoria Geral de "
     "Justiça do Estado do Maranhão.\n"
-    "PROTESTO LAVRADO PARA FINS E EFEITOS DO ART. 9º-A DA LEI Nº 9.430/1996"
+    "PROTESTO {tipo} LAVRADO POR {motivo}."
 )
+
+# O que o livro escreve para cada código — o vocabulário da CRA, por extenso.
+MOTIVO_NO_LIVRO = {
+    "1": "FALTA DE PAGAMENTO",
+    "2": "FALTA DE ACEITE",
+    "3": "FALTA DE DEVOLUÇÃO",
+}
+TIPO_NO_LIVRO = {
+    "C": "COMUM",
+    "F": "PARA FINS FALIMENTARES",
+}
 
 # 1.105 de 1.132. O que decide os outros 27 nao esta no dado — ver o cabecalho.
 FRASE_PAGAMENTO_POSTERIORI = (
@@ -159,11 +184,48 @@ def frase_do_edital(*, data: Any, motivo: Any = None) -> str:
         return ""
     razao = _texto(motivo)
     fim = f" pelo motivo {razao}" if razao else ""
-    return f"O Sacado foi intimado por Edital em {quando}{fim}."
+    # «O DEVEDOR», e não «o Sacado»: na nota promissória e no cheque o devedor
+    # é o emitente (CN-MA art. 919, § 4º). O E-Ofício escrevia «Sacado» em
+    # todos; até 14/10/2026, este também.
+    return f"O devedor foi intimado por Edital em {quando}{fim}."
+
+
+def motivo_no_livro(codigo: Any) -> str:
+    """«1» -> «FALTA DE PAGAMENTO». Código desconhecido devolve vazio."""
+    return MOTIVO_NO_LIVRO.get(_texto(codigo).upper(), "")
+
+
+def tipo_no_livro(codigo: Any) -> str:
+    """«F» -> «PARA FINS FALIMENTARES»; vazio é o protesto COMUM.
+
+    O falimentar se pede expressamente (Lei 9.492/1997, art. 23); sem o pedido
+    o protesto é o comum — e é o que o acervo diz em 1.414 de 1.414.
+    """
+    return TIPO_NO_LIVRO.get(_texto(codigo).upper()[:1] or "C", "")
+
+
+def frase_da_intimacao_pessoal(*, data: Any, digital: bool = False) -> str:
+    """«O devedor foi intimado pessoalmente em DD/MM/AAAA.»
+
+    A CERTIDÃO DA INTIMAÇÃO É ITEM DO REGISTRO (Lei 9.492/1997, art. 22, IV;
+    CN-MA art. 914), e até 14/10/2026 o termo só a escrevia quando ela era por
+    edital — a intimação em mãos, que é a regra da lei, saía sem uma palavra.
+    A digital é a do CN-MA art. 919, § 1º, cumprida pela confirmação da
+    plataforma (art. 921, § 6º, II).
+    """
+    quando = _data_br(data)
+    if not quando:
+        return ""
+    if digital:
+        return (f"O devedor foi intimado por meio eletrônico, com o recebimento "
+                f"confirmado em {quando}.")
+    return f"O devedor foi intimado pessoalmente em {quando}."
 
 
 def montar(*, modelo: str | None = None, edital_data: Any = None,
-           edital_motivo: Any = None) -> str:
+           edital_motivo: Any = None, motivo_protesto: Any = None,
+           tipo_protesto: Any = None, pessoal_data: Any = None,
+           pessoal_digital: bool = False) -> str:
     """O texto do registro do protesto. Só calcula.
 
     `modelo` é o que o oficial editou no catálogo; sem ele vale
@@ -182,15 +244,33 @@ def montar(*, modelo: str | None = None, edital_data: Any = None,
     marcada errado.** A frase é parte do texto que o oficial edita; se um dia
     aparecer a regra, ela vira marcador.
     """
-    partes = {"edital": frase_do_edital(data=edital_data,
-                                        motivo=edital_motivo)}
+    molde = modelo or TERMO_DO_PROTESTO
+    # O MARCADOR CONTINUA SE CHAMANDO `{edital}` — trocar o nome quebraria o
+    # modelo que o oficial já tenha editado —, e passa a levar a certidão da
+    # intimação que houve: por edital, em mãos ou digital.
+    partes = {"edital": (frase_do_edital(data=edital_data, motivo=edital_motivo)
+                         or frase_da_intimacao_pessoal(
+                             data=pessoal_data, digital=pessoal_digital)),
+              "motivo": motivo_no_livro(motivo_protesto),
+              "tipo": tipo_no_livro(tipo_protesto)}
+    # MOTIVO QUE NÃO SE SABE NÃO SE ESCREVE: escrever um no lugar dele seria
+    # o motivo genérico que a inspeção reprovou, agora inventado.
+    if "{motivo}" in molde and not partes["motivo"]:
+        raise TermoError(
+            "O título não diz o motivo do protesto (falta de pagamento, de "
+            "aceite ou de devolução) — ele vem no arquivo da CRA. Informe-o "
+            "na ficha do título antes de lavrar.")
+    if "{tipo}" in molde and not partes["tipo"]:
+        raise TermoError(
+            f"O tipo de protesto «{_texto(tipo_protesto)}» não é comum (C) "
+            f"nem para fins falimentares (F). Corrija-o na ficha do título.")
     try:
-        texto = (modelo or TERMO_DO_PROTESTO).format(**partes)
+        texto = molde.format(**partes)
     except (KeyError, IndexError, ValueError) as erro:
         raise TermoError(
             f"O modelo do termo do protesto tem um marcador que não existe: "
-            f"{erro}. O único que vale é {{edital}} — as demais frases são "
-            f"texto, e se escrevem inteiras no modelo."
+            f"{erro}. Os que valem são {{tipo}}, {{motivo}} e {{edital}} — as "
+            f"demais frases são texto, e se escrevem inteiras no modelo."
         ) from erro
     # O `\n` EM `TEXTO_BASE`/`TERMO_DO_PROTESTO` É SÓ FRONTEIRA DE FRASE — o
     # que decide onde uma parte acaba e a linha vazia do edital ausente some.
@@ -213,21 +293,27 @@ def dados_do_titulo(con: sqlite3.Connection, titulo_id: int) -> dict:
     1.361), e reemitir é rotina. O texto do livro descreve a intimação que
     levou a este protesto, que é a última.
     """
+    tit = con.execute(
+        "SELECT motivo_protesto, tipo_protesto FROM pt_titulos WHERE id=?",
+        (int(titulo_id),)).fetchone()
+    proprio = {"motivo_protesto": tit["motivo_protesto"] if tit else None,
+               "tipo_protesto": tit["tipo_protesto"] if tit else None}
     linha = con.execute(
         """SELECT data_ato, detalhe_json FROM pt_atos
             WHERE titulo_id = ? AND tipo = 'INTIMACAO' AND cancelado = 0
             ORDER BY id DESC LIMIT 1""", (int(titulo_id),)).fetchone()
     if linha is None:
-        return {"edital_data": None, "edital_motivo": None}
+        return {"edital_data": None, "edital_motivo": None, **proprio}
     try:
         detalhe = json.loads(linha["detalhe_json"] or "{}")
     except (TypeError, ValueError):
         detalhe = {}
     if str(detalhe.get("modo") or "").upper() != "EDITAL":
-        # INTIMAÇÃO PESSOAL NÃO GERA A FRASE, e é o certo: ela diz «intimado
-        # por Edital». Escrevê-la numa intimação em mãos seria afirmar no
-        # livro uma publicação que não houve.
-        return {"edital_data": None, "edital_motivo": None}
+        # INTIMAÇÃO PESSOAL NÃO GERA A FRASE DO EDITAL — escrevê-la seria
+        # afirmar no livro uma publicação que não houve —, e gera a dela.
+        return {"edital_data": None, "edital_motivo": None, **proprio,
+                "pessoal_data": linha["data_ato"],
+                "pessoal_digital": bool(detalhe.get("digital"))}
     return {"edital_data": linha["data_ato"],
             "edital_motivo": detalhe.get("motivo_nao_entrega")
-            or detalhe.get("motivo") or None}
+            or detalhe.get("motivo") or None, **proprio}

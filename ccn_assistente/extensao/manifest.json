@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "CG CCN Assistente",
+  "version": "0.4.0",
+  "description": "Cartório Gestão: envia o lote de cadastros ao CCN e consulta a base nacional, trazendo a ficha para o Cartório Gestão, de dentro da aba (homologação ou produção) em que você já entrou no portal. A assinatura A3 é do serviço local 127.0.0.1:8766. Sem bypass da Cloudflare; o cookie do portal não sai do navegador.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://pessoas-hml.e-notariado.org.br/*",
+    "https://pessoas.e-notariado.org.br/*",
+    "http://127.0.0.1:8766/*",
+    "http://127.0.0.1:8765/*",
+    "http://127.0.0.1:8899/*"
+  ],
+  "background": {
+    "service_worker": "background/service_worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://pessoas-hml.e-notariado.org.br/*",
+        "https://pessoas.e-notariado.org.br/*"
+      ],
+      "js": [
+        "content/content.js"
+      ],
+      "css": [
+        "content/painel.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "CG CCN Assistente",
+    "default_popup": "popup/popup.html"
+  }
+}

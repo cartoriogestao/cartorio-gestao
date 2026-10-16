@@ -116,7 +116,7 @@ def test_expandir_e_uma_escolha_e_nao_uma_linha_de_codigo():
     para o oficial poder mudar sozinho, num sabado.
     """
     con = banco()
-    AJ.liberar_para(con, ["MANAGER", "USER"], agora=AGORA, usuario="JEAN")
+    AJ.liberar_para(con, ["MANAGER", "USER"], agora=AGORA, usuario="MARIO")
     assert AJ.pode_usar(con, "USER")
     assert AJ.pode_usar(con, "MANAGER")
 
@@ -129,7 +129,7 @@ def test_o_administrador_nunca_sai_da_lista():
     parado.
     """
     con = banco()
-    r = AJ.liberar_para(con, ["USER"], agora=AGORA, usuario="JEAN")
+    r = AJ.liberar_para(con, ["USER"], agora=AGORA, usuario="MARIO")
     assert "ADMIN" in r["perfis"]
     assert AJ.pode_usar(con, "ADMIN")
 
@@ -162,11 +162,11 @@ def test_a_recusa_diz_quem_pode_e_onde_se_muda():
 def test_a_mudanca_de_acesso_fica_escrita():
     """Abrir a ajuda para mais gente tem consequencia de sigilo e de gasto."""
     con = banco()
-    AJ.liberar_para(con, ["USER"], agora=AGORA, usuario="JEAN",
+    AJ.liberar_para(con, ["USER"], agora=AGORA, usuario="MARIO",
                     motivo="abrir para o balcão depois de duas semanas")
     e = AJ.situacao_do_acesso(con)
     assert e["alterada_em"] == AGORA
-    assert e["alterada_por"] == "JEAN"
+    assert e["alterada_por"] == "MARIO"
     assert "duas semanas" in e["alterada_motivo"]
 
 
@@ -417,12 +417,12 @@ def test_a_consulta_guarda_o_que_saiu_inteiro(monkeypatch):
     r = AJ.consultar(_DbDeMentira(con), pergunta="o que é a irregularidade 33?",
                      assunto="CRA", contexto="recusa da CRA no título 84713/1",
                      pasta_de_dados=".", agora=AGORA, papel="ADMIN",
-                     usuario="JEAN")
+                     usuario="MARIO")
     linha = AJ.ler(con, r["consulta_id"])
     assert "84713/1" not in linha["enviado"]
     assert "[REFERENCIA_REGISTRAL_" in linha["enviado"]
     assert linha["tokens_entrada"] == 120
-    assert linha["perguntada_por"] == "JEAN"
+    assert linha["perguntada_por"] == "MARIO"
     assert linha["mascarado"] == 1
 
 

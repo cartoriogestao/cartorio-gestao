@@ -146,8 +146,40 @@ def data_limite(hoje: str, anos: int = PERIODO_PADRAO_ANOS) -> str:
 # ----------------------------------------------------------------- a busca
 
 
+# O CANCELADO E O SUSPENSO NÃO ENTRAM NA CERTIDÃO — decisão do oficial em
+# 14/10/2026, que é a letra da lei: Lei 9.492/1997, art. 27, § 2º, e Código de
+# Normas do TJMA (Prov. 28/2026), arts. 944 e 948 — «não serão expedidas
+# certidões relativas a registros cujo cancelamento já tenha sido averbado,
+# salvo quando houver requerimento escrito do próprio devedor ou determinação
+# judicial expressa». O protesto com efeitos suspensos pelo juiz também sai
+# (Gentil, cap. 7, [p. 2693]): a ordem para a publicidade dele.
+#
+# CORREÇÃO, e ela é grande: até 14/10 a busca trazia os cancelados, e com tudo
+# cancelado saía SOZINHA a «certidão de cancelamento» a requerimento verbal —
+# exatamente o papel que a lei só admite a pedido escrito do devedor ou por
+# ordem judicial.
+AUTORIZACOES = {
+    "DEVEDOR_ESCRITO": "requerimento escrito do próprio devedor",
+    "ORDEM_JUDICIAL": "determinação judicial expressa",
+}
+
+
+def autorizacao_valida(autorizacao: Any) -> str | None:
+    """A chave de `AUTORIZACOES`, ou None. Palavra desconhecida recusa."""
+    a = str(autorizacao or "").strip().upper()
+    if not a:
+        return None
+    if a not in AUTORIZACOES:
+        raise CertidaoError(
+            f"Autorização desconhecida: {a!r}. As que a lei admite para "
+            f"certificar protesto cancelado são o requerimento escrito do "
+            f"devedor e a ordem judicial.")
+    return a
+
+
 def buscar(con: sqlite3.Connection, *, nome: str | None = None,
-           documento: str | None = None, desde: str | None = None) -> list[dict]:
+           documento: str | None = None, desde: str | None = None,
+           autorizacao: str | None = None) -> list[dict]:
     """Os protestos de uma pessoa, no periodo. So LE.
 
     SO ENTRA TITULO QUE CHEGOU A PROTESTO — o que tem ato de PROTESTO. O
@@ -184,13 +216,23 @@ def buscar(con: sqlite3.Connection, *, nome: str | None = None,
         filtro = f"({filtro}) AND a.data_ato >= ?"
         params.append(str(desde)[:10])
 
+    # O NÚMERO DO LIVRO MORA EM `nu_livros`, que é do núcleo: banco só com o
+    # esquema do protesto não a tem, e aí o livro é o do acervo (detalhe).
+    tem_livros = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='nu_livros'"
+    ).fetchone() is not None
+    livro_sql = ("(SELECT v.numero FROM nu_livros v WHERE v.id = a.livro_id)"
+                 if tem_livros else "NULL")
     linhas = con.execute(
         f"""SELECT t.id titulo_id, t.numero_titulo, t.especie, t.situacao,
                    t.valor_centavos, t.saldo_centavos, t.data_emissao,
-                   t.data_vencimento, t.cedente_nome,
+                   t.data_vencimento, t.cedente_nome, t.cedente_documento,
+                   t.protocolo, t.apresentante_nome, t.motivo_protesto,
+                   t.tipo_protesto, t.tipo_endosso,
                    d.nome devedor_nome, d.documento_tipo, d.documento_numero,
                    a.id ato_id, a.data_ato, a.folha, a.numero_ordem,
-                   a.detalhe_json, a.selo
+                   a.detalhe_json, a.selo, a.rotulo,
+                   {livro_sql} livro_numero
               FROM pt_atos a
               JOIN pt_titulos t ON t.id = a.titulo_id
               JOIN pt_devedores d ON d.titulo_id = t.id
@@ -222,6 +264,13 @@ def buscar(con: sqlite3.Connection, *, nome: str | None = None,
             "devedor": r["devedor_nome"],
             "devedor_documento": formatar_documento(r["documento_numero"]),
             "cedente": r["cedente_nome"],
+            "cedente_documento": formatar_documento(r["cedente_documento"])
+            if r["cedente_documento"] else "",
+            "protocolo": r["protocolo"],
+            "apresentante": r["apresentante_nome"],
+            "motivo_protesto": r["motivo_protesto"],
+            "tipo_protesto": r["tipo_protesto"],
+            "tipo_endosso": r["tipo_endosso"],
             "valor": reais(int(r["valor_centavos"] or 0)),
             "saldo": reais(int(r["saldo_centavos"] or 0)),
             "data_emissao": r["data_emissao"],
@@ -231,8 +280,10 @@ def buscar(con: sqlite3.Connection, *, nome: str | None = None,
             "suspensao_juizo": (suspenso or {}).get("juizo", ""),
             "suspensao_processo": (suspenso or {}).get("processo", ""),
             "suspensao_em": (suspenso or {}).get("data_ato", ""),
-            "livro": detalhe.get("livro_do_acervo"),
-            "folha": r["folha"],
+            # O livro do ato lavrado aqui mora em `nu_livros`; o do acervo, no
+            # detalhe que a carga gravou.
+            "livro": r["livro_numero"] or detalhe.get("livro_do_acervo"),
+            "folha": r["rotulo"] or r["folha"],
             "numero_ordem": r["numero_ordem"],
             "selo": r["selo"],
             "cancelado": bool(baixa),
@@ -240,6 +291,11 @@ def buscar(con: sqlite3.Connection, *, nome: str | None = None,
             "motivo_cancelamento": (baixa["motivo_cancelamento"]
                                     if baixa else None),
         })
+    # O QUE A LEI DEIXA CERTIFICAR. Sem autorização, o cancelado e o suspenso
+    # ficam de fora — e então a negativa é o que cabe se não sobrar nada.
+    if not autorizacao_valida(autorizacao):
+        achados = [a for a in achados
+                   if not a["cancelado"] and not a["efeitos_suspensos"]]
     return achados
 
 
@@ -300,17 +356,37 @@ def _linha_do_protesto(a: dict, i: int) -> str:
     cedente = (a.get("cedente") or "").strip()
     if cedente and cedente.upper() == (a.get("devedor") or "").strip().upper():
         cedente = ""
+    # O QUE A CERTIDÃO DIZ DE CADA PROTESTO — Prov. CNJ 134, art. 51 (Gentil,
+    # cap. 7, [p. 2693]): protocolo, apresentante, credor, valor protestado,
+    # tipo e motivo. Até 14/10/2026 o cedente saía como «apresentado por», e
+    # quem apresenta é o apresentante (o banco, a CRA): o credor é outro papel.
+    import protesto_termo as TERMO
+    motivo = TERMO.motivo_no_livro(a.get("motivo_protesto"))
+    tipo = TERMO.tipo_no_livro(a.get("tipo_protesto")) if motivo else ""
+    credor = cedente
+    if credor and a.get("cedente_documento"):
+        credor += f" ({a['cedente_documento']})"
     partes = [
         f"{i}) Título n. {a['numero_titulo']}",
         f"espécie {a['especie']}" if a.get("especie") else None,
+        f"protocolo {a['protocolo']}" if a.get("protocolo") else None,
         f"valor R$ {a['valor']}",
+        (f"valor protestado R$ {a['saldo']}"
+         if a.get("saldo") and a.get("saldo") != a.get("valor") else None),
         f"emitido em {_dia(a['data_emissao'])}" if a.get("data_emissao") else None,
         f"vencido em {_dia(a['data_vencimento'])}" if a.get("data_vencimento") else None,
-        f"apresentado por {cedente}" if cedente else None,
+        f"apresentante {a['apresentante']}" if a.get("apresentante") else None,
+        f"credor {credor}" if credor else None,
+        f"protesto {tipo.lower()} por {motivo.lower()}" if motivo else None,
         f"protestado em {_dia(a['data_protesto'])}",
         lugar,
     ]
     linha = "; ".join(p for p in partes if p)
+    if a.get("efeitos_suspensos"):
+        juizo = " ".join(x for x in (a.get("suspensao_juizo"),
+                                    a.get("suspensao_processo")) if x)
+        linha += (f"; EFEITOS SUSPENSOS por ordem judicial"
+                  f"{' (' + juizo + ')' if juizo else ''}")
     if a.get("cancelado"):
         linha += f"; CANCELADO em {_dia(a['data_cancelamento'])}"
         if a.get("motivo_cancelamento"):
@@ -321,7 +397,9 @@ def _linha_do_protesto(a: dict, i: int) -> str:
 def montar_teor(*, tipo: str, nome: str, documento: str | None,
                 achados: list[dict], desde: str, hoje: str,
                 periodo_anos: int = PERIODO_PADRAO_ANOS,
-                requerente: str | None = None, modelo: str | None = None) -> str:
+                requerente: str | None = None, modelo: str | None = None,
+                autorizacao: str | None = None,
+                autorizacao_ref: str | None = None) -> str:
     """O teor da certidao, nas palavras que esta casa usa.
 
     Nao grava nada e nao le banco: recebe o que a busca achou e devolve texto.
@@ -337,6 +415,17 @@ def montar_teor(*, tipo: str, nome: str, documento: str | None,
     # e quem aparece.
     pedido = (f"a requerimento de {quem}" if quem
               else "a requerimento verbal de parte interessada")
+    # CANCELADO OU SUSPENSO SÓ ENTRA COM A AUTORIZAÇÃO, E A CERTIDÃO DIZ QUAL
+    # (CN TJMA arts. 944 e 948): é ela que justifica o papel mostrar o que a
+    # regra manda calar.
+    aut = autorizacao_valida(autorizacao)
+    if aut == "DEVEDOR_ESCRITO":
+        pedido = ("a requerimento escrito do próprio devedor"
+                  + (f", {quem}" if quem else ""))
+    elif aut == "ORDEM_JUDICIAL":
+        ref = (autorizacao_ref or "").strip()
+        pedido = ("por determinação judicial expressa"
+                  + (f" ({ref})" if ref else ""))
     doc_tipo = tipo_do_documento(documento)
     identificacao = nome.strip()
     if documento:
@@ -418,7 +507,8 @@ def emitir(con: sqlite3.Connection, *, nome: str, documento: str | None,
            achados: list[dict], hoje: str, agora: str, tipo: str | None = None,
            periodo_anos: int = PERIODO_PADRAO_ANOS, desde: str | None = None,
            requerente: str | None = None, finalidade: str | None = None,
-           usuario: str | None = None) -> dict:
+           usuario: str | None = None, autorizacao: str | None = None,
+           autorizacao_ref: str | None = None) -> dict:
     """Emite a certidao, com numero do exercicio, teor congelado e hash. ESCREVE.
 
     O TIPO SAI DO QUE SE ACHOU, e nao de quem pede: `tipo_para(achados)`.
@@ -430,6 +520,24 @@ def emitir(con: sqlite3.Connection, *, nome: str, documento: str | None,
     """
     if not (nome or "").strip():
         raise CertidaoError("A certidão precisa do nome de quem ela é.")
+    # O CPF/CNPJ É OBRIGATÓRIO — CN TJMA (Prov. 28/2026), art. 906: ele
+    # consta de todos os registros e certidões. Certidão só pelo nome não
+    # separa homônimos, e homônimo é a regra.
+    if not tipo_do_documento(documento):
+        raise CertidaoError(
+            "Informe o CPF (11 dígitos) ou o CNPJ (14 dígitos) de quem se quer "
+            "a certidão — o Código de Normas (art. 906) manda que ele conste "
+            "de toda certidão de protesto.")
+    aut = autorizacao_valida(autorizacao)
+    if aut == "ORDEM_JUDICIAL" and not (autorizacao_ref or "").strip():
+        raise CertidaoError(
+            "Para certificar protesto cancelado por determinação judicial, "
+            "informe o juízo e o processo da ordem.")
+    if not aut:
+        # A busca já deixa de fora o cancelado e o suspenso; quem passar os
+        # achados de outro jeito não fura a regra.
+        achados = [a for a in achados if not a.get("cancelado")
+                   and not a.get("efeitos_suspensos")]
     cabivel = tipo_para(achados)
     escolhido = (tipo or cabivel).strip().upper()
     if escolhido not in TIPOS:
@@ -459,7 +567,8 @@ def emitir(con: sqlite3.Connection, *, nome: str, documento: str | None,
     teor = montar_teor(tipo=escolhido, nome=nome, documento=documento,
                        achados=achados, desde=limite, hoje=hoje,
                        periodo_anos=periodo_anos, requerente=requerente,
-                       modelo=modelo)
+                       modelo=modelo, autorizacao=autorizacao,
+                       autorizacao_ref=autorizacao_ref)
     ano = int(str(hoje)[:4])
     numero = proximo_numero(con, ano)
     # A LINHA DA ASSINATURA A MAO SAI ANTES DO HASH, E NAO ANTES DO
@@ -480,7 +589,12 @@ def emitir(con: sqlite3.Connection, *, nome: str, documento: str | None,
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (numero, ano, escolhido, nome.strip(), _digitos(documento) or None,
              tipo_do_documento(documento), (requerente or "").strip() or None,
-             (finalidade or "").strip() or None, int(periodo_anos), limite,
+             ("; ".join(x for x in ((finalidade or "").strip(),
+                                    (f"{AUTORIZACOES[aut]}"
+                                     + (f": {autorizacao_ref.strip()}"
+                                        if (autorizacao_ref or "").strip()
+                                        else "")) if aut else "") if x)
+              or None), int(periodo_anos), limite,
              len(achados), json.dumps(achados, ensure_ascii=False), teor,
              impressao, agora, usuario))
     except sqlite3.IntegrityError as erro:

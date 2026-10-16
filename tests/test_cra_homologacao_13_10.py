@@ -160,9 +160,11 @@ def test_a_rede_corre_fora_da_transacao(con, monkeypatch):
     monkeypatch.setattr(API, "enviar_confirmacao", falso_envio)
     monkeypatch.setattr(API, "chamar", falsa_chamada)
     monkeypatch.setattr(CRED, "tem", lambda *a, **k: True)
+    # 14/10/2026 («agora é tudo produção»): era HOMOLOGACAO, com o envio
+    # automático dela ligado de fábrica; agora é PRODUCAO, com a caixa ligada.
     envio = ENV.enviar_pos_remessa(
         tx, lotes=r["lotes"], andamentos=[("001", a)],
-        ambiente=CRED.HOMOLOGACAO, ler_config=lambda k, d: d)
+        ambiente=CRED.PRODUCAO, ler_config=lambda k, d: "1")
     assert not envio["falhas"], envio["falhas"]
     assert [v[0] for v in vistos] == ["Confirmacao", "TituloComplemento"]
     assert not any(v[3] for v in vistos)   # nenhuma transação durante a rede
@@ -187,7 +189,7 @@ def test_sem_a_confirmacao_o_andamento_nao_sai(con, monkeypatch):
     monkeypatch.setattr(CRED, "tem", lambda *a, **k: True)
     envio = ENV.enviar_pos_remessa(
         _Transacoes(con), lotes=r["lotes"], andamentos=[("001", a)],
-        ambiente=CRED.HOMOLOGACAO, ler_config=lambda k, d: d)
+        ambiente=CRED.PRODUCAO, ler_config=lambda k, d: "1")
     assert not chamadas and not envio["enviados"]
     assert {f["operacao"] for f in envio["falhas"]} == {"Confirmacao",
                                                          "TituloComplemento"}

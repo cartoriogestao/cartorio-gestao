@@ -147,7 +147,15 @@ MENCAO_DA_COPIA_ARQUIVADA = (
 # regra de `notas_modelos.py`. Até 07/09/2026 as três partes eram separadas
 # por `"\n\n"` — linha em branco de propósito —, e isso ia inteiro para o
 # papel que o tabelião assina e entrega ao apresentante.
-INSTRUMENTO_DE_PROTESTO = TEXTO_BASE + " {copia} {intimacao}"
+INSTRUMENTO_DE_PROTESTO = TEXTO_BASE + " {descricao} {copia} {intimacao}"
+
+# «O DOCUMENTO ABAIXO DESCRITO» NÃO ERA DESCRITO — conferência dos modelos de
+# 14/10/2026: o texto dizia isso e nada vinha depois. `{descricao}` é o que o
+# Código de Normas do TJMA (Prov. 28/2026), art. 914, manda o registro e o
+# instrumento conterem: número de ordem e data do registro, data e número da
+# protocolização, apresentante, o título (espécie, número, valor, emissão e
+# vencimento), o devedor com documento e endereço, o credor, o tipo e o motivo.
+# Montado dos FATOS do ato e do título — nada escrito à mão.
 
 
 class InstrumentoError(ValueError):
@@ -208,10 +216,16 @@ def dados(con: sqlite3.Connection, titulo_id: int) -> dict:
         raise InstrumentoError(
             f"Não há título com o número interno {titulo_id} neste sistema.")
 
+    tem_livros = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='nu_livros'"
+    ).fetchone() is not None
+    livro_sql = ("(SELECT v.numero FROM nu_livros v WHERE v.id = a.livro_id)"
+                 if tem_livros else "NULL")
     protesto = con.execute(
-        """SELECT * FROM pt_atos
-            WHERE titulo_id = ? AND tipo = 'PROTESTO' AND cancelado = 0
-            ORDER BY id DESC LIMIT 1""", (int(titulo_id),)).fetchone()
+        f"""SELECT a.*, {livro_sql} livro_numero
+             FROM pt_atos a
+            WHERE a.titulo_id = ? AND a.tipo = 'PROTESTO' AND a.cancelado = 0
+            ORDER BY a.id DESC LIMIT 1""", (int(titulo_id),)).fetchone()
 
     apontamento = con.execute(
         """SELECT data_ato FROM pt_atos
@@ -321,9 +335,62 @@ def por_que_nao_esta_completo(conferido: dict) -> str:
 # ------------------------------------------------------------- o teor
 
 
+def descricao_do_documento(d: dict) -> str:
+    """O «documento abaixo descrito», item a item do art. 914. Só calcula."""
+    import protesto_termo as TERMO
+    t, prot = d["titulo"], d["protesto"] or {}
+    especie = CRA.ESPECIES.get(_texto(t.get("especie")).upper(),
+                               _texto(t.get("especie")))
+    partes = []
+    if prot:
+        lugar = []
+        if prot.get("livro_numero"):
+            lugar.append(f"Livro {prot['livro_numero']}")
+        if prot.get("rotulo") or prot.get("folha"):
+            lugar.append(f"folha {prot.get('rotulo') or prot.get('folha')}")
+        if prot.get("numero_ordem"):
+            lugar.append(f"sob o n.º {prot['numero_ordem']}")
+        partes.append("Registro do protesto: " + (", ".join(lugar) or
+                      "livro e folha não constam") +
+                      f", em {_data_br(prot.get('data_ato'))}.")
+    if _texto(t.get("protocolo")):
+        partes.append(f"Protocolo n.º {t['protocolo']}"
+                      + (f", de {_data_br(d.get('apontado_em'))}"
+                         if d.get("apontado_em") else "") + ".")
+    partes.append(
+        f"Título: {especie or 'espécie não informada'}, n.º "
+        f"{_texto(t.get('numero_titulo')) or 'sem número'}"
+        + (f", emitido em {_data_br(t['data_emissao'])}" if t.get("data_emissao") else "")
+        + (f", vencido em {_data_br(t['data_vencimento'])}" if t.get("data_vencimento") else "")
+        + f", valor R$ {_reais(t.get('valor_centavos'))}"
+        + (f", valor protestado R$ {_reais(t.get('saldo_centavos'))}"
+           if t.get("saldo_centavos") and t.get("saldo_centavos") != t.get("valor_centavos")
+           else "") + ".")
+    if _texto(t.get("apresentante_nome")) or _texto(t.get("apresentante_codigo")):
+        partes.append(f"Apresentante: {_texto(t.get('apresentante_nome')) or _texto(t.get('apresentante_codigo'))}.")
+    if _texto(t.get("cedente_nome")):
+        doc = _texto(t.get("cedente_documento"))
+        partes.append(f"Credor (sacador/favorecido): {t['cedente_nome']}"
+                      + (f", CPF/CNPJ {doc}" if doc else "") + ".")
+    for dev in d.get("devedores") or []:
+        end = ", ".join(x for x in (_texto(dev.get("endereco")), _texto(dev.get("bairro")),
+                                    _texto(dev.get("cidade")) and
+                                    f"{_texto(dev.get('cidade'))}/{_texto(dev.get('uf'))}") if x)
+        partes.append(f"Devedor: {_texto(dev.get('nome'))}"
+                      + (f", {dev.get('documento_tipo') or 'documento'} "
+                         f"{_texto(dev.get('documento_numero'))}"
+                         if _texto(dev.get("documento_numero")) else "")
+                      + (f", endereço {end}" if end else "") + ".")
+    motivo = TERMO.motivo_no_livro(t.get("motivo_protesto"))
+    if motivo:
+        partes.append(f"Tipo: protesto {TERMO.tipo_no_livro(t.get('tipo_protesto')).lower()}. "
+                      f"Motivo: {motivo.lower()}.")
+    return " ".join(partes)
+
+
 def montar_teor(*, modelo: str | None = None, serventia: str, praca: str,
                 motivo: str, copia_arquivada: bool,
-                intimacao: dict | None) -> str:
+                intimacao: dict | None, descricao: str = "") -> str:
     """O corpo do instrumento. Não lê banco e não grava.
 
     `copia_arquivada` decide a **menção do § único**, e por isso é obrigatório
@@ -353,7 +420,8 @@ def montar_teor(*, modelo: str | None = None, serventia: str, praca: str,
                     f"devedor em {_data_br(intimacao.get('data'))}.")
     try:
         pronto = texto.format(serventia=serventia, praca=praca, motivo=motivo,
-                              copia=copia, intimacao=certidao)
+                              copia=copia, intimacao=certidao,
+                              descricao=descricao)
     except (KeyError, IndexError) as erro:
         raise InstrumentoError(
             f"O modelo do instrumento pede um campo que o sistema não sabe "
@@ -408,14 +476,23 @@ def emitir(con: sqlite3.Connection, titulo_id: int, *, serventia: str,
             "O ato de protesto está sem data, e o instrumento a declara. "
             "Corrija a data do ato antes de emitir.")
 
-    motivo = (CRA.MOTIVOS_DE_PROTESTO.get(_texto(t.get("motivo_protesto")))
-              or _texto(t.get("motivo_protesto")) or "FALTA DE PAGAMENTO")
+    # SEM MOTIVO NÃO HÁ INSTRUMENTO — até 14/10/2026 faltando o motivo saía
+    # «FALTA DE PAGAMENTO» por conta própria. O termo recusa; o instrumento,
+    # que é a cópia que vai ao credor, recusa igual (CN-MA art. 914, X).
+    import protesto_termo as TERMO
+    motivo = TERMO.motivo_no_livro(t.get("motivo_protesto"))
+    if not motivo:
+        raise InstrumentoError(
+            "O título não diz o motivo do protesto (falta de pagamento, de "
+            "aceite ou de devolução), e o instrumento o declara. Informe-o na "
+            "ficha do título.")
     teor = montar_teor(
         modelo=modelo, serventia=serventia,
         praca=_texto(t.get("praca_protesto")) or "desta praça",
-        motivo=motivo.upper(),
+        motivo=motivo,
         copia_arquivada=d["copias_arquivadas"] > 0,
-        intimacao=d["intimacao"])
+        intimacao=d["intimacao"],
+        descricao=descricao_do_documento(d))
 
     numero = proximo_numero(con, ano)
     corpo = json.dumps(
@@ -527,3 +604,73 @@ def contagens(con: sqlite3.Connection) -> dict:
     n_com = int(com["c"] if com else 0)
     return {"protestos": n_lavrados, "com_instrumento": n_com,
             "sem_instrumento": max(n_lavrados - n_com, 0)}
+
+
+# ------------------------------------- o instrumento assinado com o A3
+#
+# Pedido do oficial, 15/10/2026: «vamos criar o gerador de arquivo e assinar
+# com o certificado». O instrumento sai em PDF, o serviço local de assinatura
+# (`a3_servico_local`, com o token do oficial plugado e o PIN digitado por ele)
+# devolve o PKCS#7 com o PDF dentro — o formato medido nos 44 instrumentos que
+# esta casa mandou à CENPROT —, e ele fica guardado na fila da casa
+# (`as_documentos`), que até aqui esperava um arquivo que nada recebia.
+
+
+def guardar_assinatura(con: sqlite3.Connection, instrumento_id: int, *,
+                       pdf: bytes, p7s: bytes, pasta_de_arquivos: Any,
+                       agora: str, usuario: str | None = None) -> dict:
+    """Guarda o instrumento assinado. ESCREVE, e grava os dois arquivos.
+
+    **CONFERE ANTES DE GUARDAR** (`assinatura_digital.conferir`): o PDF de
+    dentro do pacote tem de ser, byte a byte, o PDF que a casa acabou de gerar.
+    Assinatura que embrulha outro papel não serve, e não entra.
+    """
+    from pathlib import Path
+
+    import assinatura_digital as ASD
+    ins = instrumento(con, instrumento_id)
+    if not ins:
+        raise InstrumentoError(f"Instrumento {instrumento_id} não encontrado.")
+    resultado = ASD.conferir(bytes(p7s), documento=bytes(pdf))
+    if not resultado.get("serve"):
+        raise InstrumentoError(
+            "A assinatura não confere com o instrumento: "
+            + (ASD.por_que_nao_serve(resultado) or "motivo não identificado")
+            + ". Nada foi guardado.")
+    quem = resultado.get("quem_assinou") or {}
+    destino = Path(pasta_de_arquivos) / "Protesto" / "Instrumentos"
+    destino.mkdir(parents=True, exist_ok=True)
+    base = destino / f"instrumento-{ins['numero']}-{ins['ano']}"
+    base.with_suffix(".pdf").write_bytes(bytes(pdf))
+    base.with_suffix(".p7s").write_bytes(bytes(p7s))
+    import hashlib
+    cur = con.execute(
+        """UPDATE as_documentos
+              SET caminho_documento=?, tamanho_documento=?,
+                  caminho_assinado=?, sha256_assinado=?, assinado_em=?,
+                  assinado_por_nome=?, assinado_por_cpf=?, recebido_por=?
+            WHERE entidade=? AND entidade_id=?""",
+        (str(base.with_suffix(".pdf")), len(pdf), str(base.with_suffix(".p7s")),
+         hashlib.sha256(bytes(p7s)).hexdigest(), agora, quem.get("nome"),
+         quem.get("cpf"), usuario, ENTIDADE_DA_ASSINATURA, int(instrumento_id)))
+    if not cur.rowcount:
+        raise InstrumentoError(
+            "Este instrumento não está na fila de assinatura da casa — emita-o "
+            "de novo pela ficha do título.")
+    return {"instrumento_id": int(instrumento_id),
+            "assinado_por": quem.get("nome"), "numero": ins["numero"],
+            "ano": ins["ano"]}
+
+
+def assinado_do_titulo(con: sqlite3.Connection, titulo_id: int) -> bytes | None:
+    """O `.p7s` do instrumento mais recente e ASSINADO do título. Só LÊ."""
+    from pathlib import Path
+    linha = con.execute(
+        """SELECT d.caminho_assinado FROM pt_instrumentos i
+             JOIN as_documentos d ON d.entidade=? AND d.entidade_id=i.id
+            WHERE i.titulo_id=? AND d.caminho_assinado IS NOT NULL
+            ORDER BY i.id DESC LIMIT 1""",
+        (ENTIDADE_DA_ASSINATURA, int(titulo_id))).fetchone()
+    if not linha or not linha[0] or not Path(linha[0]).exists():
+        return None
+    return Path(linha[0]).read_bytes()

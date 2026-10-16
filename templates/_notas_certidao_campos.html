@@ -1,0 +1,23 @@
+{# Os campos comuns das duas certidões das Notas (ato identificado e busca):
+   escritos uma vez, para as duas não divergirem no primeiro conserto. #}
+<label>Requerente <small>(opcional)</small>
+  <input name="requerente" placeholder="em branco: «parte interessada»"></label>
+<label>CPF ou CNPJ do requerente <small>(opcional)</small>
+  <input name="requerente_documento"></label>
+<label style="grid-column:1/-1">Finalidade <small>(opcional)</small>
+  <input name="finalidade"></label>
+<label>Folhas da certidão
+  <input type="number" name="folhas" value="" min="1" step="1" placeholder="auto">
+  <small>O sistema conta antes de emitir. Mais de uma folha cobra a folha acrescida
+    (13.12.3), num selo próprio — como a casa fez no E-Ofício.</small></label>
+<label style="display:flex;gap:8px;align-items:flex-start">
+  <input type="checkbox" name="eletronica" value="1">
+  <span><strong>Certidão eletrônica</strong> (13.12.4)<br>
+    <small>Já inclui buscas e folhas: não leva selo de busca nem de folha acrescida.</small></span></label>
+<label style="display:flex;gap:8px;align-items:flex-start">
+  <input type="checkbox" name="ato_gratuito" value="1">
+  <span><strong>Selo gratuito / isento</strong><br>
+    <small>Exige o motivo escrito — é ele que a conferência lê no selo.</small></span></label>
+<label>Motivo da gratuidade <input name="motivo_gratuidade" maxlength="500"></label>
+<label>Selo <small>(opcional — digitado à mão, quando o selador não responde)</small>
+  <input name="selo" pattern="[A-Za-z0-9]*"></label>

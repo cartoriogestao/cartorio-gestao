@@ -41,15 +41,15 @@ def test_teor_ganha_lavrou_na_lavratura():
     """Averbacao generica ainda ganha linha «Lavrado por:»; CPF nao."""
     con = _con()
     r = RC.averbar(con, 1, teor="Averbo retificacao de grafia do nome do pai.",
-                   agora="2026-09-08T12:00:00", usuario="Jean Santos")
+                   agora="2026-09-08T12:00:00", usuario="Mario Santos")
     ato = con.execute("SELECT teor, criado_por FROM rc_atos WHERE id=?",
                       (r["ato_id"],)).fetchone()
-    assert "Lavrado por: Jean Santos." in ato["teor"]
-    assert ato["criado_por"] == "Jean Santos"
+    assert "Lavrado por: Mario Santos." in ato["teor"]
+    assert ato["criado_por"] == "Mario Santos"
     # CPF: lavratura parcial sem «Lavrado por:» — usuario entra apos o selo.
     import rc_cpf as CPF
     r2 = RC.averbar(con, 1, teor=CPF.texto_averbacao("00000001597"),
-                    agora="2026-09-08T12:00:00", usuario="Jean Santos",
+                    agora="2026-09-08T12:00:00", usuario="Mario Santos",
                     fundamento="art. 347 do Código de Normas do TJMA")
     ato2 = con.execute("SELECT teor FROM rc_atos WHERE id=?",
                        (r2["ato_id"],)).fetchone()
@@ -62,7 +62,7 @@ def test_sincronizar_reescreve_teor_cpf_apos_selo():
     import rc_cpf as CPF
     con = _con()
     r = RC.averbar(con, 1, teor=CPF.texto_averbacao("00000001597"),
-                   agora="2026-09-08T12:00:00", usuario="Jean Santos",
+                   agora="2026-09-08T12:00:00", usuario="Mario Santos",
                    fundamento="art. 347 do Código de Normas do TJMA")
     con.execute("UPDATE rc_atos SET selo=? WHERE id=?",
                 ("AVERBA000000WOGST2V2BKC6LG79", r["ato_id"]))
@@ -70,7 +70,7 @@ def test_sincronizar_reescreve_teor_cpf_apos_selo():
     t2 = RCETQ.sincronizar_teor_do_ato(con, r["ato_id"])
     esperado = (
         "Averbo neste assento o CPF n. 000.000.015-97. "
-        "AVERBA000000WOGST2V2BKC6LG79. 08/09/2026. Jean Santos.")
+        "AVERBA000000WOGST2V2BKC6LG79. 08/09/2026. Mario Santos.")
     assert t1 == esperado
     assert t2 == t1
     assert "Lavrado por:" not in t1
@@ -87,10 +87,10 @@ def test_sincronizar_teor_cpf_com_funcao_do_usuario():
                funcao TEXT)""")
     con.execute(
         "INSERT INTO users(id, username, full_name, funcao) "
-        "VALUES (1, 'jean', 'Jean Santos', "
+        "VALUES (1, 'mario', 'Mario Santos', "
         "'Tabelião e Oficial de Registro')")
     r = RC.averbar(con, 1, teor=CPF.texto_averbacao("00000001597"),
-                   agora="2026-09-08T12:00:00", usuario="Jean Santos",
+                   agora="2026-09-08T12:00:00", usuario="Mario Santos",
                    fundamento="art. 347 do Código de Normas do TJMA")
     con.execute("UPDATE rc_atos SET selo=? WHERE id=?",
                 ("AVERBA000000WOGST2V2BKC6LG79", r["ato_id"]))
@@ -98,20 +98,20 @@ def test_sincronizar_teor_cpf_com_funcao_do_usuario():
     assert teor == (
         "Averbo neste assento o CPF n. 000.000.015-97. "
         "AVERBA000000WOGST2V2BKC6LG79. 08/09/2026. "
-        "Jean Santos, Tabelião e Oficial de Registro.")
+        "Mario Santos, Tabelião e Oficial de Registro.")
 
 
 def test_sincronizar_acrescenta_selo_sem_duplicar_generico():
     con = _con()
     r = RC.averbar(con, 1, teor="Averbo retificacao de grafia do sobrenome.",
-                   agora="2026-09-08T12:00:00", usuario="Jean Santos")
+                   agora="2026-09-08T12:00:00", usuario="Mario Santos")
     con.execute("UPDATE rc_atos SET selo=? WHERE id=?",
                 ("AVESVD000000TESTESELO0001", r["ato_id"]))
     t1 = RCETQ.sincronizar_teor_do_ato(con, r["ato_id"])
     t2 = RCETQ.sincronizar_teor_do_ato(con, r["ato_id"])
     assert t1.count("Selo: AVESVD000000TESTESELO0001.") == 1
     assert t2 == t1
-    assert "Lavrado por: Jean Santos." in t1
+    assert "Lavrado por: Mario Santos." in t1
 
 
 def test_odt_contem_teor_lavrou_selo_e_refs():

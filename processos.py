@@ -31,6 +31,7 @@ from typing import Any
 import processo_especies as ESP
 import tarefa_ordem as TO
 import tarefa_processo as TP
+import tarefa_suspensao as TS
 
 #: O despacho do gestor virou relato em 12/10/2026 e não é processo.
 FORA_DOS_PROCESSOS = ("DESPACHO", "RCPN_DIA")
@@ -106,8 +107,11 @@ def listar(con: sqlite3.Connection, *, vista: str = "ABERTOS", usuario_id: int |
         where.append("(t.assigned_user_id = ? OR t.backup_user_id = ?)")
         args += [usuario_id, usuario_id]
     if vista == "VENCIDOS":
-        where.append("t.due_date IS NOT NULL AND t.due_date < ?")
-        args.append(hoje_iso)
+        # A suspensa não está vencida — relato #132: o prazo não corre enquanto
+        # ela espera, e «vencido» é a palavra da cobrança.
+        nao_suspensa, args_suspensao = TS.condicao_nao_suspensa("t", hoje_d)
+        where += ["t.due_date IS NOT NULL AND t.due_date < ?", nao_suspensa]
+        args += [hoje_iso, *args_suspensao]
     if vista in VISTAS_DA_REGUA:
         conds, params = TP.filtro_da_vista(vista, usuario_id)
         where += conds
@@ -118,9 +122,13 @@ def listar(con: sqlite3.Connection, *, vista: str = "ABERTOS", usuario_id: int |
     if origem:
         where.append("t.source_type = ?")
         args.append(origem)
-    if q:
-        where.append("(t.title LIKE ? OR t.description LIKE ? OR e.internal_protocol LIKE ? OR e.sender LIKE ?)")
-        args += [f"%{q}%"] * 4
+    # A BUSCA É A DA RÉGUA COMUM desde 15/10/2026 (relato #122): a de «Tarefas»
+    # procura também o número e o responsável, e as duas telas não podem achar
+    # coisas diferentes com a mesma palavra. Aqui ela olha ainda o expediente.
+    conds, params = TO.busca_sql(q, responsavel="ua.full_name",
+                                 extras=("e.internal_protocol", "e.sender"))
+    where += conds
+    args += params
     # ---- os filtros de fiscalização: a régua comum (`tarefa_ordem`)
     conds, params = TO.filtros_sql(f, hoje=hoje_d, cond_aberta=cond_aberta,
                                    args_aberta=list(args_aberta),
@@ -139,6 +147,7 @@ def listar(con: sqlite3.Connection, *, vista: str = "ABERTOS", usuario_id: int |
                    (SELECT COUNT(*) FROM attachments a WHERE a.entity_type='TASK' AND a.entity_id=t.id) AS evidencias,
                    t.assigned_user_id, ua.full_name AS responsavel, ub.full_name AS substituto,
                    e.internal_protocol AS expediente, e.sender AS remetente, pe.especie,
+                   t.suspensa_desde, t.suspensa_ate, t.suspensa_condicao, t.suspensa_motivo,
                    COALESCE((SELECT MAX(h.ts) FROM task_history h WHERE h.task_id = t.id), t.created_at)
                        AS ultimo_andamento
               FROM tasks t
@@ -155,8 +164,10 @@ def listar(con: sqlite3.Connection, *, vista: str = "ABERTOS", usuario_id: int |
         d["numero"] = numero(d["created_at"], d["id"])
         d["origem"] = nome_da_origem(d["source_type"])
         d["especie_nome"] = ESP.CATALOGO.get(d["especie"] or "", {}).get("nome")
+        d["suspensao"] = TS.situacao(d, hoje_d)
         d["vencido"] = bool(d["due_date"] and str(d["due_date"])[:10] < hoje_iso
-                            and TP.tem_servico_em_andamento(d["status"]))
+                            and TP.tem_servico_em_andamento(d["status"])
+                            and not d["suspensao"])
         d["dias_parado"] = _dias_desde(d["ultimo_andamento"], hoje_d)
         saida.append(d)
     return saida
@@ -198,6 +209,9 @@ def quadro_de_fiscalizacao(con: sqlite3.Connection, hoje: date | None = None) ->
         "sem_responsavel": sum(1 for p in abertos if not p["assigned_user_id"]),
         "sem_prazo": sum(1 for p in abertos if not p["due_date"]),
         "sem_tipo": sum(1 for p in abertos if not p["especie"]),
+        # As suspensas (relato #132) entram em «abertos», com o selo, e não em
+        # «vencidos»: o número delas fica à vista para ninguém as esquecer.
+        "suspensas": sum(1 for p in abertos if p["suspensao"]),
         "por_pessoa": sorted(por_pessoa.values(), key=ordem),
         "por_setor": sorted(por_setor.values(), key=ordem),
     }

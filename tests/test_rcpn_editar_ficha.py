@@ -313,3 +313,60 @@ def test_rota_editar_grava_onde_nasceu(tmp_path):
                        follow_redirects=True).get_data(as_text=True)
     assert local() == 3
     assert "local do nascimento" in html
+
+
+def test_rota_editar_obito_grava_as_quatro_marcas(tmp_path):
+    """Relato #131 (14/10/2026): o óbito já lavrado não tinha onde dizer se
+    deixou bens, e a carga da CRC o recusa sem isso. As quatro marcas agora
+    estão na tela de corrigir; mudar SÓ uma delas também grava, e deixar em
+    branco não apaga resposta já dada."""
+    from app import create_app
+    from database import Database
+
+    dados = tmp_path / "dados"
+    dados.mkdir()
+    app = create_app({"DATA_DIR": str(dados)})
+    banco_path = Path(glob.glob(f"{dados}/*.sqlite3")[0])
+    Database(banco_path).create_user(
+        "tabeliao", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    client = app.test_client()
+    client.post("/login", data={
+        "username": "tabeliao", "password": SENHA,
+        "csrf_token": _token(client.get("/login").get_data(as_text=True)),
+    }, follow_redirects=True)
+    con = sqlite3.connect(banco_path)
+    con.row_factory = sqlite3.Row
+    with con:
+        r = RC.lavrar_assento(
+            con, especie="OBITO", nome="JOAO FALECIDO TESTE", sv=SV,
+            agora=AGORA, data_extenso=EXTENSO, data_fato="2026-09-01",
+            origem="EOFICIO", origem_chave="ACERVO-OBITO-131",
+            dados={"sexo": "M"},
+            pessoas=[{"papel": "FALECIDO", "nome": "JOAO FALECIDO TESTE",
+                      "sexo": "M"}],
+            usuario="carga",
+        )
+        aid = r["assento_id"]
+        con.execute("UPDATE rc_assentos SET obito_eleitor='NAO' WHERE id=?",
+                    (aid,))
+    con.close()
+
+    body = client.get(f"/rcpn/{aid}/editar").get_data(as_text=True)
+    assert 'name="obito_possui_bens"' in body
+    assert 'name="obito_eleitor"' in body
+    client.post(f"/rcpn/{aid}/editar", data={
+        "csrf_token": _token(body),
+        "motivo": "Declarante confirmou que deixou bens",
+        "nome": "JOAO FALECIDO TESTE", "data_fato": "2026-09-01",
+        "sexo": "M",
+        "obito_possui_bens": "SIM",
+        "obito_eleitor": "",          # em branco: não apaga o «não» gravado
+    }, follow_redirects=True)
+
+    c = sqlite3.connect(banco_path)
+    bens, eleitor = c.execute(
+        "SELECT obito_possui_bens, obito_eleitor FROM rc_assentos WHERE id=?",
+        (aid,)).fetchone()
+    c.close()
+    assert bens == "SIM"
+    assert eleitor == "NAO"

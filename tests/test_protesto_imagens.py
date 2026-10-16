@@ -103,6 +103,22 @@ def test_o_nome_decodifica_nas_tres_partes():
     assert itens[0]["apresentante_pasta"] == "1LV"
 
 
+def test_o_nome_sem_sequencial_tambem_entra():
+    """O pacote real de 07/10/2026 trouxe os cinco arquivos SEM o `_01`
+    (`<nosso>_<documento>.pdf`) — com o sequencial obrigatório, nenhum casava."""
+    con = banco()
+    titulo(con)
+    itens = PI.ler_pacote(pacote(("1LV/49000005243_00000002135.pdf",
+                                  b"%PDF-1.4 x")))
+    p = itens[0]["partes"]
+    assert p["nosso_numero"] == "49000005243"
+    assert p["documento"] == "00000002135"
+    assert p["sequencia"] == ""
+    r = PI.conferir(con, pacote(("1LV/49000005243_00000002135.pdf",
+                                 b"%PDF-1.4 x")))
+    assert len(r["entram"]) == 1 and not r["fora"]
+
+
 def test_nome_fora_da_forma_nao_derruba_a_leitura():
     """Ele entra sem partes; quem diz por que ele nao serve e `conferir`, que
     tem o banco na mao."""

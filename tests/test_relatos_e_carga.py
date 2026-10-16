@@ -94,7 +94,7 @@ def test_tarefa_igual_aberta_acha_o_mesmo_pedido_e_nao_o_de_outro_numero():
 
 def test_create_task_repetida_nao_abre_outra_e_anota_na_existente(cg_casa_logada):
     db = cg_casa_logada["db"]
-    uid = _um(db, "SELECT id FROM users WHERE username='jean'")[0]
+    uid = _um(db, "SELECT id FROM users WHERE username='mario'")[0]
     dados = {"source_type": "MANUAL", "title": "Pedir certidão ao cartório vizinho",
              "assigned_user_id": uid, "priority": "MEDIA"}
     a = db.create_task(dados, user_id=uid)
@@ -171,7 +171,7 @@ def test_a_tarefa_mostra_os_documentos_do_expediente_de_onde_nasceu(cg_casa_loga
     """12/10/2026: a tarefa da averbação de divórcio nasceu do malote e o
     mandado estava no expediente — a tela da tarefa não o mostrava."""
     c, db = cg_casa_logada["c"], cg_casa_logada["db"]
-    uid = _um(db, "SELECT id FROM users WHERE username='jean'")[0]
+    uid = _um(db, "SELECT id FROM users WHERE username='mario'")[0]
     exp = db.create_expediente({"source": "Malote Digital", "subject": "Mandado de averbação de divórcio",
                                 "sender": "Vara de Exemplo", "category": "Para Cumprimento",
                                 "received_at": "2026-08-19"}, uid)

@@ -54,10 +54,10 @@ def cliente(tmp_path_factory):
     dados = tmp_path_factory.mktemp("dados")
     app = create_app({"DATA_DIR": str(dados)})
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
-    Database(banco).create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    Database(banco).create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c = app.test_client()
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return c

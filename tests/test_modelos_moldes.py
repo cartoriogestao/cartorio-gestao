@@ -69,13 +69,13 @@ def test_o_ajuste_ganha_do_pacote(con):
     ajustado = _molde_com(MOLDE_NASC.read_bytes(),
                           {"CERTIDÃO DE NASCIMENTO": "CERTIDÃO DE NASCIMENTO"})
     MOLDES.salvar(con, "RC_MOLDE_NASCIMENTO", arquivo=ajustado,
-                  nome_arquivo="meu_molde.odt", quem="JEAN",
+                  nome_arquivo="meu_molde.odt", quem="MARIO",
                   agora="2026-09-10T10:00")
     assert MOLDES.arquivo_que_vale(con, "RC_MOLDE_NASCIMENTO") == ajustado
     como = MOLDES.como_esta(con, "RC_MOLDE_NASCIMENTO")
     assert como["ajustado"] is True
     assert como["nome_arquivo"] == "meu_molde.odt"
-    assert como["atualizado_por"] == "JEAN"
+    assert como["atualizado_por"] == "MARIO"
     assert como["tamanho"] == len(ajustado)
 
 

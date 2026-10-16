@@ -34,6 +34,11 @@
     {% endfor %}
   </p>
 </div>
+{# O MANUAL DO PADRÃO, PELA MACRO DA CASA — toda tela de importação o oferece
+   (tests/test_manual_de_importacao.py). Esta lê o JSON do padrão
+   (`importar_padrao`), por isso o desenho «deste padrão». 14/10/2026. #}
+{% from "_manual_de_importacao.html" import manual_para_baixar %}
+{{ manual_para_baixar(true) }}
 
 <h2>2. Envie o arquivo e veja a prévia</h2>
 {% if erro %}

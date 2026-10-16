@@ -50,13 +50,13 @@ def test_o_prazo_conta_do_primeiro_ato_fora_da_imagem(cg_casa, tmp_path):
 
 
 def test_o_aviso_vermelho_na_ficha_e_para_o_administrador(cg_casa, tmp_path):
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
     con = sqlite3.connect(cg_casa["banco"])
     hoje = date.today()
     mid = _ficha(con, "4102", f"{hoje.isoformat()}T08:00:00")
     _ficha(con, "4103", "2026-09-10T08:00:00")
     c = cg_casa["c"]
-    cg_login(c, "jean", "Senha#12345")
+    cg_login(c, "mario", "Senha#12345")
     ficha = c.get(f"/registro-imoveis/{mid}").get_data(as_text=True)
     assert "ESTA FICHA PRECISA SER DIGITALIZADA DE NOVO" in ficha
     outra = c.get("/tarefas", follow_redirects=True).get_data(as_text=True)

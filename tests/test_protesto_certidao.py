@@ -129,7 +129,8 @@ def test_o_periodo_limita_a_busca():
 def test_a_busca_traz_o_lugar_do_protesto_e_a_baixa():
     con = banco()
     titulo(con, cancelamento="2024-06-01")
-    a = PC.buscar(con, nome="SILVA")[0]
+    # O cancelado só aparece com a autorização da lei (14/10/2026).
+    a = PC.buscar(con, nome="SILVA", autorizacao="DEVEDOR_ESCRITO")[0]
     assert a["livro"] == 5 and a["folha"] == 120
     assert a["data_protesto"] == "2024-03-10"
     assert a["cancelado"] is True
@@ -146,7 +147,12 @@ def test_o_tipo_sai_do_que_se_achou():
     assert PC.tipo_para(PC.buscar(con, nome="SILVA")) == "POSITIVA"
     con2 = banco()
     titulo(con2, numero="2/1", cancelamento="2024-06-01")
-    assert PC.tipo_para(PC.buscar(con2, nome="SILVA")) == "CANCELAMENTO"
+    # Até 14/10/2026 o cancelado entrava sozinho e saía «CANCELAMENTO» a
+    # requerimento verbal. Lei 9.492, art. 27, § 2º; CN-MA arts. 944 e 948:
+    # sem pedido escrito do devedor ou ordem judicial, ele não entra.
+    assert PC.tipo_para(PC.buscar(con2, nome="SILVA")) == "NEGATIVA"
+    assert PC.tipo_para(PC.buscar(con2, nome="SILVA",
+                                  autorizacao="DEVEDOR_ESCRITO")) == "CANCELAMENTO"
 
 
 def test_um_protesto_em_pe_no_meio_de_cancelados_faz_positiva():
@@ -177,10 +183,10 @@ def test_sem_requerente_sai_a_requerimento_verbal_como_a_casa_escreve():
     # quem aparece: dizer "verbal" sobre pedido escrito seria certificar o que
     # nao houve.
     con = banco()
-    sem = PC.emitir(con, nome="X", documento=None, achados=[], hoje=HOJE,
+    sem = PC.emitir(con, nome="X", documento="04785512388", achados=[], hoje=HOJE,
                     agora=AGORA)
     assert "a requerimento verbal de parte interessada" in sem["teor"]
-    com = PC.emitir(con, nome="X", documento=None, achados=[], hoje=HOJE,
+    com = PC.emitir(con, nome="X", documento="04785512388", achados=[], hoje=HOJE,
                     agora=AGORA, requerente="BANCO DO BRASIL S.A.")
     assert "a requerimento de BANCO DO BRASIL S.A." in com["teor"]
     assert "verbal" not in com["teor"]
@@ -196,7 +202,8 @@ def test_a_positiva_lista_o_protesto_com_livro_folha_e_datas_do_balcao():
     assert "encontrei protesto contra JOSÉ DA SILVA" in r["teor"]
     assert "Título n. 9911/1" in r["teor"]
     assert "Livro 5, fl. 120" in r["teor"]
-    assert "apresentado por BANCO DO NORDESTE" in r["teor"]
+    # O cedente é o CREDOR; «apresentado por» ele estava errado até 14/10/2026.
+    assert "credor BANCO DO NORDESTE" in r["teor"]
     # DATA DE BALCAO, e nao ISO: `10/03/2024`, como as 19 do acervo escrevem.
     assert "protestado em 10/03/2024" in r["teor"]
     assert "2024-03-10" not in r["teor"]
@@ -205,10 +212,12 @@ def test_a_positiva_lista_o_protesto_com_livro_folha_e_datas_do_balcao():
 def test_a_certidao_de_cancelamento_fecha_com_o_art_26():
     con = banco()
     titulo(con, cancelamento="2024-06-01")
-    achados = PC.buscar(con, nome="SILVA")
+    achados = PC.buscar(con, nome="SILVA", autorizacao="DEVEDOR_ESCRITO")
     r = PC.emitir(con, nome="JOSÉ DA SILVA", documento="04785512388",
-                  achados=achados, hoje=HOJE, agora=AGORA)
+                  achados=achados, hoje=HOJE, agora=AGORA,
+                  autorizacao="DEVEDOR_ESCRITO")
     assert r["tipo"] == "CANCELAMENTO"
+    assert "a requerimento escrito do próprio devedor" in r["teor"]
     assert "CANCELADO em 01/06/2024" in r["teor"]
     assert "art. 26 da lei 9492/97" in r["teor"]
     assert "dou fé" in r["teor"]
@@ -218,13 +227,16 @@ def test_o_fecho_do_cancelamento_concorda_em_numero():
     # O acervo tem as duas formas, singular e plural. Sai a que couber.
     con = banco()
     titulo(con, numero="1/1", cancelamento="2024-06-01")
-    um = PC.emitir(con, nome="JOSÉ DA SILVA", documento=None,
-                   achados=PC.buscar(con, nome="SILVA"), hoje=HOJE, agora=AGORA)
+    um = PC.emitir(con, nome="JOSÉ DA SILVA", documento="04785512388",
+                   achados=PC.buscar(con, nome="SILVA",
+                                     autorizacao="DEVEDOR_ESCRITO"),
+                   hoje=HOJE, agora=AGORA, autorizacao="DEVEDOR_ESCRITO")
     assert "no referido livro e folha consta a BAIXA" in um["teor"]
     titulo(con, numero="2/1", cancelamento="2024-07-01")
-    dois = PC.emitir(con, nome="JOSÉ DA SILVA", documento=None,
-                     achados=PC.buscar(con, nome="SILVA"), hoje=HOJE,
-                     agora=AGORA)
+    dois = PC.emitir(con, nome="JOSÉ DA SILVA", documento="04785512388",
+                     achados=PC.buscar(con, nome="SILVA",
+                                       autorizacao="DEVEDOR_ESCRITO"),
+                     hoje=HOJE, agora=AGORA, autorizacao="DEVEDOR_ESCRITO")
     assert "nos referidos livros e folhas constam as BAIXAS" in dois["teor"]
 
 
@@ -234,9 +246,9 @@ def test_cedente_igual_ao_devedor_nao_sai_no_teor():
     # pôr no papel um engano que a carga so copiou.
     con = banco()
     titulo(con, cedente="JOSÉ DA SILVA")
-    r = PC.emitir(con, nome="JOSÉ DA SILVA", documento=None,
+    r = PC.emitir(con, nome="JOSÉ DA SILVA", documento="04785512388",
                   achados=PC.buscar(con, nome="SILVA"), hoje=HOJE, agora=AGORA)
-    assert "apresentado por" not in r["teor"]
+    assert "credor JOSÉ" not in r["teor"]
 
 
 # --------------------------------------------------------------- a emissao
@@ -249,7 +261,7 @@ def test_nao_se_emite_negativa_sobre_quem_tem_protesto():
     titulo(con)
     achados = PC.buscar(con, nome="SILVA")
     with pytest.raises(PC.CertidaoError) as erro:
-        PC.emitir(con, nome="JOSÉ DA SILVA", documento=None, achados=achados,
+        PC.emitir(con, nome="JOSÉ DA SILVA", documento="04785512388", achados=achados,
                   hoje=HOJE, agora=AGORA, tipo="NEGATIVA")
     assert "achou 1 protesto" in str(erro.value)
     assert con.execute("SELECT COUNT(*) FROM pt_certidoes").fetchone()[0] == 0
@@ -257,24 +269,24 @@ def test_nao_se_emite_negativa_sobre_quem_tem_protesto():
 
 def test_nao_se_emite_positiva_sem_protesto_nenhum():
     with pytest.raises(PC.CertidaoError) as erro:
-        PC.emitir(banco(), nome="X", documento=None, achados=[], hoje=HOJE,
+        PC.emitir(banco(), nome="X", documento="04785512388", achados=[], hoje=HOJE,
                   agora=AGORA, tipo="POSITIVA")
     assert "a certidão que cabe é a NEGATIVA" in str(erro.value)
 
 
 def test_certidao_sem_nome_e_recusada():
     with pytest.raises(PC.CertidaoError):
-        PC.emitir(banco(), nome="   ", documento=None, achados=[], hoje=HOJE,
+        PC.emitir(banco(), nome="   ", documento="04785512388", achados=[], hoje=HOJE,
                   agora=AGORA)
 
 
 def test_a_numeracao_e_por_exercicio_e_nao_repete():
     con = banco()
-    a = PC.emitir(con, nome="A", documento=None, achados=[], hoje="2026-08-25",
+    a = PC.emitir(con, nome="A", documento="04785512388", achados=[], hoje="2026-08-25",
                   agora=AGORA)
-    b = PC.emitir(con, nome="B", documento=None, achados=[], hoje="2026-12-31",
+    b = PC.emitir(con, nome="B", documento="04785512388", achados=[], hoje="2026-12-31",
                   agora=AGORA)
-    c = PC.emitir(con, nome="C", documento=None, achados=[], hoje="2027-01-02",
+    c = PC.emitir(con, nome="C", documento="04785512388", achados=[], hoje="2027-01-02",
                   agora=AGORA)
     assert (a["numero"], a["ano"]) == (1, 2026)
     assert (b["numero"], b["ano"]) == (2, 2026)
@@ -286,7 +298,7 @@ def test_o_teor_congela_na_emissao():
     # reescrever o que a serventia ja afirmou, e a via do cliente ficaria
     # diferente da do banco.
     con = banco()
-    r = PC.emitir(con, nome="JOSÉ DA SILVA", documento=None, achados=[],
+    r = PC.emitir(con, nome="JOSÉ DA SILVA", documento="04785512388", achados=[],
                   hoje=HOJE, agora=AGORA)
     titulo(con)                                    # o protesto vem depois
     guardada = PC.certidao(con, r["certidao_id"])
@@ -321,7 +333,7 @@ def test_a_certidao_guarda_o_que_achou_congelado():
 
 def test_cancelar_a_certidao_exige_motivo_escrito():
     con = banco()
-    r = PC.emitir(con, nome="X", documento=None, achados=[], hoje=HOJE,
+    r = PC.emitir(con, nome="X", documento="04785512388", achados=[], hoje=HOJE,
                   agora=AGORA)
     with pytest.raises(PC.CertidaoError) as erro:
         PC.cancelar(con, r["certidao_id"], motivo="erro", agora=AGORA)
@@ -332,7 +344,7 @@ def test_a_certidao_cancelada_guarda_o_teor_que_saiu():
     # Certidao errada nao se apaga: a via que o cliente levou ficaria sem par
     # no banco, e e essa via que alguem vai conferir.
     con = banco()
-    r = PC.emitir(con, nome="X", documento=None, achados=[], hoje=HOJE,
+    r = PC.emitir(con, nome="X", documento="04785512388", achados=[], hoje=HOJE,
                   agora=AGORA)
     PC.cancelar(con, r["certidao_id"], motivo="emitida com o nome errado",
                 agora=AGORA, usuario="TABELIÃO", selo_cancelado_tjma=True)
@@ -406,17 +418,67 @@ def test_contra_o_acervo_real():
              JOIN pt_atos a ON a.titulo_id=d.titulo_id AND a.tipo='PROTESTO'
             WHERE d.documento_numero IS NOT NULL LIMIT 1""").fetchone()
     desde = PC.data_limite(HOJE, 20)
-    achados = PC.buscar(con, documento=alvo["documento_numero"], desde=desde)
+    achados = PC.buscar(con, documento=alvo["documento_numero"], desde=desde,
+                        autorizacao="DEVEDOR_ESCRITO")
     assert achados, "quem tem protesto no acervo tem de aparecer na busca"
     r = PC.emitir(con, nome=alvo["nome"], documento=alvo["documento_numero"],
                   achados=achados, hoje=HOJE, agora=AGORA, periodo_anos=20,
-                  desde=desde)
+                  desde=desde, autorizacao="DEVEDOR_ESCRITO")
     assert r["tipo"] in ("POSITIVA", "CANCELAMENTO")
     assert "Livro" in r["teor"] and "fl." in r["teor"]
 
     # E quem nao tem sai negativa, sobre o mesmo acervo carregado.
     vazio = PC.buscar(con, nome="NOME QUE NÃO EXISTE NO ACERVO", desde=desde)
     assert vazio == []
-    n = PC.emitir(con, nome="NOME QUE NÃO EXISTE NO ACERVO", documento=None,
+    n = PC.emitir(con, nome="NOME QUE NÃO EXISTE NO ACERVO", documento="04785512388",
                   achados=vazio, hoje=HOJE, agora=AGORA)
     assert n["tipo"] == "NEGATIVA"
+
+
+# --------------------------- o que a lei deixa certificar (14/10/2026)
+
+
+def test_cancelado_NAO_entra_sem_pedido_escrito_ou_ordem_judicial():
+    """Lei 9.492/1997, art. 27, § 2º; CN-MA (Prov. 28/2026) arts. 944 e 948."""
+    con = banco()
+    titulo(con, cancelamento="2024-06-01")
+    assert PC.buscar(con, nome="SILVA") == []
+    r = PC.emitir(con, nome="JOSÉ DA SILVA", documento="04785512388",
+                  achados=PC.buscar(con, nome="SILVA"), hoje=HOJE, agora=AGORA)
+    assert r["tipo"] == "NEGATIVA"
+
+
+def test_achados_passados_por_fora_nao_furam_a_regra():
+    con = banco()
+    titulo(con, cancelamento="2024-06-01")
+    com_cancelado = PC.buscar(con, nome="SILVA", autorizacao="DEVEDOR_ESCRITO")
+    r = PC.emitir(con, nome="JOSÉ DA SILVA", documento="04785512388",
+                  achados=com_cancelado, hoje=HOJE, agora=AGORA)
+    assert r["tipo"] == "NEGATIVA"
+
+
+def test_ordem_judicial_exige_o_juizo_e_o_processo():
+    con = banco()
+    titulo(con, cancelamento="2024-06-01")
+    achados = PC.buscar(con, nome="SILVA", autorizacao="ORDEM_JUDICIAL")
+    with pytest.raises(PC.CertidaoError, match="juízo e o processo"):
+        PC.emitir(con, nome="JOSÉ DA SILVA", documento="04785512388",
+                  achados=achados, hoje=HOJE, agora=AGORA,
+                  autorizacao="ORDEM_JUDICIAL")
+    r = PC.emitir(con, nome="JOSÉ DA SILVA", documento="04785512388",
+                  achados=achados, hoje=HOJE, agora=AGORA,
+                  autorizacao="ORDEM_JUDICIAL",
+                  autorizacao_ref="1ª Vara, processo 0800123-45.2026")
+    assert "por determinação judicial expressa (1ª Vara" in r["teor"]
+
+
+def test_sem_cpf_ou_cnpj_a_certidao_nao_sai():
+    """CN-MA art. 906: o CPF/CNPJ consta de toda certidão."""
+    with pytest.raises(PC.CertidaoError, match="art. 906"):
+        PC.emitir(banco(), nome="X", documento=None, achados=[], hoje=HOJE,
+                  agora=AGORA)
+
+
+def test_autorizacao_desconhecida_recusa():
+    with pytest.raises(PC.CertidaoError, match="Autorização desconhecida"):
+        PC.buscar(banco(), nome="X", autorizacao="QUALQUER")

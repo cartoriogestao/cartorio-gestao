@@ -74,6 +74,16 @@
         <span class="small muted">Ele fica dentro da pasta de arquivos que o
           backup já varre.</span></div>
     </form>
+    {# relato #135, 15/10/2026: o que o cliente entregou no Protocolo Geral
+       vinculado a esta prenotação aparece aqui também, só para ver. #}
+    {% if docs_protocolo_geral %}
+    <h4 style="margin-top:14px">Documentos para qualificação do protocolo geral</h4>
+    <ul class="small">{% for d in docs_protocolo_geral %}
+      <li><a href="{{ url_for('attachment_view', attachment_id=d.id) }}" target="_blank">{{ d.original_name }}</a>
+        — {{ d.tipo_rotulo or 'sem tipo' }}{% if d.description %}: {{ d.description }}{% endif %}
+        <span class="muted">({{ d.enviado_por_nome or '—' }}, {{ fmt_dt(d.uploaded_at) }})</span></li>
+    {% endfor %}</ul>
+    {% endif %}
   </div>
 </section>
 

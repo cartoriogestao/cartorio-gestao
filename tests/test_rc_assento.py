@@ -67,6 +67,10 @@ def extras_legais(especie: str, nome="ALGUÉM") -> dict:
         }
         if especie == "NATIMORTO":
             extra["ibge"] = {"numero_do": "12345"}
+        else:
+            # «Onde nasceu» — o SIRC recusa o nascimento sem ele, e desde o
+            # relato #130 (14/10/2026) a lavratura também.
+            extra["ibge"] = {"local_nascimento": 1}
         return extra
     if especie in RC.ESPECIES_DE_CASAMENTO:
         return {
@@ -87,6 +91,9 @@ def extras_legais(especie: str, nome="ALGUÉM") -> dict:
             "data_fato": "2026-08-01",
             "termo_dados": {"local_fato_nome": "Hospital Municipal"},
             "ibge": {"numero_do": "98765"},
+            # «Deixou bens» — a CRC recusa o óbito sem S ou N, e desde o
+            # relato #130 (14/10/2026) a lavratura também.
+            "marcas_do_obito": {"obito_possui_bens": "NAO"},
             "pessoas": [
                 {"papel": "FALECIDO", "nome": nome},
                 {"papel": "MAE", "nome": "IGNORADO"},
@@ -106,6 +113,9 @@ def nascimento(con, nome="JOÃO DA SILVA", **kw):
         dados = dict(kw.get("dados") or {})
         dados.setdefault("sexo", "M")
         kw["dados"] = dados
+        ibge = dict(kw.get("ibge") or {})
+        ibge.setdefault("local_nascimento", 1)       # relato #130: o SIRC exige
+        kw["ibge"] = ibge
         if "pessoas" not in kw:
             kw["pessoas"] = [
                 {"papel": "REGISTRADO", "nome": nome, "sexo": dados["sexo"]},
@@ -188,11 +198,28 @@ def test_assento_de_eoficio_sem_chave_e_recusado():
 
 
 def test_a_matricula_de_32_digitos_e_guardada_como_recebida():
-    # Nao e gerada nem validada por este modulo — ver rc_schema.py.
+    # A digitada nao e recomposta — ver rc_schema.py.
+    #
+    # ERA "2" * 32 ATE 14/10/2026, e deixou de poder ser: desde o relato #130
+    # a lavratura do balcao confere o que a CRC confere (`crc_carga.
+    # o_que_falta`), e a CRC retem matricula com digito verificador errado.
+    # O que o teste guarda continua o mesmo: uma matricula VALIDA, diferente
+    # da que a lavratura comporia, fica como veio.
+    import rc_matricula as MATR
     con = banco()
-    m = "2" * 32
+    m = MATR.compor(cns="000000", ano="2026", livro_tipo="1", livro=7,
+                    folha=91, termo=4321)
     r = nascimento(con, matricula=m)
     assert RC.assento(con, r["assento_id"])["matricula"] == m
+
+
+def test_matricula_digitada_com_digito_errado_e_recusada_na_lavratura():
+    """Relato #130: a CRC retém matrícula com o dígito errado, e o balcão agora
+    sabe disso antes de lavrar — e não na carga, com o assento no livro."""
+    import rc_centrais_na_lavratura as CENT
+    con = banco()
+    with pytest.raises(CENT.FaltaParaAsCentraisError, match="dígito verificador"):
+        nascimento(con, matricula="2" * 32)
 
 
 # --------------------------------------------------- a divisao tripartite
@@ -374,7 +401,14 @@ def test_a_matricula_digitada_manda_e_nao_e_sobrescrita():
     """Assento antigo sendo cadastrado, ou registro transportado: o numero
     nacional ja existe e e **unico e imutavel**. Sobrescreve-lo trocaria a
     identidade de um assento que ja pode ter saido em certidao."""
-    veio = "000000" "01" "55" "1955" "1" "00001" "070" "0000283" "53"
+    # ERA UMA MATRICULA DE 1955 COM O DIGITO ERRADO ATE 14/10/2026 ("…53",
+    # e o certo e 94). Desde o relato #130 a lavratura do balcao confere o
+    # que a CRC confere — digito e ano igual ao do registro —, e o assento
+    # antigo se cadastra por «Digitar acervo» (origem ACERVO), que nao passa
+    # por essa recusa. A propriedade guardada e a mesma: a digitada manda.
+    import rc_matricula as MATR
+    veio = MATR.compor(cns="000000", ano="2026", livro_tipo="1", livro=1,
+                       folha=70, termo=283)
     con = banco()
     r = nascimento(con, matricula=veio)
     assert r["matricula"] == veio
@@ -540,7 +574,8 @@ def test_o_nascimento_aceita_filiacao_e_avos():
     do nome, e o termo desta casa escreve «filho de ...»."""
     con = banco()
     r = nascimento(con, pessoas=[
-        {"papel": "REGISTRADO", "nome": "PAULO HENRIQUE"},
+        # o sexo do registrado: a CRC exige (relato #130, 14/10/2026)
+        {"papel": "REGISTRADO", "nome": "PAULO HENRIQUE", "sexo": "M"},
         {"papel": "PAI", "nome": "BALTAZAR SOARES DA SILVA", "sexo": "M"},
         {"papel": "MAE", "nome": "ADA BARROS ALMEIDA", "sexo": "F"},
         {"papel": "AVO_PATERNO", "nome": "JOSE SOARES"},
@@ -709,9 +744,19 @@ def test_municipio_que_o_cadastro_do_ibge_nao_confirma_nao_e_gravado():
     rede que já existia."""
     con = banco()
     _com_municipios(con)
-    r = nascimento(con, termo_dados={
-        "local_fato_nome": "Hospital",
-        "naturalidade_declarada": "Cidade Que Não Existe/XX"})
+    td = {"local_fato_nome": "Hospital",
+          "naturalidade_declarada": "Cidade Que Não Existe/XX"}
+    # DESDE O RELATO #130 (14/10/2026) a lavratura do balcão já recusa: sem
+    # município confirmado, a CRC retém o nascimento. A derivação se confere
+    # pela saída de emergência do oficial, que lavra por cima e deixa gravado.
+    import rc_centrais_na_lavratura as CENT
+    con.execute("SAVEPOINT x")
+    with pytest.raises(CENT.FaltaParaAsCentraisError, match="município"):
+        nascimento(con, termo_dados=td)
+    con.execute("ROLLBACK TO x")
+    con.execute("RELEASE x")
+    r = nascimento(con, termo_dados=td, usuario="MARIO EXEMPLO DOS SANTOS",
+                   forcar_motivo="municipio de nascimento a conferir na DNV")
     assert _naturalidade_da_pessoa(con, r["assento_id"]) == (None, None)
     con.close()
 
@@ -738,8 +783,11 @@ def test_anotar_o_termo_depois_tambem_preenche():
     """O assento tardio completa o termo dias depois, e a naturalidade tem de
     seguir junto — senão o conserto valeria só para quem lavra de uma vez."""
     con = banco()
-    _com_municipios(con)
+    # O cadastro do IBGE entra DEPOIS da lavratura: com ele carregado, desde o
+    # relato #130 (14/10/2026) o balcão não lavra nascimento sem o município
+    # que a CRC exige. O que se guarda aqui é o completar de depois.
     r = nascimento(con)
+    _com_municipios(con)
     assert _naturalidade_da_pessoa(con, r["assento_id"]) == (None, None)
     saida = RC.anotar_do_termo(con, r["assento_id"],
                                naturalidade_declarada="Cidade Exemplo/MA")

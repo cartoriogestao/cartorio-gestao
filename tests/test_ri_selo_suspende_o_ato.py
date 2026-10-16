@@ -87,7 +87,7 @@ def test_o_ato_suspenso_vira_minuta_COM_as_partes(cg_casa):
         mid = _ficha(con)
         ato_id = _ato(con, mid)
         r = RIMIN.voltar_do_ato(con, ato_id, agora="2026-09-16T10:30",
-                                por="JEAN", motivo="o aparelho não respondeu")
+                                por="MARIO", motivo="o aparelho não respondeu")
 
     assert r["rotulo"] == "AV-05"
     assert r["partes"] == 2, "as partes do ato não foram para a minuta"
@@ -128,7 +128,7 @@ def test_a_minuta_de_origem_volta_em_vez_de_nascer_outra(cg_casa):
         RIMIN.marcar_lavrada(con, minuta_id, ato_id=ato_id,
                              agora="2026-09-15T09:00")
         r = RIMIN.voltar_do_ato(con, ato_id, agora="2026-09-16T10:30",
-                                por="JEAN", motivo="sem rede")
+                                por="MARIO", motivo="sem rede")
 
     assert r["reaproveitou"] is True
     assert r["minuta_id"] == minuta_id

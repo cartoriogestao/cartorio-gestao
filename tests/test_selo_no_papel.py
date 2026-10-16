@@ -32,7 +32,7 @@ import selo_no_papel as SNP
 # e não escrito à mão: boneco que não passa pelo leitor testa o teste.
 RECONHECIMENTO_REAL = (
     "Poder Judiciario - TJMA. Selo: RECFIR000000003M1XKR7TEX6G33, "
-    "06/12/2021 14:38:30, Ato: 13.17.4, Parte(s): RAYMACKSSON DOS SANTOS "
+    "06/12/2021 14:38:30, Ato: 13.17.4, Parte(s): TOMAS DOS SANTOS "
     "RIBEIRO, Rec Firma: Semelhanca, Total R$ 18,11 Emol R$ 16,31 "
     "FERC R$ 0,50 FADEP R$ 0,65 FEMP R$ 0,65 "
     "Consulte em https://selo.tjma.jus.br")
@@ -108,7 +108,7 @@ def test_o_detalhe_traz_ato_data_e_partes():
     d = SNP.detalhe(RECONHECIMENTO_REAL)
     assert "13.17.4" in d
     assert "06/12/2021" in d
-    assert "RAYMACKSSON" in d
+    assert "TOMAS DOS SANTOS" in d
 
 
 def test_do_papel_aceita_a_linha_do_razao_dos_selos():

@@ -67,6 +67,13 @@ def remontar_corpo_gravado(con, certidao_id: int, *, data_dir, agora: str) -> di
     if tipo.upper() == "ONUS" and str(linha.get("onus_escolhido_por") or "") == "BALCAO":
         return {"certidao_id": int(certidao_id), "atualizado": False,
                 "motivo": "onus escolhido no balcao"}
+    # A DOMINIAL E A VINTENÁRIA TAMBÉM NÃO (14/10/2026): as matrículas de
+    # origem e os anos foram escolhidos no balcão e só ficaram no corpo —
+    # remontar pela ficha trocaria a escolha pelo padrão (20 anos; a origem
+    # seguida pelo registro anterior), e a 394/2026 perderia a 2548.
+    if tipo.upper() in ("DOMINIAL", "VINTENARIA"):
+        return {"certidao_id": int(certidao_id), "atualizado": False,
+                "motivo": "cadeia escolhida no balcao"}
     matricula_id = int(linha["matricula_id"])
     numero = int(linha["numero"])
     ano = int(linha["ano"])

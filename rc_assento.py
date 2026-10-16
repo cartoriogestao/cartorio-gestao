@@ -298,6 +298,12 @@ CAMPOS_DA_LEI_POR_ESPECIE: dict[str, tuple[str, ...]] = {
     "NASCIMENTO": ("pais_casamento_lugar", "pais_casamento_cartorio"),
 }
 CAMPOS_DA_LEI_POR_ESPECIE["CASAMENTO_RELIGIOSO"] = CAMPOS_DA_LEI_POR_ESPECIE["CASAMENTO"]
+# O JUIZ DE PAZ QUE PRESIDIU — 15/10/2026, decisão do oficial (relato #124):
+# entra só no casamento CIVIL, DEPOIS da linha acima, para o religioso não o
+# herdar (lá quem presidiu foi o celebrante). Opcional: sem o nome, a linha de
+# assinatura da folha sai só com o rótulo «Juiz(a) de Paz».
+CAMPOS_DA_LEI_POR_ESPECIE["CASAMENTO"] = (
+    CAMPOS_DA_LEI_POR_ESPECIE["CASAMENTO"] + ("juiz_de_paz",))
 # O LIVRO E — 13/10/2026. O título (sentença, escritura ou termo) e a
 # referência ao registro de nascimento valem para as seis espécies; o resto é
 # o que o artigo de cada uma pede. O «OUTRO» fica sem: não se sabe o que é.
@@ -1252,8 +1258,14 @@ def lavrar_assento(con: sqlite3.Connection, *, especie: str, nome: str,
                    regime_bens: str | None = None,
                    termo_dados: dict | None = None,
                    pessoas: list[dict] | None = None,
-                   forcar_motivo: str | None = None) -> dict:
+                   forcar_motivo: str | None = None,
+                   marcas_do_obito: dict | None = None) -> dict:
     """Lavra o assento e o ato de REGISTRO. ESCREVE.
+
+    `marcas_do_obito` são as respostas do balcão às perguntas do óbito (era
+    eleitor, deixou bens...). Entram AQUI, antes da conferência das centrais,
+    porque a CRC recusa o óbito sem «deixou bens» — gravadas depois, a
+    conferência as acharia sempre vazias (relato #130, 14/10/2026).
 
     `forcar_motivo` é a saída de emergência: com ele, o que a conferência dos
     dados travaria entra mesmo assim, e a trava fica gravada em
@@ -1472,23 +1484,54 @@ def lavrar_assento(con: sqlite3.Connection, *, especie: str, nome: str,
     #   VALE PARA QUEM CHAMAR ESTA FUNÇÃO, e é de propósito: o robô que monta
     #   assento a partir das digitalizações lavra por script, chamando-a
     #   direto, e a trava na tela não o alcançaria.
+    if marcas_do_obito and especie == "OBITO":
+        import rc_marcas_do_obito as MARCA
+        MARCA.responder(con, assento_id, marcas_do_obito)
+
     avisos_da_conferencia: list[dict] = []
     lavratura_forcada = False
     if (origem or "MANUAL").strip().upper() == "MANUAL":
         import rc_conferencia_dados as CONF
+        import rc_centrais_na_lavratura as CENT
         problemas = CONF.conferir_assento(con, assento_id)
+        # O QUE A CRC E O SIRC EXIGEM (relato #130, 14/10/2026) — as MESMAS
+        # réguas da carga (`crc_carga.o_que_falta`, `sirc_remessa.o_que_falta`),
+        # rodadas aqui, antes do commit: o que faltar recusa e a transação
+        # desfaz número, folha e pessoas. Antes, a falta só aparecia na carga,
+        # com o assento já no livro.
+        faltas_centrais = CENT.o_que_falta(con, assento_id, para_lavratura=True)
+        travas_centrais = CENT.problemas(faltas_centrais)
+        problemas = problemas + travas_centrais
+
+        def _recusa(extra: str = "") -> ConferenciaError:
+            contradicoes = [p for p in CONF.bloqueios(problemas)
+                            if p not in travas_centrais]
+            partes = []
+            if contradicoes:
+                partes.append(CONF.mensagem_de_recusa(
+                    [p for p in problemas if p not in travas_centrais]))
+            if faltas_centrais:
+                partes.append(CENT.mensagem_de_recusa(faltas_centrais))
+            if extra:
+                partes.append(extra)
+            classe = (CENT.FaltaParaAsCentraisError if faltas_centrais
+                      else ConferenciaError)
+            return classe(" ".join(partes), problemas)
+
         travas = CONF.bloqueios(problemas)
         if travas:
             # A SAÍDA DE EMERGÊNCIA (11/10/2026): só com motivo que basta e com
-            # o nome de quem força. Sem os dois, é a recusa de sempre.
+            # o nome de quem força. Sem os dois, é a recusa de sempre. Ela vale
+            # também para a falta das centrais — o óbito tem de ser lavrado
+            # para o sepultamento mesmo quando o declarante não sabe responder
+            # o que a CRC exige —, e as travas forçadas ficam gravadas.
             if forcar_motivo is None:
-                raise ConferenciaError(CONF.mensagem_de_recusa(problemas), problemas)
+                raise _recusa()
             falta = CONF.motivo_insuficiente(forcar_motivo)
             if not falta and not (usuario or "").strip():
                 falta = "Lavrar por cima da trava exige o nome de quem força."
             if falta:
-                raise ConferenciaError(
-                    CONF.mensagem_de_recusa(problemas) + " " + falta, problemas)
+                raise _recusa(falta)
             con.execute(
                 """INSERT INTO rc_lavraturas_forcadas
                        (assento_id, forcado_em, forcado_por, motivo, travas_json)

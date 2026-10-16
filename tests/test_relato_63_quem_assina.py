@@ -53,6 +53,7 @@ SERVENTIA = {"escrevente": QUEM_ASSINA, "funcao": "Tabelião"}
 NASCIMENTO = {
     "pessoa_nome": "CRIANÇA DA SILVA", "pessoa_sexo": "F",
     "data_fato": "2026-09-15", "local_fato_nome": "Hospital Municipal",
+    "ibge_local": "1",                 # relato #130: o SIRC exige
     "filiacao1_nome": "MARIA DA SILVA", "filiacao2_nome": "IGNORADO",
     "declarante_nome": "MARIA DA SILVA",
 }

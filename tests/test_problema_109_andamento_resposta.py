@@ -39,7 +39,7 @@ def _uid(casa, login: str) -> int:
 
 
 def _tarefa(casa, **campos) -> int:
-    jean = _uid(casa, "jean")
+    mario = _uid(casa, "mario")
     dados = {
         "title": "Tramitar resposta",
         "sector": "Malote",
@@ -47,12 +47,12 @@ def _tarefa(casa, **campos) -> int:
         "assigned_user_id": None,
     }
     dados.update(campos)
-    return casa["db"].create_task(dados, jean)
+    return casa["db"].create_task(dados, mario)
 
 
 def test_passagem_falha_grava_nota_limpa(casa):
     """Sem responsavel, passagem recusa — o texto do andamento fica so na NOTA."""
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
     tid = _tarefa(casa)
     resposta = "Resposta do setor: documentos conferidos."
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)

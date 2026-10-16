@@ -100,28 +100,57 @@ def test_a_manutencao_volta_no_dia_seguinte(serventia):
     assert marca == date.today().isoformat()
 
 
-def test_a_tela_de_leitura_nao_espera_o_lock_de_outro_balcao(serventia):
+def test_a_tela_de_leitura_nao_espera_o_lock_de_outro_balcao(serventia, monkeypatch):
     """Era 500 depois de dez segundos. Agora abre na hora.
 
     Segura o lock de escrita numa conexão à parte e abre telas de leitura.
-    Voltando a haver escrita no GET, o teste estoura o tempo e falha — que é
-    exatamente o que se quer detectar.
+    Voltando a haver escrita no GET, o teste falha — que é exatamente o que se
+    quer detectar.
+
+    A PROVA PASSOU A SER O COMANDO, E NÃO SÓ O RELÓGIO — 14/10/2026. O teto
+    era 3 s para as cinco telas juntas, e com quatro suítes na mesma máquina
+    as cinco levam 9 s SEM trava nenhuma (medido: a mesma tela, 2 a 10 s): o
+    relógio passou a acusar a máquina. Agora o teste (1) registra todo
+    comando de escrita que as telas mandam ao banco — `BEGIN IMMEDIATE`,
+    `INSERT`, `UPDATE`, `DELETE` — e exige ZERO, que não depende de carga; e
+    (2) mantém o relógio, por tela, abaixo do `busy_timeout`, que é a
+    assinatura do defeito (quem espera a trava espera os dez segundos).
+    O que este guarda pegou em 14/10/2026: `nu_avisos_web` abria
+    `db.transaction()` em TODA tela para as recorrências dos avisos — 83 s.
     """
+    import re
+    from database import Database
+
     serventia["cliente"].get("/")          # gasta a manutenção do dia
+
+    escritas: list[str] = []
+    escreve = re.compile(r"^\s*(BEGIN\s+IMMEDIATE|INSERT|UPDATE|DELETE|REPLACE)\b", re.I)
+    original = sqlite3.connect
+
+    def conectar(*a, **k):
+        con = original(*a, **k)
+        con.set_trace_callback(
+            lambda sql: escritas.append(sql[:120]) if escreve.match(sql or "") else None)
+        return con
 
     outro = sqlite3.connect(serventia["banco"], timeout=30)
     outro.execute("PRAGMA busy_timeout=30000")
     outro.execute("BEGIN IMMEDIATE")
     outro.execute("UPDATE settings SET value=value")
+    monkeypatch.setattr(sqlite3, "connect", conectar)
+    teto = Database.BUSY_TIMEOUT_MS / 1000
     try:
-        comeco = time.monotonic()
         for caminho in ("/notas", "/notas/livros", "/notas/atos",
                         "/notas/anotacoes/pendentes", "/notas/atos/novo"):
+            comeco = time.monotonic()
             resposta = serventia["cliente"].get(caminho)
+            decorrido = time.monotonic() - comeco
             assert resposta.status_code == 200, (caminho, resposta.status_code)
-        decorrido = time.monotonic() - comeco
-        assert decorrido < 3, f"as telas esperaram {decorrido:.1f}s — alguma escreveu"
+            assert not escritas, f"{caminho} escreveu no banco num GET: {escritas}"
+            assert decorrido < teto, (
+                f"{caminho} esperou {decorrido:.1f}s — o tempo de quem espera a trava")
     finally:
+        monkeypatch.setattr(sqlite3, "connect", original)
         outro.rollback()
         outro.close()
 

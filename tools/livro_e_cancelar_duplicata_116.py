@@ -15,8 +15,9 @@ O QUE FOI MEDIDO (produção, só leitura, 13/10/2026):
     E aberto em `nu_livros`.
 
 O QUE FAZ, com --confirmar:
-  1. cópia do banco (VACUUM INTO) na pasta `backups`, medindo o disco antes —
-     o banco fica sozinho na pasta dele;
+  1. cópia do banco (VACUUM INTO) na pasta das cópias
+     (`pasta_das_copias.destino_da_copia`), medindo o disco antes — o banco
+     fica sozinho na pasta dele;
   2. `rc_assentos` 116 → situacao CANCELADO (a linha fica);
   3. apaga a linha RC_E de `nu_numeracao` — o número fica EM ABERTO, como o
      oficial mandou; a pendência continua aberta e é onde ele o informa;
@@ -110,15 +111,20 @@ def main() -> int:
         print("\nSÓ MEDIU. Para gravar: --confirmar")
         return 0
 
-    pasta = banco.parent / "backups"
-    pasta.mkdir(exist_ok=True)
-    livre = shutil.disk_usage(pasta).free
+    # FORA DA PASTA DO BANCO — a regra de 11/10/2026 (`pasta_das_copias`),
+    # a mesma dos outros scripts de `tools/`. Até 14/10/2026 esta ferramenta
+    # gravava em `<pasta do banco>\backups`, ao lado do banco.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import pasta_das_copias as _PC
+    carimbo = datetime.now().strftime("%Y%m%dT%H%M%S")
+    copia = _PC.destino_da_copia(
+        banco.parent / f"cartorio_gestao_pre_CANCELA_116_LIVRO_E_{carimbo}.sqlite3",
+        banco)
+    livre = shutil.disk_usage(copia.parent).free
     tamanho = banco.stat().st_size
     if livre < tamanho * 2:
         raise Recusa(f"RECUSO: {livre / 2**20:.0f} MB livres e banco de "
                      f"{tamanho / 2**20:.0f} MB — a cópia não cabe com folga.")
-    carimbo = datetime.now().strftime("%Y%m%dT%H%M%S")
-    copia = pasta / f"cartorio_gestao_pre_CANCELA_116_LIVRO_E_{carimbo}.sqlite3"
     con = sqlite3.connect(banco, timeout=30)
     con.execute(f"VACUUM INTO '{copia.as_posix()}'")
     print("CÓPIA", copia, f"{copia.stat().st_size / 2**20:.0f} MB")

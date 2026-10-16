@@ -62,9 +62,9 @@ def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -166,7 +166,16 @@ def test_so_o_cliente_assina_a_ficha(casa):
     assert "MARIA DAS DORES DA SILVA" in texto
     assert "o titular do cartão" in texto
     # NEM O TITULAR NEM A SUBSTITUTA aparecem embaixo de uma linha de assinar.
-    assert "MARIO EXEMPLO DOS SANTOS" not in texto
+    #
+    # TESTE VELHO, ATUALIZADO EM 14/10/2026: a conta é do CORPO da ficha, e
+    # não do cabeçalho. O cabeçalho da serventia («<unidade> / <título>:
+    # <titular> / CNS») está no cartão desde a 3.6.59 (01/09) e identifica a
+    # casa, como em todo papel dela — não é assinatura. Ele não acusava antes
+    # porque o titular saía de `serventia_titular`; na 3.6.286 (06/10/2026,
+    # migração B0) `serventia.ALIASES_LEGADOS` passou a lê-lo de
+    # `ri_registrador`, que é o nome que este teste grava.
+    corpo = texto.split("CARTÃO DE AUTÓGRAFO", 1)[1]
+    assert "MARIO EXEMPLO DOS SANTOS" not in corpo
     assert "BEATRIZ EXEMPLO DE SOUZA" not in texto
 
 

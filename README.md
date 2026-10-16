@@ -43,7 +43,16 @@ backups ficam na casa.
 - **Python 3.11 ou superior** no servidor — o instalador tenta instalar o
   Python 3.12 pelo `winget` quando ele não existe.
 - Os computadores do balcão só precisam de um navegador.
-- Opcional: LibreOffice no servidor, para entregar os papéis em PDF.
+- LibreOffice no servidor, para os papéis saírem em PDF, e Chrome ou Edge,
+  para alguns papéis desenhados em HTML.
+- Para funções específicas: o aparelho selador do Tribunal, impressora térmica
+  de etiquetas, token A3 com o programa do fabricante, a extensão do CCN e as
+  credenciais de cada Central.
+
+A lista completa, com o motivo de cada item, está em
+[`docs/REQUISITOS.md`](docs/REQUISITOS.md), e o
+**[manual geral](docs/MANUAL.md)** cobre instalação, configuração e o
+panorama de todas as telas.
 
 ## Instalação rápida
 
@@ -81,6 +90,12 @@ RODAR_SUITE_RAPIDA.cmd
 
 - A arquitetura, as regras da casa e o mapa dos módulos estão em
   [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
+- Quem programa com IA (Claude Code, Cursor, Codex, ChatGPT) começa por
+  [`docs/AGENTES.md`](docs/AGENTES.md): o fluxo por pull request, os dados
+  fictícios e o que costuma quebrar.
+- As decisões que moldaram o sistema (regras de domínio com o fundamento
+  legal, armadilhas das Centrais, o que o sistema não faz) estão em
+  [`docs/decisoes/`](docs/decisoes/README.md), por atribuição.
 - **Nenhum dado real entra no repositório.** Os testes usam uma serventia
   fictícia (CNS `000000`, «Cidade Exemplo»), e o varredor
   `ci/anti_vazamento.py` recusa CPF, CNPJ, CNS e selo que não estejam

@@ -150,7 +150,7 @@ BLOCO_530 = (
 TEOR_589 = (
     "- Uma gleba de terras com área de 242,43,00ha (duzentos e quarenta e dois "
     "hectares e quarenta e três ares), denominada “Retiro” situada na Data ou "
-    "Fazenda Campo Grande deste Município, em conjunto com Cicero dos Santos "
+    "Fazenda Campo Grande deste Município, em conjunto com Denis dos Santos "
     "Mota, com 42,10,00ha."
 )
 

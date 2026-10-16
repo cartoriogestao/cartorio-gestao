@@ -59,6 +59,11 @@ homologação — é o que a P21 ofereceu em 02/09/2026. Guardar uma credencial 
 faria a troca de ambiente exigir redigitar a senha, e no dia da virada alguém
 usaria a de teste contra a Central de verdade.
 
+**E A VIRADA ACONTECEU EM 14/10/2026** — *«tire a opção de funcionar na
+homologação, agora é tudo produção»*. A CRA, a CENPROT e a Resolve passaram a
+ter uma linha só na tela, a de produção (`CENTRAIS_SO_EM_PRODUCAO`). A gaveta
+de homologação continua no arquivo, intocada: o que mudou foi quem a oferece.
+
 **ESTE MÓDULO NÃO FALA COM CENTRAL NENHUMA.** Ele só guarda e devolve. Quem
 autentica é `cenprot_api`, `onrtdpj_api` e o cliente da CRA — e é por isso que
 `credencial()` tem um nome que não se confunde: quem a chama está prestes a
@@ -251,7 +256,11 @@ ONDE_SE_OBTEM_O_TOKEN: dict[str, str] = {
 }
 
 # OS AMBIENTES. `HOMOLOGACAO` primeiro de propósito: é onde se começa, e é o
-# padrão de fábrica — ver `cra21` e `cenprot_api`.
+# padrão de fábrica das Centrais que ainda estão nela — ver `onr_api`.
+#
+# **AS TRÊS DO PROTESTO SAÍRAM DESSA REGRA EM 14/10/2026**, primeiro dia do
+# protesto operando no sistema. Ordem do oficial: *«tire a opção de funcionar
+# na homologação, agora é tudo produção»*. Ver `CENTRAIS_SO_EM_PRODUCAO`.
 HOMOLOGACAO, PRODUCAO = "HOMOLOGACAO", "PRODUCAO"
 
 # **E HÁ UM TERCEIRO, QUE SÓ A RESOLVE TEM.** O contrato dela declara três
@@ -261,6 +270,41 @@ HOMOLOGACAO, PRODUCAO = "HOMOLOGACAO", "PRODUCAO"
 # o de testes.
 TESTES = "TESTES"
 AMBIENTES: tuple[str, ...] = (HOMOLOGACAO, PRODUCAO)
+
+# AS CENTRAIS DE PROTESTO FUNCIONAM SÓ EM PRODUÇÃO — ordem do oficial em
+# 14/10/2026: *«tire a opção de funcionar na homologação, agora é tudo
+# produção»*.
+#
+#   **O QUE ISTO MUDA:** nenhuma tela oferece mais homologação nem testes para
+#   a CRA, a CENPROT e a Resolve; o padrão, e o único caminho que o sistema
+#   usa, é `PRODUCAO`; a tabela de credenciais mostra só a linha de produção
+#   delas; e o que estiver gravado em outro ambiente (pendência, intimação,
+#   lote) **não se responde nem se envia** — `ambiente_de_uso` recusa, dizendo
+#   por quê.
+#
+#   **O QUE ISTO NÃO MUDA:** nada se apaga. O `HOMOLOGACAO` e o `TESTES`
+#   guardados em `cra.cred`, `cenprot.cred` e `resolve.cred` ficam no arquivo
+#   (medido em 14/10/2026: os três têm as duas chaves), e os endereços de
+#   homologação continuam declarados nos transportes — servem ao teste
+#   automatizado, que os pede pelo nome. O que deixou de existir é a tela
+#   oferecê-los, ou o sistema cair neles por omissão.
+CENTRAIS_SO_EM_PRODUCAO: frozenset[str] = frozenset({CRA, CENPROT, RESOLVE,
+                                                     CENSEC, ONR})
+
+# A CENSEC E O ONR ENTRARAM NA MESMA REGRA EM 15/10/2026 — ordem do oficial:
+# *«tira as telas e referências a homologação nas centrais que já configuramos
+# a produção (deixa no código)»*. Medido no mesmo dia: `censec.cred` e
+# `onr.cred` só tinham a chave de produção. Ficaram de fora o ON-RCPN (sem
+# credencial nenhuma, e o contrato só publica homologação), a CRC (assinada
+# com A3, sem `.cred`, e sem envio pela produção ainda) e o CCN (sem a chave
+# do Colégio Notarial) — essas continuam oferecendo homologação.
+#
+# A DATA DA VIRADA É DE CADA UMA, e a frase da recusa a diz — com uma data só,
+# a frase da CENSEC afirmaria uma ordem de 14/10 que foi dada em 15/10.
+VIROU_PRODUCAO_EM: dict[str, str] = {
+    CRA: "14/10/2026", CENPROT: "14/10/2026", RESOLVE: "14/10/2026",
+    CENSEC: "15/10/2026", ONR: "15/10/2026",
+}
 
 NOME_DA_CENTRAL: dict[str, str] = {
     CRA: "CRA — Central de Remessa de Arquivos (IEPTB-MA)",
@@ -295,13 +339,23 @@ AMBIENTES_DA_CENTRAL: dict[str, tuple[str, ...]] = {
     #   de bens, com o CNS desta serventia no cabeçalho.
     CNIB: (PRODUCAO,),
     ONRTDPJ: (PRODUCAO,),
-    # A RESOLVE TEM TRÊS NO CONTRATO (`TESTES`, homologação, produção) — medido
-    # em 03/09/2026 no `/api/status` —, mas **a tela de Configurações e a
-    # Intimação Digital só listam homologação e produção**. O ambiente de
-    # testes da API continua disponível para o transporte (`resolve_api`) e
-    # para o simulador `:8912`; não pedimos ao oficial uma terceira linha
-    # «Produção» que na prática era o rótulo errado de `TESTES`.
-    RESOLVE: (HOMOLOGACAO, PRODUCAO),
+    # AS TRÊS DO PROTESTO TÊM UM AMBIENTE SÓ DESDE 14/10/2026 — e não porque o
+    # contrato declare um só: a CRA e a CENPROT declaram dois, e a Resolve
+    # três (`TESTES`, homologação, produção, medidos em 03/09/2026 no
+    # `/api/status`). É ORDEM do oficial, no primeiro dia operando o protesto:
+    # «agora é tudo produção». Ver `CENTRAIS_SO_EM_PRODUCAO`.
+    #
+    #   Até 13/10/2026 a CRA e a CENPROT caíam na regra geral (os dois) e a
+    #   Resolve estava aqui com `(HOMOLOGACAO, PRODUCAO)`. Os endereços dos
+    #   outros ambientes continuam nos transportes, para o teste automatizado.
+    CRA: (PRODUCAO,),
+    CENPROT: (PRODUCAO,),
+    RESOLVE: (PRODUCAO,),
+    # A CENSEC E O ONR DESDE 15/10/2026, pela mesma razão (ordem do oficial,
+    # com a produção já configurada). Os endereços de homologação continuam
+    # em `censec_api.BASE_DO_AMBIENTE` e `onr_api`, pedidos pelo nome.
+    CENSEC: (PRODUCAO,),
+    ONR: (PRODUCAO,),
     # A ON-RCPN É O ESPELHO DA ONRTDPJ, E PELO MOTIVO OPOSTO. Ali o contrato
     # declara **só a produção**; aqui os dois contratos publicados declaram
     # **só a homologação** — `servicosh.` e `certidaoh.`, com o «h».
@@ -355,10 +409,10 @@ AMBIENTES_DA_CENTRAL: dict[str, tuple[str, ...]] = {
     # homologação em lugar nenhum do contrato. Igual à ONRTDPJ, e pelo mesmo
     # motivo: não se inventa endereço que o contrato não publica.
     SIRC: (PRODUCAO,),
-    # **O ONR NÃO ENTRA NESTA TABELA, E ISSO É O PONTO.** Ele é a única das
-    # cinco cujo contrato declara **os dois** endereços em `servers` —
-    # `api.` e `testes-api.` —, e por isso vale a regra geral: os dois
-    # ambientes. Aqui não se adivinha endereço nenhum.
+    # **O ONR FICOU FORA DESTA TABELA ATÉ 15/10/2026, E A RAZÃO SEGUE CERTA.**
+    # Ele é a única das cinco cujo contrato declara **os dois** endereços em
+    # `servers` — `api.` e `testes-api.` —, e os dois continuam no
+    # transporte. O que mudou foi a ordem de usar só a produção (acima).
 }
 
 
@@ -413,17 +467,92 @@ def _ambiente(qual: Any, central: Any = None) -> str:
     produção por omissão é o que esta escolha evita»).
 
     Sem `central`, o comportamento é o de antes — é o que a `onr_api` usa.
+
+    **AS TRÊS DO PROTESTO, DESDE 14/10/2026:** vazio ou desconhecido é
+    `PRODUCAO` — é o padrão e o único caminho que o sistema usa. Mas
+    `HOMOLOGACAO` e `TESTES` **pedidos pelo nome** continuam lendo a gaveta
+    deles: a credencial guardada não se apaga, e o teste automatizado que
+    fala com o endereço de homologação tem de falar com a chave de
+    homologação — o contrário seria endereço de um ambiente com a chave do
+    outro. Quem impede que uma TELA ou um fluxo do balcão os use é
+    `ambiente_de_uso`, e não esta régua.
     """
     nome = str(qual or "").strip().upper()
     validos = ambientes_de(central) if central is not None else AMBIENTES
-    # A Resolve ainda grava e lê `TESTES` no arquivo (semear, simulador);
-    # a tabela de Configurações só lista homologação e produção.
-    if central is not None and _central(central) == RESOLVE:
-        validos_arquivo = (HOMOLOGACAO, PRODUCAO, TESTES)
-        if not nome:
-            return HOMOLOGACAO
-        return nome if nome in validos_arquivo else HOMOLOGACAO
+    if central is not None and _central(central) in CENTRAIS_SO_EM_PRODUCAO:
+        if nome in (HOMOLOGACAO, PRODUCAO, TESTES):
+            return nome
+        return PRODUCAO
     return nome if nome in validos else validos[0]
+
+
+def ambiente_de_uso(central: Any, pedido: Any = None) -> str:
+    """O ambiente em que o sistema fala com aquela Central. Só calcula.
+
+    **Para as três do Protesto é sempre `PRODUCAO`** (ordem do oficial em
+    14/10/2026). Vazio vira produção; homologação ou testes pedidos — porque
+    vêm de uma pendência, de uma intimação ou de um lote gravado antes da
+    virada — são **recusados com a frase**, e não trocados por produção em
+    silêncio: a resposta a uma anuência de homologação mandada à produção
+    falaria de um código que lá é de outra anuência (os dois ambientes
+    devolvem códigos do mesmo intervalo).
+
+    Para as outras Centrais, devolve a régua de sempre.
+    """
+    qual = _central(central)
+    nome = str(pedido or "").strip().upper()
+    if qual not in CENTRAIS_SO_EM_PRODUCAO:
+        return _ambiente(nome, qual)
+    if nome in ("", PRODUCAO):
+        return PRODUCAO
+    rotulo = {HOMOLOGACAO: "homologação", TESTES: "testes"}.get(nome, nome)
+    raise CredencialError(
+        f"Desde {VIROU_PRODUCAO_EM[qual]} o sistema fala com a {NOME_DA_CENTRAL[qual]} só "
+        f"em produção — ordem do oficial. Isto é do ambiente de {rotulo}, "
+        f"que não se usa mais: o que estiver gravado nele fica como "
+        f"histórico, e nada se responde, envia ou grava nele por aqui.")
+
+
+def _falta_a_de_producao(qual: str, guardado: dict) -> str:
+    """A frase de quando a credencial de PRODUÇÃO de uma Central do Protesto
+    não está gravada. Só calcula.
+
+    **Ela diz que é a de produção que falta, com todas as letras** — pedido
+    do oficial em 14/10/2026. E, se a de homologação estiver guardada, diz
+    que ela continua lá e não serve: sem isso, quem a cadastrou meses atrás
+    acharia que o sistema perdeu a senha.
+    """
+    sobra = [onde for onde in (HOMOLOGACAO, TESTES)
+             if any(str(v or "").strip()
+                    for v in (guardado.get(onde) or {}).values())]
+    palavra = "o token" if FORMA_DA_CENTRAL[qual] == TOKEN else "a credencial"
+    frase = (f"{palavra[0].upper()}{palavra[1:]} de PRODUÇÃO da "
+             f"{NOME_DA_CENTRAL[qual]} ainda não foi informad"
+             f"{'o' if palavra == 'o token' else 'a'}. Desde {VIROU_PRODUCAO_EM[qual]} o "
+             f"sistema usa só a produção; informe-a em Administrativo → "
+             f"Configurações, na seção «Centrais — credenciais das APIs», "
+             f"onde ela fica gravada fora do banco.")
+    if sobra:
+        nomes = " e ".join({HOMOLOGACAO: "homologação",
+                            TESTES: "testes"}[x] for x in sobra)
+        frase += (f" A de {nomes} continua guardada, mas não é usada — ela "
+                  f"não serve no lugar da de produção.")
+    if FORMA_DA_CENTRAL[qual] == TOKEN and qual in ONDE_SE_OBTEM_O_TOKEN:
+        frase += f" Para obtê-lo: {ONDE_SE_OBTEM_O_TOKEN[qual]}"
+    return frase
+
+
+def fora_de_uso(central: Any, pasta: Any = None) -> list[str]:
+    """Os ambientes que têm credencial guardada e que o sistema não usa mais.
+
+    Só para as três do Protesto. **Não devolve segredo** — só o nome do
+    ambiente, para a tela dizer «a de homologação continua guardada, mas não
+    é usada» em vez de deixar o oficial achar que perdeu alguma coisa.
+    """
+    qual = _central(central)
+    if qual not in CENTRAIS_SO_EM_PRODUCAO:
+        return []
+    return [onde for onde in (HOMOLOGACAO, TESTES) if tem(qual, onde, pasta)]
 
 
 def caminho(central: Any, pasta: Any = None) -> Path:
@@ -454,11 +583,17 @@ def _conferir_senha_da_cenprot(senha: str) -> None:
 
 
 def gravar(central: Any, *, usuario: str, senha: str,
-           ambiente: Any = HOMOLOGACAO, pasta: Any = None) -> Path:
+           ambiente: Any = None, pasta: Any = None) -> Path:
     """Guarda o par daquela Central e ambiente. ESCREVE EM DISCO, não no banco.
 
     Não apaga o outro ambiente: quem grava a produção continua com a
     homologação para testar, e vice-versa.
+
+    **O PADRÃO SAI DA TABELA DA CENTRAL** (`None` → `_ambiente`), e não de um
+    `HOMOLOGACAO` escrito na assinatura — mudado em 14/10/2026: com ele, a
+    CRA e a CENPROT gravariam na gaveta de homologação quando ninguém
+    dissesse o ambiente. Para as outras Centrais o resultado é o mesmo de
+    antes, porque o primeiro da tabela delas é o mesmo.
     """
     qual = _central(central)
     onde = _ambiente(ambiente, qual)
@@ -491,7 +626,7 @@ def gravar(central: Any, *, usuario: str, senha: str,
     return destino
 
 
-def tem(central: Any, ambiente: Any = HOMOLOGACAO, pasta: Any = None) -> bool:
+def tem(central: Any, ambiente: Any = None, pasta: Any = None) -> bool:
     """Aquela credencial existe? **Não devolve a senha** — é o que a tela usa.
 
     A tela precisa saber se já foi informada, e não qual é. Devolver o segredo
@@ -511,7 +646,7 @@ def tem(central: Any, ambiente: Any = HOMOLOGACAO, pasta: Any = None) -> bool:
                 and str(guardado_do_ambiente.get("senha") or "").strip())
 
 
-def usuario(central: Any, ambiente: Any = HOMOLOGACAO,
+def usuario(central: Any, ambiente: Any = None,
             pasta: Any = None) -> str:
     """Só o usuário, para a tela mostrar quem está configurado. Sem a senha."""
     caminho_ = caminho(central, pasta)
@@ -525,7 +660,7 @@ def usuario(central: Any, ambiente: Any = HOMOLOGACAO,
                or "")
 
 
-def credencial(central: Any, ambiente: Any = HOMOLOGACAO,
+def credencial(central: Any, ambiente: Any = None,
                pasta: Any = None) -> tuple[str, str]:
     """O par em claro. **É o único lugar do sistema que devolve a senha.**
 
@@ -535,6 +670,9 @@ def credencial(central: Any, ambiente: Any = HOMOLOGACAO,
     qual = _central(central)
     onde = _ambiente(ambiente, qual)
     caminho_ = caminho(qual, pasta)
+    if not caminho_.is_file() and qual in CENTRAIS_SO_EM_PRODUCAO \
+            and onde == PRODUCAO:
+        raise CredencialError(_falta_a_de_producao(qual, {}))
     if not caminho_.is_file():
         raise CredencialError(
             f"A credencial da {NOME_DA_CENTRAL[qual]} ainda não foi "
@@ -550,6 +688,8 @@ def credencial(central: Any, ambiente: Any = HOMOLOGACAO,
     par = guardado.get(onde) or {}
     u, s = str(par.get("usuario") or ""), str(par.get("senha") or "")
     if not (u and s):
+        if qual in CENTRAIS_SO_EM_PRODUCAO and onde == PRODUCAO:
+            raise CredencialError(_falta_a_de_producao(qual, guardado))
         outro = PRODUCAO if onde == HOMOLOGACAO else HOMOLOGACAO
         tem_outro = bool((guardado.get(outro) or {}).get("usuario"))
         extra = (f" A de {outro.lower()} está informada — confira se o "
@@ -609,6 +749,10 @@ def token_guardado(central: Any, ambiente: Any = None,
             f"A {NOME_DA_CENTRAL[qual]} não guarda token. Use «credencial».")
     onde = _ambiente(ambiente, qual)
     caminho_ = caminho(qual, pasta)
+    producao_do_protesto = (qual in CENTRAIS_SO_EM_PRODUCAO
+                            and onde == PRODUCAO)
+    if not caminho_.is_file() and producao_do_protesto:
+        raise CredencialError(_falta_a_de_producao(qual, {}))
     if not caminho_.is_file():
         raise CredencialError(
             f"O token da {NOME_DA_CENTRAL[qual]} ainda não foi informado. Ele "
@@ -622,13 +766,15 @@ def token_guardado(central: Any, ambiente: Any = None,
             f"Não consegui ler «{caminho_}»: {erro}. Informe o token de novo "
             f"na tela de configurações.") from erro
     valor = str((guardado.get(onde) or {}).get("token") or "").strip()
+    if not valor and producao_do_protesto:
+        raise CredencialError(_falta_a_de_producao(qual, guardado))
     if not valor:
         raise CredencialError(
             f"O token da {NOME_DA_CENTRAL[qual]} ainda não foi informado.")
     return valor
 
 
-def apagar(central: Any, ambiente: Any = HOMOLOGACAO, pasta: Any = None) -> bool:
+def apagar(central: Any, ambiente: Any = None, pasta: Any = None) -> bool:
     """Tira aquela credencial do arquivo. Devolve se havia o que tirar.
 
     Existe porque credencial trocada pela Central tem de sair daqui: senha
@@ -677,5 +823,10 @@ def situacao(pasta: Any = None) -> list[dict]:
                 # escrevia «usuário» e «senha» para todas, e no ONR o par é
                 # `client_id` + `client secret`.
                 "rotulos": rotulos_do_par(qual),
+                # O QUE FICOU GUARDADO E NÃO SE USA MAIS (14/10/2026) — só as
+                # três do Protesto, e só o nome do ambiente, nunca o segredo.
+                # Sem esta marca, quem cadastrou a de homologação e não vê
+                # mais a linha dela concluiria que o sistema a perdeu.
+                "fora_de_uso": fora_de_uso(qual, pasta),
             })
     return fora

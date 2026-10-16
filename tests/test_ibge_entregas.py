@@ -35,7 +35,7 @@ AGORA = "2026-08-20T09:00"
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     return cg_casa
 
 def _con(casa):
@@ -177,7 +177,7 @@ def test_registrar_tira_o_trimestre_da_lista(casa):
     with con:
         IBGE.registrar_entrega(con, ano=2026, trimestre=1,
                                teor="21987650501226A24...", quantos=1,
-                               agora=AGORA, por="jean", canal="IBGE Coleta")
+                               agora=AGORA, por="mario", canal="IBGE Coleta")
     assert IBGE.a_prestar(con, hoje="2026-08-20") == []
 
 
@@ -186,7 +186,7 @@ def test_o_teor_congela_com_hash(casa):
     con = _con(casa)
     with con:
         IBGE.registrar_entrega(con, ano=2026, trimestre=1, teor="ABC",
-                               quantos=3, agora=AGORA, por="jean")
+                               quantos=3, agora=AGORA, por="mario")
     linha = dict(con.execute("SELECT * FROM ib_entregas").fetchone())
     assert linha["teor"] == "ABC"
     assert len(linha["hash_teor"]) == 64
@@ -199,11 +199,11 @@ def test_nao_se_registra_o_mesmo_trimestre_duas_vezes(casa):
     con = _con(casa)
     with con:
         IBGE.registrar_entrega(con, ano=2026, trimestre=1, teor="ABC",
-                               quantos=1, agora=AGORA, por="jean")
+                               quantos=1, agora=AGORA, por="mario")
     with pytest.raises(ValueError) as erro:
         with con:
             IBGE.registrar_entrega(con, ano=2026, trimestre=1, teor="XYZ",
-                                   quantos=1, agora=AGORA, por="jean")
+                                   quantos=1, agora=AGORA, por="mario")
     assert "já está registrado" in str(erro.value)
 
 
@@ -212,7 +212,7 @@ def test_nao_se_registra_entrega_sem_arquivo(casa):
     with pytest.raises(ValueError):
         with con:
             IBGE.registrar_entrega(con, ano=2026, trimestre=1, teor="",
-                                   quantos=0, agora=AGORA, por="jean")
+                                   quantos=0, agora=AGORA, por="mario")
 
 
 def test_trimestre_fora_da_faixa_recusa(casa):
@@ -221,7 +221,7 @@ def test_trimestre_fora_da_faixa_recusa(casa):
         with pytest.raises(ValueError):
             with con:
                 IBGE.registrar_entrega(con, ano=2026, trimestre=t, teor="ABC",
-                                       quantos=1, agora=AGORA, por="jean")
+                                       quantos=1, agora=AGORA, por="mario")
 
 
 # ------------------------------------------------ o painel volta a contar
@@ -256,7 +256,7 @@ def _token_de(html):
 def logado(casa):
     c = casa["app"].test_client()
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token_de(
                      c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
@@ -301,7 +301,7 @@ def test_a_tela_mostra_o_trimestre_ja_entregue(logado):
     with con:
         _assento(con, data_ato="2026-01-15")
         IBGE.registrar_entrega(con, ano=2026, trimestre=1, teor="ABC",
-                               quantos=1, agora=AGORA, por="jean",
+                               quantos=1, agora=AGORA, por="mario",
                                canal="IBGE Coleta", protocolo="2026/123")
     html = _liso(logado["cliente"].get(
         "/rcpn/ibge?ano=2026&trimestre=1").get_data(as_text=True))

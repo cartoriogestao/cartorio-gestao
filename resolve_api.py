@@ -191,19 +191,22 @@ def base_do_ambiente(ambiente: Any) -> str:
 
 
 def _ambiente(qual: Any) -> str:
-    """**O padrão é homologação** — é onde a casa valida antes da produção.
+    """**O padrão é PRODUÇÃO desde 14/10/2026** — ordem do oficial no primeiro
+    dia do protesto no sistema: «tire a opção de funcionar na homologação,
+    agora é tudo produção».
 
-    O contrato também declara `TESTES`; quem passar esse valor explicitamente
-    (simulador, ensaio) continua sendo atendido. Omitir o ambiente **não** cai
-    mais em testes: a Configurações não expõe essa linha, e o padrão antigo
-    fazia «Testar conexão» ler um slot vazio enquanto homologação já estava
-    informada."""
+    Até 13/10/2026 o padrão era homologação («onde a casa valida antes da
+    produção»). Vazio ou desconhecido agora é produção. `TESTES` e
+    `HOMOLOGACAO` **pedidos pelo nome** continuam atendidos — o contrato os
+    declara, e o teste automatizado e o simulador os usam —, mas nenhuma tela
+    os oferece e nenhum fluxo do balcão os pede: quem impede é
+    `centrais_cred.ambiente_de_uso`."""
     nome = str(qual or "").strip().upper()
     if not nome:
-        return CRED.HOMOLOGACAO
+        return CRED.PRODUCAO
     if nome in BASE_DO_AMBIENTE:
         return nome
-    return CRED.HOMOLOGACAO
+    return CRED.PRODUCAO
 
 
 def _partes(base: str) -> tuple[str, int, str]:
@@ -234,9 +237,11 @@ def chave(ambiente: Any = None, *, pasta=None) -> str:
     """
     qual = _ambiente(ambiente)
     if not CRED.tem(CRED.RESOLVE, qual, pasta):
+        onde = ("a PRODUÇÃO — a única que o sistema usa desde 14/10/2026"
+                if qual == CRED.PRODUCAO else f"o ambiente {qual}")
         raise ResolveError(
-            "A chave da Resolve ainda não foi informada para o ambiente "
-            f"{qual}. Ela é a `x-api-key` que a plataforma entrega depois da "
+            f"A chave da Resolve ainda não foi informada para {onde}. "
+            f"Ela é a `x-api-key` que a plataforma entrega depois da "
             "adesão à Intimação Digital, e se cadastra em Administrativo → "
             "Configurações, na tabela das Centrais.")
     return CRED.token_guardado(CRED.RESOLVE, qual, pasta)
@@ -639,8 +644,12 @@ def diagnostico(ambiente: Any = None, *, pasta=None) -> dict:
     qual = _ambiente(ambiente)
     if not CRED.tem(CRED.RESOLVE, qual, pasta):
         return {"ok": False, "ambiente": qual,
-                "motivo": "A chave da Resolve ainda não foi informada para "
-                          "este ambiente."}
+                "motivo": ("A chave da Resolve ainda não foi informada para "
+                           + ("a PRODUÇÃO — é a única que o sistema usa desde "
+                              "14/10/2026. Informe-a em Administrativo → "
+                              "Configurações → Centrais."
+                              if qual == CRED.PRODUCAO
+                              else "este ambiente."))}
     try:
         intimacoes(qual, pagina=1, quantas=1, pasta=pasta)
     except ResolveError as erro:

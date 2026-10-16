@@ -15,9 +15,9 @@
   @page {
     size: {{ folha.LARGURA_MM }}mm {{ folha.ALTURA_MM }}mm;
     margin-top: {{ folha.MARGEM_TOPO_MM }}mm;
-    margin-right: 5mm;
-    margin-bottom: 5mm;
-    margin-left: 5mm;
+    margin-right: {{ folha.MARGEM_DA_IMPRESSAO_MM }}mm;
+    margin-bottom: {{ folha.MARGEM_DA_IMPRESSAO_MM }}mm;
+    margin-left: {{ folha.MARGEM_DA_IMPRESSAO_MM }}mm;
   }
   body { font-family: Georgia, "Times New Roman", serif; font-size: 10.5pt;
          color: #000; margin: 0; padding: 0; }
@@ -46,13 +46,15 @@
   table.colunas td.col-margem { padding: 0; }
 
   /* PAUTA: um so bloco na 3a coluna. Titulo no <th>, fora da caixa.
-     Ciclo = PAUTA_PASSO_MM. background-size/position 0: o 1o vao = os demais. */
+     Ciclo = PAUTA_PASSO_MM. background-size/position 0: o 1o vao = os demais.
+     A altura desce ate a margem de baixo (relato #124, 15/10/2026): sai da
+     conta de rc_folha.PAUTA_ALTURA_MM, e nao de numero escrito aqui. */
   .campo-notas.pautado {
     position: relative;
     padding-top: 0;
     padding-left: 1.2mm;
     padding-right: 1.2mm;
-    min-height: 155mm;
+    min-height: {{ folha.PAUTA_ALTURA_MM }}mm;
   }
   /* SVG imprime mesmo quando o navegador omite imagens de fundo. A pauta
      não participa do fluxo: as anotações mantêm o HTML e seus espaçamentos. */
@@ -82,13 +84,21 @@
                                    word-break: break-all; }
 
   /* LINHAS DE ASSINATURA - folha do NASCIMENTO (Elisa 09/10/2026): declarante
-     e quem lavrou, nomes vindos do ato (face.assinaturas). */
+     e quem lavrou, nomes vindos do ato (face.assinaturas). Desde o relato
+     #124 (15/10/2026) toda especie com termo: rc_folha.ASSINAM_ALEM_DE_QUEM_LAVROU. */
   .assinaturas-do-termo { margin-top: 8mm; }
   .assinaturas-do-termo .assinatura { margin: 9mm 6mm 0; text-align: center;
                                      page-break-inside: avoid; }
   .assinaturas-do-termo .linha-ass { border-top: .8pt solid #000; height: 0; }
   .assinaturas-do-termo .nome-ass { font-size: 9.5pt; margin-top: .8mm;
                                     min-height: 1.2em; overflow-wrap: anywhere; }
+  /* DUAS POR LINHA quando sao quatro ou mais (o casamento: nubentes,
+     testemunhas, juiz de paz e quem lavrou) - resposta do oficial ao
+     relato #124, 15/10/2026. Uma embaixo da outra empurrariam a frente
+     para outra pagina. */
+  .assinaturas-do-termo.em-par { display: flex; flex-wrap: wrap; }
+  .assinaturas-do-termo.em-par .assinatura { flex: 1 1 40%;
+                                             margin: 9mm 3mm 0; }
 
   @media screen {
     body { background: #eceff3; padding: 8px 14px 14px; }
@@ -107,7 +117,7 @@
        de composição é a mesma da prévia; o zoom ocupa a área útil do papel. */
     .folha {
       width: {{ folha.LARGURA_MM - 2 * margem }}mm;
-      zoom: {{ (folha.LARGURA_MM - 10) / (folha.LARGURA_MM - 2 * margem) }};
+      zoom: {{ (folha.LARGURA_MM - 2 * folha.MARGEM_DA_IMPRESSAO_MM) / (folha.LARGURA_MM - 2 * margem) }};
     }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
@@ -182,7 +192,7 @@
         <td class="col-termo">
           <div class="termo">{{ face.termo|safe }}</div>
           {% if face.carimbo %}<div class="carimbo-do-selo">{{ face.carimbo|safe }}</div>{% endif %}
-          {% if face.assinaturas %}<div class="assinaturas-do-termo">
+          {% if face.assinaturas %}<div class="assinaturas-do-termo{% if face.assinaturas|length >= folha.ASSINATURAS_EM_PAR_A_PARTIR_DE %} em-par{% endif %}">
             {% for a in face.assinaturas %}<div class="assinatura"><div class="linha-ass"></div>
               <div class="nome-ass">{{ a.nome }}{% if a.nome and a.qualidade %}, {% endif %}{{ a.qualidade }}</div></div>
             {% endfor %}</div>{% endif %}

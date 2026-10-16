@@ -37,6 +37,21 @@ def com_chave(monkeypatch):
     monkeypatch.setattr(AP, "tem_chave", lambda pasta, prov=None: True)
 
 
+def _bloqueante(con):
+    """A REGRA ANTIGA SE PEDE DE PROPÓSITO — HOTFIX-2026-10-13-01 (3.6.291).
+
+    Desde 13/10/2026 a revisão é CONSULTIVA por padrão
+    (`settings.revisao_previa_modo`), e no consultivo o gerente lavra sem
+    revisão — então «lavrar com a revisão anterior» nem chega a ser
+    perguntado. O que estes testes guardam (justificativa, 90% de semelhança,
+    GRAVE não suprido) é a regra do modo 'bloqueante', que continua existindo
+    e se religa sem versão nova; por isso ela é ligada aqui, e não removida.
+    """
+    con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?, 'bloqueante')",
+                (RV.CHAVE_MODO,))
+    con.commit()
+
+
 def _matricula(con):
     mid = con.execute("""INSERT INTO ri_matriculas (numero, teor, criado_em)
                          VALUES ('4101', 'Imóvel rural de 10 ha', '2026-10-08')""").lastrowid
@@ -146,6 +161,7 @@ def test_marca_nao_atravessa_ato_lavrado(con, com_chave, tmp_path):
 
 
 def test_texto_mudou_pouco_gerente_lavra_com_a_revisao_anterior(con, com_chave, tmp_path):
+    _bloqueante(con)
     mid = _matricula(con)
     rid = _pronta(con, mid, TEOR, ATENCAO_1196)
     teor2 = TEOR.replace("Dou fé.", "Dou fé. Cidade Exemplo/MA.")
@@ -180,6 +196,7 @@ def test_texto_mudou_pouco_gerente_lavra_com_a_revisao_anterior(con, com_chave, 
 
 
 def test_anterior_com_grave_pendente_recusa(con, com_chave, tmp_path):
+    _bloqueante(con)
     mid = _matricula(con)
     _pronta(con, mid, TEOR, [{"gravidade": "GRAVE", "o_que": "Área diverge"}])
     teor2 = TEOR + " Cidade Exemplo."

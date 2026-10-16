@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -700,7 +701,158 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
     # Edital em ‹data›» — e o E-Oficio o escreveu em 1.078 de 1.132. E a
     # certidao cobrando da carga pela QUINTA vez.
     _o_que_o_retorno_precisa(con, acervo, carga=carga, agora=agora)
+    _a_vida_dos_titulos(con, acervo, carga=carga, agora=agora)
     return carga
+
+
+# **A VIDA DO TÍTULO DEPOIS QUE ELE ENTROU** — 13/10/2026, a virada do protesto
+# para o Cartório Gestão («amanhã será o primeiro dia a operar o protesto no
+# Cartório Gestão… passar todos os atos»). A carga só INSERE título novo: quem
+# entrou em 14/09 apontado e foi protestado, pago ou retirado no E-Ofício
+# depois disso continuava «APONTADO» aqui. E ela nunca criou o ato do pagamento
+# nem o da desistência — os 190 «PAGO» eram pagos E retirados juntos.
+#
+# A SITUAÇÃO SAI DO CÓDIGO DE OCORRÊNCIA DA CRA (`intCodigoOcorrencia`), medido
+# no acervo: C 1.114 e 2 58 (protestado), 1 138 (pago), 3 47 (retirado), 5 3
+# (devolvido por irregularidade). O «5» não tem situação neste sistema e NÃO se
+# inventa: o título fica como está, e é contado.
+#
+# SÓ ALCANÇA TÍTULO SEM ATO LAVRADO AQUI: o E-Ofício é a verdade do que ele fez;
+# o que o Cartório Gestão lavrou é a verdade do que veio depois.
+_OCORRENCIA_FINAL = {"1": ("PAGO", "PAGAMENTO"), "3": ("DESISTIDO", "DESISTENCIA")}
+
+
+def _a_vida_dos_titulos(con: sqlite3.Connection, acervo: sqlite3.Connection,
+                        *, carga: "Carga", agora: str) -> None:
+    if not _tem_tabela(acervo, "tbAvisoProtesto"):
+        return
+    nossos = {str(r["origem_chave"]): (int(r["id"]), r["situacao"])
+              for r in con.execute(
+                  """SELECT id, origem_chave, situacao FROM pt_titulos
+                      WHERE origem_chave LIKE 'tbAvisoProtesto:%'""")}
+    tem = {}
+    lavrado_aqui = set()
+    for r in con.execute("SELECT titulo_id, tipo, origem FROM pt_atos"):
+        tem.setdefault(int(r["titulo_id"]), set()).add(r["tipo"])
+        if (r["origem"] or "EOFICIO") != "EOFICIO":
+            lavrado_aqui.add(int(r["titulo_id"]))
+
+    def ato(titulo_id, tipo, data, chave, **extra) -> None:
+        if tipo in tem.get(titulo_id, set()):
+            return
+        con.execute(
+            """INSERT INTO pt_atos(titulo_id, tipo, selo, folha, data_ato,
+                   observacao, detalhe_json, motivo_cancelamento, origem,
+                   origem_chave, criado_em)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (titulo_id, tipo, extra.get("selo"), extra.get("folha"),
+             data or agora, extra.get("observacao"),
+             extra.get("detalhe_json") or "{}", extra.get("motivo"),
+             "EOFICIO", f"{chave}:{tipo}", agora))
+        tem.setdefault(titulo_id, set()).add(tipo)
+        carga.contar(f"atos de {tipo.lower()} trazidos do E-Ofício (vida do título)")
+
+    # O MOTIVO DO PROTESTO É O DA REMESSA DA CRA — `tbSDT.Campo22`, a posição
+    # 297 do registro («1» falta de pagamento em 1.403, «2» falta de aceite em
+    # 34). A carga de 14/09 gravava ali `intMotivoProtesto`, que é o código do
+    # CATÁLOGO do E-Ofício (uma linha só: o motivo genérico do art. 9º-A que a
+    # inspeção reprovou) — o «1» coincidia por acaso e os seis «0» não querem
+    # dizer nada. O termo do protesto e o retorno à CRA leem este campo.
+    motivo_da_remessa = {}
+    if _tem_tabela(acervo, "tbSDT") and _tem_coluna(acervo, "tbSDT", "Campo22"):
+        for s in acervo.execute(
+                "SELECT intProtocolo, Campo22 FROM tbSDT WHERE Campo22 IS NOT NULL"):
+            codigo = _txt(s["Campo22"])
+            if codigo in ("1", "2", "3") and s["intProtocolo"] is not None:
+                motivo_da_remessa[_inteiro(s["intProtocolo"])] = codigo
+
+    for linha in acervo.execute("SELECT * FROM tbAvisoProtesto ORDER BY intChave"):
+        # COLUNA QUE A EXPORTAÇÃO NÃO TROUXE VALE NULO, e não derruba a carga:
+        # acervo antigo (e o dos testes) não tem todas as colunas de hoje — a
+        # mesma regra de `_tem_coluna` no resto deste módulo.
+        r = defaultdict(lambda: None, dict(linha))
+        chave = f"tbAvisoProtesto:{r['intChave']}"
+        if chave not in nossos:
+            continue
+        titulo_id, situacao_aqui = nossos[chave]
+        motivo = motivo_da_remessa.get(_inteiro(r["intProtocolo"]))
+        if motivo:
+            if con.execute(
+                    """UPDATE pt_titulos SET motivo_protesto=? WHERE id=?
+                          AND COALESCE(motivo_protesto, '') <> ?""",
+                    (motivo, titulo_id, motivo)).rowcount:
+                carga.contar("motivo do protesto trazido da remessa da CRA (tbSDT)")
+        else:
+            carga.contar("títulos sem a remessa da CRA no acervo: motivo do "
+                         "protesto continua como estava")
+        if titulo_id in lavrado_aqui:
+            carga.contar("títulos com ato lavrado no Cartório Gestão: vida não tocada")
+            continue
+        ocorrencia = (_txt(r["intCodigoOcorrencia"]) or "").upper()
+        quando = _data(r["dtmOcorrencia"])
+        # O PROTESTO QUE O E-OFÍCIO DESFEZ. Medido em 13/10/2026 no apontamento
+        # 2141: a carga de 27/08 viu `snProtestado` e criou o ato (livro 9,
+        # fl. 149); depois o E-Ofício o desfez e deu o título por retirado em
+        # 02/09. O ato importado ficava aqui sem fonte — e a certidão, que
+        # procura ato de PROTESTO, sairia POSITIVA sobre quem a casa não
+        # protestou. Sai só o que a carga trouxe: sem selo e nunca informado.
+        if (not r["snProtestado"] and not r["snCanceladoProtesto"]
+                and "PROTESTO" in tem.get(titulo_id, set())):
+            for velho in con.execute(
+                    """SELECT id, folha, detalhe_json FROM pt_atos
+                        WHERE titulo_id=? AND tipo='PROTESTO' AND origem='EOFICIO'
+                          AND selo IS NULL AND retorno_id IS NULL""",
+                    (titulo_id,)).fetchall():
+                livro = json.loads(velho["detalhe_json"] or "{}").get("livro_do_acervo")
+                con.execute("DELETE FROM pt_atos WHERE id=?", (velho["id"],))
+                tem[titulo_id].discard("PROTESTO")
+                carga.contar(
+                    f"protesto importado e depois desfeito no E-Ofício (apontamento "
+                    f"{_inteiro(r['intNumeroApontamento'])}): o ato #{velho['id']} "
+                    f"(livro {livro}, fl. {velho['folha']}) saiu")
+        if r["snProtestado"] and ocorrencia not in _OCORRENCIA_FINAL:
+            ato(titulo_id, "PROTESTO", quando, chave,
+                folha=_inteiro(r["intProtestoFolha"]),
+                observacao="número de ordem não consta do acervo do E-Ofício",
+                detalhe_json=json.dumps(
+                    {"livro_do_acervo": _inteiro(r["intProtestoLivro"]),
+                     "ocorrencia_eoficio": ocorrencia or None},
+                    ensure_ascii=False))
+        if r["snCanceladoProtesto"]:
+            ato(titulo_id, "CANCELAMENTO", _data(r["dtmCancelaProtesto"]), chave,
+                selo=_txt(r["strSelo_Cancelamento"]),
+                motivo=_txt(r["memObsCancelamento"]),
+                observacao="hipótese do catálogo não consta do acervo")
+            nova = "CANCELADO"
+        elif ocorrencia in _OCORRENCIA_FINAL and not r["snProtestado"]:
+            nova, tipo = _OCORRENCIA_FINAL[ocorrencia]
+            ato(titulo_id, tipo, quando, chave,
+                observacao="lavrado no E-Ofício; trazido na virada do protesto")
+        elif r["snProtestado"]:
+            nova = "PROTESTADO"
+        elif ocorrencia == "5":
+            carga.contar("títulos devolvidos por irregularidade (código 5): "
+                         "situação não existe no sistema, ficaram como estavam")
+            continue
+        elif (situacao_aqui == "PAGO" and "strTipoPG" in r.keys()
+                and _txt(r["strTipoPG"])):
+            # Pagamento lançado no caixa do E-Ofício (`strTipoPG`, com o número
+            # do protocolo geral) e nenhuma ocorrência: o E-Ofício não diz se
+            # foi pago ou retirado. Reabrir como apontado poria na fila um
+            # título que alguém recebeu — fica como estava.
+            carga.contar("títulos com pagamento no caixa do E-Ofício e sem "
+                         "ocorrência: ficaram como estavam (PAGO)")
+            continue
+        elif "INTIMACAO" in tem.get(titulo_id, set()):
+            nova = "INTIMADO"
+        elif _inteiro(r["intNumeroApontamento"]):
+            nova = "APONTADO"
+        else:
+            continue
+        if nova != situacao_aqui:
+            con.execute("UPDATE pt_titulos SET situacao=? WHERE id=?",
+                        (nova, titulo_id))
+            carga.contar(f"situação acertada pelo E-Ofício: {situacao_aqui} → {nova}")
 
 
 # ------------------------------------------------------------------ o RCPN

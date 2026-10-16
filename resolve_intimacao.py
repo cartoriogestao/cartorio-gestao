@@ -9,12 +9,20 @@ devedor, e entra aqui como informação, nunca como ato.
 
     É a regra do CNIB pela sexta vez: avisar e preparar; quem assina decide.
 
-**O QUE A CENTRAL EXIGE E ESTA CASA NÃO TEM: a chave de 23 dígitos.** Medido na
-produção em 03/09/2026 — `pt_titulos.chave_cenprot` está **vazia em 1.366 de
-1.366**. Ela vem do XML diário do CENPROT, e a tela «Chave do CENPROT» já sabe
-gravá-la; enquanto ninguém carregar aquele arquivo, **a fila daqui é vazia com
-razão** — e a tela diz isso, em vez de mostrar uma lista vazia que faz o
-operador achar que quebrou.
+**O QUE A CENTRAL EXIGE: a chave de 23 dígitos.** Ela vem do XML diário do
+CENPROT, e a tela «Chave do CENPROT» a grava.
+
+> **ESTE PARÁGRAFO DIZIA QUE ESTA CASA NÃO TEM A CHAVE, E ISSO ENVELHECEU —
+> corrigido em 14/10/2026, pelo relato do oficial: *«diz erroneamente na
+> intimação digital que não tem chave da CENPROT»*.** Estava escrito «medido
+> em 03/09/2026: vazia em 1.366 de 1.366». Medido de novo em 14/10/2026 no
+> banco da produção (só leitura): **1.261 de 1.409** títulos têm a chave, todas
+> com 23 dígitos. E a tela errava por outro caminho, que é o que importa: o
+> quadro contava como «sem a chave» **todo** título sem ela — 148, quase todos
+> pagos (108), desistidos (23) ou cancelados (5), que não vão à Intimação
+> Digital de jeito nenhum. Entre os que **poderiam** ir (31: 30 apontados e 1
+> intimado), faltavam 11. A régua agora mede só os que poderiam ir, e diz
+> quais são os que faltam — `quantos_podem_ir`.
 
 **O QUE VAI E O QUE FICA**
     Vão os títulos **apontados e ainda não intimados**, com chave. Não vão os
@@ -167,56 +175,129 @@ SITUACOES_QUE_NAO_VAO: frozenset[str] = frozenset({
 })
 
 
+def _classificar(item: dict) -> dict:
+    """Diz se o título pode ir e, se não, por quê. Só calcula.
+
+    **A CHAVE SÓ É MOTIVO DE QUEM PODERIA IR — correção de 14/10/2026.** Até
+    13/10 todo título sem chave levava «falta a chave do CENPROT», inclusive
+    o pago, o desistido e o cancelado — e o quadro do alto somava esses todos
+    como se fossem intimações travadas pela chave. Para quem já não vai pela
+    situação, a chave não muda nada, e dizer que falta é afirmar um problema
+    que não existe. E a chave que existe com o tamanho errado é outra coisa,
+    com outra frase: ela foi gravada, e gravada torta.
+    """
+    situacao = str(item.get("situacao") or "").strip().upper()
+    chave = PC.so_digitos(item.get("chave_cenprot"))
+    porques = []
+    if situacao in SITUACOES_QUE_NAO_VAO:
+        porques.append(f"o título está {situacao.lower()}")
+    if not str(item.get("devedor_nome") or "").strip():
+        porques.append("o título está sem devedor")
+    elegivel = not porques
+    falta_chave = ""
+    if elegivel and len(chave) != API.TAMANHO_DA_CHAVE:
+        if not chave:
+            falta_chave = ("falta a chave do CENPROT (carregue o XML diário "
+                           "em Protesto → Chave do CENPROT)")
+        else:
+            falta_chave = (f"a chave do CENPROT gravada tem {len(chave)} "
+                           f"dígitos, e a Central exige "
+                           f"{API.TAMANHO_DA_CHAVE} (carregue de novo o XML "
+                           f"diário em Protesto → Chave do CENPROT)")
+        porques.append(falta_chave)
+    item["elegivel"] = elegivel
+    item["falta_chave"] = falta_chave
+    item["pode_ir"] = not porques
+    item["porque_nao"] = "; ".join(porques)
+    return item
+
+
+def situacao_do_titulo(titulo: dict) -> dict:
+    """Se este título pode ir à Intimação Digital e, se não, por quê. Só calcula.
+
+    A porta pública de `_classificar`, para o aviso que não foi entregue
+    perguntar a mesma régua desta tela (15/10/2026) — duas réguas para «pode
+    ir à Resolve?» divergiriam no primeiro conserto.
+    """
+    return _classificar(dict(titulo))
+
+
 def candidatos(con: sqlite3.Connection, *, limite: int = 200) -> list[dict]:
     """Os títulos que poderiam ser intimados pela Central. SÓ LÊ.
 
     **Quem não tem chave aparece com o motivo, e não some.** Lista que esconde
     o que não pode ir faz o balcão procurar o título e não achar — e o conserto
     (carregar o XML do CENPROT) é de uma tela só.
-    """
-    linhas = con.execute(
-        """SELECT t.*, d.nome AS devedor_nome,
-                  d.documento_numero AS devedor_documento
-             FROM pt_titulos t
-             LEFT JOIN pt_devedores d ON d.titulo_id = t.id
-            ORDER BY t.id DESC
-            LIMIT ?""", (int(limite),)).fetchall()
 
-    fora = []
-    for linha in linhas:
-        item = dict(linha)
-        situacao = str(item.get("situacao") or "").strip().upper()
-        chave = PC.so_digitos(item.get("chave_cenprot"))
-        porques = []
-        if situacao in SITUACOES_QUE_NAO_VAO:
-            porques.append(f"o título está {situacao.lower()}")
-        if len(chave) != API.TAMANHO_DA_CHAVE:
-            porques.append(
-                "falta a chave do CENPROT (carregue o XML diário em "
-                "Protesto → Chave do CENPROT)")
-        if not str(item.get("devedor_nome") or "").strip():
-            porques.append("o título está sem devedor")
-        item["pode_ir"] = not porques
-        item["porque_nao"] = "; ".join(porques)
-        fora.append(item)
-    return fora
+    **OS QUE ESTÃO EM SITUAÇÃO DE IR VÊM PRIMEIRO** (14/10/2026). A lista
+    trazia os 200 mais novos em qualquer situação, e na produção eram 150
+    protestados para 20 que podiam ir — os apontados antigos, justamente os
+    que esperam a chave, ficavam fora da lista.
+    """
+    que_nao_vao = sorted(SITUACOES_QUE_NAO_VAO)
+    marcas = ",".join("?" for _ in que_nao_vao)
+    linhas = con.execute(
+        f"""SELECT t.*, d.nome AS devedor_nome,
+                   d.documento_numero AS devedor_documento
+              FROM pt_titulos t
+              LEFT JOIN pt_devedores d ON d.titulo_id = t.id
+             ORDER BY CASE WHEN UPPER(COALESCE(t.situacao, ''))
+                                IN ({marcas}) THEN 1 ELSE 0 END,
+                      t.id DESC
+             LIMIT ?""", [*que_nao_vao, int(limite)]).fetchall()
+    return [_classificar(dict(linha)) for linha in linhas]
+
+
+# QUANTOS TÍTULOS SEM CHAVE A TELA LISTA PELO NOME. O número vai inteiro no
+# quadro; a lista para aqui para a tela não virar o livro.
+LISTA_DOS_SEM_CHAVE = 50
 
 
 def quantos_podem_ir(con: sqlite3.Connection) -> dict:
-    """O quadro do alto da tela. SÓ LÊ — e conta o motivo de quem não vai."""
-    todos = candidatos(con, limite=100000)
-    sem_chave = sum(1 for x in todos
-                    if "chave do CENPROT" in (x["porque_nao"] or ""))
+    """O quadro do alto da tela. SÓ LÊ — e conta o motivo de quem não vai.
+
+    **MEDE ENTRE OS QUE PODERIAM IR, e diz quais faltam** (14/10/2026). Os
+    números são: todos os títulos; os que estão em situação de ir (`elegiveis`
+    — não pagos, retirados, protestados, cancelados, desistidos nem sustados,
+    e com devedor); entre esses, os que podem ir e os que estão sem a chave,
+    **com a lista deles** (protocolo, título, devedor e o motivo).
+
+    Um devedor por título na conta: a junção com `pt_devedores` repetiria o
+    título que tem dois devedores, e o número deixaria de ser de títulos.
+    """
+    linhas = con.execute(
+        """SELECT t.id, t.situacao, t.chave_cenprot, t.protocolo,
+                  t.numero_titulo,
+                  (SELECT d.nome FROM pt_devedores d
+                    WHERE d.titulo_id = t.id ORDER BY d.id LIMIT 1)
+                      AS devedor_nome
+             FROM pt_titulos t
+            ORDER BY t.id DESC""").fetchall()
+    todos = [_classificar(dict(linha)) for linha in linhas]
+    elegiveis = [x for x in todos if x["elegivel"]]
+    sem_chave = [x for x in elegiveis if x["falta_chave"]]
     return {"titulos": len(todos),
+            "elegiveis": len(elegiveis),
             "podem_ir": sum(1 for x in todos if x["pode_ir"]),
-            "sem_chave": sem_chave,
+            "sem_chave": len(sem_chave),
+            "sem_chave_lista": [
+                {"id": x["id"], "protocolo": x.get("protocolo"),
+                 "numero_titulo": x.get("numero_titulo"),
+                 "devedor_nome": x.get("devedor_nome"),
+                 "situacao": x.get("situacao"),
+                 "motivo": x["falta_chave"]}
+                for x in sem_chave[:LISTA_DOS_SEM_CHAVE]],
+            "fora_pela_situacao": len(todos) - len(elegiveis),
             "ja_enviados": _quantos_enviados(con)}
 
 
 def _quantos_enviados(con: sqlite3.Connection) -> int:
+    """As intimações mandadas em PRODUÇÃO — as de homologação e testes que
+    ficaram no banco não contam desde 14/10/2026."""
     try:
         return int(con.execute(
-            "SELECT COUNT(*) FROM rs_intimacoes").fetchone()[0])
+            "SELECT COUNT(*) FROM rs_intimacoes WHERE ambiente = ?",
+            (CRED.PRODUCAO,)).fetchone()[0])
     except sqlite3.Error:
         return 0
 
@@ -244,7 +325,8 @@ def enviar(db, titulo_ids: Any, *, ambiente: Any = None, quem: str = "",
     registro do que subiu se grava **depois** da resposta: gravar antes faria a
     lista dizer «intimado» num dia em que a internet caiu.
     """
-    qual = str(ambiente or "").strip().upper() or CRED.TESTES
+    # SÓ PRODUÇÃO desde 14/10/2026 (até 13/10 o padrão daqui era `TESTES`).
+    qual = CRED.ambiente_de_uso(CRED.RESOLVE, ambiente)
     ids = [int(x) for x in (titulo_ids or []) if str(x).strip()]
     if not ids:
         raise IntimacaoDigitalError(
@@ -408,7 +490,10 @@ def avisar(db, intimacao_id: int, qual: str, *, quem: str = "",
             "aceita lá, e não há o que avisar.")
 
     funcao, estado, o_que = AVISOS_A_CENTRAL[acao]
-    resposta = funcao(item["intimacao_id"], item["ambiente"], pasta=pasta)
+    # A INTIMAÇÃO DE HOMOLOGAÇÃO OU DE TESTES NÃO SE AVISA MAIS (14/10/2026):
+    # ela fica como histórico, e a recusa diz por quê.
+    onde = CRED.ambiente_de_uso(CRED.RESOLVE, item["ambiente"])
+    resposta = funcao(item["intimacao_id"], onde, pasta=pasta)
 
     agora = db.now()
     with db.transaction() as con:
@@ -427,7 +512,8 @@ def atualizar_estados(db, *, ambiente: Any = None, quem: str = "",
     oficial quem decide o que fazer com isso — lavrar a intimação, mandar ao
     edital, ou esperar.
     """
-    qual = str(ambiente or "").strip().upper() or CRED.TESTES
+    # SÓ PRODUÇÃO desde 14/10/2026 (até 13/10 o padrão daqui era `TESTES`).
+    qual = CRED.ambiente_de_uso(CRED.RESOLVE, ambiente)
     with db.connect() as con:
         con.row_factory = sqlite3.Row
         fila = [dict(x) for x in con.execute(

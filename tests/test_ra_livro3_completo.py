@@ -91,7 +91,7 @@ class LivroTresCompletoTests(unittest.TestCase):
             ato_id = self._ato(db, rid)
             with db.transaction() as con:
                 r = MIN.voltar_do_ato(con, ato_id, agora=db.now(),
-                                      usuario="Jean",
+                                      usuario="Mario",
                                       motivo="o teor precisa ser reescrito")
             with db.connect() as con:
                 atas = EXP.listar(con, rid)
@@ -104,7 +104,7 @@ class LivroTresCompletoTests(unittest.TestCase):
             self.assertIn("ATA DE OCORRÊNCIA", ata["ata"])
             self.assertIn("CANCELAMENTO INTEGRAL", ata["ata"])
             self.assertIn("o teor precisa ser reescrito", ata["ata"])
-            self.assertIn("Jean", ata["ata"])
+            self.assertIn("Mario", ata["ata"])
 
     def test_ato_que_nao_volta_nao_deixa_ata(self):
         """Ata sem ato desfeito é o outro jeito de isto dar errado."""
@@ -181,14 +181,14 @@ class LivroTresCompletoTests(unittest.TestCase):
             rid = self._registro(db)
             with db.transaction() as con:
                 CORR.conferir(con, rid, conferido=True, agora="2026-09-21T10:00",
-                              usuario="Jean", nota="Data conferida no papel.")
+                              usuario="Mario", nota="Data conferida no papel.")
             with db.connect() as con:
                 r = con.execute(
                     "SELECT conferido, conferido_em, conferido_por, "
                     "conferido_nota FROM ra_registros WHERE id=?",
                     (rid,)).fetchone()
             self.assertEqual(r["conferido"], 1)
-            self.assertEqual(r["conferido_por"], "Jean")
+            self.assertEqual(r["conferido_por"], "Mario")
             self.assertIn("Data conferida", r["conferido_nota"])
 
             with db.transaction() as con:
@@ -198,7 +198,7 @@ class LivroTresCompletoTests(unittest.TestCase):
                     "SELECT conferido, conferido_em, conferido_por "
                     "FROM ra_registros WHERE id=?", (rid,)).fetchone()
             self.assertEqual(r["conferido"], 0)
-            self.assertEqual(r["conferido_por"], "Jean",
+            self.assertEqual(r["conferido_por"], "Mario",
                              "quem leu naquele dia leu — é fato do passado")
 
     def test_a_fila_do_que_falta_conferir(self):
@@ -474,7 +474,7 @@ class CertidaoDoLivroTresTests(unittest.TestCase):
                 r = AC.emitir(con, "LIVRO3", rid, hoje="2026-09-21",
                               agora="2026-09-21T10:00", requerente="FULANA",
                               requerente_documento="000.000.012-44",
-                              usuario="jean", usuario_nome="MARIO EXEMPLO",
+                              usuario="mario", usuario_nome="MARIO EXEMPLO",
                               usuario_funcao="Oficial")
             with db.connect() as con:
                 c = con.execute("SELECT * FROM at_certidoes WHERE id=?",

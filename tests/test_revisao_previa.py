@@ -136,11 +136,11 @@ def test_ia_fora_do_ar_nao_trava_e_leitura_presa_desiste(con, cg_casa, com_chave
 
 
 def test_a_rota_de_lavrar_recusa_sem_revisao_e_nao_toma_numero(cg_casa, com_chave):
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
     con = sqlite3.connect(cg_casa["banco"])
     mid = _matricula(con)
     c = cg_casa["c"]
-    cg_login(c, "jean", "Senha#12345")
+    cg_login(c, "mario", "Senha#12345")
     with c.session_transaction() as s:
         token = s.get("csrf_token")
     r = c.post(f"/registro-imoveis/{mid}/atos",
@@ -152,14 +152,14 @@ def test_a_rota_de_lavrar_recusa_sem_revisao_e_nao_toma_numero(cg_casa, com_chav
 
 
 def test_o_botao_pede_e_a_tela_pergunta_o_andamento(cg_casa, com_chave, monkeypatch):
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
     con = sqlite3.connect(cg_casa["banco"])
     mid = _matricula(con)
     chamadas = []
     monkeypatch.setattr(RV, "ler_em_segundo_plano",
                         lambda banco, pasta, rid: chamadas.append(rid))
     c = cg_casa["c"]
-    cg_login(c, "jean", "Senha#12345")
+    cg_login(c, "mario", "Senha#12345")
     with c.session_transaction() as s:
         token = s.get("csrf_token")
     r = c.post(f"/revisao-previa/ri/{mid}",
@@ -217,7 +217,7 @@ def _revisao_pronta(con, atribuicao, alvo, hash_texto, achados, pedido_em="2026-
 
 
 def test_a_ultima_revisao_volta_ao_abrir_a_tela_das_notas(cg_casa):
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
     con = sqlite3.connect(cg_casa["banco"])
     RV.init_schema(con)
     aid = con.execute("""INSERT INTO nt_atos (tipo, situacao, teor, data, criado_em)
@@ -226,7 +226,7 @@ def test_a_ultima_revisao_volta_ao_abrir_a_tela_das_notas(cg_casa):
     rid = _revisao_pronta(con, "NOTAS", aid, RV.hash_do_ato("PROCURACAO", "OUTORGANTE: FULANO"),
                           [{"gravidade": "ATENCAO", "o_que": "poderes amplos demais"}])
     c = cg_casa["c"]
-    cg_login(c, "jean", "Senha#12345")
+    cg_login(c, "mario", "Senha#12345")
     r = c.get(f"/revisao-previa/notas/{aid}/ultima").get_json()
     assert r["id"] == rid and r["texto_mudou"] is False
     assert r["achados"][0]["o_que"] == "poderes amplos demais"

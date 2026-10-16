@@ -74,16 +74,16 @@ def _entrar(app, usuario: str):
 @pytest.fixture()
 def casa(cg_casa):
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.create_user("balcao", "QUEM ATENDE", SENHA, "MANAGER")
     con = sqlite3.connect(cg_casa["banco"])
     with con:
-        con.execute("UPDATE users SET funcao=? WHERE username='jean'",
+        con.execute("UPDATE users SET funcao=? WHERE username='mario'",
                     (FUNCAO_DO_OFICIAL,))
         con.execute("UPDATE users SET funcao=? WHERE username='balcao'",
                     (FUNCAO_DA_BALCAO,))
     con.close()
-    return {**cg_casa, "cliente": _entrar(cg_casa["app"], "jean")}
+    return {**cg_casa, "cliente": _entrar(cg_casa["app"], "mario")}
 
 
 def _con(casa):
@@ -212,7 +212,7 @@ def test_o_ato_nao_muda_quando_o_cadastro_de_quem_assinou_muda(casa):
 
     con = _con(casa)
     with con:
-        con.execute("UPDATE users SET funcao='Substituta' WHERE username='jean'")
+        con.execute("UPDATE users SET funcao='Substituta' WHERE username='mario'")
     ato = _ato(con, mid)
     con.close()
     assert ato["lavrado_titulo"] == FUNCAO_DO_OFICIAL

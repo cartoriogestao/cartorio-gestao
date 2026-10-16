@@ -159,8 +159,9 @@ def test_serie_de_varios_por_face_enche_a_face_antes_de_virar():
 
 
 def test_no_livro_de_protestos_o_verso_recebe_o_protesto_seguinte():
-    # Medido no acervo: os livros 7 e 8 fecharam com 207 e 219 registros em
-    # 200 folhas. Nao e folha nova — e um por FACE.
+    # Um protesto por FACE — decisao do oficial em 14/10/2026 («nao tem por
+    # que deixar o verso em branco»). O E-Oficio fazia um por folha; isso
+    # serviu so para contar o numero de ordem atual.
     con = banco()
     a = reservar(con, "PT_PROTESTO", 1)
     b = reservar(con, "PT_PROTESTO", 2)

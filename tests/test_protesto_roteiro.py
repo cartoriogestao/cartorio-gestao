@@ -284,3 +284,219 @@ def test_a_tela_diz_de_onde_saiu_o_roteiro(s):
     html = s.get("/protesto/roteiro").get_data(as_text=True)
     assert "IEPTB-MA/CRA-MA" in html
     assert "não está no acervo" in html
+
+
+# ================================================================ o PAINEL DO DIA
+#
+# Pedido do oficial em 14/10/2026: «botao claro e bem posicionado para cada
+# parte da rotina do protesto» e «um fluxo natural». O que estes testes
+# guardam:
+#   - as dez etapas, na ordem em que o titulo anda, cada uma com o botao que
+#     leva a tela que FAZ aquilo — e toda tela existe no url_map;
+#   - o que nao existe nao ganha botao que finge: o XML diario assinado a
+#     CENPROT fica SEM botao, dizendo onde se faz;
+#   - os links das Centrais pedem PRODUCAO (desde 14/10 tudo e producao);
+#   - a contagem conta, e nao julga: None quando nao da para medir, nunca um
+#     zero inventado; e a marca da virada nao conta como arquivo de hoje.
+
+import json as _json
+
+
+def _retorno(con, *, tipo, gerado_em, ambiente=None, enviado=None, erro=None):
+    con.execute(
+        """INSERT INTO pt_retornos(tipo, apresentante_codigo, dia, nome_arquivo,
+               conteudo, titulos, gerado_em, cra_enviado_em,
+               cra_enviado_ambiente, cra_envio_erro)
+           VALUES (?, '033', ?, 'x.txt', 'x', 1, ?, ?, ?, ?)""",
+        (tipo, gerado_em[:10], gerado_em, enviado, ambiente, erro))
+
+
+def test_as_etapas_sao_dez_na_ordem_da_rotina():
+    numeros = [e["n"] for e in PR.ETAPAS_DO_DIA]
+    assert numeros == list(range(1, 11))
+    ancoras = [e["ancora"] for e in PR.ETAPAS_DO_DIA]
+    assert len(set(ancoras)) == len(ancoras)
+    titulos = " | ".join(e["titulo"] for e in PR.ETAPAS_DO_DIA)
+    for palavra in ("remessa", "imagens", "Confirmar", "Intimar",
+                    "desistências", "Pagamentos", "protestos", "Retorno",
+                    "CENPROT", "Certidões"):
+        assert palavra in titulos, palavra
+
+
+def test_toda_etapa_tem_botao_e_diz_o_que_faz():
+    for e in PR.ETAPAS_DO_DIA:
+        assert e["botoes"], f"etapa {e['n']} sem botao"
+        assert e["faz"].strip()
+        for b in e["botoes"]:
+            assert b["rotulo"].strip() and b["tela"].strip()
+
+
+def test_toda_medida_tem_frase_e_toda_frase_e_medida():
+    """Lista escrita em dois lugares diverge na tarde em que se escreve."""
+    medido = PR.medir_o_dia(banco(), hoje=HOJE)
+    assert set(medido) == set(PR.MEDIDAS_DO_DIA)
+    for e in PR.ETAPAS_DO_DIA:
+        for k in e["medidas"]:
+            assert k in PR.MEDIDAS_DO_DIA, k
+
+
+def test_os_links_das_centrais_pedem_producao():
+    """Desde 14/10/2026 tudo e producao; as telas ainda abrem na homologacao
+    quando nao se diz qual — por isso o painel DIZ."""
+    import centrais_cred as CRED
+    assert PR.AMBIENTE_DE_PRODUCAO == CRED.PRODUCAO
+    centrais = {"protesto_cra_api", "protesto_resolve", "protesto_pendencias"}
+    vistos = set()
+    for e in PR.ETAPAS_DO_DIA:
+        for b in e["botoes"]:
+            if b["tela"] in centrais:
+                vistos.add(b["tela"])
+                assert b["args"].get("ambiente") == CRED.PRODUCAO
+    assert vistos == centrais
+    assert "HOMOLOG" not in _json.dumps(PR.ETAPAS_DO_DIA,
+                                        ensure_ascii=False).upper()
+
+
+def test_o_xml_diario_se_gera_e_nenhum_botao_promete_o_envio():
+    """Desde 15/10/2026 o sistema GERA o XML diário (P e D, com o instrumento
+    assinado dentro) — e o ENVIO continua pelo portal, porque a API da
+    CENPROT não tem caminho para ele. A etapa diz as duas coisas, e nenhum
+    botão promete enviar o que só se gera. (Até 14/10 este teste exigia que
+    nenhum botão falasse do XML diário: ele não existia.)"""
+    cenprot = next(e for e in PR.ETAPAS_DO_DIA if e["ancora"] == "etapa-cenprot")
+    assert "XML diário" in cenprot["sem_botao"]
+    assert "portal da CENPROT" in cenprot["falta"]
+    assert any(b["tela"] == "protesto_cenprot_xml" for b in cenprot["botoes"])
+    for e in PR.ETAPAS_DO_DIA:
+        for b in e["botoes"]:
+            if "XML diário" in b["rotulo"]:
+                assert "envi" not in b["rotulo"].lower()
+
+
+def test_o_retorno_sobe_pelo_botao_e_o_andamento_do_par_diz_que_nao():
+    # Até 14/10/2026 o retorno não subia pela API; ganhou o botão «Enviar à
+    # CRA» (`protesto_cra_envio.enviar_arquivo`). O andamento em par com o
+    # retorno continua pelo portal, e a etapa diz isso.
+    retorno = next(e for e in PR.ETAPAS_DO_DIA if e["ancora"] == "etapa-retorno")
+    assert "Enviar à CRA" in retorno["falta"]
+    assert "portal da CRA" in retorno["falta"]
+    assert "11:30" in retorno["falta"]
+
+
+def test_as_horas_das_etapas_sao_as_do_papel():
+    p = PR.painel_do_dia(banco(), hoje=HOJE)
+    horas = {e["ancora"]: e["hora_limite"] for e in p["etapas"]}
+    assert horas["etapa-remessa"] == "12:30"
+    assert horas["etapa-confirmacao"] == "14:10"
+    assert horas["etapa-retorno"] == "11:30"
+    assert horas["etapa-intimar"] is None
+    # O relogio junta retorno e andamento, que sao a mesma hora e etapa.
+    assert [r["hora"] for r in p["relogio"]] == ["11:30", "12:30", "14:10"]
+    assert p["relogio"][0]["ancora"] == "etapa-retorno"
+    assert "Andamento" in p["relogio"][0]["o_que"]
+
+
+def test_sem_tabela_a_contagem_e_none_e_nao_zero():
+    """Instalacao sem o Protesto: «nao ha o que contar» nao e «contei zero»."""
+    con = sqlite3.connect(":memory:")
+    con.row_factory = sqlite3.Row
+    medido = PR.medir_o_dia(con, hoje=HOJE)
+    assert medido and all(v is None for v in medido.values())
+    assert PR.estado_do_envio(con)["cra_envio_automatico_producao"] is None
+
+
+def test_com_tabela_vazia_a_contagem_e_zero_medido():
+    medido = PR.medir_o_dia(banco(), hoje=HOJE)
+    assert medido["remessas_recebidas_hoje"] == 0
+    assert medido["a_protestar"] == 0
+    assert medido["atos_esperando_retorno"] == 0
+
+
+def test_a_marca_da_virada_nao_conta_como_arquivo_de_hoje():
+    """A virada gravou em `pt_retornos` linhas que nao sao arquivo (o que o
+    E-Oficio ja informou). Contadas, o primeiro dia diria «1 retorno gerado»
+    sem ninguem ter gerado."""
+    con = banco()
+    _retorno(con, tipo="SDTBFORTP", gerado_em=HOJE + "T08:13:17",
+             ambiente="EOFICIO", enviado=HOJE + "T08:13:17")
+    assert PR.o_que_ja_aconteceu_hoje(con, hoje=HOJE)["retorno_gerado"] == 0
+    assert PR.medir_o_dia(con, hoje=HOJE)["retornos_e_andamentos_hoje"] == 0
+    _retorno(con, tipo="SDTBFORTP", gerado_em=HOJE + "T10:00:00")
+    assert PR.o_que_ja_aconteceu_hoje(con, hoje=HOJE)["retorno_gerado"] == 1
+    assert PR.medir_o_dia(con, hoje=HOJE)["retornos_e_andamentos_hoje"] == 1
+
+
+def test_a_confirmacao_conta_gerada_aceita_e_com_erro():
+    con = banco()
+    _retorno(con, tipo="SDTBFOCRT", gerado_em=HOJE + "T12:40:00",
+             ambiente="PRODUCAO", enviado=HOJE + " 15:41:00")
+    _retorno(con, tipo="SDTBFOCRT", gerado_em=HOJE + "T12:41:00",
+             ambiente="PRODUCAO", erro="A CRA recusou")
+    _retorno(con, tipo="SDTBFOCRT", gerado_em=HOJE + "T12:42:00")
+    # Um de homologacao aceito nao e aceito em producao.
+    _retorno(con, tipo="SDTBFOCRT", gerado_em=HOJE + "T12:43:00",
+             ambiente="HOMOLOGACAO", enviado=HOJE + " 15:44:00")
+    m = PR.medir_o_dia(con, hoje=HOJE)
+    assert m["confirmacoes_hoje"] == 4
+    assert m["confirmacoes_aceitas_hoje"] == 1
+    assert m["confirmacoes_com_erro_hoje"] == 1
+
+
+def test_o_instrumento_nao_conta_o_protesto_do_acervo():
+    """«Protesto sem instrumento» do acervo nao e trabalho de hoje: o E-Oficio
+    nao guardava instrumento, e contar os mil protestos dele faria o numero
+    nunca zerar."""
+    con = banco()
+    for origem in ("EOFICIO", "MANUAL"):
+        cur = con.execute(
+            """INSERT INTO pt_titulos(especie, numero_titulo, situacao,
+                   origem, origem_chave, criado_em)
+               VALUES ('DMI', ?, 'PROTESTADO', 'CRA', ?, ?)""",
+            (origem, origem, HOJE))
+        con.execute(
+            """INSERT INTO pt_atos(titulo_id, tipo, data_ato, origem,
+                   criado_em)
+               VALUES (?, 'PROTESTO', ?, ?, ?)""",
+            (cur.lastrowid, HOJE, origem, HOJE))
+    assert PR.medir_o_dia(con, hoje=HOJE)["protestos_sem_instrumento"] == 1
+
+
+def test_o_painel_nao_tem_nome_que_julga():
+    for palavra in ("atrasado", "atraso", "pendente", "vencido", "alerta"):
+        for k in list(PR.MEDIDAS_DO_DIA) + list(PR.MEDIDAS_DO_DIA.values()):
+            assert palavra not in k.lower(), (palavra, k)
+
+
+def test_toda_tela_do_painel_existe_e_aceita_os_argumentos(cg_casa):
+    """Mais forte que procurar `def nome(`: monta o endereco de verdade."""
+    from flask import url_for
+    app = cg_casa["app"]
+    with app.test_request_context():
+        for e in PR.ETAPAS_DO_DIA:
+            for b in e["botoes"]:
+                assert b["tela"] in app.view_functions, b["tela"]
+                url_for(b["tela"], **b["args"])
+        url_for("settings")
+
+
+def test_a_tela_mostra_o_painel_com_os_botoes(s):
+    html = s.get("/protesto/roteiro").get_data(as_text=True)
+    assert "o painel do dia" in html
+    for e in PR.ETAPAS_DO_DIA:
+        assert e["titulo"] in html
+        assert f'id="{e["ancora"]}"' in html
+    assert 'href="/protesto/remessas"' in html
+    assert 'href="/protesto/a-protestar"' in html
+    assert "ambiente=PRODUCAO" in html
+    assert "ambiente=HOMOLOG" not in html
+    assert "Sem botão:" in html and "XML diário" in html
+    assert "enviar até" in html and "a CRA disponibiliza" in html
+    assert "Envio automático à CRA (produção)" in html
+
+
+def test_o_painel_nao_tem_formulario(s):
+    """Os botoes LEVAM a tela que faz — nenhum faz por aqui, e o GET so le."""
+    html = s.get("/protesto/roteiro").get_data(as_text=True)
+    painel = html.split('id="relogio"', 1)[1].split(
+        'id="roteiro-das-centrais"', 1)[0]
+    assert "<form" not in painel

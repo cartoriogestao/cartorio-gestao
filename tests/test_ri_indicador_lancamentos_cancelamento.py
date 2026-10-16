@@ -82,7 +82,7 @@ def test_cancelamento_livro2_gera_lancamentos_4_e_5(con):
     out = RILANC.registrar_cancelamento_livro2(
         con, matricula=m, ato_alvo=alvo, averbacao_id=av_id,
         averbacao_numero=2, motivo="Pedido judicial de anulacao.",
-        usuario="jean", agora="2026-09-18T12:00:00",
+        usuario="mario", agora="2026-09-18T12:00:00",
         data_lancamento="2026-09-18")
     con.commit()
 
@@ -114,7 +114,7 @@ def test_cancelamento_livro3_gera_lancamentos_4_e_5(con):
         (rid,))
     con.commit()
     out = RA.cancelar(con, rid, motivo="Quitacao integral comprovada.",
-                      agora=agora, usuario="jean")
+                      agora=agora, usuario="mario")
     con.commit()
 
     rows4 = [x for x in RILANC.listar(con, 4) if x["origem_livro"] == 3]

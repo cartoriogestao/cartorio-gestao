@@ -113,7 +113,28 @@ def test_a_prova_APONTA_PARA_COISA_QUE_EXISTE():
             caminho = pedaco.split()[0].rstrip(",")
             if not ("/" in caminho or caminho.endswith(".py")):
                 continue
-            if not (RAIZ / caminho).exists():
+            # TRÊS FORMAS DE APONTAR, e as três se conferem — 14/10/2026,
+            # quando as notas passaram a citar (a) o teste pelo nó do pytest,
+            # «arquivo.py::test_x», (b) a rota, «/login», e (c) documento da
+            # raiz do PROJETO (`docs/`, `internal/`), e não da do sistema.
+            # Nenhuma delas afrouxa a régua: o nó exige o arquivo E o `def`;
+            # a rota exige o `route("/...")` num módulo da raiz; o documento
+            # exige o arquivo em disco.
+            if "::" in caminho:
+                arquivo, _, teste = caminho.partition("::")
+                alvo = RAIZ / arquivo
+                if not (alvo.is_file() and f"def {teste}(" in
+                        alvo.read_text(encoding="utf-8")):
+                    faltando.append(f"{n['impressao']} → {caminho}")
+                continue
+            if caminho.startswith("/"):
+                if not any(f'route("{caminho}"' in p.read_text(
+                               encoding="utf-8", errors="replace")
+                           for p in RAIZ.glob("*.py")):
+                    faltando.append(f"{n['impressao']} → rota {caminho}")
+                continue
+            if not ((RAIZ / caminho).exists()
+                    or (RAIZ.parent.parent / caminho).exists()):
                 faltando.append(f"{n['impressao']} → {caminho}")
     assert not faltando, (
         "estas provas apontam para arquivos que não existem:\n    "
@@ -171,13 +192,13 @@ def test_a_passada_NAO_sobrescreve_o_que_o_oficial_escreveu(con):
     pid = _problema(con, n["impressao"])
     PROB.anotar_desenvolvimento(con, pid, nota="isto aqui continua acontecendo",
                             estado=ND.EM_ANDAMENTO, prova="",
-                            agora=AGORA, por="jean")
+                            agora=AGORA, por="mario")
     r = ND.aplicar(con, agora=AGORA)
     assert r["respeitadas"] >= 1
     linha = con.execute("SELECT nota_dev, nota_dev_por FROM aj_problemas "
                         "WHERE id = ?", (pid,)).fetchone()
     assert linha["nota_dev"] == "isto aqui continua acontecendo"
-    assert linha["nota_dev_por"] == "jean"
+    assert linha["nota_dev_por"] == "mario"
 
 
 def test_a_passada_NAO_fecha_problema_nenhum(con):
@@ -227,7 +248,7 @@ def test_a_marca_separa_o_que_e_meu_do_que_e_dele():
     """Sem uma marca própria não haveria como distinguir a nota que a passada
     pôs da que uma pessoa escreveu — e a escolha seria entre nunca corrigir
     uma nota minha ou apagar as dele."""
-    assert ND.MARCA and ND.MARCA != "jean"
+    assert ND.MARCA and ND.MARCA != "mario"
 
 
 # ------------------------------------------------ o alcance
@@ -288,6 +309,14 @@ def test_o_que_nao_esta_feito_nao_se_diz_atendido():
     # **O #36 SAIU EM 07/09/2026**: o rascunho passou de UMA para as TREZE
     # telas de lavrar, com varredor que exige as treze —
     # `test_rascunho_em_todo_ato.py`.
-    for impressao in ("8115acd5e5f11b15",):
+    #
+    # **O #16 SAIU EM 14/10/2026** (impressão 8115acd5e5f11b15), e o conserto
+    # é de 24/09/2026: o QR passou a abrir a consulta do selo
+    # (`#/resumo/<SELO>`), medido no portal e conferido em dois selos reais —
+    # ver CLAUDE.md, «O QR DO SELO PASSOU A ABRIR A CONSULTA», e a prova da
+    # nota, `test_qr_do_selo.py`. A nota foi para ATENDIDO naquele dia e esta
+    # lista não acompanhou. Com ela vazia, o guarda continua de pé: quem
+    # souber de relato marcado ATENDIDO sem estar feito o põe aqui.
+    for impressao in ():
         assert impressao in abertos, (
             f"{impressao} está marcado como atendido e não está feito")

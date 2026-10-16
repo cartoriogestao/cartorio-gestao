@@ -558,6 +558,45 @@ CREATE TABLE IF NOT EXISTS nt_ato_anotacoes (
 
 CREATE INDEX IF NOT EXISTS ix_nt_anot_ato ON nt_ato_anotacoes(ato_id, data);
 
+-- A COMUNICACAO A SERVENTIA DE ORIGEM — relato #129, 14/10/2026, vindo da
+-- inspecao. Codigo de Normas TJMA, art. 831, § 1o: substabelecimento de
+-- mandato lavrado em OUTRA serventia se comunica imediatamente ao tabeliao que
+-- o lavrou, com comprovante de recebimento. Uma linha por ato; ela nasce
+-- ABERTA e so vira CUMPRIDA por uma das duas providencias (comprovante juntado
+-- ou envio do oficio anotado). Nao se apaga nem se reabre — ver
+-- `notas_comunicacao_origem.py`.
+CREATE TABLE IF NOT EXISTS nt_comunicacoes_origem (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ato_id INTEGER NOT NULL UNIQUE,
+    situacao TEXT NOT NULL DEFAULT 'ABERTA',   -- ABERTA | CUMPRIDA
+    destinatario TEXT NOT NULL,                -- a serventia de origem
+    destinatario_cns TEXT,
+    procuracao_livro TEXT,
+    procuracao_folha TEXT,
+    procuracao_data TEXT,
+    nascida_em TEXT NOT NULL,
+    nascida_por TEXT,
+    nascida_como TEXT NOT NULL,                -- LAVRATURA | TELA
+    providencia TEXT,                          -- COMPROVANTE | OFICIO
+    cumprida_em TEXT,
+    cumprida_por TEXT,
+    envio_data TEXT,
+    envio_meio TEXT,
+    envio_numero TEXT,                         -- numero do oficio ou rastreio
+    envio_por TEXT,                            -- quem enviou
+    comprovante_attachment_id INTEGER,         -- attachments.id
+    comprovante_sha256 TEXT,
+    comprovante_nome TEXT,
+    comprovante_recebido_em TEXT,
+    comprovante_em TEXT,
+    comprovante_por TEXT,
+    observacao TEXT,
+    FOREIGN KEY(ato_id) REFERENCES nt_atos(id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_nt_comunicacoes_origem_situacao
+    ON nt_comunicacoes_origem(situacao, nascida_em);
+
 -- Contador do numero de TERMO, uma linha por serie de livro.
 --
 -- POR QUE CONTADOR E NAO MAX()+1
@@ -935,6 +974,14 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("nt_atos", "lancado_em", "TEXT"),
     ("nt_atos", "lancado_por", "TEXT"),
     ("nt_atos", "folhas_arquivamento", "INTEGER"),
+    # A CONFIRMACAO DAS FOLHAS ARQUIVADAS — pedido do oficial, 15/10/2026: o
+    # numero sai da contagem dos anexos e o escrevente confirma, podendo
+    # corrigir. Guarda-se o sugerido, de onde ele veio, quem confirmou e
+    # quando; o confirmado e `folhas_arquivamento`. Ver notas_arquivamento.py.
+    ("nt_atos", "arquivamento_folhas_sugeridas", "INTEGER"),
+    ("nt_atos", "arquivamento_origem_sugestao", "TEXT"),
+    ("nt_atos", "arquivamento_confirmado_em", "TEXT"),
+    ("nt_atos", "arquivamento_confirmado_por", "TEXT"),
     # A primeira folha do livro nem sempre e a 1: livro de continuacao comeca
     # onde o anterior parou em algumas serventias.
     ("nt_livros", "folha_inicial", "INTEGER NOT NULL DEFAULT 1"),

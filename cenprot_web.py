@@ -33,9 +33,7 @@ from flask import Response, flash, redirect, render_template, request, url_for
 import cenprot_api as API
 import cenprot_pendencias as PEND
 import centrais_cred as CENTCRED
-import centrais_fila as FILA
 import cn_schema as CN
-import protesto_centrais_fila as PFILA
 import protesto_cenprot as PCEN
 
 # QUEM ENTRA. É o mesmo trio das outras telas do Protesto — a guarda de
@@ -71,15 +69,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     usuario_nome = app.extensions["usuario_nome"]
 
     def ambiente_pedido() -> str:
-        """Qual ambiente a tela está olhando.
+        """Qual ambiente a tela usa: **sempre PRODUÇÃO, desde 14/10/2026**.
 
-        **`request.values`, e não `request.form`** — este defeito apareceu duas
-        vezes na mesma noite, espelhado: a tela do IBGE mandava por POST e o
-        redirecionamento por query string, e a rota lia só um dos dois. Quem
-        registrasse voltaria olhando outra coisa.
+        Ordem do oficial no primeiro dia do protesto no sistema: «tire a
+        opção de funcionar na homologação, agora é tudo produção». Até 13/10
+        a tela lia `ambiente` de `request.values` e caía na homologação por
+        padrão; agora **o que vier no endereço ou no formulário não muda
+        nada** — um favorito antigo com `?ambiente=HOMOLOGACAO` abre a
+        produção, e não o ambiente de teste.
         """
-        pedido = str(request.values.get("ambiente") or "").strip().upper()
-        return pedido if pedido in CENTCRED.AMBIENTES else CENTCRED.HOMOLOGACAO
+        return CENTCRED.PRODUCAO
 
     def especie_pedida(padrao: str = CN.ANUENCIA) -> str:
         pedida = str(request.values.get("especie") or "").strip().upper()
@@ -115,9 +114,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             decididas=len(decididas),
             especies=[{"chave": e, "nome": CN.NOME_DA_ESPECIE[e]}
                       for e in CN.ESPECIES],
-            ambientes=CENTCRED.AMBIENTES,
             so_baixa=(especie in PEND.ESPECIES_QUE_SO_SE_BAIXAM),
             tem_credencial=CENTCRED.tem(CENTCRED.CENPROT, ambiente),
+            fora_de_uso=CENTCRED.fora_de_uso(CENTCRED.CENPROT),
             a_conferir=PEND.CODIGO_DO_CANCELAMENTO_A_CONFERIR)
 
     @app.route("/protesto/cenprot/pendencias/baixar", methods=["POST"])
@@ -317,7 +316,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                   "warning")
             return redirect(url_for("protesto_pendencias"))
         try:
-            r = API.arquivos_da_anuencia(p["codigo"], p["ambiente"])
+            # A PENDÊNCIA DIZ DE QUE AMBIENTE ELA É, e a de homologação não se
+            # consulta mais (14/10/2026) — a recusa vem com a frase.
+            r = API.arquivos_da_anuencia(
+                p["codigo"],
+                CENTCRED.ambiente_de_uso(CENTCRED.CENPROT, p["ambiente"]))
         except RECUSAS_DO_BALCAO as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_pendencia",
@@ -398,16 +401,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         """
         ambiente = ambiente_pedido()
         try:
-            # HOMOLOGAÇÃO PASSA PELA FILA COMUM DAS CENTRAIS (marco b,
-            # 05/10/2026): o mesmo pedido de token, agora enfileirado,
-            # processado e anotado — e visível em /centrais/status. PRODUÇÃO
-            # continua direto: a fila deste marco não fala com produção.
-            if ambiente == CENTCRED.HOMOLOGACAO:
-                d = PFILA.testar_pela_fila(db, CENTCRED.CENPROT, ambiente,
-                                           por=usuario_nome() or None)
-            else:
-                d = API.diagnostico(ambiente)
-        except RECUSAS_DO_BALCAO + (FILA.FilaError,) as erro:
+            # SÓ PRODUÇÃO, E DIRETO (14/10/2026). Até 13/10 a homologação
+            # passava pela fila comum das Centrais (marco b, 05/10/2026), que
+            # não fala com produção; com a homologação fora da tela, o teste
+            # é o de produção, direto, como já era.
+            d = API.diagnostico(ambiente)
+        except RECUSAS_DO_BALCAO as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_pendencias", ambiente=ambiente))
         nota = ""

@@ -34,7 +34,7 @@ SENHA = "Senha#12345"
 AGORA = "2026-09-07T10:00:00"
 CNS = "000000"
 SV = {"ri_cns": CNS, "ri_cidade": "Cidade Exemplo", "ri_uf": "MA",
-      "escrevente": "JEAN", "funcao": "Escrevente"}
+      "escrevente": "MARIO", "funcao": "Escrevente"}
 
 # **`lavrar_assento` NAO LAVRA EM BRANCO** — art. 54 da Lei 6.015/1973. A
 # filiacao 2 e o declarante sao exigidos, e por isso entram aqui: montar o
@@ -91,8 +91,12 @@ def _assento(s, *, especie="NASCIMENTO") -> int:
     feito = RC.lavrar_assento(
         con, especie=especie, nome="FULANO DE TAL", sv=SV, agora=AGORA,
         data_extenso="sete de setembro de dois mil e vinte e seis",
-        data_fato="2020-01-15", usuario="JEAN", pessoas=PESSOAS,
-        termo_dados={"local_fato_nome": "Hospital Municipal"})
+        data_fato="2020-01-15", usuario="MARIO", pessoas=PESSOAS,
+        termo_dados={"local_fato_nome": "Hospital Municipal"},
+        # relato #130: o que a CRC e o SIRC exigem entra na lavratura
+        ibge=({"local_nascimento": 1} if especie == "NASCIMENTO" else None),
+        marcas_do_obito=({"obito_possui_bens": "NAO"}
+                         if especie == "OBITO" else None))
     con.commit()
     con.close()
     return feito["assento_id"]
@@ -102,7 +106,7 @@ def _modelo(s, *, especie="NASCIMENTO", nome="Comunicação",
             corpo="Certifico que {nome}.") -> int:
     con = _con(s)
     ident = MOD.criar(con, especie=especie, nome=nome, corpo=corpo,
-                      quem="JEAN", agora=AGORA)
+                      quem="MARIO", agora=AGORA)
     con.commit()
     con.close()
     return ident

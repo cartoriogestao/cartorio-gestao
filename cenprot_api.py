@@ -98,6 +98,9 @@ CAMINHO: dict[str, str] = {
     "pedidos_consulta": "/pedidos/consulta",
     "pedidos_protocolar": "/pedidos/protocolar",
     "endereco_consultar": "/base-endereco",
+    # O MESMO CAMINHO COM OUTRO MÉTODO: `POST` consulta (o documento vai na
+    # query), `PUT` cadastra. Medido no `swagger.yaml` 2.1.0 em 15/10/2026.
+    "endereco_cadastrar": "/base-endereco",
     "custas_arquivo": "/custas/arquivo",
 }
 
@@ -109,7 +112,7 @@ CAMINHOS_QUE_ESCREVEM: frozenset[str] = frozenset({
     "certidao_processar", "certidao_processar_legado",
     "cancelar_protesto", "renegociacoes_processar",
     "decisao_judicial_processar", "pedidos_protocolar",
-    "endereco_consultar", "custas_arquivo",
+    "endereco_consultar", "endereco_cadastrar", "custas_arquivo",
 })
 
 # QUANTOS PEDIDOS CABEM NUM PROTOCOLAR, e o número é do contrato: «Limite
@@ -159,7 +162,10 @@ class CenprotRecusou(CenprotError):
 def base_do_ambiente(ambiente: Any) -> str:
     """A base daquele ambiente. Só calcula."""
     nome = str(ambiente or "").strip().upper()
-    return BASE_DO_AMBIENTE.get(nome, BASE_DO_AMBIENTE[CRED.HOMOLOGACAO])
+    # O PADRÃO É PRODUÇÃO DESDE 14/10/2026 — ordem do oficial: «agora é tudo
+    # produção». Até 13/10 o vazio ou desconhecido caía na homologação, cuja
+    # base continua declarada acima para o teste automatizado que a pede.
+    return BASE_DO_AMBIENTE.get(nome, BASE_DO_AMBIENTE[CRED.PRODUCAO])
 
 
 def _partes(base: str) -> tuple[str, int, str]:
@@ -240,10 +246,10 @@ def _pedir_token(ambiente: str, *, pasta=None) -> str:
     return token
 
 
-def token(ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None,
+def token(ambiente: Any = CRED.PRODUCAO, *, pasta=None,
           renovar: bool = False) -> str:
     """O token deste processo, pedindo um novo quando preciso. Só LÊ disco."""
-    qual = str(ambiente or "").strip().upper() or CRED.HOMOLOGACAO
+    qual = str(ambiente or "").strip().upper() or CRED.PRODUCAO
     agora = time.time()
     with _TRAVA:
         guardado = _TOKENS.get(qual)
@@ -355,7 +361,7 @@ def _com_renovacao(ambiente: str, chamar) -> dict:
 
 def _ambiente_ok(qual: Any) -> str:
     """O ambiente em maiúsculas, com o padrão da casa. Só calcula."""
-    return str(qual or "").strip().upper() or CRED.HOMOLOGACAO
+    return str(qual or "").strip().upper() or CRED.PRODUCAO
 
 
 def _listar(ambiente: str, chave: str, o_que: str, *, parametros: dict | None = None,
@@ -398,7 +404,7 @@ LISTAS_QUE_RESPONDEM_404_QUANDO_VAZIAS = frozenset({
 # «só as de setembro» e receberia o período inteiro, sem erro em lugar nenhum.
 # É a lição da «mesma palavra em dois lugares», agora dentro de uma API só.
 
-def anuencias(ambiente: Any = CRED.HOMOLOGACAO, *, pagina: int | None = None,
+def anuencias(ambiente: Any = CRED.PRODUCAO, *, pagina: int | None = None,
               inicio: str = "", fim: str = "", pasta=None) -> Any:
     """As anuências pendentes. SÓ LÊ — não aprova nem recusa nada.
 
@@ -416,7 +422,7 @@ def anuencias(ambiente: Any = CRED.HOMOLOGACAO, *, pagina: int | None = None,
                                "data_fim": fim})
 
 
-def certidoes(ambiente: Any = CRED.HOMOLOGACAO, *, pagina: int | None = None,
+def certidoes(ambiente: Any = CRED.PRODUCAO, *, pagina: int | None = None,
               inicio: str = "", fim: str = "", pasta=None) -> Any:
     """Os pedidos de certidão pendentes. SÓ LÊ."""
     return _listar(ambiente, "certidoes", "baixar os pedidos de certidão",
@@ -425,7 +431,7 @@ def certidoes(ambiente: Any = CRED.HOMOLOGACAO, *, pagina: int | None = None,
                                "data_fim": fim})
 
 
-def pedidos_de_cancelamento(ambiente: Any = CRED.HOMOLOGACAO, *,
+def pedidos_de_cancelamento(ambiente: Any = CRED.PRODUCAO, *,
                             inicio: str, fim: str, pasta=None) -> Any:
     """Os pedidos de cancelamento do período. SÓ LÊ.
 
@@ -456,7 +462,7 @@ def pedidos_de_cancelamento(ambiente: Any = CRED.HOMOLOGACAO, *,
 #   `page`/`per_page` da decisão judicial. Escrever os nomes errados não
 #   estoura: a Central ignora o que não conhece, e a tela pediria «só as de
 #   setembro» recebendo o período inteiro, sem erro em lugar nenhum.
-def renegociacoes(ambiente: Any = CRED.HOMOLOGACAO, *,
+def renegociacoes(ambiente: Any = CRED.PRODUCAO, *,
                   pagina: int | None = None, inicio: str = "", fim: str = "",
                   pasta=None) -> Any:
     """As propostas de renegociação de dívida. SÓ LÊ — não aceita nem recusa.
@@ -483,7 +489,7 @@ CAMPOS_OBRIGATORIOS_DA_RENEGOCIACAO: tuple[tuple[str, str], ...] = (
 )
 
 
-def processar_renegociacoes(corpos: Any, ambiente: Any = CRED.HOMOLOGACAO, *,
+def processar_renegociacoes(corpos: Any, ambiente: Any = CRED.PRODUCAO, *,
                             pasta=None) -> Any:
     """Atribui a custa de cancelamento a um lote de renegociações. **ESCREVE.**
 
@@ -517,7 +523,7 @@ def processar_renegociacoes(corpos: Any, ambiente: Any = CRED.HOMOLOGACAO, *,
                      "enviar as custas das renegociações", pasta=pasta)
 
 
-def decisoes_judiciais(ambiente: Any = CRED.HOMOLOGACAO, *,
+def decisoes_judiciais(ambiente: Any = CRED.PRODUCAO, *,
                        pagina: int | None = None, por_pagina: int | None = None,
                        chave: str = "", de: str = "", ate: str = "",
                        pasta=None) -> Any:
@@ -536,7 +542,7 @@ def decisoes_judiciais(ambiente: Any = CRED.HOMOLOGACAO, *,
                                "dt_ocorrencia_ate": ate})
 
 
-def pedidos_de_protesto(ambiente=CRED.HOMOLOGACAO, *, numero: str = "",
+def pedidos_de_protesto(ambiente=CRED.PRODUCAO, *, numero: str = "",
                         data: str = "", pasta=None):
     """A REMESSA que chega pela CENPROT — o passo 1 do roteiro. SÓ LÊ.
 
@@ -571,7 +577,7 @@ def pedidos_de_protesto(ambiente=CRED.HOMOLOGACAO, *, numero: str = "",
 # casa, a função volta em quatro linhas, com a tela junto.
 
 
-def arquivos_da_anuencia(cd_anuencia: Any, ambiente: Any = CRED.HOMOLOGACAO,
+def arquivos_da_anuencia(cd_anuencia: Any, ambiente: Any = CRED.PRODUCAO,
                          *, pasta=None) -> Any:
     """Os PDFs da anuência, em base64. SÓ LÊ.
 
@@ -600,7 +606,8 @@ def arquivos_da_anuencia(cd_anuencia: Any, ambiente: Any = CRED.HOMOLOGACAO,
 
 
 def _escrever(ambiente: str, chave: str, corpo: Any, o_que: str, *,
-              caminho_pronto: str | None = None, pasta=None) -> Any:
+              caminho_pronto: str | None = None, pasta=None,
+              metodo: str = "POST") -> Any:
     if chave not in CAMINHOS_QUE_ESCREVEM:
         raise CenprotError(
             f"«{chave}» não está declarado como caminho que escreve na "
@@ -608,7 +615,7 @@ def _escrever(ambiente: str, chave: str, corpo: Any, o_que: str, *,
     caminho = caminho_pronto or CAMINHO[chave]
     dados = json.dumps(corpo, ensure_ascii=False).encode("utf-8")
     r = _com_renovacao(ambiente, lambda: _bater(
-        ambiente, "POST", caminho, corpo=dados,
+        ambiente, metodo, caminho, corpo=dados,
         cabecalhos={"Content-Type": "application/json"}, pasta=pasta))
     return _resposta_ou_erro(r, o_que)
 
@@ -663,7 +670,7 @@ def _falta(item: dict, campo: str) -> bool:
 
 
 def processar_anuencia(decisoes: list[dict],
-                       ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None) -> Any:
+                       ambiente: Any = CRED.PRODUCAO, *, pasta=None) -> Any:
     """Aprova ou recusa anuências. **ESCREVE NA CENTRAL.**
 
     Cada item tem de trazer `ic_aprovado`; com `True` o `vl_custas` é
@@ -697,7 +704,7 @@ def processar_anuencia(decisoes: list[dict],
 
 
 def processar_certidao(pedidos: list[dict],
-                       ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None) -> Any:
+                       ambiente: Any = CRED.PRODUCAO, *, pasta=None) -> Any:
     """Manda o orçamento — e a certidão, quando pronta. **ESCREVE NA CENTRAL.**
 
     **O CONTRATO DECLARA TRÊS OBRIGATÓRIOS, E EU CONFERIA UM.** O schema traz
@@ -729,7 +736,7 @@ def processar_certidao(pedidos: list[dict],
                      "enviar os pedidos de certidão", pasta=pasta)
 
 
-def cancelar_protesto(cd_pedido: Any, ambiente: Any = CRED.HOMOLOGACAO, *,
+def cancelar_protesto(cd_pedido: Any, ambiente: Any = CRED.PRODUCAO, *,
                       certidao_b64: str = "", pasta=None) -> Any:
     """Informa à Central o cancelamento. **ESCREVE NA CENTRAL.**
 
@@ -763,7 +770,7 @@ CAMPOS_DO_PROTOCOLAR: tuple[tuple[str, str], ...] = (
 )
 
 
-def protocolar_pedidos(itens: list[dict], ambiente=CRED.HOMOLOGACAO, *,
+def protocolar_pedidos(itens: list[dict], ambiente=CRED.PRODUCAO, *,
                        pasta=None):
     """Devolve à Central o protocolo desta casa. **ESCREVE NA CENTRAL.**
 
@@ -813,7 +820,7 @@ def protocolar_pedidos(itens: list[dict], ambiente=CRED.HOMOLOGACAO, *,
 
 
 def enviar_custas(nome_arquivo: str, arquivo_b64: str,
-                  ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None) -> Any:
+                  ambiente: Any = CRED.PRODUCAO, *, pasta=None) -> Any:
     """Manda o arquivo de custas em base64. **ESCREVE NA CENTRAL.**
 
     O formato do arquivo é o que `protesto_cenprot` já monta — medido no
@@ -840,16 +847,98 @@ def enviar_custas(nome_arquivo: str, arquivo_b64: str,
                      "enviar o arquivo de custas", pasta=pasta)
 
 
-def diagnostico(ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None) -> dict:
+# ------------------------------------------- a base nacional de endereços
+#
+# PEDIDO DO OFICIAL, 15/10/2026: «construa o cadastrar endereco do devedor se
+# tivermos algum beneficio em consultar esse banco de dados nacional». Tem: a
+# consulta devolve os endereços que outros cartórios e a própria CENPROT já
+# cadastraram para o documento, COM TELEFONE, CELULAR E E-MAIL — o que permite
+# tentar outro endereço antes do edital, e o contato é justamente o que a
+# Intimação Digital (Resolve) precisa.
+
+# O QUE O `PUT` EXIGE, na ordem do contrato. Os doze são `required`.
+CAMPOS_DO_CADASTRO_DE_ENDERECO: tuple[str, ...] = (
+    "nm_usuario", "nm_nr_cpfcnpj", "nm_email", "nm_nr_telefone",
+    "nm_nr_celular", "nm_nr_cep", "nm_endereco", "nm_nr_endereco",
+    "nm_complemento", "nm_bairro", "nm_cidade", "sg_uf")
+
+# OS QUE A CASA NÃO PODE MANDAR VAZIOS: sem eles o cadastro não serve para
+# achar ninguém. E-mail, telefone, celular, complemento e bairro esta casa
+# quase nunca tem — eles vão PRESENTES E VAZIOS, porque o contrato exige a
+# chave. **A CONFERIR na homologação** se a Central aceita o vazio.
+CAMPOS_QUE_NAO_PODEM_IR_VAZIOS: tuple[tuple[str, str], ...] = (
+    ("nm_usuario", "o nome do devedor"),
+    ("nm_nr_cpfcnpj", "o CPF ou CNPJ"),
+    ("nm_nr_cep", "o CEP"),
+    ("nm_endereco", "o endereço"),
+    ("nm_cidade", "a cidade"),
+    ("sg_uf", "a UF"),
+)
+
+
+def consultar_endereco(documento: Any, ambiente: Any = CRED.PRODUCAO, *,
+                       pasta=None) -> list[dict]:
+    """Os endereços da base nacional para um CPF/CNPJ. Só LÊ na Central.
+
+    É `POST`, com o documento na QUERY e corpo nenhum — está assim no
+    contrato. **404 é «ninguém com esse documento», e não erro**: devolve
+    lista vazia, como as listas da casa.
+    """
+    so = "".join(c for c in str(documento or "") if c.isdigit())
+    if len(so) not in (11, 14):
+        raise CenprotError(
+            "O documento do devedor tem de ser um CPF (11 dígitos) ou um CNPJ "
+            "(14) para consultar a base de endereços da CENPROT.")
+    qual = _ambiente_ok(ambiente)
+    caminho = (CAMINHO["endereco_consultar"] + "?"
+               + urllib.parse.urlencode({"documento": so}))
+    r = _com_renovacao(qual, lambda: _bater(qual, "POST", caminho, pasta=pasta))
+    if r["status"] == 404:
+        return []
+    corpo = _resposta_ou_erro(r, "consultar a base de endereços")
+    lista = corpo.get("usuario") if isinstance(corpo, dict) else None
+    return [dict(x) for x in (lista or []) if isinstance(x, dict)]
+
+
+def cadastrar_endereco(dados: dict, ambiente: Any = CRED.PRODUCAO, *,
+                       pasta=None) -> Any:
+    """Cadastra o endereço de um devedor na base nacional. **ESCREVE NA
+    CENTRAL.** O contrato diz que só INSERE — não corrige o que já existe.
+
+    Confere antes da rede: os doze campos presentes, e os seis que não podem
+    ir vazios preenchidos. A Central responde 400 com uma frase curta («UF
+    inválida»); a recusa aqui diz qual campo faltou.
+    """
+    faltam = [rotulo for campo, rotulo in CAMPOS_QUE_NAO_PODEM_IR_VAZIOS
+              if not str(dados.get(campo) or "").strip()]
+    if faltam:
+        raise CenprotError(
+            "Para cadastrar o endereço na base da CENPROT falta "
+            + ", ".join(faltam) + ".")
+    corpo = {c: str(dados.get(c) or "").strip()
+             for c in CAMPOS_DO_CADASTRO_DE_ENDERECO}
+    if len(corpo["sg_uf"]) != 2:
+        raise CenprotError("A UF tem de ter duas letras.")
+    return _escrever(_ambiente_ok(ambiente), "endereco_cadastrar", corpo,
+                     "cadastrar o endereço na base", pasta=pasta,
+                     metodo="PUT")
+
+
+def diagnostico(ambiente: Any = CRED.PRODUCAO, *, pasta=None) -> dict:
     """Tenta autenticar e diz o que aconteceu. **Não baixa nem envia nada.**
 
     É o que a tela chama no botão «testar a conexão»: sem isto, a primeira
     notícia de credencial errada seria no meio de um download.
     """
-    qual = str(ambiente or "").strip().upper() or CRED.HOMOLOGACAO
+    qual = str(ambiente or "").strip().upper() or CRED.PRODUCAO
     if not CRED.tem(CRED.CENPROT, qual, pasta):
         return {"ok": False, "ambiente": qual,
-                "motivo": "A credencial da CENPROT ainda não foi informada."}
+                "motivo": (
+                    "A credencial da CENPROT ainda não foi informada"
+                    + (" para a PRODUÇÃO — é a única que o sistema usa desde "
+                       "14/10/2026. Informe-a em Administrativo → "
+                       "Configurações → Centrais." if qual == CRED.PRODUCAO
+                       else "."))}
     try:
         esquecer_token(qual)
         token(qual, pasta=pasta)

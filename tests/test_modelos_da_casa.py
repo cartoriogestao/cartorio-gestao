@@ -42,9 +42,9 @@ def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -137,7 +137,15 @@ def test_o_catalogo_lista_os_papeis_das_atribuicoes():
     # sem os meus três o catálogo tinha **31** e aqui estava escrito 30. Quem
     # pôs o 31 não é desta passada e eu não o atribuo: o número de agora é o que
     # a régua conta hoje, e quem acrescentar papel a este catálogo mede de novo.
-    assert len(MOD.CATALOGO) == 36
+    #
+    # **EM 14/10/2026 PASSOU DE 36 PARA 38**: os miolos da certidão DOMINIAL e
+    # da VINTENÁRIA, que a 3.6.233 pôs no catálogo em 28/09 e que se perderam
+    # nos pacotes seguintes — reconstituídos agora, com o mesmo nome de chave.
+    #
+    # **EM 15/10/2026 PASSOU DE 38 PARA 41**: os três textos da certidão das
+    # Notas (inteiro teor, positiva e negativa), pedido do oficial — sem
+    # precedente de texto no E-Ofício, e por isso no catálogo, que é dele.
+    assert len(MOD.CATALOGO) == 41
     atribuicoes = {c["atribuicao"] for c in MOD.CATALOGO}
     # O RCPJ e o RTD entraram com as certidões deles — até a 3.6.72 eles não
     # tinham um único papel no catálogo, e o submódulo nascia só com o nível
@@ -274,7 +282,7 @@ def test_o_ajuste_da_casa_vence_o_padrao(casa):
     con = _con(casa)
     with con:
         MOD.salvar(con, "CAIXA_RECIBO", corpo="RECIBO DA CASA",
-                   quem="jean", agora="2026-08-29T09:00")
+                   quem="mario", agora="2026-08-29T09:00")
     assert MOD.corpo_de(con, "CAIXA_RECIBO") == "RECIBO DA CASA"
     assert MOD.esta_ajustado(con, "CAIXA_RECIBO")
 
@@ -284,7 +292,7 @@ def test_restaurar_apaga_o_ajuste_e_devolve_o_padrao(casa):
     ninguém tem mais guardado."""
     con = _con(casa)
     with con:
-        MOD.salvar(con, "CAIXA_RECIBO", corpo="X", quem="jean",
+        MOD.salvar(con, "CAIXA_RECIBO", corpo="X", quem="mario",
                    agora="2026-08-29T09:00")
         assert MOD.restaurar(con, "CAIXA_RECIBO") is True
     assert MOD.corpo_de(con, "CAIXA_RECIBO") == MOD.padrao_de("CAIXA_RECIBO")
@@ -296,8 +304,8 @@ def test_gravar_vazio_volta_ao_padrao_e_nao_grava_folha_em_branco(casa):
     branco assinada é pior que modelo feio."""
     con = _con(casa)
     with con:
-        MOD.salvar(con, "CAIXA_RECIBO", corpo="X", quem="jean", agora="a")
-        MOD.salvar(con, "CAIXA_RECIBO", corpo="   ", quem="jean", agora="b")
+        MOD.salvar(con, "CAIXA_RECIBO", corpo="X", quem="mario", agora="a")
+        MOD.salvar(con, "CAIXA_RECIBO", corpo="   ", quem="mario", agora="b")
     assert MOD.corpo_de(con, "CAIXA_RECIBO") == MOD.padrao_de("CAIXA_RECIBO")
 
 
@@ -305,8 +313,8 @@ def test_o_ajuste_e_um_por_papel(casa):
     """`UNIQUE(chave)`: gravar de novo troca o texto, não cria um segundo."""
     con = _con(casa)
     with con:
-        MOD.salvar(con, "CAIXA_RECIBO", corpo="A", quem="jean", agora="a")
-        MOD.salvar(con, "CAIXA_RECIBO", corpo="B", quem="jean", agora="b")
+        MOD.salvar(con, "CAIXA_RECIBO", corpo="A", quem="mario", agora="a")
+        MOD.salvar(con, "CAIXA_RECIBO", corpo="B", quem="mario", agora="b")
     assert con.execute("SELECT COUNT(*) FROM mo_modelos").fetchone()[0] == 1
     assert MOD.corpo_de(con, "CAIXA_RECIBO") == "B"
 
@@ -344,7 +352,7 @@ def test_o_ajuste_novo_vence_o_legado(casa):
             "INSERT INTO ri_modelos (nome, tipo, corpo, formato, ativo,"
             " versao, atualizado_em)"
             " VALUES ('velha','CERTIDAO','ANTIGA','html',1,1,'x')")
-        MOD.salvar(con, "RI_CERTIDAO", corpo="NOVA", quem="jean", agora="a")
+        MOD.salvar(con, "RI_CERTIDAO", corpo="NOVA", quem="mario", agora="a")
     assert MOD.corpo_de(con, "RI_CERTIDAO") == "NOVA"
 
 

@@ -27,6 +27,29 @@
   <form method="post" class="grid2" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% for c in modelo.campos %}
+    {% if c.tipo == 'correcoes' %}
+    {# Relato #127 (15/10/2026): uma linha por correção, mais de uma na mesma averbação. #}
+    {% set _feitas = valores.get(c.nome) or [] %}
+    <div style="grid-column:1/-1">
+      <strong>{{ c.rotulo }}</strong>
+      {% if c.ajuda %}<small>({{ c.ajuda }})</small>{% endif %}
+      <datalist id="elementos-do-assento">
+        {% for s in c.sugestoes %}<option value="{{ s }}">{% endfor %}
+      </datalist>
+      <table class="table">
+        <tr><th>#</th><th>Elemento do assento</th><th>Onde se lê (como consta)</th><th>Leia-se (o correto)</th></tr>
+        {% for i in range(1, c.linhas + 1) %}
+        {% set _l = _feitas[i - 1] if _feitas|length >= i else {} %}
+        <tr>
+          <td>{{ i }}</td>
+          <td><input name="correcao_campo_{{ i }}" list="elementos-do-assento" value="{{ _l.get('campo', '') }}" placeholder="ex.: O NOME DA GENITORA"></td>
+          <td><input name="correcao_errado_{{ i }}" value="{{ _l.get('errado', '') }}"></td>
+          <td><input name="correcao_correto_{{ i }}" value="{{ _l.get('correto', '') }}"></td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% else %}
     <label {% if c.tipo == 'textarea' %}style="grid-column:1/-1"{% endif %}>{{ c.rotulo }}
       {% if c.ajuda %}<small>({{ c.ajuda }})</small>{% endif %}
       {% if c.tipo == 'textarea' %}
@@ -41,19 +64,23 @@
       <input type="{{ c.tipo }}" name="{{ c.nome }}" value="{{ valores.get(c.nome, '') }}">
       {% endif %}
     </label>
+    {% endif %}
     {% endfor %}
+    {% if previa %}
+    {# Relato #127 (15/10/2026): o texto gerado se edita AQUI, antes de levar; em
+       «Levar» vai o que estiver na caixa, e não o texto remontado. #}
+    <label style="grid-column:1/-1">Texto gerado — você pode ajustar antes de levar
+      <small>(«Gerar texto» de novo refaz o texto a partir do formulário e desfaz os ajustes feitos aqui)</small>
+      <textarea name="teor" id="teor-do-modelo" rows="10" style="white-space:pre-wrap">{{ previa.teor }}</textarea>
+    </label>
+    <label style="grid-column:1/-1">Fundamento do ato
+      <input name="fundamento_ato" value="{{ previa.fundamento }}">
+    </label>
+    {% endif %}
     <div class="actions" style="grid-column:1/-1">
       <button class="button" name="acao" value="gerar">Gerar texto</button>
       {% if previa %}<button class="button" name="acao" value="levar">Levar para a averbação</button>{% endif %}
     </div>
   </form>
 </section>
-
-{% if previa %}
-<section class="panel">
-  <div class="panel-head"><span>Texto gerado (prévia)</span></div>
-  <div style="padding:14px;white-space:pre-wrap">{{ previa.teor }}</div>
-  <div style="padding:0 14px 14px"><small>Fundamento do ato: {{ previa.fundamento }}</small></div>
-</section>
-{% endif %}
 {% endblock %}

@@ -20,6 +20,7 @@ from pathlib import Path
 
 from flask import abort, flash, jsonify, redirect, render_template, request, send_file, url_for
 
+import ccn_consulta as CQ
 import ccn_envio as CE
 
 #: Quem pode falar com a ponte: o próprio servidor.
@@ -138,6 +139,75 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         flash(f"Lote {lote_id} descartado. As pessoas dele voltam a estar pendentes.", "success")
         return redirect(url_for("notas_ccn"))
 
+    # ------------------------------------------------- a consulta (exportação)
+    # «crie a integracao do ccn para receber e consultar na base nacional» —
+    # o oficial, 15/10/2026. O domínio mora em `ccn_consulta.py`.
+
+    @app.route("/notas/ccn/consultas", methods=["GET", "POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def notas_ccn_consultas():
+        """Pedir uma consulta pelo CPF, e a lista das últimas. O POST ESCREVE o pedido."""
+        if request.method == "POST":
+            ambiente = request.form.get("ambiente") or "PRODUCAO"
+            try:
+                with db.transaction() as con:
+                    cid = CQ.pedir(con, request.form.get("cpf"), ambiente,
+                                   usuario=usuario_nome(), agora=_agora())
+            except CQ.ConsultaError as erro:
+                flash(str(erro), "danger")
+                return redirect(url_for("notas_ccn_consultas"))
+            audit("NT_CCN_CONSULTA_PEDIDA", "nt_ccn_consultas", cid, {"ambiente": ambiente})
+            return redirect(url_for("notas_ccn_consulta", consulta_id=cid))
+        with db.connect() as con:
+            lista = CQ.consultas(con)
+        return render_template("notas_ccn_consultas.html", consultas=lista,
+                               ambientes=CE.AMBIENTES)
+
+    @app.route("/notas/ccn/consultas/<int:consulta_id>")
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def notas_ccn_consulta(consulta_id: int):
+        """A consulta: o código para a extensão, as fichas e o que completaria o cartão. Só LÊ."""
+        try:
+            indice = max(0, int(request.args.get("ficha") or 0))
+        except ValueError:
+            indice = 0
+        with db.connect() as con:
+            c = CQ.carregar(con, consulta_id)
+            if c is None:
+                abort(404)
+            proposta = CQ.proposta(con, c, indice) if c["registros"] else None
+        fichas = [CQ.ficha_para_a_tela(f) for f in c["registros"]]
+        return render_template("notas_ccn_consulta.html", c=c, fichas=fichas, indice=indice,
+                               proposta=proposta, host=CE.AMBIENTES[c["ambiente"]],
+                               codigo=CQ.codigo_da_consulta(app.secret_key, consulta_id))
+
+    @app.route("/notas/ccn/consultas/<int:consulta_id>/aplicar", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def notas_ccn_consulta_aplicar(consulta_id: int):
+        """Completa o cartão de firma com o que ele não tem. ESCREVE — só campo vazio."""
+        try:
+            indice = max(0, int(request.form.get("ficha") or 0))
+        except ValueError:
+            indice = 0
+        try:
+            with db.transaction() as con:
+                c = CQ.carregar(con, consulta_id)
+                if c is None:
+                    abort(404)
+                r = CQ.aplicar(con, c, indice=indice, usuario=usuario_nome(), agora=_agora())
+        except CQ.ConsultaError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("notas_ccn_consulta", consulta_id=consulta_id, ficha=indice))
+        audit("NT_CCN_CONSULTA_APLICADA", "nt_cartoes", r["cartao_id"],
+              {"consulta": consulta_id, "campos": sorted(r["campos"])})
+        if r["campos"]:
+            flash(f"Cartão completado com {len(r['campos'])} campo(s) do CCN: "
+                  + ", ".join(CQ.ROTULOS[k] for k in r["campos"]) + ".", "success")
+        else:
+            flash("Nada entrou: os campos foram preenchidos por outra pessoa enquanto a tela "
+                  "estava aberta.", "warning")
+        return redirect(url_for("notas_ccn_consulta", consulta_id=consulta_id, ficha=indice))
+
     # ------------------------------------------------------------- a ponte
 
     def _so_desta_maquina():
@@ -156,6 +226,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         except CE.CcnError as erro:
             return jsonify({"ok": False, "erro": str(erro)}), 400
 
+    @app.route("/ccn/ponte/consulta")
+    def ccn_ponte_consulta():
+        """O CPF que o código da consulta abre, para a extensão consultar. Só LÊ."""
+        _so_desta_maquina()
+        codigo = request.args.get("codigo") or ""
+        try:
+            with db.connect() as con:
+                c = CQ.consulta_pelo_codigo(con, app.secret_key, codigo)
+            return jsonify({"ok": True, **CQ.para_a_extensao(c, codigo.strip())})
+        except CQ.ConsultaError as erro:
+            return jsonify({"ok": False, "erro": str(erro)}), 400
+
     @app.route("/ccn/ponte/resultado", methods=["POST"])
     def ccn_ponte_resultado():
         """O que o CCN respondeu, trazido pela extensão. ESCREVE.
@@ -167,6 +249,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         _so_desta_maquina()
         dados = request.get_json(silent=True) or {}
         codigo = str(dados.get("codigo") or "")
+        # A MESMA PORTA SERVE A CONSULTA (15/10/2026): o código dela começa com
+        # «C». Uma porta só, e não duas, porque é ela que está isenta do token
+        # de formulário — e isenção se dá ao menor número de rotas possível.
+        if CQ.e_codigo_de_consulta(codigo):
+            try:
+                with db.transaction() as con:
+                    c = CQ.consulta_pelo_codigo(con, app.secret_key, codigo)
+                    r = CQ.registrar_resposta(con, c, dados, _agora())
+            except CQ.ConsultaError as erro:
+                return jsonify({"ok": False, "erro": str(erro)}), 400
+            audit("NT_CCN_CONSULTA_RESPONDIDA", "nt_ccn_consultas", c["id"], r)
+            return jsonify({"ok": True, **r})
         try:
             with db.transaction() as con:
                 lote = CE.lote_pelo_codigo(con, app.secret_key, codigo)

@@ -87,11 +87,13 @@ def test_casamento_traz_nubentes_e_quem_lavrou(casa):
     aid = _casamento(casa)
     _registro(casa, aid, criado_por="Elisa Ficticia de Teste")
     html = _abrir(casa, f"/rcpn/{aid}/folha")
-    assert 'class="assinaturas-do-termo"' in html
+    # Desde a resposta do oficial ao relato #124 (15/10/2026) o casamento
+    # leva também testemunhas e juiz de paz, e as linhas saem em par.
+    assert 'class="assinaturas-do-termo em-par"' in html
     assert "JOAO ENSAIO CASAMENTO, Primeiro nubente" in html
     assert "MARIA ENSAIO CASAMENTO, Segundo nubente" in html
     assert "Elisa Ficticia de Teste, Escrevente Autorizada" in html
-    assert html.count('class="assinaturas-do-termo"') == 1
+    assert html.count('class="assinaturas-do-termo') == 1
 
 
 def test_odt_da_folha_traz_as_linhas(casa):

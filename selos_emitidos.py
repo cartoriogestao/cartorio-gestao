@@ -325,7 +325,7 @@ def _onde(*, inicio: Any = None, fim: Any = None, atribuicao: Any = None,
         #   | `DEBORA` · `Debora Exemplo Reis` · `Debora` | 83 · 54 · 1 |
         #   | `ELISA` · `Elisa Exemplo Lima` | 1.016 · 48 |
         #   | `CARLA` · `Carla Exemplo Lima` · `Carla` | 4.630 · 21 · 1 |
-        #   | `Mario Exemplo dos Santos` · `Jean Santos` | 9 · 8 |
+        #   | `Mario Exemplo dos Santos` · `Mario Santos` | 9 · 8 |
         #
         # São **19 valores distintos** para cerca de **treze pessoas** — o
         # agrupamento por usuário conta mais gente do que existe, e é honesto

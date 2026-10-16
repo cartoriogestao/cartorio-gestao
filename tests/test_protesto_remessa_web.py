@@ -145,12 +145,16 @@ def test_receber_xml_pela_tela_grava_origem_xml(s):
     dados = {"csrf_token": _token(html), "conteudo": conteudo,
              "nome_arquivo": "exemplo.xml", "apontar": "1",
              "origem_xml_ambiente": "HOMOLOGACAO"}
+    # 14/10/2026: a conferência manda PRODUCAO no campo escondido, e mesmo
+    # um formulário antigo com HOMOLOGACAO entra como produção — «agora é
+    # tudo produção». Até 13/10 o lote entrava marcado de homologação.
+    assert 'name="origem_xml_ambiente" value="PRODUCAO"' in html
     html = s["c"].post("/protesto/remessas/receber", data=dados,
                        follow_redirects=True).get_data(as_text=True)
     assert "Remessa recebida" in html
     con = _con(s)
     remessa = con.execute("SELECT * FROM pt_remessas").fetchone()
-    assert remessa["origem_xml_ambiente"] == "HOMOLOGACAO"
+    assert remessa["origem_xml_ambiente"] == "PRODUCAO"
     assert remessa["origem_xml_hash_lote"]
     assert remessa["origem_xml_chave"]
 

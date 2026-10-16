@@ -37,7 +37,7 @@ HOJE = date(2026, 10, 6)
 @pytest.fixture()
 def con(cg_casa):
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.create_user("debora", "DEBORA EXEMPLO REIS", SENHA, "USER")
     c = sqlite3.connect(cg_casa["banco"])
     c.row_factory = sqlite3.Row
@@ -220,13 +220,13 @@ def test_responsavel_definido_pelo_oficial_nao_e_sobrescrito(con):
     init_gestor_schema(con)
     debora = con.execute("SELECT id FROM users WHERE username='debora'").fetchone()[0]
     con.execute("""INSERT INTO ge_responsaveis (setor, user_id, origem, definido_em,
-                       definido_por) VALUES ('RCPN', ?, 'OFICIAL', ?, 'jean')""",
+                       definido_por) VALUES ('RCPN', ?, 'OFICIAL', ?, 'mario')""",
                 (debora, AGORA))
     GR.aplicar_distribuicao(con)
     resp = GR.inferir_responsaveis(con)
     assert resp["RCPN"]["titular"] == debora
-    jean = con.execute("SELECT id FROM users WHERE username='jean'").fetchone()[0]
-    assert resp["TI"]["titular"] == jean
+    mario = con.execute("SELECT id FROM users WHERE username='mario'").fetchone()[0]
+    assert resp["TI"]["titular"] == mario
 
 
 # ------------------------------------------------------ a distribuição de 06/10
@@ -261,13 +261,13 @@ def test_a_distribuicao_do_oficial_entra_como_ele_ditou(casa_inteira):
             _id(con, "carla"), _id(con, "beatriz")), setor
     for setor in ("RI_QUALIFICACAO", "NOTAS_QUALIFICACAO", "RCPJ_RTD_QUALIFICACAO"):
         assert (resp[setor]["titular"], resp[setor]["substituto"]) == (
-            _id(con, "beatriz"), _id(con, "jean")), setor
+            _id(con, "beatriz"), _id(con, "mario")), setor
     assert (resp["PROTESTO"]["titular"], resp["PROTESTO"]["substituto"]) == (
-        _id(con, "elisa"), _id(con, "jean"))
+        _id(con, "elisa"), _id(con, "mario"))
     assert (resp["GESTAO"]["titular"], resp["GESTAO"]["substituto"]) == (
-        _id(con, "jean"), None)
+        _id(con, "mario"), None)
     assert (resp["TI"]["titular"], resp["TI"]["substituto"]) == (
-        _id(con, "alberto"), _id(con, "jean"))
+        _id(con, "alberto"), _id(con, "mario"))
 
 
 # ------------------------------------------------------ a trava do cancelamento
@@ -526,7 +526,7 @@ def test_titulo_e_ato_final_vao_para_a_qualificacao(casa_inteira):
         """SELECT assigned_user_id, backup_user_id, sector FROM tasks
             WHERE source_ref='GESTOR:PRENOTACAO_VENCIDA:RI_QUALIFICACAO'""").fetchone()
     assert (t["assigned_user_id"], t["backup_user_id"]) == (
-        _id(con, "beatriz"), _id(con, "jean"))
+        _id(con, "beatriz"), _id(con, "mario"))
     assert t["sector"] == "Registro de Imóveis"
 
 
@@ -555,12 +555,12 @@ def test_tarefa_com_quem_saiu_do_setor_passa_adiante(casa_inteira, sirc_como_tar
     con = casa_inteira
     from gestor_schema import init_gestor_schema
     init_gestor_schema(con)
-    jean = _id(con, "jean")
+    mario = _id(con, "mario")
     con.execute(
         """INSERT INTO tasks (source_type, source_ref, title, priority, status,
                assigned_user_id, created_at, updated_at)
            VALUES ('GESTOR', 'GESTOR:SIRC:RCPN', 'x', 'MEDIA', 'ABERTA', ?, ?, ?)""",
-        (jean, AGORA, AGORA))
+        (mario, AGORA, AGORA))
     _assento(con, data_ato="2026-09-15")
     GR.rodar(con, HOJE)
     dono = con.execute("SELECT assigned_user_id FROM tasks WHERE source_ref='GESTOR:SIRC:RCPN'"

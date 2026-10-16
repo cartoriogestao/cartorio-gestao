@@ -44,9 +44,9 @@ def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -107,7 +107,7 @@ def test_guardar_rascunho_nao_cria_ato(casa):
         mid = _matricula(con, atos=(("R", 1, "o registro"),))
         RASC.salvar(con, mid, tipo="AV", teor="<p>a averbação nova</p>",
                     modelo_codigo=None, natureza_titulo=None, protocolo=None,
-                    prenotacao=None, data_ato="2026-08-28", quem="jean",
+                    prenotacao=None, data_ato="2026-08-28", quem="mario",
                     agora="2026-08-28T10:00")
     assert _con(casa).execute(
         "SELECT COUNT(*) c FROM ri_atos WHERE matricula_id=?",
@@ -136,11 +136,11 @@ def test_guardar_de_novo_atualiza_e_nao_duplica(casa):
         mid = _matricula(con)
         RASC.salvar(con, mid, tipo="AV", teor="primeira versão",
                     modelo_codigo=None, natureza_titulo=None, protocolo=None,
-                    prenotacao=None, data_ato=None, quem="jean",
+                    prenotacao=None, data_ato=None, quem="mario",
                     agora="2026-08-28T10:00")
         RASC.salvar(con, mid, tipo="R", teor="segunda versão",
                     modelo_codigo=None, natureza_titulo=None, protocolo=None,
-                    prenotacao=None, data_ato=None, quem="jean",
+                    prenotacao=None, data_ato=None, quem="mario",
                     agora="2026-08-28T11:00")
     linhas = _con(casa).execute(
         "SELECT * FROM ri_rascunhos WHERE matricula_id=?", (mid,)).fetchall()
@@ -162,7 +162,7 @@ def test_rascunho_em_branco_e_recusado(casa):
             with _con(casa) as c:
                 RASC.salvar(c, mid, tipo="AV", teor=vazio, modelo_codigo=None,
                             natureza_titulo=None, protocolo=None,
-                            prenotacao=None, data_ato=None, quem="jean",
+                            prenotacao=None, data_ato=None, quem="mario",
                             agora="2026-08-28T10:00")
         assert "Escreva o texto" in str(e.value)
 
@@ -175,7 +175,7 @@ def test_tipo_fora_dos_dois_e_recusado(casa):
         with _con(casa) as c:
             RASC.salvar(c, mid, tipo="X", teor="um texto", modelo_codigo=None,
                         natureza_titulo=None, protocolo=None, prenotacao=None,
-                        data_ato=None, quem="jean", agora="2026-08-28T10:00")
+                        data_ato=None, quem="mario", agora="2026-08-28T10:00")
     assert "não é tipo de ato" in str(e.value)
 
 
@@ -190,7 +190,7 @@ def test_a_visao_poe_o_rascunho_no_fim_com_o_numero_que_teria(casa):
         mid = _matricula(con, atos=(("R", 1, "o registro"), ("AV", 2, "a av")))
         RASC.salvar(con, mid, tipo="AV", teor="<p>a nova</p>",
                     modelo_codigo=None, natureza_titulo=None, protocolo=None,
-                    prenotacao=None, data_ato="2026-08-28", quem="jean",
+                    prenotacao=None, data_ato="2026-08-28", quem="mario",
                     agora="2026-08-28T10:00")
     visao = RASC.como_ficara(_con(casa), mid)
     assert [a["numero"] for a in visao["atos"]] == [1, 2]
@@ -226,7 +226,7 @@ def test_a_previsao_sai_marcada_como_nao_lavrada(casa):
         mid = _matricula(con)
         RASC.salvar(con, mid, tipo="AV", teor="<p>a averbação</p>",
                     modelo_codigo=None, natureza_titulo=None, protocolo=None,
-                    prenotacao=None, data_ato=None, quem="jean",
+                    prenotacao=None, data_ato=None, quem="mario",
                     agora="2026-08-28T10:00")
     html = casa["cliente"].get(
         f"/registro-imoveis/{mid}/como-ficara").get_data(as_text=True)
@@ -244,7 +244,7 @@ def test_a_tela_diz_que_o_numero_e_de_quem_lavrar_primeiro(casa):
         mid = _matricula(con)
         RASC.salvar(con, mid, tipo="AV", teor="x", modelo_codigo=None,
                     natureza_titulo=None, protocolo=None, prenotacao=None,
-                    data_ato=None, quem="jean", agora="2026-08-28T10:00")
+                    data_ato=None, quem="mario", agora="2026-08-28T10:00")
     junto = " ".join(casa["cliente"].get(
         f"/registro-imoveis/{mid}/como-ficara").get_data(as_text=True).split())
     assert "de quem lavrar primeiro" in junto
@@ -262,7 +262,7 @@ def test_apagar_rascunho_nao_deixa_rastro(casa):
         mid = _matricula(con)
         RASC.salvar(con, mid, tipo="AV", teor="x", modelo_codigo=None,
                     natureza_titulo=None, protocolo=None, prenotacao=None,
-                    data_ato=None, quem="jean", agora="2026-08-28T10:00")
+                    data_ato=None, quem="mario", agora="2026-08-28T10:00")
     con = _con(casa)
     with con:
         assert RASC.apagar(con, mid) is True
@@ -279,10 +279,10 @@ def test_a_lista_mostra_os_rascunhos_abertos(casa):
         b = _matricula(con, numero="2")
         RASC.salvar(con, a, tipo="AV", teor="o mais antigo", modelo_codigo=None,
                     natureza_titulo=None, protocolo=None, prenotacao=None,
-                    data_ato=None, quem="jean", agora="2026-08-27T10:00")
+                    data_ato=None, quem="mario", agora="2026-08-27T10:00")
         RASC.salvar(con, b, tipo="R", teor="o mais novo", modelo_codigo=None,
                     natureza_titulo=None, protocolo=None, prenotacao=None,
-                    data_ato=None, quem="jean", agora="2026-08-28T10:00")
+                    data_ato=None, quem="mario", agora="2026-08-28T10:00")
     lista = RASC.abertos(_con(casa))
     assert [r["matricula_numero"] for r in lista] == ["1", "2"]
     html = casa["cliente"].get("/registro-imoveis/rascunhos").get_data(as_text=True)

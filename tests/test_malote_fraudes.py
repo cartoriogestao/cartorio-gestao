@@ -51,15 +51,15 @@ def test_a_referencia_leva_codigo_documento_processo_e_trecho():
 
 def test_proposta_nao_entra_na_lista_sem_aprovacao(con):
     assert MF.carregar(con, [_p(), _p()]) == {"novas": 1, "repetidas": 1}
-    assert MF.aplicar(con, usuario="jean") == {"incluidos": 0, "ja_havia": 0}
+    assert MF.aplicar(con, usuario="mario") == {"incluidos": 0, "ja_havia": 0}
     assert con.execute("SELECT count(*) FROM fr_alertas").fetchone()[0] == 0
 
 
 def test_aprovada_vira_alerta_com_a_referencia_e_nao_repete(con):
     MF.carregar(con, [_p(), _p(nome="BELTRANA EXEMPLO", papel="VITIMA", documento="000.000.001-91")])
     ids = [r[0] for r in con.execute("SELECT id FROM mt_alertas_propostos")]
-    assert MF.revisar(con, ids, aprovar=True, revisor="jean") == 2
-    assert MF.aplicar(con, usuario="jean") == {"incluidos": 2, "ja_havia": 0}
+    assert MF.revisar(con, ids, aprovar=True, revisor="mario") == 2
+    assert MF.aplicar(con, usuario="mario") == {"incluidos": 2, "ja_havia": 0}
     a = con.execute("SELECT * FROM fr_alertas WHERE papel='VITIMA'").fetchone()
     assert a["documento"] == "00000000191" and a["origem"].startswith("Malote Digital nº 81020265958952")
     assert a["origem_data"] == "2026-10-13" and "Trecho:" in a["observacao"]
@@ -68,8 +68,8 @@ def test_aprovada_vira_alerta_com_a_referencia_e_nao_repete(con):
     # a mesma pessoa do mesmo aviso, proposta e aprovada de novo, não vira segundo alerta
     con.execute("DELETE FROM mt_alertas_propostos")
     MF.carregar(con, [_p()])
-    MF.revisar(con, [con.execute("SELECT id FROM mt_alertas_propostos").fetchone()[0]], aprovar=True, revisor="jean")
-    assert MF.aplicar(con, usuario="jean") == {"incluidos": 0, "ja_havia": 1}
+    MF.revisar(con, [con.execute("SELECT id FROM mt_alertas_propostos").fetchone()[0]], aprovar=True, revisor="mario")
+    assert MF.aplicar(con, usuario="mario") == {"incluidos": 0, "ja_havia": 1}
     assert con.execute("SELECT count(*) FROM fr_alertas").fetchone()[0] == 2
 
 
@@ -77,8 +77,8 @@ def test_descartar_exige_motivo(con):
     MF.carregar(con, [_p()])
     i = con.execute("SELECT id FROM mt_alertas_propostos").fetchone()[0]
     with pytest.raises(MF.PropostaError, match="motivo"):
-        MF.revisar(con, [i], aprovar=False, revisor="jean")
-    assert MF.revisar(con, [i], aprovar=False, revisor="jean", motivo="homônimo, não é a pessoa") == 1
+        MF.revisar(con, [i], aprovar=False, revisor="mario")
+    assert MF.revisar(con, [i], aprovar=False, revisor="mario", motivo="homônimo, não é a pessoa") == 1
 
 
 def test_papel_desconhecido_recusa(con):

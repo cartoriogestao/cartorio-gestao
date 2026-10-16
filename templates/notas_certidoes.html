@@ -1,0 +1,102 @@
+{#
+  A certidão das Notas — pedido do oficial, 15/10/2026: «precisa emitir
+  certidão do notas, com selo e etc, inclusive busca quando não disser o ato».
+
+  DOIS CAMINHOS, e o pedido diz qual: o ato identificado (livro e folha, pela
+  ficha do ato) dá a certidão de inteiro teor; o pedido que não diz o ato
+  vira BUSCA pela parte, e a certidão sai positiva ou negativa conforme o que
+  se achou. O GET não emite nada; emitir é o botão.
+#}
+{% extends 'base.html' %}
+{% from '_cobrar.html' import quadro %}
+{% from '_busca.html' import campo_busca %}
+{% block heading %}<h1>Certidões das Notas</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+{% if ato %}
+<section class="panel">
+  <div class="panel-head"><span>Certidão do ato identificado</span>
+    <small>{{ rotulo_tipo }} — Livro {{ ato.livro or '—' }}, folha {{ ato.folha or '—' }}, de {{ ato.data }}</small></div>
+  <form method="post" action="{{ url_for('notas_certidao_emitir') }}" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ato_id" value="{{ ato.id }}">
+    {% include '_notas_certidao_campos.html' %}
+    {{ campo_busca(busca_da_certidao('NOTAS', ato.data,
+         identificado='ato indicado pelo livro ' ~ (ato.livro or '—') ~ ', folha ' ~ (ato.folha or '—'))) }}
+    {{ quadro(receita, caixa, protocolos) }}
+    <div class="actions" style="grid-column:1/-1"><button class="button primary">Emitir certidão de inteiro teor</button></div>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Procurar quando o pedido não diz o ato</span>
+    <small>pela parte — nome ou CPF/CNPJ — e pelo período</small></div>
+  <form method="get" class="grid2" style="padding:14px">
+    <label>Nome <input name="nome" value="{{ nome }}" placeholder="JOSÉ DA SILVA">
+      <small>Acha sem acento e sem caixa.</small></label>
+    <label>CPF ou CNPJ <input name="documento" value="{{ documento }}"></label>
+    <label>Desde <input type="date" name="de" value="{{ de }}"></label>
+    <label>Até <input type="date" name="ate" value="{{ ate }}"></label>
+    <div class="actions"><button class="button">Procurar</button>
+      <a class="button" href="{{ url_for('notas_certidoes') }}">Limpar</a></div>
+  </form>
+</section>
+
+{% if buscou %}
+<section class="panel">
+  <div class="panel-head"><span>O que a busca achou</span><small>{{ periodo }}</small></div>
+  {% if not achados %}
+    <div class="notice" style="margin:14px"><strong>Nada consta</strong> em nome de
+      {{ nome or documento }}. A certidão que cabe é a <strong>NEGATIVA</strong>.</div>
+  {% else %}
+    <table class="table">
+      <thead><tr><th>Ato</th><th>Livro / folha</th><th>Data</th><th>Como figura</th><th>Achado por</th></tr></thead>
+      <tbody>
+      {% for x in achados %}
+        <tr><td><a href="{{ url_for('notas_ato', ato_id=x.ato_id) }}">{{ x.rotulo_tipo }}</a>
+              {% if x.natureza %}<div><small>{{ x.natureza }}</small></div>{% endif %}</td>
+            <td>{{ x.livro or '—' }} / {{ x.folha or '—' }}</td><td>{{ x.data }}</td>
+            <td>{{ x.qualificacao or 'parte' }}</td><td>{{ x.por }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+  <form method="post" action="{{ url_for('notas_certidao_emitir') }}" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="nome" value="{{ nome }}">
+    <input type="hidden" name="documento" value="{{ documento }}">
+    <input type="hidden" name="de" value="{{ de }}">
+    <input type="hidden" name="ate" value="{{ ate }}">
+    <label>Certidão <input value="{{ cabivel }}" readonly>
+      <small>Sai do que a busca achou: negativa sobre quem tem ato é recusada.</small></label>
+    {% include '_notas_certidao_campos.html' %}
+    {{ campo_busca(busca_da_certidao('NOTAS', de or None)) }}
+    {{ quadro(receita, caixa, protocolos) }}
+    <div class="actions" style="grid-column:1/-1"><button class="button primary">Emitir certidão {{ cabivel|lower }}</button></div>
+    <p style="grid-column:1/-1"><small>A busca <strong>roda de novo</strong> ao emitir, e o teor
+      <strong>congela</strong> na emissão.</small></p>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Certidões emitidas</span><small>{{ emitidas|length }}</small></div>
+  {% if not emitidas %}<p style="padding:14px"><small>Nenhuma certidão emitida ainda.</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Nº</th><th>Tipo</th><th>De quê</th><th>Emitida em</th><th>Selo</th></tr></thead>
+    <tbody>
+    {% for c in emitidas %}
+      <tr{% if c.cancelada %} style="opacity:.55"{% endif %}>
+        <td><a href="{{ url_for('notas_certidao', certidao_id=c.id) }}">{{ c.numero }}/{{ c.ano }}</a></td>
+        <td>{{ c.tipo }}{% if c.cancelada %} <small>(cancelada)</small>{% endif %}</td>
+        <td>{% if c.ato_id %}ato {{ c.ato_id }}{% else %}{{ c.nome or c.documento }}{% endif %}</td>
+        <td><small>{{ c.emitida_em }}</small></td><td><small>{{ c.selo or '—' }}</small></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

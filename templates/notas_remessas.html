@@ -46,8 +46,7 @@
     <p class="small">
       Chave de integração (<code>X-Api-Key</code>):
       {% for amb, tem in chaves_censec.items() %}
-        <strong>{{ 'homologação' if amb == 'HOMOLOGACAO' else 'produção' }}</strong>
-        {{ 'informada' if tem else 'falta' }}{{ ' · ' if not loop.last }}
+        <strong>{{ 'informada' if tem else 'falta informar' }}</strong>{{ ' · ' if not loop.last }}
       {% endfor %}
       &mdash; ela se gera dentro da CENSEC e se cadastra em Administrativo &rarr; Configurações.
     </p>
@@ -58,11 +57,11 @@
       <input type="hidden" name="ano" value="{{ ano }}">
       <input type="hidden" name="mes" value="{{ mes }}">
       <input type="hidden" name="quinzena" value="{{ quinzena }}">
-      <label>Ambiente
-        <select name="ambiente">
-          <option value="HOMOLOGACAO" selected>Homologação (teste &mdash; não marca nada)</option>
-          <option value="PRODUCAO">Produção (envio de verdade)</option>
-        </select></label>
+      {# A ESCOLHA DO AMBIENTE SAIU EM 15/10/2026: a produção da CENSEC está
+         configurada e o envio é sempre de verdade (centrais_cred.
+         CENTRAIS_SO_EM_PRODUCAO). A homologação continua em censec_api,
+         pedida pelo nome, para o teste automatizado. #}
+      <input type="hidden" name="ambiente" value="PRODUCAO">
       <button class="primary">Enviar os {{ aptos_total }} atos aptos desta quinzena</button>
     </form>
     <p class="small muted" style="margin-top:8px">

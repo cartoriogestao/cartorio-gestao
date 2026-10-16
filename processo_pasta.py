@@ -1,6 +1,6 @@
 """A PASTA DO PROCESSO — fase 1 do módulo único de Processos (12/10/2026).
 
-    «abri uma tarefa da vanessa, de averbacao de um divorcio, ainda que bem
+    «abri uma tarefa da escrevente, de averbacao de um divorcio, ainda que bem
      explicada a tarefa eh insuficiente. nao tem os docs necessarios e nao tem
      onde procurar. precisamos unir o modulo de tarefas e de expedientes para
      ser um unico modulo de Processos»               — o oficial, 12/10/2026
@@ -59,8 +59,11 @@ TIPOS: dict[str, dict[str, Any]] = {
     "ri_protocolos": {"nome": "Prenotação do RI", "endpoint": "ri_protocolo_ver",
                       "arg": "protocolo_id", "anexos": ("RI_PROTOCOLO",),
                       "ajuda": "o número da prenotação"},
+    # O PROTOCOLO GERAL PASSOU A GUARDAR DOCUMENTO — relato #135, 15/10/2026
+    # (documentos para qualificação, `protocolo_documentos`). O retirado com
+    # motivo sai da lista principal e aparece à parte (`documentos_retirados`).
     "cx_protocolos": {"nome": "Protocolo geral do balcão", "endpoint": "caixa_protocolo",
-                      "arg": "protocolo_id", "anexos": (),
+                      "arg": "protocolo_id", "anexos": ("PROTOCOLO",),
                       "ajuda": "o número 2026.10.31"},
     "nt_atos": {"nome": "Ato das Notas", "endpoint": "notas_ato", "arg": "ato_id",
                 "anexos": ("NT_ATO",), "ajuda": "o número interno do ato (o da tela do ato)"},
@@ -259,19 +262,45 @@ def etapa_do_ri(con: sqlite3.Connection, protocolo_id: int) -> str | None:
         return None
 
 
-def documentos(con: sqlite3.Connection, task_id: int) -> list[dict]:
-    """Todos os documentos da pasta, de onde quer que estejam guardados: os do
-    processo e os de cada peça vinculada. Só lê."""
+def _todos_os_documentos(con: sqlite3.Connection, task_id: int) -> list[dict]:
+    """Os documentos do processo e de cada peça vinculada, com a marca de
+    retirada quando houver. Só lê.
+
+    `SELECT *` lido pela descrição do cursor, e não pela posição: as colunas da
+    retirada (`retirado_em`, `retirado_motivo`, relato #135) nasceram depois, e
+    banco que ainda não as tem continua respondendo — sem elas, nada foi
+    retirado.
+    """
     grupos = [("TASK", int(task_id), "anexado ao processo")]
     for v in vinculos(con, task_id):
         for ent in TIPOS[v["tabela"]]["anexos"]:
             grupos.append((ent, v["item_id"], f"{v['nome'].lower()} {v['rotulo']}"))
     saida, vistos = [], set()
     for ent, eid, de_onde in grupos:
-        for a in con.execute("SELECT id, original_name, size_bytes, uploaded_at FROM attachments "
-                             "WHERE entity_type=? AND entity_id=? ORDER BY id", (ent, eid)):
-            if a[0] in vistos:
+        cur = con.execute("SELECT * FROM attachments "
+                          "WHERE entity_type=? AND entity_id=? ORDER BY id", (ent, eid))
+        nomes = [d[0] for d in cur.description]
+        for linha in cur:
+            a = dict(zip(nomes, linha))
+            if a["id"] in vistos:
                 continue
-            vistos.add(a[0])
-            saida.append({"id": a[0], "nome": a[1], "tamanho": a[2], "em": a[3], "de_onde": de_onde})
+            vistos.add(a["id"])
+            saida.append({"id": a["id"], "nome": a.get("original_name"),
+                          "tamanho": a.get("size_bytes"), "em": a.get("uploaded_at"),
+                          "de_onde": de_onde,
+                          "retirado_em": a.get("retirado_em"),
+                          "retirado_por": a.get("retirado_por"),
+                          "retirado_motivo": a.get("retirado_motivo")})
     return saida
+
+
+def documentos(con: sqlite3.Connection, task_id: int) -> list[dict]:
+    """Todos os documentos ATIVOS da pasta, de onde quer que estejam guardados:
+    os do processo e os de cada peça vinculada. Só lê."""
+    return [d for d in _todos_os_documentos(con, task_id) if not d["retirado_em"]]
+
+
+def documentos_retirados(con: sqlite3.Connection, task_id: int) -> list[dict]:
+    """Os que foram retirados da peça com motivo — à parte, e não escondidos:
+    documento que sustentou uma qualificação não some do rastro. Só lê."""
+    return [d for d in _todos_os_documentos(con, task_id) if d["retirado_em"]]

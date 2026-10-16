@@ -50,7 +50,7 @@
     </div>
     <details style="margin-top:12px">
       <summary>Ver o termo nesta tela</summary>
-      <iframe src="{{ url_for('rcpn_digitalizacao_arquivo', assento_id=assento.id, visualizar=1) }}"
+      <iframe src="{{ url_for('rcpn_digitalizacao_arquivo', assento_id=assento.id, visualizar=1) }}#navpanes=0&amp;pagemode=none"
               loading="lazy" title="Termo digitalizado"
               style="width:100%;height:80vh;border:1px solid #ccc;background:#fff;margin-top:8px"></iframe>
     </details>

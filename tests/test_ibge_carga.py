@@ -292,6 +292,9 @@ def _lavrar(con, especie="NASCIMENTO", **ibge):
                 {"papel": "PAI", "nome": "IGNORADO"},
                 {"papel": "DECLARANTE", "nome": "FULANO"},
             ],
+            # «deixou bens»: a CRC exige, e desde o relato #130 (14/10/2026)
+            # a lavratura também
+            "marcas_do_obito": {"obito_possui_bens": "NAO"},
         }
         ibge.setdefault("numero_do", "98765")
     elif especie in ("CASAMENTO", "CASAMENTO_RELIGIOSO"):
@@ -324,11 +327,14 @@ def test_o_nascimento_guarda_o_que_o_ibge_pede(civil):
 
 def test_o_que_nao_se_informa_fica_nulo(civil):
     """Preencher com «ignorado» por conta própria seria afirmar que se
-    perguntou. A remessa mostra o que falta."""
-    r = _lavrar(civil)
+    perguntou. A remessa mostra o que falta.
+
+    O LOCAL DO NASCIMENTO SAIU DESTE TESTE em 14/10/2026: o SIRC o exige, e
+    desde o relato #130 a lavratura do balcão recusa sem ele (ver
+    `test_relato_130_centrais_na_lavratura.py`). Os outros continuam nulos."""
+    r = _lavrar(civil, local_nascimento=1)
     linha = civil.execute("SELECT * FROM rc_assentos WHERE id=?",
                           (r["assento_id"],)).fetchone()
-    assert linha["ibge_local_nascimento"] is None
     assert linha["ibge_gemeo"] is None
     assert linha["dnv"] is None
 
@@ -373,8 +379,11 @@ def test_o_obito_guarda_o_numero_da_declaracao(civil):
 
 
 def test_completar_depois_funciona(civil):
-    """Assento tardio, óbito de pessoa achada: nem sempre se sabe na hora."""
-    r = _lavrar(civil)
+    """Assento tardio, óbito de pessoa achada: nem sempre se sabe na hora.
+
+    Lavra com o local (o SIRC o exige desde o relato #130, 14/10/2026) e o
+    completar de depois o troca — o que se guarda é o completar."""
+    r = _lavrar(civil, local_nascimento=1)
     RC.anotar_para_o_ibge(civil, r["assento_id"], local_nascimento=3,
                           gemeo=1, dnv="55555")
     linha = civil.execute("SELECT * FROM rc_assentos WHERE id=?",

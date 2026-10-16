@@ -183,7 +183,7 @@ def test_piso_capa_sem_frase_integrante():
     ]
     assert vivos == [], vivos
     t = CERT.textos_prontos(
-        numero=148, lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
         denominacao="CAIXA", natureza="Ata", paginas=1, serie="PJ_A")
     assert "integrante" not in t["fecho"].lower()
 
@@ -383,7 +383,7 @@ def test_primeira_folha_entra_na_capa_quando_ha_espaco():
     entra ali, em vez de abrir uma página só para ela.
     """
     textos = CERT.textos_prontos(
-        numero=148, lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
         denominacao="CAIXA", natureza="Ata", paginas=1, serie="PJ_A")
     primeira = _folha((50, 50, 50))  # cinza escuro — fácil de detectar
     capa, colou = CERT.montar_capa(textos, primeira_folha=primeira)
@@ -408,7 +408,7 @@ def test_primeira_folha_nao_colada_sem_espaco_suficiente():
     # automática) — muitas linhas é o que de fato consome altura da capa.
     texto_longo = "\n".join(["linha bem comprida de denominação"] * 40)
     textos = CERT.textos_prontos(
-        numero=148, lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
         denominacao=texto_longo, natureza=texto_longo, paginas=1, serie="PJ_A")
     _, colou = CERT.montar_capa(textos, primeira_folha=_folha())
     assert colou is False
@@ -422,7 +422,7 @@ def test_sem_emolumentos_nenhum_quadro_e_desenhado():
     desligada, nenhuma linha do quadro é desenhada.
     """
     textos = CERT.textos_prontos(
-        numero=148, lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
         denominacao="CAIXA", natureza="Ata", paginas=1, serie="PJ_A")
     com_quadro, _ = CERT.montar_capa(textos, com_emolumentos=True)
     sem_quadro, _ = CERT.montar_capa(textos, com_emolumentos=False)
@@ -461,7 +461,7 @@ def test_selo_real_aparece_na_capa_e_nao_a_moldura_vazia():
     verificação», «QR / autenticação»), mesmo com a certidão já selada.
     """
     textos = CERT.textos_prontos(
-        numero=148, lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
         denominacao="CAIXA", natureza="Ata", paginas=1, serie="PJ_A")
     sem_selo, _ = CERT.montar_capa(textos)
     com_selo, _ = CERT.montar_capa(textos, selo=_selo_de_teste())
@@ -491,14 +491,14 @@ def test_objeto_certificado_aparece_no_corpo_e_na_faixa():
     é o que a rota manda quando a certidão é, de fato, sobre averbações.
     """
     t_padrao = CERT.textos_prontos(
-        numero=148, lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
         denominacao="CAIXA", natureza="Ata de constituição", paginas=1,
         serie="PJ_A")
     assert "o registro de Ata de constituição" in t_padrao["corpo"]
     assert "o registro de Ata de constituição" in t_padrao["faixa"]
 
     t_averb = CERT.textos_prontos(
-        numero=148, lavrante_nome="JEAN", lavrante_funcao="Oficial",
+        numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
         denominacao="CAIXA", natureza="Ata de constituição", paginas=1,
         serie="PJ_A",
         objeto_certificado=("a(s) averbação(ões) nº 378 (Ata de Assembleia "

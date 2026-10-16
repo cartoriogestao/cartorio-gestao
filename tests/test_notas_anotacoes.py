@@ -306,6 +306,22 @@ def acao(s, ato_id, **dados):
         # A trava da CENSEC (09/10/2026) — ver `notas_pronto_para_a_censec`.
         from notas_pronto_para_a_censec import preparar
         preparar(s["banco"], ato_id)
+        # O ARQUIVAMENTO 13.30 É OBRIGATÓRIO na revogação, no substabelecimento
+        # e na renúncia desde 15/10/2026 (pedido do oficial): sem o documento
+        # anexado e as folhas confirmadas o lançamento é recusado — ver
+        # test_arquivamento_obrigatorio_procuracao.py.
+        import io
+        s["cliente"].post(
+            f"/notas/atos/{ato_id}/anexos",
+            data={"csrf_token": dados["csrf_token"],
+                  "descricao": "Documento arquivado",
+                  "arquivo": (io.BytesIO(b"\xff\xd8\xff\xe0 imagem"), "doc.jpg")},
+            content_type="multipart/form-data", follow_redirects=True)
+        s["cliente"].post(f"/notas/atos/{ato_id}",
+                          data={"csrf_token": dados["csrf_token"],
+                                "acao": "confirmar_arquivamento",
+                                "folhas_arquivamento": "1"},
+                          follow_redirects=True)
     return s["cliente"].post(f"/notas/atos/{ato_id}", data=dados,
                              follow_redirects=True)
 

@@ -143,3 +143,25 @@ def assinar_pdf(pdf: bytes, pin: str, *,
         raise AssinarComA3Error(
             str(dados.get("erro") or "assinatura A3 recusada"))
     return dados
+
+
+# ACRÉSCIMO DE 15/10/2026 (sessão do protesto): a assinatura pelo repositório
+# do Windows, a rota `/assinar/pdf-windows` do serviço local. Sem PIN aqui: a
+# janela do próprio token o pede ao titular, e por isso o prazo é longo.
+PRAZO_ASSINAR_PELO_WINDOWS_SEGUNDOS = 200.0
+
+
+def assinar_pdf_pelo_windows(pdf: bytes, *,
+                             thumbprint: str | None = None) -> dict[str, Any]:
+    """Assina o PDF pelo Windows, no serviço local. Devolve `cms_b64` etc."""
+    if not pdf:
+        raise AssinarComA3Error("PDF vazio — nada para assinar")
+    corpo: dict[str, Any] = {"pdf_b64": base64.b64encode(pdf).decode("ascii")}
+    if thumbprint:
+        corpo["thumbprint"] = thumbprint
+    dados = _post_json("/assinar/pdf-windows", corpo,
+                       prazo=PRAZO_ASSINAR_PELO_WINDOWS_SEGUNDOS)
+    if not dados.get("ok", True):
+        raise AssinarComA3Error(
+            str(dados.get("erro") or "assinatura pelo Windows recusada"))
+    return dados

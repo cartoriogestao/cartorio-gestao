@@ -50,9 +50,9 @@ def _token(html: str) -> str:
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     c = cg_casa["cliente"]
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -296,6 +296,6 @@ def test_ajuste_do_modelo_aparece_na_ficha(casa):
                    corpo=MOD.padrao_de("NOTAS_CARTAO_FICHA").replace(
                        "o titular do cartão",
                        "o titular do cartão — TEXTO DA CASA"),
-                   quem="jean", agora="2026-09-07T16:00")
+                   quem="mario", agora="2026-09-07T16:00")
     texto = _ficha(casa, cid)
     assert "TEXTO DA CASA" in texto

@@ -212,6 +212,10 @@ def test_cada_miolo_do_catalogo_e_o_texto_do_seu_tipo():
         "INTEIRO_TEOR": "{% if teor_odf %}{{ teor_odf }}{% endif %}",
         "ONUS": "NADA CONSTA",
         "PROPRIEDADE": "propriedade do imóvel acima descrito",
+        # A dominial e a vintenária — 28/09/2026, reconstituídas em 14/10/2026
+        # (ver `tests/test_ri_certidao_dominial_vintenaria.py`).
+        "DOMINIAL": "CADEIA DOMINIAL",
+        "VINTENARIA": "TRANSMISSÕES DE DOMÍNIO NO PERÍODO",
     }
     assert set(esperado) == set(RS.TIPOS_CERTIDAO), (
         "entrou tipo novo na tela sem miolo declarado neste teste")

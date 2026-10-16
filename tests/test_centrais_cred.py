@@ -74,13 +74,78 @@ def test_gravar_um_ambiente_nao_apaga_o_outro(tmp_path):
     assert CC.credencial(CC.CRA, CC.PRODUCAO, tmp_path) == ("valendo", "b")
 
 
-def test_o_padrao_e_a_homologacao(tmp_path):
-    """É onde se começa — e o engano para o lado seguro."""
+def test_o_padrao_das_centrais_do_protesto_e_a_producao(tmp_path):
+    """**CONTRATO MUDADO EM 14/10/2026** — ordem do oficial: «tire a opção de
+    funcionar na homologação, agora é tudo produção». Este teste se chamava
+    `test_o_padrao_e_a_homologacao` e cobrava que a CENPROT gravasse na
+    gaveta de homologação quando ninguém dissesse o ambiente; agora cobra a
+    produção. Sem central, a régua continua a de antes (é a da `onr_api`)."""
     assert CC._ambiente(None) == CC.HOMOLOGACAO
     assert CC._ambiente("sei la") == CC.HOMOLOGACAO
+    for central in (CC.CRA, CC.CENPROT, CC.RESOLVE):
+        assert CC._ambiente(None, central) == CC.PRODUCAO
+        assert CC._ambiente("sei la", central) == CC.PRODUCAO
     CC.gravar(CC.CENPROT, usuario="u", senha=BOA, pasta=tmp_path)
-    assert CC.tem(CC.CENPROT, CC.HOMOLOGACAO, tmp_path)
-    assert not CC.tem(CC.CENPROT, CC.PRODUCAO, tmp_path)
+    assert CC.tem(CC.CENPROT, CC.PRODUCAO, tmp_path)
+    assert CC.tem(CC.CENPROT, pasta=tmp_path)
+    assert not CC.tem(CC.CENPROT, CC.HOMOLOGACAO, tmp_path)
+
+
+def test_as_tres_do_protesto_tem_so_a_producao_na_tela(tmp_path):
+    """14/10/2026: a tabela de credenciais mostra uma linha só para a CRA, a
+    CENPROT e a Resolve — a de produção. A de homologação gravada antes NÃO
+    se apaga: continua no arquivo, e a linha diz que ela está fora de uso."""
+    # 15/10/2026: a CENSEC e o ONR entraram na mesma regra.
+    assert CC.CENTRAIS_SO_EM_PRODUCAO == {CC.CRA, CC.CENPROT, CC.RESOLVE,
+                                          CC.CENSEC, CC.ONR}
+    for central in CC.CENTRAIS_SO_EM_PRODUCAO:
+        assert CC.ambientes_de(central) == (CC.PRODUCAO,)
+    CC.gravar(CC.CRA, usuario="teste", senha="a", ambiente=CC.HOMOLOGACAO,
+              pasta=tmp_path)
+    linhas = [x for x in CC.situacao(tmp_path)
+              if x["central"] in CC.CENTRAIS_SO_EM_PRODUCAO]
+    assert {x["ambiente"] for x in linhas} == {CC.PRODUCAO}
+    cra = next(x for x in linhas if x["central"] == CC.CRA)
+    assert cra["informada"] is False
+    assert cra["fora_de_uso"] == [CC.HOMOLOGACAO]
+    # a gaveta antiga continua lá, intocada
+    assert CC.credencial(CC.CRA, CC.HOMOLOGACAO, tmp_path) == ("teste", "a")
+
+
+def test_o_uso_recusa_homologacao_e_testes_com_a_frase(tmp_path):
+    """Pendência, intimação ou lote gravados em outro ambiente não se mandam
+    à produção em silêncio: os códigos dos dois ambientes se repetem."""
+    for central in CC.CENTRAIS_SO_EM_PRODUCAO:
+        assert CC.ambiente_de_uso(central) == CC.PRODUCAO
+        assert CC.ambiente_de_uso(central, "producao") == CC.PRODUCAO
+        for outro in (CC.HOMOLOGACAO, CC.TESTES):
+            with pytest.raises(CC.CredencialError) as e:
+                CC.ambiente_de_uso(central, outro)
+            assert "só em produção" in str(e.value)
+            assert CC.VIROU_PRODUCAO_EM[central] in str(e.value)
+    assert CC.VIROU_PRODUCAO_EM[CC.CRA] == "14/10/2026"
+    assert CC.VIROU_PRODUCAO_EM[CC.CENSEC] == "15/10/2026"
+    # as outras Centrais seguem a régua de sempre (o ON-RCPN só tem homologação)
+    assert CC.ambiente_de_uso(CC.ONRCPN, CC.HOMOLOGACAO) == CC.HOMOLOGACAO
+
+
+def test_falta_a_de_producao_e_a_frase_diz_isso(tmp_path):
+    """Pedido do oficial em 14/10/2026: «se a credencial de produção não
+    existir, a tela deve dizer isso claramente»."""
+    with pytest.raises(CC.CredencialError) as e:
+        CC.credencial(CC.CRA, pasta=tmp_path)
+    assert "PRODUÇÃO" in str(e.value)
+    CC.gravar(CC.CRA, usuario="teste", senha="a", ambiente=CC.HOMOLOGACAO,
+              pasta=tmp_path)
+    with pytest.raises(CC.CredencialError) as e:
+        CC.credencial(CC.CRA, pasta=tmp_path)
+    assert "PRODUÇÃO" in str(e.value)
+    assert "homologação continua guardada" in str(e.value)
+    CC.gravar_token(CC.RESOLVE, ambiente=CC.HOMOLOGACAO, token="h",
+                    pasta=tmp_path)
+    with pytest.raises(CC.CredencialError) as e:
+        CC.token_guardado(CC.RESOLVE, pasta=tmp_path)
+    assert "PRODUÇÃO" in str(e.value) and "x-api-key" in str(e.value)
 
 
 def test_a_tela_sabe_sem_receber_o_segredo(tmp_path):
@@ -176,7 +241,10 @@ def test_a_pasta_de_dados_e_a_do_selador():
 def test_o_ambiente_se_valida_pelos_da_central_e_nao_pelos_dois_de_sempre(tmp_path):
     """**A mesma palavra, dois destinos** — a Resolve declara três ambientes, e
     o `TESTES` dela ia parar no lugar da homologação."""
-    assert CC.ambientes_de(CC.RESOLVE) == (CC.HOMOLOGACAO, CC.PRODUCAO)
+    # 14/10/2026: na TELA a Resolve tem só a produção (era homologação e
+    # produção) — mas a gaveta de testes pedida pelo nome continua sendo a
+    # dela, que é o que este teste guarda.
+    assert CC.ambientes_de(CC.RESOLVE) == (CC.PRODUCAO,)
     # A régua, agora ciente da Central: o terceiro ambiente é respeitado.
     assert CC._ambiente(CC.TESTES, CC.RESOLVE) == CC.TESTES
     # E `_ambiente` sem central continua sendo o de antes — é o que a `onr_api`
@@ -201,10 +269,12 @@ def test_os_tres_ambientes_da_resolve_nao_se_misturam(tmp_path):
 
 
 def test_gravar_sem_ambiente_usa_o_primeiro_da_central(tmp_path):
-    """A Resolve tem homologação como primeiro ambiente na tela, e as outras
-    têm `HOMOLOGACAO` — e o padrão sai da tabela da Central."""
+    """O padrão sai da tabela da Central. **Mudado em 14/10/2026**: a Resolve
+    tinha homologação como primeiro ambiente; desde a ordem «agora é tudo
+    produção», o único é a produção."""
     CC.gravar_token(CC.RESOLVE, token="t", pasta=tmp_path)
-    assert CC.token_guardado(CC.RESOLVE, CC.HOMOLOGACAO, tmp_path) == "t"
+    assert CC.token_guardado(CC.RESOLVE, CC.PRODUCAO, tmp_path) == "t"
+    assert not CC.tem(CC.RESOLVE, CC.HOMOLOGACAO, tmp_path)
     CC.gravar_token(CC.ONRTDPJ, token="o", pasta=tmp_path)
     assert CC.token_guardado(CC.ONRTDPJ, CC.PRODUCAO, tmp_path) == "o"
 
@@ -317,6 +387,18 @@ def test_a_tela_de_configuracoes_oferece_as_cinco_linhas(tmp_path, monkeypatch):
     # E A TERCEIRA GUARDA UM TOKEN, e não um par: campo de usuário para ela
     # faria alguém preenchê-lo com o CNS só para a tela deixar salvar.
     assert 'name="token" type="password"' in html
+    # 14/10/2026: a CRA, a CENPROT e a Resolve não têm mais linha de
+    # homologação (o `HOMOLOGACAO` acima é das outras Centrais).
+    for central in ("CRA", "CENPROT", "RESOLVE"):
+        assert not re.search(
+            rf'name="central" value="{central}">\s*<input type="hidden" '
+            rf'name="ambiente" value="(HOMOLOGACAO|TESTES)"', html), central
+        assert re.search(
+            rf'name="central" value="{central}">\s*<input type="hidden" '
+            rf'name="ambiente" value="PRODUCAO"', html), central
+    # e a caixa do envio automático em homologação saiu
+    assert 'name="cra_auto_enviar_homolog"' not in html
+    assert "comece pela de homologação" not in html
 
 
 def test_a_tela_de_configuracoes_explica_de_onde_vem_a_credencial_do_sirc(

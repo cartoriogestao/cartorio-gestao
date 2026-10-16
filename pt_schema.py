@@ -267,6 +267,58 @@ CREATE INDEX IF NOT EXISTS idx_pt_instrumentos_titulo
 -- Guarda o teor inteiro, e nao so o nome: o arquivo que saiu daqui e o que a
 -- Central recebeu, e quando ela reclamar de um titulo e este teor que se le.
 -- E a mesma razao do teor congelado da certidao.
+-- O XML DIÁRIO QUE A CASA SOBE À CENPROT (15/10/2026). P = protestos, com o
+-- instrumento eletrônico assinado dentro; D = pagos, retirados e cancelados.
+-- O arquivo INTEIRO fica guardado (com o BOM), porque é ele que se baixa e se
+-- sobe no portal, e é ele que se confere quando a Central reclamar.
+CREATE TABLE IF NOT EXISTS pt_cenprot_xml (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    letra TEXT NOT NULL,                    -- P | D
+    dia TEXT NOT NULL,                      -- AAAA-MM-DD do arquivo
+    sequencial INTEGER NOT NULL,
+    nome_arquivo TEXT NOT NULL UNIQUE,
+    conteudo BLOB NOT NULL,
+    sha256 TEXT NOT NULL,
+    titulos INTEGER NOT NULL,
+    gerado_em TEXT NOT NULL,
+    gerado_por TEXT
+);
+
+-- O CADASTRO DOS APRESENTANTES, para o XML da CENPROT — 15/10/2026.
+-- O arquivo da CRA traz o codigo e o nome do apresentante, e o XML pede
+-- tambem o CNPJ e o tipo dele. Medido: na amostra de 28 arquivos que a casa
+-- mandou, 13 dos 14 apresentantes casam pelo codigo com `tbCobrador`
+-- (`strCodigoBanco`, unico nas 56 linhas que o tem), com o mesmo CNPJ, o mesmo
+-- tipo e o mesmo nome. O que nao casa se cadastra na tela do XML.
+CREATE TABLE IF NOT EXISTS pt_apresentantes (
+    codigo TEXT PRIMARY KEY,                -- o codigo da CRA (3 posicoes)
+    nome TEXT NOT NULL,
+    documento TEXT,                         -- CNPJ ou CPF, so digitos
+    tipo_apresentante TEXT,                 -- o codigo do XML (0, 1, 3, 4...)
+    origem TEXT NOT NULL DEFAULT 'MANUAL',  -- EOFICIO | MANUAL
+    atualizado_em TEXT NOT NULL,
+    atualizado_por TEXT
+);
+
+-- A BASE NACIONAL DE ENDERECOS DA CENPROT — o que se perguntou e o que se
+-- mandou, por aviso (15/10/2026). Consultar manda o CPF do devedor para
+-- fora, e cadastrar manda o endereco dele: as duas coisas ficam escritas,
+-- com quem fez e quando. A resposta da consulta fica guardada porque e com
+-- ela que o balcao decide reemitir o aviso noutro endereco.
+CREATE TABLE IF NOT EXISTS pt_base_endereco (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    aviso_id INTEGER NOT NULL REFERENCES pt_avisos(id),
+    titulo_id INTEGER NOT NULL REFERENCES pt_titulos(id),
+    acao TEXT NOT NULL,                     -- CONSULTA | CADASTRO
+    ambiente TEXT NOT NULL,
+    documento TEXT NOT NULL,
+    enviado TEXT,                           -- o corpo do cadastro, JSON
+    resposta TEXT,                          -- o que a Central devolveu, JSON
+    achados INTEGER NOT NULL DEFAULT 0,     -- quantos enderecos a consulta trouxe
+    feito_em TEXT NOT NULL,
+    feito_por TEXT
+);
+
 CREATE TABLE IF NOT EXISTS pt_retornos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     -- SDTBFORTP (retorno) | SDTBFOAND (andamento) | SDTBFOCRT (confirmacao).
@@ -508,6 +560,8 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("pt_titulos", "apresentante_nome", "TEXT"),
     ("pt_titulos", "protocolo", "TEXT"),
     ("pt_atos", "retorno_id", "INTEGER"),
+    # em que XML da CENPROT o ato já foi (15/10/2026) — nada sai duas vezes
+    ("pt_atos", "cenprot_xml_id", "INTEGER"),
     ("pt_retornos", "tipo", "TEXT"),
     ("pt_retornos", "par_id", "INTEGER"),
     ("pt_titulos", "remessa_id", "INTEGER"),

@@ -58,7 +58,7 @@ def _token(html: str) -> str:
 
 @pytest.fixture()
 def casa(cg_casa_logada):
-    """A casa com o jean (ADMIN) logado, e mais duas pessoas.
+    """A casa com o mario (ADMIN) logado, e mais duas pessoas.
 
     São três porque o relato é sobre PASSAGEM: sem um segundo nome para
     receber, não há o que testar — e a terceira é o destino que não é o
@@ -122,7 +122,7 @@ def _historico(casa, task_id: int, acao: str | None = None) -> list[sqlite3.Row]
 
 
 def test_reabrir_devolve_a_tarefa_ao_filtro_das_abertas(casa):
-    uid = _uid(casa, "jean")
+    uid = _uid(casa, "mario")
     tid = _tarefa(casa, criada_por=uid, assigned_user_id=uid)
     casa["db"].update_task(tid, {"status": "CONCLUIDA"}, uid)   # carimba
     assert _linha(casa, tid)["completed_at"] is not None
@@ -149,7 +149,7 @@ def test_reabrir_devolve_a_tarefa_ao_filtro_das_abertas(casa):
 
 
 def test_a_reabertura_fica_na_linha_do_tempo_com_quem_e_por_que(casa):
-    uid = _uid(casa, "jean")
+    uid = _uid(casa, "mario")
     tid = _tarefa(casa, criada_por=uid)
     casa["db"].update_task(tid, {"status": "CONCLUIDA"}, uid)
     con = _con(casa)
@@ -172,7 +172,7 @@ def test_reabrir_sem_motivo_de_verdade_e_recusado(casa, motivo):
     """O piso de dez letras é o mesmo da recusa de certidão e da linha do
     problema resolvido (relato #82): «ok» não responde à pergunta que a
     correição faz — e a pergunta aqui é por que a tarefa voltou."""
-    uid = _uid(casa, "jean")
+    uid = _uid(casa, "mario")
     tid = _tarefa(casa, criada_por=uid)
     casa["db"].update_task(tid, {"status": "CONCLUIDA"}, uid)
     con = _con(casa)
@@ -187,7 +187,7 @@ def test_reabrir_sem_motivo_de_verdade_e_recusado(casa, motivo):
 
 
 def test_reabrir_o_que_esta_andando_e_recusado(casa):
-    uid = _uid(casa, "jean")
+    uid = _uid(casa, "mario")
     tid = _tarefa(casa, criada_por=uid)
     con = _con(casa)
     try:
@@ -205,14 +205,14 @@ def test_reabrir_o_que_esta_andando_e_recusado(casa):
 
 
 def test_passar_nao_muda_a_situacao_e_grava_nomes_e_nao_numeros(casa):
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean)
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario)
     con = _con(casa)
     try:
         with con:
             r = TP.passar_para(con, tid, gisele,
                                "Ela responde pelo malote nesta semana.",
-                               jean, casa["db"].now())
+                               mario, casa["db"].now())
     finally:
         con.close()
     assert r["de"] == "MARIO EXEMPLO DOS SANTOS"
@@ -233,15 +233,15 @@ def test_passar_nao_muda_a_situacao_e_grava_nomes_e_nao_numeros(casa):
 def test_o_substituto_nao_se_move_junto_com_o_responsavel(casa):
     """Ele é o segundo de quem responde — trocar os dois deixaria a tarefa sem
     ninguém atrás, e é o substituto que o escalonamento automático avisa."""
-    jean, gisele, lei = (_uid(casa, "jean"), _uid(casa, "gisele"),
+    mario, gisele, lei = (_uid(casa, "mario"), _uid(casa, "gisele"),
                         _uid(casa, "beatriz"))
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean,
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario,
                   backup_user_id=gisele)
     con = _con(casa)
     try:
         with con:
             TP.passar_para(con, tid, lei, "Eu entro de férias amanhã.",
-                           jean, casa["db"].now())
+                           mario, casa["db"].now())
     finally:
         con.close()
     linha = _linha(casa, tid)
@@ -250,14 +250,14 @@ def test_o_substituto_nao_se_move_junto_com_o_responsavel(casa):
 
 
 def test_passar_para_tarefa_concluida_e_recusado(casa):
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean)
-    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, jean)
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario)
+    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, mario)
     con = _con(casa)
     try:
         with pytest.raises(TP.ProcessoError) as erro, con:
             TP.passar_para(con, tid, gisele, "Passando o que já terminou.",
-                           jean, casa["db"].now())
+                           mario, casa["db"].now())
     finally:
         con.close()
     assert "reabra" in str(erro.value).lower(), (
@@ -267,29 +267,29 @@ def test_passar_para_tarefa_concluida_e_recusado(casa):
 def test_passar_para_quem_esta_desligado_e_recusado(casa):
     """Entregar ao vazio: a tarefa sai da mão de quem responde e não entra na de
     ninguém."""
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean)
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario)
     con = _con(casa)
     try:
         with con:
             con.execute("UPDATE users SET active=0 WHERE id=?", (gisele,))
         with pytest.raises(TP.ProcessoError) as erro, con:
             TP.passar_para(con, tid, gisele, "Passando para quem saiu ontem.",
-                           jean, casa["db"].now())
+                           mario, casa["db"].now())
     finally:
         con.close()
     assert "não está ativo" in str(erro.value)
-    assert _linha(casa, tid)["assigned_user_id"] == jean
+    assert _linha(casa, tid)["assigned_user_id"] == mario
 
 
 def test_passar_para_o_mesmo_responsavel_e_recusado(casa):
-    jean = _uid(casa, "jean")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean)
+    mario = _uid(casa, "mario")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario)
     con = _con(casa)
     try:
         with pytest.raises(TP.ProcessoError) as erro, con:
-            TP.passar_para(con, tid, jean, "Passando para mim mesmo agora.",
-                           jean, casa["db"].now())
+            TP.passar_para(con, tid, mario, "Passando para mim mesmo agora.",
+                           mario, casa["db"].now())
     finally:
         con.close()
     assert "já está com" in str(erro.value)
@@ -298,13 +298,13 @@ def test_passar_para_o_mesmo_responsavel_e_recusado(casa):
 def test_tarefa_sem_responsavel_diz_o_que_fazer(casa):
     """Medido: **79 das 95** tarefas da produção não têm responsável. A recusa
     aponta o formulário em vez de mandar pedir ao ADMIN."""
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    tid = _tarefa(casa, criada_por=jean)
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    tid = _tarefa(casa, criada_por=mario)
     con = _con(casa)
     try:
         with pytest.raises(TP.ProcessoError) as erro, con:
             TP.passar_para(con, tid, gisele, "Passando tarefa sem dono aqui.",
-                           jean, casa["db"].now())
+                           mario, casa["db"].now())
     finally:
         con.close()
     assert "responsável" in str(erro.value)
@@ -314,21 +314,21 @@ def test_tarefa_sem_responsavel_diz_o_que_fazer(casa):
 
 
 def test_as_vistas_do_relato_59(casa):
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    minha = _tarefa(casa, title="Minha", criada_por=jean, assigned_user_id=jean)
-    passada = _tarefa(casa, title="Passada", criada_por=jean,
-                      assigned_user_id=jean)
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    minha = _tarefa(casa, title="Minha", criada_por=mario, assigned_user_id=mario)
+    passada = _tarefa(casa, title="Passada", criada_por=mario,
+                      assigned_user_id=mario)
     con = _con(casa)
     try:
         with con:
             TP.passar_para(con, passada, gisele, "Ficou com ela esta semana.",
-                           jean, casa["db"].now())
+                           mario, casa["db"].now())
     finally:
         con.close()
 
     def ids(vista):
         return {r["id"] for r in casa["db"].list_tasks(vista, None,
-                                                       usuario_id=jean)}
+                                                       usuario_id=mario)}
 
     assert minha in ids(TP.VISTA_COMIGO)
     assert passada not in ids(TP.VISTA_COMIGO)
@@ -342,20 +342,20 @@ def test_as_vistas_do_relato_59(casa):
 def test_o_que_terminou_sai_da_lista_do_que_passou(casa):
     """O que foi concluído não pede acompanhamento — e continuar ali faria a
     lista crescer para sempre."""
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean)
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario)
     con = _con(casa)
     try:
         with con:
             TP.passar_para(con, tid, gisele, "Ficou com ela esta semana.",
-                           jean, casa["db"].now())
+                           mario, casa["db"].now())
     finally:
         con.close()
     assert tid in {r["id"] for r in casa["db"].list_tasks(
-        TP.VISTA_PASSOU_POR_MIM, None, usuario_id=jean)}
+        TP.VISTA_PASSOU_POR_MIM, None, usuario_id=mario)}
     casa["db"].update_task(tid, {"status": "CONCLUIDA"}, gisele)
     assert tid not in {r["id"] for r in casa["db"].list_tasks(
-        TP.VISTA_PASSOU_POR_MIM, None, usuario_id=jean)}
+        TP.VISTA_PASSOU_POR_MIM, None, usuario_id=mario)}
 
 
 def test_a_vista_sem_saber_de_quem_e_a_lista_e_recusada(casa):
@@ -368,19 +368,19 @@ def test_a_vista_sem_saber_de_quem_e_a_lista_e_recusada(casa):
 def test_a_contagem_e_a_mesma_lista(casa):
     """Contagem que não acompanha o próprio filtro é o carimbo que mente sobre
     ele — e aqui o setor entra junto, porque a lista tem dois filtros."""
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    _tarefa(casa, title="Minha", criada_por=jean, assigned_user_id=jean)
-    passada = _tarefa(casa, title="Passada", criada_por=jean,
-                      assigned_user_id=jean, sector="Protocolo")
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    _tarefa(casa, title="Minha", criada_por=mario, assigned_user_id=mario)
+    passada = _tarefa(casa, title="Passada", criada_por=mario,
+                      assigned_user_id=mario, sector="Protocolo")
     con = _con(casa)
     try:
         with con:
             TP.passar_para(con, passada, gisele, "Ficou com ela esta semana.",
-                           jean, casa["db"].now())
+                           mario, casa["db"].now())
         for setor in (None, "Malote", "Protocolo"):
-            contagem = TP.contagem_por_vista(con, jean, setor)
+            contagem = TP.contagem_por_vista(con, mario, setor)
             for vista, n in contagem.items():
-                lista = casa["db"].list_tasks(vista, setor, usuario_id=jean)
+                lista = casa["db"].list_tasks(vista, setor, usuario_id=mario)
                 assert n == len(lista), (
                     f"«{vista}» com o setor {setor!r}: o botão diz {n} e a "
                     f"lista tem {len(lista)}")
@@ -432,9 +432,9 @@ def test_toda_coluna_editavel_tem_rotulo():
 def test_o_historico_grava_nome_quando_o_campo_e_pessoa(casa):
     """Zero linhas assim na produção — o defeito era latente, e a passagem de
     responsabilidade o alcançaria no primeiro uso."""
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean)
-    casa["db"].update_task(tid, {"assigned_user_id": gisele}, jean)
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario)
+    casa["db"].update_task(tid, {"assigned_user_id": gisele}, mario)
     h = _historico(casa, tid, "ALTEROU_ASSIGNED_USER_ID")[0]
     assert h["old_value"] == "MARIO EXEMPLO DOS SANTOS"
     assert h["new_value"] == "GISELE SOUZA LIMA"
@@ -444,24 +444,24 @@ def test_editar_a_tarefa_concluida_nao_move_o_carimbo(casa):
     """O carimbo afirma o dia em que o serviço terminou. Quem corrige uma
     vírgula no título de uma tarefa concluída em março não pode ver a ficha
     dizer que o serviço terminou no dia da correção."""
-    jean = _uid(casa, "jean")
-    tid = _tarefa(casa, criada_por=jean)
-    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, jean)
+    mario = _uid(casa, "mario")
+    tid = _tarefa(casa, criada_por=mario)
+    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, mario)
     carimbo = _linha(casa, tid)["completed_at"]
     assert carimbo
-    casa["db"].update_task(tid, {"title": "Enviar a declaração anual"}, jean)
+    casa["db"].update_task(tid, {"title": "Enviar a declaração anual"}, mario)
     linha = _linha(casa, tid)
     assert linha["completed_at"] == carimbo
-    assert linha["completed_by"] == jean
+    assert linha["completed_by"] == mario
 
 
 def test_mudar_a_situacao_para_fora_da_conclusao_apaga_o_carimbo(casa):
     """O outro lado: `PENDENTE` na #85 guardava o carimbo de uma conclusão que
     a tarefa já não tinha."""
-    jean = _uid(casa, "jean")
-    tid = _tarefa(casa, criada_por=jean)
-    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, jean)
-    casa["db"].update_task(tid, {"status": "EM_ANDAMENTO"}, jean)
+    mario = _uid(casa, "mario")
+    tid = _tarefa(casa, criada_por=mario)
+    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, mario)
+    casa["db"].update_task(tid, {"status": "EM_ANDAMENTO"}, mario)
     linha = _linha(casa, tid)
     assert linha["completed_at"] is None and linha["completed_by"] is None
 
@@ -483,9 +483,9 @@ def test_a_escalada_automatica_avisa_o_substituto_pelo_nome(casa):
 
 
 def test_a_tela_da_tarefa_mostra_o_historico_em_portugues(casa):
-    jean = _uid(casa, "jean")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean)
-    casa["db"].update_task(tid, {"status": "EM_ANDAMENTO"}, jean)
+    mario = _uid(casa, "mario")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario)
+    casa["db"].update_task(tid, {"status": "EM_ANDAMENTO"}, mario)
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)
     assert "Tarefa criada" in html
     assert "Mudou a situação" in html
@@ -493,9 +493,9 @@ def test_a_tela_da_tarefa_mostra_o_historico_em_portugues(casa):
 
 
 def test_reabrir_pela_tela_exige_o_motivo(casa):
-    jean = _uid(casa, "jean")
-    tid = _tarefa(casa, criada_por=jean)
-    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, jean)
+    mario = _uid(casa, "mario")
+    tid = _tarefa(casa, criada_por=mario)
+    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, mario)
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)
     r = casa["cliente"].post(f"/tarefas/{tid}",
                              data={"action": "reabrir", "motivo": "",
@@ -506,9 +506,9 @@ def test_reabrir_pela_tela_exige_o_motivo(casa):
 
 
 def test_reabrir_pela_tela_apaga_o_carimbo_e_volta_para_a_lista(casa):
-    jean = _uid(casa, "jean")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean)
-    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, jean)
+    mario = _uid(casa, "mario")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario)
+    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, mario)
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)
     casa["cliente"].post(
         f"/tarefas/{tid}",
@@ -523,8 +523,8 @@ def test_reabrir_pela_tela_apaga_o_carimbo_e_volta_para_a_lista(casa):
 
 
 def test_passar_pela_tela(casa):
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean)
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario)
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)
     r = casa["cliente"].post(
         f"/tarefas/{tid}",
@@ -540,8 +540,8 @@ def test_passar_pela_tela(casa):
 
 def test_as_tres_portas_da_passagem_estao_na_tela(casa):
     """A lista, o substituto e quem criou — as três escrevem o motivo."""
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean,
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario,
                   backup_user_id=gisele)
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)
     assert "Passar para outro responsável" in html
@@ -550,23 +550,23 @@ def test_as_tres_portas_da_passagem_estao_na_tela(casa):
 
 
 def test_devolver_a_quem_criou_e_a_mesma_porta(casa):
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=gisele)
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=gisele)
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)
     casa["cliente"].post(
         f"/tarefas/{tid}",
         data={"action": "devolver", "motivo": "Voltou para quem abriu o pedido.",
               "csrf_token": _token(html)},
         follow_redirects=True)
-    assert _linha(casa, tid)["assigned_user_id"] == jean
+    assert _linha(casa, tid)["assigned_user_id"] == mario
 
 
 def test_tarefa_concluida_nao_oferece_passagem(casa):
     """Não há serviço para passar adiante."""
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    tid = _tarefa(casa, criada_por=jean, assigned_user_id=jean,
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    tid = _tarefa(casa, criada_por=mario, assigned_user_id=mario,
                   backup_user_id=gisele)
-    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, jean)
+    casa["db"].update_task(tid, {"status": "CONCLUIDA"}, mario)
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)
     assert "Passar para outro responsável" not in html
 
@@ -583,16 +583,16 @@ def test_a_lista_de_tarefas_tem_as_vistas_no_alto(casa):
 
 
 def test_o_numero_ao_lado_do_botao_e_o_da_lista(casa):
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    _tarefa(casa, title="Minha", criada_por=jean, assigned_user_id=jean)
-    passada = _tarefa(casa, title="Passada", criada_por=jean,
-                      assigned_user_id=jean)
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    _tarefa(casa, title="Minha", criada_por=mario, assigned_user_id=mario)
+    passada = _tarefa(casa, title="Passada", criada_por=mario,
+                      assigned_user_id=mario)
     con = _con(casa)
     try:
         with con:
             TP.passar_para(con, passada, gisele, "Ficou com ela esta semana.",
-                           jean, casa["db"].now())
-        contagem = TP.contagem_por_vista(con, jean)
+                           mario, casa["db"].now())
+        contagem = TP.contagem_por_vista(con, mario)
     finally:
         con.close()
     html = casa["cliente"].get("/tarefas").get_data(as_text=True)
@@ -601,10 +601,10 @@ def test_o_numero_ao_lado_do_botao_e_o_da_lista(casa):
 
 
 def test_a_lista_mostra_o_que_esta_comigo(casa):
-    jean, gisele = _uid(casa, "jean"), _uid(casa, "gisele")
-    _tarefa(casa, title="Enviar a declaração do IBGE", criada_por=jean,
-            assigned_user_id=jean)
-    _tarefa(casa, title="Conferir o malote de ontem", criada_por=jean,
+    mario, gisele = _uid(casa, "mario"), _uid(casa, "gisele")
+    _tarefa(casa, title="Enviar a declaração do IBGE", criada_por=mario,
+            assigned_user_id=mario)
+    _tarefa(casa, title="Conferir o malote de ontem", criada_por=mario,
             assigned_user_id=gisele)
     html = casa["cliente"].get("/tarefas?status=COMIGO").get_data(as_text=True)
     assert "Enviar a declaração do IBGE" in html
@@ -704,8 +704,8 @@ def _tarefa_pendente(casa, criada_por: int) -> int:
 
 def test_o_script_da_palavra_torta_nao_escreve_sem_confirmacao(casa, monkeypatch):
     script = _script_da_palavra_torta()
-    jean = _uid(casa, "jean")
-    tid = _tarefa_pendente(casa, jean)
+    mario = _uid(casa, "mario")
+    tid = _tarefa_pendente(casa, mario)
     monkeypatch.setattr(script, "BANCO", Path(casa["banco"]))
     monkeypatch.setattr(sys, "argv", ["normalizar_situacao_das_tarefas.py"])
 
@@ -722,8 +722,8 @@ def test_o_script_da_palavra_torta_tira_a_tarefa_do_limbo(casa, monkeypatch, tmp
     vocabulário, o carimbo de uma conclusão que a tarefa já não tem sai, e as
     duas coisas ficam registradas — na linha do tempo e na auditoria."""
     script = _script_da_palavra_torta()
-    jean = _uid(casa, "jean")
-    tid = _tarefa_pendente(casa, jean)
+    mario = _uid(casa, "mario")
+    tid = _tarefa_pendente(casa, mario)
     monkeypatch.setattr(script, "BANCO", Path(casa["banco"]))
     monkeypatch.setattr(script, "PASTA_DAS_COPIAS", tmp_path)
     monkeypatch.setattr(sys, "argv",
@@ -767,8 +767,8 @@ def test_a_tarefa_fora_do_vocabulario_nao_some_da_lista(casa):
     e a vista «Todas» é a que ainda a mostra, com a palavra como ela é. É a
     mesma regra do problema #77: palavra desconhecida não é chutada em vista
     nenhuma, e também não se esconde."""
-    jean = _uid(casa, "jean")
-    tid = _tarefa_pendente(casa, jean)
+    mario = _uid(casa, "mario")
+    tid = _tarefa_pendente(casa, mario)
 
     abertas = casa["cliente"].get("/tarefas").get_data(as_text=True)
     assert "Enviar declaração" not in abertas, (
@@ -800,13 +800,13 @@ def test_a_tarefa_fora_do_vocabulario_nao_some_da_lista(casa):
 def test_a_contagem_das_vistas_nao_conta_a_palavra_desconhecida(casa):
     """Contagem que não acompanha o próprio filtro é o carimbo que mente sobre
     ele: o botão diria que há trabalho na vista que a lista não mostra."""
-    jean = _uid(casa, "jean")
-    _tarefa_pendente(casa, jean)  # fora do vocabulário, e com o carimbo dentro
-    _tarefa(casa, criada_por=jean, assigned_user_id=jean)
+    mario = _uid(casa, "mario")
+    _tarefa_pendente(casa, mario)  # fora do vocabulário, e com o carimbo dentro
+    _tarefa(casa, criada_por=mario, assigned_user_id=mario)
 
     con = _con(casa)
     try:
-        contagem = TP.contagem_por_vista(con, jean)
+        contagem = TP.contagem_por_vista(con, mario)
         fora = TP.tarefas_fora_do_vocabulario(con)
     finally:
         con.close()
@@ -837,9 +837,9 @@ def test_o_painel_nao_infla_o_numero_e_declara_o_que_ficou_fora(casa):
     o painel conta **uma aberta** — e diz que existe outra fora das vistas. O
     número menor sem essa frase seria a mentira do outro lado: quem lê conclui
     que não há nada ali."""
-    jean = _uid(casa, "jean")
-    _tarefa_pendente(casa, jean)
-    _tarefa(casa, criada_por=jean, assigned_user_id=jean)
+    mario = _uid(casa, "mario")
+    _tarefa_pendente(casa, mario)
+    _tarefa(casa, criada_por=mario, assigned_user_id=mario)
 
     stats = casa["db"].dashboard_stats()
     assert stats["open_tasks"] == 1, "a palavra desconhecida inflou o painel"

@@ -132,10 +132,15 @@ def cofre(tmp_path, monkeypatch):
     pasta = tmp_path / "cofre"
     pasta.mkdir()
     monkeypatch.setattr(CRED, "pasta_de_dados", lambda: pasta)
+    # O AMBIENTE AGORA SE DIZ (14/10/2026): sem ele, a CRA e a CENPROT gravam
+    # na gaveta de PRODUÇÃO desde a ordem «agora é tudo produção». Estes
+    # testes exercitam o transporte e a fila pela homologação PEDIDA PELO
+    # NOME, que continua alcançável para o teste automatizado.
     CRED.gravar(CRED.CENPROT, usuario="usuario-ficticio",
-                senha="Senha-Ficticia-1", pasta=pasta)
+                senha="Senha-Ficticia-1", pasta=pasta,
+                ambiente=CRED.HOMOLOGACAO)
     CRED.gravar(CRED.CRA, usuario="cra-ficticio", senha="Senha-Ficticia-2",
-                pasta=pasta)
+                pasta=pasta, ambiente=CRED.HOMOLOGACAO)
     API.esquecer_token()
     yield pasta
     API.esquecer_token()
@@ -385,8 +390,15 @@ def _token(html: str) -> str:
     return achado.group(1)
 
 
-def test_testar_cra_em_homologacao_passa_pela_fila_e_aparece_no_painel(
+def test_testar_cra_na_tela_e_sempre_producao_e_direto(
         cg_casa_logada, rede, tmp_path, monkeypatch):
+    """**CONTRATO MUDADO EM 14/10/2026** — ordem do oficial: «tire a opção de
+    funcionar na homologação, agora é tudo produção». Este teste se chamava
+    `test_testar_cra_em_homologacao_passa_pela_fila_e_aparece_no_painel`: o
+    botão, em homologação, passava pela fila comum. Agora a tela não tem
+    homologação — mesmo o formulário antigo que manda `HOMOLOGACAO` testa a
+    PRODUÇÃO, direto, sem fila (a fila não fala com produção). A chamada
+    continua no log das Centrais, que é o que o painel mostra."""
     casa = cg_casa_logada
     casa["db"].set_settings({"modulo_protesto_alcance": "TODOS"})
     pasta = tmp_path / "cofre-web"
@@ -401,15 +413,13 @@ def test_testar_cra_em_homologacao_passa_pela_fila_e_aparece_no_painel(
                              "ambiente": "HOMOLOGACAO"},
                        follow_redirects=True)
     assert r.status_code == 200
-    assert "da fila das Centrais" in r.get_data(as_text=True)
+    assert "Falou com a CRA" in r.get_data(as_text=True)
     with casa["db"].connect() as con:
         itens = FILA.listar(con, central="CRA")
         log = LOG.ultimos(con, central="CRA")
-    assert itens and itens[0]["status"] == SCH.CONFIRMADO
-    assert any(x["operacao"] == "BuscarApresentante" for x in log)
-    painel = casa["c"].get("/centrais/status?central=CRA").get_data(
-        as_text=True)
-    assert "DIAGNOSTICO" in painel
+    assert itens == []
+    assert any(x["operacao"] == "BuscarApresentante"
+               and x["ambiente"] == "PRODUCAO" for x in log)
 
 
 def test_testar_cenprot_em_producao_nao_passa_pela_fila(

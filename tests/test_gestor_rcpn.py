@@ -261,7 +261,7 @@ def test_boletim_junta_e_renova_sem_duplicar(con, cg_casa):
     import gestor_rotina as GR
     from gestor_schema import init_gestor_schema
     init_gestor_schema(con)
-    cg_casa["db"].create_user("jean", "JEAN", "Senha#12345", "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO", "Senha#12345", "ADMIN")
     cg_casa["db"].create_user("elisa", "Elisa", "Senha#12345", "USER")
     cg_casa["db"].create_user("debora", "Debora", "Senha#12345", "USER")
     GR.aplicar_distribuicao(con)

@@ -32,6 +32,7 @@ import fraude as FR
 
 import emolumentos as EMOL
 import notas_anotacoes as NA
+import notas_comunicacao_origem as NCO
 import notas_censec as NC
 import censec_api as CAPI
 import centrais_cred as CRED
@@ -57,6 +58,7 @@ import caixa_depositos as DEP
 import caixa_schema as CXC
 import notas_teor as NT
 import notas_teor_arquivo as TA
+import protocolo_documentos as PDOC
 from storage import save_upload
 from ri_modelos_atos import (campos_do_modelo, pendencias as pendencias_modelo,
                              preencher as preencher_modelo)
@@ -77,6 +79,14 @@ from serventia import dados as dados_serventia
 import modelos_motor_etiqueta as MOTOR_ETQ
 
 POR_PAGINA = 40
+
+# O SELO DE ARQUIVAMENTO (13.30) E OBRIGATORIO na procuracao, no
+# substabelecimento e na revogacao — pedido do oficial, 15/10/2026. A regra
+# (quem e obrigado, a contagem das folhas dos anexos, a confirmacao e a
+# recusa) mora em `notas_arquivamento.py`; o selo continua saindo pelo
+# mecanismo que ja existia como opcional, `_selar_arquivamento_das_notas`.
+import notas_arquivamento as NARQ
+from notas_arquivamento import arquivamento_obrigatorio
 
 # Onde estao as imagens de assinatura do E-Oficio. O banco guarda o caminho
 # original em UNC (\\servidor\C11\Firmas\); quando a maquina que abre a tela
@@ -570,8 +580,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # Cinco linhas deixam a pessoa desenvolver a assinatura natural, que
         # é o padrão usado depois na comparação por semelhança (relato #27).
         espaco = "<p> </p>" * 5
+        # A LINHA DE ASSINAR VAI CENTRADA — 14/10/2026. Desde 24/09/2026
+        # `ri_odt.html_para_odf` troca parágrafo só de riscas pela «risca entre
+        # atos» (borda dupla de largura total), e só poupa a linha de assinar
+        # CENTRADA. Esta saía sem `align` e virava a risca dupla nos três
+        # autógrafos. No papel nada muda de lugar: com `compacto=True` o
+        # parágrafo é `P-cabecalho`, que já era centrado.
         linha = (
-            "<p>________________________________________________________________</p>")
+            '<p align="center">'
+            "________________________________________________________________</p>")
 
         selo_ab = (c["selo_abertura"] or "").strip()
         texto_selo = _texto_do_selo(selo_ab) if selo_ab else ""
@@ -1650,10 +1667,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return f" Selo {r['numero']}."
 
     def _atualizar_data_teor_antes_do_selo(ato_id: int) -> None:
-        """Relato #116 — data do instrumento = dia em que o selo sai."""
+        """Relato #116 — data do instrumento = dia em que o selo sai.
+
+        Troca só a data escrita no texto gravado — nunca remonta o teor (ver
+        `notas_teor.atualizar_teor_para_data_de_selo`). Quando não consegue,
+        diz na tela, em vez de ficar calado.
+        """
         agora = datetime.now()
         with db.transaction() as con:
-            NT.atualizar_teor_para_data_de_selo(
+            r = NT.atualizar_teor_para_data_de_selo(
                 con,
                 int(ato_id),
                 quando=agora,
@@ -1661,6 +1683,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 lavrado_nome=usuario_nome(),
                 lavrado_titulo=usuario_funcao(),
             )
+        if r.get("aviso"):
+            flash(r["aviso"], "warning")
 
     def _selar_arquivamento_das_notas(*, ato_id: int, folhas: int,
                                       selo_do_ato: str | None = None,
@@ -1675,7 +1699,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """
         import selo_robo as SR
         if not SR.pode_selar_automatico():
-            return SR.recado_pendente_selo()
+            # QUEM CHAMA LÊ UM DICIONÁRIO (`arq.get(...)`), e o recado do robô
+            # é texto: devolvido cru, ele estourava em AttributeError. Com o
+            # arquivamento obrigatório na procuração (15/10/2026) todo
+            # lançamento do robô passaria por aqui. `robo` diz que não houve
+            # falha do aparelho: o selo fica para quem é gente pedir.
+            return {"ok": False, "robo": True,
+                    "motivo": SR.recado_pendente_selo()}
         try:
             q = max(1, int(folhas or 0))
         except (TypeError, ValueError):
@@ -2802,8 +2832,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         with db.connect() as con:
             con.row_factory = sqlite3.Row
             faltando = NA.pendentes(con)
+            # A comunicação à serventia de origem (art. 831, § 1º) — a outra
+            # metade da mesma pergunta da correição. Relato #129.
+            comunicacoes = NCO.pendentes(con)
         return render_template("notas_anotacoes_pendentes.html",
-                               faltando=faltando, TIPOS_ATO=TIPOS_ATO)
+                               faltando=faltando, comunicacoes=comunicacoes,
+                               TIPOS_ATO=TIPOS_ATO)
 
     def _odt_inutilizacao(faces, serie, numero, titulo):
         """As faces inutilizadas, uma por página, prontas para imprimir.
@@ -3033,6 +3067,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                familia=familia, familia_chave=familia_chave,
                                livro_id=livro_id, livro_q=livro_q, folha_q=folha_q,
                                termo_q=termo_q, livro_ctx=livro_ctx,
+                               # o aviso «Atos do livro N — <tipo>» pede o nome
+                               # do tipo; sem isto a tela do livro dava 500
+                               # (15/10/2026, visto no servidor.log).
+                               TIPOS_LIVRO=TIPOS_LIVRO,
                                total=total, pagina=pagina, TIPOS_ATO=TIPOS_ATO,
                                paginas=max(1, (total + POR_PAGINA - 1) // POR_PAGINA))
 
@@ -3435,6 +3473,174 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         flash(f"Arquivo '{removido['original_name']}' retirado deste ato.", "success")
         return redirect(url_for("notas_ato", ato_id=ato_id))
 
+    @app.route("/notas/atos/<int:ato_id>/protocolo-geral", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def notas_ato_protocolo_geral(ato_id):
+        """Liga (ou desliga) o ato ao protocolo do balcão — relato #135. ESCREVE.
+
+        É a ponte por onde os documentos para qualificação, anexados no
+        Protocolo Geral, aparecem na tela de lavrar. A regra (só em lavratura,
+        só protocolo das Notas, um de cada vez) mora em `protocolo_documentos`.
+        """
+        volta = url_for("notas_ato", ato_id=ato_id) + "#documentos-qualificacao"
+        if not q1("SELECT id FROM nt_atos WHERE id=?", (ato_id,)):
+            abort(404)
+        acao = request.form.get("acao") or "vincular"
+        try:
+            with db.transaction() as con:
+                if acao == "desvincular":
+                    p = PDOC.desvincular_ato_de_notas(con, ato_id)
+                else:
+                    p = PDOC.vincular_ato_de_notas(
+                        con, ato_id, request.form.get("numero") or "")
+        except PDOC.DocumentoError as e:
+            flash(str(e), "danger")
+            return redirect(volta)
+        audit("NT_ATO_PROTOCOLO_DESVINCULADO" if acao == "desvincular"
+              else "NT_ATO_PROTOCOLO_VINCULADO", "NT_ATO", ato_id,
+              {"protocolo_id": (p or {}).get("id"),
+               "numero": (p or {}).get("numero")})
+        if acao == "desvincular":
+            flash("Ligação com o protocolo desfeita.", "success")
+        else:
+            flash(f"Ato ligado ao protocolo {p['numero']}: os documentos dele "
+                  "aparecem abaixo.", "success")
+        return redirect(volta)
+
+    # ------------------------------------------------------------------
+    # A COMUNICAÇÃO À SERVENTIA DE ORIGEM — relato #129, 14/10/2026.
+    #
+    #   Código de Normas TJMA, art. 831, § 1º: o substabelecimento de mandato
+    #   lavrado em OUTRA serventia se comunica imediatamente ao tabelião que o
+    #   lavrou, com comprovante de recebimento. O domínio mora em
+    #   `notas_comunicacao_origem`; aqui só se ligam os fios.
+    def _comunicacao_desta_tela(a) -> dict:
+        """O que a ficha do ato precisa para o aviso e o formulário. SÓ LÊ."""
+        tipo = (a["tipo"] or "").upper()
+        with db.connect() as con:
+            con.row_factory = sqlite3.Row
+            ob = NCO.do_ato(con, a["id"])
+        return {
+            "comunicacao_cabe": tipo in NCO.TIPOS_QUE_COMUNICAM,
+            "comunicacao": ob,
+            "comunicacao_devida": NCO.devida(a, _sv()),
+            "COMUNICACAO_MEIOS": NCO.MEIOS,
+            "COMUNICACAO_PROVIDENCIAS": NCO.PROVIDENCIAS,
+            "COMUNICACAO_FUNDAMENTO": NCO.FUNDAMENTO,
+        }
+
+    @app.route("/notas/atos/<int:ato_id>/comunicacao-origem", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def notas_ato_comunicacao_origem(ato_id):
+        """Informar a origem, lançar a obrigação e baixá-la — uma porta só.
+
+        Baixar EXIGE uma das duas providências, e o domínio é quem recusa; a
+        auditoria grava o que foi feito, por quem, depois de fechar a
+        transação (regra da casa: `audit` fora do `with`).
+        """
+        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        if not a:
+            abort(404)
+        if somente_leitura():
+            flash("Perfil de auditoria não registra comunicação.", "danger")
+            return redirect(url_for("notas_ato", ato_id=ato_id))
+        acao = request.form.get("acao") or ""
+        quem = usuario_nome()
+        try:
+            if acao == "origem":
+                with db.transaction() as con:
+                    con.row_factory = sqlite3.Row
+                    feito = NCO.informar_origem(
+                        con, ato_id, {k: request.form.get(k) for k in
+                                      ("cartorio", "cns", "cidade", "uf",
+                                       "livro", "folha", "data")},
+                        _sv(), db.now(), quem)
+                audit("NT_COMUNICACAO_ORIGEM_INFORMADA", "NT_ATO", ato_id, feito)
+                flash("Serventia de origem da procuração gravada."
+                      + (" Nasceu a obrigação de comunicá-la (art. 831, § 1º)."
+                         if feito["obrigacao_nasceu"] else ""),
+                      "warning" if feito["obrigacao_nasceu"] else "success")
+            elif acao == "abrir":
+                with db.transaction() as con:
+                    con.row_factory = sqlite3.Row
+                    ob = NCO.abrir(con, ato_id, _sv(), db.now(), quem, "TELA")
+                if not ob:
+                    flash("Nada a lançar: ou a obrigação já existe, ou o ato não "
+                          "a deve (procuração desta serventia, ou origem não "
+                          "informada).", "info")
+                else:
+                    audit("NT_COMUNICACAO_ORIGEM_NASCEU", "NT_ATO", ato_id, ob)
+                    flash("Obrigação de comunicação lançada. O aviso fica nesta "
+                          "ficha até a providência.", "warning")
+            elif acao == "oficio":
+                with db.transaction() as con:
+                    con.row_factory = sqlite3.Row
+                    ob = NCO.baixar_por_oficio(
+                        con, ato_id, data=request.form.get("envio_data"),
+                        meio=request.form.get("envio_meio"),
+                        numero=request.form.get("envio_numero"),
+                        enviado_por=request.form.get("envio_por"),
+                        observacao=request.form.get("observacao") or "",
+                        agora=db.now(), por=quem)
+                audit("NT_COMUNICACAO_ORIGEM_BAIXADA", "NT_ATO", ato_id,
+                      {"providencia": "OFICIO", **ob})
+                flash("Envio do ofício anotado e obrigação baixada. A norma "
+                      "pede comprovante de recebimento: junte-o aqui quando "
+                      "chegar.", "success")
+            elif acao == "comprovante":
+                enviado = request.files.get("comprovante")
+                if not enviado or not enviado.filename:
+                    flash("Escolha o arquivo do comprovante de recebimento.",
+                          "danger")
+                    return redirect(url_for("notas_ato", ato_id=ato_id))
+                with db.connect() as con:
+                    con.row_factory = sqlite3.Row
+                    ob = NCO.do_ato(con, ato_id)
+                if not ob:
+                    raise NCO.ComunicacaoError(
+                        "Este ato não tem obrigação de comunicação. Informe "
+                        "antes a serventia de origem da procuração.")
+                if ob.get("comprovante_attachment_id"):
+                    raise NCO.ComunicacaoError(
+                        "O comprovante desta comunicação já foi juntado.")
+                # A data se confere ANTES de guardar o arquivo: recusada
+                # depois, o arquivo ficaria no acervo sem obrigação que o leve.
+                try:
+                    recebido = date.fromisoformat(
+                        (request.form.get("recebido_em") or "")[:10])
+                except ValueError:
+                    raise NCO.ComunicacaoError(
+                        "Informe a data do recebimento.") from None
+                if recebido > date.today():
+                    raise NCO.ComunicacaoError(
+                        "A data do recebimento não pode ser depois de hoje.")
+                raiz = Path(db.get_setting("archive_root", "").strip()
+                            or (Path(db.db_path).parent / "arquivos"))
+                destino = (raiz / "notas" / "atos" / f"ato-{ato_id:05d}"
+                           / "comunicacao-origem")
+                info = save_upload(enviado, destino)
+                anexo = db.add_attachment(
+                    NCO.TIPO_DO_ANEXO, ob["id"], info,
+                    int(app.extensions["usuario_id"]() or 0),
+                    "Comprovante de recebimento da comunicação (art. 831, § 1º)")
+                with db.transaction() as con:
+                    con.row_factory = sqlite3.Row
+                    ob = NCO.juntar_comprovante(
+                        con, ato_id, attachment_id=anexo,
+                        recebido_em=request.form.get("recebido_em"),
+                        observacao=request.form.get("observacao") or "",
+                        agora=db.now(), por=quem)
+                audit("NT_COMUNICACAO_ORIGEM_COMPROVANTE", "NT_ATO", ato_id,
+                      {"attachment_id": anexo, "sha256": info["sha256"], **ob})
+                flash("Comprovante juntado, com SHA-256 "
+                      f"{info['sha256'][:16]}…. A comunicação está comprovada.",
+                      "success")
+            else:
+                flash("Ação desconhecida.", "danger")
+        except NCO.ComunicacaoError as erro:
+            flash(str(erro), "danger")
+        return redirect(url_for("notas_ato", ato_id=ato_id) + "#comunicacao-origem")
+
 
 
     @app.route("/notas/atos/<int:ato_id>", methods=["GET", "POST"])
@@ -3797,7 +4003,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     return redirect(url_for("notas_ato", ato_id=ato_id))
                 gerar_arquivamento = request.form.get("gerar_arquivamento") == "1"
                 folhas_arquivamento = None
-                if gerar_arquivamento:
+                # NA PROCURACAO, NO SUBSTABELECIMENTO E NA REVOGACAO O
+                # ARQUIVAMENTO NAO SE DESMARCA — pedido do oficial, 15/10/2026.
+                # A recusa e daqui, do servidor, e nao so da caixa travada na
+                # tela: formulario mandado sem o campo tambem para, e ANTES do
+                # lancamento, porque depois a folha do livro ja foi gasta.
+                #
+                # E A QUANTIDADE NÃO VEM DESTE FORMULÁRIO: vem da confirmação
+                # gravada na ficha (a contagem dos anexos, conferida pelo
+                # escrevente). Sem anexo ou sem confirmação, não se lança.
+                obrigatorio = arquivamento_obrigatorio(a["tipo"])
+                if obrigatorio:
+                    gerar_arquivamento = True
+                    try:
+                        with db.connect() as _con_arq:
+                            folhas_arquivamento = NARQ.exigir_para_selar(
+                                _con_arq, a)
+                    except NARQ.ArquivamentoError as erro:
+                        audit("NT_ATO_LAVRATURA_SEM_ARQUIVAMENTO", "NT_ATO",
+                              int(ato_id), {"tipo": a["tipo"],
+                                            "motivo": str(erro)})
+                        flash("Ato NÃO lançado: na "
+                              f"{TIPOS_ATO.get(a['tipo'], a['tipo']).lower()} "
+                              "o selo de arquivamento (13.30) é obrigatório — "
+                              f"{erro}", "danger")
+                        return redirect(url_for("notas_ato", ato_id=ato_id))
+                elif gerar_arquivamento:
                     bruto_folhas = (request.form.get("folhas_arquivamento") or "").strip()
                     try:
                         folhas_arquivamento = int(bruto_folhas or 0)
@@ -3841,6 +4072,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         return redirect(url_for("notas_ato", ato_id=ato_id,
                                                 paginas_a_mao=1))
                 anotado = None
+                comunicacao = None
                 try:
                     with db.transaction() as con:
                         feito = NL.lancar_ato(
@@ -3854,7 +4086,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         # atrás junto — as duas coisas são um ato só.
                         anotado = NA.anotar_ato_anterior(
                             con, ato_id, _sv(), db.now(), usuario_nome())
-                except (NL.LivroError, NA.AnotacaoError) as erro:
+                        # A COMUNICAÇÃO À SERVENTIA DE ORIGEM nasce aqui,
+                        # na mesma transação — relato #129 (art. 831, § 1º).
+                        # Procuração de outra serventia não se anota por
+                        # aqui; o que nasce é a obrigação de comunicá-la.
+                        comunicacao = NCO.abrir(
+                            con, ato_id, _sv(), db.now(), usuario_nome(),
+                            "LAVRATURA")
+                except (NL.LivroError, NA.AnotacaoError,
+                        NCO.ComunicacaoError) as erro:
                     flash(str(erro), "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
                 except sqlite3.IntegrityError:
@@ -3869,6 +4109,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if anotado:
                     audit("NT_ANOTACAO_MARGEM", "NT_ATO",
                           anotado["ato_id"], anotado)
+                if comunicacao:
+                    audit("NT_COMUNICACAO_ORIGEM_NASCEU", "NT_ATO", ato_id,
+                          comunicacao)
 
                 recado = (f"Lançado no livro {feito['livro']}, folha "
                           f"{feito['folha']}"
@@ -3889,6 +4132,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           + (f" O ato anotado passou a "
                              f"{SITUACOES_ATO[anotado['situacao_nova']].lower()}."
                              if anotado["situacao_nova"] else ""), "success")
+                elif comunicacao:
+                    flash("A procuração substabelecida é de outra serventia "
+                          f"({comunicacao['destinatario']}). Nasceu a "
+                          "obrigação de comunicá-la (Código de Normas, art. "
+                          "831, § 1º): o aviso fica nesta ficha até se juntar "
+                          "o comprovante de recebimento ou se anotar o envio "
+                          "do ofício.", "warning")
                 elif ATO_PEDE_ANOTACAO.get((a["tipo"] or "").upper()):
                     flash("Este ato pede anotação à margem do ato anterior, e "
                           "eu não consegui identificá-lo com segurança. "
@@ -3960,6 +4210,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         audit("NT_ATO_ARQUIVAMENTO_PENDENTE", "NT_ATO", ato_id,
                               {"folhas": folhas_arquivamento,
                                "motivo": arq.get("motivo")})
+                        # OBRIGATÓRIO QUE NÃO SAIU SUSPENDE O ATO — a regra
+                        # do item 1 (16/09/2026: «se falhar o selo, sempre
+                        # suspender o ato»). A procuração só fica LAVRADA com
+                        # os dois selos; o do ato fica, e o botão «Selar
+                        # arquivamento» da ficha a conclui. (O robô não é
+                        # falha do aparelho: o selo dele fica para gente.)
+                        if obrigatorio and not arq.get("robo"):
+                            with db.transaction() as con:
+                                con.execute(
+                                    "UPDATE nt_atos SET situacao='SUSPENSO_SELO' "
+                                    "WHERE id=?", (ato_id,))
+                            flash(recado, "success")
+                            flash("Ato NÃO concluído: o selo do ato saiu, mas o "
+                                  "selo de arquivamento, que é obrigatório "
+                                  f"neste ato, não: {arq.get('motivo')}. "
+                                  "Corrija e use «Selar arquivamento» na ficha.",
+                                  "danger")
+                            return redirect(url_for("notas_ato", ato_id=ato_id))
                 flash(recado, "success")
                 flash(recado_do_selo.strip() + recado_do_arquivamento,
                       "warning" if "PENDENTE" in recado_do_arquivamento
@@ -4012,6 +4280,40 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          " A anotação sai quando este ato for lançado no livro."),
                       "success")
 
+            elif acao == "confirmar_arquivamento":
+                # **AS FOLHAS ARQUIVADAS SE CONFIRMAM** — pedido do oficial,
+                # 15/10/2026: o número sai da contagem dos anexos e fica
+                # pendente até o escrevente confirmar, podendo corrigir. Fica
+                # gravado o sugerido, de onde veio, o confirmado, quem e quando.
+                try:
+                    with db.transaction() as con:
+                        feito = NARQ.confirmar(
+                            con, int(ato_id),
+                            folhas=request.form.get("folhas_arquivamento"),
+                            usuario=usuario_nome(), agora=db.now())
+                except NARQ.ArquivamentoError as erro:
+                    flash(str(erro), "danger")
+                    return redirect(url_for("notas_ato", ato_id=ato_id))
+                audit("NT_ATO_ARQUIVAMENTO_CONFIRMADO", "NT_ATO", ato_id, feito)
+                flash(f"Folhas do arquivamento confirmadas: {feito['folhas']}"
+                      + (f" (a contagem dos anexos sugeria {feito['sugeridas']}"
+                         f" — corrigido por você)." if feito["corrigido"]
+                         else f" ({feito['origem']})."), "success")
+                # O 13.30 × N NAS CUSTAS (decisão do oficial, 15/10/2026): o
+                # item vai sozinho para o protocolo do ato; quando não pôde ir,
+                # a tela diz por quê, em vez de calar.
+                custas = feito.get("custas") or {}
+                if custas.get("lancado"):
+                    flash(f"Item 13.30 × {feito['folhas']} "
+                          + {"lancado": "lançado", "ajustado": "ajustado",
+                             "adotado": "ajustado (era o item posto à mão)",
+                             "ja_quitado": "já quitado"}.get(custas.get("acao"), "")
+                          + " no protocolo do ato — entra nas custas e no "
+                          "recibo quando for quitado no caixa.", "success")
+                else:
+                    flash("O 13.30 NÃO entrou nas custas: "
+                          f"{custas.get('motivo')}", "warning")
+
             elif acao == "selar":
                 # **SELAR UM ATO JÁ LANÇADO** — a saída de quando o aparelho
                 # estava fora do ar na hora do lançamento. Sem ela, o ato
@@ -4027,6 +4329,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if erro_item:
                     flash(f"O selo não foi pedido: {erro_item}", "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
+                # O ARQUIVAMENTO OBRIGATÓRIO SE CONFERE ANTES DE PEDIR O SELO
+                # DO ATO (15/10/2026): os dois saem juntos, e pedir o primeiro
+                # sabendo que o segundo não pode sair deixaria a procuração
+                # selada pela metade.
+                folhas_arq = None
+                if (arquivamento_obrigatorio(a["tipo"])
+                        and not str(a["selo_arquivamento"] or "").strip()):
+                    try:
+                        with db.connect() as _con_arq:
+                            folhas_arq = NARQ.exigir_para_selar(_con_arq, a)
+                    except NARQ.ArquivamentoError as erro:
+                        flash("O selo não foi pedido: o selo de arquivamento "
+                              f"é obrigatório neste ato — {erro}", "danger")
+                        return redirect(url_for("notas_ato", ato_id=ato_id))
                 _atualizar_data_teor_antes_do_selo(ato_id)
                 recado = selar_o_ato_de_livro(
                     ato_id, codigo_tj=item,
@@ -4037,9 +4353,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 audit("NT_ATO_SELO_AUTOMATICO", "NT_ATO", ato_id,
                       {"item": item, "motivo": motivo,
                        "recado": recado.strip()})
+                arq = None
+                if not motivo and folhas_arq:
+                    selo_ato = q1("SELECT selo FROM nt_atos WHERE id=?",
+                                  (ato_id,))["selo"]
+                    arq = _selar_arquivamento_das_notas(
+                        ato_id=ato_id, folhas=folhas_arq,
+                        selo_do_ato=str(selo_ato or "").strip() or None,
+                        partes=[(p["nome"], p["documento"]) for p in q(
+                            "SELECT nome, documento FROM nt_ato_partes "
+                            "WHERE ato_id=? ORDER BY id", (ato_id,))],
+                        isento=request.form.get("selo_isento") == "1",
+                        motivo_isencao=request.form.get("motivo_isencao"))
+                    audit("NT_ATO_ARQUIVAMENTO_SELADO" if arq.get("ok")
+                          else "NT_ATO_ARQUIVAMENTO_PENDENTE", "NT_ATO", ato_id,
+                          {"folhas": folhas_arq,
+                           "selo_arquivamento": arq.get("numero"),
+                           "motivo": arq.get("motivo")})
                 if motivo:
                     flash("O selo ainda não saiu. "
                           f"Motivo: {motivo}. O ato continua suspenso.",
+                          "danger")
+                elif (arq is not None and not arq.get("ok")
+                      and not arq.get("robo")):
+                    flash(recado.strip(), "success")
+                    flash("O selo do ato saiu, mas o de arquivamento, que é "
+                          f"obrigatório neste ato, não: {arq.get('motivo')}. "
+                          "O ato continua suspenso; use «Selar arquivamento».",
                           "danger")
                 else:
                     with db.transaction() as con:
@@ -4074,13 +4414,105 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 except AS.AtoError as erro:
                     flash(str(erro), "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
+                # O SELO À MÃO NÃO DISPENSA O ARQUIVAMENTO — decisão do
+                # oficial, 15/10/2026: na procuração, no substabelecimento e
+                # na revogação lançados por este sistema, o ato fica
+                # SUSPENSO_SELO até o 13.30 sair (pelo aparelho, ou à mão logo
+                # abaixo). O acervo, que não foi lançado aqui, não é alcançado.
+                falta_arquivamento = (
+                    arquivamento_obrigatorio(a["tipo"])
+                    and str(a["lancado_em"] or "").strip()
+                    and not str(a["selo_arquivamento"] or "").strip())
                 with db.transaction() as con:
-                    con.execute(
-                        "UPDATE nt_atos SET situacao='LAVRADO' "
-                        "WHERE id=? AND situacao='SUSPENSO_SELO'", (ato_id,))
+                    if falta_arquivamento:
+                        con.execute(
+                            "UPDATE nt_atos SET situacao='SUSPENSO_SELO' "
+                            "WHERE id=? AND situacao IN ('LAVRADO','SUSPENSO_SELO')",
+                            (ato_id,))
+                    else:
+                        con.execute(
+                            "UPDATE nt_atos SET situacao='LAVRADO' "
+                            "WHERE id=? AND situacao='SUSPENSO_SELO'", (ato_id,))
                 audit("NT_ATO_SELADO", "NT_ATO", ato_id, {"selo": selo})
                 flash("Selo registrado, e ele entrou no razão dos selos.",
                       "success")
+                if falta_arquivamento:
+                    flash("O ato continua SUSPENSO: falta o selo de "
+                          "arquivamento (13.30), obrigatório neste ato. Peça-o "
+                          "ao aparelho ou anote-o à mão no quadro «Selo».",
+                          "warning")
+
+            elif acao == "selo_arquivamento":
+                # **O SELO DE ARQUIVAMENTO À MÃO** — decisão do oficial,
+                # 15/10/2026, para quem tirou o 13.30 fora do sistema. O mesmo
+                # molde da entrada à mão do selo do ato: o número é lido, o CNS
+                # é conferido, o repetido é recusado e ele entra no razão.
+                # E A REGRA DO OBRIGATÓRIO VALE IGUAL: anexo e folhas
+                # confirmadas, porque a quantidade é o que o selo declara.
+                selo = (request.form.get("selo_arquivamento") or "").strip().upper()
+                if not selo:
+                    flash("Informe o número do selo de arquivamento.", "danger")
+                    return redirect(url_for("notas_ato", ato_id=ato_id))
+                if not str(a["selo"] or "").strip():
+                    flash("Registre primeiro o selo do ato — o de "
+                          "arquivamento vem junto dele, e não no lugar.",
+                          "danger")
+                    return redirect(url_for("notas_ato", ato_id=ato_id))
+                if str(a["selo_arquivamento"] or "").strip():
+                    flash(f"Este ato já tem selo de arquivamento: "
+                          f"{a['selo_arquivamento']}.", "warning")
+                    return redirect(url_for("notas_ato", ato_id=ato_id))
+                if not selo.startswith("ARQUIV"):
+                    flash(f"O selo {selo} não é de arquivamento: o código do "
+                          "13.30 começa com ARQUIV. Confira se copiou o selo "
+                          "certo.", "danger")
+                    return redirect(url_for("notas_ato", ato_id=ato_id))
+                folhas_m = None
+                if arquivamento_obrigatorio(a["tipo"]):
+                    try:
+                        with db.connect() as _con_arq:
+                            folhas_m = NARQ.exigir_para_selar(_con_arq, a)
+                    except NARQ.ArquivamentoError as erro:
+                        flash(f"Selo de arquivamento não anotado: {erro}",
+                              "danger")
+                        return redirect(url_for("notas_ato", ato_id=ato_id))
+                else:
+                    folhas_m = NARQ.folhas_validas(
+                        request.form.get("folhas_arquivamento"))
+                    if folhas_m < 1:
+                        flash("Informe quantas folhas o selo de arquivamento "
+                              "declara (número inteiro, 1 ou mais).", "danger")
+                        return redirect(url_for("notas_ato", ato_id=ato_id))
+                try:
+                    with db.transaction() as con:
+                        AS.registrar_selo_obtido_a_mao(
+                            con, selo, tabela="nt_atos", ato_id=int(ato_id),
+                            atribuicao="NOTAS", agora=db.now(),
+                            cns=db.get_setting("ri_cns", ""),
+                            usuario=usuario_nome(),
+                            texto=(request.form.get("selo_arquivamento_texto")
+                                   or "").strip() or None)
+                        # `registrar_selo_obtido_a_mao` escreve na coluna do
+                        # selo do ATO; o do ato volta para o lugar dele, e
+                        # este vai para `selo_arquivamento` — a mesma troca
+                        # que `_selar_arquivamento_das_notas` faz.
+                        con.execute(
+                            """UPDATE nt_atos SET selo=?, selo_arquivamento=?,
+                                      folhas_arquivamento=?
+                                WHERE id=?""",
+                            (a["selo"], selo, folhas_m, int(ato_id)))
+                        if arquivamento_obrigatorio(a["tipo"]):
+                            con.execute(
+                                "UPDATE nt_atos SET situacao='LAVRADO' "
+                                "WHERE id=? AND situacao='SUSPENSO_SELO'",
+                                (ato_id,))
+                except AS.AtoError as erro:
+                    flash(str(erro), "danger")
+                    return redirect(url_for("notas_ato", ato_id=ato_id))
+                audit("NT_ATO_ARQUIVAMENTO_SELO_A_MAO", "NT_ATO", ato_id,
+                      {"selo_arquivamento": selo, "folhas": folhas_m})
+                flash(f"Selo de arquivamento {selo} registrado ({folhas_m} "
+                      "folha(s)), e ele entrou no razão dos selos.", "success")
 
             elif acao == "anotacao_de_lavratura":
                 # **A ANOTAÇÃO ANTES DA LAVRATURA** — 17/09/2026, pedido do
@@ -4137,7 +4569,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     (a["modelo_codigo"],)) if a["modelo_codigo"] else None
         familia = NF.do_tipo_ato(a["tipo"])
         anexos = db.get_attachments("NT_ATO", ato_id)
-        modelo_padrao = NMOD.por_codigo(a["modelo_codigo"]) if a["modelo_codigo"] else None
+        # OS DOCUMENTOS QUE O CLIENTE ENTREGOU NO PROTOCOLO GERAL — relato
+        # #135, 15/10/2026. Quem lavra vê os papéis da qualificação sem largar
+        # o teor; a ponte é `nt_atos.protocolo_id`, nunca o nome do cliente.
+        with db.connect() as _cpd:
+            qualificacao = PDOC.anexos_do_ato_de_notas(_cpd, ato_id)
+        modelo_padrao =NMOD.por_codigo(a["modelo_codigo"]) if a["modelo_codigo"] else None
         requisitos_modelo = (modelo_padrao or {}).get("requisitos", [])
         busca = (request.args.get("busca_parte") or "").strip()
         achados = []
@@ -4185,6 +4622,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         with db.connect() as con:
             con.row_factory = sqlite3.Row
             depositos = DEP.do_ato(con, ato_id)
+            # O ARQUIVAMENTO OBRIGATÓRIO (15/10/2026): a contagem dos anexos,
+            # a confirmação e o que ainda falta — a tela trava o que o
+            # servidor recusa.
+            arquivamento = NARQ.situacao(con, a)
 
         # O que o lançamento vai atribuir, se ainda não foi lançado. Mostrar
         # antes evita a surpresa de descobrir o livro depois de imprimir.
@@ -4250,12 +4691,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                doi_partes=doi_partes,
                                fraudes=fraudes, modelo=modelo, familia=familia,
                                anexos=anexos,
+                               qualificacao=qualificacao,
                                requisitos_modelo=requisitos_modelo,
                                campos=campos, valores_do_modelo=valores_do_modelo,
                                busca_parte=busca, achados=achados,
-                               pendencias=pendencias_modelo(a["teor"] or ""),
+                               pendencias=_pendencias_do_teor(a["teor"] or ""),
                                falta_qualificar=NT.pendencias_da_qualificacao(partes),
                                depositos=depositos, previsao=previsao,
+                               arquivamento=arquivamento,
                                paginas_estimadas=paginas_estimadas,
                                paginas_a_mao=bool(request.args.get("paginas_a_mao")),
                                entrelinha=entrelinha, face_em_branco=face_em_branco,
@@ -4263,6 +4706,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                pede_anotacao=pede_anotacao,
                                busca_anterior=busca_anterior,
                                candidatos=candidatos,
+                               **_comunicacao_desta_tela(a),
                                saldo=CXC.reais(DEP.saldo_do_titulo(depositos)),
                                FORMAS=CXC.FORMAS_PAGAMENTO,
                                TIPOS_ANOTACAO=TIPOS_ANOTACAO,
@@ -4294,8 +4738,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         esconderia justamente o que falta cadastrar.
         """
         tipo = str((a["tipo"] or "")).strip().upper()
-        if tipo not in ("ESCRITURA", "PROCURACAO", "ATA",
-                        "ATA_USUCAPIAO"):
+        # Substabelecimento e revogação selam pelo caminho da procuração —
+        # decisão do oficial, 15/10/2026 (`AS.TIPOS_QUE_SELAM_COMO_PROCURACAO`).
+        if tipo not in ("ESCRITURA", "ATA", "ATA_USUCAPIAO",
+                        *AS.TIPOS_QUE_SELAM_COMO_PROCURACAO):
             return {
                 "selo_caminhos": [], "selo_sem_caminho": True,
                 "selo_aviso": (f"Ainda não há caminho de selo configurado "
@@ -4373,6 +4819,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         "naturezaEscritura": "escolha a natureza em Notas → Escrituras pendentes",
     }
 
+    def _pendencias_do_teor(teor: str) -> list[str]:
+        """Campo em branco do teor: `[CAMPO]`, `{ESCOLHA}` e a fileira de X.
+
+        A fileira de X é o claro dos modelos do E-Ofício (39 dos 300), que o
+        detector do RI não conhece — a procuração 802 foi lavrada com
+        «XXXXXXXXXXXXXXXXXXX» no lugar do veículo. Mora aqui, e não em
+        `ri_modelos_atos`, porque o detector de lá serve também o RI.
+        """
+        return pendencias_modelo(teor) + [f"«{x}»" for x in NT.claros_de_x(teor)]
+
     def _travas_da_lavratura(a: dict) -> list[str]:
         """O que impede este ato de ser lavrado — vazio, pode lavrar.
 
@@ -4386,7 +4842,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if (a.get("situacao") or "") != "EM_LAVRATURA":
             return []
         travas = [f"o texto tem campo em branco {m} — edite o teor"
-                  for m in pendencias_modelo(a.get("teor") or "")]
+                  for m in _pendencias_do_teor(a.get("teor") or "")]
         with db.connect() as con:
             con.row_factory = sqlite3.Row
             for imp in NC.impedimentos_para_lavrar(con, a):
@@ -4504,25 +4960,48 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash(f"Este ato já tem selo de arquivamento: "
                   f"{a['selo_arquivamento']}.", "warning")
             return redirect(url_for("notas_ato", ato_id=ato_id))
-        bruto = (request.form.get("folhas_arquivamento") or "").strip()
-        try:
-            folhas = int(bruto or 0)
-        except ValueError:
-            folhas = 0
-        if folhas < 1:
-            flash("Informe a quantidade de folhas (>= 1) para o arquivamento.",
-                  "danger")
-            return redirect(url_for("notas_ato", ato_id=ato_id))
+        obrigatorio = arquivamento_obrigatorio(a["tipo"])
+        if obrigatorio:
+            # NA PROCURAÇÃO, NO SUBSTABELECIMENTO E NA REVOGAÇÃO a quantidade
+            # é a CONFIRMADA na ficha (15/10/2026), e não a do formulário:
+            # sem anexo ou sem confirmação, recusa aqui, no servidor.
+            try:
+                with db.connect() as _con_arq:
+                    folhas = NARQ.exigir_para_selar(_con_arq, a)
+            except NARQ.ArquivamentoError as erro:
+                flash(f"Arquivamento não pedido: {erro}", "danger")
+                return redirect(url_for("notas_ato", ato_id=ato_id))
+        else:
+            bruto = (request.form.get("folhas_arquivamento") or "").strip()
+            try:
+                folhas = int(bruto or 0)
+            except ValueError:
+                folhas = 0
+            if folhas < 1:
+                flash("Informe a quantidade de folhas (>= 1) para o "
+                      "arquivamento.", "danger")
+                return redirect(url_for("notas_ato", ato_id=ato_id))
         partes_arq = [dict(p) for p in q(
             "SELECT nome, documento FROM nt_ato_partes WHERE ato_id=? "
             "ORDER BY id", (ato_id,))]
+        # A GRATUIDADE SEGUE A DO ATO, como no RI (art. 290-A) e no RCPN: o
+        # isento do arquivamento vem com o motivo escrito, e quem marca é quem
+        # selou o ato. Sem marcar, sai cobrado — que é o que esta tela fazia.
         arq = _selar_arquivamento_das_notas(
             ato_id=ato_id, folhas=folhas,
             selo_do_ato=str(a["selo"] or "").strip(),
-            partes=[(p["nome"], p.get("documento")) for p in partes_arq])
+            partes=[(p["nome"], p.get("documento")) for p in partes_arq],
+            isento=request.form.get("selo_isento") == "1",
+            motivo_isencao=request.form.get("motivo_isencao"))
         if arq.get("ok"):
             audit("NT_ATO_ARQUIVAMENTO_SELADO", "NT_ATO", ato_id,
                   {"folhas": folhas, "selo_arquivamento": arq["numero"]})
+            if obrigatorio:
+                # Com os dois selos, a procuração sai da suspensão.
+                with db.transaction() as con:
+                    con.execute(
+                        "UPDATE nt_atos SET situacao='LAVRADO' "
+                        "WHERE id=? AND situacao='SUSPENSO_SELO'", (ato_id,))
             flash(f"Arquivamento selado.{arq['recado']}", "success")
         else:
             audit("NT_ATO_ARQUIVAMENTO_PENDENTE", "NT_ATO", ato_id,
@@ -4587,7 +5066,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         (corpo, _json.dumps(valores, ensure_ascii=False), ato_id))
         audit("NT_ATO_PREENCHIDO", "NT_ATO", ato_id,
               {"modelo": a["modelo_codigo"], "campos": len(valores)})
-        faltam = pendencias_modelo(corpo)
+        faltam = _pendencias_do_teor(corpo)
         if faltam:
             flash(f"Teor montado, mas {len(faltam)} campo(s) continuam em branco: "
                   f"{', '.join(faltam[:6])}", "warning")
@@ -5416,8 +5895,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         ano = int(request.form.get("ano"))
         mes = int(request.form.get("mes"))
         quinzena = int(request.form.get("quinzena"))
-        ambiente = (request.form.get("ambiente") or CRED.HOMOLOGACAO).upper()
         volta = redirect(url_for("notas_remessas", ano=ano, mes=mes, quinzena=quinzena))
+        # SÓ PRODUÇÃO DESDE 15/10/2026 (ordem do oficial; a produção da CENSEC
+        # está configurada). Vazio vira produção; homologação pedida pelo
+        # formulário é recusada com a frase de `ambiente_de_uso`, e não trocada
+        # em silêncio. A homologação continua em `censec_api`, pelo nome.
+        try:
+            ambiente = CRED.ambiente_de_uso(CRED.CENSEC, request.form.get("ambiente"))
+        except CRED.CredencialError as erro:
+            flash(str(erro), "danger")
+            return volta
         if ambiente not in CAPI.BASE_DO_AMBIENTE:
             abort(400)
         try:

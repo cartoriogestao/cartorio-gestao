@@ -46,6 +46,18 @@ def manifest_for(version: str, payload: dict[str, bytes],
 
 
 class UpdateNetworkTests(unittest.TestCase):
+    def setUp(self):
+        # Estes testes medem as OUTRAS travas do atualizador (versão, hash,
+        # conteúdo escondido, reaprovação) com pacotes montados à mão, sem
+        # assinatura. Desde 14/10/2026 há chave cadastrada e o pacote sem
+        # assinatura é recusado antes delas — a assinatura tem os testes dela
+        # em test_assinatura_da_atualizacao.py. Aqui, o modo de transição.
+        import assinatura_da_atualizacao as ASS
+        from unittest import mock
+        trava = mock.patch.object(ASS, "CHAVES_CONFIAVEIS", {})
+        trava.start()
+        self.addCleanup(trava.stop)
+
     def test_discovery_responder(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(("127.0.0.1", 0))

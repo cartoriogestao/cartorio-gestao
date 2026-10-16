@@ -807,7 +807,12 @@ def base_do_ambiente(ambiente: Any = None) -> str:
 
 
 def ambiente_da_casa() -> str:
-    """Em que ambiente esta casa fala com o ONR. **Começa na homologação.**"""
+    """Em que ambiente esta casa fala com o ONR.
+
+    **Produção desde 15/10/2026** (ordem do oficial, com a produção já
+    configurada): `centrais_cred` declara só ela para o ONR. Até então a casa
+    começava na homologação, o primeiro da tabela.
+    """
     return CRED.ambientes_de(CRED.ONR)[0]
 
 

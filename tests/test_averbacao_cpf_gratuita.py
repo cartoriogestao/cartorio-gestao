@@ -21,7 +21,7 @@ def test_art_347_cpf_existe_nas_gratuidades():
 def test_envelope_do_civil_aceita_selo_gratuito():
     env = AS.envelope_do_civil(
         especie="NASCIMENTO", tipo="AVERBACAO",
-        escrevente="JEAN", livro="A-1", folha="10", termo="1",
+        escrevente="MARIO", livro="A-1", folha="10", termo="1",
         nome_parte="MARIA", versao_tabela="0120260101",
         isento=True,
         motivo_isencao="ART. 347 DO CODIGO DE NORMAS DO TJMA")
@@ -34,14 +34,14 @@ def test_envelope_do_civil_gratuito_exige_motivo():
     with pytest.raises(AS.AtoError):
         AS.envelope_do_civil(
             especie="NASCIMENTO", tipo="AVERBACAO",
-            escrevente="JEAN", livro="A-1", folha="10", termo="1",
+            escrevente="MARIO", livro="A-1", folha="10", termo="1",
             nome_parte="MARIA", versao_tabela="0120260101",
             isento=True, motivo_isencao="")
 
 
 def test_envelope_da_averbacao_civil_campos_obrigatorios():
     env = AS.envelope_da_averbacao_civil(
-        escrevente="JEAN SANTOS", livro="A-1", folha="10", termo="1222",
+        escrevente="MARIO SANTOS", livro="A-1", folha="10", termo="1222",
         versao_tabela="0120260101",
         alteracao="Averbo neste assento o CPF n.º 000.000.000-00, art. 347.",
         tipo_averbacao=AS.TIPO_AVERBACAO_CPF_ART_347,
@@ -61,7 +61,7 @@ def test_envelope_da_averbacao_civil_campos_obrigatorios():
 def test_envelope_da_averbacao_civil_exige_tipo():
     with pytest.raises(AS.AtoError):
         AS.envelope_da_averbacao_civil(
-            escrevente="JEAN", livro="A-1", folha="10", termo="1",
+            escrevente="MARIO", livro="A-1", folha="10", termo="1",
             versao_tabela="0120260101", alteracao="texto",
             tipo_averbacao="", codigo_tj="14.4.1")
 
@@ -69,7 +69,7 @@ def test_envelope_da_averbacao_civil_exige_tipo():
 def test_envelope_da_averbacao_civil_default_codigo_14_4_1():
     """Sem codigo_tj, monta 14.4.1 + alteracao + tipo obrigatorio."""
     env = AS.envelope_da_averbacao_civil(
-        escrevente="JEAN", livro="A-1", folha="10", termo="1",
+        escrevente="MARIO", livro="A-1", folha="10", termo="1",
         versao_tabela="0120260101",
         alteracao="Averbo o CPF, art. 347.",
         tipo_averbacao=AS.TIPO_AVERBACAO_CPF_ART_347)
@@ -82,7 +82,7 @@ def test_envelope_da_averbacao_civil_default_codigo_14_4_1():
 def test_envelope_da_averbacao_civil_isento_false_quando_pago():
     """Sem gratuidade, ainda manda dadosSelo.isento=False (Tribunal exige o campo)."""
     env = AS.envelope_da_averbacao_civil(
-        escrevente="JEAN", livro="A-1", folha="10", termo="1",
+        escrevente="MARIO", livro="A-1", folha="10", termo="1",
         versao_tabela="0120260101",
         alteracao="Averbo retificacao de grafia.",
         tipo_averbacao=1, codigo_tj="14.4.1", isento=False)

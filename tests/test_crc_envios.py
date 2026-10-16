@@ -47,10 +47,10 @@ def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.set_settings({"serventia_cns": "000000"})
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -104,7 +104,7 @@ def test_pendentes_some_quem_ja_tem_lote(casa):
             "SELECT id, especie, numero, nome, data_ato, matricula "
             "FROM rc_assentos WHERE id=?", (aid,))]
 
-    CRCENVIOS.registrar_envio(con, [aid], agora=AGORA, por="jean",
+    CRCENVIOS.registrar_envio(con, [aid], agora=AGORA, por="mario",
                               canal="MANUAL")
     con.commit()
 
@@ -116,7 +116,7 @@ def test_pendentes_some_quem_ja_tem_lote(casa):
 def test_registrar_envio_recusa_lote_vazio(casa):
     con = _con(casa)
     with pytest.raises(CRC.CrcError, match="Nenhum assento"):
-        CRCENVIOS.registrar_envio(con, [], agora=AGORA, por="jean",
+        CRCENVIOS.registrar_envio(con, [], agora=AGORA, por="mario",
                                   canal="MANUAL")
 
 
@@ -125,7 +125,7 @@ def test_historico_e_assentos_do_lote(casa):
     a1 = _assento(con, "MARIA ÍSIS", numero=1)
     a2 = _assento(con, "JOÃO PEDRO", numero=2)
     lote_id = CRCENVIOS.registrar_envio(
-        con, [a1, a2], agora=AGORA, por="jean", canal="WEBSERVICE",
+        con, [a1, a2], agora=AGORA, por="mario", canal="WEBSERVICE",
         ambiente="HOMOLOGACAO", resposta="<return>OK</return>")
     con.commit()
 
@@ -203,7 +203,7 @@ def _abrir_lista(casa):
 def test_a_lista_avisa_quantos_ja_foram_enviados(casa):
     con = _con(casa)
     aid = _assento(con)
-    CRCENVIOS.registrar_envio(con, [aid], agora=AGORA, por="jean",
+    CRCENVIOS.registrar_envio(con, [aid], agora=AGORA, por="mario",
                               canal="MANUAL")
     con.commit()
 
@@ -215,7 +215,7 @@ def test_a_lista_avisa_quantos_ja_foram_enviados(casa):
 def test_ver_enviados_traz_de_volta(casa):
     con = _con(casa)
     aid = _assento(con)
-    CRCENVIOS.registrar_envio(con, [aid], agora=AGORA, por="jean",
+    CRCENVIOS.registrar_envio(con, [aid], agora=AGORA, por="mario",
                               canal="MANUAL")
     con.commit()
 
@@ -234,7 +234,7 @@ def test_a_tela_de_historico_mostra_o_lote(casa):
     con = _con(casa)
     aid = _assento(con)
     CRCENVIOS.registrar_envio(
-        con, [aid], agora=AGORA, por="jean", canal="WEBSERVICE",
+        con, [aid], agora=AGORA, por="mario", canal="WEBSERVICE",
         ambiente="HOMOLOGACAO", resposta="<return>OK-999</return>")
     con.commit()
 

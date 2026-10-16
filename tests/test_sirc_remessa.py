@@ -60,7 +60,7 @@ def casa(tmp_path):
     app = create_app({"DATA_DIR": str(dados)})
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
     db = Database(banco)
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     return {"app": app, "banco": banco, "db": db}
 
 

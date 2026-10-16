@@ -295,40 +295,40 @@ def test_texto_averbacao_completo_apos_selo():
         "000.000.015-97",
         selo="AVERBA000000WOGST2V2BKC6LG79",
         data="2026-09-08T10:02:59",
-        usuario="Jean Santos")
+        usuario="Mario Santos")
     assert t == (
         "Averbo neste assento o CPF n. 000.000.015-97. "
-        "AVERBA000000WOGST2V2BKC6LG79. 08/09/2026. Jean Santos.")
+        "AVERBA000000WOGST2V2BKC6LG79. 08/09/2026. Mario Santos.")
     t2 = CPF.texto_averbacao(
         "000.000.015-97",
         selo="AVERBA000000WOGST2V2BKC6LG79",
         data="2026-09-08T10:02:59",
-        usuario="Jean Santos",
+        usuario="Mario Santos",
         funcao="Tabelião e Oficial de Registro")
     assert t2 == (
         "Averbo neste assento o CPF n. 000.000.015-97. "
         "AVERBA000000WOGST2V2BKC6LG79. 08/09/2026. "
-        "Jean Santos, Tabelião e Oficial de Registro.")
+        "Mario Santos, Tabelião e Oficial de Registro.")
 
 
 def test_reescrever_teor_cpf_a_partir_do_antigo():
     antigo = ("Averbo neste assento o CPF n.º 000.000.015-97, na forma do "
               "art. 347 do Código de Normas do TJMA.\n"
-              "Lavrado por: Jean Santos.")
+              "Lavrado por: Mario Santos.")
     novo = CPF.reescrever_teor_cpf(
         antigo, selo="AVERBA000000WOGST2V2BKC6LG79",
-        data="2026-09-08", usuario="Jean Santos")
+        data="2026-09-08", usuario="Mario Santos")
     assert novo == (
         "Averbo neste assento o CPF n. 000.000.015-97. "
-        "AVERBA000000WOGST2V2BKC6LG79. 08/09/2026. Jean Santos.")
+        "AVERBA000000WOGST2V2BKC6LG79. 08/09/2026. Mario Santos.")
     novo2 = CPF.reescrever_teor_cpf(
         antigo, selo="AVERBA000000WOGST2V2BKC6LG79",
-        data="2026-09-08", usuario="Jean Santos",
+        data="2026-09-08", usuario="Mario Santos",
         funcao="Tabelião e Oficial de Registro")
     assert novo2 == (
         "Averbo neste assento o CPF n. 000.000.015-97. "
         "AVERBA000000WOGST2V2BKC6LG79. 08/09/2026. "
-        "Jean Santos, Tabelião e Oficial de Registro.")
+        "Mario Santos, Tabelião e Oficial de Registro.")
     assert CPF.reescrever_teor_cpf("Averbação de retificação de grafia.") is None
     assert CPF.nome_usuario_teor("operador") == ""
 
@@ -433,11 +433,11 @@ def test_reescrever_teor_cpf_preserva_o_referente_apos_o_selo():
     antes = CPF.texto_averbacao("00000004502", nome="JOÃO DA SILVA",
                                 papel_rotulo="Primeiro nubente")
     depois = CPF.reescrever_teor_cpf(
-        antes, selo="AVERBA000000ABCDEF", data="2026-09-09", usuario="Jean")
+        antes, selo="AVERBA000000ABCDEF", data="2026-09-09", usuario="Mario")
     assert depois == (
         "Averbo neste assento o CPF n. 000.000.045-02, referente ao "
         "primeiro nubente, JOÃO DA SILVA. AVERBA000000ABCDEF. "
-        "09/09/2026. Jean.")
+        "09/09/2026. Mario.")
 
 
 # ------------------------------------------- quem_falta_cpf, para a ficha

@@ -235,10 +235,10 @@ def casa(tmp_path):
     app = create_app({"DATA_DIR": str(dados)})
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
     db = Database(banco)
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c = app.test_client()
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     bancada = {"app": app, "cliente": c, "banco": banco,
@@ -288,6 +288,8 @@ def _minimo_legal(especie="NASCIMENTO"):
              "declarante_nome": "MARIA DA SILVA"}
         if especie == "NATIMORTO":
             d["numero_do"] = "12345"
+        else:
+            d["ibge_local"] = "1"     # relato #130: o SIRC exige «onde nasceu»
         return d
     if especie in ("CASAMENTO", "CASAMENTO_RELIGIOSO"):
         return {"data_fato": "2026-08-20",
@@ -302,7 +304,9 @@ def _minimo_legal(especie="NASCIMENTO"):
                 "local_fato_nome": "Hospital Municipal",
                 "numero_do": "98765",
                 "filiacao1_nome": "IGNORADO", "filiacao2_nome": "IGNORADO",
-                "declarante_nome": "FULANO"}
+                "declarante_nome": "FULANO",
+                # relato #130: a CRC exige «deixou bens»
+                "obito_possui_bens": "NAO"}
     return {}
 
 
@@ -378,6 +382,7 @@ def test_a_url_fixa_a_especie_mesmo_se_o_post_for_adulterado(casa):
         "pessoa_nome": "CRIANÇA DA SILVA", "pessoa_sexo": "F",
         "data_fato": "2026-08-31",
         "local_fato_nome": "Hospital Municipal",
+        "ibge_local": "1",            # relato #130: o SIRC exige
         "filiacao1_nome": "MARIA DA SILVA",
         "filiacao2_nome": "IGNORADO",
         "declarante_nome": "MARIA DA SILVA",

@@ -42,10 +42,10 @@ def _token(html: str) -> str:
 @pytest.fixture()
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); usuario+login por teste."""
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c = cg_casa["cliente"]
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -167,7 +167,7 @@ def test_lavrar_pela_casa_ja_abre_a_pendencia(casa):
     with con:
         RC.lavrar_assento(con, especie="OBITO", nome="ANTONIO DA SILVA",
                           agora=AGORA, data_fato="2026-08-28",
-                          usuario="jean", origem="SISTEMA",
+                          usuario="mario", origem="SISTEMA",
                           sv={"cidade": "Cidade Exemplo", "uf": "MA"},
                           data_extenso=lambda d: str(d))
     assert ANOT.quantas_pendentes(con) == 2
@@ -204,11 +204,11 @@ def test_anotar_aqui_guarda_qual_assento_foi(casa):
         aid = _assento(con)
         ids = ANOT.declarar(con, aid, agora=AGORA)
         ANOT.anotar_aqui(con, ids[0], assento_alvo_id=alvo, agora=AGORA,
-                         usuario="jean")
+                         usuario="mario")
     p = ANOT.pendencias_do_assento(con, aid)[0]
     assert p["situacao"] == ANOT.ANOTADA
     assert p["assento_alvo_id"] == alvo
-    assert p["resolvida_por"] == "jean"
+    assert p["resolvida_por"] == "mario"
 
 
 def test_o_modulo_nao_escreve_no_assento_alvo(casa):
@@ -272,7 +272,7 @@ def test_comunicar_guarda_o_caminho_inteiro(casa):
         ids = ANOT.declarar(con, aid, agora=AGORA)
         ANOT.comunicar(con, ids[0], canal="CRC",
                        serventia="1º Ofício de Imperatriz/MA",
-                       protocolo="CRC-2026-0099", agora=AGORA, usuario="jean")
+                       protocolo="CRC-2026-0099", agora=AGORA, usuario="mario")
     p = ANOT.pendencias_do_assento(con, aid)[0]
     assert p["situacao"] == ANOT.COMUNICADA
     assert p["canal"] == "CRC"

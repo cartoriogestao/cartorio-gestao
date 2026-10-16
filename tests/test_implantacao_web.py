@@ -122,7 +122,9 @@ def test_o_aviso_NAO_aparece_em_sistema_novo(s):
 
 def test_o_aviso_aparece_em_QUALQUER_tela(s):
     declarar(s)
-    for caminho in ("/", "/protesto/titulos", "/nucleo/livros"):
+    # `/protesto` e nao `/protesto/titulos`: desde a 3.6.193 (24/09/2026) o
+    # endereco antigo so redireciona, sem tela — 14/10/2026.
+    for caminho in ("/", "/protesto", "/nucleo/livros"):
         html = s["c"].get(caminho).get_data(as_text=True)
         assert AVISO in html, caminho
         assert "/implantacao" in html

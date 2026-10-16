@@ -297,11 +297,18 @@ def test_sem_credencial_a_frase_diz_onde_cadastrar():
     assert "adesão" in str(erro.value).lower()
 
 
-def test_o_ambiente_padrao_e_homologacao():
-    """**Começar na produção por omissão** é o que esta escolha evita."""
-    assert API._ambiente(None) == CRED.HOMOLOGACAO
-    assert API._ambiente("") == CRED.HOMOLOGACAO
+def test_o_ambiente_padrao_e_producao():
+    """**CONTRATO MUDADO EM 14/10/2026** — ordem do oficial: «tire a opção de
+    funcionar na homologação, agora é tudo produção». Este teste se chamava
+    `test_o_ambiente_padrao_e_homologacao` e dizia que «começar na produção
+    por omissão é o que esta escolha evita»; a ordem desfez a escolha. Os
+    outros dois ambientes continuam alcançáveis PELO NOME (teste automatizado
+    e simulador), e nenhuma tela os pede."""
+    assert API._ambiente(None) == CRED.PRODUCAO
+    assert API._ambiente("") == CRED.PRODUCAO
+    assert API._ambiente("sei la") == CRED.PRODUCAO
     assert API._ambiente(CRED.TESTES) == CRED.TESTES
+    assert API._ambiente(CRED.HOMOLOGACAO) == CRED.HOMOLOGACAO
 
 
 def test_o_diagnostico_nao_usa_o_status_que_dispensa_chave():

@@ -65,15 +65,15 @@ def test_tarefas_filtra_por_prioridade_e_responsavel_e_ordena(cg_casa_logada):
     casa = cg_casa_logada
     db, c = casa["db"], casa["c"]
     with db.connect() as con_:
-        jean = con_.execute("SELECT id FROM users WHERE username='jean'").fetchone()[0]
+        mario = con_.execute("SELECT id FROM users WHERE username='mario'").fetchone()[0]
     _tarefa(db, "Tarefa Zeta baixa", priority="BAIXA", sector="RCPN", due_date="2026-12-01")
     _tarefa(db, "Tarefa Alfa critica", priority="CRITICA", sector="Notas", due_date="2026-11-01",
-            assigned_user_id=jean)
+            assigned_user_id=mario)
     _tarefa(db, "Tarefa Meio media", priority="MEDIA", sector="Atendimento")
 
     html = c.get("/tarefas?status=&prioridade=CRITICA").get_data(as_text=True)
     assert "Tarefa Alfa critica" in html and "Tarefa Zeta baixa" not in html
-    html = c.get(f"/tarefas?status=&responsavel={jean}").get_data(as_text=True)
+    html = c.get(f"/tarefas?status=&responsavel={mario}").get_data(as_text=True)
     assert "Tarefa Alfa critica" in html and "Tarefa Meio media" not in html
 
     nomes = ("Tarefa Zeta baixa", "Tarefa Alfa critica", "Tarefa Meio media")
@@ -108,6 +108,59 @@ def test_processos_ordena_por_todas_as_colunas(cg_casa_logada):
     assert 'name="prioridade"' in html and "Inverter a ordem" in html
 
 
+# --------------------------------------------- a busca (relato #122)
+def test_busca_por_numero_titulo_descricao_e_responsavel():
+    """«precisa ser possível ordenar e pesquisar melhor entre as tarefas» —
+    relato #122, 07/10/2026. A régua é uma só para Tarefas e Processos."""
+    assert TO.busca_sql("", responsavel="u.full_name") == ([], [])
+    where, args = TO.busca_sql("PROC-2026-000318", responsavel="u.full_name")
+    assert where[0].startswith("(t.id = ?") and args[0] == 318
+    assert TO.busca_sql("#318", responsavel="x")[1][0] == 318
+    where, args = TO.busca_sql("certidão", responsavel="u.full_name", extras=("e.sender",))
+    assert "t.id" not in where[0] and len(args) == 4 and "e.sender LIKE ?" in where[0]
+
+
+def test_tarefas_procura_e_convive_com_filtros_ordem_e_suspensas(cg_casa_logada):
+    import tarefa_suspensao as TS
+    casa = cg_casa_logada
+    db, c = casa["db"], casa["c"]
+    with db.connect() as con_:
+        mario = con_.execute("SELECT id FROM users WHERE username='mario'").fetchone()[0]
+    db.create_user("beatriz", "BEATRIZ EXEMPLO DE SOUZA", "Senha#12345", "USER")
+    with db.connect() as con_:
+        beatriz = con_.execute("SELECT id FROM users WHERE username='beatriz'").fetchone()[0]
+    um = _tarefa(db, "Certidão Bravo", priority="ALTA", description="pedido do juízo",
+                 assigned_user_id=mario)
+    dois = _tarefa(db, "Escritura Alfa", priority="BAIXA", description="certidão de ônus anexa",
+                   assigned_user_id=beatriz)
+    _tarefa(db, "Averbação Gama", priority="MEDIA", assigned_user_id=beatriz)
+    nomes = ("Certidão Bravo", "Escritura Alfa", "Averbação Gama")
+
+    # título e descrição, com a ordem escolhida
+    html = c.get("/tarefas?status=&q=certid&ordem=ASSUNTO").get_data(as_text=True)
+    assert _titulos(html, *nomes) == ["Certidão Bravo", "Escritura Alfa"]
+    # o número, nas três formas
+    for q in (str(dois), f"%23{dois}", f"PROC-2026-{dois:06d}"):
+        html = c.get(f"/tarefas?status=&q={q}").get_data(as_text=True)
+        assert "Escritura Alfa" in html and "Averbação Gama" not in html, q
+    # o responsável, junto com o filtro de prioridade
+    html = c.get("/tarefas?status=&q=BEATRIZ&prioridade=BAIXA").get_data(as_text=True)
+    assert _titulos(html, *nomes) == ["Escritura Alfa"]
+    assert 'name="q"' in html and 'value="BEATRIZ"' in html
+    # e o filtro das suspensas (relato #132)
+    with db.transaction() as con_:
+        TS.suspender(con_, um, modo="CONDICAO", motivo="Nota devolutiva emitida ao cliente",
+                     condicao="Retorno do cliente com o documento", usuario_id=mario,
+                     agora="2026-10-15T09:00:00")
+    html = c.get("/tarefas?status=&q=certid&suspensas=OCULTAR").get_data(as_text=True)
+    assert _titulos(html, *nomes) == ["Escritura Alfa"]
+    html = c.get("/tarefas?status=&q=certid&suspensas=SO").get_data(as_text=True)
+    assert _titulos(html, *nomes) == ["Certidão Bravo"] and "SUSPENSA até:" in html
+    # Processos procura com a mesma régua: o número e o responsável também
+    html = c.get(f"/processos?vista=TODOS&q={dois}").get_data(as_text=True)
+    assert "Escritura Alfa" in html and "Averbação Gama" not in html
+
+
 # ------------------------------------------------------- a produtividade
 def _registro(**kw):
     base = {"id": 1, "data_registro": "2026-10-13", "responsavel_nome": "Ana",
@@ -140,12 +193,12 @@ def test_tela_da_produtividade_filtra_o_periodo_e_ordena(cg_casa_logada):
     for dia, tarefa, prior in (("2026-10-01", "Certidão Gama", "Baixa"),
                                ("2026-10-05", "Escritura Alfa", "Alta"),
                                ("2026-09-01", "Fora do período", "Alta")):
-        PRD.registrar_registro(con, responsavel_user_id=1, responsavel_nome="Jean",
+        PRD.registrar_registro(con, responsavel_user_id=1, responsavel_nome="Mario",
                                categoria=PRD.CATEGORIA_PADRAO, tarefa=tarefa,
                                prioridade=prior, status=PRD.STATUS_CONCLUIDA,
                                data_registro=dia, hora_inicio="08:00", hora_fim="09:00",
                                pausas_min=0, tempo_planejado_min=None, observacoes=None,
-                               criado_por="jean")
+                               criado_por="mario")
     con.commit()
     con.close()
     url = "/administrativo/produtividade?data_de=2026-10-01&data_ate=2026-10-31&responsavel=Todos"

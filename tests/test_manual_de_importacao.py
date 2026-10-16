@@ -49,6 +49,9 @@ TELAS_DE_IMPORTACAO: tuple[str, ...] = (
     "notas_importar.html", "ri_importar.html",
     "atrib_livro3_importar.html", "protesto_importar_eoficio.html",
     "rcpn_importar_acervo.html",
+    # Os pré-cadastros do Registro Civil (11/10/2026) — entrou em 14/10/2026,
+    # quando o varredor abaixo acusou a tela sem o manual da casa.
+    "rcpn_importar.html",
 )
 
 
@@ -65,11 +68,11 @@ def casa(tmp_path_factory):
     dados = tmp_path_factory.mktemp("dados")
     app = create_app({"DATA_DIR": str(dados)})
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
-    Database(banco).create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA,
+    Database(banco).create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA,
                                 "ADMIN")
     c = app.test_client()
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return {"c": c, "banco": banco}

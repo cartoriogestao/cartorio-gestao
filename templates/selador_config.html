@@ -160,15 +160,25 @@
       <input type="text" name="base_url" value="{{ estado.base_url or '' }}"
              placeholder="https://IP-DO-SELADOR:443" autocomplete="off">
     </label>
+    {# A HOMOLOGAÇÃO SAI DA TELA QUANDO O SELADOR JÁ ESTÁ EM PRODUÇÃO —
+       ordem do oficial em 15/10/2026 («tira as telas e referências a
+       homologação nas centrais que já configuramos a produção, deixa no
+       código»). Ela volta a aparecer se a instalação estiver em homologação
+       ou tiver um endereço de homologação gravado; `selador_config.gravar`
+       continua aceitando os dois. #}
+    {% set mostra_homologacao = estado.ambiente != 'PRODUCAO' or estado.base_homologacao %}
+    {% if mostra_homologacao %}
     <label>Endereço de homologação
       <input type="text" name="base_homologacao"
              value="{{ estado.base_homologacao or '' }}"
-             placeholder="no E-Ofício, campo «URL de Homologação»" autocomplete="off">
+             placeholder="o endereço de homologação do selador" autocomplete="off">
     </label>
+    {% endif %}
     <label>Endereço de autenticação
       <input type="text" name="auth_url" value="{{ estado.auth_url or '' }}"
              placeholder="em branco = o próprio selador, em /auth" autocomplete="off">
     </label>
+    {% if mostra_homologacao %}
     <label>Ambiente
       <select name="ambiente">
         {% for a in ambientes %}
@@ -176,6 +186,10 @@
         {% endfor %}
       </select>
     </label>
+    {% else %}
+    <input type="hidden" name="ambiente" value="PRODUCAO">
+    <p class="small muted">Ambiente: <strong>produção</strong>.</p>
+    {% endif %}
     <label>Usuário
       <input type="text" name="usuario" placeholder="nome.sobrenome" autocomplete="off">
     </label>

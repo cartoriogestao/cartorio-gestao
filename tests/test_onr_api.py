@@ -111,9 +111,12 @@ def test_os_DOIS_ambientes_vem_do_contrato(contrato):
     assert API.BASE_POR_AMBIENTE[CRED.HOMOLOGACAO] in declarados
 
 
-def test_a_casa_comeca_na_homologacao():
-    assert API.ambiente_da_casa() == CRED.HOMOLOGACAO
-    assert API.base_do_ambiente().startswith("https://testes-api.")
+def test_a_casa_fala_com_a_producao_e_os_testes_seguem_pelo_nome():
+    # Até 15/10/2026 a casa começava na homologação. Ordem do oficial: só a
+    # produção, com ela já configurada; o endereço de testes fica no código.
+    assert API.ambiente_da_casa() == CRED.PRODUCAO
+    assert not API.base_do_ambiente().startswith("https://testes-api.")
+    assert API.base_do_ambiente(CRED.HOMOLOGACAO).startswith("https://testes-api.")
 
 
 def test_o_https_e_forcado():
@@ -312,9 +315,10 @@ def test_o_ONR_e_a_quinta_central_e_guarda_um_PAR():
     assert CRED.ARQUIVO_DA_CENTRAL[CRED.ONR] == "onr.cred"
     assert CRED.rotulos_do_par(CRED.ONR) == ("client_id", "client secret")
     assert CRED.rotulos_do_par(CRED.CRA) == CRED.PAR_PADRAO
-    # E ele tem os DOIS ambientes, porque o contrato os declara:
-    assert set(CRED.ambientes_de(CRED.ONR)) == {
-        CRED.HOMOLOGACAO, CRED.PRODUCAO}
+    # O contrato declara os DOIS ambientes, e os dois seguem no transporte;
+    # a tela, desde 15/10/2026, oferece só a produção (ordem do oficial).
+    assert CRED.ambientes_de(CRED.ONR) == (CRED.PRODUCAO,)
+    assert set(API.BASE_POR_AMBIENTE) >= {CRED.HOMOLOGACAO, CRED.PRODUCAO}
 
 
 # ------------------------------------------------------- os vocabularios

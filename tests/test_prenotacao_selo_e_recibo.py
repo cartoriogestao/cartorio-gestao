@@ -50,9 +50,9 @@ def _token(html: str) -> str:
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     c = cg_casa["cliente"]
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -135,7 +135,7 @@ def test_o_envelope_da_prenotacao_tem_os_valores_medidos():
     """Cada valor tem a sua contagem nos 829 envelopes do acervo."""
     import ato_selado as AS
     e = AS.envelope_da_prenotacao(
-        protocolo="11150", escrevente="JEAN", versao_tabela="0220260101",
+        protocolo="11150", escrevente="MARIO", versao_tabela="0220260101",
         descricao_natureza="compra e venda",
         partes=[{"nome": "MARIA", "documento": "000.000.010-82"}])
     assert list(e) == ["protocolo", "dadosSelo"]
@@ -157,10 +157,10 @@ def test_isencao_sem_motivo_escrito_e_recusada():
     import ato_selado as AS
     with pytest.raises(AS.AtoError, match="motivo"):
         AS.envelope_da_prenotacao(
-            protocolo="1", escrevente="JEAN", versao_tabela="0220260101",
+            protocolo="1", escrevente="MARIO", versao_tabela="0220260101",
             descricao_natureza="REURB", isento=True)
     e = AS.envelope_da_prenotacao(
-        protocolo="1", escrevente="JEAN", versao_tabela="0220260101",
+        protocolo="1", escrevente="MARIO", versao_tabela="0220260101",
         descricao_natureza="REURB", isento=True,
         motivo_isencao="Lei 13.465 de 2017")
     assert e["dadosSelo"]["motivoIsentoGratuito"] == "LEI 13.465 DE 2017"

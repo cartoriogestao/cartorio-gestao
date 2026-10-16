@@ -448,7 +448,7 @@ def test_cancelar_recupera_a_folha_de_seguranca_sem_escolha_manual(s):
             con, fornecedor="ARPENBRASIL", codigo_de="900001",
             codigo_ate="900002", agora="2026-09-10T08:00:00")
         PP.usar(con, "900001", tabela="rc_certidoes", ato_id=cid,
-                agora="2026-09-10T08:05:00", usuario="JEAN")
+                agora="2026-09-10T08:05:00", usuario="MARIO")
     con.close()
 
     html = s["c"].get(f"/rcpn/certidoes/{cid}").get_data(as_text=True)

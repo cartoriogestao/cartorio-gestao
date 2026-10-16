@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Consulta ao CCN &mdash; base nacional</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a></div>
+
+<div class="notice">
+  Busca a pessoa pelo CPF no <strong>CCN</strong> (Cadastro Único de Clientes do Notariado) e traz a
+  ficha de cada cartório onde ela tem cadastro. O sistema prepara a consulta e mostra um
+  <strong>código</strong>; quem consulta é a extensão «CG CCN Assistente», na aba do portal do CCN
+  deste servidor, com a <strong>chave de exportação</strong> e a assinatura do certificado A3.
+  A ficha só completa os campos <strong>vazios</strong> do cartão de firma &mdash; o que a casa já
+  conferiu não se troca.
+</div>
+
+<section class="panel">
+  <form method="post" style="padding:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>CPF <input name="cpf" inputmode="numeric" size="16" required autofocus></label>
+    <label>Ambiente
+      <select name="ambiente">
+        {% for chave, host in ambientes.items() %}
+        <option value="{{ chave }}" {% if chave == 'PRODUCAO' %}selected{% endif %}>{{ 'Homologação' if chave == 'HOMOLOGACAO' else 'Produção' }} ({{ host }})</option>
+        {% endfor %}
+      </select></label>
+    <button>Preparar a consulta</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Últimas consultas</h2>
+  {% if consultas %}
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>CPF</th><th>Ambiente</th><th>Pedida</th><th>Situação</th><th>Cartão completado</th></tr>
+    {% for c in consultas %}
+    <tr>
+      <td><a href="{{ url_for('notas_ccn_consulta', consulta_id=c.id) }}">{{ c.id }}</a></td>
+      <td>{{ c.cpf[:3] }}.{{ c.cpf[3:6] }}.{{ c.cpf[6:9] }}-{{ c.cpf[9:] }}</td>
+      <td>{{ 'Homologação' if c.ambiente == 'HOMOLOGACAO' else 'Produção' }}</td>
+      <td>{{ c.pedida_em[:16].replace('T', ' ') }} &middot; {{ c.pedida_por or '—' }}</td>
+      <td>{{ {'PEDIDA': 'esperando a extensão', 'ENCONTRADA': 'encontrada', 'NAO_ENCONTRADA': 'sem cadastro no CCN', 'FALHOU': 'falhou'}.get(c.situacao, c.situacao) }}</td>
+      <td>{{ c.aplicada_em[:16].replace('T', ' ') if c.aplicada_em else '' }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}
+  <p class="muted" style="padding:14px">Nenhuma consulta ainda.</p>
+  {% endif %}
+</section>
+{% endblock %}

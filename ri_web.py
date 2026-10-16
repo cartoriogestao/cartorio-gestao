@@ -26,6 +26,8 @@ from flask import (Response, abort, flash, redirect, render_template,
                    request, session, url_for)
 
 import ato_selado as AS
+# O SELO DE BUSCA QUE VAI JUNTO COM A CERTIDÃO — pedido do oficial, 15/10/2026.
+import buscas as BU
 import certidao_folhas as CFOLHAS
 import selador_config as SELCFG
 import cancelamento_certidao as CANC
@@ -86,6 +88,10 @@ import ri_numeros_do_teor as NUMT
 import ri_revisao as RV
 import ri_onus as RIONUS
 import ri_onus_ia as RONIA
+# A CADEIA DOMINIAL E A VINTENÁRIA — a régua de quais atos entram mora em
+# `ri_dominial` (a mesma família de `ri_onus`). Reconstituída em 14/10/2026: o
+# que a 3.6.233/234 ligou aqui em 28/09 se perdeu nos pacotes seguintes.
+import ri_dominial as RIDOM
 import ri_certidao_negativa as RINEG
 import ri_prenotacao_prazo as PRAZO
 import ri_pedidos as PED
@@ -164,7 +170,7 @@ def _exige_cib(rural_urbano, *, tipo_ficha=None) -> bool:
 
 
 def _cib_dispensado(numero, lista) -> bool:
-    """HOTFIX-2026-10-13-05 (Leidiane 13/10/2026, mat. 4022 vinda do
+    """HOTFIX-2026-10-13-05 (escrevente, 13/10/2026, mat. 4022 vinda do
     encerramento da 1196): imóvel sem CIB. `settings.cib_dispensado_matriculas`
     lista os números («4022» ou JSON ["4022"]) em que o CIB fica opcional; as
     demais continuam exigindo."""
@@ -742,6 +748,74 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     # Vocabulario do SAUIN disponivel em qualquer tela: e o mesmo nome que o
     # selo eletronico reconhece, e nao adianta uma tela oferecer e outra nao.
     app.jinja_env.globals["NATUREZAS_SAUIN"] = nomes_natureza()
+    # O campo da busca da certidão (15/10/2026) se monta na tela — a mesma
+    # função que `atribuicoes_web` registra, para o RI não depender da ordem
+    # em que os dois módulos sobem.
+    app.jinja_env.globals["busca_da_certidao"] = BU.para_a_tela
+
+    def _busca_da_certidao_do_ri(form) -> str | None:
+        """O item de busca que a tela da certidão do RI mandou. Só LÊ.
+
+        Sem `busca_formulario` é chamada de antes do campo existir, e não há
+        busca — a forma de `onus_formulario`. Com ele, vazio se recusa.
+
+        **O PROTOCOLO VEM PRIMEIRO** — resposta do oficial, 15/10/2026: «se o
+        protocolo do pedido já traz um item de busca, vale ele». O protocolo
+        da certidão do RI é o número digitado ou escolhido na lista.
+        """
+        with db.connect() as con:
+            do_protocolo = BU.busca_do_protocolo(
+                con, form.get("protocolo"), "IMOVEL")
+        if do_protocolo:
+            return do_protocolo
+        if (form.get("busca_formulario") or "").strip() != "1":
+            return None
+        return BU.escolher("IMOVEL", form.get("busca_item"))
+
+    def _selar_a_busca_da_certidao_do_ri(*, certidao_id: int,
+                                          busca: str | None,
+                                          nome: str | None,
+                                          documento: str | None,
+                                          matricula: str | None,
+                                          isento: bool,
+                                          motivo_isencao: str | None) -> str:
+        """O selo da BUSCA da certidão do RI. FALA COM A REDE.
+
+        Pedido do oficial, 15/10/2026. **SELO PRÓPRIO, por
+        `/selo/imovel/atos-em-geral`**, que é o caminho dos 27 selos de busca
+        do RI no acervo de 2022 a 2025 (os 5 de 2020 saíram pelo da
+        certidão). Vai DEPOIS da certidão, no mesmo protocolo, como lá foi;
+        a gratuidade é a da certidão.
+
+        A BUSCA QUE NÃO SAI NÃO DESFAZ A CERTIDÃO — a regra do item da folha
+        acrescida, logo acima: a certidão tem o seu selo, e a tela diz o que
+        faltou.
+        """
+        if not busca or not BU.vira_selo(busca):
+            return ""
+        caminho = BU.CAMINHO_DO_SELO_DA_BUSCA["IMOVEL"]
+        nome_parte = str(nome or "").strip() or (
+            f"MATRICULA {str(matricula or '').strip()}".strip())
+        try:
+            envelope = BU.envelope_da_busca(
+                codigo=busca, escrevente=app.extensions["usuario_nome"](),
+                versao_tabela=AS.versao_da_tabela_de_custas(
+                    caminho, db.get_setting("selo_tabela_custas_em", "")),
+                nome=nome_parte, documento=documento,
+                isento=isento, motivo_isencao=motivo_isencao)
+        except BU.BuscaError as erro:
+            return f" A busca {busca} ficou SEM SELO: {erro}"
+        r = AS.selar_o_ato_lavrado(
+            db, Path(app.config["DATA_DIR"]), tabela="ri_certidoes",
+            ato_id=certidao_id, tipo="BUSCA", atribuicao="IMOVEL",
+            agora=datetime.now().isoformat(timespec="seconds"),
+            cns=db.get_setting("ri_cns", ""),
+            usuario=app.extensions["usuario_nome"](),
+            dados=envelope, caminho=caminho,
+            referencia=f"ri_certidoes:{int(certidao_id)}:{busca}")
+        if r["selado"]:
+            return f" Busca {busca}: selo {r['numero']}."
+        return f" A busca {busca} ficou SEM SELO: {r['motivo']}"
 
     def q(sql, params=()):
         with db.connect() as con:
@@ -1654,6 +1728,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             depositos_da_prenotacao = resolvido.get("depositos") or []
             caixa_origem = resolvido.get("origem") or "nenhum"
             caixa_ligado = resolvido.get("caixa")
+            # OS DOCUMENTOS PARA QUALIFICACAO DO PROTOCOLO GERAL ligado a
+            # prenotacao escolhida — relato #135, decisao do oficial em
+            # 15/10/2026: quem lavra ve o que o cliente entregou no balcao.
+            # So da prenotacao ESCOLHIDA, e nao de todas as abertas: o bloco
+            # das abertas saiu desta ficha no relato #85, por ser ruido.
+            import protocolo_documentos as PDOC
+            docs_qualificacao_lavrar = PDOC.da_prenotacao(
+                _cx, prenotacao_escolhida_id)["ativos"]
         prenotacao_escolhida = None
         if prenotacao_escolhida_id:
             for p in abertos:
@@ -1729,7 +1811,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 RIONUS.onus_vigentes(
                     atos, rotulo=lambda a: rotulo_ato(a["tipo"], a["numero"],
                                                       m["numero"])),
-                Path(app.config["DATA_DIR"]))
+                Path(app.config["DATA_DIR"]),
+                proprietarios_cadastro=[dict(p) for p in partes
+                                        if p["proprietario_ativo"]])
 
         return render_template(
             "ri_ficha.html", m=m, atos=atos, partes=partes, imagens=imagens,
@@ -1740,6 +1824,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             stub_arquivado=stub_arquivado,
             matricula_corrigida=matricula_corrigida,
             TIPOS_CERTIDAO=TIPOS_CERTIDAO,
+            # AS MATRÍCULAS DE ORIGEM QUE O REGISTRO ANTERIOR CITA — a sugestão
+            # do campo da certidão dominial. SÓ LÊ: quem decide o que entra é o
+            # balcão, e em branco a emissão segue o registro anterior.
+            ANOS_DA_VINTENARIA=sorted(RIDOM.ANOS_PERMITIDOS),
+            ANOS_PADRAO_VINTENARIA=RIDOM.ANOS_PADRAO_VINTENARIA,
+            origens_sugeridas=RIDOM.sugerir_numeros_origem(
+                m["registro_anterior"], numero_atual=m["numero"]),
             revisoes=revisoes,
             revisoes_abertas=[r for r in revisoes if r["situacao"] == RV.ABERTA],
             minutas=minutas, minuta_aberta=minuta_aberta,
@@ -1765,6 +1856,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             depositos_da_prenotacao=depositos_da_prenotacao,
             caixa_origem=caixa_origem,
             caixa_ligado=caixa_ligado,
+            docs_qualificacao_lavrar=docs_qualificacao_lavrar,
             # OS MOTIVOS DE GRATUIDADE QUE ESTA CASA ESCREVEU, na ordem de uso
             # — a lista existe para o balcão não redigitar a mesma frase com
             # erro, como aconteceu nos 48 do acervo.
@@ -3057,8 +3149,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         (int(caixa_protocolo_id),))]
                 if caixa_atos:
                     caixa_soma = EMOL.somar_itens(caixa_atos)
+        # OS DOCUMENTOS PARA QUALIFICACAO do Protocolo Geral ligado — relato
+        # #135, 15/10/2026: a tarefa 386 guardava os papeis da prenotacao
+        # 11.573 numa pasta fora do sistema. So os ativos; so LE.
+        docs_protocolo_geral = []
+        if caixa_protocolo_id:
+            import protocolo_documentos as PDOC
+            with db.connect() as _pd:
+                docs_protocolo_geral = PDOC.documentos(
+                    _pd, int(caixa_protocolo_id))["ativos"]
         return render_template("ri_protocolo_ver.html", p=dict(p),
                                documentos=documentos, e_imagem=RDOC.e_imagem,
+                               docs_protocolo_geral=docs_protocolo_geral,
                                depositos=depositos, saldo=reais(saldo),
                                restam=restam, notas=notas, historico=historico,
                                qualificacoes=qualificacoes,
@@ -3520,14 +3622,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """Quem criou, revisou, lavrou ou descartou a minuta. Só lê.
 
         É O NOME, E NÃO O LOGIN — e esta escolha tem um motivo medido. O RI usa
-        as duas convenções: `_usuario_atual()` devolve o login («jean») e serve
+        as duas convenções: `_usuario_atual()` devolve o login («mario») e serve
         a ata do expurgo e o rascunho; `usuario_nome()` devolve «MARIO EXEMPLO
         DOS SANTOS» e é o que sai no selo, no escrevente e em `reaberta_por`,
         que a ficha **mostra na tela**.
 
         O rastro da minuta é da segunda espécie: ele vai ser lido por uma
         pessoa que abre a ficha meses depois e pergunta «quem revisou este
-        texto?». «jean» não responde isso. A primeira versão gravava o login, e
+        texto?». «mario» não responde isso. A primeira versão gravava o login, e
         quem apontou foi o teste que comparou com o que a reabertura grava ao
         lado, na mesma ficha — **duas convenções na mesma tela é como elas
         divergem**.
@@ -5287,6 +5389,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         "cnm": "CNM",
     }
 
+    _RECADO_ALTERADA_POR_OUTRA_PESSOA = (
+        "Esta matrícula foi alterada por outra pessoa depois que você abriu a "
+        "tela de retificação. Nada foi gravado — abra a tela de novo, confira "
+        "o que mudou e refaça a correção.")
+
+    def _versao_do_cadastro(linha) -> str:
+        """A versão do cadastro: o que a tela mostra, e quando mudou por último.
+
+        Vai escondida no formulário (`versao_edicao`) e volta no POST; se a
+        ficha mudou no meio, a gravação é recusada em vez de sobrescrever.
+        """
+        import hashlib
+        import json as _json
+        chaves = (list(CAMPOS_CADASTRAIS)
+                  + ["aberta_nome", "aberta_titulo", "aberta_tratamento",
+                     "encerrada", "atualizado_em"])
+        valores = [None if linha.get(c) is None else str(linha.get(c))
+                   for c in chaves]
+        return hashlib.sha256(_json.dumps(valores, ensure_ascii=False)
+                              .encode("utf-8")).hexdigest()[:20]
+
     @app.route("/registro-imoveis/<int:matricula_id>/editar", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_editar_matricula(matricula_id):
@@ -5294,21 +5417,39 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not m:
             abort(404)
         m = dict(m)
+        # A VERSAO DO CADASTRO QUE A TELA MOSTROU — tests/
+        # test_ri_retificacao_cadastral.py (28/09/2026). Dois balcões abrindo a
+        # mesma ficha: o segundo a gravar levava junto, calado, os campos
+        # velhos da tela dele por cima da correção do primeiro.
+        versao_atual = _versao_do_cadastro(m)
         if matricula_de_acervo(m["numero"]):
             m["tipo_ficha"] = "ACERVO"
 
         if request.method == "GET":
             return render_template("ri_editar.html", m=m,
                                    campos=CAMPOS_CADASTRAIS,
+                                   versao_edicao=versao_atual,
                                    delegatarios=quem_pode_abrir_matricula())
 
         if m["encerrada"]:
             flash("Matrícula encerrada não recebe alteração cadastral.", "danger")
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
+        versao_da_tela = request.form.get("versao_edicao")
+        if versao_da_tela is not None and versao_da_tela != versao_atual:
+            flash(_RECADO_ALTERADA_POR_OUTRA_PESSOA, "danger")
+            return redirect(url_for("ri_editar_matricula",
+                                    matricula_id=matricula_id))
+
         mudancas: dict[str, dict] = {}
         valores: dict[str, str | None] = {}
         for campo in CAMPOS_CADASTRAIS:
+            # CAMPO QUE NAO VEIO NAO SE APAGA. Vazio no formulário é o
+            # operador esvaziando (e grava None); AUSENTE do POST é quem não
+            # mexeu nele — sem esta linha, um POST parcial zerava o resto do
+            # cadastro.
+            if campo not in request.form:
+                continue
             novo = (request.form.get(campo) or "").strip() or None
             antigo = m[campo]
             if (antigo or None) != novo:
@@ -5379,21 +5520,39 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
         motivo = (request.form.get("motivo") or "").strip()
-        if not motivo:
-            flash("Informe o motivo da alteração cadastral.", "danger")
+        if len(motivo) < 10:
+            # A mesma régua da reabertura e do fechamento de problema: «erro»
+            # não diz a quem conferir depois por que o cadastro mudou.
+            flash("Escreva o motivo da retificação cadastral com pelo menos "
+                  "10 caracteres — ele fica na auditoria, ao lado do valor "
+                  "anterior e do novo.", "danger")
             return redirect(url_for("ri_editar_matricula", matricula_id=matricula_id))
 
         atribuicoes = ", ".join(f"{c}=?" for c in valores)
+        conflito = False
         with db.transaction() as con:
-            con.execute(
-                f"""UPDATE ri_matriculas SET {atribuicoes}, imovel_norm=?,
-                    atualizado_em=? WHERE id=?""",
-                list(valores.values())
-                + [normalizar_busca(" ".join(str(
-                    valores.get(c, m[c]) or "") for c in
-                    ("logradouro", "bairro", "cidade", "descricao_perimetro"))),
-                   db.now(), matricula_id],
-            )
+            # A conferência da versão se refaz DENTRO da transação: entre a
+            # leitura lá de cima e o BEGIN IMMEDIATE outro balcão pode ter
+            # gravado. Havendo conflito, nada é escrito.
+            agora_linha = con.execute("SELECT * FROM ri_matriculas WHERE id=?",
+                                      (matricula_id,)).fetchone()
+            if (versao_da_tela is not None and agora_linha is not None
+                    and _versao_do_cadastro(dict(agora_linha)) != versao_da_tela):
+                conflito = True
+            else:
+                con.execute(
+                    f"""UPDATE ri_matriculas SET {atribuicoes}, imovel_norm=?,
+                        atualizado_em=? WHERE id=?""",
+                    list(valores.values())
+                    + [normalizar_busca(" ".join(str(
+                        valores.get(c, m[c]) or "") for c in
+                        ("logradouro", "bairro", "cidade", "descricao_perimetro"))),
+                       db.now(), matricula_id],
+                )
+        if conflito:
+            flash(_RECADO_ALTERADA_POR_OUTRA_PESSOA, "danger")
+            return redirect(url_for("ri_editar_matricula",
+                                    matricula_id=matricula_id))
 
         # A auditoria guarda de-para campo a campo: sem isso, "alterou o
         # cadastro" nao diz nada a quem for conferir depois.
@@ -5800,7 +5959,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
     @app.route("/registro-imoveis/<int:matricula_id>/reabrir", methods=["POST"])
-    @roles_required("ADMIN", "MANAGER", "USER")
+    # REABRIR E DO OFICIAL — volta a ADMIN/MANAGER em 14/10/2026. O «USER»
+    # entrou na 3.6.160 (21/09) numa troca em lote de perfis do RI, sem ordem
+    # registrada, e deixou a rota mais larga que a tela (o botao em
+    # ri_ficha.html continua so para ADMIN/MANAGER). A guarda e no servidor.
+    @roles_required("ADMIN", "MANAGER")
     def ri_reabrir_matricula(matricula_id):
         """Desfaz o encerramento da ficha. NAO apaga o ato de encerramento.
 
@@ -6125,13 +6288,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         #   A CONTA E UMA SO — `atos_fora_do_teor` —, feita uma vez e usada
         #   pelos dois papeis. Escreve-la de novo no outro lado divergiria no
         #   primeiro conserto, e e ela que decide se um ato APARECE.
-        # HOTFIX-2026-10-13-09 (Leidiane 13/10/2026, mat. 4023): ficha
+        # HOTFIX-2026-10-13-09 (escrevente, 13/10/2026, mat. 4023): ficha
         # ESTRUTURADA com descricao preenchida imprimia so os campos (IMOVEL:
         # descricao...) e deixava o teor de fora. As matriculas listadas em
         # `settings.ri_ficha_teor_no_papel` imprimem o TEOR inteiro na ficha.
         if (para_odt and (m.get("teor") or "").strip()
                 and _cib_dispensado(m["numero"], db.get_setting("ri_ficha_teor_no_papel", ""))):
             m["tipo_ficha"] = "ACERVO"
+            m["_teor_no_papel"] = True  # HOTFIX-2026-10-15-01: nao e acervo, o selo de abertura sai
         teor_vai_ao_papel = (m["tipo_ficha"] == "ACERVO") or not para_odt
         atos_para_o_papel = (NUMT.atos_fora_do_teor(m["teor"], atos)
                              if teor_vai_ao_papel else atos)
@@ -6487,7 +6651,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 except ValueError:
                     pass
 
-        return {
+        _ctx = {
             **RONIA.padrao_do_sistema(_onus),
             "_fragmentos": fragmentos,
             "m": dict(m),
@@ -6502,19 +6666,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         a["data_ato"], a["teor"], a["lavrado_nome"],
                         a["lavrado_titulo"], a["lavrado_tratamento"])
                     if para_odt else None),
-                # Certidao inteiro teor: destaca R-01/AV-02 no miolo
-                # (ficha ja tem ato-cab; teor fica sem cabecalho).
+                # Certidao inteiro teor: destaca R-01/AV-02 no miolo.
+                # O TEOR VAI INTEIRO — 14/10/2026. Ate aqui ele passava por
+                # `teor_sem_cabecalho_do_ato`, que corta a primeira frase
+                # (natureza, protocolo ou data) porque a FICHA a imprime na
+                # linha `ato-cab`; a certidao nao tem essa linha, e a frase
+                # sumia do papel que se chama «inteiro teor» (a data do ato
+                # em `AV-28/582 — 18 de agosto de 2026.` desaparecia).
                 "teor_certidao_odf": (
-                    teor_convertido(
-                        teor_sem_cabecalho_do_ato(
-                            a["teor"], a["tipo"], a["numero"], m["numero"]),
-                        a["teor_formato"], True, None)
+                    teor_convertido(a["teor"], a["teor_formato"], True, None)
                     if para_odt else
                     html_com_destaque_rotulo_ato(
-                        teor_convertido(
-                            teor_sem_cabecalho_do_ato(
-                                a["teor"], a["tipo"], a["numero"], m["numero"]),
-                            a["teor_formato"], True, None),
+                        teor_convertido(a["teor"], a["teor_formato"], True,
+                                        None),
                         a["tipo"], a["numero"], m["numero"])),
                 "rotulo": rotulo_ato(a["tipo"], a["numero"], m["numero"]),
                 # HOTFIX-2026-10-07-04: nº com ponto e data da prenotação.
@@ -6608,7 +6772,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 tipo_ficha=m["tipo_ficha"])["assinatura"],
             # O CARIMBO DA ABERTURA TEM O MESMO DESENHO DO ATO — e desde
             # 16/09 os dois sao uma linha so, sem QR e sem link.
-            "selo_abertura_odf": ("" if m["tipo_ficha"] == "ACERVO" else
+            "selo_abertura_odf": ("" if (m["tipo_ficha"] == "ACERVO"
+                                         and not m.get("_teor_no_papel")) else  # HOTFIX-2026-10-15-01
                                     selo_convertido(
                                         etiqueta_da_abertura(),
                                         rotulo="SELO DE ABERTURA")),
@@ -6628,6 +6793,35 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "clausula_prenotacoes_abertas": _clausula_prenot,
             "_imagens_selo": imagens_selo,
         }
+        # A CADEIA DOMINIAL DESTA MATRÍCULA SÓ, E A VINTENÁRIA DE 20 ANOS — o
+        # padrão que a conferência do modelo e a remontagem enxergam. São conta
+        # em memória sobre os atos que já estão aqui; as matrículas de ORIGEM e
+        # os anos escolhidos no balcão entram na emissão
+        # (`_contexto_da_cadeia`), e não aqui: a origem chama este mesmo
+        # contexto para cada matrícula antecedente, e montá-la aqui faria uma
+        # chamar a outra sem fim.
+        _cadeia_atual = RIDOM.cadeia_dominial(_ctx["atos"])
+        _ctx.update({
+            "cadeia_dominial": _cadeia_atual,
+            "cadeia_matriculas": [{
+                "numero": m["numero"], "papel": "atual",
+                "registro_anterior": (m.get("registro_anterior") or "").strip(),
+                "atos": _cadeia_atual}],
+            "origens_nao_encontradas": [],
+            **_janela_da_vintenaria(_ctx["atos"],
+                                    RIDOM.ANOS_PADRAO_VINTENARIA),
+        })
+        return _ctx
+
+    def _janela_da_vintenaria(atos_do_papel, anos) -> dict:
+        """O recorte da vintenária, já com as datas na forma do papel."""
+        _pack = RIDOM.conteudo_vintenaria(atos_do_papel, anos=anos,
+                                          hoje=date.today())
+        return {"anos_periodo": _pack["anos"],
+                "desde_periodo": fmt_date(_pack["desde"]),
+                "ate_periodo": fmt_date(_pack["ate"]),
+                "dominio_periodo": _pack["dominio"],
+                "onus_periodo": _pack["onus"]}
 
     def render_modelo(corpo: str, contexto: dict) -> str:
         """Renderiza o modelo do usuario em ambiente restrito.
@@ -7339,6 +7533,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not isento:
             motivo_isencao = None
 
+        # O ITEM DA BUSCA (15/10/2026) — aqui `busca` é o TERMO pesquisado,
+        # e por isso o item tem outro nome. A negativa não tem ato de onde
+        # contar o tempo: a tela abre em «escolha», e vazio se recusa.
+        try:
+            item_busca = _busca_da_certidao_do_ri(request.form)
+        except BU.BuscaError as erro:
+            flash(str(erro), "danger")
+            return _voltar_negativa(modo, busca, bairro, tipo_ru, so_prop)
+
         hoje = date.today()
         agora = datetime.now()
         try:
@@ -7439,7 +7642,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         audit("RI_CERTIDAO_NEGATIVA_EMITIDA", "RI_CERTIDAO", certidao_id,
               {"numero": numero, "ano": hoje.year, "tipo": RINEG.TIPO,
-               "modo": modo, "busca": busca, "hash": h, "achados": 0})
+               "modo": modo, "busca": busca, "hash": h, "achados": 0,
+               **({"item_busca": item_busca} if item_busca else {})})
 
         # Selo automatico — sem bypass «mesmo se o selo falhar».
         recado_do_selo = ""
@@ -7518,6 +7722,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "selo e tente de novo.",
                 "danger")
             return _voltar_negativa(modo, busca, bairro, tipo_ru, so_prop)
+
+        # A BUSCA SAI DEPOIS DA CERTIDÃO JÁ SELADA (15/10/2026); a pessoa
+        # pesquisada é quem vai nas partes, como na certidão.
+        recado_do_selo += _selar_a_busca_da_certidao_do_ri(
+            certidao_id=certidao_id, busca=item_busca, nome=requerente,
+            documento=requerente_documento, matricula="",
+            isento=isento, motivo_isencao=motivo_isencao)
 
         flash(
             f"{RINEG.NOME_DO_TIPO} n. {numero}/{hoje.year} emitida. "
@@ -8135,6 +8346,75 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return render_template("ri_certidoes.html", rows=rows, resumo=resumo,
                                busca=busca, hoje=hoje, TIPOS=ROTULOS_CERTIDAO_RI)
 
+    # A CADEIA DOMINIAL E A VINTENÁRIA — 28/09/2026, reconstituídas em
+    # 14/10/2026 (o código da 3.6.233/234 foi construído direto na produção e
+    # se perdeu nos pacotes da 3.6.282 em diante; ver `ri_odt`, junto dos
+    # miolos). O que o balcão escolhe na ficha entra aqui:
+    #
+    #   VINTENÁRIA — os ANOS (10, 15, 20 ou 30; padrão 20). Anos só valem
+    #     para ela.
+    #   DOMINIAL — as MATRÍCULAS DE ORIGEM. Digitadas, valem exatamente as
+    #     digitadas (a 394/2026 saiu assim: 3472 → 2667 → 2548, e o «sob n°
+    #     2.548» do registro anterior da 2667 não é citação que a régua
+    #     reconheça). Em branco, o sistema segue o `registro_anterior` de
+    #     matrícula em matrícula, até `MAX_PROFUNDIDADE_ORIGEM` degraus e
+    #     `MAX_ORIGENS_POR_CERTIDAO` blocos.
+    #
+    # **SÓ ENTRA NO PAPEL A MATRÍCULA QUE EXISTE NO BANCO, E UMA SÓ.** Número
+    # citado que não existe — ou que responde por mais de uma ficha — não vira
+    # bloco: volta na lista `origens_nao_encontradas`, e a emissão avisa.
+    # Nunca se inventa origem.
+    TIPOS_DA_CADEIA = ("DOMINIAL", "VINTENARIA")
+
+    def _contexto_da_cadeia(contexto: dict, tipo: str, *, anos=None,
+                            origens_digitadas=None) -> dict:
+        m = contexto["m"]
+        if tipo == "VINTENARIA":
+            return {**_janela_da_vintenaria(
+                        contexto.get("atos") or [],
+                        RIDOM.normalizar_anos(
+                            str(anos or "").strip()
+                            or RIDOM.ANOS_PADRAO_VINTENARIA)),
+                    "_cadeia_montada": True}
+        atual = {"numero": m["numero"], "papel": "atual",
+                 "registro_anterior": (m.get("registro_anterior") or "").strip(),
+                 "atos": RIDOM.cadeia_dominial(contexto.get("atos") or [])}
+        blocos, nao_achadas = [atual], []
+        digitadas = str(origens_digitadas or "").strip()
+        if digitadas:
+            fila = [(n, 1) for n in RIDOM.parsear_numeros_digitados(digitadas)]
+            seguir = False
+        else:
+            fila = [(n, 1) for n in RIDOM.sugerir_numeros_origem(
+                m.get("registro_anterior"), numero_atual=m["numero"])]
+            seguir = True
+        vistos = {RIDOM.normalizar_numero_matricula(m["numero"])}
+        while fila and len(blocos) - 1 < RIDOM.MAX_ORIGENS_POR_CERTIDAO:
+            numero, degrau = fila.pop(0)
+            if numero in vistos:
+                continue
+            vistos.add(numero)
+            achadas = q("SELECT id FROM ri_matriculas "
+                        "WHERE CAST(numero AS TEXT)=?", (numero,))
+            if len(achadas) != 1:
+                nao_achadas.append(
+                    f"{numero} (" + ("não existe no banco" if not achadas
+                                     else f"{len(achadas)} fichas com este número")
+                    + ")")
+                continue
+            ctx_o = contexto_ficha(int(achadas[0]["id"]), para_odt=False)
+            m_o = ctx_o["m"]
+            blocos.append({
+                "numero": m_o["numero"], "papel": "origem",
+                "registro_anterior": (m_o.get("registro_anterior") or "").strip(),
+                "atos": RIDOM.cadeia_dominial(ctx_o.get("atos") or [])})
+            if seguir and degrau < RIDOM.MAX_PROFUNDIDADE_ORIGEM:
+                fila.extend((n, degrau + 1) for n in RIDOM.sugerir_numeros_origem(
+                    m_o.get("registro_anterior"), numero_atual=m_o["numero"]))
+        return {"cadeia_dominial": atual["atos"], "cadeia_matriculas": blocos,
+                "origens_nao_encontradas": nao_achadas,
+                "_cadeia_montada": True}
+
     def corpo_certidao(tipo: str, contexto: dict) -> str:
         """Renderiza a certidao: O MOLDE do papel mais O MIOLO do tipo pedido.
 
@@ -8175,6 +8455,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         _nome = (RONIA.titulo(contexto.get("resultado_onus"),
                               contexto.get("resultado_acoes"))
                  if tipo == "ONUS" else TIPOS_CERTIDAO.get(tipo, tipo))
+        # A DOMINIAL E A VINTENÁRIA MONTAM A CADEIA SE NINGUÉM MONTOU — é o caso
+        # de quem chama sem a tela (a remontagem, o ensaio): vale o padrão, 20
+        # anos e a origem seguida pelo registro anterior. E a vintenária diz os
+        # anos no título, como a 3.6.233 dizia.
+        if tipo in TIPOS_DA_CADEIA and not contexto.get("_cadeia_montada"):
+            contexto = contexto | _contexto_da_cadeia(contexto, tipo)
+        if tipo == "VINTENARIA" and contexto.get("anos_periodo"):
+            _nome = f"{_nome} ({contexto['anos_periodo']} anos)"
         return sem_linha_de_assinatura_a_mao(
             render_modelo(
             _corpo,
@@ -8215,6 +8503,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not isento:
             motivo_isencao = None
 
+        # A BUSCA — pedido do oficial, 15/10/2026: selo próprio junto com a
+        # certidão, a faixa sugerida pela abertura da matrícula. A escolha se
+        # confere AQUI, antes de numerar, como a gratuidade logo acima.
+        try:
+            busca = _busca_da_certidao_do_ri(request.form)
+        except BU.BuscaError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+
         contexto = contexto_ficha(matricula_id, para_odt=False)
         m = contexto["m"]
 
@@ -8236,7 +8533,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         marcados=request.form.getlist("onus_item"),
                         manual_onus=request.form.get("onus_transcricao") or "",
                         manual_acao=request.form.get("acao_transcricao") or "",
-                        justificativa=request.form.get("onus_justificativa") or "")
+                        justificativa=request.form.get("onus_justificativa") or "",
+                        # O PROPRIETÁRIO QUE O PAPEL IMPRIME, conferido com o
+                        # que a IA leu no teor — 15/10/2026 (certidão 64/2026).
+                        proprietarios_cadastro=contexto.get("proprietarios") or [],
+                        ia_ligada=RONIA.ligada(_c_onus, Path(app.config["DATA_DIR"])),
+                        proprietario_conferido=(
+                            request.form.get("proprietario_conferido") == "1"),
+                        justificativa_proprietario=(
+                            request.form.get("proprietario_justificativa") or ""))
             except RONIA.OnusError as erro:
                 audit("RI_CERTIDAO_ONUS_RECUSADA", "RI_MATRICULA", int(matricula_id),
                       {"motivo": str(erro)[:400],
@@ -8245,6 +8550,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return redirect(url_for("ri_ficha", matricula_id=matricula_id)
                                 + "#certidao-onus")
             contexto = contexto | _escolha
+
+        # A DOMINIAL E A VINTENÁRIA LEVAM O QUE O BALCÃO ESCOLHEU — os anos da
+        # vintenária e as matrículas de origem da cadeia (ver
+        # `_contexto_da_cadeia`). Monta-se ANTES de número e selo: a cadeia é o
+        # teor, e o teor congela junto com o número.
+        if tipo in TIPOS_DA_CADEIA:
+            contexto = contexto | _contexto_da_cadeia(
+                contexto, tipo, anos=request.form.get("anos"),
+                origens_digitadas=request.form.get("origens"))
 
         hoje = date.today()
         # 30 dias corridos, conforme o Codigo de Normas do TJMA.
@@ -8379,21 +8693,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 con.execute(
                     """UPDATE ri_certidoes
                           SET resultado_onus=?, resultado_acoes=?, onus_sugestao_id=?,
-                              onus_justificativa=?, onus_escolhido_por=?
+                              onus_justificativa=?, onus_escolhido_por=?,
+                              onus_proprietario_conferencia=?,
+                              onus_proprietario_justificativa=?
                         WHERE id=?""",
                     (contexto.get("resultado_onus"), contexto.get("resultado_acoes"),
                      contexto.get("onus_sugestao_id"),
                      contexto.get("onus_justificativa") or None,
-                     contexto.get("onus_escolhido_por"), certidao_id))
+                     contexto.get("onus_escolhido_por"),
+                     contexto.get("onus_proprietario_conferencia"),
+                     contexto.get("onus_proprietario_justificativa") or None,
+                     certidao_id))
 
         audit("RI_CERTIDAO_EMITIDA", "RI_CERTIDAO", certidao_id,
               {"numero": numero, "ano": hoje.year, "tipo": tipo,
                "matricula": m["numero"], "hash": h,
+               # a busca escolhida (15/10/2026), inclusive o «.9» sem selo
+               **({"busca": busca} if busca else {}),
                **({"resultado_onus": contexto.get("resultado_onus"),
                    "resultado_acoes": contexto.get("resultado_acoes"),
                    "onus_escolhido_por": contexto.get("onus_escolhido_por"),
                    "onus_sugestao_id": contexto.get("onus_sugestao_id"),
-                   "onus_justificativa": contexto.get("onus_justificativa") or None}
+                   "onus_justificativa": contexto.get("onus_justificativa") or None,
+                   "onus_proprietario_conferencia":
+                       contexto.get("onus_proprietario_conferencia"),
+                   "onus_proprietario_justificativa":
+                       contexto.get("onus_proprietario_justificativa") or None}
                   if tipo == "ONUS" else {})})
 
         if fonte_pedida == "DIGITALIZACAO" and digi_info:
@@ -8542,6 +8867,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "selo e tente de novo.",
                   "danger")
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+        # A BUSCA SAI DEPOIS DA CERTIDÃO JÁ SELADA (15/10/2026). Com o selo
+        # digitado à mão, a busca também é da mão — nada se pede ao aparelho.
+        if busca and not (request.form.get("selo_texto") or "").strip():
+            recado_do_selo += _selar_a_busca_da_certidao_do_ri(
+                certidao_id=certidao_id, busca=busca,
+                nome=request.form.get("requerente"),
+                documento=request.form.get("requerente_documento"),
+                matricula=m["numero"], isento=isento,
+                motivo_isencao=motivo_isencao)
         _nome_emitida = (RONIA.titulo(contexto.get("resultado_onus"),
                                       contexto.get("resultado_acoes"))
                          if tipo == "ONUS" else TIPOS_CERTIDAO[tipo])
@@ -8559,6 +8893,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       "pela palavra do teor, sem natureza do título "
                       "reconhecida. Se não for ônus, cancele a certidão, "
                       "corrija a natureza do ato e emita de novo.", "warning")
+        if tipo in TIPOS_DA_CADEIA:
+            lista = ([a for b in contexto.get("cadeia_matriculas") or []
+                      for a in b.get("atos") or []]
+                     if tipo == "DOMINIAL" else
+                     contexto.get("dominio_periodo") or [])
+            por_palavra = [a["rotulo"] for a in lista if a.get("conferir")]
+            if por_palavra:
+                flash("Confira antes de entregar: "
+                      f"{', '.join(por_palavra)} entrou na cadeia dominial "
+                      "pela palavra do teor, sem natureza do título "
+                      "reconhecida. Se não for transmissão de domínio, "
+                      "cancele, corrija a natureza do ato e emita de novo.",
+                      "warning")
+            if contexto.get("origens_nao_encontradas"):
+                flash("Matrícula de origem que NÃO entrou na cadeia: "
+                      f"{'; '.join(contexto['origens_nao_encontradas'])}. "
+                      "Só entra no papel a matrícula que existe no banco — "
+                      "confira o número e, se for o caso, emita de novo.",
+                      "warning")
         return redirect(url_for("ri_certidao_odt", certidao_id=certidao_id))
 
     def _etiqueta_da_certidao(c) -> str:
@@ -9074,7 +9427,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # O NOME, E NÃO O LOGIN — correção de 17/09/2026, e ela só apareceu
         # porque a ficha passou a MOSTRAR este campo.
         #
-        #   A rota gravava `_usuario_atual()`, que devolve o login («jean»).
+        #   A rota gravava `_usuario_atual()`, que devolve o login («mario»).
         #   `emitida_por_nome`, na linha de cima da mesma tabela, grava o nome
         #   («MARIO EXEMPLO DOS SANTOS») — e é o nome o que a certidão imprime
         #   embaixo da assinatura. Duas convenções na MESMA linha é como elas

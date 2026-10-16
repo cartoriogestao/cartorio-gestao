@@ -116,13 +116,10 @@
         action="{{ url_for('protesto_cenprot_emolumentos_enviar') }}"
         style="padding:0 14px 14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label><small>Ambiente</small>
-      <select name="ambiente">
-        <option value="HOMOLOGACAO">Homologação (teste)</option>
-        <option value="PRODUCAO">Produção</option>
-      </select>
-    </label>
-    <button class="button">Enviar à CENPROT pela API</button>
+    {# O SELETOR DE AMBIENTE SAIU EM 14/10/2026 — ordem do oficial: «agora é
+       tudo produção». Ele abria em «Homologação (teste)», e quem clicasse sem
+       mexer mandava o arquivo ao ambiente de teste. #}
+    <button class="button">Enviar à CENPROT pela API (produção)</button>
     <p><small>
       <strong>Enviar muda coisa na Central.</strong> O roteiro diz que a
       aprovação da anuência é <strong>automática por meio deste arquivo</strong>

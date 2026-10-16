@@ -174,9 +174,11 @@ def test_pago_retirado_e_protestado_tambem_nao_vao():
 
 
 def test_sem_a_chave_do_cenprot_o_titulo_NAO_vai_e_a_lista_DIZ_por_que(s):
-    """**Medido na produção em 03/09/2026: `chave_cenprot` está vazia em 1.366
-    de 1.366.** Hoje nenhum título desta casa pode ser intimado por aqui — e a
-    tela tem de dizer isso, em vez de mostrar lista vazia."""
+    """Título em situação de ir e sem a chave não vai, e a lista diz por quê.
+
+    (O docstring dizia «medido na produção em 03/09/2026: vazia em 1.366 de
+    1.366 — hoje nenhum título pode ser intimado». Envelheceu: medido em
+    14/10/2026, 1.261 de 1.409 têm a chave.)"""
     _titulo(s, chave_cenprot="")
     con = sqlite3.connect(s["banco"])
     con.row_factory = sqlite3.Row
@@ -203,8 +205,81 @@ def test_o_quadro_conta_quantos_faltam_por_falta_de_chave(s):
     con.row_factory = sqlite3.Row
     q = RI.quantos_podem_ir(con)
     assert q["titulos"] == 3
+    assert q["elegiveis"] == 3
     assert q["podem_ir"] == 1
     assert q["sem_chave"] == 2
+    assert len(q["sem_chave_lista"]) == 2
+
+
+# ------------------------------------------------ a chave, medida de verdade
+#
+# RELATO DO OFICIAL EM 14/10/2026: «diz erroneamente na intimação digital que
+# não tem chave da CENPROT». Medido no banco da produção (só leitura): 1.261
+# de 1.409 títulos têm a chave; o quadro contava 148 «sem a chave» porque
+# somava pagos, desistidos e cancelados — que não vão de jeito nenhum —, e
+# entre os que poderiam ir faltavam 11. Os testes abaixo guardam a régua nova.
+
+
+def test_titulo_que_nao_vai_pela_situacao_nao_conta_como_sem_chave(s):
+    _titulo(s)                                            # pode ir
+    _titulo(s, situacao="PAGO", chave_cenprot="")
+    _titulo(s, situacao="DESISTIDO", chave_cenprot="")
+    _titulo(s, situacao="PROTESTADO", chave_cenprot="")
+    con = sqlite3.connect(s["banco"])
+    con.row_factory = sqlite3.Row
+    q = RI.quantos_podem_ir(con)
+    assert q["titulos"] == 4
+    assert q["elegiveis"] == 1
+    assert q["podem_ir"] == 1
+    assert q["sem_chave"] == 0 and q["sem_chave_lista"] == []
+    assert q["fora_pela_situacao"] == 3
+    for item in RI.candidatos(con):
+        if item["situacao"] != "APONTADO":
+            assert "chave" not in item["porque_nao"], item["porque_nao"]
+
+
+def test_a_tela_so_diz_que_falta_chave_quando_falta_e_diz_quais(s):
+    _titulo(s)
+    _titulo(s, situacao="PAGO", chave_cenprot="")
+    html = " ".join(s["c"].get("/protesto/resolve")
+                    .get_data(as_text=True).split())
+    assert "nenhum — os 1 em situação de ir têm a chave" in html
+    assert "Nenhum título pode ir" not in html
+    assert "Quais estão sem a chave" not in html
+    _titulo(s, numero_titulo="SEMCHAVE/1", protocolo="2604170099",
+            chave_cenprot="")
+    html = " ".join(s["c"].get("/protesto/resolve")
+                    .get_data(as_text=True).split())
+    assert "Quais estão sem a chave do CENPROT" in html
+    assert "SEMCHAVE/1" in html and "2604170099" in html
+    assert "<strong>1</strong> dos 2 em situação de ir" in html
+
+
+def test_nenhum_pode_ir_por_falta_de_chave_so_quando_e_esse_o_motivo(s):
+    _titulo(s, chave_cenprot="")
+    html = " ".join(s["c"].get("/protesto/resolve")
+                    .get_data(as_text=True).split())
+    assert "Nenhum título pode ir, e o motivo é um só" in html
+
+
+def test_chave_com_tamanho_errado_tem_frase_propria(s):
+    _titulo(s, chave_cenprot="123")
+    con = sqlite3.connect(s["banco"])
+    con.row_factory = sqlite3.Row
+    item = RI.candidatos(con)[0]
+    assert item["pode_ir"] is False
+    assert "tem 3 dígitos" in item["porque_nao"]
+
+
+def test_os_que_podem_ir_vem_primeiro_na_lista(s):
+    """A lista trazia os 200 mais novos em qualquer situação — na produção,
+    150 protestados para 20 que podiam ir."""
+    apontado = _titulo(s)
+    for _ in range(3):
+        _titulo(s, situacao="PROTESTADO")
+    con = sqlite3.connect(s["banco"])
+    con.row_factory = sqlite3.Row
+    assert RI.candidatos(con, limite=1)[0]["id"] == apontado
 
 
 # ------------------------------------------------ o identificador
@@ -286,9 +361,19 @@ def test_a_tela_avisa_quando_o_ambiente_e_o_de_producao(s):
     assert "chega ao devedor de verdade" in html
 
 
-def test_o_ambiente_padrao_da_tela_e_homologacao(s):
-    html = s["c"].get("/protesto/resolve").get_data(as_text=True)
-    assert re.search(r'value="HOMOLOGACAO"\s+selected', html)
+def test_a_tela_so_tem_producao(s):
+    """**CONTRATO MUDADO EM 14/10/2026** — ordem do oficial: «tire a opção de
+    funcionar na homologação, agora é tudo produção». Este teste se chamava
+    `test_o_ambiente_padrao_da_tela_e_homologacao` e cobrava a homologação
+    selecionada no seletor. O seletor saiu, e um endereço antigo com
+    `?ambiente=TESTES` ou `HOMOLOGACAO` abre a produção."""
+    for endereco in ("/protesto/resolve", "/protesto/resolve?ambiente=TESTES",
+                     "/protesto/resolve?ambiente=HOMOLOGACAO"):
+        html = s["c"].get(endereco).get_data(as_text=True)
+        assert '<select name="ambiente"' not in html
+        assert 'value="HOMOLOGACAO"' not in html
+        assert 'value="TESTES"' not in html
+        assert "ambiente de PRODUÇÃO" in " ".join(html.split())
 
 
 def test_a_tela_esta_no_menu_do_protesto():
@@ -321,11 +406,12 @@ def test_as_quatro_rotas_existem(s):
 # ------------------------------------------------ a Central é a sexta
 
 
-def test_a_resolve_e_a_sexta_central_e_tem_dois_ambientes_na_tela():
+def test_a_resolve_e_a_sexta_central_e_tem_so_a_producao_na_tela():
+    """Até 13/10/2026: homologação e produção. Desde 14/10, só a produção —
+    «agora é tudo produção»."""
     assert CRED.RESOLVE in CRED.ARQUIVO_DA_CENTRAL
     assert CRED.ARQUIVO_DA_CENTRAL[CRED.RESOLVE] == "resolve.cred"
-    assert CRED.ambientes_de(CRED.RESOLVE) == (
-        CRED.HOMOLOGACAO, CRED.PRODUCAO)
+    assert CRED.ambientes_de(CRED.RESOLVE) == (CRED.PRODUCAO,)
 
 
 def test_toda_central_declarada_tem_arquivo_forma_e_nome():
@@ -341,7 +427,8 @@ def test_toda_central_declarada_tem_arquivo_forma_e_nome():
 def _intimacao_gravada(s, **troca) -> int:
     """Uma intimação já mandada, como o envio a deixa."""
     tid = _titulo(s)
-    dados = {"titulo_id": tid, "ambiente": "TESTES",
+    # PRODUCAO desde 14/10/2026 (era «TESTES»): a lista mostra só as dela.
+    dados = {"titulo_id": tid, "ambiente": "PRODUCAO",
              "lote_id": "68532a2a6e5df1d32d14a971",
              "intimacao_id": "68532a2a6e5df1d32d14a97e",
              "identificador": "2604170001-1",
@@ -378,11 +465,24 @@ def test_a_ficha_diz_que_avisar_NAO_lavra_ato(s):
 
 def test_a_lista_leva_a_ficha(s):
     _intimacao_gravada(s)
-    # A tela abre em HOMOLOGAÇÃO por padrão (`resolve_web.ambiente_pedido`);
-    # `TESTES` só entra pedido na URL. A intimação de exemplo é de TESTES, e
-    # por isso o pedido diz o ambiente — sem ele a lista é a de outro ambiente.
-    html = s["c"].get("/protesto/resolve?ambiente=TESTES").get_data(as_text=True)
+    # Desde 14/10/2026 a tela é só de produção, e a intimação de exemplo
+    # também (era de TESTES, pedida pela URL).
+    html = s["c"].get("/protesto/resolve").get_data(as_text=True)
     assert "/protesto/resolve/1" in html
+
+
+def test_intimacao_de_testes_fica_como_historico_e_nao_se_avisa(s):
+    """A que ficou no banco de antes da virada: some da lista, a ficha diz o
+    que ela é, e avisar a Central sobre ela é recusado com a frase."""
+    iid = _intimacao_gravada(s, ambiente="TESTES")
+    lista = s["c"].get("/protesto/resolve").get_data(as_text=True)
+    assert f"/protesto/resolve/{iid}" not in lista
+    ficha = " ".join(s["c"].get(f"/protesto/resolve/{iid}")
+                     .get_data(as_text=True).split())
+    assert "guardada só como histórico" in ficha
+    with pytest.raises(CRED.CredencialError) as erro:
+        RI.avisar(s["db"], iid, "paga")
+    assert "só em produção" in str(erro.value)
 
 
 def test_os_tres_avisos_a_central_estao_declarados():

@@ -18,8 +18,15 @@ aqui desde 30/09, que dizia «medido» sobre um envio que nunca tinha sido feito
 Quem monta é ``protesto_remessa`` / ``protesto_retorno``; este módulo só
 converte para XML e transporta.
 
-Produção só envia automaticamente se ``cra_auto_enviar_producao`` estiver ligado;
-homologação obedece ``cra_auto_enviar_homolog`` (padrão ligado).
+Produção só envia automaticamente se ``cra_auto_enviar_producao`` estiver ligado.
+
+**DESDE 14/10/2026 O ENVIO É SÓ EM PRODUÇÃO** — ordem do oficial: «tire a
+opção de funcionar na homologação, agora é tudo produção». Lote sem ambiente é
+de produção; lote gravado como de homologação **não se envia** a lugar nenhum
+(`centrais_cred.ambiente_de_uso` recusa com a frase), porque mandar à produção
+a confirmação de um lote de teste seria apresentar à Central títulos que ela
+não mandou. ``cra_auto_enviar_homolog`` continua gravado em ``settings`` e não
+se lê mais por tela nenhuma.
 """
 from __future__ import annotations
 
@@ -64,15 +71,20 @@ class CraEnvioError(CRA.CraError):
     """Falha ao enviar arquivo à CRA, com frase para o balcão."""
 
 
-def ambiente_da_remessa(lote: dict, *, padrao: str = CRED.HOMOLOGACAO) -> str:
-    """HOMOLOGACAO/PRODUCAO a partir do lote XML, ou padrão para TXT."""
+def ambiente_da_remessa(lote: dict, *, padrao: str = CRED.PRODUCAO) -> str:
+    """HOMOLOGACAO/PRODUCAO a partir do lote XML, ou padrão para TXT.
+
+    O padrão é PRODUÇÃO desde 14/10/2026 (até 13/10, homologação). O lote que
+    disser homologação é devolvido como tal — e o envio o recusa —, em vez de
+    ser trocado por produção em silêncio.
+    """
     bruto = str(lote.get("origem_xml_ambiente") or "").strip().upper()
     return bruto if bruto in CRED.AMBIENTES else padrao
 
 
 def auto_envio_ligado(ambiente: str, ler_config: Callable[[str, str], str]) -> bool:
     """Se o envio automático pós-receber deve rodar neste ambiente."""
-    qual = str(ambiente or "").strip().upper() or CRED.HOMOLOGACAO
+    qual = str(ambiente or "").strip().upper() or CRED.PRODUCAO
     if qual == CRED.PRODUCAO:
         return ler_config("cra_auto_enviar_producao", "0") == "1"
     return ler_config("cra_auto_enviar_homolog", "1") == "1"
@@ -254,9 +266,24 @@ def _transmitir(preparado: dict, qual: str, pasta=None) -> dict[str, Any]:
     return interpretar_resposta_envio(bruto, o_que=o_que)
 
 
+def _agora_local() -> str:
+    """A hora LOCAL, na forma de `database.now()` (`AAAA-MM-DDTHH:MM:SS`).
+
+    **ERA A FUNÇÃO `datetime` DO SQLITE COM «now» ATÉ 14/10/2026, e isso é
+    UTC** — três horas
+    à frente do Maranhão —, enquanto `pt_retornos.gerado_em` é hora local: o
+    arquivo aparecia «enviado» antes de ter sido gerado. Achado pela frente do
+    painel do dia. A hora agora sai do Python, como em todo o resto da casa
+    (e sem acoplar data calculada ao SQLite).
+    """
+    from datetime import datetime
+    return datetime.now().replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%S")
+
+
 def _gravar_envio(con: sqlite3.Connection, preparado: dict, lido: dict, *,
-                  qual: str, usuario: str | None) -> dict[str, Any]:
-    agora = con.execute("SELECT datetime('now')").fetchone()[0]
+                  qual: str, usuario: str | None,
+                  agora: str | None = None) -> dict[str, Any]:
+    agora = agora or _agora_local()
     con.execute(
         """UPDATE pt_retornos SET cra_enviado_em=?, cra_enviado_ambiente=?,
                cra_envio_resumo=?, cra_enviado_por=?, cra_envio_erro=NULL
@@ -292,7 +319,9 @@ def enviar_pos_remessa(
     de uma. A ordem importa: o andamento fala de protocolos que só a
     confirmação apresenta à Central.
     """
-    qual = str(ambiente or "").strip().upper() or CRED.HOMOLOGACAO
+    # SÓ PRODUÇÃO (14/10/2026): vazio é produção, e lote de homologação é
+    # recusado aqui, com a frase, antes de qualquer leitura ou rede.
+    qual = CRED.ambiente_de_uso(CRED.CRA, ambiente)
     if not auto_envio_ligado(qual, ler_config):
         return {
             "auto": False,
@@ -306,7 +335,9 @@ def enviar_pos_remessa(
         return {
             "auto": True,
             "ambiente": qual,
-            "motivo": "Credencial da CRA não informada — envio manual na Central.",
+            "motivo": ("Credencial de PRODUÇÃO da CRA não informada — envio "
+                       "manual na Central, ou informe-a em Administrativo → "
+                       "Configurações → Centrais."),
             "enviados": [],
             "falhas": [],
         }
@@ -367,3 +398,42 @@ def enviar_pos_remessa(
         "enviados": enviados,
         "falhas": falhas,
     }
+
+
+def enviar_arquivo(transacao: Callable[[], Any], retorno_id: int, *,
+                   pasta=None, usuario: str | None = None,
+                   forcar: bool = False) -> dict[str, Any]:
+    """Envia à CRA UM arquivo já gerado — o retorno das 11h30, a confirmação
+    que falhou, o andamento do apontamento. É o botão «Enviar à CRA».
+
+    ATÉ 14/10/2026 O RETORNO NÃO TINHA BOTÃO: o envio só rodava junto com a
+    remessa (`enviar_pos_remessa`, confirmação e andamento), e o retorno — que
+    a homologação aceitou pela operação `Retorno` em 13/10 (código 0000) — se
+    baixava para subir à mão no portal. As mesmas três fases: ler (transação
+    curta) → a rede (sem transação) → gravar (transação curta). Só produção.
+    """
+    qual = CRED.ambiente_de_uso(CRED.CRA, CRED.PRODUCAO)
+    if not CRED.tem(CRED.CRA, qual, pasta):
+        raise CraEnvioError(
+            "A credencial de PRODUÇÃO da CRA não está informada — informe-a em "
+            "Administrativo → Configurações → Centrais, ou suba o arquivo no "
+            "portal da CRA.")
+    with transacao() as con:                       # 1. ler — curta
+        linha = PRE.retorno(con, int(retorno_id))
+        if not linha:
+            raise CraEnvioError(f"O arquivo #{retorno_id} não existe.")
+        if str(linha["cra_enviado_ambiente"] or "") == "EOFICIO":
+            raise CraEnvioError(
+                "Esta linha não é um arquivo: é o registro de que o E-Ofício já "
+                "informou a CRA antes da virada (14/10/2026). Não há o que enviar.")
+        preparado = _preparar(linha, con=con, forcar=forcar)
+    erro = None
+    try:                                           # 2. a rede — sem transação
+        lido = _transmitir(preparado, qual, pasta)
+    except (CRA.CraError, CRED.CredencialError) as e:
+        lido, erro = None, str(e)
+    with transacao() as con:                       # 3. gravar — curta
+        if erro is None:
+            return _gravar_envio(con, preparado, lido, qual=qual, usuario=usuario)
+        _registrar_falha(con, int(retorno_id), ambiente=qual, erro=erro)
+    raise CraEnvioError(erro)

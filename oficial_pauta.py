@@ -69,11 +69,15 @@ def tarefas(con: sqlite3.Connection, hoje: date, dono: int) -> dict[str, list[di
     """As tarefas do oficial por quando: vencidas, hoje, 7 dias, depois, sem prazo."""
     marcas = ",".join("?" * len(ABERTA))
     fora_marcas = ",".join("?" * len(FORA_DA_MESA))
+    # A SUSPENSA SAI DA PAUTA (relato #132): ela não vence nem pede o oficial
+    # enquanto espera a data ou a condição.
+    import tarefa_suspensao as TS
+    nao_suspensa, params_suspensao = TS.condicao_nao_suspensa(None, hoje, con=con)
     linhas = con.execute(
         f"""SELECT id, title, priority, due_date, source_type, sector, linked_expediente_id
               FROM tasks WHERE assigned_user_id = ? AND status NOT IN ({marcas})
-               AND source_type NOT IN ({fora_marcas})""",
-        (dono, *ABERTA, *FORA_DA_MESA)).fetchall()
+               AND source_type NOT IN ({fora_marcas}) AND {nao_suspensa}""",
+        (dono, *ABERTA, *FORA_DA_MESA, *params_suspensao)).fetchall()
     grupos: dict[str, list[dict]] = {"VENCIDAS": [], "HOJE": [], "SEMANA": [],
                                      "DEPOIS": [], "SEM_PRAZO": []}
     semana = hoje + timedelta(days=7)
@@ -102,13 +106,15 @@ def substituicoes_vencidas(con: sqlite3.Connection, hoje: date, dono: int) -> li
     """Onde o oficial é o substituto e o titular deixou vencer."""
     marcas = ",".join("?" * len(ABERTA))
     nomes = _nomes(con)
+    import tarefa_suspensao as TS
+    nao_suspensa, params_suspensao = TS.condicao_nao_suspensa(None, hoje, con=con)
     linhas = con.execute(
         f"""SELECT id, title, priority, due_date, assigned_user_id FROM tasks
              WHERE backup_user_id = ? AND assigned_user_id IS NOT NULL
                AND assigned_user_id <> ? AND status NOT IN ({marcas})
-               AND due_date IS NOT NULL AND due_date < ?
+               AND due_date IS NOT NULL AND due_date < ? AND {nao_suspensa}
              ORDER BY due_date""",
-        (dono, dono, *ABERTA, hoje.isoformat())).fetchall()
+        (dono, dono, *ABERTA, hoje.isoformat(), *params_suspensao)).fetchall()
     return [{"id": r[0], "titulo": r[1], "prioridade": r[2], "prazo": r[3],
              "titular": nomes.get(r[4], f"#{r[4]}"),
              "dias_vencida": (hoje - _dt(r[3])).days} for r in linhas]

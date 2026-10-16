@@ -42,7 +42,11 @@ def test_data_de_abertura_e_primeira_informacao_da_ficha():
 
 
 def test_fecho_do_registro_nao_cria_linha_em_branco():
-    assert "{% if a.teor_odf %}<p>{{ a.teor_odf }}</p>{% endif %}" in MODELO_FICHA_PADRAO
+    # O molde mudou na 3.6.216 (25/09/2026): `a.teor_odf` e `a.selo_odf` já
+    # chegam como parágrafos/tabela de ODF, e o `<p>` em volta deles aninhava
+    # parágrafo dentro de parágrafo. A propriedade guardada é a mesma — o teor
+    # só sai quando existe, e o fecho não abre linha em branco.
+    assert "{% if a.teor_odf %}{{ a.teor_odf }}{% endif %}" in MODELO_FICHA_PADRAO
     assert "{% if a.fecho %}<p></p>" not in MODELO_FICHA_PADRAO
 
 

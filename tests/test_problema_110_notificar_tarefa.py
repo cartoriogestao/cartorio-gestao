@@ -44,20 +44,20 @@ def _uid(casa, login: str) -> int:
 
 
 def _tarefa(casa, **campos) -> int:
-    jean = _uid(casa, "jean")
+    mario = _uid(casa, "mario")
     dados = {
         "title": "Docs no endereco indicado",
         "sector": "Malote",
         "evidence_required": 0,
-        "assigned_user_id": jean,
+        "assigned_user_id": mario,
     }
     dados.update(campos)
-    return casa["db"].create_task(dados, jean)
+    return casa["db"].create_task(dados, mario)
 
 
 def test_notificar_mantem_comigo_e_lista_pediram_resposta(casa):
-    jean, lei = _uid(casa, "jean"), _uid(casa, "beatriz")
-    tid = _tarefa(casa, assigned_user_id=jean)
+    mario, lei = _uid(casa, "mario"), _uid(casa, "beatriz")
+    tid = _tarefa(casa, assigned_user_id=mario)
     texto = (
         "Nao achamos os docs referidos; preciso entender por que nao aparecem "
         "no endereco indicado."
@@ -82,9 +82,9 @@ def test_notificar_mantem_comigo_e_lista_pediram_resposta(casa):
             con.execute(
                 "SELECT assigned_user_id FROM tasks WHERE id=?", (tid,)
             ).fetchone()["assigned_user_id"]
-            == jean
+            == mario
         )
-        assert TP.contagem_por_vista(con, jean)[TP.VISTA_COMIGO] == 1
+        assert TP.contagem_por_vista(con, mario)[TP.VISTA_COMIGO] == 1
         assert TP.contagem_por_vista(con, lei)[TP.VISTA_PEDIRAM_RESPOSTA] == 1
         notif = con.execute(
             "SELECT old_value, new_value, note FROM task_history "
@@ -99,8 +99,8 @@ def test_notificar_mantem_comigo_e_lista_pediram_resposta(casa):
 
 
 def test_mencao_no_texto_notifica_sem_select(casa):
-    jean, lei = _uid(casa, "jean"), _uid(casa, "beatriz")
-    tid = _tarefa(casa, assigned_user_id=jean)
+    mario, lei = _uid(casa, "mario"), _uid(casa, "beatriz")
+    tid = _tarefa(casa, assigned_user_id=mario)
     texto = (
         "@beatriz, pode confirmar se os arquivos foram enviados ao endereco?"
     )
@@ -127,8 +127,8 @@ def test_mencao_no_texto_notifica_sem_select(casa):
 
 
 def test_resposta_da_notificada_tira_da_vista(casa):
-    jean, lei = _uid(casa, "jean"), _uid(casa, "beatriz")
-    tid = _tarefa(casa, assigned_user_id=jean)
+    mario, lei = _uid(casa, "mario"), _uid(casa, "beatriz")
+    tid = _tarefa(casa, assigned_user_id=mario)
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)
     casa["cliente"].post(
         f"/tarefas/{tid}",

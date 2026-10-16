@@ -10,31 +10,27 @@
   <a class="button" href="{{ url_for('protesto_titulos') }}">Títulos</a>
 </div>
 
-{# O AMBIENTE TEM DE GRITAR. Pendência de homologação é DADO DE TESTE, e com
-   cara de real ela faz alguém ir ao balcão dizer que existe — o carimbo que
-   mente na pior forma. #}
-{% if ambiente == 'HOMOLOGACAO' %}
-<div class="alert alert-warning">
-  <strong>Você está no ambiente de HOMOLOGAÇÃO.</strong> Tudo o que aparece
-  aqui é <strong>dado de teste</strong> da Central, e o que for enviado
-  <strong>não vale</strong> para nenhum protesto de verdade. Para trabalhar,
-  troque para produção abaixo — e só depois de a credencial de produção estar
-  informada.
-</div>
-{% else %}
+{# SÓ PRODUÇÃO DESDE 14/10/2026 — ordem do oficial: «tire a opção de
+   funcionar na homologação, agora é tudo produção». O seletor de ambiente e o
+   aviso de homologação saíram; a lista mostra só as pendências de produção, e
+   as de homologação que ficaram no banco continuam lá, sem aparecer. #}
 <div class="alert alert-danger">
-  <strong>Ambiente de PRODUÇÃO.</strong> O que for enviado daqui muda a
-  situação dos títulos na Central, e não se desfaz por esta tela.
+  <strong>Ambiente de PRODUÇÃO</strong> — o único que o sistema usa. O que for
+  enviado daqui muda a situação dos títulos na Central, e não se desfaz por
+  esta tela.
 </div>
-{% endif %}
 
 {% if not tem_credencial %}
 <div class="alert alert-danger">
-  A credencial da CENPROT para {{ ambiente|lower }} <strong>ainda não foi
-  informada</strong>. Ela se informa em
+  A credencial <strong>de PRODUÇÃO</strong> da CENPROT <strong>ainda não foi
+  informada</strong> — sem ela nada se baixa nem se envia. Ela se informa em
   <a href="{{ url_for('settings') }}">Administrativo → Configurações →
-  Centrais de Protesto</a>, e fica guardada <strong>fora do banco</strong> —
-  o backup não a alcança.
+  Centrais</a>, e fica guardada <strong>fora do banco</strong> — o backup não
+  a alcança.
+  {% if fora_de_uso %}
+  A de homologação continua guardada, mas não é usada e não serve no lugar
+  da de produção.
+  {% endif %}
 </div>
 {% endif %}
 
@@ -87,14 +83,6 @@
         {% endfor %}
       </select>
     </label>
-    <label>Ambiente
-      <select name="ambiente">
-        {% for a in ambientes %}
-        <option value="{{ a }}" {% if a == ambiente %}selected{% endif %}>
-          {{ a|capitalize }}</option>
-        {% endfor %}
-      </select>
-    </label>
     <label>De <input type="date" name="inicio"></label>
     <label>Até <input type="date" name="fim"></label>
     <div>
@@ -116,7 +104,7 @@
         style="padding:.75rem">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="ambiente" value="{{ ambiente }}">
-    <button class="button" type="submit">Testar {{ ambiente|lower }}</button>
+    <button class="button" type="submit">Testar a ligação com a produção</button>
   </form>
 </section>
 
@@ -129,7 +117,7 @@
 
   {% if especie == 'CANCELAMENTO' %}
   <div class="alert alert-warning" style="margin:.75rem">
-    <strong>A conferir na homologação:</strong> {{ a_conferir }}
+    <strong>A conferir:</strong> {{ a_conferir }}
   </div>
   {% endif %}
 
@@ -204,7 +192,7 @@
       <input type="hidden" name="especie" value="{{ especie }}">
       <input type="hidden" name="ambiente" value="{{ ambiente }}">
       <button class="button" type="submit">
-        Enviar as {{ decididas }} à CENPROT ({{ ambiente|lower }})</button>
+        Enviar as {{ decididas }} à CENPROT (produção)</button>
     </form>
   </div>
 </section>

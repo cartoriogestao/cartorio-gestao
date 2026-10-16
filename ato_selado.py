@@ -105,6 +105,10 @@ TABELAS_DE_ATO: dict[str, str] = {
     "ra_atos": "Registro Auxiliar",
     "ri_atos": "Registro de Imóveis",
     "nt_atos": "Notas",
+    # A CERTIDÃO DAS NOTAS (15/10/2026), pela razão das outras certidões: não
+    # é ato de livro, e a negativa nem ato tem. Faltando aqui, o selo seria
+    # recusado DEPOIS de comprado e a certidão sumiria.
+    "nt_certidoes": "Notas — certidões",
     # O BALCAO DAS NOTAS TEM TRES TABELAS PROPRIAS, e nenhuma delas e `nt_atos`
     # (que e o ato de LIVRO — escritura, procuracao, testamento).
     #
@@ -1068,6 +1072,13 @@ def natureza_do_protesto(tipo: Any, modo: Any = None,
     return NATUREZA_DO_PROTESTO.get(t)
 
 
+# O QUE A CASA MANDOU NA CERTIDÃO DO PROTESTO, que não tem título — medido nos
+# 57 envelopes de `/selo/protesto/certidao` (15/10/2026): protocolo «0» em 51
+# (os outros 6 citam o protocolo de um título achado) e livro «1» em 57.
+PROTOCOLO_DA_CERTIDAO_DO_PROTESTO = "0"
+LIVRO_DA_CERTIDAO_DO_PROTESTO = "1"
+
+
 def envelope_do_protesto(*, tipo: Any, codigo_tj: Any, escrevente: Any,
                          protocolo: Any, versao_tabela: Any,
                          partes: Any = None, livro: Any = None,
@@ -1088,6 +1099,17 @@ def envelope_do_protesto(*, tipo: Any, codigo_tj: Any, escrevente: Any,
         raise AtoError(
             f"Não sei que natureza de selo corresponde a {str(tipo).lower()} "
             f"no Protesto. O ato fica sem selo.")
+    # A CERTIDÃO POR NOME NÃO TEM TÍTULO, E POR ISSO NÃO TEM PROTOCOLO —
+    # conserto pedido pelo oficial em 15/10/2026. Esta função exigia o
+    # protocolo do título também da certidão, e a certidão (busca por nome ou
+    # documento) nunca tem título vinculado: o selo automático dela não saía
+    # nunca. Medido nos 57 envelopes de `/selo/protesto/certidao` do acervo:
+    # `selo.protocolo` = «0» em 51 e `selo.livro` = «1» em 57 — é o que a
+    # casa mandou quando não havia título, e é o que vai.
+    eh_certidao = str(tabela or "") == "pt_certidoes"
+    if eh_certidao:
+        protocolo = str(protocolo or "").strip() or PROTOCOLO_DA_CERTIDAO_DO_PROTESTO
+        livro = livro or LIVRO_DA_CERTIDAO_DO_PROTESTO
     faltando = [nome for nome, valor in
                 (("o item da tabela de custas", codigo_tj),
                  ("o escrevente", escrevente), ("o protocolo", protocolo),
@@ -1107,6 +1129,22 @@ def envelope_do_protesto(*, tipo: Any, codigo_tj: Any, escrevente: Any,
         # O VALOR VAI EM REAIS, e o caixa desta casa conta em centavos. A
         # divisao acontece na fronteira, num lugar so.
         selo["valorTitulo"] = round(int(valor_centavos) / 100, 2)
+    if eh_certidao:
+        # `quantidade` 1 nos 57 envelopes da certidão, e só neles: os outros
+        # caminhos do Protesto não o mandavam, e não passam a mandar.
+        return {
+            "natureza": {"tipo": int(natureza)},
+            "quantidade": 1,
+            "selo": selo,
+            "ato": {"codigo": str(codigo_tj).strip(),
+                    "codigoTabelaCusta": str(versao_tabela).strip()},
+            "partes": {"nomePartes": [],
+                       "parteAto": [{"nome": str(p.get("nome") or "").strip(),
+                                     "documento": "".join(
+                                         c for c in str(p.get("documento") or "")
+                                         if c.isdigit())}
+                                    for p in (partes or [])]},
+        }
     return {
         "natureza": {"tipo": int(natureza)},
         "selo": selo,
@@ -1541,7 +1579,7 @@ def caminho_do_ato_do_ri(base_calculo: Any = None) -> str:
             else CAMINHO_DO_ATO_DO_RI_SEM_VALOR)
 
 
-#: HOTFIX-2026-10-13-02 (AV-08/1196, Leidiane 13/10/2026): o TJMA recusa
+#: HOTFIX-2026-10-13-02 (AV-08/1196, escrevente, 13/10/2026): o TJMA recusa
 #: «O tamanho do campo "protocolo" deve estar entre 1 e 50». Ato de ofício
 #: (encerramento por mudança da técnica, sem prenotação) mandava "". Vazio vira
 #: PROTOCOLO_DE_OFICIO; acima de 50 caracteres, corta em 50.
@@ -1894,10 +1932,19 @@ def envelope_da_prenotacao(*, protocolo: Any, escrevente: Any,
 # chave sai daqui junto com o tipo, e nao por arrumacao: mapa de selo que
 # aceita um tipo que a tela nao emite e porta aberta para o proximo codigo
 # digitar `NEGATIVA` e o selador responder por uma busca que nao foi feita.
+#
+# **A DOMINIAL E A VINTENARIA SAO DO 16.24.4** — a descricao do item nomeia
+# a «cadeia dominial» com todas as letras, e a vintenaria e a cadeia dominial
+# recortada no tempo, com os onus do periodo (que o mesmo item tambem nomeia).
+# Foi o mapa que a 3.6.233 usou em 28/09/2026 e com que a certidao 394/2026
+# saiu selada (`CERELE…`); reposto em 14/10/2026, quando o codigo perdido foi
+# reconstituido.
 CODIGO_DA_CERTIDAO_DO_RI = {
     "INTEIRO_TEOR": "16.24.4",
     "ONUS": "16.24.4",
     "PROPRIEDADE": "16.24.1",
+    "DOMINIAL": "16.24.4",
+    "VINTENARIA": "16.24.4",
 }
 # Negativa de imovel — tela propria (indicador), nao a ficha (#75). Mesmo item
 # 16.24.1 medido; mora fora de CODIGO_DA_CERTIDAO_DO_RI para o mapa bater com
@@ -2724,6 +2771,9 @@ COLUNA_DO_SELO: dict[str, str] = {
     # medido no esquema: `ri_certidoes` guarda em `selo_texto`,
     # como `ri_atos` — e nao em `selo`.
     "ri_certidoes": "selo_texto",
+    # A certidao das Notas (15/10/2026) guarda em `selo`, e fica escrito
+    # para ninguem precisar abrir o esquema para saber.
+    "nt_certidoes": "selo",
 }
 
 
@@ -2902,6 +2952,12 @@ CAMINHO_DA_PROCURACAO: dict[str, str] = {
     "VENDA": "/selo/notas/procuracao/venda",
 }
 
+# Os tipos de ato de livro que selam pelos tres caminhos acima (15/10/2026).
+# A previdenciaria e a renuncia entraram no mesmo dia, por decisao dele.
+TIPOS_QUE_SELAM_COMO_PROCURACAO = frozenset(
+    {"PROCURACAO", "SUBSTABELECIMENTO", "REVOGACAO",
+     "PROCURACAO_PREVIDENCIARIA", "RENUNCIA"})
+
 # A natureza do ato declarado SEM valor, medida em 15 de 15 envelopes. Nao ha
 # outra forma no acervo, e por isso ela nao se pergunta.
 NATUREZA_DO_ATO_DECLARADO_SEM_VALOR = {"descricao": "Outros", "tipo": 41}
@@ -2957,7 +3013,10 @@ def caminho_do_ato_de_livro_das_notas(
     if especie == "ESCRITURA":
         return (CAMINHO_DA_ESCRITURA_COM_VALOR if com_valor
                 else CAMINHO_DA_ESCRITURA_SEM_VALOR)
-    if especie == "PROCURACAO":
+    # O SUBSTABELECIMENTO E A REVOGACAO SELAM PELO CAMINHO DA PROCURACAO —
+    # decisao do oficial, 15/10/2026. O acervo nao tem precedente (nenhum
+    # substabelecimento, e a unica revogacao sem selo); quem decidiu foi ele.
+    if especie in TIPOS_QUE_SELAM_COMO_PROCURACAO:
         qual = str(especie_procuracao or "").strip().upper()
         caminho = CAMINHO_DA_PROCURACAO.get(qual)
         if not caminho:

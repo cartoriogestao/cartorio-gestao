@@ -57,9 +57,9 @@ def _entrar(app, usuario: str):
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.create_user("balcao", "QUEM ATENDE", SENHA, "USER")
-    return {**cg_casa, "cliente": _entrar(cg_casa["app"], "jean")}
+    return {**cg_casa, "cliente": _entrar(cg_casa["app"], "mario")}
 
 def _con(casa):
     con = sqlite3.connect(casa["banco"])

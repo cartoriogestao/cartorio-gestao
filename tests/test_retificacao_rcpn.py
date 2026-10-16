@@ -41,7 +41,7 @@ FUNDAMENTO = ("o erro é evidente na comparação com a certidão de nascimento 
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     return cg_casa
 
 def _con(casa):
@@ -63,7 +63,7 @@ def _abrir(con, **extra):
     campos = dict(instituto="RETIFICACAO", forma="ESCRITO",
                   requerente_nome="MARIA DAS DORES",
                   o_que_se_pede="corrigir o nome da genitora",
-                  ano=2026, agora=AGORA, por="jean",
+                  ano=2026, agora=AGORA, por="mario",
                   assento_descricao="Livro A-24, fl. 166, termo 19552")
     campos.update(extra)
     return RR.abrir(con, **campos)
@@ -72,11 +72,11 @@ def _abrir(con, **extra):
 def _ate_a_decisao(con, **extra):
     """Leva um processo até a véspera da decisão — instruído e com a CRC."""
     pid = _abrir(con, **extra)
-    RR.instruir(con, pid, agora=AGORA, por="jean")
+    RR.instruir(con, pid, agora=AGORA, por="mario")
     RR.registrar_consulta_crc(
         con, pid, o_que_se_procurou="nome, data de nascimento e filiação",
         resultado="nenhuma duplicidade; nenhum ato em outra serventia",
-        agora=AGORA, por="jean")
+        agora=AGORA, por="mario")
     return pid
 
 
@@ -189,7 +189,7 @@ def test_o_suprimento_nao_exige_assento(casa):
     with con:
         pid = RR.abrir(con, instituto="SUPRIMENTO", forma="ESCRITO",
                        requerente_nome="JOÃO", o_que_se_pede="suprir o assento",
-                       ano=2026, agora=AGORA, por="jean")
+                       ano=2026, agora=AGORA, por="mario")
     assert pid
 
 
@@ -199,7 +199,7 @@ def test_a_retificacao_exige_dizer_de_que_assento_se_trata(casa):
         with con:
             RR.abrir(con, instituto="RETIFICACAO", forma="ESCRITO",
                      requerente_nome="JOÃO", o_que_se_pede="corrigir",
-                     ano=2026, agora=AGORA, por="jean")
+                     ano=2026, agora=AGORA, por="mario")
     assert "de que assento" in str(erro.value)
 
 
@@ -224,7 +224,7 @@ def test_o_prazo_conta_do_instruido_e_em_dias_uteis(casa):
                              (pid,)).fetchone())
     assert linha["prazo_ate"] is None       # ainda nao conta
     with con:
-        r = RR.instruir(con, pid, agora=AGORA, por="jean")
+        r = RR.instruir(con, pid, agora=AGORA, por="mario")
     # 20/08/2026 mais 10 dias uteis nao e 30/08: ha fim de semana no meio
     assert r["prazo_ate"] > "2026-08-30"
 
@@ -233,17 +233,17 @@ def test_nao_se_instrui_duas_vezes(casa):
     con = _con(casa)
     with con:
         pid = _abrir(con)
-        RR.instruir(con, pid, agora=AGORA, por="jean")
+        RR.instruir(con, pid, agora=AGORA, por="mario")
     with pytest.raises(RR.RetificacaoRcpnError):
         with con:
-            RR.instruir(con, pid, agora=AGORA, por="jean")
+            RR.instruir(con, pid, agora=AGORA, por="mario")
 
 
 def test_fora_do_prazo_lista_quem_estourou(casa):
     con = _con(casa)
     with con:
         pid = _abrir(con)
-        RR.instruir(con, pid, agora=AGORA, por="jean")
+        RR.instruir(con, pid, agora=AGORA, por="mario")
     assert RR.fora_do_prazo(con, hoje="2026-08-25") == []
     assert len(RR.fora_do_prazo(con, hoje="2026-12-01")) == 1
 
@@ -257,11 +257,11 @@ def test_nao_se_decide_sem_a_consulta_a_crc(casa):
     con = _con(casa)
     with con:
         pid = _abrir(con)
-        RR.instruir(con, pid, agora=AGORA, por="jean")
+        RR.instruir(con, pid, agora=AGORA, por="mario")
     with pytest.raises(RR.RetificacaoRcpnError) as erro:
         with con:
             RR.decidir(con, pid, decisao="DEFERIDO", fundamento=FUNDAMENTO,
-                       agora=AGORA, por="jean")
+                       agora=AGORA, por="mario")
     assert "consulta obrigatória à CRC" in str(erro.value)
 
 
@@ -273,7 +273,7 @@ def test_a_consulta_exige_dizer_o_que_se_achou(casa):
         pid = _abrir(con)
     for extra in ({"o_que_se_procurou": " "}, {"resultado": " "}):
         campos = dict(o_que_se_procurou="nome e filiação",
-                      resultado="nada encontrado", agora=AGORA, por="jean")
+                      resultado="nada encontrado", agora=AGORA, por="mario")
         campos.update(extra)
         with pytest.raises(RR.RetificacaoRcpnError):
             with con:
@@ -289,7 +289,7 @@ def test_a_duplicidade_vira_andamento_com_o_art_365(casa):
         RR.registrar_consulta_crc(
             con, pid, o_que_se_procurou="nome e data",
             resultado="há assento da mesma pessoa na serventia de Imperatriz",
-            achou_duplicidade=True, agora=AGORA, por="jean")
+            achou_duplicidade=True, agora=AGORA, por="mario")
     andamento = [x["o_que"] for x in con.execute(
         "SELECT o_que FROM rr_andamento WHERE processo_id=?", (pid,))]
     assert any("art. 365" in x for x in andamento)
@@ -315,7 +315,7 @@ def test_decidir_exige_fundamento(casa):
     with pytest.raises(RR.RetificacaoRcpnError) as erro:
         with con:
             RR.decidir(con, pid, decisao="DEFERIDO", fundamento="sim",
-                       agora=AGORA, por="jean")
+                       agora=AGORA, por="mario")
     assert "fundamentada" in str(erro.value)
 
 
@@ -324,7 +324,7 @@ def test_decidir_com_tudo_pronto(casa):
     with con:
         pid = _ate_a_decisao(con)
         r = RR.decidir(con, pid, decisao="DEFERIDO", fundamento=FUNDAMENTO,
-                       agora=AGORA, por="jean")
+                       agora=AGORA, por="mario")
     assert r["decisao"] == "DEFERIDO"
     assert r["comunicacoes_abertas"] == []
 
@@ -334,11 +334,11 @@ def test_nao_se_decide_duas_vezes(casa):
     with con:
         pid = _ate_a_decisao(con)
         RR.decidir(con, pid, decisao="DEFERIDO", fundamento=FUNDAMENTO,
-                   agora=AGORA, por="jean")
+                   agora=AGORA, por="mario")
     with pytest.raises(RR.RetificacaoRcpnError) as erro:
         with con:
             RR.decidir(con, pid, decisao="INDEFERIDO", fundamento=FUNDAMENTO,
-                       agora=AGORA, por="jean")
+                       agora=AGORA, por="mario")
     assert "já foi decidido" in str(erro.value)
 
 
@@ -349,7 +349,7 @@ def test_decisao_inventada_recusa(casa):
     with pytest.raises(RR.RetificacaoRcpnError):
         with con:
             RR.decidir(con, pid, decisao="TALVEZ", fundamento=FUNDAMENTO,
-                       agora=AGORA, por="jean")
+                       agora=AGORA, por="mario")
 
 
 def test_o_que_falta_para_decidir_diz_a_crc_primeiro(casa):
@@ -373,7 +373,7 @@ def test_erro_da_serventia_exige_fundamento_proprio(casa):
     with pytest.raises(RR.RetificacaoRcpnError) as erro:
         with con:
             RR.decidir(con, pid, decisao="DEFERIDO", fundamento=FUNDAMENTO,
-                       agora=AGORA, por="jean", erro_da_serventia=True,
+                       agora=AGORA, por="mario", erro_da_serventia=True,
                        erro_fundamento="foi erro nosso")
     assert "delegatário titular da época" in str(erro.value)
 
@@ -385,7 +385,7 @@ def test_erro_da_serventia_abre_as_duas_comunicacoes(casa):
         pid = _ate_a_decisao(con)
         r = RR.decidir(
             con, pid, decisao="DEFERIDO", fundamento=FUNDAMENTO, agora=AGORA,
-            por="jean", erro_da_serventia=True,
+            por="mario", erro_da_serventia=True,
             erro_fundamento="a grafia do nome divergiu do documento "
                             "apresentado no ato originário, por falha da "
                             "digitação desta serventia")
@@ -398,12 +398,12 @@ def test_registrar_a_comunicacao_congela_o_teor(casa):
     with con:
         pid = _ate_a_decisao(con)
         RR.decidir(con, pid, decisao="DEFERIDO", fundamento=FUNDAMENTO,
-                   agora=AGORA, por="jean", erro_da_serventia=True,
+                   agora=AGORA, por="mario", erro_da_serventia=True,
                    erro_fundamento="erro de digitação desta serventia no ato "
                                    "originário, conferido no livro")
         RR.registrar_comunicacao_353(con, pid, fundo="FERC",
                                      teor="Ofício ao FERC...", agora=AGORA,
-                                     por="jean", canal="malote")
+                                     por="mario", canal="malote")
     ferc = [x for x in RR.comunicacoes_353(con, pid) if x["fundo"] == "FERC"][0]
     assert ferc["situacao"] == "ENVIADA"
     assert len(ferc["hash_teor"]) == 64
@@ -416,11 +416,11 @@ def test_comunicacao_sem_pendencia_avisa_em_vez_de_mentir(casa):
     with con:
         pid = _ate_a_decisao(con)
         RR.decidir(con, pid, decisao="DEFERIDO", fundamento=FUNDAMENTO,
-                   agora=AGORA, por="jean")
+                   agora=AGORA, por="mario")
     with pytest.raises(RR.RetificacaoRcpnError) as erro:
         with con:
             RR.registrar_comunicacao_353(con, pid, fundo="FERJ", teor="Ofício",
-                                         agora=AGORA, por="jean")
+                                         agora=AGORA, por="mario")
     assert "Não há comunicação pendente" in str(erro.value)
 
 
@@ -432,7 +432,7 @@ def test_fundo_inventado_recusa(casa):
         with con:
             RR.registrar_comunicacao_353(con, pid, fundo="FUNDEB",
                                          teor="Ofício", agora=AGORA,
-                                         por="jean")
+                                         por="mario")
 
 
 # ------------------------------------------------ o ato
@@ -443,10 +443,10 @@ def test_so_o_deferido_produz_ato(casa):
     with con:
         pid = _ate_a_decisao(con)
         RR.decidir(con, pid, decisao="INDEFERIDO", fundamento=FUNDAMENTO,
-                   agora=AGORA, por="jean")
+                   agora=AGORA, por="mario")
     with pytest.raises(RR.RetificacaoRcpnError) as erro:
         with con:
-            RR.registrar_ato(con, pid, ato_id=1, agora=AGORA, por="jean")
+            RR.registrar_ato(con, pid, ato_id=1, agora=AGORA, por="mario")
     assert "Só o pedido deferido" in str(erro.value)
 
 
@@ -457,10 +457,10 @@ def test_amarrar_ato_que_nao_existe_recusa_em_vez_de_estourar(casa):
     with con:
         pid = _ate_a_decisao(con)
         RR.decidir(con, pid, decisao="DEFERIDO", fundamento=FUNDAMENTO,
-                   agora=AGORA, por="jean")
+                   agora=AGORA, por="mario")
     with pytest.raises(RR.RetificacaoRcpnError) as erro:
         with con:
-            RR.registrar_ato(con, pid, ato_id=9999, agora=AGORA, por="jean")
+            RR.registrar_ato(con, pid, ato_id=9999, agora=AGORA, por="mario")
     assert "Esse ato não existe" in str(erro.value)
 
 
@@ -474,8 +474,8 @@ def test_amarrar_o_ato_conclui_o_processo(casa):
         ato_id = int(cur.lastrowid)
         pid = _ate_a_decisao(con, assento_id=aid)
         RR.decidir(con, pid, decisao="DEFERIDO", fundamento=FUNDAMENTO,
-                   agora=AGORA, por="jean")
-        RR.registrar_ato(con, pid, ato_id=ato_id, agora=AGORA, por="jean")
+                   agora=AGORA, por="mario")
+        RR.registrar_ato(con, pid, ato_id=ato_id, agora=AGORA, por="mario")
     linha = dict(con.execute("SELECT * FROM rr_processos WHERE id=?",
                              (pid,)).fetchone())
     assert linha["situacao"] == "CONCLUIDO"
@@ -494,9 +494,9 @@ def test_os_proximos_passos_seguem_o_rito(casa):
     assert "instruído" in passos
     assert "CRC" in passos
     with con:
-        RR.instruir(con, pid, agora=AGORA, por="jean")
+        RR.instruir(con, pid, agora=AGORA, por="mario")
         RR.registrar_consulta_crc(con, pid, o_que_se_procurou="nome",
-                                  resultado="nada", agora=AGORA, por="jean")
+                                  resultado="nada", agora=AGORA, por="mario")
     assert "Decidir" in " ".join(RR.proximos_passos(con, pid))
 
 
@@ -505,7 +505,7 @@ def test_depois_de_deferir_o_passo_e_lavrar_no_livro_corrente(casa):
     with con:
         pid = _ate_a_decisao(con)
         RR.decidir(con, pid, decisao="DEFERIDO", fundamento=FUNDAMENTO,
-                   agora=AGORA, por="jean")
+                   agora=AGORA, por="mario")
     passos = " ".join(RR.proximos_passos(con, pid))
     assert "livro corrente" in passos
     assert "recíprocas" in passos

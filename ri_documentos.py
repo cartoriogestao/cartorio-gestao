@@ -117,8 +117,15 @@ def documentos_para_lavrar(con: sqlite3.Connection, ato_id: int) -> dict:
     p = prenotacao_do_ato(con, ato_id)
     if not p:
         return {"prenotacao": None, "documentos": [], "ligacao": None}
+    # OS DOCUMENTOS PARA QUALIFICACAO DO PROTOCOLO GERAL ligado a prenotacao —
+    # relato #135, decisao do oficial em 15/10/2026. Ficam numa chave PROPRIA,
+    # e nao misturados em `documentos`: estes sao o titulo apresentado na
+    # prenotacao, aqueles o que o cliente entregou no balcao. A leitura e a de
+    # `protocolo_documentos.da_prenotacao`, a mesma da tela de lavrar.
+    import protocolo_documentos as PDOC
     return {"prenotacao": p, "ligacao": p.get("ligacao"),
-            "documentos": documentos_de(con, ENTIDADE_RI, p["id"])}
+            "documentos": documentos_de(con, ENTIDADE_RI, p["id"]),
+            "do_protocolo_geral": PDOC.da_prenotacao(con, p["id"])["ativos"]}
 
 
 def documentos_de(con: sqlite3.Connection, entidade: str,

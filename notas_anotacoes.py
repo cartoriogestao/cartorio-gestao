@@ -493,6 +493,12 @@ def pendentes(con: sqlite3.Connection) -> list[dict]:
               AND a.situacao NOT IN ('EM_LAVRATURA', 'CANCELADO')
               AND NOT EXISTS (SELECT 1 FROM nt_ato_anotacoes n
                               WHERE n.ato_relacionado_id = a.id)
+              -- Procuração de OUTRA serventia não se anota por aqui: a
+              -- providência é a comunicação do art. 831, § 1º. Cumprida ela,
+              -- o ato sai desta lista (relato #129, 14/10/2026).
+              AND NOT EXISTS (SELECT 1 FROM nt_comunicacoes_origem c
+                              WHERE c.ato_id = a.id
+                                AND c.situacao = 'CUMPRIDA')
             ORDER BY a.data DESC, a.id DESC""", tipos)
     fora = []
     for r in linhas:

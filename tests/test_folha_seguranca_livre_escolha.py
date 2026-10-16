@@ -110,7 +110,7 @@ def _semear_folhas(s, *codigos: str) -> None:
     with con:
         PP.receber_remessa(con, fornecedor="ARPENBRASIL", serie="HA",
                            codigo_de=min(codigos), codigo_ate=max(codigos),
-                           agora=AGORA, nota_fiscal="NF 1", usuario="JEAN")
+                           agora=AGORA, nota_fiscal="NF 1", usuario="MARIO")
     con.close()
 
 
@@ -141,10 +141,21 @@ def test_a_ficha_mostra_a_lista_do_estoque_com_a_sugerida_marcada(s):
     html = s["c"].get(f"/rcpn/{assento_id}").get_data(as_text=True)
     assert 'name="folha_seguranca"' in html
     assert "500001" in html and "500002" in html and "500003" in html
-    # a MENOR em branco é a sugerida, marcada — mas as outras aparecem
+    # TESTE VELHO, ATUALIZADO EM 14/10/2026. Até a 3.6.238 a MENOR em branco
+    # vinha PRÉ-SELECIONADA. Relato #92 (22/09/2026, na 3.6.240 de 28/09):
+    # «escolha manual do papel de segurança, inclusive 1ª via; não pega
+    # sozinha a próxima da gaveta sem o escrevente dizer qual folha está na
+    # mão» (`atribuicoes_web.py`, FOLHA OBRIGATÓRIA EM TODA EMISSÃO). A
+    # sugerida continua MARCADA — agora pelo rótulo «próxima em ordem» —, e
+    # nenhuma vem selecionada: a lista abre em «escolha a folha da gaveta».
     achado = re.search(
-        r'<option value="500001"[^>]*selected', html)
-    assert achado, "a folha 500001 (a menor) deveria vir pré-selecionada"
+        r'<option value="500001"[^>]*>\s*(?:HA )?500001 \(próxima em ordem\)',
+        html)
+    assert achado, "a folha 500001 (a menor) deveria vir marcada como a próxima"
+    assert not re.search(r'<option value="5000\d\d"[^>]*selected', html), (
+        "nenhuma folha pode vir pré-selecionada (relato #92): quem escolhe é "
+        "o escrevente, com a folha na mão")
+    assert '<option value="">— escolha a folha da gaveta —</option>' in html
 
 
 def test_a_lista_nao_esconde_folha_alem_da_posicao_200(s):

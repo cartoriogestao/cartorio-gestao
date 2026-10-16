@@ -51,9 +51,9 @@ def test_o_admin_ve_os_caixas_de_outros_dias_dos_outros(cg_casa):
     con = _con(cg_casa)
     _caixa(con, "2026-09-14", nome="BEATRIZ SANTOS")
     _caixa(con, "2020-03-19", nome="BEATRIZ")          # carga do E-Ofício: fica fora
-    a = CA.situacao(con, "JEAN", datetime(2026, 10, 6, 9, 0), "17:00", e_admin=True)
+    a = CA.situacao(con, "MARIO", datetime(2026, 10, 6, 9, 0), "17:00", e_admin=True)
     assert a["nivel"] == "OUTROS" and [o["data"] for o in a["outros"]] == ["2026-09-14"]
-    assert CA.situacao(con, "JEAN", datetime(2026, 10, 6, 9, 0), "17:00") is None
+    assert CA.situacao(con, "MARIO", datetime(2026, 10, 6, 9, 0), "17:00") is None
 
 
 def test_hora_torta_na_configuracao_volta_ao_padrao():

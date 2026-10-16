@@ -156,7 +156,17 @@ def test_o_odt_preenche_os_campos_da_casa(s):
     Provimento CNJ 182/2024 não tem e-mail, telefone, CNPJ nem substituta,
     e o oficial mandou tirar o que não consta no modelo do CNJ. O endereço
     (`@serventia_endereco`) ficou, sem o rótulo "ENDEREÇO:" — é por isso que
-    a asserção de e-mail virou o contrário do que era."""
+    a asserção de e-mail virou o contrário do que era.
+
+    TESTE VELHO, ATUALIZADO EM 14/10/2026: o endereço vinha da semente da
+    casa, com o endereço REAL da serventia («Fabr…», «Av.»). A sanitização
+    (B2/B3, 06–10/10/2026) esvaziou `serventia.PADRAO["serventia_endereco"]` e
+    a serventia fictícia do `conftest` não tem endereço — o rodapé saía sem
+    ele e a asserção caía. O endereço agora é fictício e gravado aqui, como a
+    tela de Configurações grava; a regra («o endereço ficou») é a mesma."""
+    from database import Database
+    Database(s["banco"]).set_settings(
+        {"serventia_endereco": "Avenida Exemplo, 100, Centro"})
     _emitir(s, _semear(s), selo=SELO)
     r = s["c"].get(f"/rcpn/certidoes/{_cid(s)}/odt{ODT}")
     _e_odt(r)

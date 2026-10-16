@@ -51,9 +51,9 @@ def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -70,7 +70,7 @@ def _relato(con, titulo, *, onde="ri_ficha"):
     return AJ.anotar(con, origem="RELATADO", titulo=titulo,
                      detalhe="o que o escrevente escreveu", onde=onde,
                      caminho="/registro-imoveis/1", versao="3.6.29",
-                     agora="2026-08-29T10:00", usuario="jean")["id"]
+                     agora="2026-08-29T10:00", usuario="mario")["id"]
 
 
 # ------------------------------------------- a tela mostra o número

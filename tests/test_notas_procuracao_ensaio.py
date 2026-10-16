@@ -9,7 +9,14 @@ from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-import ambiente
+# `ambiente` mora em SANDBOX\ambiente.py, FORA da pasta sistema, e não viaja
+# quando a árvore é copiada para empacotar — ali a coleta morria com
+# ImportError (suíte de 14/10/2026). Este ensaio só existe no SANDBOX: sem o
+# módulo, pula; com ele, roda exatamente como antes.
+import pytest
+
+ambiente = pytest.importorskip(
+    "ambiente", reason="ensaio do SANDBOX: SANDBOX\\ambiente.py não está nesta árvore")
 
 ambiente.preparar_para_importar()
 

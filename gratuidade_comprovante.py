@@ -6,7 +6,7 @@
                                                     — o oficial, 11/10/2026
 
 POR QUÊ: o Portal do Selo analisa cada gratuidade e pede o comprovante; em
-outubro de 2026 a casa teve de ir atrás de todos de uma vez (Vanessa e Andreia,
+outubro de 2026 a casa teve de ir atrás de todos de uma vez (duas escreventes,
 ~5 h numa semana), porque não foram guardados na hora.
 
 COMO SE SABE QUE O ATO É GRATUITO: pelo selo. O aparelho escreve «Selo Isento»
@@ -65,7 +65,7 @@ def desde(con: sqlite3.Connection) -> str:
 
 
 def incluidos(con: sqlite3.Connection) -> list[int]:
-    """HOTFIX-2026-10-13-04 (Leidiane 13/10/2026, mat. 4019 -> FERJ): selos de
+    """HOTFIX-2026-10-13-04 (escrevente, 13/10/2026, mat. 4019 -> FERJ): selos de
     antes do «desde» que o oficial manda pôr na lista, um a um, por
     `settings.gratuidade_comprovante_incluir` («26461,26463»). Retroagir só o
     que foi pedido, sem ligar o passado inteiro."""

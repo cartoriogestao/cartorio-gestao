@@ -21,7 +21,7 @@
 <div class="notice">
   <strong>Remessa XML da CRA — nada foi gravado ainda.</strong>
   Confira abaixo e receba no fim da página se estiver certo. Ambiente CRA:
-  <strong>{{ origem_xml_ambiente or 'HOMOLOGACAO' }}</strong>.
+  <strong>PRODUÇÃO</strong> — o único que o sistema usa desde 14/10/2026.
   {% if xml_previa %}<small>SHA-256 do arquivo: {{ xml_previa.sha256[:16] }}…</small>{% endif %}
 </div>
 {% else %}
@@ -143,8 +143,11 @@
     <input type="hidden" name="conteudo" value="{{ conteudo }}">
     <input type="hidden" name="nome_arquivo" value="{{ nome_arquivo }}">
     {% if xml_previa %}
-    <input type="hidden" name="origem_xml_ambiente"
-           value="{{ origem_xml_ambiente or 'HOMOLOGACAO' }}">
+    {# PRODUÇÃO FIXA (14/10/2026). Até 13/10 este campo repetia o que a
+       conferência recebia, e sem ele a rota caía em «HOMOLOGACAO»: o lote
+       entrava marcado de teste e a confirmação ia à CRA de homologação. O
+       domínio (`protesto_remessa._ambiente_cra`) também força produção. #}
+    <input type="hidden" name="origem_xml_ambiente" value="PRODUCAO">
     {% endif %}
 
     <div class="field">

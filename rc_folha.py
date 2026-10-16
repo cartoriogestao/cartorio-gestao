@@ -115,20 +115,122 @@ CHAVES = tuple(c["chave"] for c in COLUNAS)
 # 8.369 sao duas assinaturas manuscritas, acima do cabecalho das colunas.
 FAIXA_DE_ASSINATURAS_NO_TOPO = True
 
+# QUEM ASSINA EMBAIXO DO TERMO, POR ESPÉCIE — relato #124 do oficial
+# («adequar todos os termos do RCPN para constar campo de assinatura para quem
+# assina o ato»), 15/10/2026. Até aqui só nascimento, óbito e casamento tinham
+# as linhas (hotfix de 09/10/2026, termo 19579); o natimorto e as sete espécies
+# do Livro E saíam sem linha nenhuma, embora o termo diga «dou fé e assino».
+#
+#   **A LISTA É A DO PRÓPRIO TEXTO DO TERMO**, e não uma escolha daqui: o de
+#   nascimento (que o natimorto usa) diz «o(a) declarante assina»; o de óbito,
+#   «assina comigo» o declarante; o de casamento, os nubentes; o do Livro E só
+#   «Eu, …, dou fé e assino» — lá não há declarante nem testemunha, porque o
+#   registro se faz pelo traslado do título (Lei 6.015/1973, art. 90, caput).
+#   Quem lavrou fecha todas as listas, e é acrescentado por quem monta a folha.
+#
+#   **E A RESPOSTA DO OFICIAL VEIO NO MESMO DIA, 15/10/2026, e ampliou a
+#   lista** — a primeira versão deixava de fora as testemunhas do casamento
+#   (no termo 8.369 elas assinam na faixa de cima) e as partes do Livro E, e
+#   perguntou. Ele decidiu:
+#     • CASAMENTO — as TESTEMUNHAS e o JUIZ DE PAZ (presidente do ato, Lei
+#       6.015/1973, art. 70) ganham linha com o nome embaixo; sem nome, a linha
+#       sai com o rótulo da função. As testemunhas são todas as do assento, e
+#       no mínimo duas (Código Civil, art. 1.534).
+#     • LIVRO E — as partes também assinam: os companheiros na união estável,
+#       o optante na opção de nacionalidade e, nas demais, quem o texto do termo
+#       nomeia como requerente ou declarante (a interdição diz «a requerimento
+#       de», a ausência «promovido por»). Emancipação, tutela e «outro» não
+#       nomeiam requerente nem declarante no termo, e ficam só com quem lavrou.
+#   Quem assina pela serventia continua vindo da regra viva (relato #65).
+#
+#   Cada linha é `(papel, rótulo)`: o papel é o de `rc_pessoas`, e o rótulo é
+#   o que sai embaixo do nome (vazio = o rótulo do papel em `rc_assento`).
+#   `JUIZ_DE_PAZ` não é papel de `rc_pessoas`: não há campo para ele no
+#   assento lavrado aqui — quem o lê é a folha, do que o acervo trouxe.
+TESTEMUNHAS_DO_CASAMENTO_NO_MINIMO = 2
+JUIZ_DE_PAZ = "JUIZ_DE_PAZ"
+ASSINAM_ALEM_DE_QUEM_LAVROU: dict[str, tuple[tuple[str, str], ...]] = {
+    "NASCIMENTO": (("DECLARANTE", ""),),
+    "NATIMORTO": (("DECLARANTE", ""),),
+    "OBITO": (("DECLARANTE", ""),),
+    "CASAMENTO": (("NUBENTE1", ""), ("NUBENTE2", ""), ("TESTEMUNHA", ""),
+                  (JUIZ_DE_PAZ, "Juiz(a) de Paz")),
+    # O religioso é o mesmo termo, e as testemunhas assinam; quem presidiu
+    # foi o celebrante religioso, e não juiz de paz desta casa.
+    "CASAMENTO_RELIGIOSO": (("NUBENTE1", ""), ("NUBENTE2", ""),
+                            ("TESTEMUNHA", "")),
+    "AUSENCIA": (("REQUERENTE", "Requerente"),),
+    "INTERDICAO": (("REQUERENTE", "Requerente"),),
+    "TUTELA": (),
+    "EMANCIPACAO": (),
+    "UNIAO_ESTAVEL": (("COMPANHEIRO1", ""), ("COMPANHEIRO2", "")),
+    "OPCAO_NACIONALIDADE": (("REGISTRADO", "Optante"),),
+    "OUTRO": (),
+}
+
+# Com mais de três linhas (o casamento), as assinaturas saem DUAS POR LINHA:
+# uma embaixo da outra elas empurrariam a frente para outra página.
+ASSINATURAS_EM_PAR_A_PARTIR_DE = 4
+
 # Oficial 01/09/2026, 10:25: um só título no topo da 3ª coluna; abaixo,
 # linhas seguidas no mesmo passo. 1ª e 2ª colunas lisas.
 PAUTA_ATRAVESSA_AS_COLUNAS = False
 A_TERCEIRA_COLUNA_E_PAUTADA = True
 SO_AVERBACOES_SAO_PAUTADAS = False  # nao fatiar a 3a em tres caixas
 PAUTA_PASSO_MM = 5.0
-# Altura do recanto pautado e quantas linhas cabem.
-PAUTA_ALTURA_MM = 155.0
-PAUTA_LINHAS = int(PAUTA_ALTURA_MM // PAUTA_PASSO_MM)  # 31
 
 # MARGEM DE CIMA — o oficial pediu para tirar o espaço não usado acima das
 # três colunas. Laterais e rodapé continuam na margem da casa; o topo aperta.
 MARGEM_MM = 12.0
 MARGEM_TOPO_MM = 5.0
+# A margem que a IMPRESSORA recebe nos outros três lados (`@page` da folha).
+# A folha se compõe com a margem da casa (12 mm) e, na impressão, é ampliada
+# até esta — o `zoom` do modelo de tela. Um número só para os dois lugares.
+MARGEM_DA_IMPRESSAO_MM = 5.0
+
+# A ALTURA DA PAUTA SAI DA CONTA DA FOLHA, E NÃO DE UM NÚMERO ESCRITO — relato
+# #124 do oficial, 15/10/2026: «expandir a parte de baixo para alcançar mais a
+# margem de baixo, folha deixa muito espaço em branco. Só aumentar a linha das
+# colunas e seguir com as linhas das averbações até mais embaixo».
+#
+#   Até aqui eram 155 mm fixos (31 linhas). Medido no PDF que o Chrome imprime
+#   (a rota `/rcpn/<id>/folha/papel`, casamento com carimbo e três
+#   assinaturas): a última linha da pauta caía a 226,9 mm do topo de uma folha
+#   de 279 — **52 mm de papel em branco embaixo**.
+#
+#   A conta: a altura útil do papel (menos o topo e o rodapé da impressora),
+#   devolvida à escala em que a folha se compõe (o `zoom` da impressão), menos
+#   o que fica fora da pauta. Esse «fora» foi MEDIDO no mesmo PDF — cabeçalho
+#   com o brasão, faixa das testemunhas, títulos das colunas e a marca
+#   «Frente/Verso» somam 55 mm na bancada; a produção tem uma linha a mais no
+#   cabeçalho (o contato), ~4 mm — e leva 9 mm de folga, porque a pauta que
+#   passa da folha empurra a frente para uma segunda página e o verso para a
+#   terceira, que é pior que papel em branco.
+RESERVA_FORA_DA_PAUTA_MM = 68.0
+
+
+def altura_util_impressa_mm() -> float:
+    """A altura da folha na escala em que ela se compõe, em mm. Só calcula.
+
+    O papel tem `ALTURA_MM` menos o topo e o rodapé da impressão; a folha é
+    composta com a margem da casa e ampliada pelo `zoom` até a margem da
+    impressora — então cada milímetro composto ocupa `zoom` milímetros de papel.
+    """
+    zoom = ((LARGURA_MM - 2 * MARGEM_DA_IMPRESSAO_MM)
+            / (LARGURA_MM - 2 * MARGEM_MM))
+    return (ALTURA_MM - MARGEM_TOPO_MM - MARGEM_DA_IMPRESSAO_MM) / zoom
+
+
+def _pauta_que_cabe() -> float:
+    """A maior pauta, em passos inteiros, que cabe na folha. Só calcula."""
+    livre = altura_util_impressa_mm() - RESERVA_FORA_DA_PAUTA_MM
+    return float(int(livre // PAUTA_PASSO_MM) * PAUTA_PASSO_MM)
+
+
+# Altura do recanto pautado e quantas linhas cabem: 180 mm e 36 linhas na
+# carta 215 × 279 (eram 155 e 31).
+PAUTA_ALTURA_MM = _pauta_que_cabe()
+PAUTA_LINHAS = int(PAUTA_ALTURA_MM // PAUTA_PASSO_MM)
 
 
 def somam_um() -> bool:

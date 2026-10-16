@@ -111,7 +111,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
     def login_do_usuario() -> str:
         """O LOGIN de quem está logado — relato #87. O nome muda (o mesmo
-        Jean já foi «Jean Santos» e «Mario Exemplo dos Santos»); o login não,
+        Mario já foi «Mario Santos» e «Mario Exemplo dos Santos»); o login não,
         e é por ele que «os meus problemas» se reconhecem."""
         user = app.extensions["current_user"]()
         return str(user["username"]) if user else ""

@@ -101,7 +101,7 @@ def _ficha(s, numero, *, cnm=None, partes=(), livro="2") -> int:
 # OS NOMES SÃO OS DO RELATO, e os vizinhos são os que decidem a regra: a 3140
 # existe para provar que «314» não a traz, e a 3236 é a do CNM com máscara.
 ADELAIDE = "RUBENS DANTAS MACHADO"
-RAIMUNDA = "RAIMUNDA DA CONCEIÇÃO TORRES"
+RAIMUNDA = "RAIMUNDA DA CONCEIÇÃO CASTELO"
 CPF_DA_RAIMUNDA = "00000001406"
 CNM_MASCARADO = "000000.2.0003236-22"
 
@@ -258,6 +258,10 @@ def test_a_parte_cadastrada_pelo_balcao_ja_nasce_pesquisavel(cg_casa_logada):
                           "data_ato": "2026-08-18",
                           "natureza_titulo": "Compra e venda",
                           "codigo_tj": "16.3",
+                          # O 16.3 exige o valor declarado desde a 3.6.185
+                          # (23/09/2026): sem ele o ato nao nasce — o quarto
+                          # contrato vizinho, depois dos tres de 18/09.
+                          "base_calculo": "100.000,00",
                           "parte_nome": nome,
                           "parte_papel": "proprietário", "csrf_token": _token(html)},
                     follow_redirects=True)

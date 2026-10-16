@@ -17,6 +17,13 @@ sys.path.insert(0, str(RAIZ))
 
 SENHA = "Senha#12345"
 
+# TESTE VELHO, ATUALIZADO EM 14/10/2026: na 3.6.289 (12/10/2026) o cabeçalho do
+# rascunho deixou de trazer a serventia escrita no molde («Ofício Único de …
+# — CNS …») e passou a lê-la de `sv` (`serventia.dados`, que o app põe em toda
+# tela). O bloco renderizado aqui fora do app precisa receber `sv` como a tela
+# recebe; os valores são fictícios, como em todo ensaio.
+SV = {"unit_name": "Ofício Único de Cidade Exemplo/MA", "ri_cns": "000000"}
+
 
 def _token(html: str) -> str:
     achado = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
@@ -64,8 +71,9 @@ def test_template_conferencia_render_obito_nao_parece_nascimento():
         "dnv": "NAO_DEVE_APARECER",
         "prog1f1_nome": "AVO1", "prog2f1_nome": "AVO2",
     }
-    html = tpl.render(especie="OBITO", form=form)
+    html = tpl.render(especie="OBITO", form=form, sv=SV)
     assert "RASCUNHO DE REGISTRO DE ÓBITO" in html
+    assert "CNS 000000" in html
     assert "RASCUNHO DE REGISTRO DE NASCIMENTO" not in html
     assert "123456789" in html
     assert "DO:" in html
@@ -90,7 +98,7 @@ def test_template_conferencia_render_nascimento_preservado():
             "prog1f1_nome": "AVO1", "prog2f1_nome": "AVO2",
             "prog1f2_nome": "AVO3", "prog2f2_nome": "AVO4",
             "declarante_nome": "MAE"}
-    html = tpl.render(especie="NASCIMENTO", form=form)
+    html = tpl.render(especie="NASCIMENTO", form=form, sv=SV)
     assert "RASCUNHO DE REGISTRO DE NASCIMENTO" in html
     assert "RASCUNHO DE REGISTRO DE ÓBITO" not in html
     assert "DNV:" in html

@@ -50,11 +50,13 @@ def test_tela_do_menu_ganha_modulo_quando_faz_sentido():
         ("notas_autenticacao", "Notas", ("Autenticar", "Notas")),
         ("ri_matriculas", "Registro de Imóveis", ("Matrícula", "Registro")),
         ("ri_protocolo", "Registro de Imóveis", ("Protocolo", "Registro")),
-        ("tasks", "Malote", ("Tarefas", "Malote")),
+        # «Tarefas e pendências», «Expedientes / Malote» e «Expedientes
+        # prontos para encerrar» SAÍRAM DO MENU em 12/10/2026, por ordem do
+        # oficial: viraram a lista única de Processos (templates/base.html,
+        # grupo «Processos e malote»). A aba agora se mede nela — 14/10/2026.
+        ("processos_lista", "Malote", ("Processos", "Malote")),
         ("caixa_protocolos", "Administrativo", ("Protocolo", "Administrativo")),
-        ("expedientes", "Malote", ("Expedientes", "Malote")),
         ("inspections", "Malote", ("Inspe", "Malote")),
-        ("expedientes_prontos", "Malote", ("encerrar", "Malote")),
         ("nucleo_livros", "Livros e acervo", ("termos", "Livros")),
         ("nucleo_encerramento_diario", "Livros e acervo", ("Encerramento", "Livros")),
         ("atribuicoes_importar", "Livros e acervo", ("E-Ofício", "Livros")),

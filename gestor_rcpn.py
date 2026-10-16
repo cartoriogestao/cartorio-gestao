@@ -1058,10 +1058,20 @@ def boletim_texto(con: sqlite3.Connection, hoje: date) -> str:
             WHERE t.sector = 'RCPN' AND t.status NOT IN ('CONCLUIDA','CANCELADA')
               AND t.source_type NOT IN (?, 'GESTOR')
             ORDER BY COALESCE(t.due_date,'9999'), t.id""", (SOURCE_BOLETIM,))]
+    # A SUSPENSA NÃO É COBRADA COMO VENCIDA — relato #132, decisão do oficial em
+    # 15/10/2026: ela continua no boletim, para ninguém a esquecer, com o selo
+    # «SUSPENSA» no lugar do «VENCIDA».
+    import tarefa_suspensao as TS
+    cond_suspensa, params_suspensa = TS.condicao_suspensa(None, hoje, con=con)
+    suspensas = {r[0] for r in con.execute(
+        f"SELECT id FROM tasks WHERE {cond_suspensa}", params_suspensa)}
     linhas.append(f"4. OUTRAS TAREFAS DO RCPN — inspeção, malote e manuais ({len(tarefas)})")
     for t in tarefas[:25]:
         prazo = f" — prazo {_br(t['due_date'])}" if t["due_date"] else ""
-        venc = " — VENCIDA" if t["due_date"] and t["due_date"] < hoje.isoformat() else ""
+        if t["id"] in suspensas:
+            venc = " — SUSPENSA (fora da cobrança)"
+        else:
+            venc = " — VENCIDA" if t["due_date"] and t["due_date"] < hoje.isoformat() else ""
         linhas.append(f"   #{t['id']} [{t['priority']}] {t['title']} "
                       f"({t['full_name'] or 'sem responsável'}){prazo}{venc}")
     linhas.append("")

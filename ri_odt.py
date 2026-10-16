@@ -422,7 +422,13 @@ class _ParaOdf(HTMLParser):
             return
         if texto:
             visivel = " ".join(re.sub(r"<[^>]+>", " ", texto).split())
-            if _JA_E_UMA_RISCA.match(visivel):
+            # A LINHA DE ASSINAR NÃO É RISCA ENTRE ATOS — 14/10/2026. O
+            # `<p align="center">____</p>` de `notas_teor.bloco_de_assinaturas`
+            # (traslado e termo do livro, 18/09/2026) também casa com a régua
+            # da risca, e desde 24/09 saía como a borda de largura total: o
+            # papel ficava sem o traço curto, centrado, onde a caneta passa.
+            linha_de_assinar = self._centro and set(visivel) <= {"_", " "}
+            if _JA_E_UMA_RISCA.match(visivel) and not linha_de_assinar:
                 self.saida.append(SEPARADOR_DE_ATO)
             else:
                 if self.compacto:
@@ -1063,10 +1069,15 @@ def partes_do_carimbo(selo_texto, rotulo: str = "SELO DIGITAL DO TJMA", *,
     O PDF NAO ENTRA NA CONTA porque ele nasce do `.odt`: quem converte e o
     LibreOffice. Sao dois desenhos, e nao tres.
 
-    Devolve `{"rotulo", "numero", "linhas", "linha", "qr_texto"}`. `linhas`
-    ja vem na ordem em que se le: numero, ato e data, valores. `linha` e a
-    MESMA COISA numa linha so, para o carimbo do livro — ver
-    `carimbo_compacto_odf`.
+    Devolve `{"rotulo", "numero", "linhas", "qr_texto", "texto"}`. `linhas`
+    ja vem na ordem em que se le: numero, ato e data, valores. `texto` e a
+    etiqueta crua daquele selo, para quem precisar ler de novo o carimbo
+    congelado (`carimbos_do_html_para_odf`).
+
+    A LINHA UNICA DE 16/09 (`linha` e `_numa_linha_so`) FOI APAGADA em
+    14/10/2026 — o unico leitor dela era a tela do livro, e era ela que fazia
+    a tela dizer `Emol 120,03` onde o papel dizia `Emol R$ 120,03`. Quem
+    decide o que o carimbo escreve, nos dois desenhos, e `linhas_desenhadas`.
     """
     texto = str(selo_texto or "").strip()
     if not texto:
@@ -1097,30 +1108,29 @@ def partes_do_carimbo(selo_texto, rotulo: str = "SELO DIGITAL DO TJMA", *,
     except Exception:                                        # noqa: BLE001
         qr_texto = ""
     return {"rotulo": rotulo, "numero": numero, "linhas": linhas,
-            "linha": _numa_linha_so(linhas), "qr_texto": qr_texto}
+            "qr_texto": qr_texto, "texto": texto}
 
 
-def _numa_linha_so(linhas: list[str]) -> str:
-    """As mesmas linhas, emendadas numa so. So calcula.
+def linhas_desenhadas(partes: dict, larga: bool = True) -> list[str]:
+    """O que o carimbo ESCREVE, linha a linha — nos dois desenhos. So calcula.
 
-    O `R$` SAI DE TODOS MENOS DO PRIMEIRO, e isso foi medido: repetido seis
-    vezes ele custa dezoito caracteres na unica linha que ha, e nao diz nada
-    que a primeira ocorrencia ja nao tenha dito. Com ele em todos, 163
-    caracteres; sem, 145 — e a linha da ficha comporta cerca de 150 a 5,5 pt.
+    QR EM TODOS OS SELOS, INCLUSIVE NO LIVRO — ordem da corregedoria trazida
+    pelo oficial em 24/09/2026. A tela e o papel do livro chegaram a dizer
+    coisas diferentes do mesmo selo porque cada desenho decidia as suas
+    linhas e o seu link; agora `_uma_celula_de_carimbo` (o papel) e
+    `carimbo_compacto_html` (a tela) pedem a esta funcao, e so desenham.
 
-    QUEM SEPARA OS CAMPOS E O PONTO MEIO-ALTO, e os valores ficam separados
-    apenas pelo proprio nome do fundo: medido nos 1.965 selos do RI desta
-    casa, com separador entre cada valor caem para 1.812 numa linha; sem ele,
-    1.955. O nome do fundo ja separa — «Emol 120,03 FERC 3,60» se le.
+    As linhas sao as de `partes_do_carimbo`, e o link da consulta daquele
+    selo vem por ultimo. «CONFIRA EM» SO ONDE CABE, e isto e medido a 5,5 pt:
+    o endereco sozinho mede 5,97 cm e cabe na coluna de meia largura (6,25
+    cm); com a palavra na frente vai a 6,97 cm e quebra em duas linhas. No
+    carimbo largo (certidao, livro, tela) ela entra.
     """
-    partes = [x for x in (linhas or []) if str(x).strip()]
-    if not partes:
-        return ""
-    junto = " · ".join(str(x).strip() for x in partes)
-    primeiro = junto.find("R$")
-    if primeiro >= 0:
-        junto = junto[:primeiro + 2] + junto[primeiro + 2:].replace(" R$", "")
-    return junto
+    linhas = [str(x) for x in (partes.get("linhas") or []) if str(x).strip()]
+    if partes.get("qr_texto"):
+        linhas.append(f'Confira em {partes["qr_texto"]}' if larga
+                      else partes["qr_texto"])
+    return linhas
 
 
 def carimbos_do_ato(selo_texto, rotulo: str = "SELO DIGITAL DO TJMA", *,
@@ -1156,17 +1166,11 @@ def _uma_celula_de_carimbo(partes: dict, imagem_nome,
     #   selo. Medido: o endereco tem 59 caracteres e a coluna do texto tem
     #   cerca de 6,3 cm — a 5,5 pt ele cabe numa linha.
     #
-    #   **E ELE NAO VAI AO LIVRO**: quem desenha a ficha e
-    #   `carimbo_compacto_odf`, que nao passa por aqui. O livro fica na
-    #   serventia, e o oficial mandou tirar dele o QR e o link em 16/09.
-    linhas = list(partes["linhas"])
-    if partes.get("qr_texto"):
-        # «CONFIRA EM» SO ONDE CABE, e isto e medido a 5,5 pt: o endereco
-        # sozinho mede 5,97 cm e cabe na coluna de meia largura (6,25 cm); com
-        # a palavra na frente vai a 6,97 cm e quebra em duas linhas. No
-        # carimbo largo da certidao ha 14,25 cm, e ali ela entra.
-        linhas.append(f'Confira em {partes["qr_texto"]}' if larga
-                      else partes["qr_texto"])
+    #   **E ELE VAI AO LIVRO desde 24/09/2026** (ordem da corregedoria: «qr
+    #   code em todos os selos»): `carimbo_compacto_odf` passa por aqui com
+    #   `larga=True`. O que se escreve vem de `linhas_desenhadas`, a mesma
+    #   funcao que a tela pede.
+    linhas = linhas_desenhadas(partes, larga=larga)
     corpo = (f'<text:p text:style-name="P-selo-rotulo">'
              f'{escape(partes["rotulo"])}</text:p>'
              + "".join(f'<text:p text:style-name="P-selo-compacto">'
@@ -1389,7 +1393,15 @@ def carimbos_do_html_para_odf(html: str) -> tuple[str, dict[str, str], dict]:
         if rm:
             rotulo = rm.group(1).strip()
         texto = ""
-        tm = _re.search(r"</b></div>\s*<div>([^<]+)</div>", bloco, _re.I)
+        # Desde 14/10/2026 a tela escreve o carimbo em LINHAS (as mesmas do
+        # papel) e guarda a etiqueta crua do selo em `data-etiqueta`: relê-la
+        # devolve o carimbo inteiro, e não só a primeira linha (o número).
+        dm = _re.search(r'data-etiqueta="([^"]*)"', bloco)
+        if dm:
+            import html as _html
+            texto = _html.unescape(dm.group(1)).strip()
+        tm = None if texto else _re.search(
+            r"</b></div>\s*<div>([^<]+)</div>", bloco, _re.I)
         if tm:
             texto = tm.group(1).strip()
         if not texto:
@@ -1470,6 +1482,13 @@ def carimbo_compacto_html(selo_texto,
     O conteúdo vem de `partes_do_carimbo` / `carimbos_do_ato` (fonte única);
     aqui só se desenha, com o PNG do QR em data-URI quando o `segno` estiver
     disponível.
+
+    O QUE SE ESCREVE É `linhas_desenhadas`, A MESMA DO PAPEL — 14/10/2026.
+    Até aqui a tela escrevia a linha única de 16/09 (`Emol 120,03`, sem o R$
+    nos fundos, e o endereço solto), enquanto o papel do livro já saía nas
+    linhas completas com «Confira em …»: dois desenhos dizendo coisas
+    diferentes do mesmo selo. A etiqueta crua vai em `data-etiqueta`, para a
+    certidão que congela este HTML poder relê-lo inteiro na impressão.
     """
     import base64
     partes = carimbos_do_ato(selo_texto, rotulo, feitio="ato")
@@ -1483,19 +1502,22 @@ def carimbo_compacto_html(selo_texto,
             b64 = base64.b64encode(png).decode("ascii")
             img = (f'<img class="carimbo-qr" alt="QR do selo" width="56" height="56" '
                    f'src="data:image/png;base64,{b64}"/>')
+        linhas = linhas_desenhadas(pe, larga=True)
         link = ""
-        if pe.get("qr_texto"):
+        if pe.get("qr_texto") and linhas:
             link = (f'<div class="carimbo-link muted small">'
-                    f'{escape(pe["qr_texto"])}</div>')
+                    f'{escape(linhas.pop())}</div>')
+        etiqueta = escape(str(pe.get("texto") or ""), {'"': "&quot;"})
         caixas.append(
-            '<div class="carimbo-com-qr" style="display:flex;gap:10px;'
+            '<div class="carimbo-com-qr" '
+            f'data-etiqueta="{etiqueta}" style="display:flex;gap:10px;'
             'align-items:flex-start;margin:6px 0;padding:6px;'
             'border:1px solid #ccc;border-radius:4px">'
             f'{img}'
             '<div class="carimbo-texto" style="flex:1;min-width:0">'
             f'<div><b>{escape(pe["rotulo"])}</b></div>'
-            f'<div>{escape(pe["linha"])}</div>'
-            f'{link}'
+            + "".join(f'<div>{escape(l)}</div>' for l in linhas)
+            + f'{link}'
             '</div></div>')
     return "".join(caixas)
 
@@ -2459,6 +2481,57 @@ MIOLO_CERTIDAO_PROPRIEDADE = """
 <p>Certifico que a propriedade do imóvel acima descrito encontra-se registrada em nome do(s) titular(es) indicado(s), conforme os atos constantes da matrícula.</p>
 """
 
+# A CADEIA DOMINIAL E A VINTENÁRIA — construídas na produção em 28/09/2026
+# (3.6.233, `_apply_dominial_patch.py`, e a segunda passada do mesmo dia, a das
+# matrículas de ORIGEM) e perdidas quando os pacotes da 3.6.282 em diante
+# sobrescreveram aquele código, que nunca entrou na árvore. Reconstituídas em
+# 14/10/2026: o texto da 3.6.233 está na cópia de segurança
+# `backups_patch/dominial_origem_20260928-100959/ri_odt.py`, e o desenho dos
+# BLOCOS por matrícula foi lido no corpo da única certidão emitida, a 394/2026
+# (matrícula 3472 → 2667 → 2548), porque a cópia do «depois» da segunda passada
+# não existe.
+#
+# **QUEM ESCOLHE O ATO É `ri_dominial`, E NÃO O MIOLO**: a natureza SAUIN
+# reconhecida primeiro, a palavra do título do registro como apoio — e o ato
+# que entrou pela palavra vem marcado `conferir`, e a emissão avisa. Os blocos
+# (`cadeia_matriculas`) saem de `ri_web`: a matrícula atual e, se houver, as de
+# origem — só as que EXISTEM no banco; número citado que não existe não vira
+# bloco, vira aviso na tela (nunca se inventa origem).
+#
+# A data do período da vintenária vai em dd/mm/aaaa — a 3.6.233 imprimia a data
+# crua do banco (`2006-10-14`), que é a lição da certidão 6/2026 (28/08).
+MIOLO_CERTIDAO_DOMINIAL = """
+<p align="center"><b>CADEIA DOMINIAL</b></p>
+{% for b in cadeia_matriculas %}{% if cadeia_matriculas|length > 1 %}
+<p align="center"><b>Matrícula N.º {{ b.numero }} ({{ b.papel }})</b></p>
+{% if b.registro_anterior %}<p><i>Registro anterior: {{ b.registro_anterior }}</i></p>{% endif %}{% endif %}
+{% if b.atos %}
+<p>Constam os seguintes atos de transmissão de domínio, na ordem cronológica:</p>
+{% for a in b.atos %}<p><b>{{ a.rotulo }}</b>{% if a.data_extenso %} — {{ a.data_extenso }}{% elif a.data_ato %} — {{ a.data_ato }}{% endif %}{% if a.natureza_titulo %}: {{ a.natureza_titulo }}{% endif %}</p>{% if a.teor_odf %}{{ a.teor_odf }}{% elif a.teor %}<p>{{ a.teor }}</p>{% endif %}{% if not loop.last %}<p class="separa-ato" style="border-bottom:0.06cm double #000;margin:0.12cm 0;padding:0;line-height:0;font-size:0;">&nbsp;</p>{% endif %}{% endfor %}
+{% else %}
+<p><b>NADA CONSTA</b> de ato de transmissão de domínio lavrado nesta matrícula, além da abertura, até a presente data.</p>
+{% endif %}
+{% if not loop.last %}<p class="separa-ato" style="border-bottom:0.06cm double #000;margin:0.18cm 0;padding:0;line-height:0;font-size:0;">&nbsp;</p>{% endif %}
+{% endfor %}
+"""
+
+MIOLO_CERTIDAO_VINTENARIA = """
+<p align="center"><b>CERTIDÃO VINTENÁRIA — ÚLTIMOS {{ anos_periodo }} ANOS</b></p>
+<p>Período considerado: de {{ desde_periodo }} a {{ ate_periodo }} ({{ anos_periodo }} anos).</p>
+<p align="center"><b>TRANSMISSÕES DE DOMÍNIO NO PERÍODO</b></p>
+{% if dominio_periodo %}
+{% for a in dominio_periodo %}<p><b>{{ a.rotulo }}</b>{% if a.data_extenso %} — {{ a.data_extenso }}{% elif a.data_ato %} — {{ a.data_ato }}{% endif %}{% if a.natureza_titulo %}: {{ a.natureza_titulo }}{% endif %}</p>{% if a.teor_odf %}{{ a.teor_odf }}{% elif a.teor %}<p>{{ a.teor }}</p>{% endif %}{% if not loop.last %}<p class="separa-ato" style="border-bottom:0.06cm double #000;margin:0.12cm 0;padding:0;line-height:0;font-size:0;">&nbsp;</p>{% endif %}{% endfor %}
+{% else %}
+<p><b>NADA CONSTA</b> de transmissão de domínio no período indicado.</p>
+{% endif %}
+<p align="center"><b>ÔNUS E GRAVAMES NO PERÍODO</b></p>
+{% if onus_periodo %}
+{% for a in onus_periodo %}<p><b>{{ a.rotulo }}</b>{% if a.data_extenso %} — {{ a.data_extenso }}{% elif a.data_ato %} — {{ a.data_ato }}{% endif %}{% if a.natureza_titulo %}: {{ a.natureza_titulo }}{% endif %}</p>{% endfor %}
+{% else %}
+<p><b>NADA CONSTA</b> de ônus reais, gravames ou restrições lavrados no período indicado.</p>
+{% endif %}
+"""
+
 # **A «CERTIDAO NEGATIVA DE MATRICULA» NAO TEM MIOLO, porque nao existe mais**
 # — problema #75, 18/09/2026. O texto dela dizia «NADA CONSTA em nome do
 # requerente nos livros de Registro de Imoveis desta Serventia», e isso nao
@@ -2475,6 +2548,8 @@ MIOLO_DA_CERTIDAO: dict[str, str] = {
     "INTEIRO_TEOR": "RI_CERTIDAO_INTEIRO_TEOR",
     "ONUS": "RI_CERTIDAO_ONUS",
     "PROPRIEDADE": "RI_CERTIDAO_PROPRIEDADE",
+    "DOMINIAL": "RI_CERTIDAO_DOMINIAL",
+    "VINTENARIA": "RI_CERTIDAO_VINTENARIA",
 }
 
 

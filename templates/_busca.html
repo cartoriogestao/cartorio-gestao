@@ -1,0 +1,53 @@
+{#
+  O campo da BUSCA da certidão, escrito UMA vez e usado nas telas que emitem
+  certidão — pedido do oficial, 15/10/2026: «colocar selo de busca para ir
+  junto com as certidões (escolhe o item de tempo pelo protocolo ou por
+  seleção manual quando da emissão da certidão)».
+
+  QUANDO O PEDIDO IDENTIFICA O ATO, O «.9» VEM MARCADO, e a tela diz por quê
+  (resposta do oficial, 15/10/2026: matrícula ou número de ordem no RI;
+  livro, folha e termo no RCPN; livro e folha nas Notas; data do ato no
+  Protesto). A faixa de tempo só vem sugerida na busca por nome ou sem dado
+  do ato. Sem sugestão a lista abre em «escolha», e a emissão recusa até
+  alguém escolher. O balcão pode trocar sempre.
+
+  O `busca_formulario=1` diz à rota que a tela tem o campo: chamada sem ele
+  — de antes desta tela — emite como sempre emitiu, sem busca.
+
+  `pede_data` (o Protesto) acrescenta a data do ato indicada no pedido:
+  preenchida, ela marca o «.9».
+
+  Uso, dentro do <form> que emite a certidão:
+      {% from '_busca.html' import campo_busca %}
+      {{ campo_busca(busca_da_certidao('IMOVEL', m.data_abertura,
+                                       identificado='...')) }}
+#}
+{% macro campo_busca(b, pede_data=False) %}
+{% set sem_cobranca = (b.opcoes | last).codigo %}
+<input type="hidden" name="busca_formulario" value="1">
+{% if pede_data %}
+<label class="campo-busca-data">Data do ato indicada no pedido <small>(opcional)</small>
+  <input type="date" name="busca_data_do_ato"
+         onchange="(function(c){var s=c.form.querySelector('select[name=busca_item]');var p=c.form.querySelector('.busca-porque');if(c.value&&s){s.value='{{ sem_cobranca }}';if(p)p.textContent='Marcado o {{ sem_cobranca }}: o pedido indicou a data do ato, e com ela não se cobram buscas.';}})(this)">
+  <small>Indicada a data do ato, a busca não se cobra (item {{ sem_cobranca }}).</small>
+</label>
+{% endif %}
+<label class="campo-busca">Busca <small>(selo próprio, junto com a certidão)</small>
+  <select name="busca_item" {% if not b.sugerido %}required{% endif %}>
+    {% if not b.sugerido %}<option value="">— escolha o tempo da busca —</option>{% endif %}
+    {% for o in b.opcoes %}
+      <option value="{{ o.codigo }}" {% if o.codigo == b.sugerido %}selected{% endif %}>{{ o.codigo }} — {{ o.rotulo }}{% if o.codigo == b.sugerido %} (sugerido){% endif %}</option>
+    {% endfor %}
+  </select>
+  <small class="busca-porque">
+    {% if b.identificado %}Marcado o {{ b.sugerido }}, sem cobrança de busca: {{ b.de_onde }}. Se o pedido não identificou o ato, troque pela faixa de tempo.
+    {% elif b.sugerido %}Sugerido {{ b.de_onde }}. Confira e troque se for o caso.
+    {% else %}Sem dado do ato não há de onde contar o tempo: escolha a faixa.
+    {% endif %}
+  </small>
+  <small>
+    O último item não cobra busca e não gera selo. Se o protocolo do pedido já
+    traz um item de busca, vale o do protocolo.
+  </small>
+</label>
+{% endmacro %}

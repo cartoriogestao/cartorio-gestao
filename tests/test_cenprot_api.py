@@ -440,10 +440,19 @@ def test_a_base_tem_de_ser_https():
     assert "https" in str(e.value)
 
 
-def test_a_homologacao_e_o_padrao():
-    """Onde se começa — e o engano cai para o lado seguro."""
-    assert API.base_do_ambiente(None) == API.BASE_DO_AMBIENTE[CRED.HOMOLOGACAO]
-    assert API.base_do_ambiente("sei la") == API.BASE_DO_AMBIENTE[CRED.HOMOLOGACAO]
+def test_a_producao_e_o_padrao():
+    """**CONTRATO MUDADO EM 14/10/2026** — ordem do oficial: «tire a opção de
+    funcionar na homologação, agora é tudo produção». Este teste se chamava
+    `test_a_homologacao_e_o_padrao`; agora o vazio e o desconhecido caem na
+    produção, e a base de homologação só se alcança pelo nome."""
+    assert API.base_do_ambiente(None) == API.BASE_DO_AMBIENTE[CRED.PRODUCAO]
+    assert API.base_do_ambiente("sei la") == API.BASE_DO_AMBIENTE[CRED.PRODUCAO]
+    assert API._ambiente_ok(None) == CRED.PRODUCAO
+    import inspect as _insp
+    for nome in ("anuencias", "certidoes", "pedidos_de_protesto",
+                 "processar_anuencia", "enviar_custas", "diagnostico", "token"):
+        padrao = _insp.signature(getattr(API, nome)).parameters["ambiente"]
+        assert padrao.default == CRED.PRODUCAO, nome
     assert "homolog" in API.base_do_ambiente(CRED.HOMOLOGACAO)
     assert "homolog" not in API.base_do_ambiente(CRED.PRODUCAO)
 
@@ -470,6 +479,8 @@ def test_nenhuma_funcao_recebe_con():
 
 def test_o_post_do_token_manda_usuario_e_senha_no_formulario(tmp_path, monkeypatch):
     """Medido no OpenAPI: `POST /token` exige form `usuario` e `senha`."""
+    # 14/10/2026 («agora é tudo produção»): a credencial sem ambiente vai para
+    # a gaveta de produção, e o token se pede nela (era homologação).
     CRED.gravar(CRED.CENPROT, usuario="01234567", senha="Cenprot@2024",
                 pasta=tmp_path)
     visto: dict = {}
@@ -481,7 +492,7 @@ def test_o_post_do_token_manda_usuario_e_senha_no_formulario(tmp_path, monkeypat
         return {"status": 200, "json": {"access_token": "jwt-teste"}, "texto": "{}"}
 
     monkeypatch.setattr(API, "_bater", fake_bater)
-    assert API._pedir_token(CRED.HOMOLOGACAO, pasta=tmp_path) == "jwt-teste"
+    assert API._pedir_token(CRED.PRODUCAO, pasta=tmp_path) == "jwt-teste"
     assert visto["metodo"] == "POST"
     assert visto["caminho"] == API.CAMINHO["token"]
     assert visto["com_token"] is False
@@ -500,12 +511,12 @@ def test_a_producao_devolve_token_e_nao_access_token(tmp_path, monkeypatch):
     monkeypatch.setattr(API, "_bater", lambda *a, **k: {
         "status": 200, "json": {"token": "abc123", "message": "Sucesso"},
         "texto": '{"token":"abc123"}'})
-    assert API._pedir_token(CRED.HOMOLOGACAO, pasta=tmp_path) == "abc123"
+    assert API._pedir_token(CRED.PRODUCAO, pasta=tmp_path) == "abc123"
     monkeypatch.setattr(API, "_bater", lambda *a, **k: {
         "status": 200, "json": {"segredo": "nao-mostre"},
         "texto": '{"segredo":"nao-mostre"}'})
     with pytest.raises(API.CenprotError) as erro:
-        API._pedir_token(CRED.HOMOLOGACAO, pasta=tmp_path)
+        API._pedir_token(CRED.PRODUCAO, pasta=tmp_path)
     assert "nao-mostre" not in str(erro.value)
 
 

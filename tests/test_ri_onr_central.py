@@ -412,10 +412,12 @@ def test_sem_credencial_a_tela_diz_que_e_um_PAR(s, sem_credencial):
     assert "client secret" in html
 
 
-def test_a_tela_diz_que_os_dois_ambientes_vem_do_contrato(s):
+def test_a_tela_fala_so_da_producao(s):
+    # 15/10/2026: a nota dos dois ambientes saiu da tela (ordem do oficial);
+    # o endereço de testes continua em onr_api, pedido pelo nome.
     html = s["c"].get("/ri/onr").get_data(as_text=True)
-    assert "testes-api" in html
-    assert "contrato" in html
+    assert "testes-api" not in html
+    assert "ambiente <strong>producao</strong>" in html
 
 
 def test_a_tela_separa_enviado_de_aceito(s):

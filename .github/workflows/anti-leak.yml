@@ -58,3 +58,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml   # config do B1 na raiz; nao duplicar
+          # A tabela [[allowlists]] do .gitleaks.toml exige >= 8.25; sem fixar,
+          # a action baixou a 8.24.3 (1a publicacao, 14/10/2026), que ignora as
+          # excecoes e falha sobre falsos positivos ja declarados.
+          GITLEAKS_VERSION: "8.28.0"

@@ -138,6 +138,68 @@
 </section>
 {% endif %}
 
+{# DOCUMENTOS PARA QUALIFICAÇÃO — relato #135, 15/10/2026. Os papéis que o
+   cliente entrega no balcão ficam aqui, e o ato ligado a este protocolo os vê
+   na tela de lavrar (Notas: «Protocolo geral do ato»; RI: a prenotação
+   vinculada acima). Retirar não apaga: pede o motivo e deixa a linha. #}
+<section class="panel" id="documentos-qualificacao">
+  <div class="panel-head"><span>Documentos para qualificação</span>
+    <span class="small muted">{{ docs_qualificacao.ativos|length }} documento(s){% if docs_qualificacao.retirados %} · {{ docs_qualificacao.retirados|length }} retirado(s){% endif %}</span></div>
+  {% if docs_qualificacao.ativos %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Documento</th><th>Tipo e descrição</th><th>Anexado por</th><th></th></tr></thead>
+    <tbody>{% for d in docs_qualificacao.ativos %}
+      <tr>
+        <td><strong>{{ d.original_name }}</strong><br><span class="small muted">{{ (d.size_bytes / 1024)|round(1) }} KB · <code title="{{ d.sha256 }}">{{ d.sha256[:12] }}…</code></span></td>
+        <td class="small">{{ d.tipo_rotulo or '—' }}{% if d.description %}<br>{{ d.description }}{% endif %}</td>
+        <td class="small">{{ d.enviado_por_nome or '—' }}<br>{{ (d.uploaded_at or '')[:16]|replace('T', ' ') }}</td>
+        <td class="small">
+          <a href="{{ url_for('attachment_view', attachment_id=d.id) }}" target="_blank">ver</a> ·
+          <a href="{{ url_for('attachment_download', attachment_id=d.id) }}">baixar</a>
+          {% if user.role in PAPEIS_QUE_ANEXAM and not encerrado %}
+          <form method="post" style="margin-top:6px"
+                action="{{ url_for('caixa_protocolo_documento_retirar', protocolo_id=p.id, anexo_id=d.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="motivo" required minlength="10" placeholder="por que sai (motivo)">
+            <button type="submit" class="small">Retirar</button>
+          </form>
+          {% endif %}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}
+  <p class="muted" style="padding:0 14px">Nenhum documento anexado a este protocolo.</p>
+  {% endif %}
+  {% if docs_qualificacao.retirados %}
+  <details style="padding:0 14px 10px">
+    <summary class="small">Retirados ({{ docs_qualificacao.retirados|length }}) — continuam guardados, com o motivo</summary>
+    <ul class="small">{% for d in docs_qualificacao.retirados %}
+      <li><strong>{{ d.original_name }}</strong> — retirado por {{ d.retirado_por or '—' }} em {{ (d.retirado_em or '')[:16]|replace('T', ' ') }}: «{{ d.retirado_motivo }}»</li>
+    {% endfor %}</ul>
+  </details>
+  {% endif %}
+  {% if user.role in PAPEIS_QUE_ANEXAM %}
+  {% if encerrado %}
+  <p class="small muted" style="padding:0 14px 14px">Protocolo encerrado: reabra-o para anexar ou retirar documento.</p>
+  {% else %}
+  <form method="post" enctype="multipart/form-data" class="grid2" style="padding:14px"
+        action="{{ url_for('caixa_protocolo_documentos', protocolo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Arquivos (PDF, JPG ou PNG; até 25 MB cada)
+      <input type="file" name="documento" multiple required accept=".pdf,.jpg,.jpeg,.png"></label>
+    <label>Tipo
+      <select name="tipo" required>
+        <option value="">— escolha —</option>
+        {% for codigo, rotulo in TIPOS_DE_DOCUMENTO %}<option value="{{ codigo }}">{{ rotulo }}</option>{% endfor %}
+      </select></label>
+    <label class="span2">Descrição (curta; obrigatória em «Outro documento»)
+      <input name="descricao" placeholder="ex.: certidão de casamento dos vendedores"></label>
+    <div class="span2"><button class="primary">Anexar</button></div>
+  </form>
+  {% endif %}
+  {% endif %}
+</section>
+
 <section class="cards">
   <div class="stat"><strong>{{ soma.total }}</strong><small>total do protocolo</small></div>
   <div class="stat"><strong>{{ pendente.total }}</strong><small>ainda a quitar</small></div>

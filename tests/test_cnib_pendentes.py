@@ -50,9 +50,9 @@ def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -181,7 +181,7 @@ def test_decidir_que_nao_e_a_pessoa_tira_da_lista(casa):
                      decisao=CNIB.NAO_E_A_PESSOA,
                      motivo="conferi o CPF na certidão: o desta matrícula é "
                             "outro, nascido em 1961 em Cidade Exemplo",
-                     ato_id=None, quem="jean", agora="2026-08-28T10:00")
+                     ato_id=None, quem="mario", agora="2026-08-28T10:00")
     assert CNIB.pendentes(_con(casa)) == []
 
 
@@ -198,7 +198,7 @@ def test_dizer_que_nao_e_a_pessoa_exige_motivo_escrito(casa):
                          ordem={"protocolo_cnib": "X", "nome": "FULANO",
                                 "documento": "00012345678", "criterio": "documento"},
                          decisao=CNIB.NAO_E_A_PESSOA, motivo="  ",
-                         ato_id=None, quem="jean", agora="2026-08-28T10:00")
+                         ato_id=None, quem="mario", agora="2026-08-28T10:00")
     assert "por que" in str(e.value).lower()
 
 

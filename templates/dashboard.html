@@ -16,6 +16,11 @@
   <div class="card stat danger"><span>Vencidos</span><strong>{{ stats.overdue }}</strong></div>
   <div class="card stat warning"><span>Vencem em {{ alert_days }} dias</span><strong>{{ stats.soon }}</strong></div>
   <div class="card stat"><span>Processos abertos</span><strong>{{ stats.open_tasks }}</strong></div>
+  {# OS SUSPENSOS — relato #132: saíram da conta de cima (não são cobrados) e
+     aparecem contados aqui, para o número de cima não diminuir sem dizer por quê. #}
+  {% if stats.tarefas_suspensas %}
+  <div class="card stat" title="Suspensos por prazo ou à espera de uma condição (como o retorno do cliente). Não contam como abertos nem como vencidos enquanto suspensos."><span><a href="{{ url_for('processos_lista', suspensas='SO') }}">Suspensos</a></span><strong>{{ stats.tarefas_suspensas }}</strong></div>
+  {% endif %}
   {# A TAREFA QUE O SISTEMA NÃO SABE LER NÃO ENTRA NA CONTA ACIMA e não some do
      painel: ela aparece aqui, contada, apontando para a lista onde a palavra sai
      como ela é. Sem isto, o número de cima ficaria menor que a realidade sem

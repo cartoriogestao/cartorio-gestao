@@ -46,7 +46,7 @@ TEOR = ("Faco saber que pretendem casar-se FULANO DE TAL e BELTRANA DE TAL, "
         "e que apresentaram os documentos exigidos pelo art. 1.525 do Codigo "
         "Civil. Quem souber de impedimento, oponha-o na forma da lei.")
 SV = {"ri_cns": CNS, "ri_cidade": "Cidade Exemplo", "ri_uf": "MA",
-      "escrevente": "JEAN", "funcao": "Escrevente"}
+      "escrevente": "MARIO", "funcao": "Escrevente"}
 
 
 @pytest.fixture()
@@ -89,16 +89,16 @@ def _habilitacao(con, **extra) -> int:
              "nubente2_mae": "JOANA DE TAL",
              "tipo": "CIVIL", "regime": "COMUNHAO_PARCIAL"}
     dados.update(extra)
-    h = HAB.abrir(con, dados, agora=AGORA, usuario="JEAN")
+    h = HAB.abrir(con, dados, agora=AGORA, usuario="MARIO")
     for d in HAB.o_que_falta(con, h):
         HAB.marcar_documento(con, d["id"], apresentado=True, agora=AGORA,
-                             usuario="JEAN")
+                             usuario="MARIO")
     return h
 
 
 def _publicar(con, h) -> None:
     HAB.publicar_edital(con, h, teor=TEOR, agora=AGORA, hoje="2026-09-03",
-                        usuario="JEAN")
+                        usuario="MARIO")
 
 
 def _assento_de_proclamas(con, h) -> int:
@@ -106,7 +106,7 @@ def _assento_de_proclamas(con, h) -> int:
     feito = RC.lavrar_assento(
         con, especie="PROCLAMAS", nome="FULANO DE TAL e BELTRANA DE TAL",
         sv=SV, agora=AGORA, data_extenso="tres de setembro de dois mil e "
-        "vinte e seis", data_fato="2026-09-03", usuario="JEAN")
+        "vinte e seis", data_fato="2026-09-03", usuario="MARIO")
     con.execute("UPDATE hc_habilitacoes SET proclamas_assento_id=? WHERE id=?",
                 (feito["assento_id"], h))
     return feito["assento_id"]

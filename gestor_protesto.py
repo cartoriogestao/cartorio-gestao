@@ -397,8 +397,9 @@ def _regras_do_fluxo(con, fluxo: dict, hoje: date, feriados) -> list[dict]:
                 f"Protesto de {_br(quando)} que não devia ter saído — "
                 f"{_titulo_curto(t, prot) if t else 'protocolo ' + prot}",
                 "; ".join(motivos).capitalize() + ". Se confirmado, o caminho é o "
-                "cancelamento por erro (hipótese ERRO_APRESENTANTE do catálogo) e a "
-                "comunicação à Central — protesto indevido é dano a terceiro.",
+                "cancelamento — pela anuência do apresentante (CN-MA art. 942, § 2º) "
+                "ou por ordem judicial (art. 943) — e a comunicação à Central: "
+                "protesto indevido é dano a terceiro.",
                 None, "Lei 9.492/1997, arts. 12, 16, 17 e 26"))
         elif motivos:
             antigos.append(f"{prot} (protesto de {_br(quando)}: {motivos[0]})")

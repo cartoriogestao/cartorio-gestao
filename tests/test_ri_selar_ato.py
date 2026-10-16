@@ -61,9 +61,9 @@ def _entrar(app, usuario: str):
 @pytest.fixture()
 def casa(cg_casa):
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.create_user("balcao", "QUEM ATENDE", SENHA, "USER")
-    return {**cg_casa, "cliente": _entrar(cg_casa["app"], "jean")}
+    return {**cg_casa, "cliente": _entrar(cg_casa["app"], "mario")}
 
 
 def _con(casa):
@@ -209,9 +209,18 @@ def test_o_que_foi_informado_fica_gravado_mesmo_sem_o_selo_sair(casa):
     # E A TELA NAO PODE DIZER QUE O ATO NAO FOI LAVRADO: ele esta no livro.
     # A frase medida e «O selo NÃO saiu: … O ato AV-06 continua lavrado e
     # aparece na lista de atos sem selo.»
-    assert "O selo NÃO saiu" in html
-    assert "continua lavrado" in html
-    assert "não foi lavrado" not in html, (
+    #
+    # O QUE SE LÊ SÃO OS AVISOS, E NÃO A PÁGINA INTEIRA — 14/10/2026. Desde o
+    # HOTFIX-2026-10-13-01 a ficha traz o script do rascunho do formulário de
+    # lavrar, e ele RECONHECE a recusa pela própria frase
+    # (`/não foi lavrado|NÃO foi lavrado|…/`): procurada na página inteira, a
+    # frase achava o código, e não o aviso. A propriedade é a mesma — o que
+    # a tela DIZ a quem selou.
+    avisos = " ".join(re.findall(
+        r'<div class="flash [^"]*" data-aviso>(.*?)<button', html, re.S))
+    assert "O selo NÃO saiu" in avisos
+    assert "continua lavrado" in avisos
+    assert "não foi lavrado" not in avisos, (
         "`_selar_o_ato_do_ri` foi escrita para a LAVRATURA e a frase dela diz "
         "«o ato foi lavrado SEM SELO»; aqui o ato ja existia, e dizer que ele "
         "nao foi lavrado assustaria quem so queria selar")

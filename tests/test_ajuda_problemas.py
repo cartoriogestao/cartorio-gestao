@@ -253,12 +253,12 @@ def test_o_relatorio_marca_so_o_que_coube_nele():
 def test_fechar_e_reabrir():
     con = banco()
     r = AP.anotar(con, origem="RELATADO", titulo="algo", agora=AGORA)
-    AP.fechar(con, r["id"], agora=DEPOIS, usuario="JEAN",
+    AP.fechar(con, r["id"], agora=DEPOIS, usuario="MARIO",
               nota="era o cabo da impressora")
     linha = AP.ler(con, r["id"])
     assert linha["situacao"] == "RESOLVIDO"
     assert "cabo" in linha["fechado_nota"]
-    AP.reabrir(con, r["id"], agora=DEPOIS, usuario="JEAN")
+    AP.reabrir(con, r["id"], agora=DEPOIS, usuario="MARIO")
     assert AP.ler(con, r["id"])["situacao"] == "ABERTO"
 
 
@@ -286,7 +286,7 @@ def test_problema_resolvido_some_da_janela():
     con = banco()
     r = AP.anotar(con, origem="ERRO_DE_TELA", titulo="KeyError", onde="caixa",
                   agora=AGORA)
-    AP.fechar(con, r["id"], agora=DEPOIS, usuario="JEAN",
+    AP.fechar(con, r["id"], agora=DEPOIS, usuario="MARIO",
               nota="era o campo que faltava no contexto da tela")
     assert AP.da_tela(con, "caixa") == []
 
@@ -566,7 +566,7 @@ def test_a_vista_nao_traz_o_que_ela_nao_promete():
                        onde="caixa", agora=AGORA)
     fechado = AP.anotar(con, origem="RELATADO", titulo="o botao nao faz nada",
                         onde="notas", agora=AGORA)
-    AP.fechar(con, fechado["id"], agora=DEPOIS, usuario="JEAN",
+    AP.fechar(con, fechado["id"], agora=DEPOIS, usuario="MARIO",
               nota="era o cabo da impressora, que foi trocado")
 
     em_aberto = [p["id"] for p in AP.listar(
@@ -590,9 +590,9 @@ def test_o_resolvido_mais_novo_vem_primeiro():
                       onde="caixa", agora=AGORA)
     novo = AP.anotar(con, origem="RELATADO", titulo="o consertado agora",
                      onde="notas", agora=AGORA)
-    AP.fechar(con, velho["id"], agora=DEPOIS, usuario="JEAN",
+    AP.fechar(con, velho["id"], agora=DEPOIS, usuario="MARIO",
               nota="resolvido no fim de agosto, com a nota escrita")
-    AP.fechar(con, novo["id"], agora=SETEMBRO, usuario="JEAN",
+    AP.fechar(con, novo["id"], agora=SETEMBRO, usuario="MARIO",
               nota="resolvido em setembro, com a nota escrita")
 
     ids = [p["id"] for p in AP.listar(con, situacao="RESOLVIDO")]
@@ -639,7 +639,7 @@ def test_a_contagem_acompanha_o_filtro():
     for i in range(2):
         r = AP.anotar(con, origem="RELATADO", titulo=f"fechado {i}",
                       onde=f"f{i}", agora=AGORA)
-        AP.fechar(con, r["id"], agora=DEPOIS, usuario="JEAN",
+        AP.fechar(con, r["id"], agora=DEPOIS, usuario="MARIO",
                   nota="consertado, com a explicacao escrita aqui")
 
     quadro = AP.contagem(con)
@@ -704,7 +704,7 @@ def test_a_janela_da_tela_usa_a_mesma_regua_da_lista():
 
     resolvido = AP.anotar(con, origem="ERRO_DE_TELA", titulo="IndexError",
                           onde="caixa", agora=AGORA)
-    AP.fechar(con, resolvido["id"], agora=DEPOIS, usuario="JEAN",
+    AP.fechar(con, resolvido["id"], agora=DEPOIS, usuario="MARIO",
               nota="era o campo que faltava no contexto da tela")
     assert [p["id"] for p in AP.da_tela(con, "caixa")] == [aberto["id"]]
 
@@ -726,7 +726,7 @@ def test_em_aberto_e_a_vista_em_aberto_dizem_o_mesmo():
                         agora=AGORA)
     con.execute("UPDATE aj_problemas SET situacao='FECHADO' WHERE id=?",
                 (torta["id"],))
-    AP.fechar(con, fechado["id"], agora=DEPOIS, usuario="JEAN",
+    AP.fechar(con, fechado["id"], agora=DEPOIS, usuario="MARIO",
               nota="consertado, com a explicacao escrita aqui")
 
     da_lista = [p["id"] for p in AP.listar(
@@ -767,7 +767,7 @@ def test_a_conferencia_nao_fala_da_palavra_quando_todas_sao_conhecidas():
               agora=AGORA)
     fechado = AP.anotar(con, origem="RELATADO", titulo="resolvido", onde="notas",
                         agora=AGORA)
-    AP.fechar(con, fechado["id"], agora=DEPOIS, usuario="JEAN",
+    AP.fechar(con, fechado["id"], agora=DEPOIS, usuario="MARIO",
               nota="consertado, com a explicacao escrita aqui")
 
     achados = AP.conferir_a_casa(con, agora=AGORA, disputas={})
@@ -792,7 +792,7 @@ def test_fechar_sem_a_linha_de_explicacao_e_recusado():
                   agora=AGORA)
     for nota in (None, "", "   ", "ok", "feito"):
         with pytest.raises(AP.ProblemaError, match=f"#{r['id']}"):
-            AP.fechar(con, r["id"], agora=DEPOIS, usuario="JEAN", nota=nota)
+            AP.fechar(con, r["id"], agora=DEPOIS, usuario="MARIO", nota=nota)
         assert AP.ler(con, r["id"])["situacao"] == "ABERTO", (
             "a recusa nao pode fechar o que ela recusou")
 

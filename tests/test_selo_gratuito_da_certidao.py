@@ -125,12 +125,12 @@ def test_a_averbacao_e_a_prenotacao_mandam_o_MESMO_campo():
     08/09.
     """
     averbacao = AS.envelope_da_averbacao_civil(
-        escrevente="Jean Santos", livro="A-10", folha="58", termo="9313",
+        escrevente="Mario Santos", livro="A-10", folha="58", termo="9313",
         versao_tabela="20260101", alteracao="CPF 000.000.000-00",
         tipo_averbacao=AS.TIPO_AVERBACAO_CPF_ART_347, codigo_tj="14.4.1",
         isento=True, motivo_isencao="ART. 347")["dadosSelo"]
     prenotacao = AS.envelope_da_prenotacao(
-        protocolo="11534", escrevente="Jean Santos",
+        protocolo="11534", escrevente="Mario Santos",
         versao_tabela="20260101", descricao_natureza="compra e venda",
         isento=True, motivo_isencao="ART. 290-A")["dadosSelo"]
     certidao = envelope(isento=True, motivo_isencao="ART. 347")["dadosSelo"]

@@ -54,8 +54,8 @@ import sqlite3
 import pytest
 
 TEOR_DA_FICHA = ("R-1/2.500 - IMOVEL: uma area de terras rurais na Fazenda Boa "
-                 "Lembranca, com 38,55,55 ha. PROPRIETARIO: HELENA CRISTINA "
-                 "MACHADO CARDOSO.")
+                 "Lembranca, com 38,55,55 ha. PROPRIETARIO: BEATRIZ EXEMPLO "
+                 "DE SOUZA.")
 
 TEOR_DO_ATO = ("AV-02/2500 - CANCELAMENTO INTEGRAL DE HIPOTECA CEDULAR DE 1o "
                "GRAU. Cidade Exemplo/MA, 14 de setembro de 2026. (PROTOCOLO no "
@@ -132,7 +132,12 @@ def _lavrar(casa, mid, *, numero=4, teor=TEOR_DO_ATO, codigo_tj="16.3"):
                               "numero": numero, "data_ato": "2026-09-16",
                               "teor": teor,
                               "natureza_titulo": "Compra e venda",
-                              "codigo_tj": codigo_tj},
+                              "codigo_tj": codigo_tj,
+                              # O item 16.3 EXIGE o valor declarado desde
+                              # 23/09/2026 (o TJ recusava o selo sem ele,
+                              # R-01/4019), e a recusa é ANTES de o ato
+                              # nascer — sem ele não há ato para medir.
+                              "base_calculo": "1000,00" if codigo_tj else ""},
                         follow_redirects=True)
 
 

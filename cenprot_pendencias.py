@@ -218,7 +218,7 @@ def _especie(qual: Any) -> str:
 # ------------------------------------------------------------------ baixar
 
 
-def baixar(db, especie: Any, *, ambiente: Any = CRED.HOMOLOGACAO,
+def baixar(db, especie: Any, *, ambiente: Any = CRED.PRODUCAO,
            quem: str = "", pasta=None, **filtros) -> dict:
     """Traz da Central o que está pendente e guarda o que ainda não estava.
 
@@ -232,7 +232,9 @@ def baixar(db, especie: Any, *, ambiente: Any = CRED.HOMOLOGACAO,
     novas.
     """
     qual = _especie(especie)
-    onde = str(ambiente or "").strip().upper() or CRED.HOMOLOGACAO
+    # SÓ PRODUÇÃO desde 14/10/2026 — ordem do oficial. Vazio é produção;
+    # homologação pedida volta com a frase, e não se baixa.
+    onde = CRED.ambiente_de_uso(CRED.CENPROT, ambiente)
     resposta = BAIXA_DA_ESPECIE[qual](onde, pasta=pasta, **filtros)
     itens = _lista_da_resposta(resposta)
 
@@ -420,16 +422,20 @@ def painel(con: sqlite3.Connection) -> list[dict]:
     um dia em que nada veio é o alarme que soa sempre. A tela mostra o número e
     **quando foi a última baixa**, que é o que responde a diferença.
     """
+    # SÓ A PRODUÇÃO CONTA (14/10/2026). Pendência de homologação que sobrou no
+    # banco não é trabalho de ninguém — contá-la faria o número nunca zerar.
     fora = []
     for especie in CN.ESPECIES:
         linha = con.execute(
             """SELECT COUNT(*) AS quantas, MAX(baixada_em) AS ultima
                  FROM cn_pendencias
-                WHERE especie = ? AND situacao NOT IN (?, ?)""",
-            (especie, CN.ENVIADA, CN.DISPENSADA)).fetchone()
+                WHERE especie = ? AND ambiente = ?
+                  AND situacao NOT IN (?, ?)""",
+            (especie, CRED.PRODUCAO, CN.ENVIADA, CN.DISPENSADA)).fetchone()
         ultima = con.execute(
-            "SELECT MAX(baixada_em) FROM cn_pendencias WHERE especie = ?",
-            (especie,)).fetchone()
+            """SELECT MAX(baixada_em) FROM cn_pendencias
+                WHERE especie = ? AND ambiente = ?""",
+            (especie, CRED.PRODUCAO)).fetchone()
         fora.append({"especie": especie,
                      "nome": CN.NOME_DA_ESPECIE[especie],
                      "esperando": int(linha["quantas"] or 0),
@@ -478,10 +484,14 @@ def decidir(con: sqlite3.Connection, pendencia_id: int, *, decisao: dict,
     decidir e mandar cabe uma releitura, e o que sobe muda coisa na Central.
     """
     linha = con.execute(
-        "SELECT situacao FROM cn_pendencias WHERE id = ?",
+        "SELECT situacao, ambiente FROM cn_pendencias WHERE id = ?",
         (int(pendencia_id),)).fetchone()
     if linha is None:
         raise PendenciaError("Essa pendência não existe mais na lista.")
+    # PENDÊNCIA DE HOMOLOGAÇÃO NÃO SE DECIDE MAIS (14/10/2026): decidida, ela
+    # ficaria esperando um envio que já não existe para aquele ambiente — e a
+    # tela a contaria como coisa a fazer. `ambiente_de_uso` recusa com a frase.
+    CRED.ambiente_de_uso(CRED.CENPROT, linha["ambiente"])
     if linha["situacao"] == CN.ENVIADA:
         # **NADA SAI DUAS VEZES** — a regra do retorno à CRA. Redecidir o que
         # já subiu faria a segunda resposta contradizer a primeira lá dentro.
@@ -534,7 +544,7 @@ def dispensar(con: sqlite3.Connection, pendencia_id: int, *, motivo: str,
 
 
 def decididas(con: sqlite3.Connection, especie: Any,
-              ambiente: Any = CRED.HOMOLOGACAO) -> list[dict]:
+              ambiente: Any = CRED.PRODUCAO) -> list[dict]:
     """O que já tem decisão e ainda não subiu. Só LÊ — é o que o envio manda."""
     linhas = con.execute(
         """SELECT * FROM cn_pendencias
@@ -545,7 +555,7 @@ def decididas(con: sqlite3.Connection, especie: Any,
     return [dict(linha) for linha in linhas]
 
 
-def enviar(db, especie: Any, *, ambiente: Any = CRED.HOMOLOGACAO,
+def enviar(db, especie: Any, *, ambiente: Any = CRED.PRODUCAO,
            quem: str = "", pasta=None) -> dict:
     """Sobe à Central o que o oficial decidiu. **ESCREVE NA CENTRAL.**
 
@@ -557,7 +567,9 @@ def enviar(db, especie: Any, *, ambiente: Any = CRED.HOMOLOGACAO,
     reclamar de uma anuência, é esse texto que se lê.
     """
     qual = _especie(especie)
-    onde = str(ambiente or "").strip().upper() or CRED.HOMOLOGACAO
+    # SÓ PRODUÇÃO desde 14/10/2026: as decididas de homologação ficam
+    # guardadas e não sobem — `decididas` filtra pelo ambiente.
+    onde = CRED.ambiente_de_uso(CRED.CENPROT, ambiente)
     if qual not in _MANDA_DA_ESPECIE:
         # A decisao judicial so se BAIXA — ver a nota no fim do modulo.
         raise PendenciaError(

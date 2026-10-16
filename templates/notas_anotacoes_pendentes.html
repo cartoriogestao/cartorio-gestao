@@ -44,4 +44,31 @@
   </div>
 </section>
 {% endif %}
+
+{# A outra metade da mesma pergunta — relato #129, art. 831, § 1º. #}
+<section class="panel" id="comunicacoes-pendentes">
+  <div class="panel-head"><span>Comunicação à serventia de origem pendente</span>
+    <span class="small muted">{{ comunicacoes|length }} obrigação(ões) aberta(s)</span></div>
+  {% if not comunicacoes %}
+  <div style="padding:14px" class="small">Nenhuma comunicação pendente: todo substabelecimento de
+    procuração de outra serventia tem o comprovante juntado ou o envio do ofício anotado.</div>
+  {% else %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Ato</th><th>Data</th><th>Livro/folha</th><th>Serventia de origem</th>
+      <th>Pendente desde</th></tr></thead>
+    <tbody>
+    {% for c in comunicacoes %}
+      <tr>
+        <td><a href="{{ url_for('notas_ato', ato_id=c.ato_id) }}#comunicacao-origem"><strong>{{ c.termo or c.ato_id }}</strong></a>
+          <span class="small">{{ TIPOS_ATO.get(c.tipo, c.tipo) }}</span></td>
+        <td class="small">{{ fmt_date(c.data_ato) }}</td>
+        <td class="small">{{ c.livro or '—' }}/{{ c.folha or '—' }}</td>
+        <td class="small">{{ c.destinatario }}</td>
+        <td class="small"><span class="badge alta">{{ fmt_date(c.nascida_em) }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+</section>
 {% endblock %}

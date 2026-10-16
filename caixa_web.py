@@ -19,6 +19,7 @@ import fraude as FR
 import caixa_depositos as DEP
 import caixa_protocolo as CXP
 import contato_do_cliente as CONTATO
+import protocolo_documentos as PDOC
 import modelos_da_casa as MODELOS
 from caixa_import import importar as importar_caixa
 from caixa_schema import (AVISO_ORCAMENTO, FORMAS_PAGAMENTO, FUNCOES, NATUREZAS,
@@ -1386,7 +1387,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         int(x["id"]) != int(prenotacao_ligada["id"])
                         for x in prenotacoes_ri):
                     prenotacoes_ri = [prenotacao_ligada] + prenotacoes_ri
+        # OS DOCUMENTOS PARA QUALIFICACAO — relato #135, 15/10/2026. Os
+        # retirados vêm junto, com o motivo: sumir da tela seria o DELETE
+        # com outra cara.
+        with db.connect() as con_doc:
+            docs_qualificacao = PDOC.documentos(con_doc, protocolo_id)
         return render_template("caixa_protocolo.html", p=p, atos=atos,
+                               docs_qualificacao=docs_qualificacao,
+                               TIPOS_DE_DOCUMENTO=PDOC.TIPOS_DE_DOCUMENTO,
+                               PAPEIS_QUE_ANEXAM=PDOC.PAPEIS_QUE_ANEXAM,
                                fraudes=fraudes,
                                lancamentos=lanc, SITUACOES=SITUACOES,
                                soma=soma, pendente=pendente, busca_ato=busca,
@@ -1402,6 +1411,95 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                prenotacao_ligada=prenotacao_ligada,
                                prenotacoes_ri=prenotacoes_ri,
                                acima_do_teto=acima_do_teto)
+
+    # ---------------------------------------- documentos para qualificação
+    #
+    # RELATO #135, 15/10/2026, aberto da tarefa 386: «criar no protocolo geral
+    # ou em notas aba de anexar documentos para fim de qualificação». A tarefa
+    # guardava os papéis numa pasta do Proton Drive, fora do backup e fora da
+    # tela de quem qualifica. A regra mora em `protocolo_documentos`; aqui só
+    # se ligam os fios.
+
+    def _pasta_dos_documentos_do_protocolo(numero) -> Path:
+        """Dentro da pasta de arquivos que o backup varre — a régua da prenotação."""
+        raiz = Path(db.get_setting("archive_root", "").strip()
+                    or (Path(db.db_path).parent / "arquivos"))
+        seguro = "".join(c if (c.isalnum() or c in "-_.") else "_"
+                         for c in str(numero or "sem-numero"))[:60] or "sem-numero"
+        return raiz / "protocolo" / seguro / "qualificacao"
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/documentos", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def caixa_protocolo_documentos(protocolo_id):
+        """Anexa um ou mais documentos para qualificação ao protocolo. ESCREVE."""
+        from storage import save_upload
+        volta = url_for("caixa_protocolo", protocolo_id=protocolo_id) + "#documentos-qualificacao"
+        p = q1("SELECT * FROM cx_protocolos WHERE id=?", (protocolo_id,))
+        if not p:
+            abort(404)
+        enviados = [f for f in request.files.getlist("documento") if f and f.filename]
+        if not enviados:
+            flash("Escolha o arquivo antes de anexar.", "danger")
+            return redirect(volta)
+        tipo = request.form.get("tipo") or ""
+        descricao = request.form.get("descricao") or ""
+        # O LOTE INTEIRO SE CONFERE ANTES DE UM BYTE IR AO DISCO: um arquivo
+        # ruim no meio de cinco não deixa os quatro bons gravados pela metade.
+        try:
+            for f in enviados:
+                PDOC.conferir_arquivo(*PDOC.medir_envio(f))
+        except PDOC.DocumentoError as e:
+            flash(str(e), "danger")
+            return redirect(volta)
+        pasta = _pasta_dos_documentos_do_protocolo(p["numero"])
+        salvos = [save_upload(f, pasta) for f in enviados]
+        ids = []
+        try:
+            with db.transaction() as con:
+                for info in salvos:
+                    ids.append(PDOC.registrar(
+                        con, protocolo_id, info, tipo=tipo, descricao=descricao,
+                        usuario_id=usuario_id(), agora=db.now()))
+        except PDOC.DocumentoError as e:
+            # A transação voltou atrás; os arquivos gravados há pouco saem do
+            # disco junto, senão ficariam órfãos sem linha nenhuma que os cite.
+            for info in salvos:
+                try:
+                    Path(info["stored_path"]).unlink()
+                except OSError:
+                    pass
+            flash(str(e), "danger")
+            return redirect(volta)
+        audit("PROTOCOLO_DOCUMENTO_ANEXADO", "PROTOCOLO", protocolo_id,
+              {"anexos": ids, "tipo": tipo,
+               "arquivos": [i["original_name"] for i in salvos],
+               "sha256": [i["sha256"] for i in salvos]})
+        flash(f"{len(ids)} documento(s) anexado(s) ao protocolo {p['numero']}.",
+              "success")
+        return redirect(volta)
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/documentos/<int:anexo_id>/retirar",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def caixa_protocolo_documento_retirar(protocolo_id, anexo_id):
+        """Retira o documento da lista, com motivo. Não apaga nada. ESCREVE."""
+        volta = url_for("caixa_protocolo", protocolo_id=protocolo_id) + "#documentos-qualificacao"
+        if not q1("SELECT id FROM cx_protocolos WHERE id=?", (protocolo_id,)):
+            abort(404)
+        try:
+            with db.transaction() as con:
+                r = PDOC.retirar(con, protocolo_id, anexo_id,
+                                 motivo=request.form.get("motivo") or "",
+                                 por=usuario_nome(), agora=db.now())
+        except PDOC.DocumentoError as e:
+            flash(str(e), "danger")
+            return redirect(volta)
+        audit("PROTOCOLO_DOCUMENTO_RETIRADO", "PROTOCOLO", protocolo_id,
+              {"anexo": anexo_id, "arquivo": r["original_name"],
+               "sha256": r["sha256"], "motivo": r["retirado_motivo"]})
+        flash(f"«{r['original_name']}» retirado da lista. O arquivo continua "
+              "guardado, e o motivo fica registrado.", "success")
+        return redirect(volta)
 
     @app.route("/caixa/protocolos/novo", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")

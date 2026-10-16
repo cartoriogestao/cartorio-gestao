@@ -100,11 +100,11 @@ def test_o_proprio_nome_e_usuario_continuam_editaveis(casa):
     """A guarda é só contra rebaixar o PRÓPRIO PERFIL — nome e usuário do
     próprio administrador continuam livres, é o caso do pedido."""
     r = editar(casa["c"], casa["admin_id"], full_name="MARIO EXEMPLO DOS SANTOS",
-              username="jean.exemplo", role="ADMIN")
+              username="mario.exemplo", role="ADMIN")
     assert "Usuário atualizado" in r.get_data(as_text=True)
     row = usuario(casa["banco"], casa["admin_id"])
     assert row["full_name"] == "MARIO EXEMPLO DOS SANTOS"
-    assert row["username"] == "jean.exemplo"
+    assert row["username"] == "mario.exemplo"
 
 
 def test_username_duplicado_e_recusado_sem_derrubar_a_tela(casa):

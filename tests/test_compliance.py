@@ -36,7 +36,7 @@ SENHA = "Senha#12345"
 @pytest.fixture()
 def con(cg_casa):
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c = sqlite3.connect(cg_casa["banco"])
     import gestor_schema
     import gestor_leitura

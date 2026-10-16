@@ -448,6 +448,13 @@
              title="Série e número como no papel (IA 033467007) ou só o número">
       <small>se preencher, vale o digitado (aceita IA 033467007)</small>
     </label>
+    {# A BUSCA VAI JUNTO, selo próprio — pedido do oficial, 15/10/2026. A 1ª
+       via (folha travada, acima) não leva busca. #}
+    {% from '_busca.html' import campo_busca %}
+    {# O ASSENTO É CONHECIDO — livro, folha e termo estão na ficha —, e por
+       isso o «.9» vem marcado (resposta do oficial, 15/10/2026). #}
+    {{ campo_busca(busca_da_certidao('RCPN', assento.data_ato,
+         identificado=(('2ª via de assento conhecido (termo ' ~ assento.numero ~ ((', livro ' ~ assento.livro_volume) if assento.livro_volume else '') ~ ')') if assento.numero else None))) }}
     {% endif %}
 
     <div style="grid-column:1/-1;padding:8px 0;border-top:1px solid #e5e5e5;margin-top:4px">

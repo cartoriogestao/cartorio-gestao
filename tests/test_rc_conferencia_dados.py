@@ -79,7 +79,9 @@ def lavrar(con, teor=TEOR, gente=None, dnv="30-12345678-9", hora="08:46"):
         con, especie="NASCIMENTO", nome="JOÃO EXEMPLO DA SILVA", sv=SV,
         agora=AGORA, data_extenso=EXTENSO, data_fato="2026-10-01",
         dados={"sexo": "M"}, teor=teor,
-        ibge={"dnv": dnv},
+        # «Onde nasceu» (1 = hospital): o SIRC exige, e desde o relato #130
+        # (14/10/2026) a lavratura também.
+        ibge={"dnv": dnv, "local_nascimento": 1},
         termo_dados={"local_fato_nome": "Hospital Municipal", "hora_fato": hora},
         pessoas=gente if gente is not None else pessoas())
 

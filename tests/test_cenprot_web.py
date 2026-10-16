@@ -37,6 +37,7 @@ sys.path.insert(0, str(RAIZ))
 
 import cn_schema as CN
 import centrais_cred as CRED
+import cenprot_pendencias as PEND
 
 SENHA = "Senha#12345"
 AGORA = "2026-09-02T10:00:00"
@@ -102,8 +103,11 @@ def _con(s) -> sqlite3.Connection:
     return con
 
 
+# O AMBIENTE PADRÃO DA PENDÊNCIA DE MESA É PRODUÇÃO desde 14/10/2026 («agora
+# é tudo produção»): a tela só lista e só decide as de produção. Até 13/10 o
+# padrão daqui era «HOMOLOGACAO».
 def pendencia(s, *, especie=CN.ANUENCIA, codigo="1",
-              ambiente="HOMOLOGACAO", titulo_id=None, teor=None,
+              ambiente="PRODUCAO", titulo_id=None, teor=None,
               situacao=CN.PENDENTE) -> int:
     corpo = teor or {"cd_anuencia": 1, "nm_chave": CHAVE,
                      "nm_nr_protocolo": PROTOCOLO,
@@ -185,19 +189,40 @@ def test_toda_funcao_de_transporte_tem_chamador():
 # ------------------------------------------- o que a tela diz
 
 
-def test_a_homologacao_grita_na_tela(s):
-    """**Pendência de teste com cara de real é o carimbo que mente na pior
-    forma**, porque quem a lê vai ao balcão dizer que existe."""
-    html = s["c"].get(
-        "/protesto/cenprot/pendencias?ambiente=HOMOLOGACAO"
-    ).get_data(as_text=True)
-    assert "HOMOLOGA" in html.upper()
-    assert "dado de teste" in html
-    producao = s["c"].get(
-        "/protesto/cenprot/pendencias?ambiente=PRODUCAO"
-    ).get_data(as_text=True)
-    assert "PRODUÇÃO" in producao
-    assert "não se desfaz" in producao
+def test_a_tela_so_tem_producao(s):
+    """**CONTRATO MUDADO EM 14/10/2026** — ordem do oficial: «tire a opção de
+    funcionar na homologação, agora é tudo produção». Este teste se chamava
+    `test_a_homologacao_grita_na_tela` e cobrava o aviso de homologação
+    quando a tela era aberta nela. Agora a tela não tem seletor, um endereço
+    antigo com `?ambiente=HOMOLOGACAO` abre a produção, e a pendência de
+    homologação que ficou no banco não aparece na lista nem se decide."""
+    pendencia(s, codigo="7", ambiente="HOMOLOGACAO")
+    for endereco in ("/protesto/cenprot/pendencias",
+                     "/protesto/cenprot/pendencias?ambiente=HOMOLOGACAO"):
+        html = s["c"].get(endereco).get_data(as_text=True)
+        assert "PRODUÇÃO" in html
+        assert "não se desfaz" in html
+        assert 'name="ambiente"' not in html.split("Trazer da Central")[1] \
+            .split("</form>")[0], "o seletor de ambiente voltou"
+        assert 'value="HOMOLOGACAO"' not in html
+        assert "FULANO DA SILVA · 00123" not in html, (
+            "a pendência de homologação apareceu na lista de produção")
+
+
+def test_a_pendencia_de_homologacao_nao_se_decide(s):
+    """Ela fica no banco como histórico; decidi-la deixaria uma resposta
+    esperando um envio que não existe mais."""
+    pid = pendencia(s, codigo="8", ambiente="HOMOLOGACAO")
+    ficha = " ".join(s["c"].get(f"/protesto/cenprot/pendencias/{pid}")
+                     .get_data(as_text=True).split())
+    assert "guardado só como histórico" in ficha
+    con = _con(s)
+    with pytest.raises(CRED.CredencialError) as e:
+        with con:
+            PEND.decidir(con, pid, decisao={"cd_anuencia": 8,
+                                            "ic_aprovado": True},
+                         quem="t", agora=AGORA)
+    assert "só em produção" in str(e.value)
 
 
 def test_a_tela_avisa_quando_falta_a_credencial(s, sem_credencial):

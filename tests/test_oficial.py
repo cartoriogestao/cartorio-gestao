@@ -41,7 +41,7 @@ HOJE = AGORA.date()
 @pytest.fixture()
 def con(cg_casa):
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.create_user("alberto", "ANALISTA DE SISTEMAS", SENHA, "ADMIN")
     db.create_user("beatriz", "BEATRIZ SANTOS", SENHA, "MANAGER")
     c = sqlite3.connect(cg_casa["banco"])
@@ -61,7 +61,7 @@ def _uid(con, login):
 def _responsavel(con, setor, login, subst=None):
     con.execute("INSERT OR REPLACE INTO ge_responsaveis (setor, user_id, origem, definido_em, "
                 "definido_por, substituto_id) VALUES (?,?,?,?,?,?)",
-                (setor, _uid(con, login), "OFICIAL", "2026-10-06", "jean",
+                (setor, _uid(con, login), "OFICIAL", "2026-10-06", "mario",
                  _uid(con, subst) if subst else None))
 
 
@@ -187,7 +187,7 @@ def test_o_quadro_tem_uma_linha_por_robo(con):
 # ------------------------------------------------- tarefas dos robôs
 
 def test_robo_quebrado_vira_tarefa_da_ti_e_fecha_sozinha(con):
-    _responsavel(con, "TI", "alberto", subst="jean")
+    _responsavel(con, "TI", "alberto", subst="mario")
     alheia = _tarefa(con, "tarefa de gente", dono=_uid(con, "beatriz"), origem="GESTOR")
     for i, h in enumerate(("2026-10-08T08:28:54", "2026-10-09T07:30:00",
                            "2026-10-09T14:00:00")):
@@ -197,7 +197,7 @@ def test_robo_quebrado_vira_tarefa_da_ti_e_fecha_sozinha(con):
     assert r1["criadas"] == 1
     t = con.execute("SELECT assigned_user_id, backup_user_id, priority, status, description "
                     "FROM tasks WHERE source_type='OFICIAL'").fetchone()
-    assert t[0] == _uid(con, "alberto") and t[1] == _uid(con, "jean")
+    assert t[0] == _uid(con, "alberto") and t[1] == _uid(con, "mario")
     assert t[2] == "CRITICA" and t[3] == "ABERTA" and "claude-opus-5-5" in t[4]
     r2 = ROT.sincronizar_tarefas_dos_robos(con, achados, HOJE)
     assert r2 == {"criadas": 0, "fechadas": 0, "atualizadas": 1}
@@ -221,12 +221,12 @@ def test_a_pergunta_entra_uma_vez_e_a_respondida_nao_reabre(con):
                      opcoes=["sim", "não"], gravidade="CRITICO")
     b = OD.perguntar(con, chave="X", origem="RI", pergunta="Renumerar 4011 para 4014?")
     assert a == b and len(OD.abertas(con)) == 1
-    OD.responder(con, a, "sim, depois da conferência da Beatriz", "jean")
+    OD.responder(con, a, "sim, depois da conferência da Beatriz", "mario")
     assert OD.abertas(con) == []
     OD.perguntar(con, chave="X", origem="RI", pergunta="Renumerar 4011 para 4014?")
     assert OD.abertas(con) == []
     with pytest.raises(OD.DecisaoError):
-        OD.responder(con, a, "de novo", "jean")
+        OD.responder(con, a, "de novo", "mario")
 
 
 def test_a_fila_vem_na_ordem_da_gravidade(con):
@@ -241,7 +241,7 @@ def test_resposta_vazia_e_pergunta_sem_chave_sao_recusadas(con):
         OD.perguntar(con, chave="", origem="X", pergunta="?")
     d = OD.perguntar(con, chave="K", origem="X", pergunta="?")
     with pytest.raises(OD.DecisaoError):
-        OD.responder(con, d, " ", "jean")
+        OD.responder(con, d, " ", "mario")
 
 
 # --------------------------------------------------------- obrigações
@@ -275,37 +275,37 @@ def test_o_que_nao_esta_medido_vira_pergunta_e_nao_prazo(con):
 # ----------------------------------------------------------------- mesa
 
 def test_a_mesa_separa_por_quando_e_deixa_o_despacho_de_fora(con):
-    jean = _uid(con, "jean")
-    _responsavel(con, "GESTAO", "jean")
-    _tarefa(con, "vencida", dono=jean, prazo="2026-09-30")
-    _tarefa(con, "hoje", dono=jean, prazo="2026-10-09")
-    _tarefa(con, "semana", dono=jean, prazo="2026-10-14")
-    _tarefa(con, "depois", dono=jean, prazo="2026-11-30")
-    _tarefa(con, "sem prazo", dono=jean)
-    _tarefa(con, "concluida", dono=jean, prazo="2026-09-01", status="CONCLUIDA")
-    _tarefa(con, "[Despacho] o dia", dono=jean, prazo="2026-10-09", origem="DESPACHO")
-    g = OP.tarefas(con, HOJE, jean)
+    mario = _uid(con, "mario")
+    _responsavel(con, "GESTAO", "mario")
+    _tarefa(con, "vencida", dono=mario, prazo="2026-09-30")
+    _tarefa(con, "hoje", dono=mario, prazo="2026-10-09")
+    _tarefa(con, "semana", dono=mario, prazo="2026-10-14")
+    _tarefa(con, "depois", dono=mario, prazo="2026-11-30")
+    _tarefa(con, "sem prazo", dono=mario)
+    _tarefa(con, "concluida", dono=mario, prazo="2026-09-01", status="CONCLUIDA")
+    _tarefa(con, "[Despacho] o dia", dono=mario, prazo="2026-10-09", origem="DESPACHO")
+    g = OP.tarefas(con, HOJE, mario)
     assert {k: [t["titulo"] for t in v] for k, v in g.items()} == {
         "VENCIDAS": ["vencida"], "HOJE": ["hoje"], "SEMANA": ["semana"],
         "DEPOIS": ["depois"], "SEM_PRAZO": ["sem prazo"]}
-    assert OP.dono_da_mesa(con) == jean
+    assert OP.dono_da_mesa(con) == mario
 
 
 def test_substituto_ve_o_que_o_titular_deixou_vencer(con):
-    jean, lei = _uid(con, "jean"), _uid(con, "beatriz")
-    _tarefa(con, "venceu", dono=lei, substituto=jean, prazo="2026-10-07")
-    _tarefa(con, "no prazo", dono=lei, substituto=jean, prazo="2026-10-20")
-    s = OP.substituicoes_vencidas(con, HOJE, jean)
+    mario, lei = _uid(con, "mario"), _uid(con, "beatriz")
+    _tarefa(con, "venceu", dono=lei, substituto=mario, prazo="2026-10-07")
+    _tarefa(con, "no prazo", dono=lei, substituto=mario, prazo="2026-10-20")
+    s = OP.substituicoes_vencidas(con, HOJE, mario)
     assert [(x["titulo"], x["dias_vencida"], x["titular"]) for x in s] == [
         ("venceu", 2, "BEATRIZ SANTOS")]
 
 
 def test_malote_para_cumprimento_sem_tarefa_aparece_e_com_tarefa_nao(con):
-    jean = _uid(con, "jean")
-    parado = _expediente(con, "mandado de averbação", dono=jean)
-    com_tarefa = _expediente(con, "pedido de certidão", dono=jean)
-    _tarefa(con, "cumprir pedido", dono=jean, expediente=com_tarefa)
-    _expediente(con, "convite para seminário", categoria="Circulares", dono=jean)
+    mario = _uid(con, "mario")
+    parado = _expediente(con, "mandado de averbação", dono=mario)
+    com_tarefa = _expediente(con, "pedido de certidão", dono=mario)
+    _tarefa(con, "cumprir pedido", dono=mario, expediente=com_tarefa)
+    _expediente(con, "convite para seminário", categoria="Circulares", dono=mario)
     m = OP.malote_sem_providencia(con, HOJE)
     assert [x["id"] for x in m] == [parado]
     assert m[0]["dias_parado"] == 19
@@ -332,7 +332,7 @@ def test_certificado_vencendo_e_o_cpf_nao_aparece():
 # --------------------------------------------------------------- rodada
 
 def test_a_rodada_bate_o_ponto_e_escreve_a_mesa(con, tmp_path):
-    _responsavel(con, "GESTAO", "jean")
+    _responsavel(con, "GESTAO", "mario")
     r = ROT.rodar(con, HOJE, agora=AGORA, pasta_relatorio=tmp_path,
                   ler_agendador=lambda: [], ler_certificados=lambda: [])
     assert r["nao_mediu"] == {}
@@ -345,7 +345,7 @@ def test_a_rodada_bate_o_ponto_e_escreve_a_mesa(con, tmp_path):
 def test_so_ler_nao_grava_nada(cg_casa, tmp_path):
     """Num banco aberto só para leitura, qualquer gravação estouraria — e viraria
     «não mediu». Ela sai limpa, com o relatório, e o banco fica como estava."""
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     banco = Path(cg_casa["banco"])
 
     def contagem():
@@ -371,7 +371,7 @@ def test_so_ler_nao_grava_nada(cg_casa, tmp_path):
 def test_parte_que_quebra_vira_nao_mediu_e_o_resto_sai(con, tmp_path):
     def quebra():
         raise RuntimeError("certificados indisponíveis")
-    _responsavel(con, "GESTAO", "jean")
+    _responsavel(con, "GESTAO", "mario")
     r = ROT.rodar(con, HOJE, agora=AGORA, pasta_relatorio=tmp_path,
                   ler_agendador=lambda: [], ler_certificados=quebra)
     assert "mesa" in r["nao_mediu"]

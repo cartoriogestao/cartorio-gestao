@@ -242,7 +242,7 @@ def _anotacoes(con: sqlite3.Connection, tabela: str) -> dict[int, dict]:
 def _sugerir_pares(pedidos: list[dict]) -> None:
     """Protocolo geral sem prenotação × prenotação sem protocolo geral, pelo nome.
 
-    MEDIDO NA PRODUÇÃO EM 12/10/2026: ELIAS BISPO DOS SANTOS está no protocolo
+    MEDIDO NA PRODUÇÃO EM 12/10/2026: BRAULIO NEIVA DOS SANTOS está no protocolo
     geral 2026.08.172 sem prenotação, e na prenotação 11554 sem protocolo geral
     — o mesmo pedido em duas pontas que nunca se ligaram. (Eu tinha escrito
     «EDILSON, idem», e a medição desmentiu: a prenotação dele, 11571, JÁ tem o

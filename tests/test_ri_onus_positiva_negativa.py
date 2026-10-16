@@ -90,7 +90,9 @@ def test_a_citacao_de_acao_e_separada_do_onus():
 def _decidir(**kw):
     base = dict(texto_da_ficha_=RONIA.normalizar(TEOR_COM_HIPOTECA), onus_vigentes=[],
                 sugestao=None, resultado_onus="NEGATIVA", resultado_acoes="NEGATIVA",
-                marcados=[], manual_onus="", manual_acao="", justificativa="")
+                marcados=[], manual_onus="", manual_acao="", justificativa="",
+                # sem leitura da IA, quem emite marca que conferiu o dono (15/10)
+                proprietario_conferido=True)
     base.update(kw)
     return RONIA.decidir(**base)
 
@@ -261,8 +263,8 @@ def _entrar(app, usuario):
 
 @pytest.fixture()
 def casa(cg_casa):
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
-    return {**cg_casa, "oficial": _entrar(cg_casa["app"], "jean")}
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    return {**cg_casa, "oficial": _entrar(cg_casa["app"], "mario")}
 
 
 def _ficha_acervo(casa, numero="4201"):
@@ -283,7 +285,7 @@ def _emitir(casa, mid, **campos):
     tela = c.get(f"/registro-imoveis/{mid}").get_data(as_text=True)
     dados = {"csrf_token": _token(tela), "tipo": "ONUS", "fonte_corpo": "TEXTO",
              "requerente": "FULANO DE TAL", "selo_texto": "SELO-DE-TESTE-0001",
-             "onus_formulario": "1"}
+             "onus_formulario": "1", "proprietario_conferido": "1"}
     dados.update(campos)
     c.post(f"/registro-imoveis/{mid}/certidao", data=dados)
     con = sqlite3.connect(casa["banco"])
@@ -364,3 +366,231 @@ def test_a_noticia_de_penhor_entra_na_certidao_de_onus():
     achado = ONUS.classificar({"tipo": "AV", "natureza_titulo": None, "cancelado": 0,
                                "teor": "AV-05/2914 - noticia de penhor rural cedular."})
     assert achado is not None
+
+
+# ------------------------------- a IA confere o proprietário (15/10/2026)
+#
+# «a IA confere o proprietario» — o oficial, depois de a certidão de ônus
+# 64/2026 (matrícula 3371) sair com o dono da matrícula-mãe: o cadastro vinha
+# errado da importação, e o papel imprime o cadastro.
+
+CADASTRO_ERRADO = [{"nome": "TOMAS EXEMPLO BARROS", "documento_numero": "00000000191"}]
+CADASTRO_CERTO = [{"nome": "Magno Exemplo Pereira", "documento_numero": "00000000272"},
+                  {"nome": "MARIANA EXEMPLO DOS SANTOS", "documento_numero": ""}]
+
+
+def _leitura(*donos, situacao="PRONTA", vale=True):
+    return {"id": 9, "situacao": situacao, "vale": vale, "onus": "NEGATIVA",
+            "acoes": "NEGATIVA", "itens": [], "cancelados": [], "parecer": "",
+            "proprietarios": list(donos), "proprietarios_ato": "R-01/4201",
+            "proprietarios_trecho": "vende a MAGNO e MARIANA", "proprietarios_literal": True}
+
+
+DONOS_LIDOS = ({"nome": "MAGNO EXEMPLO PEREIRA", "documento": ""},
+               {"nome": "Mariana Exemplo dos Santos", "documento": ""})
+
+
+def test_o_proprietario_confere_sem_acento_caixa_ou_de_da_dos():
+    c = RONIA.conferir_proprietarios(CADASTRO_CERTO, _leitura(*DONOS_LIDOS))
+    assert c["situacao"] == RONIA.CONFERE
+
+
+def test_o_documento_decide_quando_os_dois_lados_tem():
+    lido = {"nome": "MAGNO E PEREIRA", "documento": "00000000272"}
+    c = RONIA.conferir_proprietarios(CADASTRO_CERTO[:1], _leitura(lido))
+    assert c["situacao"] == RONIA.CONFERE
+
+
+def test_o_caso_da_3371_diverge_e_diz_quem_falta_e_quem_sobra():
+    c = RONIA.conferir_proprietarios(CADASTRO_ERRADO, _leitura(*DONOS_LIDOS))
+    assert c["situacao"] == RONIA.DIVERGE
+    assert [p["nome"] for p in c["sobram"]] == ["TOMAS EXEMPLO BARROS"]
+    assert len(c["faltam"]) == 2
+
+
+def test_divergencia_sem_justificativa_nao_emite():
+    with pytest.raises(RONIA.OnusError, match="não confere com o teor"):
+        _decidir(proprietarios_cadastro=CADASTRO_ERRADO, sugestao=_leitura(*DONOS_LIDOS),
+                 ia_ligada=True)
+
+
+def test_divergencia_com_justificativa_emite_e_grava_o_porque():
+    d = _decidir(proprietarios_cadastro=CADASTRO_ERRADO, sugestao=_leitura(*DONOS_LIDOS),
+                 ia_ligada=True, justificativa_proprietario="a IA leu o vendedor do R-1")
+    assert d["onus_proprietario_conferencia"] == RONIA.DIVERGE
+    assert "vendedor" in d["onus_proprietario_justificativa"]
+
+
+def test_leitura_que_confere_dispensa_a_caixa():
+    d = _decidir(proprietarios_cadastro=CADASTRO_CERTO, sugestao=_leitura(*DONOS_LIDOS),
+                 ia_ligada=True, proprietario_conferido=False)
+    assert d["onus_proprietario_conferencia"] == RONIA.CONFERE
+
+
+def test_ia_ainda_lendo_espera():
+    with pytest.raises(RONIA.OnusError, match="ainda está lendo"):
+        _decidir(proprietarios_cadastro=CADASTRO_CERTO, ia_ligada=True,
+                 sugestao=_leitura(situacao="LENDO"))
+
+
+def test_sem_leitura_quem_emite_marca_que_conferiu():
+    with pytest.raises(RONIA.OnusError, match="Conferi o proprietário no teor"):
+        _decidir(proprietarios_cadastro=CADASTRO_CERTO, proprietario_conferido=False)
+    d = _decidir(proprietarios_cadastro=CADASTRO_CERTO, proprietario_conferido=True)
+    assert d["onus_proprietario_conferencia"] == "CONFERIDO_NO_BALCAO"
+
+
+def test_leitura_velha_nao_confere_nada():
+    with pytest.raises(RONIA.OnusError, match="Conferi o proprietário"):
+        _decidir(proprietarios_cadastro=CADASTRO_CERTO, proprietario_conferido=False,
+                 ia_ligada=True, sugestao=_leitura(*DONOS_LIDOS, vale=False))
+
+
+def test_a_ia_devolve_os_donos_e_o_trecho_conferido():
+    resposta = json.dumps({"onus": "NEGATIVA", "acoes": "NEGATIVA", "itens": [],
+                           "proprietarios": [{"nome": "BANCO EXEMPLO S/A", "documento": "x"}],
+                           "proprietarios_ato": "R-02/4201",
+                           "proprietarios_trecho": "em favor do BANCO EXEMPLO S/A."})
+    r = RONIA.ler_resposta(resposta, RONIA.normalizar(TEOR_COM_HIPOTECA))
+    assert r["proprietarios"] == [{"nome": "BANCO EXEMPLO S/A", "documento": ""}]
+    assert r["proprietarios_literal"] is True
+    assert "PROPRIETÁRIOS DE HOJE" in RONIA.INSTRUCAO
+
+
+def test_sem_conferir_o_proprietario_a_certidao_nao_sai(casa):
+    mid = _ficha_acervo(casa, "4203")
+    assert _emitir(casa, mid, resultado_onus="NEGATIVA", resultado_acoes="NEGATIVA",
+                   proprietario_conferido="") is None
+
+
+def test_a_certidao_grava_como_o_proprietario_foi_conferido(casa):
+    mid = _ficha_acervo(casa, "4204")
+    c = _emitir(casa, mid, resultado_onus="NEGATIVA", resultado_acoes="NEGATIVA")
+    assert c["onus_proprietario_conferencia"] == "CONFERIDO_NO_BALCAO"
+
+
+def test_a_tela_mostra_o_passo_do_proprietario(casa):
+    mid = _ficha_acervo(casa, "4205")
+    html = casa["oficial"].get(f"/registro-imoveis/{mid}").get_data(as_text=True)
+    assert "2. Proprietário que a certidão vai imprimir" in html
+    assert 'name="proprietario_conferido"' in html  # sem IA nos testes: a caixa aparece
+    assert 'data-url-andamento=' in html
+
+
+# --------------------- acatar a leitura corrige o cadastro (15/10/2026)
+#
+# «sendo acatada a sugestao, sistema tbm retifique no cadastro da matricula
+#  para constar o proprietario atual correto» — o oficial.
+
+TEOR_DA_VENDA = (
+    "<p>IMÓVEL: Uma gleba de terras com 10ha, destacada da matrícula 4300.</p>"
+    "<p>R-01/4206 - COMPRA E VENDA. ASSOCIAÇÃO EXEMPLO vende o imóvel a MAGNO EXEMPLO "
+    "PEREIRA, CPF nº 000.000.001-91, e MARIANA EXEMPLO DOS SANTOS.</p>")
+
+
+def _ficha_com_dono_errado(casa, numero="4206"):
+    con = sqlite3.connect(casa["banco"])
+    cur = con.execute(
+        """INSERT INTO ri_matriculas (numero, livro, livro_norm, situacao, tipo_ficha,
+               origem, criado_em, data_abertura, cidade, uf, teor)
+           VALUES (?, '2', '2', 'ATIVA', 'ACERVO', 'MANUAL', '2026-10-15T08:00',
+                   '2010-01-01', 'Cidade Exemplo', 'MA', ?)""", (numero, TEOR_DA_VENDA))
+    mid = int(cur.lastrowid)
+    con.execute("""INSERT INTO ri_partes (matricula_id, nome, nome_norm, papel, proprietario,
+                       proprietario_ativo, origem) VALUES (?, 'MANOEL EXEMPLO BARROS',
+                       'manoel exemplo barros', 'proprietario', 1, 1, 'EOFICIO')""", (mid,))
+    con.commit()
+    con.close()
+    return mid
+
+
+def _leitura_gravada(casa, mid, donos):
+    con = sqlite3.connect(casa["banco"])
+    RONIA.init_schema(con)
+    r = {"onus": "NEGATIVA", "acoes": "NEGATIVA", "itens": [], "cancelados": [],
+         "proprietarios": donos, "proprietarios_ato": "R-01/4206",
+         "proprietarios_trecho": "vende o imóvel a MAGNO", "proprietarios_literal": True,
+         "parecer": ""}
+    con.execute("""INSERT INTO ri_onus_sugestoes (matricula_id, hash_ficha, dossie, situacao,
+                       pedido_em, resultado_json) VALUES (?,?,?, 'PRONTA', ?, ?)""",
+                (mid, RONIA.hash_da_ficha(con, mid), "x", "2026-10-15T08:00:00",
+                 json.dumps(r, ensure_ascii=False)))
+    con.commit()
+    con.close()
+
+
+def _acatar(casa, mid):
+    c = casa["oficial"]
+    tela = c.get(f"/registro-imoveis/{mid}").get_data(as_text=True)
+    return c.post(f"/registro-imoveis/{mid}/onus/acatar-proprietario",
+                  data={"csrf_token": _token(tela)}, follow_redirects=True)
+
+
+def _titulares(casa, mid):
+    con = sqlite3.connect(casa["banco"])
+    linhas = con.execute("""SELECT nome, documento_numero, proprietario_ativo, origem_chave
+                              FROM ri_partes WHERE matricula_id=? ORDER BY id""",
+                         (mid,)).fetchall()
+    con.close()
+    return linhas
+
+
+def test_acatar_corrige_o_cadastro_e_guarda_o_historico(casa):
+    mid = _ficha_com_dono_errado(casa)
+    _leitura_gravada(casa, mid, [{"nome": "MAGNO EXEMPLO PEREIRA", "documento": "00000000191"},
+                                 {"nome": "MARIANA EXEMPLO DOS SANTOS", "documento": ""}])
+    tela = casa["oficial"].get(f"/registro-imoveis/{mid}").get_data(as_text=True)
+    assert "Acatar a leitura e corrigir o cadastro" in tela
+    r = _acatar(casa, mid)
+    assert "Cadastro da matrícula corrigido" in r.get_data(as_text=True)
+    linhas = {n: (doc, ativo, chave) for n, doc, ativo, chave in _titulares(casa, mid)}
+    assert linhas["MANOEL EXEMPLO BARROS"][1] == 0          # fica, como histórico
+    assert linhas["MAGNO EXEMPLO PEREIRA"][:2] == ("00000000191", 1)
+    assert linhas["MARIANA EXEMPLO DOS SANTOS"][:2] == (None, 1)
+    assert linhas["MAGNO EXEMPLO PEREIRA"][2].startswith("ia_onus_acatada:")
+    depois = casa["oficial"].get(f"/registro-imoveis/{mid}").get_data(as_text=True)
+    assert "Confere" in depois
+    con = sqlite3.connect(casa["banco"])
+    n = con.execute("""SELECT COUNT(*) FROM audit_logs WHERE action IN
+                       ('RI_PARTE_CORRIGIDA','RI_PARTE_INCLUIDA')
+                       AND details LIKE '%leitura da IA acatada%'""").fetchone()[0]
+    con.close()
+    assert n == 3
+
+
+def test_acatar_recusa_nome_que_nao_esta_na_ficha(casa):
+    mid = _ficha_com_dono_errado(casa, "4207")
+    _leitura_gravada(casa, mid, [{"nome": "FULANO INVENTADO", "documento": ""}])
+    r = _acatar(casa, mid)
+    assert "não está escrito" in r.get_data(as_text=True)
+    assert [a for _n, _d, a, _c in _titulares(casa, mid)] == [1]   # nada mudou
+
+
+def test_acatar_nao_poe_cpf_que_a_ficha_nao_escreve(casa):
+    mid = _ficha_com_dono_errado(casa, "4208")
+    _leitura_gravada(casa, mid, [{"nome": "MARIANA EXEMPLO DOS SANTOS",
+                                  "documento": "00000000272"}])
+    _acatar(casa, mid)
+    linhas = {n: doc for n, doc, _a, _c in _titulares(casa, mid)}
+    assert linhas["MARIANA EXEMPLO DOS SANTOS"] is None
+
+
+def test_leitura_sem_dono_volta_para_a_caixa_e_nao_acusa_o_cadastro():
+    """Leitura antiga, ou que não achou o dono: sem o lado da IA não há o que
+    comparar — a conferência volta para quem emite, e não diz «não confere»."""
+    r = RONIA.conferir_proprietarios(
+        [{"nome": "MARIO DA SILVA", "documento_numero": ""}],
+        {"situacao": "PRONTA", "vale": True, "proprietarios": []})
+    assert r["situacao"] == RONIA.SEM_LEITURA
+    assert r["ia_sem_dono"] is True
+
+
+def test_a_ia_so_le_quando_alguem_clica():
+    """«a IA so vai ler se clicar no botao na emissao de certidao de onus. para
+    cada matricula» — o oficial, 15/10/2026. A tela não pede leitura sozinha."""
+    tela = (Path(__file__).resolve().parent.parent / "templates" / "ri_ficha.html").read_text(
+        encoding="utf-8")
+    assert "Pedir a leitura à IA" in tela
+    assert "pela_tela" not in tela and "lerSozinha" not in tela and "ler_sozinha" not in tela
+    fonte = (Path(__file__).resolve().parent.parent / "ri_onus_ia.py").read_text(encoding="utf-8")
+    assert "ler_sozinha" not in fonte

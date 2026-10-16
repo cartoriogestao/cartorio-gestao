@@ -17,8 +17,8 @@ def _token(html: str):
 @pytest.fixture()
 def casa(cg_casa):
     c = cg_casa["c"]
-    cg_casa["db"].create_user("jean", "JEAN", SENHA, "ADMIN")
-    c.post("/login", data={"username": "jean", "password": SENHA,
+    cg_casa["db"].create_user("mario", "MARIO", SENHA, "ADMIN")
+    c.post("/login", data={"username": "mario", "password": SENHA,
            "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     con = sqlite3.connect(cg_casa["banco"])

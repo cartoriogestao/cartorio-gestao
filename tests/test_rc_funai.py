@@ -39,7 +39,7 @@ CASA = {"nome": "SERVENTIA EXTRAJUDICIAL DE CIDADE EXEMPLO", "cns": "000000"}
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     return cg_casa
 
 def _con(casa):
@@ -232,7 +232,7 @@ def test_registrar_envio_tira_da_lista(casa):
         aid = _nascimento(con, nome="CAMILO KRIKATI")
     assert len(FUNAI.pendentes(con)) == 1
     with con:
-        FUNAI.registrar_envio(con, aid, agora=AGORA, por="jean",
+        FUNAI.registrar_envio(con, aid, agora=AGORA, por="mario",
                               teor="Ofício à FUNAI...", canal="CARTA")
     assert FUNAI.pendentes(con) == []
     assert FUNAI.historico(con)[0]["situacao"] == "ENVIADA"
@@ -244,7 +244,7 @@ def test_o_teor_congela_com_hash(casa):
     con = _con(casa)
     with con:
         aid = _nascimento(con, nome="CAMILO KRIKATI")
-        FUNAI.registrar_envio(con, aid, agora=AGORA, por="jean",
+        FUNAI.registrar_envio(con, aid, agora=AGORA, por="mario",
                               teor="Ofício à FUNAI...")
     linha = FUNAI.historico(con)[0]
     assert linha["teor"] == "Ofício à FUNAI..."
@@ -257,7 +257,7 @@ def test_nao_se_registra_envio_sem_oficio(casa):
         aid = _nascimento(con, nome="CAMILO KRIKATI")
     with pytest.raises(FUNAI.FunaiError):
         with con:
-            FUNAI.registrar_envio(con, aid, agora=AGORA, por="jean", teor="")
+            FUNAI.registrar_envio(con, aid, agora=AGORA, por="mario", teor="")
 
 
 def test_nao_se_comunica_duas_vezes(casa):
@@ -266,10 +266,10 @@ def test_nao_se_comunica_duas_vezes(casa):
     con = _con(casa)
     with con:
         aid = _nascimento(con, nome="CAMILO KRIKATI")
-        FUNAI.registrar_envio(con, aid, agora=AGORA, por="jean", teor="Ofício")
+        FUNAI.registrar_envio(con, aid, agora=AGORA, por="mario", teor="Ofício")
     with pytest.raises(FUNAI.FunaiError) as erro:
         with con:
-            FUNAI.registrar_envio(con, aid, agora=AGORA, por="jean",
+            FUNAI.registrar_envio(con, aid, agora=AGORA, por="mario",
                                   teor="Outro")
     assert "já foi comunicado" in str(erro.value)
 
@@ -281,12 +281,12 @@ def test_dispensar_exige_motivo_escrito(casa):
         aid = _nascimento(con, nome="CAMILO KRIKATI")
     with pytest.raises(FUNAI.FunaiError):
         with con:
-            FUNAI.dispensar(con, aid, motivo="não", agora=AGORA, por="jean")
+            FUNAI.dispensar(con, aid, motivo="não", agora=AGORA, por="mario")
     with con:
         FUNAI.dispensar(con, aid,
                         motivo="a cor foi digitada por engano; o assento não é "
                                "de pessoa indígena, conferido no livro",
-                        agora=AGORA, por="jean")
+                        agora=AGORA, por="mario")
     assert FUNAI.pendentes(con) == []
     assert FUNAI.historico(con)[0]["situacao"] == "DISPENSADA"
 
@@ -297,7 +297,7 @@ def test_o_que_se_escreveu_ao_dispensar_fica(casa):
     with con:
         aid = _nascimento(con, nome="CAMILO KRIKATI")
         FUNAI.dispensar(con, aid, motivo="conferido no livro de papel",
-                        agora=AGORA, por="jean")
+                        agora=AGORA, por="mario")
     assert "conferido no livro" in FUNAI.historico(con)[0]["motivo"]
 
 

@@ -27,7 +27,7 @@ HOJE = date(2026, 10, 6)
 
 @pytest.fixture()
 def con(cg_casa):
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
     for login, nome in (("elisa", "Elisa Exemplo Lima"), ("debora", "Debora Exemplo Reis"),
                         ("beatriz", "Beatriz Santos"), ("carla", "Carla Exemplo")):
         cg_casa["db"].create_user(login, nome, "Senha#12345", "USER")

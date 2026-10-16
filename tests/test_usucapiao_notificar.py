@@ -49,7 +49,7 @@ def con(cg_db, cg_db_path):
 def processo_id(con):
     pid = US.autuar(
         con, numero="3", modalidade="ORDINARIA", agora=AGORA,
-        requerente_nome="JOÃO BATISTA DE SOUSA", usuario="jean")
+        requerente_nome="JOÃO BATISTA DE SOUSA", usuario="mario")
     con.execute(
         """UPDATE us_processos SET imovel_descricao=?, imovel_endereco=?,
                imovel_municipio=?, imovel_uf=?, imovel_area=?,
@@ -67,7 +67,7 @@ def _notificar(con, pid, **troca):
                  forma="PESSOAL", prazo_chave="CONFRONTANTE",
                  agora=AGORA, serventia=SERVENTIA,
                  hoje_extenso="Cidade Exemplo/MA, 30 de agosto de 2026",
-                 usuario="jean")
+                 usuario="mario")
     dados.update(troca)
     return US.notificar(con, pid, **dados)
 
@@ -113,7 +113,7 @@ def test_autuar_grava_TODA_coluna_que_lhe_e_passada(con):
                     c == "ano" else f"valor de {c}")
                 for c in colunas}
     pid = US.autuar(con, numero="9", modalidade="ORDINARIA", agora=AGORA,
-                    usuario="jean", **mandados)
+                    usuario="mario", **mandados)
     linha = con.execute("SELECT * FROM us_processos WHERE id=?",
                         (pid,)).fetchone()
     perdidas = [c for c in colunas
@@ -130,7 +130,7 @@ def test_movimentar_grava_TODA_coluna_que_lhe_e_passada(con, processo_id):
     mandados = {c: (1 if c in ("prazo_dias", "prazo_uteis", "tentativa")
                     else f"valor de {c}") for c in colunas}
     mid = US.movimentar(con, processo_id, tipo="OUTRO", descricao="ensaio",
-                        agora=AGORA, usuario="jean", **mandados)
+                        agora=AGORA, usuario="mario", **mandados)
     linha = con.execute("SELECT * FROM us_movimentos WHERE id=?",
                         (mid,)).fetchone()
     perdidas = [c for c in colunas

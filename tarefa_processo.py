@@ -305,14 +305,22 @@ def _contagem_notificacao(
     filtros_extra: list[str],
     params_extra: tuple[Any, ...] = (),
 ) -> int:
-    """Tarefas em Comigo + Pediram resposta, com filtros SQL adicionais."""
+    """Tarefas em Comigo + Pediram resposta, com filtros SQL adicionais.
+
+    A TAREFA SUSPENSA NÃO ENTRA NO SINO — relato #132, 15/10/2026: o aviso é
+    cobrança, e a suspensão existe justamente para a cobrança parar. A régua é
+    a de `tarefa_suspensao`, a mesma do painel e de quem cobra."""
+    import tarefa_suspensao as TS
+    nao_suspensa, params_suspensao = TS.condicao_nao_suspensa("t", con=con)
     total = 0
     for vista in _VISTAS_NOTIFICACAO:
         filtros, params = filtro_da_vista(vista, usuario_id)
         filtros.extend(filtros_extra)
+        filtros.append(nao_suspensa)
         where = "WHERE " + " AND ".join(filtros)
         total += int(
-            con.execute(f"SELECT COUNT(*) FROM tasks t {where}", (*params, *params_extra)).fetchone()[0]
+            con.execute(f"SELECT COUNT(*) FROM tasks t {where}",
+                        (*params, *params_extra, *params_suspensao)).fetchone()[0]
         )
     return total
 
@@ -406,18 +414,22 @@ def texto_tarefas_media_baixa_intro(media: int, baixa: int) -> str:
 def contagem_pendentes_notificacao(
     con: sqlite3.Connection, usuario_id: int
 ) -> int:
-    """Comigo + Pediram minha resposta — mesma régua que `contagem_por_vista`."""
-    c = contagem_por_vista(con, usuario_id, sector=None)
-    return int(c[VISTA_COMIGO] + c[VISTA_PEDIRAM_RESPOSTA])
+    """Comigo + Pediram minha resposta — as vistas de `contagem_por_vista`, sem
+    as suspensas (relato #132): «pendente» é cobrança, e a suspensa não se cobra."""
+    return _contagem_notificacao(con, usuario_id, [])
 
 
 def contagem_sem_responsavel_abertas(con: sqlite3.Connection) -> int:
-    """Tarefas abertas (vocabulário conhecido) sem responsável — só ADMIN no modal/faixa."""
+    """Tarefas abertas (vocabulário conhecido) sem responsável — só ADMIN no modal/faixa.
+    A suspensa fica fora (relato #132): ninguém precisa pegá-la enquanto espera."""
+    import tarefa_suspensao as TS
     abertas, params = condicao_aberta("t.status")
+    nao_suspensa, params_suspensao = TS.condicao_nao_suspensa("t", con=con)
     sql = (
         f"SELECT COUNT(*) FROM tasks t WHERE t.assigned_user_id IS NULL AND ({abertas})"
+        f" AND {nao_suspensa}"
     )
-    return int(con.execute(sql, params).fetchone()[0])
+    return int(con.execute(sql, [*params, *params_suspensao]).fetchone()[0])
 
 
 def texto_tarefas_pendentes(quantidade: int) -> str:
@@ -529,6 +541,11 @@ ACOES = {
     "PRAZO_CALCULADO": "Vencimento calculado",
     "ATRIBUICAO_EM_LOTE": "Responsável definido em lote",
     "ESCALONAMENTO_AUTOMATICO": "Venceu — o substituto foi avisado",
+    # A SUSPENSÃO — relato #132. As frases moram aqui, com as outras: a linha do
+    # tempo lê um dicionário só (`tarefa_suspensao.ACOES` repete as duas, e há
+    # teste que exige as duas iguais).
+    "SUSPENSA": "Suspensa — a cobrança parou",
+    "RETOMADA": "Suspensão encerrada — voltou a ser cobrada",
 }
 
 #: O rótulo de cada coluna da tarefa, para as linhas `ALTEROU_<COLUNA>`.
@@ -658,6 +675,11 @@ def reabrir(
         "updated_at=? WHERE id=?",
         (STATUS_DE_REABERTURA, instante, task_id),
     )
+    # A SUSPENSÃO QUE SOBROU NÃO VOLTA COM A TAREFA (relato #132): quem a
+    # concluiu por fora de `database.update_task` deixou as colunas; reaberta, a
+    # tarefa voltaria «suspensa» por uma condição de que ninguém se lembra.
+    import tarefa_suspensao as TS
+    TS.encerrar_pelo_fim_da_tarefa(con, task_id, STATUS_DE_REABERTURA, usuario_id, instante)
     _registrar(
         con, task_id, "REABERTA", usuario_id, instante,
         antigo=linha["status"], novo=STATUS_DE_REABERTURA, nota=texto,

@@ -18,7 +18,7 @@ O QUE ESTAVA ERRADO, MEDIDO
 
 O PRECEDENTE DA CASA, e é ele que o texto imita
     A pasta «1. RI/CERTIDÕES/certidões antigas/ÔNUS» do Proton tem 258
-    negativas e 70 positivas. As de 2024 (Karem, Leidiane) dizem:
+    negativas e 70 positivas. As de 2024 (de duas escreventes) dizem:
       «CERTIDÃO DE POSITIVA DE ÔNUS E NEGATIVA DE REGISTRO DE AÇÕES REAIS E
        PESSOAIS REIPERSECUTÓRIAS» … «HÁ ÔNUS REAIS, assim caracterizados:
        a) R-02/2.914 (Protocolo n° 9837). Cidade Exemplo-MA, … Registra-se …»
@@ -113,6 +113,14 @@ a trate como cautela nem como dúvida.
 2. AÇÕES: registro de citação de ação real ou pessoal reipersecutória, averbação \
 premonitória ou de ajuizamento de execução.
 
+3. PROPRIETÁRIOS DE HOJE — quem é dono do imóvel AGORA, pelo que a matrícula diz. É \
+quem adquiriu pela última transmissão registrada e não cancelada (compra e venda, \
+doação, permuta, partilha, adjudicação, arrematação, usucapião, integralização, \
+dação); sem transmissão, quem consta como proprietário na abertura da matrícula. NÃO \
+são donos de hoje: quem vendeu ou doou; os proprietários da matrícula de ORIGEM (a \
+matrícula-mãe citada no histórico); o credor, o usufrutuário ou o promissário. Copie \
+cada nome como está escrito, e o CPF/CNPJ se o texto o trouxer.
+
 NÃO É ÔNUS VIGENTE: o que foi cancelado, baixado, quitado ou extinto por ato \
 posterior (averbação de cancelamento, de quitação, de baixa, de extinção do usufruto \
 por morte, de liberação); a frase «livre e desembaraçado de ônus» de uma compra e \
@@ -130,6 +138,9 @@ Responda SÓ com JSON, sem texto em volta:
 "itens": [{"categoria": "ONUS" | "ACAO", "ato": "R-02/2.914", \
 "natureza": "Hipoteca cedular de 1º grau", "trecho": "..."}], \
 "cancelados": [{"ato": "R-03/2.914", "cancelado_por": "AV-05/2.914"}], \
+"proprietarios": [{"nome": "FULANO DE TAL", "documento": "000.000.001-91"}], \
+"proprietarios_ato": "R-04/2.914", \
+"proprietarios_trecho": "o pedaço do ato que os faz donos, copiado exatamente", \
 "parecer": "uma ou duas frases dizendo por que é positiva ou negativa, e o que deixou dúvida"}
 Na dúvida sobre se um ônus está vigente, INCLUA-O em itens e diga a dúvida no parecer: \
 quem emite confere. Não invente: se o texto não permite concluir, diga no parecer."""
@@ -373,9 +384,75 @@ def ler_resposta(texto: str, texto_da_ficha_: str) -> dict:
     cancelados = [{"ato": normalizar(c.get("ato"))[:40],
                    "cancelado_por": normalizar(c.get("cancelado_por"))[:40]}
                   for c in d.get("cancelados") or [] if isinstance(c, dict)]
+    proprietarios = [{"nome": normalizar(p.get("nome"))[:160],
+                      "documento": re.sub(r"\D", "", str(p.get("documento") or ""))[:14]}
+                     for p in d.get("proprietarios") or []
+                     if isinstance(p, dict) and normalizar(p.get("nome"))]
+    trecho_dono = normalizar(d.get("proprietarios_trecho"))
     return {"onus": _resultado(d.get("onus")), "acoes": _resultado(d.get("acoes")),
             "itens": itens, "cancelados": cancelados,
+            "proprietarios": proprietarios,
+            "proprietarios_ato": normalizar(d.get("proprietarios_ato"))[:40],
+            "proprietarios_trecho": trecho_dono[:1500],
+            "proprietarios_literal": esta_escrito(trecho_dono, texto_da_ficha_),
             "parecer": normalizar(d.get("parecer"))[:800]}
+
+
+# ------------------------------------------------- o proprietário, conferido
+
+#: As situações da conferência do proprietário — o que a tela mostra e o que a
+#: certidão grava. Pedido do oficial em 15/10/2026, depois de a certidão de ônus
+#: 64/2026 sair com o dono da matrícula-mãe: «a IA confere o proprietario».
+CONFERE, DIVERGE, LENDO, SEM_LEITURA = "CONFERE", "DIVERGE", "LENDO", "SEM_LEITURA"
+_PALAVRAS_DE_LIGACAO = {"DE", "DA", "DO", "DAS", "DOS", "E"}
+
+
+def _nome_comparavel(nome: str) -> str:
+    """Sem acento, sem caixa, sem pontuação e sem «de/da/dos/e» — o que sobra é
+    o que identifica a pessoa («José da Silva» = «JOSE SILVA»)."""
+    palavras = re.sub(r"[^A-Z0-9 ]", " ", _sem_acento(nome)).split()
+    return " ".join(p for p in palavras if p not in _PALAVRAS_DE_LIGACAO)
+
+
+def _mesma_pessoa(a: dict, b: dict) -> bool:
+    da, db_ = a.get("documento") or "", b.get("documento") or ""
+    if len(da) >= 11 and len(db_) >= 11:
+        return da == db_
+    return bool(_nome_comparavel(a.get("nome"))) and \
+        _nome_comparavel(a.get("nome")) == _nome_comparavel(b.get("nome"))
+
+
+def conferir_proprietarios(cadastro: list, sugestao: dict | None) -> dict:
+    """Compara os proprietários do CADASTRO (o quadro que a certidão imprime) com
+    os que a IA leu no teor. SÓ COMPARA: quem decide é quem emite.
+
+    `cadastro` é a lista de partes com `proprietario_ativo` — dicionários ou
+    linhas com `nome` e `documento_numero` (ou `documento`)."""
+    do_cadastro = []
+    for p in cadastro or []:
+        nome = normalizar(_campo(p, "nome"))
+        if nome:
+            doc = _campo(p, "documento_numero") or _campo(p, "documento") or ""
+            do_cadastro.append({"nome": nome, "documento": re.sub(r"\D", "", str(doc))})
+    base = {"cadastro": do_cadastro, "ia": [], "faltam": [], "sobram": [],
+            "ato": "", "trecho": "", "trecho_literal": False}
+    if not sugestao or sugestao.get("situacao") in ("PENDENTE", "LENDO"):
+        return base | {"situacao": LENDO if sugestao else SEM_LEITURA}
+    if sugestao.get("situacao") != "PRONTA" or not sugestao.get("vale"):
+        return base | {"situacao": SEM_LEITURA}
+    da_ia = sugestao.get("proprietarios") or []
+    if not da_ia:
+        # Leitura feita antes de a IA ler o dono, ou leitura que não achou quem é:
+        # sem o lado da IA não há o que comparar — «não confere» aqui acusaria o
+        # cadastro sem prova. Volta para a caixa de quem emite, e a tela diz por quê.
+        return base | {"situacao": SEM_LEITURA, "ia_sem_dono": True}
+    faltam =[p for p in da_ia if not any(_mesma_pessoa(p, c) for c in do_cadastro)]
+    sobram = [c for c in do_cadastro if not any(_mesma_pessoa(c, p) for p in da_ia)]
+    situacao = CONFERE if da_ia and not faltam and not sobram else DIVERGE
+    return base | {"situacao": situacao, "ia": da_ia, "faltam": faltam, "sobram": sobram,
+                   "ato": sugestao.get("proprietarios_ato") or "",
+                   "trecho": sugestao.get("proprietarios_trecho") or "",
+                   "trecho_literal": bool(sugestao.get("proprietarios_literal"))}
 
 
 def executar(banco: Path, pasta_dados: Path, sugestao_id: int, conversar=None) -> None:
@@ -478,10 +555,11 @@ def itens_da_sugestao(sugestao: dict | None) -> list[dict]:
 # --------------------------------------------------------- a escolha do balcão
 
 def painel(con: sqlite3.Connection, matricula_id: int, onus_vigentes: list[dict],
-           pasta_dados: Path | None = None) -> dict:
+           pasta_dados: Path | None = None, proprietarios_cadastro: list | None = None) -> dict:
     """O que a tela da ficha mostra no quadro da certidão de ônus. SÓ LÊ."""
     sistema = [item_do_ato(a) for a in onus_vigentes or []]
     sugestao = ultima(con, matricula_id)
+    conferencia = conferir_proprietarios(proprietarios_cadastro or [], sugestao)
     da_ia = itens_da_sugestao(sugestao)
     # O QUE VEM MARCADO: o que o sistema sabe (ato lavrado com natureza de
     # ônus, ou pela palavra — este com o aviso de conferir) e o que a IA
@@ -505,20 +583,172 @@ def painel(con: sqlite3.Connection, matricula_id: int, onus_vigentes: list[dict]
             ligada_ = ligada(con, pasta_dados)
         except Exception:                                # noqa: BLE001 — só a tela
             ligada_ = False
+    # A IA SÓ LÊ QUANDO ALGUÉM CLICA — ordem do oficial em 15/10/2026: «a IA so
+    # vai ler se clicar no botao na emissao de certidao de onus. para cada
+    # matricula». Na mesma manhã a leitura tinha passado a começar sozinha ao
+    # escolher a certidão de ônus; saiu, porque cada leitura custa e quem decide
+    # gastar é quem está emitindo.
     return {"sistema": sistema, "ia": da_ia, "sugestao": sugestao,
             "sugerido": sugerido, "ia_ligada": ligada_,
+            "proprietarios": conferencia,
             "no_sandbox": no_sandbox(con)}
+
+
+def acatar_proprietarios(con: sqlite3.Connection, matricula_id: int, *, agora: str,
+                         usuario: str = "") -> dict:
+    """ACATA a leitura da IA e CORRIGE o cadastro de partes da matrícula.
+
+        «sendo acatada a sugestao, sistema tbm retifique no cadastro da matricula
+         para constar o proprietario atual correto» — o oficial, 15/10/2026
+
+    Roda DENTRO da transação de quem chama, e não audita (devolve o que mudou,
+    para a rota auditar cada linha). É clique de gente — nada aqui roda sozinho.
+
+    O QUE FAZ, pelo caminho de sempre (`ri_correcoes.corrigir_parte`, o mesmo da
+    linha «Corrigir» da ficha), com motivo escrito em cada linha:
+      - quem está no cadastro como dono e a IA não leu como dono de hoje DEIXA DE
+        SER TITULAR ATUAL — a linha fica, como histórico;
+      - quem a IA leu e já está no cadastro, mas não titular, VOLTA A SER;
+      - quem a IA leu e não está no cadastro É INCLUÍDO, amarrado ao ato que o
+        fez dono quando esse ato está lavrado no sistema.
+
+    DUAS TRAVAS, e as duas recusam em vez de gravar torto:
+      - o NOME tem de estar escrito na ficha (teor ou atos) — a IA não inventa dono;
+      - o CPF/CNPJ só entra se os dígitos estiverem escritos na ficha; senão a
+        pessoa entra sem documento, que é o que a ficha permite afirmar.
+    """
+    import ri_correcoes as RC
+    from ri_schema import normalizar_busca, valida_cpf_cnpj
+
+    sugestao = ultima(con, matricula_id)
+    if not sugestao or sugestao.get("situacao") != "PRONTA" or not sugestao.get("vale"):
+        raise OnusError("Não há leitura da IA que valha para a ficha como ela está. Peça a "
+                        "leitura de novo antes de acatar. Nada foi alterado.")
+    da_ia = sugestao.get("proprietarios") or []
+    if not da_ia:
+        raise OnusError("A IA não leu quem é o dono de hoje nesta ficha: não há o que "
+                        "acatar. Corrija o cadastro pela linha da parte. Nada foi alterado.")
+    texto = texto_da_ficha(con, matricula_id)
+    digitos_da_ficha = re.sub(r"\D", "", texto)
+    for p in da_ia:
+        if not esta_escrito(p["nome"], texto):
+            raise OnusError(f"A IA leu «{p['nome']}» como dono, e esse nome não está escrito "
+                            "na ficha desta matrícula. A leitura não pode ir ao cadastro: "
+                            "corrija pela linha da parte. Nada foi alterado.")
+
+    con.row_factory = sqlite3.Row
+    partes = [dict(r) for r in con.execute(
+        "SELECT * FROM ri_partes WHERE matricula_id = ? ORDER BY id", (matricula_id,))]
+    ativos = [p for p in partes if p["proprietario_ativo"]]
+    motivo = (f"Leitura da IA acatada na certidão de ônus ({agora[:10]}): dono(s) de hoje "
+              f"pelo {sugestao.get('proprietarios_ato') or 'teor'} — "
+              + "; ".join(p["nome"] for p in da_ia) + ".")
+    feito = {"desligados": [], "religados": [], "incluidos": [], "motivo": motivo,
+             "sugestao_id": sugestao.get("id")}
+
+    def como_pessoa(linha):
+        return {"nome": linha["nome"], "documento": re.sub(r"\D", "", linha["documento_numero"] or "")}
+
+    for linha in ativos:
+        if not any(_mesma_pessoa(como_pessoa(linha), p) for p in da_ia):
+            saida = RC.corrigir_parte(con, linha["id"], motivo=motivo, agora=agora,
+                                      titular=False, usuario=usuario)
+            feito["desligados"].append(saida)
+
+    ato_id = None
+    alvo = _ato_do_rotulo(sugestao.get("proprietarios_ato") or "")
+    if alvo:
+        m = re.match(r"(R|AV)(\d+)", alvo)
+        r = con.execute("SELECT id FROM ri_atos WHERE matricula_id=? AND UPPER(tipo)=? "
+                        "AND numero=?", (matricula_id, m.group(1), int(m.group(2)))).fetchone()
+        ato_id = r["id"] if r else None
+
+    for p in da_ia:
+        ja = [linha for linha in partes if _mesma_pessoa(como_pessoa(linha), p)]
+        if ja:
+            if not ja[0]["proprietario_ativo"]:
+                feito["religados"].append(RC.corrigir_parte(
+                    con, ja[0]["id"], motivo=motivo, agora=agora, titular=True,
+                    usuario=usuario))
+            continue
+        doc = p.get("documento") or ""
+        if doc and doc not in digitos_da_ficha:
+            doc = ""
+        tipo = "CPF" if len(doc) == 11 else "CNPJ" if len(doc) == 14 else None
+        if not tipo:
+            doc = ""
+        cur = con.execute(
+            """INSERT INTO ri_partes
+               (matricula_id, ato_id, nome, nome_norm, documento_tipo, documento_numero,
+                documento_valido, papel, qualificacao, proprietario, proprietario_ativo,
+                origem, origem_chave)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (matricula_id, ato_id, p["nome"], normalizar_busca(p["nome"]), tipo,
+             doc or None, 1 if doc and valida_cpf_cnpj(doc) else (0 if doc else None),
+             "proprietario", None, 1, 1, "MANUAL",
+             f"ia_onus_acatada:{sugestao.get('id')}"))
+        feito["incluidos"].append({"parte_id": int(cur.lastrowid), "nome": p["nome"],
+                                   "documento": doc or None, "ato_id": ato_id})
+    con.execute("UPDATE ri_matriculas SET atualizado_em=? WHERE id=?", (agora, matricula_id))
+    return feito
 
 
 def _justificativa_basta(texto: str) -> bool:
     return len(re.sub(r"[^A-Za-zÀ-ÿ]", "", texto or "")) >= MINIMO_DA_JUSTIFICATIVA
 
 
+def _o_proprietario(*, proprietarios_cadastro, sugestao, ia_ligada: bool,
+                    proprietario_conferido: bool, justificativa_proprietario: str) -> dict:
+    """A regra do proprietário, ANTES de tudo o mais — o papel afirma quem é o
+    dono, e a certidão 64/2026 (matrícula 3371) saiu com o dono da matrícula-mãe
+    porque o cadastro vinha errado da importação e ninguém o conferiu.
+
+      - IA ligada e ainda lendo → espera (um ou dois minutos);
+      - IA leu e o cadastro CONFERE → segue;
+      - IA leu e DIVERGE (ou não achou dono) → só segue com justificativa
+        escrita, e ela fica gravada — o normal é corrigir o cadastro antes;
+      - sem leitura que valha (IA desligada, fora do ar, leitura com erro) →
+        quem emite marca que conferiu o proprietário no teor.
+    """
+    c = conferir_proprietarios(proprietarios_cadastro, sugestao)
+    just = normalizar(justificativa_proprietario)
+    if c["situacao"] == LENDO and ia_ligada:
+        raise OnusError("A IA ainda está lendo a ficha para conferir o proprietário. "
+                        "Espere um ou dois minutos e emita de novo. Nada foi emitido.")
+    if c["situacao"] == CONFERE:
+        return {"onus_proprietario_conferencia": CONFERE, "onus_proprietario_justificativa": ""}
+    if c["situacao"] == DIVERGE:
+        if not _justificativa_basta(just):
+            leu = ", ".join(p["nome"] for p in c["ia"]) or "ninguém"
+            tem = ", ".join(p["nome"] for p in c["cadastro"]) or "ninguém"
+            raise OnusError(
+                f"O proprietário do cadastro não confere com o teor. A IA leu na matrícula "
+                f"como dono(s) de hoje: {leu}; o cadastro, que é o que a certidão imprime, "
+                f"diz: {tem}. Corrija o cadastro de partes da matrícula — ou, se o cadastro "
+                "estiver certo, escreva por quê no campo de justificativa do proprietário. "
+                "Nada foi emitido.")
+        return {"onus_proprietario_conferencia": DIVERGE,
+                "onus_proprietario_justificativa": just}
+    if not proprietario_conferido:
+        raise OnusError(
+            "Sem leitura da IA que valha para esta ficha, quem emite confere o proprietário: "
+            "leia no teor quem é o dono de hoje, compare com o quadro de proprietários e "
+            "marque «Conferi o proprietário no teor». Nada foi emitido.")
+    return {"onus_proprietario_conferencia": "CONFERIDO_NO_BALCAO",
+            "onus_proprietario_justificativa": ""}
+
+
 def decidir(*, texto_da_ficha_: str, onus_vigentes: list[dict], sugestao: dict | None,
             resultado_onus, resultado_acoes, marcados, manual_onus: str = "",
-            manual_acao: str = "", justificativa: str = "") -> dict:
+            manual_acao: str = "", justificativa: str = "",
+            proprietarios_cadastro: list | None = None, ia_ligada: bool = False,
+            proprietario_conferido: bool = False,
+            justificativa_proprietario: str = "") -> dict:
     """A escolha do escrevente, conferida. Devolve o que o miolo da certidão lê,
     ou recusa com a frase pronta. NÃO GRAVA NADA."""
+    dono = _o_proprietario(proprietarios_cadastro=proprietarios_cadastro, sugestao=sugestao,
+                           ia_ligada=ia_ligada, proprietario_conferido=proprietario_conferido,
+                           justificativa_proprietario=justificativa_proprietario)
     ro = str(resultado_onus or "").strip().upper()
     ra = str(resultado_acoes or "").strip().upper()
     if ro not in RESULTADOS:
@@ -587,4 +817,4 @@ def decidir(*, texto_da_ficha_: str, onus_vigentes: list[dict], sugestao: dict |
             "itens_acoes": [i for i in escolhidos if i["categoria"] == ACAO],
             "onus_justificativa": just if contra_a_ia else "",
             "onus_sugestao_id": sugestao.get("id") if vale else None,
-            "onus_escolhido_por": "BALCAO"}
+            "onus_escolhido_por": "BALCAO", **dono}

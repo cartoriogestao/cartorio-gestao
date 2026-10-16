@@ -53,7 +53,7 @@ CHAVE_LIGADA = "revisao_previa"
 #: (que não revisa ato) continua mascarada. `settings.revisao_mascara = '1'`
 #: volta a mascarar sem versão nova.
 CHAVE_MASCARA = "revisao_mascara"
-#: HOTFIX-2026-10-13-01 (Leidiane, 13/10/2026: «esse modo revisão IA está
+#: HOTFIX-2026-10-13-01 (escrevente, 13/10/2026: «esse modo revisão IA está
 #: atrapalhando»). `settings.revisao_previa_modo`: 'consultivo' (padrão) ou
 #: 'bloqueante' (regra antiga, de 06-08/10). No consultivo, para gerente/
 #: administrador e para ato de ofício/encerramento/isento, a revisão só

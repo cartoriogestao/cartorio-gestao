@@ -41,7 +41,9 @@ def test_override_notas_cartao_ficha_permanece(tmp_path=None):
         ("NOTAS_CARTAO_FICHA", "CORPO"),
     ).fetchone()
     assert row is not None, "override NOTAS_CARTAO_FICHA sumiu do banco"
-    assert row[0] == "Jean Santos"
+    # quem ajustou é gente da casa: o nome sai do banco, e não se escreve aqui
+    # (este arquivo vai ao GitHub — 14/10/2026)
+    assert (row[0] or "").strip()
     assert row[1] > 100
     corpo = MOD.corpo_de(con, "NOTAS_CARTAO_FICHA")
     assert corpo and len(corpo) > 100

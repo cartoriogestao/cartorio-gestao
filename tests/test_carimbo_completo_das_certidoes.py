@@ -231,7 +231,7 @@ def test_a_certidao_do_protesto_saia_sem_carimbo_e_agora_sai_com(s):
     tela = c.get("/protesto/certidoes").get_data(as_text=True)
     token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', tela).group(1)
     c.post("/protesto/certidoes/emitir",
-           data={"csrf_token": token, "nome": "MARIA", "anos": "5"},
+           data={"csrf_token": token, "nome": "MARIA", "documento": "000.000.001-91", "anos": "5"},  # CPF exigido desde 14/10 (CN art. 906)
            follow_redirects=True)
     con = sqlite3.connect(s["banco"])
     cid = con.execute("SELECT id FROM pt_certidoes").fetchone()[0]
@@ -253,7 +253,7 @@ def test_a_certidao_do_protesto_sem_selo_nao_inventa_carimbo(s):
     tela = c.get("/protesto/certidoes").get_data(as_text=True)
     token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', tela).group(1)
     c.post("/protesto/certidoes/emitir",
-           data={"csrf_token": token, "nome": "MARIA", "anos": "5"},
+           data={"csrf_token": token, "nome": "MARIA", "documento": "000.000.001-91", "anos": "5"},  # CPF exigido desde 14/10 (CN art. 906)
            follow_redirects=True)
     con = sqlite3.connect(s["banco"])
     cid = con.execute("SELECT id FROM pt_certidoes").fetchone()[0]
@@ -298,7 +298,7 @@ def test_a_certidao_do_protesto_leva_o_qr_dentro_do_pacote(s):
     tela = c.get("/protesto/certidoes").get_data(as_text=True)
     token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', tela).group(1)
     c.post("/protesto/certidoes/emitir",
-           data={"csrf_token": token, "nome": "MARIA", "anos": "5"},
+           data={"csrf_token": token, "nome": "MARIA", "documento": "000.000.001-91", "anos": "5"},  # CPF exigido desde 14/10 (CN art. 906)
            follow_redirects=True)
     con = sqlite3.connect(s["banco"])
     cid = con.execute("SELECT id FROM pt_certidoes").fetchone()[0]
@@ -307,7 +307,11 @@ def test_a_certidao_do_protesto_leva_o_qr_dentro_do_pacote(s):
 
     dados = c.get(f"/protesto/certidoes/{cid}/odt?formato=odt").data
     pacote = zipfile.ZipFile(BytesIO(dados))
-    imagens = [n for n in pacote.namelist() if n.startswith("Pictures/")]
+    # 14/10/2026: a certidão ganhou o cabeçalho da casa, e o brasão vai no
+    # pacote referenciado pelo cabeçalho da página (styles.xml), não pelo
+    # corpo. O QR é a imagem que NÃO é o brasão.
+    imagens = [n for n in pacote.namelist()
+               if n.startswith("Pictures/") and "brasao" not in n]
     assert imagens, "a certidão do protesto saiu sem o QR dentro do pacote"
     xml = pacote.read("content.xml").decode("utf-8")
     for nome in imagens:
@@ -342,7 +346,7 @@ def test_a_certidao_do_rcpj_rtd_leva_o_qr_dentro_do_pacote(s):
     with con:
         feito = CE.emitir(con, "RCPJ_RTD", rid, hoje="2026-09-17",
                           agora="2026-09-17T09:10:00", requerente="EMPRESA X",
-                          finalidade="prova", usuario="JEAN")
+                          finalidade="prova", usuario="MARIO")
     con.close()
     cid = int(feito["certidao_id"])
     c = s["c"]

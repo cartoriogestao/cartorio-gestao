@@ -97,7 +97,7 @@ def _ato(s, aid):
 def test_campo_em_branco_no_teor_trava_a_lavratura(serventia):
     """O caso do ato 791: o colchete do modelo ia para o livro."""
     aid = _abrir_escritura(serventia)
-    _parte(serventia, aid, "HUGO FERREIRA DOS SANTOS", "OUTORGANTE")
+    _parte(serventia, aid, "PEDRO EXEMPLO DOS SANTOS", "OUTORGANTE")
     _postar(serventia, aid, acao="teor",
             teor="<p>nomeia e constitui seu bastante procurador "
                  "[OUTORGADO(S) — QUALIFIQUE A PARTE NO ATO], a quem confere</p>")

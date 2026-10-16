@@ -29,7 +29,7 @@ HOJE = date(2026, 10, 6)
 
 @pytest.fixture()
 def con(cg_casa):
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
     c = sqlite3.connect(cg_casa["banco"])
     c.row_factory = sqlite3.Row
     yield c
@@ -120,7 +120,7 @@ def test_os_arquivos_saem_e_trazem_os_numeros(con, tmp_path):
 
 
 def test_primeiro_nome_do_caixa_vira_o_nome_do_cadastro(con):
-    cg = con.execute("SELECT full_name FROM users WHERE username = 'jean'").fetchone()[0]
+    cg = con.execute("SELECT full_name FROM users WHERE username = 'mario'").fetchone()[0]
     assert GF._nome_do_operador(con, cg.split()[0].title()) == cg
     assert GF._nome_do_operador(con, "Fulano") == "Fulano"
     assert GF._nome_do_operador(con, "") == "sem caixa"

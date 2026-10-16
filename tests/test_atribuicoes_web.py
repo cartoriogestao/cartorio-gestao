@@ -157,7 +157,11 @@ def test_as_quatro_listas_abrem_vazias_e_dizem_onde_trazer_o_acervo(s, rota):
 
 
 @pytest.mark.parametrize("rota,esperado", [
-    ("/protesto", "84713/1"),
+    # A LISTA DO PROTESTO ABRE NOS PENDENTES desde 14/10/2026 (pedido do
+    # oficial), e o titulo semeado aqui esta PROTESTADO — por isso a vista
+    # «todos». O que este teste guarda continua o mesmo: a lista mostra o
+    # que o banco tem.
+    ("/protesto?vista=todos", "84713/1"),
     ("/rcpn", "JOÃO DA SILVA"),
     ("/rcpj-rtd", "EMPRESA X"),
     ("/livro3", "40/01800-8"),
@@ -188,7 +192,8 @@ def test_a_lista_do_protesto_acha_pelo_nome_e_pelo_documento_do_devedor(s):
 
 def test_a_lista_do_protesto_mostra_quem_e_o_devedor(s):
     _semear(s)
-    assert "DEVEDOR TESTE" in s["c"].get("/protesto").get_data(as_text=True)
+    # O titulo semeado esta PROTESTADO; a lista abre nos pendentes (14/10/2026).
+    assert "DEVEDOR TESTE" in s["c"].get("/protesto?vista=todos").get_data(as_text=True)
 
 
 def test_a_lista_filtra_pela_situacao(s):
@@ -746,7 +751,9 @@ def test_a_carga_roda_de_verdade_e_mostra_os_numeros(s, tmp_path):
     linhas = [tuple(x) for x in _con(s).execute(
         "SELECT numero_titulo, situacao, origem FROM pt_titulos").fetchall()]
     assert any(x[0] == "99999/1" for x in linhas), linhas
-    pagina = c.get("/protesto").get_data(as_text=True)
+    # O titulo da carga esta PROTESTADO, e a lista abre nos pendentes desde
+    # 14/10/2026 — a vista «todos» e a que o mostra.
+    pagina = c.get("/protesto?vista=todos").get_data(as_text=True)
     titulos = re.findall(r"<title>(.*?)</title>|<h1[^>]*>(.*?)</h1>",
                          pagina, re.S | re.I)
     assert "99999/1" in pagina, f"banco={linhas!r}; pagina={titulos!r}"
@@ -882,7 +889,9 @@ def test_assento_novo_vai_para_o_livro_da_especie_e_nao_para_o_escolhido(s):
                       local_fato_nome="Hospital Municipal",
                       numero_do="98765",
                       filiacao1_nome="IGNORADO", filiacao2_nome="IGNORADO",
-                      declarante_nome="FULANO")
+                      declarante_nome="FULANO",
+                      # relato #130: a CRC exige «deixou bens»
+                      obito_possui_bens="NAO")
     assert "Assento lavrado" in html
     a = _con(s).execute("SELECT * FROM rc_assentos").fetchone()
     assert a["serie"] == "RC_C"            # obito, e nao RC_A
@@ -949,6 +958,7 @@ def test_abrir_registro_novo_com_selo_de_outra_serventia_nao_deixa_registro(s):
                       pessoa_nome="ANA", pessoa_sexo="F",
                       data_fato="2026-08-20",
                       local_fato_nome="Hospital Municipal",
+                      ibge_local="1",       # relato #130: o SIRC exige
                       filiacao1_nome="MARIA", filiacao2_nome="IGNORADO",
                       declarante_nome="MARIA",
                       selo="AVESVD999999NARRKWVNJCRSVO21")
@@ -1011,6 +1021,8 @@ def _emitir(s, **campos) -> str:
     # Estes testes medem busca, teor e caixa. O selo automático por item tem
     # ensaio próprio; aqui a certidão leva um selo válido já informado.
     campos.setdefault("selo", "AVESVD000000NARRKWVNJCRSVO21")
+    # O CPF/CNPJ é obrigatório desde 14/10/2026 (CN-MA art. 906).
+    campos.setdefault("documento", "04785512388")
     return c.post("/protesto/certidoes/emitir",
                   data={"csrf_token": token, **campos},
                   follow_redirects=True).get_data(as_text=True)
@@ -1356,7 +1368,7 @@ def _titulo_da_cra(s, numero="8888/1", apresentante="001") -> int:
     """Um titulo vindo da CRA, apontado e protestado — pronto para o retorno."""
     import protesto as PT
     con = _con(s)
-    sv = {"unit_name": "SERVENTIA", "serventia_titular": "JEAN",
+    sv = {"unit_name": "SERVENTIA", "serventia_titular": "MARIO",
           "serventia_titulo": "Tabelião", "ri_cns": "000000",
           "ri_cidade": "Cidade Exemplo", "ri_uf": "MA"}
     agora = "2026-08-25T10:00:00"
@@ -1369,6 +1381,9 @@ def _titulo_da_cra(s, numero="8888/1", apresentante="001") -> int:
             "data_emissao": "2026-01-05", "data_vencimento": "2026-02-05",
             "valor": "1.200,00", "saldo": "1.310,45",
             "praca_protesto": "CIDADE EXEMPLO",
+            # O motivo vem da remessa da CRA (posição 297); desde 14/10/2026
+            # o termo do protesto recusa sem ele (inspeção, tarefa #49).
+            "motivo_protesto": "1",
             "cedente": {"nome": "LOJA CENTRAL LTDA"},
             "devedores": [{"nome": "JOSÉ DA SILVA", "CPF": "04785512388",
                            "enderecos": [{"endereco": "RUA GRANDE, 10",
@@ -1482,7 +1497,10 @@ def test_o_rcpj_e_o_rtd_tem_cada_um_a_sua_lista(s):
 
     rcpj = s["c"].get("/rcpj-rtd?atribuicao=3").get_data(as_text=True)
     assert "EMPRESA X" not in rcpj                # o RTD nao aparece no RCPJ
-    assert "pessoas jurídicas" in rcpj
+    # O titulo passou a ser o NOME DA ATRIBUICAO, «RCPJ — Registro Civil das
+    # Pessoas Jurídicas», com maiusculas (a regra do nome, de 28/08/2026);
+    # a pergunta continua sendo «e a lista do RCPJ?» — 14/10/2026.
+    assert "pessoas jurídicas" in rcpj.lower()
 
     # E sem filtro nenhum, as duas continuam juntas — com a coluna que diz
     # de qual atribuicao e cada linha.

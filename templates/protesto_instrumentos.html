@@ -3,15 +3,15 @@
 {% block content %}
 {% include '_serventia.html' %}
 <div class="actions">
-  <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; TÃ­tulos</a>
+  <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
   <a class="button" href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
 </div>
 
 <div class="notice">
-  O <strong>instrumento</strong> Ã© o papel do art. 20 da Lei 9.492/1997 â€”
+  O <strong>instrumento</strong> é o papel do art. 20 da Lei 9.492/1997 —
   afirma que o protesto foi lavrado e vai ao apresentante. Emitir aqui
-  <strong>nÃ£o envia nada Ã  Central</strong>: sÃ³ grava o teor, o nÃºmero do
-  exercÃ­cio e coloca o documento na fila de assinatura da casa.
+  <strong>não envia nada à Central</strong>: só grava o teor, o número do
+  exercício e coloca o documento na fila de assinatura da casa.
 </div>
 
 <section class="cards">
@@ -30,16 +30,16 @@
   {% else %}
   <table class="table">
     <thead><tr>
-      <th>Data do ato</th><th>Protocolo</th><th>TÃ­tulo</th>
+      <th>Data do ato</th><th>Protocolo</th><th>Título</th>
       <th>Apresentante</th><th></th>
     </tr></thead>
     <tbody>
       {% for r in fila %}
       <tr>
-        <td>{{ r.data_ato or 'â€”' }}</td>
+        <td>{{ r.data_ato or '—' }}</td>
         <td><a href="{{ url_for('protesto_titulo', titulo_id=r.titulo_id) }}">{{ r.protocolo or r.titulo_id }}</a></td>
-        <td>{{ r.numero_titulo or 'â€”' }}</td>
-        <td>{{ r.apresentante_nome or 'â€”' }}</td>
+        <td>{{ r.numero_titulo or '—' }}</td>
+        <td>{{ r.apresentante_nome or '—' }}</td>
         <td>
           <form method="post" action="{{ url_for('protesto_instrumento_emitir', titulo_id=r.titulo_id) }}" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -52,5 +52,44 @@
   </table>
   {% endif %}
 </section>
-{% endblock %}
 
+<section class="panel">
+  <div class="panel-head"><span>Instrumentos emitidos</span><small>os mais recentes — para imprimir de novo</small></div>
+  {% if not emitidos %}
+    <p style="padding:14px">Nenhum instrumento emitido ainda.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Instrumento</th><th>Emitido em</th><th>Título</th><th></th><th>Assinatura A3</th></tr></thead>
+    <tbody>
+      {% for e in emitidos %}
+      <tr>
+        <td>{{ e.numero }}/{{ e.ano }}</td>
+        <td>{{ (e.emitido_em or '')[:16] }}</td>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=e.titulo_id) }}">{{ e.protocolo or e.titulo_id }}</a></td>
+        <td><a class="button" href="{{ url_for('protesto_instrumento_odt', instrumento_id=e.id) }}">Imprimir</a></td>
+        <td>
+          {% if e.assinado_em %}
+            assinado em {{ e.assinado_em[:16] }}{% if e.assinado_por_nome %}
+            <div><small>por {{ e.assinado_por_nome }}</small></div>{% endif %}
+          {% else %}
+          {#
+            ASSINAR COM O A3 (15/10/2026): o PDF do instrumento vai ao serviço
+            local de assinatura, que assina pelo repositório do Windows. A
+            janela de PIN é a do próprio token, na tela do oficial — o PIN não
+            passa pelo sistema.
+          #}
+          <form method="post" style="display:inline"
+                action="{{ url_for('protesto_instrumento_assinar', instrumento_id=e.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button primary">Assinar com o A3</button>
+          </form>
+          <div><small>a janela do token pede o PIN na sua tela</small></div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

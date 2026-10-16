@@ -42,7 +42,10 @@ document.addEventListener("click", function (e) {
   {% if trava %}
   <div class="notice danger">
     <strong>{% if veio_da_recusa %}A lavratura recusou — nada foi gravado.{% else %}Corrija antes de lavrar.{% endif %}
-      {{ trava|length }} dado(s) se contradizem:</strong>
+      {% set faltas_c = trava | selectattr("codigo", "in", ["FALTA_PARA_A_CRC", "FALTA_PARA_O_SIRC"]) | list %}
+      {% if faltas_c|length == trava|length %}{{ trava|length }} campo(s) que a CRC e o SIRC exigem estão faltando:
+      {% elif faltas_c %}{{ trava|length }} problema(s) — dados que se contradizem e campos que a CRC e o SIRC exigem:
+      {% else %}{{ trava|length }} dado(s) se contradizem:{% endif %}</strong>
     <ul>{% for p in trava %}<li>{{ p.mensagem }}</li>{% endfor %}</ul>
   </div>
   {# ARRUMAR SÓ O PROBLEMA (pedido do oficial, 11/10/2026): abrem-se apenas os

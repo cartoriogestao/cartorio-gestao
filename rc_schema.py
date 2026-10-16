@@ -760,6 +760,13 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("rc_assentos", "livro_e_internacao", "TEXT"),         # art. 92, 7º
     ("rc_assentos", "livro_e_ausencia_tempo", "TEXT"),     # art. 94, 3º
     ("rc_assentos", "livro_e_uniao_inicio", "TEXT"),       # data de início da união
+    # QUEM PRESIDIU O CASAMENTO — 15/10/2026, decisão do oficial ao responder o
+    # relato #124: o juiz de paz (presidente do ato, Lei 6.015/1973, art. 70)
+    # assina o termo, e o nome dele sai embaixo da linha da folha. Até aqui não
+    # havia onde guardá-lo: só o acervo trazia `strNomeCelebrante`, no blob.
+    # Só o casamento CIVIL — no religioso quem presidiu foi o celebrante.
+    # Opcional; sem índice, porque ninguém procura assento por ele.
+    ("rc_assentos", "juiz_de_paz", "TEXT"),
 )
 
 #: O INSTANTE A PARTIR DO QUAL O REGISTRO LAVRADO TEM DE TER O TERMO

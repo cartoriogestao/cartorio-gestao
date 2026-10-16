@@ -199,7 +199,9 @@ def test_sem_chave_a_recusa_diz_onde_gerar(tmp_path):
 def test_a_credencial_e_token_fora_do_banco():
     assert CRED.FORMA_DA_CENTRAL[CRED.CENSEC] == CRED.TOKEN
     assert CRED.ARQUIVO_DA_CENTRAL[CRED.CENSEC] == "censec.cred"
-    assert CRED.ambientes_de(CRED.CENSEC) == (CRED.HOMOLOGACAO, CRED.PRODUCAO)
+    # Só a produção na tela desde 15/10/2026; a homologação segue no código.
+    assert CRED.ambientes_de(CRED.CENSEC) == (CRED.PRODUCAO,)
+    assert set(CA.BASE_DO_AMBIENTE) >= {CRED.HOMOLOGACAO, CRED.PRODUCAO}
 
 
 def test_no_sandbox_a_producao_da_censec_nao_sai(monkeypatch):
@@ -209,7 +211,7 @@ def test_no_sandbox_a_producao_da_censec_nao_sai(monkeypatch):
     assert TRAVA.destino_seguro("hml.censec.org.br", 443) == ("hml.censec.org.br", 443)
 
 
-def test_a_tela_mostra_o_envio_e_o_botao_respeita_homologacao(cg_casa_logada, monkeypatch):
+def test_a_tela_envia_so_na_producao_e_recusa_homologacao(cg_casa_logada, monkeypatch):
     c = cg_casa_logada["c"]
     html = c.get("/notas/remessas?ano=2026&mes=10&quinzena=1").get_data(as_text=True)
     assert "Enviar pela API da CENSEC" in html
@@ -221,8 +223,17 @@ def test_a_tela_mostra_o_envio_e_o_botao_respeita_homologacao(cg_casa_logada, mo
     monkeypatch.setattr(CA, "enviar_quinzena", enviar)
     import re
     token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    # 15/10/2026: a tela não oferece mais a homologação (ordem do oficial).
+    assert 'value="HOMOLOGACAO"' not in html
+    r = c.post("/notas/remessas/enviar-api",
+               data={"ano": "2026", "mes": "10", "quinzena": "1",
+                     "ambiente": "PRODUCAO", "csrf_token": token})
+    assert r.status_code in (302, 303)
+    assert recebido == {"ambiente": "PRODUCAO", "quinzena": 1}
+    # homologação pedida à mão é recusada com a frase, e nada é enviado
+    recebido.clear()
     r = c.post("/notas/remessas/enviar-api",
                data={"ano": "2026", "mes": "10", "quinzena": "1",
                      "ambiente": "HOMOLOGACAO", "csrf_token": token})
     assert r.status_code in (302, 303)
-    assert recebido == {"ambiente": "HOMOLOGACAO", "quinzena": 1}
+    assert recebido == {}

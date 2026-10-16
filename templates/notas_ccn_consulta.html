@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Consulta {{ c.id }} ao CCN</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_ccn_consultas') }}">&larr; Consultas ao CCN</a>
+  <a class="button" href="{{ url_for('notas_ccn_consulta', consulta_id=c.id, ficha=indice) }}">Atualizar a tela</a>
+</div>
+
+<section class="panel">
+  <table>
+    <tr><th>CPF</th><td>{{ c.cpf[:3] }}.{{ c.cpf[3:6] }}.{{ c.cpf[6:9] }}-{{ c.cpf[9:] }}</td></tr>
+    <tr><th>Ambiente</th><td>{{ 'Homologação' if c.ambiente == 'HOMOLOGACAO' else 'Produção' }} &mdash; <code>{{ host }}</code></td></tr>
+    <tr><th>Pedida</th><td>{{ c.pedida_em[:16].replace('T', ' ') }} por {{ c.pedida_por or '—' }}</td></tr>
+    <tr><th>Código da consulta</th><td><code style="font-size:1.2em">{{ codigo }}</code>
+      <span class="muted">&mdash; cole na extensão «CG CCN Assistente», na aba do portal do CCN</span></td></tr>
+    <tr><th>Situação</th><td><strong>{{ {'PEDIDA': 'esperando a extensão', 'ENCONTRADA': 'encontrada', 'NAO_ENCONTRADA': 'o CCN não tem cadastro com este CPF', 'FALHOU': 'falhou'}.get(c.situacao, c.situacao) }}</strong>
+      {% if c.respondida_em %} &middot; respondida em {{ c.respondida_em[:16].replace('T', ' ') }}{% endif %}</td></tr>
+    {% if c.erro %}<tr><th>Erro</th><td>{{ c.erro }}</td></tr>{% endif %}
+    {% if c.aplicada_em %}<tr><th>Cartão completado</th><td>{{ c.aplicada_em[:16].replace('T', ' ') }} por {{ c.aplicada_por }}</td></tr>{% endif %}
+  </table>
+  {% if c.situacao == 'PEDIDA' %}
+  <div class="notice" style="margin:14px">
+    <strong>Como consultar:</strong> abra o portal do CCN neste servidor
+    (<code>https://{{ host }}</code>) e entre; no painel da extensão, cole o código acima em
+    «Código da consulta», digite o PIN do certificado A3 e clique em «Assinar e consultar».
+    O serviço A3 precisa estar no ar e o token plugado. Depois volte aqui e atualize a tela.
+  </div>
+  {% endif %}
+</section>
+
+{% if c.achados and not fichas %}
+<section class="panel">
+  <h2>Cadastros encontrados</h2>
+  <p style="padding:0 14px" class="muted">O CCN achou o CPF, mas a extensão não trouxe a ficha completa.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Nome</th><th>Cartório</th><th>Atualizado em</th></tr>
+    {% for a in c.achados %}
+    <tr><td>{{ a.name }}</td><td>{{ (a.notary or {}).name or a.subscriptionName }}</td><td>{{ (a.lastUpdate or '')[:10] }}</td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endif %}
+
+{% if fichas %}
+<section class="panel">
+  <h2>Fichas no CCN ({{ fichas | length }})</h2>
+  {% if fichas | length > 1 %}
+  <div class="actions" style="padding:0 14px">
+    {% for f in fichas %}
+    <a class="button{% if loop.index0 == indice %} primary{% endif %}" href="{{ url_for('notas_ccn_consulta', consulta_id=c.id, ficha=loop.index0) }}">{{ f.cartorio or ('Ficha ' ~ loop.index) }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% set f = fichas[indice] if indice < fichas|length else fichas[0] %}
+  {% for alerta in f.alertas %}
+  <div class="notice danger" style="margin:14px"><strong>Atenção:</strong> {{ alerta }}. Isto não se grava sozinho no cartão: quem decide é o balcão.</div>
+  {% endfor %}
+  <table>
+    <tr><th>Nome</th><td><strong>{{ f.nome }}</strong></td></tr>
+    <tr><th>Cartório de origem</th><td>{{ f.cartorio or '—' }}{% if f.cns %} (CNS {{ f.cns }}){% endif %}{% if f.criado_em %} &middot; cadastrado em {{ f.criado_em }}{% endif %}</td></tr>
+    {% for rotulo, valor in f.linhas %}
+    <tr><th>{{ rotulo }}</th><td>{{ valor }}</td></tr>
+    {% endfor %}
+    <tr><th>Biometria</th><td>foto {{ 'verificada' if f.face_verificada else 'não verificada' }} &middot; {{ f.digitais }} digital(is)</td></tr>
+    {% if f.arquivos %}<tr><th>Arquivos no CCN</th><td>{{ f.arquivos | join('; ') }}</td></tr>{% endif %}
+  </table>
+</section>
+
+<section class="panel">
+  <h2>O que a ficha acrescenta ao cartão de firma</h2>
+  {% if proposta.cartao is none %}
+  <p style="padding:0 14px">{{ proposta.motivo }}.</p>
+  {% else %}
+  <p style="padding:0 14px">Cartão nº <strong>{{ proposta.cartao.numero or proposta.cartao.id }}</strong> &mdash; {{ proposta.cartao.nome }}</p>
+  {% if proposta.preencher %}
+  <div class="table-wrap"><table>
+    <tr><th>Campo vazio no cartão</th><th>Valor no CCN</th></tr>
+    {% for p in proposta.preencher %}<tr><td>{{ p.rotulo }}</td><td>{{ p.valor }}</td></tr>{% endfor %}
+  </table></div>
+  <form method="post" action="{{ url_for('notas_ccn_consulta_aplicar', consulta_id=c.id) }}" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ficha" value="{{ indice }}">
+    <button class="primary">Completar o cartão com estes {{ proposta.preencher | length }} campo(s)</button>
+  </form>
+  {% else %}
+  <p style="padding:0 14px" class="muted">O cartão já tem tudo o que esta ficha traz.</p>
+  {% endif %}
+  {% if proposta.diferentes %}
+  <h3 style="padding:0 14px">Diferentes do cartão &mdash; não se trocam</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Campo</th><th>No cartão (fica)</th><th>No CCN</th></tr>
+    {% for d in proposta.diferentes %}<tr><td>{{ d.rotulo }}</td><td>{{ d.no_cartao }}</td><td>{{ d.no_ccn }}</td></tr>{% endfor %}
+  </table></div>
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

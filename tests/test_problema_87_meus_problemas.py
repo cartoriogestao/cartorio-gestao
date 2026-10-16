@@ -8,7 +8,7 @@ A FRASE DO RELATO
 
 O QUE SE MEDIU EM 23/09/2026, e o que isso decidiu
     * `ultimo_usuario` não serve para «os meus»: guarda o NOME do dia — o
-      mesmo Jean em «Jean Santos» (44) e «Mario Exemplo dos Santos» (24) —,
+      mesmo Mario em «Mario Santos» (44) e «Mario Exemplo dos Santos» (24) —,
       mistura login e nome conforme a origem, e é sobrescrito na repetição.
       Por isso `criado_por`, com o LOGIN, e só na primeira vez.
     * A auditoria sabe quem relatou em 92 de 92: é dela que os antigos ganham

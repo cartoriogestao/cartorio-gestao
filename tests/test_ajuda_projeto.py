@@ -58,10 +58,10 @@ def casa(tmp_path):
     app = create_app({"DATA_DIR": str(dados)})
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
     db = Database(banco)
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c = app.test_client()
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return {"app": app, "cliente": c, "banco": banco, "db": db}
@@ -133,10 +133,16 @@ def test_o_indice_nao_leva_a_primeira_frase_dos_documentos():
     para 162 documentos. Ele não mede tamanho — ele pega o RETORNO da primeira
     frase, que levaria o índice de volta aos 23.949 sem ninguém notar.
     """
+    # O TETO PASSOU A SER POR DOCUMENTO — 14/10/2026. O de 16.000 fixos foi
+    # medido com 162 documentos (~79 caracteres por linha); em 14/10 eram 201,
+    # com 16.401 (~82 por linha) e sem a primeira frase: a biblioteca cresceu,
+    # e não a linha. Com a frase de volta a linha média passaria de ~147
+    # (11.099 / 162 a mais), e 100 por documento continua pegando isso.
     indice = "\n".join(PROJ.indice())
-    assert len(indice) <= 16_000, (
+    teto = 100 * len(PROJ.documentos())
+    assert len(indice) <= teto, (
         "o índice dos documentos cresceu de mais — confira se a primeira frase "
-        f"voltou a ele ({len(indice)} caracteres)")
+        f"voltou a ele ({len(indice)} caracteres, teto {teto})")
     d = PROJ.documentos()[0]
     texto = (RAIZ / "DOCUMENTACAO" / d["arquivo"]).read_text(encoding="utf-8")
     prosa = [ln.strip() for ln in texto.splitlines()
@@ -368,7 +374,7 @@ def test_os_relatos_vao_com_o_numero(casa):
         AP.anotar(con, titulo="um defeito de ensaio", onde="ajuda_problemas",
                   caminho="/ajuda/problemas", detalhe="detalhe",
                   versao="3.6.32", agora="2026-08-29T09:00",
-                  usuario="jean", origem="RELATADO")
+                  usuario="mario", origem="RELATADO")
     texto = PROJ.para_a_consulta(con, versao="3.6.32")
     assert "#1" in texto
     assert "um defeito de ensaio" in texto

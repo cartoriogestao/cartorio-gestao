@@ -55,7 +55,7 @@ def _token(html: str) -> str:
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     return cg_casa
 
 def _con(casa):
@@ -156,7 +156,7 @@ def test_a_divergencia_vira_pendencia_declarada_com_os_dois_numeros(casa,
     acervo = _acervo_de_ensaio(tmp_path, intRegistroAtualCasamento=39)
     with con:
         _numeracao(con, "RC_B", maior=1011)
-        AC.semear_numeracao(con, agora=AGORA, usuario="jean", acervo=acervo)
+        AC.semear_numeracao(con, agora=AGORA, usuario="mario", acervo=acervo)
     abertas = IMP.abertas(con)
     doc = " ".join(str(x.get("motivo") or "") for x in abertas)
     assert "1011" in doc or "1.011" in doc
@@ -171,7 +171,7 @@ def test_a_pendencia_diz_quantos_numeros_o_livro_pularia(casa, tmp_path):
     acervo = _acervo_de_ensaio(tmp_path, intRegistroAtualCasamento=39)
     with con:
         _numeracao(con, "RC_B", maior=1011)
-        AC.semear_numeracao(con, agora=AGORA, usuario="jean", acervo=acervo)
+        AC.semear_numeracao(con, agora=AGORA, usuario="mario", acervo=acervo)
     doc = " ".join(str(x.get("motivo") or "") for x in IMP.abertas(con))
     assert "972" in doc                      # 1012 − 39 − 1
 
@@ -183,7 +183,7 @@ def test_o_contador_continua_semeado_apesar_da_divergencia(casa, tmp_path):
     acervo = _acervo_de_ensaio(tmp_path, intRegistroAtualCasamento=39)
     with con:
         _numeracao(con, "RC_B", maior=1011)
-        AC.semear_numeracao(con, agora=AGORA, usuario="jean", acervo=acervo)
+        AC.semear_numeracao(con, agora=AGORA, usuario="mario", acervo=acervo)
     linha = con.execute("SELECT * FROM nu_numeracao WHERE serie='RC_B'"
                         ).fetchone()
     assert int(linha["proximo"]) == 1012
@@ -197,9 +197,9 @@ def test_rodar_a_carga_duas_vezes_nao_reabre_o_que_o_oficial_resolveu(casa,
     acervo = _acervo_de_ensaio(tmp_path, intRegistroAtualCasamento=39)
     with con:
         _numeracao(con, "RC_B", maior=1011)
-        AC.semear_numeracao(con, agora=AGORA, usuario="jean", acervo=acervo)
+        AC.semear_numeracao(con, agora=AGORA, usuario="mario", acervo=acervo)
         antes = len(IMP.abertas(con))
-        AC.semear_numeracao(con, agora=AGORA, usuario="jean", acervo=acervo)
+        AC.semear_numeracao(con, agora=AGORA, usuario="mario", acervo=acervo)
     assert len(IMP.abertas(con)) == antes
 
 

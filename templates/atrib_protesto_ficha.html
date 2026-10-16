@@ -107,7 +107,8 @@
       <tr>
         <td><strong>{{ a.numero }}/{{ a.ano }}</strong>
             <div><small>{{ a.emitido_em[:10] }}
-                 {{ a.emitido_por or '' }}</small></div></td>
+                 {{ a.emitido_por or '' }}</small></div>
+            <a class="button small" href="{{ url_for('protesto_aviso_odt', aviso_id=a.id) }}">Imprimir</a></td>
         <td>{{ a.devedor_nome or '—' }}
             <div><small>{{ a.endereco or 'sem endereço' }}{% if a.bairro %},
                  {{ a.bairro }}{% endif %}</small></div></td>
@@ -278,6 +279,20 @@
         <input name="motivo" required placeholder="Credor desistiu antes do protesto"></label>
     {% elif ato == 'PAGAMENTO' %}
       <label>Valor pago <input name="valor_pago" placeholder="1.482,78"></label>
+      <label>Emolumentos <input name="emolumentos" placeholder="82,64"></label>
+      <label>Forma de pagamento
+        <select name="forma_pagamento" required>
+          <option value="">— escolha —</option>
+          <option value="ESPECIE">em espécie</option>
+          <option value="CHEQUE">por cheque</option>
+          <option value="PIX">por PIX</option>
+          <option value="TRANSFERENCIA">por transferência bancária</option>
+          <option value="BOLETO">por boleto</option>
+          <option value="CARTAO">por cartão</option>
+        </select>
+        <small>O Livro de Pagamentos exige (Código de Normas, art. 930).</small></label>
+      <label>Identificação <small>(banco e n.º do cheque, ou do comprovante)</small>
+        <input name="forma_identificacao"></label>
     {% elif ato == 'SUSTACAO' %}
       <label>Juízo <small>(de onde veio a ordem)</small>
         <input name="juizo" required

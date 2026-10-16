@@ -319,7 +319,7 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("aj_problemas", "diagnostico_codigo_linhas", "TEXT"),
     ("aj_problemas", "diagnostico_codigo_sha256", "TEXT"),
     # QUEM CRIOU, PELO LOGIN — relato #87, 23/09/2026. `ultimo_usuario` não
-    # serve para «os meus»: guarda o NOME do dia (o mesmo Jean está como «Jean
+    # serve para «os meus»: guarda o NOME do dia (o mesmo Mario está como «Mario
     # Santos» em 44 relatos e «Mario Exemplo dos Santos» em 24), mistura login
     # e nome conforme a origem, e é sobrescrito quando o problema se repete.
     # O login não muda com o nome. `preencher_criado_por` põe os antigos.

@@ -169,7 +169,7 @@ def test_conferir_nao_grava_nada(con):
 
 
 def test_importar_grava_e_marca_a_origem(con):
-    q = IMP.importar(con, _arquivo([_bom()]), agora=AGORA, por="jean")
+    q = IMP.importar(con, _arquivo([_bom()]), agora=AGORA, por="mario")
     assert q["entraram"] == 1
     linha = con.execute(
         "SELECT * FROM rc_assentos WHERE origem = ?",

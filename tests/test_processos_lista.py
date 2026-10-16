@@ -21,7 +21,7 @@ def _token(c, url):
 
 
 def _uid(db):
-    return _um(db, "SELECT id FROM users WHERE username='jean'")[0]
+    return _um(db, "SELECT id FROM users WHERE username='mario'")[0]
 
 
 def test_numero_do_processo():
@@ -107,7 +107,7 @@ def test_rascunho_lavrado_conclui_o_processo(cg_casa_logada):
     with db.transaction() as con:
         RASC.init_rascunho_schema(con)
         rid = RASC.salvar(con, tela="rascunhos", dados={"nome": "Beatriz Exemplo de Souza"},
-                          titulo="Óbito — Beatriz Exemplo de Souza", agora="2026-10-12T10:00:00", por="jean")["id"]
+                          titulo="Óbito — Beatriz Exemplo de Souza", agora="2026-10-12T10:00:00", por="mario")["id"]
     r = c.post(f"/rascunhos/{rid}/processo", data={"csrf_token": _token(c, "/rascunhos")})
     tid = int(re.search(r"/tarefas/(\d+)", r.headers["Location"]).group(1))
     vid = _um(db, "SELECT id FROM pr_vinculos WHERE task_id=?", (tid,))[0]

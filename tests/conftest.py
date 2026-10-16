@@ -15,7 +15,7 @@ API (use nos testes novos ou ao migrar um arquivo)
     cg_db        - Database() com DB restaurado ao seed (scope=function)
     cg_client    - app.test_client() fresco; depende de cg_db (reset incluso)
     cg_casa      - dict {app, cliente, c, banco, db, dados, acervo} limpo
-    cg_casa_logada - cg_casa + admin jean logado (nao usar em testes de auth)
+    cg_casa_logada - cg_casa + admin mario logado (nao usar em testes de auth)
     cg_login(client, user, senha) - helper de login com CSRF
 
 QUANDO NAO USAR
@@ -52,6 +52,22 @@ RAIZ = Path(__file__).resolve().parent.parent
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
+import os  # noqa: E402
+
+# MIGRAÇÃO PARA O POSTGRESQL (cópia MIGRACAO_PG, 15/10/2026): com
+# CG_TEST_BACKEND=pg e CG_PG_DSN, o banco de cada teste vai para um schema
+# próprio no PostgreSQL de teste, e o schema é apagado quando o teste acaba.
+# Sem a variável, a suíte roda no SQLite como sempre.
+BACKEND_PG = os.environ.get("CG_TEST_BACKEND", "").strip().lower() == "pg"
+if BACKEND_PG:
+    if not os.environ.get("CG_PG_DSN", "").strip():
+        raise RuntimeError("CG_TEST_BACKEND=pg exige CG_PG_DSN")
+    import banco_pg  # noqa: E402
+
+    banco_pg.instalar_desvio()
+# Os agentes da migração rodam pedaços da suíte em paralelo nesta cópia.
+SEM_TRAVA = os.environ.get("CG_SEM_TRAVA_DA_SUITE", "").strip() == "1"
+
 # A SERVENTIA DOS TESTES É FICTÍCIA — sanitização B3, 10/10/2026. As sementes
 # de `database.DEFAULT_SETTINGS` nascem vazias desde a B2b (a identidade vem
 # do perfil local), e os testes precisam de uma serventia preenchida: esta,
@@ -74,12 +90,12 @@ SERVENTIA_DE_TESTE = {
         ' ["RI", "carla", "beatriz", 0],'
         ' ["NOTAS", "carla", "beatriz", 0],'
         ' ["RCPJ_RTD", "carla", "beatriz", 0],'
-        ' ["RI_QUALIFICACAO", "beatriz", "jean", 0],'
-        ' ["NOTAS_QUALIFICACAO", "beatriz", "jean", 0],'
-        ' ["RCPJ_RTD_QUALIFICACAO", "beatriz", "jean", 0],'
-        ' ["PROTESTO", "elisa", "jean", 0],'
-        ' ["GESTAO", "jean", null, 0],'
-        ' ["TI", "alberto", "jean", 0]]'),
+        ' ["RI_QUALIFICACAO", "beatriz", "mario", 0],'
+        ' ["NOTAS_QUALIFICACAO", "beatriz", "mario", 0],'
+        ' ["RCPJ_RTD_QUALIFICACAO", "beatriz", "mario", 0],'
+        ' ["PROTESTO", "elisa", "mario", 0],'
+        ' ["GESTAO", "mario", null, 0],'
+        ' ["TI", "alberto", "mario", 0]]'),
 }
 import database as _database  # noqa: E402
 
@@ -122,6 +138,8 @@ def pytest_sessionstart(session) -> None:
     _ARVORE_INVALIDADA = False
     from tools.pytest_guard import TravaDaSuite
 
+    if SEM_TRAVA:
+        return
     if not hasattr(session.config, "workerinput"):
         _SESSAO_CONTROLADORA = session
         _TRAVA_SUITE = TravaDaSuite(RAIZ)
@@ -172,6 +190,12 @@ def pytest_sessionfinish(session, exitstatus) -> None:
     global _TRAVA_SUITE, _SESSAO_CONTROLADORA, _ARVORE_INVALIDADA
     from tools.pytest_guard import codigo_de_saida
 
+    if BACKEND_PG:
+        for esquema in banco_pg.schemas_criados():
+            try:
+                banco_pg.devolver_schema(esquema)
+            except Exception:  # noqa: BLE001 - limpeza não derruba o resultado
+                pass
     session.exitstatus = codigo_de_saida(exitstatus, _ARVORE_INVALIDADA)
     if _TRAVA_SUITE is not None:
         _TRAVA_SUITE.liberar()
@@ -206,7 +230,76 @@ def _tabelas_com_linha(con, tables, schema: str = "main") -> list[str]:
     return cheias
 
 
+def _pg_cru():
+    import psycopg
+
+    return psycopg.connect(os.environ["CG_PG_DSN"], autocommit=True)
+
+
+_FORA_DO_SEED = ("cg_meta", "cg_ddl", "cg_fk_pendentes")
+
+
+def _pg_tabelas(c, esquema: str) -> list[str]:
+    c.execute("SELECT table_name FROM information_schema.tables WHERE table_schema=%s "
+              "AND table_type='BASE TABLE' ORDER BY table_name", (esquema,))
+    return [r[0] for r in c.fetchall() if r[0] not in _FORA_DO_SEED]
+
+
+def _pg_com_linha(c, esquema: str, tabelas: list[str]) -> list[str]:
+    if not tabelas:
+        return []
+    partes = [f"(SELECT %s::text FROM \"{esquema}\".\"{t}\" LIMIT 1)" for t in tabelas]
+    c.execute(" UNION ALL ".join(partes), tabelas)
+    return [r[0] for r in c.fetchall()]
+
+
+def _pg_semear(db_path: Path, seed_path: Path) -> list[str]:
+    esquema = banco_pg.schema_do_caminho(db_path)
+    semente = banco_pg.schema_do_caminho(seed_path)
+    with _pg_cru() as pg, pg.cursor() as c:
+        c.execute(f'DROP SCHEMA IF EXISTS "{semente}" CASCADE')
+        c.execute(f'CREATE SCHEMA "{semente}"')
+        cheias = _pg_com_linha(c, esquema, _pg_tabelas(c, esquema))
+        for t in cheias:
+            c.execute(f'CREATE TABLE "{semente}"."{t}" AS SELECT * FROM "{esquema}"."{t}"')
+    banco_pg._SCHEMAS_CRIADOS.append(semente)
+    return cheias
+
+
+def _pg_restaurar(db_path: Path, seed_path: Path, seed_tables: list[str]) -> None:
+    esquema = banco_pg.schema_do_caminho(db_path)
+    semente = banco_pg.schema_do_caminho(seed_path)
+    with _pg_cru() as pg, pg.cursor() as c:
+        # conexão esquecida no meio de uma transação seguraria o TRUNCATE
+        c.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE "
+                  "application_name=%s AND state LIKE 'idle in transaction%%' "
+                  "AND pid<>pg_backend_pid()", (esquema[:60],))
+        sujas = _pg_com_linha(c, esquema, _pg_tabelas(c, esquema))
+        alvo = sorted(set(sujas) | set(seed_tables))
+        # DELETE e não TRUNCATE: o TRUNCATE troca os arquivos da tabela, e no
+        # Windows arquivo novo custa caro
+        c.execute("SET session_replication_role = replica")
+        for t in alvo:
+            c.execute(f'DELETE FROM "{esquema}"."{t}"')
+        for t in seed_tables:
+            c.execute(f'INSERT INTO "{esquema}"."{t}" SELECT * FROM "{semente}"."{t}"')
+        # a numeração automática volta ao maior id (ou ao 1) em toda tabela
+        # mexida — é o que o SQLite faz ao recolocar o sqlite_sequence do seed
+        c.execute(
+            "SELECT k.relname, a.attname FROM pg_attribute a JOIN pg_class k ON k.oid=a.attrelid "
+            "JOIN pg_namespace n ON n.oid=k.relnamespace WHERE n.nspname=%s AND "
+            "a.attidentity IN ('a','d') AND k.relname = ANY(%s)", (esquema, alvo))
+        for t, coluna in c.fetchall():
+            c.execute(
+                f"SELECT setval(pg_get_serial_sequence(%s, %s), "
+                f'COALESCE((SELECT MAX("{coluna}") FROM "{esquema}"."{t}"), 0) + 1, false)',
+                (f'"{esquema}"."{t}"', coluna))
+        c.execute("SET session_replication_role = origin")
+
+
 def _checkpoint(db_path: Path) -> None:
+    if BACKEND_PG:
+        return
     con = sqlite3.connect(str(db_path), timeout=30)
     try:
         con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -255,6 +348,8 @@ def _restaurar_do_seed(db_path: Path, seed_path: Path, seed_tables: list[str]) -
     Preferido a substituir o arquivo: no Windows conexoes sqlite vazadas do
     teste anterior travam shutil.copy; ATTACH+DELETE/INSERT convive com isso.
     """
+    if BACKEND_PG:
+        return _pg_restaurar(db_path, seed_path, seed_tables)
     con = sqlite3.connect(str(db_path), timeout=30)
     try:
         con.execute("PRAGMA foreign_keys=OFF")
@@ -325,13 +420,16 @@ def _cg_boot(cg_data_dir: Path) -> dict:
     app = create_app({"DATA_DIR": str(cg_data_dir)})
     db_path = _db_file(cg_data_dir)
     seed_path = _seed_file(cg_data_dir)
-    _checkpoint(db_path)
-    shutil.copy2(db_path, seed_path)
-    con = sqlite3.connect(str(seed_path))
-    try:
-        seed_tables = _tabelas_com_linha(con, _nomes_de_tabela(con))
-    finally:
-        con.close()
+    if BACKEND_PG:
+        seed_tables = _pg_semear(db_path, seed_path)
+    else:
+        _checkpoint(db_path)
+        shutil.copy2(db_path, seed_path)
+        con = sqlite3.connect(str(seed_path))
+        try:
+            seed_tables = _tabelas_com_linha(con, _nomes_de_tabela(con))
+        finally:
+            con.close()
     return {
         "app": app,
         "data_dir": cg_data_dir,
@@ -390,7 +488,7 @@ def cg_casa(cg_app, cg_db, _cg_boot) -> dict:
 
 @pytest.fixture
 def cg_casa_logada(cg_casa):
-    """cg_casa com admin padrao ja logado (jean / Senha#12345).
+    """cg_casa com admin padrao ja logado (mario / Senha#12345).
 
     Use quando o arquivo so precisa de um ADMIN logado e nao testa auth/login.
     NAO use em testes de login, CSRF anonimo, /setup ou troca de papel — esses
@@ -401,8 +499,26 @@ def cg_casa_logada(cg_casa):
     """
     SENHA = "Senha#12345"
     cg_casa["db"].create_user(
-        "jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN"
+        "mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN"
     )
     c = cg_casa["c"]
-    cg_login(c, "jean", SENHA)
+    cg_login(c, "mario", SENHA)
     return cg_casa
+
+
+@pytest.fixture(autouse=True)
+def _cg_pg_apaga_schemas_do_teste():
+    """No PostgreSQL, cada `Database(tmp_path)` cria um schema com centenas de
+    tabelas; sem apagar, a suíte enche o disco. O que nasceu durante o teste
+    morre com ele (os de módulo morrem no fim da sessão)."""
+    if not BACKEND_PG:
+        yield
+        return
+    antes = set(banco_pg.schemas_criados())
+    yield
+    for esquema in banco_pg.schemas_criados():
+        if esquema not in antes:
+            try:
+                banco_pg.devolver_schema(esquema)
+            except Exception:  # noqa: BLE001
+                pass

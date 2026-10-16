@@ -16,7 +16,7 @@ pagou quatro vezes.
 imprimiu, o texto do selo traz os valores em **25.634** — sem exceção:
 
     Poder Judiciário – TJMA. Selo: RECFIR000000003M1XKR7TEX6G33,
-    06/12/2021 14:38:30, Ato: 13.17.4, Parte(s): CELSO DOS SANTOS
+    06/12/2021 14:38:30, Ato: 13.17.4, Parte(s): TOMAS DOS SANTOS
     RIBEIRO, Rec Firma: Semelhança, Total R$ 18,11 Emol R$ 16,31
     FERC R$ 0,50 FADEP R$ 0,65 FEMP R$ 0,65
     Consulte em https://selo.tjma.jus.br

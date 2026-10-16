@@ -37,18 +37,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     usuario_nome = app.extensions["usuario_nome"]
 
     def ambiente_pedido() -> str:
-        """Qual ambiente a tela está olhando.
+        """Qual ambiente a tela usa: **sempre PRODUÇÃO, desde 14/10/2026**.
 
-        **`request.values`, e não `request.form`** — o defeito que apareceu
-        duas vezes na mesma noite, espelhado, na FUNAI e no IBGE.
-
-        **O padrão é homologação** — o mesmo par de ambientes da tabela
-        Centrais (homologação e produção). `TESTES` só entra se vier explícito
-        na URL ou no formulário (ensaio C1 no simulador).
+        Ordem do oficial no primeiro dia do protesto no sistema: «tire a
+        opção de funcionar na homologação, agora é tudo produção». Até 13/10
+        a tela lia `ambiente` do pedido, com homologação por padrão e `TESTES`
+        quando vinha no endereço; agora o que vier no endereço ou no
+        formulário não muda nada.
         """
-        pedido = str(request.values.get("ambiente") or "").strip().upper()
-        permitidos = set(CENTCRED.ambientes_de(CENTCRED.RESOLVE)) | {CENTCRED.TESTES}
-        return (pedido if pedido in permitidos else CENTCRED.HOMOLOGACAO)
+        return CENTCRED.PRODUCAO
 
     # ---------------------------------------------------------- a lista
 
@@ -66,8 +63,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             "protesto_resolve.html",
             titulos=titulos, quadro=quadro, enviadas=enviadas,
             ambiente=ambiente,
-            ambientes=CENTCRED.ambientes_de(CENTCRED.RESOLVE),
             tem_credencial=CENTCRED.tem(CENTCRED.RESOLVE, ambiente),
+            fora_de_uso=CENTCRED.fora_de_uso(CENTCRED.RESOLVE),
             estados=API.ESTADOS, maximo=API.MAXIMO_DO_LOTE)
 
     # ---------------------------------------------------------- o envio
@@ -149,8 +146,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             flash("Essa intimação não tem número na Central.", "warning")
             return redirect(url_for("protesto_resolve"))
         try:
-            historico = API.historico_de(item["intimacao_id"],
-                                         item["ambiente"])
+            # A INTIMAÇÃO DE HOMOLOGAÇÃO OU TESTES NÃO SE CONSULTA MAIS
+            # (14/10/2026) — `ambiente_de_uso` recusa com a frase.
+            historico = API.historico_de(
+                item["intimacao_id"],
+                CENTCRED.ambiente_de_uso(CENTCRED.RESOLVE, item["ambiente"]))
         except RECUSAS_DO_BALCAO as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_resolve_ficha",
@@ -180,7 +180,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             flash("Essa intimação não tem número na Central.", "warning")
             return redirect(url_for("protesto_resolve"))
         try:
-            r = API.pdf_da_intimacao(item["intimacao_id"], item["ambiente"])
+            r = API.pdf_da_intimacao(
+                item["intimacao_id"],
+                CENTCRED.ambiente_de_uso(CENTCRED.RESOLVE, item["ambiente"]))
         except RECUSAS_DO_BALCAO as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_resolve_ficha",

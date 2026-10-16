@@ -141,18 +141,18 @@ def test_reprocessar_e_local_e_so_para_quem_falhou(con):
         FILA.reprocessar(con, novo)
     FILA.pegar_proximo(con)
     FILA.marcar_falha(con, novo, "x", definitiva=True)
-    it = FILA.reprocessar(con, novo, por="jean")
+    it = FILA.reprocessar(con, novo, por="mario")
     assert it["status"] == SCH.PENDENTE and it["tentativas"] == 0
     ev = con.execute("SELECT evento, mensagem FROM centrais_log "
                      "ORDER BY id DESC LIMIT 1").fetchone()
-    assert ev["evento"] == "REPROCESSO" and "jean" in ev["mensagem"]
+    assert ev["evento"] == "REPROCESSO" and "mario" in ev["mensagem"]
     with pytest.raises(FILA.FilaError, match="não está na fila"):
         FILA.reprocessar(con, 9999)
 
 
 def test_cancelar_e_reprocessar_o_cancelado(con):
     novo = FILA.enfileirar(con, "CRA", "op", "r")
-    FILA.cancelar(con, novo, por="jean", motivo="duplicado")
+    FILA.cancelar(con, novo, por="mario", motivo="duplicado")
     assert FILA.item(con, novo)["status"] == SCH.CANCELADO
     with pytest.raises(FILA.FilaError):
         FILA.cancelar(con, novo)

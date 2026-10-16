@@ -19,6 +19,21 @@
   </small></p>
 </div>
 
+{# O QUE AINDA FALTA PARA A CRC E O SIRC (relato #130, 14/10/2026). Só aviso:
+   a correção não trava por isso. As frases são as das réguas da carga. #}
+{% if faltas_centrais %}
+<div class="notice warning" id="faltas-centrais" style="margin:0 0 14px">
+  <strong>Ainda falta para as centrais — este assento não sobe sem isto</strong>
+  <ul>
+    {% for f in faltas_centrais %}
+    <li><strong>{{ nome_da_central[f.central] }}:</strong> {{ f.falta }}</li>
+    {% endfor %}
+  </ul>
+  <p><small>É só aviso: a correção abaixo grava mesmo assim. Complete o que
+    puder conferir no livro de papel.</small></p>
+</div>
+{% endif %}
+
 <form method="post" class="grid2" style="padding:0">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
@@ -116,6 +131,17 @@
       <label>Testamento
         <input name="testamento" value="{{ form.get('testamento','') }}"></label>
       {% endif %}
+      {# AS QUATRO MARCAS DO ÓBITO (relato #131, 14/10/2026): a mesma pergunta
+         da lavratura. A carga da CRC recusa o óbito sem «deixou bens». Deixar
+         em branco não apaga resposta já dada. #}
+      {% for m in marcas_do_obito %}
+      <label>{{ m.pergunta }}
+        <select name="{{ m.chave }}">
+          <option value="">o declarante não sabe</option>
+          <option value="SIM" {% if form.get(m.chave) == 'SIM' %}selected{% endif %}>sim</option>
+          <option value="NAO" {% if form.get(m.chave) == 'NAO' %}selected{% endif %}>não</option>
+        </select></label>
+      {% endfor %}
       {% if assento.especie == 'NASCIMENTO' and locais %}
       <label>Onde nasceu <small>(o SIRC recusa o registro sem isto)</small>
         <select name="ibge_local">
@@ -192,6 +218,11 @@
         <input type="date" name="pacto_data" value="{{ form.get('pacto_data','') }}"></label>
       <label>Serventia do pacto
         <input name="pacto_serventia" value="{{ form.get('pacto_serventia','') }}"></label>
+      {% endif %}
+      {% if 'juiz_de_paz' in campos_termo %}
+      {# Relato #124, decisão de 15/10/2026: só o casamento civil. #}
+      <label>Juiz(a) de Paz que presidiu o ato <small>(nome)</small>
+        <input name="juiz_de_paz" value="{{ form.get('juiz_de_paz','') }}"></label>
       {% endif %}
     </div>
   </section>

@@ -60,6 +60,12 @@
                 protocolo_escolhido=protocolo_escolhido,
                 itens_do_protocolo=itens_do_protocolo,
                 reload_url=reload_url) }}
+      {#  A BUSCA VAI JUNTO, selo próprio — pedido do oficial, 15/10/2026.
+          A certidão sai da ficha de um registro conhecido: o «.9» vem marcado
+          e a tela diz por quê; o balcão troca se o pedido foi por nome. #}
+      {% from '_busca.html' import campo_busca %}
+      {{ campo_busca(busca_da_certidao(atribuicao, None,
+           identificado=(('certidão do registro nº ' ~ registro.numero ~ ', pedida pelo número de ordem') if registro.numero else None))) }}
       {#  COMO SAI O TEOR — 21/09/2026, «aplique o mesmo codigo do livro 2
           adaptado». O Livro 2 emite de dois modos, e o Livro 3 so tinha um.
 

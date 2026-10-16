@@ -23,7 +23,19 @@
       <small>Acha sem acento e sem caixa: <em>josé</em> acha <em>JOSÉ</em>.</small></label>
     <label>CPF ou CNPJ
       <input name="documento" value="{{ documento }}" placeholder="047.855.123-88">
-      <small>Com ponto e traço ou sem — tanto faz.</small></label>
+      <small>Com ponto e traço ou sem — tanto faz. <strong>Obrigatório para emitir</strong>
+        (Código de Normas, art. 906).</small></label>
+    <label>Protesto cancelado ou suspenso
+      <select name="autorizacao">
+        <option value="">não entra na certidão (a regra)</option>
+        {% for k, v in autorizacoes.items() %}
+          <option value="{{ k }}" {% if autorizacao == k %}selected{% endif %}>entra: {{ v }}</option>
+        {% endfor %}
+      </select>
+      <small>Lei 9.492, art. 27, § 2º; Código de Normas, arts. 944 e 948: só com
+        requerimento escrito do devedor ou ordem judicial.</small></label>
+    <label>Ordem judicial <small>(juízo e processo, se for o caso)</small>
+      <input name="autorizacao_ref" value="{{ autorizacao_ref }}"></label>
     <label>Período de busca
       <select name="anos">
         {% for n in [5, 10, 20, 30] %}
@@ -50,7 +62,9 @@
       <strong>Nenhum protesto</strong> contra {{ nome or documento }} no período.
       A certidão que cabe é a <strong>NEGATIVA</strong>.
       <br><br>
-      <small>Só entra título que <strong>chegou a protesto</strong>. Apontamento não é
+      <small>Protesto cancelado ou com efeitos suspensos <strong>não entra</strong>, salvo
+      requerimento escrito do devedor ou ordem judicial.
+      Só entra título que <strong>chegou a protesto</strong>. Apontamento não é
       protesto: título apontado e pago no tríduo nunca foi protestado, e certidão que o
       mostrasse mentiria contra a pessoa.</small>
     </div>
@@ -93,6 +107,8 @@
     <input type="hidden" name="nome" value="{{ nome }}">
     <input type="hidden" name="documento" value="{{ documento }}">
     <input type="hidden" name="anos" value="{{ anos }}">
+    <input type="hidden" name="autorizacao" value="{{ autorizacao }}">
+    <input type="hidden" name="autorizacao_ref" value="{{ autorizacao_ref }}">
 
     <label>Tipo
       <select name="tipo">
@@ -111,6 +127,10 @@
 
     <label>Selo <small>(opcional)</small>
       <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
+    {# A BUSCA VAI JUNTO, selo próprio — pedido do oficial, 15/10/2026. A
+       faixa sai do período pesquisado. #}
+    {% from '_busca.html' import campo_busca %}
+    {{ campo_busca(busca_da_certidao('PROTESTO', anos=anos), pede_data=True) }}
     {{ quadro(receita, caixa, protocolos) }}
 
     <div class="actions" style="grid-column:1/-1">

@@ -51,8 +51,8 @@ from ri_numeros_do_teor import (  # noqa: E402
 SENHA = "Senha#12345"
 
 TEOR_ANTIGO = ("R-1/2.500 - IMOVEL: uma area de terras rurais na Fazenda Boa "
-               "Lembranca, com 38,55,55 ha. PROPRIETARIO: HELENA CRISTINA "
-               "MACHADO CARDOSO.")
+               "Lembranca, com 38,55,55 ha. PROPRIETARIO: BEATRIZ EXEMPLO "
+               "DE SOUZA.")
 
 TEOR_DO_ATO = ("AV-02/2500 - CANCELAMENTO INTEGRAL DE HIPOTECA CEDULAR DE 1o "
                "GRAU. Cidade Exemplo/MA, 14 de setembro de 2026. (PROTOCOLO no "
@@ -189,7 +189,11 @@ def _lavrar(casa, mid, *, numero=4, teor=TEOR_DO_ATO):
                               # e por isso que estes testes ficaram vermelhos
                               # naquela data — nao por defeito do que medem.
                               "natureza_titulo": "Compra e venda",
-                              "codigo_tj": "16.3"},
+                              "codigo_tj": "16.3",
+                              # E O 16.3 EXIGE O VALOR DECLARADO desde
+                              # 23/09/2026 (o TJ recusava o selo sem ele,
+                              # R-01/4019): a recusa tambem e antes do ato.
+                              "base_calculo": "1000,00"},
                         follow_redirects=True)
 
 

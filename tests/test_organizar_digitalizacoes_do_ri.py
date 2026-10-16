@@ -60,7 +60,7 @@ def _entrar(app, usuario: str):
 def casa(cg_casa):
     """Uma ficha com quatro páginas, e duas pessoas de papéis diferentes."""
     db = cg_casa["db"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.create_user("balcao", "LAURA MARIA DA COSTA", SENHA, "USER")
     con = sqlite3.connect(cg_casa["banco"])
     with con:
@@ -90,7 +90,7 @@ def casa(cg_casa):
             (outra, "da-outra-ficha.0001", r"C:\ARPNET\outra", 1))
     con.close()
     return {**cg_casa, "mid": mid, "outra": outra,
-            "cliente": _entrar(cg_casa["app"], "jean")}
+            "cliente": _entrar(cg_casa["app"], "mario")}
 
 
 def _paginas(casa, matricula_id=None):

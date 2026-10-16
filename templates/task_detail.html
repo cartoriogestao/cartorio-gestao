@@ -102,8 +102,56 @@
       aguarda ou conclui. O motivo e o seu nome ficam no histórico.</small>
     </form>
   </details>
+  {#
+    SUSPENDER A COBRANÇA — relato #132, 14/10/2026: «permitir suspender a
+    exigência da tarefa ou expediente por tempo, ou condicionar ao retorno de
+    algo, como no caso de emissão de nota devolutiva e espera do retorno do
+    cliente». A tarefa continua aqui, com a situação que tinha; o que para é a
+    cobrança. O motivo e o seu nome ficam no histórico.
+  #}
+  {% if not suspensao and user.role != 'AUDITOR' %}
+  <details class="cancelar-ato suspender-cobranca">
+    <summary>Suspender a cobrança</summary>
+    <form method="post" class="stack compact">
+      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+      <input type="hidden" name="action" value="suspender">
+      {% for codigo, rotulo in MODOS_DE_SUSPENDER.items() %}
+      <label class="checkbox-label"><input type="radio" name="modo" value="{{ codigo }}" required> {{ rotulo }}</label>
+      {% endfor %}
+      <label>Até a data (por prazo) <input type="date" name="ate" min="{{ amanha }}"></label>
+      <label>A condição (por condição)
+        <input name="condicao" placeholder="Ex.: aguardando o cliente trazer o documento pedido na nota devolutiva"></label>
+      <input name="motivo" required minlength="10" placeholder="Por que a cobrança para?">
+      <button>Suspender</button>
+      <small class="muted">Enquanto suspensa, a tarefa não conta como pendente nem como
+      vencida — no painel, nos avisos, no escalonamento ao substituto e na cobrança diária.
+      O prazo para de correr: ao retomar, o vencimento anda os dias que ela ficou suspensa
+      (por prazo, ele já anda ao suspender). Por prazo, ela volta sozinha no dia marcado.</small>
+    </form>
+  </details>
+  {% endif %}
   {% endif %}
 </div>
+{% if suspensao and row.status not in ('CONCLUIDA', 'CANCELADA') %}
+<div class="notice warning tarefa-suspensa">
+  <strong>{{ suspensao.rotulo }}</strong> — desde {{ fmt_date(suspensao.desde) }}.
+  Motivo: {{ suspensao.motivo }}.
+  {% if suspensao.prazo_original %}<br><small class="muted">Vencimento antes da suspensão: {{ fmt_date(suspensao.prazo_original) }}{% if row.due_date and row.due_date != suspensao.prazo_original %}; com a pausa, {{ fmt_date(row.due_date) }}{% endif %}.</small>{% endif %}
+  <br><small class="muted">Enquanto suspensa, esta tarefa não é cobrada: não conta como pendente nem como vencida.
+  {# A ENTRADA DO MALOTE NÃO SE SUSPENDE SOZINHA — decisão do oficial em 15/10/2026:
+     ela se suspende por este processo, que é a obrigação dela. #}
+  {% if row.linked_expediente_id %}O expediente ligado fica suspenso junto, por este processo.{% endif %}</small>
+  {% if user.role != 'AUDITOR' %}
+  <form method="post" class="inline-form" style="margin-top:6px">
+    <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <input type="hidden" name="action" value="retomar">
+    <input name="motivo" required minlength="10" size="50"
+           placeholder="{% if suspensao.condicao %}A condição se cumpriu? O que aconteceu{% else %}Por que retomar antes da data{% endif %}">
+    <button class="primary">Retomar agora</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
 {# O QUE FAZER — o texto didático das tarefas do gestor (06/10/2026: «precisa
    ficar bem claro o que foi errado, como resolver e onde acessar o ato com
    erro»). A descrição continua editável lá embaixo; aqui ela é LIDA, com os
@@ -132,6 +180,13 @@
     · <a href="{{ url_for('attachment_download', attachment_id=a.id) }}">baixar</a>
     <small>{{ a.tamanho|filesize }} · {{ a.de_onde }}</small></li>
   {% else %}<li class="muted">Nenhum documento na pasta. O que chegou com o pedido se anexa na peça de origem (o expediente, a prenotação) ou aqui, em «Evidências».</li>{% endfor %}</ul>
+  {# relato #135: os retirados com motivo ficam à parte, e não somem. #}
+  {% if pasta_retirados %}
+  <details><summary class="small">Retirados ({{ pasta_retirados|length }}) — continuam guardados, com o motivo</summary>
+    <ul class="file-list small">{% for a in pasta_retirados %}<li><a href="{{ url_for('attachment_view', attachment_id=a.id) }}" target="_blank">{{ a.nome }}</a>
+      <small>{{ a.de_onde }} · retirado por {{ a.retirado_por or '—' }} em {{ (a.retirado_em or '')[:16]|replace('T', ' ') }}: «{{ a.retirado_motivo }}»</small></li>{% endfor %}</ul>
+  </details>
+  {% endif %}
   <details><summary>Pôr uma peça na pasta</summary>
     <form method="post" action="{{ url_for('processo_pasta_vincular', task_id=row.id) }}" class="form-grid">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

@@ -69,18 +69,18 @@ def casa(tmp_path):
     app = create_app({"DATA_DIR": str(dados)})
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
     db = Database(banco)
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     db.create_user("robo_teste", "Robo de Testes", SENHA, "ADMIN", eh_robo=1)
     con = sqlite3.connect(banco)
     with con:
         PP.receber_remessa(con, fornecedor="ARPENBRASIL", serie="IA",
                            codigo_de=FOLHAS[0], codigo_ate=FOLHAS[-1],
-                           agora=AGORA, nota_fiscal="NF TESTE", usuario="JEAN")
+                           agora=AGORA, nota_fiscal="NF TESTE", usuario="MARIO")
     con.close()
     bancada = {"app": app, "banco": banco, "dados": dados, "db": db}
     with ligar_o_selador(bancada) as aparelho:
         bancada["aparelho"] = aparelho
-        bancada["humano"] = _login(app.test_client(), "jean")
+        bancada["humano"] = _login(app.test_client(), "mario")
         yield bancada
 
 
@@ -95,12 +95,14 @@ def _minimo(especie):
         return {"pessoa_nome": "CRIANCA TESTE FOLHA", "pessoa_sexo": "M",
                 "data_fato": "2026-10-01",
                 "local_fato_nome": "Hospital Municipal",
+                "ibge_local": "1",    # relato #130: o SIRC exige
                 "filiacao1_nome": "MARIA TESTE", "filiacao2_nome": "IGNORADO",
                 "declarante_nome": "MARIA TESTE"}
     return {"pessoa_nome": "FALECIDO TESTE FOLHA", "data_fato": "2026-10-01",
             "local_fato_nome": "Hospital Municipal", "numero_do": "98765",
             "filiacao1_nome": "IGNORADO", "filiacao2_nome": "IGNORADO",
-            "declarante_nome": "FULANO"}
+            "declarante_nome": "FULANO",
+            "obito_possui_bens": "NAO"}   # relato #130: a CRC exige
 
 
 SLUG = {"NASCIMENTO": "nascimento", "OBITO": "obito"}

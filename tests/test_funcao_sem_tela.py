@@ -183,7 +183,9 @@ JA_SABIDAS: frozenset[str] = frozenset({
     # devolve erro. Ela sai desta lista no dia em que a integracao existir.
     "solicitar",
     "somam_um",
-    "somar", "texto_corrido", "texto_puro", "trimestre_de",
+    # `texto_corrido` SAIU em 14/10/2026: a montagem do ato das Notas
+    # (`notas_teor._corrido`) passou a chamá-la — o ato em texto corrido.
+    "somar", "texto_puro", "trimestre_de",
     "vai_direto_para_edital", "valida_cnm", "valor_doi", "voltar_ao_padrao",
 })
 
@@ -212,9 +214,6 @@ NASCIDAS_DEPOIS_DA_3_6_51: dict[str, str] = {
     # destas tres vem quando ele voltar. Constru-las agora seria construir
     # tela para modulo que o balcao nao ve.
     "por_que_nao_esta_completo": "protesto_instrumento — o modulo esta desligado",
-    # A ASSINATURA DIGITAL ainda nao tem tela: o delegatario assina fora do
-    # sistema, e a tela de subir o `.p7s` e o proximo passo dela.
-    "por_que_nao_serve": "assinatura_digital — a tela de subir o assinado nao existe ainda",
     # AUXILIARES DO CENPROT que a tela nao chama: ela mostra `quantos_sem_chave`
     # e nao a lista, e le a data pela decomposicao inteira.
     "titulos_sem_chave": "protesto_cenprot — a tela mostra a CONTAGEM, nao a lista",
@@ -269,9 +268,8 @@ REVELADAS_AO_SEPARAR_PROSA_DE_CHAMADA: dict[str, str] = {
     # A API conserva a operacao GET do contrato. A tela corrente concilia pela
     # lista (`indicadores`) e pelo rastro local, sem abrir o GET individual.
     "indicador": "onr_api — operacao individual do contrato ainda sem botao",
-    # O Protesto esta fora do alcance do balcao por ordem do oficial; a leitura
-    # por id fica junto das outras funcoes desse modulo ja declaradas acima.
-    "instrumento": "protesto_instrumento — o modulo esta desligado",
+    # `protesto_instrumento.instrumento` SAIU DAQUI EM 14/10/2026: a rota do
+    # papel do instrumento (`/protesto/instrumentos/<id>/odt`) passou a lê-la.
 }
 
 
@@ -464,11 +462,10 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     "detalhes_do_protocolo": _SAEC, "gerar_cobranca": _SAEC,
     "interagir_no_atendimento": _SAEC, "tipos_de_pagamento": _SAEC,
     "validar_token_do_protocolo": _SAEC,
-    "cadeia_dominial": _DOMINIAL, "classificar_dominio": _DOMINIAL,
-    "conteudo_vintenaria": _DOMINIAL, "desde_da_janela": _DOMINIAL,
-    "extrair_numeros_registro_anterior": _DOMINIAL, "normalizar_anos": _DOMINIAL,
-    "normalizar_numero_matricula": _DOMINIAL, "parsear_numeros_digitados": _DOMINIAL,
-    "sugerir_numeros_origem": _DOMINIAL,
+    # As nove de `ri_dominial` (cadeia_dominial, conteudo_vintenaria e as
+    # auxiliares delas) SAÍRAM desta lista em 14/10/2026: a certidão dominial
+    # e a vintenária voltaram para a ficha da matrícula (`ri_web`), e com elas
+    # a porta. Fica só a que continua sem chamador.
     "atos_na_janela": "ri_dominial — " + _SEM,
     "atualizar_andamento_cenprot": "dev_projetos — " + _SEM,
     "claros_documento": "notas_atas_ensaio/notas_procuracao_ensaio — " + _SEM,
@@ -480,6 +477,10 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     "buscar_duplicatas_por_documento": "cpf_cnpj — " + _TESTE,
     "mensagem_documento_invalido": "cpf_cnpj — " + _TESTE,
     "carregar_privada": "assinatura_da_atualizacao — a porta é `tools/criar_atualizacao.py` (assinar o .cgu)",
+    # 14/10/2026: a porta é `tools/conferir_instalacao.py emergencia`, que o
+    # SERVIDOR\ATUALIZAR_SISTEMA.cmd chama depois de copiar — de propósito sem
+    # tela: a emergência é o caminho que não passa pela tela de Atualizações.
+    "registrar_emergencia": "retrato_da_instalacao — " + _TOOLS + " (o ATUALIZAR_SISTEMA.cmd a chama)",
     "contagem_criticas_notificacao": "tarefa_processo — " + _TOOLS + " (release 262)",
     "contagem_pendentes_nao_criticas": "tarefa_processo — " + _TOOLS + " (release 262)",
     "contagem_pendentes_notificacao": "tarefa_processo — " + _TOOLS + " (release 262)",
@@ -513,6 +514,35 @@ ACHADAS_EM_13_10_2026: dict[str, str] = {
 }
 
 
+# 14/10/2026 — achada na suíte inteira desse dia. Escrita em 13/10/2026 pela
+# passada do Protesto («a virada do protesto»: marcar como já informados à CRA
+# os atos do E-Ofício que os arquivos da pasta da CRA provam). Medido em
+# 14/10: nenhum chamador na raiz, em `tests/`, em `tools/`, em FERRAMENTAS nem
+# no INSTALAR; quem a chamou foi o script pontual
+# `CartorioGestao/tmp/protesto_virada_20261013/2_virada.py`, fora da árvore
+# do sistema. Fica DECLARADA, e não apagada: o módulo é de outra passada, e
+# ligar a porta (tela ou script de `tools/`) é decisão dela.
+#
+# E A FILA COMUM DAS CENTRAIS (marco b, 05/10/2026) PERDEU A ÚNICA PORTA NO
+# MESMO DIA, às 08h44: a passada do Protesto tirou a homologação das telas da
+# CRA e da CENPROT («SÓ PRODUÇÃO, E DIRETO (14/10/2026)», `cra21_web.py` e
+# `cenprot_web.py`), e o teste de ligação em homologação era quem chamava
+# `testar_pela_fila`. As peças continuam testadas em
+# `tests/test_centrais_fila.py`. Religar ou apagar é decisão daquela passada.
+_FILA = ("centrais_fila — a porta (teste de ligação em homologação) saiu da "
+         "tela em 14/10/2026; testada, sem chamador no sistema")
+ACHADAS_EM_14_10_2026: dict[str, str] = {
+    "marcar_o_que_o_eoficio_ja_informou":
+        "protesto_retorno — virada do protesto (13/10); a porta foi o script "
+        "pontual tmp/protesto_virada_20261013/2_virada.py, fora do sistema",
+    "devolver_presos": _FILA, "enfileirar": _FILA,
+    "espera_da_tentativa": _FILA, "marcar_confirmado": _FILA,
+    "marcar_enviado": _FILA, "marcar_falha": _FILA, "pegar_proximo": _FILA,
+    "processar_proximo": _FILA,
+    "testar_pela_fila": "protesto_centrais_fila — " + _FILA,
+}
+
+
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
     return (set(JA_SABIDAS) | set(NASCIDAS_DEPOIS_DA_3_6_51)
@@ -523,7 +553,8 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_05_10_2026)
             | set(ACHADAS_EM_08_10_2026)
             | set(ACHADAS_EM_12_10_2026)
-            | set(ACHADAS_EM_13_10_2026))
+            | set(ACHADAS_EM_13_10_2026)
+            | set(ACHADAS_EM_14_10_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

@@ -215,10 +215,10 @@ def logado(cg_casa):
     banco = cg_casa['banco']
     dados = cg_casa['dados']
     db = cg_casa['db']
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c = app.test_client()
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return {"app": app, "cliente": c, "banco": banco, "db": db}

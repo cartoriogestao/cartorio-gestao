@@ -47,6 +47,17 @@ def pacote() -> tuple[bytes, str]:
 
 
 class UpdateApprovalWebTests(unittest.TestCase):
+    def setUp(self):
+        # Pacote montado à mão, sem assinatura. Desde 14/10/2026 há chave
+        # cadastrada e o pacote sem assinatura é recusado antes da aprovação;
+        # a assinatura tem os testes dela em test_assinatura_da_atualizacao.py.
+        # Aqui, o modo de transição — como em test_update_network.py.
+        import assinatura_da_atualizacao as ASS
+        from unittest import mock
+        trava = mock.patch.object(ASS, "CHAVES_CONFIAVEIS", {})
+        trava.start()
+        self.addCleanup(trava.stop)
+
     def test_preparar_nao_aplica_e_aprovacao_exige_senha(self):
         from app import create_app
 

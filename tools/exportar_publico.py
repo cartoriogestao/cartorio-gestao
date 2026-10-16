@@ -62,7 +62,11 @@ RAIZ = Path(__file__).resolve().parent.parent
 
 SEMENTES_DO_APP = ("app",)
 PASTAS = ("templates", "static", "tests", "tools", "installer", "modelos",
-          "modelos_papeis", "schemas", "ci", ".github", "docs")
+          "modelos_papeis", "schemas", "ci", ".github", "docs",
+          # A EXTENSÃO DO NAVEGADOR DO CCN (15/10/2026): sem ela o envio ao
+          # CCN e a consulta não funcionam em outra serventia. Entra só a
+          # extensão; o README e o contrato ficam (ver FORA_POR_DECISAO).
+          "ccn_assistente")
 ARQUIVOS_DE_PROJETO = ("README.md", "requirements.txt", "requirements-build.txt",
                        "VERSAO.txt", ".gitignore", ".gitleaks.toml",
                        ".env.example", "LICENSE", "LICENSE.md", "pyproject.toml",
@@ -72,10 +76,17 @@ ARQUIVOS_DE_PROJETO = ("README.md", "requirements.txt", "requirements-build.txt"
                        # sairia com um instalador que não instala.
                        "INSTALAR_SERVIDOR.cmd", "INSTALAR_CLIENTE.cmd",
                        "REPARAR_REDE.cmd", "DIAGNOSTICAR_INSTALACAO.cmd",
-                       "RODAR_SUITE_RAPIDA.cmd", "RODAR_SUITE_COMPLETA.cmd")
+                       "RODAR_SUITE_RAPIDA.cmd", "RODAR_SUITE_COMPLETA.cmd",
+                       # O SANDBOX DE DEMONSTRAÇÃO (15/10/2026): um clique liga
+                       # uma instalação fictícia e isolada para quem baixou.
+                       "INICIAR_SANDBOX.cmd")
 # A FICAR DE FORA ATÉ O OFICIAL DECIDIR (ver docstring).
 FORA_POR_DECISAO = ("DOCUMENTACAO/*", "CLAUDE.md", "AGENTS.md",
                     "modelos/_preview/*",
+                    # o README da extensão é da casa (caminhos e contatos), e o
+                    # contrato é trecho de documentação de terceiro; a
+                    # instalação da extensão está em docs/REQUISITOS.md.
+                    "ccn_assistente/README.md", "ccn_assistente/contrato/*",
                     # o diário da casa guardado como dado (11/10/2026): as notas
                     # do desenvolvimento sobre os relatos do oficial e o
                     # relatório da inspeção de 12/08/2026. O sistema roda sem

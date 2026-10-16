@@ -225,11 +225,25 @@ def test_o_ambiente_faz_parte_da_chave(monkeypatch):
     verdade não entraria, sem erro em lugar nenhum."""
     db = BancoDeMesa(banco())
     api_devolve(monkeypatch, [anuencia(1)], db=db)
-    P.baixar(db, CN.ANUENCIA, ambiente=CRED.HOMOLOGACAO)
-    P.baixar(db, CN.ANUENCIA, ambiente=CRED.PRODUCAO)
+    # 14/10/2026 («agora é tudo produção»): a baixa de homologação não se faz
+    # mais, e a pendência de homologação que já estava no banco é a que fica
+    # de exemplo — a chave continua com o ambiente, e por isso a anuência 1
+    # de produção entra ao lado dela.
+    with db.transaction() as con:
+        con.execute(
+            """INSERT INTO cn_pendencias (especie, ambiente, codigo, teor,
+                   baixada_em, situacao) VALUES (?,?,?,?,?,?)""",
+            (CN.ANUENCIA, CRED.HOMOLOGACAO, "1", "{}", AGORA, CN.PENDENTE))
+    with pytest.raises(CRED.CredencialError):
+        P.baixar(db, CN.ANUENCIA, ambiente=CRED.HOMOLOGACAO)
+    r = P.baixar(db, CN.ANUENCIA)
+    assert r["ambiente"] == CRED.PRODUCAO and r["entraram"] == 1
     linhas = db.con.execute(
         "SELECT ambiente FROM cn_pendencias ORDER BY ambiente").fetchall()
     assert [r[0] for r in linhas] == [CRED.HOMOLOGACAO, CRED.PRODUCAO]
+    # e só a de produção conta no painel e na fila
+    linha = {x["especie"]: x for x in P.painel(db.con)}[CN.ANUENCIA]
+    assert linha["esperando"] == 1
 
 
 def test_pendencia_sem_codigo_nao_entra(monkeypatch):

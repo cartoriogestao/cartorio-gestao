@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Tela dos modelos de averbacao com formulario proprio (HOTFIX-2026-10-09-04).
 
-So LE o banco. O POST "Gerar texto" mostra a previa; "Levar para a averbacao"
-guarda o texto na sessao e abre /rcpn/<id>/averbar ja preenchido - o
+So LE o banco. O POST "Gerar texto" mostra a previa numa caixa EDITAVEL (relato
+#127, 15/10/2026); "Levar para a averbacao" guarda o texto da caixa, como o
+escrevente o deixou, na sessao e abre /rcpn/<id>/averbar ja preenchido - o
 lancamento (e o selo) continuam sendo o botao da tela padrao, pelo escrevente.
 As rotas se chamam `rcpn_*` para cair no modulo RCPN do menu/permissoes.
 """
@@ -68,17 +69,31 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=Non
                 valores = RAM.valores_do_formulario(slug, request.form)
         previa = None
         if request.method == "POST":
+            acao = request.form.get("acao")
+            # O texto da prévia é editável (relato #127, 15/10/2026: «tela não tem
+            # edição de texto»). Em «Levar» vai o que o escrevente deixou na caixa,
+            # e NÃO o texto remontado — senão a correção dele se perderia calada.
+            # Em «Gerar texto» o modelo remonta, e a tela avisa disso.
+            teor_editado = str(request.form.get("teor") or "").strip()
+            fund_editado = str(request.form.get("fundamento_ato") or "").strip()
             try:
                 previa = RAM.montar(slug, valores, assento)
             except RAM.ModeloErro as e:
                 flash(str(e), "danger")
-            if previa and request.form.get("acao") == "levar":
+                if acao == "levar" and teor_editado:
+                    # Recusa não apaga o que foi editado: a caixa volta com o texto.
+                    previa = {"teor": teor_editado, "fundamento": fund_editado,
+                              "natureza": "retificacao", "recusado": True}
+            if previa and not previa.get("recusado") and acao == "levar":
+                editou = bool(teor_editado) and teor_editado != previa["teor"]
                 session[RAM.CHAVE_DA_SESSAO] = {
-                    "assento_id": assento_id, "teor": previa["teor"],
-                    "fundamento": previa["fundamento"], "natureza": previa["natureza"],
-                    "modelo": slug}
-                flash("Texto do modelo levado para a averbação. Confira antes de lançar.",
-                      "info")
+                    "assento_id": assento_id,
+                    "teor": teor_editado or previa["teor"],
+                    "fundamento": fund_editado or previa["fundamento"],
+                    "natureza": previa["natureza"], "modelo": slug, "editado": editou}
+                flash("Texto do modelo levado para a averbação"
+                      + (", com as suas alterações" if editou else "")
+                      + ". Confira antes de lançar.", "info")
                 return redirect(url_for("rcpn_averbar", assento_id=assento_id))
         return render_template("atrib_rcpn_averbacao_modelo.html", assento=assento,
                                modelo=m, valores=valores, previa=previa)

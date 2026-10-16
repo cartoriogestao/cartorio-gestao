@@ -49,3 +49,17 @@ regexes = [
   # Regex de mascaramento do centrais_log (detecta Bearer/Basic em mensagens)
   '''^_PORTADOR\s*=\s*re\.compile\(r"\(\?i\)\\b\(bearer\|basic\)''',
 ]
+
+# 14/10/2026 (1a publicacao): o token de 24 caracteres do QR de um selo do
+# acervo, decodificado a mao em 27/08, aparece em comentarios e em
+# tests/test_qr_do_selo.py e tests/test_rc_certidao_impressao.py (TOKEN = ...).
+# Nao e credencial: e o conteudo impresso no QR do papel, nao abre consulta
+# nenhuma (o portal procura pelo numero do selo) e nao traz dado de pessoa.
+# A regra generic-api-key o pega pela entropia e pelo nome TOKEN. Excecao
+# estreita: so este valor exato, como segredo.
+[[allowlists]]
+description = "Token do QR de selo do acervo (conteudo impresso no papel, nao credencial)"
+regexTarget = "secret"
+regexes = [
+  '''^MDGaPtZuqUKD4FtmC82CK5al$''',
+]

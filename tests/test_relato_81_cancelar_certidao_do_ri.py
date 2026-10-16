@@ -383,7 +383,7 @@ def test_quem_cancelou_e_o_NOME_e_nao_o_login(cg_casa_logada):
 
     `emitida_por_nome` grava «MARIO EXEMPLO DOS SANTOS» — é o nome que a
     certidão imprime embaixo da assinatura. O cancelamento gravava
-    `_usuario_atual()`, que devolve «jean»: duas convenções na mesma linha, e
+    `_usuario_atual()`, que devolve «mario»: duas convenções na mesma linha, e
     quem lê meses depois pergunta «quem cancelou isto?», que o login não
     responde. É a régua do rastro da minuta e da reabertura, e a mesma do RCPN,
     que o relato mandou imitar — e o defeito só apareceu porque a ficha passou a
@@ -398,7 +398,7 @@ def test_quem_cancelou_e_o_NOME_e_nao_o_login(cg_casa_logada):
     assert linha["cancelada_por"] == linha["emitida_por_nome"], (
         f"quem expediu ficou como {linha['emitida_por_nome']!r} e quem cancelou "
         f"como {linha['cancelada_por']!r} — a mesma linha com duas convenções")
-    assert linha["cancelada_por"] != "jean", "gravou o login, e não o nome"
+    assert linha["cancelada_por"] != "mario", "gravou o login, e não o nome"
     assert linha["declaracao_selo_tjma_por"] == linha["cancelada_por"], (
         "a declaração do selo ficou com outra assinatura que o cancelamento")
 

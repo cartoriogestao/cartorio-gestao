@@ -90,7 +90,7 @@ def _token(c, url):
 
 def test_a_tela_mostra_a_pasta_e_poe_peca_nela(cg_casa_logada):
     c, db = cg_casa_logada["c"], cg_casa_logada["db"]
-    uid = _um(db, "SELECT id FROM users WHERE username='jean'")[0]
+    uid = _um(db, "SELECT id FROM users WHERE username='mario'")[0]
     exp = db.create_expediente({"source": "Malote Digital", "subject": "Mandado de exemplo",
                                 "category": "Para Cumprimento", "received_at": "2026-08-19"}, uid)
     db.add_attachment("EXPEDIENTE", exp, {"original_name": "Mandado de Exemplo.pdf", "stored_name": "m.pdf",
@@ -114,7 +114,7 @@ def test_o_rascunho_vira_processo_com_responsavel_e_prazo(cg_casa_logada):
         RASC.init_rascunho_schema(con)
         rid = RASC.salvar(con, tela="rascunhos", dados={"nome": "Mario Exemplo dos Santos"},
                           titulo="Nascimento — Mario Exemplo dos Santos", agora="2026-10-12T10:00:00",
-                          por="jean")["id"]
+                          por="mario")["id"]
     r = c.post(f"/rascunhos/{rid}/processo", data={"csrf_token": _token(c, "/rascunhos")})
     tid = int(re.search(r"/tarefas/(\d+)", r.headers["Location"]).group(1))
     t = _um(db, "SELECT title, due_date, assigned_user_id, source_ref FROM tasks WHERE id=?", (tid,))
@@ -181,7 +181,7 @@ def test_tipo_antigo_gravado_aparece_como_sem_tipo():
 
 def test_a_tela_mostra_o_tipo_sugerido_e_depois_o_gravado(cg_casa_logada):
     c, db = cg_casa_logada["c"], cg_casa_logada["db"]
-    uid = _um(db, "SELECT id FROM users WHERE username='jean'")[0]
+    uid = _um(db, "SELECT id FROM users WHERE username='mario'")[0]
     tid = db.create_task({"source_type": "EXPEDIENTE", "title": "Mandado de averbação",
                           "description": "averbar o divórcio no assento de casamento", "assigned_user_id": uid},
                          user_id=uid)

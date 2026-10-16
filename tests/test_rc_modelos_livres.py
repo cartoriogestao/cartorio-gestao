@@ -75,7 +75,7 @@ def _pessoa(con, assento_id, papel, nome, **campos):
 
 def _modelo(con, *, especie="NASCIMENTO", nome="Termo", corpo="oi") -> int:
     return MOD.criar(con, especie=especie, nome=nome, corpo=corpo,
-                     quem="JEAN", agora=AGORA)
+                     quem="MARIO", agora=AGORA)
 
 
 # ==================================================== o vocabulário existe mesmo
@@ -269,7 +269,7 @@ def test_salvar_confere_antes_de_gravar(con):
     ident = _modelo(con, corpo="Certifico que {nome}.")
     with pytest.raises(MOD.ModeloLivreError):
         MOD.salvar(con, ident, nome="Termo", corpo="{inventado}",
-                   quem="JEAN", agora=AGORA)
+                   quem="MARIO", agora=AGORA)
     assert MOD.ler(con, ident)["corpo"] == "Certifico que {nome}."
 
 
@@ -295,7 +295,7 @@ def test_modelo_sem_nome_recusa(con):
 
 def test_desativar_nao_apaga(con):
     ident = _modelo(con, corpo="{nome}")
-    MOD.ativar(con, ident, ativo=False, quem="JEAN", agora=AGORA)
+    MOD.ativar(con, ident, ativo=False, quem="MARIO", agora=AGORA)
     assert MOD.ler(con, ident)["ativo"] == 0
     assert len(MOD.listar(con)) == 1
     assert MOD.listar(con, incluir_inativos=False) == []
@@ -306,7 +306,7 @@ def test_a_lista_do_assento_so_traz_a_especie_dele_e_ativos(con):
     _modelo(con, especie="OBITO", nome="Comunicação", corpo="{nome}")
     _modelo(con, especie="NASCIMENTO", nome="Outro", corpo="{nome}")
     inativo = _modelo(con, especie="OBITO", nome="Velho", corpo="{nome}")
-    MOD.ativar(con, inativo, ativo=False, quem="JEAN", agora=AGORA)
+    MOD.ativar(con, inativo, ativo=False, quem="MARIO", agora=AGORA)
     nomes = [m["nome"] for m in MOD.para_o_assento(con, aid)]
     assert nomes == ["Comunicação"]
 
@@ -320,7 +320,7 @@ def test_assento_de_especie_sem_vocabulario_devolve_lista_vazia(con):
 def test_quantos_por_especie_conta_so_os_ativos(con):
     _modelo(con, especie="NASCIMENTO", nome="Um", corpo="{nome}")
     ident = _modelo(con, especie="NASCIMENTO", nome="Dois", corpo="{nome}")
-    MOD.ativar(con, ident, ativo=False, quem="JEAN", agora=AGORA)
+    MOD.ativar(con, ident, ativo=False, quem="MARIO", agora=AGORA)
     assert MOD.quantos_por_especie(con)["NASCIMENTO"] == 1
 
 

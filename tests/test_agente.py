@@ -226,7 +226,7 @@ def test_os_passos_saem_na_ordem_em_que_aconteceram(casa):
     AGS.init_agente_schema(con)
     sessao = AGS.abrir_sessao(con, titulo="ordem", pedido="ordem",
                               provedor="deepseek", modelo="m", agora=HORA,
-                              criada_por="JEAN")
+                              criada_por="MARIO")
     for ordem, texto in ((2, "segundo"), (1, "primeiro"), (3, "terceiro")):
         AGS.registrar_passo(con, sessao, ordem=ordem, tipo=AGS.TEXTO,
                             conteudo=texto, agora=HORA)
@@ -243,9 +243,9 @@ def test_a_contagem_do_dia_conta_pelo_dia_em_que_se_pediu(casa):
     AGS.init_agente_schema(con)
     antes = AGS.contagem_do_dia(con, desde=HOJE)
     AGS.abrir_sessao(con, titulo="hoje", pedido="hoje", provedor="deepseek",
-                     modelo="m", agora=f"{HOJE}T11:00:00", criada_por="JEAN")
+                     modelo="m", agora=f"{HOJE}T11:00:00", criada_por="MARIO")
     AGS.abrir_sessao(con, titulo="ontem", pedido="ontem", provedor="deepseek",
-                     modelo="m", agora="2026-09-13T11:00:00", criada_por="JEAN")
+                     modelo="m", agora="2026-09-13T11:00:00", criada_por="MARIO")
     agora = AGS.contagem_do_dia(con, desde=HOJE)
     con.commit()
     con.close()
@@ -288,7 +288,7 @@ def test_a_mascara_vale_para_o_que_a_ferramenta_devolve(casa):
                              titulo="certidão com o CPF errado",
                              detalhe=f"o CPF {CPF} não bate com o cadastro",
                              onde="rcpn_certidoes", caminho="/rcpn",
-                             versao="3.6.126", usuario="JEAN", agora=HORA)
+                             versao="3.6.126", usuario="MARIO", agora=HORA)
     r = FER.executar(_ctx(casa), "ler_problema",
                      {"problema_id": problema["id"]})
     assert r["erro"] is False
@@ -377,14 +377,14 @@ def test_desfazer_recusa_o_que_nao_sabe_voltar(casa):
     con = _con(casa)
     AGS.init_agente_schema(con)
     sessao = AGS.abrir_sessao(con, titulo="d", pedido="d", provedor="deepseek",
-                              modelo="m", agora=HORA, criada_por="JEAN")
+                              modelo="m", agora=HORA, criada_por="MARIO")
     mudanca = AGS.registrar_mudanca(
         con, sessao, ferramenta="anotar_no_problema", alvo="problema 7",
-        antes="sem nota", depois="com nota", agora=HORA, criada_por="JEAN")
+        antes="sem nota", depois="com nota", agora=HORA, criada_por="MARIO")
     con.commit()
     con.close()
     with pytest.raises(FER.FerramentaError) as recusa:
-        AGT.desfazer(casa["db"], mudanca, agora=HORA, usuario="JEAN")
+        AGT.desfazer(casa["db"], mudanca, agora=HORA, usuario="MARIO")
     assert "não sei voltar" in str(recusa.value)
 
 
@@ -399,7 +399,7 @@ def test_desfazer_volta_o_alcance_de_um_modulo(casa):
     con = _con(casa)
     sessao = AGS.abrir_sessao(con, titulo="entende", pedido="e",
                               provedor="deepseek", modelo="m", agora=HORA,
-                              criada_por="JEAN")
+                              criada_por="MARIO")
     con.commit()
     con.close()
 
@@ -414,13 +414,13 @@ def test_desfazer_volta_o_alcance_de_um_modulo(casa):
     con.close()
     assert mudanca is not None, "a mudança não foi registrada"
 
-    voltou = AGT.desfazer(casa["db"], mudanca["id"], agora=HORA, usuario="JEAN")
+    voltou = AGT.desfazer(casa["db"], mudanca["id"], agora=HORA, usuario="MARIO")
     assert voltou["voltei_para"] == de_fabrica
     assert casa["db"].get_setting(nome_na_config, de_fabrica) == de_fabrica
 
     # E DESFAZER DUAS VEZES RECUSA: o registro diz que já voltou.
     with pytest.raises(FER.FerramentaError):
-        AGT.desfazer(casa["db"], mudanca["id"], agora=HORA, usuario="JEAN")
+        AGT.desfazer(casa["db"], mudanca["id"], agora=HORA, usuario="MARIO")
     _cris(casa, AGS.CHAVE_ESCRITA, "")
 
 
@@ -431,7 +431,7 @@ def test_pedido_vazio_e_recusado_sem_abrir_sessao(casa):
     antes = _sessoes(casa)
     with pytest.raises(AGT.AgenteRecusado) as recusa:
         AGT.pedir(casa["db"], pedido="   ", pasta_de_dados=casa["dados"],
-                  raiz=RAIZ, agora=HORA, usuario="JEAN")
+                  raiz=RAIZ, agora=HORA, usuario="MARIO")
     assert "pedido vazio" in str(recusa.value)
     assert _sessoes(casa) == antes
 
@@ -444,7 +444,7 @@ def test_sem_chave_o_agente_recusa_antes_de_abrir_sessao(casa, monkeypatch):
     with pytest.raises(AGT.AgenteRecusado) as recusa:
         AGT.pedir(casa["db"], pedido="confira o selo",
                   pasta_de_dados=casa["dados"], raiz=RAIZ, agora=HORA,
-                  usuario="JEAN")
+                  usuario="MARIO")
     assert "Não há chave do DeepSeek" in str(recusa.value)
     assert _sessoes(casa) == antes
 
@@ -605,7 +605,7 @@ def test_o_teto_de_tokens_e_da_sessao_e_nao_da_rodada(casa, monkeypatch):
     monkeypatch.setattr(PROV, "conversar", falso)
     retrato = AGT.responder(casa["db"], retrato["sessao"]["id"],
                             pedido="e agora?", pasta_de_dados=casa["dados"],
-                            raiz=RAIZ, agora=HORA, usuario="JEAN",
+                            raiz=RAIZ, agora=HORA, usuario="MARIO",
                             app=casa["app"])
     sessao = retrato["sessao"]
     assert sessao["estado"] == AGS.LIMITE
@@ -771,7 +771,7 @@ def test_a_rodada_que_nao_escreveu_nada_deixa_a_linha_que_faltava(casa,
     AGS.init_agente_schema(con)
     sessao = AGS.abrir_sessao(con, titulo="muda", pedido="confira",
                               provedor="deepseek", modelo="deepseek-chat",
-                              agora=HORA, criada_por="JEAN")
+                              agora=HORA, criada_por="MARIO")
     AGS.registrar_passo(con, sessao, ordem=1, tipo=AGS.PEDIDO,
                         conteudo="confira o selo", agora=HORA)
     desde = AGS.proxima_ordem(con, sessao)
@@ -815,7 +815,7 @@ def test_a_falha_do_provedor_vira_estado_e_nao_perde_o_trabalho(casa,
     monkeypatch.setattr(PROV, "conversar", cai)
     retrato = AGT.pedir(casa["db"], pedido="confira o selo",
                         pasta_de_dados=casa["dados"], raiz=RAIZ, agora=HORA,
-                        usuario="JEAN", app=casa["app"])
+                        usuario="MARIO", app=casa["app"])
     sessao = retrato["sessao"]
     assert sessao["estado"] == AGS.ERRO
     assert "sem crédito" in sessao["erro"]
@@ -834,7 +834,7 @@ def test_a_sessao_interrompida_retoma_com_o_resultado_que_faltou(casa,
     AGS.init_agente_schema(con)
     sessao = AGS.abrir_sessao(con, titulo="interrompida", pedido="confira",
                               provedor="deepseek", modelo="deepseek-chat",
-                              agora=HORA, criada_por="JEAN")
+                              agora=HORA, criada_por="MARIO")
     AGS.registrar_passo(con, sessao, ordem=1, tipo=AGS.PEDIDO,
                         conteudo="confira o selo", agora=HORA)
     AGS.registrar_passo(con, sessao, ordem=2, tipo=AGS.FERRAMENTA,
@@ -863,7 +863,7 @@ def test_a_sessao_interrompida_retoma_com_o_resultado_que_faltou(casa,
 
     retrato = AGT.responder(casa["db"], sessao, pedido="continue",
                             pasta_de_dados=casa["dados"], raiz=RAIZ,
-                            agora=HORA, usuario="JEAN", app=casa["app"])
+                            agora=HORA, usuario="MARIO", app=casa["app"])
     conversa = falso.recebido[0]["conversa"]
     blocos = [e for e in conversa if e["tipo"] == "tool"]
     assert blocos, "o pedido de ferramenta ficou sem resposta — o provedor "
@@ -886,7 +886,7 @@ def test_o_gasto_soma_entre_as_rodadas_da_mesma_sessao(casa, monkeypatch):
     monkeypatch.setattr(PROV, "conversar", falso)
     retrato = AGT.responder(casa["db"], retrato["sessao"]["id"],
                             pedido="e mais isto", pasta_de_dados=casa["dados"],
-                            raiz=RAIZ, agora=HORA, usuario="JEAN",
+                            raiz=RAIZ, agora=HORA, usuario="MARIO",
                             app=casa["app"])
     assert retrato["sessao"]["tokens_de_entrada"] == primeiro + 500
     assert retrato["sessao"]["tokens_de_saida"] == 200 + 100
@@ -903,7 +903,7 @@ def test_o_teto_de_sessoes_do_dia_recusa_a_seguinte(casa, monkeypatch):
     with pytest.raises(AGT.AgenteRecusado) as recusa:
         AGT.pedir(casa["db"], pedido="mais uma",
                   pasta_de_dados=casa["dados"], raiz=RAIZ, agora=HORA,
-                  usuario="JEAN")
+                  usuario="MARIO")
     assert "teto do dia" in str(recusa.value)
     _cris(casa, AGS.CHAVE_TETO_SESSOES,
           AGS.PADROES[AGS.CHAVE_TETO_SESSOES])

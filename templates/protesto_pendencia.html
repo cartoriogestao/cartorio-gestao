@@ -5,8 +5,7 @@
 
 <div class="actions">
   <a class="button" href="{{ url_for('protesto_pendencias',
-                                     especie=p.especie,
-                                     ambiente=p.ambiente) }}">Voltar à fila</a>
+                                     especie=p.especie) }}">Voltar à fila</a>
   {% if p.titulo_id %}
   <a class="button" href="{{ url_for('protesto_titulo',
                                      titulo_id=p.titulo_id) }}">
@@ -24,10 +23,15 @@
   {% endif %}
 </div>
 
-{% if p.ambiente == 'HOMOLOGACAO' %}
+{# A FICHA DE UMA PENDÊNCIA ANTIGA DE HOMOLOGAÇÃO AINDA ABRE (pelo endereço),
+   e por isso diz o que ela é: desde 14/10/2026 o sistema usa só a produção, e
+   a decisão e os arquivos dela são recusados com a frase. #}
+{% if p.ambiente != 'PRODUCAO' %}
 <div class="alert alert-warning">
-  <strong>HOMOLOGAÇÃO — dado de teste.</strong> Esta pendência não é de nenhum
-  protesto de verdade, e o que for enviado aqui não vale.
+  <strong>{{ 'HOMOLOGAÇÃO' if p.ambiente == 'HOMOLOGACAO' else p.ambiente }}
+  — dado de teste, guardado só como histórico.</strong> Esta pendência não é
+  de nenhum protesto de verdade, e desde 14/10/2026 o sistema fala com a
+  CENPROT só em produção: ela não se decide nem se envia por aqui.
 </div>
 {% endif %}
 

@@ -226,6 +226,8 @@
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O balcão</div>
         <a href="{{ url_for('notas_reconhecimento') }}">Reconhecer firma</a>
         <a href="{{ url_for('notas_autenticacao') }}">Autenticar cópia</a>
+        {# A certidão das Notas — pedido do oficial, 15/10/2026. #}
+        <a href="{{ url_for('notas_certidoes') }}">Certidões</a>
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Instrumentos</div>
         <a href="{{ url_for('notas_escrituras') }}">Escrituras públicas</a>
         <a href="{{ url_for('notas_atas') }}">Atas notariais</a>
@@ -240,7 +242,7 @@
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Livros e remessas</div>
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('notas_livros') }}">Livros do tabelionato</a>{% endif %}
         <a href="{{ url_for('notas_remessas') }}">Remessa às centrais</a>
-        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('notas_ccn') }}">Cadastro no CCN</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('notas_ccn') }}">Cadastro no CCN</a>{% endif %}<a href="{{ url_for('notas_ccn_consultas') }}">Consulta ao CCN</a>
         {% if user.role in ['ADMIN','MANAGER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Configuração</div>
         <a href="{{ url_for('notas_etiqueta_ajuste') }}">Ajustar etiqueta</a>{% endif %}
         {% if user.role == 'ADMIN' %}<a href="{{ url_for('notas_importar') }}">Trazer notas do E-Ofício</a>{% endif %}

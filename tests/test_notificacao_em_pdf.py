@@ -51,9 +51,9 @@ def _token(html: str) -> str:
 def casa(cg_casa):
     db = cg_casa["db"]
     c = cg_casa["cliente"]
-    db.create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -75,7 +75,7 @@ def _processo_com_confrontante(casa, *, endereco="Fazenda Vizinha, zona rural"):
         pid = RT.autuar(
             con, numero="9/2026", especie=NORMA.GEORREFERENCIADA,
             fundamento=NORMA.A_REQUERIMENTO, matricula_id=mid, rural=True,
-            agora=AGORA, usuario="jean", ano=2026,
+            agora=AGORA, usuario="mario", ano=2026,
             requerente_nome="ANTONIO JARDINEIRO PEREIRA",
             area_na_matricula="30,7770 ha", area_pretendida="31,1000 ha",
             profissional_nome="ENG. BELTRANO",
@@ -106,7 +106,7 @@ def test_o_papel_anuncia_o_prazo_o_silencio_e_a_impugnacao_atrasada():
                   "matricula_numero": "3.247"},
         confrontante={"nome": "SICRANO DA SILVA", "endereco": "Fazenda Vizinha",
                       "papel": "Confrontante"},
-        serventia={"nome": "OFÍCIO ÚNICO", "oficial": "JEAN", "cargo": "Oficial"},
+        serventia={"nome": "OFÍCIO ÚNICO", "oficial": "MARIO", "cargo": "Oficial"},
         hoje_extenso="Cidade Exemplo-MA, 21 de setembro de 2026")
     assert "15 (quinze) dias úteis" in teor
     assert "art. 599" in teor
@@ -252,14 +252,14 @@ def test_a_notificacao_da_usucapiao_sai_em_arquivo(casa):
     pid = US.autuar(con, numero="88", modalidade="ORDINARIA",
                     agora=AGORA, requerente_nome="JOÃO BATISTA DE SOUSA",
                     imovel_descricao="Terreno urbano de 12m por 30m",
-                    imovel_municipio="Cidade Exemplo", usuario="jean")
+                    imovel_municipio="Cidade Exemplo", usuario="mario")
     con.commit()
     r = US.dar_ciencia_aos_entes(
         con, pid, agora=AGORA,
-        serventia={"nome": "OFÍCIO ÚNICO", "oficial": "JEAN",
+        serventia={"nome": "OFÍCIO ÚNICO", "oficial": "MARIO",
                    "cargo": "Oficial"},
         hoje_extenso="Cidade Exemplo-MA, 21 de setembro de 2026",
-        usuario="jean")
+        usuario="mario")
     con.commit()
     movimentos = [x["movimento_id"] for x in r]
     con.close()
@@ -287,12 +287,12 @@ def test_movimento_sem_teor_nao_vira_papel(casa):
             """INSERT INTO us_processos (numero, modalidade, etapa, situacao,
                    requerente_nome, criado_em, criado_por)
                VALUES ('89', 'ORDINARIA', 'AUTUACAO', 'EM_ANDAMENTO',
-                       'FULANO', ?, 'jean')""", (AGORA,))
+                       'FULANO', ?, 'mario')""", (AGORA,))
         pid = int(cur.lastrowid)
         cur = con.execute(
             """INSERT INTO us_movimentos (processo_id, tipo, etapa, descricao,
                    data_movimento, criado_em, criado_por)
-               VALUES (?, 'CIENCIA', 'CIENCIA_ENTES', 'sem teor', ?, ?, 'jean')""",
+               VALUES (?, 'CIENCIA', 'CIENCIA_ENTES', 'sem teor', ?, ?, 'mario')""",
             (pid, AGORA, AGORA))
         mid = int(cur.lastrowid)
     con.close()

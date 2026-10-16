@@ -79,7 +79,7 @@ def test_o_contador_de_ativos_segue_a_regra_da_ficha(uma_de_cada):
 
 
 def test_o_painel_nao_mostra_o_respondido_em_andamento(uma_de_cada):
-    """O caso do expediente 6, dito na tela onde o Jean o viu.
+    """O caso do expediente 6, dito na tela onde o Mario o viu.
 
     13/10/2026: o bloco de expedientes saiu do painel (ordem do oficial); o
     expediente que espera decisão aparece agora em Processos, e a regra que

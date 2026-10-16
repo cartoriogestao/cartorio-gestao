@@ -39,7 +39,11 @@ NOME_NO_PACOTE = "update_manifest.sig.json"
 
 # As chaves públicas aceitas, por id → chave pública em base64 (32 bytes crus).
 # Vazio até o oficial gerar a sua (`tools/chave_de_atualizacao.py gerar`).
-CHAVES_CONFIAVEIS: dict[str, str] = {}
+# 14/10/2026: gerada pelo oficial; a privada, cifrada pela senha dele, mora na
+# pasta compartilhada do cartório (14. PLATAFORMAS\CHAVE ATUALIZACAO SISTEMA).
+CHAVES_CONFIAVEIS: dict[str, str] = {
+    "94e13d44f1ee61bc": "atbBkN9HNd7Ud8QZWtpcMJ8SuefqOMoGnAdEig2cTHc=",
+}
 
 
 class AssinaturaRecusada(ValueError):

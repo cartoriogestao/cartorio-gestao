@@ -1,0 +1,18 @@
+{# A FICHA SEM IMAGEM NOVA DEPOIS DO ATO — ver ri_digi_prazo.py. Ordem do
+   oficial (06/10/2026): aviso chamativo, 7 dias corridos. #}
+{% if digi_aviso %}
+<div role="alert" style="background:#b00020;color:#fff;padding:12px 18px;font-size:16px;
+     font-weight:700;border-bottom:4px solid #6d0014">
+  {% if digi_aviso.desta %}{% set d = digi_aviso.desta %}
+    ESTA FICHA PRECISA SER DIGITALIZADA DE NOVO: {{ d.atos }} não está na imagem.
+    {% if d.vencida %}O prazo de 7 dias venceu em {{ d.prazo.strftime('%d/%m') }}.
+    {% else %}Prazo: {{ d.prazo.strftime('%d/%m') }}.{% endif %}
+    {% if digi_aviso.vencidas %}<br>{% endif %}
+  {% endif %}
+  {% if digi_aviso.vencidas %}
+    {{ digi_aviso.vencidas|length }} ficha(s) com ato lavrado e sem digitalização há mais de 7 dias:
+    {% for p in digi_aviso.vencidas[:12] %}<a style="color:#fff;text-decoration:underline"
+      href="{{ url_for('ri_ficha', matricula_id=p.matricula_id) }}">{{ p.numero }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if digi_aviso.vencidas|length > 12 %}…{% endif %}.
+  {% endif %}
+</div>
+{% endif %}

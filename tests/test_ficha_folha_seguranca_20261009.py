@@ -70,6 +70,7 @@ def _lavrar(casa, folha, nome="CRIANCA DA FICHA"):
              "acao": "lavrar", "folha_seguranca": folha, "nome": nome,
              "pessoa_nome": nome, "pessoa_sexo": "F",
              "data_fato": "2026-10-01", "local_fato_nome": "Hospital",
+             "ibge_local": "1",        # relato #130: o SIRC exige
              "filiacao1_nome": "MAE DA FICHA", "filiacao2_nome": "IGNORADO",
              "declarante_nome": "MAE DA FICHA"}
     c.post("/rcpn/novo/nascimento", data=dados, follow_redirects=True)

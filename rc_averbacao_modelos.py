@@ -141,6 +141,107 @@ def _prova_sugerida(con: sqlite3.Connection, assento: dict) -> str:
     return " e ".join(partes)
 
 
+# ------------------------------------------ o texto comum aos dois modelos
+# A redação é a do precedente medido (relato #127, 15/10/2026): averbações 361,
+# 431 e 433 desta casa e as três do E-Ofício guardadas em `tbCN_Generica`
+# («AV 01/6.412», «AV-01/18.042»). Todas dizem «venho retificar X, que na época
+# do registro foi grafado erroneamente como sendo “Y” ao invés de Z», e todas
+# fecham com o Artigo 110 e «retificando o assento». O modelo da data (09/10) e o
+# genérico de erro material montam por AQUI, para não haver duas redações da
+# mesma averbação divergindo no primeiro conserto.
+_PARTICIPIO = {"A": "foi grafada", "AS": "foram grafadas",
+               "O": "foi grafado", "OS": "foram grafados"}
+
+ABERTURA_DE_OFICIO = ("de ofício, por se tratar de erro que não exige qualquer "
+                      "indagação para a constatação imediata de necessidade de sua correção")
+
+
+def _sem_aspas(texto: Any) -> str:
+    return str(texto or "").strip().strip("“”\"«»'").strip()
+
+
+def _participio(campo: str) -> str | None:
+    """A concordância sai do artigo que o escrevente escreveu («A DATA», «O NOME»).
+    Sem artigo não se adivinha o gênero: o texto usa «constou», que não concorda."""
+    primeira = (campo.split() or [""])[0].upper()
+    return _PARTICIPIO.get(primeira)
+
+
+def _uma_correcao(c: dict, *, na_lista: bool) -> str:
+    campo = str(c["campo"]).strip().upper()
+    # Os dois valores entre aspas — decisão do oficial, 15/10/2026 (relato #127):
+    # «grafado erroneamente como sendo “Y” ao invés de “Z”».
+    errado, correto = _sem_aspas(c["errado"]), _sem_aspas(c["correto"])
+    part = _participio(campo)
+    if na_lista:
+        if part:
+            return (f"{campo}, {part.split(' ', 1)[1]} erroneamente como sendo "
+                    f"“{errado}” ao invés de “{correto}”")
+        return f"{campo}, que constou erroneamente como “{errado}” ao invés de “{correto}”"
+    if part:
+        return (f"{campo} deste assento, que na época do registro {part} erroneamente "
+                f"como sendo “{errado}” ao invés de “{correto}”")
+    return (f"{campo} deste assento, que na época do registro constou erroneamente "
+            f"como “{errado}” ao invés de “{correto}”")
+
+
+_CONTRACAO = {"A": "DA", "AS": "DAS", "O": "DO", "OS": "DOS"}
+
+
+def _do_elemento(campo: str) -> str:
+    """«O NOME DA GENITORA» vira «DO NOME DA GENITORA»; sem artigo, «DE …»."""
+    palavras = campo.strip().upper().split()
+    if palavras and palavras[0] in _CONTRACAO:
+        return " ".join([_CONTRACAO[palavras[0]]] + palavras[1:])
+    return " ".join(["DE"] + palavras)
+
+
+def _titulo(correcoes: list[dict]) -> str:
+    """O título diz o que se retifica, como no E-Ofício («RETIFICAÇÃO DO NOME DA
+    MÃE DO REGISTRADO», AV-01/18.042) — decisão do oficial, 15/10/2026. Com mais
+    de uma correção os elementos se juntam: «… DO NOME DO REGISTRADO E DA DATA DE
+    NASCIMENTO»."""
+    partes = [_do_elemento(str(c["campo"])) for c in correcoes]
+    if len(partes) == 1:
+        return "RETIFICAÇÃO " + partes[0]
+    return "RETIFICAÇÃO " + ", ".join(partes[:-1]) + " E " + partes[-1]
+
+
+def _abertura(v: dict) -> str:
+    if v.get("requerente_tipo") == "parte":
+        txt = ("após requerimento feito pela parte interessada, "
+               f"{str(v.get('requerente_nome') or '').strip()}")
+        dreq = _iso(v.get("data_requerimento"))
+        return txt + (f", em {data_curta(dreq)}" if dreq else "")
+    return ABERTURA_DE_OFICIO
+
+
+def _teor_retificacao(v: dict, correcoes: list[dict], *, provas: str = "",
+                      constar: str = "a redação correta") -> str:
+    """Monta o teor da averbação de retificação (art. 110) para uma ou mais correções.
+    Só monta texto; quem confere e lança é o escrevente, na tela padrão."""
+    dav = _iso(v["data_averbacao"])
+    if len(correcoes) == 1:
+        miolo = "venho retificar " + _uma_correcao(correcoes[0], na_lista=False)
+    else:
+        itens = [_uma_correcao(c, na_lista=True) for c in correcoes]
+        miolo = ("venho retificar os seguintes elementos deste assento, que na época do "
+                 "registro constaram com erro: " + "; ".join(itens[:-1]) + "; e " + itens[-1])
+    provas = str(provas or "").strip().rstrip(".")
+    sub = str(v["subscritor_nome"]).strip()
+    funcao = str(v.get("subscritor_funcao") or "").strip()
+    assinatura = f"Eu, {sub}, {funcao}, o subscrevi." if funcao else f"Eu, {sub}, o subscrevi."
+    return (
+        f"AVERBAÇÃO {str(v['numero_av']).strip()} – {_titulo(correcoes)}: "
+        f"Em {data_por_extenso(dav)}, "
+        f"{_abertura(v)}, {miolo}"
+        f"{', conforme ' + provas if provas else ''}; diante disto faço constar {constar}, "
+        f"dando cumprimento ao {str(v['fundamento']).strip()}, retificando o assento. "
+        f"O referido é verdade e dou fé. "
+        f"{(v.get('cidade') or CIDADE_PADRAO).strip()}, {data_curta(dav)}. {assinatura}"
+    )
+
+
 # ------------------------------------------------- modelo 1: data do registro
 def _sugestoes_data_registro(con: sqlite3.Connection, assento: dict,
                              usuario: dict) -> dict:
@@ -179,25 +280,16 @@ def _montar_data_registro(v: dict, assento: dict) -> dict:
         raise ModeloErro("Data correta do registro inválida.")
     if not dav:
         raise ModeloErro("Data da averbação inválida.")
-    if v.get("requerente_tipo") == "parte":
-        abertura = ("após requerimento feito pela parte interessada, "
-                    f"{v['requerente_nome'].strip()}")
-    else:
-        abertura = ("de ofício, por se tratar de erro que não exige qualquer "
-                    "indagação para a constatação imediata de necessidade de sua correção")
-    sub = v["subscritor_nome"].strip()
-    funcao = str(v.get("subscritor_funcao") or "").strip()
-    assinatura = f"Eu, {sub}, {funcao}, o subscrevi." if funcao else f"Eu, {sub}, o subscrevi."
-    teor = (
-        f"AVERBAÇÃO {v['numero_av'].strip()} – RETIFICAÇÃO: Em {data_por_extenso(dav)}, "
-        f"{abertura}, venho retificar A DATA DO REGISTRO deste assento, que na época "
-        f"do registro foi grafada erroneamente como sendo “{v['data_como_consta'].strip()}” "
-        f"ao invés de {data_por_extenso(correta)} ({data_curta(correta)}), conforme "
-        f"{v['elementos_prova'].strip().rstrip('.')}; diante disto faço constar a data "
-        f"correta do registro, dando cumprimento ao {v['fundamento'].strip()}, "
-        f"retificando o assento. O referido é verdade e dou fé. "
-        f"{(v.get('cidade') or CIDADE_PADRAO).strip()}, {data_curta(dav)}. {assinatura}"
-    )
+    # Desde 15/10/2026 (relato #127) este modelo é um caso pronto do genérico de
+    # erro material: uma correção só, «A DATA DO REGISTRO». Saiu letra por letra
+    # igual ao de 09/10 até a decisão do oficial do mesmo dia 15/10: o título
+    # passou a «RETIFICAÇÃO DA DATA DO REGISTRO» e a data correta, a ir entre
+    # aspas. O teste que compara a frase inteira guarda a forma nova.
+    v = dict(v, data_requerimento="")
+    correcao = {"campo": "A DATA DO REGISTRO", "errado": v["data_como_consta"],
+                "correto": f"{data_por_extenso(correta)} ({data_curta(correta)})"}
+    teor = _teor_retificacao(v, [correcao], provas=v["elementos_prova"],
+                             constar="a data correta do registro")
     return {"teor": teor,
             "fundamento": f"Art. 110 da Lei 6.015/1973 - erro na data do registro "
                           f"(de “{v['data_como_consta'].strip()}” para {data_curta(correta)})",
@@ -227,6 +319,126 @@ CAMPOS_DATA_REGISTRO: tuple[dict, ...] = (
      "ajuda": "ex.: Escrevente Autorizada"},
 )
 
+# ------------------------------------------- modelo 2: erro material genérico
+# Relato #127 (09/10/2026, balcão): «deixar o modelo mais genérico, para caber
+# para mais casos de erros materiais». O precedente mostra o que mais se corrige
+# nesta casa — sobrenome de genitor e avós (AV 01/6.412), nome da mãe
+# (AV-01/18.042, av. 433), naturalidade e genitora numa só averbação (av. 361) —
+# e por isso cabe mais de uma correção no mesmo ato.
+LINHAS_DE_CORRECAO = 5
+LIMITE_DO_FUNDAMENTO = 2000
+
+# Todas as espécies que têm assento a retificar — decisão do oficial, 15/10/2026:
+# nascimento, casamento (e o religioso, que é casamento noutro livro), óbito,
+# natimorto e as do Livro E. Proclamas fica de fora: é edital, não assento.
+ESPECIES_DO_ERRO_MATERIAL = (
+    "NASCIMENTO", "CASAMENTO", "CASAMENTO_RELIGIOSO", "OBITO", "NATIMORTO",
+    "AUSENCIA", "INTERDICAO", "TUTELA", "EMANCIPACAO", "UNIAO_ESTAVEL",
+    "OPCAO_NACIONALIDADE", "OUTRO",
+)
+
+# Sugestões da lista do campo. O artigo vai junto porque é dele que sai a
+# concordância do texto («foi grafada» / «foi grafado»).
+ELEMENTOS_COMUNS = (
+    "O NOME DO REGISTRADO", "O NOME DA REGISTRADA", "O SOBRENOME DO REGISTRADO",
+    "A DATA DE NASCIMENTO", "A HORA DE NASCIMENTO", "O LOCAL DE NASCIMENTO",
+    "A NATURALIDADE", "O SEXO", "O NOME DO GENITOR", "O NOME DA GENITORA",
+    "OS NOMES DOS AVÓS PATERNOS", "OS NOMES DOS AVÓS MATERNOS",
+    "O NOME DO CÔNJUGE", "A PROFISSÃO", "O ESTADO CIVIL", "O DOMICÍLIO",
+    "A DATA DO ÓBITO", "O LOCAL DO ÓBITO", "A DATA DO REGISTRO",
+)
+
+
+def _correcoes_preenchidas(v: dict) -> list[dict]:
+    """As linhas com alguma coisa escrita; linha pela metade é recusada dizendo qual."""
+    saida, faltas = [], []
+    for i, c in enumerate(v.get("correcoes") or [], start=1):
+        campo, errado, correto = (str(c.get(k) or "").strip()
+                                  for k in ("campo", "errado", "correto"))
+        if not (campo or errado or correto):
+            continue
+        falta = [rot for val, rot in ((campo, "o elemento"), (errado, "onde se lê"),
+                                      (correto, "leia-se")) if not val]
+        if falta:
+            faltas.append(f"correção {i} sem {', '.join(falta)}")
+        else:
+            saida.append({"campo": campo, "errado": errado, "correto": correto})
+    if faltas:
+        raise ModeloErro("Complete: " + "; ".join(faltas) + ".")
+    return saida
+
+
+def _sugestoes_erro_material(con: sqlite3.Connection, assento: dict,
+                             usuario: dict) -> dict:
+    return {
+        "numero_av": proximo_numero_av(con, assento),
+        "correcoes": [],
+        "requerente_tipo": "oficio",
+        "requerente_nome": "",
+        "data_requerimento": "",
+        "documentos": "",
+        "fundamento": FUNDAMENTO_PADRAO,
+        "data_averbacao": date.today().isoformat(),
+        "cidade": cidade_da_casa(con),
+        "subscritor_nome": usuario.get("nome") or "",
+        "subscritor_funcao": usuario.get("funcao") or "",
+    }
+
+
+def _montar_erro_material(v: dict, assento: dict) -> dict:
+    faltam = [rot for chave, rot in (
+        ("numero_av", "Número da averbação"),
+        ("fundamento", "Fundamento legal"),
+        ("data_averbacao", "Data da averbação"),
+        ("subscritor_nome", "Quem subscreve"),
+    ) if not str(v.get(chave) or "").strip()]
+    if v.get("requerente_tipo") == "parte" and not str(v.get("requerente_nome") or "").strip():
+        faltam.append("Nome do requerente")
+    correcoes = _correcoes_preenchidas(v)
+    if not correcoes:
+        faltam.append("ao menos uma correção (elemento, onde se lê, leia-se)")
+    if faltam:
+        raise ModeloErro("Preencha: " + ", ".join(faltam) + ".")
+    if not _iso(v["data_averbacao"]):
+        raise ModeloErro("Data da averbação inválida.")
+    if str(v.get("data_requerimento") or "").strip() and not _iso(v["data_requerimento"]):
+        raise ModeloErro("Data do requerimento inválida.")
+    teor = _teor_retificacao(v, correcoes, provas=str(v.get("documentos") or ""))
+    resumo = "; ".join(f"{c['campo'].upper()} (de “{_sem_aspas(c['errado'])}” para "
+                       f"“{_sem_aspas(c['correto'])}”)" for c in correcoes)
+    fundamento = f"Art. 110 da Lei 6.015/1973 - erro material: {resumo}"
+    # Limite largo (decisão do oficial, 15/10/2026): o destino é `rc_atos.fundamento`,
+    # TEXT sem tamanho, e o campo da tela de lançamento não tem maxlength — o corte de
+    # 300 da primeira versão cortava a quinta correção ao meio.
+    if len(fundamento) > LIMITE_DO_FUNDAMENTO:
+        fundamento = fundamento[:LIMITE_DO_FUNDAMENTO - 1].rstrip() + "…"
+    return {"teor": teor, "fundamento": fundamento, "natureza": "retificacao"}
+
+
+CAMPOS_ERRO_MATERIAL: tuple[dict, ...] = (
+    {"nome": "numero_av", "rotulo": "Número da averbação", "tipo": "text",
+     "ajuda": "ordem/termo, ex.: 01/13.706"},
+    {"nome": "correcoes", "rotulo": "O que está errado no assento", "tipo": "correcoes",
+     "linhas": LINHAS_DE_CORRECAO, "sugestoes": ELEMENTOS_COMUNS,
+     "ajuda": "uma linha por correção; escreva o elemento com o artigo (A DATA, O NOME)"},
+    {"nome": "requerente_tipo", "rotulo": "Origem", "tipo": "select",
+     "opcoes": (("oficio", "De ofício (o próprio cartório)"),
+                ("parte", "A requerimento da parte interessada")), "ajuda": ""},
+    {"nome": "requerente_nome", "rotulo": "Nome do requerente (se for a parte)",
+     "tipo": "text", "ajuda": ""},
+    {"nome": "data_requerimento", "rotulo": "Data do requerimento (se houver)",
+     "tipo": "date", "ajuda": ""},
+    {"nome": "documentos", "rotulo": "Documento comprobatório (opcional)", "tipo": "textarea",
+     "ajuda": "ex.: certidão de nascimento da genitora e RG, cujas cópias ficam arquivadas"},
+    {"nome": "fundamento", "rotulo": "Fundamento legal", "tipo": "text",
+     "ajuda": "padrão da casa"},
+    {"nome": "data_averbacao", "rotulo": "Data da averbação", "tipo": "date", "ajuda": ""},
+    {"nome": "cidade", "rotulo": "Cidade do fecho", "tipo": "text", "ajuda": ""},
+    {"nome": "subscritor_nome", "rotulo": "Quem subscreve", "tipo": "text", "ajuda": ""},
+    {"nome": "subscritor_funcao", "rotulo": "Função de quem subscreve", "tipo": "text",
+     "ajuda": "ex.: Escrevente Autorizada"},
+)
+
 MODELOS: dict[str, dict] = {
     "retificacao-data-registro": {
         "slug": "retificacao-data-registro",
@@ -238,6 +450,17 @@ MODELOS: dict[str, dict] = {
         "campos": CAMPOS_DATA_REGISTRO,
         "sugestoes": _sugestoes_data_registro,
         "montar": _montar_data_registro,
+    },
+    "retificacao-erro-material": {
+        "slug": "retificacao-erro-material",
+        "nome": "Retificação de erro material (art. 110)",
+        "descricao": ("Erro material em qualquer elemento do assento — nome, sobrenome, "
+                      "data, local, filiação, avós etc. —, uma ou mais correções na "
+                      "mesma averbação (art. 110 da Lei 6.015/1973)."),
+        "especies": ESPECIES_DO_ERRO_MATERIAL,
+        "campos": CAMPOS_ERRO_MATERIAL,
+        "sugestoes": _sugestoes_erro_material,
+        "montar": _montar_erro_material,
     },
 }
 
@@ -262,8 +485,18 @@ def sugestoes(con: sqlite3.Connection, slug: str, assento: dict,
 
 
 def valores_do_formulario(slug: str, form: Any) -> dict:
-    return {c["nome"]: str(form.get(c["nome"]) or "").strip()
-            for c in modelo(slug)["campos"]}
+    valores: dict[str, Any] = {}
+    for c in modelo(slug)["campos"]:
+        if c["tipo"] == "correcoes":
+            # Linhas numeradas (correcao_campo_1, correcao_errado_1, …): a tela
+            # devolve todas, inclusive as vazias, para redesenhar o que se digitou.
+            valores[c["nome"]] = [
+                {k: str(form.get(f"correcao_{k}_{i}") or "").strip()
+                 for k in ("campo", "errado", "correto")}
+                for i in range(1, int(c.get("linhas") or LINHAS_DE_CORRECAO) + 1)]
+        else:
+            valores[c["nome"]] = str(form.get(c["nome"]) or "").strip()
+    return valores
 
 
 def montar(slug: str, valores: dict, assento: dict) -> dict:

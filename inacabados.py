@@ -70,6 +70,35 @@ FONTES: tuple[dict, ...] = (
      "dias": 7,
      "tela": "notas_ato", "parametro": "ato_id"},
 
+    # A COMUNICAÇÃO À SERVENTIA DE ORIGEM — relato #129, 14/10/2026, vindo da
+    # inspeção. Código de Normas TJMA, art. 831, § 1º: substabelecimento de
+    # mandato lavrado em OUTRA serventia se comunica IMEDIATAMENTE, com
+    # comprovante de recebimento.
+    #
+    #   **ESTA FONTE LÊ A OBRIGAÇÃO, E NÃO OS CAMPOS DO ATO.** Medida pelos
+    #   campos `anterior_*`, ela sumiria no dia em que alguém apagasse o nome
+    #   do cartório de origem — e o relato pede aviso que só some com a
+    #   providência. A linha nasce em `notas_comunicacao_origem.abrir` e só
+    #   deixa de ser ABERTA por comprovante juntado ou ofício anotado.
+    #
+    #   **UM DIA**, porque a norma diz «imediatamente»: o prazo daqui é o de
+    #   «parado», e o oficial o ajusta na tela.
+    {"chave": "NOTAS_COMUNICACAO_ORIGEM",
+     "nome": "Substabelecimento sem comunicação à serventia de origem",
+     "atribuicao": "NOTAS",
+     "tabela": "nt_comunicacoes_origem",
+     "id": "ato_id",
+     "onde": "situacao = 'ABERTA'",
+     "quando": "nascida_em",
+     "rotulo": "destinatario",
+     "terminou": "quando se junta o comprovante de recebimento ou se anota "
+                 "o envio do ofício, na ficha do ato",
+     "o_acervo": "não entra sozinho: a obrigação nasce no lançamento ou por "
+                 "ato de alguém na ficha — o acervo só entra quando alguém o "
+                 "olha e lança a obrigação",
+     "dias": 1,
+     "tela": "notas_ato", "parametro": "ato_id"},
+
     {"chave": "RI_PRENOTACAO",
      "nome": "Prenotação sem ato",
      "atribuicao": "RI",

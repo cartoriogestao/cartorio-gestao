@@ -1,5 +1,10 @@
 # Instalação do Cartório Gestão
 
+> Versão curta. O [manual geral](MANUAL.md) traz a instalação, a configuração
+> e o panorama de todas as telas, e a lista completa do que é preciso
+> (LibreOffice, navegador, selador, token A3, extensão do CCN, credenciais)
+> está em [`REQUISITOS.md`](REQUISITOS.md).
+
 Um computador da serventia é o **servidor**: guarda o banco e os documentos e
 atende os demais pela rede local. Os computadores do balcão só usam o
 navegador.
@@ -44,8 +49,10 @@ Outra pasta pode ser usada definindo `CARTORIO_GESTAO_DATA` (ver
    CNS, CNPJ, endereço, CEP, cidade, UF, titular e substituto(a), brasão e o
    endereço do aparelho selador. **O código não traz dado de serventia
    nenhuma** — papéis e remessas saem com o que estiver aqui.
-3. Em **Configurações**, confira também os feriados locais (contam nos prazos)
-   e a data da tabela de custas em vigor.
+3. Em **Configurações**, confira a data da tabela de custas em vigor. Os
+   feriados locais (estaduais e municipais) contam nos prazos, mas ainda não
+   têm tela própria: ficam na configuração `ri_feriados_locais`, com uma data
+   `AAAA-MM-DD` por linha (veja o [manual](MANUAL.md), seção 3).
 
 > **Instalação que já tinha os dados dentro do código** (versões antigas): rode
 > uma vez `tools\migrar_settings_serventia_b0.py`. Ele lê o perfil local

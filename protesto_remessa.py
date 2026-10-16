@@ -199,11 +199,22 @@ def remessa_pela_chave_xml(con: sqlite3.Connection,
 
 
 def _ambiente_cra(ambiente: str) -> str:
-    ambiente = (ambiente or "HOMOLOGACAO").strip().upper()
-    if ambiente not in ("HOMOLOGACAO", "PRODUCAO"):
-        raise RemessaError(
-            "Ambiente CRA inválido — use HOMOLOGACAO ou PRODUCAO.")
-    return ambiente
+    """O ambiente CRA do lote XML que entra: **sempre PRODUÇÃO desde
+    14/10/2026** — ordem do oficial: «tire a opção de funcionar na
+    homologação, agora é tudo produção».
+
+    **O QUE O CHAMADOR MANDA NÃO MUDA ISSO, e é de propósito.** A rota de
+    receber remessa manda «HOMOLOGACAO» quando o formulário chega sem o campo
+    — era o padrão até 13/10 —, e o lote entraria marcado como de
+    homologação: a confirmação e o andamento dele seguiriam para a CRA de
+    HOMOLOGAÇÃO, com os títulos já apontados no livro de verdade. Medido em
+    14/10/2026: a produção ainda não tinha recebido remessa nenhuma
+    (`pt_remessas` vazia), e por isso nenhum lote foi atingido.
+
+    Lote antigo gravado como homologação continua como está — dado gravado
+    não se reescreve.
+    """
+    return "PRODUCAO"
 
 
 def _titulos_vivos_iguais(con: sqlite3.Connection, dados: dict) -> list[dict]:

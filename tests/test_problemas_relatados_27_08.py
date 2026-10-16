@@ -36,7 +36,7 @@ def _token(html: str) -> str:
 def casa(cg_casa):
     """App/DB compartilhados do modulo (conftest); setup de dominio por teste."""
     c = cg_casa["cliente"]
-    cg_casa["db"].create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     with sqlite3.connect(cg_casa["banco"]) as con:
         # A autenticação usa o serviço interno 415, cujo item TJMA é 13.18.
         # A bancada mede etiqueta/impressão, não ausência de cadastro.
@@ -45,7 +45,7 @@ def casa(cg_casa):
                    (codigo, codigo_tj, descricao, ativo)
                VALUES (415,'13.18','Autenticação de cópia',1)""")
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     return cg_casa
@@ -177,7 +177,7 @@ def test_o_campo_nao_se_esvazia_quando_a_resposta_nao_veio():
 def test_o_corpo_do_pedido_de_selo_nao_vai_embrulhado():
     """Medido: dos 26.123 envelopes que esta casa mandou, ZERO vão embrulhados."""
     import selador as SD
-    dados = {"escrevente": "JEAN",
+    dados = {"escrevente": "MARIO",
              "nomesReconhecido": {"nomePartes": [], "parteAto": [
                  {"nome": "MARIA", "documento": "00000001082"}]},
              "natureza": {"tipo": 1},
@@ -199,7 +199,7 @@ def test_o_corpo_do_pedido_de_selo_nao_vai_embrulhado():
 def test_nenhum_caminho_embrulha_o_corpo(caminho):
     """O defeito era de `montar_pedido`, e alcançava todas as atribuições."""
     import selador as SD
-    dados = {"escrevente": "JEAN", "ato": {"codigo": "1"}}
+    dados = {"escrevente": "MARIO", "ato": {"codigo": "1"}}
     assert SD.montar_pedido(caminho, dados)["corpo"] == dados
 
 
@@ -304,7 +304,7 @@ def test_amarrar_o_selo_ao_ato_marca_a_hora(casa):
         con.execute(
             """INSERT INTO nt_reconhecimentos (id, data, hora, especie,
                    servico_codigo, quantidade, oficial, criado_em)
-               VALUES (1,'2026-08-27','18:40','SEMELHANCA',413,1,'JEAN',
+               VALUES (1,'2026-08-27','18:40','SEMELHANCA',413,1,'MARIO',
                        '2026-08-27T18:40:03')""")
         AS.vincular_ao_ato(con, numero, tabela="nt_reconhecimentos",
                            ato_id=1, agora="2026-08-27T18:40:05")

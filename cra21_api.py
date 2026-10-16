@@ -168,16 +168,23 @@ class CraRecusou(CraError):
     """A Central respondeu, e respondeu não. O motivo dela vem junto."""
 
 
+# O PADRÃO É PRODUÇÃO DESDE 14/10/2026 — ordem do oficial no primeiro dia do
+# protesto no sistema: «tire a opção de funcionar na homologação, agora é tudo
+# produção». Até 13/10 o ambiente vazio ou desconhecido caía na homologação.
+# O endereço de homologação continua declarado acima, para o teste
+# automatizado que o pede pelo nome; nenhuma tela o oferece mais.
+
+
 def endereco_do_ambiente(ambiente: Any) -> str:
     nome = str(ambiente or "").strip().upper()
     return ENDERECO_DO_AMBIENTE.get(nome,
-                                    ENDERECO_DO_AMBIENTE[CRED.HOMOLOGACAO])
+                                    ENDERECO_DO_AMBIENTE[CRED.PRODUCAO])
 
 
 def namespace_do_ambiente(ambiente: Any) -> str:
     nome = str(ambiente or "").strip().upper()
     return NAMESPACE_DO_AMBIENTE.get(nome,
-                                     NAMESPACE_DO_AMBIENTE[CRED.HOMOLOGACAO])
+                                     NAMESPACE_DO_AMBIENTE[CRED.PRODUCAO])
 
 
 def _partes(endereco: str) -> tuple[str, int, str]:
@@ -341,7 +348,7 @@ def _bater(ambiente: str, operacao: str, valores: dict, *,
         "Content-Length": str(len(corpo)),
     }
     escreve = operacao in OPERACOES_QUE_ESCREVEM
-    qual = str(ambiente or "").strip().upper() or CRED.HOMOLOGACAO
+    qual = str(ambiente or "").strip().upper() or CRED.PRODUCAO
     try:
         # **RETENTAR SÓ O QUE NÃO CHEGOU.** Uma confirmação que a Central
         # pode ter recebido não se repete sozinha — o arquivo entraria duas
@@ -372,7 +379,7 @@ def _bater(ambiente: str, operacao: str, valores: dict, *,
     return resposta.corpo.decode("utf-8", errors="replace")
 
 
-def chamar(operacao: str, ambiente: Any = CRED.HOMOLOGACAO, *,
+def chamar(operacao: str, ambiente: Any = CRED.PRODUCAO, *,
            o_que: str = "", pasta=None, **valores) -> str:
     """A porta genérica: qualquer das 21, com os nomes conferidos.
 
@@ -387,7 +394,7 @@ def chamar(operacao: str, ambiente: Any = CRED.HOMOLOGACAO, *,
         raise CraError(
             f"«{operacao}» não é operação da CRA. As que existem são "
             f"{', '.join(sorted(OPERACOES))}.")
-    onde = str(ambiente or "").strip().upper() or CRED.HOMOLOGACAO
+    onde = str(ambiente or "").strip().upper() or CRED.PRODUCAO
     texto = _bater(onde, qual, valores, pasta=pasta)
     return ler_resposta(texto, o_que or f"chamar {qual}")
 
@@ -398,14 +405,14 @@ def chamar(operacao: str, ambiente: Any = CRED.HOMOLOGACAO, *,
 # `protesto_remessa` e `protesto_desistencia`, que já leem os cinco layouts.
 
 
-def apresentantes(ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None) -> str:
+def apresentantes(ambiente: Any = CRED.PRODUCAO, *, pasta=None) -> str:
     """A lista de apresentantes. **É a única operação SEM PARÂMETRO NENHUM**,
     e por isso é ela que serve de teste de conexão."""
     return chamar("BuscarApresentante", ambiente,
                   o_que="buscar os apresentantes", pasta=pasta)
 
 
-def remessa(nome_do_arquivo: str, ambiente: Any = CRED.HOMOLOGACAO, *,
+def remessa(nome_do_arquivo: str, ambiente: Any = CRED.PRODUCAO, *,
             com_imagem: bool = False, pasta=None) -> str:
     """A remessa do dia, **mais as pendentes de datas anteriores**.
 
@@ -421,7 +428,7 @@ def remessa(nome_do_arquivo: str, ambiente: Any = CRED.HOMOLOGACAO, *,
 
 
 def remessas_pendentes(nome_do_arquivo: str = "",
-                       ambiente: Any = CRED.HOMOLOGACAO, *,
+                       ambiente: Any = CRED.PRODUCAO, *,
                        com_imagem: bool = False, pasta=None) -> str:
     """**Todas** as pendentes, sem olhar data nem apresentante."""
     return chamar("RemessaPendente", ambiente,
@@ -431,7 +438,7 @@ def remessas_pendentes(nome_do_arquivo: str = "",
                                   else SO_CONFERIR_A_IMAGEM))
 
 
-def desistencias(nome_do_arquivo: str, ambiente: Any = CRED.HOMOLOGACAO, *,
+def desistencias(nome_do_arquivo: str, ambiente: Any = CRED.PRODUCAO, *,
                  pasta=None) -> str:
     """As desistências do dia e as pendentes.
 
@@ -441,7 +448,7 @@ def desistencias(nome_do_arquivo: str, ambiente: Any = CRED.HOMOLOGACAO, *,
                   pasta=pasta, userArq=_nome(nome_do_arquivo))
 
 
-def cancelamentos(nome_do_arquivo: str, ambiente: Any = CRED.HOMOLOGACAO, *,
+def cancelamentos(nome_do_arquivo: str, ambiente: Any = CRED.PRODUCAO, *,
                   com_imagem: bool = False, pasta=None) -> str:
     """Os cancelamentos do dia e os pendentes."""
     return chamar("Cancelamento", ambiente, o_que="baixar os cancelamentos",
@@ -450,7 +457,7 @@ def cancelamentos(nome_do_arquivo: str, ambiente: Any = CRED.HOMOLOGACAO, *,
                                   else SO_CONFERIR_A_IMAGEM))
 
 
-def autorizacoes(nome_do_arquivo: str, ambiente: Any = CRED.HOMOLOGACAO, *,
+def autorizacoes(nome_do_arquivo: str, ambiente: Any = CRED.PRODUCAO, *,
                  com_imagem: bool = False, pasta=None) -> str:
     """As autorizações — **de retirada e de cancelamento**.
 
@@ -466,7 +473,7 @@ def autorizacoes(nome_do_arquivo: str, ambiente: Any = CRED.HOMOLOGACAO, *,
 
 
 def ordem_de_cancelamento(nome_do_arquivo: str,
-                          ambiente: Any = CRED.HOMOLOGACAO, *,
+                          ambiente: Any = CRED.PRODUCAO, *,
                           pasta=None) -> str:
     """A ordem de cancelamento."""
     return chamar("OrdemCancelamento", ambiente,
@@ -475,7 +482,7 @@ def ordem_de_cancelamento(nome_do_arquivo: str,
 
 
 def enviar_confirmacao(nome_do_arquivo: str, conteudo: str,
-                       ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None) -> str:
+                       ambiente: Any = CRED.PRODUCAO, *, pasta=None) -> str:
     """Envia a confirmação do recebimento.
 
     **Medido em homologação (30/09/2026):** ``userArq`` é o nome FEBRABAN e
@@ -492,7 +499,7 @@ def enviar_confirmacao(nome_do_arquivo: str, conteudo: str,
 
 
 def enviar_retorno(nome_do_arquivo: str, conteudo: str,
-                   ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None) -> str:
+                   ambiente: Any = CRED.PRODUCAO, *, pasta=None) -> str:
     """Envia retorno ou andamento (operacao SOAP ``Retorno``).
 
     **Medido em homologação (30/09/2026):** mesmo contrato da confirmação —
@@ -507,7 +514,7 @@ def enviar_retorno(nome_do_arquivo: str, conteudo: str,
 
 
 def consultar_slip(protocolo: str, data_do_protocolo: str,
-                   ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None) -> str:
+                   ambiente: Any = CRED.PRODUCAO, *, pasta=None) -> str:
     """O slip de um protocolo."""
     if not (str(protocolo or "").strip()
             and str(data_do_protocolo or "").strip()):
@@ -519,7 +526,7 @@ def consultar_slip(protocolo: str, data_do_protocolo: str,
 
 def consultar_autorizacao(nome_do_arquivo: str, protocolo: str,
                           data_do_protocolo: str,
-                          ambiente: Any = CRED.HOMOLOGACAO, *,
+                          ambiente: Any = CRED.PRODUCAO, *,
                           marcar_baixado: bool = False, pasta=None) -> str:
     """Uma autorização.
 
@@ -539,7 +546,7 @@ def consultar_autorizacao(nome_do_arquivo: str, protocolo: str,
 def consultar_imagem(*, nosso_numero: str = "", numero_titulo: str = "",
                      documento_devedor: str = "", saldo: str = "",
                      vencimento: str = "", remessa_: str = "",
-                     ambiente: Any = CRED.HOMOLOGACAO, pasta=None) -> str:
+                     ambiente: Any = CRED.PRODUCAO, pasta=None) -> str:
     """A imagem de um título, achada pelos seis campos do contrato."""
     return chamar("ConsultaImagem", ambiente, o_que="consultar a imagem",
                   pasta=pasta, nossoNumero=str(nosso_numero or "").strip(),
@@ -553,7 +560,7 @@ def consultar_imagem(*, nosso_numero: str = "", numero_titulo: str = "",
 def autorizacoes_do_periodo(*, solicitacao_de: str = "",
                             solicitacao_ate: str = "", remessa_de: str = "",
                             remessa_ate: str = "",
-                            ambiente: Any = CRED.HOMOLOGACAO,
+                            ambiente: Any = CRED.PRODUCAO,
                             pasta=None) -> str:
     """As autorizações por período — de solicitação e de remessa."""
     return chamar("ConsultaAutorizacoesPeriodo", ambiente,
@@ -582,7 +589,7 @@ def _nome(valor: Any) -> str:
     return nome
 
 
-def diagnostico(ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None) -> dict:
+def diagnostico(ambiente: Any = CRED.PRODUCAO, *, pasta=None) -> dict:
     """Tenta falar com a CRA e diz o que aconteceu. **Não baixa nem envia.**
 
     **USA `BuscarApresentante`, que é a única operação sem parâmetro nenhum** —
@@ -590,10 +597,15 @@ def diagnostico(ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None) -> dict:
     sobre arquivo. Um teste que pedisse uma remessa marcaria a remessa como
     baixada do lado de lá.
     """
-    qual = str(ambiente or "").strip().upper() or CRED.HOMOLOGACAO
+    qual = str(ambiente or "").strip().upper() or CRED.PRODUCAO
     if not CRED.tem(CRED.CRA, qual, pasta):
         return {"ok": False, "ambiente": qual,
-                "motivo": "A credencial da CRA ainda não foi informada."}
+                "motivo": (
+                    "A credencial da CRA ainda não foi informada"
+                    + (" para a PRODUÇÃO — é a única que o sistema usa desde "
+                       "14/10/2026. Informe-a em Administrativo → "
+                       "Configurações → Centrais." if qual == CRED.PRODUCAO
+                       else "."))}
     try:
         resposta = apresentantes(qual, pasta=pasta)
     except CraError as erro:
@@ -603,7 +615,8 @@ def diagnostico(ambiente: Any = CRED.HOMOLOGACAO, *, pasta=None) -> dict:
         return {"ok": False, "ambiente": qual,
                 "motivo": (
                     "A CRA recusou ao buscar os apresentantes: "
-                    f"{recusa} Confira o usuário e a senha de homologação "
+                    f"{recusa} Confira o usuário e a senha de "
+                    f"{'produção' if qual == CRED.PRODUCAO else qual.lower()} "
                     "em Administrativo → Configurações → Centrais de Protesto.")}
     return {"ok": True, "ambiente": qual,
             "endereco": endereco_do_ambiente(qual),

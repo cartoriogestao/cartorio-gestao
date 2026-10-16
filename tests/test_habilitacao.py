@@ -59,18 +59,18 @@ def _abrir(con, **extra) -> int:
              "nubente2_estado_civil": "SOLTEIRA",
              "tipo": "CIVIL", "regime": "COMUNHAO_PARCIAL"}
     dados.update(extra)
-    return HAB.abrir(con, dados, agora=AGORA, usuario="JEAN")
+    return HAB.abrir(con, dados, agora=AGORA, usuario="MARIO")
 
 
 def _entregar_tudo(con, habilitacao_id: int) -> None:
     for d in HAB.o_que_falta(con, habilitacao_id):
         HAB.marcar_documento(con, d["id"], apresentado=True, agora=AGORA,
-                             usuario="JEAN")
+                             usuario="MARIO")
 
 
 def _publicar(con, habilitacao_id: int, hoje="2026-08-27"):
     return HAB.publicar_edital(con, habilitacao_id, teor=TEOR, agora=AGORA,
-                               hoje=hoje, usuario="JEAN")
+                               hoje=hoje, usuario="MARIO")
 
 
 # ------------------------------------------------------------- abrir
@@ -136,7 +136,7 @@ def test_dispensar_exige_motivo_escrito(con):
     HAB.dispensar_documento(con, doc["id"],
                             motivo="apresentou o original em cartório e o "
                                    "escrevente conferiu",
-                            agora=AGORA, usuario="JEAN")
+                            agora=AGORA, usuario="MARIO")
     assert doc["id"] not in {d["id"] for d in HAB.o_que_falta(con, h)}
 
 
@@ -255,7 +255,7 @@ def test_habilita_com_edital_publicado_mesmo_no_prazo(con):
     _entregar_tudo(con, h)
     _publicar(con, h, hoje="2026-08-27")
     # Dentro do prazo (e no último dia) já pode habilitar.
-    r = HAB.habilitar(con, h, agora=AGORA, hoje="2026-08-30", usuario="JEAN")
+    r = HAB.habilitar(con, h, agora=AGORA, hoje="2026-08-30", usuario="MARIO")
     assert r["numero"] == 1 and r["ano"] == 2026
     linha = con.execute("SELECT situacao FROM hc_habilitacoes WHERE id=?", (h,)).fetchone()
     assert linha["situacao"] == "HABILITADO"
@@ -265,7 +265,7 @@ def test_vencido_o_prazo_a_certidao_sai_e_vale_noventa_dias(con):
     h = _abrir(con)
     _entregar_tudo(con, h)
     _publicar(con, h, hoje="2026-08-27")
-    r = HAB.habilitar(con, h, agora=AGORA, hoje="2026-09-02", usuario="JEAN")
+    r = HAB.habilitar(con, h, agora=AGORA, hoje="2026-09-02", usuario="MARIO")
     assert r["numero"] == 1 and r["ano"] == 2026
     assert r["vale_ate"] == "2026-12-01"        # 02/09 + 90
     linha = con.execute("SELECT * FROM hc_habilitacoes WHERE id=?", (h,)).fetchone()
@@ -465,7 +465,7 @@ def test_a_publicacao_na_central_guarda_o_protocolo(con):
     _entregar_tudo(con, h)
     _publicar(con, h)
     HAB.registrar_publicacao(con, h, protocolo="CRC-2026-00123", agora=AGORA,
-                             usuario="JEAN")
+                             usuario="MARIO")
     linha = con.execute("SELECT * FROM hc_habilitacoes WHERE id=?", (h,)).fetchone()
     assert linha["eproclamas_protocolo"] == "CRC-2026-00123"
     assert linha["eproclamas_em"] == AGORA[:10]

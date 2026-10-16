@@ -91,7 +91,7 @@ def test_balcao_nao_entra_no_painel(cg_casa):
 
 
 def test_anonimo_vai_para_o_login(cg_casa):
-    cg_casa["db"].create_user("jean", "ADMIN DE TESTE", SENHA, "ADMIN")
+    cg_casa["db"].create_user("mario", "ADMIN DE TESTE", SENHA, "ADMIN")
     r = cg_casa["c"].get("/centrais/status")
     assert r.status_code == 302 and "/login" in r.headers["Location"]
 

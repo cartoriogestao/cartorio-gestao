@@ -152,6 +152,21 @@ def test_o_achado_do_http_fica_a_vista_do_oficial(s):
     assert "legível" in html
 
 
+def test_a_tela_so_tem_producao(s):
+    """**14/10/2026** — ordem do oficial: «tire a opção de funcionar na
+    homologação, agora é tudo produção». A tela tinha seletor com
+    homologação (o padrão) e produção; agora não tem seletor, e um endereço
+    antigo com `?ambiente=HOMOLOGACAO` abre a produção."""
+    for endereco in ("/protesto/cra/api",
+                     "/protesto/cra/api?ambiente=HOMOLOGACAO"):
+        html = s["c"].get(endereco).get_data(as_text=True)
+        assert "<select name=\"ambiente\"" not in html
+        assert 'value="HOMOLOGACAO"' not in html
+        assert "Ambiente de PRODUÇÃO" in html
+        assert "Comece pela de homologação" not in html
+        assert "crama.crabr.com.br" in html, "o endereço mostrado é o de produção"
+
+
 def test_a_producao_avisa_que_baixar_MARCA_do_lado_de_la(s):
     """O manual diz que a `Remessa` traz a do dia mais as pendentes — pedir
     duas vezes não é o mesmo que pedir uma."""

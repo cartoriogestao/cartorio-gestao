@@ -40,16 +40,16 @@ def _uid(casa, login: str) -> int:
 
 
 def _tarefa(casa, criada_por: int | None = None, **campos) -> int:
-    jean = _uid(casa, "jean")
+    mario = _uid(casa, "mario")
     dados = {"title": "Encaminhar malote", "sector": "Malote",
-             "evidence_required": 0, "assigned_user_id": jean}
+             "evidence_required": 0, "assigned_user_id": mario}
     dados.update(campos)
-    return casa["db"].create_task(dados, criada_por or jean)
+    return casa["db"].create_task(dados, criada_por or mario)
 
 
 def test_andamento_com_passagem_pela_lista_tira_de_comigo(casa):
-    jean, lei = _uid(casa, "jean"), _uid(casa, "beatriz")
-    tid = _tarefa(casa, jean, assigned_user_id=jean)
+    mario, lei = _uid(casa, "mario"), _uid(casa, "beatriz")
+    tid = _tarefa(casa, mario, assigned_user_id=mario)
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)
     assert "Passar a responsabilidade para" in html
     texto = "Beatriz, dar os demais encaminhamentos desta semana."
@@ -64,7 +64,7 @@ def test_andamento_com_passagem_pela_lista_tira_de_comigo(casa):
         linha = con.execute("SELECT assigned_user_id FROM tasks WHERE id=?",
                             (tid,)).fetchone()
         assert linha["assigned_user_id"] == lei
-        comigo = TP.contagem_por_vista(con, jean)[TP.VISTA_COMIGO]
+        comigo = TP.contagem_por_vista(con, mario)[TP.VISTA_COMIGO]
         assert comigo == 0
     finally:
         con.close()
@@ -74,8 +74,8 @@ def test_andamento_com_passagem_pela_lista_tira_de_comigo(casa):
 
 
 def test_andamento_sem_passagem_mantem_comigo(casa):
-    jean = _uid(casa, "jean")
-    tid = _tarefa(casa, assigned_user_id=jean)
+    mario = _uid(casa, "mario")
+    tid = _tarefa(casa, assigned_user_id=mario)
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)
     casa["cliente"].post(
         f"/tarefas/{tid}",
@@ -86,15 +86,15 @@ def test_andamento_sem_passagem_mantem_comigo(casa):
     con.row_factory = sqlite3.Row
     try:
         assert con.execute("SELECT assigned_user_id FROM tasks WHERE id=?",
-                           (tid,)).fetchone()["assigned_user_id"] == jean
-        assert TP.contagem_por_vista(con, jean)[TP.VISTA_COMIGO] == 1
+                           (tid,)).fetchone()["assigned_user_id"] == mario
+        assert TP.contagem_por_vista(con, mario)[TP.VISTA_COMIGO] == 1
     finally:
         con.close()
 
 
 def test_atalho_registrar_e_passar_ao_substituto(casa):
-    jean, lei = _uid(casa, "jean"), _uid(casa, "beatriz")
-    tid = _tarefa(casa, assigned_user_id=jean, backup_user_id=lei)
+    mario, lei = _uid(casa, "mario"), _uid(casa, "beatriz")
+    tid = _tarefa(casa, assigned_user_id=mario, backup_user_id=lei)
     html = casa["cliente"].get(f"/tarefas/{tid}").get_data(as_text=True)
     assert "Registrar e passar ao substituto" in html
     casa["cliente"].post(

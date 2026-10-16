@@ -59,11 +59,11 @@ def casa(tmp_path):
     dados.mkdir()
     app = create_app({"DATA_DIR": str(dados)})
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
-    Database(banco).create_user("jean", "MARIO EXEMPLO DOS SANTOS", SENHA,
+    Database(banco).create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA,
                                "ADMIN")
     c = app.test_client()
     c.post("/login",
-           data={"username": "jean", "password": SENHA,
+           data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     con = sqlite3.connect(banco)
@@ -102,10 +102,10 @@ def _configurar_o_selador(casa):
     """
     with casa["con"] as con:
         SELCFG.gravar(con, base_url="https://127.0.0.1:9", origem="MANUAL",
-                      agora="2026-09-16T09:00", usuario_do_sistema="jean")
+                      agora="2026-09-16T09:00", usuario_do_sistema="mario")
     SELCFG.gravar_credencial(casa["dados"], "selador", "senha-de-mentira",
                              agora="2026-09-16T09:00",
-                             usuario_do_sistema="jean")
+                             usuario_do_sistema="mario")
     assert SELCFG.situacao(casa["con"], casa["dados"])["pronto"], (
         "o ensaio nao conseguiu deixar o selador pronto")
 

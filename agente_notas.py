@@ -536,7 +536,23 @@ def regra_anotacao_a_margem(con: sqlite3.Connection, hoje: date) -> list[dict]:
                        "sem selo.")
             gravidade = "VENCIDO"
         elif a["anterior_cns"] or a["anterior_livro"]:
-            continue          # ato de outra serventia: comunica-se por carta (§ 1º)
+            # Ato de outra serventia: comunica-se por carta (§ 1º). Desde o
+            # relato #129 (14/10/2026) há onde guardar o comprovante — a
+            # obrigação ABERTA em `nt_comunicacoes_origem` vira achado.
+            aberta = (_tem_tabela(con, "nt_comunicacoes_origem") and con.execute(
+                """SELECT destinatario FROM nt_comunicacoes_origem
+                   WHERE ato_id = ? AND situacao = 'ABERTA'""",
+                (a["id"],)).fetchone())
+            if not aberta:
+                continue
+            saida.append(GC._achado(
+                f"NOTAS_COMUNICACAO_ORIGEM:nt_atos:{a['id']}", "NOTAS_ANOTACAO",
+                "VENCIDO", SETOR_QUALIFICACAO,
+                f"{_rotulo_ato(a)} sem a comunicação à serventia de origem",
+                f"Comunicar {aberta['destinatario']} e, na ficha do ato, juntar o "
+                "comprovante de recebimento ou anotar o envio do ofício "
+                "(art. 831, § 1º).", None, FUND_ANOTACAO))
+            continue
         else:
             detalhe = ("O ato não diz qual procuração alcança (livro, folha ou o ato "
                        "desta casa): sem isso a anotação à margem não tem onde ser feita.")

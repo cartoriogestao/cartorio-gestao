@@ -556,7 +556,8 @@ def listar(con: sqlite3.Connection, limite: int = 100) -> list[sqlite3.Row]:
     return list(con.execute(
         """SELECT id, tipo, par_id, apresentante_codigo, apresentante_nome,
                   dia, numero_da_remessa, titulos, soma_centavos, nome_arquivo,
-                  hash_arquivo, gerado_em, gerado_por
+                  hash_arquivo, gerado_em, gerado_por, cra_enviado_em,
+                  cra_enviado_ambiente, cra_envio_erro, cra_enviado_por
              FROM pt_retornos ORDER BY id DESC LIMIT ?""", (int(limite),)))
 
 
@@ -567,3 +568,97 @@ def atos_do_retorno(con: sqlite3.Connection, retorno_id: int) -> list[dict]:
                   t.nosso_numero, t.protocolo, t.saldo_centavos
              FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
             WHERE a.retorno_id = ? ORDER BY a.id""", (int(retorno_id),))]
+
+
+# ------------------------------------------ o que o E-Ofício já mandou à CRA
+#
+# A VIRADA DO PROTESTO (13/10/2026). Os atos trazidos do E-Ofício não têm
+# `retorno_id`, e `pendentes()` os oferecia de volta: a tela da CRA mandaria
+# reenviar mais de mil atos que o E-Ofício já informou. Marcar TODOS seria o
+# erro do outro lado — o que o E-Ofício lavrou e ainda não retornou ficaria
+# calado. Marca-se só o que aparece nos ARQUIVOS que ele gerou (a pasta da
+# CRA), e o que é anterior a esses arquivos todos.
+NOME_DO_INFORMADO_PELO_EOFICIO = {
+    "SDTBFORTP": "E-OFICIO-RETORNOS-ANTES-DA-VIRADA",
+    "SDTBFOAND": "E-OFICIO-ANDAMENTOS-ANTES-DA-VIRADA",
+}
+#: Que ocorrência do retorno prova cada ato final (`protesto_cra.OCORRENCIAS`;
+#: «C» é o protesto como o E-Ofício o escrevia, 1.106 de 1.107 no acervo).
+OCORRENCIA_QUE_PROVA = {"PROTESTO": {"2", "C"}, "PAGAMENTO": {"1"},
+                        "DESISTENCIA": {"3"}, "CANCELAMENTO": {"A"}}
+
+
+def _registro_do_eoficio(con: sqlite3.Connection, tipo: str, agora: str) -> int:
+    nome = NOME_DO_INFORMADO_PELO_EOFICIO[tipo]
+    linha = con.execute("SELECT id FROM pt_retornos WHERE nome_arquivo=?",
+                        (nome,)).fetchone()
+    if linha:
+        return int(linha[0])
+    cur = con.execute(
+        """INSERT INTO pt_retornos(tipo, apresentante_codigo, apresentante_nome,
+               dia, numero_da_remessa, titulos, soma_centavos, nome_arquivo,
+               conteudo, gerado_em, gerado_por, cra_enviado_em,
+               cra_enviado_ambiente, cra_envio_resumo)
+           VALUES (?, '', 'E-Ofício', ?, 1, 0, 0, ?, '', ?, 'virada do protesto',
+                   ?, 'EOFICIO', ?)""",
+        (tipo, agora[:10], nome, agora, agora,
+         "Não é arquivo deste sistema: marca os atos que o E-Ofício já "
+         "informou à CRA antes da virada (13/10/2026)."))
+    return int(cur.lastrowid)
+
+
+def marcar_o_que_o_eoficio_ja_informou(con: sqlite3.Connection, fluxo: dict,
+                                       *, agora: str) -> dict:
+    """Marca como informados os atos do E-Ofício que os arquivos provam. ESCREVE.
+
+    `fluxo` é `gestor_protesto.ler_fluxo_da_cra` da pasta da CRA. Ato final
+    entra se o retorno do mesmo protocolo traz a ocorrência dele; apontamento
+    entra se o título aparece em qualquer arquivo devolvido. Ato anterior ao
+    primeiro arquivo da pasta entra também: o E-Ofício era o único sistema, e
+    ato pendente de retorno há mais tempo que a pasta alcança não existe. O que
+    sobra fica pendente — e sai no primeiro retorno do Cartório Gestão.
+    """
+    datas = [r["enviado"] for v in fluxo.get("retorno", {}).values() for r in v
+             if r.get("enviado")]
+    desde = min(datas).isoformat() if datas else None
+    contagem = {"retorno": 0, "andamento": 0, "anterior_aos_arquivos": 0,
+                "fica_pendente": 0, "desde": desde}
+    reg_ret = reg_and = None
+    linhas = con.execute(
+        """SELECT a.id, a.tipo, a.data_ato, t.protocolo, t.apresentante_codigo,
+                  t.nosso_numero, t.numero_titulo
+             FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
+            WHERE a.retorno_id IS NULL AND a.origem = 'EOFICIO'
+              AND t.origem IN ('CRA', 'CENPROT')""").fetchall()
+    for a in linhas:
+        tipo, prot = a["tipo"], str(a["protocolo"] or "").strip()
+        if tipo == "APONTAMENTO":
+            apres = str(a["apresentante_codigo"] or "").strip()
+            provado = ((apres, str(a["nosso_numero"] or "").strip())
+                       in fluxo.get("respondido", set())
+                       or (apres, str(a["numero_titulo"] or "").strip())
+                       in fluxo.get("respondido", set()))
+            arquivo = "SDTBFOAND"
+        elif tipo in OCORRENCIA_QUE_PROVA:
+            provado = any(str(r.get("ocorrencia") or "").upper()
+                          in OCORRENCIA_QUE_PROVA[tipo]
+                          for r in fluxo.get("retorno", {}).get(prot, []))
+            arquivo = "SDTBFORTP"
+        else:
+            continue
+        antigo = bool(desde and str(a["data_ato"] or "")[:10] < desde)
+        if not (provado or antigo):
+            contagem["fica_pendente"] += 1
+            continue
+        if arquivo == "SDTBFORTP":
+            reg_ret = reg_ret or _registro_do_eoficio(con, arquivo, agora)
+            alvo = reg_ret
+            contagem["retorno"] += 1
+        else:
+            reg_and = reg_and or _registro_do_eoficio(con, arquivo, agora)
+            alvo = reg_and
+            contagem["andamento"] += 1
+        if antigo and not provado:
+            contagem["anterior_aos_arquivos"] += 1
+        con.execute("UPDATE pt_atos SET retorno_id=? WHERE id=?", (alvo, a["id"]))
+    return contagem

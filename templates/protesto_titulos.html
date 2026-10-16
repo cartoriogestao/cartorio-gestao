@@ -1,0 +1,214 @@
+{% extends 'base.html' %}
+{% block title %}Protesto — títulos — Protesto{% endblock %}
+{% block heading %}<h1>Protesto — títulos</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+{#
+  A LISTA ABRE NOS PENDENTES — pedido do oficial em 14/10/2026, o primeiro dia
+  do protesto no sistema: «não consigo ver, filtrar e ordenar os títulos
+  realmente pendentes». Quem separa, conta, filtra, ordena e diz o próximo
+  passo é `protesto_lista`; esta tela só desenha.
+#}
+
+{#
+  OS HORARIOS DA CRA NA TELA ONDE O BALCAO CHEGA — pedido do oficial em
+  01/09/2026, «na pagina principal do protesto, para amplo acesso dos
+  escreventes». Só a parte com hora marcada; o roteiro inteiro fica a um clique.
+#}
+<section class="panel" style="border-left:3px solid var(--cor-do-modulo)">
+  <div class="panel-head">
+    <span>Horários da CRA</span>
+    <small><a href="{{ url_for('protesto_painel') }}">o roteiro inteiro das
+      Centrais</a></small>
+  </div>
+  <p style="padding:14px"><small>
+    <strong>Retorno 11:30</strong> · <strong>Andamento 11:30</strong> ·
+    <strong>Confirmação 14:10</strong> — estes três <strong>saem daqui</strong>.
+    A remessa a CRA disponibiliza às <strong>12:30</strong>.
+  </small></p>
+</section>
+
+{% if user.role in ['ADMIN','MANAGER','USER'] %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_titulo_novo') }}">+ Título novo</a>
+  <a class="button" href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
+  <a class="button" href="{{ url_for('protesto_avisos') }}">Avisos e editais</a>
+  <a class="button" href="{{ url_for('protesto_certidoes') }}">Certidão de protesto</a>
+</div>
+{% endif %}
+
+<div class="notice">
+  Esta tela <strong>consulta</strong>. Para lançar ato — apontar, intimar, protestar,
+  cancelar — abra a ficha do título (ou siga o link do <em>próximo passo</em>): os
+  atos que cabem aparecem lá, e só os que cabem. Para abrir título <strong>novo</strong>,
+  use o botão acima.
+</div>
+
+{#
+  AS TRÊS VISTAS, com o número de cada uma no botão — a forma da lista de
+  problemas da ajuda (relato #82). O número vem da MESMA régua que filtra a
+  lista (os outros filtros valem para a contagem; só a vista e a situação não).
+  É link, e não formulário: o filtro é pergunta, e fica no endereço.
+#}
+<div class="actions">
+  {% for chave, v in vistas.items() %}
+    <a class="modo-botao{% if chave == filtro.vista %} ativo{% endif %}"
+       href="{{ url_for('protesto_titulos', **params(filtro, vista=chave, situacao=None, ordem=None, dir=None, pagina=None)) }}"
+       {% if chave == filtro.vista %}aria-current="page"{% endif %}
+       >{{ v.rotulo }} ({{ contagem_vistas.get(chave, 0) }})</a>
+  {% endfor %}
+</div>
+
+{% if lembrado %}
+<p class="small muted" style="margin:6px 0">
+  Mostrando o último filtro que você usou nesta lista.
+  <a href="{{ url_for('protesto_titulos', vista='pendentes') }}">Voltar aos pendentes</a>
+</p>
+{% endif %}
+
+<section class="cards">
+  <div class="stat"><strong>{{ total }}</strong><small>no filtro atual</small></div>
+  {% for s in vistas[filtro.vista].situacoes %}
+    <div class="stat"><strong>{{ por_situacao.get(s, 0) }}</strong><small>{{ s }}</small></div>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Procurar e filtrar</span></div>
+  <form method="get" class="grid2" style="padding:14px">
+    <input type="hidden" name="vista" value="{{ filtro.vista }}">
+    <input type="hidden" name="ordem" value="{{ filtro.ordem }}">
+    <input type="hidden" name="dir" value="{{ filtro.dir }}">
+    <label>Termo
+      <input name="q" value="{{ filtro.q }}"
+             placeholder="nome ou CPF/CNPJ do devedor, número do título, protocolo, cedente"></label>
+    <label>Situação
+      <select name="situacao">
+        <option value="">todas desta vista</option>
+        {% for s in vistas[filtro.vista].situacoes %}
+          <option value="{{ s }}" {% if s == filtro.situacao %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+        {% if filtro.vista != 'encerrados' %}
+          <option value="{{ filtro_sustado }}" {% if filtro.situacao == filtro_sustado %}selected{% endif %}>SUSTADO (ordem judicial em vigor)</option>
+        {% endif %}
+      </select></label>
+    <label>Apresentante
+      <input name="apresentante" value="{{ filtro.apresentante }}" list="pt-apresentantes"
+             placeholder="código ou nome"></label>
+    <datalist id="pt-apresentantes">
+      {% for a in apresentantes %}<option value="{{ a.nome }}">{{ a.codigo or '' }} · {{ a.n }}</option>{% endfor %}
+    </datalist>
+    <label>Entrada de
+      <input type="date" name="de" value="{{ filtro.de }}"></label>
+    <label>até
+      <input type="date" name="ate" value="{{ filtro.ate }}"></label>
+    <div class="actions">
+      <button class="button">Procurar</button>
+      <a class="button" href="{{ url_for('protesto_titulos', vista='pendentes') }}">Limpar</a>
+    </div>
+  </form>
+  <p class="small muted" style="padding:0 14px 14px">
+    «Entrada» é a data do apontamento (ou a do recebimento, para quem ainda não foi
+    apontado). Os dias desde a intimação são <strong>contagem, e não juízo</strong>:
+    quem diz se o prazo venceu é quem assina.
+  </p>
+</section>
+
+{% macro cab(chave, rotulo) -%}
+  <a href="{{ url_for('protesto_titulos', **ordenar_por(filtro, chave)) }}"
+     style="color:inherit; white-space:nowrap">{{ rotulo }}{% if filtro.ordem == chave %} {{ '▲' if filtro.dir == 'asc' else '▼' }}{% endif %}</a>
+{%- endmacro %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>{{ vistas[filtro.vista].rotulo }}</span>
+    <small>página {{ pagina }} de {{ paginas }}</small>
+  </div>
+  {% if not linhas %}
+    <p style="padding:14px">
+      Nada aqui.
+      {% if acervo_vazio %}
+        O acervo do E-Ofício entra pela tela
+        <a href="{{ url_for('atribuicoes_importar') }}">Trazer das atribuições</a>;
+        título novo, pelo botão «Título novo».
+      {% elif filtro.vista == 'pendentes' and not filtro.q and not filtro.situacao and not filtro.apresentante and not filtro.de and not filtro.ate %}
+        Nenhum título com o fluxo em aberto. Os já resolvidos estão em
+        <a href="{{ url_for('protesto_titulos', vista='encerrados') }}">Encerrados</a>.
+      {% else %}
+        Nenhum título casou com o filtro.
+        {% if filtro.vista != 'todos' %}
+          Procure também em
+          <a href="{{ url_for('protesto_titulos', **params(filtro, vista='todos', situacao=None, pagina=None)) }}">Todos</a>.
+        {% endif %}
+      {% endif %}
+    </p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>{{ cab('protocolo', 'Protocolo') }}</th>
+        <th>Nº apont.</th>
+        <th>{{ cab('entrada', 'Entrada') }}</th>
+        <th>Apresentante</th>
+        <th>{{ cab('devedor', 'Devedor') }}</th>
+        <th>Espécie</th>
+        <th>{{ cab('valor', 'Valor') }}</th>
+        <th>Situação</th>
+        <th>{{ cab('dias', 'Intimado há') }}</th>
+        <th>CENPROT</th>
+        <th>Próximo passo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+      {% set ficha = url_for('protesto_titulo', titulo_id=l.id) %}
+      <tr>
+        <td><a href="{{ ficha }}">{{ l.protocolo or '—' }}</a>
+          <div><small>título {{ l.numero_titulo }}</small></div></td>
+        <td>{{ l.numero_apontamento if l.numero_apontamento is not none else '—' }}</td>
+        <td style="white-space:nowrap">{{ (l.data_entrada or '—')[:10] }}</td>
+        <td>{% if l.apresentante_nome or l.apresentante_codigo %}{{ l.apresentante_nome or '' }}{% if l.apresentante_codigo %} <small>({{ l.apresentante_codigo }})</small>{% endif %}{% else %}—{% endif %}</td>
+        <td>{{ l.devedores or '—' }}
+          {%- if l.nosso_numero %}<div><small>nosso nº {{ l.nosso_numero }}</small></div>{% endif %}</td>
+        <td>{{ l.especie }}</td>
+        <td style="white-space:nowrap">{{ l.saldo_centavos | centavos_reais }}</td>
+        <td>{{ l.situacao }}{% if l.ultima_ordem == 'SUSTACAO' %}<div><small><strong>sustado</strong></small></div>{% endif %}</td>
+        <td>{% if l.dias_desde_a_intimacao is none %}<small>—</small>
+            {% else %}{{ l.dias_desde_a_intimacao }} dia(s)<div><small>{{ (l.data_intimacao or '')[:10] }}</small></div>{% endif %}</td>
+        <td>{{ 'sim' if l.tem_chave else 'não' }}</td>
+        <td>
+          {% set p = l.proximo %}
+          {% if not p %}<small class="muted">—</small>
+          {% else %}
+            <small>{{ p.texto }}</small>
+            {% if p.passo in ('entrega', 'edital') %}
+              <div><a href="{{ url_for('protesto_avisos') }}">{{ p.acao }} &rarr;</a></div>
+            {% elif p.passo == 'digital' %}
+              <div><a href="{{ url_for('protesto_resolve_ficha', intimacao_id=p.intimacao_id) }}">{{ p.acao }} &rarr;</a></div>
+            {% elif p.passo == 'protestar' %}
+              <div><a href="{{ url_for('protesto_a_protestar') }}">{{ p.acao }} &rarr;</a></div>
+            {% else %}
+              <div><a href="{{ ficha }}">{{ p.acao }} &rarr;</a></div>
+            {% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  {% if paginas > 1 %}
+  <div class="actions" style="padding:14px">
+    {% if pagina > 1 %}
+      <a class="button" href="{{ url_for('protesto_titulos', **params(filtro, pagina=pagina-1)) }}">&larr; anterior</a>
+    {% endif %}
+    {% if pagina < paginas %}
+      <a class="button" href="{{ url_for('protesto_titulos', **params(filtro, pagina=pagina+1)) }}">próxima &rarr;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

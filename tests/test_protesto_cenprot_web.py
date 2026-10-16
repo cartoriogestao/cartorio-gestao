@@ -142,7 +142,9 @@ def test_a_tela_abre(s):
 
 def test_a_tela_esta_no_menu(s):
     """O DEFEITO DAS SEIS VEZES: funcao pronta que nenhuma tela chama."""
-    html = s["c"].get("/protesto/titulos").get_data(as_text=True)
+    # A lista mora em `/protesto` desde a 3.6.193 (24/09/2026); o endereço
+    # antigo só redireciona, e o redirecionamento não traz menu — 14/10/2026.
+    html = s["c"].get("/protesto").get_data(as_text=True)
     assert 'href="/protesto/cenprot"' in html
 
 

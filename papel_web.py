@@ -115,13 +115,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return redirect(url_for("rcpn_papel"))
 
     @app.route("/rcpn/papel/estornar", methods=["POST"])
-    @roles_required("ADMIN", "MANAGER", "USER")
+    @roles_required("ADMIN", "MANAGER")
     def rcpn_papel_estornar():
         """Desfaz uma remessa recebida por engano. ESCREVE.
 
-        MESMO PERFIL DE `receber`: dar entrada em papel de segurança e desfazer
-        essa entrada são o mesmo tipo de decisão — de quem responde pela
-        serventia, e não do balcão.
+        De quem responde pela serventia, e não do balcão: desfazer a entrada
+        do papel de segurança INUTILIZA folhas em branco em lote.
+
+        O PERFIL USER VOLTOU A SER RECUSADO AQUI EM 14/10/2026. A 3.6.160
+        (21/09/2026) abriu esta rota ao USER na mesma leva de ~50 rotas, sem
+        ordem registrada (`DOCUMENTACAO/SANITIZACAO_PARA_O_GITHUB.md`), e a
+        tela continuou escondendo o botão de quem não é ADMIN/MANAGER — a porta
+        escondida e destrancada. `tests/test_papel_web.py` guarda a recusa.
+        (`receber`, acima, ficou aberta ao USER na mesma leva; decidir se fica
+        é do oficial.)
         """
         try:
             with db.transaction() as con:

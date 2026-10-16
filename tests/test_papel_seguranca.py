@@ -44,7 +44,7 @@ def banco() -> sqlite3.Connection:
 def _caixa(con, de="7225136", ate="7225145", serie="HA"):
     return PP.receber_remessa(con, fornecedor="ARPENBRASIL", serie=serie,
                               codigo_de=de, codigo_ate=ate, agora=AGORA,
-                              nota_fiscal="NF 1234", usuario="JEAN")
+                              nota_fiscal="NF 1234", usuario="MARIO")
 
 
 # ---------------------------------------------------------- a remessa
@@ -172,7 +172,7 @@ def test_cancelar_o_ato_devolve_a_folha_e_guarda_o_caminho():
 
     r = PP.recuperar_do_ato(
         con, tabela="rc_certidoes", ato_id=7, agora=DEPOIS,
-        motivo="certidão emitida com erro", usuario="JEAN")
+        motivo="certidão emitida com erro", usuario="MARIO")
 
     assert r == {"quantas": 1, "codigos": ["7225136"]}
     folha = PP.ler(con, "7225136")
@@ -188,7 +188,7 @@ def test_cancelar_o_ato_devolve_a_folha_e_guarda_o_caminho():
     volta = movimentos[-1]
     assert volta["tabela"] == "rc_certidoes" and volta["ato_id"] == 7
     assert volta["selo"] == "CERTID000000ABC"
-    assert volta["ocorrido_por"] == "JEAN"
+    assert volta["ocorrido_por"] == "MARIO"
 
 
 def test_recuperar_e_idempotente_e_nao_toca_outro_ato():
@@ -408,7 +408,7 @@ def test_estornar_inutiliza_as_folhas_em_branco_da_remessa():
     r = _caixa(con, "7225415", "7225417")
     ok = PP.estornar_remessa(con, r["remessa_id"],
                              motivo="duplicou a remessa 5", agora=DEPOIS,
-                             usuario="JEAN")
+                             usuario="MARIO")
     assert ok["inutilizadas"] == 3
     assert ok["ja_usadas"] == 0
     for codigo in ("7225415", "7225416", "7225417"):
@@ -423,7 +423,7 @@ def test_estornar_NAO_TOCA_folha_ja_usada():
     r = _caixa(con, "7225415", "7225417")
     with con:
         PP.usar(con, "7225416", tabela="rc_certidoes", ato_id=1, agora=AGORA,
-               usuario="JEAN")
+               usuario="MARIO")
     ok = PP.estornar_remessa(con, r["remessa_id"], motivo="engano", agora=DEPOIS)
     assert ok["inutilizadas"] == 2
     assert ok["ja_usadas"] == 1

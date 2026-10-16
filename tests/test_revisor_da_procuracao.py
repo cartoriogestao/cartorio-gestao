@@ -105,9 +105,9 @@ def _situacao(s, aid):
 def test_procuracao_sem_procurador_no_quadro_nao_lavra(serventia):
     """O caso da 791: o procurador só no papel, e não no sistema."""
     aid = _abrir(serventia)
-    _parte(serventia["banco"], aid, "HUGO FERREIRA DOS SANTOS", "OUTORGANTE")
+    _parte(serventia["banco"], aid, "PEDRO EXEMPLO DOS SANTOS", "OUTORGANTE")
     _postar(serventia, aid, acao="teor",
-            teor="<p>HUGO FERREIRA DOS SANTOS nomeia e constitui seu procurador "
+            teor="<p>PEDRO EXEMPLO DOS SANTOS nomeia e constitui seu procurador "
                  "JOSE DA SILVA, a quem confere poderes</p>")
     html = _postar(serventia, aid, acao="lancar")
     assert _situacao(serventia, aid) == "EM_LAVRATURA"
@@ -116,10 +116,10 @@ def test_procuracao_sem_procurador_no_quadro_nao_lavra(serventia):
 
 def test_cadastro_incompleto_da_parte_nao_lavra(serventia):
     aid = _abrir(serventia)
-    _parte(serventia["banco"], aid, "HUGO FERREIRA DOS SANTOS", "OUTORGANTE")
+    _parte(serventia["banco"], aid, "PEDRO EXEMPLO DOS SANTOS", "OUTORGANTE")
     _parte(serventia["banco"], aid, "JOSE DA SILVA", "OUTORGADO", completa=False)
     _postar(serventia, aid, acao="teor",
-            teor="<p>HUGO FERREIRA DOS SANTOS nomeia e constitui seu procurador "
+            teor="<p>PEDRO EXEMPLO DOS SANTOS nomeia e constitui seu procurador "
                  "JOSE DA SILVA, a quem confere poderes</p>")
     html = _postar(serventia, aid, acao="lancar")
     assert _situacao(serventia, aid) == "EM_LAVRATURA"
@@ -128,10 +128,10 @@ def test_cadastro_incompleto_da_parte_nao_lavra(serventia):
 
 def test_parte_do_quadro_que_nao_esta_no_texto_nao_lavra(serventia):
     aid = _abrir(serventia)
-    _parte(serventia["banco"], aid, "HUGO FERREIRA DOS SANTOS", "OUTORGANTE")
+    _parte(serventia["banco"], aid, "PEDRO EXEMPLO DOS SANTOS", "OUTORGANTE")
     _parte(serventia["banco"], aid, "JOSE DA SILVA", "OUTORGADO")
     _postar(serventia, aid, acao="teor",
-            teor="<p>HUGO FERREIRA DOS SANTOS nomeia e constitui seu procurador "
+            teor="<p>PEDRO EXEMPLO DOS SANTOS nomeia e constitui seu procurador "
                  "FULANO DE TAL, a quem confere poderes</p>")
     html = _postar(serventia, aid, acao="lancar")
     assert _situacao(serventia, aid) == "EM_LAVRATURA"
@@ -140,10 +140,10 @@ def test_parte_do_quadro_que_nao_esta_no_texto_nao_lavra(serventia):
 
 def test_procuracao_completa_nao_bate_na_trava_da_procuracao(serventia):
     aid = _abrir(serventia)
-    _parte(serventia["banco"], aid, "HUGO FERREIRA DOS SANTOS", "OUTORGANTE")
+    _parte(serventia["banco"], aid, "PEDRO EXEMPLO DOS SANTOS", "OUTORGANTE")
     _parte(serventia["banco"], aid, "José da Silva", "OUTORGADO")
     _postar(serventia, aid, acao="teor",
-            teor="<p>HUGO FERREIRA DOS SANTOS nomeia e constitui seu procurador "
+            teor="<p>PEDRO EXEMPLO DOS SANTOS nomeia e constitui seu procurador "
                  "JOSÉ DA SILVA, a quem confere poderes</p>")
     html = _postar(serventia, aid, acao="lancar")
     for frase in ("sem OUTORGANTE", "sem OUTORGADO", "cadastro incompleto",
@@ -154,7 +154,7 @@ def test_procuracao_completa_nao_bate_na_trava_da_procuracao(serventia):
 def test_a_trava_da_procuracao_nao_alcanca_a_escritura(serventia):
     """A ordem foi para a procuração; a escritura tem as travas dela."""
     aid = _abrir(serventia, "ESCRITURA")
-    _parte(serventia["banco"], aid, "HUGO FERREIRA DOS SANTOS", "OUTORGANTE",
+    _parte(serventia["banco"], aid, "PEDRO EXEMPLO DOS SANTOS", "OUTORGANTE",
            completa=False)
     _postar(serventia, aid, acao="teor", teor="<p>teor completo do ato</p>")
     html = _postar(serventia, aid, acao="lancar")
@@ -193,7 +193,7 @@ def test_procuracao_e_lida_pelo_sonnet_e_escritura_pelo_opus(con):
 
 def test_a_leitura_da_procuracao_sai_pelo_sonnet_com_a_instrucao_dela(con, cg_casa):
     aid = _ato_de_notas(con, "PROCURACAO")
-    _parte(cg_casa["banco"], aid, "HUGO FERREIRA DOS SANTOS", "OUTORGANTE")
+    _parte(cg_casa["banco"], aid, "PEDRO EXEMPLO DOS SANTOS", "OUTORGANTE")
     dossie = RV.dossie_notas(con, aid)
     rid, _ = RV.pedir(con, "NOTAS", aid, "h1", dossie, usuario="BEATRIZ")
     con.commit()
@@ -214,9 +214,23 @@ def test_a_leitura_da_procuracao_sai_pelo_sonnet_com_a_instrucao_dela(con, cg_ca
 
 def test_o_dossie_leva_o_cadastro_inteiro_das_partes(con, cg_casa):
     aid = _ato_de_notas(con, "PROCURACAO")
-    _parte(cg_casa["banco"], aid, "HUGO FERREIRA DOS SANTOS", "OUTORGANTE")
+    _parte(cg_casa["banco"], aid, "PEDRO EXEMPLO DOS SANTOS", "OUTORGANTE")
     _parte(cg_casa["banco"], aid, "JOSE DA SILVA", "OUTORGADO", completa=False)
     dossie = RV.dossie_notas(con, aid)
     assert "brasileira" in dossie and "lavradora" in dossie and "Rua Grande" in dossie
     # o que falta não some: aparece marcado, para o revisor apontar
     assert "profissão ?" in dossie and "endereço ?" in dossie
+
+
+def test_procuracao_com_a_fileira_de_x_do_modelo_nao_lavra(serventia):
+    """O caso da 802 (14/10/2026): o veículo ficou «XXXXXXXXXXXXXXXXXXX»."""
+    aid = _abrir(serventia)
+    _parte(serventia["banco"], aid, "PEDRO EXEMPLO DOS SANTOS", "OUTORGANTE")
+    _parte(serventia["banco"], aid, "JOSE DA SILVA", "OUTORGADO")
+    _postar(serventia, aid, acao="teor",
+            teor="<p>PEDRO EXEMPLO DOS SANTOS nomeia e constitui seu procurador "
+                 "JOSE DA SILVA, a quem confere poderes para vender o veículo : "
+                 "XXXXXXXXXXXXXXXXXXX</p>")
+    html = _postar(serventia, aid, acao="lancar")
+    assert _situacao(serventia, aid) == "EM_LAVRATURA"
+    assert "XXXXXXXXXXXXXXXXXXX" in html and "campo em branco" in html

@@ -37,11 +37,15 @@ from typing import Any
 # A epigrafe e o fecho mudam conforme o ato. Testamento tem forma propria e
 # nao entra aqui: e ato de forma vinculada, e montar por template seria
 # temerario — o modulo devolve so a moldura e o tabeliao escreve.
+#
+# A PROCURAÇÃO PARA EM «perante mim, Tabelião,» — 14/10/2026. O resto
+# («compareceu como OUTORGANTE:» ou «compareceram como OUTORGANTES:») depende
+# de quantos outorgam, e `montar` o escreve. Antes vinha fixo no singular.
 ABERTURAS = {
     "PROCURACAO": ("SAIBAM quantos este público instrumento de procuração bastante "
                    "virem que, aos {data_extenso}, nesta cidade de {cidade}, "
                    "Estado {uf_extenso}, nesta Serventia Extrajudicial, perante mim, "
-                   "Tabelião, compareceu como OUTORGANTE:"),
+                   "Tabelião,"),
     "ESCRITURA": ("SAIBAM quantos este público instrumento virem que, aos "
                   "{data_extenso}, nesta cidade de {cidade}, Estado {uf_extenso}, "
                   "nesta Serventia Extrajudicial, perante mim, Tabelião, "
@@ -309,39 +313,178 @@ def montar(tipo: str, partes: list, poderes: str | None,
         blocos += [f"<p>{qualificar(p)}.</p>" for p in partes]
         return "\n".join(blocos)
 
+    # O ATO SAI EM TEXTO CORRIDO, NUM PARÁGRAFO SÓ — 14/10/2026, ordem do
+    # oficial: «Todas procuracoes e escrituras sao em texto corrido, sem
+    # espacos no meio do texto». Art. 795, § 2º, do Código de Normas: «a
+    # escrituração deve ser seguida, sem claros ou espaços em branco».
+    #
+    #   ATÉ AQUI SAÍAM CINCO PARÁGRAFOS — a abertura, UM POR PARTE, os poderes
+    #   e o fecho —, e o modelo do E-Ofício entrava cru, com os espaços
+    #   duplos de dentro dele (181 dos 300 modelos têm). Medido o precedente:
+    #   nas 209 procurações e 41 escrituras do E-Ofício, do «SAIBAM» ao fecho
+    #   é UM parágrafo, e as partes vêm na mesma linha, separadas por «; e».
+    #
+    #   E A PROCURAÇÃO NÃO DIZIA QUEM É O PROCURADOR. As partes saíam todas
+    #   atrás de «compareceu como OUTORGANTE:», cada uma com «— na qualidade
+    #   de …», e o modelo emendava «a quem confere amplos poderes» sem a
+    #   nomeação. O precedente tem a cláusula em 200 das 210: «Pela OUTORGANTE
+    #   me foi dito que nomeia e constitui seu bastante PROCURADOR: …, a quem
+    #   confere …» (a procuração 212, de 07/08/2026, é o modelo copiado).
     uf_extenso = UF_EXTENSO.get((uf or "").upper(), f"de {uf}")
-    blocos = [f"<p>{abertura.format(data_extenso=data_extenso, cidade=cidade, uf_extenso=uf_extenso)}</p>"]
+    pedacos = [abertura.format(data_extenso=data_extenso, cidade=cidade,
+                               uf_extenso=uf_extenso)]
 
     principais = [p for p in partes if not dict(p).get("testemunha")]
     testemunhas = [p for p in partes if dict(p).get("testemunha")]
+    corpo = _em_linha(poderes or objeto or "")
 
-    if not principais:
-        blocos.append(f"<p>{_falta('nenhuma parte cadastrada no ato')}</p>")
-    for p in principais:
-        d = dict(p)
-        rotulo = (d.get("qualificacao") or "").strip().upper()
-        texto = qualificar(d)
-        blocos.append(f"<p>{texto}{f' — na qualidade de {rotulo}' if rotulo else ''}.</p>")
-
-    corpo = (poderes or objeto or "").strip()
-    if corpo:
-        # O modelo ja vem em HTML da importacao; texto solto vira paragrafo.
-        blocos.append(corpo if corpo.lstrip().startswith("<")
-                      else f"<p>{_escapar(corpo)}</p>")
+    if tipo == "PROCURACAO":
+        pedacos.append(_comparecimento_da_procuracao(principais, corpo))
     else:
-        blocos.append(f"<p>{_falta('objeto do ato — escolha um modelo ou escreva aqui')}</p>")
+        if principais:
+            pedacos.append("; e ".join(_parte_com_rotulo(p) for p in principais) + ".")
+        else:
+            pedacos.append(_falta("nenhuma parte cadastrada no ato") + ".")
+        pedacos.append(_fechar_frase(corpo) if corpo else
+                       _falta("objeto do ato — escolha um modelo ou escreva aqui") + ".")
 
     if testemunhas:
         nomes = "; ".join((dict(t).get("nome") or "").strip().upper() for t in testemunhas)
-        blocos.append(f"<p>Presentes as testemunhas: {nomes}.</p>")
+        pedacos.append(f"Presentes as testemunhas: {nomes}.")
 
-    blocos.append(f"<p>{FECHOS.get(tipo, FECHOS['ESCRITURA'])}</p>")
+    fecho = FECHOS.get(tipo, FECHOS["ESCRITURA"])
+    # O fecho da escritura pede quem assina e em que condição — o mesmo campo
+    # que «Preencher a partir do modelo» já completa sozinho com as partes.
+    assinantes = texto_dos_assinantes(partes)
+    if assinantes:
+        fecho = fecho.replace(f"[{CHAVE_ASSINANTES_ROTULO}]", assinantes)
+    pedacos.append(fecho)
+
+    texto = _corrido(" ".join(pedacos))
     # AS LINHAS DE ASSINATURA — mesmo bloco do traslado (pedido 18/09/2026).
     # A marca separa o teor narrativo do bloco, para o traslado nao duplicar.
-    blocos.append(MARCA_ASSINATURAS)
-    blocos.append(bloco_de_assinaturas(
-        partes, lavrado_nome=lavrado_nome, lavrado_titulo=lavrado_titulo))
-    return "\n".join(blocos)
+    # Elas continuam linhas próprias: são onde a caneta passa, e não o meio
+    # do texto.
+    return "\n".join([f"<p>{texto}</p>", MARCA_ASSINATURAS, bloco_de_assinaturas(
+        partes, lavrado_nome=lavrado_nome, lavrado_titulo=lavrado_titulo)])
+
+
+CHAVE_ASSINANTES_ROTULO = "ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM"
+
+
+# O CLARO DE «X» DOS MODELOS DO E-OFÍCIO — 14/10/2026. Trinta e nove dos 300
+# modelos marcam o dado a escrever com uma fileira de X («o veículo :
+# XXXXXXXXXXXXXXXXXXX»), e não com `[CAMPO]`: o detector de campo em branco
+# não os via, e a procuração 802 foi lavrada assim. Quatro X seguidos não são
+# palavra nem numeral romano em ato desta casa.
+_CLARO_DE_X = re.compile(r"[Xx]{4,}")
+
+
+def claros_de_x(teor: str | None) -> list[str]:
+    """As fileiras de X que sobraram no texto — dado do modelo não escrito."""
+    plano = re.sub(r"<[^>]+>", " ", teor or "")
+    return sorted({m.group(0) for m in _CLARO_DE_X.finditer(plano)})
+
+
+def _em_linha(html: str | None) -> str:
+    """O trecho do modelo como texto de DENTRO de um parágrafo.
+
+    Tira `<p>`, `<div>` e `<br>` — que abririam linha nova no meio do ato — e
+    deixa o resto (`<b>`, `<i>`, `<u>`). Texto solto, sem marcação, é
+    escapado. O espaço duplo sai em `_corrido`.
+    """
+    bruto = (html or "").strip()
+    if not bruto:
+        return ""
+    if not bruto.startswith("<"):
+        return _escapar(bruto)
+    bruto = re.sub(r"(?i)<br\s*/?>", " ", bruto)
+    bruto = re.sub(r"(?i)</?(p|div)(\s[^>]*)?>", " ", bruto)
+    return bruto.strip()
+
+
+def _corrido(texto: str) -> str:
+    """Um espaço entre palavras, nenhum antes de pontuação — art. 795, § 2º.
+
+    É a régua de `notas_modelos.texto_corrido`, a mesma dos modelos do
+    submódulo: uma só, para as duas montagens não divergirem.
+    """
+    from notas_modelos import texto_corrido
+    return texto_corrido(re.sub(r"\s+", " ", texto or ""))
+
+
+def _fechar_frase(texto: str) -> str:
+    """Garante o ponto final antes da frase seguinte do ato."""
+    t = (texto or "").rstrip()
+    plano = re.sub(r"<[^>]+>", "", t).rstrip()
+    return t if not plano or plano[-1] in ".;:!?" else t + "."
+
+
+def _rotulo(parte) -> str:
+    return (dict(parte).get("qualificacao") or "").strip().upper()
+
+
+def _parte_com_rotulo(parte) -> str:
+    """«como VENDEDOR, <qualificação>» — a forma da escritura 256 do E-Ofício."""
+    rotulo = _rotulo(parte)
+    return f"como {rotulo}, {qualificar(parte)}" if rotulo else qualificar(parte)
+
+
+def _qualificacao_no_lado(parte, *, esperado: tuple[str, ...]) -> str:
+    """A qualificação da parte; o papel só aparece quando não é o óbvio.
+
+    Na procuração, «OUTORGANTE» e «PROCURADOR» já estão ditos pela própria
+    frase. Papel diferente (anuente, cônjuge, representante) continua escrito
+    — sumir com ele apagaria o que o escrevente qualificou.
+    """
+    rotulo = _rotulo(parte)
+    texto = qualificar(parte)
+    if rotulo and not any(x in _sem_acento_maiusculo(rotulo) for x in esperado):
+        texto += f", na qualidade de {rotulo}"
+    return texto
+
+
+def _comparecimento_da_procuracao(principais: list, poderes: str) -> str:
+    """Comparecimento, reconhecimento, nomeação e poderes — numa frase corrida.
+
+    Copiado da procuração 212 do E-Ofício (07/08/2026), o precedente mais
+    recente desta casa. O plural acompanha quantos outorgam e quantos são
+    nomeados; o gênero fica em «(a)», como já faz `qualificar`, porque a
+    parte não tem sexo cadastrado.
+    """
+    lado_a, lado_b = [], []
+    for p in principais:
+        alvo = (lado_b if any(x in _sem_acento_maiusculo(dict(p).get("qualificacao"))
+                              for x in _SEGUNDA_PARTE) else lado_a)
+        alvo.append(p)
+    varios = len(lado_a) > 1
+    frase = ("compareceram como OUTORGANTES: " if varios
+             else "compareceu como OUTORGANTE: ")
+    if lado_a:
+        frase += "; e ".join(_qualificacao_no_lado(p, esperado=("OUTORGANT",))
+                             for p in lado_a)
+    else:
+        frase += _falta("outorgante — inclua quem outorga no quadro Partes")
+    frase += ("; reconhecidos como os próprios" if varios
+              else "; reconhecido(a) como o(a) próprio(a)")
+    frase += (" à vista dos documentos apresentados, de cuja identidade, "
+              "capacidade e livre manifestação de vontade dou fé.")
+    frase += (" Pelos OUTORGANTES me foi dito que nomeiam e constituem"
+              if varios else " Pelo(a) OUTORGANTE me foi dito que nomeia e constitui")
+    frase += (" seus bastantes PROCURADORES: " if len(lado_b) > 1
+              else " seu(sua) bastante PROCURADOR(A): ")
+    if lado_b:
+        frase += "; e ".join(_qualificacao_no_lado(p, esperado=("OUTORGAD", "PROCURADOR"))
+                             for p in lado_b)
+    else:
+        frase += _falta("procurador — inclua o outorgado no quadro Partes")
+    if not poderes:
+        return frase + ", " + _falta("poderes — escolha um modelo ou escreva aqui") + "."
+    plano = re.sub(r"<[^>]+>", "", poderes).lstrip()
+    # «a quem confere», «com amplos poderes» — o modelo continua a frase.
+    # O que começa por número ou maiúscula («1 - PODERES …») abre frase nova.
+    liga = ". " if plano[:1].isdigit() or plano[:1].isupper() else ", "
+    return frase + liga + _fechar_frase(poderes)
 
 
 # A SEGUNDA METADE DO ATO — quem RECEBE (comprador, donatário, procurador).
@@ -451,13 +594,30 @@ def atualizar_teor_para_data_de_selo(
     lavrado_nome: str,
     lavrado_titulo: str,
 ) -> dict[str, Any]:
-    """Alinha `data`, `hora` e datas no teor com o dia em que o selo sai.
+    """Alinha `data`, `hora` e a data escrita no teor com o dia em que o selo sai.
 
     Relato #116: o teor costuma ser montado dias antes; traslado/termo já usam
     «hoje» na exportação, mas o HTML gravado no ato ficava com a data antiga.
+
+    **SÓ SE TROCA A DATA ESCRITA, E NUNCA SE REMONTA O TEXTO — correção de
+    14/10/2026.** Até aqui esta função montava o teor DE NOVO a partir do
+    modelo (`montar` para os do E-Ofício, `preencher` para os do submódulo) e
+    gravava por cima — e ela roda DEPOIS do lançamento, com o ato já no livro.
+    Tudo o que o escrevente tinha corrigido à mão sumia. Medido na produção:
+    os quatro atos editados antes do selo (778, 788, 791 e 802) ficaram com
+    texto diferente da última edição; na procuração 802 as 6.010 letras
+    editadas (o veículo identificado, o procurador nomeado) viraram as 2.976
+    do modelo cru, com «XXXXXXXXXXXXXXXXXXX» no lugar do veículo — e o termo
+    do livro foi impresso depois disso. No ramo do E-Ofício a remontagem
+    acontecia até no mesmo dia, quando não havia data nenhuma a trocar.
+
+    Agora: troca-se, no texto gravado, a data por extenso de `data_por_extenso`
+    e a frase de data dos modelos do submódulo (montada com os valores que o
+    escrevente gravou); o resto do teor não se toca. Se a data mudou e o texto
+    não a escreve de nenhuma das duas formas, o teor fica como está e volta um
+    `aviso` — a tela diz para conferir, em vez de reescrever o que alguém
+    escreveu.
     """
-    from jinja2.sandbox import SandboxedEnvironment
-    from ri_modelos_atos import preencher as preencher_modelo
     from ri_web import data_por_extenso
 
     row = con.execute("SELECT * FROM nt_atos WHERE id=?", (int(ato_id),)).fetchone()
@@ -469,60 +629,54 @@ def atualizar_teor_para_data_de_selo(
     teor = ato.get("teor") or ""
     teor_novo: str | None = None
     modelo_valores_json: str | None = None
+    aviso: str | None = None
 
-    partes = [
-        dict(p)
-        for p in con.execute(
-            "SELECT * FROM nt_ato_partes WHERE ato_id=? ORDER BY testemunha, ordem",
-            (int(ato_id),),
-        ).fetchall()
-    ]
-    modelo = None
-    if ato.get("modelo_codigo"):
-        m = con.execute(
-            "SELECT * FROM nt_modelos WHERE codigo=?", (ato["modelo_codigo"],)
-        ).fetchone()
-        if m:
-            modelo = dict(m)
+    try:
+        valores = json.loads(ato.get("modelo_valores") or "{}") or {}
+    except (TypeError, ValueError):
+        valores = {}
+    if not isinstance(valores, dict):
+        valores = {}
+    novos = valores_campos_data_lavratura(quando)
 
-    if modelo and (modelo.get("origem") or "") == "SISTEMA":
+    trocas: list[tuple[str, str]] = []
+    data_velha = ato.get("data") or ""
+    if data_velha and data_velha != data_iso:
         try:
-            valores = json.loads(ato.get("modelo_valores") or "{}") or {}
-        except (TypeError, ValueError):
-            valores = {}
-        valores.update(valores_campos_data_lavratura(quando))
-        env = SandboxedEnvironment(autoescape=False)
-        ctx = contexto_jinja_partes(partes)
-        corpo_jinja = env.from_string(modelo["corpo"]).render(
-            sv=sv,
-            lavrado_nome=lavrado_nome,
-            lavrado_titulo=lavrado_titulo,
-            **ctx,
-        )
-        teor_novo = preencher_modelo({"corpo": corpo_jinja}, valores)
-        modelo_valores_json = json.dumps(valores, ensure_ascii=False)
-    elif modelo and (modelo.get("origem") or "") != "SISTEMA":
-        teor_novo = montar(
-            ato["tipo"],
-            partes,
-            modelo.get("corpo"),
-            data_extenso=data_por_extenso(quando.date()),
-            cidade=sv.get("ri_cidade", ""),
-            uf=sv.get("ri_uf", "MA"),
-            lavrado_nome=lavrado_nome,
-            lavrado_titulo=lavrado_titulo,
-        )
-    elif ato.get("data") and data_iso != ato["data"] and teor.strip():
-        try:
-            velho = data_por_extenso(date.fromisoformat(ato["data"]))
-            novo = data_por_extenso(quando.date())
-            if velho in teor:
-                teor_novo = teor.replace(velho, novo)
+            trocas.append((data_por_extenso(date.fromisoformat(data_velha)),
+                           data_por_extenso(quando.date())))
         except ValueError:
             pass
+        frase = ("{dia_por_extenso} ({dia_em_algarismos}) dias do mês de "
+                 "{mes_por_extenso} do ano de {ano_por_extenso} ({ano_em_algarismos})")
+        chaves = ("dia_por_extenso", "dia_em_algarismos", "mes_por_extenso",
+                  "ano_por_extenso", "ano_em_algarismos")
+        if all(str(valores.get(k) or "").strip() for k in chaves):
+            trocas.append((frase.format(**{k: valores[k] for k in chaves}),
+                           frase.format(**novos)))
+    if (str(valores.get("hora_por_extenso") or "").strip()
+            and str(valores.get("hora_em_algarismos") or "").strip()):
+        velha = f"{valores['hora_por_extenso']} ({valores['hora_em_algarismos']}) horas"
+        nova = f"{novos['hora_por_extenso']} ({novos['hora_em_algarismos']}) horas"
+        if velha != nova:
+            trocas.append((velha, nova))
 
-    if teor_novo is None and data_iso == (ato.get("data") or ""):
-        return {"ok": True, "alterou_teor": False, "data": data_iso}
+    texto = teor
+    for velho, novo in trocas:
+        # Espaço e quebra de linha entre as palavras não decidem nada: o
+        # mesmo texto gravado por outra tela pode ter um ou outro.
+        padrao = r"\s+".join(re.escape(pedaco) for pedaco in velho.split())
+        texto = re.sub(padrao, lambda _m, novo=novo: novo, texto)
+    if texto != teor:
+        teor_novo = texto
+        if any(k in valores for k in novos):
+            valores.update({k: v for k, v in novos.items() if k in valores})
+            modelo_valores_json = json.dumps(valores, ensure_ascii=False)
+    elif data_velha and data_velha != data_iso and teor.strip():
+        aviso = (f"A data do selo ({quando.date().strftime('%d/%m/%Y')}) não é a "
+                 f"que estava no ato ({date.fromisoformat(data_velha).strftime('%d/%m/%Y')}"
+                 ") e o texto não a escreve de um jeito que o sistema saiba trocar "
+                 "sozinho. O texto NÃO foi mexido: confira a data escrita no teor.")
 
     if modelo_valores_json is not None:
         con.execute(
@@ -540,4 +694,5 @@ def atualizar_teor_para_data_de_selo(
             "UPDATE nt_atos SET data=?, hora=? WHERE id=?",
             (data_iso, hora, int(ato_id)),
         )
-    return {"ok": True, "alterou_teor": teor_novo is not None, "data": data_iso}
+    return {"ok": True, "alterou_teor": teor_novo is not None, "data": data_iso,
+            "aviso": aviso}

@@ -22,8 +22,13 @@ from conftest import cg_login                                    # noqa: E402
 
 def test_modelos_de_encerramento_montam_o_texto():
     m = {"numero": "1196", "livro": "2-F", "livro_norm": "2F"}
+    # A CIDADE VEM DE QUEM CHAMA — sanitização B2a (10/10/2026): o padrão
+    # o nome da cidade saiu da assinatura da função e virou "" ; a tela passa
+    # `settings.ri_cidade`. O literal deste teste virou «Cidade Exemplo» na B3
+    # e ficou sem a cidade na chamada; passa-se aqui como a tela passa.
     mods = ri_web.modelos_de_encerramento(
-        m, 8, "2026-10-08", ("Beatriz Exemplo de Souza", "Substituta", "A"))
+        m, 8, "2026-10-08", ("Beatriz Exemplo de Souza", "Substituta", "A"),
+        cidade="Cidade Exemplo", uf="MA")
     cods = [x["codigo"] for x in mods]
     assert cods == ["TECNICA", "DESMEMBRAMENTO", "UNIFICACAO", "CIRCUNSCRICAO", "LIVRE"]
     tec = mods[0]["teor"]

@@ -54,7 +54,7 @@ def processo_id(con):
     pid = US.autuar(con, numero="5", modalidade="ORDINARIA", agora=AGORA,
                     requerente_nome="JOÃO BATISTA DE SOUSA",
                     imovel_descricao="Terreno urbano de 12m por 30m",
-                    imovel_municipio="Cidade Exemplo", usuario="jean")
+                    imovel_municipio="Cidade Exemplo", usuario="mario")
     con.execute("UPDATE us_processos SET imovel_area=?, posse_tempo_alegado=? "
                 "WHERE id=?", ("360,00 m²", "há mais de quinze anos", pid))
     con.commit()
@@ -124,7 +124,7 @@ def test_a_data_da_disponibilizacao_manda_no_movimento(con, processo_id):
 def test_edital_sem_descricao_do_imovel_e_recusado(con):
     """Edital que não descreve o imóvel não avisa terceiro nenhum."""
     pid = US.autuar(con, numero="6", modalidade="ORDINARIA", agora=AGORA,
-                    requerente_nome="FULANO", usuario="jean")
+                    requerente_nome="FULANO", usuario="mario")
     with pytest.raises(UN.NotificacaoError) as e:
         US.publicar_edital(con, pid, agora=AGORA, serventia=SERVENTIA)
     assert "imóvel" in str(e.value)

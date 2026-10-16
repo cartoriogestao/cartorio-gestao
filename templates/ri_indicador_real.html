@@ -89,6 +89,10 @@
       Selo gratuito / isento</label>
     <label class="span2">Motivo da gratuidade (obrigatório se isento)
       <input name="motivo_isencao" maxlength="500" size="60"></label>
+    {# A BUSCA VAI JUNTO, selo próprio — pedido do oficial, 15/10/2026. A
+       negativa não tem ato de onde contar o tempo: escolhe quem emite. #}
+    {% from '_busca.html' import campo_busca %}
+    <div class="span2">{{ campo_busca(busca_da_certidao('IMOVEL')) }}</div>
     <div class="span2"><button class="primary">Emitir certidão negativa</button></div>
   </form>
 </section>

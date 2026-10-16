@@ -108,19 +108,19 @@ def _com_edital(s, *, com_assento: bool = True) -> int:
         "nubente2_nome": "BELTRANA DE TAL", "nubente2_estado_civil": "SOLTEIRA",
         "nubente2_sexo": "F", "nubente2_nascimento": "1992-03-08",
         "tipo": "CIVIL", "regime": "COMUNHAO_PARCIAL"},
-        agora=AGORA, usuario="JEAN")
+        agora=AGORA, usuario="MARIO")
     for d in HAB.o_que_falta(con, h):
         HAB.marcar_documento(con, d["id"], apresentado=True, agora=AGORA,
-                             usuario="JEAN")
+                             usuario="MARIO")
     HAB.publicar_edital(con, h, teor=TEOR, agora=AGORA, hoje="2026-09-03",
-                        usuario="JEAN")
+                        usuario="MARIO")
     if com_assento:
         sv = {"ri_cns": "000000", "ri_cidade": "Cidade Exemplo", "ri_uf": "MA",
-              "escrevente": "JEAN", "funcao": "Escrevente"}
+              "escrevente": "MARIO", "funcao": "Escrevente"}
         feito = RC.lavrar_assento(
             con, especie="PROCLAMAS", nome="FULANO e BELTRANA", sv=sv,
             agora=AGORA, data_extenso="tres de setembro de dois mil e vinte e "
-            "seis", data_fato="2026-09-03", usuario="JEAN")
+            "seis", data_fato="2026-09-03", usuario="MARIO")
         con.execute(
             "UPDATE hc_habilitacoes SET proclamas_assento_id=? WHERE id=?",
             (feito["assento_id"], h))

@@ -194,10 +194,18 @@ def test_a_funcao_nao_vem_mais_de_busca_por_nome(serventia):
 
 def test_sem_sessao_e_rotina_de_fundo_e_nao_gente(serventia):
     """Backup e tarefa agendada não têm usuário logado. Antes ESTE era o
-    caminho normal de toda requisição; agora é a exceção."""
+    caminho normal de toda requisição; agora é a exceção.
+
+    E ELA NÃO SAI MAIS NO NOME DA SUBSTITUTA (23/10/2026, ordem do oficial,
+    «solução 1»): até aqui este teste exigia `SUBSTITUTA`, e era justamente a
+    troca que punha no ato o nome de quem não o praticou. Sem gente na tela, o
+    campo fica pendente, e quem selar assina."""
+    import nome_humano as NOMEHUM
     app = serventia["app"]
     with app.test_request_context():
-        assert app.extensions["usuario_nome"]() == SUBSTITUTA
+        nome = app.extensions["usuario_nome"]()
+    assert nome == NOMEHUM.MARCA_PENDENTE
+    assert nome != SUBSTITUTA
 
 
 # ------------------------------------------------------- não voltar atrás

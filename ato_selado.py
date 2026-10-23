@@ -2697,6 +2697,7 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
     # verdade, na mesma transação (22/10/2026).
     if cobertura.get("reserva"):
         _confirmar_reserva(con, cobertura.get("reserva"), agora=agora)
+    assinar_o_que_ficou_pendente(con, tabela=tabela, ato_id=ato_id, quem=usuario)
     # A COLUNA DO SELO NAO SE CHAMA `selo` EM TODA TABELA DE ATO, e esta linha
     # supunha que sim. Achado em 15/09/2026, ao ligar «Selar este ato» do RI —
     # a primeira tela a chamar esta funcao com `ri_atos`:
@@ -2834,6 +2835,9 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
                 _estornar_reserva(con, reserva, agora=agora,
                                   motivo="o selador respondeu sem selo")
             _tirar_aguardando(con, tabela=tabela, ato_id=ato_id)
+            if selos:
+                assinar_o_que_ficou_pendente(con, tabela=tabela, ato_id=ato_id,
+                                             quem=usuario)
         return selos
     # SEM COBERTURA: o ato fica «aguardando cobertura», com o motivo, numa
     # transacao propria — a de cima voltou atras.
@@ -3014,6 +3018,45 @@ def vincular_ao_ato(con: sqlite3.Connection, numero: Any, *, tabela: str,
     coluna = COLUNA_DO_SELO.get(tabela, "selo")
     banco(con).escrever(f"UPDATE {tabela} SET {coluna} = %s WHERE id = %s",
                         (str(numero), int(ato_id)))
+    assinar_o_que_ficou_pendente(
+        con, tabela=tabela, ato_id=ato_id,
+        quem=banco(con).valor("SELECT obtido_por FROM sd_selos WHERE numero = %s",
+                              (str(numero),)))
+
+
+def assinar_o_que_ficou_pendente(con: Any, *, tabela: Any, ato_id: Any,
+                                 quem: Any) -> list[str]:
+    """Quem selou assina o que a máquina deixou pendente. ESCREVE.
+
+    23/10/2026, ordem do oficial («solução 1»). Ato lavrado em sessão de robô
+    guarda `nome_humano.MARCA_PENDENTE` onde iria o nome de quem o praticou.
+    O selo não sai em nome de máquina (`obter_selo` e
+    `registrar_selo_obtido_a_mao` recusam), então quem o obteve é gente — e
+    é esse nome que entra no lugar da marca. São TRÊS as portas por onde um
+    selo encontra o ato, e as três chamam aqui: o selo do aparelho
+    (`obter_selo`), o digitado (`registrar_selo_obtido_a_mao`) e o amarrado
+    depois (`vincular_ao_ato`, que lê `sd_selos.obtido_por`).
+
+    SÓ A COLUNA QUE É EXATAMENTE A MARCA. Teor que a traz no meio do texto
+    NÃO se reescreve: no RI ele está na corrente de hash, e ato lavrado não
+    se edita. Ali a marca fica, e o carimbo do selo, ao lado, diz quem selou.
+
+    Devolve as colunas trocadas (vazio quando não havia o que assinar).
+    """
+    quem = NOMEHUM.nome_humano_para_ato(quem)
+    if not quem or tabela not in TABELAS_DE_ATO or ato_id in (None, ""):
+        return []
+    bd = banco(con)
+    colunas = [l["column_name"] for l in bd.ler(
+        """SELECT column_name FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = %s
+              AND data_type IN ('text', 'character varying')""", (tabela,))]
+    linha = bd.um(f"SELECT * FROM {tabela} WHERE id = %s", (int(ato_id),)) or {}
+    trocadas = [c for c in colunas if linha.get(c) == NOMEHUM.MARCA_PENDENTE]
+    for c in trocadas:
+        bd.escrever(f"UPDATE {tabela} SET {c} = %s WHERE id = %s AND {c} = %s",
+                    (quem, int(ato_id), NOMEHUM.MARCA_PENDENTE))
+    return trocadas
 
 
 # ------------------------------------------------------------ conferencia

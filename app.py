@@ -66,7 +66,7 @@ APP_NAME = "Gestão Integrada da Serventia"
 # servidor avisou «quem respondeu está na versão 3.6.137, e a instalada é
 # 3.6.138» sobre uma atualização que tinha funcionado (504 de 505 arquivos
 # batendo byte a byte). `tests/test_os_dois_carimbos_da_versao.py` guarda isso.
-VERSION = "3.7.2"
+VERSION = "3.7.3"
 # 3.6.286 - 06/10/2026 Release do sandbox para o oficial: centrais (fila/log/trava), A3, editor/motor de modelos, produtividade, selo robo, F10-F12 do RI, SIRC (cancelados)
 # 3.6.285 - CENPROT: POST /token com form usuario/senha (x-www-form-urlencoded)
 # 3.6.284 - Projetos lista: coluna Atualizado (DD/MM/AA - HH:MM, fuso local)
@@ -379,22 +379,23 @@ def create_app(test_config: dict | None = None) -> Flask:
         NUNCA devolve rotulo de robo/maquina. Em 21/09/2026 tres selos de
         nascimento sairam com escrevente/obtido_por = "Robo Nascimento RCPN"
         — o TJMA recebeu isso como quem praticou o ato. Maquina nao assina.
-        Se a sessao for de robo (ou fundo sem gente), cai na substituta / gente
-        do cadastro via `nome_humano`.
+
+        E NINGUÉM ASSINA PELA MÁQUINA (23/10/2026, ordem do oficial, «solução
+        1»). Até aqui a sessão de robô — ou sem ninguém — caía na substituta
+        (`fallbacks_da_casa`), e o ato saía no nome de quem não o praticou: a
+        troca que a revisão de segurança de 22/10 (A6) tirou do selo e tinha
+        deixado aqui. Agora sai `NOMEHUM.MARCA_PENDENTE`: o ato fica pendente
+        de quem assina, e quem selar assina (`ato_selado.vincular_ao_ato`).
         """
-        candidatos = []
+        import selo_robo as SR
         user = current_user()
-        if user:
+        if user and not SR.usuario_e_robo(user):
             nome = (user["full_name"] or "").strip() or (user["username"] or "").strip()
-            if nome:
-                candidatos.append(nome)
-        candidatos.extend(NOMEHUM.fallbacks_da_casa(db))
-        humano = NOMEHUM.nome_humano_para_ato(*candidatos)
-        if humano:
-            return humano
-        # Sem sessao e rotina de fundo (backup, tarefa agendada), nao gente.
-        # Antes isto era o caminho normal; agora e a excecao, e diz o que e.
-        return "operador"
+            humano = NOMEHUM.nome_humano_para_ato(nome)
+            if humano:
+                return humano
+        # Sessão de robô, cadastro com nome de máquina, ou ninguém logado.
+        return NOMEHUM.MARCA_PENDENTE
     def usuario_funcao() -> str:
         """A função que a pessoa exerce, na forma da Lei 8.935/94, arts. 20 e 21.
 

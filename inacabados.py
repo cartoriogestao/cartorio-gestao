@@ -41,6 +41,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
+
 
 class InacabadoError(ValueError):
     """Erro de regra, com mensagem pronta para o balcao."""
@@ -403,10 +405,16 @@ def consulta_da_fonte(f: dict) -> str:
     #   Subir o teto era permitido e era o caminho preguiçoso: juntar duas
     #   colunas é justamente o que o Python faz de graça.
     mais = f", {f['rotulo_2']} AS rotulo_2" if f.get("rotulo_2") else ""
+    # O DESEMPATE É O `id` DA PRÓPRIA TABELA, e não o `AS id` da fonte.
+    #
+    #   No SQLite, dois itens com o mesmo `quando` saíam na ordem em que
+    #   entraram; no PostgreSQL, sem desempate, saem em qualquer ordem — e o
+    #   corte do `limite` pode levar um ou outro. O `AS id` não basta: no RI ele
+    #   é a matrícula, e três minutas da mesma ficha empatariam de novo.
     return (f"SELECT {f.get('id', 'id')} AS id, {f['rotulo']} AS rotulo{mais}, "
             f"{f['quando']} AS quando "
             f"FROM {f['tabela']} WHERE {f['onde']} "
-            f"ORDER BY {f['quando']} IS NULL, {f['quando']}")
+            f"ORDER BY {f['quando']} IS NULL, {f['quando']}, {f['tabela']}.id")
 
 
 def configuracao(con: sqlite3.Connection) -> dict[str, dict]:
@@ -417,9 +425,9 @@ def configuracao(con: sqlite3.Connection) -> dict[str, dict]:
     linha em `ex_fontes`, a fonte funciona com o padrão declarado — e «voltar ao
     padrão» é apagar a linha. Instalação nova nasce funcionando.
     """
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     salvo = {}
-    for linha in con.execute("SELECT * FROM ex_fontes"):
+    for linha in bd.ler("SELECT * FROM ex_fontes ORDER BY chave"):
         salvo[linha["chave"]] = dict(linha)
     saida = {}
     for f in FONTES:
@@ -452,10 +460,10 @@ def ajustar(con: sqlite3.Connection, chave: str, *, ligada: bool, dias: int,
         raise InacabadoError(
             "O prazo tem de ser de ao menos um dia — com zero, tudo apareceria "
             "como parado no mesmo dia em que entrou.")
-    con.execute(
+    banco(con).escrever(
         """INSERT INTO ex_fontes (chave, ligada, dias, atualizado_em,
                atualizado_por)
-           VALUES (?,?,?,?,?)
+           VALUES (%s,%s,%s,%s,%s)
            ON CONFLICT(chave) DO UPDATE SET
                ligada=excluded.ligada, dias=excluded.dias,
                atualizado_em=excluded.atualizado_em,
@@ -466,7 +474,7 @@ def ajustar(con: sqlite3.Connection, chave: str, *, ligada: bool, dias: int,
 def voltar_ao_padrao(con: sqlite3.Connection, chave: str) -> None:
     """Apaga o ajuste e a fonte volta ao que o código declara. GRAVA."""
     fonte(chave)
-    con.execute("DELETE FROM ex_fontes WHERE chave = ?", (chave,))
+    banco(con).escrever("DELETE FROM ex_fontes WHERE chave = %s", (chave,))
 
 
 def _dias(de: Any, ate: str) -> int | None:
@@ -524,9 +532,9 @@ def lista(con: sqlite3.Connection, *, hoje: str, chave: str = "",
     mesmo jeito que o painel das comunicações. Uma tabela renomeada faria a lista
     encolher em silêncio, e ninguém repara em item que deixou de aparecer.
     """
-    con.row_factory = sqlite3.Row
-    config = configuracao(con)
-    anotadas = _anotacoes(con)
+    bd = banco(con)
+    config = configuracao(bd)
+    anotadas = _anotacoes(bd)
     saida: list[dict] = []
     for f in FONTES:
         c = config[f["chave"]]
@@ -537,7 +545,7 @@ def lista(con: sqlite3.Connection, *, hoje: str, chave: str = "",
         if atribuicao and f["atribuicao"] != atribuicao:
             continue
         try:
-            linhas = con.execute(consulta_da_fonte(f)).fetchall()
+            linhas = bd.ler(consulta_da_fonte(f))
         except sqlite3.Error as erro:
             saida.append({"chave": f["chave"], "fonte": f["nome"],
                           "atribuicao": f["atribuicao"],
@@ -568,7 +576,8 @@ def lista(con: sqlite3.Connection, *, hoje: str, chave: str = "",
 
 def resumo(con: sqlite3.Connection, *, hoje: str) -> list[dict]:
     """Quantos por fonte, e quantos parados. Só lê — é o alto da tela."""
-    tudo = lista(con, hoje=hoje, limite=100000)
+    bd = banco(con)
+    tudo = lista(bd, hoje=hoje, limite=100000)
     por_fonte: dict[str, dict] = {}
     for f in FONTES:
         por_fonte[f["chave"]] = {"chave": f["chave"], "fonte": f["nome"],
@@ -581,7 +590,7 @@ def resumo(con: sqlite3.Connection, *, hoje: str) -> list[dict]:
             continue
         alvo["quantos"] += 1
         alvo["parados"] += 1 if x["parado"] else 0
-    config = configuracao(con)
+    config = configuracao(bd)
     for chave, alvo in por_fonte.items():
         alvo["ligada"] = config[chave]["ligada"]
         alvo["dias"] = config[chave]["dias"]
@@ -595,9 +604,9 @@ def resumo(con: sqlite3.Connection, *, hoje: str) -> list[dict]:
 
 
 def _anotacoes(con: sqlite3.Connection) -> dict[tuple, dict]:
-    con.row_factory = sqlite3.Row
     return {(x["tabela"], x["item_id"]): dict(x)
-            for x in con.execute("SELECT * FROM ex_anotacoes")}
+            for x in banco(con).ler(
+                "SELECT * FROM ex_anotacoes ORDER BY tabela, item_id")}
 
 
 def anotar(con: sqlite3.Connection, *, tabela: str, item_id: int, texto: str,
@@ -611,10 +620,10 @@ def anotar(con: sqlite3.Connection, *, tabela: str, item_id: int, texto: str,
         raise InacabadoError(f"«{tabela}» não é uma das fontes desta lista.")
     if not _texto(texto):
         raise InacabadoError("Escreva o que falta neste item.")
-    con.execute(
+    banco(con).escrever(
         """INSERT INTO ex_anotacoes (tabela, item_id, texto, responsavel, ate,
                criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?)
+           VALUES (%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT(tabela, item_id) DO UPDATE SET
                texto=excluded.texto, responsavel=excluded.responsavel,
                ate=excluded.ate, criado_em=excluded.criado_em,
@@ -631,5 +640,6 @@ def apagar_anotacao(con: sqlite3.Connection, *, tabela: str,
     dele. Apagar a anotação aqui e o item sumir seria a lista virando gaveta, que
     é exatamente o que este módulo não é.
     """
-    con.execute("DELETE FROM ex_anotacoes WHERE tabela=? AND item_id=?",
-                (tabela, int(item_id)))
+    banco(con).escrever(
+        "DELETE FROM ex_anotacoes WHERE tabela=%s AND item_id=%s",
+        (tabela, int(item_id)))

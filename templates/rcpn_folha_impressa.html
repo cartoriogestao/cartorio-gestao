@@ -100,6 +100,20 @@
   .assinaturas-do-termo.em-par .assinatura { flex: 1 1 40%;
                                              margin: 9mm 3mm 0; }
 
+  /* TERMO LONGO CABE NA FRENTE - 21/10/2026, assento [n.] (registro tardio,
+     2.610 caracteres): as assinaturas saltavam para uma pagina a mais entre a
+     frente e o verso. So com o termo longo, e so onde ha menos de quatro
+     assinaturas (o casamento ja as poe em par): letra um ponto menor,
+     entrelinha mais justa e as assinaturas lado a lado. */
+  .folha.termo-longo { font-size: 9.5pt; }
+  .folha.termo-longo .termo { line-height: 1.26; }
+  .folha.termo-longo .assinaturas-do-termo { margin-top: 3mm; display: flex;
+                                             flex-wrap: wrap; }
+  .folha.termo-longo .assinaturas-do-termo .assinatura { flex: 1 1 40%;
+                                                          margin: 8mm 3mm 0; }
+  .folha.termo-muito-longo { font-size: 9pt; }
+  .folha.termo-muito-longo .termo { line-height: 1.2; }
+
   @media screen {
     body { background: #eceff3; padding: 8px 14px 14px; }
     .folha { background: #fff;
@@ -134,7 +148,7 @@
 <div class="aviso naoimprime">
   <p><strong>Prévia dos campos do assento.</strong> Nada foi gravado —
      gravar o termo é outro passo, com confirmação.
-     {% if do_acervo %}Este assento veio do E-Ofício: o termo original
+     {% if do_acervo %}Este assento veio do sistema antigo: o termo original
      existe em papel.{% endif %}
      Ao imprimir, use <strong>retrato</strong> e <strong>frente e verso</strong>.</p>
 </div>
@@ -145,7 +159,9 @@
 {% endif %}
 
 {% for face in faces %}
-<div class="folha">
+{% set letras = (face.termo or '')|striptags|length %}
+{% set poucas_assinaturas = (face.assinaturas or [])|length < folha.ASSINATURAS_EM_PAR_A_PARTIR_DE %}
+<div class="folha{% if poucas_assinaturas and letras > 1650 %} termo-longo{% endif %}{% if poucas_assinaturas and letras > 2300 %} termo-muito-longo{% endif %}">
   {% if cabecalho %}
   <div class="cabecalho">
     <div><img src="{{ url_for('static', filename='brasao.jpg') }}"
@@ -190,7 +206,7 @@
         </td>
 
         <td class="col-termo">
-          <div class="termo">{{ face.termo|safe }}</div>
+          <div class="termo">{{ face.termo|sem_script }}</div>
           {% if face.carimbo %}<div class="carimbo-do-selo">{{ face.carimbo|safe }}</div>{% endif %}
           {% if face.assinaturas %}<div class="assinaturas-do-termo{% if face.assinaturas|length >= folha.ASSINATURAS_EM_PAR_A_PARTIR_DE %} em-par{% endif %}">
             {% for a in face.assinaturas %}<div class="assinatura"><div class="linha-ass"></div>

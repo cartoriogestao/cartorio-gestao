@@ -63,13 +63,13 @@
   {# A CONVERSÃO DO E-OFÍCIO. Ela NÃO GRAVA: devolve o texto convertido no
      campo acima e a lista do que não soube converter. Gravar direto
      esconderia essa lista atrás de uma recusa genérica. #}
-  <h2>Colar um texto do E-Ofício</h2>
+  <h2>Colar um texto do sistema antigo</h2>
   <div class="card">
     <form method="post"
           action="{{ url_for('rcpn_modelo_converter', modelo_id=m.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <p class="small">
-        Cole aqui o texto do modelo do E-Ofício, com os claros
+        Cole aqui o texto do modelo do sistema antigo, com os claros
         <code>@assim</code>. O sistema os troca pelos desta casa e
         <strong>diz quais não soube converter</strong> — ele não apaga nenhum.
       </p>
@@ -108,7 +108,7 @@
      ofereceria claro que `montar` não conhece. #}
   <h2>Os claros desta espécie</h2>
   <p class="small muted">
-    Use a legenda <code>@nome</code> como no E-Ofício. Ao clicar, o sistema
+    Use a legenda <code>@nome</code> como no sistema antigo. Ao clicar, o sistema
     insere o claro correto no texto. São
     <strong>{{ vocabulario|length }}</strong> claros no
     {{ nome_da_especie|lower }}. Os que este modelo já usa estão marcados.

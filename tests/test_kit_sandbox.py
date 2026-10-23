@@ -55,7 +55,18 @@ def test_recusa_a_pasta_da_producao_e_o_que_esta_dentro_ou_em_volta(tmp_path, mo
         with pytest.raises(KIT.SandboxRecusado, match="instalação real"):
             KIT.preparar_pasta(alvo)
     assert not producao.exists(), "a recusa veio depois de criar alguma coisa"
-    # o caminho fixo do Windows vale sempre, qualquer que seja o PROGRAMDATA
+
+
+@pytest.mark.skipif(os.name != "nt", reason="caminho do Windows: fora dele a "
+                    "contrabarra não separa pastas e `C:\\ProgramData` não existe")
+def test_recusa_o_caminho_fixo_do_windows_qualquer_que_seja_o_programdata():
+    """Separado do teste de cima porque só se prova no Windows.
+
+    No macOS e no Linux `C:\\ProgramData\\CartorioGestao` é UM nome de arquivo
+    relativo à pasta corrente, e não a pasta de `C:\\ProgramData` — a recusa
+    não tem o que reconhecer. O teste já falhava assim antes dos lotes LX
+    (`base_antes_dos_lotes.log`); a instalação real é Windows.
+    """
     with pytest.raises(KIT.SandboxRecusado):
         KIT.conferir_pasta_de_dados(r"C:\ProgramData\CartorioGestao")
 

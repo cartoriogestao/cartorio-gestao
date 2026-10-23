@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}DETRAN — configuração{% endblock %}
+{% block heading %}<h1>Comunicação ao DETRAN — configuração</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('notas_veiculos') }}">&larr; Comunicações</a></div>
+<section class="panel">
+  <div class="panel-head"><span>Integração</span></div>
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="integracao">
+    <p class="small">Desligada por padrão. Ainda não há leiaute do DETRAN neste sistema: ligada, a comunicação é recusada com o aviso até o contrato chegar.</p>
+    <label><input type="checkbox" name="ligada" value="1" {% if ligada %}checked{% endif %}> Ligada</label>
+    <label>Ambiente
+      <select name="ambiente">{% for a in AMBIENTES %}<option value="{{ a }}" {% if a == ambiente %}selected{% endif %}>{{ a|lower }}</option>{% endfor %}</select></label>
+    <button class="primary">Gravar</button>
+  </form>
+</section>
+<section class="panel">
+  <div class="panel-head"><span>Credencial (fora do banco)</span></div>
+  <form method="post" style="padding:14px" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="credencial">
+    <p class="small">{% for a in AMBIENTES %}{{ a|lower }}: {% if credenciais[a] %}✓ gravada{% else %}não gravada{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+    <label>Ambiente
+      <select name="ambiente">{% for a in AMBIENTES %}<option value="{{ a }}">{{ a|lower }}</option>{% endfor %}</select></label>
+    <label>Usuário <input name="usuario"></label>
+    <label>Senha <input type="password" name="senha"></label>
+    <button>Gravar credencial</button>
+  </form>
+</section>
+{% endblock %}

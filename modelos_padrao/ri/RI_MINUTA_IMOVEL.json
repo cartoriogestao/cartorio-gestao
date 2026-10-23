@@ -1,0 +1,11 @@
+{
+  "chave": "RI_MINUTA_IMOVEL",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Minutas de ato — imóvel",
+  "formato": "JINJA",
+  "explica": "A frase do imóvel na parte fixa das minutas de ato. Sem logradouro, o código põe o marcador de descrever; a área entra pela frase própria.",
+  "campos": [
+    "area",
+    "imovel"
+  ]
+}

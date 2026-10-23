@@ -13,13 +13,18 @@ testes guardam as regras com um título fictício:
 from __future__ import annotations
 
 import base64
+import sqlite3
+import threading
+import time
 import xml.etree.ElementTree as ET
 
 import pytest
 
+import banco_pg
 import protesto as PT
 import protesto_cenprot_xml as X
 import protesto_instrumento as PI
+from bd_nativo import banco
 
 from test_protesto_aviso_web import _con, _token, s, titulo_apontado  # noqa: F401
 from test_protesto_instrumento_assinado import (PDF, SV, _assinar,  # noqa: F401
@@ -127,9 +132,13 @@ def test_gerar_guarda_marca_e_nao_repete(pronto, s):
 def test_o_segundo_arquivo_do_dia_e_o_02(s):
     con = _con(s)
     with con:
+        # O conteúdo vai como bytes, por parâmetro, como o `gerar` grava: o
+        # literal `x'00'` é BLOB só no SQLite — no PostgreSQL é cadeia de bits,
+        # e a coluna bytea o recusa.
         con.execute("""INSERT INTO pt_cenprot_xml(letra, dia, sequencial,
                          nome_arquivo, conteudo, sha256, titulos, gerado_em)
-                       VALUES ('P','2026-10-15',1,'x.xml',x'00','h',1,'t')""")
+                       VALUES ('P','2026-10-15',1,'x.xml',?,'h',1,'t')""",
+                    (b"\x00",))
     nome = X.nome_do_arquivo(uf="MA", comarca="2199999", cartorio="01",
                              letra="P", dia="2026-10-15",
                              sequencial=1 + con.execute(
@@ -189,6 +198,46 @@ def test_cadastrar_apresentante_pela_tela(s):
                           "tipo_apresentante": "0"}, follow_redirects=True)
     assert "Apresentante 237 gravado" in r.get_data(as_text=True)
     assert X.apresentante(_con(s), "237")["documento"] == "00000001000055"
+
+
+def test_o_cnpj_e_o_endereco_do_cadastro_vao_a_ficha_ao_aviso_e_ao_instrumento(s):
+    """LD08: o arquivo da CRA traz só o código e o nome do apresentante. O
+    CNPJ e o endereço se cadastram aqui UMA vez, pelo código, e chegam a todo
+    título dele: à ficha, ao aviso (CN-MA art. 923) e ao instrumento (Lei
+    9.492/1997, art. 22, II). O nome continua o que a CRA mandou."""
+    import protesto_aviso as AV
+    from database import Database
+    html = s["c"].get("/protesto/cenprot-xml").get_data(as_text=True)
+    assert 'name="endereco"' in html
+    r = s["c"].post("/protesto/cenprot-xml/apresentantes",
+                    data={"csrf_token": _token(html), "codigo": "001",
+                          "nome": "BANCO EXEMPLO DO CADASTRO",
+                          "documento": "00.000.010/0001-27",
+                          "tipo_apresentante": "0",
+                          "endereco": "Avenida Exemplo, 500, Cidade Exemplo/MA"},
+                    follow_redirects=True)
+    tela = r.get_data(as_text=True)
+    assert "Apresentante 001 gravado" in tela and "Avenida Exemplo, 500" in tela
+    tid = titulo_apontado(s)
+    ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
+    assert "00.000.010/0001-27" in ficha and "Avenida Exemplo, 500" in ficha
+    db = Database(s["banco"])
+    db.set_settings({"serventia_horario": "de segunda a sexta, das 8h às 17h"})
+    with db.transaction() as con:
+        bd = banco(con)
+        aviso = AV.emitir(con, tid, hoje=db.now()[:10], agora=db.now())
+        teor_do_aviso = AV.montar_teor_do_aviso(
+            con, AV.ler(con, aviso["aviso_id"]), sv=SV)
+        PT.lancar_intimacao(con, tid, modo="PESSOAL", agora="2026-10-10T10:00:00")
+        bd.escrever("UPDATE pt_titulos SET motivo_protesto='1' WHERE id=%s", (tid,))
+        PT.lancar_protesto(con, tid, sv=SV, agora="2026-10-14T10:00:00",
+                           data_extenso="x")
+        instrumento = PI.emitir(con, tid, serventia=SV["unit_name"],
+                                agora="2026-10-14T11:00:00")
+    assert ("Apresentante: BANCO DO BRASIL, CPF/CNPJ 00.000.010/0001-27"
+            in teor_do_aviso), teor_do_aviso
+    assert ("Apresentante: BANCO DO BRASIL, endereço Avenida Exemplo, 500, "
+            "Cidade Exemplo/MA.") in instrumento["teor"], instrumento["teor"]
 
 
 # ------------------------------------- o motivo do edital e a anuência
@@ -262,3 +311,103 @@ def test_cancelamento_por_anuencia_do_credor_vai_com_origem_3(pronto, s):
     assert d["ocorrencia"] == "A"
     assert d["anuencia"] == {"flag": True, "origem": "3",
                              "origem_datahora": "2026-10-15"}
+
+
+# ------------------------------- duas gravações ao mesmo tempo (L037R)
+#
+# Hoje a ponte deixa um escritor por vez no banco inteiro. Estes testes usam
+# o psycopg SEM a ponte — a transação como vai ficar quando ela sair.
+
+so_no_postgres = pytest.mark.skipif(
+    not banco_pg.ativo(),
+    reason="duas conexões do PostgreSQL: só roda com ele ligado (CG_PG_DSN)")
+
+
+def _psycopg_puro(con, *, autocommit=False):
+    """Uma conexão do psycopg no schema do teste, sem a ponte."""
+    import psycopg
+    pg = psycopg.connect(banco_pg.dsn(), autocommit=autocommit)
+    pg.execute(f'SET search_path TO "{con.schema}", public')
+    if not autocommit:
+        pg.commit()
+    return pg
+
+
+def _ate_ficar_esperando(vigia, pid) -> None:
+    for _ in range(200):
+        if banco(vigia).valor(
+                "SELECT count(*) AS n FROM pg_locks WHERE pid=%s AND NOT granted",
+                (pid,)):
+            return
+        time.sleep(0.05)
+
+
+def _no_fio(saida: dict, pg, fazer) -> threading.Thread:
+    def rodar():
+        try:
+            saida["feito"] = fazer()
+            pg.commit()
+        except Exception as erro:  # o teste confere qual
+            saida["erro"] = erro
+            pg.rollback()
+    fio = threading.Thread(target=rodar)
+    fio.start()
+    return fio
+
+
+@so_no_postgres
+def test_duas_geracoes_ao_mesmo_tempo_nao_mandam_o_ato_duas_vezes(pronto, s):
+    """Ressalva da revisão do L037: a trava do sequencial vinha DEPOIS da
+    lista dos pendentes. A segunda geração lia os mesmos atos antes de esperar
+    a trava, e saía um arquivo 02 com o título que o 01 já tinha levado."""
+    con = _con(s)
+    um, dois = _psycopg_puro(con), _psycopg_puro(con)
+    vigia = _psycopg_puro(con, autocommit=True)
+    pid = banco(dois).valor("SELECT pg_backend_pid() AS pid")
+    primeiro = X.gerar(um, "P", uf="MA", comarca="2199999", cartorio="01",
+                       dia="2026-10-15", agora="2026-10-15T13:00:00")
+    saida: dict = {}
+    fio = _no_fio(saida, dois, lambda: X.gerar(
+        dois, "P", uf="MA", comarca="2199999", cartorio="01",
+        dia="2026-10-15", agora="2026-10-15T13:00:01"))
+    _ate_ficar_esperando(vigia, pid)
+    um.commit()
+    fio.join(30)
+    for c in (um, dois, vigia):
+        c.close()
+    assert primeiro["titulos"] == 1
+    assert isinstance(saida.get("erro"), X.CenprotXmlError), saida
+    assert "Não há ato pronto" in str(saida["erro"])
+    assert [a["nome_arquivo"] for a in X.arquivos(con)] == [primeiro["nome"]]
+
+
+@so_no_postgres
+def test_cadastro_a_mao_no_meio_da_carga_do_acervo_fica_e_a_carga_nao_cai(s):
+    """Varredura do L037R, o mesmo padrão: a carga conferia se o código já
+    estava no cadastro e gravava depois. O apresentante cadastrado à mão nesse
+    meio-tempo fazia o INSERT da carga estourar a chave, e a carga caía."""
+    acervo = sqlite3.connect(":memory:", check_same_thread=False)
+    acervo.execute("""CREATE TABLE tbCobrador (strCodigoBanco TEXT,
+                        strRazaoSocial TEXT, strCGC TEXT, strCIC TEXT,
+                        intTipoApresentante INTEGER)""")
+    acervo.execute("INSERT INTO tbCobrador VALUES ('998', 'BANCO EXEMPLO DO "
+                   "ACERVO', '00000002000066', NULL, 0)")
+    con = _con(s)
+    a_mao, carga = _psycopg_puro(con), _psycopg_puro(con)
+    vigia = _psycopg_puro(con, autocommit=True)
+    pid = banco(carga).valor("SELECT pg_backend_pid() AS pid")
+    X.gravar_apresentante(a_mao, codigo="998", nome="BANCO EXEMPLO CORRIGIDO",
+                          documento="00000002000066", tipo_apresentante="1",
+                          agora="2026-10-15T13:00:00")
+    saida: dict = {}
+    fio = _no_fio(saida, carga, lambda: X.carregar_apresentantes(
+        carga, acervo, agora="2026-10-15T13:00:01"))
+    _ate_ficar_esperando(vigia, pid)
+    a_mao.commit()
+    fio.join(30)
+    for c in (a_mao, carga, vigia, acervo):
+        c.close()
+    assert saida.get("feito") == {"entraram": 0, "mantidos": 1,
+                                  "sem_codigo": 0}, saida
+    apr = X.apresentante(con, "998")
+    assert apr["nome"] == "BANCO EXEMPLO CORRIGIDO" and apr["origem"] == "MANUAL"

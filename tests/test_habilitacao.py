@@ -24,6 +24,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import habilitacao as HAB                                    # noqa: E402
 import hc_schema as HC                                       # noqa: E402
@@ -39,7 +41,7 @@ TEOR = ("Faço saber que pretendem casar-se FULANO DE TAL e BELTRANA DE TAL, "
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys = ON")
     # O NÚCLEO ENTRA PORQUE `rc_atos` APONTA PARA `nu_livros`, e as travas ficam
@@ -122,6 +124,33 @@ def test_o_numero_e_por_exercicio(con):
                            (x,)).fetchone() for x in (a, b)]
     assert [r["numero"] for r in numeros] == [1, 2]
     assert all(r["ano"] == 2026 for r in numeros)
+
+
+def test_abrir_trava_a_numeracao_antes_de_ler_o_maior(con, monkeypatch):
+    """Dois balcões abrindo juntos leriam o mesmo `max(numero)+1`, e a mesma
+    «habilitação 12/2026» sairia duas vezes. No PostgreSQL não há o
+    `BEGIN IMMEDIATE` que serializava isso no SQLite: `abrir` trava o assunto
+    `hc_habilitacoes.numero` ANTES de ler o maior (revisão do L032, 17/10/2026).
+    `proximo_numero` continua só lendo — não trava nada."""
+    import bd_nativo
+    passos: list[str] = []
+    travar = bd_nativo.Banco.travar
+    ler = HAB.proximo_numero
+
+    def espiao_da_trava(self, chave):
+        passos.append(f"trava {chave}")
+        return travar(self, chave)
+
+    def espiao_da_leitura(con, ano):
+        passos.append("lê o maior")
+        return ler(con, ano)
+
+    monkeypatch.setattr(bd_nativo.Banco, "travar", espiao_da_trava)
+    HAB.proximo_numero(con, 2026)
+    assert passos == []
+    monkeypatch.setattr(HAB, "proximo_numero", espiao_da_leitura)
+    _abrir(con)
+    assert passos == ["trava hc_habilitacoes.numero", "lê o maior"]
 
 
 # --------------------------------------------------------- documentos

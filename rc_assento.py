@@ -40,11 +40,11 @@ FUNDAMENTO
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import date
 from typing import Any
 import unicodedata
 
+from bd_nativo import banco
 import escrituracao as ESC
 # A BUSCA DE MUNICIPIO E' REAPROVEITADA, E NAO REESCRITA — a mesma que a
 # remessa do IBGE e a carga da CRC ja' usam. Ela recusa escolher municipio
@@ -174,37 +174,38 @@ SITUACOES = ("ATIVO", "CANCELADO")
 # --------------------------------------------------------------- consultas
 
 
-def assento(con: sqlite3.Connection, assento_id: int) -> sqlite3.Row | None:
+def assento(con: Any, assento_id: int) -> dict | None:
     """O assento, com tudo que foi lavrado. Só LÊ."""
-    return con.execute(
-        "SELECT * FROM rc_assentos WHERE id=?", (int(assento_id),)).fetchone()
+    return banco(con).um(
+        "SELECT * FROM rc_assentos WHERE id = %s", (int(assento_id),))
 
 
-def atos_do(con: sqlite3.Connection, assento_id: int) -> list[sqlite3.Row]:
+def atos_do(con: Any, assento_id: int) -> list[dict]:
     """Os atos do assento, na ordem em que aconteceram. Só LÊ."""
-    return list(con.execute(
-        "SELECT * FROM rc_atos WHERE assento_id=? ORDER BY id",
-        (int(assento_id),)))
+    return banco(con).ler(
+        "SELECT * FROM rc_atos WHERE assento_id = %s ORDER BY id",
+        (int(assento_id),))
 
 
-def blocos_do(con: sqlite3.Connection, assento_id: int) -> dict[str, list[sqlite3.Row]]:
+def blocos_do(con: Any, assento_id: int) -> dict[str, list[dict]]:
     """Os atos separados por bloco — a divisão tripartite, para a ficha. Só LÊ.
 
     É o que a inspeção pede que apareça em campos próprios: as averbações
     num bloco, as anotações noutro, as retificações noutro.
     """
-    saida: dict[str, list[sqlite3.Row]] = {t: [] for t in TIPOS_ATO}
+    saida: dict[str, list[dict]] = {t: [] for t in TIPOS_ATO}
     for ato in atos_do(con, assento_id):
         saida.setdefault(ato["tipo"], []).append(ato)
     return saida
 
 
-def assento_por_origem(con: sqlite3.Connection, origem: str,
-                       origem_chave: str) -> sqlite3.Row | None:
+def assento_por_origem(con: Any, origem: str,
+                       origem_chave: str) -> dict | None:
     """O assento de uma chave de origem, ou None. Só LÊ."""
-    return con.execute(
-        "SELECT * FROM rc_assentos WHERE origem=? AND origem_chave=?",
-        (origem, origem_chave)).fetchone()
+    return banco(con).um(
+        "SELECT * FROM rc_assentos WHERE origem = %s AND origem_chave = %s "
+        "ORDER BY id LIMIT 1",
+        (origem, origem_chave))
 
 
 # ----------------------------------------------------------- lavrar assento
@@ -269,19 +270,49 @@ CORES_E_RACAS: dict[str, str] = {
 #   lia. Coluna que nada preenche e coluna que mente: a remessa acusa «falta o
 #   dado» e ninguem sabe onde informa-lo.
 CAMPOS_DO_TERMO_POR_ESPECIE: dict[str, tuple[str, ...]] = {
+    # O MUNICÍPIO DO LOCAL (LD01, 21/10/2026) vai com o nome e o endereço: é
+    # ele que a certidão imprime na célula MUNICÍPIO, e o endereço não é.
     "NASCIMENTO": ("cor_raca", "hora_fato", "local_fato_nome",
-                   "local_fato_endereco", "naturalidade_declarada"),
+                   "local_fato_endereco", "local_fato_municipio",
+                   "naturalidade_declarada"),
     # Natimorto (art. 53) tem lugar do fato no papel, como o nascimento e o obito.
     "NATIMORTO": ("cor_raca", "hora_fato", "local_fato_nome",
-                   "local_fato_endereco", "naturalidade_declarada"),
+                   "local_fato_endereco", "local_fato_municipio",
+                   "naturalidade_declarada"),
     "OBITO": ("cor_raca", "hora_fato", "local_fato_nome",
-              "local_fato_endereco", "naturalidade_declarada",
+              "local_fato_endereco", "local_fato_municipio",
+              "naturalidade_declarada",
               "causa_morte", "atestante", "atestante_documento",
               "local_sepultamento", "testamento"),
     "CASAMENTO": ("hora_fato", "local_fato_nome", "local_fato_endereco"),
     "CASAMENTO_RELIGIOSO": (
         "hora_fato", "local_fato_nome", "local_fato_endereco"),
 }
+
+#: As espécies cujo termo diz o lugar do fato e cuja certidão imprime o
+#: MUNICÍPIO dele (LRP art. 54, 1º; art. 80, 2º) — LD01, 21/10/2026.
+ESPECIES_COM_MUNICIPIO_DO_LOCAL: frozenset[str] = frozenset(
+    {"NASCIMENTO", "NATIMORTO", "OBITO"})
+
+
+def municipio_do_local_padrao(sv: dict | None) -> str:
+    """O município do local do fato que a tela já traz escrito: o da
+    serventia, «Município/UF». Só calcula.
+
+    **É O CASO COMUM, E FICA À VISTA PARA SER TROCADO.** O nascimento e o
+    óbito se registram no lugar do fato ou no da residência (LRP arts. 50 e
+    77), e o que acontece noutro município o escrevente escreve por cima — a
+    tela mostra o campo preenchido, e a conferência o repete. Quem lavra sem
+    a tela (robô, integração, a importação do arquivo) recebe o mesmo valor
+    que a tela daria, e não um vazio: célula vazia de município numa certidão
+    de nascimento é o defeito que o LD01 consertou. A carga do acervo não
+    passa por aqui — o assento antigo traz o município no blob.
+    """
+    s = sv or {}
+    cidade = str(s.get("ri_cidade") or s.get("cidade") or "").strip()
+    uf = str(s.get("ri_uf") or s.get("uf") or "").strip()
+    return f"{cidade}/{uf}" if cidade and uf else cidade
+
 
 #: O QUE A LEI PEDE E NÃO TINHA ONDE SER INFORMADO — 13/10/2026. Texto livre,
 #: opcional e condicional (a tela só pergunta quando a situação existe); por
@@ -295,7 +326,10 @@ CAMPOS_DA_LEI_POR_ESPECIE: dict[str, tuple[str, ...]] = {
                   "nubente2_conjuge_anterior", "nubente2_dissolucao_data",
                   "proclamas_data", "documentos_apresentados",
                   "pacto_data", "pacto_serventia"),
-    "NASCIMENTO": ("pais_casamento_lugar", "pais_casamento_cartorio"),
+    "NASCIMENTO": ("pais_casamento_lugar", "pais_casamento_cartorio",
+                   # O REGISTRO TARDIO (art. 249) — a marca e o número do
+                   # requerimento autuado. 21/10/2026.
+                   "registro_tardio", "tardio_requerimento"),
 }
 CAMPOS_DA_LEI_POR_ESPECIE["CASAMENTO_RELIGIOSO"] = CAMPOS_DA_LEI_POR_ESPECIE["CASAMENTO"]
 # O JUIZ DE PAZ QUE PRESIDIU — 15/10/2026, decisão do oficial (relato #124):
@@ -383,7 +417,7 @@ def municipio_da_naturalidade(declarada: Any) -> tuple[str, str]:
     return texto.strip(" ."), uf
 
 
-def _tem_municipios(con: sqlite3.Connection) -> bool:
+def _tem_municipios(con: Any) -> bool:
     """Se `ib_municipios` existe E tem linha. **So le.**
 
     As duas perguntas numa so' de proposito: a tabela **faltar** (instalacao
@@ -392,15 +426,13 @@ def _tem_municipios(con: sqlite3.Connection) -> bool:
     a irma desta e so' pergunta a segunda, porque la' o esquema inteiro ja'
     existe; aqui o assento se lavra em banco que pode nao ter nem a tabela.
     """
-    existe = con.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ib_municipios'"
-    ).fetchone()
-    if not existe:
+    bd = banco(con)
+    if not bd.tem_tabela("ib_municipios"):
         return False
-    return con.execute("SELECT 1 FROM ib_municipios LIMIT 1").fetchone() is not None
+    return bd.um("SELECT 1 AS um FROM ib_municipios LIMIT 1") is not None
 
 
-def _naturalidade_do_titular(con: sqlite3.Connection, assento_id: int,
+def _naturalidade_do_titular(con: Any, assento_id: int,
                              especie: str, declarada: Any) -> dict:
     """Preenche a naturalidade da PESSOA a partir do que o termo declara.
 
@@ -428,10 +460,11 @@ def _naturalidade_do_titular(con: sqlite3.Connection, assento_id: int,
     cidade, uf = municipio_da_naturalidade(declarada)
     if not cidade:
         return {"gravou": False, "motivo": "a naturalidade declarada está vazia"}
-    pessoa = con.execute(
+    bd = banco(con)
+    pessoa = bd.um(
         """SELECT id, naturalidade_cidade FROM rc_pessoas
-           WHERE assento_id=? AND papel=? ORDER BY id LIMIT 1""",
-        (int(assento_id), papel)).fetchone()
+           WHERE assento_id = %s AND papel = %s ORDER BY id LIMIT 1""",
+        (int(assento_id), papel))
     if not pessoa:
         return {"gravou": False, "motivo": f"o assento não tem {papel.lower()}"}
     if ("" if pessoa["naturalidade_cidade"] is None
@@ -444,26 +477,27 @@ def _naturalidade_do_titular(con: sqlite3.Connection, assento_id: int,
     # transacao inteira por causa de uma tabela de estatistica. Foram os testes
     # do proprio modulo que pegaram isto — eles montam o banco so' com o nucleo
     # e o Registro Civil, que e' o que uma casa recem-instalada tem.
-    if not _tem_municipios(con):
+    if not _tem_municipios(bd):
         return {"gravou": False, "cidade": cidade, "uf": uf,
                 "motivo": "o cadastro de municípios do IBGE não foi carregado"}
     achado = IBGEG.lugar(con, cidade, uf)
     if not achado.get("achou"):
         return {"gravou": False, "cidade": cidade, "uf": uf,
                 "motivo": "o município não está no cadastro do IBGE"}
-    con.execute(
-        """UPDATE rc_pessoas SET naturalidade_cidade=?, naturalidade_uf=?
-           WHERE id=?""", (cidade, uf or achado.get("uf") or None,
-                           int(pessoa["id"])))
+    bd.escrever(
+        """UPDATE rc_pessoas SET naturalidade_cidade = %s, naturalidade_uf = %s
+           WHERE id = %s""", (cidade, uf or achado.get("uf") or None,
+                              int(pessoa["id"])))
     return {"gravou": True, "cidade": cidade, "uf": uf,
             "codigo_ibge": achado.get("codigo_ibge")}
 
 
-def anotar_do_termo(con: sqlite3.Connection, assento_id: int, *,
+def anotar_do_termo(con: Any, assento_id: int, *,
                     especie: str | None = None,
                     cor_raca: Any = None, hora_fato: Any = None,
                     local_fato_nome: Any = None,
                     local_fato_endereco: Any = None,
+                    local_fato_municipio: Any = None,
                     naturalidade_declarada: Any = None,
                     causa_morte: Any = None, atestante: Any = None,
                     atestante_documento: Any = None,
@@ -488,8 +522,9 @@ def anotar_do_termo(con: sqlite3.Connection, assento_id: int, *,
     seria afirmar que se perguntou — e «ignorada» e uma resposta legitima que
     alguem pode ter dado.
     """
-    linha = con.execute("SELECT especie FROM rc_assentos WHERE id=?",
-                        (int(assento_id),)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT especie FROM rc_assentos WHERE id = %s",
+                  (int(assento_id),))
     if not linha:
         raise RcError(f"O assento {assento_id} não existe.")
     especie = (especie or linha["especie"] or "").strip().upper()
@@ -506,6 +541,7 @@ def anotar_do_termo(con: sqlite3.Connection, assento_id: int, *,
     for nome, valor in (("hora_fato", hora_fato),
                         ("local_fato_nome", local_fato_nome),
                         ("local_fato_endereco", local_fato_endereco),
+                        ("local_fato_municipio", local_fato_municipio),
                         ("naturalidade_declarada", naturalidade_declarada),
                         ("causa_morte", causa_morte),
                         ("atestante", atestante),
@@ -525,10 +561,10 @@ def anotar_do_termo(con: sqlite3.Connection, assento_id: int, *,
             f"Estes campos não cabem num assento de "
             f"{especie.lower()}: {', '.join(sorted(fora))}.")
     if valores:
-        con.execute(
+        bd.escrever(
             "UPDATE rc_assentos SET "
-            + ", ".join(f"{c}=?" for c in valores)
-            + " WHERE id=?", (*valores.values(), int(assento_id)))
+            + ", ".join(f"{c} = %s" for c in valores)
+            + " WHERE id = %s", (*valores.values(), int(assento_id)))
     # A NATURALIDADE DA PESSOA SAI DA DECLARADA, e isso mora aqui — no
     # dominio — e nao na rota: o campo que a CRC le e' o da PESSOA, e quem
     # digita preenche o do ASSENTO. Ver `_naturalidade_do_titular`.
@@ -540,7 +576,7 @@ def anotar_do_termo(con: sqlite3.Connection, assento_id: int, *,
             "naturalidade": naturalidade}
 
 
-def anotar_para_o_ibge(con: sqlite3.Connection, assento_id: int, *,
+def anotar_para_o_ibge(con: Any, assento_id: int, *,
                        especie: str | None = None,
                        local_nascimento: Any = None, gemeo: Any = None,
                        dnv: Any = None, numero_do: Any = None,
@@ -560,8 +596,9 @@ def anotar_para_o_ibge(con: sqlite3.Connection, assento_id: int, *,
     O QUE NAO SE INFORMA FICA NULO, e a remessa mostra o que falta. Preencher
     com «ignorado» por conta propria seria afirmar que se perguntou.
     """
-    linha = con.execute("SELECT especie FROM rc_assentos WHERE id=?",
-                        (int(assento_id),)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT especie FROM rc_assentos WHERE id = %s",
+                  (int(assento_id),))
     if not linha:
         raise RcError(f"O assento {assento_id} não existe.")
     especie = (especie or linha["especie"] or "").strip().upper()
@@ -598,9 +635,9 @@ def anotar_para_o_ibge(con: sqlite3.Connection, assento_id: int, *,
             f"{', '.join(permitidos) or 'nada'}.")
     if not valores:
         return {}
-    con.execute(
-        f"UPDATE rc_assentos SET {','.join(f'{c}=?' for c in valores)} "
-        f"WHERE id=?", (*valores.values(), int(assento_id)))
+    bd.escrever(
+        f"UPDATE rc_assentos SET {','.join(f'{c} = %s' for c in valores)} "
+        f"WHERE id = %s", (*valores.values(), int(assento_id)))
     return valores
 
 
@@ -642,7 +679,11 @@ PAPEIS_DA_ESPECIE: dict[str, tuple[str, ...]] = {
     "NASCIMENTO": ("REGISTRADO", "PAI", "MAE",
                    "AVO_PATERNO", "AVO_PATERNA",
                    "AVO_MATERNO", "AVO_MATERNA",
-                   "DECLARANTE", "TESTEMUNHA"),
+                   "DECLARANTE", "TESTEMUNHA",
+                   # A SEGUNDA TESTEMUNHA É DO REGISTRO TARDIO (art. 249, II):
+                   # o requerimento é assinado por duas. 21/10/2026. A
+                   # segunda do parto sem assistência médica (LD01) também.
+                   "TESTEMUNHA2"),
     "NATIMORTO": ("REGISTRADO", "PAI", "MAE", "DECLARANTE", "TESTEMUNHA"),
     # NO CASAMENTO A FILIACAO E DOS DOIS, E SAO QUATRO PESSOAS.
     #
@@ -757,6 +798,9 @@ ROTULO_DO_PAPEL: dict[str, str] = {
     "AVO_PATERNA": "Progenitor 2 da filiação 2",
     "DECLARANTE": "Declarante",
     "TESTEMUNHA": "Testemunha",
+    # Sem «(registro tardio)» no rótulo: no NASCIMENTO a segunda gaveta grava
+    # este papel também no parto sem assistência médica (LD01).
+    "TESTEMUNHA2": "Segunda testemunha",
     # O LIVRO E — 13/10/2026. Os companheiros seguem a convenção do casamento
     # («filiação 1 e 2, indicando a 1 para mãe entre parênteses»).
     "TUTOR": "Tutor(a)",
@@ -828,12 +872,38 @@ PREFIXO_DO_PAPEL: dict[str, str] = {
     "AVO_MATERNO": "prog1f1", "AVO_MATERNA": "prog2f1",
     "AVO_PATERNO": "prog1f2", "AVO_PATERNA": "prog2f2",
     "DECLARANTE": "declarante", "TESTEMUNHA": "testemunha",
+    "TESTEMUNHA2": "testemunha2",
     # O LIVRO E — 13/10/2026.
     "TUTOR": "tutor", "CURADOR": "curador", "REQUERENTE": "requerente",
     "COMPANHEIRO1": "companheiro1", "COMPANHEIRO2": "companheiro2",
     "MAE_COMPANHEIRO1": "filiacao1c1", "PAI_COMPANHEIRO1": "filiacao2c1",
     "MAE_COMPANHEIRO2": "filiacao1c2", "PAI_COMPANHEIRO2": "filiacao2c2",
 }
+
+# O PAPEL QUE A TELA PERGUNTA MAIS DE UMA VEZ — LD01, 21/10/2026. O casamento
+# se celebra com duas testemunhas pelo menos (CC art. 1.534; LRP art. 70, 6º),
+# e o parto sem assistência médica pede duas no assento (LRP art. 54, 9º); a
+# tela tinha uma gaveta só. A segunda gaveta tem prefixo próprio e grava o
+# MESMO papel: quem lê o assento conta as testemunhas pelo papel.
+PREFIXOS_A_MAIS_DO_PAPEL: dict[str, tuple[str, ...]] = {
+    "TESTEMUNHA": ("testemunha2",),
+}
+
+
+def prefixos_do_papel(papel: str, especie: Any = "") -> tuple[str, ...]:
+    """As gavetas da tela que gravam aquele papel, na ordem. Só calcula.
+
+    **A GAVETA A MAIS CEDE O LUGAR AO PAPEL PRÓPRIO.** No NASCIMENTO a segunda
+    testemunha é papel seu, `TESTEMUNHA2` (o registro tardio, art. 249, II —
+    21/10/2026, hotfix do servidor), e a gaveta `testemunha2` grava ESSE
+    papel; nas outras espécies ela continua sendo a segunda `TESTEMUNHA` do
+    LD01. Sem a espécie, as gavetas são as de sempre."""
+    proprios = {PREFIXO_DO_PAPEL[p] for p in PAPEIS_DA_ESPECIE.get(
+        str(especie or "").strip().upper(), ()) if p != papel}
+    return (PREFIXO_DO_PAPEL[papel],
+            *(g for g in PREFIXOS_A_MAIS_DO_PAPEL.get(papel, ())
+              if g not in proprios))
+
 
 # A ORDEM EM QUE ELES APARECEM na ficha e na certidao.
 #
@@ -850,7 +920,7 @@ ORDEM_DO_PAPEL: dict[str, int] = {
     "MAE": 2, "PAI": 3,
     "AVO_MATERNO": 4, "AVO_MATERNA": 5,
     "AVO_PATERNO": 6, "AVO_PATERNA": 7,
-    "DECLARANTE": 8, "TESTEMUNHA": 9,
+    "DECLARANTE": 8, "TESTEMUNHA": 9, "TESTEMUNHA2": 10,
     # O LIVRO E: o titular, a filiação, e depois quem a lei põe ao lado dele.
     "COMPANHEIRO1": 0, "COMPANHEIRO2": 1,
     "MAE_COMPANHEIRO1": 2, "PAI_COMPANHEIRO1": 3,
@@ -887,7 +957,7 @@ CAMPOS_DA_PESSOA: tuple[str, ...] = (
 PAPEIS_TITULARES: frozenset = frozenset({"REGISTRADO", "FALECIDO"})
 
 
-def registrar_pessoa(con: sqlite3.Connection, assento_id: int, *,
+def registrar_pessoa(con: Any, assento_id: int, *,
                      papel: str, especie: Any = None, agora: str,
                      usuario: str | None = None, **campos: Any) -> int:
     """Grava a pessoa de quem o assento e. ESCREVE.
@@ -902,9 +972,10 @@ def registrar_pessoa(con: sqlite3.Connection, assento_id: int, *,
     perguntar ao declarante.
     """
     papel = str(papel or "").strip().upper()
-    linha = con.execute(
-        "SELECT especie, nome, data_ato, data_fato FROM rc_assentos WHERE id=?",
-        (int(assento_id),)).fetchone()
+    bd = banco(con)
+    linha = bd.um(
+        "SELECT especie, nome, data_ato, data_fato FROM rc_assentos WHERE id = %s",
+        (int(assento_id),))
     if not linha:
         raise RcError(f"O assento {assento_id} não existe.")
     especie = str(especie or linha["especie"] or "").strip().upper()
@@ -950,14 +1021,14 @@ def registrar_pessoa(con: sqlite3.Connection, assento_id: int, *,
     valores["sexo"] = _sexo_da_pessoa(valores["sexo"])
     valores["data_nascimento"] = nascimento
     colunas = list(CAMPOS_DA_PESSOA)
-    cur = con.execute(
+    return int(bd.escrever(
         "INSERT INTO rc_pessoas(assento_id, papel, nome_norm, ordem, origem,"
         " criado_em, " + ", ".join(colunas) + ")"
-        " VALUES (?,?,?,?,'MANUAL',?," + ",".join("?" * len(colunas)) + ")",
+        " VALUES (%s, %s, %s, %s, 'MANUAL', %s, "
+        + ", ".join(["%s"] * len(colunas)) + ") RETURNING id",
         (int(assento_id), papel, normalizar_nome(nome),
          ORDEM_DO_PAPEL.get(papel, 0), agora,
-         *[valores[c] for c in colunas]))
-    return int(cur.lastrowid)
+         *[valores[c] for c in colunas]))[0]["id"])
 
 
 def _sexo_da_pessoa(v: Any) -> str | None:
@@ -970,18 +1041,17 @@ def _sexo_da_pessoa(v: Any) -> str | None:
     return letra if letra in ("M", "F") else None
 
 
-def pessoas_do_assento(con: sqlite3.Connection, assento_id: int,
-                       papeis: Any = None) -> list[sqlite3.Row]:
+def pessoas_do_assento(con: Any, assento_id: int,
+                       papeis: Any = None) -> list[dict]:
     """As pessoas daquele assento, na ordem da certidao. So LE."""
     if papeis:
-        marcas = ",".join("?" * len(papeis))
-        return list(con.execute(
-            f"SELECT * FROM rc_pessoas WHERE assento_id=? "
-            f"AND papel IN ({marcas}) ORDER BY ordem, id",
-            (int(assento_id), *papeis)))
-    return list(con.execute(
-        "SELECT * FROM rc_pessoas WHERE assento_id=? ORDER BY ordem, id",
-        (int(assento_id),)))
+        return banco(con).ler(
+            "SELECT * FROM rc_pessoas WHERE assento_id = %s "
+            "AND papel = ANY(%s) ORDER BY ordem, id",
+            (int(assento_id), list(papeis)))
+    return banco(con).ler(
+        "SELECT * FROM rc_pessoas WHERE assento_id = %s ORDER BY ordem, id",
+        (int(assento_id),))
 
 
 
@@ -1105,6 +1175,29 @@ def _conferir_o_livro_e(especie: str, assento: dict,
             f"{'; '.join(faltas)}.")
 
 
+def e_tardio(valor: Any) -> bool:
+    """A marca do registro tardio, como a tela e o banco a escrevem. Só lê."""
+    return str(valor or "").strip().upper() in ("1", "SIM", "TRUE", "ON")
+
+
+def regra_das_testemunhas_do_tardio(assento: dict, pessoas: list | None) -> dict:
+    """Se o tardio dispensa as testemunhas — art. 249, II. Só calcula.
+
+    A régua é a de `rc_registro_tardio.dispensa_testemunhas` (menor de 12 anos
+    **e** DNV, cumulativos); aqui só se tira a idade e a DNV do que a tela
+    mandou. A idade é a do dia do registro, e **sem data de nascimento não há
+    idade — e idade desconhecida não dispensa**.
+    """
+    import rc_registro_tardio as TARDIO
+    titular = _pessoa_do_papel(pessoas, "REGISTRADO") or {}
+    nasceu = titular.get("data_nascimento") or assento.get("data_fato")
+    hoje = str(assento.get("data_ato") or date.today().isoformat())
+    idade = idade_na_data(nasceu, hoje)
+    tem_dnv = _texto_preenchido(assento.get("dnv"), aceita_ignorado=False)
+    return {**TARDIO.dispensa_testemunhas(idade=idade, tem_dnv=tem_dnv),
+            "idade": idade, "tem_dnv": tem_dnv}
+
+
 def conferir_requisitos_legais(especie: Any, assento: dict | None = None,
                                pessoas: list | None = None) -> None:
     """Recusa lavrar em branco o que a Lei nº 6.015/1973 exige.
@@ -1160,6 +1253,16 @@ def conferir_requisitos_legais(especie: Any, assento: dict | None = None,
                     "filiação 2 (pai) — preencha ou declare ignorado",
                     faltas)
         _falta_nome(pessoas, "DECLARANTE", "declarante", faltas)
+        if especie == "NASCIMENTO" and e_tardio(assento.get("registro_tardio")):
+            artigo += " e art. 249 do Código de Normas (registro tardio)"
+            regra = regra_das_testemunhas_do_tardio(assento, pessoas)
+            if not regra["dispensada"]:
+                _falta_nome(pessoas, "TESTEMUNHA",
+                            "a primeira testemunha do requerimento (art. 249, II)",
+                            faltas)
+                _falta_nome(pessoas, "TESTEMUNHA2",
+                            "a segunda testemunha do requerimento (art. 249, II)",
+                            faltas)
         if especie == "NATIMORTO" and not _texto_preenchido(
                 assento.get("numero_do"), aceita_ignorado=False):
             faltas.append("Declaração de Óbito (número da DO)")
@@ -1214,7 +1317,7 @@ def conferir_requisitos_legais(especie: Any, assento: dict | None = None,
         f"declaração.")
 
 
-def numero_sem_dono(con: sqlite3.Connection, serie: str) -> None:
+def numero_sem_dono(con: Any, serie: str) -> None:
     """Recusa lavrar numa série cujo próximo número ninguém informou. SÓ LÊ.
 
     13/10/2026, o oficial, sobre o Livro E: «deixe em aberto o próximo
@@ -1227,22 +1330,23 @@ def numero_sem_dono(con: sqlite3.Connection, serie: str) -> None:
     **SÉRIE COM CONTADOR NÃO É ALCANÇADA**, mesmo com a pendência aberta: o
     Livro A e o Livro B lavram todo dia com o contador semeado do acervo.
     """
-    try:
-        tem_contador = con.execute(
-            "SELECT 1 FROM nu_numeracao WHERE serie=?", (serie,)).fetchone()
-        pendente = con.execute(
-            "SELECT titulo FROM nu_implantacao WHERE chave=? AND situacao='ABERTA'",
-            (f"numeracao:{serie}",)).fetchone()
-    except sqlite3.OperationalError:
+    bd = banco(con)
+    if not (bd.tem_tabela("nu_numeracao") and bd.tem_tabela("nu_implantacao")):
         return                       # instalação sem as tabelas do núcleo
+    tem_contador = bd.um(
+        "SELECT 1 AS um FROM nu_numeracao WHERE serie = %s LIMIT 1", (serie,))
+    pendente = bd.um(
+        "SELECT titulo FROM nu_implantacao WHERE chave = %s AND situacao='ABERTA'"
+        " LIMIT 1",
+        (f"numeracao:{serie}",))
     if pendente and not tem_contador:
         raise RcError(
-            f"{pendente[0]}: ainda não foi informado, e sem ele o primeiro ato "
+            f"{pendente['titulo']}: ainda não foi informado, e sem ele o primeiro ato "
             f"nasceria com o número 1. Informe-o em Livros e acervo → O que "
             f"falta informar (confira no livro de papel) e lavre em seguida.")
 
 
-def lavrar_assento(con: sqlite3.Connection, *, especie: str, nome: str,
+def lavrar_assento(con: Any, *, especie: str, nome: str,
                    sv: dict, agora: str, data_extenso: str,
                    data_fato: str | None = None,
                    matricula: str | None = None,
@@ -1296,32 +1400,36 @@ def lavrar_assento(con: sqlite3.Connection, *, especie: str, nome: str,
              "numero_do": (ibge or {}).get("numero_do"),
              # O LIVRO E confere o título com os campos dele (13/10/2026).
              **{k: v for k, v in (termo_dados or {}).items()
-                if k.startswith("livro_e_")}},
+                if k.startswith("livro_e_")
+                or k in ("registro_tardio", "tardio_requerimento")},
+             "dnv": (ibge or {}).get("dnv")},
             pessoas)
     if not (nome or "").strip():
         raise RcError("O assento precisa do nome de quem é o registro.")
     serie = SERIE_DA_ESPECIE[especie]
+    bd = banco(con)
     if (origem or "MANUAL").strip().upper() == "MANUAL":
-        numero_sem_dono(con, serie)
+        numero_sem_dono(bd, serie)
     chave = (origem_chave or "").strip() or None
     if origem == "EOFICIO" and not chave:
         raise RcError(
             "Assento de origem EOFICIO precisa de uma chave de origem, para "
             "a carga poder ser repetida sem duplicar.")
     if chave:
-        existente = assento_por_origem(con, origem, chave)
+        existente = assento_por_origem(bd, origem, chave)
         if existente:
             return {"assento_id": int(existente["id"]), "reaproveitado": True}
 
-    cur = con.execute(
+    assento_id = int(bd.escrever(
         """INSERT INTO rc_assentos(serie, especie, matricula, nome, data_ato,
                data_fato, dados_json, teor, teor_formato, situacao, origem,
                origem_chave, importacao_id, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+           RETURNING id""",
         (serie, especie, (matricula or "").strip() or None, nome.strip(),
          agora, data_fato, json.dumps(dados or {}, ensure_ascii=False), teor,
-         teor_formato, "ATIVO", origem, chave, importacao_id, agora, usuario))
-    assento_id = int(cur.lastrowid)
+         teor_formato, "ATIVO", origem, chave, importacao_id, agora,
+         usuario))[0]["id"])
 
     # O QUE A REMESSA DO IBGE PEDE, quando o balcão já sabe.
     #
@@ -1340,11 +1448,11 @@ def lavrar_assento(con: sqlite3.Connection, *, especie: str, nome: str,
     #   nada disso existia.
     if pessoas:
         for pessoa in pessoas:
-            registrar_pessoa(con, assento_id, especie=especie, agora=agora,
+            registrar_pessoa(bd, assento_id, especie=especie, agora=agora,
                              **pessoa)
 
     if ibge:
-        anotar_para_o_ibge(con, assento_id, especie=especie, **ibge)
+        anotar_para_o_ibge(bd, assento_id, especie=especie, **ibge)
 
     # O QUE O TERMO PEDE — cor ou raça, hora, hospital, naturalidade.
     #
@@ -1377,7 +1485,7 @@ def lavrar_assento(con: sqlite3.Connection, *, especie: str, nome: str,
             raise RcError(
                 f"Só o casamento e a união estável têm regime de bens — e este assento é de "
                 f"{NOME_DA_ESPECIE.get(especie, especie).lower()}.")
-        con.execute("UPDATE rc_assentos SET regime_bens=? WHERE id=?",
+        bd.escrever("UPDATE rc_assentos SET regime_bens = %s WHERE id = %s",
                     (regime, assento_id))
 
     de_fora = (habilitacao_serventia or "").strip()
@@ -1391,27 +1499,27 @@ def lavrar_assento(con: sqlite3.Connection, *, especie: str, nome: str,
             raise RcError(
                 "Diga de que serventia é a habilitação. O selo de fora sozinho "
                 "não diz de onde veio, e é isso que vai no papel e no selo.")
-        con.execute(
-            "UPDATE rc_assentos SET habilitacao_serventia=?, habilitacao_selo=? "
-            "WHERE id=?", (de_fora, selo_de_fora or None, assento_id))
+        bd.escrever(
+            "UPDATE rc_assentos SET habilitacao_serventia = %s, "
+            "habilitacao_selo = %s WHERE id = %s",
+            (de_fora, selo_de_fora or None, assento_id))
 
-    cur = con.execute(
+    ato_id = int(bd.escrever(
         """INSERT INTO rc_atos(assento_id, tipo, data_ato, teor, teor_formato,
                origem, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (assento_id, "REGISTRO", agora, teor, teor_formato, origem, agora,
-         usuario))
-    ato_id = int(cur.lastrowid)
+         usuario))[0]["id"])
 
     lugar = ESC.reservar(con, serie, "rc_atos", ato_id, sv=sv, agora=agora,
                          data_extenso=data_extenso, paginas=1, usuario=usuario)
-    con.execute(
-        """UPDATE rc_atos SET livro_id=?, folha=?, verso=?, numero_ordem=?,
-                              rotulo=? WHERE id=?""",
+    bd.escrever(
+        """UPDATE rc_atos SET livro_id = %s, folha = %s, verso = %s,
+                              numero_ordem = %s, rotulo = %s WHERE id = %s""",
         (lugar["livro_id"], lugar["folha"], int(lugar["verso"]),
          lugar["numero_ordem"], lugar["rotulo"], ato_id))
-    con.execute("UPDATE rc_assentos SET numero=? WHERE id=?",
-               (lugar["numero_ordem"], assento_id))
+    bd.escrever("UPDATE rc_assentos SET numero = %s WHERE id = %s",
+                (lugar["numero_ordem"], assento_id))
 
     # A MATRICULA DE 32 DIGITOS — COMPOSTA AQUI, E NAO ANTES.
     #
@@ -1447,7 +1555,7 @@ def lavrar_assento(con: sqlite3.Connection, *, especie: str, nome: str,
                 livro=lugar.get("livro_numero"),
                 folha=lugar.get("folha"),
                 termo=lugar.get("numero_ordem"))
-            con.execute("UPDATE rc_assentos SET matricula=? WHERE id=?",
+            bd.escrever("UPDATE rc_assentos SET matricula = %s WHERE id = %s",
                         (matricula_composta, assento_id))
         except (MATR.MatriculaError, KeyError) as erro:
             matricula_composta = ""
@@ -1532,10 +1640,10 @@ def lavrar_assento(con: sqlite3.Connection, *, especie: str, nome: str,
                 falta = "Lavrar por cima da trava exige o nome de quem força."
             if falta:
                 raise _recusa(falta)
-            con.execute(
+            bd.escrever(
                 """INSERT INTO rc_lavraturas_forcadas
                        (assento_id, forcado_em, forcado_por, motivo, travas_json)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s)""",
                 (assento_id, agora, usuario.strip(), forcar_motivo.strip(),
                  json.dumps(travas, ensure_ascii=False)))
             lavratura_forcada = True
@@ -1553,28 +1661,28 @@ def lavrar_assento(con: sqlite3.Connection, *, especie: str, nome: str,
 CHAVE_TERMO_TRANCADO = "rcpn_termo_lavrado_trancado"
 
 
-def termo_lavrado_trancado(con: sqlite3.Connection, assento_id: int) -> bool:
+def termo_lavrado_trancado(con: Any, assento_id: int) -> bool:
     """O assento foi lavrado nesta casa (origem MANUAL) e o registro tem selo?
     Então o termo, o número, a folha e a data são o livro. SÓ LÊ."""
-    r = con.execute("SELECT value FROM settings WHERE key=?",
-                    (CHAVE_TERMO_TRANCADO,)).fetchone() if con.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'"
-    ).fetchone() else None
-    if r and str(r[0] or "").strip().upper() == "DESLIGADO":
+    bd = banco(con)
+    r = bd.um("SELECT value FROM settings WHERE key = %s",
+              (CHAVE_TERMO_TRANCADO,)) if bd.tem_tabela("settings") else None
+    if r and str(r["value"] or "").strip().upper() == "DESLIGADO":
         return False
-    a = con.execute("SELECT origem FROM rc_assentos WHERE id=?",
-                    (int(assento_id),)).fetchone()
-    if not a or str(a[0] or "").upper() != "MANUAL":
+    a = bd.um("SELECT origem FROM rc_assentos WHERE id = %s",
+              (int(assento_id),))
+    if not a or str(a["origem"] or "").upper() != "MANUAL":
         return False
-    return con.execute(
-        "SELECT 1 FROM rc_atos WHERE assento_id=? AND tipo='REGISTRO' "
-        "AND COALESCE(TRIM(selo),'') <> ''", (int(assento_id),)).fetchone() is not None
+    return bd.um(
+        "SELECT 1 AS um FROM rc_atos WHERE assento_id = %s AND tipo='REGISTRO' "
+        "AND COALESCE(TRIM(selo),'') <> '' LIMIT 1",
+        (int(assento_id),)) is not None
 
 
 # ------------------------------------------------- a divisao tripartite
 
 
-def _lancar_no_assento(con: sqlite3.Connection, assento_id: int, tipo: str, *,
+def _lancar_no_assento(con: Any, assento_id: int, tipo: str, *,
                        teor: str, agora: str, fundamento: str | None,
                        teor_formato: str, usuario: str | None,
                        origem: str) -> dict:
@@ -1585,7 +1693,13 @@ def _lancar_no_assento(con: sqlite3.Connection, assento_id: int, tipo: str, *,
     isso que a divisão tripartite significa. Chamar `reservar()` aqui daria
     folha nova a cada averbação e faria o Livro A encher em um ano.
     """
-    ass = assento(con, assento_id)
+    # A SITUAÇÃO SE CONFERE COM A LINHA PRESA (FOR UPDATE), e não por
+    # `assento`, que só lê: sem a ponte, um cancelamento ao mesmo tempo
+    # passaria pela conferência e o lançamento entraria em assento cancelado.
+    bd = banco(con)
+    bd._escrita()
+    ass = bd.um("SELECT * FROM rc_assentos WHERE id = %s FOR UPDATE",
+                (int(assento_id),))
     if not ass:
         raise RcError(f"Assento {assento_id} não encontrado.")
     if ass["situacao"] != "ATIVO":
@@ -1603,17 +1717,17 @@ def _lancar_no_assento(con: sqlite3.Connection, assento_id: int, tipo: str, *,
     import rc_etiqueta_averbacao as ETIQ
     razao = ETIQ.teor_com_lavratura(razao, usuario)
 
-    cur = con.execute(
+    ato_id = int(bd.escrever(
         """INSERT INTO rc_atos(assento_id, tipo, data_ato, teor, teor_formato,
                fundamento, origem, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (assento_id, tipo, agora, razao, teor_formato,
-         (fundamento or "").strip() or None, origem, agora, usuario))
-    return {"assento_id": assento_id, "ato_id": int(cur.lastrowid),
+         (fundamento or "").strip() or None, origem, agora, usuario))[0]["id"])
+    return {"assento_id": assento_id, "ato_id": ato_id,
            "tipo": tipo, "teor": razao}
 
 
-def averbar(con: sqlite3.Connection, assento_id: int, *, teor: str,
+def averbar(con: Any, assento_id: int, *, teor: str,
             agora: str, fundamento: str | None = None,
             teor_formato: str = "texto", usuario: str | None = None,
             origem: str = "MANUAL") -> dict:
@@ -1624,7 +1738,7 @@ def averbar(con: sqlite3.Connection, assento_id: int, *, teor: str,
                               origem=origem)
 
 
-def anotar(con: sqlite3.Connection, assento_id: int, *, teor: str,
+def anotar(con: Any, assento_id: int, *, teor: str,
            agora: str, fundamento: str | None = None,
            teor_formato: str = "texto", usuario: str | None = None,
            origem: str = "MANUAL") -> dict:
@@ -1635,7 +1749,7 @@ def anotar(con: sqlite3.Connection, assento_id: int, *, teor: str,
                               origem=origem)
 
 
-def retificar(con: sqlite3.Connection, assento_id: int, *, teor: str,
+def retificar(con: Any, assento_id: int, *, teor: str,
               fundamento: str, agora: str, teor_formato: str = "texto",
               usuario: str | None = None, origem: str = "MANUAL") -> dict:
     """Retifica — corrige erro. Lei 6.015/1973, art. 109.
@@ -1662,7 +1776,7 @@ def retificar(con: sqlite3.Connection, assento_id: int, *, teor: str,
 # fundamento): e a correção direta dos CAMPOS da ficha, com motivo e
 # auditoria de quem alterou. criado_por do assento NAO muda.
 
-def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
+def corrigir_informacoes(con: Any, assento_id: int, *,
                          motivo: str, agora: str,
                          usuario: str | None = None,
                          nome: Any = None,
@@ -1693,8 +1807,12 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
             "Escreva o motivo da correção com pelo menos dez letras — "
             "quem abrir o assento depois precisa entender por que mudou.")
 
-    linha = con.execute("SELECT * FROM rc_assentos WHERE id=?",
-                        (int(assento_id),)).fetchone()
+    # Linha presa (FOR UPDATE): a situação e o que se compara com a ficha
+    # valem até o fim da transação, e não só até a leitura.
+    bd = banco(con)
+    bd._escrita()
+    linha = bd.um("SELECT * FROM rc_assentos WHERE id = %s FOR UPDATE",
+                  (int(assento_id),))
     if not linha:
         raise RcError(f"O assento {assento_id} não existe.")
     if (linha["situacao"] or "").strip().upper() != "ATIVO":
@@ -1797,12 +1915,12 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
     # corrigível — ali a ficha é transcrição, e o livro é o de papel.
     trancados = [c for c in ("teor", "numero", "data_ato") if c in mudancas]
     if folha is not None:
-        ato_reg = con.execute(
-            "SELECT folha FROM rc_atos WHERE assento_id=? AND tipo='REGISTRO' "
-            "ORDER BY id DESC LIMIT 1", (int(assento_id),)).fetchone()
+        ato_reg = bd.um(
+            "SELECT folha FROM rc_atos WHERE assento_id = %s AND tipo='REGISTRO' "
+            "ORDER BY id DESC LIMIT 1", (int(assento_id),))
         if ato_reg and str(ato_reg["folha"] or "") != str(folha).strip():
             trancados.append("folha")
-    if trancados and termo_lavrado_trancado(con, int(assento_id)):
+    if trancados and termo_lavrado_trancado(bd, int(assento_id)):
         nomes = {"teor": "o termo", "numero": "o número do termo",
                  "data_ato": "a data do registro", "folha": "a folha"}
         raise RcError(
@@ -1814,10 +1932,10 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
             "campos que não estão no termo continuam corrigíveis aqui.")
 
     if sets:
-        con.execute(
+        bd.escrever(
             "UPDATE rc_assentos SET "
-            + ", ".join(f"{c}=?" for c in sets)
-            + " WHERE id=?",
+            + ", ".join(f"{c} = %s" for c in sets)
+            + " WHERE id = %s",
             (*sets.values(), int(assento_id)))
 
     if termo:
@@ -1838,10 +1956,10 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
                         "para": preencher.get(c),
                     }
             if limpar:
-                con.execute(
+                bd.escrever(
                     "UPDATE rc_assentos SET "
                     + ", ".join(f"{c}=NULL" for c in limpar)
-                    + " WHERE id=?",
+                    + " WHERE id = %s",
                     (int(assento_id),))
                 for c in limpar:
                     antigo = linha[c] if c in linha.keys() else None
@@ -1864,10 +1982,10 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
             return int(digitos), bruto_f.upper()
 
     if folha is not None or ("numero" in mudancas):
-        ato = con.execute(
+        ato = bd.um(
             "SELECT id, folha, numero_ordem, rotulo FROM rc_atos "
-            "WHERE assento_id=? AND tipo='REGISTRO' ORDER BY id LIMIT 1",
-            (int(assento_id),)).fetchone()
+            "WHERE assento_id = %s AND tipo='REGISTRO' ORDER BY id LIMIT 1",
+            (int(assento_id),))
         if ato:
             ato_sets: dict[str, Any] = {}
             if folha is not None:
@@ -1881,10 +1999,10 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
                 if novo_n != ato["numero_ordem"]:
                     ato_sets["numero_ordem"] = novo_n
             if ato_sets:
-                con.execute(
+                bd.escrever(
                     "UPDATE rc_atos SET "
-                    + ", ".join(f"{c}=?" for c in ato_sets)
-                    + " WHERE id=?",
+                    + ", ".join(f"{c} = %s" for c in ato_sets)
+                    + " WHERE id = %s",
                     (*ato_sets.values(), int(ato["id"])))
         elif folha is not None:
             # Acervo sem ato REGISTRO: a folha não tem linha em rc_atos.
@@ -1929,8 +2047,8 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
         if "numero" in mudancas:
             dados_sync["termo"] = mudancas["numero"]["para"]
         novo_dj = json.dumps(dados_sync, ensure_ascii=False)
-        con.execute(
-            "UPDATE rc_assentos SET dados_json=? WHERE id=?",
+        bd.escrever(
+            "UPDATE rc_assentos SET dados_json = %s WHERE id = %s",
             (novo_dj, int(assento_id)))
         sets["dados_json"] = novo_dj
 
@@ -1942,10 +2060,10 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
             campos = {c: p.get(c) for c in CAMPOS_DA_PESSOA if c in p}
             if not any(v not in (None, "") for v in campos.values()):
                 continue
-            existente = con.execute(
-                "SELECT * FROM rc_pessoas WHERE assento_id=? AND papel=? "
+            existente = bd.um(
+                "SELECT * FROM rc_pessoas WHERE assento_id = %s AND papel = %s "
                 "ORDER BY id LIMIT 1",
-                (int(assento_id), papel)).fetchone()
+                (int(assento_id), papel))
             if existente:
                 upd: dict[str, Any] = {}
                 for c, v in campos.items():
@@ -1960,10 +2078,10 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
                 if "nome" in upd and upd["nome"]:
                     upd["nome_norm"] = normalizar_nome(upd["nome"])
                 if upd:
-                    con.execute(
+                    bd.escrever(
                         "UPDATE rc_pessoas SET "
-                        + ", ".join(f"{c}=?" for c in upd)
-                        + " WHERE id=?",
+                        + ", ".join(f"{c} = %s" for c in upd)
+                        + " WHERE id = %s",
                         (*upd.values(), int(existente["id"])))
                     mudancas[f"pessoa:{papel}"] = {
                         k: {"de": existente[k] if k in existente.keys()
@@ -1973,7 +2091,7 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
                 if not (campos.get("nome") or "").strip():
                     continue
                 registrar_pessoa(
-                    con, int(assento_id), papel=papel,
+                    bd, int(assento_id), papel=papel,
                     especie=linha["especie"], agora=agora,
                     usuario=usuario,
                     **{c: v for c, v in campos.items()
@@ -1988,13 +2106,13 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
             "OBITO": "FALECIDO",
         }.get((linha["especie"] or "").upper())
         if titular_papel:
-            t = con.execute(
+            t = bd.um(
                 "SELECT id, nome FROM rc_pessoas "
-                "WHERE assento_id=? AND papel=?",
-                (int(assento_id), titular_papel)).fetchone()
+                "WHERE assento_id = %s AND papel = %s ORDER BY id LIMIT 1",
+                (int(assento_id), titular_papel))
             if t and t["nome"] != mudancas["nome"]["para"]:
-                con.execute(
-                    "UPDATE rc_pessoas SET nome=?, nome_norm=? WHERE id=?",
+                bd.escrever(
+                    "UPDATE rc_pessoas SET nome = %s, nome_norm = %s WHERE id = %s",
                     (mudancas["nome"]["para"],
                      normalizar_nome(mudancas["nome"]["para"]),
                      int(t["id"])))
@@ -2007,9 +2125,9 @@ def corrigir_informacoes(con: sqlite3.Connection, assento_id: int, *,
             "Nada foi alterado — confira os campos e tente de novo.")
 
     if "teor" in mudancas and "teor" in sets:
-        con.execute(
-            "UPDATE rc_atos SET teor=? "
-            "WHERE assento_id=? AND tipo='REGISTRO'",
+        bd.escrever(
+            "UPDATE rc_atos SET teor = %s "
+            "WHERE assento_id = %s AND tipo='REGISTRO'",
             (sets.get("teor"), int(assento_id)))
 
     return {

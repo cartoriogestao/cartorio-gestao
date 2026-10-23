@@ -74,7 +74,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -85,7 +84,9 @@ if str(RAIZ) not in sys.path:
 
 # A RÉGUA É A DO MÓDULO, e não uma lista escrita aqui: duas listas de situações
 # divergiriam no dia em que a sexta nascesse, e a que ficasse velha seria esta.
+import banco_pg
 import tarefa_processo as TP
+from bd_nativo import banco as abrir_banco
 
 for saida in (sys.stdout, sys.stderr):
     try:
@@ -111,29 +112,29 @@ NOTA_DA_LINHA = (
 )
 
 
-def _fora_do_vocabulario(con: sqlite3.Connection) -> list[sqlite3.Row]:
-    marcadores = ",".join("?" * len(TP.SITUACOES))
-    return list(con.execute(
+def _fora_do_vocabulario(bd) -> list[dict]:
+    marcadores = ",".join(["%s"] * len(TP.SITUACOES))
+    return bd.ler(
         f"""SELECT t.id, t.title, t.status, t.sector, t.assigned_user_id,
                    t.completed_at, t.completed_by, t.updated_at,
-                   COALESCE(u.full_name,'') quem
+                   COALESCE(u.full_name,'') AS quem
               FROM tasks t
               LEFT JOIN users u ON u.id=t.assigned_user_id
              WHERE COALESCE(t.status,'') NOT IN ({marcadores})
-             ORDER BY t.id""", tuple(TP.SITUACOES)))
+             ORDER BY t.id""", tuple(TP.SITUACOES))
 
 
-def _o_que_a_linha_tem(con: sqlite3.Connection, task_id: int) -> list[sqlite3.Row]:
+def _o_que_a_linha_tem(bd, task_id: int) -> list[dict]:
     """O histórico inteiro dela — é dele que sai por que a palavra está assim."""
-    return list(con.execute(
+    return bd.ler(
         """SELECT h.ts, h.action, h.old_value, h.new_value, h.note
-             FROM task_history h WHERE h.task_id=? ORDER BY h.id""", (task_id,)))
+             FROM task_history h WHERE h.task_id=%s ORDER BY h.id""", (task_id,))
 
 
-def _depois(con: sqlite3.Connection, task_id: int) -> sqlite3.Row:
-    return con.execute(
+def _depois(bd, task_id: int) -> dict | None:
+    return bd.um(
         """SELECT id, status, completed_at, completed_by, updated_at
-             FROM tasks WHERE id=?""", (task_id,)).fetchone()
+             FROM tasks WHERE id=%s""", (task_id,))
 
 
 def main() -> int:
@@ -153,13 +154,13 @@ def main() -> int:
         print(f"o banco não está em {banco}", file=sys.stderr)
         return 1
 
-    con = sqlite3.connect(str(banco))
-    con.row_factory = sqlite3.Row
+    con = banco_pg.conectar(str(banco))
+    bd = abrir_banco(con)
     print(f"medido em {datetime.now():%d/%m/%Y às %H:%M:%S}")  # noqa: DTZ005
     print(f"banco: {banco}" + ("" if banco == BANCO else "   (NÃO é o da produção)"))
     print(f"o vocabulário que a tela conhece: {', '.join(TP.SITUACOES)}")
 
-    linhas = _fora_do_vocabulario(con)
+    linhas = _fora_do_vocabulario(bd)
     if not linhas:
         print("\nNenhuma tarefa fora do vocabulário — nada a fazer.")
         con.close()
@@ -179,7 +180,7 @@ def main() -> int:
               f"   responsável {linha['quem'] or '—'}")
         print(f"      carimbo de conclusão {linha['completed_at'] or '—'}"
               f"   por {linha['completed_by'] or '—'}")
-        for h in _o_que_a_linha_tem(con, int(linha["id"])):
+        for h in _o_que_a_linha_tem(bd, int(linha["id"])):
             # O que pôs a palavra foi um `ALTEROU_STATUS` cujo `new_value` é
             # ela mesma — foi assim na #85: `CONCLUIDA → PENDENTE`, três
             # segundos depois de a tarefa ser concluída (o botão «Reabrir
@@ -225,11 +226,11 @@ def main() -> int:
     # FORA DA PASTA DO BANCO — ordem do oficial em 11/10/2026.
     import pasta_das_copias as _PC
     copia = _PC.destino_da_copia(copia, Path(banco))
-    con.execute("VACUUM INTO ?", (str(copia),))
+    banco_pg.copiar_para_arquivo(banco, copia)
     print(f"\ncópia do banco: {copia}")
 
     agora = datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
-    mudadas: list[tuple[sqlite3.Row, str, bool]] = []
+    mudadas: list[tuple[dict, str, bool]] = []
     with con:
         for linha in elegiveis:
             destino = SINONIMOS[linha["status"]]
@@ -237,14 +238,14 @@ def main() -> int:
             # carimbo ficaria onde está; como não carimba, ele sai.
             guarda_carimbo = TP.carimba_o_status(destino)
             if guarda_carimbo:
-                con.execute(
-                    "UPDATE tasks SET status=?, updated_at=? WHERE id=? AND status=?",
+                bd.escrever(
+                    "UPDATE tasks SET status=%s, updated_at=%s WHERE id=%s AND status=%s",
                     (destino, agora, int(linha["id"]), linha["status"]),
                 )
             else:
-                con.execute(
-                    "UPDATE tasks SET status=?, completed_at=NULL, "
-                    "completed_by=NULL, updated_at=? WHERE id=? AND status=?",
+                bd.escrever(
+                    "UPDATE tasks SET status=%s, completed_at=NULL, "
+                    "completed_by=NULL, updated_at=%s WHERE id=%s AND status=%s",
                     (destino, agora, int(linha["id"]), linha["status"]),
                 )
             apagou = bool(linha["completed_at"]) and not guarda_carimbo
@@ -258,17 +259,17 @@ def main() -> int:
             # `user_id` NULL: quem fez isto não foi gente no sistema, e a tela
             # mostra «sistema» — que é a verdade. O nome do script vai na nota e
             # na auditoria, onde se procura por ele.
-            con.execute(
+            bd.escrever(
                 "INSERT INTO task_history(task_id,ts,user_id,action,old_value,"
-                "new_value,note) VALUES (?,?,?,?,?,?,?)",
+                "new_value,note) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (int(linha["id"]), agora, None, "NORMALIZADA",
                  linha["status"], destino, nota),
             )
             # A MESMA SERIALIZAÇÃO DE `db.log` (`json.dumps`, `ensure_ascii=False`).
-            con.execute(
+            bd.escrever(
                 """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
                        entity_type, entity_id, details)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (agora, None, "tools/normalizar_situacao_das_tarefas.py",
                  "TAREFA_SITUACAO", "tasks", int(linha["id"]),
                  json.dumps({"acao": "normalizar", "de": linha["status"],
@@ -282,7 +283,7 @@ def main() -> int:
 
     print("\n=== como ficaram ===")
     for linha, destino, apagou in mudadas:
-        d = _depois(con, int(linha["id"]))
+        d = _depois(bd, int(linha["id"]))
         print(f"   #{d['id']}  {linha['status']!r} -> {d['status']!r}"
               f"   carimbo {d['completed_at'] or '—'}"
               + ("  (apagado)" if apagou else ""))

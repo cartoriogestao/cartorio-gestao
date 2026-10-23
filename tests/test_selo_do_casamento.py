@@ -53,7 +53,7 @@ sys.path.insert(0, str(RAIZ))
 import ato_selado as AS            # noqa: E402
 import selador as S                # noqa: E402
 
-DOC = Path(r"C:\ARPNET\C11\Selo Eletrônico\selador-doc\civil\index.html")
+DOC = Path(r"C:\ProgramData\CartorioGestao\arquivos\eoficio\Selo Eletrônico\selador-doc\civil\index.html")
 
 pytestmark = pytest.mark.skipif(
     not DOC.exists(), reason="o contrato do selador não está nesta máquina")

@@ -1,0 +1,11 @@
+{
+  "chave": "PT_EDITAL_ROTULOS",
+  "atribuicao": "Protesto",
+  "nome": "Edital de intimação — rótulos dos dados",
+  "formato": "CHAVES",
+  "explica": "Uma linha por rótulo, no formato «nome = texto». O NOME é do sistema e não muda; o TEXTO é seu. Linha apagada, ou deixada sem texto, volta ao padrão — o sistema nunca fica sem a palavra. A inscrição do devedor e a espécie entram quando o título as tem; os «sem_» são o que o edital diz quando o dado falta — «o prazo legal» quando o protocolo não diz a data.",
+  "campos": [
+    "documento",
+    "especie"
+  ]
+}

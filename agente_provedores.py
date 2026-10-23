@@ -77,6 +77,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+import ia_uso as USO
+
 NOME_DO_ARQUIVO = "agente.cred"
 
 # ONDE A AJUDA JÁ GUARDA A CHAVE DA ANTHROPIC. Lido só como compatibilidade, e
@@ -161,10 +163,19 @@ def _sem_segredo(texto: str) -> str:
 
 
 class AgenteError(ValueError):
-    """Falha de transporte, com a mensagem pronta para quem opera."""
+    """Falha de transporte, com a mensagem pronta para quem opera.
 
-    def __init__(self, mensagem: object = "") -> None:
+    `motivo` é o resumo de forma fixa que vai para o registro do uso de IA
+    (`ia_uso`, LF01) — e só ele vai: a mensagem pode trazer de volta um pedaço
+    do que o provedor recebeu. `recusado` separa o pedido que não chegou a sair
+    (ou que o provedor recusou) da falha de rede ou de serviço.
+    """
+
+    def __init__(self, mensagem: object = "", *, motivo: str = "",
+                 recusado: bool = False) -> None:
         super().__init__(_sem_segredo(str(mensagem or "")))
+        self.motivo = motivo
+        self.recusado = recusado
 
 
 # ----------------------------------------------------------- as credenciais
@@ -231,7 +242,7 @@ def credencial(pasta_de_dados: Any, provedor: Any) -> str:
             f"Ela é gravada em {caminho_da_credencial(pasta_de_dados)}, fora do "
             f"banco — o banco vai no backup, e o backup sai da serventia. "
             f"Informe em Administrativo → Agente do sistema → "
-            f"Configuração.")
+            f"Configuração.", motivo="sem chave", recusado=True)
     return achada
 
 
@@ -288,6 +299,10 @@ def gravar_chave(pasta_de_dados: Any, provedor: Any, chave: Any) -> Path:
     temporario.write_text(json.dumps(so_o_do_agente, ensure_ascii=False,
                                      indent=2), encoding="utf-8")
     temporario.replace(caminho)
+    # O `.tmp` novo herda a ACE de Usuários da pasta; a chave do provedor
+    # ficava legível até o próximo reinício (22/10/2026, M6).
+    import centrais_cred as _CRED
+    _CRED._so_do_servico(caminho)
     return caminho
 
 
@@ -310,7 +325,8 @@ def normalizar_provedor(provedor: Any) -> str:
     if nome not in PROVEDORES:
         raise AgenteError(
             f"Provedor desconhecido: {provedor!r}. Os que existem são "
-            f"{', '.join(PROVEDORES)}.")
+            f"{', '.join(PROVEDORES)}.", motivo="provedor desconhecido",
+            recusado=True)
     return nome
 
 
@@ -414,7 +430,8 @@ def _mensagens_openai(conversa: list[dict], sistema: str) -> list[dict]:
                 # Imagem só se manda pela família da Anthropic; aqui ela sumiria
                 # calada, e a «transcrição» viria de uma página que não subiu.
                 raise AgenteError("Este provedor não recebe imagem pelo sistema; "
-                                  "a leitura de documento digitalizado usa o Claude.")
+                                  "a leitura de documento digitalizado usa o Claude.",
+                                  motivo="imagem neste provedor", recusado=True)
             saida.append({"role": "user",
                           "content": str(evento.get("texto") or "")})
         elif tipo == "assistant":
@@ -523,10 +540,11 @@ def ler_resposta(provedor: Any, bruto: bytes) -> dict:
         dados = json.loads(bruto.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as erro:
         raise AgenteError(
-            "A resposta veio num formato que eu não entendi. Tente de novo."
-        ) from erro
+            "A resposta veio num formato que eu não entendi. Tente de novo.",
+            motivo="resposta ilegível") from erro
     if not isinstance(dados, dict):
-        raise AgenteError("A resposta veio vazia. Tente de novo.")
+        raise AgenteError("A resposta veio vazia. Tente de novo.",
+                          motivo="resposta vazia")
 
     if PROVEDORES[prov]["familia"] == ANTHROPIC:
         blocos = dados.get("content") or []
@@ -545,7 +563,8 @@ def ler_resposta(provedor: Any, bruto: bytes) -> dict:
         escolhas = dados.get("choices") or []
         if not escolhas:
             raise AgenteError(
-                "A resposta do provedor veio sem escolha nenhuma. Tente de novo.")
+                "A resposta do provedor veio sem escolha nenhuma. Tente de novo.",
+                motivo="resposta vazia")
         escolha = escolhas[0] or {}
         mensagem = escolha.get("message") or {}
         texto = str(mensagem.get("content") or "").strip()
@@ -646,19 +665,11 @@ def _nao_consegui(prov: str, ultimo: str, *, corpo: bytes, prazo: int,
             f"siga o atendimento, e tente de novo daqui a pouco.")
 
 
-def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
-              conversa: list[dict], ferramentas: list[dict],
-              modelo: Any = None, maximo_de_saida: int = 2000,
-              prazo: int = PRAZO_PADRAO) -> dict:
-    """Um turno. **FALA COM A REDE** e devolve a resposta em forma neutra.
-
-    **NÃO RECEBE `con`, E ISSO É DE PROPÓSITO** — a mesma assinatura de
-    `ato_selado.obter_selo` e do antigo `claude_cliente.perguntar`, pelo mesmo
-    motivo:
-    assim não há como chamá-la de dentro de uma transação sem reparar no que
-    está fazendo. Um turno leva dezenas de segundos, e dentro do
-    `BEGIN IMMEDIATE` poria a casa inteira no `busy_timeout`.
-    """
+def _turno(pasta_de_dados: Any, *, provedor: Any, sistema: str,
+           conversa: list[dict], ferramentas: list[dict],
+           modelo: Any = None, maximo_de_saida: int = 2000,
+           prazo: int = PRAZO_PADRAO) -> dict:
+    """O turno em si, sem o registro — quem chama é `conversar`."""
     prov = normalizar_provedor(provedor)
     pedido = montar_pedido(prov, sistema=sistema, conversa=conversa,
                            ferramentas=ferramentas, modelo=modelo,
@@ -668,7 +679,8 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
         raise AgenteError(
             f"A conversa ficou grande demais ({len(corpo) // 1024} KB). Isso "
             f"quase sempre é engano de quem a montou — reduza o que vai junto "
-            f"e comece uma sessão nova.")
+            f"e comece uma sessão nova.", motivo="conversa grande demais",
+            recusado=True)
     # A CREDENCIAL É PEDIDA AQUI, e não antes: assim uma sessão que só lê o
     # histórico não precisa de chave nenhuma para existir.
     cabecalhos = _cabecalhos(pedido, credencial(pasta_de_dados, prov))
@@ -704,10 +716,73 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
 
         # 429 e 5xx melhoram repetindo; o resto não.
         if situacao and situacao not in (429, 500, 502, 503, 504):
-            raise AgenteError(_explicar(prov, situacao, bruto))
+            raise AgenteError(_explicar(prov, situacao, bruto),
+                              motivo=f"HTTP {situacao}",
+                              recusado=400 <= situacao < 500)
         ultimo = ultimo or _explicar(prov, situacao, bruto)
         if tentativa < TENTATIVAS:
             time.sleep(2 * tentativa)
 
+    if situacao:
+        motivo = f"HTTP {situacao}"
+    elif "timed out" in ultimo.lower() or "timeout" in ultimo.lower():
+        motivo = "sem resposta no prazo"
+    else:
+        motivo = "sem rede"
     raise AgenteError(_nao_consegui(prov, ultimo, corpo=corpo, prazo=prazo,
-                                    segundos=time.time() - inicio))
+                                    segundos=time.time() - inicio),
+                      motivo=motivo)
+
+
+def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
+              conversa: list[dict], ferramentas: list[dict],
+              modelo: Any = None, maximo_de_saida: int = 2000,
+              prazo: int = PRAZO_PADRAO, modulo: str = "",
+              finalidade: str = "", usuario: str = "", atribuicao: str = "",
+              referencia: str = "", mascarado: bool | None = None) -> dict:
+    """Um turno. **FALA COM A REDE** e devolve a resposta em forma neutra.
+
+    **NÃO RECEBE `con`, E ISSO É DE PROPÓSITO** — a mesma assinatura de
+    `ato_selado.obter_selo` e do antigo `claude_cliente.perguntar`, pelo mesmo
+    motivo:
+    assim não há como chamá-la de dentro de uma transação sem reparar no que
+    está fazendo. Um turno leva dezenas de segundos, e dentro do
+    `BEGIN IMMEDIATE` poria a casa inteira no `busy_timeout`.
+
+    **E CADA TURNO FICA REGISTRADO** (LF01 — Código de Normas do MA, arts.
+    170, § 4º, e 176): quando, de onde (`modulo`), para quê (`finalidade`, o
+    código de `ia_catalogo`), quem, em que atribuição, sobre qual registro
+    (`referencia`, «tabela:id»), se o que subiu ia mascarado, quantos tokens e
+    como terminou. Quem chama diz esses dados; o transporte grava, depois da
+    resposta, numa conexão própria — e **nada do texto que foi ou voltou**.
+    Registro que não grava vai para o log e não derruba o turno
+    (`ia_uso.registrar`).
+    """
+    registro = {"modulo": modulo, "finalidade": finalidade, "usuario": usuario,
+                "atribuicao": atribuicao, "referencia": referencia,
+                "mascarado": mascarado,
+                "provedor": str(provedor or "").strip().lower() or PADRAO,
+                "modelo": str(modelo or "").strip()}
+    try:
+        registro["modelo"] = modelo_de(provedor, modelo)
+    except AgenteError:
+        pass
+    try:
+        lida = _turno(pasta_de_dados, provedor=provedor, sistema=sistema,
+                      conversa=conversa, ferramentas=ferramentas,
+                      modelo=modelo, maximo_de_saida=maximo_de_saida,
+                      prazo=prazo)
+    except AgenteError as falha:
+        USO.registrar(pasta_de_dados, **registro,
+                      resultado=USO.RECUSADO if falha.recusado else USO.ERRO,
+                      erro=falha.motivo or "falha do transporte")
+        raise
+    except Exception as falha:
+        USO.registrar(pasta_de_dados, **registro, resultado=USO.ERRO,
+                      erro=type(falha).__name__)
+        raise
+    registro["modelo"] = lida.get("modelo") or registro["modelo"]
+    USO.registrar(pasta_de_dados, **registro, resultado=USO.OK,
+                  tokens_entrada=lida.get("entrada") or 0,
+                  tokens_saida=lida.get("saida") or 0)
+    return lida

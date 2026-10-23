@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_RECONHECIMENTO_SEMELHANCA__firmas",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Reconhecimento por semelhança — várias firmas",
+  "formato": "CHAVES",
+  "explica": "Quando a etiqueta reconhece mais de uma firma (e sem sinal público).",
+  "campos": [
+    "quem"
+  ]
+}

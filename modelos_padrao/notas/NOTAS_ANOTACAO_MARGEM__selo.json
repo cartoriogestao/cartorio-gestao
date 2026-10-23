@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ANOTACAO_MARGEM__selo",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Anotação à margem — selo",
+  "formato": "CHAVES",
+  "explica": "Quando o ato tem selo.",
+  "campos": [
+    "selo"
+  ]
+}

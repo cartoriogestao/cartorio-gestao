@@ -50,6 +50,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import modelos_da_casa as MODELOS
 from notas_livro import (PAGINAS_POR_FOLHA, com_algarismos, inteiro,
                          rotulo_folha)
 from notas_schema import TIPOS_LIVRO
@@ -97,32 +98,35 @@ def faces_do_livro(livro: Any) -> list[str]:
 
 
 def dizer(faces: list[str], serie: str, numero: Any, sv: dict,
-          data_extenso: str, motivo: str | None = None) -> str:
+          data_extenso: str, motivo: str | None = None, *, con: Any = None) -> str:
     """O texto que sai na face inutilizada.
 
     Diz o que e, por que esta em branco, e que nada mais entra ali. As tres
     coisas, porque uma face riscada sem dizer nenhum obriga quem le a supor.
+
+    O TEXTO MORA NA BASE DESDE O LF06D (`NOTAS_INUTILIZACAO`, com a declaracao
+    de uma face ou de varias como peca); o singular e o plural sao decididos
+    aqui.
     """
+    textos = MODELOS.textos(con)
     quantas = len(faces)
+    livro = TIPOS_LIVRO.get(serie, serie)
     if quantas == 1:
-        alvo = f"a face {faces[0]}"
+        declaracao = textos.preencher(
+            "NOTAS_INUTILIZACAO__uma_face", face=faces[0], livro=livro, numero=numero,
+            quantas=com_algarismos(quantas),
+            razao=(motivo or "").strip() or textos("NOTAS_INUTILIZACAO__razao_uma"))
     else:
-        alvo = f"as faces {faces[0]} a {faces[-1]}"
-    razao = (motivo or "").strip() or (
-        "por não ter nela sido lançado ato algum" if quantas == 1
-        else "por não terem nelas sido lançados atos")
-    plural = "" if quantas == 1 else "S"
-    return (
-        f"INUTILIZAÇÃO. Fica{'' if quantas == 1 else 'm'} INUTILIZADA{plural} "
-        f"{alvo} do {TIPOS_LIVRO.get(serie, serie)} n. {numero} "
-        f"— {com_algarismos(quantas)} face{'' if quantas == 1 else 's'} —, "
-        f"{razao}, nada mais podendo nela{'' if quantas == 1 else 's'} ser "
-        f"lançado. "
-        f"Escrituração seguida, sem claros ou espaços em branco — art. 795, "
-        f"§ 2º, do Código de Normas. "
-        f"{sv.get('ri_cidade', '')}-{sv.get('ri_uf', '')}, {data_extenso}. "
-        f"{sv.get('serventia_titular', '')} — {sv.get('serventia_titulo', '')}."
-    )
+        primeira, ultima = faces[0], faces[-1]
+        declaracao = textos.preencher(
+            "NOTAS_INUTILIZACAO__varias_faces", primeira=primeira, ultima=ultima,
+            livro=livro, numero=numero, quantas=com_algarismos(quantas),
+            razao=(motivo or "").strip() or textos("NOTAS_INUTILIZACAO__razao_varias"))
+    return textos.preencher(
+        "NOTAS_INUTILIZACAO", declaracao=declaracao,
+        cidade=sv.get('ri_cidade', ''), uf=sv.get('ri_uf', ''),
+        data_extenso=data_extenso, titular=sv.get('serventia_titular', ''),
+        titulo=sv.get('serventia_titulo', ''))
 
 
 # O traco. Nao e enfeite: e o que impede a linha em branco de receber texto
@@ -132,20 +136,18 @@ LINHAS_DE_RISCO = 24
 
 
 def html_da_face(face: str, serie: str, numero: Any, sv: dict,
-                 data_extenso: str, texto: str) -> str:
-    """Uma face inutilizada, pronta para imprimir sobre a folha do livro."""
+                 data_extenso: str, texto: str, *, con: Any = None) -> str:
+    """Uma face inutilizada, pronta para imprimir sobre a folha do livro.
+
+    A folha mora na base desde o LF06D (`NOTAS_INUTILIZACAO_FACE`); o traco,
+    que e regra (cobrir a altura util da face), entra pronto no claro
+    `{riscos}`.
+    """
     riscos = "".join(f'<p align="center">{_RISCO}</p>' for _ in range(LINHAS_DE_RISCO))
-    return (
-        f'<p align="center"><b>{TIPOS_LIVRO.get(serie, serie)} '
-        f'n. {numero} — FOLHA {face}</b></p>'
-        f'<p align="center"><b>FACE INUTILIZADA</b></p>'
-        f'{riscos}'
-        f'<p>{texto}</p>'
-        f'<p></p><p></p>'
-        f'<p align="center">_________________________________</p>'
-        f'<p align="center">{sv.get("serventia_titular", "")}</p>'
-        f'<p align="center">{sv.get("serventia_titulo", "")}</p>'
-    )
+    return MODELOS.textos(con).preencher(
+        "NOTAS_INUTILIZACAO_FACE", livro=TIPOS_LIVRO.get(serie, serie),
+        numero=numero, face=face, riscos=riscos, texto=texto,
+        titular=sv.get("serventia_titular", ""), titulo=sv.get("serventia_titulo", ""))
 
 
 def sugerir_entrelinha(paginas_texto: Any,

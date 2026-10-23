@@ -13,7 +13,9 @@ from pathlib import Path
 
 from flask import abort, jsonify, request
 
+from bd_nativo import banco
 import revisao_previa as RV
+from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 
 #: As telas em que o painel aparece (as que lavram ato do RI e das Notas).
 TELAS_COM_REVISAO = ("ri_ficha", "ri_preencher_modelo", "notas_ato")
@@ -69,9 +71,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 return jsonify({"erro": str(erro)}), 404
         # OS ANEXOS DO RI SÃO OS DA PRENOTAÇÃO escolhida no formulário — é ali que
         # o título apresentado mora (`ri_documentos`). Sem prenotação, sem anexos.
-        prenotacao = (request.form.get("prenotacao_id_ui") or "").strip()
-        origem = ({"entidade": "RI_PROTOCOLO", "id": int(prenotacao)}
-                  if prenotacao.isdigit() else None)
+        prenotacao = numero_digitado(request.form.get("prenotacao_id_ui"))
+        origem = ({"entidade": "RI_PROTOCOLO", "id": prenotacao}
+                  if prenotacao is not None else None)
         return _comecar("RI", matricula_id, RV.hash_do_ato(tipo, teor), dossie,
                         f"{tipo} na matrícula id {matricula_id}", origem)
 
@@ -81,12 +83,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             if not RV.ligada(con, pasta()):
                 return jsonify({"desligada": True})
-            a = con.execute("SELECT tipo, teor FROM nt_atos WHERE id = ?", (ato_id,)).fetchone()
-            if a is None or not RV.normalizar(a[1]):
+            a = banco(con).um("SELECT tipo, teor FROM nt_atos WHERE id = %s", (ato_id,))
+            if a is None or not RV.normalizar(a["teor"]):
                 return jsonify({"erro": "Guarde o teor antes de revisar."}), 400
             dossie = RV.dossie_notas(con, ato_id)
-        return _comecar("NOTAS", ato_id, RV.hash_do_ato(a[0], a[1]), dossie,
-                        f"{a[0]} das Notas id {ato_id}",
+        return _comecar("NOTAS", ato_id, RV.hash_do_ato(a["tipo"], a["teor"]), dossie,
+                        f"{a['tipo']} das Notas id {ato_id}",
                         {"entidade": "NT_ATO", "id": ato_id})
 
     # A ÚLTIMA REVISÃO, PARA A TELA MOSTRAR AO ABRIR (07/10/2026): recarregar a
@@ -95,10 +97,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @login_required
     def revisao_previa_notas_ultima(ato_id: int):
         with db.connect() as con:
-            a = con.execute("SELECT tipo, teor FROM nt_atos WHERE id = ?", (ato_id,)).fetchone()
+            a = banco(con).um("SELECT tipo, teor FROM nt_atos WHERE id = %s", (ato_id,))
             if a is None:
                 abort(404)
-            r = RV.ultima(con, "NOTAS", ato_id, RV.hash_do_ato(a[0], a[1]))
+            r = RV.ultima(con, "NOTAS", ato_id, RV.hash_do_ato(a["tipo"], a["teor"]))
             r = RV.anotar_supridos(con, r) if r else r
         return jsonify(r or {})
 
@@ -106,8 +108,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @login_required
     def revisao_previa_ri_ultima(matricula_id: int):
         with db.connect() as con:
-            lavrado = con.execute("SELECT MAX(lavrado_em) FROM ri_atos WHERE matricula_id = ?",
-                                  (matricula_id,)).fetchone()[0]
+            lavrado = banco(con).valor(
+                "SELECT max(lavrado_em) AS lavrado FROM ri_atos WHERE matricula_id = %s",
+                (matricula_id,))
             r = RV.ultima(con, "RI", matricula_id, None, depois_de=lavrado)
             r = RV.anotar_supridos(con, r) if r else r
         return jsonify(r or {})
@@ -131,22 +134,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         papel = app.extensions["usuario_papel"]()
         itens = []
         for bruto in request.form.getlist("indice"):
-            if str(bruto).strip().isdigit():
-                i = int(bruto)
+            i = numero_digitado(bruto)
+            if i is not None:
                 itens.append((i, request.form.get(f"obs_{i}") or ""))
         if not itens:
             return jsonify({"erro": "Marque ao menos um apontamento."}), 400
         try:
             with db.transaction() as con:
-                alvo = con.execute("SELECT atribuicao, alvo_id FROM rv_revisoes WHERE id=?",
-                                   (revisao_id,)).fetchone()
+                alvo = banco(con).um("SELECT atribuicao, alvo_id FROM rv_revisoes WHERE id = %s",
+                                     (revisao_id,))
                 feitos = RV.suprir(con, revisao_id, itens, usuario=usuario_nome(),
                                    papel=papel)
         except RV.RevisaoPendente as erro:
             return jsonify({"erro": str(erro)}), 400
         for f in feitos:
             audit("REVISAO_PREVIA_SUPRIDO", "rv_revisoes", revisao_id,
-                  {"atribuicao": alvo[0], "alvo": alvo[1], "papel": papel, **f})
+                  {"atribuicao": alvo["atribuicao"], "alvo": alvo["alvo_id"], "papel": papel, **f})
         with db.connect() as con:
             r = RV.mostrar(con, revisao_id)
             r = RV.anotar_supridos(con, r) if r else r

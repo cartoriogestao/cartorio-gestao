@@ -48,6 +48,17 @@ def test_so_o_que_e_envio_aparece_e_com_a_central_certa(cg_casa):
     assert itens["SIRC_CANC:rc_assentos:1231"]["central"] == "SIRC_CANCELAMENTO"
 
 
+def test_o_achado_sem_prazo_vem_no_comeco_da_lista(cg_casa):
+    """No SQLite o NULL vinha primeiro no ASC; no PostgreSQL vai por último.
+    A tela continua com o achado sem prazo no topo (revisão do L004)."""
+    con = _con(cg_casa)
+    _achado(con, "OBITO_TRE:2026-09", "OBITO_MENSAL")
+    _achado(con, "IBGE:2026-T3", "IBGE")
+    con.execute("UPDATE ge_achados SET prazo = '2026-10-08' WHERE chave = 'IBGE:2026-T3'")
+    con.commit()
+    assert [i["chave"] for i in GE.pendentes(con)] == ["OBITO_TRE:2026-09", "IBGE:2026-T3"]
+
+
 def test_registrar_pela_chave_apaga_a_cobranca_na_conferencia_seguinte(cg_casa):
     con = _con(cg_casa)
     _achado(con, "OBITO_TRE:2026-09", "OBITO_MENSAL")
@@ -94,12 +105,21 @@ def test_a_tela_registra_o_marcado(cg_casa_logada):
     assert tuple(linha) == ("IBGE", "2026-T3", "IBGE-123")
 
 
-def test_a_tela_das_leituras_abre_sem_a_leitura_ter_rodado(cg_casa_logada):
+def test_a_tela_das_leituras_abre_sem_a_leitura_ter_rodado(cg_casa_logada, monkeypatch):
+    """GET não escreve. Até o LH09 a prova era «a tabela não nasceu»; desde ele
+    (21/10/2026) `ge_leituras` nasce na subida, vazia — e a prova passa a ser
+    que a tela não roda o esquema nem grava linha nenhuma nela."""
+    import gestor_leitura as GL
+
+    def _rodou_o_esquema(*_a, **_k):
+        raise AssertionError("a tela GET das leituras rodou o esquema de ge_leituras")
+
+    monkeypatch.setattr(GL, "init_leitura_schema", _rodou_o_esquema)
     r = cg_casa_logada["c"].get("/administrativo/gestor/leituras")
     assert r.status_code == 200
     assert "Nenhum apontamento esperando" in r.get_data(as_text=True)
     con = sqlite3.connect(cg_casa_logada["banco"])
-    assert con.execute("SELECT 1 FROM sqlite_master WHERE name='ge_leituras'").fetchone() is None
+    assert con.execute("SELECT count(*) FROM ge_leituras").fetchone()[0] == 0
 
 
 def test_a_rodada_diaria_mora_no_pacote_e_escreve_os_relatorios(cg_casa, tmp_path):
@@ -133,3 +153,28 @@ def test_o_visto_em_lote_so_vale_para_o_caixa_que_fecha(cg_casa_logada):
            data={"caixa_id": [str(bom), str(torto)], "csrf_token": token})
     vistos = {r[0]: r[1] for r in con.execute("SELECT id, conferido_por FROM cx_caixas")}
     assert vistos[bom] is not None and vistos[torto] is None
+
+
+# ================================================== CONSERTO DO L031R (18/10/2026)
+# A RODADA DAS 07:30 RODA PELO AGENDADOR, FORA DO SISTEMA: ninguém monta
+# `Database()`, o desvio do `sqlite3.connect` não existe, e o acesso nativo
+# recusa o sqlite3 cru (`BancoNaoEPostgres`). Abrindo o banco pelo
+# `sqlite3.connect`, a conferência inteira morria com «ERRO: a conferência não
+# terminou», e os relatórios do fim, que abrem o banco só para ler, não saíam.
+
+import banco_pg                                                   # noqa: E402
+import pytest                                                     # noqa: E402
+
+
+@pytest.mark.skipif(not banco_pg.ativo(), reason="mede a porta do PostgreSQL (CG_PG_DSN)")
+def test_a_rodada_diaria_chega_ao_banco_fora_do_sistema(cg_casa, tmp_path, monkeypatch):
+    import gestor_rotina as GR
+    monkeypatch.setattr(sqlite3, "connect", banco_pg._CONNECT_ORIGINAL)
+    linhas: list[str] = []
+    codigo = GR.rodada_diaria(Path(cg_casa["banco"]), tmp_path / "dados", tmp_path / "rel",
+                              date(2026, 10, 6), escrever=linhas.append)
+    assert codigo == 0, "\n".join(linhas)
+    nomes = sorted(p.name for p in (tmp_path / "rel").iterdir())
+    assert "conferencia_2026-10-06.html" in nomes and "financeiro_2026-09.html" in nomes
+    assert "erros_2026-10-06.html" in nomes
+    assert not [l for l in linhas if "BancoNaoEPostgres" in l], "\n".join(linhas)

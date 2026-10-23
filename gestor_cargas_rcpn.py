@@ -69,14 +69,18 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
+import banco_pg
+import pastas_da_casa as PDC
+from bd_nativo import banco as _banco
 from gestor_schema import init_gestor_schema
 
 QUEM = "gestor"
 
-#: A pasta é da casa (09/10/2026), ao lado das do E-Ofício. **Não é a
-#: `IBGE_EXP` dele**: lá estão os CARTINF que o E-Ofício gerou em 23/07/2026,
-#: que são a prova do 2º trimestre, e o agente não escreve por cima de prova.
-PASTA_PADRAO = r"C:\ARPNET\C11\CARGAS_RCPN"
+#: A pasta é da casa: `<arquivos>/rcpn/cargas` (hotfix de 16/10/2026 — antes
+#: era uma pasta dentro da do E-Ofício, e a suíte de testes rodada no servidor
+#: escrevia nela). **Não é a `IBGE_EXP` do E-Ofício**: lá estão os CARTINF que
+#: ele gerou em 23/07/2026, prova do 2º trimestre, e o agente não escreve por
+#: cima de prova. Ver `pastas_da_casa`.
 CHAVE_PASTA = "rcpn_cargas_pasta"
 
 CANAIS = ("SIRC", "CRC", "FUNAI", "OBITOS", "IBGE")
@@ -138,18 +142,23 @@ def _agora() -> str:
 
 
 def _tem_tabela(con, nome: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                       (nome,)).fetchone() is not None
+    return _banco(con).tem_tabela(nome)
 
 
 def _settings(con) -> dict[str, str]:
     if not _tem_tabela(con, "settings"):
         return {}
-    return {r[0]: (r[1] or "") for r in con.execute("SELECT key, value FROM settings")}
+    return {r["key"]: (r["value"] or "") for r in
+            _banco(con).ler("SELECT key, value FROM settings ORDER BY key")}
 
 
-def pasta(con) -> Path:
-    return Path((_settings(con).get(CHAVE_PASTA) or "").strip() or PASTA_PADRAO)
+def pasta(con, banco: Path | None = None) -> Path:
+    """A configurada na tela; senão a da casa, ao lado do banco que se usa."""
+    s = _settings(con)
+    configurada = (s.get(CHAVE_PASTA) or "").strip()
+    if configurada:
+        return Path(configurada)
+    return PDC.cargas_rcpn(banco=banco, archive_root=s.get("archive_root"))
 
 
 def _cns(s: dict) -> str:
@@ -185,11 +194,11 @@ def _sem_acento(texto: str) -> str:
 
 
 def _registrar(con, canal: str, *, situacao: str, detalhe: Any) -> int:
-    return int(con.execute(
+    return int(_banco(con).escrever(
         """INSERT INTO ge_rcpn_cargas (canal, tipo, situacao, gerado_em, detalhe)
-           VALUES (?, 'RODADA', ?, ?, ?)""",
+           VALUES (%s, 'RODADA', %s, %s, %s) RETURNING id""",
         (canal, situacao, _agora(), json.dumps(detalhe, ensure_ascii=False, default=str))
-    ).lastrowid)
+    )[0]["id"])
 
 
 # ======================================================= 1. O QUE NÃO PODE IR
@@ -227,13 +236,14 @@ def _retidos_provisorio(con) -> dict[int, str]:
     """
     saida: dict[int, str] = {}
     grupos: dict[tuple, list] = {}
-    for r in con.execute(
+    for r in _banco(con).ler(
             """SELECT id, especie, numero, nome, data_fato FROM rc_assentos
                 WHERE COALESCE(situacao,'ATIVO') = 'ATIVO'
                   AND COALESCE(origem,'') NOT IN ('EOFICIO','ARQUIVO','IMPORTACAO')
                   AND especie IN ('NASCIMENTO','NATIMORTO','CASAMENTO',
                                   'CASAMENTO_RELIGIOSO','OBITO')
-                  AND data_ato >= ?""", (_implantacao(),)):
+                  AND data_ato >= %s
+             ORDER BY id""", (_implantacao(),)):
         if r["numero"] is None:
             saida[int(r["id"])] = "assento ativo sem número de termo"
         chave = (r["especie"], _sem_acento(r["nome"]), str(r["data_fato"] or "")[:10])
@@ -400,12 +410,12 @@ def _feitas(con, comp: str) -> set[str]:
     (`rc_comunicacoes` ENVIADA ou DISPENSADA) ou pelo gestor (`ge_envios`)."""
     feitos = set()
     if _tem_tabela(con, "rc_comunicacoes"):
-        feitos |= {r[0] for r in con.execute(
-            "SELECT destino FROM rc_comunicacoes WHERE competencia = ? "
+        feitos |= {r["destino"] for r in _banco(con).ler(
+            "SELECT destino FROM rc_comunicacoes WHERE competencia = %s "
             "AND situacao IN ('ENVIADA','DISPENSADA')", (comp,))}
     if _tem_tabela(con, "ge_envios"):
-        centrais = {r[0] for r in con.execute(
-            "SELECT central FROM ge_envios WHERE competencia = ? "
+        centrais = {r["central"] for r in _banco(con).ler(
+            "SELECT central FROM ge_envios WHERE competencia = %s "
             "AND situacao <> 'REJEITADO'", (comp,))}
         feitos |= {d for d, c in CENTRAL_DO_DESTINO.items() if c in centrais}
     return feitos
@@ -418,8 +428,8 @@ def competencias_comunicadas(con, central: str) -> set[str]:
     destino = {c: d for d, c in CENTRAL_DO_DESTINO.items()}.get(central)
     if not destino or not _tem_tabela(con, "rc_comunicacoes"):
         return set()
-    return {r[0] for r in con.execute(
-        "SELECT competencia FROM rc_comunicacoes WHERE destino = ? "
+    return {r["competencia"] for r in _banco(con).ler(
+        "SELECT competencia FROM rc_comunicacoes WHERE destino = %s "
         "AND situacao IN ('ENVIADA','DISPENSADA')", (destino,))}
 
 
@@ -448,9 +458,9 @@ def preparar_obitos(con, hoje: date, *, s: dict, ret: dict[int, str],
         if not faltam:
             continue
         prazo = GC._quinto_dia_util(*GC._mes_seguinte(ano, mes))
-        presos = [row for row in con.execute(
+        presos = [row for row in _banco(con).ler(
             "SELECT id, numero, nome FROM rc_assentos WHERE especie='OBITO' "
-            "AND data_ato LIKE ?", (comp + "%",)) if int(row["id"]) in ret]
+            "AND data_ato ILIKE %s ORDER BY id", (comp + "%",)) if int(row["id"]) in ret]
         if presos:
             r["problemas"].append(
                 f"{comp}: não preparado — " + "; ".join(
@@ -461,9 +471,9 @@ def preparar_obitos(con, hoje: date, *, s: dict, ret: dict[int, str],
         if gravar:
             COM.declarar_mes(con, comp, agora=_agora(), prazo_ate=prazo.isoformat(),
                              usuario=QUEM)
-        linhas = {row["destino"]: row["id"] for row in con.execute(
-            "SELECT id, destino FROM rc_comunicacoes WHERE competencia = ? "
-            "AND situacao = 'PENDENTE'", (comp,))} if _tem_tabela(con, "rc_comunicacoes") else {}
+        linhas = {row["destino"]: row["id"] for row in _banco(con).ler(
+            "SELECT id, destino FROM rc_comunicacoes WHERE competencia = %s "
+            "AND situacao = 'PENDENTE' ORDER BY id", (comp,))} if _tem_tabela(con, "rc_comunicacoes") else {}
         for destino in faltam:
             cid = linhas.get(destino)
             if cid is None:
@@ -510,21 +520,22 @@ def preparar_ibge(con, hoje: date, *, s: dict, ret: dict[int, str]) -> dict:
     r = _vazio()
     entregues = set()
     if _tem_tabela(con, "ib_entregas"):
-        entregues |= {(x[0], x[1]) for x in con.execute(
+        entregues |= {(x["ano"], x["trimestre"]) for x in _banco(con).ler(
             "SELECT ano, trimestre FROM ib_entregas WHERE enviada_em IS NOT NULL")}
     if _tem_tabela(con, "ge_envios"):
-        entregues |= {(int(c[:4]), int(c[-1])) for (c,) in con.execute(
+        entregues |= {(int(c["competencia"][:4]), int(c["competencia"][-1]))
+                      for c in _banco(con).ler(
             "SELECT competencia FROM ge_envios WHERE central='IBGE' "
-            "AND situacao <> 'REJEITADO' AND competencia LIKE '____-T_'")}
+            "AND situacao <> 'REJEITADO' AND competencia ILIKE '____-T_'")}
     r["transicao"] = []
     for ano, tri in _trimestres(hoje):
         if (ano, tri) in entregues:
             continue
         montado = IBGEG.montar(con, ano=ano, trimestre=tri, config=s)
         de, ate = montado["de"], montado["ate"]
-        presos = [row for row in con.execute(
-            "SELECT id, numero, nome, especie FROM rc_assentos WHERE data_ato >= ? "
-            "AND data_ato <= ?", (de, ate + "z")) if int(row["id"]) in ret]
+        presos = [row for row in _banco(con).ler(
+            "SELECT id, numero, nome, especie FROM rc_assentos WHERE data_ato >= %s "
+            "AND data_ato <= %s ORDER BY id", (de, ate + "z")) if int(row["id"]) in ret]
         if presos:
             r["problemas"].append(f"{ano}-T{tri}: não preparado — " + "; ".join(
                 f"{x['especie'].lower()} nº {x['numero']}: {ret[int(x['id'])]}" for x in presos))
@@ -532,11 +543,11 @@ def preparar_ibge(con, hoje: date, *, s: dict, ret: dict[int, str]) -> dict:
         # O TRIMESTRE QUE ATRAVESSA A TROCA DE SISTEMA: o E-Ofício lavrou até
         # 14/08/2026 e este sistema desde 09/09. O mapa é do trimestre inteiro;
         # se o E-Ofício já mandou a parte dele, mandar de novo é duplicar.
-        acervo = con.execute(
-            "SELECT COUNT(*) FROM rc_assentos WHERE data_ato >= ? AND data_ato <= ? "
+        acervo = int(_banco(con).valor(
+            "SELECT COUNT(*) AS n FROM rc_assentos WHERE data_ato >= %s AND data_ato <= %s "
             "AND COALESCE(situacao,'ATIVO') <> 'CANCELADO' "
             "AND COALESCE(origem,'') IN ('EOFICIO','ARQUIVO','IMPORTACAO')",
-            (de, ate + "z")).fetchone()[0]
+            (de, ate + "z")))
         if acervo:
             r["transicao"].append({"competencia": f"{ano}-T{tri}", "do_acervo": acervo,
                                    "linhas": montado["linhas"]})
@@ -620,11 +631,10 @@ def rodada(con: sqlite3.Connection, banco: Path | None = None, hoje: date | None
     fica gravada no livro de cargas — é ela que a conferência lê depois.
     """
     hoje = hoje or date.today()
-    con.row_factory = sqlite3.Row
     init_gestor_schema(con)
     con.commit()
     s = _settings(con)
-    raiz = pasta(con)
+    raiz = pasta(con, banco)
     try:
         ret = retidos(con)
     except Exception as erro:                           # noqa: BLE001
@@ -695,16 +705,15 @@ def _achado(chave, regra, gravidade, setor, titulo, detalhe="", prazo=None,
 
 
 def _ultima_rodada(con, canal: str):
-    return con.execute(
-        "SELECT * FROM ge_rcpn_cargas WHERE canal=? AND tipo='RODADA' "
-        "ORDER BY id DESC LIMIT 1", (canal,)).fetchone()
+    return _banco(con).um(
+        "SELECT * FROM ge_rcpn_cargas WHERE canal=%s AND tipo='RODADA' "
+        "ORDER BY id DESC LIMIT 1", (canal,))
 
 
 def conferir(con: sqlite3.Connection, hoje: date) -> list[dict]:
     """O que está pronto e não subiu, o que não monta, e o agente parado.
     SÓ LÊ — o que mede é o livro de cargas que a rodada deixou."""
     import gestor_conferencia as GC
-    con.row_factory = sqlite3.Row
     if not _tem_tabela(con, "ge_rcpn_cargas"):
         return [_achado("CARGAS_RCPN_AGENTE:TODAS", "CARGAS_RCPN_AGENTE_PARADO", "CRITICO",
                         "TI", "O agente de cargas do RCPN nunca rodou nesta base",
@@ -764,9 +773,9 @@ def conferir(con: sqlite3.Connection, hoje: date) -> list[dict]:
             achados.append(_achado(
                 f"CARGAS_RCPN_DECISAO:IBGE:{t['competencia']}", "CARGAS_RCPN_DECISAO",
                 "ATENCAO", "GESTAO",
-                f"IBGE {t['competencia']}: o trimestre atravessa a troca do E-Ofício",
+                f"IBGE {t['competencia']}: o trimestre atravessa a troca do sistema antigo",
                 f"O mapa preparado tem {t['linhas']} linha(s), e {t['do_acervo']} registro(s) "
-                "do trimestre vieram do E-Ofício (lavrados até 14/08/2026). Se o E-Ofício "
+                "do trimestre vieram do sistema antigo (lavrados até 14/08/2026). Se o sistema antigo "
                 "já mandou a parte dele, subir este arquivo a manda de novo; se não "
                 "mandou, ela tem de ir. Decisão do oficial antes de subir.",
                 prazo, FUNDAMENTO["IBGE"]))
@@ -793,7 +802,6 @@ def painel(con: sqlite3.Connection) -> dict:
 def medir(con: sqlite3.Connection, hoje: date) -> dict:
     """Tudo o que a rodada prepararia, SEM gravar nada e sem escrever na pasta —
     para conferir contra a produção aberta só para leitura."""
-    con.row_factory = sqlite3.Row
     s = _settings(con)
     ret = retidos(con)
     saida: dict[str, Any] = {"retidos": ret}
@@ -819,14 +827,16 @@ def main(argv=None) -> int:
     except Exception:                                   # noqa: BLE001
         pass
     hoje = date.fromisoformat(a.hoje)
+    # PELA PORTA DO BANCO, e não `sqlite3.connect`: fora do sistema ninguém
+    # instala o desvio, e o `sqlite3` cru é recusado pelo acesso nativo.
     if a.so_medir:
-        con = sqlite3.connect(f"file:{a.banco}?mode=ro", uri=True, timeout=60)
+        con = banco_pg.conectar(f"file:{a.banco}?mode=ro", uri=True, timeout=60)
         try:
             print(json.dumps(medir(con, hoje), ensure_ascii=False, indent=1, default=str))
         finally:
             con.close()
         return 0
-    con = sqlite3.connect(a.banco, timeout=60)
+    con = banco_pg.conectar(a.banco, timeout=60)
     try:
         rodada(con, Path(a.banco), hoje)
         for x in conferir(con, hoje):

@@ -11,11 +11,12 @@ COMO SE USA, DO LADO DA ATRIBUICAO
     com o livro, a folha e o numero que voltaram:
 
         with db.transaction() as con:
-            ato_id = con.execute("INSERT INTO rc_atos ...").lastrowid
+            bd = banco(con)
+            ato_id = bd.escrever("INSERT INTO rc_atos ... RETURNING id")[0]["id"]
             lugar = escrituracao.reservar(
                 con, "RC_A", "rc_atos", ato_id,
                 sv=sv, agora=agora, data_extenso=hoje, paginas=1)
-            con.execute("UPDATE rc_atos SET livro_id=?, folha=?, numero=? WHERE id=?",
+            bd.escrever("UPDATE rc_atos SET livro_id=%s, folha=%s, numero=%s WHERE id=%s",
                         (lugar["livro_id"], lugar["folha"], lugar["numero_ordem"], ato_id))
         audit(...)                      # FORA da transacao, como no resto da casa
 
@@ -45,6 +46,7 @@ import sqlite3
 from typing import Any
 
 import livro_nucleo as LN
+from bd_nativo import banco
 from livro_nucleo import LivroError, Serie, com_algarismos, rotulo_folha
 
 
@@ -92,15 +94,15 @@ def serie_de(codigo: str) -> Serie:
 # do 1 sobre acervo importado repetiria numero de 1985.
 
 
-def _semente(con: sqlite3.Connection, serie: str) -> int:
+def _semente(con, serie: str) -> int:
     """O maior numero de ordem ja gravado na serie. So LE."""
-    linha = con.execute(
-        "SELECT MAX(COALESCE(numero_ordem, 0)) m FROM nu_lugares WHERE serie=?",
-        (serie,)).fetchone()
+    linha = banco(con).um(
+        "SELECT MAX(COALESCE(numero_ordem, 0)) m FROM nu_lugares WHERE serie=%s",
+        (serie,))
     return int((linha["m"] if linha and linha["m"] is not None else 0) or 0)
 
 
-def _proximo_do_dia(con: sqlite3.Connection, serie: str, dia: str) -> int:
+def _proximo_do_dia(con, serie: str, dia: str) -> int:
     """O proximo numero num livro de numeracao DIARIA. So LE.
 
     O protocolo do protesto reinicia todo dia: `tbProtocoloProtesto` guarda um
@@ -116,14 +118,14 @@ def _proximo_do_dia(con: sqlite3.Connection, serie: str, dia: str) -> int:
         s = serie_de(serie)
         raise LivroError(
             f"{s.nome} é de numeração diária; informe o dia (AAAA-MM-DD).")
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT MAX(l.numero_ordem) m FROM nu_lugares l
              JOIN nu_livros v ON v.id = l.livro_id
-            WHERE l.serie = ? AND v.dia = ?""", (serie, dia)).fetchone()
+            WHERE l.serie = %s AND v.dia = %s""", (serie, dia))
     return int((linha["m"] if linha and linha["m"] is not None else 0) or 0) + 1
 
 
-def proximo_numero(con: sqlite3.Connection, serie: str,
+def proximo_numero(con, serie: str,
                    consumir: bool = True, dia: str | None = None) -> int:
     """O proximo numero de ordem da serie.
 
@@ -134,35 +136,40 @@ def proximo_numero(con: sqlite3.Connection, serie: str,
 
     Em serie de numeracao DIARIA nunca escreve: o numero sai do livro do dia.
     """
+    bd = banco(con)
     if serie_de(serie).numeracao_diaria:
-        return _proximo_do_dia(con, serie, dia or "")
-    linha = con.execute("SELECT * FROM nu_numeracao WHERE serie=?", (serie,)).fetchone()
+        return _proximo_do_dia(bd, serie, dia or "")
     if not consumir:
-        return int(linha["proximo"]) if linha else _semente(con, serie) + 1
+        linha = bd.um("SELECT * FROM nu_numeracao WHERE serie=%s", (serie,))
+        return int(linha["proximo"]) if linha else _semente(bd, serie) + 1
+    # Le e grava o contador: trava o assunto (a linha pode ainda nao existir)
+    # e a linha, antes de ler.
+    bd.travar("nu_numeracao.proximo")
+    linha = bd.um("SELECT * FROM nu_numeracao WHERE serie=%s FOR UPDATE", (serie,))
     if not linha:
         # Semeia a linha e CAI no consumo abaixo. Devolver `base + 1` aqui e
         # sair era um defeito: a linha nascia com `proximo = base + 1`, o
         # numero devolvido era esse mesmo, e a chamada seguinte devolvia o
         # numero de novo. Dois atos com o mesmo numero de ordem — exatamente o
         # que este modulo existe para nao deixar acontecer.
-        base = _semente(con, serie)
-        con.execute(
+        base = _semente(bd, serie)
+        bd.escrever(
             """INSERT INTO nu_numeracao(serie, proximo, maior_em_uso, semeado_de,
                                         observacao)
-               VALUES (?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s)""",
             (serie, base + 1, base, "nu_lugares",
              "semeado do maior número de ordem já gravado na série"))
-        linha = con.execute("SELECT * FROM nu_numeracao WHERE serie=?",
-                            (serie,)).fetchone()
+        linha = bd.um("SELECT * FROM nu_numeracao WHERE serie=%s FOR UPDATE",
+                      (serie,))
     numero = int(linha["proximo"])
-    con.execute(
+    bd.escrever(
         """UPDATE nu_numeracao
-              SET proximo=?, maior_em_uso=MAX(COALESCE(maior_em_uso, 0), ?)
-            WHERE serie=?""", (numero + 1, numero, serie))
+              SET proximo=%s, maior_em_uso=GREATEST(COALESCE(maior_em_uso, 0), %s)
+            WHERE serie=%s""", (numero + 1, numero, serie))
     return numero
 
 
-def fixar_numeracao(con: sqlite3.Connection, serie: str, proximo: Any,
+def fixar_numeracao(con, serie: str, proximo: Any,
                     *, usuario: str | None, motivo: str | None,
                     agora: str) -> int:
     """Corrige o contador a mao, como a tela de numeracao do RI faz.
@@ -178,23 +185,26 @@ def fixar_numeracao(con: sqlite3.Connection, serie: str, proximo: Any,
     novo = _inteiro(proximo)
     if novo is None or novo < 1:
         raise LivroError("Informe o próximo número, inteiro e maior que zero.")
-    proximo_numero(con, serie, consumir=False)
-    linha = con.execute("SELECT * FROM nu_numeracao WHERE serie=?", (serie,)).fetchone()
-    maior = int((linha["maior_em_uso"] if linha else None) or _semente(con, serie))
+    bd = banco(con)
+    proximo_numero(bd, serie, consumir=False)
+    # Le o maior e grava o contador: a mesma trava de quem consome.
+    bd.travar("nu_numeracao.proximo")
+    linha = bd.um("SELECT * FROM nu_numeracao WHERE serie=%s FOR UPDATE", (serie,))
+    maior = int((linha["maior_em_uso"] if linha else None) or _semente(bd, serie))
     if novo <= maior:
         raise LivroError(
             f"O número {novo} é igual ou menor que o maior já usado nesta série "
             f"({maior}). Isso repetiria número de ordem.")
     if linha:
-        con.execute(
-            """UPDATE nu_numeracao SET proximo=?, fixado_em=?, fixado_por=?,
-                                       observacao=? WHERE serie=?""",
+        bd.escrever(
+            """UPDATE nu_numeracao SET proximo=%s, fixado_em=%s, fixado_por=%s,
+                                       observacao=%s WHERE serie=%s""",
             (novo, agora, usuario, (motivo or "").strip() or None, serie))
     else:
-        con.execute(
+        bd.escrever(
             """INSERT INTO nu_numeracao(serie, proximo, maior_em_uso, semeado_de,
                                         fixado_em, fixado_por, observacao)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (serie, novo, maior, "nu_lugares", agora, usuario,
              (motivo or "").strip() or None))
     return novo
@@ -314,7 +324,7 @@ def texto_encerramento_diario(serie: str, dia_extenso: str, quantidade: int,
 # ---------------------------------------------------------------- os livros
 
 
-def numero_do_proximo_livro(con: sqlite3.Connection, serie: str) -> str:
+def numero_do_proximo_livro(con, serie: str) -> str:
     """O numero do proximo livro da serie: 1 se nao ha nenhum, senao maior+1.
 
     Le `numero` como texto e converte, porque o acervo trouxe '1', '01' e
@@ -323,15 +333,16 @@ def numero_do_proximo_livro(con: sqlite3.Connection, serie: str) -> str:
     """
     serie_de(serie)
     maior = 0
-    for linha in con.execute("SELECT numero FROM nu_livros WHERE serie=?", (serie,)):
+    for linha in banco(con).ler(
+            "SELECT numero FROM nu_livros WHERE serie=%s ORDER BY id", (serie,)):
         n = _inteiro(str(linha["numero"]).split("-")[-1])
         if n and n > maior:
             maior = n
     return str(maior + 1)
 
 
-def livro_da_vez(con: sqlite3.Connection, serie: str,
-                 dia: str | None = None) -> sqlite3.Row | None:
+def livro_da_vez(con, serie: str,
+                 dia: str | None = None) -> dict | None:
     """O livro aberto da serie, ou None. So LE.
 
     Em serie diaria o livro da vez e o DO DIA: o protocolo de ontem esta
@@ -342,17 +353,17 @@ def livro_da_vez(con: sqlite3.Connection, serie: str,
         if not dia:
             raise LivroError(
                 f"A série {s.codigo} é de livro diário; informe o dia.")
-        return con.execute(
+        return banco(con).um(
             """SELECT * FROM nu_livros
-                WHERE serie=? AND dia=? AND encerrado=0 AND ativo=1
-                ORDER BY id DESC LIMIT 1""", (serie, dia)).fetchone()
-    return con.execute(
+                WHERE serie=%s AND dia=%s AND encerrado=0 AND ativo=1
+                ORDER BY id DESC LIMIT 1""", (serie, dia))
+    return banco(con).um(
         """SELECT * FROM nu_livros
-            WHERE serie=? AND encerrado=0 AND ativo=1
-            ORDER BY id DESC LIMIT 1""", (serie,)).fetchone()
+            WHERE serie=%s AND encerrado=0 AND ativo=1
+            ORDER BY id DESC LIMIT 1""", (serie,))
 
 
-def abrir_livro(con: sqlite3.Connection, serie: str, *, sv: dict, agora: str,
+def abrir_livro(con, serie: str, *, sv: dict, agora: str,
                 data_extenso: str, folhas: int | None = None,
                 complemento: str = "", descricao: str | None = None,
                 dia: str | None = None, usuario: str | None = None,
@@ -366,7 +377,10 @@ def abrir_livro(con: sqlite3.Connection, serie: str, *, sv: dict, agora: str,
     if s.diario and not dia:
         raise LivroError(
             f"A série {s.codigo} é de livro diário; informe o dia (AAAA-MM-DD).")
-    if livro_da_vez(con, serie, dia=dia):
+    bd = banco(con)
+    # Le o livro aberto e o maior numero para numerar o novo: trava antes.
+    bd.travar("nu_livros.numero")
+    if livro_da_vez(bd, serie, dia=dia):
         onde = f" do dia {dia}" if dia else ""
         raise LivroError(
             f"Já existe livro aberto de {s.nome}{onde}. Encerre-o antes de "
@@ -375,38 +389,42 @@ def abrir_livro(con: sqlite3.Connection, serie: str, *, sv: dict, agora: str,
     quantas = _inteiro(folhas) or s.folhas
     if quantas < 1:
         raise LivroError("O livro precisa de pelo menos uma folha.")
-    numero = numero_do_proximo_livro(con, serie)
+    numero = numero_do_proximo_livro(bd, serie)
     termo = texto_termo_abertura(serie, numero, quantas, sv, data_extenso,
                                  folha_inicial=folha_inicial, dia=dia)
-    cur = con.execute(
+    novo = bd.escrever(
         """INSERT INTO nu_livros(serie, atribuicao, numero, complemento, descricao,
                                  folhas, folha_inicial, folha_atual, dia, abertura,
                                  termo_abertura, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (serie, s.atribuicao, numero, complemento or "", descricao, quantas,
          int(folha_inicial), int(folha_inicial), dia, agora, termo, agora, usuario))
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
 
 
-def ultima_folha(livro: sqlite3.Row) -> int:
+def ultima_folha(livro: dict) -> int:
     """A ultima folha do livro."""
     return int(livro["folha_inicial"] or 1) + int(livro["folhas"] or 1) - 1
 
 
-def faces_ocupadas(con: sqlite3.Connection, livro_id: int) -> set[tuple[int, int]]:
+def faces_ocupadas(con, livro_id: int) -> set[tuple[int, int]]:
     """As faces do livro que ja tem algo — ato ou inutilizacao. So LE."""
+    bd = banco(con)
     ocupadas = {
         (int(r["folha"]), int(r["verso"]))
-        for r in con.execute(
-            "SELECT folha, verso FROM nu_lugares WHERE livro_id=?", (livro_id,))}
+        for r in bd.ler(
+            "SELECT folha, verso FROM nu_lugares WHERE livro_id=%s ORDER BY id",
+            (livro_id,))}
     ocupadas |= {
         (int(r["folha"]), int(r["verso"]))
-        for r in con.execute(
-            "SELECT folha, verso FROM nu_inutilizacoes WHERE livro_id=?", (livro_id,))}
+        for r in bd.ler(
+            "SELECT folha, verso FROM nu_inutilizacoes WHERE livro_id=%s ORDER BY id",
+            (livro_id,))}
     return ocupadas
 
 
-def folha_livre(con: sqlite3.Connection, livro: sqlite3.Row) -> int:
+def folha_livre(con, livro: dict) -> int:
     """A primeira folha inteiramente livre do livro. So LE.
 
     Nao confia em `folha_atual`: os livros importados do acervo nasceram com
@@ -422,38 +440,39 @@ def folha_livre(con: sqlite3.Connection, livro: sqlite3.Row) -> int:
     return max(piso, maior + 1)
 
 
-def _proxima_posicao(con: sqlite3.Connection, s: Serie,
-                     livro: sqlite3.Row) -> tuple[int, int, int]:
+def _proxima_posicao(con, s: Serie,
+                     livro: dict) -> tuple[int, int, int]:
     """(folha, verso, ordem) do proximo lugar livre, conforme a serie.
 
     Serie de folha nova comeca sempre em folha limpa. Serie de varios por
     folha — apontamento, protocolo, pagamento — enche a face antes de virar.
     """
+    bd = banco(con)
     if s.folha_nova:
-        return folha_livre(con, livro), 0, 1
+        return folha_livre(bd, livro), 0, 1
     inicio = int(livro["folha_inicial"] or 1)
     limite = ultima_folha(livro)
     inutilizadas = {
         (int(r["folha"]), int(r["verso"]))
-        for r in con.execute(
-            "SELECT folha, verso FROM nu_inutilizacoes WHERE livro_id=?",
+        for r in bd.ler(
+            "SELECT folha, verso FROM nu_inutilizacoes WHERE livro_id=%s ORDER BY id",
             (int(livro["id"]),))}
     folha = max(inicio, _inteiro(livro["folha_atual"]) or inicio)
     while folha <= limite:
         for verso in (0, 1) if s.usa_verso else (0,):
             if (folha, verso) in inutilizadas:
                 continue
-            usados = con.execute(
+            usados = bd.valor(
                 """SELECT COUNT(*) n FROM nu_lugares
-                    WHERE livro_id=? AND folha=? AND verso=?""",
-                (int(livro["id"]), folha, verso)).fetchone()["n"]
+                    WHERE livro_id=%s AND folha=%s AND verso=%s""",
+                (int(livro["id"]), folha, verso))
             if int(usados) < s.por_face:
                 return folha, verso, int(usados) + 1
         folha += 1
     return limite + 1, 0, 1
 
 
-def reservar(con: sqlite3.Connection, serie: str, tabela: str, referencia: int,
+def reservar(con, serie: str, tabela: str, referencia: int,
              *, sv: dict, agora: str, data_extenso: str, paginas: Any = 1,
              dia: str | None = None, usuario: str | None = None,
              abrir_se_faltar: bool = True) -> dict:
@@ -471,24 +490,29 @@ def reservar(con: sqlite3.Connection, serie: str, tabela: str, referencia: int,
     """
     s = serie_de(serie)
     n_paginas = max(1, _inteiro(paginas) or 1)
-    ja = lugar_de(con, tabela, referencia)
+    bd = banco(con)
+    # Le o livro, a folha livre e o numero do dia para gravar o lugar: trava
+    # o assunto antes de ler (a ponte ja da um escritor por vez; isto fica
+    # para quando ela sair).
+    bd.travar("nu_lugares.lugar")
+    ja = lugar_de(bd, tabela, referencia)
     if ja:
-        onde = con.execute("SELECT numero FROM nu_livros WHERE id=?",
-                           (int(ja["livro_id"]),)).fetchone()
+        onde = bd.um("SELECT numero FROM nu_livros WHERE id=%s",
+                     (int(ja["livro_id"]),))
         raise LivroError(
             f"Este ato já está escriturado no Livro n. "
             f"{onde['numero'] if onde else '?'}, folha {ja['rotulo']}, sob o "
             f"n. {ja['numero_ordem']}. Um ato tem um lugar e não dois.")
-    livro = livro_da_vez(con, serie, dia=dia)
+    livro = livro_da_vez(bd, serie, dia=dia)
     if not livro:
         if not abrir_se_faltar:
             raise LivroError(f"Não há livro aberto de {s.nome}.")
-        abrir_livro(con, serie, sv=sv, agora=agora, data_extenso=data_extenso,
+        abrir_livro(bd, serie, sv=sv, agora=agora, data_extenso=data_extenso,
                     dia=dia, usuario=usuario)
-        livro = livro_da_vez(con, serie, dia=dia)
+        livro = livro_da_vez(bd, serie, dia=dia)
     assert livro is not None
 
-    folha, verso, ordem = _proxima_posicao(con, s, livro)
+    folha, verso, ordem = _proxima_posicao(bd, s, livro)
     precisa = LN.folhas_para(s, n_paginas) if s.folha_nova else 1
     limite = ultima_folha(livro)
 
@@ -504,16 +528,16 @@ def reservar(con: sqlite3.Connection, serie: str, tabela: str, referencia: int,
                 f"diário não se substitui no meio do dia — abra o do dia "
                 f"seguinte ou amplie este.")
         else:
-            encerrar_livro(con, int(livro["id"]), sv=sv, agora=agora,
+            encerrar_livro(bd, int(livro["id"]), sv=sv, agora=agora,
                            data_extenso=data_extenso, usuario=usuario,
                            motivo="livro esgotado")
-            abrir_livro(con, serie, sv=sv, agora=agora,
+            abrir_livro(bd, serie, sv=sv, agora=agora,
                         data_extenso=data_extenso, dia=dia, usuario=usuario)
-            livro = livro_da_vez(con, serie, dia=dia)
+            livro = livro_da_vez(bd, serie, dia=dia)
             assert livro is not None
-            folha, verso, ordem = _proxima_posicao(con, s, livro)
+            folha, verso, ordem = _proxima_posicao(bd, s, livro)
 
-    numero = proximo_numero(con, serie, dia=dia)
+    numero = proximo_numero(bd, serie, dia=dia)
     faces = (LN.faces_de(s, folha, n_paginas) if s.folha_nova
              else [rotulo_folha(folha, verso=bool(verso))])
     sobra = LN.sobra_de(s, folha, n_paginas) if s.folha_nova else []
@@ -521,11 +545,11 @@ def reservar(con: sqlite3.Connection, serie: str, tabela: str, referencia: int,
     for i, face in enumerate(faces):
         f, v = _face(face)
         try:
-            con.execute(
+            bd.escrever(
                 """INSERT INTO nu_lugares(livro_id, serie, folha, verso, ordem,
                        rotulo, inicio, paginas, numero_ordem, tabela, referencia,
                        ocupado_em, ocupado_por)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (int(livro["id"]), serie, f, v, ordem if i == 0 else 1, face,
                  1 if i == 0 else 0, n_paginas if i == 0 else 1, numero,
                  tabela, int(referencia), agora, usuario))
@@ -535,7 +559,7 @@ def reservar(con: sqlite3.Connection, serie: str, tabela: str, referencia: int,
                 f"está ocupada. Nada foi lançado. ({erro})") from erro
 
     ultima = max(_face(f)[0] for f in faces)
-    con.execute("UPDATE nu_livros SET folha_atual=? WHERE id=?",
+    bd.escrever("UPDATE nu_livros SET folha_atual=%s WHERE id=%s",
                 (ultima if not s.folha_nova else ultima + 1, int(livro["id"])))
     return {
         "livro_id": int(livro["id"]),
@@ -552,16 +576,16 @@ def reservar(con: sqlite3.Connection, serie: str, tabela: str, referencia: int,
     }
 
 
-def lugar_de(con: sqlite3.Connection, tabela: str,
-             referencia: int) -> sqlite3.Row | None:
+def lugar_de(con, tabela: str,
+             referencia: int) -> dict | None:
     """O lugar de inicio de um ato, ou None. So LE."""
-    return con.execute(
+    return banco(con).um(
         """SELECT * FROM nu_lugares
-            WHERE tabela=? AND referencia=? AND inicio=1""",
-        (tabela, int(referencia))).fetchone()
+            WHERE tabela=%s AND referencia=%s AND inicio=1""",
+        (tabela, int(referencia)))
 
 
-def liberar(con: sqlite3.Connection, tabela: str, referencia: int) -> int:
+def liberar(con, tabela: str, referencia: int) -> int:
     """Solta o lugar de um ato. ESCREVE. Devolve quantas faces soltou.
 
     Serve ao EXPURGO — o ato lavrado em teste que nunca existiu. NAO serve a
@@ -572,16 +596,17 @@ def liberar(con: sqlite3.Connection, tabela: str, referencia: int) -> int:
     consumido nao volta, senao o proximo ato nasce com numero que ja apareceu
     em ata de ocorrencia.
     """
-    lugar = lugar_de(con, tabela, referencia)
-    quantas = con.execute(
-        "DELETE FROM nu_lugares WHERE tabela=? AND referencia=?",
-        (tabela, int(referencia))).rowcount
+    bd = banco(con)
+    lugar = lugar_de(bd, tabela, referencia)
+    quantas = len(bd.escrever(
+        "DELETE FROM nu_lugares WHERE tabela=%s AND referencia=%s RETURNING id",
+        (tabela, int(referencia))))
     if lugar:
-        _recompor_folha_atual(con, int(lugar["livro_id"]))
+        _recompor_folha_atual(bd, int(lugar["livro_id"]))
     return quantas
 
 
-def _recompor_folha_atual(con: sqlite3.Connection, livro_id: int) -> int:
+def _recompor_folha_atual(con, livro_id: int) -> int:
     """Reajusta `folha_atual` ao que sobrou no livro. Nunca AUMENTA.
 
     Serve ao expurgo do ultimo ato: soltar o lugar sem baixar `folha_atual`
@@ -594,15 +619,16 @@ def _recompor_folha_atual(con: sqlite3.Connection, livro_id: int) -> int:
     reaproveitar e inutilizar. Voltar sozinho ao meio do livro poria o ato de
     n. 5 fisicamente antes do de n. 3.
     """
-    livro = con.execute("SELECT * FROM nu_livros WHERE id=?", (livro_id,)).fetchone()
+    bd = banco(con)
+    livro = bd.um("SELECT * FROM nu_livros WHERE id=%s", (livro_id,))
     if not livro:
         return 0
     s = serie_de(livro["serie"])
     inicio = int(livro["folha_inicial"] or 1)
-    marcas = [int(r["f"]) for r in con.execute(
-        """SELECT MAX(folha) f FROM nu_lugares WHERE livro_id=?
+    marcas = [int(r["f"]) for r in bd.ler(
+        """SELECT MAX(folha) f FROM nu_lugares WHERE livro_id=%s
            UNION ALL
-           SELECT MAX(folha) f FROM nu_inutilizacoes WHERE livro_id=?""",
+           SELECT MAX(folha) f FROM nu_inutilizacoes WHERE livro_id=%s""",
         (livro_id, livro_id)) if r["f"] is not None]
     if marcas:
         alvo = max(marcas) + (1 if s.folha_nova else 0)
@@ -611,7 +637,7 @@ def _recompor_folha_atual(con: sqlite3.Connection, livro_id: int) -> int:
     alvo = max(inicio, alvo)
     atual = int(livro["folha_atual"] or inicio)
     if alvo < atual:
-        con.execute("UPDATE nu_livros SET folha_atual=? WHERE id=?",
+        bd.escrever("UPDATE nu_livros SET folha_atual=%s WHERE id=%s",
                     (alvo, livro_id))
         return alvo
     return atual
@@ -620,7 +646,7 @@ def _recompor_folha_atual(con: sqlite3.Connection, livro_id: int) -> int:
 # ------------------------------------------------------------ inutilizacao
 
 
-def inutilizar(con: sqlite3.Connection, livro_id: int, rotulo: str, *,
+def inutilizar(con, livro_id: int, rotulo: str, *,
                motivo: str, sv: dict, agora: str, data_extenso: str,
                usuario: str | None = None, origem: str = "MANUAL") -> int:
     """Inutiliza uma face em branco, com motivo e termo. ESCREVE.
@@ -628,7 +654,11 @@ def inutilizar(con: sqlite3.Connection, livro_id: int, rotulo: str, *,
     Recusa inutilizar face ocupada: a face escriturada nao se inutiliza, o ato
     nela se cancela. Sao coisas diferentes e confundi-las apaga ato bom.
     """
-    livro = con.execute("SELECT * FROM nu_livros WHERE id=?", (livro_id,)).fetchone()
+    bd = banco(con)
+    # Confere a face livre e grava nela: a mesma trava de quem reserva o
+    # lugar, senao o ato reservado ao mesmo tempo cai na face inutilizada.
+    bd.travar("nu_lugares.lugar")
+    livro = bd.um("SELECT * FROM nu_livros WHERE id=%s", (livro_id,))
     if not livro:
         raise LivroError("Livro não encontrado.")
     razao = (motivo or "").strip()
@@ -646,10 +676,10 @@ def inutilizar(con: sqlite3.Connection, livro_id: int, rotulo: str, *,
     if verso and not s.usa_verso:
         raise LivroError(
             f"{s.nome} não escritura o verso — não há verso a inutilizar.")
-    if con.execute(
+    if bd.um(
             """SELECT 1 FROM nu_lugares
-                WHERE livro_id=? AND folha=? AND verso=? LIMIT 1""",
-            (livro_id, folha, verso)).fetchone():
+                WHERE livro_id=%s AND folha=%s AND verso=%s LIMIT 1""",
+            (livro_id, folha, verso)):
         raise LivroError(
             f"A folha {rotulo} está escriturada. Folha escriturada não se "
             f"inutiliza — o ato nela é que se cancela.")
@@ -657,19 +687,20 @@ def inutilizar(con: sqlite3.Connection, livro_id: int, rotulo: str, *,
                                     rotulo_folha(folha, verso=bool(verso)),
                                     razao, sv, data_extenso)
     try:
-        cur = con.execute(
+        novo = bd.escrever(
             """INSERT INTO nu_inutilizacoes(livro_id, serie, folha, verso, rotulo,
                    motivo, teor, origem, inutilizado_em, inutilizado_por)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id""",
             (livro_id, livro["serie"], folha, verso,
              rotulo_folha(folha, verso=bool(verso)), razao, teor, origem,
              agora, usuario))
     except sqlite3.IntegrityError:
         raise LivroError(f"A folha {rotulo} já está inutilizada.") from None
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
 
 
-def inutilizar_sobra(con: sqlite3.Connection, tabela: str, referencia: int, *,
+def inutilizar_sobra(con, tabela: str, referencia: int, *,
                      sv: dict, agora: str, data_extenso: str,
                      usuario: str | None = None) -> list[str]:
     """Inutiliza o que sobrou em branco por causa do ato. ESCREVE.
@@ -678,7 +709,8 @@ def inutilizar_sobra(con: sqlite3.Connection, tabela: str, referencia: int, *,
     branco quando o teor da um numero impar de paginas. E essa a face que a
     inspecao cobra. Chamada depois do fecho, com o teor final ja conhecido.
     """
-    lugar = lugar_de(con, tabela, referencia)
+    bd = banco(con)
+    lugar = lugar_de(bd, tabela, referencia)
     if not lugar:
         return []
     s = serie_de(lugar["serie"])
@@ -686,12 +718,12 @@ def inutilizar_sobra(con: sqlite3.Connection, tabela: str, referencia: int, *,
     feitas = []
     for face in sobra:
         folha, verso = _face(face)
-        if con.execute(
+        if bd.um(
                 """SELECT 1 FROM nu_inutilizacoes
-                    WHERE livro_id=? AND folha=? AND verso=? LIMIT 1""",
-                (int(lugar["livro_id"]), folha, verso)).fetchone():
+                    WHERE livro_id=%s AND folha=%s AND verso=%s LIMIT 1""",
+                (int(lugar["livro_id"]), folha, verso)):
             continue
-        inutilizar(con, int(lugar["livro_id"]), face,
+        inutilizar(bd, int(lugar["livro_id"]), face,
                    motivo=(f"face em branco remanescente do ato de ordem "
                            f"n. {lugar['numero_ordem']}, que ocupou folhas "
                            f"inteiras"),
@@ -704,49 +736,54 @@ def inutilizar_sobra(con: sqlite3.Connection, tabela: str, referencia: int, *,
 # -------------------------------------------------------------- encerramento
 
 
-def _faixa_do_livro(con: sqlite3.Connection,
+def _faixa_do_livro(con,
                     livro_id: int) -> tuple[int | None, int | None, int | None]:
     """(primeiro numero, ultimo numero, ultima folha usada) do livro."""
-    linha = con.execute(
+    bd = banco(con)
+    linha = bd.um(
         """SELECT MIN(numero_ordem) a, MAX(numero_ordem) b, MAX(folha) f
-             FROM nu_lugares WHERE livro_id=?""", (livro_id,)).fetchone()
-    inut = con.execute(
-        "SELECT MAX(folha) f FROM nu_inutilizacoes WHERE livro_id=?",
-        (livro_id,)).fetchone()
+             FROM nu_lugares WHERE livro_id=%s""", (livro_id,))
+    inut = bd.um(
+        "SELECT MAX(folha) f FROM nu_inutilizacoes WHERE livro_id=%s",
+        (livro_id,))
     folhas = [x for x in ((linha["f"] if linha else None),
                           (inut["f"] if inut else None)) if x is not None]
     return ((linha["a"] if linha else None), (linha["b"] if linha else None),
             max(folhas) if folhas else None)
 
 
-def encerrar_livro(con: sqlite3.Connection, livro_id: int, *, sv: dict,
+def encerrar_livro(con, livro_id: int, *, sv: dict,
                    agora: str, data_extenso: str, usuario: str | None = None,
                    motivo: str | None = None) -> str:
     """Encerra o livro com termo. ESCREVE. Devolve o teor do termo."""
-    livro = con.execute("SELECT * FROM nu_livros WHERE id=?", (livro_id,)).fetchone()
+    bd = banco(con)
+    # Confere "ja encerrado", conta os atos e fecha: a mesma trava de quem
+    # reserva o lugar, senao o ato reservado ao mesmo tempo fica fora do termo.
+    bd.travar("nu_lugares.lugar")
+    livro = bd.um("SELECT * FROM nu_livros WHERE id=%s", (livro_id,))
     if not livro:
         raise LivroError("Livro não encontrado.")
     if int(livro["encerrado"] or 0):
         raise LivroError(
             f"O Livro n. {livro['numero']} já está encerrado desde "
             f"{livro['encerramento'] or 'data não gravada'}.")
-    primeiro, ultimo, ultima_usada = _faixa_do_livro(con, livro_id)
-    inutilizadas = int(con.execute(
-        "SELECT COUNT(*) n FROM nu_inutilizacoes WHERE livro_id=?",
-        (livro_id,)).fetchone()["n"])
+    primeiro, ultimo, ultima_usada = _faixa_do_livro(bd, livro_id)
+    inutilizadas = int(bd.valor(
+        "SELECT COUNT(*) n FROM nu_inutilizacoes WHERE livro_id=%s",
+        (livro_id,)))
     teor = texto_termo_encerramento(
         livro["serie"], livro["numero"], int(livro["folhas"] or 1),
         ultima_usada, primeiro, ultimo, sv, data_extenso,
         folha_inicial=int(livro["folha_inicial"] or 1), motivo=motivo,
         inutilizadas=inutilizadas)
-    con.execute(
-        """UPDATE nu_livros SET encerrado=1, encerramento=?, termo_encerramento=?,
-                                motivo_encerramento=? WHERE id=?""",
+    bd.escrever(
+        """UPDATE nu_livros SET encerrado=1, encerramento=%s, termo_encerramento=%s,
+                                motivo_encerramento=%s WHERE id=%s""",
         (agora, teor, (motivo or "").strip() or None, livro_id))
     return teor
 
 
-def encerrar_o_dia(con: sqlite3.Connection, serie: str, dia: str, *, sv: dict,
+def encerrar_o_dia(con, serie: str, dia: str, *, sv: dict,
                    agora: str, dia_extenso: str,
                    usuario: str | None = None) -> dict:
     """Encerra o dia no livro diario — protocolo de Protesto, RCPJ e RTD.
@@ -759,43 +796,47 @@ def encerrar_o_dia(con: sqlite3.Connection, serie: str, dia: str, *, sv: dict,
         raise LivroError(
             f"{s.nome} não é livro diário — encerra quando enche, não no fim "
             f"do dia.")
-    ja = con.execute(
-        "SELECT * FROM nu_encerramentos_diarios WHERE serie=? AND dia=?",
-        (serie, dia)).fetchone()
+    bd = banco(con)
+    # Confere "ja encerrado", conta os protocolos do dia e fecha: a mesma trava
+    # de quem reserva o lugar, senao o protocolo do mesmo dia fica fora do termo.
+    bd.travar("nu_lugares.lugar")
+    ja = bd.um(
+        "SELECT * FROM nu_encerramentos_diarios WHERE serie=%s AND dia=%s",
+        (serie, dia))
     if ja:
         raise LivroError(
             f"O dia {dia} de {s.nome} já foi encerrado em {ja['encerrado_em']}.")
-    livro = con.execute(
-        """SELECT * FROM nu_livros WHERE serie=? AND dia=?
-            ORDER BY id DESC LIMIT 1""", (serie, dia)).fetchone()
+    livro = bd.um(
+        """SELECT * FROM nu_livros WHERE serie=%s AND dia=%s
+            ORDER BY id DESC LIMIT 1""", (serie, dia))
     livro_id = int(livro["id"]) if livro else None
     if livro_id:
-        primeiro, ultimo, _ = _faixa_do_livro(con, livro_id)
-        quantos = int(con.execute(
-            "SELECT COUNT(*) n FROM nu_lugares WHERE livro_id=? AND inicio=1",
-            (livro_id,)).fetchone()["n"])
+        primeiro, ultimo, _ = _faixa_do_livro(bd, livro_id)
+        quantos = int(bd.valor(
+            "SELECT COUNT(*) n FROM nu_lugares WHERE livro_id=%s AND inicio=1",
+            (livro_id,)))
     else:
         primeiro = ultimo = None
         quantos = 0
     teor = texto_encerramento_diario(serie, dia_extenso, quantos, primeiro,
                                      ultimo, sv)
-    con.execute(
+    bd.escrever(
         """INSERT INTO nu_encerramentos_diarios(serie, dia, livro_id, primeiro,
                ultimo, quantidade, teor, encerrado_em, encerrado_por)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (serie, dia, livro_id, primeiro, ultimo, quantos, teor, agora, usuario))
     if livro_id and not int(livro["encerrado"] or 0):
-        con.execute(
-            """UPDATE nu_livros SET encerrado=1, encerramento=?,
-                                    termo_encerramento=?,
-                                    motivo_encerramento=? WHERE id=?""",
+        bd.escrever(
+            """UPDATE nu_livros SET encerrado=1, encerramento=%s,
+                                    termo_encerramento=%s,
+                                    motivo_encerramento=%s WHERE id=%s""",
             (agora, teor, "encerramento diário", livro_id))
     return {"dia": dia, "serie": serie, "livro_id": livro_id,
             "quantidade": quantos, "primeiro": primeiro, "ultimo": ultimo,
             "teor": teor}
 
 
-def dias_sem_encerrar(con: sqlite3.Connection, serie: str) -> list[str]:
+def dias_sem_encerrar(con, serie: str) -> list[str]:
     """Os dias com movimento e sem termo de encerramento. So LE.
 
     E a tela que a inspecao pede: nao basta encerrar, tem de dar para provar
@@ -804,9 +845,9 @@ def dias_sem_encerrar(con: sqlite3.Connection, serie: str) -> list[str]:
     s = serie_de(serie)
     if not s.diario:
         return []
-    return [r["dia"] for r in con.execute(
+    return [r["dia"] for r in banco(con).ler(
         """SELECT DISTINCT l.dia dia FROM nu_livros l
-            WHERE l.serie=? AND l.dia IS NOT NULL
+            WHERE l.serie=%s AND l.dia IS NOT NULL
               AND NOT EXISTS (SELECT 1 FROM nu_encerramentos_diarios e
                                WHERE e.serie=l.serie AND e.dia=l.dia)
             ORDER BY l.dia""", (serie,))]
@@ -815,12 +856,13 @@ def dias_sem_encerrar(con: sqlite3.Connection, serie: str) -> list[str]:
 # ------------------------------------------------------------- conferencia
 
 
-def conferir_livro(con: sqlite3.Connection, livro_id: int) -> dict:
+def conferir_livro(con, livro_id: int) -> dict:
     """O que esta errado no livro, em linguagem de balcao. So LE.
 
     Devolve `achados`: lista de frases. Lista vazia e livro em ordem.
     """
-    livro = con.execute("SELECT * FROM nu_livros WHERE id=?", (livro_id,)).fetchone()
+    bd = banco(con)
+    livro = bd.um("SELECT * FROM nu_livros WHERE id=%s", (livro_id,))
     if not livro:
         raise LivroError("Livro não encontrado.")
     s = serie_de(livro["serie"])
@@ -832,7 +874,7 @@ def conferir_livro(con: sqlite3.Connection, livro_id: int) -> dict:
         achados.append("O livro está encerrado sem termo de encerramento.")
 
     inicio, limite = int(livro["folha_inicial"] or 1), ultima_folha(livro)
-    ocupadas = faces_ocupadas(con, livro_id)
+    ocupadas = faces_ocupadas(bd, livro_id)
     usadas = {f for f, _ in ocupadas}
     if usadas:
         buracos = [f for f in range(inicio, max(usadas)) if f not in usadas]
@@ -858,18 +900,19 @@ def conferir_livro(con: sqlite3.Connection, livro_id: int) -> dict:
             achados.append(
                 f"{len(sobrando)} folha(s) ficaram em branco em livro encerrado.")
 
-    repetidos = [r["numero_ordem"] for r in con.execute(
+    repetidos = [r["numero_ordem"] for r in bd.ler(
         """SELECT numero_ordem FROM nu_lugares
-            WHERE livro_id=? AND inicio=1 AND numero_ordem IS NOT NULL
-            GROUP BY numero_ordem HAVING COUNT(*) > 1""", (livro_id,))]
+            WHERE livro_id=%s AND inicio=1 AND numero_ordem IS NOT NULL
+            GROUP BY numero_ordem HAVING COUNT(*) > 1
+            ORDER BY numero_ordem""", (livro_id,))]
     if repetidos:
         achados.append(
             f"Número de ordem repetido no livro: "
             f"{', '.join(str(x) for x in repetidos[:10])}.")
 
-    if s.diario and livro["dia"] and not con.execute(
-            "SELECT 1 FROM nu_encerramentos_diarios WHERE serie=? AND dia=?",
-            (livro["serie"], livro["dia"])).fetchone():
+    if s.diario and livro["dia"] and not bd.um(
+            "SELECT 1 FROM nu_encerramentos_diarios WHERE serie=%s AND dia=%s",
+            (livro["serie"], livro["dia"])):
         achados.append(f"O dia {livro['dia']} não tem termo de encerramento diário.")
 
     return {
@@ -879,29 +922,30 @@ def conferir_livro(con: sqlite3.Connection, livro_id: int) -> dict:
         "numero": livro["numero"],
         "folhas": int(livro["folhas"] or 0),
         "faces_ocupadas": len(ocupadas),
-        "inutilizadas": int(con.execute(
-            "SELECT COUNT(*) n FROM nu_inutilizacoes WHERE livro_id=?",
-            (livro_id,)).fetchone()["n"]),
-        "atos": int(con.execute(
-            "SELECT COUNT(*) n FROM nu_lugares WHERE livro_id=? AND inicio=1",
-            (livro_id,)).fetchone()["n"]),
+        "inutilizadas": int(bd.valor(
+            "SELECT COUNT(*) n FROM nu_inutilizacoes WHERE livro_id=%s",
+            (livro_id,))),
+        "atos": int(bd.valor(
+            "SELECT COUNT(*) n FROM nu_lugares WHERE livro_id=%s AND inicio=1",
+            (livro_id,))),
         "encerrado": bool(int(livro["encerrado"] or 0)),
         "achados": achados,
     }
 
 
-def panorama(con: sqlite3.Connection,
+def panorama(con,
              atribuicao: int | str | None = None) -> list[dict]:
     """Uma linha por serie: livro aberto, folha livre, proximo numero. So LE.
 
     E a tela de onde o oficial ve as seis atribuicoes de uma vez.
     """
     series = (LN.series_da(atribuicao) if atribuicao is not None else LN.SERIES)
+    bd = banco(con)
     linhas = []
     for codigo, s in series.items():
-        aberto = con.execute(
-            """SELECT * FROM nu_livros WHERE serie=? AND encerrado=0 AND ativo=1
-                ORDER BY id DESC LIMIT 1""", (codigo,)).fetchone()
+        aberto = bd.um(
+            """SELECT * FROM nu_livros WHERE serie=%s AND encerrado=0 AND ativo=1
+                ORDER BY id DESC LIMIT 1""", (codigo,))
         linhas.append({
             "serie": codigo,
             "atribuicao": s.atribuicao,
@@ -910,17 +954,17 @@ def panorama(con: sqlite3.Connection,
             "livro_id": int(aberto["id"]) if aberto else None,
             "livro_numero": aberto["numero"] if aberto else None,
             "dia": aberto["dia"] if aberto else None,
-            "folha_livre": folha_livre(con, aberto) if aberto else None,
+            "folha_livre": folha_livre(bd, aberto) if aberto else None,
             "folhas": int(aberto["folhas"]) if aberto else s.folhas,
             "proximo_numero": (
-                proximo_numero(con, codigo, consumir=False,
+                proximo_numero(bd, codigo, consumir=False,
                                dia=(aberto["dia"] if aberto else None))
                 if not (s.numeracao_diaria and not aberto) else 1),
-            "livros": int(con.execute(
-                "SELECT COUNT(*) n FROM nu_livros WHERE serie=?",
-                (codigo,)).fetchone()["n"]),
-            "atos": int(con.execute(
-                "SELECT COUNT(*) n FROM nu_lugares WHERE serie=? AND inicio=1",
-                (codigo,)).fetchone()["n"]),
+            "livros": int(bd.valor(
+                "SELECT COUNT(*) n FROM nu_livros WHERE serie=%s",
+                (codigo,))),
+            "atos": int(bd.valor(
+                "SELECT COUNT(*) n FROM nu_lugares WHERE serie=%s AND inicio=1",
+                (codigo,))),
         })
     return linhas

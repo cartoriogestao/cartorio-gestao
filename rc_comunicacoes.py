@@ -50,6 +50,9 @@ O QUE ESTE MÓDULO NÃO FAZ
 from __future__ import annotations
 
 import sqlite3
+
+from bd_nativo import banco
+import rc_textos as TEXTOS
 from typing import Any
 
 
@@ -197,8 +200,7 @@ def obitos_do_mes(con: sqlite3.Connection, competencia: str) -> list[dict]:
     if len(comp) != 7 or comp[4] != "-":
         raise ComunicacaoError(
             "A competência é o mês, no formato AAAA-MM — por exemplo 2026-07.")
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         """SELECT a.id, a.numero, a.nome, a.data_ato, a.data_fato, a.matricula,
                   a.numero_do, a.livro_volume,
                   p.sexo, p.documento_numero, p.data_nascimento
@@ -206,8 +208,8 @@ def obitos_do_mes(con: sqlite3.Connection, competencia: str) -> list[dict]:
              LEFT JOIN rc_pessoas p
                     ON p.assento_id = a.id AND p.papel = 'FALECIDO'
             WHERE a.especie = 'OBITO'
-              AND COALESCE(a.data_ato, '') >= ?
-              AND COALESCE(a.data_ato, '') < ?
+              AND COALESCE(a.data_ato, '') >= %s
+              AND COALESCE(a.data_ato, '') < %s
          ORDER BY a.data_ato, a.id""",
         (comp + "-01", comp + "-32"))]
 
@@ -268,12 +270,26 @@ MINIMO_DO_MOTIVO = 10
 
 
 def _exigir(con: sqlite3.Connection, comunicacao_id: int) -> dict:
-    con.row_factory = sqlite3.Row
-    r = con.execute("SELECT * FROM rc_comunicacoes WHERE id = ?",
-                    (comunicacao_id,)).fetchone()
+    r = banco(con).um("SELECT * FROM rc_comunicacoes WHERE id = %s",
+                      (comunicacao_id,))
     if not r:
         raise ComunicacaoError("Não achei essa comunicação.")
     return dict(r)
+
+
+def _exigir_para_gravar(con: sqlite3.Connection, comunicacao_id: int) -> dict:
+    """A comunicação, com a linha PRESA até o fim da transação (FOR UPDATE).
+
+    Para quem confere a situação e grava em cima dela: o envio registrado ao
+    mesmo tempo que uma dispensa deixaria a comunicação «dispensada» com o
+    protocolo do envio, ou o teor congelado regravado por cima. Com a linha
+    presa, o segundo espera e lê a situação já gravada.
+    """
+    bd = banco(con)
+    bd._escrita()
+    bd.um("SELECT id FROM rc_comunicacoes WHERE id = %s FOR UPDATE",
+          (comunicacao_id,))
+    return _exigir(bd, comunicacao_id)
 
 
 def declarar_mes(con: sqlite3.Connection, competencia: str, *, agora: str,
@@ -286,7 +302,7 @@ def declarar_mes(con: sqlite3.Connection, competencia: str, *, agora: str,
     § 3º manda comunicar o fato. **Comunicação que não se abre por estar vazia
     é comunicação que ninguém lembra de mandar.**
 
-    REPETÍVEL: `UNIQUE(destino, competencia)` e `INSERT OR IGNORE`. Rodar duas
+    REPETÍVEL: `UNIQUE(destino, competencia)` e `ON CONFLICT DO NOTHING`. Rodar duas
     vezes o mesmo mês não duplica a obrigação.
 
     `prazo_ate` VEM PRONTO, de quem conta dia útil — `ri_schema.soma_dias_uteis`,
@@ -298,16 +314,46 @@ def declarar_mes(con: sqlite3.Connection, competencia: str, *, agora: str,
         raise ComunicacaoError(
             "A competência é o mês, no formato AAAA-MM — por exemplo 2026-07.")
     novas = []
+    bd = banco(con)
     for d in DESTINOS:
-        cur = con.execute(
-            """INSERT OR IGNORE INTO rc_comunicacoes (destino, competencia,
+        nova = bd.escrever(
+            """INSERT INTO rc_comunicacoes (destino, competencia,
                    situacao, prazo_ate, criado_em, criado_por)
-               VALUES (?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s)
+               ON CONFLICT DO NOTHING RETURNING id""",
             (d["chave"], comp, PENDENTE, _texto(prazo_ate) or None, agora,
              usuario))
-        if cur.rowcount:
-            novas.append(int(cur.lastrowid))
+        if nova:
+            novas.append(int(nova[0]["id"]))
     return novas
+
+
+# ------------------------------------------------------------- o papel
+#
+# O TEXTO DA COMUNICACAO MORA NA PASTA DOS PADROES desde o LF06C (19/10/2026):
+# `modelos_padrao/rcpn/RC_COMUNICACAO_OBITOS.txt`, editavel na tela de Modelos.
+# As frases da linha de cada obito («termo nº …», «falecido em …») sao PECAS
+# dele (`RC_COMUNICACAO_OBITOS__termo`…). QUEM entra na relacao e QUAL frase
+# vai na linha continuam aqui: e regra da norma, e nao redacao. Os destinos
+# (nome, artigo, finalidade, aviso) tambem: sao dado da norma, e entram no papel
+# como claros.
+CHAVE_DO_PAPEL = "RC_COMUNICACAO_OBITOS"
+
+
+def _leitor_de_pecas(con: sqlite3.Connection):
+    """As peças do papel pela busca única, UMA leitura por peça. Só lê.
+
+    UMA VEZ POR COMUNICAÇÃO, E NÃO UMA VEZ POR ÓBITO: julho de 2026 teve treze
+    óbitos, e sete frases por linha seriam noventa idas ao banco atrás dos
+    mesmos textos.
+    """
+    lidas: dict[str, str] = {}
+
+    def peca(nome: str, **claros: Any) -> str:
+        if nome not in lidas:
+            lidas[nome] = TEXTOS.texto(f"{CHAVE_DO_PAPEL}__{nome}", con)
+        return lidas[nome].format(**claros)
+    return peca
 
 
 def montar(con: sqlite3.Connection, comunicacao_id: int, *,
@@ -316,53 +362,53 @@ def montar(con: sqlite3.Connection, comunicacao_id: int, *,
 
     Ver como fica é barato; **congelar acontece uma vez**, quando ela sai — e o
     art. 226, § 1º, III manda guardá-la por dois anos, organizada por mês.
+
+    O TEXTO É O PAPEL `RC_COMUNICACAO_OBITOS`, lido pela busca única — o ajuste
+    da casa, e na falta dele o padrão da base. O que já saiu não muda: o teor
+    que `registrar_envio` congelou é o de quando saiu, e só a comunicação
+    montada daqui em diante lê o texto novo.
     """
     c = _exigir(con, comunicacao_id)
     r = relacao(con, c["competencia"], c["destino"])
     d = r["destino"]
+    peca = _leitor_de_pecas(con)
 
     linhas = []
     for i, o in enumerate(r["entram"], 1):
-        pedaco = [f"{i}. {o.get('nome') or '(sem nome)'}"]
+        pedaco = [f"{i}. {o.get('nome') or peca('sem_nome')}"]
         if o.get("numero"):
-            pedaco.append(f"termo nº {o['numero']}")
+            pedaco.append(peca("termo", numero=o["numero"]))
         if o.get("livro_volume"):
-            pedaco.append(f"livro {o['livro_volume']}")
+            pedaco.append(peca("livro", livro=o["livro_volume"]))
         if o.get("data_fato"):
-            pedaco.append(f"falecido em {o['data_fato']}")
+            pedaco.append(peca("falecido_em", data=o["data_fato"]))
         if o.get("idade") is not None:
-            pedaco.append(f"{o['idade']} anos")
+            pedaco.append(peca("idade", idade=o["idade"]))
         else:
             # SEM IDADE ELE ENTRA, E A LISTA DIZ ISSO. Omitir a falta faria o
             # orgao receber a linha sem saber que o dado nao existe.
-            pedaco.append("idade não informada no assento")
+            pedaco.append(peca("sem_idade"))
         if o.get("documento_numero"):
-            pedaco.append(f"CPF {o['documento_numero']}")
+            pedaco.append(peca("cpf", cpf=o["documento_numero"]))
         if o.get("numero_do"):
-            pedaco.append(f"DO nº {o['numero_do']}")
+            pedaco.append(peca("declaracao_de_obito", numero_do=o["numero_do"]))
         if o.get("matricula"):
-            pedaco.append(f"matrícula {o['matricula']}")
+            pedaco.append(peca("matricula", matricula=o["matricula"]))
         linhas.append(", ".join(pedaco) + ".")
 
-    corpo = "\n".join(linhas) if linhas else (
-        "Nada consta: nenhum óbito nesta competência alcança este destino.")
+    corpo = "\n".join(linhas) if linhas else peca("nada_consta")
 
     aviso = f" — {d['aviso']}" if d.get("aviso") else ""
-    texto = (
-        f"{serventia.get('nome', '')}\n"
-        f"{serventia.get('cidade', '')}/{serventia.get('uf', '')}\n\n"
-        f"COMUNICAÇÃO MENSAL DE ÓBITOS — {c['competencia']}\n"
-        f"Destinatário: {d['nome']}\n"
-        f"Fundamento: {d['artigo']}\n\n"
-        f"Comunicamos, {d['porque']}, os óbitos lavrados nesta serventia na "
-        f"competência {c['competencia']}{aviso}:\n\n"
-        f"{corpo}\n\n"
-        f"Total: {r['quantos']} de {r['quantos_no_mes']} óbito(s) lavrados no "
-        f"mês.\n\n"
-        f"{serventia.get('cidade', '')}/{serventia.get('uf', '')}.\n\n"
-        f"_________________________________\n"
-        f"{serventia.get('registrador', '')}\n"
-        f"{serventia.get('titulo', '')}\n")
+    texto = TEXTOS.peca(
+        CHAVE_DO_PAPEL, con,
+        serventia_nome=serventia.get("nome", ""),
+        cidade=serventia.get("cidade", ""), uf=serventia.get("uf", ""),
+        competencia=c["competencia"], destinatario=d["nome"],
+        fundamento=d["artigo"], finalidade=d["porque"], aviso=aviso,
+        relacao=corpo, quantos=r["quantos"],
+        quantos_no_mes=r["quantos_no_mes"],
+        registrador=serventia.get("registrador", ""),
+        titulo=serventia.get("titulo", ""))
     return {"texto": texto, **r}
 
 
@@ -378,7 +424,7 @@ def registrar_envio(con: sqlite3.Connection, comunicacao_id: int, *,
     """
     import hashlib
 
-    c = _exigir(con, comunicacao_id)
+    c = _exigir_para_gravar(con, comunicacao_id)
     if c["situacao"] != PENDENTE:
         raise ComunicacaoError(
             "Esta comunicação já está como "
@@ -391,10 +437,10 @@ def registrar_envio(con: sqlite3.Connection, comunicacao_id: int, *,
 
     montado = montar(con, comunicacao_id, serventia=serventia)
     texto = montado["texto"]
-    con.execute(
-        """UPDATE rc_comunicacoes SET situacao = ?, teor = ?, quantos = ?,
-               hash_teor = ?, enviada_em = ?, canal = ?, protocolo = ?,
-               resolvida_por = ? WHERE id = ?""",
+    banco(con).escrever(
+        """UPDATE rc_comunicacoes SET situacao = %s, teor = %s, quantos = %s,
+               hash_teor = %s, enviada_em = %s, canal = %s, protocolo = %s,
+               resolvida_por = %s WHERE id = %s""",
         (ENVIADA, texto, montado["quantos"],
          hashlib.sha256(texto.encode("utf-8")).hexdigest(), quando,
          _texto(canal) or None, _texto(protocolo), usuario, comunicacao_id))
@@ -408,7 +454,7 @@ def dispensar(con: sqlite3.Connection, comunicacao_id: int, *, motivo: str,
     DISPENSAR É DECISÃO DO OFICIAL; IGNORAR NÃO É. E o art. 226, § 2º
     responsabiliza a omissão — então o que não sai tem de dizer por quê.
     """
-    c = _exigir(con, comunicacao_id)
+    c = _exigir_para_gravar(con, comunicacao_id)
     if c["situacao"] != PENDENTE:
         raise ComunicacaoError(
             "Esta comunicação já está como "
@@ -418,9 +464,9 @@ def dispensar(con: sqlite3.Connection, comunicacao_id: int, *, motivo: str,
             "Para dispensar, escreva o motivo — e lembre que o art. 226, § 2º "
             "responsabiliza a omissão. "
             f"Ao menos {MINIMO_DO_MOTIVO} letras.")
-    con.execute(
-        """UPDATE rc_comunicacoes SET situacao = ?, motivo = ?,
-               resolvida_por = ? WHERE id = ?""",
+    banco(con).escrever(
+        """UPDATE rc_comunicacoes SET situacao = %s, motivo = %s,
+               resolvida_por = %s WHERE id = %s""",
         (DISPENSADA, _texto(motivo), usuario, comunicacao_id))
     return {"situacao": DISPENSADA}
 
@@ -432,17 +478,15 @@ def pendentes(con: sqlite3.Connection, limite: int = 500) -> list[dict]:
     aqui o que importa é o prazo, e quem está há mais tempo esperando é quem
     está mais perto de estourá-lo.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        """SELECT * FROM rc_comunicacoes WHERE situacao = ?
-         ORDER BY competencia, destino LIMIT ?""", (PENDENTE, limite))]
+    return [dict(r) for r in banco(con).ler(
+        """SELECT * FROM rc_comunicacoes WHERE situacao = %s
+         ORDER BY competencia, destino LIMIT %s""", (PENDENTE, limite))]
 
 
 def quantas_pendentes(con: sqlite3.Connection) -> int:
-    con.row_factory = sqlite3.Row
-    return int(con.execute(
-        "SELECT COUNT(*) FROM rc_comunicacoes WHERE situacao = ?",
-        (PENDENTE,)).fetchone()[0])
+    return int(banco(con).valor(
+        "SELECT COUNT(*) FROM rc_comunicacoes WHERE situacao = %s",
+        (PENDENTE,)))
 
 
 def meses_com_obito(con: sqlite3.Connection) -> list[dict]:
@@ -462,12 +506,11 @@ def meses_com_obito(con: sqlite3.Connection) -> list[dict]:
     > e por isso nasceu `tests/test_o_acervo_nao_vira_atraso.py`, que varre a
     > classe inteira em vez de consertar um módulo por vez.
     """
-    con.row_factory = sqlite3.Row
     contas: dict[str, int] = {}
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT data_ato AS d FROM rc_assentos
                 WHERE especie = 'OBITO' AND COALESCE(data_ato, '') <> ''
-                  AND COALESCE(origem, '') <> ?""",
+                  AND COALESCE(origem, '') <> %s""",
             (ORIGEM_QUE_NAO_SE_COMUNICA,)):
         comp = str(r["d"])[:7]
         contas[comp] = contas.get(comp, 0) + 1
@@ -481,13 +524,28 @@ def meses_sem_comunicacao(con: sqlite3.Connection) -> list[dict]:
     cinco meses de 2026 com óbito — abril, maio, junho, julho e agosto —, e
     cinco destinos cada, dão até 25 remessas.
     """
-    con.row_factory = sqlite3.Row
     faltando = []
-    for m in meses_com_obito(con):
-        quantas = int(con.execute(
-            "SELECT COUNT(*) FROM rc_comunicacoes WHERE competencia = ?",
-            (m["competencia"],)).fetchone()[0])
+    bd = banco(con)
+    for m in meses_com_obito(bd):
+        quantas = int(bd.valor(
+            "SELECT COUNT(*) FROM rc_comunicacoes WHERE competencia = %s",
+            (m["competencia"],)))
         if quantas < len(DESTINOS):
             faltando.append({**m, "abertas": quantas,
                              "faltam": len(DESTINOS) - quantas})
     return faltando
+
+
+def __getattr__(nome: str):
+    """O nome do texto da comunicação, lido da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06C (19/10/2026) e mora em
+    `modelos_padrao/`. `COMUNICACAO_MENSAL` nunca foi constante — o texto era
+    montado dentro de `montar` —; é o nome que o catálogo dá ao papel, e quem o
+    pede recebe o padrão da base, o MESMO que a comunicação imprime. Nome que
+    não é de papel continua sendo `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)

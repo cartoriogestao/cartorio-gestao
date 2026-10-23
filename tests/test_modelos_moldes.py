@@ -34,6 +34,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import modelos_moldes as MOLDES
 import rc_certidao_odt as ODT
@@ -45,7 +47,7 @@ tem_o_molde = pytest.mark.skipif(
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     MOLDES.init_modelos_moldes_schema(c)
     yield c
     c.close()
@@ -240,7 +242,7 @@ def test_instalacao_sem_a_tabela_nao_derruba_a_certidao():
     """**O PISO NÃO PODE DEPENDER DO ANDAR DE CIMA** — a mesma decisão de
     `modelos_da_casa.corpo_de`. Banco a meio de migrar continua imprimindo o
     papel do pacote, em vez de estourar na cara de quem emite."""
-    c = sqlite3.connect(":memory:")           # sem `mo_moldes`
+    c = conexao_de_teste()           # sem `mo_moldes`
     try:
         assert MOLDES.como_esta(c, "RC_MOLDE_NASCIMENTO")["ajustado"] is False
         assert MOLDES.restaurar(c, "RC_MOLDE_NASCIMENTO") is False

@@ -21,10 +21,11 @@ existe porque a segunda varredura às vezes é a errada.
 from __future__ import annotations
 
 import shutil
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from bd_nativo import banco
 
 # AS REGRAS DE ARQUIVO SÃO AS DO LIVRO 2 — ver o cabeçalho.
 from ri_digitalizacao import (  # noqa: F401
@@ -56,11 +57,11 @@ def pasta_do_registro(raiz: Path, registro_id: int) -> Path:
     return Path(raiz) / "livro3" / f"registro-{int(registro_id)}"
 
 
-def atual(con: sqlite3.Connection, registro_id: int) -> dict | None:
+def atual(con: Any, registro_id: int) -> dict | None:
     """O arquivo oficial de hoje daquele registro, ou `None`. Só lê."""
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT digi_path, digi_nome, digi_sha256, digi_em, digi_por
-             FROM ra_registros WHERE id=?""", (int(registro_id),)).fetchone()
+             FROM ra_registros WHERE id=%s""", (int(registro_id),))
     if not linha or not linha["digi_path"]:
         return None
     return dict(linha)
@@ -84,12 +85,12 @@ def gravar_upload(db, *, registro_id: int, arquivo, usuario: Any) -> dict:
             "do Livro 2.")
 
     with db.connect() as con:
-        if con.execute("SELECT 1 FROM ra_registros WHERE id=?",
-                       (int(registro_id),)).fetchone() is None:
+        bd = banco(con)
+        anterior = bd.um(
+            "SELECT digi_path, digi_nome FROM ra_registros WHERE id=%s",
+            (int(registro_id),))
+        if anterior is None:
             raise DigitalizacaoError("Registro do Livro 3 não encontrado.")
-        anterior = con.execute(
-            "SELECT digi_path, digi_nome FROM ra_registros WHERE id=?",
-            (int(registro_id),)).fetchone()
 
     pasta = pasta_do_registro(raiz_arquivos(db), registro_id)
     pasta.mkdir(parents=True, exist_ok=True)
@@ -114,11 +115,11 @@ def gravar_upload(db, *, registro_id: int, arquivo, usuario: Any) -> dict:
     agora = db.now()
 
     with db.transaction() as con:
-        con.execute(
+        banco(con).escrever(
             """UPDATE ra_registros
-                  SET digi_path=?, digi_nome=?, digi_sha256=?, digi_em=?,
-                      digi_por=?
-                WHERE id=?""",
+                  SET digi_path=%s, digi_nome=%s, digi_sha256=%s, digi_em=%s,
+                      digi_por=%s
+                WHERE id=%s""",
             (str(estavel.resolve()), nome, sha, agora, str(usuario or ""),
              int(registro_id)))
     return {"path": str(estavel.resolve()), "nome": nome, "sha256": sha,
@@ -146,11 +147,11 @@ def pasta_do_ato(raiz: Path, registro_id: int, ato_id: int) -> Path:
     return pasta_do_registro(raiz, registro_id) / f"termo-{int(ato_id)}"
 
 
-def atual_do_ato(con: sqlite3.Connection, ato_id: int) -> dict | None:
+def atual_do_ato(con: Any, ato_id: int) -> dict | None:
     """O papel daquele termo, ou `None`. Só lê."""
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT digi_path, digi_nome, digi_sha256, digi_em, digi_por
-             FROM ra_atos WHERE id=?""", (int(ato_id),)).fetchone()
+             FROM ra_atos WHERE id=%s""", (int(ato_id),))
     if not linha or not linha["digi_path"]:
         return None
     return dict(linha)
@@ -174,9 +175,9 @@ def gravar_upload_do_ato(db, *, ato_id: int, arquivo, usuario: Any) -> dict:
             "do Livro 2.")
 
     with db.connect() as con:
-        a = con.execute(
-            "SELECT registro_id, digi_path, digi_nome FROM ra_atos WHERE id=?",
-            (int(ato_id),)).fetchone()
+        a = banco(con).um(
+            "SELECT registro_id, digi_path, digi_nome FROM ra_atos WHERE id=%s",
+            (int(ato_id),))
     if a is None:
         raise DigitalizacaoError("Ato do Livro 3 não encontrado.")
 
@@ -199,9 +200,9 @@ def gravar_upload_do_ato(db, *, ato_id: int, arquivo, usuario: Any) -> dict:
     sha = hash_file(estavel)
     agora = db.now()
     with db.transaction() as con:
-        con.execute(
-            """UPDATE ra_atos SET digi_path=?, digi_nome=?, digi_sha256=?,
-                   digi_em=?, digi_por=? WHERE id=?""",
+        banco(con).escrever(
+            """UPDATE ra_atos SET digi_path=%s, digi_nome=%s, digi_sha256=%s,
+                   digi_em=%s, digi_por=%s WHERE id=%s""",
             (str(estavel.resolve()), nome, sha, agora, str(usuario or ""),
              int(ato_id)))
     return {"path": str(estavel.resolve()), "nome": nome, "sha256": sha,
@@ -224,9 +225,8 @@ def retirar_upload(db, *, registro_id: int | None = None,
     tabela = "ra_atos" if ato_id is not None else "ra_registros"
     chave = int(ato_id if ato_id is not None else registro_id)
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
-        linha = con.execute(
-            f"SELECT * FROM {tabela} WHERE id=?", (chave,)).fetchone()
+        linha = banco(con).um(
+            f"SELECT * FROM {tabela} WHERE id=%s", (chave,))
     if not linha or not linha["digi_path"]:
         raise DigitalizacaoError("Não há arquivo ativo para retirar.")
     rid = int(linha["registro_id"] if ato_id is not None else chave)
@@ -245,12 +245,12 @@ def retirar_upload(db, *, registro_id: int | None = None,
             f"{carimbo}_retirado_{safe_component(linha['digi_nome'] or atual_path.name)}")
         shutil.copy2(atual_path, destino)
     with db.transaction() as con:
-        alterado = con.execute(
+        alterado = banco(con).escrever(
             f"""UPDATE {tabela} SET digi_path=NULL, digi_nome=NULL,
                        digi_sha256=NULL, digi_em=NULL, digi_por=NULL
-                 WHERE id=? AND digi_path=?""",
+                 WHERE id=%s AND digi_path=%s RETURNING id""",
             (chave, str(linha["digi_path"])))
-        if alterado.rowcount != 1:
+        if len(alterado) != 1:
             raise DigitalizacaoError(
                 "O arquivo mudou durante a retirada; atualize a ficha e tente novamente.")
     if (destino is not None and atual_path.is_file()

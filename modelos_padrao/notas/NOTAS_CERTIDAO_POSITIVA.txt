@@ -1,0 +1,4 @@
+<p><b>CERTIFICO</b>, a pedido de {{ requerente or 'parte interessada' }}{% if requerente_documento %}, {{ requerente_documento }}{% endif %}, que, feitas as buscas nos livros deste Tabelionato de Notas {{ periodo }}, em nome de <b>{{ nome }}</b>{% if documento %}, {{ documento }}{% endif %}, CONSTA(M) o(s) seguinte(s) ato(s):</p>
+{% for x in achados %}<p>— {{ x.rotulo_tipo }}{% if x.natureza %} ({{ x.natureza }}){% endif %}, Livro {{ x.livro or '—' }}, folha {{ x.folha or '—' }}{% if x.termo %}, termo n. {{ x.termo }}{% elif x.numero_ordem %}, ordem n. {{ x.numero_ordem }}{% endif %}, de {{ x.data }}, em que figura como {{ x.qualificacao or 'parte' }}.</p>{% endfor %}
+{% if finalidade %}<p><b>FINALIDADE:</b> {{ finalidade }}</p>{% endif %}
+<p>O referido é verdade e dou fé.</p>

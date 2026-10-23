@@ -87,7 +87,8 @@
         <label>Profissão<input name="{{ lado }}_profissao" value="{{ v.get(lado ~ '_profissao', '') }}"></label>
         <label>Nacionalidade<input name="{{ lado }}_nacionalidade" value="{{ v.get(lado ~ '_nacionalidade') or 'brasileira' }}"></label>
         <label class="span2">Naturalidade<input name="{{ lado }}_naturalidade" value="{{ v.get(lado ~ '_naturalidade', '') }}"></label>
-        <label class="span2">Endereço<input name="{{ lado }}_endereco" value="{{ v.get(lado ~ '_endereco', '') }}"></label>
+        <label class="span2">Endereço<input name="{{ lado }}_endereco" value="{{ v.get(lado ~ '_endereco', '') }}"
+               placeholder="rua, número, bairro, Município/UF"></label>
         <label class="span2">Pai<input name="{{ lado }}_pai" value="{{ v.get(lado ~ '_pai', '') }}"></label>
         <label class="span2">Mãe<input name="{{ lado }}_mae" value="{{ v.get(lado ~ '_mae', '') }}"></label>
       </div>

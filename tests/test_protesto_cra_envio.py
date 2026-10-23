@@ -9,6 +9,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import centrais_cred as CRED
 import cra21_api as API
@@ -41,6 +43,114 @@ def test_interpretar_codigo_recusado():
     assert "0002" in str(e.value)
 
 
+def test_a_recusa_traz_a_ocorrencia_que_vem_depois_do_cabecalho():
+    """RTAB2110.261, 21/10/2026: o motivo da CRA vinha depois dos 240
+    primeiros caracteres e não chegava à tela nem ao banco."""
+    cabecalho = ('<?xml version="1.0" encoding="ISO-8859-1" standalone="no"?>'
+                 "<relatorio><nome_arquivo>RTAB2110.261</nome_arquivo>"
+                 '<comarca CodMun="2107001"><datahora>202610211320</datahora>'
+                 "<dataoperacao>20261022</dataoperacao>"
+                 "<total_registros>0</total_registros>")
+    with pytest.raises(API.CraRecusou) as e:
+        ENV.interpretar_resposta_envio(
+            cabecalho + "<codigo>2154</codigo><ocorrencia>MOTIVO\n   DE TESTE"
+            "</ocorrencia></comarca></relatorio>", o_que="enviar o retorno")
+    assert "(código 2154): MOTIVO DE TESTE." in str(e.value)
+    # LH08 (revisão do LH07): a resposta inteira vai À PARTE, para o campo de
+    # erro do arquivo — e não mais na frase, que vai à tela.
+    assert "</relatorio>" in e.value.bruto
+    assert "</relatorio>" not in str(e.value)
+    assert "RTAB2110.261" in str(e.value)       # o trecho curto do começo
+
+
+def _relatorio_comprido(motivo: str = "MOTIVO DE TESTE", titulos: int = 200) -> str:
+    """Um relatório de recusa como os da CRA, com a lista dos títulos depois
+    da ocorrência — passa fácil dos 4.000 caracteres. Dados de ensaio."""
+    cauda = "".join(f"<titulo><protocolo>{n:06d}</protocolo>"
+                    f"<situacao>RECUSADO</situacao></titulo>"
+                    for n in range(titulos))
+    return ('<?xml version="1.0" encoding="ISO-8859-1" standalone="no"?>'
+            "<relatorio><nome_arquivo>R0012110.261</nome_arquivo>"
+            '<comarca CodMun="0000000"><datahora>202610211320</datahora>'
+            f"<codigo>2154</codigo><ocorrencia>{motivo}</ocorrencia>"
+            f"<titulos>{cauda}</titulos></comarca></relatorio>")
+
+
+def test_a_frase_da_recusa_e_curta_e_a_resposta_inteira_vai_a_parte():
+    """A frase vai ao `flash` — que mora no cookie da sessão — e à auditoria:
+    o motivo, o código e um trecho curto do começo. A resposta inteira fica em
+    `bruto`, sem corte, para o campo de erro."""
+    bruto = _relatorio_comprido()
+    assert len(bruto) > 10_000
+    with pytest.raises(API.CraRecusou) as e:
+        ENV.interpretar_resposta_envio(bruto, o_que="enviar o retorno")
+    frase = str(e.value)
+    assert frase.startswith(
+        "A CRA recusou ao enviar o retorno (código 2154): MOTIVO DE TESTE. "
+        "Início da resposta: <relatorio><nome_arquivo>R0012110.261")
+    assert "<?xml" not in frase
+    assert "000199" not in frase                   # a cauda não vai à tela
+    assert len(frase) <= (len("A CRA recusou ao enviar o retorno (código 2154): "
+                              ". Início da resposta: ")
+                          + ENV.TRECHO_NA_TELA + ENV.TRECHO_DA_RESPOSTA)
+    assert e.value.bruto == bruto
+
+
+def test_a_ocorrencia_comprida_sai_cortada_na_tela():
+    motivo = "DIVERGENCIA NO TITULO " * 60
+    with pytest.raises(API.CraRecusou) as e:
+        ENV.interpretar_resposta_envio(_relatorio_comprido(motivo, titulos=1),
+                                       o_que="enviar o retorno")
+    achado = re.search(r"\(código 2154\): (.*?)\. Início da resposta", str(e.value))
+    assert achado
+    assert len(achado.group(1)) <= ENV.TRECHO_NA_TELA
+    assert achado.group(1).startswith("DIVERGENCIA NO TITULO DIVERGENCIA")
+    assert achado.group(1).endswith("…")
+    assert " ".join(motivo.split()) in " ".join(e.value.bruto.split())
+
+
+def test_no_envio_automatico_a_falha_diz_a_frase_e_o_arquivo_guarda_a_resposta(
+        monkeypatch):
+    """O caminho de `enviar_pos_remessa` (a confirmação depois da remessa): a
+    falha devolvida à rota — que vira `flash` e auditoria — é a frase curta;
+    `pt_retornos.cra_envio_erro` guarda a frase e a resposta até 4.000."""
+    from contextlib import contextmanager
+    from nucleo_schema import init_nucleo_schema
+    from pt_schema import init_pt_schema
+
+    con = conexao_de_teste()
+    init_nucleo_schema(con)
+    init_pt_schema(con)
+    con.execute(
+        """INSERT INTO pt_retornos(tipo, apresentante_codigo, dia,
+               numero_da_remessa, nome_arquivo, conteudo, gerado_em)
+           VALUES ('SDTBFOCRT','001','2026-10-21',1,'C0012110.261','x',
+                   '2026-10-21T10:00:00')""")
+    con.commit()
+    rid = int(con.execute("SELECT MAX(id) FROM pt_retornos").fetchone()[0])
+
+    @contextmanager
+    def transacao():
+        yield con
+        con.commit()
+
+    bruto = _relatorio_comprido()
+    monkeypatch.setattr(CRED, "tem", lambda *a, **k: True)
+    monkeypatch.setattr(ENV, "user_dados_do_arquivo", lambda conteudo, tipo: "<x/>")
+    monkeypatch.setattr(API, "enviar_confirmacao", lambda *a, **k: bruto)
+    r = ENV.enviar_pos_remessa(
+        transacao, lotes=[{"confirmacao_id": rid}], andamentos=[],
+        ambiente=CRED.PRODUCAO, ler_config=lambda k, d: "1")
+    [falha] = r["falhas"]
+    assert "MOTIVO DE TESTE" in falha["erro"]
+    assert "000199" not in falha["erro"] and len(falha["erro"]) < 600
+    guardado = con.execute("SELECT cra_envio_erro FROM pt_retornos WHERE id=?",
+                           (rid,)).fetchone()[0]
+    assert len(guardado) == ENV.CORTE_DO_ERRO
+    assert guardado.startswith(falha["erro"] + " Resposta: <?xml")
+    assert guardado == (falha["erro"] + " Resposta: " + bruto)[:ENV.CORTE_DO_ERRO]
+
+
 def test_auto_homolog_ligado_por_padrao():
     assert ENV.auto_envio_ligado(CRED.HOMOLOGACAO, lambda k, d: d)
     assert not ENV.auto_envio_ligado(
@@ -64,9 +174,13 @@ def test_a_hora_do_envio_e_a_local_e_nao_a_utc_do_sqlite():
     três horas «antes» de gerado. Agora é a hora local, na forma da casa."""
     import sqlite3
     from datetime import datetime, timedelta
+    from nucleo_schema import init_nucleo_schema
     from pt_schema import init_pt_schema
 
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
+    # `pt_atos.livro_id` aponta para `nu_livros`, e o PostgreSQL nativo
+    # cobra a chave estrangeira ja na criacao: o nucleo vem antes.
+    init_nucleo_schema(con)
     init_pt_schema(con)
     con.execute(
         """INSERT INTO pt_retornos(tipo, apresentante_codigo, dia,
@@ -144,9 +258,13 @@ def test_enviar_confirmacao_monta_envelope(monkeypatch, tmp_path):
 
 def test_pos_remessa_respeita_auto_desligado():
     import sqlite3
+    from nucleo_schema import init_nucleo_schema
     from pt_schema import init_pt_schema
 
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
+    # `pt_atos.livro_id` aponta para `nu_livros`, e o PostgreSQL nativo
+    # cobra a chave estrangeira ja na criacao: o nucleo vem antes.
+    init_nucleo_schema(con)
     init_pt_schema(con)
     con.execute(
         """INSERT INTO pt_retornos(tipo, apresentante_codigo, dia,

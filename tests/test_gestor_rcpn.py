@@ -227,7 +227,8 @@ def _hab(con, situacao, n1="AMARO ARAÚJO DA SILVA", n2="EMILIO DA COSTA ROCHEDO
 
 
 def test_habilitacao_de_casal_ja_casado(con):
-    _hab(con, "CELEBRADO", numero=1, celebrado_em="2026-10-08", casamento_assento_id=1)
+    casamento = _assento(con, "CASAMENTO", numero=1)
+    _hab(con, "CELEBRADO", numero=1, celebrado_em="2026-10-08", casamento_assento_id=casamento)
     dup = _hab(con, "EM_ANALISE", numero=2, n1="Emilio da Costa Rochedo",
                n2="Amaro Araujo da Silva")
     h = G.conferir_habilitacoes(con, HOJE)
@@ -261,6 +262,7 @@ def test_boletim_junta_e_renova_sem_duplicar(con, cg_casa):
     import gestor_rotina as GR
     from gestor_schema import init_gestor_schema
     init_gestor_schema(con)
+    con.commit()
     cg_casa["db"].create_user("mario", "MARIO", "Senha#12345", "ADMIN")
     cg_casa["db"].create_user("elisa", "Elisa", "Senha#12345", "USER")
     cg_casa["db"].create_user("debora", "Debora", "Senha#12345", "USER")
@@ -308,3 +310,32 @@ def test_termo_reescrito_depois_de_lavrado_aparece(con):
     assert len(alt) == 1 and "CPF 000" in alt[0]["detalhe"]
     G.aceitar_termo_atual(con, a, quem="o oficial", agora=AGORA)
     assert not [x for x in G.conferir_dados(con, HOJE) if x["regra"] == "RCPN_TERMO_ALTERADO"]
+
+
+# ================================================== CONSERTO DO L031R (18/10/2026)
+# A LINHA DE COMANDO DO AGENTE RODA FORA DO SISTEMA: ninguém monta `Database()`,
+# o desvio do `sqlite3.connect` não existe, e o acesso nativo recusa o sqlite3
+# cru (`BancoNaoEPostgres`). Abrindo pelo `sqlite3.connect`, os três caminhos
+# (conferir, `--rodar`, `--aceitar-termo`) quebravam antes da primeira leitura.
+
+import banco_pg                                                   # noqa: E402
+
+
+@pytest.mark.skipif(not banco_pg.ativo(), reason="mede a porta do PostgreSQL (CG_PG_DSN)")
+def test_o_comando_do_agente_chega_ao_banco_fora_do_sistema(con, cg_casa, monkeypatch, capsys):
+    from gestor_schema import init_gestor_schema
+    init_gestor_schema(con)
+    _assento(con, "CASAMENTO", numero=1013, teor="")          # lavrado sem termo
+    termo = _assento(con, numero=32, nome="CICLANO EXEMPLO",
+                     teor="Termo do CICLANO EXEMPLO, lido e achado conforme.")
+    con.commit()
+    monkeypatch.setattr(sqlite3, "connect", banco_pg._CONNECT_ORIGINAL)
+    banco = str(cg_casa["banco"])
+    assert G.main(["--banco", banco, "--hoje", HOJE.isoformat()]) == 0
+    assert "RCPN_SEM_TERMO" in capsys.readouterr().out
+    assert G.main(["--banco", banco, "--hoje", HOJE.isoformat(), "--rodar"]) == 0
+    assert con.execute("SELECT situacao FROM ge_rcpn_execucoes ORDER BY id DESC LIMIT 1"
+                       ).fetchone()[0] == "OK"
+    assert G.main(["--banco", banco, "--aceitar-termo", str(termo), "--quem", "o oficial"]) == 0
+    assert con.execute("SELECT aceito_por FROM ge_rcpn_termos WHERE assento_id=?",
+                       (termo,)).fetchone()[0] == "o oficial"

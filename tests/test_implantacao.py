@@ -30,6 +30,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import acervo_carga as AC
 import implantacao as IMP
@@ -44,11 +46,14 @@ AGORA = "2026-08-26T10:00:00"
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     init_nucleo_schema(c)
     init_pt_schema(c)
     init_rc_schema(c)
+    # `rg_titulos` aponta para `cx_protocolos` (FK): o PostgreSQL cobra a FK
+    # na criacao, e o banco da casa cria o caixa antes. Aqui basta o esqueleto.
+    c.execute("CREATE TABLE IF NOT EXISTS cx_protocolos (id INTEGER PRIMARY KEY)")
     init_rg_schema(c)
     yield c
     c.close()

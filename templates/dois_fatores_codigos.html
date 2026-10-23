@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Códigos de recuperação{% endblock %}
+{% block heading %}<h1>Códigos de recuperação</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <p><strong>Anote ou imprima agora: esta é a única vez que eles aparecem.</strong> O sistema guarda só
+  uma impressão de cada um, que não volta a ser o código.</p>
+  <p>Sem o celular, cada código entra no lugar do código do aplicativo — uma vez só. Guarde-os longe do
+  celular (na gaveta do oficial, e não na capinha).</p>
+  <ol class="codigos-de-recuperacao">
+    {% for c in codigos %}<li><code>{{ c }}</code></li>{% endfor %}
+  </ol>
+  <p><button type="button" onclick="window.print()">Imprimir</button>
+     <a href="{{ seguir }}">Já anotei — continuar</a></p>
+</section>
+{% endblock %}

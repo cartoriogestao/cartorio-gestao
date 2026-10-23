@@ -126,5 +126,9 @@ def test_a_tela_dos_cartoes_diz_quantos_estao_sem_autografo(cliente):
 
 
 def test_o_mutirao_e_chamado_da_tela_dos_cartoes(cliente):
+    """Era chamado daqui («Trazer autógrafos do E-Ofício»). Desde 17/10/2026
+    não é mais: a importação do E-Ofício terminou, e a tela do mutirão fica
+    só pelo endereço."""
     html = cliente.get("/notas/cartoes").get_data(as_text=True)
-    assert "/notas/assinaturas" in html[html.find("</nav>"):]
+    assert "/notas/assinaturas" not in html[html.find("</nav>"):]
+    assert "Trazer autógrafos" not in html

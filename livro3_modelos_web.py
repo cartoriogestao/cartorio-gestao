@@ -11,6 +11,7 @@ from flask import flash, jsonify, redirect, render_template, request, url_for
 import livro3_modelos_ensaio as L3_ENSAIO
 import modelos_da_casa as MODELOS
 import modelos_elementos as ELEM
+import seguranca_web as SEGWEB  # B2 (LX11): exceção inesperada não vai para a tela
 import modelos_previa as PREVIA
 
 QUEM_EDITA: tuple[str, ...] = ("ADMIN", "MANAGER", "USER")
@@ -99,7 +100,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             except (MODELOS.ModeloError, ELEM.ElementoError) as erro:
                 flash(str(erro), "danger")
             except Exception as erro:  # noqa: BLE001
-                flash(f"Não deu para gravar: {erro}", "danger")
+                flash(SEGWEB.recado_de_erro(erro, "livro3_modelos",
+                                            "Não deu para gravar; o detalhe ficou "
+                                            "no registro do servidor."), "danger")
             return redirect(url_for("livro3_modelos", editar=chave))
 
         if not chave:
@@ -114,7 +117,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 "legenda": ELEM.legenda_do_ato(
                     editando["chave"], editando["corpo"]),
                 "formato": MODELOS.formato_de(editando["chave"]),
-                "onde": "{}.{}".format(*editando["padrao"]),
+                # o arquivo da pasta dos padrões (LF06A); era a constante
+                "onde": MODELOS.arquivo_do_padrao(editando["chave"]),
             }
 
         return render_template(

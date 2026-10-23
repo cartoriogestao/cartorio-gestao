@@ -238,6 +238,8 @@ import json
 import re
 import sqlite3
 
+from bd_nativo import banco
+
 ATOS_DA_LETRA = {"P": ("PROTESTO",),
                  "D": ("PAGAMENTO", "DESISTENCIA", "CANCELAMENTO")}
 LIVRO_DO_PROTESTO = "G"
@@ -258,7 +260,7 @@ def _mesmo_nome(a: Any, b: Any) -> bool:
 # ------------------------------------------------------------ o registro
 
 
-def registro_da_cra(con: sqlite3.Connection, titulo: dict,
+def registro_da_cra(con, titulo: dict,
                     acervo: sqlite3.Connection | None = None) -> dict | None:
     """O registro de 600 posições do título, lido. Só LÊ.
 
@@ -268,23 +270,27 @@ def registro_da_cra(con: sqlite3.Connection, titulo: dict,
     porque cedente e sacador não se adivinham.
     """
     import protesto_arquivo as PA
+    bd = banco(con)
     chave = _txt(titulo.get("origem_chave"))
     if titulo.get("remessa_id") and chave.startswith("CRA:"):
-        linha = con.execute("SELECT conteudo FROM pt_remessas WHERE id=?",
-                            (titulo["remessa_id"],)).fetchone()
+        linha = bd.um("SELECT conteudo FROM pt_remessas WHERE id = %s",
+                      (titulo["remessa_id"],))
         try:
             posicao = int(chave.rsplit(":", 1)[1])
         except ValueError:
             posicao = 0
         if linha and posicao > 0:
-            lido = PA.ler(linha[0])
+            lido = PA.ler(linha["conteudo"])
             if posicao <= len(lido.titulos):
                 return lido.titulos[posicao - 1]
     protocolo = _txt(titulo.get("protocolo"))
     if acervo is not None and protocolo.isdigit():
+        # O acervo do E-Ofício é um arquivo SQLite à parte, em só leitura: o
+        # SQL dele continua o do SQLite.
         linha = acervo.execute(
-            "SELECT * FROM tbSDT WHERE intProtocolo=? ORDER BY intChave LIMIT 1",
-            (int(protocolo),)).fetchone()
+            "SELECT * FROM tbSDT WHERE intProtocolo = :protocolo"
+            " ORDER BY intChave LIMIT 1",
+            {"protocolo": int(protocolo)}).fetchone()
         if linha is not None:
             nomes = [c[0] for c in acervo.execute(
                 "SELECT * FROM tbSDT LIMIT 0").description]
@@ -315,21 +321,27 @@ def _cedente_e_sacador(reg: dict) -> tuple[dict, dict, str]:
 # ------------------------------------------------------- os apresentantes
 
 
-def apresentante(con: sqlite3.Connection, codigo: Any) -> dict | None:
-    linha = con.execute("SELECT * FROM pt_apresentantes WHERE codigo=?",
-                        (_txt(codigo),)).fetchone()
-    return dict(linha) if linha else None
+def apresentante(con, codigo: Any) -> dict | None:
+    return banco(con).um("SELECT * FROM pt_apresentantes WHERE codigo = %s",
+                         (_txt(codigo),))
 
 
-def apresentantes(con: sqlite3.Connection) -> list[dict]:
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM pt_apresentantes ORDER BY codigo")]
+def apresentantes(con) -> list[dict]:
+    return banco(con).ler("SELECT * FROM pt_apresentantes ORDER BY codigo")
 
 
-def gravar_apresentante(con: sqlite3.Connection, *, codigo: Any, nome: Any,
+def gravar_apresentante(con, *, codigo: Any, nome: Any,
                         documento: Any, tipo_apresentante: Any, agora: str,
-                        usuario: str | None = None) -> None:
-    """Cadastra ou corrige um apresentante. ESCREVE."""
+                        usuario: str | None = None,
+                        endereco: Any = None) -> None:
+    """Cadastra ou corrige um apresentante. ESCREVE.
+
+    O ENDEREÇO (LD08, 21/10/2026) é o que o registro e o instrumento do
+    protesto levam (Lei 9.492/1997, art. 22, II), e o CNPJ o aviso leva (CN-MA
+    art. 923) — o arquivo da CRA não traz nenhum dos dois. Ler é
+    `protesto.apresentante_do_titulo`. Quem corrige o cadastro manda a linha
+    inteira: endereço vazio apaga o de antes.
+    """
     codigo, nome = _txt(codigo), _txt(nome)
     documento, tipo = _so_digitos(documento), _txt(tipo_apresentante)
     if not codigo or not nome:
@@ -342,25 +354,28 @@ def gravar_apresentante(con: sqlite3.Connection, *, codigo: Any, nome: Any,
         raise CenprotXmlError(
             f"Informe o tipo do apresentante {codigo} (o número que o XML da "
             f"CENPROT usa: na amostra desta casa aparecem 0, 1, 3 e 4).")
-    con.execute(
+    banco(con).escrever(
         """INSERT INTO pt_apresentantes(codigo, nome, documento,
-               tipo_apresentante, origem, atualizado_em, atualizado_por)
-           VALUES (?,?,?,?, 'MANUAL', ?, ?)
+               tipo_apresentante, endereco, origem, atualizado_em,
+               atualizado_por)
+           VALUES (%s, %s, %s, %s, %s, 'MANUAL', %s, %s)
            ON CONFLICT(codigo) DO UPDATE SET nome=excluded.nome,
                documento=excluded.documento,
                tipo_apresentante=excluded.tipo_apresentante,
+               endereco=excluded.endereco,
                origem='MANUAL', atualizado_em=excluded.atualizado_em,
                atualizado_por=excluded.atualizado_por""",
-        (codigo, nome, documento, tipo, agora, usuario))
+        (codigo, nome, documento, tipo, _txt(endereco) or None, agora, usuario))
 
 
-def carregar_apresentantes(con: sqlite3.Connection, acervo: sqlite3.Connection,
+def carregar_apresentantes(con, acervo: sqlite3.Connection,
                            *, agora: str) -> dict:
     """Traz os apresentantes de `tbCobrador`. ESCREVE.
 
     Só os que têm o código da CRA (`strCodigoBanco`). **O que alguém já
     corrigiu à mão não se sobrescreve**: a correção é mais nova que o acervo.
     """
+    bd = banco(con)
     entraram = mantidos = sem_codigo = 0
     for r in acervo.execute(
             """SELECT strCodigoBanco, strRazaoSocial, strCGC, strCIC,
@@ -369,17 +384,23 @@ def carregar_apresentantes(con: sqlite3.Connection, acervo: sqlite3.Connection,
         if not codigo:
             sem_codigo += 1
             continue
-        if con.execute("SELECT 1 FROM pt_apresentantes WHERE codigo=?",
-                       (codigo,)).fetchone():
+        if bd.um("SELECT 1 AS um FROM pt_apresentantes WHERE codigo = %s",
+                 (codigo,)):
             mantidos += 1
             continue
         tipo = r[4]
-        con.execute(
+        # Quem cadastra à mão no meio da carga não derruba a carga: fica o
+        # cadastro dele, como se já estivesse lá.
+        bd.escrever(
             """INSERT INTO pt_apresentantes(codigo, nome, documento,
                    tipo_apresentante, origem, atualizado_em)
-               VALUES (?,?,?,?, 'EOFICIO', ?)""",
+               VALUES (%s, %s, %s, %s, 'EOFICIO', %s)
+               ON CONFLICT(codigo) DO NOTHING""",
             (codigo, _txt(r[1]), _so_digitos(r[2]) or _so_digitos(r[3]),
              "" if tipo is None else str(int(tipo)), agora))
+        if not bd.linhas_afetadas:
+            mantidos += 1
+            continue
         entraram += 1
     return {"entraram": entraram, "mantidos": mantidos,
             "sem_codigo": sem_codigo}
@@ -388,43 +409,43 @@ def carregar_apresentantes(con: sqlite3.Connection, acervo: sqlite3.Connection,
 # ------------------------------------------------------------ o título
 
 
-def _intimacao(con: sqlite3.Connection, titulo_id: int) -> tuple[bool, bool]:
+def _intimacao(con, titulo_id: int) -> tuple[bool, bool]:
     """(intimado, edital), pela última intimação lavrada e não cancelada."""
-    linha = con.execute(
-        """SELECT detalhe_json FROM pt_atos WHERE titulo_id=? AND
+    linha = banco(con).um(
+        """SELECT detalhe_json FROM pt_atos WHERE titulo_id = %s AND
                tipo='INTIMACAO' AND cancelado=0 ORDER BY id DESC LIMIT 1""",
-        (titulo_id,)).fetchone()
+        (titulo_id,))
     if not linha:
         return False, False
-    modo = _txt(json.loads(linha[0] or "{}").get("modo")).upper()
+    modo = _txt(json.loads(linha["detalhe_json"] or "{}").get("modo")).upper()
     return modo == "PESSOAL", modo == "EDITAL"
 
 
-def _data_de_entrada(con: sqlite3.Connection, titulo: dict) -> str:
-    linha = con.execute(
-        """SELECT data_ato FROM pt_atos WHERE titulo_id=? AND
+def _data_de_entrada(con, titulo: dict) -> str:
+    linha = banco(con).um(
+        """SELECT data_ato FROM pt_atos WHERE titulo_id = %s AND
                tipo='APONTAMENTO' AND cancelado=0 ORDER BY id LIMIT 1""",
-        (titulo["id"],)).fetchone()
-    if linha and linha[0]:
-        return str(linha[0])[:10]
+        (titulo["id"],))
+    if linha and linha["data_ato"]:
+        return str(linha["data_ato"])[:10]
     p = _so_digitos(titulo.get("protocolo"))
     if len(p) >= 6:
         return f"20{p[:2]}-{p[2:4]}-{p[4:6]}"
     return ""
 
 
-def _livro_e_folha(con: sqlite3.Connection, ato: dict) -> tuple[str, str]:
+def _livro_e_folha(con, ato: dict) -> tuple[str, str]:
     detalhe = json.loads(ato.get("detalhe_json") or "{}")
     livro = ""
     if ato.get("livro_id"):
-        r = con.execute("SELECT numero FROM nu_livros WHERE id=?",
-                        (ato["livro_id"],)).fetchone()
-        livro = _txt(r[0]) if r else ""
+        r = banco(con).um("SELECT numero FROM nu_livros WHERE id = %s",
+                          (ato["livro_id"],))
+        livro = _txt(r["numero"]) if r else ""
     livro = livro or _txt(detalhe.get("livro_do_acervo"))
     return _so_digitos(livro), _so_digitos(ato.get("folha"))
 
 
-def _anuencia(con: sqlite3.Connection, titulo_id: int) -> dict:
+def _anuencia(con, titulo_id: int) -> dict:
     """Há anuência registrada para este título? Só LÊ.
 
     O esquema diz o que o campo é: «aponta se existe anuência registrada no
@@ -433,33 +454,34 @@ def _anuencia(con: sqlite3.Connection, titulo_id: int) -> dict:
     (2) e o cancelamento lavrado pela hipótese ANUENCIA_CREDOR, à vista da
     carta (3). Sem nenhum dos dois o campo vai falso — nada afirma anuência.
     """
-    for r in con.execute(
+    bd = banco(con)
+    for r in bd.ler(
             """SELECT decisao, decidida_em FROM cn_pendencias
-                WHERE titulo_id=? AND especie='ANUENCIA'
+                WHERE titulo_id = %s AND especie='ANUENCIA'
                   AND situacao IN ('DECIDIDA','ENVIADA') ORDER BY id DESC""",
             (titulo_id,)):
         try:
-            decisao = json.loads(r[0] or "{}")
+            decisao = json.loads(r["decisao"] or "{}")
         except ValueError:
             decisao = {}
         if decisao.get("ic_aprovado") is True:
             return {"flag": True, "origem": "2",
-                    "origem_datahora": _txt(r[1])[:10]}
-    for r in con.execute(
-            """SELECT data_ato, detalhe_json FROM pt_atos WHERE titulo_id=?
+                    "origem_datahora": _txt(r["decidida_em"])[:10]}
+    for r in bd.ler(
+            """SELECT data_ato, detalhe_json FROM pt_atos WHERE titulo_id = %s
                  AND tipo='CANCELAMENTO' AND cancelado=0 ORDER BY id DESC""",
             (titulo_id,)):
-        if json.loads(r[1] or "{}").get("hipotese") == "ANUENCIA_CREDOR":
+        if json.loads(r["detalhe_json"] or "{}").get("hipotese") == "ANUENCIA_CREDOR":
             return {"flag": True, "origem": "3",
-                    "origem_datahora": _txt(r[0])[:10]}
+                    "origem_datahora": _txt(r["data_ato"])[:10]}
     return {"flag": False}
 
 
-def _devedores(con: sqlite3.Connection, titulo_id: int, reg: dict,
+def _devedores(con, titulo_id: int, reg: dict,
                intimado: bool, edital: bool) -> list[dict]:
-    gravados = [dict(d) for d in con.execute(
-        "SELECT * FROM pt_devedores WHERE titulo_id=? ORDER BY id",
-        (titulo_id,))]
+    gravados = banco(con).ler(
+        "SELECT * FROM pt_devedores WHERE titulo_id = %s ORDER BY id",
+        (titulo_id,))
     if len(gravados) == 1 and _txt(reg.get("devedor_nome")):
         # Um devedor só: vai o do arquivo, como o E-Ofício mandava. O
         # documento tem 14 posições também para CPF, e é o TIPO que diz quantos
@@ -495,7 +517,7 @@ def _devedores(con: sqlite3.Connection, titulo_id: int, reg: dict,
             for d in gravados]
 
 
-def montar_titulo(con: sqlite3.Connection, ato_id: int, *,
+def montar_titulo(con, ato_id: int, *,
                   acervo: sqlite3.Connection | None = None,
                   com_instrumento: bool = True) -> dict:
     """O título do XML para um ato lavrado, e o apresentante dele. Só LÊ.
@@ -504,34 +526,33 @@ def montar_titulo(con: sqlite3.Connection, ato_id: int, *,
     Central um título pela metade.
     """
     import protesto_instrumento as PI
-    con.row_factory = sqlite3.Row
-    ato = con.execute("SELECT * FROM pt_atos WHERE id=?", (ato_id,)).fetchone()
+    bd = banco(con)
+    ato = bd.um("SELECT * FROM pt_atos WHERE id = %s", (ato_id,))
     if ato is None:
         raise CenprotXmlError(f"Ato {ato_id} não encontrado.")
-    ato = dict(ato)
     letra = LETRA_DO_ATO.get(ato["tipo"])
     if letra is None:
         raise CenprotXmlError(f"O ato {ato['tipo']} não vai ao XML da CENPROT.")
-    titulo = dict(con.execute("SELECT * FROM pt_titulos WHERE id=?",
-                              (ato["titulo_id"],)).fetchone())
+    titulo = dict(bd.um("SELECT * FROM pt_titulos WHERE id = %s",
+                        (ato["titulo_id"],)))
     chave = _so_digitos(titulo.get("chave_cenprot"))
     if len(chave) != 23:
         raise CenprotXmlError(
             "o título não tem a chave do CENPROT — ela vem do XML que a "
             "Central devolve (tela «Chave do CENPROT»)")
-    apr = apresentante(con, titulo.get("apresentante_codigo"))
+    apr = apresentante(bd, titulo.get("apresentante_codigo"))
     if not apr or not apr.get("documento") or not _txt(apr.get("tipo_apresentante")):
         raise CenprotXmlError(
             f"o apresentante {titulo.get('apresentante_codigo') or '(sem código)'} "
             f"não está cadastrado com CNPJ e tipo — cadastre-o nesta tela")
-    reg = registro_da_cra(con, titulo, acervo)
+    reg = registro_da_cra(bd, titulo, acervo)
     if reg is None:
         raise CenprotXmlError(
             "o registro da CRA deste título não está no sistema nem no acervo "
             "— sem ele não se sabe quem é o cedente e quem é o sacador")
     cedente, sacador, endosso = _cedente_e_sacador(reg)
-    intimado, edital = _intimacao(con, titulo["id"])
-    entrada = _data_de_entrada(con, titulo)
+    intimado, edital = _intimacao(bd, titulo["id"])
+    entrada = _data_de_entrada(bd, titulo)
     t = {"id": chave, "cedente": cedente, "sacador": sacador,
          "nosso_numero": _txt(titulo.get("nosso_numero")),
          "especie": _txt(titulo.get("especie")),
@@ -548,7 +569,7 @@ def montar_titulo(con: sqlite3.Connection, ato_id: int, *,
                           else "S"),
          "aceite": ("A" if (_txt(titulo.get("aceite"))
                             or _txt(reg.get("aceite"))).upper() == "A" else "N"),
-         "devedores": _devedores(con, titulo["id"], reg, intimado, edital),
+         "devedores": _devedores(bd, titulo["id"], reg, intimado, edital),
          "data_apresentacao": entrada,
          "protocolo": _txt(titulo.get("protocolo")),
          "data_protocolo": entrada,
@@ -556,11 +577,11 @@ def montar_titulo(con: sqlite3.Connection, ato_id: int, *,
          "data_ocorrencia": _txt(ato.get("data_ato"))[:10],
          "tipo_protesto": _txt(titulo.get("tipo_protesto")).upper() or "C",
          "acervo_herdado": False,
-         "anuencia": _anuencia(con, titulo["id"])}
+         "anuencia": _anuencia(bd, titulo["id"])}
     if not t["devedores"]:
         raise CenprotXmlError("o título não tem devedor gravado")
     if letra == "P":
-        livro, folha = _livro_e_folha(con, ato)
+        livro, folha = _livro_e_folha(bd, ato)
         if not livro or not folha:
             raise CenprotXmlError("o protesto não tem livro e folha gravados")
         motivo = _txt(titulo.get("motivo_protesto"))
@@ -569,7 +590,7 @@ def montar_titulo(con: sqlite3.Connection, ato_id: int, *,
         t.update(motivo_protesto=motivo, tipo_livro=LIVRO_DO_PROTESTO,
                  num_livro=livro, num_folha=folha)
         if com_instrumento:
-            p7s = PI.assinado_do_titulo(con, titulo["id"])
+            p7s = PI.assinado_do_titulo(bd, titulo["id"])
             if not p7s:
                 raise CenprotXmlError(
                     "o instrumento do protesto ainda não foi assinado com o "
@@ -589,7 +610,7 @@ def montar_titulo(con: sqlite3.Connection, ato_id: int, *,
 # ------------------------------------------------- o que falta mandar
 
 
-def pendentes(con: sqlite3.Connection, letra: str, *,
+def pendentes(con, letra: str, *,
               acervo: sqlite3.Connection | None = None) -> dict:
     """Os atos lavrados POR ESTE SISTEMA que a Central ainda não recebeu. Só LÊ.
 
@@ -598,28 +619,28 @@ def pendentes(con: sqlite3.Connection, letra: str, *,
     """
     if letra not in ATOS_DA_LETRA:
         raise CenprotXmlError(f"Letra de arquivo desconhecida: {letra!r}.")
-    con.row_factory = sqlite3.Row
-    marcas = ",".join("?" * len(ATOS_DA_LETRA[letra]))
-    atos = con.execute(
+    bd = banco(con)
+    marcas = ", ".join(["%s"] * len(ATOS_DA_LETRA[letra]))
+    atos = bd.ler(
         f"""SELECT a.id, a.tipo, a.data_ato, t.id AS titulo_id, t.protocolo,
                    t.apresentante_codigo
               FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
              WHERE a.tipo IN ({marcas}) AND a.cancelado = 0
                AND a.cenprot_xml_id IS NULL
                AND COALESCE(a.origem, '') <> 'EOFICIO'
-             ORDER BY a.data_ato, a.id""", ATOS_DA_LETRA[letra]).fetchall()
+             ORDER BY a.data_ato, a.id""", ATOS_DA_LETRA[letra])
     entram, fora = [], []
     for a in atos:
         base = {"ato_id": a["id"], "tipo": a["tipo"], "data_ato": a["data_ato"],
                 "titulo_id": a["titulo_id"], "protocolo": a["protocolo"]}
         try:
-            entram.append(dict(base, **montar_titulo(con, a["id"], acervo=acervo)))
+            entram.append(dict(base, **montar_titulo(bd, a["id"], acervo=acervo)))
         except CenprotXmlError as erro:
             fora.append(dict(base, motivo=str(erro)))
     return {"entram": entram, "fora": fora}
 
 
-def gerar(con: sqlite3.Connection, letra: str, *, uf: str, comarca: str,
+def gerar(con, letra: str, *, uf: str, comarca: str,
           cartorio: str, dia: str, agora: str, usuario: str | None = None,
           acervo: sqlite3.Connection | None = None) -> dict:
     """Escreve o arquivo do dia com o que está pronto, guarda e marca. ESCREVE.
@@ -627,7 +648,12 @@ def gerar(con: sqlite3.Connection, letra: str, *, uf: str, comarca: str,
     Cada ato que entra ganha `cenprot_xml_id` na MESMA transação em que o
     arquivo é guardado: o que foi para um arquivo não entra no seguinte.
     """
-    lista = pendentes(con, letra, acervo=acervo)
+    bd = banco(con)
+    # A TRAVA VEM ANTES DA LISTA: duas gerações da mesma letra ao mesmo tempo
+    # leriam os mesmos atos pendentes, e o segundo arquivo levaria de novo o
+    # que o primeiro já levou.
+    bd.travar("pt_cenprot_xml.sequencial")
+    lista = pendentes(bd, letra, acervo=acervo)
     if not lista["entram"]:
         raise CenprotXmlError(
             "Não há ato pronto para este arquivo"
@@ -638,36 +664,34 @@ def gerar(con: sqlite3.Connection, letra: str, *, uf: str, comarca: str,
         a = item["apresentante"]
         grupos.setdefault(a["codigo"], dict(a, titulos=[]))["titulos"].append(
             item["titulo"])
-    sequencial = 1 + (con.execute(
-        "SELECT COUNT(*) FROM pt_cenprot_xml WHERE letra=? AND dia=?",
-        (letra, dia)).fetchone()[0])
+    sequencial = 1 + int(bd.valor(
+        "SELECT COUNT(*) AS n FROM pt_cenprot_xml WHERE letra = %s AND dia = %s",
+        (letra, dia)))
     nome = nome_do_arquivo(uf=uf, comarca=comarca, cartorio=cartorio,
                            letra=letra, dia=dia, sequencial=sequencial)
     conteudo = escrever(letra=letra, uf=uf, comarca=comarca, cartorio=cartorio,
                         apresentantes=list(grupos.values()))
     import hashlib
-    cur = con.execute(
+    xml_id = int(bd.escrever(
         """INSERT INTO pt_cenprot_xml(letra, dia, sequencial, nome_arquivo,
                conteudo, sha256, titulos, gerado_em, gerado_por)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (letra, dia, sequencial, nome, conteudo,
          hashlib.sha256(conteudo).hexdigest(), len(lista["entram"]), agora,
-         usuario))
-    xml_id = int(cur.lastrowid)
-    con.executemany("UPDATE pt_atos SET cenprot_xml_id=? WHERE id=?",
-                    [(xml_id, i["ato_id"]) for i in lista["entram"]])
+         usuario))[0]["id"])
+    bd.escrever("UPDATE pt_atos SET cenprot_xml_id = %s WHERE id = ANY(%s)",
+                (xml_id, [i["ato_id"] for i in lista["entram"]]))
     return {"id": xml_id, "nome": nome, "titulos": len(lista["entram"]),
             "fora": lista["fora"]}
 
 
-def arquivos(con: sqlite3.Connection, limite: int = 60) -> list[dict]:
-    return [dict(r) for r in con.execute(
+def arquivos(con, limite: int = 60) -> list[dict]:
+    return banco(con).ler(
         """SELECT id, letra, dia, sequencial, nome_arquivo, sha256, titulos,
                   gerado_em, gerado_por FROM pt_cenprot_xml
-            ORDER BY id DESC LIMIT ?""", (int(limite),))]
+            ORDER BY id DESC LIMIT %s""", (int(limite),))
 
 
-def arquivo(con: sqlite3.Connection, xml_id: int) -> dict | None:
-    r = con.execute("SELECT * FROM pt_cenprot_xml WHERE id=?",
-                    (int(xml_id),)).fetchone()
-    return dict(r) if r else None
+def arquivo(con, xml_id: int) -> dict | None:
+    return banco(con).um("SELECT * FROM pt_cenprot_xml WHERE id = %s",
+                         (int(xml_id),))

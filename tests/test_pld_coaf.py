@@ -10,16 +10,21 @@ from __future__ import annotations
 
 import io
 import re
-import sqlite3
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
 
+import banco_pg               # noqa: E402
 import pld_coaf as P          # noqa: E402
+from banco_de_teste import conexao_de_teste  # noqa: E402
+from bd_nativo import banco   # noqa: E402
 
 SENHA = "Senha#12345"
 
@@ -105,7 +110,7 @@ def test_procuracao_ampla_irrevogavel_pede_analise():
 
 @pytest.fixture()
 def con(tmp_path):
-    c = sqlite3.connect(tmp_path / "casa.sqlite3")
+    c = conexao_de_teste()
     c.executescript("""
         CREATE TABLE nt_atos (id INTEGER PRIMARY KEY, tipo TEXT, livro TEXT, folha TEXT,
             data TEXT, situacao TEXT, teor TEXT, valor_transacao INTEGER);
@@ -169,6 +174,71 @@ def test_nao_ocorrencia_so_cabe_sem_comunicacao_e_sem_pendencia(con):
 def test_prazo_conta_trinta_dias_na_automatica(con):
     P.selecionar(con, desde="2026-01-01")
     assert P.caso(con, 1)["prazo"]["limite"] == "2026-10-01"
+
+
+def test_caso_sem_data_fica_onde_o_sqlite_o_punha(con):
+    """Ressalva da revisão do L035: o SQLite põe o NULL primeiro na ordem
+    crescente e por último na decrescente; o PostgreSQL, sem dizer, faz o
+    contrário — e o caso sem data mudava de lugar na fila."""
+    P.selecionar(con, desde="2026-01-01")             # caso de 2026-09-01
+    con.execute("""INSERT INTO pld_casos (atribuicao, tabela, ato_id, hipotese,
+                       especie, fundamento, descricao, data_operacao, situacao,
+                       selecionado_em)
+                   VALUES ('NOTAS', 'manual', 1, 'MANUAL', 'ANALISE', 'CNN',
+                           'sem data', NULL, 'A_COMUNICAR', '2026-10-01')""")
+    assert [c["data_operacao"] for c in P.casos(con, "A_COMUNICAR")] \
+        == [None, "2026-09-01"]
+    assert [c["data_operacao"] for c in P.casos(con)] == ["2026-09-01", None]
+
+
+def _psycopg_puro(con, *, autocommit=False):
+    """Uma conexão do psycopg no schema do teste, SEM a ponte — como a
+    transação vai ficar quando a ponte sair."""
+    import psycopg
+    pg = psycopg.connect(banco_pg.dsn(), autocommit=autocommit)
+    pg.execute(f'SET search_path TO "{con.schema}", public')
+    if not autocommit:
+        pg.commit()
+    return pg
+
+
+def test_envio_e_descarte_ao_mesmo_tempo_nao_descomunicam_o_caso(con):
+    """Ressalva da revisão do L035, o mesmo padrão do papel: a decisão
+    conferia a situação e gravava por cima sem prender a linha. Com a ponte,
+    `init_schema` já grava antes e pega a trava única do banco; sem ela, só o
+    FOR UPDATE segura. O envio grava e ainda não confirmou; o descarte chega
+    no meio."""
+    P.selecionar(con, desde="2026-01-01")
+    con.commit()
+    um, dois = _psycopg_puro(con), _psycopg_puro(con)
+    vigia = _psycopg_puro(con, autocommit=True)
+    pid = banco(dois).valor("SELECT pg_backend_pid() AS pid")
+    P.registrar_envio(um, 1, numero_coaf="123456", data_envio="2026-09-02", usuario="a")
+    saida: dict = {}
+
+    def descarte():
+        try:
+            P.descartar(dois, 1, motivo="o valor achado não era o pago em espécie, "
+                                        "era o total do quinhão", usuario="b")
+            dois.commit()
+        except Exception as erro:  # o teste confere qual
+            saida["erro"] = erro
+            dois.rollback()
+
+    fio = threading.Thread(target=descarte)
+    fio.start()
+    for _ in range(200):          # o descarte tem de estar ESPERANDO a linha
+        if banco(vigia).valor(
+                "SELECT count(*) AS n FROM pg_locks WHERE pid=%s AND NOT granted",
+                (pid,)):
+            break
+        time.sleep(0.05)
+    um.commit()
+    fio.join(30)
+    for c in (um, dois, vigia):
+        c.close()
+    assert isinstance(saida.get("erro"), P.PldError), saida
+    assert P.caso(con, 1)["situacao"] == "COMUNICADA"
 
 
 # ------------------------------------------------------------- as telas e o sigilo

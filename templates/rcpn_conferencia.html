@@ -102,6 +102,40 @@ document.addEventListener("click", function (e) {
   <a class="button" href="{{ url_for('rcpn_assentos') }}">Consultar assentos</a>
 </div>
 
+{# O REQUERIMENTO DO REGISTRO TARDIO — 21/10/2026. Imprime sozinho, numa
+   janela própria, para o requerente e as testemunhas assinarem; o «Imprimir
+   rascunho» de cima não o leva. #}
+{% if especie == 'NASCIMENTO' and form.get('registro_tardio') in ('1', 'SIM') %}
+{% from '_requerimento_tardio.html' import requerimento_tardio %}
+<section class="panel no-print" style="margin-top:14px">
+  <div class="panel-head"><span>Requerimento do registro tardio</span>
+    <small>para o requerente e as testemunhas assinarem — art. 249</small></div>
+  <div style="padding:14px">
+    <p class="small">Imprima, colha as assinaturas na presença do oficial ou
+      do preposto, e anexe o requerimento assinado ao ato (ele fica arquivado
+      por 20 anos). O que não veio preenchido sai com linha para completar à mão.</p>
+    <button class="button primary" type="button" onclick="imprimirRequerimentoTardio()">
+      Imprimir requerimento do registro tardio</button>
+    <div id="requerimento-tardio" style="margin-top:12px; border:1px dashed #999; padding:12px">
+      {{ requerimento_tardio(form, sv, tardio_regra, hoje_br) }}
+    </div>
+  </div>
+</section>
+<script>
+function imprimirRequerimentoTardio() {
+  var corpo = document.getElementById("requerimento-tardio").innerHTML;
+  var w = window.open("", "_blank");
+  w.document.write("<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'>"
+    + "<title>Requerimento de registro tardio</title>"
+    + "<style>@page{margin:15mm} body{margin:0} h2,h3{page-break-after:avoid}</style>"
+    + "</head><body>" + corpo + "</body></html>");
+  w.document.close();
+  w.focus();
+  w.print();
+}
+</script>
+{% endif %}
+
 <section class="panel" style="margin-top:14px">
   <div class="panel-head"><span>Rascunho para o declarante</span>
     <small>não é assento lavrado</small></div>
@@ -115,7 +149,8 @@ document.addEventListener("click", function (e) {
        {% if form.get('hora_fato') %} às {{ form.get('hora_fato') }}{% endif %}
        &nbsp;|&nbsp; <strong>Cor/raça:</strong> {{ form.get('cor_raca') }}</p>
     <p><strong>Local do óbito:</strong> {{ form.get('local_fato_nome') }}
-       — {{ form.get('local_fato_endereco') }}</p>
+       — {{ form.get('local_fato_endereco') }}
+       {% if form.get('local_fato_municipio') %}— {{ form.get('local_fato_municipio') }}{% endif %}</p>
     <p><strong>Naturalidade declarada:</strong> {{ form.get('naturalidade_declarada') }}</p>
     <p><strong>DO:</strong> {{ form.get('numero_do') }}
        {% if form.get('natureza_obito') %}&nbsp;|&nbsp; <strong>Natureza:</strong> {{ form.get('natureza_obito') }}{% endif %}</p>
@@ -165,7 +200,8 @@ document.addEventListener("click", function (e) {
        {% if form.get('hora_fato') %} às {{ form.get('hora_fato') }}{% endif %}
        &nbsp;|&nbsp; <strong>Cor/raça:</strong> {{ form.get('cor_raca') }}</p>
     <p><strong>Local:</strong> {{ form.get('local_fato_nome') }}
-       — {{ form.get('local_fato_endereco') }}</p>
+       — {{ form.get('local_fato_endereco') }}
+       {% if form.get('local_fato_municipio') %}— {{ form.get('local_fato_municipio') }}{% endif %}</p>
     <p><strong>Naturalidade declarada:</strong> {{ form.get('naturalidade_declarada') }}</p>
     <p><strong>DNV:</strong> {{ form.get('dnv') }}</p>
     <p><strong>Mãe:</strong> {{ form.get('filiacao1_nome') }}

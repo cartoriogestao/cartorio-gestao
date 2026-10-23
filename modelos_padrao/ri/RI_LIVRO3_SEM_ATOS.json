@@ -1,0 +1,8 @@
+{
+  "chave": "RI_LIVRO3_SEM_ATOS",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão do Livro 3 sem averbações",
+  "formato": "JINJA",
+  "explica": "O que vai no claro {atos} da certidão do Livro 3 quando nenhuma averbação com conteúdo foi marcada; o sistema decide (atrib_certidao).",
+  "campos": []
+}

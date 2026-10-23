@@ -1,0 +1,17 @@
+{% if data_abertura_br or m.logradouro or m.cidade or protocolo_atual %}<p>{% if data_abertura_br %}<b>DATA DE ABERTURA DA FICHA: </b>{{ data_abertura_br }}. {% endif %}{% if m.logradouro %}<b>DENOMINAÇÃO: </b>{{ m.logradouro }}. {% endif %}{% if m.cidade %}<b>LOCALIZAÇÃO: </b>Município de {{ m.cidade }}, Estado {{ "do" if m.uf != "SP" else "de" }} {{ uf_extenso }}. {% endif %}{% if protocolo_atual %}<b>PROTOCOLO: </b>Nº {{ protocolo_atual }}{% endif %}</p>{% endif %}
+
+{% set usa_teor_como_miolo = (m.tipo_ficha == "ACERVO" or (m.tipo_ficha == "ESTRUTURADA" and not m.descricao_perimetro)) and teor_odf %}
+{% if usa_teor_como_miolo %}
+{{ teor_odf }}
+{% else %}
+<p><b>IMÓVEL: </b>{% if m.descricao_perimetro %}{{ m.descricao_perimetro }}{% else %}{{ m.logradouro or "" }}{% if m.numero_predial %}, nº {{ m.numero_predial }}{% endif %}{% if m.bairro %}, {{ m.bairro }}{% endif %}{% if m.cidade %}, {{ m.cidade }}/{{ m.uf }}{% endif %}{% if m.area_valor %}, com a área de {{ m.area_valor }} {{ m.area_unidade or "" }}{% endif %}{% endif %}.{% if m.confrontacoes %} <b>CONFRONTAÇÕES: </b>{{ m.confrontacoes }}.{% endif %}{% if m.inscricao_municipal %} <b>INSCRIÇÃO MUNICIPAL: </b>{{ m.inscricao_municipal }}.{% endif %}{% if m.cib or m.car or m.nirf or m.incra or m.sigef or m.ccir %} {% if m.cib %}<b>CIB: </b>{{ m.cib }}. {% endif %}{% if m.ccir %}<b>CCIR: </b>{{ m.ccir }}. {% endif %}{% if m.car %}<b>CAR: </b>{{ m.car }}. {% endif %}{% if m.incra %}<b>INCRA: </b>{{ m.incra }}. {% endif %}{% if m.sigef %}<b>SIGEF: </b>{{ m.sigef }}. {% endif %}{% if m.nirf %}<b>NIRF: </b>{{ m.nirf }}.{% endif %}{% endif %}{% set props_ab = proprietarios_abertura if proprietarios_abertura else proprietarios %}{% if props_ab %} <b>PROPRIETÁRIO(S): </b>{% for p in props_ab %}{{ p.nome }}{% if p.qualificacao %}, {{ p.qualificacao }}{% endif %}{% if p.documento_numero %}, inscrito no {{ p.documento_tipo }} sob o nº {{ p.documento_numero }}{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.{% endif %}{% if m.registro_anterior %} <b>REGISTRO ANTERIOR: </b>{{ m.registro_anterior|trim }}{% if not (m.registro_anterior|trim).endswith('.') %}.{% endif %}{% endif %}{% if abertura_fecho %} {{ abertura_fecho }}{% endif %}{% if abertura_assinatura %} {{ abertura_assinatura }}{% endif %}</p>
+{% endif %}
+{{ selo_abertura_odf }}
+
+{% for a in atos %}
+{{ separador }}
+<p class="ato-cab"><b>{{ a.rotulo }} – </b>{% if a.natureza_titulo %}<b>{{ a.natureza_titulo|upper }}.</b>{% endif %}{% if a.protocolo %} <b>PROTOCOLO Nº {{ a.protocolo_cab or a.protocolo }}</b>{% if a.protocolo_data_cab %}, DE {{ a.protocolo_data_cab }}{% elif a.data_ato %}, DE {{ a.data_ato }}{% endif %}.{% endif %}{% if a.cancelado %} <b>(ATO CANCELADO)</b>{% endif %}</p>
+{% if a.teor_odf %}{{ a.teor_odf }}{% endif %}
+{% if a.fecho %}<p>{{ a.fecho }}</p>{% endif %}
+{% if a.selo_odf %}{{ a.selo_odf }}{% endif %}
+{% endfor %}

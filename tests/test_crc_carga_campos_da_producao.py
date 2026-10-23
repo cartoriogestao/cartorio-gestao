@@ -11,7 +11,7 @@ O QUE O XSD PROVA, E O QUE ELE NÃO PROVA
     isso prova a FORMA: que a tag existe, que o tipo bate, que o valor está
     num enum aceito. **O XSD não prova o CONTEÚDO.** Uma tag `<NOME></NOME>`
     vazia, uma tag `<NOME>None</NOME>` (o `str(None)` do Python vazando para
-    dentro do XML), um `<CNS>2963701</CNS>` com sete dígitos, ou uma tag com
+    dentro do XML), um `<CNS>1234567</CNS>` com sete dígitos, ou uma tag com
     o caractere de substituição Unicode (`\\ufffd`, a marca de um texto lido
     com o encoding errado — o mesmo defeito que corrompeu o caminho da pasta
     «CERTIDÕES E TERMOS REUNIDOS» ao passar pela linha de comando em

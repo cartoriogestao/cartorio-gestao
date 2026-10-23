@@ -17,6 +17,26 @@ def safe_component(value: str, fallback: str = "Sem_classificacao") -> str:
     return value[:120] or fallback
 
 
+def nome_simples(nome) -> bool:
+    """O nome é SÓ de arquivo — sem pasta, sem unidade, sem `..`. Só calcula.
+
+    POR QUE EXISTE (LS02, 19/10/2026)
+        Há tela que grava o nome do arquivo digitado no formulário e, depois,
+        o junta a uma pasta do acervo (`pasta / nome`) para copiar ou servir.
+        No Windows, um nome com `..\\` sobe de pasta, e um nome com `C:\\` faz
+        o `/` do `pathlib` JOGAR FORA a pasta da esquerda: a cópia, que roda
+        como SYSTEM, iria para onde o nome mandasse.
+
+    As duas barras são recusadas em qualquer sistema — o servidor é Windows,
+    e o teste roda no Mac; a regra tem de ser a mesma nos dois. O `:` também:
+    no Windows ele é unidade (`C:x`) ou fluxo alternativo (`x.tif:y`).
+    """
+    texto = str(nome or "")
+    if not texto.strip() or texto.strip() in (".", ".."):
+        return False
+    return not any(c in texto for c in ("/", "\\", ":", "\x00"))
+
+
 def unique_path(folder: Path, filename: str) -> Path:
     filename = safe_component(filename, "arquivo")
     candidate = folder / filename

@@ -15,6 +15,28 @@
 {% include '_serventia.html' %}
 <div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
 
+{% if ordens_sem_marca %}
+{# AS ORDENS SEM A MARCA DO CNN art. 263-K (LH13, 21/10/2026): lançadas antes
+   da regra nova, o protesto delas fica fora da certidão, como ficava. Se a
+   decisão for provisória, o certo hoje é a certidão dizer «CONSTA COM SUSTAÇÃO
+   JUDICIAL PRECÁRIA» — e só quem lê o mandado sabe. Sem este aviso, ninguém
+   saberia que há ordem a marcar. #}
+<div class="notice warning" data-ordens-sem-marca>
+  <strong>{{ ordens_sem_marca | length }} ordem(ns) judicial(is) de suspensão dos efeitos
+  do protesto sem a marca do Código Nacional de Normas, art. 263-K.</strong>
+  Enquanto não forem marcadas, o protesto delas <strong>fica fora da certidão</strong>,
+  como antes de 21/10/2026. Se a decisão for provisória, a certidão tem de dizer
+  «CONSTA COM SUSTAÇÃO JUDICIAL PRECÁRIA»: abra a ficha, leia o mandado e marque.
+  <ul>
+    {% for o in ordens_sem_marca %}
+    <li><a href="{{ url_for('protesto_titulo', titulo_id=o.titulo_id) }}">título
+      {{ o.numero_titulo }}</a>{% if o.protocolo %}, protocolo {{ o.protocolo }}{% endif %}
+      — ordem recebida em {{ o.data_ato }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <section class="panel">
   <div class="panel-head"><span>Procurar</span><small>por nome ou por documento</small></div>
   <form method="get" class="grid2" style="padding:14px">
@@ -24,7 +46,9 @@
     <label>CPF ou CNPJ
       <input name="documento" value="{{ documento }}" placeholder="047.855.123-88">
       <small>Com ponto e traço ou sem — tanto faz. <strong>Obrigatório para emitir</strong>
-        (Código de Normas, art. 906).</small></label>
+        (Código de Normas, art. 906). Com ele, a busca é pelo documento: o nome
+        não traz homônimo, e só acha, inteiro, o devedor gravado sem CPF/CNPJ
+        — a tela avisa quando isso acontece.</small></label>
     <label>Protesto cancelado ou suspenso
       <select name="autorizacao">
         <option value="">não entra na certidão (a regra)</option>
@@ -63,7 +87,9 @@
       A certidão que cabe é a <strong>NEGATIVA</strong>.
       <br><br>
       <small>Protesto cancelado ou com efeitos suspensos <strong>não entra</strong>, salvo
-      requerimento escrito do devedor ou ordem judicial.
+      requerimento escrito do devedor ou ordem judicial — menos o suspenso por decisão
+      <strong>provisória</strong>, que sai como «CONSTA COM SUSTAÇÃO JUDICIAL PRECÁRIA»
+      (Código Nacional de Normas, art. 263-K).
       Só entra título que <strong>chegou a protesto</strong>. Apontamento não é
       protesto: título apontado e pago no tríduo nunca foi protestado, e certidão que o
       mostrasse mentiria contra a pessoa.</small>
@@ -81,7 +107,8 @@
         <tr>
           <td><a href="{{ url_for('protesto_titulo', titulo_id=a.titulo_id) }}">{{ a.numero_titulo }}</a>
               <div><small>{{ a.especie }}</small></div></td>
-          <td>{{ a.devedor }}<div><small>{{ a.devedor_documento }}</small></div></td>
+          <td>{{ a.devedor }}<div><small>{% if a.so_pelo_nome %}<strong>sem CPF/CNPJ no título</strong>
+              — entrou só pelo nome{% else %}{{ a.devedor_documento }}{% endif %}</small></div></td>
           <td>R$ {{ a.valor }}</td>
           <td>{{ a.data_protesto }}</td>
           <td>{% if a.livro %}Livro {{ a.livro }}{% endif %}
@@ -91,11 +118,35 @@
             {% if a.cancelado %}
               <strong>CANCELADO</strong><div><small>{{ a.data_cancelamento }}</small></div>
             {% else %}{{ a.situacao }}{% endif %}
+            {% if a.sustacao_precaria %}
+              <div><strong>SUSTAÇÃO JUDICIAL PRECÁRIA</strong><small> — processo
+                {{ a.suspensao_processo }}{% if a.suspensao_segredo %}, em segredo de
+                justiça{% endif %}</small></div>
+            {% elif a.efeitos_suspensos %}
+              <div><small>efeitos suspensos por ordem judicial</small></div>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+  {% endif %}
+  {# QUEM ENTROU SÓ PELO NOME (LD12): o devedor gravado sem CPF/CNPJ, que a
+     busca com o documento acha pelo nome inteiro. O aviso é ao escrevente;
+     o teor da certidão não muda. #}
+  {% if aviso_pelo_nome %}
+    <div class="notice warning" style="margin:14px" data-so-pelo-nome>
+      <strong>{{ aviso_pelo_nome }}</strong>
+      {% if protocolo_pelo_nome %}
+        <br><small>Do Livro de Protocolo, que a autorização traz:</small>
+        <ul>
+          {% for l in protocolo_pelo_nome %}
+          <li><a href="{{ url_for('protesto_titulo', titulo_id=l.titulo_id) }}">protocolo
+            {{ l.protocolo }}, de {{ l.data }}</a>{% if l.titulo %} — título {{ l.titulo }}{% endif %}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
   {% endif %}
 </section>
 

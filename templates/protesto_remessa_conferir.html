@@ -19,7 +19,9 @@
 
 {% if xml_previa %}
 <div class="notice">
-  <strong>Remessa XML da CRA — nada foi gravado ainda.</strong>
+  <strong>Remessa XML da CRA — nenhum título foi recebido ainda.</strong>
+  A cópia do arquivo já está salva para retomar esta conferência.
+  <strong>{{ visto.imagens or 0 }} documento(s)/imagem(ns)</strong> serão vinculados aos respectivos títulos aceitos ao receber.
   Confira abaixo e receba no fim da página se estiver certo. Ambiente CRA:
   <strong>PRODUÇÃO</strong> — o único que o sistema usa desde 14/10/2026.
   {% if xml_previa %}<small>SHA-256 do arquivo: {{ xml_previa.sha256[:16] }}…</small>{% endif %}
@@ -140,7 +142,11 @@
   <form method="post" action="{{ url_for('protesto_remessa_receber') }}"
         class="form" style="padding:14px">
       <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    {% if origem_xml_token %}
+    <input type="hidden" name="origem_xml_token" value="{{ origem_xml_token }}">
+    {% else %}
     <input type="hidden" name="conteudo" value="{{ conteudo }}">
+    {% endif %}
     <input type="hidden" name="nome_arquivo" value="{{ nome_arquivo }}">
     {% if xml_previa %}
     {# PRODUÇÃO FIXA (14/10/2026). Até 13/10 este campo repetia o que a

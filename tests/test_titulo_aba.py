@@ -59,7 +59,9 @@ def test_tela_do_menu_ganha_modulo_quando_faz_sentido():
         ("inspections", "Malote", ("Inspe", "Malote")),
         ("nucleo_livros", "Livros e acervo", ("termos", "Livros")),
         ("nucleo_encerramento_diario", "Livros e acervo", ("Encerramento", "Livros")),
-        ("atribuicoes_importar", "Livros e acervo", ("E-Ofício", "Livros")),
+        # «Trazer o acervo do E-Ofício» saiu do menu em 17/10/2026; a tela
+        # fica pelo endereço, e a aba cai no nome do módulo.
+        ("atribuicoes_importar", "Livros e acervo", ("Livros",)),
         ("importar_padrao_tela", "Livros e acervo", ("Importar", "Livros")),
     ],
 )

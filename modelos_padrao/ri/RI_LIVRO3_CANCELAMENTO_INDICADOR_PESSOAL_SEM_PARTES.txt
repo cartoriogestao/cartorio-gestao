@@ -1,0 +1,1 @@
+CANCELAMENTO no Indicador Pessoal. Registro {{ numero }} do Livro 3 cancelado pela {{ averbacao }}. Sem partes nominadas. FUNDAMENTO: {{ motivo }}

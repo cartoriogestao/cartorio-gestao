@@ -73,8 +73,14 @@ function Ensure-Dependencies([string]$RuntimePython) {
     & $RuntimePython -c "import flask,waitress" 2>$null
     if($LASTEXITCODE -eq 0){Log 'Flask e Waitress ja estao disponiveis no ambiente privado.'; return}
 
-    # Reaproveita pacotes de uma v3/v3.1 antiga se houver ambiente virtual compativel.
+    # NAO SE REAPROVEITA .venv DE DOWNLOADS OU DO DESKTOP (revisao de seguranca de
+    # 22/10/2026, M5): copiar o site-packages de uma pasta do perfil do usuario para o
+    # runtime do SYSTEM e instalar codigo que ninguem conferiu como servico. As
+    # bibliotecas vem do pip, pela lista do requirements.txt — e, sem internet, de
+    # SERVIDOR\DEPENDENCIAS pelo ATUALIZAR_SISTEMA.cmd. A lista de candidatos abaixo
+    # fica VAZIA de proposito, e o laco nao roda.
     $oldVenvCandidates = New-Object System.Collections.Generic.List[string]
+    if($false){
     $oldVenvCandidates.Add((Join-Path $SourceRoot '.venv'))
     $oldVenvCandidates.Add('C:\CartorioGestao\.venv')
     foreach($base in @((Join-Path $env:USERPROFILE 'Downloads'),(Join-Path $env:USERPROFILE 'Desktop'))){
@@ -83,6 +89,7 @@ function Ensure-Dependencies([string]$RuntimePython) {
                 $oldVenvCandidates.Add((Join-Path $_.FullName '.venv'))
             }
         }
+    }
     }
     foreach($oldVenv in ($oldVenvCandidates | Select-Object -Unique)){
         $oldPy=Join-Path $oldVenv 'Scripts\python.exe'

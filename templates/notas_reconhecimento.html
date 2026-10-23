@@ -98,8 +98,20 @@ body[data-notas-firma-aqui="reconhecer"] .sidebar a[href*="/notas/reconhecimento
       <label class="span2">Descrição do documento <input name="documento_descricao"></label>
       <label class="check"><input type="checkbox" name="veiculo" value="1"> Documento de veículo (item 13.17.3)</label>
       <label class="check"><input type="checkbox" name="financeiro" value="1"> Conteúdo financeiro (item 13.17.4)</label>
+      <label>Qual documento de veículo
+        <select name="veiculo_documento">
+          {% for k, rot in DOCUMENTOS_DE_VEICULO.items() %}<option value="{{ k }}">{{ rot }}</option>{% endfor %}
+        </select>
+        <small>Transferência (CRV, DUT, ATPV ou procuração para esse fim) só por
+          autenticidade — Código de Normas, art. 865, II.</small></label>
       <label>Placa <input name="veiculo_placa" size="10"></label>
       <label class="check"><input type="checkbox" name="sinal_publico" value="1"> Reconhecer também o sinal público</label>
+      {# O PROTOCOLO PAGO — 22/10/2026. O selo pago só sai com o item pago do
+         protocolo que você atende; aqui ele se escolhe, sem ir a «Selo e caixa». #}
+      <div class="span2">
+        {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
+        {{ protocolo_do_selo(candidatos_selo, [], atendendo=atendendo) }}
+      </div>
       <label class="span2 check"><input type="checkbox" name="confirmar_bloqueio" value="1">
         Ciente de cartão bloqueado, reconheço assim mesmo</label>
       <div class="span2">

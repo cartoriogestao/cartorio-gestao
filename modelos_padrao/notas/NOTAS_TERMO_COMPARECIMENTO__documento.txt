@@ -1,0 +1,1 @@
+portador(a) do CPF/CNPJ n {documento}

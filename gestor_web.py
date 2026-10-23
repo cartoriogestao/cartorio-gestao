@@ -24,6 +24,9 @@ import sqlite3
 from flask import flash, redirect, render_template, request, url_for
 
 import gestor_envios as GE
+from bd_nativo import banco
+from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
+from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
@@ -54,7 +57,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def gestor_envios():
         """O que a conferência cobra das Centrais, e o que já se registrou. Só LÊ."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             itens = GE.pendentes(con)
             feitos = GE.recentes(con, limite=40)
         grupos: dict[str, list[dict]] = {}
@@ -66,6 +68,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
     @app.route("/administrativo/gestor/envios/registrar", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def gestor_envios_registrar():
         """Grava o envio dos itens marcados, com o protocolo."""
         chaves = [c for c in request.form.getlist("chave") if c.strip()]
@@ -98,7 +101,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def _caixas_para_o_visto(con):
         import gestor_caixa as GX
         prontos, com_pontos = [], []
-        for r in con.execute(
+        for r in banco(con).ler(
                 """SELECT * FROM cx_caixas WHERE situacao = 'FECHADO'
                       AND fechado_em IS NOT NULL AND conferido_em IS NULL
                       AND data >= '2026-08-01' ORDER BY data, id"""):
@@ -113,7 +116,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def gestor_caixas():
         """Os caixas fechados, com o parecer do agente. Só LÊ."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             prontos, com_pontos = _caixas_para_o_visto(con)
         return render_template("gestor_caixas.html", prontos=prontos,
                                com_pontos=com_pontos, eu=usuario_nome())
@@ -122,21 +124,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @roles_required("ADMIN", "MANAGER")
     def gestor_caixas_visto():
         """Dá o visto nos marcados — só nos que continuam fechando agora."""
-        pedidos = {int(x) for x in request.form.getlist("caixa_id") if x.isdigit()}
+        # Marcado que não é número («²», dígitos demais) é como não marcado.
+        pedidos = {n for n in map(numero_digitado, request.form.getlist("caixa_id"))
+                   if n is not None}
         if not pedidos:
             flash("Marque os caixas que você conferiu.", "danger")
             return redirect(url_for("gestor_caixas"))
         eu, quem = usuario_nome(), usuario_id()
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
             prontos, _ = _caixas_para_o_visto(con)
             # A CONTA SE REFAZ NA HORA DO CLIQUE: um lançamento mexido entre a
             # tela e o botão tira o caixa do lote, em vez de levar visto calado.
             dados = [p for p in prontos if p["id"] in pedidos and p["operador"] != eu]
             for p in dados:
-                con.execute("""UPDATE cx_caixas SET conferido_por=?, conferido_em=?
-                                WHERE id=? AND conferido_em IS NULL""",
-                            (quem, db.now(), p["id"]))
+                banco(con).escrever("""UPDATE cx_caixas SET conferido_por=%s, conferido_em=%s
+                                WHERE id=%s AND conferido_em IS NULL""",
+                                    (quem, db.now(), p["id"]))
         for p in dados:
             audit("CAIXA_CONFERIDO", "CAIXA", p["id"],
                   {"data": p["data"], "operador": p["operador"],
@@ -160,16 +163,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """Os apontamentos da leitura que ninguém conferiu ainda. Só LÊ."""
         import gestor_leitura as GL
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             # NUM BANCO EM QUE A LEITURA NUNCA RODOU a tabela não existe, e
             # `achados_vigentes` a criaria — GET não escreve.
-            tem = con.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
-                              "AND name='ge_leituras'").fetchone()
+            tem = banco(con).tem_tabela("ge_leituras")
             itens = GL.achados_vigentes(con) if tem else []
             revisoes = []
-            if con.execute("SELECT 1 FROM sqlite_master WHERE name='rv_revisoes'").fetchone():
+            if banco(con).tem_tabela("rv_revisoes"):
                 import json as _json
-                for r in con.execute(
+                for r in banco(con).ler(
                         """SELECT id, rotulo, resultado_json, graves FROM rv_revisoes
                             WHERE origem = 'AGENTE' AND situacao = 'PRONTA'
                               AND justificado_em IS NULL ORDER BY graves DESC, id"""):
@@ -181,19 +182,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
     @app.route("/administrativo/gestor/revisoes/<int:revisao_id>/conferi", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def gestor_revisao_conferida(revisao_id: int):
         """A revisão em lote de um ato passado, conferida por quem qualifica."""
         nota = (request.form.get("nota") or "").strip() or "conferido"
         with db.transaction() as con:
-            con.execute("""UPDATE rv_revisoes SET justificativa=?, justificado_por=?,
-                               justificado_em=? WHERE id=? AND origem='AGENTE'""",
-                        (nota, usuario_nome(), db.now(), revisao_id))
+            banco(con).escrever("""UPDATE rv_revisoes SET justificativa=%s, justificado_por=%s,
+                               justificado_em=%s WHERE id=%s AND origem='AGENTE'""",
+                                (nota, usuario_nome(), db.now(), revisao_id))
         audit("GESTOR_REVISAO_CONFERIDA", "rv_revisoes", revisao_id, {"nota": nota})
         flash("Revisão conferida. A tarefa sai na próxima conferência.", "success")
         return redirect(url_for("gestor_leituras"))
 
     @app.route("/administrativo/gestor/leituras/<int:leitura_id>/conferi", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def gestor_leitura_conferida(leitura_id: int):
         """Quem qualifica conferiu o apontamento e o dá por resolvido."""
         import gestor_leitura as GL
@@ -269,12 +272,154 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         try:
             import gestor_erros as GER
             with db.connect() as con:
-                papel = con.execute("SELECT role FROM users WHERE id = ?",
-                                    (session.get("user_id"),)).fetchone()
-                if not papel or papel[0] != "ADMIN":
+                papel = banco(con).um("SELECT role FROM users WHERE id = %s",
+                                      (session.get("user_id"),))
+                if not papel or papel["role"] != "ADMIN":
                     return {"erros_no_painel": None}
                 r = GER.relatorio(con, situacao="abertos")
             return {"erros_no_painel": {"abertos": r["abertos"],
                                         "por_pessoa": r["por_pessoa"][:6]}}
         except sqlite3.Error:
             return {"erros_no_painel": None}
+
+    # --------------------------------------- o relatório anual do uso de IA
+    #
+    # LF01 (19/10/2026): o Código de Normas do MA (art. 170, § 4º) pede um
+    # relatório anual à COGEX. É SÓ DO ADMIN — leva os dados dos fornecedores e
+    # os incidentes, e quem o assina é o oficial. A montagem mora em
+    # `ia_relatorio`; o registro, em `ia_uso`; o catálogo, em `ia_catalogo`.
+    # O endereço da especificação (`/gestor/relatorio-ia`) e o da casa
+    # (`/administrativo/gestor/...`) levam à mesma tela.
+
+    def _contexto_da_ia() -> dict:
+        import ia_catalogo as CAT
+        import ia_uso as USO
+        return {"aviso": CAT.AVISO_DO_TEXTO_OFICIAL, "requisito": CAT.REQUISITO_DO_FORNECEDOR,
+                "nome_da_finalidade": CAT.nome_da_finalidade, "catalogo": CAT.CATALOGO,
+                "respostas": USO.RESPOSTAS, "retencoes": USO.RETENCOES}
+
+    def _relatorio_ia(papel: bool):
+        import ia_relatorio as IAR
+        ano = IAR.ano_pedido(request.args.get("ano"), IAR.hoje())
+        with db.connect() as con:
+            r = IAR.montar(con, ano, pasta_de_dados=app.config.get("DATA_DIR"),
+                           serventia=IAR.serventia_de(con))
+        return ano, render_template("gestor_relatorio_ia.html", r=r, papel=papel,
+                                    **_contexto_da_ia())
+
+    @app.route("/gestor/relatorio-ia")
+    @app.route("/administrativo/gestor/relatorio-ia")
+    @roles_required("ADMIN")
+    def gestor_relatorio_ia():
+        """A página do relatório, pronta para imprimir. Só LÊ."""
+        return _relatorio_ia(papel=False)[1]
+
+    @app.route("/administrativo/gestor/relatorio-ia/papel")
+    @roles_required("ADMIN")
+    def gestor_relatorio_ia_papel():
+        """O mesmo HTML em PDF, pelo caminho de impressão da casa (Chrome)."""
+        from flask import Response
+
+        import impressao_pdf as PDFIMP
+        ano, html = _relatorio_ia(papel=True)
+        try:
+            conteudo, tipo, arquivo, entrega = PDFIMP.arquivo_de_html(
+                html, nome=f"relatorio-ia-{ano}", formato=request.args.get("formato"),
+                get_setting=db.get_setting)
+        except PDFIMP.PdfError as erro:
+            flash(f"{erro} Use «Imprimir» na página do relatório.", "warning")
+            return redirect(url_for("gestor_relatorio_ia", ano=ano))
+        audit("GESTOR_RELATORIO_IA_PAPEL", None, None, {"ano": ano})
+        return Response(conteudo, mimetype=tipo,
+                        headers={"Content-Disposition": f'{entrega}; filename="{arquivo}"'})
+
+    @app.route("/administrativo/gestor/ia")
+    @roles_required("ADMIN")
+    def gestor_ia():
+        """Os incidentes e os dados dos fornecedores. Só LÊ."""
+        import agente_provedores as AP
+        import ia_uso as USO
+        with db.connect() as con:
+            incidentes = USO.incidentes(con)
+            fornecedores = USO.fornecedores(con)
+        provedores = [{"id": p, "nome": d["nome"]} for p, d in AP.PROVEDORES.items()]
+        return render_template("gestor_ia.html", incidentes=incidentes,
+                               fornecedores=fornecedores, provedores=provedores,
+                               reserva_sem_mascara=db.get_setting(
+                                   _CHAVE_RESERVA_SEM_MASCARA, "0") == "1",
+                               **_contexto_da_ia())
+
+    # A CAUTELA DA LEITURA DIÁRIA (LX13, A6). O «sem máscara» de 06/10/2026 foi
+    # decidido com o Claude como provedor; quando a leitura cai noutro, vai
+    # mascarada até o oficial dizer o contrário AQUI — e a mudança fica na
+    # auditoria, com quem mudou. A chave mora em `gestor_leitura`, que a lê.
+    from gestor_leitura import CHAVE_RESERVA_SEM_MASCARA as _CHAVE_RESERVA_SEM_MASCARA
+
+    @app.route("/administrativo/gestor/ia/cautelas", methods=["POST"])
+    @roles_required("ADMIN")
+    def gestor_ia_cautelas():
+        """Grava «permitir sem máscara no provedor reserva» (padrão: desligado)."""
+        valor = "1" if request.form.get("reserva_sem_mascara") == "1" else "0"
+        db.set_settings({_CHAVE_RESERVA_SEM_MASCARA: valor})
+        audit("GESTOR_IA_CAUTELA", "settings", None,
+              {"chave": _CHAVE_RESERVA_SEM_MASCARA, "valor": valor})
+        flash("Provedor reserva liberado a ler SEM máscara." if valor == "1" else
+              "Provedor reserva lê com máscara (o padrão).", "success")
+        return redirect(url_for("gestor_ia"))
+
+    @app.route("/administrativo/gestor/ia/incidente", methods=["POST"])
+    @roles_required("ADMIN")
+    def gestor_ia_incidente():
+        """Grava um incidente ou falha do uso de IA."""
+        import ia_uso as USO
+        campos = {c: request.form.get(c) or "" for c in USO.CAMPOS_DO_INCIDENTE}
+        try:
+            with db.transaction() as con:
+                novo = USO.registrar_incidente(con, registrado_por=usuario_nome(),
+                                               agora=db.now(), **campos)
+        except USO.IncidenteError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("gestor_ia"))
+        audit("GESTOR_IA_INCIDENTE", "ia_incidentes", novo, {"sistema": campos["sistema"]})
+        flash("Incidente registrado. Ele entra no relatório anual do uso de IA.", "success")
+        return redirect(url_for("gestor_ia"))
+
+    @app.route("/administrativo/gestor/ia/fornecedor", methods=["POST"])
+    @roles_required("ADMIN")
+    def gestor_ia_fornecedor():
+        """Grava os dados de um fornecedor, como o oficial os conferiu."""
+        import agente_provedores as AP
+        import ia_uso as USO
+        provedor = (request.form.get("provedor") or "").strip().lower()
+        if provedor not in AP.PROVEDORES:
+            flash("Provedor desconhecido.", "danger")
+            return redirect(url_for("gestor_ia"))
+        with db.transaction() as con:
+            USO.gravar_fornecedor(con, provedor, request.form, por=usuario_nome(),
+                                  agora=db.now())
+        audit("GESTOR_IA_FORNECEDOR", "ia_fornecedores", None, {"provedor": provedor})
+        flash("Dados do fornecedor gravados.", "success")
+        return redirect(url_for("gestor_ia"))
+
+    @app.context_processor
+    def _relatorio_ia_no_painel() -> dict:
+        """Em janeiro, o painel do ADMIN lembra o relatório de IA do ano anterior."""
+        from flask import session
+        try:
+            if (request.endpoint or "") != "dashboard" or not session.get("user_id"):
+                return {"relatorio_ia_no_painel": None}
+        except RuntimeError:
+            return {"relatorio_ia_no_painel": None}
+        import ia_relatorio as IAR
+        aviso = IAR.aviso_do_painel(IAR.hoje())
+        if aviso is None:
+            return {"relatorio_ia_no_painel": None}
+        try:
+            with db.connect() as con:
+                papel = banco(con).um("SELECT role FROM users WHERE id = %s",
+                                      (session.get("user_id"),))
+        except sqlite3.Error:
+            return {"relatorio_ia_no_painel": None}
+        if not papel or papel["role"] != "ADMIN":
+            return {"relatorio_ia_no_painel": None}
+        return {"relatorio_ia_no_painel": aviso}

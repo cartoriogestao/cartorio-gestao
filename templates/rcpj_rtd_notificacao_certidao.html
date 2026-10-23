@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{# A CERTIDÃO DE NOTIFICAÇÃO COMO FOI CONGELADA — número, teor e impressão
+   digital não mudam depois de emitida. O selo, o QR, os valores que o selo
+   declara e quem expediu são desenhados aqui, na impressão (LT05). #}
+{% block heading %}<h1>Certidão de notificação {{ c.tipo|lower }} nº {{ c.numero }}/{{ c.ano }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpj_rtd_notificacao', notificacao_id=n.id) }}">&larr; A notificação</a>
+  <button class="button" type="button" onclick="window.print()">Imprimir</button>
+</div>
+<section class="panel">
+  <div style="padding:18px; white-space:pre-wrap">{{ c.teor }}</div>
+  <div style="padding:0 18px 12px; text-align:center">
+    {% if c.emitida_por %}<div>{{ c.emitida_por }}</div>{% endif %}
+    <div><small>Certidão nº {{ c.numero }}/{{ c.ano }}, emitida em {{ br(c.emitida_em) }}</small></div>
+  </div>
+  {% if c.selo %}
+  <div class="selo-da-certidao" style="padding:0 18px 18px; display:flex; gap:12px; align-items:center">
+    {% if marca.qr %}<div class="qr">{{ marca.qr|safe }}</div>{% endif %}
+    <div><small>SELO DIGITAL DO TJMA: <strong>{{ c.selo }}</strong>
+      {% if valores %}<br>{{ valores }}{% endif %}
+      {% if consulta %}<br>Confira em {{ consulta }}{% endif %}
+      <br>Impressão digital {{ c.hash_certidao[:16] }}…</small></div>
+  </div>
+  {% else %}
+  <p style="padding:0 18px 18px"><small>Selo: SEM SELO ({{ c.selo_motivo or c.selo_situacao }})
+  — impressão digital {{ c.hash_certidao[:16] }}…</small></p>
+  {% endif %}
+</section>
+{% endblock %}

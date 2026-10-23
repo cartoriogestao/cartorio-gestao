@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Comunicação de veículo nº {{ c.id }} — Notas{% endblock %}
+{% block heading %}<h1>Comunicação de venda nº {{ c.id }}</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('notas_veiculos') }}">&larr; Comunicações</a></div>
+<section class="panel">
+  <div class="panel-head"><span>{{ SITUACOES.get(c.situacao, c.situacao) }}</span></div>
+  <div style="padding:14px" class="small">
+    <p>{{ DOCUMENTOS.get(c.documento, c.documento) }} — placa <strong>{{ c.placa }}</strong>, RENAVAM {{ c.renavam }}.</p>
+    <p>Vendedor: {{ c.vendedor_nome }} ({{ c.vendedor_documento }}). Comprador: {{ c.comprador_nome }} ({{ c.comprador_documento }}).</p>
+    <p>Venda em {{ fmt_date(c.data_venda) }}{% if c.municipio %}, {{ c.municipio }}/{{ c.uf or '' }}{% endif %}.
+      {% if c.reconhecimento_id %}Reconhecimento de firma nº {{ c.reconhecimento_id }}.{% endif %}</p>
+    <p>Selo: <strong>{{ c.selo or '—' }}</strong>. Protocolo do DETRAN: <strong>{{ c.protocolo_detran or '—' }}</strong>
+      {% if c.ambiente %}({{ c.ambiente|lower }}){% endif %}. Tentativas: {{ c.tentativas }}.</p>
+    {% if c.ultimo_erro %}<p><strong>Último erro:</strong> {{ c.ultimo_erro }}</p>{% endif %}
+  </div>
+</section>
+{% if c.situacao not in ('CONFIRMADA', 'COMUNICADA_A_MAO') %}
+<section class="panel">
+  <div class="panel-head"><span>Comunicar</span></div>
+  <form method="post" action="{{ url_for('notas_veiculo_comunicar', com_id=c.id) }}" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if ligada %}
+      <p class="small">Sela (se falta) e envia ao DETRAN em {{ ambiente|lower }}.</p>
+    {% else %}
+      <p class="small">A integração está desligada: comunique no portal do DETRAN e digite o protocolo. O selo sai antes.</p>
+      <label>Protocolo do portal <input name="protocolo" required></label>
+    {% endif %}
+    {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
+    {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('nt_comunicacoes_veiculo') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+    <button class="primary">Selar e comunicar</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

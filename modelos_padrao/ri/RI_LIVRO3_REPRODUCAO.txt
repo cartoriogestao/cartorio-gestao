@@ -1,0 +1,3 @@
+CERTIDÃO DE INTEIRO TEOR do registro n. {{ registro_numero }} do Livro 3 — Registro Auxiliar, por REPRODUÇÃO da digitalização oficial desta Serventia ({{ paginas }} folha(s); sha256 {{ sha256 }}).
+
+O documento impresso reproduz as folhas digitalizadas e traz o selo desta certidão ao final.

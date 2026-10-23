@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Apostila de Haia{% endblock %}
+{% block heading %}<h1>Apostila de Haia</h1>{% endblock %}
+{% block content %}
+{# A APOSTILA DE HAIA (LG03). A emissão é no sistema do CNJ; aqui é o pedido,
+   o documento, o código que o CNJ deu, o selo, a cobrança no protocolo geral e
+   o controle numerado. Base: Código de Normas do MA, art. 875 (Res. CNJ
+   228/2016 e arts. 195 a 216 do Código Nacional de Normas). #}
+<section class="panel">
+  <p>A apostila se emite no <strong>sistema do CNJ</strong>. Aqui fica o que a serventia guarda em volta dela:
+  o pedido, o documento apostilado, o código da apostila, o selo, a cobrança no protocolo geral e o
+  <a href="{{ url_for('apostila_controle') }}">controle das apostilas emitidas</a>.</p>
+  <p class="muted">Base: Código de Normas do MA, art. 875 — Resolução CNJ nº 228/2016 e arts. 195 a 216 do
+  Código Nacional de Normas (Prov. CNJ 149/2023). Os detalhes destes dois: conferir no texto oficial.</p>
+</section>
+
+<section class="panel">
+  <h2>O que ainda falta</h2>
+  {% if pendencias %}
+  <div class="table-wrap"><table>
+    <tr><th>Pedido</th><th>Nº de ordem</th><th>Código</th><th>Falta</th></tr>
+    {% for x in pendencias %}
+    <tr><td><a href="{{ url_for('apostila_pedido', pedido_id=x.pedido_id) }}">pedido {{ x.pedido_id }}</a></td>
+        <td>{{ x.ordem or '—' }}</td><td>{{ x.codigo_cnj or '—' }}</td><td>{{ x.falta }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">Nada pendente.</p>{% endif %}
+</section>
+
+{% if pode_fazer %}
+<section class="panel">
+  <h2>Novo pedido</h2>
+  <form method="post" action="{{ url_for('apostila_pedido_novo') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Recebido em <input type="date" name="recebido_em" value="{{ hoje }}" max="{{ hoje }}" required></label>
+    <label>Atribuição
+      <select name="atribuicao" required>
+        {% for sigla, nome in atribuicoes %}<option value="{{ sigla }}">{{ nome }}</option>{% endfor %}
+      </select></label>
+    <label>Quem pede <input type="text" name="requerente_nome" maxlength="200" required></label>
+    <label>CPF ou CNPJ <input type="text" name="requerente_documento" maxlength="20"></label>
+    <label>Contato <input type="text" name="requerente_contato" maxlength="120"></label>
+    <label>País de destino <input type="text" name="pais_destino" maxlength="80"></label>
+    <label>Protocolo geral (AAAA.MM.N) <input type="text" name="protocolo" maxlength="30"></label>
+    <label>Observação <textarea name="observacao" rows="2"></textarea></label>
+    <button type="submit">Registrar pedido</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Pedidos</h2>
+  {% if pedidos %}
+  <div class="table-wrap"><table>
+    <tr><th>Pedido</th><th>Recebido em</th><th>Atribuição</th><th>Quem pede</th><th>Protocolo</th>
+        <th>Documentos</th><th>Aguardando</th><th>Emitidas</th></tr>
+    {% for p in pedidos %}
+    <tr><td><a href="{{ url_for('apostila_pedido', pedido_id=p.id) }}">{{ p.id }}</a></td>
+        <td>{{ p.recebido_em }}</td><td>{{ p.atribuicao }}</td><td>{{ p.requerente_nome }}</td>
+        <td>{{ p.protocolo_numero or '—' }}</td><td>{{ p.documentos }}</td>
+        <td>{{ p.pendentes }}</td><td>{{ p.emitidas }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">Nenhum pedido registrado.</p>{% endif %}
+</section>
+{% endblock %}

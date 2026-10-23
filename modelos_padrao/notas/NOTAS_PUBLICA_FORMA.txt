@@ -1,0 +1,5 @@
+<p><b>PÚBLICA FORMA</b> n. {{ numero }}/{{ ano }}</p>
+<p><b>CERTIFICO</b>, a pedido de {{ apresentante }}{% if apresentante_documento %}, {{ apresentante_documento }}{% endif %}, que me foi apresentado o original de {{ documento_especie|lower }}{% if documento_descricao %} ({{ documento_descricao }}){% endif %}{% if documento_expedidor %}, expedido por {{ documento_expedidor }}{% endif %}, em {{ folhas }} folha(s), cujo teor, por mim transcrito na íntegra, é o seguinte:</p>
+<p>«{{ transcricao }}»</p>
+{% if ressalvas %}<p><b>RESSALVA:</b> {{ ressalvas }}</p>{% else %}<p>O original não apresenta rasura, emenda nem entrelinha.</p>{% endif %}
+<p>Conferida com o original, que foi devolvido ao apresentante, a transcrição está conforme. O referido é verdade e dou fé.</p>

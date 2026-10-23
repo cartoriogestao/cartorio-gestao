@@ -50,6 +50,8 @@ from __future__ import annotations
 
 import re
 import sqlite3
+
+from bd_nativo import banco
 import unicodedata
 from datetime import date
 from typing import Any
@@ -102,6 +104,7 @@ LADO_DO_AVO = {"AVO_MATERNA": "MAE", "AVO_MATERNO": "MAE",
 ROTULO = {
     "REGISTRADO": "registrado", "FALECIDO": "falecido", "MAE": "mãe",
     "PAI": "pai", "DECLARANTE": "declarante", "TESTEMUNHA": "testemunha",
+    "TESTEMUNHA2": "segunda testemunha",
     "AVO_MATERNA": "avó materna", "AVO_MATERNO": "avô materno",
     "AVO_PATERNA": "avó paterna", "AVO_PATERNO": "avô paterno",
     "NUBENTE1": "1º cônjuge", "NUBENTE2": "2º cônjuge",
@@ -249,14 +252,19 @@ def conferir(dados: dict) -> list[dict]:
     if not _vazio(dados.get("nome")) and especie in ("NASCIMENTO", "OBITO", "NATIMORTO"):
         nomes_principais.setdefault(_sem_acento(dados["nome"]),
                                     "FALECIDO" if especie == "OBITO" else "REGISTRADO")
-    for p in por_papel.get("TESTEMUNHA", []):
-        quem = nomes_principais.get(_sem_acento(p["nome"]))
-        if quem:
-            probs.append(_problema(
-                BLOQUEIA if quem in TITULARES else AVISA, "TESTEMUNHA_FANTASMA",
-                f"{p['nome']} está como testemunha e é o(a) {ROTULO.get(quem, quem)} "
-                "do próprio assento. Tire a testemunha ou ponha a pessoa certa.",
-                "TESTEMUNHA"))
+    # A SEGUNDA TESTEMUNHA DO NASCIMENTO é papel próprio, TESTEMUNHA2 (o
+    # registro tardio, 21/10/2026 — LH05); antes ela era a segunda TESTEMUNHA
+    # do LD01, e a régua continua a mesma.
+    for papel_da_testemunha in ("TESTEMUNHA", "TESTEMUNHA2"):
+        for p in por_papel.get(papel_da_testemunha, []):
+            quem = nomes_principais.get(_sem_acento(p["nome"]))
+            if quem:
+                probs.append(_problema(
+                    BLOQUEIA if quem in TITULARES else AVISA, "TESTEMUNHA_FANTASMA",
+                    f"{p['nome']} está como testemunha e é o(a) "
+                    f"{ROTULO.get(quem, quem)} do próprio assento. Tire a "
+                    "testemunha ou ponha a pessoa certa.",
+                    papel_da_testemunha))
 
     # 3. DOCUMENTOS E DATAS — o que tem resposta certa.
     cpf = _digitos(dados.get("cpf_registrado"))
@@ -427,13 +435,13 @@ def mensagem_de_recusa(problemas: list[dict]) -> str:
 
 def dados_do_assento(con: sqlite3.Connection, assento_id: int) -> dict:
     """O dicionário de `conferir` a partir de um assento gravado. SÓ LÊ."""
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT * FROM rc_assentos WHERE id = ?", (assento_id,)).fetchone()
+    bd = banco(con)
+    a = bd.um("SELECT * FROM rc_assentos WHERE id = %s", (assento_id,))
     if not a:
         return {}
     d = dict(a)
-    d["pessoas"] = [dict(p) for p in con.execute(
-        "SELECT * FROM rc_pessoas WHERE assento_id = ? ORDER BY ordem, id", (assento_id,))]
+    d["pessoas"] = [dict(p) for p in bd.ler(
+        "SELECT * FROM rc_pessoas WHERE assento_id = %s ORDER BY ordem, id", (assento_id,))]
     return d
 
 
@@ -459,11 +467,15 @@ def dados_do_formulario(valores: dict, *, especie: str = "", data_ato: Any = Non
     especie = (especie or v.get("especie") or "").strip().upper()
     pessoas = []
     for papel in RC.PAPEIS_DA_ESPECIE.get(especie, ()):
-        prefixo = RC.PREFIXO_DO_PAPEL[papel]
-        campos = {c: v.get(f"{prefixo}_{c}", "").strip() for c in RC.CAMPOS_DA_PESSOA}
-        if not any(x for c, x in campos.items() if c != "documento_tipo"):
-            continue
-        pessoas.append({"papel": papel, **{c: x for c, x in campos.items() if x}})
+        # A SEGUNDA TESTEMUNHA tem gaveta própria e o mesmo papel (LD01) —
+        # menos no NASCIMENTO, onde a gaveta grava TESTEMUNHA2 (o tardio).
+        for prefixo in RC.prefixos_do_papel(papel, especie):
+            campos = {c: v.get(f"{prefixo}_{c}", "").strip()
+                      for c in RC.CAMPOS_DA_PESSOA}
+            if not any(x for c, x in campos.items() if c != "documento_tipo"):
+                continue
+            pessoas.append({"papel": papel,
+                            **{c: x for c, x in campos.items() if x}})
     nome = (v.get("nome") or v.get("pessoa_nome") or "").strip()
     if not nome and v.get("nubente1_nome"):
         nome = " e ".join(x for x in (v.get("nubente1_nome"), v.get("nubente2_nome")) if x)

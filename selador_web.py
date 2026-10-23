@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import selos_emitidos as SEM
 
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -29,7 +28,9 @@ from flask import flash, redirect, render_template, request, url_for
 
 import selador
 import selador_cliente as CL
+from bd_nativo import banco
 import selador_config as SC
+from seguranca_web import PAGINA_MAIS_ALTA, numero_digitado  # LD13: o número que a tela mandou
 
 
 def _legivel(sha256: str | None) -> str:
@@ -87,12 +88,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             "situacao": (request.args.get("situacao") or "").strip(),
         }
         agrupar = (request.args.get("agrupar") or "usuario").strip()
-        try:
-            pagina = int(request.args.get("pagina") or 1)
-        except ValueError:
-            pagina = 1
+        # A página que não é número, ou que o OFFSET não aguenta, é a primeira (LD13).
+        pagina = numero_digitado(request.args.get("pagina"),
+                                 maximo=PAGINA_MAIS_ALTA) or 1
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             try:
                 lista = SEM.procurar(con, pagina=pagina, **f)
                 conta = SEM.resumo(con, **f)
@@ -129,6 +128,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
                 elif acao == "gravar":
                     with db.transaction() as con:
+                        # O ENDERECO E SO DO ADMIN (LX14; M8 do LS03): o
+                        # «testar» manda a senha do selador para ele, e o
+                        # MANAGER, que nao conhece a senha, a receberia num
+                        # servidor seu. O resto da tela segue dele.
+                        trocados = SC.enderecos_que_mudam(
+                            con, base_url=request.form.get("base_url"),
+                            base_homologacao=request.form.get("base_homologacao"),
+                            auth_url=request.form.get("auth_url"))
+                        if trocados and app.extensions["usuario_papel"]() != "ADMIN":
+                            raise SC.ConfigError(
+                                "Trocar o endereço " + " e o ".join(trocados)
+                                + " é só do ADMIN: é para esse endereço que o "
+                                "sistema manda a senha do selador. Nada mudou.")
                         SC.gravar(
                             con,
                             base_url=request.form.get("base_url"),
@@ -153,7 +165,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
                 elif acao == "ver_certificado":
                     with db.connect() as con:
-                        con.row_factory = sqlite3.Row
                         base = SC.base_em_uso(con)
                     if not base:
                         flash("Informe primeiro o endereço do selador.", "danger")
@@ -215,10 +226,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("selador_config"))
 
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             estado = SC.situacao(con, pasta_de_dados())
-            linha = con.execute(
-                "SELECT * FROM sd_config WHERE id=1").fetchone()
+            linha = banco(con).um(
+                "SELECT * FROM sd_config WHERE id=1")
             orfaos = CL.orfaos(con, limite=20)
         certificado = dict(
             sha256=(linha["certificado_sha256"] if linha else None),

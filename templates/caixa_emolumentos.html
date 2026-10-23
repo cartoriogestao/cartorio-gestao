@@ -5,18 +5,18 @@
 <div class="actions"><a class="button" href="{{ url_for('caixa') }}">&larr; Caixa</a></div>
 
 <div class="notice">
-  A tabela vem do <strong>E-Ofício</strong>, que a mantém atualizada e é quem conversa com o
-  selador do tribunal. Não se digita aqui: uma cópia editável à mão seria uma segunda verdade,
+  A tabela veio do <strong>sistema antigo</strong>. Não se digita aqui: uma cópia editável à mão seria uma segunda verdade,
   e no dia em que as duas divergissem ninguém saberia qual está certa.
 </div>
 
 {% if not vigencias %}
 <section class="panel">
   <div class="panel-head"><span>A tabela ainda não foi importada</span></div>
+  {# Os dois botões «Importar do E-Ofício» desta tela saíram em 17/10/2026,
+     por decisão do oficial: a importação do E-Ofício terminou. O POST
+     acao=importar continua na rota (caixa_web.caixa_emolumentos). #}
   <div style="padding:14px">
-    <p class="small">Rode o <code>EXPORTAR_CAIXA.cmd</code> e depois importe aqui.</p>
-    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="primary" name="acao" value="importar">Importar do E-Ofício</button></form>
+    <p class="small">Sem a tabela, não há o que consultar aqui.</p>
   </div>
 </section>
 {% else %}
@@ -93,17 +93,6 @@
     </table>
   </div>
   {% endif %}
-</section>
-
-<section class="panel">
-  <div class="panel-head"><span>Atualizar a tabela</span></div>
-  <div style="padding:14px">
-    <p class="small">Depois de rodar o <code>EXPORTAR_CAIXA.cmd</code> com a tabela nova,
-      importe aqui. A carga <strong>substitui a tabela inteira</strong> — é cópia de fonte
-      externa, não cadastro nosso.</p>
-    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button name="acao" value="importar">Importar do E-Ofício</button></form>
-  </div>
 </section>
 {% endif %}
 {% endblock %}

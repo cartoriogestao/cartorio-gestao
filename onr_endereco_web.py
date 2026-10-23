@@ -29,10 +29,9 @@ matrícula — quem grava é a conferência.
 """
 from __future__ import annotations
 
-import sqlite3
-
 from flask import flash, redirect, render_template, request, url_for
 
+from bd_nativo import banco
 import onr_endereco_do_teor as END
 
 # QUEM CONFERE é quem atende — a mesma lista de `ri_onr_web`. **Conferir aqui
@@ -65,7 +64,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         so_divergentes = request.values.get("divergentes") == "1"
         confianca = (request.values.get("confianca") or "").strip() or None
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             fila = END.listar(con, situacao=situacao or None,
                               somente_prontas=so_prontas,
                               somente_divergentes=so_divergentes,
@@ -90,7 +88,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """
         so_do_ocr = request.form.get("so_do_ocr") == "1"
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
             feito = END.gerar(con, agora=agora(), settings=_settings(),
                               so_do_ocr=so_do_ocr)
         audit("ONR_ENDERECO_GERADO",
@@ -141,11 +138,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # tela mostraria a proposta VELHA como se fosse a leitura que o operador
         # acabou de pedir — que é o carimbo que mente na sua forma mais direta.
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            ja = con.execute(
+            ja = banco(con).um(
                 "SELECT id, situacao, decidido_por, decidido_em, motivo "
-                "FROM ri_onr_enderecos WHERE matricula_id=?",
-                (int(matricula_id),)).fetchone()
+                "FROM ri_onr_enderecos WHERE matricula_id=%s",
+                (int(matricula_id),))
         if ja and ja["situacao"] != END.A_CONFERIR:
             quando = str(ja["decidido_em"] or "")[:16]
             quem = ja["decidido_por"] or "alguém"
@@ -159,7 +155,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("ri_onr_endereco", proposta_id=ja["id"]))
         try:
             with db.transaction() as con:
-                con.row_factory = sqlite3.Row
                 proposta = END.propor_do_banco(con, matricula_id,
                                                settings=_settings())
                 proposta_id = END.guardar(con, proposta, agora=agora())
@@ -182,17 +177,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def ri_onr_endereco(proposta_id: int):
         """Uma proposta: as duas versões à vista, e a frase de onde saiu."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             p = END.ler(con, proposta_id)
             atual = None
             if p:
-                atual = con.execute(
+                atual = banco(con).um(
                     "SELECT id, numero, livro, tipo_ficha, origem, teor, "
                     "       logradouro, numero_predial, bairro, cidade, uf, "
                     "       cep, rural_urbano, area_valor, area_unidade, "
                     "       tipo_imovel "
-                    "  FROM ri_matriculas WHERE id=?",
-                    (int(p["matricula_id"]),)).fetchone()
+                    "  FROM ri_matriculas WHERE id=%s",
+                    (int(p["matricula_id"]),))
         if not p:
             flash("Esta proposta de endereço não existe.", "danger")
             return redirect(url_for("ri_onr_enderecos"))
@@ -220,7 +214,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                    if request.form.get(campo) is not None}
         try:
             with db.transaction() as con:
-                con.row_factory = sqlite3.Row
                 feito = END.confirmar(con, proposta_id, agora=agora(),
                                       usuario=usuario_nome(),
                                       ajustes=ajustes)

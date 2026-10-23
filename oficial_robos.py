@@ -31,6 +31,7 @@ import json
 import sqlite3
 from datetime import datetime, timedelta
 
+from bd_nativo import banco
 from oficial_schema import init_oficial_schema
 
 #: Os robôs da casa. `setores` liga o robô às tarefas que ele deixa na mesa de
@@ -88,8 +89,7 @@ def _agora() -> str:
 
 
 def _tem_tabela(con: sqlite3.Connection, nome: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                       (nome,)).fetchone() is not None
+    return banco(con).tem_tabela(nome)
 
 
 def bater(con: sqlite3.Connection, robo: str, *, situacao: str = "OK",
@@ -102,24 +102,26 @@ def bater(con: sqlite3.Connection, robo: str, *, situacao: str = "OK",
                          "Use OK, AVISO ou ERRO.")
     init_oficial_schema(con)
     agora = _agora()
-    cur = con.execute(
+    novo = banco(con).escrever(
         """INSERT INTO of_batidas (robo, iniciada_em, terminada_em, situacao,
-               resumo_json, erro, quem_rodou) VALUES (?,?,?,?,?,?,?)""",
+               resumo_json, erro, quem_rodou) VALUES (%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (robo, iniciada_em or agora, agora, situacao,
          json.dumps(resumo or {}, ensure_ascii=False, default=str), erro, quem_rodou))
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
 
 
 def ultima_batida(con: sqlite3.Connection, robo: str) -> dict | None:
     if not _tem_tabela(con, "of_batidas"):
         return None
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT robo, iniciada_em, terminada_em, situacao, resumo_json, erro
-             FROM of_batidas WHERE robo = ? ORDER BY id DESC LIMIT 1""", (robo,)).fetchone()
+             FROM of_batidas WHERE robo = %s ORDER BY id DESC LIMIT 1""", (robo,))
     if not linha:
         return None
-    return {"robo": linha[0], "iniciada_em": linha[1], "terminada_em": linha[2],
-            "situacao": linha[3], "resumo": json.loads(linha[4] or "{}"), "erro": linha[5]}
+    return {"robo": linha["robo"], "iniciada_em": linha["iniciada_em"],
+            "terminada_em": linha["terminada_em"], "situacao": linha["situacao"],
+            "resumo": json.loads(linha["resumo_json"] or "{}"), "erro": linha["erro"]}
 
 
 def _achado(regra, gravidade, robo, titulo, detalhe="", como_resolver="", chave=None):
@@ -149,37 +151,37 @@ def _saude_do_gestor(con, agora: datetime) -> list[dict]:
                         "O gestor nunca rodou neste banco",
                         "A tabela ge_execucoes não existe.",
                         "Ligar a conferência diária (FERRAMENTAS/GESTOR) no Agendador.")]
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT iniciada_em, terminada_em, erro, achados, novos, nao_mediu
-             FROM ge_execucoes ORDER BY id DESC LIMIT 1""").fetchone()
+             FROM ge_execucoes ORDER BY id DESC LIMIT 1""")
     if not linha:
         return [_achado("ROBO_NUNCA_RODOU", "ATENCAO", "GESTOR",
                         "O gestor nunca rodou neste banco")]
     fora = []
-    horas = _horas_desde(linha[0], agora)
+    horas = _horas_desde(linha["iniciada_em"], agora)
     if horas is not None and horas > 26:
         fora.append(_achado(
             "ROBO_PARADO", "CRITICO", "GESTOR",
             f"O gestor não roda há {horas:.0f} horas",
-            f"Última rodada: {linha[0]}. O Agendador o chama às 07:30, 14:00 e 14:30.",
+            f"Última rodada: {linha['iniciada_em']}. O Agendador o chama às 07:30, 14:00 e 14:30.",
             "Conferir a tarefa «CartorioGestao-Conferencia-Diaria» no Agendador do "
             "Windows e o arquivo FERRAMENTAS/GESTOR/CONFERENCIA_DIARIA.log."))
-    if linha[2]:
+    if linha["erro"]:
         fora.append(_achado(
             "ROBO_TERMINOU_COM_ERRO", "CRITICO", "GESTOR",
             "A última rodada do gestor terminou com erro — nada dela foi gravado",
-            linha[2][:400],
+            linha["erro"][:400],
             "Ler o fim de FERRAMENTAS/GESTOR/CONFERENCIA_DIARIA.log; o erro diz o arquivo e a linha."))
-    elif linha[1] is None and horas is not None and horas > 1:
+    elif linha["terminada_em"] is None and horas is not None and horas > 1:
         fora.append(_achado(
             "ROBO_NAO_TERMINOU", "CRITICO", "GESTOR",
             "A última rodada do gestor começou e não terminou",
-            f"Começou em {linha[0]} e não gravou fim nem erro — o processo morreu no meio.",
+            f"Começou em {linha['iniciada_em']} e não gravou fim nem erro — o processo morreu no meio.",
             "Ver o log da conferência diária e o espaço livre do disco C:."))
-    if linha[5]:
+    if linha["nao_mediu"]:
         fora.append(_achado(
             "ROBO_NAO_MEDIU", "ATENCAO", "GESTOR",
-            f"{linha[5]} regra(s) do gestor não conseguiram medir na última rodada",
+            f"{linha['nao_mediu']} regra(s) do gestor não conseguiram medir na última rodada",
             "Regra que quebra vira NAO_MEDIU, e não zero — mas fica sem conferir.",
             "Abrir o relatório da conferência do dia e procurar «não mediu»."))
     return fora
@@ -202,24 +204,24 @@ def _saude_da_leitura(con, agora: datetime) -> list[dict]:
     if not _tem_tabela(con, "ge_leituras"):
         return []
     desde = (agora - timedelta(hours=72)).isoformat(timespec="seconds")
-    linhas = con.execute(
-        "SELECT lido_em, modelo, erro FROM ge_leituras WHERE lido_em >= ? ORDER BY lido_em",
-        (desde,)).fetchall()
+    linhas = banco(con).ler(
+        "SELECT lido_em, modelo, erro FROM ge_leituras WHERE lido_em >= %s ORDER BY lido_em, id",
+        (desde,))
     if not linhas:
         return []
-    erros = [r for r in linhas if r[2]]
-    certas = [r for r in linhas if not r[2]]
+    erros = [r for r in linhas if r["erro"]]
+    certas = [r for r in linhas if not r["erro"]]
     if not erros:
         return []
-    ultima_certa = certas[-1][0] if certas else None
-    falhando_desde = next((r[0] for r in erros if ultima_certa is None or r[0] > ultima_certa), None)
+    ultima_certa = certas[-1]["lido_em"] if certas else None
+    falhando_desde = next((r["lido_em"] for r in erros if ultima_certa is None or r["lido_em"] > ultima_certa), None)
     if falhando_desde is None:
         return []
-    seguidas = sum(1 for r in erros if r[0] >= falhando_desde)
+    seguidas = sum(1 for r in erros if r["lido_em"] >= falhando_desde)
     if seguidas < 3:
         return []
-    frase = erros[-1][2]
-    modelo = erros[-1][1]
+    frase = erros[-1]["erro"]
+    modelo = erros[-1]["modelo"]
     como = ("Abrir a tela de configuração do agente (Administrativo → Agente) e conferir "
             "o provedor e a chave.")
     if _MODELO_DESCONHECIDO in (frase or ""):

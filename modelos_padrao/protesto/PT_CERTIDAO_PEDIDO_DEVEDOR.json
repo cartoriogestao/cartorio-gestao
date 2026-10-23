@@ -1,0 +1,8 @@
+{
+  "chave": "PT_CERTIDAO_PEDIDO_DEVEDOR",
+  "atribuicao": "Protesto",
+  "nome": "Certidão de protesto — pedido escrito do próprio devedor",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: entra no {pedido} quando a certidão mostra protesto cancelado ou suspenso a pedido escrito do devedor (CN-MA arts. 944 e 948). Se o requerente foi informado, o sistema acrescenta «, NOME».",
+  "campos": []
+}

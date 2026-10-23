@@ -27,6 +27,15 @@ POR QUE A CASA NAO ASSINA ESTE PAPEL
     afirma. A fe do delegatario aparece no RECONHECIMENTO, que e outro ato e
     outro papel.
 
+E EM 21/10/2026 O PREPOSTO QUE CONFERIU VOLTOU — SO ELE.
+    O CN-MA art. 864, § 1º, VI, pede na ficha o «nome, assinatura e carimbo
+    do tabeliao ou do seu substituto ou outro preposto designado que
+    verificou a regularidade do preenchimento». Perguntado, o oficial
+    respondeu «9 b» (LH13): «Preenchimento conferido por: NOME — funcao», com
+    linha de assinatura e espaco para o carimbo, do escrevente que ABRIU o
+    cartao (gravado nele na abertura). O cliente continua assinando so os
+    autografos e o fecho dele, e o delegatario continua fora.
+
 O QUE O RELATO PEDIA DE VERDADE JA ESTAVA FEITO, e continua:
     Os tres campos — «Assinatura por extenso», «Assinatura abreviada» e
     «Rubrica» — que sao exatamente «dois campos em aberto para assinatura
@@ -75,12 +84,13 @@ def _con(casa):
     return con
 
 
-def _cartao(con, *, nome="MARIA DAS DORES DA SILVA", numero=4063):
+def _cartao(con, *, nome="MARIA DAS DORES DA SILVA", numero=4063,
+            conferente_nome=None, conferente_funcao=None):
     cur = con.execute(
         """INSERT INTO nt_cartoes (numero, nome, nome_norm, documento,
-               origem, criado_em)
-           VALUES (?,?,?, '00000000191', 'MANUAL', '2026-08-29T09:00')""",
-        (numero, nome, nome.lower()))
+               origem, criado_em, conferente_nome, conferente_funcao)
+           VALUES (?,?,?, '00000000191', 'MANUAL', '2026-08-29T09:00', ?, ?)""",
+        (numero, nome, nome.lower(), conferente_nome, conferente_funcao))
     return int(cur.lastrowid)
 
 
@@ -149,22 +159,32 @@ def test_o_cartao_sai_em_arquivo_para_imprimir(casa):
 # ------------------------------------------- o que faltava
 
 
-def test_so_o_cliente_assina_a_ficha(casa):
+def test_o_delegatario_nao_assina_a_ficha_so_o_cliente_e_quem_conferiu(casa):
     """«o oficial nao assina a ficha de assinatura, so o cliente» — 31/08/2026.
 
     E a assinatura do ESCREVENTE saiu junto, pela mesma frase. Ela estava no
     papel antes do meu engano, e nao foi ele que a pos — mas «so o cliente»
     alcanca as duas.
+
+    ESTE TESTE SE CHAMAVA «so o cliente assina a ficha» (`test_so_o_cliente_
+    assina_a_ficha`), e mudou em 21/10/2026: o oficial respondeu «9 b» à
+    pergunta do CN-MA art. 864, § 1º, VI (LH13), e o PREPOSTO QUE ABRIU O
+    CARTAO assina a linha «Preenchimento conferido por». O delegatario e a
+    substituta continuam fora — a conta abaixo e a mesma de antes.
     """
     casa["db"].set_settings({"ri_registrador": "MARIO EXEMPLO DOS SANTOS",
                              "ri_substituta": "BEATRIZ EXEMPLO DE SOUZA"})
     con = _con(casa)
     with con:
-        cid = _cartao(con, nome="MARIA DAS DORES DA SILVA")
+        cid = _cartao(con, nome="MARIA DAS DORES DA SILVA",
+                      conferente_nome="CARLA EXEMPLO",
+                      conferente_funcao="Escrevente Autorizada")
     texto = _ficha(casa, cid)
 
     assert "MARIA DAS DORES DA SILVA" in texto
     assert "o titular do cartão" in texto
+    assert ("Preenchimento conferido por: CARLA EXEMPLO — Escrevente Autorizada"
+            in texto)
     # NEM O TITULAR NEM A SUBSTITUTA aparecem embaixo de uma linha de assinar.
     #
     # TESTE VELHO, ATUALIZADO EM 14/10/2026: a conta é do CORPO da ficha, e
@@ -179,25 +199,44 @@ def test_so_o_cliente_assina_a_ficha(casa):
     assert "BEATRIZ EXEMPLO DE SOUZA" not in texto
 
 
-def test_ha_uma_linha_de_assinar_no_fecho_e_nao_tres(casa):
+def test_ha_duas_linhas_de_assinar_no_fecho_e_nao_tres(casa):
     """Tres linhas no fecho eram o cliente, o escrevente e o oficial.
 
     A conta e do FECHO, e nao da folha: os tres campos de autografo — por
     extenso, abreviada e rubrica — tambem tem linha, e esses ficam.
+
+    ERA «UMA LINHA, E NAO TRES» ATE 21/10/2026 (`test_ha_uma_linha_de_assinar_
+    no_fecho_e_nao_tres`). Com a resposta «9 b» do oficial (LH13), depois da
+    do titular vem UMA linha, a do preposto que conferiu o preenchimento
+    (CN-MA art. 864, § 1º, VI) — e a do oficial continua fora.
     """
     con = _con(casa)
     with con:
-        cid = _cartao(con, nome="MARIA DAS DORES DA SILVA")
+        cid = _cartao(con, nome="MARIA DAS DORES DA SILVA",
+                      conferente_nome="CARLA EXEMPLO",
+                      conferente_funcao="Escrevente Autorizada")
     texto = _ficha(casa, cid)
-    fecho = texto.split("o titular do cartão", 1)[1]
-    assert "___________________________" not in fecho
+    titular, depois = texto.split("o titular do cartão", 1)
+    assert len(re.findall(r"_{27,}", titular.rsplit("Autógrafos", 1)[1])) == 10, (
+        "nove linhas de autógrafo e a do titular")
+    assert len(re.findall(r"_{27,}", depois)) == 1, (
+        "depois do titular, só a linha de quem conferiu o preenchimento")
+    assert depois.strip().endswith("assinatura e carimbo de quem conferiu o preenchimento")
 
 
 def test_a_serventia_nao_e_nomeada_como_quem_assina(casa):
     """Sem esta guarda, alguem devolve a assinatura da casa daqui a um ano —
-    e o papel volta a afirmar, nesta folha, o que ele so afirma na seguinte."""
+    e o papel volta a afirmar, nesta folha, o que ele so afirma na seguinte.
+
+    **A GUARDA ESTAVA DESLIGADA DESDE O LF06A** (19/10/2026): o texto do cartão
+    saiu do `notas_web.py` para `modelos_padrao/notas/NOTAS_CARTAO_FICHA.txt`,
+    a âncora «CARTÃO DE AUTÓGRAFO» sumiu do módulo, e o teste estourava em
+    `IndexError` antes de conferir qualquer coisa. Achado pelo LF06D. A
+    assinatura da casa só voltaria pela ROTA que monta o cartão — o papel do
+    catálogo não chama função —, e é ela que se confere, até a rota seguinte."""
     fonte = (RAIZ / "notas_web.py").read_text(encoding="utf-8")
-    trecho = fonte.split("CARTÃO DE AUTÓGRAFO", 1)[1][:4000]
+    trecho = fonte.split("def notas_cartao_ficha(", 1)[1].split("@app.route", 1)[0]
+    assert "NOTAS_CARTAO_FICHA" in trecho, "o trecho não é mais a rota do cartão"
     for proibido in ("_quem_responde_pela_serventia",
                      "_titulo_de_quem_responde"):
         assert proibido not in trecho, (

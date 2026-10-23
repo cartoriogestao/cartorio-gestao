@@ -37,9 +37,9 @@ O HASH, E POR QUE ELE E RECALCULADO
 """
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 from ri_schema import hash_ato, norm_livro, normalizar_busca, so_digitos, valida_cpf_cnpj
 
 
@@ -69,20 +69,20 @@ def serie_do_livro(livro: Any) -> str:
     return digitos or nome
 
 
-def livros_da_serie(con: sqlite3.Connection, livro: Any) -> list[str]:
+def livros_da_serie(con: Any, livro: Any) -> list[str]:
     """Todos os livros (volumes) da mesma serie que existem no banco."""
     serie = serie_do_livro(livro)
     encontrados = {norm_livro(livro)}
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     for tabela, coluna in (("ri_numeracao", "livro"), ("ri_matriculas", "livro_norm")):
-        for r in con.execute(f"SELECT DISTINCT {coluna} v FROM {tabela} "
-                             f"WHERE COALESCE({coluna},'') <> ''"):
+        for r in bd.ler(f"SELECT DISTINCT {coluna} AS v FROM {tabela} "
+                        f"WHERE COALESCE({coluna},'') <> '' ORDER BY 1"):
             if serie_do_livro(r["v"]) == serie:
                 encontrados.add(norm_livro(r["v"]))
     return sorted(encontrados)
 
 
-def maior_numero_da_serie(con: sqlite3.Connection, livro: Any) -> int:
+def maior_numero_da_serie(con: Any, livro: Any) -> int:
     """O maior numero de matricula ja usado na serie, olhando as duas fontes.
 
     Olha as matriculas de verdade E a tabela de numeracao. A tabela sozinha nao
@@ -90,18 +90,22 @@ def maior_numero_da_serie(con: sqlite3.Connection, livro: Any) -> int:
     pode ter sido reservado e a matricula, expurgada.
     """
     volumes = livros_da_serie(con, livro)
-    marcas = ",".join("?" * len(volumes))
-    con.row_factory = sqlite3.Row
+    marcas = ",".join(["%s"] * len(volumes))
+    bd = banco(con)
     maior = 0
-    linha = con.execute(
-        f"""SELECT MAX(CAST(numero AS INTEGER)) n FROM ri_matriculas
-            WHERE livro_norm IN ({marcas}) AND numero GLOB '[0-9]*'
-              AND CAST(numero AS INTEGER) < ?""", (*volumes, NUMERO_PROVISORIO)).fetchone()
+    # O CASE protege o cast: o PostgreSQL não garante a ordem de um AND.
+    linha = bd.um(
+        f"""SELECT MAX(CASE WHEN numero ~ '^[0-9]' THEN
+                      CASE WHEN substring(numero FROM '^[0-9]+')::bigint < %s
+                           THEN substring(numero FROM '^[0-9]+')::bigint END
+                    END) AS n
+              FROM ri_matriculas
+             WHERE livro_norm IN ({marcas})""", (NUMERO_PROVISORIO, *volumes))
     maior = max(maior, int(linha["n"] or 0))
-    linha = con.execute(
-        f"""SELECT MAX(maior_em_uso) m, MAX(proximo_numero) p FROM ri_numeracao
-            WHERE livro IN ({marcas}) AND proximo_numero < ?""",
-        (*volumes, NUMERO_PROVISORIO)).fetchone()
+    linha = bd.um(
+        f"""SELECT MAX(maior_em_uso) AS m, MAX(proximo_numero) AS p FROM ri_numeracao
+            WHERE livro IN ({marcas}) AND proximo_numero < %s""",
+        (*volumes, NUMERO_PROVISORIO))
     maior = max(maior, int(linha["m"] or 0), int(linha["p"] or 1) - 1)
     return maior
 
@@ -115,26 +119,27 @@ def maior_numero_da_serie(con: sqlite3.Connection, livro: Any) -> int:
 NUMERO_PROVISORIO = 900000
 
 
-def proximo_numero(con: sqlite3.Connection, livro: Any) -> int:
+def proximo_numero(con: Any, livro: Any) -> int:
     """O numero da proxima matricula da serie. Nunca repete numero ja usado."""
     return maior_numero_da_serie(con, livro) + 1
 
 
-def numero_em_uso(con: sqlite3.Connection, livro: Any, numero: Any) -> sqlite3.Row | None:
+def numero_em_uso(con: Any, livro: Any, numero: Any) -> dict | None:
     """A matricula que ja ocupa este numero na serie, se houver."""
     volumes = livros_da_serie(con, livro)
-    marcas = ",".join("?" * len(volumes))
-    con.row_factory = sqlite3.Row
-    return con.execute(
+    marcas = ",".join(["%s"] * len(volumes))
+    return banco(con).um(
         f"""SELECT id, numero, livro, complemento FROM ri_matriculas
-            WHERE CAST(numero AS INTEGER)=? AND livro_norm IN ({marcas})""",
-        (int(numero), *volumes)).fetchone()
+            WHERE CASE WHEN numero ~ '^[0-9]' THEN substring(numero FROM '^[0-9]+')::bigint
+                       ELSE 0 END = %s
+              AND livro_norm IN ({marcas}) ORDER BY id LIMIT 1""",
+        (int(numero), *volumes))
 
 
 # ------------------------------------------------------------- renumeracao
 
 
-def renumerar_matricula(con: sqlite3.Connection, matricula_id: int, novo_numero: Any, *,
+def renumerar_matricula(con: Any, matricula_id: int, novo_numero: Any, *,
                         motivo: str, agora: str, usuario: str | None = None) -> dict[str, Any]:
     """Troca o numero da matricula e refaz a cadeia de integridade dos atos.
 
@@ -144,8 +149,11 @@ def renumerar_matricula(con: sqlite3.Connection, matricula_id: int, novo_numero:
     if len(motivo) < 10:
         raise CorrecaoError("Escreva o motivo da renumeração com pelo menos dez letras.")
 
-    con.row_factory = sqlite3.Row
-    m = con.execute("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,)).fetchone()
+    bd = banco(con)
+    # A conferencia do numero ocupado e a gravacao ficam sob a trava de quem
+    # numera a matricula (abertura em `ri_web`, `_sincronizar_numeracao`).
+    bd.travar("ri_numeracao.livro")
+    m = bd.um("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
     if not m:
         raise CorrecaoError("Esta matrícula não existe.")
 
@@ -171,27 +179,27 @@ def renumerar_matricula(con: sqlite3.Connection, matricula_id: int, novo_numero:
             f"O número {novo} já é da matrícula do Livro {ocupada['livro']}. "
             f"Número de matrícula não se repete na serventia.")
 
-    for c in con.execute("""SELECT numero, ano FROM ri_certidoes
-                            WHERE matricula_id=? AND COALESCE(cancelada,0)=0""",
-                         (matricula_id,)):
+    for c in bd.ler("""SELECT numero, ano FROM ri_certidoes
+                       WHERE matricula_id=%s AND COALESCE(cancelada,0)=0
+                       ORDER BY id""", (matricula_id,)):
         raise CorrecaoError(
             f"A certidão {c['numero']}/{c['ano']} foi expedida sobre a matrícula {antigo} "
             f"e não está cancelada. Ela afirma o número antigo. Cancele a certidão antes "
             f"de renumerar, ou a certidão passa a divergir da ficha.")
 
-    con.execute("""UPDATE ri_matriculas SET numero=?, atualizado_em=?, atualizado_por=?
-                   WHERE id=?""", (str(novo), agora, None, matricula_id))
+    bd.escrever("""UPDATE ri_matriculas SET numero=%s, atualizado_em=%s, atualizado_por=%s
+                   WHERE id=%s""", (str(novo), agora, None, matricula_id))
 
     # Refaz a cadeia com o numero novo, na mesma ordem de lavratura.
-    atos = list(con.execute("""SELECT id, tipo, numero, data_ato, teor, hash_ato
-                               FROM ri_atos WHERE matricula_id=? ORDER BY id""",
-                            (matricula_id,)))
+    atos = bd.ler("""SELECT id, tipo, numero, data_ato, teor, hash_ato
+                     FROM ri_atos WHERE matricula_id=%s ORDER BY id""",
+                  (matricula_id,))
     refeitos = []
     anterior = None
     for a in atos:
         novo_hash = hash_ato(str(novo), a["tipo"], a["numero"],
                              a["data_ato"] or "", a["teor"] or "", anterior)
-        con.execute("UPDATE ri_atos SET hash_ato=?, hash_anterior=? WHERE id=?",
+        bd.escrever("UPDATE ri_atos SET hash_ato=%s, hash_anterior=%s WHERE id=%s",
                     (novo_hash, anterior, a["id"]))
         refeitos.append({"ato": f"{a['tipo']}-{a['numero']:02d}",
                          "hash_antigo": a["hash_ato"], "hash_novo": novo_hash})
@@ -206,21 +214,23 @@ def renumerar_matricula(con: sqlite3.Connection, matricula_id: int, novo_numero:
             "livro": m["livro"], "serie": serie_do_livro(m["livro"])}
 
 
-def _sincronizar_numeracao(con: sqlite3.Connection, livro: Any, agora: str,
+def _sincronizar_numeracao(con: Any, livro: Any, agora: str,
                            usuario: str | None) -> int:
     """Poe o proximo numero de TODOS os volumes da serie acima do maior em uso.
 
     Sem isto, corrigir o numero de uma matricula deixaria a contagem apontando
     para tras, e o proximo atendimento repetiria o erro.
     """
+    bd = banco(con)
+    bd.travar("ri_numeracao.livro")
     maior = maior_numero_da_serie(con, livro)
     observacao = ("Sincronizado pela numeração da série: o número da matrícula é "
                   "único na serventia, não no volume")
     for volume in livros_da_serie(con, livro):
-        con.execute(
+        bd.escrever(
             """INSERT INTO ri_numeracao(livro, proximo_numero, maior_em_uso, fixado_em,
                                         observacao)
-               VALUES (?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s)
                ON CONFLICT(livro) DO UPDATE SET proximo_numero=excluded.proximo_numero,
                                                 maior_em_uso=excluded.maior_em_uso,
                                                 fixado_em=excluded.fixado_em,
@@ -229,7 +239,7 @@ def _sincronizar_numeracao(con: sqlite3.Connection, livro: Any, agora: str,
     return maior + 1
 
 
-def sincronizar_numeracao(con: sqlite3.Connection, livro: Any, agora: str,
+def sincronizar_numeracao(con: Any, livro: Any, agora: str,
                           usuario: str | None = None) -> int:
     """Versao publica de _sincronizar_numeracao, para a tela de numeração."""
     return _sincronizar_numeracao(con, livro, agora, usuario)
@@ -266,7 +276,122 @@ def e_titular(papel: Any) -> bool:
     return any(p.startswith(x) for x in PAPEL_DE_TITULAR)
 
 
-def corrigir_parte(con: sqlite3.Connection, parte_id: int, *, motivo: str, agora: str,
+# Papel de quem TRANSMITE o imovel no ato — o espelho de `PAPEL_DE_TITULAR`.
+PAPEL_DE_QUEM_TRANSMITE = ("transmitente",)
+
+
+def e_transmitente(papel: Any) -> bool:
+    """Se este papel e o de quem transmite o imovel no ato."""
+    p = (str(papel or "").strip().lower())
+    return any(p.startswith(x) for x in PAPEL_DE_QUEM_TRANSMITE)
+
+
+def chave_dos_titulares(matricula_id: Any) -> str:
+    """A trava do assunto «quem e titular atual desta matricula». So calcula.
+
+    Quem tira (`titulares_que_transmitiram`) e quem corrige (`corrigir_parte`)
+    o titular da mesma ficha pegam a mesma, e ANTES de prender as linhas — a
+    ordem do renumerar: trava do assunto, depois a linha.
+    """
+    return f"ri_partes.titular:{int(matricula_id)}"
+
+
+def titulares_que_transmitiram(con: Any, matricula_id: int, ato_id: int,
+                               partes: list[dict]) -> dict[str, list[str]]:
+    """Tira da titularidade atual quem transmitiu o imovel no ato. ESCREVE.
+
+    O DEFEITO QUE ISTO CONSERTA — LT03 achou, LD03 consertou (21/10/2026):
+    depois do R-1 de compra e venda (transmitente e adquirente), a certidao de
+    propriedade afirmava o VENDEDOR como dono, e nao a compradora. A lavratura
+    so fazia titular quem tinha papel «propriet...» — a regra desta mesma
+    tabela ja contava o adquirente, e as duas divergiam — e ninguem tirava o
+    transmitente do quadro. A certidao de propriedade e o quadro de ônus dizem
+    o proprietario VIGENTE (Lei 6.015/1973, art. 19, § 9º).
+
+    SO QUANDO O ATO TRAZ QUEM ADQUIRE. Ato com transmitente e sem titular novo
+    (papel errado, ato que nao transmite) nao esvazia a matricula: sem dono
+    nenhum, a certidao sairia em branco, que e o defeito de 18/08 de novo.
+
+    QUEM E O MESMO — LD10, 21/10/2026 (ressalva da revisao do LD03, «corrija
+    tudo»). O LD03 casava pelo nome sempre que faltava o documento de UM dos
+    lados, e o homonimo sem CPF saia junto. Agora:
+      - pelo DOCUMENTO, quando o ato e o quadro o tem;
+      - pelo NOME so quando NENHUM dos dois lados tem documento, e so se ha
+        UM titular atual com aquele nome.
+    O resto NAO tira ninguem e volta em `a_conferir`, com a frase pronta para
+    a tela e para a auditoria: o homonimo (dois ou mais com o nome) e o
+    documento de um lado so (o nome bate, mas so o ato ou so o quadro tem
+    CPF/CNPJ — a parte da abertura do acervo vem sem ele). Tirar o dono
+    errado do quadro e pior que deixar o certo: a certidao afirmaria que ele
+    nao e mais dono, e o quadro nao avisa ninguem.
+
+    PRESO, e a leitura e a escrita sao a mesma decisao: a trava do assunto
+    (`chave_dos_titulares`) e as linhas lidas `FOR UPDATE`. Esta funcao roda
+    na transacao propria, depois do selo; uma correcao de parte ou outra
+    lavratura na mesma ficha, no meio, mudaria o quadro entre o que se leu e o
+    que se grava. A correcao que chegou antes e vista: a linha que ela tirou
+    do quadro sai desta leitura quando ela confirma.
+
+    A LINHA FICA, so deixa de ser atual: `proprietario` continua dizendo que
+    ela foi dona, e a abertura continua mostrando quem era. A venda de PARTE
+    IDEAL (o vendedor continua condomino) se acerta em «Corrigir» na parte,
+    com motivo escrito — o sistema nao guarda a fracao.
+
+    Devolve `{"sairam": nomes, "a_conferir": frases}`.
+    """
+    saida: dict[str, list[str]] = {"sairam": [], "a_conferir": []}
+    if not any(e_titular(p.get("papel")) for p in partes):
+        return saida
+    quem_transmite = [p for p in partes if e_transmitente(p.get("papel"))]
+    if not quem_transmite:
+        return saida
+    bd = banco(con)
+    bd.travar(chave_dos_titulares(matricula_id))
+    bd._escrita()
+    atuais = bd.ler(
+        """SELECT id, nome, nome_norm, documento_numero FROM ri_partes
+            WHERE matricula_id=%s AND proprietario_ativo=1
+              AND ato_id IS DISTINCT FROM %s
+            ORDER BY id FOR UPDATE""", (int(matricula_id), int(ato_id)))
+    saem: dict[int, str] = {}
+    for t in quem_transmite:
+        doc = so_digitos(t.get("documento_numero") or "")
+        nome = normalizar_busca(t.get("nome") or "")
+        quem = (t.get("nome") or "").strip() or doc
+        if doc:
+            for a in atuais:
+                if so_digitos(a["documento_numero"] or "") == doc:
+                    saem[int(a["id"])] = a["nome"]
+        xaras = [a for a in atuais if int(a["id"]) not in saem and nome
+                 and nome == (a["nome_norm"] or normalizar_busca(a["nome"] or ""))]
+        if doc:
+            # Com documento no ato, só o xará SEM documento no quadro fica em
+            # dúvida; o que tem outro CPF/CNPJ é outra pessoa.
+            xaras = [a for a in xaras if not so_digitos(a["documento_numero"] or "")]
+        if not xaras:
+            continue
+        if len(xaras) > 1:
+            saida["a_conferir"].append(
+                f"{quem}: há {len(xaras)} titulares atuais com este nome e o "
+                f"documento não decide qual transmitiu — ninguém saiu do "
+                f"quadro. Diga qual em Partes → Corrigir (titular), com o "
+                f"motivo.")
+        elif doc or so_digitos(xaras[0]["documento_numero"] or ""):
+            saida["a_conferir"].append(
+                f"{quem}: o nome bate com o titular atual {xaras[0]['nome']}, "
+                f"mas só um dos dois tem CPF/CNPJ — pelo nome ninguém saiu do "
+                f"quadro. Se é a mesma pessoa, tire-a em Partes → Corrigir "
+                f"(titular), com o motivo.")
+        else:
+            saem[int(xaras[0]["id"])] = xaras[0]["nome"]
+    for parte_id in sorted(saem):
+        bd.escrever("UPDATE ri_partes SET proprietario_ativo=0 WHERE id=%s",
+                    (parte_id,))
+    saida["sairam"] = sorted(set(saem.values()))
+    return saida
+
+
+def corrigir_parte(con: Any, parte_id: int, *, motivo: str, agora: str,
                    nome: str | None = None, documento: str | None = None,
                    qualificacao: str | None = None, papel: str | None = None,
                    titular: bool | None = None,
@@ -275,13 +400,37 @@ def corrigir_parte(con: sqlite3.Connection, parte_id: int, *, motivo: str, agora
 
     Campo nao informado (None) fica como esta. Roda DENTRO da transacao de quem
     chama, e nao audita.
+
+    A LINHA SE PRENDE ANTES DE SE CONFERIR — LD10, 21/10/2026. A titularidade
+    nova sai da comparacao com a que a linha tem (`proprietario_ativo`); lida
+    solta, a saida do transmitente que outra transacao ainda nao confirmou
+    passava despercebida, e «ponha de volta como titular» (a venda de parte
+    ideal) virava «Nada foi alterado» com o vendedor fora do quadro. A trava
+    e a mesma de `titulares_que_transmitiram`, e vem antes da linha.
+
+    A FICHA SE LE ANTES DA TRAVA, E ISSO E SEGURO — LD13, 21/10/2026
+    (ressalva da revisao do LD10). O primeiro SELECT so diz QUAL trava pegar,
+    e a ficha de uma parte nao muda: nenhum codigo grava `ri_partes.
+    matricula_id` depois do INSERT (conferido no LD13; o `acervo_correcao`
+    nao libera `ri_partes`). O que se decide — a titularidade — sai da linha
+    relida `FOR UPDATE` depois da trava. O chamador em laço
+    (`ri_onus_ia.acatar_proprietarios`) corrige so partes da MESMA ficha, e
+    pega esta trava antes de ler a lista: quando chega aqui, a trava ja e da
+    transacao (pedi-la de novo nao espera) e nenhuma linha de outra ficha
+    esta presa — a ordem e sempre trava do assunto, depois linha, e nao fecha
+    ciclo com quem tira o transmitente.
     """
     motivo = (motivo or "").strip()
     if len(motivo) < 10:
         raise CorrecaoError("Escreva o motivo da correção com pelo menos dez letras.")
 
-    con.row_factory = sqlite3.Row
-    p = con.execute("SELECT * FROM ri_partes WHERE id=?", (parte_id,)).fetchone()
+    bd = banco(con)
+    ficha = bd.valor("SELECT matricula_id FROM ri_partes WHERE id=%s", (parte_id,))
+    if ficha is None:
+        raise CorrecaoError("Esta parte não existe.")
+    bd.travar(chave_dos_titulares(ficha))
+    bd._escrita()
+    p = bd.um("SELECT * FROM ri_partes WHERE id=%s FOR UPDATE", (parte_id,))
     if not p:
         raise CorrecaoError("Esta parte não existe.")
 
@@ -332,10 +481,10 @@ def corrigir_parte(con: sqlite3.Connection, parte_id: int, *, motivo: str, agora
     if not mudancas:
         raise CorrecaoError("Nada foi alterado nesta parte.")
 
-    atribuicoes = ", ".join(f"{k}=?" for k in campos)
-    con.execute(f"UPDATE ri_partes SET {atribuicoes} WHERE id=?",
+    atribuicoes = ", ".join(f"{k}=%s" for k in campos)
+    bd.escrever(f"UPDATE ri_partes SET {atribuicoes} WHERE id=%s",
                 (*campos.values(), parte_id))
-    con.execute("UPDATE ri_matriculas SET atualizado_em=? WHERE id=?",
+    bd.escrever("UPDATE ri_matriculas SET atualizado_em=%s WHERE id=%s",
                 (agora, p["matricula_id"]))
 
     return {"parte_id": parte_id, "matricula_id": p["matricula_id"],

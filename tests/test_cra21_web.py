@@ -244,15 +244,16 @@ def test_baixar_com_conteudo_no_lugar_do_nome_recusa(s, tmp_path,
 # ------------------------------------------- quem pode
 
 
-def test_a_tela_NAO_e_do_balcao(cg_casa):
-    """**Falar direto com a Central é de quem responde pela serventia**, e a
-    consulta de autorização pode MARCAR coisa lá dentro. O balcão baixa
-    arquivo pela tela de remessa, que já existe."""
+def test_a_tela_tambem_e_do_balcao(cg_casa):
+    """21/10/2026 — CONTRATO MUDADO POR ORDEM DO OFICIAL: «dar acesso às
+    escreventes operarem todo o protesto, em especial operar as API, CRA etc.».
+    Até aqui este teste se chamava `test_a_tela_NAO_e_do_balcao` e cobrava a
+    tela FECHADA ao escrevente; agora cobra que ela abre."""
     s = _sessao(cg_casa, papel="USER")
     r = s["c"].get("/protesto/cra/api", follow_redirects=True)
-    assert "CRA — falar com a Central" not in r.get_data(as_text=True)
+    assert "CRA — falar com a Central" in r.get_data(as_text=True)
     import cra21_web as W
-    assert "USER" not in W.QUEM_FALA_COM_A_CRA
+    assert "USER" in W.QUEM_FALA_COM_A_CRA
 
 
 def test_a_guarda_do_alcance_alcanca_a_tela_da_cra():
@@ -283,3 +284,25 @@ def test_a_lista_da_tela_so_traz_operacao_que_existe_no_contrato():
     for operacao in CRA.OPERACOES_SEM_SENTIDO_MEDIDO:
         assert f'"{operacao}"' not in fonte, (
             f"a tela oferece «{operacao}», cujo `userDados` não está medido")
+
+
+def test_download_de_todas_as_remessas_pela_api_dispensa_nome(s, monkeypatch):
+    import cra21_web as CRAW
+    chamadas = []
+
+    def trazer(qual, nome, amb, com_imagem=False):
+        chamadas.append((qual, nome, com_imagem))
+        return "<remessas>exemplo fictício</remessas>"
+
+    monkeypatch.setattr(CRAW, "_trazer", trazer)
+    html = s["c"].get("/protesto/cra/api").get_data(as_text=True)
+    form = re.search(r'<form[^>]+action="/protesto/cra/api/baixar".*?</form>',
+                     html, re.S).group()
+    assert 'name="o_que" value="pendentes"' in form
+    assert 'name="nome"' not in form
+    r = s["c"].post("/protesto/cra/api/baixar", data={
+        "csrf_token": _token(html), "o_que": "pendentes", "com_imagem": "1"})
+    assert r.status_code == 200
+    assert chamadas == [("pendentes", "", True)]
+    assert "attachment" in r.headers["Content-Disposition"]
+    assert "exemplo fictício" in r.get_data(as_text=True)

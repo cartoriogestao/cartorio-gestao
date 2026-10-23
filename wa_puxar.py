@@ -61,6 +61,13 @@ def puxar_pendentes(con: sqlite3.Connection, *,
                     agora: str | None = None) -> dict:
     """Busca pendentes na caixa-postal e aplica na fila. Sem rede se mockado."""
     url = WA.ler_config(con, SCH.CHAVE_CAIXA_URL)
+    # O SEGREDO SÓ VIAJA EM HTTPS (revisão de segurança de 22/10/2026, M11):
+    # o `Bearer` ia para a URL que o ADMIN gravasse, inclusive `http://`, e
+    # qualquer máquina no caminho o leria.
+    if url and not str(url).strip().lower().startswith("https://"):
+        return {"ok": False, "motivo": "caixa_url sem https: o segredo iria em "
+                                       "claro pela rede — corrija nas configurações",
+                "aplicadas": 0, "ignoradas": 0, "erros": []}
     if not url:
         return {"ok": False, "motivo": "caixa_url vazia", "aplicadas": 0,
                 "repetidas": 0}

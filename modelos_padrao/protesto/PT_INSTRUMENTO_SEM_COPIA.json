@@ -1,0 +1,8 @@
+{
+  "chave": "PT_INSTRUMENTO_SEM_COPIA",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto — sem cópia arquivada",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {copia} do instrumento quando não há imagem do título arquivada.",
+  "campos": []
+}

@@ -29,6 +29,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import cenprot_pendencias as P
 import centrais_cred as CRED
@@ -49,12 +51,13 @@ tem_contrato = pytest.mark.skipif(
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     init_nucleo_schema(con)
     init_pt_schema(con)
     CN.init_cn_schema(con)
+    con.commit()
     return con
 
 
@@ -609,6 +612,7 @@ def test_a_decidida_e_nao_enviada_aparece_no_QUE_FICOU_PELO_CAMINHO(
 
     db = BancoDeMesa(banco())
     init_ex_schema(db.con)      # a tabela do que o oficial ajustou na tela
+    db.con.commit()
     pid = uma_pendencia(db, monkeypatch)
 
     # ainda sem decisão: não é «inacabado», é «não começado»

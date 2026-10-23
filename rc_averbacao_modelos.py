@@ -21,6 +21,13 @@ assento. O referido e verdade e dou fe. Cidade Exemplo/MA, 24/09/2026."
 
 PARA ACRESCENTAR OUTRO MODELO: novo item em MODELOS com `campos` e uma funcao
 `montar`. A tela e a rota servem a todos os modelos do catalogo.
+
+O TEXTO MORA EM `modelos_padrao/rcpn/` DESDE O LF06C (19/10/2026): o papel
+`RC_AVERBACAO_RETIFICACAO` e as frases dele como pecas
+(`RC_AVERBACAO_RETIFICACAO__de_oficio`, `__uma`, `__assinatura`...), editaveis
+na tela de Modelos. Aqui fica a REGRA que escolhe a frase - de oficio ou a
+requerimento, uma correcao ou varias, a concordancia pelo artigo digitado - e a
+cola entre elas. O texto lancado em `rc_atos.teor` nao muda: ja e da averbacao.
 """
 from __future__ import annotations
 
@@ -30,10 +37,18 @@ import sqlite3
 from datetime import date, datetime
 from typing import Any, Callable
 
+import rc_textos as TEXTOS
+from bd_nativo import banco
+
 MESES = ("janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
          "agosto", "setembro", "outubro", "novembro", "dezembro")
 
-FUNDAMENTO_PADRAO = "Artigo 110, §§1º e 3º, da Lei 6.015/1973"
+# O papel no catálogo; as frases são peças dele (`<CHAVE>__<peça>`).
+CHAVE_DO_PAPEL = "RC_AVERBACAO_RETIFICACAO"
+# Os nomes que guardavam texto até o LF06C e continuam respondendo, pelo
+# `__getattr__` do fim do módulo, com o padrão da peça.
+_PECAS_DE_ANTES = {"FUNDAMENTO_PADRAO": "RC_AVERBACAO_RETIFICACAO__fundamento",
+                   "ABERTURA_DE_OFICIO": "RC_AVERBACAO_RETIFICACAO__de_oficio"}
 # Vazia desde 09/10/2026 (sanitização): a cidade vem de `settings` —
 # ver `cidade_da_casa`.
 CIDADE_PADRAO = ""
@@ -43,8 +58,9 @@ CHAVE_DA_SESSAO = "rcpn_averbacao_preenchida"
 def cidade_da_casa(con: sqlite3.Connection) -> str:
     """«Cidade/UF» desta serventia, de `settings`. Só lê; sem tabela, vazio."""
     try:
-        s = dict(con.execute(
-            "SELECT key, value FROM settings WHERE key IN ('ri_cidade','ri_uf')").fetchall())
+        s = {r["key"]: r["value"] for r in banco(con).ler(
+            "SELECT key, value FROM settings WHERE key IN ('ri_cidade','ri_uf') "
+            "ORDER BY key")}
     except sqlite3.Error:
         return CIDADE_PADRAO
     cidade, uf = (s.get("ri_cidade") or "").strip(), (s.get("ri_uf") or "").strip()
@@ -98,9 +114,9 @@ def _termo_formatado(numero: Any) -> str:
 
 def proximo_numero_av(con: sqlite3.Connection, assento: dict) -> str:
     """"02/13.706": ordem da averbacao / termo. So sugestao - o campo e editavel."""
-    n = con.execute(
-        "SELECT COUNT(*) FROM rc_atos WHERE assento_id=? "
-        "AND tipo IN ('AVERBACAO','RETIFICACAO')", (assento["id"],)).fetchone()[0]
+    n = banco(con).valor(
+        "SELECT COUNT(*) FROM rc_atos WHERE assento_id=%s "
+        "AND tipo IN ('AVERBACAO','RETIFICACAO')", (assento["id"],))
     return f"{int(n) + 1:02d}/{_termo_formatado(assento.get('numero'))}"
 
 
@@ -113,31 +129,35 @@ def termos_vizinhos(con: sqlite3.Connection, assento: dict, *, raio: int = 6,
         termo = int(assento.get("numero"))
     except (TypeError, ValueError):
         return []
-    linhas = con.execute(
+    linhas = banco(con).ler(
         "SELECT numero, data_ato FROM rc_assentos "
-        "WHERE serie=? AND (COALESCE(livro_volume,'')='' OR COALESCE(?,'')='' "
-        "OR livro_volume=?) "
-        "AND numero BETWEEN ? AND ? AND id<>? "
+        "WHERE serie=%s AND (COALESCE(livro_volume,'')='' OR COALESCE(%s,'')='' "
+        "OR livro_volume=%s) "
+        "AND numero BETWEEN %s AND %s AND id<>%s "
         "AND COALESCE(data_ato,'')<>'' "
-        "AND UPPER(COALESCE(situacao,''))<>'CANCELADO' ORDER BY numero",
+        "AND UPPER(COALESCE(situacao,''))<>'CANCELADO' ORDER BY numero, id",
         (assento.get("serie"), assento.get("livro_volume"), assento.get("livro_volume"),
          termo - raio,
-         termo + raio, assento["id"])).fetchall()
-    antes = [r for r in linhas if int(r[0]) < termo][-quantos:]
-    depois = [r for r in linhas if int(r[0]) > termo][:quantos]
-    return [{"termo": int(r[0]), "data": data_curta(r[1])} for r in antes + depois]
+         termo + raio, assento["id"]))
+    antes = [r for r in linhas if int(r["numero"]) < termo][-quantos:]
+    depois = [r for r in linhas if int(r["numero"]) > termo][:quantos]
+    return [{"termo": int(r["numero"]), "data": data_curta(r["data_ato"])}
+            for r in antes + depois]
 
 
 def _prova_sugerida(con: sqlite3.Connection, assento: dict) -> str:
+    """A sugestão do campo «Elementos de prova». A frase de cada prova é peça
+    do papel; o que entra (vizinhos achados, nascimento com data) é daqui."""
     partes = []
     viz = termos_vizinhos(con, assento)
     if viz:
-        lista = "; ".join(f"termo {_termo_formatado(v['termo'])}, de {v['data']}"
+        lista = "; ".join(_peca("prova_termo", termo=_termo_formatado(v["termo"]),
+                                data=v["data"])
                           for v in viz)
-        partes.append(f"a sequência dos termos vizinhos ({lista})")
+        partes.append(_peca("prova_termos_vizinhos", lista=lista))
     if str(assento.get("especie") or "").upper() == "NASCIMENTO" and assento.get("data_fato"):
-        partes.append("a data de nascimento do registrando, "
-                      f"{data_curta(assento['data_fato'])}, constante do próprio assento")
+        partes.append(_peca("prova_data_de_nascimento",
+                            data=data_curta(assento["data_fato"])))
     return " e ".join(partes)
 
 
@@ -148,12 +168,40 @@ def _prova_sugerida(con: sqlite3.Connection, assento: dict) -> str:
 # do registro foi grafado erroneamente como sendo “Y” ao invés de Z», e todas
 # fecham com o Artigo 110 e «retificando o assento». O modelo da data (09/10) e o
 # genérico de erro material montam por AQUI, para não haver duas redações da
-# mesma averbação divergindo no primeiro conserto.
+# mesma averbação divergindo no primeiro conserto. Desde o LF06C essa redação
+# mora no papel `RC_AVERBACAO_RETIFICACAO` e nas peças dele.
 _PARTICIPIO = {"A": "foi grafada", "AS": "foram grafadas",
                "O": "foi grafado", "OS": "foram grafados"}
 
-ABERTURA_DE_OFICIO = ("de ofício, por se tratar de erro que não exige qualquer "
-                      "indagação para a constatação imediata de necessidade de sua correção")
+
+def _preencher(texto: str, chave: str, /, **claros: Any) -> str:
+    """O texto com os claros preenchidos. Só calcula.
+
+    Claro que o papel não sabe preencher — um ajuste da casa com
+    `{nome_do_pai}` — é recusa com o nome do texto, que a tela mostra, e não
+    `KeyError` com o cliente no balcão.
+    """
+    try:
+        return texto.format(**claros)
+    except (KeyError, IndexError, ValueError) as erro:
+        validos = ", ".join("{" + c + "}" for c in claros) or "nenhum"
+        raise ModeloErro(
+            f"O texto «{chave}» (Administrativo → Modelos) tem um claro que "
+            f"este papel não preenche: {erro}. Claros que valem ali: {validos}."
+        ) from erro
+
+
+def _peca(nome: str, /, **claros: Any) -> str:
+    """A frase `nome` do papel, com os claros preenchidos. Só lê.
+
+    Sem conexão: dentro de `rc_textos.lendo_da_casa`, que a rota abre com a
+    conexão da casa, vale o ajuste da casa; fora dele, o padrão da base. Nem
+    as sugestões, que recebem `con`, a passam aqui: ela serve para ler o
+    assento, e quem as pede fora da rota (uma ferramenta, um banco montado só
+    com `rc_assentos`) não tem a tabela dos modelos para a busca única.
+    """
+    chave = f"{CHAVE_DO_PAPEL}__{nome}"
+    return _preencher(TEXTOS.texto(chave), chave, **claros)
 
 
 def _sem_aspas(texto: Any) -> str:
@@ -168,21 +216,22 @@ def _participio(campo: str) -> str | None:
 
 
 def _uma_correcao(c: dict, *, na_lista: bool) -> str:
+    """A frase de uma correção: sozinha («venho retificar X deste assento…») ou
+    como item da lista de várias («X, grafada erroneamente…»). Sem artigo, a
+    peça `…_sem_artigo`, com «constou», que não concorda."""
     campo = str(c["campo"]).strip().upper()
     # Os dois valores entre aspas — decisão do oficial, 15/10/2026 (relato #127):
     # «grafado erroneamente como sendo “Y” ao invés de “Z”».
-    errado, correto = _sem_aspas(c["errado"]), _sem_aspas(c["correto"])
+    valores = {"elemento": campo, "errado": _sem_aspas(c["errado"]),
+               "correto": _sem_aspas(c["correto"])}
     part = _participio(campo)
     if na_lista:
         if part:
-            return (f"{campo}, {part.split(' ', 1)[1]} erroneamente como sendo "
-                    f"“{errado}” ao invés de “{correto}”")
-        return f"{campo}, que constou erroneamente como “{errado}” ao invés de “{correto}”"
+            return _peca("item", participio=part.split(" ", 1)[1], **valores)
+        return _peca("item_sem_artigo", **valores)
     if part:
-        return (f"{campo} deste assento, que na época do registro {part} erroneamente "
-                f"como sendo “{errado}” ao invés de “{correto}”")
-    return (f"{campo} deste assento, que na época do registro constou erroneamente "
-            f"como “{errado}” ao invés de “{correto}”")
+        return _peca("uma", participio=part, **valores)
+    return _peca("uma_sem_artigo", **valores)
 
 
 _CONTRACAO = {"A": "DA", "AS": "DAS", "O": "DO", "OS": "DOS"}
@@ -203,42 +252,54 @@ def _titulo(correcoes: list[dict]) -> str:
     NASCIMENTO»."""
     partes = [_do_elemento(str(c["campo"])) for c in correcoes]
     if len(partes) == 1:
-        return "RETIFICAÇÃO " + partes[0]
-    return "RETIFICAÇÃO " + ", ".join(partes[:-1]) + " E " + partes[-1]
+        return _peca("titulo", elementos=partes[0])
+    return _peca("titulo", elementos=", ".join(partes[:-1]) + " E " + partes[-1])
 
 
 def _abertura(v: dict) -> str:
+    """De ofício ou a requerimento da parte (com a data, se houver e valer)."""
     if v.get("requerente_tipo") == "parte":
-        txt = ("após requerimento feito pela parte interessada, "
-               f"{str(v.get('requerente_nome') or '').strip()}")
+        txt = _peca("a_requerimento",
+                    requerente=str(v.get("requerente_nome") or "").strip())
         dreq = _iso(v.get("data_requerimento"))
-        return txt + (f", em {data_curta(dreq)}" if dreq else "")
-    return ABERTURA_DE_OFICIO
+        return txt + (_peca("data_do_requerimento", data_requerimento=data_curta(dreq))
+                      if dreq else "")
+    return _peca("de_oficio")
 
 
 def _teor_retificacao(v: dict, correcoes: list[dict], *, provas: str = "",
-                      constar: str = "a redação correta") -> str:
+                      constar: str | None = None, modelo: str | None = None) -> str:
     """Monta o teor da averbação de retificação (art. 110) para uma ou mais correções.
-    Só monta texto; quem confere e lança é o escrevente, na tela padrão."""
+    Só monta texto; quem confere e lança é o escrevente, na tela padrão.
+
+    `modelo` é o corpo do papel `RC_AVERBACAO_RETIFICACAO` lido pela busca única
+    por quem tem a conexão; sem ele, `rc_textos.texto` (o ajuste da casa dentro
+    de `lendo_da_casa`, senão o padrão da base). `constar` sem valor é a peça
+    «a redação correta»."""
     dav = _iso(v["data_averbacao"])
     if len(correcoes) == 1:
-        miolo = "venho retificar " + _uma_correcao(correcoes[0], na_lista=False)
+        correcao = _uma_correcao(correcoes[0], na_lista=False)
     else:
         itens = [_uma_correcao(c, na_lista=True) for c in correcoes]
-        miolo = ("venho retificar os seguintes elementos deste assento, que na época do "
-                 "registro constaram com erro: " + "; ".join(itens[:-1]) + "; e " + itens[-1])
+        correcao = _peca("varias", itens="; ".join(itens[:-1]) + "; e " + itens[-1])
     provas = str(provas or "").strip().rstrip(".")
     sub = str(v["subscritor_nome"]).strip()
     funcao = str(v.get("subscritor_funcao") or "").strip()
-    assinatura = f"Eu, {sub}, {funcao}, o subscrevi." if funcao else f"Eu, {sub}, o subscrevi."
-    return (
-        f"AVERBAÇÃO {str(v['numero_av']).strip()} – {_titulo(correcoes)}: "
-        f"Em {data_por_extenso(dav)}, "
-        f"{_abertura(v)}, {miolo}"
-        f"{', conforme ' + provas if provas else ''}; diante disto faço constar {constar}, "
-        f"dando cumprimento ao {str(v['fundamento']).strip()}, retificando o assento. "
-        f"O referido é verdade e dou fé. "
-        f"{(v.get('cidade') or CIDADE_PADRAO).strip()}, {data_curta(dav)}. {assinatura}"
+    assinatura = (_peca("assinatura", subscritor=sub, funcao=funcao) if funcao
+                  else _peca("assinatura_sem_funcao", subscritor=sub))
+    return _preencher(
+        modelo or TEXTOS.texto(CHAVE_DO_PAPEL), CHAVE_DO_PAPEL,
+        numero_av=str(v["numero_av"]).strip(),
+        titulo=_titulo(correcoes),
+        data_por_extenso=data_por_extenso(dav),
+        abertura=_abertura(v),
+        correcao=correcao,
+        conforme=_peca("conforme", provas=provas) if provas else "",
+        constar=_peca("constar") if constar is None else constar,
+        fundamento=str(v["fundamento"]).strip(),
+        cidade=(v.get("cidade") or CIDADE_PADRAO).strip(),
+        data=data_curta(dav),
+        assinatura=assinatura,
     )
 
 
@@ -253,7 +314,7 @@ def _sugestoes_data_registro(con: sqlite3.Connection, assento: dict,
         "requerente_tipo": "oficio",
         "requerente_nome": "",
         "elementos_prova": _prova_sugerida(con, assento),
-        "fundamento": FUNDAMENTO_PADRAO,
+        "fundamento": _peca("fundamento"),
         "data_averbacao": date.today().isoformat(),
         "cidade": cidade_da_casa(con),
         "subscritor_nome": usuario.get("nome") or "",
@@ -261,7 +322,7 @@ def _sugestoes_data_registro(con: sqlite3.Connection, assento: dict,
     }
 
 
-def _montar_data_registro(v: dict, assento: dict) -> dict:
+def _montar_data_registro(v: dict, assento: dict, *, modelo: str | None = None) -> dict:
     faltam = [rot for chave, rot in (
         ("numero_av", "Número da averbação"),
         ("data_como_consta", "Data do registro como consta"),
@@ -289,7 +350,7 @@ def _montar_data_registro(v: dict, assento: dict) -> dict:
     correcao = {"campo": "A DATA DO REGISTRO", "errado": v["data_como_consta"],
                 "correto": f"{data_por_extenso(correta)} ({data_curta(correta)})"}
     teor = _teor_retificacao(v, [correcao], provas=v["elementos_prova"],
-                             constar="a data correta do registro")
+                             constar=_peca("constar_data_registro"), modelo=modelo)
     return {"teor": teor,
             "fundamento": f"Art. 110 da Lei 6.015/1973 - erro na data do registro "
                           f"(de “{v['data_como_consta'].strip()}” para {data_curta(correta)})",
@@ -377,7 +438,7 @@ def _sugestoes_erro_material(con: sqlite3.Connection, assento: dict,
         "requerente_nome": "",
         "data_requerimento": "",
         "documentos": "",
-        "fundamento": FUNDAMENTO_PADRAO,
+        "fundamento": _peca("fundamento"),
         "data_averbacao": date.today().isoformat(),
         "cidade": cidade_da_casa(con),
         "subscritor_nome": usuario.get("nome") or "",
@@ -385,7 +446,7 @@ def _sugestoes_erro_material(con: sqlite3.Connection, assento: dict,
     }
 
 
-def _montar_erro_material(v: dict, assento: dict) -> dict:
+def _montar_erro_material(v: dict, assento: dict, *, modelo: str | None = None) -> dict:
     faltam = [rot for chave, rot in (
         ("numero_av", "Número da averbação"),
         ("fundamento", "Fundamento legal"),
@@ -403,7 +464,8 @@ def _montar_erro_material(v: dict, assento: dict) -> dict:
         raise ModeloErro("Data da averbação inválida.")
     if str(v.get("data_requerimento") or "").strip() and not _iso(v["data_requerimento"]):
         raise ModeloErro("Data do requerimento inválida.")
-    teor = _teor_retificacao(v, correcoes, provas=str(v.get("documentos") or ""))
+    teor = _teor_retificacao(v, correcoes, provas=str(v.get("documentos") or ""),
+                             modelo=modelo)
     resumo = "; ".join(f"{c['campo'].upper()} (de “{_sem_aspas(c['errado'])}” para "
                        f"“{_sem_aspas(c['correto'])}”)" for c in correcoes)
     fundamento = f"Art. 110 da Lei 6.015/1973 - erro material: {resumo}"
@@ -479,6 +541,11 @@ def modelo(slug: str) -> dict:
     return m
 
 
+# `montar` recebe `modelo=` (o corpo do papel, como os outros montadores do
+# catálogo), e lá dentro esse nome esconde a função acima.
+_modelo_do_slug = modelo
+
+
 def sugestoes(con: sqlite3.Connection, slug: str, assento: dict,
               usuario: dict | None = None) -> dict:
     return modelo(slug)["sugestoes"](con, assento, usuario or {})
@@ -499,9 +566,31 @@ def valores_do_formulario(slug: str, form: Any) -> dict:
     return valores
 
 
-def montar(slug: str, valores: dict, assento: dict) -> dict:
-    m = modelo(slug)
+def montar(slug: str, valores: dict, assento: dict, *,
+           modelo: str | None = None) -> dict:
+    """O teor, o fundamento e a natureza da averbação. Só calcula.
+
+    `modelo` é o corpo do papel `RC_AVERBACAO_RETIFICACAO` que vale na casa,
+    lido por quem tem a conexão; sem ele, o de `rc_textos.texto` — o padrão da
+    base, ou o ajuste da casa dentro de `lendo_da_casa`."""
+    m = _modelo_do_slug(slug)
     esp = str(assento.get("especie") or "").upper()
     if esp not in m["especies"]:
         raise ModeloErro(f"Este modelo não serve para assento de {esp or '?'}.")
-    return m["montar"](valores, assento)
+    return m["montar"](valores, assento, modelo=modelo)
+
+
+def __getattr__(nome: str):
+    """Os nomes antigos do texto de fábrica, lidos da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06C (19/10/2026) e mora em
+    `modelos_padrao/rcpn/`. `FUNDAMENTO_PADRAO` e `ABERTURA_DE_OFICIO` viraram
+    peças do papel e respondem o padrão delas; `TEOR_DA_RETIFICACAO` é o nome
+    do papel no catálogo. Nome que não é de papel continua `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    if nome in _PECAS_DE_ANTES:
+        return _MODELOS.padrao_de(_PECAS_DE_ANTES[nome])
+    return _MODELOS.constante_antiga(__name__, nome)

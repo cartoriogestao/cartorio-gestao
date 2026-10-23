@@ -210,11 +210,16 @@ def test_a_pagina_monta_com_item_em_TODA_fonte(casa):
                            criado_em)
                        VALUES ('1',2026,'2026-01-05','CIVIL','ABERTA',
                                'CARLA','ROBERTO',?)""", (AGORA,))
+        # `created_by` E O ID de quem cadastrou (INTEGER NOT NULL, FK users): a
+        # tela e o malote gravam o numero. O login «mario» que estava aqui o
+        # SQLite aceitava, e o PostgreSQL recusa (19/10/2026).
+        mario = con.execute(
+            "SELECT id FROM users WHERE username='mario'").fetchone()[0]
         con.execute("""INSERT INTO expedientes (internal_protocol, source,
                            subject, category, received_at, created_by,
                            created_at, updated_at)
                        VALUES ('1','MALOTE','oficio do juiz','JUDICIAL',
-                               '2026-01-05','mario',?,?)""", (AGORA, AGORA))
+                               '2026-01-05',?,?,?)""", (mario, AGORA, AGORA))
         con.execute("""INSERT INTO tasks (title, created_at, updated_at)
                        VALUES ('uma tarefa','2026-01-05','2026-01-05')""")
 

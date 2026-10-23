@@ -1,0 +1,1 @@
+O {serventia}, Tabelionato de Protesto de Títulos, DECLARA PROTESTADO o documento abaixo descrito, pagável na praça de {praca}, em virtude do que se fez a intimação devida, na forma da Lei, para que o devedor se manifestasse a respeito; pelo que, para garantia do credor, foi lavrado este Protesto, por motivo de {motivo}. {descricao} {copia} {intimacao}

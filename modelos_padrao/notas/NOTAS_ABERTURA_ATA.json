@@ -1,0 +1,12 @@
+{
+  "chave": "NOTAS_ABERTURA_ATA",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Abertura da ata notarial",
+  "formato": "CHAVES",
+  "explica": "O começo do teor da ata notarial montado pelo sistema («SAIBAM…»), antes das partes. Data, cidade e estado são claros.",
+  "campos": [
+    "data_extenso",
+    "cidade",
+    "uf_extenso"
+  ]
+}

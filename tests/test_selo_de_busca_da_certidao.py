@@ -174,8 +174,8 @@ def gravador(monkeypatch):
 
     def _selar(*a, **k):
         chamadas.append(k)
-        return {"selado": True, "numero": f"BUSCAS0296370TESTE{len(chamadas):04d}",
-                "numeros": [f"BUSCAS0296370TESTE{len(chamadas):04d}"],
+        return {"selado": True, "numero": f"BUSCAS0000000TESTE{len(chamadas):04d}",
+                "numeros": [f"BUSCAS0000000TESTE{len(chamadas):04d}"],
                 "motivo": None}
     monkeypatch.setattr(AS, "selar_o_ato_lavrado", _selar)
     return chamadas

@@ -1,0 +1,154 @@
+{#
+  O repasse ao apresentante (LG05) — o dinheiro do título pago ainda é de
+  outra pessoa. Lei 9.492/1997, art. 19, § 2º; CN-MA arts. 926 e 929.
+
+  DOIS CAMINHOS: o título da Central volta pela guia do IEPTB; o do balcão,
+  direto ao apresentante. A pendência nasce do Livro de Pagamentos — pagamento
+  sem repasse É a pendência.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Repasses ao apresentante</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
+  <a class="button" href="{{ url_for('protesto_repasses_csv') }}">Baixar o relatório de pendências (CSV)</a>
+</div>
+
+<div class="notice">
+  O valor pago fica <strong>à disposição do apresentante no primeiro dia útil
+  seguinte</strong> ao recebimento <small>({{ fundamento }})</small>.
+  <br><br>
+  <strong>Título da CRA ou da CENPROT</strong> volta pela <em>guia de pagamento
+  ao IEPTB</em>: gere aqui a relação, emita a guia no Instituto, registre-a,
+  registre o pagamento e concilie com a confirmação dele. O sistema
+  <strong>não gera o boleto</strong> — o código de barras é do Instituto.
+  <br>
+  <strong>Título do balcão</strong> se repassa direto: em espécie, cheque ou
+  depósito na conta indicada — acima de R$ 300,00 só cheque ou depósito
+  (CN-MA art. 926, § 1º). O comprovante é obrigatório.
+  <br><br>
+  <small>O atraso é <strong>contagem, e não juízo</strong>. O valor é o pago,
+  quando o balcão o informou; senão, o declarado pelo apresentante.</small>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Resumo</span>
+    <small>{{ rel.pendentes | length }} pendente(s), {{ rel.vencidos }} com o prazo vencido</small></div>
+  <table class="table">
+    <thead><tr><th>Canal</th><th>Títulos</th><th>Total</th><th>Prazo vencido</th></tr></thead>
+    <tbody>
+      {% for canal, g in rel.por_canal.items() %}
+      <tr><td>{{ 'Guia ao IEPTB' if canal == 'IEPTB' else 'Direto ao apresentante' }}</td>
+          <td>{{ g.titulos }}</td><td>R$ {{ reais(g.total_centavos) }}</td>
+          <td>{% if g.vencidos %}<strong class="danger">{{ g.vencidos }}</strong>{% else %}0{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% set da_central = rel.pendentes | selectattr('canal', 'equalto', 'IEPTB') | list %}
+{% set do_balcao = rel.pendentes | selectattr('canal', 'equalto', 'DIRETO') | list %}
+
+<section class="panel">
+  <div class="panel-head"><span>Da Central — vão pela guia do IEPTB</span>
+    <small>{{ da_central | length }} pagamento(s)</small></div>
+  {% if not da_central %}
+    <p style="padding:14px">Nenhum pagamento de título da Central esperando repasse.</p>
+  {% else %}
+  <form method="post" action="{{ url_for('protesto_repasse_guia_gerar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <table class="table">
+      <thead><tr><th></th><th>Título</th><th>Apresentante</th><th>Pago em</th>
+                 <th>Prazo</th><th>Valor</th></tr></thead>
+      <tbody>
+        {% for p in da_central %}
+        <tr>
+          <td><input type="checkbox" name="ato_id" value="{{ p.ato_id }}"></td>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.numero_titulo }}</a>
+              <div><small>protocolo {{ p.protocolo or '—' }}</small></div></td>
+          <td>{{ p.apresentante_codigo or '' }} {{ p.favorecido }}</td>
+          <td>{{ p.recebido_em }}{% if p.observacao %}<div><small>{{ p.observacao }}</small></div>{% endif %}</td>
+          <td>{{ p.prazo }}{% if p.vencido %} <strong class="danger">({{ p.dias_de_atraso }} dia(s) de atraso)</strong>{% endif %}</td>
+          <td>R$ {{ reais(p.valor_centavos) }}
+              {% if p.valor_de == 'SALDO' %}<div><small>o declarado — o valor pago não foi informado</small></div>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if user.role in pode_mexer %}
+    <div class="actions" style="padding:0 14px 14px">
+      <button class="button">Gerar a guia (os marcados — ou todos, se nenhum)</button>
+    </div>
+    {% endif %}
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Do balcão — repasse direto ao apresentante</span>
+    <small>{{ do_balcao | length }} pagamento(s)</small></div>
+  {% if not do_balcao %}
+    <p style="padding:14px">Nenhum pagamento de título do balcão esperando repasse.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Título</th><th>Pago em</th><th>Prazo</th><th>Valor</th><th>Registrar o repasse</th></tr></thead>
+    <tbody>
+      {% for p in do_balcao %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.numero_titulo }}</a>
+            <div><small>{{ p.favorecido or 'apresentante não informado' }}</small></div></td>
+        <td>{{ p.recebido_em }}{% if p.observacao %}<div><small>{{ p.observacao }}</small></div>{% endif %}</td>
+        <td>{{ p.prazo }}{% if p.vencido %} <strong class="danger">({{ p.dias_de_atraso }} dia(s) de atraso)</strong>{% endif %}</td>
+        <td>R$ {{ reais(p.valor_centavos) }}
+            {% if p.valor_de == 'SALDO' %}<div><small>o declarado</small></div>{% endif %}</td>
+        <td>
+          {% if user.role in pode_mexer %}
+          <form method="post" action="{{ url_for('protesto_repasse_direto') }}" class="grid2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="ato_id" value="{{ p.ato_id }}">
+            <label>Forma
+              <select name="forma" required>
+                <option value="">— escolha —</option>
+                {% for k, v in formas.items() %}
+                  {% if not (k == 'ESPECIE' and p.valor_centavos > 30000) %}
+                  <option value="{{ k }}">{{ v }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select></label>
+            <label>Comprovante <input name="comprovante" required
+                   placeholder="recibo assinado, nº do cheque ou do depósito"></label>
+            <label>Repassado em <input type="date" name="repassado_em" value="{{ hoje }}"></label>
+            <label>Favorecido <input name="favorecido" value="{{ p.favorecido }}"></label>
+            <div class="actions"><button class="button">Registrar o repasse</button></div>
+          </form>
+          {% else %}<small>quem registra é quem responde pelo caixa</small>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Guias ao IEPTB</span>
+    <small>{{ rel.a_conciliar | length }} paga(s) esperando conciliação</small></div>
+  {% if not guias %}
+    <p style="padding:14px">Nenhuma guia gerada ainda.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Guia</th><th>Gerada em</th><th>Títulos</th><th>Total</th><th>Situação</th></tr></thead>
+    <tbody>
+      {% for g in guias %}
+      <tr>
+        <td><a href="{{ url_for('protesto_repasse_guia', guia_id=g.id) }}">{{ g.numero }}/{{ g.ano }}</a></td>
+        <td>{{ g.dia }}</td><td>{{ g.titulos }}</td><td>R$ {{ reais(g.total_centavos) }}</td>
+        <td>{{ g.situacao }}{% if g.identificador %}<div><small>{{ g.identificador }}</small></div>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

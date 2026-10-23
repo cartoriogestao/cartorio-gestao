@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_FECHO_ESCRITURA__testemunhas",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Teor — testemunhas presentes",
+  "formato": "CHAVES",
+  "explica": "Antes do fecho, quando o ato tem testemunhas.",
+  "campos": [
+    "nomes"
+  ]
+}

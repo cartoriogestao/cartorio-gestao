@@ -1,0 +1,8 @@
+{
+  "chave": "PT_TERMO_TIPOS",
+  "atribuicao": "Protesto",
+  "nome": "Termo do protesto — tipo do protesto, por extenso",
+  "formato": "CHAVES",
+  "explica": "Uma linha por rótulo, no formato «nome = texto». O NOME é do sistema e não muda; o TEXTO é seu. Linha apagada, ou deixada sem texto, volta ao padrão — o sistema nunca fica sem a palavra. O nome é o código do tipo (C comum, F para fins falimentares). O texto entra na descrição do instrumento e da certidão (em minúsculas). No {tipo} do termo lavrado no livro vale o PADRÃO, enquanto o oficial não decidir que o livro siga o ajuste (LF06E).",
+  "campos": []
+}

@@ -373,11 +373,20 @@ def test_a_morte_violenta_SOBE_porque_o_XSD_a_enumera(casa):
 
     **Prosa de recomendação não é schema.** Os 4 óbitos violentos desta casa
     deixam de ser retidos, e sobem com a palavra que a Central declara.
+
+    **GRAVA-SE O CÓDIGO 2, E NÃO A PALAVRA «Violenta»** — 19/10/2026, na
+    migração para o PostgreSQL. A coluna é número (`bigint` na produção
+    migrada, e no SQLite da produção só havia número nela), e nenhum caminho
+    do sistema grava palavra ali: a tela passa por `rc_assento._codigo_do_ibge`,
+    a leitura de documentos devolve `"2"`, e a carga do acervo traduz o
+    «Violenta» de `strTipoMorte` em `2` antes de gravar. O SQLite guardava o
+    texto na coluna inteira; o PostgreSQL o recusa — e os 4 violentos desta
+    casa são `2`.
     """
     con = _con(casa)
     with con:
         aid = _assento(con, especie="OBITO", serie="RC_C", nome="ANTONIO",
-                       ibge_natureza_obito="Violenta", cor_raca="Parda",
+                       ibge_natureza_obito=2, cor_raca="Parda",
                        obito_possui_bens="N")
         _pessoa(con, aid, "FALECIDO", "ANTONIO", sexo="M")
     r = CRC.montar(con, [aid], cns=CNS)
@@ -410,10 +419,12 @@ def test_a_morte_vai_pelo_CODIGO_do_ibge_e_nao_so_pela_palavra(casa):
 
 
 def test_a_morte_natural_vai(casa):
+    # O CÓDIGO 1 DO IBGE, e não a palavra «Natural»: a coluna é número e
+    # nenhum caminho do sistema grava palavra nela (ver a morte violenta).
     con = _con(casa)
     with con:
         aid = _assento(con, especie="OBITO", serie="RC_C", nome="JOAQUIM",
-                       ibge_natureza_obito="Natural", cor_raca="Branca",
+                       ibge_natureza_obito=1, cor_raca="Branca",
                        obito_possui_bens="N")
         _pessoa(con, aid, "FALECIDO", "JOAQUIM", sexo="M")
     r = CRC.montar(con, [aid], cns=CNS)
@@ -421,6 +432,8 @@ def test_a_morte_natural_vai(casa):
     # A CAIXA E A DO XSD: `NATURAL`, e nao `Natural`. Enumeracao de schema se
     # compara caractere a caractere.
     assert "<TIPOMORTE>NATURAL</TIPOMORTE>" in r["xml"]
+    # E a palavra do acervo, que o vocabulário ainda aceita, sai na mesma caixa.
+    assert CRC.TIPO_MORTE.get(CRC._chave("Natural")) == "NATURAL"
 
 
 def test_cor_fora_do_catalogo_fica_retida(casa):

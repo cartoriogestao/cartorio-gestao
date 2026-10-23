@@ -1,0 +1,2861 @@
+{
+ "_como": "Gerado ANTES do LF06C, na árvore do commit 2c41e90 exportada intocada, por tests/fixtures/modelos_ouro/ouro_lf06c.py gerar termos. Não regerar: depois da mudança o texto mora na pasta dos padrões, e regerar faria o teste comparar a pasta com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "cas.montado.cheio": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [],
+    "texto": "Em trinta (30) de agosto de dois mil e vinte e seis (2026), nesta cidade de Cidade Exemplo, em cartório, perante mim e as testemunhas adiante nomeadas e no fim assinadas, compareceram os nubentes <strong>JOÃO DE EXEMPLO</strong>, brasileiro, lavrador, inscrito no CPF n.º 00000000191, tendo sido casado(a) com BEATRIZ DE EXEMPLO, casamento dissolvido em 03/05/2020 e <strong>MARIA DE EXEMPLO</strong>, brasileira, professora, tendo sido casado(a) com ROBERTO DE EXEMPLO, a fim de contrair matrimônio, apresentando os seguintes documentos: Certidão de nascimento, RG e Comprovante de residência, dispensada a apresentação de Certidão de óbito do cônjuge anterior (nubentes solteiros) e Declaração de testemunhas e a certidão de habilitação expedida por Cartório de Exemplo de Outra Cidade/MA, com os proclamas publicados em 01/08/2026. E, não havendo impedimento, foram declarados casados sob o regime de comunhão parcial de bens, conforme escritura de pacto antenupcial lavrada em 15/07/2026 nas notas de Tabelionato de Exemplo. Passou o cônjuge MARIA DE EXEMPLO a assinar-se MARIA DE EXEMPLO SOUSA. São pais do primeiro nubente ANA DE EXEMPLO e PEDRO DE EXEMPLO; e do segundo, RITA DE EXEMPLO. Trata-se de conversão de união estável, processo n.º 0000000-00.2026.8.10.0000. Nada mais. Lido e achado conforme, assinam comigo, que escrevi, os nubentes e as testemunhas CARLOS DE EXEMPLO, LUCIA DE EXEMPLO e PAULO DE EXEMPLO. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, escrevi e assino."
+   }
+  },
+  "cas.montado.corpo_da_casa": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [],
+    "texto": "<strong>JOÃO DE EXEMPLO</strong>, brasileiro, lavrador, inscrito no CPF n.º 00000000191, tendo sido casado(a) com BEATRIZ DE EXEMPLO, casamento dissolvido em 03/05/2020| e a certidão de habilitação expedida por Cartório de Exemplo de Outra Cidade/MA, com os proclamas publicados em 01/08/2026.|comunhão parcial de bens, conforme escritura de pacto antenupcial lavrada em 15/07/2026 nas notas de Tabelionato de Exemplo|Trata-se de conversão de união estável, processo n.º 0000000-00.2026.8.10.0000."
+   }
+  },
+  "cas.montado.desta_casa_ninguem_muda": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Relação dos documentos apresentados",
+     "Filiação do primeiro nubente",
+     "Filiação do segundo nubente",
+     "Testemunhas"
+    ],
+    "nao_e_o_caso": [
+     "Conversão de união estável"
+    ],
+    "texto": "Em trinta (30) de agosto de dois mil e vinte e seis (2026), nesta cidade de Cidade Exemplo, em cartório, perante mim e as testemunhas adiante nomeadas e no fim assinadas, compareceram os nubentes <strong>JOÃO DE EXEMPLO</strong>, brasileiro, lavrador, inscrito no CPF n.º 00000000191 e <strong>MARIA DE EXEMPLO</strong>, brasileira, professora, a fim de contrair matrimônio, apresentando ____________. E, não havendo impedimento, foram declarados casados sob o regime de separação total de bens. Nenhum dos cônjuges alterou o nome, mantendo ambos os que já usavam. São pais do primeiro nubente ____________; e do segundo, ____________. Nada mais. Lido e achado conforme, assinam comigo, que escrevi, os nubentes e as testemunhas ____________. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, escrevi e assino."
+   }
+  },
+  "cas.montado.sem_nada": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro, por extenso",
+     "Cidade e comarca",
+     "Primeiro nubente — qualificação",
+     "Segundo nubente — qualificação",
+     "Regime de bens",
+     "Relação dos documentos apresentados",
+     "Filiação do primeiro nubente",
+     "Filiação do segundo nubente",
+     "Testemunhas",
+     "Quem escreveu",
+     "Em que qualidade"
+    ],
+    "nao_e_o_caso": [
+     "Conversão de união estável"
+    ],
+    "texto": "Em ____________, nesta cidade de ____________, em cartório, perante mim e as testemunhas adiante nomeadas e no fim assinadas, compareceram os nubentes ____________ e ____________, a fim de contrair matrimônio, apresentando ____________. E, não havendo impedimento, foram declarados casados sob o regime de ____________. Nenhum dos cônjuges alterou o nome, mantendo ambos os que já usavam. São pais do primeiro nubente ____________; e do segundo, ____________. Nada mais. Lido e achado conforme, assinam comigo, que escrevi, os nubentes e as testemunhas ____________. Eu, ____________, ____________, escrevi e assino."
+   }
+  },
+  "cas.valores.cheio": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_ato_extenso": "trinta (30) de agosto de dois mil e vinte e seis (2026)",
+    "documentos_apresentados": "os seguintes documentos: Certidão de nascimento, RG e Comprovante de residência, dispensada a apresentação de Certidão de óbito do cônjuge anterior (nubentes solteiros) e Declaração de testemunhas",
+    "escrevente": "ESCREVENTE DE EXEMPLO",
+    "filiacao1": "ANA DE EXEMPLO e PEDRO DE EXEMPLO",
+    "filiacao2": "RITA DE EXEMPLO",
+    "frase_conversao": "Trata-se de conversão de união estável, processo n.º 0000000-00.2026.8.10.0000.",
+    "frase_dos_nomes": "Passou o cônjuge MARIA DE EXEMPLO a assinar-se MARIA DE EXEMPLO SOUSA.",
+    "frase_habilitacao": " e a certidão de habilitação expedida por Cartório de Exemplo de Outra Cidade/MA, com os proclamas publicados em 01/08/2026.",
+    "funcao_do_escrevente": "Escrevente Autorizado",
+    "nubente1_qualificacao": "<strong>JOÃO DE EXEMPLO</strong>, brasileiro, lavrador, inscrito no CPF n.º 00000000191, tendo sido casado(a) com BEATRIZ DE EXEMPLO, casamento dissolvido em 03/05/2020",
+    "nubente2_qualificacao": "<strong>MARIA DE EXEMPLO</strong>, brasileira, professora, tendo sido casado(a) com ROBERTO DE EXEMPLO",
+    "regime_bens": "comunhão parcial de bens, conforme escritura de pacto antenupcial lavrada em 15/07/2026 nas notas de Tabelionato de Exemplo",
+    "testemunhas": "CARLOS DE EXEMPLO, LUCIA DE EXEMPLO e PAULO DE EXEMPLO"
+   }
+  },
+  "cas.valores.desta_casa": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_ato_extenso": "trinta (30) de agosto de dois mil e vinte e seis (2026)",
+    "documentos_apresentados": "os seguintes documentos: Certidão de nascimento, RG e Comprovante de residência, dispensada a apresentação de Certidão de óbito do cônjuge anterior (nubentes solteiros) e Declaração de testemunhas",
+    "escrevente": "ESCREVENTE DE EXEMPLO",
+    "filiacao1": "ANA DE EXEMPLO e PEDRO DE EXEMPLO",
+    "filiacao2": "RITA DE EXEMPLO",
+    "frase_conversao": "",
+    "frase_dos_nomes": "Passou o cônjuge MARIA DE EXEMPLO a assinar-se MARIA DE EXEMPLO SOUSA.",
+    "frase_habilitacao": ".",
+    "funcao_do_escrevente": "Escrevente Autorizado",
+    "nubente1_qualificacao": "<strong>JOÃO DE EXEMPLO</strong>, brasileiro, lavrador, inscrito no CPF n.º 00000000191",
+    "nubente2_qualificacao": "<strong>MARIA DE EXEMPLO</strong>, brasileira, professora",
+    "regime_bens": "comunhão parcial",
+    "testemunhas": "CARLOS DE EXEMPLO, LUCIA DE EXEMPLO e PAULO DE EXEMPLO"
+   }
+  },
+  "cas.valores.docs_digitados": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_ato_extenso": "trinta (30) de agosto de dois mil e vinte e seis (2026)",
+    "documentos_apresentados": "os seguintes documentos: Certidões de nascimento e RG",
+    "escrevente": "",
+    "filiacao1": "ANA DE EXEMPLO e PEDRO DE EXEMPLO",
+    "filiacao2": "RITA DE EXEMPLO",
+    "frase_conversao": "Trata-se de conversão de união estável, processo n.º 0000000-00.2026.8.10.0000.",
+    "frase_dos_nomes": "Passou o cônjuge MARIA DE EXEMPLO a assinar-se MARIA DE EXEMPLO SOUSA.",
+    "frase_habilitacao": " e a certidão de habilitação expedida por Cartório de Exemplo de Outra Cidade/MA, com os proclamas publicados em 01/08/2026.",
+    "funcao_do_escrevente": "",
+    "nubente1_qualificacao": "<strong>JOÃO DE EXEMPLO</strong>, brasileiro, lavrador, inscrito no CPF n.º 00000000191, tendo sido casado(a) com BEATRIZ DE EXEMPLO, casamento dissolvido em 03/05/2020",
+    "nubente2_qualificacao": "<strong>MARIA DE EXEMPLO</strong>, brasileira, professora, tendo sido casado(a) com ROBERTO DE EXEMPLO",
+    "regime_bens": "comunhão parcial de bens, conforme escritura de pacto antenupcial lavrada em 15/07/2026 nas notas de Tabelionato de Exemplo",
+    "testemunhas": "CARLOS DE EXEMPLO, LUCIA DE EXEMPLO e PAULO DE EXEMPLO"
+   }
+  },
+  "cas.valores.docs_lista_vazia_usa_digitado": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_ato_extenso": "trinta (30) de agosto de dois mil e vinte e seis (2026)",
+    "documentos_apresentados": "os seguintes documentos: RG",
+    "escrevente": "",
+    "filiacao1": "ANA DE EXEMPLO e PEDRO DE EXEMPLO",
+    "filiacao2": "RITA DE EXEMPLO",
+    "frase_conversao": "Trata-se de conversão de união estável, processo n.º 0000000-00.2026.8.10.0000.",
+    "frase_dos_nomes": "Passou o cônjuge MARIA DE EXEMPLO a assinar-se MARIA DE EXEMPLO SOUSA.",
+    "frase_habilitacao": " e a certidão de habilitação expedida por Cartório de Exemplo de Outra Cidade/MA, com os proclamas publicados em 01/08/2026.",
+    "funcao_do_escrevente": "",
+    "nubente1_qualificacao": "<strong>JOÃO DE EXEMPLO</strong>, brasileiro, lavrador, inscrito no CPF n.º 00000000191, tendo sido casado(a) com BEATRIZ DE EXEMPLO, casamento dissolvido em 03/05/2020",
+    "nubente2_qualificacao": "<strong>MARIA DE EXEMPLO</strong>, brasileira, professora, tendo sido casado(a) com ROBERTO DE EXEMPLO",
+    "regime_bens": "comunhão parcial de bens, conforme escritura de pacto antenupcial lavrada em 15/07/2026 nas notas de Tabelionato de Exemplo",
+    "testemunhas": "CARLOS DE EXEMPLO, LUCIA DE EXEMPLO e PAULO DE EXEMPLO"
+   }
+  },
+  "cas.valores.docs_lista_vence_digitado": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_ato_extenso": "trinta (30) de agosto de dois mil e vinte e seis (2026)",
+    "documentos_apresentados": "os seguintes documentos: Certidão de nascimento",
+    "escrevente": "",
+    "filiacao1": "ANA DE EXEMPLO e PEDRO DE EXEMPLO",
+    "filiacao2": "RITA DE EXEMPLO",
+    "frase_conversao": "Trata-se de conversão de união estável, processo n.º 0000000-00.2026.8.10.0000.",
+    "frase_dos_nomes": "Passou o cônjuge MARIA DE EXEMPLO a assinar-se MARIA DE EXEMPLO SOUSA.",
+    "frase_habilitacao": " e a certidão de habilitação expedida por Cartório de Exemplo de Outra Cidade/MA, com os proclamas publicados em 01/08/2026.",
+    "funcao_do_escrevente": "",
+    "nubente1_qualificacao": "<strong>JOÃO DE EXEMPLO</strong>, brasileiro, lavrador, inscrito no CPF n.º 00000000191, tendo sido casado(a) com BEATRIZ DE EXEMPLO, casamento dissolvido em 03/05/2020",
+    "nubente2_qualificacao": "<strong>MARIA DE EXEMPLO</strong>, brasileira, professora, tendo sido casado(a) com ROBERTO DE EXEMPLO",
+    "regime_bens": "comunhão parcial de bens, conforme escritura de pacto antenupcial lavrada em 15/07/2026 nas notas de Tabelionato de Exemplo",
+    "testemunhas": "CARLOS DE EXEMPLO, LUCIA DE EXEMPLO e PAULO DE EXEMPLO"
+   }
+  },
+  "cas.valores.fora_sem_proclamas": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_ato_extenso": "trinta (30) de agosto de dois mil e vinte e seis (2026)",
+    "documentos_apresentados": "os seguintes documentos: Certidão de nascimento, RG e Comprovante de residência, dispensada a apresentação de Certidão de óbito do cônjuge anterior (nubentes solteiros) e Declaração de testemunhas",
+    "escrevente": "ESCREVENTE DE EXEMPLO",
+    "filiacao1": "ANA DE EXEMPLO e PEDRO DE EXEMPLO",
+    "filiacao2": "RITA DE EXEMPLO",
+    "frase_conversao": "Trata-se de conversão de união estável, processo n.º 0000000-00.2026.8.10.0000.",
+    "frase_dos_nomes": "Passou o cônjuge MARIA DE EXEMPLO a assinar-se MARIA DE EXEMPLO SOUSA.",
+    "frase_habilitacao": " e a certidão de habilitação expedida por Cartório de Exemplo de Outra Cidade/MA.",
+    "funcao_do_escrevente": "Escrevente Autorizado",
+    "nubente1_qualificacao": "<strong>JOÃO DE EXEMPLO</strong>, brasileiro, lavrador, inscrito no CPF n.º 00000000191, tendo sido casado(a) com BEATRIZ DE EXEMPLO, casamento dissolvido em 03/05/2020",
+    "nubente2_qualificacao": "<strong>MARIA DE EXEMPLO</strong>, brasileira, professora, tendo sido casado(a) com ROBERTO DE EXEMPLO",
+    "regime_bens": "comunhão parcial de bens, conforme escritura de pacto antenupcial lavrada em 15/07/2026 nas notas de Tabelionato de Exemplo",
+    "testemunhas": "CARLOS DE EXEMPLO, LUCIA DE EXEMPLO e PAULO DE EXEMPLO"
+   }
+  },
+  "cas.valores.proclamas_nao_iso": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_ato_extenso": "trinta (30) de agosto de dois mil e vinte e seis (2026)",
+    "documentos_apresentados": "",
+    "escrevente": "",
+    "filiacao1": "ANA DE EXEMPLO e PEDRO DE EXEMPLO",
+    "filiacao2": "RITA DE EXEMPLO",
+    "frase_conversao": "Trata-se de conversão de união estável, processo n.º 0000000-00.2026.8.10.0000.",
+    "frase_dos_nomes": "Passou o cônjuge MARIA DE EXEMPLO a assinar-se MARIA DE EXEMPLO SOUSA.",
+    "frase_habilitacao": " e a certidão de habilitação expedida por Cartório de Exemplo de Outra Cidade/MA, com os proclamas publicados em 01/08/2026.",
+    "funcao_do_escrevente": "",
+    "nubente1_qualificacao": "<strong>JOÃO DE EXEMPLO</strong>, brasileiro, lavrador, inscrito no CPF n.º 00000000191, tendo sido casado(a) com BEATRIZ DE EXEMPLO, casamento dissolvido em 03/05/2020",
+    "nubente2_qualificacao": "<strong>MARIA DE EXEMPLO</strong>, brasileira, professora, tendo sido casado(a) com ROBERTO DE EXEMPLO",
+    "regime_bens": "comunhão parcial de bens, conforme escritura de pacto antenupcial lavrada em 15/07/2026 nas notas de Tabelionato de Exemplo",
+    "testemunhas": "CARLOS DE EXEMPLO, LUCIA DE EXEMPLO e PAULO DE EXEMPLO"
+   }
+  },
+  "cas.valores.sem_nada": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_ato_extenso": "",
+    "documentos_apresentados": "",
+    "escrevente": "",
+    "filiacao1": "",
+    "filiacao2": "",
+    "frase_conversao": "",
+    "frase_dos_nomes": "Nenhum dos cônjuges alterou o nome, mantendo ambos os que já usavam.",
+    "frase_habilitacao": ".",
+    "funcao_do_escrevente": "",
+    "nubente1_qualificacao": "",
+    "nubente2_qualificacao": "",
+    "regime_bens": "",
+    "testemunhas": ""
+   }
+  },
+  "cas.valores.uma_testemunha_um_genitor": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_ato_extenso": "",
+    "documentos_apresentados": "",
+    "escrevente": "",
+    "filiacao1": "PEDRO DE EXEMPLO",
+    "filiacao2": "",
+    "frase_conversao": "",
+    "frase_dos_nomes": "Nenhum dos cônjuges alterou o nome, mantendo ambos os que já usavam.",
+    "frase_habilitacao": ".",
+    "funcao_do_escrevente": "",
+    "nubente1_qualificacao": "<strong>JOÃO DE EXEMPLO</strong>, brasileiro, lavrador, inscrito no CPF n.º 00000000191",
+    "nubente2_qualificacao": "",
+    "regime_bens": "",
+    "testemunhas": "CARLOS DE EXEMPLO"
+   }
+  },
+  "cas_ant.nome_data_iso": {
+   "ok": ", tendo sido casado(a) com BEATRIZ DE EXEMPLO, casamento dissolvido em 03/05/2020"
+  },
+  "cas_ant.nome_data_livre": {
+   "ok": ", tendo sido casado(a) com BEATRIZ DE EXEMPLO, casamento dissolvido em maio de 2020"
+  },
+  "cas_ant.so_data": {
+   "ok": ""
+  },
+  "cas_ant.so_nome": {
+   "ok": ", tendo sido casado(a) com ROBERTO DE EXEMPLO"
+  },
+  "cas_ant.vazio": {
+   "ok": ""
+  },
+  "completar_teor_nascimento.ancora_no_inicio": {
+   "ok": " Trata-se de primeiro registro. Inscrito no CPF n.º 000.000.001-91. Lido e achado conforme, assina."
+  },
+  "completar_teor_nascimento.bordas_cpf_curto": {
+   "ok": "Aos dezenove (19) de agosto, compareceu JOÃO DE EXEMPLO. Trata-se de primeiro registro. Inscrito no CPF n.º 123. Lido e achado conforme, o(a) declarante assina."
+  },
+  "completar_teor_nascimento.cpf_curto_no_texto": {
+   "ok": "Aos dezenove (19) de agosto, compareceu JOÃO DE EXEMPLO 123. Trata-se de primeiro registro. Lido e achado conforme, o(a) declarante assina."
+  },
+  "completar_teor_nascimento.cpf_em_digitos_no_texto": {
+   "ok": "Aos dezenove (19) de agosto, compareceu JOÃO DE EXEMPLO, CPF 00000000191. Trata-se de primeiro registro. Lido e achado conforme, o(a) declarante assina."
+  },
+  "completar_teor_nascimento.cpf_formatado_no_texto": {
+   "ok": "Aos dezenove (19) de agosto, compareceu JOÃO DE EXEMPLO, CPF 000.000.001-91. Trata-se de primeiro registro. Lido e achado conforme, o(a) declarante assina."
+  },
+  "completar_teor_nascimento.espacos": {
+   "ok": "   "
+  },
+  "completar_teor_nascimento.exclamacao": {
+   "ok": "Aos dezenove (19) de agosto, compareceu JOÃO DE EXEMPLO! Trata-se de primeiro registro. Lido e achado conforme, o(a) declarante assina."
+  },
+  "completar_teor_nascimento.ja_tem_primeiro": {
+   "ok": "Aos dezenove (19) de agosto, compareceu JOÃO DE EXEMPLO. Trata-se de PRIMEIRO REGISTRO. Inscrito no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina."
+  },
+  "completar_teor_nascimento.none": {
+   "ok": ""
+  },
+  "completar_teor_nascimento.numero": {
+   "ok": "12345"
+  },
+  "completar_teor_nascimento.os_dois_no_texto": {
+   "ok": "Aos dezenove (19) de agosto, compareceu JOÃO DE EXEMPLO. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina."
+  },
+  "completar_teor_nascimento.sem_ancora": {
+   "ok": "Texto próprio sem o fecho."
+  },
+  "completar_teor_nascimento.sem_ponto_final": {
+   "ok": "Aos dezenove (19) de agosto, compareceu JOÃO DE EXEMPLO. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina."
+  },
+  "completar_teor_nascimento.tn": {
+   "ok": "Aos dezenove (19) de agosto, compareceu JOÃO DE EXEMPLO. Trata-se de primeiro registro. Lido e achado conforme, o(a) declarante assina."
+  },
+  "completar_teor_nascimento.tn_cpf_f": {
+   "ok": "Aos dezenove (19) de agosto, compareceu JOÃO DE EXEMPLO. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina."
+  },
+  "completar_teor_nascimento.tn_cpf_m": {
+   "ok": "Aos dezenove (19) de agosto, compareceu JOÃO DE EXEMPLO. Trata-se de primeiro registro. Inscrito no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina."
+  },
+  "completar_teor_nascimento.vazio": {
+   "ok": ""
+  },
+  "conj.cartorio_sem_nome": {
+   "ok": "Era divorciada."
+  },
+  "conj.estado_premorto_cartorio": {
+   "ok": "Era viúva, sendo cônjuge pré-morto JOSÉ DE EXEMPLO, com casamento registrado em Cartório de Exemplo."
+  },
+  "conj.estado_sobrevivente": {
+   "ok": "Era casada, sendo cônjuge sobrevivente JOSÉ DE EXEMPLO."
+  },
+  "conj.estado_sobrevivente_cartorio": {
+   "ok": "Era casada, sendo cônjuge sobrevivente JOSÉ DE EXEMPLO, com casamento registrado em Cartório de Exemplo."
+  },
+  "conj.nada": {
+   "ok": ""
+  },
+  "conj.sem_estado_premorto_cartorio": {
+   "ok": "Teve como cônjuge pré-morto JOSÉ DE EXEMPLO, com casamento registrado em Cartório de Exemplo."
+  },
+  "conj.sem_estado_sobrevivente": {
+   "ok": "Deixou como cônjuge sobrevivente JOSÉ DE EXEMPLO."
+  },
+  "conj.sem_estado_sobrevivente_cartorio": {
+   "ok": "Deixou como cônjuge sobrevivente JOSÉ DE EXEMPLO, com casamento registrado em Cartório de Exemplo."
+  },
+  "conj.so_estado": {
+   "ok": "Era solteira."
+  },
+  "data_do_termo.''": {
+   "ok": ""
+  },
+  "data_do_termo.'19/08/2026'": {
+   "ok": "19/08/2026"
+  },
+  "data_do_termo.'1994-07-21'": {
+   "ok": "vinte e um (21) de julho de mil novecentos e noventa e quatro (1994)"
+  },
+  "data_do_termo.'2000-01-01'": {
+   "ok": "um (01) de janeiro de dois mil (2000)"
+  },
+  "data_do_termo.'2026-00-10'": {
+   "ok": "2026-00-10"
+  },
+  "data_do_termo.'2026-08-19'": {
+   "ok": "dezenove (19) de agosto de dois mil e vinte e seis (2026)"
+  },
+  "data_do_termo.'2026-08-19T10:00:00'": {
+   "ok": "dezenove (19) de agosto de dois mil e vinte e seis (2026)"
+  },
+  "data_do_termo.'2026-1-5'": {
+   "ok": "cinco (05) de janeiro de dois mil e vinte e seis (2026)"
+  },
+  "data_do_termo.'2026-12-31 23:59'": {
+   "ok": "trinta e um (31) de dezembro de dois mil e vinte e seis (2026)"
+  },
+  "data_do_termo.'2026-13-01'": {
+   "ok": "2026-13-01"
+  },
+  "data_do_termo.'abc'": {
+   "ok": "abc"
+  },
+  "data_do_termo.None": {
+   "ok": ""
+  },
+  "data_do_termo.com_numeros.''": {
+   "ok": ""
+  },
+  "data_do_termo.com_numeros.'19/08/2026'": {
+   "ok": "19/08/2026"
+  },
+  "data_do_termo.com_numeros.'1994-07-21'": {
+   "ok": "vinte e um (21) de julho de mil novecentos e noventa e quatro (1994) - 21/07/1994"
+  },
+  "data_do_termo.com_numeros.'2000-01-01'": {
+   "ok": "um (01) de janeiro de dois mil (2000) - 01/01/2000"
+  },
+  "data_do_termo.com_numeros.'2026-00-10'": {
+   "ok": "2026-00-10"
+  },
+  "data_do_termo.com_numeros.'2026-08-19'": {
+   "ok": "dezenove (19) de agosto de dois mil e vinte e seis (2026) - 19/08/2026"
+  },
+  "data_do_termo.com_numeros.'2026-08-19T10:00:00'": {
+   "ok": "dezenove (19) de agosto de dois mil e vinte e seis (2026) - 19/08/2026"
+  },
+  "data_do_termo.com_numeros.'2026-1-5'": {
+   "ok": "cinco (05) de janeiro de dois mil e vinte e seis (2026) - 05/01/2026"
+  },
+  "data_do_termo.com_numeros.'2026-12-31 23:59'": {
+   "ok": "trinta e um (31) de dezembro de dois mil e vinte e seis (2026) - 31/12/2026"
+  },
+  "data_do_termo.com_numeros.'2026-13-01'": {
+   "ok": "2026-13-01"
+  },
+  "data_do_termo.com_numeros.'abc'": {
+   "ok": "abc"
+  },
+  "data_do_termo.com_numeros.None": {
+   "ok": ""
+  },
+  "docs.dispensado_vence_apresentado": {
+   "ok": "dispensada a apresentação de Certidão de óbito do cônjuge anterior (nubentes solteiros)"
+  },
+  "docs.dispensados_dedup": {
+   "ok": "dispensada a apresentação de Certidão de óbito do cônjuge anterior (nubentes solteiros) e Declaração de testemunhas"
+  },
+  "docs.dois_apresentados_dedup": {
+   "ok": "os seguintes documentos: Certidão de nascimento e RG"
+  },
+  "docs.none": {
+   "ok": ""
+  },
+  "docs.so_dispensado_com_motivo": {
+   "ok": "dispensada a apresentação de Certidão de óbito do cônjuge anterior (nubentes solteiros)"
+  },
+  "docs.so_dispensado_sem_motivo": {
+   "ok": "dispensada a apresentação de Declaração de testemunhas"
+  },
+  "docs.so_sem_nome_e_nao_entregue": {
+   "ok": ""
+  },
+  "docs.todos": {
+   "ok": "os seguintes documentos: Certidão de nascimento, RG e Comprovante de residência, dispensada a apresentação de Certidão de óbito do cônjuge anterior (nubentes solteiros) e Declaração de testemunhas"
+  },
+  "docs.tres_apresentados": {
+   "ok": "os seguintes documentos: Certidão de nascimento, RG e Comprovante de residência"
+  },
+  "docs.um_apresentado": {
+   "ok": "os seguintes documentos: Certidão de nascimento"
+  },
+  "fil.filha_dois": {
+   "ok": ", filha de ANA DE EXEMPLO e de PEDRO DE EXEMPLO"
+  },
+  "fil.filho_so_pai": {
+   "ok": ", filho de PEDRO DE EXEMPLO"
+  },
+  "fil.nada": {
+   "ok": ""
+  },
+  "fil.sem_sexo_so_mae": {
+   "ok": ", filho de ANA DE EXEMPLO"
+  },
+  "filhos.dois": {
+   "ok": "Deixou os filhos: ANA DE EXEMPLO, 10 anos; PEDRO DE EXEMPLO, 8 anos."
+  },
+  "filhos.sem_lista": {
+   "ok": "Deixou filhos."
+  },
+  "filhos.sem_lista_vazio": {
+   "ok": ""
+  },
+  "filhos.um": {
+   "ok": "Deixou os filhos: ANA DE EXEMPLO, 10 anos."
+  },
+  "form.CASAMENTO.claros_preenchidos": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [],
+    "texto": "Em [data_ato_extenso] x, nesta cidade de [cidade_do_ato] x, em cartório, perante mim e as testemunhas adiante nomeadas e no fim assinadas, compareceram os nubentes [nubente1_qualificacao] x e [nubente2_qualificacao] x, a fim de contrair matrimônio, apresentando [documentos_apresentados] x [frase_habilitacao] x E, não havendo impedimento, foram declarados casados sob o regime de [regime_bens] x. [frase_dos_nomes] x São pais do primeiro nubente [filiacao1] x; e do segundo, [filiacao2] x. [frase_conversao] x Nada mais. Lido e achado conforme, assinam comigo, que escrevi, os nubentes e as testemunhas [testemunhas] x. Eu, [escrevente] x, [funcao_do_escrevente] x, escrevi e assino."
+   }
+  },
+  "form.CASAMENTO.quem_assina": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro, por extenso",
+     "Cidade e comarca",
+     "Primeiro nubente — qualificação",
+     "Segundo nubente — qualificação",
+     "Regime de bens",
+     "Relação dos documentos apresentados",
+     "O que aconteceu com os nomes",
+     "Filiação do primeiro nubente",
+     "Filiação do segundo nubente",
+     "Testemunhas"
+    ],
+    "nao_e_o_caso": [
+     "Habilitação",
+     "Conversão de união estável"
+    ],
+    "texto": "Em ____________, nesta cidade de ____________, em cartório, perante mim e as testemunhas adiante nomeadas e no fim assinadas, compareceram os nubentes ____________ e ____________, a fim de contrair matrimônio, apresentando ____________ E, não havendo impedimento, foram declarados casados sob o regime de ____________. ____________ São pais do primeiro nubente ____________; e do segundo, ____________. Nada mais. Lido e achado conforme, assinam comigo, que escrevi, os nubentes e as testemunhas ____________. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, escrevi e assino."
+   }
+  },
+  "form.CASAMENTO.vazio": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro, por extenso",
+     "Cidade e comarca",
+     "Primeiro nubente — qualificação",
+     "Segundo nubente — qualificação",
+     "Regime de bens",
+     "Relação dos documentos apresentados",
+     "O que aconteceu com os nomes",
+     "Filiação do primeiro nubente",
+     "Filiação do segundo nubente",
+     "Testemunhas",
+     "Quem escreveu",
+     "Em que qualidade"
+    ],
+    "nao_e_o_caso": [
+     "Habilitação",
+     "Conversão de união estável"
+    ],
+    "texto": "Em ____________, nesta cidade de ____________, em cartório, perante mim e as testemunhas adiante nomeadas e no fim assinadas, compareceram os nubentes ____________ e ____________, a fim de contrair matrimônio, apresentando ____________ E, não havendo impedimento, foram declarados casados sob o regime de ____________. ____________ São pais do primeiro nubente ____________; e do segundo, ____________. Nada mais. Lido e achado conforme, assinam comigo, que escrevi, os nubentes e as testemunhas ____________. Eu, ____________, ____________, escrevi e assino."
+   }
+  },
+  "form.LIVRO_E.claros_preenchidos": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [],
+    "texto": "Aos [data_do_ato] x, neste Município de [cidade_do_ato] x, Estado do [estado_do_ato] x, neste ofício, lavrou-se o [titulo_do_ato] x referente a \" [nome] x \" [qualificacao_do_titular] x. [frase_da_especie] x [frase_observacoes] x Lido e achado conforme. Eu, [escrevente] x, [funcao_do_escrevente] x, dou fé e assino. [cidade_do_ato] x / [uf_do_ato] x, [data_do_ato] x."
+   }
+  },
+  "form.LIVRO_E.quem_assina": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro",
+     "Município",
+     "Estado",
+     "UF",
+     "Título do ato",
+     "Nome do registrado"
+    ],
+    "nao_e_o_caso": [
+     "Qualificação do titular",
+     "O que a lei manda constar",
+     "Teor / observações"
+    ],
+    "texto": "Aos ____________, neste Município de ____________, Estado do ____________, neste ofício, lavrou-se o ____________ referente a \"____________\". Lido e achado conforme. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. ____________/____________, ____________."
+   }
+  },
+  "form.LIVRO_E.quem_assina_vazio_vira_traco": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro",
+     "Município",
+     "Estado",
+     "UF",
+     "Título do ato",
+     "Quem escreveu",
+     "Em que qualidade"
+    ],
+    "nao_e_o_caso": [
+     "Qualificação do titular",
+     "O que a lei manda constar"
+    ],
+    "texto": "<strong>MARIA DE EXEMPLO</strong>| Nota de exemplo.|____________|____________"
+   }
+  },
+  "form.LIVRO_E.quem_assina_vence": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro",
+     "Município",
+     "Estado",
+     "UF",
+     "Título do ato"
+    ],
+    "nao_e_o_caso": [
+     "Qualificação do titular",
+     "O que a lei manda constar"
+    ],
+    "texto": "<strong>MARIA DE EXEMPLO</strong>| Nota de exemplo.|FULANA DE EXEMPLO|Escrevente Autorizada"
+   }
+  },
+  "form.LIVRO_E.texto_proprio": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro",
+     "Município",
+     "Estado",
+     "UF",
+     "Título do ato",
+     "Quem escreveu"
+    ],
+    "nao_e_o_caso": [
+     "Qualificação do titular",
+     "O que a lei manda constar"
+    ],
+    "texto": "<strong>MARIA DE EXEMPLO</strong>| Nota de exemplo.|____________|Escrevente"
+   }
+  },
+  "form.LIVRO_E.texto_vazio": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro",
+     "Município",
+     "Estado",
+     "UF",
+     "Título do ato",
+     "Quem escreveu"
+    ],
+    "nao_e_o_caso": [
+     "Qualificação do titular",
+     "O que a lei manda constar"
+    ],
+    "texto": ""
+   }
+  },
+  "form.LIVRO_E.vazio": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro",
+     "Município",
+     "Estado",
+     "UF",
+     "Título do ato",
+     "Nome do registrado",
+     "Quem escreveu",
+     "Em que qualidade"
+    ],
+    "nao_e_o_caso": [
+     "Qualificação do titular",
+     "O que a lei manda constar",
+     "Teor / observações"
+    ],
+    "texto": "Aos ____________, neste Município de ____________, Estado do ____________, neste ofício, lavrou-se o ____________ referente a \"____________\". Lido e achado conforme. Eu, ____________, ____________, dou fé e assino. ____________/____________, ____________."
+   }
+  },
+  "form.NASCIMENTO.claros_preenchidos": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [],
+    "texto": "Aos [data_do_ato] x, neste Município de [cidade_do_ato] x, Estado do [estado_do_ato] x, neste ofício, compareceu [declarante_qualificacao] x [frase_dnv] x, e declarou que no dia [data_do_fato] x [frase_hora] x, em [local_do_fato] x, nasceu uma criança do sexo [sexo] x [frase_cor] x, que recebeu o nome de: \" [nome] x \" [frase_gemeos] x, sendo filho de [filiacao1_qualificacao] x [frase_filiacao2] x [frase_idade_da_genitora] x [frase_avos] x [frase_naturalidade] x [frase_primeiro_registro] x [frase_cpf] x Lido e achado conforme, o(a) declarante assina. Eu, [escrevente] x, [funcao_do_escrevente] x, dou fé e assino. [frase_matricula] x [cidade_do_ato] x / [uf_do_ato] x, [data_do_ato] x."
+   }
+  },
+  "form.NASCIMENTO.quem_assina": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro",
+     "Município",
+     "Estado",
+     "UF",
+     "Declarante — qualificação inteira",
+     "Data do nascimento",
+     "Local do nascimento",
+     "Sexo",
+     "Nome do registrando",
+     "Filiação 1 (mãe) — qualificação inteira",
+     "A matrícula de 32 dígitos"
+    ],
+    "nao_e_o_caso": [
+     "A DNV apresentada",
+     "Hora do nascimento",
+     "Cor ou raça",
+     "Gêmeos — ordem de nascimento",
+     "Filiação 2 (pai) — qualificação inteira",
+     "Idade da genitora no parto",
+     "Avós",
+     "Naturalidade declarada",
+     "Primeiro registro",
+     "CPF do registrado"
+    ],
+    "texto": "Aos ____________, neste Município de ____________, Estado do ____________, neste ofício, compareceu ____________, e declarou que no dia ____________, em ____________, nasceu uma criança do sexo ____________, que recebeu o nome de: \"____________\", sendo filho de ____________ Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. ____________ ____________/____________, ____________."
+   }
+  },
+  "form.NASCIMENTO.vazio": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro",
+     "Município",
+     "Estado",
+     "UF",
+     "Declarante — qualificação inteira",
+     "Data do nascimento",
+     "Local do nascimento",
+     "Sexo",
+     "Nome do registrando",
+     "Filiação 1 (mãe) — qualificação inteira",
+     "A matrícula de 32 dígitos",
+     "Quem escreveu",
+     "Em que qualidade"
+    ],
+    "nao_e_o_caso": [
+     "A DNV apresentada",
+     "Hora do nascimento",
+     "Cor ou raça",
+     "Gêmeos — ordem de nascimento",
+     "Filiação 2 (pai) — qualificação inteira",
+     "Idade da genitora no parto",
+     "Avós",
+     "Naturalidade declarada",
+     "Primeiro registro",
+     "CPF do registrado"
+    ],
+    "texto": "Aos ____________, neste Município de ____________, Estado do ____________, neste ofício, compareceu ____________, e declarou que no dia ____________, em ____________, nasceu uma criança do sexo ____________, que recebeu o nome de: \"____________\", sendo filho de ____________ Lido e achado conforme, o(a) declarante assina. Eu, ____________, ____________, dou fé e assino. ____________ ____________/____________, ____________."
+   }
+  },
+  "form.OBITO.claros_preenchidos": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [],
+    "texto": "Em [data_ato_extenso] x, nesta cidade de [cidade_do_ato] x, em cartório, compareceu [declarante_qualificacao] x, e declarou que, no dia [data_fato_extenso] x [frase_hora] x, em [local_do_fato] x, faleceu [falecido_qualificacao] x. [frase_filiacao] x [frase_estado_civil] x [frase_causa] x [frase_sepultamento] x [frase_eleitor] x [frase_testamento] x [frase_filhos] x [frase_deixou_bens] x [frase_identificacao] x [frase_declaracao_de_obito] x [frase_ignorados] x Nada mais declarou. Lido e achado conforme, assina comigo, que escrevi. Eu, [escrevente] x, [funcao_do_escrevente] x, escrevi e assino."
+   }
+  },
+  "form.OBITO.quem_assina": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro, por extenso",
+     "Cidade e comarca",
+     "Declarante — qualificação",
+     "Data do falecimento, por extenso",
+     "Lugar do falecimento",
+     "Falecido — qualificação inteira",
+     "A Declaração de Óbito"
+    ],
+    "nao_e_o_caso": [
+     "Hora do falecimento",
+     "Filiação do falecido",
+     "Cônjuge sobrevivente ou pré-morto",
+     "Se a morte foi natural ou violenta, e a causa",
+     "Lugar do sepultamento",
+     "Se era eleitor",
+     "Se faleceu com testamento conhecido",
+     "Se deixou filhos, o nome e a idade de cada um",
+     "Se deixou bens e herdeiros menores ou interditados",
+     "Ao menos uma identificação do falecido",
+     "O que o declarante ignorava"
+    ],
+    "texto": "Em ____________, nesta cidade de ____________, em cartório, compareceu ____________, e declarou que, no dia ____________, em ____________, faleceu ____________. ____________ Nada mais declarou. Lido e achado conforme, assina comigo, que escrevi. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, escrevi e assino."
+   }
+  },
+  "form.OBITO.vazio": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro, por extenso",
+     "Cidade e comarca",
+     "Declarante — qualificação",
+     "Data do falecimento, por extenso",
+     "Lugar do falecimento",
+     "Falecido — qualificação inteira",
+     "A Declaração de Óbito",
+     "Quem escreveu",
+     "Em que qualidade"
+    ],
+    "nao_e_o_caso": [
+     "Hora do falecimento",
+     "Filiação do falecido",
+     "Cônjuge sobrevivente ou pré-morto",
+     "Se a morte foi natural ou violenta, e a causa",
+     "Lugar do sepultamento",
+     "Se era eleitor",
+     "Se faleceu com testamento conhecido",
+     "Se deixou filhos, o nome e a idade de cada um",
+     "Se deixou bens e herdeiros menores ou interditados",
+     "Ao menos uma identificação do falecido",
+     "O que o declarante ignorava"
+    ],
+    "texto": "Em ____________, nesta cidade de ____________, em cartório, compareceu ____________, e declarou que, no dia ____________, em ____________, faleceu ____________. ____________ Nada mais declarou. Lido e achado conforme, assina comigo, que escrevi. Eu, ____________, ____________, escrevi e assino."
+   }
+  },
+  "form.erro.chave": {
+   "erro": "ModeloError: Não há modelo de termo para «XYZ»."
+  },
+  "form.erro.claro": {
+   "erro": "ModeloError: O modelo usa o claro 'inexistente', que não tem campo no formulário. Ele sairia assim mesmo no papel assinado."
+  },
+  "form.valores_none": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro, por extenso",
+     "Cidade e comarca",
+     "Declarante — qualificação",
+     "Data do falecimento, por extenso",
+     "Lugar do falecimento",
+     "Falecido — qualificação inteira",
+     "A Declaração de Óbito",
+     "Quem escreveu",
+     "Em que qualidade"
+    ],
+    "nao_e_o_caso": [
+     "Hora do falecimento",
+     "Filiação do falecido",
+     "Cônjuge sobrevivente ou pré-morto",
+     "Se a morte foi natural ou violenta, e a causa",
+     "Lugar do sepultamento",
+     "Se era eleitor",
+     "Se faleceu com testamento conhecido",
+     "Se deixou filhos, o nome e a idade de cada um",
+     "Se deixou bens e herdeiros menores ou interditados",
+     "Ao menos uma identificação do falecido",
+     "O que o declarante ignorava"
+    ],
+    "texto": "Em ____________, nesta cidade de ____________, em cartório, compareceu ____________, e declarou que, no dia ____________, em ____________, faleceu ____________. ____________ Nada mais declarou. Lido e achado conforme, assina comigo, que escrevi. Eu, ____________, ____________, escrevi e assino."
+   }
+  },
+  "frase_do_cpf.''.'F'": {
+   "ok": ""
+  },
+  "frase_do_cpf.'000 000 001 91'.'f'": {
+   "ok": "Inscrita no CPF n.º 000.000.001-91."
+  },
+  "frase_do_cpf.'000.000.001-91'.'M'": {
+   "ok": "Inscrito no CPF n.º 000.000.001-91."
+  },
+  "frase_do_cpf.'00000000191'.''": {
+   "ok": "Inscrito no CPF n.º 000.000.001-91."
+  },
+  "frase_do_cpf.'00000000191'.'F'": {
+   "ok": "Inscrita no CPF n.º 000.000.001-91."
+  },
+  "frase_do_cpf.'00000000191'.None": {
+   "ok": "Inscrito no CPF n.º 000.000.001-91."
+  },
+  "frase_do_cpf.'123'.'F'": {
+   "ok": "Inscrita no CPF n.º 123."
+  },
+  "frase_do_cpf.191.'m'": {
+   "ok": "Inscrito no CPF n.º 191."
+  },
+  "frase_do_cpf.None.'feminino'": {
+   "ok": ""
+  },
+  "frase_do_cpf.sem_sexo": {
+   "ok": "Inscrito no CPF n.º 000.000.001-91."
+  },
+  "herd.nao": {
+   "ok": " Não deixou herdeiros menores nem interditados."
+  },
+  "herd.outro": {
+   "ok": ""
+  },
+  "herd.sim": {
+   "ok": " Deixou herdeiros menores ou interditados."
+  },
+  "herd.vazio": {
+   "ok": ""
+  },
+  "ign.dois": {
+   "ok": "O oficial indagou a respeito de todos os itens do art. 255, e o declarante ignorava: deixou bens e deixou filhos, na forma do § 1º do referido artigo."
+  },
+  "ign.none": {
+   "ok": "O oficial indagou a respeito de todos os itens do art. 255, e o declarante ignorava: era eleitor, deixou bens, deixou filhos e pessoa não identificada, na forma do § 1º do referido artigo."
+  },
+  "ign.tres": {
+   "ok": "O oficial indagou a respeito de todos os itens do art. 255, e o declarante ignorava: era eleitor, deixou bens e deixou filhos, na forma do § 1º do referido artigo."
+  },
+  "ign.tudo_nao": {
+   "ok": ""
+  },
+  "ign.tudo_sim": {
+   "ok": ""
+  },
+  "ign.um": {
+   "ok": "O oficial indagou a respeito de todos os itens do art. 255, e o declarante ignorava: era eleitor, na forma do § 1º do referido artigo."
+  },
+  "le.ausencia_cheia": {
+   "ok": " Ausência declarada por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026), com nascimento registrado em Livro A-1, folha 2, termo 3, Cartório de Exemplo, casado(a) com CÔNJUGE DE EXEMPLO, com casamento registrado em Livro B-1, folha 4, termo 5, contando dois anos de ausência até a data da sentença, em processo promovido por REQUERENTE DE EXEMPLO, sendo nomeado curador CURADOR DE EXEMPLO, nos seguintes limites da curatela: administração dos bens."
+  },
+  "le.ausencia_min": {
+   "ok": " Ausência declarada."
+  },
+  "le.emancipacao_cheia": {
+   "ok": " Emancipação concedida por escritura pública lavrada em um (01) de setembro de dois mil e vinte e seis (2026) no livro 10, folha 42, nas notas de Tabelionato de Exemplo, com nascimento registrado em Livro A-1, folha 2, termo 3, Cartório de Exemplo, filha de ANA DE EXEMPLO e de PEDRO DE EXEMPLO, representado(a) por seu(sua) tutor(a) TUTOR DE EXEMPLO, comerciante."
+  },
+  "le.emancipacao_min": {
+   "ok": " Emancipação concedida."
+  },
+  "le.emancipacao_tutor_sem_nome": {
+   "ok": " Emancipação concedida."
+  },
+  "le.interdicao_cheia": {
+   "ok": " Interdição decretada por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026), com nascimento registrado em Livro A-1, folha 2, termo 3, Cartório de Exemplo, casado(a) com CÔNJUGE DE EXEMPLO, com casamento registrado em Livro B-1, folha 4, termo 5, a requerimento de REQUERENTE DE EXEMPLO, tendo por causa causa de exemplo, sendo nomeada curadora CURADORA DE EXEMPLO, inscrita no CPF n.º 00000000191, nos seguintes limites da curatela: atos patrimoniais. Local de internação: Clínica de Exemplo."
+  },
+  "le.interdicao_min": {
+   "ok": " Interdição decretada."
+  },
+  "le.interdicao_req_sem_nome_so_conj": {
+   "ok": " Interdição decretada, casado(a) com CÔNJUGE DE EXEMPLO, sendo nomeado curador CURADOR DE EXEMPLO."
+  },
+  "le.interdicao_so_cas": {
+   "ok": " Interdição decretada, com casamento registrado em Livro B-1, folha 4, termo 5."
+  },
+  "le.minuscula_nao_casa": {
+   "ok": ""
+  },
+  "le.opcao_cheia": {
+   "ok": " Opção pela nacionalidade brasileira homologada por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026), com nascimento registrado em Livro A-1, folha 2, termo 3, Cartório de Exemplo, filha de ANA DE EXEMPLO e de PEDRO DE EXEMPLO."
+  },
+  "le.opcao_min": {
+   "ok": " Opção pela nacionalidade brasileira homologada."
+  },
+  "le.outro": {
+   "ok": ""
+  },
+  "le.tutela_cheia_tutora": {
+   "ok": " Tutela deferida por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026), com nascimento registrado em Livro A-1, folha 2, termo 3, Cartório de Exemplo, filho de ANA DE EXEMPLO e de PEDRO DE EXEMPLO, sendo nomeada tutora TUTORA DE EXEMPLO."
+  },
+  "le.tutela_min": {
+   "ok": " Tutela deferida."
+  },
+  "le.tutela_tutor": {
+   "ok": " Tutela deferida, sendo nomeado tutor TUTOR DE EXEMPLO, comerciante."
+  },
+  "le.ue_cheia": {
+   "ok": " Fica registrada a união estável entre JOÃO DE EXEMPLO, lavrador, filho de ANA DE EXEMPLO, e MARIA DE EXEMPLO, professora, filha de PEDRO DE EXEMPLO, reconhecida por termo declaratório lavrado nesta serventia em um (01) de setembro de dois mil e vinte e seis (2026), com início em dez (10) de janeiro de dois mil e vinte (2020), sob o regime de comunhão parcial de bens. Registros de nascimento: Livro A-1, folha 2, termo 3, Cartório de Exemplo. Casamentos e uniões estáveis anteriores, e óbitos de cônjuges ou companheiros: Livro B-1, folha 4, termo 5. MARIA DE EXEMPLO passa a usar o nome MARIA DE EXEMPLO SOUSA."
+  },
+  "le.ue_min": {
+   "ok": " Fica registrada a união estável."
+  },
+  "le.ue_um_lado_regime_livre": {
+   "ok": " Fica registrada a união estável entre MARIA DE EXEMPLO, professora, sob o regime de comunhão parcial. MARIA DE EXEMPLO passa a usar o nome MARIA DE EXEMPLO SOUSA."
+  },
+  "lev.especie_desconhecida": {
+   "ok": ""
+  },
+  "lev.especie_vazia": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_do_ato": "",
+    "escrevente": "",
+    "estado_do_ato": "Maranhão",
+    "frase_da_especie": "",
+    "frase_observacoes": "",
+    "funcao_do_escrevente": "",
+    "nome": "",
+    "qualificacao_do_titular": "",
+    "titulo_do_ato": "",
+    "uf_do_ato": "MA"
+   }
+  },
+  "lev.interdicao": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "trinta (30) de setembro de dois mil e vinte e seis (2026)",
+    "escrevente": "ESCREVENTE DE EXEMPLO",
+    "estado_do_ato": "Estado de Exemplo",
+    "frase_da_especie": " Interdição decretada por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026), a requerimento de REQUERENTE DE EXEMPLO, sendo nomeada curadora CURADORA DE EXEMPLO, inscrita no CPF n.º 00000000191.",
+    "frase_observacoes": " Observação de exemplo.",
+    "funcao_do_escrevente": "Escrevente Autorizado",
+    "nome": "<strong>JOÃO DE EXEMPLO</strong>",
+    "qualificacao_do_titular": ", brasileiro, estudante, inscrito no CPF n.º 00000000191, nascido no dia 04/03/2008, residente e domiciliado em Rua de Exemplo, 1, Cidade Exemplo/EX",
+    "titulo_do_ato": "REGISTRO DE INTERDIÇÃO",
+    "uf_do_ato": "EX"
+   }
+  },
+  "lev.montado.AUSENCIA": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Teor / observações"
+    ],
+    "texto": "Aos trinta (30) de setembro de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado de Exemplo, neste ofício, lavrou-se o REGISTRO DE AUSÊNCIA referente a \"<strong>MARIA DE EXEMPLO</strong>\", brasileira, estudante, inscrita no CPF n.º 00000000191, nascida no dia 04/03/2008, residente e domiciliada em Rua de Exemplo, 1, Cidade Exemplo/EX. Ausência declarada por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026), casado(a) com CÔNJUGE DE EXEMPLO, com casamento registrado em Livro B-1, folha 4, termo 5, contando dois anos de ausência até a data da sentença, em processo promovido por REQUERENTE DE EXEMPLO, sendo nomeado curador CURADOR DE EXEMPLO. Lido e achado conforme. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, dou fé e assino. Cidade Exemplo/EX, trinta (30) de setembro de dois mil e vinte e seis (2026)."
+   }
+  },
+  "lev.montado.EMANCIPACAO": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Teor / observações"
+    ],
+    "texto": "Aos trinta (30) de setembro de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado de Exemplo, neste ofício, lavrou-se o REGISTRO DE EMANCIPAÇÃO referente a \"<strong>MARIA DE EXEMPLO</strong>\", brasileira, estudante, inscrita no CPF n.º 00000000191, nascida no dia 04/03/2008, residente e domiciliada em Rua de Exemplo, 1, Cidade Exemplo/EX. Emancipação concedida por escritura pública lavrada em um (01) de setembro de dois mil e vinte e seis (2026) no livro 10, folha 42, nas notas de Tabelionato de Exemplo, com nascimento registrado em Livro A-1, folha 2, termo 3, Cartório de Exemplo, filha de ANA DE EXEMPLO e de PEDRO DE EXEMPLO, representado(a) por seu(sua) tutor(a) TUTOR DE EXEMPLO, comerciante. Lido e achado conforme. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, dou fé e assino. Cidade Exemplo/EX, trinta (30) de setembro de dois mil e vinte e seis (2026)."
+   }
+  },
+  "lev.montado.INTERDICAO": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Teor / observações"
+    ],
+    "texto": "Aos trinta (30) de setembro de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado de Exemplo, neste ofício, lavrou-se o REGISTRO DE INTERDIÇÃO referente a \"<strong>JOÃO DE EXEMPLO</strong>\", brasileiro, estudante, inscrito no CPF n.º 00000000191, nascido no dia 04/03/2008, residente e domiciliado em Rua de Exemplo, 1, Cidade Exemplo/EX. Interdição decretada por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026), com nascimento registrado em Livro A-1, folha 2, termo 3, Cartório de Exemplo, casado(a) com CÔNJUGE DE EXEMPLO, com casamento registrado em Livro B-1, folha 4, termo 5, a requerimento de REQUERENTE DE EXEMPLO, tendo por causa causa de exemplo, sendo nomeada curadora CURADORA DE EXEMPLO, inscrita no CPF n.º 00000000191, nos seguintes limites da curatela: atos patrimoniais. Local de internação: Clínica de Exemplo. Lido e achado conforme. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, dou fé e assino. Cidade Exemplo/EX, trinta (30) de setembro de dois mil e vinte e seis (2026)."
+   }
+  },
+  "lev.montado.OPCAO_NACIONALIDADE": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Teor / observações"
+    ],
+    "texto": "Aos trinta (30) de setembro de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado de Exemplo, neste ofício, lavrou-se o REGISTRO DE OPÇÃO DE NACIONALIDADE referente a \"<strong>MARIA DE EXEMPLO</strong>\", brasileira, estudante, inscrita no CPF n.º 00000000191, nascida no dia 04/03/2008, residente e domiciliada em Rua de Exemplo, 1, Cidade Exemplo/EX. Opção pela nacionalidade brasileira homologada por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026), com nascimento registrado em Livro A-1, folha 2, termo 3, Cartório de Exemplo, filha de ANA DE EXEMPLO e de PEDRO DE EXEMPLO. Lido e achado conforme. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, dou fé e assino. Cidade Exemplo/EX, trinta (30) de setembro de dois mil e vinte e seis (2026)."
+   }
+  },
+  "lev.montado.OUTRO": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "O que a lei manda constar"
+    ],
+    "texto": "Aos trinta (30) de setembro de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado de Exemplo, neste ofício, lavrou-se o REGISTRO DO LIVRO E referente a \"<strong>JOÃO DE EXEMPLO</strong>\", brasileiro, estudante, inscrito no CPF n.º 00000000191, nascido no dia 04/03/2008, residente e domiciliado em Rua de Exemplo, 1, Cidade Exemplo/EX. Observação de exemplo. Lido e achado conforme. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, dou fé e assino. Cidade Exemplo/EX, trinta (30) de setembro de dois mil e vinte e seis (2026)."
+   }
+  },
+  "lev.montado.TUTELA": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Teor / observações"
+    ],
+    "texto": "Aos trinta (30) de setembro de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado de Exemplo, neste ofício, lavrou-se o REGISTRO DE TUTELA referente a \"<strong>JOÃO DE EXEMPLO</strong>\", brasileiro, estudante, inscrito no CPF n.º 00000000191, nascido no dia 04/03/2008, residente e domiciliado em Rua de Exemplo, 1, Cidade Exemplo/EX. Tutela deferida por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026), com nascimento registrado em Livro A-1, folha 2, termo 3, Cartório de Exemplo, filho de ANA DE EXEMPLO e de PEDRO DE EXEMPLO, sendo nomeada tutora TUTORA DE EXEMPLO. Lido e achado conforme. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, dou fé e assino. Cidade Exemplo/EX, trinta (30) de setembro de dois mil e vinte e seis (2026)."
+   }
+  },
+  "lev.montado.UNIAO_ESTAVEL": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Qualificação do titular",
+     "Teor / observações"
+    ],
+    "texto": "Aos trinta (30) de setembro de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado de Exemplo, neste ofício, lavrou-se o REGISTRO DE UNIÃO ESTÁVEL referente a \"<strong>JOÃO DE EXEMPLO</strong>\". Fica registrada a união estável entre JOÃO DE EXEMPLO, lavrador, e MARIA DE EXEMPLO, professora, reconhecida por termo declaratório lavrado nesta serventia, com início em dez (10) de janeiro de dois mil e vinte (2020), sob o regime de comunhão parcial de bens. Registros de nascimento: Livro A-1, folha 2, termo 3, Cartório de Exemplo. Casamentos e uniões estáveis anteriores, e óbitos de cônjuges ou companheiros: Livro B-1, folha 4, termo 5. MARIA DE EXEMPLO passa a usar o nome MARIA DE EXEMPLO SOUSA. Lido e achado conforme. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, dou fé e assino. Cidade Exemplo/EX, trinta (30) de setembro de dois mil e vinte e seis (2026)."
+   }
+  },
+  "lev.montado.corpo_da_casa": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Teor / observações"
+    ],
+    "texto": "<strong>MARIA DE EXEMPLO</strong>, brasileira, estudante, inscrita no CPF n.º 00000000191, nascida no dia 04/03/2008, residente e domiciliada em Rua de Exemplo, 1, Cidade Exemplo/EX| Tutela deferida por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026), filha de ANA DE EXEMPLO, sendo nomeado tutor TUTOR DE EXEMPLO, comerciante."
+   }
+  },
+  "lev.montado.interdicao": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [],
+    "texto": "Aos trinta (30) de setembro de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado de Exemplo, neste ofício, lavrou-se o REGISTRO DE INTERDIÇÃO referente a \"<strong>JOÃO DE EXEMPLO</strong>\", brasileiro, estudante, inscrito no CPF n.º 00000000191, nascido no dia 04/03/2008, residente e domiciliado em Rua de Exemplo, 1, Cidade Exemplo/EX. Interdição decretada por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026), a requerimento de REQUERENTE DE EXEMPLO, sendo nomeada curadora CURADORA DE EXEMPLO, inscrita no CPF n.º 00000000191. Observação de exemplo. Lido e achado conforme. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, dou fé e assino. Cidade Exemplo/EX, trinta (30) de setembro de dois mil e vinte e seis (2026)."
+   }
+  },
+  "lev.montado.ue_sem_sv": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Município",
+     "Nome do registrado"
+    ],
+    "nao_e_o_caso": [
+     "Qualificação do titular",
+     "Teor / observações"
+    ],
+    "texto": "Aos trinta (30) de setembro de dois mil e vinte e seis (2026), neste Município de ____________, Estado do Maranhão, neste ofício, lavrou-se o REGISTRO DE UNIÃO ESTÁVEL referente a \"____________\". Fica registrada a união estável entre JOÃO DE EXEMPLO, lavrador, e MARIA DE EXEMPLO, professora, sob o regime de separação total de bens. MARIA DE EXEMPLO passa a usar o nome MARIA DE EXEMPLO SOUSA. Lido e achado conforme. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, dou fé e assino. ____________/MA, trinta (30) de setembro de dois mil e vinte e seis (2026)."
+   }
+  },
+  "lev.obs_dados_nao_dict": {
+   "ok": ""
+  },
+  "lev.obs_dados_obs": {
+   "ok": " Nota de exemplo."
+  },
+  "lev.obs_dados_teor": {
+   "ok": " Teor de exemplo."
+  },
+  "lev.obs_teor_livre": {
+   "ok": " Teor livre de exemplo."
+  },
+  "lev.registrado_so_nome": {
+   "ok": ""
+  },
+  "lev.sem_sv_defaults": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_do_ato": "",
+    "escrevente": "",
+    "estado_do_ato": "Maranhão",
+    "frase_da_especie": " Tutela deferida, sendo nomeado tutor TUTOR DE EXEMPLO, comerciante.",
+    "frase_observacoes": "",
+    "funcao_do_escrevente": "",
+    "nome": "<strong>MARIA DE EXEMPLO</strong>",
+    "qualificacao_do_titular": ", brasileira, estudante, inscrita no CPF n.º 00000000191, nascida no dia 04/03/2008, residente e domiciliada em Rua de Exemplo, 1, Cidade Exemplo/EX",
+    "titulo_do_ato": "REGISTRO DE TUTELA",
+    "uf_do_ato": "MA"
+   }
+  },
+  "lev.ue_sem_qualif": {
+   "ok": ""
+  },
+  "limpar.0": {
+   "ok": ""
+  },
+  "limpar.1": {
+   "ok": "a b"
+  },
+  "limpar.2": {
+   "ok": "a,b.c;d:e"
+  },
+  "limpar.3": {
+   "ok": "linha nova linha"
+  },
+  "limpar.4": {
+   "ok": "a\tb c"
+  },
+  "limpar.5": {
+   "ok": "Fim. Começo, meio"
+  },
+  "limpar.6": {
+   "ok": ", x"
+  },
+  "limpar.7": {
+   "ok": "x y"
+  },
+  "limpar.8": {
+   "ok": "Aos {x},"
+  },
+  "nasc.montado.acervo_minusculo": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "Primeiro registro"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.avos_so_avo_materna": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): ROSA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.avos_so_maternos": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.avos_so_paternos": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.avos_um_de_cada": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.cheio": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.cor_minuscula": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Branca, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.corpo_da_casa": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "<strong>ANA DE EXEMPLO</strong> Inscrita no CPF n.º 000.000.001-91. Trata-se de primeiro registro.. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Matrícula 000000 01 55 2026 1 00024 169 0019555 53."
+   }
+  },
+  "nasc.montado.cpf_curto": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 123. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.cpf_do_documento_m": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "Avós"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Masculino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrito no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.eoficio": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "Primeiro registro"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.gemeos": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", não é gêmeo único, sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.hora_14": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14 horas, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.hora_14_dois_pontos": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14 horas, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.hora_espacada": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 9:05, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.hora_so_minuto": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Hora do nascimento",
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.minimo": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do registro",
+     "Município",
+     "Declarante — qualificação inteira",
+     "Data do nascimento",
+     "Local do nascimento",
+     "Sexo",
+     "Nome do registrando",
+     "Filiação 1 (mãe) — qualificação inteira",
+     "A matrícula de 32 dígitos",
+     "Quem escreveu",
+     "Em que qualidade"
+    ],
+    "nao_e_o_caso": [
+     "A DNV apresentada",
+     "Hora do nascimento",
+     "Cor ou raça",
+     "Gêmeos — ordem de nascimento",
+     "Filiação 2 (pai) — qualificação inteira",
+     "Idade da genitora no parto",
+     "Avós",
+     "CPF do registrado"
+    ],
+    "texto": "Aos ____________, neste Município de ____________, Estado do Maranhão, neste ofício, compareceu ____________, e declarou que no dia ____________, em ____________, nasceu uma criança do sexo ____________, que recebeu o nome de: \"____________\", sendo filho de ____________. Trata-se de primeiro registro. Lido e achado conforme, o(a) declarante assina. Eu, ____________, ____________, dou fé e assino. ____________ ____________/MA, ____________."
+   }
+  },
+  "nasc.montado.natimorto": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "Primeiro registro"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.pai_sem_nome": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "Filiação 2 (pai) — qualificação inteira",
+     "Avós"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, tendo a mãe, na ocasião do parto, 29 anos de idade. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.pais_nao_casados": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.pais_so_cartorio": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.pais_so_lugar": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.papel_repetido": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "Avós"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.sem_avos": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "Avós"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.sem_cpf": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "CPF do registrado"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.sem_hora_cor_dnv_nat_matricula": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "A matrícula de 32 dígitos"
+    ],
+    "nao_e_o_caso": [
+     "A DNV apresentada",
+     "Hora do nascimento",
+     "Cor ou raça",
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. ____________ Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.sem_idade": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "Idade da genitora no parto",
+     "Avós"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.sem_pai": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "Filiação 2 (pai) — qualificação inteira"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.sexo_m": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "Avós"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Masculino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrito no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.sexo_vazio": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Sexo"
+    ],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento",
+     "Avós"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo ____________, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrito no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.so_endereco": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Local do nascimento"
+    ],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em ____________, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.so_local": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de Cidade Exemplo, Estado do Estado Exemplo, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. Cidade Exemplo/EX, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.montado.sv_vazio": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Município",
+     "Quem escreveu",
+     "Em que qualidade"
+    ],
+    "nao_e_o_caso": [
+     "Gêmeos — ordem de nascimento"
+    ],
+    "texto": "Aos dezenove (19) de agosto de dois mil e vinte e seis (2026), neste Município de ____________, Estado do Maranhão, neste ofício, compareceu JOÃO DE EXEMPLO, apresentou a DNV n.º 12345678901, e declarou que no dia oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026, às 14:30, em Hospital Exemplo, Rua Exemplo, 1, nasceu uma criança do sexo Feminino, cor Parda, que recebeu o nome de: \"<strong>ANA DE EXEMPLO</strong>\", sendo filho de MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191, e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo, tendo a mãe, na ocasião do parto, 29 anos de idade, tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO. A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973. Trata-se de primeiro registro. Inscrita no CPF n.º 000.000.001-91. Lido e achado conforme, o(a) declarante assina. Eu, ____________, ____________, dou fé e assino. Matrícula 000000 01 55 2026 1 00024 169 0019555 53. ____________/MA, dezenove (19) de agosto de dois mil e vinte e seis (2026)."
+   }
+  },
+  "nasc.valores.acervo_minusculo": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": "",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.avos_so_avo_materna": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): ROSA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.avos_so_maternos": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.avos_so_paternos": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.avos_um_de_cada": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.cheio": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.cor_minuscula": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Branca",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.cpf_curto": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 123.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.cpf_do_documento_m": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": "",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrito no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Masculino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.eoficio": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": "",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.gemeos": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": ", não é gêmeo único",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.hora_14": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14 horas",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.hora_14_dois_pontos": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14 horas",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.hora_espacada": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 9:05",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.hora_so_minuto": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": "",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.minimo": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_do_ato": "",
+    "data_do_fato": "",
+    "declarante_qualificacao": "",
+    "escrevente": "",
+    "estado_do_ato": "Maranhão",
+    "filiacao1_qualificacao": "",
+    "frase_avos": "",
+    "frase_cor": "",
+    "frase_cpf": "",
+    "frase_dnv": "",
+    "frase_filiacao2": "",
+    "frase_gemeos": "",
+    "frase_hora": "",
+    "frase_idade_da_genitora": "",
+    "frase_matricula": "",
+    "frase_naturalidade": ".",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "",
+    "local_do_fato": "",
+    "nome": "",
+    "sexo": "",
+    "uf_do_ato": "MA"
+   }
+  },
+  "nasc.valores.natimorto": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": "",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.pai_sem_nome": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": "",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": "",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.pais_nao_casados": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.pais_so_cartorio": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.pais_so_lugar": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.papel_repetido": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": "",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.sem_avos": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": "",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.sem_cpf": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": "",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.sem_hora_cor_dnv_nat_matricula": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": "",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": "",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": "",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "",
+    "frase_naturalidade": ".",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.sem_idade": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": "",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": "",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.sem_pai": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": "",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.sexo_m": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": "",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrito no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Masculino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.sexo_vazio": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": "",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrito no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.so_endereco": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.so_local": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "FULANA DE EXEMPLO",
+    "estado_do_ato": "Estado Exemplo",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "Escrevente Autorizada",
+    "local_do_fato": "Hospital Exemplo",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "EX"
+   }
+  },
+  "nasc.valores.sv_vazio": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_do_ato": "dezenove (19) de agosto de dois mil e vinte e seis (2026)",
+    "data_do_fato": "oito (08) de agosto de dois mil e vinte e seis (2026) - 08/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO",
+    "escrevente": "",
+    "estado_do_ato": "Maranhão",
+    "filiacao1_qualificacao": "MARIA DE EXEMPLO, brasileira, lavradora, inscrita no CPF n.º 00000000191",
+    "frase_avos": ", tendo como avós (da filiação 1): PEDRO DE EXEMPLO e ROSA DE EXEMPLO e (da filiação 2): PAULO DE EXEMPLO e LUZIA DE EXEMPLO",
+    "frase_cor": ", cor Parda",
+    "frase_cpf": " Inscrita no CPF n.º 000.000.001-91.",
+    "frase_dnv": ", apresentou a DNV n.º 12345678901",
+    "frase_filiacao2": ", e de JOÃO DE EXEMPLO, brasileiro, casados entre si em Cidade Exemplo, com registro em Ofício Exemplo",
+    "frase_gemeos": "",
+    "frase_hora": ", às 14:30",
+    "frase_idade_da_genitora": ", tendo a mãe, na ocasião do parto, 29 anos de idade",
+    "frase_matricula": "Matrícula 000000 01 55 2026 1 00024 169 0019555 53.",
+    "frase_naturalidade": ". A naturalidade declarada é de Cidade Exemplo/EX, na forma do art. 54, § 4º, da Lei Federal n.º 6.015/1973.",
+    "frase_primeiro_registro": " Trata-se de primeiro registro.",
+    "funcao_do_escrevente": "",
+    "local_do_fato": "Hospital Exemplo, Rua Exemplo, 1",
+    "nome": "<strong>ANA DE EXEMPLO</strong>",
+    "sexo": "Feminino",
+    "uf_do_ato": "MA"
+   }
+  },
+  "nome_em_negrito": {
+   "ok": [
+    "",
+    "",
+    "",
+    "<strong>MARIA DE EXEMPLO</strong>"
+   ]
+  },
+  "nomes.ninguem_igual": {
+   "ok": "Nenhum dos cônjuges alterou o nome, mantendo ambos os que já usavam."
+  },
+  "nomes.ninguem_none": {
+   "ok": "Nenhum dos cônjuges alterou o nome, mantendo ambos os que já usavam."
+  },
+  "nomes.ninguem_vazio": {
+   "ok": "Nenhum dos cônjuges alterou o nome, mantendo ambos os que já usavam."
+  },
+  "nomes.os_dois": {
+   "ok": "Passaram os cônjuges a assinar-se JOÃO DE EXEMPLO SOUSA e MARIA DE EXEMPLO SOUSA, respectivamente."
+  },
+  "nomes.sem_nome_antes": {
+   "ok": "Passou o cônjuge  a assinar-se MARIA DE EXEMPLO."
+  },
+  "nomes.so_o_1": {
+   "ok": "Passou o cônjuge JOÃO DE EXEMPLO a assinar-se JOÃO DE EXEMPLO SOUSA."
+  },
+  "nomes.so_o_2": {
+   "ok": "Passou o cônjuge MARIA DE EXEMPLO a assinar-se MARIA DE EXEMPLO SOUSA."
+  },
+  "ob.montado.cheio_nao": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Ao menos uma identificação do falecido",
+     "O que o declarante ignorava"
+    ],
+    "texto": "Em trinta (30) de agosto de dois mil e vinte e seis (2026), nesta cidade de Cidade Exemplo, em cartório, compareceu JOÃO DE EXEMPLO, lavrador, e declarou que, no dia vinte e nove (29) de agosto de dois mil e vinte e seis (2026) - 29/08/2026, às 14:30, em Hospital de Exemplo, Rua de Exemplo, 100, faleceu <strong>MARIA DE EXEMPLO</strong>, professora, inscrita no CPF n.º 00000000191. Filho de ANA MÃE DE EXEMPLO e PEDRO PAI DE EXEMPLO. Era casada, sendo cônjuge sobrevivente JOSÉ DE EXEMPLO, com casamento registrado em Cartório de Exemplo. A morte foi natural, atestada por Dr. MÉDICO DE EXEMPLO, CRM 0000/EX. Sepultado em Cemitério de Exemplo. Não era eleitor. Deixou testamento conhecido: lavrado no Tabelionato de Exemplo. Não deixou filhos. Não deixou bens. Não deixou herdeiros menores nem interditados. Apresentada a Declaração de Óbito n.º 00000000. Nada mais declarou. Lido e achado conforme, assina comigo, que escrevi. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, escrevi e assino."
+   }
+  },
+  "ob.montado.cheio_sim": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "O que o declarante ignorava"
+    ],
+    "texto": "Em trinta (30) de agosto de dois mil e vinte e seis (2026), nesta cidade de Cidade Exemplo, em cartório, compareceu JOÃO DE EXEMPLO, lavrador, e declarou que, no dia vinte e nove (29) de agosto de dois mil e vinte e seis (2026) - 29/08/2026, às 14:30, em Hospital de Exemplo, Rua de Exemplo, 100, faleceu <strong>MARIA DE EXEMPLO</strong>, professora, inscrita no CPF n.º 00000000191. Filho de ANA MÃE DE EXEMPLO e PEDRO PAI DE EXEMPLO. Era casada, sendo cônjuge sobrevivente JOSÉ DE EXEMPLO, com casamento registrado em Cartório de Exemplo. A morte foi natural, atestada por Dr. MÉDICO DE EXEMPLO, CRM 0000/EX. Sepultado em Cemitério de Exemplo. Era eleitor. Deixou testamento conhecido: lavrado no Tabelionato de Exemplo. Deixou os filhos: ANA DE EXEMPLO, 10 anos; PEDRO DE EXEMPLO, 8 anos. Deixou bens. Deixou herdeiros menores ou interditados. Não foi possível identificar a pessoa falecida. Apresentada a Declaração de Óbito n.º 00000000. Nada mais declarou. Lido e achado conforme, assina comigo, que escrevi. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, escrevi e assino."
+   }
+  },
+  "ob.montado.corpo_da_casa": {
+   "ok": {
+    "completo": true,
+    "em_branco": [],
+    "nao_e_o_caso": [
+     "Se era eleitor",
+     "Se deixou filhos, o nome e a idade de cada um",
+     "Ao menos uma identificação do falecido"
+    ],
+    "texto": "Filho de ANA MÃE DE EXEMPLO e PEDRO PAI DE EXEMPLO.|A morte foi natural, atestada por Dr. MÉDICO DE EXEMPLO, CRM 0000/EX.|Sepultado em Cemitério de Exemplo.|O oficial indagou a respeito de todos os itens do art. 255, e o declarante ignorava: era eleitor, deixou bens, deixou filhos e pessoa não identificada, na forma do § 1º do referido artigo."
+   }
+  },
+  "ob.montado.nada_perguntado": {
+   "ok": {
+    "completo": false,
+    "em_branco": [
+     "Data do falecimento, por extenso",
+     "Lugar do falecimento",
+     "A Declaração de Óbito"
+    ],
+    "nao_e_o_caso": [
+     "Hora do falecimento",
+     "Filiação do falecido",
+     "Se a morte foi natural ou violenta, e a causa",
+     "Lugar do sepultamento",
+     "Se era eleitor",
+     "Se faleceu com testamento conhecido",
+     "Se deixou filhos, o nome e a idade de cada um",
+     "Se deixou bens e herdeiros menores ou interditados",
+     "Ao menos uma identificação do falecido"
+    ],
+    "texto": "Em trinta (30) de agosto de dois mil e vinte e seis (2026), nesta cidade de Cidade Exemplo, em cartório, compareceu JOÃO DE EXEMPLO, lavrador, e declarou que, no dia ____________, em ____________, faleceu <strong>MARIA DE EXEMPLO</strong>, professora, inscrita no CPF n.º 00000000191. Era casada. ____________ O oficial indagou a respeito de todos os itens do art. 255, e o declarante ignorava: era eleitor, deixou bens, deixou filhos e pessoa não identificada, na forma do § 1º do referido artigo. Nada mais declarou. Lido e achado conforme, assina comigo, que escrevi. Eu, ESCREVENTE DE EXEMPLO, Escrevente Autorizado, escrevi e assino."
+   }
+  },
+  "ob.valores.bens_nao_herd_vazio": {
+   "ok": "Não deixou bens."
+  },
+  "ob.valores.bens_sim_herd_nao": {
+   "ok": "Deixou bens. Não deixou herdeiros menores nem interditados."
+  },
+  "ob.valores.bens_vazio_herd_sim": {
+   "ok": "Deixou herdeiros menores ou interditados."
+  },
+  "ob.valores.causa_atestante_sem_doc": {
+   "ok": "A morte foi natural, atestada por Dr. MÉDICO DE EXEMPLO."
+  },
+  "ob.valores.causa_sem_atestante": {
+   "ok": "A morte foi natural."
+  },
+  "ob.valores.causa_so_doc": {
+   "ok": "A morte foi natural, CRM 0000/EX."
+  },
+  "ob.valores.cheio_nao": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_ato_extenso": "trinta (30) de agosto de dois mil e vinte e seis (2026)",
+    "data_fato_extenso": "vinte e nove (29) de agosto de dois mil e vinte e seis (2026) - 29/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO, lavrador",
+    "escrevente": "ESCREVENTE DE EXEMPLO",
+    "falecido_qualificacao": "<strong>MARIA DE EXEMPLO</strong>, professora, inscrita no CPF n.º 00000000191",
+    "frase_causa": "A morte foi natural, atestada por Dr. MÉDICO DE EXEMPLO, CRM 0000/EX.",
+    "frase_declaracao_de_obito": "Apresentada a Declaração de Óbito n.º 00000000.",
+    "frase_deixou_bens": "Não deixou bens. Não deixou herdeiros menores nem interditados.",
+    "frase_eleitor": "Não era eleitor.",
+    "frase_estado_civil": "Era casada, sendo cônjuge sobrevivente JOSÉ DE EXEMPLO, com casamento registrado em Cartório de Exemplo.",
+    "frase_filhos": "Não deixou filhos.",
+    "frase_filiacao": "Filho de ANA MÃE DE EXEMPLO e PEDRO PAI DE EXEMPLO.",
+    "frase_hora": ", às 14:30",
+    "frase_identificacao": "",
+    "frase_ignorados": "",
+    "frase_sepultamento": "Sepultado em Cemitério de Exemplo.",
+    "frase_testamento": "Deixou testamento conhecido: lavrado no Tabelionato de Exemplo.",
+    "funcao_do_escrevente": "Escrevente Autorizado",
+    "local_do_fato": "Hospital de Exemplo, Rua de Exemplo, 100"
+   }
+  },
+  "ob.valores.cheio_sim": {
+   "ok": {
+    "cidade_do_ato": "Cidade Exemplo",
+    "data_ato_extenso": "trinta (30) de agosto de dois mil e vinte e seis (2026)",
+    "data_fato_extenso": "vinte e nove (29) de agosto de dois mil e vinte e seis (2026) - 29/08/2026",
+    "declarante_qualificacao": "JOÃO DE EXEMPLO, lavrador",
+    "escrevente": "ESCREVENTE DE EXEMPLO",
+    "falecido_qualificacao": "<strong>MARIA DE EXEMPLO</strong>, professora, inscrita no CPF n.º 00000000191",
+    "frase_causa": "A morte foi natural, atestada por Dr. MÉDICO DE EXEMPLO, CRM 0000/EX.",
+    "frase_declaracao_de_obito": "Apresentada a Declaração de Óbito n.º 00000000.",
+    "frase_deixou_bens": "Deixou bens. Deixou herdeiros menores ou interditados.",
+    "frase_eleitor": "Era eleitor.",
+    "frase_estado_civil": "Era casada, sendo cônjuge sobrevivente JOSÉ DE EXEMPLO, com casamento registrado em Cartório de Exemplo.",
+    "frase_filhos": "Deixou os filhos: ANA DE EXEMPLO, 10 anos; PEDRO DE EXEMPLO, 8 anos.",
+    "frase_filiacao": "Filho de ANA MÃE DE EXEMPLO e PEDRO PAI DE EXEMPLO.",
+    "frase_hora": ", às 14:30",
+    "frase_identificacao": "Não foi possível identificar a pessoa falecida.",
+    "frase_ignorados": "",
+    "frase_sepultamento": "Sepultado em Cemitério de Exemplo.",
+    "frase_testamento": "Deixou testamento conhecido: lavrado no Tabelionato de Exemplo.",
+    "funcao_do_escrevente": "Escrevente Autorizado",
+    "local_do_fato": "Hospital de Exemplo, Rua de Exemplo, 100"
+   }
+  },
+  "ob.valores.com_documento": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_ato_extenso": "trinta (30) de agosto de dois mil e vinte e seis (2026)",
+    "data_fato_extenso": "vinte e nove (29) de agosto de dois mil e vinte e seis (2026) - 29/08/2026",
+    "declarante_qualificacao": "",
+    "escrevente": "",
+    "falecido_qualificacao": "<strong>MARIA DE EXEMPLO</strong>, professora, portadora do RG n.º 123, inscrita no CPF n.º 00000000191",
+    "frase_causa": "A morte foi natural, atestada por Dr. MÉDICO DE EXEMPLO, CRM 0000/EX.",
+    "frase_declaracao_de_obito": "Apresentada a Declaração de Óbito n.º 00000000.",
+    "frase_deixou_bens": "Não deixou bens. Deixou herdeiros menores ou interditados.",
+    "frase_eleitor": "Não era eleitor.",
+    "frase_estado_civil": "Era casada, sendo cônjuge sobrevivente JOSÉ DE EXEMPLO, com casamento registrado em Cartório de Exemplo.",
+    "frase_filhos": "Não deixou filhos.",
+    "frase_filiacao": "",
+    "frase_hora": ", às 14:30",
+    "frase_identificacao": "",
+    "frase_ignorados": "",
+    "frase_sepultamento": "Sepultado em Cemitério de Exemplo.",
+    "frase_testamento": "Deixou testamento conhecido: lavrado no Tabelionato de Exemplo.",
+    "funcao_do_escrevente": "",
+    "local_do_fato": "Hospital de Exemplo, Rua de Exemplo, 100"
+   }
+  },
+  "ob.valores.desconhecido_com_documento": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_ato_extenso": "trinta (30) de agosto de dois mil e vinte e seis (2026)",
+    "data_fato_extenso": "vinte e nove (29) de agosto de dois mil e vinte e seis (2026) - 29/08/2026",
+    "declarante_qualificacao": "",
+    "escrevente": "",
+    "falecido_qualificacao": "<strong>MARIA DE EXEMPLO</strong>, professora, portadora do RG n.º 123, inscrita no CPF n.º 00000000191",
+    "frase_causa": "A morte foi natural, atestada por Dr. MÉDICO DE EXEMPLO, CRM 0000/EX.",
+    "frase_declaracao_de_obito": "Apresentada a Declaração de Óbito n.º 00000000.",
+    "frase_deixou_bens": "Não deixou bens. Deixou herdeiros menores ou interditados.",
+    "frase_eleitor": "Não era eleitor.",
+    "frase_estado_civil": "Era casada, sendo cônjuge sobrevivente JOSÉ DE EXEMPLO, com casamento registrado em Cartório de Exemplo.",
+    "frase_filhos": "Não deixou filhos.",
+    "frase_filiacao": "",
+    "frase_hora": ", às 14:30",
+    "frase_identificacao": "Não foi possível identificar a pessoa falecida.",
+    "frase_ignorados": "",
+    "frase_sepultamento": "Sepultado em Cemitério de Exemplo.",
+    "frase_testamento": "Deixou testamento conhecido: lavrado no Tabelionato de Exemplo.",
+    "funcao_do_escrevente": "",
+    "local_do_fato": "Hospital de Exemplo, Rua de Exemplo, 100"
+   }
+  },
+  "ob.valores.filhos_sim_sem_lista": {
+   "ok": "Deixou filhos."
+  },
+  "ob.valores.hora_sem_h": {
+   "ok": ""
+  },
+  "ob.valores.nada_perguntado": {
+   "ok": {
+    "cidade_do_ato": "",
+    "data_ato_extenso": "",
+    "data_fato_extenso": "",
+    "declarante_qualificacao": "",
+    "escrevente": "",
+    "falecido_qualificacao": "",
+    "frase_causa": "",
+    "frase_declaracao_de_obito": "",
+    "frase_deixou_bens": "",
+    "frase_eleitor": "",
+    "frase_estado_civil": "",
+    "frase_filhos": "",
+    "frase_filiacao": "",
+    "frase_hora": "",
+    "frase_identificacao": "",
+    "frase_ignorados": "O oficial indagou a respeito de todos os itens do art. 255, e o declarante ignorava: era eleitor, deixou bens, deixou filhos e pessoa não identificada, na forma do § 1º do referido artigo.",
+    "frase_sepultamento": "",
+    "frase_testamento": "",
+    "funcao_do_escrevente": "",
+    "local_do_fato": ""
+   }
+  },
+  "ob.valores.so_hora": {
+   "ok": ", às 14 horas"
+  },
+  "ob.valores.so_local_nome": {
+   "ok": "Hospital de Exemplo"
+  },
+  "ob.valores.so_mae": {
+   "ok": "Filho de ANA MÃE DE EXEMPLO."
+  },
+  "pacto.os_dois": {
+   "ok": ", conforme escritura de pacto antenupcial lavrada em 15/07/2026 nas notas de Tabelionato de Exemplo"
+  },
+  "pacto.so_data": {
+   "ok": ", conforme escritura de pacto antenupcial lavrada em 15/07/2026"
+  },
+  "pacto.so_data_livre": {
+   "ok": ", conforme escritura de pacto antenupcial lavrada em 15 de julho"
+  },
+  "pacto.so_serventia": {
+   "ok": ", conforme escritura de pacto antenupcial nas notas de Tabelionato de Exemplo"
+  },
+  "pacto.vazio": {
+   "ok": ""
+  },
+  "pais.no_nascimento_com_pai": {
+   "ok": ", e de PEDRO DE EXEMPLO, casados entre si em Cidade Exemplo/EX, com registro em Cartório de Exemplo"
+  },
+  "pais.no_nascimento_sem_pai": {
+   "ok": ""
+  },
+  "pais.os_dois": {
+   "ok": ", casados entre si em Cidade Exemplo/EX, com registro em Cartório de Exemplo"
+  },
+  "pais.so_cartorio": {
+   "ok": ", casados entre si, com registro em Cartório de Exemplo"
+  },
+  "pais.so_lugar": {
+   "ok": ", casados entre si em Cidade Exemplo/EX"
+  },
+  "pais.vazio": {
+   "ok": ""
+  },
+  "por_extenso_com_algarismo.'8'.False": {
+   "ok": "oito (8)"
+  },
+  "por_extenso_com_algarismo.0.False": {
+   "ok": "zero (0)"
+  },
+  "por_extenso_com_algarismo.1.True": {
+   "ok": "uma (1)"
+  },
+  "por_extenso_com_algarismo.100.False": {
+   "ok": "cem (100)"
+  },
+  "por_extenso_com_algarismo.19.False": {
+   "ok": "dezenove (19)"
+  },
+  "por_extenso_com_algarismo.1994.False": {
+   "ok": "mil novecentos e noventa e quatro (1994)"
+  },
+  "por_extenso_com_algarismo.2.True": {
+   "ok": "duas (2)"
+  },
+  "por_extenso_com_algarismo.2026.False": {
+   "ok": "dois mil e vinte e seis (2026)"
+  },
+  "por_extenso_com_algarismo.erro": {
+   "erro": "ValueError: invalid literal for int() with base 10: 'x'"
+  },
+  "qualificacao_inteira.bairro_cidade_uf_sem_endereco": {
+   "ok": ""
+  },
+  "qualificacao_inteira.cheia": {
+   "ok": "MARIA DE EXEMPLO, brasileira, lavradora, portadora do RG n.º 123456, inscrita no CPF n.º 000.000.001-91, natural de Cidade Exemplo/EX, nascida no dia 01/02/1990, residente e domiciliada em Rua Exemplo, 1, Centro, Cidade Exemplo/EX"
+  },
+  "qualificacao_inteira.cheia_forca_fem": {
+   "ok": "MARIA DE EXEMPLO, brasileira, lavradora, portadora do RG n.º 123456, inscrita no CPF n.º 000.000.001-91, natural de Cidade Exemplo/EX, nascida no dia 01/02/1990, residente e domiciliada em Rua Exemplo, 1, Centro, Cidade Exemplo/EX"
+  },
+  "qualificacao_inteira.cheia_forca_masc": {
+   "ok": "MARIA DE EXEMPLO, brasileira, lavradora, portador do RG n.º 123456, inscrito no CPF n.º 000.000.001-91, natural de Cidade Exemplo/EX, nascido no dia 01/02/1990, residente e domiciliado em Rua Exemplo, 1, Centro, Cidade Exemplo/EX"
+  },
+  "qualificacao_inteira.cheia_m": {
+   "ok": "JOÃO DE EXEMPLO, brasileira, lavradora, portador do RG n.º 123456, inscrito no CPF n.º 000.000.001-91, natural de Cidade Exemplo/EX, nascido no dia 01/02/1990, residente e domiciliado em Rua Exemplo, 1, Centro, Cidade Exemplo/EX"
+  },
+  "qualificacao_inteira.cheia_negrito": {
+   "ok": "<strong>MARIA DE EXEMPLO</strong>, brasileira, lavradora, portadora do RG n.º 123456, inscrita no CPF n.º 000.000.001-91, natural de Cidade Exemplo/EX, nascida no dia 01/02/1990, residente e domiciliada em Rua Exemplo, 1, Centro, Cidade Exemplo/EX"
+  },
+  "qualificacao_inteira.cheia_sem_sexo": {
+   "ok": "MARIA DE EXEMPLO, brasileira, lavradora, portador do RG n.º 123456, inscrito no CPF n.º 000.000.001-91, natural de Cidade Exemplo/EX, nascido no dia 01/02/1990, residente e domiciliado em Rua Exemplo, 1, Centro, Cidade Exemplo/EX"
+  },
+  "qualificacao_inteira.cnh": {
+   "ok": "JOÃO DE EXEMPLO"
+  },
+  "qualificacao_inteira.cpf_como_documento": {
+   "ok": "JOÃO DE EXEMPLO, inscrito no CPF n.º 00000000191"
+  },
+  "qualificacao_inteira.data_br": {
+   "ok": "JOÃO DE EXEMPLO, nascido no dia 90//1/01/0"
+  },
+  "qualificacao_inteira.data_com_hora": {
+   "ok": "nascida no dia 01/02/1990"
+  },
+  "qualificacao_inteira.data_curta": {
+   "ok": "JOÃO DE EXEMPLO"
+  },
+  "qualificacao_inteira.documento_sem_tipo": {
+   "ok": "JOÃO DE EXEMPLO, portador do RG n.º 123456"
+  },
+  "qualificacao_inteira.endereco_cidade": {
+   "ok": "residente e domiciliado em Rua Exemplo, 1, Cidade Exemplo"
+  },
+  "qualificacao_inteira.fem_profissao_endereco_uf": {
+   "ok": "lavradora, residente e domiciliada em Rua Exemplo, 1/EX"
+  },
+  "qualificacao_inteira.negrito_sem_nome": {
+   "ok": "brasileira, lavradora, portadora do RG n.º 123456, inscrita no CPF n.º 000.000.001-91, natural de Cidade Exemplo/EX, nascida no dia 01/02/1990, residente e domiciliada em Rua Exemplo, 1, Centro, Cidade Exemplo/EX"
+  },
+  "qualificacao_inteira.nome_com_espacos": {
+   "ok": "MARIA  DE EXEMPLO"
+  },
+  "qualificacao_inteira.none": {
+   "ok": ""
+  },
+  "qualificacao_inteira.rg_minusculo": {
+   "ok": "MARIA DE EXEMPLO, portadora do RG n.º 1"
+  },
+  "qualificacao_inteira.so_cidade_natal": {
+   "ok": "natural de Cidade Exemplo"
+  },
+  "qualificacao_inteira.so_sexo": {
+   "ok": ""
+  },
+  "qualificacao_inteira.so_uf_natal": {
+   "ok": ""
+  },
+  "qualificacao_inteira.valores_numericos": {
+   "ok": "MARIA DE EXEMPLO, portador do RG n.º 123, inscrito no CPF n.º 191, residente e domiciliado em 12"
+  },
+  "qualificacao_inteira.vazio": {
+   "ok": ""
+  },
+  "rc_termo.qualificacao.cheia": {
+   "ok": "brasileira, solteira, lavradora, portador(a) do RG n.º 123456, expedido por SSP/EX, natural de Cidade Exemplo, EX, nascido(a) aos 1990-02-01, residente e domiciliado(a) em Rua Exemplo, 1, Centro, Cidade Exemplo, EX"
+  },
+  "rc_termo.qualificacao.cnh": {
+   "ok": "portador(a) de CNH n.º 999"
+  },
+  "rc_termo.qualificacao.cpf_como_documento": {
+   "ok": "inscrito(a) no CPF n.º 00000000191"
+  },
+  "rc_termo.qualificacao.documento_sem_tipo": {
+   "ok": "portador(a) de documento n.º 777"
+  },
+  "rc_termo.qualificacao.endereco_numero": {
+   "ok": "residente e domiciliado(a) em 12, EX"
+  },
+  "rc_termo.qualificacao.maiusculas_com_espaco": {
+   "ok": "brasileira, lavradora"
+  },
+  "rc_termo.qualificacao.none": {
+   "ok": ""
+  },
+  "rc_termo.qualificacao.rg_minusculo_sem_orgao": {
+   "ok": "brasileira, solteira, lavradora, portador(a) do RG n.º 123456, natural de Cidade Exemplo, EX, nascido(a) aos 1990-02-01, residente e domiciliado(a) em Rua Exemplo, 1, Centro, Cidade Exemplo, EX"
+  },
+  "rc_termo.qualificacao.so_cidade": {
+   "ok": "residente e domiciliado(a) em Cidade Exemplo"
+  },
+  "rc_termo.qualificacao.so_cidade_natural": {
+   "ok": "natural de Cidade Exemplo"
+  },
+  "rc_termo.qualificacao.so_nascimento": {
+   "ok": "nascido(a) aos 1990-02-01"
+  },
+  "rc_termo.qualificacao.so_nome": {
+   "ok": ""
+  },
+  "rc_termo.qualificacao.so_uf_natural": {
+   "ok": "natural de EX"
+  },
+  "rc_termo.qualificacao.vazio": {
+   "ok": ""
+  },
+  "regime.' SEPARACAO_TOTAL '": {
+   "ok": "separação total de bens"
+  },
+  "regime.''": {
+   "ok": ""
+  },
+  "regime.'COMUNHAO_PARCIAL'": {
+   "ok": "comunhão parcial de bens"
+  },
+  "regime.'COMUNHÃO PARCIAL DE BENS'": {
+   "ok": "COMUNHÃO PARCIAL DE BENS"
+  },
+  "regime.'PARTICIPACAO_FINAL'": {
+   "ok": "participação final nos aquestos"
+  },
+  "regime.'SEPARACAO_OBRIGATORIA'": {
+   "ok": "separação obrigatória de bens (CC art. 1.641)"
+  },
+  "regime.'comunhao_universal'": {
+   "ok": "comunhão universal de bens"
+  },
+  "regime.None": {
+   "ok": ""
+  },
+  "tit.escritura_nada": {
+   "ok": "por escritura pública lavrada"
+  },
+  "tit.escritura_so_folha": {
+   "ok": "por escritura pública lavrada, folha 42"
+  },
+  "tit.escritura_tudo": {
+   "ok": "por escritura pública lavrada em um (01) de setembro de dois mil e vinte e seis (2026) no livro 10, folha 42, nas notas de Tabelionato de Exemplo"
+  },
+  "tit.nenhum": {
+   "ok": ""
+  },
+  "tit.sentenca_juiz_sem_juizo": {
+   "ok": "por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo(a) MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026)"
+  },
+  "tit.sentenca_juizo_sem_juiz": {
+   "ok": "por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo"
+  },
+  "tit.sentenca_nada": {
+   "ok": "por sentença proferida"
+  },
+  "tit.sentenca_tudo": {
+   "ok": "por sentença proferida em um (01) de setembro de dois mil e vinte e seis (2026) pelo Juízo da 1ª Vara de Exemplo, MM. Juiz(a) JUIZ DE EXEMPLO, nos autos do processo n.º 0000000-00.2026.8.10.0000, transitada em julgado em vinte (20) de setembro de dois mil e vinte e seis (2026)"
+  },
+  "tit.termo": {
+   "ok": "por termo declaratório lavrado nesta serventia"
+  },
+  "tit.termo_data": {
+   "ok": "por termo declaratório lavrado nesta serventia em um (01) de setembro de dois mil e vinte e seis (2026)"
+  },
+  "tit.termo_data_livre": {
+   "ok": "por termo declaratório lavrado nesta serventia em 01/09/2026"
+  },
+  "varre.casamento": {
+   "ok": {
+    "erros": 0,
+    "n": 984,
+    "sha256": "f73d16b37dd0484d41523a75ca15d0c98908fe7893c29880fb3554b4037d8e95"
+   }
+  },
+  "varre.frase_do_livro_e": {
+   "ok": {
+    "erros": 0,
+    "n": 21800,
+    "sha256": "3d5f6ea1f2e5ccb8e405270f6e7fcd24387da0aaffe59c0306059c816bf757c2"
+   }
+  },
+  "varre.livro_e_do_assento": {
+   "ok": {
+    "erros": 0,
+    "n": 144,
+    "sha256": "893bdaaf3c8b5c1d78583ad423d4b4f296cd74ad5ee4bdb7315ba6ac3091f99d"
+   }
+  },
+  "varre.nascimento": {
+   "ok": {
+    "erros": 0,
+    "n": 3968,
+    "sha256": "9766598f1139e2419eb108b2ce9db53d01630ddbb7833e0a6b55602da8b803e7"
+   }
+  },
+  "varre.obito": {
+   "ok": {
+    "erros": 0,
+    "n": 1272,
+    "sha256": "1d0e426c67d62d96ec38d5704989f4178f93d0d5ed1a4c88d55db8240562bed5"
+   }
+  },
+  "varre.qualificacao_inteira": {
+   "ok": {
+    "erros": 0,
+    "n": 38880,
+    "sha256": "2ee5b95782521b7765b7543824f925d1c4b7c6c8d6b5deb4dc4f9bb2fc7cf207"
+   }
+  },
+  "varre.titulo": {
+   "ok": {
+    "erros": 0,
+    "n": 82,
+    "sha256": "0ad19d3f2b434ae28422b93f3067e4817491884e7076b2154660492a75f168b5"
+   }
+  }
+ },
+ "grupo": "termos",
+ "textos": {
+  "rc_modelos_do_livro.FRASE_PRIMEIRO_REGISTRO": "Trata-se de primeiro registro."
+ }
+}

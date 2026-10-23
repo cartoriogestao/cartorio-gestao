@@ -71,6 +71,7 @@ from datetime import date, datetime
 from typing import Any
 
 import emolumentos
+from bd_nativo import banco
 from caixa_schema import centavos, reais
 
 
@@ -254,23 +255,23 @@ def vigencia_do_dia(con: sqlite3.Connection, data: Any = None) -> dict:
     nao casou com nenhuma faixa.
     """
     dia = _dia(data)
-    colunas = {linha[1] for linha in con.execute("PRAGMA table_info(cx_vigencias)")}
-    if {"inicio", "fim"} <= colunas:
-        linha = con.execute(
+    bd = banco(con)
+    if bd.tem_coluna("cx_vigencias", "inicio") and bd.tem_coluna("cx_vigencias", "fim"):
+        linha = bd.um(
             """SELECT codigo, descricao, inicio, fim FROM cx_vigencias
-                WHERE inicio IS NOT NULL AND inicio <= ?
-                  AND (fim IS NULL OR fim >= ?)
-                ORDER BY inicio DESC LIMIT 1""", (dia, dia)).fetchone()
+                WHERE inicio IS NOT NULL AND inicio <= %s
+                  AND (fim IS NULL OR fim >= %s)
+                ORDER BY inicio DESC, codigo LIMIT 1""", (dia, dia))
         if linha:
             return {"codigo": int(linha["codigo"]), "descricao": linha["descricao"],
                     "inicio": linha["inicio"], "fim": linha["fim"],
                     "dia": dia, "exata": True}
-    corrente = con.execute(
-        "SELECT codigo, descricao FROM cx_vigencias WHERE vigente=1").fetchone()
+    corrente = bd.um(
+        "SELECT codigo, descricao FROM cx_vigencias WHERE vigente=1 ORDER BY codigo LIMIT 1")
     if not corrente:
         raise CustasError(
             "Não há tabela de emolumentos carregada. Importe a tabela do "
-            "E-Ofício antes de cobrar.")
+            "sistema antigo antes de cobrar.")
     return {"codigo": int(corrente["codigo"]), "descricao": corrente["descricao"],
             "inicio": None, "fim": None, "dia": dia, "exata": False}
 

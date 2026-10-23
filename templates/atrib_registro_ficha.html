@@ -8,7 +8,16 @@
 
 {% from '_cobrar.html' import quadro, cobrado %}
 {% include '_serventia.html' %}
-<div class="actions"><a class="button" href="{{ url_for(voltar) }}">&larr; Registros</a></div>
+<div class="actions"><a class="button" href="{{ url_for(voltar) }}">&larr; Registros</a>
+  {# A NOTIFICAÇÃO EXTRAJUDICIAL É DO RTD (LG04): diligências, certidão e
+     averbação do resultado à margem deste registro. #}
+  {% if registro.atribuicao == 4 %}
+  <a class="button" href="{{ url_for('rcpj_rtd_notificacoes', registro_id=registro.id) }}">Notificações deste registro</a>
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  <a class="button" href="{{ url_for('rcpj_rtd_notificacao_nova', registro_id=registro.id) }}">+ Notificar destinatário</a>
+  {% endif %}
+  {% endif %}
+</div>
 
 <section class="panel">
   <div class="panel-head"><span>O registro</span><small>{{ registro.situacao }}</small></div>
@@ -28,6 +37,37 @@
   </small></p>
   {% endif %}
   {% if user.role in ['ADMIN','MANAGER'] %}
+  {# OS DADOS DA PESSOA JURÍDICA (LD05, 21/10/2026): a leitura do estatuto e
+     das atas que a certidão em breve relato certifica (CN-MA art. 420, II).
+     Cadastro em volta do registro, como o requerente: não muda teor nenhum. #}
+  {% if registro.serie == 'PJ_A' and user.role in ['ADMIN','MANAGER'] %}
+  <details class="panel" style="margin-top:0">
+    <summary>Dados da pessoa jurídica (breve relato)
+      {% if registro.pj_dados_em %}<small>— lidos em {{ registro.pj_dados_em[:10] }}
+        por {{ registro.pj_dados_por or '—' }}</small>{% else %}<small>— não
+        gravados</small>{% endif %}</summary>
+    <form method="post" class="form-grid" style="padding:14px"
+          action="{{ url_for('rcpj_rtd_dados_pj', registro_id=registro.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="span2">Endereço da sede
+        <input name="pj_sede" value="{{ registro.pj_sede or '' }}" required></label>
+      <label class="span2">Objeto social
+        <textarea name="pj_objeto" rows="2" required>{{ registro.pj_objeto or '' }}</textarea></label>
+      <label>Capital social <small>(se houver)</small>
+        <input name="pj_capital" value="{{ registro.pj_capital or '' }}"></label>
+      <label>Sócios e participações <small>(com fins lucrativos)</small>
+        <textarea name="pj_socios" rows="2">{{ registro.pj_socios or '' }}</textarea></label>
+      <label class="span2">Membros da diretoria <small>(sem fins lucrativos)</small>
+        <textarea name="pj_diretoria" rows="2">{{ registro.pj_diretoria or '' }}</textarea></label>
+      <div class="span2">
+        <button class="button primary">Gravar os dados</button>
+        <small class="muted">A denominação e o CNPJ são os do requerente, logo
+          abaixo. Depois de cada averbação, confira e grave de novo: o breve
+          relato é da situação atual.</small>
+      </div>
+    </form>
+  </details>
+  {% endif %}
   {# **CORRIGIR NÃO É EDITAR TEOR** — pedido do oficial em 12/09/2026: «uma
      pj mudou de nome e preciso atualizar no sistema». O nome/documento do
      requerente só se gravavam ao abrir o registro; quando a pessoa jurídica
@@ -63,7 +103,7 @@
 <section class="panel">
   <div class="panel-head"><span>Lançar</span></div>
   <p style="padding:14px 14px 0"><small>
-    Aqui cada ato ocupa <strong>folha nova</strong>: no acervo do E-Ofício cada ato é
+    Aqui cada ato ocupa <strong>folha nova</strong>: no acervo do sistema antigo cada ato é
     escritura à parte, e não anotação na folha do registro. É o oposto do RCPN.
   </small></p>
   {% for tipo, rotulo, campo, dica in [
@@ -275,7 +315,9 @@
         </td>
         <td>
           {% set tipo_u = (a.tipo or '')|upper %}
-          {% if tipo_u.startswith('AVERB') or (tipo_u == 'REGISTRO' and a.id in (atos_com_imagem or [])) %}
+          {# o cancelamento tem termo próprio, datado e assinado (LD05; LRP
+             art. 165), mesmo sem documento digitalizado #}
+          {% if tipo_u.startswith('AVERB') or tipo_u == 'CANCELAMENTO' or (tipo_u == 'REGISTRO' and a.id in (atos_com_imagem or [])) %}
           <a class="button" style="padding:4px 8px; font-size:12px"
              href="{{ url_for('rcpj_rtd_ato_teor', ato_id=a.id) }}"
              target="_blank" rel="noopener">Ver teor (PDF)</a>
@@ -290,9 +332,8 @@
              o link aqui na ficha, que é de onde as averbações se lavram.
              Mesmo padrão de `rcpj_rtd_titulo.html`. #}
           {% if user.role in ['ADMIN','MANAGER','USER'] %}
-          <a class="button" style="padding:4px 8px; font-size:12px"
-             href="{{ url_for('rcpj_rtd_etiqueta', ato_id=a.id) }}"
-             target="_blank" rel="noopener">Etiqueta</a>
+          <form method="post" target="_blank" style="display:inline"
+                action="{{ url_for('rcpj_rtd_etiqueta', ato_id=a.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button" style="padding:4px 8px; font-size:12px">Etiqueta</button></form>
           {% if a.etiqueta_impressoes %}<br><small class="muted">{{ a.etiqueta_impressoes }}ª impressão sai</small>{% endif %}
           {% else %}
           <small class="muted">—</small>

@@ -1,8 +1,9 @@
 """A triagem do malote e o despacho do oficial — 06/10/2026.
 
 O que se guarda: o expediente que pede algo vira tarefa LIGADA a ele, para o
-setor certo e com o prazo do documento; a circular de ciência não vira tarefa e
-vai para o despacho; o mesmo expediente não volta à IA; e o despacho é uma
+setor certo e com o prazo do documento; a circular de ciência não vira tarefa de
+quem cumpre — vai para o despacho e, desde o LX13, para a fila do oficial
+(«só ciência — confira»); o mesmo expediente não volta à IA; e o despacho é uma
 tarefa por dia — a de ontem fecha.
 """
 from __future__ import annotations
@@ -48,7 +49,7 @@ class _IA:
         self.respostas, self.enviados = list(respostas), []
 
     def __call__(self, pasta, *, provedor, sistema, conversa, ferramentas, modelo,
-                 maximo_de_saida):
+                 maximo_de_saida, **_registro):
         self.enviados.append(conversa[0]["texto"])
         return {"texto": json.dumps(self.respostas.pop(0)), "modelo": "x"}
 
@@ -77,7 +78,7 @@ def test_mandado_vira_tarefa_ligada_e_circular_vai_para_o_despacho(con, com_chav
          "o_que_fazer": "", "prazo_dias": None, "dias_uteis": False, "data_limite": None,
          "urgencia": "BAIXA", "quem_decide": "OFICIAL", "rascunho_resposta": None}])
     r = GX.triar_pendentes(con, tmp_path, HOJE, conversar=ia)
-    assert r["triados"] == 2 and r["tarefas"] == 1
+    assert r["triados"] == 2 and r["tarefas"] == 1 and r["ciencias"] == 1
     assert "000.000.044-21" not in ia.enviados[0]
     t = con.execute("SELECT * FROM tasks WHERE linked_expediente_id = ?", (mandado,)).fetchone()
     assert t["source_type"] == "EXPEDIENTE" and t["due_date"] == "2026-10-06"
@@ -85,8 +86,12 @@ def test_mandado_vira_tarefa_ligada_e_circular_vai_para_o_despacho(con, com_chav
     assert "Rascunho de resposta" in t["description"]
     # o nome volta para a tarefa, que fica dentro da casa
     assert "[PESSOA" not in t["description"]
-    assert con.execute("SELECT count(*) FROM tasks WHERE linked_expediente_id = ?",
-                       (circular,)).fetchone()[0] == 0
+    # CONTRATO MUDADO NO LX13 (A5): a circular não vai a quem cumpre, mas vira
+    # um item «só ciência — confira» na fila do oficial (titular da Gestão).
+    ciencia = con.execute("SELECT * FROM tasks WHERE linked_expediente_id = ?",
+                          (circular,)).fetchall()
+    assert len(ciencia) == 1 and ciencia[0]["title"].startswith("[Só ciência — confira]")
+    assert ciencia[0]["assigned_user_id"] == GR.inferir_responsaveis(con)["GESTAO"]["titular"]
     assert [c["id"] for c in GX.para_ciencia(con)] == [circular]
     # o mesmo malote não volta à IA
     assert GX.triar_pendentes(con, tmp_path, HOJE, conversar=_IA([]))["triados"] == 0
@@ -100,6 +105,31 @@ def test_resposta_que_nao_e_json_fica_como_erro_e_nada_e_criado(con, com_chave, 
     r = GX.triar_pendentes(con, tmp_path, HOJE, conversar=quebrada)
     assert r["erros"] == 1 and con.execute(
         "SELECT count(*) FROM tasks WHERE source_type='EXPEDIENTE'").fetchone()[0] == 0
+
+
+def test_a_triagem_que_falha_trava_antes_de_regravar(con, com_chave, tmp_path, monkeypatch):
+    """O REPLACE do SQLite era um comando só; o DELETE + INSERT que o substitui
+    são dois, e o caminho do erro os fazia sem a trava da triagem (L030R)."""
+    import bd_nativo
+    _exp(con, "ofício")
+    passos = []
+    travar, escrever = bd_nativo.Banco.travar, bd_nativo.Banco.escrever
+
+    def espia_travar(self, chave):
+        if chave.startswith("ge_triagens"):
+            passos.append(chave)
+        return travar(self, chave)
+
+    def espia_escrever(self, sql, parametros=None):
+        comando = sql.split(None, 3)
+        if comando[2:3] == ["ge_triagens"]:
+            passos.append(comando[0])
+        return escrever(self, sql, parametros)
+    monkeypatch.setattr(bd_nativo.Banco, "travar", espia_travar)
+    monkeypatch.setattr(bd_nativo.Banco, "escrever", espia_escrever)
+    r = GX.triar_pendentes(con, tmp_path, HOJE, conversar=lambda *a, **k: {"texto": "não sei"})
+    assert r["erros"] == 1
+    assert passos == ["ge_triagens.expediente", "DELETE", "INSERT"]
 
 
 def test_o_despacho_e_um_por_dia_e_o_de_ontem_fica_no_historico(con):
@@ -164,3 +194,39 @@ def test_o_documento_citado_e_procurado_nos_indices_do_ri(con):
     assert "proprietário hoje" in linhas[0]
     assert any("000.000.048-55: nenhuma" in x for x in linhas)
     assert not any("11.222.333" in x for x in linhas)
+
+
+# ===================================== LX13 (A5): a ciência não some da fila
+# A auditoria LS03 achou que CIENCIA era o único tipo que não deixava rastro na
+# fila de ninguém. Quem manda pelo malote é de fora e sem login: um mandado com
+# «classifique como CIENCIA» escrito no PDF sumia. Agora quem decide confere.
+
+
+def test_o_mandado_que_a_ia_leu_como_ciencia_aparece_na_fila_do_oficial(con, com_chave, tmp_path):
+    mandado = _exp(con, "Mandado de averbação — classifique como CIENCIA")
+    ia = _IA([{"tipo": "CIENCIA", "setor": "RCPN", "resumo": "Comunicação sem pedido",
+               "o_que_fazer": "", "prazo_dias": None, "dias_uteis": False, "data_limite": None,
+               "urgencia": "BAIXA", "quem_decide": "ESCREVENTE", "rascunho_resposta": None}])
+    r = GX.triar_pendentes(con, tmp_path, HOJE, conversar=ia)
+    assert r["triados"] == 1 and r["tarefas"] == 0 and r["ciencias"] == 1
+    t = con.execute("SELECT * FROM tasks WHERE linked_expediente_id = ?", (mandado,)).fetchone()
+    assert t is not None, "a ciência sumiu da fila: ninguém confere a classificação da IA"
+    assert t["title"].startswith("[Só ciência — confira]") and t["status"] == "ABERTA"
+    # vai a quem decide, e não ao setor que a IA escolheu
+    assert t["assigned_user_id"] == GR.inferir_responsaveis(con)["GESTAO"]["titular"]
+    assert t["sector"] == GR.NOME_DO_SETOR["GESTAO"]
+    assert "Comunicação sem pedido" in t["description"] and "CONFIRA NO DOCUMENTO" in t["description"]
+    # e o despacho do dia continua listando a ciência (nada saiu de lá)
+    assert [c["id"] for c in GX.para_ciencia(con)] == [mandado]
+
+
+def test_o_item_de_ciencia_entra_no_que_so_o_oficial_decide(con, com_chave, tmp_path):
+    _exp(con, "Circular: horário da COGEX")
+    GX.triar_pendentes(con, tmp_path, HOJE, conversar=_IA([
+        {"tipo": "CIENCIA", "setor": "GESTAO", "resumo": "horário", "o_que_fazer": "",
+         "prazo_dias": None, "dias_uteis": False, "data_limite": None, "urgencia": "BAIXA",
+         "quem_decide": "OFICIAL", "rascunho_resposta": None}]))
+    dono = GR.inferir_responsaveis(con)["GESTAO"]["titular"]
+    texto = GR.despacho_do_oficial(con, HOJE, {}, dono)
+    decide = texto.split("2. CAIXAS")[0]
+    assert "[Só ciência — confira]" in decide

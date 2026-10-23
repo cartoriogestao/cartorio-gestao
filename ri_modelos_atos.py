@@ -675,9 +675,17 @@ import unicodedata as _ud
 #                               nao existir             desmarcada, some
 #
 # Campo dentro de clausula opcional so e cobrado quando a clausula entra.
+#
+# A ESCOLHA VAI ATE 1500 LETRAS, como a clausula opcional (LT02, 20/10/2026).
+# Ate aqui eram 300, e 11 das 35 minutas das Notas tem escolha maior — o
+# regime da uniao estavel, a torna da permuta, o ITR da compra e venda rural,
+# os filhos e a partilha do divorcio: ela nao virava campo da tela, nao era
+# pendencia para a trava da lavratura, e ia ao livro como estava escrita, com
+# as chaves e as barras. Medido no mesmo dia: o limite novo so muda essas 11;
+# os modelos do RI e os demais papeis da casa saem iguais.
 
 _MARCADOR = _re.compile(r"\[([^\[\]]{2,120})\]")
-_ESCOLHA = _re.compile(r"\{([^{}]{2,300})\}")
+_ESCOLHA = _re.compile(r"\{([^{}]{2,1500})\}")
 _OPCIONAL = _re.compile(r"«([^«»]{2,1500})»", _re.S)
 
 # Palavra encontrada no marcador -> tipo de campo e rotulo melhor.
@@ -924,3 +932,66 @@ def pendencias(texto: str) -> list[str]:
         if lido:
             achados.append("{" + lido[0] + "}")
     return sorted(set(achados))
+
+
+# ------------------------------------------- o que nao pode chegar ao livro
+#
+# O QUE A PARTE FIXA ESCREVE QUANDO O SISTEMA NAO SABE O DADO — os textos sao
+# de `ri_web._contexto_modelo` e `ri_web.ri_aplicar_modelo`: o protocolo que a
+# matricula ainda nao tem, os titulares que ela nao tem, o imovel sem
+# logradouro e o adquirente, que so o titulo diz. O do adquirente leva a lista
+# do que se qualifica dentro dele, e por isso aqui vai so o comeco.
+#
+#   Sao colchetes DO MODELO, e nao do acervo: so nascem de um modelo desta
+#   lista. `test_fluxo_ri` monta o modelo sobre uma matricula sem nada e
+#   confere que todo colchete que sobra esta aqui ou nos campos do modelo —
+#   a parte fixa que ganhar um marcador novo e nao vier para ca fica vermelha.
+MARCADORES_DA_PARTE_FIXA = ("[INFORMAR O PROTOCOLO]", "[QUALIFICAR AS PARTES]",
+                            "[DESCREVER O IMÓVEL]", "[DESCREVER]",
+                            "[QUALIFICAR O(S) ADQUIRENTE(S)")
+
+
+def por_preencher(teor, codigo) -> list[str]:
+    """Os campos do modelo `codigo` que ficaram por preencher no teor. So calcula.
+
+    NASCEU DO LT03 (20/10/2026), e o conserto e do LD03 (21/10/2026, «corrija
+    tudo»): a lavratura recusava o `{{ }}` cru (`ri_minuta.marcador_de_modelo`)
+    e deixava passar «[DATA DA ESCRITURA]» — o R-1 ia ao livro sem a data do
+    titulo (Lei 6.015/1973, art. 176, § 1º, III, 4), com o claro escrito, e o
+    teor congela na corrente de hash: dali so sai por averbacao.
+
+    POR QUE SO OS DO MODELO, e nao todo colchete: o acervo transcrito tem
+    colchete legitimo («[rubrica]», «[ilegivel]»), e o escrevente pode
+    escrever um. O que se recusa e o que o MODELO informado em `modelo_codigo`
+    pos no texto — os campos e as escolhas, que sao as pendencias da tela do
+    modelo (`pendencias`), e o que a parte fixa escreve quando o sistema nao
+    sabe (`MARCADORES_DA_PARTE_FIXA`). Clausula opcional nao entra, pela mesma
+    razao de `pendencias`: nao marcar tambem e uma decisao.
+
+    Sem modelo (ou com codigo que nao e desta lista) devolve vazio: ali nao ha
+    regua do que e campo, e adivinhar recusaria o acervo.
+    """
+    modelo = por_codigo(str(codigo or "").strip().upper())
+    if not modelo:
+        return []
+    texto = " ".join(str(teor or "").split())
+    achados: list[str] = []
+    for campo in campos_do_modelo(modelo):
+        if campo["natureza"] == "texto":
+            marca, mostra = f"[{campo['marcador']}]", f"[{campo['marcador']}]"
+        elif campo["natureza"] == "escolha":
+            marca = "{" + campo["marcador"] + "}"
+            mostra = "{" + campo["rotulo"] + "}"
+        else:
+            continue
+        if marca in texto and mostra not in achados:
+            achados.append(mostra)
+    for comeco in MARCADORES_DA_PARTE_FIXA:
+        onde = texto.find(comeco)
+        if onde < 0:
+            continue
+        fim = texto.find("]", onde)
+        marca = texto[onde:fim + 1] if fim >= 0 else comeco
+        if marca not in achados:
+            achados.append(marca)
+    return achados

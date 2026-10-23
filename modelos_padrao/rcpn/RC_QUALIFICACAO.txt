@@ -1,0 +1,1 @@
+{nome}, {nacionalidade}, {profissao}, {rg}, {cpf}, {naturalidade}, {nascimento}, {residencia}

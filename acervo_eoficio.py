@@ -35,6 +35,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+import banco_pg
+
 NOME_BANCO = "acervo_eoficio.sqlite3"
 # Estes dois nao sao tabelas: descrevem a exportacao.
 ARQUIVOS_DE_CONTROLE = {"ESQUEMA.jsonl", "MANIFESTO.jsonl"}
@@ -132,7 +134,10 @@ def carregar(pasta: str | Path, destino: str | Path,
     parcial.unlink(missing_ok=True)
     destino.parent.mkdir(parents=True, exist_ok=True)
 
-    con = sqlite3.connect(parcial)
+    # O ACERVO E SQLITE DE VERDADE (LH09): pela porta do SQLite, e nao pelo
+    # desvio do `sqlite3.connect`, que decide pelo nome do arquivo. Aqui se
+    # ESCREVE — e a montagem —, no `.parcial`, que so no fim vira o acervo.
+    con = banco_pg.conectar_sqlite(parcial, so_leitura=False)
     con.execute("PRAGMA journal_mode = OFF")
     con.execute("PRAGMA synchronous = OFF")
 
@@ -218,7 +223,7 @@ def conferir(banco: str | Path) -> str | None:
     if banco.stat().st_size == 0:
         return "o arquivo está vazio"
     try:
-        con = sqlite3.connect(f"file:{banco}?mode=ro", uri=True)
+        con = banco_pg.conectar_sqlite(banco)
         try:
             if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 return "o banco não passou no integrity_check"
@@ -242,7 +247,7 @@ def resumo(banco: str | Path) -> dict:
              "problema": conferir(banco) if banco.is_file() else "ainda não foi montado"}
     if dados["problema"]:
         return dados
-    con = sqlite3.connect(f"file:{banco}?mode=ro", uri=True)
+    con = banco_pg.conectar_sqlite(banco)
     con.row_factory = sqlite3.Row
     try:
         dados["info"] = {r["chave"]: r["valor"] for r in

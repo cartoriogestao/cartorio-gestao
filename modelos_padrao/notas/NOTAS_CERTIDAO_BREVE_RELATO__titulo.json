@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_CERTIDAO_BREVE_RELATO__titulo",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Título da certidão — breve relato",
+  "formato": "CHAVES",
+  "explica": "O título impresso da certidão (e o nome dela nas telas).",
+  "campos": []
+}

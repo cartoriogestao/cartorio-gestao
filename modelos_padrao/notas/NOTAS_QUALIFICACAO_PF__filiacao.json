@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_QUALIFICACAO_PF__filiacao",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Qualificação de pessoa física — filiação",
+  "formato": "CHAVES",
+  "explica": "Entra no lugar do documento de identidade quando a parte não o tem (CNN art. 111: «ou, na sua falta, a filiação»).",
+  "campos": [
+    "filiacao"
+  ]
+}

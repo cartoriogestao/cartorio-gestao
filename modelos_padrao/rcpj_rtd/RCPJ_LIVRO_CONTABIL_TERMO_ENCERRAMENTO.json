@@ -1,0 +1,22 @@
+{
+  "chave": "RCPJ_LIVRO_CONTABIL_TERMO_ENCERRAMENTO",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Livro contábil — termo de encerramento",
+  "formato": "CHAVES",
+  "explica": "O termo de encerramento do livro que o RCPJ autentica. Congelado na autenticação.",
+  "campos": [
+    "tipo_livro",
+    "numero_livro",
+    "pj_nome",
+    "pj_cnpj",
+    "folhas",
+    "folha_de",
+    "folha_ate",
+    "numero",
+    "ano",
+    "cidade_uf",
+    "data_extenso",
+    "full_name",
+    "funcao"
+  ]
+}

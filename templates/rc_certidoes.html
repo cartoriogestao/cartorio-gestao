@@ -46,7 +46,10 @@
     <p style="padding:0 14px 14px">
       Nenhum assento com <strong>{{ termo }}</strong>.
       Se o registro é desta serventia e não aparece, ele pode não ter vindo do
-      acervo ainda — veja <a href="{{ url_for('atribuicoes_importar') }}">Carga do acervo</a>.
+      acervo — nesse caso,
+      <a href="{{ url_for('rcpn_assento_novo', do_acervo=1) }}">digite as informações</a>
+      do assento.
+      {# Até 17/10/2026 o link era para a carga do E-Ofício, que saiu. #}
     </p>
     {% endif %}
   {% endif %}

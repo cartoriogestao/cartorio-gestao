@@ -1,0 +1,8 @@
+TERMO DE ENCERRAMENTO
+
+Contém este livro, {tipo_livro} nº {numero_livro}, de {pj_nome}, inscrita no CNPJ sob o nº {pj_cnpj}, {folhas} folhas, numeradas de {folha_de} a {folha_ate}, autenticado sob o nº {numero}/{ano} do controle de autenticação de livros deste Registro Civil das Pessoas Jurídicas.
+
+{cidade_uf}, {data_extenso}.
+
+{full_name}
+{funcao}

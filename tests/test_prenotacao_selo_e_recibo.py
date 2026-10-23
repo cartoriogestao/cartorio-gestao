@@ -239,7 +239,7 @@ def test_o_comprovante_traz_o_que_o_cliente_veio_saber(casa):
 # casa (protocolo 11573, 22/09/2026), e nao inventada.
 ETIQUETA_REAL = (
     "Poder Judiciário – TJMA. Selo: PRENOT000000STZ9R7DD8BZ6AG49, "
-    "22/09/2026 10:56:07, Ato: 16.1, Parte(s): LUANNA CARREIRO SOUSA, "
+    "22/09/2026 10:56:07, Ato: 16.1, Parte(s): BEATRIZ EXEMPLO DE SOUZA, "
     "Total R$ 43,37 Emol R$ 38,72 FERC R$ 1,16 FADEP R$ 1,55 FEMP R$ 1,55 "
     "FERRFIS R$ 0,39 Consulte em https://selo.tjma.jus.br")
 NUMERO_REAL = "PRENOT000000STZ9R7DD8BZ6AG49"

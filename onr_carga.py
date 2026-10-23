@@ -62,7 +62,7 @@ O DOCUMENTO ZERADO É PRECEDENTE DESTA CASA, E ELE CONTRARIA O MODELO
              - A INFORMACAO DEVE SER MAIOR QUE ZERO -->
 
     E os arquivos que **esta casa mandou** dizem o contrário. Medido nos 19
-    XML de `C:\\ARPNET\\C11\\ONR`, 10.781 `<INDIVIDUO>`:
+    XML de `arquivos\\eoficio\\ONR`, 10.781 `<INDIVIDUO>`:
 
         7.812  com onze zeros
         2.259  CPF
@@ -96,6 +96,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+from bd_nativo import banco
 import ri_fichas_do_disco as FD
 import ri_onr as ONR
 
@@ -155,7 +156,7 @@ def vinculos_da_carga(con: sqlite3.Connection) -> list[dict]:
     desta casa está montado, e é assim que os 19 arquivos que ela já mandou
     estão escritos.
     """
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT p.nome,
                   p.documento_numero          AS documento,
                   m.numero                    AS matricula,
@@ -180,7 +181,7 @@ def vinculos_da_carga(con: sqlite3.Connection) -> list[dict]:
              JOIN ri_matriculas m ON m.id = p.matricula_id
              LEFT JOIN ri_atos  a ON a.id = p.ato_id
             WHERE TRIM(COALESCE(p.nome,'')) <> ''
-            ORDER BY CAST(m.numero AS INTEGER), p.nome""").fetchall()]
+            ORDER BY coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0), p.nome, p.id""")
 
 
 def gerar_indicador_pessoal(con: sqlite3.Connection, cns: str = "") -> str:
@@ -229,7 +230,7 @@ def conferir_indicador_pessoal(con: sqlite3.Connection) -> dict:
         "precedente_da_casa": (
             "esta serventia já mandou 7.812 dos 10.781 vínculos com o "
             "documento zerado, e o modelo do ONR pede documento maior que "
-            "zero. Vale a regra da casa — fazer como o E-Ofício fazia —, e a "
+            "zero. Vale a regra da casa — fazer como o sistema antigo fazia —, e a "
             "divergência fica declarada aqui."),
     }
 
@@ -368,10 +369,10 @@ def matriculas_sem_imagem(con: sqlite3.Connection, raiz: Any,
         raise CargaOnrError(f"A pasta das imagens não existe: {pasta}.")
     no_disco = {FD.partir(f.name)[0] for f in pasta.rglob("*")
                 if f.is_file() and FD.partir(f.name)}
-    linhas = [dict(r) for r in con.execute(
+    linhas = banco(con).ler(
         """SELECT id, numero, livro, folha, tipo_ficha, data_abertura
              FROM ri_matriculas
-            ORDER BY CAST(numero AS INTEGER)""").fetchall()]
+            ORDER BY coalesce(substring(numero FROM '^[0-9]+')::bigint, 0), id""")
     faltando = [x for x in linhas if _numero(x["numero"]) not in no_disco]
     return faltando[:limite] if limite else faltando
 
@@ -445,10 +446,10 @@ def ultima_matricula(con: sqlite3.Connection) -> dict | None:
     **Ordenada por NÚMERO, e não por texto.** Os números desta casa têm
     larguras diferentes, e em ordem alfabética `999` viria depois de `4013`.
     """
-    linha = con.execute(
+    return banco(con).um(
         """SELECT numero, livro, folha, data_abertura FROM ri_matriculas
-            ORDER BY CAST(numero AS INTEGER) DESC LIMIT 1""").fetchone()
-    return dict(linha) if linha else None
+            ORDER BY coalesce(substring(numero FROM '^[0-9]+')::bigint, 0) DESC, id DESC
+            LIMIT 1""")
 
 
 def para_o_formulario(con: sqlite3.Connection, raiz: Any, *,
@@ -477,8 +478,8 @@ def para_o_formulario(con: sqlite3.Connection, raiz: Any, *,
             "o Console do Google Cloud Platform — é por ela que se concede, "
             "altera e revoga acesso aos dados desta serventia. NÃO é o e-mail "
             "de contato geral do cartório."),
-        "total_de_matriculas": con.execute(
-            "SELECT COUNT(*) FROM ri_matriculas").fetchone()[0],
+        "total_de_matriculas": int(banco(con).valor(
+            "SELECT COUNT(*) FROM ri_matriculas")),
         "ultima_matricula": ultima_matricula(con),
         "espaco": espaco,
         "erro_do_espaco": erro,
@@ -570,14 +571,14 @@ def sem_digitalizacao(con: sqlite3.Connection, raiz: Any, *, hoje: str,
         raise CargaOnrError(f"Janela inválida: {meses}") from erro
 
     fora: list[dict] = []
-    for linha in con.execute(
+    for linha in banco(con).ler(
             """SELECT id, numero, livro, folha, tipo_ficha, data_abertura,
                       origem
                  FROM ri_matriculas
                 WHERE data_abertura IS NOT NULL AND TRIM(data_abertura) <> ''
-                  AND data_abertura <= ?
-                  AND data_abertura >= ?
-                ORDER BY data_abertura DESC""", (corte, piso)).fetchall():
+                  AND data_abertura <= %s
+                  AND data_abertura >= %s
+                ORDER BY data_abertura DESC, id DESC""", (corte, piso)):
         x = dict(linha)
         if _numero(x["numero"]) in no_disco:
             continue
@@ -591,10 +592,9 @@ def sem_digitalizacao(con: sqlite3.Connection, raiz: Any, *, hoje: str,
 
 
 def _minima(con: sqlite3.Connection, tabela: str, coluna: str) -> str | None:
-    linha = con.execute(
+    return banco(con).valor(
         f"SELECT MIN({coluna}) FROM {tabela} "
-        f"WHERE {coluna} IS NOT NULL AND TRIM({coluna}) <> ''").fetchone()
-    return linha[0] if linha else None
+        f"WHERE {coluna} IS NOT NULL AND TRIM({coluna}) <> ''")
 
 
 def prontidao(con: sqlite3.Connection, raiz: Any) -> dict:
@@ -617,7 +617,7 @@ def prontidao(con: sqlite3.Connection, raiz: Any) -> dict:
         # números, e a tela o mostra.
         img, sem_imagem, erro_do_disco = None, None, str(erro)
 
-    total = con.execute("SELECT COUNT(*) FROM ri_matriculas").fetchone()[0]
+    total = int(banco(con).valor("SELECT COUNT(*) FROM ri_matriculas"))
     mais_antiga = _minima(con, "ri_matriculas", "data_abertura")
     ato_mais_antigo = _minima(con, "ri_atos", "data_ato")
 

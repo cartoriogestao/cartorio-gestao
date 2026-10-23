@@ -22,6 +22,7 @@ from __future__ import annotations
 from flask import flash, redirect, render_template, request, url_for
 
 import rc_modelos_livres as MOD
+from bd_nativo import banco
 from rc_modelos_livres_schema import ESPECIES, NOME_DA_ESPECIE
 
 QUEM_VE: tuple[str, ...] = ("ADMIN", "MANAGER", "USER")
@@ -200,9 +201,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             except MOD.ModeloLivreError as erro:
                 flash(str(erro), "warning")
                 return redirect(url_for("rcpn_assentos"))
-            a = dict(con.execute(
+            a = banco(con).um(
                 "SELECT id, especie, nome, numero FROM rc_assentos "
-                "WHERE id = ?", (assento_id,)).fetchone())
+                "WHERE id = %s", (assento_id,))
         return render_template(
             "rcpn_modelos.html", modelos=modelos, especie=a["especie"],
             especies=[{"chave": e, "nome": NOME_DA_ESPECIE[e]}

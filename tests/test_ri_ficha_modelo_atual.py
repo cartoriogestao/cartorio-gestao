@@ -7,6 +7,9 @@ from ri_odt import (MODELO_CABECALHO_PADRAO, MODELO_FICHA_PADRAO,
                     anexar_fecho_ao_ato, ato_sem_espaco_antes_do_fecho, bloco_selo_odf,
                     html_para_odf, texto_para_odf)
 from serventia import dados
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 
 def render(modelo, contexto):
@@ -82,7 +85,7 @@ def test_um_selo_ocupa_so_metade_e_nao_desenha_caixa_vazia():
 
 
 def test_schema_guarda_selo_da_abertura_e_segundo_qr_do_ato():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.executescript(ri_schema.SCHEMA)
     matricula = {r[1] for r in con.execute("PRAGMA table_info(ri_matriculas)")}
     atos = {r[1] for r in con.execute("PRAGMA table_info(ri_atos)")}

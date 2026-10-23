@@ -43,7 +43,7 @@ class _IA:
         self.resposta, self.enviados, self.modelos = resposta, [], []
 
     def __call__(self, pasta, *, provedor, sistema, conversa, ferramentas, modelo,
-                 maximo_de_saida):
+                 maximo_de_saida, **_registro):
         self.enviados.append(conversa[0]["texto"])
         self.modelos.append(modelo)
         texto = self.resposta(conversa[0]["texto"]) if callable(self.resposta) else self.resposta
@@ -248,3 +248,128 @@ def test_a_tela_sabe_onde_buscar_a_ultima():
     html = (RAIZ / "templates" / "_revisao_previa.html").read_text(encoding="utf-8")
     js = (RAIZ / "static" / "revisao_previa.js").read_text(encoding="utf-8")
     assert "data-ultima-url" in html and "ultimaUrl" in js
+
+
+# ---- revisão do L043 (PostgreSQL nativo)
+
+def test_tabela_que_ja_existe_sem_o_indice_ganha_o_indice(con):
+    """O `executescript` do SQLite rodava o `CREATE INDEX IF NOT EXISTS` toda vez.
+    No nativo o `init_schema` só escreve o que falta — e confere o índice à
+    parte, senão a tabela que já existe nunca mais o ganha."""
+    from bd_nativo import Banco
+    con.commit()
+    con.execute("DROP INDEX ix_rv_revisoes_alvo")
+    con.commit()
+
+    RV.init_schema(con)
+    con.commit()
+    assert Banco(con).valor(
+        """SELECT count(*) AS n FROM pg_indexes
+            WHERE schemaname = current_schema() AND tablename = 'rv_revisoes'
+              AND indexname = 'ix_rv_revisoes_alvo'""") == 1
+
+
+def test_erro_do_banco_durante_a_leitura_ainda_grava_o_erro(con, cg_casa, com_chave, tmp_path):
+    """No PostgreSQL, comando que falha condena a transação, e o `except` de
+    `executar` grava o ERRO pela mesma conexão. Aqui a gravação do PRONTA falha
+    no banco (contagem de tokens que não é número) e o ERRO tem de chegar à
+    tabela — senão a revisão fica «lendo» até o prazo de desistir."""
+    mid = _matricula(con)
+    teor = "R-1: venda de 20 ha"
+    dossie = RV.dossie_ri(con, mid, "R", teor, None)
+    rid, _ = RV.pedir(con, "RI", mid, RV.hash_do_ato("R", teor), dossie)
+    con.commit()
+
+    def ia(pasta, **k):
+        return {"texto": '{"achados": []}', "modelo": k["modelo"],
+                "entrada": "nove mil", "saida": 800}
+    RV.executar(Path(cg_casa["banco"]), tmp_path, rid, conversar=ia)
+    situacao, erro = con.execute("SELECT situacao, erro FROM rv_revisoes WHERE id=?",
+                                 (rid,)).fetchone()
+    assert situacao == "ERRO"
+    assert erro.startswith("OperationalError")
+    assert RV.exigir_para_lavrar(con, tmp_path, "RI", mid, RV.hash_do_ato("R", teor)) == "falhou"
+
+
+# ---- revisão do L023 (PostgreSQL nativo)
+
+def test_exportar_em_lote_abre_o_banco_so_para_ler(cg_casa, tmp_path, monkeypatch):
+    """O `exportar` só lê, e abria o banco em `mode=ro`. A troca para a porta
+    do banco o deixara gravável; o `mode=ro` chega ao PostgreSQL e o próprio
+    servidor recusa a escrita."""
+    import banco_pg
+    if not banco_pg.ativo():
+        pytest.skip("ferramenta nativa: só roda com o PostgreSQL ligado (CG_PG_DSN)")
+    from bd_nativo import banco
+    sys.path.insert(0, str(RAIZ / "tools"))
+    import revisao_em_lote as RL
+    abertas = []
+    exportar = RL.exportar
+
+    def espiao(con, saida, **k):
+        abertas.append(con)
+        return exportar(con, saida, **k)
+
+    monkeypatch.setattr(RL, "exportar", espiao)
+    assert RL.main(["exportar", "--banco", str(cg_casa["banco"]),
+                    "--saida", str(tmp_path / "lote")]) == 0
+    assert len(abertas) == 1
+    con = abertas[0]
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            banco(con).escrever("INSERT INTO settings (key, value) VALUES (%s, %s)",
+                                ("chave_de_teste_l023r", "x"))
+    finally:
+        con.close()
+    with cg_casa["db"].connect() as outra:
+        assert not banco(outra).um("SELECT 1 AS um FROM settings WHERE key = %s",
+                                   ("chave_de_teste_l023r",))
+
+
+def test_importar_em_lote_confere_a_repeticao_dentro_da_trava(cg_casa, tmp_path, monkeypatch):
+    """«Já foi importada?» e o INSERT na mesma trava. No SQLite, a primeira
+    gravação prendia o banco até o commit do fim; sem a ponte, duas importações
+    da mesma pasta ao mesmo tempo gravariam a revisão duas vezes."""
+    import banco_pg
+    if not banco_pg.ativo():
+        pytest.skip("ferramenta nativa: só roda com o PostgreSQL ligado (CG_PG_DSN)")
+    import psycopg
+    from bd_nativo import banco
+    sys.path.insert(0, str(RAIZ / "tools"))
+    import revisao_em_lote as RL
+
+    def livre() -> bool:
+        with psycopg.connect(banco_pg.dsn(), autocommit=True) as outra:
+            return bool(outra.execute("SELECT pg_try_advisory_xact_lock(hashtext(%s))",
+                                      ("rv_revisoes.hash_texto",)).fetchone()[0])
+
+    vistas = []
+
+    class Espia:
+        def __init__(self, con):
+            self.bd = banco(con)
+
+        def um(self, sql, parametros=None):
+            if "FROM rv_revisoes" in sql:
+                vistas.append(livre())
+            return self.bd.um(sql, parametros)
+
+        def __getattr__(self, nome):
+            return getattr(self.bd, nome)
+
+    monkeypatch.setattr(RL, "banco", Espia)
+    pasta = tmp_path / "lote"
+    (pasta / "_mapas").mkdir(parents=True)
+    (pasta / "resultados").mkdir()
+    indice = {"RI_9901.txt": {"atribuicao": "RI", "alvo_id": 9901, "ato_id": 9901,
+                              "hash": "h-l023r", "rotulo": "R-1 da matrícula 9901"}}
+    (pasta / "_mapas" / "indice.json").write_text(json.dumps(indice), encoding="utf-8")
+    (pasta / "_mapas" / "RI_9901.txt.json").write_text("{}", encoding="utf-8")
+    (pasta / "resultados" / "lote_001.jsonl").write_text(json.dumps(
+        {"arquivo": "RI_9901.txt", "achados": [], "parecer": "sem achado"}), encoding="utf-8")
+    con = sqlite3.connect(cg_casa["banco"])
+    try:
+        assert RL.importar(con, pasta)["gravados"] == 1
+    finally:
+        con.close()
+    assert vistas == [False], "a conferência rodou com a trava livre"

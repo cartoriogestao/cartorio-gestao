@@ -1,0 +1,12 @@
+{
+  "chave": "RI_ENCERRAMENTO_FECHO_SEM_NOME",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Fecho do modelo de encerramento — sem quem assina",
+  "formato": "JINJA",
+  "explica": "Local, data e «Dou fé» no fim dos modelos de encerramento, com o «PREENCHER» de quem assina; o módulo usa este quando não se sabe quem pratica o ato, e o «PREENCHER» recusa a lavratura (ri_web).",
+  "campos": [
+    "cidade",
+    "data",
+    "uf"
+  ]
+}

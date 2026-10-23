@@ -81,13 +81,13 @@ def casa(cg_casa):
                 """INSERT INTO ri_imagens (matricula_id, nome_arquivo, caminho,
                                            ordem, ficha_digitalizada)
                    VALUES (?,?,?,?,1)""",
-                (mid, f"0000401{n}.000{n}", rf"C:\ARPNET\C11\ONR\IMAGENS\p{n}",
+                (mid, f"0000401{n}.000{n}", rf"C:\ProgramData\CartorioGestao\arquivos\eoficio\ONR\IMAGENS\p{n}",
                  n))
         con.execute(
             """INSERT INTO ri_imagens (matricula_id, nome_arquivo, caminho,
                                        ordem, ficha_digitalizada)
                VALUES (?,?,?,?,1)""",
-            (outra, "da-outra-ficha.0001", r"C:\ARPNET\outra", 1))
+            (outra, "da-outra-ficha.0001", r"C:\ProgramData\CartorioGestao\arquivos\outra", 1))
     con.close()
     return {**cg_casa, "mid": mid, "outra": outra,
             "cliente": _entrar(cg_casa["app"], "mario")}
@@ -183,7 +183,7 @@ def test_nome_vazio_e_recusado(casa):
 
 def test_excluir_tira_da_ficha_e_nao_apaga_o_arquivo(casa):
     """O que se desfaz não precisa de coragem para ser usado."""
-    caminho = r"C:\ARPNET\C11\ONR\IMAGENS\p2"
+    caminho = r"C:\ProgramData\CartorioGestao\arquivos\eoficio\ONR\IMAGENS\p2"
     r = _mandar(casa, acao="excluir", imagem_id=_imagem_id(casa, 2))
     assert len(_paginas(casa)) == 3
     corpo = r.get_data(as_text=True)

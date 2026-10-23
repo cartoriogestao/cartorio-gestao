@@ -1,0 +1,41 @@
+<p align="center"><b>CARTÃO DE AUTÓGRAFO</b> — Ficha nº {{ numero }}{% if data_abertura %}, aberta em {{ data_abertura }}{% endif %}</p>
+<table border="1" cols="4.6cm,11.4cm">
+<tr><td><b>Nome</b></td><td>{{ nome or "&#160;" }}</td></tr>
+<tr><td><b>CPF / CNPJ</b></td><td>{{ documento or "&#160;" }}</td></tr>
+<tr><td><b>Identidade</b></td><td>{{ identidade or "&#160;" }}</td></tr>
+<tr><td><b>Emissão da identidade</b></td><td>{{ rg_emissao or "&#160;" }}</td></tr>
+<tr><td><b>Nascimento</b></td><td>{{ nascimento or "&#160;" }}</td></tr>
+<tr><td><b>Título eleitoral</b></td><td>{{ titulo_eleitor or "&#160;" }}</td></tr>
+<tr><td><b>Nacionalidade</b></td><td>{{ nacionalidade or "&#160;" }}</td></tr>
+<tr><td><b>Naturalidade</b></td><td>{{ naturalidade or "&#160;" }}</td></tr>
+<tr><td><b>Estado civil</b></td><td>{{ estado_civil or "&#160;" }}</td></tr>
+<tr><td><b>Profissão</b></td><td>{{ profissao or "&#160;" }}</td></tr>
+<tr><td><b>Filiação</b></td><td>{{ filiacao or "&#160;" }}</td></tr>
+<tr><td><b>Endereço</b></td><td>{{ endereco or "&#160;" }}</td></tr>
+<tr><td><b>Bairro / cidade</b></td><td>{{ bairro_cidade or "&#160;" }}</td></tr>
+<tr><td><b>CEP</b></td><td>{{ cep or "&#160;" }}</td></tr>
+<tr><td><b>Telefone</b></td><td>{{ telefone or "&#160;" }}</td></tr>
+{% if conjuge %}<tr><td><b>Cônjuge</b></td><td>{{ conjuge }}</td></tr>{% endif %}
+{% if como_assina %}<tr><td><b>Como assina</b></td><td>{{ como_assina }}</td></tr>{% endif %}
+</table>
+{% if somente_autenticidade %}<p><b>ESTE CARTÃO SÓ ADMITE RECONHECIMENTO POR AUTENTICIDADE.</b></p>{% endif %}
+{% if bloqueado %}<p><b>CARTÃO BLOQUEADO.</b> {{ motivo_bloqueio }}</p>{% endif %}
+@@SELO@@
+<p><b>Autógrafos</b> — assino na presença do escrevente, três vezes cada uma, as formas com que firmo nesta serventia.</p>
+<p><b>Assinatura por extenso</b> <span>(como o nome é assinado por inteiro)</span></p>
+{{ espaco }}{{ linha }}{{ espaco_curto }}{{ linha }}{{ espaco_curto }}{{ linha }}
+<p><b>Assinatura abreviada</b> <span>(a forma curta, se houver)</span></p>
+{{ espaco }}{{ linha }}{{ espaco_curto }}{{ linha }}{{ espaco_curto }}{{ linha }}
+<p><b>Rubrica</b> <span>(para folhas e vias)</span></p>
+{{ espaco }}{{ linha }}{{ espaco_curto }}{{ linha }}{{ espaco_curto }}{{ linha }}
+<table border="1" cols="8cm,8cm">
+<tr><td><b>Fotografia</b></td><td><b>Impressão digital</b> (polegar direito)</td></tr>
+{{ caixa_foto_digital_celulas }}
+</table>
+<p>{{ cidade_uf }}, {{ data_extenso }}.</p>
+<p align="center">________________________________________________________________</p>
+<p align="center">{{ nome }}</p>
+<p align="center">o titular do cartão</p>
+<p><b>Preenchimento conferido por:</b> {% if conferente_nome %}{{ conferente_nome }}{% if conferente_funcao %} — {{ conferente_funcao }}{% endif %}{% else %}________________________________ — ____________________{% endif %}</p>
+{{ espaco }}{{ linha }}
+<p align="center">assinatura e carimbo de quem conferiu o preenchimento</p>

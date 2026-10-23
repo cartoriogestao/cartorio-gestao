@@ -1,0 +1,28 @@
+<p align="center"><b>{{ sv.unit_name }}</b></p>
+<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
+<p align="center">CNPJ {{ sv.serventia_cnpj }} — CNS {{ sv.ri_cns }} — Telefone {{ sv.serventia_telefone }}</p>
+<p align="center">{{ sv.endereco_completo }}</p>
+<p align="center"><b>RECIBO Nº {{ r.numero }}/{{ r.ano }}</b></p>
+<p><b>Recebemos de:</b> {{ r.pagador }}{% if documento %}, inscrito(a) no
+CPF/CNPJ sob o nº {{ documento }}{% endif %}{% if telefone %}, telefone {{ telefone }}{% endif %}.</p>
+<p><b>A importância de:</b> R$ {{ r.valor_total }} ({{ r.valor_extenso }}).</p>
+{% if r.protocolo_numero %}<p><b>Referente ao protocolo nº</b> {{ r.protocolo_numero }}.</p>{% endif %}
+{% if lancamento %}<p><b>Lançamento de caixa nº</b> {{ lancamento }}.</p>{% endif %}
+{% if itens %}
+<p><b>DISCRIMINAÇÃO{% if orcamento %} ORÇAMENTÁRIA — valores previstos para o serviço requerido (CN-MA art. 197){% endif %}</b></p>
+<table border="1" cols="7.0cm,2.4cm,3.0cm,3.4cm">
+<tr><td><b>Ato</b></td><td><b>Código TJ</b></td><td><b>Emolumentos</b></td><td><b>Total</b></td></tr>
+{% for i in itens %}<tr><td>{{ i.descricao or '—' }}</td><td>{{ i.codigo_ato or '—' }}</td><td>{{ i.emolumentos or '—' }}</td><td>{{ i.valor_total or '—' }}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+{% if tem_fundos %}<p><b>COMPOSIÇÃO:</b> emolumentos R$ {{ fundos.emolumentos }};
+FERC R$ {{ fundos.ferc }}; FADEP R$ {{ fundos.fadep }}; FEMP R$ {{ fundos.femp }};
+FERRFIS R$ {{ fundos.ferrfis }}.</p>{% endif %}
+{% if r.forma_pagamento %}<p><b>Forma de pagamento:</b> {{ r.forma_pagamento }}.</p>{% endif %}
+{% if r.observacao %}<p>{{ observacao }}</p>{% endif %}
+<p>{{ sv.cidade_uf }}, {{ data_extenso }}.</p>
+<p align="center">_______________________________________</p>
+<p align="center">{{ emitido_por }}{% if funcao %}<br>{{ funcao }}{% endif %}</p>
+<p><small>Documento emitido pelo sistema em {{ agora }}. Conferência: {{ r.hash_recibo[:16] }}.
+Dados pessoais parcialmente ocultados na forma da Lei 13.709/2018 — LGPD.</small></p>

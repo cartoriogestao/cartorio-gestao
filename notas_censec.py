@@ -35,9 +35,9 @@ from __future__ import annotations
 import calendar
 import hashlib
 import json
-import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 from notas_partes import documento_valido, so_digitos
 
 # ------------------------------------------------------------- quinzena
@@ -173,6 +173,37 @@ TIPO_TESTAMENTO = {
     1: "Aditamento", 2: "Cerrado", 3: "Revogacao", 4: "Testamento",
     5: "TestamentoComRevogacao", 6: "TestamentoSemConteudoPatrimonial",
 }
+
+# QUE TIPO DO RCTO CADA ESPÉCIE DE ATO PODE TER — LG04, 19/10/2026.
+#
+# O testamento lavrado NESTE sistema nascia com `tipo_testamento` nulo — só a
+# carga do acervo o preenchia —, e o RCTO o recusava com «sem o tipo do
+# testamento»: o art. 785, I, do Código de Normas manda alimentar o RCTO, e
+# nenhum testamento novo chegava lá. O primeiro da lista é o padrão de quando o
+# ato abre (o da minuta, se ela disser outro); a ficha do ato troca entre os
+# outros enquanto o ato não foi à central. O cerrado é sempre «Cerrado»: o que
+# o tabelião lavra é o auto de aprovação, e não o conteúdo.
+TIPOS_DE_TESTAMENTO_DO_ATO: dict[str, tuple[int, ...]] = {
+    "TESTAMENTO": (4, 6, 5, 3, 1),
+    "TESTAMENTO_CERRADO": (2,),
+}
+
+
+def tipo_testamento_ao_abrir(tipo_do_ato: Any,
+                             do_modelo: Any = None) -> int | None:
+    """O `tipo_testamento` com que o ato nasce. Só calcula.
+
+    O da minuta vale quando é um dos permitidos para a espécie; senão, o padrão
+    dela. Ato que não é testamento nasce sem tipo — a CEP o leva.
+    """
+    permitidos = TIPOS_DE_TESTAMENTO_DO_ATO.get(str(tipo_do_ato or "").upper())
+    if not permitidos:
+        return None
+    try:
+        escolhido = int(do_modelo) if do_modelo not in (None, "") else None
+    except (TypeError, ValueError):
+        escolhido = None
+    return escolhido if escolhido in permitidos else permitidos[0]
 
 # ParteQualidade da CEP. Valem para qualquer tipo de ato, exceto as quatro
 # ultimas, que so existem em conciliacao e mediacao.
@@ -477,7 +508,7 @@ class Impedimento:
     def __init__(self, campo: str, motivo: str):
         self.campo, self.motivo = campo, motivo
 
-    def __repr__(self) -> str:                                    # pragma: no cover
+    def __repr__(self) -> str:
         return f"{self.campo}: {self.motivo}"
 
     def como_dict(self) -> dict:
@@ -841,14 +872,15 @@ def central_do_ato(ato: dict) -> str | None:
     """Para qual central da CENSEC o ato vai — a mesma regra de `separar`."""
     if ato.get("tipo_cesdi") is not None:
         return "CESDI"
-    if (ato.get("tipo") or "") == "TESTAMENTO" or ato.get("tipo_testamento") is not None:
+    if ((ato.get("tipo") or "") in TIPOS_DE_TESTAMENTO_DO_ATO
+            or ato.get("tipo_testamento") is not None):
         return "RCTO"
     if ato.get("tipo") in TIPO_SISTEMA_PARA_CEP:
         return "CEP"
     return None
 
 
-def impedimentos_para_lavrar(con: sqlite3.Connection, ato: dict) -> list[Impedimento]:
+def impedimentos_para_lavrar(con: Any, ato: dict) -> list[Impedimento]:
     """O que impediria este ato de ir à CENSEC, dito ANTES de lavrar.
 
     Lista vazia: pode lavrar. Não grava nada.
@@ -861,35 +893,48 @@ def impedimentos_para_lavrar(con: sqlite3.Connection, ato: dict) -> list[Impedim
             if p.campo not in PREENCHE_A_LAVRATURA | SEM_ONDE_CORRIGIR_ANTES]
 
 
-def _partes_do_ato(con: sqlite3.Connection, ato_id: int) -> list[dict]:
+def _partes_do_ato(con: Any, ato_id: int) -> list[dict]:
     """As partes com o que a CENSEC pede — inclusive o que so o cartao tem.
 
     A data de nascimento, o sexo e o nome da mae nao ficam na parte do ato:
     ficam no cartao de autografo. A CESDI e o RCTO exigem esses tres, entao a
     parte sem cartao nao tem como ir — e a conferencia diz isso com todas as
     letras, em vez de mandar campo vazio e esperar a central recusar.
+
+    A nacionalidade e a da PARTE (`p.*`), como no SQLite: la o dict da linha
+    ficava com a primeira coluna de nome repetido, e o `dict_row` do psycopg
+    fica com a ultima — o `c.nacionalidade` que vinha no fim trocava a da
+    parte pela do cartao (vazia, se a parte nao tem cartao).
     """
-    linhas = con.execute("""
+    linhas = banco(con).ler("""
         SELECT p.*, c.nascimento, c.sexo, c.mae, c.pai, c.rg, c.rg_orgao,
-               c.cidade, c.uf, c.nacionalidade
+               c.cidade, c.uf
           FROM nt_ato_partes p
           LEFT JOIN nt_cartoes c ON c.id = p.cartao_id
-         WHERE p.ato_id = ?
-         ORDER BY p.ordem, p.id""", (ato_id,)).fetchall()
+         WHERE p.ato_id = %s
+         ORDER BY p.ordem, p.id""", (ato_id,))
     return [dict(linha) for linha in linhas]
 
 
-def separar(con: sqlite3.Connection, central: str, ano: int, mes: int,
-            quinzena: int) -> dict:
+def separar(con: Any, central: str, ano: int, mes: int,
+            quinzena: int, *, para_gravar: bool = False) -> dict:
     """Separa os atos da quinzena em aptos e impedidos.
 
     Nao grava nada. Serve tanto para a tela de conferencia quanto para a
     geracao — a mesma conta, para nao existir a chance de a tela dizer uma
     coisa e o arquivo levar outra.
+
+    `para_gravar=True` (quem registra a remessa a seguir, na mesma transacao)
+    PRENDE as linhas dos atos lidos ate o fim dela. Sem isso, o tipo do
+    testamento trocado na ficha entre a leitura e o registro do item fazia a
+    remessa levar um tipo e a ficha guardar outro — a ficha
+    (`notas_web`, acao `tipo_testamento`) prende a mesma linha antes de
+    conferir se o ato ja foi a central. A tela de conferencia so le, e nao
+    prende nada.
     """
     inicio, fim = periodo_da_quinzena(ano, mes, quinzena)
     tipos = tuple(TIPO_SISTEMA_PARA_CEP) if central == "CEP" else ()
-    onde = "a.data BETWEEN ? AND ? AND a.situacao = 'LAVRADO'"
+    onde = "a.data BETWEEN %s AND %s AND a.situacao = 'LAVRADO'"
     args: list[Any] = [inicio, fim]
     if central == "CEP":
         # "Na CEP devem ser informadas todas as ESCRITURAS, PROCURACOES e ATAS
@@ -897,26 +942,38 @@ def separar(con: sqlite3.Connection, central: str, ano: int, mes: int,
         # CESDI, que devem ser informadas somente nestas centrais." O ato que
         # ja tem tipo da CESDI ou do RCTO nao entra aqui — mandar nas duas
         # produz o mesmo ato em duas centrais.
-        onde += f" AND a.tipo IN ({','.join('?' * len(tipos))})"
+        onde += f" AND a.tipo IN ({','.join(['%s'] * len(tipos))})"
         onde += " AND a.tipo_cesdi IS NULL AND a.tipo_testamento IS NULL"
         args += list(tipos)
     elif central == "CESDI":
         onde += " AND a.tipo_cesdi IS NOT NULL"
     elif central == "RCTO":
-        onde += " AND a.tipo = 'TESTAMENTO'"
+        # O CERRADO TAMBÉM VAI AO RCTO (art. 785, I) — até o LG04 só o público
+        # entrava. Pelo TIPO do ato, e não por `tipo_testamento`: o acervo
+        # importado guarda testamentos como ESCRITURA com o tipo preenchido, e
+        # eles já foram informados pelo E-Ofício.
+        onde += " AND a.tipo IN ('TESTAMENTO', 'TESTAMENTO_CERRADO')"
 
     # Ja enviado nao vai de novo: item confirmado em remessa anterior fica de
     # fora. Rejeitado volta, que e o ponto de poder reenviar.
     onde += """ AND NOT EXISTS (
                     SELECT 1 FROM nt_remessa_itens i
                       JOIN nt_remessas r ON r.id = i.remessa_id
-                     WHERE i.ato_id = a.id AND r.central = ?
+                     WHERE i.ato_id = a.id AND r.central = %s
                        AND i.situacao IN ('ENVIADA', 'CONFIRMADA'))"""
     args.append(central)
 
+    bd = banco(con)
+    prender = ""
+    if para_gravar:
+        bd._escrita()
+        # Na ordem do ORDER BY: duas geracoes ao mesmo tempo prendem na mesma
+        # ordem e uma espera a outra, sem se cruzar.
+        prender = " FOR UPDATE OF a"
     aptos, impedidos = [], []
-    for linha in con.execute(f"SELECT a.* FROM nt_atos a WHERE {onde} "
-                             "ORDER BY a.data, COALESCE(a.termo, a.numero_ordem), a.id", args):
+    for linha in bd.ler(f"SELECT a.* FROM nt_atos a WHERE {onde} "
+                        "ORDER BY a.data, COALESCE(a.termo, a.numero_ordem), a.id"
+                        f"{prender}", args):
         ato = dict(linha)
         partes = _partes_do_ato(con, ato["id"])
         if central == "RCTO":
@@ -942,7 +999,7 @@ def separar(con: sqlite3.Connection, central: str, ano: int, mes: int,
     }
 
 
-def gerar(con: sqlite3.Connection, central: str, ano: int, mes: int,
+def gerar(con: Any, central: str, ano: int, mes: int,
           quinzena: int, cns: str) -> dict:
     """Monta a carga da quinzena e devolve o texto do arquivo e o resumo.
 
@@ -954,7 +1011,9 @@ def gerar(con: sqlite3.Connection, central: str, ano: int, mes: int,
     # porque ela importa este modulo). Ate 09/10/2026 o arquivo levava os
     # codigos numericos e as listas com o nome errado — ver ENVELOPE_CHAVES.
     import censec_api as CA
-    separado = separar(con, central, ano, mes, quinzena)
+    # Quem chama registra a remessa com estes atos na mesma transacao: as
+    # linhas ficam presas ate la (ver `separar`).
+    separado = separar(con, central, ano, mes, quinzena, para_gravar=True)
     carga = CA.cabecalho(cns, ano, mes, quinzena)
     chave, traduzir = CA.TRADUTOR[central]
     carga[chave] = [traduzir(x["linha"]) for x in separado["aptos"]]

@@ -46,6 +46,16 @@ def casa(cg_casa):
            data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
+    # O BALCÃO JÁ RECEBEU A HABILITAÇÃO (LX16, 19/10/2026): selo pago só sai
+    # com protocolo e pagamento. O protocolo da bancada traz os itens do
+    # catálogo, e o 14.1.1 não está lá — a habilitação ficava «aguardando
+    # cobertura» e nenhum teste daqui chegava ao HABILITADO. O escrevente
+    # atende o protocolo pago do casal, como no balcão; a trava roda de verdade.
+    import ato_selado as AS
+    from protocolo_de_teste import atender_protocolo_pago
+    with cg_casa["db"].transaction() as con:
+        atender_protocolo_pago(con, usuario="MARIO EXEMPLO DOS SANTOS",
+                               codigos=(AS.CODIGO_DA_HABILITACAO,))
     from selador_de_bancada import ligar_o_selador
     with ligar_o_selador(cg_casa) as aparelho:
         cg_casa["selador"] = aparelho
@@ -251,6 +261,28 @@ def test_a_certidao_diz_ate_quando_vale(casa):
     assert "CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO" in texto
     assert "válida até" in texto
     assert "artigo 1.532" in texto
+
+
+def test_nem_a_certidao_nem_o_edital_imprimem_o_hash(casa):
+    """Ordem do oficial, 22/10/2026: a linha «Conferência: <hash>…» saiu dos
+    dois papéis — o público não tem onde conferir, e ela parecia código de
+    validação. O hash continua gravado no banco."""
+    hid = _abrir(casa)
+    _entregar_tudo(casa, hid)
+    _post(casa, hid, acao="edital", teor=TEOR)
+    _mandar_prazo_para_tras(casa, hid)
+    _post(casa, hid, acao="habilitar")
+    linha = _con(casa).execute(
+        "SELECT edital_hash, certidao_hash FROM hc_habilitacoes WHERE id=?",
+        (hid,)).fetchone()
+    assert linha["edital_hash"] and linha["certidao_hash"]
+    for papel, impressao in (("edital", linha["edital_hash"]),
+                             ("certidao", linha["certidao_hash"])):
+        r = casa["cliente"].get(f"/rcpn/habilitacoes/{hid}/{papel}")
+        with zipfile.ZipFile(io.BytesIO(r.get_data())) as z:
+            texto = re.sub(r"<[^>]+>", " ", z.read("content.xml").decode("utf-8"))
+        assert "Conferência:" not in texto, papel
+        assert impressao[:16] not in texto, papel
 
 
 def test_sem_habilitacao_expedida_nao_ha_certidao(casa):
@@ -564,3 +596,41 @@ def test_o_andamento_conta_que_o_selo_foi_para_o_assento(casa):
     _post(casa, hid, acao="celebrado", assento_id=assento)
     html = _ficha(casa, hid)
     assert "UMSELOSO" in html
+
+
+
+# ------------------------------------------------ o edital do CNN art. 122 (LD01)
+
+
+def test_o_edital_so_publica_a_cidade_do_domicilio_e_nunca_a_rua():
+    """CNN art. 122: o edital contém «tão somente» o nome, o estado civil, a
+    filiação, a cidade e a circunscrição do domicílio — o «tão somente» vale
+    dos dois lados (LD01). A cidade sai do fim do endereço só quando ele
+    termina em «Município/UF»; senão o edital não afirma cidade nenhuma, e a
+    rua nunca vai ao papel público."""
+    import habilitacao_web as HW
+    assert HW.cidade_do_endereco(
+        "Rua Exemplo, 10, Centro, Cidade Exemplo/MA") == "Cidade Exemplo/MA"
+    assert HW.cidade_do_endereco("Rua Exemplo, 10, Cidade Exemplo-ma") == (
+        "Cidade Exemplo/MA")
+    for sem_cidade in ("Rua Exemplo, 10, Centro", "Rua Exemplo, 10",
+                       "Rua Exemplo, 10 - Centro - Cidade Exemplo-MA", "", None):
+        assert HW.cidade_do_endereco(sem_cidade) == "", sem_cidade
+    h = {"nubente1_nome": "FULANO DE TAL", "nubente1_estado_civil": "DIVORCIADO",
+         "nubente1_sexo": "M", "nubente1_mae": "MARIA DE TAL",
+         "nubente1_endereco": "Rua Exemplo, 10, Centro, Cidade Exemplo/MA",
+         "nubente2_nome": "BELTRANA DE TAL", "nubente2_estado_civil": "VIUVO",
+         "nubente2_sexo": "F", "nubente2_endereco": "Rua Exemplo, 20"}
+    frases = HW.frases_dos_nubentes_no_edital(h, sv={"ri_cidade": "Cidade Exemplo"})
+    assert frases["estado_civil"] == (
+        ", de estado civil DIVORCIADO e VIÚVA, respectivamente")
+    assert frases["filiacao"] == (
+        ", filhos, respectivamente, de MARIA DE TAL e de pais não declarados")
+    assert frases["domicilio"] == (
+        ", domiciliados, respectivamente, em Cidade Exemplo/MA, nesta "
+        "circunscrição e em domicílio não declarado")
+    assert "Rua" not in "".join(frases.values())
+    # Sem nada além dos nomes, o edital é o de antes: só os nomes.
+    assert HW.frases_dos_nubentes_no_edital(
+        {"nubente1_nome": "A", "nubente2_nome": "B"}, sv={}) == {
+            "estado_civil": "", "filiacao": "", "domicilio": ""}

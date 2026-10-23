@@ -1,0 +1,12 @@
+{
+  "chave": "RCPJ_CERTIDAO",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Certidão de inteiro teor — RCPJ (texto congelado)",
+  "formato": "CHAVES",
+  "explica": "Texto congelado em at_certidoes na emissão — abertura + teor do registro (+ averbações). O PDF visual usa RCPJ_CERTIDAO_CAPA / RCPJ_CERTIDAO_FAIXA.",
+  "campos": [
+    "onde",
+    "natureza",
+    "teor"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "chave": "PT_CERTIDAO_PEDIDO_JUDICIAL",
+  "atribuicao": "Protesto",
+  "nome": "Certidão de protesto — determinação judicial",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: entra no {pedido} quando a certidão mostra protesto cancelado ou suspenso por ordem judicial (CN-MA arts. 944 e 948). O sistema acrescenta «(juízo e processo)» quando informados.",
+  "campos": []
+}

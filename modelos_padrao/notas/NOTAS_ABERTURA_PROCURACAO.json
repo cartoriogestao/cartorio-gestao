@@ -1,0 +1,12 @@
+{
+  "chave": "NOTAS_ABERTURA_PROCURACAO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Abertura da procuração",
+  "formato": "CHAVES",
+  "explica": "O começo do teor da procuração montado pelo sistema («SAIBAM…»), antes das partes. Data, cidade e estado são claros.",
+  "campos": [
+    "data_extenso",
+    "cidade",
+    "uf_extenso"
+  ]
+}

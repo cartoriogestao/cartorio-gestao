@@ -1,0 +1,11 @@
+{
+  "chave": "NOTAS_LIVRO_ENCERRAMENTO__usadas",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Encerramento — folhas usadas",
+  "formato": "CHAVES",
+  "explica": "Quando alguma folha foi usada.",
+  "campos": [
+    "primeira",
+    "ultima"
+  ]
+}

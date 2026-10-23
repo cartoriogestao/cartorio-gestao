@@ -1,0 +1,17 @@
+<table border="1" cols="6.5cm,5.8cm,3.7cm">
+<tr>
+  <td rowspan="2"><b>REGISTRO DE IMÓVEIS</b><br>
+    <b>SERVENTIA EXTRAJUDICIAL DO</b><br>
+    <b>OFÍCIO ÚNICO DE {{ serventia.cidade|upper }}/{{ serventia.uf }}</b><br>
+    <b>{{ serventia.registrador|upper }}</b><br>
+    {{ serventia.titulo_registrador }}<br>
+    <b>{{ serventia.substituta|upper }}</b><br>
+    {{ serventia.titulo_substituta }}</td>
+  <td class="matricula-destaque"><b>MATRÍCULA Nº {{ m.numero }}</b>{% if m.cnm %}<br>CNM Nº {{ m.cnm }}{% endif %}</td>
+  <td><b>FICHA Nº {{ ficha_numero }}</b></td>
+</tr>
+<tr>
+  <td><b>LIVRO Nº {{ livro_ficha }} - REGISTRO GERAL</b></td>
+  <td>USUÁRIO<br>{{ usuario_impressao }}</td>
+</tr>
+</table>

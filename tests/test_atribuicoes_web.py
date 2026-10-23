@@ -26,6 +26,7 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+from navegador_de_teste import postar_e_seguir  # noqa: E402
 
 SENHA = "Senha#12345"
 
@@ -150,10 +151,13 @@ def _semear(s) -> dict:
 @pytest.mark.parametrize("rota", ["/protesto", "/rcpn", "/rcpj-rtd", "/livro3"])
 def test_as_quatro_listas_abrem_vazias_e_dizem_onde_trazer_o_acervo(s, rota):
     # Lista vazia que so mostra nada faz o operador achar que quebrou. Esta
-    # diz onde esta o botao.
+    # dizia onde estava o botao da carga do E-Oficio. Desde 17/10/2026 a
+    # importacao terminou e o botao saiu: a lista vazia diz «Nada aqui» e nao
+    # aponta mais para a carga.
     html = s["c"].get(rota).get_data(as_text=True)
     assert "Nada aqui" in html
-    assert "Trazer" in html
+    assert "/atribuicoes/importar" not in html
+    assert "Trazer das atribuições" not in html
 
 
 @pytest.mark.parametrize("rota,esperado", [
@@ -336,26 +340,37 @@ def _post(s, rota: str, **campos) -> str:
     c = s["c"]
     origem = rota.rsplit("/lancar", 1)[0]
     token = _token(c.get(origem).get_data(as_text=True))
-    return c.post(rota, data={"csrf_token": token, **campos},
-                  follow_redirects=True).get_data(as_text=True)
+    return postar_e_seguir(c, rota, {"csrf_token": token, **campos}
+                           ).get_data(as_text=True)
 
 
 def test_a_ficha_so_oferece_os_atos_que_cabem_na_situacao(s):
     ids = _semear(s)                      # título nasce PROTESTADO
     html = s["c"].get(f"/protesto/{ids['titulo']}").get_data(as_text=True)
-    # Protestado: cabe cancelar e pagar; não cabe intimar nem protestar de novo.
-    assert 'value="CANCELAMENTO"' in html
-    assert 'value="PAGAMENTO"' in html
+    # Protestado: cabe cancelar; não cabe intimar nem protestar de novo. E,
+    # desde 21/10/2026 (LH13), não cabe mais PAGAR — «protesto nao pode ser
+    # pago na serventia depois de lavrar», o oficial. O nome do campo entra
+    # na conferência: `value="PAGAMENTO"` sozinho acha a hipótese de
+    # cancelamento do mesmo nome, e este teste passaria pelo motivo errado.
+    assert 'name="ato" value="CANCELAMENTO"' in html
+    assert 'name="ato" value="PAGAMENTO"' not in html
     assert 'value="INTIMACAO"' not in html
     assert 'value="PROTESTO"' not in html
 
 
 def test_lanca_cancelamento_de_protesto_com_hipotese_do_catalogo(s):
+    # COM O ITEM MARCADO, como o balcão lança (LT04, 20/10/2026). Sem item o
+    # selo não sai e o ato se anula — e este teste passava assim mesmo, porque
+    # «Ato NÃO lançado» também diz «lançado» e o título ficava CANCELADO por
+    # um ato que não existiu. Desde o LT04 o título volta a PROTESTADO.
     ids = _semear(s)
+    servico = _com_servico(s)
+    _abrir_caixa(s)
     html = _post(s, f"/protesto/{ids['titulo']}/lancar", ato="CANCELAMENTO",
                  hipotese="PAGAMENTO",
-                 fundamento="Título quitado, com prova de pagamento.")
-    assert "lançado" in html
+                 fundamento="Título quitado, com prova de pagamento.",
+                 cobrar=str(servico))
+    assert "Cancelamento lançado" in html
     con = _con(s)
     assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
                        (ids["titulo"],)).fetchone()[0] == "CANCELADO"
@@ -806,8 +821,8 @@ def _post_novo(s, rota: str, **campos) -> str:
         campos.setdefault("folha_seguranca", codigo)
     if rota.startswith("/rcpj-rtd/novo"):
         campos.setdefault("selo", "AVESVD000000NARRKWVNJCRSVO21")
-    return c.post(rota, data={"csrf_token": token, **campos},
-                  follow_redirects=True).get_data(as_text=True)
+    return postar_e_seguir(c, rota, {"csrf_token": token, **campos}
+                           ).get_data(as_text=True)
 
 
 @pytest.mark.parametrize("rota", ["/protesto/novo", "/rcpn/novo",
@@ -850,11 +865,21 @@ def test_o_titulo_cadastrado_no_balcao_pode_ser_apontado_pela_ficha(s):
     ficha = s["c"].get(f"/protesto/{titulo_id}").get_data(as_text=True)
     assert 'value="APONTAMENTO"' in ficha
 
-    html = _post(s, f"/protesto/{titulo_id}/lancar", ato="APONTAMENTO")
-    assert "lançado" in html
+    # COM O ITEM MARCADO, como o balcão lança (LT04, 20/10/2026). Desde
+    # 21/10/2026 o apontamento NÃO pede selo (ordem do oficial, LH06): a
+    # cobrança marcada entra no caixa, e o ato fica de pé. «NÃO lançado»
+    # também contém «lançado» — foi assim que este teste passou com o
+    # apontamento saindo CANCELADO (900001/1).
+    servico = _com_servico(s, codigo_tj="17.1")
+    _abrir_caixa(s)
+    html = _post(s, f"/protesto/{titulo_id}/lancar", ato="APONTAMENTO",
+                 cobrar=str(servico))
+    assert "Apontamento lançado" in html and "NÃO lançado" not in html
     con = _con(s)
     ato = con.execute(
         "SELECT * FROM pt_atos WHERE tipo='APONTAMENTO'").fetchone()
+    assert int(ato["cancelado"] or 0) == 0   # apontamento não tem selo próprio
+    assert ato["selo"] is None
     assert ato["numero_ordem"] == 1        # banco do teste nasce vazio
     assert ato["livro_id"] is not None     # e o lugar sai do nucleo
     assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
@@ -862,6 +887,117 @@ def test_o_titulo_cadastrado_no_balcao_pode_ser_apontado_pela_ficha(s):
     # E nao se aponta duas vezes: um titulo tem um apontamento, nao dois.
     de_novo = _post(s, f"/protesto/{titulo_id}/lancar", ato="APONTAMENTO")
     assert "não se aponta de novo" in de_novo
+
+
+def test_o_apontamento_sem_item_nao_pede_selo_e_fica_lancado(s):
+    """P-B, 21/10/2026 — ordem do oficial. Dos 1.409 apontamentos do E-Ofício,
+    1.161 não têm selo; pedir selo aqui fazia o 900001/1 sair lavrado no livro
+    e marcado cancelado, com o título já APONTADO."""
+    _post_novo(s, "/protesto/novo", **TITULO, **DEVEDOR)
+    con = _con(s)
+    titulo_id = con.execute("SELECT id FROM pt_titulos").fetchone()["id"]
+    html = _post(s, f"/protesto/{titulo_id}/lancar", ato="APONTAMENTO")
+    assert "Apontamento lançado" in html and "NÃO lançado" not in html
+    assert "SEM SELO" not in html
+    con = _con(s)
+    ato = con.execute(
+        "SELECT * FROM pt_atos WHERE tipo='APONTAMENTO'").fetchone()
+    assert int(ato["cancelado"] or 0) == 0 and ato["motivo_cancelamento"] is None
+    assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                       (titulo_id,)).fetchone()[0] == "APONTADO"
+    assert con.execute(
+        "SELECT COUNT(*) FROM sd_selos WHERE tabela='pt_atos' AND ato_id=?",
+        (ato["id"],)).fetchone()[0] == 0
+    assert con.execute(
+        "SELECT COUNT(*) FROM audit_logs "
+        "WHERE action='PROTESTO_ATO_NAO_LAVRADO_SELO_FALHOU'").fetchone()[0] == 0
+
+
+def _auditoria_da_falha(s) -> dict:
+    con = _con(s)
+    linha = con.execute(
+        "SELECT details FROM audit_logs "
+        "WHERE action='PROTESTO_ATO_NAO_LAVRADO_SELO_FALHOU' "
+        "ORDER BY id DESC LIMIT 1").fetchone()
+    con.close()
+    assert linha, "a falha do selo não foi auditada"
+    import json
+    return json.loads(linha["details"])
+
+
+def test_ato_cancelado_por_falta_de_selo_devolve_a_situacao_do_titulo(s):
+    """O caminho do erro (P-B, 900001/1): o ato sai cancelado e o título volta
+    à situação de antes, com `situacao_restaurada` na auditoria. Sem item
+    marcado o selo da desistência não sai — sempre, neste banco de teste."""
+    _post_novo(s, "/protesto/novo", **TITULO, **DEVEDOR)
+    con = _con(s)
+    titulo_id = con.execute("SELECT id FROM pt_titulos").fetchone()["id"]
+    html = _post(s, f"/protesto/{titulo_id}/lancar", ato="DESISTENCIA",
+                 motivo="Credor desistiu antes do protesto")
+    assert "NÃO lançado" in html
+    con = _con(s)
+    ato = con.execute("SELECT * FROM pt_atos WHERE tipo='DESISTENCIA'").fetchone()
+    assert int(ato["cancelado"]) == 1
+    assert "Selo não emitido" in ato["motivo_cancelamento"]
+    assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                       (titulo_id,)).fetchone()[0] == "RECEBIDO"
+    detalhe = _auditoria_da_falha(s)
+    assert detalhe["ato"] == "DESISTENCIA"
+    assert detalhe["situacao_restaurada"] == "RECEBIDO"
+    # E a ficha deixa lançar de novo — o que o 900001/1 não deixava.
+    ficha = s["c"].get(f"/protesto/{titulo_id}").get_data(as_text=True)
+    assert 'value="DESISTENCIA"' in ficha
+
+
+def test_a_volta_da_situacao_nao_passa_por_cima_de_outro_balcao(s, monkeypatch):
+    """Entre o ato e a volta há o pedido do selo, fora da transação. Se outro
+    balcão mexeu no título nesse meio-tempo, a volta não o desfaz — e a
+    auditoria diz que não voltou (None), em vez de afirmar uma volta que não
+    houve."""
+    import ato_selado as AS
+    _post_novo(s, "/protesto/novo", **TITULO, **DEVEDOR)
+    con = _con(s)
+    titulo_id = con.execute("SELECT id FROM pt_titulos").fetchone()["id"]
+    con.close()
+    original = AS.recado_de_falta
+
+    def outro_balcao_mexe_antes(texto):
+        de_fora = _con(s)
+        with de_fora:
+            de_fora.execute("UPDATE pt_titulos SET situacao='APONTADO' WHERE id=?",
+                            (titulo_id,))
+        de_fora.close()
+        return original(texto)
+
+    monkeypatch.setattr(AS, "recado_de_falta", outro_balcao_mexe_antes)
+    html = _post(s, f"/protesto/{titulo_id}/lancar", ato="DESISTENCIA",
+                 motivo="Credor desistiu antes do protesto")
+    assert "NÃO lançado" in html
+    con = _con(s)
+    assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                       (titulo_id,)).fetchone()[0] == "APONTADO"
+    assert _auditoria_da_falha(s)["situacao_restaurada"] is None
+
+
+def test_ninguem_procura_na_auditoria_o_nome_antigo_da_volta_do_titulo():
+    """Revisão do LH06 (conferida no LH08): a volta do título se audita como
+    `situacao_restaurada`, o nome da produção e do sandbox. O nome antigo só
+    existiu na branch, do LT04 (20/10/2026) ao LH06, e nunca foi ao servidor
+    — não há linha gravada com ele. Por isso nenhuma tela, relatório ou
+    módulo pode procurá-lo: acharia sempre vazio.
+
+    O nome antigo se escreve em duas metades para que este arquivo não seja,
+    ele mesmo, o achado; e a varredura prova que leu o que importa (o módulo
+    que grava o nome novo), senão passaria sem ler nada."""
+    antigo = "situacao_" + "restabelecida"
+    arquivos = [p for padrao in ("*.py", "templates/**/*.html", "static/**/*.js",
+                                 "tools/**/*.py", "tests/**/*.py", "docs/**/*.md")
+                for p in RAIZ.glob(padrao) if p.is_file()]
+    lidos = {p.relative_to(RAIZ).as_posix():
+             p.read_text(encoding="utf-8", errors="replace") for p in arquivos}
+    assert '"situacao_restaurada": situacao_restaurada' in lidos["atribuicoes_web.py"]
+    assert len(lidos) > 500, len(lidos)
+    assert [nome for nome, texto in lidos.items() if antigo in texto] == []
 
 
 def test_titulo_sem_devedor_e_recusado_pelo_contrato_da_cra(s):
@@ -942,7 +1078,7 @@ def test_registro_novo_do_livro_3_nasce_como_R_1_com_as_partes(s):
     assert ato["tipo"] == "R" and ato["numero"] == 1
     parte = con.execute("SELECT * FROM ra_partes").fetchone()
     assert parte["nome"] == "BANCO DO NORDESTE"
-    assert parte["papel"] == "credor"
+    assert parte["papel"] == "CREDOR", "o papel entra como código do catálogo (19/10/2026)"
 
 
 def test_registro_do_livro_3_com_natureza_de_fora_do_catalogo_e_recusado(s):

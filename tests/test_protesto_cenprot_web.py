@@ -168,11 +168,15 @@ def test_o_quadro_mostra_os_tres_numeros(s):
 
 
 def test_o_quadro_explica_o_que_esta_tela_nao_resolve(s):
-    """Sem protocolo nao ha por onde casar — e o conserto e outra tela."""
+    """Sem protocolo nao ha por onde casar — e o protocolo vinha da carga.
+
+    Desde 17/10/2026 (importacao do E-Oficio encerrada) a tela nao aponta
+    mais para a carga: diz de onde o protocolo vinha, sem o link."""
     titulo(s, protocolo="", nosso="A", numero="SEM PROTOCOLO")
     html = s["c"].get("/protesto/cenprot").get_data(as_text=True)
-    assert "Trazer o\n    acervo do E-Ofício" in html or \
-           "acervo do E-Ofício" in html
+    assert "vinha da carga do acervo" in html
+    assert "acervo do E-Ofício" not in html
+    assert 'href="/atribuicoes/importar"' not in html
 
 
 def test_o_escrevente_nao_ve_link_para_tela_que_nao_pode_abrir(cg_casa):
@@ -180,7 +184,7 @@ def test_o_escrevente_nao_ve_link_para_tela_que_nao_pode_abrir(cg_casa):
     s = _sessao(cg_casa, papel="USER")
     titulo(s, protocolo="", nosso="A", numero="SEM PROTOCOLO")
     html = s["c"].get("/protesto/cenprot").get_data(as_text=True)
-    assert "só o administrador abre" in html
+    assert "vinha da carga do acervo" in html
     assert 'href="/atribuicoes/importar"' not in html
 
 

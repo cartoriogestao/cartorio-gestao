@@ -15,12 +15,15 @@ from datetime import date
 
 import carga_da_equipe as CARGA
 import relatos_diarios as RD
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 HOJE = date(2026, 10, 12)
 
 
 def _con():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("""CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, full_name TEXT,
         role TEXT)""")

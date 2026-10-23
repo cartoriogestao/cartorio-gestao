@@ -21,6 +21,7 @@ from flask import flash, redirect, render_template, request, url_for
 
 import onr_certidoes as OC
 import onr_wsoficio as WS
+from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 
 QUEM = ("ADMIN", "MANAGER", "USER")
 RECUSAS = (OC.CertidaoOnrError, WS.WSOficioError)
@@ -59,7 +60,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required(*QUEM)
     def onr_certidoes_buscar():
         """Traz do ONR os pedidos dos últimos dias. SÓ LÊ do lado de lá."""
-        dias = max(1, min(90, int(request.form.get("dias") or 30)))
+        # O que não é número vale como o campo vazio: 30 dias (LD13).
+        digitado = numero_digitado(request.form.get("dias"))
+        dias = max(1, min(90, 30 if digitado is None else digitado))
         de = (date.today() - timedelta(days=dias)).isoformat()
         try:
             r = sessao().certidoes_a_emitir(de=de, ate=date.today().isoformat())

@@ -322,6 +322,65 @@ def test_a_ficha_tem_o_caminho_de_volta(casa):
     assert 'href="/protesto"' in html
 
 
+def test_o_apontado_com_intimacao_digital_diz_o_estado_na_central(tmp_path):
+    """RESSALVA DO L012R: a linha do banco agora é `dict`, e `digital[0]` dava
+    KeyError — bastava um título apontado com intimação digital enviada para
+    a lista inteira cair. Banco à parte: a semente do módulo tem as contagens
+    que os outros testes conferem."""
+    from app import create_app
+
+    dados = tmp_path / "dados"
+    dados.mkdir()
+    create_app({"DATA_DIR": str(dados)})
+    banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
+    con = sqlite3.connect(banco)
+    with con:
+        tid = _titulo(con, numero="T8", situacao="APONTADO",
+                      devedor="GUSTAVO DIGITAL", protocolo="2610030001",
+                      chave=CHAVE)
+        _ato(con, tid, "APONTAMENTO", "2026-10-03", ordem=105)
+        con.execute(
+            """INSERT INTO rs_intimacoes(titulo_id, ambiente, identificador,
+                   teor, resumo, enviada_em, estado)
+               VALUES (?, 'HOMOLOGACAO', ?, '{}', '', '2026-10-05T10:00:00',
+                       'RECEBIDA')""", (tid, f"CG-TESTE-{tid}"))
+        intimacao = con.execute(
+            "SELECT id FROM rs_intimacoes WHERE titulo_id=?", (tid,)).fetchone()[0]
+    con.close()
+
+    r = _listar({"banco": banco})
+    passo = {l["numero_titulo"]: l["proximo"] for l in r["linhas"]}["T8"]
+    assert passo["passo"] == "digital", passo
+    assert passo["intimacao_id"] == intimacao
+    assert "enviada em 2026-10-05" in passo["texto"]
+    assert "estado na Central: RECEBIDA" in passo["texto"]
+
+
+def test_apresentantes_de_mesmo_nome_e_mesma_contagem_saem_pelo_codigo(tmp_path):
+    """RESSALVA DO L012R: `ORDER BY n DESC, apresentante_nome` deixava o
+    empate do mesmo nome com dois códigos na ordem que o PostgreSQL quisesse.
+    O SQLite os dava na ordem do agrupamento — a do código."""
+    from app import create_app
+
+    dados = tmp_path / "dados"
+    dados.mkdir()
+    create_app({"DATA_DIR": str(dados)})
+    banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
+    con = sqlite3.connect(banco)
+    with con:
+        for numero, codigo in (("A1", "902"), ("A2", "901"), ("A3", "903")):
+            _titulo(con, numero=numero, situacao="RECEBIDO",
+                    devedor="DEVEDOR DE EXEMPLO",
+                    apres=(codigo, "BANCO DE EXEMPLO"))
+    con.close()
+    con = _con({"banco": banco})
+    try:
+        codigos = [a["codigo"] for a in L.apresentantes(con)]
+    finally:
+        con.close()
+    assert codigos == ["901", "902", "903"]
+
+
 def test_filtro_vazio_diz_onde_mais_procurar(casa):
     html = _cliente(casa).get(
         "/protesto?vista=pendentes&q=FABIO").get_data(as_text=True)
@@ -330,13 +389,19 @@ def test_filtro_vazio_diz_onde_mais_procurar(casa):
 
 
 def test_get_da_lista_nao_grava_no_banco(casa):
+    # O LOGIN VEM ANTES DA MEDIDA. O primeiro pedido do dia numa pasta de
+    # dados nova dispara a cópia automática (AUTO_BACKUP_BANCO e
+    # AUTO_BACKUP_COMPLETO, duas linhas de auditoria) além do LOGIN_SUCCESS;
+    # medido em 18/10/2026 (lote L072), quando o xdist pôs este teste como o
+    # primeiro do módulo no seu processo e a conta deu 3. O que se mede aqui é
+    # só a lista: ela não grava nada.
+    cliente = _cliente(casa)
     con = sqlite3.connect(casa["banco"])
     antes = con.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
-    _cliente(casa).get("/protesto?vista=todos&ordem=dias")
+    cliente.get("/protesto?vista=todos&ordem=dias")
     depois = con.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
     con.close()
-    # O login grava auditoria; a lista não acrescenta nada além dele.
-    assert depois - antes <= 1
+    assert depois == antes
 
 
 def test_o_sql_novo_nao_aumenta_o_acoplamento():
@@ -354,3 +419,37 @@ def test_o_sql_novo_nao_aumenta_o_acoplamento():
             for proibido in ("substr(", "||", "strftime(", "julianday(",
                              "pragma"):
                 assert proibido not in texto, (proibido, no.value[:60])
+
+
+# --------------------------- a busca não fica presa na aba (LH06, 21/10/2026)
+
+
+def test_o_termo_buscado_na_aba_pendentes_acha_o_titulo_pago(casa):
+    """O oficial procurou «900001» estando em «Pendentes»: o título pago
+    estava em «Encerrados», a aba contava 1 e a lista vinha vazia, porque o
+    formulário mandava a vista escondida. Com termo, a busca abre em «Todos»."""
+    assert L.ler_filtro({"q": "T7", "vista_atual": "pendentes"})["vista"] == "todos"
+    assert _numeros(_listar(casa, q="T7", vista_atual="pendentes")) == ["T7"]
+
+
+def test_sem_termo_a_aba_em_que_se_estava_continua_valendo(casa):
+    r = _listar(casa, vista_atual="encerrados")
+    assert "T7" in _numeros(r) and "T2" not in _numeros(r)
+
+
+def test_a_aba_clicada_continua_mandando_mesmo_com_termo(casa):
+    assert _numeros(_listar(casa, q="T7", vista="pendentes")) == []
+
+
+def test_o_formulario_nao_manda_mais_a_vista_escondida(casa):
+    html = _cliente(casa).get("/protesto?vista=pendentes").get_data(as_text=True)
+    assert 'name="vista_atual"' in html
+    assert '<input type="hidden" name="vista"' not in html
+
+
+def test_a_busca_pela_tela_com_a_aba_pendentes_acha_o_titulo_pago(casa):
+    """O mesmo caminho do oficial, pelo formulário da tela: a aba escondida
+    viaja como `vista_atual` e o termo acha o título encerrado."""
+    html = _cliente(casa).get(
+        "/protesto?vista_atual=pendentes&q=FABIO").get_data(as_text=True)
+    assert "FABIO PAGOU" in html

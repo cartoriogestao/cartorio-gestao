@@ -30,6 +30,8 @@ import sqlite3
 import subprocess
 from datetime import date, datetime, timedelta
 
+from bd_nativo import banco
+
 ABERTA = ("CONCLUIDA", "CANCELADA")          # situações que NÃO são abertas
 
 #: O despacho do gestor é a lista do dia; contá-lo como tarefa dele seria a
@@ -49,43 +51,45 @@ def _dt(texto: str | None) -> date | None:
 def dono_da_mesa(con: sqlite3.Connection) -> int | None:
     """Quem é o oficial: o titular da Gestão (ordem dele, 06/10), senão o 1º ADMIN."""
     try:
-        linha = con.execute("SELECT user_id FROM ge_responsaveis WHERE setor='GESTAO'"
-                            ).fetchone()
+        linha = banco(con).um("SELECT user_id FROM ge_responsaveis "
+                              "WHERE setor='GESTAO'")
         if linha:
-            return int(linha[0])
+            return int(linha["user_id"])
     except sqlite3.Error:
         pass
-    linha = con.execute("SELECT id FROM users WHERE role='ADMIN' AND active=1 "
-                        "ORDER BY id LIMIT 1").fetchone()
-    return int(linha[0]) if linha else None
+    linha = banco(con).um("SELECT id FROM users WHERE role='ADMIN' AND active=1 "
+                          "ORDER BY id LIMIT 1")
+    return int(linha["id"]) if linha else None
 
 
 def _nomes(con) -> dict[int, str]:
-    return {int(r[0]): (r[1] or r[2]) for r in
-            con.execute("SELECT id, full_name, username FROM users")}
+    return {int(r["id"]): (r["full_name"] or r["username"]) for r in
+            banco(con).ler("SELECT id, full_name, username FROM users ORDER BY id")}
 
 
 def tarefas(con: sqlite3.Connection, hoje: date, dono: int) -> dict[str, list[dict]]:
     """As tarefas do oficial por quando: vencidas, hoje, 7 dias, depois, sem prazo."""
-    marcas = ",".join("?" * len(ABERTA))
-    fora_marcas = ",".join("?" * len(FORA_DA_MESA))
+    marcas = ",".join(["%s"] * len(ABERTA))
+    fora_marcas = ",".join(["%s"] * len(FORA_DA_MESA))
     # A SUSPENSA SAI DA PAUTA (relato #132): ela não vence nem pede o oficial
     # enquanto espera a data ou a condição.
     import tarefa_suspensao as TS
     nao_suspensa, params_suspensao = TS.condicao_nao_suspensa(None, hoje, con=con)
-    linhas = con.execute(
+    linhas = banco(con).ler(
         f"""SELECT id, title, priority, due_date, source_type, sector, linked_expediente_id
-              FROM tasks WHERE assigned_user_id = ? AND status NOT IN ({marcas})
-               AND source_type NOT IN ({fora_marcas}) AND {nao_suspensa}""",
-        (dono, *ABERTA, *FORA_DA_MESA, *params_suspensao)).fetchall()
+              FROM tasks WHERE assigned_user_id = %s AND status NOT IN ({marcas})
+               AND source_type NOT IN ({fora_marcas}) AND {nao_suspensa.replace("?", "%s")}
+             ORDER BY id""",
+        (dono, *ABERTA, *FORA_DA_MESA, *params_suspensao))
     grupos: dict[str, list[dict]] = {"VENCIDAS": [], "HOJE": [], "SEMANA": [],
                                      "DEPOIS": [], "SEM_PRAZO": []}
     semana = hoje + timedelta(days=7)
     ordem = {"CRITICA": 0, "ALTA": 1, "MEDIA": 2, "BAIXA": 3}
     for r in linhas:
-        prazo = _dt(r[3])
-        item = {"id": r[0], "titulo": r[1], "prioridade": r[2], "prazo": r[3],
-                "origem": r[4], "setor": r[5], "expediente_id": r[6],
+        prazo = _dt(r["due_date"])
+        item = {"id": r["id"], "titulo": r["title"], "prioridade": r["priority"],
+                "prazo": r["due_date"], "origem": r["source_type"],
+                "setor": r["sector"], "expediente_id": r["linked_expediente_id"],
                 "dias": (prazo - hoje).days if prazo else None}
         if prazo is None:
             grupos["SEM_PRAZO"].append(item)
@@ -104,20 +108,22 @@ def tarefas(con: sqlite3.Connection, hoje: date, dono: int) -> dict[str, list[di
 
 def substituicoes_vencidas(con: sqlite3.Connection, hoje: date, dono: int) -> list[dict]:
     """Onde o oficial é o substituto e o titular deixou vencer."""
-    marcas = ",".join("?" * len(ABERTA))
+    marcas = ",".join(["%s"] * len(ABERTA))
     nomes = _nomes(con)
     import tarefa_suspensao as TS
     nao_suspensa, params_suspensao = TS.condicao_nao_suspensa(None, hoje, con=con)
-    linhas = con.execute(
+    linhas = banco(con).ler(
         f"""SELECT id, title, priority, due_date, assigned_user_id FROM tasks
-             WHERE backup_user_id = ? AND assigned_user_id IS NOT NULL
-               AND assigned_user_id <> ? AND status NOT IN ({marcas})
-               AND due_date IS NOT NULL AND due_date < ? AND {nao_suspensa}
-             ORDER BY due_date""",
-        (dono, dono, *ABERTA, hoje.isoformat(), *params_suspensao)).fetchall()
-    return [{"id": r[0], "titulo": r[1], "prioridade": r[2], "prazo": r[3],
-             "titular": nomes.get(r[4], f"#{r[4]}"),
-             "dias_vencida": (hoje - _dt(r[3])).days} for r in linhas]
+             WHERE backup_user_id = %s AND assigned_user_id IS NOT NULL
+               AND assigned_user_id <> %s AND status NOT IN ({marcas})
+               AND due_date IS NOT NULL AND due_date < %s
+               AND {nao_suspensa.replace("?", "%s")}
+             ORDER BY due_date, id""",
+        (dono, dono, *ABERTA, hoje.isoformat(), *params_suspensao))
+    return [{"id": r["id"], "titulo": r["title"], "prioridade": r["priority"],
+             "prazo": r["due_date"],
+             "titular": nomes.get(r["assigned_user_id"], f"#{r['assigned_user_id']}"),
+             "dias_vencida": (hoje - _dt(r["due_date"])).days} for r in linhas]
 
 
 def malote_sem_providencia(con: sqlite3.Connection, hoje: date) -> list[dict]:
@@ -126,9 +132,9 @@ def malote_sem_providencia(con: sqlite3.Connection, hoje: date) -> list[dict]:
     É da casa inteira, e não só do oficial: ordem judicial que ninguém pegou é
     responsabilidade dele qualquer que seja o setor.
     """
-    marcas = ",".join("?" * len(ABERTA))
+    marcas = ",".join(["%s"] * len(ABERTA))
     nomes = _nomes(con)
-    linhas = con.execute(
+    linhas = banco(con).ler(
         f"""SELECT e.id, e.internal_protocol, e.subject, e.sender, e.received_at,
                    e.deadline_date, e.assigned_user_id, e.category
               FROM expedientes e
@@ -136,13 +142,16 @@ def malote_sem_providencia(con: sqlite3.Connection, hoje: date) -> list[dict]:
                AND e.category = 'Para Cumprimento'
                AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.linked_expediente_id = e.id
                                   AND t.status NOT IN ({marcas}))
-             ORDER BY e.received_at""", ABERTA).fetchall()
+             ORDER BY e.received_at, e.id""", ABERTA)
     fora = []
     for r in linhas:
-        recebido = _dt(r[4])
-        fora.append({"id": r[0], "protocolo": r[1], "assunto": " ".join((r[2] or "").split()),
-                     "remetente": (r[3] or "").strip(), "recebido_em": r[4],
-                     "prazo": r[5], "responsavel": nomes.get(r[6], "—"),
+        recebido = _dt(r["received_at"])
+        fora.append({"id": r["id"], "protocolo": r["internal_protocol"],
+                     "assunto": " ".join((r["subject"] or "").split()),
+                     "remetente": (r["sender"] or "").strip(),
+                     "recebido_em": r["received_at"],
+                     "prazo": r["deadline_date"],
+                     "responsavel": nomes.get(r["assigned_user_id"], "—"),
                      "dias_parado": (hoje - recebido).days if recebido else None})
     return fora
 
@@ -151,14 +160,18 @@ def suspeitas_de_fraude(con: sqlite3.Connection) -> list[dict]:
     """Expediente aberto que fala em fraude ou suspeita — qualquer categoria."""
     nomes = _nomes(con)
     fora = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT id, internal_protocol, subject, sender, received_at, assigned_user_id,
-                      stage FROM expedientes WHERE completed_at IS NULL ORDER BY received_at"""):
-        assunto = " ".join((r[2] or "").split())
+                      stage FROM expedientes WHERE completed_at IS NULL
+                      ORDER BY received_at, id"""):
+        assunto = " ".join((r["subject"] or "").split())
         if _FRAUDE.search(assunto):
-            fora.append({"id": r[0], "protocolo": r[1], "assunto": assunto,
-                         "remetente": (r[3] or "").strip(), "recebido_em": r[4],
-                         "responsavel": nomes.get(r[5], "—"), "etapa": r[6]})
+            fora.append({"id": r["id"], "protocolo": r["internal_protocol"],
+                         "assunto": assunto,
+                         "remetente": (r["sender"] or "").strip(),
+                         "recebido_em": r["received_at"],
+                         "responsavel": nomes.get(r["assigned_user_id"], "—"),
+                         "etapa": r["stage"]})
     return fora
 
 

@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{#
+  A FICHA DA AUTENTICAÇÃO DE LIVRO (LG04): o pedido, o número do controle, os
+  termos congelados, o selo e o preço do item configurado.
+#}
+{% block heading %}<h1>Autenticação de livro {% if l.numero %}nº {{ l.numero }}/{{ l.ano }}{% else %}— pedido {{ l.id }}{% endif %}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpj_rtd_livro_contabil_lista') }}">Todas as autenticações</a>
+  {% if l.termo_abertura %}
+  <a class="button" href="{{ url_for('rcpj_rtd_livro_contabil_papel', livro_id=l.id, qual='abertura') }}">Termo de abertura</a>
+  <a class="button" href="{{ url_for('rcpj_rtd_livro_contabil_papel', livro_id=l.id, qual='encerramento') }}">Termo de encerramento</a>
+  {% endif %}
+  {% if l.situacao == 'AUTENTICADO' %}
+  <a class="button" href="{{ url_for('rcpj_rtd_livro_contabil_papel', livro_id=l.id, qual='certidao') }}">Certidão</a>
+  {% endif %}
+</div>
+
+<dl class="ficha">
+  <dt>Situação</dt><dd><strong>{{ SITUACOES.get(l.situacao, l.situacao) }}</strong>
+    {% if l.situacao == 'SUSPENSO_SELO' and l.motivo_suspensao %}<br><span class="muted">{{ l.motivo_suspensao }}</span>{% endif %}
+    {% if l.situacao == 'CANCELADO' %}<br><span class="muted">{{ l.motivo_cancelamento }}</span>{% endif %}</dd>
+  <dt>Pessoa jurídica</dt><dd>{{ l.pj_nome }} — CNPJ {{ l.pj_cnpj }}</dd>
+  <dt>Livro</dt><dd>{{ l.rotulo }} nº {{ l.numero_livro }}, {{ l.folhas }} folhas ({{ l.folha_de }} a {{ l.folha_ate }}), em {{ FORMAS.get(l.forma, l.forma) }}</dd>
+  <dt>Pedido</dt><dd>{{ l.pedido_em }} — {{ l.pedido_por or '' }}{% if l.apresentante_nome %}; apresentado por {{ l.apresentante_nome }}{% endif %}</dd>
+  {% if l.autenticado_em %}<dt>Autenticado</dt><dd>{{ l.autenticado_em }} — {{ l.autenticado_por or '' }}</dd>{% endif %}
+  <dt>Selo</dt><dd>{{ l.selo or '—' }}</dd>
+  <dt>Item da tabela</dt><dd>{{ l.codigo_tj or item or 'NÃO CONFIGURADO' }}{% if preco %} — {{ preco.descricao }}: R$ {{ preco.total }}{% endif %}</dd>
+</dl>
+
+{% if anterior_ausente %}
+<div class="notice">O livro nº {{ l.numero_livro - 1 }} deste tipo e deste CNPJ não consta autenticado nesta serventia.</div>
+{% endif %}
+
+{% if pode_qualificar and l.situacao in ['PEDIDO', 'SUSPENSO_SELO'] %}
+<form method="post" action="{{ url_for('rcpj_rtd_livro_contabil_autenticar', livro_id=l.id) }}" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if not item and l.situacao == 'PEDIDO' %}
+  <div class="notice">Falta configurar o item da tabela de emolumentos — <a href="{{ url_for('rcpj_rtd_livro_contabil_configuracao') }}">configure aqui</a>. Sem ele a autenticação não sai.</div>
+  {% endif %}
+  <label><input type="checkbox" name="cobrar" value="1"> Lançar no meu caixa</label>
+  {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
+  {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_livros_contabeis') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+  <button type="submit" class="primary">{% if l.situacao == 'PEDIDO' %}Autenticar e selar{% else %}Selar de novo{% endif %}</button>
+</form>
+{% endif %}
+
+{% if pode_qualificar and l.situacao != 'CANCELADO' %}
+<form method="post" action="{{ url_for('rcpj_rtd_livro_contabil_cancelar', livro_id=l.id) }}" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Motivo do cancelamento <input name="motivo" minlength="10" required></label>
+  <button type="submit">Cancelar</button>
+</form>
+{% endif %}
+{% endblock %}

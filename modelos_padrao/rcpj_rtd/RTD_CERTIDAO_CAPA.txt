@@ -1,0 +1,17 @@
+===CABECALHO===
+{unit_short} — CNS {cns}
+Oficial: {oficial}
+{endereco}
+===TITULO===
+{atribuicao}
+Nº {numero} de {data_registro}
+===CORPO===
+Certifico e dou fé que o documento, contendo {paginas} ({paginas_extenso}) página(s) (arquivo anexo), foi apresentado em {data_apresentacao}, protocolado sob nº {protocolo}, referente ao registro nº {numero} de {data_registro}, no {livro} desta serventia. A presente certidão tem por objeto {objeto_certificado}.
+===DENOMINACAO===
+Denominação
+{denominacao}
+Natureza:
+{natureza}
+===FECHO===
+{cidade}, {data_extenso}.
+Eu, {full_name}, {funcao}, o subscrevo e assino.

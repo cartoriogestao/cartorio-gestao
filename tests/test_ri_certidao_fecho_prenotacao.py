@@ -10,11 +10,13 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
 
 from ri_web import (  # noqa: E402
     clausula_html_prenotacoes_abertas,
     prenotacoes_abertas_da_matricula,
 )
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 
 def _fmt(d):
@@ -61,8 +63,7 @@ def test_molde_fabrica_tem_titulo_e_clausula():
 
 def test_prenotacoes_ligam_por_ato_mesmo_com_matricula_id_divergente(tmp_path):
     """Caso 4019/11546: ato cita o protocolo; ri_protocolos.matricula_id e outra."""
-    db = tmp_path / "t.sqlite3"
-    con = sqlite3.connect(db)
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript(
         """
@@ -83,8 +84,7 @@ def test_prenotacoes_ligam_por_ato_mesmo_com_matricula_id_divergente(tmp_path):
 
 
 def test_prenotacoes_por_matricula_id_direto(tmp_path):
-    db = tmp_path / "t.sqlite3"
-    con = sqlite3.connect(db)
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript(
         """

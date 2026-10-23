@@ -1,0 +1,112 @@
+{
+ "_como": "Gerado ANTES do LF06B, na árvore exportada do commit 2c41e90 (git archive), por ouro_lf06b.gerar. Não regerar depois da mudança: o teste compararia a base com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "fecho_da_abertura(ACERVO, 'Teor de exemplo. Dou fé. ________ FULANO.', com nome e titulo)": {
+   "ok": {
+    "assinatura": "",
+    "frase": ""
+   }
+  },
+  "fecho_da_abertura(ACERVO, 'Teor de exemplo.', com nome e titulo)": {
+   "ok": {
+    "assinatura": "",
+    "frase": ""
+   }
+  },
+  "fecho_da_abertura(ACERVO, None, com nome e titulo)": {
+   "ok": {
+    "assinatura": "",
+    "frase": ""
+   }
+  },
+  "fecho_da_abertura(ESTRUTURADA, 'Teor de exemplo. Dou fé. ________ FULANO.', com nome e titulo)": {
+   "ok": {
+    "assinatura": "________________________________ FULANO DE EXEMPLO, Escrevente Autorizado.",
+    "frase": "Cidade Exemplo/MA, 19 de outubro de 2026. O referido é verdade e dou fé."
+   }
+  },
+  "fecho_da_abertura(ESTRUTURADA, 'Teor de exemplo.', com nome e titulo)": {
+   "ok": {
+    "assinatura": "________________________________ FULANO DE EXEMPLO, Escrevente Autorizado.",
+    "frase": "Cidade Exemplo/MA, 19 de outubro de 2026. O referido é verdade e dou fé."
+   }
+  },
+  "fecho_da_abertura(ESTRUTURADA, None, com nome e titulo)": {
+   "ok": {
+    "assinatura": "________________________________ FULANO DE EXEMPLO, Escrevente Autorizado.",
+    "frase": "Cidade Exemplo/MA, 19 de outubro de 2026. O referido é verdade e dou fé."
+   }
+  },
+  "fecho_da_abertura(None, 'Teor de exemplo. Dou fé. ________ FULANO.', com nome e titulo)": {
+   "ok": {
+    "assinatura": "________________________________ FULANO DE EXEMPLO, Escrevente Autorizado.",
+    "frase": "Cidade Exemplo/MA, 19 de outubro de 2026. O referido é verdade e dou fé."
+   }
+  },
+  "fecho_da_abertura(None, 'Teor de exemplo.', com nome e titulo)": {
+   "ok": {
+    "assinatura": "________________________________ FULANO DE EXEMPLO, Escrevente Autorizado.",
+    "frase": "Cidade Exemplo/MA, 19 de outubro de 2026. O referido é verdade e dou fé."
+   }
+  },
+  "fecho_da_abertura(None, None, com nome e titulo)": {
+   "ok": {
+    "assinatura": "________________________________ FULANO DE EXEMPLO, Escrevente Autorizado.",
+    "frase": "Cidade Exemplo/MA, 19 de outubro de 2026. O referido é verdade e dou fé."
+   }
+  },
+  "fecho_da_abertura(data torta)": {
+   "ok": {
+    "assinatura": "________________________________ FULANO DE EXEMPLO, Oficial.",
+    "frase": ""
+   }
+  },
+  "fecho_da_abertura(sem data)": {
+   "ok": {
+    "assinatura": "________________________________ FULANO DE EXEMPLO, Oficial.",
+    "frase": ""
+   }
+  },
+  "fecho_da_abertura(sem nome)": {
+   "ok": {
+    "assinatura": "________________________________",
+    "frase": "Cidade Exemplo/MA, 19 de outubro de 2026. O referido é verdade e dou fé."
+   }
+  },
+  "fecho_da_abertura(sem titulo)": {
+   "ok": {
+    "assinatura": "________________________________ FULANO DE EXEMPLO.",
+    "frase": "Cidade Exemplo/MA, 19 de outubro de 2026. O referido é verdade e dou fé."
+   }
+  },
+  "fecho_do_ato(caracteres de html)": {
+   "ok": "Cidade Exemplo/MA, 19 de outubro de 2026. Dou fé. O Oficial & Registrador (FULANO <&> DE EXEMPLO)."
+  },
+  "fecho_do_ato(com titulo, A)": {
+   "ok": "Cidade Exemplo/MA, 1 de março de 2026. Dou fé. A Tabeliã Registradora Substituta (MARIA DE EXEMPLO)."
+  },
+  "fecho_do_ato(com titulo, O)": {
+   "ok": "Cidade Exemplo/MA, 19 de outubro de 2026. Dou fé. O Oficial Registrador (FULANO DE EXEMPLO)."
+  },
+  "fecho_do_ato(data torta)": {
+   "ok": ""
+  },
+  "fecho_do_ato(sem data)": {
+   "ok": ""
+  },
+  "fecho_do_ato(sem nome)": {
+   "ok": ""
+  },
+  "fecho_do_ato(sem titulo)": {
+   "ok": "Cidade Exemplo/MA, 31 de dezembro de 2026. Dou fé. FULANO DE EXEMPLO."
+  },
+  "fecho_do_ato(sem tratamento)": {
+   "ok": "Cidade Exemplo/MA, 19 de outubro de 2026. Dou fé. O Escrevente (FULANO DE EXEMPLO)."
+  },
+  "fecho_do_ato(teor ja diz dou fe)": {
+   "ok": ""
+  }
+ },
+ "parte": "d"
+}

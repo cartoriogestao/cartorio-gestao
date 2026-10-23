@@ -98,6 +98,7 @@ from xml.sax.saxutils import escape
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
+from bd_nativo import banco
 import ibge_geracao as IBG
 import rc_assento as RCA
 import rc_matricula as RCM
@@ -577,6 +578,25 @@ def _chave_do_arquivo(cns: Any) -> bytes:
     return hashlib.md5(sem_zeros.encode("ascii")).digest()
 
 
+# **O BYTE 9 DO CABEÇALHO DO GZIP DIZ QUE SISTEMA COMPRIMIU** (RFC 1952,
+# campo OS) — e quem o escreve é o zlib da máquina: 10 no Windows, 19 no
+# macOS, 3 no Linux; o Python 3.13 em diante escreve 255. Nenhum
+# descompactador olha para ele, mas ele cai no PRIMEIRO bloco cifrado, e o
+# mesmo XML dava um `.mrc` diferente em cada máquina — achado em 19/10/2026,
+# quando a suíte rodou no Mac. Fica fixo o do Windows: é o que a produção
+# sempre gerou, e é o que o openssl cifrou na validação byte a byte.
+_SISTEMA_NO_GZIP = 10
+
+
+def _comprimido(xml: str) -> bytes:
+    """O XML em GZIP, byte a byte igual em qualquer máquina e a qualquer
+    hora: `mtime=0` tira o relógio do cabeçalho, e o byte do sistema fica o
+    do Windows (ver `_SISTEMA_NO_GZIP`). Só calcula."""
+    gz = bytearray(gzip.compress(xml.encode(CODIFICACAO), mtime=0))
+    gz[9] = _SISTEMA_NO_GZIP
+    return bytes(gz)
+
+
 def arquivo_mrc(xml: str, *, cns: Any) -> bytes:
     """O XML comprimido e cifrado, pronto para o upload manual no
     SIRC-Web. Só calcula — não grava nada, não fala com rede nenhuma.
@@ -589,9 +609,10 @@ def arquivo_mrc(xml: str, *, cns: Any) -> bytes:
     compressão, e o mesmo XML gera um `.mrc` diferente a cada chamada
     (só no primeiro bloco cifrado, por causa do ECB). A Central não liga
     para essa data, mas um arquivo que sai igual sempre que o conteúdo é
-    igual é o que permite conferir/testar sem inventar tolerância.
+    igual é o que permite conferir/testar sem inventar tolerância. Pela
+    mesma razão o byte do sistema no cabeçalho é fixo (`_comprimido`).
     """
-    comprimido = gzip.compress(xml.encode(CODIFICACAO), mtime=0)
+    comprimido = _comprimido(xml)
     chave = _chave_do_arquivo(cns)
     enchedor = padding.PKCS7(128).padder()
     preenchido = enchedor.update(comprimido) + enchedor.finalize()
@@ -606,7 +627,7 @@ def nome_do_arquivo_mrc(prefixo: str, numero: int) -> str:
     return f"{prefixo}-{numero:03d}.mrc"
 
 
-def pendentes_de_remessa(con: sqlite3.Connection,
+def pendentes_de_remessa(con,
                          limite: int = 20_000) -> list[dict]:
     """O que o SIRC ainda não recebeu, do mais antigo para o mais novo. Só lê.
 
@@ -640,16 +661,16 @@ def pendentes_de_remessa(con: sqlite3.Connection,
     > **E a carga da CRC NÃO leva este filtro**, de propósito: lá os 243 estão
     > certos — a carga é *justamente* a do acervo histórico na Central.
     """
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     achados: list[dict] = []
-    marcadores = ",".join("?" * len(ORIGENS_QUE_NAO_SE_REMETEM))
+    marcadores = ",".join(["%s"] * len(ORIGENS_QUE_NAO_SE_REMETEM))
 
     # `regime_bens` NAS DUAS CONSULTAS desde 08/10/2026: `_registro_casamento`
     # lê `r["regime_bens"]`, e as consultas não o traziam — nenhum casamento
     # levava o regime ao SIRC (medido no 8366, comunhão parcial). Os testes
     # não pegavam porque montam o registro com uma consulta própria.
 
-    for r in con.execute(
+    for r in bd.ler(
             f"""SELECT id, id AS assento_id, especie AS tipo, numero, nome,
                       data_ato, data_fato, matricula, hora_fato, dnv,
                       cpf_registrado, regime_bens
@@ -658,9 +679,9 @@ def pendentes_de_remessa(con: sqlite3.Connection,
                                   'CASAMENTO_RELIGIOSO','OBITO')
                   AND COALESCE(situacao,'ATIVO') = 'ATIVO'
                   AND COALESCE(origem,'') NOT IN ({marcadores})
-             ORDER BY data_ato, id LIMIT ?""",
+             ORDER BY data_ato NULLS FIRST, id LIMIT %s""",
             (*ORIGENS_QUE_NAO_SE_REMETEM, limite)):
-        achados.append({**dict(r), "onde": "rc_assentos"})
+        achados.append({**r, "onde": "rc_assentos"})
 
     # **OS TRES ATOS DA DIVISAO TRIPARTITE VIRAM UMA «ALTERAÇÃO» DO PRÓPRIO
     # REGISTRO — e não um envelope à parte.** Achado em 14/09/2026, lendo o
@@ -688,7 +709,7 @@ def pendentes_de_remessa(con: sqlite3.Connection,
     # § 4º do art. 225 pune a informação inexata. O caminho de um termo
     # cancelado é `pendentes_de_cancelamento`, e só ele.
     try:
-        linhas = list(con.execute(
+        linhas = bd.ler(
                 f"""SELECT s.*, a.id AS ato_id, a.tipo AS ato_tipo,
                           a.data_ato AS ato_data, a.fundamento AS ato_fundamento
                      FROM rc_atos a
@@ -696,8 +717,8 @@ def pendentes_de_remessa(con: sqlite3.Connection,
                     WHERE a.tipo IN ('AVERBACAO','ANOTACAO','RETIFICACAO')
                       AND COALESCE(s.situacao,'ATIVO') = 'ATIVO'
                       AND COALESCE(s.origem,'') NOT IN ({marcadores})
-                 ORDER BY s.id, a.data_ato, a.id""",
-                (*ORIGENS_QUE_NAO_SE_REMETEM,)))
+                 ORDER BY s.id, a.data_ato NULLS FIRST, a.id""",
+                (*ORIGENS_QUE_NAO_SE_REMETEM,))
         agrupados: dict[int, dict] = {}
         for r in linhas:
             d = dict(r)
@@ -737,7 +758,7 @@ def pendentes_de_remessa(con: sqlite3.Connection,
     return achados[:limite]
 
 
-def pendentes_de_carga_do_acervo(con: sqlite3.Connection,
+def pendentes_de_carga_do_acervo(con,
                                  limite: int = 20_000) -> list[dict]:
     """O acervo em .docx que o SIRC nunca recebeu — não é a remessa do dia.
 
@@ -751,11 +772,11 @@ def pendentes_de_carga_do_acervo(con: sqlite3.Connection,
     E-Ofício e o `ARQUIVO` ficam de fora até se confirmar se já cumpriram a
     obrigação sozinhos.
     """
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     achados: list[dict] = []
-    marcadores = ",".join("?" * len(ORIGENS_DA_CARGA_DO_ACERVO))
+    marcadores = ",".join(["%s"] * len(ORIGENS_DA_CARGA_DO_ACERVO))
 
-    for r in con.execute(
+    for r in bd.ler(
             f"""SELECT id, id AS assento_id, especie AS tipo, numero, nome,
                       data_ato, data_fato, matricula, hora_fato, dnv,
                       cpf_registrado, regime_bens
@@ -764,15 +785,15 @@ def pendentes_de_carga_do_acervo(con: sqlite3.Connection,
                                   'CASAMENTO_RELIGIOSO','OBITO')
                   AND COALESCE(situacao,'ATIVO') = 'ATIVO'
                   AND COALESCE(origem,'') IN ({marcadores})
-             ORDER BY data_ato, id LIMIT ?""",
+             ORDER BY data_ato NULLS FIRST, id LIMIT %s""",
             (*ORIGENS_DA_CARGA_DO_ACERVO, limite)):
-        achados.append({**dict(r), "onde": "rc_assentos"})
+        achados.append({**r, "onde": "rc_assentos"})
 
     achados.sort(key=lambda x: (_texto(x.get("data_ato")), x.get("id") or 0))
     return achados[:limite]
 
 
-def quantos_ficam_de_fora_pelo_acervo(con: sqlite3.Connection) -> int:
+def quantos_ficam_de_fora_pelo_acervo(con) -> int:
     """Quantos assentos do acervo (EOFICIO/ARQUIVO/IMPORTACAO) NÃO entram na
     lista de pendentes — só para a tela dizer o número, e não deixar um
     filtro forte parecer sistema perdendo registro.
@@ -783,15 +804,14 @@ def quantos_ficam_de_fora_pelo_acervo(con: sqlite3.Connection) -> int:
     o prazo do REGISTRO, e o acervo foi registrado há décadas —, mas a tela
     não dizia isso: um número pequeno sem explicação lê como defeito.
     """
-    con.row_factory = sqlite3.Row
-    marcadores = ",".join("?" * len(ORIGENS_QUE_NAO_SE_REMETEM))
-    return con.execute(
-        f"""SELECT COUNT(*) FROM rc_assentos
+    marcadores = ",".join(["%s"] * len(ORIGENS_QUE_NAO_SE_REMETEM))
+    return int(banco(con).valor(
+        f"""SELECT COUNT(*) AS n FROM rc_assentos
              WHERE especie IN ('NASCIMENTO','NATIMORTO','CASAMENTO',
                                'CASAMENTO_RELIGIOSO','OBITO')
                AND COALESCE(situacao,'ATIVO') = 'ATIVO'
                AND COALESCE(origem,'') IN ({marcadores})""",
-        ORIGENS_QUE_NAO_SE_REMETEM).fetchone()[0]
+        ORIGENS_QUE_NAO_SE_REMETEM))
 
 
 # **NENHUMA ESPÉCIE ESTÁ PRONTA PARA SAIR AINDA — e isso só se soube
@@ -895,18 +915,18 @@ LOCAL_NASCIMENTO_SIRC: dict[int, str] = {
 }
 
 
-def _codigo_local_nascimento(con: sqlite3.Connection | None,
+def _codigo_local_nascimento(con,
                              r: dict) -> int | None:
     if "ibge_local_nascimento" in r:
         bruto = r.get("ibge_local_nascimento")
     elif con is not None and r.get("assento_id") is not None:
         try:
-            linha = con.execute(
-                "SELECT ibge_local_nascimento FROM rc_assentos WHERE id = ?",
-                (r.get("assento_id"),)).fetchone()
+            linha = banco(con).um(
+                "SELECT ibge_local_nascimento FROM rc_assentos WHERE id = %s",
+                (r.get("assento_id"),))
         except sqlite3.OperationalError:
             linha = None
-        bruto = linha[0] if linha else None
+        bruto = linha["ibge_local_nascimento"] if linha else None
     else:
         return None
     try:
@@ -930,7 +950,7 @@ def _codigo_local_nascimento(con: sqlite3.Connection | None,
 # naturalidade dos genitores em `rc_pessoas`; a cidade do parto em
 # `rc_assentos.local_fato_endereco`. O montador é que não os levava.
 
-def _coluna_do_assento(con: sqlite3.Connection | None, r: dict,
+def _coluna_do_assento(con, r: dict,
                        coluna: str) -> Any:
     """Uma coluna de `rc_assentos` — da linha que veio, ou do banco.
 
@@ -944,11 +964,11 @@ def _coluna_do_assento(con: sqlite3.Connection | None, r: dict,
     if con is None or r.get("assento_id") is None:
         return None
     try:
-        linha = con.execute(f"SELECT {coluna} FROM rc_assentos WHERE id = ?",
-                            (r.get("assento_id"),)).fetchone()
+        return banco(con).valor(
+            f"SELECT {coluna} FROM rc_assentos WHERE id = %s",
+            (r.get("assento_id"),))
     except sqlite3.OperationalError:
         return None
-    return linha[0] if linha else None
 
 
 _NUMERO_DO_ENDERECO = re.compile(
@@ -985,7 +1005,7 @@ def _endereco_em_partes(texto: Any) -> dict:
     return saida
 
 
-def _municipio_sirc(con: sqlite3.Connection | None, cidade: Any,
+def _municipio_sirc(con, cidade: Any,
                     uf: Any) -> tuple[str, str]:
     """(código do município NO SIRC, código da UF) — ou ("", "") se não achou.
 
@@ -1030,7 +1050,7 @@ def _cpf_da_pessoa(pessoa: dict) -> str:
     return n if len(n) == 11 and _cpf_valido(n) else ""
 
 
-def o_que_falta(con: sqlite3.Connection | None, registro: dict) -> list[str]:
+def o_que_falta(con, registro: dict) -> list[str]:
     """O que impede este registro de ir ao SIRC. Só calcula.
 
     A CONFERENCIA VEM ANTES DO ARQUIVO, e aqui ela vale mais que em qualquer
@@ -1293,19 +1313,19 @@ def referencia_do_envio(r: dict) -> str:
     return f"{base}:{ultima}" if ultima else base
 
 
-def ja_enviados(con: sqlite3.Connection, central: str = "SIRC") -> set[str]:
+def ja_enviados(con, central: str = "SIRC") -> set[str]:
     """As referências com envio registrado. Só lê; sem a tabela, nenhuma."""
     try:
-        linhas = con.execute(
-            "SELECT referencia FROM ge_envios WHERE central = ? "
+        linhas = banco(con).ler(
+            "SELECT referencia FROM ge_envios WHERE central = %s "
             "AND situacao <> 'REJEITADO' AND referencia IS NOT NULL",
-            (central,)).fetchall()
+            (central,))
     except sqlite3.OperationalError:
         return set()
-    return {linha[0] for linha in linhas}
+    return {linha["referencia"] for linha in linhas}
 
 
-def sem_os_ja_enviados(con: sqlite3.Connection, registros: list[dict]) -> list[dict]:
+def sem_os_ja_enviados(con, registros: list[dict]) -> list[dict]:
     """A remessa sem o que já tem envio registrado — o mesmo critério da
     regra do gestor, para a tela e a cobrança dizerem a mesma coisa."""
     enviados = ja_enviados(con)
@@ -1319,7 +1339,7 @@ def sem_os_ja_enviados(con: sqlite3.Connection, registros: list[dict]) -> list[d
     return saida
 
 
-def quantas_pendentes(con: sqlite3.Connection) -> int:
+def quantas_pendentes(con) -> int:
     """O número do painel das comunicações (`rc_obrigacoes._quantas`, que
     procura esta função antes de `pendentes_de_remessa`). Sem ela o painel
     contava também o que já tem envio registrado — o mesmo aviso eterno que
@@ -1327,13 +1347,13 @@ def quantas_pendentes(con: sqlite3.Connection) -> int:
     return len(sem_os_ja_enviados(con, pendentes_de_remessa(con)))
 
 
-def cancelamentos_sem_os_ja_enviados(con: sqlite3.Connection,
+def cancelamentos_sem_os_ja_enviados(con,
                                      registros: list[dict]) -> list[dict]:
     enviados = ja_enviados(con, "SIRC_CANCELAMENTO")
     return [r for r in registros if f"rc_assentos:{r.get('id')}" not in enviados]
 
 
-def montar(con: sqlite3.Connection | None, registros: list[dict], *,
+def montar(con, registros: list[dict], *,
            cns: str, competencia: str = "") -> dict:
     """A remessa em lotes de até 250, e o que ficou retido. Só lê.
 
@@ -1504,7 +1524,7 @@ def _bloco_dos_atos(especie: str, atos: list[dict]) -> str:
     return "".join(partes)
 
 
-def _filiacoes_nascimento(con: sqlite3.Connection | None,
+def _filiacoes_nascimento(con,
                           assento_id: Any) -> str:
     """As `filiacoesNascimento`, com `minOccurs="2"` no XSD — e o módulo não
     montava nenhuma.
@@ -1572,7 +1592,7 @@ def _filiacoes_nascimento(con: sqlite3.Connection | None,
     return "".join(partes)
 
 
-def _endereco_da_filiacao(con: sqlite3.Connection | None,
+def _endereco_da_filiacao(con,
                           assento_id: Any) -> dict:
     """O domicílio dos genitores — da MÃE, e do PAI quando ela não o tem.
 
@@ -1596,7 +1616,7 @@ def _endereco_da_filiacao(con: sqlite3.Connection | None,
     return {}
 
 
-def _registro(con: sqlite3.Connection | None, r: dict) -> str:
+def _registro(con, r: dict) -> str:
     """Um registro do movimento. Só monta o que `montar()` já filtrou como
     pronto — `o_que_falta` retém o que ainda não tem envelope próprio.
 
@@ -1746,7 +1766,7 @@ def _registro(con: sqlite3.Connection | None, r: dict) -> str:
 #   uma tag (`nomeIgnorado`) que o XSD deste tipo não tem.
 
 
-def _filiacoes_casamento(con: sqlite3.Connection | None, assento_id: Any,
+def _filiacoes_casamento(con, assento_id: Any,
                          indice: int) -> str:
     """As duas `filiacoesConjuge` do cônjuge `indice` (1 ou 2).
 
@@ -1773,7 +1793,7 @@ def _filiacoes_casamento(con: sqlite3.Connection | None, assento_id: Any,
     return "".join(partes)
 
 
-def _conjuge(con: sqlite3.Connection | None, assento_id: Any,
+def _conjuge(con, assento_id: Any,
             indice: int) -> str:
     """Um `<conjuge1>` ou `<conjuge2>` inteiro — nome, sexo, CPF e as duas
     filiações.
@@ -1818,7 +1838,7 @@ def _conjuge(con: sqlite3.Connection | None, assento_id: Any,
     return f"<conjuge{indice}>" + "".join(partes) + f"</conjuge{indice}>"
 
 
-def _registro_casamento(con: sqlite3.Connection | None, r: dict) -> str:
+def _registro_casamento(con, r: dict) -> str:
     """Um `registroCasamentoInclusao`. Só monta o que `montar()` já filtrou
     como pronto — `o_que_falta` retém quem não tem os dois nomes.
 
@@ -1902,7 +1922,7 @@ def _registro_casamento(con: sqlite3.Connection | None, r: dict) -> str:
 #   preenchidos por semelhança.
 
 
-def _filiacoes_obito(con: sqlite3.Connection | None, assento_id: Any) -> str:
+def _filiacoes_obito(con, assento_id: Any) -> str:
     """As `filiacoesObito` (PAI e MAE do falecido), `minOccurs="2"` no XSD —
     a mesma forma de `_filiacoes_nascimento`, com o mesmo papel PAI/MAE
     (`rc_assento.PAPEIS_DA_ESPECIE["OBITO"]`)."""
@@ -1936,7 +1956,7 @@ def _documento_obito(dono: str, numero_bruto: Any, tag: str) -> str:
             f"{_tag('numero', numero)}<tipo>CPF</tipo></{tag}>")
 
 
-def _registro_obito(con: sqlite3.Connection | None, r: dict) -> str:
+def _registro_obito(con, r: dict) -> str:
     """Um `registroObitoInclusao`. Só monta o que `montar()` já filtrou como
     pronto — `o_que_falta` retém quem não tem o nome do falecido.
 
@@ -2182,7 +2202,7 @@ TIPO_REGISTRO_CIVIL_CANCELAMENTO: dict[str, str] = {
 }
 
 
-def pendentes_de_cancelamento(con: sqlite3.Connection,
+def pendentes_de_cancelamento(con,
                               limite: int = 20_000) -> list[dict]:
     """Os termos cancelados nesta casa que o SIRC ainda não sabe. Só lê.
 
@@ -2190,29 +2210,29 @@ def pendentes_de_cancelamento(con: sqlite3.Connection,
     ARQUIVO/IMPORTACAO) não se remete — o cancelamento, se houve, já
     aconteceu há décadas, antes de o SIRC existir.
     """
-    con.row_factory = sqlite3.Row
-    marcadores = ",".join("?" * len(ORIGENS_QUE_NAO_SE_REMETEM))
+    bd = banco(con)
+    marcadores = ",".join(["%s"] * len(ORIGENS_QUE_NAO_SE_REMETEM))
     achados = []
-    for r in con.execute(
+    for r in bd.ler(
             f"""SELECT * FROM rc_assentos
                 WHERE situacao = 'CANCELADO'
                   AND especie IN ('NASCIMENTO','CASAMENTO',
                                   'CASAMENTO_RELIGIOSO','OBITO','NATIMORTO')
                   AND COALESCE(origem,'') NOT IN ({marcadores})
-             ORDER BY data_ato, id LIMIT ?""",
+             ORDER BY data_ato NULLS FIRST, id LIMIT %s""",
             (*ORIGENS_QUE_NAO_SE_REMETEM, limite)):
         d = dict(r)
         # **O MOTIVO NÃO TEM COLUNA PRÓPRIA** — lido da averbação mais
         # recente sobre este assento, que na prática é onde o oficial já
         # registra por que cancelou (o caso real: "Determinação do
         # oficial à lavratura no livro físico errado").
-        motivo = con.execute(
+        motivo = bd.um(
             """SELECT fundamento FROM rc_atos
-                WHERE assento_id=? AND tipo='AVERBACAO'
+                WHERE assento_id = %s AND tipo='AVERBACAO'
                   AND COALESCE(fundamento,'')<>''
-             ORDER BY data_ato DESC, id DESC LIMIT 1""",
-            (d["id"],)).fetchone()
-        d["motivo"] = motivo[0] if motivo else ""
+             ORDER BY data_ato DESC NULLS LAST, id DESC LIMIT 1""",
+            (d["id"],))
+        d["motivo"] = motivo["fundamento"] if motivo else ""
         # **A MATRÍCULA DO TERMO CANCELADO PODE ESTAR EM USO POR OUTRO
         # ASSENTO VIVO** — achado em 02/10/2026 contra a produção: o óbito
         # 8311 (cancelado) e o 8315 (ativo) têm a MESMA matrícula de 32
@@ -2223,13 +2243,13 @@ def pendentes_de_cancelamento(con: sqlite3.Connection,
         # registro que VALE. Fica retido, com o número do assento vivo,
         # para quem decide conferir no SIRC-Web o que de fato foi enviado.
         if _texto(d.get("matricula")):
-            vivo = con.execute(
+            vivo = bd.um(
                 """SELECT id FROM rc_assentos
-                    WHERE matricula = ? AND id <> ?
+                    WHERE matricula = %s AND id <> %s
                       AND COALESCE(situacao,'ATIVO') = 'ATIVO'
                  ORDER BY id LIMIT 1""",
-                (d["matricula"], d["id"])).fetchone()
-            d["matricula_em_uso_por"] = vivo[0] if vivo else None
+                (d["matricula"], d["id"]))
+            d["matricula_em_uso_por"] = vivo["id"] if vivo else None
         else:
             d["matricula_em_uso_por"] = None
         achados.append(d)

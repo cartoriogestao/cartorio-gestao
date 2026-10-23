@@ -25,15 +25,16 @@ O PRAZO NÃO SE CALCULA AQUI
 """
 from __future__ import annotations
 
-import sqlite3
 from datetime import date
 
 from flask import abort, flash, redirect, render_template, request, url_for
 
+from bd_nativo import banco
 import impressao_web as IMPW
 import retificacao as RT
 import rt_tjma as NORMA
 from storage import safe_component, save_upload
+from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
 
 #  O QUE A TELA DIZ AO JUNTAR UMA PEÇA — e por que a frase é uma só.
 #
@@ -66,6 +67,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     usuario_nome = app.extensions["usuario_nome"]
     usuario_id = app.extensions["usuario_id"]
     archive_root = app.extensions["archive_root"]
+
+    # A NOTIFICAÇÃO É EDITÁVEL NA TELA DE MODELOS DESDE O LF06G, e a tela
+    # confere o ajuste com a régua de quem monta (`rt_notificacao.
+    # conferir_modelo`): o claro que o papel não tem é recusado ao gravar, e não
+    # na hora de notificar, com o confrontante esperando.
+    import rt_notificacao as _NOTIF
+    app.extensions.setdefault("conferidores_de_modelo", {})[_NOTIF.PAPEL] = (
+        _NOTIF.conferir_modelo)
 
     def agora() -> str:
         return db.now()
@@ -106,7 +115,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def _campo(nome: str, padrao: str = "") -> str:
         return (request.form.get(nome) or padrao).strip()
 
-    def _pasta_pecas_retificacao(p: sqlite3.Row | dict):
+    def _pasta_pecas_retificacao(p: dict):
         numero = (p["numero"] if p else "") or "sem-numero"
         return (archive_root() / "Registro de Imoveis" / "Retificacoes" /
                 safe_component(str(numero), f"Processo-{p['id']}"))
@@ -143,7 +152,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         prazos têm alguém de fora cobrando; este não tem ninguém.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             processos = RT.abertos(con)
             sigef = RT.sigef_a_vencer(con)
         return render_template("ri_retificacoes.html", processos=processos,
@@ -186,11 +194,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("ri_retificacao", processo_id=novo))
 
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            matriculas = [dict(r) for r in con.execute(
+            matriculas = banco(con).ler(
                 """SELECT id, numero, livro FROM ri_matriculas
                     WHERE COALESCE(situacao,'ATIVA') <> 'ENCERRADA'
-                 ORDER BY CAST(numero AS INTEGER) DESC LIMIT 500""")]
+                 ORDER BY coalesce(substring(numero FROM '^[0-9]+')::bigint, 0) DESC, id
+                 LIMIT 500""")
         return render_template("ri_retificacao_nova.html",
                                matriculas=matriculas,
                                especies=NORMA.NOME_DA_ESPECIE,
@@ -202,7 +210,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @login_required
     def ri_retificacao(processo_id: int):
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             p = RT.processo(con, processo_id)
             if not p:
                 flash("Não achei esse processo de retificação.", "warning")
@@ -266,7 +273,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return _voltar(processo_id)
 
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             p = RT.processo(con, processo_id)
             if not p:
                 flash("Nao achei esse processo de retificacao.", "danger")
@@ -310,6 +316,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/registro-imoveis/retificacoes/<int:processo_id>/item",
                methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def ri_retificacao_item(processo_id: int):
         try:
             with db.transaction() as con:
@@ -326,6 +333,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/registro-imoveis/retificacoes/<int:processo_id>/confrontante",
                methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def ri_retificacao_confrontante(processo_id: int):
         try:
             with db.transaction() as con:
@@ -351,6 +359,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/registro-imoveis/retificacoes/<int:processo_id>/notificar",
                methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def ri_retificacao_notificar(processo_id: int):
         try:
             with db.transaction() as con:
@@ -392,13 +401,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         remontar um texto que ninguém leu.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            linha = con.execute(
+            linha = banco(con).um(
                 """SELECT c.*, p.numero AS processo_numero
                      FROM rt_confrontantes c
                      JOIN rt_processos p ON p.id = c.processo_id
-                    WHERE c.id = ? AND c.processo_id = ?""",
-                (confrontante_id, processo_id)).fetchone()
+                    WHERE c.id = %s AND c.processo_id = %s""",
+                (confrontante_id, processo_id))
         if linha is None:
             abort(404)
         voltar = url_for("ri_retificacao", processo_id=processo_id)
@@ -424,6 +432,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/registro-imoveis/retificacoes/<int:processo_id>/resposta",
                methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def ri_retificacao_resposta(processo_id: int):
         try:
             with db.transaction() as con:

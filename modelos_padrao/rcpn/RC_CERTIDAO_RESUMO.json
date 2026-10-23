@@ -1,0 +1,14 @@
+{
+  "chave": "RC_CERTIDAO_RESUMO",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Certidão em resumo — averbações e fecho",
+  "formato": "CHAVES",
+  "explica": "O fim do teor da certidão em resumo (o quadro do CNJ): o bloco das observações e averbações e o fecho com a serventia, a cidade e a data. Congela em rc_certidoes.teor, com o hash, na emissão. {averbacoes} são as averbações, anotações e retificações do assento, uma por linha — e, quando o assento foi alterado (averbação ou retificação), a peça da inscrição do art. 21, parágrafo único, da Lei 6.015/1973 («a presente certidão envolve elementos de averbação à margem do termo») —, ou a peça «NADA CONSTA.»; {cancelado} é a peça do assento cancelado, só quando ele o está; {casa} é o nome da serventia, {onde} a cidade/UF e {data} a data da emissão por extenso. Os rótulos do quadro (NOME:, CPF, MATRÍCULA Nº…) ficam no sistema: são o leiaute do CNJ medido nas 145 certidões da casa.",
+  "campos": [
+    "averbacoes",
+    "cancelado",
+    "casa",
+    "onde",
+    "data"
+  ]
+}

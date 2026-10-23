@@ -47,9 +47,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 import centrais_cred as CRED
 import onrcpn_certidao_api as API
 import rc_certidao as CERT
@@ -170,28 +170,30 @@ def baixar(db, modulo: Any, *, cns: Any, agora: str, usuario: str | None = None,
     # 2) A GRAVAÇÃO, numa transação curta.
     novos, repetidos = 0, 0
     with db.transaction() as con:
-        con.row_factory = sqlite3.Row
+        bd = banco(con)
         for p in trazidos["pedidos"]:
             numero = _texto(p.get("pedido_certidao_id"))
             if not numero:
                 # Pedido sem número não se guarda: é por ele que se responde,
                 # e sem ele a linha nasceria impossível de cumprir.
                 continue
-            casado = _casar(con, p)
-            cur = con.execute(
-                """INSERT OR IGNORE INTO rc_pedidos(
+            casado = _casar(bd, p)
+            entrou = bd.escrever(
+                """INSERT INTO rc_pedidos(
                        modulo, ambiente, numero_pedido, letra_registro,
                        especie, assento_id, casamento_motivo, teor, resumo,
                        deposito_previo, deposito_previo_valor,
                        baixado_em, baixado_por, situacao)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT DO NOTHING
+                   RETURNING id""",
                 (qual, onde, numero, _texto(p.get("tipo_registro")) or None,
                  p.get("especie"), casado["assento_id"], casado["motivo"],
                  json.dumps(p.get("teor"), ensure_ascii=False), _resumo(p),
                  _texto(p.get("deposito_previo")) or None,
                  p.get("deposito_previo_valor"),
                  agora, usuario, ESQ.PENDENTE))
-            if cur.rowcount:
+            if entrou:
                 novos += 1
             else:
                 repetidos += 1
@@ -216,7 +218,7 @@ def _resumo(p: dict) -> str:
     return " · ".join(partes)[:300]
 
 
-def _casar(con: sqlite3.Connection, p: dict) -> dict:
+def _casar(con, p: dict) -> dict:
     """Acha o assento desta casa. **Pela matrícula, e só por ela.**
 
     Devolve `{assento_id, motivo}`. `motivo` é escrito para o balcão ler: ele
@@ -227,9 +229,10 @@ def _casar(con: sqlite3.Connection, p: dict) -> dict:
         return {"assento_id": None,
                 "motivo": ("O pedido não trouxe matrícula. Procure o assento "
                            "pelo nome e amarre-o à mão.")}
-    linha = con.execute(
-        "SELECT id, nome, especie FROM rc_assentos WHERE matricula=?",
-        (matricula,)).fetchone()
+    linha = banco(con).um(
+        "SELECT id, nome, especie FROM rc_assentos WHERE matricula=%s "
+        "ORDER BY id LIMIT 1",
+        (matricula,))
     if not linha:
         return {"assento_id": None,
                 "motivo": (f"Nenhum assento desta casa tem a matrícula "
@@ -247,23 +250,23 @@ def _casar(con: sqlite3.Connection, p: dict) -> dict:
     return {"assento_id": int(linha["id"]), "motivo": motivo}
 
 
-def pendentes(con: sqlite3.Connection, *, modulo: Any = None,
+def pendentes(con, *, modulo: Any = None,
               situacao: str | None = ESQ.PENDENTE) -> list[dict]:
     """A fila. Só LÊ."""
-    onde = [ "ambiente=?" ]
+    onde = [ "ambiente=%s" ]
     valores: list[Any] = [ambiente()]
     if modulo:
-        onde.append("modulo=?")
+        onde.append("modulo=%s")
         valores.append(API.modulo_da_central(modulo))
     if situacao:
-        onde.append("situacao=?")
+        onde.append("situacao=%s")
         valores.append(situacao)
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         "SELECT * FROM rc_pedidos WHERE " + " AND ".join(onde)
-        + " ORDER BY baixado_em DESC, id DESC", valores)]
+        + " ORDER BY baixado_em DESC, id DESC", valores)
 
 
-def quantos_por_modulo(con: sqlite3.Connection) -> dict[str, int]:
+def quantos_por_modulo(con) -> dict[str, int]:
     """Quantos pendentes há em cada módulo. Só CONTA — não julga atraso.
 
     **A Central não diz quando o pedido venceu**, e o contrato não traz prazo
@@ -271,18 +274,19 @@ def quantos_por_modulo(con: sqlite3.Connection) -> dict[str, int]:
     o alarme que soa sempre.
     """
     contagem = {m: 0 for m in API.MODULOS}
-    for linha in con.execute(
-            "SELECT modulo, COUNT(*) n FROM rc_pedidos "
-            "WHERE ambiente=? AND situacao=? GROUP BY modulo",
+    for linha in banco(con).ler(
+            "SELECT modulo, COUNT(*) AS n FROM rc_pedidos "
+            "WHERE ambiente=%s AND situacao=%s GROUP BY modulo ORDER BY modulo",
             (ambiente(), ESQ.PENDENTE)):
-        contagem[str(linha[0])] = int(linha[1])
+        contagem[str(linha["modulo"])] = int(linha["n"])
     return contagem
 
 
-def pedido(con: sqlite3.Connection, pedido_id: int) -> dict | None:
+def pedido(con, pedido_id: int) -> dict | None:
     """Um pedido, com o assento que casou e o teor aberto. Só LÊ."""
-    linha = con.execute("SELECT * FROM rc_pedidos WHERE id=?",
-                        (int(pedido_id),)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT * FROM rc_pedidos WHERE id=%s",
+                  (int(pedido_id),))
     if not linha:
         return None
     p = dict(linha)
@@ -295,12 +299,12 @@ def pedido(con: sqlite3.Connection, pedido_id: int) -> dict | None:
     p["especie_a_lavrar"] = API.ESPECIE_DO_MODULO_DE_REGISTRO.get(p["modulo"])
     p["assento"] = None
     if p.get("assento_id"):
-        a = con.execute("SELECT * FROM rc_assentos WHERE id=?",
-                        (int(p["assento_id"]),)).fetchone()
+        a = bd.um("SELECT * FROM rc_assentos WHERE id=%s",
+                  (int(p["assento_id"]),))
         p["assento"] = dict(a) if a else None
-    p["eletronicas"] = [dict(r) for r in con.execute(
-        "SELECT * FROM rc_certidoes_eletronicas WHERE pedido_id=? "
-        "ORDER BY id DESC", (int(pedido_id),))]
+    p["eletronicas"] = bd.ler(
+        "SELECT * FROM rc_certidoes_eletronicas WHERE pedido_id=%s "
+        "ORDER BY id DESC", (int(pedido_id),))
     # **AS OUTRAS CERTIDOES DO MESMO REGISTRO.** Nao e enfeite: um segundo
     # pedido do mesmo assento chega com frequencia, e quem nao ve que ja saiu
     # certidao eletronica dali **cria outra** — que custa, e que deixa dois
@@ -309,31 +313,32 @@ def pedido(con: sqlite3.Connection, pedido_id: int) -> dict | None:
     if p.get("assento_id"):
         deste = {e["id"] for e in p["eletronicas"]}
         p["outras_do_registro"] = [
-            e for e in eletronicas_do_assento(con, int(p["assento_id"]))
+            e for e in eletronicas_do_assento(bd, int(p["assento_id"]))
             if e["id"] not in deste]
     return p
 
 
-def amarrar_assento(con: sqlite3.Connection, pedido_id: int, assento_id: int,
+def amarrar_assento(con, pedido_id: int, assento_id: int,
                     *, motivo: str = "") -> dict:
     """Amarra à mão o assento que a matrícula não achou. ESCREVE.
 
     Existe porque a matrícula falta em pedido antigo e o balcão sabe qual é o
     assento — e sem esta porta o pedido ficaria para sempre sem como cumprir.
     """
-    a = con.execute("SELECT id, nome FROM rc_assentos WHERE id=?",
-                    (int(assento_id),)).fetchone()
+    bd = banco(con)
+    a = bd.um("SELECT id, nome FROM rc_assentos WHERE id=%s",
+              (int(assento_id),))
     if not a:
         raise PedidoError(f"O assento {assento_id} não existe.")
-    con.execute(
-        "UPDATE rc_pedidos SET assento_id=?, casamento_motivo=? WHERE id=?",
+    bd.escrever(
+        "UPDATE rc_pedidos SET assento_id=%s, casamento_motivo=%s WHERE id=%s",
         (int(assento_id),
          (_texto(motivo) or "Amarrado à mão no balcão.")
          + f" Assento: {a['nome']}.", int(pedido_id)))
     return {"pedido_id": int(pedido_id), "assento_id": int(assento_id)}
 
 
-def dispensar(con: sqlite3.Connection, pedido_id: int, *, motivo: str,
+def dispensar(con, pedido_id: int, *, motivo: str,
               agora: str, usuario: str | None = None) -> dict:
     """Tira o pedido da fila **sem responder à Central**. ESCREVE.
 
@@ -346,14 +351,14 @@ def dispensar(con: sqlite3.Connection, pedido_id: int, *, motivo: str,
         raise PedidoError(
             "Escreva por que este pedido sai da fila sem resposta. A Central "
             "continua com ele em aberto, e daqui a seis meses ninguém lembra.")
-    con.execute(
-        "UPDATE rc_pedidos SET situacao=?, dispensa_motivo=?, "
-        "respondido_em=?, respondido_por=? WHERE id=?",
+    banco(con).escrever(
+        "UPDATE rc_pedidos SET situacao=%s, dispensa_motivo=%s, "
+        "respondido_em=%s, respondido_por=%s WHERE id=%s",
         (ESQ.DISPENSADO, texto, agora, usuario, int(pedido_id)))
     return {"pedido_id": int(pedido_id), "motivo": texto}
 
 
-def marcar_registrado(con: sqlite3.Connection, pedido_id: int, *,
+def marcar_registrado(con, pedido_id: int, *,
                       assento_id: int, agora: str,
                       usuario: str | None = None) -> dict:
     """Marca que o registro pedido por `P13`/`EOB` **foi lavrado**. ESCREVE.
@@ -361,8 +366,9 @@ def marcar_registrado(con: sqlite3.Connection, pedido_id: int, *,
     **Não lavra nada** — quem lavrou foi a tela do assento. O que esta função
     faz é tirar da fila o que já virou livro, amarrando ao assento que saiu.
     """
-    p = con.execute("SELECT modulo FROM rc_pedidos WHERE id=?",
-                    (int(pedido_id),)).fetchone()
+    bd = banco(con)
+    p = bd.um("SELECT modulo FROM rc_pedidos WHERE id=%s",
+              (int(pedido_id),))
     if not p:
         raise PedidoError(f"O pedido {pedido_id} não existe.")
     if str(p["modulo"]) not in API.MODULOS_DE_REGISTRO:
@@ -370,9 +376,9 @@ def marcar_registrado(con: sqlite3.Connection, pedido_id: int, *,
             f"O módulo {p['modulo']} pede certidão, e não registro. "
             f"Só os módulos "
             f"{', '.join(API.MODULOS_DE_REGISTRO)} pedem que se lavre.")
-    con.execute(
-        "UPDATE rc_pedidos SET situacao=?, assento_id=?, respondido_em=?, "
-        "respondido_por=? WHERE id=?",
+    bd.escrever(
+        "UPDATE rc_pedidos SET situacao=%s, assento_id=%s, respondido_em=%s, "
+        "respondido_por=%s WHERE id=%s",
         (ESQ.REGISTRADO, int(assento_id), agora, usuario, int(pedido_id)))
     return {"pedido_id": int(pedido_id), "assento_id": int(assento_id)}
 
@@ -387,7 +393,6 @@ def rejeitar(db, pedido_id: int, *, motivo: str, agora: str,
     dizem.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         p = pedido(con, pedido_id)
     if not p:
         raise PedidoError(f"O pedido {pedido_id} não existe.")
@@ -399,10 +404,10 @@ def rejeitar(db, pedido_id: int, *, motivo: str, agora: str,
     feito = API.rejeitar_pedido(numero_pedido=p["numero_pedido"],
                                 modulo=p["modulo"], motivo=motivo, pasta=pasta)
     with db.transaction() as con:
-        con.execute(
-            "UPDATE rc_pedidos SET situacao=?, rejeicao_motivo=?, "
-            "respondido_em=?, respondido_por=?, resposta=?, corpo_enviado=?, "
-            "corpo_hash=? WHERE id=?",
+        banco(con).escrever(
+            "UPDATE rc_pedidos SET situacao=%s, rejeicao_motivo=%s, "
+            "respondido_em=%s, respondido_por=%s, resposta=%s, corpo_enviado=%s, "
+            "corpo_hash=%s WHERE id=%s",
             (ESQ.REJEITADO, feito["corpo"]["descricao_motivo"], agora, usuario,
              json.dumps(feito.get("resposta"), ensure_ascii=False),
              json.dumps(feito["corpo"], ensure_ascii=False),
@@ -455,7 +460,7 @@ def _sem_vazios(d: dict) -> dict:
     return saida
 
 
-def montar(con: sqlite3.Connection, assento_id: int, *, cns: Any,
+def montar(con, assento_id: int, *, cns: Any,
            tipo_registro: str | None = None, tipo_certidao: str | None = None,
            modalidade: str = "eletronica", selo: Any = None,
            cod_selo: Any = None, cota_emolumentos: Any = None,
@@ -468,8 +473,9 @@ def montar(con: sqlite3.Connection, assento_id: int, *, cns: Any,
     e-Proclamas, e ela existe porque campo que some calado é campo que ninguém
     conserta.
     """
-    a = con.execute("SELECT * FROM rc_assentos WHERE id=?",
-                    (int(assento_id),)).fetchone()
+    bd = banco(con)
+    a = bd.um("SELECT * FROM rc_assentos WHERE id=%s",
+              (int(assento_id),))
     if not a:
         raise PedidoError(f"O assento {assento_id} não existe.")
     assento = dict(a)
@@ -491,11 +497,11 @@ def montar(con: sqlite3.Connection, assento_id: int, *, cns: Any,
         registro = _inteiro_teor(assento, grupos, texto_do_inteiro_teor,
                                  avisos)
     elif tipo == "nascimento":
-        registro = _nascimento(con, assento, grupos, avisos)
+        registro = _nascimento(bd, assento, grupos, avisos)
     elif tipo == "casamento":
-        registro = _casamento(con, assento, grupos, avisos)
+        registro = _casamento(bd, assento, grupos, avisos)
     else:
-        registro = _obito(con, assento, grupos, avisos)
+        registro = _obito(bd, assento, grupos, avisos)
 
     certidao = _sem_vazios({
         "plataformaId": PLATAFORMA,
@@ -550,7 +556,7 @@ def _anotacoes_de_cadastro(assento: dict) -> list[dict]:
 ATOS_DA_MARGEM: tuple[str, ...] = ("AVERBACAO", "ANOTACAO", "RETIFICACAO")
 
 
-def _averbacoes(con: sqlite3.Connection, assento_id: int) -> str:
+def _averbacoes(con, assento_id: int) -> str:
     """O que está lançado à margem, num campo só, como a Central o quer.
 
     > **CORREÇÃO, e ela fica à vista.** A primeira versão desta função lia
@@ -568,19 +574,19 @@ def _averbacoes(con: sqlite3.Connection, assento_id: int) -> str:
     Em produção há **244 atos, todos `REGISTRO`** — de modo que hoje isto
     devolve vazio para todos, e é a resposta certa: não há margem escrita.
     """
-    linhas = con.execute(
-        "SELECT rotulo, teor FROM rc_atos WHERE assento_id=? AND tipo IN "
-        "(" + ",".join("?" * len(ATOS_DA_MARGEM)) + ") ORDER BY id",
-        (int(assento_id), *ATOS_DA_MARGEM)).fetchall()
+    linhas = banco(con).ler(
+        "SELECT rotulo, teor FROM rc_atos WHERE assento_id=%s AND tipo IN "
+        "(" + ",".join(["%s"] * len(ATOS_DA_MARGEM)) + ") ORDER BY id",
+        (int(assento_id), *ATOS_DA_MARGEM))
     partes = []
     for linha in linhas:
-        rotulo, teor = _texto(linha[0]), _texto(linha[1])
+        rotulo, teor = _texto(linha["rotulo"]), _texto(linha["teor"])
         if teor:
             partes.append(f"{rotulo}: {teor}" if rotulo else teor)
     return " | ".join(partes)
 
 
-def _nascimento(con: sqlite3.Connection, assento: dict,
+def _nascimento(con, assento: dict,
                 grupos: dict[str, list[dict]], avisos: list[str]) -> dict:
     quem = _um(grupos, "REGISTRADO")
     pai, mae = _um(grupos, "PAI"), _um(grupos, "MAE")
@@ -618,9 +624,9 @@ def _nascimento(con: sqlite3.Connection, assento: dict,
     if assento.get("gemeo_ordem"):
         irmaos = []
         if assento.get("gemeo_irmao_id"):
-            irmao = con.execute(
-                "SELECT nome, matricula FROM rc_assentos WHERE id=?",
-                (int(assento["gemeo_irmao_id"]),)).fetchone()
+            irmao = banco(con).um(
+                "SELECT nome, matricula FROM rc_assentos WHERE id=%s",
+                (int(assento["gemeo_irmao_id"]),))
             if irmao:
                 irmaos.append(_sem_vazios({
                     "nome": _texto(irmao["nome"]),
@@ -659,7 +665,7 @@ def _nascimento(con: sqlite3.Connection, assento: dict,
     }
 
 
-def _casamento(con: sqlite3.Connection, assento: dict,
+def _casamento(con, assento: dict,
                grupos: dict[str, list[dict]], avisos: list[str]) -> dict:
     conjuges = []
     for papel in ("NUBENTE1", "NUBENTE2"):
@@ -700,7 +706,7 @@ def _casamento(con: sqlite3.Connection, assento: dict,
     }
 
 
-def _obito(con: sqlite3.Connection, assento: dict,
+def _obito(con, assento: dict,
            grupos: dict[str, list[dict]], avisos: list[str]) -> dict:
     quem = _um(grupos, "FALECIDO")
     pai, mae = _um(grupos, "PAI"), _um(grupos, "MAE")
@@ -761,7 +767,7 @@ def _inteiro_teor(assento: dict, grupos: dict[str, list[dict]],
         avisos.append(
             "Este assento não tem teor gravado, e o inteiro teor é a "
             "reprodução do que está escrito no livro. Os assentos vindos do "
-            "acervo do E-Ofício estão todos assim — para eles, a cópia se tira "
+            "acervo do sistema antigo estão todos assim — para eles, a cópia se tira "
             "do livro de papel.")
     principal = (_um(grupos, "REGISTRADO") or _um(grupos, "FALECIDO")
                  or _um(grupos, "NUBENTE1"))
@@ -776,7 +782,7 @@ def _inteiro_teor(assento: dict, grupos: dict[str, list[dict]],
     }
 
 
-def corpo_crc(con: sqlite3.Connection, assento_id: int, *, cns: Any,
+def corpo_crc(con, assento_id: int, *, cns: Any,
              **campos) -> dict:
     """O JSON {certidao, registro} no formato certificate-json da CRC/ON-RCPN.
 
@@ -790,7 +796,7 @@ def corpo_crc(con: sqlite3.Connection, assento_id: int, *, cns: Any,
     return {"certidao": montado["certidao"], "registro": montado["registro"]}
 
 
-def conferir(con: sqlite3.Connection, assento_id: int, *, cns: Any,
+def conferir(con, assento_id: int, *, cns: Any,
              **campos) -> dict:
     """O que iria para a Central, com o que impede e o que vai em branco.
 
@@ -834,7 +840,6 @@ def emitir(db, assento_id: int, *, cns: Any, agora: str,
     tela.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         conferido = conferir(con, assento_id, cns=cns, **campos)
     if conferido["impedem"]:
         raise PedidoError(" ".join(conferido["impedem"]))
@@ -843,12 +848,13 @@ def emitir(db, assento_id: int, *, cns: Any, agora: str,
     feito = API.criar(conferido["certidao"], conferido["registro"], pasta=pasta)
 
     with db.transaction() as con:
-        cur = con.execute(
+        nova = banco(con).escrever(
             """INSERT INTO rc_certidoes_eletronicas(
                    assento_id, pedido_id, ambiente, tipo_registro,
                    tipo_certidao, modalidade, certidao_id, corpo_enviado,
                    corpo_hash, resposta, situacao, criada_em, criada_por)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id""",
             (int(assento_id), int(pedido_id) if pedido_id else None,
              ambiente(), conferido["tipo_registro"],
              conferido["certidao"].get("tipo_certidao"),
@@ -857,27 +863,27 @@ def emitir(db, assento_id: int, *, cns: Any, agora: str,
              json.dumps(corpo, ensure_ascii=False), _hash(corpo),
              json.dumps(feito.get("bruto"), ensure_ascii=False),
              ESQ.CRIADA, agora, usuario))
-    return {"eletronica_id": int(cur.lastrowid), "certidao_id": feito["id"],
+    return {"eletronica_id": int(nova[0]["id"]), "certidao_id": feito["id"],
             "mensagem": feito.get("mensagem"), "hash": _hash(corpo)}
 
 
-def eletronica(con: sqlite3.Connection, eletronica_id: int) -> dict | None:
+def eletronica(con, eletronica_id: int) -> dict | None:
     """Uma certidão eletrônica desta casa. Só LÊ."""
-    linha = con.execute(
-        "SELECT * FROM rc_certidoes_eletronicas WHERE id=?",
-        (int(eletronica_id),)).fetchone()
+    linha = banco(con).um(
+        "SELECT * FROM rc_certidoes_eletronicas WHERE id=%s",
+        (int(eletronica_id),))
     return dict(linha) if linha else None
 
 
-def eletronicas_do_assento(con: sqlite3.Connection,
+def eletronicas_do_assento(con,
                            assento_id: int) -> list[dict]:
     """As certidões eletrônicas daquele assento, da mais nova. Só LÊ."""
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM rc_certidoes_eletronicas WHERE assento_id=? "
-        "ORDER BY id DESC", (int(assento_id),))]
+    return banco(con).ler(
+        "SELECT * FROM rc_certidoes_eletronicas WHERE assento_id=%s "
+        "ORDER BY id DESC", (int(assento_id),))
 
 
-def corpo_crc_da_eletronica(con: sqlite3.Connection, eletronica_id: int, *,
+def corpo_crc_da_eletronica(con, eletronica_id: int, *,
                             cns: Any) -> dict:
     """O corpo já gravado (corpo_enviado) ou, se ainda não houve, o de agora.
 
@@ -916,7 +922,6 @@ def assinar(db, eletronica_id: int, *, agora: str, usuario: str | None = None,
     A3 dentro do Flask sem derrubar o balcão.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         linha = eletronica(con, eletronica_id)
     if not linha:
         raise PedidoError(f"A certidão eletrônica {eletronica_id} não existe.")
@@ -929,9 +934,9 @@ def assinar(db, eletronica_id: int, *, agora: str, usuario: str | None = None,
 
     feito = API.assinar(linha["certidao_id"], pasta=pasta)
     with db.transaction() as con:
-        con.execute(
-            "UPDATE rc_certidoes_eletronicas SET situacao=?, "
-            "assinatura_link=?, assinatura_id=?, assinada_em=? WHERE id=?",
+        banco(con).escrever(
+            "UPDATE rc_certidoes_eletronicas SET situacao=%s, "
+            "assinatura_link=%s, assinatura_id=%s, assinada_em=%s WHERE id=%s",
             (ESQ.ASSINADA, feito["link"] or None,
              feito["id_assinatura"] or None, agora, int(eletronica_id)))
     return {"eletronica_id": int(eletronica_id), "link": feito["link"],
@@ -952,7 +957,6 @@ def atualizar_eletronica(db, eletronica_id: int, *, cns: Any, agora: str,
     quem esta do outro lado ficaria com um numero que nao aponta para nada.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         linha = eletronica(con, eletronica_id)
         if not linha:
             raise PedidoError(
@@ -974,9 +978,9 @@ def atualizar_eletronica(db, eletronica_id: int, *, cns: Any, agora: str,
     feito = API.atualizar(linha["certidao_id"], conferido["certidao"],
                           conferido["registro"], pasta=pasta)
     with db.transaction() as con:
-        con.execute(
-            "UPDATE rc_certidoes_eletronicas SET corpo_enviado=?, "
-            "corpo_hash=?, resposta=? WHERE id=?",
+        banco(con).escrever(
+            "UPDATE rc_certidoes_eletronicas SET corpo_enviado=%s, "
+            "corpo_hash=%s, resposta=%s WHERE id=%s",
             (json.dumps(corpo, ensure_ascii=False), _hash(corpo),
              json.dumps(feito.get("bruto"), ensure_ascii=False),
              int(eletronica_id)))
@@ -994,7 +998,6 @@ def cancelar_eletronica(db, eletronica_id: int, *, agora: str,
     caminho dele.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         linha = eletronica(con, eletronica_id)
     if not linha:
         raise PedidoError(f"A certidão eletrônica {eletronica_id} não existe.")
@@ -1004,9 +1007,9 @@ def cancelar_eletronica(db, eletronica_id: int, *, agora: str,
             "se cancela.")
     API.cancelar(linha["certidao_id"], pasta=pasta)
     with db.transaction() as con:
-        con.execute(
-            "UPDATE rc_certidoes_eletronicas SET situacao=?, cancelada_em=?, "
-            "cancelada_por=? WHERE id=?",
+        banco(con).escrever(
+            "UPDATE rc_certidoes_eletronicas SET situacao=%s, cancelada_em=%s, "
+            "cancelada_por=%s WHERE id=%s",
             (ESQ.CANCELADA, agora, usuario, int(eletronica_id)))
     return {"eletronica_id": int(eletronica_id)}
 
@@ -1040,7 +1043,6 @@ def atender(db, pedido_id: int, *, eletronica_id: int,
     a descrição do próprio caminho. O Maranhão é outro estado.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         p = pedido(con, pedido_id)
         e = eletronica(con, eletronica_id)
     if not p:
@@ -1072,16 +1074,17 @@ def atender(db, pedido_id: int, *, eletronica_id: int,
         uf_da_serventia=uf_da_serventia, pasta=pasta)
 
     with db.transaction() as con:
-        con.execute(
-            "UPDATE rc_pedidos SET situacao=?, respondido_em=?, "
-            "respondido_por=?, resposta=?, corpo_enviado=?, corpo_hash=? "
-            "WHERE id=?",
+        bd = banco(con)
+        bd.escrever(
+            "UPDATE rc_pedidos SET situacao=%s, respondido_em=%s, "
+            "respondido_por=%s, resposta=%s, corpo_enviado=%s, corpo_hash=%s "
+            "WHERE id=%s",
             (ESQ.ATENDIDO, agora, usuario,
              json.dumps(feito.get("resposta"), ensure_ascii=False),
              json.dumps(feito["corpo"], ensure_ascii=False),
              _hash(feito["corpo"]), int(pedido_id)))
-        con.execute(
-            "UPDATE rc_certidoes_eletronicas SET pedido_id=? WHERE id=?",
+        bd.escrever(
+            "UPDATE rc_certidoes_eletronicas SET pedido_id=%s WHERE id=%s",
             (int(pedido_id), int(eletronica_id)))
     return {"pedido_id": int(pedido_id), "eletronica_id": int(eletronica_id),
             "resposta": feito.get("resposta"), "corpo": feito["corpo"]}

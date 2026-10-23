@@ -1,0 +1,10 @@
+{
+  "chave": "PT_TERMO_INTIMACAO_PESSOAL",
+  "atribuicao": "Protesto",
+  "nome": "Termo do protesto — intimação pessoal",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {edital} do termo quando a última intimação foi em mãos (Lei 9.492/1997, art. 22, IV; CN-MA art. 914). O LIVRO LAVRA O PADRÃO DESTA FRASE: o protesto lançado não segue o ajuste gravado aqui enquanto o oficial não decidir que siga, porque mudar o que se escreve no livro é regra de negócio (LF06E).",
+  "campos": [
+    "data"
+  ]
+}

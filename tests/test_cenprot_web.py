@@ -413,20 +413,21 @@ def test_a_baixa_do_cancelamento_exige_o_periodo(s):
 # ------------------------------------------- quem pode o quê
 
 
-def test_enviar_NAO_e_do_balcao(cg_casa):
-    """**Enviar muda coisa na Central** — aprova anuência, orça certidão,
-    cancela protesto. É a mesma separação da ajuda do Claude: consultar abre,
-    configurar não."""
+def test_enviar_tambem_e_do_balcao(cg_casa):
+    """21/10/2026 — CONTRATO MUDADO POR ORDEM DO OFICIAL: «dar acesso às
+    escreventes operarem todo o protesto, em especial operar as API, CRA etc.».
+    Até aqui este teste se chamava `test_enviar_NAO_e_do_balcao` e cobrava
+    que o escrevente NÃO enviasse à CENPROT; agora cobra que envia — a rota
+    chega ao domínio (que recusa o lote vazio com a frase dele) em vez de 403.
+    A auxiliar, que tem o mesmo papel, fica de fora pela FUNÇÃO
+    (`test_modulo_alcance`)."""
     s = _sessao(cg_casa, papel="USER")
     html = s["c"].get("/protesto/cenprot/pendencias").get_data(as_text=True)
     assert "Baixar da CENPROT" in html, "o balcão pode BAIXAR"
     for endereco in ("/protesto/cenprot/pendencias/enviar",
                      "/protesto/cenprot/emolumentos/enviar"):
-        r = s["c"].post(endereco,
-                        data={"csrf_token": _token(html)},
-                        follow_redirects=True)
-        assert "Decida na lista" not in r.get_data(as_text=True), (
-            f"{endereco} deixou o balcão enviar")
+        r = s["c"].post(endereco, data={"csrf_token": _token(html)})
+        assert r.status_code != 403, f"{endereco}: o balcão continua barrado"
 
 
 def test_a_guarda_do_alcance_alcanca_as_telas_novas(cg_casa):
@@ -514,8 +515,10 @@ def test_os_papeis_estao_declarados_e_nao_espalhados():
     """Duas listas de papéis divergem no primeiro conserto."""
     import cenprot_web as W
     assert W.QUEM_OPERA == ("ADMIN", "MANAGER", "USER")
-    assert W.QUEM_ENVIA == ("ADMIN", "MANAGER")
-    assert set(W.QUEM_ENVIA) < set(W.QUEM_OPERA)
+    # 21/10/2026: era ("ADMIN", "MANAGER") e `<` (envio mais fechado que a
+    # consulta); por ordem do oficial o balcão também envia.
+    assert W.QUEM_ENVIA == ("ADMIN", "MANAGER", "USER")
+    assert set(W.QUEM_ENVIA) <= set(W.QUEM_OPERA)
 
 
 # ------------------------------------------- a anuência na forma da produção
@@ -528,7 +531,7 @@ ANUENCIA_COMO_A_PRODUCAO_MANDA = {"dados_anuencia": {
     "dt_protocolo": "2025-01-07", "nm_nr_documento_devedor": "00000000000",
     "nm_devedor": "DEVEDOR FICTICIO", "vl_protesto": "100.00",
     "dt_solicitacao_anuencia": "2026-10-08 21:02:17.000",
-    "nm_nr_titulo": "123/1", "nm_nr_documento_credor": "00000000000191",
+    "nm_nr_titulo": "123/1", "nm_nr_documento_credor": "00000042000122",
     "dt_emissao": "2024-12-01", "nm_assinatura": "x",
     "nm_assinatura_validade": "x",
     "dados_cartorio": {"cd_cartorio": "1", "nm_nome": "CARTORIO"},

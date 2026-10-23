@@ -1,0 +1,11 @@
+{
+  "chave": "RI_MINUTA_PROTOCOLO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Minutas de ato — protocolo",
+  "formato": "JINJA",
+  "explica": "A frase do protocolo da prenotação aberta na parte fixa das minutas de ato: o preenchimento do modelo na ficha, o teor sugerido na lavratura e a averbação de indisponibilidade da CNIB. Sem prenotação aberta, o código põe o marcador [INFORMAR O PROTOCOLO]. Lavrado o ato, não muda mais.",
+  "campos": [
+    "data",
+    "numero"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "chave": "PT_EDITAL_INTIMACAO",
+  "atribuicao": "Protesto",
+  "nome": "Edital de intimação",
+  "formato": "CHAVES",
+  "explica": "O edital que substitui a intimação pessoal que não deu certo (Lei 9.492/1997, art. 15; CN-MA art. 922, § 3º). CONGELA na publicação, com o hash. A linha que tem {prazo_limite} sai em branco quando o protocolo não diz a data; {ate_quando} é então «o prazo legal». {documento_do_devedor} e {especie} o sistema monta quando há o dado.",
+  "campos": [
+    "serventia",
+    "devedor",
+    "documento_do_devedor",
+    "ate_quando",
+    "protocolo",
+    "numero_titulo",
+    "especie",
+    "valor",
+    "prazo_limite",
+    "endereco_da_serventia",
+    "telefone",
+    "local_e_data"
+  ]
+}

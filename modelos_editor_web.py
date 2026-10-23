@@ -13,8 +13,11 @@ from flask import (
     request, session, url_for,
 )
 
+from bd_nativo import banco
 import modelos_editor as ED
 import modelos_editor_motor as MOTOR
+import seguranca_web as SEGWEB  # B2 (LX11): exceção inesperada não vai para a tela
+from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 from modelos_editor_schema import (
     AREA_RCPN,
     PARTE_CORPO,
@@ -38,11 +41,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             uid = session.get("user_id")
             if uid:
                 with db.connect() as con:
-                    row = con.execute(
-                        "SELECT role FROM users WHERE id=?", (uid,)).fetchone()
+                    row = banco(con).um(
+                        "SELECT role FROM users WHERE id=%s", (uid,))
                     if row:
-                        return (row["role"] if hasattr(row, "keys")
-                                else row[0]) or ""
+                        return row["role"] or ""
         except Exception:
             pass
         return (session.get("role") or "").upper()
@@ -162,7 +164,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         except ED.EditorError as err:
             return jsonify(ok=False, erro=str(err)), 400
         except Exception as err:  # noqa: BLE001
-            return jsonify(ok=False, erro=str(err)), 500
+            return jsonify(ok=False, erro=SEGWEB.recado_de_erro(err, "modelos_editor_api")), 500
 
     @app.route("/modelos/editor/api/publicar", methods=["POST"])
     @login_required
@@ -190,7 +192,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         except ED.EditorError as err:
             return jsonify(ok=False, erro=str(err)), 403
         except Exception as err:  # noqa: BLE001
-            return jsonify(ok=False, erro=str(err)), 500
+            return jsonify(ok=False, erro=SEGWEB.recado_de_erro(err, "modelos_editor_api")), 500
 
     @app.route("/modelos/editor/api/historico")
     @login_required
@@ -245,7 +247,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def modelos_editor_api_restaurar():
         dados = request.get_json(silent=True) or {}
         try:
-            vid = int(dados.get("versao_id") or 0)
+            # O id que não é número é a mesma «Versão não encontrada.» (400):
+            # o `int()` daqui, fora do que o `except` apanha, era 500 (LD13).
+            vid = numero_digitado(dados.get("versao_id") or 0)
+            if vid is None:
+                raise ED.EditorError("Versão não encontrada.")
             with db.transaction() as con:
                 row = ED.restaurar_como_rascunho(
                     con, vid, autor=usuario_nome(), agora=_agora())
@@ -285,7 +291,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             codigo = resp.pop("_http", 200)
             return jsonify(resp), codigo
         except Exception as err:  # noqa: BLE001
-            return jsonify(ok=False, erro=str(err), avisos=[], erros=[]), 200
+            return jsonify(ok=False, erro=SEGWEB.erro_do_modelo(err, "modelos_editor_previa"),
+                           avisos=[], erros=[]), 200
 
     @app.route("/modelos/editor/api/campos")
     @login_required

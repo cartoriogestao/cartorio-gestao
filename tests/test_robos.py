@@ -102,8 +102,11 @@ def test_config_nao_vaza_chave_no_html(s):
     html = r.get_data(as_text=True)
     assert chave_secreta not in html
     assert "sk-test-CHAVE-COMPLETA" not in html
-    assert "z987" in html  # ultimos 4 (mascarado)
-    assert "••••" in html or "****" in html or "gravado" in html.lower()
+    # NEM OS ULTIMOS 4 (LX14, 19/10/2026): a tela diz so que a chave esta
+    # configurada. Antes ela mostrava «••••z987», pedaco de chave no HTML de
+    # quem abriu a pagina.
+    assert "z987" not in html
+    assert "Configurada: sim" in html
 
 
 def test_testar_rota_exige_login(tmp_path):

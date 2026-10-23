@@ -1,0 +1,10 @@
+{
+  "chave": "PT_INSTRUMENTO_INTIMACAO_DIGITAL",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto — certidão da intimação por meio eletrônico",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {intimacao} do instrumento quando a última intimação foi por meio eletrônico, confirmada pela plataforma (CN-MA art. 919, § 1º; art. 921, § 6º, II). É a mesma intimação que o termo certifica com PT_TERMO_INTIMACAO_DIGITAL — o termo e o instrumento têm de bater (Lei 9.492/1997, art. 22, IV).",
+  "campos": [
+    "data"
+  ]
+}

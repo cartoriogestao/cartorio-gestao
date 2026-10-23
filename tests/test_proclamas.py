@@ -29,6 +29,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import habilitacao as HAB
 import onrcpn_api as API
@@ -51,7 +53,7 @@ SV = {"ri_cns": CNS, "ri_cidade": "Cidade Exemplo", "ri_uf": "MA",
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys = ON")
     init_nucleo_schema(c)

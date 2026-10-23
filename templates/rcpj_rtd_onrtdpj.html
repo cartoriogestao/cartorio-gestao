@@ -106,7 +106,12 @@
            `PedidoModel`, e é onde está o título que o cliente mandou. Baixá-lo
            por dentro exigiria decidir o que fazer com um endereço que veio de
            fora — e isso não foi medido. #}
-        <br><a href="{{ p.get('LinkArquivoEnviado') }}" target="_blank" rel="noopener noreferrer"><small>o arquivo, na Central</small></a>
+        {# Só http(s) vira link (LX12, M9 do LS02). #}
+        {% if p.get('LinkArquivoEnviado')|so_http %}
+        <br><a href="{{ p.get('LinkArquivoEnviado')|so_http }}" target="_blank" rel="noopener noreferrer"><small>o arquivo, na Central</small></a>
+        {% else %}
+        <br><small class="muted">o arquivo, na Central (link recusado: não é http)</small>
+        {% endif %}
         {% endif %}
       </td>
     </tr>

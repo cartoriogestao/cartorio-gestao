@@ -1,0 +1,10 @@
+{
+  "chave": "RI_ENCERRAMENTO_DIRETO_DESTINO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Encerramento direto — matrícula de destino",
+  "formato": "JINJA",
+  "explica": "A frase que o código acrescenta ao encerramento direto quando se informa para qual matrícula o imóvel passa. Vai ao livro e congela.",
+  "campos": [
+    "destino"
+  ]
+}

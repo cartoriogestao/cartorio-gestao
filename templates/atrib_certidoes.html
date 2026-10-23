@@ -4,6 +4,9 @@
   Emitir é na FICHA do registro, e não aqui: é ali que o escrevente está
   quando o cliente pede, e é ali que ele acabou de ver o que o livro diz.
   Esta tela consulta e reimprime.
+
+  A NEGATIVA É A EXCEÇÃO, e sai daqui (LD05, 21/10/2026): ela não tem registro
+  — é a pesquisa pelo nome nos livros (CN-MA art. 963, § 3º).
 #}
 {% extends 'base.html' %}
 {% block title %}Certidões{% if atribuicao and atribuicao in paineis %} — {{ paineis[atribuicao].nome }}{% endif %}{% endblock %}
@@ -21,6 +24,41 @@
   registros de RCPJ/RTD e 2 dos 14 do Livro 3 vieram do acervo sem o texto: eles
   constam do livro, e a cópia se tira do livro físico.
 </div>
+
+{% if user and user.role in ['ADMIN','MANAGER','USER'] %}
+<section class="panel">
+  <details>
+    <summary class="panel-head"><span>Certidão negativa — RTD e RCPJ</span></summary>
+    <p style="padding:0 14px"><small>A pesquisa é pelo nome (e pelo CPF/CNPJ, se
+      informado) nos registros e averbações da atribuição. Se a pessoa consta, a
+      certidão NÃO sai: a dela é a do registro, pela ficha. O selo sai pelo item
+      de certidão do protocolo escolhido; sem ele, nada é emitido.</small></p>
+    <form method="post" class="grid2" style="padding:14px"
+          action="{{ url_for('atribuicoes_certidao_negativa') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Atribuição
+        <select name="atribuicao_da_busca">
+          <option value="">a do protocolo</option>
+          <option value="RTD">RTD — Registro de Títulos e Documentos</option>
+          <option value="RCPJ">RCPJ — Registro Civil das Pessoas Jurídicas</option>
+        </select></label>
+      <label>Nome pesquisado <input name="nome_pesquisado" required></label>
+      <label>CPF ou CNPJ pesquisado <input name="documento_pesquisado"></label>
+      <label>Requerente <input name="requerente"></label>
+      <label>CPF ou CNPJ do requerente <input name="requerente_documento"></label>
+      <label>Finalidade <input name="finalidade"></label>
+      <label>Protocolo (pago no caixa)
+        <select name="protocolo_id" required>
+          <option value="">—</option>
+          {% for pr in protocolos or [] %}
+          <option value="{{ pr.id }}">{{ pr.numero }} — {{ pr.interessado or '—' }}</option>
+          {% endfor %}
+        </select></label>
+      <div class="actions"><button class="button primary">Pesquisar e emitir</button></div>
+    </form>
+  </details>
+</section>
+{% endif %}
 
 <section class="panel">
   <div class="panel-head"><span>Procurar</span></div>

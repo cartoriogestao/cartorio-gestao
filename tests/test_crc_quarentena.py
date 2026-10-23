@@ -80,6 +80,18 @@ def test_assento_sem_o_registrado_fica_em_quarentena(con):
     assert retidos[0]["o_que_falta"]
 
 
+def test_o_assento_sem_data_do_ato_vem_primeiro_como_no_sqlite(con):
+    """No SQLite o NULL vinha primeiro no `ORDER BY data_ato`; no PostgreSQL vai
+    por ultimo, e com o `LIMIT` o assento sem data sairia da lista (revisao do
+    L004)."""
+    com_data = _assento(con)
+    sem_data = _assento(con, numero=11310, data_ato=None,
+                        matricula="00000001551998100012158001131081")
+    con.commit()
+    assert [r["id"] for r in CRC.em_quarentena(con)] == [sem_data, com_data]
+    assert [r["id"] for r in CRC.em_quarentena(con, limite=1)] == [sem_data]
+
+
 def test_quem_esta_em_quarentena_NAO_entra_no_ARQUIVO(con):
     """**A quarentena e no ARQUIVO, e nao na lista de candidatos.**
 

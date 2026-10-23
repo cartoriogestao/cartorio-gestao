@@ -19,9 +19,11 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 import sqlite3
 import sys
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -30,6 +32,7 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import banco_pg  # noqa: E402
 import centrais_cred as CRED  # noqa: E402
 import centrais_fila as FILA  # noqa: E402
 import centrais_http as HTTP  # noqa: E402
@@ -95,6 +98,7 @@ class _BancoFalso:
 
     def __init__(self, caminho):
         self.caminho = str(caminho)
+        banco_pg.registrar_banco(caminho)
         c = self.connect()
         SCH.init_centrais_schema(c)
         c.commit()
@@ -296,6 +300,38 @@ def test_anotar_com_banco_travado_desiste_e_nao_derruba(banco, monkeypatch):
     finally:
         trava.rollback()
         trava.close()
+
+
+@pytest.mark.skipif(not banco_pg.ativo(),
+                    reason="mede a trava do PostgreSQL (CG_PG_DSN)")
+def test_anotar_com_banco_travado_desiste_no_prazo_do_log(banco, monkeypatch,
+                                                          caplog):
+    """O prazo do log vale para a trava do banco (L027R). Posto depois da
+    primeira escrita, ele chegava tarde: o log esperava os 15 s da conexão e
+    segurava o balcão. E o prazo curto não fica na conexão devolvida."""
+    import bd_nativo
+    monkeypatch.setattr(LOG, "ESPERA_DO_LOG_MS", 200)
+    trava = banco.connect()
+    trava.execute("BEGIN IMMEDIATE")
+    try:
+        inicio = time.monotonic()
+        with caplog.at_level(logging.WARNING,
+                             logger="cartorio_gestao.centrais"):
+            assert LOG.anotar_resposta("CRA", "x",
+                                       HTTP.CentralHttpError("y")) is None
+        esperou = time.monotonic() - inicio
+    finally:
+        trava.rollback()
+        trava.close()
+    assert esperou < 5, f"o log esperou {esperou:.1f} s pela trava do banco"
+    assert any("LOG_NAO_GRAVADO" in r.getMessage() for r in caplog.records)
+    abertas = [banco.connect() for _ in range(2)]
+    try:
+        for c in abertas:
+            assert bd_nativo.banco(c).valor("SHOW lock_timeout") == "15s"
+    finally:
+        for c in abertas:
+            c.close()
 
 
 # --------------------------------------------- a fila: só homologação/teste

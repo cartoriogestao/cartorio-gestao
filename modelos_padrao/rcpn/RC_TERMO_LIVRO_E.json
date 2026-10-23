@@ -1,0 +1,20 @@
+{
+  "chave": "RC_TERMO_LIVRO_E",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Termo do Livro E",
+  "formato": "CHAVES",
+  "explica": "O texto compartilhado do Livro E — ausência, interdição, tutela, emancipação, união estável, opção de nacionalidade e outro. Mesmo modelo; o título do ato muda pela espécie.",
+  "campos": [
+    "data_do_ato",
+    "cidade_do_ato",
+    "estado_do_ato",
+    "titulo_do_ato",
+    "nome",
+    "qualificacao_do_titular",
+    "frase_da_especie",
+    "frase_observacoes",
+    "escrevente",
+    "funcao_do_escrevente",
+    "uf_do_ato"
+  ]
+}

@@ -25,6 +25,8 @@ import pytest
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — referencia acervo_eoficio ou sqlite de producao
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import atrib_certidao as CE
 from nucleo_schema import init_nucleo_schema
@@ -41,10 +43,16 @@ TEOR = ("Aos 26 dias do mês de novembro de dois mil e vinte e um, nesta cidade 
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     init_nucleo_schema(con)
+    # `rg_titulos` aponta para `cx_protocolos` (FK): o PostgreSQL cobra a FK
+    # na criacao, e o banco da casa cria o caixa antes. Aqui basta o esqueleto.
+    con.execute("CREATE TABLE IF NOT EXISTS cx_protocolos (id INTEGER PRIMARY KEY)")
     init_rg_schema(con)
+    # `ri_schema` aponta para `users` (FK): o PostgreSQL cobra a FK
+    # na criacao, e o banco da casa cria `users` antes. Aqui basta o esqueleto.
+    con.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
     init_ri_schema(con)
     init_ra_schema(con)
     CE.init_atrib_certidao_schema(con)

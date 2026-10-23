@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ANOTACAO_MARGEM__numero_de_ordem",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Anotação à margem — número de ordem",
+  "formato": "CHAVES",
+  "explica": "Quando o ato não tem termo e tem número de ordem.",
+  "campos": [
+    "ordem"
+  ]
+}

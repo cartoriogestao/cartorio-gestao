@@ -25,7 +25,6 @@ import argparse
 import html
 import json
 import re
-import sqlite3
 import sys
 from datetime import datetime
 
@@ -39,6 +38,8 @@ TIPO_IMOVEL_EOFICIO = {
 }
 from pathlib import Path
 
+import banco_pg
+from bd_nativo import banco
 from ri_schema import (
     hash_ato,
     init_ri_schema,
@@ -106,8 +107,9 @@ def chave_matricula(numero, complemento, livro) -> tuple[str, str, str]:
 
 
 class Importador:
-    def __init__(self, con: sqlite3.Connection, usuario_id: int | None = None):
+    def __init__(self, con, usuario_id: int | None = None):
         self.con = con
+        self.bd = banco(con)
         self.usuario_id = usuario_id
         self.rejeitados: list[tuple] = []
         self.contagem = {
@@ -197,7 +199,7 @@ class Importador:
              "strConfrontacao_L", "strConfrontacao_O")
             if norm(m.get(c))
         )
-        cur = self.con.execute(
+        novo = self.bd.escrever(
             """INSERT INTO ri_matriculas
                (numero, complemento, cnm, livro, livro_norm, folha, folha_complemento,
                 data_abertura, tipo_ficha, situacao, conferido, encerrada,
@@ -207,8 +209,9 @@ class Importador:
                 car, nirf, incra, sigef, ccir, cmc, inscricao_municipal, iptu,
                 registro_anterior, observacao, teor, teor_formato,
                 origem, origem_chave, importacao_id, criado_em, criado_por)
-               VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-                       'EOFICIO',?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                       'EOFICIO',%s,%s,%s,%s)
+               RETURNING id""",
             (
                 chave[0], chave[1], norm(m.get("strCNM")) or None,
                 norm(m.get("strLivro")) or None, chave[2],
@@ -240,7 +243,7 @@ class Importador:
                 str(m.get("intChave")), self.importacao_id, AGORA, self.usuario_id,
             ),
         )
-        novo_id = int(cur.lastrowid)
+        novo_id = int(novo[0]["id"])
         self.id_por_chave[chave] = novo_id
         self.id_por_chave.setdefault(chave[:2], novo_id)
         self.id_por_origem[str(m.get("intChave"))] = novo_id
@@ -282,12 +285,12 @@ class Importador:
             anterior = ultimo_hash.get(matricula_id)
             h = hash_ato(chave[0], tipo, numero, data or "", teor, anterior)
 
-            self.con.execute(
+            self.bd.escrever(
                 """INSERT INTO ri_atos
                    (matricula_id, tipo, numero, data_ato, protocolo, prenotacao,
                     teor, teor_formato, cancelado, acervo, origem, origem_chave,
                     importacao_id, hash_ato, hash_anterior, lavrado_em, lavrado_por)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,'EOFICIO',?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'EOFICIO',%s,%s,%s,%s,%s,%s)""",
                 (matricula_id, tipo, numero, data,
                  norm(a.get("strProtocoloGeral")) or None,
                  norm(a.get("intNumeroPrenotacao")) or None,
@@ -343,8 +346,8 @@ class Importador:
                 indice[str(codigo)] = self._pessoa_normalizada(p)
 
         atos = {}
-        for row in self.con.execute("SELECT id, matricula_id, tipo, numero FROM ri_atos"):
-            atos[(row[1], row[2], int(row[3]))] = row[0]
+        for row in self.bd.ler("SELECT id, matricula_id, tipo, numero FROM ri_atos ORDER BY id"):
+            atos[(row["matricula_id"], row["tipo"], int(row["numero"]))] = row["id"]
 
         for p in registros:
             chave = chave_matricula(p.get("strMatricula"), p.get("StrComp"), None)[:2]
@@ -372,12 +375,12 @@ class Importador:
             numero = int(p.get("strNReg") or 0)
             ato_id = atos.get((matricula_id, tipo, numero))
 
-            self.con.execute(
+            self.bd.escrever(
                 """INSERT INTO ri_partes
                    (matricula_id, ato_id, nome, documento_tipo, documento_numero,
                     documento_valido, qualificacao, papel, proprietario,
                     proprietario_ativo, participacao, origem, origem_chave)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,'EOFICIO',?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'EOFICIO',%s)""",
                 (matricula_id, ato_id, nome, doc_tipo, doc_num or None,
                  1 if doc_num and valida_cpf_cnpj(doc_num) else 0,
                  pessoa.get("qualificacao"),
@@ -398,10 +401,10 @@ class Importador:
             if matricula_id is None:
                 self.rejeitar("imagem", i.get("id"), "Imagem sem matricula correspondente")
                 continue
-            self.con.execute(
+            self.bd.escrever(
                 """INSERT INTO ri_imagens
                    (matricula_id, nome_arquivo, ordem, ficha_digitalizada)
-                   VALUES (?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s)""",
                 (matricula_id, norm(i.get("strNomeDigital")) or None,
                  i.get("intOrdem"), 1 if i.get("bitFichaDigitalizada") else 0),
             )
@@ -438,13 +441,13 @@ class Importador:
             mat = norm(p.get("strMatricula"))
             matricula_id = self.id_por_chave.get((mat, "")) if mat else None
             situacao = "CANCELADO" if cancelado else "ENCERRADO"
-            self.con.execute(
+            self.bd.escrever(
                 """INSERT INTO ri_protocolos
                    (numero, livro, data_prenotacao, hora, apresentante, apresentante_documento,
                     natureza_titulo, objeto, matricula_id, matricula_numero, data_limite,
                     data_reingresso, situacao, selo_prenotacao, suscitacao_duvida, anotacao,
                     origem, origem_chave, importacao_id, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'EOFICIO',?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'EOFICIO',%s,%s,%s)""",
                 (numero, livro, data or "", norm(p.get("strHoras")) or None,
                  norm(p.get("strApresentante")) or None, norm(p.get("strDoc")) or None,
                  None, norm(p.get("memObjeto")) or None,
@@ -471,8 +474,8 @@ class Importador:
         a mais nova** — e e por isso que o `DO UPDATE` tem guarda: ele so escreve
         sobre linha que ainda e `EOFICIO`.
 
-        DELA VEM O `id`, E ELE NAO SE PEGA POR `lastrowid`. Um INSERT que virou
-        UPDATE nao move o `last_insert_rowid()`, e a pessoa seria pendurada na
+        DELA VEM O `id`, E ELE NAO SE PEGA PELO ULTIMO ID INSERIDO. Um INSERT que
+        virou UPDATE nao move esse ultimo id, e a pessoa seria pendurada na
         ordem errada — em silencio. O `RETURNING` responde: devolve o `id` quando
         escreveu, e **nao devolve linha nenhuma quando a guarda barra**. Isso e o
         que faz esta funcao saber, sem adivinhar, quais ordens ela reescreveu.
@@ -495,12 +498,12 @@ class Importador:
 
             cancelamento = norm(o.get("CANCELAMENTODEINDISPONIBILIDADE"))
             chave_arquivo = str(o.get("id"))
-            linha = self.con.execute(
+            linha = self.bd.escrever(
                 """INSERT INTO ri_cnib_ordens
                    (protocolo_cnib, data_pedido, processo, instituicao, forum_vara,
                     solicitante, cancelamento_protocolo, cancelamento_data, ativa,
                     origem_chave, origem)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,'EOFICIO')
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'EOFICIO')
                    ON CONFLICT(protocolo_cnib) DO UPDATE SET
                        data_pedido=excluded.data_pedido,
                        processo=excluded.processo,
@@ -518,22 +521,23 @@ class Importador:
                  norm(o.get("FORUMVARA")) or None, norm(o.get("USUARIO")) or None,
                  cancelamento or None, data_iso(o.get("CANCELAMENTO_DATA")),
                  0 if cancelamento else 1, chave_arquivo),
-            ).fetchone()
+            )
 
-            if linha is None:
+            # `bd.escrever` devolve lista: vazia (e nao None) quando a guarda barra.
+            if not linha:
                 # Esta ordem ja e dado da Central, e o arquivo e mais velho que
                 # ela. Nao se toca — nem nela, nem nas pessoas dela.
                 preservadas.add(chave_arquivo)
                 self.contagem["cnib_ordens_preservadas"] += 1
                 continue
 
-            ordem_id = int(linha[0])
+            ordem_id = int(linha[0]["id"])
             reescritas[chave_arquivo] = ordem_id
             # As pessoas desta ordem saem ANTES das novas entrarem. O `substituir`
             # da tela ja apagou as de origem `EOFICIO`, mas a funcao nao pode
             # depender de quem a chamou ter feito isso: sem esta linha, chama-la
             # de outro lugar somaria as partes do arquivo as que ja estao la.
-            self.con.execute("DELETE FROM ri_cnib_pessoas WHERE ordem_id=?", (ordem_id,))
+            self.bd.escrever("DELETE FROM ri_cnib_pessoas WHERE ordem_id=%s", (ordem_id,))
             self.contagem["cnib_ordens"] += 1
 
         for p in pessoas:
@@ -549,10 +553,10 @@ class Importador:
             if ordem_id is None:
                 self.rejeitar("cnib_pessoa", p.get("id"), "Pessoa sem ordem correspondente")
                 continue
-            self.con.execute(
+            self.bd.escrever(
                 """INSERT INTO ri_cnib_pessoas(ordem_id, nome, nome_norm,
                        documento, origem_chave, origem)
-                   VALUES (?,?,?,?,?,'EOFICIO')""",
+                   VALUES (%s,%s,%s,%s,%s,'EOFICIO')""",
                 # `nome_norm` GRAVADO NA ENTRADA, e nao calculado na consulta:
                 # e por ele que a busca por nome acha a pessoa, e sem ele a
                 # importacao de amanha entraria muda — achada por documento e
@@ -598,13 +602,13 @@ class Importador:
             extra = por_id.get(str(c.get("intID")), {})
             corpo = extra.get("memCertidao") or extra.get("memCertidaoSF")
             formato = "html" if (corpo or "").lstrip().startswith("<?xml") else "texto"
-            self.con.execute(
+            self.bd.escrever(
                 """INSERT INTO ri_certidoes
                    (numero, ano, tipo, matricula_id, matricula_numero, data_emissao,
                     protocolo, selo_texto, corpo, corpo_formato, cancelada,
                     origem, origem_chave, importacao_id, emitida_em)
-                   VALUES (?,?, 'INTEIRO_TEOR', ?,?,?,?,?,?, ?, 0,
-                           'EOFICIO', ?,?,?)""",
+                   VALUES (%s,%s, 'INTEIRO_TEOR', %s,%s,%s,%s,%s,%s, %s, 0,
+                           'EOFICIO', %s,%s,%s)""",
                 (numero, ano, self.id_por_chave.get((mat, "")), mat or None, data or "",
                  protocolo or None,
                  norm(c.get("strSelo_Certidao")) or None,
@@ -620,16 +624,19 @@ class Importador:
 
     def fixar_numeracao(self) -> list[tuple[str, int]]:
         """Fixa o proximo numero por livro a partir do maior em uso."""
+        # Le o maior e grava o proximo: a mesma trava de quem numera a
+        # matricula (`ri_correcoes`, abertura em `ri_web`).
+        self.bd.travar("ri_numeracao.livro")
         resultado = []
-        for livro, maior in self.con.execute(
-            """SELECT livro_norm, MAX(CAST(numero AS INTEGER))
+        for linha in self.bd.ler(
+            """SELECT livro_norm, MAX(substring(numero FROM '^[0-9]+')::bigint) AS maior
                FROM ri_matriculas
-               WHERE numero GLOB '[0-9]*' GROUP BY livro_norm"""
-        ).fetchall():
-            maior = int(maior or 0)
-            self.con.execute(
+               WHERE numero ~ '^[0-9]' GROUP BY livro_norm ORDER BY livro_norm"""
+        ):
+            livro, maior = linha["livro_norm"], int(linha["maior"] or 0)
+            self.bd.escrever(
                 """INSERT INTO ri_numeracao(livro, proximo_numero, maior_em_uso, fixado_em, fixado_por, observacao)
-                   VALUES (?,?,?,?,?,?)
+                   VALUES (%s,%s,%s,%s,%s,%s)
                    ON CONFLICT(livro) DO UPDATE SET
                      proximo_numero=excluded.proximo_numero,
                      maior_em_uso=excluded.maior_em_uso,
@@ -643,12 +650,12 @@ class Importador:
     # -- orquestracao -------------------------------------------------
 
     def executar(self, pasta: Path) -> dict:
-        cur = self.con.execute(
+        novo = self.bd.escrever(
             """INSERT INTO ri_importacoes(iniciada_em, usuario_id, origem, arquivo)
-               VALUES (?,?,'EOFICIO',?)""",
+               VALUES (%s,%s,'EOFICIO',%s) RETURNING id""",
             (AGORA, self.usuario_id, str(pasta)),
         )
-        self.importacao_id = int(cur.lastrowid)
+        self.importacao_id = int(novo[0]["id"])
 
         matriculas = ler_jsonl(pasta / "matriculas.jsonl")
         atos = ler_jsonl(pasta / "atos.jsonl")
@@ -670,18 +677,18 @@ class Importador:
         numeracao = self.fixar_numeracao()
 
         for entidade, chave, motivo, conteudo in self.rejeitados:
-            self.con.execute(
+            self.bd.escrever(
                 """INSERT INTO ri_rejeitados(importacao_id, entidade, chave_origem, motivo, conteudo)
-                   VALUES (?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s)""",
                 (self.importacao_id, entidade, chave, motivo, conteudo),
             )
 
         relatorio = dict(self.contagem)
         relatorio["numeracao"] = {l: n for l, n in numeracao}
-        self.con.execute(
-            """UPDATE ri_importacoes SET concluida_em=?, matriculas_lidas=?, matriculas_gravadas=?,
-                 atos_lidos=?, atos_gravados=?, partes_lidas=?, partes_gravadas=?,
-                 rejeitados=?, relatorio=? WHERE id=?""",
+        self.bd.escrever(
+            """UPDATE ri_importacoes SET concluida_em=%s, matriculas_lidas=%s, matriculas_gravadas=%s,
+                 atos_lidos=%s, atos_gravados=%s, partes_lidas=%s, partes_gravadas=%s,
+                 rejeitados=%s, relatorio=%s WHERE id=%s""",
             (datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
              self.contagem["matriculas_lidas"], self.contagem["matriculas_gravadas"],
              self.contagem["atos_lidos"], self.contagem["atos_gravados"],
@@ -704,9 +711,8 @@ def main() -> int:
         print(f"Pasta nao encontrada: {pasta}")
         return 2
 
-    con = sqlite3.connect(args.banco)
-    con.execute("PRAGMA foreign_keys=ON")
-    con.executescript("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY);")
+    con = banco_pg.conectar(args.banco)
+    banco(con).escrever("CREATE TABLE IF NOT EXISTS users(id bigint PRIMARY KEY)")
     init_ri_schema(con)
 
     imp = Importador(con)

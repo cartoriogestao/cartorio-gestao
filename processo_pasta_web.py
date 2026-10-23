@@ -15,8 +15,10 @@ from datetime import date, timedelta
 
 from flask import flash, redirect, request, url_for
 
+from bd_nativo import banco
 import processo_pasta as PASTA
 import rascunho_de_tela as RASC
+from seguranca_web import destino_interno  # M1/B3 (LX11): o «volte para» só leva a caminho desta casa
 
 QUEM = ("ADMIN", "MANAGER", "USER")
 
@@ -95,8 +97,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "due_date": prazo.isoformat(),
         }, user_id=uid)
         with db.transaction() as con:
-            if not con.execute("SELECT 1 FROM pr_vinculos WHERE task_id=? AND tabela='rascunhos_de_tela' "
-                               "AND item_id=?", (tid, rascunho_id)).fetchone():
+            if not banco(con).um("SELECT 1 FROM pr_vinculos WHERE task_id = %s AND tabela = 'rascunhos_de_tela' "
+                                 "AND item_id = %s", (tid, rascunho_id)):
                 PASTA.vincular(con, tid, "rascunhos_de_tela", str(rascunho_id), agora=db.now(), por=uid)
         audit("PROCESSO_DO_RASCUNHO", "TASK", tid, {"rascunho_id": rascunho_id})
         return tid
@@ -126,7 +128,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """O botão «não termina hoje» da tela do ato: guarda o rascunho (como o
         botão de sempre) e abre o processo dele, numa ação só."""
         tela = (request.form.get("_tela") or "").strip()
-        volta = (request.form.get("_volta") or "").strip()
+        volta = destino_interno((request.form.get("_volta") or "").strip(), "")
         rid = request.form.get("_rascunho_id")
         dados = {k: v for k, v in request.form.items() if not k.startswith("_")}
         try:

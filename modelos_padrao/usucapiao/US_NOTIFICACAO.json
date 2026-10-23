@@ -1,0 +1,27 @@
+{
+  "chave": "US_NOTIFICACAO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Notificação da usucapião extrajudicial",
+  "formato": "CHAVES",
+  "explica": "O papel de quem se notifica na usucapião (confrontante, titular, credor, ente público), com o recibo no mesmo papel. Congela no movimento ao expedir: mudar o modelo não reescreve o que já foi entregue. O título, as linhas do imóvel, a posse, o prazo, o silêncio e a forma são peças deste papel, na mesma pasta.",
+  "campos": [
+    "cabeca",
+    "numero",
+    "do_ano",
+    "modalidade",
+    "requerente",
+    "destinatario",
+    "papel",
+    "endereco",
+    "imovel",
+    "sobre_a_posse",
+    "prazo_texto",
+    "sobre_o_silencio",
+    "lugar_e_data",
+    "oficial",
+    "cargo",
+    "serventia",
+    "forma_texto",
+    "base_da_forma"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "chave": "NOTAS_ABERTURA_REVOGACAO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Abertura da revogação",
+  "formato": "CHAVES",
+  "explica": "O começo do teor da revogação montado pelo sistema («SAIBAM…»), antes das partes. Data, cidade e estado são claros.",
+  "campos": [
+    "data_extenso",
+    "cidade",
+    "uf_extenso"
+  ]
+}

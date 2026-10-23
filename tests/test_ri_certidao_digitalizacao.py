@@ -31,8 +31,14 @@ def casa(cg_casa):
     db = cg_casa["db"]
     c = cg_casa["cliente"]
     db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    # A TRAVA DO SELO PAGO FICA DESLIGADA NESTA BANCADA (22/10/2026). Aqui se
+    # mede o PAPEL da reprodução, e não o pagamento: com a trava ligada e sem
+    # protocolo, a certidão fica «aguardando cobertura» e — por decisão do
+    # oficial — não pode ser impressa até o selo sair. Desligada, o selo é
+    # pedido a um aparelho que não existe, falha, e a certidão sai cancelada,
+    # como saía antes da 3.7.0; o papel dela continua se imprimindo.
     db.set_settings({"ri_cns": "000000", "ri_cidade": "Cidade Exemplo",
-                     "ri_uf": "MA"})
+                     "ri_uf": "MA", "selo_trava_caixa": "DESLIGADA"})
     c.post("/login",
            data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
@@ -200,6 +206,59 @@ def test_inteiro_teor_por_digitalizacao_congela_arquivo(casa):
     con.close()
 
 
+def test_a_reprografica_pela_tela_identifica_a_matricula_e_le_o_cadastro(casa):
+    """O MODELO DA CASA PELA ROTA (LH02): a identificação vem da ficha
+    (`ri_matriculas`: número, livro, CNM), o cabeçalho e a cidade vêm do
+    cadastro da serventia, e quem assina é quem emitiu. Nada disso é do
+    código: a serventia do ensaio é a fictícia do `conftest`."""
+    import zipfile
+    from datetime import date
+
+    import ri_digitalizacao as RDIGI
+    con = _con(casa)
+    mid = _matricula(con)
+    con.execute("UPDATE ri_matriculas SET cnm = '000000.2.0099001-00' WHERE id = ?",
+                (mid,))
+    con.commit()
+    con.close()
+    c = casa["cliente"]
+    ficha = c.get(f"/registro-imoveis/{mid}").get_data(as_text=True)
+    c.post(f"/registro-imoveis/{mid}/digitalizacao",
+           data={"csrf_token": _token(ficha),
+                 "arquivo": (io.BytesIO(_png_minimo()), "oficial.png")},
+           content_type="multipart/form-data", follow_redirects=True)
+    ficha = c.get(f"/registro-imoveis/{mid}").get_data(as_text=True)
+    c.post(f"/registro-imoveis/{mid}/certidao",
+           data={"csrf_token": _token(ficha), "tipo": "INTEIRO_TEOR",
+                 "fonte_corpo": "DIGITALIZACAO", "requerente": "Fulano da Silva",
+                 "lavrar_sem_selo": "1"},
+           follow_redirects=True)
+    con = _con(casa)
+    row = con.execute(
+        """SELECT id, emitida_por_nome FROM ri_certidoes
+            WHERE matricula_id=? AND fonte_corpo='DIGITALIZACAO'
+            ORDER BY id DESC""", (mid,)).fetchone()
+    con.close()
+    assert row is not None, "a certidão por reprodução não saiu"
+    papel = c.get(f"/registro-imoveis/certidoes/{row['id']}.odt?formato=odt")
+    assert papel.status_code == 200 and papel.data[:2] == b"PK"
+    with zipfile.ZipFile(io.BytesIO(papel.data)) as z:
+        xml = z.read("content.xml").decode("utf-8")
+    hoje = RDIGI.data_por_extenso_repro(date.today().isoformat())
+    for trecho in (
+            "SERVENTIA EXTRAJUDICIAL DO OFÍCIO ÚNICO DE CIDADE EXEMPLO/MA",
+            "Mario Exemplo dos Santos — Tabelião e Registrador Oficial",
+            "Beatriz Exemplo de Souza — Tabeliã e Registradora Substituta",
+            "Matrícula nº 99.001 do Livro nº 2-C – Registro Geral, CNM "
+            "000000.2.0099001-00, em 1 (uma) página.",
+            f"Cidade Exemplo/MA, {hoje}.",
+            "CERTIFICO ainda que"):
+        assert trecho in xml, trecho
+    assert row["emitida_por_nome"], "a emissão grava quem emitiu"
+    assert ('<text:p text:style-name="P-repro-fecho-assina">'
+            f'{row["emitida_por_nome"]}') in xml
+
+
 def test_paginas_png_e_odt_unitario(tmp_path):
     import zipfile
     import ri_digitalizacao as RDIGI
@@ -261,15 +320,17 @@ def test_odt_repro_layout_a4_e_imagem_cabe(tmp_path):
     with zipfile.ZipFile(io.BytesIO(odt)) as z:
         xml = z.read("content.xml").decode("utf-8")
         styles = z.read("styles.xml").decode("utf-8")
-    assert "CERTID" in xml and "REPROGR" in xml
-    assert "P-digi-titulo" in xml
+    # Modelo da casa (substituta, 20/10/2026): título e fecho do modelo.
+    assert "CERTIDÃO REPROGRÁFICA" in xml
+    assert "P-repro-titulo" in xml
     assert "CERTIFICO ainda" in xml
-    assert "Era o que nela continha" in xml
+    assert "Era o que constava no documento/assento reproduzido" in xml
+    assert "Era o que nela continha" not in xml
     assert "sha256" not in xml.lower()
     assert "documento impresso reproduz" not in xml.lower()
     assert 'fo:page-width="21cm"' in styles or 'fo:page-width="21.0cm"' in styles
     assert 'fo:page-height="29.7cm"' in styles
-    assert 'fo:margin-top="0.9cm"' in styles
+    assert 'fo:margin-top="0.51cm"' in styles
     import re
     m = re.search(
         r'draw:name="digi1\.png"[^>]*svg:width="([0-9.]+)cm"[^>]*svg:height="([0-9.]+)cm"',
@@ -297,3 +358,32 @@ def test_escala_e_fecho_helpers():
     assert "sha256" not in fecho.lower()
     assert "documento impresso" not in fecho.lower()
     assert "REPROGR" not in fecho.upper()
+
+
+MODULOS_DO_LOTE = ("ri_certidao_negativa", "ri_digi_prazo", "ri_digi_prazo_web",
+                   "ri_digitalizacao", "ri_documentos", "ri_expurgo",
+                   "ri_fichas_do_disco")
+
+
+def test_os_modulos_compilam_no_python_3_11():
+    """A producao roda Python 3.11. A f-string que repete as proprias aspas
+    dentro das chaves (`f"{row["digi_nome"]}"`) so o 3.12 le: no 3.11 o
+    `ri_digitalizacao` nem importa, e a ficha do RI cai junto."""
+    import tokenize
+    if not hasattr(tokenize, "FSTRING_START"):       # antes do 3.12, o import ja acusou
+        return
+    for nome in MODULOS_DO_LOTE:
+        aspas: list[str] = []                        # as das f-strings abertas
+        with open(RAIZ / f"{nome}.py", "rb") as f:
+            for tok in tokenize.tokenize(f.readline):
+                if tok.type == tokenize.FSTRING_END:
+                    aspas.pop()
+                    continue
+                if tok.type not in (tokenize.FSTRING_START, tokenize.STRING):
+                    continue
+                abre = tok.string.lstrip("rRbBuUfF")[:3]
+                abre = abre if abre in ('"""', "'''") else abre[0]
+                assert not aspas or not abre.startswith(aspas[-1]), (
+                    nome, tok.start[0], tok.line.strip())
+                if tok.type == tokenize.FSTRING_START:
+                    aspas.append(abre)

@@ -257,6 +257,43 @@ def test_o_zero_nao_e_prenotacao(casa):
         _prenotacao(con, numero=0)
     assert RDOC.prenotacao_do_ato(_con(casa), aid) is None
 
+
+def _prenotacao_com_id(con, id_, *, numero, livro="1A", ato_id=None):
+    con.execute(
+        """INSERT INTO ri_protocolos (id, numero, livro, data_prenotacao,
+               apresentante, situacao, ato_id, criado_em)
+           VALUES (?, ?, ?, '2026-08-29', 'FULANO DE TAL', 'ABERTO', ?,
+                   '2026-08-29T09:00')""", (id_, numero, livro, ato_id))
+
+
+def test_duas_prenotacoes_amarradas_ao_ato_da_a_mais_antiga(casa):
+    """`ri_protocolos.ato_id` não é único. O SQLite devolvia a de menor id;
+    sem ORDER BY, o PostgreSQL devolve a que estiver primeiro no disco — por
+    isso as duas entram de trás para a frente."""
+    con = _con(casa)
+    with con:
+        mid = _matricula(con)
+        aid = _ato(con, mid)
+        _prenotacao_com_id(con, 902, numero=2222, ato_id=aid)
+        _prenotacao_com_id(con, 901, numero=1111, ato_id=aid)
+    achada = RDOC.prenotacao_do_ato(_con(casa), aid)
+    assert achada["id"] == 901
+    assert achada["ligacao"] == "gravada"
+
+
+def test_o_mesmo_numero_em_dois_livros_da_a_mais_antiga(casa):
+    """A chave é (livro, numero): o número digitado no ato pode casar com uma
+    prenotação de cada livro, e a escolha tem de ser a mesma de antes."""
+    con = _con(casa)
+    with con:
+        mid = _matricula(con)
+        aid = _ato(con, mid, prenotacao="1111")
+        _prenotacao_com_id(con, 912, numero=1111, livro="1B")
+        _prenotacao_com_id(con, 911, numero=1111, livro="1A")
+    achada = RDOC.prenotacao_do_ato(_con(casa), aid)
+    assert achada["id"] == 911
+    assert achada["ligacao"] == "pelo número"
+
 # ------------------------------------------- layout (relato ajuda #60)
 
 

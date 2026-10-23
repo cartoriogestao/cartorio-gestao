@@ -1,0 +1,1 @@
+{nome} passa a usar o nome {nome_pos}.

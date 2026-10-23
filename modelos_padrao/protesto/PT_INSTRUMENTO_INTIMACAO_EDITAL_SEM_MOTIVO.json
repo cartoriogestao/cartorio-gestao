@@ -1,0 +1,10 @@
+{
+  "chave": "PT_INSTRUMENTO_INTIMACAO_EDITAL_SEM_MOTIVO",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto — certidão da intimação por edital, sem motivo",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {intimacao} do instrumento quando a última intimação foi por edital sem motivo registrado.",
+  "campos": [
+    "data"
+  ]
+}

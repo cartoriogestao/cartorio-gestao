@@ -93,7 +93,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from typing import Any
 
 import centrais_cred as CRED
@@ -101,6 +100,7 @@ import habilitacao as HAB
 import ibge_geracao as IBGER
 import onrcpn_api as API
 import rc_matricula as MATR
+from bd_nativo import banco
 
 # O QUE A CENTRAL CHAMA DE TIPO DE CASAMENTO, a partir do que a casa guarda.
 #
@@ -130,9 +130,9 @@ def _txt(v: Any) -> str:
     return "" if v is None else str(v).strip()
 
 
-def _linha(con: sqlite3.Connection, habilitacao_id: int) -> sqlite3.Row:
-    h = con.execute("SELECT * FROM hc_habilitacoes WHERE id=?",
-                    (int(habilitacao_id),)).fetchone()
+def _linha(con: Any, habilitacao_id: int) -> dict:
+    h = banco(con).um("SELECT * FROM hc_habilitacoes WHERE id = %s",
+                      (int(habilitacao_id),))
     if h is None:
         raise ProclamaError(f"Habilitação {habilitacao_id} não existe.")
     return h
@@ -151,7 +151,7 @@ def ambiente() -> str:
 # ------------------------------------------------------------- a matrícula
 
 
-def matricula_do_proclama(con: sqlite3.Connection, h: sqlite3.Row, *,
+def matricula_do_proclama(con: Any, h: dict, *,
                           cns: Any) -> dict:
     """A matrícula de 32 dígitos do assento no Livro D. Só LÊ.
 
@@ -170,14 +170,14 @@ def matricula_do_proclama(con: sqlite3.Connection, h: sqlite3.Row, *,
                            "matrícula de 32 dígitos com que a Central "
                            "identifica o proclama. Lavre em Registro Civil → "
                            "Novo assento, espécie «Proclamas», e amarre-o aqui.")}
-    a = con.execute("SELECT * FROM rc_assentos WHERE id=?",
-                    (int(assento_id),)).fetchone()
+    a = banco(con).um("SELECT * FROM rc_assentos WHERE id = %s",
+                      (int(assento_id),))
     if a is None:
         return {"matricula": "", "de_onde": "", "procedencia": "",
                 "motivo": (f"O assento {assento_id}, ligado a esta habilitação "
                            f"como registro de proclamas, não existe mais.")}
     # **`.keys()` NAO E REDUNDANTE AQUI, e o ruff pede a troca errada.**
-    #   Num `sqlite3.Row`, `"matricula" in a` **itera os VALORES**, e nao
+    #   Numa linha do SQLite (`Row`), `"matricula" in a` **itera os VALORES**, e nao
     #   as chaves: `"x" in linha` devolve `True` quando `x` e o conteudo de
     #   alguma coluna. Trocar por `in a` faria a leitura acertar por acaso
     #   e errar quando o dado mudasse — o defeito calado.
@@ -220,7 +220,7 @@ def _procedencia(matricula: Any) -> str:
 # ---------------------------------------------------------------- o cônjuge
 
 
-def _naturalidade(con: sqlite3.Connection, texto: Any) -> dict:
+def _naturalidade(con: Any, texto: Any) -> dict:
     """O município de naturalidade nos 7 dígitos do IBGE, ou vazio com motivo.
 
     Aceita «Cidade Exemplo/MA» e «Cidade Exemplo». A régua de ambiguidade é a de
@@ -244,12 +244,12 @@ def _naturalidade(con: sqlite3.Connection, texto: Any) -> dict:
     return {"codigo": achado.get("codigo_ibge") or "", "motivo": ""}
 
 
-def _conjuge(con: sqlite3.Connection, h: sqlite3.Row, qual: int) -> dict:
+def _conjuge(con: Any, h: dict, qual: int) -> dict:
     """Um nubente na forma do contrato, do que a habilitação guarda."""
     def col(nome: str) -> str:
         chave = f"nubente{qual}_{nome}"
         # `.keys()` pelo mesmo motivo de `matricula_do_proclama`: em
-        # `sqlite3.Row`, `in` olha os valores.
+        # linha do SQLite (`Row`), `in` olha os valores.
         return _txt(h[chave] if chave in h.keys() else "")  # noqa: SIM118
 
     natural = _naturalidade(con, col("naturalidade"))
@@ -286,7 +286,7 @@ def _conjuge(con: sqlite3.Connection, h: sqlite3.Row, qual: int) -> dict:
 # ------------------------------------------------------------- a conferência
 
 
-def conferir(con: sqlite3.Connection, habilitacao_id: int, *, cns: Any,
+def conferir(con: Any, habilitacao_id: int, *, cns: Any,
              publicacao: bool = True, livro_eletronico: bool = True,
              cpf_fatura: Any = None, nome_fatura: Any = None) -> dict:
     """O que iria, e o que impede. **NÃO GRAVA NADA E NÃO FALA COM NINGUÉM.**
@@ -366,7 +366,7 @@ def conferir(con: sqlite3.Connection, habilitacao_id: int, *, cns: Any,
 # ------------------------------------------------------------- a montagem
 
 
-def montar(con: sqlite3.Connection, habilitacao_id: int, *, cns: Any,
+def montar(con: Any, habilitacao_id: int, *, cns: Any,
            publicacao: bool = True, livro_eletronico: bool = True,
            cpf_fatura: Any = None, nome_fatura: Any = None,
            matricula: Any = None, conferindo: bool = False) -> dict:
@@ -412,7 +412,7 @@ def montar(con: sqlite3.Connection, habilitacao_id: int, *, cns: Any,
 # --------------------------------------------------------------- o histórico
 
 
-def publicacao_ja_feita(con: sqlite3.Connection,
+def publicacao_ja_feita(con: Any,
                         habilitacao_id: int) -> dict | None:
     """O envio de PUBLICAÇÃO que já deu certo, se houve. Só lê.
 
@@ -420,22 +420,22 @@ def publicacao_ja_feita(con: sqlite3.Connection,
     publicação de verdade, e dizer que impede travaria o balcão por causa de
     um teste.
     """
-    linha = con.execute(
-        "SELECT * FROM hc_eproclamas WHERE habilitacao_id=? AND publicacao=1 "
-        "AND ambiente=? AND protocolo IS NOT NULL "
+    linha = banco(con).um(
+        "SELECT * FROM hc_eproclamas WHERE habilitacao_id = %s AND publicacao = 1 "
+        "AND ambiente = %s AND protocolo IS NOT NULL "
         "ORDER BY id LIMIT 1",
-        (int(habilitacao_id), ambiente())).fetchone()
+        (int(habilitacao_id), ambiente()))
     return dict(linha) if linha else None
 
 
-def enviados_de(con: sqlite3.Connection, habilitacao_id: int) -> list[dict]:
+def enviados_de(con: Any, habilitacao_id: int) -> list[dict]:
     """Tudo o que já se mandou desta habilitação, na ordem. Só lê."""
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM hc_eproclamas WHERE habilitacao_id=? ORDER BY id DESC",
-        (int(habilitacao_id),)).fetchall()]
+    return [dict(r) for r in banco(con).ler(
+        "SELECT * FROM hc_eproclamas WHERE habilitacao_id = %s ORDER BY id DESC",
+        (int(habilitacao_id),))]
 
 
-def pendentes(con: sqlite3.Connection) -> list[dict]:
+def pendentes(con: Any) -> list[dict]:
     """As habilitações com edital publicado e sem publicação na Central.
 
     **O acervo não vira atraso, e aqui isso é de graça**: `hc_habilitacoes`
@@ -444,7 +444,7 @@ def pendentes(con: sqlite3.Connection) -> list[dict]:
     lavrada por esta casa.
     """
     onde = ambiente()
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         "SELECT h.id, h.numero, h.ano, h.tipo, h.edital_em, "
         "       h.edital_prazo_ate, h.nubente1_nome, h.nubente2_nome, "
         "       h.eproclamas_protocolo, h.proclamas_assento_id "
@@ -452,9 +452,9 @@ def pendentes(con: sqlite3.Connection) -> list[dict]:
         " WHERE h.edital_em IS NOT NULL AND h.edital_em <> '' "
         "   AND NOT EXISTS (SELECT 1 FROM hc_eproclamas e "
         "                    WHERE e.habilitacao_id = h.id "
-        "                      AND e.publicacao = 1 AND e.ambiente = ? "
+        "                      AND e.publicacao = 1 AND e.ambiente = %s "
         "                      AND e.protocolo IS NOT NULL) "
-        " ORDER BY h.edital_em, h.id", (onde,)).fetchall()]
+        " ORDER BY h.edital_em, h.id", (onde,))]
 
 
 # ------------------------------------------------------------------ o envio
@@ -509,11 +509,11 @@ def enviar(db, habilitacao_id: int, *, cns: Any, agora: str,
     assinatura = hashlib.sha256(corpo.encode("utf-8")).hexdigest()
     lote = _txt(resposta.get("lote")) if aceito else ""
     with db.transaction() as con:
-        con.execute(
+        banco(con).escrever(
             "INSERT INTO hc_eproclamas(habilitacao_id, matricula, publicacao, "
             " livro_eletronico, ambiente, corpo_enviado, corpo_hash, "
             " resposta, protocolo, enviado_em, enviado_por) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (int(habilitacao_id), minha,
              1 if publicacao else 0, 1 if livro_eletronico else 0,
              ambiente(), corpo, assinatura,

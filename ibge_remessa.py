@@ -7,7 +7,7 @@ DE ONDE SAI ESTE LAYOUT
     indicou o caminho em 28/08/2026.
 
     **E ela foi conferida contra os arquivos que ESTA CASA exportou**, em
-    `C:\\ARPNET\\C11\\IBGE_EXP`: a soma dos campos bate com a largura das linhas
+    `arquivos\\eoficio\\IBGE_EXP`: a soma dos campos bate com a largura das linhas
     nos três modelos que têm dado — 112 no nascimento, 105 no casamento, 103 no
     óbito — e o resumo RC-10 bate em 68.
 

@@ -61,19 +61,20 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any
 from xml.sax.saxutils import escape
 
 import custas
+from bd_nativo import banco
 
 # A CHAVE, DECOMPOSTA — medido em 175 de 175 titulos.
 TAMANHO_DA_CHAVE = 23
 _SO_DIGITOS = re.compile(r"\D+")
 
 # A versao que este arquivo trouxe. O contrato desta casa carrega a 1.22, e os
-# XSDs de `C:\ARPNET\CRA\Remessa` sao de 2017: a 1.23 NAO esta na casa. Ler um
+# XSDs de `arquivos\eoficio\CRA\Remessa` sao de 2017: a 1.23 NAO esta na casa. Ler um
 # arquivo mais novo do que o contrato e seguro para os campos que lemos — o que
 # nao se pode e GERAR na versao que ninguem conferiu.
 VERSAO_MEDIDA = "1.23-geral"
@@ -114,10 +115,11 @@ def decompor_chave(chave) -> dict | None:
 # Pastas onde o E-Oficio guarda `.p7s` assinados (IPDigital). Medido em
 # DOCUMENTACAO/REFERENCIAS_EOFICIO_BOOKC.md — so o nome do arquivo importa
 # aqui: chave de 23 digitos + `.p7s`. Nao se abre nem se valida o PKCS#7.
-PASTAS_IPDIGITAL: tuple[Path, ...] = (
-    Path(r"C:\ARPNET\C11\IPDigital"),
-    Path(r"\\Servidor\c11\IPDigital"),
-)
+# Hotfix de 16/10/2026: a cópia da casa, `<arquivos>/eoficio/IPDigital`, e não
+# mais a pasta do E-Ofício nem o compartilhamento do servidor antigo.
+def pastas_ipdigital(*, banco=None, archive_root: str | None = None) -> tuple[Path, ...]:
+    import pastas_da_casa as PDC
+    return (PDC.do_eoficio("IPDigital", banco=banco, archive_root=archive_root),)
 
 
 def casar_ipdigital_por_chave(
@@ -139,7 +141,7 @@ def casar_ipdigital_por_chave(
         return []
     saida: list[dict] = []
     vistos: set[str] = set()
-    for pasta in (pastas if pastas is not None else PASTAS_IPDIGITAL):
+    for pasta in (pastas if pastas is not None else pastas_ipdigital()):
         raiz = Path(pasta)
         if not raiz.is_dir():
             continue
@@ -257,8 +259,7 @@ def identidade_da_casa(config: dict) -> dict:
     if faltando:
         raise CenprotError(
             f"O sistema nao sabe {', '.join(faltando)}, e sem isso nao da para "
-            f"conferir se o arquivo e desta casa. Isso vem da carga do acervo "
-            f"(Livros e acervo — Trazer o acervo do E-Oficio) ou se informa em "
+            f"conferir se o arquivo e desta casa. Isso se informa em "
             f"Administrativo — Configuracoes.")
     return {"comarca": (str(config["ibge_uf"]).strip().zfill(2)
                         + str(config["ibge_municipio"]).strip().zfill(5)),
@@ -298,7 +299,7 @@ def conferir_a_casa(lido: dict, *, comarca: str, cartorio: str) -> None:
             f"dela.")
 
 
-def conferir(con: sqlite3.Connection, conteudo, *, comarca: str,
+def conferir(con: Any, conteudo, *, comarca: str,
              cartorio: str) -> dict:
     """Diz quais chaves entrariam, quais nao, e por que. NAO GRAVA NADA.
 
@@ -354,7 +355,7 @@ def _por_que_nao_entra(item: dict) -> str:
     return ""
 
 
-def _titulo_do_item(con: sqlite3.Connection, item: dict) -> dict | None:
+def _titulo_do_item(con: Any, item: dict) -> dict | None:
     """Acha o titulo pelo protocolo E confere por uma segunda coisa.
 
     OS DOIS JUNTOS. O protocolo e o numero desta casa e deveria bastar — mas
@@ -371,11 +372,10 @@ def _titulo_do_item(con: sqlite3.Connection, item: dict) -> dict | None:
     protocolo = so_digitos(item["protocolo"])
     if not protocolo:
         return None
-    con.create_function("digitos", 1, so_digitos)
-    achados = [dict(r) for r in con.execute(
+    achados = banco(con).ler(
         """SELECT id, numero_titulo, nosso_numero, valor_centavos, chave_cenprot
              FROM pt_titulos
-            WHERE digitos(COALESCE(protocolo,'')) = ?""", (protocolo,))]
+            WHERE digitos(coalesce(protocolo,'')) = %s ORDER BY id""", (protocolo,))
     if not achados:
         return None
     if len(achados) > 1:
@@ -424,7 +424,7 @@ def _centavos(valor) -> int | None:
 # ------------------------------------------------------------------ guardar
 
 
-def guardar(con: sqlite3.Connection, conteudo, *, comarca: str,
+def guardar(con: Any, conteudo, *, comarca: str,
             cartorio: str) -> dict:
     """Preenche `chave_cenprot` nos titulos que casaram. ESCREVE.
 
@@ -453,13 +453,14 @@ def guardar(con: sqlite3.Connection, conteudo, *, comarca: str,
                            len(conferencia["divergem"]),
                            len(conferencia["fora"])))
 
+    bd = banco(con)
     for linha in conferencia["entram"]:
         # A GUARDA DO `WHERE` REPETE A DE `conferir`, DE PROPOSITO: entre
         # conferir e gravar pode ter passado outro balcao. Onde a regra pode
         # morar no banco, ela mora no banco.
-        con.execute(
-            """UPDATE pt_titulos SET chave_cenprot = ?
-                WHERE id = ? AND TRIM(COALESCE(chave_cenprot,'')) = ''""",
+        bd.escrever(
+            """UPDATE pt_titulos SET chave_cenprot = %s
+                WHERE id = %s AND trim(coalesce(chave_cenprot,'')) = ''""",
             (linha["chave"], linha["titulo_id"]))
     return {**conferencia, "gravadas": len(conferencia["entram"])}
 
@@ -467,36 +468,37 @@ def guardar(con: sqlite3.Connection, conteudo, *, comarca: str,
 # ------------------------------------------------------------------ o outro lado
 
 
-def titulos_sem_chave(con: sqlite3.Connection, limite: int = 200) -> list[dict]:
+def titulos_sem_chave(con: Any, limite: int = 200) -> list[dict]:
     """Os titulos que a Central conhece por uma chave que a casa nao tem.
 
     E o par de `conferir`, do lado de ca: sem a chave, o titulo existe nos dois
     lugares e os dois nao sabem que e o mesmo.
     """
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT id, protocolo, numero_titulo, nosso_numero, situacao
              FROM pt_titulos
-            WHERE TRIM(COALESCE(chave_cenprot,'')) = ''
-              AND TRIM(COALESCE(protocolo,'')) <> ''
-            ORDER BY id DESC LIMIT ?""", (limite,))]
+            WHERE trim(coalesce(chave_cenprot,'')) = ''
+              AND trim(coalesce(protocolo,'')) <> ''
+            ORDER BY id DESC LIMIT %s""", (limite,))
 
 
-def quantos_sem_chave(con: sqlite3.Connection) -> dict:
+def quantos_sem_chave(con: Any) -> dict:
     """Quantos tem chave, quantos nao tem, e quantos nem protocolo tem.
 
     OS TRES NUMEROS, E NAO UM. «Faltam 1.366» esconde que a maioria falta por
     um motivo que este modulo nao resolve — sem protocolo nao ha por onde
     casar, e o protocolo vem da carga do acervo.
     """
-    linha = con.execute(
-        """SELECT COUNT(*) total,
-                  SUM(CASE WHEN TRIM(COALESCE(chave_cenprot,'')) <> ''
-                           THEN 1 ELSE 0 END) com_chave,
-                  SUM(CASE WHEN TRIM(COALESCE(protocolo,'')) = ''
-                           THEN 1 ELSE 0 END) sem_protocolo
-             FROM pt_titulos""").fetchone()
-    total, com_chave, sem_protocolo = (linha[0] or 0, linha[1] or 0,
-                                       linha[2] or 0)
+    linha = banco(con).um(
+        """SELECT count(*)::int AS total,
+                  sum(CASE WHEN trim(coalesce(chave_cenprot,'')) <> ''
+                           THEN 1 ELSE 0 END)::int AS com_chave,
+                  sum(CASE WHEN trim(coalesce(protocolo,'')) = ''
+                           THEN 1 ELSE 0 END)::int AS sem_protocolo
+             FROM pt_titulos""")
+    total, com_chave, sem_protocolo = (linha["total"] or 0,
+                                       linha["com_chave"] or 0,
+                                       linha["sem_protocolo"] or 0)
     return {"total": total, "com_chave": com_chave,
             "sem_protocolo": sem_protocolo,
             "a_preencher": total - com_chave - sem_protocolo}
@@ -587,34 +589,35 @@ CABECALHO_EMOLUMENTOS = ("nm_chave|vl_retirada|vl_cancelamento|cd_ibge"
                          "|nr_cartorio|dt_movimento")
 
 
-def _faixas(con: sqlite3.Connection, grupo: str, vigencia: int) -> list[tuple]:
+def _faixas(con: Any, grupo: str, vigencia: int) -> list[tuple]:
     """As bandas de valor de um item, em centavos. So LE."""
     def centavos(texto) -> int:
         return round(float(str(texto).replace(".", "").replace(",", ".")) * 100)
 
-    linhas = con.execute(
+    linhas = banco(con).ler(
         """SELECT de, ate, total FROM cx_faixas
-            WHERE vigencia = ? AND codigo_tj LIKE ? ORDER BY id""",
-        (vigencia, grupo + ".%")).fetchall()
+            WHERE vigencia = %s AND codigo_tj ILIKE %s ORDER BY id""",
+        (vigencia, grupo + ".%"))
     return [(centavos(r["de"]), centavos(r["ate"]), centavos(r["total"]))
             for r in linhas]
 
 
-def _preco_do_item(con: sqlite3.Connection, codigo_tj: str,
+def _preco_do_item(con: Any, codigo_tj: str,
                    vigencia: int) -> int | None:
     """O total de um item da tabela, em centavos — com os quatro fundos."""
     def centavos(texto) -> int:
         return round(float(str(texto).replace(".", "").replace(",", ".")) * 100)
 
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT v.total FROM cx_servicos s
              JOIN cx_servico_valores v ON v.servico = s.codigo
-            WHERE v.vigencia = ? AND s.codigo_tj = ?""",
-        (vigencia, codigo_tj)).fetchone()
+            WHERE v.vigencia = %s AND s.codigo_tj = %s
+            ORDER BY v.id LIMIT 1""",
+        (vigencia, codigo_tj))
     return centavos(linha["total"]) if linha and linha["total"] else None
 
 
-def constantes(con: sqlite3.Connection, vigencia: int) -> dict:
+def constantes(con: Any, vigencia: int) -> dict:
     """A parte FIXA dos dois precos, somada da tabela. So LE.
 
     **NAO SE ESCREVE O NUMERO: SOMA-SE.** Escrito, ele ficaria parado na
@@ -638,7 +641,7 @@ def constantes(con: sqlite3.Connection, vigencia: int) -> dict:
             "faltando": False}
 
 
-def precos_do_titulo(con: sqlite3.Connection, valor_centavos: int, *,
+def precos_do_titulo(con: Any, valor_centavos: int, *,
                      vigencia: int) -> dict:
     """O que o devedor paga para retirar e para cancelar. So LE.
 
@@ -680,7 +683,7 @@ def nome_do_arquivo(*, uf: str, comarca: str, cartorio: str, data: str,
             f"{so_digitos(data)}-{sequencial:02d}.txt")
 
 
-def titulos_do_arquivo(con: sqlite3.Connection) -> list[dict]:
+def titulos_do_arquivo(con: Any) -> list[dict]:
     """Os titulos que entram: **protesto vivo, e com chave da Central**.
 
     MEDIDO NO ARQUIVO REAL: os 173 que deu para casar sao todos `snProtestado=1`
@@ -691,15 +694,15 @@ def titulos_do_arquivo(con: sqlite3.Connection) -> list[dict]:
     **E SEM A CHAVE NAO HA LINHA**, porque ela e o primeiro campo. E por isso
     que este arquivo depende do importador do XML: e la que a chave entra.
     """
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT id, chave_cenprot, valor_centavos, numero_titulo, protocolo
              FROM pt_titulos
             WHERE situacao = 'PROTESTADO'
-              AND TRIM(COALESCE(chave_cenprot,'')) <> ''
-            ORDER BY chave_cenprot""")]
+              AND trim(coalesce(chave_cenprot,'')) <> ''
+            ORDER BY chave_cenprot, id""")
 
 
-def gerar_emolumentos(con: sqlite3.Connection, *, comarca: str, cartorio: str,
+def gerar_emolumentos(con: Any, *, comarca: str, cartorio: str,
                       uf: str, data: str, sequencial: int = 1) -> dict:
     """Monta o arquivo de emolumentos do CENPROT. So LE.
 
@@ -730,7 +733,7 @@ def gerar_emolumentos(con: sqlite3.Connection, *, comarca: str, cartorio: str,
             f"este arquivo cobra ({', '.join(ITENS_FIXOS_DA_RETIRADA)}, "
             f"{ITEM_POR_FOLHA}, "
             f"{', '.join(sorted(set(ITENS_A_MAIS_DO_CANCELAMENTO)))}). "
-            f"Importe a tabela do E-Oficio de novo antes de gerar — arquivo de "
+            f"Importe a tabela do sistema antigo de novo antes de gerar — arquivo de "
             f"precos com item faltando publica na Central um valor menor que o "
             f"que a casa cobra.")
 
@@ -833,7 +836,7 @@ def nome_do_edital(*, comarca: str, dia: str, sequencial: int = 1) -> str:
             f"{d[2]}{d[1]}{d[0]}_{sequencial:03d}.xml")
 
 
-def _motivo_do_edital(con: sqlite3.Connection, titulo_id: int) -> str:
+def _motivo_do_edital(con: Any, titulo_id: int) -> str:
     """Por que este titulo foi a edital. So LE.
 
     Sai do ato de INTIMACAO por edital, onde a carga guardou o motivo do
@@ -841,10 +844,11 @@ def _motivo_do_edital(con: sqlite3.Connection, titulo_id: int) -> str:
     publica assim mesmo, e um motivo errado no edital afirma sobre a pessoa
     uma coisa que ninguem apurou.
     """
-    linha = con.execute(
+    bd = banco(con)
+    linha = bd.um(
         """SELECT detalhe_json FROM pt_atos
-            WHERE titulo_id = ? AND tipo = 'INTIMACAO'
-            ORDER BY id DESC LIMIT 1""", (int(titulo_id),)).fetchone()
+            WHERE titulo_id = %s AND tipo = 'INTIMACAO'
+            ORDER BY id DESC LIMIT 1""", (int(titulo_id),))
     if not linha:
         return ""
     try:
@@ -859,14 +863,14 @@ def _motivo_do_edital(con: sqlite3.Connection, titulo_id: int) -> str:
     # edital eletrônico dos editais novos sairia com este campo vazio. Ele
     # vem do catálogo medido (`tbMotivoNEntrega`), como «Ausente».
     import protesto_aviso as AV
-    aviso = con.execute(
-        """SELECT motivo FROM pt_avisos WHERE titulo_id = ? AND
+    aviso = bd.um(
+        """SELECT motivo FROM pt_avisos WHERE titulo_id = %s AND
                situacao = 'EDITAL' AND motivo IS NOT NULL
-            ORDER BY id DESC LIMIT 1""", (int(titulo_id),)).fetchone()
-    return AV.motivo_rotulo(aviso[0]) if aviso else ""
+            ORDER BY id DESC LIMIT 1""", (int(titulo_id),))
+    return AV.motivo_rotulo(aviso["motivo"]) if aviso else ""
 
 
-def gerar_edital_eletronico(con: sqlite3.Connection, *, dia: str,
+def gerar_edital_eletronico(con: Any, *, dia: str,
                             comarca: str, sequencial: int = 1) -> dict:
     """Monta o XML do edital eletronico do dia. So LE.
 
@@ -881,18 +885,19 @@ def gerar_edital_eletronico(con: sqlite3.Connection, *, dia: str,
     """
     import protesto_aviso as PA
 
+    bd = banco(con)
     linhas, fora = [], []
     for e in PA.editais_do_dia(con, dia):
-        t = con.execute(
+        t = bd.um(
             """SELECT id, numero_titulo, especie, protocolo, valor_centavos,
                       data_emissao, data_vencimento, cedente_nome,
                       cedente_documento
-                 FROM pt_titulos WHERE id = ?""", (e["titulo_id"],)).fetchone()
-        d = con.execute(
+                 FROM pt_titulos WHERE id = %s""", (e["titulo_id"],))
+        d = bd.um(
             """SELECT nome, documento_tipo, documento_numero, bairro, cep,
                       cidade, uf FROM pt_devedores
-                WHERE titulo_id = ? ORDER BY id LIMIT 1""",
-            (e["titulo_id"],)).fetchone()
+                WHERE titulo_id = %s ORDER BY id LIMIT 1""",
+            (e["titulo_id"],))
         if t is None or d is None or not str(d["nome"] or "").strip():
             fora.append({"edital": e["numero"], "titulo_id": e["titulo_id"],
                          "motivo": "o titulo nao tem devedor com nome, e o "

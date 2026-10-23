@@ -1,0 +1,10 @@
+{
+  "chave": "RI_PRENOTACOES_ABERTAS_HA_UMA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Prenotação em aberto — há uma",
+  "formato": "JINJA",
+  "explica": "Frase da certidão da matrícula que afirma haver um título prenotado em aberto; entra quando a busca acha um só protocolo, e o módulo monta a lista (ri_web).",
+  "campos": [
+    "lista"
+  ]
+}

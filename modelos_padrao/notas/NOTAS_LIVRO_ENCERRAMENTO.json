@@ -1,0 +1,18 @@
+{
+  "chave": "NOTAS_LIVRO_ENCERRAMENTO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Termo de encerramento do livro de notas",
+  "formato": "CHAVES",
+  "explica": "O termo de encerramento, com o que foi usado e o que ficou inutilizado. As frases do meio ({frases}) são peças, escolhidas pelo código conforme o livro. Gravado no livro ao encerrar — o termo já lavrado não muda.",
+  "campos": [
+    "numero",
+    "serie",
+    "folhas",
+    "frases",
+    "cidade",
+    "uf",
+    "data_extenso",
+    "titular",
+    "titulo"
+  ]
+}

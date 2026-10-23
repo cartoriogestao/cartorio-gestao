@@ -39,6 +39,9 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
+
+from protocolo_de_teste import atender_protocolo_pago  # noqa: E402
 
 SUBSTITUTA = "Beatriz Exemplo de Souza"
 
@@ -84,6 +87,12 @@ def serventia(cg_casa):
                    VALUES (413, '13.17.2',
                            'Reconhecimento de firma, por assinatura',
                            'RECONHECIMENTO DE FIRMA, POR ASSINATURA', 1)""")
+    # CADA UM ATENDE O SEU PROTOCOLO PAGO — desde o LX16 (19/10/2026) o selo
+    # pago só sai com protocolo e pagamento, e a trava procura o item no
+    # protocolo de QUEM está logado. Sem isto o selo nem é pedido, o
+    # reconhecimento é desfeito e o nome no livro não chega a ser lido.
+    for nome in ("ANTONIO PEREIRA LIMA", "LAURA MARIA DA COSTA"):
+        atender_protocolo_pago(con, usuario=nome, codigos=("13.17.2",))
     con.commit()
     con.close()
 

@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ANOTACAO_MARGEM__cns",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Anotação à margem — CNS da serventia de fora",
+  "formato": "CHAVES",
+  "explica": "Depois do nome da serventia de fora, com vírgula, quando há CNS.",
+  "campos": [
+    "cns"
+  ]
+}

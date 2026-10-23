@@ -1,0 +1,28 @@
+{
+  "chave": "PT_AVISO_INTIMACAO",
+  "atribuicao": "Protesto",
+  "nome": "Aviso de intimação para pagamento",
+  "formato": "CHAVES",
+  "explica": "O papel que vai ao devedor, com os itens dos arts. 920 e 923 do Código de Normas. Não congela: remonta-se a cada impressão, com o endereço que congelou no aviso. {documento_do_devedor}, {documento_do_apresentante} e {vencimento} o sistema monta quando há o dado (vazios quando não há) — o CPF/CNPJ do apresentante vem do título do balcão ou do cadastro dos apresentantes, pelo código da CRA (CN-MA art. 923); {prazo_limite} é o terceiro dia útil da protocolização (CN-MA art. 925, § 4º).",
+  "campos": [
+    "numero",
+    "ano",
+    "protocolo",
+    "prazo_limite",
+    "devedor",
+    "documento_do_devedor",
+    "endereco",
+    "especie",
+    "numero_titulo",
+    "valor",
+    "vencimento",
+    "aceite",
+    "credor",
+    "apresentante",
+    "documento_do_apresentante",
+    "serventia",
+    "endereco_da_serventia",
+    "telefone",
+    "horario"
+  ]
+}

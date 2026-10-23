@@ -1,0 +1,55 @@
+{
+ "_como": "Gerado ANTES do LF06B, na árvore exportada do commit 2c41e90 (git archive), por ouro_lf06b.gerar. Não regerar depois da mudança: o teste compararia a base com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "_papel_da_certidao_do_livro3(fecho, cancelada)": {
+   "ok": "<p>Era o que nela continha.</p><p><b>FINALIDADE: </b>Instruir processo hipotético</p><p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Válida até 18/11/2026. Certidão emitida em 19 de outubro de 2026. Dou fé.</p><p align=\"center\">Cidade Exemplo/MA, 19 de outubro de 2026.</p><p align=\"center\">MARIA DE EXEMPLO</p><p align=\"center\">Escrevente Autorizada</p><p><font size=\"8\">Certidão n. 7/2026, emitida em 2026-10-19T09:30:00. Autenticidade: 0000000000000000000000000000000000000000000000000000000000000000</font></p>"
+  },
+  "_papel_da_certidao_do_livro3(fecho, completa)": {
+   "ok": "<p>Era o que nela continha.</p><p><b>FINALIDADE: </b>Instruir processo hipotético</p><p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Válida até 18/11/2026. Certidão emitida em 19 de outubro de 2026. Dou fé.</p><p align=\"center\">Cidade Exemplo/MA, 19 de outubro de 2026.</p><p align=\"center\">MARIA DE EXEMPLO</p><p align=\"center\">Escrevente Autorizada</p><p><font size=\"8\">Certidão n. 7/2026, emitida em 2026-10-19T09:30:00. Autenticidade: 0000000000000000000000000000000000000000000000000000000000000000</font></p>"
+  },
+  "_papel_da_certidao_do_livro3(fecho, data torta)": {
+   "ok": "<p>Era o que nela continha.</p><p><b>FINALIDADE: </b>Instruir processo hipotético</p><p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Válida até 18/11/2026. Certidão emitida em 19/10/2026. Dou fé.</p><p align=\"center\">Cidade Exemplo/MA, 19/10/2026.</p><p align=\"center\">MARIA DE EXEMPLO</p><p align=\"center\">Escrevente Autorizada</p><p><font size=\"8\">Certidão n. 7/2026, emitida em 19/10/2026. Autenticidade: 0000000000000000000000000000000000000000000000000000000000000000</font></p>"
+  },
+  "_papel_da_certidao_do_livro3(fecho, html no texto)": {
+   "ok": "<p>Era o que nela continha.</p><p><b>FINALIDADE: </b>Uso &lt;&amp;&gt; de exemplo</p><p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Válida até 18/11/2026. Certidão emitida em 19 de outubro de 2026. Dou fé.</p><p align=\"center\">Cidade Exemplo/MA, 19 de outubro de 2026.</p><p align=\"center\">FULANO &lt;&amp;&gt; DE EXEMPLO</p><p align=\"center\">Escrevente Autorizada</p><p><font size=\"8\">Certidão n. 7/2026, emitida em 2026-10-19T09:30:00. Autenticidade: 0000000000000000000000000000000000000000000000000000000000000000</font></p>"
+  },
+  "_papel_da_certidao_do_livro3(fecho, quem pela serventia)": {
+   "ok": "<p>Era o que nela continha.</p><p><b>FINALIDADE: </b>Instruir processo hipotético</p><p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Válida até 18/11/2026. Certidão emitida em 19 de outubro de 2026. Dou fé.</p><p align=\"center\">Cidade Exemplo/MA, 19 de outubro de 2026.</p><p align=\"center\">FULANO DE EXEMPLO</p><p align=\"center\">Oficial</p><p><font size=\"8\">Certidão n. 7/2026, emitida em 2026-10-19T09:30:00. Autenticidade: 0000000000000000000000000000000000000000000000000000000000000000</font></p>"
+  },
+  "_papel_da_certidao_do_livro3(fecho, sem finalidade nem validade)": {
+   "ok": "<p>Era o que nela continha.</p><p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Certidão emitida em 19 de outubro de 2026. Dou fé.</p><p align=\"center\">Cidade Exemplo/MA, 19 de outubro de 2026.</p><p align=\"center\">MARIA DE EXEMPLO</p><p align=\"center\">Escrevente Autorizada</p><p><font size=\"8\">Certidão n. 7/2026, emitida em 2026-10-19T09:30:00. Autenticidade: 0000000000000000000000000000000000000000000000000000000000000000</font></p>"
+  },
+  "_papel_da_certidao_do_livro3(fecho, sem quem nem funcao)": {
+   "ok": "<p>Era o que nela continha.</p><p><b>FINALIDADE: </b>Instruir processo hipotético</p><p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Válida até 18/11/2026. Certidão emitida em 19 de outubro de 2026. Dou fé.</p><p align=\"center\">/, 19 de outubro de 2026.</p><p><font size=\"8\">Certidão n. 7/2026, emitida em 2026-10-19T09:30:00. Autenticidade: 0000000000000000000000000000000000000000000000000000000000000000</font></p>"
+  },
+  "_papel_da_certidao_do_livro3(titulo, cancelada)": {
+   "ok": "<p align=\"center\"><b>CERTIDÃO DE INTEIRO TEOR n. 7/2026</b></p><p align=\"center\"><b>CERTIDÃO CANCELADA — Erro &lt;&amp;&gt; de exemplo</b></p>"
+  },
+  "_papel_da_certidao_do_livro3(titulo, completa)": {
+   "ok": "<p align=\"center\"><b>CERTIDÃO DE INTEIRO TEOR n. 7/2026</b></p>"
+  },
+  "_papel_da_certidao_do_livro3(titulo, data torta)": {
+   "ok": "<p align=\"center\"><b>CERTIDÃO DE INTEIRO TEOR n. 7/2026</b></p>"
+  },
+  "_papel_da_certidao_do_livro3(titulo, html no texto)": {
+   "ok": "<p align=\"center\"><b>CERTIDÃO DE INTEIRO TEOR n. 7/2026</b></p>"
+  },
+  "_papel_da_certidao_do_livro3(titulo, quem pela serventia)": {
+   "ok": "<p align=\"center\"><b>CERTIDÃO DE INTEIRO TEOR n. 7/2026</b></p>"
+  },
+  "_papel_da_certidao_do_livro3(titulo, sem finalidade nem validade)": {
+   "ok": "<p align=\"center\"><b>CERTIDÃO DE INTEIRO TEOR n. 7/2026</b></p>"
+  },
+  "_papel_da_certidao_do_livro3(titulo, sem quem nem funcao)": {
+   "ok": "<p align=\"center\"><b>CERTIDÃO DE INTEIRO TEOR n. 7/2026</b></p>"
+  },
+  "ri_emitir_certidao_negativa(pelo bairro, Bairro <&> de Exemplo)": {
+   "ok": "pelo bairro «Bairro <&> de Exemplo»"
+  },
+  "ri_emitir_certidao_negativa(pelo bairro, Centro)": {
+   "ok": "pelo bairro «Centro»"
+  }
+ },
+ "parte": "f"
+}

@@ -1,0 +1,47 @@
+{# Certidao RI.
+   HOTFIX-2026-10-09-01 (oficial, via Carla, 09/10/2026): o fecho NAO
+   assina mais pela substituta/registrador; fica o local/data e, na
+   impressao, `_assinatura_de_quem_emitiu` (quem expediu). Altera a
+   decisao de 23/09/2026 (molde fechava com quem responde pela serventia).
+
+   Inteiro teor por TEXTO (16/09/2026): cabecalho da ficha na impressao.
+   Texto corrido. Introducao: "inteiro teor segue". Fecho "Era o que nela
+   continha." DEPOIS de todo o teor. Nos atos, o teor com destaque do rotulo
+   (R-01/...:- em negrito) se ainda nao vier no texto.
+
+   O TEOR SAI EM TODA FICHA QUE O TENHA — relato #79, 17/09/2026.
+
+     A condicao era `{% if m.tipo_ficha == "ACERVO" %}`. Medido na producao:
+     das 1.985 matriculas, **1.979 sao ACERVO e 6 sao ESTRUTURADA** — e as 6
+     perderam o teor na certidao. A da matricula 4.016 saiu com **674
+     caracteres**: a introducao, o «cujo inteiro teor segue:», e «Era o que
+     nela continha.» sem nada entre os dois.
+
+     **A PERGUNTA CERTA NAO E DE QUE TIPO A FICHA E; E SE ELA TEM TEOR.** A
+     guarda que a ficha de papel usa — `MODELO_FICHA_PADRAO`, decisao de
+     16/09 sobre a linha de assinatura — responde a outra pergunta (o que o
+     papel da FICHA imprime), e nao se muda por causa disto.
+
+     Nao vai ao papel da certidao o ato cujo texto ja esta escrito no teor:
+     quem decide isso e `contexto_ficha`, com `atos_fora_do_teor`.
+#}
+{% if tipo_certidao == "INTEIRO_TEOR" %}
+<p align="center"><b>{{ tipo_certidao_nome|upper }}</b></p>
+<p>Certifico, a pedido de parte interessada{% if requerente %} — <b>{{ requerente }}</b>{% if requerente_documento %}, {{ requerente_documento }}{% endif %}{% endif %}, que, revendo os livros de Registro de Imóveis a meu cargo, neles encontrei a <b>MATRÍCULA Nº {{ m.numero }}</b>{% if m.livro %}, do Livro {{ m.livro }}{% endif %}{% if m.folha %}, folha {{ m.folha }}{% endif %}{% if m.cnm %}, CNM {{ m.cnm }}{% endif %}, cujo <b>inteiro teor segue</b>:</p>
+{{ miolo_do_tipo }}{% if clausula_prenotacoes_abertas %}{{ clausula_prenotacoes_abertas }}{% endif %}{% if finalidade %}<p><b>FINALIDADE: </b>{{ finalidade }}</p>{% endif %}<p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 553 do Código de Normas da CGJ/TJMA. Certidão emitida em {{ hoje_extenso }}. Dou fé.</p>
+<p align="center">{{ serventia.cidade }}/{{ serventia.uf }}, {{ hoje_extenso }}.</p>
+{% else %}
+<p align="center"><b>{{ serventia.nome|upper }}</b></p>
+<p align="center">CNS {{ serventia.cns }} — {{ serventia.cidade }}/{{ serventia.uf }}</p>
+<p align="center"><b>{{ tipo_certidao_nome|upper }}</b></p>
+<p>Certifico, a pedido de parte interessada{% if requerente %} — <b>{{ requerente }}</b>{% if requerente_documento %}, {{ requerente_documento }}{% endif %}{% endif %}, que, revendo os livros de Registro de Imóveis a meu cargo, neles encontrei a <b>MATRÍCULA Nº {{ m.numero }}</b>{% if m.livro %}, do Livro {{ m.livro }}{% endif %}{% if m.folha %}, folha {{ m.folha }}{% endif %}{% if m.cnm %}, CNM {{ m.cnm }}{% endif %}, cujo teor é o seguinte:</p>
+<p><b>IMÓVEL: </b>{% if m.descricao_perimetro %}{{ m.descricao_perimetro }}{% else %}{{ m.logradouro or "" }}{% if m.bairro %}, {{ m.bairro }}{% endif %}{% if m.cidade %}, {{ m.cidade }}/{{ m.uf }}{% endif %}{% if m.area_valor %}, área de {{ m.area_valor }} {{ m.area_unidade or "" }}{% endif %}{% endif %}.</p>
+{% if proprietarios %}
+<p><b>PROPRIETÁRIO(S) ATUAL(IS): </b>{% for p in proprietarios %}{{ p.nome }}{% if p.documento_numero %}, {{ p.documento_tipo }} {{ p.documento_numero }}{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.</p>
+{% else %}
+<p><b>PROPRIETÁRIO:</b> não consta titularidade ativa registrada nesta matrícula.</p>
+{% endif %}
+{{ miolo_do_tipo }}{% if clausula_prenotacoes_abertas %}{{ clausula_prenotacoes_abertas }}{% endif %}{% if finalidade %}<p><b>FINALIDADE: </b>{{ finalidade }}</p>{% endif %}
+<p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 553 do Código de Normas da CGJ/TJMA. Certidão emitida em {{ hoje_extenso }}. Dou fé.</p>
+<p align="center">{{ serventia.cidade }}/{{ serventia.uf }}, {{ hoje_extenso }}.</p>
+{% endif %}

@@ -1,0 +1,10 @@
+{
+  "chave": "RI_PRENOTACOES_ABERTAS_ITEM_OBJETO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Prenotação em aberto — objeto",
+  "formato": "JINJA",
+  "explica": "Objeto do título na lista das prenotações em aberto; o módulo só o põe quando o protocolo tem objeto (ri_web).",
+  "campos": [
+    "objeto"
+  ]
+}

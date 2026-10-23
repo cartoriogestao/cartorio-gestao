@@ -52,13 +52,15 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import banco_pg  # noqa: E402
+from bd_nativo import banco  # noqa: E402
 
-def _atos_depois(con: sqlite3.Connection, matricula_id: int,
-                 ato_id: int) -> list[sqlite3.Row]:
-    return list(con.execute(
+
+def _atos_depois(bd, matricula_id: int, ato_id: int) -> list[dict]:
+    return bd.ler(
         """SELECT id, tipo, numero FROM ri_atos
-            WHERE matricula_id=? AND id>? ORDER BY id""",
-        (int(matricula_id), int(ato_id))))
+            WHERE matricula_id=%s AND id>%s ORDER BY id""",
+        (int(matricula_id), int(ato_id)))
 
 
 def main() -> int:
@@ -102,10 +104,10 @@ def main() -> int:
         """
         return LIMPO.limpar(sem_fecho_antigo(teor))
 
-    con = sqlite3.connect(caminho)
-    con.row_factory = sqlite3.Row
-    m = con.execute("SELECT * FROM ri_matriculas WHERE numero=?",
-                    (str(args.matricula).strip(),)).fetchone()
+    con = banco_pg.conectar(caminho)
+    bd = banco(con)
+    m = bd.um("SELECT * FROM ri_matriculas WHERE numero=%s",
+              (str(args.matricula).strip(),))
     if not m:
         print(f"Matrícula {args.matricula} não encontrada.", file=sys.stderr)
         con.close()
@@ -132,8 +134,8 @@ def main() -> int:
 
     # ------------------------------------------------------------ os atos
     if not args.so_a_ficha:
-        for a in con.execute("""SELECT * FROM ri_atos WHERE matricula_id=?
-                                 ORDER BY id""", (m["id"],)):
+        for a in bd.ler("""SELECT * FROM ri_atos WHERE matricula_id=%s
+                          ORDER BY id""", (m["id"],)):
             novo = limpar_ato(a["teor"])
             saiu = LIMPO.o_que_sai(a["teor"])
             marcador = novo != LIMPO.limpar(a["teor"])
@@ -148,7 +150,7 @@ def main() -> int:
             if marcador:
                 print("  e o bloco «Espaco reservado para o selo digital do "
                       "TJMA», que o sistema escreveu na lavratura")
-            depois = _atos_depois(con, m["id"], a["id"])
+            depois = _atos_depois(bd, m["id"], a["id"])
             if depois:
                 nomes = ", ".join(f"{d['tipo']}-{d['numero']:02d}"
                                   for d in depois)
@@ -163,7 +165,8 @@ def main() -> int:
             print(f"  hash: {(a['hash_ato'] or '')[:16]}… → {h[:16]}…")
             print(f"  selo: {a['selo_texto'] or '—'}  (FICA — não entra no hash)")
             planos.append({"o_que": rotulo, "id": int(a["id"]),
-                           "teor": novo, "hash": h})
+                           "teor": novo, "hash": h,
+                           "lido": (a["teor"], a["hash_ato"])})
             print()
 
     if not planos:
@@ -183,26 +186,44 @@ def main() -> int:
     import pasta_das_copias as _PC
     copia = _PC.destino_da_copia(copia, Path(caminho))
     try:
-        con.execute("VACUUM INTO ?", (str(copia),))
+        banco_pg.copiar_para_arquivo(caminho, copia)
     except sqlite3.OperationalError:
         shutil.copy2(caminho, copia)
     print(f"Cópia do banco guardada em:\n  {copia}\n")
 
     agora = datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
     with con:
+        # A RECUSA SE CONFERE DE NOVO, DENTRO DA TRAVA DA LAVRATURA
+        # (`ri_atos.numero`, a de `ri_web`). A conferência lá de cima veio antes
+        # da cópia do banco; um ato lavrado depois deste na ficha, nesse
+        # meio-tempo, ficaria com o `hash_anterior` do hash que se troca aqui.
+        bd.travar("ri_atos.numero")
         for plano in planos:
             if plano["o_que"] == "ficha":
-                con.execute("UPDATE ri_matriculas SET teor=? WHERE id=?",
+                continue
+            relido = bd.um("SELECT teor, hash_ato FROM ri_atos WHERE id=%s FOR UPDATE",
+                           (plano["id"],))
+            if (_atos_depois(bd, m["id"], plano["id"]) or not relido
+                    or (relido["teor"], relido["hash_ato"]) != plano["lido"]):
+                print(f"RECUSA: o {plano['o_que']} (ato {plano['id']}) mudou, ou "
+                      f"ganhou ato depois dele na ficha, enquanto a cópia era "
+                      f"tirada. Nada foi gravado — rode de novo para ver como "
+                      f"ficou.", file=sys.stderr)
+                con.close()
+                return 1
+        for plano in planos:
+            if plano["o_que"] == "ficha":
+                bd.escrever("UPDATE ri_matriculas SET teor=%s WHERE id=%s",
                             (plano["teor"], plano["id"]))
             else:
-                con.execute("UPDATE ri_atos SET teor=?, hash_ato=? WHERE id=?",
+                bd.escrever("UPDATE ri_atos SET teor=%s, hash_ato=%s WHERE id=%s",
                             (plano["teor"], plano["hash"], plano["id"]))
             # O RASTRO FICA NO BANCO. Quem conferir a ficha daqui a um ano
             # precisa achar por que o texto — e o hash — mudaram.
-            con.execute(
+            bd.escrever(
                 """INSERT INTO audit_logs (ts, user_id, username_snapshot,
                        action, entity_type, entity_id, details)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (agora, None, "tools/limpar_teor_do_acervo.py",
                  "RI_TEOR_LIMPO",
                  "RI_MATRICULA" if plano["o_que"] == "ficha" else "RI_ATO",

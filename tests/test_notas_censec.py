@@ -19,13 +19,15 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import notas_censec as NC          # noqa: E402
 from notas_schema import init_notas_schema   # noqa: E402
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")      # como a producao
     init_notas_schema(con)
@@ -374,3 +376,35 @@ def test_ata_notarial_entra_na_cep_com_o_solicitante():
     r = NC.separar(con, "CEP", 2026, 9, 2)
     assert len(r["aptos"]) == 1, r["impedidos"]
     assert r["aptos"][0]["linha"]
+
+
+# ------------------------------------------- as partes do ato (migração PG)
+
+def test_a_nacionalidade_das_partes_e_a_da_parte_e_nao_a_do_cartao():
+    """O SQL junta `p.*` (que tem `nacionalidade`) com colunas do cartão. No
+    SQLite o dict ficava com a coluna da parte; no PostgreSQL o `dict_row`
+    fica com a última de nome repetido — e um `c.nacionalidade` no fim
+    trocava a da parte pela do cartão, ou por nada quando não há cartão."""
+    con = banco()
+    agora = "2026-09-17T12:00:00"
+    con.execute("""INSERT INTO nt_atos(id, tipo, data, situacao, criado_em)
+                   VALUES (1,'ESCRITURA','2026-09-17','LAVRADO',?)""", (agora,))
+    con.execute("""INSERT INTO nt_cartoes(id, nome, nacionalidade, sexo,
+                       criado_em)
+                   VALUES (1,'PESSOA FICTICIA UM','PORTUGUESA','F',?)""",
+                (agora,))
+    con.execute("""INSERT INTO nt_ato_partes(ato_id, cartao_id, nome,
+                       nacionalidade, qualificacao, ordem, criado_em)
+                   VALUES (1,1,'PESSOA FICTICIA UM','BRASILEIRA',
+                           'OUTORGANTE',1,?)""", (agora,))
+    con.execute("""INSERT INTO nt_ato_partes(ato_id, nome, nacionalidade,
+                       qualificacao, ordem, criado_em)
+                   VALUES (1,'PESSOA FICTICIA DOIS','BRASILEIRA',
+                           'OUTORGADO',2,?)""", (agora,))
+    con.commit()
+
+    com_cartao, sem_cartao = NC._partes_do_ato(con, 1)
+    assert com_cartao["nacionalidade"] == "BRASILEIRA"
+    assert com_cartao["sexo"] == "F"          # o que só o cartão tem continua vindo
+    assert sem_cartao["nacionalidade"] == "BRASILEIRA"
+    assert sem_cartao["sexo"] is None

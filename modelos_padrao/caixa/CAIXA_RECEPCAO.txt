@@ -1,0 +1,37 @@
+<p align="center"><b>{{ sv.unit_name }}</b></p>
+<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
+<p align="center">CNPJ {{ sv.serventia_cnpj }} — CNS {{ sv.ri_cns }} — Telefone {{ sv.serventia_telefone }}</p>
+<p align="center">{{ sv.endereco_completo }}</p>
+<p align="center"><b>PROTOCOLO DE RECEPÇÃO Nº {{ p.numero }}</b></p>
+<p>Recebemos nesta data, de <b>{{ p.interessado or '—' }}</b>{% if documento %},
+inscrito(a) no CPF/CNPJ sob o nº {{ documento }}{% endif %}{% if telefone %},
+telefone {{ telefone }}{% endif %}{% if email %}, e-mail {{ email }}{% endif %}, o(s)
+documento(s) abaixo, para o fim indicado.</p>
+<table border="1" cols="4.6cm,11.4cm">
+<tr><td><b>Atribuição</b></td><td>{{ p.atribuicao }}</td></tr>
+<tr><td><b>Assunto</b></td><td>{{ p.assunto or '—' }}</td></tr>
+{% if p.documento_descricao %}<tr><td><b>Documento apresentado</b></td><td>{{ p.documento_descricao }}</td></tr>{% endif %}
+{% if p.documento_tipo %}<tr><td><b>Tipo</b></td><td>{{ p.documento_tipo }}{% if p.documento_numero %} nº {{ p.documento_numero }}{% endif %}</td></tr>{% endif %}
+<tr><td><b>Recebido em</b></td><td>{{ data }}{% if p.hora %} às {{ p.hora }}{% endif %}</td></tr>
+{% if p.previsao_entrega %}<tr><td><b>Previsão de entrega</b></td><td>{{ previsao }}</td></tr>{% endif %}
+</table>
+{% if itens %}
+<p><b>ATOS PREVISTOS E VALORES</b></p>
+<table border="1" cols="2.2cm,7.8cm,1.4cm,4.6cm">
+<tr><td><b>Código TJ</b></td><td><b>Ato</b></td><td><b>Qtd</b></td><td><b>Total</b></td></tr>
+{% for i in itens %}<tr><td>{{ i.codigo_ato or '—' }}</td><td>{{ i.descricao or '—' }}</td><td>{{ i.quantidade }}</td><td>{{ i.valor_total }}{% if i.quitado %} (quitado){% endif %}</td></tr>
+{% endfor %}
+</table>
+<p><b>TOTAL: R$ {{ soma.total }}</b>{% if pendente.total_centavos %} — <b>a quitar: R$ {{ pendente.total }}</b>{% endif %}.</p>
+{% endif %}
+{% if p.observacao %}<p><b>Observação:</b> {{ observacao }}</p>{% endif %}
+<p>A retirada do documento depende da apresentação deste protocolo e da quitação
+dos emolumentos devidos.</p>
+<p>{{ sv.cidade_uf }}, {{ data }}.</p>
+<p></p><p></p>
+<table cols="7.6cm,7.6cm">
+<tr><td>_________________________________</td><td>_________________________________</td></tr>
+<tr><td>{{ emitido_por }}</td><td>{{ p.interessado or 'Apresentante' }}</td></tr>
+<tr><td>{{ funcao or 'Escrevente' }}</td><td>Apresentante</td></tr>
+</table>
+<p><small>Dados pessoais parcialmente ocultados na forma da Lei 13.709/2018 — LGPD.</small></p>

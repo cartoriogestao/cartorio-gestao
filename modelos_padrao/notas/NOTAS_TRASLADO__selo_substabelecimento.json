@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_TRASLADO__selo_substabelecimento",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Rótulo do selo — substabelecimento",
+  "formato": "CHAVES",
+  "explica": "O rótulo do quadro do selo no traslado e no termo do livro.",
+  "campos": []
+}

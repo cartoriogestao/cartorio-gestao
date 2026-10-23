@@ -1,0 +1,16 @@
+{
+  "chave": "RTD_CERTIDAO_NOTIFICACAO_NEGATIVA__averbacao",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Averbação à margem — notificação negativa",
+  "formato": "CHAVES",
+  "explica": "O teor da averbação do resultado negativo à margem do registro (CN-MA, art. 987, §§ 2º e 4º).",
+  "campos": [
+    "quantas",
+    "endereco",
+    "destinatario",
+    "documento",
+    "certidao",
+    "cidade",
+    "data_extenso"
+  ]
+}

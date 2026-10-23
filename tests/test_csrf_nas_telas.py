@@ -135,3 +135,22 @@ def test_nenhuma_tela_CHAMA_csrf_token_como_funcao():
     assert not achados, (
         "estas telas chamam csrf_token como função e respondem HTTP 500: "
         + ", ".join(achados))
+
+
+@pytest.mark.parametrize("tela", [
+    "login_dois_fatores.html",
+    "login_dois_fatores_cadastrar.html",
+    "dois_fatores.html",
+    "gestor_dois_fatores.html",
+])
+def test_as_telas_da_verificacao_em_duas_etapas_mandam_o_token(tela):
+    """As quatro telas do LG02 (19/10/2026), nomeadas.
+
+    Duas delas são de quem AINDA NÃO ENTROU — a meia-sessão, entre a senha e o
+    código. Ali o token é o que a troca de sessão acabou de gerar, e uma tela
+    que o esquecesse trancaria do lado de fora justamente quem ativou a
+    verificação: «bad request» no lugar do código.
+    """
+    corpos = _formularios((TELAS / tela).read_text(encoding="utf-8"))
+    assert corpos, f"{tela} deixou de ter formulário — confira se é isso mesmo"
+    assert all(TOKEN.search(c) for c in corpos), f"{tela} esqueceu o token"

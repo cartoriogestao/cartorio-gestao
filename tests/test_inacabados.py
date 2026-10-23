@@ -247,6 +247,21 @@ def test_item_sem_data_vai_para_o_fim_e_nao_vira_zero(casa):
     assert not lista[-1]["parado"]
 
 
+def test_mesma_data_sai_na_ordem_em_que_entrou(casa):
+    """No SQLite, o empate saía na ordem do `id`; no PostgreSQL, sem desempate,
+    sai na ordem em que a linha está gravada no disco. Os `id` vão de trás para
+    a frente de propósito: sem o desempate, a lista os mostra ao contrário."""
+    con = _con(casa)
+    with con:
+        for tid in (903, 902, 901):
+            con.execute("""INSERT INTO tasks (id, title, created_at, updated_at)
+                           VALUES (?, ?, '2026-08-01', '2026-08-01')""",
+                        (tid, f"empate {tid}"))
+    rotulos = [x["rotulo"] for x in IN.lista(con, hoje=HOJE, chave="TAREFA")
+               if x["rotulo"].startswith("empate")]
+    assert rotulos == ["empate 901", "empate 902", "empate 903"]
+
+
 def test_filtrar_por_atribuicao(casa):
     """Para o balcão do civil não ver a fila do protesto."""
     con = _con(casa)

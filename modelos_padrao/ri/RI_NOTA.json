@@ -1,0 +1,14 @@
+{
+  "chave": "RI_NOTA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Nota devolutiva",
+  "formato": "JINJA",
+  "explica": "As exigências que devolvem o título ao apresentante.",
+  "campos": [
+    "exigencias_odf",
+    "hoje_extenso",
+    "nota",
+    "protocolo",
+    "serventia"
+  ]
+}

@@ -1,0 +1,20 @@
+EDITAL DE USUCAPIÃO EXTRAJUDICIAL
+
+{serventia}
+{oficial}, {cargo}, FAZ SABER a quantos este edital virem ou dele conhecimento tiverem que, nos termos do art. 216-A da Lei nº 6.015/1973, tramita nesta serventia procedimento de USUCAPIÃO EXTRAJUDICIAL:
+
+Autos nº {numero}{do_ano} — {modalidade}
+Requerente: {requerente}
+
+IMÓVEL:
+{imovel}
+
+{sobre_a_origem}{sobre_a_posse}FICAM CIENTIFICADOS terceiros eventualmente interessados de que poderão MANIFESTAR-SE no prazo de {prazo_texto}, contado na forma do art. 755, § 1º, do Código de Normas da CGJ/TJMA.
+
+A manifestação pode ser apresentada nesta serventia, por escrito.
+
+{lugar_e_data}
+
+_______________________________________
+{oficial}
+{cargo}

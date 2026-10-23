@@ -9,12 +9,21 @@ from unittest.mock import patch, MagicMock
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import banco_pg
 import cnib_atualizador as A
+from banco_de_teste import conexao_de_teste
 
 
 class ReferenciaAcervoTests(unittest.TestCase):
-    def banco(self, path=':memory:'):
-        con=sqlite3.connect(path);con.row_factory=sqlite3.Row
+    def banco(self, path=None):
+        # cnib_atualizador é PostgreSQL nativo: o banco do teste é o da casa
+        # (na pasta pedida, quando o teste precisa do acervo ao lado dele).
+        if path is None:
+            con=conexao_de_teste()
+        else:
+            banco_pg.registrar_banco(path);con=sqlite3.connect(path)
+        con.row_factory=sqlite3.Row
         con.executescript('''
           CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT);
           CREATE TABLE ri_cnib_ordens(id INTEGER PRIMARY KEY,protocolo_cnib TEXT UNIQUE,

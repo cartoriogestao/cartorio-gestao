@@ -26,6 +26,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 import ri_schema
 import rr_tjma as NORMA
 
@@ -66,9 +67,25 @@ def _texto(v: Any) -> str:
 
 
 def _exigir(con: sqlite3.Connection, processo_id: int) -> dict:
-    con.row_factory = sqlite3.Row
-    linha = con.execute("SELECT * FROM rr_processos WHERE id = ?",
-                        (int(processo_id),)).fetchone()
+    linha = banco(con).um("SELECT * FROM rr_processos WHERE id = %s",
+                          (int(processo_id),))
+    if not linha:
+        raise RetificacaoRcpnError("Esse processo não existe.")
+    return dict(linha)
+
+
+def _exigir_para_gravar(con: sqlite3.Connection, processo_id: int) -> dict:
+    """O processo, com a linha presa até o fim da transação. GRAVA.
+
+    Quem confere «já instruído?» ou «já decidido?» e grava em seguida lê por
+    aqui, e não por `_exigir`, que só lê: sem a ponte, duas decisões ao mesmo
+    tempo passariam as duas pela conferência, e a segunda reescreveria a que
+    saiu.
+    """
+    bd = banco(con)
+    bd._escrita()
+    linha = bd.um("SELECT * FROM rr_processos WHERE id = %s FOR UPDATE",
+                  (int(processo_id),))
     if not linha:
         raise RetificacaoRcpnError("Esse processo não existe.")
     return dict(linha)
@@ -80,10 +97,11 @@ def proximo_numero(con: sqlite3.Connection, ano: int) -> int:
     A NUMERAÇÃO É POR ANO, como a das certidões — e o `UNIQUE(numero, ano)`
     guarda o resto.
     """
-    linha = con.execute(
-        "SELECT MAX(CAST(numero AS INTEGER)) FROM rr_processos WHERE ano = ?",
-        (int(ano),)).fetchone()
-    return int(linha[0] or 0) + 1
+    maior = banco(con).valor(
+        """SELECT max(substring(numero FROM '^[0-9]+')::bigint) AS maior
+             FROM rr_processos WHERE ano = %s""",
+        (int(ano),))
+    return int(maior or 0) + 1
 
 
 def abrir(con: sqlite3.Connection, *, instituto: str, forma: str,
@@ -122,31 +140,33 @@ def abrir(con: sqlite3.Connection, *, instituto: str, forma: str,
             "descrevendo onde ele está no livro de papel. Só no suprimento o "
             "assento ainda não existe.")
 
-    numero = proximo_numero(con, ano)
-    cur = con.execute(
+    bd = banco(con)
+    bd.travar("rr_processos.numero")
+    numero = proximo_numero(bd, ano)
+    processo_id = int(bd.escrever(
         """INSERT INTO rr_processos (numero, ano, instituto, forma, fase,
                situacao, assento_id, assento_descricao, requerente_nome,
                requerente_documento, assinado_por, o_que_se_pede,
                termo_verbal, termo_verbal_em, protocolado_em, criado_em,
                criado_por, atualizado_em)
-           VALUES (?,?,?,?,'PROTOCOLO','EM_ANDAMENTO',?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,'PROTOCOLO','EM_ANDAMENTO',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (str(numero), int(ano), instituto, forma, assento_id,
          _texto(assento_descricao), _texto(requerente_nome),
          _texto(requerente_documento), _texto(assinado_por),
          _texto(o_que_se_pede), _texto(termo_verbal),
          agora if _texto(termo_verbal) else None,
-         agora, agora, por, agora))
-    processo_id = int(cur.lastrowid)
-    _andar(con, processo_id, f"Processo aberto — {instituto.lower()}", agora,
+         agora, agora, por, agora))[0]["id"])
+    _andar(bd, processo_id, f"Processo aberto — {instituto.lower()}", agora,
            por)
     return processo_id
 
 
 def _andar(con: sqlite3.Connection, processo_id: int, o_que: str, quando: str,
            quem: str) -> None:
-    con.execute(
+    banco(con).escrever(
         """INSERT INTO rr_andamento (processo_id, quando, o_que, quem)
-           VALUES (?,?,?,?)""", (int(processo_id), quando, o_que, quem))
+           VALUES (%s,%s,%s,%s)""", (int(processo_id), quando, o_que, quem))
 
 
 def instruir(con: sqlite3.Connection, processo_id: int, *, agora: str,
@@ -161,7 +181,7 @@ def instruir(con: sqlite3.Connection, processo_id: int, *, agora: str,
     O prazo sai de `ri_schema.soma_dias_uteis`, o contador de dias úteis da
     casa — porque o § 3º **qualifica**: «10 (dez) dias úteis».
     """
-    processo = _exigir(con, processo_id)
+    processo = _exigir_para_gravar(con, processo_id)
     if _texto(processo["instruido_em"]):
         raise RetificacaoRcpnError(
             "Este pedido já está marcado como instruído. O prazo dos 10 dias "
@@ -178,9 +198,9 @@ def instruir(con: sqlite3.Connection, processo_id: int, *, agora: str,
     inicio = date(int(bruto[:4]), int(bruto[5:7]), int(bruto[8:10]))
     prazo = ri_schema.soma_dias_uteis(
         inicio, NORMA.PRAZO_DECISAO_DIAS_UTEIS).isoformat()
-    con.execute(
-        """UPDATE rr_processos SET instruido_em=?, prazo_ate=?, fase='INSTRUCAO',
-               atualizado_em=? WHERE id=?""",
+    banco(con).escrever(
+        """UPDATE rr_processos SET instruido_em=%s, prazo_ate=%s, fase='INSTRUCAO',
+               atualizado_em=%s WHERE id=%s""",
         (agora, prazo, agora, int(processo_id)))
     _andar(con, processo_id,
            f"Pedido devidamente instruído — o prazo vai até {prazo}", agora,
@@ -213,33 +233,34 @@ def registrar_consulta_crc(con: sqlite3.Connection, processo_id: int, *,
         raise RetificacaoRcpnError(
             "Escreva o que a CRC devolveu. «Consultado» não responde à pergunta "
             "que a correição faz.")
-    cur = con.execute(
+    bd = banco(con)
+    consulta_id = int(bd.escrever(
         """INSERT INTO rr_consultas_crc (processo_id, consultada_em,
                o_que_se_procurou, achou_duplicidade,
                achou_ato_em_outra_serventia, resultado, protocolo, criado_em,
                criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (int(processo_id), agora, _texto(o_que_se_procurou),
          1 if achou_duplicidade else 0,
          1 if achou_ato_em_outra_serventia else 0, _texto(resultado),
-         _texto(protocolo), agora, por))
-    con.execute("UPDATE rr_processos SET fase='CONSULTA_CRC', atualizado_em=? "
-                "WHERE id=?", (agora, int(processo_id)))
+         _texto(protocolo), agora, por))[0]["id"])
+    bd.escrever("UPDATE rr_processos SET fase='CONSULTA_CRC', atualizado_em=%s "
+                "WHERE id=%s", (agora, int(processo_id)))
     aviso = ""
     if achou_duplicidade:
         aviso = (" — DUPLICIDADE: o art. 365 manda comunicar imediatamente ao "
                  "juiz corregedor, com bloqueio cautelar do registro mais "
                  "recente")
-    _andar(con, processo_id, f"Consulta à CRC registrada{aviso}", agora, por)
-    return int(cur.lastrowid)
+    _andar(bd, processo_id, f"Consulta à CRC registrada{aviso}", agora, por)
+    return consulta_id
 
 
 def consultas(con: sqlite3.Connection, processo_id: int) -> list[dict]:
     """As consultas à CRC daquele processo. Só lê."""
-    con.row_factory = sqlite3.Row
-    return [dict(x) for x in con.execute(
-        "SELECT * FROM rr_consultas_crc WHERE processo_id=? ORDER BY id",
-        (int(processo_id),))]
+    return banco(con).ler(
+        "SELECT * FROM rr_consultas_crc WHERE processo_id=%s ORDER BY id",
+        (int(processo_id),))
 
 
 def o_que_falta_para_decidir(con: sqlite3.Connection,
@@ -284,7 +305,7 @@ def decidir(con: sqlite3.Connection, processo_id: int, *, decisao: str,
     e FERJ —, e exige fundamento próprio: a marca gera gratuidade e uma cobrança
     contra **o delegatário titular da época**, que é uma pessoa nomeada.
     """
-    processo = _exigir(con, processo_id)
+    processo = _exigir_para_gravar(con, processo_id)
     if decisao not in DECISOES:
         raise RetificacaoRcpnError(
             f"«{decisao}» não é uma decisão: deferido, indeferido ou remessa ao "
@@ -309,26 +330,28 @@ def decidir(con: sqlite3.Connection, processo_id: int, *, decisao: str,
             "delegatário titular da época. Escreva o fundamento — isso é juízo "
             "seu, e não uma caixinha.")
 
-    con.execute(
-        """UPDATE rr_processos SET decidido_em=?, decisao=?, fundamento=?,
-               decidido_por=?, erro_da_serventia=?, erro_fundamento=?,
-               fase='DECISAO', situacao=?, atualizado_em=? WHERE id=?""",
+    bd = banco(con)
+    bd.escrever(
+        """UPDATE rr_processos SET decidido_em=%s, decisao=%s, fundamento=%s,
+               decidido_por=%s, erro_da_serventia=%s, erro_fundamento=%s,
+               fase='DECISAO', situacao=%s, atualizado_em=%s WHERE id=%s""",
         (agora, decisao, _texto(fundamento), por,
          1 if erro_da_serventia else 0, _texto(erro_fundamento),
          "EM_ANDAMENTO" if decisao == "DEFERIDO" else decisao, agora,
          int(processo_id)))
-    _andar(con, processo_id, f"Decisão: {decisao.lower()}", agora, por)
+    _andar(bd, processo_id, f"Decisão: {decisao.lower()}", agora, por)
 
     abertas = []
     if erro_da_serventia:
         for fundo in FUNDOS:
-            con.execute(
-                """INSERT OR IGNORE INTO rr_comunicacoes_353 (processo_id,
+            bd.escrever(
+                """INSERT INTO rr_comunicacoes_353 (processo_id,
                        fundo, situacao, criado_em, criado_por)
-                   VALUES (?,?,'PENDENTE',?,?)""",
+                   VALUES (%s,%s,'PENDENTE',%s,%s)
+                   ON CONFLICT DO NOTHING""",
                 (int(processo_id), fundo, agora, por))
             abertas.append(fundo)
-        _andar(con, processo_id,
+        _andar(bd, processo_id,
                "Erro imputável à serventia — ato gratuito, e comunicação "
                "devida ao FERC e ao FERJ (art. 353)", agora, por)
     return {"decisao": decisao, "comunicacoes_abertas": abertas}
@@ -348,13 +371,14 @@ def registrar_comunicacao_353(con: sqlite3.Connection, processo_id: int, *,
             f"«{fundo}» não é um dos fundos do art. 353: FERC e FERJ.")
     if not _texto(teor):
         raise RetificacaoRcpnError("Não dá para registrar sem o ofício.")
-    atualizado = con.execute(
+    atualizado = len(banco(con).escrever(
         """UPDATE rr_comunicacoes_353
-              SET situacao='ENVIADA', teor=?, hash_teor=?, enviada_em=?,
-                  canal=?, protocolo=?
-            WHERE processo_id=? AND fundo=? AND situacao<>'ENVIADA'""",
+              SET situacao='ENVIADA', teor=%s, hash_teor=%s, enviada_em=%s,
+                  canal=%s, protocolo=%s
+            WHERE processo_id=%s AND fundo=%s AND situacao<>'ENVIADA'
+        RETURNING id""",
         (teor, hashlib.sha256(teor.encode("utf-8")).hexdigest(), agora,
-         _texto(canal), _texto(protocolo), int(processo_id), fundo)).rowcount
+         _texto(canal), _texto(protocolo), int(processo_id), fundo)))
     # `rowcount` E RESPOSTA; «deu certo» E SUPOSICAO. O recibo da DOI dizia
     # «registrado» com zero linhas mudadas, e o escrevente ia embora achando que
     # a obrigacao estava cumprida.
@@ -367,10 +391,9 @@ def registrar_comunicacao_353(con: sqlite3.Connection, processo_id: int, *,
 
 def comunicacoes_353(con: sqlite3.Connection, processo_id: int) -> list[dict]:
     """As comunicações do art. 353 daquele processo. Só lê."""
-    con.row_factory = sqlite3.Row
-    return [dict(x) for x in con.execute(
-        "SELECT * FROM rr_comunicacoes_353 WHERE processo_id=? ORDER BY fundo",
-        (int(processo_id),))]
+    return banco(con).ler(
+        "SELECT * FROM rr_comunicacoes_353 WHERE processo_id=%s ORDER BY fundo",
+        (int(processo_id),))
 
 
 def registrar_ato(con: sqlite3.Connection, processo_id: int, *, ato_id: int,
@@ -390,15 +413,15 @@ def registrar_ato(con: sqlite3.Connection, processo_id: int, *, ato_id: int,
         raise RetificacaoRcpnError(
             "Só o pedido deferido produz ato. Este está "
             f"«{_texto(processo['decisao']).lower() or 'sem decisão'}».")
-    existe = con.execute("SELECT id FROM rc_atos WHERE id=?",
-                         (int(ato_id),)).fetchone()
+    bd = banco(con)
+    existe = bd.um("SELECT id FROM rc_atos WHERE id=%s", (int(ato_id),))
     if not existe:
         raise RetificacaoRcpnError(
             "Esse ato não existe. Lavre o ato na ficha do assento e depois "
             "amarre-o a este processo.")
-    con.execute(
-        """UPDATE rr_processos SET ato_id=?, assento_novo_id=?, fase='ATO',
-               situacao='CONCLUIDO', atualizado_em=? WHERE id=?""",
+    bd.escrever(
+        """UPDATE rr_processos SET ato_id=%s, assento_novo_id=%s, fase='ATO',
+               situacao='CONCLUIDO', atualizado_em=%s WHERE id=%s""",
         (int(ato_id), assento_novo_id, agora, int(processo_id)))
     _andar(con, processo_id, "Ato lançado e amarrado ao processo", agora, por)
 
@@ -439,12 +462,11 @@ def proximos_passos(con: sqlite3.Connection, processo_id: int) -> list[str]:
 
 def em_andamento(con: sqlite3.Connection, limite: int = 300) -> list[dict]:
     """Os processos abertos, do prazo mais apertado para o mais folgado. Só lê."""
-    con.row_factory = sqlite3.Row
-    return [dict(x) for x in con.execute(
+    return banco(con).ler(
         """SELECT * FROM rr_processos
             WHERE COALESCE(situacao,'') NOT IN ('CONCLUIDO','INDEFERIDO',
                                                 'JUDICIAL')
-         ORDER BY prazo_ate IS NULL, prazo_ate LIMIT ?""", (limite,))]
+         ORDER BY prazo_ate IS NULL, prazo_ate, id LIMIT %s""", (limite,))
 
 
 def fora_do_prazo(con: sqlite3.Connection, *, hoje: str) -> list[dict]:

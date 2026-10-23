@@ -1,0 +1,1 @@
+{{ cidade }}/{{ uf }}, {{ data }}. Dou fé. {{ artigo }} {{ titulo }}, _____________ {{ nome }}.

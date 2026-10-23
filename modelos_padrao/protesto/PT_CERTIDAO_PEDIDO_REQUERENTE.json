@@ -1,0 +1,10 @@
+{
+  "chave": "PT_CERTIDAO_PEDIDO_REQUERENTE",
+  "atribuicao": "Protesto",
+  "nome": "Certidão de protesto — pedido de quem se identificou",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: entra no {pedido} quando o requerente é informado; dizer «verbal» de um pedido escrito seria certificar o que não houve.",
+  "campos": [
+    "requerente"
+  ]
+}

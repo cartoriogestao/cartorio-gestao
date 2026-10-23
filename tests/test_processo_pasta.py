@@ -16,12 +16,15 @@ import pytest
 
 import processo_pasta as PASTA
 from processo_pasta_web import proximo_dia_util
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 MATRICULA = "99999901552022200003154000092990"
 
 
 def _con():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.executescript("""
         CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT, linked_expediente_id INTEGER);
         CREATE TABLE task_history (id INTEGER PRIMARY KEY, task_id INTEGER, ts TEXT, user_id INTEGER,

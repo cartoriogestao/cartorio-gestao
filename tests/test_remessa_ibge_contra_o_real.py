@@ -2,7 +2,7 @@
 
 O ENSAIO QUE ISTO É, E POR QUE ELE VALE MAIS QUE OS OUTROS
     Os testes de regra provam que o montador obedece ao layout. Este pega os
-    **cinco arquivos que o E-Ofício exportou** em `C:\\ARPNET\\C11\\IBGE_EXP`,
+    **cinco arquivos que o E-Ofício exportou** em `C:\\ProgramData\\CartorioGestao\\arquivos\\eoficio\\IBGE_EXP`,
     gera o mesmo trimestre a partir do acervo, e compara **posição por
     posição**.
 
@@ -44,6 +44,8 @@ import pytest
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — referencia acervo_eoficio ou sqlite de producao
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import acervo_carga as AC                        # noqa: E402
 import ibge_geracao as G                         # noqa: E402
@@ -54,7 +56,7 @@ from rc_schema import init_rc_schema             # noqa: E402
 
 AGORA = "2026-08-28T12:00:00"
 ACERVO = Path(r"C:\ProgramData\CartorioGestao\acervo_eoficio.sqlite3")
-EXPORTADO = Path(r"C:\ARPNET\C11\IBGE_EXP")
+EXPORTADO = Path(r"C:\ProgramData\CartorioGestao\arquivos\eoficio\IBGE_EXP")
 
 pytestmark = pytest.mark.skipif(
     not (ACERVO.exists() and EXPORTADO.exists()),
@@ -63,7 +65,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def gerado():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     for iniciar in (init_nucleo_schema, init_rc_schema, init_ibge_schema):
         iniciar(con)

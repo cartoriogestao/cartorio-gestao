@@ -1,0 +1,49 @@
+{serventia}
+
+NOTIFICAÇÃO — RETIFICAÇÃO DE ÁREA
+Processo n. {numero}{do_ano}{sobre_matricula}
+
+Ao(À) Sr.(a) {nome}{qualidade}
+{endereco}
+
+Na qualidade de confrontante do imóvel adiante descrito, fica V. S.ª
+NOTIFICADO(A) de que tramita nesta Serventia pedido de retificação de área
+formulado por {requerente}, nos termos dos arts. 594 e seguintes do Código de
+Normas da Corregedoria Geral da Justiça do Estado do Maranhão.
+
+DO IMÓVEL RETIFICANDO
+{imovel}
+
+{sobre_a_planta}O inteiro teor do pedido, a planta e o memorial descritivo
+estão à disposição para exame nesta Serventia, no horário de expediente.
+
+DO PRAZO
+V. S.ª tem o prazo de {prazo_texto}, contado do recebimento desta, para
+impugnar o pedido (art. 599 do Código de Normas). O prazo corre
+individualmente para cada notificado.
+
+DO SILÊNCIO
+{silencio} ({silencio_artigo}).
+
+A impugnação apresentada fora do prazo, mas antes da averbação da retificação,
+ainda assim será recebida e processada ({atrasada_artigo}).
+
+A impugnação deve ser fundamentada e apresentada por escrito nesta Serventia.
+
+{lugar_e_data}
+
+_______________________________________
+{oficial}
+{cargo}
+
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+RECIBO
+
+Recebi, nesta data, a notificação acima, referente ao processo n. {numero}.
+
+Data: ____/____/________
+
+Nome legível: ______________________________________________________
+
+Documento: ________________________  Assinatura: ___________________

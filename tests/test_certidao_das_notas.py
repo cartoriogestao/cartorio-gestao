@@ -178,7 +178,7 @@ def gravador(monkeypatch):
 
     def _selar(*a, **k):
         chamadas.append(k)
-        n = f"CERTID0296370TESTE{len(chamadas):06d}"
+        n = f"CERTID0000000TESTE{len(chamadas):06d}"
         return {"selado": True, "numero": n, "numeros": [n], "motivo": None}
     monkeypatch.setattr(AS, "selar_o_ato_lavrado", _selar)
     return chamadas
@@ -319,7 +319,7 @@ def test_cancelar_com_selo_exige_a_declaracao(s, gravador):
     cid = con.execute("SELECT id FROM nt_certidoes").fetchone()[0]
     with con:
         # o gravador não amarra o selo; aqui ele fica amarrado à mão
-        con.execute("UPDATE nt_certidoes SET selo='CERTID0296370TESTE000001'"
+        con.execute("UPDATE nt_certidoes SET selo='CERTID0000000TESTE000001'"
                     " WHERE id=?", (cid,))
     con.close()
     s["c"].post(f"/notas/certidoes/{cid}/cancelar",

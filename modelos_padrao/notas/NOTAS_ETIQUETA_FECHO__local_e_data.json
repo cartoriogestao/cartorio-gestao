@@ -1,0 +1,11 @@
+{
+  "chave": "NOTAS_ETIQUETA_FECHO__local_e_data",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Fecho da etiqueta — local e data",
+  "formato": "CHAVES",
+  "explica": "Cidade-UF e a data do ato, depois do fecho; sai só se houver um dos dois.",
+  "campos": [
+    "local",
+    "dia"
+  ]
+}

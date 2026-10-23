@@ -1,0 +1,12 @@
+{
+  "chave": "RI_FECHO_DA_ABERTURA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Fecho da abertura da matrícula",
+  "formato": "JINJA",
+  "explica": "A frase que fecha a abertura da matrícula na ficha, antes do espaço de assinar. O código a omite na ficha de acervo e quando o teor que vai ao papel já diz «dou fé»; a linha de assinar e o nome continuam no código.",
+  "campos": [
+    "cidade",
+    "data_extenso",
+    "uf"
+  ]
+}

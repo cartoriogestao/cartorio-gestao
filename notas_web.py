@@ -27,6 +27,8 @@ import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
+from bd_nativo import banco
+
 from flask import Response, abort, flash, redirect, render_template, request, url_for
 import fraude as FR
 
@@ -42,6 +44,9 @@ import notas_livro as NL
 import notas_familias as NF
 import notas_modelos as NMOD
 import notas_naturezas as NNAT
+import arquivo_visivel as ARQVIS
+import pastas_da_casa as PDC
+import tetos_de_entrada as TETOS
 import ri_imagens as RIMG
 import notas_partes as NP
 import cadastro_biometria as CB
@@ -52,6 +57,7 @@ import notas_selo as NSELO
 # usam as mesmas, e duplicá-las aqui as faria divergir no
 # primeiro código que a Receita mudasse.
 import modelos_da_casa as MODELOS
+import html_sem_script as HSS
 import notas_doi as NDOI
 import ri_ctp as CTP
 import caixa_depositos as DEP
@@ -70,9 +76,9 @@ import selo_no_papel as SNPAPEL
 from notas_schema import (ATO_PEDE_ANOTACAO, CENTRAIS, CENTRAIS_COM_REMESSA,
                           ESPECIES_RECONHECIMENTO, ORIGENS_SINAL, SERVICOS,
                           SITUACOES_ATO, SITUACOES_REMESSA, TIPOS_ANOTACAO,
-                          TIPOS_ATO,
-                          TIPOS_AUTENTICACAO, TIPOS_LIVRO,
+                          TIPOS_ATO, AUTENTICACOES, TIPOS_LIVRO,
                           normalizar_nome_sinal, servico_do_reconhecimento,
+                          DOCUMENTOS_DE_VEICULO, recusa_da_firma_do_veiculo,
                           texto_autenticacao, texto_da_etiqueta,
                           texto_reconhecimento, texto_reconhecimento_sinal)
 from serventia import dados as dados_serventia
@@ -86,6 +92,9 @@ POR_PAGINA = 40
 # recusa) mora em `notas_arquivamento.py`; o selo continua saindo pelo
 # mecanismo que ja existia como opcional, `_selar_arquivamento_das_notas`.
 import notas_arquivamento as NARQ
+import seguranca_web as SEGWEB  # B2 (LX11): exceção inesperada não vai para a tela
+# O número que a tela mandou (LD13): `int(...)` cru era a tela de erro.
+from seguranca_web import PAGINA_MAIS_ALTA, numero_digitado
 from notas_arquivamento import arquivamento_obrigatorio
 
 # Onde estao as imagens de assinatura do E-Oficio. O banco guarda o caminho
@@ -95,10 +104,9 @@ from notas_arquivamento import arquivamento_obrigatorio
 # A PRIMEIRA DA LISTA E CALCULADA, E NAO ESCRITA AQUI: e
 # `<archive_root>\eoficio\Firmas`, para onde o COPIAR_ARQUIVOS_EOFICIO trouxe
 # as 3.644 assinaturas. Ver `pastas_firmas()`.
-PASTAS_FIRMAS_PADRAO = (
-    r"C:\ARPNET\C11\Firmas",
-    r"\\servidor\C11\Firmas",
-)
+# Hotfix de 16/10/2026: sem a pasta do E-Ofício nem o compartilhamento do
+# servidor antigo — a cópia da casa (`pasta_firmas_do_acervo`) é a que vale.
+PASTAS_FIRMAS_PADRAO: tuple[str, ...] = ()
 
 
 def _e_arquivo(p: Path) -> bool:
@@ -152,35 +160,17 @@ def _e_pasta(p: Path) -> bool:
 # `a.folha`. **É a página do PDF, e não a face do livro** — o sistema não
 # sabe, ao montar o `.odt`, quantas páginas o LibreOffice vai desenhar; isso
 # só se decide na conversão.
-MODELO_TRASLADO_CABECALHO = """<table border="0" cols="5.3cm,5.3cm,5.4cm">
-<tr><td><b>LIVRO {{ a.livro or '—' }}</b></td><td><b>FOLHA #FOLHA_PAGINA#</b></td><td><b>{% if a.termo %}TERMO {{ a.termo }}{% elif a.numero_ordem %}ORDEM {{ a.numero_ordem }}{% endif %}</b></td></tr>
-</table>
-"""
+#
+# `MODELO_TRASLADO_CABECALHO` — o texto de fábrica do papel NOTAS_TRASLADO_CABECALHO —
+# saiu daqui no LF06D (19/10/2026): mora em
+# `modelos_padrao/notas/NOTAS_TRASLADO_CABECALHO.txt`, com os mesmos bytes, e é um
+# papel do catálogo, editável na tela de Modelos. O nome antigo continua
+# respondendo — ver `__getattr__` no fim deste módulo.
 
-MODELO_TRASLADO = """@@BRASAO@@
-<p align="center"><b>{{ sv.unit_name }}</b></p>
-<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
-<p align="center">CNPJ {{ sv.serventia_cnpj }} — CNS {{ sv.ri_cns }} — Telefone {{ sv.serventia_telefone }}</p>
-<p align="center">{{ sv.endereco_completo }}</p>
-<table border="0" cols="5.3cm,5.3cm,5.4cm">
-<tr><td><b>LIVRO {{ a.livro or '—' }}</b></td><td><b>FOLHA {{ a.folha or '—' }}{% if a.folha_final and a.folha_final != a.folha %} A {{ a.folha_final }}{% endif %}</b></td><td><b>{% if a.termo %}TERMO {{ a.termo }}{% elif a.numero_ordem %}ORDEM {{ a.numero_ordem }}{% endif %}</b></td></tr>
-</table>
-<p align="center"><b>{{ titulo_do_instrumento|upper }}</b></p>
-<p></p>
-@@TEOR@@
-<p></p>
-@@SELO@@
-{% if anotacoes %}
-<p><b>ANOTAÇÕES À MARGEM</b></p>
-{% for n in anotacoes %}<p>{{ loop.index }}. {{ n.texto }}{% if n.selo %} (selo {{ n.selo }}){% endif %}</p>
-{% endfor %}
-{% endif %}
-<p><small>Traslado extraído nesta data, conferido e achado conforme com o ato lavrado no
-livro próprio desta Serventia{% if anotacoes %}, com as anotações constantes da margem
-transcritas acima{% endif %}.</small></p>
-<p>{{ sv.cidade_uf }}, {{ data_extenso }}.</p>
-@@ASSINATURAS@@
-"""
+# `MODELO_TRASLADO` — o texto de fábrica do papel NOTAS_TRASLADO — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/notas/NOTAS_TRASLADO.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 # O termo que vai para o LIVRO (instrumento), distinto do traslado da parte.
 #
@@ -191,31 +181,19 @@ transcritas acima{% endif %}.</small></p>
 # QR e sem link), na mesma regra do livro do RI (`carimbo_compacto_odf`, ordem
 # do oficial em 16/09/2026). Sem a frase «Traslado extraído…» e sem as
 # anotações à margem (estas se escrevem à margem do livro, depois).
-MODELO_TERMO_LIVRO = """@@BRASAO@@
-<p align="center"><b>{{ sv.unit_name }}</b></p>
-<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
-<p align="center">CNPJ {{ sv.serventia_cnpj }} — CNS {{ sv.ri_cns }} — Telefone {{ sv.serventia_telefone }}</p>
-<p align="center">{{ sv.endereco_completo }}</p>
-<table border="0" cols="5.3cm,5.3cm,5.4cm">
-<tr><td><b>LIVRO {{ a.livro or '—' }}</b></td><td><b>FOLHA {{ a.folha or '—' }}{% if a.folha_final and a.folha_final != a.folha %} A {{ a.folha_final }}{% endif %}</b></td><td><b>{% if a.termo %}TERMO {{ a.termo }}{% elif a.numero_ordem %}ORDEM {{ a.numero_ordem }}{% endif %}</b></td></tr>
-</table>
-<p align="center"><b>{{ titulo_do_instrumento|upper }}</b></p>
-<p></p>
-@@TEOR@@
-<p></p>
-@@SELO@@
-<p></p>
-<p></p>
-<p></p>
-@@ASSINATURAS@@
-"""
+# `MODELO_TERMO_LIVRO` — o texto de fábrica do papel NOTAS_TERMO_LIVRO — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/notas/NOTAS_TERMO_LIVRO.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 
-def titulo_do_instrumento(ato: dict, *, nome_modelo: str | None = None) -> str:
+def titulo_do_instrumento(ato: dict, *, nome_modelo: str | None = None,
+                          con=None) -> str:
     """Nome completo do instrumento no traslado/termo — uma linha só, em negrito.
 
     Não repetir «ESCRITURA PÚBLICA» sozinha e a natureza em outra linha: o
-    cabeçalho leva o título inteiro (nome do modelo ou natureza composta).
+    cabeçalho leva o título inteiro (nome do modelo ou natureza composta). O
+    título da escritura sem modelo é peça do traslado na base desde o LF06D.
     """
     tipo = (ato.get("tipo") or "").strip().upper()
     if tipo == "ESCRITURA":
@@ -224,7 +202,8 @@ def titulo_do_instrumento(ato: dict, *, nome_modelo: str | None = None) -> str:
             return nome
         nat = (ato.get("natureza") or "").strip()
         if nat:
-            return f"Escritura pública de {nat.lower()}"
+            return MODELOS.textos(con).preencher(
+                "NOTAS_TRASLADO__titulo_da_escritura", natureza=nat.lower())
     if tipo in ("ATA", "ATA_USUCAPIAO"):
         nome = (nome_modelo or "").strip()
         if nome:
@@ -232,10 +211,35 @@ def titulo_do_instrumento(ato: dict, *, nome_modelo: str | None = None) -> str:
     return TIPOS_ATO.get(ato.get("tipo") or "", ato.get("tipo") or "Ato")
 
 
-def _titulos_para_limpar_do_teor(ato: dict, *, nome_modelo: str | None = None) -> list[str]:
+# O RÓTULO DO QUADRO DO SELO, no traslado e no termo do livro. Estava escrito
+# DUAS VEZES, um dicionário dentro de cada rota; desde o LF06D (19/10/2026) cada
+# rótulo é peça do traslado na base (`NOTAS_TRASLADO__selo_*`), e qual tipo de
+# ato leva qual rótulo é regra — aqui, uma vez só.
+PECA_DO_ROTULO_DO_SELO = {
+    "ESCRITURA": "NOTAS_TRASLADO__selo_escritura",
+    "PROCURACAO": "NOTAS_TRASLADO__selo_procuracao",
+    "PROCURACAO_PREVIDENCIARIA": "NOTAS_TRASLADO__selo_procuracao",
+    "SUBSTABELECIMENTO": "NOTAS_TRASLADO__selo_substabelecimento",
+    "REVOGACAO": "NOTAS_TRASLADO__selo_revogacao",
+    "RENUNCIA": "NOTAS_TRASLADO__selo_renuncia",
+    "ATA": "NOTAS_TRASLADO__selo_ata",
+    "ATA_USUCAPIAO": "NOTAS_TRASLADO__selo_ata",
+    "TESTAMENTO": "NOTAS_TRASLADO__selo_testamento",
+    "TESTAMENTO_CERRADO": "NOTAS_TRASLADO__selo_testamento",
+}
+
+
+def rotulo_do_selo(tipo: str | None, *, con=None) -> str:
+    """«SELO DA ESCRITURA», «SELO DA PROCURAÇÃO»… — o rótulo do quadro do selo."""
+    return MODELOS.textos(con)(
+        PECA_DO_ROTULO_DO_SELO.get(tipo or "", "NOTAS_TRASLADO__selo_ato"))
+
+
+def _titulos_para_limpar_do_teor(ato: dict, *, nome_modelo: str | None = None,
+                                 con=None) -> list[str]:
     """Títulos que podem aparecer no cabeçalho e repetir no início do teor."""
     candidatos = [
-        titulo_do_instrumento(ato, nome_modelo=nome_modelo),
+        titulo_do_instrumento(ato, nome_modelo=nome_modelo, con=con),
         (nome_modelo or "").strip(),
         (ato.get("natureza") or "").strip(),
     ]
@@ -252,44 +256,10 @@ def _titulos_para_limpar_do_teor(ato: dict, *, nome_modelo: str | None = None) -
     return sorted(saida, key=len, reverse=True)
 
 
-MODELO_CARTAO_FICHA = """\
-<p align="center"><b>CARTÃO DE AUTÓGRAFO</b> — Ficha nº {{ numero }}</p>
-<table border="1" cols="4.6cm,11.4cm">
-<tr><td><b>Nome</b></td><td>{{ nome or "&#160;" }}</td></tr>
-<tr><td><b>CPF / CNPJ</b></td><td>{{ documento or "&#160;" }}</td></tr>
-<tr><td><b>Identidade</b></td><td>{{ identidade or "&#160;" }}</td></tr>
-<tr><td><b>Nascimento</b></td><td>{{ nascimento or "&#160;" }}</td></tr>
-<tr><td><b>Nacionalidade</b></td><td>{{ nacionalidade or "&#160;" }}</td></tr>
-<tr><td><b>Naturalidade</b></td><td>{{ naturalidade or "&#160;" }}</td></tr>
-<tr><td><b>Estado civil</b></td><td>{{ estado_civil or "&#160;" }}</td></tr>
-<tr><td><b>Profissão</b></td><td>{{ profissao or "&#160;" }}</td></tr>
-<tr><td><b>Filiação</b></td><td>{{ filiacao or "&#160;" }}</td></tr>
-<tr><td><b>Endereço</b></td><td>{{ endereco or "&#160;" }}</td></tr>
-<tr><td><b>Bairro / cidade</b></td><td>{{ bairro_cidade or "&#160;" }}</td></tr>
-<tr><td><b>CEP</b></td><td>{{ cep or "&#160;" }}</td></tr>
-<tr><td><b>Telefone</b></td><td>{{ telefone or "&#160;" }}</td></tr>
-{% if conjuge %}<tr><td><b>Cônjuge</b></td><td>{{ conjuge }}</td></tr>{% endif %}
-{% if como_assina %}<tr><td><b>Como assina</b></td><td>{{ como_assina }}</td></tr>{% endif %}
-</table>
-{% if somente_autenticidade %}<p><b>ESTE CARTÃO SÓ ADMITE RECONHECIMENTO POR AUTENTICIDADE.</b></p>{% endif %}
-{% if bloqueado %}<p><b>CARTÃO BLOQUEADO.</b> {{ motivo_bloqueio }}</p>{% endif %}
-@@SELO@@
-<p><b>Autógrafos</b> — assino na presença do escrevente as formas com que firmo nesta serventia.</p>
-<p><b>Assinatura por extenso</b> <span>(como o nome é assinado por inteiro)</span></p>
-{{ espaco }}{{ linha }}
-<p><b>Assinatura abreviada</b> <span>(a forma curta, se houver)</span></p>
-{{ espaco }}{{ linha }}
-<p><b>Rubrica</b> <span>(para folhas e vias)</span></p>
-{{ espaco }}{{ linha }}
-<table border="1" cols="8cm,8cm">
-<tr><td><b>Fotografia</b></td><td><b>Impressão digital</b> (polegar direito)</td></tr>
-{{ caixa_foto_digital_celulas }}
-</table>
-<p>{{ cidade_uf }}, {{ data_extenso }}.</p>
-<p align="center">________________________________________________________________</p>
-<p align="center">{{ nome }}</p>
-<p align="center">o titular do cartão</p>
-"""
+# `MODELO_CARTAO_FICHA` — o texto de fábrica do papel NOTAS_CARTAO_FICHA — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/notas/NOTAS_CARTAO_FICHA.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 
 
@@ -299,8 +269,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     def q(sql, params=()):
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            return list(con.execute(sql, params))
+            return banco(con).ler(sql, params)
 
     def q1(sql, params=()):
         linhas = q(sql, params)
@@ -374,7 +343,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not codigo:
             return {}
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             try:
                 return EMOL.calcular_item(con, servico=codigo,
                                           quantidade=quantidade) or {}
@@ -385,6 +353,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/notas/cartoes", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    # O AUDITOR ve a tela; o que ela GRAVA (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
     def notas_cartoes():
         """Busca e cadastro do cartão de autógrafo."""
         if request.method == "POST" and request.form.get("acao") == "novo":
@@ -404,7 +374,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     return redirect(url_for("notas_cartoes", busca=nome))
             with db.transaction() as con:
                 try:
-                    novo = NP.criar_cartao(con, dados, db.now(), usuario_nome())
+                    novo = NP.criar_cartao(con, dados, db.now(), usuario_nome(),
+                                            usuario_funcao())
                 except ValueError as erro:
                     flash(str(erro), "danger")
                     return redirect(url_for("notas_cartoes"))
@@ -417,7 +388,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             motivo_selo = motivo_da_falha_do_selo(selado)
             if motivo_selo:
                 with db.transaction() as con:
-                    con.execute("DELETE FROM nt_cartoes WHERE id=?", (novo,))
+                    banco(con).escrever("DELETE FROM nt_cartoes WHERE id=%s", (novo,))
                 audit("NT_CARTAO_NAO_ABERTO_SELO_FALHOU", "NT_CARTAO", novo,
                       {"nome": nome, "motivo": motivo_selo})
                 flash("Cartão NÃO aberto: o selo de abertura não saiu. "
@@ -467,11 +438,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         #   ao lado — cartao sem autografo nao serve para reconhecer por
         #   semelhanca, e esse e o numero que diz quantos ainda faltam.
         resumo = q1("""SELECT COUNT(*) total,
-                       COALESCE(SUM(CASE WHEN bloqueado=1 THEN 1 ELSE 0 END),0) bloqueados,
-                       COALESCE(SUM(CASE WHEN ativo=0 THEN 1 ELSE 0 END),0) inativos,
+                       COALESCE(SUM(CASE WHEN bloqueado=1 THEN 1 ELSE 0 END),0)::bigint bloqueados,
+                       COALESCE(SUM(CASE WHEN ativo=0 THEN 1 ELSE 0 END),0)::bigint inativos,
                        COALESCE(SUM(CASE WHEN NOT EXISTS (
                            SELECT 1 FROM nt_cartao_imagens i
-                            WHERE i.cartao_id = nt_cartoes.id) THEN 1 ELSE 0 END),0)
+                            WHERE i.cartao_id = nt_cartoes.id) THEN 1 ELSE 0 END),0)::bigint
                            sem_assinatura
                        FROM nt_cartoes""")
         return render_template("notas_cartoes.html", busca=busca, achados=achados,
@@ -523,6 +494,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     #   e arma que alguem religa sem saber por que existia: ja aconteceu cinco
     #   vezes. A regra de quem responde pela serventia continua existindo onde
     #   ela e usada de verdade — na certidao do Registro de Imoveis.
+    #
+    # E A DECISAO DE 31/08 MUDOU EM 21/10/2026 — SO PELA METADE. Perguntado
+    # sobre o CN-MA art. 864, § 1º, VI («nome, assinatura e carimbo do tabeliao
+    # ou do seu substituto ou outro preposto designado que verificou a
+    # regularidade do preenchimento»), o oficial respondeu «9 b»: ao pe da
+    # ficha, «Preenchimento conferido por: NOME — funcao», com linha de
+    # assinatura e espaco para o carimbo, DO ESCREVENTE QUE ABRIU O CARTAO. O
+    # cliente continua assinando so os autografos, e o delegatario continua
+    # fora (as duas funcoes de cima seguem apagadas): quem assina a linha nova
+    # e o preposto que conferiu, gravado no cartao na abertura
+    # (`nt_cartoes.conferente_nome`/`conferente_funcao`) — nao quem imprime.
 
     @app.route("/notas/cartoes/<int:cartao_id>/ficha")
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
@@ -550,7 +532,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         Mascarar o CPF do proprio cartao de autografo tornaria a conferencia
         impossivel — e a regra da mascara existe para papel que SAI.
         """
-        c = q1("SELECT * FROM nt_cartoes WHERE id=?", (cartao_id,))
+        c = q1("SELECT * FROM nt_cartoes WHERE id=%s", (cartao_id,))
         if not c:
             abort(404)
         sv = dados_serventia(db.get_settings)
@@ -580,6 +562,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # Cinco linhas deixam a pessoa desenvolver a assinatura natural, que
         # é o padrão usado depois na comparação por semelhança (relato #27).
         espaco = "<p> </p>" * 5
+        # CADA FORMA DE ASSINAR VAI TRÊS VEZES — LD07, 21/10/2026: a ficha tem
+        # «a colocação da firma ao menos três vezes, bem como, se houver,
+        # abreviaturas» (CN-MA art. 864, § 1º, V), e quem tem mais de uma
+        # assinatura assina «cada uma ... por três vezes» (art. 867). A 1ª de
+        # cada forma tem o espaço do relato #27; a 2ª e a 3ª, menos — a pessoa
+        # já desenvolveu a assinatura na de cima, e o teto da ficha
+        # (`test_cartao_assinatura`) é o que guarda o tamanho dela.
+        espaco_curto = "<p> </p>" * 2
         # A LINHA DE ASSINAR VAI CENTRADA — 14/10/2026. Desde 24/09/2026
         # `ri_odt.html_para_odf` troca parágrafo só de riscas pela «risca entre
         # atos» (borda dupla de largura total), e só poupa a linha de assinar
@@ -649,21 +639,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             selo_frag = carimbo_do_selo_odf(
                 selo_para_quadro, img_nome, rotulo="SELO DE ABERTURA")
         else:
+            # O aviso no lugar do selo é peça do cartão na base (LF06D).
             selo_frag = html_para_odf(
-                '<p><b>SEM SELO DE ABERTURA.</b> Anote o selo no cadastro '
-                'antes de arquivar esta ficha.</p>',
+                MODELOS.textos(db.connect)("NOTAS_CARTAO_FICHA__sem_selo"),
                 compacto=True)
 
         from jinja2.sandbox import SandboxedEnvironment
         env = SandboxedEnvironment(autoescape=False)
         with db.connect() as _c:
             _modelo = MODELOS.corpo_de(_c, "NOTAS_CARTAO_FICHA")
+        # A DATA DE ABERTURA DO CARTÃO, e não a do dia em que se imprime (LD07,
+        # 21/10/2026): «a ficha terá numeração crescente e infinita, bem como a
+        # data de abertura» (CN-MA art. 864, § 1º, I). O fecho continua com a
+        # data do dia — é a da assinatura no papel. O cartão ABERTO AQUI sem
+        # `abertura` (anterior à coluna) usa o dia em que nasceu no sistema; o
+        # importado do E-Ofício sem `dtmAbertura` fica sem a data — o dia da
+        # carga não é o da abertura, e a ficha não o afirma.
+        abertura = (c["abertura"] or (str(c["criado_em"] or "")[:10]
+                                      if (c["origem"] or "MANUAL") == "MANUAL" else "")
+                    or "").strip()
         html_corpo = env.from_string(_modelo).render(
             numero=c["numero"] or c["id"],
+            data_abertura=(fmt_date(abertura) if abertura else ""),
             nome=(c["nome"] or "").strip(),
             documento=(c["documento"] or "").strip(),
             identidade=identidade,
+            # «junto com a data de emissão da RG» — CN-MA art. 864, § 1º, IV (LD02)
+            rg_emissao=(fmt_date(c["rg_emissao"]) if c["rg_emissao"] else ""),
             nascimento=(fmt_date(c["nascimento"]) if c["nascimento"] else ""),
+            # «e, se houver, o número do título eleitoral» — art. 864, § 1º, III (LD07)
+            titulo_eleitor=(c["titulo_eleitor"] or "").strip(),
             nacionalidade=(c["nacionalidade"] or "").strip(),
             naturalidade=(c["naturalidade"] or "").strip(),
             estado_civil=(c["estado_civil"] or "").strip(),
@@ -679,9 +684,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             bloqueado=bool(c["bloqueado"]),
             motivo_bloqueio=(c["motivo_bloqueio"] or "").strip(),
             espaco=espaco,
+            espaco_curto=espaco_curto,
             linha=linha,
             cidade_uf=sv["cidade_uf"],
             data_extenso=_hoje_extenso(),
+            # QUEM CONFERIU O PREENCHIMENTO (CN-MA art. 864, § 1º, VI; LH13):
+            # o que o cartão guardou na abertura. Cartão de antes da coluna —
+            # e o do E-Ofício — vem vazio, e o papel deixa o claro para a
+            # caneta: quem imprime hoje não foi quem conferiu naquele dia.
+            conferente_nome=(c["conferente_nome"] or "").strip(),
+            conferente_funcao=(c["conferente_funcao"] or "").strip(),
         )
 
         # Cabecalho fora do modelo (decisao oficial). Corpo = texto do catalogo
@@ -709,8 +721,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/notas/cartoes/<int:cartao_id>", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    # O AUDITOR ve a tela; o que ela GRAVA (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
     def notas_cartao(cartao_id):
-        c = q1("SELECT * FROM nt_cartoes WHERE id=?", (cartao_id,))
+        c = q1("SELECT * FROM nt_cartoes WHERE id=%s", (cartao_id,))
         if not c:
             abort(404)
 
@@ -722,20 +736,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("Diga por que está bloqueando.", "danger")
                     return redirect(url_for("notas_cartao", cartao_id=cartao_id))
                 with db.transaction() as con:
-                    con.execute("""UPDATE nt_cartoes SET bloqueado=1, motivo_bloqueio=?,
-                                   bloqueado_em=?, bloqueado_por=? WHERE id=?""",
+                    banco(con).escrever("""UPDATE nt_cartoes SET bloqueado=1, motivo_bloqueio=%s,
+                                   bloqueado_em=%s, bloqueado_por=%s WHERE id=%s""",
                                 (motivo, db.now(), usuario_nome(), cartao_id))
                 audit("NT_CARTAO_BLOQUEADO", "NT_CARTAO", cartao_id, {"motivo": motivo})
                 flash("Cartão bloqueado.", "success")
             elif acao == "desbloquear":
                 with db.transaction() as con:
-                    con.execute("""UPDATE nt_cartoes SET bloqueado=0, motivo_bloqueio=NULL,
-                                   bloqueado_em=NULL, bloqueado_por=NULL WHERE id=?""",
+                    banco(con).escrever("""UPDATE nt_cartoes SET bloqueado=0, motivo_bloqueio=NULL,
+                                   bloqueado_em=NULL, bloqueado_por=NULL WHERE id=%s""",
                                 (cartao_id,))
                 audit("NT_CARTAO_DESBLOQUEADO", "NT_CARTAO", cartao_id, {})
                 flash("Cartão desbloqueado.", "success")
             elif acao == "editar":
-                campos = ("nome", "documento", "rg", "rg_orgao", "rg_uf", "nascimento",
+                campos = ("nome", "documento", "rg", "rg_orgao", "rg_uf", "rg_emissao",
+                          "titulo_eleitor", "nascimento",
                           "nacionalidade", "naturalidade", "estado_civil", "conjuge",
                           "profissao", "pai", "mae", "endereco", "endereco_numero",
                           "bairro", "cidade", "uf", "cep", "telefone", "celular",
@@ -747,14 +762,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     v = (request.form.get(campo) or "").strip() or None
                     if campo in ("documento", "cep", "telefone", "celular"):
                         v = NP.so_digitos(v) or None
-                    sets.append(f"{campo}=?")
+                    sets.append(f"{campo}=%s")
                     valores.append(v)
                 if sets:
                     nome = (request.form.get("nome") or c["nome"]).strip()
-                    sets += ["nome_norm=?", "atualizado_em=?", "atualizado_por=?"]
+                    sets += ["nome_norm=%s", "atualizado_em=%s", "atualizado_por=%s"]
                     valores += [NP.normalizar(nome), db.now(), usuario_nome()]
                     with db.transaction() as con:
-                        con.execute(f"UPDATE nt_cartoes SET {', '.join(sets)} WHERE id=?",
+                        banco(con).escrever(f"UPDATE nt_cartoes SET {', '.join(sets)} WHERE id=%s",
                                     valores + [cartao_id])
                     audit("NT_CARTAO_EDITADO", "NT_CARTAO", cartao_id, {})
                     flash("Cartão atualizado.", "success")
@@ -762,8 +777,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         dados = dict(c)
         imagens = [dict(r) for r in q(
-            """SELECT * FROM nt_cartao_imagens WHERE cartao_id=?
-               ORDER BY favorita DESC, ordem""", (cartao_id,))]
+            """SELECT * FROM nt_cartao_imagens WHERE cartao_id=%s
+               ORDER BY favorita DESC, ordem, id""", (cartao_id,))]
         # Marca qual imagem o servidor consegue mesmo abrir: caminho gravado
         # que nao existe mais e informacao inutil na tela.
         #
@@ -783,13 +798,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         recentes = q("""SELECT r.id, r.data, r.especie, r.selo
                         FROM nt_reconhecimentos r
                         JOIN nt_reconhecimento_partes p ON p.reconhecimento_id = r.id
-                        WHERE p.cartao_id=? ORDER BY r.data DESC, r.id DESC LIMIT 15""",
+                        WHERE p.cartao_id=%s ORDER BY r.data DESC, r.id DESC LIMIT 15""",
                      (cartao_id,))
         atos = q("""SELECT a.id, a.tipo, a.data, a.livro, a.folha, p.qualificacao
                     FROM nt_atos a JOIN nt_ato_partes p ON p.ato_id = a.id
-                    WHERE p.cartao_id=? ORDER BY a.data DESC LIMIT 15""", (cartao_id,))
+                    WHERE p.cartao_id=%s ORDER BY a.data DESC, a.id DESC LIMIT 15""", (cartao_id,))
         total_rec = q1("""SELECT COUNT(*) n FROM nt_reconhecimento_partes
-                          WHERE cartao_id=?""", (cartao_id,))["n"]
+                          WHERE cartao_id=%s""", (cartao_id,))["n"]
         # GET so le. Foto e digital nao se colhem nesta rota — colher e
         # POST /notas/cartoes/<id>/foto. Pasta nao se cria aqui.
         with db.connect() as con_bio:
@@ -846,7 +861,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         `CB.colher_foto`, com a pasta das assinaturas do cartao. Erro de
         regra vira flash em portugues e volta para o GET, que nao grava.
         """
-        if not q1("SELECT id FROM nt_cartoes WHERE id=?", (cartao_id,)):
+        if not q1("SELECT id FROM nt_cartoes WHERE id=%s", (cartao_id,)):
             abort(404)
         arquivo = request.files.get("foto")
         dados = arquivo.read() if arquivo else b""
@@ -904,7 +919,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         primeira saiu ruim, e guardar as duas faria a conferência ter de
         escolher entre elas.
         """
-        if not q1("SELECT id FROM nt_cartoes WHERE id=?", (cartao_id,)):
+        if not q1("SELECT id FROM nt_cartoes WHERE id=%s", (cartao_id,)):
             abort(404)
         try:
             dedo = int(request.form.get("dedo") or 0)
@@ -955,7 +970,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                  "X-Assinatura-Motivo": motivo})
 
     def _achar_ou_404(imagem_id: int):
-        img = q1("SELECT * FROM nt_cartao_imagens WHERE id=?", (imagem_id,))
+        img = q1("SELECT * FROM nt_cartao_imagens WHERE id=%s", (imagem_id,))
         if not img:
             abort(404)
         achado = _arquivo_da_assinatura(img)
@@ -992,21 +1007,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """
         _img, achado = _achar_ou_404(imagem_id)
         sufixo = achado.suffix.lower()
+        # EM LINHA, MAS SEM O NAVEGADOR ADIVINHAR O TIPO (LS02 M11; LX12,
+        # 19/10/2026): `nosniff` e `sandbox`, os cabeçalhos de quem mostra
+        # (`arquivo_visivel`), e o nome declarado. Hoje só a lista de extensões
+        # segurava — um `.jpg` que fosse HTML por dentro rodaria na sessão.
+        mostrar = {**ARQVIS.cabecalhos_para_mostrar(),
+                   "Content-Disposition": f'inline; filename="{achado.name}"'}
 
         if sufixo == ".pdf":
             # PDF não é imagem, e não adianta convertê-lo: o navegador abre PDF
             # melhor do que qualquer coisa que a gente fizesse aqui. A lupa
             # detecta que o <img> não carregou e oferece o botão de abrir.
             return Response(achado.read_bytes(), mimetype="application/pdf",
-                            headers={"Content-Disposition":
-                                     f'inline; filename="{achado.name}"',
+                            headers={**mostrar,
                                      "Cache-Control": "private, max-age=600"})
 
         largura = request.args.get("w", type=int)
         nativo = sufixo in MIME_NATIVO
         if nativo and not largura:
             return Response(achado.read_bytes(), mimetype=MIME_NATIVO[sufixo],
-                            headers={"Cache-Control": "private, max-age=600"})
+                            headers={**mostrar, "Cache-Control": "private, max-age=600"})
 
         try:
             from PIL import Image
@@ -1015,7 +1035,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # Sem Pillow não dá para encolher, mas dá para entregar. Uma
                 # imagem grande demais é muito melhor do que nenhuma.
                 return Response(achado.read_bytes(), mimetype=MIME_NATIVO[sufixo],
-                                headers={"Cache-Control": "private, max-age=600"})
+                                headers={**mostrar, "Cache-Control": "private, max-age=600"})
             app.logger.warning(
                 "Pillow ausente: a assinatura %s (%s) foi entregue para download "
                 "em vez de aparecer na tela. Instale com: "
@@ -1040,7 +1060,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                imagem_id, achado, erro)
             return _assinatura_para_baixar(achado, "conversao-falhou")
         return Response(buf.getvalue(), mimetype="image/png",
-                        headers={"Cache-Control": "private, max-age=3600"})
+                        headers={**mostrar,
+                                 "Content-Disposition": f'inline; filename="{achado.stem}.png"',
+                                 "Cache-Control": "private, max-age=3600"})
 
     @app.route("/notas/cartoes/imagem/<int:imagem_id>/original")
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
@@ -1099,7 +1121,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return None
             # 200 DPI: acima disso o arquivo cresce sem o traço melhorar, e
             # ficha de firma é meia folha, não uma planta.
-            imagem = pdf[0].render(scale=200 / 72).to_pil()
+            #
+            # E A ESCALA CABE NO TETO DE PIXELS (LS02 M3; LX12, 19/10/2026): um
+            # PDF com MediaBox gigante, a 200 DPI, virava bitmap de gigabytes
+            # no único processo do servidor. Página de ficha não muda.
+            largura_pt, altura_pt = pdf[0].get_size()
+            imagem = pdf[0].render(scale=TETOS.escala_que_cabe(
+                largura_pt, altura_pt, 200 / 72)).to_pil()
             buf = _io.BytesIO()
             imagem.save(buf, format="PNG", optimize=True)
             return buf.getvalue()
@@ -1143,18 +1171,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         #   nome deixaria passar a mesma ficha enviada duas vezes e recusaria
         #   duas fichas diferentes com o mesmo nome — errado dos dois lados.
         digest = hashlib.sha256(dados).hexdigest()
-        igual = con.execute(
-            "SELECT id FROM nt_cartao_imagens WHERE cartao_id=? AND sha256=?",
-            (cartao_id, digest)).fetchone()
+        bd = banco(con)
+        # A TRAVA VEM ANTES DA CONFERÊNCIA, e não só antes do número: dois
+        # envios da mesma ficha ao mesmo tempo passariam os dois por ela e
+        # gravariam a mesma imagem duas vezes no cartão.
+        bd.travar("nt_cartao_imagens.ordem")
+        igual = bd.um(
+            "SELECT id FROM nt_cartao_imagens WHERE cartao_id=%s AND sha256=%s "
+            "ORDER BY id LIMIT 1",
+            (cartao_id, digest))
         if igual:
             return False, (f"{nome_enviado}: esta imagem já está neste cartão "
-                           f"(nº {igual[0]}). Nada foi gravado em duplicidade.")
+                           f"(nº {igual['id']}). Nada foi gravado em duplicidade.")
 
         pasta = pasta_assinaturas_internas() / str(cartao_id)
         pasta.mkdir(parents=True, exist_ok=True)
-        proxima = (con.execute(
-            "SELECT COALESCE(MAX(ordem), 0) + 1 FROM nt_cartao_imagens WHERE cartao_id=?",
-            (cartao_id,)).fetchone()[0])
+        proxima = int(bd.valor(
+            "SELECT COALESCE(MAX(ordem), 0) + 1 AS proxima FROM nt_cartao_imagens "
+            "WHERE cartao_id=%s",
+            (cartao_id,)))
         nome = f"ficha-{cartao_id}-{proxima}{sufixo}"
         while (pasta / nome).exists():
             proxima += 1
@@ -1164,13 +1199,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         raiz = pasta_assinaturas_internas().parent.parent
         if favorita:
-            con.execute("UPDATE nt_cartao_imagens SET favorita=0 WHERE cartao_id=?",
+            bd.escrever("UPDATE nt_cartao_imagens SET favorita=0 WHERE cartao_id=%s",
                         (cartao_id,))
-        con.execute(
+        bd.escrever(
             """INSERT INTO nt_cartao_imagens
                (cartao_id, ordem, nome_arquivo, caminho, caminho_interno, sha256,
                 bytes, favorita, data, copiado_em, criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (cartao_id, proxima, nome, str(pasta),
              str(alvo.relative_to(raiz)), digest, len(dados),
              1 if favorita else 0, data_coleta or None, db.now(), db.now()))
@@ -1190,15 +1225,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         quer_favorita = request.form.get("favorita") == "1"
         entraram, recusas = 0, []
         with db.transaction() as con:
-            tem_favorita = con.execute(
-                "SELECT COUNT(*) FROM nt_cartao_imagens WHERE cartao_id=? AND favorita=1",
-                (cartao_id,)).fetchone()[0]
+            bd = banco(con)
+            # A mesma trava do `_guardar_ficha`, já antes de contar a favorita:
+            # dois envios ao mesmo tempo, num cartão sem nenhuma, levariam as
+            # duas a se acharem a primeira.
+            bd.travar("nt_cartao_imagens.ordem")
+            tem_favorita = bd.valor(
+                "SELECT COUNT(*) AS n FROM nt_cartao_imagens "
+                "WHERE cartao_id=%s AND favorita=1",
+                (cartao_id,))
             for n, fs in enumerate(arquivos):
                 # A primeira ficha de um cartão que ainda não tem nenhuma vira
                 # a favorita sozinha: é a que vai aparecer nas listas e no
                 # balcão, e ninguém deveria precisar escolher o óbvio.
                 favorita = (quer_favorita and n == 0) or (not tem_favorita and n == 0)
-                ok, recado = _guardar_ficha(con, cartao_id, fs.filename,
+                ok, recado = _guardar_ficha(bd, cartao_id, fs.filename,
                                             fs.read(), data_coleta, favorita)
                 if ok:
                     entraram += 1
@@ -1215,7 +1256,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_cartao_ficha_enviar(cartao_id):
         """Recebe a digitalização da ficha de firma e a guarda no cartão."""
-        if not q1("SELECT id FROM nt_cartoes WHERE id=?", (cartao_id,)):
+        if not q1("SELECT id FROM nt_cartoes WHERE id=%s", (cartao_id,)):
             abort(404)
         entraram, recusas = _enviar_fichas(cartao_id)
         if not entraram and not recusas:
@@ -1241,7 +1282,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             registra quem tirou e de onde — de modo que se for engano, se
             recupera.
         """
-        img = q1("SELECT * FROM nt_cartao_imagens WHERE id=?", (imagem_id,))
+        img = q1("SELECT * FROM nt_cartao_imagens WHERE id=%s", (imagem_id,))
         if not img:
             abort(404)
         cartao_id = img["cartao_id"]
@@ -1249,9 +1290,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         if acao == "favorita":
             with db.transaction() as con:
-                con.execute("UPDATE nt_cartao_imagens SET favorita=0 WHERE cartao_id=?",
+                # A trava do envio: a ficha que entra como favorita no meio
+                # não seria zerada aqui, e o cartão ficaria com duas.
+                banco(con).travar("nt_cartao_imagens.ordem")
+                banco(con).escrever("UPDATE nt_cartao_imagens SET favorita=0 WHERE cartao_id=%s",
                             (cartao_id,))
-                con.execute("UPDATE nt_cartao_imagens SET favorita=1 WHERE id=?",
+                banco(con).escrever("UPDATE nt_cartao_imagens SET favorita=1 WHERE id=%s",
                             (imagem_id,))
             audit("NT_FICHA_FAVORITA", "NT_CARTAO_IMAGEM", imagem_id,
                   {"cartao_id": cartao_id})
@@ -1261,7 +1305,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         elif acao == "data":
             nova = (request.form.get("data_coleta") or "").strip() or None
             with db.transaction() as con:
-                con.execute("UPDATE nt_cartao_imagens SET data=? WHERE id=?",
+                banco(con).escrever("UPDATE nt_cartao_imagens SET data=%s WHERE id=%s",
                             (nova, imagem_id))
             audit("NT_FICHA_DATA", "NT_CARTAO_IMAGEM", imagem_id, {"data": nova})
             flash("Data da coleta anotada." if nova else "Data da coleta apagada.",
@@ -1269,16 +1313,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         elif acao == "remover":
             with db.transaction() as con:
-                con.execute("DELETE FROM nt_cartao_imagens WHERE id=?", (imagem_id,))
+                # A trava do envio: a ficha que entra no meio não estaria na
+                # escolha da próxima, e o envio já teria contado esta como
+                # favorita — o cartão ficaria sem nenhuma.
+                banco(con).travar("nt_cartao_imagens.ordem")
+                banco(con).escrever("DELETE FROM nt_cartao_imagens WHERE id=%s", (imagem_id,))
                 # Sem favorita, a próxima da fila assume — senão o cartão fica
                 # com imagens e nenhuma delas aparecendo no balcão.
                 if img["favorita"]:
-                    proxima = con.execute(
-                        "SELECT id FROM nt_cartao_imagens WHERE cartao_id=? "
-                        "ORDER BY ordem LIMIT 1", (cartao_id,)).fetchone()
+                    proxima = banco(con).um(
+                        "SELECT id FROM nt_cartao_imagens WHERE cartao_id=%s "
+                        "ORDER BY ordem, id LIMIT 1", (cartao_id,))
                     if proxima:
-                        con.execute("UPDATE nt_cartao_imagens SET favorita=1 WHERE id=?",
-                                    (proxima[0],))
+                        banco(con).escrever("UPDATE nt_cartao_imagens SET favorita=1 WHERE id=%s",
+                                    (proxima["id"],))
             audit("NT_FICHA_REMOVIDA", "NT_CARTAO_IMAGEM", imagem_id,
                   {"cartao_id": cartao_id, "nome_arquivo": img["nome_arquivo"],
                    "caminho_interno": img["caminho_interno"],
@@ -1351,6 +1399,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             acao = request.form.get("acao") or "resolver"
             nova = (request.form.get("raiz") or "").strip()
             if nova:
+                # A PASTA DIGITADA TEM DE MORAR NA CASA (LS02 A1; LX12,
+                # 19/10/2026). O balcão continua escolhendo a pasta; o que
+                # mudou é que `\\maquina\x` (o serviço, como SYSTEM, ia à rede
+                # e entregava a credencial da máquina) e pasta qualquer do
+                # servidor não entram mais. Pasta qualquer era a troca da
+                # firma-padrão: um anexo com o nome de uma firma, a pasta
+                # apontada para ele, «resolver» e «copiar» — e a assinatura de
+                # referência passava a ser a que o escrevente escolheu.
+                try:
+                    nova = str(app.extensions["pasta_da_casa"](nova))
+                except PDC.ForaDaCasa as recusa:
+                    flash(str(recusa), "danger")
+                    return redirect(url_for("notas_assinaturas"))
                 db.set_settings({"nt_pasta_firmas": nova})
                 raiz_padrao = nova
             raiz = Path(raiz_padrao)
@@ -1380,14 +1441,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 achadas = perdidas = 0
                 perdidos: list[str] = []
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
-                    for linha in con.execute(
+                    for linha in banco(con).ler(
                             "SELECT id, nome_arquivo FROM nt_cartao_imagens "
-                            "WHERE nome_arquivo IS NOT NULL"):
+                            "WHERE nome_arquivo IS NOT NULL ORDER BY id"):
                         caminho = RIMG.achar(linha["nome_arquivo"], indice)
                         if caminho:
-                            con.execute("UPDATE nt_cartao_imagens SET caminho=? "
-                                        "WHERE id=?", (str(Path(caminho).parent),
+                            banco(con).escrever("UPDATE nt_cartao_imagens SET caminho=%s "
+                                        "WHERE id=%s", (str(Path(caminho).parent),
                                                        linha["id"]))
                             achadas += 1
                         else:
@@ -1414,11 +1474,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 copiadas = ja_tinha = sem_origem = 0
                 bytes_total = 0
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
-                    for linha in con.execute(
+                    for linha in banco(con).ler(
                             """SELECT id, cartao_id, nome_arquivo, caminho,
                                       caminho_interno FROM nt_cartao_imagens
-                               WHERE nome_arquivo IS NOT NULL"""):
+                               WHERE nome_arquivo IS NOT NULL ORDER BY id"""):
                         rel = linha["caminho_interno"]
                         if rel and _e_arquivo(destino.parent.parent / rel):
                             ja_tinha += 1
@@ -1444,10 +1503,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                             dentro = None
                         if dentro is not None:
                             conteudo = origem.read_bytes()
-                            con.execute(
+                            banco(con).escrever(
                                 """UPDATE nt_cartao_imagens
-                                     SET caminho_interno=?, sha256=?, bytes=?,
-                                         copiado_em=? WHERE id=?""",
+                                     SET caminho_interno=%s, sha256=%s, bytes=%s,
+                                         copiado_em=%s WHERE id=%s""",
                                 (str(dentro),
                                  hashlib.sha256(conteudo).hexdigest(),
                                  len(conteudo), db.now(), linha["id"]))
@@ -1460,10 +1519,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         try:
                             shutil.copy2(origem, alvo)
                             conteudo = alvo.read_bytes()
-                            con.execute(
+                            banco(con).escrever(
                                 """UPDATE nt_cartao_imagens
-                                     SET caminho_interno=?, sha256=?, bytes=?,
-                                         copiado_em=? WHERE id=?""",
+                                     SET caminho_interno=%s, sha256=%s, bytes=%s,
+                                         copiado_em=%s WHERE id=%s""",
                                 (str(alvo.relative_to(destino.parent.parent)),
                                  hashlib.sha256(conteudo).hexdigest(),
                                  len(conteudo), db.now(), linha["id"]))
@@ -1482,15 +1541,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return redirect(url_for("notas_assinaturas"))
 
         n = q1("""SELECT COUNT(*) total,
-                  COALESCE(SUM(CASE WHEN caminho_interno IS NOT NULL THEN 1 ELSE 0 END),0) copiadas,
-                  COALESCE(SUM(bytes),0) bytes FROM nt_cartao_imagens""")
+                  COALESCE(SUM(CASE WHEN caminho_interno IS NOT NULL THEN 1 ELSE 0 END),0)::bigint copiadas,
+                  COALESCE(SUM(bytes),0)::bigint bytes FROM nt_cartao_imagens""")
         raiz = Path(raiz_padrao)
         diag = None
         if n["total"] and n["copiadas"] < n["total"]:
             nomes = [r["nome_arquivo"] for r in
                      q("""SELECT nome_arquivo FROM nt_cartao_imagens
                           WHERE nome_arquivo IS NOT NULL AND caminho_interno IS NULL
-                          LIMIT 500""")]
+                          ORDER BY id LIMIT 500""")]
             candidatas = pastas_firmas()
             if _e_pasta(raiz) and not any(
                     str(p).lower() == str(raiz).lower() for p in candidatas):
@@ -1534,9 +1593,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not SR.pode_selar_automatico():
             return SR.recado_pendente_selo()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            linha = con.execute("SELECT codigo_tj FROM cx_servicos WHERE codigo=?",
-                                (int(servico),)).fetchone()
+            linha = banco(con).um("SELECT codigo_tj FROM cx_servicos WHERE codigo=%s",
+                                  (int(servico),))
         codigo_tj = (linha["codigo_tj"] if linha else None) or None
         if not codigo_tj:
             return (f" O ato foi lavrado SEM SELO: o serviço {servico} não tem "
@@ -1578,7 +1636,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         coluna = "selo_abertura" if tabela == "nt_cartoes" else "selo"
         try:
             with db.transaction() as con:
-                con.execute(f"UPDATE {tabela} SET {coluna}=? WHERE id=?",
+                banco(con).escrever(f"UPDATE {tabela} SET {coluna}=%s WHERE id=%s",
                             (saiu[0], int(ato_id)))
         except sqlite3.Error as erro:
             return (f" {len(saiu)} selo(s) obtido(s), mas não consegui gravá-los "
@@ -1617,7 +1675,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         import selo_robo as SR
         if not SR.pode_selar_automatico():
             return SR.recado_pendente_selo()
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (int(ato_id),))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (int(ato_id),))
         if not a:
             return " O ato não existe."
         erro_item = _conferir_item_da_escritura(a, codigo_tj)
@@ -1637,10 +1695,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     "tabela de custas em vigor, em Administrativo → "
                     "Configurações.")
         partes = [dict(p) for p in q(
-            "SELECT nome, documento FROM nt_ato_partes WHERE ato_id=? ORDER BY id",
+            "SELECT nome, documento FROM nt_ato_partes WHERE ato_id=%s ORDER BY id",
             (int(ato_id),))]
         # O VALOR VEM DO ATO quando ele ja o declara — `valor_transacao` esta
         # em CENTAVOS, como o resto do sistema, e o envelope pede REAIS.
+        #
+        # VALOR ZERO E SEM VALOR (LD02, 21/10/2026), como a tela o mostra
+        # (`_o_selo_desta_tela`: `bool(valor_transacao)`): a escritura de
+        # divorcio sem bens gravada com 0 ia pelo caminho COM valor declarado,
+        # e a tela tinha oferecido os itens do caminho sem valor (o 13.7).
         centavos = (valor_declarado_centavos
                     if valor_declarado_centavos is not None
                     else a["valor_transacao"])
@@ -1650,7 +1713,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 versao_tabela=versao, livro=a["livro"], folha=a["folha"],
                 termo=a["termo"], partes=partes,
                 valor_declarado=(int(centavos) / 100.0
-                                 if centavos not in (None, "") else None),
+                                 if centavos not in (None, "") and int(centavos)
+                                 else None),
                 especie_procuracao=especie_procuracao,
                 isento=isento, motivo_isencao=motivo_isencao)
         except AS.AtoError as erro:
@@ -1739,7 +1803,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         envelope["ato"]["codigo"] = codigo_arq
 
         if selo_do_ato is None:
-            row = q1("SELECT selo FROM nt_atos WHERE id=?", (int(ato_id),))
+            row = q1("SELECT selo FROM nt_atos WHERE id=%s", (int(ato_id),))
             selo_do_ato = (row["selo"] if row else None)
 
         r = AS.selar_o_ato_lavrado(
@@ -1752,17 +1816,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not r["selado"]:
             if selo_do_ato:
                 with db.transaction() as con:
-                    con.execute("UPDATE nt_atos SET selo=? WHERE id=?",
+                    banco(con).escrever("UPDATE nt_atos SET selo=%s WHERE id=%s",
                                 (selo_do_ato, int(ato_id)))
             return {"ok": False, "motivo": r["motivo"]}
 
         with db.transaction() as con:
-            con.execute(
+            banco(con).escrever(
                 """UPDATE nt_atos
-                      SET selo=COALESCE(?, selo),
-                          selo_arquivamento=?,
-                          folhas_arquivamento=?
-                    WHERE id=?""",
+                      SET selo=COALESCE(%s, selo),
+                          selo_arquivamento=%s,
+                          folhas_arquivamento=%s
+                    WHERE id=%s""",
                 (selo_do_ato or None, r["numero"], q, int(ato_id)))
         return {"ok": True, "numero": r["numero"], "folhas": q,
                 "recado": f" Arquivamento {r['numero']} ({q} folha(s))."}
@@ -1813,9 +1877,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not SR.pode_selar_automatico():
             return SR.reconhecimento_pendente()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            linha = con.execute("SELECT codigo_tj FROM cx_servicos WHERE codigo=?",
-                                (int(servico),)).fetchone()
+            linha = banco(con).um("SELECT codigo_tj FROM cx_servicos WHERE codigo=%s",
+                                  (int(servico),))
         codigo_tj = (linha["codigo_tj"] if linha else None) or None
         if not codigo_tj:
             motivo = (f"o serviço {servico} não tem item da tabela do TJMA "
@@ -1843,6 +1906,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     "motivo": motivo, "selos": []}
 
         saiu, faltou = [], []
+        # A FALTA DE PROTOCOLO OU PAGAMENTO (LX16) VOLTA MARCADA: ela não se
+        # corrige no aparelho, e sim no quadro «Selo e caixa» — é para lá que
+        # a rota leva o escrevente.
+        sem_cobertura = False
         for p in partes:
             try:
                 envelope = AS.envelope_das_notas(
@@ -1864,21 +1931,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 saiu.append((p["parte_id"], r["numero"]))
             else:
                 faltou.append(r["motivo"])
+                sem_cobertura = sem_cobertura or bool(r.get("aguardando_cobertura"))
 
         if not saiu:
             motivo = faltou[0] if faltou else "o selador não devolveu selo."
             return {"ok": False, "mensagem": f" SEM SELO: {motivo}",
-                    "motivo": motivo, "selos": []}
+                    "motivo": motivo, "selos": [],
+                    "aguardando_cobertura": sem_cobertura,
+                    "codigo": codigo_tj}
         try:
             with db.transaction() as con:
                 for parte_id, numero in saiu:
-                    con.execute(
-                        "UPDATE nt_reconhecimento_partes SET selo=? WHERE id=?",
+                    banco(con).escrever(
+                        "UPDATE nt_reconhecimento_partes SET selo=%s WHERE id=%s",
                         (numero, int(parte_id)))
                 # O ATO GUARDA O PRIMEIRO, porque e o que a tela e a etiqueta
                 # mostram. Os outros nao se perdem: cada firma tem o seu, e
                 # todos estao no razao dos selos.
-                con.execute("UPDATE nt_reconhecimentos SET selo=? WHERE id=?",
+                banco(con).escrever("UPDATE nt_reconhecimentos SET selo=%s WHERE id=%s",
                             (saiu[0][1], int(rid)))
         except sqlite3.Error as erro:
             motivo = (f"{len(saiu)} selo(s) obtido(s), mas não consegui "
@@ -1897,12 +1967,62 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return {"ok": True, "mensagem": recado, "motivo": None,
                 "selos": [n for _, n in saiu]}
 
+    #: Os itens da tabela que pagam o selo do reconhecimento (comum, veículo,
+    #: financeiro). O 13.17.1 é do cartão, e não entra.
+    CODIGOS_DA_FIRMA = ("13.17.2", "13.17.3", "13.17.4")
+
+    def _candidatos_da_firma() -> tuple[list[dict], dict | None]:
+        """Os protocolos pagos que o escrevente pode escolher para a firma. Só LÊ.
+
+        22/10/2026: a firma de VALDEIR não selou com o 13.17.4 pago, porque o
+        selo só procura o item no protocolo «em atendimento» e esse passo
+        ficava em «Selo e caixa». A lista é a do núcleo
+        (`ato_selado.candidatos_do_ato`), por código; a firma não sabe qual dos
+        três itens antes do clique, então um protocolo entra se pagar qualquer
+        um deles.
+        """
+        import caixa_protocolo as CXP
+        juntos: dict[int, dict] = {}
+        with db.connect() as con:
+            atendendo = CXP.em_atendimento(con, usuario_nome())
+            pre = (atendendo or {}).get("id")
+            for codigo in CODIGOS_DA_FIRMA:
+                for c in AS.candidatos_do_ato(con, tabela="nt_reconhecimentos",
+                                              pedidos=[(codigo, 1)],
+                                              pre_marcar_protocolo_id=pre):
+                    ja = juntos.get(c["protocolo_id"])
+                    if not ja:
+                        juntos[c["protocolo_id"]] = c
+                        continue
+                    ids = {i["id"] for i in ja["itens"]}
+                    ja["itens"] += [i for i in c["itens"] if i["id"] not in ids]
+                    ja["cobre_tudo"] = ja["cobre_tudo"] or c["cobre_tudo"]
+        lista = list(juntos.values())
+        for c in lista:
+            if c["cobre_tudo"]:
+                c["faltam"] = []
+        lista.sort(key=lambda c: (not c["pre_marcado"], not c["cobre_tudo"],
+                                  -c["protocolo_id"]))
+        return lista, (dict(atendendo) if atendendo else None)
+
+    def _suspenso_sem_cobertura(reconhecimento_id) -> bool:
+        """O reconhecimento está na fila de «aguardando cobertura»? Só LÊ."""
+        with db.connect() as con:
+            bd = banco(con)
+            if not bd.tem_tabela("cx_selo_aguardando"):
+                return False
+            return bool(bd.valor(
+                "SELECT count(*) AS n FROM cx_selo_aguardando "
+                "WHERE tabela = 'nt_reconhecimentos' AND ato_id = %s",
+                (int(reconhecimento_id),)))
+
     @app.route("/notas/reconhecimento", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_reconhecimento():
         """O balcão: procura o cartão, confere a assinatura e reconhece."""
         if request.method == "POST" and request.form.get("acao") == "reconhecer":
-            ids = [int(x) for x in request.form.getlist("cartao_id") if str(x).isdigit()]
+            ids = [n for n in map(numero_digitado, request.form.getlist("cartao_id"))
+                   if n is not None]
             especie = (request.form.get("especie") or "SEMELHANCA").upper()
             if not ids:
                 flash("Escolha pelo menos um cartão.", "danger")
@@ -1911,7 +2031,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 especie = "SEMELHANCA"
 
             cartoes = [dict(r) for r in q(
-                f"SELECT * FROM nt_cartoes WHERE id IN ({','.join('?' * len(ids))})", ids)]
+                f"SELECT * FROM nt_cartoes WHERE id IN ({','.join(['%s'] * len(ids))}) "
+                "ORDER BY id", ids)]
             bloqueados = [c["nome"] for c in cartoes if c["bloqueado"]]
             if bloqueados and not request.form.get("confirmar_bloqueio"):
                 flash("Cartão bloqueado: " + ", ".join(bloqueados)
@@ -1926,39 +2047,75 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return redirect(url_for("notas_reconhecimento"))
 
             veiculo = request.form.get("veiculo") == "1"
+            # A FIRMA DA TRANSFERÊNCIA DE VEÍCULO É POR AUTENTICIDADE (art. 865,
+            # II, do Código de Normas) — LG04, 19/10/2026; ver
+            # `notas_schema.recusa_da_firma_do_veiculo`.
+            documento_do_veiculo = (request.form.get("veiculo_documento")
+                                    or "").strip().upper()
+            recusa = recusa_da_firma_do_veiculo(especie, veiculo,
+                                                documento_do_veiculo)
+            if recusa:
+                flash(recusa, "danger")
+                return redirect(url_for("notas_reconhecimento"))
             financeiro = request.form.get("financeiro") == "1"
             servico = servico_do_reconhecimento(especie, veiculo, financeiro)
             sinal = request.form.get("sinal_publico") == "1"
-            texto = texto_reconhecimento(especie, [c["nome"] for c in cartoes], sinal)
+            try:
+                texto = texto_reconhecimento(especie, [c["nome"] for c in cartoes],
+                                             sinal, con=db.connect)
+            except MODELOS.ModeloError as erro:
+                # o ajuste da casa que não monta: diz qual papel, sem 500
+                flash(str(erro), "danger")
+                return redirect(url_for("notas_reconhecimento"))
 
             with db.transaction() as con:
-                cur = con.execute(
+                rid = int(banco(con).escrever(
                     """INSERT INTO nt_reconhecimentos
                        (data, hora, especie, servico_codigo, quantidade,
                         documento_descricao, documento_tipo, veiculo_placa,
                         conteudo_financeiro, sinal_publico, texto, oficial,
                         oficial_funcao, origem, criado_em)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'MANUAL', ?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'MANUAL', %s)
+                       RETURNING id""",
                     (date.today().isoformat(), datetime.now().strftime("%H:%M"),
                      especie, servico, len(cartoes),
                      (request.form.get("documento_descricao") or "").strip() or None,
-                     (request.form.get("documento_tipo") or "").strip() or None,
+                     ((request.form.get("documento_tipo") or "").strip()
+                      or (DOCUMENTOS_DE_VEICULO.get(documento_do_veiculo)
+                          if veiculo else None) or None),
                      (request.form.get("veiculo_placa") or "").strip().upper() or None,
                      1 if financeiro else 0, 1 if sinal else 0, texto,
-                     usuario_nome(), usuario_funcao(), db.now()))
-                rid = int(cur.lastrowid)
+                     usuario_nome(), usuario_funcao(), db.now()))[0]["id"])
                 # O ID DE CADA FIRMA VOLTA, porque e nele que o selo dela vai
                 # ser gravado — e cada firma leva um selo proprio.
                 partes = []
                 for c in cartoes:
-                    cur = con.execute(
+                    parte_id = banco(con).escrever(
                         """INSERT INTO nt_reconhecimento_partes
                            (reconhecimento_id, cartao_id, nome, documento, criado_em)
-                           VALUES (?,?,?,?,?)""",
-                        (rid, c["id"], c["nome"], c["documento"], db.now()))
-                    partes.append({"parte_id": int(cur.lastrowid),
+                           VALUES (%s,%s,%s,%s,%s) RETURNING id""",
+                        (rid, c["id"], c["nome"], c["documento"], db.now()))[0]["id"]
+                    partes.append({"parte_id": int(parte_id),
                                    "nome": c["nome"],
                                    "documento": c["documento"]})
+            # O PROTOCOLO PAGO ESCOLHIDO NA TELA VIRA O «EM ATENDIMENTO» antes
+            # do selo (22/10/2026, decisão do oficial: o escrevente confirma).
+            # A cobertura continua a mesma: protocolo e item pago do código.
+            escolhido = (request.form.get("protocolo_selo") or "").strip()
+            if escolhido:
+                import caixa_protocolo as CXP
+                try:
+                    with db.transaction() as con:
+                        feito = AS.escolher_protocolo_do_selo(
+                            con, usuario=usuario_nome(), protocolo=escolhido,
+                            agora=datetime.now().isoformat(timespec="seconds"))
+                    if feito:
+                        audit("SELO_PROTOCOLO_EM_ATENDIMENTO", "CX_PROTOCOLO",
+                              feito["protocolo_id"],
+                              {"numero": feito["numero"],
+                               "pela": "tela do reconhecimento"})
+                except CXP.ProtocoloError as erro:
+                    flash(str(erro), "warning")
             # O SELO SAI AGORA, FORA DA TRANSACAO — «igual o E-Oficio».
             selado = selar_reconhecimento(rid, servico=servico,
                                           especie=especie, partes=partes)
@@ -1966,11 +2123,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   {"especie": especie, "firmas": len(cartoes), "servico": servico,
                    "selo_ok": bool(selado["ok"]),
                    "motivo_selo": selado.get("motivo")})
+            if (not selado["ok"] and not selado["selos"]
+                    and selado.get("aguardando_cobertura")):
+                # FALTOU PAGAMENTO: O ATO FICA SUSPENSO, E NÃO É APAGADO —
+                # 22/10/2026, decisão do oficial («pode ser suspenso, com
+                # botão para selar depois do pagamento»), que é o que o relato
+                # #77 pedia («sempre SUSPENDER o ato para corrigir»). O
+                # reconhecimento fica sem selo e sem etiqueta, na fila de
+                # «aguardando cobertura»; a tela de cobertura mostra os
+                # protocolos pagos, e o botão sela pela rota de sempre.
+                audit("NT_RECONHECIMENTO_SUSPENSO_SEM_COBERTURA",
+                      "NT_RECONHECIMENTO", rid,
+                      {"especie": especie, "firmas": len(cartoes),
+                       "servico": servico, "motivo": selado.get("motivo")})
+                flash(f"Reconhecimento nº {rid} SUSPENSO: o selo pago não saiu "
+                      f"porque falta protocolo ou pagamento. Escolha o protocolo "
+                      f"pago e clique em selar. Sem selo não se imprime etiqueta.",
+                      "warning")
+                volta = url_for("notas_reconhecimento_selar", reconhecimento_id=rid)
+                return redirect(url_for(
+                    "selo_cobertura", tabela="nt_reconhecimentos", ato_id=rid,
+                    pedido=f"{selado.get('codigo') or ''}:1", selar=volta))
             if not selado["ok"] and not selado["selos"]:
                 with db.transaction() as con:
-                    con.execute("DELETE FROM nt_reconhecimento_partes "
-                                "WHERE reconhecimento_id=?", (rid,))
-                    con.execute("DELETE FROM nt_reconhecimentos WHERE id=?", (rid,))
+                    banco(con).escrever("DELETE FROM nt_reconhecimento_partes "
+                                "WHERE reconhecimento_id=%s", (rid,))
+                    banco(con).escrever("DELETE FROM nt_reconhecimentos WHERE id=%s", (rid,))
                 audit("NT_RECONHECIMENTO_NAO_LAVRADO_SELO_FALHOU",
                       "NT_RECONHECIMENTO", rid,
                       {"especie": especie, "firmas": len(cartoes),
@@ -1979,6 +2157,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       f"Motivo: {selado.get('motivo') or 'falha sem detalhe'}. "
                       "Corrija o problema do selo e lavre de novo — o ato "
                       "fica suspenso até o selo sair (relato #77).", "danger")
+                if selado.get("aguardando_cobertura"):
+                    # O QUADRO, E NÃO O BALCÃO DE NOVO (LX22A1, 20/10/2026).
+                    # Faltando protocolo ou pagamento, o que resolve está em
+                    # «Selo e caixa» — e o escrevente (USER) não tem esse
+                    # link no menu: voltando para cá, ele ficava com a frase e
+                    # nenhuma porta. O ato foi desfeito, então o quadro é o
+                    # geral, sem ato: abrir protocolo, pagar, atender.
+                    return redirect(url_for("selo_cobertura"))
                 return redirect(url_for("notas_reconhecimento"))
             if not selado["ok"]:
                 audit("NT_RECONHECIMENTO_LAVRADO_COM_FALHA_PARCIAL_DE_SELO",
@@ -2002,23 +2188,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 achados = NP.buscar_cartoes(con, busca, limite=12)
             for c in achados:
                 c["avisos"] = NP.avisos_do_cartao(c)
-                c["imagem"] = q1("""SELECT id FROM nt_cartao_imagens WHERE cartao_id=?
-                                    ORDER BY favorita DESC, ordem LIMIT 1""", (c["id"],))
-        hoje = q1("""SELECT COUNT(*) n, COALESCE(SUM(quantidade),0) firmas
-                     FROM nt_reconhecimentos WHERE data=? AND cancelado=0""",
+                c["imagem"] = q1("""SELECT id FROM nt_cartao_imagens WHERE cartao_id=%s
+                                    ORDER BY favorita DESC, ordem, id LIMIT 1""", (c["id"],))
+        hoje = q1("""SELECT COUNT(*) n, COALESCE(SUM(quantidade),0)::bigint firmas
+                     FROM nt_reconhecimentos WHERE data=%s AND cancelado=0""",
                   (date.today().isoformat(),))
         precos = {nome: emolumento_do_servico(cod)
                   for nome, cod in (("comum", SERVICOS["SEMELHANCA"]),
                                     ("veículo", SERVICOS["VEICULO"]),
                                     ("financeiro", SERVICOS["FINANCEIRO"]))}
+        candidatos_selo, atendendo = _candidatos_da_firma()
         return render_template("notas_reconhecimento.html", busca=busca,
                                achados=achados, hoje=hoje, precos=precos,
-                               ESPECIES=ESPECIES_RECONHECIMENTO)
+                               candidatos_selo=candidatos_selo,
+                               atendendo=atendendo,
+                               ESPECIES=ESPECIES_RECONHECIMENTO,
+                               DOCUMENTOS_DE_VEICULO=DOCUMENTOS_DE_VEICULO)
 
     @app.route("/notas/reconhecimento/<int:reconhecimento_id>", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    # O AUDITOR ve a tela; o que ela GRAVA (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
     def notas_reconhecimento_ver(reconhecimento_id):
-        r = q1("SELECT * FROM nt_reconhecimentos WHERE id=?", (reconhecimento_id,))
+        r = q1("SELECT * FROM nt_reconhecimentos WHERE id=%s", (reconhecimento_id,))
         if not r:
             abort(404)
 
@@ -2029,13 +2221,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if not selo:
                     flash("Informe o selo.", "danger")
                 else:
-                    ja = q1("""SELECT id FROM nt_reconhecimentos WHERE selo=? AND id<>?""",
+                    ja = q1("""SELECT id FROM nt_reconhecimentos WHERE selo=%s AND id<>%s
+                               ORDER BY id""",
                             (selo, reconhecimento_id))
                     if ja:
                         flash(f"Este selo já está no reconhecimento nº {ja['id']}.", "danger")
                     else:
                         with db.transaction() as con:
-                            con.execute("UPDATE nt_reconhecimentos SET selo=? WHERE id=?",
+                            banco(con).escrever("UPDATE nt_reconhecimentos SET selo=%s WHERE id=%s",
                                         (selo, reconhecimento_id))
                         audit("NT_RECONHECIMENTO_SELADO", "NT_RECONHECIMENTO",
                               reconhecimento_id, {"selo": selo})
@@ -2046,9 +2239,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("Diga por que está cancelando.", "danger")
                 else:
                     with db.transaction() as con:
-                        con.execute("""UPDATE nt_reconhecimentos SET cancelado=1,
-                                       motivo_cancelamento=?, cancelado_em=?,
-                                       cancelado_por=? WHERE id=?""",
+                        banco(con).escrever("""UPDATE nt_reconhecimentos SET cancelado=1,
+                                       motivo_cancelamento=%s, cancelado_em=%s,
+                                       cancelado_por=%s WHERE id=%s""",
                                     (motivo, db.now(), usuario_nome(), reconhecimento_id))
                     audit("NT_RECONHECIMENTO_CANCELADO", "NT_RECONHECIMENTO",
                           reconhecimento_id, {"motivo": motivo})
@@ -2059,27 +2252,41 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         partes = q("""SELECT p.*, c.nome nome_cartao, c.documento documento_cartao,
                              (SELECT i.id FROM nt_cartao_imagens i WHERE i.cartao_id=c.id
-                               ORDER BY i.favorita DESC, i.ordem LIMIT 1) imagem_id
+                               ORDER BY i.favorita DESC, i.ordem, i.id LIMIT 1) imagem_id
                       FROM nt_reconhecimento_partes p
                       LEFT JOIN nt_cartoes c ON c.id = p.cartao_id
-                      WHERE p.reconhecimento_id=? ORDER BY p.id""", (reconhecimento_id,))
+                      WHERE p.reconhecimento_id=%s ORDER BY p.id""", (reconhecimento_id,))
         presencas = {}
         if (r["especie"] or "").upper() == "AUTENTICIDADE":
             for pr in q("""SELECT origem_chave FROM nt_presencas
-                           WHERE origem=? AND reconhecimento_id=?""",
+                           WHERE origem=%s AND reconhecimento_id=%s""",
                         (NL.ORIGEM_PRESENCA_RECONHECIMENTO, reconhecimento_id)):
                 presencas[str(pr["origem_chave"] or "")] = True
+        suspenso = (not (r["selo"] or "").strip()
+                    and _suspenso_sem_cobertura(reconhecimento_id))
+        candidatos_selo, atendendo = (_candidatos_da_firma() if suspenso
+                                      else ([], None))
         return render_template("notas_reconhecimento_ver.html", r=dict(r), partes=partes,
-                               presencas=presencas,
+                               presencas=presencas, suspenso=suspenso,
+                               candidatos_selo=candidatos_selo, atendendo=atendendo,
                                emolumento=emolumento_do_servico(r["servico_codigo"],
                                                                 r["quantidade"] or 1),
                                sv=dados_serventia(db.get_settings))
 
-    @app.route("/notas/reconhecimento/<int:reconhecimento_id>/termo-comparecimento/<int:parte_id>")
-    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    @app.route("/notas/reconhecimento/<int:reconhecimento_id>/termo-comparecimento/<int:parte_id>",
+               methods=["POST"])
+    @roles_required(*SEGWEB.PRATICA)
     def notas_reconhecimento_termo_comparecimento(reconhecimento_id, parte_id):
-        """Termo individual de comparecimento (.odt) — autenticidade (#91)."""
-        r = q1("SELECT * FROM nt_reconhecimentos WHERE id=?", (reconhecimento_id,))
+        """Termo individual de comparecimento (.odt) — autenticidade (#91).
+
+        POST COM O TOKEN (M8 do LS01, lote LX11). Era GET, e GET que grava
+        não passa pelo CSRF da casa: o `SameSite=Lax` manda o cookie em link
+        vindo de fora, e bastava um link ou `<img>` com o id para gravar em
+        nome de quem estivesse logado. O botão da tela manda o formulário. Aqui grava a
+        PRESENÇA em `nt_presencas` — comparecimento sem a pessoa ter vindo.
+        E sem o AUDITOR, que vê e não pratica ato (M2): registrar presença é ato.
+        """
+        r = q1("SELECT * FROM nt_reconhecimentos WHERE id=%s", (reconhecimento_id,))
         if not r:
             abort(404)
         if r["cancelado"]:
@@ -2095,25 +2302,35 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             """SELECT p.*, c.nome nome_cartao, c.documento documento_cartao
                FROM nt_reconhecimento_partes p
                LEFT JOIN nt_cartoes c ON c.id = p.cartao_id
-               WHERE p.id=? AND p.reconhecimento_id=?""",
+               WHERE p.id=%s AND p.reconhecimento_id=%s""",
             (parte_id, reconhecimento_id))
         if not parte:
             abort(404)
         sv = dados_serventia(db.get_settings)
         from ri_web import data_por_extenso
         data_ext = data_por_extenso(date.fromisoformat(r["data"]))
-        html = NL.texto_termo_comparecimento(
-            sv=sv, reconhecimento=dict(r), parte=dict(parte),
-            data_extenso=data_ext)
+        # O SELO É O DESTA FIRMA (LD02, 21/10/2026): cada firma leva o seu
+        # (`nt_reconhecimento_partes.selo`), e o termo da segunda pessoa saía
+        # com o da primeira, que é o que `nt_reconhecimentos.selo` guarda. O
+        # termo traz «a numeração do selo de reconhecimento de firma utilizado»
+        # (CN-MA art. 866). Firma sem selo próprio (acervo) fica com o do ato.
+        selo_da_firma = (parte["selo"] or "").strip() or r["selo"]
         with db.transaction() as con:
+            # A ORDEM E O TERMO NA MESMA TRANSAÇÃO (LD02; art. 866): a trava do
+            # número vale até o termo estar gravado com ele.
+            ordem = NL.ordem_da_presenca(con, reconhecimento_id=reconhecimento_id,
+                                         parte_id=parte_id)
+            html = NL.texto_termo_comparecimento(
+                sv=sv, reconhecimento=dict(r, selo=selo_da_firma),
+                parte=dict(parte), data_extenso=data_ext, con=con, ordem=ordem)
             NL.registrar_presenca_reconhecimento(
                 con, reconhecimento_id=reconhecimento_id, parte_id=parte_id,
                 data=r["data"], nome=(parte["nome"] or parte["nome_cartao"] or ""),
                 documento=(parte["documento"] or parte["documento_cartao"]),
-                cartao_id=parte["cartao_id"], selo=r["selo"], conteudo=html,
-                oficial=r["oficial"], agora=db.now())
+                cartao_id=parte["cartao_id"], selo=selo_da_firma, conteudo=html,
+                oficial=r["oficial"], agora=db.now(), ordem=ordem)
         audit("NT_TERMO_COMPARECIMENTO", "NT_RECONHECIMENTO", reconhecimento_id,
-              {"parte_id": parte_id})
+              {"parte_id": parte_id, "ordem": ordem, "selo": selo_da_firma})
         nome_arq = (parte["nome"] or parte["nome_cartao"] or "comparecimento")
         nome_arq = re.sub(r"[^\w\-]+", "-", nome_arq.strip())[:40] or "comparecimento"
         arquivo = gerar_odt(html_para_odf(html, compacto=True),
@@ -2208,9 +2425,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return ""
         try:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
-                linha = con.execute(
-                    "SELECT texto FROM sd_selos WHERE numero=?", (selo,)).fetchone()
+                linha = banco(con).um(
+                    "SELECT texto FROM sd_selos WHERE numero=%s", (selo,))
         except sqlite3.Error:
             # SO A TABELA QUE FALTA SE PERDOA, e devolvendo vazio — que aqui
             # quer dizer «nao ha linha», e nao «os valores sao zero».
@@ -2259,7 +2475,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # espaço após a vírgula no fecho montado pelo sistema
             # («CIDADE-UF, dd/mm/aaaa»); importado do E-Oficio fica igual.
             "texto": MOTOR_ETQ.texto_da_etiqueta_motor(
-                r["texto"], sv["ri_cidade"], sv["ri_uf"], r["data"]),
+                r["texto"], sv["ri_cidade"], sv["ri_uf"], r["data"],
+                con=db.connect),
             "selo": selo,
             "codigo": codigo,
             "oficial": (r["oficial"] or "").strip(),
@@ -2276,7 +2493,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "valores": SNPAPEL.linha_de_valores(_texto_do_selo(selo)),
         }
 
-    @app.route("/notas/reconhecimento/<int:reconhecimento_id>/etiqueta")
+    @app.route("/notas/reconhecimento/<int:reconhecimento_id>/etiqueta", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_reconhecimento_etiqueta(reconhecimento_id):
         """A etiqueta, no tamanho exato, pronta para a janela de impressão.
@@ -2296,8 +2513,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             Botão que a pessoa tem de lembrar de apertar é botão que não é
             apertado. Abrir esta tela é a única forma de imprimir; contar aqui
             é contar onde a coisa acontece.
+
+        POR POST COM O TOKEN (M8 do LS01, lote LX11): GET que grava não passa
+            pelo CSRF, e um link de fora somava «segunda via» que ninguém
+            imprimiu. O botão «Imprimir etiqueta» manda o formulário.
         """
-        r = q1("SELECT * FROM nt_reconhecimentos WHERE id=?", (reconhecimento_id,))
+        r = q1("SELECT * FROM nt_reconhecimentos WHERE id=%s", (reconhecimento_id,))
         if not r:
             abort(404)
         if r["cancelado"]:
@@ -2307,22 +2528,80 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "de ato cancelado.", "danger")
             return redirect(url_for("notas_reconhecimento_ver",
                                     reconhecimento_id=reconhecimento_id))
+        if not (r["selo"] or "").strip() and _suspenso_sem_cobertura(reconhecimento_id):
+            # SUSPENSO ESPERANDO PAGAMENTO NÃO TEM ETIQUETA (22/10/2026): colada
+            # no documento, ela poria o ato no mundo sem o selo pago — e o
+            # cliente sairia sem pagar.
+            flash("Este reconhecimento está suspenso esperando o pagamento: "
+                  "escolha o protocolo pago e sele antes de imprimir a etiqueta.",
+                  "danger")
+            return redirect(url_for("notas_reconhecimento_ver",
+                                    reconhecimento_id=reconhecimento_id))
 
         with db.transaction() as con:
-            con.execute("""UPDATE nt_reconhecimentos
-                           SET etiqueta_impressa_em=?,
+            banco(con).escrever("""UPDATE nt_reconhecimentos
+                           SET etiqueta_impressa_em=%s,
                                etiqueta_impressoes=COALESCE(etiqueta_impressoes,0)+1
-                           WHERE id=?""", (db.now(), reconhecimento_id))
+                           WHERE id=%s""", (db.now(), reconhecimento_id))
         vez = (r["etiqueta_impressoes"] or 0) + 1
         audit("NT_ETIQUETA_IMPRESSA", "NT_RECONHECIMENTO", reconhecimento_id,
               {"vez": vez, "selo": r["selo"]})
 
-        return render_template("notas_etiqueta.html", e=dados_da_etiqueta(r),
+        etiquetas = etiquetas_do_reconhecimento(r)
+        return render_template("notas_etiqueta.html", e=etiquetas[0],
+                               etiquetas=etiquetas,
                                m=medidas_da_etiqueta(), r=dict(r), vez=vez,
                                voltar=url_for("notas_reconhecimento_ver",
                                               reconhecimento_id=reconhecimento_id))
 
-    @app.route("/notas/autenticacao/<int:autenticacao_id>/etiqueta")
+    def etiquetas_do_reconhecimento(r) -> list[dict]:
+        """Uma tira por FIRMA, cada uma com o selo dela. SÓ LÊ.
+
+        CADA FIRMA É UM ATO E UM SELO (ver `selar_reconhecimento`), e o selo
+        «deverá constar expressamente no corpo do ato físico» (CN-MA art. 131).
+        Até o LD02 (21/10/2026) a etiqueta lia só `nt_reconhecimentos.selo` — o
+        da primeira —, e a segunda firma saía do balcão sem selo no papel.
+
+        A TIRA DE CADA FIRMA DIZ O NOME DELA, como o selo dela diz em
+        `parteAto`: a fórmula da casa (`texto_reconhecimento`) com aquela
+        pessoa. O ato de uma firma só (o acervo inteiro do E-Ofício) sai como
+        sempre saiu, com o teor gravado.
+        """
+        partes = q("""SELECT p.id, p.selo, COALESCE(p.nome, c.nome) AS nome
+                        FROM nt_reconhecimento_partes p
+                        LEFT JOIN nt_cartoes c ON c.id = p.cartao_id
+                       WHERE p.reconhecimento_id=%s ORDER BY p.id""", (r["id"],))
+        if len(partes) <= 1:
+            return [dados_da_etiqueta(r)]
+        tiras = []
+        for p in partes:
+            try:
+                texto = texto_reconhecimento(
+                    r["especie"] or "SEMELHANCA", [p["nome"] or ""],
+                    bool(r["sinal_publico"]), con=db.connect)
+            except MODELOS.ModeloError:
+                texto = r["texto"]
+            tiras.append(dados_da_etiqueta(
+                dict(r, selo=(p["selo"] or "").strip(), texto=texto)))
+        return tiras
+
+    def etiquetas_da_autenticacao(dados: dict) -> list[dict]:
+        """Uma tira por FOLHA, cada uma com o selo dela. SÓ LÊ.
+
+        O 13.18 é por página e sela uma vez por folha (`selar_simples`); o
+        selo de cada folha está no razão, amarrado ao ato. Até o LD02
+        (21/10/2026) a etiqueta imprimia só o primeiro, e a segunda folha saía
+        do balcão sem selo no papel (CN-MA arts. 131 e 842).
+        """
+        with db.connect() as con:
+            selos = [s["numero"] for s in AS.etiquetas_do_ato(
+                con, "nt_autenticacoes", dados["id"], dados.get("selo") or "")
+                if s.get("numero")]
+        if len(selos) <= 1:
+            return [dados_da_etiqueta(dados)]
+        return [dados_da_etiqueta(dict(dados, selo=s)) for s in selos]
+
+    @app.route("/notas/autenticacao/<int:autenticacao_id>/etiqueta", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_autenticacao_etiqueta(autenticacao_id):
         """A etiqueta da autenticacao de copia, no mesmo formato da da firma.
@@ -2337,9 +2616,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         A CONTAGEM SOBE AQUI, e nao num botao de «marcar impressa»: abrir esta
         tela e a unica forma de imprimir, e contar onde a coisa acontece e o
-        que faz a segunda via aparecer na conferencia.
+        que faz a segunda via aparecer na conferencia. Por POST com o token
+        (M8 do LS01, lote LX11), como a do reconhecimento.
         """
-        r = q1("SELECT * FROM nt_autenticacoes WHERE id=?", (autenticacao_id,))
+        r = q1("SELECT * FROM nt_autenticacoes WHERE id=%s", (autenticacao_id,))
         if not r:
             abort(404)
         if r["cancelado"]:
@@ -2348,10 +2628,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("notas_autenticacao"))
 
         with db.transaction() as con:
-            con.execute("""UPDATE nt_autenticacoes
-                           SET etiqueta_impressa_em=?,
+            banco(con).escrever("""UPDATE nt_autenticacoes
+                           SET etiqueta_impressa_em=%s,
                                etiqueta_impressoes=COALESCE(etiqueta_impressoes,0)+1
-                           WHERE id=?""", (db.now(), autenticacao_id))
+                           WHERE id=%s""", (db.now(), autenticacao_id))
         vez = (r["etiqueta_impressoes"] or 0) + 1
         audit("NT_ETIQUETA_IMPRESSA", "NT_AUTENTICACAO", autenticacao_id,
               {"vez": vez, "selo": r["selo"]})
@@ -2362,8 +2642,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         dados = dict(r)
         dados["quantidade"] = r["folhas"] or 1
         dados["codigo_seguranca"] = None
+        etiquetas = etiquetas_da_autenticacao(dados)
         return render_template("notas_etiqueta.html",
-                               e=dados_da_etiqueta(dados),
+                               e=etiquetas[0], etiquetas=etiquetas,
                                m=medidas_da_etiqueta(), r=dados, vez=vez,
                                voltar=url_for("notas_autenticacao"))
 
@@ -2420,7 +2701,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         exemplo = {
             "texto": MOTOR_ETQ.texto_da_etiqueta_motor(
                 "RECONHEÇO POR SEMELHANÇA A FIRMA DE MARIA DA SILVA SANTOS. DOU FÉ.",
-                sv["ri_cidade"], sv["ri_uf"], date.today().isoformat()),
+                sv["ri_cidade"], sv["ri_uf"], date.today().isoformat(),
+                con=db.connect),
             "selo": selo_exemplo,
             "codigo": "A1C594FCA5921EE228376E476DA45E",
             "oficial": usuario_nome(), "funcao": usuario_funcao(), "quantidade": 1,
@@ -2446,25 +2728,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def notas_reconhecimentos():
         busca = (request.args.get("busca") or "").strip()
         especie = (request.args.get("especie") or "").strip().upper()
-        pagina = max(1, int(request.args.get("pagina") or 1))
+        pagina = max(1, numero_digitado(request.args.get("pagina"),
+                                        maximo=PAGINA_MAIS_ALTA) or 1)
         onde, params = ["1=1"], []
         if especie in ESPECIES_RECONHECIMENTO:
-            onde.append("r.especie=?")
+            onde.append("r.especie=%s")
             params.append(especie)
         if busca:
-            onde.append("""(r.selo LIKE ? OR EXISTS (
+            onde.append("""(r.selo ILIKE %s OR EXISTS (
                              SELECT 1 FROM nt_reconhecimento_partes p
                              JOIN nt_cartoes c ON c.id = p.cartao_id
-                             WHERE p.reconhecimento_id = r.id AND c.nome_norm LIKE ?))""")
+                             WHERE p.reconhecimento_id = r.id AND c.nome_norm ILIKE %s))""")
             params += [f"%{busca.upper()}%", f"%{NP.normalizar(busca)}%"]
         filtro = " AND ".join(onde)
         total = q1(f"SELECT COUNT(*) n FROM nt_reconhecimentos r WHERE {filtro}", params)["n"]
-        rows = q(f"""SELECT r.*, (SELECT GROUP_CONCAT(c.nome, ' / ')
+        rows = q(f"""SELECT r.*, (SELECT string_agg(c.nome, ' / ' ORDER BY p.id)
                                   FROM nt_reconhecimento_partes p
                                   JOIN nt_cartoes c ON c.id = p.cartao_id
                                   WHERE p.reconhecimento_id = r.id) nomes
                      FROM nt_reconhecimentos r WHERE {filtro}
-                     ORDER BY r.data DESC, r.id DESC LIMIT ? OFFSET ?""",
+                     ORDER BY r.data DESC, r.id DESC LIMIT %s OFFSET %s""",
                  params + [POR_PAGINA, (pagina - 1) * POR_PAGINA])
         return render_template("notas_reconhecimentos.html", rows=rows, busca=busca,
                                especie=especie, total=total, pagina=pagina,
@@ -2477,28 +2760,51 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_autenticacao():
         if request.method == "POST" and request.form.get("acao") == "autenticar":
-            try:
-                folhas = max(1, int(request.form.get("folhas") or 1))
-            except ValueError:
-                folhas = 1
+            # O que não é número fica 1, como sempre ficou o «abc» — e agora
+            # também os 30 dígitos, que passavam pelo `int()` e derrubavam o
+            # INSERT («bigint out of range») (LD13).
+            folhas = max(1, numero_digitado(request.form.get("folhas")) or 1)
             tipo = (request.form.get("tipo") or "PADRAO").upper()
-            if tipo not in TIPOS_AUTENTICACAO:
+            if tipo not in AUTENTICACOES:
                 tipo = "PADRAO"
+            # O DOCUMENTO DA INTERNET SÓ SE AUTENTICA CONFERIDO NO ENDEREÇO
+            # DELE, e a autenticação o menciona, com a data e o horário da
+            # conferência (CN-MA art. 839 e § 1º) — LD02, 21/10/2026. Sem o
+            # endereço não há o que mencionar: recusa antes de selar.
+            endereco = (request.form.get("endereco_eletronico") or "").strip()
+            if tipo == "INTERNET" and not endereco:
+                flash("Autenticação NÃO lavrada: a de documento da internet "
+                      "menciona o endereço eletrônico em que ele foi conferido, "
+                      "a data e o horário da conferência (Código de Normas, art. "
+                      "839, § 1º). Informe o endereço.", "danger")
+                return redirect(url_for("notas_autenticacao"))
+            agora = datetime.now()
+            hora = agora.strftime("%H:%M")
+            # A rasura ou o defeito do original vai ressalvado no teor (CN-MA
+            # art. 836) — LD07, 21/10/2026.
+            ressalva = " ".join((request.form.get("ressalva") or "").split())
             with db.transaction() as con:
-                cur = con.execute(
+                aid = int(banco(con).escrever(
                     """INSERT INTO nt_autenticacoes
                        (data, hora, tipo, servico_codigo, folhas, documento_descricao,
                         documento_tipo, apresentante, apresentante_documento, texto,
-                        oficial, oficial_funcao, origem, criado_em)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'MANUAL', ?)""",
-                    (date.today().isoformat(), datetime.now().strftime("%H:%M"), tipo,
+                        oficial, oficial_funcao, endereco_eletronico, ressalva,
+                        origem, criado_em)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'MANUAL', %s)
+                       RETURNING id""",
+                    (agora.date().isoformat(), hora, tipo,
                      SERVICOS["AUTENTICACAO"], folhas,
                      (request.form.get("documento_descricao") or "").strip() or None,
                      (request.form.get("documento_tipo") or "").strip() or None,
                      (request.form.get("apresentante") or "").strip() or None,
                      NP.so_digitos(request.form.get("apresentante_documento")) or None,
-                     texto_autenticacao(tipo), usuario_nome(), usuario_funcao(), db.now()))
-                aid = int(cur.lastrowid)
+                     texto_autenticacao(tipo, con=con, endereco=endereco,
+                                        data=agora.strftime("%d/%m/%Y"), hora=hora,
+                                        ressalva=ressalva),
+                     usuario_nome(), usuario_funcao(),
+                     (endereco or None) if tipo == "INTERNET" else None,
+                     ressalva or None,
+                     db.now()))[0]["id"])
             # UM SELO POR FOLHA — o item 13.18 e por pagina, e o E-Oficio
             # selava uma vez por folha: 3.539 autenticacoes, todas de uma
             # folha, 3.539 selos distintos.
@@ -2508,7 +2814,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             motivo_selo = motivo_da_falha_do_selo(selado)
             if motivo_selo:
                 with db.transaction() as con:
-                    con.execute("DELETE FROM nt_autenticacoes WHERE id=?", (aid,))
+                    banco(con).escrever("DELETE FROM nt_autenticacoes WHERE id=%s", (aid,))
                 audit("NT_AUTENTICACAO_NAO_LAVRADA_SELO_FALHOU",
                       "NT_AUTENTICACAO", aid,
                       {"tipo": tipo, "folhas": folhas, "motivo": motivo_selo})
@@ -2524,13 +2830,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "warning" if motivo_selo else "success")
             return redirect(url_for("notas_autenticacao"))
 
-        hoje = q1("""SELECT COUNT(*) n, COALESCE(SUM(folhas),0) folhas
-                     FROM nt_autenticacoes WHERE data=? AND cancelado=0""",
+        hoje = q1("""SELECT COUNT(*) n, COALESCE(SUM(folhas),0)::bigint folhas
+                     FROM nt_autenticacoes WHERE data=%s AND cancelado=0""",
                   (date.today().isoformat(),))
         ultimas = q("""SELECT * FROM nt_autenticacoes ORDER BY id DESC LIMIT 15""")
         return render_template("notas_autenticacao.html", hoje=hoje, ultimas=ultimas,
                                preco=emolumento_do_servico(SERVICOS["AUTENTICACAO"]),
-                               TIPOS=TIPOS_AUTENTICACAO)
+                               TIPOS=AUTENTICACOES)
 
 
     @app.route("/notas/cartoes/<int:cartao_id>/selar", methods=["POST"])
@@ -2540,7 +2846,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         import selo_robo as SR
         if SR.exige_humano_para_selar():
             abort(403)
-        c = q1("SELECT * FROM nt_cartoes WHERE id=?", (cartao_id,))
+        c = q1("SELECT * FROM nt_cartoes WHERE id=%s", (cartao_id,))
         if not c:
             abort(404)
         if (c["selo_abertura"] or "").strip():
@@ -2564,7 +2870,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         import selo_robo as SR
         if SR.exige_humano_para_selar():
             abort(403)
-        r = q1("SELECT * FROM nt_reconhecimentos WHERE id=?", (reconhecimento_id,))
+        r = q1("SELECT * FROM nt_reconhecimentos WHERE id=%s", (reconhecimento_id,))
         if not r:
             abort(404)
         if (r["selo"] or "").strip():
@@ -2573,8 +2879,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                     reconhecimento_id=reconhecimento_id))
         partes = q("""SELECT id parte_id, nome, documento
                         FROM nt_reconhecimento_partes
-                       WHERE reconhecimento_id=? ORDER BY id""",
+                       WHERE reconhecimento_id=%s ORDER BY id""",
                    (reconhecimento_id,))
+        # O protocolo pago escolhido na ficha ou no quadro de cobertura vira o
+        # «em atendimento» antes do selo (22/10/2026, «escrevente confirma»).
+        escolhido = (request.form.get("protocolo_selo") or "").strip()
+        if escolhido:
+            import caixa_protocolo as CXP
+            try:
+                with db.transaction() as con:
+                    feito = AS.escolher_protocolo_do_selo(
+                        con, usuario=usuario_nome(), protocolo=escolhido,
+                        agora=datetime.now().isoformat(timespec="seconds"))
+                if feito:
+                    audit("SELO_PROTOCOLO_EM_ATENDIMENTO", "CX_PROTOCOLO",
+                          feito["protocolo_id"],
+                          {"numero": feito["numero"],
+                           "pela": "selar o reconhecimento suspenso"})
+            except CXP.ProtocoloError as erro:
+                flash(str(erro), "danger")
+                return redirect(url_for("notas_reconhecimento_ver",
+                                        reconhecimento_id=reconhecimento_id))
         selado = selar_reconhecimento(
             reconhecimento_id,
             servico=int(r["servico_codigo"] or SERVICOS["SEMELHANCA"]),
@@ -2583,6 +2908,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      "documento": p["documento"]} for p in partes])
         if not selado.get("ok") and not selado.get("selos"):
             flash(f"Não selou: {selado.get('motivo') or 'falha'}", "danger")
+            if selado.get("aguardando_cobertura"):
+                volta = url_for("notas_reconhecimento_selar",
+                                reconhecimento_id=reconhecimento_id)
+                return redirect(url_for(
+                    "selo_cobertura", tabela="nt_reconhecimentos",
+                    ato_id=reconhecimento_id,
+                    pedido=f"{selado.get('codigo') or ''}:1", selar=volta))
         else:
             audit("NT_RECONHECIMENTO_SELADO", "NT_RECONHECIMENTO",
                   reconhecimento_id, {"via": "botao_selar",
@@ -2600,7 +2932,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         import selo_robo as SR
         if SR.exige_humano_para_selar():
             abort(403)
-        a = q1("SELECT * FROM nt_autenticacoes WHERE id=?", (autenticacao_id,))
+        a = q1("SELECT * FROM nt_autenticacoes WHERE id=%s", (autenticacao_id,))
         if not a:
             abort(404)
         if (a["selo"] or "").strip():
@@ -2626,13 +2958,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not selo:
             flash("Informe o selo.", "danger")
         else:
-            ja = q1("SELECT id FROM nt_autenticacoes WHERE selo=? AND id<>?",
+            ja = q1("SELECT id FROM nt_autenticacoes WHERE selo=%s AND id<>%s ORDER BY id",
                     (selo, autenticacao_id))
             if ja:
                 flash(f"Este selo já está na autenticação nº {ja['id']}.", "danger")
             else:
                 with db.transaction() as con:
-                    con.execute("UPDATE nt_autenticacoes SET selo=? WHERE id=?",
+                    banco(con).escrever("UPDATE nt_autenticacoes SET selo=%s WHERE id=%s",
                                 (selo, autenticacao_id))
                 audit("NT_AUTENTICACAO_SELADA", "NT_AUTENTICACAO", autenticacao_id,
                       {"selo": selo})
@@ -2749,12 +3081,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # `NL.folha_livre`, que nao grava.
         livros = []
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            for r in con.execute(
+            bd = banco(con)
+            for r in bd.ler(
                     """SELECT l.*,
                          (SELECT COUNT(*) FROM nt_atos a WHERE a.livro_id = l.id) atos
                        FROM nt_livros l
-                       ORDER BY l.encerrado, l.tipo, CAST(l.numero AS INTEGER)"""):
+                       ORDER BY l.encerrado, l.tipo,
+                                COALESCE(substring(l.numero FROM '^[0-9]+')::bigint, 0),
+                                l.id"""):
                 d = dict(r)
                 inicio = int(d.get("folha_inicial") or 1)
                 cap = NL.capacidade(r)
@@ -2771,11 +3105,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
             series = []
             for serie in sorted(set(NL.LIVRO_DO_ATO.values())):
-                linha = con.execute("SELECT * FROM nt_termos WHERE serie=?",
-                                    (serie,)).fetchone()
+                linha = bd.um("SELECT * FROM nt_termos WHERE serie=%s",
+                              (serie,))
                 series.append({
                     "serie": serie,
-                    "nome": NL.NOME_DA_SERIE.get(serie, serie),
+                    "nome": NL.nome_da_serie(serie, con=con, sem_nome=serie),
                     "proximo": (int(linha["proximo"]) if linha
                                 else NL.proximo_termo(con, serie, consumir=False)),
                     "maior_em_uso": int(linha["maior_em_uso"] or 0) if linha else 0,
@@ -2796,7 +3130,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """
         if qual not in ("abertura", "encerramento"):
             abort(404)
-        livro = q1("SELECT * FROM nt_livros WHERE id=?", (livro_id,))
+        livro = q1("SELECT * FROM nt_livros WHERE id=%s", (livro_id,))
         if not livro:
             abort(404)
         texto = (livro[f"termo_{qual}"] or "").strip()
@@ -2830,7 +3164,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         que falta, e por quê.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             faltando = NA.pendentes(con)
             # A comunicação à serventia de origem (art. 831, § 1º) — a outra
             # metade da mesma pergunta da correição. Relato #129.
@@ -2848,8 +3181,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """
         sv = _sv()
         extenso = _hoje_extenso()
-        texto = NI.dizer(faces, serie, numero, sv, extenso)
-        paginas = [NI.html_da_face(f, serie, numero, sv, extenso, texto)
+        textos = MODELOS.textos(db.connect)
+        texto = NI.dizer(faces, serie, numero, sv, extenso, con=textos)
+        paginas = [NI.html_da_face(f, serie, numero, sv, extenso, texto, con=textos)
                    for f in faces]
         # Uma face por página. O `ri_odt` não tem estilo de quebra, então as
         # páginas são separadas pelo próprio corpo — o LibreOffice quebra ao
@@ -2874,7 +3208,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         art. 795, § 2º do Código de Normas, escrituração seguida, sem claros.
         Em vez de riscar à mão, imprime-se a face já riscada.
         """
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         faces = NI.faces_do_ato(a)
@@ -2890,7 +3224,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_livro_inutilizacao(livro_id):
         """As folhas que sobraram quando o livro encerrou, já inutilizadas."""
-        livro = q1("SELECT * FROM nt_livros WHERE id=?", (livro_id,))
+        livro = q1("SELECT * FROM nt_livros WHERE id=%s", (livro_id,))
         if not livro:
             abort(404)
         faces = NI.faces_do_livro(livro)
@@ -2911,7 +3245,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         corregedor perguntar é toda a diferença.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             try:
                 laudo = NL.conferir_livro(con, livro_id)
             except NL.LivroError as erro:
@@ -2944,7 +3277,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not familia:
             abort(404)
         tipos = familia["tipos_ato"]
-        marcas = ",".join("?" for _ in tipos)
+        marcas = ",".join("%s" for _ in tipos)
         resumo = q1(
             f"""SELECT COUNT(*) total,
                        SUM(CASE WHEN situacao='EM_LAVRATURA' THEN 1 ELSE 0 END)
@@ -2959,7 +3292,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                              SELECT 1 FROM nt_ato_partes p WHERE p.ato_id=a.id
                            ) THEN 1 ELSE 0 END) sem_partes
                   FROM nt_atos a WHERE a.tipo IN ({marcas})""", tipos)
-        # sqlite3.Row itera VALORES; aqui precisamos explicitamente das chaves.
+        # A linha é dict; as chaves são explícitas para o `int` de cada soma.
         resumo = {k: int(resumo[k] or 0) for k in resumo.keys()}  # noqa: SIM118
         resumo["documentos"] = q1(
             f"""SELECT COUNT(*) n FROM attachments x
@@ -2967,11 +3300,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  WHERE x.entity_type='NT_ATO' AND a.tipo IN ({marcas})""",
             tipos)["n"]
         recentes = q(
-            f"""SELECT a.*, (SELECT GROUP_CONCAT(p.nome, ' / ')
+            f"""SELECT a.*, (SELECT string_agg(p.nome, ' / ' ORDER BY p.id)
                                 FROM nt_ato_partes p WHERE p.ato_id=a.id) nomes
                   FROM nt_atos a WHERE a.tipo IN ({marcas})
                  ORDER BY a.data DESC, a.id DESC LIMIT 12""", tipos)
-        marcas_modelo = ",".join("?" for _ in familia["tipos_modelo"])
+        marcas_modelo = ",".join("%s" for _ in familia["tipos_modelo"])
         modelos = [dict(x) for x in q(
             f"""SELECT codigo, tipo, nome, fundamento FROM nt_modelos
                  WHERE ativo=1 AND tipo IN ({marcas_modelo})
@@ -2980,7 +3313,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             padrao = NMOD.por_codigo(modelo["codigo"]) or {}
             modelo["requisitos"] = padrao.get("requisitos", [])
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             previsao = NL.previsao(con, familia["tipo_principal"])
         return render_template(
             "notas_familia.html", familia=familia, resumo=resumo,
@@ -3004,7 +3336,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         tipo = (request.args.get("tipo") or "").strip().upper()
         familia_chave = (request.args.get("familia") or "").strip().lower()
         familia = NF.por_chave(familia_chave)
-        pagina = max(1, int(request.args.get("pagina") or 1))
+        pagina = max(1, numero_digitado(request.args.get("pagina"),
+                                        maximo=PAGINA_MAIS_ALTA) or 1)
         livro_id = (request.args.get("livro_id") or "").strip()
         livro_q = (request.args.get("livro") or "").strip()
         folha_q = (request.args.get("folha") or "").strip()
@@ -3019,50 +3352,59 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 busca = ""
         onde, params = ["1=1"], []
         if familia:
-            marcas = ",".join("?" for _ in familia["tipos_ato"])
+            marcas = ",".join("%s" for _ in familia["tipos_ato"])
             onde.append(f"a.tipo IN ({marcas})")
             params.extend(familia["tipos_ato"])
         elif tipo in TIPOS_ATO:
-            onde.append("a.tipo=?")
+            onde.append("a.tipo=%s")
             params.append(tipo)
+        # O NÚMERO QUE NÃO CABE NO BANCO NÃO ACHA NADA (LD13): `numero_digitado`
+        # devolve None para o «²» e para os 5.000 dígitos, que passam pelo
+        # `isdigit()` e derrubavam o `int()`; `= NULL` não é igual a linha
+        # nenhuma, que é o «não achei» que o número inexistente já dava.
         if livro_id.isdigit():
-            onde.append("a.livro_id=?")
-            params.append(int(livro_id))
+            onde.append("a.livro_id=%s")
+            params.append(numero_digitado(livro_id))
         elif livro_q:
-            onde.append("(a.livro=? OR EXISTS (SELECT 1 FROM nt_livros l "
-                         "WHERE l.id=a.livro_id AND l.numero=?))")
+            onde.append("(a.livro=%s OR EXISTS (SELECT 1 FROM nt_livros l "
+                         "WHERE l.id=a.livro_id AND l.numero=%s))")
             params.extend([livro_q, livro_q])
             if folha_q:
-                folha_num = NL.inteiro(folha_q)
+                try:
+                    folha_num = NL.inteiro(folha_q)
+                except ValueError:    # mais de 4.300 dígitos: o int() recusa
+                    folha_num = None
                 if folha_num is not None:
-                    onde.append("""(a.folha_inicial_num=? OR a.folha=? OR
-                                    CAST(a.folha AS TEXT)=?)""")
+                    onde.append("""(a.folha_inicial_num=%s OR a.folha=%s OR
+                                    a.folha::text=%s)""")
                     params.extend([folha_num, folha_q, folha_q])
                 else:
-                    onde.append("(a.folha=? OR CAST(a.folha AS TEXT)=?)")
+                    onde.append("(a.folha=%s OR a.folha::text=%s)")
                     params.extend([folha_q, folha_q])
         if termo_q.isdigit():
-            onde.append("a.termo=?")
-            params.append(int(termo_q))
+            onde.append("a.termo=%s")
+            params.append(numero_digitado(termo_q))
         if busca:
-            onde.append("""(a.interessado LIKE ? OR a.selo LIKE ? OR
-                             CAST(a.termo AS TEXT)=? OR EXISTS (
+            onde.append("""(a.interessado ILIKE %s OR a.selo ILIKE %s OR
+                             a.termo::text=%s OR EXISTS (
                              SELECT 1 FROM nt_ato_partes p
-                             WHERE p.ato_id = a.id AND p.nome_norm LIKE ?))""")
+                             WHERE p.ato_id = a.id AND p.nome_norm ILIKE %s))""")
             params += [f"%{busca}%", f"%{busca.upper()}%", busca,
                        f"%{NP.normalizar(busca)}%"]
         filtro = " AND ".join(onde)
         total = q1(f"SELECT COUNT(*) n FROM nt_atos a WHERE {filtro}", params)["n"]
-        rows = q(f"""SELECT a.*, (SELECT GROUP_CONCAT(p.nome, ' / ') FROM nt_ato_partes p
+        rows = q(f"""SELECT a.*, (SELECT string_agg(p.nome, ' / ' ORDER BY p.id)
+                                  FROM nt_ato_partes p
                                   WHERE p.ato_id = a.id AND p.testemunha=0) nomes
                      FROM nt_atos a WHERE {filtro}
                      ORDER BY a.livro, COALESCE(a.folha_inicial_num, 0),
                               a.termo, a.data DESC, a.id DESC
-                     LIMIT ? OFFSET ?""",
+                     LIMIT %s OFFSET %s""",
                  params + [POR_PAGINA, (pagina - 1) * POR_PAGINA])
         livro_ctx = None
         if livro_id.isdigit():
-            livro_ctx = q1("SELECT * FROM nt_livros WHERE id=?", (int(livro_id),))
+            livro_ctx = q1("SELECT * FROM nt_livros WHERE id=%s",
+                           (numero_digitado(livro_id),))
         return render_template("notas_atos.html", rows=rows, busca=busca, tipo=tipo,
                                familia=familia, familia_chave=familia_chave,
                                livro_id=livro_id, livro_q=livro_q, folha_q=folha_q,
@@ -3096,7 +3438,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         o abriu — e foi uma escrevente quem pediu isto. Trancar no ADMIN faria
         o pedido dela depender de alguem que nao esta no balcao.
         """
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
 
@@ -3113,7 +3455,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if a["lancamento_id"]:
             return recusar("ele já tem lançamento no caixa. Dinheiro que "
                            "entrou sai por estorno, que deixa rastro.")
-        if q1("SELECT 1 FROM nt_remessa_itens WHERE ato_id=? LIMIT 1", (ato_id,)):
+        if q1("SELECT 1 FROM nt_remessa_itens WHERE ato_id=%s LIMIT 1", (ato_id,)):
             return recusar("ele já foi numa remessa a uma Central.")
 
         eu = (usuario_nome() or "").strip().upper()
@@ -3123,7 +3465,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return recusar(f"ele foi aberto por {a['lavrado_nome']}. Só quem "
                            f"abriu, o oficial ou o gerente podem apagá-lo.")
 
-        partes = q1("SELECT COUNT(*) n FROM nt_ato_partes WHERE ato_id=?",
+        partes = q1("SELECT COUNT(*) n FROM nt_ato_partes WHERE ato_id=%s",
                     (ato_id,))["n"]
         # O TEOR E O QUE NAO SE REFAZ: ele vai inteiro para o rastro, ANTES de
         # a linha sumir. Nao e o ato — o ato nunca existiu no livro —, e o
@@ -3134,10 +3476,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                "criado_em": a["criado_em"], "partes": partes,
                "teor": a["teor"] or "", "modelo": a["modelo_codigo"]})
         with db.transaction() as con:
-            con.execute("DELETE FROM nt_ato_anotacoes WHERE ato_id=? "
-                        "OR ato_relacionado_id=?", (ato_id, ato_id))
-            con.execute("DELETE FROM nt_ato_partes WHERE ato_id=?", (ato_id,))
-            con.execute("DELETE FROM nt_atos WHERE id=?", (ato_id,))
+            banco(con).escrever("DELETE FROM nt_ato_anotacoes WHERE ato_id=%s "
+                        "OR ato_relacionado_id=%s", (ato_id, ato_id))
+            banco(con).escrever("DELETE FROM nt_ato_partes WHERE ato_id=%s", (ato_id,))
+            banco(con).escrever("DELETE FROM nt_atos WHERE id=%s", (ato_id,))
         flash(f"Rascunho nº {ato_id} apagado. O texto que estava nele ficou "
               f"guardado na auditoria.", "success")
         return redirect(url_for("notas_atos"))
@@ -3163,7 +3505,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if request.method == "POST":
             tipo = (request.form.get("tipo") or "").upper()
             modelo_codigo = (request.form.get("modelo_codigo") or "").strip() or None
-            modelo = q1("SELECT * FROM nt_modelos WHERE codigo=?",
+            modelo = q1("SELECT * FROM nt_modelos WHERE codigo=%s",
                         (modelo_codigo,)) if modelo_codigo else None
             volta = ({"familia": familia_chave} if familia else {})
             if modelo_codigo and not modelo:
@@ -3184,24 +3526,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash("Escolha o tipo do ato.", "danger")
                 return redirect(url_for("notas_ato_novo", **volta))
             with db.transaction() as con:
-                cur = con.execute(
+                aid = int(banco(con).escrever(
                     """INSERT INTO nt_atos
                        (tipo, serie, data, hora, situacao, natureza,
-                        natureza_censec, modelo_codigo, interessado,
-                        teor_formato, lavrado_nome, lavrado_titulo,
-                        origem, criado_em)
-                       VALUES (?,?,?,?, 'EM_LAVRATURA', ?,?,?,?, 'html', ?,?,
-                               'MANUAL', ?)""",
+                        natureza_censec, tipo_cesdi, tipo_testamento,
+                        modelo_codigo, interessado, teor_formato, lavrado_nome,
+                        lavrado_titulo, origem, criado_em)
+                       VALUES (%s,%s,%s,%s, 'EM_LAVRATURA', %s,%s,%s,%s,%s,%s, 'html',
+                               %s,%s, 'MANUAL', %s)
+                       RETURNING id""",
                     (tipo, NL.LIVRO_DO_ATO.get(tipo),
                      (request.form.get("data") or date.today().isoformat()),
                      datetime.now().strftime("%H:%M"),
                      (modelo["nome"] if modelo else
                       (request.form.get("natureza") or "").strip() or None),
                      modelo["natureza_censec"] if modelo else None,
+                     # O TIPO DA CESDI TAMBÉM NASCE COM A ESCRITURA (LT02,
+                     # 20/10/2026), como o do RCTO nasce com o testamento: a
+                     # minuta do divórcio, da separação, do inventário e da
+                     # partilha já o declara. Sem ele o ato caía na CEP, e a
+                     # trava da lavratura pedia «a natureza da CENSEC» de um
+                     # ato que não vai à CEP.
+                     (modelo["tipo_cesdi"] if modelo and tipo == "ESCRITURA"
+                      else None),
+                     # O TIPO DO RCTO NASCE COM O TESTAMENTO (LG04) — sem ele
+                     # a central recusava todo testamento lavrado aqui.
+                     NC.tipo_testamento_ao_abrir(
+                         tipo, modelo["tipo_testamento"] if modelo else None),
                      modelo_codigo,
                      (request.form.get("interessado") or "").strip() or None,
-                     usuario_nome(), usuario_funcao(), db.now()))
-                aid = int(cur.lastrowid)
+                     usuario_nome(), usuario_funcao(), db.now()))[0]["id"])
             audit("NT_ATO_ABERTO", "NT_ATO", aid, {"tipo": tipo, "modelo": modelo_codigo})
             flash(f"{TIPOS_ATO[tipo]} aberto, em lavratura. Agora as partes e o "
                   f"teor; o livro e a folha saem no lançamento.", "success")
@@ -3211,7 +3565,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         sql_modelos = "SELECT codigo, tipo, nome FROM nt_modelos WHERE ativo=1"
         params_modelos = []
         if familia:
-            marcas = ",".join("?" for _ in familia["tipos_modelo"])
+            marcas = ",".join("%s" for _ in familia["tipos_modelo"])
             sql_modelos += f" AND tipo IN ({marcas})"
             params_modelos.extend(familia["tipos_modelo"])
         modelos = [dict(x) for x in q(sql_modelos + " ORDER BY tipo, nome_norm",
@@ -3221,7 +3575,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         tipos_visiveis = ({k: TIPOS_ATO[k] for k in familia["tipos_ato"]}
                           if familia else TIPOS_ATO)
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             previsoes = {t: NL.previsao(con, t) for t in tipos_visiveis}
         return render_template("notas_ato_novo.html", modelos=modelos,
                                previsoes=previsoes, TIPOS_ATO=tipos_visiveis,
@@ -3258,16 +3611,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         Sair sem dizer faria alguem entregar um rascunho como se fosse
         instrumento.
         """
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         nome_modelo = None
         if a["modelo_codigo"]:
-            mrow = q1("SELECT nome FROM nt_modelos WHERE codigo=?",
+            mrow = q1("SELECT nome FROM nt_modelos WHERE codigo=%s",
                       (a["modelo_codigo"],))
             nome_modelo = mrow["nome"] if mrow else None
         teor_limpo = NT.teor_sem_titulos_duplicados(
-            a["teor"], _titulos_para_limpar_do_teor(dict(a), nome_modelo=nome_modelo))
+            a["teor"], _titulos_para_limpar_do_teor(dict(a), nome_modelo=nome_modelo,
+                                                    con=db.connect))
         paragrafos = TA.paragrafos_do_html(teor_limpo)
         if not paragrafos:
             flash("Este ato ainda não tem teor para exportar. Monte o teor "
@@ -3307,7 +3661,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         papel divergirem, e quem confere le o papel. Correcao de ato lancado e
         RETIFICACAO, que e outro ato.
         """
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         if (a["situacao"] or "") != "EM_LAVRATURA":
@@ -3354,8 +3708,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         antes = TA.paragrafos_do_html(a["teor"])
         mudanca = TA.conferir_a_volta(antes, paragrafos)
         with db.transaction() as con:
-            con.execute(
-                "UPDATE nt_atos SET teor=?, teor_formato='html' WHERE id=?",
+            banco(con).escrever(
+                "UPDATE nt_atos SET teor=%s, teor_formato='html' WHERE id=%s",
                 (TA.html_dos_paragrafos(paragrafos), ato_id))
         audit("NT_TEOR_IMPORTADO", "NT_ATO", ato_id, mudanca)
         flash(f"Teor trazido do arquivo: {mudanca['paragrafos_depois']} "
@@ -3376,7 +3730,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         SO DEPOIS DE LANCADO. PDF assinado de ato que ainda esta em lavratura e
         assinatura de coisa que ainda pode mudar.
         """
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         if (a["situacao"] or "") == "EM_LAVRATURA":
@@ -3411,7 +3765,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         Aceita varios arquivos de uma vez (mesmo tipo/descricao).
         """
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         enviados = [f for f in request.files.getlist("arquivo") if f and f.filename]
@@ -3450,7 +3804,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_ato_anexo_retirar(ato_id, attachment_id):
         """Tira o arquivo da lista do ato. O binário fica no acervo; a auditoria registra."""
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         if somente_leitura():
@@ -3483,7 +3837,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         só protocolo das Notas, um de cada vez) mora em `protocolo_documentos`.
         """
         volta = url_for("notas_ato", ato_id=ato_id) + "#documentos-qualificacao"
-        if not q1("SELECT id FROM nt_atos WHERE id=?", (ato_id,)):
+        if not q1("SELECT id FROM nt_atos WHERE id=%s", (ato_id,)):
             abort(404)
         acao = request.form.get("acao") or "vincular"
         try:
@@ -3518,7 +3872,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """O que a ficha do ato precisa para o aviso e o formulário. SÓ LÊ."""
         tipo = (a["tipo"] or "").upper()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             ob = NCO.do_ato(con, a["id"])
         return {
             "comunicacao_cabe": tipo in NCO.TIPOS_QUE_COMUNICAM,
@@ -3538,7 +3891,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         auditoria grava o que foi feito, por quem, depois de fechar a
         transação (regra da casa: `audit` fora do `with`).
         """
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         if somente_leitura():
@@ -3549,7 +3902,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         try:
             if acao == "origem":
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     feito = NCO.informar_origem(
                         con, ato_id, {k: request.form.get(k) for k in
                                       ("cartorio", "cns", "cidade", "uf",
@@ -3562,7 +3914,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       "warning" if feito["obrigacao_nasceu"] else "success")
             elif acao == "abrir":
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     ob = NCO.abrir(con, ato_id, _sv(), db.now(), quem, "TELA")
                 if not ob:
                     flash("Nada a lançar: ou a obrigação já existe, ou o ato não "
@@ -3574,7 +3925,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           "ficha até a providência.", "warning")
             elif acao == "oficio":
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     ob = NCO.baixar_por_oficio(
                         con, ato_id, data=request.form.get("envio_data"),
                         meio=request.form.get("envio_meio"),
@@ -3594,7 +3944,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
                 with db.connect() as con:
-                    con.row_factory = sqlite3.Row
                     ob = NCO.do_ato(con, ato_id)
                 if not ob:
                     raise NCO.ComunicacaoError(
@@ -3624,7 +3973,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     int(app.extensions["usuario_id"]() or 0),
                     "Comprovante de recebimento da comunicação (art. 831, § 1º)")
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     ob = NCO.juntar_comprovante(
                         con, ato_id, attachment_id=anexo,
                         recebido_em=request.form.get("recebido_em"),
@@ -3646,7 +3994,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/notas/atos/<int:ato_id>", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
     def notas_ato(ato_id):
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
 
@@ -3677,15 +4025,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     return redirect(url_for("notas_ato", ato_id=ato_id))
                 valor = CXC.centavos(request.form.get("valor"))
                 primeira = q1("""SELECT nome FROM nt_ato_partes
-                                 WHERE ato_id=? ORDER BY id LIMIT 1""", (ato_id,))
+                                 WHERE ato_id=%s ORDER BY id LIMIT 1""", (ato_id,))
                 depositante = ((request.form.get("depositante") or "").strip()
                                or (primeira["nome"] if primeira else ""))
                 operador = usuario_nome()
-                aberto = q1("""SELECT * FROM cx_caixas WHERE operador_nome=?
-                               AND situacao='ABERTO' ORDER BY data DESC LIMIT 1""",
+                aberto = q1("""SELECT * FROM cx_caixas WHERE operador_nome=%s
+                               AND situacao='ABERTO' ORDER BY data DESC, id DESC LIMIT 1""",
                             (operador,))
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     try:
                         feito = DEP.criar(
                             con, valor_centavos=valor, depositante=depositante,
@@ -3714,28 +4061,35 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
             if acao == "parte_cartao":
                 # Caminho 1: aproveitar a ficha de firma.
-                cartao_id = int(request.form.get("cartao_id") or 0)
-                c = q1("SELECT * FROM nt_cartoes WHERE id=?", (cartao_id,))
+                cartao_id = numero_digitado(request.form.get("cartao_id")) or 0
+                c = q1("SELECT * FROM nt_cartoes WHERE id=%s", (cartao_id,))
                 if not c:
                     flash("Cartão não encontrado.", "danger")
                 else:
                     d = NP.dados_para_parte(dict(c))
+                    # O RG, a filiação e o cônjuge vêm do cartão; a união
+                    # estável, do formulário (CNN art. 111 — LD07).
+                    civil = NP.qualificacao_civil(request.form, d)
                     with db.transaction() as con:
-                        con.execute(
+                        banco(con).travar("nt_ato_partes.ordem")
+                        banco(con).escrever(
                             """INSERT INTO nt_ato_partes
                                (ato_id, cartao_id, nome, nome_norm, documento,
                                 tipo_pessoa, qualificacao, nacionalidade,
                                 estado_civil, profissao, endereco, testemunha,
-                                ordem, criado_em)
-                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,
+                                identidade, filiacao, uniao_estavel, conjuge,
+                                regime_bens, ordem, criado_em)
+                               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                                       %s,%s,%s,%s,%s,
                                        (SELECT COALESCE(MAX(ordem),0)+1 FROM nt_ato_partes
-                                         WHERE ato_id=?), ?)""",
+                                         WHERE ato_id=%s), %s)""",
                             (ato_id, cartao_id, d["nome"], d["nome_norm"], d["documento"],
                              d["tipo_pessoa"] or "F",
                              (request.form.get("qualificacao") or "").strip() or None,
                              d["nacionalidade"], d["estado_civil"], d["profissao"],
                              d["endereco_completo"],
                              1 if request.form.get("testemunha") else 0,
+                             *(civil[k] for k in NP.CAMPOS_DA_QUALIFICACAO_CIVIL),
                              ato_id, db.now()))
                     audit("NT_ATO_PARTE", "NT_ATO", ato_id,
                           {"cartao": cartao_id, "origem": "CARTAO"})
@@ -3755,15 +4109,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 cartao_id = None
                 with db.transaction() as con:
                     if request.form.get("abrir_cartao"):
-                        cartao_id = NP.criar_cartao(con, dados, db.now(), usuario_nome())
-                    con.execute(
+                        cartao_id = NP.criar_cartao(con, dados, db.now(), usuario_nome(),
+                                                     usuario_funcao())
+                    banco(con).travar("nt_ato_partes.ordem")
+                    civil = NP.qualificacao_civil(dados)
+                    banco(con).escrever(
                         """INSERT INTO nt_ato_partes
                            (ato_id, cartao_id, nome, nome_norm, documento, tipo_pessoa,
                             qualificacao, nacionalidade, estado_civil, profissao,
-                            endereco, testemunha, ordem, criado_em)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,
+                            endereco, testemunha, identidade, filiacao, uniao_estavel,
+                            conjuge, regime_bens, ordem, criado_em)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                                    (SELECT COALESCE(MAX(ordem),0)+1 FROM nt_ato_partes
-                                     WHERE ato_id=?), ?)""",
+                                     WHERE ato_id=%s), %s)""",
                         (ato_id, cartao_id, nome, NP.normalizar(nome),
                          NP.so_digitos(dados.get("documento")) or None,
                          (dados.get("tipo_pessoa") or "F")[:1],
@@ -3772,16 +4130,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          (dados.get("estado_civil") or "").strip() or None,
                          (dados.get("profissao") or "").strip() or None,
                          (dados.get("endereco") or "").strip() or None,
-                         1 if request.form.get("testemunha") else 0, ato_id, db.now()))
+                         1 if request.form.get("testemunha") else 0,
+                         *(civil[k] for k in NP.CAMPOS_DA_QUALIFICACAO_CIVIL),
+                         ato_id, db.now()))
                 audit("NT_ATO_PARTE", "NT_ATO", ato_id,
                       {"origem": "NOVO", "cartao_aberto": cartao_id})
                 flash("Parte incluída." + (f" Cartão de autógrafo nº {cartao_id} aberto — "
                                            f"da próxima vez é só procurar."
                                            if cartao_id else ""), "success")
             elif acao == "remover_parte":
-                pid = int(request.form.get("parte_id") or 0)
+                pid = numero_digitado(request.form.get("parte_id")) or 0
                 with db.transaction() as con:
-                    con.execute("DELETE FROM nt_ato_partes WHERE id=? AND ato_id=?",
+                    banco(con).escrever("DELETE FROM nt_ato_partes WHERE id=%s AND ato_id=%s",
                                 (pid, ato_id))
                 audit("NT_ATO_PARTE_REMOVIDA", "NT_ATO", ato_id, {"parte": pid})
                 flash("Parte removida.", "success")
@@ -3794,7 +4154,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if lado not in ("", "ALIENANTE", "ADQUIRENTE", "FORA"):
                     flash("Papel DOI inválido.", "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
-                parte = q1("SELECT * FROM nt_ato_partes WHERE id=? AND ato_id=?",
+                parte = q1("SELECT * FROM nt_ato_partes WHERE id=%s AND ato_id=%s",
                            (pid, ato_id))
                 if not parte:
                     abort(404)
@@ -3805,9 +4165,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           "da operação na DOI. Revise a parte do ato.", "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
                 with db.transaction() as con:
-                    alterado = con.execute(
-                        "UPDATE nt_ato_partes SET doi_lado=? WHERE id=? AND ato_id=?",
-                        (lado or None, pid, ato_id)).rowcount
+                    bd = banco(con)
+                    bd.escrever(
+                        "UPDATE nt_ato_partes SET doi_lado=%s WHERE id=%s AND ato_id=%s",
+                        (lado or None, pid, ato_id))
+                    alterado = bd.linhas_afetadas
                 if not alterado:
                     abort(404)
                 audit("NT_ATO_PARTE_PAPEL_DOI", "NT_ATO", ato_id,
@@ -3826,7 +4188,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 except ValueError:
                     pid = 0
                 nova = " ".join((request.form.get("qualificacao") or "").split()).upper()
-                parte = q1("SELECT * FROM nt_ato_partes WHERE id=? AND ato_id=?",
+                parte = q1("SELECT * FROM nt_ato_partes WHERE id=%s AND ato_id=%s",
                            (pid, ato_id))
                 if not parte:
                     abort(404)
@@ -3834,8 +4196,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("Informe a qualificação da parte.", "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
                 with db.transaction() as con:
-                    con.execute("UPDATE nt_ato_partes SET qualificacao=? "
-                                "WHERE id=? AND ato_id=?", (nova, pid, ato_id))
+                    banco(con).escrever("UPDATE nt_ato_partes SET qualificacao=%s "
+                                "WHERE id=%s AND ato_id=%s", (nova, pid, ato_id))
                 audit("NT_ATO_PARTE_QUALIFICACAO", "NT_ATO", ato_id,
                       {"parte": pid, "antes": parte["qualificacao"], "depois": nova})
                 if NC.qualidade_cep(nova, a["tipo"]) is None and \
@@ -3846,6 +4208,40 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           "testemunha, assina a rogo, requerente…", "warning")
                 else:
                     flash("Qualificação da parte atualizada.", "success")
+                return redirect(url_for("notas_ato", ato_id=ato_id))
+            elif acao == "qualificacao_civil":
+                # COMPLETAR O QUE O CNN ART. 111 PEDE SEM TIRAR A PARTE — LD07,
+                # 21/10/2026: o documento de identidade (ou a filiação), a união
+                # estável, o cônjuge e o regime de bens. A parte incluída antes
+                # não os tem, e o teor os marca entre colchetes até se dizerem.
+                # Como a qualificação acima, não mexe no teor: monta-se de novo.
+                try:
+                    pid = int(request.form.get("parte_id") or 0)
+                except ValueError:
+                    pid = 0
+                parte = q1("SELECT * FROM nt_ato_partes WHERE id=%s AND ato_id=%s",
+                           (pid, ato_id))
+                if not parte:
+                    abort(404)
+                civil = NP.qualificacao_civil(request.form)
+                with db.transaction() as con:
+                    banco(con).escrever(
+                        "UPDATE nt_ato_partes SET identidade=%s, filiacao=%s, "
+                        "uniao_estavel=%s, conjuge=%s, regime_bens=%s "
+                        "WHERE id=%s AND ato_id=%s",
+                        (*(civil[k] for k in NP.CAMPOS_DA_QUALIFICACAO_CIVIL),
+                         pid, ato_id))
+                audit("NT_ATO_PARTE_QUALIFICACAO_CIVIL", "NT_ATO", ato_id,
+                      {"parte": pid,
+                       "antes": {k: parte[k] for k in NP.CAMPOS_DA_QUALIFICACAO_CIVIL},
+                       "depois": civil})
+                faltas = NT.pendencias_da_qualificacao([{**dict(parte), **civil}])
+                if faltas:
+                    flash("Qualificação gravada, mas ainda falta — " + "; ".join(faltas)
+                          + ". Monte o teor de novo depois de completar.", "warning")
+                else:
+                    flash("Qualificação da parte completa. Monte o teor de novo para "
+                          "ela entrar no texto.", "success")
                 return redirect(url_for("notas_ato", ato_id=ato_id))
             elif acao == "imovel":
                 # OS DADOS DO IMOVEL, PARA A DOI — relatado pelo oficial em
@@ -3898,7 +4294,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 #   A folga de um ponto existe porque a divisao entre tres nao
                 #   fecha em cem: 33,33 tres vezes da 99,99.
                 partes_ato = [dict(x) for x in q(
-                    "SELECT * FROM nt_ato_partes WHERE ato_id=? ORDER BY id",
+                    "SELECT * FROM nt_ato_partes WHERE ato_id=%s ORDER BY id",
                     (ato_id,))]
                 percentuais = {
                     p["id"]: (request.form.get(f"participacao_{p['id']}") or "").strip()
@@ -3916,12 +4312,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                             flash(recusas[0].motivo, "danger")
                             return redirect(url_for("notas_ato", ato_id=ato_id))
                 with db.transaction() as con:
-                    con.execute(
+                    banco(con).escrever(
                         """UPDATE nt_atos
-                              SET com_imovel=?, doi_transacao=?,
-                                  doi_tipo_imovel=?, doi_matricula=?,
-                                  doi_endereco=?, doi_area=?, doi_torna_dinheiro=?
-                            WHERE id=?""",
+                              SET com_imovel=%s, doi_transacao=%s,
+                                  doi_tipo_imovel=%s, doi_matricula=%s,
+                                  doi_endereco=%s, doi_area=%s, doi_torna_dinheiro=%s
+                            WHERE id=%s""",
                         (1 if com_imovel else 0,
                          operacao or None, tipo or None,
                          (request.form.get("doi_matricula") or "").strip() or None,
@@ -3930,8 +4326,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          torna,
                          ato_id))
                     for parte_id, quanto in percentuais.items():
-                        con.execute(
-                            "UPDATE nt_ato_partes SET participacao=? WHERE id=?",
+                        banco(con).escrever(
+                            "UPDATE nt_ato_partes SET participacao=%s WHERE id=%s",
                             (quanto or None, parte_id))
                 audit("NOTAS_ATO_IMOVEL", "NOTAS_ATO", ato_id,
                       {"com_imovel": com_imovel, "operacao": operacao,
@@ -3953,11 +4349,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # só se escreve no lançamento, e uma vez só.
                 corpo = request.form.get("teor") or ""
                 with db.transaction() as con:
-                    con.execute("""UPDATE nt_atos SET teor=?, teor_formato='html'
-                                   WHERE id=?""", (corpo, ato_id))
-                audit("NT_ATO_TEOR", "NT_ATO", ato_id, {"letras": len(corpo)})
-                flash("Teor guardado. As páginas do livro o sistema conta "
-                      "sozinho, no termo, na hora de lançar.", "success")
+                    gravou = _gravar_teor_em_lavratura(con, ato_id, corpo)
+                if not gravou:
+                    flash(TEOR_JA_NO_LIVRO, "danger")
+                else:
+                    audit("NT_ATO_TEOR", "NT_ATO", ato_id, {"letras": len(corpo)})
+                    flash("Teor guardado. As páginas do livro o sistema conta "
+                          "sozinho, no termo, na hora de lançar.", "success")
 
             elif acao == "lancar":
                 # O lançamento no livro. É aqui, e só aqui, que o ato ganha
@@ -4029,11 +4427,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                               f"{erro}", "danger")
                         return redirect(url_for("notas_ato", ato_id=ato_id))
                 elif gerar_arquivamento:
-                    bruto_folhas = (request.form.get("folhas_arquivamento") or "").strip()
-                    try:
-                        folhas_arquivamento = int(bruto_folhas or 0)
-                    except ValueError:
-                        folhas_arquivamento = 0
+                    # O QUE NÃO CABE NO BANCO PARA AQUI (LD13): os 30 dígitos
+                    # passavam pelo `int()`, iam ao selo e só estouravam no
+                    # UPDATE de `folhas_arquivamento`, com o selo já emitido.
+                    folhas_arquivamento = numero_digitado(
+                        request.form.get("folhas_arquivamento")) or 0
                     if folhas_arquivamento < 1:
                         flash("Para gerar o selo de arquivamento junto com a "
                               "escritura, informe a quantidade de folhas (>= 1).",
@@ -4173,9 +4571,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                        "recado": recado_do_selo.strip()})
                 if motivo:
                     with db.transaction() as con:
-                        con.execute(
+                        banco(con).escrever(
                             "UPDATE nt_atos SET situacao='SUSPENSO_SELO' "
-                            "WHERE id=?", (ato_id,))
+                            "WHERE id=%s", (ato_id,))
                     audit("NT_ATO_NAO_LAVRADO_SELO_FALHOU", "NT_ATO",
                           ato_id, {"item": item, "motivo": motivo})
                     flash("Ato NÃO concluído: o selo não saiu. "
@@ -4187,8 +4585,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if gerar_arquivamento and folhas_arquivamento:
                     partes_arq = [dict(p) for p in q(
                         "SELECT nome, documento FROM nt_ato_partes "
-                        "WHERE ato_id=? ORDER BY id", (ato_id,))]
-                    selo_ato = q1("SELECT selo FROM nt_atos WHERE id=?",
+                        "WHERE ato_id=%s ORDER BY id", (ato_id,))]
+                    selo_ato = q1("SELECT selo FROM nt_atos WHERE id=%s",
                                   (ato_id,))["selo"]
                     arq = _selar_arquivamento_das_notas(
                         ato_id=ato_id, folhas=folhas_arquivamento,
@@ -4218,9 +4616,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         # falha do aparelho: o selo dele fica para gente.)
                         if obrigatorio and not arq.get("robo"):
                             with db.transaction() as con:
-                                con.execute(
+                                banco(con).escrever(
                                     "UPDATE nt_atos SET situacao='SUSPENSO_SELO' "
-                                    "WHERE id=?", (ato_id,))
+                                    "WHERE id=%s", (ato_id,))
                             flash(recado, "success")
                             flash("Ato NÃO concluído: o selo do ato saiu, mas o "
                                   "selo de arquivamento, que é obrigatório "
@@ -4355,14 +4753,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                        "recado": recado.strip()})
                 arq = None
                 if not motivo and folhas_arq:
-                    selo_ato = q1("SELECT selo FROM nt_atos WHERE id=?",
+                    selo_ato = q1("SELECT selo FROM nt_atos WHERE id=%s",
                                   (ato_id,))["selo"]
                     arq = _selar_arquivamento_das_notas(
                         ato_id=ato_id, folhas=folhas_arq,
                         selo_do_ato=str(selo_ato or "").strip() or None,
                         partes=[(p["nome"], p["documento"]) for p in q(
                             "SELECT nome, documento FROM nt_ato_partes "
-                            "WHERE ato_id=? ORDER BY id", (ato_id,))],
+                            "WHERE ato_id=%s ORDER BY id", (ato_id,))],
                         isento=request.form.get("selo_isento") == "1",
                         motivo_isencao=request.form.get("motivo_isencao"))
                     audit("NT_ATO_ARQUIVAMENTO_SELADO" if arq.get("ok")
@@ -4383,9 +4781,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           "danger")
                 else:
                     with db.transaction() as con:
-                        con.execute(
+                        banco(con).escrever(
                             "UPDATE nt_atos SET situacao='LAVRADO' "
-                            "WHERE id=? AND situacao='SUSPENSO_SELO'",
+                            "WHERE id=%s AND situacao='SUSPENSO_SELO'",
                             (ato_id,))
                     flash(recado.strip(), "success")
 
@@ -4425,14 +4823,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     and not str(a["selo_arquivamento"] or "").strip())
                 with db.transaction() as con:
                     if falta_arquivamento:
-                        con.execute(
+                        banco(con).escrever(
                             "UPDATE nt_atos SET situacao='SUSPENSO_SELO' "
-                            "WHERE id=? AND situacao IN ('LAVRADO','SUSPENSO_SELO')",
+                            "WHERE id=%s AND situacao IN ('LAVRADO','SUSPENSO_SELO')",
                             (ato_id,))
                     else:
-                        con.execute(
+                        banco(con).escrever(
                             "UPDATE nt_atos SET situacao='LAVRADO' "
-                            "WHERE id=? AND situacao='SUSPENSO_SELO'", (ato_id,))
+                            "WHERE id=%s AND situacao='SUSPENSO_SELO'", (ato_id,))
                 audit("NT_ATO_SELADO", "NT_ATO", ato_id, {"selo": selo})
                 flash("Selo registrado, e ele entrou no razão dos selos.",
                       "success")
@@ -4496,15 +4894,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         # selo do ATO; o do ato volta para o lugar dele, e
                         # este vai para `selo_arquivamento` — a mesma troca
                         # que `_selar_arquivamento_das_notas` faz.
-                        con.execute(
-                            """UPDATE nt_atos SET selo=?, selo_arquivamento=?,
-                                      folhas_arquivamento=?
-                                WHERE id=?""",
+                        banco(con).escrever(
+                            """UPDATE nt_atos SET selo=%s, selo_arquivamento=%s,
+                                      folhas_arquivamento=%s
+                                WHERE id=%s""",
                             (a["selo"], selo, folhas_m, int(ato_id)))
                         if arquivamento_obrigatorio(a["tipo"]):
-                            con.execute(
+                            banco(con).escrever(
                                 "UPDATE nt_atos SET situacao='LAVRADO' "
-                                "WHERE id=? AND situacao='SUSPENSO_SELO'",
+                                "WHERE id=%s AND situacao='SUSPENSO_SELO'",
                                 (ato_id,))
                 except AS.AtoError as erro:
                     flash(str(erro), "danger")
@@ -4525,15 +4923,64 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 #   lugares não quer dizer a mesma coisa.
                 texto = (request.form.get("observacao") or "").strip()
                 with db.transaction() as con:
-                    con.execute(
+                    banco(con).escrever(
                         """UPDATE nt_atos
-                              SET observacao=?, observacao_em=?, observacao_por=?
-                            WHERE id=?""",
+                              SET observacao=%s, observacao_em=%s, observacao_por=%s
+                            WHERE id=%s""",
                         (texto or None, db.now(), usuario_nome(), ato_id))
                 audit("NT_ANOTACAO_DA_LAVRATURA", "NT_ATO", ato_id,
                       {"texto": texto or None})
                 flash("Anotação guardada." if texto else "Anotação apagada.",
                       "success")
+            elif acao == "tipo_testamento":
+                # O TIPO DO TESTAMENTO NO RCTO — LG04, 19/10/2026. O ato nasce
+                # com o padrão (`NC.tipo_testamento_ao_abrir`); quem lavra diz
+                # se é sem conteúdo patrimonial, com revogação, revogação ou
+                # aditamento. **DEPOIS DE IR À CENTRAL NÃO MUDA AQUI**: o que
+                # a CENSEC recebeu se corrige lá, e a ficha que divergisse do
+                # informado seria a segunda verdade.
+                #
+                # A conferência «já foi?» e a troca vão na MESMA transação, com
+                # a linha do ato presa: a remessa que se registra ao mesmo
+                # tempo (`NC.separar(..., para_gravar=True)`) prende a mesma
+                # linha, e uma espera a outra. Lida fora, a remessa separada
+                # no meio levava um tipo e a ficha ficava com outro.
+                try:
+                    novo_tipo = int(request.form.get("tipo_testamento") or 0)
+                except ValueError:
+                    novo_tipo = 0
+                recusa, de = "", None
+                with db.transaction() as con:
+                    bd = banco(con)
+                    bd._escrita()
+                    preso = bd.um("SELECT tipo, tipo_testamento FROM nt_atos "
+                                  "WHERE id=%s FOR UPDATE", (ato_id,))
+                    permitidos = NC.TIPOS_DE_TESTAMENTO_DO_ATO.get(
+                        ((preso or {}).get("tipo") or "").upper(), ())
+                    ja_foi = bd.um(
+                        """SELECT 1 AS ja FROM nt_remessa_itens i
+                             JOIN nt_remessas r ON r.id = i.remessa_id
+                            WHERE i.ato_id = %s AND r.central = 'RCTO'
+                              AND i.situacao IN ('ENVIADA', 'CONFIRMADA')
+                            ORDER BY i.id LIMIT 1""", (ato_id,))
+                    if novo_tipo not in permitidos:
+                        recusa = ("Tipo de testamento que não cabe nesta "
+                                  "espécie de ato.")
+                    elif ja_foi:
+                        recusa = ("Este testamento já foi informado ao RCTO: o "
+                                  "tipo se corrige na CENSEC, e não aqui.")
+                    else:
+                        de = preso["tipo_testamento"]
+                        bd.escrever(
+                            "UPDATE nt_atos SET tipo_testamento=%s WHERE id=%s",
+                            (novo_tipo, ato_id))
+                if recusa:
+                    flash(recusa, "danger")
+                else:
+                    audit("NT_ATO_TIPO_TESTAMENTO", "NT_ATO", ato_id,
+                          {"de": de, "para": novo_tipo})
+                    flash(f"Tipo no RCTO: {NC.TIPO_TESTAMENTO[novo_tipo]}.",
+                          "success")
             elif acao == "situacao":
                 nova = (request.form.get("situacao") or "").upper()
                 motivo = (request.form.get("motivo") or "").strip()
@@ -4553,8 +5000,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("Diga o motivo.", "danger")
                 else:
                     with db.transaction() as con:
-                        con.execute("""UPDATE nt_atos SET situacao=?, sem_efeito_motivo=?,
-                                       revogado_em=?, revogado_por=? WHERE id=?""",
+                        banco(con).escrever("""UPDATE nt_atos SET situacao=%s, sem_efeito_motivo=%s,
+                                       revogado_em=%s, revogado_por=%s WHERE id=%s""",
                                     (nova, motivo or None,
                                      date.today().isoformat() if nova != "LAVRADO" else None,
                                      usuario_nome() if nova != "LAVRADO" else None, ato_id))
@@ -4563,9 +5010,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash(f"Ato marcado como {SITUACOES_ATO[nova].lower()}.", "success")
             return redirect(url_for("notas_ato", ato_id=ato_id))
 
-        partes = q("""SELECT * FROM nt_ato_partes WHERE ato_id=? ORDER BY testemunha, ordem""",
+        partes = q("""SELECT * FROM nt_ato_partes WHERE ato_id=%s
+                      ORDER BY testemunha, ordem, id""",
                    (ato_id,))
-        modelo = q1("SELECT * FROM nt_modelos WHERE codigo=?",
+        modelo = q1("SELECT * FROM nt_modelos WHERE codigo=%s",
                     (a["modelo_codigo"],)) if a["modelo_codigo"] else None
         familia = NF.do_tipo_ato(a["tipo"])
         anexos = db.get_attachments("NT_ATO", ato_id)
@@ -4616,11 +5064,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # Assinantes do fecho: se o campo ainda está vazio, sugere nome e
         # condição das partes já qualificadas no formulário (pedido 18/09/2026).
         if not (valores_do_modelo.get(NT.CHAVE_ASSINANTES) or "").strip():
-            sugerido = NT.texto_dos_assinantes(partes)
+            sugerido = NT.texto_dos_assinantes(partes, con=db.connect)
             if sugerido:
                 valores_do_modelo[NT.CHAVE_ASSINANTES] = sugerido
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             depositos = DEP.do_ato(con, ato_id)
             # O ARQUIVAMENTO OBRIGATÓRIO (15/10/2026): a contagem dos anexos,
             # a confirmação e o que ainda falta — a tela trava o que o
@@ -4633,7 +5080,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         previsao = None
         if (a["situacao"] or "") == "EM_LAVRATURA" and a["termo"] is None:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 previsao = NL.previsao(con, a["tipo"], paginas_estimadas)
 
         # Anotações à margem, e a busca do ato anterior quando o ato é dos
@@ -4641,10 +5087,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         busca_anterior = (request.args.get("busca_anterior") or "").strip()
         pede_anotacao = ATO_PEDE_ANOTACAO.get((a["tipo"] or "").upper())
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             anotacoes = NA.do_ato(con, ato_id)
-            anterior = (con.execute("SELECT * FROM nt_atos WHERE id=?",
-                                    (a["anterior_ato_id"],)).fetchone()
+            anterior = (banco(con).um("SELECT * FROM nt_atos WHERE id=%s",
+                                      (a["anterior_ato_id"],))
                         if a["anterior_ato_id"] else None)
             candidatos = (NA.candidatos(con, busca_anterior)
                           if pede_anotacao and busca_anterior else [])
@@ -4663,7 +5108,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # A LISTA DE ATENCAO PARA FRAUDES, sobre as partes do ato. `nt_partes`
         # ja guarda `nome_norm`, e por isso a busca por nome acha com acento.
         with db.connect() as _c:
-            _c.row_factory = sqlite3.Row
             fraudes = FR.conferir_pessoas(_c, [
                 {"nome": x.get("nome"), "documento": x.get("documento"),
                  "papel_no_ato": (x.get("qualificacao") or "parte")}
@@ -4718,6 +5162,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                DOI_OPERACOES=CTP.TIPO_OPERACAO,
                                DOI_IMOVEIS=CTP.TIPO_IMOVEL,
                                TIPOS_ATO=TIPOS_ATO, SITUACOES=SITUACOES_ATO,
+                               TIPO_TESTAMENTO=NC.TIPO_TESTAMENTO,
+                               TIPOS_DE_TESTAMENTO_DO_ATO=NC.TIPOS_DE_TESTAMENTO_DO_ATO,
                                # O SELO DO ATO DE LIVRO — 17/09/2026. A tela
                                # oferece os itens que a casa usou NAQUELE
                                # caminho, em ordem de frequencia, e as tres
@@ -4741,7 +5187,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # Substabelecimento e revogação selam pelo caminho da procuração —
         # decisão do oficial, 15/10/2026 (`AS.TIPOS_QUE_SELAM_COMO_PROCURACAO`).
         if tipo not in ("ESCRITURA", "ATA", "ATA_USUCAPIAO",
-                        *AS.TIPOS_QUE_SELAM_COMO_PROCURACAO):
+                        *AS.TIPOS_QUE_SELAM_COMO_PROCURACAO,
+                        *AS.ITENS_DO_TESTAMENTO):
             return {
                 "selo_caminhos": [], "selo_sem_caminho": True,
                 "selo_aviso": (f"Ainda não há caminho de selo configurado "
@@ -4760,27 +5207,50 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         elif tipo in ("ATA", "ATA_USUCAPIAO"):
             caminhos = [(None, AS.caminho_do_ato_de_livro_das_notas(
                 tipo, com_valor=bool(a["valor_transacao"])))]
+        elif tipo in AS.ITENS_DO_TESTAMENTO:
+            # O TESTAMENTO SELA POR CAMINHO PRÓPRIO, com os itens dele na
+            # tabela (LG04) — o público não oferece o 13.10.3 do cerrado, nem
+            # o cerrado os do público.
+            caminhos = [(None, AS.CAMINHO_DO_TESTAMENTO)]
         else:
             caminhos = [(chave, caminho) for chave, caminho
                         in AS.CAMINHO_DA_PROCURACAO.items()]
+            if tipo == "PROCURACAO_PREVIDENCIARIA":
+                # O caminho do INSS vem PRIMEIRO na previdenciária, e só nela
+                # (LG04): é o endereço que o contrato tem para este ato.
+                caminhos.insert(0, (AS.ESPECIE_DA_PROCURACAO_DO_INSS,
+                                    AS.CAMINHO_DA_PROCURACAO_DO_INSS))
+        # O ITEM PRÓPRIO DA ESPÉCIE VEM PRIMEIRO (LD02, 21/10/2026): o
+        # substabelecimento, a revogação e a renúncia têm item seu na tabela
+        # (13.9.5, 13.9.6), e a separação, o divórcio e a extinção da união
+        # estável sem bens também (13.7). A tela só oferecia os medidos no
+        # caminho, e o caixa cobra pelo próprio: o selo pedido pelo item da
+        # tela não achava o item pago no protocolo.
+        proprios = AS.itens_proprios_da_especie(a)
         fora = []
         for chave, caminho in caminhos:
             itens = []
             catalogo = (AS.ITENS_DA_ATA.get(tipo, ())
                         if tipo in AS.ITENS_DA_ATA
-                        else AS.ITENS_MEDIDOS_DO_ATO_DE_LIVRO.get(caminho, ()))
-            if tipo == "ESCRITURA" and a["valor_transacao"]:
+                        else AS.ITENS_DO_TESTAMENTO.get(tipo)
+                        or AS.ITENS_PREVISTOS_POR_CAMINHO.get(caminho)
+                        or AS.ITENS_MEDIDOS_DO_ATO_DE_LIVRO.get(caminho, ()))
+            catalogo = tuple(proprios) + tuple(
+                (c, n) for c, n in catalogo if c not in dict(proprios))
+            # A ESCRITURA COM VALOR E A ATA PARA USUCAPIÃO cobram pela faixa do
+            # 13.1 conforme o valor (a ata: CNN art. 423, I — LD02).
+            if tipo in AS.TIPOS_COBRADOS_PELA_FAIXA and a["valor_transacao"]:
                 faixa = _faixa_da_escritura(a)
                 catalogo = ((faixa["codigo_tj"], 0),) if faixa and faixa.get("codigo_tj") else ()
             for codigo, quantas in catalogo:
-                linha = q1("SELECT descricao FROM cx_servicos WHERE codigo_tj=? "
-                           "LIMIT 1", (codigo,))
+                linha = q1("SELECT descricao FROM cx_servicos WHERE codigo_tj=%s "
+                           "ORDER BY codigo LIMIT 1", (codigo,))
                 itens.append({
                     "codigo": codigo, "usos": quantas,
                     "descricao": (linha["descricao"] if linha else "") or ""})
             fora.append({"chave": chave, "caminho": caminho, "itens": itens})
         aviso = None
-        if tipo == "ESCRITURA" and a["valor_transacao"]:
+        if tipo in AS.TIPOS_COBRADOS_PELA_FAIXA and a["valor_transacao"]:
             faixa = _faixa_da_escritura(a)
             if not faixa or not faixa.get("codigo_tj") or faixa.get("acima_do_teto"):
                 return {"selo_caminhos": [], "selo_sem_caminho": True,
@@ -4798,7 +5268,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return EMOL.faixa_por_valor(con, a["valor_transacao"], tabela=3)
 
     def _conferir_item_da_escritura(a, item: str) -> str | None:
-        if (a["tipo"] or "").upper() != "ESCRITURA" or not a["valor_transacao"]:
+        # O TESTAMENTO TAMBÉM TEM ITEM CERTO (LG04): o cerrado é 13.10.3 e o
+        # público 13.10.1/13.10.2/13.10.4. Conferido aqui, antes de lançar e de
+        # pedir o selo, para a recusa vir antes de a folha ser reservada.
+        do_testamento = AS.conferir_item_do_testamento(a["tipo"], item)
+        if do_testamento:
+            return do_testamento
+        # a ata para usucapião também se cobra pela faixa (LD02; CNN art. 423, I)
+        if ((a["tipo"] or "").upper() not in AS.TIPOS_COBRADOS_PELA_FAIXA
+                or not a["valor_transacao"]):
             return None
         faixa = _faixa_da_escritura(a)
         if not faixa or not faixa.get("codigo_tj") or faixa.get("acima_do_teto"):
@@ -4827,7 +5305,44 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         «XXXXXXXXXXXXXXXXXXX» no lugar do veículo. Mora aqui, e não em
         `ri_modelos_atos`, porque o detector de lá serve também o RI.
         """
-        return pendencias_modelo(teor) + [f"«{x}»" for x in NT.claros_de_x(teor)]
+        achadas = pendencias_modelo(teor) + [f"«{x}»" for x in NT.claros_de_x(teor)]
+        # A ESCOLHA E A CLÁUSULA QUE O LEITOR NÃO ALCANÇA (aninhadas) também
+        # travam (LT02, 20/10/2026): sem isto iam cruas ao livro.
+        vistas = {re.sub(r"[{}\[\]]", "", x).strip() for x in achadas}
+        return achadas + [f"{{{r}: …}}" if not r.startswith("SE ") else f"«{r}: …»"
+                          for r in NT.marcas_de_modelo_sobrando(teor)
+                          if r not in vistas]
+
+    #: A recusa de regravar o teor de ato lançado — a mesma frase da
+    #: importação do arquivo (`notas_ato_teor_importar`), que já tinha a regra.
+    TEOR_JA_NO_LIVRO = ("Este ato já foi lançado no livro — o teor dele foi para o "
+                        "papel. Corrigir ato lançado é retificação, e não troca de "
+                        "texto.")
+
+    def _gravar_teor_em_lavratura(con, ato_id: int, corpo: str,
+                                  modelo_valores: str | None = None) -> bool:
+        """Grava o teor SÓ se o ato ainda está em lavratura. Devolve se gravou.
+
+        POR QUE (LS02 M10; LX12, 19/10/2026)
+            «Guardar o teor», «Montar com as partes» e «Preencher a partir do
+            modelo» regravavam o teor de ato LAVRADO: o sistema passava a dizer
+            uma coisa e o livro outra, e quem confere lê o livro. A importação
+            do arquivo já recusava; as três portas do formulário, não.
+
+        A CONDIÇÃO VAI NO PRÓPRIO UPDATE, e não num SELECT antes: o ato lançado
+        por outro balcão entre a leitura e a gravação não escapa.
+        """
+        if modelo_valores is None:
+            feito = banco(con).escrever(
+                "UPDATE nt_atos SET teor=%s, teor_formato='html' "
+                "WHERE id=%s AND situacao='EM_LAVRATURA' RETURNING id",
+                (corpo, ato_id))
+        else:
+            feito = banco(con).escrever(
+                "UPDATE nt_atos SET teor=%s, teor_formato='html', modelo_valores=%s "
+                "WHERE id=%s AND situacao='EM_LAVRATURA' RETURNING id",
+                (corpo, modelo_valores, ato_id))
+        return bool(feito)
 
     def _travas_da_lavratura(a: dict) -> list[str]:
         """O que impede este ato de ser lavrado — vazio, pode lavrar.
@@ -4844,13 +5359,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         travas = [f"o texto tem campo em branco {m} — edite o teor"
                   for m in _pendencias_do_teor(a.get("teor") or "")]
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             for imp in NC.impedimentos_para_lavrar(con, a):
                 onde = _ONDE_CORRIGIR.get(imp.campo)
                 travas.append(f"CENSEC: {imp.motivo}" + (f" — {onde}" if onde else ""))
             if (a.get("tipo") or "") in TIPOS_COM_TRAVA_DE_PROCURACAO:
-                partes = [dict(p) for p in con.execute(
-                    "SELECT * FROM nt_ato_partes WHERE ato_id=? ORDER BY ordem, id",
+                partes = [dict(p) for p in banco(con).ler(
+                    "SELECT * FROM nt_ato_partes WHERE ato_id=%s ORDER BY ordem, id",
                     (a["id"],))]
                 travas += _travas_da_procuracao(a, partes)
         return travas
@@ -4907,16 +5421,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         `[CAMPO]` intactos. Quem monta os de origem SISTEMA é
         `notas_ato_preencher`, e só ele.
         """
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         partes = [dict(p) for p in q(
-            "SELECT * FROM nt_ato_partes WHERE ato_id=? ORDER BY testemunha, ordem",
+            "SELECT * FROM nt_ato_partes WHERE ato_id=%s "
+            "ORDER BY testemunha, ordem, id",
             (ato_id,))]
         if not partes:
             flash("Inclua as partes antes de montar o teor.", "warning")
             return redirect(url_for("notas_ato", ato_id=ato_id))
-        modelo = q1("SELECT * FROM nt_modelos WHERE codigo=?",
+        modelo = q1("SELECT * FROM nt_modelos WHERE codigo=%s",
                     (a["modelo_codigo"],)) if a["modelo_codigo"] else None
         if modelo and modelo["origem"] == "SISTEMA":
             flash("Este modelo já é o instrumento completo — use "
@@ -4932,10 +5447,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             data_extenso=data_por_extenso(date.fromisoformat(a["data"])),
             cidade=s.get("ri_cidade", ""), uf=s.get("ri_uf", "MA"),
             lavrado_nome=a["lavrado_nome"] or usuario_nome(),
-            lavrado_titulo=a["lavrado_titulo"] or usuario_funcao())
+            lavrado_titulo=a["lavrado_titulo"] or usuario_funcao(), con=db.connect)
         with db.transaction() as con:
-            con.execute("UPDATE nt_atos SET teor=?, teor_formato='html' WHERE id=?",
-                        (corpo, ato_id))
+            gravou = _gravar_teor_em_lavratura(con, ato_id, corpo)
+        if not gravou:
+            flash(TEOR_JA_NO_LIVRO, "danger")
+            return redirect(url_for("notas_ato", ato_id=ato_id))
         audit("NT_ATO_MONTADO", "NT_ATO", ato_id, {"partes": len(partes)})
         faltas = NT.pendencias_da_qualificacao(partes)
         if faltas:
@@ -4949,7 +5466,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_selar_arquivamento(ato_id):
         """Selo 13.30 quando a lavratura deixou o arquivamento pendente."""
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         if not str(a["selo"] or "").strip():
@@ -4972,17 +5489,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash(f"Arquivamento não pedido: {erro}", "danger")
                 return redirect(url_for("notas_ato", ato_id=ato_id))
         else:
-            bruto = (request.form.get("folhas_arquivamento") or "").strip()
-            try:
-                folhas = int(bruto or 0)
-            except ValueError:
-                folhas = 0
+            # Os 30 dígitos param aqui, e não no UPDATE depois do selo (LD13).
+            folhas = numero_digitado(request.form.get("folhas_arquivamento")) or 0
             if folhas < 1:
                 flash("Informe a quantidade de folhas (>= 1) para o "
                       "arquivamento.", "danger")
                 return redirect(url_for("notas_ato", ato_id=ato_id))
         partes_arq = [dict(p) for p in q(
-            "SELECT nome, documento FROM nt_ato_partes WHERE ato_id=? "
+            "SELECT nome, documento FROM nt_ato_partes WHERE ato_id=%s "
             "ORDER BY id", (ato_id,))]
         # A GRATUIDADE SEGUE A DO ATO, como no RI (art. 290-A) e no RCPN: o
         # isento do arquivamento vem com o motivo escrito, e quem marca é quem
@@ -4999,9 +5513,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if obrigatorio:
                 # Com os dois selos, a procuração sai da suspensão.
                 with db.transaction() as con:
-                    con.execute(
+                    banco(con).escrever(
                         "UPDATE nt_atos SET situacao='LAVRADO' "
-                        "WHERE id=? AND situacao='SUSPENSO_SELO'", (ato_id,))
+                        "WHERE id=%s AND situacao='SUSPENSO_SELO'", (ato_id,))
             flash(f"Arquivamento selado.{arq['recado']}", "success")
         else:
             audit("NT_ATO_ARQUIVAMENTO_PENDENTE", "NT_ATO", ato_id,
@@ -5023,17 +5537,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         assina. Achado ao ajustar o modelo da escritura pública ao padrão do
         oficial em 07/09/2026, e corrigido antes de a lacuna chegar ao balcão.
         """
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
-        modelo = q1("SELECT * FROM nt_modelos WHERE codigo=?", (a["modelo_codigo"],))
+        modelo = q1("SELECT * FROM nt_modelos WHERE codigo=%s", (a["modelo_codigo"],))
         if not modelo:
             flash("Este ato não tem modelo associado.", "danger")
             return redirect(url_for("notas_ato", ato_id=ato_id))
         partes = [dict(p) for p in q(
-            "SELECT * FROM nt_ato_partes WHERE ato_id=? ORDER BY testemunha, ordem",
+            "SELECT * FROM nt_ato_partes WHERE ato_id=%s "
+            "ORDER BY testemunha, ordem, id",
             (ato_id,))]
-        ctx = NT.contexto_jinja_partes(partes)
+        ctx = NT.contexto_jinja_partes(partes, con=db.connect)
         from jinja2.sandbox import SandboxedEnvironment
         env = SandboxedEnvironment(autoescape=False)
         try:
@@ -5043,27 +5558,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 lavrado_titulo=a["lavrado_titulo"] or usuario_funcao(),
                 **ctx)
         except Exception as erro:                               # noqa: BLE001
-            flash(f"O modelo tem um erro: {type(erro).__name__}: {erro}", "danger")
+            flash("O modelo tem um erro: "
+                  f"{SEGWEB.erro_do_modelo(erro, 'notas_ato', com_tipo=True)}", "danger")
             return redirect(url_for("notas_ato", ato_id=ato_id))
         valores = {k: v for k, v in request.form.items() if k != "csrf_token"}
         # Campo do fecho aproveita as partes do formulário se veio em branco.
         if not (valores.get(NT.CHAVE_ASSINANTES) or "").strip():
-            sugerido = NT.texto_dos_assinantes(partes)
+            sugerido = NT.texto_dos_assinantes(partes, con=db.connect)
             if sugerido:
                 valores[NT.CHAVE_ASSINANTES] = sugerido
         try:
             corpo = preencher_modelo({"corpo": corpo_jinja}, valores)
         except Exception as erro:                               # noqa: BLE001
-            flash(f"O modelo tem um erro: {type(erro).__name__}: {erro}", "danger")
+            flash("O modelo tem um erro: "
+                  f"{SEGWEB.erro_do_modelo(erro, 'notas_ato', com_tipo=True)}", "danger")
             return redirect(url_for("notas_ato", ato_id=ato_id))
+        # O MODELO EDITADO PELA CASA SAI SEM O QUE EXECUTA (revisão de
+        # segurança de 22/10/2026, A7): `nt_modelos.atualizado_em` preenchido é
+        # a marca de que a serventia mexeu no texto (`notas_modelos`), e o teor
+        # vai ao navegador com `|safe`. O modelo de fábrica sai como saía.
+        if dict(modelo).get("atualizado_em") is not None:
+            corpo = HSS.limpar(corpo)
         # O QUE FOI DIGITADO FICA — relato #78. Ele volta na tela quando o
         # escrevente reabre o quadro para corrigir um campo.
         import json as _json
         with db.transaction() as con:
-            con.execute("""UPDATE nt_atos
-                              SET teor=?, teor_formato='html', modelo_valores=?
-                            WHERE id=?""",
-                        (corpo, _json.dumps(valores, ensure_ascii=False), ato_id))
+            gravou = _gravar_teor_em_lavratura(
+                con, ato_id, corpo, _json.dumps(valores, ensure_ascii=False))
+        if not gravou:
+            flash(TEOR_JA_NO_LIVRO, "danger")
+            return redirect(url_for("notas_ato", ato_id=ato_id))
         audit("NT_ATO_PREENCHIDO", "NT_ATO", ato_id,
               {"modelo": a["modelo_codigo"], "campos": len(valores)})
         faltam = _pendencias_do_teor(corpo)
@@ -5078,7 +5602,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_ato_traslado(ato_id):
         """O traslado que fica com a parte, em .odt."""
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         if not (a["teor"] or "").strip():
@@ -5098,11 +5622,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # infiel do livro — e a Lei 8.935/1994, art. 6º, II, manda expedir
         # copia FIDEDIGNA. Era o que saia ate aqui, porque a margem nao existia.
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             anotacoes = NA.do_ato(con, ato_id)
-            partes = [dict(p) for p in con.execute(
-                "SELECT * FROM nt_ato_partes WHERE ato_id=? "
-                "ORDER BY testemunha, ordem", (ato_id,)).fetchall()]
+            partes = [dict(p) for p in banco(con).ler(
+                "SELECT * FROM nt_ato_partes WHERE ato_id=%s "
+                "ORDER BY testemunha, ordem, id", (ato_id,))]
 
         lavrado_nome = a["lavrado_nome"] or usuario_nome()
         lavrado_titulo = a["lavrado_titulo"] or usuario_funcao()
@@ -5112,17 +5635,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         env = SandboxedEnvironment(autoescape=False)
         with db.connect() as _c:
             _modelo = MODELOS.corpo_de(_c, "NOTAS_TRASLADO")
+        # OS PEDAÇOS DO TRASLADO QUE SAÍRAM DO CÓDIGO NO LF06D — o cabeçalho das
+        # páginas, o título, o rótulo do selo, a linha de assinatura —, lidos da
+        # base com o ajuste da casa.
+        textos = MODELOS.textos(db.connect)
         nome_modelo = None
         if a["modelo_codigo"]:
-            mrow = q1("SELECT nome FROM nt_modelos WHERE codigo=?",
+            mrow = q1("SELECT nome FROM nt_modelos WHERE codigo=%s",
                       (a["modelo_codigo"],))
             nome_modelo = mrow["nome"] if mrow else None
         # O teor sem o bloco de assinaturas que `montar` possa ter gravado —
         # as linhas saem em @@ASSINATURAS@@, montadas ao vivo das partes.
-        titulo_inst = titulo_do_instrumento(dict(a), nome_modelo=nome_modelo)
+        titulo_inst = titulo_do_instrumento(dict(a), nome_modelo=nome_modelo,
+                                            con=textos)
         teor_sem_ass = NT.teor_sem_titulos_duplicados(
             NT.sem_bloco_de_assinaturas(a["teor"]),
-            _titulos_para_limpar_do_teor(dict(a), nome_modelo=nome_modelo))
+            _titulos_para_limpar_do_teor(dict(a), nome_modelo=nome_modelo,
+                                         con=textos))
         html = env.from_string(_modelo).render(
             a=dict(a), anotacoes=anotacoes,
             sv=dados_serventia(db.get_settings),
@@ -5164,24 +5693,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             with db.connect() as con:
                 etiqueta = AS.etiqueta_do_ato(
                     con, "nt_atos", ato_id, a["selo"]) or str(a["selo"]).strip()
-            rotulo_selo = {
-                "ESCRITURA": "SELO DA ESCRITURA",
-                "PROCURACAO": "SELO DA PROCURAÇÃO",
-                "PROCURACAO_PREVIDENCIARIA": "SELO DA PROCURAÇÃO",
-                "SUBSTABELECIMENTO": "SELO DO SUBSTABELECIMENTO",
-                "REVOGACAO": "SELO DA REVOGAÇÃO",
-                "RENUNCIA": "SELO DA RENÚNCIA",
-                "ATA": "SELO DA ATA",
-                "ATA_USUCAPIAO": "SELO DA ATA",
-                "TESTAMENTO": "SELO DO TESTAMENTO",
-                "TESTAMENTO_CERRADO": "SELO DO TESTAMENTO",
-            }.get(a["tipo"] or "", "SELO DO ATO")
+            rotulo_selo = rotulo_do_selo(a["tipo"], con=textos)
             frag_do_selo, imagens_do_selo = carimbo_da_certidao_odf(
                 etiqueta, rotulo=rotulo_selo,
                 prefixo=f"qr-selo-traslado-{ato_id}")
         # AS ASSINATURAS — mesmo bloco do teor (`notas_teor.bloco_de_assinaturas`).
         ass_html = NT.bloco_de_assinaturas(
-            partes, lavrado_nome=lavrado_nome, lavrado_titulo=lavrado_titulo)
+            partes, lavrado_nome=lavrado_nome, lavrado_titulo=lavrado_titulo,
+            con=textos)
         ass_odf = html_para_odf(ass_html) if (ass_html or "").strip() else ""
         # O teor JA E ODF quando chega aqui, e nao pode passar de novo pelo
         # conversor. O `fragmentos` do ri_odt existe para isto: troca o
@@ -5199,7 +5718,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # EM DIANTE, PELO CABEÇALHO DE PÁGINA — pedido do oficial em
         # 07/09/2026, para não escrever a mesma coisa duas vezes bem no topo
         # da primeira página.
-        cab_html = env.from_string(MODELO_TRASLADO_CABECALHO).render(a=dict(a))
+        cab_html = env.from_string(textos("NOTAS_TRASLADO_CABECALHO")).render(a=dict(a))
         cab_odf = html_para_odf(cab_html, compacto=True)
         # A FOLHA MOSTRA A PÁGINA, E NÃO A FAIXA — «não a janela que a
         # escritura está usando». `a["folha"]` guarda o número inicial
@@ -5260,10 +5779,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """
         ato_id = a["id"]
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            partes = [dict(p) for p in con.execute(
-                "SELECT * FROM nt_ato_partes WHERE ato_id=? "
-                "ORDER BY testemunha, ordem", (ato_id,)).fetchall()]
+            partes = [dict(p) for p in banco(con).ler(
+                "SELECT * FROM nt_ato_partes WHERE ato_id=%s "
+                "ORDER BY testemunha, ordem, id", (ato_id,))]
 
         lavrado_nome = a["lavrado_nome"] or usuario_nome()
         lavrado_titulo = a["lavrado_titulo"] or usuario_funcao()
@@ -5272,15 +5790,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         env = SandboxedEnvironment(autoescape=False)
         with db.connect() as _c:
             _modelo = MODELOS.corpo_de(_c, "NOTAS_TERMO_LIVRO")
+        textos = MODELOS.textos(db.connect)     # os pedaços do LF06D, como no traslado
         nome_modelo = None
         if a["modelo_codigo"]:
-            mrow = q1("SELECT nome FROM nt_modelos WHERE codigo=?",
+            mrow = q1("SELECT nome FROM nt_modelos WHERE codigo=%s",
                       (a["modelo_codigo"],))
             nome_modelo = mrow["nome"] if mrow else None
-        titulo_inst = titulo_do_instrumento(dict(a), nome_modelo=nome_modelo)
+        titulo_inst = titulo_do_instrumento(dict(a), nome_modelo=nome_modelo,
+                                            con=textos)
         teor_sem_ass = NT.teor_sem_titulos_duplicados(
             NT.sem_bloco_de_assinaturas(a["teor"]),
-            _titulos_para_limpar_do_teor(dict(a), nome_modelo=nome_modelo))
+            _titulos_para_limpar_do_teor(dict(a), nome_modelo=nome_modelo,
+                                         con=textos))
         html = env.from_string(_modelo).render(
             a=dict(a),
             sv=dados_serventia(db.get_settings),
@@ -5303,24 +5824,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 etiqueta = AS.etiqueta_do_ato(
                     con, "nt_atos", ato_id, a["selo"]) or str(a["selo"]).strip()
         if (etiqueta or "").strip():
-            rotulo_selo = {
-                "ESCRITURA": "SELO DA ESCRITURA",
-                "PROCURACAO": "SELO DA PROCURAÇÃO",
-                "PROCURACAO_PREVIDENCIARIA": "SELO DA PROCURAÇÃO",
-                "SUBSTABELECIMENTO": "SELO DO SUBSTABELECIMENTO",
-                "REVOGACAO": "SELO DA REVOGAÇÃO",
-                "RENUNCIA": "SELO DA RENÚNCIA",
-                "ATA": "SELO DA ATA",
-                "ATA_USUCAPIAO": "SELO DA ATA",
-                "TESTAMENTO": "SELO DO TESTAMENTO",
-                "TESTAMENTO_CERRADO": "SELO DO TESTAMENTO",
-            }.get(a["tipo"] or "", "SELO DO ATO")
+            rotulo_selo = rotulo_do_selo(a["tipo"], con=textos)
             # 22/09/2026 — QR + número + emolumentos no termo do livro.
             frag_do_selo = carimbo_compacto_odf(
                 etiqueta, rotulo=rotulo_selo, imagens=imagens_selo)
 
         ass_html = NT.bloco_de_assinaturas(
-            partes, lavrado_nome=lavrado_nome, lavrado_titulo=lavrado_titulo)
+            partes, lavrado_nome=lavrado_nome, lavrado_titulo=lavrado_titulo,
+            con=textos)
         ass_odf = html_para_odf(ass_html) if (ass_html or "").strip() else ""
 
         corpo = html_para_odf(html, fragmentos={
@@ -5334,16 +5845,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             extenso = _hoje_extenso()
             serie = a["serie"] or a["tipo"]
             dizer = NI.dizer(list(faces_inutilizadas), serie, a["livro"], sv,
-                             extenso)
+                             extenso, con=textos)
             for face in faces_inutilizadas:
                 pagina = html_para_odf(NI.html_da_face(
-                    face, serie, a["livro"], sv, extenso, dizer))
+                    face, serie, a["livro"], sv, extenso, dizer, con=textos))
                 # O primeiro parágrafo da face abre página nova: sem isso o
                 # traço começaria logo abaixo das assinaturas, na mesma página.
                 corpo += pagina.replace(
                     'text:style-name="P-centro"',
                     f'text:style-name="{ESTILO_QUEBRA_DE_PAGINA}"', 1)
-        cab_html = env.from_string(MODELO_TRASLADO_CABECALHO).render(a=dict(a))
+        cab_html = env.from_string(textos("NOTAS_TRASLADO_CABECALHO")).render(a=dict(a))
         cab_odf = html_para_odf(cab_html, compacto=True)
         folha_ini = NL.inteiro(str(a["folha"] or "")) or 1
         imagens = {"brasao.jpg": (brasao, "image/jpeg")}
@@ -5373,12 +5884,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         Com o selo de arquivamento pedido, são dois carimbos.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             prev = NL.previsao(con, a["tipo"], 1)
-            amostra = con.execute(
+            amostra = banco(con).um(
                 """SELECT id, selo FROM nt_atos
                     WHERE selo IS NOT NULL AND selo <> ''
-                    ORDER BY id DESC LIMIT 1""").fetchone()
+                    ORDER BY id DESC LIMIT 1""")
             etiqueta = (AS.etiqueta_do_ato(con, "nt_atos", amostra["id"],
                                            amostra["selo"])
                         if amostra else "")
@@ -5433,7 +5943,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         inutilizado. Se o texto passar do que foi reservado, o arquivo NÃO
         sai — imprimi-lo escreveria por cima da folha do ato seguinte.
         """
-        a = q1("SELECT * FROM nt_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         if not (a["teor"] or "").strip():
@@ -5484,9 +5994,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "autenticacoes": q1("SELECT COUNT(*) n FROM nt_autenticacoes")["n"],
             "atos": q1("SELECT COUNT(*) n FROM nt_atos")["n"],
             "modelos": q1("SELECT COUNT(*) n FROM nt_modelos WHERE ativo=1")["n"],
-            "rec_hoje": q1("SELECT COUNT(*) n FROM nt_reconhecimentos WHERE data=?",
+            "rec_hoje": q1("SELECT COUNT(*) n FROM nt_reconhecimentos WHERE data=%s",
                            (hoje,))["n"],
-            "aut_hoje": q1("SELECT COUNT(*) n FROM nt_autenticacoes WHERE data=?",
+            "aut_hoje": q1("SELECT COUNT(*) n FROM nt_autenticacoes WHERE data=%s",
                            (hoje,))["n"],
             "sem_selo": q1("""SELECT COUNT(*) n FROM nt_reconhecimentos
                               WHERE (selo IS NULL OR selo='') AND cancelado=0""")["n"],
@@ -5499,7 +6009,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # É a pergunta que a correição faz, e a resposta tem de ser zero.
             "anotacao_pendente": q1(
                 f"""SELECT COUNT(*) n FROM nt_atos a
-                    WHERE a.tipo IN ({','.join('?' * len(ATO_PEDE_ANOTACAO))})
+                    WHERE a.tipo IN ({','.join(['%s'] * len(ATO_PEDE_ANOTACAO))})
                       AND a.situacao NOT IN ('EM_LAVRATURA','CANCELADO')
                       AND NOT EXISTS (SELECT 1 FROM nt_ato_anotacoes n
                                       WHERE n.ato_relacionado_id = a.id)""",
@@ -5510,7 +6020,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      AND (COALESCE(folha_inicial,1) + folhas
                           - COALESCE(folha_atual, 1)) <= 10""")["n"],
         }
-        atos = q("""SELECT tipo, COUNT(*) n FROM nt_atos GROUP BY tipo ORDER BY n DESC""")
+        atos = q("""SELECT tipo, COUNT(*) n FROM nt_atos GROUP BY tipo
+                    ORDER BY n DESC, tipo""")
         return render_template("notas_painel.html", resumo=resumo, atos=atos,
                                TIPOS_ATO=TIPOS_ATO, TIPOS_LIVRO=TIPOS_LIVRO)
 
@@ -5533,7 +6044,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 with db.transaction() as con:
                     resultado = importar_notas(con, pasta)
             except Exception as erro:                              # noqa: BLE001
-                flash(f"A carga falhou: {type(erro).__name__}: {erro}", "danger")
+                flash(SEGWEB.recado_de_erro(
+                    erro, "notas_importar", "A carga falhou; o detalhe ficou no "
+                    "registro do servidor."), "danger")
                 return redirect(url_for("notas_importar"))
             # Desempate de folha do acervo, logo depois da carga.
             #
@@ -5554,8 +6067,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # E-Ofício manda `intFolha`, mas quem manda é o maior número de
             # folha realmente ocupado pelos atos daquele livro.
             with db.transaction() as con:
-                for r in con.execute(
-                        "SELECT id FROM nt_livros WHERE ativo=1 AND encerrado=0"):
+                for r in banco(con).ler(
+                        "SELECT id FROM nt_livros WHERE ativo=1 AND encerrado=0 "
+                        "ORDER BY id"):
                     NL.sincronizar_folha_atual(con, r["id"])
 
             # A biblioteca de modelos entra junto, e e repetivel: o modelo que a
@@ -5579,7 +6093,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             db.get_setting("nt_pasta_export", "")
         anteriores = q("""SELECT * FROM nt_importacoes ORDER BY id DESC LIMIT 5""")
         rejeitados = q("""SELECT tabela, COUNT(*) n FROM nt_rejeitados
-                          GROUP BY tabela ORDER BY n DESC""")
+                          GROUP BY tabela ORDER BY n DESC, tabela""")
         return render_template("notas_importar.html", sugestao=sugestao,
                                anteriores=anteriores, rejeitados=rejeitados)
 
@@ -5675,7 +6189,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             a = x["ato"]
             do_acervo.setdefault(a["id"], {"ato": dict(a), "falta": []})
             do_acervo[a["id"]]["falta"].append(
-                "natureza da CENSEC — a classificação do E-Ofício contradiz o teor"
+                "natureza da CENSEC — a classificação do sistema antigo contradiz o teor"
                 if x["diverge"] else "natureza da CENSEC")
         do_acervo = sorted(do_acervo.values(),
                            key=lambda x: (x["ato"]["data"] or "", x["ato"]["id"]),
@@ -5686,7 +6200,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             [x["sugestao"] for x in sem_natureza + sem_natureza_do_acervo])
         # A quarentena guarda o protocolo em `chave` e o resto no conteudo.
         brutos = q("""SELECT id, chave, motivo, conteudo FROM nt_rejeitados
-                       WHERE tabela = 'nt_ato_partes' AND motivo LIKE '%protocolo%'
+                       WHERE tabela = 'nt_ato_partes' AND motivo ILIKE '%%protocolo%%'
                        ORDER BY chave, id""")
         ambiguas = []
         for r in brutos:
@@ -5695,7 +6209,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             except ValueError:
                 dados = {}
             ato_id = dados.get("ato_id")
-            if ato_id and q1("SELECT 1 FROM nt_ato_partes WHERE ato_id=?", (ato_id,)):
+            if ato_id and q1("SELECT 1 FROM nt_ato_partes WHERE ato_id=%s", (ato_id,)):
                 continue        # ja foi resolvida
             # Troca o cartao pelo nome: quem decide precisa ver a pessoa.
             partes = []
@@ -5703,7 +6217,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 cartao_id = p.get("cartao_id") if isinstance(p, dict) else None
                 nome = None
                 if cartao_id:
-                    achado = q1("SELECT nome, documento FROM nt_cartoes WHERE id=?",
+                    achado = q1("SELECT nome, documento FROM nt_cartoes WHERE id=%s",
                                 (cartao_id,))
                     nome = achado["nome"] if achado else None
                 partes.append({
@@ -5714,8 +6228,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # Os atos que o protocolo rendeu, para o registrador escolher.
             irmaos = q("""SELECT id, data, livro, folha FROM nt_atos
                            WHERE tipo='ESCRITURA' AND origem_chave IN (
-                               SELECT origem_chave FROM nt_atos WHERE id=?)
-                           OR (tipo='ESCRITURA' AND livro=? AND folha=?)
+                               SELECT origem_chave FROM nt_atos WHERE id=%s)
+                           OR (tipo='ESCRITURA' AND livro=%s AND folha=%s)
                            ORDER BY folha, id""", (ato_id, dados.get("livro"),
                                                    dados.get("folha")))
             ambiguas.append({"id": r["id"], "protocolo": r["chave"],
@@ -5747,21 +6261,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         gravados = 0
         with db.transaction() as con:
             for bruto in escolhas:
-                ato_id, campo, valor = bruto.split("|", 2)
-                if campo == "cep":
-                    con.execute("""UPDATE nt_atos SET natureza_censec=?,
-                                       tipo_cesdi=NULL WHERE id=? AND tipo='ESCRITURA'""",
-                                (int(valor), int(ato_id)))
-                elif campo == "cesdi":
+                # A MARCA QUE NÃO É «ato|campo|valor», ou cujo número não cabe
+                # no banco, fica de fora como o campo desconhecido (LD13). Era
+                # ValueError — e a tela de erro levava junto as outras marcadas.
+                ato_id, campo, valor = (bruto.split("|", 2) + ["", ""])[:3]
+                ato_id = numero_digitado(ato_id)
+                codigo = numero_digitado(valor)
+                if ato_id is None:
+                    continue
+                if campo == "cep" and codigo is not None:
+                    banco(con).escrever("""UPDATE nt_atos SET natureza_censec=%s,
+                                       tipo_cesdi=NULL WHERE id=%s AND tipo='ESCRITURA'""",
+                                (codigo, ato_id))
+                elif campo == "cesdi" and codigo is not None:
                     # Vai para a CESDI: a natureza da CEP tem de sair junto,
                     # senão o ato aparece nas duas centrais.
-                    con.execute("""UPDATE nt_atos SET tipo_cesdi=?,
+                    banco(con).escrever("""UPDATE nt_atos SET tipo_cesdi=%s,
                                        natureza_censec=NULL
-                                     WHERE id=? AND tipo='ESCRITURA'""",
-                                (int(valor), int(ato_id)))
+                                     WHERE id=%s AND tipo='ESCRITURA'""",
+                                (codigo, ato_id))
                 elif campo == "tipo":
-                    con.execute("UPDATE nt_atos SET tipo=? WHERE id=?",
-                                (valor, int(ato_id)))
+                    banco(con).escrever("UPDATE nt_atos SET tipo=%s WHERE id=%s",
+                                (valor, ato_id))
                 else:
                     continue
                 gravados += 1
@@ -5772,19 +6293,39 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/notas/escrituras/<int:ato_id>/valor", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_escritura_valor(ato_id):
-        """Lanca o valor declarado no ato. Em centavos, como o resto do sistema."""
+        """Lanca o valor declarado no ato. Em centavos, como o resto do sistema.
+
+        A ATA PARA USUCAPIÃO TAMBÉM TEM VALOR (LD02, 21/10/2026): é ato de
+        conteúdo econômico, cobrado pelo valor venal do imóvel (CNN art. 423,
+        I), e sem ele o selo não sai — a ficha dizia «informe o valor do
+        imóvel» e esta rota só gravava ESCRITURA. Vindo da ficha do ato
+        (`voltar=ato`), volta para ela.
+        """
+        voltar = (url_for("notas_ato", ato_id=ato_id)
+                  if request.form.get("voltar") == "ato"
+                  else url_for("notas_escrituras_pendentes"))
         bruto = (request.form.get("valor") or "").strip()
-        digitos = "".join(c for c in bruto if c.isdigit())
-        if not digitos:
+        # A tela envia em centavos. O «²» é dígito para o `isdigit()` e não
+        # para o `int()`, e 30 dígitos não cabem na coluna: os dois davam a
+        # tela de erro e agora pedem o valor de novo, como o campo vazio (LD13).
+        centavos = numero_digitado("".join(c for c in bruto if c.isdigit()))
+        if centavos is None:
             flash("Informe o valor declarado no ato.", "danger")
-            return redirect(url_for("notas_escrituras_pendentes"))
-        centavos = int(digitos)          # a tela envia em centavos
+            return redirect(voltar)
         with db.transaction() as con:
-            con.execute("UPDATE nt_atos SET valor_transacao=? WHERE id=? "
-                        "AND tipo='ESCRITURA'", (centavos, ato_id))
+            feito = banco(con).escrever(
+                "UPDATE nt_atos SET valor_transacao=%s WHERE id=%s "
+                "AND tipo IN ('ESCRITURA', 'ATA_USUCAPIAO') RETURNING tipo",
+                (centavos, ato_id))
+        if not feito:
+            flash("Valor declarado só se lança em escritura ou em ata para "
+                  "usucapião.", "danger")
+            return redirect(voltar)
         audit("NT_ESCRITURA_VALOR", "NT_ATO", ato_id, {"valor_transacao": centavos})
-        flash(f"Valor de {reais(centavos)} lançado na escritura.", "success")
-        return redirect(url_for("notas_escrituras_pendentes"))
+        flash(f"Valor de {reais(centavos)} lançado "
+              + ("na ata para usucapião." if feito[0]["tipo"] == "ATA_USUCAPIAO"
+                 else "na escritura."), "success")
+        return redirect(voltar)
 
     @app.route("/notas/escrituras/quarentena/<int:rejeitado_id>", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -5794,14 +6335,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         O sistema nao escolhe: a tela lista as partes do protocolo e os atos que
         ele rendeu, e quem marca e quem leu o livro.
         """
-        linha = q1("SELECT * FROM nt_rejeitados WHERE id=?", (rejeitado_id,))
+        linha = q1("SELECT * FROM nt_rejeitados WHERE id=%s", (rejeitado_id,))
         if not linha:
             abort(404)
         try:
             dados = json.loads(linha["conteudo"] or "{}")
         except ValueError:
             dados = {}
-        ato_id = int(request.form.get("ato_id") or dados.get("ato_id") or 0)
+        ato_id = numero_digitado(request.form.get("ato_id") or dados.get("ato_id") or 0)
         escolhidas = request.form.getlist("parte")
         if not ato_id or not escolhidas:
             flash("Escolha o ato e ao menos uma parte.", "danger")
@@ -5810,19 +6351,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         agora = datetime.now().isoformat(timespec="seconds")
         with db.transaction() as con:
             for ordem, bruto in enumerate(escolhidas, 1):
-                cartao_id, qualificacao = bruto.split("|", 1)
-                cartao = con.execute(
-                    "SELECT nome, documento, tipo_pessoa FROM nt_cartoes WHERE id=?",
-                    (int(cartao_id),)).fetchone()
+                # A parte sem «|qualificação» ou com número que não cabe no
+                # banco segue o caminho do cartão que não se achou (LD13).
+                cartao_id, separador, qualificacao = bruto.partition("|")
+                cartao_id = numero_digitado(cartao_id)
+                if not separador or cartao_id is None:
+                    continue
+                cartao = banco(con).um(
+                    "SELECT nome, documento, tipo_pessoa FROM nt_cartoes WHERE id=%s",
+                    (cartao_id,))
                 if not cartao:
                     continue
-                con.execute(
+                banco(con).escrever(
                     """INSERT INTO nt_ato_partes
                        (ato_id, cartao_id, nome, nome_norm, documento, tipo_pessoa,
                         qualificacao, testemunha, ordem, criado_em)
-                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                    (ato_id, int(cartao_id), cartao[0], NP.normalizar(cartao[0]),
-                     cartao[1], cartao[2] or "F", qualificacao,
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (ato_id, cartao_id, cartao["nome"],
+                     NP.normalizar(cartao["nome"]),
+                     cartao["documento"], cartao["tipo_pessoa"] or "F", qualificacao,
                      1 if qualificacao.upper() == "TESTEMUNHA" else 0, ordem, agora))
         audit("NT_PARTES_DISTRIBUIDAS", "NT_ATO", ato_id,
               {"quarentena": rejeitado_id, "partes": len(escolhidas)})
@@ -5843,19 +6390,31 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return (db.get_setting("ri_cns", "")
                 or dados_serventia(db.get_settings)["ri_cns"])
 
+    def _quinzena_pedida(campos, hoje: date | None = None):
+        """(ano, mês, quinzena) que a tela da remessa mandou — LD13, 21/10/2026.
+
+        `int(request...get("ano"))` era a tela de erro com «abc», com o «²» e
+        com 5.000 dígitos — e, no POST, também com o campo vazio. Com `hoje`
+        (as telas que só mostram), o que vem vazio ou não é número fica com a
+        quinzena de hoje, como o campo vazio sempre ficou. Sem ele (gerar e
+        enviar), volta None se algum não for número, e a rota recusa com
+        recado: arquivo de quinzena adivinhada não se gera nem se envia.
+        """
+        pedidos = [numero_digitado(campos.get(k)) for k in ("ano", "mes", "quinzena")]
+        if hoje is not None:
+            padrao = (hoje.year, hoje.month, NC.quinzena_de(hoje.isoformat())[2])
+            return tuple(p if n is None else n for n, p in zip(pedidos, padrao))
+        return None if None in pedidos else tuple(pedidos)
+
     @app.route("/notas/remessas")
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
     def notas_remessas():
         """A fila: o que esta pendente em cada central, por quinzena."""
         hoje = date.today()
-        ano = int(request.args.get("ano") or hoje.year)
-        mes = int(request.args.get("mes") or hoje.month)
-        quinzena = int(request.args.get("quinzena")
-                       or NC.quinzena_de(hoje.isoformat())[2])
+        ano, mes, quinzena = _quinzena_pedida(request.args, hoje)
 
         painel = []
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             for central in CENTRAIS_COM_REMESSA:
                 separado = NC.separar(con, central, ano, mes, quinzena)
                 painel.append({
@@ -5892,9 +6451,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         pode sumir da fila da produção. Na produção a remessa e cada item ficam
         registrados com o que a Central respondeu, e o ato recusado volta.
         """
-        ano = int(request.form.get("ano"))
-        mes = int(request.form.get("mes"))
-        quinzena = int(request.form.get("quinzena"))
+        pedida = _quinzena_pedida(request.form)
+        if pedida is None:
+            flash("Remessa NÃO enviada: o ano, o mês e a quinzena têm de vir "
+                  "em número. Escolha a quinzena de novo.", "danger")
+            return redirect(url_for("notas_remessas"))
+        ano, mes, quinzena = pedida
         volta = redirect(url_for("notas_remessas", ano=ano, mes=mes, quinzena=quinzena))
         # SÓ PRODUÇÃO DESDE 15/10/2026 (ordem do oficial; a produção da CENSEC
         # está configurada). Vazio vira produção; homologação pedida pelo
@@ -5952,12 +6514,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if central not in CENTRAIS_COM_REMESSA:
             abort(404)
         hoje = date.today()
-        ano = int(request.args.get("ano") or hoje.year)
-        mes = int(request.args.get("mes") or hoje.month)
-        quinzena = int(request.args.get("quinzena")
-                       or NC.quinzena_de(hoje.isoformat())[2])
+        ano, mes, quinzena = _quinzena_pedida(request.args, hoje)
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             separado = NC.separar(con, central, ano, mes, quinzena)
         return render_template("notas_remessa_pendencias.html",
                                central=central, nome=CENTRAIS[central],
@@ -5976,32 +6534,35 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         central = central.upper()
         if central not in CENTRAIS_COM_REMESSA:
             abort(404)
-        ano = int(request.form.get("ano"))
-        mes = int(request.form.get("mes"))
-        quinzena = int(request.form.get("quinzena"))
+        pedida = _quinzena_pedida(request.form)
+        if pedida is None:
+            flash("Remessa NÃO gerada: o ano, o mês e a quinzena têm de vir "
+                  "em número. Escolha a quinzena de novo.", "danger")
+            return redirect(url_for("notas_remessa_pendencias", central=central))
+        ano, mes, quinzena = pedida
         agora = datetime.now().isoformat(timespec="seconds")
 
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
             carga = NC.gerar(con, central, ano, mes, quinzena, _cns_da_serventia())
             if not carga["aptos"]:
                 flash(f"Nenhum ato apto na {quinzena}ª quinzena de "
                       f"{NC.MESES[mes]}/{ano}. Veja as pendências.", "warning")
                 return redirect(url_for("notas_remessa_pendencias", central=central,
                                         ano=ano, mes=mes, quinzena=quinzena))
-            cur = con.execute(
+            remessa_id = banco(con).escrever(
                 """INSERT INTO nt_remessas(central, competencia, ano_referencia,
                        mes_referencia, quinzena, periodo_inicio, periodo_fim,
                        situacao, quantidade, arquivo_nome, arquivo_sha256,
                        gerada_em, gerada_por, criado_em)
-                   VALUES (?,?,?,?,?,?,?,'GERADA',?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,'GERADA',%s,%s,%s,%s,%s,%s)
+                   RETURNING id""",
                 (central, f"{ano:04d}-{mes:02d}", ano, mes, quinzena,
                  carga["periodo_inicio"], carga["periodo_fim"], carga["quantidade"],
-                 carga["arquivo_nome"], carga["sha256"], agora, usuario_nome(), agora))
-            remessa_id = cur.lastrowid
+                 carga["arquivo_nome"], carga["sha256"], agora, usuario_nome(),
+                 agora))[0]["id"]
             for item in carga["aptos"]:
-                con.execute("""INSERT INTO nt_remessa_itens(remessa_id, ato_id,
-                                   situacao, criado_em) VALUES (?,?,'GERADA',?)""",
+                banco(con).escrever("""INSERT INTO nt_remessa_itens(remessa_id, ato_id,
+                                   situacao, criado_em) VALUES (%s,%s,'GERADA',%s)""",
                             (remessa_id, item["ato"]["id"], agora))
 
         audit("NT_REMESSA_GERADA", "NT_REMESSA", remessa_id,
@@ -6034,16 +6595,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "conferir contra fonte primária.", "warning")
 
         with db.transaction() as con:
-            con.execute("""UPDATE nt_remessas SET situacao=?, protocolo_central=?,
-                               mensagem=?, enviada_em=COALESCE(enviada_em, ?),
-                               enviada_por=COALESCE(enviada_por, ?)
-                           WHERE id=?""",
+            banco(con).escrever("""UPDATE nt_remessas SET situacao=%s, protocolo_central=%s,
+                               mensagem=%s, enviada_em=COALESCE(enviada_em, %s),
+                               enviada_por=COALESCE(enviada_por, %s)
+                           WHERE id=%s""",
                         (situacao, protocolo or None, mensagem or None,
                          agora if situacao in ("ENVIADA", "CONFIRMADA") else None,
                          usuario_nome() if situacao in ("ENVIADA", "CONFIRMADA")
                          else None, remessa_id))
-            con.execute("""UPDATE nt_remessa_itens SET situacao=?, mensagem=?
-                           WHERE remessa_id=?""",
+            banco(con).escrever("""UPDATE nt_remessa_itens SET situacao=%s, mensagem=%s
+                           WHERE remessa_id=%s""",
                         (situacao, mensagem or None, remessa_id))
         audit("NT_REMESSA_SITUACAO", "NT_REMESSA", remessa_id,
               {"situacao": situacao, "protocolo": protocolo})
@@ -6092,10 +6653,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return SR.recado_pendente_selo()
         servico = SERVICOS["SINAL"]
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            linha = con.execute(
-                "SELECT codigo_tj FROM cx_servicos WHERE codigo=?",
-                (int(servico),)).fetchone()
+            linha = banco(con).um(
+                "SELECT codigo_tj FROM cx_servicos WHERE codigo=%s",
+                (int(servico),))
         codigo_tj = (linha["codigo_tj"] if linha else None) or None
         if not codigo_tj:
             return (f" O ato foi lavrado SEM SELO: o serviço {servico} não tem "
@@ -6126,9 +6686,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not r.get("selado"):
             return f" O ato foi lavrado SEM SELO: {r.get('motivo') or ''}"
         with db.transaction() as con:
-            con.execute(
+            banco(con).escrever(
                 """UPDATE nt_sinais_reconhecimentos
-                      SET selo=?, servico_codigo=? WHERE id=?""",
+                      SET selo=%s, servico_codigo=%s WHERE id=%s""",
                 (r["numero"], servico, rid))
         return f" Selo {r['numero']}."
 
@@ -6155,16 +6715,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             metadados = (request.form.get("metadados") or "").strip() or None
             agora = datetime.now().isoformat(timespec="seconds")
             with db.transaction() as con:
-                cur = con.execute(
+                novo = int(banco(con).escrever(
                     """INSERT INTO nt_sinais_publicos
                        (titular, titular_norm, documento, data_abertura, origem,
                         origem_chave, metadados, observacao, ativo,
                         criado_em, criado_por)
-                       VALUES (?,?,?,?,?,?,?,?,1,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,1,%s,%s)
+                       RETURNING id""",
                     (titular, normalizar_nome_sinal(titular), documento,
                      data_abertura, origem, origem_chave, metadados,
-                     observacao, agora, usuario_nome()))
-                novo = int(cur.lastrowid)
+                     observacao, agora, usuario_nome()))[0]["id"])
             audit("NT_SINAL_ABERTO", "NT_SINAL", novo,
                   {"titular": titular, "origem": origem})
             # Anexa PDF no mesmo POST, se veio — ainda SEM selo.
@@ -6183,17 +6743,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if dig:
                 achados = q(
                     """SELECT * FROM nt_sinais_publicos
-                        WHERE titular_norm LIKE ? OR documento LIKE ?
-                        ORDER BY id DESC LIMIT ?""",
+                        WHERE titular_norm ILIKE %s OR documento ILIKE %s
+                        ORDER BY id DESC LIMIT %s""",
                     (like, f"%{dig}%", POR_PAGINA))
             else:
                 achados = q(
                     """SELECT * FROM nt_sinais_publicos
-                        WHERE titular_norm LIKE ?
-                        ORDER BY id DESC LIMIT ?""",
+                        WHERE titular_norm ILIKE %s
+                        ORDER BY id DESC LIMIT %s""",
                     (like, POR_PAGINA))
         resumo = q1("""SELECT COUNT(*) total,
-                       COALESCE(SUM(CASE WHEN caminho_pdf IS NOT NULL THEN 1 ELSE 0 END),0) com_pdf
+                       COALESCE(SUM(CASE WHEN caminho_pdf IS NOT NULL THEN 1 ELSE 0 END),0)::bigint com_pdf
                        FROM nt_sinais_publicos WHERE ativo=1""")
         return render_template(
             "notas_sinais.html", busca=busca, achados=achados, resumo=resumo,
@@ -6221,11 +6781,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         rel = str(alvo.relative_to(archive_root()))
         agora = datetime.now().isoformat(timespec="seconds")
         with db.transaction() as con:
-            con.execute(
+            banco(con).escrever(
                 """UPDATE nt_sinais_publicos
-                      SET caminho_pdf=?, nome_arquivo_pdf=?, sha256=?, bytes=?,
-                          atualizado_em=?, atualizado_por=?
-                    WHERE id=?""",
+                      SET caminho_pdf=%s, nome_arquivo_pdf=%s, sha256=%s, bytes=%s,
+                          atualizado_em=%s, atualizado_por=%s
+                    WHERE id=%s""",
                 (rel, nome, digest, len(dados), agora, usuario_nome(), sinal_id))
         audit("NT_SINAL_PDF", "NT_SINAL", sinal_id,
               {"bytes": len(dados), "sha256": digest[:12]})
@@ -6235,7 +6795,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
     def notas_sinal(sinal_id):
         """Ficha do sinal: editar metadados e anexar/substituir PDF. Sem selo."""
-        s = q1("SELECT * FROM nt_sinais_publicos WHERE id=?", (sinal_id,))
+        s = q1("SELECT * FROM nt_sinais_publicos WHERE id=%s", (sinal_id,))
         if not s:
             abort(404)
         if request.method == "POST":
@@ -6267,13 +6827,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             ativo = 0 if request.form.get("inativo") == "1" else 1
             agora = datetime.now().isoformat(timespec="seconds")
             with db.transaction() as con:
-                con.execute(
+                banco(con).escrever(
                     """UPDATE nt_sinais_publicos
-                          SET titular=?, titular_norm=?, documento=?,
-                              data_abertura=?, origem=?, origem_chave=?,
-                              metadados=?, observacao=?, ativo=?,
-                              atualizado_em=?, atualizado_por=?
-                        WHERE id=?""",
+                          SET titular=%s, titular_norm=%s, documento=%s,
+                              data_abertura=%s, origem=%s, origem_chave=%s,
+                              metadados=%s, observacao=%s, ativo=%s,
+                              atualizado_em=%s, atualizado_por=%s
+                        WHERE id=%s""",
                     (titular, normalizar_nome_sinal(titular), documento,
                      data_abertura, origem, origem_chave, metadados,
                      observacao, ativo, agora, usuario_nome(), sinal_id))
@@ -6282,7 +6842,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("notas_sinal", sinal_id=sinal_id))
 
         recs = q("""SELECT * FROM nt_sinais_reconhecimentos
-                     WHERE sinal_id=? ORDER BY id DESC LIMIT 40""", (sinal_id,))
+                     WHERE sinal_id=%s ORDER BY id DESC LIMIT 40""", (sinal_id,))
         return render_template(
             "notas_sinal.html", s=s, reconhecimentos=recs, origens=ORIGENS_SINAL)
 
@@ -6291,7 +6851,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def notas_sinal_pdf(sinal_id):
         """Serve o PDF anexado — o da central, sem redesenhar."""
         from flask import send_file
-        s = q1("SELECT * FROM nt_sinais_publicos WHERE id=?", (sinal_id,))
+        s = q1("SELECT * FROM nt_sinais_publicos WHERE id=%s", (sinal_id,))
         if not s:
             abort(404)
         caminho = _caminho_absoluto_pdf(s["caminho_pdf"])
@@ -6310,12 +6870,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if somente_leitura():
                 flash("Perfil de auditoria não reconhece.", "danger")
                 return redirect(url_for("notas_sinal_reconhecimento"))
-            sid = request.form.get("sinal_id")
-            if not str(sid or "").isdigit():
+            # O «²» e os 5.000 dígitos passavam pelo `isdigit()` e caíam no
+            # `int()`; agora são o mesmo «escolha» do campo vazio (LD13).
+            sid = numero_digitado(request.form.get("sinal_id"))
+            if sid is None:
                 flash("Escolha o sinal público.", "danger")
                 return redirect(url_for("notas_sinal_reconhecimento"))
-            sid = int(sid)
-            s = q1("SELECT * FROM nt_sinais_publicos WHERE id=? AND ativo=1", (sid,))
+            s = q1("SELECT * FROM nt_sinais_publicos WHERE id=%s AND ativo=1", (sid,))
             if not s:
                 flash("Sinal não encontrado ou inativo.", "danger")
                 return redirect(url_for("notas_sinal_reconhecimento"))
@@ -6324,25 +6885,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return redirect(url_for("notas_sinal", sinal_id=sid))
             doc_desc = (request.form.get("documento_descricao") or "").strip() or None
             agora = datetime.now()
-            texto = texto_reconhecimento_sinal(s["titular"])
+            try:
+                texto = texto_reconhecimento_sinal(s["titular"], con=db.connect)
+            except MODELOS.ModeloError as erro:
+                flash(str(erro), "danger")
+                return redirect(url_for("notas_sinal_reconhecimento"))
             with db.transaction() as con:
-                cur = con.execute(
+                rid = int(banco(con).escrever(
                     """INSERT INTO nt_sinais_reconhecimentos
                        (sinal_id, data, hora, servico_codigo, documento_descricao,
                         texto, oficial, oficial_funcao, criado_em, criado_por)
-                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                       RETURNING id""",
                     (sid, agora.date().isoformat(),
                      agora.strftime("%H:%M:%S"), SERVICOS["SINAL"], doc_desc,
                      texto, usuario_nome(), usuario_funcao(),
-                     agora.isoformat(timespec="seconds"), usuario_nome()))
-                rid = int(cur.lastrowid)
+                     agora.isoformat(timespec="seconds"), usuario_nome()))[0]["id"])
             selado = selar_reconhecimento_sinal(
                 rid, titular=s["titular"], documento=s["documento"])
             motivo_selo = motivo_da_falha_do_selo(selado)
             if motivo_selo:
                 with db.transaction() as con:
-                    con.execute("DELETE FROM nt_sinais_reconhecimentos "
-                                "WHERE id=?", (rid,))
+                    banco(con).escrever("DELETE FROM nt_sinais_reconhecimentos "
+                                "WHERE id=%s", (rid,))
                 audit("NT_SINAL_RECONHECIMENTO_NAO_LAVRADO_SELO_FALHOU",
                       "NT_SINAL_REC", rid,
                       {"sinal_id": sid, "servico": SERVICOS["SINAL"],
@@ -6367,7 +6932,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             like = f"%{normalizar_nome_sinal(busca)}%"
             sinais = q(
                 """SELECT * FROM nt_sinais_publicos
-                    WHERE ativo=1 AND titular_norm LIKE ?
+                    WHERE ativo=1 AND titular_norm ILIKE %s
                     ORDER BY id DESC LIMIT 20""", (like,))
         lista = q("""SELECT r.*, s.titular, s.documento
                        FROM nt_sinais_reconhecimentos r
@@ -6385,7 +6950,60 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         r = q1("""SELECT r.*, s.titular, s.documento, s.caminho_pdf, s.id AS sinal_id
                     FROM nt_sinais_reconhecimentos r
                     JOIN nt_sinais_publicos s ON s.id = r.sinal_id
-                   WHERE r.id=?""", (reconhecimento_id,))
+                   WHERE r.id=%s""", (reconhecimento_id,))
         if not r:
             abort(404)
         return render_template("notas_sinal_reconhecimento_ver.html", r=r)
+
+    @app.route("/notas/sinais/reconhecimento/<int:reconhecimento_id>/etiqueta",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def notas_sinal_reconhecimento_etiqueta(reconhecimento_id):
+        """A etiqueta do reconhecimento de sinal público — LD02, 21/10/2026.
+
+        O ATO SELAVA E NÃO TINHA PAPEL: a ficha só o mostrava na tela, e o
+        documento saía do balcão sem o selo nele. O selo «deverá constar
+        expressamente no corpo do ato físico» (CN-MA art. 131), e o sinal
+        público se reconhece como firma (art. 874). A tira é a MESMA do
+        reconhecimento de firma — a mesma impressora, as mesmas medidas, a
+        mesma régua dos valores —, e conta a impressão pelo mesmo motivo. Por
+        POST com o token (M8 do LS01), como as outras duas.
+        """
+        r = q1("SELECT * FROM nt_sinais_reconhecimentos WHERE id=%s",
+               (reconhecimento_id,))
+        if not r:
+            abort(404)
+        if r["cancelado"]:
+            flash("Este reconhecimento de sinal está cancelado — não se imprime "
+                  "etiqueta de ato cancelado.", "danger")
+            return redirect(url_for("notas_sinal_reconhecimento_ver",
+                                    reconhecimento_id=reconhecimento_id))
+        with db.transaction() as con:
+            banco(con).escrever("""UPDATE nt_sinais_reconhecimentos
+                           SET etiqueta_impressa_em=%s,
+                               etiqueta_impressoes=COALESCE(etiqueta_impressoes,0)+1
+                           WHERE id=%s""", (db.now(), reconhecimento_id))
+        vez = (r["etiqueta_impressoes"] or 0) + 1
+        audit("NT_ETIQUETA_IMPRESSA", "NT_SINAL_REC", reconhecimento_id,
+              {"vez": vez, "selo": r["selo"]})
+        dados = dict(r)
+        dados["quantidade"] = 1
+        e = dados_da_etiqueta(dados)
+        return render_template("notas_etiqueta.html", e=e, etiquetas=[e],
+                               m=medidas_da_etiqueta(), r=dados, vez=vez,
+                               voltar=url_for("notas_sinal_reconhecimento_ver",
+                                              reconhecimento_id=reconhecimento_id))
+
+
+def __getattr__(nome: str):
+    """Os nomes antigos do texto de fábrica, lidos da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06A (19/10/2026) e mora em `modelos_padrao/`.
+    Quem ainda importa o nome antigo recebe o padrão da base — o MESMO que o
+    papel imprime, e não uma cópia que ficou para trás. Nome que não é de papel
+    continua sendo `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)

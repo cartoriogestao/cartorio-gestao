@@ -11,6 +11,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import centrais_http as HTTP  # noqa: E402
 import centrais_log as LOG  # noqa: E402
@@ -19,7 +21,7 @@ import centrais_schema as SCH  # noqa: E402
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     SCH.init_centrais_schema(c)
     yield c
@@ -101,5 +103,5 @@ def test_ultimos_filtra_e_ordena(con):
 
 
 def test_ultimos_sem_tabela_e_lista_vazia():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     assert LOG.ultimos(c) == []

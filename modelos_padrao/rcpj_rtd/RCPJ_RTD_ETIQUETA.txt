@@ -1,0 +1,28 @@
+      <div class="coluna">
+        <div>
+          <div class="cartorio">{{ e.cartorio }}</div>
+          <div class="onde">
+            {{ e.tipo|capitalize }} — Livro {{ e.serie }}{% if e.livro %} n. {{ e.livro }}{% endif %},
+            fl. {{ e.folha }}, sob o n. {{ e.numero }}
+          </div>
+          <div>{{ e.data }}{% if e.protocolo %} · protocolo n. {{ e.protocolo }}{% endif %}</div>
+          {% if e.natureza %}<div>{{ e.natureza }}</div>{% endif %}
+          {% if e.requerente %}<div>{{ e.requerente }}</div>{% endif %}
+        </div>
+        <div class="rodape">
+          {# O NÚMERO CONTINUA IMPRESSO, MESMO COM O QR AO LADO: QR borrado na
+             térmica, etiqueta amassada, câmera de celular velho — o número
+             legível é o que sobra quando o QR falha. #}
+          {% if e.selo %}<div class="selo">{{ e.selo }}</div>{% endif %}
+          {% if e.valores %}<div class="valores">{{ e.valores }}</div>{% endif %}
+          <div class="quem">
+            {% if e.oficial %}<div>{{ e.oficial }}{% if e.funcao %} — {{ e.funcao }}{% endif %}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% if e.qr %}
+      <div class="qr">
+        {{ e.qr|safe }}
+        <div class="qr-rotulo">confira o selo<br>selo.tjma.jus.br</div>
+      </div>
+      {% endif %}

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import collections
 import json
-import sqlite3
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -18,6 +17,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ))
 
+import banco_pg  # noqa: E402
 import protesto_arquivo as PA  # noqa: E402
 import protesto_remessa as PR  # noqa: E402
 
@@ -131,8 +131,11 @@ def analisar(caminho: Path, banco: Path) -> dict:
     # Ensaio de compatibilidade: a conversão é apenas em memória. Não grava
     # título, selo ou confirmação, nem substitui o adaptador de produção.
     amostra = "\n".join(conteudo_fixo)
+    # PELA PORTA DO BANCO: `protesto_remessa` já é nativo e recusa o `sqlite3`
+    # cru, e fora do sistema ninguém instala o desvio do `sqlite3.connect` — a
+    # conferência caía sempre no `except` abaixo, com BancoNaoEPostgres.
     try:
-        with sqlite3.connect(f"file:{banco}?mode=ro", uri=True, timeout=2) as con:
+        with banco_pg.conectar(f"file:{banco}?mode=ro", uri=True, timeout=2) as con:
             conferencia = PR.conferir(con, amostra)
     except Exception as erro:
         resumo["conferencia_existente"] = {"ok": False, "erro": f"{type(erro).__name__}: {erro}"[:300]}

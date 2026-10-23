@@ -1,0 +1,1588 @@
+{
+ "_como": "Gerado ANTES do LF06C, na árvore do commit 2c41e90 exportada intocada, por tests/fixtures/modelos_ouro/ouro_lf06c.py gerar habilitacao. Não regerar: depois da mudança o texto mora na pasta dos padrões, e regerar faria o teste comparar a pasta com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "certidao.celebrada.sv": {
+   "ok": {
+    "content_xml_sha256": "36edfbe0026e42c129c1f6e64ab4665a2b9f45a766509c631063d8cd3adf5322",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "cadb19e0e938f9d0cd8170f42e3d8a4865ed8070f4dce5134da724dfe80c0271",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.celebrada.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "1c8496714622511acd6e273ff6a718cd90230c88d7c306fb3ae403e6bc0f0d68",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "7960bd05888d2e0be5fae4e5be98714bc8a826af0bec1eec4d8078d5565905e0",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.com_selo.sv": {
+   "ok": {
+    "content_xml_sha256": "f039868e0c0a8076a02c60baa0db7d8df646277b394ca43e298e20d3ac33e880",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "2b36f5e825cd8040e3fb52ee37fb4e9dae6cd5309b3f1ac76c04d585c8e84207",
+      "imagens": {
+       "qr-hab-SeloHABCAS000000TESTE0000000001ETIQUETADEEXEMP.png": [
+        "19588413d4e933d101fcbc5db773c29a345bb2d41ede61a684c5909b34eb7d6b",
+        "image/png"
+       ]
+      },
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.com_selo.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "3439e62f455878e00cbd9a270274fc4fd50df3fc3cc23c40cf29ab15d95096bf",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "80a43c6451e937b02214c66be7c53da16c7b4c0e1e9dfaf3ca2cfe4a9e64f101",
+      "imagens": {
+       "qr-hab-SeloHABCAS000000TESTE0000000001ETIQUETADEEXEMP.png": [
+        "19588413d4e933d101fcbc5db773c29a345bb2d41ede61a684c5909b34eb7d6b",
+        "image/png"
+       ]
+      },
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.com_selo_sem_etiqueta.sv": {
+   "ok": {
+    "content_xml_sha256": "9a210daabbff9b84a0a528b7a89bd51ad8e5d143a718ab263e2317362a610b05",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "d7832074d1bbfa16420f4c9c71ea7498e6ddaf12a0ebe6bd73b43fe10179a834",
+      "imagens": {
+       "qr-hab-HABCAS000000TESTE0000000001.png": [
+        "fc02c3da5689847a5551945bf5be4f7de1aa16a23b407ef8b672d10810b4bf94",
+        "image/png"
+       ]
+      },
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.com_selo_sem_etiqueta.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "3c1b161a65fed929f05f6fb9ce0c684bf9ff5cb4359ba80aa8876a8190463590",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "a81b2d98e8b83b3505e689c24ca1660246061b11b54972c02d85199032ddfb61",
+      "imagens": {
+       "qr-hab-HABCAS000000TESTE0000000001.png": [
+        "fc02c3da5689847a5551945bf5be4f7de1aa16a23b407ef8b672d10810b4bf94",
+        "image/png"
+       ]
+      },
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.em_curso_com_oposicao.sv": {
+   "ok": {
+    "content_xml_sha256": "ee90f5fa7785023c63ff8500baafcf86813508fa29cdc1656b079c21d7ed8827",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo de oposição</b></td><td>até 06/10/2026 — ainda em curso na data desta certidão</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 05/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "deb262c79c2ccb0787c380448c3cce8c286a5283947b8c86f5ffc2adaa658696",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.em_curso_com_oposicao.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "bcd223a05b5de274cfb0a9f077df8b20ad3b6d0a73dc5e14f41f70677cbce374",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo de oposição</b></td><td>até 06/10/2026 — ainda em curso na data desta certidão</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 05/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "ff1e13235aea5648e91e3a342738c577fce63899b1e947e0e81c6763ab998674",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.em_curso_sem_oposicao.sv": {
+   "ok": {
+    "content_xml_sha256": "3378b53ad4b5e80d11c1dd4b0ddb5645a89fbf9163cff366aa224c5dc4ec9077",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo de oposição</b></td><td>até 06/10/2026 — ainda em curso na data desta certidão; sem oposição até então</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 05/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "c27956dfcb53b7adf8908c9bcb8df2d42b92713d737e15b2560547a247d29fbc",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.em_curso_sem_oposicao.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "1c79d3dbf622a15ec7eb4e047f2cc3c4af93f9ef4a1ccb0222002e2e0bec958d",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo de oposição</b></td><td>até 06/10/2026 — ainda em curso na data desta certidão; sem oposição até então</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 05/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "c11b6693c87df773b0a4ac36fc3f035b51ce7c041abf3fb988a70db8037c3988",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.encerrado_com_oposicao.sv": {
+   "ok": {
+    "content_xml_sha256": "00649fa1e86f1e88440e3cd4c61d46c9222d286234f18f03eeb98f2d9c27e798",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "3091bb969d454a3ebad790284b437ec519f7d3160c1984fd67d9a08ea7fe24b4",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.encerrado_com_oposicao.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "dd3f06083c0a22d283ca2edbe0e37eca3fb57d7de3f2d74d9f4562149fe09729",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "08f5bb78bc47617b591ae9f2c44c0fad48f5f25f13e00a6914f0b3827f5f9d67",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.encerrado_sem_oposicao.sv": {
+   "ok": {
+    "content_xml_sha256": "36edfbe0026e42c129c1f6e64ab4665a2b9f45a766509c631063d8cd3adf5322",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "cadb19e0e938f9d0cd8170f42e3d8a4865ed8070f4dce5134da724dfe80c0271",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.encerrado_sem_oposicao.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "1c8496714622511acd6e273ff6a718cd90230c88d7c306fb3ae403e6bc0f0d68",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "7960bd05888d2e0be5fae4e5be98714bc8a826af0bec1eec4d8078d5565905e0",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.expedicao_vazia.sv": {
+   "ok": {
+    "content_xml_sha256": "a5deef5224c30b70ea44a2b1ceb1842f9fe9d0416484f43c5185a20287e7ded5",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo de oposição</b></td><td>até 06/10/2026 — ainda em curso na data desta certidão; sem oposição até então</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, —.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "48026b1b5acf1cc99be5591e6f1a07ceb98502ddab79b7c928f713f7e362aa31",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.expedicao_vazia.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "1ac0597baffe66bef4a62589e98a4b482cf8479b267de4dfb0ff29c0ef73315b",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo de oposição</b></td><td>até 06/10/2026 — ainda em curso na data desta certidão; sem oposição até então</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, —.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "314009ddf47853df3f8378d5607bf6eea9c97a9d252b2300cc60993886a6957c",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.expedicao_vazia_com_oposicao.sv": {
+   "ok": {
+    "content_xml_sha256": "d6eb69b2ff3240915b3d515745bf7db5e92b16d83b926c9b8770febce116a724",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo de oposição</b></td><td>até 06/10/2026 — ainda em curso na data desta certidão</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, —.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "d48e72bbc8c4bd14b1911de13d98622e30e8f972fd3da15165e30feb2fc6e567",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.expedicao_vazia_com_oposicao.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "ff8c1c3df1dba1ebf302f41bc106aea8240402989a3aa830179374f78556b95e",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo de oposição</b></td><td>até 06/10/2026 — ainda em curso na data desta certidão</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, —.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "5fbb59dbb20f48fff9af1c3d2dc05faf365cdcff243c3cabac6222054678d92c",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.nao_expedida.sv": {
+   "ok": {
+    "destino": "/rcpn/habilitacoes/1",
+    "disposicao": null,
+    "htmls": [],
+    "mimetype": "text/html",
+    "odts": [],
+    "recados": [
+     [
+      "danger",
+      "A habilitação ainda não foi expedida."
+     ]
+    ],
+    "status": 302
+   }
+  },
+  "certidao.nao_expedida.sv_vazia": {
+   "ok": {
+    "destino": "/rcpn/habilitacoes/1",
+    "disposicao": null,
+    "htmls": [],
+    "mimetype": "text/html",
+    "odts": [],
+    "recados": [
+     [
+      "danger",
+      "A habilitação ainda não foi expedida."
+     ]
+    ],
+    "status": 302
+   }
+  },
+  "certidao.no_dia_do_prazo.sv": {
+   "ok": {
+    "content_xml_sha256": "8f53a9883ea508528f5e9a3f91c1cfeda7d73cd0e8a6bc7602757c27cfe3fb3b",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "87f359305de064a7ef2f52880479069a20fbdd5dd99932270399ef600d8bb409",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.no_dia_do_prazo.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "90fd13ba2d10a796acec4b49290f6e8c576a0c55de8794461e60abe51c63b745",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "aa6af2083a8a99a0f2d2382198d0215ceaca3a398ec6a518435187890a74a4b1",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.no_dia_do_prazo_com_hora.sv": {
+   "ok": {
+    "content_xml_sha256": "8f53a9883ea508528f5e9a3f91c1cfeda7d73cd0e8a6bc7602757c27cfe3fb3b",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "87f359305de064a7ef2f52880479069a20fbdd5dd99932270399ef600d8bb409",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.no_dia_do_prazo_com_hora.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "90fd13ba2d10a796acec4b49290f6e8c576a0c55de8794461e60abe51c63b745",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "aa6af2083a8a99a0f2d2382198d0215ceaca3a398ec6a518435187890a74a4b1",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.no_dia_do_prazo_com_oposicao.sv": {
+   "ok": {
+    "content_xml_sha256": "c3090b36915b0ba9881323e0d136093e47e0fa0535d91701978937f920f727ce",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "b6e76ce89322f3ed445f4c03dd19c5cd7781abff9d075aefc3824e37a620221d",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.no_dia_do_prazo_com_oposicao.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "aee0077e51f2c360c07ecaab46236aa2065900292c240557231d9148f9432fec",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "8a50b0f19955f7b4fbfe0485955ffd928b2ca93c66910b27fffeed64efc7a33d",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.oposicao_em_texto_vazio.sv": {
+   "ok": {
+    "content_xml_sha256": "36edfbe0026e42c129c1f6e64ab4665a2b9f45a766509c631063d8cd3adf5322",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "cadb19e0e938f9d0cd8170f42e3d8a4865ed8070f4dce5134da724dfe80c0271",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.oposicao_em_texto_vazio.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "1c8496714622511acd6e273ff6a718cd90230c88d7c306fb3ae403e6bc0f0d68",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "7960bd05888d2e0be5fae4e5be98714bc8a826af0bec1eec4d8078d5565905e0",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.prazo_e_expedicao_vazios.sv": {
+   "ok": {
+    "content_xml_sha256": "0868fd6259f61c5b8c0d62a59895ec43aae9132c3bae0d537c82a32cbbe15c1e",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>— — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, —.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "4d1fee4d94621da5e96fcce6da62031ae4ba81befe1f4c06dfd84003be795ac1",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.prazo_e_expedicao_vazios.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "f4f9b73100cbec66f4f16e6ee56a7ba5a1feede9c0237ffcc177e25c5e23d7a9",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>— — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, —.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "c90901817c3d716aff8bfc133c4ec2bf70f5106542cb23049479998b841d8b49",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.prazo_vazio.sv": {
+   "ok": {
+    "content_xml_sha256": "3a0aa438020ab9bcf42ee7b685f734d418e34f05af4cedf97b76cf7c872cc51f",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>— — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "4b5a381c22ca767b7cfd88dcda121fc6b5dd1b540d35ffdf598b1aa3a02e5db3",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.prazo_vazio.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "55064a48c5634e7efe9f20439f3bb0fcfa850d2f518cda255fa2cde7d5ebdff8",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>— — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "8a1389e954d3d1b72d8bd6193dfb98cf972b5ffb436b16e96b636b88b9ab29d5",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.prazo_vazio_com_oposicao.sv": {
+   "ok": {
+    "content_xml_sha256": "3af495505dc0df2c88e1d4ba9f27350495cbc5dae063e1003be0479d9721ed2e",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>—</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "ee28354edb2bdbaae31f25eb236b7d37e233e8f513a7d8a4c9d83f67291788a6",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.prazo_vazio_com_oposicao.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "50735f81d8d31f4a033bcb020ea9cc1c2a0a345b1d2df72441a0948cf2fe85a9",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>—</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "bfa50e9e585c97dc48bbca70e41f374edf1ac3780c2588289543af5237efa862",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.quem_assinou_vazio.sv": {
+   "ok": {
+    "content_xml_sha256": "627f5e1be240aa7a94f3cefbf6d4dd17f1e6ca8dbba170d51fe7a77f01399811",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">MARIA DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "baaee480344d5d8d1768445c43685ca1c3593c2fbdae3c275f9c29e98b0cbf21",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.quem_assinou_vazio.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "f64932387204da7ed1d544bda91fbd099635046c0a97c0690822fdf647f78a7f",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\"></p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "6ffb9534f5e5f5bd265a7c00eba9ad2b1dfb1719484720a50bd6f1d38887797e",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_comunhao_parcial.sv": {
+   "ok": {
+    "content_xml_sha256": "36edfbe0026e42c129c1f6e64ab4665a2b9f45a766509c631063d8cd3adf5322",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "cadb19e0e938f9d0cd8170f42e3d8a4865ed8070f4dce5134da724dfe80c0271",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_comunhao_parcial.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "1c8496714622511acd6e273ff6a718cd90230c88d7c306fb3ae403e6bc0f0d68",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "7960bd05888d2e0be5fae4e5be98714bc8a826af0bec1eec4d8078d5565905e0",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_comunhao_universal.sv": {
+   "ok": {
+    "content_xml_sha256": "133a7958a80c16db53565a622309c803953396cdac03fad338e01c03fb029bb4",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão universal de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "12acca24392aed82aa0511e1b5a8773071313854ba6e2bbd85bb0d6e6a89210b",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_comunhao_universal.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "cd43efc4a9518cc1af458a782746a0451fe1cd30c4ca8dbc017817b884e4fc2a",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão universal de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "b0b2cbd0dd3812d6f9c72175a7e1bedd81c5e5ea21f2d31b1cabdb06739309f2",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_desconhecido.sv": {
+   "ok": {
+    "content_xml_sha256": "de16797940f4547c4f0f6ca37d381b8df15a4009e7fc55686d5befc9fba29df1",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>—</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "8016e36514fb6da65a2b2cae71545c35adc76ff7d5dffb5b4a6f2f634940daaa",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_desconhecido.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "b1d9cc7f2d7450cbe9ca7215e2bb50fbd6b3dd4e3412f5d5d163534054400e97",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>—</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "840904b0abd7373ad6407b4b287e6f34096fc89af441c935d738530dfd54a4e4",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_nulo.sv": {
+   "ok": {
+    "content_xml_sha256": "de16797940f4547c4f0f6ca37d381b8df15a4009e7fc55686d5befc9fba29df1",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>—</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "8016e36514fb6da65a2b2cae71545c35adc76ff7d5dffb5b4a6f2f634940daaa",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_nulo.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "b1d9cc7f2d7450cbe9ca7215e2bb50fbd6b3dd4e3412f5d5d163534054400e97",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>—</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "840904b0abd7373ad6407b4b287e6f34096fc89af441c935d738530dfd54a4e4",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_participacao_final.sv": {
+   "ok": {
+    "content_xml_sha256": "1edd2f4bcbd60f2d010ab6c82b147d33e5b697ca1fd0e7fdeb053429fb278ddc",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Participação final nos aquestos</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "5ac824b382243b1b5ef0ee7689c903a13f286323f9f07f3468121d4dbc104969",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_participacao_final.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "d9f94c09759f92f6a1da41f94f02044e4e0cef5ecd454e7b3b051c6567a36ad7",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Participação final nos aquestos</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "20bf7cf42c4e477ab115ced77ad11f532b6ddf61af7a016a65b51af657d0c60f",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_separacao_obrigatoria.sv": {
+   "ok": {
+    "content_xml_sha256": "f5031bbd5226bc633f43f643c927855f7d198ae227c0419faecc5c3bbe5510e6",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Separação obrigatória de bens (CC art. 1.641)</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "946298eceb484819359e5eadb8dda78795c76357f4507b019731e634b25c802e",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_separacao_obrigatoria.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "3e81f4e42291b123aa1f6201b3271fca538025bc506e54fa1ed81895fc39ba93",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Separação obrigatória de bens (CC art. 1.641)</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "8ad65beba3040add32c17ffdfa730b0a624e592f4b91d407575a41f4dc6c33f1",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_separacao_total.sv": {
+   "ok": {
+    "content_xml_sha256": "3753f2b717c42375b9f6ad45e9612d954049ef8884280a02ef5916d39a045180",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Separação total de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "884d836a516bf32e7a5d08da080a55fcde1f005008199d0babb07a517aa6597a",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_separacao_total.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "14fcfd7016b4f2f2050c09f95e6dcfc6690915834ed4fede713b109e281da944",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Separação total de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "dd6897329165241b9cbd3448dea48f36699ef3bfb5926405fbb13079b19b9632",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_vazio.sv": {
+   "ok": {
+    "content_xml_sha256": "de16797940f4547c4f0f6ca37d381b8df15a4009e7fc55686d5befc9fba29df1",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>—</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "8016e36514fb6da65a2b2cae71545c35adc76ff7d5dffb5b4a6f2f634940daaa",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.regime_vazio.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "b1d9cc7f2d7450cbe9ca7215e2bb50fbd6b3dd4e3412f5d5d163534054400e97",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>—</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "840904b0abd7373ad6407b4b287e6f34096fc89af441c935d738530dfd54a4e4",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.sem_quem_assinou.sv": {
+   "ok": {
+    "content_xml_sha256": "627f5e1be240aa7a94f3cefbf6d4dd17f1e6ca8dbba170d51fe7a77f01399811",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">MARIA DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "baaee480344d5d8d1768445c43685ca1c3593c2fbdae3c275f9c29e98b0cbf21",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.sem_quem_assinou.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "f64932387204da7ed1d544bda91fbd099635046c0a97c0690822fdf647f78a7f",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\"></p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "6ffb9534f5e5f5bd265a7c00eba9ad2b1dfb1719484720a50bd6f1d38887797e",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.sinais.sv": {
+   "ok": {
+    "content_xml_sha256": "7cc3cc86ea5fbd7feaaa3bb3bdf9a45e34f1d22b0f69c47b3fea3ead5770f1bd",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO D'EXEMPLO {nubente2_nome} {0}</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO & <i>CIA</i> {</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "95201741790bded21246a152acbe1741b3d22d3dba317a6ee467827e9664cca9",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.sinais.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "186cd1682c58f41a4a3889acce757faa7f00554e11104ccef27ea794962445d8",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO D'EXEMPLO {nubente2_nome} {0}</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO & <i>CIA</i> {</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até 05/01/2027</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "739bb09bb58728c9d1d715d7ebc7171f9db1c08fc9d8bd33902596f822f02bd4",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.validade_vazia.sv": {
+   "ok": {
+    "content_xml_sha256": "bdc80df4d4acbb974c4e58a034ddfadf728ff1673d02d189a4ce9482105f3940",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até —</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>Cidade Exemplo/MA, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "17cdc4f0f5f5053ebcd2b59fe993faf85982d1a92ad3c65fe0b9dbd91d0977e6",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "certidao.validade_vazia.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "7019785da87853113b17557c540f98bbcfd5c72ab37c009c231356ef377c2a55",
+    "destino": null,
+    "disposicao": "attachment; filename=\"habilitacao-3-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>CERTIDÃO DE HABILITAÇÃO PARA CASAMENTO</b></p><p align=\"center\"><b>Nº 3/2026 — Habilitação 7/2026</b></p><p></p><p>CERTIFICO que, cumpridas as formalidades legais e verificada a inexistência de fato obstativo, estão <b>HABILITADOS</b> a casar-se, na forma do artigo 1.531 do Código Civil:</p><table border=\"1\" cols=\"4.6cm,11.4cm\"><tr><td><b>Nubente</b></td><td>JOÃO DE EXEMPLO</td></tr><tr><td><b>Nubente</b></td><td>MARIA DE EXEMPLO</td></tr><tr><td><b>Regime de bens</b></td><td>Comunhão parcial de bens</td></tr><tr><td><b>Edital publicado em</b></td><td>01/10/2026</td></tr><tr><td><b>Prazo encerrado em</b></td><td>06/10/2026 — sem oposição</td></tr></table><p></p><p><b>Esta habilitação é válida até —</b> — noventa dias contados da data em que foi extraída (Código Civil, artigo 1.532). Decorrido esse prazo sem que o casamento se realize, a habilitação perde a eficácia e o processo se refaz.</p><p></p><p>, 07/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">JOÃO DE EXEMPLO</p>",
+     "<p></p><p class=\"small\">Conferência: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "878e735fe64b862816cc8853a5d951982233c472011d6e34de1e2ab0c2fc02b8",
+      "imagens": {},
+      "titulo": "Certidão de habilitação 3/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.base.sv": {
+   "ok": {
+    "content_xml_sha256": "ee04baa4d2c3baeb4561166f61d97915e731e67d481abdf625168b49740790f9",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-7-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 7/2026</b></p><p></p><p>Faço saber que pretendem casar-se JOÃO DE EXEMPLO e MARIA DE EXEMPLO. Cidade Exemplo/MA, 01/10/2026.</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">MARIA DE EXEMPLO</p><p align=\"center\">Oficiala de Registro Civil</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "e07fdfeb0ee7cfaf5157cd4575f246a083d6d65534306b217b977b618d1d20b1",
+      "imagens": {},
+      "titulo": "Edital de proclamas 7/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.base.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "5da04463b2a1c76c850a1f6c28ab6babc0f6223847dba6ecebba2364b8a20b86",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-7-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 7/2026</b></p><p></p><p>Faço saber que pretendem casar-se JOÃO DE EXEMPLO e MARIA DE EXEMPLO. Cidade Exemplo/MA, 01/10/2026.</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\"></p><p align=\"center\">Tabelião e Oficial de Registro</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "f82579cc45a10e016549127977a200fe9f2b013cac4d33a3003a7f9d161af28c",
+      "imagens": {},
+      "titulo": "Edital de proclamas 7/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.datas_com_hora.sv": {
+   "ok": {
+    "content_xml_sha256": "ee04baa4d2c3baeb4561166f61d97915e731e67d481abdf625168b49740790f9",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-7-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 7/2026</b></p><p></p><p>Faço saber que pretendem casar-se JOÃO DE EXEMPLO e MARIA DE EXEMPLO. Cidade Exemplo/MA, 01/10/2026.</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">MARIA DE EXEMPLO</p><p align=\"center\">Oficiala de Registro Civil</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "e07fdfeb0ee7cfaf5157cd4575f246a083d6d65534306b217b977b618d1d20b1",
+      "imagens": {},
+      "titulo": "Edital de proclamas 7/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.datas_com_hora.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "5da04463b2a1c76c850a1f6c28ab6babc0f6223847dba6ecebba2364b8a20b86",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-7-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 7/2026</b></p><p></p><p>Faço saber que pretendem casar-se JOÃO DE EXEMPLO e MARIA DE EXEMPLO. Cidade Exemplo/MA, 01/10/2026.</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\"></p><p align=\"center\">Tabelião e Oficial de Registro</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "f82579cc45a10e016549127977a200fe9f2b013cac4d33a3003a7f9d161af28c",
+      "imagens": {},
+      "titulo": "Edital de proclamas 7/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.nao_publicado.sv": {
+   "ok": {
+    "destino": "/rcpn/habilitacoes/1",
+    "disposicao": null,
+    "htmls": [],
+    "mimetype": "text/html",
+    "odts": [],
+    "recados": [
+     [
+      "danger",
+      "O edital ainda não foi publicado."
+     ]
+    ],
+    "status": 302
+   }
+  },
+  "edital.nao_publicado.sv_vazia": {
+   "ok": {
+    "destino": "/rcpn/habilitacoes/1",
+    "disposicao": null,
+    "htmls": [],
+    "mimetype": "text/html",
+    "odts": [],
+    "recados": [
+     [
+      "danger",
+      "O edital ainda não foi publicado."
+     ]
+    ],
+    "status": 302
+   }
+  },
+  "edital.numero_grande.sv": {
+   "ok": {
+    "content_xml_sha256": "3a2fe8c22bdebbcfa4723a7375bf9d5da97b946987e2b35044d6ac7581df93a1",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-1234-2027.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 1234/2027</b></p><p></p><p>Faço saber que pretendem casar-se JOÃO DE EXEMPLO e MARIA DE EXEMPLO. Cidade Exemplo/MA, 01/10/2026.</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">MARIA DE EXEMPLO</p><p align=\"center\">Oficiala de Registro Civil</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "16ecc00b0fc33dc5960e7c37f07dcdf6e9ef27fd1d9c76ca6234b42d5ce9703f",
+      "imagens": {},
+      "titulo": "Edital de proclamas 1234/2027"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.numero_grande.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "bb2c8b9393fa4ea41abba6b85b74f10f05a564fc5e99337122e3859caf9247ad",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-1234-2027.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 1234/2027</b></p><p></p><p>Faço saber que pretendem casar-se JOÃO DE EXEMPLO e MARIA DE EXEMPLO. Cidade Exemplo/MA, 01/10/2026.</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\"></p><p align=\"center\">Tabelião e Oficial de Registro</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "42a2d7a2b5351df055e69e44470d575a9c79491d675ea1edf25ab34a06bfc842",
+      "imagens": {},
+      "titulo": "Edital de proclamas 1234/2027"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.prazo_vazio.sv": {
+   "ok": {
+    "content_xml_sha256": "50160f9ea119d6a5d6da1ba1d2a7e534698065af608173c51a5a3469dc1bb417",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-7-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 7/2026</b></p><p></p><p>Faço saber que pretendem casar-se JOÃO DE EXEMPLO e MARIA DE EXEMPLO. Cidade Exemplo/MA, 01/10/2026.</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até —.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">MARIA DE EXEMPLO</p><p align=\"center\">Oficiala de Registro Civil</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "49effd6afbec2e0433276144b074a8240f6c3a55e2d7b43f1cfbfabde6a8d076",
+      "imagens": {},
+      "titulo": "Edital de proclamas 7/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.prazo_vazio.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "483f1f6d515039bdf85b771262510ed9fdedf46a39997a3f23ed83ecc74823a1",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-7-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 7/2026</b></p><p></p><p>Faço saber que pretendem casar-se JOÃO DE EXEMPLO e MARIA DE EXEMPLO. Cidade Exemplo/MA, 01/10/2026.</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até —.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\"></p><p align=\"center\">Tabelião e Oficial de Registro</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "475633fb0b477ec3ca8bf33de6b80eeee9e7062e20e107a8db9fd904ec4b1a4e",
+      "imagens": {},
+      "titulo": "Edital de proclamas 7/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.teor_com_sinais.sv": {
+   "ok": {
+    "content_xml_sha256": "60d703340c0972592016a1dcc1f4d7de7bea14cdccd4afda16c467d32b8946df",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-7-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 7/2026</b></p><p></p><p>TEOR COM {teor} {CHAVES} {0} E <i>MARCA</i> & ASPAS' — {</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">MARIA DE EXEMPLO</p><p align=\"center\">Oficiala de Registro Civil</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "931c89968cd409f2b828657e3b34b4f7c810be7f528bd9a0979c21f6c1aad583",
+      "imagens": {},
+      "titulo": "Edital de proclamas 7/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.teor_com_sinais.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "ba5dc9dd141ac38e1ac5655a51b78d03b16a888ce40d48cd03365db31fb10c46",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-7-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 7/2026</b></p><p></p><p>TEOR COM {teor} {CHAVES} {0} E <i>MARCA</i> & ASPAS' — {</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\"></p><p align=\"center\">Tabelião e Oficial de Registro</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "22fa535b7379e7ff1e0bd4eb8fad8a5b207bc504b31ada500cc8581f7166414f",
+      "imagens": {},
+      "titulo": "Edital de proclamas 7/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.teor_nulo.sv": {
+   "ok": {
+    "content_xml_sha256": "e96b503ae6aad676964ed866c3a8d5593f4128f38c9d4b8ff51df362ad33d920",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-7-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>OFÍCIO ÚNICO DE CIDADE EXEMPLO</b></p><p align=\"center\">Oficiala de Registro Civil: MARIA DE EXEMPLO</p><p align=\"center\">CNS 000000 — Rua de Exemplo, 1, CEP 00000-000, Cidade Exemplo-MA</p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 7/2026</b></p><p></p><p>None</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">MARIA DE EXEMPLO</p><p align=\"center\">Oficiala de Registro Civil</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "278dbf6e69d4037e35833711e93a7b51a9f112d9206c90a7168c2bdbf2202b02",
+      "imagens": {},
+      "titulo": "Edital de proclamas 7/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "edital.teor_nulo.sv_vazia": {
+   "ok": {
+    "content_xml_sha256": "006fe57e3d09452e9f1bf459de387cee9b0230e67e23cbca1a51879c538972aa",
+    "destino": null,
+    "disposicao": "attachment; filename=\"edital-proclamas-7-2026.odt\"",
+    "htmls": [
+     "<p align=\"center\"><b>NOME DA SERVENTIA</b></p><p align=\"center\">Tabelião e Oficial de Registro: </p><p align=\"center\">CNS 000000 — </p><p></p><p align=\"center\"><b>EDITAL DE PROCLAMAS</b></p><p align=\"center\"><b>Habilitação nº 7/2026</b></p><p></p><p>None</p><p></p><p>Publicado em 01/10/2026. As oposições podem ser apresentadas até 06/10/2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\"></p><p align=\"center\">Tabelião e Oficial de Registro</p><p></p><p class=\"small\">Revisão jurídica local: antes de expedir certidão de habilitação ou prometer prazo às partes, confirme com o oficial o fluxo aplicável (Lei 6.015/1973, art. 67, §1º).</p><p></p><p class=\"small\">Conferência: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…</p>"
+    ],
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "odts": [
+     {
+      "corpo_sha256": "ce6ca8676c872b67b6914573fe51d0baebd1b31f4f141449947578bed3c7b71d",
+      "imagens": {},
+      "titulo": "Edital de proclamas 7/2026"
+     }
+    ],
+    "recados": [],
+    "status": 200
+   }
+  },
+  "ficha.modelo_do_edital.base.sv": {
+   "ok": {
+    "telas": [
+     {
+      "modelo_edital": "Faço saber que pretendem casar-se JOÃO DE EXEMPLO e MARIA DE EXEMPLO, e que apresentaram os documentos exigidos pelo artigo 1.525 do Código Civil. Se alguém souber de algum impedimento, oponha-o na forma da lei. Lavro o presente para ser publicado em meio eletrônico, no e-Proclamas (CRC). Cidade Exemplo/MA, 19/10/2026.",
+      "tela": "rcpn_habilitacao.html"
+     }
+    ]
+   }
+  },
+  "ficha.modelo_do_edital.base.sv_vazia": {
+   "ok": {
+    "telas": [
+     {
+      "modelo_edital": "Faço saber que pretendem casar-se JOÃO DE EXEMPLO e MARIA DE EXEMPLO, e que apresentaram os documentos exigidos pelo artigo 1.525 do Código Civil. Se alguém souber de algum impedimento, oponha-o na forma da lei. Lavro o presente para ser publicado em meio eletrônico, no e-Proclamas (CRC). , 19/10/2026.",
+      "tela": "rcpn_habilitacao.html"
+     }
+    ]
+   }
+  },
+  "ficha.modelo_do_edital.nome_nulo.sv": {
+   "ok": {
+    "telas": [
+     {
+      "modelo_edital": "Faço saber que pretendem casar-se JOÃO DE EXEMPLO e None, e que apresentaram os documentos exigidos pelo artigo 1.525 do Código Civil. Se alguém souber de algum impedimento, oponha-o na forma da lei. Lavro o presente para ser publicado em meio eletrônico, no e-Proclamas (CRC). Cidade Exemplo/MA, 19/10/2026.",
+      "tela": "rcpn_habilitacao.html"
+     }
+    ]
+   }
+  },
+  "ficha.modelo_do_edital.nome_nulo.sv_vazia": {
+   "ok": {
+    "telas": [
+     {
+      "modelo_edital": "Faço saber que pretendem casar-se JOÃO DE EXEMPLO e None, e que apresentaram os documentos exigidos pelo artigo 1.525 do Código Civil. Se alguém souber de algum impedimento, oponha-o na forma da lei. Lavro o presente para ser publicado em meio eletrônico, no e-Proclamas (CRC). , 19/10/2026.",
+      "tela": "rcpn_habilitacao.html"
+     }
+    ]
+   }
+  },
+  "ficha.modelo_do_edital.nome_vazio.sv": {
+   "ok": {
+    "telas": [
+     {
+      "modelo_edital": "Faço saber que pretendem casar-se  e MARIA DE EXEMPLO, e que apresentaram os documentos exigidos pelo artigo 1.525 do Código Civil. Se alguém souber de algum impedimento, oponha-o na forma da lei. Lavro o presente para ser publicado em meio eletrônico, no e-Proclamas (CRC). Cidade Exemplo/MA, 19/10/2026.",
+      "tela": "rcpn_habilitacao.html"
+     }
+    ]
+   }
+  },
+  "ficha.modelo_do_edital.nome_vazio.sv_vazia": {
+   "ok": {
+    "telas": [
+     {
+      "modelo_edital": "Faço saber que pretendem casar-se  e MARIA DE EXEMPLO, e que apresentaram os documentos exigidos pelo artigo 1.525 do Código Civil. Se alguém souber de algum impedimento, oponha-o na forma da lei. Lavro o presente para ser publicado em meio eletrônico, no e-Proclamas (CRC). , 19/10/2026.",
+      "tela": "rcpn_habilitacao.html"
+     }
+    ]
+   }
+  },
+  "ficha.modelo_do_edital.sinais.sv": {
+   "ok": {
+    "telas": [
+     {
+      "modelo_edital": "Faço saber que pretendem casar-se JOÃO D'EXEMPLO {nubente2_nome} {0} e MARIA DE EXEMPLO & <i>CIA</i> {, e que apresentaram os documentos exigidos pelo artigo 1.525 do Código Civil. Se alguém souber de algum impedimento, oponha-o na forma da lei. Lavro o presente para ser publicado em meio eletrônico, no e-Proclamas (CRC). Cidade Exemplo/MA, 19/10/2026.",
+      "tela": "rcpn_habilitacao.html"
+     }
+    ]
+   }
+  },
+  "ficha.modelo_do_edital.sinais.sv_vazia": {
+   "ok": {
+    "telas": [
+     {
+      "modelo_edital": "Faço saber que pretendem casar-se JOÃO D'EXEMPLO {nubente2_nome} {0} e MARIA DE EXEMPLO & <i>CIA</i> {, e que apresentaram os documentos exigidos pelo artigo 1.525 do Código Civil. Se alguém souber de algum impedimento, oponha-o na forma da lei. Lavro o presente para ser publicado em meio eletrônico, no e-Proclamas (CRC). , 19/10/2026.",
+      "tela": "rcpn_habilitacao.html"
+     }
+    ]
+   }
+  }
+ },
+ "grupo": "habilitacao",
+ "textos": {}
+}

@@ -46,6 +46,8 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+
+from bd_nativo import banco
 from typing import Any
 
 import protesto_arquivo as PA
@@ -135,19 +137,26 @@ def pendentes(con: sqlite3.Connection, *,
     `ATOS_POR_TIPO_DE_ARQUIVO`, com a medicao ao lado.
     """
     quais = ATOS_POR_TIPO_DE_ARQUIVO.get(str(tipo), ATOS_QUE_VOLTAM)
+    # TÍTULO QUE VEIO DA CENPROT NÃO VOLTA PELA CRA — 21/10/2026. Até aqui
+    # entrava `t.origem IN ('CRA', 'CENPROT')`, e o retorno do 900001/2
+    # (pedido 9000002 da Gestão de Pedidos) foi recusado três vezes:
+    # «APRESENTANTE: TAB - SEQUENCIAL REMESSA: 000077 NÃO FOI ENCONTRADO NA
+    # CRA» (código 2154) — a remessa nunca passou por ela. O pagamento entrou
+    # na CENPROT pelo XML «D» (aceito no mesmo dia). Esses atos vão pela tela
+    # «XML do CENPROT»; `pendentes_da_cenprot` os conta para a tela dizer isso.
     onde = ["a.retorno_id IS NULL",
-            f"a.tipo IN ({','.join('?' * len(quais))})",
-            "t.origem IN ('CRA', 'CENPROT')"]
+            f"a.tipo IN ({','.join(['%s'] * len(quais))})",
+            "t.origem = 'CRA'"]
     params: list[Any] = list(quais)
     if apresentante_codigo:
-        onde.append("t.apresentante_codigo = ?")
+        onde.append("t.apresentante_codigo = %s")
         params.append(str(apresentante_codigo).strip())
 
-    linhas = con.execute(
+    linhas = banco(con).ler(
         f"""SELECT a.id ato_id, a.tipo, a.data_ato, t.id titulo_id,
                    t.numero_titulo, t.nosso_numero, t.valor_centavos,
                    t.saldo_centavos, t.protocolo, t.apresentante_codigo,
-                   t.apresentante_nome, t.situacao,
+                   t.apresentante_nome, t.cra_identificacao, t.situacao,
                    (SELECT data_ato FROM pt_atos e
                      WHERE e.titulo_id = t.id AND e.tipo = 'APONTAMENTO'
                      ORDER BY e.id LIMIT 1) data_entrada
@@ -155,8 +164,49 @@ def pendentes(con: sqlite3.Connection, *,
               JOIN pt_titulos t ON t.id = a.titulo_id
              WHERE {' AND '.join(onde)}
              ORDER BY t.apresentante_codigo, a.data_ato, a.id""",
-        params).fetchall()
-    return [dict(r) for r in linhas]
+        params)
+    return linhas
+
+
+def pendentes_da_cenprot(con: sqlite3.Connection, *,
+                         apresentante_codigo: str | None = None) -> int:
+    """Quantos atos de título VINDO DA CENPROT esperam ser informados. Só LÊ.
+
+    Eles não entram no retorno à CRA (ver `pendentes`); a conta existe para a
+    tela dizer onde eles vão, em vez de o apresentante parecer em dia.
+    """
+    onde = ["a.retorno_id IS NULL", "a.cenprot_xml_id IS NULL",
+            "COALESCE(a.cancelado, 0) = 0",
+            f"a.tipo IN ({','.join(['%s'] * len(ATOS_QUE_VOLTAM))})",
+            "t.origem = 'CENPROT'"]
+    params: list[Any] = list(ATOS_QUE_VOLTAM)
+    if apresentante_codigo:
+        onde.append("t.apresentante_codigo = %s")
+        params.append(str(apresentante_codigo).strip())
+    return int(banco(con).valor(
+        f"""SELECT count(*) AS n FROM pt_atos a
+              JOIN pt_titulos t ON t.id = a.titulo_id
+             WHERE {' AND '.join(onde)}""", params) or 0)
+
+
+def pendentes_da_cenprot(con: sqlite3.Connection, *,
+                         apresentante_codigo: str | None = None) -> int:
+    """Quantos atos de título VINDO DA CENPROT esperam ser informados. Só LÊ.
+
+    Eles não entram no retorno à CRA (ver `pendentes`); a conta existe para a
+    tela dizer onde eles vão, em vez de o apresentante parecer em dia.
+    """
+    onde = ["a.retorno_id IS NULL", "a.cenprot_xml_id IS NULL",
+            "COALESCE(a.cancelado, 0) = 0",
+            f"a.tipo IN ({','.join('?' * len(ATOS_QUE_VOLTAM))})",
+            "t.origem = 'CENPROT'"]
+    params: list[Any] = list(ATOS_QUE_VOLTAM)
+    if apresentante_codigo:
+        onde.append("t.apresentante_codigo = ?")
+        params.append(str(apresentante_codigo).strip())
+    return int(con.execute(
+        f"""SELECT COUNT(*) FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
+             WHERE {' AND '.join(onde)}""", params).fetchone()[0])
 
 
 def apresentantes_pendentes(con: sqlite3.Connection) -> list[dict]:
@@ -184,12 +234,12 @@ def _titulo_completo(con: sqlite3.Connection, a: dict) -> dict:
     retorno. Por isso ele leva o titulo inteiro — cedente, devedor, endereco,
     especie —, e nao so a chave como o retorno.
     """
-    t = con.execute(
-        """SELECT * FROM pt_titulos WHERE id=?""", (int(a["titulo_id"]),)
-        ).fetchone()
-    d = con.execute(
-        """SELECT * FROM pt_devedores WHERE titulo_id=? ORDER BY id LIMIT 1""",
-        (int(a["titulo_id"]),)).fetchone()
+    bd = banco(con)
+    t = bd.um(
+        """SELECT * FROM pt_titulos WHERE id=%s""", (int(a["titulo_id"]),))
+    d = bd.um(
+        """SELECT * FROM pt_devedores WHERE titulo_id=%s ORDER BY id LIMIT 1""",
+        (int(a["titulo_id"]),))
     devedor = dict(d) if d else {}
     return {
         "cedente_nome": t["cedente_nome"] or "",
@@ -238,6 +288,14 @@ def montar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
     atos = pendentes(con, apresentante_codigo=codigo, tipo=tipo)
     if not atos:
         qual = ("apontamento" if tipo == "SDTBFOAND" else "ato")
+        da_cenprot = (pendentes_da_cenprot(con, apresentante_codigo=codigo)
+                      if tipo == "SDTBFORTP" else 0)
+        if da_cenprot:
+            raise RetornoError(
+                f"Não há {qual} para a CRA do apresentante {codigo}, mas "
+                f"{da_cenprot} ato(s) de título que veio pela CENPROT esperam ser "
+                f"informados — esses vão no arquivo XML da CENPROT (Protesto → "
+                f"XML do CENPROT), e não no retorno à CRA.")
         raise RetornoError(
             f"Não há {qual} novo para informar ao apresentante {codigo}. Tudo "
             f"o que foi lavrado para ele já entrou num arquivo anterior.")
@@ -256,7 +314,11 @@ def montar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
         titulos.append({
             **extra,
             "codigo_do_apresentante": codigo,
-            "identificacao_do_apresentante": a["apresentante_nome"] or "",
+            # A identificação do título na Central, quando a carga a trouxe
+            # (`tbSDT.Campo03`); senão o que o título recebido aqui guardou nas
+            # posições 005/019 — que, no título da remessa, é ela mesma.
+            "identificacao_do_apresentante": (a.get("cra_identificacao")
+                                              or a["apresentante_nome"] or ""),
             "nosso_numero": a["nosso_numero"] or "",
             "valor_do_titulo": int(a["valor_centavos"] or 0),
             "saldo_a_protestar": int(a["saldo_centavos"] or 0),
@@ -280,11 +342,11 @@ def montar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
     # o cabeçalho do andamento saía com `h03 = 537681502381151` no lugar de
     # «BRADESCO SA» (medido no ensaio da homologação). O título continua
     # levando aquele código no lugar dele; só o cabeçalho e o rodapé mudam.
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT apresentante_nome FROM pt_remessas
-            WHERE apresentante_codigo = ? AND COALESCE(apresentante_nome, '') <> ''
-            ORDER BY id DESC LIMIT 1""", (codigo,)).fetchone()
-    nome = ((linha[0] if linha else "") or atos[0]["apresentante_nome"] or "").strip()
+            WHERE apresentante_codigo = %s AND COALESCE(apresentante_nome, '') <> ''
+            ORDER BY id DESC LIMIT 1""", (codigo,))
+    nome = ((linha["apresentante_nome"] if linha else "") or atos[0]["apresentante_nome"] or "").strip()
     monta = {"SDTBFORTP": PA.montar_retorno,
              "SDTBFOAND": PA.montar_andamento,
              "SDTBFOCRT": PA.montar_confirmacao}.get(tipo)
@@ -330,10 +392,11 @@ def _como_o_eoficio_mandava(con: sqlite3.Connection, conteudo: str, tipo: str,
       - título 508–517 (t40) e 568–577 (t50) em branco: zeros em 87 de 87.
     O leitor e o escritor (`protesto_arquivo`) não mudam: o ajuste é do que SAI.
     """
-    ultima = con.execute(
-        """SELECT conteudo FROM pt_remessas WHERE apresentante_codigo = ?
-            ORDER BY id DESC LIMIT 1""", (codigo,)).fetchone()
-    cab_remessa = ((ultima[0] if ultima else "") or "").replace("\r", "").split("\n")[0]
+    bd = banco(con)
+    ultima = bd.um(
+        """SELECT conteudo FROM pt_remessas WHERE apresentante_codigo = %s
+            ORDER BY id DESC LIMIT 1""", (codigo,))
+    cab_remessa = ((ultima["conteudo"] if ultima else "") or "").replace("\r", "").split("\n")[0]
     agencia = cab_remessa[83:89] if len(cab_remessa) == 600 else ""
     portador = cab_remessa[89:100] if len(cab_remessa) == 600 else ""
     if not portador.strip():
@@ -342,11 +405,11 @@ def _como_o_eoficio_mandava(con: sqlite3.Connection, conteudo: str, tipo: str,
 
         def _config(chave, padrao=""):
             try:
-                r = con.execute("SELECT value FROM settings WHERE key=?",
-                                (chave,)).fetchone()
+                r = bd.um("SELECT value FROM settings WHERE key=%s",
+                          (chave,))
             except sqlite3.Error:
                 r = None
-            return (r[0] if r else None) or padrao
+            return (r["value"] if r else None) or padrao
         portador = "043" + codigo_ibge_da_casa(_config)
     h09 = "0000" if tipo == "SDTBFOAND" else f"{quantos:04d}"
     saida = []
@@ -403,9 +466,9 @@ def nome_do_arquivo(tipo: str, apresentante_codigo: str, dia: str,
     if sequencia is None:
         sequencia = 1
         if con is not None:
-            sequencia += con.execute(
-                "SELECT COUNT(*) FROM pt_retornos WHERE nome_arquivo LIKE ?",
-                (base + "_",)).fetchone()[0]
+            sequencia += int(banco(con).valor(
+                "SELECT COUNT(*) FROM pt_retornos WHERE nome_arquivo ILIKE %s",
+                (base + "_",)))
     if not 1 <= int(sequencia) <= 9:
         raise RetornoError(
             f"Já há {int(sequencia) - 1} arquivos «{base}?» — o nome FEBRABAN só "
@@ -453,20 +516,28 @@ def gerar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
     """
     def grava(montado: dict, par_id: int | None) -> int:
         conteudo = montado["conteudo"]
-        cur = con.execute(
+        return int(banco(con).escrever(
             """INSERT INTO pt_retornos(tipo, par_id, apresentante_codigo,
                    apresentante_nome, dia, numero_da_remessa, marca, titulos,
                    soma_centavos, nome_arquivo, conteudo, hash_arquivo,
                    gerado_em, gerado_por)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id""",
             (montado["tipo"], par_id, montado["apresentante_codigo"],
              montado["apresentante_nome"], montado["dia"],
              int(numero_da_remessa or 1), montado["marca"],
              len(montado["atos"]), montado["soma_centavos"],
              montado["nome_arquivo"], conteudo, hash_retorno(conteudo), agora,
-             usuario))
-        return int(cur.lastrowid)
+             usuario))[0]["id"])
 
+    # A TRAVA VEM ANTES DE `montar`, porque é ele que lê as duas coisas que
+    # dois `gerar` ao mesmo tempo disputariam: os PENDENTES — o mesmo protesto
+    # sairia em dois arquivos, e a Central registraria dois — e a SEQUÊNCIA DO
+    # NOME, que `nome_do_arquivo` conta em `pt_retornos` (os dois sairiam com
+    # o mesmo `…1`). No SQLite a escrita era uma por vez; no PostgreSQL só
+    # espera quem trava com a MESMA chave. `montar` e `nome_do_arquivo` só
+    # leem, e a tela que mostra antes de gerar não espera por ninguém.
+    banco(con).travar("pt_retornos.nome_arquivo")
     feitos: dict[str, dict] = {}
     recusas: dict[str, str] = {}
     for qual in tipos:
@@ -491,8 +562,8 @@ def gerar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
     andamento_id = (grava(andamento_montado, retorno_id)
                     if andamento_montado else None)
     if retorno_id and andamento_id:
-        con.execute("UPDATE pt_retornos SET par_id=? WHERE id=?",
-                    (andamento_id, retorno_id))
+        banco(con).escrever("UPDATE pt_retornos SET par_id=%s WHERE id=%s",
+                            (andamento_id, retorno_id))
 
     # A marcacao vem por ULTIMO: enquanto ela nao acontece, `montar` continua
     # achando os mesmos atos — e e assim que o andamento sai com os mesmos
@@ -510,8 +581,8 @@ def gerar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
         if not montado:
             continue
         for a in montado["atos"]:
-            con.execute("UPDATE pt_atos SET retorno_id=? WHERE id=?",
-                        (quem, int(a["ato_id"])))
+            banco(con).escrever("UPDATE pt_atos SET retorno_id=%s WHERE id=%s",
+                                (quem, int(a["ato_id"])))
 
     principal = retorno_montado or andamento_montado
     return {**principal, "retorno_id": retorno_id,
@@ -545,29 +616,29 @@ def gerar_andamento(con: sqlite3.Connection, *, apresentante_codigo: str,
 # --------------------------------------------------------------- consultas
 
 
-def retorno(con: sqlite3.Connection, retorno_id: int) -> sqlite3.Row | None:
+def retorno(con: sqlite3.Connection, retorno_id: int) -> dict | None:
     """O retorno gerado, com o arquivo inteiro. So LE."""
-    return con.execute("SELECT * FROM pt_retornos WHERE id=?",
-                       (int(retorno_id),)).fetchone()
+    return banco(con).um("SELECT * FROM pt_retornos WHERE id=%s",
+                         (int(retorno_id),))
 
 
-def listar(con: sqlite3.Connection, limite: int = 100) -> list[sqlite3.Row]:
+def listar(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
     """Os retornos gerados, do mais novo para o mais velho. So LE."""
-    return list(con.execute(
+    return banco(con).ler(
         """SELECT id, tipo, par_id, apresentante_codigo, apresentante_nome,
                   dia, numero_da_remessa, titulos, soma_centavos, nome_arquivo,
                   hash_arquivo, gerado_em, gerado_por, cra_enviado_em,
                   cra_enviado_ambiente, cra_envio_erro, cra_enviado_por
-             FROM pt_retornos ORDER BY id DESC LIMIT ?""", (int(limite),)))
+             FROM pt_retornos ORDER BY id DESC LIMIT %s""", (int(limite),))
 
 
 def atos_do_retorno(con: sqlite3.Connection, retorno_id: int) -> list[dict]:
     """Que atos entraram naquele retorno. So LE."""
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT a.id ato_id, a.tipo, a.data_ato, t.numero_titulo,
                   t.nosso_numero, t.protocolo, t.saldo_centavos
              FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
-            WHERE a.retorno_id = ? ORDER BY a.id""", (int(retorno_id),))]
+            WHERE a.retorno_id = %s ORDER BY a.id""", (int(retorno_id),))
 
 
 # ------------------------------------------ o que o E-Ofício já mandou à CRA
@@ -590,21 +661,22 @@ OCORRENCIA_QUE_PROVA = {"PROTESTO": {"2", "C"}, "PAGAMENTO": {"1"},
 
 def _registro_do_eoficio(con: sqlite3.Connection, tipo: str, agora: str) -> int:
     nome = NOME_DO_INFORMADO_PELO_EOFICIO[tipo]
-    linha = con.execute("SELECT id FROM pt_retornos WHERE nome_arquivo=?",
-                        (nome,)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT id FROM pt_retornos WHERE nome_arquivo=%s",
+                  (nome,))
     if linha:
-        return int(linha[0])
-    cur = con.execute(
+        return int(linha["id"])
+    return int(bd.escrever(
         """INSERT INTO pt_retornos(tipo, apresentante_codigo, apresentante_nome,
                dia, numero_da_remessa, titulos, soma_centavos, nome_arquivo,
                conteudo, gerado_em, gerado_por, cra_enviado_em,
                cra_enviado_ambiente, cra_envio_resumo)
-           VALUES (?, '', 'E-Ofício', ?, 1, 0, 0, ?, '', ?, 'virada do protesto',
-                   ?, 'EOFICIO', ?)""",
+           VALUES (%s, '', 'E-Ofício', %s, 1, 0, 0, %s, '', %s, 'virada do protesto',
+                   %s, 'EOFICIO', %s)
+           RETURNING id""",
         (tipo, agora[:10], nome, agora, agora,
          "Não é arquivo deste sistema: marca os atos que o E-Ofício já "
-         "informou à CRA antes da virada (13/10/2026)."))
-    return int(cur.lastrowid)
+         "informou à CRA antes da virada (13/10/2026)."))[0]["id"])
 
 
 def marcar_o_que_o_eoficio_ja_informou(con: sqlite3.Connection, fluxo: dict,
@@ -624,12 +696,18 @@ def marcar_o_que_o_eoficio_ja_informou(con: sqlite3.Connection, fluxo: dict,
     contagem = {"retorno": 0, "andamento": 0, "anterior_aos_arquivos": 0,
                 "fica_pendente": 0, "desde": desde}
     reg_ret = reg_and = None
-    linhas = con.execute(
+    # A MESMA TRAVA DE `gerar`, e antes da lista: os dois marcam os mesmos
+    # atos (`retorno_id IS NULL`), e `_registro_do_eoficio` confere se a linha
+    # da virada já existe antes de inserir — duas passadas ao mesmo tempo
+    # gravariam duas.
+    banco(con).travar("pt_retornos.nome_arquivo")
+    linhas = banco(con).ler(
         """SELECT a.id, a.tipo, a.data_ato, t.protocolo, t.apresentante_codigo,
                   t.nosso_numero, t.numero_titulo
              FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
             WHERE a.retorno_id IS NULL AND a.origem = 'EOFICIO'
-              AND t.origem IN ('CRA', 'CENPROT')""").fetchall()
+              AND t.origem IN ('CRA', 'CENPROT')
+            ORDER BY a.id""")
     for a in linhas:
         tipo, prot = a["tipo"], str(a["protocolo"] or "").strip()
         if tipo == "APONTAMENTO":
@@ -660,5 +738,6 @@ def marcar_o_que_o_eoficio_ja_informou(con: sqlite3.Connection, fluxo: dict,
             contagem["andamento"] += 1
         if antigo and not provado:
             contagem["anterior_aos_arquivos"] += 1
-        con.execute("UPDATE pt_atos SET retorno_id=? WHERE id=?", (alvo, a["id"]))
+        banco(con).escrever("UPDATE pt_atos SET retorno_id=%s WHERE id=%s",
+                            (alvo, a["id"]))
     return contagem

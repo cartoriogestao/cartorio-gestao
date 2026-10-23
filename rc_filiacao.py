@@ -40,6 +40,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from bd_nativo import banco
+
 PAPEL_PAI = "PAI"
 PAPEL_MAE = "MAE"
 
@@ -75,18 +77,17 @@ def filiacao_trocada(con: sqlite3.Connection,
     Medido na produção em 30/08/2026: **23 assentos**, todos vindos da carga
     do acervo.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT a.id, a.numero, a.especie, a.nome, a.data_ato, a.origem,
                   p.id AS pai_id, p.nome AS pai_nome, p.sexo AS pai_sexo,
                   m.id AS mae_id, m.nome AS mae_nome, m.sexo AS mae_sexo
              FROM rc_assentos a
-             JOIN rc_pessoas p ON p.assento_id = a.id AND p.papel = ?
-             JOIN rc_pessoas m ON m.assento_id = a.id AND m.papel = ?
+             JOIN rc_pessoas p ON p.assento_id = a.id AND p.papel = %s
+             JOIN rc_pessoas m ON m.assento_id = a.id AND m.papel = %s
             WHERE p.sexo = 'F' AND m.sexo = 'M'
               AND COALESCE(a.situacao,'ATIVO') <> 'CANCELADO'
          ORDER BY a.data_ato IS NULL, a.data_ato DESC, a.id DESC
-            LIMIT ?""", (PAPEL_PAI, PAPEL_MAE, limite))]
+            LIMIT %s""", (PAPEL_PAI, PAPEL_MAE, limite))
 
 
 def duas_filiacoes_do_mesmo_sexo(con: sqlite3.Connection,
@@ -100,18 +101,17 @@ def duas_filiacoes_do_mesmo_sexo(con: sqlite3.Connection,
 
     Medido na produção: três com as duas masculinas.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT a.id, a.numero, a.nome, a.data_ato,
                   p.nome AS pai_nome, p.sexo AS pai_sexo,
                   m.nome AS mae_nome, m.sexo AS mae_sexo
              FROM rc_assentos a
-             JOIN rc_pessoas p ON p.assento_id = a.id AND p.papel = ?
-             JOIN rc_pessoas m ON m.assento_id = a.id AND m.papel = ?
+             JOIN rc_pessoas p ON p.assento_id = a.id AND p.papel = %s
+             JOIN rc_pessoas m ON m.assento_id = a.id AND m.papel = %s
             WHERE p.sexo = m.sexo AND p.sexo IN ('M','F')
               AND COALESCE(a.situacao,'ATIVO') <> 'CANCELADO'
          ORDER BY a.data_ato IS NULL, a.data_ato DESC, a.id DESC
-            LIMIT ?""", (PAPEL_PAI, PAPEL_MAE, limite))]
+            LIMIT %s""", (PAPEL_PAI, PAPEL_MAE, limite))
 
 
 def sem_sexo(con: sqlite3.Connection, limite: int = 500) -> list[dict]:
@@ -121,17 +121,16 @@ def sem_sexo(con: sqlite3.Connection, limite: int = 500) -> list[dict]:
     mas valem por si: **é o sexo que decide como o termo escreve a filiação**,
     e é ele que a remessa do IBGE pede.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT a.id, a.numero, a.nome, a.data_ato,
                   p.papel, p.nome AS pessoa_nome
              FROM rc_assentos a
              JOIN rc_pessoas p ON p.assento_id = a.id
-            WHERE p.papel IN (?, ?)
+            WHERE p.papel IN (%s, %s)
               AND COALESCE(NULLIF(TRIM(COALESCE(p.sexo,'')),''),'') = ''
               AND COALESCE(a.situacao,'ATIVO') <> 'CANCELADO'
          ORDER BY a.data_ato IS NULL, a.data_ato DESC, a.id DESC
-            LIMIT ?""", (PAPEL_PAI, PAPEL_MAE, limite))]
+            LIMIT %s""", (PAPEL_PAI, PAPEL_MAE, limite))
 
 
 def resumo(con: sqlite3.Connection) -> dict:

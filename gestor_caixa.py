@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from bd_nativo import banco
 from caixa_schema import centavos, resumo_caixa
 
 
@@ -27,11 +28,10 @@ def _brl(c: int) -> str:
     return ("−" if c < 0 else "") + "R$ " + s
 
 
-def parecer(con: sqlite3.Connection, caixa: sqlite3.Row | dict) -> list[str]:
+def parecer(con: sqlite3.Connection, caixa: dict) -> list[str]:
     """Os pontos do caixa fechado; lista vazia é caixa que fecha. Só LÊ."""
-    cur = con.execute("SELECT * FROM cx_lancamentos WHERE caixa_id = ?", (caixa["id"],))
-    colunas = [d[0] for d in cur.description]
-    lans = [dict(zip(colunas, r)) for r in cur.fetchall()]
+    lans = banco(con).ler(
+        "SELECT * FROM cx_lancamentos WHERE caixa_id = %s ORDER BY id", (caixa["id"],))
     res = resumo_caixa(lans, caixa["saldo_inicial"])
     esperado = centavos(caixa["valor_esperado"])
     contado = centavos(caixa["valor_contado"])

@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ABERTURA_PROCURACAO__um_procurador",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Procuração — um procurador",
+  "formato": "CHAVES",
+  "explica": "Quando há um procurador (ou nenhum cadastrado).",
+  "campos": [
+    "procuradores"
+  ]
+}

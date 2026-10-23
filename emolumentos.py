@@ -39,10 +39,11 @@ from __future__ import annotations
 
 import json
 import unicodedata
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from bd_nativo import banco
 from caixa_schema import centavos, reais
 
 # Percentual de cada fundo sobre o emolumento. Serve para CONFERIR o que veio
@@ -139,17 +140,18 @@ def importar(con, pasta_caixa: Path, pasta_ri: Path | None = None) -> dict:
             "Faltam dom_servico.jsonl e dom_servico_tabela.jsonl. "
             "Rode o EXPORTAR_CAIXA.cmd.")
 
-    con.execute("DELETE FROM cx_servico_valores")
-    con.execute("DELETE FROM cx_faixas")
-    con.execute("DELETE FROM cx_servicos")
-    con.execute("DELETE FROM cx_vigencias")
+    bd = banco(con)
+    bd.escrever("DELETE FROM cx_servico_valores")
+    bd.escrever("DELETE FROM cx_faixas")
+    bd.escrever("DELETE FROM cx_servicos")
+    bd.escrever("DELETE FROM cx_vigencias")
 
     # As vigencias entram PRIMEIRO, antes dos valores que apontam para elas.
     #
     # Na primeira versao eu as gravava no fim, quando ja sabia quantos itens
     # cada uma tinha — e a carga morria com "FOREIGN KEY constraint failed".
     # O teste nao pegou porque o SQLite so cobra chave estrangeira quando
-    # `PRAGMA foreign_keys` esta ligado, e no banco em memoria do teste ele
+    # a opcao `foreign_keys` esta ligada, e no banco em memoria do teste ele
     # estava desligado. No banco da serventia esta ligado, e ali doeu.
     arq_faixa = Path(pasta_ri or pasta_caixa) / "dom_tabelas.jsonl"
     vigencias: set[int] = set()
@@ -199,22 +201,35 @@ def importar(con, pasta_caixa: Path, pasta_ri: Path | None = None) -> dict:
                 f"Nenhuma vigência contém {hoje}; foi marcada como corrente a "
                 f"de maior código ({vigente}). A tabela do exercício pode não "
                 f"ter sido publicada ainda.")
+    importado_em = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for v in sorted(vigencias):
         ini, fim, descricao = periodos.get(v, (None, None, None))
-        con.execute(
-            """INSERT OR REPLACE INTO cx_vigencias
+        bd.escrever(
+            """INSERT INTO cx_vigencias
                (codigo, descricao, vigente, servicos, faixas, importado_em,
                 inicio, fim)
-               VALUES (?,?,?,0,0, datetime('now','localtime'), ?,?)""",
+               VALUES (%s,%s,%s,0,0, %s, %s,%s)
+               ON CONFLICT (codigo) DO UPDATE SET
+                 descricao = EXCLUDED.descricao, vigente = EXCLUDED.vigente,
+                 servicos = EXCLUDED.servicos, faixas = EXCLUDED.faixas,
+                 importado_em = EXCLUDED.importado_em,
+                 inicio = EXCLUDED.inicio, fim = EXCLUDED.fim""",
             (v, descricao or f"Vigência {v}", 1 if v == vigente else 0,
-             ini, fim))
+             importado_em, ini, fim))
 
     for r in _ler(arq_serv):
-        con.execute(
-            """INSERT OR REPLACE INTO cx_servicos
+        bd.escrever(
+            """INSERT INTO cx_servicos
                (codigo, codigo_tj, descricao, descricao_norm, grupo, tipo_selo,
                 id_tj, ativo, emolumento, selo_fiscal, observacao)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               ON CONFLICT (codigo) DO UPDATE SET
+                 codigo_tj = EXCLUDED.codigo_tj, descricao = EXCLUDED.descricao,
+                 descricao_norm = EXCLUDED.descricao_norm, grupo = EXCLUDED.grupo,
+                 tipo_selo = EXCLUDED.tipo_selo, id_tj = EXCLUDED.id_tj,
+                 ativo = EXCLUDED.ativo, emolumento = EXCLUDED.emolumento,
+                 selo_fiscal = EXCLUDED.selo_fiscal,
+                 observacao = EXCLUDED.observacao""",
             (r.get("intCodigoServico"), (r.get("strCodigoTJ") or "").strip() or None,
              r.get("strDescricao"), _norm(r.get("strDescricao")),
              r.get("intGrupo"), r.get("intTipoSelo"), r.get("intID_TJ"),
@@ -228,7 +243,7 @@ def importar(con, pasta_caixa: Path, pasta_ri: Path | None = None) -> dict:
     # base da serventia — o servico 707 — e ele derrubava a carga inteira com
     # "FOREIGN KEY constraint failed". Uma linha solta na origem nao pode
     # impedir a atualizacao da tabela: fica de fora e e reportada.
-    catalogo = {r[0] for r in con.execute("SELECT codigo FROM cx_servicos")}
+    catalogo = {r["codigo"] for r in bd.ler("SELECT codigo FROM cx_servicos")}
     orfaos: list[int] = []
 
     for r in _ler(arq_val):
@@ -244,11 +259,16 @@ def importar(con, pasta_caixa: Path, pasta_ri: Path | None = None) -> dict:
         femp = _cent(r.get("curValor_MP"))
         fadep = _cent(r.get("curValor_DP"))
         ferrfis = _cent(r.get("curvalor_ferrfis"))
-        con.execute(
-            """INSERT OR REPLACE INTO cx_servico_valores
+        bd.escrever(
+            """INSERT INTO cx_servico_valores
                (servico, vigencia, emolumentos, ferc, femp, fadep, ferrfis,
                 total, id_tj)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               ON CONFLICT (servico, vigencia) DO UPDATE SET
+                 emolumentos = EXCLUDED.emolumentos, ferc = EXCLUDED.ferc,
+                 femp = EXCLUDED.femp, fadep = EXCLUDED.fadep,
+                 ferrfis = EXCLUDED.ferrfis, total = EXCLUDED.total,
+                 id_tj = EXCLUDED.id_tj""",
             (r.get("intCodigoServico"), vig, reais(emol), reais(ferc), reais(femp),
              reais(fadep), reais(ferrfis),
              reais(emol + ferc + femp + fadep + ferrfis), r.get("intID_TJ")))
@@ -265,11 +285,11 @@ def importar(con, pasta_caixa: Path, pasta_ri: Path | None = None) -> dict:
             femp = _cent(r.get("curValor_MP"))
             fadep = _cent(r.get("curValor_DP"))
             ferrfis = _cent(r.get("curvalor_ferrfis"))
-            con.execute(
+            bd.escrever(
                 """INSERT INTO cx_faixas
                    (tabela, vigencia, de, ate, codigo_tj, emolumentos, ferc,
                     femp, fadep, ferrfis, total, id_tj)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (r.get("intCodigoTabela"), vig, reais(_cent(r.get("curDe"))),
                  reais(_cent(r.get("curAte"))),
                  (r.get("strCodigoTJ") or "").strip() or None,
@@ -285,11 +305,11 @@ def importar(con, pasta_caixa: Path, pasta_ri: Path | None = None) -> dict:
     # A vigencia de maior codigo e a atual: e como o E-Oficio as numera — as
     # antigas vao de 3 a 11, as novas na faixa 10013 em diante.
     for v in sorted(vigencias):
-        con.execute(
+        bd.escrever(
             """UPDATE cx_vigencias SET
-                 servicos = (SELECT COUNT(*) FROM cx_servico_valores WHERE vigencia=?),
-                 faixas   = (SELECT COUNT(*) FROM cx_faixas WHERE vigencia=?)
-               WHERE codigo=?""", (v, v, v))
+                 servicos = (SELECT COUNT(*) FROM cx_servico_valores WHERE vigencia=%s),
+                 faixas   = (SELECT COUNT(*) FROM cx_faixas WHERE vigencia=%s)
+               WHERE codigo=%s""", (v, v, v))
     rel["vigencias"] = sorted(vigencias)
     rel["vigente"] = vigente
     rel["ignorados"] = len(orfaos)
@@ -300,7 +320,7 @@ def importar(con, pasta_caixa: Path, pasta_ri: Path | None = None) -> dict:
             f"existe no catálogo do E-Ofício (código "
             f"{', '.join(str(d) for d in distintos[:6])}"
             f"{'…' if len(distintos) > 6 else ''}).")
-    rel["conferencia"] = conferir_fundos(con, vigente) if vigente else {}
+    rel["conferencia"] = conferir_fundos(bd, vigente) if vigente else {}
     return rel
 
 
@@ -313,38 +333,38 @@ def conferir_fundos(con, vigencia: int, tolerancia_centavos: int = 1) -> dict:
     """
     fora: list[dict] = []
     total = 0
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT servico, emolumentos, ferc, femp, fadep, ferrfis
-               FROM cx_servico_valores WHERE vigencia=?""", (vigencia,)):
+               FROM cx_servico_valores WHERE vigencia=%s ORDER BY id""", (vigencia,)):
         total += 1
-        emol = centavos(r[1])
+        emol = centavos(r["emolumentos"])
         if emol <= 0:
             continue
-        for i, fundo in enumerate(("ferc", "femp", "fadep", "ferrfis"), start=2):
+        for fundo in ("ferc", "femp", "fadep", "ferrfis"):
             esperado = int(round(emol * PERCENTUAIS[fundo]))
-            achado = centavos(r[i])
+            achado = centavos(r[fundo])
             if abs(esperado - achado) > tolerancia_centavos:
-                fora.append({"servico": r[0], "fundo": fundo,
+                fora.append({"servico": r["servico"], "fundo": fundo,
                              "esperado": reais(esperado), "importado": reais(achado)})
     return {"conferidos": total, "divergentes": len(fora), "exemplos": fora[:12]}
 
 
 def valor_do_servico(con, codigo_servico: int, vigencia: int | None = None) -> dict | None:
     """Quanto custa um ato hoje, com os fundos discriminados."""
+    bd = banco(con)
     if vigencia is None:
-        linha = con.execute("SELECT codigo FROM cx_vigencias WHERE vigente=1").fetchone()
+        linha = bd.um("SELECT codigo FROM cx_vigencias WHERE vigente=1 ORDER BY codigo")
         if not linha:
             return None
-        vigencia = linha[0]
-    r = con.execute(
+        vigencia = linha["codigo"]
+    r = bd.um(
         """SELECT s.codigo, s.codigo_tj, s.descricao, v.emolumentos, v.ferc,
                   v.femp, v.fadep, v.ferrfis, v.total, v.vigencia
            FROM cx_servico_valores v JOIN cx_servicos s ON s.codigo = v.servico
-           WHERE v.servico=? AND v.vigencia=?""", (codigo_servico, vigencia)).fetchone()
+           WHERE v.servico=%s AND v.vigencia=%s""", (codigo_servico, vigencia))
     if not r:
         return None
-    return dict(zip(("codigo", "codigo_tj", "descricao", "emolumentos", "ferc",
-                     "femp", "fadep", "ferrfis", "total", "vigencia"), r))
+    return dict(r)
 
 
 def faixa_por_valor(con, valor: Any, tabela: int = TABELA_RI,
@@ -355,32 +375,35 @@ def faixa_por_valor(con, valor: Any, tabela: int = TABELA_RI,
     de exatamente 7.396,72 poderia cair na faixa de cima por arredondamento —
     e a diferenca de emolumento entre duas faixas nao e pequena.
     """
+    bd = banco(con)
     if vigencia is None:
-        linha = con.execute("SELECT codigo FROM cx_vigencias WHERE vigente=1").fetchone()
+        linha = bd.um("SELECT codigo FROM cx_vigencias WHERE vigente=1 ORDER BY codigo")
         if not linha:
             return None
-        vigencia = linha[0]
+        vigencia = linha["codigo"]
     alvo = centavos(valor)
-    for r in con.execute(
+    for r in bd.ler(
             """SELECT de, ate, codigo_tj, emolumentos, ferc, femp, fadep,
                       ferrfis, total
-               FROM cx_faixas WHERE vigencia=? AND tabela=?""", (vigencia, tabela)):
-        if centavos(r[0]) <= alvo <= centavos(r[1]):
-            achado = dict(zip(("de", "ate", "codigo_tj", "emolumentos", "ferc",
-                               "femp", "fadep", "ferrfis", "total"), r))
+               FROM cx_faixas WHERE vigencia=%s AND tabela=%s ORDER BY id""",
+            (vigencia, tabela)):
+        if centavos(r["de"]) <= alvo <= centavos(r["ate"]):
+            achado = dict(r)
             achado["vigencia"] = vigencia
             return achado
     # Acima do teto da tabela: devolve a ultima faixa, marcada, porque o
     # calculo dali em diante costuma ter regra propria no ato normativo.
-    ultima = con.execute(
+    # O CAST(... AS REAL) do SQLite lia o prefixo numerico (vazio vira 0).
+    ultima = bd.um(
         """SELECT de, ate, codigo_tj, emolumentos, ferc, femp, fadep, ferrfis, total
-           FROM cx_faixas WHERE vigencia=? AND tabela=?
-           ORDER BY CAST(REPLACE(REPLACE(ate,'.',''),',','.') AS REAL) DESC LIMIT 1""",
-        (vigencia, tabela)).fetchone()
+           FROM cx_faixas WHERE vigencia=%s AND tabela=%s
+           ORDER BY COALESCE(substring(replace(replace(ate,'.',''),',','.')
+                    FROM '^[+-]{0,1}[0-9]*[.]{0,1}[0-9]+')::float8, 0) DESC, id
+           LIMIT 1""",
+        (vigencia, tabela))
     if not ultima:
         return None
-    achado = dict(zip(("de", "ate", "codigo_tj", "emolumentos", "ferc", "femp",
-                       "fadep", "ferrfis", "total"), ultima))
+    achado = dict(ultima)
     achado["vigencia"] = vigencia
     achado["acima_do_teto"] = True
     return achado
@@ -504,17 +527,19 @@ def teto_geral(con, vigencia: int | None = None) -> int:
     Resolucao-GP 143/2025. Devolve 0 quando nao ha faixa (instalacao sem a
     tabela importada), e quem chama trata isso como «nao da' para conferir».
     """
+    bd = banco(con)
     if vigencia is None:
-        linha = con.execute(
-            "SELECT codigo FROM cx_vigencias WHERE vigente=1").fetchone()
+        linha = bd.um(
+            "SELECT codigo FROM cx_vigencias WHERE vigente=1 ORDER BY codigo")
         if not linha:
             return 0
-        vigencia = linha[0]
-    ultima = con.execute(
-        """SELECT emolumentos FROM cx_faixas WHERE vigencia=? AND tabela=?
-           ORDER BY CAST(REPLACE(REPLACE(ate,'.',''),',','.') AS REAL) DESC
-           LIMIT 1""", (vigencia, TABELA_RI)).fetchone()
-    return centavos(ultima[0]) if ultima else 0
+        vigencia = linha["codigo"]
+    ultima = bd.um(
+        """SELECT emolumentos FROM cx_faixas WHERE vigencia=%s AND tabela=%s
+           ORDER BY COALESCE(substring(replace(replace(ate,'.',''),',','.')
+                    FROM '^[+-]{0,1}[0-9]*[.]{0,1}[0-9]+')::float8, 0) DESC, id
+           LIMIT 1""", (vigencia, TABELA_RI))
+    return centavos(ultima["emolumentos"]) if ultima else 0
 
 
 def garantias_acima_do_teto(itens: list[dict], teto: int) -> dict | None:
@@ -646,9 +671,10 @@ def buscar(con, termo: str, vigencia: int | None = None, limite: int = 60) -> li
     nascimento» mapeiam para 14.5.1 (e 14.5.2 / 14.6.x da casa). A descricao
     do TJ e «Das certidoes: Com uma folha» — sem alias a busca devolve zero.
     """
+    bd = banco(con)
     if vigencia is None:
-        linha = con.execute("SELECT codigo FROM cx_vigencias WHERE vigente=1").fetchone()
-        vigencia = linha[0] if linha else None
+        linha = bd.um("SELECT codigo FROM cx_vigencias WHERE vigente=1 ORDER BY codigo")
+        vigencia = linha["codigo"] if linha else None
     termo = (termo or "").strip()
     if not termo:
         return []
@@ -658,31 +684,30 @@ def buscar(con, termo: str, vigencia: int | None = None, limite: int = 60) -> li
     # cortaria contando linhas que a tela nem vai mostrar. A tabela inteira tem
     # pouco mais de mil servicos, e a consulta ja filtra pelo termo.
     if aliases:
-        ph = ",".join("?" * len(aliases))
+        ph = ",".join(["%s"] * len(aliases))
         sql = f"""SELECT s.codigo, s.codigo_tj, s.descricao, v.emolumentos, v.total,
                   s.ativo
            FROM cx_servicos s
            LEFT JOIN cx_servico_valores v
-                  ON v.servico = s.codigo AND v.vigencia = ?
-           WHERE s.descricao_norm LIKE ? OR s.codigo_tj LIKE ?
+                  ON v.servico = s.codigo AND v.vigencia = %s
+           WHERE s.descricao_norm ILIKE %s OR s.codigo_tj ILIKE %s
               OR s.codigo_tj IN ({ph})
-           ORDER BY s.ativo DESC, s.codigo_tj, s.codigo"""
+           ORDER BY s.ativo DESC, s.codigo_tj NULLS FIRST, s.codigo"""
         params = (vigencia, like, f"%{termo}%", *aliases)
     else:
         sql = """SELECT s.codigo, s.codigo_tj, s.descricao, v.emolumentos, v.total,
                   s.ativo
            FROM cx_servicos s
            LEFT JOIN cx_servico_valores v
-                  ON v.servico = s.codigo AND v.vigencia = ?
-           WHERE s.descricao_norm LIKE ? OR s.codigo_tj LIKE ?
-           ORDER BY s.ativo DESC, s.codigo_tj, s.codigo"""
+                  ON v.servico = s.codigo AND v.vigencia = %s
+           WHERE s.descricao_norm ILIKE %s OR s.codigo_tj ILIKE %s
+           ORDER BY s.ativo DESC, s.codigo_tj NULLS FIRST, s.codigo"""
         params = (vigencia, like, f"%{termo}%")
-    linhas = con.execute(sql, params).fetchall()
+    linhas = bd.ler(sql, params)
     achados: list[dict] = []
     por_codigo: dict[str, int] = {}
     for r in linhas:
-        item = dict(zip(("codigo", "codigo_tj", "descricao", "emolumentos",
-                         "total", "ativo"), r))
+        item = dict(r)
         # Sem ativo e sem preco: listar e convidar o clique que falha.
         if not item.get("ativo"):
             continue

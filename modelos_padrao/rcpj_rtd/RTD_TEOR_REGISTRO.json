@@ -1,0 +1,31 @@
+{
+  "chave": "RTD_TEOR_REGISTRO",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Teor de registro — RTD",
+  "formato": "CHAVES",
+  "explica": "Teor de registro/lavratura no RTD — intro com REGISTRADO (sem a palavra hoje) e faixa para a etiqueta do selo. Antes do documento, o termo declara (LD09, 21/10/2026) o protocolo do título — a data, o número e o apresentante (LRP arts. 136 e 143) —; no Livro C, o extrato (valor, prazo, lugar, partes, testemunhas, firma e imposto — LRP art. 143; CN-MA art. 981); no Livro F, o total de páginas registradas (LRP art. 127-A, § 3º). Cada declaração é uma linha com o seu claro, e a linha sai do termo quando o ato não tem o dado.",
+  "campos": [
+    "unit_short",
+    "cns",
+    "atribuicao",
+    "numero",
+    "natureza_ato",
+    "data_assinatura",
+    "full_name",
+    "funcao",
+    "cidade",
+    "uf",
+    "data_extenso",
+    "data_protocolo",
+    "protocolo",
+    "apresentante",
+    "valor",
+    "prazo",
+    "lugar",
+    "partes",
+    "testemunhas",
+    "reconhecimento",
+    "imposto",
+    "paginas"
+  ]
+}

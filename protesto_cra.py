@@ -4,9 +4,9 @@ O contrato da CRA e da CENPROT — o que entra e o que sai do Protesto, em XML.
 DE ONDE ISTO VEIO
     Dos esquemas OFICIAIS, encontrados na maquina da serventia em 21/08/2026:
 
-        C:\\ARPNET\\CRA\\Remessa\\v1_21.xsd
-        C:\\ARPNET\\CRA\\Remessa\\v1_22-apontamento.xsd
-        C:\\ARPNET\\CRA\\Remessa\\v1_22-geral.xsd
+        arquivos\\eoficio\\CRA\\Remessa\\v1_21.xsd
+        arquivos\\eoficio\\CRA\\Remessa\\v1_22-apontamento.xsd
+        arquivos\\eoficio\\CRA\\Remessa\\v1_22-geral.xsd
 
     Sao 66 especies de titulo, 76 codigos de irregularidade, 10 ocorrencias, e
     os dominios de tipo de protesto, motivo, endosso, apresentante e anuencia —
@@ -189,7 +189,7 @@ OCORRENCIAS: dict[str, dict] = {
 # 'C' interno para a CRA como se fosse ocorrencia oficial seria mandar dado
 # invalido; por isso ficam separados, com o que se sabe deles.
 OCORRENCIAS_INTERNAS_DO_EOFICIO: dict[str, str] = {
-    "C": "1.027 registros no acervo; código interno do E-Ofício, não da CRA — "
+    "C": "1.027 registros no acervo; código interno do sistema antigo, não da CRA — "
          "significado a confirmar antes de qualquer migração",
     "E": "1 registro no acervo; idem",
 }
@@ -383,7 +383,7 @@ def ocorrencia(codigo: Any, versao: str = "1.22-apontamento") -> dict:
     curta = versao.split("-")[0]
     if chave in OCORRENCIAS_INTERNAS_DO_EOFICIO:
         raise CraError(
-            f"{chave!r} é código interno do E-Ofício, e não ocorrência da CRA "
+            f"{chave!r} é código interno do sistema antigo, e não ocorrência da CRA "
             f"({OCORRENCIAS_INTERNAS_DO_EOFICIO[chave]}).")
     achado = OCORRENCIAS.get(chave)
     if not achado:

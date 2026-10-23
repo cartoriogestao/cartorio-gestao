@@ -38,6 +38,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import acervo_carga as AC                          # noqa: E402
 from ra_schema import init_ra_schema                # noqa: E402
@@ -48,7 +50,7 @@ ACERVO_REAL = Path(r"C:\ProgramData\CartorioGestao") / AC.NOME_ACERVO
 
 def banco() -> sqlite3.Connection:
     """O banco do sistema, só com o que o Livro 3 usa."""
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     init_ra_schema(con)
     return con
@@ -65,7 +67,7 @@ def acervo_falso() -> sqlite3.Connection:
       - documento com máscara em uma das partes, para provar que ele sai em
         dígitos como os do Livro 2.
     """
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE LivroAuxiliar (
@@ -425,7 +427,7 @@ def test_a_previa_de_depois_da_carga_conta_tudo_como_ja_importado():
 def test_acervo_sem_as_tabelas_do_livro_3_nao_derruba_a_carga():
     """Outro sistema pode ter o registro e não ter as partes nem o tbOrtoga."""
     con = banco()
-    acervo = sqlite3.connect(":memory:")
+    acervo = conexao_de_teste()
     acervo.row_factory = sqlite3.Row
     acervo.executescript("""
         CREATE TABLE LivroAuxiliar (Id INTEGER, Livro TEXT, Registro REAL,

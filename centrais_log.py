@@ -32,6 +32,7 @@ from datetime import datetime
 from typing import Any
 
 import centrais_schema as SCH
+from bd_nativo import banco
 
 LOGGER = logging.getLogger("cartorio_gestao.centrais")
 
@@ -82,6 +83,36 @@ def mascarar_texto(texto: Any, limite: int = LIMITE_DA_MENSAGEM) -> str:
     return s
 
 
+_CHAVES_DE_DOCUMENTO = ("cpf", "cnpj", "documento", "cpfcnpj")
+
+
+def _chave_de_documento(nome: Any) -> bool:
+    limpo = re.sub(r"[-_\s]", "", str(nome or "")).lower()
+    return any(x in limpo for x in _CHAVES_DE_DOCUMENTO)
+
+
+def mascarar_documentos(valor: Any, _profundidade: int = 0) -> Any:
+    """Copia `valor` com CPF/CNPJ mascarados SÓ nos campos de documento.
+    Só calcula; não muda o original.
+
+    É a forma que a auditoria usa (revisão de segurança de 22/10/2026, M9):
+    `audit_logs.details` levava o CPF em claro, visível ao AUDITOR e no
+    backup. Mascara-se pelo NOME do campo, e não pelo texto inteiro, para
+    não tocar em hash, selo, protocolo ou telefone que por acaso tenham onze
+    dígitos; e nada é cortado — a auditoria guarda o resto como estava.
+    """
+    if _profundidade > 8:
+        return valor
+    if isinstance(valor, dict):
+        return {k: (mascarar_texto(v, limite=10 ** 9)
+                    if _chave_de_documento(k) and isinstance(v, str)
+                    else mascarar_documentos(v, _profundidade + 1))
+                for k, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [mascarar_documentos(v, _profundidade + 1) for v in valor]
+    return valor
+
+
 def sanitizar(valor: Any, _profundidade: int = 0) -> Any:
     """Copia `valor` sem segredo e sem CPF/CNPJ. Só calcula; não muda o original."""
     if _profundidade > 6:
@@ -105,7 +136,7 @@ def linha_estruturada(**campos: Any) -> str:
                       default=str)
 
 
-def registrar(con: sqlite3.Connection, central: str, operacao: str,
+def registrar(con, central: str, operacao: str,
               evento: str, *, nivel: str = SCH.INFO,
               ambiente: str | None = None, fila_id: int | None = None,
               status_http: int | None = None, duracao_ms: int | None = None,
@@ -128,22 +159,22 @@ def registrar(con: sqlite3.Connection, central: str, operacao: str,
         if len(det) > LIMITE_DO_DETALHE:
             det = det[:LIMITE_DO_DETALHE] + "…"
     quando = agora()
-    cur = con.execute(
+    novo = banco(con).escrever(
         "INSERT INTO centrais_log (quando, central, operacao, ambiente, nivel,"
         " evento, fila_id, status_http, duracao_ms, mensagem, detalhe)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
         (quando, qual, oper, (ambiente or None), niv, str(evento or "?"),
-         fila_id, status_http, duracao_ms, msg, det))
+         fila_id, status_http, duracao_ms, msg, det))[0]["id"]
     nivel_py = {SCH.INFO: logging.INFO, SCH.AVISO: logging.WARNING,
                 SCH.ERRO: logging.ERROR}[niv]
     LOGGER.log(nivel_py, linha_estruturada(
         quando=quando, central=qual, operacao=oper, ambiente=ambiente,
         nivel=niv, evento=evento, fila_id=fila_id, status_http=status_http,
         duracao_ms=duracao_ms, mensagem=msg))
-    return int(cur.lastrowid)
+    return int(novo)
 
 
-def registrar_resposta(con: sqlite3.Connection, central: str, operacao: str,
+def registrar_resposta(con, central: str, operacao: str,
                        resposta: Any, *, ambiente: str | None = None,
                        fila_id: int | None = None) -> int:
     """Registra uma `centrais_http.Resposta` (ou `CentralHttpError`).
@@ -212,8 +243,11 @@ def anotar_resposta(central: str, operacao: str, resposta: Any, *,
         if hasattr(db, "connect"):
             con = db.connect()
             try:
-                con.execute(f"PRAGMA busy_timeout={int(ESPERA_DO_LOG_MS)}")
-                con.execute("BEGIN IMMEDIATE")
+                # O PRAZO VEM ANTES DA TRAVA (L027R): a primeira escrita abre a
+                # transação e já pega a trava do banco, e um `SET LOCAL` dentro
+                # dela chegava tarde — o log esperava os 15 s da conexão. Vale
+                # para esta conexão curta; o `close()` a devolve no padrão.
+                banco(con).ler(f"SET lock_timeout = '{int(ESPERA_DO_LOG_MS)}ms'")
                 novo = registrar_resposta(con, central, operacao, resposta,
                                           ambiente=ambiente, fila_id=fila_id)
                 con.commit()
@@ -234,7 +268,7 @@ def anotar_resposta(central: str, operacao: str, resposta: Any, *,
         return None
 
 
-def ultimos(con: sqlite3.Connection, *, central: str | None = None,
+def ultimos(con, *, central: str | None = None,
             operacao: str | None = None, nivel: str | None = None,
             limite: int = 50) -> list[dict]:
     """As últimas linhas de log, mais novas primeiro. Só LÊ.
@@ -244,21 +278,21 @@ def ultimos(con: sqlite3.Connection, *, central: str | None = None,
     """
     onde, args = [], []
     if central:
-        onde.append("central = ?")
+        onde.append("central = %s")
         args.append(str(central).strip().upper())
     if operacao:
-        onde.append("operacao = ?")
+        onde.append("operacao = %s")
         args.append(str(operacao).strip())
     if nivel:
-        onde.append("nivel = ?")
+        onde.append("nivel = %s")
         args.append(str(nivel).strip().upper())
     sql = "SELECT * FROM centrais_log"
     if onde:
         sql += " WHERE " + " AND ".join(onde)
-    sql += " ORDER BY id DESC LIMIT ?"
+    sql += " ORDER BY id DESC LIMIT %s"
     args.append(max(1, min(int(limite), 1000)))
     try:
-        linhas = con.execute(sql, args).fetchall()
+        linhas = banco(con).ler(sql, args)
     except sqlite3.OperationalError as erro:
         if "no such table" in str(erro).lower():
             return []
@@ -267,6 +301,4 @@ def ultimos(con: sqlite3.Connection, *, central: str | None = None,
 
 
 def _como_dict(linha: Any) -> dict:
-    if isinstance(linha, sqlite3.Row):
-        return {k: linha[k] for k in linha.keys()}
     return dict(linha)

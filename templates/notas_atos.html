@@ -62,7 +62,7 @@
           {% if a.situacao == 'EM_LAVRATURA' %}
           <form method="post" style="display:inline"
                 action="{{ url_for('notas_ato_apagar_rascunho', ato_id=a.id) }}"
-                onsubmit="return confirm('Apagar o rascunho {{ a.id }} — {{ TIPOS_ATO.get(a.tipo, a.tipo) }}{% if a.interessado %}, {{ a.interessado[:40] }}{% endif %}?\n\nO texto fica guardado na auditoria.')">
+                onsubmit="return confirm('Apagar o rascunho {{ a.id }} — ' + {{ TIPOS_ATO.get(a.tipo, a.tipo)|tojson|forceescape }}{% if a.interessado %} + ', ' + {{ a.interessado[:40]|tojson|forceescape }}{% endif %} + '?\n\nO texto fica guardado na auditoria.')">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button class="danger small">apagar</button>
           </form>

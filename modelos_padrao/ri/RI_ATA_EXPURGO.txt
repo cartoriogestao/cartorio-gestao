@@ -1,0 +1,42 @@
+ATA DE OCORRÊNCIA — EXPURGO DE ATO LAVRADO EM TESTE DE SISTEMA
+
+{{ unidade }}{% if cns %} — CNS {{ cns }}{% endif %}
+{{ cidade }}/{{ uf }}, {{ data_extenso }}.
+
+1. DO QUE SE TRATA
+
+Durante a implantação do sistema Cartório Gestão, e antes de sua entrada definitiva em operação, foi lavrado no sistema o ato abaixo identificado, cujo selo de fiscalização foi cancelado junto ao Tribunal de Justiça do Estado do Maranhão. Cancelado o selo, o ato não subsistiu como ato de registro. Lavra-se esta ata para que dele reste memória íntegra fora da ficha, e para que a ficha não afirme ato que não houve.
+
+2. DO ATO EXPURGADO
+
+   Ato ................. {{ rotulo }}
+   Matrícula ........... nº {{ matricula }}{% if livro %}, Livro {{ livro }}{% endif %}
+   Data do ato ......... {{ data_ato }}
+   Natureza ............ {{ natureza }}
+   Prenotação .......... {{ prenotacao }}
+   Lavrado em .......... {{ lavrado_em }}
+   Praticado por ....... {{ lavrado_nome }}{% if lavrado_titulo %}, {{ lavrado_titulo }}{% endif %}
+   Emolumentos ......... {{ emolumentos }}
+   Selo no sistema ..... {{ selo_texto }}
+   Selo cancelado ...... {{ selo_cancelado }}
+   Hash de integridade . {{ hash_ato }}{% if partes %}
+
+   Partes que constavam do ato:{% for p in partes %}
+   - {{ p.nome }} ({{ p.documento }}) — {{ p.papel }}{% endfor %}{% endif %}
+
+3. DO FUNDAMENTO
+
+   {{ motivo }}
+
+4. DO TEOR INTEGRAL DO ATO EXPURGADO
+
+   Transcreve-se abaixo, na íntegra e sem alteração, o teor que constava do ato, para que nada se perca:
+{% for pedaco in teor %}
+   {{ pedaco }}{% endfor %}
+
+5. DO REGISTRO DESTA OCORRÊNCIA
+
+O ato foi removido da ficha da matrícula. Esta ata, o evento de auditoria correspondente e o cancelamento do selo junto ao Tribunal são, em conjunto, a prova do que houve. O número do ato volta a estar disponível na matrícula.
+
+Lançada por: {{ usuario }}.
+{{ cidade }}/{{ uf }}, {{ data_extenso }}.

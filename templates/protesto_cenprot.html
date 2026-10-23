@@ -35,14 +35,10 @@
   <p style="padding:0 14px 14px"><small>
     Os <strong>{{ quadro.sem_protocolo }}</strong> sem protocolo não são defeito
     desta tela: sem o número do protocolo não há por onde casar o título com o
-    que o arquivo traz. Eles se resolvem em
-    {# O LINK SÓ PARA QUEM PODE ENTRAR: a carga é do ADMIN, e link que devolve
-       403 faz o escrevente achar que o sistema quebrou. #}
-    {% if user.role == 'ADMIN' %}
-    <a href="{{ url_for('atribuicoes_importar') }}">Livros e acervo — Trazer o
-    acervo do E-Ofício</a>{% else %}<strong>Livros e acervo — Trazer o acervo
-    do E-Ofício</strong>, que só o administrador abre{% endif %},
-    que traz o protocolo de cada um.
+    que o arquivo traz. O protocolo deles vinha da carga do acervo do
+    sistema antigo.
+    {# O link «Livros e acervo — Trazer o acervo do E-Ofício» saiu em
+       17/10/2026: a importação terminou. #}
   </small></p>
   {% endif %}
 </section>

@@ -51,10 +51,22 @@ O QUE ESTE MÓDULO NÃO FAZ
     função que a lavratura usa.
 
     Ver `DOCUMENTACAO/O_TERMO_DA_CASA_E_EDITAVEL.md`.
+
+AS FRASES SAÍRAM DO CÓDIGO NO LF06C (19/10/2026), E A REGRA FICOU
+    Cada frase ocasional dos quatro termos — a DNV, a hora, os avós, o CPF, o
+    cônjuge do falecido, a sentença do Livro E… — mora em
+    `modelos_padrao/rcpn/` como PEÇA do termo (`RC_TERMO_OBITO__sepultamento`),
+    e a ordem da qualificação das partes é o papel `RC_QUALIFICACAO`. O que
+    decide SE a frase entra — o sexo, o plural, o campo vazio, a origem do
+    assento — continua aqui. As funções seguem puras: leem o texto por
+    `rc_textos`, que dá o padrão da base, ou o ajuste da casa enquanto
+    `rc_termo.montar_para_conferir` lavra com `rc_textos.lendo_da_casa`.
 """
 from __future__ import annotations
 
 from typing import Any
+
+import rc_textos as TEXTOS
 
 
 class ModeloError(ValueError):
@@ -133,16 +145,10 @@ O_TRACO_DA_CASA = "____________"
 #   manda a ordem de nascimento constar no assento de cada um;
 #   «A genitora na ocasiao do parto contava 29 anos de idade» — a idade da mae no
 #   parto, que NAO se calcula e se guarda como o declarante informou.
-TERMO_NASCIMENTO = """\
-Aos {data_do_ato}, neste Município de {cidade_do_ato}, Estado do \
-{estado_do_ato}, neste ofício, compareceu {declarante_qualificacao}\
-{frase_dnv}, e declarou que no dia {data_do_fato}{frase_hora}, em \
-{local_do_fato}, nasceu uma criança do sexo {sexo}{frase_cor}, que recebeu o \
-nome de: "{nome}"{frase_gemeos}, sendo filho de {filiacao1_qualificacao}\
-{frase_filiacao2}{frase_idade_da_genitora}{frase_avos}\
-{frase_naturalidade}{frase_primeiro_registro}{frase_cpf} Lido e achado conforme, o(a) declarante \
-assina. Eu, {escrevente}, {funcao_do_escrevente}, dou fé e assino. \
-{frase_matricula} {cidade_do_ato}/{uf_do_ato}, {data_do_ato}."""
+# `TERMO_NASCIMENTO` — o texto de fábrica do papel RC_TERMO_NASCIMENTO — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/rcpn/RC_TERMO_NASCIMENTO.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 CAMPOS_NASCIMENTO: tuple[dict, ...] = (
     campo("data_do_ato", "Data do registro",
@@ -173,6 +179,15 @@ CAMPOS_NASCIMENTO: tuple[dict, ...] = (
     campo("local_do_fato", "Local do nascimento", exigido=True,
           artigo="art. 233, I",
           ajuda="o nome do lugar **e o endereço**, com a cidade e a UF"),
+    # O NATIMORTO SE LAVRA POR ESTE MODELO, E O FATO DELE É TER NASCIDO MORTO
+    # — LD01, 21/10/2026. O texto afirmava «nasceu uma criança … que recebeu
+    # o nome de» e calava o próprio fato registrado no Livro C-Auxiliar (LRP
+    # art. 53, § 1º; art. 54, 5º: «a declaração de que nasceu morta»).
+    campo("frase_natimorto", "A declaração de que nasceu morta",
+          de_onde="a espécie do assento (natimorto)",
+          artigo="LRP art. 53, § 1º, e art. 54, 5º",
+          ajuda="«nasceu morta» — só no natimorto; no nascimento não há "
+                "menção nem espaço"),
     campo("sexo", "Sexo", exigido=True, artigo="art. 233, II", tipo="sexo"),
     campo("frase_cor", "Cor ou raça", de_onde="`cor_raca` do assento",
           ajuda="«, cor Parda» — **sai inteira** quando não informada"),
@@ -212,6 +227,27 @@ CAMPOS_NASCIMENTO: tuple[dict, ...] = (
           de_onde="o CPF gerado no registro", artigo="art. 347",
           ajuda="«Inscrito no CPF n.º ...» — **o oficial pediu em 30/08/2026: "
                 "«CPF é importante no termo»**. Sai inteira quando não houver"),
+    # O REGISTRO TARDIO — 21/10/2026 (hotfix do servidor, LH05). Vem antes
+    # das testemunhas do assento, na ordem do texto.
+    campo("frase_tardio", "Registro tardio",
+          de_onde="a marca de registro tardio, o requerimento e as testemunhas",
+          artigo="art. 46 da Lei nº 6.015/1973; art. 249 do Código de Normas",
+          ajuda="«Registro lavrado fora do prazo legal … à vista do requerimento "
+                "nº … assinado pelas testemunhas …» — **sai vazia** no "
+                "registro dentro do prazo; a dispensa das testemunhas é "
+                "calculada (menor de 12 anos com DNV), e não impressa"),
+    # AS DUAS TESTEMUNHAS DO PARTO SEM ASSISTÊNCIA MÉDICA — LD01, 21/10/2026.
+    # O papel TESTEMUNHA existia na espécie e na tela, e o modelo não tinha
+    # onde escrevê-las: o parto em residência saía sem os nomes, a profissão,
+    # o documento e a residência que a lei manda constar.
+    campo("testemunhas", "Testemunhas do assento",
+          de_onde="as pessoas de papel TESTEMUNHA (e TESTEMUNHA2, a "
+                  "segunda do nascimento)",
+          artigo="LRP art. 54, 9º; CN-MA art. 233, IX",
+          ajuda="cada uma qualificada (nome, profissão, documento e "
+                "residência), e elas também assinam. **Sai inteira** quando "
+                "o assento não tem testemunha — e no registro tardio, cujas "
+                "testemunhas a frase do tardio já nomeia"),
     campo("frase_matricula", "A matrícula de 32 dígitos",
           de_onde="composta ao lavrar", exigido=True,
           ajuda="«Matrícula 000000 01 55 2026 1 00024 169 0019555 53.» — vai "
@@ -229,19 +265,10 @@ CAMPOS_NASCIMENTO: tuple[dict, ...] = (
 # medido de um papel desta casa**: ele se monta dos requisitos do art. 70 da Lei
 # 6.015/1973 e do que o Codigo de Normas exige. Isso esta declarado no campo
 # `medido` de cada modelo — nao se apresenta como precedente o que nao e.
-TERMO_CASAMENTO = """\
-Em {data_ato_extenso}, nesta cidade de {cidade_do_ato}, em cartório, perante mim e as \
-testemunhas adiante nomeadas e no fim assinadas, compareceram os nubentes \
-{nubente1_qualificacao} e {nubente2_qualificacao}, a fim de contrair \
-matrimônio, apresentando {documentos_apresentados}{frase_habilitacao} \
-E, não havendo impedimento, foram declarados casados sob o regime de \
-{regime_bens}. \
-{frase_dos_nomes} \
-São pais do primeiro nubente {filiacao1}; e do segundo, {filiacao2}. \
-{frase_conversao} \
-Nada mais. Lido e achado conforme, assinam comigo, que escrevi, os nubentes e \
-as testemunhas {testemunhas}. \
-Eu, {escrevente}, {funcao_do_escrevente}, escrevi e assino."""
+# `TERMO_CASAMENTO` — o texto de fábrica do papel RC_TERMO_CASAMENTO — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/rcpn/RC_TERMO_CASAMENTO.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 CAMPOS_CASAMENTO: tuple[dict, ...] = (
     campo("data_ato_extenso", "Data do registro, por extenso", exigido=True),
@@ -252,8 +279,19 @@ CAMPOS_CASAMENTO: tuple[dict, ...] = (
           exigido=True, artigo="art. 70 da Lei nº 6.015/1973, item 1"),
     campo("frase_habilitacao", "Habilitação",
           de_onde="o processo de habilitação, quando é desta casa",
+          artigo="art. 70 da Lei nº 6.015/1973, item 4; CN-MA art. 284, IV",
           ajuda="quando vier de outra serventia, o assento **compra selo "
-                "próprio** — item 14.1.6"),
+                "próprio** — item 14.1.6; desta casa ou de fora, a frase diz "
+                "a data da publicação dos proclamas"),
+    # A DATA DA CELEBRAÇÃO — LD01, 21/10/2026. O termo começava «Em <data do
+    # ato>» e ignorava a data do fato, que a certidão imprime como DATA DA
+    # CELEBRAÇÃO: celebrado num dia e lavrado no outro, termo e certidão
+    # discordavam.
+    campo("frase_da_celebracao", "Data da celebração",
+          de_onde="`data_fato` do assento",
+          artigo="art. 70 da Lei nº 6.015/1973, item 4; CN-MA art. 284, IV",
+          ajuda="«em dezenove (19) de outubro de …» — **sai inteira** quando "
+                "a data do fato não foi informada"),
     campo("regime_bens", "Regime de bens", exigido=True,
           artigo="art. 70 da Lei nº 6.015/1973, item 6",
           ajuda="é campo obrigatório da certidão, e pode mudar entre a "
@@ -282,13 +320,20 @@ CAMPOS_CASAMENTO: tuple[dict, ...] = (
     campo("frase_dos_nomes", "O que aconteceu com os nomes", exigido=True,
           ajuda="ou quem passou a assinar-se como, ou que **ambos mantiveram "
                 "os que tinham** — nunca o silêncio"),
-    campo("filiacao1", "Filiação do primeiro nubente", exigido=True),
+    campo("filiacao1", "Filiação do primeiro nubente", exigido=True,
+          artigo="art. 70 da Lei nº 6.015/1973, item 2; CN-MA art. 284, II",
+          ajuda="os nomes dos pais e, entre parênteses, a nacionalidade, a "
+                "data de nascimento e a residência de cada um"),
     campo("filiacao2", "Filiação do segundo nubente", exigido=True,
           ajuda="são **quatro** filiações no casamento, e o sistema lia duas"),
     campo("frase_conversao", "Conversão de união estável",
           ajuda="tem caminho e schema próprios no selador, e o número do "
                 "processo da união estável é obrigatório"),
-    campo("testemunhas", "Testemunhas", exigido=True),
+    campo("testemunhas", "Testemunhas", exigido=True,
+          artigo="art. 70 da Lei nº 6.015/1973, item 6; CC art. 1.534; "
+                 "CN-MA art. 284, VI",
+          ajuda="cada uma qualificada — nacionalidade, profissão, documento "
+                "e residência —, e não só o nome"),
     campo("escrevente", "Quem escreveu", exigido=True),
     campo("funcao_do_escrevente", "Em que qualidade", exigido=True),
 )
@@ -313,17 +358,10 @@ CAMPOS_CASAMENTO: tuple[dict, ...] = (
 #
 #   O § 2º acrescenta que «a ausencia das informacoes nao obstara o registro»:
 #   o termo sai mesmo incompleto, **com a declaracao dizendo o que faltou**.
-TERMO_OBITO = """\
-Em {data_ato_extenso}, nesta cidade de {cidade_do_ato}, em cartório, compareceu \
-{declarante_qualificacao}, e declarou que, no dia {data_fato_extenso}\
-{frase_hora}, em {local_do_fato}, faleceu {falecido_qualificacao}. \
-{frase_filiacao} {frase_estado_civil} {frase_causa} {frase_sepultamento} \
-{frase_eleitor} {frase_testamento} {frase_filhos} {frase_deixou_bens} \
-{frase_identificacao} \
-{frase_declaracao_de_obito} \
-{frase_ignorados} \
-Nada mais declarou. Lido e achado conforme, assina comigo, que escrevi. \
-Eu, {escrevente}, {funcao_do_escrevente}, escrevi e assino."""
+# `TERMO_OBITO` — o texto de fábrica do papel RC_TERMO_OBITO — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/rcpn/RC_TERMO_OBITO.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 CAMPOS_OBITO: tuple[dict, ...] = (
     campo("data_ato_extenso", "Data do registro, por extenso", exigido=True),
@@ -412,12 +450,10 @@ CAMPOS_OBITO: tuple[dict, ...] = (
 # —, a mesma forma do termo de nascimento: a decisão de a frase existir é do
 # módulo, e não do modelo. Os requisitos de cada uma estão em
 # `frase_do_livro_e`, com o artigo ao lado.
-TERMO_LIVRO_E = """\
-Aos {data_do_ato}, neste Município de {cidade_do_ato}, Estado do \
-{estado_do_ato}, neste ofício, lavrou-se o {titulo_do_ato} referente a \
-"{nome}"{qualificacao_do_titular}.{frase_da_especie}{frase_observacoes} Lido \
-e achado conforme. Eu, {escrevente}, {funcao_do_escrevente}, dou fé e \
-assino. {cidade_do_ato}/{uf_do_ato}, {data_do_ato}."""
+# `TERMO_LIVRO_E` — o texto de fábrica do papel RC_TERMO_LIVRO_E — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/rcpn/RC_TERMO_LIVRO_E.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 CAMPOS_LIVRO_E: tuple[dict, ...] = (
     campo("data_do_ato", "Data do registro",
@@ -456,7 +492,7 @@ CAMPOS_LIVRO_E: tuple[dict, ...] = (
 # que este projeto ja pagou uma vez.
 MODELOS: tuple[dict, ...] = (
     {"chave": "NASCIMENTO", "nome": "Termo de nascimento",
-     "livro": "A", "texto": TERMO_NASCIMENTO, "campos": CAMPOS_NASCIMENTO,
+     "livro": "A", "no_catalogo": "RC_TERMO_NASCIMENTO", "campos": CAMPOS_NASCIMENTO,
      "conferido_no_papel": True,
      "fonte": "construído dos requisitos do art. 233 do Código de Normas "
               "do TJMA; o termo nº 8.369 desta casa serviu de **conferência**, "
@@ -464,21 +500,21 @@ MODELOS: tuple[dict, ...] = (
      "artigo": "art. 233 do Código de Normas do TJMA; art. 54 da Lei nº "
                "6.015/1973"},
     {"chave": "CASAMENTO", "nome": "Termo de casamento",
-     "livro": "B", "texto": TERMO_CASAMENTO, "campos": CAMPOS_CASAMENTO,
+     "livro": "B", "no_catalogo": "RC_TERMO_CASAMENTO", "campos": CAMPOS_CASAMENTO,
      "conferido_no_papel": False,
      "fonte": "construído dos requisitos do art. 70 da Lei nº 6.015/1973 — "
               "**é assim que o oficial mandou**, em 30/08/2026: os modelos do "
               "E-Ofício não se usam, nem o papel",
      "artigo": "art. 70 da Lei nº 6.015/1973"},
     {"chave": "OBITO", "nome": "Termo de óbito",
-     "livro": "C", "texto": TERMO_OBITO, "campos": CAMPOS_OBITO,
+     "livro": "C", "no_catalogo": "RC_TERMO_OBITO", "campos": CAMPOS_OBITO,
      "conferido_no_papel": False,
      "fonte": "construído dos doze incisos do art. 255 do Código de Normas "
               "do TJMA, que repete o art. 80 da Lei nº 6.015/1973 — **é assim "
               "que o oficial mandou**, em 30/08/2026",
      "artigo": "art. 80 da Lei nº 6.015/1973"},
     {"chave": "LIVRO_E", "nome": "Termo do Livro E",
-     "livro": "E", "texto": TERMO_LIVRO_E, "campos": CAMPOS_LIVRO_E,
+     "livro": "E", "no_catalogo": "RC_TERMO_LIVRO_E", "campos": CAMPOS_LIVRO_E,
      "conferido_no_papel": False,
      "fonte": "esqueleto compartilhado das espécies do Livro E — ordem do "
               "oficial em 07/09/2026: «livro e usa o mesmo modelo»; editável "
@@ -606,9 +642,17 @@ def quantos_teores_faltam() -> dict:
 
 
 def modelo(chave: str) -> dict:
+    """O modelo daquele ato, com o `texto` de fábrica LIDO DA BASE.
+
+    **O TEXTO SAIU DESTE MÓDULO NO LF06A** (19/10/2026): mora em
+    `modelos_padrao/rcpn/RC_TERMO_<ATO>.txt`, com os mesmos bytes, e chega pela
+    base dos padrões. O resto da ficha — campos, livro, de onde veio — continua
+    aqui, porque é regra do termo, e não texto.
+    """
     for m in MODELOS:
         if m["chave"] == chave:
-            return m
+            import modelos_da_casa as CASA
+            return {**m, "texto": CASA.padrao_de(m["no_catalogo"])}
     raise ModeloError(f"Não há modelo de termo para «{chave}».")
 
 
@@ -654,6 +698,23 @@ def _texto(v: Any) -> str:
     if v is None:
         return ""
     return str(v).strip()
+
+
+def _frase(chave: str, **claros: Any) -> str:
+    """A peça de um termo com os claros preenchidos. Só lê.
+
+    **SEM CONEXÃO, E NÃO POR DESCUIDO.** Estas funções são puras e a prévia do
+    motor (`modelos_motor_termo`) as chama sem banco: aí sai o padrão da base.
+    Na lavratura, `rc_termo.montar_para_conferir` abre
+    `rc_textos.lendo_da_casa(con)` em volta da montagem, e a mesma chamada lê
+    o ajuste da casa — sem pendurar a conexão em dez assinaturas.
+    """
+    return TEXTOS.peca(chave, **claros)
+
+
+def _do_papel(chave: str) -> str:
+    """O texto inteiro de um papel do catálogo, sem preencher. Só lê."""
+    return TEXTOS.texto(chave)
 
 
 def _com_os_espacos_da_frase(v: Any) -> str:
@@ -894,6 +955,16 @@ def nome_em_negrito(nome: str | None) -> str:
     return f"<strong>{n}</strong>" if n else ""
 
 
+# A ORDEM DA QUALIFICAÇÃO É UM PAPEL DO CATÁLOGO (LF06C). O nome antigo
+# `QUALIFICACAO` responde pelo `__getattr__` do fim do módulo.
+CHAVE_DA_QUALIFICACAO = "RC_QUALIFICACAO"
+
+# O lugar da parte que não se sabe, enquanto o corpo se preenche. O NUL não
+# aparece em texto do livro (o PostgreSQL nem o aceita numa coluna de texto),
+# e por isso não se confunde com nada que a pessoa tenha.
+_PARTE_VAZIA = "\x00"
+
+
 def qualificacao_inteira(p: dict, *, feminino: bool | None = None, nome_negrito: bool = False) -> str:
     """A pessoa como o termo desta casa a escreve.
 
@@ -905,6 +976,16 @@ def qualificacao_inteira(p: dict, *, feminino: bool | None = None, nome_negrito:
     **O QUE NÃO SE SABE NÃO APARECE, E NÃO DEIXA VÍRGULA SOLTA.** «Fulano, ,
     portador do RG n.º ,» é pior que «Fulano»: parece erro de impressão num
     livro que não aceita rasura.
+
+    **A ORDEM É PAPEL, AS FRASES SÃO PEÇAS, E A CONCORDÂNCIA É CÓDIGO** — LF06C,
+    19/10/2026. A ordem das partes é o corpo do papel `RC_QUALIFICACAO`
+    (`{nome}, {nacionalidade}, … {residencia}`), que a casa pode reordenar na
+    tela de Modelos; a frase de cada parte («portadora do RG n.º …») é peça
+    dele, uma para cada gênero. O que NÃO vai para o texto editável são as
+    duas regras: qual das peças concorda com o sexo da pessoa, e que a parte
+    sem dado some — com a vírgula que a separa (`_juntar_partes`). Escritas
+    no texto, a casa teria de reescrevê-las em cada ajuste, e um ajuste que
+    as esquecesse deixaria a vírgula solta no livro.
     """
     if not p:
         return ""
@@ -913,29 +994,33 @@ def qualificacao_inteira(p: dict, *, feminino: bool | None = None, nome_negrito:
     nome = _texto(p.get("nome")).strip()
     if nome_negrito and nome:
         nome = nome_em_negrito(nome)
-    partes = [nome]
-    for chave in ("nacionalidade", "profissao"):
-        v = _texto(p.get(chave))
-        if v:
-            partes.append(v)
+    partes = {"nome": nome,
+              "nacionalidade": _texto(p.get("nacionalidade")),
+              "profissao": _texto(p.get("profissao")),
+              "rg": "", "cpf": "", "naturalidade": "", "nascimento": "",
+              "residencia": ""}
     rg = _texto(p.get("documento_numero")) if \
         _texto(p.get("documento_tipo")).upper() in ("RG", "") else ""
     if rg:
-        partes.append(f"{'portadora' if f else 'portador'} do RG n.º {rg}")
+        partes["rg"] = _frase("RC_QUALIFICACAO__rg_feminino" if f
+                              else "RC_QUALIFICACAO__rg_masculino", numero=rg)
     cpf = _texto(p.get("cpf")) or (
         _texto(p.get("documento_numero"))
         if _texto(p.get("documento_tipo")).upper() == "CPF" else "")
     if cpf:
-        partes.append(f"{'inscrita' if f else 'inscrito'} no CPF n.º {cpf}")
+        partes["cpf"] = _frase("RC_QUALIFICACAO__cpf_feminino" if f
+                               else "RC_QUALIFICACAO__cpf_masculino", numero=cpf)
     nat = _texto(p.get("naturalidade_cidade"))
     if nat:
         uf = _texto(p.get("naturalidade_uf"))
-        partes.append(f"{'natural' if True else ''} de {nat}"
-                      + (f"/{uf}" if uf else ""))
+        partes["naturalidade"] = _frase("RC_QUALIFICACAO__naturalidade",
+                                        lugar=nat + (f"/{uf}" if uf else ""))
     nasc = _texto(p.get("data_nascimento"))[:10]
     if nasc and len(nasc) == 10:
         d, m, a = nasc[8:10], nasc[5:7], nasc[:4]
-        partes.append(f"{'nascida' if f else 'nascido'} no dia {d}/{m}/{a}")
+        partes["nascimento"] = _frase(
+            "RC_QUALIFICACAO__nascimento_feminino" if f
+            else "RC_QUALIFICACAO__nascimento_masculino", data=f"{d}/{m}/{a}")
     end = _texto(p.get("endereco"))
     if end:
         pedaco = [end]
@@ -945,9 +1030,25 @@ def qualificacao_inteira(p: dict, *, feminino: bool | None = None, nome_negrito:
                 pedaco.append(v)
         uf = _texto(p.get("uf"))
         residencia = ", ".join(pedaco) + (f"/{uf}" if uf else "")
-        partes.append(f"residente e {'domiciliada' if f else 'domiciliado'} "
-                      f"em {residencia}")
-    return ", ".join(x for x in partes if x)
+        partes["residencia"] = _frase(
+            "RC_QUALIFICACAO__residencia_feminino" if f
+            else "RC_QUALIFICACAO__residencia_masculino", endereco=residencia)
+    return _juntar_partes(_do_papel(CHAVE_DA_QUALIFICACAO), partes)
+
+
+def _juntar_partes(corpo: str, partes: dict[str, str]) -> str:
+    """O corpo da qualificação com as partes; a que falta some. Só calcula.
+
+    A parte vazia entra como marca e sai **com o separador que a precede**
+    («, » ou «; ») — a mesma conta do `", ".join` de antes do LF06C, agora
+    sobre a ordem que o papel diz. No começo do texto não há separador antes:
+    ali as marcas saem com o que vem DEPOIS delas, senão a qualificação de quem
+    não tem nome começaria por vírgula.
+    """
+    import re
+    montado = corpo.format(**{k: v or _PARTE_VAZIA for k, v in partes.items()})
+    montado = re.sub(r"^(?:\s*\x00\s*[,;]?)+\s*", "", montado)
+    return re.sub(r"\s*[,;]?\s*\x00", "", montado)
 
 
 def _dois_nomes(a: dict, b: dict) -> str:
@@ -985,6 +1086,149 @@ def limpar(texto: str) -> str:
     return texto.strip()
 
 
+def frase_dos_gemeos(assento: dict, registrado: dict | None) -> str:
+    """«, gêmeo, o 1º na ordem de nascimento», ou nada. Só calcula.
+
+    **O PARTO MÚLTIPLO QUE O BALCÃO INFORMA VAI AO TERMO** — LD01, 21/10/2026.
+    `{frase_gemeos}` só saía de quem a passasse à mão, e a lavratura não
+    passava: o termo calava o que a certidão já dizia («GÊMEO: SIM»). A lei
+    manda constar o fato de ser gêmeo (LRP art. 54, 3º) e, no assento de cada
+    um, a ordem de nascimento (art. 63; CN-MA art. 234).
+
+    O FATO VEM DO `ibge_gemeo` (2 gêmeo, 3 trigêmeo ou mais — a régua é a de
+    `rc_gemeos.e_parto_multiplo`), e a ORDEM do `gemeo_ordem`, que é outra
+    pergunta: sem ela a frase diz só que é gêmeo, e `rc_gemeos.pendentes`
+    continua cobrando a ordem. A palavra concorda com o sexo do registrado;
+    o texto de cada forma é peça do termo.
+    """
+    import rc_gemeos as GEMEOS
+    if not GEMEOS.e_parto_multiplo((assento or {}).get("ibge_gemeo")):
+        return ""
+    feminino = _feminino(registrado)
+    try:
+        ordem = int((assento or {}).get("gemeo_ordem") or 0)
+    except (TypeError, ValueError):
+        ordem = 0
+    if ordem >= 1:
+        return ", " + _frase("RC_TERMO_NASCIMENTO__gemea_na_ordem" if feminino
+                             else "RC_TERMO_NASCIMENTO__gemeo_na_ordem",
+                             ordem=ordem)
+    return ", " + _frase("RC_TERMO_NASCIMENTO__gemea" if feminino
+                         else "RC_TERMO_NASCIMENTO__gemeo")
+
+
+def _lista_de_qualificados(qualificacoes: list[str]) -> str:
+    """«A, qualificada; e B, qualificado» — a lista de pessoas qualificadas.
+
+    A qualificação de cada uma tem vírgulas por dentro; separá-las com a
+    vírgula da lista misturaria as pessoas. O ponto e vírgula separa uma da
+    outra, e o «e» fica antes da última. Só calcula."""
+    limpos = [q for q in (_texto(x) for x in qualificacoes) if q]
+    # SÓ COM NOMES, A LISTA É A DE SEMPRE — «A, B e C». O ponto e vírgula só
+    # entra quando há qualificação para separar.
+    if not any("," in q for q in limpos):
+        return _lista_por_extenso(limpos)
+    if len(limpos) <= 1:
+        return "".join(limpos)
+    return "; ".join(limpos[:-1]) + "; e " + limpos[-1]
+
+
+def _testemunhas_qualificadas(pessoas: list[dict] | None) -> str:
+    """As pessoas de papel TESTEMUNHA, cada uma com a qualificação inteira,
+    na ordem em que entraram. Só calcula.
+
+    No NASCIMENTO a segunda gaveta grava `TESTEMUNHA2` (o papel do registro
+    tardio, 21/10/2026 — LH05), e ela é testemunha do assento do mesmo jeito."""
+    return _lista_de_qualificados([
+        qualificacao_inteira(p) for p in pessoas or []
+        if _texto(p.get("papel")).upper() in ("TESTEMUNHA", "TESTEMUNHA2")
+        and _texto(p.get("nome"))])
+
+
+def _filiacao_qualificada(mae: dict | None, pai: dict | None,
+                          campos: tuple[str, ...]) -> str:
+    """«ANA e JOÃO (respectivamente: brasileira, …; e brasileiro, …)». Só calcula.
+
+    **OS NOMES FICAM JUNTOS, E A QUALIFICAÇÃO VAI DEPOIS** — LD01, 21/10/2026.
+    O termo dava só os nomes dos pais, e a lei pede mais: no casamento a
+    nacionalidade, a data de nascimento e a residência (LRP art. 70, 2º; CN-MA
+    art. 284, II); no óbito a profissão, a naturalidade e a residência (LRP
+    art. 80, 5º; CN-MA art. 255, VI). `campos` diz quais partes da
+    qualificação entram — o resto do cadastro da pessoa não vai a este termo.
+
+    Os dois nomes continuam lado a lado, como o termo sempre os escreveu; a
+    qualificação de cada um vem entre parênteses, na ordem dos nomes
+    («respectivamente»). Só um com qualificação, ela leva o nome junto, para
+    não ficar dito de quem não é. Sem qualificação nenhuma, só os nomes.
+    """
+    pais = [p for p in (mae, pai) if p and _texto(p.get("nome"))]
+    nomes = _dois_nomes(mae or {}, pai or {})
+    if not pais:
+        return nomes
+    quais = [qualificacao_inteira({**{c: p.get(c) for c in campos},
+                                   "sexo": p.get("sexo"), "nome": ""})
+             for p in pais]
+    if not any(quais):
+        return nomes
+    if all(quais):
+        dentro = (quais[0] if len(quais) == 1
+                  else _frase("RC_QUALIFICACAO__respectivamente",
+                              qualificacoes=_lista_de_qualificados(quais)))
+    else:
+        dentro = "; ".join(f"{_texto(p.get('nome'))}, {q}"
+                           for p, q in zip(pais, quais) if q)
+    return f"{nomes} ({dentro})"
+
+
+#: As partes da qualificação dos pais que cada termo pede.
+CAMPOS_DOS_PAIS_NO_CASAMENTO = ("nacionalidade", "data_nascimento", "endereco",
+                                "bairro", "cidade", "uf")
+CAMPOS_DOS_PAIS_NO_OBITO = ("profissao", "naturalidade_cidade",
+                            "naturalidade_uf", "endereco", "bairro", "cidade",
+                            "uf")
+
+
+def _testemunhas_do_tardio(pessoas: list[dict] | None) -> list[dict]:
+    """As duas testemunhas do requerimento do tardio (art. 249, II), a
+    primeira antes da segunda, só as que têm nome. Só calcula."""
+    return [p for papel in ("TESTEMUNHA", "TESTEMUNHA2")
+            for p in (pessoas or [])
+            if _texto(p.get("papel")).upper() == papel
+            and _texto(p.get("nome"))]
+
+
+def frase_do_tardio(assento: dict, pessoas: list[dict]) -> str:
+    """O registro tardio no termo — art. 46 da Lei 6.015/1973 e art. 249 do
+    Código de Normas. Só calcula. 21/10/2026.
+
+    **A DISPENSA DAS TESTEMUNHAS SE CALCULA, E NÃO SE IMPRIME** — o modelo do
+    E-Ofício a afirmava em toda folha, e o art. 249, II a condiciona (menor de
+    12 anos *e* DNV). A régua é `rc_assento.regra_das_testemunhas_do_tardio`,
+    a mesma que a lavratura usa para recusar.
+
+    O TEXTO DE CADA PEDAÇO É PEÇA DE `RC_TERMO_NASCIMENTO` (LF06C): no
+    servidor ele estava escrito aqui, e o texto do papel mora na base. Os
+    bytes são os do servidor; a vírgula que junta os pedaços, o espaço da
+    frente e o ponto final são do código.
+    """
+    import rc_assento as RC
+    if not RC.e_tardio(assento.get("registro_tardio")):
+        return ""
+    req = _texto(assento.get("tardio_requerimento"))
+    frase = " " + (_frase("RC_TERMO_NASCIMENTO__tardio_com_requerimento",
+                          requerimento=req) if req
+                   else _frase("RC_TERMO_NASCIMENTO__tardio"))
+    testemunhas = _testemunhas_do_tardio(pessoas)
+    if testemunhas:
+        frase += ", " + _frase(
+            "RC_TERMO_NASCIMENTO__tardio_testemunhas",
+            testemunhas=" e ".join(qualificacao_inteira(p) for p in testemunhas))
+    regra = RC.regra_das_testemunhas_do_tardio(assento, pessoas)
+    if regra["dispensada"] and not testemunhas:
+        frase += ", " + _frase("RC_TERMO_NASCIMENTO__tardio_dispensa")
+    return frase + "."
+
+
 def valores_do_assento(assento: dict, pessoas: list[dict], *,
                        sv: dict | None = None,
                        frase_gemeos: str = "",
@@ -995,6 +1239,10 @@ def valores_do_assento(assento: dict, pessoas: list[dict], *,
     **AS FRASES OCASIONAIS SAEM INTEIRAS, COM A PONTUAÇÃO.** Cada uma já vem
     com a vírgula que a precede, para que a ausência não deixe rastro — foi o
     que o oficial determinou sobre os gêmeos, e vale para todas.
+
+    `frase_gemeos` passada por quem chama vence a que o assento dá (é o
+    caminho de antes do LD01, que a prévia do motor ainda usa); vazia, a
+    frase sai do parto múltiplo informado (`frase_dos_gemeos`).
     """
     por_papel: dict[str, dict] = {}
     for p in pessoas or []:
@@ -1005,8 +1253,6 @@ def valores_do_assento(assento: dict, pessoas: list[dict], *,
     pai = por_papel.get("PAI", {})
     sv = sv or {}
 
-    hora = _texto(assento.get("hora_fato"))
-    h, _, m = hora.partition(":")
     idade = _texto(mae.get("idade_no_fato"))
     cor = _texto(assento.get("cor_raca")).capitalize()
     dnv = _texto(assento.get("dnv"))
@@ -1025,14 +1271,26 @@ def valores_do_assento(assento: dict, pessoas: list[dict], *,
                         por_papel.get("AVO_MATERNA", {}))
     avos2 = _dois_nomes(por_papel.get("AVO_PATERNO", {}),
                         por_papel.get("AVO_PATERNA", {}))
+    # O TEXTO DE CADA FRASE É PEÇA DE `RC_TERMO_NASCIMENTO` (LF06C); a vírgula
+    # que a precede já mora na peça, e a decisão de ela entrar continua aqui.
     if avos1 and avos2:
-        frase_avos = (f", tendo como avós (da filiação 1): {avos1} e "
-                      f"(da filiação 2): {avos2}")
+        frase_avos = _frase("RC_TERMO_NASCIMENTO__avos", avos1=avos1,
+                            avos2=avos2)
     elif avos1 or avos2:
-        qual = "1" if avos1 else "2"
-        frase_avos = f", tendo como avós (da filiação {qual}): {avos1 or avos2}"
+        frase_avos = _frase("RC_TERMO_NASCIMENTO__avos_de_um_lado",
+                            filiacao="1" if avos1 else "2",
+                            avos=avos1 or avos2)
     else:
         frase_avos = ""
+    qualificacao_do_pai = qualificacao_inteira(pai)
+    natimorto = _texto(assento.get("especie")).upper() == "NATIMORTO"
+    # O NATIMORTO NÃO TEM DNV: o documento que o balcão apresenta é a
+    # Declaração de Óbito (LRP art. 53; CNN art. 479-A), e o termo diz qual.
+    numero_do = _texto(assento.get("numero_do")) if natimorto else ""
+    testemunhas = _testemunhas_qualificadas(pessoas)
+    frase_tardio = frase_do_tardio(assento, pessoas)
+    tardio_com_testemunhas = bool(frase_tardio
+                                  and _testemunhas_do_tardio(pessoas))
 
     return {
         "data_do_ato": data_do_termo(assento.get("data_ato")),
@@ -1041,18 +1299,23 @@ def valores_do_assento(assento: dict, pessoas: list[dict], *,
         "uf_do_ato": _texto(sv.get("ri_uf")) or "MA",
         "declarante_qualificacao": qualificacao_inteira(
             por_papel.get("DECLARANTE", {})),
-        "frase_dnv": f", apresentou a DNV n.º {dnv}" if dnv else "",
+        "frase_dnv": (_frase("RC_TERMO_NASCIMENTO__dnv", dnv=dnv) if dnv
+                      else _frase("RC_TERMO_NASCIMENTO__declaracao_de_obito",
+                                  numero=numero_do) if numero_do else ""),
         "data_do_fato": data_do_termo(assento.get("data_fato"),
                                       com_numeros=True),
-        "frase_hora": (f", às {h.strip()}:{m.strip()}"
-                       if h.strip() and m.strip()
-                       else (f", às {h.strip()} horas" if h.strip() else "")),
+        "frase_hora": _frase_da_hora(assento.get("hora_fato"),
+                                     "RC_TERMO_NASCIMENTO__hora",
+                                     "RC_TERMO_NASCIMENTO__hora_cheia"),
         "local_do_fato": local,
+        # «nasceu morta uma criança» — o fato do Livro C-Auxiliar (LD01).
+        "frase_natimorto": (" " + _frase("RC_TERMO_NASCIMENTO__natimorto")
+                            if natimorto else ""),
         "sexo": {"M": "Masculino", "F": "Feminino"}.get(
             _texto(registrado.get("sexo")).upper()[:1], ""),
-        "frase_cor": f", cor {cor}" if cor else "",
+        "frase_cor": _frase("RC_TERMO_NASCIMENTO__cor", cor=cor) if cor else "",
         "nome": nome_em_negrito(assento.get("nome")),
-        "frase_gemeos": frase_gemeos,
+        "frase_gemeos": frase_gemeos or frase_dos_gemeos(assento, registrado),
         # **O GENERO VEM DO SEXO DA PESSOA, E NAO DA POSICAO.** Forcei
         # feminino na filiacao 1 e o termo saiu «EVANDRO SOUSA SALES,
         # BRASILEIRO, LAVRADOR, INSCRITA no CPF, NASCIDA no dia...» —
@@ -1060,31 +1323,60 @@ def valores_do_assento(assento: dict, pessoas: list[dict], *,
         # mesmo sexo, e ha dado trocado no acervo: a posicao nao diz o
         # genero de ninguem.
         "filiacao1_qualificacao": qualificacao_inteira(mae),
-        "frase_filiacao2": (f", e de {qualificacao_inteira(pai)}"
+        "frase_filiacao2": (_frase("RC_TERMO_NASCIMENTO__filiacao2",
+                                   filiacao2=qualificacao_do_pai)
                             + frase_do_casamento_dos_pais(assento)
-                            if qualificacao_inteira(pai) else ""),
+                            if qualificacao_do_pai else ""),
         "frase_idade_da_genitora": (
-            f", tendo a mãe, na ocasião do parto, {idade} anos de idade"
+            _frase("RC_TERMO_NASCIMENTO__idade_da_mae", idade=idade)
             if idade else ""),
         "frase_avos": frase_avos,
+        # O PONTO QUE FECHA A FILIAÇÃO É DO CÓDIGO: ele sai mesmo sem a frase.
         "frase_naturalidade": (
-            f". A naturalidade declarada é de {nat}, na forma do art. 54, "
-            f"§ 4º, da Lei Federal n.º 6.015/1973." if nat else "."),
+            ". " + _frase("RC_TERMO_NASCIMENTO__naturalidade", naturalidade=nat)
+            if nat else "."),
         # CPF E «PRIMEIRO REGISTRO» DENTRO DO TEOR - pedido do oficial em
         # 09/10/2026: o CPF entra no termo, sem averbacao. Concorda com o sexo
         # do registrado; sem CPF a frase some inteira (sem traco solto).
         "frase_primeiro_registro": (
             "" if (_texto(assento.get("origem")).upper() in ORIGENS_SEM_PRIMEIRO_REGISTRO
                    or _texto(assento.get("especie")).upper() == "NATIMORTO")
-            else f" {FRASE_PRIMEIRO_REGISTRO}"),
+            else " " + _frase("RC_TERMO_NASCIMENTO__primeiro_registro")),
         "frase_cpf": (f" {frase_do_cpf(cpf, registrado.get('sexo'))}"
                       if cpf else ""),
+        # O REGISTRO TARDIO (art. 46 da LRP; art. 249 do CN-MA) — vazia no
+        # registro dentro do prazo.
+        "frase_tardio": frase_tardio,
+        # AS TESTEMUNHAS DO ASSENTO (LRP art. 54, 9º), antes do fecho — que é
+        # onde elas assinam com o declarante.
+        # A MESMA PESSOA NÃO SE ESCREVE DUAS VEZES (LH05): no tardio quem
+        # nomeia e qualifica as testemunhas é a frase do tardio.
+        "testemunhas": (" " + _frase("RC_TERMO_NASCIMENTO__testemunhas",
+                                     testemunhas=testemunhas)
+                        if testemunhas and not tardio_com_testemunhas
+                        else ""),
         # O ESPACO DEPOIS DO PONTO E PARTE DA FRASE. Sem ele sai
         # «...18.Cidade Exemplo/MA» — medido em 30/08/2026.
-        "frase_matricula": f"Matrícula {matricula}." if matricula else "",
+        "frase_matricula": (_frase("RC_TERMO_NASCIMENTO__matricula",
+                                   matricula=matricula) if matricula else ""),
         "escrevente": escrevente,
         "funcao_do_escrevente": funcao_do_escrevente,
     }
+
+
+def _frase_da_hora(hora_fato: Any, peca_com_minuto: str, peca_cheia: str) -> str:
+    """«, às 14:30», «, às 14 horas», ou nada. Só calcula.
+
+    A MESMA REGRA NOS DOIS TERMOS (nascimento e óbito), cada um com as suas
+    peças: com hora e minuto, a primeira; só com a hora, a segunda; sem a hora
+    — ainda que haja minuto —, a frase não entra.
+    """
+    h, _, m = _texto(hora_fato).partition(":")
+    if h.strip() and m.strip():
+        return _frase(peca_com_minuto, hora=h.strip(), minuto=m.strip())
+    if h.strip():
+        return _frase(peca_cheia, hora=h.strip())
+    return ""
 
 
 def montar_do_assento(assento: dict, pessoas: list[dict],
@@ -1106,31 +1398,60 @@ def montar_do_assento(assento: dict, pessoas: list[dict],
 # se lavra daqui para a frente: o teor ja gravado (`rc_assentos.teor`) nao se
 # remonta, e o do acervo (E-Oficio / digitado do livro antigo) nao ganha frase
 # que o papel assinado nao tem.
-FRASE_PRIMEIRO_REGISTRO = "Trata-se de primeiro registro."
+#
+# As duas frases sao pecas de RC_TERMO_NASCIMENTO desde o LF06C
+# (`__primeiro_registro`, `__cpf_feminino`, `__cpf_masculino`); o nome antigo
+# `FRASE_PRIMEIRO_REGISTRO` responde pelo `__getattr__` do fim do modulo. A
+# origem, a ancora e a palavra que acusa o «primeiro registro» ja escrito
+# ficam aqui: sao regra, e o texto do livro e lido por elas.
 ORIGENS_SEM_PRIMEIRO_REGISTRO = ("EOFICIO", "ACERVO")
 ANCORA_DO_FECHO = "Lido e achado conforme"
+JA_TEM_PRIMEIRO_REGISTRO = "primeiro registro"
 
 
-def frase_do_cpf(cpf: Any, sexo: Any = "") -> str:
-    """«Inscrito(a) no CPF n.º 000.000.000-00.» - vazio sem CPF. So calcula."""
+def _cpf_formatado(cpf: Any) -> str:
+    """O CPF como o termo o escreve. So calcula.
+
+    Com onze digitos, `000.000.000-00`; com outra conta, como veio — o termo
+    nao corrige o que o balcao digitou, e o passo do CPF avisa depois.
+    """
     bruto = _texto(cpf)
-    if not bruto:
-        return ""
     n = "".join(ch for ch in bruto if ch.isdigit())
     if len(n) == 11:
-        bruto = f"{n[:3]}.{n[3:6]}.{n[6:9]}-{n[9:]}"
-    quem = "Inscrita" if _texto(sexo).upper()[:1] == "F" else "Inscrito"
-    return f"{quem} no CPF n.º {bruto}."
+        return f"{n[:3]}.{n[3:6]}.{n[6:9]}-{n[9:]}"
+    return bruto
 
 
-def completar_teor_nascimento(teor: Any, *, cpf: Any = "", sexo: Any = "") -> str:
-    """Poe «primeiro registro» e o CPF no teor digitado, se faltarem. So calcula.
+def frase_do_cpf(cpf: Any, sexo: Any = "", *, con: Any = None) -> str:
+    """«Inscrito(a) no CPF n.º 000.000.000-00.» - vazio sem CPF. So le.
+
+    `con` e de quem lavra o teor digitado (`completar_teor_nascimento`): com
+    ela a frase sai do ajuste da casa; sem ela, do padrao (ou de
+    `rc_textos.lendo_da_casa`, na montagem do termo).
+    """
+    formatado = _cpf_formatado(cpf)
+    if not formatado:
+        return ""
+    chave = ("RC_TERMO_NASCIMENTO__cpf_feminino"
+             if _texto(sexo).upper()[:1] == "F"
+             else "RC_TERMO_NASCIMENTO__cpf_masculino")
+    return TEXTOS.peca(chave, con, cpf=formatado)
+
+
+def completar_teor_nascimento(teor: Any, *, cpf: Any = "", sexo: Any = "",
+                              con: Any = None) -> str:
+    """Poe «primeiro registro» e o CPF no teor digitado, se faltarem. So le.
 
     O teor do balcao chega pronto (textarea / rascunho) e o CPF da conferencia
     so era gravado DEPOIS de lavrar - por isso o termo saia sem ele e o CPF ia
     por averbacao. Entra antes de «Lido e achado conforme»; sem essa ancora
     (texto proprio) nao adivinha o lugar e devolve o texto como veio.
     Idempotente: o que ja esta no texto nao entra de novo.
+
+    **O CPF JA ESCRITO SE PROCURA PELO NUMERO, E NAO PELA FRASE** (LF06C): a
+    frase e peca que a casa pode reescrever, e recortar o numero de dentro
+    dela («n.º ») quebraria no primeiro ajuste. `con` vem da lavratura, para
+    as duas frases sairem do ajuste da casa.
     """
     texto = _texto(teor)
     if not texto:
@@ -1139,14 +1460,15 @@ def completar_teor_nascimento(teor: Any, *, cpf: Any = "", sexo: Any = "") -> st
     if i < 0:
         return texto
     faltam = []
-    if "primeiro registro" not in texto.lower():
-        faltam.append(FRASE_PRIMEIRO_REGISTRO)
-    frase = frase_do_cpf(cpf, sexo)
-    if frase:
+    if JA_TEM_PRIMEIRO_REGISTRO not in texto.lower():
+        faltam.append(TEXTOS.peca("RC_TERMO_NASCIMENTO__primeiro_registro", con))
+    formatado = _cpf_formatado(cpf)
+    if formatado:
         n = "".join(ch for ch in _texto(cpf) if ch.isdigit())
-        formatado = frase.split("n.º ", 1)[1].rstrip(".")
-        if formatado not in texto and (not n or n not in texto):
-            faltam.append(frase)
+        # O `rstrip` e o da forma de antes, que recortava o numero da frase e
+        # lhe tirava o ponto final junto com qualquer ponto do fim do numero.
+        if formatado.rstrip(".") not in texto and (not n or n not in texto):
+            faltam.append(frase_do_cpf(cpf, sexo, con=con))
     if not faltam:
         return texto
     antes = texto[:i].rstrip()
@@ -1190,13 +1512,13 @@ def frase_dos_nomes(nubente1: dict, nubente2: dict) -> str:
         if depois and depois != antes:
             mudou.append((antes, depois))
     if not mudou:
-        return ("Nenhum dos cônjuges alterou o nome, mantendo ambos os que "
-                "já usavam.")
+        return _frase("RC_TERMO_CASAMENTO__nomes_mantidos")
     if len(mudou) == 1:
         antes, depois = mudou[0]
-        return f"Passou o cônjuge {antes} a assinar-se {depois}."
-    return ("Passaram os cônjuges a assinar-se "
-            + _lista_por_extenso([d for _, d in mudou]) + ", respectivamente.")
+        return _frase("RC_TERMO_CASAMENTO__nome_de_um", antes=antes,
+                      depois=depois)
+    return _frase("RC_TERMO_CASAMENTO__nomes_dos_dois",
+                  nomes=_lista_por_extenso([d for _, d in mudou]))
 
 
 def relacao_de_documentos(documentos: list) -> str:
@@ -1237,11 +1559,11 @@ def relacao_de_documentos(documentos: list) -> str:
         return ""
     partes = []
     if apresentados:
-        partes.append("os seguintes documentos: "
-                      + _lista_por_extenso(apresentados))
+        partes.append(_frase("RC_TERMO_CASAMENTO__documentos_apresentados",
+                             lista=_lista_por_extenso(apresentados)))
     if dispensados:
-        partes.append("dispensada a apresentação de "
-                      + _lista_por_extenso(dispensados))
+        partes.append(_frase("RC_TERMO_CASAMENTO__documentos_dispensados",
+                             lista=_lista_por_extenso(dispensados)))
     return ", ".join(partes)
 
 
@@ -1279,12 +1601,9 @@ def valores_do_casamento(assento: dict, pessoas: list[dict], *,
     Lei 6.015/1973 a exige.
     """
     por_papel: dict[str, dict] = {}
-    testemunhas = []
     for p in pessoas or []:
         papel = _texto(p.get("papel")).upper()
-        if papel == "TESTEMUNHA":
-            testemunhas.append(_texto(p.get("nome")))
-        else:
+        if papel != "TESTEMUNHA":
             por_papel.setdefault(papel, p)
     sv = sv or {}
 
@@ -1293,21 +1612,36 @@ def valores_do_casamento(assento: dict, pessoas: list[dict], *,
 
     de_fora = _texto(assento.get("habilitacao_serventia"))
     proclamas = _data_br(assento.get("proclamas_data"))
-    frase_habilitacao = (
-        f" e a certidão de habilitação expedida por {de_fora}"
-        + (f", com os proclamas publicados em {proclamas}" if proclamas else "")
-        + "."
-        if de_fora else ".")
+    # Sem habilitação de fora, o ponto fecha a relação dos documentos — e, com
+    # a data do edital desta casa, a frase dos proclamas vem logo depois
+    # (LRP art. 70, 4º; CN-MA art. 284, IV — LD01, 21/10/2026: a data só se
+    # escrevia quando a habilitação era de fora).
+    if not de_fora:
+        frase_habilitacao = (". " + _frase(
+            "RC_TERMO_CASAMENTO__habilitacao_desta_casa_proclamas",
+            data=proclamas) if proclamas else ".")
+    elif proclamas:
+        frase_habilitacao = " " + _frase(
+            "RC_TERMO_CASAMENTO__habilitacao_de_fora_proclamas",
+            serventia=de_fora, data=proclamas)
+    else:
+        frase_habilitacao = " " + _frase(
+            "RC_TERMO_CASAMENTO__habilitacao_de_fora", serventia=de_fora)
     # A RELAÇÃO DOS DOCUMENTOS (art. 70, 5º): a da habilitação desta casa vem
     # de `hc_documentos`; a de fora, do que o balcão digitou (13/10/2026).
     docs_digitados = _texto(assento.get("documentos_apresentados"))
     relacao = relacao_de_documentos(documentos) or (
-        f"os seguintes documentos: {docs_digitados}" if docs_digitados else "")
+        _frase("RC_TERMO_CASAMENTO__documentos_apresentados",
+               lista=docs_digitados) if docs_digitados else "")
 
     processo = _texto(assento.get("uniao_estavel_processo"))
     frase_conversao = (
-        f"Trata-se de conversão de união estável, processo n.º {processo}."
+        _frase("RC_TERMO_CASAMENTO__conversao", processo=processo)
         if processo else "")
+
+    # A DATA DA CELEBRAÇÃO É A DO FATO, e a certidão a imprime com esse nome;
+    # o termo a diz junto de «foram declarados casados» (LD01).
+    celebracao = data_do_termo(assento.get("data_fato"))
 
     return {
         "data_ato_extenso": data_do_termo(assento.get("data_ato")),
@@ -1318,15 +1652,22 @@ def valores_do_casamento(assento: dict, pessoas: list[dict], *,
                                  + frase_do_casamento_anterior(assento, "nubente2"),
         "documentos_apresentados": relacao,
         "frase_habilitacao": frase_habilitacao,
+        "frase_da_celebracao": (" " + _frase("RC_TERMO_CASAMENTO__celebracao",
+                                             data=celebracao)
+                                if celebracao else ""),
         "regime_bens": (regime_por_extenso(assento.get("regime_bens"))
                         + frase_do_pacto(assento)),
         "frase_dos_nomes": frase_dos_nomes(n1, n2),
-        "filiacao1": _dois_nomes(por_papel.get("MAE_NUBENTE1", {}),
-                                 por_papel.get("PAI_NUBENTE1", {})),
-        "filiacao2": _dois_nomes(por_papel.get("MAE_NUBENTE2", {}),
-                                 por_papel.get("PAI_NUBENTE2", {})),
+        "filiacao1": _filiacao_qualificada(por_papel.get("MAE_NUBENTE1"),
+                                           por_papel.get("PAI_NUBENTE1"),
+                                           CAMPOS_DOS_PAIS_NO_CASAMENTO),
+        "filiacao2": _filiacao_qualificada(por_papel.get("MAE_NUBENTE2"),
+                                           por_papel.get("PAI_NUBENTE2"),
+                                           CAMPOS_DOS_PAIS_NO_CASAMENTO),
         "frase_conversao": frase_conversao,
-        "testemunhas": _lista_por_extenso(testemunhas),
+        # AS TESTEMUNHAS QUALIFICADAS (LRP art. 70, 6º; CN-MA art. 284, VI —
+        # LD01): o termo dava só os nomes.
+        "testemunhas": _testemunhas_qualificadas(pessoas),
         "escrevente": escrevente,
         "funcao_do_escrevente": funcao_do_escrevente,
     }
@@ -1345,6 +1686,11 @@ def montar_casamento_do_assento(assento: dict, pessoas: list[dict],
 # =========================================================================
 
 
+#: As marcas do óbito que NÃO são itens do art. 255 do CN-MA e, por isso,
+#: não entram na declaração do § 1º. Ver `frase_dos_ignorados`.
+_MARCAS_FORA_DO_ART_255 = frozenset({"obito_desconhecido"})
+
+
 def frase_dos_ignorados(marcas: dict) -> str:
     """A declaracao do art. 255, § 1o. So calcula.
 
@@ -1356,19 +1702,28 @@ def frase_dos_ignorados(marcas: dict) -> str:
     «nao» e **«nao perguntado»** — e sao os nao perguntados que entram nesta
     frase. Um campo vazio nao distingue «o falecido nao tinha bens» de «ninguem
     perguntou se tinha», e o termo tem de dizer qual dos dois foi.
+
+    **«PESSOA NÃO IDENTIFICADA» NÃO É ITEM DO ART. 255** — LT01, 20/10/2026.
+    A marca existe para o assento de desconhecido (LRP art. 81; CN-MA art.
+    257), que tem teor próprio. Entrando nesta lista, a pergunta não
+    respondida fazia o termo de uma falecida com nome e CPF declarar, assinado,
+    que «o declarante ignorava: pessoa não identificada».
     """
     import rc_marcas_do_obito as MO
 
     ignorados = []
     for m in MO.MARCAS:
+        if m["chave"] in _MARCAS_FORA_DO_ART_255:
+            continue
         if _texto((marcas or {}).get(m["chave"])) == MO.NAO_PERGUNTADO:
             ignorados.append(_texto(m.get("no_termo")) or
                              _texto(m["rotulo"]).lower())
     if not ignorados:
         return ""
-    return ("O oficial indagou a respeito de todos os itens do art. 255, e o "
-            "declarante ignorava: " + _lista_por_extenso(ignorados)
-            + ", na forma do § 1º do referido artigo.")
+    # Os itens são os rótulos de `rc_marcas_do_obito` — a lista é regra e vem
+    # de lá; a frase que os declara é peça do termo (LF06C).
+    return _frase("RC_TERMO_OBITO__ignorados",
+                  itens=_lista_por_extenso(ignorados))
 
 
 # ---------------------------------------------- o que a lei pede (13/10/2026)
@@ -1389,16 +1744,23 @@ def frase_do_conjuge_do_falecido(assento: dict, estado_civil: str) -> str:
     ou divorciado) ou o pré-morto, e o cartório do casamento. So calcula."""
     nome = _texto(assento.get("obito_conjuge_nome"))
     cartorio = _texto(assento.get("obito_conjuge_cartorio"))
-    base = f"Era {estado_civil}" if estado_civil else ""
     if not nome:
-        return f"{base}." if base else ""
+        return (_frase("RC_TERMO_OBITO__estado_civil", estado_civil=estado_civil)
+                if estado_civil else "")
+    # TRÊS RAMOS DE REDAÇÃO, CADA UM UMA PEÇA (LF06C): com o estado civil, a
+    # frase começa por ele; sem, diz se o cônjuge ficou («Deixou») ou se foi
+    # antes («Teve»).
     pre_morto = _texto(assento.get("obito_conjuge_situacao")).upper() == "PRE_MORTO"
-    quem = "cônjuge pré-morto" if pre_morto else "cônjuge sobrevivente"
-    frase = (f"{base}, sendo {quem} {nome}" if base else
-             f"Deixou como {quem} {nome}" if not pre_morto else
-             f"Teve como {quem} {nome}")
+    if estado_civil:
+        frase = _frase("RC_TERMO_OBITO__conjuge_pre_morto" if pre_morto
+                       else "RC_TERMO_OBITO__conjuge_sobrevivente",
+                       estado_civil=estado_civil, nome=nome)
+    else:
+        frase = _frase("RC_TERMO_OBITO__teve_conjuge" if pre_morto
+                       else "RC_TERMO_OBITO__deixou_conjuge", nome=nome)
     if cartorio:
-        frase += f", com casamento registrado em {cartorio}"
+        frase += _frase("RC_TERMO_OBITO__casamento_do_conjuge",
+                        cartorio=cartorio)
     return frase + "."
 
 
@@ -1409,16 +1771,18 @@ def frase_dos_filhos_do_falecido(assento: dict, marca_texto: str) -> str:
     linhas = [ln for ln in linhas if ln]
     if not linhas:
         return marca_texto
-    return "Deixou os filhos: " + "; ".join(linhas) + "."
+    return _frase("RC_TERMO_OBITO__filhos", filhos="; ".join(linhas))
 
 
 def frase_dos_herdeiros(assento: dict) -> str:
-    """CN art. 255, XI — herdeiros menores ou interditados. So calcula."""
+    """CN art. 255, XI — herdeiros menores ou interditados. So calcula.
+
+    O espaço da frente é da junção com a frase dos bens, e não da peça."""
     v = _texto(assento.get("obito_herdeiros_menores")).upper()
     if v == "SIM":
-        return " Deixou herdeiros menores ou interditados."
+        return " " + _frase("RC_TERMO_OBITO__herdeiros_sim")
     if v == "NAO":
-        return " Não deixou herdeiros menores nem interditados."
+        return " " + _frase("RC_TERMO_OBITO__herdeiros_nao")
     return ""
 
 
@@ -1429,8 +1793,10 @@ def frase_do_casamento_anterior(assento: dict, qual: str) -> str:
     if not nome:
         return ""
     data = _data_br(assento.get(f"{qual}_dissolucao_data"))
-    return (f", tendo sido casado(a) com {nome}"
-            + (f", casamento dissolvido em {data}" if data else ""))
+    if data:
+        return _frase("RC_TERMO_CASAMENTO__casamento_anterior_dissolvido",
+                      nome=nome, data=data)
+    return _frase("RC_TERMO_CASAMENTO__casamento_anterior", nome=nome)
 
 
 def frase_do_pacto(assento: dict) -> str:
@@ -1438,22 +1804,119 @@ def frase_do_pacto(assento: dict) -> str:
     pacto antenupcial. So calcula."""
     data = _data_br(assento.get("pacto_data"))
     serventia = _texto(assento.get("pacto_serventia"))
-    if not data and not serventia:
-        return ""
-    return (", conforme escritura de pacto antenupcial"
-            + (f" lavrada em {data}" if data else "")
-            + (f" nas notas de {serventia}" if serventia else ""))
+    if data and serventia:
+        return _frase("RC_TERMO_CASAMENTO__pacto_data_serventia", data=data,
+                      serventia=serventia)
+    if data:
+        return _frase("RC_TERMO_CASAMENTO__pacto_data", data=data)
+    if serventia:
+        return _frase("RC_TERMO_CASAMENTO__pacto_serventia",
+                      serventia=serventia)
+    return ""
 
 
 def frase_do_casamento_dos_pais(assento: dict) -> str:
     """Art. 54, 7º — «lugar e cartório onde se casaram» os pais. So calcula."""
     lugar = _texto(assento.get("pais_casamento_lugar"))
     cartorio = _texto(assento.get("pais_casamento_cartorio"))
-    if not lugar and not cartorio:
+    if lugar and cartorio:
+        return _frase("RC_TERMO_NASCIMENTO__pais_casados_lugar_cartorio",
+                      lugar=lugar, cartorio=cartorio)
+    if lugar:
+        return _frase("RC_TERMO_NASCIMENTO__pais_casados_lugar", lugar=lugar)
+    if cartorio:
+        return _frase("RC_TERMO_NASCIMENTO__pais_casados_cartorio",
+                      cartorio=cartorio)
+    return ""
+
+
+def _idade_por_extenso(nascimento: Any, quando: Any) -> str:
+    """«76 anos», «1 ano», «menos de um ano», ou nada. Só calcula.
+
+    A CONTA É A DA CASA (`rc_assento.idade_na_data`, que desconta o
+    aniversário que não chegou), e não outra: o termo e a certidão do óbito
+    têm de dizer a mesma idade."""
+    import rc_assento as RC
+    anos = RC.idade_na_data(nascimento, quando)
+    if anos is None:
         return ""
-    return (", casados entre si"
-            + (f" em {lugar}" if lugar else "")
-            + (f", com registro em {cartorio}" if cartorio else ""))
+    if anos == 0:
+        return "menos de um ano"
+    return f"{anos} ano" + ("s" if anos != 1 else "")
+
+
+def frase_do_sexo_idade_e_cor(falecido: dict, assento: dict) -> str:
+    """«, do sexo feminino, com 76 anos de idade, de cor parda». Só calcula.
+
+    **O TERMO DIZIA SÓ A DATA DE NASCIMENTO** — LD01, 21/10/2026 — e a
+    certidão imprime a idade e a cor («IDADE 76 anos», «COR OU RAÇA PARDA»)
+    que o termo não declarava. A lei pede os três (LRP art. 80, 3º; CN-MA
+    art. 255, III: «o nome, sexo, idade, a data do nascimento, cor…»). Cada
+    parte é peça do termo, e a que não se sabe some com a vírgula dela. A
+    cor é a da lista fechada da casa (`rc_assento.CORES_E_RACAS`), em
+    minúsculas porque vai no meio da frase.
+    """
+    import rc_assento as RC
+    partes = []
+    sexo = {"M": "masculino", "F": "feminino"}.get(
+        _texto((falecido or {}).get("sexo")).upper()[:1], "")
+    if sexo:
+        partes.append(_frase("RC_TERMO_OBITO__sexo", sexo=sexo))
+    idade = _idade_por_extenso((falecido or {}).get("data_nascimento"),
+                               (assento or {}).get("data_fato"))
+    if idade:
+        partes.append(_frase("RC_TERMO_OBITO__idade", idade=idade))
+    bruta = _texto((assento or {}).get("cor_raca"))
+    cor = RC.CORES_E_RACAS.get(bruta.upper(), bruta).lower()
+    if cor:
+        partes.append(_frase("RC_TERMO_OBITO__cor", cor=cor))
+    return "".join(partes)
+
+
+#: A natureza da morte, no código do IBGE que o balcão escolhe
+#: (`ibge_remessa.NATUREZA_DO_OBITO`), como o termo a escreve. O 9
+#: («ignorado») não vira palavra: o termo não afirma natureza que ninguém
+#: declarou.
+NATUREZA_DA_MORTE_NO_TERMO: dict[int, str] = {1: "natural", 2: "violenta"}
+
+
+def frase_da_causa(assento: dict) -> str:
+    """«A morte foi natural, tendo como causa …, atestada por …, CRM …». Só
+    calcula.
+
+    **SE A MORTE FOI NATURAL OU VIOLENTA É ITEM PRÓPRIO DA LEI** — LD01,
+    21/10/2026. A natureza que o balcão informa (`ibge_natureza_obito`) ia só
+    para a remessa do IBGE, e a peça escrevia «A morte foi {causa}» (LRP art.
+    80, 8º; CN-MA art. 255, IX). Agora a natureza entra quando foi declarada;
+    quando o próprio texto da causa já começa por ela («natural, por …»), a
+    peça de antes basta, para o termo não dizer a palavra duas vezes. Sem
+    natureza declarada, a frase é a de antes.
+    """
+    a = assento or {}
+    causa = _texto(a.get("causa_morte"))
+    try:
+        natureza = NATUREZA_DA_MORTE_NO_TERMO.get(
+            int(a.get("ibge_natureza_obito") or 0), "")
+    except (TypeError, ValueError):
+        natureza = ""
+    atestante = _texto(a.get("atestante"))
+    documento_do_atestante = _texto(a.get("atestante_documento"))
+    if natureza and causa and not causa.lower().startswith(natureza):
+        frase = _frase("RC_TERMO_OBITO__natureza_e_causa", natureza=natureza,
+                       causa=causa)
+    elif causa:
+        frase = _frase("RC_TERMO_OBITO__causa", causa=causa)
+    elif natureza:
+        frase = _frase("RC_TERMO_OBITO__natureza", natureza=natureza)
+    else:
+        return ""
+    # O documento do atestante entra cru, depois da vírgula: não tem
+    # palavra própria que seja frase, e por isso não é peça.
+    return (frase
+            + (_frase("RC_TERMO_OBITO__atestante", atestante=atestante)
+               if atestante else "")
+            + (f", {documento_do_atestante}" if documento_do_atestante else "")
+            + ".")
 
 
 def valores_do_obito(assento: dict, pessoas: list[dict], *,
@@ -1471,17 +1934,23 @@ def valores_do_obito(assento: dict, pessoas: list[dict], *,
     marcas = marcas or {}
 
     falecido = por_papel.get("FALECIDO", {})
-    hora = _texto(assento.get("hora_fato"))
-    h, _, mm = hora.partition(":")
+    # **O TERMO CONCORDA COM O SEXO DE QUEM FALECEU** — LD01, 21/10/2026.
+    # «Filho de», «Sepultado em» e «Era eleitor» eram uma peça só, no
+    # masculino, e o termo de uma falecida saía no masculino (LRP art. 80, 3º).
+    # Cada uma tem agora a forma feminina ao lado; quem escolhe é o sexo.
+    feminino = _feminino(falecido)
 
     local = _texto(assento.get("local_fato_nome"))
     endereco = _texto(assento.get("local_fato_endereco"))
     if local and endereco:
         local = f"{local}, {endereco}"
 
-    filiacao = _dois_nomes(por_papel.get("MAE", {}), por_papel.get("PAI", {}))
+    filiacao = _filiacao_qualificada(por_papel.get("MAE"), por_papel.get("PAI"),
+                                     CAMPOS_DOS_PAIS_NO_OBITO)
     estado_civil = _texto(falecido.get("estado_civil"))
     numero_do = _texto(assento.get("numero_do"))
+    sepultamento = _texto(assento.get("local_sepultamento"))
+    testamento = _texto(assento.get("testamento"))
 
     def _sim(chave: str) -> bool:
         return _texto(marcas.get(chave)) == MO.SIM
@@ -1491,31 +1960,39 @@ def valores_do_obito(assento: dict, pessoas: list[dict], *,
 
     # AS TRES FRASES DAS MARCAS. **«Sim» e «nao» sao os dois que se escrevem**;
     # o «nao perguntado» nao vira frase aqui — ele vai para a declaracao do
-    # § 1o, que e onde a norma manda que ele apareca.
-    def _marca(chave: str, quando_sim: str, quando_nao: str) -> str:
+    # § 1o, que e onde a norma manda que ele apareca. Cada resposta e uma peca
+    # do termo (LF06C), e so a que vale e lida.
+    def _marca(chave: str, peca_sim: str, peca_nao: str) -> str:
         if _sim(chave):
-            return quando_sim
+            return _frase(peca_sim)
         if _nao(chave):
-            return quando_nao
+            return _frase(peca_nao)
         return ""
+
+    marca_dos_filhos = _marca("obito_possui_filho", "RC_TERMO_OBITO__filhos_sim",
+                              "RC_TERMO_OBITO__filhos_nao")
 
     return {
         "data_ato_extenso": data_do_termo(assento.get("data_ato")),
         "cidade_do_ato": _texto(sv.get("ri_cidade")),
         "declarante_qualificacao": qualificacao_inteira(
             por_papel.get("DECLARANTE", {})),
-        "falecido_qualificacao": qualificacao_inteira(falecido, nome_negrito=True),
+        "falecido_qualificacao": (qualificacao_inteira(falecido, nome_negrito=True)
+                                  + frase_do_sexo_idade_e_cor(falecido, assento)),
         "data_fato_extenso": data_do_termo(assento.get("data_fato"),
                                            com_numeros=True),
-        "frase_hora": (f", às {h.strip()}:{mm.strip()}"
-                       if h.strip() and mm.strip()
-                       else (f", às {h.strip()} horas" if h.strip() else "")),
+        "frase_hora": _frase_da_hora(assento.get("hora_fato"),
+                                     "RC_TERMO_OBITO__hora",
+                                     "RC_TERMO_OBITO__hora_cheia"),
         "local_do_fato": local,
         # **AS FRASES SAO INTEIRAS, e comecam depois de um ponto.** O modelo
         # fecha a qualificacao com `.` e abre linha nova; uma frase que
         # comecasse com virgula sairia «lavrador., filho de» — medido no
         # primeiro ensaio desta ponte, em 31/08/2026.
-        "frase_filiacao": f"Filho de {filiacao}." if filiacao else "",
+        "frase_filiacao": (_frase("RC_TERMO_OBITO__filiacao_feminino" if feminino
+                                  else "RC_TERMO_OBITO__filiacao",
+                                  filiacao=filiacao)
+                           if filiacao else ""),
         "frase_estado_civil": frase_do_conjuge_do_falecido(assento, estado_civil),
         # **A IDENTIFICACAO E O DOCUMENTO DO FALECIDO**, e nao o contrario —
         # eu inverti o sentido do campo no primeiro ensaio. O rotulo diz «ao
@@ -1530,42 +2007,34 @@ def valores_do_obito(assento: dict, pessoas: list[dict], *,
         #   exige e que o falecido **esteja identificado**, e nao que exista uma
         #   frase com esse nome: ela so aparece quando a qualificacao nao
         #   identifica — ou quando nao foi possivel identificar ninguem, que e o
-        #   caso em que a declaracao e obrigatoria.
-        "frase_identificacao": (
-            "Não foi possível identificar a pessoa falecida."
-            if _sim("obito_desconhecido")
-            else ("" if _texto(falecido.get("documento_numero"))
-                  else "")),
+        #   caso em que a declaracao e obrigatoria. (Ate o LF06C havia aqui um
+        #   segundo ramo pelo `documento_numero` do falecido que devolvia vazio
+        #   dos dois lados; saiu, e o termo nao mudou.)
+        "frase_identificacao": (_frase("RC_TERMO_OBITO__desconhecido")
+                                if _sim("obito_desconhecido") else ""),
         "frase_declaracao_de_obito": (
-            f"Apresentada a Declaração de Óbito n.º {numero_do}."
+            _frase("RC_TERMO_OBITO__declaracao_de_obito", numero=numero_do)
             if numero_do else ""),
-        "frase_causa": (
-            f"A morte foi {_texto(assento.get('causa_morte'))}"
-            + (f", atestada por {_texto(assento.get('atestante'))}"
-               if _texto(assento.get("atestante")) else "")
-            + (f", {_texto(assento.get('atestante_documento'))}"
-               if _texto(assento.get("atestante_documento")) else "")
-            + "."
-            if _texto(assento.get("causa_morte")) else ""),
+        # A natureza, a causa e quem atestou — ver `frase_da_causa` (LD01).
+        "frase_causa": frase_da_causa(assento),
         "frase_sepultamento": (
-            f"Sepultado em {_texto(assento.get('local_sepultamento'))}."
-            if _texto(assento.get("local_sepultamento")) else ""),
-        "frase_eleitor": _marca("obito_eleitor", "Era eleitor.",
-                                "Não era eleitor."),
-        "frase_deixou_bens": (_marca("obito_possui_bens", "Deixou bens.",
-                                     "Não deixou bens.")
+            _frase("RC_TERMO_OBITO__sepultamento_feminino" if feminino
+                   else "RC_TERMO_OBITO__sepultamento", local=sepultamento)
+            if sepultamento else ""),
+        "frase_eleitor": (
+            _marca("obito_eleitor", "RC_TERMO_OBITO__eleitor_sim_feminino",
+                   "RC_TERMO_OBITO__eleitor_nao_feminino") if feminino
+            else _marca("obito_eleitor", "RC_TERMO_OBITO__eleitor_sim",
+                        "RC_TERMO_OBITO__eleitor_nao")),
+        "frase_deixou_bens": (_marca("obito_possui_bens",
+                                     "RC_TERMO_OBITO__bens_sim",
+                                     "RC_TERMO_OBITO__bens_nao")
                               + frase_dos_herdeiros(assento)).strip(),
-        "frase_filhos": (frase_dos_filhos_do_falecido(
-                             assento, _marca("obito_possui_filho",
-                                             "Deixou filhos.",
-                                             "Não deixou filhos."))
-                         if _sim("obito_possui_filho") else
-                         _marca("obito_possui_filho", "Deixou filhos.",
-                                "Não deixou filhos.")),
+        "frase_filhos": (frase_dos_filhos_do_falecido(assento, marca_dos_filhos)
+                         if _sim("obito_possui_filho") else marca_dos_filhos),
         "frase_testamento": (
-            f"Deixou testamento conhecido: "
-            f"{_texto(assento.get('testamento'))}."
-            if _texto(assento.get("testamento")) else ""),
+            _frase("RC_TERMO_OBITO__testamento", testamento=testamento)
+            if testamento else ""),
         "frase_ignorados": frase_dos_ignorados(marcas),
         "escrevente": escrevente,
         "funcao_do_escrevente": funcao_do_escrevente,
@@ -1590,44 +2059,62 @@ def _feminino(p: dict | None) -> bool:
 
 def _do_titulo(assento: dict) -> str:
     """«por sentença proferida em … pelo juízo …» — o título que se registra.
-    So calcula. Sem título informado, devolve vazio: não se inventa sentença."""
+    So calcula. Sem título informado, devolve vazio: não se inventa sentença.
+
+    Cada cláusula com palavra própria é peça de `RC_TERMO_LIVRO_E` (LF06C); o
+    « em {data}» e o espaço que separa as cláusulas são cola, e ficam aqui —
+    como a decisão de cada uma entrar."""
     tipo = _texto(assento.get("livro_e_titulo")).upper()
     data = data_do_termo(assento.get("livro_e_titulo_data"))
+    em_data = f" em {data}" if data else ""
     if tipo == "SENTENCA":
         juiz = _texto(assento.get("livro_e_juiz"))
         juizo = _texto(assento.get("livro_e_juizo"))
         processo = _texto(assento.get("livro_e_processo"))
         transito = data_do_termo(assento.get("livro_e_transito"))
-        return ("por sentença proferida" + (f" em {data}" if data else "")
-                + (f" pelo Juízo da {juizo}" if juizo else "")
-                + ((f", MM. Juiz(a) {juiz}" if juizo else
-                    f" pelo(a) MM. Juiz(a) {juiz}") if juiz else "")
-                + (f", nos autos do processo n.º {processo}" if processo else "")
-                + (f", transitada em julgado em {transito}" if transito else ""))
+        # Com o juízo, o juiz vem depois dele, entre vírgulas; sem, é o juiz
+        # quem profere.
+        if juiz and juizo:
+            do_juiz = _frase("RC_TERMO_LIVRO_E__juiz_do_juizo", juiz=juiz)
+        elif juiz:
+            do_juiz = " " + _frase("RC_TERMO_LIVRO_E__juiz", juiz=juiz)
+        else:
+            do_juiz = ""
+        return (_frase("RC_TERMO_LIVRO_E__sentenca") + em_data
+                + (" " + _frase("RC_TERMO_LIVRO_E__juizo", juizo=juizo)
+                   if juizo else "")
+                + do_juiz
+                + (_frase("RC_TERMO_LIVRO_E__processo", processo=processo)
+                   if processo else "")
+                + (_frase("RC_TERMO_LIVRO_E__transito", transito=transito)
+                   if transito else ""))
     if tipo == "ESCRITURA":
         livro = _texto(assento.get("livro_e_escritura_livro"))
         folha = _texto(assento.get("livro_e_escritura_folha"))
         tab = _texto(assento.get("livro_e_tabelionato"))
-        return ("por escritura pública lavrada" + (f" em {data}" if data else "")
-                + (f" no livro {livro}" if livro else "")
-                + (f", folha {folha}" if folha else "")
-                + (f", nas notas de {tab}" if tab else ""))
+        return (_frase("RC_TERMO_LIVRO_E__escritura") + em_data
+                + (" " + _frase("RC_TERMO_LIVRO_E__escritura_livro", livro=livro)
+                   if livro else "")
+                + (_frase("RC_TERMO_LIVRO_E__escritura_folha", folha=folha)
+                   if folha else "")
+                + (_frase("RC_TERMO_LIVRO_E__escritura_notas", tabelionato=tab)
+                   if tab else ""))
     if tipo == "TERMO":
-        return ("por termo declaratório lavrado nesta serventia"
-                + (f" em {data}" if data else ""))
+        return _frase("RC_TERMO_LIVRO_E__termo_declaratorio") + em_data
     return ""
 
 
 def _filiacao_curta(titular: dict | None, mae: dict | None,
                     pai: dict | None) -> str:
     """«, filho de X e de Y» — só os nomes (art. 94-A, III), na ordem da casa
-    (a filiação 1 primeiro). So calcula."""
+    (a filiação 1 primeiro). So calcula. «filho»/«filha» concorda com o sexo
+    do titular: é a regra que escolhe a peça."""
     nomes = [n for n in (_texto((mae or {}).get("nome")),
                          _texto((pai or {}).get("nome"))) if n]
     if not nomes:
         return ""
-    return (f", {'filha' if _feminino(titular) else 'filho'} de "
-            + " e de ".join(nomes))
+    return _frase("RC_TERMO_LIVRO_E__filha_de" if _feminino(titular)
+                  else "RC_TERMO_LIVRO_E__filho_de", nomes=" e de ".join(nomes))
 
 
 def frase_do_livro_e(especie: str, assento: dict,
@@ -1644,64 +2131,89 @@ def frase_do_livro_e(especie: str, assento: dict,
     analogia. UNIÃO ESTÁVEL, art. 94-A: os dois qualificados, os pais, os
     registros anteriores, o título, o regime e o nome que passam a usar.
     OPÇÃO DE NACIONALIDADE, art. 32, § 4º: a sentença da Justiça Federal.
+
+    **O TEXTO DE CADA PEDAÇO É PEÇA DE `RC_TERMO_LIVRO_E`** (LF06C): a cabeça
+    de cada espécie («Interdição decretada») e cada cláusula com palavra
+    própria. A espécie que escolhe as cláusulas, o sexo que escolhe «nomeado
+    curador» ou «nomeada curadora» e o ponto que fecha a frase ficam aqui.
     """
     a = assento or {}
     t = por_papel.get("REGISTRADO") or {}
     titulo = _do_titulo(a)
     pelo = f" {titulo}" if titulo else ""
     nasc = _texto(a.get("livro_e_registro_nascimento"))
-    reg_nasc = f", com nascimento registrado em {nasc}" if nasc else ""
     cas = _texto(a.get("livro_e_registro_casamento"))
     conj = _texto(a.get("livro_e_conjuge"))
-    reg_cas = (f", casado(a) com {conj}" if conj else "") + (
-        f", com casamento registrado em {cas}" if cas else "")
+
+    def reg_nasc() -> str:
+        return (_frase("RC_TERMO_LIVRO_E__nascimento_registrado", registro=nasc)
+                if nasc else "")
+
+    def reg_cas() -> str:
+        return ((_frase("RC_TERMO_LIVRO_E__casado_com", conjuge=conj)
+                 if conj else "")
+                + (_frase("RC_TERMO_LIVRO_E__casamento_registrado", registro=cas)
+                   if cas else ""))
+
+    def cabeca(peca: str) -> str:
+        return " " + _frase(peca) + pelo
 
     def q(papel: str) -> str:
         return qualificacao_inteira(por_papel.get(papel) or {})
 
-    def nomeado(papel: str, masc: str, fem: str) -> str:
+    def tem_nome(papel: str) -> bool:
         p = por_papel.get(papel)
-        if not p or not _texto(p.get("nome")):
+        return bool(p and _texto(p.get("nome")))
+
+    def nomeado(papel: str, peca_masc: str, peca_fem: str) -> str:
+        if not tem_nome(papel):
             return ""
-        return (f", sendo {'nomeada' if _feminino(p) else 'nomeado'} "
-                f"{fem if _feminino(p) else masc} {q(papel)}")
+        return _frase(peca_fem if _feminino(por_papel.get(papel)) else peca_masc,
+                      qualificacao=q(papel))
+
+    def limites_da_curatela() -> str:
+        limites = _texto(a.get("livro_e_limites"))
+        return (_frase("RC_TERMO_LIVRO_E__limites", limites=limites)
+                if limites else "")
+
+    def filiacao() -> str:
+        return _filiacao_curta(t, por_papel.get("MAE"), por_papel.get("PAI"))
 
     if especie == "EMANCIPACAO":
-        tutor = por_papel.get("TUTOR")
-        tutela = (f", representado(a) por seu(sua) tutor(a) {q('TUTOR')}"
-                  if tutor and _texto(tutor.get("nome")) else "")
-        return (f" Emancipação concedida{pelo}{reg_nasc}"
-                f"{_filiacao_curta(t, por_papel.get('MAE'), por_papel.get('PAI'))}"
-                f"{tutela}.")
+        tutela = (_frase("RC_TERMO_LIVRO_E__representado_pelo_tutor",
+                         qualificacao=q("TUTOR"))
+                  if tem_nome("TUTOR") else "")
+        return (cabeca("RC_TERMO_LIVRO_E__emancipacao") + reg_nasc()
+                + filiacao() + tutela + ".")
     if especie == "INTERDICAO":
         causa = _texto(a.get("livro_e_causa"))
-        limites = _texto(a.get("livro_e_limites"))
         intern = _texto(a.get("livro_e_internacao"))
-        req = por_papel.get("REQUERENTE")
-        return (f" Interdição decretada{pelo}{reg_nasc}{reg_cas}"
-                + (f", a requerimento de {q('REQUERENTE')}"
-                   if req and _texto(req.get("nome")) else "")
-                + (f", tendo por causa {causa}" if causa else "")
-                + nomeado("CURADOR", "curador", "curadora")
-                + (f", nos seguintes limites da curatela: {limites}"
-                   if limites else "") + "."
-                + (f" Local de internação: {intern}." if intern else ""))
+        return (cabeca("RC_TERMO_LIVRO_E__interdicao") + reg_nasc() + reg_cas()
+                + (_frase("RC_TERMO_LIVRO_E__requerimento",
+                          requerente=q("REQUERENTE"))
+                   if tem_nome("REQUERENTE") else "")
+                + (_frase("RC_TERMO_LIVRO_E__causa", causa=causa)
+                   if causa else "")
+                + nomeado("CURADOR", "RC_TERMO_LIVRO_E__curador_nomeado",
+                          "RC_TERMO_LIVRO_E__curadora_nomeada")
+                + limites_da_curatela() + "."
+                + (" " + _frase("RC_TERMO_LIVRO_E__internacao", local=intern)
+                   if intern else ""))
     if especie == "AUSENCIA":
         tempo = _texto(a.get("livro_e_ausencia_tempo"))
-        limites = _texto(a.get("livro_e_limites"))
-        req = por_papel.get("REQUERENTE")
-        return (f" Ausência declarada{pelo}{reg_nasc}{reg_cas}"
-                + (f", contando {tempo} de ausência até a data da sentença"
+        return (cabeca("RC_TERMO_LIVRO_E__ausencia") + reg_nasc() + reg_cas()
+                + (_frase("RC_TERMO_LIVRO_E__tempo_de_ausencia", tempo=tempo)
                    if tempo else "")
-                + (f", em processo promovido por {q('REQUERENTE')}"
-                   if req and _texto(req.get("nome")) else "")
-                + nomeado("CURADOR", "curador", "curadora")
-                + (f", nos seguintes limites da curatela: {limites}"
-                   if limites else "") + ".")
+                + (_frase("RC_TERMO_LIVRO_E__promovido_por",
+                          requerente=q("REQUERENTE"))
+                   if tem_nome("REQUERENTE") else "")
+                + nomeado("CURADOR", "RC_TERMO_LIVRO_E__curador_nomeado",
+                          "RC_TERMO_LIVRO_E__curadora_nomeada")
+                + limites_da_curatela() + ".")
     if especie == "TUTELA":
-        return (f" Tutela deferida{pelo}{reg_nasc}"
-                f"{_filiacao_curta(t, por_papel.get('MAE'), por_papel.get('PAI'))}"
-                f"{nomeado('TUTOR', 'tutor', 'tutora')}.")
+        return (cabeca("RC_TERMO_LIVRO_E__tutela") + reg_nasc() + filiacao()
+                + nomeado("TUTOR", "RC_TERMO_LIVRO_E__tutor_nomeado",
+                          "RC_TERMO_LIVRO_E__tutora_nomeada") + ".")
     if especie == "UNIAO_ESTAVEL":
         c1, c2 = por_papel.get("COMPANHEIRO1"), por_papel.get("COMPANHEIRO2")
         lados = []
@@ -1712,26 +2224,29 @@ def frase_do_livro_e(especie: str, assento: dict,
                     c, por_papel.get(mae), por_papel.get(pai)))
         inicio = data_do_termo(a.get("livro_e_uniao_inicio"))
         regime = regime_por_extenso(a.get("regime_bens"))
-        frase = (" Fica registrada a união estável"
+        frase = (" " + _frase("RC_TERMO_LIVRO_E__uniao_estavel")
                  + (f" entre {', e '.join(lados)}" if lados else "")
-                 + (f", reconhecida{pelo}" if titulo else "")
-                 + (f", com início em {inicio}" if inicio else "")
-                 + (f", sob o regime de {regime}" if regime else "") + ".")
+                 + (_frase("RC_TERMO_LIVRO_E__reconhecida") + pelo
+                    if titulo else "")
+                 + (_frase("RC_TERMO_LIVRO_E__inicio", data=inicio)
+                    if inicio else "")
+                 + (_frase("RC_TERMO_LIVRO_E__regime", regime=regime)
+                    if regime else "") + ".")
         if nasc:
-            frase += f" Registros de nascimento: {nasc}."
+            frase += " " + _frase("RC_TERMO_LIVRO_E__registros_de_nascimento",
+                                  registros=nasc)
         if cas:
-            frase += (" Casamentos e uniões estáveis anteriores, e óbitos de "
-                      f"cônjuges ou companheiros: {cas}.")
+            frase += " " + _frase("RC_TERMO_LIVRO_E__anteriores", anteriores=cas)
         for c in (c1, c2):
             if c and _texto(c.get("nome_pos")) and \
                     _texto(c.get("nome_pos")) != _texto(c.get("nome")):
-                frase += (f" {_texto(c.get('nome'))} passa a usar o nome "
-                          f"{_texto(c.get('nome_pos'))}.")
+                frase += " " + _frase("RC_TERMO_LIVRO_E__novo_nome",
+                                      nome=_texto(c.get("nome")),
+                                      nome_pos=_texto(c.get("nome_pos")))
         return frase
     if especie == "OPCAO_NACIONALIDADE":
-        return (f" Opção pela nacionalidade brasileira homologada{pelo}"
-                f"{reg_nasc}"
-                f"{_filiacao_curta(t, por_papel.get('MAE'), por_papel.get('PAI'))}.")
+        return (cabeca("RC_TERMO_LIVRO_E__opcao_nacionalidade") + reg_nasc()
+                + filiacao() + ".")
     return ""
 
 
@@ -1795,3 +2310,28 @@ def montar_livro_e_do_assento(assento: dict, pessoas: list[dict],
     """O termo do Livro E montado do assento. Só lê."""
     valores = valores_livro_e_do_assento(assento, pessoas, **kw)
     return montar_do_formulario("LIVRO_E", valores, texto)
+
+
+# As constantes de texto que viraram PEÇA no LF06C, e a peça que responde
+# pelo nome antigo. Os papéis inteiros (`TERMO_*`, `QUALIFICACAO`) respondem
+# pelo catálogo, em `modelos_da_casa.constante_antiga`.
+_PECAS_DE_ANTES = {
+    "FRASE_PRIMEIRO_REGISTRO": "RC_TERMO_NASCIMENTO__primeiro_registro",
+}
+
+
+def __getattr__(nome: str):
+    """Os nomes antigos do texto de fábrica, lidos da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06A (19/10/2026) e mora em `modelos_padrao/`;
+    as frases e a ordem da qualificação saíram no LF06C. Quem ainda importa o
+    nome antigo recebe o padrão da base — o MESMO que o papel imprime, e não
+    uma cópia que ficou para trás. Nome que não é de papel continua sendo
+    `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    if nome in _PECAS_DE_ANTES:
+        return _MODELOS.padrao_de(_PECAS_DE_ANTES[nome])
+    return _MODELOS.constante_antiga(__name__, nome)

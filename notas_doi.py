@@ -583,8 +583,121 @@ def declarar(dec: dict, cns: str, codigo_ibge: str,
               [dict(x, papel="ADQUIRENTE",
                     documento_numero=x.get("documento_numero") or x.get("documento"))
                for x in (dec.get("adquirentes") or [])])
-    return montar_registro(ato, m, partes, dados, cns, codigo_ibge,
-                           tipo_servico=tipo_servico, tipo_ato=tipo_ato)
+    # O MONTADOR É O DA CTP, E A LÍNGUA DO ARQUIVO É A DO DOI-WEB — 22/10/2026.
+    # A CTP chama o cônjuge de `niConjuge`/`indicadorConjugeParticipante` e
+    # escreve `IndicadorNaoConsta…` com «I»; o layout oficial do DOI-Web não
+    # tem nenhum dos três (medido no `/api/layout-doiweb.json`). Ver `ri_doi`.
+    from ri_doi import no_layout_do_doiweb
+    return no_layout_do_doiweb(montar_registro(ato, m, partes, dados, cns, codigo_ibge,
+                                               tipo_servico=tipo_servico,
+                                               tipo_ato=tipo_ato))
+
+
+
+def declaracao_da_escritura(ato: dict, partes: list[dict], cns: str,
+                            codigo_ibge: str) -> tuple[dict | None, list[dict]]:
+    """A declaração DOI-Web da escritura com imóvel, ou o que impede.
+
+    MORAVA DENTRO DA ROTA DA DOI (`ri_web.ri_doi`) até 22/10/2026, e saiu
+    para cá porque a CTP da CENSEC (`censec_ctp`) declara as MESMAS
+    escrituras com os mesmos campos: dois montadores divergiriam no primeiro
+    conserto, e a Receita e a prefeitura receberiam versões diferentes do
+    mesmo negócio. Devolve `(registro, [])` ou `(None, problemas)`; cada
+    problema é `{"campo", "motivo"}`, a forma que `resumo_impedimentos` lê.
+    A declaração passa pelo layout oficial do DOI-Web antes de sair.
+    """
+    from ri_ctp import TIPO_OPERACAO
+    from ri_doi import conferir_layout
+    # A CHAVE E `motivo`, E NUNCA `texto`: e a que
+    # `Impedimento.como_dict` devolve, e e por ela que
+    # `resumo_impedimentos` conta os motivos no alto da tela. Com a
+    # outra palavra as escrituras ficariam de fora da conferencia —
+    # presentes na lista, ausentes da conta que se le antes de gerar o
+    # arquivo. Eu escrevi `texto` na primeira versao.
+    problemas = []
+    # `str(...)` PORQUE `doi_transacao` E COLUNA INTEGER: o `11` que
+    # a tela gravou como texto volta do banco como o numero 11, e
+    # `.strip()` num numero estoura a tela inteira. A afinidade da
+    # coluna converte na entrada, calada, e so aparece na leitura.
+    for chave, rotulo in (("doi_transacao", "a operação imobiliária"),
+                          ("doi_matricula", "a matrícula do imóvel")):
+        if not str(ato.get(chave) or "").strip():
+            problemas.append({"campo": chave,
+                              "motivo": f"falta {rotulo}"})
+    if str(ato.get("doi_transacao") or "") not in TIPO_OPERACAO:
+        problemas.append({"campo": "doi_transacao",
+                          "motivo": "operação imobiliária inválida"})
+    if not ato.get("valor_transacao") or ato["valor_transacao"] <= 0:
+        problemas.append({"campo": "valor_transacao",
+                          "motivo": "falta o valor total da operação"})
+    torna = ato.get("doi_torna_dinheiro") or 0
+    if torna < 0 or (ato.get("valor_transacao") and torna > ato["valor_transacao"]):
+        problemas.append({"campo": "doi_torna_dinheiro",
+                          "motivo": "torna em dinheiro inválida para o valor total"})
+    if torna and str(ato.get("doi_transacao") or "") != "13":
+        problemas.append({"campo": "doi_torna_dinheiro",
+                          "motivo": "torna em dinheiro exige operação Permuta"})
+
+    partes_e = [dict(x) for x in partes]
+    # QUEM ALIENOU E QUEM ADQUIRIU SAI DA QUALIFICACAO, medida — e nao
+    # de um campo `papel`, que esta tabela nao tem. Ver
+    # `notas_doi.lados_das_partes`: o procurador e descartado ANTES de
+    # se procurar o vendedor, porque «PROCURADOR DO VENDEDOR» contem
+    # «VENDEDOR» e o CPF de quem so assinou por outro iria a Receita
+    # como o de quem vendeu.
+    alienantes, adquirentes, duvidas = lados_das_partes(partes_e)
+    if not partes_e:
+        problemas.append({"campo": "partes",
+                          "motivo": "falta lançar as partes da escritura"})
+    else:
+        if not alienantes:
+            problemas.append({
+                "campo": "alienantes",
+                "motivo": "nenhuma parte foi qualificada como quem "
+                          "alienou (vendedor, cedente, doador)"})
+        if not adquirentes:
+            problemas.append({
+                "campo": "adquirentes",
+                "motivo": "nenhuma parte foi qualificada como quem "
+                          "adquiriu (comprador, cessionário, donatário)"})
+        for d in duvidas:
+            problemas.append({
+                "campo": "partes",
+                "motivo": f"não dá para saber de que lado "
+                          f"{d.get('nome')} está: a qualificação é "
+                          f"«{d.get('qualificacao') or 'em branco'}»"})
+        # A SOMA DA PARTICIPACAO DE CADA LADO, que a Receita valida
+        # entre 99% e 100% — e fora da faixa ela recusa o ARQUIVO
+        # INTEIRO, e nao a linha. A ficha ja recusa no balcao; esta
+        # conferencia pega o que foi gravado ANTES desta versao, que e
+        # onde o percentual nao existia.
+        for rotulo, lado in (("alienantes", alienantes),
+                             ("adquirentes", adquirentes)):
+            for x in conferir_participacoes(lado, rotulo) if lado else []:
+                problemas.append(x.como_dict())
+
+    if problemas:
+        return None, problemas
+    reg_e = declarar(
+        {"operacao": ato["doi_transacao"],
+         "natureza_titulo": 2,          # escritura pública
+         "data_ato": (ato.get("data") or "")[:10],
+         "livro": ato.get("livro"), "folha": ato.get("folha"),
+         "valor_operacao": ato.get("valor_transacao"),
+         "houve_permuta": str(ato.get("doi_transacao") or "") == "13",
+         "houve_pagamento_dinheiro": bool(ato.get("doi_torna_dinheiro")),
+         "valor_especie": ato.get("doi_torna_dinheiro"),
+         "imovel": {"matricula": ato.get("doi_matricula"),
+                    "tipo": ato.get("doi_tipo_imovel"),
+                    "logradouro": ato.get("doi_endereco"),
+                    "area": ato.get("doi_area")},
+         "alienantes": alienantes, "adquirentes": adquirentes,
+         "ato_id": ato["id"]},
+        cns, codigo_ibge)
+    erros = conferir_layout(reg_e)
+    if erros:
+        return None, problemas + [{"campo": "layout", "motivo": x} for x in erros]
+    return reg_e, problemas
 
 
 def _reais(centavos: int | None):

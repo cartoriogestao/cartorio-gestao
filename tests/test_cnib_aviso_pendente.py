@@ -1,4 +1,4 @@
-import sqlite3,unittest
+import re,sqlite3,unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import cnib_atualizador as A
@@ -20,6 +20,18 @@ class AvisoCnibTests(unittest.TestCase):
   A._gravar_ordem(self.con,{'protocoloindisponibilidade':'202610.0000.00000001-IA-001','datapedido':'2026-10-04','numeroprocesso':'PROCESSO1','partes':[{'nomerazao':'JOSÉ DA SILVA','cpfcnpj':'22222222222'}]})
   self.con.commit()
   self.ordens=consultar_cnib(self.con,['11111111111'],['José da Silva'])
+ def _entrar(self,client):
+  """Entra pelo /login, como quem usa o sistema.
+
+  A SESSÃO MONTADA À MÃO (só `user_id`) VOLTA PARA O LOGIN desde o LX11: o
+  `before_request` encerra a sessão sem o carimbo da senha (M3) e sem a hora
+  da entrada (prazo absoluto). Copiar esses campos aqui divergiria no próximo
+  conserto da sessão; o login de verdade os grava todos.
+  """
+  h=client.get('/login').get_data(as_text=True)
+  token=re.search(r'name="csrf_token"[^>]*value="([^"]+)"',h).group(1)
+  r=client.post('/login',data={'username':'teste_cnib','password':'Senha#12345','csrf_token':token})
+  self.assertEqual(r.status_code,302,'o login de teste não entrou')
  def test_importacao_normaliza_nome_e_busca_com_documento_diferente(self):
   self.assertEqual(len(self.ordens),1);self.assertEqual(self.ordens[0]['criterio'],'nome')
   self.assertEqual(self.con.execute('SELECT nome_norm FROM ri_cnib_pessoas').fetchone()[0],normalizar_busca('José da Silva'))
@@ -37,7 +49,7 @@ class AvisoCnibTests(unittest.TestCase):
   self.assertEqual(consultar_cnib(self.con,[],['José da Silva']),[])
  def test_ficha_mostra_alerta_vermelho_no_alto_por_nome(self):
   with self.app.test_client() as client:
-   with client.session_transaction() as s:s['user_id']=self.uid
+   self._entrar(client)
    r=client.get(f'/registro-imoveis/{self.mid}')
    self.assertEqual(r.status_code,200)
    h=r.get_data(as_text=True)

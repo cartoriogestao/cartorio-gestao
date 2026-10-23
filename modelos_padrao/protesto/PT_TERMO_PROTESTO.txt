@@ -1,0 +1,4 @@
+CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão.
+PROTESTO {tipo} LAVRADO POR {motivo}.
+Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente.
+{edital}

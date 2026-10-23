@@ -407,3 +407,84 @@ def test_a_sessao_mostra_o_que_se_pediu_e_o_que_voltou(admin):
 def test_sessao_que_nao_existe_e_recusada_com_recado(admin):
     resposta = admin["c"].get("/agente/sessao/9999", follow_redirects=True)
     assert "Não achei a sessão #9999" in resposta.get_data(as_text=True)
+
+
+# ------------------------------------- a mudança proposta (LS03, M4 — LX13)
+
+
+def test_ligar_a_escrita_nao_desliga_a_confirmacao(admin):
+    """**M4.** A caixa do «aplicar sozinho» é outra, e nasce desmarcada: o
+    formulário que liga a escrita sem marcá-la deixa o agente só propondo."""
+    import agente_schema as AGS
+
+    html = admin["c"].get("/agente/configurar").get_data(as_text=True)
+    assert "aplicar sozinho" in html
+    admin["c"].post(
+        "/agente/configurar",
+        data={"csrf_token": _token(html), "acao": "config",
+              "provedor_padrao": "deepseek", "modelo_padrao": "",
+              "teto_de_turnos": "10", "teto_de_sessoes": "5",
+              "escrita_ligada": "on"}, follow_redirects=True)
+    con = _con(admin)
+    assert AGS.escrita_ligada(con) is True
+    assert AGS.escrita_sem_confirmacao(con) is False
+    con.close()
+
+
+def _proposta(s) -> tuple[int, int, str, str, str]:
+    """Uma sessão com uma mudança de alcance PROPOSTA, montada à mão."""
+    import agente_schema as AGS
+    import modulos_ligados as ML
+    from database import Database
+
+    chave = sorted(ML.CHAVE_DA_CONFIGURACAO)[0]
+    nome = ML.CHAVE_DA_CONFIGURACAO[chave]
+    antes = Database(s["banco"]).get_setting(
+        nome, ML.ALCANCE_DE_FABRICA.get(chave, ML.TODOS))
+    outro = [a for a in ML.ALCANCES if a != antes][0]
+    con = _con(s)
+    AGS.init_agente_schema(con)
+    sessao_id = AGS.abrir_sessao(
+        con, titulo="feche o módulo", pedido="feche o módulo",
+        provedor="deepseek", modelo="deepseek-chat",
+        agora="2026-09-14T10:00:00", criada_por="MARIO EXEMPLO DOS SANTOS")
+    mudanca_id = AGS.registrar_mudanca(
+        con, sessao_id, ferramenta="definir_alcance_do_modulo", alvo=nome,
+        antes=antes, depois=outro, agora="2026-09-14T10:00:01",
+        criada_por="MARIO EXEMPLO DOS SANTOS", proposta=True)
+    con.commit()
+    con.close()
+    return sessao_id, mudanca_id, nome, antes, outro
+
+
+def test_o_oficial_aplica_pela_tela_a_mudanca_que_o_agente_propos(admin):
+    """**M4.** A proposta aparece com o botão «aplicar», e o alcance só muda
+    no clique — com o recado do que passou a valer."""
+    from database import Database
+
+    sessao_id, mudanca_id, nome, antes, outro = _proposta(admin)
+    html = admin["c"].get(f"/agente/sessao/{sessao_id}").get_data(as_text=True)
+    assert "proposta" in html and "aplicar" in html and "descartar" in html
+    assert Database(admin["banco"]).get_setting(nome, antes) == antes
+
+    resposta = admin["c"].post(
+        f"/agente/mudanca/{mudanca_id}/aplicar",
+        data={"csrf_token": _token(html), "sessao_id": str(sessao_id)},
+        follow_redirects=True)
+    assert "Aplicado" in resposta.get_data(as_text=True)
+    assert Database(admin["banco"]).get_setting(nome, antes) == outro
+    depois = admin["c"].get(f"/agente/sessao/{sessao_id}").get_data(as_text=True)
+    assert "desfazer" in depois
+
+
+def test_o_escrevente_nao_aplica_a_proposta_mandando_post(tmp_path):
+    """A rota nova é do ADMIN, como o resto do agente."""
+    from database import Database
+
+    s = _sessao(tmp_path, "USER")
+    _, mudanca_id, nome, antes, _ = _proposta(s)
+    html = s["c"].get("/").get_data(as_text=True)
+    resposta = s["c"].post(f"/agente/mudanca/{mudanca_id}/aplicar",
+                           data={"csrf_token": _token(html)})
+    assert resposta.status_code == 403
+    assert Database(s["banco"]).get_setting(nome, antes) == antes

@@ -12,11 +12,11 @@ do Livro 2. Aqui só se ligam os fios.
 from __future__ import annotations
 
 import mimetypes
-import sqlite3
 from pathlib import Path
 
 from flask import Response, abort, flash, redirect, render_template, request, url_for
 
+from bd_nativo import banco
 import modelos_da_casa as MODELOS
 import ra_correcoes as CORR
 import ra_digitalizacao as DIGI
@@ -32,9 +32,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
     def _registro(registro_id: int) -> dict:
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            linha = con.execute("SELECT * FROM ra_registros WHERE id=?",
-                                (registro_id,)).fetchone()
+            linha = banco(con).um("SELECT * FROM ra_registros WHERE id=%s",
+                          (registro_id,))
         if not linha:
             abort(404)
         return dict(linha)
@@ -87,7 +86,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         arquivo.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             digi = DIGI.atual(con, registro_id)
         if not digi:
             abort(404)
@@ -115,7 +113,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def livro3_miniatura_digitalizacao(registro_id: int):
         """A primeira página, para a ficha. Só lê."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             digi = DIGI.atual(con, registro_id)
         if not digi:
             abort(404)
@@ -171,14 +168,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                     registro_id=registro_id))
 
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             digi = DIGI.atual(con, registro_id)
-            atos = [dict(x) for x in con.execute(
-                "SELECT * FROM ra_atos WHERE registro_id=? ORDER BY numero, id",
-                (registro_id,)).fetchall()]
-            partes = [dict(x) for x in con.execute(
-                "SELECT * FROM ra_partes WHERE registro_id=? ORDER BY id",
-                (registro_id,)).fetchall()]
+            atos = banco(con).ler(
+                "SELECT * FROM ra_atos WHERE registro_id=%s ORDER BY numero, id",
+                (registro_id,))
+            partes = banco(con).ler(
+                "SELECT * FROM ra_partes WHERE registro_id=%s ORDER BY id",
+                (registro_id,))
         arquivo = Path(digi["digi_path"]) if digi else None
         return render_template(
             "livro3_conferir.html", registro=r, atos=atos, partes=partes,
@@ -194,7 +190,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def livro3_por_conferir():
         """A fila do que ninguém leu contra o papel ainda."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             registros = CORR.por_conferir(con)
         return render_template("livro3_por_conferir.html",
                                registros=registros)
@@ -216,25 +211,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         gravada vale o padrão do código, e ajustado sai como o oficial
         escreveu. É o relato #28.
 
-        **NÃO HÁ FECHO, NEM «CONFERE COM O ORIGINAL», NEM ASSINATURA DE
-        OFICIAL**: um papel que se pareça com certidão sem ser uma é o pior
-        tipo de papel que esta casa pode pôr no mundo. O rodapé diz isso com
-        todas as letras.
+        **NÃO HÁ FECHO DE CERTIDÃO, NEM «CONFERE COM O ORIGINAL», NEM
+        ASSINATURA DE OFICIAL**: um papel que se pareça com certidão sem ser
+        uma é o pior tipo de papel que esta casa pode pôr no mundo. O rodapé
+        diz isso com todas as letras.
+
+        **CADA ATO, PORÉM, DIZ QUEM O PRATICOU** — LH13, 21/10/2026 («15 a»):
+        como na ficha do Livro 2, «Cidade/UF, data. Dou fé. A Escrevente
+        Autorizada (NOME).», com o nome e a função gravados no ato na
+        lavratura (CN-MA art. 458). É o que o livro diz do ato, e não uma
+        afirmação da certidão; o ato antigo, sem o nome gravado, sai sem ele.
         """
         r = _registro(registro_id)
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            atos = [dict(x) for x in con.execute(
-                "SELECT * FROM ra_atos WHERE registro_id=? ORDER BY numero, id",
-                (registro_id,)).fetchall()]
-            partes = [dict(x) for x in con.execute(
-                "SELECT * FROM ra_partes WHERE registro_id=? ORDER BY id",
-                (registro_id,)).fetchall()]
+            atos = banco(con).ler(
+                "SELECT * FROM ra_atos WHERE registro_id=%s ORDER BY numero, id",
+                (registro_id,))
+            partes = banco(con).ler(
+                "SELECT * FROM ra_partes WHERE registro_id=%s ORDER BY id",
+                (registro_id,))
             corpo = MODELOS.corpo_de(con, "RI_LIVRO3_FICHA")
-        sv = dados_serventia(db.get_settings)
-        claros = FICHA.contexto(
-            registro=r, atos=atos, partes=partes,
-            serventia=sv, impresso_em=db.now())
+            sv = dados_serventia(db.get_settings)
+            # A etiqueta do selo vem DESTE banco (LT03): sem `con`, o carimbo
+            # procurava na pasta padrão da instalação e saía sem os valores.
+            claros = FICHA.contexto(
+                registro=r, atos=atos, partes=partes,
+                serventia=sv, impresso_em=db.now(), con=con)
         try:
             texto = corpo.format(**claros)
         except KeyError as erro:
@@ -273,8 +275,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         representou, o aditivo que a averbação registrou.
         """
         with db.connect() as con:
-            a = con.execute("SELECT registro_id, tipo, numero FROM ra_atos "
-                            "WHERE id=?", (ato_id,)).fetchone()
+            a = banco(con).um("SELECT registro_id, tipo, numero FROM ra_atos "
+                          "WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
         voltar = redirect(url_for("livro3_registro",
@@ -297,8 +299,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @roles_required("ADMIN", "MANAGER", "USER")
     def livro3_remover_digitalizacao_do_ato(ato_id: int):
         with db.connect() as con:
-            ato = con.execute("SELECT registro_id FROM ra_atos WHERE id=?",
-                              (ato_id,)).fetchone()
+            ato = banco(con).um("SELECT registro_id FROM ra_atos WHERE id=%s",
+                          (ato_id,))
         if not ato:
             abort(404)
         try:
@@ -318,7 +320,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def livro3_baixar_digitalizacao_do_ato(ato_id: int):
         """Entrega o papel do termo. `?visualizar=1` abre na tela."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             digi = DIGI.atual_do_ato(con, ato_id)
         if not digi:
             abort(404)

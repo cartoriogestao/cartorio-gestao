@@ -24,6 +24,7 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+from navegador_de_teste import postar_e_seguir  # noqa: E402
 
 SENHA = "Senha#12345"
 
@@ -118,9 +119,9 @@ def _lancar_averbacao(s, registro_id: int, **extra) -> str:
     dados = {"csrf_token": _token(html), "tipo": "AVERBACAO",
              "teor": "Averbação de alteração do endereço da sede da empresa."}
     dados.update(extra)
-    return s["c"].post(
-        f"/rcpj-rtd/{registro_id}/lancar", data=dados,
-        follow_redirects=True).get_data(as_text=True)
+    # Com selo, a averbação leva à etiqueta por 307 (`navegador_de_teste`).
+    return postar_e_seguir(
+        s["c"], f"/rcpj-rtd/{registro_id}/lancar", dados).get_data(as_text=True)
 
 
 def test_caminho_averbacao_pj_vs_td():
@@ -708,16 +709,15 @@ def test_anexar_arquivo_novo_direto_no_form_de_lancar(s):
 
     html = s["c"].get(f"/rcpj-rtd/{rid}").get_data(as_text=True)
     tok = _token(html)
-    resp = s["c"].post(
-        f"/rcpj-rtd/{rid}/lancar",
-        data={
+    resp = postar_e_seguir(
+        s["c"], f"/rcpj-rtd/{rid}/lancar",
+        {
             "csrf_token": tok, "tipo": "AVERBACAO",
             "teor": "Averbação de alteração do endereço da sede da empresa.",
             "selo": "AVESVD000000NARRKWVNJCRSVO21",
             "novo_arquivo": (io.BytesIO(b"%PDF-1.4 conteudo"), "estatuto.pdf"),
         },
-        content_type="multipart/form-data",
-        follow_redirects=True)
+        content_type="multipart/form-data")
     resp_html = resp.get_data(as_text=True)
     assert resp.status_code == 200
 

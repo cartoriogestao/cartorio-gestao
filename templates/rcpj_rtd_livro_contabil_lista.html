@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{#
+  AS AUTENTICAÇÕES DE LIVROS CONTÁBEIS — o controle do RCPJ (LG04).
+
+  A LISTA SÓ LÊ: a busca é por CNPJ e período do pedido, e o número de cada
+  linha é o do controle da serventia (por exercício), dado na autenticação.
+#}
+{% block heading %}<h1>Livros contábeis — autenticações (RCPJ)</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  <a class="button primary" href="{{ url_for('rcpj_rtd_livro_contabil_novo') }}">+ Pedido de autenticação</a>
+  {% endif %}
+  {% if user.role in ['ADMIN','MANAGER'] %}
+  <a class="button" href="{{ url_for('rcpj_rtd_livro_contabil_configuracao') }}">Item da tabela</a>
+  {% endif %}
+  <a class="button" href="{{ url_for('rcpj_rtd_titulos', atribuicao=3) }}">Títulos do RCPJ</a>
+</div>
+
+{% if not item %}
+<div class="notice">
+  <strong>Falta configurar o item da tabela de emolumentos</strong> da
+  autenticação de livro. Sem ele a autenticação não numera e o selo não sai.
+</div>
+{% endif %}
+
+<form method="get" class="form">
+  <label>CNPJ <input name="cnpj" value="{{ filtro.cnpj }}"></label>
+  <label>Pedido de <input type="date" name="de" value="{{ filtro.de }}"></label>
+  <label>até <input type="date" name="ate" value="{{ filtro.ate }}"></label>
+  <label>Situação
+    <select name="situacao">
+      <option value="">todas</option>
+      {% for chave, rotulo in SITUACOES.items() %}
+      <option value="{{ chave }}"{% if filtro.situacao == chave %} selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select></label>
+  <button type="submit">Buscar</button>
+</form>
+
+<table class="table">
+  <thead><tr><th>Controle</th><th>Pessoa jurídica</th><th>Livro</th><th>Folhas</th><th>Situação</th><th>Selo</th></tr></thead>
+  <tbody>
+  {% for l in linhas %}
+  <tr>
+    <td><a href="{{ url_for('rcpj_rtd_livro_contabil_ficha', livro_id=l.id) }}">{% if l.numero %}{{ l.numero }}/{{ l.ano }}{% else %}pedido {{ l.id }}{% endif %}</a></td>
+    <td>{{ l.pj_nome }}<br><small>{{ l.pj_cnpj }}</small></td>
+    <td>{{ l.rotulo }} nº {{ l.numero_livro }}</td>
+    <td>{{ l.folhas }}</td>
+    <td>{{ SITUACOES.get(l.situacao, l.situacao) }}</td>
+    <td>{{ l.selo or '' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">Nenhuma autenticação com estes filtros.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

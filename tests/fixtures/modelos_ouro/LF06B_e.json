@@ -1,0 +1,40 @@
+{
+ "_como": "Gerado ANTES do LF06B, na árvore exportada do commit 2c41e90 (git archive), por ouro_lf06b.gerar. Não regerar depois da mudança: o teste compararia a base com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "ri_cancelar_ato(teor, AV-12/4.901)": {
+   "ok": "CANCELAMENTO DO ATO AV-12/4.901. Nos termos do requerimento e da documentação apresentada, fica cancelado o ato AV-12/4.901 desta matrícula. FUNDAMENTO: Ordem judicial de exemplo"
+  },
+  "ri_cancelar_ato(teor, R-01/4901)": {
+   "ok": "CANCELAMENTO DO ATO R-01/4901. Nos termos do requerimento e da documentação apresentada, fica cancelado o ato R-01/4901 desta matrícula. FUNDAMENTO: Requerimento de exemplo, de 19/10/2026"
+  },
+  "ri_emitir_certidao(validade, 19 de outubro de 2026)": {
+   "ok": "<p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Certidão emitida em 19 de outubro de 2026. Dou fé.</p>"
+  },
+  "ri_emitir_certidao(validade, 1º de março de 2026)": {
+   "ok": "<p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Certidão emitida em 1º de março de 2026. Dou fé.</p>"
+  },
+  "ri_encerrar_matricula(teor, 'Desmembramento de exemplo', '4901 e 4902')": {
+   "ok": "ENCERRAMENTO DESTA MATRÍCULA. MOTIVO: Desmembramento de exemplo. O imóvel passa a constar da(s) matrícula(s) 4901 e 4902."
+  },
+  "ri_encerrar_matricula(teor, 'Motivo com <&> de exemplo', '4903')": {
+   "ok": "ENCERRAMENTO DESTA MATRÍCULA. MOTIVO: Motivo com <&> de exemplo. O imóvel passa a constar da(s) matrícula(s) 4903."
+  },
+  "ri_encerrar_matricula(teor, 'Unificação com a matrícula de exemplo', '')": {
+   "ok": "ENCERRAMENTO DESTA MATRÍCULA. MOTIVO: Unificação com a matrícula de exemplo."
+  },
+  "ri_prenotacao_comprovante(limite, '', DUVIDA)": {
+   "ok": "prazo suspenso desde 01/10/2026 (Suscitação de dúvida / remessa ao juízo); o limite avança pelos dias úteis parados"
+  },
+  "ri_prenotacao_comprovante(limite, '', MOTIVO_DE_EXEMPLO)": {
+   "ok": "prazo suspenso desde 15/09/2026 (MOTIVO_DE_EXEMPLO); o limite avança pelos dias úteis parados"
+  },
+  "ri_prenotacao_comprovante(limite, '30/10/2026', DUVIDA)": {
+   "ok": "30/10/2026 — prazo suspenso desde 01/10/2026 (Suscitação de dúvida / remessa ao juízo); o limite avança pelos dias úteis parados"
+  },
+  "ri_prenotacao_comprovante(limite, '30/10/2026', MOTIVO_DE_EXEMPLO)": {
+   "ok": "30/10/2026 — prazo suspenso desde 15/09/2026 (MOTIVO_DE_EXEMPLO); o limite avança pelos dias úteis parados"
+  }
+ },
+ "parte": "e"
+}

@@ -1,0 +1,9 @@
+documento = CPF/CNPJ {documento}
+vencimento = vencimento em {data}
+A = com aceite
+N = sem aceite
+sem_aceite = aceite não informado
+sem_endereco = não informado pelo apresentante
+sem_numero = sem número
+sem_protocolo = —
+nao_informado = não informado

@@ -1,0 +1,35 @@
+<p align="center"><b>{{ serventia.nome|upper }}</b></p>
+<p align="center">CNS {{ serventia.cns }} — {{ serventia.cidade }}/{{ serventia.uf }}</p>
+<p align="center"><b>NOTA DEVOLUTIVA Nº {{ nota.numero }}</b></p>
+<p></p>
+
+<p><b>PROTOCOLO Nº {{ protocolo.numero }}</b>, prenotado em {{ protocolo.data_prenotacao }}.
+{% if protocolo.apresentante %}<b>APRESENTANTE:</b> {{ protocolo.apresentante }}
+{%- if protocolo.apresentante_documento %}, {{ protocolo.apresentante_documento }}{% endif %}.{% endif %}
+{% if protocolo.matricula_numero %}<b>MATRÍCULA:</b> {{ protocolo.matricula_numero }}.{% endif %}
+{% if protocolo.objeto %}<b>OBJETO:</b> {{ protocolo.objeto }}.{% endif %}</p>
+
+<p>Examinado o título apresentado, verificou-se que ele <b>não se encontra em condições de
+registro</b>, pelas razões a seguir. Ficam formuladas as seguintes exigências:</p>
+
+{{ exigencias_odf }}
+
+{% if nota.fundamentacao %}
+<p><b>FUNDAMENTAÇÃO:</b> {{ nota.fundamentacao }}</p>
+{% endif %}
+
+<p>O interessado poderá cumprir as exigências e <b>reapresentar o título dentro do prazo de
+vigência da prenotação</b>, hipótese em que o título será objeto do mesmo lançamento no
+Livro 1 — Protocolo, recebendo igual número de ordem, na forma do art. 44 do Código de
+Normas da CGJ/TJMA.{% if nota.prazo_ate %} A prenotação vigora até <b>{{ nota.prazo_ate }}</b>.{% endif %}</p>
+
+<p>Cessados os efeitos da prenotação sem o cumprimento das exigências, a reapresentação
+demandará <b>novo protocolo</b>, com os emolumentos correspondentes.</p>
+
+<p>Fica ressalvado ao interessado o direito de requerer a suscitação de dúvida, nos termos
+dos arts. 198 a 204 da Lei nº 6.015/1973.</p>
+
+<p></p>
+<p align="center">{{ serventia.cidade }}/{{ serventia.uf }}, {{ hoje_extenso }}.</p>
+<p align="center">{{ serventia.substituta or serventia.registrador }}</p>
+<p align="center">{{ "Tabeliã Registradora Substituta" if serventia.substituta else "Tabelião Registrador" }}</p>

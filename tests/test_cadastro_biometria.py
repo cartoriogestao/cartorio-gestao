@@ -22,7 +22,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 import cadastro_biometria as CB
-from notas_partes import criar_cartao
+from notas_partes import buscar_cartoes, criar_cartao
 
 AGORA = "2026-08-31T19:10:00"
 POR = "mario"
@@ -281,3 +281,41 @@ def test_a_tabela_nova_existe_e_o_legado_biometria_fica(casa):
         assert campo in colunas_img
     assert "conteudo" not in colunas_img
     assert "blob" not in colunas_img
+
+
+# ------------------------------------------------------------- busca no cartão
+
+
+def test_homonimos_na_busca_vem_na_ordem_em_que_os_cartoes_foram_abertos(casa):
+    """No empate do nome, o cartão mais antigo vem antes, como no SQLite.
+
+    No PostgreSQL, a linha editada muda de lugar na tabela. Sem o desempate
+    por `id`, editar o cartão mais antigo trocava a ordem dos homônimos na
+    busca e, com o LIMIT, trocava também qual deles aparecia na tela."""
+    with _abrir(casa) as con:
+        antigo = _pessoa(con, nome="PESSOA FICTICIA HOMONIMA", documento="")
+        novo = _pessoa(con, nome="PESSOA FICTICIA HOMONIMA", documento="")
+        con.execute("UPDATE nt_cartoes SET observacao=? WHERE id=?",
+                    ("cadastro conferido", antigo))
+    with _abrir(casa) as con:
+        assert [c["id"] for c in buscar_cartoes(con, "pessoa ficticia")] == [antigo, novo]
+        assert [c["id"] for c in buscar_cartoes(con, "pessoa ficticia", limite=1)] == [antigo]
+
+
+def test_a_firma_do_cartao_no_empate_de_ordem_e_a_mais_antiga(casa):
+    """Duas imagens com a mesma `ordem` (o padrão é 1): vale a de `id` menor.
+
+    É a imagem que a busca mostra no cartão. Sem o desempate, no PostgreSQL
+    ela dependia de onde a linha estava gravada: a firma que entrou como 2ª e
+    depois foi posta como 1ª passava a perder para a outra."""
+    with _abrir(casa) as con:
+        cid = _pessoa(con, nome="PESSOA FICTICIA COM DUAS FIRMAS", documento="")
+        imagens = [con.execute(
+            """INSERT INTO nt_cartao_imagens (cartao_id, ordem, nome_arquivo, criado_em)
+               VALUES (?, ?, ?, ?)""", (cid, ordem, nome, AGORA)).lastrowid
+            for ordem, nome in ((2, "firma-1.jpg"), (1, "firma-2.jpg"))]
+        con.execute("UPDATE nt_cartao_imagens SET ordem=1 WHERE id=?", (imagens[0],))
+    with _abrir(casa) as con:
+        (achado,) = buscar_cartoes(con, "pessoa ficticia com duas")
+    assert achado["imagens"] == 2
+    assert achado["imagem_id"] == imagens[0]

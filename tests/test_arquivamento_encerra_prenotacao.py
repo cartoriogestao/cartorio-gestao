@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
 
-WEB = Path(__file__).resolve().parent.parent / "ri_web.py"
+RAIZ = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
+
+from bd_nativo import banco  # noqa: E402
+from banco_de_teste import conexao_de_teste  # noqa: E402
+
+WEB = RAIZ / "ri_web.py"
 
 
 def _load_helpers():
@@ -21,7 +29,7 @@ def _load_helpers():
             linhas.append(ln[4:])
         else:
             linhas.append(ln)
-    ns: dict = {}
+    ns: dict = {"banco": banco}
     exec("".join(linhas), ns)
     return ns
 
@@ -32,8 +40,7 @@ def fns():
 
 
 def _db(tmp_path):
-    db = tmp_path / "t.sqlite3"
-    con = sqlite3.connect(db)
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript(
         """

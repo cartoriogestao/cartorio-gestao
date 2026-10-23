@@ -14,6 +14,7 @@ from flask import redirect, render_template, request, session, url_for
 
 import carga_da_equipe as CARGA
 import relatos_diarios as RD
+from seguranca_web import destino_interno  # M1/B3 (LX11): o «volte para» só leva a caminho desta casa
 
 QUEM = ("ADMIN", "MANAGER", "USER")
 VEEM_A_GESTAO = ("ADMIN", "MANAGER")
@@ -68,5 +69,4 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         uid, gestao = _quem()
         with db.transaction() as con:
             RD.marcar_lido(con, relato_id, usuario_id=uid, ve_a_gestao=gestao)
-        volta = request.form.get("voltar") or url_for("relatos_diarios")
-        return redirect(volta if volta.startswith("/") else url_for("relatos_diarios"))
+        return redirect(destino_interno(request.form.get("voltar"), url_for("relatos_diarios")))

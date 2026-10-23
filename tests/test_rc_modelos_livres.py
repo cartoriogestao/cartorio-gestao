@@ -28,10 +28,13 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
 
 import rc_modelos_livres as MOD
 import rc_modelos_livres_schema as ESQ
+import nucleo_schema
 import rc_schema
+from banco_de_teste import conexao_de_teste
 
 AGORA = "2026-09-07T10:00:00"
 SV = {"serventia_titular": "SERVENTIA EXTRAJUDICIAL DE CIDADE EXEMPLO",
@@ -43,8 +46,11 @@ SV = {"serventia_titular": "SERVENTIA EXTRAJUDICIAL DE CIDADE EXEMPLO",
 
 @pytest.fixture()
 def con(tmp_path):
-    c = sqlite3.connect(tmp_path / "t.sqlite3")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
+    # `rc_atos.livro_id` aponta para `nu_livros` (FK): o PostgreSQL cobra a
+    # FK na criacao, e o banco da casa cria o nucleo antes do RCPN.
+    nucleo_schema.init_nucleo_schema(c)
     rc_schema.init_rc_schema(c)
     ESQ.init_rc_modelos_livres_schema(c)
     yield c
@@ -247,7 +253,10 @@ def test_jinja_e_recusado_com_o_recado_certo():
 
 def test_claro_do_eoficio_e_recusado_e_manda_converter():
     ruim = MOD.conferir_corpo("NASCIMENTO", "NOME: @nomenascido")
-    assert "E-Ofício" in ruim
+    # Desde 17/10/2026 a tela diz «sistema antigo», e o botão citado é o que
+    # existe de fato na tela do modelo.
+    assert "sistema antigo" in ruim
+    assert "«Converter — não grava»" in ruim
 
 
 def test_modelo_vazio_e_recusado():

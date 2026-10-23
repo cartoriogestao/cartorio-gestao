@@ -1,0 +1,1 @@
+{dias} ({extenso}) dias úteis

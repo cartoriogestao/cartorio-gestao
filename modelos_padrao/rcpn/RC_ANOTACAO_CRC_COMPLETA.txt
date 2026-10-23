@@ -1,0 +1,1 @@
+Comunicação de {ato}: Código da comunicação: {codigo}{narrativa}{frase_origem} Eu, {assinatura}, que anotei. {cidade}, ___/___/____.

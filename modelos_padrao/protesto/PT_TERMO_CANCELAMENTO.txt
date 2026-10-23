@@ -1,0 +1,5 @@
+CANCELAMENTO DO REGISTRO DE PROTESTO.
+Certifico que, em {data}, foi cancelado o registro do protesto abaixo, na forma do art. 26 da Lei 9.492/1997.
+{registro} {protocolo} {titulo} {credor} {devedor}
+Hipótese do cancelamento: {hipotese}. {fundamento_legal}
+Fundamento do caso: {fundamento}

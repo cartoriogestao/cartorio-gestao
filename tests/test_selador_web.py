@@ -79,6 +79,23 @@ def postar(cliente, dados: dict):
     return r.get_data().decode("utf-8", errors="replace")
 
 
+def garantir_credencial(cliente) -> None:
+    """A credencial gravada, para o teste que precisa dela já estar lá.
+
+    A pasta DADOS é por processo do xdist (ver acima), e o paralelismo reparte
+    teste a teste: o teste que lê a credencial pode cair num processo que não
+    rodou `test_gravar_a_mao...`. Medido em 18/10/2026 (lote L072): quatro
+    testes deste arquivo ficavam vermelhos conforme a repartição. Cada um
+    garante o que supõe, em vez de herdar do vizinho.
+    """
+    import selador_config as SC
+    if SC.ler_credencial(Path(DADOS)) is None:
+        postar(cliente, {"acao": "gravar", "base_url": LOCAL,
+                         "ambiente": "PRODUCAO",
+                         "usuario": USUARIO_DO_SELADOR,
+                         "senha": SENHA_DO_SELADOR})
+
+
 # ------------------------------------------------------------------ a tela
 
 def test_a_tela_abre_e_diz_o_que_falta(cliente):
@@ -129,6 +146,7 @@ def test_gravar_a_mao_guarda_a_senha_fora_do_banco(cliente):
 
 
 def test_depois_de_gravar_a_tela_mostra_o_usuario_mascarado(cliente):
+    garantir_credencial(cliente)
     html = cliente.get("/selador").get_data(as_text=True)
     assert "fu***********23" in html
     assert USUARIO_DO_SELADOR not in html
@@ -137,6 +155,7 @@ def test_depois_de_gravar_a_tela_mostra_o_usuario_mascarado(cliente):
 
 
 def test_a_tela_nao_repoe_a_senha_no_campo(cliente):
+    garantir_credencial(cliente)
     html = cliente.get("/selador").get_data(as_text=True)
     campo = re.search(r'<input type="password"[^>]*>', html).group(0)
     assert "value=" not in campo
@@ -145,6 +164,7 @@ def test_a_tela_nao_repoe_a_senha_no_campo(cliente):
 
 def test_gravar_sem_trocar_a_senha_mantem_a_que_estava(cliente):
     import selador_config as SC
+    garantir_credencial(cliente)
     postar(cliente, {"acao": "gravar", "base_url": LOCAL,
                      "ambiente": "PRODUCAO", "usuario": USUARIO_DO_SELADOR,
                      "senha": ""})
@@ -288,6 +308,8 @@ def test_a_tela_de_selo_nao_usado_existe_e_explica_o_defeito_antigo(cliente):
 
 def test_apagar_a_credencial_deixa_a_tela_dizendo_o_que_falta(cliente):
     import selador_config as SC
+    # Sem credencial gravada a tela diria «Não havia credencial gravada».
+    garantir_credencial(cliente)
     html = postar(cliente, {"acao": "apagar_credencial"})
     assert "não vai selar" in html
     assert SC.ler_credencial(Path(DADOS)) is None

@@ -16,8 +16,9 @@
   <a class="button" href="{{ url_for('notas_anotacoes_pendentes') }}">Anotações pendentes</a>
   <a class="button" href="{{ url_for('notas_remessas') }}">Remessa às centrais</a>
   <a class="button" href="{{ url_for('notas_escrituras_pendentes') }}">Pendências das escrituras</a>
-  {% if user.role in ['ADMIN','MANAGER'] %}<a class="button" href="{{ url_for('notas_assinaturas') }}">Assinaturas digitalizadas</a>{% endif %}
-  {% if user.role == 'ADMIN' %}<a class="button" href="{{ url_for('notas_importar') }}">Trazer acervo do E-Ofício</a>{% endif %}
+  {# «Assinaturas digitalizadas» (o mutirão que traz os autógrafos do
+     E-Ofício) e «Trazer acervo do E-Ofício» saíram em 17/10/2026: a
+     importação terminou. As rotas ficam, sem link. #}
 </div>
 
 <section class="cards">

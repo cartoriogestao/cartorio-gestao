@@ -43,11 +43,14 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+sys.path.insert(0, str(RAIZ / "tests"))
+from banco_de_teste import conexao_de_teste  # noqa: E402
+
 import caixa_protocolo as CXPROT
 
 
 def _banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE cx_protocolo_atos(

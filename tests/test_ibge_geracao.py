@@ -26,6 +26,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import ibge_geracao as G          # noqa: E402
 import ibge_remessa as IBGE       # noqa: E402
@@ -37,7 +39,7 @@ CABECALHO = {"ibge_uf": "21", "ibge_municipio": "98765",
 
 @pytest.fixture()
 def municipios():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     IB.init_ibge_schema(con)
     for cod, uf_cod, mun, uf, nome in (
@@ -378,7 +380,7 @@ def test_o_arquivo_baixa_zipado_e_em_iso_8859_1(casa):
 
 
 def test_trimestre_que_nao_existe_e_recusado_com_frase_de_balcao():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     with pytest.raises(G.IbgeError, match="1, 2, 3 e 4"):
         G.montar(con, ano=2026, trimestre=5, config=CABECALHO)
@@ -389,3 +391,56 @@ def test_o_recorte_do_trimestre_esta_certo():
     assert G._do_trimestre(2026, 1) == ("2026-01-01", "2026-03-31")
     assert G._do_trimestre(2024, 1) == ("2024-01-01", "2024-03-31")
     assert G._do_trimestre(2026, 4) == ("2026-10-01", "2026-12-31")
+
+
+def test_o_assento_sem_numero_sai_na_mesma_ordem_que_no_sqlite():
+    """`ORDER BY a.numero` punha o NULL primeiro no SQLite e põe por último no
+    PostgreSQL. A ordem das linhas é a do teor que congela com sha256 na
+    entrega; ela não pode mudar só porque o banco mudou."""
+    from nucleo_schema import init_nucleo_schema
+    from rc_schema import init_rc_schema
+
+    con = conexao_de_teste()
+    con.row_factory = sqlite3.Row
+    for iniciar in (init_nucleo_schema, init_rc_schema, IB.init_ibge_schema):
+        iniciar(con)
+    # O NUMERADO ENTRA PRIMEIRO, com o id menor: sem o `NULLS FIRST`, o
+    # desempate por id não esconderia a troca.
+    for numero, nome in ((7, "FULANO DE TAL"), (None, "BELTRANO DE TAL")):
+        con.execute(
+            """INSERT INTO rc_assentos (serie, especie, numero, nome, data_ato,
+                   data_fato, livro_volume, situacao, origem, criado_em)
+               VALUES ('RC_A','NASCIMENTO',?,?,'2026-05-10','2026-05-01',
+                       'A-24','ATIVO','MANUAL','2026-05-10T09:00')""",
+            (numero, nome))
+        aid = con.execute("SELECT MAX(id) AS id FROM rc_assentos").fetchone()["id"]
+        con.execute(
+            """INSERT INTO rc_atos (assento_id, tipo, data_ato, criado_em)
+               VALUES (?, 'REGISTRO', '2026-05-10', '2026-05-10T09:00')""",
+            (aid,))
+
+    r = G.montar(con, ano=2026, trimestre=2, config=CABECALHO)
+    numeros = [IBGE.ler_linha(IBGE.NASCIMENTO, linha)["NUM-REGLIV"].strip().lstrip("0")
+               for linha in r["arquivos"]["CARTINF01.TXT"]]
+    assert numeros == ["", "7"]
+
+
+# ------------------------------------------------ a chave é a do IBGE
+
+
+def test_o_codigo_do_municipio_e_o_do_ibge_e_o_banco_nao_inventa_outro():
+    """`ib_municipios.codigo_ibge` é o código de sete dígitos do IBGE, e não um
+    número nosso. Com IDENTITY, um INSERT sem o código ganhava 1, 2... por
+    conta própria, e a remessa mandaria ao IBGE um município que não existe.
+    O certo é recusar, como a carga do acervo recusa a linha sem código."""
+    con = conexao_de_teste()
+    try:
+        IB.init_ibge_schema(con)
+        with pytest.raises(sqlite3.IntegrityError):
+            con.execute(
+                """INSERT INTO ib_municipios(codigo_uf, codigo_mun, uf, nome,
+                       nome_norm, criado_em)
+                   VALUES (21, '98765', 'MA', 'Cidade Exemplo',
+                           'cidade exemplo', '2026-08-28')""")
+    finally:
+        con.close()

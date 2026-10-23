@@ -46,11 +46,21 @@ O QUE ESTE MÓDULO NÃO FAZ
     **Não expede, não entrega e não dá por notificado.** Ele monta o papel e diz
     o que falta. Quem entrega é a serventia, e o que prova a entrega é o
     comprovante que volta — não uma linha que alguém digitou.
+
+O TEXTO DOS TRÊS PAPÉIS NÃO MORA MAIS AQUI — LF06G, 19/10/2026
+    A notificação, o edital e o ofício aos entes foram para
+    `modelos_padrao/usucapiao/` (`US_NOTIFICACAO`, `US_EDITAL`,
+    `US_OFICIO_AO_ENTE`), com os mesmos bytes das constantes de antes, e cada
+    frase que o processo decide — a posse, a origem, as linhas do imóvel, o
+    prazo, a forma — virou peça do papel dela. **A REGRA ficou aqui**: qual
+    frase entra, com que dado, e em que ordem. O ajuste da casa vale para o
+    PRÓXIMO papel; o que já saiu continua congelado no movimento.
 """
 from __future__ import annotations
 
 from typing import Any
 
+import modelos_da_casa as _MODELOS
 import rt_tjma as RT
 
 # AS FORMAS E OS ENDEREÇOS VÊM DA RETIFICAÇÃO — art. 754 manda aplicá-la.
@@ -183,55 +193,108 @@ def conferir(dados: dict) -> list[str]:
 
 
 # ------------------------------------------------------------- o papel
+#
+# `CABECA` e `CORPO` — o título e o texto de fábrica do papel US_NOTIFICACAO —
+# saíram daqui no LF06G (19/10/2026): moram em
+# `modelos_padrao/usucapiao/US_NOTIFICACAO.txt` (o corpo, com os mesmos bytes)
+# e `US_NOTIFICACAO__cabeca.txt` (o título, peça do papel), e chegam pela busca
+# única (`modelos_da_casa.texto_do_papel`). O nome antigo do corpo continua
+# respondendo — ver `__getattr__` no fim deste módulo.
+PAPEL_NOTIFICACAO = "US_NOTIFICACAO"
+PAPEL_EDITAL = "US_EDITAL"
+PAPEL_OFICIO = "US_OFICIO_AO_ENTE"
+
+# OS CLAROS QUE CADA MONTADOR PREENCHE, e é contra eles que a tela confere o
+# ajuste da casa (`conferir_modelo`). Claro fora da lista estouraria na hora
+# de expedir — com o processo parado à espera do papel.
+CLAROS_POR_PAPEL: dict[str, tuple[str, ...]] = {
+    PAPEL_NOTIFICACAO: (
+        "cabeca", "numero", "do_ano", "modalidade", "requerente",
+        "destinatario", "papel", "endereco", "imovel", "sobre_a_posse",
+        "prazo_texto", "sobre_o_silencio", "lugar_e_data", "oficial", "cargo",
+        "serventia", "forma_texto", "base_da_forma"),
+    PAPEL_EDITAL: (
+        "serventia", "oficial", "cargo", "numero", "do_ano", "modalidade",
+        "requerente", "imovel", "sobre_a_origem", "sobre_a_posse",
+        "prazo_texto", "lugar_e_data"),
+    PAPEL_OFICIO: (
+        "serventia", "numero", "do_ano", "ente", "requerente", "imovel",
+        "sobre_a_posse", "prazo_texto", "lugar_e_data", "oficial", "cargo"),
+}
 
 
-CABECA = ("NOTIFICAÇÃO — PROCEDIMENTO DE USUCAPIÃO EXTRAJUDICIAL")
+def _modelo(con, chave: str) -> str:
+    """O texto que vale hoje para o papel ou a peça. Só lê.
 
-CORPO = """{cabeca}
+    Com `con`, a busca única — o ajuste da casa e, sem ele, o padrão da base.
+    Sem `con` (quem monta fora de uma rota, um teste), o padrão da base. O
+    papel que não carregou vira a recusa deste módulo, com a frase do
+    `modelos_da_casa` dizendo qual arquivo faltou.
+    """
+    try:
+        return (_MODELOS.texto_do_papel(con, chave) if con is not None
+                else _MODELOS.padrao_de(chave))
+    except _MODELOS.ModeloError as erro:
+        raise NotificacaoError(str(erro)) from erro
 
-Autos nº {numero}{do_ano} — {modalidade}
-Requerente: {requerente}
 
-NOTIFICADO(A): {destinatario}
-Na qualidade de: {papel}
-Endereço: {endereco}
+def _preencher(con, chave: str, valores: dict) -> str:
+    try:
+        return _MODELOS.preencher(chave, _modelo(con, chave), valores)
+    except _MODELOS.ModeloError as erro:
+        raise NotificacaoError(str(erro)) from erro
 
-Pelo presente, fica V. Sa. NOTIFICADO(A) de que tramita nesta serventia \
-procedimento de USUCAPIÃO EXTRAJUDICIAL, requerido nos termos do art. 216-A da \
-Lei nº 6.015/1973, sobre o imóvel a seguir descrito:
 
-{imovel}
+def _peca(con, papel: str, peca: str, **valores: Any) -> str:
+    """Uma frase do papel, preenchida — `<papel>__<peca>`."""
+    return _preencher(con, f"{papel}__{peca}", valores)
 
-{sobre_a_posse}Fica V. Sa. cientificado(a) de que poderá MANIFESTAR-SE sobre o \
-pedido no prazo de {prazo_texto}, contado do recebimento desta.
 
-{sobre_o_silencio}
+def _forma_no_recibo(con, papel: str, forma: str, f: dict) -> str:
+    """O texto da forma no recibo: a peça `__forma_<chave>`, ou a norma. Só lê.
 
-A manifestação, a anuência ou a impugnação podem ser apresentadas nesta \
-serventia, por escrito, ou por qualquer meio que permita a identificação de \
-quem as apresenta.
+    **A FORMA QUE A NORMA GANHAR ANTES DA PEÇA SAI COM O TEXTO DA NORMA**, como
+    saía antes do LF06G (`o_que` de `rt_tjma.COMO_NOTIFICAR`), e não como
+    recusa: a lista das formas é da norma, e o papel não pode parar à espera
+    de um arquivo de texto (LX18, ressalva da revisão do LF06G). Só a peça que
+    não existe cai na norma; a que existe e não monta continua sendo recusa.
+    """
+    peca = f"forma_{forma.lower()}"
+    try:
+        _MODELOS.padrao_de(f"{papel}__{peca}")
+    except _MODELOS.ModeloError:
+        return _texto(f.get("o_que"))
+    return _texto(_peca(con, papel, peca))
 
-{lugar_e_data}
 
-_______________________________________
-{oficial}
-{cargo}
-{serventia}
+def conferir_modelo(chave: str, texto: str) -> str:
+    """O ajuste da casa serve como aquele papel? Devolve o erro, ou ``""``.
 
---------------------------------------------------------------------------
-RECIBO — a ser assinado por quem recebe
+    É a régua que a tela de Modelos usa para gravar e a que os montadores
+    usam para preencher — conferir com uma e emitir com outra é como a tela
+    passa a aprovar o papel que a usucapião não sabe montar.
+    """
+    return _MODELOS.conferir_claros(texto, CLAROS_POR_PAPEL[chave])
 
-Recebi a notificação acima, em ____/____/________, às ______h______.
 
-Nome de quem recebe: ______________________________________________________
-Documento: ________________________________  Assinatura: __________________
+def _linhas_do_imovel(con, papel: str, processo: dict) -> list[str]:
+    """A descrição e as linhas do imóvel do EDITAL e do OFÍCIO — uma regra só.
 
-Forma da notificação: {forma_texto}
-{base_da_forma}"""
+    As duas montagens eram cópia uma da outra (inventário do LF06A). O texto de
+    cada linha continua sendo de cada papel (as peças `__imovel_*`); a regra de
+    quais entram, e em que ordem, mora aqui.
+    """
+    partes = [_texto(processo.get("imovel_descricao"))]
+    for peca, chave in (("imovel_situado_em", "imovel_endereco"),
+                        ("imovel_municipio", "imovel_municipio"),
+                        ("imovel_area", "imovel_area")):
+        if _texto(processo.get(chave)):
+            partes.append(_peca(con, papel, peca, valor=_texto(processo[chave])))
+    return partes
 
 
 def montar(*, processo: dict, notificacao: dict, serventia: dict,
-           hoje_extenso: str = "") -> str:
+           hoje_extenso: str = "", con=None) -> str:
     """O papel da notificação, pronto para imprimir e entregar. Só monta.
 
     **RECUSA ANTES DE IMPRIMIR**, e não depois: papel de notificação com buraco
@@ -241,34 +304,44 @@ def montar(*, processo: dict, notificacao: dict, serventia: dict,
     **O RECIBO VAI NO MESMO PAPEL.** O que prova a notificação não é a linha
     que alguém digitou no sistema: é o comprovante que volta assinado — e um
     recibo que sai em folha separada é o recibo que se perde.
+
+    **COM `con`, O AJUSTE DA CASA VALE** (LF06G): o papel e as frases saem da
+    busca única. Sem `con`, o padrão da base.
     """
     faltando = conferir(notificacao)
     if faltando:
         raise NotificacaoError(
             "A notificação não sai sem: " + "; ".join(faltando) + ".")
 
+    papel = PAPEL_NOTIFICACAO
     p = PRAZO_POR_CHAVE.get(_texto(notificacao.get("prazo_chave")))
     dias = int(notificacao.get("prazo_dias") or (p or {}).get("dias") or 0)
     uteis = bool((p or {}).get("uteis"))
-    prazo_texto = (f"{dias} ({_por_extenso(dias)}) dias"
-                   + (" úteis" if uteis else ""))
+    prazo_texto = _peca(con, papel, "prazo_uteis" if uteis else "prazo_corridos",
+                        dias=dias, extenso=_por_extenso(dias))
 
     forma = _texto(notificacao.get("forma")).upper()
     f = FORMA_POR_CHAVE.get(forma, {})
+    # A FORMA NO RECIBO É PEÇA DO PAPEL, uma por forma da norma
+    # (`__forma_pessoal`…): o texto entregue é da casa, e a lista das formas,
+    # a ordem e o artigo continuam sendo da norma (`rt_tjma.COMO_NOTIFICAR`).
+    forma_texto = (_forma_no_recibo(con, papel, forma, f) if f else "") or forma
 
     imovel = _texto(processo.get("imovel_descricao")) or "____________"
     endereco_imovel = _texto(processo.get("imovel_endereco"))
     municipio = _texto(processo.get("imovel_municipio"))
+    uf = _texto(processo.get("imovel_uf"))
     area = _texto(processo.get("imovel_area"))
     partes_do_imovel = [imovel]
     if endereco_imovel:
-        partes_do_imovel.append(f"Situado em: {endereco_imovel}")
+        partes_do_imovel.append(
+            _peca(con, papel, "imovel_situado_em", valor=endereco_imovel))
     if municipio:
-        partes_do_imovel.append(f"Município: {municipio}"
-                                + (f"/{_texto(processo.get('imovel_uf'))}"
-                                   if _texto(processo.get("imovel_uf")) else ""))
+        partes_do_imovel.append(
+            _peca(con, papel, "imovel_municipio_uf", municipio=municipio, uf=uf)
+            if uf else _peca(con, papel, "imovel_municipio", municipio=municipio))
     if area:
-        partes_do_imovel.append(f"Área: {area}")
+        partes_do_imovel.append(_peca(con, papel, "imovel_area", valor=area))
 
     # O QUE NÃO SE SABE NÃO SE AFIRMA. A posse alegada só entra se estiver no
     # processo — uma frase genérica sobre posse num papel que a serventia
@@ -276,37 +349,33 @@ def montar(*, processo: dict, notificacao: dict, serventia: dict,
     posse = _texto(processo.get("posse_tempo_alegado"))
     desde = _texto(processo.get("posse_inicio"))
     sobre_a_posse = ""
-    if posse or desde:
-        pedaco = posse or f"desde {desde}"
-        sobre_a_posse = (f"O requerente alega posse {pedaco}.\n\n")
-
-    sobre_o_silencio = (
-        "DECORRIDO O PRAZO SEM MANIFESTAÇÃO, O SILÊNCIO SERÁ INTERPRETADO "
-        "COMO CONCORDÂNCIA, na forma do art. 216-A, § 2º, da Lei nº "
-        "6.015/1973.")
+    if posse:
+        sobre_a_posse = _peca(con, papel, "posse", posse=posse) + "\n\n"
+    elif desde:
+        sobre_a_posse = _peca(con, papel, "posse_desde", desde=desde) + "\n\n"
 
     ano = processo.get("ano")
-    return CORPO.format(
-        cabeca=CABECA,
-        numero=_texto(processo.get("numero")) or "____",
-        do_ano=f"/{ano}" if ano else "",
-        modalidade=_texto(processo.get("modalidade_rotulo")
-                          or processo.get("modalidade")),
-        requerente=_texto(processo.get("requerente_nome")) or "____________",
-        destinatario=_texto(notificacao.get("destinatario")),
-        papel=_texto(notificacao.get("destinatario_papel")),
-        endereco=_texto(notificacao.get("endereco")),
-        imovel="\n".join(partes_do_imovel),
-        sobre_a_posse=sobre_a_posse,
-        prazo_texto=prazo_texto,
-        sobre_o_silencio=sobre_o_silencio,
-        lugar_e_data=_texto(hoje_extenso),
-        oficial=_texto(serventia.get("oficial")) or "____________",
-        cargo=_texto(serventia.get("cargo")) or "Oficial",
-        serventia=_texto(serventia.get("nome")) or "",
-        forma_texto=_texto(f.get("o_que")) or forma,
-        base_da_forma=f"({_texto(f.get('artigo'))})" if f.get("artigo") else "",
-    )
+    return _preencher(con, papel, {
+        "cabeca": _peca(con, papel, "cabeca"),
+        "numero": _texto(processo.get("numero")) or "____",
+        "do_ano": f"/{ano}" if ano else "",
+        "modalidade": _texto(processo.get("modalidade_rotulo")
+                             or processo.get("modalidade")),
+        "requerente": _texto(processo.get("requerente_nome")) or "____________",
+        "destinatario": _texto(notificacao.get("destinatario")),
+        "papel": _texto(notificacao.get("destinatario_papel")),
+        "endereco": _texto(notificacao.get("endereco")),
+        "imovel": "\n".join(partes_do_imovel),
+        "sobre_a_posse": sobre_a_posse,
+        "prazo_texto": prazo_texto,
+        "sobre_o_silencio": _peca(con, papel, "silencio"),
+        "lugar_e_data": _texto(hoje_extenso),
+        "oficial": _texto(serventia.get("oficial")) or "____________",
+        "cargo": _texto(serventia.get("cargo")) or "Oficial",
+        "serventia": _texto(serventia.get("nome")) or "",
+        "forma_texto": forma_texto,
+        "base_da_forma": f"({_texto(f.get('artigo'))})" if f.get("artigo") else "",
+    })
 
 
 def _por_extenso(n: int) -> str:
@@ -408,34 +477,14 @@ PRAZO_DO_EDITAL = {
 }
 
 
-EDITAL = """EDITAL DE USUCAPIÃO EXTRAJUDICIAL
-
-{serventia}
-{oficial}, {cargo}, FAZ SABER a quantos este edital virem ou dele \
-conhecimento tiverem que, nos termos do art. 216-A da Lei nº 6.015/1973, \
-tramita nesta serventia procedimento de USUCAPIÃO EXTRAJUDICIAL:
-
-Autos nº {numero}{do_ano} — {modalidade}
-Requerente: {requerente}
-
-IMÓVEL:
-{imovel}
-
-{sobre_a_origem}{sobre_a_posse}FICAM CIENTIFICADOS terceiros eventualmente \
-interessados de que poderão MANIFESTAR-SE no prazo de {prazo_texto}, contado \
-na forma do art. 755, § 1º, do Código de Normas da CGJ/TJMA.
-
-A manifestação pode ser apresentada nesta serventia, por escrito.
-
-{lugar_e_data}
-
-_______________________________________
-{oficial}
-{cargo}"""
+# `EDITAL` — o texto de fábrica do papel US_EDITAL — saiu daqui no LF06G
+# (19/10/2026): mora em `modelos_padrao/usucapiao/US_EDITAL.txt`, com os mesmos
+# bytes, e chega pela busca única. O nome antigo continua respondendo — ver
+# `__getattr__` no fim deste módulo.
 
 
 def montar_edital(*, processo: dict, serventia: dict, hoje_extenso: str = "",
-                  imovel_sem_origem: bool = False) -> str:
+                  imovel_sem_origem: bool = False, con=None) -> str:
     """O edital para terceiros interessados. Só monta.
 
     **A CIRCUNSTÂNCIA DA ORIGEM VAI ESCRITA, quando é o caso** — art. 755, § 2º
@@ -460,68 +509,44 @@ def montar_edital(*, processo: dict, serventia: dict, hoje_extenso: str = "",
         raise NotificacaoError(
             "O edital não sai sem: " + ", ".join(faltando) + ".")
 
-    partes = [_texto(processo.get("imovel_descricao"))]
-    for rotulo, chave in (("Situado em", "imovel_endereco"),
-                          ("Município", "imovel_municipio"),
-                          ("Área", "imovel_area")):
-        if _texto(processo.get(chave)):
-            partes.append(f"{rotulo}: {_texto(processo[chave])}")
-
-    sobre_a_origem = ""
-    if imovel_sem_origem:
-        sobre_a_origem = (
-            "CONSIGNA-SE EXPRESSAMENTE que o imóvel não tem origem "
-            "registrária, ou que a origem não foi encontrada, na forma do "
-            "art. 755, § 2º, do Código de Normas da CGJ/TJMA.\n\n")
+    papel = PAPEL_EDITAL
+    # A REGRA DO ART. 755, § 2º, FICA AQUI; a frase que ela manda escrever é a
+    # peça `__sem_origem`.
+    sobre_a_origem = (_peca(con, papel, "sem_origem") + "\n\n"
+                      if imovel_sem_origem else "")
 
     posse = _texto(processo.get("posse_tempo_alegado"))
-    sobre_a_posse = f"O requerente alega posse {posse}.\n\n" if posse else ""
+    sobre_a_posse = (_peca(con, papel, "posse", posse=posse) + "\n\n"
+                     if posse else "")
 
     ano = processo.get("ano")
-    return EDITAL.format(
-        serventia=_texto(serventia.get("nome")),
-        oficial=_texto(serventia.get("oficial")) or "____________",
-        cargo=_texto(serventia.get("cargo")) or "Oficial",
-        numero=_texto(processo.get("numero")),
-        do_ano=f"/{ano}" if ano else "",
-        modalidade=_texto(processo.get("modalidade_rotulo")
-                          or processo.get("modalidade")),
-        requerente=_texto(processo.get("requerente_nome")),
-        imovel="\n".join(partes),
-        sobre_a_origem=sobre_a_origem,
-        sobre_a_posse=sobre_a_posse,
-        prazo_texto=f"{PRAZO_DO_EDITAL['dias']} "
-                    f"({_por_extenso(PRAZO_DO_EDITAL['dias'])}) dias",
-        lugar_e_data=_texto(hoje_extenso))
+    dias = PRAZO_DO_EDITAL["dias"]
+    return _preencher(con, papel, {
+        "serventia": _texto(serventia.get("nome")),
+        "oficial": _texto(serventia.get("oficial")) or "____________",
+        "cargo": _texto(serventia.get("cargo")) or "Oficial",
+        "numero": _texto(processo.get("numero")),
+        "do_ano": f"/{ano}" if ano else "",
+        "modalidade": _texto(processo.get("modalidade_rotulo")
+                             or processo.get("modalidade")),
+        "requerente": _texto(processo.get("requerente_nome")),
+        "imovel": "\n".join(_linhas_do_imovel(con, papel, processo)),
+        "sobre_a_origem": sobre_a_origem,
+        "sobre_a_posse": sobre_a_posse,
+        "prazo_texto": _peca(con, papel, "prazo", dias=dias,
+                             extenso=_por_extenso(dias)),
+        "lugar_e_data": _texto(hoje_extenso)})
 
 
-OFICIO_AO_ENTE = """{serventia}
-
-Ofício — procedimento de usucapião extrajudicial
-Autos nº {numero}{do_ano}
-
-Ao/À {ente}
-
-Senhor(a) Representante,
-
-Comunico a V. Sa. que tramita nesta serventia procedimento de USUCAPIÃO \
-EXTRAJUDICIAL, requerido por {requerente} nos termos do art. 216-A da Lei nº \
-6.015/1973, sobre o imóvel a seguir descrito:
-
-{imovel}
-
-{sobre_a_posse}Nos termos do § 3º do referido artigo, fica esse ente \
-CIENTIFICADO para, querendo, manifestar-se no prazo de {prazo_texto}.
-
-{lugar_e_data}
-
-_______________________________________
-{oficial}
-{cargo}"""
+# `OFICIO_AO_ENTE` — o texto de fábrica do papel US_OFICIO_AO_ENTE — saiu
+# daqui no LF06G (19/10/2026): mora em
+# `modelos_padrao/usucapiao/US_OFICIO_AO_ENTE.txt`, com os mesmos bytes, e
+# chega pela busca única. O nome antigo continua respondendo — ver
+# `__getattr__` no fim deste módulo.
 
 
 def montar_oficio_ao_ente(*, ente: str, processo: dict, serventia: dict,
-                          hoje_extenso: str = "") -> str:
+                          hoje_extenso: str = "", con=None) -> str:
     """O ofício de ciência a um dos três entes públicos. Só monta.
 
     **SÃO TRÊS, e os três se avisam** — art. 216-A, § 3º. Avisar dois e
@@ -541,27 +566,24 @@ def montar_oficio_ao_ente(*, ente: str, processo: dict, serventia: dict,
         raise NotificacaoError(
             "O ofício não sai sem: " + ", ".join(faltando) + ".")
 
-    partes = [_texto(processo.get("imovel_descricao"))]
-    for rotulo, chave in (("Situado em", "imovel_endereco"),
-                          ("Município", "imovel_municipio"),
-                          ("Área", "imovel_area")):
-        if _texto(processo.get(chave)):
-            partes.append(f"{rotulo}: {_texto(processo[chave])}")
+    papel = PAPEL_OFICIO
     posse = _texto(processo.get("posse_tempo_alegado"))
     ano = processo.get("ano")
-    return OFICIO_AO_ENTE.format(
-        serventia=_texto(serventia.get("nome")),
-        numero=_texto(processo.get("numero")),
-        do_ano=f"/{ano}" if ano else "",
-        ente=_texto(ente),
-        requerente=_texto(processo.get("requerente_nome")),
-        imovel="\n".join(partes),
-        sobre_a_posse=f"O requerente alega posse {posse}.\n\n" if posse else "",
-        prazo_texto=f"{PRAZO_DOS_ENTES['dias']} "
-                    f"({_por_extenso(PRAZO_DOS_ENTES['dias'])}) dias",
-        lugar_e_data=_texto(hoje_extenso),
-        oficial=_texto(serventia.get("oficial")) or "____________",
-        cargo=_texto(serventia.get("cargo")) or "Oficial")
+    dias = PRAZO_DOS_ENTES["dias"]
+    return _preencher(con, papel, {
+        "serventia": _texto(serventia.get("nome")),
+        "numero": _texto(processo.get("numero")),
+        "do_ano": f"/{ano}" if ano else "",
+        "ente": _texto(ente),
+        "requerente": _texto(processo.get("requerente_nome")),
+        "imovel": "\n".join(_linhas_do_imovel(con, papel, processo)),
+        "sobre_a_posse": (_peca(con, papel, "posse", posse=posse) + "\n\n"
+                          if posse else ""),
+        "prazo_texto": _peca(con, papel, "prazo", dias=dias,
+                             extenso=_por_extenso(dias)),
+        "lugar_e_data": _texto(hoje_extenso),
+        "oficial": _texto(serventia.get("oficial")) or "____________",
+        "cargo": _texto(serventia.get("cargo")) or "Oficial"})
 
 
 MANUAL_DO_EDITAL: tuple[dict, ...] = (
@@ -608,3 +630,16 @@ MANUAL_DOS_ENTES: tuple[dict, ...] = (
              "volta, e não a linha no sistema.",
      "base": "—"},
 )
+
+
+def __getattr__(nome: str):
+    """Os nomes antigos do texto de fábrica, lidos da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06G (19/10/2026) e mora em `modelos_padrao/`.
+    Quem ainda importa o nome antigo recebe o padrão da base — o MESMO que o
+    papel imprime, e não uma cópia que ficou para trás. Nome que não é de papel
+    continua sendo `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    return _MODELOS.constante_antiga(__name__, nome)

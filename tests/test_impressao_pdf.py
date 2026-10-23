@@ -88,8 +88,12 @@ def test_documento_vazio_recusa_em_vez_de_devolver_nada():
 
 
 def test_sem_conversor_a_recusa_diz_o_que_fazer():
-    """«Nao encontrado» faria o balcao achar que o sistema quebrou."""
-    sem_nada = lambda chave, padrao=None: "C:/nao/existe/soffice.exe"
+    """«Nao encontrado» faria o balcao achar que o sistema quebrou.
+
+    O caminho configurado fica DENTRO da pasta de programas (revisão de
+    segurança de 22/10/2026, M3: fora dela o caminho é ignorado e vale a
+    detecção) — e não existe: a recusa diz onde consertar."""
+    sem_nada = lambda chave, padrao=None: "C:/Program Files/nao/existe/soffice.exe"
     with pytest.raises(PDF.PdfError) as e:
         PDF.pdf_de_odt(b"conteudo", nome="p", get_setting=sem_nada)
     frase = str(e.value)
@@ -97,11 +101,27 @@ def test_sem_conversor_a_recusa_diz_o_que_fazer():
     assert "Configurações" in frase
 
 
-def test_a_configuracao_manda_sobre_os_caminhos_conhecidos():
+def test_a_configuracao_manda_sobre_os_caminhos_conhecidos(tmp_path, monkeypatch):
     """No dia em que ele mudar de lugar, ninguem quer mexer no codigo para o
-    balcao voltar a imprimir — a mesma decisao da versao da tabela de custas."""
+    balcao voltar a imprimir — a mesma decisao da versao da tabela de custas.
+
+    DESDE 22/10/2026 (revisão de segurança, M3) a configuração só manda se o
+    programa estiver numa pasta de programas e tiver o nome do programa: um
+    caminho em Downloads — ou um `.odt`, que era o que este teste usava —
+    seria executado como conversor por quem conseguisse gravar a configuração."""
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "Program Files"))
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "Program Files (x86)"))
+    monkeypatch.setenv("ProgramW6432", str(tmp_path / "Program Files"))
+    de_fora = tmp_path / "Program Files" / "LibreOffice 25" / "program" / "soffice.exe"
+    de_fora.parent.mkdir(parents=True)
+    de_fora.write_bytes(b"x")
+    escrito = lambda chave, padrao=None: str(de_fora)
+    assert PDF.onde_esta_o_conversor(escrito) == de_fora
+    # fora da pasta de programas (o molde .odt) a configuração é ignorada
+    monkeypatch.setattr(PDF, "CAMINHOS_CONHECIDOS", ())
+    monkeypatch.setattr(PDF.shutil, "which", lambda *_: None)
     escrito = lambda chave, padrao=None: str(MOLDE)
-    assert PDF.onde_esta_o_conversor(escrito) == MOLDE
+    assert PDF.onde_esta_o_conversor(escrito) is None
 
 
 # ------------------------------------------------- e convertendo de verdade

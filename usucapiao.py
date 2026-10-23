@@ -48,9 +48,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from typing import Any
 
+import modelos_da_casa as _MODELOS
+from bd_nativo import banco
 from serventia import mascarar_documento
 
 
@@ -276,51 +277,51 @@ def _texto(v: Any) -> str | None:
     return s or None
 
 
-def processo(con: sqlite3.Connection, processo_id: int) -> sqlite3.Row | None:
+def processo(con, processo_id: int) -> dict | None:
     """O processo, ou None. So LE."""
-    return con.execute("SELECT * FROM us_processos WHERE id=?",
-                       (int(processo_id),)).fetchone()
+    return banco(con).um("SELECT * FROM us_processos WHERE id=%s",
+                         (int(processo_id),))
 
 
-def _exigir(con: sqlite3.Connection, processo_id: int) -> sqlite3.Row:
+def _exigir(con, processo_id: int) -> dict:
     p = processo(con, processo_id)
     if not p:
         raise UsucapiaoError(f"Processo {processo_id} não encontrado.")
     return p
 
 
-def pecas(con: sqlite3.Connection, processo_id: int) -> list[sqlite3.Row]:
+def pecas(con, processo_id: int) -> list[dict]:
     """As peças juntadas, na ordem em que entraram. So LE."""
-    return list(con.execute(
-        "SELECT * FROM us_pecas WHERE processo_id=? ORDER BY id",
-        (int(processo_id),)))
+    return banco(con).ler(
+        "SELECT * FROM us_pecas WHERE processo_id=%s ORDER BY id",
+        (int(processo_id),))
 
 
-def movimentos(con: sqlite3.Connection, processo_id: int) -> list[sqlite3.Row]:
+def movimentos(con, processo_id: int) -> list[dict]:
     """O andamento, em ordem. So LE."""
-    return list(con.execute(
-        """SELECT * FROM us_movimentos WHERE processo_id=?
-            ORDER BY data_movimento, id""", (int(processo_id),)))
+    return banco(con).ler(
+        """SELECT * FROM us_movimentos WHERE processo_id=%s
+            ORDER BY data_movimento, id""", (int(processo_id),))
 
 
-def decisoes(con: sqlite3.Connection, processo_id: int) -> list[sqlite3.Row]:
+def decisoes(con, processo_id: int) -> list[dict]:
     """As decisões, da mais nova para a mais velha. So LE."""
-    return list(con.execute(
-        "SELECT * FROM us_decisoes WHERE processo_id=? ORDER BY id DESC",
-        (int(processo_id),)))
+    return banco(con).ler(
+        "SELECT * FROM us_decisoes WHERE processo_id=%s ORDER BY id DESC",
+        (int(processo_id),))
 
 
-def analises(con: sqlite3.Connection, processo_id: int) -> list[sqlite3.Row]:
+def analises(con, processo_id: int) -> list[dict]:
     """As análises recebidas, da mais nova para a mais velha. So LE."""
-    return list(con.execute(
-        "SELECT * FROM us_analises WHERE processo_id=? ORDER BY id DESC",
-        (int(processo_id),)))
+    return banco(con).ler(
+        "SELECT * FROM us_analises WHERE processo_id=%s ORDER BY id DESC",
+        (int(processo_id),))
 
 
 # ------------------------------------------------------------- autuação
 
 
-def autuar(con: sqlite3.Connection, *, numero: str, modalidade: str,
+def autuar(con, *, numero: str, modalidade: str,
            agora: str, requerente_nome: str | None = None,
            requerente_documento: str | None = None,
            imovel_descricao: str | None = None,
@@ -335,12 +336,12 @@ def autuar(con: sqlite3.Connection, *, numero: str, modalidade: str,
     pendente — assim a tela mostra o que falta desde o primeiro dia, em vez de
     mostrar vazio ate alguem clicar.
     """
+    bd = banco(con)
     m = _modalidade(modalidade)
     num = _texto(numero)
     if not num:
         raise UsucapiaoError("O processo precisa de um número.")
-    if con.execute("SELECT 1 FROM us_processos WHERE numero=?",
-                   (num,)).fetchone():
+    if bd.um("SELECT 1 FROM us_processos WHERE numero=%s", (num,)):
         raise UsucapiaoError(f"Já existe processo com o número {num}.")
 
     aceitos = ("ano", "advogado_nome", "advogado_oab", "matricula_id",
@@ -356,24 +357,24 @@ def autuar(con: sqlite3.Connection, *, numero: str, modalidade: str,
     valores = [num, m, "AUTUACAO", "EM_ANDAMENTO", _texto(requerente_nome),
                _texto(requerente_documento), _texto(imovel_descricao),
                _texto(imovel_municipio), agora, usuario, *extra.values()]
-    cur = con.execute(
+    processo_id = int(bd.escrever(
         f"INSERT INTO us_processos({', '.join(colunas)}) "
-        f"VALUES ({', '.join('?' * len(colunas))})", valores)
-    processo_id = int(cur.lastrowid)
+        f"VALUES ({', '.join(['%s'] * len(colunas))}) RETURNING id",
+        valores)[0]["id"])
 
     for item in checklist_da_modalidade(m):
-        con.execute(
+        bd.escrever(
             """INSERT INTO us_conferencia(processo_id, item, estado,
                    atualizado_em, atualizado_por)
-               VALUES (?,?, 'PENDENTE', ?, ?)""",
+               VALUES (%s,%s, 'PENDENTE', %s, %s)""",
             (processo_id, item["item"], agora, usuario))
-    _mover(con, processo_id, tipo="AUTUACAO", etapa="AUTUACAO",
+    _mover(bd, processo_id, tipo="AUTUACAO", etapa="AUTUACAO",
            descricao=f"Autuado o processo {num}, modalidade {MODALIDADES[m]}.",
            data_movimento=agora, agora=agora, usuario=usuario)
     return processo_id
 
 
-def _mover(con: sqlite3.Connection, processo_id: int, *, tipo: str,
+def _mover(con, processo_id: int, *, tipo: str,
            descricao: str, data_movimento: str, agora: str,
            etapa: str | None = None, usuario: str | None = None,
            **campos: Any) -> int:
@@ -401,15 +402,17 @@ def _mover(con: sqlite3.Connection, processo_id: int, *, tipo: str,
                "criado_em", "criado_por", *extra]
     valores = [int(processo_id), tipo, etapa, descricao, data_movimento,
                agora, usuario, *extra.values()]
-    cur = con.execute(
+    bd = banco(con)
+    movimento_id = int(bd.escrever(
         f"INSERT INTO us_movimentos({', '.join(colunas)}) "
-        f"VALUES ({', '.join('?' * len(colunas))})", valores)
-    con.execute("UPDATE us_processos SET atualizado_em=? WHERE id=?",
+        f"VALUES ({', '.join(['%s'] * len(colunas))}) RETURNING id",
+        valores)[0]["id"])
+    bd.escrever("UPDATE us_processos SET atualizado_em=%s WHERE id=%s",
                 (agora, int(processo_id)))
-    return int(cur.lastrowid)
+    return movimento_id
 
 
-def movimentar(con: sqlite3.Connection, processo_id: int, *, tipo: str,
+def movimentar(con, processo_id: int, *, tipo: str,
                descricao: str, agora: str, data_movimento: str | None = None,
                usuario: str | None = None, **campos: Any) -> int:
     """Lança um movimento no processo. ESCREVE.
@@ -417,18 +420,19 @@ def movimentar(con: sqlite3.Connection, processo_id: int, *, tipo: str,
     Recusa movimentar processo em situacao final: processo registrado ou
     rejeitado nao anda mais, e movimento nele seria andar depois do fim.
     """
-    p = _exigir(con, processo_id)
+    bd = banco(con)
+    p = _exigir(bd, processo_id)
     if p["situacao"] in SITUACOES_FINAIS:
         raise UsucapiaoError(
             f"O processo está {p['situacao']} — não há mais o que movimentar.")
     if not _texto(descricao):
         raise UsucapiaoError("Descreva o movimento.")
-    return _mover(con, processo_id, tipo=tipo, descricao=descricao,
+    return _mover(bd, processo_id, tipo=tipo, descricao=descricao,
                   data_movimento=data_movimento or agora, agora=agora,
                   etapa=p["etapa"], usuario=usuario, **campos)
 
 
-def notificar(con: sqlite3.Connection, processo_id: int, *, destinatario: str,
+def notificar(con, processo_id: int, *, destinatario: str,
               destinatario_papel: str, endereco: str, forma: str,
               prazo_chave: str, agora: str, serventia: dict,
               hoje_extenso: str = "", tentativa: Any = None,
@@ -450,7 +454,8 @@ def notificar(con: sqlite3.Connection, processo_id: int, *, destinatario: str,
     """
     import us_notificacao as UN
 
-    p = _exigir(con, processo_id)
+    bd = banco(con)
+    p = _exigir(bd, processo_id)
     if p["situacao"] in SITUACOES_FINAIS:
         raise UsucapiaoError(
             f"O processo está {p['situacao']} — não há mais o que notificar.")
@@ -461,13 +466,14 @@ def notificar(con: sqlite3.Connection, processo_id: int, *, destinatario: str,
              "endereco": endereco, "forma": forma,
              "prazo_dias": regra["dias"], "prazo_chave": prazo_chave}
 
+    # COM `bd`, O PAPEL SAI COMO A CASA O AJUSTOU (LF06G) — e congela assim.
     teor = UN.montar(processo=dict(p), notificacao=dados,
-                     serventia=serventia, hoje_extenso=hoje_extenso)
+                     serventia=serventia, hoje_extenso=hoje_extenso, con=bd)
 
     forma_rotulo = UN.FORMA_POR_CHAVE.get(
         str(forma).upper(), {}).get("o_que", forma)
     mov = _mover(
-        con, processo_id, tipo="NOTIFICACAO",
+        bd, processo_id, tipo="NOTIFICACAO",
         descricao=f"Notificação de {destinatario} ({destinatario_papel}), "
                   f"por: {forma_rotulo}.",
         data_movimento=data_movimento or agora, agora=agora, etapa=p["etapa"],
@@ -479,7 +485,7 @@ def notificar(con: sqlite3.Connection, processo_id: int, *, destinatario: str,
     return {"movimento_id": mov, "teor": teor, "prazo": regra}
 
 
-def publicar_edital(con: sqlite3.Connection, processo_id: int, *, agora: str,
+def publicar_edital(con, processo_id: int, *, agora: str,
                     serventia: dict, hoje_extenso: str = "",
                     imovel_sem_origem: bool = False,
                     disponibilizado_em: str | None = None,
@@ -495,16 +501,17 @@ def publicar_edital(con: sqlite3.Connection, processo_id: int, *, agora: str,
     """
     import us_notificacao as UN
 
-    p = _exigir(con, processo_id)
+    bd = banco(con)
+    p = _exigir(bd, processo_id)
     if p["situacao"] in SITUACOES_FINAIS:
         raise UsucapiaoError(
             f"O processo está {p['situacao']} — não há mais o que publicar.")
 
     teor = UN.montar_edital(processo=dict(p), serventia=serventia,
                             hoje_extenso=hoje_extenso,
-                            imovel_sem_origem=imovel_sem_origem)
+                            imovel_sem_origem=imovel_sem_origem, con=bd)
     mov = _mover(
-        con, processo_id, tipo="EDITAL",
+        bd, processo_id, tipo="EDITAL",
         descricao="Edital para terceiros interessados"
                   + (" — imóvel sem origem registrária consignada"
                      if imovel_sem_origem else "") + ".",
@@ -515,7 +522,7 @@ def publicar_edital(con: sqlite3.Connection, processo_id: int, *, agora: str,
     return {"movimento_id": mov, "teor": teor}
 
 
-def dar_ciencia_aos_entes(con: sqlite3.Connection, processo_id: int, *,
+def dar_ciencia_aos_entes(con, processo_id: int, *,
                           agora: str, serventia: dict, hoje_extenso: str = "",
                           usuario: str | None = None) -> list[dict]:
     """Monta os três ofícios e lança um movimento por ente. ESCREVE.
@@ -526,7 +533,8 @@ def dar_ciencia_aos_entes(con: sqlite3.Connection, processo_id: int, *,
     """
     import us_notificacao as UN
 
-    p = _exigir(con, processo_id)
+    bd = banco(con)
+    p = _exigir(bd, processo_id)
     if p["situacao"] in SITUACOES_FINAIS:
         raise UsucapiaoError(
             f"O processo está {p['situacao']} — não há mais o que comunicar.")
@@ -535,9 +543,9 @@ def dar_ciencia_aos_entes(con: sqlite3.Connection, processo_id: int, *,
     for ente in UN.ENTES:
         teor = UN.montar_oficio_ao_ente(ente=ente, processo=dict(p),
                                         serventia=serventia,
-                                        hoje_extenso=hoje_extenso)
+                                        hoje_extenso=hoje_extenso, con=bd)
         mov = _mover(
-            con, processo_id, tipo="CIENCIA",
+            bd, processo_id, tipo="CIENCIA",
             descricao=f"Ciência a: {ente} (art. 216-A, § 3º).",
             data_movimento=agora, agora=agora, etapa=p["etapa"],
             usuario=usuario, destinatario=ente,
@@ -551,7 +559,7 @@ def dar_ciencia_aos_entes(con: sqlite3.Connection, processo_id: int, *,
 # ------------------------------------------------------------- as peças
 
 
-def juntar_peca(con: sqlite3.Connection, processo_id: int, *, tipo: str,
+def juntar_peca(con, processo_id: int, *, tipo: str,
                 agora: str, descricao: str | None = None,
                 nome_arquivo: str | None = None, caminho: str | None = None,
                 sha256: str | None = None, bytes_: int | None = None,
@@ -563,28 +571,28 @@ def juntar_peca(con: sqlite3.Connection, processo_id: int, *, tipo: str,
     a CUMPRIDO sozinho. Fazer o escrevente juntar e depois marcar a mesma coisa
     à mão é o jeito de as duas divergirem.
     """
-    p = _exigir(con, processo_id)
+    bd = banco(con)
+    p = _exigir(bd, processo_id)
     if tipo not in TIPOS_DE_PECA:
         raise UsucapiaoError(
             f"Tipo de peça desconhecido: {tipo!r}. Os que existem: "
             f"{', '.join(TIPOS_DE_PECA)}.")
-    cur = con.execute(
+    peca_id = int(bd.escrever(
         """INSERT INTO us_pecas(processo_id, tipo, descricao, nome_arquivo,
                caminho, sha256, bytes, paginas, teor, juntada_em, juntada_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(processo_id), tipo, _texto(descricao), _texto(nome_arquivo),
          _texto(caminho), _texto(sha256), bytes_, paginas, _texto(teor),
-         agora, usuario))
-    peca_id = int(cur.lastrowid)
+         agora, usuario))[0]["id"])
 
     for item in checklist_da_modalidade(p["modalidade"]):
         if item.get("peca") == tipo:
-            con.execute(
+            bd.escrever(
                 """UPDATE us_conferencia SET estado='CUMPRIDO',
-                       atualizado_em=?, atualizado_por=?
-                    WHERE processo_id=? AND item=? AND estado='PENDENTE'""",
+                       atualizado_em=%s, atualizado_por=%s
+                    WHERE processo_id=%s AND item=%s AND estado='PENDENTE'""",
                 (agora, usuario, int(processo_id), item["item"]))
-    _mover(con, processo_id, tipo="JUNTADA", etapa=p["etapa"],
+    _mover(bd, processo_id, tipo="JUNTADA", etapa=p["etapa"],
            descricao=f"Juntada de {TIPOS_DE_PECA[tipo]}"
                      + (f": {_texto(descricao)}" if _texto(descricao) else "."),
            data_movimento=agora, agora=agora, usuario=usuario)
@@ -594,15 +602,17 @@ def juntar_peca(con: sqlite3.Connection, processo_id: int, *, tipo: str,
 # --------------------------------------------------------- a conferência
 
 
-def conferir(con: sqlite3.Connection, processo_id: int) -> dict:
+def conferir(con, processo_id: int) -> dict:
     """O checklist do processo, item a item, com o que falta. So LE.
 
     Devolve `pendentes`, `cumpridos` e `dispensados` — e `pronto_para_decidir`,
     que e o que a tela usa para deixar (ou nao) chamar a decisao.
     """
-    p = _exigir(con, processo_id)
-    gravados = {r["item"]: r for r in con.execute(
-        "SELECT * FROM us_conferencia WHERE processo_id=?", (int(processo_id),))}
+    bd = banco(con)
+    p = _exigir(bd, processo_id)
+    gravados = {r["item"]: r for r in bd.ler(
+        "SELECT * FROM us_conferencia WHERE processo_id=%s ORDER BY id",
+        (int(processo_id),))}
     linhas = []
     for item in checklist_da_modalidade(p["modalidade"]):
         g = gravados.get(item["item"])
@@ -624,7 +634,7 @@ def conferir(con: sqlite3.Connection, processo_id: int) -> dict:
     }
 
 
-def marcar_item(con: sqlite3.Connection, processo_id: int, item: str, *,
+def marcar_item(con, processo_id: int, item: str, *,
                 estado: str, agora: str, motivo: str | None = None,
                 anotacao: str | None = None,
                 usuario: str | None = None) -> None:
@@ -634,7 +644,8 @@ def marcar_item(con: sqlite3.Connection, processo_id: int, item: str, *,
     do rito e decisao do oficial, e decisao sem motivo e o que a inspecao
     aponta. Recusar aqui e mais barato que explicar depois.
     """
-    _exigir(con, processo_id)
+    bd = banco(con)
+    _exigir(bd, processo_id)
     if item not in ITENS_DO_CHECKLIST:
         raise UsucapiaoError(f"Item de conferência desconhecido: {item!r}.")
     if estado not in ("PENDENTE", "CUMPRIDO", "DISPENSADO"):
@@ -644,10 +655,10 @@ def marcar_item(con: sqlite3.Connection, processo_id: int, item: str, *,
         raise UsucapiaoError(
             "Dispensar item do rito exige motivo escrito, com pelo menos dez "
             "letras — ele fica nos autos e é o que a inspeção lê.")
-    con.execute(
+    bd.escrever(
         """INSERT INTO us_conferencia(processo_id, item, estado, motivo,
                anotacao, atualizado_em, atualizado_por)
-           VALUES (?,?,?,?,?,?,?)
+           VALUES (%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT(processo_id, item) DO UPDATE SET
                estado=excluded.estado, motivo=excluded.motivo,
                anotacao=excluded.anotacao,
@@ -660,7 +671,7 @@ def marcar_item(con: sqlite3.Connection, processo_id: int, item: str, *,
 # ---------------------------------------------- onde está e o que falta
 
 
-def etapas_faltantes(con: sqlite3.Connection, processo_id: int) -> list[dict]:
+def etapas_faltantes(con, processo_id: int) -> list[dict]:
     """As etapas que ainda nao aconteceram, na ordem. So LE."""
     p = _exigir(con, processo_id)
     atual = ORDEM_DAS_ETAPAS.get(p["etapa"], 0)
@@ -668,7 +679,7 @@ def etapas_faltantes(con: sqlite3.Connection, processo_id: int) -> list[dict]:
             for i, (e, nome) in enumerate(ETAPAS) if i > atual]
 
 
-def prazos_abertos(con: sqlite3.Connection, processo_id: int,
+def prazos_abertos(con, processo_id: int,
                    hoje: str) -> list[dict]:
     """Os prazos que correm e ainda nao foram respondidos. So LE.
 
@@ -676,11 +687,11 @@ def prazos_abertos(con: sqlite3.Connection, processo_id: int,
     trazer `datetime` para um modulo que so precisa comparar.
     """
     saida = []
-    for m in con.execute(
+    for m in banco(con).ler(
             """SELECT * FROM us_movimentos
-                WHERE processo_id=? AND prazo_fim IS NOT NULL
+                WHERE processo_id=%s AND prazo_fim IS NOT NULL
                   AND respondido_em IS NULL
-                ORDER BY prazo_fim""", (int(processo_id),)):
+                ORDER BY prazo_fim, id""", (int(processo_id),)):
         saida.append({
             "movimento_id": m["id"], "tipo": m["tipo"],
             "destinatario": m["destinatario"],
@@ -691,7 +702,7 @@ def prazos_abertos(con: sqlite3.Connection, processo_id: int,
     return saida
 
 
-def proximos_passos(con: sqlite3.Connection, processo_id: int,
+def proximos_passos(con, processo_id: int,
                     hoje: str) -> list[dict]:
     """O que fazer agora, em frases de balcao. So LE.
 
@@ -699,7 +710,8 @@ def proximos_passos(con: sqlite3.Connection, processo_id: int,
     Cada passo diz o que e, por que, e quao urgente — `urgencia` serve para a
     tela ordenar, e nao para decidir por ninguem.
     """
-    p = _exigir(con, processo_id)
+    bd = banco(con)
+    p = _exigir(bd, processo_id)
     passos: list[dict] = []
 
     if p["situacao"] in SITUACOES_FINAIS:
@@ -712,7 +724,7 @@ def proximos_passos(con: sqlite3.Connection, processo_id: int,
             "porque": "Enquanto suspenso, nenhum prazo do rito avança.",
             "urgencia": 2})
 
-    vencidos = [x for x in prazos_abertos(con, processo_id, hoje) if x["vencido"]]
+    vencidos = [x for x in prazos_abertos(bd, processo_id, hoje) if x["vencido"]]
     for v in vencidos:
         passos.append({
             "passo": f"Certificar o decurso do prazo de {v['destinatario'] or v['tipo']}.",
@@ -721,7 +733,7 @@ def proximos_passos(con: sqlite3.Connection, processo_id: int,
                        f"precisa estar certificado nos autos."),
             "urgencia": 3, "movimento_id": v["movimento_id"]})
 
-    conf = conferir(con, processo_id)
+    conf = conferir(bd, processo_id)
     for item in conf["pendentes"]:
         passos.append({
             "passo": f"Obter: {item['rotulo']}.",
@@ -742,7 +754,7 @@ def proximos_passos(con: sqlite3.Connection, processo_id: int,
             "porque": "LRP, art. 216-A, § 2º — sem anuência na planta, notifica-se.",
             "urgencia": 2})
     elif etapa == "NOTIFICACAO":
-        feitos = {m["destinatario_papel"] for m in movimentos(con, processo_id)
+        feitos = {m["destinatario_papel"] for m in movimentos(bd, processo_id)
                   if m["tipo"] == "CIENCIA"}
         faltam = [e for e in ENTES_PUBLICOS if e not in feitos]
         if faltam:
@@ -772,7 +784,7 @@ def proximos_passos(con: sqlite3.Connection, processo_id: int,
             "porque": "Há decisão procedente e o registro ainda não foi feito.",
             "urgencia": 3})
 
-    impugnou = [m for m in movimentos(con, processo_id)
+    impugnou = [m for m in movimentos(bd, processo_id)
                 if m["resposta"] == "IMPUGNOU"]
     if impugnou and p["situacao"] == "EM_ANDAMENTO":
         passos.append({
@@ -785,7 +797,7 @@ def proximos_passos(con: sqlite3.Connection, processo_id: int,
     return passos
 
 
-def avancar(con: sqlite3.Connection, processo_id: int, *, etapa: str,
+def avancar(con, processo_id: int, *, etapa: str,
             agora: str, usuario: str | None = None) -> str:
     """Move o processo para a etapa seguinte. ESCREVE.
 
@@ -794,7 +806,8 @@ def avancar(con: sqlite3.Connection, processo_id: int, *, etapa: str,
     e registro feito com fase pulada nasce nulo. Voltar atras e permitido:
     diligencia nova pode devolver o processo a uma fase anterior.
     """
-    p = _exigir(con, processo_id)
+    bd = banco(con)
+    p = _exigir(bd, processo_id)
     if etapa not in ORDEM_DAS_ETAPAS:
         raise UsucapiaoError(
             f"Etapa desconhecida: {etapa!r}. As do rito: "
@@ -808,9 +821,9 @@ def avancar(con: sqlite3.Connection, processo_id: int, *, etapa: str,
         raise UsucapiaoError(
             f"Não dá para pular a etapa «{pulada[1]}». Cada fase do rito "
             f"protege alguém, e registro com fase pulada nasce nulo.")
-    con.execute("UPDATE us_processos SET etapa=?, atualizado_em=? WHERE id=?",
+    bd.escrever("UPDATE us_processos SET etapa=%s, atualizado_em=%s WHERE id=%s",
                 (etapa, agora, int(processo_id)))
-    _mover(con, processo_id, tipo="OUTRO", etapa=etapa,
+    _mover(bd, processo_id, tipo="OUTRO", etapa=etapa,
            descricao=(f"Etapa alterada de «{NOME_DA_ETAPA[p['etapa']]}» para "
                       f"«{NOME_DA_ETAPA[etapa]}»."),
            data_movimento=agora, agora=agora, usuario=usuario)
@@ -820,7 +833,7 @@ def avancar(con: sqlite3.Connection, processo_id: int, *, etapa: str,
 # --------------------------------- o relatório para qualificação
 
 
-def montar_dossie(con: sqlite3.Connection, processo_id: int, *, hoje: str,
+def montar_dossie(con, processo_id: int, *, hoje: str,
                   mascarar: bool = True) -> dict:
     """O processo inteiro em texto, para mandar a quem vai opinar. So LE.
 
@@ -843,8 +856,9 @@ def montar_dossie(con: sqlite3.Connection, processo_id: int, *, hoje: str,
     quem quiser abrir. O que vai e o TEOR das pecas, quando alguem o digitou
     ou extraiu.
     """
-    p = _exigir(con, processo_id)
-    conf = conferir(con, processo_id)
+    bd = banco(con)
+    p = _exigir(bd, processo_id)
+    conf = conferir(bd, processo_id)
 
     def doc(v: Any) -> str:
         s = _texto(v) or "—"
@@ -879,7 +893,7 @@ def montar_dossie(con: sqlite3.Connection, processo_id: int, *, hoje: str,
         f"{_texto(p['ata_notarial_cartorio']) or '—'}")
     add("")
 
-    todas = pecas(con, processo_id)
+    todas = pecas(bd, processo_id)
     add(f"## Peças juntadas ({len(todas)})")
     for i, peca in enumerate(todas, 1):
         add(f"### {i}. {TIPOS_DE_PECA.get(peca['tipo'], peca['tipo'])}")
@@ -897,7 +911,7 @@ def montar_dossie(con: sqlite3.Connection, processo_id: int, *, hoje: str,
         add("")
 
     add("## Andamento")
-    for m in movimentos(con, processo_id):
+    for m in movimentos(bd, processo_id):
         prazo = ""
         if m["prazo_fim"]:
             estado = ("respondido" if m["respondido_em"]
@@ -923,7 +937,7 @@ def montar_dossie(con: sqlite3.Connection, processo_id: int, *, hoje: str,
     add("")
 
     add("## O que falta")
-    faltantes = etapas_faltantes(con, processo_id)
+    faltantes = etapas_faltantes(bd, processo_id)
     if faltantes:
         add("Etapas do rito ainda não percorridas:")
         for e in faltantes:
@@ -931,25 +945,29 @@ def montar_dossie(con: sqlite3.Connection, processo_id: int, *, hoje: str,
     else:
         add("Todas as etapas do rito foram percorridas.")
     add("")
-    for passo in proximos_passos(con, processo_id, hoje):
+    for passo in proximos_passos(bd, processo_id, hoje):
         add(f"- {passo['passo']} ({passo['porque']})")
     add("")
 
     add("---")
     add("")
-    add("## O que se pede a quem analisar")
-    add("")
-    add("1. Aponte documento **faltante ou insuficiente** para a modalidade, "
-        "citando o dispositivo.")
-    add("2. Aponte **contradição entre peças** — área, confrontação, nome, "
-        "datas, tempo de posse.")
-    add("3. Diga se o **tempo de posse alegado** basta para a modalidade, e o "
-        "que nos autos o comprova.")
-    add("4. Aponte o que **impediria o registro** se a decisão fosse hoje.")
-    add("5. Separe o que é **exigência** do que é mera **observação**.")
-    add("")
-    add("> Não redija a decisão nem conclua pelo deferimento: a decisão é do "
-        "oficial registrador, e o que se pede aqui é a análise que a informa.")
+    # O PEDIDO A QUEM ANALISA É TEXTO DA CASA, e saiu daqui no LF06G
+    # (19/10/2026): é o papel US_DOSSIE_PEDIDO, editável na tela de Modelos.
+    # O resto do dossiê é o processo listado, e fica aqui.
+    #
+    # **O AJUSTE QUE NÃO MONTA É RECUSA, E NÃO ERRO 500** (LX18, ressalva da
+    # revisão do LF06G): o `ModeloError` vira `UsucapiaoError`, que a rota
+    # mostra ao escrevente. Não se põe o recado no lugar do pedido, como faz a
+    # ficha com as decisões: o dossiê é papel que sai da casa, e um pedido
+    # trocado por recado iria assim mesmo para quem analisa.
+    try:
+        add(_MODELOS.preencher(
+            PAPEL_DO_PEDIDO, _MODELOS.texto_do_papel(bd, PAPEL_DO_PEDIDO),
+            {"numero": p["numero"],
+             "modalidade": MODALIDADES.get(p["modalidade"], p["modalidade"])}))
+    except _MODELOS.ModeloError as erro:
+        raise UsucapiaoError(
+            f"O dossiê não sai: {erro}") from erro
     add("")
     add(f"*Dossiê gerado em {hoje}. "
         f"{'Documentos mascarados.' if mascarar else 'ATENÇÃO: documentos NÃO mascarados.'}*")
@@ -965,7 +983,7 @@ def montar_dossie(con: sqlite3.Connection, processo_id: int, *, hoje: str,
     }
 
 
-def registrar_analise(con: sqlite3.Connection, processo_id: int, *,
+def registrar_analise(con, processo_id: int, *,
                       parecer: str, agora: str, ferramenta: str | None = None,
                       dossie_sha256: str | None = None,
                       dossie_pecas: int | None = None,
@@ -977,21 +995,21 @@ def registrar_analise(con: sqlite3.Connection, processo_id: int, *,
     Entra com `conferida_por_humano = 0`. Enquanto ninguem conferir, `decidir()`
     recusa fechar o processo apoiado nela — ver o cabecalho do modulo.
     """
-    _exigir(con, processo_id)
+    bd = banco(con)
+    _exigir(bd, processo_id)
     texto = _texto(parecer)
     if not texto:
         raise UsucapiaoError("O parecer veio vazio — não há o que guardar.")
-    cur = con.execute(
+    analise_id = int(bd.escrever(
         """INSERT INTO us_analises(processo_id, origem, ferramenta,
                dossie_sha256, dossie_pecas, parecer, achados_json,
                recebida_em, recebida_por, observacao)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(processo_id), "IA_EXTERNA", _texto(ferramenta), dossie_sha256,
          dossie_pecas, texto,
          json.dumps(achados, ensure_ascii=False) if achados else None,
-         agora, usuario, _texto(observacao)))
-    analise_id = int(cur.lastrowid)
-    _mover(con, processo_id, tipo="ANALISE_IA",
+         agora, usuario, _texto(observacao)))[0]["id"])
+    _mover(bd, processo_id, tipo="ANALISE_IA",
            descricao=(f"Parecer recebido de "
                       f"{_texto(ferramenta) or 'origem não informada'} "
                       f"e juntada aos autos. Aguarda conferência do oficial."),
@@ -999,7 +1017,7 @@ def registrar_analise(con: sqlite3.Connection, processo_id: int, *,
     return analise_id
 
 
-def conferir_analise(con: sqlite3.Connection, analise_id: int, *, agora: str,
+def conferir_analise(con, analise_id: int, *, agora: str,
                      usuario: str | None = None,
                      observacao: str | None = None) -> None:
     """O oficial diz que leu a análise. ESCREVE.
@@ -1007,15 +1025,15 @@ def conferir_analise(con: sqlite3.Connection, analise_id: int, *, agora: str,
     E o que destrava a decisao apoiada nela. Conferir nao e concordar: e ter
     lido, e assumir o que se faz com aquilo.
     """
-    linha = con.execute("SELECT * FROM us_analises WHERE id=?",
-                        (int(analise_id),)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT * FROM us_analises WHERE id=%s", (int(analise_id),))
     if not linha:
         raise UsucapiaoError(f"Análise {analise_id} não encontrada.")
-    con.execute(
-        """UPDATE us_analises SET conferida_por_humano=1, conferida_em=?,
-               observacao=COALESCE(?, observacao) WHERE id=?""",
+    bd.escrever(
+        """UPDATE us_analises SET conferida_por_humano=1, conferida_em=%s,
+               observacao=COALESCE(%s, observacao) WHERE id=%s""",
         (agora, _texto(observacao), int(analise_id)))
-    _mover(con, int(linha["processo_id"]), tipo="OUTRO",
+    _mover(bd, int(linha["processo_id"]), tipo="OUTRO",
            descricao="O oficial conferiu o parecer.",
            data_movimento=agora, agora=agora, usuario=usuario)
 
@@ -1023,68 +1041,90 @@ def conferir_analise(con: sqlite3.Connection, analise_id: int, *, agora: str,
 # -------------------------------------------------------------- a decisão
 
 
-def modelos_de_decisao(p: sqlite3.Row | dict, sv: dict) -> dict[str, str]:
+# OS MODELOS DE DECISÃO E O PEDIDO DO DOSSIÊ SAÍRAM DAQUI NO LF06G (19/10/2026).
+#
+#   Eram f-strings deste módulo; o texto foi para `modelos_padrao/usucapiao/`
+#   (`US_DECISAO_<SENTIDO>.txt`, `US_DOSSIE_PEDIDO.txt`), montado da f-string de
+#   antes com os claros no lugar dos dados — e não redigitado —, e chega pela
+#   busca única. O fecho («Cidade-UF, nesta data. Titular — título.») foi junto,
+#   dentro de cada decisão: é parte do texto que o oficial assina. O nome por
+#   que cada texto responde aqui (`MODELO_DECISAO_PROCEDENTE`…) é o do
+#   `__getattr__` no fim deste módulo.
+PAPEL_DA_DECISAO: dict[str, str] = {
+    "PROCEDENTE": "US_DECISAO_PROCEDENTE",
+    "IMPROCEDENTE": "US_DECISAO_IMPROCEDENTE",
+    "EXIGENCIA": "US_DECISAO_EXIGENCIA",
+    "REMESSA_JUIZO": "US_DECISAO_REMESSA_JUIZO",
+}
+PAPEL_DO_PEDIDO = "US_DOSSIE_PEDIDO"
+
+# OS CLAROS QUE CADA TEXTO PODE PEDIR — é contra eles que a tela confere o
+# ajuste da casa, e com eles que o texto se preenche.
+CLAROS_DA_DECISAO: tuple[str, ...] = (
+    "numero", "modalidade", "requerente", "imovel", "cidade", "uf", "titular",
+    "titulo")
+CLAROS_DO_PEDIDO: tuple[str, ...] = ("numero", "modalidade")
+
+
+def conferir_modelo(chave: str, texto: str) -> str:
+    """O ajuste da casa serve como aquela decisão (ou como o pedido do dossiê)?
+
+    Devolve o erro, ou ``""``. É a mesma régua de quem preenche
+    (`modelos_da_casa.preencher`): a tela recusa o claro que a ficha do
+    processo não saberia preencher.
+    """
+    claros = CLAROS_DO_PEDIDO if chave == PAPEL_DO_PEDIDO else CLAROS_DA_DECISAO
+    return _MODELOS.conferir_claros(texto, claros)
+
+
+def modelos_de_decisao(p: dict, sv: dict, con=None) -> dict[str, str]:
     """Os modelos de decisao, com o processo ja preenchido. So calcula.
 
     Sao MODELOS e nao textos prontos: o fundamento de cada caso e do oficial, e
     o modelo deixa isso explicito com o trecho que ele tem de completar.
+
+    Com `con`, o texto de cada um é o que vale na casa (o ajuste, e sem ele o
+    padrão da base); sem `con`, o padrão. **MODELO QUE NÃO MONTA NÃO DERRUBA A
+    FICHA DO PROCESSO**: no lugar dele sai a frase que diz qual e por quê, e o
+    oficial a vê antes de lavrar qualquer coisa — e, se a carregar no teor e
+    mandar lavrar, `decidir` a recusa (LX18).
     """
-    numero = p["numero"]
-    modalidade = MODALIDADES.get(p["modalidade"], p["modalidade"])
-    requerente = _texto(p["requerente_nome"]) or "o requerente"
-    imovel = _texto(p["imovel_descricao"]) or "o imóvel descrito nos autos"
-    cidade = sv.get("ri_cidade", "")
-    uf = sv.get("ri_uf", "")
-    titular = sv.get("serventia_titular", "")
-    titulo = sv.get("serventia_titulo", "")
-    fecho = (f"{cidade}-{uf}, nesta data. {titular} — {titulo}.")
+    modelos, recados = _montar_decisoes(p, sv, con)
+    return {sentido: modelos[sentido] if sentido in modelos
+            else f"[{recados[sentido]}]" for sentido in PAPEL_DA_DECISAO}
 
-    return {
-        "PROCEDENTE": (
-            f"DECISÃO. Processo de usucapião extrajudicial n. {numero}, "
-            f"modalidade {modalidade}, requerido por {requerente}, tendo por "
-            f"objeto {imovel}.\n\n"
-            f"Os autos vieram instruídos com a ata notarial, a planta e o "
-            f"memorial descritivo assinados por profissional habilitado, as "
-            f"certidões e a prova da posse, na forma do art. 216-A da Lei "
-            f"6.015/1973.\n\n"
-            f"Os titulares de direitos registrados e os confrontantes foram "
-            f"cientificados; a União, o Estado e o Município tomaram ciência; "
-            f"o edital foi publicado, e decorreram os prazos sem impugnação.\n\n"
-            f"[COMPLETAR: o que dos autos comprova o tempo e a natureza da "
-            f"posse, e por que a modalidade invocada é a cabível.]\n\n"
-            f"Do exposto, RECONHEÇO a usucapião e DETERMINO o registro da "
-            f"aquisição em nome de {requerente}, procedendo-se à abertura de "
-            f"matrícula, se for o caso.\n\n{fecho}"),
-        "IMPROCEDENTE": (
-            f"DECISÃO. Processo de usucapião extrajudicial n. {numero}, "
-            f"requerido por {requerente}.\n\n"
-            f"[COMPLETAR: o que dos autos impede o reconhecimento, com o "
-            f"dispositivo. Fundamento genérico não serve — a parte tem direito "
-            f"de saber o que exatamente faltou.]\n\n"
-            f"Do exposto, INDEFIRO o pedido de reconhecimento extrajudicial da "
-            f"usucapião, ressalvada a via judicial e a renovação do pedido uma "
-            f"vez suprido o que aqui se apontou.\n\n{fecho}"),
-        "EXIGENCIA": (
-            f"NOTA DE EXIGÊNCIA. Processo de usucapião extrajudicial n. "
-            f"{numero}, requerido por {requerente}.\n\n"
-            f"Para o prosseguimento, cumpre satisfazer:\n\n"
-            f"[COMPLETAR: uma exigência por item, com o dispositivo de cada "
-            f"uma, e dizendo o que satisfaz cada uma.]\n\n"
-            f"O processo aguarda o cumprimento, mantida a prenotação nos termos "
-            f"do Código de Normas.\n\n{fecho}"),
-        "REMESSA_JUIZO": (
-            f"DECISÃO. Processo de usucapião extrajudicial n. {numero}, "
-            f"requerido por {requerente}.\n\n"
-            f"Houve impugnação [COMPLETAR: de quem, e em que data]. Nos termos "
-            f"do art. 216-A, § 10, da Lei 6.015/1973, o oficial não julga a "
-            f"impugnação: os autos são remetidos ao juízo competente.\n\n"
-            f"REMETAM-SE os autos ao Juízo da Comarca, dando-se ciência ao "
-            f"requerente.\n\n{fecho}"),
+
+def _montar_decisoes(p: dict, sv: dict,
+                     con=None) -> tuple[dict[str, str], dict[str, str]]:
+    """Os modelos que montam e, à parte, o recado de cada um que não monta.
+
+    Separados porque quem lavra precisa reconhecer o recado no teor: o botão
+    da ficha carrega no teor o que `modelos_de_decisao` devolve, recado
+    inclusive.
+    """
+    valores = {
+        "numero": p["numero"],
+        "modalidade": MODALIDADES.get(p["modalidade"], p["modalidade"]),
+        "requerente": _texto(p["requerente_nome"]) or "o requerente",
+        "imovel": _texto(p["imovel_descricao"]) or "o imóvel descrito nos autos",
+        "cidade": sv.get("ri_cidade", ""),
+        "uf": sv.get("ri_uf", ""),
+        "titular": sv.get("serventia_titular", ""),
+        "titulo": sv.get("serventia_titulo", ""),
     }
+    modelos: dict[str, str] = {}
+    recados: dict[str, str] = {}
+    for sentido, chave in PAPEL_DA_DECISAO.items():
+        try:
+            texto = (_MODELOS.texto_do_papel(con, chave) if con is not None
+                     else _MODELOS.padrao_de(chave))
+            modelos[sentido] = _MODELOS.preencher(chave, texto, valores)
+        except _MODELOS.ModeloError as erro:
+            recados[sentido] = str(erro)
+    return modelos, recados
 
 
-def decidir(con: sqlite3.Connection, processo_id: int, *, sentido: str,
+def decidir(con, processo_id: int, *, sentido: str,
             fundamento: str, teor: str, agora: str, modelo: str | None = None,
             analise_id: int | None = None,
             usuario: str | None = None) -> int:
@@ -1101,7 +1141,8 @@ def decidir(con: sqlite3.Connection, processo_id: int, *, sentido: str,
        tem de ter sido lida por gente. A decisao e ato do delegatario, e ato de
        delegatario nao se delega a ferramenta.
     """
-    p = _exigir(con, processo_id)
+    bd = banco(con)
+    p = _exigir(bd, processo_id)
     if sentido not in SENTIDOS:
         raise UsucapiaoError(
             f"Sentido de decisão desconhecido: {sentido!r}. Os que existem: "
@@ -1115,9 +1156,20 @@ def decidir(con: sqlite3.Connection, processo_id: int, *, sentido: str,
             "fundamento não se sustenta, e é o que desfaz o registro depois.")
     if not _texto(teor):
         raise UsucapiaoError("A decisão precisa do teor que sai impresso.")
+    # O RECADO DO MODELO QUE NÃO MONTA NÃO SE LAVRA (LX18, ressalva da revisão
+    # do LF06G). A ficha põe o recado no lugar do modelo quebrado, e o botão o
+    # carrega no teor; sem esta trava, «Lavrar decisão» o gravaria em
+    # `us_decisoes.teor`, que é o que sai impresso e assinado.
+    _, recados = _montar_decisoes(p, {}, bd)
+    for recado in recados.values():
+        if recado in teor:
+            raise UsucapiaoError(
+                "O teor traz o recado de um modelo que não monta, e não a "
+                f"decisão: «{recado}» Escreva o teor, ou corrija o modelo, "
+                "antes de lavrar.")
 
     if sentido == "PROCEDENTE":
-        conf = conferir(con, processo_id)
+        conf = conferir(bd, processo_id)
         if conf["pendentes"]:
             faltam = ", ".join(x["rotulo"] for x in conf["pendentes"][:4])
             raise UsucapiaoError(
@@ -1126,8 +1178,8 @@ def decidir(con: sqlite3.Connection, processo_id: int, *, sentido: str,
                 f"com motivo — dispensar é decisão, ignorar não é.")
 
     if analise_id is not None:
-        a = con.execute("SELECT * FROM us_analises WHERE id=? AND processo_id=?",
-                        (int(analise_id), int(processo_id))).fetchone()
+        a = bd.um("SELECT * FROM us_analises WHERE id=%s AND processo_id=%s",
+                  (int(analise_id), int(processo_id)))
         if not a:
             raise UsucapiaoError(
                 f"A análise {analise_id} não é deste processo.")
@@ -1136,29 +1188,28 @@ def decidir(con: sqlite3.Connection, processo_id: int, *, sentido: str,
                 "Esta análise ainda não foi conferida. A decisão é ato do "
                 "oficial: confira a análise antes de decidir apoiado nela.")
 
-    cur = con.execute(
+    decisao_id = int(bd.escrever(
         """INSERT INTO us_decisoes(processo_id, sentido, modelo, fundamento,
                teor, decidida_em, decidida_por)
-           VALUES (?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(processo_id), sentido, _texto(modelo), _texto(fundamento),
-         _texto(teor), agora, usuario))
-    decisao_id = int(cur.lastrowid)
+         _texto(teor), agora, usuario))[0]["id"])
 
     nova_situacao = {"PROCEDENTE": "EM_ANDAMENTO",     # falta registrar
                      "IMPROCEDENTE": "REJEITADO",
                      "EXIGENCIA": "EM_ANDAMENTO",
                      "REMESSA_JUIZO": "REMETIDO_AO_JUIZO"}[sentido]
     nova_etapa = "DECISAO" if sentido == "PROCEDENTE" else p["etapa"]
-    con.execute(
-        "UPDATE us_processos SET situacao=?, etapa=?, atualizado_em=? WHERE id=?",
+    bd.escrever(
+        "UPDATE us_processos SET situacao=%s, etapa=%s, atualizado_em=%s WHERE id=%s",
         (nova_situacao, nova_etapa, agora, int(processo_id)))
-    _mover(con, processo_id, tipo="DECISAO", etapa=nova_etapa,
+    _mover(bd, processo_id, tipo="DECISAO", etapa=nova_etapa,
            descricao=f"Decisão: {SENTIDOS[sentido]}",
            data_movimento=agora, agora=agora, usuario=usuario)
     return decisao_id
 
 
-def registrar_reconhecimento(con: sqlite3.Connection, processo_id: int, *,
+def registrar_reconhecimento(con, processo_id: int, *,
                              ato_id: int, agora: str, selo: str | None = None,
                              usuario: str | None = None) -> None:
     """Amarra o registro feito à decisão que o determinou. ESCREVE.
@@ -1166,10 +1217,11 @@ def registrar_reconhecimento(con: sqlite3.Connection, processo_id: int, *,
     Só depois disto o processo fica REGISTRADO. Antes, uma decisão procedente
     deixa o processo em andamento — decidir não é registrar.
     """
-    _exigir(con, processo_id)          # só para recusar processo que não existe
-    ultima = con.execute(
-        """SELECT * FROM us_decisoes WHERE processo_id=?
-            ORDER BY id DESC LIMIT 1""", (int(processo_id),)).fetchone()
+    bd = banco(con)
+    _exigir(bd, processo_id)          # só para recusar processo que não existe
+    ultima = bd.um(
+        """SELECT * FROM us_decisoes WHERE processo_id=%s
+            ORDER BY id DESC LIMIT 1""", (int(processo_id),))
     if not ultima or ultima["sentido"] != "PROCEDENTE":
         raise UsucapiaoError(
             "Só se registra depois de decisão procedente. A última decisão "
@@ -1180,18 +1232,30 @@ def registrar_reconhecimento(con: sqlite3.Connection, processo_id: int, *,
     # HTTP 500 na cara do escrevente, no fim de um processo de meses. Quem
     # achou isto foi o teste de TELA: o de dominio rodava com a trava de FK
     # desligada, e passava.
-    if not con.execute("SELECT 1 FROM ri_atos WHERE id=?",
-                       (int(ato_id),)).fetchone():
+    if not bd.um("SELECT 1 FROM ri_atos WHERE id=%s", (int(ato_id),)):
         raise UsucapiaoError(
             f"Não existe ato {ato_id} no Registro de Imóveis. Lavre o registro "
             f"na matrícula primeiro, e depois informe aqui o número do ato — é "
             f"ele que amarra o processo ao que ficou na ficha.")
-    con.execute("UPDATE us_decisoes SET ato_id=?, selo=? WHERE id=?",
+    bd.escrever("UPDATE us_decisoes SET ato_id=%s, selo=%s WHERE id=%s",
                 (int(ato_id), _texto(selo), int(ultima["id"])))
-    con.execute(
+    bd.escrever(
         """UPDATE us_processos SET situacao='REGISTRADO', etapa='REGISTRO',
-               encerrado_em=?, atualizado_em=? WHERE id=?""",
+               encerrado_em=%s, atualizado_em=%s WHERE id=%s""",
         (agora, agora, int(processo_id)))
-    _mover(con, processo_id, tipo="OUTRO", etapa="REGISTRO",
+    _mover(bd, processo_id, tipo="OUTRO", etapa="REGISTRO",
            descricao=f"Registrado o reconhecimento da usucapião (ato {ato_id}).",
            data_movimento=agora, agora=agora, usuario=usuario)
+
+
+def __getattr__(nome: str):
+    """Os textos das decisões e do pedido do dossiê, lidos da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06G (19/10/2026) e mora em `modelos_padrao/`.
+    `usucapiao.MODELO_DECISAO_PROCEDENTE` devolve o padrão da base — o MESMO
+    que a ficha do processo oferece, e não uma cópia. Nome que não é de papel
+    continua sendo `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    return _MODELOS.constante_antiga(__name__, nome)

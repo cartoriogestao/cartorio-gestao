@@ -502,3 +502,139 @@ def test_a_normalizacao_do_nome_e_a_da_casa():
     codigo = (RAIZ / "retificacao.py").read_text(encoding="utf-8")
     assert "from pt_schema import normalizar_nome" in codigo
     assert "def normalizar_nome" not in codigo
+
+
+# ------------------------------------------------ duas telas ao mesmo tempo
+#
+# ACHADO DA VARREDURA DO L042R (18/10/2026). Com a ponte, o `BEGIN IMMEDIATE`
+# da rota deixa um escritor por vez no banco inteiro; sem ela, a transação
+# prende só o que pede. As recusas «já existe o número», «já foi notificado»,
+# «já foi decidido» e «já está amarrado ao ato» conferiam e gravavam sem
+# prender nada — e as duas telas passavam pela conferência.
+
+import threading                                                 # noqa: E402
+import time                                                      # noqa: E402
+
+import banco_pg                                                  # noqa: E402
+from bd_nativo import banco                                      # noqa: E402
+
+sem_a_ponte = pytest.mark.skipif(
+    not banco_pg.ativo(), reason="a corrida só existe no PostgreSQL")
+
+
+def _psycopg_puro(con, *, autocommit=False):
+    """Uma conexão do psycopg no schema do teste, SEM a ponte — como a
+    transação vai ficar quando a ponte sair."""
+    import psycopg
+    pg = psycopg.connect(banco_pg.dsn(), autocommit=autocommit)
+    pg.execute(f'SET search_path TO "{con.schema}", public')
+    if not autocommit:
+        pg.commit()
+    return pg
+
+
+def _ao_mesmo_tempo(con, primeira, segunda):
+    """A `primeira` grava e ainda não confirmou; a `segunda` chega no meio,
+    por outra conexão. Devolve o erro da segunda (None se ela passou)."""
+    um, dois = _psycopg_puro(con), _psycopg_puro(con)
+    vigia = _psycopg_puro(con, autocommit=True)
+    pid = banco(dois).valor("SELECT pg_backend_pid() AS pid")
+    primeira(um)
+    saida: dict = {}
+
+    def no_fio():
+        try:
+            segunda(dois)
+            dois.commit()
+        except Exception as erro:  # o teste confere qual
+            saida["erro"] = erro
+            dois.rollback()
+
+    fio = threading.Thread(target=no_fio)
+    fio.start()
+    for _ in range(200):          # a segunda tem de estar ESPERANDO
+        if banco(vigia).valor(
+                "SELECT count(*) AS n FROM pg_locks WHERE pid=%s AND NOT granted",
+                (pid,)):
+            break
+        time.sleep(0.05)
+    um.commit()
+    fio.join(30)
+    for c in (um, dois, vigia):
+        c.close()
+    return saida.get("erro")
+
+
+@sem_a_ponte
+def test_dois_balcoes_autuando_o_mesmo_numero_ouvem_a_frase(casa):
+    """Sem a trava, o segundo passava pela conferência e estourava a chave
+    única (IntegrityError, HTTP 500) em vez de ouvir «Já existe»."""
+    con = _con(casa)
+    with con:
+        m = _matricula(con)
+
+    def autuar(c):
+        RT.autuar(c, numero="31/2026", especie=NORMA.GEORREFERENCIADA,
+                  fundamento=NORMA.A_REQUERIMENTO, matricula_id=m, rural=True,
+                  agora=AGORA)
+
+    erro = _ao_mesmo_tempo(con, autuar, autuar)
+    assert isinstance(erro, RT.RetificacaoError), erro
+    assert "Já existe" in str(erro)
+
+
+@sem_a_ponte
+def test_duas_notificacoes_ao_mesmo_tempo_nao_recomecam_o_prazo(casa):
+    con = _con(casa)
+    with con:
+        pid, _ = _processo(con, numero="32/2026")
+        cid = RT.anotar_confrontante(con, pid, nome="FULANO DE TAL", agora=AGORA)
+    erro = _ao_mesmo_tempo(
+        con,
+        lambda c: RT.notificar(c, cid, forma="CORREIO", quando=HOJE, agora=AGORA,
+                               prazo_ate="2026-09-19"),
+        lambda c: RT.notificar(c, cid, forma="PESSOAL", quando=HOJE, agora=AGORA,
+                               prazo_ate="2026-09-30"))
+    assert isinstance(erro, RT.RetificacaoError), erro
+    assert "recomeçaria o prazo" in str(erro)
+    assert RT.confrontantes(con, pid)[0]["prazo_ate"] == "2026-09-19"
+
+
+@sem_a_ponte
+def test_duas_decisoes_ao_mesmo_tempo_nao_passam_as_duas(casa):
+    con = _con(casa)
+    with con:
+        pid, _ = _processo(con, numero="33/2026")
+    erro = _ao_mesmo_tempo(
+        con,
+        lambda c: RT.decidir(c, pid, sentido=RT.IMPROCEDENTE,
+                             fundamento="a planta não fecha com as divisas",
+                             agora=AGORA, hoje=HOJE),
+        lambda c: RT.decidir(c, pid, sentido=RT.IMPROCEDENTE,
+                             fundamento="o memorial não confere com a planta",
+                             agora=AGORA, hoje=HOJE))
+    assert isinstance(erro, RT.RetificacaoError), erro
+    assert "já foi decidido" in str(erro)
+    assert RT.processo(con, pid)["decisao_fundamento"] == \
+        "a planta não fecha com as divisas"
+
+
+@sem_a_ponte
+def test_duas_averbacoes_ao_mesmo_tempo_nao_trocam_o_ato(casa):
+    con = _con(casa)
+    with con:
+        pid, m = _processo(con, numero="34/2026")
+        _ate_a_averbacao(con, pid)
+        atos = [int(con.execute(
+            """INSERT INTO ri_atos (matricula_id, tipo, numero, teor,
+                   teor_formato, origem, hash_ato, lavrado_em)
+               VALUES (?, 'AVERBACAO', ?, 'teor', 'texto', 'SISTEMA',
+                       'hash-de-ensaio', ?)""", (m, numero, AGORA)).lastrowid)
+            for numero in (16, 17)]
+    erro = _ao_mesmo_tempo(
+        con,
+        lambda c: RT.registrar_averbacao(c, pid, ato_id=atos[0], agora=AGORA),
+        lambda c: RT.registrar_averbacao(c, pid, ato_id=atos[1], agora=AGORA))
+    assert isinstance(erro, RT.RetificacaoError), erro
+    assert "já está amarrado" in str(erro)
+    assert RT.processo(con, pid)["ato_id"] == atos[0]

@@ -23,6 +23,7 @@ import sqlite3
 from flask import flash, redirect, render_template, request, url_for
 
 import fraude as FR
+from seguranca_web import destino_interno  # M1/B3 (LX11): o «volte para» só leva a caminho desta casa
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit):
@@ -83,9 +84,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             flash(str(erro), "danger")
             return redirect(url_for("fraudes"))
         # `audit` abre transação própria: FORA do `with`, como no resto da casa.
+        # O DOCUMENTO VAI MASCARADO (LX14; M9 do LS03): ele já está inteiro em
+        # `fr_alertas`, que a linha de auditoria aponta pelo id; repeti-lo na
+        # auditoria o espalharia por toda tela e log que a mostra.
+        import centrais_log
         audit("FRAUDE_INCLUIR", "fr_alertas", r["alerta_id"],
               {"papel": r["papel"], "nome": r["nome"],
-               "documento": r["documento"]})
+               "documento": centrais_log.mascarar_texto(r["documento"])
+               if r["documento"] else r["documento"]})
         flash(f"{r['nome'] or r['documento']} entrou na lista de atenção. "
               f"O sistema passa a avisar quando esse nome aparecer num ato.",
               "success")
@@ -155,7 +161,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         apesar do aviso, a pergunta que vem é "o sistema avisou?" — e esta
         linha é a resposta escrita.
         """
-        volta = request.form.get("volta") or url_for("fraude_consultar")
+        volta = destino_interno(request.form.get("volta"), url_for("fraude_consultar"))
         try:
             with db.transaction() as con:
                 con.row_factory = sqlite3.Row

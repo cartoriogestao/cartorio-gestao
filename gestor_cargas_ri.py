@@ -13,7 +13,7 @@ SÃO TRÊS CARGAS, POR TRÊS CANAIS, E CADA UMA TEM O SEU «ENVIADO»
 
     Nas duas primeiras o agente **entrega na pasta** e confere depois se o
     programa do ONR levou (o IPS move para `Processados`, que é o precedente do
-    E-Ofício em `C:\\ARPNET\\C11\\ONR\\INDICADORES`). Na terceira ele **manda**,
+    E-Ofício em `arquivos\\eoficio\\ONR\\INDICADORES`). Na terceira ele **manda**,
     e confere a fila: enviar não é ser aceito.
 
 O QUE ELE FAZ TODO DIA (`rodada`, chamada pela rodada das 07:30 do gestor)
@@ -74,6 +74,9 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import banco_pg
+import tetos_de_entrada as TETO
+from bd_nativo import banco as _bd_de
 from gestor_schema import init_gestor_schema
 
 QUEM = "gestor"
@@ -82,9 +85,9 @@ QUEM = "gestor"
 # código: trocar de pasta não pode exigir versão nova.
 # ORDEM DO OFICIAL, 10/10/2026: «nao poderemos usar essas pastas, sao do sistema
 # antigo, precisamos usar as pastas proprias do cartorio gestao». As pastas do
-# ONR moram dentro dos arquivos do RI do sistema; o que estava em C:\ARPNET foi
+# ONR moram dentro dos arquivos do RI do sistema; o que estava na pasta do E-Ofício foi
 # MOVIDO para cá no mesmo dia (3.984 matrículas de imagens e o controle delas).
-# O histórico do E-Ofício (`C:\ARPNET\C11\ONR\INDICADORES\Processados`) ficou lá.
+# O histórico do E-Ofício (`arquivos\eoficio\ONR\INDICADORES\Processados`) ficou lá.
 PASTA_CSL2_PADRAO = r"C:\ProgramData\CartorioGestao\arquivos\ri\onr\livro2"
 PASTA_IPS_PADRAO = r"C:\ProgramData\CartorioGestao\arquivos\ri\onr\ips"
 PASTA_CARGA_INICIAL_PADRAO = r"C:\ProgramData\CartorioGestao\arquivos\ri\onr\carga_inicial"
@@ -140,15 +143,14 @@ def _agora() -> str:
 
 
 def _tem_tabela(con, nome: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                       (nome,)).fetchone() is not None
+    return _bd_de(con).tem_tabela(nome)
 
 
 def configuracao(con, chave: str, padrao: str = "") -> str:
     if not _tem_tabela(con, "settings"):
         return padrao
-    r = con.execute("SELECT value FROM settings WHERE key=?", (chave,)).fetchone()
-    return (r[0] or "").strip() if r and (r[0] or "").strip() else padrao
+    r = _bd_de(con).um("SELECT value FROM settings WHERE key=%s", (chave,))
+    return (r["value"] or "").strip() if r and (r["value"] or "").strip() else padrao
 
 
 def raiz_dos_arquivos(con, banco: Path | None) -> Path | None:
@@ -226,14 +228,14 @@ def _cns(con) -> str:
 def _registrar(con, canal: str, tipo: str, *, situacao: str, arquivo: str = "",
                sha256: str = "", quantos: int | None = None, periodo_de: str = "",
                periodo_ate: str = "", detalhe: Any = None) -> int:
-    return int(con.execute(
+    return int(_bd_de(con).escrever(
         """INSERT INTO ge_onr_cargas (canal, tipo, periodo_de, periodo_ate, arquivo,
                sha256, quantos, situacao, gerado_em, detalhe)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (canal, tipo, periodo_de or None, periodo_ate or None, arquivo or None,
          sha256 or None, quantos, situacao, _agora(),
          json.dumps(detalhe, ensure_ascii=False) if detalhe is not None else None)
-    ).lastrowid)
+    )[0]["id"])
 
 
 # ================================================================ 1. IMAGENS
@@ -270,10 +272,29 @@ def otsu(cinza) -> int:
     return limiar
 
 
+def _conferir_pagina(pagina) -> None:
+    """Recusa a página que, a `DPI`, passa do teto de pixels. Só confere."""
+    if TETO.escala_que_cabe(pagina.rect.width, pagina.rect.height, DPI / 72) < DPI / 72:
+        raise TETO.TetoExcedido(
+            f"A página {pagina.number + 1} é grande demais para virar imagem a "
+            f"{DPI} dpi ({pagina.rect.width:.0f} x {pagina.rect.height:.0f} "
+            f"pontos). Confira o PDF da matrícula (CG_TETO_PIXELS_POR_PAGINA "
+            f"ajusta).")
+
+
 def pagina_em_tiff(pagina, destino: Path) -> None:
+    """A página em TIFF G4 a `DPI`, para o CSL2.
+
+    PÁGINA GIGANTE SE RECUSA, E NÃO ENCOLHE (LX12, LS02 M3, 19/10/2026): um
+    PDF de MediaBox enorme virava, a 200 dpi, bitmap de gigabytes. A imagem
+    do ONR tem resolução combinada; baixá-la calada mandaria ficha ilegível.
+    A recusa é `TetoExcedido` (um `ValueError`) e cai no «um PDF ruim não
+    para os outros» de `exportar_imagens`.
+    """
     import numpy as np
     import pymupdf
     from PIL import Image
+    _conferir_pagina(pagina)
     pix = pagina.get_pixmap(dpi=DPI, colorspace=pymupdf.csGRAY, alpha=False)
     cinza = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width)
     t = otsu(cinza)
@@ -403,13 +424,15 @@ def imagens_pendentes(con, destino: Path, *, somente: set[str] | None = None) ->
     """
     feito = ler_controle(destino)
     por_numero: dict[int, list] = {}
-    for r in con.execute(
+    for r in _bd_de(con).ler(
             "SELECT id, numero, digi_path, digi_sha256, digi_onr_pendente "
-            "FROM ri_matriculas WHERE digi_path IS NOT NULL AND TRIM(digi_path) <> ''"):
-        num = _numero(r[1])
+            "FROM ri_matriculas WHERE digi_path IS NOT NULL AND TRIM(digi_path) <> '' "
+            "ORDER BY id"):
+        num = _numero(r["numero"])
         if num is None or num >= NUMERO_DE_FICHA_ARQUIVADA:
             continue
-        por_numero.setdefault(num, []).append(tuple(r))
+        por_numero.setdefault(num, []).append((r["id"], r["numero"], r["digi_path"],
+                                               r["digi_sha256"], r["digi_onr_pendente"]))
     pendentes, so_baixar, problemas = [], [], []
     for num in sorted(por_numero):
         if somente and str(num) not in somente:
@@ -440,6 +463,15 @@ def _converter_uma(pdf: Path, destino: Path, num: int) -> int:
     doc = pymupdf.open(pdf)
     try:
         n = doc.page_count
+        # O número de páginas tem teto ANTES de apagar as velhas (LX12, LS02
+        # M3): o PDF recusado não deixa a matrícula sem imagem na pasta.
+        TETO.conferir_paginas(n, f"o PDF da matrícula {num}")
+        # A ÁREA DE CADA PÁGINA TAMBÉM, E PELO MESMO MOTIVO (LX20, ressalva do
+        # LX12): conferida só dentro de `pagina_em_tiff`, a página gigante do
+        # meio do PDF era recusada depois de as velhas já terem sido apagadas
+        # e as primeiras regravadas — a matrícula ficava com meia ficha.
+        for pagina in doc:
+            _conferir_pagina(pagina)
         for velho in pasta.glob(f"{num:08d}.*"):
             velho.unlink()
         for i, pagina in enumerate(doc, 1):
@@ -547,11 +579,11 @@ CONVERTENDO_VELHO_SEGUNDOS = TRAVA_VELHA_SEGUNDOS
 
 
 def _numero_da_matricula(con, matricula_id: int) -> int | None:
-    r = con.execute("SELECT numero FROM ri_matriculas WHERE id=?",
-                    (int(matricula_id),)).fetchone()
+    r = _bd_de(con).um("SELECT numero FROM ri_matriculas WHERE id=%s",
+                       (int(matricula_id),))
     if r is None:
         raise ValueError("Matrícula não encontrada.")
-    return _numero(r[0])
+    return _numero(r["numero"])
 
 
 def converter_matricula(con, matricula_id: int, banco: Path | None = None) -> dict:
@@ -620,18 +652,18 @@ def situacao_da_imagem(con, matricula_id: int, banco: Path | None = None) -> dic
     CONVERTENDO · ERRO · AGUARDANDO. O que manda é o CONTROLE: se o sha de hoje
     está nele, a imagem está na pasta, diga a situação o que disser.
     """
-    r = con.execute("SELECT numero, digi_path, digi_sha256, digi_onr_pendente "
-                    "FROM ri_matriculas WHERE id=?", (int(matricula_id),)).fetchone()
-    if r is None or not (r[1] or "").strip():
+    r = _bd_de(con).um("SELECT numero, digi_path, digi_sha256, digi_onr_pendente "
+                       "FROM ri_matriculas WHERE id=%s", (int(matricula_id),))
+    if r is None or not (r["digi_path"] or "").strip():
         return {"estado": "SEM_DIGITALIZACAO"}
-    num = _numero(r[0])
+    num = _numero(r["numero"])
     if num is None or num >= NUMERO_DE_FICHA_ARQUIVADA:
         return {"estado": "FORA"}
     destino = pastas(con, banco)["csl2"]
     base = {"numero": num, "pasta": str(destino), "csl2_em_uso": csl2_em_uso(con),
-            "marca_pendente": bool(r[3])}
+            "marca_pendente": bool(r["digi_onr_pendente"])}
     linha = ler_controle(destino).get(str(num)) or {}
-    if r[2] and linha.get("sha") == r[2]:
+    if r["digi_sha256"] and linha.get("sha") == r["digi_sha256"]:
         return {**base, "estado": "NA_PASTA", "paginas": linha.get("paginas"),
                 "em": linha.get("em")}
     s = ler_situacao(destino).get(str(num)) or {}
@@ -642,7 +674,7 @@ def situacao_da_imagem(con, matricula_id: int, banco: Path | None = None) -> dic
             idade = CONVERTENDO_VELHO_SEGUNDOS + 1
         if idade <= CONVERTENDO_VELHO_SEGUNDOS:
             return {**base, "estado": "CONVERTENDO", "em": s.get("em")}
-    if s.get("situacao") == "ERRO" and s.get("sha") in (None, r[2]):
+    if s.get("situacao") == "ERRO" and s.get("sha") in (None, r["digi_sha256"]):
         return {**base, "estado": "ERRO", "motivo": s.get("motivo"), "em": s.get("em")}
     return {**base, "estado": "AGUARDANDO"}
 
@@ -676,19 +708,19 @@ def vinculos(con, *, desde: str | None = None) -> list[dict]:
     args: tuple = ()
     if desde:
         sql += """ AND ((a.id IS NOT NULL AND COALESCE(a.acervo,0) = 0
-                         AND a.lavrado_em >= ?)
-                     OR (p.ato_id IS NULL AND m.criado_em >= ?))"""
+                         AND a.lavrado_em >= %s)
+                     OR (p.ato_id IS NULL AND m.criado_em >= %s))"""
         args = (desde, desde)
     sql += " ORDER BY m.numero, p.nome"
     saida = []
-    for r in con.execute(sql, args):
-        num = _numero(r[2])
+    for r in _bd_de(con).ler(sql, args):
+        num = _numero(r["matricula"])
         if num is not None and num >= NUMERO_DE_FICHA_ARQUIVADA:
             continue
-        nat, tipo_ato, data = r[5], r[6], r[7]
+        nat, tipo_ato, data = r["natureza_titulo"], r["tipo"], r["data_ato"]
         tipo = nat or "MATRICULA"
         if not data:
-            m = RE_QUAL.match(r[4] or "") if r[3] == "TEOR_TRANSCRICAO" else None
+            m = RE_QUAL.match(r["qualificacao"] or "") if r["origem"] == "TEOR_TRANSCRICAO" else None
             if m:
                 ato, d, mes, ano, natureza = m.groups()
                 data = f"{ano}-{mes}-{d}"
@@ -696,9 +728,9 @@ def vinculos(con, *, desde: str | None = None) -> list[dict]:
                 tipo = ("MATRICULA" if ato.upper() == "ABERTURA" or not natureza
                         or natureza == "ABERTURA" else natureza)
             else:
-                data = r[8]
-        saida.append({"nome": r[0], "documento": r[1],
-                      "matricula": str(num) if num is not None else r[2],
+                data = r["data_abertura"]
+        saida.append({"nome": r["nome"], "documento": r["documento"],
+                      "matricula": str(num) if num is not None else r["matricula"],
                       "tipo_ato": (tipo or "MATRICULA")[:60], "data_ato": data,
                       "data_venda": data})
     # A ordem é a numérica da matrícula, como a ferramenta de 06/10 gerava
@@ -728,19 +760,21 @@ def _arquivos_do_ips(pasta: Path) -> dict[str, tuple[Path, str]]:
 
 def _conferir_o_ips(con, pasta_ips: Path) -> int:
     """Marca PROCESSADO o arquivo nosso que o IPS levou (achado pelo sha)."""
-    abertos = con.execute(
-        "SELECT id, sha256 FROM ge_onr_cargas WHERE canal=? AND sha256 IS NOT NULL "
-        "AND situacao IN ('PREPARADO','NA_PASTA')", (CANAL_PESSOAL,)).fetchall()
+    bd = _bd_de(con)
+    abertos = bd.ler(
+        "SELECT id, sha256 FROM ge_onr_cargas WHERE canal=%s AND sha256 IS NOT NULL "
+        "AND situacao IN ('PREPARADO','NA_PASTA') ORDER BY id", (CANAL_PESSOAL,))
     if not abertos:
         return 0
     no_disco = _arquivos_do_ips(pasta_ips)
     mudou = 0
-    for rid, sha in abertos:
+    for aberto in abertos:
+        rid, sha = aberto["id"], aberto["sha256"]
         if sha in no_disco:
             arq, onde = no_disco[sha]
             quando = datetime.fromtimestamp(arq.stat().st_mtime).replace(
                 microsecond=0).isoformat()
-            con.execute("UPDATE ge_onr_cargas SET situacao=?, processado_em=? WHERE id=?",
+            bd.escrever("UPDATE ge_onr_cargas SET situacao=%s, processado_em=%s WHERE id=%s",
                         (onde, quando if onde == "PROCESSADO" else None, rid))
             mudou += 1
     return mudou
@@ -749,13 +783,14 @@ def _conferir_o_ips(con, pasta_ips: Path) -> int:
 def _completa_levada(con):
     if not _tem_tabela(con, "ge_onr_cargas"):
         return None
-    return con.execute(
-        "SELECT * FROM ge_onr_cargas WHERE canal=? AND tipo='COMPLETA' "
-        "AND situacao='PROCESSADO' ORDER BY id DESC LIMIT 1", (CANAL_PESSOAL,)).fetchone()
+    return _bd_de(con).um(
+        "SELECT * FROM ge_onr_cargas WHERE canal=%s AND tipo='COMPLETA' "
+        "AND situacao='PROCESSADO' ORDER BY id DESC LIMIT 1", (CANAL_PESSOAL,))
 
 
 def cuidar_do_pessoal(con, hoje: date, banco: Path | None = None) -> dict:
     """Mantém o Indicador Pessoal em dia. Grava arquivo e o livro de cargas."""
+    bd = _bd_de(con)
     p = pastas(con, banco)
     levados = _conferir_o_ips(con, p["ips"])
     agora = _agora()
@@ -764,10 +799,10 @@ def cuidar_do_pessoal(con, hoje: date, banco: Path | None = None) -> dict:
         lista = vinculos(con)
         xml = xml_do_pessoal(con, lista)
         sha = _sha_texto(xml)
-        ultima = con.execute(
-            "SELECT id, sha256, arquivo FROM ge_onr_cargas WHERE canal=? AND tipo='COMPLETA' "
+        ultima = bd.um(
+            "SELECT id, sha256, arquivo FROM ge_onr_cargas WHERE canal=%s AND tipo='COMPLETA' "
             "AND situacao IN ('PREPARADO','NA_PASTA') ORDER BY id DESC LIMIT 1",
-            (CANAL_PESSOAL,)).fetchone()
+            (CANAL_PESSOAL,))
         if ultima and ultima["sha256"] == sha:
             con.commit()
             return {"fase": "CARGA_INICIAL", "acao": "sem mudança", "vinculos": len(lista),
@@ -776,13 +811,13 @@ def cuidar_do_pessoal(con, hoje: date, banco: Path | None = None) -> dict:
         pasta.mkdir(parents=True, exist_ok=True)
         arq = pasta / f"IndicadorPessoal_CARGA_COMPLETA_{hoje.isoformat()}.XML"
         arq.write_bytes(xml.encode("utf-8"))
-        for velho in con.execute(
-                "SELECT id, arquivo FROM ge_onr_cargas WHERE canal=? AND tipo='COMPLETA' "
-                "AND situacao='PREPARADO'", (CANAL_PESSOAL,)).fetchall():
+        for velho in bd.ler(
+                "SELECT id, arquivo FROM ge_onr_cargas WHERE canal=%s AND tipo='COMPLETA' "
+                "AND situacao='PREPARADO' ORDER BY id", (CANAL_PESSOAL,)):
             v = Path(velho["arquivo"] or "")
             if v.parent == pasta and v != arq and v.exists():
                 v.unlink()
-            con.execute("UPDATE ge_onr_cargas SET situacao='SUBSTITUIDO' WHERE id=?",
+            bd.escrever("UPDATE ge_onr_cargas SET situacao='SUBSTITUIDO' WHERE id=%s",
                         (velho["id"],))
         sem_doc = sum(1 for v in lista
                       if len(re.sub(r"\D", "", v["documento"] or "")) not in (11, 14))
@@ -793,9 +828,9 @@ def cuidar_do_pessoal(con, hoje: date, banco: Path | None = None) -> dict:
         return {"fase": "CARGA_INICIAL", "acao": "carga completa regravada",
                 "arquivo": str(arq), "vinculos": len(lista), "levados": levados}
     # DEPOIS DA ADESÃO: o incremental do que se lavrou desde o último arquivo.
-    desde = con.execute(
-        "SELECT MAX(periodo_ate) FROM ge_onr_cargas WHERE canal=? "
-        "AND situacao IN ('PROCESSADO','NA_PASTA')", (CANAL_PESSOAL,)).fetchone()[0]
+    desde = bd.valor(
+        "SELECT MAX(periodo_ate) FROM ge_onr_cargas WHERE canal=%s "
+        "AND situacao IN ('PROCESSADO','NA_PASTA')", (CANAL_PESSOAL,))
     lista = vinculos(con, desde=desde)
     if not lista:
         con.commit()
@@ -833,15 +868,15 @@ class _Banco:
         self.caminho = Path(caminho)
 
     def connect(self) -> sqlite3.Connection:
-        c = sqlite3.connect(str(self.caminho), timeout=60)
-        c.row_factory = sqlite3.Row
+        # A porta da ponte, e não `sqlite3.connect`: fora do servidor (o CLI)
+        # ninguém instalou o desvio, e `ri_onr_central` recusaria o SQLite.
+        c = banco_pg.conectar(str(self.caminho), timeout=60)
         return c
 
     @contextmanager
     def transaction(self):
         c = self.connect()
         try:
-            c.execute("BEGIN IMMEDIATE")
             yield c
             c.commit()
         except Exception:
@@ -857,13 +892,14 @@ def _ultimos_envios(con) -> list[dict]:
     import ri_onr_central_schema as ESQ
     if not _tem_tabela(con, "ri_onr_envios"):
         return []
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in _bd_de(con).ler(
         """SELECT e.*, m.numero FROM ri_onr_envios e
              JOIN ri_matriculas m ON m.id = e.matricula_id
-            WHERE e.especie = ? AND e.ambiente = ?
+            WHERE e.especie = %s AND e.ambiente = %s
               AND e.id = (SELECT MAX(x.id) FROM ri_onr_envios x
                            WHERE x.matricula_id = e.matricula_id
-                             AND x.especie = e.especie AND x.ambiente = e.ambiente)""",
+                             AND x.especie = e.especie AND x.ambiente = e.ambiente)
+            ORDER BY e.id""",
         (ESQ.INDICADOR, ONR.ambiente()))]
 
 
@@ -942,8 +978,8 @@ def cuidar_do_real(con, banco: Path, *, pasta_cred=None) -> dict:
         return saida
     db = _Banco(banco)
     agora = _agora()
-    if con.execute("SELECT 1 FROM ri_onr_envios WHERE situacao=? AND ambiente=?",
-                   (ESQ.ENVIADO, ONR.ambiente())).fetchone():
+    if _bd_de(con).um("SELECT 1 AS um FROM ri_onr_envios WHERE situacao=%s AND ambiente=%s "
+                      "LIMIT 1", (ESQ.ENVIADO, ONR.ambiente())):
         try:
             saida["fila"] = ONR.conferir_a_fila(db, agora=agora, pasta=pasta_cred)
         except Exception as erro:                      # noqa: BLE001
@@ -980,16 +1016,18 @@ def cuidar_do_real(con, banco: Path, *, pasta_cred=None) -> dict:
 
 def acervo_sem_indicador(con) -> dict:
     """Os números da decisão sobre o Indicador Real do acervo. SÓ LÊ."""
-    total = con.execute(
+    bd = _bd_de(con)
+    total = int(bd.valor(
         "SELECT COUNT(*) FROM ri_matriculas WHERE tipo_ficha='ACERVO' "
-        "AND COALESCE(encerrada,0)=0").fetchone()[0]
-    ids = {r[0] for r in con.execute(
+        "AND COALESCE(encerrada,0)=0"))
+    ids = {r["id"] for r in bd.ler(
         "SELECT id, numero FROM ri_matriculas WHERE tipo_ficha='ACERVO' "
-        "AND COALESCE(encerrada,0)=0") if (_numero(r[1]) or 0) < NUMERO_DE_FICHA_ARQUIVADA}
-    com_ato_novo = {r[0] for r in con.execute(
+        "AND COALESCE(encerrada,0)=0 ORDER BY id")
+        if (_numero(r["numero"]) or 0) < NUMERO_DE_FICHA_ARQUIVADA}
+    com_ato_novo = {r["matricula_id"] for r in bd.ler(
         "SELECT DISTINCT a.matricula_id FROM ri_atos a JOIN ri_matriculas m "
         "ON m.id = a.matricula_id WHERE m.tipo_ficha='ACERVO' AND COALESCE(a.acervo,0)=0 "
-        "AND a.lavrado_em >= ?", ("2026-09-10",))}
+        "AND a.lavrado_em >= %s ORDER BY a.matricula_id", ("2026-09-10",))}
     return {"ativas": len(ids), "registradas": total,
             "com_ato_desta_casa_desde_10_09": len(com_ato_novo & ids),
             "precedente_eoficio": 3}
@@ -1006,7 +1044,6 @@ def rodada(con: sqlite3.Connection, banco: Path, hoje: date | None = None, *,
     """
     import traceback
     hoje = hoje or date.today()
-    con.row_factory = sqlite3.Row
     init_gestor_schema(con)
     con.commit()
     resumo: dict[str, Any] = {}
@@ -1052,16 +1089,15 @@ def _achado(chave, regra, gravidade, setor, titulo, detalhe="", prazo=None) -> d
 
 
 def _ultima_rodada(con, canal: str):
-    return con.execute(
-        "SELECT * FROM ge_onr_cargas WHERE canal=? AND tipo='RODADA' "
-        "ORDER BY id DESC LIMIT 1", (canal,)).fetchone()
+    return _bd_de(con).um(
+        "SELECT * FROM ge_onr_cargas WHERE canal=%s AND tipo='RODADA' "
+        "ORDER BY id DESC LIMIT 1", (canal,))
 
 
 def conferir(con: sqlite3.Connection, hoje: date, *, pasta_cred=None) -> list[dict]:
     """O que está fora do dia nas três cargas. SÓ LÊ (fora as tabelas que nascem)."""
     import onr_api as API
     import ri_onr_central as ONR
-    con.row_factory = sqlite3.Row
     init_gestor_schema(con)
     achados: list[dict] = []
 
@@ -1125,25 +1161,25 @@ def conferir(con: sqlite3.Connection, hoje: date, *, pasta_cred=None) -> list[di
                 f"Indicador Real da matrícula {e.get('matricula') or '—'}: o "
                 f"{e.get('onde')} falhou", e.get("erro", "")))
     acervo = acervo_sem_indicador(con)
-    enviados_acervo = con.execute(
+    enviados_acervo = _bd_de(con).valor(
         "SELECT COUNT(DISTINCT e.matricula_id) FROM ri_onr_envios e JOIN ri_matriculas m "
-        "ON m.id = e.matricula_id WHERE m.tipo_ficha='ACERVO'").fetchone()[0] \
+        "ON m.id = e.matricula_id WHERE m.tipo_ficha='ACERVO'") \
         if _tem_tabela(con, "ri_onr_envios") else 0
     if acervo["ativas"] and not enviados_acervo:
         achados.append(_achado(
             "ONR_ACERVO", "ONR_ACERVO_DECISAO", "ATENCAO", "GESTAO",
             f"O Indicador Real das {acervo['ativas']} fichas ativas do acervo nunca subiu",
-            f"O E-Ofício deixou um único arquivo de indicador real, com "
+            f"O sistema antigo deixou um único arquivo de indicador real, com "
             f"{acervo['precedente_eoficio']} matrículas. {acervo['com_ato_desta_casa_desde_10_09']}"
             " delas já receberam ato desta casa desde 10/09. Decisão do oficial: subir o "
             "acervo (todo, ou só o que recebe ato novo) ou mantê-lo fora."))
 
     # INDICADOR PESSOAL
     if _completa_levada(con) is None:
-        prep = con.execute(
-            "SELECT arquivo, quantos, detalhe FROM ge_onr_cargas WHERE canal=? "
+        prep = _bd_de(con).um(
+            "SELECT arquivo, quantos, detalhe FROM ge_onr_cargas WHERE canal=%s "
             "AND tipo='COMPLETA' AND situacao IN ('PREPARADO','NA_PASTA') "
-            "ORDER BY id DESC LIMIT 1", (CANAL_PESSOAL,)).fetchone()
+            "ORDER BY id DESC LIMIT 1", (CANAL_PESSOAL,))
         if prep:
             sem = (json.loads(prep["detalhe"] or "{}") or {}).get("sem_documento")
             achados.append(_achado(
@@ -1157,9 +1193,9 @@ def conferir(con: sqlite3.Connection, hoje: date, *, pasta_cred=None) -> list[di
                    f"instalado, informe a data em «{CHAVE_CSL2_DESDE}» para a marca de "
                    "pendência baixar.")))
     limite = (hoje - timedelta(days=IPS_DIAS_TOLERADOS)).isoformat()
-    for r in con.execute(
-            "SELECT id, arquivo, gerado_em FROM ge_onr_cargas WHERE canal=? "
-            "AND tipo='INCREMENTAL' AND situacao='NA_PASTA' AND gerado_em < ?",
+    for r in _bd_de(con).ler(
+            "SELECT id, arquivo, gerado_em FROM ge_onr_cargas WHERE canal=%s "
+            "AND tipo='INCREMENTAL' AND situacao='NA_PASTA' AND gerado_em < %s ORDER BY id",
             (CANAL_PESSOAL, limite)):
         achados.append(_achado(
             f"ONR_IPS:{r['id']}", "ONR_IPS_NAO_LEVOU", "ATENCAO", "RI",
@@ -1223,8 +1259,7 @@ def main(argv=None) -> int:
         pass
     hoje = date.fromisoformat(a.hoje)
     if a.so_medir:
-        con = sqlite3.connect(f"file:{a.banco}?mode=ro", uri=True, timeout=60)
-        con.row_factory = sqlite3.Row
+        con = banco_pg.conectar(f"file:{a.banco}?mode=ro", uri=True, timeout=60)
         try:
             if not _tem_tabela(con, "ge_onr_cargas"):
                 print("(o livro de cargas ainda não existe nesta base: o agente nunca rodou)")
@@ -1232,7 +1267,7 @@ def main(argv=None) -> int:
         finally:
             con.close()
         return 0
-    con = sqlite3.connect(a.banco, timeout=60)
+    con = banco_pg.conectar(a.banco, timeout=60)
     try:
         rodada(con, Path(a.banco), hoje, imagens=not a.sem_imagens)
         for x in conferir(con, hoje):

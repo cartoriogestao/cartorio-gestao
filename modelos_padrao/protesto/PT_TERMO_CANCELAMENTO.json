@@ -1,0 +1,18 @@
+{
+  "chave": "PT_TERMO_CANCELAMENTO",
+  "atribuicao": "Protesto",
+  "nome": "Termo do cancelamento do registro de protesto",
+  "formato": "CHAVES",
+  "explica": "O termo que se lavra ao cancelar o protesto — Lei 9.492/1997, art. 26, §§ 5º e 6º: no registro eletrônico, «o termo do cancelamento será lançado em documento apartado», arquivado com os documentos do pedido (CN-MA art. 896). Fica no próprio ato do cancelamento, e congela nele. Monta-se de frases inteiras, uma por linha: {data} é a do cancelamento; {registro}, {protocolo}, {titulo}, {credor} e {devedor} identificam o protesto cancelado com a MESMA redação do registro e do instrumento; {hipotese} e {fundamento_legal} são os do catálogo de hipóteses; {fundamento} é o que quem cancela escreveu sobre o caso. Claro sem o fato entra vazio, e a linha que fica sem nenhum some.",
+  "campos": [
+    "data",
+    "registro",
+    "protocolo",
+    "titulo",
+    "credor",
+    "devedor",
+    "hipotese",
+    "fundamento_legal",
+    "fundamento"
+  ]
+}

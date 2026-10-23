@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_TERMO_COMPARECIMENTO__quem_assina",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Termo de comparecimento — quem assina, sem nome",
+  "formato": "CHAVES",
+  "explica": "O que vai sob a segunda linha quando o reconhecimento não diz quem o lavrou.",
+  "campos": []
+}

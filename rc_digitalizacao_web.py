@@ -49,7 +49,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         saida = dict(vazio)
         try:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 if onde == "rcpn_assento":
                     aid = (request.view_args or {}).get("assento_id")
                     if aid:
@@ -131,7 +130,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def rcpn_termos_a_digitalizar():
         """Os registros lavrados aqui que ainda esperam o termo assinado. Só LÊ."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             linhas = RCDIGI.pendentes(con)
             desde = RCDIGI.obrigatoria_desde(con)
         return render_template("rc_termos_a_digitalizar.html", linhas=linhas,

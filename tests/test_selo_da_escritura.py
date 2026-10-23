@@ -334,8 +334,13 @@ def test_o_selo_sai_sozinho_no_ato_ja_lancado(casa):
 def test_o_selo_da_ata_sai_pelo_sistema(casa):
     """Regressão do caso real: a trava antiga nem chamava o selador."""
     from selador_de_bancada import ligar_o_selador
+    from protocolo_de_teste import cobrir_o_ato
     aid = _ato(casa, tipo="ATA", situacao="LAVRADO", livro="1", folha="1",
                termo="1")
+    # Selo pago só sai coberto (LX16), e o protocolo da bancada não traz o
+    # 13.14.1 da ata: a ficha fica ligada ao item pago, como o balcão a deixa.
+    with casa["db"].transaction() as con:
+        cobrir_o_ato(con, tabela="nt_atos", ato_id=aid, codigo="13.14.1")
     with ligar_o_selador(casa) as aparelho:
         html = _postar(casa, aid, acao="selar", codigo_tj="13.14.1")
     r = _linha(casa, aid)

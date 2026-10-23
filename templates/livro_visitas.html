@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}Livro de Visitas e Correições{% endblock %}
+{% block heading %}<h1>Livro de Visitas e Correições</h1>{% endblock %}
+{% block content %}
+{# O LIVRO DE VISITAS E CORREIÇÕES (LG08) — art. 188, I, e art. 189 do Código de
+   Normas do MA. Eletrônico: o lançamento não se edita nem se apaga; erro se
+   conserta por retificação, que é lançamento novo e aponta para o antigo. #}
+<section class="panel">
+  <p>Escriturado eletronicamente, sob a guarda e responsabilidade do delegatário (art. 189). Cada visita,
+  inspeção ou correição da autoridade é um lançamento numerado em sequência. <strong>O lançamento não se
+  altera nem se apaga</strong>: erro se corrige por retificação, que entra com número novo e diz por quê.</p>
+  <p class="muted">O § 1º do art. 189 dispensa este livro se as visitas estiverem registradas em sistema
+  próprio da Corregedoria. O plano de ação do que a inspeção mandou fazer continua em
+  <a href="{{ url_for('inspections') }}">Inspeções</a>.
+  <a href="{{ url_for('livro_visitas_imprimir') }}">Imprimir o livro</a> ·
+  <a href="{{ url_for('livros_obrigatorios') }}">Livros obrigatórios</a></p>
+</section>
+
+{% if pode_lancar %}
+<section class="panel">
+  <h2>{% if retificar %}Retificar o lançamento{% else %}Novo lançamento{% endif %}</h2>
+  <form method="post" action="{{ url_for('livro_visitas_lancar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if retificar %}
+    <input type="hidden" name="retifica_id" value="{{ retificar }}">
+    <label>Por que retificar <input type="text" name="motivo_retificacao" maxlength="1000" required></label>
+    {% endif %}
+    <label>Data da visita <input type="date" name="data" max="{{ hoje }}" required></label>
+    <label>Natureza
+      <select name="natureza" required>
+        {% for chave, nome in naturezas.items() %}<option value="{{ chave }}">{{ nome }}</option>{% endfor %}
+      </select></label>
+    <label>Autoridade (cargo ou órgão) <input type="text" name="autoridade" maxlength="200" required></label>
+    <label>Nome da autoridade <input type="text" name="autoridade_nome" maxlength="200"></label>
+    <label>Processo ou ato que determinou <input type="text" name="processo" maxlength="200"></label>
+    <label>Termo — o que foi visto e registrado
+      <textarea name="termo" rows="6" required></textarea></label>
+    <label>Determinações e recomendações <textarea name="determinacoes" rows="4"></textarea></label>
+    <label>Prazo para cumprir <input type="date" name="prazo"></label>
+    {% if inspecoes %}
+    <label>Plano de ação (Inspeções)
+      <select name="inspecao_id">
+        <option value="">— nenhum —</option>
+        {% for i in inspecoes %}<option value="{{ i.id }}">{{ i.title }}{% if i.report_date %} ({{ i.report_date }}){% endif %}</option>{% endfor %}
+      </select></label>
+    {% endif %}
+    <button class="button" type="submit">Escriturar no livro</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Lançamentos</h2>
+  {% if linhas %}
+  <div class="table-wrap"><table>
+    <tr><th>Nº</th><th>Data</th><th>Natureza</th><th>Autoridade</th><th>Termo</th><th>Determinações</th><th>Escriturado</th><th></th></tr>
+    {% for x in linhas %}
+    <tr>
+      <td>{{ x.numero }}</td>
+      <td>{{ x.data }}</td>
+      <td>{{ x.natureza_nome }}</td>
+      <td>{{ x.autoridade }}{% if x.autoridade_nome %} — {{ x.autoridade_nome }}{% endif %}{% if x.processo %}<br><span class="small muted">{{ x.processo }}</span>{% endif %}</td>
+      <td><span style="white-space:pre-wrap">{{ x.termo }}</span>
+          {% if x.retifica_numero %}<br><span class="badge warning">retifica o nº {{ x.retifica_numero }}</span> <span class="small">{{ x.motivo_retificacao }}</span>{% endif %}
+          {% if x.retificado_por_numero %}<br><span class="badge danger">retificado pelo nº {{ x.retificado_por_numero }}</span>{% endif %}</td>
+      <td><span style="white-space:pre-wrap">{{ x.determinacoes or '—' }}</span>{% if x.prazo %}<br><span class="small">prazo: {{ x.prazo }}</span>{% endif %}</td>
+      <td class="small">{{ x.lancado_em[:16] }}<br>{{ x.lancado_por }}</td>
+      <td>{% if pode_lancar and not x.retificado_por_numero %}<a href="{{ url_for('livro_visitas', retificar=x.id) }}">retificar</a>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">Nenhum lançamento.</p>{% endif %}
+</section>
+{% endblock %}

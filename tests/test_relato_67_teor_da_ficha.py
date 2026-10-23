@@ -277,7 +277,8 @@ def test_a_rota_usa_a_funcao_do_modulo_e_nao_uma_regra_parecida(casa):
     primeiro conserto — e a que decide se um ato aparece na ficha é esta.
     """
     codigo = (RAIZ / "ri_web.py").read_text(encoding="utf-8")
-    assert "NUMT.atos_fora_do_teor(m[\"teor\"], atos)" in codigo, (
+    # HOTFIX SANDBOX-2026-10-19-02: a chamada passa a matricula (numero/CNM).
+    assert "NUMT.atos_fora_do_teor(m[\"teor\"], atos, matricula=m)" in codigo, (
         "`ri_web.py` tem de chamar `ri_numeros_do_teor.atos_fora_do_teor`")
     assert "fora_do_teor=fora_do_teor" in codigo, (
         "e o que ele devolve tem de chegar à tela")

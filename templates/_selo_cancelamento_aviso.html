@@ -1,0 +1,11 @@
+{# O SELO CANCELADO QUE O TJMA AINDA NÃO SABE (LG07, 19/10/2026). Só para o
+   gestor e o oficial, que são quem pede o cancelamento. Selo em ofício que
+   ainda não foi mandado continua contando: gerar o papel não é comunicar. #}
+{% if selo_cancelamento_aviso %}
+<div role="alert" style="background:#8a4b00;color:#fff;padding:10px 18px;font-size:15px;
+     font-weight:700;border-bottom:4px solid #5c3200">
+  {{ selo_cancelamento_aviso.n }} selo(s) cancelado(s) ainda não comunicado(s) ao TJMA
+  {%- if selo_cancelamento_aviso.mais_antigo %} — o mais antigo de {{ selo_cancelamento_aviso.mais_antigo[8:10] }}/{{ selo_cancelamento_aviso.mais_antigo[5:7] }}/{{ selo_cancelamento_aviso.mais_antigo[:4] }}{% endif %}.
+  <a style="color:#fff;text-decoration:underline" href="{{ url_for('selo_cancelamentos') }}">Pedir o cancelamento</a>.
+</div>
+{% endif %}

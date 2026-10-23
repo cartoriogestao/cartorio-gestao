@@ -46,13 +46,13 @@ ORDEM = (
     ("pt_schema", "init_pt_schema"),
     ("rc_schema", "init_rc_schema"),
     ("ajuda", "init_ajuda_schema"),
-    ("rg_schema", "init_rg_schema"),
     ("selador_config", "init_selador_schema"),
     ("ri_schema", "init_ri_schema"),
     ("ra_schema", "init_ra_schema"),
     ("us_schema", "init_us_schema"),
-    ("atrib_certidao", "init_atrib_certidao_schema"),
     ("caixa_schema", "init_caixa_schema"),
+    ("rg_schema", "init_rg_schema"),
+    ("atrib_certidao", "init_atrib_certidao_schema"),
     ("notas_schema", "init_notas_schema"),
 )
 

@@ -24,6 +24,12 @@ A REGRA, NUM LUGAR SÓ
     E a pasta das cópias não cresce para sempre: guarda as
     `GUARDAR_ANTES_DE_MEXER` mais novas. Em 06/10/2026 o disco chegou a 24 MB
     livres por causa delas.
+
+A PASTA DOS BACKUPS É SÓ DO SERVIÇO (LX14, 19/10/2026; A7 do LS03)
+    O pacote leva o banco inteiro e, no completo, o acervo do E-Ofício com a
+    senha do selador. `pasta_de_backups` passa a pedir a `permissao_local` a
+    ACL de SYSTEM, Administradores e a conta do processo (Windows: `icacls`;
+    fora dele, 0700). Falhar é aviso no log, e o backup sai assim mesmo.
 """
 from __future__ import annotations
 
@@ -45,6 +51,11 @@ FICA_NA_PASTA_DO_BANCO = frozenset({
     "acervo_eoficio.sqlite3", "acervo_eoficio.sqlite3-wal", "acervo_eoficio.sqlite3-shm",
     "secret.key", "install.json", "disputas_de_escrita.log", "iniciar_servidor_servico.cmd",
     "serventia_local_atual.json",
+    # A chave do cofre dos `.cred` cifrados (LX14) — sem ela, os segredos dos
+    # robôs, do WhatsApp e a senha da cifra do backup não abrem.
+    "cofre.key",
+    # A senha do PostgreSQL, se a casa seguir `docs/SEGURANCA_REDE.md` (A9).
+    "pgpass.conf",
 })
 PASTAS_DA_PASTA_DO_BANCO = frozenset({
     "arquivos", "runtime", "updates", "libreoffice_perfil", "logs", "crc_selecoes",
@@ -77,6 +88,8 @@ def pasta_de_backups(pasta_do_banco: Path, configurada: str | None = None) -> Pa
     else:
         pasta = raiz_das_copias(pasta_do_banco) / "backups"
     pasta.mkdir(parents=True, exist_ok=True)
+    import permissao_local
+    permissao_local.restringir(pasta, pasta=True)
     return pasta
 
 

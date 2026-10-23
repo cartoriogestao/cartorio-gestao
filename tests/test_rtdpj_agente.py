@@ -26,6 +26,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import gestor_rtdpj as GRT
 import rg_registro as RG
@@ -46,10 +48,11 @@ AVERBA = "AVERBA000000MGUFASDY2S09MO57"
 
 @pytest.fixture()
 def con(tmp_path):
-    c = sqlite3.connect(tmp_path / "t.sqlite3")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     init_nucleo_schema(c)
-    RGS.init_rg_schema(c)
+    # `cx_protocolos` antes do RCPJ/RTD: `rg_titulos` aponta para ela (FK), e
+    # o PostgreSQL cobra a FK na criacao.
     c.executescript("""
         CREATE TABLE cx_protocolos (
             id INTEGER PRIMARY KEY AUTOINCREMENT, numero TEXT, interessado TEXT,
@@ -69,6 +72,7 @@ def con(tmp_path):
             entity_id INTEGER, details TEXT, ip_address TEXT);
         CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT);
     """)
+    RGS.init_rg_schema(c)
     return c
 
 
@@ -271,6 +275,31 @@ def test_o_livro_de_protocolo_sem_o_termo_do_dia(con):
     achados = GRT.regra_encerramento_diario(con, HOJE)
     assert [a["regra"] for a in achados] == [GRT.ENCERRAMENTO_DIARIO]
     assert "11/09/2026" in achados[0]["titulo"]
+
+
+def test_o_livro_de_serie_gravada_em_minuscula_tambem_e_conferido(con, monkeypatch):
+    """`escrituracao.abrir_livro` aceita a série em qualquer caixa e a grava
+    como veio. O `LIKE 'PJ%'` do SQLite não ligava para caixa; o do PostgreSQL
+    liga, e o livro sumiria da conferência calado (revisão do L032: `ILIKE`)."""
+    import escrituracao as ESC
+    livro = ESC.abrir_livro(con, "pj_a", sv=SV, agora=AGORA, data_extenso=EXTENSO)
+    assert con.execute("SELECT serie FROM nu_livros WHERE id=?",
+                       (livro,)).fetchone()["serie"] == "pj_a"
+    monkeypatch.setattr(ESC, "conferir_livro", lambda con, livro_id: {
+        "achados": ["a folha 3 está em branco"], "serie_nome": "Livro A do RCPJ"})
+    achados = GRT.regra_livro(con, HOJE)
+    assert [a["chave"] for a in achados] == [f"RTDPJ_LIVRO:{livro}:0"]
+
+
+def test_o_que_o_agente_corrigiu_volta_qualquer_que_seja_a_caixa_da_acao(con):
+    """O `LIKE 'GESTOR_RTDPJ_%'` do SQLite não ligava para caixa; a conversão
+    manteve isso com `ILIKE` (revisão do L032)."""
+    con.execute("""INSERT INTO audit_logs (ts, username_snapshot, action, details)
+                   VALUES ('2026-10-08T10:00:00', 'gestor', ?, ?)""",
+                ("gestor_rtdpj_selo_principal",
+                 json.dumps({"resumo": "selo do ato no lugar do da prenotação"})))
+    achados = GRT.regra_corrigido(con, HOJE)
+    assert [a["titulo"] for a in achados] == ["selo do ato no lugar do da prenotação"]
 
 
 def test_a_regra_que_quebra_vira_nao_mediu(con, monkeypatch):

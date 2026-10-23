@@ -1,0 +1,10 @@
+{
+  "chave": "PT_INSTRUMENTO_INTIMACAO_ENTREGUE",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto — certidão da intimação entregue",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {intimacao} do instrumento quando a última intimação foi entregue (em mãos ou pelo correio). A intimação por meio eletrônico tem a peça própria, PT_INSTRUMENTO_INTIMACAO_DIGITAL (LD04, 21/10/2026).",
+  "campos": [
+    "data"
+  ]
+}

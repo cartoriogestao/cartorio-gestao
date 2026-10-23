@@ -228,6 +228,10 @@
         <a href="{{ url_for('notas_autenticacao') }}">Autenticar cópia</a>
         {# A certidão das Notas — pedido do oficial, 15/10/2026. #}
         <a href="{{ url_for('notas_certidoes') }}">Certidões</a>
+        {# LG04 (19/10/2026): a pública forma e a comunicação de venda de
+           veículo ao DETRAN — atos de balcão, sem livro de ato. #}
+        <a href="{{ url_for('notas_publica_forma') }}">Pública forma</a>
+        <a href="{{ url_for('notas_veiculos') }}">Comunicação de venda de veículo</a>
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Instrumentos</div>
         <a href="{{ url_for('notas_escrituras') }}">Escrituras públicas</a>
         <a href="{{ url_for('notas_atas') }}">Atas notariais</a>
@@ -245,7 +249,9 @@
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('notas_ccn') }}">Cadastro no CCN</a>{% endif %}<a href="{{ url_for('notas_ccn_consultas') }}">Consulta ao CCN</a>
         {% if user.role in ['ADMIN','MANAGER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Configuração</div>
         <a href="{{ url_for('notas_etiqueta_ajuste') }}">Ajustar etiqueta</a>{% endif %}
-        {% if user.role == 'ADMIN' %}<a href="{{ url_for('notas_importar') }}">Trazer notas do E-Ofício</a>{% endif %}
+        {# «Trazer notas do E-Ofício» SAIU DO MENU em 17/10/2026, por decisão
+           do oficial: a importação do acervo terminou. A rota fica, sem link,
+           e o importador fica de exemplo (docs/COMO_FAZER_UM_IMPORTADOR.md). #}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
         {# O SUBMODULO DE MODELOS DESTA ATRIBUICAO — 07/09/2026, ordem do
            oficial. Cada papel e corpo + encerramento + rodape, e o que se
@@ -336,6 +342,9 @@
         <a href="{{ url_for('cnib_central') }}">CNIB — a cópia local e a Central</a>
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('ri_expurgos') }}">Atas de ocorrência</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_resolver_imagens') }}">Fichas digitalizadas</a>{% endif %}
+        {# A IA CONFERE AS TRANSCRIÇÕES DOS LIVROS ANTIGOS (LH11, 21/10/2026) —
+           ao lado das fichas digitalizadas, que são a página que ela lê. #}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_transcricoes_lote') }}">Revisar transcrições em lote (IA)</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('ri_matriculas_doc') }}">Matrículas em Word</a>{% endif %}
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
         <a href="{{ url_for('ri_modelos_atos') }}">Modelos de atos</a>
@@ -427,10 +436,17 @@
         <a href="{{ url_for('protesto_titulos') }}">Títulos</a>
         <a href="{{ url_for('protesto_certidoes') }}">Certidões</a>
         <a href="{{ url_for('protesto_instrumentos') }}">Instrumentos</a>
+        {# O DEVEDOR E O BOLETO (LG06) sao do balcao: e ali que o devedor
+           pergunta o que deve e como paga. #}
+        <a href="{{ url_for('protesto_devedores') }}">Devedores</a>
+        <a href="{{ url_for('protesto_boletos') }}">Boletos</a>
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O dia da CRA</div>
         <a href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>
         <a href="{{ url_for('protesto_imagens') }}">Imagens dos títulos</a>
         <a href="{{ url_for('protesto_avisos') }}">Avisos e editais</a>
+        {# O AR DIGITAL vem logo depois dos avisos: e o outro caminho do mesmo
+           papel (LG06). #}
+        <a href="{{ url_for('protesto_ar') }}">AR digital (Correios)</a>
         {#
           A DESISTENCIA VEM ANTES DO «A PROTESTAR», E NAO E ORDEM DE MENU: e a
           ordem do roteiro dele, nos DOIS turnos — «MEIO DIA: 2) verificacao de
@@ -450,7 +466,8 @@
           dessa corrente: e por onde se FALA com a Central, e ela e de
           ADMIN/MANAGER porque a consulta pode marcar coisa la dentro.
         #}
-        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('protesto_cra_api') }}">CRA — falar pela API</a>{% endif %}
+        {# 21/10/2026: aberto às escreventes por ordem do oficial (era ADMIN e MANAGER). #}
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('protesto_cra_api') }}">CRA — falar pela API</a>{% endif %}
         {#
           A CENPROT GANHOU SECAO PROPRIA, e o motivo e o roteiro que o oficial
           trouxe: ele tem DUAS listas de passos, uma por Central, e nao uma
@@ -464,7 +481,8 @@
         <a href="{{ url_for('protesto_pendencias') }}">Pendências da CENPROT</a>
         <a href="{{ url_for('protesto_resolve') }}">Intimação Digital</a>
         <a href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a>
-        {% if user.role == 'ADMIN' %}<a href="{{ url_for('protesto_importar_eoficio') }}">Trazer protesto do E-Ofício</a>{% endif %}
+        {# «Trazer protesto do E-Ofício» saiu em 17/10/2026 (importação
+           terminada); a rota fica, sem link. #}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
         {# O SUBMODULO DE MODELOS DESTA ATRIBUICAO — 07/09/2026, ordem do
            oficial. Cada papel e corpo + encerramento + rodape, e o que se
@@ -546,7 +564,7 @@
 
            Fica no balcao porque e trabalho do dia — quem monta o documento e
            quem esta atendendo. #}
-        <a href="{{ url_for('rcpn_modelos') }}">Documentos avulsos (modelos do E-Ofício)</a>
+        <a href="{{ url_for('rcpn_modelos') }}">Documentos avulsos (modelos do sistema antigo)</a>
 
         {# ---------------------------------------------------------------- #}
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Nascimento</div>
@@ -729,6 +747,10 @@
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O balcão</div>
         <a href="{{ url_for('rcpj_rtd_titulos', atribuicao=4) }}">RTD — títulos apresentados</a>
         <a href="{{ url_for('rcpj_rtd_titulos', atribuicao=3) }}">RCPJ — títulos apresentados</a>
+        {# LG04 (19/10/2026): as diligências e a certidão da notificação do RTD,
+           e a autenticação de livros do RCPJ — trabalho de balcão. #}
+        <a href="{{ url_for('rcpj_rtd_notificacoes') }}">RTD — notificações extrajudiciais</a>
+        <a href="{{ url_for('rcpj_rtd_livro_contabil_lista') }}">RCPJ — autenticação de livros</a>
         {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('rcpj_rtd_etiquetas_selos_externos') }}">Etiquetas de selos externos</a>{% endif %}
         {# O MENU NAO OFERECE O QUE AQUELE OPERADOR NAO PODE FAZER. A fila da
            Central e `@roles_required(QUEM_OPERA)`; o AUDITOR consulta as
@@ -765,7 +787,9 @@
         {# A ABA DO QUE FALTA INFORMAR serve as SEIS atribuições, e por isso
            fica aqui e não dentro de uma delas. #}
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('implantacao') }}">O que falta informar</a>{% endif %}
-        {% if user.role == 'ADMIN' %}<a href="{{ url_for('atribuicoes_importar') }}">Trazer o acervo do E-Ofício</a>{% endif %}
+        {# «Trazer o acervo do E-Ofício» saiu em 17/10/2026 (importação
+           terminada); a rota fica, sem link. Acervo de outro sistema entra
+           pela importação padrão, logo abaixo. #}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('importar_padrao_tela') }}">Importar de outro sistema</a>{% endif %}
         {% if user.role == 'USER' %}<a href="{{ url_for('importar_padrao_tela', especie='RI_MATRICULA') }}">Importar matrícula do RI</a>{% endif %}
       </details>
@@ -800,6 +824,9 @@
         <a href="{{ url_for('caixa_protocolos') }}">Protocolo geral</a>
         <a href="{{ url_for('caixa_protocolos_parados') }}">Protocolos parados</a>
         <a href="{{ url_for('caixa_depositos') }}">Depósito prévio</a>
+        {# A NFS-e DOS RECIBOS (LG01) — a fila do que falta e do que ficou no
+           meio. Ao lado do caixa, porque é do recibo pago que a nota nasce. #}
+        <a href="{{ url_for('nfse_fila') }}">NFS-e</a>
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('caixa_recibos') }}">Recibos</a>
         <a href="{{ url_for('caixa_emolumentos') }}">Emolumentos</a>
         {# O RAZAO DOS SELOS — relato #33. Fica no dinheiro porque selo se
@@ -811,6 +838,22 @@
            continua respondendo, e leva para cá. Não é a tela de selos do RI,
            que reune o selo de dentro dos atos daquela atribuição. #}
         <a href="{{ url_for('selos_emitidos_lista') }}">Selos emitidos</a>{% endif %}
+        {# SELO × CAIXA (LX16): o quadro do que falta para selar e, para o
+           gestor, o que saiu sem cobertura. É DE QUEM SELA (LX22A3,
+           20/10/2026): o link estava dentro do bloco do ADMIN/MANAGER/AUDITOR,
+           e o recado do selo travado manda o escrevente (USER) «resolver em
+           Selo e caixa» — tela que o menu dele não mostrava. #}
+        <a href="{{ url_for('selo_cobertura') }}">Selo e caixa</a>
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}{% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('selo_conferencia') }}">Selos × caixa (conferência)</a>{% endif %}
+        {# O QUE SE DEVE AO PORTAL DO SELO (LG07): o pedido de cancelamento ao
+           TJMA e o pacote do ressarcimento das gratuidades. #}
+        <a href="{{ url_for('selo_cancelamentos') }}">Selos cancelados (pedido ao TJMA)</a>
+        <a href="{{ url_for('selo_gratuidades_portal') }}">Gratuidades (Portal do Selo)</a>{% endif %}
+        {# O LIVRO DIÁRIO AUXILIAR (LG08) — receita por selo e despesa da
+           serventia, gerado todo mês (Código de Normas do MA, art. 205). Mora
+           no dinheiro, e não só em «Livros obrigatórios», porque é aqui que
+           o oficial procura a despesa que acabou de pagar. #}
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('livro_diario') }}">Livro Diário Auxiliar</a>{% endif %}
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Atendimento</div>
         <a href="{{ url_for('service_queue') }}">Atendimento / senhas</a>
         <a href="{{ url_for('whatsapp_lista') }}">WhatsApp</a>
@@ -826,6 +869,17 @@
         <a href="{{ url_for('gestor_leituras') }}">Leitura dos textos (IA)</a>
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('gestor_caixas') }}">Caixas para o visto</a>{% endif %}
         {% if user.role == 'ADMIN' %}<a href="{{ url_for('gestor_erros') }}">Relatório de erros</a>{% endif %}
+        {# O RELATÓRIO ANUAL DO USO DE IA (LF01) — Código de Normas do MA,
+           art. 170, § 4º. Só do ADMIN, como o de erros: leva fornecedores e
+           incidentes, e quem assina é o oficial. #}
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('gestor_relatorio_ia') }}">Relatório anual de IA</a>{% endif %}
+        {# A APOSTILA DE HAIA (LG03) chega DESLIGADA. Quem a vê é quem o alcance
+           deixa entrar; o oficial a vê sempre, porque é pelo link dele que ela
+           se liga. A guarda de verdade é a das rotas (`apostila_web`). #}
+        {% if 'APOSTILA' not in (MODULOS_ESCONDIDOS or []) %}<a href="{{ url_for('apostila_lista') }}">Apostila de Haia</a>{% elif user.role == 'ADMIN' %}<a href="{{ url_for('apostila_configuracao') }}">Apostila de Haia (desligada)</a>{% endif %}
+        {# O INTERRUPTOR DO AR E DO BOLETO (LG06) — so do ADMIN, como a
+           credencial das Centrais. As duas integracoes nascem desligadas. #}
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('gestor_protesto_integracoes') }}">Integrações do Protesto</a>{% endif %}
         {# OS RASCUNHOS — relato #36. Ficam AO LADO de «O que ficou pelo
            caminho», e nao dentro: aquele mede ATOS que ja existem e estao
            parados; este guarda o que ainda nao virou ato nenhum. Juntar os
@@ -842,6 +896,10 @@
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('fraudes') }}">Atenção para fraudes</a>{% endif %}
         <a href="{{ url_for('checklists') }}">Checklists</a>
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('recurrences') }}">Obrigações recorrentes</a>{% endif %}
+        {# OS LIVROS OBRIGATÓRIOS (LG08): o que o Código de Normas do MA manda
+           ter, e onde cada livro está — com os três administrativos do art.
+           188. É o que a correição pergunta primeiro. #}
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('livros_obrigatorios') }}">Livros obrigatórios</a>{% endif %}
         <a href="{{ url_for('lgpd') }}">LGPD e governança</a>
         <a href="{{ url_for('assets') }}">TI e infraestrutura</a>
         {% if user.role in ['ADMIN','AUDITOR'] %}<a href="{{ url_for('audit_logs') }}">Auditoria</a>
@@ -897,29 +955,34 @@
            recusa os outros perfis de todo jeito. #}
         {% if user.role == 'ADMIN' %}<a href="{{ url_for('pld_painel') }}">PLD / COAF (sigiloso)</a>
         <a href="{{ url_for('users') }}">Usuários</a>
+        <a href="{{ url_for('gestor_dois_fatores') }}">Verificação em duas etapas — Gestor</a>
         <a href="{{ url_for('acervo_corrigir') }}">Corrigir dado do acervo</a>
         {# O AGENTE — CONFIGURAR FICA JUNTO DA AJUDA — CONFIGURAR, e não lá em
            cima com o console: quem procura a chave da API do agente procura
            onde já achou a da ajuda. E é aqui que se liga a escrita. #}
         {% if agente_no_menu %}<a href="{{ url_for('agente_configurar') }}">Agente — configurar</a>{% endif %}
         <a href="{{ url_for('ajuda_configurar') }}">Ajuda — configurar</a>
-        <a href="{{ url_for('caixa_importar') }}">Trazer caixa do E-Ofício</a>
+        {# «Trazer caixa do E-Ofício» saiu em 17/10/2026 (importação
+           terminada); a rota fica, sem link. #}
         <a href="{{ url_for('updates') }}">Correções e atualizações</a>
         <a href="{{ url_for('settings') }}">Configurações</a>{% endif %}
       </details>
     </nav>
     <div class="sidebar-footer">
       <span class="user-avatar" aria-hidden="true" title="{{ user.full_name }}">{{ user.full_name[:1] | upper }}</span>
-      <div class="user-copy"><strong>{{ user.full_name }}</strong><small>{{ user.role }} · v{{ VERSION }}</small></div>
+      <div class="user-copy"><strong>{{ user.full_name }}</strong><small>{{ user.role }} · v{{ VERSION }} · <a href="{{ url_for('dois_fatores') }}" title="Verificação em duas etapas da sua conta">duas etapas</a> · <a href="{{ url_for('minha_senha') }}" title="Trocar a senha da sua conta">minha senha</a></small></div>
       <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" title="Sair do sistema">Sair</button></form>
     </div>
   </aside>
   <button class="sidebar-scrim" type="button" aria-label="Fechar menu" tabindex="-1"></button>
   <main class="main">
+    {% include '_barras_fixas.html' %}
     {% include '_caixa_aviso.html' %}
     {% include '_digi_aviso.html' %}
     {% include '_rc_digi_aviso.html' %}
+    {% include '_selo_trava_aviso.html' %}
     {% include '_gratuidade_aviso.html' %}
+    {% include '_selo_cancelamento_aviso.html' %}
     <div class="main-compact-banners" data-main-compact-banners{% if nu_avisos_modal %} hidden{% endif %}>
       {% include '_faixas_compactas.html' %}
     </div>

@@ -7,7 +7,7 @@
 
 {% if titulo.numero_titulo == 'SEM NÚMERO NO ACERVO' %}
 <div class="notice">
-  <strong>Este título entrou sem número.</strong> O acervo do E-Ofício não guardou o
+  <strong>Este título entrou sem número.</strong> O acervo do sistema antigo não guardou o
   número dele, mas o protesto aconteceu — tem espécie, valor e situação. Entrou
   marcado, e não foi descartado, porque protesto que existiu e não aparece faz a
   certidão dizer que a pessoa está limpa quando não está.
@@ -28,6 +28,25 @@
     <tr><th>Origem</th><td>{{ titulo.origem }}</td>
         <th>Chave de origem</th><td><small>{{ titulo.origem_chave or '—' }}</small></td></tr>
   </table>
+</section>
+
+{# O APRESENTANTE (LD08, 21/10/2026), como os papéis o escrevem: o do título
+   (balcão) ou o do cadastro dos apresentantes, pelo código da CRA. O CPF/CNPJ
+   vai ao aviso (CN-MA art. 923) e o endereço ao registro e ao instrumento (Lei
+   9.492/1997, art. 22, II); o que falta se vê aqui, antes do papel. #}
+<section class="panel">
+  <div class="panel-head"><span>Apresentante</span>
+    <small>{{ apresentante.codigo and ('código ' ~ apresentante.codigo) or 'balcão' }}</small></div>
+  <table class="table">
+    <tr><th>Nome</th><td>{{ apresentante.nome or '—' }}</td>
+        <th>CPF/CNPJ</th><td>{{ apresentante.documento_na_tela or 'não informado' }}</td></tr>
+    <tr><th>Endereço</th><td colspan="3">{{ apresentante.endereco or 'não informado' }}</td></tr>
+  </table>
+  {% if apresentante.codigo and not (apresentante.documento and apresentante.endereco) %}
+  <p style="padding:0 14px 14px"><small>O arquivo da CRA não traz o CPF/CNPJ nem o
+    endereço do apresentante: cadastre-os em
+    <a href="{{ url_for('protesto_cenprot_xml') }}#apresentantes">Cadastro dos apresentantes</a>.</small></p>
+  {% endif %}
 </section>
 
 {% if titulo.cedente_nome %}
@@ -52,10 +71,9 @@
       com devedor. Lista vazia aqui virou sinal de que falta rodar a carga, e
       não de que o dado não existe.
     #}
-    <p style="padding:14px">Sem devedor cadastrado. Se este título veio do acervo,
-      rode <a href="{{ url_for('atribuicoes_importar') }}">Trazer das atribuições</a>
-      de novo: desde 25/08/2026 a carga traz o devedor de <code>tbPessoa</code>, e
-      antes disso não trazia.</p>
+    {# O link para rodar a carga de novo saiu em 17/10/2026: a importação do
+       E-Ofício terminou. #}
+    <p style="padding:14px">Sem devedor cadastrado.</p>
   {% else %}
   <table class="table">
     <thead><tr><th>Nome</th><th>Documento</th><th>Endereço</th><th>Cidade</th></tr></thead>
@@ -199,10 +217,15 @@
 {#
   ELE NAO ESCONDE BOTAO NENHUM — nao bloqueia ato. O que ele para e a
   PUBLICIDADE do protesto, e por isso o aviso existe: quem olha a ficha
-  precisa saber que a certidao vai sair dizendo que os efeitos estao
-  suspensos.
+  precisa saber o que a certidao vai dizer dele.
+
+  E O QUE ELA DIZ DEPENDE DA MARCA DA ORDEM (LH13, 21/10/2026 — CNN art.
+  263-K): a decisão provisória sai como «CONSTA COM SUSTAÇÃO JUDICIAL
+  PRECÁRIA»; a definitiva, e a que manda emitir negativa, ficam fora. A ordem
+  lançada antes da regra não tem a marca, fica fora como ficava, e o aviso
+  pede que alguém a marque — é aqui, e só aqui, que se marca.
 #}
-<div class="notice warning">
+<div class="notice warning" data-ordem-judicial>
   <p><strong>EFEITOS DO PROTESTO SUSPENSOS POR ORDEM JUDICIAL.</strong>
   O registro continua no livro — o que parou foi a publicidade dele.</p>
   <p>
@@ -210,12 +233,84 @@
     {% if suspensao.processo %}<strong>Processo:</strong> {{ suspensao.processo }}<br>{% endif %}
     <strong>Ordem recebida em:</strong> {{ suspensao.data_ato or '—' }}
     {% if suspensao.observacao %}<br><small>{{ suspensao.observacao }}</small>{% endif %}
+    {% if suspensao.ordem_carater %}<br><strong>Decisão:</strong>
+      {{ caracteres.get(suspensao.ordem_carater, suspensao.ordem_carater) }}
+      {%- if suspensao.ordem_manda_negativa %}; manda emitir certidão negativa{% endif %}
+      {%- if suspensao.ordem_segredo_de_justica %}; segredo de justiça{% endif %}
+      {% if suspensao.ordem_marcada_por %}<small>(marcada por {{ suspensao.ordem_marcada_por }}
+        em {{ suspensao.ordem_marcada_em }})</small>{% endif %}{% endif %}
   </p>
+  {% if not suspensao.ordem_carater %}
+  <p data-ordem-sem-marca><strong>Esta ordem não tem a marca do Código Nacional de Normas,
+    art. 263-K</strong> (foi lançada antes de 21/10/2026). Enquanto não for marcada, o
+    protesto <strong>fica fora da certidão</strong>, como antes. Leia o mandado e marque
+    abaixo: se a decisão for <strong>provisória</strong>, a certidão passa a dizer
+    «CONSTA COM SUSTAÇÃO JUDICIAL PRECÁRIA».</p>
+  {% elif suspensao.ordem_carater == 'PROVISORIA' and not suspensao.ordem_manda_negativa %}
   <p><small>
-    A certidão deste devedor sai <strong>com o protesto e com a nota de que
-    seus efeitos estão suspensos</strong>. Ele não some da certidão: sumir
-    seria dizer que não há protesto, e há.
+    A certidão deste devedor sai com o protesto como <strong>«CONSTA COM SUSTAÇÃO
+    JUDICIAL PRECÁRIA»</strong>, o caráter provisório e o número da ação, e fecha com
+    «Resultado emitido em cumprimento à decisão judicial — Processo nº …» (CNN art.
+    263-K, III){% if suspensao.ordem_segredo_de_justica %} — em segredo de justiça, só
+    a sustação e o número do processo (§ 1º){% endif %}.
   </small></p>
+  {% else %}
+  <p><small>
+    O protesto <strong>fica fora da certidão</strong> a terceiro:
+    {% if suspensao.ordem_manda_negativa %}a decisão manda expressamente emitir negativa,
+    e cumpre-se nos limites dela (CNN art. 263-K, § 1º){% else %}a decisão é definitiva
+    (CNN art. 263-K, I){% endif %}. Só entra a pedido escrito do devedor ou por ordem
+    judicial expressa.
+  </small></p>
+  {% endif %}
+  <form method="post" action="{{ url_for('protesto_ordem_marcar', titulo_id=titulo.id, ato_id=suspensao.id) }}"
+        class="grid2" style="padding-top:8px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Caráter da decisão
+      <select name="carater" required>
+        <option value="">— escolha —</option>
+        {% for k, v in caracteres.items() %}
+          <option value="{{ k }}"{% if suspensao.ordem_carater == k %} selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select></label>
+    <label><input type="checkbox" name="manda_negativa" value="1"
+      {%- if suspensao.ordem_manda_negativa %} checked{% endif %}>
+      A decisão manda expressamente emitir certidão negativa</label>
+    <label><input type="checkbox" name="segredo_de_justica" value="1"
+      {%- if suspensao.ordem_segredo_de_justica %} checked{% endif %}>
+      O processo corre em segredo de justiça</label>
+    <div class="actions"><button class="button">{{ 'Corrigir a marca' if suspensao.ordem_carater else 'Marcar a ordem' }}</button></div>
+  </form>
+</div>
+{% endif %}
+
+{% if titulo.situacao == 'PROTESTADO' %}
+{#
+  O PAGAMENTO SAIU DA LISTA (LH13, 21/10/2026), e a ficha diz por quê — botão
+  que some sem explicação faz o escrevente achar que o sistema quebrou.
+#}
+<div class="notice" data-sem-pagamento>
+  <small><strong>Protesto lavrado não se paga mais nesta serventia</strong> (decisão do
+  oficial de 21/10/2026). O devedor paga diretamente ao credor e pede o
+  <strong>cancelamento</strong> com a carta de anuência do credor, com firma reconhecida
+  (Lei 9.492/1997, art. 26, § 1º; Código de Normas do TJMA, art. 942, § 2º).</small>
+</div>
+{% endif %}
+
+{% if pago_com_protesto %}
+{#
+  O LEGADO DA REGRA DE 24/08/2026: pago aqui depois de protestado. O protesto
+  continua em pé, e sem este aviso ninguém sabe por que o título PAGO ainda
+  sai na certidão positiva.
+#}
+<div class="notice warning" data-pago-com-protesto>
+  <p><strong>PAGO DEPOIS DE PROTESTADO — o protesto continua em pé.</strong>
+  Este título foi pago nesta serventia pela regra que valeu até 21/10/2026, e o
+  protesto ainda sai na certidão positiva.</p>
+  <p><small>Para baixá-lo, lance o <strong>cancelamento</strong> abaixo com a
+  <strong>anuência do credor</strong> (carta com firma reconhecida) ou com a ordem
+  judicial — Lei 9.492/1997, art. 26, § 1º; Código de Normas do TJMA, art. 942, § 2º.
+  O pagamento lançado aqui não serve de prova da quitação para o cancelamento.</small></p>
 </div>
 {% endif %}
 
@@ -243,6 +338,62 @@
     lavrá-lo até o primeiro dia útil seguinte ao recebimento (art. 17, § 2º).
   </small></p>
 </div>
+{% endif %}
+
+{% if emolumento %}
+{# O EMOLUMENTO A POSTERIORI (LG05) — quem paga cada ato deste título, quando,
+   e por qual tabela. CN-MA art. 925, §§ 11 e 12. A regra é do domínio
+   (`protesto_posteriori`); aqui só se mostra. #}
+<section class="panel">
+  <div class="panel-head">
+    <span>Emolumentos</span>
+    <small>{{ 'a posteriori (diferido)' if emolumento.regime == 'DIFERIDO' else 'antecipado' }}</small>
+  </div>
+  <p style="padding:14px 14px 0">
+    <strong>{{ emolumento.regime | capitalize }}</strong> — {{ emolumento.motivo }}.
+    <small>{{ emolumento.fundamento }}</small>
+  </p>
+  {% if emolumento.regime == 'DIFERIDO' %}
+  <p style="padding:0 14px"><small>
+    A protocolização, a intimação e o protesto <strong>selam na hora e não
+    entram no caixa</strong>: o item marcado fica devido. Cobra-se no desfecho —
+    no pagamento e na desistência pela tabela da protocolização
+    {% if emolumento.data_da_protocolizacao %}({{ emolumento.data_da_protocolizacao }}){% endif %},
+    no cancelamento pela tabela do dia do pedido.
+  </small></p>
+  {% endif %}
+  {% if emolumento.pendentes.itens %}
+  <table class="table">
+    <thead><tr><th>Devido por</th><th>Item</th><th>Desde</th><th>Estimado</th></tr></thead>
+    <tbody>
+      {% for d in emolumento.pendentes.itens %}
+      <tr><td>{{ d.tipo_ato | capitalize }}</td><td>{{ d.descricao or d.servico }}</td>
+          <td>{{ d.data_do_ato }}</td>
+          <td>{% if d.preco is not none %}R$ {{ d.preco | centavos_reais }}{% else %}<small>{{ d.motivo }}</small>{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif emolumento.regime == 'DIFERIDO' %}
+  <p style="padding:0 14px 14px"><small>Nada devido registrado. Ato lavrado antes
+    desta conta (ou trazido do E-Ofício) não deixou item devido: no desfecho,
+    marque os itens a cobrar.</small></p>
+  {% endif %}
+  {% if emolumento.pode_mudar and user.role in ['ADMIN', 'MANAGER'] %}
+  <form method="post" action="{{ url_for('protesto_regime_emolumentos', titulo_id=titulo.id) }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Regime <small>(só antes do primeiro ato)</small>
+      <select name="regime">
+        <option value="">pela regra</option>
+        <option value="DIFERIDO"{% if titulo.emolumento_regime == 'DIFERIDO' %} selected{% endif %}>diferido (a posteriori)</option>
+        <option value="ANTECIPADO"{% if titulo.emolumento_regime == 'ANTECIPADO' %} selected{% endif %}>antecipado (depósito prévio)</option>
+      </select></label>
+    <label>Por quê <input name="motivo" required minlength="5"
+           placeholder="ex.: apresentante é pessoa física, sem convênio"></label>
+    <div class="actions"><button class="button">Mudar o regime</button></div>
+  </form>
+  {% endif %}
+</section>
 {% endif %}
 
 {% if cabem %}
@@ -318,12 +469,26 @@
       <label>Processo <input name="processo" required
                placeholder="0800123-45.2026.8.10.0100"></label>
       <label>Recebida em <input name="recebido_em" type="date"></label>
+      {# A MARCA DO CNN art. 263-K (LH13, 21/10/2026): é ela que decide o que
+         a certidão a terceiro diz deste protesto. #}
+      <label>Caráter da decisão <small>(Código Nacional de Normas, art. 263-K)</small>
+        <select name="carater" required>
+          <option value="">— escolha —</option>
+          {% for k, v in caracteres.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+        </select></label>
+      <label><input type="checkbox" name="manda_negativa" value="1">
+        A decisão manda expressamente emitir certidão negativa</label>
+      <label><input type="checkbox" name="segredo_de_justica" value="1">
+        O processo corre em segredo de justiça</label>
       <label style="grid-column:1/-1">Observação
         <input name="observacao" placeholder="Protestado por engano"></label>
       <p style="grid-column:1/-1"><small>
         O protesto <strong>continua no livro</strong>: o que para é a
-        publicidade dele. A certidão passa a sair com o protesto <em>e</em> com
-        a nota de que os efeitos estão suspensos por esta ordem.
+        publicidade dele. Na certidão a terceiro, a decisão
+        <strong>provisória</strong> sai como «CONSTA COM SUSTAÇÃO JUDICIAL
+        PRECÁRIA», com o número da ação (no segredo de justiça, só a sustação e
+        o processo); a <strong>definitiva</strong>, e a que manda emitir
+        negativa, ficam fora.
       </small></p>
     {% elif ato == 'REVOGACAO_EFEITO_SUSPENSIVO' %}
       <label>Recebida em <input name="recebido_em" type="date"></label>
@@ -366,6 +531,16 @@
     <label>Selo <small>(opcional)</small>
       <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
     {% endif %}
+    {% set cob = emolumento.por_ato.get(ato) if emolumento else none %}
+    {% if cob and cob.regime == 'DIFERIDO' %}
+    <p style="grid-column:1/-1"><small><strong>A posteriori:</strong> {{ cob.frase }}
+      <em>({{ cob.fundamento }})</em></small></p>
+      {% if cob.cobra_diferidos and emolumento.pendentes.itens %}
+      <label style="grid-column:1/-1"><input type="checkbox" name="cobrar_diferidos" value="1" checked>
+        Cobrar também o que ficou devido — {{ emolumento.pendentes.itens | length }} item(ns),
+        pela tabela de {{ cob.data_da_tabela }}</label>
+      {% endif %}
+    {% endif %}
     <div class="actions"><button class="button">Lançar {{ ato | lower }}</button></div>
 
     {{ quadro(receitas.get(ato), caixa, protocolos) }}
@@ -402,6 +577,14 @@
           {% endif %}
           {% if a.observacao %}<div><small>{{ a.observacao }}</small></div>{% endif %}
           {% if a.motivo_cancelamento %}<div><small>{{ a.motivo_cancelamento }}</small></div>{% endif %}
+          {# A QUITAÇÃO DO TÍTULO (LD04) — Lei 9.492/1997, art. 19, § 2º; CN-MA
+             art. 927. Sai do pagamento lançado no livro, e não do caixa. O
+             botão só aparece para quem a rota deixa emitir: os papéis de
+             quem lança o pagamento (LD11). #}
+          {% if a.tipo == 'PAGAMENTO' and not a.cancelado
+                and user.role in ['ADMIN', 'MANAGER', 'USER'] %}
+            <div><a class="button small" href="{{ url_for('protesto_quitacao_odt', ato_id=a.id) }}">Quitação do título</a></div>
+          {% endif %}
         </td>
       </tr>
       {% if a.teor %}
@@ -429,9 +612,10 @@
     </tbody>
   </table>
   <p style="padding:0 14px 14px"><small>
-    O recibo sai pelo Caixa — numeração por exercício, teor congelado e hash —, e a
-    ficha só aponta para lá: duas versões da peça que o cliente leva para casa seria
-    uma a mais.
+    O recibo dos emolumentos sai pelo Caixa — numeração por exercício, teor congelado e
+    hash —, e a ficha só aponta para lá: duas versões da peça que o cliente leva para
+    casa seria uma a mais. A quitação do VALOR DO TÍTULO é outro papel (Lei 9.492/1997,
+    art. 19, § 2º), e sai na linha do pagamento.
   </small></p>
 </section>
 {# A IMAGEM DO TÍTULO — o documento que se protesta.
@@ -465,7 +649,7 @@
     e entra em <a href="{{ url_for('protesto_imagens') }}">Imagens dos
     títulos</a>.
     {% if titulo.origem == 'EOFICIO' %}
-    <br><small>Este título veio do acervo do E-Ofício: a imagem dele está em
+    <br><small>Este título veio do acervo do sistema antigo: a imagem dele está em
       papel, na pasta — a CRA não a reenvia.</small>
     {% endif %}
   </p>

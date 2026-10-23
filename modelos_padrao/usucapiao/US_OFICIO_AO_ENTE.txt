@@ -1,0 +1,20 @@
+{serventia}
+
+Ofício — procedimento de usucapião extrajudicial
+Autos nº {numero}{do_ano}
+
+Ao/À {ente}
+
+Senhor(a) Representante,
+
+Comunico a V. Sa. que tramita nesta serventia procedimento de USUCAPIÃO EXTRAJUDICIAL, requerido por {requerente} nos termos do art. 216-A da Lei nº 6.015/1973, sobre o imóvel a seguir descrito:
+
+{imovel}
+
+{sobre_a_posse}Nos termos do § 3º do referido artigo, fica esse ente CIENTIFICADO para, querendo, manifestar-se no prazo de {prazo_texto}.
+
+{lugar_e_data}
+
+_______________________________________
+{oficial}
+{cargo}

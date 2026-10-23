@@ -216,7 +216,7 @@ def test_a_lista_mostra_quem_falta_e_explica_o_acervo(casa):
     aid = _assento(casa, origem="ACERVO")
     html = _abrir(casa, "/rcpn/termos-a-escrever")
     assert "MARIA NUNES SANTOS ARAÚJO" in html
-    assert "E-Ofício não o guardava" in html
+    assert "sistema antigo não o guardava" in html
     assert "sem fingir ser a cópia" in html
     _escrever(casa, aid)
     assert "MARIA NUNES SANTOS ARAÚJO" not in _abrir(casa,
@@ -296,7 +296,7 @@ def test_o_importado_mostra_previa_e_nao_grava(casa):
     """
     aid = _importado(casa)
     html = _abrir(casa, f"/rcpn/assentos/{aid}/termo")
-    assert "veio do E-Ofício, e o termo dele existe em papel" in html
+    assert "veio do sistema antigo, e o termo dele existe em papel" in html
     assert "Como o termo vai ficar" in html
     teor = _con(casa).execute("SELECT teor FROM rc_assentos WHERE id=?",
                               (aid,)).fetchone()["teor"]
@@ -328,7 +328,7 @@ def test_o_lavrado_aqui_continua_mostrando_a_previa(casa):
     para além do que ela diz."""
     aid = _assento(casa)
     html = _abrir(casa, f"/rcpn/assentos/{aid}/termo")
-    assert "veio do E-Ofício" not in html
+    assert "veio do sistema antigo" not in html
 
 
 def test_a_lista_de_termos_nao_traz_os_importados(casa):

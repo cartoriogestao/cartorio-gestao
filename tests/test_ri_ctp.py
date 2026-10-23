@@ -237,3 +237,45 @@ def test_gerar_carga_ctp_mantem_envelope_registros():
 
 def test_nome_arquivo_ctp():
     assert CTP.nome_arquivo("000001", "2026-08") == "CTP_000001_202608.json"
+
+
+def test_conjuge_do_adquirente_nao_vira_segundo_comprador():
+    """21/10/2026, DOI de 09/2026, R-01/[n.]: «cônjuge do adquirente» contém
+    «adquirente» e a cônjuge entrava como segunda compradora."""
+    assert CTP._papel({"papel": "cônjuge do adquirente"}) == ""
+    assert CTP._papel({"papel": "procurador do transmitente"}) == ""
+    assert CTP._papel({"papel": "adquirente"}) == "ADQUIRENTE"
+    assert CTP._papel({"papel": "DOADORES/OUTORGANTES"}) == "ALIENANTE"
+
+
+def test_quem_acompanha_a_parte_fica_fora_do_arquivo_da_doi():
+    """Os seis que acompanham (cônjuge, procurador, representante, testemunha,
+    anuente, interveniente) não entram nem como transmitente nem como
+    adquirente — no arquivo sai só quem compra e quem vende."""
+    acompanhantes = ["Cônjuge do adquirente", "procurador do vendedor",
+                     "representante do comprador", "testemunha do adquirente",
+                     "anuente do transmitente", "interveniente do donatário"]
+    partes = [parte("ALIENANTE"), parte("ADQUIRENTE", "PARTE B", "11144477735")]
+    partes += [parte(p, f"ACOMPANHANTE {i}", "") for i, p in enumerate(acompanhantes)]
+    reg = CTP.montar_registro(
+        ato_base(), matricula_urbana(), partes, dados_base(),
+        "000001", "2198765")
+    assert [a["ni"] for a in reg["alienantes"]] == ["52998224725"]
+    assert [a["ni"] for a in reg["adquirentes"]] == ["11144477735"]
+    assert CTP.conferir(ato_base(), matricula_urbana(), partes, dados_base()) == []
+
+
+def test_a_participacao_da_tela_vai_para_o_arquivo():
+    """A conferência aceitava `participacao_<id>` da tela e o arquivo saía com
+    «não consta» — o gerador só lia a da parte."""
+    reg = CTP._pessoa({"id": 7, "documento_numero": "52998224725"},
+                      {"participacao_7": "50"})
+    assert reg["participacao"] == 50.0
+    assert reg["indicadorNaoConstaParticipacaoOperacao"] is False
+
+
+def test_a_participacao_gravada_na_parte_vence_a_da_tela():
+    """A da parte continua valendo primeiro; a da tela só preenche o vazio."""
+    reg = CTP._pessoa({"id": 7, "documento_numero": "52998224725",
+                       "participacao": "100,00"}, {"participacao_7": "50"})
+    assert reg["participacao"] == 100.0

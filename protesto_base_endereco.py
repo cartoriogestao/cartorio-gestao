@@ -26,8 +26,9 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 from typing import Any
+
+from bd_nativo import banco
 
 CONSULTA = "CONSULTA"
 CADASTRO = "CADASTRO"
@@ -45,9 +46,8 @@ def _norma(v: Any) -> str:
     return re.sub(r"[^A-Z0-9]", "", str(v or "").upper())
 
 
-def aviso(con: sqlite3.Connection, aviso_id: int) -> dict:
-    con.row_factory = sqlite3.Row
-    r = con.execute("SELECT * FROM pt_avisos WHERE id=?", (int(aviso_id),)).fetchone()
+def aviso(con: Any, aviso_id: int) -> dict:
+    r = banco(con).um("SELECT * FROM pt_avisos WHERE id = %s", (int(aviso_id),))
     if r is None:
         raise BaseEnderecoError(f"Aviso {aviso_id} não encontrado.")
     return dict(r)
@@ -100,22 +100,21 @@ def corpo_do_cadastro(av: dict) -> dict:
             "sg_uf": str(av.get("uf") or "").strip().upper()}
 
 
-def registrar(con: sqlite3.Connection, av: dict, *, acao: str, ambiente: str,
+def registrar(con: Any, av: dict, *, acao: str, ambiente: str,
               agora: str, usuario: str | None = None, enviado: Any = None,
               resposta: Any = None) -> int:
     """Guarda o que se perguntou ou mandou. ESCREVE (só a casa)."""
     if acao not in (CONSULTA, CADASTRO):
         raise BaseEnderecoError(f"Ação desconhecida: {acao!r}.")
     achados = len(resposta) if acao == CONSULTA and isinstance(resposta, list) else 0
-    cur = con.execute(
+    return int(banco(con).escrever(
         """INSERT INTO pt_base_endereco(aviso_id, titulo_id, acao, ambiente,
                documento, enviado, resposta, achados, feito_em, feito_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(av["id"]), int(av["titulo_id"]), acao, ambiente, documento(av),
          None if enviado is None else json.dumps(enviado, ensure_ascii=False),
          None if resposta is None else json.dumps(resposta, ensure_ascii=False),
-         achados, agora, usuario))
-    return int(cur.lastrowid)
+         achados, agora, usuario))[0]["id"])
 
 
 def _do_aviso(av: dict, achado: dict) -> bool:
@@ -126,19 +125,19 @@ def _do_aviso(av: dict, achado: dict) -> bool:
             and bool(rua) and rua[:12] in _norma(av.get("endereco")))
 
 
-def ultima_consulta(con: sqlite3.Connection, av: dict) -> dict | None:
+def ultima_consulta(con: Any, av: dict) -> dict | None:
     """A consulta mais recente deste aviso, com cada endereço marcado como
     «novo» (diferente do aviso) ou não. Só LÊ."""
-    r = con.execute(
+    r = banco(con).um(
         """SELECT feito_em, feito_por, resposta, achados FROM pt_base_endereco
-            WHERE aviso_id=? AND acao=? ORDER BY id DESC LIMIT 1""",
-        (int(av["id"]), CONSULTA)).fetchone()
+            WHERE aviso_id = %s AND acao = %s ORDER BY id DESC LIMIT 1""",
+        (int(av["id"]), CONSULTA))
     if r is None:
         return None
-    lista = json.loads(r[2] or "[]")
+    lista = json.loads(r["resposta"] or "[]")
     for x in lista:
         x["novo"] = not _do_aviso(av, x)
-    return {"feito_em": r[0], "feito_por": r[1], "achados": lista,
+    return {"feito_em": r["feito_em"], "feito_por": r["feito_por"], "achados": lista,
             "novos": sum(1 for x in lista if x["novo"]),
             "com_contato": sum(1 for x in lista
                                if any(str(x.get(k) or "").strip() for k in
@@ -146,10 +145,10 @@ def ultima_consulta(con: sqlite3.Connection, av: dict) -> dict | None:
                                        "nm_nr_celular")))}
 
 
-def cadastro(con: sqlite3.Connection, aviso_id: int) -> dict | None:
+def cadastro(con: Any, aviso_id: int) -> dict | None:
     """Quando o endereço deste aviso foi cadastrado na base, se foi. Só LÊ."""
-    r = con.execute(
+    r = banco(con).um(
         """SELECT feito_em, feito_por FROM pt_base_endereco
-            WHERE aviso_id=? AND acao=? ORDER BY id DESC LIMIT 1""",
-        (int(aviso_id), CADASTRO)).fetchone()
-    return {"feito_em": r[0], "feito_por": r[1]} if r else None
+            WHERE aviso_id = %s AND acao = %s ORDER BY id DESC LIMIT 1""",
+        (int(aviso_id), CADASTRO))
+    return {"feito_em": r["feito_em"], "feito_por": r["feito_por"]} if r else None

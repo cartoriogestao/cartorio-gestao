@@ -26,15 +26,21 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
+import banco_pg
 import protesto as PT
 import protesto_aviso as AV
+from bd_nativo import banco as nativo
 from nucleo_schema import init_nucleo_schema
 from pt_schema import init_pt_schema
 
@@ -49,7 +55,7 @@ SV = {"unit_name": "SERVENTIA EXTRAJUDICIAL DO OFÍCIO ÚNICO DE CIDADE EXEMPLO"
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     init_nucleo_schema(c)
     init_pt_schema(c)
@@ -240,6 +246,93 @@ def test_entrega_registrada_duas_vezes_e_recusada(con):
     with pytest.raises(AV.AvisoError) as erro:
         AV.registrar_entrega(con, r["aviso_id"], entregue=True, agora=AGORA)
     assert "já foi registrada" in str(erro.value)
+
+
+def _psycopg_puro(con, *, autocommit=False):
+    """Uma conexão do psycopg no schema do teste, SEM a ponte — como a
+    transação vai ficar quando a ponte sair."""
+    import psycopg
+    pg = psycopg.connect(banco_pg.dsn(), autocommit=autocommit)
+    pg.execute(f'SET search_path TO "{con.schema}", public')
+    if not autocommit:
+        pg.commit()
+    return pg
+
+
+def _ao_mesmo_tempo(con, primeiro, segundo):
+    """`primeiro` grava e ainda não confirmou; `segundo` chega no meio, por
+    outra conexão. Devolve o erro do segundo, ou None se ele passou."""
+    if not banco_pg.ativo():
+        pytest.skip("a corrida é do PostgreSQL sem a ponte")
+    con.commit()
+    um, dois = _psycopg_puro(con), _psycopg_puro(con)
+    vigia = _psycopg_puro(con, autocommit=True)
+    pid = nativo(dois).valor("SELECT pg_backend_pid() AS pid")
+    primeiro(um)
+    saida: dict = {}
+
+    def corre():
+        try:
+            segundo(dois)
+            dois.commit()
+        except Exception as erro:  # o teste confere qual
+            saida["erro"] = erro
+            dois.rollback()
+
+    fio = threading.Thread(target=corre)
+    fio.start()
+    for _ in range(200):          # o segundo tem de estar ESPERANDO a linha
+        if nativo(vigia).valor(
+                "SELECT count(*) AS n FROM pg_locks WHERE pid=%s AND NOT granted",
+                (pid,)):
+            break
+        time.sleep(0.05)
+    um.commit()
+    fio.join(30)
+    for c in (um, dois, vigia):
+        c.close()
+    return saida.get("erro")
+
+
+def test_duas_entregas_do_mesmo_aviso_ao_mesmo_tempo_lavram_uma_intimacao(con):
+    """Ressalva 4 da revisão do L036: a entrega conferia a situação do aviso
+    e gravava por cima sem prender a linha. Com a ponte, a trava única do
+    banco põe as duas em fila; sem ela, só o FOR UPDATE segura. A primeira
+    entrega grava e ainda não confirmou; a segunda chega no meio — e, sem a
+    linha presa, lia EMITIDO e lavrava a segunda intimação."""
+    tid = titulo(con)
+    r = AV.emitir(con, tid, hoje=HOJE, agora=AGORA)
+    erro = _ao_mesmo_tempo(
+        con,
+        lambda pg: AV.registrar_entrega(pg, r["aviso_id"], entregue=True,
+                                        agora=AGORA),
+        lambda pg: AV.registrar_entrega(pg, r["aviso_id"], entregue=True,
+                                        agora=AGORA))
+    assert isinstance(erro, AV.AvisoError), erro
+    assert "já foi registrada" in str(erro)
+    assert [a["tipo"] for a in PT.atos_do(con, tid)] == ["APONTAMENTO",
+                                                         "INTIMACAO"]
+    assert len(AV.tentativas(con, r["aviso_id"])) == 1
+
+
+def test_edital_que_chega_durante_a_entrega_e_recusado(con):
+    """Ressalva 4 da revisão do L036, o edital: sem a linha do aviso presa,
+    ele lia NAO_ENTREGUE enquanto a segunda tentativa registrava a entrega,
+    publicava em cima dela e deixava o aviso EDITAL, com duas intimações."""
+    tid = titulo(con)
+    r = AV.emitir(con, tid, hoje=HOJE, agora=AGORA)
+    AV.registrar_entrega(con, r["aviso_id"], entregue=False, motivo=11,
+                         agora=AGORA)
+    erro = _ao_mesmo_tempo(
+        con,
+        lambda pg: AV.registrar_entrega(pg, r["aviso_id"], entregue=True,
+                                        agora=AGORA),
+        lambda pg: AV.publicar_edital(pg, r["aviso_id"], sv=SV, hoje=HOJE,
+                                      agora=AGORA))
+    assert isinstance(erro, AV.AvisoError), erro
+    assert "está ENTREGUE" in str(erro)
+    assert AV.ler(con, r["aviso_id"])["situacao"] == "ENTREGUE"
+    assert AV.editais_do_dia(con, HOJE) == []
 
 
 def test_a_segunda_tentativa_do_mesmo_aviso_e_permitida(con):
@@ -447,3 +540,206 @@ def test_sem_data_por_extenso_o_edital_sai_com_a_data_crua_e_nao_quebra(con):
                          agora=AGORA)
     ed = AV.publicar_edital(con, r["aviso_id"], sv=SV, hoje=HOJE, agora=AGORA)
     assert f"Cidade Exemplo/MA, {HOJE}." in ed["teor"]
+
+
+# ------------------------- apontados sem aviso e apontados antigos (LH06)
+#
+# 21/10/2026: os títulos apontados que vieram do E-Ofício sem aviso não
+# apareciam em lista nenhuma de intimação, e os apontados de 2020-2022 se
+# misturavam aos avisos da rua. O «hoje» chega do Python, como em toda a casa.
+
+HOJE_LH06 = "2026-10-21"
+
+
+def _apontado_em(con, numero: str, quando: str) -> int:
+    tid = titulo(con, numero=numero, apontar=False)
+    PT.lancar_apontamento(con, tid, sv=SV, agora=f"{quando}T09:00:00",
+                          data_extenso=EXTENSO)
+    return tid
+
+
+def test_o_apontado_sem_aviso_vai_para_intimar_e_o_antigo_para_decidir(con):
+    novo = titulo(con, numero="10/1")                      # 25/08/2026
+    velho = _apontado_em(con, "11/1", "2022-03-01")
+    com_aviso = titulo(con, numero="12/1")
+    AV.emitir(con, com_aviso, hoje=HOJE, agora=AGORA)
+
+    assert [t["titulo_id"] for t in AV.apontados_sem_aviso(con, HOJE_LH06)] == [novo]
+    antigos = AV.apontados_antigos(con, HOJE_LH06)
+    assert [t["titulo_id"] for t in antigos] == [velho]
+    assert antigos[0]["apontado_em"] == "2022-03-01"
+    assert antigos[0]["devedor_nome"] == "JOSÉ DA SILVA"
+    assert antigos[0]["avisos"] == 0
+
+
+def test_o_corte_dos_antigos_e_de_180_dias_contados_do_hoje_do_python(con):
+    assert AV.ANTIGO_DIAS == 180
+    no_limite = _apontado_em(con, "20/1", "2026-04-24")   # 180 dias antes
+    passou = _apontado_em(con, "21/1", "2026-04-23")      # 181 dias antes
+    assert [t["titulo_id"] for t in AV.apontados_sem_aviso(con, HOJE_LH06)] == [
+        no_limite]
+    assert [t["titulo_id"] for t in AV.apontados_antigos(con, HOJE_LH06)] == [passou]
+    # O mesmo banco, outro «hoje»: quem decide é a data que a tela passa.
+    assert AV.apontados_antigos(con, "2026-10-20") == []
+
+
+def test_o_aviso_do_apontado_antigo_sai_da_lista_dos_que_esperam_entrega(con):
+    recente = titulo(con, numero="30/1")
+    velho = _apontado_em(con, "31/1", "2021-06-10")
+    ra = AV.emitir(con, recente, hoje=HOJE, agora=AGORA)
+    rv = AV.emitir(con, velho, hoje=HOJE, agora=AGORA)
+    assert [a["id"] for a in AV.esperando_entrega(con, hoje=HOJE_LH06)] == [
+        ra["aviso_id"]]
+    # Sem `hoje`, como era: quem não passa a data recebe a lista inteira.
+    assert [a["id"] for a in AV.esperando_entrega(con)] == [
+        ra["aviso_id"], rv["aviso_id"]]
+    # E o aviso do antigo continua à vista, na lista dos antigos.
+    assert [t["avisos"] for t in AV.apontados_antigos(con, HOJE_LH06)] == [1]
+
+
+def test_aviso_cancelado_nao_conta_como_aviso_vivo(con):
+    tid = titulo(con, numero="40/1")
+    r = AV.emitir(con, tid, hoje=HOJE, agora=AGORA)
+    assert AV.apontados_sem_aviso(con, HOJE_LH06) == []
+    nativo(con).escrever("UPDATE pt_avisos SET situacao='CANCELADO' WHERE id=%s",
+                         (r["aviso_id"],))
+    [linha] = AV.apontados_sem_aviso(con, HOJE_LH06)
+    assert (linha["titulo_id"], linha["avisos_vivos"], linha["avisos"]) == (tid, 0, 1)
+
+
+def test_o_titulo_apontado_sem_apontamento_valido_vem_primeiro_entre_os_antigos(con):
+    """O estado do 900001/1: APONTADO com o único apontamento cancelado. Sem
+    data, ele é «antigo a decidir» — e vem PRIMEIRO, como vinha no SQLite (o
+    NULL do PostgreSQL iria para o fim sem o NULLS FIRST)."""
+    velho = _apontado_em(con, "50/1", "2020-01-15")
+    sem_data = titulo(con, numero="51/1")
+    nativo(con).escrever(
+        "UPDATE pt_atos SET cancelado=1 WHERE titulo_id=%s AND tipo='APONTAMENTO'",
+        (sem_data,))
+    antigos = AV.apontados_antigos(con, HOJE_LH06)
+    assert [t["titulo_id"] for t in antigos] == [sem_data, velho]
+    assert antigos[0]["apontado_em"] is None
+
+
+def test_o_titulo_que_nao_esta_apontado_nao_entra_em_nenhuma_das_duas(con):
+    tid = _apontado_em(con, "60/1", "2022-02-02")
+    nativo(con).escrever("UPDATE pt_titulos SET situacao='PAGO' WHERE id=%s", (tid,))
+    titulo(con, numero="61/1", apontar=False)              # RECEBIDO
+    assert AV.apontados_sem_aviso(con, HOJE_LH06) == []
+    assert AV.apontados_antigos(con, HOJE_LH06) == []
+
+
+# ----------------------- o tipo de `data_ato` no PostgreSQL (revisão do LH06)
+#
+# Conferido no LH08: `pt_atos.data_ato` é `text` no esquema da branch
+# (`pt_schema.py`) e no da produção (`respostas_pg/schema.sql`). O corte dos
+# antigos compara TEXTO, e isso só é cronológico porque as duas formas que o
+# sistema grava começam pela data ISO.
+
+
+def _ids(linhas) -> list[int]:
+    return [int(t["titulo_id"]) for t in linhas]
+
+
+def _data_do_apontamento(con, titulo_id: int, data_ato: str) -> None:
+    nativo(con).escrever(
+        "UPDATE pt_atos SET data_ato=%s WHERE titulo_id=%s AND tipo='APONTAMENTO'",
+        (data_ato, titulo_id))
+
+
+def test_o_corte_vale_nas_duas_formas_de_data_que_o_sistema_grava(con):
+    """A carga do E-Ofício grava `AAAA-MM-DD` (`acervo_carga._data`); o balcão
+    grava `AAAA-MM-DDTHH:MM:SS` (`lancar_apontamento`, com o `agora`). O
+    corte de 21/10/2026 é 24/04/2026, e as duas formas caem do lado certo
+    dele — inclusive a do balcão no último segundo do dia anterior."""
+    no_corte_da_carga = _apontado_em(con, "90/1", "2026-04-24")
+    _data_do_apontamento(con, no_corte_da_carga, "2026-04-24")
+    no_corte_do_balcao = _apontado_em(con, "91/1", "2026-04-24")
+    _data_do_apontamento(con, no_corte_do_balcao, "2026-04-24T00:00:00")
+    vespera_do_balcao = _apontado_em(con, "92/1", "2026-04-23")
+    _data_do_apontamento(con, vespera_do_balcao, "2026-04-23T23:59:59")
+    vespera_da_carga = _apontado_em(con, "93/1", "2026-04-23")
+    _data_do_apontamento(con, vespera_da_carga, "2026-04-23")
+
+    assert nativo(con).valor(
+        "SELECT pg_typeof(data_ato)::text AS tipo FROM pt_atos "
+        "ORDER BY id LIMIT 1") == "text"
+    assert _ids(AV.apontados_sem_aviso(con, HOJE_LH06)) == [
+        no_corte_da_carga, no_corte_do_balcao]
+    antigos = AV.apontados_antigos(con, HOJE_LH06)
+    assert sorted(_ids(antigos)) == sorted([vespera_do_balcao, vespera_da_carga])
+    assert {t["apontado_em"] for t in antigos} == {"2026-04-23"}
+    # O «hoje» da rota é texto; como `date` ou com hora, o corte é o mesmo.
+    from datetime import date
+    for hoje in (date(2026, 10, 21), "2026-10-21T17:30:00"):
+        assert _ids(AV.apontados_sem_aviso(con, hoje)) == [
+            no_corte_da_carga, no_corte_do_balcao], hoje
+        assert sorted(_ids(AV.apontados_antigos(con, hoje))) == sorted(
+            [vespera_do_balcao, vespera_da_carga]), hoje
+
+
+def test_se_a_data_do_ato_virar_date_as_listas_nao_mudam(con):
+    """Com a coluna `date`, o psycopg devolve `datetime.date`, e o `[:10]`
+    da lista estourava (`'datetime.date' object is not subscriptable`). A
+    mesma bancada, antes e depois de trocar o tipo, dá as mesmas listas."""
+    recente = titulo(con, numero="94/1")                  # 25/08/2026
+    velho = _apontado_em(con, "95/1", "2022-03-01")
+    com_aviso = _apontado_em(con, "96/1", "2021-06-10")
+    AV.emitir(con, com_aviso, hoje=HOJE, agora=AGORA)
+
+    def listas():
+        return (_ids(AV.apontados_sem_aviso(con, HOJE_LH06)),
+                [(t["titulo_id"], t["apontado_em"])
+                 for t in AV.apontados_antigos(con, HOJE_LH06)],
+                [a["titulo_id"] for a in AV.esperando_entrega(con, hoje=HOJE_LH06)])
+
+    como_texto = listas()
+    assert como_texto == ([recente],
+                          [(com_aviso, "2021-06-10"), (velho, "2022-03-01")],
+                          [])
+    bd = nativo(con)
+    bd.escrever("ALTER TABLE pt_atos ALTER COLUMN data_ato TYPE date "
+                "USING left(data_ato, 10)::date")
+    assert bd.valor("SELECT pg_typeof(data_ato)::text AS tipo FROM pt_atos "
+                    "ORDER BY id LIMIT 1") == "date"
+    assert listas() == como_texto
+
+
+def _com_anexos(con):
+    """A tabela dos anexos, que a lista do upload consulta: o banco deste
+    arquivo só tem o núcleo e o Protesto."""
+    bd = nativo(con)
+    bd.escrever("""CREATE TABLE IF NOT EXISTS attachments (
+        id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+        entity_type text, entity_id bigint, original_name text,
+        size_bytes bigint, uploaded_at text)""")
+    return bd
+
+
+def test_o_aviso_entregue_do_eoficio_nao_e_trabalho_de_upload(con):
+    """Os 68 entregues em mãos do E-Ofício viriam ao alto como «falta o
+    comprovante»: o papel deles é do arquivo do E-Ofício. A coluna `origem`
+    chega ao esquema com a carga (LH07) — aqui ela é posta no banco do teste."""
+    bd = _com_anexos(con)
+    bd.escrever("ALTER TABLE pt_avisos ADD COLUMN IF NOT EXISTS origem TEXT")
+    daqui = AV.emitir(con, titulo(con, numero="70/1"), hoje=HOJE, agora=AGORA)
+    de_la = AV.emitir(con, titulo(con, numero="71/1"), hoje=HOJE, agora=AGORA)
+    sem_origem = AV.emitir(con, titulo(con, numero="72/1"), hoje=HOJE, agora=AGORA)
+    for r in (daqui, de_la, sem_origem):
+        AV.registrar_entrega(con, r["aviso_id"], entregue=True, agora=AGORA)
+    bd.escrever("UPDATE pt_avisos SET origem='SISTEMA' WHERE id=%s",
+                (daqui["aviso_id"],))
+    bd.escrever("UPDATE pt_avisos SET origem='EOFICIO' WHERE id=%s",
+                (de_la["aviso_id"],))
+    ids = {a["id"] for a in AV.entregues(con)}
+    assert ids == {daqui["aviso_id"], sem_origem["aviso_id"]}
+
+
+def test_sem_a_coluna_origem_a_lista_do_upload_e_a_de_sempre(con):
+    """O esquema sem `pt_avisos.origem` (antes da carga do LH07) não pode
+    derrubar a tela: a consulta só filtra a origem quando a coluna existe."""
+    bd = _com_anexos(con)
+    bd.escrever("ALTER TABLE pt_avisos DROP COLUMN IF EXISTS origem")
+    r = AV.emitir(con, titulo(con, numero="80/1"), hoje=HOJE, agora=AGORA)
+    AV.registrar_entrega(con, r["aviso_id"], entregue=True, agora=AGORA)
+    assert [a["id"] for a in AV.entregues(con)] == [r["aviso_id"]]

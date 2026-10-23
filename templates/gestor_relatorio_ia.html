@@ -1,0 +1,179 @@
+<!doctype html>
+{# O RELATÓRIO ANUAL DO USO DE IA (LF01) — página própria, sem o menu, porque é
+   papel: a mesma página serve a tela, o «Imprimir» do navegador e o PDF
+   (`papel=True` tira a barra de cima). Nada de texto de ato aqui dentro: só
+   contagens, o catálogo e o que o oficial escreveu nos incidentes. #}
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Relatório do uso de IA — {{ r.ano }}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #111; margin: 1.5cm; }
+  h1 { font-size: 16pt; margin: 0 0 .2em; }
+  h2 { font-size: 13pt; margin: 1.4em 0 .4em; border-bottom: 1px solid #999; }
+  h3 { font-size: 11.5pt; margin: 1em 0 .3em; }
+  table { border-collapse: collapse; width: 100%; margin: .3em 0 .8em; }
+  th, td { border: 1px solid #bbb; padding: 3px 5px; vertical-align: top; text-align: left; font-size: 9.5pt; }
+  th { background: #eee; }
+  td.n, th.n { text-align: right; white-space: nowrap; }
+  .aviso { border: 2px solid #b36b00; background: #fff6e5; padding: .5em .8em; margin: .6em 0; }
+  .pendencia { color: #8a1c1c; }
+  .muted { color: #555; font-size: 9.5pt; }
+  .barra { background: #f2f2f2; border: 1px solid #ccc; padding: .5em .8em; margin-bottom: 1em; }
+  .barra a, .barra button { margin-right: 1em; }
+  .assinatura { margin-top: 3em; }
+  .assinatura div { border-top: 1px solid #333; width: 60%; margin-top: 3em; padding-top: .2em; }
+  @media print { .barra { display: none; } body { margin: 0; } }
+</style>
+</head>
+<body>
+{% if not papel %}
+<div class="barra">
+  <a href="{{ url_for('dashboard') }}">← Painel</a>
+  <button type="button" onclick="window.print()">Imprimir</button>
+  <a href="{{ url_for('gestor_relatorio_ia_papel', ano=r.ano) }}">Baixar em PDF</a>
+  <a href="{{ url_for('gestor_ia') }}">Incidentes e fornecedores</a>
+  <form method="get" action="{{ url_for('gestor_relatorio_ia') }}" style="display:inline">
+    <label>Ano <input type="number" name="ano" value="{{ r.ano }}" min="2000" style="width:6em"></label>
+    <button type="submit">Ver</button>
+  </form>
+  {% with mensagens = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in mensagens %}<p class="pendencia">{{ m }}</p>{% endfor %}
+  {% endwith %}
+</div>
+{% endif %}
+
+<h1>Relatório anual do uso de inteligência artificial — {{ r.ano }}</h1>
+<p>{{ r.serventia.get('unit_name') or 'Serventia' }}{% if r.serventia.get('ri_cns') %} — CNS {{ r.serventia.get('ri_cns') }}{% endif %}{% if r.serventia.get('ri_cidade') %} — {{ r.serventia.get('ri_cidade') }}/{{ r.serventia.get('ri_uf') or 'MA' }}{% endif %}</p>
+<p class="muted">Período: 01/01/{{ r.ano }} a 31/12/{{ r.ano }}. Relatório previsto no {{ r.norma }}: sistemas e
+finalidades, medidas de segurança, incidentes ou falhas e ações de mitigação.</p>
+<div class="aviso"><strong>{{ r.aviso }}</strong><br>
+O enquadramento de cada sistema no art. 171 é proposta do sistema; quem enquadra é o oficial.</div>
+
+<h2>1. Sistemas e finalidades</h2>
+<p class="muted">O catálogo é o código do sistema (ia_catalogo.py), conferido por teste: chamada nova a um
+provedor de IA sem entrada aqui faz o teste falhar. Usos do art. 171, pelo resumo:
+{% for k, v in r.incisos.items() %}{{ k }} — {{ v }}{% if not loop.last %}; {% endif %}{% endfor %}.</p>
+<table>
+  <tr><th>Sistema</th><th>Finalidade</th><th>Art. 171</th><th>O que vai ao provedor</th><th>Máscara</th>
+      <th>Revisão humana</th><th>O que a IA não faz</th><th>Teto</th><th class="n">Chamadas no ano</th></tr>
+  {% for s in r.sistemas %}
+  <tr><td><strong>{{ s.nome }}</strong><br><span class="muted">{{ s.onde }}</span></td>
+      <td>{{ s.finalidade }}</td>
+      <td>{{ s.inciso }}<br><span class="muted">{{ s.enquadramento }}</span></td>
+      <td>{{ s.dado }}</td><td>{{ s.mascara }}</td><td>{{ s.revisao_humana }}</td>
+      <td>{{ s.nao_faz }}</td><td>{{ s.teto_texto }}</td>
+      <td class="n">{{ s.uso.chamadas }}</td></tr>
+  {% endfor %}
+</table>
+{% if r.fora_do_catalogo %}
+<p class="pendencia">Chamadas registradas com finalidade fora do catálogo:
+{% for f in r.fora_do_catalogo %}{{ f.nome }} ({{ f.chamadas }}){% if not loop.last %}; {% endif %}{% endfor %}.</p>
+{% endif %}
+
+<h3>Uso por mês</h3>
+<p class="muted">{% if r.primeiro_registro %}O registro de cada chamada começou em {{ r.primeiro_registro[8:10] }}/{{ r.primeiro_registro[5:7] }}/{{ r.primeiro_registro[:4] }}:
+antes disso não há contagem, e mês sem linha antes dessa data não quer dizer mês sem uso.{% else %}Nenhuma
+chamada registrada até hoje.{% endif %}</p>
+<table>
+  <tr><th>Mês</th><th class="n">Chamadas</th><th class="n">Sem erro</th><th class="n">Com erro</th>
+      <th class="n">Recusadas</th><th class="n">Tokens de entrada</th><th class="n">Tokens de saída</th></tr>
+  {% for m in r.por_mes %}
+  <tr><td>{{ m.nome }}</td><td class="n">{{ m.chamadas }}</td><td class="n">{{ m.ok }}</td>
+      <td class="n">{{ m.erro }}</td><td class="n">{{ m.recusado }}</td>
+      <td class="n">{{ m.entrada }}</td><td class="n">{{ m.saida }}</td></tr>
+  {% endfor %}
+  <tr><th>Total</th><th class="n">{{ r.total.chamadas }}</th><th class="n">{{ r.total.ok }}</th>
+      <th class="n">{{ r.total.erro }}</th><th class="n">{{ r.total.recusado }}</th>
+      <th class="n">{{ r.total.entrada }}</th><th class="n">{{ r.total.saida }}</th></tr>
+</table>
+
+<h3>Uso por finalidade</h3>
+{% if r.por_finalidade %}
+<table>
+  <tr><th>Finalidade</th><th class="n">Chamadas</th><th class="n">Com máscara</th><th class="n">Sem máscara</th>
+      <th class="n">Com erro</th><th class="n">Recusadas</th></tr>
+  {% for f in r.por_finalidade %}
+  <tr><td>{{ f.nome }}</td><td class="n">{{ f.chamadas }}</td><td class="n">{{ f.mascaradas }}</td>
+      <td class="n">{{ f.sem_mascara }}</td><td class="n">{{ f.erro }}</td><td class="n">{{ f.recusado }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p>Nenhuma chamada registrada no ano.</p>{% endif %}
+
+<h3>Uso por provedor</h3>
+{% if r.por_provedor %}
+<table>
+  <tr><th>Provedor</th><th class="n">Chamadas</th><th class="n">Tokens de entrada</th><th class="n">Tokens de saída</th></tr>
+  {% for p in r.por_provedor %}
+  <tr><td>{{ p.nome }}</td><td class="n">{{ p.chamadas }}</td><td class="n">{{ p.entrada }}</td><td class="n">{{ p.saida }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p>Nenhuma chamada registrada no ano.</p>{% endif %}
+
+<h2>2. Medidas de segurança</h2>
+<ul>{% for m in r.medidas %}<li>{{ m }}</li>{% endfor %}</ul>
+
+<h3>Fornecedores e pendências de conformidade</h3>
+<p class="muted">Requisito do MA para o fornecedor, pelo resumo: {{ r.requisito }}. O que contraria o requisito
+aparece como <span class="pendencia">pendência a conferir</span> — o sistema não decide pelo oficial.</p>
+{% if r.fornecedores %}
+<table>
+  <tr><th>Provedor</th><th>Empresa</th><th>Processa / armazena</th><th>Retenção</th><th>Treinamento</th>
+      <th>ISO 27001</th><th>Contrato</th><th>Pendências</th></tr>
+  {% for f in r.fornecedores %}
+  <tr><td>{{ f.nome }}{% if not f.usado_no_ano %}<br><span class="muted">chave gravada, sem uso no ano</span>{% endif %}</td>
+      <td>{{ f.dados.get('empresa') or '—' }}</td>
+      <td>{{ f.dados.get('pais_processa') or '—' }} / {{ f.dados.get('pais_armazena') or '—' }}</td>
+      <td>{{ retencoes.get(f.dados.get('retencao') or '', '—') }}{% if f.dados.get('retencao_prazo') %} ({{ f.dados.get('retencao_prazo') }}){% endif %}</td>
+      <td>{{ respostas.get(f.dados.get('treinamento') or '', '—') }}</td>
+      <td>{{ respostas.get(f.dados.get('iso27001') or '', '—') }}</td>
+      <td>{{ f.dados.get('contrato') or '—' }}</td>
+      <td>{% for p in f.pendencias %}<div class="pendencia">{{ p }}</div>{% else %}nenhuma{% endfor %}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p>Nenhum provedor com chave gravada nem com uso no ano.</p>{% endif %}
+
+<h2>3. Incidentes ou falhas</h2>
+<h3>Incidentes registrados</h3>
+{% if r.incidentes %}
+<table>
+  <tr><th>Data</th><th>Sistema</th><th>O que aconteceu</th><th>Impacto</th><th>Causa</th><th>Comunicado a</th></tr>
+  {% for i in r.incidentes %}
+  <tr><td>{{ i.data }}</td><td>{{ nome_da_finalidade(i.sistema) if i.sistema else '—' }}</td><td>{{ i.o_que }}</td>
+      <td>{{ i.impacto or '—' }}</td><td>{{ i.causa or '—' }}</td><td>{{ i.comunicado_a or '—' }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p>Nenhum incidente registrado no ano.</p>{% endif %}
+<h3>Falhas registradas automaticamente</h3>
+<p class="muted">Chamadas que não terminaram bem (rede, provedor fora do ar, pedido recusado). Em todas o
+atendimento seguiu sem a IA.</p>
+{% if r.falhas %}
+<table>
+  <tr><th>Sistema</th><th>Provedor</th><th>Resultado</th><th>Motivo</th><th class="n">Vezes</th><th>Primeira</th><th>Última</th></tr>
+  {% for f in r.falhas %}
+  <tr><td>{{ f.nome }}</td><td>{{ f.provedor_nome }}</td><td>{{ f.resultado }}</td><td>{{ f.erro or '—' }}</td>
+      <td class="n">{{ f.vezes }}</td><td>{{ f.primeira[:10] }}</td><td>{{ f.ultima[:10] }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p>Nenhuma falha registrada no ano.</p>{% endif %}
+
+<h2>4. Ações de mitigação</h2>
+{% if r.mitigacoes %}
+<table>
+  <tr><th>Incidente (data)</th><th>Sistema</th><th>Ação de mitigação</th></tr>
+  {% for i in r.mitigacoes %}
+  <tr><td>{{ i.data }}</td><td>{{ nome_da_finalidade(i.sistema) if i.sistema else '—' }}</td><td>{{ i.mitigacao }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p>Nenhuma ação de mitigação registrada no ano{% if not r.incidentes %} (não houve incidente registrado){% endif %}.</p>{% endif %}
+
+<h2>Outra obrigação</h2>
+<p>{{ r.lembrete_federal }}</p>
+
+<div class="assinatura">
+  <p>{{ r.serventia.get('ri_cidade') or '______________' }}, ____ de ______________ de ______.</p>
+  <div>Oficial responsável pela serventia</div>
+</div>
+<p class="muted">{{ r.aviso }}</p>
+</body>
+</html>

@@ -19,6 +19,7 @@ import json
 import re
 from typing import Any
 
+from bd_nativo import banco
 import rc_certidao as RCE
 import rc_certidao_quadro as RCQ
 
@@ -207,7 +208,7 @@ def contexto_de_assento(
     certidao = dict(certidao or {})
     if assento is None and con is not None and (assento_id or certidao.get("assento_id")):
         aid = int(assento_id or certidao["assento_id"])
-        row = con.execute("SELECT * FROM rc_assentos WHERE id=?", (aid,)).fetchone()
+        row = banco(con).um("SELECT * FROM rc_assentos WHERE id=%s", (aid,))
         assento = dict(row) if row else {}
         if not certidao.get("assento_id"):
             certidao["assento_id"] = aid

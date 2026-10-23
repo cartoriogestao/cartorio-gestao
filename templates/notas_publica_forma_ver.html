@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}Pública forma {{ pf.numero }}/{{ pf.ano }} — Notas{% endblock %}
+{% block heading %}<h1>Pública forma n. {{ pf.numero }}/{{ pf.ano }}</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('notas_publica_forma') }}">&larr; Pública forma</a>
+  {# O PAPEL — LD02, 21/10/2026: a serventia, o teor, o lugar e a data, quem
+     expede e o selo com o que declara (CN-MA art. 131). A suspensa, sem selo,
+     não tem papel. #}
+  {% if pf.selo and pf.situacao != 'SUSPENSO_SELO' %}
+  <a class="button primary" href="{{ url_for('notas_publica_forma_odt', pf_id=pf.id) }}" target="_blank">Imprimir (PDF)</a>
+  <a class="button" href="{{ url_for('notas_publica_forma_odt', pf_id=pf.id, formato='odt') }}">Baixar em .odt</a>
+  {% endif %}</div>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ SITUACOES.get(pf.situacao, pf.situacao) }}</span></div>
+  <div style="padding:14px">
+    <p class="small">Emitida em {{ pf.emitida_em }} por {{ pf.emitida_por or '—' }}.
+      Item {{ pf.codigo_tj or '—' }}. Selo: <strong>{{ pf.selo or '—' }}</strong>.
+      Impressão digital: <code>{{ pf.hash_teor[:16] }}…</code></p>
+    {% if pf.situacao == 'SUSPENSO_SELO' %}
+      <p class="small"><strong>O selo não saiu.</strong> {{ pf.motivo_suspensao or '' }}</p>
+      <form method="post" action="{{ url_for('notas_publica_forma_selar', pf_id=pf.id) }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
+        {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('nt_publicas_formas') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+        <button class="primary">Selar de novo</button></form>
+    {% endif %}
+    {% if pf.situacao == 'CANCELADA' %}
+      <p class="small"><strong>Cancelada</strong> em {{ pf.cancelada_em }} por {{ pf.cancelada_por or '—' }}: {{ pf.motivo_cancelamento }}</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Teor</span></div>
+  <div style="padding:14px">{{ pf.teor|sem_script }}</div>
+</section>
+
+{% if pf.situacao != 'CANCELADA' %}
+<section class="panel">
+  <div class="panel-head"><span>Cancelar</span></div>
+  <form method="post" action="{{ url_for('notas_publica_forma_cancelar', pf_id=pf.id) }}" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Motivo <input name="motivo" size="60" required></label>
+    <button>Cancelar a pública forma</button>
+    <span class="small muted">O teor fica guardado; só administrador ou gerente cancela.</span>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

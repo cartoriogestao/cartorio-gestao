@@ -22,14 +22,19 @@
     <h2>Cloud API</h2>
     <p>
       <label>verify_token<br>
-        <input type="text" name="verify_token" value="{{ cfg.verify_token or '' }}"
-               autocomplete="off" style="width:100%">
+        <input type="password" name="verify_token" value="" autocomplete="new-password"
+               style="width:100%" placeholder="vazio = não altera">
       </label>
     </p>
     <p class="small muted">
-      Vazio = o GET do webhook (só teste local) aceita <code>cartorio-teste</code>.
-      O valor oficial, quando gravado, passa a ser o único aceito. O mesmo
-      token vai no worker da VPS.
+      {% if cfg.tem_verify_token %}Configurado: sim. O valor oficial é o único
+      aceito pelo GET do webhook.
+      <label><input type="checkbox" name="apagar_verify_token" value="1">
+        apagar e voltar ao de teste (<code>cartorio-teste</code>)</label>
+      {% else %}Ainda não gravado: o GET do webhook (só teste local) aceita
+      <code>cartorio-teste</code>.{% endif %}
+      O mesmo token vai no worker da VPS. Os segredos desta tela ficam fora do
+      banco, num arquivo cifrado da pasta de dados (<code>whatsapp.cred</code>).
     </p>
     <p>
       <label>phone_number_id<br>
@@ -45,7 +50,7 @@
       </label>
     </p>
     <p class="small muted">
-      {% if cfg.tem_access_token %}Já gravado: {{ cfg.access_token_mascarado }}
+      {% if cfg.tem_access_token %}Configurado: sim.
       {% else %}Ainda não gravado.{% endif %}
     </p>
     <p>
@@ -55,10 +60,19 @@
       </label>
     </p>
     <p class="small muted">
-      {% if cfg.tem_app_secret %}Já gravado: {{ cfg.app_secret_mascarado }}.
+      {% if cfg.tem_app_secret %}Configurado: sim.
       Com secret, o POST local só entra com <code>X-Hub-Signature-256</code> válido.
-      {% else %}Sem secret, o POST daqui aceita só <code>X-Wa-Test: 1</code>
-      (desenvolvimento). Produção não deve expor este Flask.{% endif %}
+      {% else %}Sem secret, o POST do webhook é recusado (a entrada de verdade
+      vem pela caixa-postal). Produção não deve expor este Flask.{% endif %}
+    </p>
+    <p>
+      <label class="check"><input type="checkbox" name="modo_teste" value="1"
+             {% if cfg.modo_teste %}checked{% endif %}>
+        Modo de teste do webhook (só desenvolvimento)</label>
+    </p>
+    <p class="small muted">
+      Ligado, o POST desta própria máquina com <code>X-Wa-Test: 1</code> entra
+      na fila sem assinatura. Deixe desligado no servidor da casa.
     </p>
   </div>
 
@@ -86,7 +100,7 @@
       </label>
     </p>
     <p class="small muted">
-      {% if cfg.tem_caixa_segredo %}Já gravado: {{ cfg.caixa_segredo_mascarado }}
+      {% if cfg.tem_caixa_segredo %}Configurado: sim.
       {% else %}Ainda não gravado.{% endif %}
     </p>
   </div>

@@ -1,0 +1,22 @@
+{
+  "chave": "RC_CERTIDAO_HABILITACAO",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Certidão de habilitação para casamento",
+  "formato": "CHAVES",
+  "explica": "A certidão do artigo 1.531 do Código Civil, com a validade de noventa dias. Não congela: é remontada a cada impressão, e um ajuste muda também a reimpressão das já expedidas. A linha do prazo de oposição ({linha_do_prazo}) o sistema escolhe entre quatro peças, pela data da expedição e pela oposição; o cabeçalho da serventia, o regime por extenso e o selo ficam no sistema.",
+  "campos": [
+    "certidao_numero",
+    "certidao_ano",
+    "numero",
+    "ano",
+    "nubente1_nome",
+    "nubente2_nome",
+    "regime",
+    "edital_em",
+    "linha_do_prazo",
+    "vale_ate",
+    "cidade_uf",
+    "habilitado_em",
+    "assinante"
+  ]
+}

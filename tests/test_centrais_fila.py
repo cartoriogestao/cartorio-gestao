@@ -13,6 +13,9 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+import banco_pg  # noqa: E402
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import centrais_fila as FILA  # noqa: E402
 import centrais_schema as SCH  # noqa: E402
@@ -20,7 +23,7 @@ import centrais_schema as SCH  # noqa: E402
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     SCH.init_centrais_schema(c)
     yield c
@@ -33,8 +36,10 @@ class _BancoFalso:
     def __init__(self, caminho):
         self.caminho = caminho
         self.aberta = False
+        banco_pg.registrar_banco(caminho)
         c = self._conectar()
         SCH.init_centrais_schema(c)
+        c.commit()
         c.close()
 
     def _conectar(self):
@@ -243,7 +248,7 @@ def test_resumo_falhas_e_lista_para_o_painel(con):
 
 
 def test_painel_em_banco_sem_tabela_nao_estoura():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     assert FILA.resumo_por_central(c) == []
     assert FILA.ultimas_falhas(c) == []
     assert FILA.listar(c) == []

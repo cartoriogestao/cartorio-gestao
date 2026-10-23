@@ -27,6 +27,12 @@ navegador.
 Se algo falhar, **`DIAGNOSTICAR_INSTALACAO.cmd`** mostra o motivo, e o registro
 fica em `C:\ProgramData\CartorioGestao\logs`.
 
+> **Depois de instalar, endureça o servidor:** permissões da pasta de dados,
+> Python do serviço fora do perfil de uma pessoa, papel do banco sem
+> superusuário, firewall por perfil, rotinas e a chave que assina as
+> atualizações. O roteiro, com os comandos e a conferência de cada item, é
+> [`SEGURANCA_IMPLANTACAO.md`](SEGURANCA_IMPLANTACAO.md).
+
 ### A pasta de dados
 
 | | |

@@ -1,0 +1,10 @@
+CERTIDÃO DE AUTENTICAÇÃO DE LIVRO
+
+CERTIFICO que consta do controle de autenticação de livros deste Registro Civil das Pessoas Jurídicas de {unit_name} — CNS {cns}, sob o nº {numero}/{ano}, em {data_autenticacao}, a autenticação do {tipo_livro} nº {numero_livro} de {pj_nome}, inscrita no CNPJ sob o nº {pj_cnpj}, com {folhas} folhas, numeradas de {folha_de} a {folha_ate}, apresentado em {forma}. Selo de fiscalização: {selo}.
+
+O referido é verdade e dou fé.
+
+{cidade_uf}, {data_extenso}.
+
+{full_name}
+{funcao}

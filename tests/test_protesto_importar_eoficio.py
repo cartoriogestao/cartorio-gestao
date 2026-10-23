@@ -24,6 +24,8 @@ import pytest
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — EOFicio
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import acervo_carga as AC
 import protesto_cenprot as PCEN
@@ -36,7 +38,7 @@ SENHA = "Senha#12345"
 
 
 def _banco_cg() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     init_nucleo_schema(con)
     init_pt_schema(con)
@@ -45,7 +47,7 @@ def _banco_cg() -> sqlite3.Connection:
 
 def _acervo_com_chave(*, com_coluna: bool = True,
                       chave: str | None = CHAVE) -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     col_chave = ", strChaveUnicaCENPROT TEXT" if com_coluna else ""
     con.executescript(f"""
@@ -194,10 +196,12 @@ def test_tela_importar_eoficio_existe_e_esta_no_menu(cg_casa):
     assert "csrf_token" in html
     assert "ao vivo" in html.lower() and ("Trazer agora" in html or "Trazer agora do E-Of" in html)
     assert "strChaveUnicaCENPROT" in html or "chave CENPROT" in html.lower() or "chave" in html.lower()
-    # Menu do Protesto aponta para a rota.
+    # O menu do Protesto NÃO aponta mais para a rota: o item saiu em
+    # 17/10/2026, com a importação do E-Ofício encerrada. A tela fica pelo
+    # endereço (acima), para o administrador.
     home = c.get("/").get_data(as_text=True)
-    assert "/protesto/importar-eoficio" in home or "protesto_importar_eoficio" in home or \
-        "Trazer protesto do E-Of" in home
+    assert "/protesto/importar-eoficio" not in home
+    assert "Trazer protesto do E-Of" not in home
 
 
 def test_tela_instrumentos_existe(cg_casa):

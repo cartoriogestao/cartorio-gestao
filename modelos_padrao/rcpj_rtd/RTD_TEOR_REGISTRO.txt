@@ -1,0 +1,21 @@
+===CABECALHO===
+{unit_short} — CNS {cns}
+{atribuicao}
+===INTRO===
+CERTIFICO que me foi apresentado para ser REGISTRADO no Registro nº {numero} o documento digitalizado abaixo:
+Protocolizado em {data_protocolo}, sob o nº {protocolo}.
+Apresentante: {apresentante}.
+Tipo do ato: {natureza_ato}.
+Data da assinatura: {data_assinatura}.
+Valor: {valor}.
+Prazo: {prazo}.
+Instrumento celebrado em {lugar}.
+Partes e condição jurídica: {partes}.
+Testemunhas: {testemunhas}.
+Com firma reconhecida em {reconhecimento}.
+Importância e qualidade do imposto pago: {imposto}.
+Total de páginas registradas: {paginas}.
+===ENCERRAMENTO===
+Era o que continha o documento apresentado para registro, arquivado em sua íntegra mediante digitalização. Eu, {full_name}, {funcao}, o subscrevo e assino.
+===DATA===
+{cidade}/{uf}, {data_extenso}.

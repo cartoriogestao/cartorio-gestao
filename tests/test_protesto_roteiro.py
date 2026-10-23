@@ -32,8 +32,11 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import protesto_roteiro as PR
+from nucleo_schema import init_nucleo_schema
 from pt_schema import init_pt_schema
 
 SENHA = "Senha#12345"
@@ -41,8 +44,11 @@ HOJE = "2026-09-01"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
+    # `pt_atos.livro_id` aponta para `nu_livros`, e o PostgreSQL nativo
+    # cobra a chave estrangeira ja na criacao: o nucleo vem antes.
+    init_nucleo_schema(con)
     init_pt_schema(con)
     return con
 
@@ -158,7 +164,7 @@ def test_coluna_errada_ESTOURA_em_vez_de_virar_zero():
 def test_tabela_que_nao_existe_devolve_NONE_e_nao_zero():
     """Instalacao sem o Protesto e caso real — e ali «nao ha o que contar» e
     diferente de «contei, e deu zero»."""
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     assert PR._um(con, "pt_remessas", "SELECT COUNT(*) FROM pt_remessas") is None
 
@@ -398,7 +404,7 @@ def test_as_horas_das_etapas_sao_as_do_papel():
 
 def test_sem_tabela_a_contagem_e_none_e_nao_zero():
     """Instalacao sem o Protesto: «nao ha o que contar» nao e «contei zero»."""
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     medido = PR.medir_o_dia(con, hoje=HOJE)
     assert medido and all(v is None for v in medido.values())

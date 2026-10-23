@@ -69,10 +69,10 @@ QUANDO NASCE
 from __future__ import annotations
 
 import re
-import sqlite3
 from datetime import date
 from typing import Any
 
+from bd_nativo import banco
 from notas_anotacoes import _mesma_serventia
 
 #: Os atos que fazem nascer a obrigação. O § 1º do art. 831 alcança também a
@@ -162,13 +162,12 @@ def _destinatario(a: dict) -> str:
     return " — ".join(partes)
 
 
-def do_ato(con: sqlite3.Connection, ato_id: int) -> dict | None:
+def do_ato(con: Any, ato_id: int) -> dict | None:
     """A obrigação deste ato, se nasceu. Só lê."""
-    linha = con.execute("SELECT * FROM nt_comunicacoes_origem WHERE ato_id=?",
-                        (ato_id,)).fetchone()
-    if not linha:
+    d = banco(con).um("SELECT * FROM nt_comunicacoes_origem WHERE ato_id = %s",
+                      (ato_id,))
+    if not d:
         return None
-    d = dict(linha)
     d["aberta"] = d["situacao"] == "ABERTA"
     d["falta_comprovante"] = (d["situacao"] == "CUMPRIDA"
                               and not d.get("comprovante_attachment_id"))
@@ -177,7 +176,7 @@ def do_ato(con: sqlite3.Connection, ato_id: int) -> dict | None:
 
 # ------------------------------------------------------------- nascer
 
-def abrir(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
+def abrir(con: Any, ato_id: int, sv: dict, agora: str,
           por: str | None, como: str) -> dict | None:
     """Faz nascer a obrigação, se o ato a deve e ela ainda não existe. GRAVA.
 
@@ -185,18 +184,17 @@ def abrir(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
     existia). Roda dentro da transação de quem chama — no lançamento, é a
     mesma do livro: se a obrigação falhar, o lançamento volta junto.
     """
-    ato = con.execute("SELECT * FROM nt_atos WHERE id=?", (ato_id,)).fetchone()
-    if not ato:
+    a = banco(con).um("SELECT * FROM nt_atos WHERE id = %s", (ato_id,))
+    if not a:
         raise ComunicacaoError("Ato não encontrado.")
-    a = dict(ato)
     if not devida(a, sv) or do_ato(con, ato_id):
         return None
-    con.execute(
+    banco(con).escrever(
         """INSERT INTO nt_comunicacoes_origem
                (ato_id, situacao, destinatario, destinatario_cns,
                 procuracao_livro, procuracao_folha, procuracao_data,
                 nascida_em, nascida_por, nascida_como)
-           VALUES (?, 'ABERTA', ?,?,?,?,?,?,?,?)""",
+           VALUES (%s, 'ABERTA', %s,%s,%s,%s,%s,%s,%s,%s)""",
         (ato_id, _destinatario(a), _texto(a.get("anterior_cns")) or None,
          _texto(a.get("anterior_livro")) or None,
          _texto(a.get("anterior_folha")) or None,
@@ -205,7 +203,7 @@ def abrir(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
     return do_ato(con, ato_id)
 
 
-def informar_origem(con: sqlite3.Connection, ato_id: int, dados: dict,
+def informar_origem(con: Any, ato_id: int, dados: dict,
                     sv: dict, agora: str, por: str | None) -> dict:
     """Grava, no ato, de onde veio a procuração substabelecida. GRAVA.
 
@@ -221,10 +219,9 @@ def informar_origem(con: sqlite3.Connection, ato_id: int, dados: dict,
       - fazer a obrigação aberta sumir dizendo que a origem é esta casa — o
         aviso só some com a providência.
     """
-    ato = con.execute("SELECT * FROM nt_atos WHERE id=?", (ato_id,)).fetchone()
-    if not ato:
+    a = banco(con).um("SELECT * FROM nt_atos WHERE id = %s", (ato_id,))
+    if not a:
         raise ComunicacaoError("Ato não encontrado.")
-    a = dict(ato)
     if (a.get("tipo") or "").upper() not in TIPOS_QUE_COMUNICAM:
         raise ComunicacaoError("Só o substabelecimento informa aqui a serventia "
                                "de origem da procuração.")
@@ -261,10 +258,10 @@ def informar_origem(con: sqlite3.Connection, ato_id: int, dados: dict,
             "some trocando a origem para esta serventia. Se o ato foi lançado "
             "com a origem errada, baixe a obrigação pela anotação do ofício, "
             "explicando na observação.")
-    con.execute(
-        """UPDATE nt_atos SET anterior_cartorio=?, anterior_cns=?,
-               anterior_cidade=?, anterior_uf=?, anterior_livro=?,
-               anterior_folha=?, anterior_data=? WHERE id=?""",
+    banco(con).escrever(
+        """UPDATE nt_atos SET anterior_cartorio = %s, anterior_cns = %s,
+               anterior_cidade = %s, anterior_uf = %s, anterior_livro = %s,
+               anterior_folha = %s, anterior_data = %s WHERE id = %s""",
         (novo["anterior_cartorio"], novo["anterior_cns"], novo["anterior_cidade"],
          novo["anterior_uf"], novo["anterior_livro"], novo["anterior_folha"],
          novo["anterior_data"], ato_id))
@@ -272,10 +269,11 @@ def informar_origem(con: sqlite3.Connection, ato_id: int, dados: dict,
         # Ainda aberta: o destinatário acompanha a correção, que é o que vai
         # no ofício. Depois de cumprida, a recusa acima já barrou.
         a2 = {**a, **novo}
-        con.execute(
-            """UPDATE nt_comunicacoes_origem SET destinatario=?,
-                   destinatario_cns=?, procuracao_livro=?, procuracao_folha=?,
-                   procuracao_data=? WHERE ato_id=?""",
+        banco(con).escrever(
+            """UPDATE nt_comunicacoes_origem SET destinatario = %s,
+                   destinatario_cns = %s, procuracao_livro = %s,
+                   procuracao_folha = %s, procuracao_data = %s
+             WHERE ato_id = %s""",
             (_destinatario(a2), novo["anterior_cns"], novo["anterior_livro"],
              novo["anterior_folha"], novo["anterior_data"], ato_id))
     nasceu = abrir(con, ato_id, sv, agora, por, "TELA")
@@ -285,7 +283,7 @@ def informar_origem(con: sqlite3.Connection, ato_id: int, dados: dict,
 
 # ------------------------------------------------------------- baixar
 
-def _aberta_ou_recusa(con: sqlite3.Connection, ato_id: int) -> dict:
+def _aberta_ou_recusa(con: Any, ato_id: int) -> dict:
     ob = do_ato(con, ato_id)
     if not ob:
         raise ComunicacaoError(
@@ -294,7 +292,7 @@ def _aberta_ou_recusa(con: sqlite3.Connection, ato_id: int) -> dict:
     return ob
 
 
-def baixar_por_oficio(con: sqlite3.Connection, ato_id: int, *, data: str,
+def baixar_por_oficio(con: Any, ato_id: int, *, data: str,
                       meio: str, numero: str, enviado_por: str, agora: str,
                       por: str | None, observacao: str = "") -> dict:
     """Porta (b): a anotação do envio do ofício. GRAVA.
@@ -319,18 +317,18 @@ def baixar_por_oficio(con: sqlite3.Connection, ato_id: int, *, data: str,
     if meio == "OUTRO" and len(_texto(observacao)) < 5:
         raise ComunicacaoError("Com «outro meio», descreva na observação qual.")
     quando = _data(data, "data do envio", agora)
-    con.execute(
-        """UPDATE nt_comunicacoes_origem SET situacao='CUMPRIDA',
-               providencia='OFICIO', cumprida_em=?, cumprida_por=?,
-               envio_data=?, envio_meio=?, envio_numero=?, envio_por=?,
-               observacao=?
-           WHERE ato_id=? AND situacao='ABERTA'""",
+    banco(con).escrever(
+        """UPDATE nt_comunicacoes_origem SET situacao = 'CUMPRIDA',
+               providencia = 'OFICIO', cumprida_em = %s, cumprida_por = %s,
+               envio_data = %s, envio_meio = %s, envio_numero = %s,
+               envio_por = %s, observacao = %s
+           WHERE ato_id = %s AND situacao = 'ABERTA'""",
         (agora, por, quando, meio, _texto(numero), _texto(enviado_por),
          _texto(observacao) or None, ato_id))
     return do_ato(con, ato_id)
 
 
-def juntar_comprovante(con: sqlite3.Connection, ato_id: int, *,
+def juntar_comprovante(con: Any, ato_id: int, *,
                        attachment_id: int, recebido_em: str, agora: str,
                        por: str | None, observacao: str = "") -> dict:
     """Porta (a): o comprovante de recebimento. GRAVA.
@@ -342,8 +340,8 @@ def juntar_comprovante(con: sqlite3.Connection, ato_id: int, *,
     ob = _aberta_ou_recusa(con, ato_id)
     if ob.get("comprovante_attachment_id"):
         raise ComunicacaoError("O comprovante desta comunicação já foi juntado.")
-    anexo = con.execute("SELECT * FROM attachments WHERE id=?",
-                        (attachment_id,)).fetchone()
+    bd = banco(con)
+    anexo = bd.um("SELECT * FROM attachments WHERE id = %s", (attachment_id,))
     if (not anexo or anexo["entity_type"] != TIPO_DO_ANEXO
             or int(anexo["entity_id"]) != int(ob["id"])):
         raise ComunicacaoError("O arquivo do comprovante não pertence a esta "
@@ -351,22 +349,24 @@ def juntar_comprovante(con: sqlite3.Connection, ato_id: int, *,
     quando = _data(recebido_em, "data do recebimento", agora)
     obs = _texto(observacao)
     if ob["aberta"]:
-        con.execute(
-            """UPDATE nt_comunicacoes_origem SET situacao='CUMPRIDA',
-                   providencia='COMPROVANTE', cumprida_em=?, cumprida_por=?,
-                   observacao=?
-               WHERE ato_id=? AND situacao='ABERTA'""",
+        bd.escrever(
+            """UPDATE nt_comunicacoes_origem SET situacao = 'CUMPRIDA',
+                   providencia = 'COMPROVANTE', cumprida_em = %s,
+                   cumprida_por = %s, observacao = %s
+               WHERE ato_id = %s AND situacao = 'ABERTA'""",
             (agora, por, obs or None, ato_id))
     elif obs:
-        con.execute(
+        bd.escrever(
             """UPDATE nt_comunicacoes_origem SET observacao =
-                   CASE WHEN observacao IS NULL THEN ? ELSE observacao END
-               WHERE ato_id=?""", (obs, ato_id))
-    con.execute(
-        """UPDATE nt_comunicacoes_origem SET comprovante_attachment_id=?,
-               comprovante_sha256=?, comprovante_nome=?, comprovante_recebido_em=?,
-               comprovante_em=?, comprovante_por=?
-           WHERE ato_id=?""",
+                   CASE WHEN observacao IS NULL THEN %s::text
+                        ELSE observacao END
+               WHERE ato_id = %s""", (obs, ato_id))
+    bd.escrever(
+        """UPDATE nt_comunicacoes_origem SET comprovante_attachment_id = %s,
+               comprovante_sha256 = %s, comprovante_nome = %s,
+               comprovante_recebido_em = %s, comprovante_em = %s,
+               comprovante_por = %s
+           WHERE ato_id = %s""",
         (int(attachment_id), anexo["sha256"], anexo["original_name"], quando,
          agora, por, ato_id))
     return do_ato(con, ato_id)
@@ -374,16 +374,16 @@ def juntar_comprovante(con: sqlite3.Connection, ato_id: int, *,
 
 # ------------------------------------------------------------- a lista
 
-def pendentes(con: sqlite3.Connection) -> list[dict]:
+def pendentes(con: Any) -> list[dict]:
     """As obrigações abertas, a mais antiga primeiro. Só lê.
 
     É a lista que a correição pede — «há comprovação de comunicação à
     serventia que emitiu a procuração substabelecida?» —, e a mesma que a
     lente dos inacabados (`NOTAS_COMUNICACAO_ORIGEM`) mostra no painel.
     """
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT c.*, a.tipo, a.livro, a.folha, a.termo, a.data data_ato,
                   a.interessado
            FROM nt_comunicacoes_origem c JOIN nt_atos a ON a.id = c.ato_id
            WHERE c.situacao = 'ABERTA'
-           ORDER BY c.nascida_em, c.id""")]
+           ORDER BY c.nascida_em, c.id""")

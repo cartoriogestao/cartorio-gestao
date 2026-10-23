@@ -344,3 +344,55 @@ def test_a_tentativa_anterior_nao_some_quando_a_segunda_da_certo(s):
     assert con.execute("SELECT COUNT(*) c FROM pt_tentativas").fetchone()["c"] == 2
     ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
     assert "Ausente" in ficha and "entregue" in ficha
+
+
+# ------------------------- apontados sem aviso e apontados antigos (LH06)
+
+
+def _painel(html: str, titulo: str) -> str:
+    """O pedaço da tela de um painel só, do título até o fim da seção."""
+    comeco = html.index(titulo)
+    return html[comeco:html.index("</section>", comeco)]
+
+
+def test_o_apontado_sem_aviso_aparece_na_tela_e_o_aviso_sai_dali(s):
+    """21/10/2026: o título apontado sem aviso só aparecia na própria ficha, e
+    os que vieram do E-Ofício sumiam da vista. O botão do painel é o mesmo da
+    ficha — e, emitido o aviso, o título sai do painel."""
+    tid = titulo_apontado(s)
+    html = s["c"].get("/protesto/avisos").get_data(as_text=True)
+    painel = _painel(html, "Apontados sem aviso — a intimar")
+    assert f'href="/protesto/{tid}"' in painel
+    assert "JOSÉ DA SILVA" in painel
+    assert f'action="/protesto/{tid}/aviso"' in painel
+
+    r = s["c"].post(f"/protesto/{tid}/aviso",
+                    data={"csrf_token": _token(html)}, follow_redirects=True)
+    assert "emitido" in r.get_data(as_text=True)
+    depois = s["c"].get("/protesto/avisos").get_data(as_text=True)
+    assert "Todo título apontado tem aviso." in _painel(
+        depois, "Apontados sem aviso — a intimar")
+
+
+def test_o_apontado_antigo_vai_para_decidir_e_sai_dos_que_esperam(s):
+    tid = titulo_apontado(s)
+    emitir(s, tid)
+    con = _con(s)
+    with con:
+        con.execute("UPDATE pt_atos SET data_ato='2021-05-05T10:00:00' "
+                    "WHERE titulo_id=? AND tipo='APONTAMENTO'", (tid,))
+    con.close()
+    html = s["c"].get("/protesto/avisos").get_data(as_text=True)
+    antigos = _painel(html, "Apontados antigos — decidir")
+    assert "Apontados há mais de 180 dias" in antigos
+    assert f'href="/protesto/{tid}"' in antigos and "2021-05-05" in antigos
+    assert "Nenhum aviso esperando." in _painel(
+        html, "<span>Saíram e esperam desfecho</span>")
+    assert "Todo título apontado tem aviso." in _painel(
+        html, "Apontados sem aviso — a intimar")
+
+
+def test_sem_apontado_antigo_o_painel_de_decidir_nem_aparece(s):
+    titulo_apontado(s)
+    html = s["c"].get("/protesto/avisos").get_data(as_text=True)
+    assert "Apontados antigos — decidir" not in html

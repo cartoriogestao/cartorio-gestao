@@ -20,7 +20,6 @@ O QUE ESTES TESTES GUARDAM
 from __future__ import annotations
 
 import glob
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -29,8 +28,10 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import banco_pg                                                  # noqa: E402
 import us_notificacao as UN                                      # noqa: E402
 import usucapiao as US                                           # noqa: E402
+from bd_nativo import banco                                      # noqa: E402
 
 AGORA = "2026-08-30T10:00"
 SERVENTIA = {"oficial": "MARIO EXEMPLO DOS SANTOS", "cargo": "Oficial",
@@ -39,8 +40,13 @@ SERVENTIA = {"oficial": "MARIO EXEMPLO DOS SANTOS", "cargo": "Oficial",
 
 @pytest.fixture()
 def con(cg_db, cg_db_path):
-    c = sqlite3.connect(str(cg_db_path))
-    c.row_factory = sqlite3.Row
+    """A conexão da rota, aberta pela porta do banco.
+
+    O `usucapiao` já é PostgreSQL nativo, e o SQL deste arquivo também: ele lê
+    e grava pelo `bd_nativo`, na mesma transação que o módulo usa, e o
+    `commit()` da conexão confirma os dois juntos.
+    """
+    c = banco_pg.conectar(str(cg_db_path))
     yield c
     c.close()
 
@@ -50,10 +56,10 @@ def processo_id(con):
     pid = US.autuar(
         con, numero="3", modalidade="ORDINARIA", agora=AGORA,
         requerente_nome="JOÃO BATISTA DE SOUSA", usuario="mario")
-    con.execute(
-        """UPDATE us_processos SET imovel_descricao=?, imovel_endereco=?,
-               imovel_municipio=?, imovel_uf=?, imovel_area=?,
-               posse_tempo_alegado=? WHERE id=?""",
+    banco(con).escrever(
+        """UPDATE us_processos SET imovel_descricao=%s, imovel_endereco=%s,
+               imovel_municipio=%s, imovel_uf=%s, imovel_area=%s,
+               posse_tempo_alegado=%s WHERE id=%s""",
         ("Um terreno urbano de 12m por 30m", "Rua das Flores, s/n",
          "Cidade Exemplo", "MA", "360,00 m²", "há mais de quinze anos", pid))
     con.commit()
@@ -86,8 +92,14 @@ DA_MAQUINA = {
 
 
 def _colunas_de(con, tabela: str) -> list[str]:
-    return [r[1] for r in con.execute(f"PRAGMA table_info({tabela})")
-            if r[1] not in DA_MAQUINA[tabela]]
+    todas = [r["coluna"] for r in banco(con).ler(
+        """SELECT column_name AS coluna FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = %s
+            ORDER BY ordinal_position""", (tabela,))]
+    # Lista vazia passaria os dois testes abaixo sem conferir nada: o catálogo
+    # filtra pelo schema da conexão, e schema errado não dá erro, dá zero.
+    assert todas, f"{tabela} não tem coluna no schema desta conexão"
+    return [c for c in todas if c not in DA_MAQUINA[tabela]]
 
 
 def test_autuar_grava_TODA_coluna_que_lhe_e_passada(con):
@@ -112,10 +124,19 @@ def test_autuar_grava_TODA_coluna_que_lhe_e_passada(con):
     mandados = {c: (1 if c.endswith("_id") or c == "valor_centavos" or
                     c == "ano" else f"valor de {c}")
                 for c in colunas}
+    #  A MATRICULA TEM DE EXISTIR (medido em 19/10/2026, no PostgreSQL):
+    #  `matricula_id` aponta para `ri_matriculas`, e o banco migrado da
+    #  producao tem a mesma chave (`us_processos_matricula_id_fkey`). A conexao
+    #  crua do SQLite nao conferia FK, e o `1` passava apontando para matricula
+    #  nenhuma — coisa que a tela nunca grava (`usucapiao_web` nem manda
+    #  `matricula_id`). O que se mede aqui e se a coluna chega, e nao a chave.
+    mandados["matricula_id"] = banco(con).escrever(
+        """INSERT INTO ri_matriculas (numero, livro, situacao, criado_em)
+           VALUES ('9001', '2', 'ATIVA', %s) RETURNING id""",
+        (AGORA,))[0]["id"]
     pid = US.autuar(con, numero="9", modalidade="ORDINARIA", agora=AGORA,
                     usuario="mario", **mandados)
-    linha = con.execute("SELECT * FROM us_processos WHERE id=?",
-                        (pid,)).fetchone()
+    linha = banco(con).um("SELECT * FROM us_processos WHERE id=%s", (pid,))
     perdidas = [c for c in colunas
                 if str(linha[c] or "") != str(mandados[c])]
     assert not perdidas, (
@@ -131,8 +152,7 @@ def test_movimentar_grava_TODA_coluna_que_lhe_e_passada(con, processo_id):
                     else f"valor de {c}") for c in colunas}
     mid = US.movimentar(con, processo_id, tipo="OUTRO", descricao="ensaio",
                         agora=AGORA, usuario="mario", **mandados)
-    linha = con.execute("SELECT * FROM us_movimentos WHERE id=?",
-                        (mid,)).fetchone()
+    linha = banco(con).um("SELECT * FROM us_movimentos WHERE id=%s", (mid,))
     perdidas = [c for c in colunas
                 if str(linha[c] or "") != str(mandados[c])]
     assert not perdidas, (
@@ -146,8 +166,8 @@ def test_movimentar_grava_TODA_coluna_que_lhe_e_passada(con, processo_id):
 
 def test_a_notificacao_grava_o_movimento_com_tudo(con, processo_id):
     r = _notificar(con, processo_id)
-    linha = con.execute("SELECT * FROM us_movimentos WHERE id=?",
-                        (r["movimento_id"],)).fetchone()
+    linha = banco(con).um("SELECT * FROM us_movimentos WHERE id=%s",
+                          (r["movimento_id"],))
     assert linha["tipo"] == "NOTIFICACAO"
     assert linha["destinatario"] == "MARIA DAS DORES SOUSA"
     assert linha["endereco"].startswith("Rua do Comércio")
@@ -159,9 +179,9 @@ def test_o_teor_expedido_fica_guardado(con, processo_id):
     """**O que o notificado leu é o de então.** Remontá-lo depois traria o
     processo como ele está hoje."""
     r = _notificar(con, processo_id)
-    guardado = con.execute(
-        "SELECT teor_expedido FROM us_movimentos WHERE id=?",
-        (r["movimento_id"],)).fetchone()[0]
+    guardado = banco(con).valor(
+        "SELECT teor_expedido FROM us_movimentos WHERE id=%s",
+        (r["movimento_id"],))
     assert "MARIA DAS DORES SOUSA" in guardado
     assert "USUCAPIÃO EXTRAJUDICIAL" in guardado
     assert guardado == r["teor"]
@@ -170,19 +190,19 @@ def test_o_teor_expedido_fica_guardado(con, processo_id):
 def test_o_papel_e_conferido_antes_de_o_movimento_existir(con, processo_id):
     """**Movimento sem papel que o sustente é uma linha dizendo que a serventia
     notificou alguém sem ter notificado.**"""
-    antes = con.execute("SELECT COUNT(*) FROM us_movimentos").fetchone()[0]
+    antes = banco(con).valor("SELECT count(*) AS n FROM us_movimentos")
     with pytest.raises(UN.NotificacaoError):
         _notificar(con, processo_id, endereco="")
-    depois = con.execute("SELECT COUNT(*) FROM us_movimentos").fetchone()[0]
+    depois = banco(con).valor("SELECT count(*) AS n FROM us_movimentos")
     assert depois == antes, "gravou o movimento apesar de o papel ser recusado"
 
 
 def test_forma_fora_da_norma_nao_grava(con, processo_id):
-    antes = con.execute("SELECT COUNT(*) FROM us_movimentos").fetchone()[0]
+    antes = banco(con).valor("SELECT count(*) AS n FROM us_movimentos")
     with pytest.raises(UN.NotificacaoError):
         _notificar(con, processo_id, forma="WHATSAPP")
-    assert con.execute(
-        "SELECT COUNT(*) FROM us_movimentos").fetchone()[0] == antes
+    assert banco(con).valor(
+        "SELECT count(*) AS n FROM us_movimentos") == antes
 
 
 def test_o_prazo_vem_da_norma_e_nao_de_quem_digita(con, processo_id):
@@ -191,14 +211,15 @@ def test_o_prazo_vem_da_norma_e_nao_de_quem_digita(con, processo_id):
     r = _notificar(con, processo_id, prazo_chave="TITULAR_TABULAR")
     assert r["prazo"]["dias"] == 15
     assert r["prazo"]["procedencia"] == UN.CITADO
-    linha = con.execute("SELECT prazo_uteis FROM us_movimentos WHERE id=?",
-                        (r["movimento_id"],)).fetchone()
+    linha = banco(con).um("SELECT prazo_uteis FROM us_movimentos WHERE id=%s",
+                          (r["movimento_id"],))
     assert linha["prazo_uteis"] == 0, "o do titular tabular é em dias corridos"
 
 
 def test_processo_encerrado_nao_se_notifica(con, processo_id):
-    con.execute("UPDATE us_processos SET situacao='REGISTRADO' WHERE id=?",
-                (processo_id,))
+    banco(con).escrever(
+        "UPDATE us_processos SET situacao='REGISTRADO' WHERE id=%s",
+        (processo_id,))
     con.commit()
     with pytest.raises(US.UsucapiaoError) as e:
         _notificar(con, processo_id)
@@ -209,8 +230,8 @@ def test_a_descricao_do_movimento_diz_quem_e_por_que_forma(con, processo_id):
     """Quem abrir o andamento seis meses depois tem de entender sem abrir o
     papel."""
     r = _notificar(con, processo_id)
-    d = con.execute("SELECT descricao FROM us_movimentos WHERE id=?",
-                    (r["movimento_id"],)).fetchone()[0]
+    d = banco(con).valor("SELECT descricao FROM us_movimentos WHERE id=%s",
+                         (r["movimento_id"],))
     assert "MARIA DAS DORES SOUSA" in d
     assert "Confrontante ao norte" in d
     assert "Pessoalmente" in d

@@ -1,0 +1,11 @@
+{
+  "chave": "RI_CANCELAMENTO_DO_ATO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Cancelamento de ato da matrícula",
+  "formato": "JINJA",
+  "explica": "O teor da averbação que cancela um ato da matrícula, com o fundamento informado. O rótulo do ato (R-01/1234) é calculado pelo código. Vai ao livro e congela.",
+  "campos": [
+    "motivo",
+    "rotulo"
+  ]
+}

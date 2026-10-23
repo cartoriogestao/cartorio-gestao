@@ -50,11 +50,13 @@ from __future__ import annotations
 
 import hashlib
 import re
-import sqlite3
 import zipfile
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+
+import tetos_de_entrada as TETO
+from bd_nativo import banco
 
 # A ENTIDADE DOS ANEXOS DO TÍTULO. `attachments` é a tabela geral da casa —
 # ela já serve expediente e tarefa —, e o que separa um dono do outro é este
@@ -127,6 +129,14 @@ def ler_pacote(conteudo: bytes) -> list[dict]:
             "Este arquivo não é um pacote .zip de imagens da CRA. Baixe de "
             "novo em «Download imagens» e mande o arquivo como ele veio."
         ) from erro
+    # O ÍNDICE SE CONFERE ANTES DE LER (LX12, LS02 M2, 19/10/2026): o limite
+    # de 200 MB acima é do arquivo COMPACTADO; um zip de 200 MB pode se abrir
+    # em muito mais, e cada membro era lido inteiro antes de o teto de 25 MB
+    # por imagem recusá-lo.
+    try:
+        TETO.conferir_pacote(pacote)
+    except TETO.TetoExcedido as erro:
+        raise ImagemError(str(erro)) from erro
 
     itens: list[dict] = []
     for info in pacote.infolist():
@@ -147,36 +157,63 @@ def ler_pacote(conteudo: bytes) -> list[dict]:
                 "sequencia": achado.group("sequencia") or "",
                 "extensao": achado.group("extensao").lower(),
             }
+        tamanho, conteudo = _ler_ate_o_limite(pacote, info)
         itens.append({"nome": nome, "apresentante_pasta": pasta,
-                      "tamanho": info.file_size, "partes": partes,
-                      "conteudo": pacote.read(info)})
+                      "tamanho": tamanho, "partes": partes,
+                      "conteudo": conteudo})
     if not itens:
         raise ImagemError("O pacote não tem nenhum arquivo dentro.")
     return itens
 
 
+def _ler_ate_o_limite(pacote: zipfile.ZipFile, info: zipfile.ZipInfo) -> tuple[int, bytes]:
+    """(tamanho, conteúdo) do membro; acima de `LIMITE_DE_UMA_IMAGEM`, o
+    conteúdo fica VAZIO e não se lê (LX12, LS02 M2).
+
+    A imagem grande demais já era recusada por `_por_que_nao_entra` — mas
+    depois de lida inteira para a memória. Agora nem se lê: o tamanho
+    declarado basta para a recusa, e a leitura corta em limite+1, porque o
+    cabeçalho do zip pode mentir para baixo.
+    """
+    if info.file_size > LIMITE_DE_UMA_IMAGEM:
+        return info.file_size, b""
+    partes: list[bytes] = []
+    lidos = 0
+    with pacote.open(info) as fonte:
+        while lidos <= LIMITE_DE_UMA_IMAGEM:
+            pedaco = fonte.read(min(1024 * 1024, LIMITE_DE_UMA_IMAGEM + 1 - lidos))
+            if not pedaco:
+                break
+            partes.append(pedaco)
+            lidos += len(pedaco)
+    if lidos > LIMITE_DE_UMA_IMAGEM:
+        return lidos, b""
+    return lidos, b"".join(partes)
+
+
 # --------------------------------------------------------------- conferir
 
 
-def conferir(con: sqlite3.Connection, conteudo: bytes) -> dict:
+def conferir(con: Any, conteudo: bytes) -> dict:
     """Diz o que entraria, e o que não entraria e por quê. Só LÊ.
 
     NÃO GRAVA NADA — é o primeiro dos dois passos. Quem olha esta lista está
     prestes a anexar documento à ficha de títulos de gente de verdade.
     """
+    bd = banco(con)
     itens = ler_pacote(conteudo)
     entram, ficam_de_fora, repetidas = [], [], []
 
     for item in itens:
-        motivo = _por_que_nao_entra(con, item)
+        motivo = _por_que_nao_entra(bd, item)
         if motivo:
             ficam_de_fora.append({**_sem_conteudo(item), "motivo": motivo})
             continue
-        titulo = _titulo_do_item(con, item)
-        ja = con.execute(
+        titulo = _titulo_do_item(bd, item)
+        ja = bd.um(
             """SELECT id FROM attachments
-                WHERE entity_type=? AND entity_id=? AND sha256=?""",
-            (ENTIDADE, titulo["id"], _sha256(item["conteudo"]))).fetchone()
+                WHERE entity_type=%s AND entity_id=%s AND sha256=%s""",
+            (ENTIDADE, titulo["id"], _sha256(item["conteudo"])))
         destino = repetidas if ja else entram
         destino.append({**_sem_conteudo(item),
                         "titulo_id": titulo["id"],
@@ -192,7 +229,7 @@ def _sem_conteudo(item: dict) -> dict:
     return {k: v for k, v in item.items() if k != "conteudo"}
 
 
-def _titulo_do_item(con: sqlite3.Connection, item: dict) -> dict | None:
+def _titulo_do_item(con: Any, item: dict) -> dict | None:
     """Acha o título pelo nosso número E confere pelo documento do devedor.
 
     OS DOIS JUNTOS, e não um deles. O nosso número se repete entre
@@ -207,18 +244,18 @@ def _titulo_do_item(con: sqlite3.Connection, item: dict) -> dict | None:
     documento = so_digitos(partes["documento"])
     if not nosso:
         return None
-    con.create_function("digitos", 1, lambda v: so_digitos(v))
-    linha = con.execute(
+    bd = banco(con)
+    linha = bd.um(
         """SELECT t.id, t.numero_titulo, d.nome devedor
              FROM pt_titulos t
              JOIN pt_devedores d ON d.titulo_id = t.id
-            WHERE digitos(t.nosso_numero) = ?
-              AND digitos(d.documento_numero) = ?
-            ORDER BY t.id LIMIT 1""", (nosso, documento)).fetchone()
+            WHERE digitos(t.nosso_numero) = %s
+              AND digitos(d.documento_numero) = %s
+            ORDER BY t.id, d.id LIMIT 1""", (nosso, documento))
     return dict(linha) if linha else None
 
 
-def _por_que_nao_entra(con: sqlite3.Connection, item: dict) -> str:
+def _por_que_nao_entra(con: Any, item: dict) -> str:
     """A frase de balcão, ou vazio quando entra."""
     if item["tamanho"] > LIMITE_DE_UMA_IMAGEM:
         return (f"tem {item['tamanho'] // 1024 // 1024} MB, acima do limite de "
@@ -226,16 +263,16 @@ def _por_que_nao_entra(con: sqlite3.Connection, item: dict) -> str:
     if not item.get("partes"):
         return ("o nome não tem a forma que a CRA usa "
                 "(nosso número, documento do devedor e sequência)")
-    if _titulo_do_item(con, item) is not None:
+    bd = banco(con)
+    if _titulo_do_item(bd, item) is not None:
         return ""
     partes = item["partes"]
     # A RECUSA DIZ QUAL DAS DUAS PARTES FALHOU, porque o conserto é diferente:
     # título que não existe aqui é remessa que não foi recebida; documento que
     # não bate é imagem de outro título com o mesmo nosso número.
-    con.create_function("digitos", 1, lambda v: so_digitos(v))
-    existe = con.execute(
-        "SELECT id FROM pt_titulos WHERE digitos(nosso_numero)=?",
-        (so_digitos(partes["nosso_numero"]),)).fetchone()
+    existe = bd.um(
+        "SELECT id FROM pt_titulos WHERE digitos(nosso_numero)=%s ORDER BY id LIMIT 1",
+        (so_digitos(partes["nosso_numero"]),))
     if not existe:
         return (f"não há título com o nosso número {partes['nosso_numero']} — "
                 f"a remessa dele ainda não foi recebida")
@@ -247,7 +284,7 @@ def _por_que_nao_entra(con: sqlite3.Connection, item: dict) -> str:
 # --------------------------------------------------------------- guardar
 
 
-def guardar(con: sqlite3.Connection, conteudo: bytes, *, pasta_de_arquivos: Any,
+def guardar(con: Any, conteudo: bytes, *, pasta_de_arquivos: Any,
             agora: str, usuario_id: int | None = None,
             origem: str | None = None) -> dict:
     """Anexa as imagens aos títulos. ESCREVE, e grava arquivo em disco.
@@ -256,7 +293,8 @@ def guardar(con: sqlite3.Connection, conteudo: bytes, *, pasta_de_arquivos: Any,
     as outras quarenta e cinco continuam sendo o trabalho do dia — é a mesma
     regra do lote da remessa, em que título ruim não impede os bons de entrar.
     """
-    conferencia = conferir(con, conteudo)
+    bd = banco(con)
+    conferencia = conferir(bd, conteudo)
     if not conferencia["entram"]:
         raise ImagemError(
             f"Nenhuma das {conferencia['total']} imagens deste pacote entra: "
@@ -283,17 +321,18 @@ def guardar(con: sqlite3.Connection, conteudo: bytes, *, pasta_de_arquivos: Any,
             arquivo = destino / f"{base}_{n}{ponto}{ext}"
         arquivo.write_bytes(item["conteudo"])
 
-        cur = con.execute(
+        novo = bd.escrever(
             """INSERT INTO attachments(entity_type, entity_id, original_name,
                    stored_name, stored_path, sha256, size_bytes, description,
                    uploaded_by, uploaded_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id""",
             (ENTIDADE, titulo_id, previsto["nome"], arquivo.name,
              str(arquivo), _sha256(item["conteudo"]), item["tamanho"],
              "Imagem do título recebida da CRA"
              + (f" ({origem})" if origem else ""),
              usuario_id, agora))
-        guardadas.append({"anexo_id": int(cur.lastrowid),
+        guardadas.append({"anexo_id": int(novo[0]["id"]),
                           "titulo_id": titulo_id,
                           "nome": previsto["nome"]})
 
@@ -306,35 +345,35 @@ def guardar(con: sqlite3.Connection, conteudo: bytes, *, pasta_de_arquivos: Any,
 # --------------------------------------------------------------- consultas
 
 
-def imagens_do_titulo(con: sqlite3.Connection, titulo_id: int) -> list[dict]:
+def imagens_do_titulo(con: Any, titulo_id: int) -> list[dict]:
     """As imagens anexadas àquele título, da mais nova. Só LÊ."""
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         """SELECT id, original_name, stored_path, sha256, size_bytes,
                   description, uploaded_at
-             FROM attachments WHERE entity_type=? AND entity_id=?
+             FROM attachments WHERE entity_type=%s AND entity_id=%s
             ORDER BY id DESC""", (ENTIDADE, int(titulo_id)))]
 
 
-def quantas(con: sqlite3.Connection, titulo_id: int) -> int:
+def quantas(con: Any, titulo_id: int) -> int:
     """Quantas imagens o título tem. Só LÊ — a ficha pergunta isso sempre."""
-    linha = con.execute(
-        "SELECT COUNT(*) c FROM attachments WHERE entity_type=? AND entity_id=?",
-        (ENTIDADE, int(titulo_id))).fetchone()
+    linha = banco(con).um(
+        "SELECT COUNT(*) AS c FROM attachments WHERE entity_type=%s AND entity_id=%s",
+        (ENTIDADE, int(titulo_id)))
     return int(linha["c"] if linha else 0)
 
 
-def titulos_sem_imagem(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
+def titulos_sem_imagem(con: Any, limite: int = 100) -> list[dict]:
     """Os títulos vivos que não têm imagem nenhuma. Só LÊ.
 
     É a lista de trabalho: cada um deles é um título que a casa apontou sem ter
     o documento à mão. Ela não acusa o acervo — os 1.366 que vieram do E-Ofício
     têm imagem em papel, na pasta, e a CRA não os reenvia.
     """
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         """SELECT t.id, t.numero_titulo, t.nosso_numero, t.situacao,
                   t.criado_em
              FROM pt_titulos t
             WHERE t.origem <> 'EOFICIO'
               AND NOT EXISTS (SELECT 1 FROM attachments a
-                               WHERE a.entity_type = ? AND a.entity_id = t.id)
-            ORDER BY t.id DESC LIMIT ?""", (ENTIDADE, int(limite)))]
+                               WHERE a.entity_type = %s AND a.entity_id = t.id)
+            ORDER BY t.id DESC LIMIT %s""", (ENTIDADE, int(limite)))]

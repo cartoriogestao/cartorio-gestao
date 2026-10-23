@@ -1,0 +1,1 @@
+a data de nascimento do registrando, {data}, constante do próprio assento

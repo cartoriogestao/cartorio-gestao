@@ -66,14 +66,15 @@ FUNDAMENTO
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import date
 from typing import Any
 
 import escrituracao as ESC
 import protesto_cra as CRA
 import protesto_termo as TERMO
+from bd_nativo import banco
 from caixa_schema import centavos
+from cpf_cnpj import documento_valido, mensagem_documento_invalido, so_digitos
 from pt_schema import normalizar_nome
 
 
@@ -82,7 +83,7 @@ class ProtestoError(ValueError):
 
 
 # O titulo anda RECEBIDO -> APONTADO -> INTIMADO -> PROTESTADO -> CANCELADO,
-# e pode receber PAGAMENTO em qualquer ponto ate PROTESTADO; ou para em
+# e pode receber PAGAMENTO em qualquer ponto ANTES do protesto; ou para em
 # DESISTIDO antes do protesto. O resto do ciclo (DEVOLVIDO, RETIRADO) esta
 # documentado em LEVANTAMENTO_PROTESTO.md e ainda por construir.
 SITUACOES_TITULO = ("RECEBIDO", "APONTADO", "INTIMADO", "PROTESTADO",
@@ -90,6 +91,24 @@ SITUACOES_TITULO = ("RECEBIDO", "APONTADO", "INTIMADO", "PROTESTADO",
 
 # Situacoes finais: nao ha mais o que fazer com o titulo por este modulo.
 SITUACOES_FINAIS = ("DESISTIDO", "PAGO", "CANCELADO")
+
+# O PROTESTO LAVRADO NÃO SE PAGA MAIS NA SERVENTIA — o oficial, 21/10/2026
+# (LH13, pergunta 17, letra c): «protesto nao pode ser pago na serventia
+# depois de lavrar». Ele voltou atrás na decisão de 24/08/2026, que admitia o
+# pagamento em qualquer ponto do ciclo: o título pago depois do protesto ficava
+# PAGO, e o cancelamento — que só cabia no PROTESTADO — não o alcançava mais;
+# o protesto continuava para sempre na certidão positiva. Depois do protesto,
+# o devedor paga ao CREDOR e pede o cancelamento com a carta de anuência (Lei
+# 9.492/1997, art. 26, § 1º; CN-MA art. 942, § 2º).
+SITUACOES_SEM_PAGAMENTO = SITUACOES_FINAIS + ("PROTESTADO",)
+
+# O LEGADO DA REGRA ANTIGA: o título PAGO na serventia depois de protestado,
+# entre 24/08 e 21/10/2026, tem o protesto em pé e nenhum caminho de baixa.
+# Para ele o cancelamento cabe pelo caminho que a decisão de 21/10 manda — a
+# anuência do credor — e pela ordem judicial, que vale sempre. A hipótese
+# PAGAMENTO, não: usar o pagamento lançado aqui como prova da quitação era a
+# letra (a) da pergunta 17, que o oficial não escolheu.
+HIPOTESES_DO_PAGO_DEPOIS_DO_PROTESTO = ("ANUENCIA_CREDOR", "ORDEM_JUDICIAL")
 
 # As hipoteses de cancelamento do registro do protesto. O acervo tinha UM
 # cadastro so — "Erro Material" — e os 56 cancelamentos reais saíram todos
@@ -175,6 +194,24 @@ ORDEM_JUDICIAL_E_A_REVOGACAO = {
     "EFEITO_SUSPENSIVO": "REVOGACAO_EFEITO_SUSPENSIVO",
 }
 
+# O CARÁTER DA DECISÃO QUE SUSPENDE OS EFEITOS DO PROTESTO — CNN art. 263-K
+# (Prov. CN 253, de 18/08/2026), seguido por decisão do oficial em 21/10/2026
+# (LH13, pergunta 18, letra a), no lugar da sua decisão de 14/10/2026 pelo
+# CN-MA arts. 944 e 948. É o que decide a certidão a terceiro:
+#   PROVISORIA — «CONSTA COM SUSTAÇÃO JUDICIAL PRECÁRIA», com os dados do
+#                registro, o número da ação e o caráter provisório (III);
+#   DEFINITIVA — «NADA CONSTA»: o protesto fica fora da certidão (I).
+# A decisão que manda EXPRESSAMENTE emitir negativa cumpre-se nos exatos
+# limites, e no segredo de justiça a certidão diz só a sustação e o número do
+# processo (§ 1º) — as duas outras marcas da ordem.
+#
+# SÓ O EFEITO SUSPENSIVO TEM A MARCA, e não a sustação: a sustação chega antes
+# do protesto, e título sem protesto lavrado não entra em certidão nenhuma.
+CARATER_DA_ORDEM = {
+    "PROVISORIA": "provisória (liminar, tutela de urgência)",
+    "DEFINITIVA": "definitiva (sentença ou decisão final)",
+}
+
 # OS ATOS QUE A SUSTACAO JUDICIAL BLOQUEIA — Lei 9.492/1997, art. 17, § 1o:
 # o titulo sustado «so podera ser PAGO, PROTESTADO ou RETIRADO com autorizacao
 # judicial».
@@ -233,38 +270,94 @@ SERIE_PAGAMENTO = "PT_PAGAMENTO"
 # --------------------------------------------------------------- consultas
 
 
-def titulo(con: sqlite3.Connection, titulo_id: int) -> sqlite3.Row | None:
+def titulo(con, titulo_id: int) -> dict | None:
     """O titulo, com tudo que foi cadastrado. So LE."""
-    return con.execute(
-        "SELECT * FROM pt_titulos WHERE id=?", (int(titulo_id),)).fetchone()
+    return banco(con).um(
+        "SELECT * FROM pt_titulos WHERE id=%s", (int(titulo_id),))
 
 
-def devedores_do(con: sqlite3.Connection, titulo_id: int) -> list[sqlite3.Row]:
+def titulo_para_gravar(con, titulo_id: int) -> dict | None:
+    """O titulo, com a linha PRESA ate o fim da transacao (FOR UPDATE).
+
+    Para quem confere a situacao do titulo — ou a ordem judicial em vigor —
+    e grava em cima dela. Sem a linha presa, a desistencia e a intimacao do
+    mesmo titulo, ao mesmo tempo, passariam as duas na conferencia; com ela,
+    a segunda espera a primeira e le a situacao ja gravada. Abre a escrita:
+    nao e para tela que so mostra (essa usa `titulo`).
+    """
+    bd = banco(con)
+    bd._escrita()
+    return bd.um("SELECT * FROM pt_titulos WHERE id=%s FOR UPDATE",
+                 (int(titulo_id),))
+
+
+def devedores_do(con, titulo_id: int) -> list[dict]:
     """Os devedores do titulo, na ordem em que entraram. So LE."""
-    return list(con.execute(
-        "SELECT * FROM pt_devedores WHERE titulo_id=? ORDER BY id",
-        (int(titulo_id),)))
+    return banco(con).ler(
+        "SELECT * FROM pt_devedores WHERE titulo_id=%s ORDER BY id",
+        (int(titulo_id),))
 
 
-def atos_do(con: sqlite3.Connection, titulo_id: int) -> list[sqlite3.Row]:
+def atos_do(con, titulo_id: int) -> list[dict]:
     """Os atos ja lancados para o titulo, na ordem em que aconteceram. So LE."""
-    return list(con.execute(
-        "SELECT * FROM pt_atos WHERE titulo_id=? ORDER BY id",
-        (int(titulo_id),)))
+    return banco(con).ler(
+        "SELECT * FROM pt_atos WHERE titulo_id=%s ORDER BY id",
+        (int(titulo_id),))
 
 
-def titulo_por_origem(con: sqlite3.Connection, origem: str,
-                      origem_chave: str) -> sqlite3.Row | None:
+def titulo_por_origem(con, origem: str,
+                      origem_chave: str) -> dict | None:
     """O titulo de uma chave de origem, ou None. So LE."""
-    return con.execute(
-        "SELECT * FROM pt_titulos WHERE origem=? AND origem_chave=?",
-        (origem, origem_chave)).fetchone()
+    return banco(con).um(
+        "SELECT * FROM pt_titulos WHERE origem=%s AND origem_chave=%s "
+        "ORDER BY id LIMIT 1",
+        (origem, origem_chave))
+
+
+def apresentante_do_titulo(con, titulo: Any) -> dict:
+    """Quem apresentou o titulo: nome, CPF/CNPJ e endereco. So LE.
+
+    A NORMA PEDE OS TRES, E O ARQUIVO DA CRA TRAZ UM (LD08, 21/10/2026). O
+    aviso leva o apresentante «com respectivos CPF e/ou CNPJ» (CN-MA art.
+    923; CNN art. 356, § 4o); o registro e o instrumento, o nome «e
+    endereco» (Lei 9.492/1997, art. 22, II; CN-MA art. 914, III). O
+    cabecalho da remessa da CRA tem so o codigo (3) e o nome (40) — medido em
+    01/09/2026 (`protesto_instrumento.ITENS_DO_ART_22`).
+
+    DE ONDE VEM CADA UM, nesta ordem:
+      - do proprio titulo: o balcao os pede a quem traz o titulo (CN-MA art.
+        884, I), e eles ficam em `pt_titulos`;
+      - do cadastro dos apresentantes (`pt_apresentantes`), pelo codigo da
+        CRA — o mesmo que o XML da CENPROT ja le para o CNPJ. O banco
+        apresentante e um so para milhares de titulos: o endereco dele se
+        escreve uma vez, na tela do XML, e nao titulo a titulo;
+      - sem nenhum dos dois, o nome cai para o codigo, e o documento e o
+        endereco vem vazios: o papel os omite, e a conferencia do
+        instrumento diz o que falta. Nao se inventa.
+    """
+    t = dict(titulo or {})
+    codigo = str(t.get("apresentante_codigo") or "").strip()
+    cadastro = (banco(con).um(
+        "SELECT nome, documento, endereco FROM pt_apresentantes WHERE codigo = %s",
+        (codigo,)) if codigo else None) or {}
+
+    def _primeiro(*valores: Any) -> str:
+        return next((str(v).strip() for v in valores
+                     if v is not None and str(v).strip()), "")
+
+    return {"codigo": codigo,
+            "nome": _primeiro(t.get("apresentante_nome"), cadastro.get("nome"),
+                              codigo),
+            "documento": _primeiro(so_digitos(t.get("apresentante_documento")),
+                                   so_digitos(cadastro.get("documento"))),
+            "endereco": _primeiro(t.get("apresentante_endereco"),
+                                  cadastro.get("endereco"))}
 
 
 # ------------------------------------------------------------- o cadastro
 
 
-def cadastrar_titulo(con: sqlite3.Connection, dados: dict, *, origem: str,
+def cadastrar_titulo(con, dados: dict, *, origem: str,
                      origem_chave: str | None = None,
                      importacao_id: int | None = None,
                      usuario: str | None = None, agora: str) -> int:
@@ -291,24 +384,39 @@ def cadastrar_titulo(con: sqlite3.Connection, dados: dict, *, origem: str,
     if faltas:
         raise ProtestoError(
             "O título não passa no contrato da CRA: " + "; ".join(faltas))
+    # O CPF/CNPJ DO APRESENTANTE VAI AO AVISO (CN-MA art. 923), e número que
+    # não fecha o dígito é documento de ninguém num papel que a casa assina.
+    # Vazio não é erro: quem exige ou não é o oficial (LD08.perguntas, 1).
+    doc_apresentante = so_digitos(dados.get("apresentante_documento"))
+    if documento_valido(doc_apresentante) is False:
+        raise ProtestoError("CPF/CNPJ do apresentante: "
+                            + mensagem_documento_invalido(doc_apresentante))
+    bd = banco(con)
     if chave:
-        existente = titulo_por_origem(con, origem, chave)
+        existente = titulo_por_origem(bd, origem, chave)
         if existente:
             return int(existente["id"])
 
     cedente = dados.get("cedente") or {}
-    cur = con.execute(
+    # O `ON CONFLICT` e a mesma regra de cima para quem chega AO MESMO TEMPO:
+    # a conferencia nao ve o cadastro que outro atendimento ainda nao
+    # confirmou, e o INSERT puro estouraria o UNIQUE(origem, origem_chave).
+    # Com ele, o segundo espera o primeiro e devolve o id que ficou.
+    novo = bd.escrever(
         """INSERT INTO pt_titulos(
                especie, numero_titulo, nosso_numero, chave_cenprot,
                data_emissao, data_vencimento, tipo_moeda, valor_centavos,
                saldo_centavos, praca_protesto, tipo_protesto, tipo_endosso,
                aceite, motivo_protesto, irregularidades_json,
                apresentante_codigo, apresentante_nome,
+               apresentante_documento, apresentante_endereco,
                cedente_nome, cedente_documento, cedente_endereco,
                cedente_cep, cedente_cidade, cedente_uf,
                situacao, origem, origem_chave, importacao_id,
                criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           ON CONFLICT (origem, origem_chave) DO NOTHING
+           RETURNING id""",
         (dados.get("especie"), dados.get("numero_titulo"), dados.get("nosso_numero"),
          dados.get("chave_cenprot"), dados.get("data_emissao"),
          dados.get("data_vencimento"), dados.get("tipo_moeda") or "1",
@@ -318,21 +426,25 @@ def cadastrar_titulo(con: sqlite3.Connection, dados: dict, *, origem: str,
          json.dumps(dados.get("irregularidades") or [], ensure_ascii=False),
          (dados.get("apresentante_codigo") or None),
          (dados.get("apresentante_nome") or None),
+         doc_apresentante or None,
+         (str(dados.get("apresentante_endereco") or "").strip() or None),
          cedente.get("nome"), cedente.get("documento"), cedente.get("endereco"),
          cedente.get("cep"), cedente.get("cidade"), cedente.get("uf"),
          "RECEBIDO", origem, chave, importacao_id, agora, usuario))
-    titulo_id = int(cur.lastrowid)
+    if not novo:
+        return int(titulo_por_origem(bd, origem, chave)["id"])
+    titulo_id = int(novo[0]["id"])
 
     for devedor in dados.get("devedores") or []:
         documento_tipo = ("CNPJ" if devedor.get("CNPJ")
                           else "CPF" if devedor.get("CPF") else None)
         documento_numero = devedor.get("CNPJ") or devedor.get("CPF")
         endereco = (devedor.get("enderecos") or [{}])[0]
-        con.execute(
+        bd.escrever(
             """INSERT INTO pt_devedores(titulo_id, nome, nome_norm,
                    documento_tipo, documento_numero, endereco, bairro, cep,
                    cidade, uf)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (titulo_id, devedor.get("nome"),
              normalizar_nome(devedor.get("nome")),
              documento_tipo, documento_numero,
@@ -344,7 +456,7 @@ def cadastrar_titulo(con: sqlite3.Connection, dados: dict, *, origem: str,
 # ----------------------------------------------------------- o protocolo
 
 
-def numero_do_protocolo(con: sqlite3.Connection, dia: str) -> str:
+def numero_do_protocolo(con, dia: str) -> str:
     """O protocolo da casa: AAMMDD mais o sequencial do dia, com 4 digitos.
 
     E A FORMA QUE ESTA CASA USA HOJE, medida em 25/08/2026 no acervo. No
@@ -363,17 +475,17 @@ def numero_do_protocolo(con: sqlite3.Connection, dia: str) -> str:
     """
     d = str(dia)[:10]
     prefixo = d[2:4] + d[5:7] + d[8:10]
-    linha = con.execute(
-        """SELECT COUNT(*) n FROM pt_titulos
-            WHERE protocolo IS NOT NULL AND protocolo LIKE ?""",
-        (f"{prefixo}%",)).fetchone()
-    return f"{prefixo}{int(linha['n']) + 1:04d}"
+    n = banco(con).valor(
+        """SELECT COUNT(*) AS n FROM pt_titulos
+            WHERE protocolo IS NOT NULL AND protocolo ILIKE %s""",
+        (f"{prefixo}%",))
+    return f"{prefixo}{int(n) + 1:04d}"
 
 
 # ----------------------------------------------------------- o apontamento
 
 
-def lancar_apontamento(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
+def lancar_apontamento(con, titulo_id: int, *, sv: dict,
                        agora: str, data_extenso: str,
                        usuario: str | None = None,
                        origem: str = "MANUAL") -> dict:
@@ -388,7 +500,8 @@ def lancar_apontamento(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
     a reserva falhar por falta de folha, a transacao volta atras inteira e
     nao sobra ato sem lugar.
     """
-    tit = titulo(con, titulo_id)
+    bd = banco(con)
+    tit = titulo_para_gravar(bd, titulo_id)
     if not tit:
         raise ProtestoError(f"Título {titulo_id} não encontrado.")
     if tit["situacao"] != "RECEBIDO":
@@ -396,30 +509,30 @@ def lancar_apontamento(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
             f"O título {tit['numero_titulo']} está com situação "
             f"{tit['situacao']} — não se aponta de novo.")
 
-    cur = con.execute(
+    ato_id = int(bd.escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, origem, criado_em,
                criado_por)
-           VALUES (?,?,?,?,?,?)""",
-        (titulo_id, "APONTAMENTO", agora, origem, agora, usuario))
-    ato_id = int(cur.lastrowid)
+           VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (titulo_id, "APONTAMENTO", agora, origem, agora, usuario))[0]["id"])
 
     # O PROTOCOLO NASCE AQUI, com o apontamento — e o numero que volta para a
     # CRA na posicao 448 do retorno. Titulo que ja tem protocolo (veio do
     # acervo com ele) fica com o que tinha: renumerar apagaria o que a Central
     # ja conhece.
     if not (tit["protocolo"] or "").strip():
-        con.execute("UPDATE pt_titulos SET protocolo=? WHERE id=?",
-                    (numero_do_protocolo(con, agora), titulo_id))
+        bd.travar("pt_titulos.protocolo")
+        bd.escrever("UPDATE pt_titulos SET protocolo=%s WHERE id=%s",
+                    (numero_do_protocolo(bd, agora), titulo_id))
 
     lugar = ESC.reservar(con, SERIE_APONTAMENTO, "pt_atos", ato_id, sv=sv,
                          agora=agora, data_extenso=data_extenso, paginas=1,
                          usuario=usuario)
-    con.execute(
-        """UPDATE pt_atos SET livro_id=?, folha=?, verso=?, numero_ordem=?,
-                              rotulo=? WHERE id=?""",
+    bd.escrever(
+        """UPDATE pt_atos SET livro_id=%s, folha=%s, verso=%s, numero_ordem=%s,
+                              rotulo=%s WHERE id=%s""",
         (lugar["livro_id"], lugar["folha"], int(lugar["verso"]),
          lugar["numero_ordem"], lugar["rotulo"], ato_id))
-    con.execute("UPDATE pt_titulos SET situacao='APONTADO' WHERE id=?",
+    bd.escrever("UPDATE pt_titulos SET situacao='APONTADO' WHERE id=%s",
                (titulo_id,))
     return {"ato_id": ato_id, "titulo_id": titulo_id, **lugar}
 
@@ -427,7 +540,7 @@ def lancar_apontamento(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
 # ------------------------------------------------------------ a intimacao
 
 
-def lancar_intimacao(con: sqlite3.Connection, titulo_id: int, *, modo: str,
+def lancar_intimacao(con, titulo_id: int, *, modo: str,
                      agora: str, usuario: str | None = None,
                      digital: bool = False, codigo_edital: str | None = None,
                      comprovante: str | None = None,
@@ -447,7 +560,8 @@ def lancar_intimacao(con: sqlite3.Connection, titulo_id: int, *, modo: str,
         raise ProtestoError(
             f"Modo de intimação desconhecido: {modo!r}. Os que existem são "
             f"{', '.join(MODOS_INTIMACAO)}.")
-    tit = titulo(con, titulo_id)
+    bd = banco(con)
+    tit = titulo_para_gravar(bd, titulo_id)
     if not tit:
         raise ProtestoError(f"Título {titulo_id} não encontrado.")
     if tit["situacao"] not in ("APONTADO", "INTIMADO"):
@@ -464,21 +578,21 @@ def lancar_intimacao(con: sqlite3.Connection, titulo_id: int, *, modo: str,
     if comprovante:
         detalhe["comprovante"] = comprovante.strip()
 
-    cur = con.execute(
+    ato_id = int(bd.escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
                origem, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (titulo_id, "INTIMACAO", agora, json.dumps(detalhe, ensure_ascii=False),
-         origem, agora, usuario))
-    con.execute("UPDATE pt_titulos SET situacao='INTIMADO' WHERE id=?",
+         origem, agora, usuario))[0]["id"])
+    bd.escrever("UPDATE pt_titulos SET situacao='INTIMADO' WHERE id=%s",
                (titulo_id,))
-    return {"ato_id": int(cur.lastrowid), "titulo_id": titulo_id, **detalhe}
+    return {"ato_id": ato_id, "titulo_id": titulo_id, **detalhe}
 
 
 # --------------------------------------------------- o protesto e a desistencia
 
 
-def esperando_protesto(con: sqlite3.Connection, *, hoje: str,
+def esperando_protesto(con, *, hoje: str,
                        limite: int = 300) -> list[dict]:
     """Os títulos intimados e SEM MOVIMENTAÇÃO desde a intimação. Só LÊ.
 
@@ -497,11 +611,12 @@ def esperando_protesto(con: sqlite3.Connection, *, hoje: str,
     que **nenhum ato entrou depois da intimação** — e é assim que a consulta
     pergunta, olhando o `id` do ato, que é a ordem em que eles foram lavrados.
     """
-    linhas = con.execute(
+    bd = banco(con)
+    linhas = bd.ler(
         """SELECT t.id, t.numero_titulo, t.nosso_numero, t.protocolo,
                   t.especie, t.valor_centavos, t.saldo_centavos, t.situacao,
-                  i.data_ato data_da_intimacao, i.detalhe_json,
-                  i.numero_ordem numero_da_intimacao
+                  i.data_ato AS data_da_intimacao, i.detalhe_json,
+                  i.numero_ordem AS numero_da_intimacao
              FROM pt_titulos t
              JOIN pt_atos i ON i.id = (
                     SELECT MAX(a.id) FROM pt_atos a
@@ -523,7 +638,7 @@ def esperando_protesto(con: sqlite3.Connection, *, hoje: str,
                                                AND r.tipo = 'REVOGACAO_SUSTACAO'
                                             ), 0))
             ORDER BY i.data_ato, t.id
-            LIMIT ?""", (int(limite),)).fetchall()
+            LIMIT %s""", (int(limite),))
 
     saida = []
     for linha in linhas:
@@ -539,14 +654,15 @@ def esperando_protesto(con: sqlite3.Connection, *, hoje: str,
                                       .get("modo") or "")
         except (TypeError, ValueError):
             d["modo_da_intimacao"] = ""
-        d["devedores"] = [dict(r) for r in con.execute(
-            "SELECT nome, documento_numero FROM pt_devedores WHERE titulo_id=?",
+        d["devedores"] = [dict(r) for r in bd.ler(
+            "SELECT nome, documento_numero FROM pt_devedores WHERE titulo_id=%s "
+            "ORDER BY id",
             (d["id"],))]
         saida.append(d)
     return saida
 
 
-def sustacao_revogada(con: sqlite3.Connection, *, hoje: str,
+def sustacao_revogada(con, *, hoje: str,
                       limite: int = 300) -> list[dict]:
     """Os títulos cuja sustação foi revogada e que ainda não foram protestados.
 
@@ -568,10 +684,11 @@ def sustacao_revogada(con: sqlite3.Connection, *, hoje: str,
     tríduo, que o oficial fixou em 24/08/2026. E conta-se do **recebimento**
     da revogação, que é o que o parágrafo manda, e não da data da decisão.
     """
-    linhas = con.execute(
+    bd = banco(con)
+    linhas = bd.ler(
         """SELECT t.id, t.numero_titulo, t.nosso_numero, t.protocolo,
                   t.especie, t.valor_centavos, t.saldo_centavos, t.situacao,
-                  r.data_ato data_da_revogacao, r.detalhe_json
+                  r.data_ato AS data_da_revogacao, r.detalhe_json
              FROM pt_titulos t
              JOIN pt_atos r ON r.id = (
                     SELECT MAX(a.id) FROM pt_atos a
@@ -581,7 +698,7 @@ def sustacao_revogada(con: sqlite3.Connection, *, hoje: str,
               AND t.situacao NOT IN ('PROTESTADO','PAGO','CANCELADO',
                                      'DESISTIDO','RETIRADO')
             ORDER BY r.data_ato, t.id
-            LIMIT ?""", (int(limite),)).fetchall()
+            LIMIT %s""", (int(limite),))
 
     saida = []
     for linha in linhas:
@@ -594,14 +711,15 @@ def sustacao_revogada(con: sqlite3.Connection, *, hoje: str,
             ordem = {}
         d["juizo"] = ordem.get("juizo") or ""
         d["processo"] = ordem.get("processo") or ""
-        d["devedores"] = [dict(x) for x in con.execute(
-            "SELECT nome, documento_numero FROM pt_devedores WHERE titulo_id=?",
+        d["devedores"] = [dict(x) for x in bd.ler(
+            "SELECT nome, documento_numero FROM pt_devedores WHERE titulo_id=%s "
+            "ORDER BY id",
             (d["id"],))]
         saida.append(d)
     return saida
 
 
-def sustados(con: sqlite3.Connection, limite: int = 300) -> list[dict]:
+def sustados(con, limite: int = 300) -> list[dict]:
     """Os títulos com o protesto sustado por ordem judicial. Só LÊ.
 
     Eles ficam **à disposição do Juízo** (art. 17, caput), e não se pagam, não
@@ -609,10 +727,11 @@ def sustados(con: sqlite3.Connection, limite: int = 300) -> list[dict]:
     própria existe porque eles não aparecem em nenhuma outra: saíram da fila
     do «A protestar» de propósito, e sem esta tela ninguém sabe que existem.
     """
-    linhas = con.execute(
+    bd = banco(con)
+    linhas = bd.ler(
         """SELECT t.id, t.numero_titulo, t.nosso_numero, t.protocolo,
                   t.especie, t.saldo_centavos, t.situacao,
-                  s.data_ato data_da_sustacao, s.detalhe_json
+                  s.data_ato AS data_da_sustacao, s.detalhe_json
              FROM pt_titulos t
              JOIN pt_atos s ON s.id = (
                     SELECT MAX(a.id) FROM pt_atos a
@@ -620,7 +739,7 @@ def sustados(con: sqlite3.Connection, limite: int = 300) -> list[dict]:
                        AND a.tipo IN ('SUSTACAO','REVOGACAO_SUSTACAO'))
             WHERE s.tipo = 'SUSTACAO'
             ORDER BY s.data_ato, t.id
-            LIMIT ?""", (int(limite),)).fetchall()
+            LIMIT %s""", (int(limite),))
     saida = []
     for linha in linhas:
         d = dict(linha)
@@ -630,8 +749,9 @@ def sustados(con: sqlite3.Connection, limite: int = 300) -> list[dict]:
             ordem = {}
         d["juizo"] = ordem.get("juizo") or ""
         d["processo"] = ordem.get("processo") or ""
-        d["devedores"] = [dict(x) for x in con.execute(
-            "SELECT nome, documento_numero FROM pt_devedores WHERE titulo_id=?",
+        d["devedores"] = [dict(x) for x in bd.ler(
+            "SELECT nome, documento_numero FROM pt_devedores WHERE titulo_id=%s "
+            "ORDER BY id",
             (d["id"],))]
         saida.append(d)
     return saida
@@ -651,7 +771,7 @@ def _dias_entre(de: Any, ate: Any) -> int | None:
     return (b - a).days
 
 
-def _ordem_em_vigor(con: sqlite3.Connection, titulo_id: int,
+def _ordem_em_vigor(con, titulo_id: int,
                     ordem: str) -> dict | None:
     """A ordem judicial daquele tipo que está valendo, ou None. Só LÊ.
 
@@ -661,12 +781,14 @@ def _ordem_em_vigor(con: sqlite3.Connection, titulo_id: int,
     somar daria a resposta errada na segunda vez.
     """
     revogacao = ORDEM_JUDICIAL_E_A_REVOGACAO[ordem]
-    linha = con.execute(
-        """SELECT id, tipo, data_ato, detalhe_json
+    linha = banco(con).um(
+        """SELECT id, tipo, data_ato, detalhe_json, ordem_carater,
+                  ordem_manda_negativa, ordem_segredo_de_justica,
+                  ordem_marcada_em, ordem_marcada_por
              FROM pt_atos
-            WHERE titulo_id = ? AND tipo IN (?, ?) AND cancelado = 0
+            WHERE titulo_id = %s AND tipo IN (%s, %s) AND cancelado = 0
             ORDER BY id DESC LIMIT 1""",
-        (int(titulo_id), ordem, revogacao)).fetchone()
+        (int(titulo_id), ordem, revogacao))
     if linha is None or linha["tipo"] != ordem:
         return None
     d = dict(linha)
@@ -674,15 +796,21 @@ def _ordem_em_vigor(con: sqlite3.Connection, titulo_id: int,
         d.update(json.loads(d.get("detalhe_json") or "{}"))
     except (TypeError, ValueError):
         pass
+    # A MARCA DO CNN art. 263-K vem das colunas (LH13), e o detalhe não a
+    # sobrepõe: o que se marcou depois é o que vale.
+    for coluna in ("ordem_carater", "ordem_manda_negativa",
+                   "ordem_segredo_de_justica", "ordem_marcada_em",
+                   "ordem_marcada_por"):
+        d[coluna] = linha[coluna]
     return d
 
 
-def sustacao_em_vigor(con: sqlite3.Connection, titulo_id: int) -> dict | None:
+def sustacao_em_vigor(con, titulo_id: int) -> dict | None:
     """A ordem que IMPEDE o protesto — art. 17. Só LÊ."""
     return _ordem_em_vigor(con, titulo_id, "SUSTACAO")
 
 
-def efeito_suspensivo_em_vigor(con: sqlite3.Connection,
+def efeito_suspensivo_em_vigor(con,
                                titulo_id: int) -> dict | None:
     """A ordem que SUSPENDE OS EFEITOS de um protesto já lavrado. Só LÊ.
 
@@ -696,7 +824,7 @@ def efeito_suspensivo_em_vigor(con: sqlite3.Connection,
     return _ordem_em_vigor(con, titulo_id, "EFEITO_SUSPENSIVO")
 
 
-def _recusar_se_sustado(con: sqlite3.Connection, titulo_id: int,
+def _recusar_se_sustado(con, titulo_id: int,
                         que_ato: str) -> None:
     """Lei 9.492/1997, art. 17, § 1º. Recusa com a ordem na mensagem.
 
@@ -719,7 +847,7 @@ def _recusar_se_sustado(con: sqlite3.Connection, titulo_id: int,
         f"registre a revogação antes.")
 
 
-def lancar_sustacao(con: sqlite3.Connection, titulo_id: int, *,
+def lancar_sustacao(con, titulo_id: int, *,
                     juizo: str, processo: str, agora: str,
                     recebido_em: str | None = None,
                     observacao: str | None = None,
@@ -743,7 +871,7 @@ def lancar_sustacao(con: sqlite3.Connection, titulo_id: int, *,
     **NÃO SE SUSTA DUAS VEZES.** Se já há ordem em vigor, a segunda seria um
     registro que não muda nada e que faz a ficha contar duas.
     """
-    tit = titulo(con, titulo_id)
+    tit = titulo_para_gravar(con, titulo_id)
     if not tit:
         raise ProtestoError(f"Título {titulo_id} não encontrado.")
     if sustacao_em_vigor(con, titulo_id):
@@ -762,16 +890,16 @@ def lancar_sustacao(con: sqlite3.Connection, titulo_id: int, *,
     detalhe = json.dumps({"juizo": quem, "processo": autos,
                           "observacao": str(observacao or "").strip()},
                          ensure_ascii=False)
-    cur = con.execute(
+    ato_id = int(banco(con).escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
                origem, criado_em, criado_por)
-           VALUES (?,'SUSTACAO',?,?,?,?,?)""",
-        (titulo_id, recebido_em or agora, detalhe, origem, agora, usuario))
-    return {"ato_id": int(cur.lastrowid), "titulo_id": titulo_id,
+           VALUES (%s,'SUSTACAO',%s,%s,%s,%s,%s) RETURNING id""",
+        (titulo_id, recebido_em or agora, detalhe, origem, agora, usuario))[0]["id"])
+    return {"ato_id": ato_id, "titulo_id": titulo_id,
             "juizo": quem, "processo": autos}
 
 
-def lancar_revogacao_sustacao(con: sqlite3.Connection, titulo_id: int, *,
+def lancar_revogacao_sustacao(con, titulo_id: int, *,
                               agora: str, recebido_em: str | None = None,
                               observacao: str | None = None,
                               usuario: str | None = None,
@@ -794,7 +922,7 @@ def lancar_revogacao_sustacao(con: sqlite3.Connection, titulo_id: int, *,
     E NÃO SE REVOGA O QUE NÃO ESTÁ SUSTADO: seria registrar o levantamento de
     uma ordem que não existe.
     """
-    tit = titulo(con, titulo_id)
+    tit = titulo_para_gravar(con, titulo_id)
     if not tit:
         raise ProtestoError(f"Título {titulo_id} não encontrado.")
     ordem = sustacao_em_vigor(con, titulo_id)
@@ -808,22 +936,49 @@ def lancar_revogacao_sustacao(con: sqlite3.Connection, titulo_id: int, *,
                           "sustacao_ato_id": ordem.get("id"),
                           "observacao": str(observacao or "").strip()},
                          ensure_ascii=False)
-    cur = con.execute(
+    ato_id = int(banco(con).escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
                origem, criado_em, criado_por)
-           VALUES (?,'REVOGACAO_SUSTACAO',?,?,?,?,?)""",
-        (titulo_id, recebido_em or agora, detalhe, origem, agora, usuario))
-    return {"ato_id": int(cur.lastrowid), "titulo_id": titulo_id,
+           VALUES (%s,'REVOGACAO_SUSTACAO',%s,%s,%s,%s,%s) RETURNING id""",
+        (titulo_id, recebido_em or agora, detalhe, origem, agora, usuario))[0]["id"])
+    return {"ato_id": ato_id, "titulo_id": titulo_id,
             "recebido_em": recebido_em or agora}
 
 
-def lancar_efeito_suspensivo(con: sqlite3.Connection, titulo_id: int, *,
+def _marca_da_ordem(carater: Any) -> str:
+    """O caráter da decisão, validado (CNN art. 263-K). Só calcula.
+
+    OBRIGATÓRIO NA ORDEM NOVA (LH13, 21/10/2026): é ele que decide se o
+    protesto sai na certidão a terceiro como sustação precária ou se fica
+    fora, e o escrevente que lança a ordem é quem tem o mandado na mão. Sem a
+    marca, a certidão faria a escolha por ele.
+    """
+    c = str(carater or "").strip().upper()
+    if c not in CARATER_DA_ORDEM:
+        raise ProtestoError(
+            "Informe o caráter da decisão judicial: provisória (liminar, tutela "
+            "de urgência) ou definitiva. Pelo Código Nacional de Normas, art. "
+            "263-K, é ele que decide a certidão: a provisória sai como «CONSTA "
+            "COM SUSTAÇÃO JUDICIAL PRECÁRIA», e a definitiva fica fora dela.")
+    return c
+
+
+def lancar_efeito_suspensivo(con, titulo_id: int, *,
                             juizo: str, processo: str, agora: str,
+                            carater: str | None = None,
+                            manda_negativa: Any = False,
+                            segredo_de_justica: Any = False,
                             recebido_em: str | None = None,
                             observacao: str | None = None,
                             usuario: str | None = None,
                             origem: str = "MANUAL") -> dict:
     """Suspende os EFEITOS de um protesto já lavrado, por ordem judicial.
+
+    **E A ORDEM VEM MARCADA** (LH13, 21/10/2026 — CNN art. 263-K): o
+    `carater` (PROVISORIA × DEFINITIVA, obrigatório), se ela manda
+    expressamente emitir certidão negativa e se o processo corre em segredo
+    de justiça. A marca mora nas colunas `ordem_*` do ato, e é a certidão que
+    a lê (`protesto_certidao.buscar`).
 
     A sustação impede o ato; esta ordem chega **depois** dele.
 
@@ -842,12 +997,12 @@ def lancar_efeito_suspensivo(con: sqlite3.Connection, titulo_id: int, *,
     outro — a sustação —, e usar um pelo outro faria a certidão dizer que há
     efeito suspenso sobre um protesto que não existe.
     """
-    tit = titulo(con, titulo_id)
+    tit = titulo_para_gravar(con, titulo_id)
     if not tit:
         raise ProtestoError(f"Título {titulo_id} não encontrado.")
-    protestado = con.execute(
-        """SELECT 1 FROM pt_atos WHERE titulo_id=? AND tipo='PROTESTO'
-            AND cancelado = 0 LIMIT 1""", (int(titulo_id),)).fetchone()
+    protestado = banco(con).um(
+        """SELECT 1 AS um FROM pt_atos WHERE titulo_id=%s AND tipo='PROTESTO'
+            AND cancelado = 0 ORDER BY id LIMIT 1""", (int(titulo_id),))
     if not protestado:
         raise ProtestoError(
             f"O título {tit['numero_titulo']} não tem protesto lavrado — não "
@@ -865,21 +1020,104 @@ def lancar_efeito_suspensivo(con: sqlite3.Connection, titulo_id: int, *,
             "Informe o juízo e o número do processo da ordem. Sem eles a "
             "certidão não tem como dizer de quem é a determinação que "
             "suspendeu os efeitos deste protesto.")
+    marca = _marca_da_ordem(carater)
 
     detalhe = json.dumps({"juizo": quem, "processo": autos,
                           "observacao": str(observacao or "").strip()},
                          ensure_ascii=False)
-    cur = con.execute(
+    ato_id = int(banco(con).escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
-               origem, criado_em, criado_por)
-           VALUES (?,'EFEITO_SUSPENSIVO',?,?,?,?,?)""",
-        (titulo_id, recebido_em or agora, detalhe, origem, agora, usuario))
-    return {"ato_id": int(cur.lastrowid), "titulo_id": titulo_id,
-            "juizo": quem, "processo": autos}
+               origem, criado_em, criado_por, ordem_carater,
+               ordem_manda_negativa, ordem_segredo_de_justica,
+               ordem_marcada_em, ordem_marcada_por)
+           VALUES (%s,'EFEITO_SUSPENSIVO',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
+        (titulo_id, recebido_em or agora, detalhe, origem, agora, usuario,
+         marca, int(bool(manda_negativa)), int(bool(segredo_de_justica)),
+         agora, usuario))[0]["id"])
+    return {"ato_id": ato_id, "titulo_id": titulo_id,
+            "juizo": quem, "processo": autos, "carater": marca}
+
+
+def marcar_ordem_judicial(con, ato_id: int, *, carater: str,
+                          manda_negativa: Any = False,
+                          segredo_de_justica: Any = False, agora: str,
+                          usuario: str | None = None) -> dict:
+    """Marca (ou corrige a marca de) uma ordem de efeito suspensivo. ESCREVE.
+
+    É A PORTA DAS ORDENS LANÇADAS ANTES DE 21/10/2026 (LH13): elas não têm a
+    marca do CNN art. 263-K, e por isso continuam como sempre — o protesto
+    fora da certidão — até alguém ler o mandado e dizer se a decisão é
+    provisória ou definitiva. A mesma porta corrige a marca posta errada.
+
+    O ATO NÃO SE REESCREVE: o juízo, o processo e a data de recebimento
+    ficam como foram lançados; muda só a marca, com quem a pôs e quando. A
+    certidão já emitida também não muda — o teor dela congelou na emissão.
+
+    AS TRAVAS NA ORDEM DA CASA: o título primeiro (`titulo_para_gravar`), o
+    ato depois — a mesma ordem de todo `lancar_*`.
+    """
+    bd = banco(con)
+    ato = bd.um("SELECT id, titulo_id FROM pt_atos WHERE id = %s",
+                (int(ato_id),))
+    if not ato:
+        raise ProtestoError(f"Ordem judicial {ato_id} não encontrada.")
+    tit = titulo_para_gravar(con, int(ato["titulo_id"]))
+    bd._escrita()
+    ordem = bd.um(
+        """SELECT id, tipo, cancelado FROM pt_atos WHERE id = %s FOR UPDATE""",
+        (int(ato_id),))
+    if ordem["tipo"] != "EFEITO_SUSPENSIVO" or int(ordem["cancelado"] or 0):
+        raise ProtestoError(
+            "Só a ordem judicial que suspendeu os efeitos de um protesto "
+            "lavrado leva a marca do art. 263-K do Código Nacional de Normas "
+            "— e esta não é uma, ou foi anulada.")
+    marca = _marca_da_ordem(carater)
+    bd.escrever(
+        """UPDATE pt_atos SET ordem_carater = %s, ordem_manda_negativa = %s,
+                  ordem_segredo_de_justica = %s, ordem_marcada_em = %s,
+                  ordem_marcada_por = %s
+            WHERE id = %s""",
+        (marca, int(bool(manda_negativa)), int(bool(segredo_de_justica)),
+         agora, usuario, int(ato_id)))
+    return {"ato_id": int(ato_id), "titulo_id": int(ato["titulo_id"]),
+            "numero_titulo": (tit or {}).get("numero_titulo"),
+            "carater": marca, "manda_negativa": bool(manda_negativa),
+            "segredo_de_justica": bool(segredo_de_justica)}
+
+
+def ordens_sem_marca(con, limite: int = 300) -> list[dict]:
+    """As ordens de efeito suspensivo EM VIGOR que ainda não têm a marca do
+    CNN art. 263-K. Só LÊ.
+
+    Elas são as lançadas antes de 21/10/2026 (LH13), e o protesto delas fica
+    FORA da certidão, como ficava — mas se a decisão for provisória, o certo
+    hoje é a certidão dizer «CONSTA COM SUSTAÇÃO JUDICIAL PRECÁRIA». A lista
+    existe para a tela avisar: sem ela, ninguém sabe que há ordem a marcar.
+
+    EM VIGOR é a última palavra do juízo (a ordem, e não a revogação dela), e
+    só sobre protesto em pé — o cancelado não sai em certidão nenhuma.
+    """
+    return banco(con).ler(
+        """SELECT a.id AS ato_id, a.titulo_id, a.data_ato, a.detalhe_json,
+                  t.numero_titulo, t.protocolo
+             FROM pt_atos a
+             JOIN pt_titulos t ON t.id = a.titulo_id
+            WHERE a.tipo = 'EFEITO_SUSPENSIVO' AND a.cancelado = 0
+              AND a.ordem_carater IS NULL
+              AND a.id = (SELECT max(b.id) FROM pt_atos b
+                           WHERE b.titulo_id = a.titulo_id AND b.cancelado = 0
+                             AND b.tipo IN ('EFEITO_SUSPENSIVO',
+                                            'REVOGACAO_EFEITO_SUSPENSIVO'))
+              AND NOT EXISTS (SELECT 1 FROM pt_atos c
+                               WHERE c.titulo_id = a.titulo_id
+                                 AND c.tipo = 'CANCELAMENTO' AND c.cancelado = 0)
+            ORDER BY a.data_ato, a.id
+            LIMIT %s""", (int(limite),))
 
 
 def lancar_revogacao_efeito_suspensivo(
-        con: sqlite3.Connection, titulo_id: int, *, agora: str,
+        con, titulo_id: int, *, agora: str,
         recebido_em: str | None = None, observacao: str | None = None,
         usuario: str | None = None, origem: str = "MANUAL") -> dict:
     """Revoga a suspensão dos efeitos: o protesto volta a publicar. ESCREVE.
@@ -888,7 +1126,7 @@ def lancar_revogacao_efeito_suspensivo(
     protesto voltou a valer é fato que a certidão de amanhã pode ter de
     explicar.
     """
-    tit = titulo(con, titulo_id)
+    tit = titulo_para_gravar(con, titulo_id)
     if not tit:
         raise ProtestoError(f"Título {titulo_id} não encontrado.")
     ordem = efeito_suspensivo_em_vigor(con, titulo_id)
@@ -901,15 +1139,15 @@ def lancar_revogacao_efeito_suspensivo(
                           "efeito_ato_id": ordem.get("id"),
                           "observacao": str(observacao or "").strip()},
                          ensure_ascii=False)
-    cur = con.execute(
+    ato_id = int(banco(con).escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
                origem, criado_em, criado_por)
-           VALUES (?,'REVOGACAO_EFEITO_SUSPENSIVO',?,?,?,?,?)""",
-        (titulo_id, recebido_em or agora, detalhe, origem, agora, usuario))
-    return {"ato_id": int(cur.lastrowid), "titulo_id": titulo_id}
+           VALUES (%s,'REVOGACAO_EFEITO_SUSPENSIVO',%s,%s,%s,%s,%s) RETURNING id""",
+        (titulo_id, recebido_em or agora, detalhe, origem, agora, usuario))[0]["id"])
+    return {"ato_id": ato_id, "titulo_id": titulo_id}
 
 
-def lancar_protesto(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
+def lancar_protesto(con, titulo_id: int, *, sv: dict,
                     agora: str, data_extenso: str,
                     usuario: str | None = None,
                     origem: str = "MANUAL",
@@ -925,7 +1163,7 @@ def lancar_protesto(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
     protesto por FACE, frente e verso (decisão do oficial em 14/10/2026; ver
     `livro_nucleo`).
     """
-    tit = titulo(con, titulo_id)
+    tit = titulo_para_gravar(con, titulo_id)
     if not tit:
         raise ProtestoError(f"Título {titulo_id} não encontrado.")
     # Art. 17, § 1o: sustado so se protesta com autorizacao judicial.
@@ -942,35 +1180,58 @@ def lancar_protesto(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
     #
     # `modelo` e `base` vem do catalogo que o oficial edita quando a rota os
     # passa; sem eles vale o texto desta casa, copiado do E-Oficio.
-    fatos = TERMO.dados_do_titulo(con, titulo_id)
-    texto = TERMO.montar(modelo=modelo_do_termo,
-                         edital_data=fatos["edital_data"],
-                         edital_motivo=fatos["edital_motivo"],
-                         motivo_protesto=fatos["motivo_protesto"],
-                         tipo_protesto=fatos["tipo_protesto"],
-                         pessoal_data=fatos.get("pessoal_data"),
-                         pessoal_digital=bool(fatos.get("pessoal_digital")))
-    cur = con.execute(
+    #
+    # AS FRASES DA INTIMACAO E AS PALAVRAS DO MOTIVO E DO TIPO SAEM DO PADRAO,
+    # e por isso nao se passa `con`. Ate o LF06E (19/10/2026) eram constantes
+    # do codigo, e o ajuste da casa nao as alcancava; desde entao sao pecas
+    # que a tela de Modelos edita (`PT_TERMO_INTIMACAO_*`, `PT_TERMO_MOTIVOS`,
+    # `PT_TERMO_TIPOS`). Fazer o livro segui-las mudaria o que se lavra no
+    # Livro de Registro de Protestos (Lei 9.492/1997, art. 22, IV) — regra de
+    # negocio, que espera a decisao do oficial. Se ele confirmar, basta
+    # passar `con=con` aqui.
+    #
+    # A QUALIFICAÇÃO DO REGISTRO (LD04, 21/10/2026) — Lei 9.492/1997, art. 22,
+    # e CN-MA art. 914: o número de ordem e a data do registro, o protocolo, o
+    # apresentante, o título e os devedores. O NÚMERO DE ORDEM SÓ EXISTE DEPOIS
+    # DE `reservar`, e por isso o termo se monta duas vezes: a primeira, antes
+    # de gravar qualquer coisa, para o modelo quebrado ou o título sem motivo
+    # recusarem aqui (e não com o ato e o lugar já tomados); a segunda, com o
+    # lugar, é a que se grava. Os fatos são os mesmos — `dados_do_titulo` os
+    # relê do banco, e é com eles que o teor se confere depois.
+    def _termo() -> str:
+        fatos = TERMO.dados_do_titulo(con, titulo_id)
+        return TERMO.montar(modelo=modelo_do_termo,
+                            edital_data=fatos["edital_data"],
+                            edital_motivo=fatos["edital_motivo"],
+                            motivo_protesto=fatos["motivo_protesto"],
+                            tipo_protesto=fatos["tipo_protesto"],
+                            pessoal_data=fatos.get("pessoal_data"),
+                            pessoal_digital=bool(fatos.get("pessoal_digital")),
+                            qualificacao_do_registro=fatos.get(
+                                "qualificacao_do_registro"))
+    texto = _termo()
+    bd = banco(con)
+    ato_id = int(bd.escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, teor, origem,
                criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?)""",
-        (titulo_id, "PROTESTO", agora, texto, origem, agora, usuario))
-    ato_id = int(cur.lastrowid)
+           VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (titulo_id, "PROTESTO", agora, texto, origem, agora, usuario))[0]["id"])
 
     lugar = ESC.reservar(con, SERIE_PROTESTO, "pt_atos", ato_id, sv=sv,
                          agora=agora, data_extenso=data_extenso, paginas=1,
                          usuario=usuario)
-    con.execute(
-        """UPDATE pt_atos SET livro_id=?, folha=?, verso=?, numero_ordem=?,
-                              rotulo=? WHERE id=?""",
+    bd.escrever(
+        """UPDATE pt_atos SET livro_id=%s, folha=%s, verso=%s, numero_ordem=%s,
+                              rotulo=%s WHERE id=%s""",
         (lugar["livro_id"], lugar["folha"], int(lugar["verso"]),
          lugar["numero_ordem"], lugar["rotulo"], ato_id))
-    con.execute("UPDATE pt_titulos SET situacao='PROTESTADO' WHERE id=?",
+    bd.escrever("UPDATE pt_atos SET teor=%s WHERE id=%s", (_termo(), ato_id))
+    bd.escrever("UPDATE pt_titulos SET situacao='PROTESTADO' WHERE id=%s",
                (titulo_id,))
     return {"ato_id": ato_id, "titulo_id": titulo_id, **lugar}
 
 
-def lancar_desistencia(con: sqlite3.Connection, titulo_id: int, *,
+def lancar_desistencia(con, titulo_id: int, *,
                        motivo: str, agora: str, usuario: str | None = None,
                        origem: str = "MANUAL") -> dict:
     """Registra a desistência do CREDOR, antes de o protesto ser lavrado. ESCREVE.
@@ -980,7 +1241,7 @@ def lancar_desistencia(con: sqlite3.Connection, titulo_id: int, *,
     por construir neste módulo, e não é a mesma coisa. Não ocupa lugar em
     livro: a desistência não tem série própria no acervo.
     """
-    tit = titulo(con, titulo_id)
+    tit = titulo_para_gravar(con, titulo_id)
     if not tit:
         raise ProtestoError(f"Título {titulo_id} não encontrado.")
     # Art. 17, § 1o: sustado so se retira com autorizacao judicial — e a
@@ -995,21 +1256,22 @@ def lancar_desistencia(con: sqlite3.Connection, titulo_id: int, *,
         raise ProtestoError("Escreva o motivo da desistência.")
 
     detalhe = {"motivo": razao}
-    cur = con.execute(
+    bd = banco(con)
+    ato_id = int(bd.escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
                origem, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (titulo_id, "DESISTENCIA", agora, json.dumps(detalhe, ensure_ascii=False),
-         origem, agora, usuario))
-    con.execute("UPDATE pt_titulos SET situacao='DESISTIDO' WHERE id=?",
+         origem, agora, usuario))[0]["id"])
+    bd.escrever("UPDATE pt_titulos SET situacao='DESISTIDO' WHERE id=%s",
                (titulo_id,))
-    return {"ato_id": int(cur.lastrowid), "titulo_id": titulo_id, "motivo": razao}
+    return {"ato_id": ato_id, "titulo_id": titulo_id, "motivo": razao}
 
 
 # ------------------------------------------------------------- o pagamento
 
 
-def lancar_pagamento(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
+def lancar_pagamento(con, titulo_id: int, *, sv: dict,
                      agora: str, data_extenso: str,
                      valor_pago: Any = None, usuario: str | None = None,
                      origem: str = "MANUAL", forma_pagamento: Any = None,
@@ -1024,9 +1286,13 @@ def lancar_pagamento(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
     entrava, e opcional. `forma_pagamento` é do vocabulário
     `FORMAS_DE_PAGAMENTO`; forma desconhecida recusa.
 
-    Cabe em QUALQUER ponto do ciclo — apontado, intimado ou já protestado —,
-    decisão do oficial em 24/08/2026: o devedor nem sempre espera o
-    protesto ser lavrado para pagar. Só recusa título que já chegou a uma
+    Cabe ANTES DO PROTESTO — recebido, apontado ou intimado. Até 21/10/2026
+    cabia também no título já protestado (decisão do oficial de 24/08/2026);
+    desde então, por decisão dele (LH13, pergunta 17, letra c), «protesto nao
+    pode ser pago na serventia depois de lavrar»: o PROTESTADO se recusa com a
+    frase que diz o caminho — o credor, a carta de anuência e o cancelamento
+    (Lei 9.492/1997, art. 26, § 1º; CN-MA art. 942, § 2º). Ver
+    `SITUACOES_SEM_PAGAMENTO`. Também recusa título que já chegou a uma
     situação final (`SITUACOES_FINAIS`): pago de novo, ou pago depois de
     desistido, não fazem sentido.
 
@@ -1038,13 +1304,21 @@ def lancar_pagamento(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
     contra o saldo do título — decidir o que fazer com pagamento parcial é
     do oficial, não deste módulo.
     """
-    tit = titulo(con, titulo_id)
+    tit = titulo_para_gravar(con, titulo_id)
     if not tit:
         raise ProtestoError(f"Título {titulo_id} não encontrado.")
     # Art. 17, § 1o: sustado so se PAGA com autorizacao judicial.
     # Receber o dinheiro de um titulo que o juiz mandou parar e tao
     # grave quanto lavrar o ato.
     _recusar_se_sustado(con, titulo_id, "o pagamento")
+    if tit["situacao"] == "PROTESTADO":
+        raise ProtestoError(
+            f"O título {tit['numero_titulo']} já está PROTESTADO, e protesto "
+            f"lavrado não se paga mais nesta serventia (decisão do oficial de "
+            f"21/10/2026). O devedor paga diretamente ao credor e pede o "
+            f"CANCELAMENTO do protesto com a carta de anuência do credor, com "
+            f"firma reconhecida (Lei 9.492/1997, art. 26, § 1º; Código de "
+            f"Normas do TJMA, art. 942, § 2º).")
     if tit["situacao"] in SITUACOES_FINAIS:
         raise ProtestoError(
             f"O título {tit['numero_titulo']} está com situação "
@@ -1071,23 +1345,23 @@ def lancar_pagamento(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
     if emolumentos is not None and str(emolumentos).strip():
         detalhe["emolumentos_centavos"] = centavos(emolumentos)
 
-    cur = con.execute(
+    bd = banco(con)
+    ato_id = int(bd.escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
                origem, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (titulo_id, "PAGAMENTO", agora, json.dumps(detalhe, ensure_ascii=False),
-         origem, agora, usuario))
-    ato_id = int(cur.lastrowid)
+         origem, agora, usuario))[0]["id"])
 
     lugar = ESC.reservar(con, SERIE_PAGAMENTO, "pt_atos", ato_id, sv=sv,
                          agora=agora, data_extenso=data_extenso, paginas=1,
                          usuario=usuario)
-    con.execute(
-        """UPDATE pt_atos SET livro_id=?, folha=?, verso=?, numero_ordem=?,
-                              rotulo=? WHERE id=?""",
+    bd.escrever(
+        """UPDATE pt_atos SET livro_id=%s, folha=%s, verso=%s, numero_ordem=%s,
+                              rotulo=%s WHERE id=%s""",
         (lugar["livro_id"], lugar["folha"], int(lugar["verso"]),
          lugar["numero_ordem"], lugar["rotulo"], ato_id))
-    con.execute("UPDATE pt_titulos SET situacao='PAGO' WHERE id=?",
+    bd.escrever("UPDATE pt_titulos SET situacao='PAGO' WHERE id=%s",
                (titulo_id,))
     return {"ato_id": ato_id, "titulo_id": titulo_id, **lugar}
 
@@ -1095,21 +1369,62 @@ def lancar_pagamento(con: sqlite3.Connection, titulo_id: int, *, sv: dict,
 # ---------------------------------------------------------- o cancelamento
 
 
-def lancar_cancelamento(con: sqlite3.Connection, titulo_id: int, *,
+def protesto_em_pe(con, titulo_id: int) -> bool:
+    """Se o título tem protesto lavrado (e não anulado) que não se cancelou.
+    Só LÊ."""
+    return banco(con).um(
+        """SELECT 1 AS um FROM pt_atos p
+            WHERE p.titulo_id = %s AND p.tipo = 'PROTESTO' AND p.cancelado = 0
+              AND NOT EXISTS (SELECT 1 FROM pt_atos c
+                               WHERE c.titulo_id = p.titulo_id
+                                 AND c.tipo = 'CANCELAMENTO' AND c.cancelado = 0)
+            ORDER BY p.id LIMIT 1""", (int(titulo_id),)) is not None
+
+
+def hipoteses_que_cabem(con, tit: dict) -> dict[str, dict[str, str]]:
+    """As hipóteses de cancelamento que cabem no título AGORA. Só LÊ.
+
+    No PROTESTADO, o catálogo inteiro. No PAGO com protesto em pé — o legado
+    da regra de 24/08/2026, que deixava pagar depois do protesto —, só
+    `HIPOTESES_DO_PAGO_DEPOIS_DO_PROTESTO` (LH13, 21/10/2026): sem isso ele
+    ficava para sempre na certidão positiva, sem caminho de baixa. Nos outros,
+    nenhuma. É a mesma conta na ficha (o que se oferece) e em
+    `lancar_cancelamento` (o que se aceita).
+    """
+    situacao = (tit or {}).get("situacao")
+    if situacao == "PROTESTADO":
+        return dict(CATALOGO_CANCELAMENTO)
+    if situacao == "PAGO" and protesto_em_pe(con, int(tit["id"])):
+        return {k: v for k, v in CATALOGO_CANCELAMENTO.items()
+                if k in HIPOTESES_DO_PAGO_DEPOIS_DO_PROTESTO}
+    return {}
+
+
+def lancar_cancelamento(con, titulo_id: int, *,
                         hipotese: str, fundamento: str, agora: str,
                         usuario: str | None = None,
-                        origem: str = "MANUAL") -> dict:
+                        origem: str = "MANUAL",
+                        modelo_do_termo: str | None = None) -> dict:
     """Cancela o registro do protesto, com hipótese do catálogo. ESCREVE.
 
     Só cabe título PROTESTADO — cancelar o que nunca foi protestado não faz
     sentido; para isso há a desistência (antes do protesto) ou não há nada
-    a fazer (título pago sem protesto). Recusa hipótese fora do catálogo, e
-    recusa fundamento vazio: o defeito medido no acervo foi exatamente 56
-    cancelamentos com o mesmo motivo genérico, "Erro Material", metade sem
-    dizer por quê.
+    a fazer (título pago sem protesto). A EXCEÇÃO É O LEGADO (LH13,
+    21/10/2026): o título PAGO aqui depois de protestado, pela regra que valeu
+    de 24/08 a 21/10/2026, tem o protesto em pé, e se cancela pela anuência do
+    credor ou por ordem judicial (`hipoteses_que_cabem`). Recusa hipótese
+    fora do catálogo, e recusa fundamento vazio: o defeito medido no acervo
+    foi exatamente 56 cancelamentos com o mesmo motivo genérico, "Erro
+    Material", metade sem dizer por quê.
 
     Não ocupa lugar em livro próprio — o cancelamento é anotação no próprio
     registro do protesto, e o acervo não tem Livro de Cancelamento.
+
+    **E LAVRA O TERMO** (LD04, 21/10/2026): Lei 9.492/1997, art. 26, § 6º —
+    no registro eletrônico, «o termo do cancelamento será lançado em
+    documento apartado». Ele vai a `pt_atos.teor` do próprio ato, e congela
+    ali como o termo do protesto. `modelo_do_termo` é o que o oficial editou
+    no catálogo (`PT_TERMO_CANCELAMENTO`); sem ele, o padrão.
     """
     if hipotese not in CATALOGO_CANCELAMENTO:
         raise ProtestoError(
@@ -1120,24 +1435,43 @@ def lancar_cancelamento(con: sqlite3.Connection, titulo_id: int, *,
         raise ProtestoError(
             "Escreva o fundamento do cancelamento com pelo menos dez "
             "letras — ele sai impresso na certidão e é o que a inspeção lê.")
-    tit = titulo(con, titulo_id)
+    tit = titulo_para_gravar(con, titulo_id)
     if not tit:
         raise ProtestoError(f"Título {titulo_id} não encontrado.")
-    if tit["situacao"] != "PROTESTADO":
+    cabem = hipoteses_que_cabem(con, tit)
+    if not cabem:
         raise ProtestoError(
             f"O título {tit['numero_titulo']} está com situação "
             f"{tit['situacao']} — só se cancela protesto já lavrado.")
+    if hipotese not in cabem:
+        raise ProtestoError(
+            f"O título {tit['numero_titulo']} foi PAGO nesta serventia depois "
+            f"de protestado, pela regra que valeu até 21/10/2026, e o protesto "
+            f"continua em pé. Para ele o cancelamento cabe pela "
+            f"{' ou pela '.join(v['rotulo'].lower() for v in cabem.values())} "
+            f"— e não pela hipótese «{CATALOGO_CANCELAMENTO[hipotese]['rotulo']}»: "
+            f"protesto lavrado não se paga mais na serventia, e o caminho é a "
+            f"carta de anuência do credor (Lei 9.492/1997, art. 26, § 1º; "
+            f"Código de Normas do TJMA, art. 942, § 2º).")
 
     catalogo = CATALOGO_CANCELAMENTO[hipotese]
     detalhe = {"hipotese": hipotese, "rotulo": catalogo["rotulo"],
               "fundamento_legal": catalogo["fundamento_legal"]}
-    cur = con.execute(
+    # O TERMO SE MONTA ANTES DE GRAVAR: o modelo quebrado recusa aqui, sem
+    # ato nenhum lançado. O protesto que ele identifica é o que está em pé.
+    bd = banco(con)
+    termo = TERMO.montar_cancelamento(
+        modelo=modelo_do_termo, data=agora, hipotese=catalogo["rotulo"],
+        fundamento_legal=catalogo["fundamento_legal"], fundamento=razao,
+        qualificacao_do_registro=TERMO.fatos_da_qualificacao(bd, int(titulo_id)))
+    ato_id = int(bd.escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, observacao,
-               detalhe_json, origem, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?)""",
+               detalhe_json, teor, origem, criado_em, criado_por)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (titulo_id, "CANCELAMENTO", agora, razao,
-         json.dumps(detalhe, ensure_ascii=False), origem, agora, usuario))
-    con.execute("UPDATE pt_titulos SET situacao='CANCELADO' WHERE id=?",
+         json.dumps(detalhe, ensure_ascii=False), termo, origem, agora,
+         usuario))[0]["id"])
+    bd.escrever("UPDATE pt_titulos SET situacao='CANCELADO' WHERE id=%s",
                (titulo_id,))
-    return {"ato_id": int(cur.lastrowid), "titulo_id": titulo_id,
+    return {"ato_id": ato_id, "titulo_id": titulo_id,
            "fundamento": razao, **detalhe}

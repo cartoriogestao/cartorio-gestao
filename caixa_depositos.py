@@ -27,32 +27,32 @@ DINHEIRO EM CENTAVOS INTEIROS
 """
 from __future__ import annotations
 
-import sqlite3
+import json
 from datetime import date, datetime
 from typing import Any
 
+from bd_nativo import banco
 from caixa_schema import reais
 
 
-def proximo_numero(con: sqlite3.Connection, hoje: date | None = None) -> str:
+def proximo_numero(con, hoje: date | None = None) -> str:
     """O numero de controle do deposito: DP<ano>.<mes>.<sequencial>.
 
-    A sequencia reinicia por mes, e por isso o `LIKE` do prefixo. Ordenar por
-    texto daria DP2026.08.10 antes de DP2026.08.9 — por isso o CAST.
+    A sequencia reinicia por mes, e por isso o filtro do prefixo. Ordenar por
+    texto daria DP2026.08.10 antes de DP2026.08.9 — por isso o maior se le
+    como NUMERO, pelo prefixo numerico do sufixo (como o CAST do SQLite lia).
     """
     hoje = hoje or date.today()
     prefixo = f"DP{hoje.year}.{hoje.month:02d}."
-    ultimo = con.execute(
-        """SELECT numero FROM cx_depositos WHERE numero LIKE ?
-           ORDER BY CAST(SUBSTR(numero, ?) AS INTEGER) DESC LIMIT 1""",
-        (prefixo + "%", len(prefixo) + 1)).fetchone()
-    if not ultimo:
-        return f"{prefixo}1"
-    anterior = ultimo[0] if not isinstance(ultimo, sqlite3.Row) else ultimo["numero"]
-    return f"{prefixo}{int(str(anterior).split('.')[-1]) + 1}"
+    maior = banco(con).valor(
+        """SELECT max(substring(substring(numero FROM %(inicio)s) FROM '^[0-9]+')::bigint)
+             FROM cx_depositos
+            WHERE starts_with(numero, %(prefixo)s)""",
+        {"prefixo": prefixo, "inicio": len(prefixo) + 1})
+    return f"{prefixo}{int(maior or 0) + 1}"
 
 
-def criar(con: sqlite3.Connection, *, valor_centavos: int, depositante: str,
+def criar(con, *, valor_centavos: int, depositante: str,
           agora: str, documento: str | None = None, observacao: str | None = None,
           forma_pagamento: str = "DINHEIRO", caixa_id: int | None = None,
           protocolo_id: int | None = None,
@@ -91,6 +91,7 @@ def criar(con: sqlite3.Connection, *, valor_centavos: int, depositante: str,
     """
     hoje = hoje or date.today()
     data = data_do_deposito or hoje
+    bd = banco(con)
     if valor_centavos <= 0:
         raise ValueError("O valor do depósito tem de ser maior que zero.")
     depositante = (depositante or "").strip()
@@ -135,51 +136,61 @@ def criar(con: sqlite3.Connection, *, valor_centavos: int, depositante: str,
     #   depósitos antigos usa — três caminhos, uma régua. Escritas em separado,
     #   elas divergiriam no primeiro conserto, e a divergência aqui é dinheiro
     #   classificado de dois jeitos.
-    dica = sugerir_tipo(con, protocolo_id=protocolo_id,
+    dica = sugerir_tipo(bd, protocolo_id=protocolo_id,
                         ri_protocolo_id=ri_protocolo_id, nt_ato_id=nt_ato_id,
                         servico_codigo=(servico or {}).get("codigo"))
     if not qual:
         qual = dica["atribuicao"]
     if not servico and dica["servico"]:
         servico = dica["servico"]
-    numero = proximo_numero(con, hoje)
-    cur = con.execute(
+    # O ORÇAMENTO SE CONGELA AQUI, no dia do depósito (CN-MA art. 198, VI):
+    # é o que foi dito ao cliente quando ele deixou o dinheiro.
+    orcamento = orcamento_do_deposito(bd, protocolo_id=protocolo_id, servico=servico)
+    bd.travar("cx_depositos.numero")
+    numero = proximo_numero(bd, hoje)
+    novo = bd.escrever(
         """INSERT INTO cx_depositos
            (numero, data, depositante, depositante_documento, valor, saldo,
             protocolo_id, ri_protocolo_id, nt_ato_id, atribuicao,
-            servico_codigo, observacao, criado_em, atualizado_em)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            servico_codigo, observacao, orcamento, criado_em, atualizado_em)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (numero, data.isoformat(), depositante, (documento or "").strip() or None,
          reais(valor_centavos), reais(valor_centavos), protocolo_id, ri_protocolo_id,
          nt_ato_id, qual, (servico or {}).get("codigo"),
-         (observacao or "").strip() or None, agora, agora))
-    deposito_id = int(cur.lastrowid)
+         (observacao or "").strip() or None,
+         json.dumps(orcamento, ensure_ascii=False) if orcamento else None,
+         agora, agora))
+    deposito_id = int(novo[0]["id"])
 
     # O depósito é dinheiro que entrou: tem de aparecer no caixa do dia, senão
-    # a gaveta não fecha.
+    # a gaveta não fecha. E o lançamento fica apontado no depósito — é pelo
+    # recibo DELE que o orçamento sai para o cliente (art. 197).
     if caixa_id:
-        con.execute(
+        lancamento = bd.escrever(
             """INSERT INTO cx_lancamentos
                (caixa_id, protocolo_id, data, hora, natureza, sentido,
                 forma_pagamento, descricao, pagador, valor, criado_em)
-               VALUES (?,?,?,?, 'DEPOSITO_PREVIO','ENTRADA',?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s, 'DEPOSITO_PREVIO','ENTRADA',%s,%s,%s,%s,%s)
+               RETURNING id""",
             (caixa_id, protocolo_id, hoje.isoformat(),
              datetime.now().strftime("%H:%M"), forma_pagamento or "DINHEIRO",
              f"Depósito prévio nº {numero} — {depositante}",
              depositante, reais(valor_centavos), agora))
+        bd.escrever("UPDATE cx_depositos SET lancamento_id = %s WHERE id = %s",
+                    (int(lancamento[0]["id"]), deposito_id))
 
     # Se o deposito ja aponta os dois lados e o protocolo de caixa ainda
     # nao tem a ponte, grava agora — evidencia explicita, sem adivinhar.
     if protocolo_id and ri_protocolo_id:
-        cols = {r[1] for r in con.execute("PRAGMA table_info(cx_protocolos)")}
-        if "ri_protocolo_id" in cols:
-            atual = con.execute(
-                "SELECT ri_protocolo_id FROM cx_protocolos WHERE id=?",
-                (int(protocolo_id),)).fetchone()
-            if atual is not None and atual[0] is None:
+        if bd.tem_coluna("cx_protocolos", "ri_protocolo_id"):
+            atual = bd.um(
+                "SELECT ri_protocolo_id FROM cx_protocolos WHERE id = %s",
+                (int(protocolo_id),))
+            if atual is not None and atual["ri_protocolo_id"] is None:
                 import caixa_protocolo as CXP
                 try:
-                    CXP.vincular_ri(con, int(protocolo_id), int(ri_protocolo_id))
+                    CXP.vincular_ri(bd, int(protocolo_id), int(ri_protocolo_id))
                 except CXP.ProtocoloError:
                     # Deposito vale mesmo se a prenotacao sumiu; nao bloqueia.
                     pass
@@ -187,6 +198,7 @@ def criar(con: sqlite3.Connection, *, valor_centavos: int, depositante: str,
     return {"id": deposito_id, "numero": numero, "valor": reais(valor_centavos),
             "data": data.isoformat(), "atribuicao": qual,
             "servico_codigo": (servico or {}).get("codigo"),
+            "orcamento": orcamento,
             # A DIVERGÊNCIA ENTRE O VÍNCULO E O SERVIÇO NÃO PASSA CALADA, e não
             # derruba o depósito: quem manda é o vínculo, e quem confere é quem
             # atende. Devolvida para a tela poder dizer.
@@ -194,26 +206,132 @@ def criar(con: sqlite3.Connection, *, valor_centavos: int, depositante: str,
             "lancado_no_caixa": bool(caixa_id)}
 
 
-def do_titulo(con: sqlite3.Connection, ri_protocolo_id: int) -> list[dict]:
+def do_titulo(con, ri_protocolo_id: int) -> list[dict]:
     """Os depositos ligados a um titulo do Registro de Imoveis."""
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        """SELECT * FROM cx_depositos WHERE ri_protocolo_id=?
-           ORDER BY data, id""", (ri_protocolo_id,))]
+    return banco(con).ler(
+        """SELECT * FROM cx_depositos WHERE ri_protocolo_id = %s
+           ORDER BY data, id""", (ri_protocolo_id,))
 
 
-def do_ato(con: sqlite3.Connection, nt_ato_id: int) -> list[dict]:
+def do_ato(con, nt_ato_id: int) -> list[dict]:
     """Os depositos ligados a um ato de livro do Tabelionato de Notas."""
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        """SELECT * FROM cx_depositos WHERE nt_ato_id=?
-           ORDER BY data, id""", (nt_ato_id,))]
+    return banco(con).ler(
+        """SELECT * FROM cx_depositos WHERE nt_ato_id = %s
+           ORDER BY data, id""", (nt_ato_id,))
 
 
 def saldo_do_titulo(depositos) -> int:
     """Quanto ainda ha de saldo, em centavos, somando os depositos do titulo."""
     from caixa_schema import centavos
     return sum(centavos(d["saldo"]) for d in depositos if not d["encerrado"])
+
+
+# ------------------------------------------- o orçamento (art. 198, VI)
+#
+# «No Livro de Controle de Depósito Prévio, o delegatário deverá indicar, no
+#  mínimo: [...] VI - A descrição completa do orçamento, inclusive seus
+#  acréscimos» (CN-MA art. 198) — e o recibo do depósito «deverá incluir a
+#  discriminação orçamentária de todos os valores previstos para o serviço
+#  requerido» (art. 197).
+#
+# O ORÇAMENTO NÃO SE DIGITA: sai de onde a casa já orça. Os itens do
+# protocolo, quando o depósito aponta um — é ali que o balcão monta o
+# orçamento, item a item, pela tabela do tribunal (o «mero cálculo» é um
+# protocolo do tipo ORÇAMENTO) —; senão, o serviço escolhido, pela tabela
+# vigente, pela MESMA conta que o protocolo faz (`emolumentos.calcular_item`).
+# Duas contas do mesmo preço divergiriam na primeira tabela nova.
+#
+# OS ACRÉSCIMOS SÃO OS FUNDOS (FERC, FADEP, FEMP e FERRFIS — art. 881, § 1º),
+# item a item e somados. Sem preço na tabela vigente não há orçamento completo,
+# e o depósito fica sem ele: o livro diz a falta, em vez de imprimir só o nome
+# do serviço como se fosse o orçamento.
+
+_FUNDOS_DO_ORCAMENTO = ("emolumentos", "ferc", "fadep", "femp", "ferrfis")
+
+
+def _orcamento(itens: list[dict], *, de_onde: str, vigencia: Any = None) -> dict:
+    """O orçamento pronto para guardar: itens, soma e procedência. Só calcula."""
+    import emolumentos as EMOL
+    limpos = [{"codigo_ato": i.get("codigo_ato"), "descricao": i.get("descricao"),
+               "quantidade": int(i.get("quantidade") or 1),
+               "base_calculo": i.get("base_calculo"),
+               **{f: i.get(f) for f in _FUNDOS_DO_ORCAMENTO},
+               "valor_total": i.get("valor_total")} for i in itens]
+    return {"itens": limpos, "soma": EMOL.somar_itens(limpos), "de_onde": de_onde,
+            "vigencia": vigencia}
+
+
+def orcamento_do_deposito(con, *, protocolo_id: Any = None,
+                          servico: dict | None = None) -> dict | None:
+    """A descrição completa do orçamento do depósito, com os fundos. Só LÊ.
+
+    Do protocolo vêm os itens AINDA A PAGAR, na ordem em que entraram: o
+    depósito adianta o que falta, e o item que o cliente já pagou no caixa
+    não é orçamento de nada. Devolve None quando não há de onde tirar o
+    orçamento com valor — e quem lê o depósito diz a falta.
+    """
+    bd = banco(con)
+    if protocolo_id:
+        itens = bd.ler(
+            """SELECT codigo_ato, descricao, quantidade, base_calculo, emolumentos,
+                      ferc, fadep, femp, ferrfis, valor_total
+                 FROM cx_protocolo_atos
+                WHERE protocolo_id = %s AND coalesce(quitado, 0) = 0
+                ORDER BY id""", (int(protocolo_id),))
+        if itens:
+            numero = bd.valor("SELECT numero FROM cx_protocolos WHERE id = %s",
+                              (int(protocolo_id),))
+            return _orcamento(itens, de_onde=f"os itens do protocolo {numero or ''}"
+                              .strip())
+    if servico and servico.get("codigo"):
+        import emolumentos as EMOL
+        item = EMOL.calcular_item(bd, servico=int(servico["codigo"]))
+        if item:
+            codigo = str(item.get("codigo_tj") or "").strip()
+            return _orcamento(
+                [item | {"codigo_ato": codigo or None, "valor_total": item["total"]}],
+                de_onde=(f"o serviço {codigo} da tabela vigente" if codigo
+                         else "o serviço da tabela vigente"),
+                vigencia=item.get("vigencia"))
+    return None
+
+
+def orcamento_gravado(d) -> dict | None:
+    """O orçamento congelado no depósito, ou None. Só lê a linha.
+
+    Texto que não é o JSON esperado vale como ausente — e a falta aparece no
+    livro —, em vez de derrubar a tela.
+    """
+    try:
+        bruto = d.get("orcamento") if hasattr(d, "get") else None
+        lido = json.loads(bruto) if bruto else None
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(lido, dict) or not lido.get("itens"):
+        return None
+    return lido
+
+
+def linhas_do_orcamento(orcamento: dict | None) -> list[str]:
+    """O orçamento por extenso, uma linha por item e a soma. Só calcula.
+
+    É a forma do livro e da lista do caixa: o código do TJ, o ato, a
+    quantidade, os emolumentos e CADA FUNDO — os acréscimos do art. 198, VI.
+    """
+    if not orcamento:
+        return []
+    linhas = []
+    for i in orcamento.get("itens") or []:
+        fundos = "; ".join(f"{rotulo} R$ {i.get(f) or '0,00'}" for f, rotulo in (
+            ("emolumentos", "emolumentos"), ("ferc", "FERC"), ("fadep", "FADEP"),
+            ("femp", "FEMP"), ("ferrfis", "FERRFIS")))
+        linhas.append(f"{i.get('codigo_ato') or '—'} {i.get('descricao') or ''} × "
+                      f"{i.get('quantidade') or 1}: {fundos}; total R$ "
+                      f"{i.get('valor_total') or '0,00'}")
+    soma = orcamento.get("soma") or {}
+    linhas.append(f"Total do orçamento: R$ {soma.get('total') or '0,00'} "
+                  f"({orcamento.get('de_onde') or 'origem não registrada'})")
+    return linhas
 
 
 # ---------------------------------------------------------------- espelho
@@ -374,24 +492,17 @@ def atribuicoes_do_grupo(grupo: Any) -> tuple[str, ...]:
         return ()
 
 
-def servico_do_catalogo(con: sqlite3.Connection, servico_codigo: Any) -> dict | None:
+def servico_do_catalogo(con, servico_codigo: Any) -> dict | None:
     """O item do catálogo da casa, com o grupo. Só LÊ.
 
     Sem item devolve `None` — quem chama decide o que dizer; inventar um item
     vazio faria o depósito parecer tipado sem estar.
-
-    A leitura é por posição, e `dict(zip(...))` como em `emolumentos.buscar`:
-    esta função é chamada de dentro da transação de quem cria o depósito, e
-    mexer no `row_factory` da conexão alheia mudaria o que o chamador lê
-    depois — a afinidade do SQLite pelo lado da conexão compartilhada.
     """
     if not servico_codigo:
         return None
-    linha = con.execute(
+    return banco(con).um(
         """SELECT codigo, codigo_tj, descricao, grupo, ativo
-             FROM cx_servicos WHERE codigo=?""", (int(servico_codigo),)).fetchone()
-    return (dict(zip(("codigo", "codigo_tj", "descricao", "grupo", "ativo"), linha))
-            if linha else None)
+             FROM cx_servicos WHERE codigo = %s""", (int(servico_codigo),))
 
 
 def rotulo_do_servico(servico: dict | None) -> str:
@@ -417,7 +528,7 @@ def _recado_dos_ambiguos(termo: str, achados: list[dict]) -> str:
             f"de um deles: " + "; ".join(oito) + resto + ".")
 
 
-def resolver_servico(con: sqlite3.Connection, termo: Any) -> dict:
+def resolver_servico(con, termo: Any) -> dict:
     """O item do catálogo da casa a partir do que a pessoa escreveu. **SÓ LÊ.**
 
     Devolve `{"servico": {...}}` quando há **um só** candidato,
@@ -454,7 +565,7 @@ def resolver_servico(con: sqlite3.Connection, termo: Any) -> dict:
     return {"ambiguos": achados} if achados else {}
 
 
-def buscar_servicos(con: sqlite3.Connection, termo: str,
+def buscar_servicos(con, termo: str,
                     limite: int = LIMITE_DA_BUSCA_DE_SERVICOS) -> list[dict]:
     """Os serviços do catálogo que casam com a busca, com a atribuição que o
     grupo declara. **SÓ LÊ** — a mesma consulta do protocolo (`emolumentos.buscar`,
@@ -472,11 +583,10 @@ def buscar_servicos(con: sqlite3.Connection, termo: str,
     codigos = [int(r["codigo"]) for r in achados if r.get("codigo") is not None]
     grupos: dict[int, Any] = {}
     if codigos:
-        marcadores = ",".join("?" * len(codigos))
-        for linha in con.execute(
-                f"""SELECT codigo, grupo FROM cx_servicos
-                     WHERE codigo IN ({marcadores})""", codigos):
-            grupos[int(linha[0])] = linha[1]
+        for linha in banco(con).ler(
+                """SELECT codigo, grupo FROM cx_servicos
+                    WHERE codigo = ANY(%s) ORDER BY codigo""", (codigos,)):
+            grupos[int(linha["codigo"])] = linha["grupo"]
     for r in achados:
         qual = atribuicoes_do_grupo(grupos.get(int(r["codigo"])))
         r["grupo"] = grupos.get(int(r["codigo"]))
@@ -487,25 +597,23 @@ def buscar_servicos(con: sqlite3.Connection, termo: str,
     return achados
 
 
-def _qual_do_registro(con: sqlite3.Connection, tabela: str, coluna: str,
+def _qual_do_registro(con, tabela: str, coluna: str,
                       identificador: Any) -> str | None:
     """A atribuição que o registro declara, se ela estiver no vocabulário. Só LÊ.
 
-    `tabela` e `coluna` são constantes deste arquivo — nunca texto de fora —, e
-    a leitura é por posição para não mexer no `row_factory` da conexão de quem
-    chamou (esta função roda dentro da transação de quem cria o depósito).
+    `tabela` e `coluna` são constantes deste arquivo — nunca texto de fora.
     """
     if not identificador:
         return None
-    linha = con.execute(
-        f"SELECT {coluna} FROM {tabela} WHERE id=?", (int(identificador),)).fetchone()
-    if not linha or not linha[0]:
+    valor = banco(con).valor(
+        f"SELECT {coluna} FROM {tabela} WHERE id = %s", (int(identificador),))
+    if not valor:
         return None
-    qual = str(linha[0]).strip().upper()
+    qual = str(valor).strip().upper()
     return qual if qual in ATRIBUICOES else None
 
 
-def atribuicao_do_vinculo(con: sqlite3.Connection, *, protocolo_id: Any = None,
+def atribuicao_do_vinculo(con, *, protocolo_id: Any = None,
                           ri_protocolo_id: Any = None,
                           nt_ato_id: Any = None) -> dict | None:
     """A atribuição que o VÍNCULO declara — e de onde ela saiu. Só LÊ.
@@ -525,12 +633,13 @@ def atribuicao_do_vinculo(con: sqlite3.Connection, *, protocolo_id: Any = None,
     não há declaração.
     """
     if protocolo_id:
-        qual = _qual_do_registro(con, "cx_protocolos", "atribuicao", protocolo_id)
+        bd = banco(con)
+        qual = _qual_do_registro(bd, "cx_protocolos", "atribuicao", protocolo_id)
         if qual:
-            numero = con.execute("SELECT numero FROM cx_protocolos WHERE id=?",
-                                 (int(protocolo_id),)).fetchone()
+            numero = bd.um("SELECT numero FROM cx_protocolos WHERE id = %s",
+                           (int(protocolo_id),))
             return {"atribuicao": qual,
-                    "de_onde": f"o protocolo {numero[0] if numero else ''}".strip()}
+                    "de_onde": f"o protocolo {numero['numero'] if numero else ''}".strip()}
     if ri_protocolo_id:
         # A prenotação mora em `ri_protocolos`, que é a tabela de protocolo do
         # Registro de Imóveis — a atribuição é a da tabela, não uma suposição.
@@ -541,7 +650,7 @@ def atribuicao_do_vinculo(con: sqlite3.Connection, *, protocolo_id: Any = None,
     return None
 
 
-def sugerir_tipo(con: sqlite3.Connection, *, protocolo_id: Any = None,
+def sugerir_tipo(con, *, protocolo_id: Any = None,
                  ri_protocolo_id: Any = None, nt_ato_id: Any = None,
                  servico_codigo: Any = None) -> dict:
     """O que o sistema já sabe do tipo, antes de a pessoa escolher. Só LÊ.
@@ -564,19 +673,20 @@ def sugerir_tipo(con: sqlite3.Connection, *, protocolo_id: Any = None,
         a mesma ordem do selo, onde o código do ato precede o texto —, e a
         divergência aparece em vez de sumir.
     """
+    bd = banco(con)
     do_vinculo = atribuicao_do_vinculo(
-        con, protocolo_id=protocolo_id, ri_protocolo_id=ri_protocolo_id,
+        bd, protocolo_id=protocolo_id, ri_protocolo_id=ri_protocolo_id,
         nt_ato_id=nt_ato_id)
-    servico = servico_do_catalogo(con, servico_codigo)
+    servico = servico_do_catalogo(bd, servico_codigo)
     if not servico and protocolo_id:
-        # O ITEM ÚNICO DO PROTOCOLO — a leitura é por posição para não mexer no
-        # `row_factory` da conexão de quem chamou.
-        itens = con.execute(
+        # O ITEM ÚNICO DO PROTOCOLO.
+        itens = bd.ler(
             """SELECT servico_codigo FROM cx_protocolo_atos
-                WHERE protocolo_id=? AND servico_codigo IS NOT NULL""",
-            (int(protocolo_id),)).fetchall()
+                WHERE protocolo_id = %s AND servico_codigo IS NOT NULL
+                ORDER BY id""",
+            (int(protocolo_id),))
         if len(itens) == 1:
-            servico = servico_do_catalogo(con, itens[0][0])
+            servico = servico_do_catalogo(bd, itens[0]["servico_codigo"])
     do_grupo = atribuicoes_do_grupo(servico.get("grupo") if servico else None)
     uma_so_do_grupo = do_grupo[0] if len(do_grupo) == 1 else None
 
@@ -609,7 +719,7 @@ def sugerir_tipo(con: sqlite3.Connection, *, protocolo_id: Any = None,
             "atribuicoes": oferecidas, "aviso": aviso}
 
 
-def tipo_do_deposito(con: sqlite3.Connection, d) -> dict:
+def tipo_do_deposito(con, d) -> dict:
     """Como o tipo daquele depósito se lê na lista. Só LÊ.
 
     **O QUE ESTÁ GRAVADO MANDA**; o que não estiver é lido do vínculo e
@@ -644,7 +754,7 @@ def tipo_do_deposito(con: sqlite3.Connection, d) -> dict:
             "rotulo_servico": rotulo_servico, "origem": "NENHUM"}
 
 
-def gravar_tipos_do_vinculo(con: sqlite3.Connection) -> dict:
+def gravar_tipos_do_vinculo(con) -> dict:
     """Grava a atribuição dos depósitos que TÊM vínculo e ainda não têm tipo.
 
     ESCREVE — e é botão de apertar uma vez, de propósito.
@@ -664,10 +774,11 @@ def gravar_tipos_do_vinculo(con: sqlite3.Connection) -> dict:
     Devolve os contadores, para a tela poder dizer o que fez — mudar linha em
     silêncio é o que faz a conferência desconfiar do sistema.
     """
-    linhas = [tuple(r) for r in con.execute(
+    bd = banco(con)
+    linhas = [tuple(r.values()) for r in bd.ler(
         """SELECT id, protocolo_id, ri_protocolo_id, nt_ato_id, atribuicao,
                   servico_codigo
-             FROM cx_depositos""")]
+             FROM cx_depositos ORDER BY id""")]
     gravados = servicos = sem_tipo = 0
     for did, protocolo_id, ri_protocolo_id, nt_ato_id, qual, servico in linhas:
         if qual:
@@ -675,20 +786,261 @@ def gravar_tipos_do_vinculo(con: sqlite3.Connection) -> dict:
         # A MESMA RÉGUA DO CADASTRO — `sugerir_tipo` —, e não uma segunda
         # leitura do vínculo: o que o botão grava tem de ser o que a tela ia
         # gravar se aquele depósito fosse registrado hoje.
-        dica = sugerir_tipo(con, protocolo_id=protocolo_id,
+        dica = sugerir_tipo(bd, protocolo_id=protocolo_id,
                             ri_protocolo_id=ri_protocolo_id,
                             nt_ato_id=nt_ato_id, servico_codigo=servico)
         if not dica["atribuicao"]:
             sem_tipo += 1
             continue
         item = dica["servico_codigo"]
-        con.execute(
+        bd.escrever(
             """UPDATE cx_depositos
-                  SET atribuicao=?, servico_codigo=COALESCE(?, servico_codigo)
-                WHERE id=?""",
+                  SET atribuicao = %s, servico_codigo = COALESCE(%s, servico_codigo)
+                WHERE id = %s""",
             (dica["atribuicao"], item, int(did)))
         gravados += 1
         if item and not servico:
             servicos += 1
     return {"gravados": gravados, "com_servico": servicos,
             "sem_tipo": sem_tipo}
+
+
+# ------------------------------------------ o deposito que paga o selo (LX16)
+#
+# «Não tem como permitir selo pago sem um protocolo e sem o registro de que o
+#  item foi pago ou entrou antes em depósito prévio» — o oficial, 19/10/2026
+#
+# O DEPÓSITO PAGA O ITEM, E NÃO O SELO. O débito quita o item do protocolo
+# (`quitado`), e é a quitação que a trava do selo lê: o segundo selo do mesmo
+# item acha o item pago e não debita de novo. Debitar por selo cobraria o
+# cliente duas vezes pelo mesmo serviço.
+#
+# SEM SALDO NEGATIVO E SEM DOIS DÉBITOS DO MESMO SALDO. O saldo se lê e se
+# grava com a linha presa (FOR UPDATE), como no «usar» da tela do caixa; e o
+# item também fica preso, para dois selos do mesmo item ao mesmo tempo não o
+# pagarem duas vezes.
+
+SCHEMA_USOS = """
+CREATE TABLE IF NOT EXISTS cx_deposito_usos (
+    id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    deposito_id bigint NOT NULL,
+    valor_centavos bigint NOT NULL,
+    saldo_depois_centavos bigint NOT NULL,
+    protocolo_id bigint,
+    item_id bigint,
+    tabela TEXT,
+    ato_id bigint,
+    motivo TEXT,
+    criado_em TEXT NOT NULL,
+    criado_por TEXT
+)
+"""
+
+
+class DepositoSemSaldo(ValueError):
+    """O depósito não cobre o valor — frase de balcão, sem número de erro."""
+
+
+def init_usos_schema(con) -> None:
+    """O rastro de cada débito do depósito. Idempotente."""
+    banco(con).escrever(SCHEMA_USOS)
+
+
+def do_protocolo(con, protocolo_id, *, tabela: str | None = None,
+                 ato_id: int | None = None) -> list[dict]:
+    """Os depósitos com saldo que podem pagar este protocolo. Só LÊ.
+
+    Do protocolo é o depósito amarrado a ele, à MESMA prenotação do RI (o
+    dinheiro deixado no título) ou, nas Notas, ao mesmo ato de livro. Depósito
+    solto não entra: usar dinheiro de outro cliente seria pior que não selar.
+    """
+    from caixa_schema import centavos
+    bd = banco(con)
+    condicoes = ["d.protocolo_id = %(p)s",
+                 """(d.ri_protocolo_id IS NOT NULL AND d.ri_protocolo_id =
+                     (SELECT c.ri_protocolo_id FROM cx_protocolos c
+                       WHERE c.id = %(p)s))"""]
+    if tabela == "nt_atos" and ato_id is not None:
+        condicoes.append("d.nt_ato_id = %(a)s")
+    linhas = bd.ler(
+        f"""SELECT d.* FROM cx_depositos d
+             WHERE coalesce(d.encerrado, 0) = 0
+               AND ({' OR '.join(condicoes)})
+             ORDER BY d.data, d.id""",
+        {"p": int(protocolo_id), "a": int(ato_id or 0)})
+    return [d for d in linhas if centavos(d["saldo"]) > 0]
+
+
+def saldo_do_protocolo(con, protocolo_id, **kw) -> int:
+    """Quanto há, em centavos, nos depósitos que podem pagar o protocolo."""
+    from caixa_schema import centavos
+    return sum(centavos(d["saldo"]) for d in do_protocolo(con, protocolo_id, **kw))
+
+
+def debitar(con, deposito_id: int, valor_centavos: int, *, agora: str,
+            quem: str | None = None, protocolo_id: int | None = None,
+            item_id: int | None = None, tabela: str | None = None,
+            ato_id: int | None = None, motivo: str | None = None) -> dict:
+    """Tira do saldo do depósito, sem nunca deixá-lo negativo. ESCREVE.
+
+    Recusa com `DepositoSemSaldo` — e não grava nada — quando o saldo DE
+    AGORA (lido com a linha presa) não cobre o valor.
+    """
+    from caixa_schema import centavos
+    valor = int(valor_centavos or 0)
+    if valor <= 0:
+        raise DepositoSemSaldo("O valor a debitar tem de ser maior que zero.")
+    bd = banco(con)
+    bd._escrita()
+    d = bd.um("SELECT * FROM cx_depositos WHERE id = %s FOR UPDATE",
+              (int(deposito_id),))
+    if not d or int(d["encerrado"] or 0):
+        raise DepositoSemSaldo("Este depósito prévio não existe mais ou já foi encerrado.")
+    saldo = centavos(d["saldo"])
+    if valor > saldo:
+        raise DepositoSemSaldo(
+            f"O depósito {d['numero'] or d['id']} tem R$ {reais(saldo)} e o "
+            f"item custa R$ {reais(valor)}. Falta R$ {reais(valor - saldo)}: "
+            f"registre o pagamento da diferença no caixa.")
+    novo = saldo - valor
+    bd.escrever(
+        """UPDATE cx_depositos SET saldo = %s, encerrado = %s, atualizado_em = %s
+            WHERE id = %s""",
+        (reais(novo), 1 if novo == 0 else 0, agora, int(deposito_id)))
+    if bd.tem_tabela("cx_deposito_usos"):
+        bd.escrever(
+            """INSERT INTO cx_deposito_usos
+                   (deposito_id, valor_centavos, saldo_depois_centavos,
+                    protocolo_id, item_id, tabela, ato_id, motivo, criado_em,
+                    criado_por)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (int(deposito_id), valor, novo, protocolo_id, item_id, tabela,
+             ato_id, motivo, agora, quem))
+    return {"deposito_id": int(deposito_id), "numero": d["numero"],
+            "valor_centavos": valor, "saldo_centavos": novo}
+
+
+def pagar_item(con, item_id: int, *, agora: str, quem: str | None = None,
+               tabela: str | None = None, ato_id: int | None = None) -> dict | None:
+    """Quita o item do protocolo com o depósito prévio, se houver saldo. ESCREVE.
+
+    Devolve o débito feito, `{"ja_quitado": True}` se outro selo pagou o item
+    enquanto este esperava a trava, ou None quando nenhum depósito cobre o
+    valor (ou o item não tem valor — e sem valor não há o que debitar).
+    """
+    import caixa_protocolo as CXP
+    from caixa_schema import centavos
+    bd = banco(con)
+    bd._escrita()
+    linha = bd.um("SELECT * FROM cx_protocolo_atos WHERE id = %s FOR UPDATE",
+                  (int(item_id),))
+    if not linha:
+        return None
+    if CXP._sim(linha["quitado"]):
+        return {"ja_quitado": True}
+    valor = centavos(linha["valor_total"])
+    if valor <= 0:
+        return None
+    for d in do_protocolo(bd, linha["protocolo_id"], tabela=tabela, ato_id=ato_id):
+        if centavos(d["saldo"]) < valor:
+            continue
+        try:
+            feito = debitar(bd, d["id"], valor, agora=agora, quem=quem,
+                            protocolo_id=linha["protocolo_id"], item_id=int(item_id),
+                            tabela=tabela, ato_id=ato_id,
+                            motivo="Quitação do item pelo depósito prévio (selo)")
+        except DepositoSemSaldo:
+            # Outro balcão gastou o saldo entre a lista e a trava: tenta o
+            # próximo depósito, e não estoura.
+            continue
+        quitar_o_item(bd, linha, feito, agora=agora)
+        return feito
+    return None
+
+
+def quitar_o_item(con, item: dict, feito: dict, *, agora: str) -> None:
+    """Marca o item como pago pelo depósito e regrava o protocolo. ESCREVE.
+
+    A MESMA MARCA NOS DOIS CAMINHOS QUE PAGAM O ITEM COM O DEPÓSITO — o selo
+    (`pagar_item`) e o «usar» da tela do caixa (LD06). `quitado_por` começa
+    por «DEPÓSITO PRÉVIO»: é por ela que o estorno da reserva do selo sabe
+    que a quitação é do depósito, e que o caixa recusa cobrar o item de novo
+    ou reabri-lo sem devolver o dinheiro.
+    """
+    import caixa_protocolo as CXP
+    bd = banco(con)
+    bd.escrever(
+        """UPDATE cx_protocolo_atos
+              SET quitado = 1, quitado_em = %s, quitado_por = %s
+            WHERE id = %s""",
+        (agora, f"DEPÓSITO PRÉVIO {feito['numero'] or feito['deposito_id']}",
+         int(item["id"])))
+    CXP.atualizar_situacao(bd, item["protocolo_id"])
+
+
+# ------------------------------- o «usar» da tela do caixa quita o item (LD06)
+#
+# «Praticado o ato notarial ou de registro para o qual o depósito prévio foi
+#  efetuado, o valor correspondente deverá ser baixado do Livro de Controle de
+#  Depósito Prévio e lançado como receita» — CN-MA art. 202.
+#
+# O DEFEITO, MEDIDO PELO LT06 (20/10/2026): «usar» o depósito na tela do caixa,
+# com o número do protocolo, baixava o saldo e lançava o uso, mas NÃO quitava
+# o item. O protocolo continuava A_PAGAR, a trava do selo pedia pagamento de
+# novo e o item ainda podia ser quitado em dinheiro — o cliente pagava duas
+# vezes. Quem quitava era só o quadro «Selo e caixa» (`pagar_item`).
+#
+# AGORA OS DOIS SÃO UM CAMINHO SÓ para o item: o débito de `debitar` (com o
+# rastro em `cx_deposito_usos`, que o livro lê com o item) e a marca de
+# `quitar_o_item`. O que o valor usado não cobre de item inteiro continua sendo
+# o uso de sempre — dinheiro do depósito que vira receita sem item no protocolo.
+
+
+def prender_itens_a_pagar(con, protocolo_id: int) -> list[dict]:
+    """Os itens do protocolo ainda a pagar, PRESOS, na ordem em que entraram.
+
+    PRESOS ANTES DO DEPÓSITO, na ordem de `pagar_item` (item → depósito →
+    protocolo): o «usar» e o selo do mesmo protocolo, presos em ordens
+    contrárias, se esperariam um ao outro, e o PostgreSQL derrubaria um dos
+    dois por deadlock.
+    """
+    bd = banco(con)
+    bd._escrita()
+    return bd.ler(
+        """SELECT * FROM cx_protocolo_atos
+            WHERE protocolo_id = %s AND coalesce(quitado, 0) = 0
+            ORDER BY id FOR UPDATE""", (int(protocolo_id),))
+
+
+def quitar_itens_com_o_deposito(con, deposito_id: int, itens: list[dict],
+                                valor_centavos: int, *, agora: str,
+                                quem: str | None = None) -> list[dict]:
+    """Quita, com o valor usado do depósito, os itens que ele cobre. ESCREVE.
+
+    `itens` são os de `prender_itens_a_pagar` — já presos. Cada item, na ordem
+    do protocolo, é quitado INTEIRO se o que resta do valor cobre o preço
+    dele; o que não cabe fica a pagar e o seguinte é tentado — meio item pago
+    não existe no caixa, e parar no primeiro que não cabe deixaria a pagar um
+    item que o dinheiro já usado cobria (e o cliente o pagaria de novo).
+
+    O saldo de quem chama já foi conferido com a linha do depósito presa; o
+    débito de cada item passa por `debitar`, que confere de novo. Devolve os
+    débitos feitos, um por item, com o item dentro.
+    """
+    from caixa_schema import centavos
+    bd = banco(con)
+    resta = int(valor_centavos or 0)
+    feitos = []
+    for item in itens:
+        preco = centavos(item.get("valor_total"))
+        if preco <= 0 or preco > resta:
+            continue
+        feito = debitar(bd, deposito_id, preco, agora=agora, quem=quem,
+                        protocolo_id=int(item["protocolo_id"]),
+                        item_id=int(item["id"]),
+                        motivo="Quitação do item pelo uso do depósito prévio "
+                               "(tela do caixa)")
+        quitar_o_item(bd, item, feito, agora=agora)
+        feitos.append(feito | {"item": item})
+        resta -= preco
+    return feitos

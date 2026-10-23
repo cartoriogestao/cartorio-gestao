@@ -225,6 +225,14 @@ def test_so_o_proprietario_fica_como_titular_atual(casa):
     Cinco partes com dois `proprietário` no meio: quem for titular é quem o
     papel diz, e não a primeira linha da lista. Este é o campo que, errado,
     troca o dono do imóvel no papel que a casa emite.
+
+    O ADQUIRENTE TAMBÉM É TITULAR — LD03, 21/10/2026. Esta lista dizia só os
+    dois `proprietário`, e era a régua da lavratura (`startswith("propriet")`)
+    que o LT03 achou errada: depois da compra e venda a certidão de
+    propriedade afirmava o vendedor, e não quem adquiriu (LRP art. 19, § 9º —
+    o proprietário vigente). A régua agora é uma só, a de
+    `ri_correcoes.PAPEL_DE_TITULAR`, que já contava o adquirente; o credor e
+    o anuente continuam de fora.
     """
     mid = _matricula_do_sistema(casa)
     _lavrar(casa, mid, **_blocos(
@@ -232,8 +240,10 @@ def test_so_o_proprietario_fica_como_titular_atual(casa):
 
     partes = _partes_gravadas(casa, mid)
     ativos = [p["nome"] for p in partes if p["proprietario_ativo"]]
-    assert ativos == ["JOSÉ ANTÔNIO DE SANTANA NETO", "ESPÓLIO DE JOÃO PEREIRA"]
+    assert ativos == ["JOSÉ ANTÔNIO DE SANTANA NETO", "MARIA DA SILVA",
+                      "ESPÓLIO DE JOÃO PEREIRA"]
     assert [p["proprietario"] for p in partes if p["papel"] == "credor"] == [0]
+    assert [p["proprietario"] for p in partes if p["papel"] == "anuente"] == [0]
 
 
 def test_o_bloco_em_branco_da_tela_nao_vira_parte(casa):

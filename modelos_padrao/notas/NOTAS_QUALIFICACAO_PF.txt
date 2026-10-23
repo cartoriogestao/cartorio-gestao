@@ -1,0 +1,1 @@
+<b>{nome}</b>, {nacionalidade}, {estado_civil}{conjuge}{uniao_estavel}, {profissao}{identidade}, inscrito(a) no CPF sob o nº {documento}, residente e domiciliado(a) em {endereco}

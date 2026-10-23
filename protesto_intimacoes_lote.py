@@ -28,7 +28,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from bd_nativo import banco
 import protesto_aviso as AV
+import tetos_de_entrada as TETO
 
 PREFIXO = "CG-AVISO"
 QR = re.compile(rf"^{PREFIXO}:(?P<id>\d+):(?P<numero>\d+)/(?P<ano>\d{{4}}):"
@@ -84,7 +86,7 @@ def ler_conteudo(texto: Any) -> dict | None:
 def _abrir(pdf: bytes):
     try:
         import pymupdf as fitz
-    except ImportError:  # pragma: no cover — versões antigas
+    except ImportError:  # versões antigas (sem cobertura)
         import fitz
     if not pdf:
         raise LoteError("O arquivo está vazio.")
@@ -113,6 +115,11 @@ def _qrs_da_pagina(pagina) -> list[str]:
     import numpy as np
     detector = cv2.QRCodeDetector()
     for dpi in DPI_DE_LEITURA:
+        # A ÁREA TEM TETO (LX12, LS02 M3, 19/10/2026): o limite de páginas já
+        # existia, mas uma página de MediaBox gigante virava, a 300 dpi,
+        # bitmap de gigabytes. Para achar o QR basta a resolução que cabe.
+        escala = TETO.escala_que_cabe(pagina.rect.width, pagina.rect.height, dpi / 72)
+        dpi = max(1, int(escala * 72))
         pix = pagina.get_pixmap(dpi=dpi, colorspace="gray")
         img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
             pix.height, pix.width)
@@ -215,9 +222,9 @@ def conferir(con: sqlite3.Connection, pdf: bytes) -> dict:
         g.update(_situacao_do_grupo(con, g))
         aviso = AV.ler(con, g["aviso_id"])
         if aviso:
-            tit = con.execute(
-                "SELECT numero_titulo, protocolo FROM pt_titulos WHERE id=?",
-                (int(aviso["titulo_id"]),)).fetchone()
+            tit = banco(con).um(
+                "SELECT numero_titulo, protocolo FROM pt_titulos WHERE id=%s",
+                (int(aviso["titulo_id"]),))
             g["devedor_nome"] = aviso["devedor_nome"]
             g["numero_titulo"] = tit["numero_titulo"] if tit else None
             g["protocolo_titulo"] = tit["protocolo"] if tit else None
@@ -259,7 +266,7 @@ def fatia(pdf: bytes, paginas: list[int]) -> bytes:
     """Só as folhas de um aviso, num PDF próprio. Só calcula."""
     try:
         import pymupdf as fitz
-    except ImportError:  # pragma: no cover — versões antigas
+    except ImportError:  # versões antigas (sem cobertura)
         import fitz
     origem = _abrir(pdf)
     novo = fitz.open()

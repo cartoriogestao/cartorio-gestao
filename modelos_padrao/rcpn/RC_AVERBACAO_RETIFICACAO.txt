@@ -1,0 +1,1 @@
+AVERBAÇÃO {numero_av} – {titulo}: Em {data_por_extenso}, {abertura}, {correcao}{conforme}; diante disto faço constar {constar}, dando cumprimento ao {fundamento}, retificando o assento. O referido é verdade e dou fé. {cidade}, {data}. {assinatura}

@@ -8,7 +8,7 @@
 
 <div class="notice">
   Duas pendências seguram as escrituras na fila da CEP, e nenhuma delas o sistema pode decidir.
-  O <strong>valor</strong> veio vazio do E-Ofício em todas as escrituras &mdash; e na escritura o
+  O <strong>valor</strong> veio vazio do sistema antigo em todas as escrituras &mdash; e na escritura o
   valor é o conteúdo econômico do ato, não dá para zerar como se faz na procuração. As
   <strong>partes de protocolo repetido</strong> estão na quarentena porque o protocolo rendeu mais
   de um ato e ninguém sabe quem compareceu a qual.
@@ -20,7 +20,7 @@
     <span>Sem natureza da CENSEC &mdash; {{ sem_natureza|length }} escritura{{ '' if sem_natureza|length == 1 else 's' }}</span>
   </div>
   <div style="padding:14px" class="small muted">
-    Vieram do E-Ofício com um modelo genérico que aponta para
+    Vieram do sistema antigo com um modelo genérico que aponta para
     <strong>ACORDO EXTRAJUDICIAL</strong>, e nenhuma é isso. A lista abaixo é do que o teor
     <strong>contradiz</strong> — não do que está em branco, porque em branco não há nenhuma: elas
     já estão classificadas, e classificadas errado. A sugestão sai do que cada ato diz de si
@@ -203,11 +203,11 @@
 {% if do_acervo %}
 <details class="panel">
   <summary style="padding:14px;cursor:pointer">
-    <strong>{{ do_acervo|length }} escritura(s) do acervo do E-Ofício</strong>
+    <strong>{{ do_acervo|length }} escritura(s) do acervo do sistema antigo</strong>
     <span class="small muted">— remetidas no tempo delas; não são pendência de hoje</span>
   </summary>
   <div style="padding:0 14px 14px" class="small muted">
-    Estes atos vieram do E-Ofício e a remessa deles saiu naquela época. Ficam
+    Estes atos vieram do sistema antigo e a remessa deles saiu naquela época. Ficam
     aqui para quem precisar consultá-los ou completá-los um dia — clique no
     número para abrir a ficha.
   </div>

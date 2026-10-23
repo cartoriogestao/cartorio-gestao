@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_AUTENTICACAO__ressalva",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Autenticação — ressalva do original",
+  "formato": "CHAVES",
+  "explica": "Entra logo depois da fórmula quando o original tem rasura ou outro defeito: o tabelião os ressalva na autenticação (CN-MA art. 836). Sem defeito visto, a peça não entra.",
+  "campos": [
+    "ressalva"
+  ]
+}

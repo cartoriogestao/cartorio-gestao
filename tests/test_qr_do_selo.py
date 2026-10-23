@@ -14,7 +14,7 @@ O QUE SE SUPUNHA, E POR QUE ESTAVA ERRADO
     Era palpite e estava errado. **O QR do TJMA não carrega URL nenhuma.**
 
 COMO SE MEDIU
-    A casa tem **4.392 imagens de QR de selo** em `C:\\ARPNET\\C11\\SeloDigital`,
+    A casa tem **4.392 imagens de QR de selo** em `C:\\ProgramData\\CartorioGestao\\arquivos\\eoficio\\SeloDigital`,
     uma por selo, geradas pelo E-Ofício. Uma delas foi decodificada à mão —
     grade lida da imagem, formato, máscara 3, nível Q, e os dois blocos de
     correção **desintercalados**, que era o passo que faltava.
@@ -63,6 +63,8 @@ import pytest
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — referencia acervo_eoficio ou sqlite de producao
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import selador as S                              # noqa: E402
 from selador_config import init_selador_schema    # noqa: E402
@@ -76,7 +78,7 @@ TOKEN_MEDIDO = "MDGaPtZuqUKD4FtmC82CK5al"
 
 @pytest.fixture()
 def banco():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     init_selador_schema(con)
     return con
@@ -110,7 +112,7 @@ def test_o_contrato_de_2017_nao_devolve_o_token():
     """
     import html
     import re
-    doc = Path(r"C:\ARPNET\C11\Selo Eletrônico\selador-doc\civil\index.html")
+    doc = Path(r"C:\ProgramData\CartorioGestao\arquivos\eoficio\Selo Eletrônico\selador-doc\civil\index.html")
     if not doc.exists():
         pytest.skip("o contrato do selador não está nesta máquina")
     plano = html.unescape(re.sub(r"\s+", " ", re.sub(

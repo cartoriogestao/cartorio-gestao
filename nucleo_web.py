@@ -35,7 +35,6 @@ FUNDAMENTO
 """
 from __future__ import annotations
 
-import sqlite3
 from datetime import date
 
 from flask import Response, abort, flash, redirect, render_template, request, url_for
@@ -45,6 +44,7 @@ import atribuicoes as AT
 import escrituracao as ESC
 import implantacao as IMP
 import livro_nucleo as LN
+from bd_nativo import banco
 from ri_odt import gerar_odt, html_para_odf
 from ri_web import data_por_extenso
 from serventia import dados as dados_serventia
@@ -87,9 +87,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return None
 
     def _ler():
-        con = db.connect()
-        con.row_factory = sqlite3.Row
-        return con
+        return db.connect()
 
     # ------------------------------------------------------- o panorama
 
@@ -105,12 +103,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             linhas = ESC.panorama(con)
             atrasados = {s: ESC.dias_sem_encerrar(con, s)
                          for s in SERIES_DIARIAS}
-            fechados = [dict(r) for r in con.execute(
+            fechados = banco(con).ler(
                 """SELECT l.*, COUNT(g.id) atos
                      FROM nu_livros l
                      LEFT JOIN nu_lugares g ON g.livro_id = l.id AND g.inicio = 1
                     WHERE l.encerrado = 1
-                    GROUP BY l.id ORDER BY l.encerramento DESC LIMIT 40""")]
+                    GROUP BY l.id ORDER BY l.encerramento DESC, l.id LIMIT 40""")
         atrasados = {s: d for s, d in atrasados.items() if d}
         return render_template("nucleo_livros.html", linhas=linhas,
                                atribuicoes=AT.ATRIBUICOES, fechados=fechados,
@@ -161,18 +159,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         encerramento. Deixar isso numa tela separada seria deixar para depois.
         """
         with _ler() as con:
-            livro = con.execute("SELECT * FROM nu_livros WHERE id=?",
-                                (livro_id,)).fetchone()
+            bd = banco(con)
+            livro = bd.um("SELECT * FROM nu_livros WHERE id=%s", (livro_id,))
             if not livro:
                 flash("Livro não encontrado.", "danger")
                 return redirect(url_for("nucleo_livros"))
             conferencia = ESC.conferir_livro(con, livro_id)
-            lugares = [dict(r) for r in con.execute(
-                """SELECT * FROM nu_lugares WHERE livro_id=? AND inicio=1
-                    ORDER BY folha, verso, ordem LIMIT 400""", (livro_id,))]
-            inutilizadas = [dict(r) for r in con.execute(
-                """SELECT * FROM nu_inutilizacoes WHERE livro_id=?
-                    ORDER BY folha, verso""", (livro_id,))]
+            lugares = bd.ler(
+                """SELECT * FROM nu_lugares WHERE livro_id=%s AND inicio=1
+                    ORDER BY folha, verso, ordem, id LIMIT 400""", (livro_id,))
+            inutilizadas = bd.ler(
+                """SELECT * FROM nu_inutilizacoes WHERE livro_id=%s
+                    ORDER BY folha, verso, id""", (livro_id,))
             livre = ESC.folha_livre(con, livro)
         s = ESC.serie_de(livro["serie"])
         return render_template(
@@ -242,8 +240,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if qual not in ("abertura", "encerramento"):
             abort(404)
         with _ler() as con:
-            livro = con.execute("SELECT * FROM nu_livros WHERE id=?",
-                                (livro_id,)).fetchone()
+            livro = banco(con).um("SELECT * FROM nu_livros WHERE id=%s",
+                                  (livro_id,))
         if not livro:
             abort(404)
         texto = (livro[f"termo_{qual}"] or "").strip()
@@ -313,14 +311,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     "serie": codigo,
                     "nome": LN.serie(codigo).nome,
                     "atrasados": ESC.dias_sem_encerrar(con, codigo),
-                    "encerrado_hoje": bool(con.execute(
+                    "encerrado_hoje": bool(banco(con).um(
                         """SELECT 1 FROM nu_encerramentos_diarios
-                            WHERE serie=? AND dia=?""",
-                        (codigo, hoje())).fetchone()),
+                            WHERE serie=%s AND dia=%s""",
+                        (codigo, hoje()))),
                 })
-            feitos = [dict(r) for r in con.execute(
+            feitos = banco(con).ler(
                 """SELECT * FROM nu_encerramentos_diarios
-                    ORDER BY dia DESC, id DESC LIMIT 60""")]
+                    ORDER BY dia DESC, id DESC LIMIT 60""")
         return render_template("nucleo_encerramento_diario.html",
                                painel=painel, feitos=feitos, hoje=hoje())
 
@@ -350,10 +348,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             numeros = {}
             for x in abertas:
                 if x["tipo"] == "NUMERO" and x["serie"]:
-                    linha = con.execute(
-                        "SELECT * FROM nu_numeracao WHERE serie=?",
-                        (x["serie"],)).fetchone()
-                    numeros[x["chave"]] = dict(linha) if linha else None
+                    linha = banco(con).um(
+                        "SELECT * FROM nu_numeracao WHERE serie=%s",
+                        (x["serie"],))
+                    numeros[x["chave"]] = linha
         return render_template("implantacao.html", abertas=abertas,
                                fechadas=fechadas, numeros=numeros,
                                nomes=IMP.NOME_DA_ATRIBUICAO)
@@ -370,7 +368,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         acao = _campo("acao") or "informar"
         try:
             with db.transaction() as con:
-                con.row_factory = sqlite3.Row
                 if acao == "dispensar":
                     r = IMP.dispensar(con, chave, motivo=_campo("motivo"),
                                       agora=agora(), usuario=usuario_nome())
@@ -442,8 +439,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("nucleo_numeracao"))
 
         with _ler() as con:
-            fixados = {r["serie"]: dict(r)
-                       for r in con.execute("SELECT * FROM nu_numeracao")}
+            fixados = {r["serie"]: r for r in banco(con).ler(
+                "SELECT * FROM nu_numeracao ORDER BY serie")}
             series = []
             for codigo, s in LN.SERIES.items():
                 # As chaves de `nu_numeracao` entram SEMPRE, mesmo vazias:

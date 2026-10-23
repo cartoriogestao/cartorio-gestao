@@ -45,6 +45,10 @@
   {% if registro %}
   <a class="button" href="{{ url_for('rcpj_rtd_registro', registro_id=registro.id) }}">Ver o registro lavrado</a>
   {% endif %}
+  {# A notificação corre desde a apresentação (CN-MA, art. 987) — LG04. #}
+  {% if t.atribuicao == 4 and user.role in ['ADMIN','MANAGER','USER'] %}
+  <a class="button" href="{{ url_for('rcpj_rtd_notificacao_nova', titulo_id=t.id) }}">+ Notificação extrajudicial</a>
+  {% endif %}
 </div>
 
 <section class="panel">
@@ -240,7 +244,7 @@
         <td><small>{{ a.selo or '—' }}</small></td>
         <td>
           {% if user.role in ['ADMIN','MANAGER','USER'] %}
-          <a href="{{ url_for('rcpj_rtd_etiqueta', ato_id=a.id) }}">Etiqueta</a>
+          <form method="post" action="{{ url_for('rcpj_rtd_etiqueta', ato_id=a.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button">Etiqueta</button></form>
           {% if a.etiqueta_impressoes %}<br><small class="muted">{{ a.etiqueta_impressoes }}ª impressão sai</small>{% endif %}
           {% endif %}
         </td>
@@ -281,16 +285,39 @@
     <label>Teor do registro
       <textarea name="teor" rows="8"
         placeholder="O texto que vai escrito no livro."></textarea></label>
+    {# O QUE O TERMO DECLARA (LD09, 21/10/2026): o extrato do Livro C, a
+       inscrição da pessoa jurídica, a matrícula do periódico. O protocolo e o
+       apresentante saem deste título, sem digitar. #}
+    {% from '_declaracoes_do_termo.html' import quadros %}
+    {{ quadros(declaracoes_do_termo, series, form) }}
     {# Selo e custas — o mesmo padrão do /rcpj-rtd/novo. Domínio não sela;
        a tela oferece, opcional, e o POST grava na mesma transação. #}
     {% from '_cobrar.html' import quadro %}
+    {# O PROTOCOLO DO TÍTULO JÁ VEM ESCOLHIDO, e os itens dele para marcar
+       (LD05, 21/10/2026): só os do registro vêm marcados — a diligência, a
+       certidão e a averbação do mesmo atendimento são de outro ato. O item
+       já foi pago no caixa do protocolo: aqui não se cobra de novo. #}
     <section style="grid-column:1/-1;margin-top:8px">
       <div class="grid2">
         <label>Selo <small>(opcional)</small>
           <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
-        {{ quadro(receita, caixa, protocolos) }}
+        {{ quadro(receita, caixa, protocolos, protocolo_geral_id,
+                  itens_do_protocolo, cobrar_itens=False) }}
       </div>
     </section>
+    {# O ATO GRATUITO (LD05; CN-MA art. 133): o selo sai «isento», com o
+       fundamento escrito, sem pagamento — e o comprovante da gratuidade é
+       cobrado depois, de quem obteve o selo. #}
+    <details style="grid-column:1/-1">
+      <summary>Ato gratuito</summary>
+      <label><input type="checkbox" name="gratuito" value="1">
+        Lavrar como gratuito (selo isento)</label>
+      <label>Fundamento da gratuidade
+        <input name="fundamento_gratuidade"
+               placeholder="Gratuidade da justiça — CPC art. 98, § 1º, IX"></label>
+      <label>Item da tabela do ato <small>(sem item no protocolo)</small>
+        <input name="item_gratuito" value="{{ item_gratuito }}"></label>
+    </details>
     <button class="button primary" type="submit">Lavrar o registro</button>
   </form>
 </section>
@@ -407,8 +434,14 @@
         <td style="white-space:pre-wrap">{{ n.get('Descricao') or n.get('descricao') or '—' }}</td>
         <td><small>{{ (n.get('Data') or n.get('data') or '')[:10] }}</small></td>
         <td>
+          {# Só http(s) vira link (LX12, M9 do LS02): o endereço vem da
+             Central, e um `javascript:` rodaria no clique. #}
           {% for a in (n.get('Arquivos') or n.get('arquivos') or []) %}
-          <a href="{{ a.get('Link') or a.get('link') }}" target="_blank" rel="noopener noreferrer">{{ a.get('Nome') or a.get('nome') or 'arquivo' }}</a><br>
+          {% if (a.get('Link') or a.get('link'))|so_http %}
+          <a href="{{ (a.get('Link') or a.get('link'))|so_http }}" target="_blank" rel="noopener noreferrer">{{ a.get('Nome') or a.get('nome') or 'arquivo' }}</a><br>
+          {% else %}
+          {{ a.get('Nome') or a.get('nome') or 'arquivo' }}<br>
+          {% endif %}
           {% endfor %}
         </td>
       </tr>

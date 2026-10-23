@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{#
+  A NOTIFICAÇÃO NOVA — UM DESTINATÁRIO DE CADA VEZ, porque a tabela cobra por
+  destinatário (itens 15.8 e 15.8.1) e cada um tem o seu resultado.
+
+  Nasce do TÍTULO protocolado (o prazo da primeira diligência corre da
+  apresentação — CN-MA, art. 987) ou do REGISTRO. A certidão só sai depois do
+  registro (art. 988, § 2º).
+#}
+{% block heading %}<h1>Nova notificação extrajudicial — RTD</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('rcpj_rtd_notificacoes') }}">&larr; Notificações</a></div>
+<section class="panel">
+  <form method="post" class="form" style="padding:14px" action="{{ url_for('rcpj_rtd_notificacao_nova') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Título protocolado (RTD)
+      <select name="titulo_id"><option value="">—</option>
+      {% for t in titulos %}<option value="{{ t.id }}"{% if titulo_id|string == t.id|string %} selected{% endif %}>Protocolo {{ t.numero or '—' }} — {{ t.data_apresentacao }} — {{ t.apresentante or '' }} {{ t.natureza or '' }}</option>{% endfor %}
+      </select></label>
+    <label>ou Registro (RTD)
+      <select name="registro_id"><option value="">—</option>
+      {% for r in registros %}<option value="{{ r.id }}"{% if registro_id|string == r.id|string %} selected{% endif %}>Nº {{ r.numero or '—' }} ({{ r.serie }}) — {{ r.natureza or '' }} {{ r.requerente_nome or '' }}</option>{% endfor %}
+      </select></label>
+    <label>Destinatário<input name="destinatario_nome" required></label>
+    <label>CPF ou CNPJ<input name="destinatario_documento"></label>
+    <label>Endereço da diligência<textarea name="endereco" rows="2" required></textarea></label>
+    <label>Zona<select name="zona">{% for chave, rotulo in ZONAS.items() %}<option value="{{ chave }}">{{ rotulo }}</option>{% endfor %}</select></label>
+    <label>Distância, em km (só zona rural — item 15.8.1.2)<input type="number" min="1" name="distancia_km"></label>
+    <label>Observação<textarea name="observacao" rows="2"></textarea></label>
+    <button class="button" type="submit">Abrir a notificação</button>
+  </form>
+</section>
+{% endblock %}

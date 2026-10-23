@@ -34,6 +34,7 @@ import sqlite3
 from datetime import date, timedelta
 from typing import Any, Mapping
 
+from bd_nativo import banco
 import protesto as PT
 import protesto_aviso as AV
 from pt_schema import normalizar_nome
@@ -105,7 +106,7 @@ SELECT x.*, COALESCE(x.data_apontamento, x.criado_em) AS data_entrada
              WHERE a.titulo_id = t.id AND a.cancelado = 0
                AND a.tipo IN ('SUSTACAO', 'REVOGACAO_SUSTACAO')
              ORDER BY a.id DESC LIMIT 1) AS ultima_ordem,
-           (SELECT group_concat(d.nome, ' · ') FROM pt_devedores d
+           (SELECT string_agg(d.nome::text, ' · ' ORDER BY d.id) FROM pt_devedores d
              WHERE d.titulo_id = t.id) AS devedores,
            (SELECT MIN(COALESCE(d.nome_norm, d.nome)) FROM pt_devedores d
              WHERE d.titulo_id = t.id) AS devedor_ordem
@@ -116,7 +117,7 @@ SELECT x.*, COALESCE(x.data_apontamento, x.criado_em) AS data_entrada
 # Os parâmetros que a lista entende — e só eles viajam na paginação, na
 # ordenação e na volta da ficha.
 CAMPOS_DO_FILTRO = ("vista", "situacao", "apresentante", "de", "ate", "q",
-                    "ordem", "dir")
+                    "ordem", "dir", "vista_atual")
 
 
 def _data(valor: Any) -> str:
@@ -146,6 +147,14 @@ def ler_filtro(args: Mapping[str, Any]) -> dict:
         situacao = ""
 
     vista = campo("vista").lower()
+    # A ABA EM QUE A PESSOA ESTAVA VALE PARA O FILTRO SEM TERMO, e não para a
+    # busca — 21/10/2026. O formulário mandava a vista escondida, e o oficial
+    # procurou «900001» na aba «Pendentes»: o título pago estava em
+    # «Encerrados», a aba contava 1 e a lista mostrava vazio. Com termo, a
+    # busca abre em «Todos», que é a promessa do parágrafo acima; a aba
+    # escolhida por CLIQUE (`vista` no endereço) continua mandando.
+    if vista not in VISTAS and not q:
+        vista = campo("vista_atual").lower()
     if vista not in VISTAS:
         if situacao in SITUACOES_ENCERRADAS:
             vista = "encerrados"
@@ -217,46 +226,46 @@ def _onde(filtro: Mapping[str, Any], *, com_vista: bool,
     p: list[Any] = []
     if com_vista:
         sits = VISTAS[filtro["vista"]]["situacoes"]
-        onde.append(f"y.situacao IN ({','.join('?' * len(sits))})")
+        onde.append(f"y.situacao IN ({','.join(['%s'] * len(sits))})")
         p += list(sits)
     if com_situacao and filtro.get("situacao"):
         if filtro["situacao"] == FILTRO_SUSTADO:
             onde.append("y.ultima_ordem = 'SUSTACAO'")
         else:
-            onde.append("y.situacao = ?")
+            onde.append("y.situacao = %s")
             p.append(filtro["situacao"])
     if filtro.get("apresentante"):
-        onde.append("(y.apresentante_codigo = ? OR y.apresentante_nome LIKE ?)")
+        onde.append("(y.apresentante_codigo = %s OR y.apresentante_nome ILIKE %s)")
         p += [filtro["apresentante"], f"%{filtro['apresentante']}%"]
     if filtro.get("de"):
-        onde.append("y.data_entrada >= ?")
+        onde.append("y.data_entrada >= %s")
         p.append(filtro["de"])
     if filtro.get("ate"):
         # MENOR QUE O DIA SEGUINTE, e não menor-ou-igual: `criado_em` tem hora
         # (`2026-09-14T12:11:38`), e `<= '2026-09-14'` deixaria o dia de fora.
         seguinte = (date.fromisoformat(filtro["ate"])
                     + timedelta(days=1)).isoformat()
-        onde.append("y.data_entrada < ?")
+        onde.append("y.data_entrada < %s")
         p.append(seguinte)
     termo = filtro.get("q") or ""
     if termo:
         like = f"%{termo}%"
-        campos = ["y.numero_titulo LIKE ?", "y.nosso_numero LIKE ?",
-                  "y.protocolo LIKE ?", "y.cedente_nome LIKE ?",
-                  "y.apresentante_nome LIKE ?", "y.chave_cenprot LIKE ?"]
+        campos = ["y.numero_titulo ILIKE %s", "y.nosso_numero ILIKE %s",
+                  "y.protocolo ILIKE %s", "y.cedente_nome ILIKE %s",
+                  "y.apresentante_nome ILIKE %s", "y.chave_cenprot ILIKE %s"]
         p += [like] * len(campos)
         # O DEVEDOR MORA NOUTRA TABELA, e é por ele que o balcão procura.
-        devedor = ["d.nome LIKE ?", "d.documento_numero LIKE ?"]
+        devedor = ["d.nome ILIKE %s", "d.documento_numero ILIKE %s"]
         p += [like, like]
         norm = normalizar_nome(termo)
         if norm:
-            devedor.append("d.nome_norm LIKE ?")
+            devedor.append("d.nome_norm ILIKE %s")
             p.append(f"%{norm}%")
         # CPF/CNPJ DIGITADO COM PONTO E TRAÇO acha o documento guardado só
         # com dígitos.
         digitos = "".join(c for c in termo if c.isdigit())
         if len(digitos) >= 5 and digitos != termo:
-            devedor.append("d.documento_numero LIKE ?")
+            devedor.append("d.documento_numero ILIKE %s")
             p.append(f"%{digitos}%")
         campos.append("EXISTS (SELECT 1 FROM pt_devedores d "
                       "WHERE d.titulo_id = y.id AND ("
@@ -273,8 +282,8 @@ def _contar_vistas(con: sqlite3.Connection, filtro: Mapping[str, Any]) -> dict:
     regra da lista de problemas da ajuda, relato #82).
     """
     onde, p = _onde(filtro, com_vista=False, com_situacao=False)
-    por_situacao = {r[0]: int(r[1]) for r in con.execute(
-        f"SELECT y.situacao, COUNT(*) FROM ({_BASE}) y{onde} "
+    por_situacao = {r["situacao"]: int(r["n"]) for r in banco(con).ler(
+        f"SELECT y.situacao, COUNT(*) AS n FROM ({_BASE}) y{onde} "
         f"GROUP BY y.situacao", p)}
     vistas = {chave: sum(por_situacao.get(s, 0) for s in v["situacoes"])
               for chave, v in VISTAS.items()}
@@ -287,14 +296,14 @@ def _contar_vistas(con: sqlite3.Connection, filtro: Mapping[str, Any]) -> dict:
 
 def apresentantes(con: sqlite3.Connection, limite: int = 200) -> list[dict]:
     """Os apresentantes que já mandaram título, do que mais manda. Só LÊ."""
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT apresentante_codigo AS codigo, apresentante_nome AS nome,
                   COUNT(*) AS n
              FROM pt_titulos
             WHERE apresentante_nome IS NOT NULL AND apresentante_nome <> ''
             GROUP BY apresentante_codigo, apresentante_nome
-            ORDER BY n DESC, apresentante_nome
-            LIMIT ?""", (int(limite),))]
+            ORDER BY n DESC, apresentante_nome, apresentante_codigo
+            LIMIT %s""", (int(limite),))
 
 
 def _detalhe(linha: Any) -> dict:
@@ -369,10 +378,10 @@ def proximo_passo(con: sqlite3.Connection, linha: Mapping[str, Any], *,
 def _passo_do_apontado(con: sqlite3.Connection, tid: int,
                        linha: Mapping[str, Any]) -> dict:
     """Apontado: falta intimar — e o aviso que já saiu diz em que pé está."""
-    digital = con.execute(
+    digital = banco(con).um(
         """SELECT id, estado, enviada_em FROM rs_intimacoes
-            WHERE titulo_id = ? ORDER BY id DESC LIMIT 1""",
-        (tid,)).fetchone()
+            WHERE titulo_id = %s ORDER BY id DESC LIMIT 1""",
+        (tid,))
     avisos = [a for a in AV.do_titulo(con, tid)
               if str(a.get("situacao") or "") != "CANCELADO"]
     aviso = avisos[0] if avisos else None
@@ -390,11 +399,11 @@ def _passo_do_apontado(con: sqlite3.Connection, tid: int,
                           f"não entregue ({motivo}) — publicar o edital."),
                 "acao": "Avisos"}
     if digital is not None:
-        estado = str(digital[1] or "sem resposta ainda")
-        return {"passo": "digital", "intimacao_id": int(digital[0]),
+        estado = str(digital["estado"] or "sem resposta ainda")
+        return {"passo": "digital", "intimacao_id": int(digital["id"]),
                 "texto": (f"Intimação digital enviada em "
-                          f"{str(digital[2] or '')[:10]} — estado na Central: "
-                          f"{estado}."),
+                          f"{str(digital['enviada_em'] or '')[:10]} — estado "
+                          f"na Central: {estado}."),
                 "acao": "Acompanhar"}
     if aviso:
         # ENTREGUE ou EDITAL e o título ainda APONTADO: a intimação deveria ter
@@ -427,15 +436,13 @@ def listar(con: sqlite3.Connection, filtro: Mapping[str, Any], *,
     inv = "ASC" if d == "DESC" else "DESC"
     ordem_sql = o["sql"].format(d=d, inv=inv)
 
-    total = int(con.execute(f"SELECT COUNT(*) FROM ({_BASE}) y{onde}",
-                            p).fetchone()[0])
+    bd = banco(con)
+    total = int(bd.valor(f"SELECT COUNT(*) FROM ({_BASE}) y{onde}", p))
     paginas = max(1, -(-total // por_pagina))
     pagina = min(max(1, int(pagina)), paginas)
-    cur = con.execute(
+    linhas = bd.ler(
         f"SELECT y.* FROM ({_BASE}) y{onde} ORDER BY {ordem_sql} "
-        f"LIMIT ? OFFSET ?", (*p, por_pagina, (pagina - 1) * por_pagina))
-    nomes = [c[0] for c in cur.description]
-    linhas = [dict(zip(nomes, r)) for r in cur.fetchall()]
+        f"LIMIT %s OFFSET %s", (*p, por_pagina, (pagina - 1) * por_pagina))
 
     # AS DUAS FILAS DA TELA «A PROTESTAR», lidas uma vez e só se a página
     # tiver quem precise delas.
@@ -461,5 +468,5 @@ def listar(con: sqlite3.Connection, filtro: Mapping[str, Any], *,
     return {"linhas": linhas, "total": total, "pagina": pagina,
             "paginas": paginas, "vistas": contagens["vistas"],
             "por_situacao": contagens["por_situacao"],
-            "acervo_vazio": not con.execute(
-                "SELECT 1 FROM pt_titulos LIMIT 1").fetchone()}
+            "acervo_vazio": not bd.um(
+                "SELECT 1 AS um FROM pt_titulos ORDER BY id LIMIT 1")}

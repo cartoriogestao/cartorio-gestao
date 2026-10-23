@@ -77,12 +77,16 @@ def _abrir(s, tipo="PROCURACAO") -> int:
 
 
 def _parte(banco, aid, nome, qualificacao, completa=True):
+    # Completa, desde o LD07 (21/10/2026), tem também o documento de
+    # identidade e a união estável que o CNN art. 111 pôs na qualificação.
     campos = ("12345678909", "brasileira", "solteira", "lavradora",
-              "Rua Grande, 10, Cidade Exemplo/MA") if completa else (None,) * 5
+              "Rua Grande, 10, Cidade Exemplo/MA", "1234567 SSP/MA",
+              "NAO") if completa else (None,) * 7
     _sql(banco, """INSERT INTO nt_ato_partes(ato_id, nome, nome_norm, qualificacao,
                        documento, nacionalidade, estado_civil, profissao, endereco,
-                       tipo_pessoa, testemunha, ordem, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,'F',0,1,'2026-10-13T00:00:00')""",
+                       identidade, uniao_estavel, tipo_pessoa, testemunha, ordem,
+                       criado_em)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,'F',0,1,'2026-10-13T00:00:00')""",
          (aid, nome, nome.lower(), qualificacao, *campos))
 
 
@@ -199,7 +203,7 @@ def test_a_leitura_da_procuracao_sai_pelo_sonnet_com_a_instrucao_dela(con, cg_ca
     con.commit()
     vistos = {}
 
-    def ia(pasta, *, provedor, sistema, conversa, ferramentas, modelo, maximo_de_saida):
+    def ia(pasta, *, provedor, sistema, conversa, ferramentas, modelo, maximo_de_saida, **_registro):
         vistos.update(modelo=modelo, sistema=sistema)
         return {"texto": '{"achados": [], "parecer": "ok"}', "modelo": None,
                 "entrada": 10, "saida": 5}

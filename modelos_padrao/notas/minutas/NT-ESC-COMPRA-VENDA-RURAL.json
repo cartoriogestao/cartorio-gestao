@@ -1,0 +1,14 @@
+{
+  "chave": "NT-ESC-COMPRA-VENDA-RURAL",
+  "atribuicao": "Tabelionato de Notas — minutas",
+  "nome": "Escritura pública de compra e venda de imóvel rural",
+  "formato": "JINJA",
+  "explica": "Minuta de fábrica do ato (o corpo, com os marcadores da casa). O ajuste da casa mora em nt_modelos e continua lá; a subida atualiza a linha que ninguém editou.",
+  "campos": [
+    "lavrado_nome",
+    "lavrado_titulo",
+    "outorgados",
+    "outorgantes",
+    "sv"
+  ]
+}

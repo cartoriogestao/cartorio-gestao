@@ -16,6 +16,7 @@ from datetime import date
 
 from flask import flash, redirect, render_template, request, url_for
 
+import banco_pg
 import centrais_cred as CRED
 import cnib_api as API
 import cnib_atualizador as ATZ
@@ -189,7 +190,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   "onde trazer o par. Grave-o em Configurações.", "danger")
             return redirect(url_for("cnib_central"))
         try:
-            con = sqlite3.connect(f"file:{caminho.as_posix()}?mode=ro", uri=True)
+            # o acervo e SQLite de verdade, so leitura, pela porta que nao
+            # decide pelo nome do arquivo (LH09)
+            con = banco_pg.conectar_sqlite(caminho)
             try:
                 linha = con.execute(
                     "SELECT Cliente_ID, Secret_Code FROM tbCNIB_Propriedades "

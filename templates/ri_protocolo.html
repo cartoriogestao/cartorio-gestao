@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_protocolo_do_selo.html' import protocolo_do_selo %}
 {% block title %}Protocolo (Livro 1-A) — Registro de Imóveis{% endblock %}
 {% block heading %}<h1>Livro 1-A — Protocolo (Registro de Imóveis)</h1>{% endblock %}
 {% block content %}
@@ -10,6 +11,10 @@
     <input type="hidden" name="csrf_token" value="{{csrf_token}}">
     <label>Natureza / título <input name="natureza_titulo" value="{{ p.natureza_titulo or p.objeto or '' }}" required></label>
     <label>Item TJ <input name="codigo_tj" placeholder="ex.: 16.1"></label>
+    {# O protocolo que paga o selo da prenotação (16.1) — 22/10/2026, trava do
+       selo pago. O protocolo geral dela vem pré-marcado; a escrevente confirma. #}
+    {% set _ps_pren = protocolos_do_selo_ri('ri_protocolos', '16.1', ri_protocolo_id=p.id) %}
+    {{ protocolo_do_selo(_ps_pren.candidatos, _ps_pren.pedidos, atendendo=_ps_pren.atendendo) }}
     <button class="primary">Selar</button>
   </form>
 </div>
@@ -44,13 +49,13 @@
   <div class="stat" title="Quantidade total de protocolos nesta lista"><strong>{{ resumo.total }}</strong><small>protocolos</small></div>
   <div class="stat" title="Ainda em análise — prazo de prenotação em curso"><strong>{{ resumo.abertos }}</strong><small>em aberto (ainda em análise)</small></div>
   <div class="stat" title="Prazo legal já passou e o protocolo continua aberto"><strong>{{ resumo.vencidos }}</strong><small>com prazo vencido</small></div>
-  <div class="stat" title="Vindos do E-Ofício sem apresentante — só histórico"><strong>{{ resumo.sem_apresentante }}</strong><small>sem apresentante (importados)</small></div>
+  <div class="stat" title="Vindos do sistema antigo sem apresentante — só histórico"><strong>{{ resumo.sem_apresentante }}</strong><small>sem apresentante (importados)</small></div>
 </section>
 
 {% if resumo.sem_apresentante %}
 <div class="notice warning">
   <strong>{{ resumo.sem_apresentante }} protocolos importados não têm apresentante nem imóvel vinculado.</strong>
-  No E-Ofício esses campos vinham em branco em todos os registros — sobraram o objeto
+  No sistema antigo esses campos vinham em branco em todos os registros — sobraram o objeto
   em texto livre, o selo e a data limite. Servem como histórico da numeração;
   não dá para reconstruir de quem era o título. Protocolos abertos aqui pedem esses dados.
 </div>

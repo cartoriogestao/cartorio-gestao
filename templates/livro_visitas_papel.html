@@ -1,0 +1,43 @@
+<!doctype html>
+{# O LIVRO DE VISITAS E CORREIÇÕES (LG08), em papel — página própria, sem o
+   menu. Sai inteiro, na ordem de escrituração, com as retificações marcadas
+   nos dois lançamentos: no que corrige e no corrigido. #}
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Livro de Visitas e Correições — {{ sv.unit_name }}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #111; margin: 1.5cm; }
+  h1 { font-size: 16pt; margin: 0 0 .2em; }
+  .lancamento { border-top: 1px solid #999; padding: .5em 0; page-break-inside: avoid; }
+  .termo { white-space: pre-wrap; }
+  .muted { color: #555; font-size: 9.5pt; }
+  .barra { background: #f2f2f2; border: 1px solid #ccc; padding: .5em .8em; margin-bottom: 1em; }
+  .barra a, .barra button { margin-right: 1em; }
+  @media print { .barra { display: none; } body { margin: 0; } }
+</style>
+</head>
+<body>
+<div class="barra">
+  <a href="{{ url_for('livro_visitas') }}">← Livro de Visitas e Correições</a>
+  <button type="button" onclick="window.print()">Imprimir</button>
+</div>
+<h1>Livro de Visitas e Correições</h1>
+<p>{{ sv.unit_name }}{% if sv.ri_cns %} — CNS {{ sv.ri_cns }}{% endif %}</p>
+<p class="muted">Código de Normas do Foro Extrajudicial do MA (Prov. COGEX nº 28/2026), art. 188, I, e art. 189:
+  escriturado eletronicamente, sob a guarda e responsabilidade do delegatário.</p>
+{% for x in linhas %}
+<div class="lancamento">
+  <p><strong>Nº {{ x.numero }}</strong> — {{ x.natureza_nome }} em {{ x.data }} —
+     {{ x.autoridade }}{% if x.autoridade_nome %} ({{ x.autoridade_nome }}){% endif %}{% if x.processo %} — {{ x.processo }}{% endif %}</p>
+  {% if x.retifica_numero %}<p><em>Retifica o lançamento nº {{ x.retifica_numero }}: {{ x.motivo_retificacao }}</em></p>{% endif %}
+  <p class="termo">{{ x.termo }}</p>
+  {% if x.determinacoes %}<p class="termo"><strong>Determinações:</strong> {{ x.determinacoes }}{% if x.prazo %} — prazo: {{ x.prazo }}{% endif %}</p>{% endif %}
+  {% if x.retificado_por_numero %}<p><em>Retificado pelo lançamento nº {{ x.retificado_por_numero }}.</em></p>{% endif %}
+  <p class="muted">Escriturado em {{ x.lancado_em[:16] }} por {{ x.lancado_por }}.</p>
+</div>
+{% else %}
+<p class="muted">Nenhum lançamento.</p>
+{% endfor %}
+</body>
+</html>

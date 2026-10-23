@@ -265,7 +265,7 @@ def test_a_certidao_de_cada_tipo_sai_com_a_abertura_E_o_texto_do_tipo(
         assert frase in corpo, f"a certidão {tipo} saiu sem o texto do tipo"
         assert "neles encontrei a" in corpo, (
             f"a certidão {tipo} saiu sem a abertura do molde")
-        assert "art. 53 do Código de Normas" in corpo, (
+        assert "art. 553 do Código de Normas" in corpo, (
             f"a certidão {tipo} saiu sem a validade — o que é comum se perdeu")
         assert "MATRÍCULA Nº 4016" in corpo, (
             f"a certidão {tipo} não diz de que matrícula é")
@@ -339,6 +339,44 @@ def test_a_emissao_tambem_recusa_o_molde_sem_a_emenda(cg_casa_logada):
     assert quantas == 0, "a certidão saiu com o molde quebrado"
     assert "perdeu o ponto onde o texto do tipo entra" in html, (
         "a emissão recusou sem dizer o que faltava")
+
+
+def test_o_erro_do_modelo_que_e_da_casa_vai_ao_log_e_nao_a_tela(
+        cg_casa_logada, monkeypatch, caplog):
+    """Só a recusa do molde sem a emenda vai à tela (LX22B2 #1). O
+    `ModeloError` de `corpo_de` — o padrão que não está na base — diz o
+    schema, o caminho do arquivo e a variável de ambiente: é da casa, vai ao
+    log, e o escrevente lê a frase genérica (regra B2 do LX11)."""
+    casa = cg_casa_logada
+    mid = _abrir(casa)
+    detalhe = ("não está carregado na base de modelos (cg_padroes_exemplo): "
+               "falta o arquivo /srv/exemplo/modelos/RI_CERTIDAO.odt na pasta "
+               "do programa (CG_PG_DSN)")
+
+    original = MODELOS.corpo_de
+
+    def corpo_de_quebrado(con, chave):
+        # Só o molde: as frases da tela (que também passam por aqui) seguem.
+        if chave == "RI_CERTIDAO":
+            raise MODELOS.ModeloError(detalhe)
+        return original(con, chave)
+
+    monkeypatch.setattr(MODELOS, "corpo_de", corpo_de_quebrado)
+    tela = casa["c"].get(f"/registro-imoveis/{mid}").get_data(as_text=True)
+    with caplog.at_level("ERROR"):
+        resposta = casa["c"].post(f"/registro-imoveis/{mid}/certidao", data={
+            "csrf_token": _token(tela), "tipo": "INTEIRO_TEOR",
+            "fonte_corpo": "TEXTO"}, follow_redirects=True)
+    html = resposta.get_data(as_text=True)
+
+    con = _con(casa)
+    quantas = con.execute("SELECT COUNT(*) n FROM ri_certidoes").fetchone()["n"]
+    con.close()
+    assert quantas == 0, "a certidão saiu sem o modelo"
+    for pedaco in ("cg_padroes_exemplo", "/srv/exemplo", "CG_PG_DSN"):
+        assert pedaco not in html, f"«{pedaco}» do servidor foi para a tela"
+    assert "Não foi possível concluir" in html, "a recusa sumiu da tela"
+    assert "cg_padroes_exemplo" in caplog.text, "o detalhe não chegou ao log"
 
 
 def test_o_conferidor_do_molde_vale_mesmo_em_instalacao_sem_matricula(

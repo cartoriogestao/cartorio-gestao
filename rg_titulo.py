@@ -89,6 +89,7 @@ import sqlite3
 import escrituracao as ESC
 import livro_nucleo as LN
 import rg_registro as RG
+from bd_nativo import banco
 
 
 class TituloError(ValueError):
@@ -208,29 +209,25 @@ def serie_cabe_na_atribuicao(serie: str, atribuicao: int) -> bool:
 
 def um(con: sqlite3.Connection, titulo_id: int) -> dict | None:
     """O título, com tudo que foi cadastrado. Só LÊ."""
-    con.row_factory = sqlite3.Row
-    linha = con.execute("SELECT * FROM rg_titulos WHERE id=?",
-                        (int(titulo_id),)).fetchone()
-    return dict(linha) if linha else None
+    return banco(con).um("SELECT * FROM rg_titulos WHERE id=%s", (int(titulo_id),))
 
 
 def fila(con: sqlite3.Connection, *, atribuicao: int | None = None,
          situacao: str | None = None, limite: int = 200) -> list[dict]:
     """Os títulos, do mais novo para o mais velho. Só LÊ."""
-    con.row_factory = sqlite3.Row
     onde, param = [], []
     if atribuicao is not None:
-        onde.append("atribuicao=?")
+        onde.append("atribuicao=%s")
         param.append(_atribuicao(atribuicao))
     if situacao:
-        onde.append("situacao=?")
+        onde.append("situacao=%s")
         param.append(_texto(situacao).upper())
     sql = "SELECT * FROM rg_titulos"
     if onde:
         sql += " WHERE " + " AND ".join(onde)
-    sql += " ORDER BY id DESC LIMIT ?"
+    sql += " ORDER BY id DESC LIMIT %s"
     param.append(max(1, int(limite)))
-    return [dict(r) for r in con.execute(sql, param)]
+    return banco(con).ler(sql, param)
 
 
 def painel(con: sqlite3.Connection) -> dict[str, int]:
@@ -240,37 +237,33 @@ def painel(con: sqlite3.Connection) -> dict[str, int]:
     quando tem número faz o painel mudar de forma conforme o dia — e quem lê
     todo dia perde a referência de onde olhar.
     """
-    con.row_factory = sqlite3.Row
     quadro = dict.fromkeys(SITUACOES, 0)
-    for linha in con.execute(
-            "SELECT situacao, COUNT(*) n FROM rg_titulos GROUP BY situacao"):
+    for linha in banco(con).ler(
+            "SELECT situacao, COUNT(*) AS n FROM rg_titulos GROUP BY situacao "
+            "ORDER BY situacao"):
         quadro[str(linha["situacao"])] = int(linha["n"])
     return quadro
 
 
 def qualificacoes_de(con: sqlite3.Connection, titulo_id: int) -> list[dict]:
     """As qualificações daquele título, na ordem em que foram feitas. Só LÊ."""
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM rg_qualificacoes WHERE titulo_id=? ORDER BY ordem",
-        (int(titulo_id),))]
+    return banco(con).ler(
+        "SELECT * FROM rg_qualificacoes WHERE titulo_id=%s ORDER BY ordem, id",
+        (int(titulo_id),))
 
 
 def ultima_qualificacao(con: sqlite3.Connection, titulo_id: int) -> dict | None:
     """A decisão que vale hoje — a mais recente. Só LÊ."""
-    con.row_factory = sqlite3.Row
-    linha = con.execute(
-        """SELECT * FROM rg_qualificacoes WHERE titulo_id=?
-            ORDER BY ordem DESC LIMIT 1""", (int(titulo_id),)).fetchone()
-    return dict(linha) if linha else None
+    return banco(con).um(
+        """SELECT * FROM rg_qualificacoes WHERE titulo_id=%s
+            ORDER BY ordem DESC, id DESC LIMIT 1""", (int(titulo_id),))
 
 
 def encaminhamentos_de(con: sqlite3.Connection, titulo_id: int) -> list[dict]:
     """O que passou pela Central, naquele título. Só LÊ."""
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM rg_encaminhamentos WHERE titulo_id=? ORDER BY id",
-        (int(titulo_id),))]
+    return banco(con).ler(
+        "SELECT * FROM rg_encaminhamentos WHERE titulo_id=%s ORDER BY id",
+        (int(titulo_id),))
 
 
 def titulo_do_registro(con: sqlite3.Connection, registro_id: int) -> dict | None:
@@ -282,12 +275,10 @@ def titulo_do_registro(con: sqlite3.Connection, registro_id: int) -> dict | None
     amarração; aqui os 72 registros do acervo nasceram sem título nenhum, e
     inventar uma ponte por aproximação acharia título errado.
     """
-    con.row_factory = sqlite3.Row
-    linha = con.execute(
+    return banco(con).um(
         """SELECT t.* FROM rg_titulos t
              JOIN rg_registros r ON r.titulo_id = t.id
-            WHERE r.id = ?""", (int(registro_id),)).fetchone()
-    return dict(linha) if linha else None
+            WHERE r.id = %s""", (int(registro_id),))
 
 
 # ------------------------------------------------------- receber o título
@@ -345,21 +336,22 @@ def receber(con: sqlite3.Connection, *, atribuicao: int, sv: dict, agora: str,
         raise TituloError(
             "Título de origem EOFICIO precisa de uma chave de origem, para a "
             "carga poder ser repetida sem duplicar.")
+    bd = banco(con)
     if chave:
-        con.row_factory = sqlite3.Row
-        existente = con.execute(
-            "SELECT id FROM rg_titulos WHERE origem=? AND origem_chave=?",
-            (origem, chave)).fetchone()
+        existente = bd.um(
+            "SELECT id FROM rg_titulos WHERE origem=%s AND origem_chave=%s",
+            (origem, chave))
         if existente:
             return {"titulo_id": int(existente["id"]), "reaproveitado": True}
 
-    cur = con.execute(
+    novo = bd.escrever(
         """INSERT INTO rg_titulos(atribuicao, data_apresentacao, hora,
                apresentante, apresentante_documento, telefone, email,
                natureza, serie, valor_declarado, vias, forma, situacao,
                protocolo_geral_id, observacao, origem, origem_chave,
                importacao_id, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (codigo, dia, _texto(hora) or None, _texto(apresentante) or None,
          _texto(apresentante_documento) or None, _texto(telefone) or None,
          _texto(email) or None, _texto(natureza) or None, pretendida,
@@ -368,7 +360,7 @@ def receber(con: sqlite3.Connection, *, atribuicao: int, sv: dict, agora: str,
          int(protocolo_geral_id) if protocolo_geral_id else None,
          _texto(observacao) or None, origem, chave, importacao_id, agora,
          usuario))
-    titulo_id = int(cur.lastrowid)
+    titulo_id = int(novo[0]["id"])
 
     # O LUGAR NO LIVRO DE PROTOCOLO. `dia` é o do livro diário: o protocolo é
     # livro que se encerra todo dia, e não quando enche.
@@ -376,9 +368,9 @@ def receber(con: sqlite3.Connection, *, atribuicao: int, sv: dict, agora: str,
                          titulo_id, sv=sv, agora=agora,
                          data_extenso=data_extenso, paginas=1, dia=dia,
                          usuario=usuario)
-    con.execute(
-        """UPDATE rg_titulos SET numero=?, livro_id=?, folha=?, verso=?,
-                                 rotulo=? WHERE id=?""",
+    bd.escrever(
+        """UPDATE rg_titulos SET numero=%s, livro_id=%s, folha=%s, verso=%s,
+                                 rotulo=%s WHERE id=%s""",
         (lugar["numero_ordem"], lugar["livro_id"], lugar["folha"],
          int(lugar["verso"]), lugar["rotulo"], titulo_id))
     return {"titulo_id": titulo_id, "reaproveitado": False, **lugar}
@@ -434,19 +426,20 @@ def atualizar(con: sqlite3.Connection, titulo_id: int, *,
         "forma": como,
         "observacao": _texto(observacao) or None,
     }
-    con.execute(
-        """UPDATE rg_titulos SET apresentante=?, apresentante_documento=?,
-               telefone=?, email=?, natureza=?, serie=?, valor_declarado=?,
-               vias=?, forma=?, observacao=? WHERE id=?""",
+    bd = banco(con)
+    bd.escrever(
+        """UPDATE rg_titulos SET apresentante=%s, apresentante_documento=%s,
+               telefone=%s, email=%s, natureza=%s, serie=%s, valor_declarado=%s,
+               vias=%s, forma=%s, observacao=%s WHERE id=%s""",
         (*valores.values(), int(titulo_id)))
 
     # A ponte com o protocolo geral não pode deixar o mesmo atendimento com
     # dois nomes e dois assuntos. Não se mexe em situação, número nem datas.
     if titulo.get("protocolo_geral_id"):
-        con.execute(
-            """UPDATE cx_protocolos SET interessado=?,
-                   interessado_documento=?, telefone=?, email=?, assunto=?,
-                   documento_numero=?, documento_descricao=? WHERE id=?""",
+        bd.escrever(
+            """UPDATE cx_protocolos SET interessado=%s,
+                   interessado_documento=%s, telefone=%s, email=%s, assunto=%s,
+                   documento_numero=%s, documento_descricao=%s WHERE id=%s""",
             (valores["apresentante"], valores["apresentante_documento"],
              valores["telefone"], valores["email"], valores["natureza"],
              valores["apresentante_documento"], valores["natureza"],
@@ -501,25 +494,26 @@ def qualificar(con: sqlite3.Connection, titulo_id: int, *, resultado: str,
         # título liberado, e alguém a leria como pendente.
         razao = ""
 
-    con.row_factory = sqlite3.Row
-    ordem = int(con.execute(
-        "SELECT COALESCE(MAX(ordem),0)+1 n FROM rg_qualificacoes WHERE titulo_id=?",
-        (int(titulo_id),)).fetchone()["n"])
+    bd = banco(con)
+    bd.travar("rg_qualificacoes.ordem")
+    ordem = int(bd.valor(
+        "SELECT COALESCE(MAX(ordem),0)+1 AS n FROM rg_qualificacoes WHERE titulo_id=%s",
+        (int(titulo_id),)))
 
-    cur = con.execute(
+    novo = bd.escrever(
         """INSERT INTO rg_qualificacoes(titulo_id, ordem, resultado,
                fundamentacao, exigencias, prazo_ate, data_qualificacao,
                qualificada_por, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(titulo_id), ordem, decisao, _texto(fundamentacao) or None,
          razao or None, _texto(prazo_ate) or None,
          _texto(data_qualificacao) or str(agora)[:10],
          _texto(qualificada_por) or None, agora, usuario))
 
     situacao = QUALIFICADO if decisao == POSITIVA else EXIGENCIA
-    con.execute("UPDATE rg_titulos SET situacao=?, prazo_ate=? WHERE id=?",
+    bd.escrever("UPDATE rg_titulos SET situacao=%s, prazo_ate=%s WHERE id=%s",
                 (situacao, _texto(prazo_ate) or None, int(titulo_id)))
-    return {"titulo_id": int(titulo_id), "qualificacao_id": int(cur.lastrowid),
+    return {"titulo_id": int(titulo_id), "qualificacao_id": int(novo[0]["id"]),
             "ordem": ordem, "resultado": decisao, "situacao": situacao}
 
 
@@ -529,7 +523,8 @@ def qualificar(con: sqlite3.Connection, titulo_id: int, *, resultado: str,
 def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
               sv: dict, agora: str, data_extenso: str,
               teor: str | None = None, teor_formato: str = "texto",
-              usuario: str | None = None) -> dict:
+              usuario: str | None = None,
+              declaracoes: dict | None = None) -> dict:
     """Lavra o registro do título qualificado. ESCREVE.
 
     **SÓ DEPOIS DA QUALIFICAÇÃO POSITIVA** — é a frase do oficial, e ela é
@@ -540,6 +535,10 @@ def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
     O registro em si é o do `rg_registro`, e não uma segunda versão dele: o
     livro, a folha, a numeração e a regra de folha nova são as mesmas para o
     título que entrou pelo protocolo e para o que veio do acervo.
+
+    `declaracoes` são as do termo do livro escolhido (LD09: o extrato do Livro
+    C, a inscrição da pessoa jurídica, a matrícula do periódico) — quem as
+    confere e grava no ato é `rg_registro.abrir_registro`, antes do número.
     """
     titulo = um(con, titulo_id)
     if not titulo:
@@ -564,12 +563,14 @@ def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
         con, serie=escolhida, sv=sv, agora=agora, data_extenso=data_extenso,
         natureza=titulo["natureza"], requerente_nome=titulo["apresentante"],
         requerente_documento=titulo["apresentante_documento"],
-        teor=teor, teor_formato=teor_formato, usuario=usuario)
+        teor=teor, teor_formato=teor_formato, usuario=usuario,
+        declaracoes=declaracoes)
 
-    con.execute("UPDATE rg_registros SET titulo_id=? WHERE id=?",
+    bd = banco(con)
+    bd.escrever("UPDATE rg_registros SET titulo_id=%s WHERE id=%s",
                 (int(titulo_id), int(feito["registro_id"])))
-    con.execute("UPDATE rg_titulos SET situacao=?, registro_id=?, serie=? "
-                "WHERE id=?",
+    bd.escrever("UPDATE rg_titulos SET situacao=%s, registro_id=%s, serie=%s "
+                "WHERE id=%s",
                 (REGISTRADO, int(feito["registro_id"]), escolhida,
                  int(titulo_id)))
     return {"titulo_id": int(titulo_id), **feito}
@@ -604,8 +605,8 @@ def encerrar(con: sqlite3.Connection, titulo_id: int, *, situacao: str,
 
     anotacao = _texto(titulo["observacao"])
     anotacao = (anotacao + "\n" if anotacao else "") + f"{fim}: {razao}"
-    con.execute("UPDATE rg_titulos SET situacao=?, observacao=? WHERE id=?",
-                (fim, anotacao, int(titulo_id)))
+    banco(con).escrever("UPDATE rg_titulos SET situacao=%s, observacao=%s WHERE id=%s",
+                        (fim, anotacao, int(titulo_id)))
     return {"titulo_id": int(titulo_id), "situacao": fim, "motivo": razao}
 
 
@@ -635,15 +636,13 @@ TIPOS_QUE_CONCLUEM = ("AVERBACAO", "CANCELAMENTO")
 def _tem_colunas_de_uso(con: sqlite3.Connection) -> bool:
     """O protocolo do balcão já sabe que ato gastou cada item? Só LÊ.
 
-    Pergunta pela consulta, e não por `PRAGMA` — o teto de acoplamento de
-    módulo de domínio é zero (`tests/test_portabilidade.py`).
+    Pergunta ao catálogo do banco (`bd.tem_coluna`), como os outros módulos
+    nativos — o teto de acoplamento de módulo de domínio é zero
+    (`tests/test_portabilidade.py`).
     """
-    try:
-        con.execute("SELECT usado_por_tabela, usado_por_ato_id "
-                    "FROM cx_protocolo_atos LIMIT 0")
-    except sqlite3.OperationalError:
-        return False
-    return True
+    bd = banco(con)
+    return (bd.tem_coluna("cx_protocolo_atos", "usado_por_tabela")
+            and bd.tem_coluna("cx_protocolo_atos", "usado_por_ato_id"))
 
 
 def atos_do_protocolo(con: sqlite3.Connection, titulo_id: int) -> list[dict]:
@@ -653,22 +652,22 @@ def atos_do_protocolo(con: sqlite3.Connection, titulo_id: int) -> list[dict]:
     máquina quando o ato consumiu o item — e não a data, nem o nome do
     apresentante. Só entram atos da mesma atribuição do título.
     """
-    con.row_factory = sqlite3.Row
-    titulo = um(con, titulo_id)
+    bd = banco(con)
+    titulo = um(bd, titulo_id)
     if not titulo or not titulo.get("protocolo_geral_id") \
-            or not _tem_colunas_de_uso(con):
+            or not _tem_colunas_de_uso(bd):
         return []
-    return [dict(r) for r in con.execute(
+    return bd.ler(
         """SELECT DISTINCT a.id, a.registro_id, a.tipo, a.data_ato,
                   a.numero_ordem, a.rotulo, r.serie, r.atribuicao,
                   r.numero AS registro_numero
              FROM cx_protocolo_atos i
              JOIN rg_atos a ON a.id = i.usado_por_ato_id
              JOIN rg_registros r ON r.id = a.registro_id
-            WHERE i.protocolo_id = ? AND i.usado_por_tabela = 'rg_atos'
-              AND r.atribuicao = ?
+            WHERE i.protocolo_id = %s AND i.usado_por_tabela = 'rg_atos'
+              AND r.atribuicao = %s
             ORDER BY a.id""",
-        (int(titulo["protocolo_geral_id"]), int(titulo["atribuicao"])))]
+        (int(titulo["protocolo_geral_id"]), int(titulo["atribuicao"])))
 
 
 def atos_para_concluir(con: sqlite3.Connection, titulo_id: int) -> list[dict]:
@@ -680,22 +679,22 @@ def atos_para_concluir(con: sqlite3.Connection, titulo_id: int) -> list[dict]:
     protocolo marcado. **Quem escolhe entre eles é quem qualifica**: a lista
     oferece, e não decide.
     """
-    con.row_factory = sqlite3.Row
-    titulo = um(con, titulo_id)
+    bd = banco(con)
+    titulo = um(bd, titulo_id)
     if not titulo:
         return []
     pelo_protocolo = [dict(a, pelo_protocolo=True)
-                      for a in atos_do_protocolo(con, titulo_id)
+                      for a in atos_do_protocolo(bd, titulo_id)
                       if a["tipo"] in TIPOS_QUE_CONCLUEM]
     vistos = {a["id"] for a in pelo_protocolo}
-    lugares = ",".join("?" * len(TIPOS_QUE_CONCLUEM))
-    pela_data = [dict(r, pelo_protocolo=False) for r in con.execute(
+    lugares = ",".join(["%s"] * len(TIPOS_QUE_CONCLUEM))
+    pela_data = [dict(r, pelo_protocolo=False) for r in bd.ler(
         f"""SELECT a.id, a.registro_id, a.tipo, a.data_ato, a.numero_ordem,
                    a.rotulo, r.serie, r.atribuicao,
                    r.numero AS registro_numero
               FROM rg_atos a JOIN rg_registros r ON r.id = a.registro_id
-             WHERE r.atribuicao = ? AND a.tipo IN ({lugares})
-               AND a.data_ato >= ?
+             WHERE r.atribuicao = %s AND a.tipo IN ({lugares})
+               AND a.data_ato >= %s
              ORDER BY a.id""",
         (int(titulo["atribuicao"]), *TIPOS_QUE_CONCLUEM,
          _texto(titulo["data_apresentacao"])[:10]))
@@ -737,9 +736,9 @@ def concluir_pelo_ato(con: sqlite3.Connection, titulo_id: int, *, ato_id: int,
             + (f", por {usuario}" if usuario else "") + ".")
     anotacao = _texto(titulo["observacao"])
     anotacao = (anotacao + "\n" if anotacao else "") + nota
-    con.execute(
-        """UPDATE rg_titulos SET situacao=?, registro_id=?,
-               serie=COALESCE(NULLIF(serie,''), ?), observacao=? WHERE id=?""",
+    banco(con).escrever(
+        """UPDATE rg_titulos SET situacao=%s, registro_id=%s,
+               serie=COALESCE(NULLIF(serie,''), %s), observacao=%s WHERE id=%s""",
         (REGISTRADO, int(ato["registro_id"]), ato["serie"], anotacao,
          int(titulo_id)))
     return {"titulo_id": int(titulo_id), "ato_id": int(ato["id"]),
@@ -755,18 +754,17 @@ def titulo_do_ato(con: sqlite3.Connection, ato_id: int) -> dict | None:
     outro título, ou do acervo —, e sem esta ponte a etiqueta dela saía sem o
     número do protocolo.
     """
-    con.row_factory = sqlite3.Row
-    if _tem_colunas_de_uso(con):
-        linha = con.execute(
+    bd = banco(con)
+    if _tem_colunas_de_uso(bd):
+        linha = bd.um(
             """SELECT t.* FROM rg_titulos t
                  JOIN cx_protocolo_atos i ON i.protocolo_id = t.protocolo_geral_id
-                WHERE i.usado_por_tabela = 'rg_atos' AND i.usado_por_ato_id = ?
-                ORDER BY t.id LIMIT 1""", (int(ato_id),)).fetchone()
+                WHERE i.usado_por_tabela = 'rg_atos' AND i.usado_por_ato_id = %s
+                ORDER BY t.id LIMIT 1""", (int(ato_id),))
         if linha:
-            return dict(linha)
-    ato = con.execute("SELECT registro_id FROM rg_atos WHERE id=?",
-                      (int(ato_id),)).fetchone()
-    return titulo_do_registro(con, int(ato["registro_id"])) if ato else None
+            return linha
+    ato = bd.um("SELECT registro_id FROM rg_atos WHERE id=%s", (int(ato_id),))
+    return titulo_do_registro(bd, int(ato["registro_id"])) if ato else None
 
 
 # ------------------------------------------------ o que passou pela Central
@@ -799,11 +797,10 @@ def protocolo_na_central(con: sqlite3.Connection, titulo_id: int) -> str:
     cópia em `rg_titulos` seria o mesmo número em dois lugares, divergindo no
     primeiro conserto.
     """
-    con.row_factory = sqlite3.Row
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT protocolo_central FROM rg_encaminhamentos
-            WHERE titulo_id=? AND sentido=? AND protocolo_central IS NOT NULL
-            ORDER BY id LIMIT 1""", (int(titulo_id), RECEBIDO)).fetchone()
+            WHERE titulo_id=%s AND sentido=%s AND protocolo_central IS NOT NULL
+            ORDER BY id LIMIT 1""", (int(titulo_id), RECEBIDO))
     return _texto(linha["protocolo_central"]) if linha else ""
 
 
@@ -914,14 +911,14 @@ def registrar_encaminhamento(con: sqlite3.Connection, titulo_id: int, *,
             f"«{sentido}» não é sentido de encaminhamento. São dois: "
             f"{', '.join(SENTIDOS)}.")
 
-    cur = con.execute(
+    novo = banco(con).escrever(
         """INSERT INTO rg_encaminhamentos(titulo_id, central, sentido,
                protocolo_central, data_encaminhamento, observacao, criado_em,
                criado_por)
-           VALUES (?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(titulo_id), _texto(central).upper() or "ONRTDPJ", para_onde,
          _texto(protocolo_central) or None,
          _texto(data_encaminhamento) or str(agora)[:10],
          _texto(observacao) or None, agora, usuario))
     return {"titulo_id": int(titulo_id),
-            "encaminhamento_id": int(cur.lastrowid), "sentido": para_onde}
+            "encaminhamento_id": int(novo[0]["id"]), "sentido": para_onde}

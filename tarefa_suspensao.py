@@ -60,11 +60,11 @@ AS DECISÕES DO OFICIAL DE 15/10/2026
 """
 from __future__ import annotations
 
-import sqlite3
 from datetime import date, timedelta
 from typing import Any
 
 import tarefa_processo as TP
+from bd_nativo import banco
 
 # --------------------------------------------------------------------------
 # O esquema — colunas novas em `tasks`, só acrescentadas
@@ -85,30 +85,17 @@ MIGRACOES = (
 COLUNAS = tuple(coluna for _tabela, coluna, _tipo in MIGRACOES)
 
 
-def _colunas_da_tabela(con: sqlite3.Connection) -> set[str]:
-    """As colunas de `tasks`, pela descrição de um SELECT vazio.
-
-    Não é `PRAGMA`: módulo novo entra com zero acoplamento ao SQLite
-    (`test_portabilidade`), e a descrição do cursor é DB-API, de qualquer banco.
-    """
-    try:
-        cur = con.execute("SELECT * FROM tasks LIMIT 0")
-    except sqlite3.Error:
-        return set()
-    return {d[0] for d in (cur.description or ())}
-
-
-def init_suspensao_schema(con: sqlite3.Connection) -> None:
+def init_suspensao_schema(con: Any) -> None:
     """Acrescenta as colunas da suspensão em `tasks`. Idempotente."""
-    existentes = _colunas_da_tabela(con)
-    if not existentes:
+    bd = banco(con)
+    if not bd.tem_tabela("tasks"):
         return
     for tabela, coluna, tipo in MIGRACOES:
-        if coluna not in existentes:
-            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+        if not bd.tem_coluna(tabela, coluna):
+            bd.escrever(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
 
 
-def tem_as_colunas(con: sqlite3.Connection | None) -> bool:
+def tem_as_colunas(con: Any | None) -> bool:
     """True quando o banco já tem as colunas. Sem conexão, supõe que sim.
 
     Existe para quem cobra não estourar numa tabela montada à mão (os testes de
@@ -117,7 +104,7 @@ def tem_as_colunas(con: sqlite3.Connection | None) -> bool:
     """
     if con is None:
         return True
-    return "suspensa_desde" in _colunas_da_tabela(con)
+    return banco(con).tem_coluna("tasks", "suspensa_desde")
 
 
 # --------------------------------------------------------------------------
@@ -164,8 +151,16 @@ def _prefixo(alias: str | None) -> str:
     return f"{alias}." if alias else ""
 
 
+#: O marcador do pedaço de WHERE que este módulo ENTREGA. Quem o consome ainda
+#: pela ponte (`database`, `tarefa_ordem`, `carga_da_equipe`,
+#: `gestor_financeiro`) espera `?`, e quem já é nativo o troca no ponto de uso
+#: (`tarefa_processo._pg`, `oficial_pauta`, `gestor_rcpn`, `gestor_rotina`).
+#: Sai quando esses consumidores forem convertidos — junto com aquelas trocas.
+_Q = "?"
+
+
 def condicao_suspensa(alias: str | None = "t", hoje: date | str | None = None,
-                      con: sqlite3.Connection | None = None) -> tuple[str, list[Any]]:
+                      con: Any | None = None) -> tuple[str, list[Any]]:
     """O SQL de «está suspensa HOJE», e os parâmetros dele.
 
     Por prazo, ela está suspensa até a véspera da data: no dia da data volta a
@@ -175,11 +170,11 @@ def condicao_suspensa(alias: str | None = "t", hoje: date | str | None = None,
         return "0=1", []
     p = _prefixo(alias)
     return (f"({p}suspensa_desde IS NOT NULL AND "
-            f"({p}suspensa_ate IS NULL OR {p}suspensa_ate > ?))", [_hoje_iso(hoje)])
+            f"({p}suspensa_ate IS NULL OR {p}suspensa_ate > {_Q}))", [_hoje_iso(hoje)])
 
 
 def condicao_nao_suspensa(alias: str | None = "t", hoje: date | str | None = None,
-                          con: sqlite3.Connection | None = None) -> tuple[str, list[Any]]:
+                          con: Any | None = None) -> tuple[str, list[Any]]:
     """O contrário — o que entra na cobrança. Ver `condicao_suspensa`."""
     if not tem_as_colunas(con):
         return "1=1", []
@@ -188,7 +183,7 @@ def condicao_nao_suspensa(alias: str | None = "t", hoje: date | str | None = Non
 
 
 def _campo(linha: Any, nome: str) -> Any:
-    """Lê a coluna de `sqlite3.Row` ou de `dict` — e None quando ela não vem."""
+    """Lê a coluna da linha da ponte ou de `dict` — e None quando ela não vem."""
     try:
         return linha[nome]
     except (KeyError, IndexError, TypeError):
@@ -268,9 +263,15 @@ def dias_entre(desde: Any, ate: Any) -> int:
 # --------------------------------------------------------------------------
 
 
-def _linha(con: sqlite3.Connection, task_id: int) -> sqlite3.Row:
-    con.row_factory = sqlite3.Row
-    linha = con.execute("SELECT * FROM tasks WHERE id=?", (int(task_id),)).fetchone()
+def _linha(bd: Any, task_id: int) -> dict:
+    """A tarefa, presa até o fim da transação: quem a lê aqui grava nela.
+
+    FOR UPDATE: o vencimento e o «já está suspensa» saem desta leitura, e dois
+    balcões ao mesmo tempo calculariam sobre o estado de antes do outro.
+    """
+    bd = banco(bd)
+    bd._escrita()
+    linha = bd.um("SELECT * FROM tasks WHERE id=%s FOR UPDATE", (int(task_id),))
     if not linha:
         raise SuspensaoError("Tarefa não encontrada.")
     return linha
@@ -287,17 +288,18 @@ def _texto(valor: str | None, falta: str) -> str:
     return texto
 
 
-def _limpar(con: sqlite3.Connection, task_id: int, agora: str,
+def _limpar(bd: Any, task_id: int, agora: str,
             vencimento: Any = None, mexe_no_vencimento: bool = False) -> None:
     sets = ", ".join(f"{c}=NULL" for c in COLUNAS)
     if mexe_no_vencimento:
-        con.execute(f"UPDATE tasks SET {sets}, due_date=?, updated_at=? WHERE id=?",
-                    (vencimento, agora, int(task_id)))
+        banco(bd).escrever(f"UPDATE tasks SET {sets}, due_date=%s, updated_at=%s WHERE id=%s",
+                           (vencimento, agora, int(task_id)))
     else:
-        con.execute(f"UPDATE tasks SET {sets}, updated_at=? WHERE id=?", (agora, int(task_id)))
+        banco(bd).escrever(f"UPDATE tasks SET {sets}, updated_at=%s WHERE id=%s",
+                           (agora, int(task_id)))
 
 
-def suspender(con: sqlite3.Connection, task_id: int, *, modo: str, motivo: str,
+def suspender(con: Any, task_id: int, *, modo: str, motivo: str,
               usuario_id: int | None, agora: str, ate: str | None = None,
               condicao: str | None = None, hoje: date | str | None = None) -> dict[str, Any]:
     """Suspende a cobrança da tarefa — por prazo ou por condição.
@@ -305,13 +307,14 @@ def suspender(con: sqlite3.Connection, task_id: int, *, modo: str, motivo: str,
     `agora` vem de fora (o relógio da casa é `database.now()`), e `hoje`
     também pode vir, para o teste mexer no calendário.
     """
+    bd = banco(con)
     hoje_iso = _hoje_iso(hoje)
     modo = (modo or "").strip().upper()
     if modo not in MODOS:
         raise SuspensaoError("Escolha como suspender: por prazo (até uma data) "
                              "ou por condição (até o retorno de algo).")
     texto_motivo = _texto(motivo, "Escreva o motivo da suspensão.")
-    linha = _linha(con, task_id)
+    linha = _linha(bd, task_id)
     if linha["status"] not in TP.SITUACOES_ABERTAS:
         raise SuspensaoError(
             f"A tarefa #{task_id} está «{linha['status']}» — só se suspende o que "
@@ -323,8 +326,8 @@ def suspender(con: sqlite3.Connection, task_id: int, *, modo: str, motivo: str,
             raise SuspensaoError(
                 f"A tarefa #{task_id} já está suspensa ({situacao(linha, hoje_iso)['rotulo']}). "
                 "Retome-a primeiro, se a suspensão precisa mudar.")
-        _fechar_a_que_venceu(con, linha, agora)
-        linha = _linha(con, task_id)
+        _fechar_a_que_venceu(bd, linha, agora)
+        linha = _linha(bd, task_id)
     vencimento_antes = linha["due_date"]
     vencimento_depois = vencimento_antes
     data_ate = None
@@ -344,24 +347,24 @@ def suspender(con: sqlite3.Connection, task_id: int, *, modo: str, motivo: str,
         texto_condicao = _texto(condicao, "Descreva a condição — o que se espera para "
                                           "a tarefa voltar a andar.")
         resumo = f"Por condição: {texto_condicao}."
-    con.execute(
-        "UPDATE tasks SET suspensa_em=?, suspensa_desde=?, suspensa_ate=?, suspensa_condicao=?, "
-        "suspensa_motivo=?, suspensa_por=?, suspensa_prazo_original=?, due_date=?, updated_at=? "
-        "WHERE id=?",
+    bd.escrever(
+        "UPDATE tasks SET suspensa_em=%s, suspensa_desde=%s, suspensa_ate=%s, suspensa_condicao=%s, "
+        "suspensa_motivo=%s, suspensa_por=%s, suspensa_prazo_original=%s, due_date=%s, updated_at=%s "
+        "WHERE id=%s",
         (agora, hoje_iso, data_ate, texto_condicao, texto_motivo, usuario_id,
          vencimento_antes, vencimento_depois, agora, int(task_id)))
     nota = f"{resumo} Motivo: {texto_motivo}"
     if vencimento_depois != vencimento_antes:
         nota += (f" O vencimento passou de {_br(vencimento_antes)} para "
                  f"{_br(vencimento_depois)} — o prazo não corre enquanto suspensa.")
-    TP._registrar(con, int(task_id), ACAO_SUSPENSA, usuario_id, agora,
+    TP._registrar(bd, int(task_id), ACAO_SUSPENSA, usuario_id, agora,
                   antigo=vencimento_antes, novo=vencimento_depois, nota=nota)
     return {"task_id": int(task_id), "modo": modo, "ate": data_ate, "condicao": texto_condicao,
             "motivo": texto_motivo, "vencimento_antes": vencimento_antes,
             "vencimento_depois": vencimento_depois}
 
 
-def retomar(con: sqlite3.Connection, task_id: int, *, motivo: str,
+def retomar(con: Any, task_id: int, *, motivo: str,
             usuario_id: int | None, agora: str,
             hoje: date | str | None = None) -> dict[str, Any]:
     """Encerra a suspensão à mão — a qualquer momento — e o prazo volta a correr.
@@ -370,15 +373,16 @@ def retomar(con: sqlite3.Connection, task_id: int, *, motivo: str,
     Na suspensão por prazo retomada antes da data, isso DEVOLVE os dias que
     tinham sido somados a mais ao suspender.
     """
+    bd = banco(con)
     hoje_iso = _hoje_iso(hoje)
     texto = _texto(motivo, "Escreva o que aconteceu — por que a cobrança volta.")
-    linha = _linha(con, task_id)
+    linha = _linha(bd, task_id)
     if not _campo(linha, "suspensa_desde"):
         raise SuspensaoError(f"A tarefa #{task_id} não está suspensa.")
     if not esta_suspensa(linha, hoje_iso):
         # Já tinha voltado sozinha: fecha o rastro como automático e diz isso —
         # sem recusar, porque recusar desfaria (rollback) o rastro que se fechou.
-        _fechar_a_que_venceu(con, linha, agora)
+        _fechar_a_que_venceu(bd, linha, agora)
         return {"task_id": int(task_id), "dias": dias_entre(linha["suspensa_desde"],
                                                             linha["suspensa_ate"]),
                 "vencimento_antes": linha["due_date"], "vencimento_depois": linha["due_date"],
@@ -386,54 +390,57 @@ def retomar(con: sqlite3.Connection, task_id: int, *, motivo: str,
     dias = dias_entre(linha["suspensa_desde"], hoje_iso)
     original = linha["suspensa_prazo_original"]
     novo = _vencimento_somado(original, dias)
-    _limpar(con, task_id, agora, novo, mexe_no_vencimento=True)
+    _limpar(bd, task_id, agora, novo, mexe_no_vencimento=True)
     nota = (f"Retomada depois de {dias} dia(s) suspensa. {texto}")
     if novo != linha["due_date"]:
         nota += f" Vencimento: {_br(original)} + {dias} dia(s) = {_br(novo)}."
-    TP._registrar(con, int(task_id), ACAO_RETOMADA, usuario_id, agora,
+    TP._registrar(bd, int(task_id), ACAO_RETOMADA, usuario_id, agora,
                   antigo=linha["due_date"], novo=novo, nota=nota)
     return {"task_id": int(task_id), "dias": dias, "vencimento_antes": linha["due_date"],
             "vencimento_depois": novo, "motivo": texto, "ja_tinha_voltado": False}
 
 
-def _fechar_a_que_venceu(con: sqlite3.Connection, linha: Any, agora: str) -> None:
+def _fechar_a_que_venceu(bd: Any, linha: Any, agora: str) -> None:
     """Fecha o rastro da suspensão por prazo que acabou sozinha.
 
     O vencimento já andou quando ela começou; aqui só se limpa e se anota.
     """
-    _limpar(con, linha["id"], agora)
-    TP._registrar(con, int(linha["id"]), ACAO_RETOMADA, None, agora,
+    _limpar(bd, linha["id"], agora)
+    TP._registrar(bd, int(linha["id"]), ACAO_RETOMADA, None, agora,
                   antigo=linha["due_date"], novo=linha["due_date"],
                   nota=(f"Retomada automática: a suspensão ia até "
                         f"{_br(linha['suspensa_ate'])}, e a data chegou."))
 
 
-def encerrar_as_vencidas(con: sqlite3.Connection, *, agora: str,
+def encerrar_as_vencidas(con: Any, *, agora: str,
                          hoje: date | str | None = None) -> int:
     """A manutenção diária: fecha o rastro das suspensões por prazo que chegaram
     à data. A cobrança já tinha voltado na leitura; isto só escreve a linha do
     tempo e limpa as colunas. Idempotente — a que fechou não volta à lista."""
-    if not tem_as_colunas(con):
+    bd = banco(con)
+    if not tem_as_colunas(bd):
         return 0
-    con.row_factory = sqlite3.Row
-    linhas = con.execute(
+    # FOR UPDATE: duas passadas ao mesmo tempo fechariam o mesmo rastro duas vezes.
+    bd._escrita()
+    linhas = bd.ler(
         "SELECT * FROM tasks WHERE suspensa_desde IS NOT NULL AND suspensa_ate IS NOT NULL "
-        "AND suspensa_ate <= ?", (_hoje_iso(hoje),)).fetchall()
+        "AND suspensa_ate <= %s ORDER BY id FOR UPDATE", (_hoje_iso(hoje),))
     for linha in linhas:
-        _fechar_a_que_venceu(con, linha, agora)
+        _fechar_a_que_venceu(bd, linha, agora)
     return len(linhas)
 
 
-def vencimento_editado(con: sqlite3.Connection, task_id: int, antes: Any, depois: Any) -> None:
+def vencimento_editado(con: Any, task_id: int, antes: Any, depois: Any) -> None:
     """Quem muda o vencimento à mão durante a suspensão muda também o de antes.
 
     A retomada recalcula a partir de `suspensa_prazo_original`; sem isto, ela
     desfaria em silêncio a correção de quem editou. O de antes anda os mesmos
     dias que o vencimento andou; apagado o vencimento, apaga-se o de antes.
     """
-    if not tem_as_colunas(con):
+    bd = banco(con)
+    if not tem_as_colunas(bd):
         return
-    linha = _linha(con, task_id)
+    linha = _linha(bd, task_id)
     if not _campo(linha, "suspensa_desde"):
         return
     a, d, original = _data(antes), _data(depois), _data(linha["suspensa_prazo_original"])
@@ -441,11 +448,11 @@ def vencimento_editado(con: sqlite3.Connection, task_id: int, antes: Any, depois
         novo_original = depois or None
     else:
         novo_original = (original + (d - a)).isoformat()
-    con.execute("UPDATE tasks SET suspensa_prazo_original=? WHERE id=?",
+    bd.escrever("UPDATE tasks SET suspensa_prazo_original=%s WHERE id=%s",
                 (novo_original, int(task_id)))
 
 
-def encerrar_pelo_fim_da_tarefa(con: sqlite3.Connection, task_id: int, novo_status: str,
+def encerrar_pelo_fim_da_tarefa(con: Any, task_id: int, novo_status: str,
                                 usuario_id: int | None, agora: str) -> bool:
     """Concluir ou cancelar a tarefa suspensa encerra a suspensão junto.
 
@@ -453,13 +460,14 @@ def encerrar_pelo_fim_da_tarefa(con: sqlite3.Connection, task_id: int, novo_stat
     condição de que ninguém se lembra mais. O vencimento não se mexe: o
     serviço terminou.
     """
-    if not tem_as_colunas(con):
+    bd = banco(con)
+    if not tem_as_colunas(bd):
         return False
-    linha = _linha(con, task_id)
+    linha = _linha(bd, task_id)
     if not _campo(linha, "suspensa_desde"):
         return False
-    _limpar(con, task_id, agora)
-    TP._registrar(con, int(task_id), ACAO_RETOMADA, usuario_id, agora,
+    _limpar(bd, task_id, agora)
+    TP._registrar(bd, int(task_id), ACAO_RETOMADA, usuario_id, agora,
                   nota=(f"A suspensão foi encerrada junto com a mudança da tarefa "
                         f"para «{novo_status}»."))
     return True

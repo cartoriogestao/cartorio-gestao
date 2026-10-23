@@ -32,6 +32,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
+from bd_nativo import banco
 from ri_schema import eh_dia_util, soma_dias_uteis
 
 #: O CORTE É ORDEM DO OFICIAL, 06/10/2026: «não crie tarefas para atos
@@ -119,10 +120,10 @@ def _achado(chave, regra, gravidade, setor, titulo, detalhe="", prazo=None,
             "fundamento": fundamento}
 
 
-def _envios(con: sqlite3.Connection, central: str) -> list[sqlite3.Row]:
-    return con.execute(
-        "SELECT * FROM ge_envios WHERE central = ? AND situacao <> 'REJEITADO'",
-        (central,)).fetchall()
+def _envios(con: sqlite3.Connection, central: str) -> list[dict]:
+    return banco(con).ler(
+        "SELECT * FROM ge_envios WHERE central = %s AND situacao <> 'REJEITADO' "
+        "ORDER BY id", (central,))
 
 
 def _referencias_enviadas(con, central) -> set[str]:
@@ -176,11 +177,11 @@ def regra_sirc_cancelamentos(con, hoje: date) -> list[dict]:
             # roda com ela (FERRAMENTAS\GESTOR). Medido no ensaio de 06/10: o
             # cancelamento do óbito 1981 saía «a enviar» — e o SIRC cancelaria,
             # pela matrícula, o 8315, que é o que vale. A trava mora aqui também.
-            linha = con.execute(
-                """SELECT id FROM rc_assentos WHERE matricula = ? AND id <> ?
+            linha = banco(con).um(
+                """SELECT id FROM rc_assentos WHERE matricula = %s AND id <> %s
                       AND COALESCE(situacao,'ATIVO') = 'ATIVO' ORDER BY id LIMIT 1""",
-                (p["matricula"], p["id"])).fetchone()
-            vivo = linha[0] if linha else None
+                (p["matricula"], p["id"]))
+            vivo = linha["id"] if linha else None
         if p.get("numero") is None:
             # SEM NÚMERO NÃO HOUVE TERMO. Medido em 06/10/2026: três assentos
             # cancelados sem número e sem averbação de cancelamento — cópias
@@ -264,15 +265,15 @@ def regra_obitos_do_mes(con, hoje: date) -> list[dict]:
         gravidade = _situacao_do_prazo(prazo, hoje)
         if gravidade is None:
             continue
-        obitos = con.execute(
+        obitos = banco(con).ler(
             f"""SELECT numero, nome FROM rc_assentos
-                 WHERE especie = 'OBITO' AND data_ato LIKE ?
-                   AND data_ato >= ?
+                 WHERE especie = 'OBITO' AND data_ato ILIKE %s
+                   AND data_ato >= %s
                    AND COALESCE(situacao,'ATIVO') = 'ATIVO'
                    AND COALESCE(origem,'') NOT IN
-                       ({','.join('?' * len(ORIGENS_DO_ACERVO))})
-              ORDER BY numero""",
-            (comp + "%", IMPLANTACAO, *ORIGENS_DO_ACERVO)).fetchall()
+                       ({','.join(['%s'] * len(ORIGENS_DO_ACERVO))})
+              ORDER BY numero, id""",
+            (comp + "%", IMPLANTACAO, *ORIGENS_DO_ACERVO))
         lista = ", ".join(f"nº {o['numero']} ({o['nome']})" for o in obitos)
         for central, nome in DESTINOS_DO_OBITO:
             # O QUE A TELA DAS COMUNICAÇÕES REGISTROU TAMBÉM CONTA (09/10/2026):
@@ -293,8 +294,9 @@ def regra_obitos_do_mes(con, hoje: date) -> list[dict]:
 
 
 def regra_ibge(con, hoje: date) -> list[dict]:
-    entregues = {(r["ano"], r["trimestre"]) for r in con.execute(
-        "SELECT ano, trimestre FROM ib_entregas WHERE enviada_em IS NOT NULL")}
+    entregues = {(r["ano"], r["trimestre"]) for r in banco(con).ler(
+        "SELECT ano, trimestre FROM ib_entregas WHERE enviada_em IS NOT NULL "
+        "ORDER BY ano, trimestre")}
     entregues |= {(int(c[:4]), int(c[-1])) for c in
                   _competencias_enviadas(con, "IBGE") if "-T" in c}
     inicio = _dia(IMPLANTACAO)
@@ -326,9 +328,10 @@ TIPOS_CENSEC = ("ESCRITURA", "PROCURACAO", "SUBSTABELECIMENTO", "ATA",
 def regra_censec(con, hoje: date) -> list[dict]:
     import notas_censec
     enviadas = {(r["ano_referencia"], r["mes_referencia"], r["quinzena"])
-                for r in con.execute(
+                for r in banco(con).ler(
                     """SELECT ano_referencia, mes_referencia, quinzena
-                         FROM nt_remessas WHERE enviada_em IS NOT NULL""")}
+                         FROM nt_remessas WHERE enviada_em IS NOT NULL
+                        ORDER BY ano_referencia, mes_referencia, quinzena""")}
     enviadas |= {(int(c[:4]), int(c[5:7]), int(c[-1]))
                  for c in _competencias_enviadas(con, "CENSEC") if "-Q" in c}
     saida = []
@@ -344,11 +347,12 @@ def regra_censec(con, hoje: date) -> list[dict]:
             gravidade = _situacao_do_prazo(prazo, hoje)
             if gravidade is None:
                 continue
-            atos = con.execute(
+            atos = banco(con).ler(
                 f"""SELECT tipo, livro, folha FROM nt_atos
-                     WHERE situacao = 'LAVRADO' AND data >= ? AND data <= ?
-                       AND tipo IN ({','.join('?' * len(TIPOS_CENSEC))})""",
-                (ini, fim + "z", *TIPOS_CENSEC)).fetchall()
+                     WHERE situacao = 'LAVRADO' AND data >= %s AND data <= %s
+                       AND tipo IN ({','.join(['%s'] * len(TIPOS_CENSEC))})
+                     ORDER BY id""",
+                (ini, fim + "z", *TIPOS_CENSEC))
             if not atos:
                 continue
             saida.append(_achado(
@@ -380,8 +384,9 @@ def regra_doi(con, hoje: date) -> list[dict]:
     calendário.
     """
     import notas_doi
-    entregues = {r["competencia"] for r in con.execute(
-        "SELECT competencia FROM ri_doi_remessas WHERE entregue_em IS NOT NULL")}
+    entregues = {r["competencia"] for r in banco(con).ler(
+        "SELECT competencia FROM ri_doi_remessas WHERE entregue_em IS NOT NULL "
+        "ORDER BY competencia")}
     entregues |= _competencias_enviadas(con, "DOI")
     saida = []
     for ano, mes in _meses(IMPLANTACAO[:7], hoje):
@@ -392,18 +397,51 @@ def regra_doi(con, hoje: date) -> list[dict]:
         gravidade = _situacao_do_prazo(prazo, hoje)
         if gravidade is None:
             continue
-        atos = con.execute(
+        atos = int(banco(con).valor(
             """SELECT count(*) FROM nt_atos
-                WHERE situacao = 'LAVRADO' AND data LIKE ?
-                  AND data >= ?
+                WHERE situacao = 'LAVRADO' AND data ILIKE %s
+                  AND data >= %s
                   AND (doi_transacao IS NOT NULL OR COALESCE(com_imovel,0) = 1)""",
-            (comp + "%", IMPLANTACAO)).fetchone()[0]
+            (comp + "%", IMPLANTACAO)))
+        # **A DOI É DA SERVENTIA, E O REGISTRO DE IMÓVEIS TAMBÉM DECLARA** —
+        # achado em 21/10/2026: setembro tinha compra e venda (R-01/[n.]) e
+        # duas doações (R-02/[n.] e [n.]) registradas, e este achado dizia
+        # «sem ato com imóvel no sistema: conferir se cabe declaração
+        # negativa», porque só contava as escrituras. Conta-se o REGISTRO
+        # (`tipo = 'R'`) não cancelado; a averbação não transmite.
+        registros = int(banco(con).valor(
+            """SELECT count(*) FROM ri_atos
+                WHERE tipo = 'R' AND COALESCE(cancelado,0) = 0
+                  AND data_ato ILIKE %s AND data_ato >= %s""",
+            (comp + "%", IMPLANTACAO)))
+        # A escritura com imóvel que ficou «em lavratura» pode ter sido
+        # assinada no papel — e então ela é deste mês e da DOI. Não se conta
+        # como ato; avisa-se, para alguém fechar ou explicar.
+        em_lavratura = int(banco(con).valor(
+            """SELECT count(*) FROM nt_atos
+                WHERE situacao = 'EM_LAVRATURA' AND data ILIKE %s
+                  AND data >= %s AND COALESCE(com_imovel,0) = 1""",
+            (comp + "%", IMPLANTACAO)))
+        partes_do_detalhe = []
+        if registros:
+            partes_do_detalhe.append(
+                f"{registros} registro(s) no Registro de Imóveis no mês")
+        if atos:
+            partes_do_detalhe.append(
+                f"{atos} escritura(s) com imóvel lavrada(s) nas Notas")
+        detalhe = ("; ".join(partes_do_detalhe) + " — não cabe negativa."
+                   if partes_do_detalhe
+                   else "Sem registro no RI nem escritura com imóvel no "
+                        "sistema: conferir se cabe declaração negativa ou se o "
+                        "ato foi lavrado fora do sistema.")
+        if em_lavratura:
+            detalhe += (f" Há {em_lavratura} escritura(s) com imóvel ainda «em "
+                        f"lavratura» com data do mês: se foi assinada, entra.")
         saida.append(_achado(
-            f"DOI:{comp}", "DOI", gravidade, "NOTAS",
+            f"DOI:{comp}", "DOI", gravidade,
+            "RI" if registros and not atos else "NOTAS",
             f"DOI de {mes:02d}/{ano} sem recibo registrado",
-            (f"{atos} ato(s) com imóvel lavrado(s) no sistema no mês." if atos
-             else "Sem ato com imóvel no sistema: conferir se cabe declaração "
-                  "negativa ou se o ato foi lavrado fora do sistema."),
+            detalhe,
             prazo, "DOI — Receita Federal (último dia útil do mês seguinte)"))
     return saida
 
@@ -444,31 +482,35 @@ def regra_atos_sem_selo(con, hoje: date) -> list[dict]:
         ("RCPN", "rc_atos", """
             SELECT a.id, a.tipo, NULL AS tipo2, s.numero, NULL AS numero2, a.criado_em AS dia
               FROM rc_atos a LEFT JOIN rc_assentos s ON s.id = a.assento_id
-             WHERE a.criado_em >= ? AND COALESCE(a.selo,'') = ''
-               AND COALESCE(s.situacao,'ATIVO') = 'ATIVO'"""),
+             WHERE a.criado_em >= %s AND COALESCE(a.selo,'') = ''
+               AND COALESCE(s.situacao,'ATIVO') = 'ATIVO'
+             ORDER BY a.id"""),
         ("RI_QUALIFICACAO", "ri_atos", """
             SELECT id, tipo, numero AS tipo2, matricula_id AS numero,
                    NULL AS numero2, lavrado_em AS dia
               FROM ri_atos
-             WHERE lavrado_em >= ? AND COALESCE(acervo,0) = 0
+             WHERE lavrado_em >= %s AND COALESCE(acervo,0) = 0
                AND COALESCE(cancelado,0) = 0 AND COALESCE(selo_texto,'') = ''
                AND NOT (COALESCE(isento,0) = 1
-                        AND COALESCE(motivo_isencao,'') <> '')"""),
+                        AND COALESCE(motivo_isencao,'') <> '')
+             ORDER BY id"""),
         ("RCPJ_RTD_QUALIFICACAO", "rg_atos", """
             SELECT id, tipo, NULL AS tipo2, registro_id AS numero, NULL AS numero2, criado_em AS dia
               FROM rg_atos
-             WHERE criado_em >= ? AND COALESCE(selo,'') = ''
-               AND COALESCE(motivo_cancelamento,'') = ''"""),
+             WHERE criado_em >= %s AND COALESCE(selo,'') = ''
+               AND COALESCE(motivo_cancelamento,'') = ''
+             ORDER BY id"""),
         ("NOTAS_QUALIFICACAO", "nt_atos", """
             SELECT id, tipo, NULL AS tipo2, livro AS numero, folha AS numero2,
                    data AS dia
               FROM nt_atos
-             WHERE data >= ? AND situacao = 'LAVRADO'
-               AND COALESCE(selo,'') = ''"""),
+             WHERE data >= %s AND situacao = 'LAVRADO'
+               AND COALESCE(selo,'') = ''
+             ORDER BY id"""),
     )
     saida = []
     for setor, tabela, sql in consultas:
-        for r in con.execute(sql, (IMPLANTACAO,)):
+        for r in banco(con).ler(sql, (IMPLANTACAO,)):
             saida.append(_achado(
                 f"SEM_SELO:{tabela}:{r['id']}", "ATO_SEM_SELO", "ATENCAO", setor,
                 f"Ato sem selo: {tabela} {r['id']} ({_junto(r['tipo'], '-', r['tipo2'])}, "
@@ -485,11 +527,11 @@ def regra_selo_cancelado_so_no_sistema(con, hoje: date) -> list[dict]:
     regra pega é o cancelamento cujo motivo **não** fala do TJ/portal.
     """
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT numero, tabela, ato_id, cancelado_em, cancelado_por,
                       motivo_cancelamento FROM sd_selos
                 WHERE cancelado_em IS NOT NULL
-                  AND COALESCE(usado_em, obtido_em) >= ?""", (IMPLANTACAO,)):
+                  AND COALESCE(usado_em, obtido_em) >= %s ORDER BY id""", (IMPLANTACAO,)):
         motivo = (r["motivo_cancelamento"] or "").upper()
         if any(p in motivo for p in ("TJ", "PORTAL")) and "LOCAL" not in motivo:
             continue
@@ -506,12 +548,12 @@ def regra_selo_cancelado_so_no_sistema(con, hoje: date) -> list[dict]:
 
 def regra_prenotacao_vencida(con, hoje: date) -> list[dict]:
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT numero, data_prenotacao, data_limite, natureza_titulo,
                       apresentante FROM ri_protocolos
-                WHERE situacao = 'ABERTO' AND data_limite < ?
-                  AND data_prenotacao >= ?
-                  AND prazo_suspenso_desde IS NULL""", (hoje.isoformat(), IMPLANTACAO)):
+                WHERE situacao = 'ABERTO' AND data_limite < %s
+                  AND data_prenotacao >= %s
+                  AND prazo_suspenso_desde IS NULL ORDER BY id""", (hoje.isoformat(), IMPLANTACAO)):
         teste = (r["natureza_titulo"] or "").strip().upper() == "TESTE"
         saida.append(_achado(
             f"PRENOTACAO:{r['numero']}", "PRENOTACAO_VENCIDA",
@@ -534,11 +576,12 @@ def regra_prenotacao_a_vencer(con, hoje: date) -> list[dict]:
     primeiras vencendo em 14/10). Vencida, a prioridade do título se perde."""
     limite = soma_dias_uteis(hoje, PRENOTACAO_AVISO_DIAS_UTEIS).isoformat()
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT numero, data_prenotacao, data_limite, natureza_titulo,
                       apresentante FROM ri_protocolos
-                WHERE situacao = 'ABERTO' AND data_limite >= ? AND data_limite <= ?
-                  AND data_prenotacao >= ? AND prazo_suspenso_desde IS NULL""",
+                WHERE situacao = 'ABERTO' AND data_limite >= %s AND data_limite <= %s
+                  AND data_prenotacao >= %s AND prazo_suspenso_desde IS NULL
+                ORDER BY id""",
             (hoje.isoformat(), limite, IMPLANTACAO)):
         saida.append(_achado(
             f"PRENOT_VENCE:{r['numero']}", "PRENOTACAO_A_VENCER", "PRAZO",
@@ -589,13 +632,15 @@ def regra_revisao_do_agente(con, hoje: date) -> list[dict]:
     retificação. Some quando alguém marca «conferi» na tela das leituras.
     """
     import json as _json
-    if not con.execute("SELECT 1 FROM sqlite_master WHERE name='rv_revisoes'").fetchone():
+    if not banco(con).tem_tabela("rv_revisoes"):
         return []
     saida = []
-    for rid, atribuicao, rotulo, resultado, graves in con.execute(
+    for rv in banco(con).ler(
             """SELECT id, atribuicao, rotulo, resultado_json, graves FROM rv_revisoes
                 WHERE origem = 'AGENTE' AND situacao = 'PRONTA'
-                  AND justificado_em IS NULL"""):
+                  AND justificado_em IS NULL ORDER BY id"""):
+        rid, atribuicao, rotulo, resultado, graves = (
+            rv["id"], rv["atribuicao"], rv["rotulo"], rv["resultado_json"], rv["graves"])
         achados = (_json.loads(resultado or "{}").get("achados") or [])
         if not achados:
             continue
@@ -623,22 +668,25 @@ def regra_registro_sem_cnib(con, hoje: date) -> list[dict]:
     """
     from ri_schema import consultar_cnib
     saida = []
-    for r in con.execute(
+    bd = banco(con)
+    for r in bd.ler(
             """SELECT a.id, a.numero, a.matricula_id, a.natureza_titulo,
                       a.lavrado_em AS dia, m.numero AS matricula
                  FROM ri_atos a LEFT JOIN ri_matriculas m ON m.id = a.matricula_id
-                WHERE a.lavrado_em >= ? AND COALESCE(a.acervo,0) = 0
-                  AND COALESCE(a.cancelado,0) = 0 AND a.tipo = 'R'""",
-            (IMPLANTACAO,)).fetchall():
-        partes = con.execute("SELECT nome, documento_numero FROM ri_partes WHERE ato_id = ?",
-                             (r["id"],)).fetchall()
+                WHERE a.lavrado_em >= %s AND COALESCE(a.acervo,0) = 0
+                  AND COALESCE(a.cancelado,0) = 0 AND a.tipo = 'R' ORDER BY a.id""",
+            (IMPLANTACAO,)):
+        partes = bd.ler("SELECT nome, documento_numero FROM ri_partes WHERE ato_id = %s "
+                        "ORDER BY id", (r["id"],))
         if not partes:
-            partes = con.execute(
+            partes = bd.ler(
                 """SELECT nome, documento_numero FROM ri_partes
-                    WHERE matricula_id = ? AND COALESCE(proprietario_ativo,0) = 1""",
-                (r["matricula_id"],)).fetchall()
-        ordens = consultar_cnib(con, [p[1] for p in partes if p[1]],
-                                [p[0] for p in partes if p[0]])
+                    WHERE matricula_id = %s AND COALESCE(proprietario_ativo,0) = 1
+                    ORDER BY id""",
+                (r["matricula_id"],))
+        ordens = consultar_cnib(con, [p["documento_numero"] for p in partes
+                                      if p["documento_numero"]],
+                                [p["nome"] for p in partes if p["nome"]])
         if not ordens:
             continue
         por_doc = [o for o in ordens if o["criterio"] == "documento"]
@@ -664,11 +712,12 @@ def regra_cnib_parado(con, hoje: date) -> list[dict]:
     ordem foi pedida. O que diz é a última LEITURA que a Central respondeu
     (`ri_cnib_leituras`, situação OK ou VAZIA).
     """
-    if not con.execute("SELECT 1 FROM sqlite_master WHERE name='ri_cnib_leituras'").fetchone():
+    bd = banco(con)
+    if not bd.tem_tabela("ri_cnib_leituras"):
         return []
-    ultima = con.execute(
+    ultima = bd.valor(
         """SELECT max(terminada_em) FROM ri_cnib_leituras
-            WHERE situacao IN ('OK', 'VAZIA')""").fetchone()[0]
+            WHERE situacao IN ('OK', 'VAZIA')""")
     dia = _dia(ultima)
     if dia and (hoje - dia).days <= CNIB_DIAS_TOLERADOS:
         return []
@@ -691,8 +740,8 @@ def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]
     # por garantia, também na pasta antiga.
     import pasta_das_copias
     try:
-        configurada = (con.execute("SELECT value FROM settings WHERE key='backup_dir'")
-                       .fetchone() or [""])[0] or ""
+        configurada = (banco(con).um("SELECT value FROM settings WHERE key='backup_dir'")
+                       or {"value": ""})["value"] or ""
     except sqlite3.Error:
         configurada = ""
     pastas = {pasta_das_copias.pasta_de_backups(Path(pasta_dados), configurada),
@@ -707,10 +756,13 @@ def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]
         titulo = f"Último backup completo é de {ultimo:%d/%m/%Y}"
     else:
         titulo = "Nenhum backup completo encontrado"
+    # O FUNDAMENTO MUDOU DE NORMA, NÃO DE REGRA: o 213/2026 revogou o 74/2018
+    # (art. 26). A cópia completa em periodicidade da classe é o art. 12,
+    # § 3º, I; o alerta ao responsável quando o backup falha, o § 10.
     return [_achado(
         "BACKUP:completo", "BACKUP", "CRITICO", "TI", titulo,
         "Rodar FERRAMENTAS/BACKUP_AGORA.cmd, que também espelha fora do servidor.",
-        None, "Provimento CNJ 74/2018")]
+        None, "Provimento CN/CNJ 213/2026, art. 12, § 3º, I, e § 10")]
 
 
 #: abaixo disto o disco do servidor vira achado (em GB)
@@ -739,13 +791,15 @@ def regra_disco(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]:
                      if q.is_file() and (".bak" in q.name or "backup" in q.name.lower())),
                     reverse=True)[:6]
     detalhe = "; ".join(f"{nome} ({tam / 1024 ** 2:,.0f} MB)" for tam, nome in copias)
+    # Espaço livre em disco não tem dispositivo próprio no 213/2026, que
+    # revogou o 74/2018: cita-se a norma inteira, sem inventar artigo.
     return [_achado(
         "DISCO:dados", "DISCO", gravidade, "TI",
         f"Disco do servidor com {livre_gb:,.1f} GB livres".replace(",", "X").replace(".", ",").replace("X", "."),
         ("Cópias soltas na pasta de dados: " + detalhe + ". " if detalhe else "")
         + "Mover para fora do servidor o que já está no espelho de backup; "
           "com o disco cheio o banco não grava e o backup não sai.",
-        None, "Provimento CNJ 74/2018")]
+        None, "Provimento CN 213/2026 (que revogou o 74/2018)")]
 
 
 def regra_pasta_do_banco(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]:
@@ -781,9 +835,9 @@ TESTES_MANTIDOS_PELO_OFICIAL = frozenset({"teste"})
 
 def regra_dado_de_teste(con, hoje: date) -> list[dict]:
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT id, username FROM users
-                WHERE active = 1 AND lower(username) IN ('teste','test')"""):
+                WHERE active = 1 AND lower(username) IN ('teste','test') ORDER BY id"""):
         if r["username"].lower() in TESTES_MANTIDOS_PELO_OFICIAL:
             continue
         saida.append(_achado(
@@ -806,23 +860,26 @@ def regra_numeracao_rcpn(con, hoje: date) -> list[dict]:
     o salto, mas não para a repetição — o 1981 de 06/10 é exatamente isso.
     """
     saida = []
-    for r in con.execute(
+    bd = banco(con)
+    for r in bd.ler(
             """SELECT especie, numero, count(*) AS n FROM rc_assentos
-                WHERE data_ato >= ? AND numero IS NOT NULL
+                WHERE data_ato >= %s AND numero IS NOT NULL
                   AND COALESCE(situacao,'ATIVO') = 'ATIVO'
-             GROUP BY especie, numero HAVING count(*) > 1""", (IMPLANTACAO,)):
+             GROUP BY especie, numero HAVING count(*) > 1
+             ORDER BY especie, numero""", (IMPLANTACAO,)):
         saida.append(_achado(
             f"NUM_RCPN:rep:{r['especie']}:{r['numero']}", "NUMERACAO", "CRITICO",
             "RCPN", f"Termo nº {r['numero']} de {r['especie'].lower()} repetido "
             f"em {r['n']} assentos vivos", "Dois assentos vivos não podem ter o "
             "mesmo termo: conferir no livro qual vale e cancelar o outro.", None,
             "Lei 6.015/1973"))
-    for (especie,) in con.execute(
-            "SELECT DISTINCT especie FROM rc_assentos WHERE data_ato >= ?",
-            (IMPLANTACAO,)).fetchall():
-        nums = sorted({r[0] for r in con.execute(
-            """SELECT numero FROM rc_assentos WHERE especie = ? AND numero IS NOT NULL
-                  AND data_ato >= ?""", (especie, IMPLANTACAO))})
+    for linha_especie in bd.ler(
+            "SELECT DISTINCT especie FROM rc_assentos WHERE data_ato >= %s ORDER BY especie",
+            (IMPLANTACAO,)):
+        especie = linha_especie["especie"]
+        nums = sorted({r["numero"] for r in bd.ler(
+            """SELECT numero FROM rc_assentos WHERE especie = %s AND numero IS NOT NULL
+                  AND data_ato >= %s ORDER BY numero""", (especie, IMPLANTACAO))})
         faltam = sorted(set(range(nums[0], nums[-1] + 1)) - set(nums)) if nums else []
         if faltam:
             saida.append(_achado(
@@ -841,15 +898,17 @@ def regra_numeracao_ri(con, hoje: date) -> list[dict]:
     `hash_anterior` de cada ato tem de ser o `hash_ato` do anterior.
     """
     saida = []
-    tocadas = [r[0] for r in con.execute(
+    bd = banco(con)
+    tocadas = [r["matricula_id"] for r in bd.ler(
         """SELECT DISTINCT matricula_id FROM ri_atos
-            WHERE lavrado_em >= ? AND COALESCE(acervo,0) = 0""", (IMPLANTACAO,))]
+            WHERE lavrado_em >= %s AND COALESCE(acervo,0) = 0
+            ORDER BY matricula_id""", (IMPLANTACAO,))]
     for mid in tocadas:
-        atos = con.execute(
+        atos = bd.ler(
             """SELECT id, tipo, numero, hash_ato, hash_anterior, lavrado_em,
                       COALESCE(acervo,0) AS acervo, COALESCE(cancelado,0) AS cancelado
-                 FROM ri_atos WHERE matricula_id = ? ORDER BY numero, id""",
-            (mid,)).fetchall()
+                 FROM ri_atos WHERE matricula_id = %s ORDER BY numero, id""",
+            (mid,))
         vistos: dict = {}
         for a in atos:
             if not a["cancelado"] and a["numero"] is not None:
@@ -881,14 +940,15 @@ def regra_ato_por_fora(con, hoje: date) -> list[dict]:
     sem `RI_ATO_LAVRADO` nunca passou pela rota que sela, cobra e audita.
     """
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT a.id, a.tipo, a.numero, a.matricula_id, a.origem,
                       a.lavrado_em AS dia
                  FROM ri_atos a
-                WHERE a.lavrado_em >= ? AND COALESCE(a.acervo,0) = 0
+                WHERE a.lavrado_em >= %s AND COALESCE(a.acervo,0) = 0
                   AND NOT EXISTS (SELECT 1 FROM audit_logs l
                                    WHERE l.action = 'RI_ATO_LAVRADO'
-                                     AND l.entity_id = a.id)""", (IMPLANTACAO,)):
+                                     AND l.entity_id = a.id)
+                ORDER BY a.id""", (IMPLANTACAO,)):
         saida.append(_achado(
             f"POR_FORA:ri_atos:{r['id']}", "ATO_POR_FORA", "ATENCAO", "RI_QUALIFICACAO",
             f"{r['tipo']}-{r['numero']} (matrícula id {r['matricula_id']}) sem "
@@ -901,12 +961,13 @@ def regra_ato_por_fora(con, hoje: date) -> list[dict]:
 def regra_registro_sem_prenotacao(con, hoje: date) -> list[dict]:
     """Registro (R) sem a prenotação amarrada — a prioridade não se prova."""
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT a.id, a.numero, a.matricula_id, a.prenotacao,
                       a.lavrado_em AS dia FROM ri_atos a
-                WHERE a.lavrado_em >= ? AND COALESCE(a.acervo,0) = 0
+                WHERE a.lavrado_em >= %s AND COALESCE(a.acervo,0) = 0
                   AND COALESCE(a.cancelado,0) = 0 AND a.tipo = 'R'
-                  AND NOT EXISTS (SELECT 1 FROM ri_protocolos p WHERE p.ato_id = a.id)""",
+                  AND NOT EXISTS (SELECT 1 FROM ri_protocolos p WHERE p.ato_id = a.id)
+                ORDER BY a.id""",
             (IMPLANTACAO,)):
         saida.append(_achado(
             f"SEM_PRENOT:{r['id']}", "REGISTRO_SEM_PRENOTACAO", "ATENCAO",
@@ -934,14 +995,16 @@ def regra_selo_orfao(con, hoje: date) -> list[dict]:
     # O que se confere são os códigos de 28 caracteres que estão lá dentro.
     codigo = re.compile(r"\b[A-Z]{6}\d{6}[A-Z0-9]{16}\b")
     saida = []
+    bd = banco(con)
     for tabela, col, data in _ATOS_COM_SELO:
-        for r in con.execute(
+        for r in bd.ler(
                 f"""SELECT a.id, a.{col} AS selo FROM {tabela} a
-                     WHERE COALESCE(a.{col},'') <> '' AND a.{data} >= ?""",
+                     WHERE COALESCE(a.{col},'') <> '' AND a.{data} >= %s
+                     ORDER BY a.id""",
                 (IMPLANTACAO,)):
             achados = codigo.findall(str(r["selo"]).upper()) or [str(r["selo"]).strip()]
-            fora = [c for c in achados if not con.execute(
-                "SELECT 1 FROM sd_selos WHERE numero = ?", (c,)).fetchone()]
+            fora = [c for c in achados if not bd.um(
+                "SELECT 1 AS um FROM sd_selos WHERE numero = %s LIMIT 1", (c,))]
             if not fora:
                 continue
             saida.append(_achado(
@@ -950,18 +1013,17 @@ def regra_selo_orfao(con, hoje: date) -> list[dict]:
                 f"{', '.join(c[:40] for c in fora)} fora do razão dos selos",
                 "Selo digitado à mão sem passar pela conferência: o sistema não "
                 "sabe se é desta serventia nem se já foi usado.", None, ""))
-    tabelas = [r[0] for r in con.execute(
-        "SELECT DISTINCT tabela FROM sd_selos WHERE usado_em >= ? AND tabela IS NOT NULL",
-        (IMPLANTACAO,))]
-    existentes = {r[0] for r in con.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'")}
+    tabelas = [r["tabela"] for r in bd.ler(
+        "SELECT DISTINCT tabela FROM sd_selos WHERE usado_em >= %s AND tabela IS NOT NULL "
+        "ORDER BY tabela", (IMPLANTACAO,))]
     for tabela in tabelas:
-        if tabela not in existentes:
+        if not bd.tem_tabela(tabela):
             continue
-        for r in con.execute(
+        for r in bd.ler(
                 f"""SELECT s.numero, s.ato_id FROM sd_selos s
-                     WHERE s.tabela = ? AND s.usado_em >= ? AND s.cancelado_em IS NULL
-                       AND NOT EXISTS (SELECT 1 FROM {tabela} a WHERE a.id = s.ato_id)""",
+                     WHERE s.tabela = %s AND s.usado_em >= %s AND s.cancelado_em IS NULL
+                       AND NOT EXISTS (SELECT 1 FROM {tabela} a WHERE a.id = s.ato_id)
+                     ORDER BY s.id""",
                 (tabela, IMPLANTACAO)):
             saida.append(_achado(
                 f"SELO_ORFAO:razao:{r['numero']}", "SELO_ORFAO", "ATENCAO",
@@ -988,19 +1050,21 @@ def regra_documento_invalido(con, hoje: date) -> list[dict]:
     fontes = (
         ("RI_QUALIFICACAO", """SELECT p.id, p.nome, p.documento_numero AS doc,
                  p.documento_tipo AS tipo FROM ri_partes p JOIN ri_atos a ON a.id = p.ato_id
-                 WHERE a.lavrado_em >= ? AND COALESCE(a.acervo,0) = 0""", "ri_partes"),
+                 WHERE a.lavrado_em >= %s AND COALESCE(a.acervo,0) = 0
+                 ORDER BY p.id""", "ri_partes"),
         ("NOTAS_QUALIFICACAO", """SELECT p.id, p.nome, p.documento AS doc, '' AS tipo
                  FROM nt_ato_partes p JOIN nt_atos a ON a.id = p.ato_id
-                 WHERE a.data >= ?""", "nt_ato_partes"),
+                 WHERE a.data >= %s ORDER BY p.id""", "nt_ato_partes"),
         ("RCPN", """SELECT p.id, p.nome, p.documento_numero AS doc,
                  p.documento_tipo AS tipo FROM rc_pessoas p
                  JOIN rc_assentos s ON s.id = p.assento_id
-                 WHERE s.data_ato >= ? AND COALESCE(s.situacao,'ATIVO') = 'ATIVO'""",
+                 WHERE s.data_ato >= %s AND COALESCE(s.situacao,'ATIVO') = 'ATIVO'
+                 ORDER BY p.id""",
          "rc_pessoas"),
     )
     saida = []
     for setor, sql, tabela in fontes:
-        for r in con.execute(sql, (IMPLANTACAO,)):
+        for r in banco(con).ler(sql, (IMPLANTACAO,)):
             qual = _documento_invalido(r["doc"], r["tipo"])
             if qual:
                 saida.append(_achado(
@@ -1057,31 +1121,33 @@ def _conferir_texto(teor, partes, matricula=None) -> list[str]:
 
 def regra_texto_contra_cadastro(con, hoje: date) -> list[dict]:
     casos = []
-    for a in con.execute(
+    bd = banco(con)
+    for a in bd.ler(
             """SELECT a.id, a.numero, a.teor, m.numero AS mat FROM ri_atos a
                  JOIN ri_matriculas m ON m.id = a.matricula_id
-                WHERE a.lavrado_em >= ? AND COALESCE(a.acervo,0) = 0 AND a.tipo = 'R'
-                  AND COALESCE(a.cancelado,0) = 0""", (IMPLANTACAO,)).fetchall():
-        partes = con.execute("SELECT nome, documento_numero FROM ri_partes WHERE ato_id = ?",
-                             (a["id"],)).fetchall()
+                WHERE a.lavrado_em >= %s AND COALESCE(a.acervo,0) = 0 AND a.tipo = 'R'
+                  AND COALESCE(a.cancelado,0) = 0 ORDER BY a.id""", (IMPLANTACAO,)):
+        partes = [(q["nome"], q["documento_numero"]) for q in bd.ler(
+            "SELECT nome, documento_numero FROM ri_partes WHERE ato_id = %s ORDER BY id",
+            (a["id"],))]
         casos.append(("ri_atos", a["id"], f"R-{a['numero']}", a["teor"], partes, a["mat"],
                       "RI_QUALIFICACAO"))
-    for a in con.execute(
+    for a in bd.ler(
             """SELECT n.id, n.numero_pretendido, n.teor, m.numero AS mat FROM ri_minutas n
                  LEFT JOIN ri_matriculas m ON m.id = n.matricula_id
-                WHERE n.situacao = 'A_REVISAR' AND n.tipo = 'R'""").fetchall():
-        partes = con.execute(
-            "SELECT nome, documento_numero FROM ri_minuta_partes WHERE minuta_id = ?",
-            (a["id"],)).fetchall()
+                WHERE n.situacao = 'A_REVISAR' AND n.tipo = 'R' ORDER BY n.id"""):
+        partes = [(q["nome"], q["documento_numero"]) for q in bd.ler(
+            "SELECT nome, documento_numero FROM ri_minuta_partes WHERE minuta_id = %s "
+            "ORDER BY id", (a["id"],))]
         casos.append(("ri_minutas", a["id"], f"minuta R-{a['numero_pretendido'] or '?'}",
                       a["teor"], partes, a["mat"], "RI_QUALIFICACAO"))
-    for a in con.execute(
+    for a in bd.ler(
             """SELECT id, tipo, livro, folha, teor FROM nt_atos
-                WHERE (data >= ? OR situacao = 'EM_LAVRATURA')
-                  AND tipo IN ('ESCRITURA','PROCURACAO')""", (IMPLANTACAO,)).fetchall():
-        partes = con.execute(
+                WHERE (data >= %s OR situacao = 'EM_LAVRATURA')
+                  AND tipo IN ('ESCRITURA','PROCURACAO') ORDER BY id""", (IMPLANTACAO,)):
+        partes = [(q["nome"], q["documento"]) for q in bd.ler(
             """SELECT nome, documento FROM nt_ato_partes
-                WHERE ato_id = ? AND COALESCE(testemunha,0) = 0""", (a["id"],)).fetchall()
+                WHERE ato_id = %s AND COALESCE(testemunha,0) = 0 ORDER BY id""", (a["id"],))]
         casos.append(("nt_atos", a["id"], f"{a['tipo'].lower()} {a['id']}", a["teor"],
                       partes, None, "NOTAS_QUALIFICACAO"))
     saida = []
@@ -1107,11 +1173,12 @@ def regra_minuta_em_ficha_encerrada(con, hoje: date) -> list[dict]:
     lavrar em ficha fechada; o caminho é descartá-la com motivo (ou movê-la).
     """
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT n.id, n.tipo, n.numero_pretendido, m.numero, m.origem
                  FROM ri_minutas n JOIN ri_matriculas m ON m.id = n.matricula_id
                 WHERE n.situacao = 'A_REVISAR'
-                  AND (COALESCE(m.encerrada,0) = 1 OR m.situacao = 'ENCERRADA')"""):
+                  AND (COALESCE(m.encerrada,0) = 1 OR m.situacao = 'ENCERRADA')
+                ORDER BY n.id"""):
         saida.append(_achado(
             f"MINUTA_FECHADA:{r['id']}", "MINUTA_EM_FICHA_ENCERRADA", "ATENCAO",
             "RI_QUALIFICACAO", f"Minuta {r['tipo']}-{r['numero_pretendido'] or '?'} "
@@ -1136,22 +1203,22 @@ def regra_modelo_nao_preenchido(con, hoje: date) -> list[dict]:
     marcador = re.compile(r"\{\{.*?\}\}|\{%.*?%\}|(?<![\w.])@[a-z][a-z0-9_]{3,}"
                           r"|\[\s*(?:INSERIR|PREENCHER|COMPLETAR)[^\]]*\]", re.I)
     fontes = (
-        ("ri_minutas", "RI_QUALIFICACAO", "SELECT id, teor FROM ri_minutas WHERE situacao = 'A_REVISAR'", ()),
+        ("ri_minutas", "RI_QUALIFICACAO", "SELECT id, teor FROM ri_minutas WHERE situacao = 'A_REVISAR' ORDER BY id", ()),
         ("nt_atos", "NOTAS_QUALIFICACAO",
-         "SELECT id, teor FROM nt_atos WHERE data >= ? OR situacao = 'EM_LAVRATURA'", (IMPLANTACAO,)),
+         "SELECT id, teor FROM nt_atos WHERE data >= %s OR situacao = 'EM_LAVRATURA' ORDER BY id", (IMPLANTACAO,)),
         ("ri_atos", "RI_QUALIFICACAO",
-         "SELECT id, teor FROM ri_atos WHERE lavrado_em >= ? AND COALESCE(acervo,0) = 0", (IMPLANTACAO,)),
-        ("rg_atos", "RCPJ_RTD_QUALIFICACAO", "SELECT id, teor FROM rg_atos WHERE data_ato >= ?", (IMPLANTACAO,)),
-        ("rc_atos", "RCPN", "SELECT id, teor FROM rc_atos WHERE data_ato >= ?", (IMPLANTACAO,)),
+         "SELECT id, teor FROM ri_atos WHERE lavrado_em >= %s AND COALESCE(acervo,0) = 0 ORDER BY id", (IMPLANTACAO,)),
+        ("rg_atos", "RCPJ_RTD_QUALIFICACAO", "SELECT id, teor FROM rg_atos WHERE data_ato >= %s ORDER BY id", (IMPLANTACAO,)),
+        ("rc_atos", "RCPN", "SELECT id, teor FROM rc_atos WHERE data_ato >= %s ORDER BY id", (IMPLANTACAO,)),
         # O TEOR DA FICHA TAMBÉM: a abertura da matrícula escreve nele, e não em
         # `ri_atos` — foi onde o marcador da 4019 morava.
         ("ri_matriculas", "RI_QUALIFICACAO",
          """SELECT id, teor FROM ri_matriculas
-             WHERE COALESCE(data_abertura, criado_em, '') >= ?""", (IMPLANTACAO,)),
+             WHERE COALESCE(data_abertura, criado_em, '') >= %s ORDER BY id""", (IMPLANTACAO,)),
     )
     saida = []
     for tabela, setor, sql, args in fontes:
-        for r in con.execute(sql, args):
+        for r in banco(con).ler(sql, args):
             achados = marcador.findall(str(r["teor"] or ""))
             if achados:
                 saida.append(_achado(
@@ -1214,8 +1281,9 @@ def _pessoa_do_operador(con, nome: str | None) -> str:
     n = forma(nome)
     if not n:
         return "GESTAO"
-    achados = [r[0] for r in con.execute("SELECT id, full_name FROM users WHERE active = 1")
-               if forma(r[1]).startswith(n)]
+    achados = [r["id"] for r in banco(con).ler(
+        "SELECT id, full_name FROM users WHERE active = 1 ORDER BY id")
+               if forma(r["full_name"]).startswith(n)]
     return f"PESSOA:{achados[0]}" if len(achados) == 1 else "GESTAO"
 
 
@@ -1236,16 +1304,17 @@ def regra_caixa_do_dia(con, hoje: date) -> list[dict]:
     import caixa_aviso as CA
     if hoje != date.today():
         return []
-    linha = con.execute("SELECT value FROM settings WHERE key = ?",
-                        (CA.CHAVE_FIM,)).fetchone()
-    hora, minuto = CA.fim_do_expediente(linha[0] if linha else None)
+    linha = banco(con).um("SELECT value FROM settings WHERE key = %s",
+                          (CA.CHAVE_FIM,))
+    hora, minuto = CA.fim_do_expediente(linha["value"] if linha else None)
     agora = _relogio()
     if (agora.hour, agora.minute) < (hora, minuto):
         return []
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT id, operador_nome FROM cx_caixas
-                WHERE data = ? AND situacao = 'ABERTO' AND fechado_em IS NULL""",
+                WHERE data = %s AND situacao = 'ABERTO' AND fechado_em IS NULL
+                ORDER BY id""",
             (hoje.isoformat(),)):
         saida.append(_achado(
             f"CAIXA_HOJE:{r['id']}", "CAIXA_DO_DIA_ABERTO", "CRITICO",
@@ -1265,11 +1334,11 @@ def regra_caixa(con, hoje: date) -> list[dict]:
     """
     import gestor_caixa
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT id, data, operador_nome, diferenca, justificativa, fechado_em,
                       conferido_por, situacao, saldo_inicial, valor_esperado,
                       valor_contado FROM cx_caixas
-                WHERE aberto_em >= ?""", (IMPLANTACAO,)):
+                WHERE aberto_em >= %s ORDER BY id""", (IMPLANTACAO,)):
         dia = _dia(r["data"])
         if r["fechado_em"] and not r["conferido_por"] and dia and (hoje - dia).days >= 1:
             # O AGENTE REFAZ A CONTA (06/10/2026): o caixa que fecha vai para o
@@ -1380,10 +1449,11 @@ def regra_fechamento_do_mes(con, hoje: date) -> list[dict]:
     for ano, mes in _meses(IMPLANTACAO[:7], hoje):
         comp = f"{ano:04d}-{mes:02d}"
         selos: dict[str, float] = {}
-        for texto, atr in con.execute(
+        for sel in banco(con).ler(
                 """SELECT texto, atribuicao FROM sd_selos
-                    WHERE usado_em LIKE ? AND usado_em >= ?
-                      AND cancelado_em IS NULL""", (comp + "%", IMPLANTACAO)):
+                    WHERE usado_em ILIKE %s AND usado_em >= %s
+                      AND cancelado_em IS NULL ORDER BY id""", (comp + "%", IMPLANTACAO)):
+            texto, atr = sel["texto"], sel["atribuicao"]
             lido = SL.ler_texto(texto or "")
             marcas = " ".join(lido.get("marcas") or []).upper()
             if "ISENT" in marcas or "DIFERID" in marcas or lido.get("total") is None:
@@ -1392,11 +1462,13 @@ def regra_fechamento_do_mes(con, hoje: date) -> list[dict]:
             selos[g] = selos.get(g, 0.0) + lido["total"]
         caixa = 0.0
         sem_protocolo = 0
-        for v, sentido, prot in con.execute(
+        for lanc in banco(con).ler(
                 """SELECT valor, sentido, protocolo_id FROM cx_lancamentos
-                    WHERE data LIKE ? AND data >= ?
-                      AND COALESCE(estornado,0) = 0 AND COALESCE(excluido,0) = 0""",
+                    WHERE data ILIKE %s AND data >= %s
+                      AND COALESCE(estornado,0) = 0 AND COALESCE(excluido,0) = 0
+                    ORDER BY id""",
                 (comp + "%", IMPLANTACAO)):
+            v, sentido, prot = lanc["valor"], lanc["sentido"], lanc["protocolo_id"]
             caixa += _reais(v) * (1 if (sentido or "ENTRADA") == "ENTRADA" else -1)
             sem_protocolo += prot is None
         total_selos = sum(selos.values())
@@ -1510,8 +1582,7 @@ _COLUNA_DO_SELO = {"ri_atos": "selo_texto", "nt_atos": "selo", "rc_atos": "selo"
 
 
 def _coluna_existe(con, tabela: str, coluna: str) -> bool:
-    import sqlite_esquema
-    return coluna in sqlite_esquema.colunas(con, tabela)
+    return banco(con).tem_coluna(tabela, coluna)
 
 
 def _lavrado(con, tabela: str, ato_id) -> bool:
@@ -1520,22 +1591,23 @@ def _lavrado(con, tabela: str, ato_id) -> bool:
     if tabela in ("ri_minutas", "ri_rascunhos"):
         return False
     if tabela == "nt_atos":
-        r = con.execute("SELECT situacao FROM nt_atos WHERE id = ?", (ato_id,)).fetchone()
-        return bool(r) and (r[0] or "").upper() == "LAVRADO"
+        r = banco(con).um("SELECT situacao FROM nt_atos WHERE id = %s", (ato_id,))
+        return bool(r) and (r["situacao"] or "").upper() == "LAVRADO"
     return tabela in ("ri_atos", "rc_atos", "ra_atos", "rg_atos", "pt_atos")
 
 
 def _selado(con, tabela: str, ato_id) -> bool:
     """A chave do selo é tabela + ato_id — por ato_id sozinho vêm selos de outra
     atribuição."""
-    if con.execute("SELECT 1 FROM sqlite_master WHERE name='sd_selos'").fetchone():
-        if con.execute("""SELECT 1 FROM sd_selos WHERE tabela = ? AND ato_id = ?
-                             AND cancelado_em IS NULL""", (tabela, ato_id)).fetchone():
+    bd = banco(con)
+    if bd.tem_tabela("sd_selos"):
+        if bd.um("""SELECT 1 AS um FROM sd_selos WHERE tabela = %s AND ato_id = %s
+                       AND cancelado_em IS NULL LIMIT 1""", (tabela, ato_id)):
             return True
     col = _COLUNA_DO_SELO.get(tabela)
     if col and _coluna_existe(con, tabela, col):
-        r = con.execute(f"SELECT {col} FROM {tabela} WHERE id = ?", (ato_id,)).fetchone()
-        return bool(r and (r[0] or "").strip())
+        r = bd.um(f"SELECT {col} AS selo FROM {tabela} WHERE id = %s", (ato_id,))
+        return bool(r and (r["selo"] or "").strip())
     return False
 
 
@@ -1543,22 +1615,23 @@ def _ato_da_revisao(con, rid) -> tuple[str, int] | None:
     """(tabela, id) do ato que a revisão em lote leu. No RI o alvo é a
     MATRÍCULA, e o ato sai do rótulo («AV-6 da matrícula 3110»)."""
     import re as _re
-    if not con.execute("SELECT 1 FROM sqlite_master WHERE name='rv_revisoes'").fetchone():
+    bd = banco(con)
+    if not bd.tem_tabela("rv_revisoes"):
         return None
-    r = con.execute("SELECT atribuicao, alvo_id, rotulo FROM rv_revisoes WHERE id = ?",
-                    (rid,)).fetchone()
+    r = bd.um("SELECT atribuicao, alvo_id, rotulo FROM rv_revisoes WHERE id = %s",
+              (rid,))
     if not r:
         return None
-    atribuicao, alvo, rotulo = r[0], r[1], r[2] or ""
+    atribuicao, alvo, rotulo = r["atribuicao"], r["alvo_id"], r["rotulo"] or ""
     if atribuicao == "NOTAS":
         return "nt_atos", alvo
     if atribuicao == "RI":
         m = _re.match(r"\s*(R|AV)-(\d+)", rotulo)
         if not m:
             return None
-        a = con.execute("SELECT id FROM ri_atos WHERE matricula_id=? AND tipo=? AND numero=?",
-                        (alvo, m.group(1), int(m.group(2)))).fetchone()
-        return ("ri_atos", a[0]) if a else None
+        a = bd.um("SELECT id FROM ri_atos WHERE matricula_id=%s AND tipo=%s AND numero=%s "
+                  "ORDER BY id LIMIT 1", (alvo, m.group(1), int(m.group(2))))
+        return ("ri_atos", a["id"]) if a else None
     if atribuicao == "LIVRO3":
         return "ra_atos", alvo
     return None
@@ -1605,7 +1678,6 @@ def conferir(con: sqlite3.Connection, hoje: date, *,
     tem de entender isso como «nada registrado», e não quebrar.
     """
     from gestor_schema import init_gestor_schema
-    con.row_factory = sqlite3.Row
     init_gestor_schema(con)
     achados: list[dict] = []
     for nome, regra in REGRAS:

@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_QUALIFICACAO_PF__identidade",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Qualificação de pessoa física — documento de identidade",
+  "formato": "CHAVES",
+  "explica": "Entra depois da profissão quando a parte tem o documento de identidade cadastrado (CNN art. 111: «o documento de identificação, ou, na sua falta, a filiação»).",
+  "campos": [
+    "identidade"
+  ]
+}

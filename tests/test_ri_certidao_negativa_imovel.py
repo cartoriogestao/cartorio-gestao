@@ -7,6 +7,9 @@ import ato_selado as AS
 import modelos_da_casa as MODELOS
 import ri_certidao_negativa as RINEG
 import ri_schema as RS
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 
 def test_tipo_nao_esta_na_tela_da_matricula():
@@ -28,7 +31,7 @@ def test_modelo_no_catalogo():
 
 
 def test_recusa_quando_busca_acha():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript(
         """
@@ -60,3 +63,22 @@ def test_modelo_sem_traco_de_assinatura():
     assert "________" not in RINEG.MODELO_PADRAO
     limpo = RINEG.limpar_corpo("Nome\n____________________\nCargo")
     assert "____" not in limpo
+
+
+def test_matricula_de_numero_sem_digito_abre_a_lista_como_no_sqlite():
+    """O CAST do SQLite dava 0 para numero sem digito, e essas matriculas
+    abriam a lista. Sem o coalesce, o PostgreSQL as manda para o fim -- e,
+    passando de 60 achados, para fora do corte."""
+    con = conexao_de_teste()
+    con.executescript(
+        """
+        CREATE TABLE ri_matriculas (id INTEGER PRIMARY KEY, numero TEXT,
+            logradouro TEXT, bairro TEXT, imovel_norm TEXT, rural_urbano TEXT,
+            cnm TEXT);
+        INSERT INTO ri_matriculas VALUES (1,'12','Rua A','Centro','RUA A','U',NULL);
+        INSERT INTO ri_matriculas VALUES (2,'S/N','Rua A','Centro','RUA A','U',NULL);
+        INSERT INTO ri_matriculas VALUES (3,'3','Rua A','Centro','RUA A','U',NULL);
+        """
+    )
+    achados = RINEG.buscar_por_imovel(con, "rua a")
+    assert [m["numero"] for m in achados] == ["S/N", "3", "12"]

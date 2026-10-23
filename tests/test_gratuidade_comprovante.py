@@ -13,13 +13,16 @@ import sqlite3
 import pytest
 
 import gratuidade_comprovante as GC
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 TEXTO_ISENTO = ("Poder Judiciário – TJMA. Selo: AVERBA000000VBKH58VIXU0CLW81, 13/10/2026 12:07:22, "
                 "Ato: 14.4.1, Total R$ 43,37 Emol R$ 38,72 Selo Isento, Consulte em https://selo.tjma.jus.br")
 
 
 def _con():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.execute("""CREATE TABLE sd_selos (id INTEGER PRIMARY KEY, numero TEXT, texto TEXT, tabela TEXT,
         ato_id INTEGER, atribuicao TEXT, obtido_em TEXT, obtido_por TEXT, cancelado_em TEXT)""")
     con.execute("""CREATE TABLE attachments (id INTEGER PRIMARY KEY AUTOINCREMENT, entity_type TEXT,

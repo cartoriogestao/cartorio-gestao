@@ -24,10 +24,10 @@ Ler não grava nada.
 """
 from __future__ import annotations
 
-import sqlite3
 from datetime import date
 from typing import Any
 
+from bd_nativo import banco
 import processo_especies as ESP
 import tarefa_ordem as TO
 import tarefa_processo as TP
@@ -81,7 +81,7 @@ ORDENS = TO.ordens_da_tela(tem_tipo=True)
 SEM_RESPONSAVEL = TO.SEM_RESPONSAVEL
 
 
-def listar(con: sqlite3.Connection, *, vista: str = "ABERTOS", usuario_id: int | None = None,
+def listar(con: Any, *, vista: str = "ABERTOS", usuario_id: int | None = None,
            origem: str = "", q: str = "", setor: str = "", hoje: date | None = None,
            limite: int = 500, **filtros: Any) -> list[dict]:
     """Os processos da vista pedida, filtrados, com o que a lista mostra. Só lê.
@@ -90,12 +90,12 @@ def listar(con: sqlite3.Connection, *, vista: str = "ABERTOS", usuario_id: int |
     filtra». O «parado» se mede pelo último andamento (`task_history`), e a
     conta de dias é feita em Python — data calculada no SQL custa acoplamento."""
     ESP.init_schema(con)
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     hoje_d = hoje or date.today()
     hoje_iso = hoje_d.isoformat()
     f = {k: str(v).strip() for k, v in filtros.items() if v not in (None, "")}
     cond_aberta, args_aberta = TP.condicao_aberta("t.status")
-    where = [f"t.source_type NOT IN ({','.join('?' * len(FORA_DOS_PROCESSOS))})"]
+    where = [f"t.source_type NOT IN ({','.join(['%s'] * len(FORA_DOS_PROCESSOS))})"]
     args: list[Any] = list(FORA_DOS_PROCESSOS)
     if vista in ("ABERTOS", "COMIGO", "VENCIDOS"):
         where.append(cond_aberta)
@@ -104,23 +104,23 @@ def listar(con: sqlite3.Connection, *, vista: str = "ABERTOS", usuario_id: int |
         where.append(f"NOT ({cond_aberta})")
         args += args_aberta
     if vista == "COMIGO":
-        where.append("(t.assigned_user_id = ? OR t.backup_user_id = ?)")
+        where.append("(t.assigned_user_id = %s OR t.backup_user_id = %s)")
         args += [usuario_id, usuario_id]
     if vista == "VENCIDOS":
         # A suspensa não está vencida — relato #132: o prazo não corre enquanto
         # ela espera, e «vencido» é a palavra da cobrança.
         nao_suspensa, args_suspensao = TS.condicao_nao_suspensa("t", hoje_d)
-        where += ["t.due_date IS NOT NULL AND t.due_date < ?", nao_suspensa]
+        where += ["t.due_date IS NOT NULL AND t.due_date < %s", nao_suspensa]
         args += [hoje_iso, *args_suspensao]
     if vista in VISTAS_DA_REGUA:
         conds, params = TP.filtro_da_vista(vista, usuario_id)
         where += conds
         args += params
     if setor:
-        where.append("t.sector = ?")
+        where.append("t.sector = %s")
         args.append(setor)
     if origem:
-        where.append("t.source_type = ?")
+        where.append("t.source_type = %s")
         args.append(origem)
     # A BUSCA É A DA RÉGUA COMUM desde 15/10/2026 (relato #122): a de «Tarefas»
     # procura também o número e o responsável, e as duas telas não podem achar
@@ -138,10 +138,13 @@ def listar(con: sqlite3.Connection, *, vista: str = "ABERTOS", usuario_id: int |
     if f.get("especie") == "SEM_TIPO":
         where.append("pe.especie IS NULL")
     elif f.get("especie"):
-        where.append("pe.especie = ?")
+        where.append("pe.especie = %s")
         args.append(f["especie"])
     ordem = TO.ordem_sql(f.get("ordem"), f.get("inverter"))
-    linhas = con.execute(
+    # Os pedaços que vêm da régua comum (`tarefa_ordem`, `tarefa_processo`,
+    # `tarefa_suspensao`) ainda trazem `?` e `LIKE` do SQLite; aqui viram PostgreSQL.
+    onde = " AND ".join(where).replace("?", "%s").replace(" LIKE ", " ILIKE ")
+    linhas = bd.ler(
         f"""SELECT t.id, t.title, t.status, t.priority, t.due_date, t.created_at, t.source_type, t.sector,
                    t.system_name, t.evidence_required,
                    (SELECT COUNT(*) FROM attachments a WHERE a.entity_type='TASK' AND a.entity_id=t.id) AS evidencias,
@@ -155,9 +158,9 @@ def listar(con: sqlite3.Connection, *, vista: str = "ABERTOS", usuario_id: int |
               LEFT JOIN users ub ON ub.id = t.backup_user_id
               LEFT JOIN expedientes e ON e.id = t.linked_expediente_id
               LEFT JOIN pr_especie_do_processo pe ON pe.task_id = t.id
-             WHERE {' AND '.join(where)}
+             WHERE {onde}
              ORDER BY {ordem}
-             LIMIT ?""", (*args, int(limite))).fetchall()
+             LIMIT %s""", (*args, int(limite)))
     saida = []
     for r in linhas:
         d = {k: r[k] for k in r.keys()}
@@ -180,7 +183,7 @@ def _dias_desde(quando: Any, hoje: date) -> int | None:
         return None
 
 
-def quadro_de_fiscalizacao(con: sqlite3.Connection, hoje: date | None = None) -> dict:
+def quadro_de_fiscalizacao(con: Any, hoje: date | None = None) -> dict:
     """O controle do administrador: por responsável e por setor, quantos
     processos abertos, vencidos e parados há 7 dias ou mais — e os buracos
     da casa (sem responsável, sem prazo, sem
@@ -217,17 +220,16 @@ def quadro_de_fiscalizacao(con: sqlite3.Connection, hoje: date | None = None) ->
     }
 
 
-def contagem(con: sqlite3.Connection, usuario_id: int | None, hoje: date | None = None) -> dict:
+def contagem(con: Any, usuario_id: int | None, hoje: date | None = None) -> dict:
     return {v: len(listar(con, vista=v, usuario_id=usuario_id, hoje=hoje, limite=100000))
             for v in ("COMIGO", "PASSOU_POR_MIM", "PEDIRAM_RESPOSTA", "ABERTOS", "VENCIDOS")}
 
 
-def entradas_sem_processo(con: sqlite3.Connection) -> list[dict]:
+def entradas_sem_processo(con: Any) -> list[dict]:
     """O que chegou pelo malote e ainda não virou processo nem recebeu «só
     ciência». Só lê."""
-    con.row_factory = sqlite3.Row
-    marcas = ",".join("?" * len(ESTAGIOS_ENCERRADOS))
-    linhas = con.execute(
+    marcas = ",".join(["%s"] * len(ESTAGIOS_ENCERRADOS))
+    linhas = banco(con).ler(
         f"""SELECT e.id, e.internal_protocol, e.subject, e.sender, e.received_at, e.category, e.sector,
                    e.deadline_date, e.stage,
                    (SELECT COUNT(*) FROM attachments a WHERE a.entity_type='EXPEDIENTE'
@@ -235,7 +237,7 @@ def entradas_sem_processo(con: sqlite3.Connection) -> list[dict]:
               FROM expedientes e
              WHERE e.stage NOT IN ({marcas})
                AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.linked_expediente_id = e.id)
-             ORDER BY e.received_at, e.id""", ESTAGIOS_ENCERRADOS).fetchall()
+             ORDER BY e.received_at, e.id""", ESTAGIOS_ENCERRADOS)
     saida = []
     for r in linhas:
         d = {k: r[k] for k in r.keys()}

@@ -1,0 +1,16 @@
+{
+  "chave": "PT_AVISO_CANHOTO_IDENTIFICACAO",
+  "atribuicao": "Protesto",
+  "nome": "Canhoto do aviso — identificação",
+  "formato": "CHAVES",
+  "explica": "De que aviso e de que título é o canhoto — uma linha do papel por linha daqui.",
+  "campos": [
+    "numero",
+    "ano",
+    "protocolo",
+    "devedor",
+    "especie",
+    "numero_titulo",
+    "valor"
+  ]
+}

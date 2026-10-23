@@ -1,0 +1,10 @@
+{
+  "chave": "RI_PRENOTACOES_ABERTAS_ITEM_NATUREZA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Prenotação em aberto — natureza",
+  "formato": "JINJA",
+  "explica": "Natureza do título na lista das prenotações em aberto; o módulo só a põe quando o protocolo tem natureza (ri_web).",
+  "campos": [
+    "natureza"
+  ]
+}

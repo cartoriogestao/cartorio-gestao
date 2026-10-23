@@ -1,0 +1,16 @@
+{
+  "chave": "NOTAS_INUTILIZACAO_FACE",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Face inutilizada (folha impressa)",
+  "formato": "CHAVES",
+  "explica": "A face pronta para imprimir sobre a folha do livro: o título, o traço ({riscos}, que o programa repete até cobrir a face), o dizer da inutilização ({texto}) e a assinatura.",
+  "campos": [
+    "livro",
+    "numero",
+    "face",
+    "riscos",
+    "texto",
+    "titular",
+    "titulo"
+  ]
+}

@@ -26,6 +26,14 @@ sys.path.insert(0, str(RAIZ))
 SENHA = "Senha#12345"
 
 
+def _imprimir(c, url, **kw):
+    """A etiqueta é POST com o token desde o LX11 (M8 do LS01): GET que grava
+    a contagem não passava pelo CSRF."""
+    with c.session_transaction() as sessao:
+        token = sessao["csrf_token"]
+    return c.post(url, data={"csrf_token": token}, **kw)
+
+
 def _token(html: str) -> str:
     achado = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
     assert achado, "a tela não trouxe csrf_token"
@@ -437,7 +445,7 @@ def test_a_etiqueta_da_autenticacao_conta_a_impressao(casa):
         con.execute("UPDATE nt_autenticacoes SET selo=? WHERE id=?",
                     ("AUTENT000000AAAAAAAAAAAAAAAA", aid))
     for esperado in (1, 2):
-        casa["cliente"].get(f"/notas/autenticacao/{aid}/etiqueta")
+        _imprimir(casa["cliente"], f"/notas/autenticacao/{aid}/etiqueta")
         n = con.execute("SELECT etiqueta_impressoes n FROM nt_autenticacoes "
                         "WHERE id=?", (aid,)).fetchone()["n"]
         assert n == esperado

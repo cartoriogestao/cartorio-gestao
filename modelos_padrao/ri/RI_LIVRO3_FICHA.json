@@ -1,0 +1,29 @@
+{
+  "chave": "RI_LIVRO3_FICHA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Ficha do registro do Livro 3 Auxiliar",
+  "formato": "CHAVES",
+  "explica": "A ficha do registro do Livro 3 impressa, com os atos na ordem.",
+  "campos": [
+    "numero",
+    "folha",
+    "situacao",
+    "natureza",
+    "titulo_tipo",
+    "titulo_numero",
+    "data_titulo",
+    "valor",
+    "parcelas",
+    "vencimento_inicial",
+    "vencimento",
+    "juros",
+    "prenotacao",
+    "cnm",
+    "partes",
+    "teor",
+    "garantia",
+    "condicoes",
+    "atos",
+    "impresso_em"
+  ]
+}

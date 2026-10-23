@@ -6,11 +6,14 @@ from datetime import datetime
 
 import notas_teor as NT
 import pytest
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 
 @pytest.fixture
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     c.executescript(
         """

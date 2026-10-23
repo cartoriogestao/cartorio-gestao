@@ -1,0 +1,17 @@
+{
+  "chave": "RC_QUALIFICACAO",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Qualificação das partes no termo",
+  "formato": "CHAVES",
+  "explica": "A ordem em que o termo qualifica cada pessoa — o declarante, os pais, os nubentes, o falecido, o titular do Livro E. Cada claro é uma parte já escrita pelo sistema, e a que não se sabe some com a vírgula que a separa; a frase de cada parte, que concorda com o sexo da pessoa, é peça deste papel. Congela com o termo, na lavratura.",
+  "campos": [
+    "nome",
+    "nacionalidade",
+    "profissao",
+    "rg",
+    "cpf",
+    "naturalidade",
+    "nascimento",
+    "residencia"
+  ]
+}

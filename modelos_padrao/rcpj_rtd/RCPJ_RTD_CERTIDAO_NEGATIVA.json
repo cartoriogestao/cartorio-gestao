@@ -1,0 +1,12 @@
+{
+  "chave": "RCPJ_RTD_CERTIDAO_NEGATIVA",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Certidão negativa — RCPJ e RTD",
+  "formato": "CHAVES",
+  "explica": "Teor da certidão negativa do RTD e do RCPJ (serviços 314 e 315; LRP arts. 16, 17 e 19; CN-MA art. 963, § 3º): a pesquisa pelo nome — e pelo CPF/CNPJ, se dado — nos registros e averbações da atribuição. Só sai quando nada consta; congelado em at_certidoes na emissão. A peça «__documento» entra quando o documento foi informado.",
+  "campos": [
+    "registro",
+    "nome",
+    "documento"
+  ]
+}

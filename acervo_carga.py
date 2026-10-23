@@ -13,7 +13,7 @@ DE ONDE ELA LE
 
 POR QUE UM MODULO E NAO QUATRO
     As quatro cargas tem a mesma forma: ler uma tabela do acervo, mapear campo
-    a campo, gravar com `INSERT OR IGNORE` sobre (origem, origem_chave), e
+    a campo, gravar com `ON CONFLICT DO NOTHING` sobre (origem, origem_chave), e
     contar o que entrou e o que sobrou. Escrever isso quatro vezes daria
     quatro versoes divergentes da mesma coisa — a licao do nucleo, aplicada a
     carga.
@@ -22,9 +22,9 @@ POR QUE UM MODULO E NAO QUATRO
 
 REPETIVEL POR CONSTRUCAO
     A chave de origem e o `intChave` da tabela de origem, e todo INSERT e
-    `OR IGNORE` sobre `UNIQUE(origem, origem_chave)`. Rodar duas vezes nao
-    duplica; o que foi digitado a mao tem `origem='MANUAL'` e chave nula, que
-    o UNIQUE do SQLite nao alcanca — logo sobrevive intacto.
+    `ON CONFLICT DO NOTHING` sobre `UNIQUE(origem, origem_chave)`. Rodar duas
+    vezes nao duplica; o que foi digitado a mao tem `origem='MANUAL'` e chave
+    nula, que o UNIQUE nao alcanca — logo sobrevive intacto.
 
 NADA ENTRA CALADO, E NADA SAI CALADO
     Cada carga devolve `lidos`, `inseridos`, `repetidos` e `rejeitados`, com o
@@ -46,10 +46,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections import defaultdict
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Iterator
 
+import banco_pg
+from bd_nativo import banco
 # `ato_selado` entra so pela LISTA DAS TABELAS DE ATO — e a mesma lista que
 # o resto da casa usa para saber onde um selo pode estar amarrado. Escrever
 # a lista de novo aqui seria a segunda copia divergindo na primeira tabela
@@ -88,15 +89,101 @@ def abrir_acervo(caminho: str | Path) -> sqlite3.Connection:
         raise CargaError(
             f"Não achei o acervo do E-Ofício em {p}. Ele é carregado por "
             f"`acervo_eoficio.carregar()` e fica ao lado do banco do sistema.")
-    con = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
-    con.row_factory = sqlite3.Row
-    return con
+    # SQLITE DE VERDADE, SO LEITURA, QUALQUER QUE SEJA O NOME (LH09): o caminho
+    # tambem vem digitado na tela do Livro 3, e um que termine no nome do banco
+    # da casa cairia no PostgreSQL pelo desvio do `sqlite3.connect`.
+    return banco_pg.conectar_sqlite(p)
 
 
-def _tem_tabela(con: sqlite3.Connection, nome: str) -> bool:
-    return con.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-        (nome,)).fetchone() is not None
+# O ACERVO CONTINUA SENDO UM ARQUIVO SQLITE A PARTE, em so leitura — migracao
+# para o PostgreSQL nativo, lote L054. O SQL dele e o do SQLite, com parametro
+# `:nome`; o banco da casa (`con`) e que fala PostgreSQL, pelo `bd_nativo`.
+#
+# AS LINHAS DO ACERVO SE LEEM POR `_ler_acervo`, e nao pela fabrica de linhas
+# da conexao: por nome e SEM CAIXA, que e como o SQLite le nome de coluna. O
+# acervo dos testes mora no PostgreSQL pela ponte, e la os nomes voltam em
+# minuscula — `intChave` vira `intchave`.
+
+
+class _LinhaDoAcervo(dict):
+    """Uma linha do acervo: por nome, sem caixa. `dict(linha)` da os nomes
+    como o acervo os escreve. Coluna que a linha nao tem estoura `IndexError`,
+    como a linha do sqlite3 fazia, ou vale None quando `nulo_se_faltar`."""
+
+    def __init__(self, nomes: Iterable[str], valores: Iterable[Any],
+                 nulo_se_faltar: bool = False):
+        super().__init__()
+        for nome, valor in zip(nomes, valores):
+            self.setdefault(nome, valor)
+        self._sem_caixa = {}
+        for nome in self:
+            self._sem_caixa.setdefault(str(nome).lower(), nome)
+        self._nulo = nulo_se_faltar
+
+    def _nome(self, chave: Any) -> Any:
+        return self._sem_caixa.get(str(chave).lower(), chave)
+
+    def __getitem__(self, chave: Any) -> Any:
+        nome = self._nome(chave)
+        if not dict.__contains__(self, nome):
+            if self._nulo:
+                return None
+            raise IndexError("No item with that key")
+        return dict.__getitem__(self, nome)
+
+    def get(self, chave: Any, padrao: Any = None) -> Any:
+        return dict.get(self, self._nome(chave), padrao)
+
+    def __contains__(self, chave: Any) -> bool:
+        return dict.__contains__(self, self._nome(chave))
+
+
+class _Colunas(frozenset):
+    """Os nomes das colunas como o acervo os escreve; o `in` e sem caixa."""
+
+    def __new__(cls, nomes: Iterable[str]):
+        colunas = super().__new__(cls, nomes)
+        colunas._sem_caixa = frozenset(str(n).lower() for n in colunas)
+        return colunas
+
+    def __contains__(self, nome: Any) -> bool:
+        return str(nome).lower() in self._sem_caixa
+
+
+def _ler_acervo(acervo: sqlite3.Connection, sql: str,
+                parametros: dict | None = None, *,
+                nulo_se_faltar: bool = False) -> Iterator[_LinhaDoAcervo]:
+    """As linhas de uma consulta ao acervo, por nome e sem caixa. So LE."""
+    cur = (acervo.execute(sql, parametros) if parametros
+           else acervo.execute(sql))
+    nomes = [d[0] for d in cur.description or ()]
+    for valores in cur:
+        yield _LinhaDoAcervo(nomes, tuple(valores), nulo_se_faltar)
+
+
+def _um_do_acervo(acervo: sqlite3.Connection, sql: str,
+                  parametros: dict | None = None) -> _LinhaDoAcervo | None:
+    return next(_ler_acervo(acervo, sql, parametros), None)
+
+
+def _colunas_do_acervo(acervo: sqlite3.Connection,
+                       tabela: str) -> _Colunas | None:
+    """As colunas daquela tabela do acervo, ou None se ela nao existe. So LE.
+
+    Pergunta pela consulta vazia, e nao pelo catalogo do SQLite: a resposta e
+    a mesma no arquivo do acervo e no acervo de teste, que mora no PostgreSQL.
+    """
+    if not str(tabela).isidentifier():
+        return None
+    try:
+        cur = acervo.execute(f"SELECT * FROM {tabela} LIMIT 0")
+    except sqlite3.Error:
+        return None
+    return _Colunas(d[0] for d in cur.description or ())
+
+
+def _tem_tabela(acervo: sqlite3.Connection, nome: str) -> bool:
+    return _colunas_do_acervo(acervo, nome) is not None
 
 
 def _tem_coluna(con: sqlite3.Connection, tabela: str, coluna: str) -> bool:
@@ -107,18 +194,28 @@ def _tem_coluna(con: sqlite3.Connection, tabela: str, coluna: str) -> bool:
     `intCodigoLocalNascimento` sao dessa safra — pedir uma coluna que nao existe
     nao devolve vazio: **estoura**, e derruba a carga inteira.
     """
-    try:
-        return coluna in {r[1] for r in
-                          con.execute(f'PRAGMA table_info("{tabela}")')}
-    except sqlite3.Error:
-        return False
+    return coluna in (_colunas_do_acervo(con, tabela) or ())
 
 
 def _colunas_que_existem(con: sqlite3.Connection, tabela: str,
                          pedidas: dict) -> dict:
     """O de-para reduzido ao que aquele acervo realmente tem. So LE."""
-    tem = {r[1] for r in con.execute(f'PRAGMA table_info("{tabela}")')}
+    tem = _colunas_do_acervo(con, tabela) or _Colunas(())
     return {alvo: origem for alvo, origem in pedidas.items() if origem in tem}
+
+
+def _ordem_da_primeira_linha(acervo: sqlite3.Connection, tabela: str) -> str:
+    """O `ORDER BY` de quem le UMA linha de uma tabela do acervo que so deveria
+    ter uma (as de propriedade). So LE.
+
+    A leitura antiga pegava a primeira linha do arquivo. `intChave` e a chave
+    que o E-Oficio da a toda tabela, e e a ordem em que ele gravou; onde a
+    tabela nao a tem, fica sem ordem, que no arquivo do acervo e a ordem de
+    sempre. `ORDER BY 1` nao serve: ordena pela primeira COLUNA, e com duas
+    linhas pode sair a outra.
+    """
+    return (" ORDER BY intChave"
+            if _tem_coluna(acervo, tabela, "intChave") else "")
 
 
 def _txt(v: Any) -> str | None:
@@ -179,7 +276,7 @@ def _colunas_pessoa(alias: str, prefixo: str) -> str:
                      for coluna, apelido in _CAMPOS_PESSOA)
 
 
-def _pessoa(r: sqlite3.Row, prefixo: str) -> dict | None:
+def _pessoa(r: dict, prefixo: str) -> dict | None:
     """A pessoa do acervo — devedor ou cedente —, nas colunas do prefixo.
 
     O TIPO DIZ ONDE ESTA O DOCUMENTO, e nao o tamanho do que estiver escrito.
@@ -328,21 +425,23 @@ class Carga:
 
 
 def _executar(con: sqlite3.Connection, carga: Carga, tabela: str,
-              linhas: Iterable[sqlite3.Row],
-              mapear: Callable[[sqlite3.Row], dict | None],
-              chave_de: Callable[[sqlite3.Row], Any],
-              depois: Callable[[sqlite3.Connection, int, sqlite3.Row], None] | None = None,
+              linhas: Iterable[dict],
+              mapear: Callable[[dict], dict | None],
+              chave_de: Callable[[dict], Any],
+              depois: Callable[[Any, int, dict], None] | None = None,
               ) -> Carga:
-    """O laco comum: mapeia, grava com OR IGNORE, conta o que de fato entrou.
+    """O laco comum: mapeia, grava com ON CONFLICT DO NOTHING, conta o que de
+    fato entrou.
 
     `mapear` devolve o dicionario de colunas, ou None para rejeitar (e ai ele
     mesmo chama `carga.rejeitar`). `depois` recebe o id gravado, para as
     tabelas filhas.
 
-    A contagem de `inseridos` sai do `lastrowid` mudar, e nao de `rowcount`:
-    `INSERT OR IGNORE` que ignora devolve rowcount 0, e e por isso que ele
-    serve para distinguir novo de repetido.
+    A contagem de `inseridos` sai do `RETURNING id`: o INSERT que o conflito
+    ignora nao devolve linha nenhuma, e e por isso que ele serve para
+    distinguir novo de repetido.
     """
+    bd = banco(con)
     for linha in linhas:
         carga.lidos += 1
         chave = chave_de(linha)
@@ -354,14 +453,15 @@ def _executar(con: sqlite3.Connection, carga: Carga, tabela: str,
         if dados is None:
             continue
         colunas = ", ".join(dados)
-        marcas = ", ".join("?" * len(dados))
-        cur = con.execute(
-            f"INSERT OR IGNORE INTO {tabela}({colunas}) VALUES ({marcas})",
+        marcas = ", ".join(["%s"] * len(dados))
+        novo = bd.escrever(
+            f"INSERT INTO {tabela}({colunas}) VALUES ({marcas}) "
+            f"ON CONFLICT DO NOTHING RETURNING id",
             tuple(dados.values()))
-        if cur.rowcount:
+        if novo:
             carga.inseridos += 1
             if depois:
-                depois(con, int(cur.lastrowid), linha)
+                depois(bd, int(novo[0]["id"]), linha)
         else:
             carga.repetidos += 1
     return carga
@@ -388,6 +488,7 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
     A situacao sai dos marcadores do acervo, na ordem em que eles se sobrepoem
     na vida do titulo: cancelado vence protestado, e protestado vence apontado.
     """
+    bd = banco(con)
     carga = Carga("protesto")
     if not _tem_tabela(acervo, "tbAvisoProtesto"):
         raise CargaError("O acervo não tem `tbAvisoProtesto`.")
@@ -415,7 +516,7 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
     tem_chave_cenprot = _tem_coluna(
         acervo, "tbAvisoProtesto", "strChaveUnicaCENPROT")
 
-    def situacao(r: sqlite3.Row) -> str:
+    def situacao(r: dict) -> str:
         if r["snCanceladoProtesto"]:
             return "CANCELADO"
         if r["strTipoPG"]:
@@ -424,7 +525,7 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
             return "PROTESTADO"
         return "APONTADO" if r["intNumeroApontamento"] else "RECEBIDO"
 
-    def mapear(r: sqlite3.Row) -> dict | None:
+    def mapear(r: dict) -> dict | None:
         numero = _txt(r["intNumero"])
         especie = _txt(r["strEspecie"])
         # ONZE TITULOS DO ACERVO ESTAO SEM NUMERO, E ELES NAO SAO IGUAIS.
@@ -500,7 +601,7 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
                 dados["chave_cenprot"] = chave
         return dados
 
-    def devedores_que_faltam(c: sqlite3.Connection) -> None:
+    def devedores_que_faltam(c) -> None:
         """Poe o devedor nos titulos do acervo que ainda nao tem nenhum.
 
         ELE FICAVA DE FORA, e essa era a falta mais grave da carga: sem
@@ -524,17 +625,20 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
             return
         sem_devedor = {
             str(linha["origem_chave"]): int(linha["id"])
-            for linha in c.execute(
+            for linha in c.ler(
                 """SELECT t.id, t.origem_chave FROM pt_titulos t
-                    WHERE t.origem_chave LIKE 'tbAvisoProtesto:%'
+                    WHERE t.origem_chave ILIKE 'tbAvisoProtesto:%'
                       AND NOT EXISTS (SELECT 1 FROM pt_devedores d
-                                       WHERE d.titulo_id = t.id)""")}
+                                       WHERE d.titulo_id = t.id)
+                    ORDER BY t.id""")}
         if not sem_devedor:
             return
-        for r in acervo.execute(
+        for r in _ler_acervo(
+                acervo,
                 f"""SELECT a.intChave chave, {_colunas_pessoa('d', 'dev')}
                       FROM tbAvisoProtesto a
-                      JOIN tbPessoa d ON d.intCodigoPessoa = a.intCodigoPessoa"""):
+                      JOIN tbPessoa d ON d.intCodigoPessoa = a.intCodigoPessoa
+                     ORDER BY a.intChave"""):
             titulo_id = sem_devedor.get(f"tbAvisoProtesto:{r['chave']}")
             if titulo_id is None:
                 continue
@@ -543,33 +647,33 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
                 continue
             if not d["endereco"]:
                 carga.contar("devedores sem endereço no acervo")
-            c.execute(
+            c.escrever(
                 """INSERT INTO pt_devedores(titulo_id, nome, nome_norm,
                        documento_tipo, documento_numero, endereco, bairro,
                        cep, cidade, uf)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (titulo_id, d["nome"], normalizar_nome(d["nome"]),
                  d["documento_tipo"], d["documento_numero"], d["endereco"],
                  d["bairro"], d["cep"], d["cidade"], d["uf"]))
             carga.contar("devedores trazidos do acervo")
 
-    def normalizar_o_que_falta(c: sqlite3.Connection) -> None:
+    def normalizar_o_que_falta(c) -> None:
         """Preenche `nome_norm` de quem entrou antes de a coluna existir.
 
         A coluna e aditiva — `MIGRACOES` so acrescenta, e a linha antiga fica
         com ela vazia. Devedor com `nome_norm` vazio nao aparece na busca por
         nome, e e por nome que a certidao acha a pessoa.
         """
-        faltam = c.execute(
+        faltam = c.ler(
             """SELECT id, nome FROM pt_devedores
-                WHERE nome_norm IS NULL AND nome IS NOT NULL""").fetchall()
+                WHERE nome_norm IS NULL AND nome IS NOT NULL ORDER BY id""")
         for linha in faltam:
-            c.execute("UPDATE pt_devedores SET nome_norm=? WHERE id=?",
-                      (normalizar_nome(linha["nome"]), int(linha["id"])))
+            c.escrever("UPDATE pt_devedores SET nome_norm=%s WHERE id=%s",
+                       (normalizar_nome(linha["nome"]), int(linha["id"])))
         if faltam:
             carga.contar("devedores que ganharam nome de busca")
 
-    def atos(c: sqlite3.Connection, titulo_id: int, r: sqlite3.Row) -> None:
+    def atos(c, titulo_id: int, r: dict) -> None:
         """Os atos que o acervo guarda do titulo: apontamento, protesto, baixa.
 
         A CERTIDAO E QUEM COBRA ISTO. Certidao positiva diz "protestado no
@@ -581,10 +685,10 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
 
         ordem = _inteiro(r["intNumeroApontamento"])
         if ordem:                        # titulo recebido e nao apontado: nao ha
-            c.execute(
+            c.escrever(
                 """INSERT INTO pt_atos(titulo_id, tipo, selo, folha,
                        numero_ordem, data_ato, origem, origem_chave, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (titulo_id, "APONTAMENTO", _txt(r["strSelo_Apontamento"]),
                  _inteiro(r["intFolhaApontamento"]), ordem,
                  _data(r["dtmE_Cartorio"]) or agora, "EOFICIO",
@@ -600,11 +704,11 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
         # 1.160 posteriores, nenhuma igual, nenhuma anterior. E a data em que
         # o E-Oficio marcou a ocorrencia do protesto.
         if r["snProtestado"]:
-            c.execute(
+            c.escrever(
                 """INSERT INTO pt_atos(titulo_id, tipo, folha, data_ato,
                        observacao, detalhe_json, origem, origem_chave,
                        criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (titulo_id, "PROTESTO", _inteiro(r["intProtestoFolha"]),
                  _data(r["dtmOcorrencia"]) or _data(r["dtmE_Cartorio"]) or agora,
                  "número de ordem não consta do acervo do E-Ofício",
@@ -620,11 +724,11 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
         # Material", e metade dos 56 nao diz por que. Inventar a hipotese aqui
         # seria assinar por quem cancelou.
         if r["snCanceladoProtesto"]:
-            c.execute(
+            c.escrever(
                 """INSERT INTO pt_atos(titulo_id, tipo, selo, data_ato,
                        motivo_cancelamento, observacao, origem, origem_chave,
                        criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (titulo_id, "CANCELAMENTO", _txt(r["strSelo_Cancelamento"]),
                  _data(r["dtmCancelaProtesto"]) or agora,
                  _txt(r["memObsCancelamento"]),
@@ -647,13 +751,13 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
              LEFT JOIN tbPessoa c ON c.intCodigoPessoa = a.intCodigoCedente
             ORDER BY a.intChave"""
     sem_pessoa = "SELECT a.* FROM tbAvisoProtesto a ORDER BY a.intChave"
-    linhas = acervo.execute(com_pessoa if tem_pessoa else sem_pessoa)
-    _executar(con, carga, "pt_titulos", linhas, mapear,
+    linhas = _ler_acervo(acervo, com_pessoa if tem_pessoa else sem_pessoa)
+    _executar(bd, carga, "pt_titulos", linhas, mapear,
               lambda r: r["intChave"], depois=atos)
-    devedores_que_faltam(con)
-    normalizar_o_que_falta(con)
+    devedores_que_faltam(bd)
+    normalizar_o_que_falta(bd)
 
-    def chaves_cenprot_que_faltam(c: sqlite3.Connection) -> None:
+    def chaves_cenprot_que_faltam(c) -> None:
         """Preenche `chave_cenprot` nos titulos do acervo que ainda estao
         sem ela.
 
@@ -667,32 +771,35 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
             return
         sem_chave = {
             str(linha["origem_chave"]): int(linha["id"])
-            for linha in c.execute(
+            for linha in c.ler(
                 """SELECT t.id, t.origem_chave FROM pt_titulos t
-                    WHERE t.origem_chave LIKE 'tbAvisoProtesto:%'
-                      AND TRIM(COALESCE(t.chave_cenprot,'')) = ''""")
+                    WHERE t.origem_chave ILIKE 'tbAvisoProtesto:%'
+                      AND TRIM(COALESCE(t.chave_cenprot,'')) = ''
+                    ORDER BY t.id""")
         }
         if not sem_chave:
             return
-        for r in acervo.execute(
+        for r in _ler_acervo(
+                acervo,
                 """SELECT intChave, strChaveUnicaCENPROT
                       FROM tbAvisoProtesto
                      WHERE strChaveUnicaCENPROT IS NOT NULL
-                       AND TRIM(CAST(strChaveUnicaCENPROT AS TEXT)) <> ''"""):
+                       AND TRIM(CAST(strChaveUnicaCENPROT AS TEXT)) <> ''
+                     ORDER BY intChave"""):
             titulo_id = sem_chave.get(f"tbAvisoProtesto:{r['intChave']}")
             if titulo_id is None:
                 continue
             chave = _txt(r["strChaveUnicaCENPROT"])
             if not chave:
                 continue
-            cur = c.execute(
-                """UPDATE pt_titulos SET chave_cenprot=?
-                    WHERE id=? AND TRIM(COALESCE(chave_cenprot,'')) = ''""",
-                (chave, titulo_id))
-            if cur.rowcount:
+            if c.escrever(
+                    """UPDATE pt_titulos SET chave_cenprot=%s
+                        WHERE id=%s AND TRIM(COALESCE(chave_cenprot,'')) = ''
+                    RETURNING id""",
+                    (chave, titulo_id)):
                 carga.contar("chaves CENPROT trazidas do acervo")
 
-    chaves_cenprot_que_faltam(con)
+    chaves_cenprot_que_faltam(bd)
     # A INTIMACAO, pela mesma passada-que-olha-o-que-falta — e ela e o ato do
     # MEIO da vida do titulo, que nunca entrava. Medido na producao em
     # 01/09/2026: **zero** atos de INTIMACAO em 1.366 titulos.
@@ -700,8 +807,9 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
     # Quem cobrou foi o TERMO do protesto, que diz «O Sacado foi intimado por
     # Edital em ‹data›» — e o E-Oficio o escreveu em 1.078 de 1.132. E a
     # certidao cobrando da carga pela QUINTA vez.
-    _o_que_o_retorno_precisa(con, acervo, carga=carga, agora=agora)
-    _a_vida_dos_titulos(con, acervo, carga=carga, agora=agora)
+    _o_que_o_retorno_precisa(bd, acervo, carga=carga, agora=agora)
+    _identificacao_na_central(bd, acervo, carga=carga)
+    _a_vida_dos_titulos(bd, acervo, carga=carga, agora=agora)
     return carga
 
 
@@ -726,13 +834,15 @@ def _a_vida_dos_titulos(con: sqlite3.Connection, acervo: sqlite3.Connection,
                         *, carga: "Carga", agora: str) -> None:
     if not _tem_tabela(acervo, "tbAvisoProtesto"):
         return
+    bd = banco(con)
     nossos = {str(r["origem_chave"]): (int(r["id"]), r["situacao"])
-              for r in con.execute(
+              for r in bd.ler(
                   """SELECT id, origem_chave, situacao FROM pt_titulos
-                      WHERE origem_chave LIKE 'tbAvisoProtesto:%'""")}
+                      WHERE origem_chave ILIKE 'tbAvisoProtesto:%'
+                      ORDER BY id""")}
     tem = {}
     lavrado_aqui = set()
-    for r in con.execute("SELECT titulo_id, tipo, origem FROM pt_atos"):
+    for r in bd.ler("SELECT titulo_id, tipo, origem FROM pt_atos ORDER BY id"):
         tem.setdefault(int(r["titulo_id"]), set()).add(r["tipo"])
         if (r["origem"] or "EOFICIO") != "EOFICIO":
             lavrado_aqui.add(int(r["titulo_id"]))
@@ -740,11 +850,11 @@ def _a_vida_dos_titulos(con: sqlite3.Connection, acervo: sqlite3.Connection,
     def ato(titulo_id, tipo, data, chave, **extra) -> None:
         if tipo in tem.get(titulo_id, set()):
             return
-        con.execute(
+        bd.escrever(
             """INSERT INTO pt_atos(titulo_id, tipo, selo, folha, data_ato,
                    observacao, detalhe_json, motivo_cancelamento, origem,
                    origem_chave, criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (titulo_id, tipo, extra.get("selo"), extra.get("folha"),
              data or agora, extra.get("observacao"),
              extra.get("detalhe_json") or "{}", extra.get("motivo"),
@@ -760,27 +870,30 @@ def _a_vida_dos_titulos(con: sqlite3.Connection, acervo: sqlite3.Connection,
     # dizer nada. O termo do protesto e o retorno à CRA leem este campo.
     motivo_da_remessa = {}
     if _tem_tabela(acervo, "tbSDT") and _tem_coluna(acervo, "tbSDT", "Campo22"):
-        for s in acervo.execute(
-                "SELECT intProtocolo, Campo22 FROM tbSDT WHERE Campo22 IS NOT NULL"):
+        for s in _ler_acervo(
+                acervo, "SELECT intProtocolo, Campo22 FROM tbSDT "
+                        "WHERE Campo22 IS NOT NULL ORDER BY intChave"):
             codigo = _txt(s["Campo22"])
             if codigo in ("1", "2", "3") and s["intProtocolo"] is not None:
                 motivo_da_remessa[_inteiro(s["intProtocolo"])] = codigo
 
-    for linha in acervo.execute("SELECT * FROM tbAvisoProtesto ORDER BY intChave"):
+    for r in _ler_acervo(acervo,
+                         "SELECT * FROM tbAvisoProtesto ORDER BY intChave",
+                         nulo_se_faltar=True):
         # COLUNA QUE A EXPORTAÇÃO NÃO TROUXE VALE NULO, e não derruba a carga:
         # acervo antigo (e o dos testes) não tem todas as colunas de hoje — a
         # mesma regra de `_tem_coluna` no resto deste módulo.
-        r = defaultdict(lambda: None, dict(linha))
         chave = f"tbAvisoProtesto:{r['intChave']}"
         if chave not in nossos:
             continue
         titulo_id, situacao_aqui = nossos[chave]
         motivo = motivo_da_remessa.get(_inteiro(r["intProtocolo"]))
         if motivo:
-            if con.execute(
-                    """UPDATE pt_titulos SET motivo_protesto=? WHERE id=?
-                          AND COALESCE(motivo_protesto, '') <> ?""",
-                    (motivo, titulo_id, motivo)).rowcount:
+            if bd.escrever(
+                    """UPDATE pt_titulos SET motivo_protesto=%s WHERE id=%s
+                          AND COALESCE(motivo_protesto, '') <> %s
+                    RETURNING id""",
+                    (motivo, titulo_id, motivo)):
                 carga.contar("motivo do protesto trazido da remessa da CRA (tbSDT)")
         else:
             carga.contar("títulos sem a remessa da CRA no acervo: motivo do "
@@ -798,13 +911,14 @@ def _a_vida_dos_titulos(con: sqlite3.Connection, acervo: sqlite3.Connection,
         # protestou. Sai só o que a carga trouxe: sem selo e nunca informado.
         if (not r["snProtestado"] and not r["snCanceladoProtesto"]
                 and "PROTESTO" in tem.get(titulo_id, set())):
-            for velho in con.execute(
+            for velho in bd.ler(
                     """SELECT id, folha, detalhe_json FROM pt_atos
-                        WHERE titulo_id=? AND tipo='PROTESTO' AND origem='EOFICIO'
-                          AND selo IS NULL AND retorno_id IS NULL""",
-                    (titulo_id,)).fetchall():
+                        WHERE titulo_id=%s AND tipo='PROTESTO' AND origem='EOFICIO'
+                          AND selo IS NULL AND retorno_id IS NULL
+                        ORDER BY id""",
+                    (titulo_id,)):
                 livro = json.loads(velho["detalhe_json"] or "{}").get("livro_do_acervo")
-                con.execute("DELETE FROM pt_atos WHERE id=?", (velho["id"],))
+                bd.escrever("DELETE FROM pt_atos WHERE id=%s", (velho["id"],))
                 tem[titulo_id].discard("PROTESTO")
                 carga.contar(
                     f"protesto importado e depois desfeito no E-Ofício (apontamento "
@@ -834,7 +948,7 @@ def _a_vida_dos_titulos(con: sqlite3.Connection, acervo: sqlite3.Connection,
             carga.contar("títulos devolvidos por irregularidade (código 5): "
                          "situação não existe no sistema, ficaram como estavam")
             continue
-        elif (situacao_aqui == "PAGO" and "strTipoPG" in r.keys()
+        elif (situacao_aqui == "PAGO" and "strTipoPG" in r
                 and _txt(r["strTipoPG"])):
             # Pagamento lançado no caixa do E-Ofício (`strTipoPG`, com o número
             # do protocolo geral) e nenhuma ocorrência: o E-Ofício não diz se
@@ -850,7 +964,7 @@ def _a_vida_dos_titulos(con: sqlite3.Connection, acervo: sqlite3.Connection,
         else:
             continue
         if nova != situacao_aqui:
-            con.execute("UPDATE pt_titulos SET situacao=? WHERE id=?",
+            bd.escrever("UPDATE pt_titulos SET situacao=%s WHERE id=%s",
                         (nova, titulo_id))
             carga.contar(f"situação acertada pelo E-Ofício: {situacao_aqui} → {nova}")
 
@@ -885,14 +999,16 @@ def previa_rcpn(con: sqlite3.Connection, acervo: sqlite3.Connection,
     tem um único INSERT.
 
     Já importado = mesma `origem_chave` com `origem='EOFICIO'` em
-    `rc_assentos`. É a mesma chave que `INSERT OR IGNORE` usa para não
-    duplicar.
+    `rc_assentos`. É a mesma chave que o `ON CONFLICT DO NOTHING` usa para
+    não duplicar.
     """
+    bd = banco(con)
     existentes = {
         str(r["origem_chave"])
-        for r in con.execute(
+        for r in bd.ler(
             "SELECT origem_chave FROM rc_assentos "
-            "WHERE origem = 'EOFICIO' AND origem_chave IS NOT NULL")
+            "WHERE origem = 'EOFICIO' AND origem_chave IS NOT NULL "
+            "ORDER BY id")
         if r["origem_chave"]
     }
     por_especie: list[dict] = []
@@ -914,26 +1030,25 @@ def previa_rcpn(con: sqlite3.Connection, acervo: sqlite3.Connection,
             "sem_nome": 0,
             "tabela_ausente": False,
         }
-        if not _tem_tabela(acervo, fonte["tabela"]):
+        colunas = _colunas_do_acervo(acervo, fonte["tabela"])
+        if colunas is None:
             bloco["tabela_ausente"] = True
             por_especie.append(bloco)
             continue
-        colunas = {c[1] for c in acervo.execute(
-            f'PRAGMA table_info("{fonte["tabela"]}")')}
         nome_col = fonte["nome"]
         tem_numero = "intNumeroRegistro" in colunas
         tem_matricula = fonte["matricula"] in colunas
         tem_data = fonte["data_ato"] in colunas
-        selecao = ["intChave", f'"{nome_col}" AS nome']
+        selecao = ["intChave", f'{nome_col} AS nome']
         if tem_numero:
             selecao.append("intNumeroRegistro AS numero")
         if tem_matricula:
-            selecao.append(f'"{fonte["matricula"]}" AS matricula')
+            selecao.append(f'{fonte["matricula"]} AS matricula')
         if tem_data:
-            selecao.append(f'"{fonte["data_ato"]}" AS data_ato')
-        sql = (f'SELECT {", ".join(selecao)} FROM "{fonte["tabela"]}" '
+            selecao.append(f'{fonte["data_ato"]} AS data_ato')
+        sql = (f'SELECT {", ".join(selecao)} FROM {fonte["tabela"]} '
                f'ORDER BY intChave')
-        for r in acervo.execute(sql):
+        for r in _ler_acervo(acervo, sql):
             bloco["no_acervo"] += 1
             total_no_acervo += 1
             chave = f'{fonte["tabela"]}:{r["intChave"]}'
@@ -965,10 +1080,10 @@ def previa_rcpn(con: sqlite3.Connection, acervo: sqlite3.Connection,
         por_especie.append(bloco)
 
     ja_no_cartorio = {
-        row["especie"]: row["n"]
-        for row in con.execute(
+        row["especie"]: int(row["n"])
+        for row in bd.ler(
             "SELECT especie, COUNT(*) AS n FROM rc_assentos "
-            "WHERE origem = 'EOFICIO' GROUP BY especie")
+            "WHERE origem = 'EOFICIO' GROUP BY especie ORDER BY especie")
     }
     return {
         "por_especie": por_especie,
@@ -997,14 +1112,14 @@ def carregar_rcpn(con: sqlite3.Connection, acervo: sqlite3.Connection,
     `strTipoLivro = 'E'` — ha um — vai para a especie OUTRO, porque assento de
     nascimento lancado no Livro E nao e assento do Livro A.
     """
+    bd = banco(con)
     carga = Carga("rcpn")
     for fonte in FONTES_RCPN:
-        if not _tem_tabela(acervo, fonte["tabela"]):
+        colunas = _colunas_do_acervo(acervo, fonte["tabela"])
+        if colunas is None:
             continue
-        colunas = {c[1] for c in acervo.execute(
-            f'PRAGMA table_info("{fonte["tabela"]}")')}
 
-        def mapear(r: sqlite3.Row, f=fonte, cols=colunas) -> dict | None:
+        def mapear(r: dict, f=fonte, cols=colunas) -> dict | None:
             nome = _txt(r[f["nome"]])
             if not nome:
                 carga.rejeitar(r["intChave"],
@@ -1045,11 +1160,13 @@ def carregar_rcpn(con: sqlite3.Connection, acervo: sqlite3.Connection,
                         f"— entrou como {f['especie'].lower()}, que é o que a "
                         f"matrícula afirma",
                         dict(r))
+            # SEM CAIXA, como o SQLite compara nome de coluna.
+            fora = {x.lower() for x in ("intChave", f["nome"], f["data_fato"],
+                                        f["data_ato"], f["matricula"])}
             proprios = {
                 k: r[k] for k in cols
-                if k not in ("intChave", f["nome"], f["data_fato"],
-                             f["data_ato"], f["matricula"])
-                and not k.startswith("mem")          # o teor vai em `teor`
+                if k.lower() not in fora
+                and not k.lower().startswith("mem")  # o teor vai em `teor`
                 and r[k] not in (None, "")
             }
             return {
@@ -1071,9 +1188,9 @@ def carregar_rcpn(con: sqlite3.Connection, acervo: sqlite3.Connection,
                 "criado_em": agora,
             }
 
-        _executar(con, carga, "rc_assentos",
-                  acervo.execute(f'SELECT * FROM "{fonte["tabela"]}" '
-                                 f'ORDER BY intChave'),
+        _executar(bd, carga, "rc_assentos",
+                  _ler_acervo(acervo, f'SELECT * FROM {fonte["tabela"]} '
+                                      f'ORDER BY intChave'),
                   mapear, lambda r: r["intChave"])
 
     # OS PAIS E OS AVOS ENTRAM NUMA PASSADA A PARTE, e nao pelo `depois` da
@@ -1085,14 +1202,14 @@ def carregar_rcpn(con: sqlite3.Connection, acervo: sqlite3.Connection,
     # A passada olha o que FALTA — um caminho so para os dois casos, e
     # repetivel por construcao.
     carga.contar("pessoas_de_filiacao",
-                 _pessoas_que_faltam(con, acervo, carga=carga, agora=agora))
+                 _pessoas_que_faltam(bd, acervo, carga=carga, agora=agora))
     # O DECLARANTE E AS TESTEMUNHAS, pela mesma passada-que-olha-o-que-falta.
     #
     # O declarante e campo OBRIGATORIO do assento de nascimento e de obito
     # (Lei 6.015/1973, arts. 54 e 80), e a certidao de obito o nomeia. As
     # testemunhas sao o que prova que o ato foi praticado diante de alguem.
     # Nenhum dos dois entrava.
-    for papel, quantos in _ligadas_que_faltam(con, acervo, agora=agora).items():
+    for papel, quantos in _ligadas_que_faltam(bd, acervo, agora=agora).items():
         carga.contar(f"pessoas_{papel.lower()}", quantos)
     # A PESSOA DE QUEM O ASSENTO E — o registrado, os nubentes, o falecido.
     #
@@ -1101,13 +1218,13 @@ def carregar_rcpn(con: sqlite3.Connection, acervo: sqlite3.Connection,
     # naturalidade, residencia e estado civil) e a CERTIDAO de casamento e de
     # obito ao mesmo tempo.
     for papel, quantos in _o_proprio_assento_que_falta(
-            con, acervo, carga=carga, agora=agora).items():
+            bd, acervo, carga=carga, agora=agora).items():
         carga.contar(f"pessoas_{papel.lower()}", quantos)
     # O QUE A REMESSA DO IBGE PEDE — local do nascimento, gemeo, DNV, DO e o
     # local do obito. Sem isto o arquivo sai com «ignorado» onde o acervo tem
     # a resposta, e remessa cheia de nove e remessa aceita e inutil.
     for onde, quantos in _campos_do_ibge_que_faltam(
-            con, acervo, agora=agora).items():
+            bd, acervo, agora=agora).items():
         carga.contar(f"ibge_{onde}", quantos)
     # O ATO DE REGISTRO, com a folha do livro de papel. A CERTIDAO COBROU pela
     # QUARTA VEZ neste projeto — antes foram o devedor do Protesto, o ato de
@@ -1118,14 +1235,14 @@ def carregar_rcpn(con: sqlite3.Connection, acervo: sqlite3.Connection,
     # rodou a carga antes tem os assentos gravados, e o `depois` da linha nunca
     # os alcancaria.
     carga.contar("atos_de_registro",
-                 _registros_que_faltam(con, acervo, agora=agora))
+                 _registros_que_faltam(bd, acervo, agora=agora))
     # PENDENCIA E DECLARADA, NAO ADIVINHADA: ela entra porque a carga a
     # DESCOBRIU no acervo desta casa, com o numero medido na hora.
-    _perguntar_do_livro_do_casamento(con, acervo, agora=agora)
+    _perguntar_do_livro_do_casamento(bd, acervo, agora=agora)
     # E MARCA OS ASSENTOS de que a pergunta trata, para o aviso aparecer na
     # ficha de cada um — e nao so numa aba que ninguem abre.
     carga.contar("assentos_com_livro_a_confirmar",
-                 _marcar_livro_a_confirmar(con, acervo, agora=agora))
+                 _marcar_livro_a_confirmar(bd, acervo, agora=agora))
     return carga
 
 
@@ -1162,26 +1279,26 @@ def _marcar_livro_a_confirmar(con: sqlite3.Connection,
     e perguntado de novo. Marca que volta e pior que marca que nunca existiu:
     ela ensina o balcao a ignorar o aviso.
     """
-    if not _tem_tabela(acervo, "tbRegistroCasamento"):
+    colunas = _colunas_do_acervo(acervo, "tbRegistroCasamento")
+    if colunas is None:
         return 0
-    colunas = {c[1] for c in acervo.execute(
-        'PRAGMA table_info("tbRegistroCasamento")')}
     if "intTipoRegistroLivro" not in colunas:
         return 0
-    chaves = {f'tbRegistroCasamento:{r["intChave"]}' for r in acervo.execute(
-        "SELECT intChave FROM tbRegistroCasamento "
-        "WHERE intTipoRegistroLivro = 1")}
+    chaves = {f'tbRegistroCasamento:{r["intChave"]}' for r in _ler_acervo(
+        acervo, "SELECT intChave FROM tbRegistroCasamento "
+                "WHERE intTipoRegistroLivro = 1")}
     if not chaves:
         return 0
+    bd = banco(con)
     marcados = 0
     for chave in sorted(chaves):
-        cur = con.execute(
-            """UPDATE rc_assentos SET livro_a_confirmar = ?
-                WHERE origem = 'EOFICIO' AND origem_chave = ?
+        marcados += len(bd.escrever(
+            """UPDATE rc_assentos SET livro_a_confirmar = %s
+                WHERE origem = 'EOFICIO' AND origem_chave = %s
                   AND livro_a_confirmar IS NULL
-                  AND livro_conferido_em IS NULL""",
-            (MOTIVO_DO_LIVRO_A_CONFIRMAR, chave))
-        marcados += cur.rowcount
+                  AND livro_conferido_em IS NULL
+            RETURNING id""",
+            (MOTIVO_DO_LIVRO_A_CONFIRMAR, chave)))
     return marcados
 
 
@@ -1194,20 +1311,19 @@ def _perguntar_do_livro_do_casamento(con: sqlite3.Connection,
     seria alarme que soa sempre — e alarme que soa sempre e alarme que ninguem
     ouve. E a mesma regra das series sem contador.
     """
-    if not _tem_tabela(acervo, "tbRegistroCasamento"):
+    colunas = _colunas_do_acervo(acervo, "tbRegistroCasamento")
+    if colunas is None:
         return
-    colunas = {c[1] for c in acervo.execute(
-        'PRAGMA table_info("tbRegistroCasamento")')}
     if "intTipoRegistroLivro" not in colunas:
         return
-    quantos = acervo.execute(
-        "SELECT COUNT(*) n FROM tbRegistroCasamento "
-        "WHERE intTipoRegistroLivro = 1").fetchone()[0]
+    quantos = _um_do_acervo(
+        acervo, "SELECT COUNT(*) n FROM tbRegistroCasamento "
+                "WHERE intTipoRegistroLivro = 1")["n"]
     if quantos:
         IMP.declarar_livro_do_casamento(con, quantos=int(quantos), agora=agora)
 
 
-def _volume_do_livro(r: sqlite3.Row, cols: set, especie: str) -> str | None:
+def _volume_do_livro(r: dict, cols: set, especie: str) -> str | None:
     """`A` + `22` -> `A-22`. O livro fisico, como a capa dele esta escrita.
 
     A LETRA SO SAI DE ONDE FOI MEDIDA. No nascimento ela e `strTipoLivro`
@@ -1233,13 +1349,15 @@ def _registros_que_faltam(con: sqlite3.Connection, acervo: sqlite3.Connection,
     livro de papel, com folha e numero proprios. Mandar `escrituracao.reservar`
     achar lugar reescreveria a historia.
     """
-    faltam = [dict(r) for r in con.execute(
+    bd = banco(con)
+    faltam = bd.ler(
         """SELECT a.id, a.especie, a.origem_chave, a.numero, a.data_ato
              FROM rc_assentos a
             WHERE a.origem = 'EOFICIO'
               AND NOT EXISTS (SELECT 1 FROM rc_atos t
                                WHERE t.assento_id = a.id
-                                 AND t.tipo = 'REGISTRO')""")]
+                                 AND t.tipo = 'REGISTRO')
+            ORDER BY a.id""")
     if not faltam:
         return 0
     fonte_da_especie = {f["especie"]: f["tabela"] for f in FONTES_RCPN}
@@ -1255,19 +1373,21 @@ def _registros_que_faltam(con: sqlite3.Connection, acervo: sqlite3.Connection,
         # — e o ato de registro e acabamento da certidao, nao pode derrubar a
         # carga dos 244 assentos.
         folha = None
-        if chave is not None and _tem_tabela(acervo, tabela):
-            colunas = {c[1] for c in acervo.execute(
-                f'PRAGMA table_info("{tabela}")')}
+        colunas = (_colunas_do_acervo(acervo, tabela)
+                   if chave is not None else None)
+        if colunas is not None:
             if "intFolha" in colunas:
-                linha = acervo.execute(
-                    f'SELECT intFolha FROM "{tabela}" WHERE intChave=?',
-                    (chave,)).fetchone()
+                linha = _um_do_acervo(
+                    acervo,
+                    f'SELECT intFolha FROM {tabela} WHERE intChave=:chave '
+                    f'ORDER BY intChave LIMIT 1',
+                    {"chave": chave})
                 if linha:
                     folha = _inteiro(linha["intFolha"])
-        con.execute(
+        bd.escrever(
             """INSERT INTO rc_atos(assento_id, tipo, folha, numero_ordem,
                    rotulo, data_ato, origem, origem_chave, criado_em)
-               VALUES (?,'REGISTRO',?,?,?,?, 'EOFICIO', ?, ?)""",
+               VALUES (%s,'REGISTRO',%s,%s,%s,%s, 'EOFICIO', %s, %s)""",
             (a["id"], folha, a["numero"],
              str(folha) if folha else None,
              a["data_ato"] or agora[:10],
@@ -1488,15 +1608,17 @@ def _o_que_o_retorno_precisa(con: sqlite3.Connection,
     tem_motivo = (_tem_tabela(acervo, "tbBoletoControleNEntrega")
                   and _tem_tabela(acervo, "tbMotivoNEntrega"))
 
-    faltam = [dict(r) for r in con.execute(
+    bd = banco(con)
+    faltam = bd.ler(
         """SELECT id, origem_chave, protocolo, apresentante_codigo
              FROM pt_titulos
-            WHERE origem_chave LIKE 'tbAvisoProtesto:%'
+            WHERE origem_chave ILIKE 'tbAvisoProtesto:%'
               AND (TRIM(COALESCE(protocolo,'')) = ''
                    OR TRIM(COALESCE(apresentante_codigo,'')) = ''
                    OR NOT EXISTS (SELECT 1 FROM pt_atos a
                                    WHERE a.titulo_id = pt_titulos.id
-                                     AND a.tipo = 'INTIMACAO'))""")]
+                                     AND a.tipo = 'INTIMACAO'))
+            ORDER BY id""")
     if not faltam:
         return feito
 
@@ -1536,10 +1658,12 @@ def _o_que_o_retorno_precisa(con: sqlite3.Connection,
             "AND COALESCE(n.bitEntregue, 0) = 0 "
             "ORDER BY n.dtmEntrega DESC LIMIT 1) motivo"
             if (tem_motivo and tem_cb) else "NULL motivo")
-        linha = acervo.execute(
+        linha = _um_do_acervo(
+            acervo,
             "SELECT " + ", ".join(pedacos)
-            + " FROM tbAvisoProtesto a WHERE a.intChave = ?",
-            (float(chave),)).fetchone()
+            + " FROM tbAvisoProtesto a WHERE a.intChave = :chave"
+            + " ORDER BY a.intChave LIMIT 1",
+            {"chave": float(chave)})
         if linha is None:
             continue
 
@@ -1549,22 +1673,22 @@ def _o_que_o_retorno_precisa(con: sqlite3.Connection,
         if protocolo in ("", "0"):
             protocolo = _txt(_inteiro(linha["intProtocolo"]) or "")
         if protocolo and protocolo != "0" and not _txt(t_["protocolo"]):
-            con.execute("UPDATE pt_titulos SET protocolo=? WHERE id=?",
+            bd.escrever("UPDATE pt_titulos SET protocolo=%s WHERE id=%s",
                         (protocolo, int(t_["id"])))
             feito["protocolo"] += 1
 
         if _txt(linha["cod"]) and not _txt(t_["apresentante_codigo"]):
-            con.execute(
-                """UPDATE pt_titulos SET apresentante_codigo=?,
-                       apresentante_nome=COALESCE(NULLIF(TRIM(?),''),
+            bd.escrever(
+                """UPDATE pt_titulos SET apresentante_codigo=%s,
+                       apresentante_nome=COALESCE(NULLIF(TRIM(%s),''),
                                                   apresentante_nome)
-                    WHERE id=?""",
+                    WHERE id=%s""",
                 (_txt(linha["cod"]), _txt(linha["nome"]), int(t_["id"])))
             feito["apresentante"] += 1
 
-        ja_tem = con.execute(
-            "SELECT 1 FROM pt_atos WHERE titulo_id=? AND tipo='INTIMACAO'",
-            (int(t_["id"]),)).fetchone()
+        ja_tem = bd.um(
+            "SELECT 1 AS um FROM pt_atos WHERE titulo_id=%s AND tipo='INTIMACAO'",
+            (int(t_["id"]),))
         if ja_tem:
             continue
         if linha["edital_em"]:
@@ -1579,10 +1703,10 @@ def _o_que_o_retorno_precisa(con: sqlite3.Connection,
         # numa intimacao em maos ela nao falhou.
         if modo == "EDITAL" and linha["motivo"]:
             detalhe["motivo"] = _txt(linha["motivo"])
-        con.execute(
+        bd.escrever(
             """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
                    origem, origem_chave, criado_em)
-               VALUES (?,'INTIMACAO',?,?,?,?,?)""",
+               VALUES (%s,'INTIMACAO',%s,%s,%s,%s,%s)""",
             (int(t_["id"]), quando or agora,
              json.dumps(detalhe, ensure_ascii=False),
              "EOFICIO", f"{t_['origem_chave']}:INTIMACAO", agora))
@@ -1602,6 +1726,53 @@ def _o_que_o_retorno_precisa(con: sqlite3.Connection,
     return feito
 
 
+def _identificacao_na_central(con: sqlite3.Connection,
+                              acervo: sqlite3.Connection, *,
+                              carga: "Carga") -> int:
+    """Traz `tbSDT.Campo03` para `pt_titulos.cra_identificacao`. ESCREVE.
+
+    É o que o E-Ofício devolvia nas posições 005/019 de todo retorno —
+    medido em 21/10/2026 no RTAB0608.261, o retorno que ele gerou para o
+    900001/2: `000000009000002`, igual ao `Campo03` do mesmo protocolo. Passada
+    à parte, olhando só o que falta, para não recontar as intimações da outra.
+
+    NO POSTGRESQL (lote LH07): a lista do que falta sai em ordem de `id`, e a
+    gravação confere de novo, no próprio UPDATE, que a identificação ainda
+    está vazia — duas cargas ao mesmo tempo não contam o mesmo título duas
+    vezes. O acervo continua sendo o arquivo do E-Ofício: o protocolo vai como
+    número (`float`), porque `intProtocolo` lá é REAL.
+    """
+    if not (_tem_tabela(acervo, "tbSDT")
+            and _tem_coluna(acervo, "tbSDT", "Campo03")
+            and _tem_coluna(acervo, "tbSDT", "intProtocolo")):
+        return 0
+    bd = banco(con)
+    faltam = bd.ler(
+        """SELECT id, protocolo FROM pt_titulos
+            WHERE origem_chave ILIKE 'tbAvisoProtesto:%'
+              AND TRIM(COALESCE(cra_identificacao, '')) = ''
+              AND TRIM(COALESCE(protocolo, '')) <> ''
+            ORDER BY id""")
+    trouxe = 0
+    for t_ in faltam:
+        numero = _inteiro(t_["protocolo"])
+        if not numero:
+            continue
+        linha = _um_do_acervo(
+            acervo,
+            """SELECT Campo03 FROM tbSDT WHERE intProtocolo = :protocolo
+                ORDER BY intChave LIMIT 1""", {"protocolo": float(numero)})
+        valor = _txt(linha["Campo03"]) if linha else None
+        if valor and bd.escrever(
+                """UPDATE pt_titulos SET cra_identificacao=%s
+                    WHERE id=%s AND TRIM(COALESCE(cra_identificacao, '')) = ''
+                RETURNING id""", (valor, int(t_["id"]))):
+            trouxe += 1
+    if trouxe:
+        carga.contar(f"identificações na Central trazidas do acervo ({trouxe})")
+    return trouxe
+
+
 def _pessoas_que_faltam(con: sqlite3.Connection, acervo: sqlite3.Connection,
                         *, carga: "Carga", agora: str) -> int:
     """Traz pais e avos dos assentos que ainda nao os tem. ESCREVE.
@@ -1613,12 +1784,14 @@ def _pessoas_que_faltam(con: sqlite3.Connection, acervo: sqlite3.Connection,
     """
     from pt_schema import normalizar_nome as _norm
 
-    faltam = [dict(r) for r in con.execute(
+    bd = banco(con)
+    faltam = bd.ler(
         """SELECT a.id, a.especie, a.origem_chave
              FROM rc_assentos a
             WHERE a.origem = 'EOFICIO'
               AND NOT EXISTS (SELECT 1 FROM rc_pessoas p
-                               WHERE p.assento_id = a.id)""")]
+                               WHERE p.assento_id = a.id)
+            ORDER BY a.id""")
     if not faltam:
         return 0
 
@@ -1632,10 +1805,11 @@ def _pessoas_que_faltam(con: sqlite3.Connection, acervo: sqlite3.Connection,
         if _tem_tabela(acervo, "tbFiliacao"):
             # AS LINHAS SE LEEM TODAS ANTES DE DECIDIR, porque a decisao e do
             # PAR e nao de cada uma: um assento tem um pai e uma mae.
-            da_filiacao = [dict(x) for x in acervo.execute(
-                "SELECT * FROM tbFiliacao WHERE intChaveRegistro=? "
-                "AND intTipoRegistro=? ORDER BY intCodigoFiliacao",
-                (chave, tipo))]
+            da_filiacao = list(_ler_acervo(
+                acervo,
+                "SELECT * FROM tbFiliacao WHERE intChaveRegistro=:chave "
+                "AND intTipoRegistro=:tipo ORDER BY intCodigoFiliacao",
+                {"chave": chave, "tipo": tipo}))
             papeis, duvidosos = papeis_da_filiacao(tipo, da_filiacao)
             if duvidosos:
                 carga.avisar(
@@ -1650,17 +1824,18 @@ def _pessoas_que_faltam(con: sqlite3.Connection, acervo: sqlite3.Connection,
                     ordem = (1 if papel.startswith("PAI") else 2)
                     if papel.endswith("NUBENTE2"):
                         ordem += 2
-                    linhas.append((papel, dict(r), ordem))
+                    linhas.append((papel, r, ordem))
         if tipo == 1 and _tem_tabela(acervo, "tbProgenitor"):
-            for r in acervo.execute(
-                    "SELECT * FROM tbProgenitor WHERE intChaveRegistro=? "
+            for r in _ler_acervo(
+                    acervo,
+                    "SELECT * FROM tbProgenitor WHERE intChaveRegistro=:chave "
                     "AND intTipoRegistro=1 ORDER BY intCodigoProgenitor",
-                    (chave,)):
+                    {"chave": chave}):
                 papel = PAPEL_DO_PROGENITOR.get(
                     (_inteiro(r["intCodigoFiliacao"]), _sexo(r["strSexo"])))
                 if papel:
                     linhas.append(
-                        (papel, dict(r),
+                        (papel, r,
                          2 + (_inteiro(r["intCodigoProgenitor"]) or 0)))
 
         for papel, r, ordem in linhas:
@@ -1668,14 +1843,16 @@ def _pessoas_que_faltam(con: sqlite3.Connection, acervo: sqlite3.Connection,
             if not nome:
                 continue
             documento = _txt(r.get("strCPF"))
-            con.execute(
-                """INSERT OR IGNORE INTO rc_pessoas(assento_id, papel, nome,
+            bd.escrever(
+                """INSERT INTO rc_pessoas(assento_id, papel, nome,
                        nome_norm, sexo, documento_tipo, documento_numero,
                        profissao, nacionalidade, naturalidade_cidade,
                        naturalidade_uf, data_nascimento, estado_civil,
                        endereco, bairro, cidade, uf, cep, ordem, origem,
                        origem_chave, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'EOFICIO',?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                           %s,%s,%s,'EOFICIO',%s,%s)
+                   ON CONFLICT DO NOTHING""",
                 (a["id"], papel, nome, _norm(nome), _sexo(r.get("strSexo")),
                  "CPF" if documento else None, documento,
                  _txt(r.get("strProfissao")), _txt(r.get("strNacionalidade")),
@@ -1827,8 +2004,8 @@ ORDEM_DO_PAPEL: dict[str, int] = {
 # a coluna `intCodigoIBGE`, e ela diz que o `4` de la («Outros») e o `5` daqui,
 # e que o `5` («Ignorado») e o `9`.
 #
-#   ANTES DE DEDUZIR UM DE-PARA, PROCURE A COLUNA QUE JA O TEM. Ela estava a um
-#   `PRAGMA table_info` de distancia, e mandar o codigo de la direto faria o
+#   ANTES DE DEDUZIR UM DE-PARA, PROCURE A COLUNA QUE JA O TEM. Ela estava a
+#   uma lista de colunas de distancia, e mandar o codigo de la direto faria o
 #   IBGE recusar o trimestre inteiro.
 #
 # O GEMEO SE COMPOE de duas colunas: `bitGemeos` diz se houve, e
@@ -1884,13 +2061,15 @@ def _campos_do_ibge_que_faltam(con: sqlite3.Connection,
     ainda nao tem AQUELE campo, e por isso funciona na primeira rodada e na
     centesima.
     """
+    bd = banco(con)
     postos: dict[str, int] = {}
 
     # ---- o de-para do local do nascimento, lido do proprio acervo
     de_para: dict[int, int] = {}
     if _tem_tabela(acervo, "tbRCPN_LocalNascimento"):
-        for r in acervo.execute(
-                "SELECT id, intCodigoIBGE FROM tbRCPN_LocalNascimento"):
+        for r in _ler_acervo(
+                acervo, "SELECT id, intCodigoIBGE FROM tbRCPN_LocalNascimento "
+                        "ORDER BY id"):
             de, para = _inteiro(r["id"]), _inteiro(r["intCodigoIBGE"])
             if de is not None and para is not None:
                 de_para[de] = para
@@ -1906,25 +2085,26 @@ def _campos_do_ibge_que_faltam(con: sqlite3.Connection,
     # escrevi: pedir coluna que nao existe **estoura**, e derruba a carga
     # inteira. O E-Oficio mudou de versao ao longo dos anos.
     if pedidas_nasc:
-        faltam = [dict(r) for r in con.execute(
+        faltam = bd.ler(
             "SELECT id, origem_chave FROM rc_assentos"
             " WHERE origem='EOFICIO' AND especie='NASCIMENTO'"
             "   AND ibge_local_nascimento IS NULL AND ibge_gemeo IS NULL"
-            "   AND dnv IS NULL")]
+            "   AND dnv IS NULL ORDER BY id")
         n = 0
         for a in faltam:
             chave = _chave_do_acervo(a["origem_chave"])
             if chave is None:
                 continue
-            r = acervo.execute(
+            r = _um_do_acervo(
+                acervo,
                 f"SELECT {pedidas_nasc} FROM tbRegistroNascimento"
-                f" WHERE intChave=?", (chave,)).fetchone()
+                f" WHERE intChave=:chave ORDER BY intChave LIMIT 1",
+                {"chave": chave})
             if r is None:
                 continue
-            r = dict(r)
-            con.execute(
-                "UPDATE rc_assentos SET ibge_local_nascimento=?, ibge_gemeo=?,"
-                " dnv=? WHERE id=?",
+            bd.escrever(
+                "UPDATE rc_assentos SET ibge_local_nascimento=%s, ibge_gemeo=%s,"
+                " dnv=%s WHERE id=%s",
                 (de_para.get(_inteiro(r.get("loc"))),
                  _gemeo_do_ibge(r.get("g"), r.get("qg")),
                  _txt(r.get("dnv")), a["id"]))
@@ -1939,22 +2119,23 @@ def _campos_do_ibge_que_faltam(con: sqlite3.Connection,
             "tm": "strTipoMorte"}).items()
     ) if _tem_tabela(acervo, "tbRegistroObito") else ""
     if pedidas_obito:
-        faltam = [dict(r) for r in con.execute(
+        faltam = bd.ler(
             "SELECT id, origem_chave FROM rc_assentos"
             " WHERE origem='EOFICIO' AND especie='OBITO'"
             "   AND numero_do IS NULL AND ibge_local_obito IS NULL"
-            "   AND ibge_natureza_obito IS NULL")]
+            "   AND ibge_natureza_obito IS NULL ORDER BY id")
         n = 0
         for a in faltam:
             chave = _chave_do_acervo(a["origem_chave"])
             if chave is None:
                 continue
-            r = acervo.execute(
-                f"SELECT {pedidas_obito} FROM tbRegistroObito WHERE intChave=?",
-                (chave,)).fetchone()
+            r = _um_do_acervo(
+                acervo,
+                f"SELECT {pedidas_obito} FROM tbRegistroObito"
+                f" WHERE intChave=:chave ORDER BY intChave LIMIT 1",
+                {"chave": chave})
             if r is None:
                 continue
-            r = dict(r)
             # A NATUREZA DO OBITO ESTAVA NO ACERVO, e eu escrevi aqui, uma
             # hora antes, que ela NAO estava.
             #
@@ -1971,9 +2152,9 @@ def _campos_do_ibge_que_faltam(con: sqlite3.Connection,
             #   de-para do local do nascimento que estava em `intCodigoIBGE`.
             #   **Nao achar a coluna que eu procurei nao prova que o dado nao
             #   existe** — prova que eu procurei pelo nome errado.
-            con.execute(
-                "UPDATE rc_assentos SET numero_do=?, ibge_local_obito=?,"
-                " ibge_natureza_obito=? WHERE id=?",
+            bd.escrever(
+                "UPDATE rc_assentos SET numero_do=%s, ibge_local_obito=%s,"
+                " ibge_natureza_obito=%s WHERE id=%s",
                 (_txt(r.get("d")), _local_do_obito(r.get("l")),
                  NATUREZA_DO_OBITO_POR_PALAVRA.get(_norm_ibge(r.get("tm"))),
                  a["id"]))
@@ -2025,30 +2206,33 @@ def _o_proprio_assento_que_falta(con: sqlite3.Connection,
     """
     from pt_schema import normalizar_nome as _norm
 
+    bd = banco(con)
     postos: dict[str, int] = {}
     for especie, papeis in O_PROPRIO_ASSENTO.items():
         tipo = TIPO_DO_ACERVO.get(especie)
         for papel, tabela, de_para in papeis:
             if not _tem_tabela(acervo, tabela) or not tipo:
                 continue
-            faltam = [dict(r) for r in con.execute(
+            faltam = bd.ler(
                 "SELECT a.id, a.nome, a.origem_chave, a.data_ato, "
                 "       a.data_fato FROM rc_assentos a "
-                "WHERE a.origem = 'EOFICIO' AND a.especie = ? "
+                "WHERE a.origem = 'EOFICIO' AND a.especie = %s "
                 "AND NOT EXISTS (SELECT 1 FROM rc_pessoas p "
-                "WHERE p.assento_id = a.id AND p.papel = ?)",
-                (especie, papel))]
-            entraram, ultimo = 0, None
+                "WHERE p.assento_id = a.id AND p.papel = %s) "
+                "ORDER BY a.id",
+                (especie, papel))
+            entraram = 0
             for a in faltam:
                 chave = _chave_do_acervo(a["origem_chave"])
                 if chave is None:
                     continue
-                r = acervo.execute(
-                    'SELECT * FROM "%s" WHERE intChave = ?' % tabela,
-                    (chave,)).fetchone()
-                if r is None:
+                bruto = _um_do_acervo(
+                    acervo,
+                    f"SELECT * FROM {tabela} WHERE intChave = :chave "
+                    f"ORDER BY intChave LIMIT 1",
+                    {"chave": chave})
+                if bruto is None:
                     continue
-                bruto = dict(r)
                 # SO O QUE AQUELE ACERVO TEM. Coluna ausente vira campo vazio,
                 # e nao carga derrubada: o E-Oficio mudou de versao ao longo
                 # dos anos, e nem todo acervo traz as mesmas colunas.
@@ -2076,15 +2260,16 @@ def _o_proprio_assento_que_falta(con: sqlite3.Connection,
                                  {"papel": papel, "nome": nome,
                                   "no_acervo": nascimento, "ato": limite})
                     nascimento = None
-                cur = con.execute(
-                    "INSERT OR IGNORE INTO rc_pessoas(assento_id, papel, nome,"
+                novo = bd.escrever(
+                    "INSERT INTO rc_pessoas(assento_id, papel, nome,"
                     " nome_norm, nome_pos, sexo, documento_tipo,"
                     " documento_numero, profissao, nacionalidade,"
                     " naturalidade_cidade, naturalidade_uf, naturalidade_pais,"
                     " data_nascimento, estado_civil, endereco, bairro, cidade,"
                     " uf, ordem, origem, origem_chave, criado_em)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
-                    "'EOFICIO',?,?)",
+                    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                    "%s,%s,%s,%s,%s,'EOFICIO',%s,%s)"
+                    " ON CONFLICT DO NOTHING RETURNING id",
                     (a["id"], papel, nome, _norm(nome), v.get("nome_pos"),
                      _sexo(v.get("sexo")),
                      "CPF" if documento else None, documento,
@@ -2100,17 +2285,16 @@ def _o_proprio_assento_que_falta(con: sqlite3.Connection,
                      # o acervo real. `rc_pessoas` tem `UNIQUE(origem,
                      # origem_chave)`, e os dois nubentes moram na MESMA linha
                      # do acervo: com a chave do assento, o NUBENTE1 entrava e
-                     # o NUBENTE2 era ignorado em silencio pelo OR IGNORE.
+                     # o NUBENTE2 era ignorado em silencio pelo conflito.
                      #
                      # A carga dizia «entraram 20» e a tabela tinha ZERO. O
                      # papel entra na chave porque e ele que distingue as duas
                      # pessoas dentro do mesmo registro.
                      f'{a["origem_chave"]}:{papel}', agora))
                 # CONTAR O QUE ENTROU, E NAO O QUE SE TENTOU. E a regra da
-                # casa (o `lastrowid` mudar, e nao o `rowcount`), e foi ela que
+                # casa (o `RETURNING id` do que entrou de fato), e foi ela que
                 # deixou o defeito acima visivel em vez de calado.
-                if cur.lastrowid and cur.lastrowid != ultimo:
-                    ultimo = cur.lastrowid
+                if novo:
                     entraram += 1
             if entraram:
                 postos[papel] = postos.get(papel, 0) + entraram
@@ -2138,28 +2322,30 @@ def _ligadas_que_faltam(con: sqlite3.Connection, acervo: sqlite3.Connection,
     """
     from pt_schema import normalizar_nome as _norm
 
+    bd = banco(con)
     postos: dict[str, int] = {}
     for papel, tabela, coluna, tipos in PESSOAS_LIGADAS_AO_ASSENTO:
         if not _tem_tabela(acervo, tabela):
             continue
-        faltam = [dict(r) for r in con.execute(
+        faltam = bd.ler(
             """SELECT a.id, a.especie, a.origem_chave
                  FROM rc_assentos a
                 WHERE a.origem = 'EOFICIO'
                   AND NOT EXISTS (SELECT 1 FROM rc_pessoas p
-                                   WHERE p.assento_id = a.id AND p.papel = ?)""",
-            (papel,))]
+                                   WHERE p.assento_id = a.id AND p.papel = %s)
+                ORDER BY a.id""",
+            (papel,))
         entraram = 0
         for a in faltam:
             chave = _chave_do_acervo(a["origem_chave"])
             tipo = TIPO_DO_ACERVO.get(a["especie"])
             if chave is None or tipo not in tipos:
                 continue
-            for ordem, r in enumerate(acervo.execute(
-                    f"SELECT * FROM [{tabela}] WHERE [{coluna}]=? "
-                    f"AND intTipoRegistro=? ORDER BY intChave",
-                    (chave, tipo)), start=1):
-                r = dict(r)
+            for ordem, r in enumerate(_ler_acervo(
+                    acervo,
+                    f"SELECT * FROM {tabela} WHERE {coluna}=:chave "
+                    f"AND intTipoRegistro=:tipo ORDER BY intChave",
+                    {"chave": chave, "tipo": tipo}), start=1):
                 nome = _txt(r.get("strNome"))
                 if not nome:
                     # 105 dos 225 declarantes do acervo estao sem nome. Linha
@@ -2171,13 +2357,15 @@ def _ligadas_que_faltam(con: sqlite3.Connection, acervo: sqlite3.Connection,
                 # documento sem.
                 documento = "".join(
                     ch for ch in str(r.get("strCPF") or "") if ch.isdigit()) or None
-                con.execute(
-                    """INSERT OR IGNORE INTO rc_pessoas(assento_id, papel, nome,
+                bd.escrever(
+                    """INSERT INTO rc_pessoas(assento_id, papel, nome,
                            nome_norm, sexo, documento_tipo, documento_numero,
                            profissao, nacionalidade, naturalidade_cidade,
                            naturalidade_uf, endereco, bairro, cidade, uf,
                            ordem, origem, origem_chave, criado_em)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'EOFICIO',?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                               %s,'EOFICIO',%s,%s)
+                       ON CONFLICT DO NOTHING""",
                     (a["id"], papel, nome, _norm(nome), _sexo(r.get("strSexo")),
                      "CPF" if documento else None, documento,
                      _txt(r.get("strProfissao")),
@@ -2208,7 +2396,7 @@ def carregar_rcpj_rtd(con: sqlite3.Connection, acervo: sqlite3.Connection,
     if not _tem_tabela(acervo, "tbRegistroTD"):
         raise CargaError("O acervo não tem `tbRegistroTD`.")
 
-    def mapear(r: sqlite3.Row) -> dict | None:
+    def mapear(r: dict) -> dict | None:
         tipo = (_txt(r["strTipoRegistro"]) or "").upper()
         if tipo not in ("TD", "PJ"):
             carga.rejeitar(r["intChave"],
@@ -2236,8 +2424,7 @@ def carregar_rcpj_rtd(con: sqlite3.Connection, acervo: sqlite3.Connection,
             "criado_em": agora,
         }
 
-    def ato_de_registro(c: sqlite3.Connection, registro_id: int,
-                        r: sqlite3.Row) -> None:
+    def ato_de_registro(c, registro_id: int, r: dict) -> None:
         """O ato de REGISTRO, com a folha e a data que o acervo tem.
 
         A CERTIDAO COBROU ISTO. A certidao de inteiro teor do RCPJ/RTD diz
@@ -2251,17 +2438,17 @@ def carregar_rcpj_rtd(con: sqlite3.Connection, acervo: sqlite3.Connection,
         digitada na certidao, e nao guardada. Sai a folha inicial, que e o que
         existe.
         """
-        c.execute(
+        c.escrever(
             """INSERT INTO rg_atos(registro_id, tipo, folha, numero_ordem,
                    data_ato, teor, origem, origem_chave, criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (registro_id, "REGISTRO", _inteiro(r["strFolha_DE"]),
              _inteiro(r["intNumeroRegistro"]),
              _data(r["dtmData"]) or agora,
              _txt(r["memInteiroTeorSemFormatacao"]) or _txt(r["memInteiroTeor"]),
              "EOFICIO", f"tbRegistroTD:{r['intChave']}:REGISTRO", agora))
 
-    linhas = acervo.execute("SELECT * FROM tbRegistroTD ORDER BY intChave")
+    linhas = _ler_acervo(acervo, "SELECT * FROM tbRegistroTD ORDER BY intChave")
     return _executar(con, carga, "rg_registros", linhas, mapear,
                      lambda r: r["intChave"], depois=ato_de_registro)
 
@@ -2289,7 +2476,7 @@ def carregar_registro_auxiliar(con: sqlite3.Connection,
     if not _tem_tabela(acervo, "LivroAuxiliar"):
         raise CargaError("O acervo não tem `LivroAuxiliar`.")
 
-    def mapear(r: sqlite3.Row) -> dict | None:
+    def mapear(r: dict) -> dict | None:
         numero = _inteiro(r["Registro"])
         if not numero:
             carga.rejeitar(r["Id"], "registro sem número", dict(r))
@@ -2329,16 +2516,16 @@ def carregar_registro_auxiliar(con: sqlite3.Connection,
             "criado_em": agora,
         }
 
-    def ato_de_registro(c: sqlite3.Connection, registro_id: int,
-                        r: sqlite3.Row) -> None:
-        c.execute(
+    def ato_de_registro(c, registro_id: int, r: dict) -> None:
+        c.escrever(
             """INSERT INTO ra_atos(registro_id, tipo, numero, data_ato, teor,
                    origem, origem_chave, criado_em)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
             (registro_id, "R", 1, _data(r["Data"]) or agora, _txt(r["Teor"]),
              "EOFICIO", f"LivroAuxiliar:{r['Id']}:R1", agora))
 
-    linhas = acervo.execute("SELECT * FROM LivroAuxiliar ORDER BY Registro")
+    linhas = _ler_acervo(acervo,
+                         "SELECT * FROM LivroAuxiliar ORDER BY Registro, Id")
     carga = _executar(con, carga, "ra_registros", linhas, mapear,
                       lambda r: r["Id"], depois=ato_de_registro)
 
@@ -2412,9 +2599,12 @@ def _ortoga_da_parte(acervo: sqlite3.Connection, parte_id: Any,
         return None
     if chave in cache:
         return cache[chave]
-    linha = acervo.execute(
+    linha = _um_do_acervo(
+        acervo,
         "SELECT strTipoPessoa, strNome, PJ_RazaoSocial, strCPF, strCNPJ "
-        "FROM tbOrtoga WHERE CAST(intCodigo AS INTEGER)=?", (chave,)).fetchone()
+        "FROM tbOrtoga WHERE CAST(intCodigo AS INTEGER)=:chave "
+        "ORDER BY intCodigo LIMIT 1",
+        {"chave": chave})
     dado = None
     if linha is not None:
         tipo = (_txt(linha["strTipoPessoa"]) or "").upper()
@@ -2453,9 +2643,11 @@ def _papel_da_qualificacao(acervo: sqlite3.Connection, qual_id: Any,
         return None
     if chave in cache:
         return cache[chave]
-    linha = acervo.execute(
+    linha = _um_do_acervo(
+        acervo,
         "SELECT strDescricao FROM tbQualificacaoPartes "
-        "WHERE CAST(intChave AS INTEGER)=?", (chave,)).fetchone()
+        "WHERE CAST(intChave AS INTEGER)=:chave ORDER BY intChave LIMIT 1",
+        {"chave": chave})
     cache[chave] = _txt(linha["strDescricao"]) if linha is not None else None
     return cache[chave]
 
@@ -2475,6 +2667,7 @@ def _partes_e_averbacoes_do_livro3(con: sqlite3.Connection,
       - e, para a parte da averbacao, a propria pessoa (nome + documento +
         papel) ja presente no registro.
     """
+    bd = banco(con)
     numeros: dict[str, int] = {}
 
     def contar(rotulo: str, quantos: int = 1) -> None:
@@ -2482,29 +2675,30 @@ def _partes_e_averbacoes_do_livro3(con: sqlite3.Connection,
 
     # 1. de `origem_chave` para o id que o registro tem aqui.
     por_chave: dict[str, int] = {}
-    for r in con.execute("SELECT id, origem_chave FROM ra_registros "
-                         "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL"):
+    for r in bd.ler("SELECT id, origem_chave FROM ra_registros "
+                    "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL "
+                    "ORDER BY id"):
         chave = _txt(r["origem_chave"])
         if chave and chave.startswith("LivroAuxiliar:"):
             por_chave[chave] = int(r["id"])
 
-    partes_ja = {_txt(r["origem_chave"]) for r in con.execute(
+    partes_ja = {_txt(r["origem_chave"]) for r in bd.ler(
         "SELECT origem_chave FROM ra_partes "
-        "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL")}
-    atos_ja = {_txt(r["origem_chave"]): int(r["id"]) for r in con.execute(
+        "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL ORDER BY id")}
+    atos_ja = {_txt(r["origem_chave"]): int(r["id"]) for r in bd.ler(
         "SELECT id, origem_chave FROM ra_atos "
-        "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL")}
+        "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL ORDER BY id")}
 
     # O QUE A FICHA JA MOSTRA, por registro: (nome, documento, papel). Serve
     # para nao por a mesma pessoa duas vezes — e e por pessoa, e nao por
     # `ParteId`, porque quem le a ficha le o nome.
     pessoas_do_registro: dict[int, set[tuple]] = {}
     if por_chave:
-        ids = tuple(sorted(set(por_chave.values())))
-        marcadores = ",".join("?" * len(ids))
-        for r in con.execute(
-                f"SELECT registro_id, nome, documento_numero, papel "
-                f"FROM ra_partes WHERE registro_id IN ({marcadores})", ids):
+        ids = sorted(set(por_chave.values()))
+        for r in bd.ler(
+                "SELECT registro_id, nome, documento_numero, papel "
+                "FROM ra_partes WHERE registro_id = ANY(%s) ORDER BY id",
+                (ids,)):
             pessoas_do_registro.setdefault(int(r["registro_id"]), set()).add(
                 (_txt(r["nome"]), _txt(r["documento_numero"]), _txt(r["papel"])))
 
@@ -2542,11 +2736,11 @@ def _partes_e_averbacoes_do_livro3(con: sqlite3.Connection,
                 contar("partes das averbações que já eram parte do registro "
                        "(não repetidas)")
                 return False
-        con.execute(
+        bd.escrever(
             """INSERT INTO ra_partes(registro_id, ato_id, nome,
                    documento_tipo, documento_numero, papel, origem,
                    origem_chave)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
             (registro_id, ato_id, pessoa["nome"], pessoa["documento_tipo"],
              pessoa["documento_numero"], papel, "EOFICIO", chave))
         partes_ja.add(chave)
@@ -2556,7 +2750,8 @@ def _partes_e_averbacoes_do_livro3(con: sqlite3.Connection,
 
     # 2. AS PARTES DO REGISTRO.
     if _tem_tabela(acervo, "LivroAuxiliarPartes"):
-        for r in acervo.execute(
+        for r in _ler_acervo(
+                acervo,
                 "SELECT * FROM LivroAuxiliarPartes "
                 "ORDER BY CAST(LivroAuxiliarId AS INTEGER), CAST(Id AS INTEGER)"):
             registro_id = por_chave.get(f"LivroAuxiliar:{r['LivroAuxiliarId']}")
@@ -2578,9 +2773,11 @@ def _partes_e_averbacoes_do_livro3(con: sqlite3.Connection,
     registro_da_averbacao: dict[int, int] = {}   # av_id -> registro_id aqui
     tem_averbacao = _tem_tabela(acervo, "LivroAuxiliarAverbacao")
     if tem_averbacao:
-        for r in acervo.execute(
+        for r in _ler_acervo(
+                acervo,
                 "SELECT * FROM LivroAuxiliarAverbacao "
-                "ORDER BY CAST(LivroAuxiliarId AS INTEGER), CAST(Averbacao AS INTEGER)"):
+                "ORDER BY CAST(LivroAuxiliarId AS INTEGER), "
+                "CAST(Averbacao AS INTEGER), CAST(Id AS INTEGER)"):
             registro_id = por_chave.get(f"LivroAuxiliar:{r['LivroAuxiliarId']}")
             if registro_id is None:
                 contar("averbações de registro que não está no Livro 3 do sistema")
@@ -2592,16 +2789,17 @@ def _partes_e_averbacoes_do_livro3(con: sqlite3.Connection,
                 ids_das_averbacoes[int(r["Id"])] = atos_ja[chave]
                 continue
             numero = _inteiro(r["Averbacao"]) or 1
-            cur = con.execute(
-                """INSERT OR IGNORE INTO ra_atos(registro_id, tipo, numero,
+            novo = bd.escrever(
+                """INSERT INTO ra_atos(registro_id, tipo, numero,
                        data_ato, teor, origem, origem_chave, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (registro_id, "AV", numero, _data(r["Data"]) or agora,
                  _txt(r["Teor"]), "EOFICIO", chave, agora))
-            if cur.rowcount:
+            if novo:
                 contar("averbações")
-                atos_ja[chave] = int(cur.lastrowid)
-                ids_das_averbacoes[int(r["Id"])] = int(cur.lastrowid)
+                atos_ja[chave] = int(novo[0]["id"])
+                ids_das_averbacoes[int(r["Id"])] = int(novo[0]["id"])
             else:
                 # O `UNIQUE(registro_id, tipo, numero)` barrou: ja ha um AV-N
                 # nesta ficha por outro caminho. O ato do balcao fica como
@@ -2609,9 +2807,9 @@ def _partes_e_averbacoes_do_livro3(con: sqlite3.Connection,
                 # acervo nao entra, com o motivo contado.
                 contar("averbações que não entraram: o número do ato já estava "
                        "ocupado nesta ficha")
-                linha = con.execute(
-                    "SELECT id FROM ra_atos WHERE registro_id=? AND tipo='AV' "
-                    "AND numero=?", (registro_id, numero)).fetchone()
+                linha = bd.um(
+                    "SELECT id FROM ra_atos WHERE registro_id=%s AND tipo='AV' "
+                    "AND numero=%s ORDER BY id LIMIT 1", (registro_id, numero))
                 if linha is not None:
                     ids_das_averbacoes[int(r["Id"])] = int(linha["id"])
     else:
@@ -2620,7 +2818,8 @@ def _partes_e_averbacoes_do_livro3(con: sqlite3.Connection,
     # 4. AS PARTES DAS AVERBACOES — ligadas ao ato delas, e sem repetir o que
     # o registro ja mostra.
     if tem_averbacao and _tem_tabela(acervo, "LivroAuxiliarAverbacaoPartes"):
-        for r in acervo.execute(
+        for r in _ler_acervo(
+                acervo,
                 "SELECT * FROM LivroAuxiliarAverbacaoPartes "
                 "ORDER BY CAST(LivroAuxiliarAverbacaoId AS INTEGER), "
                 "CAST(Id AS INTEGER)"):
@@ -2649,7 +2848,7 @@ def previa_registro_auxiliar(con: sqlite3.Connection,
 
     Já importado = mesma `origem_chave` com `origem='EOFICIO'`, em
     `ra_registros`, `ra_atos` e `ra_partes`. São as mesmas chaves que o
-    `INSERT OR IGNORE` usa para não duplicar.
+    `ON CONFLICT DO NOTHING` usa para não duplicar.
 
     As PARTES contadas aqui são as do registro; as das averbações que já são
     parte dele não entram na conta de propósito, porque a carga também não as
@@ -2666,20 +2865,22 @@ def previa_registro_auxiliar(con: sqlite3.Connection,
     entram` é o que sobra depois de tirar as sem pessoa, e `faltam` é a soma que
     o botão mostra — o número que o clique realmente alcança.
     """
-    ja_no_cartorio = int(con.execute(
-        "SELECT COUNT(*) FROM ra_registros WHERE origem='EOFICIO' "
-        "AND origem_chave LIKE 'LivroAuxiliar:%'").fetchone()[0])
-    existentes = {_txt(r["origem_chave"]) for r in con.execute(
+    bd = banco(con)
+    ja_no_cartorio = int(bd.valor(
+        "SELECT COUNT(*) AS n FROM ra_registros WHERE origem='EOFICIO' "
+        "AND origem_chave ILIKE 'LivroAuxiliar:%'"))
+    existentes = {_txt(r["origem_chave"]) for r in bd.ler(
         "SELECT origem_chave FROM ra_registros "
-        "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL")}
+        "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL ORDER BY id")}
 
     total_no_acervo = total_novos = total_ja = 0
     amostras_novos: list[dict] = []
     amostras_ja: list[dict] = []
     if _tem_tabela(acervo, "LivroAuxiliar"):
-        for r in acervo.execute(
+        for r in _ler_acervo(
+                acervo,
                 "SELECT Id, Registro, Titulo, Numero, Data FROM LivroAuxiliar "
-                "ORDER BY CAST(Registro AS INTEGER)"):
+                "ORDER BY CAST(Registro AS INTEGER), Id"):
             total_no_acervo += 1
             chave = f"LivroAuxiliar:{r['Id']}"
             amostra = {
@@ -2698,34 +2899,36 @@ def previa_registro_auxiliar(con: sqlite3.Connection,
                 if len(amostras_novos) < amostras:
                     amostras_novos.append(amostra)
 
-    atos_ja = {_txt(r["origem_chave"]) for r in con.execute(
+    atos_ja = {_txt(r["origem_chave"]) for r in bd.ler(
         "SELECT origem_chave FROM ra_atos "
-        "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL")}
+        "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL ORDER BY id")}
     averbacoes = averbacoes_novas = 0
     if _tem_tabela(acervo, "LivroAuxiliarAverbacao"):
-        for r in acervo.execute("SELECT Id FROM LivroAuxiliarAverbacao"):
+        for r in _ler_acervo(
+                acervo, "SELECT Id FROM LivroAuxiliarAverbacao ORDER BY Id"):
             averbacoes += 1
             if f"LivroAuxiliarAverbacao:{r['Id']}" not in atos_ja:
                 averbacoes_novas += 1
 
-    partes_ja = {_txt(r["origem_chave"]) for r in con.execute(
+    partes_ja = {_txt(r["origem_chave"]) for r in bd.ler(
         "SELECT origem_chave FROM ra_partes "
-        "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL")}
+        "WHERE origem='EOFICIO' AND origem_chave IS NOT NULL ORDER BY id")}
     partes = partes_novas = partes_sem_pessoa = 0
     tem_ortoga = _tem_tabela(acervo, "tbOrtoga")
     if _tem_tabela(acervo, "LivroAuxiliarPartes"):
-        for r in acervo.execute(
-                "SELECT Id, ParteId FROM LivroAuxiliarPartes"):
+        for r in _ler_acervo(
+                acervo, "SELECT Id, ParteId FROM LivroAuxiliarPartes ORDER BY Id"):
             partes += 1
             if f"LivroAuxiliarPartes:{r['Id']}" not in partes_ja:
                 partes_novas += 1
         if tem_ortoga:
-            partes_sem_pessoa = int(acervo.execute(
-                """SELECT COUNT(*) FROM LivroAuxiliarPartes p
+            partes_sem_pessoa = int(_um_do_acervo(
+                acervo,
+                """SELECT COUNT(*) n FROM LivroAuxiliarPartes p
                     WHERE NOT EXISTS (SELECT 1 FROM tbOrtoga o
                                        WHERE CAST(o.intCodigo AS INTEGER)
                                            = CAST(p.ParteId AS INTEGER))"""
-            ).fetchone()[0])
+            )["n"])
         else:
             # SEM O `tbOrtoga` NÃO HÁ DE ONDE TIRAR NOME, e a carga não grava
             # parte nenhuma (há teste que a manda recusar). Contar «0 sem
@@ -2782,6 +2985,7 @@ def carregar_papel(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
     dela. Entra como usada, com o protocolo anotado — que e a verdade que o
     acervo tem.
     """
+    bd = banco(con)
     carga = Carga("papel")
     if not _tem_tabela(acervo, "tbPapelMoedaRCPN"):
         raise CargaError("O acervo não tem `tbPapelMoedaRCPN`.")
@@ -2789,35 +2993,43 @@ def carregar_papel(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
     # A REMESSA DO ACERVO VIRA UMA REMESSA AQUI, e as folhas dela penduram
     # nela. Sem isso a folha nao teria de onde ter vindo.
     remessas: dict[Any, int] = {}
-    for linha in acervo.execute(
+    for linha in _ler_acervo(
+            acervo,
             """SELECT intCodigoRemessa r, strSerie s, COUNT(*) n,
                       MIN(CAST(strCodigo AS INTEGER)) de,
                       MAX(CAST(strCodigo AS INTEGER)) ate
-                 FROM tbPapelMoedaRCPN GROUP BY 1, 2"""):
-        cur = con.execute(
+                 FROM tbPapelMoedaRCPN GROUP BY 1, 2 ORDER BY 1, 2"""):
+        novo = bd.escrever(
             """INSERT INTO pp_remessas(fornecedor, serie, tipo, codigo_de,
                    codigo_ate, quantas, observacao, recebida_em, recebida_por)
-               VALUES ('ARPENBRASIL',?,?,?,?,?,?,?,'CARGA')""",
+               VALUES ('ARPENBRASIL',%s,%s,%s,%s,%s,%s,%s,'CARGA')
+               RETURNING id""",
             (linha["s"], "Papel de Segurança - ARPEN", str(linha["de"]),
              str(linha["ate"]), int(linha["n"]),
              f"Remessa {linha['r']} do E-Ofício, trazida pela carga.", agora))
-        remessas[(linha["r"], linha["s"])] = int(cur.lastrowid)
+        remessas[(linha["r"], linha["s"])] = int(novo[0]["id"])
 
-    for r in acervo.execute("SELECT * FROM tbPapelMoedaRCPN ORDER BY intChave"):
+    for r in _ler_acervo(acervo,
+                         "SELECT * FROM tbPapelMoedaRCPN ORDER BY intChave"):
         carga.lidos += 1
         codigo = _txt(r["strCodigo"])
         if not codigo:
             carga.rejeitar(r["intChave"], "folha sem número no acervo", dict(r))
             continue
-        if con.execute("SELECT 1 FROM pp_folhas WHERE codigo=?",
-                       (codigo,)).fetchone():
+        if bd.um("SELECT 1 AS um FROM pp_folhas WHERE codigo=%s",
+                 (codigo,)):
             carga.repetidos += 1
             continue
         usada = bool(r["bitUtilizado"])
-        con.execute(
+        # `ON CONFLICT (codigo) DO NOTHING`: a folha que OUTRA carga gravou
+        # entre o olhar de cima e este INSERT conta como repetida, em vez de
+        # estourar a carga inteira no `UNIQUE` de `pp_folhas.codigo`. No
+        # SQLite a escrita unica fazia isso por si.
+        novo = bd.escrever(
             """INSERT INTO pp_folhas(codigo, serie, remessa_id, situacao,
                    tabela, ato_id, usada_em, usada_por, criada_em)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               ON CONFLICT (codigo) DO NOTHING RETURNING id""",
             (codigo, _txt(r["strSerie"]) or None,
              remessas.get((r["intCodigoRemessa"], r["strSerie"])) or
              next(iter(remessas.values()), None),
@@ -2827,6 +3039,9 @@ def carregar_papel(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
              # esta num ato que talvez nao seja o dela.
              None, None, agora if usada else None,
              _txt(r["strProtocoloGeral"]) or None if usada else None, agora))
+        if not novo:
+            carga.repetidos += 1
+            continue
         carga.inseridos += 1
         carga.contar("usadas" if usada else "em_branco")
     return carga
@@ -2863,18 +3078,20 @@ def carregar_selos(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
     entra como CIVIL, que e a palavra do selador. Traduzi-la para «RCPN» aqui
     faria o razao historico falar uma lingua e o razao novo, outra.
     """
+    bd = banco(con)
     carga = Carga("selos")
     if not _tem_tabela(acervo, "tbSeloIndividual"):
         raise CargaError("O acervo não tem `tbSeloIndividual`.")
 
-    for r in acervo.execute(
+    for r in _ler_acervo(
+            acervo,
             """SELECT * FROM tbSeloIndividual
                 WHERE strSelo IS NOT NULL AND TRIM(strSelo) <> ''
                 ORDER BY intChave"""):
         carga.lidos += 1
         numero = _txt(r["strSelo"])
-        if con.execute("SELECT 1 FROM sd_selos WHERE numero=?",
-                       (numero,)).fetchone():
+        if bd.um("SELECT 1 AS um FROM sd_selos WHERE numero=%s",
+                 (numero,)):
             carga.repetidos += 1
             continue
         # `_txt` DEVOLVE None PARA VAZIO, e nem todo selo do acervo tem
@@ -2887,11 +3104,16 @@ def carregar_selos(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
         atribuicao = partes[1].upper() if len(partes) > 1 else None
         cancelado = bool(r["bitSeloCancelado"])
         usado = bool(r["bitUtilizado"])
-        con.execute(
+        # `ON CONFLICT (numero) DO NOTHING`: o selo que OUTRA carga gravou
+        # entre o olhar de cima e este INSERT conta como repetido, em vez de
+        # estourar a carga inteira no `UNIQUE` de `sd_selos.numero`. No
+        # SQLite a escrita unica fazia isso por si.
+        novo = bd.escrever(
             """INSERT INTO sd_selos(numero, texto, caminho, atribuicao,
                    referencia, data_geracao, obtido_em, obtido_por, usado_em,
                    cancelado_em, motivo_cancelamento, qr_token, ambiente)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'PRODUCAO')""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'PRODUCAO')
+               ON CONFLICT (numero) DO NOTHING RETURNING id""",
             (numero, _txt(r["strTextoSelo"]) or None, caminho or None,
              atribuicao, f"tbSeloIndividual:{r['intChave']}",
              _txt(r["dtmdata_selo"]) or None, _txt(r["dtmData"]) or agora,
@@ -2905,9 +3127,12 @@ def carregar_selos(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
              # LIDO COM `.get`, e nao pelo indice: acervo de outra versao do
              # E-Oficio pode nao ter a coluna, e pedir coluna que nao existe
              # **estoura** e derruba a carga inteira.
-             _txt(dict(r).get("strvalorQRCode")) or None))
+             _txt(r.get("strvalorQRCode")) or None))
+        if not novo:
+            carga.repetidos += 1
+            continue
         carga.inseridos += 1
-        if _txt(dict(r).get("strvalorQRCode")):
+        if _txt(r.get("strvalorQRCode")):
             carga.contar("com_token_de_qr")
         if cancelado:
             carga.contar("cancelados")
@@ -2920,8 +3145,8 @@ def carregar_selos(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
     # A COLUNA DO SELO NAO SE CHAMA `selo` EM TODA TABELA — conserto de
     # 16/09/2026, por ordem do oficial, e o defeito era CALADO.
     #
-    #   Esta consulta procurava `a.selo` escrito a mao. Medido em 16/09,
-    #   `PRAGMA table_info` das dezesseis tabelas de ato: **quatro nao tem
+    #   Esta consulta procurava `a.selo` escrito a mao. Medido em 16/09, a
+    #   lista de colunas das dezesseis tabelas de ato: **quatro nao tem
     #   essa coluna** —
     #
     #     | tabela            | a coluna e |
@@ -2940,7 +3165,7 @@ def carregar_selos(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
     #   `ato_selado.COLUNA_DO_SELO` existe exatamente para isto, e ja era
     #   consultada pelo outro lado do ciclo (`vincular_ao_ato`, desde 27/08).
     #   E a MESMA familia do defeito de `registrar_selo_obtido_a_mao`,
-    #   consertado em 15/09: `UPDATE {tabela} SET selo=?` com a coluna
+    #   consertado em 15/09: `UPDATE {tabela} SET selo=...` com a coluna
     #   escrita a mao.
     #
     #   E O `except` CONTINUA, porque a razao dele e outra: instalacao que
@@ -2948,20 +3173,24 @@ def carregar_selos(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
     for tabela in sorted(ato_selado.TABELAS_DE_ATO):
         coluna = ato_selado.COLUNA_DO_SELO.get(tabela, "selo")
         try:
-            cur = con.execute(
+            # `ORDER BY a.id LIMIT 1`: o PostgreSQL recusa subconsulta que
+            # devolve mais de uma linha, e o SQLite pegava a primeira.
+            amarrados = len(bd.escrever(
                 f"""UPDATE sd_selos
-                       SET tabela=?,
+                       SET tabela=%s,
                            ato_id=(SELECT a.id FROM {tabela} a
-                                    WHERE a.{coluna} = sd_selos.numero),
-                           usado_em=COALESCE(usado_em, ?)
+                                    WHERE a.{coluna} = sd_selos.numero
+                                    ORDER BY a.id LIMIT 1),
+                           usado_em=COALESCE(usado_em, %s)
                      WHERE ato_id IS NULL
                        AND EXISTS (SELECT 1 FROM {tabela} a
-                                    WHERE a.{coluna} = sd_selos.numero)""",
-                (tabela, agora))
+                                    WHERE a.{coluna} = sd_selos.numero)
+                    RETURNING sd_selos.id""",
+                (tabela, agora)))
         except sqlite3.Error:
             continue      # tabela de ato que este banco ainda nao tem
-        if cur.rowcount:
-            carga.contar(f"amarrados_a_{tabela}", cur.rowcount)
+        if amarrados:
+            carga.contar(f"amarrados_a_{tabela}", amarrados)
     return carga
 
 
@@ -2995,14 +3224,19 @@ def carregar_ibge(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
     cartorio na tela, a carga nao o sobrescreve com o do acervo: o que a pessoa
     respondeu vale mais que o que o programa antigo guardava.
     """
+    bd = banco(con)
     carga = Carga("ibge")
     if not _tem_tabela(acervo, "tbMunicipio"):
         raise CargaError("O acervo não tem `tbMunicipio`.")
 
-    for linha in acervo.execute(
+    # A ORDEM IMPORTA: ha codigo repetido, e a ultima linha lida e a que fica.
+    # `id` e a ordem em que o E-Oficio gravou; sem ela, vale a do arquivo.
+    ordem = " ORDER BY id" if _tem_coluna(acervo, "tbMunicipio", "id") else ""
+    for linha in _ler_acervo(
+            acervo,
             """SELECT strEstado uf, intEstadoIBGE cod_uf,
                       strMunicipio nome, intMunicipioIBGE cod
-                 FROM tbMunicipio"""):
+                 FROM tbMunicipio""" + ordem):
         carga.lidos += 1
         nome = (linha["nome"] or "").strip()
         uf = (linha["uf"] or "").strip().upper()
@@ -3020,18 +3254,25 @@ def carregar_ibge(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
             continue
         codigo = int(linha["cod"])
         cod_uf = int(linha["cod_uf"] or (codigo // 100000))
-        # OR REPLACE, E NAO OR IGNORE: o IBGE renomeia municipio, e rodar a
+        # ATUALIZA, E NAO IGNORA: o IBGE renomeia municipio, e rodar a
         # carga de novo tem de trazer o nome novo. Mas quem ja estava conta
         # como REPETIDO, e nao como inserido — senao a segunda rodada diria
         # que trouxe 5.570 municipios que ja estavam la, e o numero da tela
         # deixaria de significar «o que entrou agora».
-        ja = con.execute("SELECT 1 FROM ib_municipios WHERE codigo_ibge=?",
-                         (codigo,)).fetchone()
-        con.execute(
-            """INSERT OR REPLACE INTO ib_municipios
+        ja = bd.um("SELECT 1 AS um FROM ib_municipios WHERE codigo_ibge=%s",
+                   (codigo,))
+        # A linha inteira se reescreve, como o REPLACE do SQLite fazia. A
+        # chave e o proprio codigo do IBGE, e ninguem aponta para ela por id.
+        bd.escrever(
+            """INSERT INTO ib_municipios
                    (codigo_ibge, codigo_uf, codigo_mun, uf, nome, nome_norm,
                     origem, criado_em)
-               VALUES (?,?,?,?,?,?,'ACERVO',?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,'ACERVO',%s)
+               ON CONFLICT (codigo_ibge) DO UPDATE SET
+                   codigo_uf=excluded.codigo_uf,
+                   codigo_mun=excluded.codigo_mun, uf=excluded.uf,
+                   nome=excluded.nome, nome_norm=excluded.nome_norm,
+                   origem=excluded.origem, criado_em=excluded.criado_em""",
             (codigo, cod_uf, f"{codigo % 100000:05d}", uf, nome,
              IB.normalizar_nome(nome), agora))
         if ja:
@@ -3041,9 +3282,12 @@ def carregar_ibge(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
 
     # ------------------------------------------------ o cabecalho da casa
     if _tem_tabela(acervo, "tbIBGE_Propriedades"):
-        p = acervo.execute(
+        p = _um_do_acervo(
+            acervo,
             "SELECT strUF, strMunicipio, strDistrito, strCodigo "
-            "FROM tbIBGE_Propriedades LIMIT 1").fetchone()
+            "FROM tbIBGE_Propriedades"
+            + _ordem_da_primeira_linha(acervo, "tbIBGE_Propriedades")
+            + " LIMIT 1")
         if p:
             for chave, valor in (("ibge_uf", p["strUF"]),
                                  ("ibge_municipio", p["strMunicipio"]),
@@ -3052,13 +3296,14 @@ def carregar_ibge(con: sqlite3.Connection, acervo: sqlite3.Connection, *,
                 valor = (valor or "").strip()
                 if not valor:
                     continue
-                ja = con.execute(
-                    "SELECT value FROM settings WHERE key=?", (chave,)).fetchone()
+                ja = bd.um(
+                    "SELECT value FROM settings WHERE key=%s", (chave,))
                 if ja and (ja["value"] or "").strip():
                     carga.contar("cabecalho_ja_respondido")
                     continue
-                con.execute(
-                    "INSERT OR REPLACE INTO settings(key, value) VALUES (?,?)",
+                bd.escrever(
+                    "INSERT INTO settings(key, value) VALUES (%s,%s) "
+                    "ON CONFLICT (key) DO UPDATE SET value=excluded.value",
                     (chave, valor))
                 carga.contar("cabecalho_do_acervo")
     else:
@@ -3098,11 +3343,15 @@ def instalar_acervo_de_sqlite(origem: str | Path, destino: str | Path) -> dict:
         raise CargaError(f"Não achei o arquivo do acervo em {origem}.")
     # Conferir que abre como SQLite antes de substituir o da casa.
     try:
-        probe = sqlite3.connect(f"file:{origem}?mode=ro", uri=True)
-        probe.row_factory = sqlite3.Row
-        n = probe.execute(
-            "SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table'"
-        ).fetchone()["n"]
+        # O arquivo e SQLite de verdade, e o catalogo e o dele
+        # (`sqlite_schema` e o nome novo do mesmo catalogo). PELA PORTA DO
+        # SQLITE, e nao pelo `sqlite3.connect` (LH09): o arquivo enviado com o
+        # nome do banco da casa ia ao PostgreSQL, achava as tabelas da casa, e
+        # a copia logo abaixo punha a marca vazia do banco no lugar do acervo.
+        probe = banco_pg.conectar_sqlite(origem)
+        n = _um_do_acervo(
+            probe, "SELECT COUNT(*) AS n FROM sqlite_schema WHERE type='table'"
+        )["n"]
         probe.close()
     except sqlite3.Error as erro:
         raise CargaError(
@@ -3144,9 +3393,18 @@ def instalar_acervo_de_zip(arquivo_zip: str | Path, destino: str | Path,
     if extraindo.exists():
         shutil.rmtree(extraindo)
     extraindo.mkdir(parents=True)
+    # A EXTRAÇÃO TEM TETO (LX12, LS02 M2, 19/10/2026): o `extractall` abria o
+    # que viesse, e um ZIP pequeno que se abre em gigabytes enchia o disco da
+    # pasta de dados — onde mora o banco. O teto é o do acervo, maior que o
+    # geral, porque a exportação de verdade é grande; e o disco livre se
+    # confere antes de abrir.
+    import tetos_de_entrada as TETO
     try:
         with zipfile.ZipFile(arquivo_zip, "r") as zf:
-            zf.extractall(extraindo)
+            TETO.extrair(zf, extraindo, teto_bytes=TETO.valor("acervo_bytes"))
+    except TETO.TetoExcedido as erro:
+        shutil.rmtree(extraindo, ignore_errors=True)
+        raise CargaError(str(erro)) from erro
     except zipfile.BadZipFile as erro:
         raise CargaError(
             f"O arquivo não é um ZIP válido: {erro}") from erro
@@ -3396,16 +3654,17 @@ def _contadores_da_propriedade_do_rcpn(
     if acervo is None or not _tem_tabela(acervo, "tbPropriedadeRCPN"):
         return {}
     try:
-        acervo.row_factory = sqlite3.Row
-        linha = acervo.execute("SELECT * FROM tbPropriedadeRCPN").fetchone()
+        linha = _um_do_acervo(
+            acervo, "SELECT * FROM tbPropriedadeRCPN"
+                    + _ordem_da_primeira_linha(acervo, "tbPropriedadeRCPN")
+                    + " LIMIT 1")
     except sqlite3.Error:
         return {}
     if not linha:
         return {}
-    colunas = set(linha.keys())
     achados: dict[str, int] = {}
     for serie, coluna in CONTADOR_NA_PROPRIEDADE_DO_RCPN.items():
-        if coluna not in colunas:
+        if coluna not in linha:
             continue
         valor = _inteiro(linha[coluna])
         if valor:
@@ -3424,23 +3683,25 @@ def _divergencias_do_contador_do_rcpn(
     if acervo is None or not _tem_tabela(acervo, "tbPropriedadeRCPN"):
         return []
     try:
-        acervo.row_factory = sqlite3.Row
-        prop = acervo.execute("SELECT * FROM tbPropriedadeRCPN").fetchone()
+        prop = _um_do_acervo(
+            acervo, "SELECT * FROM tbPropriedadeRCPN"
+                    + _ordem_da_primeira_linha(acervo, "tbPropriedadeRCPN")
+                    + " LIMIT 1")
     except sqlite3.Error:
         return []
     if not prop:
         return []
-    colunas = set(prop.keys())
+    bd = banco(con)
 
     achadas: list[dict] = []
     for serie, coluna in CONTADOR_DECLARADO_PELO_EOFICIO.items():
-        if coluna not in colunas:
+        if coluna not in prop:
             continue
         declarado = _inteiro(prop[coluna])
         if not declarado:
             continue
-        linha = con.execute("SELECT * FROM nu_numeracao WHERE serie=?",
-                            (serie,)).fetchone()
+        linha = bd.um("SELECT * FROM nu_numeracao WHERE serie=%s",
+                      (serie,))
         if not linha:
             continue
         maior = _inteiro(linha["maior_em_uso"])
@@ -3465,6 +3726,10 @@ def semear_numeracao(con: sqlite3.Connection, *, agora: str,
     contador semeado é série em que o primeiro ato nasceria com número 1, e
     isso tem de estar dito e não descoberto depois.
     """
+    bd = banco(con)
+    # O MESMO ASSUNTO DA NUMERACAO do nucleo (`escrituracao`): ler o maior e
+    # gravar o proximo nao pode cruzar com quem esta numerando ato novo.
+    bd.travar("nu_numeracao.proximo")
     semeadas, pendentes = [], []
     fontes = list(FONTES_DO_CONTADOR)
     # O QUE VEM DE `tbPropriedadeRCPN` ENTRA COMO MAIS UMA FONTE, e nao como um
@@ -3472,23 +3737,24 @@ def semear_numeracao(con: sqlite3.Connection, *, agora: str,
     # que o resto. Duas maneiras de semear divergiriam no primeiro conserto.
     do_acervo = _contadores_da_propriedade_do_rcpn(acervo)
     for serie, maior in do_acervo.items():
-        fontes.append((serie, f"SELECT {int(maior)} m"))
+        fontes.append((serie, f"SELECT {int(maior)} AS m"))
     for serie, consulta in fontes:
-        linha = con.execute(consulta).fetchone()
+        linha = bd.um(consulta)
         maior = _inteiro(linha["m"] if linha else None)
         if not maior:
             continue
-        atual = con.execute("SELECT * FROM nu_numeracao WHERE serie=?",
-                            (serie,)).fetchone()
+        atual = bd.um("SELECT * FROM nu_numeracao WHERE serie=%s",
+                      (serie,))
         if atual and int(atual["proximo"]) > maior:
             continue                      # já está à frente; não se baixa
-        con.execute(
+        bd.escrever(
             """INSERT INTO nu_numeracao(serie, proximo, maior_em_uso,
                    semeado_de, fixado_em, fixado_por, observacao)
-               VALUES (?,?,?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(serie) DO UPDATE SET
                    proximo=excluded.proximo,
-                   maior_em_uso=MAX(COALESCE(maior_em_uso,0), excluded.maior_em_uso),
+                   maior_em_uso=GREATEST(COALESCE(nu_numeracao.maior_em_uso,0),
+                                         excluded.maior_em_uso),
                    semeado_de=excluded.semeado_de,
                    fixado_em=excluded.fixado_em,
                    observacao=excluded.observacao""",

@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% from '_cancelar_certidao.html' import formulario as cancelar_certidao,
                                           motivo as motivo_do_cancelamento %}
+{% from '_selar_certidao_do_ri.html' import botao as selar_certidao %}
 {% block title %}Certidões — Registro de Imóveis{% endblock %}
 {% block heading %}<h1>Certidões</h1>{% endblock %}
 {% block content %}
@@ -9,7 +10,7 @@
 <section class="cards">
   <div class="stat"><strong>{{ resumo.total }}</strong><small>certidões no livro</small></div>
   <div class="stat"><strong>{{ resumo.emitidas }}</strong><small>emitidas neste sistema</small></div>
-  <div class="stat"><strong>{{ resumo.importadas }}</strong><small>importadas do E-Ofício</small></div>
+  <div class="stat"><strong>{{ resumo.importadas }}</strong><small>importadas do sistema antigo</small></div>
   <div class="stat"><strong>{{ resumo.canceladas }}</strong><small>canceladas</small></div>
 </section>
 
@@ -24,7 +25,7 @@
 
 {% if resumo.importadas %}
 <div class="notice warning">
-  As {{ resumo.importadas }} certidões vindas do E-Ofício entraram <strong>sem o teor</strong> —
+  As {{ resumo.importadas }} certidões vindas do sistema antigo entraram <strong>sem o teor</strong> —
   a coluna do texto não veio na exportação. Constam no livro como histórico, mas não podem
   ser reimpressas aqui. Elas são identificadas pelo <strong>protocolo e via</strong>, como no
   sistema de origem: lá a numeração não era única por ano, e renumerá-las aqui seria inventar dado.
@@ -54,7 +55,7 @@
           <td>{% if r.validade_ate %}{{ fmt_date(r.validade_ate) }}
                 {% if r.validade_ate < hoje %}<br><span class="badge alta">vencida</span>{% endif %}
               {% else %}—{% endif %}</td>
-          <td>{% if r.origem == 'EOFICIO' %}<span class="badge">E-Ofício</span>{% else %}<span class="badge ok">Sistema</span>{% endif %}</td>
+          <td>{% if r.origem == 'EOFICIO' %}<span class="badge">Sistema antigo</span>{% else %}<span class="badge ok">Sistema</span>{% endif %}</td>
           <td>
             {# O BOTÃO DE CANCELAR FALTAVA, e a rota existia desde sempre.
                Certidão emitida por engano — matrícula errada, requerente
@@ -68,6 +69,7 @@
                #81. Ele é o mesmo na ficha da matrícula, e duas cópias
                divergiriam no primeiro conserto. #}
             {% if r.cancelada %}<span class="badge critica">Cancelada</span>
+            {% elif r.id in aguardando_selo and not r.selo_texto %}{{ selar_certidao(r, csrf_token, CODIGO_BASE_DA_CERTIDAO) }}
             {% elif r.corpo %}<a href="{{ url_for('ri_certidao_odt', certidao_id=r.id) }}">PDF</a>
               · <a href="{{ url_for('ri_certidao_odt', certidao_id=r.id, formato='odt') }}">.odt</a>{% endif %}
             {{ cancelar_certidao(r, csrf_token, user) }}

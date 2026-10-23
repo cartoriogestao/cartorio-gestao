@@ -96,6 +96,18 @@
           da ficha no quadro «Digitalização oficial deste registro», acima.
           {% endif %}</small></label>
       {% endif %}
+      {#  O BREVE RELATO DO RCPJ (LD05; CN-MA art. 420, II): a situação atual
+          da pessoa jurídica, pelos dados da ficha — gravados no quadro
+          «Dados da pessoa jurídica», acima. Os atos marcados abaixo não
+          entram nele. #}
+      {% if atribuicao == 'RCPJ_RTD' and registro.serie == 'PJ_A' %}
+      <label style="grid-column:1/-1">Forma da certidão
+        <select name="forma">
+          <option value="INTEIRO_TEOR" selected>Inteiro teor — o que o livro diz</option>
+          <option value="BREVE_RELATO">Breve relato — a situação atual da pessoa
+            jurídica{% if not registro.pj_dados_em %} (faltam os dados da ficha){% endif %}</option>
+        </select></label>
+      {% endif %}
       {% if atos %}
       <div style="grid-column:1/-1; margin-top:4px">
         <small><strong>Atos a incluir na certidão</strong>

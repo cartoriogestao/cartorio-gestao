@@ -33,6 +33,8 @@ O QUE ESTE MÓDULO MUDA NO NOSSO DESENHO, E É UMA CORREÇÃO
 from __future__ import annotations
 
 import sqlite3
+
+from bd_nativo import banco
 from typing import Any
 
 SIM = "SIM"
@@ -169,17 +171,16 @@ def assentos_com_marca_por_perguntar(con: sqlite3.Connection,
     2009 para perguntar se o falecido era eleitor. A pergunta é do balcão, com
     o declarante na frente — depois dele, ela não se responde mais.
     """
-    con.row_factory = sqlite3.Row
     colunas = ", ".join(f"a.{c}" for c in CHAVES)
     fora = []
-    for linha in con.execute(
+    for linha in banco(con).ler(
             f"""SELECT a.id, a.especie, a.numero, a.nome, a.data_ato, {colunas}
                   FROM rc_assentos a
-                 WHERE UPPER(COALESCE(a.especie,'')) = ?
+                 WHERE UPPER(COALESCE(a.especie,'')) = %s
                    AND COALESCE(a.origem,'') <> 'EOFICIO'
                    AND COALESCE(a.situacao,'ATIVO') <> 'CANCELADO'
               ORDER BY a.data_ato IS NULL, a.data_ato DESC, a.id DESC
-                 LIMIT ?""", (ESPECIE, limite)):
+                 LIMIT %s""", (ESPECIE, limite)):
         d = dict(linha)
         faltam = o_que_falta_perguntar(d)
         if faltam:
@@ -203,9 +204,10 @@ def responder(con: sqlite3.Connection, assento_id: int, respostas: dict) -> dict
 
     Recebe a conexão de fora, dentro de `db.transaction()`, como manda a casa.
     """
-    atual = con.execute(
-        f"SELECT {', '.join(CHAVES)} FROM rc_assentos WHERE id=?",
-        (assento_id,)).fetchone()
+    bd = banco(con)
+    atual = bd.um(
+        f"SELECT {', '.join(CHAVES)} FROM rc_assentos WHERE id=%s",
+        (assento_id,))
     if atual is None:
         raise MarcaError(f"Não achei o assento nº {assento_id}.")
     atual = dict(atual)
@@ -222,10 +224,10 @@ def responder(con: sqlite3.Connection, assento_id: int, respostas: dict) -> dict
         if novo != velho:
             mudou[chave] = novo
     if mudou:
-        con.execute(
+        bd.escrever(
             "UPDATE rc_assentos SET "
-            + ", ".join(f"{c}=?" for c in mudou)
-            + " WHERE id=?", (*mudou.values(), assento_id))
+            + ", ".join(f"{c}=%s" for c in mudou)
+            + " WHERE id=%s", (*mudou.values(), assento_id))
     return {"mudou": mudou, "quantas": len(mudou)}
 
 
@@ -238,8 +240,8 @@ def apagar_resposta(con: sqlite3.Connection, assento_id: int,
     que quer desfazer — não é o silêncio de um campo que não veio.
     """
     marca(chave)                                   # recusa chave inventada
-    con.execute(f"UPDATE rc_assentos SET {chave}=? WHERE id=?",
-                (NAO_PERGUNTADO, assento_id))
+    banco(con).escrever(f"UPDATE rc_assentos SET {chave}=%s WHERE id=%s",
+                        (NAO_PERGUNTADO, assento_id))
 
 
 def eleitores_a_comunicar(con: sqlite3.Connection,
@@ -250,12 +252,11 @@ def eleitores_a_comunicar(con: sqlite3.Connection,
     assento que o falecido votava; por isso esta lista mede exatamente o que
     foi perguntado, e a de cima mede o que não foi.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT id, especie, numero, nome, data_ato, data_fato
              FROM rc_assentos
-            WHERE UPPER(COALESCE(especie,'')) = ?
+            WHERE UPPER(COALESCE(especie,'')) = %s
               AND UPPER(COALESCE(obito_eleitor,'')) = 'SIM'
               AND COALESCE(situacao,'ATIVO') <> 'CANCELADO'
-         ORDER BY data_ato IS NULL, data_ato DESC, id DESC LIMIT ?""",
-        (ESPECIE, limite))]
+         ORDER BY data_ato IS NULL, data_ato DESC, id DESC LIMIT %s""",
+        (ESPECIE, limite))

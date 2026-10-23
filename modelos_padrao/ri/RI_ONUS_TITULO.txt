@@ -1,0 +1,1 @@
+Certidão {{ onus }} de ônus e {{ acoes }} de registro de ações reais e pessoais reipersecutórias

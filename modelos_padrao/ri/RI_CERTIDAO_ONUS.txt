@@ -1,0 +1,15 @@
+
+<p align="center"><b>ÔNUS E GRAVAMES</b></p>
+{% if resultado_onus == "POSITIVA" %}
+<p><b>HÁ ÔNUS REAIS</b> sobre o imóvel objeto desta matrícula, assim caracterizados:</p>
+{% for a in itens_onus %}<p><b>{{ "abcdefghijklmnopqrstuvwxyz"[loop.index0] if loop.index0 < 26 else loop.index }}) {{ a.rotulo }}</b>{% if a.natureza %} ({{ a.natureza }}){% endif %}{% if a.data_extenso %}, {{ a.data_extenso }}{% elif a.data_ato %}, {{ a.data_ato }}{% endif %}{% if a.texto %} — {{ a.texto }}{% endif %}</p>{% endfor %}
+{% else %}
+<p><b>NADA CONSTA</b> de ônus reais, gravames ou restrições sobre o imóvel objeto desta matrícula, até a presente data: o imóvel encontra-se <b>LIVRE E DESEMBARAÇADO DE TODOS OS ÔNUS REAIS, LEGAIS OU CONVENCIONAIS</b>.</p>
+{% endif %}
+<p align="center"><b>AÇÕES REAIS E PESSOAIS REIPERSECUTÓRIAS</b></p>
+{% if resultado_acoes == "POSITIVA" %}
+<p><b>CONSTA REGISTRO</b> de citação de ação real ou pessoal reipersecutória relativa ao imóvel, assim caracterizado:</p>
+{% for a in itens_acoes %}<p><b>{{ "abcdefghijklmnopqrstuvwxyz"[loop.index0] if loop.index0 < 26 else loop.index }}) {{ a.rotulo }}</b>{% if a.natureza %} ({{ a.natureza }}){% endif %}{% if a.data_extenso %}, {{ a.data_extenso }}{% elif a.data_ato %}, {{ a.data_ato }}{% endif %}{% if a.texto %} — {{ a.texto }}{% endif %}</p>{% endfor %}
+{% else %}
+<p><b>NÃO CONSTA</b> registro de citação de ações reais ou pessoais reipersecutórias relativas ao imóvel objeto desta matrícula.</p>
+{% endif %}

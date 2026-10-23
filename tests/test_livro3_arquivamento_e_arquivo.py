@@ -11,6 +11,9 @@ import ato_selado as AS
 import ra_digitalizacao as DIGI
 import ra_selo as RS
 from app import create_app
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 
 def _csrf(html):
@@ -53,7 +56,7 @@ def _ato(db, *, prenotacao="11546", selo="ATO123"):
 
 
 def test_seletor_inclui_subitem_1645_vigente_sem_limite_30():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.executescript("""
         CREATE TABLE cx_servicos(codigo INTEGER, codigo_tj TEXT,
             descricao TEXT, ativo INTEGER);

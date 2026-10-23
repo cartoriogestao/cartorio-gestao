@@ -44,6 +44,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 from fr_schema import so_digitos, tipo_do_documento
 
 # A NORMALIZACAO DO NOME SE IMPORTA DO PROTESTO, e nao se copia — a direcao
@@ -126,16 +127,17 @@ def incluir(con: sqlite3.Connection, *, papel: str, origem: str, agora: str,
             "Alerta sem procedência não se avalia, e vira alerta que se "
             "ignora.")
 
-    cur = con.execute(
+    novo = banco(con).escrever(
         """INSERT INTO fr_alertas(nome, nome_norm, documento, documento_tipo,
                papel, origem, origem_data, origem_orgao, observacao,
                situacao, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,'ATIVO',?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'ATIVO',%s,%s)
+           RETURNING id""",
         (limpo_nome, normalizar_nome(limpo_nome), digitos,
          tipo_do_documento(digitos), papel, origem.strip(),
          (origem_data or None), (origem_orgao or "").strip() or None,
-         (observacao or "").strip() or None, agora, usuario))
-    return {"alerta_id": int(cur.lastrowid), "papel": papel,
+         (observacao or "").strip() or None, agora, usuario))[0]["id"]
+    return {"alerta_id": int(novo), "papel": papel,
             "nome": limpo_nome, "documento": digitos}
 
 
@@ -155,9 +157,9 @@ def inativar(con: sqlite3.Connection, alerta_id: int, *, motivo: str,
         raise FraudeError(
             "Escreva por que este nome sai da lista. Comunicação de fraude é "
             "documento: o que ela gerou não se apaga sem explicação.")
-    con.execute(
-        """UPDATE fr_alertas SET situacao='INATIVO', inativado_motivo=?,
-               inativado_em=?, inativado_por=? WHERE id=?""",
+    banco(con).escrever(
+        """UPDATE fr_alertas SET situacao='INATIVO', inativado_motivo=%s,
+               inativado_em=%s, inativado_por=%s WHERE id=%s""",
         (texto, agora, usuario, int(alerta_id)))
     return {"alerta_id": int(alerta_id), "motivo": texto}
 
@@ -168,9 +170,9 @@ def reativar(con: sqlite3.Connection, alerta_id: int, *, agora: str,
     linha = ler(con, alerta_id)
     if not linha:
         raise FraudeError(f"Alerta {alerta_id} não encontrado.")
-    con.execute(
+    banco(con).escrever(
         """UPDATE fr_alertas SET situacao='ATIVO', inativado_em=NULL,
-               inativado_por=NULL WHERE id=?""", (int(alerta_id),))
+               inativado_por=NULL WHERE id=%s""", (int(alerta_id),))
     return {"alerta_id": int(alerta_id)}
 
 
@@ -196,14 +198,14 @@ def conferir(con: sqlite3.Connection, *, nome: Any = None,
 
     condicoes, valores = [], []
     if d:
-        condicoes.append("documento = ?")
+        condicoes.append("documento = %s")
         valores.append(d)
     if n:
-        condicoes.append("nome_norm = ?")
+        condicoes.append("nome_norm = %s")
         valores.append(n)
 
     achados = []
-    for r in con.execute(
+    for r in banco(con).ler(
             f"""SELECT * FROM fr_alertas
                  WHERE situacao='ATIVO' AND ({' OR '.join(condicoes)})
                  ORDER BY id""", valores):
@@ -262,23 +264,24 @@ def registrar_conferencia(con: sqlite3.Connection, alerta_id: int, *,
             f"{', '.join(DECISOES)}.")
     if not ler(con, alerta_id):
         raise FraudeError(f"Alerta {alerta_id} não encontrado.")
-    cur = con.execute(
+    novo = banco(con).escrever(
         """INSERT INTO fr_conferencias(alerta_id, onde, referencia,
                nome_conferido, documento_conferido, decisao, observacao,
                conferido_em, conferido_por)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (int(alerta_id), onde, referencia, nome, so_digitos(documento),
-         decisao, (observacao or "").strip() or None, agora, usuario))
-    return {"conferencia_id": int(cur.lastrowid), "decisao": decisao}
+         decisao, (observacao or "").strip() or None, agora, usuario))[0]["id"]
+    return {"conferencia_id": int(novo), "decisao": decisao}
 
 
 # ---------------------------------------------------------------- consultas
 
 
-def ler(con: sqlite3.Connection, alerta_id: int) -> sqlite3.Row | None:
+def ler(con: sqlite3.Connection, alerta_id: int) -> dict | None:
     """Um alerta. Só LÊ."""
-    return con.execute("SELECT * FROM fr_alertas WHERE id=?",
-                       (int(alerta_id),)).fetchone()
+    return banco(con).um("SELECT * FROM fr_alertas WHERE id=%s",
+                         (int(alerta_id),))
 
 
 def listar(con: sqlite3.Connection, *, situacao: str = "ATIVO",
@@ -288,23 +291,23 @@ def listar(con: sqlite3.Connection, *, situacao: str = "ATIVO",
     A BUSCA PROCURA NOME **E** DOCUMENTO com o mesmo texto: quem está no balcão
     tem uma coisa só na mão, e não sabe se é nome ou documento até digitar.
     """
-    condicoes, valores = ["situacao = ?"], [situacao]
+    condicoes, valores = ["situacao = %s"], [situacao]
     texto = (busca or "").strip()
     if texto:
         n = normalizar_nome(texto)
         d = so_digitos(texto)
-        alternativas = ["nome_norm LIKE ?"]
+        alternativas = ["nome_norm ILIKE %s"]
         valores_busca: list[Any] = [f"%{n}%"]
         if d:
-            alternativas.append("documento LIKE ?")
+            alternativas.append("documento ILIKE %s")
             valores_busca.append(f"%{d}%")
         condicoes.append("(" + " OR ".join(alternativas) + ")")
         valores.extend(valores_busca)
     return [dict(r) | {"papel_rotulo": PAPEIS.get(r["papel"], {}).get(
                 "rotulo", r["papel"])}
-            for r in con.execute(
+            for r in banco(con).ler(
                 f"""SELECT * FROM fr_alertas WHERE {' AND '.join(condicoes)}
-                     ORDER BY id DESC LIMIT ?""", (*valores, int(limite)))]
+                     ORDER BY id DESC LIMIT %s""", (*valores, int(limite)))]
 
 
 def conferencias(con: sqlite3.Connection, *, alerta_id: int | None = None,
@@ -312,25 +315,26 @@ def conferencias(con: sqlite3.Connection, *, alerta_id: int | None = None,
     """O rastro das conferências, do mais novo. Só LÊ."""
     onde, valores = "", []
     if alerta_id is not None:
-        onde = "WHERE c.alerta_id = ?"
+        onde = "WHERE c.alerta_id = %s"
         valores.append(int(alerta_id))
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         f"""SELECT c.*, a.nome, a.documento, a.papel
               FROM fr_conferencias c
               LEFT JOIN fr_alertas a ON a.id = c.alerta_id
               {onde}
-             ORDER BY c.id DESC LIMIT ?""", (*valores, int(limite)))]
+             ORDER BY c.id DESC LIMIT %s""", (*valores, int(limite)))]
 
 
 def contagem(con: sqlite3.Connection) -> dict:
     """Quantos nomes na lista, e quantas conferências. Só LÊ — para o alto da
     tela e para o painel."""
-    ativos = con.execute(
-        "SELECT COUNT(*) c FROM fr_alertas WHERE situacao='ATIVO'").fetchone()[0]
-    por_papel = {r["papel"]: r["n"] for r in con.execute(
-        """SELECT papel, COUNT(*) n FROM fr_alertas WHERE situacao='ATIVO'
-            GROUP BY papel""")}
-    conferidas = con.execute("SELECT COUNT(*) c FROM fr_conferencias").fetchone()[0]
+    bd = banco(con)
+    ativos = bd.valor(
+        "SELECT count(*) AS c FROM fr_alertas WHERE situacao='ATIVO'")
+    por_papel = {r["papel"]: r["n"] for r in bd.ler(
+        """SELECT papel, count(*) AS n FROM fr_alertas WHERE situacao='ATIVO'
+            GROUP BY papel ORDER BY papel""")}
+    conferidas = bd.valor("SELECT count(*) AS c FROM fr_conferencias")
     return {"ativos": int(ativos or 0),
             "por_papel": {k: int(v) for k, v in por_papel.items()},
             "conferencias": int(conferidas or 0)}
@@ -376,28 +380,8 @@ def _fontes_existentes(con: sqlite3.Connection) -> list[dict]:
     criadas — e uma consulta a tabela que não existe derruba a tela inteira
     por causa de uma atribuição que a casa não usa.
     """
-    tabelas = {r[0] for r in con.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'")}
-    return [f for f in ONDE_MORA_PESSOA if f["tabela"] in tabelas]
-
-
-def _com_normalizador(con: sqlite3.Connection) -> None:
-    """Põe `nome_da_casa()` dentro do SQLite, para a consulta poder usá-la.
-
-    É a MESMA função que grava `pt_devedores.nome_norm` e
-    `nt_ato_partes.nome_norm` — e é isso que faz a busca achar a mesma coisa
-    nas tabelas que têm a coluna e nas que não têm.
-
-    Sem ela sobraria `LOWER()`, que no SQLite é ASCII: `JOSÉ` viraria `josÉ` e
-    não `jose`. No Registro Civil quase todo nome tem acento, e a busca por
-    nome simplesmente não acharia ninguém — que é o pior defeito possível
-    numa lista de atenção.
-
-    Registrar em toda chamada é barato e não deixa estado pendurado numa
-    conexão que outro módulo vá reaproveitar sem saber.
-    """
-    con.create_function("nome_da_casa", 1,
-                        lambda v: normalizar_nome(v) or "")
+    bd = banco(con)
+    return [f for f in ONDE_MORA_PESSOA if bd.tem_tabela(f["tabela"])]
 
 
 def atos_da_pessoa(con: sqlite3.Connection, *, nome: Any = None,
@@ -411,38 +395,36 @@ def atos_da_pessoa(con: sqlite3.Connection, *, nome: Any = None,
     d = so_digitos(documento)
     if not n and not d:
         return []
-    _com_normalizador(con)
+    bd = banco(con)
     saida = []
-    for f in _fontes_existentes(con):
+    for f in _fontes_existentes(bd):
         condicoes, valores = [], []
         if n:
             # ONDE A TABELA TEM `nome_norm`, COMPARA-SE COM ELA — é a coluna
             # que existe justamente para isto.
             #
-            # ONDE NÃO HÁ, A PRÓPRIA FUNÇÃO DA CASA VAI PARA DENTRO DO SQLite,
-            # registrada em `_com_normalizador`. `LOWER()` e `UPPER()` do
-            # SQLite são ASCII — `JOSÉ` vira `josÉ`, e não `jose` —, e no
-            # Registro Civil quase todo nome tem acento: comparar com `LOWER()`
-            # simplesmente não acharia ninguém.
-            #
-            # Isto NÃO é acoplamento ao SQLite: é o contrário. A regra continua
-            # em Python, numa função só, e o banco apenas a chama.
+            # ONDE NÃO HÁ, A PRÓPRIA FUNÇÃO DA CASA É CHAMADA NO BANCO:
+            # `nome_da_casa()` mora no PostgreSQL (`banco_pg_funcoes.sql`) e
+            # faz o mesmo que `normalizar_nome`. `LOWER()` sozinho não tira o
+            # acento — `JOSÉ` vira `josé`, e não `jose` —, e no Registro Civil
+            # quase todo nome tem acento: comparar com `LOWER()` simplesmente
+            # não acharia ninguém.
             if f["nome_norm"]:
-                condicoes.append(f"{f['nome_norm']} = ?")
+                condicoes.append(f"{f['nome_norm']} = %s")
             else:
-                condicoes.append(f"nome_da_casa({f['nome']}) = ?")
+                condicoes.append(f"nome_da_casa({f['nome']}) = %s")
             valores.append(n)
         if d and f["documento"]:
             condicoes.append(
                 f"REPLACE(REPLACE(REPLACE({f['documento']},'.',''),"
-                f"'-',''),'/','') = ?")
+                f"'-',''),'/','') = %s")
             valores.append(d)
         if not condicoes:
             continue
         try:
-            for r in con.execute(
-                    f"""SELECT id, {f['nome']} nome FROM {f['tabela']}
-                         WHERE {' OR '.join(condicoes)} LIMIT ?""",
+            for r in bd.ler(
+                    f"""SELECT id, {f['nome']} AS nome FROM {f['tabela']}
+                         WHERE {' OR '.join(condicoes)} ORDER BY id LIMIT %s""",
                     (*valores, int(limite))):
                 saida.append({"tabela": f["tabela"], "id": r["id"],
                               "nome": r["nome"], "o_que_e": f["o_que_e"]})

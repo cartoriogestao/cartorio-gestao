@@ -1,0 +1,17 @@
+{
+  "chave": "RTD_CERTIDAO_NOTIFICACAO_NEGATIVA",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Certidão de notificação — negativa (RTD)",
+  "formato": "CHAVES",
+  "explica": "Texto congelado em rg_notificacao_certidoes na emissão. As diligências frustradas, em dias e horários alternados — no mínimo três (CN-MA, art. 987, § 2º).",
+  "campos": [
+    "onde",
+    "destinatario",
+    "documento",
+    "endereco",
+    "quantas",
+    "diligencias",
+    "cidade",
+    "data_extenso"
+  ]
+}

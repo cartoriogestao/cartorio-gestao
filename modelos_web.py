@@ -17,18 +17,31 @@ UMA TELA SÓ, COM AS ATRIBUIÇÕES DENTRO
     mexe uma vez e vale para a casa inteira.
 
 O QUE ESTA TELA NÃO FAZ
-    Ela não apaga o padrão, porque o padrão não mora no banco: mora no código.
-    «Voltar ao padrão» apaga o ajuste, e o papel volta a sair de fábrica — não
-    há como uma edição ruim deixar a casa sem modelo nenhum.
+    Ela não apaga o padrão, porque o padrão não mora junto do ajuste: mora na
+    pasta `modelos_padrao/`, que a subida carrega na base de padrões (LF06A,
+    19/10/2026). «Voltar ao padrão» apaga o ajuste, e o papel volta a sair de
+    fábrica — não há como uma edição ruim deixar a casa sem modelo nenhum.
 """
 from __future__ import annotations
 
-from flask import Response, flash, jsonify, redirect, render_template, request, url_for
+from flask import Response, abort, flash, jsonify, redirect, render_template, request, url_for
 
 import modelos_da_casa as MODELOS
 import modelos_elementos as ELEM
 import modelos_moldes as MOLDES
+import seguranca_web as SEGWEB  # B2 (LX11): exceção inesperada não vai para a tela
 import modelos_previa as PREVIA
+
+# QUEM GRAVA O MODELO É ADMIN OU GERENTE (LX12, 19/10/2026 — achado M6 do LS02).
+#
+#   A docstring de `/modelos` sempre disse «SÓ ADMIN E GERENTE», e o decorador
+#   deixava o USER: o escrevente trocava o molde da certidão do RCPN e os
+#   `RC_TERMO_*`, que vão ao LibreOffice do servidor e saem em todo papel da
+#   espécie. VER continua aberto ao balcão — é por esta tela que ele confere
+#   com que forma o papel sai; só a gravação (salvar, restaurar, enviar o
+#   `.odt`) se fecha. A prévia é POST, mas não grava: segue aberta.
+QUEM_GRAVA: tuple[str, ...] = ("ADMIN", "MANAGER")
+
 
 # O CONTEXTO DE ENSAIO DA CONFERENCIA.
 #
@@ -55,6 +68,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     """Pendura a tela dos modelos no app já construído."""
 
     usuario_nome = app.extensions["usuario_nome"]
+
+    def _so_quem_grava() -> None:
+        """403 para quem não grava modelo — ver `QUEM_GRAVA`."""
+        if app.extensions["usuario_papel"]() not in QUEM_GRAVA:
+            abort(403)
 
     def _redirect_modelos(chave: str, atribuicao_filtro: str = ""):
         """Volta ao editor preservando o filtro por atribuição, se houver."""
@@ -117,6 +135,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             atribuicao = MODELOS.POR_CHAVE[chave]["atribuicao"]
 
         if request.method == "POST":
+            _so_quem_grava()
             chave = (request.form.get("chave") or "").strip().upper()
             corpo = request.form.get("corpo") or ""
             acao = (request.form.get("acao") or "salvar").strip()
@@ -171,7 +190,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             except (MODELOS.ModeloError, ELEM.ElementoError) as erro:
                 flash(str(erro), "danger")
             except Exception as erro:                      # noqa: BLE001
-                flash(f"Não deu para gravar o modelo: {erro}", "danger")
+                flash(SEGWEB.recado_de_erro(erro, "modelos_gravar",
+                                            "Não deu para gravar o modelo; o detalhe "
+                                            "ficou no registro do servidor."), "danger")
             return _redirect_modelos(chave, atribuicao_post)
 
         # --------------------------------------------------------- a lista
@@ -203,7 +224,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     "corpo": corpo,
                     "ajustado": ELEM.esta_ajustado(con, chave),
                     "erro": _conferir(chave, corpo),
-                    "onde": "{}.{}".format(*MODELOS.POR_CHAVE[chave]["padrao"]),
+                    # DE ONDE O PADRÃO SAI: o arquivo da pasta dos padrões
+                    # (LF06A). Era o nome da constante no código.
+                    "onde": MODELOS.arquivo_do_padrao(chave),
+                    # O PADRÃO MUDOU DEPOIS DO AJUSTE? — ver o aviso na tela.
+                    "mudou": MODELOS.padrao_mudou_depois_do_ajuste(con, chave),
                     # **QUEM ESCREVE O MODELO PRECISA SABER COM QUE MARCADOR.**
                     #
                     #   Sao dois nesta casa: `{{ a.numero }}` do Jinja, que a
@@ -231,6 +256,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                atribuicoes=[a for a, _ in
                                             MODELOS.por_atribuicao()],
                                editando=editando, moldes=moldes,
+                               base=MODELOS.situacao_da_base(),
                                quantos_ajustados=sum(
                                    1 for g in grupos for i in g["itens"]
                                    if i["ajustado"]))
@@ -264,7 +290,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @login_required
     @roles_required("ADMIN", "MANAGER", "USER")
     def modelos_molde():
-        """Grava o papel ajustado, ou volta ao do pacote."""
+        """Grava o papel ajustado, ou volta ao do pacote. SÓ ADMIN E GERENTE."""
+        _so_quem_grava()
         chave = (request.form.get("chave") or "").strip().upper()
         acao = (request.form.get("acao") or "enviar").strip()
         try:
@@ -299,5 +326,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         except MOLDES.PapelError as erro:
             flash(str(erro), "danger")
         except Exception as erro:                          # noqa: BLE001
-            flash(f"Não deu para gravar o papel: {erro}", "danger")
+            flash(SEGWEB.recado_de_erro(erro, "modelos_papel",
+                                        "Não deu para gravar o papel; o detalhe "
+                                        "ficou no registro do servidor."), "danger")
         return redirect(url_for("modelos"))

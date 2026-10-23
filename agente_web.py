@@ -198,7 +198,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """
         try:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 s = AGS.ler_sessao(con, int(sessao_id))
         except sqlite3.Error:            # a auditoria não derruba o pedido
             s = None
@@ -215,11 +214,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         repetisse o número digitado diria «guardado 900» sobre um teto de 24. É
         o mesmo cuidado do `gravar_config`, que recusa em vez de ignorar calado.
         """
+        sozinho = config["escrita_ligada"] and config.get("escrita_sem_confirmacao")
         return (f"Guardado. Vale agora: provedor {config['provedor_padrao']}, "
                 f"modelo {config['modelo_padrao'] or '(o padrão do provedor)'}, "
                 f"até {config['teto_de_turnos']} turnos por rodada, "
                 f"{config['teto_de_sessoes']} sessões por dia, escrita "
-                f"{'LIGADA' if config['escrita_ligada'] else 'desligada'}.")
+                f"{'LIGADA' if config['escrita_ligada'] else 'desligada'}"
+                f"{' (aplica sem confirmação)' if sozinho else ''}.")
 
     # ------------------------------------------------------------- o console
 
@@ -512,8 +513,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(str(recusa), "danger")
             return redirect(_de_volta())
         audit("AGENTE_DESFEZ", "ag_mudancas", mudanca_id, r)
-        flash(f"Desfeito: {r['ferramenta']} voltou para «{r['voltei_para']}».",
-              "success")
+        if r.get("descartada"):
+            flash(f"Proposta descartada: {r['alvo']} continua como estava.",
+                  "success")
+        else:
+            flash(f"Desfeito: {r['ferramenta']} voltou para "
+                  f"«{r['voltei_para']}».", "success")
+        return redirect(_de_volta())
+
+    @app.route("/agente/mudanca/<int:mudanca_id>/aplicar", methods=["POST"])
+    @roles_required("ADMIN")
+    def agente_aplicar(mudanca_id: int):
+        """Aplica a mudança que o agente deixou PROPOSTA. ESCREVE.
+
+        **É O CLIQUE QUE O LS03 (M4) PÔS ENTRE O MODELO E O SISTEMA.** Com a
+        confirmação ligada (o padrão), o agente não abre nem fecha módulo: ele
+        propõe, e quem muda é o oficial, aqui, com o antes e o depois à vista.
+        Depois de aplicada, a mudança volta com o mesmo «desfazer» de sempre.
+        """
+        try:
+            r = AGT.aplicar(db, mudanca_id, agora=agora(),
+                            usuario=usuario_nome())
+        except FER.FerramentaError as recusa:
+            flash(str(recusa), "danger")
+            return redirect(_de_volta())
+        audit("AGENTE_APLICOU", "ag_mudancas", mudanca_id, r)
+        flash(f"Aplicado: {r['alvo']} passou de «{r['antes']}» para "
+              f"«{r['apliquei']}».", "success")
         return redirect(_de_volta())
 
     # -------------------------------------------------------- a configuração
@@ -566,7 +592,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             modelo=_campo("modelo_padrao"),
             teto_de_turnos=_campo("teto_de_turnos") or None,
             teto_de_sessoes=_campo("teto_de_sessoes") or None,
-            escrita_ligada=_marcado("escrita_ligada"))
+            escrita_ligada=_marcado("escrita_ligada"),
+            escrita_sem_confirmacao=_marcado("escrita_sem_confirmacao"))
         audit("AGENTE_CONFIGURADA", "ag_config", 1, r)
         flash(_recado_da_config(r), "success")
 

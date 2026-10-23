@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_RECONHECIMENTO_AUTENTICIDADE",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Reconhecimento de firma por autenticidade",
+  "formato": "CHAVES",
+  "explica": "O teor da etiqueta do reconhecimento por autenticidade, com uma firma. Quem decide a espécie, se são várias firmas e se o sinal público entra é o código; as outras formas da frase são peças deste papel.",
+  "campos": [
+    "quem"
+  ]
+}

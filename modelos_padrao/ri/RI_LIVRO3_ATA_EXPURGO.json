@@ -1,0 +1,17 @@
+{
+  "chave": "RI_LIVRO3_ATA_EXPURGO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Ata do expurgo (Livro 3)",
+  "formato": "JINJA",
+  "explica": "Ata de ocorrência do ato do Livro 3 desfeito e devolvido à minuta: guarda o teor que saiu do livro; é gravada com o desfazer e, gravada, não muda mais.",
+  "campos": [
+    "agora",
+    "data_ato",
+    "minuta_id",
+    "motivo",
+    "registro_numero",
+    "rotulo",
+    "teor",
+    "usuario"
+  ]
+}

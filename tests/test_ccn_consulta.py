@@ -100,9 +100,14 @@ def test_pedido_codigo_e_cpf_invalido(con):
     cod = CQ.codigo_da_consulta("segredo", cid)
     assert re.fullmatch(rf"C{cid}-[0-9A-F]{{10}}", cod) and CQ.e_codigo_de_consulta(cod)
     assert not CQ.e_codigo_de_consulta("7-ABCDEF0123")           # código de lote
-    assert CQ.consulta_pelo_codigo(con, "segredo", cod)["cpf"] == CPF
+    from datetime import datetime, timedelta
+    relogio = datetime.fromisoformat(AGORA) + timedelta(hours=1)
+    assert CQ.consulta_pelo_codigo(con, "segredo", cod, agora=relogio)["cpf"] == CPF
     with pytest.raises(CQ.ConsultaError, match="não confere"):
-        CQ.consulta_pelo_codigo(con, "outro", cod)
+        CQ.consulta_pelo_codigo(con, "outro", cod, agora=relogio)
+    # o código vence em um dia (revisão de segurança de 22/10/2026, M11)
+    with pytest.raises(CQ.ConsultaError, match="vencido"):
+        CQ.consulta_pelo_codigo(con, "segredo", cod, agora=relogio + timedelta(days=2))
 
 
 def test_ficha_de_outro_cpf_e_recusada_inteira(con):
@@ -196,3 +201,52 @@ def test_tela_ponte_e_completar_o_cartao(con, cg_casa):
     c.post(f"/notas/ccn/consultas/{cid}/aplicar", data={"ficha": "0", "csrf_token": token})
     assert con.execute("SELECT nascimento FROM nt_cartoes WHERE documento=?", (CPF,)).fetchone()[0] \
         == "1980-05-02"
+
+
+# ================================================== CONSERTO DO L027R (18/10/2026)
+# APLICAR A FICHA PRENDE A CONSULTA ANTES DE CONFERIR O CARTÃO. Com a ponte, o
+# segundo clique em «aplicar» esperava o primeiro e recebia «nada a completar»;
+# sem ela, conferia o cartão antes de o primeiro gravar e regravava
+# `aplicados_json` vazio por cima do que tinha entrado.
+
+import banco_pg  # noqa: E402
+
+
+def _consulta_presa(con, consulta_id) -> bool:
+    """A linha da consulta já está presa por outra transação? Não espera por ela."""
+    import psycopg
+    with psycopg.connect(banco_pg.dsn(), autocommit=True) as outra:
+        outra.execute(f'SET search_path TO "{con.schema}", public')
+        try:
+            outra.execute("SELECT id FROM nt_ccn_consultas WHERE id=%s FOR UPDATE NOWAIT",
+                          (consulta_id,))
+        except psycopg.errors.LockNotAvailable:
+            return True
+        return False
+
+
+@pytest.mark.skipif(not banco_pg.ativo(), reason="mede as travas do PostgreSQL (CG_PG_DSN)")
+def test_aplicar_confere_o_cartao_com_a_consulta_presa(con, monkeypatch):
+    import bd_nativo
+    _cartao(con)
+    cid = CQ.pedir(con, CPF, "PRODUCAO", usuario="T", agora=AGORA)
+    CQ.registrar_resposta(con, CQ.carregar(con, cid), {"achados": [FICHA], "registros": [FICHA]},
+                          AGORA)
+    con.commit()
+    c = CQ.carregar(con, cid)
+    presos: list[bool] = []
+
+    class Vigiado(bd_nativo.Banco):
+        def _rodar(self, sql, parametros=None):
+            if "FROM nt_cartoes" in sql:              # a conferência do cartão
+                presos.append(_consulta_presa(con, cid))
+            return super()._rodar(sql, parametros)
+
+    monkeypatch.setattr(CQ, "banco", Vigiado)
+    try:
+        assert CQ.aplicar(con, c, indice=0, usuario="CARLA EXEMPLO", agora=AGORA)["campos"]
+        assert presos and all(presos), (
+            "o cartão foi conferido com a consulta solta: o segundo clique "
+            "regravaria `aplicados_json` vazio por cima do primeiro")
+    finally:
+        con.rollback()

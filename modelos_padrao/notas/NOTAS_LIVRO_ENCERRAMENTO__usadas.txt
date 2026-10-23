@@ -1,0 +1,1 @@
+Foram utilizadas as folhas de {primeira} a {ultima}.

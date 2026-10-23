@@ -1,0 +1,10 @@
+{
+  "chave": "RI_NEGATIVA_CRITERIO_NOME",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Negativa de imóvel — busca pelo nome",
+  "formato": "JINJA",
+  "explica": "Como a certidão negativa de imóvel diz o critério da busca quando se buscou a pessoa pelo nome; o módulo decide pelo que foi digitado (ri_certidao_negativa).",
+  "campos": [
+    "nome"
+  ]
+}

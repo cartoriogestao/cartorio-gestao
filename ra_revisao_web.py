@@ -8,6 +8,8 @@ from __future__ import annotations
 from flask import abort, flash, redirect, render_template, request, url_for
 
 import ra_revisao as RV
+from bd_nativo import banco
+from seguranca_web import destino_interno  # M1/B3 (LX11): o «volte para» só leva a caminho desta casa
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
@@ -63,9 +65,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def livro3_revisao_baixar(revisao_id: int):
         """Fecha a nota, com o que se decidiu escrito dentro."""
         with db.connect() as con:
-            linha = con.execute(
-                "SELECT registro_id FROM ra_revisoes WHERE id=?",
-                (revisao_id,)).fetchone()
+            linha = banco(con).um(
+                "SELECT registro_id FROM ra_revisoes WHERE id=%s",
+                (revisao_id,))
         if not linha:
             abort(404)
         decisao = _campo("decisao")
@@ -80,6 +82,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   {"decisao": decisao[:200]})
             flash("Nota baixada, com o que você decidiu escrito nela.",
                   "success")
-        return redirect(request.form.get("voltar")
-                        or url_for("livro3_registro",
-                                   registro_id=linha["registro_id"]))
+        return redirect(destino_interno(request.form.get("voltar"),
+                                        url_for("livro3_registro",
+                                                registro_id=linha["registro_id"])))

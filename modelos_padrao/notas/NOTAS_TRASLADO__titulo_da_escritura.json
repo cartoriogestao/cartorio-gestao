@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_TRASLADO__titulo_da_escritura",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Traslado — título da escritura sem modelo",
+  "formato": "CHAVES",
+  "explica": "O título da escritura que não veio de modelo, pela natureza do ato.",
+  "campos": [
+    "natureza"
+  ]
+}

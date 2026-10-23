@@ -79,8 +79,28 @@
 </section>
 
 <section class="panel">
+  <div class="panel-head"><span>Todas as remessas disponíveis</span></div>
+  <div class="cra-panel-body">
+    <p>Baixa todas as remessas pendentes na CRA, de qualquer data e apresentante,
+      sem informar número nem nome de arquivo.</p>
+    <form method="post" action="{{ url_for('protesto_cra_api_baixar') }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="o_que" value="pendentes">
+      <label class="checkbox-label span2">
+        <input type="checkbox" name="com_imagem" value="1">Trazer também a imagem do título
+      </label>
+      <div class="cra-form-acoes span2">
+        <button class="button primary" type="submit">Baixar todas as remessas</button>
+      </div>
+    </form>
+    <p>O arquivo será salvo no computador. Para conferir e receber os títulos,
+      use <a href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>.</p>
+  </div>
+</section>
+
+<section class="panel">
   <div class="panel-head">
-    <span>Trazer um arquivo</span>
+    <span>Outros downloads da CRA</span>
     <small>vem cru, como a Central mandou</small>
   </div>
   <div class="cra-panel-body">
@@ -100,7 +120,7 @@
           {% endfor %}
         </select>
       </label>
-      <label>Nome do arquivo
+      <label>Nome do arquivo (dispensado para todas as remessas)
         <input name="nome" placeholder="C0013110.141" autocomplete="off">
       </label>
       <label class="checkbox-label span2">

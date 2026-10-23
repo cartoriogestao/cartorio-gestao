@@ -52,57 +52,9 @@
 </div>
 
 <div class="folha">
-  <div class="cabecalho">
-    <div class="nome">{{ sv.unit_name }}</div>
-    <small>{{ sv.serventia_endereco }} — CEP {{ sv.serventia_cep }} — {{ sv.cidade_uf }}<br>
-      CNS {{ sv.ri_cns }} · CNPJ {{ sv.serventia_cnpj }} ·
-      {{ sv.serventia_telefone }} · {{ sv.serventia_email }}</small>
-  </div>
-
-  <h1>Nota devolutiva</h1>
-
-  <p>Pelo presente, comunico ao apresentante que o título abaixo identificado,
-  submetido a qualificação registral, <strong>não pôde ser registrado</strong>
-  nesta serventia, pelas exigências adiante lançadas.</p>
-
-  <table class="dados">
-    <tbody>
-      <tr><th>Atribuição</th><td>{{ nome_da_atribuicao }}</td></tr>
-      <tr><th>Protocolo</th><td><strong>n. {{ t.numero or '—' }}</strong>{% if t.rotulo %}, Livro de Protocolo, fl. {{ t.rotulo }}{% endif %}</td></tr>
-      <tr><th>Apresentado em</th><td>{{ fmt_date(t.data_apresentacao) }}{% if t.hora %}, às {{ t.hora }}{% endif %}</td></tr>
-      <tr><th>Apresentante</th><td>{{ t.apresentante or '—' }}{% if t.apresentante_documento %} — {{ t.apresentante_documento }}{% endif %}</td></tr>
-      <tr><th>Natureza do título</th><td>{{ t.natureza or '—' }}</td></tr>
-      <tr><th>Qualificação em</th><td>{{ fmt_date(q.data_qualificacao) }}</td></tr>
-    </tbody>
-  </table>
-
-  <p><strong>EXIGÊNCIAS A CUMPRIR:</strong></p>
-  <div class="exigencias">{{ q.exigencias }}</div>
-
-  {% if q.fundamentacao %}
-  <p><strong>FUNDAMENTO:</strong></p>
-  <div class="exigencias">{{ q.fundamentacao }}</div>
-  {% endif %}
-
-  {% if q.prazo_ate %}
-  <p>O apresentante poderá cumprir as exigências até
-  <strong>{{ fmt_date(q.prazo_ate) }}</strong>, reapresentando o título nesta
-  serventia.</p>
-  {% else %}
-  {# PRAZO EM BRANCO NÃO SE INVENTA. O papel diz que ele não foi fixado, em vez
-     de afirmar um número que ninguém decidiu — prazo errado num papel que a
-     serventia assina é o apresentante perdendo direito por conta da tela. #}
-  <p>O apresentante poderá cumprir as exigências e reapresentar o título nesta
-  serventia. <em>Nesta nota não foi fixado prazo.</em></p>
-  {% endif %}
-
-  <p class="fecho">{{ sv.ri_cidade }}/{{ sv.ri_uf }}, {{ data_extenso }}.</p>
-
-  <div class="assinatura">
-    <div class="linha"></div>
-    <div>{{ oficial }}</div>
-    <div><small>{{ funcao }}</small></div>
-  </div>
+{# O PAPEL É O RCPJ_RTD_NOTA DO CATÁLOGO (LF06F, 19/10/2026): editável em
+   Administrativo → Modelos. Esta página é só a moldura para imprimir. -#}
+{{ papel|safe }}
 </div>
 </body>
 </html>

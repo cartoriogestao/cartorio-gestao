@@ -55,6 +55,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
+from bd_nativo import banco
+
 QUEM = "compliance"
 SOURCE_TYPE = "COMPLIANCE"
 
@@ -147,19 +149,18 @@ def _dt(valor) -> datetime | None:
 
 
 def _tem_tabela(con, nome: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                       (nome,)).fetchone() is not None
+    return banco(con).tem_tabela(nome)
 
 
 def _colunas(con, tabela: str) -> set[str]:
-    """As colunas sem PRAGMA: módulo novo entra com zero (`test_portabilidade`)."""
-    return {d[0] for d in con.execute(f"SELECT * FROM {tabela} LIMIT 0").description}
+    """As colunas pelo `information_schema`: módulo novo entra com zero (`test_portabilidade`)."""
+    return {r["column_name"] for r in banco(con).ler(
+        """SELECT column_name FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = %s""", (tabela,))}
 
 
-def _linhas(con, sql: str, args=()) -> list[dict]:
-    cur = con.execute(sql, args)
-    nomes = [d[0] for d in cur.description]
-    return [dict(zip(nomes, r)) for r in cur.fetchall()]
+def _linhas(con, sql: str, args=None) -> list[dict]:
+    return banco(con).ler(sql, args)
 
 
 # =================================================================== AGENTES
@@ -202,6 +203,131 @@ def _caminho_da_rotina(t: dict) -> Path | None:
         if m:
             return Path(m.group(1))
     return None
+
+
+# ============================================================= O CAIXA
+#: Quantos dias de lançamentos a cadeia confere a cada rodada.
+DIAS_DA_CADEIA_DO_CAIXA = 60
+#: A corrente da auditoria se confere nos últimos N dias — mais a semente,
+#: que é a última linha encadeada antes da janela.
+DIAS_DA_CADEIA_DA_AUDITORIA = 30
+
+
+def _valores_de_origem(linha: dict) -> tuple[str, str, str]:
+    """valor, natureza e descrição COMO ESTAVAM quando o hash foi feito.
+
+    O lançamento editado guarda o que havia antes em `historico`
+    (`caixa_web`, ação «editar»), e o hash foi feito sobre isso — editar não
+    recalcula a cadeia, de propósito: é o histórico que a sustenta.
+    """
+    valor, natureza, descricao = (str(linha.get("valor") or ""),
+                                  str(linha.get("natureza") or ""),
+                                  str(linha.get("descricao") or ""))
+    try:
+        historico = json.loads(linha.get("historico") or "[]")
+    except (TypeError, ValueError):
+        historico = []
+    if historico and isinstance(historico[0], dict):
+        antes = historico[0].get("antes") or {}
+        valor = str(antes.get("valor", valor) or "")
+        natureza = str(antes.get("natureza", natureza) or "")
+        descricao = str(antes.get("descricao", descricao) or "")
+    return valor, natureza, descricao
+
+
+def divergencias_da_cadeia_do_caixa(linhas: list[dict], *,
+                                    desde: str = "") -> list[dict]:
+    """Os lançamentos cujo hash não fecha com o anterior. Só calcula.
+
+    HÁ DUAS GRAFIAS DO «ANTERIOR» NA CASA, e as duas valem: `caixa_web` encadeia
+    com o último lançamento DO MESMO CAIXA; `caixa_schema.cobrar_item_do_
+    protocolo` encadeia com o último hash DO MESMO ANO. Um hash que feche por
+    qualquer das duas está íntegro. `linhas` vem em ordem de `id`, com TODOS
+    os lançamentos que têm hash — o anterior pode estar antes de `desde`.
+    """
+    import caixa_schema as CXS
+    ultimo_do_caixa: dict[Any, str] = {}
+    ultimo_do_ano: dict[Any, str] = {}
+    fora = []
+    for linha in linhas:
+        h = str(linha.get("hash_lancamento") or "")
+        if not h:
+            continue
+        caixa, ano = linha.get("caixa_id"), linha.get("ano")
+        if str(linha.get("data") or "") >= desde:
+            valor, natureza, descricao = _valores_de_origem(linha)
+            candidatos = set()
+            for anterior in (ultimo_do_caixa.get(caixa), ultimo_do_ano.get(ano)):
+                for v in {valor, str(linha.get("valor") or "")}:
+                    candidatos.add(CXS.hash_lancamento(caixa, str(linha.get("data") or ""),
+                                                       natureza, v, descricao, anterior))
+            if h not in candidatos:
+                fora.append({"id": linha.get("id"), "caixa_id": caixa,
+                             "data": linha.get("data"), "numero": linha.get("numero"),
+                             "ano": ano})
+        ultimo_do_caixa[caixa] = h
+        ultimo_do_ano[ano] = h
+    return fora
+
+
+def regra_cadeia_do_caixa(ctx: Contexto) -> list[dict]:
+    """A corrente de hash do caixa confere? (revisão de segurança de
+    22/10/2026, M2). Até aqui ninguém a recalculava — a cadeia existia e não
+    protegia nada. Lançamento cujo hash não fecha é ATENÇÃO para o oficial,
+    com o número dele: ou foi mexido por fora, ou editado sem histórico."""
+    if not _tem_tabela(ctx.con, "cx_lancamentos"):
+        return []
+    desde = (ctx.agora - timedelta(days=DIAS_DA_CADEIA_DO_CAIXA)).date().isoformat()
+    linhas = _linhas(ctx.con, """SELECT id, caixa_id, ano, numero, data, natureza, valor,
+                                        descricao, historico, hash_lancamento
+                                   FROM cx_lancamentos
+                                  WHERE hash_lancamento IS NOT NULL
+                                  ORDER BY id""")
+    fora = divergencias_da_cadeia_do_caixa(linhas, desde=desde)
+    if not fora:
+        return []
+    exemplos = ", ".join(f"#{f['numero']}/{f['ano']} (id {f['id']})" if f.get("numero")
+                         else f"id {f['id']}" for f in fora[:8])
+    return [_achado("CAIXA:cadeia", "CAIXA", "CAIXA_CADEIA", "CRITICO",
+                    f"{len(fora)} lançamento(s) do caixa com o hash que não fecha",
+                    f"Nos últimos {DIAS_DA_CADEIA_DO_CAIXA} dias: {exemplos}"
+                    + ("…" if len(fora) > 8 else ""),
+                    evidencia="cx_lancamentos.hash_lancamento recalculado "
+                              "(duas grafias do anterior aceitas)",
+                    o_que_fazer="Abrir o lançamento e o histórico dele; o que foi "
+                                "mexido por fora do sistema não tem histórico.")]
+
+
+def regra_cadeia_da_auditoria(ctx: Contexto) -> list[dict]:
+    """A corrente de hash de `audit_logs` fecha? (revisão de segurança de
+    22/10/2026). Linha apagada, editada ou inserida sem o gatilho é CRÍTICO:
+    a auditoria é o que responde «quem fez» numa correição, e uma auditoria
+    que se edita sem rastro não responde nada. Só lê; só calcula."""
+    import auditoria_cadeia as AC
+    con = ctx.con
+    if not _tem_tabela(con, "audit_logs") or not banco(con).tem_coluna("audit_logs", "hash_linha"):
+        return []
+    desde = (ctx.agora - timedelta(days=DIAS_DA_CADEIA_DA_AUDITORIA)).isoformat(timespec="seconds")
+    semente = banco(con).valor(
+        """SELECT hash_linha FROM audit_logs
+            WHERE ts < %s AND hash_linha IS NOT NULL ORDER BY id DESC LIMIT 1""", (desde,))
+    linhas = _linhas(con, """SELECT id, ts, user_id, username_snapshot, action, entity_type,
+                                    entity_id, details, ip_address, hash_anterior, hash_linha
+                               FROM audit_logs WHERE ts >= %s ORDER BY id""", (desde,))
+    fora = AC.divergencias(linhas, semente)
+    if not fora:
+        return []
+    exemplos = "; ".join(f"id {f['id']} ({str(f['ts'])[:16]}, {f['action']}): {f['motivo']}"
+                         for f in fora[:6])
+    return [_achado("AUDITORIA:cadeia", "AUDITORIA", "AUDITORIA_CADEIA", "CRITICO",
+                    f"{len(fora)} linha(s) da auditoria fora da corrente de hash",
+                    f"Nos últimos {DIAS_DA_CADEIA_DA_AUDITORIA} dias: {exemplos}"
+                    + ("…" if len(fora) > 6 else ""),
+                    evidencia="audit_logs.hash_linha recalculado contra hash_anterior "
+                              "(auditoria_cadeia.divergencias)",
+                    o_que_fazer="Comparar com a cópia de segurança do dia anterior: a "
+                                "auditoria não se edita, e o que falta ou mudou nela foi "
+                                "feito por fora do sistema.")]
 
 
 def regra_agendador(ctx: Contexto) -> list[dict]:
@@ -319,7 +445,7 @@ def regra_execucoes_do_gestor(ctx: Contexto) -> list[dict]:
     if not _tem_tabela(con, "ge_execucoes"):
         return []
     achados = []
-    ultima = con.execute("SELECT max(iniciada_em) FROM ge_execucoes").fetchone()[0]
+    ultima = banco(con).valor("SELECT max(iniciada_em) AS ultima FROM ge_execucoes")
     quando = _dt(ultima)
     if quando is None or ctx.agora - quando > timedelta(hours=HORAS_SEM_RODAR):
         achados.append(_achado(
@@ -330,7 +456,7 @@ def regra_execucoes_do_gestor(ctx: Contexto) -> list[dict]:
             evidencia="ge_execucoes.iniciada_em"))
     limite = (ctx.agora - timedelta(days=7)).isoformat(timespec="seconds")
     for e in _linhas(con, """SELECT id, iniciada_em, terminada_em, erro FROM ge_execucoes
-                              WHERE iniciada_em >= ? ORDER BY id""", (limite,)):
+                              WHERE iniciada_em >= %s ORDER BY id""", (limite,)):
         if e["erro"]:
             achados.append(_achado(
                 f"GESTOR:erro:{e['id']}", "AGENTES", "GESTOR_EXECUCAO", "CRITICO",
@@ -362,8 +488,8 @@ def regra_ia_sem_resultado(ctx: Contexto) -> list[dict]:
     for tabela, quando, falha, nome in FONTES_DE_IA:
         if not _tem_tabela(con, tabela) or not {quando, falha} <= _colunas(con, tabela):
             continue
-        linhas = _linhas(con, f"SELECT {falha} AS falha FROM {tabela} WHERE {quando} >= ?",
-                         (desde,))
+        linhas = _linhas(con, f"SELECT {falha} AS falha FROM {tabela} WHERE {quando} >= %s "
+                              "ORDER BY id", (desde,))
         erros = [str(r["falha"]) for r in linhas if r["falha"] not in (None, "", 0)]
         certos = len(linhas) - len(erros)
         if not erros:
@@ -396,13 +522,13 @@ def regra_config_do_modelo(ctx: Contexto) -> list[dict]:
     achados = []
     lugares = []
     if _tem_tabela(con, "ag_config"):
-        r = con.execute("SELECT valor FROM ag_config WHERE chave='modelo_padrao'").fetchone()
+        r = banco(con).um("SELECT valor FROM ag_config WHERE chave='modelo_padrao'")
         if r:
             lugares.append(("ag_config.modelo_padrao", "o agente do sistema, a leitura do "
-                            "texto e a revisão", r[0]))
+                            "texto e a revisão", r["valor"]))
     if _tem_tabela(con, "aj_config") and "modelo" in _colunas(con, "aj_config"):
-        for r in con.execute("SELECT modelo FROM aj_config"):
-            lugares.append(("aj_config.modelo", "a ajuda do sistema", r[0]))
+        for r in _linhas(con, "SELECT modelo FROM aj_config ORDER BY id"):
+            lugares.append(("aj_config.modelo", "a ajuda do sistema", r["modelo"]))
     for onde, quem, valor in lugares:
         if valor and not _ID_DE_MODELO.match(str(valor).strip()):
             achados.append(_achado(
@@ -425,25 +551,26 @@ _SEGREDO = re.compile(r"senha|token|secret|chave_api|api_key|password|cred", re.
 def _fotos(con) -> dict[str, str]:
     foto: dict[str, str] = {}
     if _tem_tabela(con, "ag_config"):
-        for k, v in con.execute("SELECT chave, valor FROM ag_config"):
-            foto[f"ag_config.{k}"] = str(v)
+        for r in _linhas(con, "SELECT chave, valor FROM ag_config ORDER BY chave"):
+            foto[f"ag_config.{r['chave']}"] = str(r["valor"])
     if _tem_tabela(con, "aj_config"):
         cols = _colunas(con, "aj_config") - {"alterada_em", "escolha_em"}
-        for r in _linhas(con, "SELECT * FROM aj_config"):
+        for r in _linhas(con, "SELECT * FROM aj_config ORDER BY id"):
             for k in sorted(cols):
                 foto[f"aj_config.{r.get('id', 1)}.{k}"] = str(r.get(k))
     if _tem_tabela(con, "settings"):
-        for k, v in con.execute("SELECT key, value FROM settings"):
-            v = str(v)
+        for r in _linhas(con, "SELECT key, value FROM settings ORDER BY key"):
+            k, v = r["key"], str(r["value"])
             if _SEGREDO.search(str(k)):
                 v = "sha256:" + hashlib.sha256(v.encode()).hexdigest()[:16]
             foto[f"settings.{k}"] = v[:300]
     if _tem_tabela(con, "ge_responsaveis"):
-        for r in _linhas(con, "SELECT setor, user_id, substituto_id, rodizio FROM ge_responsaveis"):
+        for r in _linhas(con, "SELECT setor, user_id, substituto_id, rodizio FROM ge_responsaveis "
+                              "ORDER BY setor"):
             foto[f"ge_responsaveis.{r['setor']}"] = (
                 f"titular={r['user_id']} substituto={r['substituto_id']} rodizio={r['rodizio']}")
     if _tem_tabela(con, "users"):
-        for r in _linhas(con, "SELECT username, role, active FROM users"):
+        for r in _linhas(con, "SELECT username, role, active FROM users ORDER BY id"):
             foto[f"users.{r['username']}"] = f"perfil={r['role']} ativo={r['active']}"
     return foto
 
@@ -455,31 +582,34 @@ def regra_config_sem_rastro(ctx: Contexto) -> list[dict]:
     if not ctx.gravar or not _tem_tabela(con, "cp_fotografias"):
         return []
     agora = ctx.agora.isoformat(timespec="seconds")
+    bd = banco(con)
     anterior = {r["chave"]: (r["valor"], r["tirada_em"]) for r in _linhas(
-        con, "SELECT chave, valor, tirada_em FROM cp_fotografias")}
+        con, "SELECT chave, valor, tirada_em FROM cp_fotografias ORDER BY chave")}
     atual = _fotos(con)
     if anterior:
         desde = min(t for _, t in anterior.values())
-        trilha = con.execute(
-            "SELECT count(*) FROM audit_logs WHERE ts >= ? AND (action LIKE '%CONFIG%' "
-            "OR action LIKE '%SETTING%' OR action LIKE '%AJUSTE%' OR action LIKE 'AG\\_%' "
-            "ESCAPE '\\' OR action LIKE '%RESPONSAV%' OR action LIKE '%USUARIO%' "
-            "OR action LIKE '%USER%')", (desde,)).fetchone()[0] if _tem_tabela(con, "audit_logs") else 0
+        trilha = bd.valor(
+            "SELECT count(*) AS n FROM audit_logs WHERE ts >= %s AND (action ILIKE '%%CONFIG%%' "
+            "OR action ILIKE '%%SETTING%%' OR action ILIKE '%%AJUSTE%%' OR action ILIKE 'AG\\_%%' "
+            "ESCAPE '\\' OR action ILIKE '%%RESPONSAV%%' OR action ILIKE '%%USUARIO%%' "
+            "OR action ILIKE '%%USER%%')", (desde,)) if _tem_tabela(con, "audit_logs") else 0
         for chave in sorted(set(anterior) | set(atual)):
             antes = anterior.get(chave, (None, None))[0]
             depois = atual.get(chave)
             if antes == depois:
                 continue
-            con.execute(
-                """INSERT OR IGNORE INTO cp_mudancas (chave, antes, depois, vista_em, com_rastro)
-                   VALUES (?,?,?,?,?)""", (chave, antes, depois, agora, 1 if trilha else 0))
-    con.execute("DELETE FROM cp_fotografias")
-    con.executemany("INSERT INTO cp_fotografias (chave, valor, tirada_em) VALUES (?,?,?)",
-                    [(k, v, agora) for k, v in atual.items()])
+            bd.escrever(
+                """INSERT INTO cp_mudancas (chave, antes, depois, vista_em, com_rastro)
+                   VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                (chave, antes, depois, agora, 1 if trilha else 0))
+    bd.escrever("DELETE FROM cp_fotografias")
+    for k, v in atual.items():
+        bd.escrever("INSERT INTO cp_fotografias (chave, valor, tirada_em) VALUES (%s,%s,%s)",
+                    (k, v, agora))
     sete = (ctx.agora - timedelta(days=7)).isoformat(timespec="seconds")
     achados = []
     for m in _linhas(con, """SELECT id, chave, antes, depois, vista_em FROM cp_mudancas
-                              WHERE com_rastro = 0 AND vista_em >= ? ORDER BY id""", (sete,)):
+                              WHERE com_rastro = 0 AND vista_em >= %s ORDER BY id""", (sete,)):
         achados.append(_achado(
             f"CONFIG_SEM_RASTRO:{m['id']}", "AGENTES", "CONFIG_SEM_RASTRO", "ATENCAO",
             f"A configuração «{m['chave']}» mudou sem registro na auditoria",
@@ -497,12 +627,14 @@ def regra_fechou_sem_medir(ctx: Contexto) -> list[dict]:
     if not _tem_tabela(con, "ge_achados"):
         return []
     falhas = {(r["chave"][len("NAO_MEDIU:"):], r["ultimo_visto_em"]) for r in _linhas(
-        con, "SELECT chave, ultimo_visto_em FROM ge_achados WHERE chave LIKE 'NAO_MEDIU:%'")}
+        con, "SELECT chave, ultimo_visto_em FROM ge_achados WHERE chave ILIKE 'NAO_MEDIU:%' "
+             "ORDER BY id")}
     if not falhas:
         return []
     achados = []
     for a in _linhas(con, """SELECT id, chave, regra, titulo, resolvido_em FROM ge_achados
-                              WHERE resolvido_em IS NOT NULL AND chave NOT LIKE 'NAO_MEDIU:%'"""):
+                              WHERE resolvido_em IS NOT NULL AND chave NOT ILIKE 'NAO_MEDIU:%'
+                              ORDER BY id"""):
         if (a["regra"], a["resolvido_em"]) in falhas:
             achados.append(_achado(
                 f"FECHOU_SEM_MEDIR:{a['id']}", "AGENTES", "FECHOU_SEM_MEDIR", "CRITICO",
@@ -519,8 +651,9 @@ def regra_fechou_e_reabriu(ctx: Contexto) -> list[dict]:
         return []
     desde = (ctx.agora - timedelta(days=14)).isoformat(timespec="seconds")
     achados = []
-    for t in _linhas(con, """SELECT id, source_ref, title FROM tasks WHERE source_type='GESTOR'"""):
-        historico = _linhas(con, """SELECT ts, action, note FROM task_history WHERE task_id=?
+    for t in _linhas(con, """SELECT id, source_ref, title FROM tasks WHERE source_type='GESTOR'
+                              ORDER BY id"""):
+        historico = _linhas(con, """SELECT ts, action, note FROM task_history WHERE task_id=%s
                                      ORDER BY id""", (t["id"],))
         fechou = [h for h in historico if (h["note"] or "").startswith("Fechada pela conferência")]
         reabriu = [h for h in historico if h["action"] == "REABERTA" and (h["ts"] or "") >= desde
@@ -572,7 +705,8 @@ def regra_agente_mexeu(ctx: Contexto) -> list[dict]:
         return []
     desde = (ctx.agora - timedelta(days=7)).isoformat(timespec="seconds")
     linhas = _linhas(con, """SELECT id, ferramenta, alvo, criada_em FROM ag_mudancas
-                              WHERE revertida_em IS NULL AND criada_em >= ?""", (desde,))
+                              WHERE revertida_em IS NULL AND criada_em >= %s
+                              ORDER BY id""", (desde,))
     if not linhas:
         return []
     return [_achado(
@@ -596,7 +730,8 @@ def regra_triagem_duvidosa(ctx: Contexto) -> list[dict]:
     desde = (ctx.agora - timedelta(days=30)).isoformat(timespec="seconds")
     achados = []
     for t in _linhas(con, """SELECT id, expediente_id, resultado_json FROM ge_triagens
-                              WHERE erro IS NULL AND tarefa_id IS NULL AND lido_em >= ?""",
+                              WHERE erro IS NULL AND tarefa_id IS NULL AND lido_em >= %s
+                              ORDER BY id""",
                      (desde,)):
         try:
             r = json.loads(t["resultado_json"] or "{}")
@@ -722,7 +857,7 @@ def regra_envio_sem_prova(ctx: Contexto) -> list[dict]:
     achados = []
     if _tem_tabela(con, "ge_envios"):
         sem_recibo: dict[str, list] = {}
-        for e in _linhas(con, "SELECT * FROM ge_envios"):
+        for e in _linhas(con, "SELECT * FROM ge_envios ORDER BY id"):
             prot = (e.get("protocolo") or "").strip()
             if e["situacao"] == "ENVIADO" and not prot:
                 achados.append(_achado(
@@ -758,7 +893,8 @@ def regra_envio_sem_prova(ctx: Contexto) -> list[dict]:
         cols = _colunas(con, "rc_crc_lotes")
         sem = _linhas(con, f"""SELECT id, quantos, enviado_em FROM rc_crc_lotes
                                WHERE COALESCE(resposta,'') = ''
-                               {"AND COALESCE(canal,'') = 'MANUAL'" if 'canal' in cols else ''}""")
+                               {"AND COALESCE(canal,'') = 'MANUAL'" if 'canal' in cols else ''}
+                               ORDER BY id""")
         if sem:
             achados.append(_achado(
                 "ENVIO:crc:sem_resposta", "INFORMACOES", "ENVIO_SEM_PROVA", "ATENCAO",
@@ -774,7 +910,8 @@ def regra_envio_sem_prova(ctx: Contexto) -> list[dict]:
         if not _tem_tabela(con, tabela) or not {quando, prova} <= _colunas(con, tabela):
             continue
         for x in _linhas(con, f"""SELECT id FROM {tabela}
-                                  WHERE {quando} IS NOT NULL AND COALESCE({prova},'') = ''"""):
+                                  WHERE {quando} IS NOT NULL AND COALESCE({prova},'') = ''
+                                  ORDER BY id"""):
             achados.append(_achado(
                 f"ENVIO:{tabela}:{x['id']}", "INFORMACOES", "ENVIO_SEM_PROVA", "CRITICO",
                 f"Entrega de {nome} registrada sem {prova}",
@@ -783,7 +920,8 @@ def regra_envio_sem_prova(ctx: Contexto) -> list[dict]:
         tres = (ctx.agora - timedelta(days=3)).isoformat(timespec="seconds")
         pend = _linhas(con, """SELECT id, especie, enviado_em FROM ri_onr_envios
                                WHERE situacao = 'ENVIADO' AND fila_situacao IS NULL
-                                 AND enviado_em < ?""", (tres,))
+                                 AND enviado_em < %s
+                               ORDER BY id""", (tres,))
         if pend:
             achados.append(_achado(
                 "ENVIO:onr:sem_fila", "INFORMACOES", "ENVIO_SEM_PROVA", "ATENCAO",
@@ -800,7 +938,8 @@ def regra_quantos_nao_fecha(ctx: Contexto) -> list[dict]:
     if _tem_tabela(con, "ge_envios"):
         grupos: dict[tuple, list] = {}
         for e in _linhas(con, """SELECT id, central, protocolo, quantos FROM ge_envios
-                                  WHERE situacao='ENVIADO' AND COALESCE(protocolo,'') <> ''"""):
+                                  WHERE situacao='ENVIADO' AND COALESCE(protocolo,'') <> ''
+                                  ORDER BY id"""):
             grupos.setdefault((e["central"], e["protocolo"]), []).append(e)
         for (central, prot), envios in grupos.items():
             declarados = {e["quantos"] for e in envios if e["quantos"] is not None}
@@ -814,7 +953,7 @@ def regra_quantos_nao_fecha(ctx: Contexto) -> list[dict]:
         for l in _linhas(con, """SELECT l.id, l.quantos,
                                        (SELECT count(*) FROM rc_crc_lote_assentos x
                                          WHERE x.lote_id = l.id) AS itens
-                                  FROM rc_crc_lotes l"""):
+                                  FROM rc_crc_lotes l ORDER BY l.id"""):
             if l["quantos"] is not None and l["quantos"] != l["itens"]:
                 achados.append(_achado(
                     f"QUANTOS:crc:{l['id']}", "INFORMACOES", "QUANTOS_NAO_FECHA", "ATENCAO",
@@ -858,7 +997,7 @@ def regra_envio_fora_do_prazo(ctx: Contexto) -> list[dict]:
     eh_util, com_feriados = _dia_util()
     atrasos: dict[str, list[str]] = {}
     for e in _linhas(con, "SELECT central, referencia, enviado_em FROM ge_envios "
-                          "WHERE situacao='ENVIADO'"):
+                          "WHERE situacao='ENVIADO' ORDER BY id"):
         prazo = PRAZO_EM_DIAS_UTEIS.get(e["central"])
         partes = (e["referencia"] or "").split(":")
         if prazo is None or len(partes) < 3:
@@ -887,8 +1026,9 @@ def regra_envio_fora_do_prazo(ctx: Contexto) -> list[dict]:
 def _abertos_do_gestor(con, regra: str) -> int:
     if not _tem_tabela(con, "ge_achados"):
         return 0
-    return con.execute("SELECT count(*) FROM ge_achados WHERE regra=? AND resolvido_em IS NULL",
-                       (regra,)).fetchone()[0]
+    return int(banco(con).valor(
+        "SELECT count(*) AS n FROM ge_achados WHERE regra=%s AND resolvido_em IS NULL",
+        (regra,)))
 
 
 def _dupla(con, regra_do_gestor: str, achados_meus: list[dict], o_que: str) -> list[dict]:
@@ -917,13 +1057,14 @@ def regra_numeracao(ctx: Contexto) -> list[dict]:
     if _tem_tabela(con, "ri_atos"):
         for d in _linhas(con, """SELECT matricula_id, numero, count(*) AS n, max(lavrado_em) AS ult
                                    FROM ri_atos WHERE COALESCE(cancelado,0) = 0
-                                  GROUP BY matricula_id, numero HAVING count(*) > 1"""):
+                                  GROUP BY matricula_id, numero HAVING count(*) > 1
+                                  ORDER BY matricula_id, numero"""):
             if (d["ult"] or "") >= CORTE:
-                mat = con.execute("SELECT numero FROM ri_matriculas WHERE id=?",
-                                  (d["matricula_id"],)).fetchone()
+                mat = banco(con).um("SELECT numero FROM ri_matriculas WHERE id=%s",
+                                    (d["matricula_id"],))
                 meus.append(_achado(
                     f"NUMERO:ri:{d['matricula_id']}:{d['numero']}", "ATOS", "NUMERO_REPETIDO",
-                    "ATENCAO", f"Matrícula {mat[0] if mat else d['matricula_id']}: o ato nº "
+                    "ATENCAO", f"Matrícula {mat['numero'] if mat else d['matricula_id']}: o ato nº "
                     f"{d['numero']} aparece {d['n']} vezes",
                     "Dois atos vivos com o mesmo número na mesma ficha",
                     evidencia="ri_atos agrupado por matrícula e número"))
@@ -932,7 +1073,8 @@ def regra_numeracao(ctx: Contexto) -> list[dict]:
                                    FROM rc_assentos
                                   WHERE COALESCE(situacao,'') NOT IN ('CANCELADO','CANCELADA')
                                     AND numero IS NOT NULL
-                                  GROUP BY serie, numero HAVING count(*) > 1"""):
+                                  GROUP BY serie, numero HAVING count(*) > 1
+                                  ORDER BY serie, numero"""):
             if (d["ult"] or "") >= CORTE:
                 meus.append(_achado(
                     f"NUMERO:rc:{d['serie']}:{d['numero']}", "ATOS", "NUMERO_REPETIDO", "ATENCAO",
@@ -989,7 +1131,8 @@ def regra_selo_em_dois_atos(ctx: Contexto) -> list[dict]:
     con = ctx.con
     razao: dict[str, tuple] = {}
     if _tem_tabela(con, "sd_selos"):
-        for s in _linhas(con, "SELECT numero, tabela, ato_id FROM sd_selos WHERE ato_id IS NOT NULL"):
+        for s in _linhas(con, "SELECT numero, tabela, ato_id FROM sd_selos WHERE ato_id IS NOT NULL "
+                              "ORDER BY id"):
             razao[s["numero"]] = (s["tabela"], s["ato_id"])
     achados = []
     for tabela, coluna in COLUNAS_DE_SELO:
@@ -1007,7 +1150,8 @@ def regra_selo_em_dois_atos(ctx: Contexto) -> list[dict]:
         recentes: set = set()
         for a in _linhas(con, f"""SELECT id, {coluna} AS selo, {data or 'NULL'} AS quando,
                                          {origem} AS origem, {acervo} AS acervo FROM {tabela}
-                                   WHERE COALESCE({coluna},'') <> '' {vivo}"""):
+                                   WHERE COALESCE({coluna},'') <> '' {vivo}
+                                   ORDER BY id"""):
             do_acervo = (a["origem"] in ORIGENS_DO_ACERVO or a["acervo"] == 1)
             for codigo in set(_CODIGO_DE_SELO.findall(str(a["selo"]).upper())):
                 donos.setdefault(codigo, set()).add(a["id"])
@@ -1058,8 +1202,8 @@ _CERTIDAO_DA_CASA = re.compile(r"^certid[aã]o-(rcpn|ri|rcpj|rtd|protesto)-\d+-\
 def _setting(con, chave: str) -> str:
     if not _tem_tabela(con, "settings"):
         return ""
-    r = con.execute("SELECT value FROM settings WHERE key=?", (chave,)).fetchone()
-    return str((r[0] if r else "") or "").strip()
+    r = banco(con).um("SELECT value FROM settings WHERE key=%s", (chave,))
+    return str((r["value"] if r else "") or "").strip()
 
 
 def _pasta_do_malote_no_proton(con) -> Path | None:
@@ -1167,7 +1311,7 @@ def regra_malote_sem_triagem(ctx: Contexto) -> list[dict]:
     for e in _linhas(con, """SELECT e.id, e.internal_protocol, e.subject, e.created_at
                                FROM expedientes e
                               WHERE e.source = 'Malote Digital' AND e.stage = 'RECEBIDO'
-                                AND e.created_at >= ?
+                                AND e.created_at >= %s
                                 AND NOT EXISTS (SELECT 1 FROM tasks t
                                                  WHERE t.linked_expediente_id = e.id
                                                    AND t.status NOT IN ('CONCLUIDA','CANCELADA'))
@@ -1197,9 +1341,10 @@ def regra_malote_anexo_confere(ctx: Contexto) -> list[dict]:
     achados = []
     for e in _linhas(con, """SELECT e.id, e.internal_protocol,
                                     (SELECT count(*) FROM attachments a
-                                      WHERE a.entity_type='EXPEDIENTE' AND a.entity_id=e.id) n
+                                      WHERE a.entity_type='EXPEDIENTE' AND a.entity_id=e.id) AS n
                                FROM expedientes e
-                              WHERE e.source = 'Malote Digital' AND e.created_at >= ?""", (CORTE,)):
+                              WHERE e.source = 'Malote Digital' AND e.created_at >= %s
+                              ORDER BY e.id""", (CORTE,)):
         if not e["n"]:
             achados.append(_achado(
                 f"MALOTE_SEM_ANEXO:{e['id']}", "AGENTES", "MALOTE_ANEXO_CONFERE", "ATENCAO",
@@ -1208,7 +1353,8 @@ def regra_malote_anexo_confere(ctx: Contexto) -> list[dict]:
                 o_que_fazer="Anexar o PDF do malote ao expediente."))
             continue
         for a in _linhas(con, """SELECT id, original_name, stored_path, sha256 FROM attachments
-                                  WHERE entity_type='EXPEDIENTE' AND entity_id=?""", (e["id"],)):
+                                  WHERE entity_type='EXPEDIENTE' AND entity_id=%s
+                                  ORDER BY id""", (e["id"],)):
             caminho = Path(a["stored_path"] or "")
             if not caminho.is_file():
                 problema = "o arquivo não está no disco"
@@ -1226,6 +1372,8 @@ def regra_malote_anexo_confere(ctx: Contexto) -> list[dict]:
 
 REGRAS: tuple[tuple[str, Callable[[Contexto], list[dict]]], ...] = (
     ("AGENDADOR", regra_agendador),
+    ("CAIXA_CADEIA", regra_cadeia_do_caixa),
+    ("AUDITORIA_CADEIA", regra_cadeia_da_auditoria),
     ("LOG_DA_ROTINA", regra_log_das_rotinas),
     ("GESTOR_EXECUCAO", regra_execucoes_do_gestor),
     ("IA_SEM_RESULTADO", regra_ia_sem_resultado),
@@ -1261,9 +1409,9 @@ AREA_DA_REGRA = {
     "MALOTE_PARADO": "AGENTES", "MALOTE_SEM_TRIAGEM": "AGENTES", "MALOTE_ANEXO_CONFERE": "AGENTES",
 }
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS cp_achados (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+SCHEMA = (
+    """CREATE TABLE IF NOT EXISTS cp_achados (
+    id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
     chave TEXT NOT NULL UNIQUE,
     area TEXT NOT NULL,
     regra TEXT NOT NULL,
@@ -1276,11 +1424,10 @@ CREATE TABLE IF NOT EXISTS cp_achados (
     primeiro_visto_em TEXT NOT NULL,
     ultimo_visto_em TEXT NOT NULL,
     resolvido_em TEXT
-);
-CREATE INDEX IF NOT EXISTS ix_cp_achados_abertos ON cp_achados (resolvido_em, area);
-
-CREATE TABLE IF NOT EXISTS cp_execucoes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+)""",
+    "CREATE INDEX IF NOT EXISTS ix_cp_achados_abertos ON cp_achados (resolvido_em, area)",
+    """CREATE TABLE IF NOT EXISTS cp_execucoes (
+    id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
     iniciada_em TEXT NOT NULL,
     terminada_em TEXT,
     achados INTEGER,
@@ -1289,30 +1436,30 @@ CREATE TABLE IF NOT EXISTS cp_execucoes (
     criticos INTEGER,
     nao_mediu INTEGER,
     relatorio TEXT,
-    tarefa_id INTEGER,
+    tarefa_id bigint,
     erro TEXT
-);
-
-CREATE TABLE IF NOT EXISTS cp_fotografias (
+)""",
+    """CREATE TABLE IF NOT EXISTS cp_fotografias (
     chave TEXT PRIMARY KEY,
     valor TEXT,
     tirada_em TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS cp_mudancas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+)""",
+    """CREATE TABLE IF NOT EXISTS cp_mudancas (
+    id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
     chave TEXT NOT NULL,
     antes TEXT,
     depois TEXT,
     vista_em TEXT NOT NULL,
     com_rastro INTEGER NOT NULL DEFAULT 0,
     UNIQUE (chave, vista_em)
-);
-"""
+)""",
+)
 
 
 def init_schema(con: sqlite3.Connection) -> None:
-    con.executescript(SCHEMA)
+    bd = banco(con)
+    for comando in SCHEMA:
+        bd.escrever(comando)
 
 
 def conferir(ctx: Contexto) -> list[dict]:
@@ -1330,46 +1477,49 @@ def conferir(ctx: Contexto) -> list[dict]:
 
 
 def gravar(con: sqlite3.Connection, achados: list[dict], agora: str) -> dict:
+    bd = banco(con)
     vistos, novos = set(), 0
     for a in achados:
         vistos.add(a["chave"])
-        r = con.execute("SELECT id FROM cp_achados WHERE chave=?", (a["chave"],)).fetchone()
+        r = bd.um("SELECT id FROM cp_achados WHERE chave=%s", (a["chave"],))
         campos = (a["area"], a["regra"], a["gravidade"], a["titulo"], a["detalhe"],
                   a["evidencia"], a["fundamento"], a["o_que_fazer"])
         if r is None:
             novos += 1
-            con.execute(
+            bd.escrever(
                 """INSERT INTO cp_achados (area, regra, gravidade, titulo, detalhe, evidencia,
                        fundamento, o_que_fazer, chave, primeiro_visto_em, ultimo_visto_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (*campos, a["chave"], agora, agora))
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", (*campos, a["chave"], agora, agora))
         else:
-            con.execute(
-                """UPDATE cp_achados SET area=?, regra=?, gravidade=?, titulo=?, detalhe=?,
-                       evidencia=?, fundamento=?, o_que_fazer=?, ultimo_visto_em=?,
-                       resolvido_em=NULL WHERE id=?""", (*campos, agora, r[0]))
+            bd.escrever(
+                """UPDATE cp_achados SET area=%s, regra=%s, gravidade=%s, titulo=%s, detalhe=%s,
+                       evidencia=%s, fundamento=%s, o_que_fazer=%s, ultimo_visto_em=%s,
+                       resolvido_em=NULL WHERE id=%s""", (*campos, agora, r["id"]))
     # A REGRA QUE NÃO MEDIU NÃO RESOLVE NADA DELA: é o defeito que este módulo
     # acusa no gestor, e o fiscal não pode cometê-lo.
     sem_medida = {a["regra"] for a in achados if a["gravidade"] == "NAO_MEDIU"}
     resolvidos = 0
-    for r in _linhas(con, "SELECT id, chave, regra FROM cp_achados WHERE resolvido_em IS NULL"):
+    for r in _linhas(con, "SELECT id, chave, regra FROM cp_achados WHERE resolvido_em IS NULL "
+                          "ORDER BY id"):
         if r["chave"] not in vistos and r["regra"] not in sem_medida:
             resolvidos += 1
-            con.execute("UPDATE cp_achados SET resolvido_em=? WHERE id=?", (agora, r["id"]))
+            bd.escrever("UPDATE cp_achados SET resolvido_em=%s WHERE id=%s", (agora, r["id"]))
     return {"novos": novos, "resolvidos": resolvidos}
 
 
 def _dono(con) -> int | None:
     """O oficial: o titular da Gestão na distribuição do gestor, senão o
     primeiro ADMIN ativo que não é robô."""
+    bd = banco(con)
     if _tem_tabela(con, "ge_responsaveis"):
-        r = con.execute("SELECT user_id FROM ge_responsaveis WHERE setor='GESTAO'").fetchone()
+        r = bd.um("SELECT user_id FROM ge_responsaveis WHERE setor='GESTAO' ORDER BY setor LIMIT 1")
         if r:
-            return int(r[0])
+            return int(r["user_id"])
     cols = _colunas(con, "users")
     robo = "AND COALESCE(eh_robo,0)=0" if "eh_robo" in cols else ""
-    r = con.execute(f"SELECT id FROM users WHERE role='ADMIN' AND active=1 {robo} "
-                    "ORDER BY id LIMIT 1").fetchone()
-    return int(r[0]) if r else None
+    r = bd.um(f"SELECT id FROM users WHERE role='ADMIN' AND active=1 {robo} "
+              "ORDER BY id LIMIT 1")
+    return int(r["id"]) if r else None
 
 
 def publicar_tarefa(con: sqlite3.Connection, hoje: date, abertos: list[dict]) -> int | None:
@@ -1379,14 +1529,16 @@ def publicar_tarefa(con: sqlite3.Connection, hoje: date, abertos: list[dict]) ->
     agora = datetime.now().isoformat(timespec="seconds")
     ref = f"{SOURCE_TYPE}:{hoje.isoformat()}"
     criticos = [a for a in abertos if a["gravidade"] in ("CRITICO", "NAO_MEDIU")]
-    for velha in _linhas(con, """SELECT id, status FROM tasks WHERE source_type=? AND
+    bd = banco(con)
+    for velha in _linhas(con, """SELECT id, status FROM tasks WHERE source_type=%s AND
                                     status NOT IN ('CONCLUIDA','CANCELADA')
-                                    AND (source_ref <> ? OR ? = 0)""",
+                                    AND (source_ref <> %s OR %s = 0)
+                                  ORDER BY id""",
                          (SOURCE_TYPE, ref, len(criticos))):
-        con.execute("UPDATE tasks SET status='CONCLUIDA', completed_at=?, updated_at=? WHERE id=?",
+        bd.escrever("UPDATE tasks SET status='CONCLUIDA', completed_at=%s, updated_at=%s WHERE id=%s",
                     (agora, agora, velha["id"]))
-        con.execute("""INSERT INTO task_history (task_id, ts, user_id, action, old_value,
-                           new_value, note) VALUES (?,?,NULL,'ALTEROU_STATUS',?,'CONCLUIDA',?)""",
+        bd.escrever("""INSERT INTO task_history (task_id, ts, user_id, action, old_value,
+                           new_value, note) VALUES (%s,%s,NULL,'ALTEROU_STATUS',%s,'CONCLUIDA',%s)""",
                     (velha["id"], agora, velha["status"],
                      "Substituída pelo relatório de compliance de hoje." if criticos else
                      "O compliance não encontra mais ponto crítico."))
@@ -1409,34 +1561,35 @@ def publicar_tarefa(con: sqlite3.Connection, hoje: date, abertos: list[dict]) ->
                   "FERRAMENTAS\\COMPLIANCE\\relatorios.")
     texto = "\n".join(linhas)
     titulo = f"[Compliance] {len(criticos)} ponto(s) crítico(s) — {hoje:%d/%m/%Y}"
-    atual = con.execute("SELECT id FROM tasks WHERE source_type=? AND source_ref=?",
-                        (SOURCE_TYPE, ref)).fetchone()
+    atual = bd.um("SELECT id FROM tasks WHERE source_type=%s AND source_ref=%s ORDER BY id LIMIT 1",
+                  (SOURCE_TYPE, ref))
     if atual:
-        con.execute("""UPDATE tasks SET title=?, description=?, status='ABERTA',
-                           completed_at=NULL, updated_at=? WHERE id=?""",
-                    (titulo, texto, agora, atual[0]))
-        return int(atual[0])
-    cur = con.execute(
+        bd.escrever("""UPDATE tasks SET title=%s, description=%s, status='ABERTA',
+                           completed_at=NULL, updated_at=%s WHERE id=%s""",
+                    (titulo, texto, agora, atual["id"]))
+        return int(atual["id"])
+    tarefa_id = bd.escrever(
         """INSERT INTO tasks (source_type, source_ref, title, description, sector, system_name,
                priority, status, start_date, due_date, assigned_user_id, evidence_required,
                created_at, updated_at)
-           VALUES (?,?,?,?,'Gestão','Agente de compliance','ALTA','ABERTA',?,?,?,0,?,?)""",
-        (SOURCE_TYPE, ref, titulo, texto, hoje.isoformat(), hoje.isoformat(), dono, agora, agora))
-    con.execute("""INSERT INTO task_history (task_id, ts, user_id, action, note)
-                   VALUES (?,?,NULL,'CRIADA','Relatório do dia, pelo agente de compliance.')""",
-                (cur.lastrowid, agora))
-    return int(cur.lastrowid)
+           VALUES (%s,%s,%s,%s,'Gestão','Agente de compliance','ALTA','ABERTA',%s,%s,%s,0,%s,%s)
+           RETURNING id""",
+        (SOURCE_TYPE, ref, titulo, texto, hoje.isoformat(), hoje.isoformat(), dono, agora, agora))[0]["id"]
+    bd.escrever("""INSERT INTO task_history (task_id, ts, user_id, action, note)
+                   VALUES (%s,%s,NULL,'CRIADA','Relatório do dia, pelo agente de compliance.')""",
+                (tarefa_id, agora))
+    return int(tarefa_id)
 
 
 def relatorio_html(con: sqlite3.Connection, agora: datetime, resumo: dict) -> str:
     e = html.escape
-    abertos = _linhas(con, "SELECT * FROM cp_achados WHERE resolvido_em IS NULL")
+    abertos = _linhas(con, "SELECT * FROM cp_achados WHERE resolvido_em IS NULL ORDER BY id")
     ordem = {g: i for i, g in enumerate(GRAVIDADES)}
     abertos.sort(key=lambda a: (list(AREAS).index(a["area"]) if a["area"] in AREAS else 9,
                                 ordem.get(a["gravidade"], 9), a["regra"], a["chave"]))
     hoje = agora.date().isoformat()
-    resolvidos = _linhas(con, "SELECT titulo FROM cp_achados WHERE resolvido_em LIKE ?",
-                         (hoje + "%",))
+    resolvidos = _linhas(con, "SELECT titulo FROM cp_achados WHERE resolvido_em ILIKE %s "
+                              "ORDER BY id", (hoje + "%",))
     blocos = []
     for area, nome in AREAS.items():
         itens = [a for a in abertos if a["area"] == area]
@@ -1482,15 +1635,16 @@ gestor divergem, o achado é sobre o gestor.</small></p>
 
 
 def rodar(con: sqlite3.Connection, ctx: Contexto, pasta_relatorio: Path | None = None) -> dict:
-    con.row_factory = None
+    bd = banco(con)
     init_schema(con)
     agora = ctx.agora.isoformat(timespec="seconds")
-    exe = con.execute("INSERT INTO cp_execucoes (iniciada_em) VALUES (?)", (agora,)).lastrowid
+    exe = bd.escrever("INSERT INTO cp_execucoes (iniciada_em) VALUES (%s) RETURNING id",
+                      (agora,))[0]["id"]
     con.commit()
     try:
         achados = conferir(ctx)
         resumo = gravar(con, achados, agora)
-        abertos = _linhas(con, "SELECT * FROM cp_achados WHERE resolvido_em IS NULL")
+        abertos = _linhas(con, "SELECT * FROM cp_achados WHERE resolvido_em IS NULL ORDER BY id")
         resumo["achados"] = len(achados)
         resumo["criticos"] = sum(a["gravidade"] == "CRITICO" for a in achados)
         resumo["nao_mediu"] = sum(a["gravidade"] == "NAO_MEDIU" for a in achados)
@@ -1501,9 +1655,9 @@ def rodar(con: sqlite3.Connection, ctx: Contexto, pasta_relatorio: Path | None =
             caminho = pasta_relatorio / f"compliance_{ctx.hoje.isoformat()}.html"
             caminho.write_text(relatorio_html(con, ctx.agora, resumo), encoding="utf-8")
         resumo["relatorio"] = str(caminho) if caminho else None
-        con.execute(
-            """UPDATE cp_execucoes SET terminada_em=?, achados=?, novos=?, resolvidos=?,
-                   criticos=?, nao_mediu=?, relatorio=?, tarefa_id=? WHERE id=?""",
+        bd.escrever(
+            """UPDATE cp_execucoes SET terminada_em=%s, achados=%s, novos=%s, resolvidos=%s,
+                   criticos=%s, nao_mediu=%s, relatorio=%s, tarefa_id=%s WHERE id=%s""",
             (datetime.now().isoformat(timespec="seconds"), resumo["achados"], resumo["novos"],
              resumo["resolvidos"], resumo["criticos"], resumo["nao_mediu"],
              resumo["relatorio"], resumo["tarefa"], exe))
@@ -1511,7 +1665,7 @@ def rodar(con: sqlite3.Connection, ctx: Contexto, pasta_relatorio: Path | None =
         return resumo
     except Exception as erro:
         con.rollback()
-        con.execute("UPDATE cp_execucoes SET terminada_em=?, erro=? WHERE id=?",
+        bd.escrever("UPDATE cp_execucoes SET terminada_em=%s, erro=%s WHERE id=%s",
                     (datetime.now().isoformat(timespec="seconds"),
                      f"{type(erro).__name__}: {erro}", exe))
         con.commit()

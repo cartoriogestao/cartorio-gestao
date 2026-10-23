@@ -1,0 +1,13 @@
+{
+  "chave": "NT-ESC-DISSOLUCAO-UNIAO-ESTAVEL",
+  "atribuicao": "Tabelionato de Notas — minutas",
+  "nome": "Escritura pública de dissolução de união estável",
+  "formato": "JINJA",
+  "explica": "Minuta de fábrica do ato (o corpo, com os marcadores da casa). O ajuste da casa mora em nt_modelos e continua lá; a subida atualiza a linha que ninguém editou.",
+  "campos": [
+    "lavrado_nome",
+    "lavrado_titulo",
+    "outorgantes",
+    "sv"
+  ]
+}

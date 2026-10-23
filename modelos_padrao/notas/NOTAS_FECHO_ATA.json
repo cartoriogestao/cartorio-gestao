@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_FECHO_ATA",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Fecho da ata notarial",
+  "formato": "CHAVES",
+  "explica": "O fecho do teor da ata notarial montado pelo sistema, depois do objeto.",
+  "campos": []
+}

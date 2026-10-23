@@ -76,7 +76,7 @@
 <section class="panel">
   <div class="panel-head"><span>Procurar e filtrar</span></div>
   <form method="get" class="grid2" style="padding:14px">
-    <input type="hidden" name="vista" value="{{ filtro.vista }}">
+    <input type="hidden" name="vista_atual" value="{{ filtro.vista }}">
     <input type="hidden" name="ordem" value="{{ filtro.ordem }}">
     <input type="hidden" name="dir" value="{{ filtro.dir }}">
     <label>Termo
@@ -128,9 +128,8 @@
     <p style="padding:14px">
       Nada aqui.
       {% if acervo_vazio %}
-        O acervo do E-Ofício entra pela tela
-        <a href="{{ url_for('atribuicoes_importar') }}">Trazer das atribuições</a>;
-        título novo, pelo botão «Título novo».
+        {# O link para a carga do E-Ofício saiu em 17/10/2026. #}
+        Título novo entra pelo botão «Título novo».
       {% elif filtro.vista == 'pendentes' and not filtro.q and not filtro.situacao and not filtro.apresentante and not filtro.de and not filtro.ate %}
         Nenhum título com o fluxo em aberto. Os já resolvidos estão em
         <a href="{{ url_for('protesto_titulos', vista='encerrados') }}">Encerrados</a>.

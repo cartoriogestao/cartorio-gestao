@@ -1,0 +1,6 @@
+<p><b>CERTIFICO</b>, a pedido de {{ requerente or 'parte interessada' }}{% if requerente_documento %}, {{ requerente_documento }}{% endif %}, que, revendo o Livro {{ a.livro or '—' }}, folha {{ a.folha or '—' }}{% if a.folha_final and a.folha_final != a.folha %} a {{ a.folha_final }}{% endif %}{% if a.termo %}, termo n. {{ a.termo }}{% elif a.numero_ordem %}, ordem n. {{ a.numero_ordem }}{% endif %}, deste Tabelionato de Notas, nele encontrei o ato de {{ rotulo_tipo|lower }}, lavrado em {{ data_do_ato }}, cujo teor, na íntegra, é o seguinte:</p>
+<p>«{{ teor }}»</p>
+{% for s in selos_do_ato or [] %}<p><b>SELO DE FISCALIZAÇÃO DO ATO:</b> {{ s }}</p>{% endfor %}
+{% if anotacoes %}<p><b>ANOTAÇÕES À MARGEM:</b></p>{% for n in anotacoes %}<p>{{ n.tipo }}{% if n.data %} em {{ n.data }}{% endif %}{% if n.texto %}: {{ n.texto }}{% endif %}</p>{% endfor %}{% else %}<p>Nada mais consta à margem do referido ato.</p>{% endif %}
+{% if finalidade %}<p><b>FINALIDADE:</b> {{ finalidade }}</p>{% endif %}
+<p>O referido é verdade e dou fé.</p>

@@ -1,0 +1,10 @@
+===CABECALHO===
+{unit_short} — CNS {cns}
+{atribuicao}
+===INTRO===
+CERTIFICO que fica CANCELADO o Registro nº {numero} deste livro, à vista do documento que o autorizou.
+Causa do cancelamento e documento que o autorizou: {motivo}
+===ENCERRAMENTO===
+Do que, para constar, lavrei este termo de cancelamento, que dato e assino. Eu, {full_name}, {funcao}, o subscrevo e assino.
+===DATA===
+{cidade}/{uf}, {data_extenso}.

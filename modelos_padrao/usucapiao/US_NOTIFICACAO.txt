@@ -1,0 +1,36 @@
+{cabeca}
+
+Autos nº {numero}{do_ano} — {modalidade}
+Requerente: {requerente}
+
+NOTIFICADO(A): {destinatario}
+Na qualidade de: {papel}
+Endereço: {endereco}
+
+Pelo presente, fica V. Sa. NOTIFICADO(A) de que tramita nesta serventia procedimento de USUCAPIÃO EXTRAJUDICIAL, requerido nos termos do art. 216-A da Lei nº 6.015/1973, sobre o imóvel a seguir descrito:
+
+{imovel}
+
+{sobre_a_posse}Fica V. Sa. cientificado(a) de que poderá MANIFESTAR-SE sobre o pedido no prazo de {prazo_texto}, contado do recebimento desta.
+
+{sobre_o_silencio}
+
+A manifestação, a anuência ou a impugnação podem ser apresentadas nesta serventia, por escrito, ou por qualquer meio que permita a identificação de quem as apresenta.
+
+{lugar_e_data}
+
+_______________________________________
+{oficial}
+{cargo}
+{serventia}
+
+--------------------------------------------------------------------------
+RECIBO — a ser assinado por quem recebe
+
+Recebi a notificação acima, em ____/____/________, às ______h______.
+
+Nome de quem recebe: ______________________________________________________
+Documento: ________________________________  Assinatura: __________________
+
+Forma da notificação: {forma_texto}
+{base_da_forma}

@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from bd_nativo import banco
+
 # ------------------------------------------------------------------ a CRA
 
 # OS QUATRO HORARIOS, do papel do oficial. Sao da CRA, e nao da CENPROT.
@@ -186,7 +188,7 @@ FONTES = (
 # O QUE ENTROU HOJE, POR ESPECIE DA CENPROT. Escrita uma vez: tres copias da
 # mesma consulta divergiriam no primeiro conserto.
 _POR_ESPECIE = ("SELECT COUNT(*) FROM cn_pendencias "
-                "WHERE especie=? AND baixada_em >= ? AND baixada_em < ?")
+                "WHERE especie=%s AND baixada_em >= %s AND baixada_em < %s")
 
 # A LINHA QUE MARCA A VIRADA DO PROTESTO NAO E ARQUIVO (protesto_retorno.
 # _registro_do_eoficio): ela traz `cra_enviado_ambiente = 'EOFICIO'`.
@@ -212,15 +214,13 @@ def _um(con: sqlite3.Connection, tabela: str | tuple, sql: str,
     """
     if not _existe(con, *((tabela,) if isinstance(tabela, str) else tabela)):
         return None
-    return int(con.execute(sql, args).fetchone()[0] or 0)
+    return int(banco(con).valor(sql, args) or 0)
 
 
 def _existe(con: sqlite3.Connection, *tabelas: str) -> bool:
     """As tabelas existem todas nesta instalacao? So LE o catalogo."""
     for tabela in tabelas:
-        if not con.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                (tabela,)).fetchone():
+        if not banco(con).tem_tabela(tabela):
             return False
     return True
 
@@ -254,13 +254,13 @@ def o_que_ja_aconteceu_hoje(con: sqlite3.Connection, *, hoje: str) -> dict:
     # do dia da virada e `cra_enviado_ambiente = 'EOFICIO'`. Contadas, a coluna
     # «hoje» diria «1 retorno gerado» no primeiro dia sem ninguem ter gerado.
     por_tipo = ("SELECT COUNT(*) FROM pt_retornos "
-                "WHERE tipo=? AND gerado_em >= ? AND gerado_em < ? "
+                "WHERE tipo=%s AND gerado_em >= %s AND gerado_em < %s "
                 f"AND {_NAO_E_A_VIRADA}")
     return {
         "remessa_recebida": _um(
             con, "pt_remessas",
             "SELECT COUNT(*) FROM pt_remessas "
-            "WHERE recebida_em >= ? AND recebida_em < ?", dia, ate),
+            "WHERE recebida_em >= %s AND recebida_em < %s", dia, ate),
         "confirmacao_gerada": _um(con, "pt_retornos", por_tipo,
                                   "SDTBFOCRT", dia, ate),
         "retorno_gerado": _um(con, "pt_retornos", por_tipo,
@@ -270,10 +270,10 @@ def o_que_ja_aconteceu_hoje(con: sqlite3.Connection, *, hoje: str) -> dict:
         "desistencia_recebida": _um(
             con, "pt_desistencias",
             "SELECT COUNT(*) FROM pt_desistencias "
-            "WHERE recebida_em >= ? AND recebida_em < ?", dia, ate),
+            "WHERE recebida_em >= %s AND recebida_em < %s", dia, ate),
         "edital_publicado": _um(
             con, "pt_editais",
-            "SELECT COUNT(*) FROM pt_editais WHERE publicado_em=?", dia),
+            "SELECT COUNT(*) FROM pt_editais WHERE publicado_em=%s", dia),
         # AS TRES DA CENPROT, de 02/09/2026. **O que se conta e o que ENTROU
         # hoje**, e nao o que espera — a pergunta deste quadro e «o que ja
         # aconteceu», como no `remessa_recebida` logo acima. Quantas esperam e
@@ -501,6 +501,9 @@ ETAPAS_DO_DIA: tuple[dict, ...] = (
           "tela": "protesto_livro", "args": {"qual": "pagamentos"}},
          {"rotulo": "Livro de Protocolo",
           "tela": "protesto_livro", "args": {"qual": "protocolo"}},
+         # O DINHEIRO DO TÍTULO PAGO AINDA É DO APRESENTANTE (LG05).
+         {"rotulo": "Repasses ao apresentante",
+          "tela": "protesto_repasses", "args": {}},
      ),
      "faz": ("O pagamento e a retirada se lançam na ficha do título (botões da "
              "ficha), com selo, custas e a forma de pagamento que o Livro de "
@@ -572,6 +575,9 @@ ETAPAS_DO_DIA: tuple[dict, ...] = (
           "tela": "protesto_certidoes", "args": {}},
          {"rotulo": "Instrumentos de protesto",
           "tela": "protesto_instrumentos", "args": {}},
+         # CN-MA art. 949: a relação do dia às entidades de crédito (LG05).
+         {"rotulo": "Certidão diária em relação",
+          "tela": "protesto_relacao_diaria", "args": {}},
      ),
      "faz": ("A certidão (negativa, positiva ou de cancelamento) se emite aqui, "
              "com número, teor congelado e selo. O instrumento se emite por "
@@ -607,36 +613,36 @@ def medir_o_dia(con: sqlite3.Connection, *, hoje: str) -> dict:
 
     dia, ate = _faixa(hoje)
     terminais = sorted(SITUACOES_TERMINAIS)
-    marcas = ", ".join("?" * len(terminais))
+    marcas = ", ".join(["%s"] * len(terminais))
     gerados = ("SELECT COUNT(*) FROM pt_retornos WHERE tipo IN ({tipos}) "
-               "AND gerado_em >= ? AND gerado_em < ? "
+               "AND gerado_em >= %s AND gerado_em < %s "
                f"AND {_NAO_E_A_VIRADA}")
     aceitos = (gerados + " AND cra_enviado_em IS NOT NULL "
-               "AND cra_enviado_ambiente = ?")
+               "AND cra_enviado_ambiente = %s")
     com_erro = (gerados + " AND cra_enviado_em IS NULL "
                 "AND TRIM(COALESCE(cra_envio_erro, '')) <> ''")
-    um_tipo = "?"
-    dois_tipos = "?, ?"
+    um_tipo = "%s"
+    dois_tipos = "%s, %s"
     em_aberto = "('APONTADO', 'INTIMADO')"
 
     m: dict = {
         "remessas_recebidas_hoje": _um(
             con, "pt_remessas",
             "SELECT COUNT(*) FROM pt_remessas "
-            "WHERE recebida_em >= ? AND recebida_em < ?", dia, ate),
+            "WHERE recebida_em >= %s AND recebida_em < %s", dia, ate),
         "titulos_sem_apontamento": _um(
             con, "pt_titulos",
             "SELECT COUNT(*) FROM pt_titulos WHERE situacao = 'RECEBIDO'"),
         "arquivos_trazidos_da_cra_hoje": _um(
             con, "audit_logs",
             "SELECT COUNT(*) FROM audit_logs "
-            "WHERE action = 'cra_baixar' AND ts >= ? AND ts < ?", dia, ate),
+            "WHERE action = 'cra_baixar' AND ts >= %s AND ts < %s", dia, ate),
         "abertos_sem_imagem": _um(
             con, ("pt_titulos", "attachments"),
             "SELECT COUNT(*) FROM pt_titulos t "
             "WHERE t.situacao IN ('RECEBIDO', 'APONTADO', 'INTIMADO') "
             "AND NOT EXISTS (SELECT 1 FROM attachments a "
-            "WHERE a.entity_type = ? AND a.entity_id = t.id)",
+            "WHERE a.entity_type = %s AND a.entity_id = t.id)",
             PIMG.ENTIDADE),
         "confirmacoes_hoje": _um(
             con, "pt_retornos", gerados.format(tipos=um_tipo),
@@ -665,13 +671,13 @@ def medir_o_dia(con: sqlite3.Connection, *, hoje: str) -> dict:
             "AND TRIM(COALESCE(chave_cenprot, '')) = ''"),
         "intimacoes_digitais_hoje": _um(
             con, "rs_intimacoes",
-            "SELECT COUNT(*) FROM rs_intimacoes WHERE ambiente = ? "
-            "AND enviada_em >= ? AND enviada_em < ?",
+            "SELECT COUNT(*) FROM rs_intimacoes WHERE ambiente = %s "
+            "AND enviada_em >= %s AND enviada_em < %s",
             AMBIENTE_DE_PRODUCAO, dia, ate),
         "desistencias_hoje": _um(
             con, "pt_desistencias",
             "SELECT COUNT(*) FROM pt_desistencias "
-            "WHERE recebida_em >= ? AND recebida_em < ?", dia, ate),
+            "WHERE recebida_em >= %s AND recebida_em < %s", dia, ate),
         "desistencias_com_titulo_por_aplicar": _um(
             con, "pt_desistencias",
             "SELECT COUNT(*) FROM pt_desistencias WHERE aplicados < titulos"),
@@ -682,7 +688,7 @@ def medir_o_dia(con: sqlite3.Connection, *, hoje: str) -> dict:
             con, "pt_atos",
             "SELECT COUNT(*) FROM pt_atos "
             "WHERE tipo IN ('PAGAMENTO', 'DESISTENCIA') AND cancelado = 0 "
-            "AND data_ato >= ? AND data_ato < ?", dia, ate),
+            "AND data_ato >= %s AND data_ato < %s", dia, ate),
         "retornos_e_andamentos_hoje": _um(
             con, "pt_retornos", gerados.format(tipos=dois_tipos),
             "SDTBFORTP", "SDTBFOAND", dia, ate),
@@ -691,26 +697,26 @@ def medir_o_dia(con: sqlite3.Connection, *, hoje: str) -> dict:
             "SDTBFORTP", "SDTBFOAND", dia, ate, AMBIENTE_DE_PRODUCAO),
         "cenprot_esperando": _um(
             con, "cn_pendencias",
-            "SELECT COUNT(*) FROM cn_pendencias WHERE ambiente = ? "
+            "SELECT COUNT(*) FROM cn_pendencias WHERE ambiente = %s "
             f"AND situacao NOT IN ({marcas})",
             AMBIENTE_DE_PRODUCAO, *terminais),
         "pedidos_de_certidao_cenprot": _um(
             con, "cn_pendencias",
-            "SELECT COUNT(*) FROM cn_pendencias WHERE ambiente = ? "
-            f"AND especie = ? AND situacao NOT IN ({marcas})",
+            "SELECT COUNT(*) FROM cn_pendencias WHERE ambiente = %s "
+            f"AND especie = %s AND situacao NOT IN ({marcas})",
             AMBIENTE_DE_PRODUCAO, CERTIDAO, *terminais),
         "editais_hoje": _um(
             con, "pt_editais",
-            "SELECT COUNT(*) FROM pt_editais WHERE publicado_em = ?", dia),
+            "SELECT COUNT(*) FROM pt_editais WHERE publicado_em = %s", dia),
         "emolumentos_enviados_hoje": _um(
             con, "audit_logs",
             "SELECT COUNT(*) FROM audit_logs "
             "WHERE action = 'cenprot_custas_enviadas' "
-            "AND ts >= ? AND ts < ?", dia, ate),
+            "AND ts >= %s AND ts < %s", dia, ate),
         "certidoes_hoje": _um(
             con, "pt_certidoes",
             "SELECT COUNT(*) FROM pt_certidoes WHERE cancelada = 0 "
-            "AND emitida_em >= ? AND emitida_em < ?", dia, ate),
+            "AND emitida_em >= %s AND emitida_em < %s", dia, ate),
         "protestos_sem_instrumento": _um(
             con, ("pt_atos", "pt_instrumentos"),
             "SELECT COUNT(*) FROM pt_atos a WHERE a.tipo = 'PROTESTO' "
@@ -745,9 +751,9 @@ def estado_do_envio(con: sqlite3.Connection) -> dict:
     """
     ligado = None
     if _existe(con, "settings"):
-        linha = con.execute("SELECT value FROM settings WHERE key = ?",
-                            ("cra_auto_enviar_producao",)).fetchone()
-        ligado = bool(linha) and str(linha[0]) == "1"
+        linha = banco(con).um("SELECT value FROM settings WHERE key = %s",
+                              ("cra_auto_enviar_producao",))
+        ligado = bool(linha) and str(linha["value"]) == "1"
     credenciais = {}
     try:
         import centrais_cred as CRED

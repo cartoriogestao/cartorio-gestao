@@ -1,0 +1,1 @@
+Fica INUTILIZADA a face {face} do {livro} n. {numero} — {quantas} face —, {razao}, nada mais podendo nela ser lançado.

@@ -1,0 +1,1 @@
+CANCELAMENTO no Indicador Real. Fica anotado o cancelamento do registro {{ numero }} do Livro 3 ({{ resumo }}), lavrado pela averbação {{ averbacao }}. FUNDAMENTO: {{ motivo }}

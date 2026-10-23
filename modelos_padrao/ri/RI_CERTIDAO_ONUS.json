@@ -1,0 +1,13 @@
+{
+  "chave": "RI_CERTIDAO_ONUS",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão — o miolo dos ônus",
+  "formato": "JINJA",
+  "explica": "Os atos restritivos, ou o «NADA CONSTA» que é o que o banco, o comprador e o juiz leem. É afirmação sobre o IMÓVEL, e se conserta sozinha, sem arrastar a abertura nem a validade.",
+  "campos": [
+    "itens_acoes",
+    "itens_onus",
+    "resultado_acoes",
+    "resultado_onus"
+  ]
+}

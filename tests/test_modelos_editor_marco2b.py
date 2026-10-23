@@ -22,6 +22,9 @@ from modelos_editor_schema import (
     init_modelos_editor_schema,
 )
 
+sys.path.insert(0, str(RAIZ / "tests"))
+from banco_de_teste import conexao_de_teste  # noqa: E402
+
 AGORA = "2026-10-05T16:00:00"
 
 TERMOS = (
@@ -39,8 +42,11 @@ MOLDES_IDS = (
 
 @pytest.fixture()
 def con(tmp_path):
-    c = sqlite3.connect(tmp_path / "t.sqlite3")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
+    # `ri_schema` aponta para `users` (FK): o PostgreSQL cobra a FK
+    # na criacao, e o banco da casa cria `users` antes. Aqui basta o esqueleto.
+    c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
     ri_schema.init_ri_schema(c)
     ESQ.init_modelos_elementos_schema(c)
     MOLDES.init_modelos_moldes_schema(c)

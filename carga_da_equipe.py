@@ -21,11 +21,12 @@ A única coisa que ele impede é a tarefa IGUAL nascer de novo
 from __future__ import annotations
 
 import re
-import sqlite3
 import unicodedata
 from collections import defaultdict
 from datetime import date
 from typing import Any
+
+from bd_nativo import banco
 
 #: Peso de cada tarefa aberta na carga. Vencida pesa mais: é a que trava.
 PESO = {"CRITICA": 3, "ALTA": 2, "MEDIA": 1, "BAIXA": 1}
@@ -47,9 +48,14 @@ def _familia(titulo: Any) -> str:
     return re.sub(r"\d+", "#", _norm(titulo))
 
 
+def _nomes(con: Any) -> dict:
+    return {r["id"]: (r["full_name"] or r["username"]) for r in banco(con).ler(
+        "SELECT id, full_name, username FROM users ORDER BY id")}
+
+
 # ------------------------------------------------------------- a guarda
 
-def tarefa_igual_aberta(con: sqlite3.Connection, dados: dict) -> int | None:
+def tarefa_igual_aberta(con: Any, dados: dict) -> int | None:
     """Já existe tarefa ABERTA igual a esta? Igual = mesmo título (sem acento,
     caixa e pontuação, mas COM os números), mesmo responsável, e — quando a nova
     traz `source_ref` — a mesma referência; sem referência, o mesmo começo de
@@ -66,34 +72,37 @@ def tarefa_igual_aberta(con: sqlite3.Connection, dados: dict) -> int | None:
     # teste do relato #59 com uma tarefa «PENDENTE» pegou.
     import tarefa_processo as TP
     cond, params = TP.condicao_aberta("status")
-    for r in con.execute(
-            f"SELECT id, title, source_ref, description FROM tasks WHERE {cond} "
-            "AND COALESCE(assigned_user_id, 0) = COALESCE(?, 0)",
-            (*params, dados.get("assigned_user_id"))).fetchall():
-        if _norm(r[1]) != titulo:
+    # `condicao_aberta` ainda devolve `?` (módulo fora do lote): troca aqui.
+    for r in banco(con).ler(
+            f"SELECT id, title, source_ref, description FROM tasks WHERE {cond.replace('?', '%s')} "
+            "AND COALESCE(assigned_user_id, 0) = COALESCE(%s, 0) ORDER BY id",
+            (*params, dados.get("assigned_user_id"))):
+        if _norm(r["title"]) != titulo:
             continue
         if ref:
-            if (r[2] or "").strip() == ref:
-                return int(r[0])
-        elif _norm(r[3])[:200] == desc:
-            return int(r[0])
+            if (r["source_ref"] or "").strip() == ref:
+                return int(r["id"])
+        elif _norm(r["description"])[:200] == desc:
+            return int(r["id"])
     return None
 
 
 # ------------------------------------------------------------- a carga
 
-def carga(con: sqlite3.Connection, hoje: date | None = None) -> list[dict]:
+def carga(con: Any, hoje: date | None = None) -> list[dict]:
     """Por pessoa: abertas, vencidas, alta/crítica e pontos."""
     hoje_iso = (hoje or date.today()).isoformat()
     por: dict[int, dict] = {}
-    nomes = {r[0]: (r[1] or r[2]) for r in con.execute("SELECT id, full_name, username FROM users")}
+    nomes = _nomes(con)
     # A SUSPENSA NÃO PESA NA CARGA (relato #132): enquanto espera o cliente ou
     # a data, ela não é serviço na mão de ninguém, nem vencida.
     import tarefa_suspensao as TS
     nao_suspensa, params_suspensao = TS.condicao_nao_suspensa(None, hoje_iso, con=con)
-    for uid, prio, venc in con.execute(
-            "SELECT assigned_user_id, priority, due_date FROM tasks WHERE status NOT IN (?, ?) "
-            f"AND assigned_user_id IS NOT NULL AND {nao_suspensa}", (*FECHADAS, *params_suspensao)):
+    for r in banco(con).ler(
+            "SELECT assigned_user_id, priority, due_date FROM tasks WHERE status NOT IN (%s, %s) "
+            f"AND assigned_user_id IS NOT NULL AND {nao_suspensa.replace('?', '%s')} ORDER BY id",
+            (*FECHADAS, *params_suspensao)):
+        uid, prio, venc = r["assigned_user_id"], r["priority"], r["due_date"]
         d = por.setdefault(uid, {"usuario_id": uid, "nome": nomes.get(uid, str(uid)), "abertas": 0,
                                  "vencidas": 0, "altas": 0, "pontos": 0})
         d["abertas"] += 1
@@ -106,23 +115,26 @@ def carga(con: sqlite3.Connection, hoje: date | None = None) -> list[dict]:
     return sorted(por.values(), key=lambda d: -d["pontos"])
 
 
-def sugestoes_de_passagem(con: sqlite3.Connection, hoje: date | None = None,
+def sugestoes_de_passagem(con: Any, hoje: date | None = None,
                           limite: int = 15) -> list[dict]:
     """Tarefas do titular sobrecarregado que o substituto (já gravado na
     tarefa) poderia assumir: o titular tem pelo menos 1,5× os pontos dele.
     As vencidas primeiro. Só sugere."""
     pontos = {d["usuario_id"]: d["pontos"] for d in carga(con, hoje)}
-    nomes = {r[0]: (r[1] or r[2]) for r in con.execute("SELECT id, full_name, username FROM users")}
+    nomes = _nomes(con)
     hoje_iso = (hoje or date.today()).isoformat()
     saida = []
     import tarefa_suspensao as TS
     nao_suspensa, params_suspensao = TS.condicao_nao_suspensa(None, hoje_iso, con=con)
-    for tid, titulo, dono, sub, venc, prio in con.execute(
+    for r in banco(con).ler(
             "SELECT id, title, assigned_user_id, backup_user_id, due_date, priority FROM tasks "
-            "WHERE status NOT IN (?, ?) AND backup_user_id IS NOT NULL "
-            f"AND backup_user_id <> assigned_user_id AND {nao_suspensa} "
-            "ORDER BY CASE WHEN due_date < ? THEN 0 ELSE 1 END, due_date",
+            "WHERE status NOT IN (%s, %s) AND backup_user_id IS NOT NULL "
+            f"AND backup_user_id <> assigned_user_id AND {nao_suspensa.replace('?', '%s')} "
+            "ORDER BY CASE WHEN due_date < %s THEN 0 ELSE 1 END, due_date, id",
             (*FECHADAS, *params_suspensao, hoje_iso)):
+        tid, titulo, dono, sub, venc, prio = (
+            r["id"], r["title"], r["assigned_user_id"], r["backup_user_id"],
+            r["due_date"], r["priority"])
         p_dono, p_sub = pontos.get(dono, 0), pontos.get(sub, 0)
         if p_dono and p_dono >= FOLGA_PARA_SUGERIR * max(p_sub, 1):
             saida.append({"id": tid, "titulo": titulo, "de": nomes.get(dono, dono),
@@ -133,29 +145,33 @@ def sugestoes_de_passagem(con: sqlite3.Connection, hoje: date | None = None,
     return saida
 
 
-def agrupaveis(con: sqlite3.Connection) -> list[dict]:
+def agrupaveis(con: Any) -> list[dict]:
     """Grupos de tarefas abertas da mesma pessoa com o mesmo título-família
     (números à parte) — candidatas a virar uma tarefa só. Só sugere."""
     grupos: dict[tuple, list] = defaultdict(list)
-    for tid, titulo, dono in con.execute(
-            "SELECT id, title, assigned_user_id FROM tasks WHERE status NOT IN (?, ?)", FECHADAS):
+    for r in banco(con).ler(
+            "SELECT id, title, assigned_user_id FROM tasks WHERE status NOT IN (%s, %s) ORDER BY id",
+            FECHADAS):
+        tid, titulo, dono = r["id"], r["title"], r["assigned_user_id"]
         grupos[(dono, _familia(titulo))].append((tid, titulo))
-    nomes = {r[0]: (r[1] or r[2]) for r in con.execute("SELECT id, full_name, username FROM users")}
+    nomes = _nomes(con)
     saida = [{"de": nomes.get(dono, dono), "familia": fam, "tarefas": v}
              for (dono, fam), v in grupos.items() if len(v) > 1]
     return sorted(saida, key=lambda g: -len(g["tarefas"]))
 
 
-def prioridade_inflada(con: sqlite3.Connection) -> dict:
+def prioridade_inflada(con: Any) -> dict:
     """Quantas das abertas estão em ALTA/CRÍTICA."""
-    total, altas = con.execute(
-        "SELECT COUNT(*), SUM(CASE WHEN priority IN ('ALTA','CRITICA') THEN 1 ELSE 0 END) "
-        "FROM tasks WHERE status NOT IN (?, ?)", FECHADAS).fetchone()
+    r = banco(con).um(
+        "SELECT COUNT(*)::int AS total, "
+        "SUM(CASE WHEN priority IN ('ALTA','CRITICA') THEN 1 ELSE 0 END)::int AS altas "
+        "FROM tasks WHERE status NOT IN (%s, %s)", FECHADAS)
+    total, altas = r["total"], r["altas"]
     return {"abertas": total or 0, "altas": altas or 0,
             "percentual": round(100 * (altas or 0) / total) if total else 0}
 
 
-def texto_do_relato(con: sqlite3.Connection, hoje: date | None = None) -> tuple[str, int]:
+def texto_do_relato(con: Any, hoje: date | None = None) -> tuple[str, int]:
     """O relato diário da carga, para a Gestão. Devolve (texto, nº de itens)."""
     linhas = ["A CARGA DE CADA UM (pontos: crítica 3, alta 2, média 1; vencida +2)"]
     c = carga(con, hoje)

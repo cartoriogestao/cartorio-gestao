@@ -58,15 +58,18 @@ def corrigir_virgula_da_data(texto: Any) -> str:
 
 
 def texto_da_etiqueta_motor(teor: str, cidade: str, uf: str, data_iso: str, *,
-                            manter_importado: bool = True) -> str:
+                            manter_importado: bool = True, con: Any = None) -> str:
     """Envelope de `notas_schema.texto_da_etiqueta` com o espaço da vírgula.
 
     `manter_importado=True` (padrão): teor que JÁ traz o fecho («… DA
     VERDADE …», os importados do E-Ofício) volta idêntico — segunda via igual
     à primeira. Só o fecho montado pelo sistema ganha o espaço.
+
+    `con` vai adiante: o fecho mora na base desde o LF06D, e com a conexão
+    vale o ajuste da casa.
     """
     from notas_schema import texto_da_etiqueta
-    saida = texto_da_etiqueta(teor, cidade, uf, data_iso)
+    saida = texto_da_etiqueta(teor, cidade, uf, data_iso, con=con)
     if manter_importado and "DA VERDADE" in str(teor or "").upper():
         return saida
     return corrigir_virgula_da_data(saida)

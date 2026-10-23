@@ -1,0 +1,12 @@
+{
+  "chave": "NOTAS_QUALIFICACAO_PJ",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Qualificação de pessoa jurídica",
+  "formato": "CHAVES",
+  "explica": "A qualificação da pessoa jurídica. O que faltar sai marcado entre colchetes pelo código — nunca em branco.",
+  "campos": [
+    "nome",
+    "documento",
+    "endereco"
+  ]
+}

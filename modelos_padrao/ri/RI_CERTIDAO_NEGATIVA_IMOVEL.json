@@ -1,0 +1,22 @@
+{
+  "chave": "RI_CERTIDAO_NEGATIVA_IMOVEL",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão negativa de imóvel (busca)",
+  "formato": "JINJA",
+  "explica": "Busca nos indicadores sem achado: NADA CONSTA em nome da pessoa ou sobre o imóvel indicado — e, na busca pelo imóvel, a ressalva da matrícula ou transcrição de descrição diversa (Código de Normas, art. 554). Emite-se pelo Indicador Pessoal ou Real — nunca pela ficha da matrícula (#75).",
+  "campos": [
+    "criterio_rotulo",
+    "finalidade",
+    "hoje_extenso",
+    "hora_emissao",
+    "imovel_busca",
+    "lavrou_funcao",
+    "lavrou_nome",
+    "pesquisado",
+    "pesquisado_documento",
+    "protocolo",
+    "requerente",
+    "requerente_documento",
+    "serventia"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "chave": "CAIXA_RECIBO",
+  "atribuicao": "Caixa e protocolo",
+  "nome": "Recibo",
+  "formato": "JINJA",
+  "explica": "A prova de pagamento do atendimento inteiro.",
+  "campos": [
+    "agora",
+    "data_extenso",
+    "documento",
+    "emitido_por",
+    "funcao",
+    "fundos",
+    "itens",
+    "lancamento",
+    "observacao",
+    "orcamento",
+    "r",
+    "sv",
+    "telefone",
+    "tem_fundos"
+  ]
+}

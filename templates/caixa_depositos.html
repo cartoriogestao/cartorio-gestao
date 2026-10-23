@@ -93,6 +93,13 @@
     <label>Serviço do catálogo
       <input name="servico_codigo" value="{{ servico_escolhido }}"
              placeholder="13.17.2 ou «arquivamento»"></label>
+    {# O PROTOCOLO DO ORÇAMENTO (LD06; CN-MA art. 198, I e VI, e art. 197). O
+       orçamento de mais de um ato se monta no protocolo, item a item, pela
+       tabela do tribunal — o «mero cálculo» é um protocolo —, e o depósito que
+       aponta para ele guarda os itens a pagar com os fundos, congelados no dia.
+       Com um serviço só, basta o campo de cima: o preço sai da tabela vigente. #}
+    <label>Protocolo do orçamento
+      <input name="protocolo" placeholder="2026.10.15"></label>
     {# O CAMPO QUE NÃO DIZ QUE É OPCIONAL SE LÊ COMO OBRIGATÓRIO — e medido em
        17/09/2026 ele **é** opcional: 8 dos 14 depósitos não têm vínculo nenhum,
        e o dinheiro deixado «para quando o título chegar» é legítimo. A frase
@@ -107,6 +114,11 @@
       <strong>{{ sugestao.de_onde }}</strong>{% if sugestao.servico %} — serviço
       {{ sugestao.servico.codigo_tj }} {{ sugestao.servico.descricao }}{% endif %}.</p>
     {% endif %}
+    <p class="span2 small muted" style="margin:0">O <strong>orçamento</strong>
+      sai do protocolo ou do serviço, com os emolumentos e os fundos, e vai no
+      recibo do depósito (CN-MA art. 197) e no Livro de Controle de Depósito
+      Prévio (art. 198, VI). Sem nenhum dos dois, o depósito entra sem orçamento,
+      e o livro aponta a falta.</p>
     <p class="span2 small muted" style="margin:0">A data do depósito é a do
       comprovante que o cliente traz, e pode não ser hoje — o lançamento no caixa
       continua sendo o do dia em que o dinheiro entrou.</p>
@@ -207,6 +219,9 @@
             {% if d.tipo.origem == 'VINCULO' %}<span class="muted">(do vínculo)</span>{% endif %}
           {% else %}<span class="muted">— sem tipo</span>{% endif %}
           {% if d.tipo.rotulo_servico %}<br><span class="muted">{{ d.tipo.rotulo_servico }}</span>{% endif %}
+          {# o orçamento congelado no depósito (LD06), ou a falta dele #}
+          <br>{% if d.orcamento_total %}<span class="muted">orçamento R$ {{ d.orcamento_total }}</span>
+          {% else %}<span class="muted">— sem orçamento</span>{% endif %}
         </td>
         <td>
           {% if not d.encerrado %}

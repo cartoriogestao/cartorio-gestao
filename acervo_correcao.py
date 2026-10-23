@@ -38,9 +38,10 @@ POR QUE `pt_titulos` (PROTESTO) FICA DE FORA
 """
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from typing import Any
+
+from bd_nativo import banco
 
 
 class CorrecaoError(ValueError):
@@ -128,40 +129,39 @@ def campos_de(tabela: str) -> tuple[str, ...]:
     return t.campos_seguros
 
 
-def buscar(con: sqlite3.Connection, tabela: str, termo: str,
-          limite: int = 30) -> list[sqlite3.Row]:
+def buscar(con: Any, tabela: str, termo: str,
+          limite: int = 30) -> list[dict]:
     """Só lê. Nunca abre transação de escrita — é tela de busca."""
     t = TABELAS.get(tabela)
     if not t:
         raise CorrecaoError("Tabela não reconhecida.")
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     colunas = ", ".join(t.colunas_lista)
     termo = (termo or "").strip()
     if t.origem_col:
-        marcadores = ",".join("?" for _ in t.valores_acervo)
+        marcadores = ",".join("%s" for _ in t.valores_acervo)
         sql = (f"SELECT {colunas} FROM {t.nome} "
               f"WHERE {t.origem_col} IN ({marcadores})"
-              + (f" AND {t.campo_busca} LIKE ?" if termo else "")
-              + " ORDER BY id DESC LIMIT ?")
+              + (f" AND {t.campo_busca} ILIKE %s" if termo else "")
+              + " ORDER BY id DESC LIMIT %s")
         params: tuple[Any, ...] = t.valores_acervo
         if termo:
             params += (f"%{termo}%",)
         params += (limite,)
     else:
         sql = (f"SELECT {colunas} FROM {t.nome}"
-              + (f" WHERE {t.campo_busca} LIKE ?" if termo else "")
-              + " ORDER BY id DESC LIMIT ?")
+              + (f" WHERE {t.campo_busca} ILIKE %s" if termo else "")
+              + " ORDER BY id DESC LIMIT %s")
         params = ((f"%{termo}%",) if termo else ()) + (limite,)
-    return list(con.execute(sql, params))
+    return bd.ler(sql, params)
 
 
-def obter(con: sqlite3.Connection, tabela: str, row_id: int) -> sqlite3.Row:
+def obter(con: Any, tabela: str, row_id: int) -> dict:
     """A linha inteira, com a guarda de proveniência já aplicada."""
     t = TABELAS.get(tabela)
     if not t:
         raise CorrecaoError("Tabela não reconhecida.")
-    con.row_factory = sqlite3.Row
-    row = con.execute(f"SELECT * FROM {t.nome} WHERE id=?", (row_id,)).fetchone()
+    row = banco(con).um(f"SELECT * FROM {t.nome} WHERE id=%s", (row_id,))
     if not row:
         raise CorrecaoError("Linha não encontrada.")
     if t.origem_col and row[t.origem_col] not in t.valores_acervo:
@@ -172,7 +172,7 @@ def obter(con: sqlite3.Connection, tabela: str, row_id: int) -> sqlite3.Row:
     return row
 
 
-def corrigir(con: sqlite3.Connection, tabela: str, row_id: int,
+def corrigir(con: Any, tabela: str, row_id: int,
             valores: dict[str, str], motivo: str) -> dict:
     """Corrige um ou mais campos de UMA linha do acervo, num motivo só.
 
@@ -192,8 +192,11 @@ def corrigir(con: sqlite3.Connection, tabela: str, row_id: int,
                 f"os campos de dado simples estão liberados, nunca "
                 f"numeração, livro, folha, selo, situação ou o texto do "
                 f"ato.")
-    con.row_factory = sqlite3.Row
-    row = con.execute(f"SELECT * FROM {t.nome} WHERE id=?", (row_id,)).fetchone()
+    bd = banco(con)
+    # Lê e grava a mesma linha: FOR UPDATE, senão uma correção ao mesmo tempo
+    # deixaria na auditoria um «antes» que já não era o valor da linha.
+    bd._escrita()
+    row = bd.um(f"SELECT * FROM {t.nome} WHERE id=%s FOR UPDATE", (row_id,))
     if not row:
         raise CorrecaoError("Linha não encontrada.")
     if t.origem_col and row[t.origem_col] not in t.valores_acervo:
@@ -210,7 +213,7 @@ def corrigir(con: sqlite3.Connection, tabela: str, row_id: int,
     if not mudancas:
         raise CorrecaoError("Nenhum campo mudou.")
     for campo, m in mudancas.items():
-        con.execute(f"UPDATE {t.nome} SET {campo}=? WHERE id=?",
-                   (m["depois"], row_id))
+        bd.escrever(f"UPDATE {t.nome} SET {campo}=%s WHERE id=%s",
+                    (m["depois"], row_id))
     return {"tabela": tabela, "id": row_id, "mudancas": mudancas,
             "motivo": motivo}

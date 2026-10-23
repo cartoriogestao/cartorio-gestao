@@ -1,0 +1,20 @@
+{
+  "chave": "RC_OFICIO_FUNAI",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Ofício à FUNAI",
+  "formato": "CHAVES",
+  "explica": "O ofício que comunica à FUNAI o assento de nascimento de pessoa indígena (art. 253, § 2º, do Código de Normas). Congela com o hash quando o envio é registrado; a etnia e a aldeia são perguntadas no balcão, e o que falta sai com o marcador «[COMPLETAR…]», que é peça deste papel.",
+  "campos": [
+    "serventia_nome",
+    "cns",
+    "nome",
+    "data_nascimento",
+    "data_assento",
+    "livro",
+    "folha",
+    "termo",
+    "matricula",
+    "etnia",
+    "aldeia"
+  ]
+}

@@ -158,6 +158,41 @@
                value="{{ form.get('hora_fato','') }}"></label>
 
       {% if nascimento %}
+      {# O REGISTRO TARDIO — 21/10/2026, o oficial: «precisamos fazer um
+         registro tardio». Fora do prazo do art. 50, o nascimento se registra
+         à vista de REQUERIMENTO autuado e numerado, assinado por duas
+         testemunhas — salvo o registrando menor de 12 anos com DNV (art. 249,
+         I e II). A tela de conferência imprime o requerimento preenchido. #}
+      <label>Registro tardio <small>(fora do prazo legal — art. 46 da Lei 6.015/1973)</small>
+        <select name="registro_tardio">
+          <option value="">não — registro dentro do prazo</option>
+          <option value="1" {% if form.get('registro_tardio') in ('1', 1, 'SIM') %}selected{% endif %}>sim — registro tardio (art. 249)</option>
+        </select></label>
+      <div class="grid2" style="grid-column:1/-1"
+           data-se-campo="registro_tardio" data-se-valor="^1$">
+        <label>Número do requerimento autuado <small>(art. 249, I)</small>
+          <input name="tardio_requerimento"
+                 value="{{ form.get('tardio_requerimento') or tardio_sugerido or '' }}"
+                 placeholder="ex.: 1/2026"></label>
+        <p style="grid-column:1/-1"><small>
+          Sem DNV, a lavratura aceita. A <strong>segunda testemunha</strong>
+          aparece no fim da tela; as duas só são dispensadas quando o
+          registrando tem <strong>menos de 12 anos e apresentou a DNV</strong>
+          (art. 249, II) — o sistema calcula. Ao conferir, imprima o
+          <strong>requerimento preenchido</strong> para o requerente e as
+          testemunhas assinarem; o requerimento assinado se anexa ao ato e fica
+          arquivado por 20 anos (§ 1º).
+          <a href="{{ url_for('rcpn_registro_tardio') }}" target="_blank">Régua do art. 249</a>.
+        </small></p>
+        {# IMPRIMIR JÁ, ANTES DE CONFERIR — 21/10/2026: o requerimento é o papel
+           que os comparecentes assinam, e ele vem antes da lavratura. #}
+        <p style="grid-column:1/-1">
+          <button class="button" type="submit" formnovalidate formtarget="_blank"
+                  formaction="{{ url_for('rcpn_requerimento_tardio_imprimir') }}">
+            Imprimir o requerimento preenchido (para assinar)</button>
+          <small>Abre em outra aba com o que já está nesta tela; o que faltar sai
+          em linha para preencher à mão. Não grava nada.</small></p>
+      </div>
       <label>DNV <small>número da Declaração de Nascido Vivo</small>
         <input name="dnv" value="{{ form.get('dnv','') }}"></label>
       <label>Tipo de parto <small>(gêmeos: a ordem vai no termo de cada um)</small>
@@ -186,6 +221,15 @@
         <input name="local_fato_endereco"
                value="{{ form.get('local_fato_endereco','') }}"
                placeholder="rua, número e bairro"></label>
+      {% if nascimento or obito or natimorto %}
+      {# O MUNICÍPIO DO LOCAL — LD01, 21/10/2026: é ele que a certidão imprime
+         na célula MUNICÍPIO (LRP art. 54, 1º; art. 80, 2º). Vem escrito o da
+         serventia, que é o caso comum; troque quando o fato foi noutro. #}
+      <label>Município do local <small>(onde nasceu / faleceu)</small>
+        <input name="local_fato_municipio"
+               value="{{ form.get('local_fato_municipio') or municipio_padrao or '' }}"
+               placeholder="Município/UF"></label>
+      {% endif %}
       {% if nascimento %}
       <label>Tipo do local <small>(IBGE)</small>
         <select name="ibge_local">
@@ -499,7 +543,30 @@
   {% endif %}
   {% if nascimento or casamento or obito or natimorto %}
     {{ pessoa('testemunha', 'Testemunha', '', false, form) }}
+    {# A SEGUNDA TESTEMUNHA — LD01, 21/10/2026. O casamento se celebra com
+       duas, pelo menos (CC art. 1.534; LRP art. 70, 6º), e o parto sem
+       assistência médica pede duas no assento (LRP art. 54, 9º); a tela tinha
+       um bloco só. O papel é o mesmo, TESTEMUNHA — menos no NASCIMENTO, onde
+       a mesma gaveta grava `TESTEMUNHA2`, o papel do registro tardio (art.
+       249, II; hotfix do servidor de 21/10/2026). Uma gaveta só, e sempre à
+       vista: o parto sem assistência também pede a segunda. #}
+    {% if nascimento %}
+    {{ pessoa('testemunha2', 'Segunda testemunha',
+              'No registro tardio (art. 249, II): nome completo, data de '
+              'nascimento, nacionalidade, estado civil, profissão, residência, '
+              'RG e CPF — ela atesta a identidade do registrando, sob as penas '
+              'da lei.', false, form) }}
+    {% else %}
+    {{ pessoa('testemunha2', 'Segunda testemunha', '', false, form) }}
+    {% endif %}
   {% endif %}
+  {# 22/10/2026: aqui havia um SEGUNDO bloco `testemunha2`, o do hotfix de
+     21/10 (só à vista no tardio), e a 3.7.0 o trouxe ao lado da gaveta única
+     acima — o pacote já vinha assim, e a produção também. Dois campos com o
+     mesmo nome: o formulário mandava os dois, e `_campo` lê com
+     `request.form.get`, que devolve o PRIMEIRO — a segunda testemunha digitada
+     no bloco de baixo se perdia. Ficou a gaveta única (LD01), e
+     tests/test_registro_tardio.py cobra um campo só. #}
 
   {# 6. O QUE O SISTEMA FAZ SOZINHO — termo, matrícula e selo, por último:
      é o que o escrevente normalmente deixa em branco. #}

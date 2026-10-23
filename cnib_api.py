@@ -337,9 +337,17 @@ def token(ambiente: Any = None, *, pasta=None, agora: float | None = None) -> st
         dados = dados["data"]
     novo = _texto(dados.get("access_token"))
     if not novo:
+        # SÓ OS NOMES DOS CAMPOS, NUNCA O CORPO (LX14; M11 do LS03). Os 200
+        # caracteres do corpo iam para a mensagem e dela para a auditoria, e
+        # uma resposta de autenticação pode trazer o `refresh_token`, o
+        # `id_token` ou o eco do `client_secret`. O nome do campo basta para
+        # saber o que veio no lugar do token.
+        campos = ", ".join(sorted(str(k) for k in dados)) if dados else ""
         raise CnibError(
-            "O CNIB respondeu à autenticação sem `access_token`. O corpo veio: "
-            f"{_texto(r.get('texto'))[:200]}")
+            "O CNIB respondeu à autenticação sem `access_token`. "
+            + (f"Vieram os campos: {campos}." if campos else
+               f"A resposta não era JSON (HTTP {r.get('status')}, "
+               f"{len(_texto(r.get('texto')))} caracteres)."))
     try:
         dura = int(dados.get("expires_in") or 0)
     except (TypeError, ValueError):

@@ -1,0 +1,11 @@
+{
+  "chave": "NOTAS_QUALIFICACAO_PF__conjuge",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Qualificação de pessoa física — cônjuge e regime de bens",
+  "formato": "CHAVES",
+  "explica": "Entra logo depois do estado civil de quem é casado: o nome do cônjuge e o regime de bens (CC art. 215, § 1º, III; CN-MA art. 798, V).",
+  "campos": [
+    "conjuge",
+    "regime_bens"
+  ]
+}

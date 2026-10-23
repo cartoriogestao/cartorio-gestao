@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_RECONHECIMENTO_SEMELHANCA__sinal",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Reconhecimento por semelhança — sinal público e firma",
+  "formato": "CHAVES",
+  "explica": "Quando o reconhecimento junta o sinal público e a firma no mesmo ato.",
+  "campos": [
+    "quem"
+  ]
+}

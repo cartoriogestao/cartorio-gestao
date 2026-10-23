@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from bd_nativo import banco
 from ri_schema import dias_uteis_entre, soma_dias_uteis
 
 # TJMA 452, § 3º — hipoteses em que o prazo da prenotacao nao corre.
@@ -47,8 +48,9 @@ def suspensa(p) -> bool:
 
 def suspender(con, protocolo_id: int, *, motivo: str, quem: str | None,
               hoje: date) -> None:
-    p = con.execute("SELECT * FROM ri_protocolos WHERE id=?",
-                    (int(protocolo_id),)).fetchone()
+    bd = banco(con)
+    p = bd.um("SELECT * FROM ri_protocolos WHERE id=%s",
+              (int(protocolo_id),))
     if not p:
         raise PrazoError("Protocolo não encontrado.")
     if p["situacao"] != "ABERTO":
@@ -57,23 +59,24 @@ def suspender(con, protocolo_id: int, *, motivo: str, quem: str | None,
         raise PrazoError("O prazo desta prenotação já está suspenso.")
     if motivo not in MOTIVOS:
         raise PrazoError("Escolha uma das hipóteses do TJMA 452, § 3º.")
-    con.execute(
+    bd.escrever(
         """UPDATE ri_protocolos
-              SET prazo_suspenso_desde=?, prazo_suspenso_motivo=?,
-                  prazo_suspenso_por=?,
-                  suscitacao_duvida=CASE WHEN ?='DUVIDA'
-                                         THEN COALESCE(suscitacao_duvida, ?)
+              SET prazo_suspenso_desde=%s, prazo_suspenso_motivo=%s,
+                  prazo_suspenso_por=%s,
+                  suscitacao_duvida=CASE WHEN %s
+                                         THEN COALESCE(suscitacao_duvida, %s)
                                          ELSE suscitacao_duvida END
-            WHERE id=?""",
-        (hoje.isoformat(), motivo, quem, motivo, hoje.isoformat(),
+            WHERE id=%s""",
+        (hoje.isoformat(), motivo, quem, motivo == "DUVIDA", hoje.isoformat(),
          int(protocolo_id)))
 
 
 def retomar(con, protocolo_id: int, *, quem: str | None, hoje: date,
             feriados: set | None = None) -> dict:
     """Volta a contar. Devolve `{"dias", "data_limite"}` (nova)."""
-    p = con.execute("SELECT * FROM ri_protocolos WHERE id=?",
-                    (int(protocolo_id),)).fetchone()
+    bd = banco(con)
+    p = bd.um("SELECT * FROM ri_protocolos WHERE id=%s",
+              (int(protocolo_id),))
     if not p:
         raise PrazoError("Protocolo não encontrado.")
     if not suspensa(p):
@@ -89,11 +92,11 @@ def retomar(con, protocolo_id: int, *, quem: str | None, hoje: date,
             f"({MOTIVOS.get(p['prazo_suspenso_motivo'], p['prazo_suspenso_motivo'])}"
             f"): +{dias} dia(s) útil(eis); limite {limite} → {novo}"
             f"{' — ' + quem if quem else ''}.")
-    con.execute(
+    bd.escrever(
         """UPDATE ri_protocolos
-              SET data_limite=?, prazo_suspenso_desde=NULL,
+              SET data_limite=%s, prazo_suspenso_desde=NULL,
                   prazo_suspenso_motivo=NULL, prazo_suspenso_por=NULL,
-                  anotacao=COALESCE(anotacao || char(10), '') || ?
-            WHERE id=?""",
+                  anotacao=COALESCE(anotacao || chr(10), '') || %s
+            WHERE id=%s""",
         (novo, nota, int(protocolo_id)))
     return {"dias": dias, "data_limite": novo}

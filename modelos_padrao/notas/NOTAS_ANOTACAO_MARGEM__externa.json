@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ANOTACAO_MARGEM__externa",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Anotação à margem — o ato de outra serventia",
+  "formato": "CHAVES",
+  "explica": "Quando o ato que gera a anotação foi lavrado fora.",
+  "campos": [
+    "serventia"
+  ]
+}

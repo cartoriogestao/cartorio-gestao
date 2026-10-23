@@ -1,0 +1,22 @@
+{
+  "chave": "CAIXA_RECEPCAO",
+  "atribuicao": "Caixa e protocolo",
+  "nome": "Comprovante de recepção",
+  "formato": "JINJA",
+  "explica": "O que o cliente entregou no balcão, e quando.",
+  "campos": [
+    "data",
+    "documento",
+    "email",
+    "emitido_por",
+    "funcao",
+    "itens",
+    "observacao",
+    "p",
+    "pendente",
+    "previsao",
+    "soma",
+    "sv",
+    "telefone"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "chave": "RTD_CERTIDAO_NOTIFICACAO_POSITIVA__entregue",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Notificação positiva — entregue ao destinatário",
+  "formato": "CHAVES",
+  "explica": "Quando a diligência positiva foi a entrega ao próprio destinatário.",
+  "campos": []
+}

@@ -84,84 +84,40 @@ class CertidaoPdfError(ValueError):
 
 
 # ------------------------------------------------------ piso (texto fábrica)
-
-def _capa_piso() -> str:
-    """Capa adaptada do modelo SP — sem telefones/branding de SP."""
-    return (
-        f"{MARCA_CABECALHO}\n"
-        f"{{unit_short}} — CNS {{cns}}\n"
-        f"Oficial: {{oficial}}\n"
-        f"{{endereco}}\n"
-        f"{MARCA_TITULO}\n"
-        f"{{atribuicao}}\n"
-        f"Nº {{numero}} de {{data_registro}}\n"
-        f"{MARCA_CORPO}\n"
-        # **`{{objeto_certificado}}` DIZ O QUE ESTÁ SENDO CERTIFICADO** —
-        # correção do oficial em 12/09/2026: «no PDF precisa arrumar a
-        # parte introdutória, não está com os dados do serviço efetivo de
-        # certidão de averbações». Antes, esta frase sempre falava do
-        # REGISTRO original, mesmo quando a certidão era só sobre
-        # averbações posteriores — quem monta o texto (a rota) decide o
-        # que entra aqui: "o registro de {natureza}" ou "a(s) averbação(ões)
-        # nº X, Y".
-        #
-        # **E A FRASE EM SI AINDA AFIRMAVA "REGISTRADO... NA PRESENTE
-        # DATA"** — mesmo achado, mesmo dia: dizia que o documento "foi
-        # apresentado... tendo sido registrado sob nº {numero}... na
-        # presente data", frase que só faz sentido quando o que se
-        # certifica É o próprio registro, lavrado hoje. Numa certidão de
-        # averbação, o registro nº {numero} é de {data_registro} — não de
-        # hoje —, e o que se apresentou/registrou agora foi a averbação, já
-        # nomeada em {objeto_certificado}. A frase passa a REFERENCIAR o
-        # registro (nº e data dele) em vez de afirmar que ele aconteceu na
-        # data da certidão.
-        f"Certifico e dou fé que o documento, contendo {{paginas}} "
-        f"({{paginas_extenso}}) página(s) (arquivo anexo), foi apresentado "
-        f"em {{data_apresentacao}}, protocolado sob nº {{protocolo}}, "
-        f"referente ao registro nº {{numero}} de {{data_registro}}, no "
-        f"{{livro}} desta serventia. A presente certidão tem por objeto "
-        f"{{objeto_certificado}}.\n"
-        f"{MARCA_DENOMINACAO}\n"
-        f"Denominação\n"
-        f"{{denominacao}}\n"
-        f"Natureza:\n"
-        f"{{natureza}}\n"
-        f"{MARCA_FECHO}\n"
-        f"{{cidade}}, {{data_extenso}}.\n"
-        f"Eu, {{full_name}}, {{funcao}}, o subscrevo e assino.\n"
-        # Frase «parte integrante…» removida a pedido do oficial (11/09/2026).
-    )
+#
+# O TEXTO DE FÁBRICA SAIU DAQUI NO LF06A (19/10/2026). A capa (adaptada do
+# modelo SP, sem telefones nem a marca de SP) e a faixa eram montadas por
+# `_capa_piso` e `_faixa_piso`; agora moram em
+# `modelos_padrao/rcpj_rtd/<CHAVE>.txt`, com os MESMOS bytes (o teste-ouro
+# confere), e chegam pela base dos padrões. As marcas de seção continuam aqui
+# porque é este módulo que parte o texto nelas.
+#
+# O QUE O TEXTO GUARDA, e que não pode se perder ao editá-lo:
+#
+#   · **`{objeto_certificado}` DIZ O QUE ESTÁ SENDO CERTIFICADO** — correção
+#     do oficial em 12/09/2026: «no PDF precisa arrumar a parte introdutória,
+#     não está com os dados do serviço efetivo de certidão de averbações».
+#     Quem monta o texto (a rota) decide o que entra ali: «o registro de
+#     {natureza}» ou «a(s) averbação(ões) nº X, Y».
+#   · **A FRASE REFERENCIA O REGISTRO, E NÃO AFIRMA QUE ELE FOI HOJE** —
+#     mesmo achado, mesmo dia: «tendo sido registrado … na presente data» só
+#     vale quando o certificado é o próprio registro, lavrado hoje.
+#   · A frase «parte integrante…» saiu a pedido do oficial (11/09/2026).
+#   · **A FAIXA TAMBÉM DIZ O OBJETO** — ela fica no topo de TODA folha
+#     interna, e quem lê uma folha solta (fotocópia) via só a história do
+#     registro, nunca a do que foi certificado.
+#
+# Os nomes antigos (`MODELO_RCPJ_CERTIDAO_CAPA`, `PADROES_POR_CHAVE`)
+# continuam respondendo — ver `__getattr__` no fim deste módulo.
 
 
-def _faixa_piso() -> str:
-    """Texto curto da faixa de cada folha interna.
+def piso(chave: str, *, se_outra: str = "RCPJ_CERTIDAO_CAPA") -> str:
+    """O padrão da base para aquela chave — `se_outra` se não for uma das
+    quatro, como o `PADROES_POR_CHAVE.get(chave) or ...` fazia."""
+    import modelos_da_casa as CASA
+    alvo = chave if chave in (*CHAVES_CAPA.values(), *CHAVES_FAIXA.values()) else se_outra
+    return CASA.padrao_de(alvo)
 
-    **TAMBÉM PRECISA DIZER O OBJETO** — mesma correção de 12/09/2026: a
-    faixa fica no topo de TODA folha interna, e falava só do registro
-    original mesmo quando a certidão é de averbação — quem lê uma folha
-    solta (fotocópia, por exemplo) via só a história do registro, nunca a
-    do que de fato foi certificado.
-    """
-    return (
-        f"{MARCA_FAIXA}\n"
-        f"Protocolo nº {{protocolo}} de {{data_apresentacao}}: certidão de "
-        f"{{objeto_certificado}}, sob nº {{numero}} em {{data_registro}} "
-        f"neste {{unit_short}} — {{atribuicao}}. Assinado por "
-        f"{{full_name}} — {{funcao}}.\n"
-    )
-
-
-MODELO_RCPJ_CERTIDAO_CAPA = _capa_piso()
-MODELO_RTD_CERTIDAO_CAPA = _capa_piso()
-MODELO_RCPJ_CERTIDAO_FAIXA = _faixa_piso()
-MODELO_RTD_CERTIDAO_FAIXA = _faixa_piso()
-
-PADROES_POR_CHAVE = {
-    "RCPJ_CERTIDAO_CAPA": MODELO_RCPJ_CERTIDAO_CAPA,
-    "RTD_CERTIDAO_CAPA": MODELO_RTD_CERTIDAO_CAPA,
-    "RCPJ_CERTIDAO_FAIXA": MODELO_RCPJ_CERTIDAO_FAIXA,
-    "RTD_CERTIDAO_FAIXA": MODELO_RTD_CERTIDAO_FAIXA,
-}
 
 CHAVES_CAPA = {"RCPJ": "RCPJ_CERTIDAO_CAPA", "RTD": "RTD_CERTIDAO_CAPA"}
 CHAVES_FAIXA = {"RCPJ": "RCPJ_CERTIDAO_FAIXA", "RTD": "RTD_CERTIDAO_FAIXA"}
@@ -258,17 +214,19 @@ def corpo_do_modelo(chave: str, con: sqlite3.Connection | None = None) -> str:
             return CASA.corpo_de(con, chave)
         except Exception:  # noqa: BLE001 — piso seguro
             pass
-    return PADROES_POR_CHAVE.get(chave) or MODELO_RCPJ_CERTIDAO_CAPA
+    return piso(chave)
 
 
-def livro_impresso(serie: str | None, volume: str | None) -> str:
+def livro_impresso(serie: str | None, volume: str | None, *,
+                   moldura: dict[str, str] | None = None) -> str:
+    """«Livro de Registro de Títulos e Documentos B-5». O nome do livro é a
+    parte ===LIVRO_RTD=== / ===LIVRO_RCPJ=== da moldura desde o LF06F; a letra
+    e o volume saem da série, aqui."""
     letra = (serie or "").split("_")[-1] or "A"
     v = str(volume or "").strip().lstrip("0")
     atr = codigo_atribuicao(serie=serie)
-    if atr == "RTD":
-        base = "Livro de Registro de Títulos e Documentos"
-    else:
-        base = "Livro de Registro Civil das Pessoas Jurídicas"
+    rotulos = moldura or TEOR.moldura()
+    base = rotulos["LIVRO_RTD"] if atr == "RTD" else rotulos["LIVRO_RCPJ"]
     sufixo = f" {letra}" + (f"-{v}" if v else "")
     return base + sufixo
 
@@ -305,8 +263,12 @@ def contexto_certidao(
     certidao_ano: str = "",
     pagina: int = 1,
     total_paginas: int = 1,
+    moldura: dict[str, str] | None = None,
 ) -> dict[str, str]:
     atr = codigo_atribuicao(serie=serie, atribuicao=atribuicao)
+    # As frases que preenchem o que a rota não mandou («o registro de …»,
+    # «Registro Nº …», o nome do livro) são da moldura desde o LF06F.
+    rotulos = moldura or TEOR.moldura()
     n_pag = max(1, int(paginas or 1))
     d_reg = _data_br(data_registro) or _data_br(dia or date.today())
     d_apr = _data_br(data_apresentacao) or d_reg
@@ -329,8 +291,10 @@ def contexto_certidao(
         # Sem que a rota mande nada, o padrão continua descrevendo o
         # REGISTRO — o mesmo texto de sempre, e não uma frase vazia.
         "objeto_certificado": (objeto_certificado or "").strip() or (
-            f"o registro de {natureza.strip()}" if (natureza or "").strip()
-            else "o registro"),
+            TEOR.preencher_moldura(rotulos, "OBJETO",
+                                   {"natureza": natureza.strip()})
+            if (natureza or "").strip()
+            else TEOR.preencher_moldura(rotulos, "OBJETO_SEM_NATUREZA")),
         # **A CAIXA "Página/Registro Nº.../data" DE TODA FOLHA INTERNA** —
         # achado do oficial em 12/09/2026: «segue o registro 148 na parte
         # esquerda superior do cabeçalho». Aquela caixa (desenhada em
@@ -342,7 +306,8 @@ def contexto_certidao(
         # "Averbação nº 378, 379"), a caixa mostra ELE — com a data de
         # `data_apresentacao` (a da própria averbação) — em vez do registro.
         "identificacao_curta": (
-            (identificacao_curta or "").strip() or f"Registro Nº {numero}"),
+            (identificacao_curta or "").strip()
+            or TEOR.preencher_moldura(rotulos, "IDENTIFICACAO", {"numero": numero})),
         "identificacao_data": _data_br(identificacao_data) or d_reg,
         "cidade": cidade or "",
         "uf": uf or "MA",
@@ -353,7 +318,7 @@ def contexto_certidao(
         "total_paginas": f"{int(total_paginas):06d}",
         "certidao_numero": str(certidao_numero or ""),
         "certidao_ano": str(certidao_ano or ""),
-        "livro": livro_impresso(serie, volume),
+        "livro": livro_impresso(serie, volume, moldura=rotulos),
     }
 
 
@@ -379,10 +344,14 @@ def textos_prontos(
     atr = codigo_atribuicao(serie=serie, atribuicao=atribuicao)
     chave_c = CHAVES_CAPA[atr]
     chave_f = CHAVES_FAIXA[atr]
+    # A MOLDURA (frases do desenho e o que preenche os claros vazios) se lê
+    # uma vez, da casa, e o ajuste com claro desconhecido é recusado aqui —
+    # com a exceção desta certidão, que a rota já sabe mostrar.
+    rotulos = TEOR.moldura(con, erro=CertidaoPdfError)
     ctx = contexto_certidao(
         numero=numero, lavrante_nome=lavrante_nome,
         lavrante_funcao=lavrante_funcao, serie=serie, atribuicao=atribuicao,
-        **kwargs)
+        moldura=rotulos, **kwargs)
 
     bruto_capa = corpo_do_modelo(chave_c, con=con)
     secoes = partir_modelo(
@@ -391,7 +360,7 @@ def textos_prontos(
          MARCA_FECHO))
     if not secoes:
         secoes = partir_modelo(
-            PADROES_POR_CHAVE[chave_c],
+            piso(chave_c),
             (MARCA_CABECALHO, MARCA_TITULO, MARCA_CORPO, MARCA_DENOMINACAO,
              MARCA_FECHO))
 
@@ -399,7 +368,7 @@ def textos_prontos(
     faixa_sec = partir_modelo(bruto_faixa, (MARCA_FAIXA,))
     if not faixa_sec:
         faixa_sec = partir_modelo(
-            PADROES_POR_CHAVE[chave_f], (MARCA_FAIXA,))
+            piso(chave_f), (MARCA_FAIXA,))
 
     return {
         "chave_capa": chave_c,
@@ -411,6 +380,7 @@ def textos_prontos(
         "fecho": aplicar_chaves(secoes.get("FECHO", ""), ctx),
         "faixa": aplicar_chaves(faixa_sec.get("FAIXA", ""), ctx),
         "ctx": ctx,
+        "moldura": rotulos,
     }
 
 
@@ -506,7 +476,8 @@ def _desenhar_quadro_emol(im: Image.Image, emol: dict[str, str],
 
 
 def _desenhar_area_selo(im: Image.Image, y0: int,
-                       selo: dict[str, Any] | None = None) -> int:
+                       selo: dict[str, Any] | None = None,
+                       rotulos: dict[str, str] | None = None) -> int:
     """A área do selo/QR na capa. Reservada (sem inventar número) — ou
 
     **COM O CARIMBO DE VERDADE**, quando a certidão já foi selada — achado
@@ -517,21 +488,26 @@ def _desenhar_area_selo(im: Image.Image, y0: int,
     autenticação" — mesmo para uma certidão já selada. Reaproveita
     `TEOR._carimbo_do_selo` (o mesmo carimbo do teor da averbação), e não
     desenha um segundo do zero.
+
+    Os rótulos («selo da certidão», «selo / verificação», «QR /
+    autenticação») são da moldura desde o LF06F (`rotulos`).
     """
+    rotulos = rotulos or TEOR.moldura()
     if selo and str(selo.get("numero") or "").strip():
         d = ImageDraw.Draw(im)
         faixa_w = min(A4_W - 2 * SIDE, 600)
         x0 = (A4_W - faixa_w) // 2
         h = 160
         TEOR._carimbo_do_selo(d, im, x0=x0, y0=y0, x1=x0 + faixa_w,
-                              y1=y0 + h, rotulo="selo da certidão", selo=selo)
+                              y1=y0 + h, rotulo=rotulos["SELO_CERTIDAO"],
+                              selo=selo, rotulos=rotulos)
         return y0 + h + 8
     d = ImageDraw.Draw(im)
     fn = _font(12)
     h = 160
     meio = A4_W // 2
     gap = 12
-    for i, rotulo in enumerate(("selo / verificação", "QR / autenticação")):
+    for i, rotulo in enumerate((rotulos["SELO_VAZIO"], rotulos["QR_VAZIO"])):
         x0 = SIDE if i == 0 else meio + gap // 2
         x1 = meio - gap // 2 if i == 0 else A4_W - SIDE
         d.rectangle([x0, y0, x1, y0 + h], outline=(160, 160, 160), width=1)
@@ -633,9 +609,10 @@ def montar_capa(textos: dict[str, Any], *,
     # Área do selo — sempre reservada na capa; vazia na prévia, ou com o
     # carimbo de verdade quando a certidão já foi selada.
     if y + 170 < A4_H - 20:
-        _desenhar_area_selo(im, max(y, A4_H - 190), selo=selo)
+        _desenhar_area_selo(im, max(y, A4_H - 190), selo=selo,
+                            rotulos=textos.get("moldura"))
     else:
-        _desenhar_area_selo(im, y, selo=selo)
+        _desenhar_area_selo(im, y, selo=selo, rotulos=textos.get("moldura"))
     return im, colou_primeira_folha
 
 
@@ -677,7 +654,7 @@ def montar_folha_interna(
     ctx["total_paginas"] = f"{total_paginas:06d}"
     # Reaplica faixa com página atual
     chave_f = textos["chave_faixa"]
-    bruto = PADROES_POR_CHAVE.get(chave_f, MODELO_RCPJ_CERTIDAO_FAIXA)
+    bruto = piso(chave_f, se_outra="RCPJ_CERTIDAO_FAIXA")
     # Usa o texto já resolvido trocando só a página via re-format se preciso
     faixa_txt = textos["faixa"]
 
@@ -685,7 +662,8 @@ def montar_folha_interna(
     # Caixa Página / Registro Nº / data (esquerda)
     box_w = 160
     d.rectangle([SIDE, y, SIDE + box_w, y + 70], outline="black", width=1)
-    d.text((SIDE + 6, y + 4), "Página", fill="black", font=fb)
+    rotulos = textos.get("moldura") or TEOR.moldura()
+    d.text((SIDE + 6, y + 4), rotulos["PAGINA"], fill="black", font=fb)
     d.text((SIDE + 6, y + 22),
            f"{ctx['pagina']}/{ctx['total_paginas']}", fill="black", font=fn)
     # **NÃO É SEMPRE "Registro Nº X"** — achado do oficial em 12/09/2026:
@@ -694,7 +672,8 @@ def montar_folha_interna(
     # `contexto_certidao`) já trazem o rótulo e a data do que de fato está
     # sendo certificado; só caem no registro quando a rota não manda nada
     # de diferente (certidão do próprio registro).
-    rotulo_curto = ctx.get("identificacao_curta") or f"Registro Nº {ctx['numero']}"
+    rotulo_curto = ctx.get("identificacao_curta") or TEOR.preencher_moldura(
+        rotulos, "IDENTIFICACAO", {"numero": ctx["numero"]})
     fb_rotulo = fb if len(rotulo_curto) <= 18 else _font(11, True)
     d.text((SIDE + 6, y + 40), rotulo_curto, fill="black", font=fb_rotulo)
     d.text((SIDE + 6, y + 54),
@@ -937,3 +916,22 @@ def gerar_pdf(
             src, textos=textos, pagina=i + 1 + deslocamento, total_paginas=n,
             emolumentos=emolumentos, com_emolumentos=com_emolumentos))
     return TEOR._images_to_pdf_bytes(pages)
+
+
+def __getattr__(nome: str):
+    """Os nomes antigos do texto de fábrica, lidos da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06A (19/10/2026) e mora em `modelos_padrao/`.
+    Quem ainda importa o nome antigo recebe o padrão da base — o MESMO que o
+    papel imprime, e não uma cópia que ficou para trás. `PADROES_POR_CHAVE`
+    devolve os quatro, na ordem de sempre. Nome que não é de papel continua
+    sendo `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    if nome == "PADROES_POR_CHAVE":
+        return {chave: piso(chave) for chave in (
+            CHAVES_CAPA["RCPJ"], CHAVES_CAPA["RTD"],
+            CHAVES_FAIXA["RCPJ"], CHAVES_FAIXA["RTD"])}
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)

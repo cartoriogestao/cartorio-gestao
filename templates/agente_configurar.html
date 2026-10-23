@@ -61,6 +61,17 @@
           </small>
         </span>
       </label>
+      <label style="display:flex; gap:8px; align-items:flex-start; margin-top:10px">
+        <input type="checkbox" name="escrita_sem_confirmacao" style="width:auto; margin-top:4px"
+               {% if config.escrita_sem_confirmacao %}checked{% endif %}>
+        <span>Deixar o agente <strong>aplicar sozinho</strong> a mudança de alcance
+          <br><small class="muted">
+            Desmarcado (o padrão), ele só PROPÕE abrir ou fechar um módulo, e a
+            mudança vale quando você clicar «aplicar» na tela do agente. Marcado,
+            ele aplica na hora, e você vê depois, no rastro, com o «desfazer» ao lado.
+          </small>
+        </span>
+      </label>
     </div>
     <div class="actions"><button class="button primary">Guardar</button></div>
   </form>

@@ -1,0 +1,1 @@
+<p>CERTIFICO ainda que, nesta data, <b>há</b> título(s) prenotado(s) em aberto referente(s) a esta matrícula, na forma da Lei nº 6.015/1973 e do Código Nacional de Normas do Foro Extrajudicial (Provimento CNJ nº 149/2023): {{ lista }}.</p>

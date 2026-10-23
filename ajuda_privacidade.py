@@ -21,9 +21,12 @@ from typing import Any, Pattern
 
 
 # "2" desde 23/09/2026: a pergunta em maiúsculas deixou de virar nome inteira.
+# "3" desde 19/10/2026 (LS03 M2, LX13): os furos medidos pela auditoria — CPF
+# com espaço, CNPJ, telefone sem DDD, CEP, «identidade 1234567», «nasceu em»,
+# «senha do gov.br: …», causa da morte e o nome solto em minúsculas.
 # A versão vai gravada em `aj_consultas.sanitizacao_versao`, e é por ela que se
 # separa, depois, o que saiu por uma régua e o que saiu pela outra.
-VERSAO_DAS_REGRAS = "2"
+VERSAO_DAS_REGRAS = "3"
 
 
 class PrivacidadeError(ValueError):
@@ -46,13 +49,40 @@ class PacoteSanitizado:
         return json.dumps(self.contagens, ensure_ascii=False, sort_keys=True)
 
 
-_CPF = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")
+# O CPF COM ESPAÇO (LS03 M2): «123 456 789 09» é como se dita ao telefone e
+# como sai de um PDF mal extraído, e passava inteiro. O espaço é um só, e não
+# `\s`: quebra de linha no meio de onze dígitos é tabela, e não CPF.
+_CPF = re.compile(r"\b\d{3}[. ]?\d{3}[. ]?\d{3}[- ]?\d{2}\b")
+# O CNPJ (LS03 M2) — o do empresário individual é o CPF dele com outra cara. A
+# mesma forma que `malote_fraudes._CNPJ` já mascarava no caminho das fraudes.
+_CNPJ = re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")
 _EMAIL = re.compile(
     r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\w-])",
     re.I,
 )
 _TELEFONE = re.compile(
     r"(?<!\d)(?:\+?55\s*)?\(?\d{2}\)?\s*(?:9\s*)?\d{4}[-\s]?\d{4}(?!\d)"
+)
+# O TELEFONE SEM DDD (LS03 M2): «98765-4321» e «3221-4567». Só com o hífen,
+# que é o que faz de oito dígitos um telefone: sem ele seria número de
+# protocolo. Celular começa com 9 e fixo com 2 a 5; «2010-2020» é intervalo de
+# anos, e fica.
+_TELEFONE_LOCAL = re.compile(
+    r"(?<![\d/.,-])(?!(?:19|20)\d{2}-(?:19|20)\d{2}(?!\d))"
+    r"(?:9 ?\d{4}|[2-5]\d{3})-\d{4}(?![\d/-])"
+)
+_TELEFONE_ROTULADO = re.compile(
+    r"(?P<inicio>\b(?:telefone|tel|fone|celular|cel|whatsapp|whats|zap)\b\.?"
+    r"\s*(?:n[ºo°]\.?\s*)?[:=]?\s*)"
+    r"(?P<valor>\+?\d[\d ().-]{6,18}\d)",
+    re.I,
+)
+# O CEP (LS03 M2): com o hífen, ou com o rótulo.
+_CEP = re.compile(r"(?<![\d.,/-])\d{2}\.?\d{3}-\d{3}(?![\d-])")
+_CEP_ROTULADO = re.compile(
+    r"(?P<inicio>\bCEP\b\.?\s*(?:n[ºo°]\.?\s*)?[:=]?\s*)"
+    r"(?P<valor>\d{2}\.?\d{3}-?\d{3})\b",
+    re.I,
 )
 _IP = re.compile(
     r"(?<!\d)(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}"
@@ -61,10 +91,18 @@ _IP = re.compile(
 _PROCESSO_CNJ = re.compile(
     r"\b\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}\b"
 )
+# «SENHA DO GOV.BR: …» (LS03 M2): o rótulo com complemento — «senha do
+# e-mail», «senha para o portal» — passava, porque a régua exigia os dois
+# pontos colados na palavra. E «a senha é Abc@1234» também: com o «é», o valor
+# só conta se tiver dígito ou símbolo, senão «a senha é obrigatória» viraria
+# segredo.
+_COMPLEMENTO_DO_SEGREDO = r"(?:\s+(?:d[aeo]s?|para|no|na)\s+[\w.@/-]{2,30}){0,2}"
 _SEGREDO = re.compile(
     r"\b(?:sk-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._~-]{8,}|"
-    r"(?:api[_-]?key|token|senha|password|secret)\s*[:=]\s*"
-    r"[^\s,;]{4,})",
+    r"(?:api[_-]?key|token|senha|password|secret|pin)" + _COMPLEMENTO_DO_SEGREDO
+    + r"\s*[:=]\s*[^\s,;]{4,}|"
+    r"(?:senha|password|pin)" + _COMPLEMENTO_DO_SEGREDO
+    + r"\s+(?:[eé]|era|ficou)\s+(?=[^\s,;]*[\d@#$%!&*])[^\s,;]{4,})",
     re.I,
 )
 _CAMINHO_USUARIO = re.compile(r"(?P<inicio>\b[A-Z]:\\Users\\)(?P<valor>[^\\\s]+)", re.I)
@@ -73,6 +111,14 @@ _DOCUMENTO_ROTULADO = re.compile(
     r"(?P<inicio>\b(?:RG|CNH|PIS|PASEP|NIS|CTPS|titulo\s+de\s+eleitor|"
     r"t[ií]tulo\s+eleitoral)\s*(?:n[ºo°]\.?\s*)?[:=]?\s*)"
     r"(?P<valor>[A-Z0-9./-]{3,30})",
+    re.I,
+)
+# «IDENTIDADE 1234567» (LS03 M2). O valor precisa de dígito: «identidade
+# dele» não é número de documento.
+_IDENTIDADE = re.compile(
+    r"(?P<inicio>\b(?:carteira\s+de\s+identidade|c[eé]dula\s+de\s+identidade|"
+    r"identidade|passaporte|RNE|RNM)\s*(?:n[ºo°]\.?\s*)?[:=]?\s*)"
+    r"(?=[A-Z0-9./-]*\d)(?P<valor>[A-Z0-9][A-Z0-9./-]{2,29})",
     re.I,
 )
 _REFERENCIA_REGISTRAL = re.compile(
@@ -98,8 +144,22 @@ _DADO_SENSIVEL = re.compile(
     r"(?P<inicio>\b(?:sa[uú]de|doen[cç]a|diagn[oó]stico\s+m[eé]dico|"
     r"defici[eê]ncia|ra[cç]a|etnia|religi[aã]o|convic[cç][aã]o|"
     r"orienta[cç][aã]o\s+sexual|vida\s+sexual|dado\s+gen[eé]tico|"
-    r"biometria|fotografia|impress[aã]o\s+digital)\b\s*[:=]?\s*)"
+    r"biometria|fotografia|impress[aã]o\s+digital|"
+    # A CAUSA DA MORTE (LS03 M2): está na DO e no assento de óbito, e é dado
+    # de saúde como qualquer outro.
+    r"causa\s+(?:da\s+morte|do\s+[oó]bito|mortis)|causa\s+morte|"
+    r"motivo\s+do\s+[oó]bito|CID-?10)\b\s*[:=]?\s*)"
     r"(?P<valor>[^\n;,]{2,160})",
+    re.I,
+)
+# E a causa dita sem rótulo: «faleceu de», «veio a óbito em decorrência de».
+# «Certidão de óbito de» fica fora de propósito: o que vem depois é o nome, e
+# o nome tem a régua dele.
+_CAUSA_DA_MORTE = re.compile(
+    r"(?P<inicio>\b(?:faleceu|morreu|veio\s+a\s+(?:[oó]bito|falecer)|"
+    r"vindo\s+a\s+(?:[oó]bito|falecer))\s+(?:de|por|em\s+decorr[eê]ncia\s+de|"
+    r"v[ií]tima\s+de|devido\s+a|em\s+raz[aã]o\s+de)\s+)"
+    r"(?P<valor>[^\n;,.]{3,120})",
     re.I,
 )
 # Caminhos da coleta nova (foto.jpg, digital_1.png). Sem isto, um relatório
@@ -108,10 +168,14 @@ _ARQUIVO_BIOMETRIA = re.compile(
     r"(?:foto\.jpg|digital_[1-9]\d?\.png)",
     re.I,
 )
+# «NASCEU EM» (LS03 M2): a régua tinha «nascido em» e não o verbo, e não
+# conhecia a data por extenso («12 de março de 1980»).
 _DATA_PESSOAL = re.compile(
-    r"(?P<inicio>\b(?:nascimento|nascido(?:a)?\s+em|data\s+de\s+nascimento|"
-    r"[oó]bito\s+em)\b\s*[:=]?\s*)"
-    r"(?P<valor>\d{1,2}[/-]\d{1,2}[/-]\d{2,4})",
+    r"(?P<inicio>\b(?:nascimento|nascid[oa]\s+em|nasceu\s+(?:no\s+dia\s+|em\s+)|"
+    r"data\s+de\s+nascimento|[oó]bito\s+em|faleceu\s+(?:no\s+dia\s+|em\s+)|"
+    r"falecid[oa]\s+em)\s*[:=]?\s*)"
+    r"(?P<valor>\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|"
+    r"\d{1,2}º?\s+de\s+[a-zç]{4,9}\s+de\s+\d{4})",
     re.I,
 )
 _ENDERECO_ROTULADO = re.compile(
@@ -296,6 +360,100 @@ _NOME_CAPITALIZADO = re.compile(
 )
 
 
+# O NOME SOLTO, EM MINÚSCULAS OU SOZINHO (LS03 M2). As duas réguas de cima
+# pedem duas palavras em maiúsculas ou capitalizadas; «a certidão da maria das
+# dores» e «o José pediu» saíam inteiros. Sem maiúscula não há forma que
+# separe nome de palavra, e por isso esta régua parte de uma LISTA de prenomes
+# comuns e segue o nome palavra a palavra até a primeira que é da língua.
+#
+# A LISTA FOI ESCRITA, E NÃO MEDIDA contra os nomes do banco (a auditoria não
+# leu dado de pessoa). Ficaram de fora os prenomes que também são palavra
+# comum — ROSA, LUZ, GLORIA, CLARA, VITORIA, PAZ, CRUZ, GRACA, AURORA,
+# ESPERANCA, FE, SOL, DIVINA, NATAL: mascará-los estragaria a frase, e a régua
+# das maiúsculas continua pegando quem os tem no nome completo. O erro, quando
+# houver, é para o lado seguro: o que vem colado ao prenome, fora da língua,
+# vai junto.
+_PRENOMES_COMUNS = frozenset("""
+MARIA JOSE ANA JOAO ANTONIO FRANCISCO CARLOS PAULO PEDRO LUCAS LUIZ LUIS MARCOS
+GABRIEL RAFAEL DANIEL MARCELO BRUNO EDUARDO FELIPE RAIMUNDO RODRIGO MANOEL
+MANUEL SEBASTIAO JORGE ANDRE FERNANDO FABIO LEONARDO GUSTAVO GUILHERME RICARDO
+TIAGO THIAGO DIEGO SERGIO CLAUDIO MARCIO ROBERTO EDSON MATEUS VITOR
+VICTOR HUGO JULIO CESAR ALEXANDRE RENATO JEFERSON JEFFERSON MAURICIO ALAN
+WELLINGTON WESLEY ADRIANO GERALDO BENEDITO DOMINGOS JOAQUIM SAMUEL ISAAC ARTHUR
+ARTUR HEITOR DAVI DAVID ENZO MIGUEL BERNARDO LORENZO NICOLAS VINICIUS IGOR
+OTAVIO EMANUEL EMANOEL ELIAS ISRAEL JOSUE MOISES ABRAAO VALDIR VALDECI EDIVALDO
+FRANCISCA ANTONIA ADRIANA JULIANA MARCIA FERNANDA PATRICIA ALINE SANDRA CAMILA
+AMANDA BRUNA JESSICA LETICIA JULIA LUCIANA MARIANA GABRIELA VERA
+RAIMUNDA SEBASTIANA JOSEFA TEREZA TERESA LUCIA RITA CONCEICAO HELENA BEATRIZ
+LARISSA CAROLINA RAQUEL SIMONE DANIELA ELIANE CRISTINA KATIA SONIA REGINA
+ROSANGELA ROSANA ROSILENE SUELI SUELY IVONE IRACEMA MARLENE MARINALVA
+MARILENE LUZIA ANTONIETA EDILEUZA EDINEIA DEBORA SARA SARAH ISABEL ISABELA
+ISABELLA LAURA ALICE VALENTINA HELOISA MANUELA SOFIA SOPHIA LIVIA LORENA
+YASMIN JAQUELINE TATIANE TATIANA PRISCILA CLAUDIA ANDREA RENATA
+FABIANA SILVIA CELIA ODETE NAIR ZILDA DALVA NEIDE MARTA MARTHA MIRIAM
+""".split())
+
+# A palavra que vem depois do prenome e não é nome, quando não está no
+# vocabulário de cima: o verbo do balcão («a maria PEDIU»). E o que vem ANTES
+# e faz do prenome um lugar: «São Paulo», «Rua João Pessoa».
+_NAO_E_SOBRENOME = frozenset("""
+PEDIU PEDE VEIO VEM DISSE DIZ CHEGOU LIGOU FALOU ESTEVE NASCEU FALECEU CASOU
+SOLICITOU SOLICITA TROUXE TRAZ APRESENTOU ASSINOU COMPARECEU MORA MOROU FICOU
+MANDOU RECEBEU COMPROU VENDEU DEIXOU VOLTOU ENTROU RETIROU REQUEREU INFORMOU
+DECLAROU ESQUECEU PERDEU QUEREM ESTA ESTAVAM SABE NAO PEDIRAM VIERAM
+DISSERAM CHEGARAM LIGARAM FORAM ESTAVA ESTIVERAM TROUXERAM ASSINARAM
+""".split())
+_ANTES_DE_LUGAR = frozenset("""
+SAO SANTA SANTO RUA AVENIDA TRAVESSA PRACA BAIRRO VILA POVOADO FAZENDA ESCOLA
+COLEGIO HOSPITAL CIDADE MUNICIPIO RODOVIA ALAMEDA ESTRADA CONJUNTO
+""".split())
+_PALAVRA = re.compile(r"[^\W\d_]+")
+_MARCA = re.compile(r"\[[A-Z_]+_\d+\]")
+
+
+def _trechos_de_nome_solto(texto: str) -> list[tuple[int, int]]:
+    """Onde mora o nome que começa por um prenome comum. Só calcula.
+
+    O trecho vai do prenome até a última palavra que não é da língua, na mesma
+    linha; um conectivo (da, de, dos…) só entra entre duas palavras de nome.
+    """
+    marcas = [m.span() for m in _MARCA.finditer(texto)]
+    palavras = [m for m in _PALAVRA.finditer(texto)
+                if not any(a <= m.start() < b for a, b in marcas)]
+    chaves = [_chave_da_palavra(m.group(0)) for m in palavras]
+
+    def colada(i: int) -> bool:
+        entre = texto[palavras[i - 1].end():palavras[i].start()]
+        return bool(entre) and entre.isspace() and "\n" not in entre
+
+    def de_nome(i: int) -> bool:
+        c = chaves[i]
+        return (len(c) >= 2 and c not in _NAO_E_SOBRENOME
+                and c not in _CONECTIVOS_DE_NOME
+                and (c not in _VOCABULARIO_COMUM
+                     or c in _VOCABULARIO_QUE_TAMBEM_E_NOME))
+
+    trechos: list[tuple[int, int]] = []
+    i = 0
+    while i < len(palavras):
+        if (chaves[i] not in _PRENOMES_COMUNS
+                or (i and colada(i) and chaves[i - 1] in _ANTES_DE_LUGAR)):
+            i += 1
+            continue
+        fim, j = palavras[i].end(), i + 1
+        while j < len(palavras) and colada(j):
+            if (chaves[j] in _CONECTIVOS_DE_NOME and j + 1 < len(palavras)
+                    and colada(j + 1) and de_nome(j + 1)):
+                fim, j = palavras[j + 1].end(), j + 2
+            elif de_nome(j):
+                fim, j = palavras[j].end(), j + 1
+            else:
+                break
+        trechos.append((palavras[i].start(), fim))
+        i = j
+    return trechos
+
+
 def _normalizar(valor: str) -> str:
     texto = unicodedata.normalize("NFKC", valor or "")
     return " ".join(texto.casefold().split())
@@ -333,6 +491,16 @@ class _Sanitizador:
             return "".join(saida)
         return _NOME_MAIUSCULO.sub(trocar, texto)
 
+    def nomes_soltos(self, texto: str) -> str:
+        """`_trechos_de_nome_solto`: o prenome comum em minúsculas ou sozinho."""
+        saida, pos = [], 0
+        for inicio, fim in _trechos_de_nome_solto(texto):
+            saida.append(texto[pos:inicio])
+            saida.append(self.marcador("PESSOA", texto[inicio:fim]))
+            pos = fim
+        saida.append(texto[pos:])
+        return "".join(saida)
+
     def rotulado(self, texto: str, tipo: str, padrao: Pattern[str]) -> str:
         return padrao.sub(
             lambda m: f"{m.group('inicio')}{self.marcador(tipo, m.group('valor'))}",
@@ -346,8 +514,13 @@ class _Sanitizador:
         # nunca chega a ser confundido com nome na passagem mais ampla.
         texto = self.simples(texto, "SEGREDO", _SEGREDO)
         texto = self.simples(texto, "EMAIL", _EMAIL)
+        texto = self.simples(texto, "CNPJ", _CNPJ)
         texto = self.simples(texto, "CPF", _CPF)
         texto = self.simples(texto, "TELEFONE", _TELEFONE)
+        texto = self.rotulado(texto, "TELEFONE", _TELEFONE_ROTULADO)
+        texto = self.simples(texto, "TELEFONE", _TELEFONE_LOCAL)
+        texto = self.rotulado(texto, "CEP", _CEP_ROTULADO)
+        texto = self.simples(texto, "CEP", _CEP)
         texto = self.simples(texto, "IP", _IP)
         texto = self.simples(texto, "PROCESSO", _PROCESSO_CNJ)
         texto = _CAMINHO_USUARIO.sub(
@@ -356,9 +529,11 @@ class _Sanitizador:
         )
 
         texto = self.rotulado(texto, "DOCUMENTO", _DOCUMENTO_ROTULADO)
+        texto = self.rotulado(texto, "DOCUMENTO", _IDENTIDADE)
         texto = self.rotulado(texto, "REFERENCIA_REGISTRAL", _REFERENCIA_REGISTRAL)
         texto = self.rotulado(texto, "DADO_FINANCEIRO", _DADO_FINANCEIRO)
         texto = self.rotulado(texto, "DADO_SENSIVEL", _DADO_SENSIVEL)
+        texto = self.rotulado(texto, "DADO_SENSIVEL", _CAUSA_DA_MORTE)
         texto = self.simples(texto, "DADO_SENSIVEL", _ARQUIVO_BIOMETRIA)
         texto = self.rotulado(texto, "DATA_PESSOAL", _DATA_PESSOAL)
         texto = self.rotulado(texto, "ENDERECO", _ENDERECO_ROTULADO)
@@ -375,6 +550,7 @@ class _Sanitizador:
         if nomes_livres:
             texto = self.nomes_maiusculos(texto)
             texto = self.simples(texto, "PESSOA", _NOME_CAPITALIZADO)
+            texto = self.nomes_soltos(texto)
         return texto
 
 

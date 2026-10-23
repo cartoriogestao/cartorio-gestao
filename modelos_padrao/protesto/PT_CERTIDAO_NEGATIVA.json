@@ -1,0 +1,13 @@
+{
+  "chave": "PT_CERTIDAO_NEGATIVA",
+  "atribuicao": "Protesto",
+  "nome": "Certidão negativa de protesto",
+  "formato": "CHAVES",
+  "explica": "Certifica que a busca não encontrou protestos no período.",
+  "campos": [
+    "pedido",
+    "desde",
+    "identificacao",
+    "periodo_anos"
+  ]
+}

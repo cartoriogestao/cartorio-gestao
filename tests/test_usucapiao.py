@@ -25,6 +25,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import usucapiao as US                            # noqa: E402
 from ri_schema import init_ri_schema               # noqa: E402
@@ -38,7 +40,7 @@ SV = {"ri_cidade": "Cidade Exemplo", "ri_uf": "MA",
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
     con.execute("""CREATE TABLE IF NOT EXISTS ri_importacoes

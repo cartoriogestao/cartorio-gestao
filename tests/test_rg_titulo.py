@@ -32,6 +32,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import escrituracao as ESC
 import livro_nucleo as LN
@@ -51,19 +53,21 @@ SV = {"unit_name": "SERVENTIA EXTRAJUDICIAL DE CIDADE EXEMPLO/MA",
 
 @pytest.fixture()
 def con(tmp_path):
-    c = sqlite3.connect(tmp_path / "t.sqlite3")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys=ON")
     # As tabelas de que este módulo depende, e só elas: o núcleo (livro, lugar,
     # numeração) e as do RCPJ/RTD.
     init_nucleo_schema(c)
-    RGS.init_rg_schema(c)
+    # `cx_protocolos` antes do RCPJ/RTD: `rg_titulos` aponta para ela (FK), e
+    # o PostgreSQL cobra a FK na criacao.
     c.executescript("""
         CREATE TABLE IF NOT EXISTS cx_protocolos (
             id INTEGER PRIMARY KEY AUTOINCREMENT, numero TEXT);
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT);
     """)
+    RGS.init_rg_schema(c)
     return c
 
 

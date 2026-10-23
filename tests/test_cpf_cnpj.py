@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 import cpf_cnpj as DOC
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 
 def test_cpf_certo():
@@ -47,7 +50,7 @@ def test_mensagem():
 
 def test_duplicatas(tmp_path):
     import sqlite3
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("CREATE TABLE pessoas(id INTEGER PRIMARY KEY, documento TEXT, nome TEXT)")
     con.execute("INSERT INTO pessoas(documento, nome) VALUES (?,?)", ("00000004502", "Ana"))

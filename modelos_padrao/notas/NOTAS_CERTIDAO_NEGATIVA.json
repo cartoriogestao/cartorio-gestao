@@ -1,0 +1,15 @@
+{
+  "chave": "NOTAS_CERTIDAO_NEGATIVA",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Certidão negativa de atos",
+  "formato": "JINJA",
+  "explica": "Busca pela parte que não achou ato nenhum no período.",
+  "campos": [
+    "documento",
+    "finalidade",
+    "nome",
+    "periodo",
+    "requerente",
+    "requerente_documento"
+  ]
+}

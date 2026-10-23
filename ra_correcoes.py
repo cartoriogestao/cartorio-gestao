@@ -19,6 +19,8 @@ deixasse resolver isso.
 from __future__ import annotations
 
 import sqlite3
+
+from bd_nativo import banco
 from typing import Any
 
 ATIVO, CANCELADO = "ATIVO", "CANCELADO"
@@ -67,8 +69,13 @@ def editar(con: sqlite3.Connection, registro_id: int, *, campos: dict,
     formulário mandou, e o que veio vazio vira `NULL` de propósito: apagar um
     campo é uma correção como outra qualquer, e às vezes é a correção certa.
     """
-    linha = con.execute("SELECT * FROM ra_registros WHERE id=?",
-                        (int(registro_id),)).fetchone()
+    bd = banco(con)
+    # FOR UPDATE: o «antes» que vai para a auditoria sai desta leitura, e a
+    # correção de outro balcão no meio faria a linha contar um antes que não
+    # era mais o do livro.
+    bd._escrita()
+    linha = bd.um("SELECT * FROM ra_registros WHERE id=%s FOR UPDATE",
+                  (int(registro_id),))
     if not linha:
         raise CorrecaoError("Registro do Livro 3 não encontrado.")
     antes = dict(linha)
@@ -88,7 +95,7 @@ def editar(con: sqlite3.Connection, registro_id: int, *, campos: dict,
         # O NOME DA COLUNA VEM DE `CAMPOS_EDITAVEIS`, e nunca do formulario
         # — e por isso a interpolacao aqui e segura: o que o navegador
         # manda ja foi recusado por `desconhecidos`, acima.
-        con.execute(f"UPDATE ra_registros SET {campo}=? WHERE id=?",
+        bd.escrever(f"UPDATE ra_registros SET {campo}=%s WHERE id=%s",
                     (novo, int(registro_id)))
         mudou[campo] = {"antes": velho, "depois": novo}
     return mudou
@@ -113,14 +120,19 @@ def descancelar(con: sqlite3.Connection, registro_id: int, *, motivo: str,
             f"Escreva o motivo com pelo menos {MINIMO_DO_MOTIVO} letras — "
             f"descancelar um registro é decisão, e decisão sem motivo escrito "
             f"é decisão que ninguém confere depois.")
-    linha = con.execute("SELECT situacao FROM ra_registros WHERE id=?",
-                        (int(registro_id),)).fetchone()
+    bd = banco(con)
+    # FOR UPDATE: dois descancelamentos ao mesmo tempo passariam os dois pela
+    # conferência da situação, e a auditoria ficaria com dois motivos para
+    # uma decisão só.
+    bd._escrita()
+    linha = bd.um("SELECT situacao FROM ra_registros WHERE id=%s FOR UPDATE",
+                  (int(registro_id),))
     if not linha:
         raise CorrecaoError("Registro do Livro 3 não encontrado.")
-    if _texto(linha[0]).upper() != CANCELADO:
+    if _texto(linha["situacao"]).upper() != CANCELADO:
         raise CorrecaoError(
             "Este registro não está cancelado — não há o que descancelar.")
-    con.execute("UPDATE ra_registros SET situacao=? WHERE id=?",
+    bd.escrever("UPDATE ra_registros SET situacao=%s WHERE id=%s",
                 (ATIVO, int(registro_id)))
 
 
@@ -131,9 +143,9 @@ def numeracao_dos_atos(con: sqlite3.Connection, registro_id: int) -> list[dict]:
     AV-2 —, e a ordem certa é a de lavratura, que é a do `id`.
     """
     fora = []
-    for posicao, a in enumerate(con.execute(
-            "SELECT id, tipo, numero, selo FROM ra_atos WHERE registro_id=? "
-            "ORDER BY id", (int(registro_id),)).fetchall(), start=1):
+    for posicao, a in enumerate(banco(con).ler(
+            "SELECT id, tipo, numero, selo FROM ra_atos WHERE registro_id=%s "
+            "ORDER BY id", (int(registro_id),)), start=1):
         fora.append({"id": a["id"], "tipo": a["tipo"], "numero": a["numero"],
                      "selo": a["selo"], "deveria_ser": posicao,
                      "fora_do_lugar": int(a["numero"]) != posicao})
@@ -154,7 +166,12 @@ def renumerar(con: sqlite3.Connection, registro_id: int, *, agora: str,
     Se a ordem certa for outra, quem sabe disso é quem tem o livro de papel na
     mão — e aí o caminho é a averbação, e não o `UPDATE`.
     """
-    atos = numeracao_dos_atos(con, registro_id)
+    # A MESMA TRAVA DA LAVRATURA (`ra_registro._proximo_ato`), e antes de ler:
+    # um ato lavrado no meio ficaria fora da conta, com o número que a
+    # lavratura lhe deu, e a numeração sairia furada do mesmo jeito.
+    bd = banco(con)
+    bd.travar(f"ra_atos.numero:{int(registro_id)}")
+    atos = numeracao_dos_atos(bd, registro_id)
     fora = [a for a in atos if a["fora_do_lugar"]]
     if not fora:
         raise CorrecaoError(
@@ -171,10 +188,10 @@ def renumerar(con: sqlite3.Connection, registro_id: int, *, agora: str,
     # numero)` bate no meio do caminho: trocar 2 e 3 direto esbarraria no 3
     # que ainda existe. O negativo é território que nenhum ato ocupa.
     for a in fora:
-        con.execute("UPDATE ra_atos SET numero=? WHERE id=?",
+        bd.escrever("UPDATE ra_atos SET numero=%s WHERE id=%s",
                     (-a["id"], a["id"]))
     for a in fora:
-        con.execute("UPDATE ra_atos SET numero=? WHERE id=?",
+        bd.escrever("UPDATE ra_atos SET numero=%s WHERE id=%s",
                     (a["deveria_ser"], a["id"]))
     return fora
 
@@ -196,20 +213,21 @@ def conferir(con: sqlite3.Connection, registro_id: int, *, conferido: bool,
     **E ELA SE DESMARCA.** Ficha conferida que depois se corrige volta a
     precisar de conferência, e travar isso obrigaria a mentir para consertar.
     """
-    linha = con.execute("SELECT 1 FROM ra_registros WHERE id=?",
-                        (int(registro_id),)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT 1 AS um FROM ra_registros WHERE id=%s",
+                  (int(registro_id),))
     if not linha:
         raise CorrecaoError("Registro do Livro 3 não encontrado.")
     if conferido:
-        con.execute(
-            """UPDATE ra_registros SET conferido=1, conferido_em=?,
-                   conferido_por=?, conferido_nota=? WHERE id=?""",
+        bd.escrever(
+            """UPDATE ra_registros SET conferido=1, conferido_em=%s,
+                   conferido_por=%s, conferido_nota=%s WHERE id=%s""",
             (agora, _texto(usuario) or None, _texto(nota) or None,
              int(registro_id)))
     else:
         # O CARIMBO ANTERIOR NÃO SE APAGA quando alguém desmarca: quem leu
         # naquele dia leu, e isso é fato do passado. O que muda é a marca.
-        con.execute("UPDATE ra_registros SET conferido=0 WHERE id=?",
+        bd.escrever("UPDATE ra_registros SET conferido=0 WHERE id=%s",
                     (int(registro_id),))
 
 
@@ -220,9 +238,8 @@ def por_conferir(con: sqlite3.Connection) -> list[dict]:
     o papel», e é dela que sai o número que a ficha mostra. Quem decide a
     ordem é quem tem o livro na mão.
     """
-    linhas = con.execute(
+    return banco(con).ler(
         """SELECT id, numero, situacao, origem, conferido
              FROM ra_registros
             WHERE COALESCE(conferido, 0) = 0
-            ORDER BY numero""").fetchall()
-    return [dict(x) for x in linhas]
+            ORDER BY numero, id""")

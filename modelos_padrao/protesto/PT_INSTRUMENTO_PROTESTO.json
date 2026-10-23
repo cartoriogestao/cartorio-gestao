@@ -1,0 +1,15 @@
+{
+  "chave": "PT_INSTRUMENTO_PROTESTO",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto",
+  "formato": "CHAVES",
+  "explica": "O papel que se entrega ao apresentante (art. 20 da Lei 9.492/1997). {serventia}, {praca} e {motivo} saem do titulo; {copia} o sistema monta do que existe — se ha imagem do titulo arquivada, ele escreve a mencao do § unico do art. 22, e se nao ha, diz que a dispensa nao se aplica; {intimacao} e a certidao do inciso IV, que diz se foi por edital ou em maos.",
+  "campos": [
+    "serventia",
+    "praca",
+    "motivo",
+    "descricao",
+    "copia",
+    "intimacao"
+  ]
+}

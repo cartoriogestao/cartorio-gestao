@@ -35,7 +35,12 @@ import cra21_api as CRA
 # QUEM ENTRA. Falar com a CRA é ato de quem responde pela serventia — o balcão
 # baixa arquivo pela tela de remessa, que já existe; **aqui se fala direto com
 # a Central**, e a operação de consulta pode MARCAR coisa lá dentro.
-QUEM_FALA_COM_A_CRA = ("ADMIN", "MANAGER")
+#
+# 21/10/2026 — ORDEM DO OFICIAL: «dar acesso às escreventes operarem todo o
+# protesto, em especial operar as API, CRA etc.». Era ("ADMIN", "MANAGER").
+# A consulta de autorização continua NÃO marcando como baixada por padrão
+# (ver `consultar`), que é o que protegia a Central do clique de olhar.
+QUEM_FALA_COM_A_CRA = ("ADMIN", "MANAGER", "USER")
 
 # O QUE VOLTA COMO FRASE, E NÃO COMO HTTP 500. A falta de credencial estoura
 # `centrais_cred.CredencialError`, que não é `CraError` — foi assim que a
@@ -46,15 +51,10 @@ RECUSAS_DO_BALCAO = (CRA.CraError, CENTCRED.CredencialError)
 # dez que dependem de `userDados` ficam de fora até alguém medir o que vai
 # nele — elas existem em `cra21_api.OPERACOES` e se alcançam por `chamar()`.
 O_QUE_SE_TRAZ: tuple[tuple[str, str, str], ...] = (
-    ("remessa", "Remessa do dia (mais as pendentes de datas anteriores)",
+    ("pendentes", "Todas as remessas disponíveis",
+     "não precisa informar nome nem número; traz todas as pendentes"),
+    ("remessa", "Remessa de uma data (mais as pendentes anteriores)",
      "o nome do arquivo, no formato FEBRABAN — ex.: B2370508.261"),
-    # **"NOME EM BRANCO" ERA PALPITE, E A CENTRAL DESMENTIU** — testado contra
-    # a homologação em 12/09/2026: `RemessaPendente` com `userArq=""` volta
-    # «NOME DO ARQUIVO INVÁLIDO» (código 0002). Ela também quer um nome —
-    # provavelmente qualquer um no formato certo, já que o que ela confere é
-    # a FORMA, não a existência (ver `CODIGOS_MEDIDOS` abaixo).
-    ("pendentes", "Todas as remessas pendentes (sem olhar data)",
-     "o nome do arquivo, no formato FEBRABAN — o mesmo da Remessa"),
     ("desistencias", "Desistências do dia e as pendentes",
      "o nome começa com DP"),
     ("cancelamentos", "Cancelamentos do dia e os pendentes", "o nome do arquivo"),

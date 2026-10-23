@@ -207,6 +207,9 @@
             </select>
             <input name="motivo_gratuidade" placeholder="motivo (obrigatório se gratuito)" style="font-size:12px">
             {% endif %}
+            {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
+            {% set s_selo = seletor_do_selo('rc_atos') %}
+            {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
             <button class="button" style="padding:4px 8px;font-size:12px">Selar novamente</button>
           </form>
           {% endif %}
@@ -225,8 +228,10 @@
           </form>
           {% endif %}</td>
         <td>{% if bloco in ('AVERBACAO','ANOTACAO','RETIFICACAO') %}
-          <a class="button" style="padding:4px 8px;font-size:12px"
-             href="{{ url_for('rcpn_ato_etiqueta', ato_id=a.id) }}">ODT</a>
+          {# POST com o token (M8 do LS01, lote LX11): gerar a etiqueta
+             reescreve o teor da averbação, e GET que grava abre a porta a um
+             link de fora. #}
+          <form method="post" action="{{ url_for('rcpn_ato_etiqueta', ato_id=a.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button" style="padding:4px 8px;font-size:12px">ODT</button></form>
         {% else %}—{% endif %}</td>
         <td>{{ cobrado(a.id, cobrancas, csrf_token) }}</td>
       </tr>
@@ -289,9 +294,10 @@
   <div class="notice" style="margin:14px">
     <strong>Este assento está sem filiação.</strong>
     A filiação é o <strong>corpo</strong> da certidão de nascimento, e sem ela a
-    certidão não sai. O assento existe no livro; o que falta é trazer os nomes —
-    pela <a href="{{ url_for('atribuicoes_importar') }}">carga do acervo</a>, que abre
-    as tabelas de filiação e de avós, ou lançando à mão.
+    certidão não sai. O assento existe no livro; o que falta é lançar os nomes
+    à mão.
+    {# O link para a carga do acervo saiu em 17/10/2026: a importação do
+       E-Ofício terminou. #}
   </div>
   {% endif %}
 </section>
@@ -511,6 +517,13 @@
       à mão. Inteiro teor usa o item medido <code>14.5.6</code> no selador quando
       o selo sai automático; o resumo usa <code>14.5.1</code>.
     </small></div>
+    {# O PROTOCOLO QUE PAGA O SELO DA CERTIDÃO — 22/10/2026 (o seletor da
+       casa; a 1ª via gratuita usa o selo do registro e não gasta nada). #}
+    <div style="grid-column:1/-1">
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
+      {% set s_selo = seletor_do_selo('rc_certidoes') %}
+      {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
+    </div>
     <div class="actions" style="grid-column:1/-1">
       <button class="button" type="submit"
               formaction="{{ url_for('rcpn_certidao_previa', assento_id=assento.id) }}"
@@ -526,6 +539,29 @@
         Emitir reprográfica da digitalização</button>
       {% endif %}
     </div>
+  </form>
+
+  {# O SELO DA CERTIDÃO ELETRÔNICA DA CRC — 22/10/2026: o número vai na
+     Central ANTES de subir o arquivo de importação; até aqui as escreventes
+     o geravam fora do sistema. Item 14.5.7, segunda via sem folha de
+     segurança (precedente desta casa, 2023). #}
+  <form method="post" class="grid2" style="padding:0 14px 14px" id="form-selo-crc"
+        action="{{ url_for('rcpn_certidao_eletronica_selo', assento_id=assento.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p style="grid-column:1/-1; margin:0"><strong>Certidão eletrônica da CRC</strong> —
+      <small>emite o <strong>selo</strong> (item 14.5.7, sem folha de segurança) para
+      copiar na Central antes de subir o arquivo de importação. A certidão fica
+      registrada aqui com o selo.</small></p>
+    <label>Requerente <small>(opcional)</small>
+      <input name="requerente" placeholder="nome de quem pediu na CRC"></label>
+    <label style="display:flex; gap:6px; align-items:center">
+      <input type="checkbox" name="selo_gratuito" value="1" style="width:auto">
+      Selo isento (gratuidade)</label>
+    <label style="grid-column:1/-1">Motivo da gratuidade <small>(só se isento)</small>
+      <input name="motivo_gratuidade"></label>
+    <button class="button primary" style="grid-column:1/-1"
+            onclick="return confirm('Emitir o selo da certidão eletrônica (14.5.7) para a CRC?');">
+      Emitir selo da certidão eletrônica (CRC)</button>
   </form>
 
   {# A CERTIDAO ELETRONICA DA CRC — pedido do oficial em 10/09/2026.

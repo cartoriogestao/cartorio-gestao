@@ -1,0 +1,30 @@
+===CABECALHO===
+{unit_short} — CNS {cns}
+{atribuicao}
+===INTRO===
+CERTIFICO que me foi apresentado para ser REGISTRADO no Registro nº {numero} o documento digitalizado abaixo:
+Protocolizado em {data_protocolo}, sob o nº {protocolo}.
+Apresentante: {apresentante}.
+Residência do apresentante: {residencia_apresentante}.
+Tipo do ato: {natureza_ato}.
+Data da assinatura: {data_assinatura}.
+Denominação: {denominacao}.
+Fundo social: {fundo_social}.
+Fins: {fins}.
+Sede: {sede}.
+Tempo de duração: {duracao}.
+Modo por que se administra e representa: {administracao}.
+Se o estatuto é reformável no tocante à administração, e de que modo: {reforma}.
+Se os membros respondem subsidiariamente pelas obrigações sociais: {responsabilidade}.
+Condições de extinção e destino do patrimônio: {extincao}.
+Fundadores ou instituidores: {fundadores}.
+Diretoria: {diretoria}.
+Título do periódico: {titulo_periodico}.
+Sede da redação: {sede_redacao}.
+Administração e oficinas impressoras: {oficinas}.
+Diretor: {diretor}.
+Proprietário: {proprietario}.
+===ENCERRAMENTO===
+Era o que continha o documento apresentado para registro, arquivado em sua íntegra mediante digitalização. Eu, {full_name}, {funcao}, o subscrevo e assino.
+===DATA===
+{cidade}/{uf}, {data_extenso}.

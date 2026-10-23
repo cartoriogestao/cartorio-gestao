@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}Pública forma — configuração{% endblock %}
+{% block heading %}<h1>Pública forma — configuração</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('notas_publica_forma') }}">&larr; Pública forma</a></div>
+<section class="panel">
+  <div class="panel-head"><span>Item da tabela do Tribunal</span></div>
+  <form method="post" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="small">A tabela de emolumentos importada não tem item próprio de pública forma.
+      Informe o item que a casa cobra; ele é conferido contra a tabela importada antes de gravar.</p>
+    <label>Item (código TJ) <input name="codigo_tj" value="{{ item }}" placeholder="ex.: 13.x"></label>
+    {% if preco %}<p class="small muted">Hoje: {{ preco.descricao or '' }} — {{ preco.total }}.</p>{% endif %}
+    <button class="primary">Gravar</button>
+  </form>
+</section>
+{% endblock %}

@@ -113,7 +113,7 @@ def _protocolo_com_item(con, *, prenotacao="11571", quantidade=5, usadas=2,
         """INSERT INTO cx_protocolos (numero, data_abertura, situacao,
                finalizado, gratuito, deposito_previo, origem, criado_em,
                tipo, ri_protocolo_id)
-           VALUES ('2026.09.23', '2026-09-14', 'A_PAGAR', 0, 0, '0,00',
+           VALUES ('2026.09.23', '2026-09-14', 'A_PAGAR', 0, 0, 0,
                    'MANUAL', '2026-09-14T09:00', 'IMOVEL', ?)""", (ri_id,))
     prot_id = int(cur.lastrowid)
     cur = con.execute(

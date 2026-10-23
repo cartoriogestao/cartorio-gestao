@@ -23,6 +23,7 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import banco_pg  # noqa: E402
 import ri_onus as ONUS  # noqa: E402
 import ri_onus_ia as RONIA  # noqa: E402
 
@@ -188,6 +189,8 @@ def test_o_modulo_nao_emite_nao_sela_nao_numera_e_nao_cobra():
 
 def _banco_com_ficha(tmp_path):
     banco = tmp_path / "b.sqlite3"
+    # módulo nativo não roda no SQLite solto: o arquivo é registrado como «banco da casa»
+    banco_pg.registrar_banco(banco)
     con = sqlite3.connect(banco)
     con.executescript("""
         CREATE TABLE ri_matriculas (id INTEGER PRIMARY KEY, numero TEXT, livro TEXT, teor TEXT);
@@ -242,6 +245,25 @@ def test_desligada_por_configuracao(tmp_path):
     _banco, con = _banco_com_ficha(tmp_path)
     con.execute("INSERT INTO settings VALUES ('onus_ia', '0')")
     assert RONIA.ligada(con, tmp_path) is False
+
+
+def test_tabela_que_ja_existe_sem_o_indice_ganha_o_indice(tmp_path):
+    """O `executescript` do SQLite rodava o `CREATE INDEX IF NOT EXISTS` toda vez.
+    No nativo o `init_schema` só escreve o que falta — e confere o índice à
+    parte, senão a tabela que já existe nunca mais o ganha (revisão do L052)."""
+    from bd_nativo import Banco
+    _banco, con = _banco_com_ficha(tmp_path)
+    RONIA.init_schema(con)
+    con.commit()
+    con.execute("DROP INDEX ix_ri_onus_sugestoes_matricula")
+    con.commit()
+
+    RONIA.init_schema(con)
+    con.commit()
+    assert Banco(con).valor(
+        """SELECT count(*) AS n FROM pg_indexes
+            WHERE schemaname = current_schema() AND tablename = 'ri_onus_sugestoes'
+              AND indexname = 'ix_ri_onus_sugestoes_matricula'""") == 1
 
 
 # ------------------------------------------------------------- a tela

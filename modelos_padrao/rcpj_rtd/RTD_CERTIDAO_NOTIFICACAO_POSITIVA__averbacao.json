@@ -1,0 +1,15 @@
+{
+  "chave": "RTD_CERTIDAO_NOTIFICACAO_POSITIVA__averbacao",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Averbação à margem — notificação positiva",
+  "formato": "CHAVES",
+  "explica": "O teor da averbação do resultado à margem do registro (CN-MA, arts. 986, § 2º, e 987, § 4º).",
+  "campos": [
+    "destinatario",
+    "documento",
+    "data_da_notificacao",
+    "certidao",
+    "cidade",
+    "data_extenso"
+  ]
+}

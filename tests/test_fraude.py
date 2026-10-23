@@ -33,6 +33,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import fraude as FR
 from fr_schema import init_fr_schema
@@ -44,7 +46,7 @@ AGORA = "2026-08-26T11:00:00"
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     init_nucleo_schema(c)
     init_pt_schema(c)
@@ -311,7 +313,7 @@ def test_o_que_a_casa_JA_TEM_daquela_pessoa(con):
 def test_atos_da_pessoa_nao_estoura_em_banco_sem_as_tabelas():
     # Nem toda instalação tem as seis atribuições criadas, e uma consulta a
     # tabela que não existe derrubaria a tela inteira.
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     init_fr_schema(c)
     assert FR.atos_da_pessoa(c, nome="qualquer") == []

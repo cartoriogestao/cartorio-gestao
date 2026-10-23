@@ -1,0 +1,13 @@
+
+<p align="center"><b>CADEIA DOMINIAL</b></p>
+{% for b in cadeia_matriculas %}{% if cadeia_matriculas|length > 1 %}
+<p align="center"><b>Matrícula N.º {{ b.numero }} ({{ b.papel }})</b></p>
+{% if b.registro_anterior %}<p><i>Registro anterior: {{ b.registro_anterior }}</i></p>{% endif %}{% endif %}
+{% if b.atos %}
+<p>Constam os seguintes atos de transmissão de domínio, na ordem cronológica:</p>
+{% for a in b.atos %}<p><b>{{ a.rotulo }}</b>{% if a.data_extenso %} — {{ a.data_extenso }}{% elif a.data_ato %} — {{ a.data_ato }}{% endif %}{% if a.natureza_titulo %}: {{ a.natureza_titulo }}{% endif %}</p>{% if a.teor_odf %}{{ a.teor_odf }}{% elif a.teor %}<p>{{ a.teor }}</p>{% endif %}{% if not loop.last %}<p class="separa-ato" style="border-bottom:0.06cm double #000;margin:0.12cm 0;padding:0;line-height:0;font-size:0;">&nbsp;</p>{% endif %}{% endfor %}
+{% else %}
+<p><b>NADA CONSTA</b> de ato de transmissão de domínio lavrado nesta matrícula, além da abertura, até a presente data.</p>
+{% endif %}
+{% if not loop.last %}<p class="separa-ato" style="border-bottom:0.06cm double #000;margin:0.18cm 0;padding:0;line-height:0;font-size:0;">&nbsp;</p>{% endif %}
+{% endfor %}

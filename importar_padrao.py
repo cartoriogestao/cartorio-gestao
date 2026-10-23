@@ -64,6 +64,8 @@ import re
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
+
 FORMATO = "CARTORIO_GESTAO_IMPORTACAO"
 VERSAO = 1
 
@@ -206,7 +208,7 @@ def _e_da_maquina(coluna: str) -> bool:
             or any(coluna.endswith(s) for s in SUFIXOS_DA_MAQUINA))
 
 
-def _criado_por_e_fk_de_usuario(con: sqlite3.Connection, tabela: str) -> bool:
+def _criado_por_e_fk_de_usuario(con, tabela: str) -> bool:
     """`criado_por` é FK para `users(id)` nesta tabela? Só `ri_matriculas` é.
 
     **`por` É NOME DE EXIBIÇÃO, NÃO ID** — é `usuario_nome()`, uma string. Em
@@ -219,11 +221,18 @@ def _criado_por_e_fk_de_usuario(con: sqlite3.Connection, tabela: str) -> bool:
     módulo era o único que tentava outra coisa. Sem essa checagem o defeito
     esperaria o primeiro RI_MATRICULA importado pela tela de verdade.
     """
-    return any(fk["from"] == "criado_por" and fk["table"] == "users"
-               for fk in con.execute(f'PRAGMA foreign_key_list("{tabela}")'))
+    return bool(banco(con).valor(
+        """SELECT EXISTS (
+               SELECT 1 FROM pg_constraint k
+                WHERE k.conrelid = to_regclass(%s) AND k.contype = 'f'
+                  AND k.confrelid = to_regclass('users')
+                  AND (SELECT a.attname FROM pg_attribute a
+                        WHERE a.attrelid = k.conrelid
+                          AND a.attnum = k.conkey[1]) = 'criado_por') AS fk""",
+        (tabela,)))
 
 
-def _colunas(con: sqlite3.Connection, tabela: str) -> list[tuple]:
+def _colunas(con, tabela: str) -> list[tuple]:
     """As colunas da tabela, com o que decide obrigatoriedade. Só lê.
 
     **A ÚNICA CONSULTA AO ESQUEMA DESTE MÓDULO, e ela é a razão de ele
@@ -242,8 +251,20 @@ def _colunas(con: sqlite3.Connection, tabela: str) -> list[tuple]:
     faz a conferência valer. A conta que se paga ao migrar é conhecida:
     `information_schema.columns` responde o mesmo nos dois outros bancos.
     """
-    return [(r[1], r[3], r[4], r[5])
-            for r in con.execute(f'PRAGMA table_info("{tabela}")')]
+    return [(r["nome"], r["obrigatoria"], r["padrao"], r["pk"])
+            for r in banco(con).ler(
+                """SELECT a.attname AS nome, a.attnotnull AS obrigatoria,
+                          pg_get_expr(d.adbin, d.adrelid) AS padrao,
+                          EXISTS (SELECT 1 FROM pg_index i
+                                   WHERE i.indrelid = a.attrelid
+                                     AND i.indisprimary
+                                     AND a.attnum = ANY(i.indkey)) AS pk
+                     FROM pg_attribute a
+                     LEFT JOIN pg_attrdef d
+                            ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+                    WHERE a.attrelid = to_regclass(%s)
+                      AND a.attnum > 0 AND NOT a.attisdropped
+                    ORDER BY a.attnum""", (tabela,))]
 
 
 
@@ -255,7 +276,7 @@ RCPN_OBRIGATORIOS_MINIMOS: frozenset[str] = frozenset({"nome", "especie"})
 RCPN_PESSOA_OBRIGATORIOS_MINIMOS: frozenset[str] = frozenset({"nome", "papel"})
 
 
-def campos(con: sqlite3.Connection, especie: str) -> list[dict]:
+def campos(con, especie: str) -> list[dict]:
     """Os campos que aquela espécie aceita — **medidos do esquema**. Só lê.
 
     Cada um diz se é obrigatório e se é data, que são as duas coisas que quem
@@ -289,7 +310,7 @@ def campos(con: sqlite3.Connection, especie: str) -> list[dict]:
 DA_MAQUINA_NA_PESSOA: frozenset[str] = frozenset({"ordem"})
 
 
-def campos_da_pessoa(con: sqlite3.Connection, especie: str) -> list[dict]:
+def campos_da_pessoa(con, especie: str) -> list[dict]:
     """Os campos que cada pessoa aceita — **medidos do esquema**, como os do
     registro. Só lê. Devolve lista vazia para espécie que não tem pessoas."""
     modelo = MODELOS.get(especie)
@@ -450,7 +471,7 @@ def _derivar(tabela: str, colunas_da_tabela: Any, linha: dict[str, Any]) -> list
     return escritas
 
 
-def preencher_colunas_derivadas(con: sqlite3.Connection) -> dict[str, int]:
+def preencher_colunas_derivadas(con) -> dict[str, int]:
     """Preenche as colunas `_norm` VAZIAS cuja fonte está preenchida.
 
     **É O CONSERTO DO QUE JÁ ESTÁ GRAVADO, e ele não podia ser só do
@@ -499,22 +520,23 @@ def preencher_colunas_derivadas(con: sqlite3.Connection) -> dict[str, int]:
         if "id" not in existentes:
             continue
         campos = ", ".join(f'"{c}"' for c in fontes)
-        for linha in con.execute(
+        bd = banco(con)
+        for linha in bd.ler(
                 f'SELECT "id", {campos} FROM "{tabela}" '
-                f'WHERE COALESCE("{coluna}", "") = ""').fetchall():
-            valores = dict(zip(fontes, list(linha)[1:]))
+                f"WHERE COALESCE(\"{coluna}\", '') = '' ORDER BY \"id\""):
+            valores = {f: linha[f] for f in fontes}
             if not any(_texto(v) for v in valores.values()):
                 continue
             nova = _derivar(tabela, colunas, valores)
             if coluna not in nova:
                 continue
-            con.execute(f'UPDATE "{tabela}" SET "{coluna}"=? WHERE id=?',
+            bd.escrever(f'UPDATE "{tabela}" SET "{coluna}"=%s WHERE id=%s',
                         (valores[coluna], linha["id"]))
             feito[chave] += 1
     return feito
 
 
-def modelo_em_branco(con: sqlite3.Connection, especie: str) -> str:
+def modelo_em_branco(con, especie: str) -> str:
     """Um arquivo de exemplo, com um registro e todos os campos. Só lê.
 
     **É O MANUAL QUE NÃO ENVELHECE.** Um exemplo escrito à mão num documento
@@ -625,7 +647,8 @@ def _conferir_pessoas(das_pessoas: Any, campos_delas: list[dict],
     return lidas, ""
 
 
-def conferir(con: sqlite3.Connection, texto: str) -> dict:
+def conferir(con, texto: str, *,
+             dispensar: frozenset[str] = frozenset()) -> dict:
     """O que o arquivo traria — **e não grava nada**. Só lê.
 
     **CONFERIR E IMPORTAR SÃO DOIS PASSOS**, como na remessa da CRA. Cinquenta
@@ -652,8 +675,8 @@ def conferir(con: sqlite3.Connection, texto: str) -> dict:
         raise ImportacaoError(
             "O arquivo não tem nenhum registro em «registros».")
 
-    ja_estao = {r[0] for r in con.execute(
-        f'SELECT origem_chave FROM "{modelo["tabela"]}" WHERE origem = ?',
+    ja_estao = {r["origem_chave"] for r in banco(con).ler(
+        f'SELECT origem_chave FROM "{modelo["tabela"]}" WHERE origem = %s',
         (MARCA_DA_ORIGEM,))}
 
     entram: list[dict] = []
@@ -699,7 +722,10 @@ def conferir(con: sqlite3.Connection, texto: str) -> dict:
             _recusa("tem campo que esta espécie não conhece: "
                     + ", ".join(estranhos))
             continue
-        faltando = sorted(o for o in obrigatorios if not _texto(
+        # `dispensar` — 21/10/2026: só a leitura do registro TARDIO o usa,
+        # para o «nome» do registrando, que não está em documento nenhum e
+        # se digita na tela. Quem lavra continua exigindo.
+        faltando = sorted(o for o in obrigatorios - set(dispensar) if not _texto(
             valores.get(o)))
         if faltando:
             _recusa("está sem: " + ", ".join(faltando))
@@ -738,7 +764,7 @@ def conferir(con: sqlite3.Connection, texto: str) -> dict:
 # ------------------------------------------------------------- importar
 
 
-def importar(con: sqlite3.Connection, texto: str, *, agora: str,
+def importar(con, texto: str, *, agora: str,
              por: str = "") -> dict:
     """Grava o que a conferência aprovou. GRAVA.
 
@@ -782,15 +808,15 @@ def importar(con: sqlite3.Connection, texto: str, *, agora: str,
         # livro, calada.
         _derivar(tabela, colunas_do_registro, valores)
         nomes = list(valores)
-        cursor = con.execute(
+        novo_id = banco(con).escrever(
             f'INSERT INTO "{tabela}" ({", ".join(nomes)}) '
-            f'VALUES ({", ".join("?" for _ in nomes)})',
-            [valores[n] for n in nomes])
+            f'VALUES ({", ".join("%s" for _ in nomes)}) RETURNING id',
+            [valores[n] for n in nomes])[0]["id"]
         entraram += 1
 
         for ordem, pessoa in enumerate(item.get("pessoas") or [], start=1):
             linha = dict(pessoa)
-            linha[das_pessoas["chave_estrangeira"]] = cursor.lastrowid
+            linha[das_pessoas["chave_estrangeira"]] = novo_id
             linha["ordem"] = ordem
             linha["origem"] = MARCA_DA_ORIGEM
             # **A CHAVE DE ORIGEM É DA PESSOA, E NÃO DO ASSENTO** — a lição
@@ -821,10 +847,10 @@ def importar(con: sqlite3.Connection, texto: str, *, agora: str,
             # linha — foi exatamente assim que o `livro_norm` ficou vazio.
             _derivar(das_pessoas["tabela"], colunas_da_pessoa, linha)
             de_pessoa = [c for c in linha if c in colunas_da_pessoa]
-            con.execute(
+            banco(con).escrever(
                 f'INSERT INTO "{das_pessoas["tabela"]}" '
                 f'({", ".join(de_pessoa)}) '
-                f'VALUES ({", ".join("?" for _ in de_pessoa)})',
+                f'VALUES ({", ".join("%s" for _ in de_pessoa)})',
                 [linha[c] for c in de_pessoa])
             pessoas_entraram += 1
     quadro["entraram"] = entraram
@@ -838,7 +864,7 @@ def importar(con: sqlite3.Connection, texto: str, *, agora: str,
 NOME_DO_MANUAL = "PADRAO_DE_IMPORTACAO.md"
 
 
-def manual(con: sqlite3.Connection, *, pasta: Any = None) -> str:
+def manual(con, *, pasta: Any = None) -> str:
     """O manual inteiro, para o oficial entregar a quem vai gerar o arquivo.
 
     **E ELE LEVA A LISTA DE CAMPOS JUNTO, e o documento em disco nao a tem.**
@@ -905,7 +931,7 @@ def campos_da_tela(modelo_da_tela: str, pasta: Any = None) -> set[str]:
     return set(re.findall(r'name="([a-z0-9_]+)"', texto))
 
 
-def para_formulario(con: sqlite3.Connection, texto: str,
+def para_formulario(con, texto: str,
                     pasta_das_telas: Any = None) -> dict:
     """Um registro do arquivo, pronto para **preencher a tela**. NÃO GRAVA.
 
@@ -1025,8 +1051,8 @@ def _valores_da_tela(valores: dict, pessoas: list[dict]) -> tuple[dict, list[str
     return tela, fora
 
 
-def para_rascunhos(con: sqlite3.Connection, texto: str, *, agora: str,
-                   por: str = "") -> dict:
+def para_rascunhos(con, texto: str, *, agora: str,
+                   por: str = "", dispensar: frozenset[str] = frozenset()) -> dict:
     """Cada registro de assento do arquivo vira um RASCUNHO da tela de assento
     novo, já conferido. ESCREVE — só `rascunhos_de_tela`.
 
@@ -1035,12 +1061,12 @@ def para_rascunhos(con: sqlite3.Connection, texto: str, *, agora: str,
     a chave do rascunho). O que o arquivo trazia e a tela não leva é dito.
     """
     import rascunho_de_tela as RASC
-    quadro, itens = _itens_da_fila(con, texto)
+    quadro, itens = _itens_da_fila(con, texto, dispensar=dispensar)
     RASC.init_rascunho_schema(con)
     criados, ja_na_fila = [], []
     for it in itens:
-        if con.execute("SELECT id FROM rascunhos_de_tela WHERE chave = ?",
-                       (it["chave_rascunho"],)).fetchone():
+        if banco(con).um("SELECT id FROM rascunhos_de_tela WHERE chave = %s",
+                         (it["chave_rascunho"],)):
             ja_na_fila.append(it["chave"])
             continue
         r = RASC.salvar(con, tela="rcpn_assento_novo", dados=it["valores"],
@@ -1056,12 +1082,13 @@ def para_rascunhos(con: sqlite3.Connection, texto: str, *, agora: str,
             "de_onde_veio": quadro["de_onde_veio"]}
 
 
-def _itens_da_fila(con: sqlite3.Connection, texto: str) -> tuple[dict, list[dict]]:
+def _itens_da_fila(con, texto: str, *,
+                   dispensar: frozenset[str] = frozenset()) -> tuple[dict, list[dict]]:
     """O arquivo, conferido e traduzido para a tela — o que a fila e a prévia
     têm em comum. SÓ LÊ. Uma função só, para a prévia mostrar exatamente o que
     a fila vai gravar."""
     import rc_assento as RC
-    quadro = conferir(con, texto)
+    quadro = conferir(con, texto, dispensar=dispensar)
     if quadro["especie"] != "RCPN_ASSENTO":
         raise ImportacaoError(
             "A fila de pré-cadastros é do Registro Civil: o arquivo tem de ser "
@@ -1086,7 +1113,7 @@ def _itens_da_fila(con: sqlite3.Connection, texto: str) -> tuple[dict, list[dict
     return quadro, itens
 
 
-def previa_da_fila(con: sqlite3.Connection, texto: str, *, agora: str) -> dict:
+def previa_da_fila(con, texto: str, *, agora: str) -> dict:
     """O que a fila de pré-cadastros faria com o arquivo — **e não grava
     nada**. SÓ LÊ. Cada registro vem com as pessoas por papel, o que travaria
     a lavratura, o que só avisa e o que ficou de fora.
@@ -1095,9 +1122,8 @@ def previa_da_fila(con: sqlite3.Connection, texto: str, *, agora: str) -> dict:
     (`rascunho_de_tela.salvar`), com quem assina posto depois."""
     import rc_conferencia_dados as CONF
     quadro, itens = _itens_da_fila(con, texto)
-    tem_tabela = con.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rascunhos_de_tela'"
-    ).fetchone()
+    bd = banco(con)
+    tem_tabela = bd.tem_tabela("rascunhos_de_tela")
     for it in itens:
         try:
             probs = CONF.conferir(CONF.dados_do_formulario(
@@ -1106,9 +1132,9 @@ def previa_da_fila(con: sqlite3.Connection, texto: str, *, agora: str) -> dict:
             probs = []
         it["travas"] = CONF.bloqueios(probs)
         it["avisos"] = CONF.avisos(probs)
-        it["ja_na_fila"] = bool(tem_tabela and con.execute(
-            "SELECT 1 FROM rascunhos_de_tela WHERE chave = ?",
-            (it["chave_rascunho"],)).fetchone())
+        it["ja_na_fila"] = bool(tem_tabela and bd.um(
+            "SELECT 1 FROM rascunhos_de_tela WHERE chave = %s",
+            (it["chave_rascunho"],)))
     return {"itens": itens, "recusados": quadro["recusados"],
             "repetidos": quadro["repetidos"], "lidos": quadro["lidos"],
             "de_onde_veio": quadro["de_onde_veio"]}
@@ -1143,6 +1169,10 @@ QUEM_E_O_PAPEL: dict[str, str] = {
     "MAE_NUBENTE2": "a mãe do segundo cônjuge",
     "PAI_NUBENTE2": "o pai do segundo cônjuge",
     "DECLARANTE": "quem declarou o fato no balcão",
+    # No NASCIMENTO a segunda testemunha é papel próprio — a do registro
+    # tardio e, desde o LD01, também a do parto sem assistência médica.
+    "TESTEMUNHA2": "a segunda testemunha do registro tardio (art. 249, II) ou "
+                   "do parto sem assistência médica — nunca o próprio registrado",
     "TESTEMUNHA": "testemunha do ato — nunca o próprio registrado, falecido ou "
                   "cônjuge",
     # O LIVRO E — 13/10/2026. No Livro E o REGISTRADO é o emancipado, o
@@ -1202,7 +1232,7 @@ O_QUE_TRAVA: tuple[tuple[str, str], ...] = (
 )
 
 
-def _espec_dos_campos_rcpn(con: sqlite3.Connection) -> list[str]:
+def _espec_dos_campos_rcpn(con) -> list[str]:
     """As colunas do assento que a tela pergunta — medidas (tela ∩ esquema)."""
     da_tela = campos_da_tela(MODELOS["RCPN_ASSENTO"]["modelo_da_tela"])
     saida = []
@@ -1216,7 +1246,7 @@ def _espec_dos_campos_rcpn(con: sqlite3.Connection) -> list[str]:
     return saida
 
 
-def modelo_rcpn(con: sqlite3.Connection, especie_do_ato: str) -> str:
+def modelo_rcpn(con, especie_do_ato: str) -> str:
     """Um arquivo para PREENCHER, de uma espécie do Registro Civil: um
     registro com os campos que a tela pergunta e **uma pessoa por papel que a
     espécie admite**, todos em branco. SÓ LÊ.
@@ -1244,7 +1274,7 @@ def modelo_rcpn(con: sqlite3.Connection, especie_do_ato: str) -> str:
                        "registros": [registro]}, ensure_ascii=False, indent=2)
 
 
-def manual_das_partes(con: sqlite3.Connection) -> str:
+def manual_das_partes(con) -> str:
     """O manual de preenchimento do arquivo do Registro Civil, com o foco nas
     PARTES. SÓ LÊ. Montado na hora: os papéis, os campos e as gavetas saem do
     sistema de hoje."""

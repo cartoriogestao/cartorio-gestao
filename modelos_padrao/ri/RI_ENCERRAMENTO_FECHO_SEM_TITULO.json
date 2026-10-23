@@ -1,0 +1,13 @@
+{
+  "chave": "RI_ENCERRAMENTO_FECHO_SEM_TITULO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Fecho do modelo de encerramento — sem título",
+  "formato": "JINJA",
+  "explica": "Local, data, «Dou fé» e a assinatura de quem pratica o ato, no fim dos modelos de encerramento; o módulo usa este quando quem assina não tem título (ri_web).",
+  "campos": [
+    "cidade",
+    "data",
+    "nome",
+    "uf"
+  ]
+}

@@ -63,7 +63,9 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+import banco_pg
 import cnib_api as API
+from bd_nativo import banco
 from ri_schema import normalizar_busca
 
 # ------------------------------------------------------------------ situações
@@ -135,16 +137,16 @@ def _dia(valor: Any) -> str | None:
 
 def cpf_de_quem_consulta(con: sqlite3.Connection) -> str:
     """O CPF que vai no pedido, como está gravado nas configurações. Só lê."""
-    linha = con.execute("SELECT value FROM settings WHERE key=?",
-                        (CHAVE_DO_CPF,)).fetchone()
-    return _texto(linha[0]) if linha else ""
+    linha = banco(con).um("SELECT value FROM settings WHERE key=%s",
+                          (CHAVE_DO_CPF,))
+    return _texto(linha["value"]) if linha else ""
 
 
 def rotina_ligada(con: sqlite3.Connection) -> bool:
     """A rotina diária está ligada? Padrão: sim."""
-    linha = con.execute("SELECT value FROM settings WHERE key=?",
-                        (CHAVE_DA_ROTINA,)).fetchone()
-    return (_texto(linha[0]) if linha else "1") != "0"
+    linha = banco(con).um("SELECT value FROM settings WHERE key=%s",
+                          (CHAVE_DA_ROTINA,))
+    return (_texto(linha["value"]) if linha else "1") != "0"
 
 
 def esta_pronto(con: sqlite3.Connection) -> dict:
@@ -173,24 +175,27 @@ def retrato_do_acervo(con: sqlite3.Connection) -> str | None:
     A origem das ordens muda para CNIB no UPSERT; por isso o MAX das linhas
     ainda EOFICIO regride durante a recuperacao e nao identifica o acervo.
     """
-    linha = con.execute("SELECT value FROM settings WHERE key=?",
-                        (CHAVE_DO_RETRATO,)).fetchone()
-    if linha and _dia(linha[0]):
-        return _dia(linha[0])
+    bd = banco(con)
+    linha = bd.um("SELECT value FROM settings WHERE key=%s",
+                  (CHAVE_DO_RETRATO,))
+    if linha and _dia(linha["value"]):
+        return _dia(linha["value"])
     from ajuda_problemas import caminho_do_banco
     principal = caminho_do_banco(con)
     if principal:
         acervo = Path(principal).parent / "acervo_eoficio.sqlite3"
         if acervo.is_file():
-            with closing(sqlite3.connect(acervo.as_uri() + "?mode=ro", uri=True)) as fonte:
+            # o acervo e SQLite de verdade, so leitura, pela porta que nao
+            # decide pelo nome do arquivo (LH09)
+            with closing(banco_pg.conectar_sqlite(acervo)) as fonte:
                 original = fonte.execute(
                     "SELECT MAX(DATAPEDIDO) FROM tbCNIB_Registro").fetchone()
             if original and _dia(original[0]):
                 return _dia(original[0])
-    linha = con.execute(
-        "SELECT MAX(data_pedido) FROM ri_cnib_ordens WHERE origem<>?",
-        (ORIGEM_DA_CENTRAL,)).fetchone()
-    return _dia(linha[0]) if linha else None
+    maior = bd.valor(
+        "SELECT MAX(data_pedido) AS maior FROM ri_cnib_ordens WHERE origem<>%s",
+        (ORIGEM_DA_CENTRAL,))
+    return _dia(maior)
 
 
 def resumo_do_espelho(con: sqlite3.Connection) -> dict:
@@ -205,45 +210,45 @@ def resumo_do_espelho(con: sqlite3.Connection) -> dict:
     move: aquelas 50.054 linhas pararam em 19/03/2023 e param ali para
     sempre.
     """
-    linha = con.execute(
-        """SELECT COUNT(*) total,
-                  COALESCE(SUM(ativa=1), 0) ativas,
-                  COALESCE(SUM(origem=?), 0) da_central,
-                  MAX(data_pedido) ultimo_pedido,
-                  MAX(CASE WHEN origem<>? THEN data_pedido END) retrato_do_acervo
+    linha = banco(con).um(
+        """SELECT COUNT(*) AS total,
+                  COUNT(*) FILTER (WHERE ativa=1) AS ativas,
+                  COUNT(*) FILTER (WHERE origem=%s) AS da_central,
+                  MAX(data_pedido) AS ultimo_pedido,
+                  MAX(CASE WHEN origem<>%s THEN data_pedido END) AS retrato_do_acervo
              FROM ri_cnib_ordens""",
-        (ORIGEM_DA_CENTRAL, ORIGEM_DA_CENTRAL)).fetchone()
-    return {"total": linha[0], "ativas": linha[1],
-            "da_central": linha[2], "ultimo_pedido": linha[3],
+        (ORIGEM_DA_CENTRAL, ORIGEM_DA_CENTRAL))
+    return {"total": int(linha["total"]), "ativas": int(linha["ativas"]),
+            "da_central": int(linha["da_central"]),
+            "ultimo_pedido": linha["ultimo_pedido"],
             "retrato_do_acervo": retrato_do_acervo(con)}
 
 
-def ultima_leitura(con: sqlite3.Connection) -> sqlite3.Row | None:
+def ultima_leitura(con: sqlite3.Connection) -> dict | None:
     """A última leitura **que a Central respondeu e a casa entendeu**.
 
     É ela que responde «até quando esta cópia vale» — e não o
     `MAX(data_pedido)`, que é a data do PEDIDO judicial e vem de 2012 numa
     ordem que a Central mandou hoje, quando o que se moveu foi o cancelamento.
     """
-    marcas = ",".join("?" * len(SITUACOES_QUE_ANDAM))
-    return con.execute(
-        f"""SELECT * FROM ri_cnib_leituras
-             WHERE situacao IN ({marcas}) AND terminada_em IS NOT NULL
-               AND parou_no_teto=0
-             ORDER BY ate DESC, id DESC LIMIT 1""",
-        tuple(sorted(SITUACOES_QUE_ANDAM))).fetchone()
+    return banco(con).um(
+        """SELECT * FROM ri_cnib_leituras
+            WHERE situacao = ANY(%s) AND terminada_em IS NOT NULL
+              AND parou_no_teto=0
+            ORDER BY ate DESC, id DESC LIMIT 1""",
+        (sorted(SITUACOES_QUE_ANDAM),))
 
 
-def leituras(con: sqlite3.Connection, limite: int = 30) -> list[sqlite3.Row]:
+def leituras(con: sqlite3.Connection, limite: int = 30) -> list[dict]:
     """As últimas leituras, **inclusive as que deram errado**.
 
     As que deram errado ficam na lista de propósito: erro que some da tela é
     erro que ninguém conserta, e aqui ele é a diferença entre «a Central não
     tinha nada» e «eu não consegui falar com ela».
     """
-    return con.execute(
-        "SELECT * FROM ri_cnib_leituras ORDER BY id DESC LIMIT ?",
-        (int(limite),)).fetchall()
+    return banco(con).ler(
+        "SELECT * FROM ri_cnib_leituras ORDER BY id DESC LIMIT %s",
+        (int(limite),))
 
 
 def ja_leu_hoje(con: sqlite3.Connection, *, hoje: date) -> bool:
@@ -258,9 +263,9 @@ def ja_leu_hoje(con: sqlite3.Connection, *, hoje: date) -> bool:
     # mesmo truque do razão dos selos — ele passa do `T`, do espaço e de todo
     # dígito, e a comparação continua sendo de texto.
     dia = hoje.isoformat()
-    return con.execute(
-        "SELECT 1 FROM ri_cnib_leituras WHERE pedida_em >= ? AND pedida_em < ? "
-        "AND ate>=? LIMIT 1", (dia, dia + "z", dia)).fetchone() is not None
+    return banco(con).um(
+        "SELECT 1 AS um FROM ri_cnib_leituras WHERE pedida_em >= %s AND pedida_em < %s "
+        "AND ate>=%s LIMIT 1", (dia, dia + "z", dia)) is not None
 
 
 # ------------------------------------------------------------------ janelas
@@ -315,7 +320,8 @@ def janelas_da_posta_em_dia(con: sqlite3.Connection, *, hoje: date) -> list[dict
     Devolve a lista inteira, com `feita` em cada um, para a tela mostrar o
     tamanho do que falta em vez de só o próximo passo.
     """
-    resumo = resumo_do_espelho(con)
+    bd = banco(con)
+    resumo = resumo_do_espelho(con)    # `con`: o retrato pergunta o caminho do banco à ponte
     inicio_texto = _texto(resumo["retrato_do_acervo"])[:10]
     try:
         inicio = date.fromisoformat(inicio_texto)
@@ -331,11 +337,11 @@ def janelas_da_posta_em_dia(con: sqlite3.Connection, *, hoje: date) -> list[dict
     while passo <= hoje:
         fim = min(_ultimo_dia_do_mes(passo), hoje)
         de, ate = passo.isoformat(), fim.isoformat()
-        feita = con.execute(
-            """SELECT 1 FROM ri_cnib_leituras
-                WHERE de<=? AND ate>=? AND situacao IN (?,?)
+        feita = bd.um(
+            """SELECT 1 AS um FROM ri_cnib_leituras
+                WHERE de<=%s AND ate>=%s AND situacao IN (%s,%s)
                   AND parou_no_teto=0 AND terminada_em IS NOT NULL LIMIT 1""",
-            (de, ate, OK, VAZIA)).fetchone() is not None
+            (de, ate, OK, VAZIA)) is not None
         fora.append({"de": de, "ate": ate, "feita": feita,
                      "titulo": f"{passo.month:02d}/{passo.year}"})
         passo = fim + timedelta(days=1)
@@ -383,16 +389,17 @@ def _gravar_ordem(con: sqlite3.Connection, ordem: dict) -> str:
             "depois, e a linha não entra.")
 
     cancelamento = API.protocolo_do_cancelamento(ordem) or None
-    antes = con.execute(
-        "SELECT id, ativa FROM ri_cnib_ordens WHERE protocolo_cnib=?",
-        (protocolo,)).fetchone()
+    bd = banco(con)
+    antes = bd.um(
+        "SELECT id, ativa FROM ri_cnib_ordens WHERE protocolo_cnib=%s",
+        (protocolo,))
 
-    con.execute(
+    bd.escrever(
         """INSERT INTO ri_cnib_ordens
               (protocolo_cnib, data_pedido, processo, instituicao, forum_vara,
                solicitante, cancelamento_protocolo, cancelamento_data, ativa,
                origem_chave, origem)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT(protocolo_cnib) DO UPDATE SET
                data_pedido=excluded.data_pedido,
                processo=excluded.processo,
@@ -415,9 +422,9 @@ def _gravar_ordem(con: sqlite3.Connection, ordem: dict) -> str:
          cancelamento, _dia(ordem.get("cancelamentodata")),
          0 if cancelamento else 1, protocolo, ORIGEM_DA_CENTRAL))
 
-    linha = con.execute(
-        "SELECT id, ativa FROM ri_cnib_ordens WHERE protocolo_cnib=?",
-        (protocolo,)).fetchone()
+    linha = bd.um(
+        "SELECT id, ativa FROM ri_cnib_ordens WHERE protocolo_cnib=%s",
+        (protocolo,))
     ordem_id = int(linha["id"])
 
     # AS PARTES DA CENTRAL SUBSTITUEM AS DO ESPELHO, e a razão é medida: o
@@ -426,13 +433,13 @@ def _gravar_ordem(con: sqlite3.Connection, ordem: dict) -> str:
     # novo a cada leitura — a fila repete linha entre páginas.
     partes = ordem.get("partes")
     if isinstance(partes, list) and partes:
-        con.execute("DELETE FROM ri_cnib_pessoas WHERE ordem_id=?", (ordem_id,))
+        bd.escrever("DELETE FROM ri_cnib_pessoas WHERE ordem_id=%s", (ordem_id,))
         for p in partes:
             if not isinstance(p, dict):
                 continue
-            con.execute(
+            bd.escrever(
                 """INSERT INTO ri_cnib_pessoas (ordem_id, nome, documento, origem_chave, nome_norm)
-                   VALUES (?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s)""",
                 (ordem_id, _texto(p.get("nomerazao")) or None,
                  _texto(p.get("cpfcnpj")) or None, protocolo,
                  normalizar_busca(p.get("nomerazao")) or None))
@@ -459,11 +466,12 @@ def gravar(con: sqlite3.Connection, *, de: str, ate: str, leitura: dict,
     ninguém sabe se está.
     """
     referencia = retrato_do_acervo(con)
+    bd = banco(con)
     if referencia:
-        con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)",
+        bd.escrever("INSERT INTO settings(key,value) VALUES (%s,%s) ON CONFLICT DO NOTHING",
                     (CHAVE_DO_RETRATO, referencia))
     if leitura.get("forma_estranha"):
-        anotar(con, de=de, ate=ate, situacao=RECUSADA, agora=agora,
+        anotar(bd, de=de, ate=ate, situacao=RECUSADA, agora=agora,
                usuario=usuario, automatica=automatica,
                mensagem=("A Central respondeu numa forma que este sistema não "
                          "conhece. Nada foi gravado, e a janela não andou. "
@@ -474,7 +482,7 @@ def gravar(con: sqlite3.Connection, *, de: str, ate: str, leitura: dict,
 
     novas = atualizadas = canceladas = 0
     for ordem in leitura.get("ordens") or []:
-        resultado = _gravar_ordem(con, ordem)
+        resultado = _gravar_ordem(bd, ordem)
         if resultado == "NOVA":
             novas += 1
         elif resultado == "CANCELOU":
@@ -484,7 +492,7 @@ def gravar(con: sqlite3.Connection, *, de: str, ate: str, leitura: dict,
 
     lidas = int(leitura.get("lidas") or 0)
     situacao = VAZIA if (leitura.get("vazio") and not lidas) else OK
-    anotar(con, de=de, ate=ate, situacao=situacao, agora=agora,
+    anotar(bd, de=de, ate=ate, situacao=situacao, agora=agora,
            usuario=usuario, automatica=automatica,
            mensagem=_texto(leitura.get("mensagem")),
            lidas=lidas, novas=novas, atualizadas=atualizadas,
@@ -510,13 +518,14 @@ def anotar(con: sqlite3.Connection, *, de: str, ate: str, situacao: str,
     """
     if situacao not in {PEDIDA, OK, VAZIA, RECUSADA, ERRO}:
         raise CnibAtualizadorError(f"Situação de leitura desconhecida: {situacao}")
-    cursor = con.execute(
+    novo = banco(con).escrever(
         """INSERT INTO ri_cnib_leituras
               (de, ate, pedida_em, terminada_em, situacao, lidas, novas,
                atualizadas, canceladas, paginas, parou_no_teto, mensagem,
                automatica, pedida_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (de, ate, agora, agora, situacao, lidas, novas, atualizadas,
          canceladas, paginas, 1 if parou_no_teto else 0, mensagem or None,
          1 if automatica else 0, usuario))
-    return int(cursor.lastrowid)
+    return int(novo[0]["id"])

@@ -217,6 +217,26 @@ def test_o_comando_tira_copia_antes_de_gravar_e_gera_o_relatorio(casa, tmp_path,
     assert casa["con"].execute("SELECT count(*) FROM expedientes").fetchone()[0] == 1
 
 
+def test_o_comando_chega_ao_banco_fora_do_sistema(casa, tmp_path, monkeypatch, capsys):
+    # revisão do L033 (17/10/2026): o comando abria o banco com `sqlite3.connect`.
+    # Fora do sistema (os .cmd de tools/) ninguém instala o desvio para o
+    # PostgreSQL, e o acesso nativo recusa o sqlite3 cru (`BancoNaoEPostgres`).
+    import banco_pg
+    if not banco_pg.ativo():
+        pytest.skip("mede a porta do PostgreSQL (CG_PG_DSN)")
+    monkeypatch.setattr(sqlite3, "connect", banco_pg._CONNECT_ORIGINAL)
+    casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    _pdf(casa["proton"] / "PARA CADASTRAR" / "OFC-COGEX_2.pdf", "d")
+    comum = ["--banco", str(casa["db"].db_path), "--pasta-dados", str(tmp_path / "dados"),
+             "--proton", str(casa["proton"])]
+    assert MA.main(comum + ["--confirmar", "--sem-copia", "--em-nome-de", "mario"]) == 0
+    assert casa["con"].execute("SELECT count(*) FROM expedientes").fetchone()[0] == 1
+    capsys.readouterr()
+    # e a medição (`mode=ro`) lê o mesmo banco: o que acabou de entrar já está lá
+    assert MA.main(comum) == 0
+    assert '"situacao": "JA_NO_SISTEMA"' in capsys.readouterr().out
+
+
 def test_a_pasta_do_proton_vem_da_configuracao_e_nao_do_codigo(casa):
     # relato #111: o caminho até a pasta do malote é desta casa e não se escreve
     casa["db"].set_settings({"malote_pasta_proton": str(casa["proton"])})
@@ -272,7 +292,17 @@ def test_aviso_que_e_so_imagem_fica_na_pasta_sem_chamar_a_ia(casa, monkeypatch):
     assert casa["con"].execute("SELECT count(*) FROM expedientes").fetchone()[0] == 0
 
 
-def test_aviso_de_fraude_vai_a_lista_sem_expediente_e_nao_volta(casa, com_chave):
+def test_aviso_de_fraude_vai_a_lista_sem_expediente_e_nao_volta(casa, com_chave, monkeypatch):
+    # O TEXTO DO OFÍCIO TEM DE TRAZER O TRECHO — LX22B2, 20/10/2026. Desde o
+    # LX13 (regra (c) das fraudes) ENVOLVIDO só fica ENVOLVIDO se o trecho que a
+    # IA cita está no PDF e nomeia a pessoa pelo prenome; o texto genérico de
+    # `com_chave` não cita ninguém, e FULANO caía para DOCUMENTO e passava a ser
+    # o primeiro «fora». Aqui o ofício diz de quem é a escritura, como o do
+    # malote diz, e o que fica de fora volta a ser só o banco.
+    import malote_fraudes as MF
+    monkeypatch.setattr(MF, "texto_dos_arquivos", lambda arquivos: (
+        "--- arquivo: x.pdf" + chr(10) + TEXTO_DO_AVISO
+        + "Escritura lavrada em face de FULANO DE TAL EXEMPLO, sem comparecimento. "))
     chamadas = []
     pdf = _pdf(casa["proton"] / "PARA CADASTRAR" / "Suspeita de fraude.pdf", "x")
     ia = _ia([{"nome": "FULANO DE TAL EXEMPLO", "papel": "ENVOLVIDO", "trecho": "em face de FULANO"},
@@ -285,6 +315,7 @@ def test_aviso_de_fraude_vai_a_lista_sem_expediente_e_nao_volta(casa, com_chave)
     assert c.execute("SELECT count(*) FROM tasks").fetchone()[0] == 0
     alertas = c.execute("SELECT * FROM fr_alertas").fetchall()
     assert [a["nome"] for a in alertas] == ["FULANO DE TAL EXEMPLO"], "banco não entra"
+    assert alertas[0]["papel"] == "ENVOLVIDO", "o trecho está no texto e cita o prenome"
     assert alertas[0]["origem"].startswith("Malote Digital") and "0001/2026" in alertas[0]["origem"]
     assert "Escritura falsa." in alertas[0]["observacao"]
     p = c.execute("SELECT * FROM mt_alertas_propostos").fetchone()
@@ -294,7 +325,7 @@ def test_aviso_de_fraude_vai_a_lista_sem_expediente_e_nao_volta(casa, com_chave)
     assert c.execute("SELECT situacao FROM mt_arquivos").fetchone()[0] == "FRAUDE"
     leitura = c.execute("SELECT * FROM mt_fraude_leituras").fetchone()
     assert leitura["modelo"] == "claude-sonnet-5" and leitura["tokens_entrada"] == 10
-    assert "Banco Exemplo" in r["fraudes"][0]["fora"][0]
+    assert len(r["fraudes"][0]["fora"]) == 1 and "Banco Exemplo" in r["fraudes"][0]["fora"][0]
     assert "FULANO DE TAL EXEMPLO" in MA.relatorio_html(r, MA.date(2026, 10, 13))
     # a segunda rodada reconhece pelo sha256: nem IA, nem alerta repetido
     r2 = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True,

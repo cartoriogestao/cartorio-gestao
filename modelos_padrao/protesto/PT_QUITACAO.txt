@@ -1,0 +1,10 @@
+O Tabelionato de Protesto de Títulos recebeu, em {data}, o pagamento do título abaixo, no valor de R$ {valor}, e dá ao devedor a respectiva QUITAÇÃO (Lei 9.492/1997, art. 19, § 2º; Código de Normas do TJMA, art. 927).
+Devedor: {devedor}.
+{titulo}.
+Protocolo n.º {protocolo}.
+Credor (sacador/favorecido): {credor}.
+Pago {forma}.
+Identificação do pagamento: {identificacao}.
+Pago em cheque ({cheque}): esta quitação fica condicionada à efetiva liquidação do cheque (Lei 9.492/1997, art. 19, § 3º; Código de Normas do TJMA, art. 927, parágrafo único).
+Emolumentos e despesas pagos: R$ {emolumentos}.
+Pagamento lançado no Livro de Registro de Pagamentos, {lancamento}, antes desta quitação (Código de Normas do TJMA, art. 930, § 1º).

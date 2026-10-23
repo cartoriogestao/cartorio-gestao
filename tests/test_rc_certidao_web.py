@@ -208,7 +208,9 @@ def test_assento_sem_filiacao_diz_o_que_fazer(s):
     assento_id = _semear(s, com_filiacao=False)
     html = s["c"].get(f"/rcpn/{assento_id}").get_data(as_text=True)
     assert "está sem filiação" in html
-    assert "carga do acervo" in html
+    # O caminho da carga do E-Ofício saiu em 17/10/2026; fica o de lançar à mão.
+    assert "lançar os nomes" in html
+    assert 'href="/atribuicoes/importar"' not in html
 
 
 def test_a_ficha_oferece_emitir_certidao(s):

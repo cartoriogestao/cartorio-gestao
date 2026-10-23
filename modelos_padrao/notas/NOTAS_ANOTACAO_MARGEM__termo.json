@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ANOTACAO_MARGEM__termo",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Anotação à margem — termo",
+  "formato": "CHAVES",
+  "explica": "Quando o ato tem número de termo.",
+  "campos": [
+    "termo"
+  ]
+}

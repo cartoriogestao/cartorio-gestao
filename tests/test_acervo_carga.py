@@ -30,6 +30,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import acervo_carga as AC                          # noqa: E402
 from nucleo_schema import init_nucleo_schema       # noqa: E402
@@ -64,8 +66,14 @@ ACERVO_REAL = Path(r"C:\ProgramData\CartorioGestao") / AC.NOME_ACERVO
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
+    # `ri_schema` aponta para `users` (FK): o PostgreSQL cobra a FK
+    # na criacao, e o banco da casa cria `users` antes. Aqui basta o esqueleto.
+    con.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
+    # `rg_titulos` aponta para `cx_protocolos` (FK): o PostgreSQL cobra a FK
+    # na criacao, e o banco da casa cria o caixa antes. Aqui basta o esqueleto.
+    con.execute("CREATE TABLE IF NOT EXISTS cx_protocolos (id INTEGER PRIMARY KEY)")
     for iniciar in (init_nucleo_schema, init_pt_schema, init_rc_schema,
                     init_rg_schema, init_ri_schema, init_ra_schema,
                     # O PAPEL DE SEGURANCA entrou nas cargas em 27/08/2026: a
@@ -92,7 +100,7 @@ def banco() -> sqlite3.Connection:
 
 def acervo_falso() -> sqlite3.Connection:
     """Um acervo minimo, com as colunas que a carga le de verdade."""
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         -- O DE-PARA DO IBGE, com o bastante para a carga rodar: um município
@@ -1084,7 +1092,7 @@ def _propriedade_rcpn(acervo, **campos):
     colunas.update(campos)
     acervo.execute("DROP TABLE IF EXISTS tbPropriedadeRCPN")
     acervo.execute(f"CREATE TABLE tbPropriedadeRCPN "
-                   f"({','.join(f'[{c}] INTEGER' for c in colunas)})")
+                   f"({','.join(f'{c} INTEGER' for c in colunas)})")
     acervo.execute(f"INSERT INTO tbPropriedadeRCPN VALUES "
                    f"({','.join('?' * len(colunas))})", tuple(colunas.values()))
 
@@ -1144,6 +1152,41 @@ def test_o_contador_do_acervo_nao_baixa_o_que_ja_andou():
     AC.semear_numeracao(con, agora="2026-08-27T10:00:00", acervo=ace)
     linha = con.execute("SELECT proximo FROM nu_numeracao WHERE serie='RC_D'").fetchone()
     assert linha["proximo"] == 2000
+
+
+def test_o_contador_da_propriedade_sai_da_primeira_linha_e_nao_da_menor_coluna():
+    """A tabela de propriedade deveria ter uma linha só. Se tiver duas, vale a
+    PRIMEIRA que o E-Ofício gravou (`intChave`), que é a que a leitura antiga
+    pegava — e não a de menor valor na primeira coluna, que é o que um
+    `ORDER BY 1` escolheria. Aqui `intChave` é a segunda coluna de propósito.
+    """
+    con, ace = banco(), acervo_falso()
+    ace.execute("DROP TABLE IF EXISTS tbPropriedadeRCPN")
+    ace.execute("CREATE TABLE tbPropriedadeRCPN "
+                "(intRegistroAtualRegistroProclamas INTEGER, intChave INTEGER)")
+    ace.execute("INSERT INTO tbPropriedadeRCPN VALUES (1358, 1)")
+    ace.execute("INSERT INTO tbPropriedadeRCPN VALUES (5, 2)")
+    r = AC.semear_numeracao(con, agora="2026-08-27T10:00:00", acervo=ace)
+    semeadas = {x["serie"]: x["proximo"] for x in r["semeadas"]}
+    assert semeadas.get("RC_D") == 1359, "leu a outra linha da propriedade"
+
+
+def test_o_cabecalho_do_ibge_sai_da_primeira_linha_do_acervo_e_nao_da_menor_uf():
+    """Mesma regra para `tbIBGE_Propriedades`: com duas linhas, vale a primeira
+    gravada (`intChave`), e não a de menor `strUF`. O cabeçalho alimenta a
+    remessa do IBGE, e UF trocada é remessa de outra casa."""
+    con, ace = banco(), acervo_falso()
+    ace.execute("DROP TABLE IF EXISTS tbIBGE_Propriedades")
+    ace.execute("CREATE TABLE tbIBGE_Propriedades (intChave INTEGER, strUF TEXT, "
+                "strMunicipio TEXT, strDistrito TEXT, strCodigo TEXT)")
+    ace.execute("INSERT INTO tbIBGE_Propriedades VALUES (1,'21','98765','05','01')")
+    ace.execute("INSERT INTO tbIBGE_Propriedades VALUES (2,'13','00001','01','09')")
+    AC.carregar_ibge(con, ace, agora=AGORA)
+    valor = {k: con.execute("SELECT value FROM settings WHERE key=?",
+                            (k,)).fetchone()["value"]
+             for k in ("ibge_uf", "ibge_municipio", "ibge_cartorio")}
+    assert valor == {"ibge_uf": "21", "ibge_municipio": "98765",
+                     "ibge_cartorio": "01"}, "leu a outra linha da propriedade"
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,8 @@ pytestmark = pytest.mark.lento  # inventaria a arvore inteira; fica na suite com
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — DROP TABLE
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
+from banco_de_teste import conexao_de_teste                      # noqa: E402
 
 import ajuda_projeto as PROJ                                     # noqa: E402
 
@@ -559,7 +561,7 @@ def test_banco_sem_as_colunas_das_notas_nao_derruba_nada(tmp_path):
 
     É o `except` ESTREITO de propósito — ele perdoa a coluna que falta (que é
     instalação velha) e não a consulta errada (que é defeito nosso)."""
-    con = sqlite3.connect(tmp_path / "velho.sqlite3")
+    con = conexao_de_teste()
     con.execute("CREATE TABLE aj_problemas (id INTEGER PRIMARY KEY)")
     assert PROJ._notas_do_desenvolvimento(con, desde="2026-09-15T10:00:00") == []
     # e sem piso nenhum não se consulta nada

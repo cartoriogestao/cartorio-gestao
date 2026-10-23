@@ -11,6 +11,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import etiqueta as ETQ
 import rc_assento as RC
@@ -19,7 +21,7 @@ import rc_schema as RCS
 
 
 def _con():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript(RCS.SCHEMA)
     for tabela, coluna, tipo in getattr(RCS, "MIGRACOES", ()):

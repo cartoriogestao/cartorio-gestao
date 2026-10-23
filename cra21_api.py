@@ -49,6 +49,7 @@ que a P21 ofereceu liberar.
 from __future__ import annotations
 
 import base64
+from datetime import date as _date
 import re
 import urllib.parse
 from typing import Any
@@ -165,7 +166,16 @@ class CraError(RuntimeError):
 
 
 class CraRecusou(CraError):
-    """A Central respondeu, e respondeu não. O motivo dela vem junto."""
+    """A Central respondeu, e respondeu não. O motivo dela vem junto.
+
+    `bruto` é a resposta INTEIRA da Central, quando há uma — à parte da frase.
+    A frase vai à tela (e o `flash` mora no cookie da sessão, que não leva
+    XML de vários KB); o bruto vai só para o campo de erro do arquivo
+    (`pt_retornos.cra_envio_erro`), que é onde se confere depois (LH08)."""
+
+    def __init__(self, mensagem: str = "", *, bruto: str = "") -> None:
+        super().__init__(mensagem)
+        self.bruto = str(bruto or "")
 
 
 # O PADRÃO É PRODUÇÃO DESDE 14/10/2026 — ordem do oficial no primeiro dia do
@@ -376,7 +386,10 @@ def _bater(ambiente: str, operacao: str, valores: dict, *,
             "em Administrativo → Configurações → Centrais de "
             "Protesto; eles são os do cartório na CRA, e o Tabelião "
             "ou o Substituto é quem os cadastra.")
-    return resposta.corpo.decode("utf-8", errors="replace")
+    try:
+        return resposta.corpo.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return resposta.corpo.decode("iso-8859-1")
 
 
 def chamar(operacao: str, ambiente: Any = CRED.PRODUCAO, *,
@@ -412,6 +425,18 @@ def apresentantes(ambiente: Any = CRED.PRODUCAO, *, pasta=None) -> str:
                   o_que="buscar os apresentantes", pasta=pasta)
 
 
+def _remessa_ou_aviso(texto: str) -> str:
+    """A CRA também responde com relatório/erro em HTTP 200, sem títulos.
+
+    Esse aviso deve chegar à tela antes do conferidor XML: um relatório
+    não é uma remessa malformada. Não repete a chamada nem recebe títulos.
+    """
+    aviso = recusa_no_return(texto)
+    if aviso:
+        raise CraRecusou(f"A CRA informou: {aviso}")
+    return texto
+
+
 def remessa(nome_do_arquivo: str, ambiente: Any = CRED.PRODUCAO, *,
             com_imagem: bool = False, pasta=None) -> str:
     """A remessa do dia, **mais as pendentes de datas anteriores**.
@@ -421,21 +446,32 @@ def remessa(nome_do_arquivo: str, ambiente: Any = CRED.PRODUCAO, *,
     confirmado pelo exemplo em PHP. Mandar o conteúdo aqui seria mandar
     megabytes onde a Central espera onze caracteres.
     """
-    return chamar("Remessa", ambiente, o_que="baixar a remessa", pasta=pasta,
+    texto = chamar("Remessa", ambiente, o_que="baixar a remessa", pasta=pasta,
                   userArq=_nome(nome_do_arquivo),
                   downloadImagem=(BAIXAR_A_IMAGEM if com_imagem
                                   else SO_CONFERIR_A_IMAGEM))
+    return _remessa_ou_aviso(texto)
 
 
 def remessas_pendentes(nome_do_arquivo: str = "",
                        ambiente: Any = CRED.PRODUCAO, *,
                        com_imagem: bool = False, pasta=None) -> str:
-    """**Todas** as pendentes, sem olhar data nem apresentante."""
-    return chamar("RemessaPendente", ambiente,
+    """Todas as pendentes, de qualquer data e apresentante.
+
+    A CRA exige um nome FEBRABAN válido mesmo nesta operação, que não filtra
+    por data nem apresentante. Geramos esse nome técnico quando não informado.
+    Contrato: manual.p21website.com.br/docs/cartorio/cartorios-webservice/
+    download-e-consulta/ (exemplo oficial com apresentante 000).
+    """
+    nome = str(nome_do_arquivo or "").strip()
+    if not nome:
+        nome = f"B000{_date.today():%d%m.%y}1"
+    texto = chamar("RemessaPendente", ambiente,
                   o_que="baixar as remessas pendentes", pasta=pasta,
-                  userArq=str(nome_do_arquivo or "").strip(),
+                  userArq=_nome(nome),
                   downloadImagem=(BAIXAR_A_IMAGEM if com_imagem
                                   else SO_CONFERIR_A_IMAGEM))
+    return _remessa_ou_aviso(texto)
 
 
 def desistencias(nome_do_arquivo: str, ambiente: Any = CRED.PRODUCAO, *,

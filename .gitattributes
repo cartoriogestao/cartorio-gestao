@@ -1,0 +1,15 @@
+# A PASTA DOS PADRÕES VIAJA BYTE A BYTE (LF06A, 19/10/2026).
+#   O texto de fábrica dos papéis saiu do código para `modelos_padrao/`, e a
+#   prova de que nada mudou é o teste-ouro, que compara byte a byte. Um git com
+#   `autocrlf` (o padrão no Windows) poria `\r\n` em cada linha do `.txt`, e a
+#   impressão digital do padrão mudaria sozinha. `-text` desliga a conversão.
+modelos_padrao/** -text
+
+# AS SEÇÕES DOS LOTES DE FLUXO (LT01 a LT06, 20/10/2026). Seis lotes escrevem,
+#   em paralelo, cada um só a SUA seção destes dois documentos — e os dois
+#   nascem nesses lotes. Sem o `union`, o segundo a entrar dava conflito
+#   (add/add: os dois «criam» o arquivo); com ele, as seções se somam. Só
+#   para estes: em texto que se edita no meio, `union` juntaria as duas
+#   versões da mesma linha.
+docs/COBERTURA_FLUXOS.md merge=union
+docs/REQUISITOS_LEGAIS.md merge=union

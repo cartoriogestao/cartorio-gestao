@@ -1,0 +1,21 @@
+{
+  "chave": "RCPJ_TEOR_AVERBACAO",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Teor de averbação — RCPJ",
+  "formato": "CHAVES",
+  "explica": "PDF do teor de averbação no Registro Civil das Pessoas Jurídicas: cabeçalho em todas as folhas, intro «apresentado para ser AVERBADO» (sem a palavra hoje), faixa no alto da 1ª folha para a etiqueta do selo, imagens anexadas e encerramento do lavrante. Sem livro/folha no cabeçalho. O cabeçalho diz o número de ordem da própria averbação (LD09, 21/10/2026; LRP arts. 149 e 153; CN-MA art. 968); a linha sai na prévia, que ainda não tem número.",
+  "campos": [
+    "unit_short",
+    "cns",
+    "atribuicao",
+    "numero",
+    "natureza_ato",
+    "data_assinatura",
+    "full_name",
+    "funcao",
+    "cidade",
+    "uf",
+    "data_extenso",
+    "numero_averbacao"
+  ]
+}

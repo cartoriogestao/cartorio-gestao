@@ -37,7 +37,9 @@ POR QUE DUAS PONTES, E NÃO UMA
 """
 from __future__ import annotations
 
-import sqlite3
+from typing import Any
+
+from bd_nativo import banco
 
 # Os dois protocolos desta casa, e eles sao coisas diferentes:
 #
@@ -62,7 +64,7 @@ class DocumentoError(ValueError):
     """Erro de regra, com mensagem pronta para o balcao."""
 
 
-def prenotacao_do_ato(con: sqlite3.Connection, ato_id: int) -> dict | None:
+def prenotacao_do_ato(con: Any, ato_id: int) -> dict | None:
     """A prenotacao de que aquele ato saiu, se der para saber. So LE.
 
     DUAS PONTES, NESTA ORDEM:
@@ -75,14 +77,13 @@ def prenotacao_do_ato(con: sqlite3.Connection, ato_id: int) -> dict | None:
     Invertida, a ordem daria a resposta errada no dia em que alguem digitasse
     um numero de prenotacao trocado num ato que ja tem amarracao boa.
     """
-    con.row_factory = sqlite3.Row
-    p = con.execute(
-        "SELECT * FROM ri_protocolos WHERE ato_id = ?", (int(ato_id),)).fetchone()
+    bd = banco(con)
+    p = bd.um("SELECT * FROM ri_protocolos WHERE ato_id = %s ORDER BY id",
+              (int(ato_id),))
     if p:
         return dict(p) | {"ligacao": "gravada"}
 
-    a = con.execute("SELECT prenotacao FROM ri_atos WHERE id = ?",
-                    (int(ato_id),)).fetchone()
+    a = bd.um("SELECT prenotacao FROM ri_atos WHERE id = %s", (int(ato_id),))
     # SO OS DIGITOS, E COMPARADO COMO NUMERO. Medido em 29/08/2026:
     # `ri_protocolos.numero` e **INTEGER** (`10595`) e `ri_atos.prenotacao` e
     # **TEXT** (`'11534'`). A comparacao direta acha 8 dos 12 atos com
@@ -98,15 +99,15 @@ def prenotacao_do_ato(con: sqlite3.Connection, ato_id: int) -> dict | None:
                       if c.isdigit()).lstrip("0")
     if not digitos:
         return None
-    p = con.execute("SELECT * FROM ri_protocolos WHERE numero = ?",
-                    (int(digitos),)).fetchone()
+    p = bd.um("SELECT * FROM ri_protocolos WHERE numero = %s ORDER BY id",
+              (int(digitos),))
     # `ligacao: "pelo numero"` NAO E DETALHE DE PROGRAMA: a tela diz isso a
     # quem lavra, porque documento achado por um numero digitado merece um
     # segundo olhar antes de virar fundamento de registro.
     return dict(p) | {"ligacao": "pelo número"} if p else None
 
 
-def documentos_para_lavrar(con: sqlite3.Connection, ato_id: int) -> dict:
+def documentos_para_lavrar(con: Any, ato_id: int) -> dict:
     """Os documentos da prenotacao daquele ato, para a tela de lavrar. So LE.
 
     Devolve `{prenotacao, documentos, ligacao}` — ou tudo vazio quando o ato
@@ -128,7 +129,7 @@ def documentos_para_lavrar(con: sqlite3.Connection, ato_id: int) -> dict:
             "do_protocolo_geral": PDOC.da_prenotacao(con, p["id"])["ativos"]}
 
 
-def documentos_de(con: sqlite3.Connection, entidade: str,
+def documentos_de(con: Any, entidade: str,
                   entidade_id: int) -> list[dict]:
     """Os anexos daquela entidade, do mais novo para o mais velho. So LE.
 
@@ -141,22 +142,20 @@ def documentos_de(con: sqlite3.Connection, entidade: str,
         raise DocumentoError(
             f"«{entidade}» não é um lugar onde eu saiba guardar documento. "
             f"São dois: {', '.join(ENTIDADES)}.")
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT a.*, u.full_name enviado_por_nome
              FROM attachments a LEFT JOIN users u ON u.id = a.uploaded_by
-            WHERE a.entity_type = ? AND a.entity_id = ?
-            ORDER BY a.id DESC""", (entidade, int(entidade_id)))]
+            WHERE a.entity_type = %s AND a.entity_id = %s
+            ORDER BY a.id DESC""", (entidade, int(entidade_id)))
 
 
-def quantos_documentos(con: sqlite3.Connection, entidade: str,
+def quantos_documentos(con: Any, entidade: str,
                        entidade_id: int) -> int:
     """Quantos anexos, para a tela dizer o numero sem carregar a lista."""
-    con.row_factory = sqlite3.Row
-    return int(con.execute(
-        """SELECT COUNT(*) n FROM attachments
-            WHERE entity_type = ? AND entity_id = ?""",
-        (entidade, int(entidade_id))).fetchone()["n"])
+    return int(banco(con).valor(
+        """SELECT COUNT(*) AS n FROM attachments
+            WHERE entity_type = %s AND entity_id = %s""",
+        (entidade, int(entidade_id))))
 
 
 def e_imagem(nome) -> bool:

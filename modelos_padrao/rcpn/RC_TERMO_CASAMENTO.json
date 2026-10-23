@@ -1,0 +1,24 @@
+{
+  "chave": "RC_TERMO_CASAMENTO",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Termo de casamento",
+  "formato": "CHAVES",
+  "explica": "O texto do Livro B — e do B-Auxiliar, no religioso com efeito civil.",
+  "campos": [
+    "data_ato_extenso",
+    "cidade_do_ato",
+    "nubente1_qualificacao",
+    "nubente2_qualificacao",
+    "documentos_apresentados",
+    "frase_habilitacao",
+    "frase_da_celebracao",
+    "regime_bens",
+    "frase_dos_nomes",
+    "filiacao1",
+    "filiacao2",
+    "frase_conversao",
+    "testemunhas",
+    "escrevente",
+    "funcao_do_escrevente"
+  ]
+}

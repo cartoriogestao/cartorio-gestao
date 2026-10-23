@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_LIVRO_ENCERRAMENTO__motivo",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Encerramento — motivo",
+  "formato": "CHAVES",
+  "explica": "Quando o encerramento tem motivo declarado.",
+  "campos": [
+    "motivo"
+  ]
+}

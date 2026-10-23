@@ -1,0 +1,18 @@
+{
+  "chave": "RTD_CERTIDAO_FAIXA",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Certidão PDF — faixa RTD",
+  "formato": "CHAVES",
+  "explica": "Faixa das folhas internas da certidão RTD.",
+  "campos": [
+    "protocolo",
+    "data_apresentacao",
+    "objeto_certificado",
+    "numero",
+    "data_registro",
+    "unit_short",
+    "atribuicao",
+    "full_name",
+    "funcao"
+  ]
+}

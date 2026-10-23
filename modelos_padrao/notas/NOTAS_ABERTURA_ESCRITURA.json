@@ -1,0 +1,12 @@
+{
+  "chave": "NOTAS_ABERTURA_ESCRITURA",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Abertura da escritura",
+  "formato": "CHAVES",
+  "explica": "O começo do teor da escritura montado pelo sistema («SAIBAM…»), antes das partes. Data, cidade e estado são claros.",
+  "campos": [
+    "data_extenso",
+    "cidade",
+    "uf_extenso"
+  ]
+}

@@ -16,7 +16,10 @@
   <a class="button" href="{{ url_for('atribuicoes_certidoes') }}">&larr; Certidões</a>
   <a class="button primary" href="{{ url_for('atribuicoes_certidao_imprimir', certidao_id=certidao.id) }}">Imprimir (PDF)</a>
   <a class="button" href="{{ url_for('atribuicoes_certidao_odt', certidao_id=certidao.id, formato='odt') }}">Baixar em .odt</a>
+  {# a certidão negativa (LD05) não tem registro para abrir #}
+  {% if certidao.registro_id %}
   <a class="button" href="{{ url_for(painel.rota_ficha, registro_id=certidao.registro_id) }}">Abrir o registro</a>
+  {% endif %}
 </div>
 
 {% if certidao.cancelada %}

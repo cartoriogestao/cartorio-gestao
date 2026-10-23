@@ -6,7 +6,7 @@
 **NÃO CONFUNDIR COM `ri_onr.py`, E O NOME DOS DOIS DIZ POR QUÊ.** Aquele gera
 os **arquivos** do ONR — o Indicador Pessoal em XML e o Indicador Real em JSON
 —, e o formato dele **foi levantado dos arquivos que esta serventia realmente
-enviou**, em `C:\\ARPNET\\C11\\ONR`. Este fala com a **API**.
+enviou**, em `arquivos\\eoficio\\ONR`. Este fala com a **API**.
 
 > **E EU ESCREVI POR CIMA DAQUELE MÓDULO, em 03/09/2026.** Dei ao meu o nome
 > `ri_onr.py` sem conferir se ele existia — e existia, com `TIPO_IMOVEL_ONR`,
@@ -65,6 +65,7 @@ from typing import Any
 
 import onr_api as API
 import ri_onr_central_schema as ESQ
+from bd_nativo import banco
 
 # **OS VOCABULÁRIOS MORAM EM `onr_api`, E NÃO AQUI.** Eles são transcritos do
 # contrato por `tools/gerar_logradouros.py`, e uma segunda cópia neste módulo
@@ -188,8 +189,9 @@ def montar_indicador(con: sqlite3.Connection, matricula_id: int, *, cns: Any,
 
     Devolve `{corpo, avisos, impedem, matricula}`.
     """
-    linha = con.execute("SELECT * FROM ri_matriculas WHERE id=?",
-                        (int(matricula_id),)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT * FROM ri_matriculas WHERE id=%s",
+                  (int(matricula_id),))
     if not linha:
         raise OnrRIError(f"A matrícula {matricula_id} não existe.")
     m = dict(linha)
@@ -250,13 +252,13 @@ def montar_indicador(con: sqlite3.Connection, matricula_id: int, *, cns: Any,
             f"«Matrícula». Transcrição e Torrens têm código próprio no ONR — "
             f"se for o caso, é aqui que se conserta.")
 
-    proprietarios, atos = _proprietarios(con, matricula_id), []
+    proprietarios, atos = _proprietarios(bd, matricula_id), []
     if not proprietarios:
         avisos.append(
             "Nenhum proprietário ativo está gravado nesta matrícula, e o "
             "indicador vai sem eles — que é justamente o que o índice real "
             "existe para publicar.")
-    atos, sem_codigo, sem_dados = _atos(con, matricula_id)
+    atos, sem_codigo, sem_dados = _atos(bd, matricula_id)
     if sem_codigo:
         avisos.append(
             "Estes atos **não vão**, porque a natureza deles não casa com "
@@ -266,7 +268,7 @@ def montar_indicador(con: sqlite3.Connection, matricula_id: int, *, cns: Any,
             "Estes atos **não vão**, porque o ONR exige a data do título e o "
             "valor declarado de cada ato, e a ficha não os tem: "
             + ", ".join(sem_dados) + ". O indicador sobe sem eles, como o "
-            "E-Ofício mandava.")
+            "sistema antigo mandava.")
     if _texto(m.get("registro_anterior")):
         avisos.append(
             "O registro anterior está gravado como texto («"
@@ -343,9 +345,9 @@ def _proprietarios(con: sqlite3.Connection, matricula_id: int) -> list[dict]:
     return [
         _sem_vazios({"nome": _texto(r["nome"]),
                      "documento": _digitos(r["documento_numero"])})
-        for r in con.execute(
+        for r in banco(con).ler(
             "SELECT nome, documento_numero FROM ri_partes "
-            "WHERE matricula_id=? AND proprietario_ativo=1 ORDER BY id",
+            "WHERE matricula_id=%s AND proprietario_ativo=1 ORDER BY id",
             (int(matricula_id),))
         if _texto(r["nome"])]
 
@@ -363,8 +365,8 @@ def _atos(con: sqlite3.Connection,
     # `SELECT *` e `dict(r).get`, e não a coluna nomeada: `data_instrumento`
     # ainda NÃO EXISTE em `ri_atos` (medido em 10/10/2026), e quando o RI a
     # criar ela passa a valer sem mexer aqui.
-    for r in con.execute(
-            "SELECT * FROM ri_atos WHERE matricula_id=? AND COALESCE(cancelado,0)=0 "
+    for r in banco(con).ler(
+            "SELECT * FROM ri_atos WHERE matricula_id=%s AND COALESCE(cancelado,0)=0 "
             "ORDER BY id", (int(matricula_id),)):
         r = dict(r)
         rotulo = f"{_texto(r.get('tipo'))}-{_texto(r.get('numero'))}"
@@ -415,25 +417,24 @@ def enviar_indicador(db, matricula_id: int, *, cns: Any, agora: str,
     transação) → gravar (transação curta).
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         montado = montar_indicador(con, matricula_id, cns=cns, **campos)
     if montado["impedem"]:
         raise OnrRIError(" ".join(montado["impedem"]))
 
     feito = API.enviar_indicador(montado["corpo"], pasta=pasta)
     with db.transaction() as con:
-        cur = con.execute(
+        novo = banco(con).escrever(
             """INSERT INTO ri_onr_envios(especie, ambiente, matricula_id,
                    identificador, corpo_enviado, corpo_hash, resposta,
                    situacao, enviado_em, enviado_por)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (ESQ.INDICADOR, ambiente(), int(matricula_id),
              feito["hash"] or None,
              json.dumps(montado["corpo"], ensure_ascii=False),
              _hash(montado["corpo"]),
              json.dumps(feito.get("bruto"), ensure_ascii=False),
-             ESQ.ENVIADO, agora, usuario))
-    return {"envio_id": int(cur.lastrowid), "identificador": feito["hash"],
+             ESQ.ENVIADO, agora, usuario))[0]["id"]
+    return {"envio_id": int(novo), "identificador": feito["hash"],
             "hash": _hash(montado["corpo"])}
 
 
@@ -447,7 +448,6 @@ def atualizar_indicador(db, envio_id: int, *, cns: Any, agora: str,
     E a mesma razao do «Corrigir na Central» da certidao eletronica.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         envio = ler_envio(con, envio_id)
         if not envio:
             raise OnrRIError(f"O envio {envio_id} nao existe.")
@@ -465,9 +465,9 @@ def atualizar_indicador(db, envio_id: int, *, cns: Any, agora: str,
     resposta = API.atualizar_indicador(envio["identificador"],
                                        montado["corpo"], pasta=pasta)
     with db.transaction() as con:
-        con.execute(
-            "UPDATE ri_onr_envios SET corpo_enviado=?, corpo_hash=?, "
-            "resposta=?, situacao=? WHERE id=?",
+        banco(con).escrever(
+            "UPDATE ri_onr_envios SET corpo_enviado=%s, corpo_hash=%s, "
+            "resposta=%s, situacao=%s WHERE id=%s",
             (json.dumps(montado["corpo"], ensure_ascii=False),
              _hash(montado["corpo"]),
              json.dumps(resposta, ensure_ascii=False),
@@ -508,8 +508,9 @@ def montar_edital(con: sqlite3.Connection, processo_id: int, *, sv: dict,
     (`/v1/edital/tipo`), e escrevê-la no código seria a lista à mão que
     envelhece na tarde em que se escreve.
     """
-    linha = con.execute("SELECT * FROM us_processos WHERE id=?",
-                        (int(processo_id),)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT * FROM us_processos WHERE id=%s",
+                  (int(processo_id),))
     if not linha:
         raise OnrRIError(f"O processo de usucapião {processo_id} não existe.")
     p = dict(linha)
@@ -538,7 +539,7 @@ def montar_edital(con: sqlite3.Connection, processo_id: int, *, sv: dict,
             avisos, "da serventia"),
     }
 
-    intimados, sem_documento = _intimados(con, processo_id, avisos)
+    intimados, sem_documento = _intimados(bd, processo_id, avisos)
     if not intimados:
         impedem.append(
             "O edital não tem ninguém a intimar. Ele existe para chamar quem "
@@ -551,7 +552,7 @@ def montar_edital(con: sqlite3.Connection, processo_id: int, *, sv: dict,
     corpo = _sem_vazios({
         "tipoEdital": _inteiro(tipo_edital),
         "numeroMatricula": _texto(p.get("matricula_id") and
-                                  _numero_da_matricula(con, p["matricula_id"]))[:7],
+                                  _numero_da_matricula(bd, p["matricula_id"]))[:7],
         "numeroProtocolo": _texto(p.get("prenotacao"))[:20],
         "textoEdital": (_texto(texto) or _texto(p.get("imovel_descricao")))[:10000],
         "intimados": intimados,
@@ -569,8 +570,8 @@ def montar_edital(con: sqlite3.Connection, processo_id: int, *, sv: dict,
 
 
 def _numero_da_matricula(con: sqlite3.Connection, matricula_id: Any) -> str:
-    linha = con.execute("SELECT numero FROM ri_matriculas WHERE id=?",
-                        (int(matricula_id),)).fetchone()
+    linha = banco(con).um("SELECT numero FROM ri_matriculas WHERE id=%s",
+                          (int(matricula_id),))
     return _texto(linha["numero"]) if linha else ""
 
 
@@ -586,9 +587,9 @@ def _intimados(con: sqlite3.Connection, processo_id: int,
     vao: list[dict] = []
     fora: list[str] = []
     vistos: set[str] = set()
-    for r in con.execute(
+    for r in banco(con).ler(
             "SELECT destinatario, destinatario_papel, endereco FROM "
-            "us_movimentos WHERE processo_id=? AND destinatario IS NOT NULL "
+            "us_movimentos WHERE processo_id=%s AND destinatario IS NOT NULL "
             "ORDER BY id", (int(processo_id),)):
         nome = _texto(r["destinatario"])
         if not nome or nome.casefold() in vistos:
@@ -617,7 +618,6 @@ def publicar_edital(db, processo_id: int, *, sv: dict, tipo_edital: Any,
     prazo; **o que faltava era a disponibilização**.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         montado = montar_edital(con, processo_id, sv=sv,
                                 tipo_edital=tipo_edital, texto=texto)
     if montado["impedem"]:
@@ -625,17 +625,17 @@ def publicar_edital(db, processo_id: int, *, sv: dict, tipo_edital: Any,
 
     feito = API.gerar_edital(montado["corpo"], pasta=pasta)
     with db.transaction() as con:
-        cur = con.execute(
+        novo = banco(con).escrever(
             """INSERT INTO ri_onr_envios(especie, ambiente, processo_id,
                    identificador, corpo_enviado, corpo_hash, resposta,
                    situacao, enviado_em, enviado_por)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (ESQ.EDITAL, ambiente(), int(processo_id), feito["numero"] or None,
              json.dumps(montado["corpo"], ensure_ascii=False),
              _hash(montado["corpo"]),
              json.dumps(feito.get("bruto"), ensure_ascii=False),
-             ESQ.ENVIADO, agora, usuario))
-    return {"envio_id": int(cur.lastrowid), "numero": feito["numero"]}
+             ESQ.ENVIADO, agora, usuario))[0]["id"]
+    return {"envio_id": int(novo), "numero": feito["numero"]}
 
 
 def cancelar_edital(db, envio_id: int, *, motivo: str, agora: str,
@@ -647,7 +647,6 @@ def cancelar_edital(db, envio_id: int, *, motivo: str, agora: str,
             "Escreva por que o edital foi cancelado. Ele foi publicado, e o "
             "prazo correu para quem o leu.")
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         envio = ler_envio(con, envio_id)
     if not envio:
         raise OnrRIError(f"O envio {envio_id} não existe.")
@@ -659,9 +658,9 @@ def cancelar_edital(db, envio_id: int, *, motivo: str, agora: str,
             "cancela.")
     API.cancelar_edital(envio["identificador"], pasta=pasta)
     with db.transaction() as con:
-        con.execute(
-            "UPDATE ri_onr_envios SET situacao=?, cancelado_em=?, "
-            "cancelado_por=?, cancelado_motivo=? WHERE id=?",
+        banco(con).escrever(
+            "UPDATE ri_onr_envios SET situacao=%s, cancelado_em=%s, "
+            "cancelado_por=%s, cancelado_motivo=%s WHERE id=%s",
             (ESQ.CANCELADO, agora, usuario, texto, int(envio_id)))
     return {"envio_id": int(envio_id), "motivo": texto}
 
@@ -681,7 +680,7 @@ def conferir_a_fila(db, *, agora: str, pasta=None) -> dict:
         linhas = [linhas] if linhas else []
     conferidos, mudaram = 0, 0
     with db.transaction() as con:
-        con.row_factory = sqlite3.Row
+        bd = banco(con)
         for item in linhas:
             if not isinstance(item, dict):
                 continue
@@ -689,17 +688,17 @@ def conferir_a_fila(db, *, agora: str, pasta=None) -> dict:
             situacao = _texto(item.get("situacao") or item.get("status"))
             conferidos += 1
             nova = _situacao_da_fila(situacao)
-            cur = con.execute(
-                "UPDATE ri_onr_envios SET fila_hash=?, fila_situacao=?, "
-                "fila_conferida_em=?, fila_resposta=?, situacao=? "
-                "WHERE ambiente=? AND identificador=? AND situacao=?",
+            bd.escrever(
+                "UPDATE ri_onr_envios SET fila_hash=%s, fila_situacao=%s, "
+                "fila_conferida_em=%s, fila_resposta=%s, situacao=%s "
+                "WHERE ambiente=%s AND identificador=%s AND situacao=%s",
                 (ident or None, situacao or None, agora,
                  json.dumps(item, ensure_ascii=False), nova,
                  ambiente(),
                  _texto(item.get("identificador") or item.get("protocolo")
                         or ident),
                  ESQ.ENVIADO))
-            mudaram += cur.rowcount
+            mudaram += bd.linhas_afetadas
     return {"conferidos": conferidos, "mudaram": mudaram}
 
 
@@ -725,34 +724,33 @@ def _situacao_da_fila(texto: Any) -> str:
 
 def ler_envio(con: sqlite3.Connection, envio_id: int) -> dict | None:
     """Um envio ao ONR. Só LÊ."""
-    linha = con.execute("SELECT * FROM ri_onr_envios WHERE id=?",
-                        (int(envio_id),)).fetchone()
-    return dict(linha) if linha else None
+    return banco(con).um("SELECT * FROM ri_onr_envios WHERE id=%s",
+                         (int(envio_id),))
 
 
 def envios(con: sqlite3.Connection, *, especie: str | None = None,
            situacao: str | None = None, limite: int = 200) -> list[dict]:
     """O que já subiu, do mais novo. Só LÊ."""
-    onde = ["ambiente=?"]
+    onde = ["ambiente=%s"]
     valores: list[Any] = [ambiente()]
     if especie:
-        onde.append("especie=?")
+        onde.append("especie=%s")
         valores.append(especie)
     if situacao:
-        onde.append("situacao=?")
+        onde.append("situacao=%s")
         valores.append(situacao)
     valores.append(int(limite))
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         "SELECT * FROM ri_onr_envios WHERE " + " AND ".join(onde)
-        + " ORDER BY id DESC LIMIT ?", valores)]
+        + " ORDER BY id DESC LIMIT %s", valores)
 
 
 def envios_da_matricula(con: sqlite3.Connection,
                         matricula_id: int) -> list[dict]:
     """O que já subiu daquela matrícula, do mais novo. Só LÊ."""
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM ri_onr_envios WHERE matricula_id=? ORDER BY id DESC",
-        (int(matricula_id),))]
+    return banco(con).ler(
+        "SELECT * FROM ri_onr_envios WHERE matricula_id=%s ORDER BY id DESC",
+        (int(matricula_id),))
 
 
 def a_enviar(con: sqlite3.Connection, *, limite: int = 200) -> list[dict]:
@@ -762,15 +760,15 @@ def a_enviar(con: sqlite3.Connection, *, limite: int = 200) -> list[dict]:
     respondia ao ONR — e mandar setenta anos de livro como novidade encheria a
     fila deles com o que já está lá. É a regra «o acervo não vira atraso».
     """
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT m.id, m.numero, m.cnm, m.livro, m.cidade, m.uf,
                   m.tipo_imovel, m.rural_urbano
              FROM ri_matriculas m
             WHERE m.tipo_ficha <> 'ACERVO'
               AND NOT EXISTS (SELECT 1 FROM ri_onr_envios e
                                WHERE e.matricula_id = m.id
-                                 AND e.especie = ?
-                                 AND e.ambiente = ?
-                                 AND e.situacao <> ?)
-            ORDER BY m.id DESC LIMIT ?""",
-        (ESQ.INDICADOR, ambiente(), ESQ.RECUSADO, int(limite)))]
+                                 AND e.especie = %s
+                                 AND e.ambiente = %s
+                                 AND e.situacao <> %s)
+            ORDER BY m.id DESC LIMIT %s""",
+        (ESQ.INDICADOR, ambiente(), ESQ.RECUSADO, int(limite)))

@@ -264,8 +264,12 @@
           <td>{{ e.id }}</td>
           <td><code>{{ e.certidao_id or '—' }}</code></td>
           <td>{{ e.situacao|lower }}
-            {% if e.assinatura_link %}
-              <br><a href="{{ e.assinatura_link }}" rel="noopener noreferrer" target="_blank">link da assinatura</a>
+            {# Só http(s) vira link (LX12, M9 do LS02): o endereço vem da
+               Central, e um `javascript:` rodaria no clique. #}
+            {% if e.assinatura_link|so_http %}
+              <br><a href="{{ e.assinatura_link|so_http }}" rel="noopener noreferrer" target="_blank">link da assinatura</a>
+            {% elif e.assinatura_link %}
+              <br><span class="muted">link da assinatura recusado (não é http)</span>
             {% endif %}
           </td>
           <td>{{ e.criada_em }}</td>

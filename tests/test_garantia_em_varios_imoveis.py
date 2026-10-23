@@ -28,8 +28,14 @@ usucapião.
 from __future__ import annotations
 
 import sqlite3
+import sys
+from pathlib import Path
 
 import emolumentos as EMOL
+
+RAIZ = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RAIZ / "tests"))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 # Três faixas da 16.45 e a última da 16.3, que é onde o teto do art. 37 mora.
 # **Os valores são os da vigência 10022 desta casa, copiados um a um** — com os
@@ -46,7 +52,7 @@ TETO = "21.380,93"
 
 
 def _tabela(caminho) -> sqlite3.Connection:
-    con = sqlite3.connect(str(caminho))
+    con = conexao_de_teste()
     con.execute("""CREATE TABLE cx_vigencias (codigo INTEGER PRIMARY KEY,
                    vigente INTEGER NOT NULL DEFAULT 0)""")
     con.execute("""CREATE TABLE cx_faixas (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,7 +166,7 @@ def test_o_teto_sai_da_tabela_e_nao_do_codigo(tmp_path):
 def test_sem_tabela_importada_o_teto_e_zero(tmp_path):
     """Instalação nova não tem faixa nenhuma, e ali «não dá para conferir» é a
     resposta certa — não um teto inventado."""
-    con = sqlite3.connect(str(tmp_path / "vazio.sqlite3"))
+    con = conexao_de_teste()
     con.execute("""CREATE TABLE cx_vigencias (codigo INTEGER PRIMARY KEY,
                    vigente INTEGER NOT NULL DEFAULT 0)""")
     con.execute("""CREATE TABLE cx_faixas (tabela INTEGER, vigencia INTEGER,

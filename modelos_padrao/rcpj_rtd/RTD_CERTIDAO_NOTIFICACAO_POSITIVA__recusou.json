@@ -1,0 +1,8 @@
+{
+  "chave": "RTD_CERTIDAO_NOTIFICACAO_POSITIVA__recusou",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Notificação positiva — destinatário recusou a via",
+  "formato": "CHAVES",
+  "explica": "Quando o destinatário, encontrado e ciente, recusou-se a receber a via do documento.",
+  "campos": []
+}

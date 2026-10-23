@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from bd_nativo import banco
+
 
 def so_digitos(valor: Any) -> str:
     return "".join(c for c in str(valor or "") if c.isdigit())
@@ -99,14 +101,10 @@ def buscar_duplicatas_por_documento(con, tabela: str, coluna: str,
     digitos = so_digitos(documento)
     if not digitos:
         return []
-    sql = f"SELECT * FROM {tabela} WHERE {coluna} = ?"
+    sql = f"SELECT * FROM {tabela} WHERE {coluna} = %s"
     params: list[Any] = [digitos]
     if excluir_id is not None:
-        sql += " AND id <> ?"
+        sql += " AND id <> %s"
         params.append(int(excluir_id))
-    sql += f" LIMIT {int(limite)}"
-    try:
-        con.row_factory = __import__("sqlite3").Row
-    except Exception:
-        pass
-    return [dict(r) for r in con.execute(sql, params).fetchall()]
+    sql += f" ORDER BY id LIMIT {int(limite)}"
+    return banco(con).ler(sql, params)

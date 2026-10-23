@@ -83,6 +83,14 @@ def casa(cg_casa):
                     (codigo, item, desc, desc.upper()),
                 )
     con.close()
+    # LX16: selo pago só sai com protocolo pago. O balcão humano atende um
+    # protocolo com os três itens das Notas já pagos — o robô não sela de
+    # qualquer jeito, e é isso que estes testes medem.
+    from tests.protocolo_de_teste import atender_protocolo_pago
+    with db.transaction() as con:
+        atender_protocolo_pago(con, usuario="MARIO EXEMPLO DOS SANTOS",
+                               codigos=("13.17.1", "13.17.2", "13.18"),
+                               atribuicao="FIRMAS")
     return cg_casa
 
 

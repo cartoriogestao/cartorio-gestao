@@ -34,9 +34,8 @@ existia desde a importação e estava vazia em 280 de 280 atos (medido em
 """
 from __future__ import annotations
 
-import sqlite3
-
 import ri_documentos as RDOC
+from bd_nativo import banco
 
 ENTIDADE = RDOC.ENTIDADE_GERAL          # "PROTOCOLO" — a do protocolo do balcão
 
@@ -96,24 +95,22 @@ class DocumentoError(RDOC.DocumentoError):
     """Erro de regra, com mensagem pronta para o balcão."""
 
 
-def init_protocolo_documentos_schema(con: sqlite3.Connection) -> None:
+def init_protocolo_documentos_schema(con) -> None:
     """Acrescenta as colunas do tipo e da retirada. Idempotente.
 
     Banco mínimo de teste sem `attachments` passa calado: sem a tabela não há
     o que migrar, e ela nasce com o resto do esquema da casa.
 
-    AS COLUNAS SE LEEM DA DESCRIÇÃO DO CURSOR, E NÃO DO PRAGMA: módulo de
-    domínio entra com teto zero de PRAGMA (`tests/test_portabilidade.py`), e
-    `SELECT * … LIMIT 0` diz o mesmo em qualquer banco.
+    AS COLUNAS SE PERGUNTAM AO CATÁLOGO (`bd.tem_coluna`): módulo de domínio
+    entra com teto zero de pergunta ao esquema do SQLite
+    (`tests/test_portabilidade.py`).
     """
+    bd = banco(con)
     for tabela, coluna, tipo in MIGRACOES:
-        try:
-            cur = con.execute(f"SELECT * FROM {tabela} LIMIT 0")
-        except sqlite3.OperationalError:
+        if not bd.tem_tabela(tabela):
             continue                                  # a tabela ainda não existe
-        colunas = {d[0] for d in (cur.description or ())}
-        if coluna not in colunas:
-            con.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+        if not bd.tem_coluna(tabela, coluna):
+            bd.escrever(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
 
 
 # ------------------------------------------------------------ o arquivo
@@ -164,12 +161,10 @@ def medir_envio(arquivo) -> tuple[str, bytes, int]:
 # ------------------------------------------------------------ o protocolo
 
 
-def protocolo(con: sqlite3.Connection, protocolo_id) -> dict | None:
+def protocolo(con, protocolo_id) -> dict | None:
     """O protocolo do balcão, ou None. Só LÊ."""
-    con.row_factory = sqlite3.Row
-    r = con.execute("SELECT * FROM cx_protocolos WHERE id=?",
-                    (int(protocolo_id),)).fetchone()
-    return dict(r) if r else None
+    return banco(con).um("SELECT * FROM cx_protocolos WHERE id = %s",
+                         (int(protocolo_id),))
 
 
 def _exigir_protocolo_aberto(con, protocolo_id) -> dict:
@@ -187,14 +182,15 @@ def _exigir_protocolo_aberto(con, protocolo_id) -> dict:
     return p
 
 
-def registrar(con: sqlite3.Connection, protocolo_id, info: dict, *,
+def registrar(con, protocolo_id, info: dict, *,
               tipo: str, descricao: str | None, usuario_id, agora: str) -> int:
     """Grava um arquivo JÁ SALVO no disco como documento do protocolo.
 
     `info` é o que `storage.save_upload` devolve. Chamar dentro da transação
     da rota: o lote entra inteiro ou não entra.
     """
-    _exigir_protocolo_aberto(con, protocolo_id)
+    bd = banco(con)
+    _exigir_protocolo_aberto(bd, protocolo_id)
     tipo = (tipo or "").strip().upper()
     if tipo not in ROTULO_DO_TIPO:
         raise DocumentoError("Escolha o tipo do documento.")
@@ -203,18 +199,19 @@ def registrar(con: sqlite3.Connection, protocolo_id, info: dict, *,
         raise DocumentoError(
             "Para «Outro documento», escreva na descrição o que ele é — "
             "senão quem qualifica abre um arquivo sem saber o que procura.")
-    cur = con.execute(
+    novo = bd.escrever(
         """INSERT INTO attachments(entity_type, entity_id, original_name,
                stored_name, stored_path, sha256, size_bytes, description,
                uploaded_by, uploaded_at, documento_tipo)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+           RETURNING id""",
         (ENTIDADE, int(protocolo_id), info["original_name"], info["stored_name"],
          info["stored_path"], info["sha256"], int(info["size_bytes"]),
          descricao, int(usuario_id) if usuario_id else None, agora, tipo))
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
 
 
-def retirar(con: sqlite3.Connection, protocolo_id, anexo_id, *, motivo: str,
+def retirar(con, protocolo_id, anexo_id, *, motivo: str,
             por: str, agora: str) -> dict:
     """Tira o documento da lista, SEM apagar: marca quem, quando e por quê.
 
@@ -222,23 +219,25 @@ def retirar(con: sqlite3.Connection, protocolo_id, anexo_id, *, motivo: str,
     uma qualificação e some sem rastro é a pergunta que a correição faz e
     ninguém sabe responder.
     """
-    _exigir_protocolo_aberto(con, protocolo_id)
+    bd = banco(con)
+    _exigir_protocolo_aberto(bd, protocolo_id)
     motivo = (motivo or "").strip()
     if len(motivo) < MOTIVO_MINIMO:
         raise DocumentoError(
             "Diga por que o documento sai (pelo menos dez letras) — por exemplo "
             "«digitalizado de cabeça para baixo» ou «documento de outro cliente».")
-    con.row_factory = sqlite3.Row
-    r = con.execute("SELECT * FROM attachments WHERE id=?", (int(anexo_id),)).fetchone()
+    bd._escrita()
+    r = bd.um("SELECT * FROM attachments WHERE id = %s FOR UPDATE", (int(anexo_id),))
     if (not r or r["entity_type"] != ENTIDADE
             or int(r["entity_id"]) != int(protocolo_id)):
         raise DocumentoError("Este documento não é deste protocolo.")
     if r["retirado_em"]:
         raise DocumentoError(
             f"«{r['original_name']}» já foi retirado em {r['retirado_em'][:16]}.")
-    con.execute(
-        """UPDATE attachments SET retirado_em=?, retirado_por=?, retirado_motivo=?
-            WHERE id=?""", (agora, por or None, motivo, int(anexo_id)))
+    bd.escrever(
+        """UPDATE attachments SET retirado_em = %s, retirado_por = %s,
+                  retirado_motivo = %s
+            WHERE id = %s""", (agora, por or None, motivo, int(anexo_id)))
     return dict(r) | {"retirado_em": agora, "retirado_por": por,
                       "retirado_motivo": motivo}
 
@@ -250,7 +249,7 @@ def _enfeitar(d: dict) -> dict:
     return d
 
 
-def documentos(con: sqlite3.Connection, protocolo_id) -> dict:
+def documentos(con, protocolo_id) -> dict:
     """`{ativos, retirados}` do protocolo, do mais novo ao mais velho. Só LÊ.
 
     Lê pela mesma `ri_documentos.documentos_de` que a prenotação usa — e só
@@ -266,17 +265,16 @@ def documentos(con: sqlite3.Connection, protocolo_id) -> dict:
 # ------------------------------------------------------------ as pontes
 
 
-def protocolo_do_ato_de_notas(con: sqlite3.Connection, ato_id) -> dict | None:
+def protocolo_do_ato_de_notas(con, ato_id) -> dict | None:
     """O protocolo do balcão ligado ao ato das Notas, ou None. Só LÊ."""
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT protocolo_id FROM nt_atos WHERE id=?",
-                    (int(ato_id),)).fetchone()
+    bd = banco(con)
+    a = bd.um("SELECT protocolo_id FROM nt_atos WHERE id = %s", (int(ato_id),))
     if not a or not a["protocolo_id"]:
         return None
-    return protocolo(con, a["protocolo_id"])
+    return protocolo(bd, a["protocolo_id"])
 
 
-def anexos_do_ato_de_notas(con: sqlite3.Connection, ato_id) -> dict:
+def anexos_do_ato_de_notas(con, ato_id) -> dict:
     """TODOS os papéis à vista de quem lavra o ato das Notas. Só LÊ.
 
     Devolve `{"do_ato": [...], "do_protocolo": [...], "protocolo": dict|None}`.
@@ -286,19 +284,19 @@ def anexos_do_ato_de_notas(con: sqlite3.Connection, ato_id) -> dict:
 
     `do_protocolo` traz só os ATIVOS: o retirado com motivo não é papel do ato.
     """
-    con.row_factory = sqlite3.Row
-    do_ato = [_enfeitar(dict(r)) for r in con.execute(
-        """SELECT a.*, u.full_name enviado_por_nome
+    bd = banco(con)
+    do_ato = [_enfeitar(dict(r)) for r in bd.ler(
+        """SELECT a.*, u.full_name AS enviado_por_nome
              FROM attachments a LEFT JOIN users u ON u.id = a.uploaded_by
-            WHERE a.entity_type='NT_ATO' AND a.entity_id=?
+            WHERE a.entity_type = 'NT_ATO' AND a.entity_id = %s
             ORDER BY a.id""", (int(ato_id),))]
     do_ato = [d for d in do_ato if not d.get("retirado_em")]
-    p = protocolo_do_ato_de_notas(con, ato_id)
-    do_protocolo = documentos(con, p["id"])["ativos"] if p else []
+    p = protocolo_do_ato_de_notas(bd, ato_id)
+    do_protocolo = documentos(bd, p["id"])["ativos"] if p else []
     return {"do_ato": do_ato, "do_protocolo": do_protocolo, "protocolo": p}
 
 
-def da_prenotacao(con: sqlite3.Connection, ri_protocolo_id) -> dict:
+def da_prenotacao(con, ri_protocolo_id) -> dict:
     """Os documentos do(s) protocolo(s) geral(is) ligado(s) a uma prenotação do RI.
 
     A ponte é `cx_protocolos.ri_protocolo_id`, que o balcão escolhe na tela do
@@ -309,13 +307,13 @@ def da_prenotacao(con: sqlite3.Connection, ri_protocolo_id) -> dict:
     """
     if ri_protocolo_id is None or not str(ri_protocolo_id).strip().isdigit():
         return {"protocolos": [], "ativos": []}
-    con.row_factory = sqlite3.Row
-    protocolos = [dict(r) for r in con.execute(
-        "SELECT * FROM cx_protocolos WHERE ri_protocolo_id=? ORDER BY id",
-        (int(ri_protocolo_id),))]
+    bd = banco(con)
+    protocolos = bd.ler(
+        "SELECT * FROM cx_protocolos WHERE ri_protocolo_id = %s ORDER BY id",
+        (int(ri_protocolo_id),))
     ativos = []
     for p in protocolos:
-        for d in documentos(con, p["id"])["ativos"]:
+        for d in documentos(bd, p["id"])["ativos"]:
             ativos.append(d | {"protocolo_numero": p["numero"]})
     return {"protocolos": protocolos, "ativos": ativos}
 
@@ -329,15 +327,16 @@ def da_prenotacao(con: sqlite3.Connection, ri_protocolo_id) -> dict:
 # protocolo ligado, e a ligação só muda enquanto o ato está em lavratura.
 
 
-def vincular_ato_de_notas(con: sqlite3.Connection, ato_id, numero: str) -> dict:
+def vincular_ato_de_notas(con, ato_id, numero: str) -> dict:
     """Liga o ato das Notas ao protocolo do balcão pelo NÚMERO. Devolve o protocolo.
 
     Só enquanto o ato está em lavratura: depois de lançado, trocar a origem dos
     papéis seria reescrever de onde veio o que fundamentou o ato.
     """
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT id, situacao, protocolo_id FROM nt_atos WHERE id=?",
-                    (int(ato_id),)).fetchone()
+    bd = banco(con)
+    bd._escrita()
+    a = bd.um("SELECT id, situacao, protocolo_id FROM nt_atos WHERE id = %s FOR UPDATE",
+              (int(ato_id),))
     if not a:
         raise DocumentoError("Ato não encontrado.")
     if (a["situacao"] or "") != "EM_LAVRATURA":
@@ -350,19 +349,21 @@ def vincular_ato_de_notas(con: sqlite3.Connection, ato_id, numero: str) -> dict:
     numero = (numero or "").strip()
     if not numero:
         raise DocumentoError("Digite o número do protocolo, por exemplo 2026.10.42.")
-    p = con.execute("SELECT * FROM cx_protocolos WHERE numero=?", (numero,)).fetchone()
+    p = bd.um("SELECT * FROM cx_protocolos WHERE numero = %s ORDER BY id LIMIT 1",
+              (numero,))
     if not p:
         raise DocumentoError(f"Não há protocolo nº {numero}.")
-    con.execute("UPDATE nt_atos SET protocolo_id=? WHERE id=?",
+    bd.escrever("UPDATE nt_atos SET protocolo_id = %s WHERE id = %s",
                 (int(p["id"]), int(ato_id)))
     return dict(p)
 
 
-def desvincular_ato_de_notas(con: sqlite3.Connection, ato_id) -> dict | None:
+def desvincular_ato_de_notas(con, ato_id) -> dict | None:
     """Desfaz a ligação, ainda em lavratura. Devolve o protocolo que saiu."""
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT id, situacao, protocolo_id FROM nt_atos WHERE id=?",
-                    (int(ato_id),)).fetchone()
+    bd = banco(con)
+    bd._escrita()
+    a = bd.um("SELECT id, situacao, protocolo_id FROM nt_atos WHERE id = %s FOR UPDATE",
+              (int(ato_id),))
     if not a:
         raise DocumentoError("Ato não encontrado.")
     if (a["situacao"] or "") != "EM_LAVRATURA":
@@ -370,6 +371,6 @@ def desvincular_ato_de_notas(con: sqlite3.Connection, ato_id) -> dict | None:
             "O ato já foi lançado no livro; o protocolo ligado a ele não muda mais.")
     if not a["protocolo_id"]:
         raise DocumentoError("Este ato não está ligado a protocolo nenhum.")
-    p = protocolo(con, a["protocolo_id"])
-    con.execute("UPDATE nt_atos SET protocolo_id=NULL WHERE id=?", (int(ato_id),))
+    p = protocolo(bd, a["protocolo_id"])
+    bd.escrever("UPDATE nt_atos SET protocolo_id = NULL WHERE id = %s", (int(ato_id),))
     return p

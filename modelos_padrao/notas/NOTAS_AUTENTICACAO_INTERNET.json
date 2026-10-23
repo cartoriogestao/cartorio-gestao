@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_AUTENTICACAO_INTERNET",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Autenticação de documento da internet",
+  "formato": "CHAVES",
+  "explica": "O teor da autenticação de cópia de documento expedido pela internet (item 43.04 da tabela).",
+  "campos": []
+}

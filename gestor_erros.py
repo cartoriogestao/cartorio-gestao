@@ -27,10 +27,11 @@ SÓ LÊ. Não cria tarefa (as tarefas já saem da conferência) e não grava nad
 from __future__ import annotations
 
 import html
-import sqlite3
 import unicodedata
 from datetime import date
 from pathlib import Path
+
+from bd_nativo import banco
 
 #: regra → categoria. Só o que tem autor; o resto da conferência não entra.
 CATEGORIAS = {
@@ -73,15 +74,13 @@ def _forma(t) -> str:
 
 
 def _tem(con, nome: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (nome,)).fetchone() is not None
+    return banco(con).tem_tabela(nome)
 
 
 def _linha(con, tabela: str, ident) -> dict | None:
     if tabela not in TABELAS or not _tem(con, tabela):
         return None
-    cur = con.execute(f"SELECT * FROM {tabela} WHERE id = ?", (ident,))
-    r = cur.fetchone()
-    return dict(zip([d[0] for d in cur.description], r)) if r else None
+    return banco(con).um(f"SELECT * FROM {tabela} WHERE id = %s", (ident,))
 
 
 class _Pessoas:
@@ -90,7 +89,8 @@ class _Pessoas:
     def __init__(self, con):
         self.por_id = {}
         if _tem(con, "users"):
-            for i, login, nome in con.execute("SELECT id, username, full_name FROM users"):
+            for u in banco(con).ler("SELECT id, username, full_name FROM users ORDER BY id"):
+                i, login, nome = u["id"], u["username"], u["full_name"]
                 self.por_id[i] = (login or "", nome or login or f"usuário {i}")
 
     def quem(self, valor) -> str | None:
@@ -115,13 +115,13 @@ def _auditoria(con, pessoas: _Pessoas, entidade: str, ident, acoes: tuple[str, .
     if not _tem(con, "audit_logs"):
         return None
     for acao in acoes:
-        r = con.execute(
+        r = banco(con).um(
             f"""SELECT user_id, username_snapshot FROM audit_logs
-                 WHERE entity_type = ? AND entity_id = ? AND action LIKE ?
+                 WHERE entity_type = %s AND entity_id = %s AND action ILIKE %s
               ORDER BY id {'DESC' if ultima else 'ASC'} LIMIT 1""",
-            (entidade, str(ident), acao)).fetchone()
+            (entidade, str(ident), acao))
         if r:
-            return pessoas.quem(r[0]) or pessoas.quem(r[1])
+            return pessoas.quem(r["user_id"]) or pessoas.quem(r["username_snapshot"])
     return None
 
 
@@ -130,20 +130,21 @@ def _auditoria(con, pessoas: _Pessoas, entidade: str, ident, acoes: tuple[str, .
 def _ato_da_revisao(con, rv_id) -> tuple[str, int] | None:
     if not _tem(con, "rv_revisoes"):
         return None
-    r = con.execute("SELECT atribuicao, alvo_id, hash_texto FROM rv_revisoes WHERE id = ?",
-                    (rv_id,)).fetchone()
+    r = banco(con).um("SELECT atribuicao, alvo_id, hash_texto FROM rv_revisoes WHERE id = %s",
+                      (rv_id,))
     if not r:
         return None
-    if r[0] == "NOTAS":
-        return "nt_atos", r[1]
-    if r[0] == "LIVRO3":
-        return "ra_atos", r[1]
+    if r["atribuicao"] == "NOTAS":
+        return "nt_atos", r["alvo_id"]
+    if r["atribuicao"] == "LIVRO3":
+        return "ra_atos", r["alvo_id"]
     import revisao_previa as RV
-    for aid, tipo, teor in con.execute(
-            "SELECT id, tipo, teor FROM ri_atos WHERE matricula_id = ? ORDER BY id DESC", (r[1],)):
-        if RV.hash_do_ato(tipo, teor) == r[2]:
-            return "ri_atos", aid
-    return "ri_matriculas", r[1]           # a revisão ANTES da lavratura: o ato ainda não existia
+    for a in banco(con).ler(
+            "SELECT id, tipo, teor FROM ri_atos WHERE matricula_id = %s ORDER BY id DESC",
+            (r["alvo_id"],)):
+        if RV.hash_do_ato(a["tipo"], a["teor"]) == r["hash_texto"]:
+            return "ri_atos", a["id"]
+    return "ri_matriculas", r["alvo_id"]           # a revisão ANTES da lavratura: o ato ainda não existia
 
 
 def alvo(con, chave: str) -> tuple[str, int] | None:
@@ -156,14 +157,15 @@ def alvo(con, chave: str) -> tuple[str, int] | None:
     if p[0] == "SELO_ORFAO" and len(p) >= 4 and p[1] == "ato" and p[3].isdigit():
         return p[2], int(p[3])
     if p[0] in ("SELO_LOCAL", "SELO_ORFAO") and _tem(con, "sd_selos"):
-        r = con.execute("SELECT id FROM sd_selos WHERE numero = ?", (p[-1],)).fetchone()
-        return ("sd_selos", r[0]) if r else None
+        r = banco(con).um("SELECT id FROM sd_selos WHERE numero = %s ORDER BY id LIMIT 1",
+                          (p[-1],))
+        return ("sd_selos", r["id"]) if r else None
     if p[0] == "DIGI" and len(p) >= 2 and p[1].isdigit():
         # Quem lavrou o ÚLTIMO ato da ficha é quem deixou de digitalizar depois dele.
-        r = con.execute("""SELECT id FROM ri_atos WHERE matricula_id = ?
+        r = banco(con).um("""SELECT id FROM ri_atos WHERE matricula_id = %s
                               AND COALESCE(acervo,0) = 0 ORDER BY numero DESC, id DESC LIMIT 1""",
-                        (int(p[1]),)).fetchone()
-        return ("ri_atos", r[0]) if r else ("ri_matriculas", int(p[1]))
+                          (int(p[1]),))
+        return ("ri_atos", r["id"]) if r else ("ri_matriculas", int(p[1]))
     if p[0] == "REV_AGENTE" and len(p) >= 2 and p[1].isdigit():
         return _ato_da_revisao(con, int(p[1]))
     return None
@@ -263,13 +265,13 @@ def relatorio(con, *, desde: str = "2026-09-10", ate: str | None = None,
     pessoas = _Pessoas(con)
     linhas: list[dict] = []
     if _tem(con, "ge_achados"):
-        marcas = ",".join("?" * len(CATEGORIAS))
+        marcas = ",".join(["%s"] * len(CATEGORIAS))
         for (ident, chave, regra, grav, titulo, detalhe, visto, ultimo, resolvido,
-             revisao) in con.execute(
+             revisao) in (tuple(x.values()) for x in banco(con).ler(
                 f"""SELECT id, chave, regra, gravidade, titulo, detalhe, primeiro_visto_em,
                            ultimo_visto_em, resolvido_em, revisao
                       FROM ge_achados WHERE regra IN ({marcas})
-                  ORDER BY primeiro_visto_em DESC, id DESC""", tuple(CATEGORIAS)):
+                  ORDER BY primeiro_visto_em DESC, id DESC""", tuple(CATEGORIAS))):
             alv = alvo(con, chave)
             quem, como = autor(con, pessoas, *alv) if alv else (NAO_IDENTIFICADO, "")
             rotulo, link = descrever(con, *alv) if alv else (chave, None)
@@ -279,10 +281,10 @@ def relatorio(con, *, desde: str = "2026-09-10", ate: str | None = None,
                 "visto_em": visto or "", "ultimo_em": ultimo or "", "resolvido_em": resolvido,
                 "revisao": revisao, "ato": rotulo, "link": link, "quem": quem, "como": como})
     if _tem(con, "rv_revisoes"):
-        for (ident, rot, graves, justif, por, em, resultado) in con.execute(
+        for (ident, rot, graves, justif, por, em, resultado) in (tuple(x.values()) for x in banco(con).ler(
                 """SELECT id, rotulo, graves, justificativa, justificado_por, justificado_em,
                           resultado_json FROM rv_revisoes
-                    WHERE justificado_em IS NOT NULL ORDER BY justificado_em DESC"""):
+                    WHERE justificado_em IS NOT NULL ORDER BY justificado_em DESC, id DESC""")):
             linhas.append({
                 "id": f"rv{ident}", "chave": f"RV:{ident}", "regra": GRAVE_JUSTIFICADO,
                 "categoria": "Lavrou contra apontamento grave", "gravidade": "ATENCAO",

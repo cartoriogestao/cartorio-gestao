@@ -234,7 +234,7 @@ ter várias linhas.</pre>
         <td>
           <strong>{{ p.titulo }}</strong>
           <br><small>{{ origens.get(p.origem, p.origem) }}</small>
-          {% if p.detalhe %}
+          {% if p.detalhe and ve_detalhe %}
           <details class="cancelar-ato">
             <summary><small>Ver o que ficou escrito</small></summary>
             <pre class="teor-texto" style="font-size:11px; max-height:280px; overflow:auto">{{ p.detalhe }}</pre>
@@ -364,6 +364,21 @@ ter várias linhas.</pre>
             {% endif %}
             <input type="hidden" name="onde" value="{{ p.onde or '' }}">
             <button class="button" type="submit">Pedir a leitura da ajuda</button>
+          </form>
+          {% endif %}
+          {# A LEITURA COM O BANCO É À PARTE, E SÓ DO ADMIN (LS03 A3). A comum
+             roda com o catálogo do balcão, porque o relato é escrito por
+             qualquer login e a resposta volta para quem relatou. #}
+          {% if le_com_banco and liberado and tem_chave %}
+          <form method="post" action="{{ url_for('ajuda_problema_ler_com_banco', problema_id=p.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="vista" value="{{ vista }}">
+            {% if exibir_filtro_ambiente and ambiente_filtro != 'todas' %}
+            <input type="hidden" name="ambiente" value="{{ ambiente_filtro }}">
+            {% endif %}
+            <input type="hidden" name="onde" value="{{ p.onde or '' }}">
+            <button class="button" type="submit"
+                    title="O texto do relato vai junto, como dado; a resposta volta para quem relatou.">Ler com o banco e o código (só administrador)</button>
           </form>
           {% endif %}
           {% if p.situacao == 'RESOLVIDO' %}

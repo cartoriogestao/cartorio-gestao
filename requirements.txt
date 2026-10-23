@@ -1,4 +1,7 @@
-Flask>=3.0,<4
+# 3.1 no minimo (LX12/LX20): o teto do POST sem login grava
+# `request.max_content_length` no pedido, e so o 3.1 aceita - no 3.0 todo
+# POST sem login, o proprio login, daria erro 500.
+Flask>=3.1,<4
 waitress>=3.0,<4
 # Converte as fichas digitalizadas (TIFF Grupo 4) para PNG, que o navegador exibe.
 Pillow>=10,<12
@@ -7,6 +10,13 @@ Pillow>=10,<12
 # outras e a lupa funciona igual. Faltando, o PDF e guardado como veio e a tela
 # diz o que instalar - o envio da ficha nao para por causa disto.
 pypdfium2>=4,<5
+# Le e monta PDF (paginas, texto, juntar e separar): `impressao_pdf` — e por
+# ele as telas que imprimem —, o arquivamento das notas, o malote e os
+# expedientes do gestor. Faltava aqui
+# (achado da IA do servidor no ensaio de 21/10/2026, LD14): a producao so
+# funcionava porque o runtime ja tinha o pypdf 6.16.2 — instalacao nova a
+# partir deste arquivo quebraria esses caminhos.
+pypdf>=6,<7
 # Gera o QR do selo de fiscalizacao na etiqueta de reconhecimento de firma.
 # Puro Python, sem dependencia de sistema. Faltando, a etiqueta sai com o
 # numero do selo do mesmo jeito - o QR e conveniencia, nao requisito.
@@ -41,3 +51,4 @@ cryptography>=41,<51
 # enviadas ao ONR. Importada so na hora do uso; faltando, essas duas funcoes
 # avisam e o resto do sistema segue.
 PyMuPDF>=1.24,<2
+psycopg[binary]>=3.1,<4

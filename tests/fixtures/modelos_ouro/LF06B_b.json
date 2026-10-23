@@ -1,0 +1,88 @@
+{
+ "_como": "Gerado ANTES do LF06B, na árvore exportada do commit 2c41e90 (git archive), por ouro_lf06b.gerar. Não regerar depois da mudança: o teste compararia a base com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "atrib_certidao._bloco_atos_certidao_livro3(filtro AV-2)": {
+   "ok": "\nAV-2:-\nCancelado a pedido de FULANO DE EXEMPLO."
+  },
+  "atrib_certidao._bloco_atos_certidao_livro3(filtro sem acerto)": {
+   "ok": "  (nenhum ato posterior informado)"
+  },
+  "atrib_certidao._bloco_atos_certidao_livro3(sem atos)": {
+   "ok": "  (nenhum ato posterior informado)"
+  },
+  "atrib_certidao._bloco_atos_certidao_livro3(so o registro)": {
+   "ok": "  (nenhum ato posterior informado)"
+  },
+  "atrib_certidao._bloco_atos_certidao_livro3(todos)": {
+   "ok": "\nAV-1 — 22/09/2026:-\nAVERBAÇÃO DE EXEMPLO em favor de FULANO DE EXEMPLO.\n\nAV-2:-\nCancelado a pedido de FULANO DE EXEMPLO."
+  },
+  "atrib_certidao.cabeca_do_ato(AV-1)": {
+   "ok": [
+    "AV-1 — ",
+    "AV-1:-"
+   ]
+  },
+  "atrib_certidao.corpo_por_reproducao(numero int, paginas str)": {
+   "ok": "CERTIDÃO DE INTEIRO TEOR do registro n. 77 do Livro 3 — Registro Auxiliar, por REPRODUÇÃO da digitalização oficial desta Serventia (2 folha(s); sha256 ).\n\nO documento impresso reproduz as folhas digitalizadas e traz o selo desta certidão ao final."
+  },
+  "atrib_certidao.corpo_por_reproducao(paginas=1)": {
+   "ok": "CERTIDÃO DE INTEIRO TEOR do registro n. 1.243 do Livro 3 — Registro Auxiliar, por REPRODUÇÃO da digitalização oficial desta Serventia (1 folha(s); sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef).\n\nO documento impresso reproduz as folhas digitalizadas e traz o selo desta certidão ao final."
+  },
+  "atrib_certidao.corpo_por_reproducao(paginas=4)": {
+   "ok": "CERTIDÃO DE INTEIRO TEOR do registro n. 1.243 do Livro 3 — Registro Auxiliar, por REPRODUÇÃO da digitalização oficial desta Serventia (4 folha(s); sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef).\n\nO documento impresso reproduz as folhas digitalizadas e traz o selo desta certidão ao final."
+  },
+  "ri_digitalizacao.TITULO_CERTIDAO_REPROGRAFICA": {
+   "ok": "CERTIDÃO DE INTEIRO TEOR REPROGRÁFICA"
+  },
+  "ri_digitalizacao._fecho_html_para_papel(corpo, paginas=1)": {
+   "ok": "<p>Era o que nela continha.</p>"
+  },
+  "ri_digitalizacao._fecho_html_para_papel(corpo, paginas=3)": {
+   "ok": "<p>Era o que nela continha.</p>"
+  },
+  "ri_digitalizacao.corpo_resumo_digitalizacao(paginas=1)": {
+   "ok": "<p align=\"center\"><b>CERTIDÃO DE INTEIRO TEOR REPROGRÁFICA</b></p><p>Certidão de inteiro teor da matrícula <strong>1.234</strong> por reprodução da digitalização oficial (1 página(s); sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef).</p><p>O documento impresso reproduz as páginas digitalizadas e traz o selo de certidão ao final.</p><p>Era o que nela continha.</p>"
+  },
+  "ri_digitalizacao.corpo_resumo_digitalizacao(paginas=3)": {
+   "ok": "<p align=\"center\"><b>CERTIDÃO DE INTEIRO TEOR REPROGRÁFICA</b></p><p>Certidão de inteiro teor da matrícula <strong>1.234</strong> por reprodução da digitalização oficial (3 página(s); sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef).</p><p>O documento impresso reproduz as páginas digitalizadas e traz o selo de certidão ao final.</p><p>Era o que nela continha.</p>"
+  },
+  "ri_digitalizacao.odt_da_digitalizacao(corpo, titulo)[content.xml]": {
+   "ok": "<office:body><office:text>\n<text:p text:style-name=\"P-digi-titulo\">CERTIDÃO DE EXEMPLO &amp; CIA</text:p>\n<text:p text:style-name=\"P-digi-capa-sub\">Reprodução fiel da matrícula digitalizada (1 página).</text:p>\n<text:p text:style-name=\"P-digi-capa-nota\">As folhas seguintes reproduzem as fichas oficiais. Ao final constam o fecho (protocolo em aberto), o selo digital e a identificação de quem expediu.</text:p>\n<text:p text:style-name=\"P-digi-pagina-quebra\"><draw:frame draw:name=\"digi1.png\" text:anchor-type=\"as-char\" svg:width=\"18.9cm\" svg:height=\"26.67cm\" style:rel-width=\"scale\" style:rel-height=\"scale\"><draw:image xlink:href=\"Pictures/digi1.png\" xlink:type=\"simple\" xlink:show=\"embed\" xlink:actuate=\"onLoad\"/></draw:frame></text:p>\n<text:p text:style-name=\"P-digi-fecho-quebra\"></text:p>\n<text:p text:style-name=\"P-cabecalho\">Era o que nela continha.</text:p>\n<table:table table:name=\"CarimboDoSelo\" table:style-name=\"Tab-selos-compactos\"><table:table-column table:style-name=\"Col-selo-inteiro\"/><table:table-row><table:table-cell table:style-name=\"Cel-selo-compacto\" office:value-type=\"string\"><table:table table:name=\"SeloInterno\" table:style-name=\"Tab-selo-interno-largo\"><table:table-column table:style-name=\"Col-selo-qr\"/><table:table-column table:style-name=\"Col-selo-texto-larga\"/><table:table-row><table:table-cell table:style-name=\"Cel-selo-interna\" office:value-type=\"string\"><text:p text:style-name=\"P-selo-compacto\"></text:p></table:table-cell><table:table-cell table:style-name=\"Cel-selo-interna\" office:value-type=\"string\"><text:p text:style-name=\"P-selo-rotulo\">SELO DA CERTIDÃO</text:p><text:p text:style-name=\"P-selo-compacto\">SELOEXEMPLO123</text:p><text:p text:style-name=\"P-selo-compacto\">Confira em https://selo.tjma.jus.br/#/resumo/SELOEXEMPLO123</text:p></table:table-cell></table:table-row></table:table></table:table-cell></table:table-row></table:table>\n<text:p text:style-name=\"P-centro\">FULANO DE EXEMPLO</text:p>\n </office:text>"
+  },
+  "ri_digitalizacao.odt_da_digitalizacao(paginas=1)[content.xml]": {
+   "ok": "<office:body><office:text>\n<text:p text:style-name=\"P-digi-titulo\">CERTIDÃO DE INTEIRO TEOR REPROGRÁFICA</text:p>\n<text:p text:style-name=\"P-digi-capa-sub\">Reprodução fiel da matrícula digitalizada (1 página).</text:p>\n<text:p text:style-name=\"P-digi-capa-nota\">As folhas seguintes reproduzem as fichas oficiais. Ao final constam o fecho (protocolo em aberto), o selo digital e a identificação de quem expediu.</text:p>\n<text:p text:style-name=\"P-digi-pagina-quebra\"><draw:frame draw:name=\"digi1.png\" text:anchor-type=\"as-char\" svg:width=\"18.9cm\" svg:height=\"26.67cm\" style:rel-width=\"scale\" style:rel-height=\"scale\"><draw:image xlink:href=\"Pictures/digi1.png\" xlink:type=\"simple\" xlink:show=\"embed\" xlink:actuate=\"onLoad\"/></draw:frame></text:p>\n<text:p text:style-name=\"P-digi-fecho-quebra\"></text:p>\n<table:table table:name=\"CarimboDoSelo\" table:style-name=\"Tab-selos-compactos\"><table:table-column table:style-name=\"Col-selo-inteiro\"/><table:table-row><table:table-cell table:style-name=\"Cel-selo-compacto\" office:value-type=\"string\"><table:table table:name=\"SeloInterno\" table:style-name=\"Tab-selo-interno-largo\"><table:table-column table:style-name=\"Col-selo-qr\"/><table:table-column table:style-name=\"Col-selo-texto-larga\"/><table:table-row><table:table-cell table:style-name=\"Cel-selo-interna\" office:value-type=\"string\"><text:p text:style-name=\"P-selo-compacto\"></text:p></table:table-cell><table:table-cell table:style-name=\"Cel-selo-interna\" office:value-type=\"string\"><text:p text:style-name=\"P-selo-rotulo\">SELO DA CERTIDAO</text:p><text:p text:style-name=\"P-selo-compacto\">SELOEXEMPLO123</text:p><text:p text:style-name=\"P-selo-compacto\">Confira em https://selo.tjma.jus.br/#/resumo/SELOEXEMPLO123</text:p></table:table-cell></table:table-row></table:table></table:table-cell></table:table-row></table:table>\n </office:text>"
+  },
+  "ri_digitalizacao.odt_da_digitalizacao(paginas=2)[content.xml]": {
+   "ok": "<office:body><office:text>\n<text:p text:style-name=\"P-digi-titulo\">CERTIDÃO DE INTEIRO TEOR REPROGRÁFICA</text:p>\n<text:p text:style-name=\"P-digi-capa-sub\">Reprodução fiel da matrícula digitalizada (2 páginas).</text:p>\n<text:p text:style-name=\"P-digi-capa-nota\">As folhas seguintes reproduzem as fichas oficiais. Ao final constam o fecho (protocolo em aberto), o selo digital e a identificação de quem expediu.</text:p>\n<text:p text:style-name=\"P-digi-pagina-quebra\"><draw:frame draw:name=\"digi1.png\" text:anchor-type=\"as-char\" svg:width=\"18.9cm\" svg:height=\"26.67cm\" style:rel-width=\"scale\" style:rel-height=\"scale\"><draw:image xlink:href=\"Pictures/digi1.png\" xlink:type=\"simple\" xlink:show=\"embed\" xlink:actuate=\"onLoad\"/></draw:frame></text:p>\n<text:p text:style-name=\"P-digi-pagina-quebra\"><draw:frame draw:name=\"digi2.png\" text:anchor-type=\"as-char\" svg:width=\"18.9cm\" svg:height=\"26.67cm\" style:rel-width=\"scale\" style:rel-height=\"scale\"><draw:image xlink:href=\"Pictures/digi2.png\" xlink:type=\"simple\" xlink:show=\"embed\" xlink:actuate=\"onLoad\"/></draw:frame></text:p>\n<text:p text:style-name=\"P-digi-fecho-quebra\"></text:p>\n<table:table table:name=\"CarimboDoSelo\" table:style-name=\"Tab-selos-compactos\"><table:table-column table:style-name=\"Col-selo-inteiro\"/><table:table-row><table:table-cell table:style-name=\"Cel-selo-compacto\" office:value-type=\"string\"><table:table table:name=\"SeloInterno\" table:style-name=\"Tab-selo-interno-largo\"><table:table-column table:style-name=\"Col-selo-qr\"/><table:table-column table:style-name=\"Col-selo-texto-larga\"/><table:table-row><table:table-cell table:style-name=\"Cel-selo-interna\" office:value-type=\"string\"><text:p text:style-name=\"P-selo-compacto\"></text:p></table:table-cell><table:table-cell table:style-name=\"Cel-selo-interna\" office:value-type=\"string\"><text:p text:style-name=\"P-selo-rotulo\">SELO DA CERTIDAO</text:p><text:p text:style-name=\"P-selo-compacto\">SELOEXEMPLO123</text:p><text:p text:style-name=\"P-selo-compacto\">Confira em https://selo.tjma.jus.br/#/resumo/SELOEXEMPLO123</text:p></table:table-cell></table:table-row></table:table></table:table-cell></table:table-row></table:table>\n </office:text>"
+  },
+  "ri_onus_ia.titulo(NEGATIVA, INDEFINIDO)": {
+   "ok": "Certidão negativa de ônus e negativa de registro de ações reais e pessoais reipersecutórias"
+  },
+  "ri_onus_ia.titulo(NEGATIVA, NEGATIVA)": {
+   "ok": "Certidão negativa de ônus e negativa de registro de ações reais e pessoais reipersecutórias"
+  },
+  "ri_onus_ia.titulo(NEGATIVA, POSITIVA)": {
+   "ok": "Certidão negativa de ônus e positiva de registro de ações reais e pessoais reipersecutórias"
+  },
+  "ri_onus_ia.titulo(None, INDEFINIDO)": {
+   "ok": "Certidão negativa de ônus e negativa de registro de ações reais e pessoais reipersecutórias"
+  },
+  "ri_onus_ia.titulo(None, NEGATIVA)": {
+   "ok": "Certidão negativa de ônus e negativa de registro de ações reais e pessoais reipersecutórias"
+  },
+  "ri_onus_ia.titulo(None, POSITIVA)": {
+   "ok": "Certidão negativa de ônus e positiva de registro de ações reais e pessoais reipersecutórias"
+  },
+  "ri_onus_ia.titulo(POSITIVA, INDEFINIDO)": {
+   "ok": "Certidão positiva de ônus e negativa de registro de ações reais e pessoais reipersecutórias"
+  },
+  "ri_onus_ia.titulo(POSITIVA, NEGATIVA)": {
+   "ok": "Certidão positiva de ônus e negativa de registro de ações reais e pessoais reipersecutórias"
+  },
+  "ri_onus_ia.titulo(POSITIVA, POSITIVA)": {
+   "ok": "Certidão positiva de ônus e positiva de registro de ações reais e pessoais reipersecutórias"
+  }
+ },
+ "parte": "b"
+}

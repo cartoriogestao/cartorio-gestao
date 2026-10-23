@@ -43,9 +43,15 @@ A ESCRITA DEIXA RASTRO DESFEITO COM UM CLIQUE
 """
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
+
+import banco_pg
+import psycopg
+from bd_nativo import banco as _banco_nativo
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -75,6 +81,7 @@ LIMITE_DE_RESULTADOS = 40       # por busca
 LIMITE_DE_LINHAS_DE_BANCO = 60  # por consulta
 LIMITE_DE_CARACTERES = 24_000   # do que volta de UMA ferramenta
 LIMITE_DE_CELULA = 400          # por célula, para uma linha enorme não dominar
+PRAZO_DA_CONSULTA_MS = 15_000   # por consulta ao banco, contado pelo servidor
 
 # OS NOMES QUE NÃO PODEM SAIR DO BANCO PARA O PROVEDOR.
 #
@@ -85,13 +92,106 @@ LIMITE_DE_CELULA = 400          # por célula, para uma linha enorme não domina
 NOMES_PROIBIDOS = (
     "senha", "password", "hash", "salt", "token", "segredo", "secret",
     "api_key", "apikey", "credencial", "private",
+    "passwd",       # a senha dos usuários do PostgreSQL, em `pg_shadow` (LX07)
 )
 
 # AS TABELAS QUE NÃO SE LEEM, e por quê: a primeira guarda as chaves de API dos
 # robôs em texto claro. Um `SELECT` nela publicaria a credencial da casa no
 # provedor — e a barreira de privacidade não a pegaria, porque uma chave de API
-# não tem forma de CPF nem de e-mail.
-TABELAS_PROIBIDAS = ("robo_config", "ag_config")
+# não tem forma de CPF nem de e-mail. `wa_config` entrou nesta lista em LS03
+# (19/10/2026): ela guarda o token e o segredo do WhatsApp (`access_token`,
+# `caixa_segredo`) no VALOR da linha, sob a coluna `valor` — um nome de coluna
+# que nenhuma das palavras de `NOMES_PROIBIDOS` alcança, do mesmo jeito das
+# chaves de `robo_config`.
+TABELAS_PROIBIDAS = ("robo_config", "ag_config", "wa_config")
+
+# AS FUNÇÕES DO SERVIDOR QUE NÃO SE CHAMAM (LX07, 19/10/2026).
+#
+# No PostgreSQL um SELECT alcança o que não é o banco: o disco do servidor
+# (`pg_read_file`, `pg_ls_dir`, `lo_export`), as outras conexões
+# (`pg_terminate_backend`), a configuração (`set_config`, `pg_reload_conf`) e o
+# relógio (`pg_sleep`). A transação só-leitura de `_ler_sem_escrever` não segura
+# nenhuma delas, porque nenhuma grava em tabela — e o usuário da casa pode ser
+# superusuário no PostgreSQL portátil, para quem todas estão liberadas.
+# Três famílias da lista não são óbvias:
+#   - a TRAVA DE SESSÃO (`pg_advisory_lock`) sobrevive ao ROLLBACK e volta ao
+#     reservatório presa na conexão: pedida na chave da trava única, pararia
+#     toda escrita da casa até alguém fechar a conexão;
+#   - as que RODAM TEXTO COMO CONSULTA (`query_to_xml`, `ts_stat`, `ts_rewrite`)
+#     e o NOME ESCRITO EM CÓDIGO (`U&"pg\005fsleep"`) passariam por cima da
+#     lista inteira, com o nome montado aos pedaços;
+#   - as que DESPEJAM A TABELA INTEIRA (`table_to_xml`…) são o `SELECT *` com
+#     outro nome.
+# Vale sobre o TEXTO, como as outras recusas, e pelo começo do nome: `pg_read`
+# pega `pg_read_file` e `pg_read_binary_file`.
+#
+# CASA COMO CHAMADA, E FORA DOS LITERAIS (LX10, item 8 da revisão do LX07). O
+# casamento pelo texto inteiro recusava `titulo LIKE '%copy %'` e a coluna
+# `lo_x`, e a frase dizia «usa lo_», que não ajuda ninguém. Agora o nome só
+# conta seguido de `(` (com espaço ou aspas no meio: `"pg_sleep" (1)`), e o
+# que está dentro de um literal não conta (`_fora_dos_literais`). A recusa
+# diz o nome que a consulta escreveu.
+#
+# Entraram em LX10 (item 9 da revisão do LX07), por efeito fora do banco:
+#   - `pg_notify`: o aviso a quem escuta. O ROLLBACK do fim já o descarta
+#     (medido), e a recusa diz o porquê antes;
+#   - `pg_stat_reset*`: zera a estatística do servidor inteiro;
+#   - `pg_rotate_logfile` e `pg_log_backend_memory_contexts`: escrevem no
+#     log do servidor;
+#   - `pg_export_snapshot`: entrega a fotografia da transação a outra conexão.
+FUNCOES_DO_SERVIDOR = (
+    "pg_read", "pg_ls_", "pg_stat_file", "pg_file_", "lo_",
+    "pg_sleep", "set_config", "pg_terminate", "pg_cancel", "pg_reload",
+    "pg_promote", "dblink", "pg_logdir", "pg_current_logfile",
+    "pg_advisory", "pg_try_advisory",
+    "pg_create_", "pg_drop_replication", "pg_replication_slot", "pg_copy_",
+    "pg_logical_", "pg_switch_wal", "pg_backup_",
+    "query_to_xml", "cursor_to_xml", "table_to_xml", "schema_to_xml",
+    "database_to_xml", "ts_stat", "ts_rewrite",
+    "pg_notify", "pg_stat_reset", "pg_rotate_logfile",
+    "pg_log_backend_memory_contexts", "pg_export_snapshot",
+)
+
+# AS PALAVRAS DO SERVIDOR que não são chamada: os comandos (`COPY`, `NOTIFY`,
+# `LISTEN`, `UNLISTEN`) e o nome escrito em código (`U&"pg\005fsleep"`, o
+# `U&'…'`), que passaria por cima da lista inteira. Valem como palavra
+# inteira, fora dos literais.
+PALAVRAS_DO_SERVIDOR = ("copy", "notify", "listen", "unlisten", 'u&"', "u&'")
+
+# OS PARÂMETROS DO SERVIDOR que dizem onde moram os arquivos dele. O caminho
+# até eles é um literal (`current_setting('data_directory')`, `pg_settings
+# WHERE name = 'hba_file'`), e por isso só estes valem também DENTRO do
+# literal — como palavra inteira.
+PARAMETROS_DO_SERVIDOR = ("data_directory", "config_file", "hba_file",
+                          "ident_file")
+
+# OS CATÁLOGOS DO SERVIDOR QUE NÃO SE LEEM (LS03, 19/10/2026), e por quê cada:
+#   - `pg_stats` e `pg_statistic` guardam AMOSTRAS DOS VALORES de cada coluna:
+#     depois de um ANALYZE, `histogram_bounds` de `users` traz o hash da senha
+#     de todos os usuários (medido), sem que a consulta escreva nome de
+#     credencial nenhum;
+#   - `pg_authid` e `pg_shadow` guardam a senha dos usuários do PostgreSQL;
+#   - `pg_user_mapping` e `pg_subscription` guardam senha de conexão.
+# Vale sobre o TEXTO e pelo começo do nome (`pg_stats` pega `pg_stats_ext`),
+# como `FUNCOES_DO_SERVIDOR`: são tabelas do sistema, cuja dependência o
+# servidor não grava, e por isso a conferência pela vista provisória não as
+# vê. Para diagnóstico ficam `pg_roles`, `pg_user` e `pg_stat_user_tables`.
+#   - `pg_stat_get_` (LX14; M1 do LS03): `pg_stat_get_activity(NULL)` e as
+#     irmãs devolvem o comando em curso de TODAS as conexões. A ponte manda os
+#     valores escritos no texto do SQL (`ClientCursor`), e o comando de uma
+#     escrita em curso leva o CPF, o teor — e, na troca de senha, o hash novo.
+CATALOGOS_PROIBIDOS = (
+    "pg_stats", "pg_statistic", "pg_authid", "pg_shadow", "pg_user_mapping",
+    "pg_subscription", "pg_stat_get_",
+)
+
+# AS COLUNAS DO SERVIDOR QUE NÃO SE LEEM (LX14; M1 do LS03), pela mesma razão
+# do `pg_stat_get_`: `pg_stat_activity.query` é o texto do comando em curso das
+# outras conexões, com os valores dentro. Ela é recusada pelo que o servidor
+# diz da consulta (o `pg_depend` a vê até renomeada no FROM, medido no LS03), e
+# não pelo texto: o resto de `pg_stat_activity` — `pid`, `state`,
+# `wait_event`, `query_start` — continua respondendo quem trava quem.
+COLUNAS_DO_SERVIDOR_PROIBIDAS = frozenset({("pg_stat_activity", "query")})
 
 
 @dataclass(frozen=True)
@@ -184,10 +284,11 @@ def _medir_a_casa(ctx: Contexto) -> list[dict]:
 def _le_estado(ctx: Contexto) -> str:
     """Como está a casa agora: versão, problemas, banco, módulos e provedor."""
     with ctx.db.connect() as con:
-        con.row_factory = sqlite3.Row
         contagem = AP.contagem(con)
-        tabelas = len([r[0] for r in con.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'")])
+        tabelas = int(_banco_nativo(con).valor(
+            "SELECT count(*) AS n FROM information_schema.tables "
+            "WHERE table_schema = current_schema() "
+            "AND table_type = 'BASE TABLE'"))
     ligados = {chave: ML.alcance(ctx.db.get_setting, chave)
                for chave in ML.CHAVE_DA_CONFIGURACAO}
     banco = ctx.db.conferencia_do_banco()
@@ -275,8 +376,11 @@ def _le_esquema(ctx: Contexto, *, tabela: str = "") -> str:
     máquina da migração — e este não é um deles.
     """
     with ctx.db.connect() as con:
-        nomes = [r[0] for r in con.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+        bd = _banco_nativo(con)
+        nomes = [r["name"] for r in bd.ler(
+            "SELECT table_name AS name FROM information_schema.tables "
+            "WHERE table_schema = current_schema() "
+            "AND table_type = 'BASE TABLE' ORDER BY table_name")]
         if tabela:
             escolhida = tabela.strip()
             if escolhida not in nomes:
@@ -290,12 +394,733 @@ def _le_esquema(ctx: Contexto, *, tabela: str = "") -> str:
             if nome.startswith("sqlite_"):
                 continue
             try:
-                cursor = con.execute(f'SELECT * FROM "{nome}" LIMIT 0')
-                colunas = [d[0] for d in (cursor.description or [])]
+                colunas = [r["column_name"] for r in bd.ler(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = current_schema() "
+                    "AND table_name = %s ORDER BY ordinal_position", (nome,))]
             except sqlite3.Error:
                 colunas = []
             linhas.append(f"{nome}: " + (", ".join(colunas) or "(sem colunas)"))
     return "\n".join(linhas)
+
+
+# O QUE O TEXTO DA CONSULTA NÃO MOSTRA, O SERVIDOR MOSTRA — achados de LS03
+# (19/10/2026).
+#
+# O guarda de texto recusa a coluna de credencial pelo NOME (`NOMES_PROIBIDOS`)
+# e o `SELECT *` pelo texto. Quatro jeitos de ler uma credencial passavam por
+# ele sem escrever nome nenhum, e os quatro foram medidos levando o hash ao
+# provedor:
+#   - a LINHA INTEIRA de `users`: `SELECT u FROM users u`, `row_to_json(u)`,
+#     `u.*`, `SELECT "U" FROM users AS "U"`;
+#   - a LINHA INTEIRA de uma VISTA: `SELECT s FROM pg_shadow s` trazia o hash
+#     SCRAM da senha do usuário do PostgreSQL — a coluna é `passwd`, mas a
+#     consulta não a escreve;
+#   - a COLUNA RENOMEADA no FROM: `SELECT x.e FROM users AS x(a, b, c, d, e)`
+#     lê a quinta coluna com o nome `e` — e até com o nome de outra coluna,
+#     trocando a ordem da lista;
+#   - o ORÁCULO: `WHERE u::text LIKE '...'` não devolve o hash, mas diz se ele
+#     tem tal trecho, e cem perguntas o soletram.
+# O sal e o hash não têm forma de CPF nem de e-mail, de modo que a barreira de
+# privacidade também não os segura. Por isso quem responde agora é o servidor,
+# antes de a consulta rodar (`_conferir_antes_de_ler`).
+#
+# A vista provisória que o servidor analisa tem nome fixo: ela nasce e morre
+# dentro de uma transação desfeita, e por isso duas consultas não se encontram.
+_VISTA_DA_CONFERENCIA = "cg_agente_consulta"
+
+# O que a vista provisória REFERENCIA, pelo nome de verdade: o `pg_depend`
+# guarda a coluna da tabela (o número dela), e não o apelido que a consulta lhe
+# deu; e cada tabela ou vista citada aparece também sem coluna. `todas` são as
+# colunas da tabela ou vista citada — é por elas que se sabe se a linha inteira
+# dela leva credencial. A própria vista provisória também aparece.
+_O_QUE_A_CONSULTA_REFERE = (
+    "SELECT c.relname AS tabela, coalesce(a.attname, '') AS coluna, "
+    "ARRAY(SELECT t.attname::text FROM pg_attribute t "
+    "WHERE t.attrelid = c.oid AND t.attnum > 0 AND NOT t.attisdropped "
+    "ORDER BY t.attnum) AS todas "
+    "FROM pg_depend d JOIN pg_class c ON c.oid = d.refobjid "
+    "LEFT JOIN pg_attribute a ON a.attrelid = d.refobjid "
+    "AND a.attnum = d.refobjsubid "
+    "WHERE d.classid = 'pg_rewrite'::regclass "
+    "AND d.refclassid = 'pg_class'::regclass "
+    "AND d.objid = (SELECT r.oid FROM pg_rewrite r "
+    f"WHERE r.ev_class = to_regclass('pg_temp.{_VISTA_DA_CONFERENCIA}')) "
+    "ORDER BY c.relname, a.attname")
+
+
+def _e_credencial(nome: Any) -> bool:
+    """Se o nome de uma coluna é de credencial (`NOMES_PROIBIDOS`)."""
+    return any(p in str(nome or "").lower() for p in NOMES_PROIBIDOS)
+
+
+def _do_servidor_proibida(tabela: Any, coluna: Any) -> bool:
+    """Se é coluna do servidor que não sai (`COLUNAS_DO_SERVIDOR_PROIBIDAS`)."""
+    return ((str(tabela or "").lower(), str(coluna or "").lower())
+            in COLUNAS_DO_SERVIDOR_PROIBIDAS)
+
+
+def _linhas_inteiras(texto: str) -> set[str]:
+    """Os apelidos cuja LINHA INTEIRA aparece num SQL escrito pelo servidor.
+
+    O servidor escreve a linha inteira sempre como `apelido.*` — `u.*::users`,
+    `row_to_json(u.*)`, `(s.*)::text` —, e o apelido que não é minúsculo
+    simples vem entre aspas (`"U".*`). O `*` de `count(*)` não leva ponto
+    antes. O que está DENTRO de um literal não conta: `nome ~ 'SILVA.*'` é uma
+    expressão regular, e recusá-la seria barrar uma consulta legítima.
+    """
+    achados: set[str] = set()
+    nome = ""
+    i, fim = 0, len(texto)
+    while i < fim:
+        c = texto[i]
+        if c in "'\"":
+            # literal ('...') ou nome entre aspas ("..."); a aspa dobrada é
+            # a aspa escrita dentro dele
+            pedaco = []
+            i += 1
+            while i < fim:
+                if texto[i] == c:
+                    if texto[i + 1:i + 2] == c:
+                        pedaco.append(c)
+                        i += 2
+                        continue
+                    break
+                pedaco.append(texto[i])
+                i += 1
+            nome = "".join(pedaco) if c == '"' else ""
+            i += 1
+            continue
+        if texto.startswith(".*", i) and nome:
+            achados.add(nome)
+            nome = ""
+            i += 2
+            continue
+        nome = nome + c if (c.isalnum() or c in "_$") else ""
+        i += 1
+    return achados
+
+
+def _cria_tabela(sql: str) -> bool:
+    """Se a consulta é um `SELECT … INTO` — um CREATE TABLE que começa com SELECT.
+
+    A RECUSA ERA DO SERVIDOR, E CHEGAVA TORTA (LS03, B7). A transação
+    só-leitura a recusaria, mas antes dela vem a vista provisória, que não
+    aceita `INTO` numa subconsulta: o modelo recebia «o banco recusou a
+    consulta: syntax error», e não o «só leio» que lhe diz o que fazer. Ler a
+    mensagem do servidor dependeria do idioma do PostgreSQL; o texto da
+    consulta não depende.
+
+    Conta a palavra INTO fora de literal e de nome entre aspas, menos a do
+    `INSERT INTO` — essa é da CTE que escreve, e a recusa dela é a do plano,
+    com a frase de sempre. Um `into` dentro de `'...'` ou de `"..."` é texto, e
+    não comando.
+    """
+    sem_texto = re.sub(r"'(?:[^']|'')*'", " ", str(sql or ""))
+    sem_texto = re.sub(r'"(?:[^"]|"")*"', " x ", sem_texto)
+    palavras = re.findall(r"[^\W\d][\w$]*", sem_texto.lower())
+    return any(p == "into" and (i == 0 or palavras[i - 1] not in ("insert", "merge"))
+               for i, p in enumerate(palavras))
+
+
+# O NOME NO SQL QUE O SERVIDOR ESCREVE: simples, ou entre aspas.
+_NOME_NO_SQL = r'(?:"(?:[^"]|"")+"|[^\W\d][\w$]*)'
+# As palavras do SQL que o `pg_get_viewdef` põe logo depois de um nome de
+# tabela ou de um `)` — não são apelido. A lista não precisa ser completa: a
+# palavra que faltar vira um apelido que não é de tabela nenhuma, e o apelido
+# desconhecido é recusado (o lado seguro).
+_PALAVRAS_DO_SQL = frozenset("""
+    all and any array as asc at between by case collate cross current desc
+    distinct else end escape except exists false fetch filter first for from
+    full group groups having ilike in inner intersect is isnull join last
+    lateral left like limit materialized natural not notnull null nulls of
+    offset on only or order ordinality outer over partition range right row
+    rows select similar some tablesample then ties true union using values
+    when where window with within
+""".split())
+
+
+def _sem_aspas(nome: str) -> str:
+    """O nome como o catálogo o guarda: sem as aspas, e com a aspa dobrada
+    desfeita. O nome simples o `pg_get_viewdef` já escreve em minúsculas."""
+    if nome.startswith('"') and nome.endswith('"'):
+        return nome[1:-1].replace('""', '"')
+    return nome
+
+
+def _apelidos_do_from(texto: str) -> dict[str, set[str | None]]:
+    """A quem cada apelido do SQL que o SERVIDOR escreveu se refere.
+
+    Devolve `{apelido: {tabela, …}}`, e `None` no lugar da tabela quando o
+    apelido é de outra coisa — subconsulta, junção, função, CTE. O
+    `pg_get_viewdef` escreve o FROM sempre da mesma forma, e é dela que isto
+    depende, e não do texto que o modelo mandou:
+      - `FROM users u`, `JOIN aj_problemas p`, `, ONLY t`, `(users u JOIN`,
+        `users x(c1, c2)`: o nome da tabela, e o apelido sem AS (o apelido de
+        COLUNA é que leva AS); sem apelido, a tabela se chama pelo próprio
+        nome. O que casa a mais (o primeiro argumento de uma função) só
+        acrescenta um alvo ao apelido, e alvo a mais nunca libera nada;
+      - `( SELECT … ) s`, `(users u JOIN …) j`, `row_to_json(u.*) x(x)`: o
+        apelido depois do `)` é de algo que não é tabela;
+      - `WITH t AS ( … )`: o nome da CTE também não é tabela.
+    E ele já desfaz o apelido repetido (o `p` de dentro vira `p_1`): cada
+    apelido diz uma coisa só.
+    """
+    sem_texto = re.sub(r"'(?:[^'\\]|''|\\.)*'", "''", str(texto or ""))
+    apelidos: dict[str, set[str | None]] = {}
+
+    def liga(apelido: str, alvo: str | None) -> None:
+        apelidos.setdefault(_sem_aspas(apelido), set()).add(alvo)
+
+    n = _NOME_NO_SQL
+    for m in re.finditer(
+            rf"(?:\bFROM|\bJOIN|,|\()\s*(?:ONLY\s+)?(?:{n}\.)?({n})(?![\w$.\"])"
+            rf"(?:\s+({n})(?![\w$.\"]))?", sem_texto, re.I):
+        tabela, apelido = m.group(1), m.group(2)
+        if tabela.lower() in _PALAVRAS_DO_SQL:
+            continue
+        if not apelido or apelido.lower() in _PALAVRAS_DO_SQL:
+            apelido = tabela
+        liga(apelido, _sem_aspas(tabela))
+    for m in re.finditer(rf"\)\s*({n})(?![\w$.\"])", sem_texto):
+        if m.group(1).lower() not in _PALAVRAS_DO_SQL:
+            liga(m.group(1), None)
+    for m in re.finditer(
+            rf"({n})(?:\s*\([^()]*\))?\s+AS\s+(?:NOT\s+)?(?:MATERIALIZED\s+)?\(",
+            sem_texto, re.I):
+        liga(m.group(1), None)
+    return apelidos
+
+
+def _nos_do_plano(no: Any):
+    """Cada nó do plano, do de cima aos de baixo (subplanos e CTEs incluídos)."""
+    if isinstance(no, dict):
+        yield no
+        for filho in no.get("Plans") or []:
+            yield from _nos_do_plano(filho)
+
+
+def _recusar_pelo_plano(plano: Any) -> None:
+    """Recusa pelo PLANO: a escrita e a tabela proibida por trás de uma vista.
+
+    - **A escrita** aparece como nó `ModifyTable` (a CTE com DELETE, UPDATE ou
+      INSERT). A transação só-leitura já a recusaria; dita aqui, a recusa vem
+      antes da vista provisória, que não aceita CTE que escreve, e com a frase
+      de sempre.
+    - **A tabela proibida por trás de uma vista**: o texto da consulta diz o
+      nome da vista; o plano diz a tabela que ela lê (`Relation Name`).
+    """
+    raiz = plano[0].get("Plan", {}) if isinstance(plano, list) and plano else {}
+    nos = list(_nos_do_plano(raiz))
+    if any(no.get("Node Type") == "ModifyTable" for no in nos):
+        raise FerramentaError(
+            "Eu só leio o banco, e esta consulta tenta escrever: o plano dela "
+            "tem um INSERT, UPDATE ou DELETE. Nada mudou. Para mudar o sistema "
+            "existem as ferramentas próprias, que deixam rastro e podem ser "
+            "desfeitas.")
+    lidas = sorted({str(no.get("Relation Name") or "").lower() for no in nos}
+                   & set(TABELAS_PROIBIDAS))
+    if lidas:
+        raise FerramentaError(
+            f"A tabela {', '.join(lidas)} guarda chave de API ou token em texto "
+            f"claro e não é lida pelo agente.")
+
+
+def _recusar_pela_vista(cursor: Any, sql: str) -> None:
+    """Recusa pelo que a consulta REFERENCIA, dito pelo servidor.
+
+    A CONSULTA VIRA UMA VISTA PROVISÓRIA, e o servidor diz duas coisas dela:
+      - o `pg_depend` guarda cada coluna de tabela que ela referencia — no
+        SELECT, no WHERE, no ORDER BY, numa CTE ou numa subconsulta — pelo
+        número da coluna, e não pelo apelido. É o que pega a coluna renomeada
+        no FROM, que nem o texto nem o plano mostram;
+      - o `pg_get_viewdef` devolve o SQL que ele entendeu, e nele toda linha
+        inteira vem escrita como `apelido.*` — de tabela ou de vista, no SELECT
+        ou no WHERE. A linha inteira é recusada quando a consulta cita tabela
+        ou vista com coluna de credencial (`users`, `pg_shadow`); a de
+        `aj_problemas` passa, porque é o mesmo que escrever as colunas dela.
+    O `count(*)` não referencia coluna nenhuma, e passa.
+
+    A VISTA NÃO RODA A CONSULTA: criar uma vista só analisa o texto. Ela vive
+    numa transação que `_conferir_antes_de_ler` desfaz sempre, e a consulta
+    vai entre parênteses, como subconsulta, para que coluna repetida
+    (`p.id, c.id`) não seja recusada por ser repetida. As visões do
+    `information_schema` passam linhas inteiras de `pg_attribute` às funções
+    delas, mas isso é por dentro da visão, e o SQL da vista não o mostra.
+    """
+    cursor.execute(f"CREATE TEMP VIEW {_VISTA_DA_CONFERENCIA} AS "
+                   f"SELECT 1 AS um FROM ({sql}) AS consulta")
+    cursor.execute(_O_QUE_A_CONSULTA_REFERE)
+    referidas = cursor.fetchall()
+    tabelas = sorted({str(t).lower() for t, _, _ in referidas}
+                     & set(TABELAS_PROIBIDAS))
+    if tabelas:
+        raise FerramentaError(
+            f"A tabela {', '.join(tabelas)} guarda chave de API ou token em "
+            f"texto claro e não é lida pelo agente.")
+    proibidas = sorted({f"{t}.{c}" for t, c, _ in referidas
+                        if c and _e_credencial(c)})
+    if proibidas:
+        raise FerramentaError(
+            f"A consulta lê {', '.join(proibidas)}, que é coluna de credencial "
+            f"— ainda que com outro nome. Isso não sai do servidor para "
+            f"provedor nenhum.")
+    do_servidor = sorted({f"{t}.{c}" for t, c, _ in referidas
+                          if c and _do_servidor_proibida(t, c)})
+    if do_servidor:
+        raise FerramentaError(
+            f"A consulta lê {', '.join(do_servidor)}, o texto do comando em "
+            f"curso das outras conexões — com os valores escritos nele, CPF e "
+            f"teor entre eles. Para saber quem trava quem, leia pid, state, "
+            f"wait_event_type, wait_event e query_start.")
+    com_credencial = sorted({str(t) for t, _, todas in referidas
+                             if any(_e_credencial(c) or _do_servidor_proibida(t, c)
+                                    for c in (todas or []))})
+    if not com_credencial:
+        return
+    cursor.execute("SELECT pg_get_viewdef(%s::regclass) AS texto",
+                   (f"pg_temp.{_VISTA_DA_CONFERENCIA}",))
+    texto = str(cursor.fetchone()[0] or "")
+    # SÓ A LINHA INTEIRA QUE PODE LEVAR CREDENCIAL É RECUSADA (LS03, B8). Antes,
+    # bastava a consulta citar `users` para a linha inteira de QUALQUER apelido
+    # ser recusada — `SELECT p FROM users u JOIN aj_problemas p …` caía por
+    # causa do `u`, que nem era a linha pedida. Agora a linha inteira passa
+    # quando o apelido é, com certeza, de uma tabela ou vista citada SEM coluna
+    # de credencial. Apelido de junção, de subconsulta, de função ou de CTE não
+    # se sabe o que carrega, e continua recusado — é o lado seguro.
+    apelidos = _apelidos_do_from(texto)
+    sem_credencial = {str(t) for t, _, todas in referidas
+                      if not any(_e_credencial(c) for c in (todas or []))}
+    sem_credencial -= set(com_credencial)
+    perigosas = {a for a in _linhas_inteiras(texto)
+                 if not apelidos.get(a)
+                 or not apelidos[a] <= sem_credencial}
+    if perigosas:
+        raise FerramentaError(
+            "A consulta leva a LINHA INTEIRA de uma tabela (por exemplo "
+            "`SELECT t FROM t` ou `row_to_json(t)`), e com ela sairiam colunas "
+            "que ninguém pediu — inclusive o sal e o hash da senha "
+            f"({', '.join(com_credencial)}). Escreva as colunas que você quer, "
+            f"uma a uma.")
+
+
+def _conferir_antes_de_ler(pg: Any, sql: str) -> None:
+    """A conferência pelo servidor, numa transação que é sempre desfeita.
+
+    É uma transação À PARTE da leitura, e não a mesma: a vista provisória é um
+    CREATE, que a transação só-leitura recusa. Nesta nada roda — o `EXPLAIN`
+    sem `ANALYZE` só planeja e a vista só analisa —, o prazo vale também
+    aqui, e o ROLLBACK do fim desfaz a vista. A leitura de verdade vem depois,
+    na transação só-leitura de sempre, que continua sendo a garantia contra a
+    escrita que o plano não mostra (a função que grava, o `nextval`).
+    """
+    with pg.cursor() as cursor, _desfeita(cursor, "BEGIN"):
+        cursor.execute("SET LOCAL statement_timeout = "
+                       f"'{int(PRAZO_DA_CONSULTA_MS)}ms'")
+        cursor.execute("EXPLAIN (VERBOSE, FORMAT JSON) " + sql)
+        bruto = cursor.fetchone()[0]
+        _recusar_pelo_plano(json.loads(bruto) if isinstance(bruto, str)
+                            else bruto)
+        _recusar_pela_vista(cursor, sql)
+
+
+@contextmanager
+def _desfeita(cursor: Any, abertura: str, *, confirmar: bool = False):
+    """Uma transação que termina em ROLLBACK, sem esconder o erro dela.
+
+    O ROLLBACK DE UM `finally` PODIA TROCAR O ERRO (LX10, item 5 da revisão do
+    LX07). Se a conexão cai no meio da consulta, o ROLLBACK também falha, e o
+    erro dele subia no lugar do original: o modelo leria «a conexão está
+    fechada» e não saberia o que aconteceu com a consulta. Aqui, com um erro
+    já subindo, a falha do ROLLBACK é engolida, porque a conexão caída não tem
+    transação a desfazer, e o erro que sobe é o de dentro. Sem erro dentro,
+    a falha do ROLLBACK sobe, porque a conexão não pode voltar ao reservatório
+    sem se saber em que estado ficou.
+
+    Com `confirmar`, o fim sem erro é COMMIT (o GRANT do papel tem de ficar),
+    e o fim com erro continua sendo ROLLBACK.
+    """
+    cursor.execute(abertura)
+    try:
+        yield
+    except BaseException:
+        try:
+            cursor.execute("ROLLBACK")
+        except psycopg.Error:
+            pass        # o que conta é o erro de dentro, que sobe agora
+        raise
+    cursor.execute("COMMIT" if confirmar else "ROLLBACK")
+
+
+# O PAPEL COM QUE O AGENTE LÊ (LX10, item 11 da revisão do LX07).
+#
+# O texto e a conferência de LS03 recusam a credencial pelo que a consulta
+# ESCREVE e pelo que o servidor diz que ela REFERE. As duas camadas são
+# listas de casos, e um caso que ninguém mediu passa. Este papel resolve na
+# origem: a leitura do agente roda com `SET LOCAL ROLE cg_agente_leitura`, e
+# o servidor não entrega ao papel o que ele não pode ver:
+#   - as colunas de credencial (`password_hash`, `password_salt`…) ficam
+#     fora do GRANT por coluna. Por isso `SELECT u`, `u.*`, `users.*`,
+#     `row_to_json(u)` e `to_jsonb(u)` dão «permissão negada» (medido), e o
+#     `pg_stats` não mostra a amostra delas;
+#   - as tabelas de chave (`TABELAS_PROIBIDAS`) não têm GRANT nenhum;
+#   - as VISTAS da casa, e as materializadas, também não têm GRANT: uma vista
+#     roda com os direitos de quem a criou (a materializada guarda o que eles
+#     leram), e por ela o papel leria a coluna que não pode ler;
+#   - sem superusuário, o servidor nega `pg_read_file`, `pg_shadow`,
+#     `pg_authid`, `current_setting('data_directory')` e o texto das consultas
+#     dos outros em `pg_stat_activity` (medido).
+#
+# POR QUE UM PAPEL, E NÃO VISTAS `agente_*`: o agente escreve SQL contra as
+# tabelas que ele lê no esquema, e vistas com outro nome o obrigariam a
+# aprender um segundo esquema. O papel não muda nada do que o agente escreve.
+#
+# QUEM CRIA O PAPEL É ESTA FERRAMENTA, na primeira consulta, e não um passo
+# de instalação: o usuário da casa no PostgreSQL portátil é o dono do cluster
+# (`trust` em 127.0.0.1). É também esta ferramenta que acerta o GRANT quando
+# nasce tabela ou coluna (`_preparar_o_papel`). Se o usuário da casa não
+# puder criar o papel, a consulta é recusada, e não lida sem ele.
+#
+# O QUE O PAPEL NÃO FECHA, e por isso continua no texto:
+#   - `set_config('role', …)`: o SET ROLE confere o usuário da SESSÃO, e não
+#     o papel, e por esse caminho o agente voltaria a ser o dono do cluster;
+#   - `pg_advisory_lock`: a trava de sessão não pede permissão nenhuma;
+#   - `pg_notify`.
+PAPEL_DO_AGENTE = "cg_agente_leitura"
+
+# O cursor do servidor da leitura: ele entrega as linhas aos poucos.
+_CURSOR_DA_LEITURA = "cg_agente_leitura"
+
+# O que o papel ENXERGA hoje, tabela por tabela, nos schemas da conexão: o
+# GRANT da tabela inteira, o das colunas, e se há outro privilégio além de
+# SELECT, que o papel não deve ter.
+_O_QUE_O_PAPEL_ENXERGA = (
+    "SELECT n.nspname AS esquema, c.relname AS tabela, "
+    "c.relkind::text AS tipo, "
+    "ARRAY(SELECT a.attname::text FROM pg_attribute a "
+    "WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped "
+    "ORDER BY a.attnum) AS colunas, "
+    "EXISTS (SELECT 1 FROM aclexplode(c.relacl) x WHERE x.grantee = r.oid "
+    "AND x.privilege_type = 'SELECT') AS na_tabela, "
+    "EXISTS (SELECT 1 FROM aclexplode(c.relacl) x WHERE x.grantee = r.oid "
+    "AND x.privilege_type <> 'SELECT') AS outros, "
+    "ARRAY(SELECT a.attname::text FROM pg_attribute a, aclexplode(a.attacl) x "
+    "WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped "
+    "AND x.grantee = r.oid ORDER BY a.attnum) AS nas_colunas "
+    "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+    "CROSS JOIN pg_roles r "
+    "WHERE r.rolname = %s AND n.nspname = ANY (current_schemas(false)) "
+    "AND c.relkind IN ('r', 'p', 'v', 'm', 'f') "
+    "ORDER BY n.nspname, c.relname")
+
+
+def _o_que_o_papel_deve_ver(tipo: str, tabela: str,
+                            colunas: list[str]) -> tuple[bool, list[str]]:
+    """`(tabela inteira?, colunas)` que o papel do agente deve poder ler.
+
+    Tabela sem coluna de credencial: a tabela inteira. Com coluna de
+    credencial: as outras colunas, uma a uma. A tabela de chave e a vista:
+    nada (ver `PAPEL_DO_AGENTE`).
+
+    A VISÃO MATERIALIZADA (`'m'`) É VISTA, E NÃO TABELA: ela guarda o que a
+    consulta de quem a criou leu, e o nome da coluna dela é o apelido dessa
+    consulta. `password_hash AS segredo` passaria pelo GRANT por coluna com o
+    hash dentro (revisão da 2ª volta do LX10).
+    """
+    if tipo in ("v", "m") or tabela.lower() in TABELAS_PROIBIDAS:
+        return False, []
+    livres = [c for c in colunas if not _e_credencial(c)]
+    if len(livres) == len(colunas):
+        return True, []
+    return False, livres
+
+
+def _acertos_do_papel(cursor: Any) -> list[Any]:
+    """Os GRANT e REVOKE que faltam para o papel ver o que deve, e só isso.
+
+    Lista vazia é o caso de todo dia. Ela só tem comando quando nasceu
+    tabela ou coluna desde a última consulta, ou quando é a primeira.
+    """
+    S = psycopg.sql
+    papel = S.Identifier(PAPEL_DO_AGENTE)
+    acertos: list[Any] = []
+    cursor.execute("SELECT s AS esquema FROM unnest(current_schemas(false)) "
+                   "AS s WHERE NOT has_schema_privilege(%s, s, 'USAGE') "
+                   "ORDER BY s", (PAPEL_DO_AGENTE,))
+    for (esquema,) in cursor.fetchall():
+        acertos.append(S.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+            S.Identifier(esquema), papel))
+    cursor.execute(_O_QUE_O_PAPEL_ENXERGA, (PAPEL_DO_AGENTE,))
+    for esquema, tabela, tipo, colunas, inteira, outros, nas_colunas \
+            in cursor.fetchall():
+        deve_inteira, deve_colunas = _o_que_o_papel_deve_ver(
+            tipo, tabela, list(colunas or []))
+        if (inteira, sorted(nas_colunas or []), outros) == (
+                deve_inteira, sorted(deve_colunas), False):
+            continue
+        alvo = S.Identifier(esquema, tabela)
+        # o REVOKE da tabela leva junto o GRANT das colunas, e o que fica é
+        # só o que se concede abaixo
+        acertos.append(S.SQL("REVOKE ALL ON {} FROM {}").format(alvo, papel))
+        if deve_inteira:
+            acertos.append(S.SQL("GRANT SELECT ON {} TO {}").format(
+                alvo, papel))
+        elif deve_colunas:
+            acertos.append(S.SQL("GRANT SELECT ({}) ON {} TO {}").format(
+                S.SQL(", ").join(S.Identifier(c) for c in deve_colunas),
+                alvo, papel))
+    return acertos
+
+
+def _preparar_o_papel(pg: Any) -> None:
+    """Cria o papel do agente, se falta, e acerta o que ele enxerga.
+
+    NO DIA A DIA ISTO SÓ LÊ O CATÁLOGO: o papel já existe e o GRANT já está
+    certo, e nenhuma transação de escrita se abre. Quando falta acerto, ele
+    entra numa transação própria, CONFIRMADA (o GRANT tem de ficar), sob uma
+    trava do assunto, para que duas consultas ao mesmo tempo não concedam a
+    mesma tabela juntas, e com o prazo de sempre.
+
+    O PAPEL É DO CLUSTER, e não do banco: outro banco do mesmo servidor pode
+    criá-lo no mesmo instante. Quem perde essa corrida tenta de novo e o acha
+    pronto.
+
+    O papel não entra, não é superusuário e não herda privilégio de papel
+    nenhum (`NOINHERIT`). Um papel com esse nome e mais poder do que isso é
+    recusado, e não usado.
+    """
+    S = psycopg.sql
+    papel = S.Identifier(PAPEL_DO_AGENTE)
+    for tentativa in (1, 2):
+        try:
+            with pg.cursor() as cursor:
+                cursor.execute(
+                    "SELECT r.rolsuper OR r.rolcanlogin OR r.rolinherit OR "
+                    "r.rolbypassrls OR r.rolcreaterole OR r.rolcreatedb OR "
+                    "r.rolreplication AS demais, "
+                    "pg_has_role(current_user, r.oid, 'MEMBER') AS membro "
+                    "FROM pg_roles r WHERE r.rolname = %s", (PAPEL_DO_AGENTE,))
+                papel_de_hoje = cursor.fetchone()
+                if papel_de_hoje and papel_de_hoje[0]:
+                    raise FerramentaError(
+                        f"O papel {PAPEL_DO_AGENTE}, com que eu leio o banco, "
+                        f"tem mais poder do que leitura (entra, é "
+                        f"superusuário ou herda de outro papel). Não leio com "
+                        f"ele. Quem cuida do servidor deve apagá-lo; eu o crio "
+                        f"de novo, do jeito certo, na próxima consulta.")
+                acertos = ([] if papel_de_hoje is None
+                           else _acertos_do_papel(cursor))
+                if papel_de_hoje is not None and papel_de_hoje[1] \
+                        and not acertos:
+                    return
+                with _desfeita(cursor, "BEGIN", confirmar=True):
+                    cursor.execute("SET LOCAL statement_timeout = "
+                                   f"'{int(PRAZO_DA_CONSULTA_MS)}ms'")
+                    cursor.execute("SELECT pg_advisory_xact_lock("
+                                   "hashtext('agente_ferramentas.papel'))")
+                    if papel_de_hoje is None:
+                        cursor.execute(S.SQL(
+                            "CREATE ROLE {} NOLOGIN NOINHERIT NOSUPERUSER "
+                            "NOCREATEDB NOCREATEROLE NOREPLICATION "
+                            "NOBYPASSRLS").format(papel))
+                    cursor.execute(
+                        "SELECT pg_has_role(current_user, %s, 'MEMBER')",
+                        (PAPEL_DO_AGENTE,))
+                    if not cursor.fetchone()[0]:
+                        # o superusuário assume qualquer papel; o usuário que
+                        # só cria papéis precisa ser membro deste
+                        cursor.execute(S.SQL("GRANT {} TO CURRENT_USER")
+                                       .format(papel))
+                    for acerto in _acertos_do_papel(cursor):
+                        cursor.execute(acerto)
+            return
+        except (psycopg.errors.UniqueViolation,
+                psycopg.errors.DuplicateObject):
+            if tentativa == 2:
+                raise
+        except psycopg.errors.InsufficientPrivilege as erro:
+            raise FerramentaError(
+                f"Não consigo ler o banco com segurança: o usuário da casa no "
+                f"PostgreSQL não pode criar nem acertar o papel "
+                f"{PAPEL_DO_AGENTE}, com que eu leio sem ver senha nem chave "
+                f"({erro.diag.message_primary}). Sem ele eu não leio. Quem "
+                f"cuida do servidor pode criá-lo (NOLOGIN NOINHERIT) e "
+                f"conceder SELECT nas tabelas, menos nas colunas de "
+                f"credencial.") from erro
+
+
+def _ler_sem_escrever(con: Any, sql: str,
+                      limite: int) -> tuple[list[str], list[tuple]]:
+    """A consulta do agente, numa transação que o servidor não deixa escrever.
+
+    O TEXTO DEIXOU DE BASTAR NO POSTGRESQL (LX07, achado da revisão do L024).
+    No SQLite, começar com SELECT ou WITH era ser leitura. Aqui,
+    `WITH x AS (DELETE FROM t RETURNING id) SELECT id FROM x` começa com WITH e
+    apaga, e a conexão da ponte confirma cada comando sozinha. Quem garante
+    agora é o servidor: o `BEGIN READ ONLY` recusa toda escrita, venha ela de
+    uma CTE, de `SELECT ... INTO`, de `FOR UPDATE`, de `nextval` ou de uma
+    função que grava; o `statement_timeout` corta a consulta que não acaba; e
+    o `ROLLBACK` do fim, que roda sempre, devolve a conexão sem transação e sem
+    o prazo — que é `SET LOCAL` para não ir com ela ao reservatório. A trava
+    de sessão o ROLLBACK não solta, e por isso ela está em
+    `FUNCOES_DO_SERVIDOR`.
+
+    ANTES DE LER, O SERVIDOR CONFERE O QUE A CONSULTA ALCANÇA (LS03): a
+    linha inteira, a coluna de credencial com outro nome e a tabela proibida
+    por trás de uma vista são recusadas em `_conferir_antes_de_ler`, numa
+    transação à parte e desfeita, antes de a consulta rodar.
+
+    TRANSAÇÃO QUE JÁ VEM ABERTA É RECUSADA, e não misturada. Dentro dela, o
+    ROLLBACK do fim desfaria o trabalho de quem a abriu, um COMMIT confirmaria
+    o que o agente não sabe o que é, e deixá-la como está poria a leitura dele
+    dentro de uma escrita alheia. No uso normal isso não acontece — cada
+    ferramenta abre a sua conexão (ver `Contexto`) —, e por isso recusar não
+    custa nada a ninguém.
+
+    A LEITURA É COM O PAPEL DO AGENTE (LX10): `SET LOCAL ROLE` para
+    `PAPEL_DO_AGENTE`, que não enxerga coluna de credencial nem tabela de
+    chave. O que as conferências pelo texto e pelo servidor deixarem passar,
+    o servidor recusa com «permissão negada». O `SET LOCAL` morre com o
+    ROLLBACK, e a conexão volta ao reservatório com o usuário de antes.
+
+    O CURSOR É O DO PSYCOPG, e não o `bd.ler`: o `bd` devolve `dict`, que junta
+    numa só as colunas de mesmo nome (`p.id`, `c.id`), e a resposta tem de
+    mostrar cada coluna que a consulta trouxe. E É UM CURSOR DO SERVIDOR (LX10,
+    item 10 da revisão do LX07): o cursor comum trazia o resultado inteiro
+    para a memória do programa antes de a tela cortar em `limite`, e uma
+    consulta de milhões de linhas pesava até o prazo acabar. O do servidor
+    entrega só as `limite + 1` linhas pedidas, e a que sobra é o que diz que
+    há mais. A consulta roda como foi escrita, sem `LIMIT` montado em volta:
+    o que roda é o que a conferência analisou.
+    """
+    pg = _banco_nativo(con)._pg
+    estado = pg.info.transaction_status
+    if estado != psycopg.pq.TransactionStatus.IDLE:
+        raise FerramentaError(
+            f"A conexão com o banco chegou ocupada ({estado.name}): há uma "
+            f"transação aberta que não é minha. Não misturo a consulta com ela "
+            f"— nem a confirmo nem a desfaço. Tente de novo.")
+    try:
+        _preparar_o_papel(pg)
+        _conferir_antes_de_ler(pg, sql)
+        with pg.cursor() as cursor, _desfeita(cursor, "BEGIN READ ONLY"):
+            cursor.execute("SET LOCAL statement_timeout = "
+                           f"'{int(PRAZO_DA_CONSULTA_MS)}ms'")
+            cursor.execute(f"SET LOCAL ROLE {PAPEL_DO_AGENTE}")
+            with pg.cursor(name=_CURSOR_DA_LEITURA) as leitor:
+                leitor.execute(sql)
+                colunas = [d[0] for d in (leitor.description or [])]
+                linhas = (leitor.fetchmany(limite + 1) if leitor.description
+                          else [])
+    except psycopg.errors.InsufficientPrivilege as erro:
+        raise FerramentaError(
+            f"O banco não me deixa ler isto ({erro.diag.message_primary}). Eu "
+            f"leio com um papel que não vê as colunas de credencial (o sal e o "
+            f"hash da senha, os tokens), as tabelas de chave, as vistas da "
+            f"casa nem as funções do servidor. Escreva só as colunas que você "
+            f"quer, das tabelas, e não a linha inteira.") from erro
+    except psycopg.errors.ReadOnlySqlTransaction as erro:
+        raise FerramentaError(
+            f"Eu só leio o banco, e esta consulta tenta escrever: o banco, "
+            f"aberto só para leitura, a recusou ({erro.diag.message_primary}). "
+            f"Nada mudou. Para mudar o sistema existem as ferramentas próprias, "
+            f"que deixam rastro e podem ser desfeitas.") from erro
+    except psycopg.errors.QueryCanceled as erro:
+        raise FerramentaError(
+            f"A consulta passou do prazo de {PRAZO_DA_CONSULTA_MS / 1000:g} s e "
+            f"o banco a interrompeu. Peça menos de uma vez: um filtro no WHERE, "
+            f"uma contagem no lugar da lista, um LIMIT.") from erro
+    except psycopg.Error as erro:
+        raise banco_pg._traduzir_erro(erro) from erro
+    return colunas, linhas
+
+
+def _fora_dos_literais(texto: str) -> str:
+    """O SQL com cada literal trocado por `''`, para a busca de nome não o ler.
+
+    Segue o que o PostgreSQL faz com o texto: `'...'` com a aspa dobrada
+    dentro; `E'...'`, em que a barra escapa a aspa (`E'\\''`); e `$$...$$` ou
+    `$tag$...$tag$`. O nome entre aspas duplas (`"pg_sleep"`) é nome, e não
+    literal: fica como está, porque `"pg_sleep"(1)` é a chamada. Se esta
+    leitura errasse a fronteira de um literal, uma chamada escrita depois dele
+    sumiria da busca. Por isso ela imita o servidor, e não um atalho.
+
+    COMENTÁRIO ELA NÃO LÊ: uma aspa dentro de `/* ' */` abriria aqui um
+    literal que o servidor não vê, e a chamada depois dele sumiria. Hoje isso
+    não acontece porque `_consulta_banco` recusa `--` e `/*` antes; quem tirar
+    aquela recusa tem de ensinar o comentário a esta função.
+    """
+    def de_nome(c: str) -> bool:
+        return c.isalnum() or c in "_$"
+
+    saida: list[str] = []
+    i, fim = 0, len(texto)
+    while i < fim:
+        c = texto[i]
+        if c == '"':
+            j = i + 1
+            while j < fim:
+                if texto[j] == '"':
+                    if texto[j + 1:j + 2] == '"':
+                        j += 2
+                        continue
+                    break
+                j += 1
+            saida.append(texto[i:j + 1])
+            i = j + 1
+            continue
+        if c == "'":
+            barra = (i > 0 and texto[i - 1] in "eE"
+                     and not (i > 1 and de_nome(texto[i - 2])))
+            j = i + 1
+            while j < fim:
+                if barra and texto[j] == "\\":
+                    j += 2
+                    continue
+                if texto[j] == "'":
+                    if texto[j + 1:j + 2] == "'":
+                        j += 2
+                        continue
+                    break
+                j += 1
+            saida.append("''")
+            i = j + 1
+            continue
+        if c == "$" and not (i > 0 and de_nome(texto[i - 1])):
+            marca = re.match(r"\$(?:[^\W\d]\w*)?\$", texto[i:])
+            if marca:
+                fecho = texto.find(marca.group(0), i + len(marca.group(0)))
+                saida.append("''")
+                i = (fim if fecho < 0 else fecho + len(marca.group(0)))
+                continue
+        saida.append(c)
+        i += 1
+    return "".join(saida)
+
+
+def _do_servidor(baixo: str) -> list[str]:
+    """O que a consulta (já em minúsculas) chama do servidor, pelo nome escrito.
+
+    A função conta como chamada: o nome (ou o começo dele, da lista), talvez
+    entre aspas, e o `(` depois. A palavra conta inteira. As duas valem fora
+    dos literais; o parâmetro do servidor vale também dentro deles (ver
+    `PARAMETROS_DO_SERVIDOR`).
+    """
+    codigo = _fora_dos_literais(baixo)
+    achados: list[str] = []
+    for nome in FUNCOES_DO_SERVIDOR:
+        for m in re.finditer(r'(?<![\w$])"?(' + re.escape(nome)
+                             + r'[\w$]*)"?\s*\(', codigo):
+            achados.append(m.group(1))
+    for palavra in PALAVRAS_DO_SERVIDOR:
+        if re.search(r"(?<![\w$])" + re.escape(palavra)
+                     + (r"(?![\w$])" if palavra[-1].isalpha() else ""), codigo):
+            achados.append(palavra)
+    for parametro in PARAMETROS_DO_SERVIDOR:
+        if re.search(r"(?<![\w$])" + re.escape(parametro) + r"(?![\w$])",
+                     baixo):
+            achados.append(parametro)
+    return list(dict.fromkeys(achados))
 
 
 def _consulta_banco(ctx: Contexto, *, consulta: str,
@@ -318,6 +1143,23 @@ def _consulta_banco(ctx: Contexto, *, consulta: str,
         guarda chaves de API em texto claro.
       - **`SELECT *`** — a consulta traz colunas que ninguém pediu, e é assim
         que um campo que não podia sair sai.
+      - **função do servidor** (`pg_read_file`, `pg_sleep`, `set_config`…) —
+        no PostgreSQL um SELECT alcança o disco, o relógio, as outras conexões
+        e a configuração do servidor, e nada disso é ler o banco
+        (`FUNCOES_DO_SERVIDOR`). Conta a chamada, fora dos literais (LX10):
+        `LIKE '%copy %'` e a coluna `lo_x` passam.
+      - **catálogo do servidor com senha ou amostra de valor** (`pg_stats`,
+        `pg_authid`…) — a amostra que o ANALYZE guarda traz o hash da senha
+        sem que a consulta o nomeie (`CATALOGOS_PROIBIDOS`, LS03).
+
+    E O QUE O TEXTO NÃO PEGA, O SERVIDOR PEGA: a consulta que passa por tudo
+    isso é conferida pelo plano e pelas colunas que ela referencia — a linha
+    inteira, a coluna de credencial renomeada no FROM, a tabela proibida por
+    trás de uma vista (`_conferir_antes_de_ler`, LS03) — e só então roda numa
+    transação só-leitura, com prazo, desfeita no fim e com o papel do agente,
+    que não enxerga credencial (`_ler_sem_escrever`, LX10).
+    As recusas pelo texto ficam porque dizem ao modelo o PORQUÊ, e as do
+    servidor ficam porque o texto não pega tudo.
     """
     sql = (consulta or "").strip().rstrip(";").strip()
     if not sql:
@@ -328,6 +1170,12 @@ def _consulta_banco(ctx: Contexto, *, consulta: str,
             "Eu só leio o banco: a consulta precisa começar com SELECT ou com "
             "WITH. Para mudar o sistema existem as ferramentas próprias, que "
             "deixam rastro e podem ser desfeitas.")
+    if _cria_tabela(sql):
+        raise FerramentaError(
+            "Eu só leio o banco, e esta consulta tenta escrever: `SELECT … "
+            "INTO` cria uma tabela nova com o resultado. Nada mudou. Para "
+            "ler, tire o INTO; para mudar o sistema existem as ferramentas "
+            "próprias, que deixam rastro e podem ser desfeitas.")
     if ";" in sql:
         raise FerramentaError(
             "A consulta tem ponto e vírgula no meio, o que permite uma segunda "
@@ -344,18 +1192,32 @@ def _consulta_banco(ctx: Contexto, *, consulta: str,
     passadas = [t for t in TABELAS_PROIBIDAS if t in baixo]
     if passadas:
         raise FerramentaError(
-            f"A tabela {', '.join(passadas)} guarda chave de API em texto "
-            f"claro e não é lida pelo agente.")
-    if "select *" in baixo and "sqlite_master" not in baixo:
+            f"A tabela {', '.join(passadas)} guarda chave de API ou token em "
+            f"texto claro e não é lida pelo agente.")
+    catalogos = [nome for nome in CATALOGOS_PROIBIDOS
+                 if re.search(r"(?<![a-z0-9_$])" + re.escape(nome), baixo)]
+    if catalogos:
+        raise FerramentaError(
+            f"A consulta lê {', '.join(catalogos)}, catálogo do servidor que "
+            f"guarda senha, amostra dos valores das colunas ou o comando em "
+            f"curso das outras conexões — o hash da senha dos usuários entre "
+            f"eles. Para o diagnóstico há pg_roles, pg_user, "
+            f"pg_stat_user_tables e as colunas de pg_stat_activity sem a query.")
+    if "select *" in baixo and "information_schema" not in baixo:
         raise FerramentaError(
             "Escreva as colunas que você quer, em vez de `SELECT *`: assim a "
             "consulta não traz, sem querer, uma coluna que não podia sair.")
+    do_servidor = _do_servidor(baixo)
+    if do_servidor:
+        raise FerramentaError(
+            f"A consulta usa {', '.join(do_servidor)}, que é do servidor e não "
+            f"do banco: o disco, o relógio, as outras conexões e a configuração "
+            f"dele não se alcançam por aqui. Leia as tabelas, que é onde está o "
+            f"diagnóstico.")
 
     with ctx.db.connect() as con:
         try:
-            cursor = con.execute(sql)
-            linhas = cursor.fetchmany(int(limite))
-            colunas = [d[0] for d in (cursor.description or [])]
+            colunas, linhas = _ler_sem_escrever(con, sql, int(limite))
         except sqlite3.Error as erro:
             raise FerramentaError(
                 f"O banco recusou a consulta: {erro}. Confira os nomes das "
@@ -363,7 +1225,7 @@ def _consulta_banco(ctx: Contexto, *, consulta: str,
     if not colunas:
         return "A consulta não devolveu coluna nenhuma."
     saida = [" | ".join(colunas)]
-    for linha in linhas:
+    for linha in linhas[:max(int(limite), 0)]:
         celulas = []
         for valor in tuple(linha):
             texto = "NULL" if valor is None else str(valor)
@@ -371,7 +1233,7 @@ def _consulta_banco(ctx: Contexto, *, consulta: str,
                 texto = texto[:LIMITE_DE_CELULA] + "…"
             celulas.append(texto)
         saida.append(" | ".join(celulas))
-    if len(linhas) >= int(limite):
+    if len(linhas) > int(limite):
         saida.append(f"(parei em {limite} linhas; há mais)")
     return "\n".join(saida)
 
@@ -380,7 +1242,6 @@ def _le_problemas(ctx: Contexto, *, situacao: str = "",
                   limite: int = 20) -> str:
     """A lista de problemas anotados, do mais recente para o mais antigo."""
     with ctx.db.connect() as con:
-        con.row_factory = sqlite3.Row
         problemas = AP.listar(con, situacao=situacao or None,
                               limite=int(limite))
     if not problemas:
@@ -401,7 +1262,6 @@ def _le_problema(ctx: Contexto, *, problema_id: int) -> str:
     """Um problema inteiro: o que ficou escrito, onde aconteceu e o trecho."""
     mapa = None
     with ctx.db.connect() as con:
-        con.row_factory = sqlite3.Row
         linha = AP.ler(con, int(problema_id))
         if linha and ctx.app is not None:
             mapa = MAPA.do_processo(ctx.app, con, versao=ctx.versao)
@@ -460,7 +1320,6 @@ def _le_documentacao(ctx: Contexto, *, nome: str = "") -> str:
         return _cortar(f"{achado['titulo']}\n({achado['arquivo']})\n\n"
                        f"{achado.get('texto') or ''}")
     with ctx.db.connect() as con:
-        con.row_factory = sqlite3.Row
         return _cortar(PROJ.para_a_consulta(con, versao=ctx.versao,
                                             documento_pedido=""))
 
@@ -517,7 +1376,6 @@ def _busca_na_base(ctx: Contexto, *, termo: str = "", limite: int = 0) -> str:
             "32 dígitos».")
     quantas = int(limite) if int(limite or 0) > 0 else BASE.LIMITE_DA_BUSCA
     with ctx.db.connect() as con:
-        con.row_factory = sqlite3.Row
         return _cortar(BASE.buscar_em_tudo(termo, limite=quantas, con=con))
 
 
@@ -567,7 +1425,6 @@ def _le_regras(ctx: Contexto, *, secao: str = "", procura: str = "") -> str:
 def _lista_telas(ctx: Contexto) -> str:
     """As telas do sistema e a que módulo cada uma pertence."""
     with ctx.db.connect() as con:
-        con.row_factory = sqlite3.Row
         mapa = MAPA.do_processo(ctx.app, con, versao=ctx.versao)
     return _cortar(MAPA.resumo(mapa))
 
@@ -641,9 +1498,25 @@ def _definir_alcance(ctx: Contexto, *, modulo: str, alcance: str) -> str:
         nome_na_config, ML.ALCANCE_DE_FABRICA.get(chave, ML.TODOS))
     if antes == novo:
         return f"O módulo {chave} já estava em {novo}; não mudei nada."
+    with ctx.db.connect() as con:
+        sem_confirmacao = AG.escrita_sem_confirmacao(con)
+    if not sem_confirmacao:
+        # O PADRÃO É PROPOR (LS03, M4): o modelo decide o que sugerir, e quem
+        # muda o sistema é o oficial, com um clique na tela do agente. Nada
+        # muda aqui — só a linha PROPOSTA, com o antes e o depois à vista.
+        with ctx.db.transaction() as con:
+            mudanca = AG.registrar_mudanca(
+                con, ctx.sessao_id, ferramenta="definir_alcance_do_modulo",
+                alvo=nome_na_config, antes=antes, depois=novo,
+                reversivel=True, agora=ctx.agora, criada_por=ctx.usuario,
+                proposta=True)
+        return (f"Deixei PROPOSTO (mudança #{mudanca}): o módulo {chave} "
+                f"passaria de {antes} para {novo}. NADA MUDOU AINDA — nesta "
+                f"instalação a mudança só vale depois que o oficial a aplicar, "
+                f"com um clique na tela do agente. Diga isso a ele na resposta.")
     with ctx.db.transaction() as con:
-        con.execute(
-            "INSERT INTO settings(key, value) VALUES (?, ?) "
+        _banco_nativo(con).escrever(
+            "INSERT INTO settings(key, value) VALUES (%s, %s) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (nome_na_config, novo))
         AG.registrar_mudanca(
@@ -848,7 +1721,8 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
         descricao=(
             "Abre ou fecha um módulo para os usuários: NINGUEM (fechado para "
             "todos), ADMIN (só o oficial) ou TODOS. É reversível, e não muda "
-            "dado nenhum: só quem vê a tela."),
+            "dado nenhum: só quem vê a tela. Salvo configuração em contrário, "
+            "a mudança fica PROPOSTA e só vale quando o oficial a aplicar."),
         esquema={"type": "object", "properties": {
             "modulo": {"type": "string", "description": "ex.: PROTESTO"},
             "alcance": {"type": "string", "enum": list(ML.ALCANCES)}},
@@ -1031,8 +1905,8 @@ def executar(ctx: Contexto, nome: str, argumentos: dict) -> dict:
 
 def _restaura_alcance(con: sqlite3.Connection, *, alvo: str, antes: str) -> None:
     """A volta de `definir_alcance_do_modulo`. **ESCREVE.**"""
-    con.execute(
-        "INSERT INTO settings(key, value) VALUES (?, ?) "
+    _banco_nativo(con).escrever(
+        "INSERT INTO settings(key, value) VALUES (%s, %s) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (str(alvo), str(antes)))
 
@@ -1040,6 +1914,76 @@ def _restaura_alcance(con: sqlite3.Connection, *, alvo: str, antes: str) -> None
 DESFAZEDORES: dict[str, Callable[..., None]] = {
     "definir_alcance_do_modulo": _restaura_alcance,
 }
+
+
+def _aplica_alcance(con: sqlite3.Connection, *, alvo: str, depois: str) -> str:
+    """O clique que aplica `definir_alcance_do_modulo`. **ESCREVE.**
+
+    Devolve o alcance que estava NO CLIQUE, que é o que o desfazer tem de
+    restaurar. A chave sem linha em `settings` vale o alcance de fábrica, a
+    mesma régua de `_definir_alcance`.
+    """
+    chave = next((k for k, v in ML.CHAVE_DA_CONFIGURACAO.items() if v == alvo),
+                 None)
+    if chave is None:
+        raise FerramentaError(
+            f"«{alvo}» não é mais um alcance controlado nesta instalação; "
+            f"a proposta não se aplica.")
+    if str(depois) not in ML.ALCANCES:
+        raise FerramentaError(f"«{depois}» não é um alcance; nada mudou.")
+    bd = _banco_nativo(con)
+    linha = bd.um("SELECT value FROM settings WHERE key = %s FOR UPDATE",
+                  (str(alvo),))
+    antes = (linha["value"] if linha and linha["value"] not in (None, "")
+             else ML.ALCANCE_DE_FABRICA.get(chave, ML.TODOS))
+    _restaura_alcance(con, alvo=alvo, antes=depois)
+    return str(antes)
+
+
+#: O que sabe APLICAR uma mudança proposta (LS03, M4). Só a de alcance é
+#: proposta: as outras duas escritas do agente só acrescentam uma nota, não
+#: mudam o que o sistema faz, e por isso continuam diretas.
+APLICADORES: dict[str, Callable[..., str]] = {
+    "definir_alcance_do_modulo": _aplica_alcance,
+}
+
+
+def aplicar(db: Any, mudanca_id: int, *, agora: str, usuario: str) -> dict:
+    """Aplica a mudança que o agente deixou PROPOSTA. **ESCREVE.**
+
+    Recusa, como o desfazer, em vez de fingir: a que já foi aplicada, a que
+    foi descartada e a que não se sabe aplicar. A trava do assunto vem antes
+    da linha (`FOR UPDATE`): dois cliques ao mesmo tempo não aplicam duas vezes
+    nem aplicam a que o outro clique acabou de descartar.
+    """
+    with db.transaction() as con:
+        _banco_nativo(con).travar("ag_mudancas.aplicar_ou_desfazer")
+        linha = AG.ler_mudanca(con, int(mudanca_id), para_mudar=True)
+        if not linha:
+            raise FerramentaError(f"Não achei a mudança #{mudanca_id}.")
+        mudanca = dict(linha)
+        if mudanca.get("revertida_em"):
+            raise FerramentaError(
+                f"A mudança #{mudanca_id} foi descartada em "
+                f"{mudanca['revertida_em']}, por {mudanca['revertida_por']}; "
+                f"ela não se aplica mais. Peça de novo ao agente, se for o caso.")
+        if mudanca.get("situacao") != AG.PROPOSTA:
+            raise FerramentaError(
+                f"A mudança #{mudanca_id} já está aplicada"
+                + (f" (desde {mudanca['aplicada_em']})"
+                   if mudanca.get("aplicada_em") else "") + "; não há o que "
+                f"aplicar de novo.")
+        aplica = APLICADORES.get(str(mudanca["ferramenta"]))
+        if aplica is None:
+            raise FerramentaError(
+                f"Eu não sei aplicar a ferramenta «{mudanca['ferramenta']}». "
+                f"Das que sei: {', '.join(sorted(APLICADORES))}.")
+        antes = aplica(con, alvo=mudanca["alvo"], depois=mudanca["depois"])
+        AG.marcar_aplicada(con, int(mudanca_id), antes=antes, agora=agora,
+                           aplicada_por=usuario or "")
+    return {"mudanca_id": int(mudanca_id), "ferramenta": mudanca["ferramenta"],
+            "alvo": mudanca["alvo"], "antes": antes,
+            "apliquei": mudanca["depois"]}
 
 
 def desfazer(db: Any, mudanca_id: int, *, agora: str, usuario: str) -> dict:
@@ -1051,8 +1995,8 @@ def desfazer(db: Any, mudanca_id: int, *, agora: str, usuario: str) -> dict:
     impressão de ter consertado.
     """
     with db.transaction() as con:
-        con.row_factory = sqlite3.Row
-        linha = AG.ler_mudanca(con, int(mudanca_id))
+        _banco_nativo(con).travar("ag_mudancas.aplicar_ou_desfazer")
+        linha = AG.ler_mudanca(con, int(mudanca_id), para_mudar=True)
         if not linha:
             raise FerramentaError(f"Não achei a mudança #{mudanca_id}.")
         mudanca = dict(linha)
@@ -1060,6 +2004,16 @@ def desfazer(db: Any, mudanca_id: int, *, agora: str, usuario: str) -> dict:
             raise FerramentaError(
                 f"A mudança #{mudanca_id} já foi desfeita em "
                 f"{mudanca['revertida_em']}, por {mudanca['revertida_por']}.")
+        if mudanca.get("situacao") == AG.PROPOSTA:
+            # A PROPOSTA DESFEITA É DESCARTADA (M4): ela nunca mudou nada, e
+            # não há o que voltar no sistema — só a linha fica dizendo quem a
+            # recusou e quando, como a mudança desfeita.
+            AG.marcar_revertida(con, int(mudanca_id), agora=agora,
+                                revertida_por=usuario or "")
+            return {"mudanca_id": int(mudanca_id),
+                    "ferramenta": mudanca["ferramenta"],
+                    "alvo": mudanca["alvo"], "voltei_para": mudanca["antes"],
+                    "descartada": True}
         if not mudanca.get("reversivel"):
             raise FerramentaError(
                 f"A mudança #{mudanca_id} ({mudanca['ferramenta']}) é só "

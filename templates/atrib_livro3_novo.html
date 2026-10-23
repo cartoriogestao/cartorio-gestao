@@ -75,22 +75,41 @@
   </section>
 
   <section class="panel" style="grid-column:1/-1">
-    <div class="panel-head"><span>Partes</span><small>quem figura no título</small></div>
-    {% for i in [0, 1] %}
-    <div class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <div class="panel-head"><span>Partes</span><small>quem figura no título — quantas forem precisas</small></div>
+    {#  19/10/2026 — pedido do oficial: «adicionar mais partes no ato». Eram
+        duas linhas fixas e o papel em texto livre. #}
+    {% macro linha_de_parte(p) %}
+    <div class="grid2 linha-parte" style="padding:14px; border-top:1px solid #e5e7eb">
       <label style="grid-column:1/-1">Nome
-        <input name="parte_nome"></label>
+        <input name="parte_nome" value="{{ p.get('nome','') }}"
+               placeholder="como está escrito no título"></label>
       <label>Documento
         <select name="parte_documento_tipo">
           <option value="">—</option>
-          <option value="CPF">CPF</option>
-          <option value="CNPJ">CNPJ</option>
+          <option value="CPF" {% if p.get('tipo') == 'CPF' %}selected{% endif %}>CPF</option>
+          <option value="CNPJ" {% if p.get('tipo') == 'CNPJ' %}selected{% endif %}>CNPJ</option>
         </select></label>
-      <label>Número <input name="parte_documento" inputmode="numeric"></label>
-      <label style="grid-column:1/-1">Papel
-        <input name="parte_papel" placeholder="emitente · credor · avalista"></label>
+      <label>Número <input name="parte_documento" inputmode="numeric"
+                           value="{{ p.get('numero','') }}"></label>
+      <label>Papel
+        <select name="parte_papel">
+          {% for codigo, rotulo in papeis %}
+          <option value="{{ codigo }}" title="{{ rotulo }}"
+                  {% if p.get('papel') == codigo %}selected{% endif %}>{{ rotulo.split(' — ')[0] }}</option>
+          {% endfor %}
+        </select></label>
+      <div class="actions"><button type="button" class="small"
+           data-remover-parte>remover esta parte</button></div>
     </div>
-    {% endfor %}
+    {% endmacro %}
+    <div id="lista-de-partes">
+      {% for p in partes_digitadas %}{{ linha_de_parte(p) }}{% endfor %}
+    </div>
+    <template id="modelo-de-parte">{{ linha_de_parte({}) }}</template>
+    <div class="actions" style="padding:0 14px 14px">
+      <button type="button" class="button" id="adicionar-parte">+ Adicionar parte</button>
+      <small class="muted">emitente, credor, avalista, interveniente, garantidor… linha sem nome é ignorada</small>
+    </div>
   </section>
 
   <section class="panel" style="grid-column:1/-1">
@@ -137,4 +156,22 @@
   </div>
 </form>
 {{ script_do_rascunho() }}
+<script>
+(function () {
+  var lista = document.getElementById('lista-de-partes');
+  var modelo = document.getElementById('modelo-de-parte');
+  document.getElementById('adicionar-parte').addEventListener('click', function () {
+    lista.appendChild(document.importNode(modelo.content, true));
+    var nomes = lista.querySelectorAll('input[name="parte_nome"]');
+    nomes[nomes.length - 1].focus();
+  });
+  lista.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-remover-parte]');
+    if (!b) return;
+    var linha = b.closest('.linha-parte');
+    if (lista.querySelectorAll('.linha-parte').length > 1) { linha.remove(); }
+    else { linha.querySelectorAll('input').forEach(function (i) { i.value = ''; }); }
+  });
+})();
+</script>
 {% endblock %}

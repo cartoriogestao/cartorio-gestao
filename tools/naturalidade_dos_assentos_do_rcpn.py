@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -51,26 +50,28 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import banco_pg  # noqa: E402
 import rc_assento as RC  # noqa: E402
+from bd_nativo import banco as abrir_banco  # noqa: E402
 
 # As espécies cujo termo declara naturalidade — as mesmas de
 # `rc_assento.TITULAR_DA_NATURALIDADE`, lidas de lá e não reescritas.
 ESPECIES = tuple(RC.TITULAR_DA_NATURALIDADE)
 
 
-def _candidatos(con: sqlite3.Connection) -> list[sqlite3.Row]:
+def _candidatos(bd) -> list[dict]:
     """Assentos com naturalidade escrita no termo. **SÓ LÊ.**
 
     Quem decide se dá para gravar é `_naturalidade_do_titular`; aqui só se
     junta o que vale a pena perguntar a ela.
     """
-    marcas = ", ".join("?" for _ in ESPECIES)
-    return con.execute(
+    marcas = ", ".join("%s" for _ in ESPECIES)
+    return bd.ler(
         f"""SELECT id, especie, numero, nome, naturalidade_declarada
             FROM rc_assentos
             WHERE especie IN ({marcas})
               AND TRIM(COALESCE(naturalidade_declarada, '')) <> ''
-            ORDER BY id""", ESPECIES).fetchall()
+            ORDER BY id""", ESPECIES)
 
 
 def medir(banco: Path) -> dict:
@@ -80,12 +81,11 @@ def medir(banco: Path) -> dict:
     de medir com a mesma função que grava, em vez de uma leitura parecida que
     diria outra coisa na hora de valer.
     """
-    con = sqlite3.connect(str(banco))
-    con.row_factory = sqlite3.Row
+    con = banco_pg.conectar(str(banco))
+    bd = abrir_banco(con)
     try:
-        con.execute("BEGIN")
         a_gravar, recusados = [], []
-        for a in _candidatos(con):
+        for a in _candidatos(bd):
             r = RC._naturalidade_do_titular(
                 con, int(a["id"]), str(a["especie"] or "").upper(),
                 a["naturalidade_declarada"])
@@ -113,14 +113,15 @@ def aplicar(banco: Path) -> tuple[Path, list[dict]]:
     # FORA DA PASTA DO BANCO — ordem do oficial em 11/10/2026.
     import pasta_das_copias as _PC
     copia = _PC.destino_da_copia(copia, Path(banco))
-    con = sqlite3.connect(str(banco))
-    con.row_factory = sqlite3.Row
+    con = banco_pg.conectar(str(banco))
+    bd = abrir_banco(con)
     gravados: list[dict] = []
     try:
-        con.execute("PRAGMA busy_timeout=15000")
-        con.execute("VACUUM INTO ?", (str(copia),))
-        con.execute("BEGIN IMMEDIATE")
-        for a in _candidatos(con):
+        banco_pg.copiar_para_arquivo(banco, copia)
+        # NO LUGAR DO `BEGIN IMMEDIATE` DO SQLITE: ler os candidatos e gravar
+        # a pessoa é um passo só, e duas rodadas ao mesmo tempo não se cruzam.
+        bd.travar("rc_pessoas.naturalidade")
+        for a in _candidatos(bd):
             r = RC._naturalidade_do_titular(
                 con, int(a["id"]), str(a["especie"] or "").upper(),
                 a["naturalidade_declarada"])
@@ -130,13 +131,12 @@ def aplicar(banco: Path) -> tuple[Path, list[dict]]:
                                  "cidade": r.get("cidade"), "uf": r.get("uf")})
         con.commit()
         # A AUDITORIA À MÃO, porque a rota não foi usada.
-        con.execute("BEGIN IMMEDIATE")
         for g in gravados:
-            con.execute(
+            bd.escrever(
                 """INSERT INTO audit_logs(ts, user_id, username_snapshot,
                                           action, entity_type, entity_id,
                                           details)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (datetime.now().isoformat(timespec="seconds"), None,
                  "naturalidade_dos_assentos_do_rcpn",
                  "RCPN_NATURALIDADE_DERIVADA", "rc_assentos",

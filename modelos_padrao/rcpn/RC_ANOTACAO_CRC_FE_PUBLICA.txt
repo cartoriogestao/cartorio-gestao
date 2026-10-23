@@ -1,0 +1,1 @@
+ANOTAÇÃO: Conforme comunicação recebida da {origem}, por meio eletrônico, através da Central do Registro Civil (Código nº {codigo}), o {ato}{de_quem}{ocorrido_em}{indicacao}{lavrado_em}{novos_nomes}. Dou fé. {cidade}, {hoje}.{assinatura}

@@ -33,6 +33,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import rc_digitalizacao as RCDIGI
 
@@ -153,7 +155,7 @@ def test_a_migracao_cria_as_colunas_e_semeia_o_corte_uma_vez(cg_casa):
 def test_banco_sem_settings_nao_estoura_e_nao_obriga():
     import nucleo_schema
     from rc_schema import init_rc_schema
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     nucleo_schema.init_nucleo_schema(con)
     init_rc_schema(con)
     assert RCDIGI.obrigatoria_desde(con) is None

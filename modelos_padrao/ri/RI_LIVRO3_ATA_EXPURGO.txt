@@ -1,0 +1,15 @@
+ATA DE OCORRÊNCIA — LIVRO 3 (REGISTRO AUXILIAR)
+
+Registro nº {{ registro_numero }}. Ato {{ rotulo }}, de {{ data_ato }}.
+
+Em {{ agora }}, o ato acima foi DESFEITO e devolvido à condição de minuta{% if minuta_id %} (minuta nº {{ minuta_id }}){% endif %}, por {{ usuario }}.
+
+MOTIVO: {{ motivo }}.
+
+O ato não chegou a receber selo — ato com selo não se desfaz por este caminho.
+
+TEOR DO ATO DESFEITO, como estava:
+
+{{ teor }}
+
+Nada mais. Esta ata é a única cópia do que saiu do livro.

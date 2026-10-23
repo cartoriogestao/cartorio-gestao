@@ -1,0 +1,1 @@
+e inscrito no {tipo_documento}: {documento}

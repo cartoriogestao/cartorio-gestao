@@ -34,8 +34,9 @@ O QUE ESTE MÓDULO NÃO FAZ
 """
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
+
+from bd_nativo import banco
 
 
 class AnotacaoError(ValueError):
@@ -230,14 +231,13 @@ def o_que_o_ato_gera(especie: str) -> tuple[str, ...]:
     return O_QUE_SE_ANOTA.get(_texto(especie).upper(), ())
 
 
-def pendencias_do_assento(con: sqlite3.Connection, assento_id: int) -> list[dict]:
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        """SELECT * FROM rc_anotacoes WHERE assento_id = ?
-            ORDER BY id""", (assento_id,))]
+def pendencias_do_assento(con, assento_id: int) -> list[dict]:
+    return banco(con).ler(
+        """SELECT * FROM rc_anotacoes WHERE assento_id = %s
+            ORDER BY id""", (assento_id,))
 
 
-def declarar(con: sqlite3.Connection, assento_id: int, *, agora: str,
+def declarar(con, assento_id: int, *, agora: str,
              usuario: str | None = None) -> list[int]:
     """Abre as pendências de anotação que o ato gerou. ESCREVE.
 
@@ -246,28 +246,27 @@ def declarar(con: sqlite3.Connection, assento_id: int, *, agora: str,
     não ter relógio.
 
     REPETÍVEL POR CONSTRUÇÃO: `UNIQUE(assento_id, especie_alvo)` e
-    `INSERT OR IGNORE`. Lavrar, corrigir e salvar de novo não pode multiplicar a
+    `ON CONFLICT DO NOTHING`. Lavrar, corrigir e salvar de novo não pode multiplicar a
     obrigação.
     """
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT * FROM rc_assentos WHERE id = ?",
-                    (assento_id,)).fetchone()
+    bd = banco(con)
+    a = bd.um("SELECT * FROM rc_assentos WHERE id = %s", (assento_id,))
     if not a:
         raise AnotacaoError(f"Não achei o assento nº {assento_id}.")
 
     novas = []
     for alvo in o_que_o_ato_gera(a["especie"]):
-        cur = con.execute(
-            """INSERT OR IGNORE INTO rc_anotacoes (assento_id, especie_alvo,
+        criada = bd.escrever(
+            """INSERT INTO rc_anotacoes (assento_id, especie_alvo,
                    situacao, criado_em, criado_por)
-               VALUES (?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING RETURNING id""",
             (assento_id, alvo, PENDENTE, agora, usuario))
-        if cur.rowcount:
-            novas.append(int(cur.lastrowid))
+        if criada:
+            novas.append(int(criada[0]["id"]))
     return novas
 
 
-def resumo_do_assento(con: sqlite3.Connection, assento_id: int) -> str:
+def resumo_do_assento(con, assento_id: int) -> str:
     """O «resumo do assento» que o art. 367 manda ir junto da comunicação.
 
     O ARTIGO PEDE RESUMO, E NÃO O TEOR INTEIRO — e a diferença importa: o teor
@@ -277,12 +276,10 @@ def resumo_do_assento(con: sqlite3.Connection, assento_id: int) -> str:
     O que vai é o que o art. 369 exige do outro lado: que ato foi, quando, e
     onde ele está — serventia, livro, folha e número.
     """
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT * FROM rc_assentos WHERE id = ?",
-                    (assento_id,)).fetchone()
+    a = banco(con).um("SELECT * FROM rc_assentos WHERE id = %s",
+                      (assento_id,))
     if not a:
         raise AnotacaoError(f"Não achei o assento nº {assento_id}.")
-    a = dict(a)
     partes = [f"{a.get('especie', '')} registrado sob o termo "
               f"nº {a.get('numero', '')}"]
     if a.get("livro_volume"):
@@ -298,7 +295,7 @@ def resumo_do_assento(con: sqlite3.Connection, assento_id: int) -> str:
     return ", ".join(partes) + "."
 
 
-def anotar_aqui(con: sqlite3.Connection, pendencia_id: int, *,
+def anotar_aqui(con, pendencia_id: int, *,
                 assento_alvo_id: int, agora: str,
                 usuario: str | None = None) -> dict:
     """Registra que o assento anterior, DESTA serventia, foi anotado. ESCREVE.
@@ -315,9 +312,9 @@ def anotar_aqui(con: sqlite3.Connection, pendencia_id: int, *,
     if p["situacao"] != PENDENTE:
         raise AnotacaoError(
             f"Esta anotação já está como {NOME_DA_SITUACAO.get(p['situacao'], p['situacao'])}.")
-    con.row_factory = sqlite3.Row
-    if not con.execute("SELECT 1 FROM rc_assentos WHERE id = ?",
-                       (assento_alvo_id,)).fetchone():
+    bd = banco(con)
+    if not bd.um("SELECT 1 AS x FROM rc_assentos WHERE id = %s",
+                 (assento_alvo_id,)):
         raise AnotacaoError(
             f"Não achei o assento nº {assento_alvo_id} nesta serventia. Se o "
             "registro anterior é de outra casa, o caminho é a comunicação.")
@@ -326,14 +323,14 @@ def anotar_aqui(con: sqlite3.Connection, pendencia_id: int, *,
             "O assento não se anota nele mesmo — a anotação vai no registro "
             "ANTERIOR da pessoa.")
 
-    con.execute(
-        """UPDATE rc_anotacoes SET situacao = ?, assento_alvo_id = ?,
-               resolvida_em = ?, resolvida_por = ? WHERE id = ?""",
+    bd.escrever(
+        """UPDATE rc_anotacoes SET situacao = %s, assento_alvo_id = %s,
+               resolvida_em = %s, resolvida_por = %s WHERE id = %s""",
         (ANOTADA, int(assento_alvo_id), agora, usuario, pendencia_id))
     return {"situacao": ANOTADA}
 
 
-def comunicar(con: sqlite3.Connection, pendencia_id: int, *, canal: str,
+def comunicar(con, pendencia_id: int, *, canal: str,
               serventia: str, agora: str, protocolo: str = "",
               usuario: str | None = None) -> dict:
     """Registra a comunicação à serventia onde está o registro primitivo.
@@ -367,16 +364,16 @@ def comunicar(con: sqlite3.Connection, pendencia_id: int, *, canal: str,
             "confirmação de recebimento (art. 226, § 1º, I), e comunicação sem "
             "confirmação é a que ninguém prova ter mandado.")
 
-    con.execute(
-        """UPDATE rc_anotacoes SET situacao = ?, canal = ?,
-               serventia_destino = ?, protocolo = ?, resolvida_em = ?,
-               resolvida_por = ? WHERE id = ?""",
+    banco(con).escrever(
+        """UPDATE rc_anotacoes SET situacao = %s, canal = %s,
+               serventia_destino = %s, protocolo = %s, resolvida_em = %s,
+               resolvida_por = %s WHERE id = %s""",
         (COMUNICADA, canal, _texto(serventia), _texto(protocolo), agora,
          usuario, pendencia_id))
     return {"situacao": COMUNICADA}
 
 
-def dispensar(con: sqlite3.Connection, pendencia_id: int, *, motivo: str,
+def dispensar(con, pendencia_id: int, *, motivo: str,
               agora: str, usuario: str | None = None) -> dict:
     """Marca que não há assento anterior a anotar. EXIGE MOTIVO ESCRITO.
 
@@ -393,49 +390,46 @@ def dispensar(con: sqlite3.Connection, pendencia_id: int, *, motivo: str,
             "Para dispensar, escreva o motivo — «não há casamento anterior», "
             "«nascimento registrado no exterior». "
             f"Ao menos {MINIMO_DO_MOTIVO} letras.")
-    con.execute(
-        """UPDATE rc_anotacoes SET situacao = ?, motivo = ?, resolvida_em = ?,
-               resolvida_por = ? WHERE id = ?""",
+    banco(con).escrever(
+        """UPDATE rc_anotacoes SET situacao = %s, motivo = %s, resolvida_em = %s,
+               resolvida_por = %s WHERE id = %s""",
         (DISPENSADA, _texto(motivo), agora, usuario, pendencia_id))
     return {"situacao": DISPENSADA}
 
 
-def _exigir(con: sqlite3.Connection, pendencia_id: int) -> dict:
-    con.row_factory = sqlite3.Row
-    r = con.execute("SELECT * FROM rc_anotacoes WHERE id = ?",
-                    (pendencia_id,)).fetchone()
+def _exigir(con, pendencia_id: int) -> dict:
+    r = banco(con).um("SELECT * FROM rc_anotacoes WHERE id = %s",
+                      (pendencia_id,))
     if not r:
         raise AnotacaoError("Não achei essa pendência de anotação.")
-    return dict(r)
+    return r
 
 
 # ------------------------------------------------------------------ as listas
 
 
-def pendentes(con: sqlite3.Connection, limite: int = 500) -> list[dict]:
+def pendentes(con, limite: int = 500) -> list[dict]:
     """O que a casa deve anotar ou comunicar, do mais antigo para o mais novo.
 
     **DO MAIS ANTIGO PARA O MAIS NOVO**, e é o contrário da ordem das outras
     listas deste sistema. Aqui o que importa é o prazo: quem está há mais tempo
     esperando é quem está mais perto de estourar os cinco dias.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT n.*, a.especie, a.numero, a.nome, a.data_ato
              FROM rc_anotacoes n
              JOIN rc_assentos a ON a.id = n.assento_id
-            WHERE n.situacao = ?
-         ORDER BY a.data_ato, n.id LIMIT ?""", (PENDENTE, limite))]
+            WHERE n.situacao = %s
+         ORDER BY a.data_ato, n.id LIMIT %s""", (PENDENTE, limite))
 
 
-def quantas_pendentes(con: sqlite3.Connection) -> int:
-    con.row_factory = sqlite3.Row
-    return int(con.execute(
-        "SELECT COUNT(*) FROM rc_anotacoes WHERE situacao = ?",
-        (PENDENTE,)).fetchone()[0])
+def quantas_pendentes(con) -> int:
+    return int(banco(con).valor(
+        "SELECT COUNT(*) FROM rc_anotacoes WHERE situacao = %s",
+        (PENDENTE,)))
 
 
-def fora_do_prazo(con: sqlite3.Connection, *, hoje: str) -> list[dict]:
+def fora_do_prazo(con, *, hoje: str) -> list[dict]:
     """As que já passaram dos cinco dias. Só lê.
 
     NÃO CONTA DIA ÚTIL, e é deliberado: o art. 367 escreve «no prazo de cinco
@@ -451,11 +445,10 @@ def fora_do_prazo(con: sqlite3.Connection, *, hoje: str) -> list[dict]:
                   - timedelta(days=PRAZO_DIAS)).isoformat()
     except ValueError:
         return []
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT n.*, a.especie, a.numero, a.nome, a.data_ato
              FROM rc_anotacoes n
              JOIN rc_assentos a ON a.id = n.assento_id
-            WHERE n.situacao = ? AND COALESCE(a.data_ato, '') <> ''
-              AND a.data_ato < ?
-         ORDER BY a.data_ato, n.id""", (PENDENTE, limite))]
+            WHERE n.situacao = %s AND COALESCE(a.data_ato, '') <> ''
+              AND a.data_ato < %s
+         ORDER BY a.data_ato, n.id""", (PENDENTE, limite))

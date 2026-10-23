@@ -1,0 +1,13 @@
+{
+  "chave": "PT_CERTIDAO_CABECA",
+  "atribuicao": "Protesto",
+  "nome": "Certidão positiva e de cancelamento — abertura",
+  "formato": "CHAVES",
+  "explica": "A abertura das certidões positiva e de cancelamento: é o {cabeca} delas. {pedido} é uma das frases de pedido; {inscrito} é a frase da inscrição (vazia sem documento); {ano_por_extenso} é o ano de início da busca.",
+  "campos": [
+    "pedido",
+    "ano_por_extenso",
+    "nome",
+    "inscrito"
+  ]
+}

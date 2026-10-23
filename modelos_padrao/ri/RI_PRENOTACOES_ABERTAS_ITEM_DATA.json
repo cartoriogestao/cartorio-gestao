@@ -1,0 +1,10 @@
+{
+  "chave": "RI_PRENOTACOES_ABERTAS_ITEM_DATA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Prenotação em aberto — data",
+  "formato": "JINJA",
+  "explica": "Data da prenotação na lista das prenotações em aberto; o módulo só a põe quando o protocolo tem data (ri_web).",
+  "campos": [
+    "data"
+  ]
+}

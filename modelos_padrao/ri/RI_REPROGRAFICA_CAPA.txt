@@ -1,0 +1,2 @@
+<p>CERTIFICO, a requerimento da parte interessada e no exercício das atribuições desta Serventia, que a reprodução reprográfica inserida no espaço abaixo foi extraída do documento/assento constante do acervo sob a identificação <i>{{ identificacao }}</i></p>
+<p>A reprodução que integra a presente certidão corresponde à imagem do documento/assento consultado, ressalvadas as características de legibilidade e conservação do original.</p>

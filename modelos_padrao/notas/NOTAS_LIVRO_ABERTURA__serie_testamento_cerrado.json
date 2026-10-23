@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_LIVRO_ABERTURA__serie_testamento_cerrado",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Nome da série TESTAMENTO_CERRADO nos termos do livro",
+  "formato": "CHAVES",
+  "explica": "O nome da série, no plural e por extenso, nos termos de abertura e de encerramento.",
+  "campos": []
+}

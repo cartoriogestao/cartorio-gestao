@@ -39,14 +39,26 @@
 <p class="small muted">
   <strong>Não é aqui que se escreve documento avulso.</strong> Comunicação,
   requerimento e declaração sobre um assento do Registro Civil ficam em
-  <a href="{{ url_for('rcpn_modelos') }}">Documentos avulsos (modelos do E-Ofício)</a> — lá você <em>cria</em> modelos; aqui você <em>ajusta</em> os
+  <a href="{{ url_for('rcpn_modelos') }}">Documentos avulsos (modelos do sistema antigo)</a> — lá você <em>cria</em> modelos; aqui você <em>ajusta</em> os
   papéis que o sistema já emite.
 </p>
 
 <div class="card">
-  <p><strong>O padrão não se perde.</strong> Ele mora no programa, e não no
-  banco: por isso «voltar ao padrão» é apagar o seu ajuste, e o papel volta a
-  sair do jeito de fábrica. Não há como uma edição deixar a casa sem modelo.</p>
+  <p><strong>O padrão não se perde.</strong> Ele vem com o programa — a pasta
+  <code>modelos_padrao/</code>, que cada atualização recarrega na base de
+  padrões —, e não mora junto do seu ajuste: por isso «voltar ao padrão» é
+  apagar o seu ajuste, e o papel volta a sair do jeito de fábrica. Não há como
+  uma edição deixar a casa sem modelo, e a atualização nunca apaga o que a casa
+  ajustou.</p>
+  {% if base and base.origem != "base" and base.erro %}
+  <p class="alerta warning">A base de padrões não carregou neste servidor
+    ({{ base.erro }}). Os papéis continuam saindo do padrão do sistema, lido
+    direto da pasta do programa — avise o suporte.</p>
+  {% endif %}
+  {% if base and base.problemas %}
+  <p class="alerta warning">A pasta dos padrões tem arquivo com defeito, e o
+    papel dele não sai sem ajuste desta casa: {{ base.problemas|join("; ") }}</p>
+  {% endif %}
   <p class="small muted">
     {% if quantos_ajustados %}
       {{ quantos_ajustados }} modelo{{ 's' if quantos_ajustados > 1 }} com
@@ -188,6 +200,30 @@
   <p class="small muted" style="margin:0 18px 12px">
     Este é o <strong>padrão do sistema</strong>, como ele está escrito hoje
     ({{ editando.onde }}). Gravar aqui cria o ajuste desta casa.
+  </p>
+  {% endif %}
+
+  {# O PADRÃO MUDOU DEPOIS DO AJUSTE (LF06A). A atualização troca o padrão e
+     NUNCA o ajuste: sem este aviso a casa continuaria imprimindo o texto
+     antigo sem saber que a versão nova trouxe outro. A diferença é entre o
+     ajuste e o padrão de hoje — o texto antigo do padrão não fica guardado,
+     só a impressão digital dele. #}
+  {% if editando.mudou and editando.mudou.situacao == "MUDOU" %}
+  <div class="alerta warning" style="margin:0 18px 12px">
+    <strong>O padrão mudou depois do seu ajuste.</strong> Uma atualização
+    trouxe um texto de fábrica novo para este papel ({{ editando.onde }}), e o
+    ajuste desta casa continua valendo — a atualização não o sobrescreve.
+    Compare e, se quiser a mudança, traga-a para o ajuste, ou use «Voltar ao
+    padrão do sistema».
+    <details open>
+      <summary>A diferença — o ajuste desta casa × o padrão de hoje</summary>
+      <pre class="modelo-diferenca" style="white-space:pre-wrap;max-height:22em;overflow:auto">{{ editando.mudou.diferenca|join("\n") }}</pre>
+    </details>
+  </div>
+  {% elif editando.mudou and editando.mudou.situacao == "SEM_MARCA" %}
+  <p class="small muted" style="margin:0 18px 12px">
+    Este ajuste é anterior à base de padrões (19/10/2026): não há como saber
+    se o padrão do sistema mudou depois dele. Gravar de novo passa a marcar.
   </p>
   {% endif %}
 

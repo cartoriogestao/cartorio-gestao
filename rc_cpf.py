@@ -54,6 +54,8 @@ from __future__ import annotations
 import nome_humano as NOMEHUM
 
 import sqlite3
+
+from bd_nativo import banco
 from typing import Any
 
 import cpf_cnpj as CPFDOC
@@ -428,21 +430,20 @@ def assentos_sem_cpf(con: sqlite3.Connection, *, so_do_balcao: bool = True,
     (averbação). Misturá-lo com o do recém-nascido faria uma lista de 244
     linhas onde a de hoje tem poucas — e lista assim ninguém abre.
     """
-    con.row_factory = sqlite3.Row
     onde = ["UPPER(COALESCE(a.especie,'')) = 'NASCIMENTO'",
             "COALESCE(a.situacao,'ATIVO') <> 'CANCELADO'",
             "TRIM(COALESCE(a.cpf_registrado,'')) = ''"]
     params: list[Any] = []
     if so_do_balcao:
-        onde.append("COALESCE(a.origem,'') <> ?")
+        onde.append("COALESCE(a.origem,'') <> %s")
         params.append(ORIGEM_DO_ACERVO)
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         f"""SELECT a.id, a.numero, a.nome, a.data_ato, a.data_fato,
                    a.matricula, a.origem
               FROM rc_assentos a
              WHERE {' AND '.join(onde)}
           ORDER BY a.data_ato IS NULL, a.data_ato DESC, a.id DESC
-             LIMIT ?""", (*params, limite))]
+             LIMIT %s""", (*params, limite))]
 
 
 # Nomes que NÃO assinam teor — máquina / placeholders.
@@ -646,10 +647,10 @@ def gravar_na_pessoa(con: sqlite3.Connection, assento_id: int, cpf: Any, *,
             f"O CPF «{cpf}» não fecha o dígito verificador. Confira com quem "
             f"está no balcão — número errado na certidão não se desfaz "
             f"depois.")
-    con.execute(
+    banco(con).escrever(
         """UPDATE rc_pessoas
-              SET documento_tipo='CPF', documento_numero=?
-            WHERE assento_id=? AND UPPER(COALESCE(papel,''))=?""",
+              SET documento_tipo='CPF', documento_numero=%s
+            WHERE assento_id=%s AND UPPER(COALESCE(papel,''))=%s""",
         (n, int(assento_id), str(papel).strip().upper()))
     return formatar(n)
 
@@ -678,6 +679,6 @@ def gravar(con: sqlite3.Connection, assento_id: int, cpf: Any) -> str:
             f"O CPF «{cpf}» não fecha o dígito verificador. Confira com quem "
             f"está no balcão — número errado na certidão não se desfaz "
             f"depois.")
-    con.execute("UPDATE rc_assentos SET cpf_registrado=? WHERE id=?",
-                (n, int(assento_id)))
+    banco(con).escrever("UPDATE rc_assentos SET cpf_registrado=%s WHERE id=%s",
+                        (n, int(assento_id)))
     return formatar(n)

@@ -53,10 +53,11 @@ DECISAO SE GRAVA, E POR ISSO A LISTA DIMINUI
 from __future__ import annotations
 
 import re
-import sqlite3
 
 import ri_modelos_atos as MOD
+import ri_frases
 import ri_numeros_do_teor as NUMT
+from bd_nativo import banco
 from ri_odt import rotulo_ato
 from ri_schema import consultar_cnib, matricula_de_acervo
 
@@ -143,10 +144,9 @@ def parte_fixa(con=None, matricula_id: int | None = None, *,
     """
     m = None
     if con is not None and matricula_id is not None:
-        con.row_factory = sqlite3.Row
-        m = con.execute(
-            "SELECT id, numero, tipo_ficha FROM ri_matriculas WHERE id=?",
-            (int(matricula_id),)).fetchone()
+        m = banco(con).um(
+            "SELECT id, numero, tipo_ficha FROM ri_matriculas WHERE id=%s",
+            (int(matricula_id),))
     n = int(numero) if numero else None
     if n is None and m is not None and not (
             m["tipo_ficha"] == "ACERVO" or matricula_de_acervo(m["numero"])):
@@ -160,12 +160,19 @@ def parte_fixa(con=None, matricula_id: int | None = None, *,
 
     protocolo = None
     if m is not None:
-        protocolo = con.execute(
+        protocolo = banco(con).um(
             """SELECT numero, data_prenotacao FROM ri_protocolos
-                WHERE matricula_id=? AND situacao='ABERTO'
-                ORDER BY numero DESC LIMIT 1""", (int(m["id"]),)).fetchone()
-    frase = (f"PROTOCOLO N. {protocolo['numero']}, DE "
-             f"{_dia(protocolo['data_prenotacao'])}."
+                WHERE matricula_id=%s AND situacao='ABERTO'
+                ORDER BY numero DESC LIMIT 1""", (int(m["id"]),))
+    # O TEXTO SAIU DAQUI — LF06B: a frase do protocolo é o papel
+    # RI_MINUTA_PROTOCOLO (tela de Modelos) — o MESMO das minutas da ficha
+    # (`ri_web._contexto_modelo`), como este comentário sempre pediu; vai
+    # ao livro com a averbação e lá
+    # fica. O `[INFORMAR O PROTOCOLO].`, o rótulo e o «órgão — vara» ficam:
+    # são marcador de campo que falta e junção de dado, não frase.
+    frase = (ri_frases.frase("RI_MINUTA_PROTOCOLO", con,
+                             numero=protocolo["numero"],
+                             data=_dia(protocolo["data_prenotacao"]))
              if protocolo else "[INFORMAR O PROTOCOLO].")
     return {"rotulo": rotulo, "protocolo_frase": frase, "numero": n,
             "protocolo": (protocolo["numero"] if protocolo else None)}
@@ -226,13 +233,14 @@ def chave_da_minuta(matricula_id: int, ordem: dict) -> str:
 
 def filtrar_pendentes(con, matricula_id: int, ordens: list[dict]) -> list[dict]:
     """Ocorrencias ainda sem decisao ou minuta efetivamente lavrada."""
+    bd = banco(con)
     decisoes = {(r['protocolo_cnib'], r['pessoa_documento'] or '', r['pessoa_nome'] or '')
-                for r in con.execute('SELECT * FROM ri_cnib_decisoes WHERE matricula_id=?',
-                                     (int(matricula_id),)).fetchall()}
-    lavradas = {r['origem_chave'] for r in con.execute(
+                for r in bd.ler('SELECT * FROM ri_cnib_decisoes WHERE matricula_id=%s ORDER BY id',
+                                (int(matricula_id),))}
+    lavradas = {r['origem_chave'] for r in bd.ler(
         """SELECT m.origem_chave FROM ri_minutas m JOIN ri_atos a ON a.id=m.ato_id
-           WHERE m.matricula_id=? AND m.situacao='LAVRADA'""",
-        (int(matricula_id),)).fetchall()}
+           WHERE m.matricula_id=%s AND m.situacao='LAVRADA' ORDER BY m.id""",
+        (int(matricula_id),))}
     return [o for o in ordens
             if (o.get('protocolo_cnib'), o.get('documento') or '', o.get('nome') or '') not in decisoes
             and chave_da_minuta(matricula_id, o) not in lavradas]
@@ -246,13 +254,14 @@ def resolver_ocorrencia(con, *, matricula_id: int, protocolo: str,
         raise CnibError("Escolha se nao e a mesma pessoa ou se a ordem foi baixada.")
     if len((motivo or '').strip()) < 10:
         raise CnibError("Descreva a conferencia e sua evidencia com pelo menos 10 caracteres.")
-    if not con.execute('SELECT 1 FROM ri_matriculas WHERE id=?',
-                       (int(matricula_id),)).fetchone():
+    bd = banco(con)
+    if not bd.um('SELECT 1 FROM ri_matriculas WHERE id=%s',
+                 (int(matricula_id),)):
         raise CnibError("Matricula nao encontrada.")
     identidade = (str(protocolo or '').strip(), str(pessoa_nome or '').strip(),
                   str(pessoa_documento or '').strip())
-    partes = con.execute('SELECT nome,documento_numero FROM ri_partes WHERE matricula_id=?',
-                          (int(matricula_id),)).fetchall()
+    partes = bd.ler('SELECT nome,documento_numero FROM ri_partes WHERE matricula_id=%s ORDER BY id',
+                    (int(matricula_id),))
     ordens = consultar_cnib(con, [p['documento_numero'] for p in partes],
                            [p['nome'] for p in partes])
     ordem = next((o for o in ordens if
@@ -261,10 +270,11 @@ def resolver_ocorrencia(con, *, matricula_id: int, protocolo: str,
                    str(o.get('documento') or '').strip()) == identidade), None)
     if ordem is None:
         raise CnibError("Esta ocorrencia nao esta mais ativa para as partes desta matricula. Atualize a ficha.")
-    existente = con.execute(
-        """SELECT id,decisao FROM ri_cnib_decisoes WHERE matricula_id=? AND protocolo_cnib=?
-           AND COALESCE(pessoa_nome,'')=? AND COALESCE(pessoa_documento,'')=?""",
-        (int(matricula_id), *identidade)).fetchone()
+    existente = bd.um(
+        """SELECT id,decisao FROM ri_cnib_decisoes WHERE matricula_id=%s AND protocolo_cnib=%s
+           AND COALESCE(pessoa_nome,'')=%s AND COALESCE(pessoa_documento,'')=%s
+           ORDER BY id LIMIT 1""",
+        (int(matricula_id), *identidade))
     if existente:
         if existente['decisao'] != decisao:
             raise CnibError('Ja existe outra decisao registrada para esta ocorrencia. Consulte o historico.')
@@ -275,11 +285,11 @@ def resolver_ocorrencia(con, *, matricula_id: int, protocolo: str,
     # mas sai da fila de lavratura. Atos lavrados e outras minutas nao mudam.
     import ri_minuta as MIN
     chave = chave_da_minuta(matricula_id, ordem)
-    for m in con.execute("SELECT id FROM ri_minutas WHERE origem_chave=? AND situacao='A_REVISAR'",
-                          (chave,)).fetchall():
+    for m in bd.ler("SELECT id FROM ri_minutas WHERE origem_chave=%s AND situacao='A_REVISAR' ORDER BY id",
+                    (chave,)):
         MIN.descartar(con, m['id'], motivo=f"CNIB {decisao}: {motivo}", agora=agora, usuario=quem)
-    for t in con.execute("SELECT id FROM tasks WHERE source_ref=?", (chave,)).fetchall():
-        con.execute('INSERT INTO task_history(task_id,ts,action,note) VALUES (?,?,?,?)',
+    for t in bd.ler("SELECT id FROM tasks WHERE source_ref=%s ORDER BY id", (chave,)):
+        bd.escrever('INSERT INTO task_history(task_id,ts,action,note) VALUES (%s,%s,%s,%s)',
                     (t['id'], agora, 'NOTA', f"CNIB: {decisao}. Conferencia por {quem}: {motivo}. Consulte a decisao na matricula."))
     return decisao_id
 
@@ -293,9 +303,10 @@ def pendentes(con) -> list[dict]:
     diferentes sobre a mesma pessoa. Custa uma consulta por matricula, e esta
     tela se abre uma vez por semana — nao e o laco do balcao.
     """
+    bd = banco(con)
     ja = {(r["matricula_id"], r["protocolo_cnib"], (r["pessoa_documento"] or ""),
-           (r["pessoa_nome"] or "")) for r in con.execute(
-        "SELECT * FROM ri_cnib_decisoes")}
+           (r["pessoa_nome"] or "")) for r in bd.ler(
+        "SELECT * FROM ri_cnib_decisoes ORDER BY id")}
 
     achados = []
     # A MATRICULA ENCERRADA TAMBEM ENTRA, e isso e deliberado. Medido em
@@ -309,11 +320,11 @@ def pendentes(con) -> list[dict]:
     # o cursor aberto, a primeira matricula ja estourava com «Error creating
     # function». Lendo as 1.701 de uma vez o laco fica livre — e 1.701 linhas
     # de tres colunas cabem na memoria sem pensar duas vezes.
-    for m in con.execute("""SELECT id, numero, livro, situacao FROM ri_matriculas
-                             ORDER BY id""").fetchall():
-        partes = [dict(x) for x in con.execute(
+    for m in bd.ler("""SELECT id, numero, livro, situacao FROM ri_matriculas
+                        ORDER BY id"""):
+        partes = bd.ler(
             """SELECT nome, documento_numero FROM ri_partes
-                WHERE matricula_id = ?""", (m["id"],)).fetchall()]
+                WHERE matricula_id = %s ORDER BY id""", (m["id"],))
         if not partes:
             continue
         ordens = consultar_cnib(
@@ -363,16 +374,17 @@ def decidir(con, *, matricula_id: int, ordem: dict, decisao: str,
             "explicar por que a indisponibilidade não foi averbada.")
     if decisao == ORDEM_BAIXADA and len(limpo) < 10:
         raise CnibError("Informe a evidencia da baixa da ordem, com pelo menos 10 caracteres.")
-    cur = con.execute(
+    novo = banco(con).escrever(
         """INSERT INTO ri_cnib_decisoes
               (matricula_id, protocolo_cnib, pessoa_nome, pessoa_documento,
                criterio, decisao, motivo, ato_id, decidido_por, decidido_em)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (int(matricula_id), (ordem.get("protocolo_cnib") or "").strip(),
          (ordem.get("nome") or "").strip(),
          (ordem.get("documento") or "").strip(),
          ordem.get("criterio"), decisao, limpo or None, ato_id, quem, agora))
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
 
 
 COPIA_LOCAL = "COPIA_LOCAL"
@@ -409,13 +421,15 @@ def gravar_consulta_do_ato(con, *, ato_id: int, matricula_id: int,
     Positivo nao trava — homonimo e a regra aqui (ver o topo do modulo).
     """
     import json
-    partes = con.execute(
+    bd = banco(con)
+    partes = bd.ler(
         """SELECT nome, documento_numero FROM ri_partes
-            WHERE matricula_id = ? AND (ato_id = ? OR proprietario_ativo = 1)""",
-        (int(matricula_id), int(ato_id))).fetchall()
-    documentos = sorted({"".join(c for c in str(doc or "") if c.isdigit())
-                         for _nome, doc in partes} - {""})
-    nomes = sorted({(nome or "").strip() for nome, _doc in partes} - {""})
+            WHERE matricula_id = %s AND (ato_id = %s OR proprietario_ativo = 1)
+            ORDER BY id""",
+        (int(matricula_id), int(ato_id)))
+    documentos = sorted({"".join(c for c in str(p["documento_numero"] or "") if c.isdigit())
+                         for p in partes} - {""})
+    nomes = sorted({(p["nome"] or "").strip() for p in partes} - {""})
     ordens = consultar_cnib(con, documentos, nomes)
     protocolo = (protocolo_consulta or "").strip() or None
     linha = {
@@ -431,37 +445,35 @@ def gravar_consulta_do_ato(con, *, ato_id: int, matricula_id: int,
                     "criterio": o.get("criterio")} for o in ordens],
         "consultado_por": quem, "consultado_em": agora,
     }
-    cur = con.execute(
+    novo = bd.escrever(
         """INSERT INTO ri_atos_cnib
               (ato_id, matricula_id, ato_rotulo, fonte, base_ate,
                protocolo_consulta, documentos, nomes, resultado, ordens,
                consultado_por, consultado_em)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (linha["ato_id"], linha["matricula_id"], ato_rotulo, linha["fonte"],
          linha["base_ate"], protocolo,
          json.dumps(documentos, ensure_ascii=False),
          json.dumps(nomes, ensure_ascii=False), linha["resultado"],
          json.dumps(linha["ordens"], ensure_ascii=False), quem, agora))
-    linha["id"] = int(cur.lastrowid)
+    linha["id"] = int(novo[0]["id"])
     return linha
 
 
 def soltar_do_ato(con, ato_id: int) -> None:
     """O ato saiu do livro (suspenso ou expurgado): a consulta fica na ficha."""
-    con.execute("UPDATE ri_atos_cnib SET ato_id = NULL WHERE ato_id = ?",
-                (int(ato_id),))
+    banco(con).escrever("UPDATE ri_atos_cnib SET ato_id = NULL WHERE ato_id = %s",
+                        (int(ato_id),))
 
 
 def consultas_da_matricula(con, matricula_id: int) -> dict[int, dict]:
     """Ultima consulta gravada por ato, para a ficha mostrar ao lado do ato."""
     saida: dict[int, dict] = {}
-    cur = con.execute(
-        """SELECT * FROM ri_atos_cnib
-            WHERE matricula_id = ? AND ato_id IS NOT NULL
-            ORDER BY id""", (int(matricula_id),))
-    colunas = [d[0] for d in cur.description]
-    for r in cur.fetchall():
-        linha = dict(zip(colunas, r))
+    for linha in banco(con).ler(
+            """SELECT * FROM ri_atos_cnib
+                WHERE matricula_id = %s AND ato_id IS NOT NULL
+                ORDER BY id""", (int(matricula_id),)):
         saida[int(linha["ato_id"])] = linha
     return saida
 
@@ -488,6 +500,6 @@ def decisoes_da_matricula(con, matricula_id: int) -> list[dict]:
     quem resolveu, e quando. Sem isso o proximo abre a ficha, ve o mesmo aviso
     vermelho e vai conferir de novo o que ja foi conferido.
     """
-    return [dict(r) for r in con.execute(
-        """SELECT * FROM ri_cnib_decisoes WHERE matricula_id = ?
-            ORDER BY id DESC""", (int(matricula_id),))]
+    return banco(con).ler(
+        """SELECT * FROM ri_cnib_decisoes WHERE matricula_id = %s
+            ORDER BY id DESC""", (int(matricula_id),))

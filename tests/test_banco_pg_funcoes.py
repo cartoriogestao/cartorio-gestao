@@ -1,11 +1,22 @@
 """As funções do SQLite emuladas no PostgreSQL (`banco_pg_funcoes.sql`),
 comparadas com o `sqlite3` do Python — entrada por entrada.
 
-A régua é o SQLite que roda aqui (3.45.1, o do Python 3.11.9 da migração):
-para cada função, uma grade grande de entradas (datas nos formatos que o
-SQLite aceita e nos que ele recusa, números, modificadores, formatos, nulos,
-vazios, nomes com acento, caixa e espaço) é calculada NOS DOIS, e o teste
-exige o mesmo resultado — o mesmo texto, o mesmo número, o mesmo NULL.
+A régua é o SQLite da PRODUÇÃO (3.45.1, o do Python 3.11.9 do Windows): para
+cada função, uma grade grande de entradas (datas nos formatos que o SQLite
+aceita e nos que ele recusa, números, modificadores, formatos, nulos, vazios,
+nomes com acento, caixa e espaço) é calculada NOS DOIS, e o teste exige o
+mesmo resultado — o mesmo texto, o mesmo número, o mesmo NULL.
+
+ONDE O PYTHON NÃO RODA A 3.45.1, A RÉGUA É A MEDIÇÃO GRAVADA DELA
+(`tests/fixtures/regua_sqlite_3_45_1.json`). Achado em 19/10/2026: o Mac da
+migração roda o SQLite 3.53.4, que da 3.46 em diante aceita 'floor'/'ceiling'
+e %G %g %U %V, ignora 'localtime'/'utc' repetidos e 'utc' depois de 'now',
+corta a fração abaixo do milissegundo em vez de arredondar, arredonda o
+printf('%.0f') de outro jeito e escreve o real com 17 dígitos. Comparado com
+ele, o teste dava 1.775 divergências — a distância entre duas versões do
+SQLite, não a do PostgreSQL até a produção (com a 3.45.1, zero). Onde o Python
+roda a 3.45.1, a comparação continua ao vivo e confere também que a medição
+gravada ainda é a dela.
 
 Pula sem `CG_PG_DSN`. Cria um schema temporário, instala o .sql nele (o
 `search_path` fica «schema, public», como na instalação de verdade) e apaga
@@ -13,10 +24,13 @@ o schema no fim.
 
 Também roda como script avulso, e então imprime o resumo da comparação:
     venv\\Scripts\\python.exe sistema\\tests\\test_banco_pg_funcoes.py
+e, com um Python que rode o SQLite 3.45.1, regrava a medição:
+    python tests/test_banco_pg_funcoes.py --gravar-regua
 """
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 import os
 import sqlite3
@@ -41,6 +55,12 @@ if str(RAIZ) not in sys.path:
 ARQUIVO_SQL = RAIZ / "banco_pg_funcoes.sql"
 DSN = os.environ.get("CG_PG_DSN", "").strip()
 
+# O SQLite que a produção roda, e o que ele respondeu às grades (ver o topo).
+REGUA_DA_PRODUCAO = "3.45.1"
+ARQUIVO_REGUA = RAIZ / "tests" / "fixtures" / "regua_sqlite_3_45_1.json"
+COMO_GRAVAR = ("com CG_PG_DSN e um Python que rode o SQLite 3.45.1: "
+               "python tests/test_banco_pg_funcoes.py --gravar-regua")
+
 if pytest is not None:
     pytestmark = pytest.mark.skipif(
         not DSN or psycopg is None,
@@ -49,10 +69,34 @@ if pytest is not None:
 
 # ============================================================ o ambiente
 
-class Ambiente:
-    """Um schema temporário com as funções instaladas, e um SQLite em memória."""
+def _impressao(consultas) -> str:
+    """O que identifica uma grade: o texto exato de cada consulta ao SQLite.
+    Se a grade muda, a medição gravada deixa de valer para ela."""
+    bruto = json.dumps([[sql, list(params)] for sql, params in consultas], ensure_ascii=False)
+    return hashlib.sha256(bruto.encode("utf-8")).hexdigest()
 
-    def __init__(self) -> None:
+
+def _ler_regua():
+    if not ARQUIVO_REGUA.exists():
+        return None
+    return json.loads(ARQUIVO_REGUA.read_text(encoding="utf-8"))
+
+
+class Ambiente:
+    """Um schema temporário com as funções instaladas, um SQLite em memória
+    e a régua (o SQLite da produção, ao vivo ou medido)."""
+
+    def __init__(self, gravando: bool = False) -> None:
+        self.ao_vivo = sqlite3.sqlite_version == REGUA_DA_PRODUCAO
+        self.gravada = None if gravando else _ler_regua()
+        self.medidas: dict = {}
+        # 'localtime' do SQLite usa o fuso do Windows; o do PostgreSQL é o
+        # da sessão. Para comparar, a sessão recebe o deslocamento daqui — ou,
+        # nas datas medidas, o da máquina em que a régua foi medida.
+        desloc = _dt.datetime.now().astimezone().utcoffset()
+        self.fuso_daqui = int(desloc.total_seconds() // 60)
+        self.fuso_da_regua = (self.gravada["fuso_minutos"]
+                              if self.gravada and not self.ao_vivo else self.fuso_daqui)
         self.pg = psycopg.connect(DSN, autocommit=True)
         self.schema = "cg_teste_funcoes_" + uuid.uuid4().hex[:10]
         with self.pg.cursor() as cur:
@@ -60,14 +104,42 @@ class Ambiente:
             cur.execute(f'SET search_path TO "{self.schema}"')
             cur.execute(ARQUIVO_SQL.read_text(encoding="utf-8"))
             cur.execute(f'SET search_path TO "{self.schema}", public')
-            # 'localtime' do SQLite usa o fuso do Windows; o do PostgreSQL é o
-            # da sessão. Para comparar, a sessão recebe o deslocamento daqui.
-            desloc = _dt.datetime.now().astimezone().utcoffset()
-            minutos = int(desloc.total_seconds() // 60)
-            sinal = "-" if minutos < 0 else "+"
+        self.no_fuso(self.fuso_daqui)
+        # A RÉGUA é o sqlite3 de verdade, em memória — de propósito: não trocar
+        # por conexao_de_teste(), que no backend pg compararia o PostgreSQL com ele mesmo.
+        self.sqlite = sqlite3.connect(":memory:")
+
+    def no_fuso(self, minutos: int) -> None:
+        sinal = "-" if minutos < 0 else "+"
+        with self.pg.cursor() as cur:
             cur.execute(f"SET TIME ZONE INTERVAL '{sinal}{abs(minutos) // 60:02d}:"
                         f"{abs(minutos) % 60:02d}' HOUR TO MINUTE")
-        self.sqlite = sqlite3.connect(":memory:")
+
+    def esperados(self, grade: str, consultas: list) -> list:
+        """A resposta do SQLite da PRODUÇÃO a cada consulta `(sql, params)`.
+
+        Ao vivo onde o Python daqui roda a 3.45.1 — e aí confere também que a
+        medição gravada continua sendo a dele, para ela não apodrecer calada.
+        Nas outras máquinas, a medição gravada; se a grade mudou depois dela,
+        o teste falha pedindo a regravação, em vez de comparar com o SQLite
+        daqui (que mediria a distância entre duas versões do SQLite)."""
+        impressao = _impressao(consultas)
+        gravada = ((self.gravada or {}).get("grades") or {}).get(grade)
+        if gravada is not None and gravada.get("impressao") != impressao:
+            gravada = None
+        if not self.ao_vivo:
+            assert gravada is not None, (
+                f"a grade «{grade}» não está medida no SQLite {REGUA_DA_PRODUCAO} (o daqui é o "
+                f"{sqlite3.sqlite_version}): regrave {ARQUIVO_REGUA.name} {COMO_GRAVAR}")
+            return list(gravada["valores"])
+        valores = [self.lite(sql, params) for sql, params in consultas]
+        self.medidas[grade] = {"impressao": impressao, "valores": valores}
+        if gravada is not None and self.fuso_daqui == self.gravada["fuso_minutos"]:
+            difere = sum(1 for g, v in zip(gravada["valores"], valores) if g != v)
+            assert not difere, (
+                f"{difere} valores da grade «{grade}» em {ARQUIVO_REGUA.name} não são os do "
+                f"SQLite {REGUA_DA_PRODUCAO} daqui: regrave {COMO_GRAVAR}")
+        return valores
 
     def fechar(self) -> None:
         try:
@@ -206,7 +278,8 @@ def _sql_sqlite(fn, fmt, v, mods):
 
 def comparar_datas(amb: Ambiente) -> tuple[int, list[str]]:
     casos = _casos_de_data()
-    esperado = [amb.lite(*_sql_sqlite(*c)) for c in casos]
+    amb.no_fuso(amb.fuso_da_regua)
+    esperado = amb.esperados("datas", [_sql_sqlite(*c) for c in casos])
     obtido = [None] * len(casos)
     # O PostgreSQL recebe as entradas em lote (jsonb), agrupadas pela forma
     # da chamada. "time" vai entre aspas: TIME é palavra da gramática.
@@ -236,8 +309,20 @@ def comparar_datas(amb: Ambiente) -> tuple[int, list[str]]:
     return len(casos), diverg
 
 
+# 'now' não se grava: a régua é o SQLite daqui, e onde ele não é a 3.45.1 a
+# consulta que difere vai na forma que dá a conta da 3.45.1 em qualquer versão.
+# 'utc' logo depois de 'now': a 3.45.1 converte, tratando 'now' como hora local
+# (o manual do SQLite chama isso de indefinido); da 3.46 em diante, 'utc' sobre
+# o que já é UTC não faz nada. 'now' passado como TEXTO não leva a marca de
+# «já é UTC», e então toda versão converte, como a 3.45.1.
+AGORA_NA_3_45_1 = {
+    "SELECT datetime('now','utc')": "SELECT datetime(datetime('now'),'utc')",
+}
+
+
 def comparar_agora(amb: Ambiente) -> tuple[int, list[str]]:
     """'now' e CURRENT_*: o mesmo instante, a menos de um segundo virando."""
+    amb.no_fuso(amb.fuso_daqui)
     pares = [
         ("SELECT date('now')", "SELECT cg_date('now')"),
         ("SELECT date()", "SELECT date()"),
@@ -257,6 +342,8 @@ def comparar_agora(amb: Ambiente) -> tuple[int, list[str]]:
         ("SELECT CURRENT_DATE", "SELECT cg_hoje_texto()"),
         ("SELECT CURRENT_TIME", "SELECT cg_hora_texto()"),
     ]
+    if not amb.ao_vivo:
+        pares = [(AGORA_NA_3_45_1.get(lite, lite), pg) for lite, pg in pares]
     diverg = []
     for lite, pg in pares:
         for _tentativa in range(3):
@@ -385,9 +472,10 @@ def comparar_escalares(amb: Ambiente) -> tuple[int, list[str]]:
         ("printf({0})", ("só texto %%",)), ("printf({0},{1},{2})", ("%s-%s", "a", "b")),
         ("printf({0},{1},{2})", ("%02d/%02d", "5", "9")),
     ]
+    esperados = amb.esperados("escalares", [
+        ("SELECT " + expr.format(*(_lit_lite(a) for a in args)), ()) for expr, args in casos])
     diverg = []
-    for expr, args in casos:
-        e = amb.lite("SELECT " + expr.format(*(_lit_lite(a) for a in args)))
+    for (expr, args), e in zip(casos, esperados):
         args_pg = args
         if expr.startswith("printf") and len(args) > 2:
             # vários argumentos chegam como texto (ver o comentário do printf)
@@ -416,18 +504,15 @@ GRUPOS = [
 
 
 def comparar_group_concat(amb: Ambiente) -> tuple[int, list[str]]:
-    diverg = []
-    n = 0
+    itens = []      # (valores, sep, consulta ao SQLite, consulta ao PostgreSQL)
     for valores, sep in GRUPOS:
         for com_sep in (True, False):
             if not com_sep and sep != ",":
                 continue
-            n += 1
             linhas = ", ".join(f"({i}, {_lit_lite(v)})" for i, v in enumerate(valores))
             sub_lite = (f"SELECT x FROM (SELECT column1 o, column2 x FROM (VALUES {linhas})) ORDER BY o"
                         if valores else "SELECT NULL x WHERE 0")
             arg_lite = f"x, {_lit_lite(sep)}" if com_sep else "x"
-            e = amb.lite(f"SELECT group_concat({arg_lite}) FROM ({sub_lite})")
             tipo = ("text" if all(isinstance(v, str) or v is None for v in valores) else
                     "bigint" if all(isinstance(v, int) or v is None for v in valores) else "float8")
             if valores:
@@ -436,10 +521,15 @@ def comparar_group_concat(amb: Ambiente) -> tuple[int, list[str]]:
             else:
                 fonte = f"(SELECT 0 o, NULL::{tipo} x WHERE false) AS t"
             sep_pg = f", {_lit_pg(sep)}::text" if com_sep else ""
-            o = amb.pg1(f"SELECT group_concat(x{sep_pg} ORDER BY o) FROM {fonte}")
-            if e != o:
-                diverg.append(f"group_concat({valores!r}, {sep!r}): sqlite={e!r} pg={o!r}")
-    return n, diverg
+            itens.append((valores, sep, f"SELECT group_concat({arg_lite}) FROM ({sub_lite})",
+                          f"SELECT group_concat(x{sep_pg} ORDER BY o) FROM {fonte}"))
+    esperados = amb.esperados("group_concat", [(lite, ()) for _v, _s, lite, _pg in itens])
+    diverg = []
+    for (valores, sep, _lite, pg), e in zip(itens, esperados):
+        o = amb.pg1(pg)
+        if e != o:
+            diverg.append(f"group_concat({valores!r}, {sep!r}): sqlite={e!r} pg={o!r}")
+    return len(itens), diverg
 
 
 def comparacoes(amb: Ambiente) -> dict[str, tuple[int, list[str]]]:
@@ -574,15 +664,42 @@ if pytest is not None:
 
 # ============================================================ script avulso
 
+def gravar_regua(amb: Ambiente) -> None:
+    """Grava o que o SQLite 3.45.1 daqui respondeu às grades que já rodaram
+    (`amb.medidas`), com o fuso da máquina — as datas com 'localtime' são
+    comparadas nele. Um valor por linha, para a regravação mostrar no diff
+    exatamente o que mudou."""
+    dados = {
+        "sobre": ("O que o SQLite da produção respondeu a cada consulta das grades de "
+                  "tests/test_banco_pg_funcoes.py. Regrave " + COMO_GRAVAR),
+        "sqlite": sqlite3.sqlite_version,
+        "python": sys.version.split()[0],
+        "medido_em": _dt.date.today().isoformat(),
+        "fuso_minutos": amb.fuso_daqui,
+        "grades": amb.medidas,
+    }
+    ARQUIVO_REGUA.write_text(json.dumps(dados, ensure_ascii=False, indent=0) + "\n",
+                             encoding="utf-8")
+
+
 if __name__ == "__main__":
     if not DSN or psycopg is None:
         print("defina CG_PG_DSN (e instale psycopg) para comparar")
         sys.exit(2)
+    gravar = "--gravar-regua" in sys.argv[1:]
     print("SQLite", sqlite3.sqlite_version, "| Python", sys.version.split()[0])
-    a = Ambiente()
+    if gravar and sqlite3.sqlite_version != REGUA_DA_PRODUCAO:
+        print(f"a régua é o SQLite {REGUA_DA_PRODUCAO} da produção; este Python roda o "
+              f"{sqlite3.sqlite_version} — use um que rode a {REGUA_DA_PRODUCAO}")
+        sys.exit(2)
+    a = Ambiente(gravando=gravar)
     try:
         print("PostgreSQL", a.pg1("SELECT current_setting('server_version')"),
               "| fuso da sessão", a.pg1("SELECT current_setting('TimeZone')"))
+        if not a.ao_vivo:
+            g = a.gravada or {}
+            print(f"régua: a medição gravada (SQLite {g.get('sqlite')}, Python {g.get('python')}, "
+                  f"{g.get('medido_em')}, fuso {g.get('fuso_minutos')} min)")
         total_div = 0
         t0 = _time.time()
         for nome, (n, diverg) in comparacoes(a).items():
@@ -591,6 +708,9 @@ if __name__ == "__main__":
             for d in diverg[:40]:
                 print("   ", d)
         print(f"\n{total_div} divergência(s) no total ({_time.time() - t0:.1f} s)")
+        if gravar:
+            gravar_regua(a)
+            print("régua gravada em", ARQUIVO_REGUA)
         sys.exit(1 if total_div else 0)
     finally:
         a.fechar()

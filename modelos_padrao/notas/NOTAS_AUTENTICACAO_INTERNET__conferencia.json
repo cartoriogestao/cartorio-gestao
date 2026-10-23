@@ -1,0 +1,12 @@
+{
+  "chave": "NOTAS_AUTENTICACAO_INTERNET__conferencia",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Autenticação de documento da internet — conferência",
+  "formato": "CHAVES",
+  "explica": "Entra logo depois da fórmula: o endereço eletrônico de acesso, a data e o horário da conferência (CN-MA art. 839, § 1º).",
+  "campos": [
+    "endereco",
+    "data",
+    "hora"
+  ]
+}

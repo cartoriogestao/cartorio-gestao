@@ -1,0 +1,8 @@
+{
+  "chave": "PT_AVISO_CANHOTO_CAMPOS",
+  "atribuicao": "Protesto",
+  "nome": "Canhoto do aviso — campos de quem recebe",
+  "formato": "CHAVES",
+  "explica": "O que quem recebe preenche à mão — uma linha do papel por linha daqui. Três linhas curtas cabem no pé da mesma folha do aviso; com cinco, o canhoto passava para a segunda.",
+  "campos": []
+}

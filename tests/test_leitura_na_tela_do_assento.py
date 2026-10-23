@@ -16,6 +16,9 @@ from test_rc_leitura_documentos import (CERT_NOIVA, CPF_MAE, IA, IDS_HAB, REQUER
                                         IAPorMolde)
 
 import rc_leitura_documentos as LEIT
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 
 def _token(html: str) -> str:
@@ -96,7 +99,7 @@ def test_os_anexos_da_leitura_acompanham_a_habilitacao_aberta(cg_casa_logada, mo
 
 
 def test_ligar_documentos_nao_repete_o_mesmo_arquivo():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.execute("""CREATE TABLE attachments (id INTEGER PRIMARY KEY, entity_type TEXT, entity_id INTEGER,
         original_name TEXT, stored_name TEXT, stored_path TEXT, sha256 TEXT, size_bytes INTEGER,
         description TEXT, uploaded_by INTEGER, uploaded_at TEXT)""")

@@ -28,10 +28,10 @@ O QUE ELE NÃO SABE, E DIZ QUE NÃO SABE
 from __future__ import annotations
 
 import html
-import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
 
+from bd_nativo import banco
 from gestor_conferencia import IMPLANTACAO, _brl, _dia, _reais
 
 FUNDOS = ("FERC", "FADP", "FEMP", "FERRFIS")
@@ -47,7 +47,7 @@ _ATRIB_DO_PROTOCOLO = {"RCPN": "RCPN", "RI": "RI", "NOTAS": "Notas", "FIRMAS": "
 TROCO = ("SALDO INICIAL",)
 
 
-def _atribuicao(lan: sqlite3.Row) -> str:
+def _atribuicao(lan: dict) -> str:
     if lan["p_atr"]:
         return _ATRIB_DO_PROTOCOLO.get(str(lan["p_atr"]).upper(), str(lan["p_atr"]))
     chave = str(lan["origem_chave"] or "")
@@ -75,8 +75,9 @@ def _nome_do_operador(con, nome: str) -> str:
     n = (nome or "").strip()
     if not n:
         return "sem caixa"
-    achados = [r[0] for r in con.execute(
-        "SELECT full_name FROM users WHERE active = 1 AND upper(full_name) LIKE ?",
+    achados = [r["full_name"] for r in banco(con).ler(
+        """SELECT full_name FROM users WHERE active = 1 AND upper(full_name) ILIKE %s
+            ORDER BY id""",
         (n.upper() + "%",))]
     return achados[0] if len(achados) == 1 else n
 
@@ -116,17 +117,21 @@ def _ri_de_valor_alto(con, comp: str, minimo: float = 1000.0) -> list[dict]:
         t = unicodedata.normalize("NFKD", str(t or "")).encode("ascii", "ignore").decode()
         return re.sub(r"\s+", " ", t.upper())
 
-    depositos = [(d[0], d[1], d[2], _reais(d[3]), norm(d[2])) for d in con.execute(
-        "SELECT id, numero, depositante, valor FROM cx_depositos")]
-    lancados = [(norm(f"{r[0] or ''} {r[1] or ''}"), _reais(r[2]), r[3]) for r in con.execute(
+    bd = banco(con)
+    depositos = [(d["id"], d["numero"], d["depositante"], _reais(d["valor"]), norm(d["depositante"]))
+                 for d in bd.ler(
+        "SELECT id, numero, depositante, valor FROM cx_depositos ORDER BY id")]
+    lancados = [(norm(f"{r['pagador'] or ''} {r['descricao'] or ''}"), _reais(r["valor"]), r["data"])
+                for r in bd.ler(
         """SELECT pagador, descricao, valor, data FROM cx_lancamentos
-            WHERE data < ? AND COALESCE(excluido,0) = 0""", (comp + "z",))]
+            WHERE data < %s AND COALESCE(excluido,0) = 0 ORDER BY id""", (comp + "z",))]
     saida = []
-    for numero, texto, tabela, ato_id, dia in con.execute(
+    for selo in bd.ler(
             """SELECT numero, texto, tabela, ato_id, usado_em FROM sd_selos
-                WHERE usado_em LIKE ? AND cancelado_em IS NULL
-                  AND atribuicao IN ('IMOVEL','RI','LIVRO3')""", (comp + "%",)):
-        dia = str(dia or "")[:10]
+                WHERE usado_em ILIKE %s AND cancelado_em IS NULL
+                  AND atribuicao IN ('IMOVEL','RI','LIVRO3') ORDER BY id""", (comp + "%",)):
+        texto, tabela, ato_id = selo["texto"], selo["tabela"], selo["ato_id"]
+        dia = str(selo["usado_em"] or "")[:10]
         lido = SL.ler_texto(texto or "")
         total = lido.get("total") or 0.0
         if total < minimo or "ISENT" in " ".join(lido.get("marcas") or []).upper():
@@ -147,15 +152,15 @@ def _ri_de_valor_alto(con, comp: str, minimo: float = 1000.0) -> list[dict]:
     return sorted(saida, key=lambda x: -x["total"])
 
 
-def apurar_mes(con: sqlite3.Connection, ano: int, mes: int) -> dict:
+def apurar_mes(con, ano: int, mes: int) -> dict:
     """Os números do mês. Só lê."""
     import selo as SL
     comp = f"{ano:04d}-{mes:02d}"
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     r: dict = {"comp": comp, "entrou": {}, "receita": {}, "por_operador": {},
                "troco": 0.0, "gratuitos": [0, 0.0], "excluidos": [0, 0.0],
                "estornos": [0, 0.0], "incoerentes": [], "sem_atrib": 0}
-    lans = con.execute(
+    lans = bd.ler(
         # O «nº» DO USO É O id DO DEPÓSITO, e não o número impresso
         # (DP2026.09.7): medido em 06/10/2026, «Uso do depósito prévio nº 10»
         # vale R$ 27.442,16, que é o depósito de id 10.
@@ -165,10 +170,11 @@ def apurar_mes(con: sqlite3.Connection, ano: int, mes: int) -> dict:
              FROM cx_lancamentos l
              LEFT JOIN cx_protocolos p ON p.id = l.protocolo_id
              LEFT JOIN cx_caixas c ON c.id = l.caixa_id
-            WHERE l.data LIKE ?""", (comp + "%",)).fetchall()
-    deps = {int(d[0]): d for d in con.execute(
+            WHERE l.data ILIKE %s ORDER BY l.id""", (comp + "%",))
+    deps = {int(d["id"]): (d["id"], d["ri_protocolo_id"], d["nt_ato_id"], d["atribuicao"])
+            for d in bd.ler(
         """SELECT d.id, d.ri_protocolo_id, d.nt_ato_id, p.atribuicao FROM cx_depositos d
-             LEFT JOIN cx_protocolos p ON p.id = d.protocolo_id""")}
+             LEFT JOIN cx_protocolos p ON p.id = d.protocolo_id ORDER BY d.id""")}
     lans = [_com_o_deposito(dict(x), deps) for x in lans]
     for lan in lans:
         valor = _reais(lan["valor"])
@@ -198,29 +204,30 @@ def apurar_mes(con: sqlite3.Connection, ano: int, mes: int) -> dict:
             r["entrou"][chave] = r["entrou"].get(chave, 0.0) + valor
             continue
         r["receita"][atr] = r["receita"].get(atr, 0.0) + valor
-        op = _nome_do_operador(con, lan["operador"])
+        op = _nome_do_operador(bd, lan["operador"])
         r["por_operador"][op] = r["por_operador"].get(op, 0.0) + valor
         if forma != "DEPOSITO_PREVIO":
             nome = {"PIX": "PIX", "DINHEIRO": "Dinheiro", "GRATUITO": "Marcado gratuito",
                     "": "Forma não informada"}.get(forma, forma.title())
             r["entrou"][nome] = r["entrou"].get(nome, 0.0) + valor
-    r["depositos_no_mes"] = con.execute(
-        "SELECT count(*) FROM cx_depositos WHERE data LIKE ?", (comp + "%",)).fetchone()[0]
-    r["depositos_valor"] = sum(_reais(x[0]) for x in con.execute(
-        "SELECT valor FROM cx_depositos WHERE data LIKE ?", (comp + "%",)))
+    r["depositos_no_mes"] = int(bd.valor(
+        "SELECT count(*) AS n FROM cx_depositos WHERE data ILIKE %s", (comp + "%",)))
+    r["depositos_valor"] = sum(_reais(x["valor"]) for x in bd.ler(
+        "SELECT valor FROM cx_depositos WHERE data ILIKE %s ORDER BY id", (comp + "%",)))
     # O DEPÓSITO ENTRA POR FORA DO CAIXA: medido em setembro/2026, R$ 76,5 mil
     # abertos em `cx_depositos` e só R$ 130 lançados no caixa como depósito.
     # Sem esta linha o quadro «dinheiro que entrou» esconderia o maior valor.
     if r["depositos_valor"]:
         r["entrou"]["Depósitos prévios abertos (cadastro de depósitos)"] = r["depositos_valor"]
-    r["depositos_em_aberto"] = sum(_reais(x[0]) for x in con.execute(
-        "SELECT saldo FROM cx_depositos WHERE COALESCE(encerrado,0) = 0"))
+    r["depositos_em_aberto"] = sum(_reais(x["saldo"]) for x in bd.ler(
+        "SELECT saldo FROM cx_depositos WHERE COALESCE(encerrado,0) = 0 ORDER BY id"))
     # selos: o que cada ato declara, e os fundos
     s = {"qtd": 0, "total": 0.0, "emol": 0.0, "fundos": {f: 0.0 for f in FUNDOS},
          "por_atr": {}, "isentos": [0, 0.0], "diferidos": 0}
-    for texto, atr in con.execute(
+    for selo in bd.ler(
             """SELECT texto, atribuicao FROM sd_selos
-                WHERE usado_em LIKE ? AND cancelado_em IS NULL""", (comp + "%",)):
+                WHERE usado_em ILIKE %s AND cancelado_em IS NULL ORDER BY id""", (comp + "%",)):
+        texto, atr = selo["texto"], selo["atribuicao"]
         lido = SL.ler_texto(texto or "")
         marcas = " ".join(lido.get("marcas") or []).upper()
         if "ISENT" in marcas:
@@ -240,16 +247,16 @@ def apurar_mes(con: sqlite3.Connection, ano: int, mes: int) -> dict:
         g = _ATRIB_DO_SELO.get(atr or "", atr or "?")
         s["por_atr"][g] = s["por_atr"].get(g, 0.0) + lido["total"]
     r["selos"] = s
-    r["ri_altos"] = _ri_de_valor_alto(con, comp)
-    r["caixas_sem_conferencia"] = con.execute(
-        """SELECT count(*) FROM cx_caixas WHERE data LIKE ?
-              AND fechado_em IS NOT NULL AND conferido_por IS NULL""", (comp,)).fetchone()[0]
+    r["ri_altos"] = _ri_de_valor_alto(bd, comp)
+    r["caixas_sem_conferencia"] = int(bd.valor(
+        """SELECT count(*) AS n FROM cx_caixas WHERE data ILIKE %s
+              AND fechado_em IS NOT NULL AND conferido_por IS NULL""", (comp,)))
     return r
 
 
-def relatorio_financeiro_html(con: sqlite3.Connection, ano: int, mes: int,
+def relatorio_financeiro_html(con, ano: int, mes: int,
                               hoje: date) -> str:
-    r = apurar_mes(con, ano, mes)
+    r = apurar_mes(banco(con), ano, mes)
     e = html.escape
     parcial = (ano, mes) == (hoje.year, hoje.month)
 
@@ -327,36 +334,39 @@ Quem deposita nem sempre é a parte: «não achado» quer dizer «conferir», e 
 
 # ------------------------------------------------------------ a semana
 
-def resumo_semanal_html(con: sqlite3.Connection, hoje: date) -> str:
+def resumo_semanal_html(con, hoje: date) -> str:
     """O que a conferência achou, o que se resolveu e quem está devendo — 7 dias."""
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     desde = (hoje - timedelta(days=7)).isoformat()
     e = html.escape
-    novos = con.execute("SELECT count(*) FROM ge_achados WHERE primeiro_visto_em >= ?",
-                        (desde,)).fetchone()[0]
-    resolvidos = con.execute(
-        "SELECT regra, titulo FROM ge_achados WHERE resolvido_em >= ? ORDER BY resolvido_em",
-        (desde,)).fetchall()
-    abertos = con.execute(
-        "SELECT count(*) FROM ge_achados WHERE resolvido_em IS NULL").fetchone()[0]
+    novos = int(bd.valor("SELECT count(*) AS n FROM ge_achados WHERE primeiro_visto_em >= %s",
+                         (desde,)))
+    resolvidos = bd.ler(
+        "SELECT regra, titulo FROM ge_achados WHERE resolvido_em >= %s ORDER BY resolvido_em, id",
+        (desde,))
+    abertos = int(bd.valor(
+        "SELECT count(*) AS n FROM ge_achados WHERE resolvido_em IS NULL"))
     # A SUSPENSA NÃO É VENCIDA (relato #132): enquanto espera, o prazo não corre.
     import tarefa_suspensao as TS
     nao_suspensa, params_suspensao = TS.condicao_nao_suspensa("t", hoje, con=con)
-    pessoas = con.execute(
+    # `tarefa_suspensao` ainda entrega o pedaço de WHERE com `?`.
+    nao_suspensa = nao_suspensa.replace("?", "%s")
+    pessoas = bd.ler(
         f"""SELECT COALESCE(u.full_name, '— sem responsável —') AS quem,
-                  sum(t.status NOT IN ('CONCLUIDA','CANCELADA')) AS abertas,
-                  sum(t.status NOT IN ('CONCLUIDA','CANCELADA') AND t.due_date < ?
-                      AND {nao_suspensa}) AS vencidas,
-                  sum(t.status = 'CONCLUIDA' AND t.completed_at >= ?) AS concluidas
+                  count(*) FILTER (WHERE t.status NOT IN ('CONCLUIDA','CANCELADA')) AS abertas,
+                  count(*) FILTER (WHERE t.status NOT IN ('CONCLUIDA','CANCELADA')
+                      AND t.due_date < %s AND {nao_suspensa}) AS vencidas,
+                  count(*) FILTER (WHERE t.status = 'CONCLUIDA'
+                      AND t.completed_at >= %s) AS concluidas
              FROM tasks t LEFT JOIN users u ON u.id = t.assigned_user_id
-         GROUP BY 1 ORDER BY vencidas DESC, abertas DESC""",
-        (hoje.isoformat(), *params_suspensao, desde)).fetchall()
-    vencidas = con.execute(
+         GROUP BY 1 ORDER BY vencidas DESC, abertas DESC, 1""",
+        (hoje.isoformat(), *params_suspensao, desde))
+    vencidas = bd.ler(
         f"""SELECT t.title, t.due_date, COALESCE(u.full_name,'—') AS quem
              FROM tasks t LEFT JOIN users u ON u.id = t.assigned_user_id
             WHERE t.source_type = 'GESTOR' AND t.status NOT IN ('CONCLUIDA','CANCELADA')
-              AND t.due_date < ? AND {nao_suspensa} ORDER BY t.due_date""",
-        (hoje.isoformat(), *params_suspensao)).fetchall()
+              AND t.due_date < %s AND {nao_suspensa} ORDER BY t.due_date, t.id""",
+        (hoje.isoformat(), *params_suspensao))
     linhas_p = "".join(
         f"<tr><td>{e(p['quem'])}</td><td class=n>{p['abertas'] or 0}</td>"
         f"<td class=n>{p['vencidas'] or 0}</td><td class=n>{p['concluidas'] or 0}</td></tr>"
@@ -382,7 +392,7 @@ Ficam <b>{abertos}</b> em aberto.</p>
 </body></html>"""
 
 
-def escrever(con: sqlite3.Connection, hoje: date, pasta: Path) -> list[Path]:
+def escrever(con, hoje: date, pasta: Path) -> list[Path]:
     """Grava o financeiro do mês corrente e do anterior, e o resumo da semana."""
     pasta.mkdir(parents=True, exist_ok=True)
     feitos = []

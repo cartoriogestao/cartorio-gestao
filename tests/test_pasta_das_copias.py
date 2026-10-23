@@ -23,6 +23,8 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import pasta_das_copias as PC  # noqa: E402
 
@@ -108,7 +110,7 @@ def test_o_que_sobra_ao_lado_do_banco_e_acusado(tmp_path):
 def test_a_conferencia_acusa_e_acha_o_backup_onde_ele_mora(tmp_path, monkeypatch):
     import gestor_conferencia as GC
     monkeypatch.delenv("CARTORIO_GESTAO_COPIAS", raising=False)
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
     fora = tmp_path / "Copias" / "backups"
     fora.mkdir(parents=True)

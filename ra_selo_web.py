@@ -13,11 +13,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-import sqlite3
 
 from flask import abort, flash, redirect, request, url_for
 
 import ato_selado as AS
+from bd_nativo import banco
 import ra_parte as PT
 import ra_selo as RS
 
@@ -121,10 +121,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if quantidade < 1:
             return {"ok": False, "recado": "Informe as folhas do arquivamento (>= 1)."}
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            ato = con.execute("SELECT * FROM ra_atos WHERE id=?", (ato_id,)).fetchone()
-            reg = (con.execute("SELECT * FROM ra_registros WHERE id=?",
-                               (ato["registro_id"],)).fetchone() if ato else None)
+            bd = banco(con)
+            ato = bd.um("SELECT * FROM ra_atos WHERE id = %s", (ato_id,))
+            reg = (bd.um("SELECT * FROM ra_registros WHERE id = %s",
+                         (ato["registro_id"],)) if ato else None)
             partes = PT.para_o_selo(con, reg["id"]) if reg else []
         if not ato or not reg:
             return {"ok": False, "recado": "Ato do Livro 3 não encontrado."}
@@ -146,8 +146,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         except AS.AtoError as erro:
             return {"ok": False, "recado": str(erro)}
         with db.transaction() as con:
-            con.execute("UPDATE ra_atos SET folhas_arquivamento=? WHERE id=?",
-                        (quantidade, ato_id))
+            banco(con).escrever(
+                "UPDATE ra_atos SET folhas_arquivamento = %s WHERE id = %s",
+                (quantidade, ato_id))
         r = AS.selar_o_ato_lavrado(
             db, Path(app.config["DATA_DIR"]), tabela="ra_atos", ato_id=ato_id,
             tipo="ARQUIV", atribuicao="IMOVEL",
@@ -157,14 +158,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             referencia=f"ra_atos:{ato_id}:{AS.CODIGO_ARQUIVAMENTO_RI}:1")
         if not r["selado"]:
             with db.transaction() as con:
-                con.execute("UPDATE ra_atos SET selo=? WHERE id=?",
-                            (ato["selo"], ato_id))
+                banco(con).escrever("UPDATE ra_atos SET selo = %s WHERE id = %s",
+                                    (ato["selo"], ato_id))
             return {"ok": False, "recado": f"Arquivamento pendente: {r['motivo']}"}
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
-            con.execute(
-                """UPDATE ra_atos SET selo=?, selo_arquivamento=?,
-                       folhas_arquivamento=? WHERE id=?""",
+            banco(con).escrever(
+                """UPDATE ra_atos SET selo = %s, selo_arquivamento = %s,
+                       folhas_arquivamento = %s WHERE id = %s""",
                 (ato["selo"], r["numero"], quantidade, ato_id))
             encerramento = RS.encerrar_prenotacao_apos_arquivamento(
                 con, int(reg["id"]))
@@ -193,8 +193,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if SR.exige_humano_para_selar():
             abort(403)
         with db.connect() as con:
-            ato = con.execute("SELECT registro_id FROM ra_atos WHERE id=?",
-                              (ato_id,)).fetchone()
+            ato = banco(con).um("SELECT registro_id FROM ra_atos WHERE id = %s",
+                                (ato_id,))
         if not ato:
             abort(404)
         voltar = redirect(url_for("livro3_registro", registro_id=ato["registro_id"]))
@@ -231,12 +231,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if SR.exige_humano_para_selar():
             abort(403)
         with db.connect() as con:
-            ato = con.execute("SELECT * FROM ra_atos WHERE id=?",
-                              (ato_id,)).fetchone()
+            bd = banco(con)
+            ato = bd.um("SELECT * FROM ra_atos WHERE id = %s", (ato_id,))
             if not ato:
                 abort(404)
-            registro = con.execute("SELECT * FROM ra_registros WHERE id=?",
-                                   (ato["registro_id"],)).fetchone()
+            registro = bd.um("SELECT * FROM ra_registros WHERE id = %s",
+                             (ato["registro_id"],))
         if not registro:
             abort(404)
         voltar = redirect(url_for("livro3_registro",
@@ -263,13 +263,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # preencheu alguma coisa; perder o que ele escreveu é cobrar duas
         # vezes pelo mesmo trabalho.
         with db.transaction() as con:
-            con.execute(
+            banco(con).escrever(
                 """UPDATE ra_atos
-                      SET natureza_titulo=COALESCE(?, natureza_titulo),
-                          codigo_tj=COALESCE(?, codigo_tj),
-                          base_calculo_centavos=COALESCE(?, base_calculo_centavos),
-                          isento=?, motivo_isencao=?
-                    WHERE id=?""",
+                      SET natureza_titulo=COALESCE(%s, natureza_titulo),
+                          codigo_tj=COALESCE(%s, codigo_tj),
+                          base_calculo_centavos=COALESCE(%s, base_calculo_centavos),
+                          isento=%s, motivo_isencao=%s
+                    WHERE id = %s""",
                 (natureza or None, codigo_tj or None, base_calculo,
                  1 if isento else 0, motivo_isencao or None, ato_id))
 

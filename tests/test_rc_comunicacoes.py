@@ -22,6 +22,8 @@ import glob
 import re
 import sqlite3
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -29,6 +31,7 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import banco_pg                                                  # noqa: E402
 import rc_comunicacoes as CM                                     # noqa: E402
 
 SENHA = "Senha#12345"
@@ -343,6 +346,68 @@ def test_dispensar_exige_motivo(casa):
     with con, pytest.raises(CM.ComunicacaoError) as erro:
         CM.dispensar(con, alguma["id"], motivo="não", agora=AGORA)
     assert "responsabiliza a omissão" in str(erro.value)
+
+
+# ------------------------------------------------ duas telas ao mesmo tempo
+
+
+def _psycopg_puro(con, *, autocommit=False):
+    """Uma conexão do psycopg no schema do teste, SEM a ponte — como a
+    transação vai ficar quando a ponte sair."""
+    import psycopg
+    pg = psycopg.connect(banco_pg.dsn(), autocommit=autocommit)
+    pg.execute(f'SET search_path TO "{con.schema}", public')
+    if not autocommit:
+        pg.commit()
+    return pg
+
+
+def test_envio_e_dispensa_ao_mesmo_tempo_nao_desfazem_o_envio(casa):
+    """Ressalva da revisão do L015: `registrar_envio` e `dispensar` conferiam
+    a situação e gravavam por cima sem prender a linha. Com a ponte, a escrita
+    pega a trava única do banco; sem ela, só o FOR UPDATE segura. O envio
+    grava e ainda não confirmou; a dispensa chega no meio — e tem de achar a
+    comunicação já enviada, e não regravá-la como dispensada."""
+    con = _con(casa)
+    with con:
+        CM.declarar_mes(con, "2026-07", agora=AGORA)
+        alguma = CM.pendentes(con)[0]
+    um, dois = _psycopg_puro(con), _psycopg_puro(con)
+    vigia = _psycopg_puro(con, autocommit=True)
+    pid = dois.execute("SELECT pg_backend_pid()").fetchone()[0]
+    CM.registrar_envio(um, alguma["id"], canal="OFICIO", protocolo="OF-1",
+                       quando="2026-08-05", agora=AGORA, serventia=SERVENTIA)
+    saida: dict = {}
+
+    def dispensa():
+        try:
+            CM.dispensar(dois, alguma["id"], agora=AGORA,
+                         motivo="o mês não teve óbito para este órgão")
+            dois.commit()
+        except Exception as erro:  # o teste confere qual
+            saida["erro"] = erro
+            dois.rollback()
+
+    fio = threading.Thread(target=dispensa)
+    fio.start()
+    for _ in range(200):          # a dispensa tem de estar ESPERANDO a linha
+        if vigia.execute(
+                "SELECT count(*) FROM pg_locks WHERE pid=%s AND NOT granted",
+                (pid,)).fetchone()[0]:
+            break
+        time.sleep(0.05)
+    um.commit()
+    fio.join(30)
+    for c in (um, dois, vigia):
+        c.close()
+    assert isinstance(saida.get("erro"), CM.ComunicacaoError), saida
+    assert "já está como" in str(saida["erro"])
+    linha = con.execute(
+        "SELECT situacao, motivo, protocolo FROM rc_comunicacoes WHERE id=?",
+        (alguma["id"],)).fetchone()
+    assert linha["situacao"] == CM.ENVIADA
+    assert linha["motivo"] is None
+    assert linha["protocolo"] == "OF-1"
 
 
 # ------------------------------------------------ o atraso

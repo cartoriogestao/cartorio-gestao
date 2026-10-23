@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from flask import abort, flash, redirect, request, url_for
 
+from bd_nativo import banco
 import ra_parte as PT
 
 
@@ -36,10 +37,42 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(str(erro), "danger")
         else:
             audit("RA_PARTE", "ra_partes", parte_id,
-                  {"registro_id": registro_id, "papel": _campo("papel")})
+                  {"registro_id": registro_id, "papel": _campo("papel"),
+                   "nome": _campo("nome")})
             flash(f"{_campo('nome')} entrou como parte deste registro.",
                   "success")
         return redirect(url_for("livro3_registro", registro_id=registro_id))
+
+    @app.route("/livro3/parte/<int:parte_id>/editar", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def livro3_parte_editar(parte_id: int):
+        """Corrige nome, documento ou papel de uma parte — 19/10/2026.
+
+        **Não mexe no teor nem no selo** do ato: a parte é da ficha. O que
+        havia antes vai inteiro para a auditoria.
+        """
+        try:
+            with db.transaction() as con:
+                r = PT.editar(con, parte_id, nome=_campo("nome"),
+                              papel=_campo("papel"),
+                              documento=_campo("documento"))
+        except PT.ParteError as erro:
+            with db.connect() as con:
+                linha = banco(con).um(
+                    "SELECT registro_id FROM ra_partes WHERE id=%s",
+                    (int(parte_id),))
+            if not linha:
+                abort(404)
+            flash(str(erro), "danger")
+            return redirect(url_for("livro3_registro",
+                                    registro_id=int(linha["registro_id"])))
+        audit("RA_PARTE_EDITADA", "ra_partes", parte_id,
+              {"registro_id": r["registro_id"], "antes": r["antes"],
+               "depois": r["depois"]})
+        flash(f"Parte corrigida: {r['depois']['nome']}.", "success")
+        return redirect(url_for("livro3_registro",
+                                registro_id=r["registro_id"]))
 
     @app.route("/livro3/parte/<int:parte_id>/remover", methods=["POST"])
     @login_required

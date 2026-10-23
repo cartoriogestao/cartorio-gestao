@@ -298,3 +298,77 @@ def test_a_tela_diz_que_a_ajuda_nao_decide(admin):
     """É a regra do usucapião, e ela precisa estar onde a pessoa lê."""
     html = admin["c"].get("/ajuda").get_data(as_text=True)
     assert "auxilia; não decide" in html
+
+
+# ============================================ LX13 — o que o LS03 só relatou
+#
+# Ficam aqui, e não em `test_seguranca_ls03.py`, porque a integração só roda os
+# arquivos da lista do lote. Logins e perguntas inventados.
+
+
+def _entrar(app, login: str) -> object:
+    c = app.test_client()
+    c.post("/login",
+           data={"username": login, "password": SENHA,
+                 "csrf_token": _token(c.get("/login").get_data(as_text=True))},
+           follow_redirects=True)
+    return c
+
+
+def test_o_escrevente_nao_ve_nem_abre_a_consulta_do_colega(cg_casa):
+    """LS03 M3: o número da consulta é sequencial, e quem tinha a ajuda
+    liberada abria a de qualquer colega trocando o número no endereço — e via
+    todas na lista. Agora a lista e a consulta são do dono e do ADMIN."""
+    import ajuda as AJ
+    s = _sessao(cg_casa, "USER")
+    cg_casa["db"].create_user("chefe", "CHEFE EXEMPLO", SENHA, "ADMIN")
+    con = _con(s)
+    AJ.liberar_para(con, ["USER"], agora="2026-10-19T10:00:00",
+                    usuario="CHEFE EXEMPLO", motivo="o balcão também pergunta")
+    ids = {}
+    for login, pergunta in (("tabeliao", "a minha dúvida de balcão"),
+                            ("colega", "a dúvida particular do colega")):
+        ids[login] = con.execute(
+            """INSERT INTO aj_consultas (assunto, pergunta, perguntada_em,
+                   perguntada_por, perguntada_login)
+               VALUES ('USO', ?, '2026-10-19T10:00:00', ?, ?) RETURNING id""",
+            (pergunta, login.upper(), login)).fetchone()[0]
+    con.commit()
+    con.close()
+
+    lista = s["c"].get("/ajuda").get_data(as_text=True)
+    assert "a minha dúvida de balcão" in lista
+    assert "a dúvida particular do colega" not in lista
+    assert s["c"].get(f"/ajuda/{ids['tabeliao']}").status_code == 200
+    alheia = s["c"].get(f"/ajuda/{ids['colega']}")
+    assert alheia.status_code == 302
+    assert "colega" not in s["c"].get(alheia.headers["Location"]).get_data(as_text=True)
+
+    chefe = _entrar(cg_casa["app"], "chefe")
+    assert "a dúvida particular do colega" in chefe.get("/ajuda").get_data(as_text=True)
+    assert chefe.get(f"/ajuda/{ids['colega']}").status_code == 200
+
+
+def test_a_leitura_do_relato_com_o_banco_e_rota_so_do_admin(cg_casa):
+    """LS03 A3: a leitura comum do relato roda com o catálogo do balcão; a que
+    lê o banco e o código é um botão à parte, e a ROTA é do ADMIN — esconder o
+    botão não tranca a porta."""
+    s = _sessao(cg_casa, "MANAGER")
+    html = s["c"].get("/ajuda/problemas").get_data(as_text=True)
+    r = s["c"].post("/ajuda/problemas/1/ler-com-banco",
+                    data={"csrf_token": _token(html)})
+    assert r.status_code in (302, 403)
+    assert "Ler com o banco" not in html
+    fonte = (RAIZ / "templates" / "ajuda_problemas.html").read_text(encoding="utf-8")
+    assert re.search(r"\{% if le_com_banco and liberado and tem_chave %\}\s*"
+                     r"<form[^>]*ajuda_problema_ler_com_banco", fonte)
+
+
+def test_a_janela_nao_promete_que_o_relato_nunca_sai_da_casa(admin):
+    """LS03 B4: a janela dizia «nada é enviado para fora», e o relato vai ao
+    provedor de IA quando alguém pede a leitura. Tela que mente sobre o que
+    sai da serventia é pior que tela calada."""
+    html = admin["c"].get("/caixa").get_data(as_text=True)
+    assert "Avisar um problema desta tela" in html
+    assert "nada é enviado para fora" not in html
+    assert "vai ao provedor de IA" in html

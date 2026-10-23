@@ -16,6 +16,19 @@
     <input type="hidden" name="especie" value="{{ especie }}">
     <label class="span2">{% if especie == 'NASCIMENTO' %}A DNV, os documentos dos pais e o comprovante de residência{% elif especie == 'OBITO' %}A DO, os documentos do falecido e do declarante{% else %}O requerimento e os documentos dos nubentes{% endif %} — PDF digitalizado ou fotos
       <input type="file" name="arquivos" multiple required accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,image/*,application/pdf"></label>
+    {% if especie == 'NASCIMENTO' %}
+    {# A MARCA DO REGISTRO TARDIO — 21/10/2026, o oficial: «não tem opção de
+       colocar que é registro tardio para receber a documentação». #}
+    <label class="span2" style="display:flex; gap:8px; align-items:flex-start">
+      <input type="checkbox" name="registro_tardio" value="1" style="width:auto; margin-top:4px">
+      <span><strong>É registro tardio</strong> (fora do prazo legal — art. 249 do Código de Normas
+        do TJMA): a leitura não exige a DNV nem o requerimento; os documentos do pai, da mãe, de
+        quem requer e das testemunhas preenchem a tela, e o requerimento se imprime preenchido para
+        os comparecentes assinarem.<br>
+        <small>Dê a cada arquivo o nome do papel — «PAI», «MÃE», «DECLARANTE», «TESTEMUNHA 1»,
+        «TESTEMUNHA 2» (pode juntar: «PAI e DECLARANTE») —: é pelo nome do arquivo que a leitura
+        sabe quem é quem. Havendo DNV (ou cópia dela), junte-a também.</small></span></label>
+    {% endif %}
     <button class="button">Processar os anexos e preencher os campos</button>
     <small class="span2 muted">A IA lê cada página e os campos voltam preenchidos nesta mesma tela, com o que não
       fecha entre um documento e outro apontado. Nada é lavrado: quem confere com o original e lavra é você.
@@ -33,5 +46,17 @@
   {% else %}<br><span class="small">A leitura não apontou divergência — o que não dispensa a conferência.</span>{% endif %}
   <span class="small"><a href="{{ url_for('rcpn_leitura_ficha', leitura_id=leitura.id) }}" target="_blank">ver o que cada documento disse</a>.
     Ao lavrar, os anexos desta leitura passam a acompanhar o ato.</span>
+  {% if (leitura.registro or {}).get('registro_tardio') in ('1', 1) %}
+  {# O REQUERIMENTO SAI PREENCHIDO DEPOIS DO PROCESSAMENTO — 21/10/2026, o
+     oficial: «de preferência sai preenchido depois do processamento dos
+     demais documentos». O botão manda o formulário desta tela (já com o
+     que a leitura preencheu e o que se digitar) para a página que imprime. #}
+  <p style="margin:8px 0 0"><button class="button primary" type="submit" form="form-do-ato"
+      formnovalidate formtarget="_blank"
+      formaction="{{ url_for('rcpn_requerimento_tardio_imprimir') }}">
+      Imprimir o requerimento do registro tardio, preenchido</button>
+    <span class="small">— com o que a leitura trouxe e o que você completar nesta tela; o que
+    faltar sai em linha para preencher à mão.</span></p>
+  {% endif %}
 </div>
 {% endmacro %}

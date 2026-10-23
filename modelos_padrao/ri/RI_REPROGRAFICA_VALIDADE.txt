@@ -1,0 +1,1 @@
+<p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 553 do Código de Normas da CGJ/TJMA. Certidão emitida em {{ hoje_extenso }}. Dou fé.</p>

@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}Livros obrigatórios{% endblock %}
+{% block heading %}<h1>Livros obrigatórios</h1>{% endblock %}
+{% block content %}
+{# OS LIVROS QUE O CÓDIGO DE NORMAS DO MA MANDA TER (LG08), e onde cada um está
+   no sistema. A régua é `livros_obrigatorios.LIVROS`; o teste confere cada
+   série e cada tela citada contra o código. #}
+<section class="panel">
+  <p>O que o Código de Normas manda a serventia ter, artigo por artigo, e onde cada livro está aqui.
+  O que falta está dito — livro que não existe não aparece como se existisse.</p>
+  <p>
+    {% for chave, nome in situacoes.items() %}<span class="badge">{{ nome }}: {{ contagem[chave] }}</span> {% endfor %}
+  </p>
+  <p>Os três livros administrativos de toda serventia (art. 188):
+    <a href="{{ url_for('livro_visitas') }}">Visitas e Correições</a> ·
+    <a href="{{ url_for('livro_diario') }}">Diário Auxiliar da Receita e da Despesa</a> ·
+    <a href="{{ url_for('livro_deposito_previo') }}">Controle de Depósito Prévio</a></p>
+  <p class="muted">Fonte: {{ fonte }}. Alteração posterior ao malote pode faltar: por isso cada linha cita o artigo.</p>
+</section>
+
+{% for g in grupos %}
+<section class="panel">
+  <h2>{{ g.titulo }}</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Livro</th><th>Artigo</th><th>Situação</th><th>Onde está</th><th>Observação</th></tr>
+    {% for x in g.livros %}
+    <tr>
+      <td>{{ x.nome }}</td>
+      <td>{{ x.artigo }}</td>
+      <td><span class="badge{% if x.situacao == 'FALTA' %} danger{% elif x.situacao in ('PARCIAL', 'A_CONFERIR') %} warning{% endif %}">{{ situacoes[x.situacao] }}</span></td>
+      <td>{% for r in x.rotas %}{% if r.startswith('protesto_') %}<a href="{{ url_for(r, qual='pagamentos') }}">tela</a>{% else %}<a href="{{ url_for(r) }}">tela</a>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+          {% if x.series %}<span class="small muted">séries {{ x.series | join(', ') }}</span>{% endif %}
+          {% if not x.rotas and not x.series %}—{% endif %}</td>
+      <td class="small">{{ x.nota }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endfor %}
+{% endblock %}

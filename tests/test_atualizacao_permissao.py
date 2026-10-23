@@ -404,20 +404,35 @@ class AMontagemNaoLevaSobraDeQuemProgramaTests(unittest.TestCase):
                 (instalada / sobra).mkdir()
                 (instalada / sobra / "sobra.txt").write_text("x", encoding="utf-8")
 
+            # A INSPEÇÃO RECONFERE O PACOTE (22/10/2026, C1): a preparação
+            # montada à mão precisa do `.cgu` de que saiu, com o mesmo
+            # manifesto — senão é exatamente a preparação forjada que ela
+            # passou a recusar. Pacote sem assinatura, no modo de transição.
+            import hashlib
+            import zipfile
+            from unittest import mock
+            import assinatura_da_atualizacao as ASS
+            manifesto = {"version": "9.9.9"}
+            pacote = base / "pacote.cgu"
+            with zipfile.ZipFile(pacote, "w") as zf:
+                zf.writestr("update_manifest.json", json.dumps(manifesto))
             preparacao = base / "preparacao"
             preparacao.mkdir()
             (preparacao / "payload").mkdir()
             (preparacao / "_update_meta.json").write_text(
                 json.dumps({
                     "state": "STAGED",
-                    "manifest": {"version": "9.9.9"},
+                    "manifest": manifesto,
+                    "package_path": str(pacote),
+                    "package_sha256": hashlib.sha256(pacote.read_bytes()).hexdigest(),
                     "checked_files": [],
                     "delete": [],
                 }),
                 encoding="utf-8",
             )
 
-            inspecao = inspect_staged(preparacao, instalada)
+            with mock.patch.object(ASS, "CHAVES_CONFIAVEIS", {}):
+                inspecao = inspect_staged(preparacao, instalada)
 
             candidato = preparacao / "candidate"
             self.assertTrue((candidato / "app.py").is_file())

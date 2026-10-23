@@ -20,13 +20,18 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
+import banco_pg
 import protesto as PT
 import protesto_arquivo as PA
 import protesto_retorno as PR
@@ -42,7 +47,7 @@ SV = {"unit_name": "SERVENTIA EXTRAJUDICIAL DE CIDADE EXEMPLO",
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     init_nucleo_schema(con)
     init_pt_schema(con)
@@ -415,3 +420,114 @@ def test_o_andamento_declara_a_ocorrencia_do_contrato():
     import protesto_cra as CRA
     assert PR.OCORRENCIA_DO_ANDAMENTO == "0"
     assert CRA.OCORRENCIAS["0"]["rotulo"] == "Apontamento"
+
+
+# --------------------------------------- dois balcões gerando ao mesmo tempo
+#
+# Ressalva da revisão do L038. `montar` lê os pendentes e `nome_do_arquivo`
+# conta em `pt_retornos` a sequência do nome — e nada travava. No SQLite a
+# escrita era uma por vez; no PostgreSQL, sem a ponte, só espera quem trava com
+# a MESMA chave, e o segundo `gerar` lia os mesmos atos e o mesmo `…1`.
+
+CHAVE_DO_NOME = "pt_retornos.nome_arquivo"
+
+
+def _sem_a_ponte(con, *, autocommit=False):
+    """Uma conexão do psycopg no schema do teste, SEM a ponte — como a
+    transação vai ficar quando a ponte sair."""
+    import psycopg
+    pg = psycopg.connect(banco_pg.dsn(), autocommit=autocommit)
+    pg.execute(f'SET search_path TO "{con.schema}", public')
+    if not autocommit:
+        pg.commit()
+    return pg
+
+
+def _assunto_livre(chave: str) -> bool:
+    """Outra conexão consegue a trava do assunto agora? Não espera por ela."""
+    import psycopg
+    with psycopg.connect(banco_pg.dsn(), autocommit=True) as outra:
+        return bool(outra.execute(
+            "SELECT pg_try_advisory_xact_lock(hashtext(%s))",
+            (chave,)).fetchone()[0])
+
+
+def test_dois_balcoes_gerando_ao_mesmo_tempo_nao_mandam_o_protesto_duas_vezes():
+    """O primeiro gerou e ainda não confirmou; o segundo chega no meio. Sem a
+    trava, ele saía com o MESMO protesto e o MESMO nome (`R0012508.261`), e a
+    Central registraria dois protestos."""
+    con = banco()
+    # A casa tem `settings` (database.py); sem a ponte não há SAVEPOINT, e a
+    # leitura do IBGE numa tabela que falta derrubaria a transação inteira.
+    con.execute("CREATE TABLE IF NOT EXISTS settings "
+                "(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    ate_o_protesto(con, titulo(con))
+    con.commit()
+    um, dois = _sem_a_ponte(con), _sem_a_ponte(con)
+    vigia = _sem_a_ponte(con, autocommit=True)
+    pid = dois.execute("SELECT pg_backend_pid()").fetchone()[0]
+    dois.rollback()
+    PR.gerar(um, apresentante_codigo="001", dia=HOJE, agora=AGORA, marca="A")
+    saida: dict = {}
+
+    def segundo():
+        try:
+            saida["r"] = PR.gerar(dois, apresentante_codigo="001", dia=HOJE,
+                                  agora=AGORA, marca="A")
+            dois.commit()
+        except Exception as erro:  # o teste confere qual
+            saida["erro"] = erro
+            dois.rollback()
+
+    fio = threading.Thread(target=segundo)
+    fio.start()
+    for _ in range(200):       # o segundo tem de estar ESPERANDO (ou já ter ido)
+        if not fio.is_alive() or vigia.execute(
+                "SELECT count(*) FROM pg_locks WHERE pid=%s AND NOT granted",
+                (pid,)).fetchone()[0]:
+            break
+        time.sleep(0.05)
+    um.commit()
+    fio.join(30)
+    for c in (um, dois, vigia):
+        c.close()
+    assert not fio.is_alive(), "o segundo balcão ficou preso"
+    assert isinstance(saida.get("erro"), PR.RetornoError), saida
+    assert "já entrou num arquivo anterior" in str(saida["erro"])
+    assert sorted(x["nome_arquivo"] for x in PR.listar(con)) \
+        == ["M0012508.261", "R0012508.261"]
+
+
+def test_gerar_e_a_virada_leem_ja_com_a_trava_do_nome(monkeypatch):
+    """A trava tem de estar pega ANTES de ler: quem trava depois de ler a
+    lista já leu o que o outro balcão está gravando. E a virada
+    (`marcar_o_que_o_eoficio_ja_informou`) marca os mesmos atos que `gerar` e
+    confere a linha dela antes de inserir — a chave é a mesma."""
+    import bd_nativo
+    from datetime import date
+    livres: list[bool] = []
+
+    class Espiao(bd_nativo.Banco):
+        def _rodar(self, sql, parametros=None):
+            if "FROM pt_atos" in sql or "FROM pt_retornos" in sql:
+                livres.append(_assunto_livre(CHAVE_DO_NOME))
+            return super()._rodar(sql, parametros)
+
+    monkeypatch.setattr(PR, "banco", Espiao)
+    con = banco()
+    ate_o_protesto(con, titulo(con, numero="1/1"))
+    PR.gerar(con, apresentante_codigo="001", dia=HOJE, agora=AGORA, marca="A")
+    assert livres and not any(livres), f"gerar leu sem a trava: {livres}"
+    con.commit()
+
+    livres.clear()
+    ate_o_protesto(con, titulo(con, numero="2/1"))
+    con.execute("UPDATE pt_atos SET origem='EOFICIO' WHERE retorno_id IS NULL")
+    prot = con.execute("SELECT protocolo FROM pt_titulos "
+                       "WHERE numero_titulo='2/1'").fetchone()[0]
+    fluxo = {"retorno": {prot: [{"ocorrencia": "C",
+                                 "enviado": date(2026, 8, 1)}]},
+             "respondido": set()}
+    contagem = PR.marcar_o_que_o_eoficio_ja_informou(con, fluxo, agora=AGORA)
+    assert contagem["retorno"] == 1
+    assert livres and not any(livres), f"a virada leu sem a trava: {livres}"

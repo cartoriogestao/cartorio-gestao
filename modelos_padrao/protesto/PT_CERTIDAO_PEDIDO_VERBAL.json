@@ -1,0 +1,8 @@
+{
+  "chave": "PT_CERTIDAO_PEDIDO_VERBAL",
+  "atribuicao": "Protesto",
+  "nome": "Certidão de protesto — pedido verbal",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: entra no {pedido} das três certidões quando ninguém informa o requerente — é o que as 44 negativas do acervo dizem.",
+  "campos": []
+}

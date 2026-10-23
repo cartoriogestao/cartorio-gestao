@@ -65,6 +65,22 @@ def reconhecimento_pendente() -> dict:
     }
 
 
+#: O que o robô NÃO alcança, pelo nome da rota (revisão de segurança da 3.7.0,
+#: 22/10/2026, achado A6): usuários, atualizações, backup, configurações, caixa,
+#: selador, modelos, agente, os próprios robôs, livros do núcleo e implantação.
+#: O robô gera minuta e lavra o que o seu papel deixa; o que é de gente é de gente.
+ROTAS_VEDADAS_AO_ROBO = ("users", "usuarios", "updates", "atualizacoes", "settings",
+                         "configuracoes", "backup", "caixa_", "caixa", "selador",
+                         "modelos", "agente", "robos", "dois_fatores", "permiss",
+                         "nucleo_", "implantacao")
+
+
+def rota_vedada_ao_robo(endpoint: Any) -> bool:
+    """A rota é das que o robô não entra? Só calcula."""
+    nome = str(endpoint or "").strip()
+    return bool(nome) and nome.startswith(ROTAS_VEDADAS_AO_ROBO)
+
+
 def exige_humano_para_selar(user: Any = None) -> bool:
     """True = a rota do botao Selar deve responder 403."""
     return usuario_e_robo(user)

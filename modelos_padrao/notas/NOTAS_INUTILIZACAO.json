@@ -1,0 +1,15 @@
+{
+  "chave": "NOTAS_INUTILIZACAO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Inutilização de face do livro",
+  "formato": "CHAVES",
+  "explica": "O dizer que sai na face em branco, já inutilizada. A declaração ({declaracao}) é peça: uma face ou várias, com a razão — a regra do singular e do plural é do código.",
+  "campos": [
+    "declaracao",
+    "cidade",
+    "uf",
+    "data_extenso",
+    "titular",
+    "titulo"
+  ]
+}

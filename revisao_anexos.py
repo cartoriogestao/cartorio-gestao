@@ -10,10 +10,13 @@ O CAMINHO DE CADA ARQUIVO, E POR QUE NESTA ORDEM
        (`attachments.sha256`), em `rv_anexos_lidos`. A segunda revisão do mesmo
        ato — a de depois de corrigir uma vírgula — não paga o anexo de novo, e
        o mesmo RG anexado a dois atos também não.
-    2. A TRIAGEM: o modelo barato vê SÓ A PRIMEIRA PÁGINA e diz o que o
-       documento é e se ele fundamenta o ato. Comprovante de pagamento, capa de
-       protocolo e página em branco não sobem inteiros. É a parte barata que
-       decide onde se gasta a cara.
+    2. A TRIAGEM: o modelo barato vê AS PRIMEIRAS PÁGINAS (até três) e diz o
+       que o documento é e se ele fundamenta o ato. Comprovante de pagamento,
+       capa de protocolo e página em branco não sobem inteiros. É a parte
+       barata que decide onde se gasta a cara — mas SÓ DESCARTA O QUE VIU
+       INTEIRO: documento mais comprido que o que a triagem viu é lido (M7 do
+       LS03; LX13, 19/10/2026). Ela via só a primeira página, e uma capa de
+       «comprovante» na frente do mandado tirava o mandado do dossiê.
     3. A TRANSCRIÇÃO, só do que importa: a página que já tem texto digital se lê
        AQUI, de graça (`pypdfium2`); só a digitalizada vai como imagem ao
        modelo barato. Medido na produção em 07/10/2026: das 512 páginas anexadas
@@ -43,6 +46,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
+import tetos_de_entrada as TETO
+from bd_nativo import banco
+
 PROVEDOR = "claude"
 #: O MODELO BARATO — o Haiku. `settings.revisao_modelo_anexos` troca sem versão.
 MODELO_BARATO = "claude-haiku-4-5-20251001"
@@ -63,6 +69,13 @@ LADO_MAIOR_PX = 1400
 PEDIDOS_SIMULTANEOS = 4
 #: O que vai ao dossiê por documento — o resto é cortado com aviso.
 LETRAS_POR_DOCUMENTO = 30_000
+#: Quantas páginas a triagem vê (M7 do LS03). Três pegam a capa, o
+#: comprovante grampeado na frente e o começo do documento de verdade; o que
+#: passar disto não se descarta pela triagem (ver `ler`), e o teto de 40
+#: páginas por ato continua segurando a conta.
+PAGINAS_DA_TRIAGEM = 3
+#: O texto de cada página com texto digital que vai à triagem.
+LETRAS_POR_PAGINA_DA_TRIAGEM = 1500
 
 EXTENSOES_DE_IMAGEM = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                        ".png": "image/png", ".webp": "image/webp",
@@ -81,6 +94,7 @@ CREATE TABLE IF NOT EXISTS rv_anexos_lidos (
     motivo TEXT,
     transcricao TEXT,
     paginas_lidas INTEGER,
+    paginas_triadas INTEGER,           -- quantas a triagem viu (LX13); NULL = 1
     situacao TEXT NOT NULL,            -- LIDO | TRIADO | ERRO
     modelo TEXT,
     tokens_entrada INTEGER NOT NULL DEFAULT 0,
@@ -92,8 +106,10 @@ CREATE TABLE IF NOT EXISTS rv_anexos_lidos (
 
 INSTRUCAO_TRIAGEM = """Você faz a triagem dos documentos anexados a um ato de \
 cartório (Registro de Imóveis ou Tabelionato de Notas), ANTES de alguém transcrevê-los. \
-Você vê só a primeira página. Diga o que o documento é e se ele FUNDAMENTA o ato — \
-isto é, se o revisor precisa lê-lo para conferir o texto do ato.
+Você vê as primeiras páginas do arquivo (até três). Diga o que o documento é e se ele \
+FUNDAMENTA o ato — isto é, se o revisor precisa lê-lo para conferir o texto do ato. Se \
+QUALQUER página vista for documento que fundamenta (mesmo depois de uma capa ou de um \
+comprovante), o arquivo é importante.
 
 IMPORTANTE (sim): título ou escritura, contrato, formal de partilha, carta de \
 arrematação, mandado ou decisão judicial, certidão de matrícula ou de ônus, documento de \
@@ -121,7 +137,16 @@ class AnexoIlegivel(ValueError):
 
 
 def init_schema(con: sqlite3.Connection) -> None:
-    con.executescript(SCHEMA)
+    bd = banco(con)
+    bd.escrever(SCHEMA)
+    # A COLUNA NOVA NO BANCO QUE JÁ EXISTE (LX13): a linha antiga fica NULL, e
+    # NULL quer dizer «a triagem viu uma página», que era a regra de então.
+    if not bd.tem_coluna("rv_anexos_lidos", "paginas_triadas"):
+        bd.escrever("ALTER TABLE rv_anexos_lidos ADD COLUMN paginas_triadas INTEGER")
+    # CONFIRMA AQUI, como o script de esquema do SQLite confirmava sozinho: a
+    # escrita pega a trava do banco, e `ler` vai à rede logo depois — sem isto
+    # o balcão esperava a triagem da IA para gravar (L042R).
+    con.commit()
 
 
 def _agora() -> str:
@@ -129,16 +154,15 @@ def _agora() -> str:
 
 
 def _tem_tabela(con, nome: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                       (nome,)).fetchone() is not None
+    return banco(con).tem_tabela(nome)
 
 
 def modelo_barato(con: sqlite3.Connection) -> str:
     if _tem_tabela(con, "settings"):
-        linha = con.execute("SELECT value FROM settings WHERE key = ?",
-                            (CHAVE_MODELO,)).fetchone()
-        if linha and str(linha[0]).strip():
-            return str(linha[0]).strip()
+        linha = banco(con).um("SELECT value FROM settings WHERE key = %s",
+                              (CHAVE_MODELO,))
+        if linha and str(linha["value"]).strip():
+            return str(linha["value"]).strip()
     return MODELO_BARATO
 
 
@@ -152,12 +176,13 @@ def anexos(con: sqlite3.Connection, origem: dict | None) -> list[dict]:
     """
     if not origem or not origem.get("id") or not _tem_tabela(con, "attachments"):
         return []
-    linhas = con.execute(
+    linhas = banco(con).ler(
         """SELECT id, original_name, stored_path, sha256, size_bytes FROM attachments
-            WHERE entity_type = ? AND entity_id = ? ORDER BY id""",
-        (origem["entidade"], int(origem["id"]))).fetchall()
-    return [{"id": r[0], "nome": r[1], "caminho": r[2], "sha256": r[3] or "",
-             "tamanho": r[4]} for r in linhas]
+            WHERE entity_type = %s AND entity_id = %s ORDER BY id""",
+        (origem["entidade"], int(origem["id"])))
+    return [{"id": r["id"], "nome": r["original_name"],
+             "caminho": r["stored_path"], "sha256": r["sha256"] or "",
+             "tamanho": r["size_bytes"]} for r in linhas]
 
 
 def assinatura(lista: list[dict]) -> str:
@@ -208,6 +233,15 @@ def paginas_do_arquivo(caminho: Path, nome: str) -> list[dict]:
         doc = pdfium.PdfDocument(str(caminho))
     except Exception as erro:                      # noqa: BLE001 — vira motivo na tela
         raise AnexoIlegivel(f"o PDF não abre ({type(erro).__name__})") from erro
+    # O NÚMERO DE PÁGINAS TEM TETO (LX12, LS02 M3, 19/10/2026): cada página
+    # tem o texto lido aqui e pode virar imagem depois; um PDF de cem mil
+    # páginas prendia o servidor. A imagem já sai com o lado maior em
+    # `LADO_MAIOR_PX`, e por isso a área não precisa de teto próprio.
+    try:
+        TETO.conferir_paginas(len(doc), "o PDF")
+    except TETO.TetoExcedido as erro:
+        doc.close()
+        raise AnexoIlegivel(str(erro)) from erro
     paginas = []
     for i in range(len(doc)):
         pagina = doc[i]
@@ -234,7 +268,12 @@ def texto_de_editor(caminho: Path, ext: str) -> str:
     fim_de_paragrafo = "</w:p>" if ext == ".docx" else "</text:p>"
     try:
         with zipfile.ZipFile(caminho) as z:
-            xml = z.read(parte).decode("utf-8", "replace")
+            # COM TETO (LX12, LS02 M2): o anexo vem do balcão, e o XML de um
+            # `.docx` de 1 KB pode se abrir em gigabytes (zip-bomba).
+            TETO.conferir_pacote(z)
+            xml = TETO.ler_membro(z, parte).decode("utf-8", "replace")
+    except TETO.TetoExcedido as erro:
+        raise AnexoIlegivel(str(erro)) from erro
     except (zipfile.BadZipFile, KeyError) as erro:
         raise AnexoIlegivel(f"o arquivo {ext} não abre ({type(erro).__name__})") from erro
     xml = xml.replace(fim_de_paragrafo, "\n")
@@ -269,20 +308,25 @@ def _pedir(conversar, pasta: Path, modelo: str, instrucao: str, texto: str,
 
 def triar(conversar, pasta: Path, modelo: str, nome: str, paginas: list[dict],
           contexto: str) -> dict:
-    """O que o documento é e se ele importa, pela primeira página."""
-    primeira = paginas[0]
-    pergunta = (f"Ato: {contexto}\nArquivo: {nome} ({len(paginas)} página(s))\n")
+    """O que o documento é e se ele importa, pelas primeiras páginas.
+
+    Devolve também `vistas`: quantas páginas a triagem viu. É por ela que
+    `ler` sabe se o «não importante» vale para o arquivo inteiro."""
+    vistas = paginas[:PAGINAS_DA_TRIAGEM]
+    pergunta = (f"Ato: {contexto}\nArquivo: {nome} ({len(paginas)} página(s); "
+                f"você vê as {len(vistas)} primeiras)\n")
     imagens: list[str] = []
-    if _tem_texto(primeira):
-        pergunta += "Texto da primeira página:\n" + primeira["texto"][:4000]
-    else:
-        imagens = [primeira["imagem"]()]
-        pergunta += "A primeira página vai como imagem."
+    for n, p in enumerate(vistas, start=1):
+        if _tem_texto(p):
+            pergunta += f"\nTexto da página {n}:\n" + p["texto"][:LETRAS_POR_PAGINA_DA_TRIAGEM]
+        else:
+            imagens.append(p["imagem"]())
+            pergunta += f"\nA página {n} vai como imagem (a {len(imagens)}ª imagem)."
     r = _pedir(conversar, pasta, modelo, INSTRUCAO_TRIAGEM, pergunta, imagens)
     d = _json(r.get("texto") or "")
     return {"tipo": str(d.get("tipo") or "documento")[:80],
             "importante": d.get("importante") is not False,      # na dúvida, importa
-            "motivo": str(d.get("motivo") or "")[:300],
+            "motivo": str(d.get("motivo") or "")[:300], "vistas": len(vistas),
             "entrada": int(r.get("entrada") or 0), "saida": int(r.get("saida") or 0)}
 
 
@@ -335,17 +379,17 @@ def transcrever(conversar, pasta: Path, modelo: str, paginas: list[dict],
 # ------------------------------------------------------------ o conjunto
 
 def _guardado(con, sha: str) -> dict | None:
-    r = con.execute("SELECT * FROM rv_anexos_lidos WHERE sha256 = ?", (sha,)).fetchone()
-    if r is None:
-        return None
-    cols = [d[0] for d in con.execute("SELECT * FROM rv_anexos_lidos LIMIT 0").description]
-    return dict(zip(cols, r))
+    return banco(con).um("SELECT * FROM rv_anexos_lidos WHERE sha256 = %s", (sha,))
 
 
 def _guardar(con, linha: dict) -> None:
     cols = list(linha)
-    con.execute(f"INSERT OR REPLACE INTO rv_anexos_lidos ({', '.join(cols)}) "
-                f"VALUES ({', '.join('?' for _ in cols)})", [linha[c] for c in cols])
+    # `sha256` é a chave e a linha não tem filho: atualizar no lugar equivale ao REPLACE.
+    atualiza = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols if c != "sha256")
+    banco(con).escrever(f"INSERT INTO rv_anexos_lidos ({', '.join(cols)}) "
+                        f"VALUES ({', '.join('%s' for _ in cols)}) "
+                        f"ON CONFLICT (sha256) DO UPDATE SET {atualiza}",
+                        [linha[c] for c in cols])
     con.commit()
 
 
@@ -357,8 +401,20 @@ def ler(con: sqlite3.Connection, pasta: Path, origem: dict | None, *,
     `aviso` diz o que não foi lido e por quê. Nunca levanta por causa de um
     arquivo: o arquivo que falha vira linha com o motivo.
     """
+    import functools
+
     import agente_provedores as AP
-    conversar = conversar or AP.conversar
+    # O REGISTRO DO USO DE IA (LF01) vai preso ao transporte aqui, na entrada:
+    # triagem e transcrição chamam `conversar` lá dentro, em quatro linhas de
+    # execução, e todas levam a mesma finalidade e a mesma origem. Documento
+    # digitalizado não se mascara (ver abaixo), e por isso `mascarado=False`.
+    entidade = str((origem or {}).get("entidade") or "")
+    origem_ref = f"{entidade}:{(origem or {}).get('id') or ''}" if origem else ""
+    conversar = functools.partial(conversar or AP.conversar, modulo="revisao_anexos",
+                                  finalidade="revisao_anexos", referencia=origem_ref,
+                                  atribuicao={"NT_ATO": "NOTAS", "RI_PROTOCOLO": "RI"}.get(
+                                      entidade, ""),
+                                  mascarado=False)
     lista = anexos(con, origem)
     if not lista:
         return {"bloco": "", "resumo": [], "aviso": "", "tokens": 0}
@@ -387,7 +443,12 @@ def ler(con: sqlite3.Connection, pasta: Path, origem: dict | None, *,
             # caso raro, e aí ele se lê outra vez.
             lidas = ja["paginas_lidas"] or 0
             incompleto = bool(ja["importante"]) and lidas < (ja["paginas"] or 0)
-            if not (incompleto and restam > lidas):
+            # O DESCARTE ANTIGO SÓ VALE SE A TRIAGEM VIU O ARQUIVO INTEIRO (M7):
+            # o de antes do LX13 viu uma página, e o de várias páginas se
+            # passa pela triagem de novo, com a régua de hoje.
+            descarte_cego = (not ja["importante"]
+                             and (ja["paginas_triadas"] or 1) < (ja["paginas"] or 0))
+            if not (incompleto and restam > lidas) and not descarte_cego:
                 item.update(tipo=ja["tipo"], importante=bool(ja["importante"]),
                             motivo=ja["motivo"] or "", paginas=ja["paginas"] or 0,
                             lidas=lidas, reaproveitado=True)
@@ -414,12 +475,20 @@ def ler(con: sqlite3.Connection, pasta: Path, origem: dict | None, *,
                  "paginas_imagem": sum(not _tem_texto(p) for p in paginas),
                  "modelo": modelo, "lido_em": _agora(), "erro": None,
                  "tokens_entrada": 0, "tokens_saida": 0, "transcricao": None,
-                 "paginas_lidas": 0}
+                 "paginas_lidas": 0, "paginas_triadas": None}
         try:
             t = triar(conversar, pasta, modelo, a["nome"], paginas, contexto)
+            if not t["importante"] and t["vistas"] < len(paginas):
+                # O QUE A TRIAGEM NÃO VIU NÃO SE DESCARTA (M7 do LS03): a capa
+                # diz «comprovante», e a página 4 pode ser o mandado.
+                t["importante"] = True
+                t["motivo"] = (f"{t['motivo']} — a triagem viu {t['vistas']} de "
+                               f"{len(paginas)} páginas, e o resto não se descarta "
+                               "pela capa").lstrip(" —")
             linha.update(tipo=t["tipo"], importante=int(t["importante"]),
                          motivo=t["motivo"], tokens_entrada=t["entrada"],
-                         tokens_saida=t["saida"], situacao="TRIADO")
+                         tokens_saida=t["saida"], situacao="TRIADO",
+                         paginas_triadas=t["vistas"])
             item.update(tipo=t["tipo"], importante=t["importante"], motivo=t["motivo"])
             if t["importante"] and restam > 0:
                 texto, lidas, e, s = transcrever(conversar, pasta, modelo, paginas, restam)

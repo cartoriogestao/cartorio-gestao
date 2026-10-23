@@ -1,0 +1,28 @@
+{
+  "chave": "RTD_CERTIDAO_CAPA",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Certidão PDF — capa RTD",
+  "formato": "CHAVES",
+  "explica": "Capa da certidão visual do Registro de Títulos e Documentos — mesma forma da capa RCPJ; muda a atribuição.",
+  "campos": [
+    "unit_short",
+    "cns",
+    "oficial",
+    "endereco",
+    "atribuicao",
+    "numero",
+    "data_registro",
+    "paginas",
+    "paginas_extenso",
+    "data_apresentacao",
+    "protocolo",
+    "livro",
+    "objeto_certificado",
+    "denominacao",
+    "natureza",
+    "cidade",
+    "data_extenso",
+    "full_name",
+    "funcao"
+  ]
+}

@@ -76,8 +76,11 @@ def test_nome_proprio_deixa_as_particulas_em_minuscula():
 
 
 def test_o_municipio_ganha_o_nome_oficial():
-    import sqlite3 as sq
-    con = sq.connect(":memory:")
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from banco_de_teste import conexao_de_teste
+    con = conexao_de_teste()
     con.execute("CREATE TABLE ib_municipios (uf TEXT, nome TEXT)")
     con.execute("INSERT INTO ib_municipios VALUES ('PA', 'Tucumã')")
     junto = {"pessoas": [{"nome": "X", "naturalidade_cidade": "Tucuma", "naturalidade_uf": "PA",
@@ -162,7 +165,7 @@ class IA:
         self.pedidos = []
 
     def __call__(self, pasta, *, provedor, sistema, conversa, ferramentas, modelo,
-                 maximo_de_saida):
+                 maximo_de_saida, **_registro):
         self.pedidos.append({"modelo": modelo, "sistema": sistema,
                              "imagens": len(conversa[0]["imagens"])})
         if sistema == LEIT.INSTRUCAO_TRIAGEM:
@@ -348,7 +351,7 @@ class IAPorMolde:
         self.tipos, self.por_molde = tipos, por_molde
 
     def __call__(self, pasta, *, provedor, sistema, conversa, ferramentas, modelo,
-                 maximo_de_saida):
+                 maximo_de_saida, **_registro):
         if sistema == LEIT.INSTRUCAO_TRIAGEM:
             corpo = {"paginas": [{"n": i, "tipo": t} for i, t in enumerate(self.tipos, 1)]}
         else:

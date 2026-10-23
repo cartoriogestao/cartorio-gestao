@@ -6,10 +6,11 @@
 
 <div class="card">
   <p class="small muted">
-    Chaves só no servidor (<code>robo_config</code>).
+    Chaves só no servidor, fora do banco, num arquivo cifrado da pasta de
+    dados (<code>robos.cred</code>) — o banco vai no backup, e a chave não vai.
     Campo vazio = <strong>não altera</strong>.
-    A UI mostra mascarado (últimos 4). <strong>Nunca</strong> colar chave no código-fonte.
-    Nunca logar API key.
+    A tela diz só se a chave está configurada, sem pedaço nenhum dela.
+    <strong>Nunca</strong> colar chave no código-fonte. Nunca logar API key.
   </p>
 </div>
 
@@ -34,7 +35,7 @@
       </label>
     </p>
     <p class="small muted">
-      {% if cfg.tem_grok %}Já gravado: {{ cfg.grok_mascarado }}
+      {% if cfg.tem_grok %}Configurada: sim.
       {% else %}Ainda não gravado.{% endif %}
     </p>
 
@@ -45,7 +46,7 @@
       </label>
     </p>
     <p class="small muted">
-      {% if cfg.tem_gpt %}Já gravado: {{ cfg.gpt_mascarado }}
+      {% if cfg.tem_gpt %}Configurada: sim.
       {% else %}Ainda não gravado.{% endif %}
     </p>
 
@@ -56,7 +57,7 @@
       </label>
     </p>
     <p class="small muted">
-      {% if cfg.tem_claude %}Já gravado: {{ cfg.claude_mascarado }}
+      {% if cfg.tem_claude %}Configurada: sim.
       {% else %}Ainda não gravado.{% endif %}
     </p>
 
@@ -67,7 +68,7 @@
       </label>
     </p>
     <p class="small muted">
-      {% if cfg.tem_deepseek %}Já gravado: {{ cfg.deepseek_mascarado }}
+      {% if cfg.tem_deepseek %}Configurada: sim.
       {% else %}Ainda não gravado.{% endif %}
     </p>
   </div>

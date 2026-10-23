@@ -7,36 +7,28 @@
   <div style="padding:14px">
     <p class="small">
       <strong>{{ sem_tipo }} matrícula(s) estão sem o tipo do imóvel.</strong>
-      O dado existe no E-Ofício em quase todas elas — a carga do acervo o descartou.
+      O dado existe no sistema antigo em quase todas elas — a carga do acervo o descartou.
       Sem ele, o Indicador Real do ONR sai com o tipo genérico e a CTP manda
       “Terreno/fração” para tudo.
     </p>
-    <form method="post" onsubmit="return confirm('Completar o tipo do imóvel nas {{ sem_tipo }} matrículas?')">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="primary" name="acao" value="tipo_imovel">
-        Completar o tipo do imóvel</button>
-      <span class="small muted">Só preenche onde está vazio. Não toca em teor, ato nem parte.</span>
-    </form>
+    {# O botão «Completar o tipo do imóvel» relia o matriculas.jsonl da
+       exportação do E-Ofício: saiu em 17/10/2026 com os outros pontos de
+       importação do E-Ofício. O POST acao=tipo_imovel continua na rota. #}
   </div>
 </section>
 {% endif %}
 <div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
-  {% if user.role in ['ADMIN','MANAGER','USER'] %}<a class="button primary" href="{{ url_for('ri_importar') }}">Carregar acervo</a>{% endif %}
-  {% if user.role in ['ADMIN','MANAGER'] %}<a class="button" href="{{ url_for('livro3_importar_acervo') }}">Livro 3 — importar do acervo</a>{% endif %}
+  {# «Carregar acervo» (ri_importar) e «Livro 3 — importar do acervo»
+     (livro3_importar_acervo) liam a exportação do E-Ofício e saíram em
+     17/10/2026: a importação terminou. As rotas ficam, sem link. #}
   {% if user.role in ['ADMIN','MANAGER','USER'] %}<a class="button" href="{{ url_for('ri_matriculas_doc') }}">Matrículas em Word</a>{% endif %}
   {% if user.role in ['ADMIN','MANAGER','USER'] %}<a class="button" href="{{ url_for('ri_importacao_manual', especie='RI_MATRICULA') }}">Importar matrícula (manual)</a>
   <a class="button" href="{{ url_for('ri_importacao_manual', especie='LIVRO3_REGISTRO') }}">Importar registro do Livro 3 (manual)</a>{% endif %}</div>
 
 <div class="notice">
-  <strong>«Carregar acervo» é a carga inteira do E-Ofício.</strong> As duas
-  «(manual)» acima são para um documento avulso de cada vez — um contrato, uma
-  matrícula que chegou digitalizada — sem escrever JSON: mesmo caminho de
-  <em>Importar de outro sistema</em>, campo por campo.
-  <br>
-  <strong>O Livro 3 tem porta própria</strong>, com o campo do acervo, a prévia
-  do que falta e as <strong>partes e averbações</strong> de cada registro:
-  <a href="{{ url_for('livro3_importar_acervo') }}">Livro 3 — importar do acervo</a>.
-  A «Carregar acervo» é o caminho do Livro 2 e não traz o Livro 3.
+  As duas «(manual)» acima são para um documento avulso de cada vez — um
+  contrato, uma matrícula que chegou digitalizada — sem escrever JSON: mesmo
+  caminho de <em>Importar de outro sistema</em>, campo por campo.
 </div>
 
 {% if manuais_matricula or manuais_livro3 %}

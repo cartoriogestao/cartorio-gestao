@@ -1,0 +1,18 @@
+{
+  "chave": "NOTAS_CERTIDAO_BREVE_RELATO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Certidão em breve relato",
+  "formato": "JINJA",
+  "explica": "Certidão RESUMIDA do ato identificado por livro e folha (CN-MA art. 851: «cópia integral ou resumida»): a espécie, a natureza, o livro, a folha, o termo, a data, as partes com a qualidade em que figuram, o selo do ato e as anotações à margem. Não resume o teor — o objeto fica na de inteiro teor.",
+  "campos": [
+    "a",
+    "anotacoes",
+    "data_do_ato",
+    "finalidade",
+    "partes",
+    "requerente",
+    "requerente_documento",
+    "rotulo_tipo",
+    "selos_do_ato"
+  ]
+}

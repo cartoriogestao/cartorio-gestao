@@ -15,9 +15,10 @@ from datetime import datetime
 from xml.sax.saxutils import quoteattr
 
 import protesto_arquivo as PA
+import protesto_cra_imagens as PCIMG
 
 
-LIMITE_BYTES = 10 * 1024 * 1024  # prévia interativa; imagens exigem outro fluxo
+LIMITE_BYTES = PCIMG.LIMITE_XML
 
 # FEBRABAN: Layout de Transmissão de Arquivo de Protesto, remessa XML,
 # campos h01..h17, t01..t52 e trailer t01..t08. Cada grupo soma 600 posições.
@@ -44,7 +45,8 @@ class PreviaXml:
     sha256: str
     conteudo_fixo: str  # somente em memória; nunca enviar à rota de receber
     trailer_xml: tuple[int, ...]
-    hashes_lotes: tuple[str, ...]  # atributos originais, sem projeção latin-1
+    hashes_lotes: tuple[str, ...]  # identidade do título, independente das imagens
+    imagens: tuple[dict, ...] = ()
 
 
 def chave_idempotencia(ambiente: str, hash_lote: str) -> str:
@@ -64,7 +66,12 @@ def chave_idempotencia(ambiente: str, hash_lote: str) -> str:
 def _hash_lote(lote: list[ET.Element]) -> str:
     # Ordem dos atributos no XML e indentação não mudam o conteúdo. Valores
     # originais Unicode e espaços dos campos são preservados.
-    campos = [(e.tag, sorted(e.attrib.items())) for e in lote]
+    campos = []
+    for e in lote:
+        atributos = dict(e.attrib)
+        if e.tag == "tr" and "t51" in atributos:
+            atributos["t51"] = ""  # imagem/indicador não altera a identidade do lote
+        campos.append((e.tag, sorted(atributos.items())))
     canonico = json.dumps(campos, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(canonico.encode("utf-8")).hexdigest()
 
@@ -81,7 +88,7 @@ def parece_xml(conteudo: str | bytes) -> bool:
 def _texto(conteudo: str | bytes) -> str:
     if isinstance(conteudo, bytes):
         if len(conteudo) > LIMITE_BYTES:
-            raise RemessaXmlError("O XML excede 10 MB; use o fluxo de arquivos grandes.")
+            raise RemessaXmlError("O XML excede 64 MB; use o fluxo de arquivos grandes.")
         try:
             return conteudo.decode("utf-8-sig")
         except UnicodeDecodeError:
@@ -90,7 +97,7 @@ def _texto(conteudo: str | bytes) -> str:
             except UnicodeDecodeError as erro:
                 raise RemessaXmlError("Não consegui ler a codificação do XML.") from erro
     if len(conteudo.encode("utf-8")) > LIMITE_BYTES:
-        raise RemessaXmlError("O XML excede 10 MB; use o fluxo de arquivos grandes.")
+        raise RemessaXmlError("O XML excede 64 MB; use o fluxo de arquivos grandes.")
     return conteudo.lstrip("\ufeff")
 
 
@@ -120,6 +127,8 @@ def _linha(elemento: ET.Element) -> str:
     for i, largura in enumerate(LARGURAS[elemento.tag], 1):
         nome = f"{prefixo}{i:02}"
         valor = elemento.get(nome, "")
+        if elemento.tag == "tr" and nome == "t51":
+            valor = ""  # ZIP fica em separado, nunca na projeção de 600 posições
         if len(valor) > largura:
             raise RemessaXmlError(
                 f"{elemento.tag}.{nome} tem {len(valor)} caracteres; o máximo é {largura}.")
@@ -160,8 +169,21 @@ def ler(conteudo: str | bytes) -> PreviaXml:
         raiz = ET.fromstring(texto)
     except ET.ParseError as erro:
         raise RemessaXmlError(f"XML da remessa não abre: {erro}.") from erro
-    if raiz.tag != "remessa" or raiz.attrib:
-        raise RemessaXmlError("A raiz esperada é <remessa>, sem atributos.")
+    if raiz.tag in ("relatorio", "erro"):
+        codigo = (raiz.findtext("codigo") or "").strip()
+        mensagem = (raiz.findtext("ocorrencia") or raiz.findtext("mensagem") or "").strip()
+        detalhe = f" (código {codigo})" if codigo else ""
+        raise RemessaXmlError(
+            f"A CRA informou: {mensagem or 'relatório sem títulos'}{detalhe}. "
+            "Esta resposta não contém remessas para receber.")
+    if raiz.tag != "remessa":
+        raise RemessaXmlError(
+            f"O XML recebido tem raiz <{str(raiz.tag)[:100]}>; "
+            "era esperada uma remessa da CRA (<remessa>).")
+    if raiz.attrib:
+        raise RemessaXmlError(
+            "A remessa trouxe atributos não previstos na raiz: "
+            + ", ".join(sorted(raiz.attrib)) + ".")
     nome = (raiz.findtext("nome_arquivo") or "").strip()
     if len(nome) > 100:
         raise RemessaXmlError("Nome do arquivo excessivamente longo.")
@@ -191,6 +213,8 @@ def ler(conteudo: str | bytes) -> PreviaXml:
     linhas = []
     saldos_trailer = []
     hashes_lotes = []
+    imagens = []
+    total_imagens = 0
     for numero, lote in enumerate(lotes, 1):
         hd, *titulos, tl = lote
         if not titulos:
@@ -211,7 +235,16 @@ def ler(conteudo: str | bytes) -> PreviaXml:
         if _inteiro(tl, "t05") != seguranca:
             raise RemessaXmlError(f"Lote {numero}: somatório de segurança do trailer não fecha.")
         saldos = 0
-        for titulo in titulos:
+        for sequencial, titulo in enumerate(titulos, 1):
+            try:
+                arquivos = PCIMG.ler_zip(titulo.get("t51", ""))
+            except PCIMG.ImagemCraError as erro:
+                raise RemessaXmlError(f"Lote {numero}, título {sequencial}: {erro}") from erro
+            if arquivos:
+                total_imagens += sum(len(a["conteudo"]) for a in arquivos)
+                if total_imagens > PCIMG.LIMITE_TOTAL:
+                    raise RemessaXmlError("As imagens da remessa excedem 100 MB descompactados.")
+                imagens.append({"lote": numero, "sequencial": sequencial, "arquivos": arquivos})
             if titulo.get("t01") != "1" or titulo.get("t02") != hd.get("h02"):
                 raise RemessaXmlError(f"Lote {numero}: título de outro apresentante.")
             _data(titulo, "t14")
@@ -250,6 +283,7 @@ def ler(conteudo: str | bytes) -> PreviaXml:
         conteudo_fixo="\n".join(linhas),
         trailer_xml=tuple(saldos_trailer),
         hashes_lotes=tuple(hashes_lotes),
+        imagens=tuple(imagens),
     )
 
 

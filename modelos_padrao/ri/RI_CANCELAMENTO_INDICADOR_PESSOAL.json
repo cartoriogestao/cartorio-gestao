@@ -1,0 +1,14 @@
+{
+  "chave": "RI_CANCELAMENTO_INDICADOR_PESSOAL",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Cancelamento no Indicador Pessoal (Livro 2)",
+  "formato": "JINJA",
+  "explica": "Lançamento no Indicador Pessoal (Livro 5), um por pessoa, do cancelamento de ato da matrícula; vai ao livro e, gravado, não muda mais.",
+  "campos": [
+    "averbacao",
+    "matricula",
+    "motivo",
+    "nome",
+    "rotulo"
+  ]
+}

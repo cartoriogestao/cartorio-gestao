@@ -1,0 +1,18 @@
+EDITAL DE INTIMAÇÃO
+
+{serventia}, na forma da lei, FAZ SABER a quem interessar possa que, tendo sido infrutífera a tentativa de intimação pessoal, fica pelo presente edital INTIMADO(A):
+
+{devedor}{documento_do_devedor}
+
+do apontamento para protesto do título abaixo, para que, até {ate_quando}, compareça a esta Serventia a fim de pagá-lo, ou, querendo, apresente as razões que tiver:
+
+Protocolo: {protocolo}
+Título: {numero_titulo}{especie}
+Valor: R$ {valor}
+Prazo-limite para pagamento: {prazo_limite}
+
+Decorrido o prazo sem manifestação, o título será protestado na forma da Lei nº 9.492, de 10 de setembro de 1997.
+
+{serventia} — {endereco_da_serventia}. Telefone {telefone}.
+
+{local_e_data}.

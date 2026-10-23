@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_protocolo_do_selo.html' import protocolo_do_selo %}
 {% block heading %}<h1>Livro 5 — Indicador Pessoal</h1>{% endblock %}
 {% block content %}
 <div class="actions">
@@ -64,6 +65,10 @@
       <form method="post" action="{{ url_for('ri_emitir_certidao_negativa') }}" class="form-grid">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="modo" value="PESSOA">
+        {# O protocolo que paga o selo da negativa (16.24.1) — 22/10/2026,
+           trava do selo pago: a escrevente confirma qual paga. #}
+        {% set _ps_neg = protocolos_do_selo_ri('ri_certidoes', '16.24.1') %}
+        <div class="span2">{{ protocolo_do_selo(_ps_neg.candidatos, _ps_neg.pedidos, atendendo=_ps_neg.atendendo) }}</div>
         <input type="hidden" name="busca" value="{{ busca }}">
         {% if so_proprietarios %}<input type="hidden" name="proprietarios" value="1">{% endif %}
         <label>Requerente

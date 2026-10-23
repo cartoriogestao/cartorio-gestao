@@ -1,0 +1,21 @@
+{
+  "chave": "RI_FICHA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Ficha da matrícula",
+  "formato": "JINJA",
+  "explica": "A matrícula impressa, com os atos na ordem.",
+  "campos": [
+    "abertura_assinatura",
+    "abertura_fecho",
+    "atos",
+    "data_abertura_br",
+    "m",
+    "proprietarios",
+    "proprietarios_abertura",
+    "protocolo_atual",
+    "selo_abertura_odf",
+    "separador",
+    "teor_odf",
+    "uf_extenso"
+  ]
+}

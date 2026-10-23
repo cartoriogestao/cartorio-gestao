@@ -1,0 +1,4 @@
+OBSERVAÇÕES/AVERBAÇÕES A ACRESCER:
+{averbacoes}{cancelado}
+
+O referido é verdade e dou fé. {casa}, {onde}, {data}.

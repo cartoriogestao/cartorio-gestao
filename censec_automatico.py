@@ -32,9 +32,10 @@ O QUE NÃO FAZ, E POR QUÊ
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import date, datetime, timedelta
 from typing import Any
+
+from bd_nativo import banco
 
 #: A conferência só olha da implantação para cá — o acervo o E-Ofício já mandou.
 DESDE = "2026-09-10"
@@ -45,6 +46,19 @@ DIAS_PARA_CONFERIR_A_VALIDACAO = 3
 POR = "ENVIO AUTOMÁTICO (madrugada)"
 ACAO_ENVIOU = "NT_REMESSA_API_AUTOMATICA"
 ACAO_FALHOU = "NT_REMESSA_API_AUTOMATICA_FALHOU"
+#: O interruptor das configurações (revisão de 22/10/2026, A13), na forma do
+#: envio do ONR. LIGADO por padrão: a tarefa foi instalada «com envio».
+CHAVE_DO_INTERRUPTOR = "censec_envio_automatico"
+DESLIGADO = "DESLIGADO"
+
+
+def envio_ligado(db) -> bool:
+    """O oficial deixou o envio automático ligado? Só lê."""
+    try:
+        valor = db.get_setting(CHAVE_DO_INTERRUPTOR, "LIGADO")
+    except Exception:                                   # noqa: BLE001
+        valor = "LIGADO"
+    return str(valor or "LIGADO").strip().upper() != DESLIGADO
 
 
 def _quinzena_de(dia: date) -> tuple[int, int, int]:
@@ -84,9 +98,9 @@ def _quinzenas_desde(inicio: str, hoje: date) -> list[tuple[int, int, int]]:
 
 def _audit(db, acao: str, detalhes: dict) -> None:
     with db.transaction() as con:
-        con.execute("""INSERT INTO audit_logs(ts, user_id, username_snapshot, action,
+        banco(con).escrever("""INSERT INTO audit_logs(ts, user_id, username_snapshot, action,
                                               entity_type, entity_id, details, ip_address)
-                       VALUES (?, NULL, 'envio-automatico', ?, 'NT_REMESSA', NULL, ?, NULL)""",
+                       VALUES (%s, NULL, 'envio-automatico', %s, 'NT_REMESSA', NULL, %s, NULL)""",
                     (datetime.now().isoformat(timespec="seconds"), acao,
                      json.dumps(detalhes, ensure_ascii=False, default=str)))
 
@@ -96,10 +110,13 @@ def enviar(db, hoje: date, *, cns: str) -> list[dict]:
     import censec_api as CAPI
     import centrais_cred as CRED
     resultados = []
+    if not envio_ligado(db):
+        # Nada sobe; fica o registro do porquê, para o painel e o log.
+        return [{"situacao": DESLIGADO,
+                 "motivo": "envio automático desligado nas configurações"}]
     for ano, mes, q in quinzenas_abertas(hoje):
         quinzena = {"ano": ano, "mes": mes, "quinzena": q}
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             envio = CAPI.montar_envio(con, ano, mes, q, cns)
         aptos = {c: [a["id"] for a in v] for c, v in envio["atos"].items() if v}
         impedidos = {c: [x["ato"]["id"] for x in v]
@@ -150,9 +167,9 @@ def _rotulo(ato: dict) -> str:
             f"fl. {ato.get('folha') or '?'}")
 
 
-def regra(con: sqlite3.Connection, hoje: date) -> list[dict]:
+def regra(con: Any, hoje: date) -> list[dict]:
     import notas_censec as NC
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     saida: list[dict] = []
     for ano, mes, q in _quinzenas_desde(DESDE, hoje):
         prazo = _prazo(ano, mes, q)
@@ -171,6 +188,26 @@ def regra(con: sqlite3.Connection, hoje: date) -> list[dict]:
                     f"pendentes; o envio da madrugada seguinte o leva.", prazo))
             if prazo < hoje:
                 aptos_ficaram += [f"{central}: {_rotulo(a['ato'])}" for a in sep["aptos"]]
+        # A CTP DAS ESCRITURAS (22/10/2026) vai na carga da 2ª quinzena, com o
+        # prazo DELA: último dia útil do mês seguinte (Prov. CNJ 174/2024,
+        # art. 184-A) — o mesmo cálculo da DOI. Sem isto, a escritura impedida
+        # ficaria fora da CTP sem ninguém saber.
+        if q == 2:
+            import censec_ctp as CTP
+            import notas_doi as NDOI
+            prazo_ctp = date.fromisoformat(NDOI.prazo_de_entrega(f"{ano:04d}-{mes:02d}-01"))
+            sep = CTP.declaracoes_do_mes(con, ano, mes, "")
+            for x in sep["impedidos"]:
+                ato = x["ato"]
+                motivos = "; ".join(p["motivo"] for p in x["problemas"][:6])
+                saida.append(_achado(
+                    f"CENSEC_IMPEDIDO:CTP:{ato['id']}", _gravidade(prazo_ctp, hoje),
+                    f"CENSEC: {_rotulo(ato)} não pode ir à CTP ({mes:02d}/{ano})",
+                    f"O envio automático deixa esta escritura de fora da CTP até ser "
+                    f"corrigida: {motivos}. Corrija no painel da DOI da escritura; o "
+                    f"envio da madrugada seguinte a leva.", prazo_ctp))
+            if prazo_ctp < hoje:
+                aptos_ficaram += [f"CTP: {_rotulo(a['ato'])}" for a in sep["aptos"]]
         if aptos_ficaram:
             saida.append(_achado(
                 f"CENSEC_APTO_FORA_DO_PRAZO:{ano:04d}-{mes:02d}-Q{q}", "VENCIDO",
@@ -184,9 +221,9 @@ def regra(con: sqlite3.Connection, hoje: date) -> list[dict]:
         prazo = _prazo(ano, mes, q)
         if fim >= hoje.isoformat() or (prazo - hoje).days > AVISAR_FECHAMENTO_DIAS:
             continue
-        enviou = con.execute("""SELECT COUNT(*) FROM nt_remessas
-                                 WHERE ano_referencia=? AND mes_referencia=? AND quinzena=?
-                                   AND enviada_em IS NOT NULL""", (ano, mes, q)).fetchone()[0]
+        enviou = bd.valor("""SELECT COUNT(*) FROM nt_remessas
+                              WHERE ano_referencia = %s AND mes_referencia = %s AND quinzena = %s
+                                AND enviada_em IS NOT NULL""", (ano, mes, q))
         if enviou:
             saida.append(_achado(
                 f"CENSEC_FECHAR:{ano:04d}-{mes:02d}-Q{q}", "PRAZO",
@@ -203,9 +240,9 @@ def regra(con: sqlite3.Connection, hoje: date) -> list[dict]:
     # carga; então, por DIAS_PARA_CONFERIR_A_VALIDACAO dias depois de cada envio,
     # a conferência pede que alguém confira no portal (CEP → Cargas).
     limite = (hoje - timedelta(days=DIAS_PARA_CONFERIR_A_VALIDACAO)).isoformat()
-    for r in con.execute("""SELECT id, central, competencia, quinzena, protocolo_central,
+    for r in bd.ler("""SELECT id, central, competencia, quinzena, protocolo_central,
                                    enviada_em FROM nt_remessas
-                             WHERE situacao = 'ENVIADA' AND enviada_em >= ?
+                             WHERE situacao = 'ENVIADA' AND enviada_em >= %s
                              ORDER BY id""", (limite,)):
         saida.append(_achado(
             f"CENSEC_CONFERIR_VALIDACAO:{r['id']}", "ATENCAO",
@@ -219,9 +256,9 @@ def regra(con: sqlite3.Connection, hoje: date) -> list[dict]:
             "remessa precisa ser marcada como recusada para o ato voltar à fila.",
             None))
 
-    ultimo = con.execute("""SELECT ts, action, details FROM audit_logs
-                             WHERE action IN (?, ?) ORDER BY id DESC LIMIT 1""",
-                         (ACAO_ENVIOU, ACAO_FALHOU)).fetchone()
+    ultimo = bd.um("""SELECT ts, action, details FROM audit_logs
+                       WHERE action IN (%s, %s) ORDER BY id DESC LIMIT 1""",
+                   (ACAO_ENVIOU, ACAO_FALHOU))
     if ultimo and ultimo["action"] == ACAO_FALHOU:
         try:
             d = json.loads(ultimo["details"] or "{}")

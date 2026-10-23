@@ -1,0 +1,1 @@
+AVERBAÇÃO DE NOTIFICAÇÃO. Certifico que {destinatario}{documento} foi notificado(a) do documento deste registro no dia {data_da_notificacao}, conforme a certidão de notificação nº {certidao}. {cidade}, {data_extenso}.

@@ -52,6 +52,9 @@ SISTEMA = Path(__file__).resolve().parent.parent
 if str(SISTEMA) not in sys.path:
     sys.path.insert(0, str(SISTEMA))
 
+import banco_pg  # noqa: E402
+from bd_nativo import banco as abrir_banco  # noqa: E402
+
 NOME_DO_BANCO = "cartorio_gestao.sqlite3"
 NOME_DO_PERFIL = "serventia_local_atual.json"
 PREFIXO_DO_BACKUP = "cartorio_gestao.pre_b0_serventia_"
@@ -201,9 +204,15 @@ def gravar_perfil(caminho: Path, perfil: dict[str, str]) -> bool:
 
 # ------------------------------------------------------------ a migracao
 
-def pendencias(con: sqlite3.Connection, perfil: dict[str, str]) -> dict[str, str]:
+def _settings_atuais(bd) -> dict[str, str]:
+    return {r["key"]: r["value"]
+            for r in bd.ler("SELECT key, value FROM settings ORDER BY key")}
+
+
+def pendencias(con, perfil: dict[str, str]) -> dict[str, str]:
     """{chave: valor} que FALTA gravar: ausente ou em branco no banco."""
-    atuais = {r[0]: r[1] for r in con.execute("SELECT key, value FROM settings")}
+    bd = abrir_banco(con)
+    atuais = _settings_atuais(bd)
     faltam = {}
     for chave in campos():
         if str(atuais.get(chave) or "").strip():
@@ -218,7 +227,7 @@ def fazer_backup(banco: Path, agora: _dt.datetime) -> Path:
     pasta = banco.parent / "backups"
     pasta.mkdir(parents=True, exist_ok=True)
     destino = pasta / f"{PREFIXO_DO_BACKUP}{agora:%Y%m%d_%H%M%S}.sqlite3"
-    origem = sqlite3.connect(str(banco), timeout=30)
+    origem = banco_pg.conectar(str(banco))
     try:
         alvo = sqlite3.connect(str(destino))
         try:
@@ -240,11 +249,11 @@ def migrar(banco: Path, perfil: dict[str, str], *, simular: bool = False,
            agora: _dt.datetime | None = None) -> dict:
     """Executa (ou simula). Devolve {gravadas, ja_preenchidas, sem_valor, backup}."""
     agora = agora or _dt.datetime.now()
-    con = sqlite3.connect(str(banco), timeout=30)
+    con = banco_pg.conectar(str(banco))
     try:
-        con.execute("PRAGMA busy_timeout=30000")
-        faltam = pendencias(con, perfil)
-        atuais = {r[0]: r[1] for r in con.execute("SELECT key, value FROM settings")}
+        bd = abrir_banco(con)
+        faltam = pendencias(bd, perfil)
+        atuais = _settings_atuais(bd)
     finally:
         con.close()
     ja = [k for k in campos() if str(atuais.get(k) or "").strip()]
@@ -254,19 +263,19 @@ def migrar(banco: Path, perfil: dict[str, str], *, simular: bool = False,
     if simular or not faltam:
         return resultado
     resultado["backup"] = fazer_backup(banco, agora)
-    con = sqlite3.connect(str(banco), timeout=30)
+    con = banco_pg.conectar(str(banco))
     try:
-        con.execute("PRAGMA busy_timeout=30000")
+        bd = abrir_banco(con)
         with con:
             for chave, valor in faltam.items():
                 # O WHERE repete a condicao dentro do proprio UPDATE: se alguem
                 # salvar a tela entre a leitura e a escrita, o valor dele vence.
-                cur = con.execute(
-                    "INSERT INTO settings(key, value) VALUES(?, ?) "
+                gravou = bd.escrever(
+                    "INSERT INTO settings(key, value) VALUES(%s, %s) "
                     "ON CONFLICT(key) DO UPDATE SET value=excluded.value "
-                    "WHERE trim(COALESCE(settings.value, ''))=''",
+                    "WHERE trim(coalesce(settings.value, ''))='' RETURNING key",
                     (chave, valor))
-                if cur.rowcount:
+                if gravou:
                     resultado["gravadas"][chave] = valor
     finally:
         con.close()

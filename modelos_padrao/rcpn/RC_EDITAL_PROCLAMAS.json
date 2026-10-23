@@ -1,0 +1,17 @@
+{
+  "chave": "RC_EDITAL_PROCLAMAS",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Edital de proclamas — teor",
+  "formato": "CHAVES",
+  "explica": "O teor que a ficha da habilitação oferece pronto no campo do edital, com o nome, o estado civil, a filiação e a cidade do domicílio de cada nubente (CNN art. 122 — cada uma dessas três é frase inteira, que some quando a habilitação não tem o dado), o canal em que a casa publica, a cidade e a data de hoje; o escrevente ajusta e, ao publicar, o teor publicado congela na habilitação com a impressão digital — mudar este texto não muda edital já publicado.",
+  "campos": [
+    "nubente1_nome",
+    "nubente2_nome",
+    "estado_civil",
+    "filiacao",
+    "domicilio",
+    "onde_se_publica",
+    "cidade_uf",
+    "data"
+  ]
+}

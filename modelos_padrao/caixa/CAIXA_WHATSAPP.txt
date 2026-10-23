@@ -1,0 +1,18 @@
+===CONTATO===
+{nome}, Oficio unico de {cidade}. Telefone {telefone}. E-mail {email}.
+===ENDERECO_DA_CASA===
+{endereco}, CEP {cep}, {cidade}-{uf}
+===HORARIO===
+Bom dia. Sobre o expediente: por favor confirmar horario de balcao no balcao ou pelo telefone. {contato}
+===ENDERECO===
+Estamos em {endereco}. {contato}
+===DOCUMENTOS===
+Para dizer exatamente quais documentos levar, precisamos saber o ato (certidao, firma, escritura, protesto). Compareca ao balcao ou ligue para orientarmos. Nao enviamos lista completa automaticamente. {contato}
+===CERTIDAO===
+Pedido de certidao se resolve no balcao, com documento de identificacao. Nao enviamos pelo WhatsApp dado de livro, CPF, instrumento nem o teor da certidao. {contato}
+===FIRMA===
+Reconhecimento de firma e abertura de ficha se fazem no balcao, com a pessoa presente. Nao enviamos dado de cadastro nem instrumento pelo WhatsApp. {contato}
+===PROTESTO===
+Assunto de protesto se trata no balcao. Nao enviamos pelo WhatsApp valor, titulo, CPF nem informacao de protesto. {contato}
+===OUTROS===
+Recebemos sua mensagem. Um escrevente vai responder por aqui. Para urgencia, ligue. {contato}

@@ -11,8 +11,10 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
 
 import modelos_editor_motor as MOTOR
+from banco_de_teste import conexao_de_teste
 import modelos_elementos_schema as ESQ
 import ri_schema
 from modelos_editor_schema import init_modelos_editor_schema
@@ -20,8 +22,11 @@ from modelos_editor_schema import init_modelos_editor_schema
 
 @pytest.fixture()
 def con(tmp_path):
-    c = sqlite3.connect(tmp_path / "t.sqlite3")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
+    # `ri_schema` aponta para `users` (FK): o PostgreSQL cobra a FK
+    # na criacao, e o banco da casa cria `users` antes. Aqui basta o esqueleto.
+    c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
     ri_schema.init_ri_schema(c)
     ESQ.init_modelos_elementos_schema(c)
     init_modelos_editor_schema(c)

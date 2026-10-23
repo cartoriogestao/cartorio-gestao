@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_AUTENTICACAO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Autenticação de cópia",
+  "formato": "CHAVES",
+  "explica": "O teor da autenticação de cópia conferida com o original exibido (item 13.18 da tabela).",
+  "campos": []
+}

@@ -6,10 +6,11 @@ from typing import Any, Callable
 from flask import Response, jsonify
 
 import produtividade as PR
+from bd_nativo import banco
 
 
 def _usuario_sessao(raw: Any) -> dict[str, Any]:
-    """Normaliza `sqlite3.Row` ou dict retornado por `current_user()`."""
+    """Normaliza linha do banco ou dict retornado por `current_user()`."""
     if not raw:
         return {}
     if isinstance(raw, dict):
@@ -313,9 +314,9 @@ def register_produtividade_routes(
                 regs = PR.listar_registros(con, limite=1)
                 reg = next((r for r in regs if r["id"] == rid), None)
                 if reg is None:
-                    rows = con.execute(
-                        "SELECT * FROM prod_registros WHERE id=?", (rid,)
-                    ).fetchall()
+                    rows = banco(con).ler(
+                        "SELECT * FROM prod_registros WHERE id = %s", (rid,)
+                    )
                     reg = PR._enriquecer_registro(dict(rows[0])) if rows else {"id": rid}
             except ValueError as erro:
                 return _json_erro(str(erro))

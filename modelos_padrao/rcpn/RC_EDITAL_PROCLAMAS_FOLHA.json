@@ -1,0 +1,17 @@
+{
+  "chave": "RC_EDITAL_PROCLAMAS_FOLHA",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Edital de proclamas — folha impressa",
+  "formato": "CHAVES",
+  "explica": "A folha do edital em .odt: título, número da habilitação, o teor publicado ({teor}, o congelado), as datas de publicação e do fim do prazo de oposição e a assinatura do titular. Remontada a cada impressão; o cabeçalho da serventia e a linha de conferência ficam no sistema.",
+  "campos": [
+    "numero",
+    "ano",
+    "teor",
+    "publicado_em",
+    "prazo_ate",
+    "serventia_titular",
+    "serventia_titulo",
+    "aviso_de_revisao_juridica"
+  ]
+}

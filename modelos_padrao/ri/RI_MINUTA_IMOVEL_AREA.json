@@ -1,0 +1,11 @@
+{
+  "chave": "RI_MINUTA_IMOVEL_AREA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Minutas de ato — área do imóvel",
+  "formato": "JINJA",
+  "explica": "O trecho da área que o código acrescenta à frase do imóvel quando a matrícula tem a área cadastrada.",
+  "campos": [
+    "unidade",
+    "valor"
+  ]
+}

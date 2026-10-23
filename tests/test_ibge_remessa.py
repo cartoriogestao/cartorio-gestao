@@ -6,7 +6,7 @@ DE ONDE SAI ESTE LAYOUT
     COPRE/GESIP, 08/01/2015 —, que o oficial indicou em 28/08/2026.
 
     E ele foi conferido contra os arquivos que **esta casa** exportou, em
-    `C:\\ARPNET\\C11\\IBGE_EXP`.
+    `C:\\ProgramData\\CartorioGestao\\arquivos\\eoficio\\IBGE_EXP`.
 
 A PROVA É O IDA E VOLTA, como no leitor da CRA: ler um arquivo real e
     reescrevê-lo tem de sair **idêntico byte a byte**. Foi esse teste que achou
@@ -31,7 +31,7 @@ sys.path.insert(0, str(RAIZ))
 
 import ibge_remessa as IBGE                                  # noqa: E402
 
-PASTA_REAL = Path(r"C:\ARPNET\C11\IBGE_EXP")
+PASTA_REAL = Path(r"C:\ProgramData\CartorioGestao\arquivos\eoficio\IBGE_EXP")
 
 REAIS = (
     ("CARTINF01.TXT", IBGE.NASCIMENTO, 112),

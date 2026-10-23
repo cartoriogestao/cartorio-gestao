@@ -1,0 +1,13 @@
+{
+  "chave": "RI_ENCERRAMENTO_CIRCUNSCRICAO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Modelo de encerramento — outra circunscrição",
+  "formato": "JINJA",
+  "explica": "Sugestão de teor da averbação de encerramento por transferência de circunscrição; quem escolhe o motivo é o formulário de lavrar, e o «PREENCHER» que sobrar recusa a lavratura (ri_web).",
+  "campos": [
+    "ato",
+    "fecho",
+    "livro",
+    "numero"
+  ]
+}

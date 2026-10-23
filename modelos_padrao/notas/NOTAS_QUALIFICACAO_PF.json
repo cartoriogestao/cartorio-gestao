@@ -1,0 +1,18 @@
+{
+  "chave": "NOTAS_QUALIFICACAO_PF",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Qualificação de pessoa física",
+  "formato": "CHAVES",
+  "explica": "A qualificação da parte (CC, art. 215, § 1º; CNN art. 111): nome, nacionalidade, estado civil — com o cônjuge e o regime de bens de quem é casado —, a existência de união estável, profissão, documento de identidade (ou, na falta, a filiação), CPF e domicílio. O que faltar sai marcado entre colchetes pelo código — nunca em branco.",
+  "campos": [
+    "nome",
+    "nacionalidade",
+    "estado_civil",
+    "conjuge",
+    "uniao_estavel",
+    "profissao",
+    "identidade",
+    "documento",
+    "endereco"
+  ]
+}

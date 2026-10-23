@@ -16,6 +16,7 @@ import re
 import sqlite3
 from datetime import datetime
 
+from bd_nativo import banco
 from gestor_schema import init_gestor_schema
 
 
@@ -77,15 +78,16 @@ def registrar(con: sqlite3.Connection, central: str, *, protocolo: str,
     init_gestor_schema(con)
     agora = datetime.now().isoformat(timespec="seconds")
     ids = []
+    bd = banco(con)
     for comp, ref in valores:
-        ids.append(con.execute(
+        ids.append(bd.escrever(
             """INSERT INTO ge_envios (central, competencia, referencia, canal,
                    protocolo, recibo_caminho, quantos, mensagem, enviado_em,
                    registrado_em, registrado_por, origem)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (central, comp or None, ref or None, canal, protocolo.strip(),
              recibo_caminho or None, len(valores), mensagem or None,
-             enviado_em or agora, agora, registrado_por.strip(), origem)).lastrowid)
+             enviado_em or agora, agora, registrado_por.strip(), origem))[0]["id"])
     con.commit()
     return ids
 
@@ -123,8 +125,7 @@ def central_da_chave(chave: str) -> tuple[str, str] | None:
 
 
 def _tem_tabela(con, nome: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                       (nome,)).fetchone() is not None
+    return banco(con).tem_tabela(nome)
 
 
 def pendentes(con: sqlite3.Connection) -> list[dict]:
@@ -138,21 +139,21 @@ def pendentes(con: sqlite3.Connection) -> list[dict]:
         return []
     feitos: set[tuple[str, str]] = set()
     if _tem_tabela(con, "ge_envios"):
-        for c, comp, ref in con.execute(
+        for e in banco(con).ler(
                 "SELECT central, competencia, referencia FROM ge_envios "
-                "WHERE COALESCE(situacao,'') <> 'REJEITADO'"):
-            feitos.add((c, ref or comp or ""))
+                "WHERE COALESCE(situacao,'') <> 'REJEITADO' ORDER BY id"):
+            feitos.add((e["central"], e["referencia"] or e["competencia"] or ""))
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT chave, titulo, detalhe, prazo, gravidade, setor FROM ge_achados
-                WHERE resolvido_em IS NULL ORDER BY prazo, chave"""):
-        par = central_da_chave(r[0])
+                WHERE resolvido_em IS NULL ORDER BY prazo NULLS FIRST, chave"""):
+        par = central_da_chave(r["chave"])
         if par is None:
             continue
         central, alvo = par
-        saida.append({"chave": r[0], "central": central, "alvo": alvo,
-                      "titulo": r[1], "detalhe": r[2], "prazo": r[3],
-                      "gravidade": r[4], "setor": r[5],
+        saida.append({"chave": r["chave"], "central": central, "alvo": alvo,
+                      "titulo": r["titulo"], "detalhe": r["detalhe"], "prazo": r["prazo"],
+                      "gravidade": r["gravidade"], "setor": r["setor"],
                       "ja_registrado": (central, alvo) in feitos})
     return saida
 
@@ -162,8 +163,8 @@ def recentes(con: sqlite3.Connection, limite: int = 40) -> list[dict]:
         return []
     cols = ("central", "competencia", "referencia", "canal", "protocolo",
             "registrado_em", "registrado_por")
-    return [dict(zip(cols, r)) for r in con.execute(
-        f"SELECT {', '.join(cols)} FROM ge_envios ORDER BY id DESC LIMIT ?", (limite,))]
+    return banco(con).ler(
+        f"SELECT {', '.join(cols)} FROM ge_envios ORDER BY id DESC LIMIT %s", (limite,))
 
 
 def registrar_pelas_chaves(con: sqlite3.Connection, chaves, *, protocolo: str,

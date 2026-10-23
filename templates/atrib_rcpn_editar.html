@@ -104,6 +104,11 @@
       <label>Local do fato (endereço)
         <input name="local_fato_endereco" value="{{ form.get('local_fato_endereco','') }}"></label>
       {% endif %}
+      {% if 'local_fato_municipio' in campos_termo %}
+      <label>Local do fato (município/UF)
+        <input name="local_fato_municipio" placeholder="Município/UF"
+               value="{{ form.get('local_fato_municipio','') }}"></label>
+      {% endif %}
       {% if 'naturalidade_declarada' in campos_termo %}
       <label>Naturalidade declarada
         <input name="naturalidade_declarada"
@@ -165,6 +170,15 @@
     <div class="panel-head"><span>O que a lei pede</span>
       <small>todos opcionais; o que estiver vazio não sai no papel</small></div>
     <div class="grid2" style="padding:14px">
+      {% if 'registro_tardio' in campos_termo %}
+      <label>Registro tardio <small>(art. 46 da Lei 6.015/1973; art. 249)</small>
+        <select name="registro_tardio">
+          <option value="">não</option>
+          <option value="1" {% if form.get('registro_tardio') in ('1', 1, 'SIM') %}selected{% endif %}>sim — registro tardio</option>
+        </select></label>
+      <label>Número do requerimento autuado
+        <input name="tardio_requerimento" value="{{ form.get('tardio_requerimento','') }}"></label>
+      {% endif %}
       {% if 'pais_casamento_lugar' in campos_termo %}
       <label>Lugar do casamento dos pais <small>(art. 54, 7º)</small>
         <input name="pais_casamento_lugar" value="{{ form.get('pais_casamento_lugar','') }}"></label>
@@ -263,6 +277,11 @@
         {% endif %}
         {{ pessoa('declarante', 'Declarante', '', false, form) }}
         {{ pessoa('testemunha', 'Testemunha', '', false, form) }}
+        {% if assento.especie == 'NASCIMENTO' %}
+        {# a segunda gaveta grava `TESTEMUNHA2` — o tardio e o parto sem
+           assistência médica (LD01) #}
+        {{ pessoa('testemunha2', 'Segunda testemunha', '', false, form) }}
+        {% endif %}
       {% elif assento.especie in ('CASAMENTO', 'CASAMENTO_RELIGIOSO') %}
         {{ pessoa('nubente1', 'Primeiro nubente', '', true, form, true, 'completo') }}
         {{ pessoa('nubente2', 'Segundo nubente', '', true, form, true, 'completo') }}

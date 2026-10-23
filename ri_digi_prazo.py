@@ -19,8 +19,10 @@ cresce todo dia até a imagem entrar.
 from __future__ import annotations
 
 import os
-import sqlite3
 from datetime import date, datetime, timedelta
+from typing import Any
+
+from bd_nativo import banco
 
 PRAZO_DIAS = 7
 #: Os atos que este sistema lavrou depois que ele entrou em uso (o corte do oficial).
@@ -34,17 +36,19 @@ def data_da_imagem(caminho: str | None, digi_em: str | None) -> str | None:
     return digi_em or None
 
 
-def pendentes(con: sqlite3.Connection, hoje: date | None = None) -> list[dict]:
+def pendentes(con: Any, hoje: date | None = None) -> list[dict]:
     """Fichas com R ou AV lavrado depois da última imagem. Só LÊ."""
     hoje = hoje or date.today()
     fichas: dict[int, dict] = {}
-    for mid, numero, digi_em, caminho, tipo, num, lavrado in con.execute(
-            """SELECT m.id, m.numero, m.digi_em, m.digi_path, a.tipo, a.numero,
+    for r in banco(con).ler(
+            """SELECT m.id, m.numero, m.digi_em, m.digi_path, a.tipo, a.numero AS num,
                       a.lavrado_em
                  FROM ri_atos a JOIN ri_matriculas m ON m.id = a.matricula_id
-                WHERE a.lavrado_em >= ? AND COALESCE(a.acervo,0) = 0
+                WHERE a.lavrado_em >= %s AND COALESCE(a.acervo,0) = 0
                   AND COALESCE(a.cancelado,0) = 0 AND a.tipo IN ('R','AV')
-                ORDER BY a.lavrado_em""", (DESDE,)):
+                ORDER BY a.lavrado_em, a.id""", (DESDE,)):
+        mid, numero, digi_em, caminho = r["id"], r["numero"], r["digi_em"], r["digi_path"]
+        tipo, num, lavrado = r["tipo"], r["num"], r["lavrado_em"]
         f = fichas.setdefault(mid, {"numero": numero, "digi_em": digi_em,
                                     "caminho": caminho, "atos": []})
         f["atos"].append((f"{tipo}-{num}", lavrado))

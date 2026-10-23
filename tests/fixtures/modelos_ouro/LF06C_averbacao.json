@@ -1,0 +1,374 @@
+{
+ "_como": "Gerado ANTES do LF06C, na árvore do commit 2c41e90 exportada intocada, por tests/fixtures/modelos_ouro/ouro_lf06c.py gerar averbacao. Não regerar: depois da mudança o texto mora na pasta dos padrões, e regerar faria o teste comparar a pasta com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "abertura_oficio": {
+   "ok": "de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção"
+  },
+  "abertura_parte_com_data": {
+   "ok": "após requerimento feito pela parte interessada, JOÃO DE EXEMPLO, em 10/10/2026"
+  },
+  "abertura_parte_data_invalida": {
+   "ok": "após requerimento feito pela parte interessada, JOÃO DE EXEMPLO"
+  },
+  "abertura_parte_sem_nome": {
+   "ok": "após requerimento feito pela parte interessada, "
+  },
+  "abertura_vazia": {
+   "ok": "de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção"
+  },
+  "constantes_antigas": {
+   "ok": {
+    "ABERTURA_DE_OFICIO": "de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção",
+    "FUNDAMENTO_PADRAO": "Artigo 110, §§1º e 3º, da Lei 6.015/1973"
+   }
+  },
+  "data_por_extenso": {
+   "ok": [
+    "5 de Janeiro de 2026",
+    "19 de Outubro de 2026",
+    "",
+    ""
+   ]
+  },
+  "do_elemento": {
+   "ok": [
+    "DO NOME",
+    "DOS NOMES",
+    "DA DATA",
+    "DAS DATAS",
+    "DE NATURALIDADE",
+    "DE DA MÃE"
+   ]
+  },
+  "dr_ausencia_recusa": {
+   "erro": "ModeloErro: Este modelo não serve para assento de AUSENCIA."
+  },
+  "dr_data_averbacao_invalida": {
+   "erro": "ModeloErro: Data da averbação inválida."
+  },
+  "dr_data_correta_invalida": {
+   "erro": "ModeloErro: Data correta do registro inválida."
+  },
+  "dr_datas_dd_mm_e_aspas": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro na data do registro (de ““primeiro de janeiro de dois mil”” para 01/01/2001)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 01/1.234 – RETIFICAÇÃO DA DATA DO REGISTRO: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar A DATA DO REGISTRO deste assento, que na época do registro foi grafada erroneamente como sendo “primeiro de janeiro de dois mil” ao invés de “1 de Janeiro de 2001 (01/01/2001)”, conforme a sequência dos termos vizinhos (termo 1.233, de 01/01/2001); diante disto faço constar a data correta do registro, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "dr_oficio": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro na data do registro (de “primeiro de janeiro de dois mil” para 01/01/2001)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 01/1.234 – RETIFICAÇÃO DA DATA DO REGISTRO: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar A DATA DO REGISTRO deste assento, que na época do registro foi grafada erroneamente como sendo “primeiro de janeiro de dois mil” ao invés de “1 de Janeiro de 2001 (01/01/2001)”, conforme a sequência dos termos vizinhos (termo 1.233, de 01/01/2001); diante disto faço constar a data correta do registro, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "dr_parte": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro na data do registro (de “primeiro de janeiro de dois mil” para 01/01/2001)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 01/1.234 – RETIFICAÇÃO DA DATA DO REGISTRO: Em 19 de Outubro de 2026, após requerimento feito pela parte interessada, JOÃO DE EXEMPLO, venho retificar A DATA DO REGISTRO deste assento, que na época do registro foi grafada erroneamente como sendo “primeiro de janeiro de dois mil” ao invés de “1 de Janeiro de 2001 (01/01/2001)”, conforme a sequência dos termos vizinhos (termo 1.233, de 01/01/2001); diante disto faço constar a data correta do registro, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "dr_parte_sem_nome": {
+   "erro": "ModeloErro: Preencha: Nome do requerente."
+  },
+  "dr_sem_cidade": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro na data do registro (de “primeiro de janeiro de dois mil” para 01/01/2001)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 01/1.234 – RETIFICAÇÃO DA DATA DO REGISTRO: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar A DATA DO REGISTRO deste assento, que na época do registro foi grafada erroneamente como sendo “primeiro de janeiro de dois mil” ao invés de “1 de Janeiro de 2001 (01/01/2001)”, conforme a sequência dos termos vizinhos (termo 1.233, de 01/01/2001); diante disto faço constar a data correta do registro, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. , 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "dr_sem_funcao": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro na data do registro (de “primeiro de janeiro de dois mil” para 01/01/2001)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 01/1.234 – RETIFICAÇÃO DA DATA DO REGISTRO: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar A DATA DO REGISTRO deste assento, que na época do registro foi grafada erroneamente como sendo “primeiro de janeiro de dois mil” ao invés de “1 de Janeiro de 2001 (01/01/2001)”, conforme a sequência dos termos vizinhos (termo 1.233, de 01/01/2001); diante disto faço constar a data correta do registro, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, o subscrevi."
+   }
+  },
+  "dr_sem_prova_recusa": {
+   "erro": "ModeloErro: Preencha: Elementos de prova."
+  },
+  "em_a": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro material: A DATA DE NASCIMENTO (de “01/01/2000” para “02/01/2000”)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 02/1.234 – RETIFICAÇÃO DA DATA DE NASCIMENTO: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar A DATA DE NASCIMENTO deste assento, que na época do registro foi grafada erroneamente como sendo “01/01/2000” ao invés de “02/01/2000”; diante disto faço constar a redação correta, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "em_as": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro material: AS DATAS (de “x” para “y”)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 02/1.234 – RETIFICAÇÃO DAS DATAS: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar AS DATAS deste assento, que na época do registro foram grafadas erroneamente como sendo “x” ao invés de “y”; diante disto faço constar a redação correta, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "em_cinco_parte_sem_data_funcao_cidade_casamento": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro material: A DATA DE NASCIMENTO (de “01/01/2000” para “02/01/2000”); AS DATAS (de “x” para “y”); O NOME DA GENITORA (de “MARIA DE EXEMPLO” para “MARIA DE EXEMPLO SILVA”); OS NOMES DOS AVÓS PATERNOS (de “JOSE DE EXEMPLO” para “JOSÉ DE EXEMPLO”); NATURALIDADE (de “CIDADE A” para “CIDADE B”)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 02/1.234 – RETIFICAÇÃO DA DATA DE NASCIMENTO, DAS DATAS, DO NOME DA GENITORA, DOS NOMES DOS AVÓS PATERNOS E DE NATURALIDADE: Em 19 de Outubro de 2026, após requerimento feito pela parte interessada, MARIA DE EXEMPLO, venho retificar os seguintes elementos deste assento, que na época do registro constaram com erro: A DATA DE NASCIMENTO, grafada erroneamente como sendo “01/01/2000” ao invés de “02/01/2000”; AS DATAS, grafadas erroneamente como sendo “x” ao invés de “y”; O NOME DA GENITORA, grafado erroneamente como sendo “MARIA DE EXEMPLO” ao invés de “MARIA DE EXEMPLO SILVA”; OS NOMES DOS AVÓS PATERNOS, grafados erroneamente como sendo “JOSE DE EXEMPLO” ao invés de “JOSÉ DE EXEMPLO”; e NATURALIDADE, que constou erroneamente como “CIDADE A” ao invés de “CIDADE B”; diante disto faço constar a redação correta, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. , 19/10/2026. Eu, FULANA DE EXEMPLO, o subscrevi."
+   }
+  },
+  "em_data_requerimento_invalida": {
+   "erro": "ModeloErro: Data do requerimento inválida."
+  },
+  "em_duas_parte_data_documentos_obito": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro material: O NOME DA GENITORA (de “MARIA DE EXEMPLO” para “MARIA DE EXEMPLO SILVA”); NATURALIDADE (de “CIDADE A” para “CIDADE B”)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 02/1.234 – RETIFICAÇÃO DO NOME DA GENITORA E DE NATURALIDADE: Em 19 de Outubro de 2026, após requerimento feito pela parte interessada, JOÃO DE EXEMPLO, em 10/10/2026, venho retificar os seguintes elementos deste assento, que na época do registro constaram com erro: O NOME DA GENITORA, grafado erroneamente como sendo “MARIA DE EXEMPLO” ao invés de “MARIA DE EXEMPLO SILVA”; e NATURALIDADE, que constou erroneamente como “CIDADE A” ao invés de “CIDADE B”, conforme certidão de nascimento da genitora; diante disto faço constar a redação correta, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "em_fundamento_cortado": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro material: O ELEMENTO 1 (de “YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY” para “YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY”); O ELEMENTO 2 (de “YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY” para “YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY…",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 02/1.234 – RETIFICAÇÃO DO ELEMENTO 1 E DO ELEMENTO 2: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar os seguintes elementos deste assento, que na época do registro constaram com erro: O ELEMENTO 1, grafado erroneamente como sendo “YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY” ao invés de “YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY”; e O ELEMENTO 2, grafado erroneamente como sendo “YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY” ao invés de “YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY”; diante disto faço constar a redação correta, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "em_linha_pela_metade": {
+   "erro": "ModeloErro: Complete: correção 1 sem leia-se."
+  },
+  "em_o": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro material: O NOME DA GENITORA (de “MARIA DE EXEMPLO” para “MARIA DE EXEMPLO SILVA”)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 02/1.234 – RETIFICAÇÃO DO NOME DA GENITORA: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar O NOME DA GENITORA deste assento, que na época do registro foi grafado erroneamente como sendo “MARIA DE EXEMPLO” ao invés de “MARIA DE EXEMPLO SILVA”; diante disto faço constar a redação correta, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "em_os": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro material: OS NOMES DOS AVÓS PATERNOS (de “JOSE DE EXEMPLO” para “JOSÉ DE EXEMPLO”)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 02/1.234 – RETIFICAÇÃO DOS NOMES DOS AVÓS PATERNOS: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar OS NOMES DOS AVÓS PATERNOS deste assento, que na época do registro foram grafados erroneamente como sendo “JOSE DE EXEMPLO” ao invés de “JOSÉ DE EXEMPLO”; diante disto faço constar a redação correta, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "em_sem_artigo": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro material: NATURALIDADE (de “CIDADE A” para “CIDADE B”)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 02/1.234 – RETIFICAÇÃO DE NATURALIDADE: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar NATURALIDADE deste assento, que na época do registro constou erroneamente como “CIDADE A” ao invés de “CIDADE B”; diante disto faço constar a redação correta, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "em_sem_correcao": {
+   "erro": "ModeloErro: Preencha: ao menos uma correção (elemento, onde se lê, leia-se)."
+  },
+  "prova_nada": {
+   "ok": ""
+  },
+  "prova_nascimento": {
+   "ok": "a sequência dos termos vizinhos (termo 1.233, de 01/01/2001; termo 1.235, de 02/01/2001) e a data de nascimento do registrando, 31/12/2000, constante do próprio assento"
+  },
+  "prova_obito": {
+   "ok": "a sequência dos termos vizinhos (termo 1.233, de 01/01/2001; termo 1.235, de 02/01/2001)"
+  },
+  "prova_sem_data_fato": {
+   "ok": "a sequência dos termos vizinhos (termo 1.233, de 01/01/2001; termo 1.235, de 02/01/2001)"
+  },
+  "prova_sem_vizinhos": {
+   "ok": "a data de nascimento do registrando, 31/12/2000, constante do próprio assento"
+  },
+  "rota_data_registro": {
+   "ok": [
+    {
+     "corpo": "{\"assento\": 5, \"modelo\": \"retificacao-data-registro\", \"previa\": null, \"tela\": \"atrib_rcpn_averbacao_modelo.html\", \"valores\": {\"cidade\": \"Cidade Exemplo/MA\", \"data_averbacao\": \"2026-10-19\", \"data_como_consta\": \"um de janeiro de dois mil\", \"data_correta\": \"2001-01-01\", \"elementos_prova\": \"a sequência dos termos vizinhos (termo 1.233, de 01/01/2001; termo 1.235, de 02/01/2001) e a data de nascimento do registrando, 31/12/2000, constante do próprio assento\", \"fundamento\": \"Artigo 110, §§1º e 3º, da Lei 6.015/1973\", \"numero_av\": \"03/1.234\", \"requerente_nome\": \"\", \"requerente_tipo\": \"oficio\", \"subscritor_funcao\": \"Escrevente Autorizada\", \"subscritor_nome\": \"FULANA DE EXEMPLO\"}}",
+     "local": null,
+     "sessao": {},
+     "status": 200
+    },
+    {
+     "corpo": "{\"assento\": 5, \"modelo\": \"retificacao-data-registro\", \"previa\": {\"fundamento\": \"Art. 110 da Lei 6.015/1973 - erro na data do registro (de “um de janeiro de dois mil” para 01/01/2001)\", \"natureza\": \"retificacao\", \"teor\": \"AVERBAÇÃO 01/1.234 – RETIFICAÇÃO DA DATA DO REGISTRO: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar A DATA DO REGISTRO deste assento, que na época do registro foi grafada erroneamente como sendo “um de janeiro de dois mil” ao invés de “1 de Janeiro de 2001 (01/01/2001)”, conforme a sequência dos termos vizinhos; diante disto faço constar a data correta do registro, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi.\"}, \"tela\": \"atrib_rcpn_averbacao_modelo.html\", \"valores\": {\"cidade\": \"Cidade Exemplo/MA\", \"data_averbacao\": \"2026-10-19\", \"data_como_consta\": \"um de janeiro de dois mil\", \"data_correta\": \"2001-01-01\", \"elementos_prova\": \"a sequência dos termos vizinhos\", \"fundamento\": \"Artigo 110, §§1º e 3º, da Lei 6.015/1973\", \"numero_av\": \"01/1.234\", \"requerente_nome\": \"\", \"requerente_tipo\": \"oficio\", \"subscritor_funcao\": \"Escrevente Autorizada\", \"subscritor_nome\": \"FULANA DE EXEMPLO\"}}",
+     "local": null,
+     "sessao": {},
+     "status": 200
+    },
+    {
+     "corpo": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/a/5\">/a/5</a>. If not, click the link.\n",
+     "local": "/a/5",
+     "sessao": {
+      "_flashes": [
+       [
+        "info",
+        "Texto do modelo levado para a averbação. Confira antes de lançar."
+       ]
+      ],
+      "rcpn_averbacao_preenchida": {
+       "assento_id": 5,
+       "editado": false,
+       "fundamento": "Art. 110 da Lei 6.015/1973 - erro na data do registro (de “um de janeiro de dois mil” para 01/01/2001)",
+       "modelo": "retificacao-data-registro",
+       "natureza": "retificacao",
+       "teor": "AVERBAÇÃO 01/1.234 – RETIFICAÇÃO DA DATA DO REGISTRO: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar A DATA DO REGISTRO deste assento, que na época do registro foi grafada erroneamente como sendo “um de janeiro de dois mil” ao invés de “1 de Janeiro de 2001 (01/01/2001)”, conforme a sequência dos termos vizinhos; diante disto faço constar a data correta do registro, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+      }
+     },
+     "status": 302
+    },
+    {
+     "corpo": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/a/5\">/a/5</a>. If not, click the link.\n",
+     "local": "/a/5",
+     "sessao": {
+      "_flashes": [
+       [
+        "info",
+        "Texto do modelo levado para a averbação, com as suas alterações. Confira antes de lançar."
+       ]
+      ],
+      "rcpn_averbacao_preenchida": {
+       "assento_id": 5,
+       "editado": true,
+       "fundamento": "F",
+       "modelo": "retificacao-data-registro",
+       "natureza": "retificacao",
+       "teor": "TEXTO EDITADO"
+      }
+     },
+     "status": 302
+    },
+    {
+     "corpo": "{\"assento\": 5, \"modelo\": \"retificacao-data-registro\", \"previa\": {\"fundamento\": \"\", \"natureza\": \"retificacao\", \"recusado\": true, \"teor\": \"TEXTO EDITADO\"}, \"tela\": \"atrib_rcpn_averbacao_modelo.html\", \"valores\": {\"cidade\": \"Cidade Exemplo/MA\", \"data_averbacao\": \"2026-10-19\", \"data_como_consta\": \"um de janeiro de dois mil\", \"data_correta\": \"2001-01-01\", \"elementos_prova\": \"a sequência dos termos vizinhos\", \"fundamento\": \"Artigo 110, §§1º e 3º, da Lei 6.015/1973\", \"numero_av\": \"01/1.234\", \"requerente_nome\": \"\", \"requerente_tipo\": \"oficio\", \"subscritor_funcao\": \"Escrevente Autorizada\", \"subscritor_nome\": \"\"}}",
+     "local": null,
+     "sessao": {
+      "_flashes": [
+       [
+        "danger",
+        "Preencha: Quem subscreve."
+       ]
+      ]
+     },
+     "status": 200
+    },
+    {
+     "corpo": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/b\">/b</a>. If not, click the link.\n",
+     "local": "/b",
+     "sessao": {
+      "_flashes": [
+       [
+        "danger",
+        "Assento não encontrado."
+       ]
+      ]
+     },
+     "status": 302
+    },
+    {
+     "corpo": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/a/5\">/a/5</a>. If not, click the link.\n",
+     "local": "/a/5",
+     "sessao": {
+      "_flashes": [
+       [
+        "danger",
+        "Modelo de averbação desconhecido."
+       ]
+      ]
+     },
+     "status": 302
+    }
+   ]
+  },
+  "rota_erro_material": {
+   "ok": [
+    {
+     "corpo": "{\"assento\": 5, \"modelo\": \"retificacao-erro-material\", \"previa\": null, \"tela\": \"atrib_rcpn_averbacao_modelo.html\", \"valores\": {\"cidade\": \"Cidade Exemplo/MA\", \"correcoes\": [], \"data_averbacao\": \"2026-10-19\", \"data_requerimento\": \"\", \"documentos\": \"\", \"fundamento\": \"Artigo 110, §§1º e 3º, da Lei 6.015/1973\", \"numero_av\": \"03/1.234\", \"requerente_nome\": \"\", \"requerente_tipo\": \"oficio\", \"subscritor_funcao\": \"Escrevente Autorizada\", \"subscritor_nome\": \"FULANA DE EXEMPLO\"}}",
+     "local": null,
+     "sessao": {},
+     "status": 200
+    },
+    {
+     "corpo": "{\"assento\": 5, \"modelo\": \"retificacao-erro-material\", \"previa\": {\"fundamento\": \"Art. 110 da Lei 6.015/1973 - erro material: O NOME DA GENITORA (de “MARIA DE EXEMPLO” para “MARIA DE EXEMPLO SILVA”); A DATA DE NASCIMENTO (de “01/01/2000” para “02/01/2000”)\", \"natureza\": \"retificacao\", \"teor\": \"AVERBAÇÃO 02/1.234 – RETIFICAÇÃO DO NOME DA GENITORA E DA DATA DE NASCIMENTO: Em 19 de Outubro de 2026, após requerimento feito pela parte interessada, JOÃO DE EXEMPLO, em 10/10/2026, venho retificar os seguintes elementos deste assento, que na época do registro constaram com erro: O NOME DA GENITORA, grafado erroneamente como sendo “MARIA DE EXEMPLO” ao invés de “MARIA DE EXEMPLO SILVA”; e A DATA DE NASCIMENTO, grafada erroneamente como sendo “01/01/2000” ao invés de “02/01/2000”, conforme certidão; diante disto faço constar a redação correta, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, o subscrevi.\"}, \"tela\": \"atrib_rcpn_averbacao_modelo.html\", \"valores\": {\"cidade\": \"Cidade Exemplo/MA\", \"correcoes\": [{\"campo\": \"O NOME DA GENITORA\", \"correto\": \"MARIA DE EXEMPLO SILVA\", \"errado\": \"MARIA DE EXEMPLO\"}, {\"campo\": \"A DATA DE NASCIMENTO\", \"correto\": \"02/01/2000\", \"errado\": \"01/01/2000\"}, {\"campo\": \"\", \"correto\": \"\", \"errado\": \"\"}, {\"campo\": \"\", \"correto\": \"\", \"errado\": \"\"}, {\"campo\": \"\", \"correto\": \"\", \"errado\": \"\"}], \"data_averbacao\": \"2026-10-19\", \"data_requerimento\": \"2026-10-10\", \"documentos\": \"certidão\", \"fundamento\": \"Artigo 110, §§1º e 3º, da Lei 6.015/1973\", \"numero_av\": \"02/1.234\", \"requerente_nome\": \"JOÃO DE EXEMPLO\", \"requerente_tipo\": \"parte\", \"subscritor_funcao\": \"\", \"subscritor_nome\": \"FULANA DE EXEMPLO\"}}",
+     "local": null,
+     "sessao": {},
+     "status": 200
+    },
+    {
+     "corpo": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/a/5\">/a/5</a>. If not, click the link.\n",
+     "local": "/a/5",
+     "sessao": {
+      "_flashes": [
+       [
+        "info",
+        "Texto do modelo levado para a averbação. Confira antes de lançar."
+       ]
+      ],
+      "rcpn_averbacao_preenchida": {
+       "assento_id": 5,
+       "editado": false,
+       "fundamento": "Art. 110 da Lei 6.015/1973 - erro material: O NOME DA GENITORA (de “MARIA DE EXEMPLO” para “MARIA DE EXEMPLO SILVA”); A DATA DE NASCIMENTO (de “01/01/2000” para “02/01/2000”)",
+       "modelo": "retificacao-erro-material",
+       "natureza": "retificacao",
+       "teor": "AVERBAÇÃO 02/1.234 – RETIFICAÇÃO DO NOME DA GENITORA E DA DATA DE NASCIMENTO: Em 19 de Outubro de 2026, após requerimento feito pela parte interessada, JOÃO DE EXEMPLO, em 10/10/2026, venho retificar os seguintes elementos deste assento, que na época do registro constaram com erro: O NOME DA GENITORA, grafado erroneamente como sendo “MARIA DE EXEMPLO” ao invés de “MARIA DE EXEMPLO SILVA”; e A DATA DE NASCIMENTO, grafada erroneamente como sendo “01/01/2000” ao invés de “02/01/2000”, conforme certidão; diante disto faço constar a redação correta, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, o subscrevi."
+      }
+     },
+     "status": 302
+    },
+    {
+     "corpo": "{\"assento\": 5, \"modelo\": \"retificacao-erro-material\", \"previa\": null, \"tela\": \"atrib_rcpn_averbacao_modelo.html\", \"valores\": {\"cidade\": \"Cidade Exemplo/MA\", \"correcoes\": [{\"campo\": \"O NOME DA GENITORA\", \"correto\": \"MARIA DE EXEMPLO SILVA\", \"errado\": \"MARIA DE EXEMPLO\"}, {\"campo\": \"A DATA DE NASCIMENTO\", \"correto\": \"\", \"errado\": \"01/01/2000\"}, {\"campo\": \"\", \"correto\": \"\", \"errado\": \"\"}, {\"campo\": \"\", \"correto\": \"\", \"errado\": \"\"}, {\"campo\": \"\", \"correto\": \"\", \"errado\": \"\"}], \"data_averbacao\": \"2026-10-19\", \"data_requerimento\": \"2026-10-10\", \"documentos\": \"certidão\", \"fundamento\": \"Artigo 110, §§1º e 3º, da Lei 6.015/1973\", \"numero_av\": \"02/1.234\", \"requerente_nome\": \"JOÃO DE EXEMPLO\", \"requerente_tipo\": \"parte\", \"subscritor_funcao\": \"\", \"subscritor_nome\": \"FULANA DE EXEMPLO\"}}",
+     "local": null,
+     "sessao": {
+      "_flashes": [
+       [
+        "danger",
+        "Complete: correção 2 sem leia-se."
+       ]
+      ]
+     },
+     "status": 200
+    }
+   ]
+  },
+  "slug_desconhecido": {
+   "erro": "ModeloErro: Modelo de averbação desconhecido."
+  },
+  "sugestoes_dr": {
+   "ok": {
+    "cidade": "Cidade Exemplo/MA",
+    "data_averbacao": "2026-10-19",
+    "data_como_consta": "um de janeiro",
+    "data_correta": "2001-01-01",
+    "elementos_prova": "a sequência dos termos vizinhos (termo 1.233, de 01/01/2001; termo 1.235, de 02/01/2001) e a data de nascimento do registrando, 31/12/2000, constante do próprio assento",
+    "fundamento": "Artigo 110, §§1º e 3º, da Lei 6.015/1973",
+    "numero_av": "03/1.234",
+    "requerente_nome": "",
+    "requerente_tipo": "oficio",
+    "subscritor_funcao": "Escrevente Autorizada",
+    "subscritor_nome": "FULANA DE EXEMPLO"
+   }
+  },
+  "sugestoes_dr_montadas": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro na data do registro (de “um de janeiro” para 01/01/2001)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 03/1.234 – RETIFICAÇÃO DA DATA DO REGISTRO: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar A DATA DO REGISTRO deste assento, que na época do registro foi grafada erroneamente como sendo “um de janeiro” ao invés de “1 de Janeiro de 2001 (01/01/2001)”, conforme a sequência dos termos vizinhos (termo 1.233, de 01/01/2001; termo 1.235, de 02/01/2001) e a data de nascimento do registrando, 31/12/2000, constante do próprio assento; diante disto faço constar a data correta do registro, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, Escrevente Autorizada, o subscrevi."
+   }
+  },
+  "sugestoes_em": {
+   "ok": {
+    "cidade": "Cidade Exemplo/MA",
+    "correcoes": [],
+    "data_averbacao": "2026-10-19",
+    "data_requerimento": "",
+    "documentos": "",
+    "fundamento": "Artigo 110, §§1º e 3º, da Lei 6.015/1973",
+    "numero_av": "03/1.234",
+    "requerente_nome": "",
+    "requerente_tipo": "oficio",
+    "subscritor_funcao": "",
+    "subscritor_nome": ""
+   }
+  },
+  "sugestoes_em_montadas": {
+   "ok": {
+    "fundamento": "Art. 110 da Lei 6.015/1973 - erro material: O NOME DA GENITORA (de “MARIA DE EXEMPLO” para “MARIA DE EXEMPLO SILVA”)",
+    "natureza": "retificacao",
+    "teor": "AVERBAÇÃO 03/1.234 – RETIFICAÇÃO DO NOME DA GENITORA: Em 19 de Outubro de 2026, de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção, venho retificar O NOME DA GENITORA deste assento, que na época do registro foi grafado erroneamente como sendo “MARIA DE EXEMPLO” ao invés de “MARIA DE EXEMPLO SILVA”; diante disto faço constar a redação correta, dando cumprimento ao Artigo 110, §§1º e 3º, da Lei 6.015/1973, retificando o assento. O referido é verdade e dou fé. Cidade Exemplo/MA, 19/10/2026. Eu, FULANA DE EXEMPLO, o subscrevi."
+   }
+  }
+ },
+ "grupo": "averbacao",
+ "textos": {
+  "rc_averbacao_modelos.ABERTURA_DE_OFICIO": "de ofício, por se tratar de erro que não exige qualquer indagação para a constatação imediata de necessidade de sua correção",
+  "rc_averbacao_modelos.FUNDAMENTO_PADRAO": "Artigo 110, §§1º e 3º, da Lei 6.015/1973"
+ }
+}

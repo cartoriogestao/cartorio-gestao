@@ -1,0 +1,11 @@
+{
+  "chave": "NOTAS_LIVRO_ENCERRAMENTO__inutilizadas",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Encerramento — folhas inutilizadas",
+  "formato": "CHAVES",
+  "explica": "Quando sobraram folhas em branco depois da última usada (art. 795, § 2º).",
+  "campos": [
+    "primeira",
+    "ultima"
+  ]
+}

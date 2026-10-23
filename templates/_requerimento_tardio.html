@@ -1,0 +1,184 @@
+{# O REQUERIMENTO DO REGISTRO TARDIO — 21/10/2026, o oficial: «tem que gerar
+   modelo de requerimento para fornecer para os comparecentes assinarem (de
+   preferência preenchido)».
+
+   O QUE ELE TEM VEM DA NORMA, E NÃO DO MODELO ANTIGO:
+     - art. 46 da Lei 6.015/1973 e art. 249 do Código de Normas do TJMA:
+       autuado e numerado (I); assinado por duas testemunhas, sob as penas da
+       lei, salvo o registrando menor de 12 anos com DNV (II); os documentos
+       que o acompanham «sempre que possível» (§ 2º); arquivo por 20 anos
+       (§ 1º);
+     - o procedimento do Provimento CNJ 28/2013, hoje no Provimento CNJ
+       149/2023 (art. 249, § 4º), como a doutrina da casa o resume (Gentil,
+       cap. 3, p. 440): requerimento pelo interessado ou representante, que
+       assina na presença do oficial (ou impressão digital e assinatura a rogo
+       de quem não sabe assinar); as testemunhas qualificadas por inteiro;
+       entrevista; fotografia e impressão datiloscópica do registrando;
+       decisão fundamentada.
+   O modelo do E-Ofício (m04) imprimia «Dispensada a presença de testemunhas»
+   em toda folha. AQUI A DISPENSA É CALCULADA (`regra`), e só sai quando vale.
+
+   O QUE VEM PREENCHIDO é o que a tela de lavrar recebeu; o que faltou sai
+   como linha para preencher à mão — o papel serve aos dois casos. #}
+
+{% macro _data(v) %}{% if v and v|length >= 10 %}{{ v[8:10] }}/{{ v[5:7] }}/{{ v[:4] }}{% else %}____/____/________{% endif %}{% endmacro %}
+{% macro _ou_linha(v, largura=40) %}{% if v %}<strong>{{ v }}</strong>{% else %}{{ '_' * largura }}{% endif %}{% endmacro %}
+
+{% macro _qualificacao(form, p) %}
+  {{ _ou_linha(form.get(p ~ '_nome'), 50) }},
+  nacionalidade {{ _ou_linha(form.get(p ~ '_nacionalidade'), 14) }},
+  estado civil {{ _ou_linha(form.get(p ~ '_estado_civil'), 14) }},
+  profissão {{ _ou_linha(form.get(p ~ '_profissao'), 18) }},
+  nascido(a) em {{ _data(form.get(p ~ '_data_nascimento')) }},
+  natural de {{ _ou_linha(((form.get(p ~ '_naturalidade_cidade') or '') ~ ('/' ~ form.get(p ~ '_naturalidade_uf') if form.get(p ~ '_naturalidade_uf') else '')) if form.get(p ~ '_naturalidade_cidade') else '', 22) }},
+  {{ (form.get(p ~ '_documento_tipo') or 'documento de identidade') }} nº {{ _ou_linha(form.get(p ~ '_documento_numero'), 18) }}{% if form.get(p ~ '_documento_orgao') %} ({{ form.get(p ~ '_documento_orgao') }}){% endif %},
+  {% if form.get(p ~ '_documento_tipo') == 'CPF' %}documento de identidade nº {{ '_' * 16 }}{% else %}CPF nº {{ '_' * 16 }}{% endif %},
+  residente em {{ _ou_linha([form.get(p ~ '_endereco'), form.get(p ~ '_bairro'), ((form.get(p ~ '_cidade') or '') ~ ('/' ~ form.get(p ~ '_uf') if form.get(p ~ '_uf') else ''))]|select|join(', '), 45) }}
+{% endmacro %}
+
+{% macro requerimento_tardio(form, sv, regra, hoje_br) %}
+<div class="req-tardio" style="font-family: Georgia, serif; font-size: 12.5px; line-height: 1.5">
+  <p style="text-align:center; margin:0"><strong>{{ sv.unit_name }}</strong><br>
+    <small>CNS {{ sv.ri_cns }} — {{ sv.ri_cidade }}/{{ sv.ri_uf }}</small></p>
+  <h2 style="text-align:center; font-size:15px; margin:10px 0 2px">
+    REQUERIMENTO DE REGISTRO DE NASCIMENTO TARDIO</h2>
+  <p style="text-align:center; margin:0"><small>art. 46 da Lei nº 6.015/1973 · art. 249 do
+    Código de Normas do TJMA · arts. 480 a 494 do Provimento CNJ nº 149/2023</small></p>
+  <p style="text-align:right"><strong>Autos nº {{ _ou_linha(form.get('tardio_requerimento'), 12) }}</strong>
+    &nbsp; autuado em ____/____/________ (art. 249, I)</p>
+
+  <p>Ilmo.(a) Sr.(a) Oficial(a) do Registro Civil das Pessoas Naturais de
+    {{ sv.ri_cidade }}/{{ sv.ri_uf }},</p>
+
+  <h3 style="font-size:13px; margin:10px 0 2px">1. QUEM REQUER</h3>
+  {# A QUALIDADE SE MARCA SÓ QUANDO O NOME DO DECLARANTE É O DE UM DELES —
+     comparar é o que basta; o resto fica para marcar à mão. #}
+  {% set quem = (form.get('declarante_nome') or '')|trim|upper %}
+  {% set q_proprio = quem and quem == ((form.get('pessoa_nome') or form.get('nome') or '')|trim|upper) %}
+  {% set q_mae = quem and quem == ((form.get('filiacao1_nome') or '')|trim|upper) %}
+  {% set q_pai = quem and quem == ((form.get('filiacao2_nome') or '')|trim|upper) %}
+  <p>{{ _qualificacao(form, 'declarante') }}, na qualidade de
+    ({{ 'X' if q_proprio else ' ' }}) o(a) próprio(a) registrando(a) &nbsp;
+    ({{ 'X' if q_mae else ' ' }}) mãe &nbsp; ({{ 'X' if q_pai else ' ' }}) pai &nbsp;
+    ( ) representante legal: ______________________.</p>
+
+  <h3 style="font-size:13px; margin:10px 0 2px">2. O NASCIMENTO QUE SE PEDE REGISTRAR</h3>
+  <p>Nome do(a) registrando(a): {{ _ou_linha(form.get('pessoa_nome') or form.get('nome'), 50) }}<br>
+    Sexo: {% if form.get('pessoa_sexo') == 'M' %}<strong>masculino</strong>{% elif form.get('pessoa_sexo') == 'F' %}<strong>feminino</strong>{% else %}( ) masculino ( ) feminino{% endif %}
+    &nbsp;·&nbsp; Data do nascimento: {{ _data(form.get('data_fato') or form.get('pessoa_data_nascimento')) }}
+    &nbsp;·&nbsp; Hora: {{ _ou_linha(form.get('hora_fato'), 6) }} (certa, sempre que possível determiná-la)<br>
+    Lugar do nascimento: {{ _ou_linha(form.get('local_fato_nome'), 30) }}
+    — {{ _ou_linha(form.get('local_fato_endereco'), 40) }}<br>
+    Gêmeo: {% if form.get('ibge_gemeo') and form.get('ibge_gemeo')|string != '1' %}<strong>sim</strong>{% elif form.get('ibge_gemeo')|string == '1' %}<strong>não</strong>{% else %}( ) sim ( ) não{% endif %}
+    &nbsp;·&nbsp; DNV: {{ _ou_linha(form.get('dnv'), 16) if form.get('dnv') else '( ) não apresentada  ( ) declaração do nascimento com firma reconhecida' }}</p>
+
+  <h3 style="font-size:13px; margin:10px 0 2px">3. FILIAÇÃO E AVÓS</h3>
+  <p>Mãe: {{ _qualificacao(form, 'filiacao1') }}.</p>
+  <p>Pai: {{ _qualificacao(form, 'filiacao2') }}.</p>
+  <p>Avós maternos: {{ _ou_linha(form.get('prog1f1_nome'), 30) }} e {{ _ou_linha(form.get('prog2f1_nome'), 30) }}.<br>
+    Avós paternos: {{ _ou_linha(form.get('prog1f2_nome'), 30) }} e {{ _ou_linha(form.get('prog2f2_nome'), 30) }}.<br>
+    <small>Os avós só se lançam no registro se o parentesco decorrer da paternidade e da
+    maternidade reconhecidas (Prov. CNJ 149/2023, art. 482, f).</small></p>
+  <p>Sem identificação dos genitores, sobrenome indicado pelo(a) registrando(a) ou, não
+    podendo ele(a) se manifestar, pelo requerente (art. 482, § 5º): {{ '_' * 30 }}<br>
+    Informação que não se pôde prestar (gêmeo, pais, avós, fotografia) e por quê
+    (art. 482, § 4º): {{ '_' * 50 }}</p>
+
+  <h3 style="font-size:13px; margin:10px 0 2px">4. DECLARAÇÃO E PEDIDO</h3>
+  <p>Declaro, sob as penas da lei, que o(a) registrando(a) <strong>nunca foi
+    registrado(a)</strong> em serventia alguma, nem teve certidão avulsa que tenha
+    produzido efeitos (Prov. CNJ 149/2023, art. 480, § 2º), que
+    ( ) reside neste município &nbsp; ( ) não tem residência fixa e se encontra neste
+    município (art. 481, parágrafo único), e que são verdadeiras as informações acima.
+    Requeiro a Vossa Senhoria que proceda ao registro de seu nascimento fora do prazo
+    legal, nos termos do art. 46 da Lei nº 6.015/1973 e do art. 249 do Código de Normas
+    do TJMA.</p>
+  <p>{{ sv.ri_cidade }}/{{ sv.ri_uf }}, {{ hoje_br }}.</p>
+  <table style="width:100%; margin-top:18px"><tr>
+    <td style="width:62%; text-align:center; vertical-align:bottom">
+      ______________________________________________<br>
+      {{ form.get('declarante_nome') or 'Requerente' }}<br>
+      <small>assinatura na presença do oficial ou preposto</small></td>
+    <td style="text-align:center">
+      <div style="border:1px solid #000; width:120px; height:70px; margin:0 auto"></div>
+      <small>impressão digital (quem não sabe assinar — assina outra pessoa a rogo)</small></td>
+  </tr></table>
+
+  <h3 style="font-size:13px; margin:14px 0 2px">5. AS TESTEMUNHAS (art. 249, II)</h3>
+  {# AS TESTEMUNHAS SAEM SEMPRE, COM O ESPAÇO DE ASSINAR — 21/10/2026, o
+     oficial: «esse registro, em específico, possui apenas cópia da DNV, nisso
+     vou pedir testemunhas. Preencher o requerimento com testemunhas e contar
+     espaço para elas assinarem, mesmo que tenhamos o número da DNV». A
+     dispensa do art. 249, II é faculdade, e quem decide colher é o oficial
+     (art. 249, III; Prov. CNJ 149/2023, art. 490). Ela só aparece como
+     opção a marcar — nunca tira as linhas do papel. #}
+  {% set colhidas = form.get('testemunha_nome') or form.get('testemunha2_nome') %}
+  {% if regra and regra.dispensada %}
+  <p>( {{ ' ' if colhidas else 'X' }} ) Dispensadas as testemunhas: {{ regra.porque|forte }}.<br>
+    ( {{ 'X' if colhidas else ' ' }} ) Colhidas por decisão do oficial — apresentada só cópia da DNV,
+    ou para prova suficiente (CN-TJMA, art. 249, III; Prov. CNJ 149/2023, art. 490).</p>
+  {% elif regra %}<p><small>Por que se colhem: {{ regra.porque|forte }}.</small></p>{% endif %}
+  <p><small>Assinam na presença do oficial ou de preposto autorizado, que examina os
+    documentos e certifica as firmas (Prov. CNJ 149/2023, arts. 482, § 2º, e 483). Podem ser
+    parentes em qualquer grau (art. 489); preferem-se as mais idosas que o registrando
+    (art. 483, d).</small></p>
+  {% for p, ordem in [('testemunha', 'Primeira'), ('testemunha2', 'Segunda')] %}
+  <p><strong>{{ ordem }} testemunha:</strong> {{ _qualificacao(form, p) }}.<br>
+    Atesto, sob responsabilidade civil e criminal, a identidade do(a)
+    registrando(a) e o conhecimento dos fatos acima declarados.</p>
+  <p style="text-align:center; margin:14px 0 6px">______________________________________________<br>
+    {{ form.get(p ~ '_nome') or (ordem ~ ' testemunha') }}</p>
+  {% endfor %}
+
+  <h3 style="font-size:13px; margin:12px 0 2px">6. O QUE ACOMPANHA (art. 249, § 2º — sempre que possível)</h3>
+  <p>( {% if form.get('dnv') %}X{% else %} {% endif %} ) DNV ou declaração com as informações do nascimento e firma reconhecida, em caso de extravio<br>
+    ( ) certidão negativa do oficial do local de nascimento &nbsp;
+    ( ) certidões de nascimento dos irmãos &nbsp;
+    ( ) documento de identidade do requerente e das testemunhas &nbsp;
+    ( ) outros: ______________________</p>
+
+  <table style="width:100%; margin-top:6px"><tr>
+    <td style="width:130px">
+      <div style="border:1px solid #000; width:110px; height:140px; text-align:center; font-size:10px; padding-top:60px">fotografia do<br>registrando</div></td>
+    <td style="width:150px">
+      <div style="border:1px solid #000; width:130px; height:140px; text-align:center; font-size:10px; padding-top:60px">impressão<br>datiloscópica</div></td>
+    <td style="vertical-align:top; font-size:11px">Fotografia e impressão
+      datiloscópica do registrando, quando possível, arquivadas na serventia
+      para futura identificação (Provimento CNJ nº 149/2023).</td>
+  </tr></table>
+
+  {% if not (regra and regra.dispensada) %}
+  <h3 style="font-size:13px; margin:12px 0 2px">7. ENTREVISTAS (Prov. CNJ 149/2023, arts. 483 a 485)</h3>
+  <p><small>Registrando com 12 anos ou mais: cada entrevista em separado (testemunhas,
+    registrando e, sendo o caso, o representante legal), reduzida a termo e assinada pelo
+    entrevistado e pelo oficial (art. 484). Verificar ao menos (art. 483):</small><br>
+    ( ) a) expressa-se no idioma nacional, como brasileiro<br>
+    ( ) b) conhece a localidade declarada como residência (ruas, prédios públicos, bairros)<br>
+    ( ) c) explicação do representante legal para o registro não feito no prazo: {{ '_' * 26 }}<br>
+    ( ) d) as testemunhas conhecem o registrando, têm informações concretas e idade compatível<br>
+    ( ) e) escolas frequentadas / unidades de saúde: {{ '_' * 34 }}<br>
+    ( ) f) irmãos, casamento e filhos, e em que cartório registrados: {{ '_' * 22 }}<br>
+    ( ) g) documentos que já teve (carteira de trabalho, título, identidade, batismo): {{ '_' * 10 }}<br>
+    <small>A falta de alguma informação não impede o registro, se justificada (art. 483,
+    parágrafo único).</small></p>
+  {% endif %}
+
+  <h3 style="font-size:13px; margin:12px 0 2px">{% if not (regra and regra.dispensada) %}8{% else %}7{% endif %}. PARA O OFICIAL</h3>
+  <p>Certifico a autenticidade das firmas do(a) requerente e das testemunhas, lançadas em
+    minha presença (Prov. CNJ 149/2023, art. 482, § 2º),
+    {% if not (regra and regra.dispensada) %}que as entrevistas foram feitas e reduzidas a termo
+    (arts. 484 e 485), {% endif %}e que os documentos acima foram conferidos.<br>
+    Decisão fundamentada (art. 485): ( ) defiro o registro &nbsp; ( ) exijo prova
+    suficiente, especificada em certidão própria (CN-TJMA, art. 249, III; Prov. 149, art. 490):
+    ____________________ &nbsp; ( ) persistindo a suspeita, encaminho ao juízo competente
+    (CN-TJMA, art. 249, IV; Prov. 149, art. 491).<br>
+    Fundamentos: {{ '_' * 60 }}</p>
+  <p>Lavrado o assento: Livro {{ '_' * 6 }} fls. {{ '_' * 5 }} nº {{ '_' * 8 }} em ____/____/________
+    (Prov. CNJ 149/2023, art. 494). <small>Nascimento fora de maternidade ou hospital: informar o
+    Ministério Público em 5 dias (art. 487).</small></p>
+  <p>{{ sv.ri_cidade }}/{{ sv.ri_uf }}, ____/____/________.
+    &nbsp;&nbsp; ______________________________________ — oficial / substituto / preposto designado</p>
+  <p><small>Arquivar por 20 anos (art. 249, § 1º); a incineração só com
+    autorização do juiz da vara de registros públicos.</small></p>
+</div>
+{% endmacro %}

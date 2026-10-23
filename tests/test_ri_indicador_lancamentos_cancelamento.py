@@ -12,17 +12,18 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
 
 import ra_registro as RA
 import ri_indicador_lancamentos as RILANC
 from ri_schema import init_ri_schema
 from ra_schema import init_ra_schema
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 
 @pytest.fixture()
 def con(tmp_path):
-    caminho = tmp_path / "t.sqlite3"
-    c = sqlite3.connect(caminho)
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys=OFF")
     c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT)")

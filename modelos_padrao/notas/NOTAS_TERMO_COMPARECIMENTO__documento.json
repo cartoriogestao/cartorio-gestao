@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_TERMO_COMPARECIMENTO__documento",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Termo de comparecimento — documento da parte",
+  "formato": "CHAVES",
+  "explica": "Entra depois do nome, com vírgula, quando a parte tem CPF/CNPJ.",
+  "campos": [
+    "documento"
+  ]
+}

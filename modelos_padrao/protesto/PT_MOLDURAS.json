@@ -1,0 +1,23 @@
+{
+  "chave": "PT_MOLDURAS",
+  "atribuicao": "Protesto",
+  "nome": "Protesto — moldura dos papéis (títulos, autenticidade, livros)",
+  "formato": "CHAVES",
+  "explica": "Uma linha por rótulo, no formato «nome = texto». O NOME é do sistema e não muda; o TEXTO é seu. Linha apagada, ou deixada sem texto, volta ao padrão — o sistema nunca fica sem a palavra. O texto em volta do teor no papel impresso: o título e o número da certidão e do instrumento, a linha de local e data, o rodapé de autenticidade (número, emissão e sha256), o «DESTAQUE AQUI» do canhoto, o separador da folha de editais e o título, o artigo e as colunas dos dois livros. O cabeçalho da casa e a assinatura não estão aqui (decisão do oficial de 07/09/2026: cabeçalho num ajuste separado).",
+  "campos": [
+    "tipo",
+    "numero",
+    "ano",
+    "motivo",
+    "emitida_em",
+    "hash",
+    "emitido_em",
+    "cidade",
+    "uf",
+    "data",
+    "de",
+    "ate",
+    "quantos",
+    "artigo"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "chave": "RI_LIVRO3_CERTIDAO_FECHO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão do Livro 3 (ODT) — fecho",
+  "formato": "JINJA",
+  "explica": "O fecho da certidão do Livro 3 impressa: «Era o que nela continha.», a finalidade, a validade do art. 553, o local e a data da EMISSÃO, quem expediu e a autenticidade. Campo sem valor não sai. Montado na impressão; o teor congelado não muda.",
+  "campos": [
+    "ano",
+    "cidade",
+    "emitida_em",
+    "finalidade",
+    "funcao",
+    "hash_certidao",
+    "numero",
+    "quando",
+    "quem",
+    "uf",
+    "valida_ate"
+  ]
+}

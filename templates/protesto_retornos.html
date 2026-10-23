@@ -131,7 +131,7 @@
         <td><small>{{ g.gerado_em }}<br>{{ g.gerado_por or '—' }}</small></td>
         <td>
           {% if g.cra_enviado_ambiente == 'EOFICIO' %}
-            <small>informado pelo E-Ofício antes da virada</small>
+            <small>informado pelo sistema antigo antes da virada</small>
           {% elif g.cra_enviado_em %}
             <strong>enviado</strong><div><small>{{ g.cra_enviado_em[:16] }}</small></div>
           {% else %}

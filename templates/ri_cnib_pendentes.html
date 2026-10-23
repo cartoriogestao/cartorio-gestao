@@ -72,7 +72,9 @@
     <details style="margin-top:12px">
       <summary><strong>A averbação preparada</strong> &mdash; leia antes de decidir</summary>
       <div class="teor" style="margin-top:8px;padding:10px;border:1px solid var(--linha)">
-        {{ p.teor|safe }}
+        {# sem_script (LX12, M8 do LS02): o teor se monta com os campos da
+           ordem judicial, que vem da central sem escape. #}
+        {{ p.teor|sem_script }}
       </div>
       <p class="small muted" style="margin-top:6px">
         O que ficou entre colchetes é o que a ordem da CNIB não trouxe, e você

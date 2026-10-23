@@ -126,6 +126,21 @@ def test_duas_falhas_soltas_nao_sao_ia_parada(con):
     assert not [a for a in OR.saude(con, AGORA) if a["robo"] == "LEITURA_IA"]
 
 
+def test_no_mesmo_segundo_a_frase_e_a_da_ultima_falha_gravada(con):
+    """Empate no `lido_em`: vale a de `id` maior, como o SQLite devolvia. Sem o
+    desempate, o PostgreSQL entrega o empate na ordem física, e a tela daria o
+    conserto da falha anterior."""
+    _leitura(con, "2026-10-09T07:30:00", erro="TimeoutError: rede", ato=1)
+    for id_, erro in ((900, ERRO_MODELO), (800, "TimeoutError: rede")):  # fora da ordem do id
+        con.execute(
+            """INSERT INTO ge_leituras (id, tabela, ato_id, hash_dossie, lido_em, provedor,
+                   modelo, erro) VALUES (?, 'ri_atos', ?, ?, '2026-10-09T14:00:00', 'claude',
+                   'Opus 5.5', ?)""", (id_, id_, f"h{id_}", erro))
+    a = [a for a in OR.saude(con, AGORA) if a["robo"] == "LEITURA_IA"][0]
+    assert "não conhece o modelo" in a["detalhe"]
+    assert "claude-opus-5-5" in a["como_resolver"]
+
+
 def test_gestor_parado_e_gestor_com_erro(con):
     con.execute("INSERT INTO ge_execucoes (iniciada_em, terminada_em, hoje, erro) "
                 "VALUES ('2026-10-08T07:30:00', '2026-10-08T07:31:00', '2026-10-08', "
@@ -212,6 +227,24 @@ def test_robo_ainda_nao_ligado_nao_vira_tarefa(con):
     ROT.sincronizar_tarefas_dos_robos(con, OR.saude(con, AGORA), HOJE)
     assert con.execute("SELECT count(*) FROM tasks WHERE source_type='OFICIAL'"
                        ).fetchone()[0] == 0
+
+
+def test_consulta_que_quebra_no_meio_da_transacao_nao_condena_a_rodada(con):
+    """No PostgreSQL, comando que falha condena a transação inteira. O `except
+    sqlite3.Error` de `saude` e de `_quem_cuida_da_ti` só vale se o comando
+    seguinte ainda roda — e o que garante isso é o SAVEPOINT do `bd_nativo`."""
+    con.execute("DROP TABLE ge_responsaveis")
+    con.execute("ALTER TABLE ge_execucoes RENAME COLUMN nao_mediu TO nao_mediu_velho")
+    con.commit()
+    OR.bater(con, "CARGAS_RI", situacao="OK")
+    assert con.in_transaction                        # como na rodada: a escrita já abriu
+    achados = {a["robo"]: a for a in OR.saude(con, AGORA)}
+    assert achados["GESTOR"]["regra"] == "NAO_MEDIU"
+    assert "CARGAS_RI" not in achados                # o robô seguinte ainda foi medido
+    dono = OP.dono_da_mesa(con)
+    assert dono is not None and ROT._quem_cuida_da_ti(con) == (dono, None)
+    con.commit()
+    assert OR.ultima_batida(con, "CARGAS_RI")["situacao"] == "OK"
 
 
 # ------------------------------------------------------------- decisões
@@ -379,6 +412,31 @@ def test_parte_que_quebra_vira_nao_mediu_e_o_resto_sai(con, tmp_path):
     assert OR.ultima_batida(con, "OFICIAL")["situacao"] == "ERRO"
 
 
+def test_o_que_a_rodada_grava_fica_confirmado_para_quem_abre_depois(con, cg_casa, tmp_path):
+    """L065R (18/10/2026): o esquema do robô oficial deixou de confirmar sozinho.
+    O `executescript` confirmava o que estivesse aberto, e era o `perguntar`, no
+    meio da rodada, que confirmava as tarefas dos robôs. Agora quem confirma é a
+    rodada, no fim. O Agendador fecha a conexão logo depois: o que ficasse
+    aberto voltaria atrás calado, e a outra conexão não veria nada."""
+    _responsavel(con, "GESTAO", "mario")
+    _responsavel(con, "TI", "alberto", subst="mario")
+    for i, h in enumerate(("2026-10-08T08:28:54", "2026-10-09T07:30:00",
+                           "2026-10-09T14:00:00")):
+        _leitura(con, h, erro=ERRO_MODELO, ato=10 + i)
+    r = ROT.rodar(con, HOJE, agora=AGORA, pasta_relatorio=tmp_path,
+                  ler_agendador=lambda: [], ler_certificados=lambda: [])
+    assert r["tarefas_dos_robos"]["criadas"] == 1
+    assert not con.in_transaction
+    outra = sqlite3.connect(cg_casa["banco"])
+    try:
+        assert outra.execute("SELECT count(*) FROM tasks WHERE source_type='OFICIAL'"
+                             ).fetchone()[0] == 1
+        assert OR.ultima_batida(outra, "OFICIAL")["situacao"] == "AVISO"
+        assert OO.PERGUNTA_DAS_OBRIGACOES in [d["chave"] for d in OD.abertas(outra)]
+    finally:
+        outra.close()
+
+
 def test_o_robo_oficial_nao_lavra_nao_sela_nao_cobra_nao_envia():
     import ast
     proibidos = ("lavr", "selar", "cobrar", "enviar", "cancelar", "apagar")
@@ -387,3 +445,27 @@ def test_o_robo_oficial_nao_lavra_nao_sela_nao_cobra_nao_envia():
         for no in arvore.body:
             if isinstance(no, ast.FunctionDef):
                 assert not any(p in no.name for p in proibidos), (mod.__name__, no.name)
+
+
+def test_o_robo_oficial_compila_no_python_3_11():
+    """O README pede «Python 3.11 ou superior». A f-string que repete as próprias
+    aspas dentro das chaves (`f"{linha["x"]}"`) só o 3.12 lê: no 3.11 o módulo
+    nem importa, e a saúde dos robôs some inteira."""
+    import tokenize
+    if not hasattr(tokenize, "FSTRING_START"):       # antes do 3.12, o import já acusou
+        return
+    for mod in (OR, OD, OO, OP, ROT):
+        aspas: list[str] = []                        # as das f-strings abertas
+        with open(mod.__file__, "rb") as f:
+            for tok in tokenize.tokenize(f.readline):
+                if tok.type == tokenize.FSTRING_END:
+                    aspas.pop()
+                    continue
+                if tok.type not in (tokenize.FSTRING_START, tokenize.STRING):
+                    continue
+                abre = tok.string.lstrip("rRbBuUfF")[:3]
+                abre = abre if abre in ('"""', "'''") else abre[0]
+                assert not aspas or not abre.startswith(aspas[-1]), (
+                    mod.__name__, tok.start[0], tok.line.strip())
+                if tok.type == tokenize.FSTRING_START:
+                    aspas.append(abre)

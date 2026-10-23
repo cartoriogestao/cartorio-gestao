@@ -367,7 +367,11 @@ class FichaEmPapelDoLivroTresTests(unittest.TestCase):
             self.assertIn("1243", styles)
 
     def test_o_texto_da_ficha_diz_que_nao_e_certidao(self):
-        """Papel que se pareça com certidão sem ser uma é o pior papel."""
+        """Papel que se pareça com certidão sem ser uma é o pior papel.
+
+        O «Dou fé» do fecho de CADA ATO (LH13, «15 a») não mora no modelo:
+        entra pelo claro `{atos}`, com quem praticou o ato — é o que o livro
+        diz do ato, como na ficha do Livro 2, e não uma afirmação da ficha."""
         import ra_ficha_odt as F
         self.assertIn("não é certidão", F.MODELO_FICHA_LIVRO3_PADRAO)
         for proibido in ("confere com o original", "dou fé", "CERTIFICO"):
@@ -384,6 +388,68 @@ class FichaEmPapelDoLivroTresTests(unittest.TestCase):
         self.assertIn("nenhum ato lavrado", claros["atos"])
         # e o modelo preenche sem estourar
         self.assertIn("1243", F.MODELO_FICHA_LIVRO3_PADRAO.format(**claros))
+
+    # ---- revisão do L013 (PostgreSQL nativo)
+
+    def test_etiqueta_do_selo_le_o_banco_so_para_ler(self):
+        """`_textos_selo` abria o banco em `mode=ro`. A troca para a porta do
+        banco o deixara gravável; o `mode=ro` chega ao PostgreSQL e o próprio
+        servidor recusa a escrita."""
+        import os
+        import sqlite3
+        from unittest import mock
+
+        import banco_pg
+        if not banco_pg.ativo():
+            self.skipTest("módulo nativo: só lê com o PostgreSQL ligado (CG_PG_DSN)")
+        from bd_nativo import banco
+        import ra_ficha_odt as F
+
+        with TemporaryDirectory() as td:
+            _app, db = self._casa(td)
+            with db.transaction() as con:
+                con.execute(
+                    "INSERT INTO sd_selos(numero, texto, obtido_em) VALUES (?,?,?)",
+                    ("TESTE-L013R-0001", "Etiqueta de teste L013R", db.now()))
+            abertos = []
+            conectar = banco_pg.conectar
+
+            def espiao(caminho, **kw):
+                abertos.append((caminho, kw))
+                return conectar(caminho, **kw)
+
+            with mock.patch.dict(os.environ, {"CARTORIO_GESTAO_DATA": td}), \
+                    mock.patch.object(banco_pg, "conectar", espiao):
+                textos = F._textos_selo(["TESTE-L013R-0001", "TESTE-L013R-0002"])
+            self.assertEqual(textos, {"TESTE-L013R-0001": "Etiqueta de teste L013R",
+                                      "TESTE-L013R-0002": "TESTE-L013R-0002"})
+            self.assertEqual(len(abertos), 1)
+            caminho, kw = abertos[0]
+            con = conectar(caminho, **kw)
+            try:
+                with self.assertRaisesRegex(sqlite3.OperationalError, "readonly"):
+                    banco(con).escrever(
+                        "INSERT INTO settings (key, value) VALUES (%s, %s)",
+                        ("chave_de_teste_l013r", "x"))
+            finally:
+                con.close()
+
+    def test_etiqueta_do_selo_sem_banco_nao_cria_arquivo_vazio(self):
+        """Sem o arquivo, a função devolvia o número sem tocar em nada. Com a
+        porta do banco sem `mode=ro` e o PostgreSQL desligado, o `sqlite3`
+        puro criava um `cartorio_gestao.sqlite3` vazio na pasta de dados."""
+        import os
+        from unittest import mock
+
+        import banco_pg
+        import ra_ficha_odt as F
+
+        with TemporaryDirectory() as td, \
+                mock.patch.dict(os.environ, {"CARTORIO_GESTAO_DATA": td}), \
+                mock.patch.object(banco_pg, "ativo", lambda: False):
+            self.assertEqual(F._textos_selo(["TESTE-L013R-0001"]),
+                             {"TESTE-L013R-0001": "TESTE-L013R-0001"})
+            self.assertFalse((Path(td) / "cartorio_gestao.sqlite3").exists())
 
 
 class CertidaoDoLivroTresTests(unittest.TestCase):
@@ -849,8 +915,16 @@ class CertidaoPorReproducaoTests(unittest.TestCase):
             #  ficha»), com o nome e o titulo sem as linhas em branco desde
             #  23/09, igual ao Livro 2. Este teste cobrava o traço até 23/09.
             self.assertNotIn("________", xml)
-            self.assertIn('<text:p text:style-name="P-centro">Administrador'
-                          '</text:p>', xml)
+            #  MODELO DA CASA — 20/10/2026: o nome sai numa linha só com a
+            #  qualificação («Nome — Função»), no estilo do fecho do modelo.
+            self.assertIn('<text:p text:style-name="P-repro-fecho-assina">'
+                          'Administrador', xml)
+            #  E O PAPEL DIZ O QUE REPRODUZ (LH02): o registro e o livro, da
+            #  certidão; o cabeçalho, do cadastro fictício da serventia.
+            self.assertIn("Registro nº 1243 do Livro nº 3 – Registro "
+                          "Auxiliar, em 1 (uma) página.", xml)
+            self.assertIn("Mario Exemplo dos Santos — Tabelião e Registrador "
+                          "Oficial", xml)
             self.assertNotIn('<text:p text:style-name="P-just"/>'
                              '<text:p text:style-name="P-just"/>', xml)
             self.assertNotIn("SELO DA CERTID", xml)
@@ -1053,7 +1127,9 @@ class PapelDaCertidaoDoLivroTresTests(unittest.TestCase):
         self.assertLess(pos_selo, pos_fecho)
         # A DATA É A DA EMISSÃO, e não a de hoje.
         self.assertIn("Certidão emitida em 21 de setembro de 2026", xml)
-        self.assertIn("art. 53", xml)
+        # a validade pelo art. 553 (LH13, «14 a»): o fecho se monta na
+        # impressão, e a segunda via já sai com o artigo vigente
+        self.assertIn("art. 553", xml)
         self.assertIn("CERTIDÃO DE INTEIRO TEOR n. 1/2026", xml)
         # E NADA DO QUE FOI CONGELADO MUDOU.
         self.assertEqual(tuple(hash_antes), tuple(hash_depois))

@@ -1,0 +1,15 @@
+{
+  "chave": "US_DECISAO_IMPROCEDENTE",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Decisão da usucapião — improcedente",
+  "formato": "CHAVES",
+  "explica": "Indefere o pedido, ressalvada a via judicial. É a SUGESTÃO que a ficha do processo oferece: o oficial completa o trecho [COMPLETAR], e o teor lavrado congela na decisão.",
+  "campos": [
+    "numero",
+    "requerente",
+    "cidade",
+    "uf",
+    "titular",
+    "titulo"
+  ]
+}

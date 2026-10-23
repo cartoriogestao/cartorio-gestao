@@ -50,11 +50,11 @@ from __future__ import annotations
 import hashlib
 import re
 import shutil
-import sqlite3
 from pathlib import Path
 from typing import Any
 
 import ri_imagens as RIMG
+from bd_nativo import banco
 
 
 class FichaDoDiscoError(ValueError):
@@ -92,7 +92,7 @@ def _sha256(caminho: Path, limite: int = 1024 * 1024) -> str:
     return h.hexdigest()
 
 
-def _numeros_das_matriculas(con: sqlite3.Connection) -> dict[str, list[int]]:
+def _numeros_das_matriculas(con: Any) -> dict[str, list[int]]:
     """De número de matrícula para os `id` que o têm. Só lê.
 
     **É uma LISTA, e não um id.** Duas matrículas com o mesmo número existem
@@ -100,8 +100,8 @@ def _numeros_das_matriculas(con: sqlite3.Connection) -> dict[str, list[int]]:
     fazer com dois é quem chamou, e a resposta é não casar.
     """
     fora: dict[str, list[int]] = {}
-    for linha in con.execute("SELECT id, numero FROM ri_matriculas"):
-        numero = str(linha[1] or "").strip()
+    for linha in banco(con).ler("SELECT id, numero FROM ri_matriculas ORDER BY id"):
+        numero = str(linha["numero"] or "").strip()
         if not numero:
             continue
         try:
@@ -110,11 +110,11 @@ def _numeros_das_matriculas(con: sqlite3.Connection) -> dict[str, list[int]]:
             continue
         if chave == "0":
             continue
-        fora.setdefault(chave, []).append(int(linha[0]))
+        fora.setdefault(chave, []).append(int(linha["id"]))
     return fora
 
 
-def conferir(con: sqlite3.Connection, raiz: Any) -> dict:
+def conferir(con: Any, raiz: Any) -> dict:
     """O que há no disco, o que o banco já tem, e o que falta. **SÓ LÊ.**
 
     Não grava nada e não copia nada — é o passo que se pode repetir à vontade,
@@ -127,8 +127,8 @@ def conferir(con: sqlite3.Connection, raiz: Any) -> dict:
             f"Lembre que ele roda como SYSTEM: caminho local funciona, unidade "
             f"mapeada não.")
 
-    ja_no_banco = {str(r[0] or "").strip().lower()
-                   for r in con.execute(
+    ja_no_banco = {str(r["nome_arquivo"] or "").strip().lower()
+                   for r in banco(con).ler(
                        "SELECT nome_arquivo FROM ri_imagens "
                        "WHERE nome_arquivo IS NOT NULL")}
     por_numero = _numeros_das_matriculas(con)
@@ -177,7 +177,7 @@ def conferir(con: sqlite3.Connection, raiz: Any) -> dict:
             "fora_do_padrao": fora_do_padrao}
 
 
-def candidatas(con: sqlite3.Connection, raiz: Any) -> list[dict]:
+def candidatas(con: Any, raiz: Any) -> list[dict]:
     """As páginas que não casam sozinhas, com as matrículas possíveis. SÓ LÊ.
 
     **AVISO SEM SAÍDA É AVISO QUE FICA PARA SEMPRE** — a lição do livro a
@@ -213,14 +213,14 @@ def candidatas(con: sqlite3.Connection, raiz: Any) -> list[dict]:
             continue
         nome_no_banco = (f"{caminho.name.split('.')[0]}."
                          f"{caminho.name.split('.')[1]}")
-        marcas = ",".join("?" for _ in ids)
-        opcoes = [dict(x) for x in con.execute(
+        marcas = ",".join("%s" for _ in ids)
+        opcoes = [dict(x) for x in banco(con).ler(
             f"""SELECT m.id, m.numero, m.livro, m.folha, m.tipo_ficha,
                        m.data_abertura,
                        (SELECT COUNT(*) FROM ri_imagens i
                          WHERE i.matricula_id = m.id) AS paginas
                   FROM ri_matriculas m WHERE m.id IN ({marcas})
-                 ORDER BY m.id""", ids).fetchall()]
+                 ORDER BY m.id""", ids)]
         fora.append({"nome": nome_no_banco, "arquivo": caminho.name,
                      "caminho": str(caminho), "numero": numero,
                      "pagina": pagina, "opcoes": opcoes})
@@ -240,7 +240,6 @@ def resolver(db, nome: str, matricula_id: int, *, raiz: Any,
         raise FichaDoDiscoError("Não veio o nome da página.")
 
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         pendentes = {x["nome"]: x for x in candidatas(con, raiz)}
     item = pendentes.get(alvo)
     if item is None:
@@ -271,32 +270,33 @@ def resolver(db, nome: str, matricula_id: int, *, raiz: Any,
                    / origem.name)
     agora = db.now()
     with db.transaction() as con:
-        con.execute(
+        banco(con).escrever(
             """INSERT INTO ri_imagens
                    (matricula_id, nome_arquivo, caminho, ordem, sha256,
                     ficha_digitalizada, caminho_interno, copiado_em, bytes)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (int(matricula_id), item["nome"], str(origem), item["pagina"],
              assinatura, 1, relativo, agora, tamanho))
     return {"nome": item["nome"], "matricula_id": int(matricula_id),
             "pagina": item["pagina"]}
 
 
-def quadro(con: sqlite3.Connection) -> dict:
+def quadro(con: Any) -> dict:
     """Quantas fichas estão completas, e quantas não. SÓ LÊ.
 
     **A conta é por matrícula, e não por página** — o que o balcão precisa
     saber é «esta ficha está inteira?», e não quantos arquivos há.
     """
-    total = int(con.execute(
-        "SELECT COUNT(*) FROM ri_matriculas").fetchone()[0])
-    com_imagem = int(con.execute(
-        "SELECT COUNT(DISTINCT matricula_id) FROM ri_imagens").fetchone()[0])
-    paginas = int(con.execute(
-        "SELECT COUNT(*) FROM ri_imagens").fetchone()[0])
-    copiadas = int(con.execute(
+    bd = banco(con)
+    total = int(bd.valor(
+        "SELECT COUNT(*) FROM ri_matriculas"))
+    com_imagem = int(bd.valor(
+        "SELECT COUNT(DISTINCT matricula_id) FROM ri_imagens"))
+    paginas = int(bd.valor(
+        "SELECT COUNT(*) FROM ri_imagens"))
+    copiadas = int(bd.valor(
         "SELECT COUNT(*) FROM ri_imagens "
-        "WHERE COALESCE(caminho_interno,'') <> ''").fetchone()[0])
+        "WHERE COALESCE(caminho_interno,'') <> ''"))
     return {"matriculas": total, "com_ficha": com_imagem,
             "sem_ficha": total - com_imagem, "paginas": paginas,
             "copiadas": copiadas}
@@ -314,7 +314,6 @@ def trazer(db, raiz: Any, *, quem: str = "", limite: int = 0) -> dict:
     caso, um arquivo copiado sem linha — que a próxima passada reaproveita.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         achado = conferir(con, raiz)
 
     novas = achado["novas"]
@@ -347,11 +346,11 @@ def trazer(db, raiz: Any, *, quem: str = "", limite: int = 0) -> dict:
         relativo = str(Path("ri") / "fichas" / str(item["matricula_id"])
                        / origem.name)
         with db.transaction() as con:
-            con.execute(
+            banco(con).escrever(
                 """INSERT INTO ri_imagens
                        (matricula_id, nome_arquivo, caminho, ordem, sha256,
                         ficha_digitalizada, caminho_interno, copiado_em, bytes)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (item["matricula_id"], item["nome"], str(origem),
                  item["pagina"], assinatura, 1, relativo, agora, tamanho))
         trazidas += 1
@@ -374,7 +373,7 @@ def pasta_interna(db) -> Path:
     return destino
 
 
-def incompletas(con: sqlite3.Connection, raiz: Any,
+def incompletas(con: Any, raiz: Any,
                 *, limite: int = 50) -> list[dict]:
     """As fichas que têm no disco mais páginas do que no sistema. SÓ LÊ.
 
@@ -390,12 +389,13 @@ def incompletas(con: sqlite3.Connection, raiz: Any,
         return []
 
     ids = list(por_matricula)[:int(limite)]
-    marcas = ",".join("?" for _ in ids)
-    linhas = con.execute(
+    marcas = ",".join("%s" for _ in ids)
+    linhas = banco(con).ler(
         f"""SELECT m.id, m.numero, m.livro,
                    (SELECT COUNT(*) FROM ri_imagens i
                      WHERE i.matricula_id = m.id) AS tem
-              FROM ri_matriculas m WHERE m.id IN ({marcas})""", ids).fetchall()
+              FROM ri_matriculas m WHERE m.id IN ({marcas})
+             ORDER BY m.id""", ids)
     return sorted(
         [{**dict(x), "faltam": por_matricula[int(x["id"])]} for x in linhas],
         key=lambda x: -x["faltam"])

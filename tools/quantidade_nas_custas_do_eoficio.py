@@ -58,6 +58,9 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import banco_pg  # noqa: E402
+# `banco` aqui e' o caminho do arquivo (parametro das funcoes), por isso o nome
+from bd_nativo import banco as banco_nativo  # noqa: E402
 from caixa_schema import centavos, reais  # noqa: E402
 
 CAMPOS = ("emolumentos", "ferc", "fadep", "femp", "ferrfis")
@@ -93,13 +96,15 @@ def _unitario_do_acervo(acervo: sqlite3.Connection) -> dict[str, dict[str, int]]
 
 def medir(banco: Path, acervo_caminho: Path) -> dict:
     """Le os dois bancos e diz o que mudaria. **NAO ESCREVE NADA.**"""
-    con = sqlite3.connect(f"file:{banco}?mode=ro", uri=True)
-    con.row_factory = sqlite3.Row
-    acervo = sqlite3.connect(f"file:{acervo_caminho}?mode=ro", uri=True)
+    con = banco_pg.conectar(f"file:{banco}?mode=ro", uri=True)
+    # O ACERVO E' O ARQUIVO DO E-OFICIO, e continua SQLite: pela porta do
+    # SQLite (LH09), que nao decide pelo nome do arquivo.
+    acervo = banco_pg.conectar_sqlite(acervo_caminho)
     try:
+        bd = banco_nativo(con)
         unitarios = _unitario_do_acervo(acervo)
         a_corrigir, recusados, ja_certos = [], [], 0
-        for item in con.execute(
+        for item in bd.ler(
                 """SELECT id, protocolo_id, origem_chave, codigo_ato, quantidade,
                           valor_total, emolumentos, ferc, fadep, femp, ferrfis,
                           quitado, lancamento_id
@@ -156,39 +161,42 @@ def aplicar(banco: Path, medicao: dict) -> Path:
     # FORA DA PASTA DO BANCO — ordem do oficial em 11/10/2026.
     import pasta_das_copias as _PC
     copia = _PC.destino_da_copia(copia, Path(banco))
-    con = sqlite3.connect(banco)
+    con = banco_pg.conectar(banco)
     try:
-        con.execute("PRAGMA busy_timeout=15000")
-        con.execute("VACUUM INTO ?", (str(copia),))
-        con.execute("BEGIN IMMEDIATE")
+        bd = banco_nativo(con)
+        banco_pg.copiar_para_arquivo(banco, copia)
         for x in medicao["a_corrigir"]:
             v = x["valores"]
-            con.execute(
+            bd.escrever(
                 """UPDATE cx_protocolo_atos
-                   SET valor_total=?, emolumentos=?, ferc=?, fadep=?, femp=?,
-                       ferrfis=?
-                   WHERE id=? AND quitado=0 AND lancamento_id IS NULL""",
+                   SET valor_total=%s, emolumentos=%s, ferc=%s, fadep=%s, femp=%s,
+                       ferrfis=%s
+                   WHERE id=%s AND quitado=0 AND lancamento_id IS NULL""",
                 (x["para"], v["emolumentos"], v["ferc"], v["fadep"], v["femp"],
                  v["ferrfis"], x["id"]))
         # O TOTAL DO PROTOCOLO E' SOMA DOS ITENS, e nao um numero a parte: se
         # ele ficasse para tras, a tela mostraria os itens novos com o total
         # velho — o carimbo que mente dentro da propria linha.
         for protocolo_id in medicao["protocolos"]:
+            # le a soma e grava o total na mesma linha: trava o protocolo antes
+            bd._escrita()
+            bd.ler("SELECT id FROM cx_protocolos WHERE id=%s FOR UPDATE",
+                   (protocolo_id,))
             soma = sum(
-                centavos(r[0]) for r in con.execute(
-                    "SELECT valor_total FROM cx_protocolo_atos WHERE protocolo_id=?",
+                centavos(r["valor_total"]) for r in bd.ler(
+                    "SELECT valor_total FROM cx_protocolo_atos WHERE protocolo_id=%s"
+                    " ORDER BY id",
                     (protocolo_id,)))
-            con.execute("UPDATE cx_protocolos SET valor_total=? WHERE id=?",
+            bd.escrever("UPDATE cx_protocolos SET valor_total=%s WHERE id=%s",
                         (reais(soma), protocolo_id))
         con.commit()
         # A AUDITORIA A MAO, porque a rota nao foi usada — a mesma forma do
         # script que normalizou a situacao dos problemas.
-        con.execute("BEGIN IMMEDIATE")
         for x in medicao["a_corrigir"]:
-            con.execute(
+            bd.escrever(
                 """INSERT INTO audit_logs(ts, user_id, username_snapshot, action,
                                           entity_type, entity_id, details)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (datetime.now().isoformat(timespec="seconds"), None,
                  "quantidade_nas_custas_do_eoficio",
                  "PROTOCOLO_ITEM_CORRIGIDO", "PROTOCOLO", x["protocolo_id"],

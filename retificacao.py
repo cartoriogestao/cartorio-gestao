@@ -27,6 +27,8 @@ O QUE ESTE MÓDULO NÃO FAZ, E CADA UM TEM MOTIVO
 from __future__ import annotations
 
 import sqlite3
+
+from bd_nativo import banco
 from typing import Any
 
 import rt_tjma as NORMA
@@ -102,13 +104,12 @@ MINIMO_DO_MOTIVO = 10
 # --------------------------------------------------------------------- leitura
 
 
-def processo(con: sqlite3.Connection, processo_id: int) -> sqlite3.Row | None:
-    con.row_factory = sqlite3.Row
-    return con.execute("SELECT * FROM rt_processos WHERE id = ?",
-                       (processo_id,)).fetchone()
+def processo(con: sqlite3.Connection, processo_id: int) -> dict | None:
+    return banco(con).um("SELECT * FROM rt_processos WHERE id = %s",
+                         (processo_id,))
 
 
-def _exigir(con: sqlite3.Connection, processo_id: int) -> sqlite3.Row:
+def _exigir(con: sqlite3.Connection, processo_id: int) -> dict:
     achado = processo(con, processo_id)
     if not achado:
         raise RetificacaoError(
@@ -116,18 +117,30 @@ def _exigir(con: sqlite3.Connection, processo_id: int) -> sqlite3.Row:
     return achado
 
 
+def _exigir_para_gravar(con: sqlite3.Connection, processo_id: int) -> dict:
+    """O processo, com a linha PRESA até o fim da transação (FOR UPDATE).
+
+    Para quem confere a decisão ou a averbação e grava em cima dela: duas
+    decisões ao mesmo tempo leriam as duas o processo sem decisão, e as duas
+    passariam. Com a linha presa, a segunda espera a primeira e lê o que ela
+    gravou.
+    """
+    bd = banco(con)
+    bd._escrita()
+    bd.um("SELECT id FROM rt_processos WHERE id = %s FOR UPDATE", (processo_id,))
+    return _exigir(bd, processo_id)
+
+
 def confrontantes(con: sqlite3.Connection, processo_id: int) -> list[dict]:
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        """SELECT * FROM rt_confrontantes WHERE processo_id = ?
-            ORDER BY papel, nome""", (processo_id,))]
+    return banco(con).ler(
+        """SELECT * FROM rt_confrontantes WHERE processo_id = %s
+            ORDER BY papel, nome, id""", (processo_id,))
 
 
 def pecas(con: sqlite3.Connection, processo_id: int) -> list[dict]:
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM rt_pecas WHERE processo_id = ? ORDER BY id",
-        (processo_id,))]
+    return banco(con).ler(
+        "SELECT * FROM rt_pecas WHERE processo_id = %s ORDER BY id",
+        (processo_id,))
 
 
 def juntar_peca(con: sqlite3.Connection, processo_id: int, *, tipo: str,
@@ -146,22 +159,22 @@ def juntar_peca(con: sqlite3.Connection, processo_id: int, *, tipo: str,
     if not tipo:
         raise RetificacaoError("A peça precisa de tipo.")
 
-    cur = con.execute(
+    bd = banco(con)
+    novo = int(bd.escrever(
         """INSERT INTO rt_pecas (processo_id, tipo, descricao, arquivo,
                sha256, entregue_em, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (processo_id, tipo, _texto(descricao) or None,
          _texto(arquivo) or None, _texto(sha256) or None,
-         _texto(entregue_em) or None, agora, usuario))
-    novo = int(cur.lastrowid)
+         _texto(entregue_em) or None, agora, usuario))[0]["id"])
 
-    con.execute(
+    bd.escrever(
         """UPDATE rt_conferencia
               SET situacao = 'ATENDIDO',
-                  nota = COALESCE(nota, ?),
-                  marcado_em = ?,
-                  marcado_por = ?
-            WHERE processo_id = ? AND item = ?
+                  nota = COALESCE(nota, %s),
+                  marcado_em = %s,
+                  marcado_por = %s
+            WHERE processo_id = %s AND item = %s
               AND COALESCE(situacao, 'PENDENTE') = 'PENDENTE'""",
         ("Atendido pela peça juntada.", agora, usuario, processo_id, tipo))
     _anotar(con, processo_id, tipo="PECA", quando=agora, quem=usuario,
@@ -171,12 +184,11 @@ def juntar_peca(con: sqlite3.Connection, processo_id: int, *, tipo: str,
 
 
 def andamento(con: sqlite3.Connection, processo_id: int) -> list[dict]:
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT a.*, c.nome AS confrontante_nome
              FROM rt_andamento a
              LEFT JOIN rt_confrontantes c ON c.id = a.confrontante_id
-            WHERE a.processo_id = ? ORDER BY a.id""", (processo_id,))]
+            WHERE a.processo_id = %s ORDER BY a.id""", (processo_id,))
 
 
 # ---------------------------------------------------------------------- autuar
@@ -209,14 +221,18 @@ def autuar(con: sqlite3.Connection, *, numero: str, especie: str,
     if not _texto(numero):
         raise RetificacaoError("O processo precisa de um número.")
 
-    con.row_factory = sqlite3.Row
-    if not con.execute("SELECT 1 FROM ri_matriculas WHERE id = ?",
-                       (matricula_id,)).fetchone():
+    bd = banco(con)
+    if not bd.um("SELECT 1 FROM ri_matriculas WHERE id = %s",
+                 (matricula_id,)):
         raise RetificacaoError(
             f"Não achei a matrícula nº {matricula_id}. A retificação é do "
             "registro: sem matrícula não há o que retificar.")
-    if con.execute("SELECT 1 FROM rt_processos WHERE numero = ?",
-                   (_texto(numero),)).fetchone():
+    # TRAVA ANTES DE CONFERIR: o número é único, e dois balcões autuando o
+    # mesmo número passariam os dois pela conferência — o segundo estouraria
+    # a chave em vez de ouvir a frase abaixo.
+    bd.travar("rt_processos.numero")
+    if bd.um("SELECT 1 FROM rt_processos WHERE numero = %s",
+             (_texto(numero),)):
         raise RetificacaoError(
             f"Já existe um processo de retificação com o número "
             f"{_texto(numero)}.")
@@ -237,11 +253,10 @@ def autuar(con: sqlite3.Connection, *, numero: str, especie: str,
             campos[chave] = extras[chave] or None
 
     colunas = ", ".join(campos)
-    marcas = ", ".join("?" for _ in campos)
-    cur = con.execute(
-        f"INSERT INTO rt_processos ({colunas}) VALUES ({marcas})",
-        tuple(campos.values()))
-    novo = int(cur.lastrowid)
+    marcas = ", ".join("%s" for _ in campos)
+    novo = int(bd.escrever(
+        f"INSERT INTO rt_processos ({colunas}) VALUES ({marcas}) "
+        "RETURNING id", tuple(campos.values()))[0]["id"])
 
     _anotar(con, novo, tipo="AUTUACAO", quando=agora, quem=usuario,
             o_que=f"Processo autuado — {NORMA.NOME_DA_ESPECIE[especie]}, "
@@ -254,10 +269,10 @@ def _anotar(con: sqlite3.Connection, processo_id: int, *, tipo: str,
             o_que: str, quando: str, quem: str | None = None,
             artigo: str | None = None,
             confrontante_id: int | None = None) -> None:
-    con.execute(
+    banco(con).escrever(
         """INSERT INTO rt_andamento (processo_id, quando, tipo, o_que, artigo,
                confrontante_id, quem)
-           VALUES (?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
         (processo_id, quando, tipo, o_que, artigo, confrontante_id, quem))
 
 
@@ -271,18 +286,18 @@ def _semear_conferencia(con: sqlite3.Connection, processo_id: int, *,
     """
     itens = NORMA.checklist(
         georreferenciada=(especie == NORMA.GEORREFERENCIADA), rural=rural)
+    bd = banco(con)
     for item in itens:
-        con.execute(
-            """INSERT OR IGNORE INTO rt_conferencia (processo_id, item, artigo)
-               VALUES (?,?,?)""",
+        bd.escrever(
+            """INSERT INTO rt_conferencia (processo_id, item, artigo)
+               VALUES (%s,%s,%s) ON CONFLICT DO NOTHING""",
             (processo_id, item["o_que"], item["artigo"]))
 
 
 def conferencia(con: sqlite3.Connection, processo_id: int) -> list[dict]:
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM rt_conferencia WHERE processo_id = ? ORDER BY id",
-        (processo_id,))]
+    return banco(con).ler(
+        "SELECT * FROM rt_conferencia WHERE processo_id = %s ORDER BY id",
+        (processo_id,))
 
 
 def marcar_item(con: sqlite3.Connection, processo_id: int, item: str, *,
@@ -303,12 +318,13 @@ def marcar_item(con: sqlite3.Connection, processo_id: int, item: str, *,
             "Para dispensar um item é preciso escrever o motivo — a norma tem "
             "casos expressos de dispensa, e é bom dizer qual deles é. "
             f"Escreva ao menos {MINIMO_DO_MOTIVO} letras.")
-    cur = con.execute(
-        """UPDATE rt_conferencia SET situacao = ?, nota = ?, marcado_em = ?,
-               marcado_por = ?
-            WHERE processo_id = ? AND item = ?""",
+    bd = banco(con)
+    bd.escrever(
+        """UPDATE rt_conferencia SET situacao = %s, nota = %s, marcado_em = %s,
+               marcado_por = %s
+            WHERE processo_id = %s AND item = %s""",
         (situacao, _texto(nota) or None, agora, usuario, processo_id, item))
-    if cur.rowcount == 0:
+    if bd.linhas_afetadas == 0:
         raise RetificacaoError(
             "Esse item não está na conferência deste processo.")
 
@@ -353,18 +369,18 @@ def anotar_confrontante(con: sqlite3.Connection, processo_id: int, *,
     #  «Nao achar a funcao que procurei nao prova que ela nao existe» — quinta
     #  vez neste projeto.)
     from pt_schema import normalizar_nome
-    cur = con.execute(
+    novo = int(banco(con).escrever(
         """INSERT INTO rt_confrontantes (processo_id, papel, nome, nome_norm,
                documento, endereco, matricula_contigua, serventia_contigua,
                divisa_afetada, assinou_planta, carta_anuencia, criado_em,
                criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (processo_id, papel, _texto(nome), normalizar_nome(_texto(nome)),
          _texto(documento) or None, _texto(endereco) or None,
          _texto(matricula_contigua) or None, _texto(serventia_contigua) or None,
          1 if divisa_afetada else 0, 1 if assinou_planta else 0,
-         1 if carta_anuencia else 0, agora, usuario))
-    novo = int(cur.lastrowid)
+         1 if carta_anuencia else 0, agora, usuario))[0]["id"])
     _anotar(con, processo_id, tipo="CONFRONTANTE", quando=agora, quem=usuario,
             confrontante_id=novo,
             o_que=f"{NOME_DO_PAPEL[papel]} anotado: {_texto(nome)}.")
@@ -447,9 +463,12 @@ def notificar(con: sqlite3.Connection, confrontante_id: int, *, forma: str,
             "existem, nesta ordem: " + ", ".join(x["forma"]
                                                  for x in NORMA.COMO_NOTIFICAR)
             + ".")
-    con.row_factory = sqlite3.Row
-    linha = con.execute("SELECT * FROM rt_confrontantes WHERE id = ?",
-                        (confrontante_id,)).fetchone()
+    bd = banco(con)
+    # FOR UPDATE: o «já foi notificado» sai desta leitura, e duas notificações
+    # ao mesmo tempo passariam as duas — a segunda recomeçando o prazo.
+    bd._escrita()
+    linha = bd.um("SELECT * FROM rt_confrontantes WHERE id = %s FOR UPDATE",
+                  (confrontante_id,))
     if not linha:
         raise RetificacaoError("Não achei esse confrontante.")
     if linha["notificado_em"]:
@@ -470,26 +489,28 @@ def notificar(con: sqlite3.Connection, confrontante_id: int, *, forma: str,
     teor = None
     if serventia is not None:
         import rt_notificacao as NOTIF
-        processo = dict(con.execute(
-            "SELECT * FROM rt_processos WHERE id = ?",
-            (int(linha["processo_id"]),)).fetchone() or {})
+        processo = dict(bd.um(
+            "SELECT * FROM rt_processos WHERE id = %s",
+            (int(linha["processo_id"]),)) or {})
         if processo.get("matricula_id"):
-            m = con.execute("SELECT numero FROM ri_matriculas WHERE id = ?",
-                            (processo["matricula_id"],)).fetchone()
+            m = bd.um("SELECT numero FROM ri_matriculas WHERE id = %s",
+                      (processo["matricula_id"],))
             if m:
-                processo["matricula_numero"] = m[0]
+                processo["matricula_numero"] = m["numero"]
         try:
+            # COM `bd`, O PAPEL SAI COMO A CASA O AJUSTOU (LF06G) — e
+            # congela assim no registro do confrontante.
             teor = NOTIF.montar(processo=processo, confrontante=dict(linha),
                                 serventia=serventia,
-                                hoje_extenso=hoje_extenso)
+                                hoje_extenso=hoje_extenso, con=bd)
         except NOTIF.NotificacaoError as erro:
             raise RetificacaoError(str(erro)) from erro
 
-    con.execute(
-        """UPDATE rt_confrontantes SET notificado_em = ?, forma = ?,
-               recebido_em = ?, prazo_ate = ?,
-               teor_expedido = COALESCE(?, teor_expedido)
-            WHERE id = ?""",
+    bd.escrever(
+        """UPDATE rt_confrontantes SET notificado_em = %s, forma = %s,
+               recebido_em = %s, prazo_ate = %s,
+               teor_expedido = COALESCE(%s, teor_expedido)
+            WHERE id = %s""",
         (quando, forma, _texto(recebido_em) or None, prazo_ate, teor,
          confrontante_id))
     _anotar(con, int(linha["processo_id"]), tipo="NOTIFICACAO", quando=agora,
@@ -517,9 +538,9 @@ def responder(con: sqlite3.Connection, confrontante_id: int, *, resposta: str,
             f"«{resposta}» não é uma resposta. As que existem: "
             + ", ".join(f"{k} ({v})" for k, v in NOME_DA_RESPOSTA.items())
             + ".")
-    con.row_factory = sqlite3.Row
-    linha = con.execute("SELECT * FROM rt_confrontantes WHERE id = ?",
-                        (confrontante_id,)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT * FROM rt_confrontantes WHERE id = %s",
+                  (confrontante_id,))
     if not linha:
         raise RetificacaoError("Não achei esse confrontante.")
     if resposta == IMPUGNOU and len(_texto(impugnacao)) < MINIMO_DO_MOTIVO:
@@ -527,9 +548,9 @@ def responder(con: sqlite3.Connection, confrontante_id: int, *, resposta: str,
             "A impugnação tem de ser fundamentada — «não bastando mera "
             "alegação de prejuízo» (art. 593). Escreva o que ele alegou.")
 
-    con.execute(
-        """UPDATE rt_confrontantes SET resposta = ?, respondido_em = ?,
-               impugnacao = ? WHERE id = ?""",
+    bd.escrever(
+        """UPDATE rt_confrontantes SET resposta = %s, respondido_em = %s,
+               impugnacao = %s WHERE id = %s""",
         (resposta, agora, _texto(impugnacao) or None, confrontante_id))
     _anotar(con, int(linha["processo_id"]), tipo="RESPOSTA", quando=agora,
             quem=usuario, confrontante_id=confrontante_id,
@@ -621,7 +642,7 @@ def decidir(con: sqlite3.Connection, processo_id: int, *, sentido: str,
     na matrícula — e quem a lavra é a tela do RI. É a decisão do CNIB, e aqui
     ela pesa mais: o desfecho **encerra uma matrícula e abre outra**.
     """
-    p = _exigir(con, processo_id)
+    p = _exigir_para_gravar(con, processo_id)
     sentido = _texto(sentido).upper()
     if sentido not in (PROCEDENTE, IMPROCEDENTE):
         raise RetificacaoError(
@@ -642,10 +663,11 @@ def decidir(con: sqlite3.Connection, processo_id: int, *, sentido: str,
                 "Não dá para julgar procedente ainda: " + " ".join(faltas))
 
     proxima = "AVERBACAO" if sentido == PROCEDENTE else "CONCLUIDO"
-    con.execute(
-        """UPDATE rt_processos SET decisao = ?, decisao_fundamento = ?,
-               decidido_em = ?, decidido_por = ?, fase = ?, atualizado_em = ?
-            WHERE id = ?""",
+    banco(con).escrever(
+        """UPDATE rt_processos SET decisao = %s, decisao_fundamento = %s,
+               decidido_em = %s, decidido_por = %s, fase = %s,
+               atualizado_em = %s
+            WHERE id = %s""",
         (sentido, _texto(fundamento), agora, usuario, proxima, agora,
          processo_id))
     _anotar(con, processo_id, tipo="DECISAO", quando=agora, quem=usuario,
@@ -672,14 +694,13 @@ def registrar_averbacao(con: sqlite3.Connection, processo_id: int, *,
 
     E SÓ DEPOIS DE PROCEDENTE. Averbação sem decisão é registro sem fundamento.
     """
-    p = _exigir(con, processo_id)
+    p = _exigir_para_gravar(con, processo_id)
     if p["decisao"] != PROCEDENTE:
         raise RetificacaoError(
             "Só se averba depois de o oficial julgar procedente (art. 604, "
             "§ 1º).")
-    con.row_factory = sqlite3.Row
-    if not con.execute("SELECT 1 FROM ri_atos WHERE id = ?",
-                       (ato_id,)).fetchone():
+    bd = banco(con)
+    if not bd.um("SELECT 1 FROM ri_atos WHERE id = %s", (ato_id,)):
         raise RetificacaoError(
             f"Não achei o ato nº {ato_id} no Registro de Imóveis. A averbação "
             "se lavra na matrícula, e este processo guarda qual foi.")
@@ -687,10 +708,10 @@ def registrar_averbacao(con: sqlite3.Connection, processo_id: int, *,
         raise RetificacaoError(
             f"Este processo já está amarrado ao ato nº {p['ato_id']}.")
 
-    con.execute(
-        """UPDATE rt_processos SET ato_id = ?, matricula_nova_id = ?,
-               averbado_em = ?, fase = 'SIGEF', atualizado_em = ?
-            WHERE id = ?""",
+    bd.escrever(
+        """UPDATE rt_processos SET ato_id = %s, matricula_nova_id = %s,
+               averbado_em = %s, fase = 'SIGEF', atualizado_em = %s
+            WHERE id = %s""",
         (int(ato_id), matricula_nova_id, agora, agora, processo_id))
     _anotar(con, processo_id, tipo="AVERBACAO", quando=agora, quem=usuario,
             artigo="art. 604, § 1º",
@@ -723,10 +744,10 @@ def registrar_sigef(con: sqlite3.Connection, processo_id: int, *,
         raise RetificacaoError(
             "Guarde o protocolo que o SIGEF devolveu — é a prova de que a "
             "serventia cumpriu o prazo.")
-    con.execute(
-        """UPDATE rt_processos SET sigef_requerido_em = ?, sigef_protocolo = ?,
-               fase = 'CONCLUIDO', situacao = ?, encerrado_em = ?,
-               atualizado_em = ? WHERE id = ?""",
+    banco(con).escrever(
+        """UPDATE rt_processos SET sigef_requerido_em = %s,
+               sigef_protocolo = %s, fase = 'CONCLUIDO', situacao = %s,
+               encerrado_em = %s, atualizado_em = %s WHERE id = %s""",
         (quando, _texto(protocolo), ENCERRADO, agora, agora, processo_id))
     _anotar(con, processo_id, tipo="SIGEF", quando=agora, quem=usuario,
             artigo="art. 620, § 2º",
@@ -739,13 +760,12 @@ def registrar_sigef(con: sqlite3.Connection, processo_id: int, *,
 
 
 def abertos(con: sqlite3.Connection, limite: int = 200) -> list[dict]:
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT p.*, m.numero AS matricula_numero
              FROM rt_processos p
              LEFT JOIN ri_matriculas m ON m.id = p.matricula_id
-            WHERE p.situacao = ?
-         ORDER BY p.id DESC LIMIT ?""", (EM_ANDAMENTO, limite))]
+            WHERE p.situacao = %s
+         ORDER BY p.id DESC LIMIT %s""", (EM_ANDAMENTO, limite))
 
 
 def sigef_a_vencer(con: sqlite3.Connection) -> list[dict]:
@@ -758,15 +778,14 @@ def sigef_a_vencer(con: sqlite3.Connection) -> list[dict]:
     Não calcula o vencimento: devolve a data da averbação, e quem conta os dias
     é quem já conta os prazos desta casa.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT p.*, m.numero AS matricula_numero
              FROM rt_processos p
              LEFT JOIN ri_matriculas m ON m.id = p.matricula_id
             WHERE p.averbado_em IS NOT NULL
               AND COALESCE(p.sigef_requerido_em, '') = ''
-              AND p.especie = ?
-         ORDER BY p.averbado_em""", (NORMA.GEORREFERENCIADA,))]
+              AND p.especie = %s
+         ORDER BY p.averbado_em, p.id""", (NORMA.GEORREFERENCIADA,))
 
 
 def proximos_passos(con: sqlite3.Connection, processo_id: int, *,

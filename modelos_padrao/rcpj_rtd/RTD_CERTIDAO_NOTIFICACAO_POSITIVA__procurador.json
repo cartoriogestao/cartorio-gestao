@@ -1,0 +1,8 @@
+{
+  "chave": "RTD_CERTIDAO_NOTIFICACAO_POSITIVA__procurador",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Notificação positiva — entregue a procurador",
+  "formato": "CHAVES",
+  "explica": "Quando a via foi entregue a procurador com poderes específicos para receber notificações (CN-MA, art. 992).",
+  "campos": []
+}

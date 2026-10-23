@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Devedor — {{ p.nomes|join(' / ') }}</h1>{% endblock %}
+{% block content %}
+
+<p>
+  {% if p.sem_documento %}
+  <strong>Devedor sem CPF/CNPJ</strong> — o painel mostra só o título deste
+  cadastro: sem documento, não se junta por nome.
+  {% else %}
+  {{ p.documento_tipo }} <strong>{{ p.documento_formatado }}</strong>
+  {% endif %}
+  · {{ p.resumo.titulos }} título(s), {{ p.resumo.em_andamento }} em andamento,
+  R$ {{ p.resumo.valor_em_aberto_centavos|centavos_reais }} em aberto
+  {% if p.resumo.protestados %}· {{ p.resumo.protestados }} protestado(s){% endif %}
+</p>
+<p><a href="{{ url_for('protesto_devedores') }}">← todos os devedores</a></p>
+
+{% for t in p.titulos %}
+<section class="cartao">
+  <h2>
+    <a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}">Título {{ t.numero_titulo or ('#' ~ t.id) }}</a>
+    — {{ t.situacao }}{% if t.sustado %} · <span class="alert-danger">SUSTADO</span>{% endif %}
+  </h2>
+
+  {% for a in t.alertas %}
+  <div class="alert {% if a.codigo in ('VENCE_HOJE', 'AR_NAO_VOLTOU', 'EDITAL_NECESSARIO') %}alert-danger{% else %}alert-warning{% endif %}">
+    <strong>{{ a.rotulo }}.</strong> {{ a.frase }}
+    {% if a.detalhe %}<span class="small">({{ a.detalhe }})</span>{% endif %}
+    <span class="small muted">{{ a.base }}.</span>
+  </div>
+  {% endfor %}
+
+  <table class="tabela">
+    <tbody>
+      <tr><th>Protocolo</th><td>{{ t.protocolo or '—' }}</td></tr>
+      <tr><th>Espécie / valor</th><td>{{ t.especie }} · R$ {{ (t.saldo_centavos or t.valor_centavos or 0)|centavos_reais }}
+        {% if t.data_vencimento %}· vencido em {{ fmt_date(t.data_vencimento) }}{% endif %}</td></tr>
+      <tr><th>Credor</th><td>{{ t.cedente_nome or '—' }}</td></tr>
+      <tr><th>Prazo-limite</th><td>
+        {% if t.prazo_limite %}{{ fmt_date(t.prazo_limite) }}
+          {% if t.dias_para_o_prazo is not none %}
+            <span class="small muted">({% if t.dias_para_o_prazo > 0 %}faltam {{ t.dias_para_o_prazo }} dia(s){% elif t.dias_para_o_prazo == 0 %}é hoje{% else %}passou há {{ -t.dias_para_o_prazo }} dia(s){% endif %} — contagem, e não juízo)</span>
+          {% endif %}
+        {% else %}—{% endif %}</td></tr>
+      {% if t.protesto %}<tr><th>Protesto</th><td>lavrado em {{ fmt_date(t.protesto.data_ato) }} {{ t.protesto.rotulo or '' }}</td></tr>{% endif %}
+    </tbody>
+  </table>
+
+  <h3>Intimações</h3>
+  {% if t.intimacoes %}
+  <ul class="small">
+    {% for i in t.intimacoes %}
+    <li>{{ fmt_date(i.data) }} — {{ i.modo|lower }}{% if i.digital %} (meio eletrônico){% endif %}{% if i.comprovante %}: {{ i.comprovante }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="small muted">Nenhuma intimação lavrada.</p>{% endif %}
+
+  {% if t.avisos or t.postagens %}
+  <h3>Avisos e AR</h3>
+  <ul class="small">
+    {% for a in t.avisos %}
+    <li>Aviso {{ a.numero }}/{{ a.ano }} — {{ a.situacao }}{% if a.entrega_em %} em {{ fmt_date(a.entrega_em) }}{% endif %}{% if a.entregador %} ({{ a.entregador }}){% endif %}</li>
+    {% endfor %}
+    {% for po in t.postagens %}
+    <li>AR {{ po.codigo_objeto or '—' }} — {{ po.situacao }}{% if po.prazo_limite %}, prazo {{ fmt_date(po.prazo_limite) }}{% endif %}{% if po.entrega_em %}, voltou com data de {{ fmt_date(po.entrega_em) }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <h3>Pagamentos e boletos</h3>
+  {% if t.pagamentos or t.boletos %}
+  <ul class="small">
+    {% for g in t.pagamentos %}
+    <li>Pago em {{ fmt_date(g.data) }}{% if g.forma %} {{ g.forma }}{% endif %}{% if g.valor_centavos is not none %} — R$ {{ g.valor_centavos|centavos_reais }}{% endif %}{% if g.identificacao %} ({{ g.identificacao }}){% endif %}{% if g.rotulo %} · Livro de Pagamentos {{ g.rotulo }}{% endif %}</li>
+    {% endfor %}
+    {% for b in t.boletos %}
+    <li>Boleto {{ b.nosso_numero or b.identificador }} — {{ b.situacao }}, R$ {{ b.valor_centavos|centavos_reais }}, vence {{ fmt_date(b.vencimento) }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="small muted">Nenhum pagamento nem boleto.</p>{% endif %}
+</section>
+{% else %}
+<p class="muted">Nenhum título deste devedor.</p>
+{% endfor %}
+{% endblock %}

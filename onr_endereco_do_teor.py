@@ -46,6 +46,7 @@ import re
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 import onr_api as API
 
 # A CONVERSÃO DE ÁREA VEM DE `onr_api`, e **não** é uma cópia: ela subiu para lá
@@ -2138,10 +2139,10 @@ def propor_do_banco(con: sqlite3.Connection, matricula_id: int,
     O extrator lê o TEOR; onde não há teor, não há o que ler. **A ficha é o
     lugar onde isso se diz**, e é para lá que a tela manda a frase.
     """
-    linha = con.execute(
+    linha = banco(con).um(
         "SELECT id, numero, teor, logradouro, numero_predial, bairro, cidade, "
         "uf, cep, rural_urbano, area_valor, area_unidade, tipo_imovel "
-        "FROM ri_matriculas WHERE id=?", (int(matricula_id),)).fetchone()
+        "FROM ri_matriculas WHERE id=%s", (int(matricula_id),))
     if not linha:
         raise EnderecoError(f"A matrícula {matricula_id} não existe.")
     if not (linha["teor"] or "").strip():
@@ -2220,24 +2221,25 @@ def guardar(con: sqlite3.Connection, proposta: dict,
     mid = proposta.get("matricula_id")
     if not mid:
         raise EnderecoError("A proposta veio sem a matrícula de origem.")
-    antes = con.execute(
+    bd = banco(con)
+    antes = bd.um(
         "SELECT logradouro, numero_predial, bairro, cidade, uf, cep, "
         "rural_urbano, area_valor, area_unidade, tipo_imovel "
-        "FROM ri_matriculas WHERE id=?", (int(mid),)).fetchone()
+        "FROM ri_matriculas WHERE id=%s", (int(mid),))
     if not antes:
         raise EnderecoError(f"A matrícula {mid} não existe.")
-    con.execute(
+    bd.escrever(
         "INSERT INTO ri_onr_enderecos (matricula_id, situacao, proposta, "
         " de_onde, faltam, avisos, bloco, confianca, pode_enviar, antes, "
         " calculado_em) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
         "ON CONFLICT(matricula_id) DO UPDATE SET "
         "  situacao=excluded.situacao, proposta=excluded.proposta, "
         "  de_onde=excluded.de_onde, faltam=excluded.faltam, "
         "  avisos=excluded.avisos, bloco=excluded.bloco, "
         "  confianca=excluded.confianca, pode_enviar=excluded.pode_enviar, "
         "  antes=excluded.antes, calculado_em=excluded.calculado_em "
-        "WHERE ri_onr_enderecos.situacao = ?",
+        "WHERE ri_onr_enderecos.situacao = %s",
         (int(mid), A_CONFERIR, _json(proposta.get("campos") or {}),
          _json(proposta.get("de_onde") or {}),
          _json(proposta.get("faltam") or []),
@@ -2245,19 +2247,18 @@ def guardar(con: sqlite3.Connection, proposta: dict,
          proposta.get("bloco") or "", proposta.get("confianca") or "media",
          1 if proposta.get("pode_enviar") else 0,
          _json(o_que_ja_tem(dict(antes))), agora, A_CONFERIR))
-    linha = con.execute(
-        "SELECT id FROM ri_onr_enderecos WHERE matricula_id=?",
-        (int(mid),)).fetchone()
+    linha = bd.um(
+        "SELECT id FROM ri_onr_enderecos WHERE matricula_id=%s",
+        (int(mid),))
     return int(linha["id"])
 
 
 def ler(con: sqlite3.Connection, proposta_id: int) -> dict | None:
     """Uma proposta, já com o JSON aberto e o número da matrícula."""
-    con.row_factory = sqlite3.Row
-    r = con.execute(
+    r = banco(con).um(
         "SELECT e.*, m.numero AS matricula_numero, m.livro "
         "FROM ri_onr_enderecos e JOIN ri_matriculas m ON m.id=e.matricula_id "
-        "WHERE e.id=?", (int(proposta_id),)).fetchone()
+        "WHERE e.id=%s", (int(proposta_id),))
     if not r:
         return None
     d = dict(r)
@@ -2278,17 +2279,16 @@ def listar(con: sqlite3.Connection, *, situacao: str | None = A_CONFERIR,
     **A ordem é a da confiança: primeiro o que está pronto.** Quem abre esta
     tela quer despachar o que não precisa de olho; o que precisa, espera.
     """
-    con.row_factory = sqlite3.Row
     onde, args = [], []
     if situacao:
-        onde.append("e.situacao=?")
+        onde.append("e.situacao=%s")
         args.append(situacao)
     if somente_prontas:
         onde.append("e.pode_enviar=1")
     if somente_divergentes:
         onde.append("e.confianca='baixa'")
     if confianca:
-        onde.append("e.confianca=?")
+        onde.append("e.confianca=%s")
         args.append(confianca)
     args.append(int(limite))
     sql = ("SELECT e.id, e.matricula_id, e.situacao, e.confianca, e.pode_enviar, "
@@ -2299,9 +2299,9 @@ def listar(con: sqlite3.Connection, *, situacao: str | None = A_CONFERIR,
     if onde:
         sql += " WHERE " + " AND ".join(onde)
     sql += (" ORDER BY CASE e.confianca WHEN 'alta' THEN 1 WHEN 'media' THEN 2 "
-            "ELSE 3 END, e.id LIMIT ?")
+            "ELSE 3 END, e.id LIMIT %s")
     saida = []
-    for r in con.execute(sql, args):
+    for r in banco(con).ler(sql, args):
         d = dict(r)
         d["proposta"] = _de_json(d.get("proposta"), {})
         d["antes"] = _de_json(d.get("antes"), {})
@@ -2313,18 +2313,19 @@ def listar(con: sqlite3.Connection, *, situacao: str | None = A_CONFERIR,
 
 def contar(con: sqlite3.Connection) -> dict:
     """Quantas em cada situação, e quantas prontas para ir."""
-    con.row_factory = sqlite3.Row
-    por_situacao = {r["situacao"]: r["n"] for r in con.execute(
-        "SELECT situacao, COUNT(*) n FROM ri_onr_enderecos GROUP BY situacao")}
-    prontas = con.execute(
-        "SELECT COUNT(*) FROM ri_onr_enderecos WHERE situacao=? AND "
-        "pode_enviar=1", (A_CONFERIR,)).fetchone()[0]
+    bd = banco(con)
+    por_situacao = {r["situacao"]: int(r["n"]) for r in bd.ler(
+        "SELECT situacao, COUNT(*) AS n FROM ri_onr_enderecos GROUP BY situacao "
+        "ORDER BY situacao")}
+    prontas = int(bd.valor(
+        "SELECT COUNT(*) FROM ri_onr_enderecos WHERE situacao=%s AND "
+        "pode_enviar=1", (A_CONFERIR,)))
     return {"por_situacao": por_situacao,
             "a_conferir": por_situacao.get(A_CONFERIR, 0),
             "prontas": prontas,
-            "divergentes": con.execute(
-                "SELECT COUNT(*) FROM ri_onr_enderecos WHERE situacao=? AND "
-                "confianca='baixa'", (A_CONFERIR,)).fetchone()[0]}
+            "divergentes": int(bd.valor(
+                "SELECT COUNT(*) FROM ri_onr_enderecos WHERE situacao=%s AND "
+                "confianca='baixa'", (A_CONFERIR,)))}
 
 
 # Os campos que a conferência pode gravar. **`rural_urbano` e `tipo_imovel`
@@ -2366,10 +2367,11 @@ def confirmar(con: sqlite3.Connection, proposta_id: int, *,
             f" Uma proposta por matrícula, e a decisão de quem conferiu vale mais"
             f" que uma segunda leitura — ela está na tela da proposta.")
 
-    atual = con.execute(
+    bd = banco(con)
+    atual = bd.um(
         "SELECT logradouro, numero_predial, bairro, cidade, uf, cep, "
         "rural_urbano, area_valor, area_unidade, tipo_imovel "
-        "FROM ri_matriculas WHERE id=?", (int(p["matricula_id"]),)).fetchone()
+        "FROM ri_matriculas WHERE id=%s", (int(p["matricula_id"]),))
     if not atual:
         raise EnderecoError(
             f"A matrícula {p['matricula_id']} não existe mais.")
@@ -2392,12 +2394,12 @@ def confirmar(con: sqlite3.Connection, proposta_id: int, *,
         vao[campo] = str(proposto[campo]).strip()
 
     if vao:
-        conjuntos = ", ".join(f"{c}=?" for c in vao)
-        con.execute(f"UPDATE ri_matriculas SET {conjuntos} WHERE id=?",
+        conjuntos = ", ".join(f"{c}=%s" for c in vao)
+        bd.escrever(f"UPDATE ri_matriculas SET {conjuntos} WHERE id=%s",
                     [*vao.values(), int(p["matricula_id"])])
-    con.execute(
-        "UPDATE ri_onr_enderecos SET situacao=?, decidido_em=?, decidido_por=?, "
-        "motivo=?, gravado=?, preservado=? WHERE id=?",
+    bd.escrever(
+        "UPDATE ri_onr_enderecos SET situacao=%s, decidido_em=%s, decidido_por=%s, "
+        "motivo=%s, gravado=%s, preservado=%s WHERE id=%s",
         (CONFIRMADA, agora, usuario,
          ("ficaram como estavam: " + ", ".join(ficaram)) if ficaram else "",
          _json(vao), _json(ficaram), int(proposta_id)))
@@ -2424,9 +2426,9 @@ def descartar(con: sqlite3.Connection, proposta_id: int, *, motivo: str,
         raise EnderecoError(
             "Esta proposta já foi confirmada e gravada na ficha. O que está "
             "lá se corrige na própria ficha, com rastro.")
-    con.execute(
-        "UPDATE ri_onr_enderecos SET situacao=?, decidido_em=?, decidido_por=?, "
-        "motivo=? WHERE id=?",
+    banco(con).escrever(
+        "UPDATE ri_onr_enderecos SET situacao=%s, decidido_em=%s, decidido_por=%s, "
+        "motivo=%s WHERE id=%s",
         (DESCARTADA, agora, usuario, motivo.strip(), int(proposta_id)))
 
 
@@ -2451,24 +2453,24 @@ def gerar(con: sqlite3.Connection, *, agora: str, settings: dict | None = None,
     > tocada (o `WHERE situacao` do `guardar` a preserva), mas a fila da
     > conferência se encheria de linha já decidida.
     """
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     onde = ["(m.teor IS NOT NULL AND TRIM(m.teor) <> '')",
             "(m.logradouro IS NULL OR TRIM(m.logradouro) = '')"]
     if so_do_ocr:
-        onde.append("(m.origem LIKE 'PDF_OCR%')")
-    linhas = con.execute(
+        onde.append("(m.origem ILIKE 'PDF_OCR%%')")
+    linhas = bd.ler(
         "SELECT m.id, m.numero, m.teor, m.logradouro, m.numero_predial, "
         "m.bairro, m.cidade, m.uf, m.cep, m.rural_urbano, m.area_valor, "
         "m.area_unidade, m.tipo_imovel, m.origem "
         "FROM ri_matriculas m WHERE " + " AND ".join(onde)
-        + " ORDER BY m.id LIMIT ?", (int(limite),)).fetchall()
+        + " ORDER BY m.id LIMIT %s", (int(limite),))
     padrao = padrao_da_casa(settings)
     feito = {"lidas": 0, "prontas": 0, "com_buraco": 0, "divergentes": 0,
              "sem_nome": 0, "sem_marca": 0}
     for linha in linhas:
         m = dict(linha)
         p = propor(m, padrao=padrao)
-        guardar(con, p, agora=agora)
+        guardar(bd, p, agora=agora)
         feito["lidas"] += 1
         if p["pode_enviar"]:
             feito["prontas"] += 1

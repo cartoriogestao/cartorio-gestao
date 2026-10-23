@@ -1,0 +1,10 @@
+{
+  "chave": "RI_PRENOTACOES_ABERTAS_ITEM_PROTOCOLO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Prenotação em aberto — número do protocolo",
+  "formato": "JINJA",
+  "explica": "Começo de cada protocolo da lista das prenotações em aberto; entra sempre, um por protocolo (ri_web).",
+  "campos": [
+    "numero"
+  ]
+}

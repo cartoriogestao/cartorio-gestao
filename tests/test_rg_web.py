@@ -38,6 +38,7 @@ import pytest
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — notoriamente pesado (~47 testes web)
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+from navegador_de_teste import postar_e_seguir  # noqa: E402
 
 import rg_titulo as TIT
 
@@ -57,6 +58,14 @@ def _token(html: str) -> str:
     achado = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
     assert achado, "a tela não trouxe csrf_token"
     return achado.group(1)
+
+
+def _imprimir(c, url, **kw):
+    """A etiqueta é POST com o token desde o LX11 (M8 do LS01): GET que grava
+    a contagem não passava pelo CSRF."""
+    with c.session_transaction() as sessao:
+        token = sessao["csrf_token"]
+    return c.post(url, data={"csrf_token": token}, **kw)
 
 
 def _sessao(cg_casa, papel: str = "ADMIN"):
@@ -134,8 +143,8 @@ def registrar(s, titulo_id: int, serie="TD_B", teor="Registro integral.",
     html = s["c"].get(f"/rcpj-rtd/titulo/{titulo_id}").get_data(as_text=True)
     dados = {"csrf_token": _token(html), "serie": serie, "teor": teor}
     dados.update(extras)
-    return s["c"].post(f"/rcpj-rtd/titulo/{titulo_id}/registrar",
-                       data=dados, follow_redirects=True)
+    # Com selo, a lavratura leva à etiqueta por 307 (`navegador_de_teste`).
+    return postar_e_seguir(s["c"], f"/rcpj-rtd/titulo/{titulo_id}/registrar", dados)
 
 
 # --------------------------------------- as telas existem, e no menu
@@ -424,7 +433,7 @@ def test_a_etiqueta_de_registro_usa_a_tira_100_por_30(s):
     titulo_id = receber(s)
     qualificar(s, titulo_id, TIT.POSITIVA)
     registrar(s, titulo_id)
-    html = s["c"].get(f"/rcpj-rtd/ato/{_ato_do(s, titulo_id)}/etiqueta"
+    html = _imprimir(s["c"], f"/rcpj-rtd/ato/{_ato_do(s, titulo_id)}/etiqueta"
                       ).get_data(as_text=True)
     assert "size: 100.0mm 30.0mm" in html or "size: 100mm 30mm" in html, html[:400]
     assert "Livro" in html and "fl." in html
@@ -439,8 +448,8 @@ def test_a_etiqueta_conta_as_impressoes(s):
     qualificar(s, titulo_id, TIT.POSITIVA)
     registrar(s, titulo_id)
     ato_id = _ato_do(s, titulo_id)
-    s["c"].get(f"/rcpj-rtd/ato/{ato_id}/etiqueta")
-    html = s["c"].get(f"/rcpj-rtd/ato/{ato_id}/etiqueta").get_data(as_text=True)
+    _imprimir(s["c"], f"/rcpj-rtd/ato/{ato_id}/etiqueta")
+    html = _imprimir(s["c"], f"/rcpj-rtd/ato/{ato_id}/etiqueta").get_data(as_text=True)
     assert "2ª impressão desta etiqueta" in html
     con = _con(s)
     ato = con.execute("SELECT * FROM rg_atos WHERE id=?", (ato_id,)).fetchone()
@@ -462,7 +471,7 @@ def test_a_etiqueta_de_registro_cancelado_e_recusada(s):
                     "WHERE id=(SELECT registro_id FROM rg_atos WHERE id=?)",
                     (ato_id,))
     con.close()
-    r = s["c"].get(f"/rcpj-rtd/ato/{ato_id}/etiqueta", follow_redirects=True)
+    r = _imprimir(s["c"], f"/rcpj-rtd/ato/{ato_id}/etiqueta", follow_redirects=True)
     assert "cancelado" in r.get_data(as_text=True)
 
 
@@ -474,7 +483,7 @@ def test_a_etiqueta_tem_ONDE_SER_AJUSTADA(s):
     titulo_id = receber(s)
     qualificar(s, titulo_id, TIT.POSITIVA)
     registrar(s, titulo_id)
-    html = s["c"].get(f"/rcpj-rtd/ato/{_ato_do(s, titulo_id)}/etiqueta"
+    html = _imprimir(s["c"], f"/rcpj-rtd/ato/{_ato_do(s, titulo_id)}/etiqueta"
                       ).get_data(as_text=True)
     assert "/rcpj-rtd/etiqueta/ajuste" in html
     r = s["c"].get("/rcpj-rtd/etiqueta/ajuste")
@@ -514,7 +523,7 @@ def test_a_etiqueta_sem_selo_avisa_em_vez_de_calar(s):
     titulo_id = receber(s)
     qualificar(s, titulo_id, TIT.POSITIVA)
     registrar(s, titulo_id)
-    html = s["c"].get(f"/rcpj-rtd/ato/{_ato_do(s, titulo_id)}/etiqueta"
+    html = _imprimir(s["c"], f"/rcpj-rtd/ato/{_ato_do(s, titulo_id)}/etiqueta"
                       ).get_data(as_text=True)
     assert "ainda está sem selo" in html
 
@@ -795,6 +804,31 @@ def test_registrar_com_selo_amarra_ao_rg_ato(s):
                       (linha["ato_id"],)).fetchone()
     assert ato["selo"] == SELO_BOM
     con.close()
+
+
+def test_a_etiqueta_sai_mesmo_sem_o_razao_dos_selos(s):
+    """`_texto_do_selo` perdoa a `sd_selos` que falta (`except sqlite3.Error`).
+    No PostgreSQL o erro chega pelo `bd_nativo`, já traduzido, numa conexão
+    própria e fora de transação — a etiqueta sai, só sem a linha de valores
+    (revisão do L043). O banco é do módulo: a tabela volta no fim."""
+    from bd_nativo import Banco
+    titulo_id = receber(s)
+    qualificar(s, titulo_id, TIT.POSITIVA)
+    registrar(s, titulo_id, selo=SELO_BOM)
+    ato_id = _ato_do(s, titulo_id)
+    con = _con(s)
+    bd = Banco(con)
+    bd.escrever("ALTER TABLE sd_selos RENAME TO sd_selos_fora_do_teste")
+    con.commit()
+    try:
+        r = _imprimir(s["c"], f"/rcpj-rtd/ato/{ato_id}/etiqueta")
+        assert r.status_code == 200
+        html = r.get_data(as_text=True)
+        assert SELO_BOM in html and 'class="valores"' not in html
+    finally:
+        bd.escrever("ALTER TABLE sd_selos_fora_do_teste RENAME TO sd_selos")
+        con.commit()
+        con.close()
 
 
 def test_selo_de_outra_serventia_desfaz_o_registro_do_titulo(s):

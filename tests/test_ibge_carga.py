@@ -35,6 +35,8 @@ import pytest
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — referencia acervo_eoficio ou sqlite de producao
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import acervo_carga as AC          # noqa: E402
 import ibge_schema as IB           # noqa: E402
@@ -45,7 +47,7 @@ ACERVO_REAL = Path(r"C:\ProgramData\CartorioGestao\acervo_eoficio.sqlite3")
 
 @pytest.fixture()
 def banco():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     IB.init_ibge_schema(con)
     con.executescript(
@@ -55,7 +57,7 @@ def banco():
 
 @pytest.fixture()
 def acervo():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE tbMunicipio (
@@ -183,7 +185,7 @@ def test_o_que_o_oficial_ja_respondeu_nao_e_sobrescrito(banco, acervo):
 
 
 def test_acervo_sem_a_tabela_recusa_com_frase_de_balcao(banco):
-    vazio = sqlite3.connect(":memory:")
+    vazio = conexao_de_teste()
     vazio.row_factory = sqlite3.Row
     with pytest.raises(AC.CargaError, match="tbMunicipio"):
         AC.carregar_ibge(banco, vazio, agora=AGORA)
@@ -260,7 +262,7 @@ SERVENTIA = {"nome": "SERVENTIA", "cidade_uf": "CIDADE EXEMPLO/MA",
 
 @pytest.fixture()
 def civil():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     init_nucleo_schema(con)

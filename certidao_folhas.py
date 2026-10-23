@@ -58,6 +58,14 @@ def folhas_da_digitalizacao(caminho: str | Path | None = None,
 
 
 def _pdf_do_html(html: str, *, get_setting=None) -> bytes | None:
+    # O CORPO VAI AO CHROME DO SERVIDOR SEM O QUE EXECUTA (revisão de
+    # segurança de 22/10/2026, A8/M16): o teor das Notas e o corpo do RI
+    # chegam aqui como o balcão os escreveu, e o Chrome que conta as folhas
+    # roda na conta do serviço — `file:` e `//maquina` no HTML iriam ao disco
+    # e à rede com a credencial da máquina. O filtro deixa parágrafo, tabela,
+    # `style` e o QR em PNG; o que ele tira não ocupa folha.
+    import html_sem_script as HSS
+    html = HSS.limpar(html)
     try:
         import impressao_pdf as IP  # type: ignore
     except Exception:

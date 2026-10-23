@@ -28,6 +28,8 @@ import pytest
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — referencia acervo_eoficio ou sqlite de producao
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import protesto_certidao as PC
 from nucleo_schema import init_nucleo_schema
@@ -39,7 +41,7 @@ ACERVO_REAL = Path(r"C:\ProgramData\CartorioGestao") / "acervo_eoficio.sqlite3"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     init_nucleo_schema(con)
     init_pt_schema(con)
@@ -102,6 +104,172 @@ def test_a_busca_acha_pelo_nome_e_pelo_documento_com_pontuacao():
     assert len(PC.buscar(con, documento="047.855.123-88")) == 1
     assert len(PC.buscar(con, documento="04785512388")) == 1
     assert PC.buscar(con, nome="OUTRA PESSOA") == []
+
+
+def test_com_o_cpf_a_busca_casa_pelo_documento_e_o_nome_nao_amplia():
+    # CN-MA art. 906, § 2º (LD11). Era documento OU nome: quem pedia com o
+    # CPF certo e um nome parcial levava o protesto e o protocolo do
+    # homonimo de outro CPF — a positiva que mente contra a pessoa, e o Livro
+    # de Protocolo de terceiros. Com o documento, so ele decide; sem ele, o
+    # nome continua achando todos.
+    import protesto_livros as PLIV
+    con = banco()
+    titulo(con, nome="JOSÉ DA SILVA", documento="00000000191", numero="1/1")
+    titulo(con, nome="MARIA DA SILVA", documento="00000000272", numero="2/1")
+    for pedido in ({"nome": "SILVA", "documento": "000.000.001-91"},
+                   {"nome": "MARIA DA SILVA", "documento": "00000000191"}):
+        assert [a["devedor"] for a in PC.buscar(con, **pedido)] == [
+            "JOSÉ DA SILVA"], pedido
+        assert [l["devedor"] for l in PLIV.protocolo_do_devedor(con, **pedido)
+                ] == ["JOSÉ DA SILVA"], pedido
+    assert len(PC.buscar(con, nome="SILVA")) == 2
+    assert len(PLIV.protocolo_do_devedor(con, nome="SILVA")) == 2
+
+
+def test_o_nome_pedido_e_texto_e_nao_curinga():
+    # O `%` e o `_` digitados sao letras, e nao o curinga do ILIKE (LD11): o
+    # nome «%» casava com todos os devedores da casa, e a certidao a pedido
+    # escrito certificava o Livro de Protocolo de terceiros (CN-MA art. 906,
+    # § 2º). O `_` que esta de verdade no nome continua achando.
+    import protesto_livros as PLIV
+    con = banco()
+    titulo(con, nome="JOSÉ DA SILVA", documento="00000000191", numero="1/1")
+    for curinga in ("%", "_", "\\", "%silva", "jos_"):
+        assert PC.buscar(con, nome=curinga) == [], curinga
+        assert PLIV.protocolo_do_devedor(con, nome=curinga) == [], curinga
+    titulo(con, nome="ALFA_BETA COMERCIO", documento="00000001000055",
+           numero="2/1")
+    for nome, achados in (("alfa_beta", ["ALFA_BETA COMERCIO"]),
+                          ("alfa%beta", []), ("alfaxbeta", [])):
+        assert [a["devedor"] for a in PC.buscar(con, nome=nome)] == achados, nome
+        assert [l["devedor"] for l in PLIV.protocolo_do_devedor(
+            con, nome=nome)] == achados, nome
+
+
+def test_o_devedor_gravado_sem_documento_sai_na_certidao_pedida_com_o_cpf_e_o_mesmo_nome():
+    # A RESSALVA DA REVISAO DO LD11 (LD12). So pelo documento, o titulo cujo
+    # devedor foi apontado sem CPF/CNPJ sumia da certidao pedida com o CPF
+    # dele, e ela saia NEGATIVA para quem tem protesto. O nome inteiro — sem
+    # acento, sem caixa, sem espaco a mais — acha o devedor sem documento
+    # (nulo ou vazio), e o achado vem marcado para o escrevente conferir.
+    import protesto_livros as PLIV
+    pedido = {"nome": "jose da  silva", "documento": "000.000.001-91"}
+    for gravado in (None, "", "..."):
+        # Uma conexao por volta, fechada no fim: a emissao trava a numeracao
+        # ate a transacao acabar, e a volta seguinte esperaria por ela.
+        con = banco()
+        try:
+            titulo(con, nome="JOSÉ DA SILVA", documento=gravado, numero="1/1")
+            achados = PC.buscar(con, **pedido)
+            assert [(a["numero_titulo"], a["so_pelo_nome"])
+                    for a in achados] == [("1/1", True)], gravado
+            assert PC.tipo_para(achados) == "POSITIVA"
+            [linha] = PLIV.protocolo_do_devedor(con, **pedido)
+            assert (linha["titulo"], linha["so_pelo_nome"]) == ("1/1", True), gravado
+            r = PC.emitir(con, nome="JOSÉ DA SILVA",
+                          documento=pedido["documento"], achados=achados,
+                          hoje=HOJE, agora=AGORA)
+            assert r["tipo"] == "POSITIVA" and r["so_pelo_nome"] == 1
+            assert "Título n. 1/1" in r["teor"]
+            # A MARCA NAO MUDA O TEOR: a mesma certidao, com os achados sem
+            # ela, diz palavra por palavra o mesmo.
+            sem_marca = [{k: v for k, v in a.items() if k != "so_pelo_nome"}
+                         for a in achados]
+            outra = PC.emitir(con, nome="JOSÉ DA SILVA",
+                              documento=pedido["documento"], achados=sem_marca,
+                              hoje=HOJE, agora=AGORA)
+            assert outra["teor"] == r["teor"] and outra["so_pelo_nome"] == 0
+        finally:
+            con.close()
+
+
+def test_com_o_cpf_o_homonimo_de_outro_documento_e_o_nome_parcial_ficam_de_fora():
+    # O que o LD11 quis continua (LD12): o homonimo que tem OUTRO CPF nao entra
+    # na certidao de quem pediu. E o nome que acha o devedor sem documento e o
+    # nome INTEIRO: com o CPF na mao, «SILVA» traria todos os SILVA sem
+    # documento a positiva de quem pediu — e «JOSÉ DA SILVA FILHO» e outra
+    # pessoa.
+    import protesto_livros as PLIV
+    con = banco()
+    titulo(con, nome="JOSÉ DA SILVA", documento="00000000191", numero="1/1")
+    titulo(con, nome="JOSÉ DA SILVA", documento="00000000272", numero="2/1")
+    titulo(con, nome="JOSÉ DA SILVA", documento=None, numero="3/1")
+    titulo(con, nome="JOSÉ DA SILVA FILHO", documento=None, numero="4/1")
+    pedido = {"nome": "JOSÉ DA SILVA", "documento": "000.000.001-91"}
+    assert [(a["numero_titulo"], a["so_pelo_nome"])
+            for a in PC.buscar(con, **pedido)] == [("1/1", False), ("3/1", True)]
+    assert [(l["titulo"], l["so_pelo_nome"])
+            for l in PLIV.protocolo_do_devedor(con, **pedido)] == [
+        ("1/1", False), ("3/1", True)]
+    for parcial in ("SILVA", "JOSÉ", "DA SILVA FILHO"):
+        com_cpf = {"nome": parcial, "documento": "00000000191"}
+        assert [a["numero_titulo"] for a in PC.buscar(con, **com_cpf)] == [
+            "1/1"], parcial
+        assert [l["titulo"] for l in PLIV.protocolo_do_devedor(
+            con, **com_cpf)] == ["1/1"], parcial
+    # Com o CPF de quem nao tem titulo nenhum, o nome inteiro ainda acha o
+    # devedor sem documento — e so ele.
+    assert [a["numero_titulo"] for a in PC.buscar(
+        con, nome="JOSÉ DA SILVA", documento="00000000353")] == ["3/1"]
+
+
+def test_so_com_o_nome_a_busca_e_a_de_antes_e_marca_quem_nao_tem_documento():
+    # Sem documento no pedido, nada muda (LD12): o nome contido no gravado,
+    # sem acento e sem caixa, acha com e sem documento. A marca so diz quem
+    # foi gravado sem ele.
+    import protesto_livros as PLIV
+    con = banco()
+    titulo(con, nome="JOSÉ DA SILVA", documento="00000000191", numero="1/1")
+    titulo(con, nome="MARIA DA SILVA", documento=None, numero="2/1")
+    titulo(con, nome="OUTRA PESSOA", documento=None, numero="3/1")
+    assert [(a["devedor"], a["so_pelo_nome"])
+            for a in PC.buscar(con, nome="silva")] == [
+        ("JOSÉ DA SILVA", False), ("MARIA DA SILVA", True)]
+    assert [(l["devedor"], l["so_pelo_nome"])
+            for l in PLIV.protocolo_do_devedor(con, nome="silva")] == [
+        ("JOSÉ DA SILVA", False), ("MARIA DA SILVA", True)]
+    assert PC.titulos_so_pelo_nome(PC.buscar(con, nome="silva")) == 1
+
+
+def test_com_o_cpf_o_curinga_no_nome_nao_traz_o_devedor_sem_documento():
+    # O nome que acha o devedor sem documento continua sendo TEXTO (LD12, com
+    # o escape do LD11): «jos_ da silva» nao e «jose da silva», e «%» nao e
+    # todo mundo.
+    import protesto_livros as PLIV
+    con = banco()
+    titulo(con, nome="JOSÉ DA SILVA", documento=None, numero="1/1")
+    for curinga in ("%", "_", "\\", "%silva", "%da silva", "jos_ da silva",
+                    "jose da silv_", "jose da silva%"):
+        com_cpf = {"nome": curinga, "documento": "00000000191"}
+        assert PC.buscar(con, **com_cpf) == [], curinga
+        assert PLIV.protocolo_do_devedor(con, **com_cpf) == [], curinga
+    assert len(PC.buscar(con, nome="jose da silva", documento="00000000191")) == 1
+
+
+def test_a_certidao_a_pedido_escrito_conta_o_apontamento_que_entrou_so_pelo_nome():
+    # O Livro de Protocolo da certidao a pedido escrito (CN-MA art. 906, § 2º)
+    # segue a mesma regra (LD12): o apontamento do devedor gravado sem
+    # documento entra, e conta para o aviso ao escrevente. A tela, antes de
+    # emitir, faz a mesma conta (`protocolo_a_certificar`).
+    con = banco()
+    titulo(con, nome="JOSÉ DA SILVA", documento=None, numero="1/1",
+           apenas_apontado=True)
+    pedido = {"nome": "JOSÉ DA SILVA", "documento": "00000000191"}
+    achados = PC.buscar(con, **pedido, autorizacao="DEVEDOR_ESCRITO")
+    assert achados == []
+    linhas = PC.protocolo_a_certificar(
+        con, **pedido, desde=PC.data_limite(HOJE), achados=achados,
+        autorizacao="DEVEDOR_ESCRITO")
+    assert [(l["titulo"], l["so_pelo_nome"]) for l in linhas] == [("1/1", True)]
+    assert PC.protocolo_a_certificar(
+        con, **pedido, desde=PC.data_limite(HOJE), achados=achados,
+        autorizacao=None) == []
+    r = PC.emitir(con, **pedido, achados=achados, hoje=HOJE, agora=AGORA,
+                  autorizacao="DEVEDOR_ESCRITO", requerente="JOSÉ DA SILVA")
+    assert r["tipo"] == "NEGATIVA" and r["so_pelo_nome"] == 1
+    assert "título n. 1/1" in r["teor"]
+    assert "1 título entrou só pelo NOME" in PC.aviso_so_pelo_nome(1)
+    assert "2 títulos entraram" in PC.aviso_so_pelo_nome(2)
 
 
 def test_a_busca_sem_nome_e_sem_documento_e_recusada():
@@ -293,6 +461,29 @@ def test_a_numeracao_e_por_exercicio_e_nao_repete():
     assert (c["numero"], c["ano"]) == (1, 2027)   # exercício novo recomeça
 
 
+def test_emitir_trava_a_numeracao_antes_de_ler_o_maior(monkeypatch):
+    """Dois balcoes emitindo juntos leriam o mesmo `max(numero)+1`, e um deles
+    cairia na UNIQUE(numero, ano) sem a certidao sair. No PostgreSQL nao ha o
+    `busy_timeout` que serializava isso no SQLite: `emitir` trava o assunto
+    `pt_certidoes.numero` antes de ler o maior. A tela de conferencia
+    (`proximo_numero`) continua so lendo — nao trava nada."""
+    import bd_nativo
+    travadas: list[str] = []
+    original = bd_nativo.Banco.travar
+
+    def espiao(self, chave):
+        travadas.append(chave)
+        return original(self, chave)
+
+    monkeypatch.setattr(bd_nativo.Banco, "travar", espiao)
+    con = banco()
+    PC.proximo_numero(con, 2026)
+    assert travadas == []
+    PC.emitir(con, nome="A", documento="04785512388", achados=[], hoje=HOJE,
+              agora=AGORA)
+    assert travadas == ["pt_certidoes.numero"]
+
+
 def test_o_teor_congela_na_emissao():
     # Protesto lavrado amanha nao muda a certidao de hoje: mudar seria
     # reescrever o que a serventia ja afirmou, e a via do cliente ficaria
@@ -398,6 +589,9 @@ def test_contra_o_acervo_real():
     from ri_schema import init_ri_schema
 
     con = banco()
+    # `rg_titulos` aponta para `cx_protocolos` (FK): o PostgreSQL cobra a FK
+    # na criacao, e o banco da casa cria o caixa antes. Aqui basta o esqueleto.
+    con.execute("CREATE TABLE IF NOT EXISTS cx_protocolos (id INTEGER PRIMARY KEY)")
     for iniciar in (init_rc_schema, init_rg_schema, init_ri_schema,
                     init_ra_schema):
         iniciar(con)
@@ -482,3 +676,38 @@ def test_sem_cpf_ou_cnpj_a_certidao_nao_sai():
 def test_autorizacao_desconhecida_recusa():
     with pytest.raises(PC.CertidaoError, match="Autorização desconhecida"):
         PC.buscar(banco(), nome="X", autorizacao="QUALQUER")
+
+
+# ------------------------------- a data do protocolo e o endosso (LD08)
+
+
+def test_a_linha_traz_o_protocolo_com_a_data_do_apontamento_e_o_endosso():
+    """CNN art. 259, parágrafo único, VII («data e número do protocolo») e V
+    («tipo do endosso»). A data da protocolização é a do APONTAMENTO, o ato
+    que a busca lê; o endosso é o código do título (M mandato)."""
+    from bd_nativo import banco as nativo
+    con = banco()
+    tid = titulo(con)
+    nativo(con).escrever(
+        "UPDATE pt_titulos SET protocolo='2402200001', tipo_endosso='M',"
+        " apresentante_nome='BANCO DE EXEMPLO' WHERE id=%s", (tid,))
+    [achado] = PC.buscar(con, nome="SILVA")
+    assert str(achado["data_protocolo"])[:10] == "2024-02-20"
+    linha = PC._linha_do_protesto(achado, 1)
+    assert "protocolo 2402200001 de 20/02/2024;" in linha
+    assert "apresentante BANCO DE EXEMPLO; endosso mandato;" in linha
+
+
+def test_sem_apontamento_a_data_nao_se_inventa_e_sem_endosso_nao_ha_tipo():
+    """O título do acervo sem o ato de apontamento sai com o número do
+    protocolo e sem data. «S» (sem endosso), o vazio e o código que o leiaute
+    não tem não viram tipo de endosso no papel."""
+    base = {"numero_titulo": "9", "valor": "10,00", "data_protesto": "2026-09-08",
+            "protocolo": "2609080001", "apresentante": "BANCO DE EXEMPLO",
+            "data_protocolo": None}
+    for codigo in ("S", "", None, "X"):
+        linha = PC._linha_do_protesto({**base, "tipo_endosso": codigo}, 1)
+        assert "protocolo 2609080001;" in linha, linha
+        assert "endosso" not in linha, (codigo, linha)
+    assert "; endosso translativo;" in PC._linha_do_protesto(
+        {**base, "tipo_endosso": "t"}, 1)

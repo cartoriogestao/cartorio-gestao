@@ -2,7 +2,7 @@
 {% block heading %}<h1>{{ aviso_item.titulo }}</h1>{% endblock %}
 {% block content %}
 <article class="panel nu-avisos-detalhe">
-  <div class="nu-avisos-item-corpo">{{ aviso_item.corpo | replace('\n', '<br>') | safe }}</div>
+  <div class="nu-avisos-item-corpo">{{ aviso_item.corpo | replace('\n', '<br>') | sem_script }}</div>
   <p class="muted"><small>Publicado em {{ aviso_item.atualizado_em or aviso_item.criado_em }}</small></p>
   {% if not aviso_item.prioridade and not dispensado_hoje %}
   <form method="post" action="{{ url_for('nu_avisos_dispensar', aviso_id=aviso_id) }}">

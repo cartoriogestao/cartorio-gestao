@@ -1,0 +1,31 @@
+{
+  "chave": "RI_ATA_EXPURGO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Ata do expurgo (Livro 2)",
+  "formato": "JINJA",
+  "explica": "Ata de ocorrência do expurgo de ato da matrícula lavrado em teste: guarda o que saiu da ficha; é gravada com o expurgo e, gravada, não muda mais.",
+  "campos": [
+    "cidade",
+    "cns",
+    "data_ato",
+    "data_extenso",
+    "emolumentos",
+    "hash_ato",
+    "lavrado_em",
+    "lavrado_nome",
+    "lavrado_titulo",
+    "livro",
+    "matricula",
+    "motivo",
+    "natureza",
+    "partes",
+    "prenotacao",
+    "rotulo",
+    "selo_cancelado",
+    "selo_texto",
+    "teor",
+    "uf",
+    "unidade",
+    "usuario"
+  ]
+}

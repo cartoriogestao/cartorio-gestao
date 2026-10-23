@@ -1,0 +1,14 @@
+{
+  "chave": "RI_CABECALHO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Cabeçalho dos documentos",
+  "formato": "JINJA",
+  "explica": "O timbre que abre a ficha e os demais papéis do RI.",
+  "campos": [
+    "ficha_numero",
+    "livro_ficha",
+    "m",
+    "serventia",
+    "usuario_impressao"
+  ]
+}

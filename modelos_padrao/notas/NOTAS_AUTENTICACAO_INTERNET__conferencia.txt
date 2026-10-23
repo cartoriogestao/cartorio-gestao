@@ -1,0 +1,1 @@
+ Conferido no endereço eletrônico {endereco}, em {data}, às {hora} horas.

@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Trocar minha senha{% endblock %}
+{% block heading %}<h1>Trocar minha senha</h1>{% endblock %}
+{% block content %}
+{# M4 do LS01 (lote LX11): só o ADMIN criava e redefinia senha, e por isso
+   conhecia a de todos — e todo ato sai com o nome de quem está logado. #}
+<section class="panel">
+  <p>A senha é sua: depois de trocá-la, nem o administrador a conhece. As outras sessões abertas
+  com a senha antiga (outra máquina, outra aba esquecida) são encerradas; esta continua.</p>
+  <form method="post" class="form-grid" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Senha atual<input type="password" name="senha_atual" required autocomplete="current-password"></label>
+    <label>Nova senha<input type="password" name="nova_senha" required autocomplete="new-password"></label>
+    <label>Repita a nova senha<input type="password" name="confirmacao" required autocomplete="new-password"></label>
+    <div class="span2"><button class="primary">Trocar a senha</button></div>
+  </form>
+</section>
+{% endblock %}

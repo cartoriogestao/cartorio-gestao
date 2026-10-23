@@ -1,0 +1,13 @@
+{% if com_cabecalho %}<p align="center"><b>{{ sv.unit_name }}</b></p>
+<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
+<p align="center">CNS {{ sv.ri_cns }} — {{ sv.endereco_completo }}</p><p></p>
+{% endif %}<p align="center"><b>CERTIDÃO n. {{ c.numero }}/{{ c.ano }}</b></p>
+{% if cancelada %}<p align="center"><b>CERTIDÃO CANCELADA — {{ c.motivo_cancelamento or '' }}</b></p>
+{% endif %}<p></p>
+{% for bloco in blocos %}<p>{{ bloco }}</p>
+{% endfor %}<p></p>
+<p>{{ sv.ri_cidade }}-{{ sv.ri_uf }}, {{ hoje }}.</p><p></p><p></p>
+<p align="center">_________________________________</p>
+<p align="center">{{ sv.serventia_titular }}</p>
+<p align="center">{{ sv.serventia_titulo }}</p><p></p>
+<p><font size="8">Certidão n. {{ c.numero }}/{{ c.ano }}, emitida em {{ c.emitida_em }}. Autenticidade: {{ c.hash_certidao }}</font></p>

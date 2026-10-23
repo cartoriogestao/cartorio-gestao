@@ -1,0 +1,28 @@
+{
+  "chave": "RCPJ_CERTIDAO_CAPA",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Certidão PDF — capa RCPJ",
+  "formato": "CHAVES",
+  "explica": "Capa da certidão visual do Registro Civil das Pessoas Jurídicas: cabeçalho da serventia, nº do registro, texto «Certifico e dou fé…», denominação, natureza, fecho do escrevente, quadro de emolumentos e área do selo/QR.",
+  "campos": [
+    "unit_short",
+    "cns",
+    "oficial",
+    "endereco",
+    "atribuicao",
+    "numero",
+    "data_registro",
+    "paginas",
+    "paginas_extenso",
+    "data_apresentacao",
+    "protocolo",
+    "livro",
+    "objeto_certificado",
+    "denominacao",
+    "natureza",
+    "cidade",
+    "data_extenso",
+    "full_name",
+    "funcao"
+  ]
+}

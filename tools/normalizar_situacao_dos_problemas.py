@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -48,6 +47,8 @@ if str(RAIZ) not in sys.path:
 # A RÉGUA É A DO MÓDULO, e não uma lista escrita aqui: duas listas de situações
 # divergiriam no dia em que a quarta nascesse, e a que ficasse velha seria esta.
 import ajuda_problemas as AP  # noqa: E402
+import banco_pg  # noqa: E402
+from bd_nativo import banco  # noqa: E402
 
 for saida in (sys.stdout, sys.stderr):
     try:
@@ -64,16 +65,15 @@ PASTA_DAS_COPIAS = Path(r"C:\ProgramData\CartorioGestao\backups")
 SINONIMOS: dict[str, str] = {"FECHADO": "RESOLVIDO"}
 
 
-def _fora_do_vocabulario(con: sqlite3.Connection) -> list[sqlite3.Row]:
-    con.row_factory = sqlite3.Row
-    marcadores = ",".join("?" * len(AP.SITUACOES))
-    return list(con.execute(
-        f"""SELECT id, situacao, substr(COALESCE(fechado_em,''),1,16) fechado_em,
-                   COALESCE(fechado_por,'') fechado_por,
-                   COALESCE(fechado_nota,'') fechado_nota
+def _fora_do_vocabulario(bd) -> list[dict]:
+    marcadores = ",".join(["%s"] * len(AP.SITUACOES))
+    return bd.ler(
+        f"""SELECT id, situacao, substr(COALESCE(fechado_em,''),1,16) AS fechado_em,
+                   COALESCE(fechado_por,'') AS fechado_por,
+                   COALESCE(fechado_nota,'') AS fechado_nota
               FROM aj_problemas
              WHERE COALESCE(situacao,'') NOT IN ({marcadores})
-             ORDER BY id""", tuple(AP.SITUACOES)))
+             ORDER BY id""", tuple(AP.SITUACOES))
 
 
 def main() -> int:
@@ -86,13 +86,13 @@ def main() -> int:
         print(f"o banco não está em {BANCO}", file=sys.stderr)
         return 1
 
-    con = sqlite3.connect(str(BANCO))
-    con.row_factory = sqlite3.Row
+    con = banco_pg.conectar(str(BANCO))
+    bd = banco(con)
     print(f"medido em {datetime.now():%d/%m/%Y às %H:%M:%S}")  # noqa: DTZ005
     print(f"banco: {BANCO}")
     print(f"o vocabulário que a lista conhece: {', '.join(AP.SITUACOES)}")
 
-    linhas = _fora_do_vocabulario(con)
+    linhas = _fora_do_vocabulario(bd)
     if not linhas:
         print("\nNenhuma linha fora do vocabulário — nada a fazer.")
         con.close()
@@ -140,22 +140,22 @@ def main() -> int:
     # FORA DA PASTA DO BANCO — ordem do oficial em 11/10/2026.
     import pasta_das_copias as _PC
     copia = _PC.destino_da_copia(copia, Path(BANCO))
-    con.execute("VACUUM INTO ?", (str(copia),))
+    banco_pg.copiar_para_arquivo(BANCO, copia)
     print(f"\ncópia do banco: {copia}")
 
     agora = datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
     with con:
         for linha in elegiveis:
             destino = SINONIMOS[linha["situacao"]]
-            con.execute("UPDATE aj_problemas SET situacao=? WHERE id=? AND situacao=?",
+            bd.escrever("UPDATE aj_problemas SET situacao=%s WHERE id=%s AND situacao=%s",
                         (destino, int(linha["id"]), linha["situacao"]))
             # A MESMA SERIALIZAÇÃO DE `db.log` (`json.dumps`, `ensure_ascii=False`),
             # e o `acao` dizendo o que a rota não tem como dizer: a rota grava
             # `fechar` e `reabrir`; esta mudança foi a palavra, e só ela.
-            con.execute(
+            bd.escrever(
                 """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
                        entity_type, entity_id, details)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (agora, None, "tools/normalizar_situacao_dos_problemas.py",
                  "AJUDA_PROBLEMA_SITUACAO", "aj_problemas", int(linha["id"]),
                  json.dumps({"acao": "normalizar",
@@ -167,9 +167,9 @@ def main() -> int:
 
     print("\n=== como ficaram ===")
     for linha in elegiveis:
-        depois = con.execute("SELECT id, situacao, fechado_em, fechado_por, "
-                             "fechado_nota FROM aj_problemas WHERE id=?",
-                             (int(linha["id"]),)).fetchone()
+        depois = bd.um("SELECT id, situacao, fechado_em, fechado_por, "
+                       "fechado_nota FROM aj_problemas WHERE id=%s",
+                       (int(linha["id"]),))
         print(f"   #{depois['id']}  {linha['situacao']!r} -> {depois['situacao']!r}"
               f"   fechado_em {depois['fechado_em'] or '—'}"
               f"   por {depois['fechado_por'] or '—'}")

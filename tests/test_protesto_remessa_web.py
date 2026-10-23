@@ -126,7 +126,7 @@ def test_xml_da_cra_conferencia_oferece_recebimento_sem_gravar(s):
     html = conferir(s, _arquivo_xml(), "exemplo.xml").get_data(as_text=True)
     assert "Remessa XML da CRA" in html
     assert 'action="/protesto/remessas/receber"' in html
-    assert 'name="conteudo"' in html
+    assert 'name="origem_xml_token"' in html
     assert 'name="origem_xml_ambiente"' in html
     con = _con(s)
     assert con.execute("SELECT COUNT(*) c FROM pt_remessas").fetchone()["c"] == 0
@@ -138,11 +138,9 @@ def test_receber_xml_pela_tela_grava_origem_xml(s):
 
     resposta = conferir(s, _arquivo_xml(), "exemplo.xml")
     html = resposta.get_data(as_text=True)
-    achado = re.search(r'name="conteudo" value="([^"]*)"', html)
+    achado = re.search(r'name="origem_xml_token" value="([0-9a-f]{64})"', html)
     assert achado
-    conteudo = achado.group(1).replace("&#34;", '"').replace("&amp;", "&")
-    conteudo = conteudo.replace("&lt;", "<").replace("&gt;", ">")
-    dados = {"csrf_token": _token(html), "conteudo": conteudo,
+    dados = {"csrf_token": _token(html), "origem_xml_token": achado.group(1),
              "nome_arquivo": "exemplo.xml", "apontar": "1",
              "origem_xml_ambiente": "HOMOLOGACAO"}
     # 14/10/2026: a conferência manda PRODUCAO no campo escondido, e mesmo

@@ -36,10 +36,10 @@ ESPÉCIES
 """
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
 
 import rc_conferencia_dados as CONF
+from bd_nativo import banco
 from rc_assento import ConferenciaError
 
 CRC = "CRC"
@@ -65,7 +65,7 @@ def _texto(v: Any) -> str:
     return "" if v is None else str(v).strip()
 
 
-def o_que_falta(con: sqlite3.Connection, assento_id: int, *,
+def o_que_falta(con, assento_id: int, *,
                 para_lavratura: bool = False) -> list[dict]:
     """O que impede este assento de ir à CRC e ao SIRC. SÓ LÊ.
 
@@ -81,39 +81,34 @@ def o_que_falta(con: sqlite3.Connection, assento_id: int, *,
     import crc_carga as CRCM
     import sirc_remessa as SIRCM
 
-    fabrica = con.row_factory
-    con.row_factory = sqlite3.Row
-    try:
-        linha = con.execute("SELECT * FROM rc_assentos WHERE id = ?",
-                            (int(assento_id),)).fetchone()
-        if not linha:
-            return []
-        assento = dict(linha)
-        especie = _texto(assento.get("especie")).upper()
-        faltas: list[dict] = []
+    linha = banco(con).um("SELECT * FROM rc_assentos WHERE id = %s",
+                          (int(assento_id),))
+    if not linha:
+        return []
+    assento = dict(linha)
+    especie = _texto(assento.get("especie")).upper()
+    faltas: list[dict] = []
 
-        # A CRC — a mesma chamada de `crc_carga.montar`, com as pessoas
-        # montadas pela mesma função que ela usa.
-        if especie in CRCM.MOVIMENTO_DA_ESPECIE:
-            pessoas = CRCM._pessoas_do_assento(con, assento["id"])
-            for frase in CRCM.o_que_falta(con, assento, pessoas):
-                faltas.append({"central": CRC, "falta": frase})
+    # A CRC — a mesma chamada de `crc_carga.montar`, com as pessoas
+    # montadas pela mesma função que ela usa.
+    if especie in CRCM.MOVIMENTO_DA_ESPECIE:
+        pessoas = CRCM._pessoas_do_assento(con, assento["id"])
+        for frase in CRCM.o_que_falta(con, assento, pessoas):
+            faltas.append({"central": CRC, "falta": frase})
 
-        # O SIRC — o registro com a forma de `sirc_remessa.pendentes_de_remessa`
-        # (`tipo` é a espécie, `assento_id` o id). A linha inteira vai junto:
-        # `o_que_falta` lê `ibge_local_nascimento` dela quando a tem.
-        origem = _texto(assento.get("origem")).upper()
-        vai_ao_sirc = (para_lavratura
-                       or origem not in SIRCM.ORIGENS_QUE_NAO_SE_REMETEM
-                       or origem in SIRCM.ORIGENS_DA_CARGA_DO_ACERVO)
-        if especie in SIRCM.ESPECIES_PRONTAS_PARA_O_SIRC and vai_ao_sirc:
-            registro = {**assento, "assento_id": assento["id"],
-                        "tipo": especie, "onde": "rc_assentos"}
-            for frase in SIRCM.o_que_falta(con, registro):
-                faltas.append({"central": SIRC, "falta": frase})
-        return faltas
-    finally:
-        con.row_factory = fabrica
+    # O SIRC — o registro com a forma de `sirc_remessa.pendentes_de_remessa`
+    # (`tipo` é a espécie, `assento_id` o id). A linha inteira vai junto:
+    # `o_que_falta` lê `ibge_local_nascimento` dela quando a tem.
+    origem = _texto(assento.get("origem")).upper()
+    vai_ao_sirc = (para_lavratura
+                   or origem not in SIRCM.ORIGENS_QUE_NAO_SE_REMETEM
+                   or origem in SIRCM.ORIGENS_DA_CARGA_DO_ACERVO)
+    if especie in SIRCM.ESPECIES_PRONTAS_PARA_O_SIRC and vai_ao_sirc:
+        registro = {**assento, "assento_id": assento["id"],
+                    "tipo": especie, "onde": "rc_assentos"}
+        for frase in SIRCM.o_que_falta(con, registro):
+            faltas.append({"central": SIRC, "falta": frase})
+    return faltas
 
 
 def problemas(faltas: list[dict]) -> list[dict]:

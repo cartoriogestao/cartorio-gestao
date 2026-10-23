@@ -1,0 +1,11 @@
+{
+  "chave": "NOTAS_ANOTACAO_MARGEM__livro",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Anotação à margem — livro e folha",
+  "formato": "CHAVES",
+  "explica": "Quando o ato que gerou a anotação tem livro.",
+  "campos": [
+    "livro",
+    "folha"
+  ]
+}

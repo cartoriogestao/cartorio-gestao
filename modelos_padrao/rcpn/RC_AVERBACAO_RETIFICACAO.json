@@ -1,0 +1,20 @@
+{
+  "chave": "RC_AVERBACAO_RETIFICACAO",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Averbação de retificação (art. 110)",
+  "formato": "CHAVES",
+  "explica": "A averbação de retificação de erro material (art. 110 da Lei 6.015/1973) que os modelos de averbação com formulário próprio sugerem; o escrevente confere a prévia, e o texto só se congela em rc_atos.teor quando ele lança a averbação. {titulo}, {abertura}, {correcao}, {conforme}, {constar} e {assinatura} são frases montadas das peças deste papel; os demais claros vêm do formulário.",
+  "campos": [
+    "numero_av",
+    "titulo",
+    "data_por_extenso",
+    "abertura",
+    "correcao",
+    "conforme",
+    "constar",
+    "fundamento",
+    "cidade",
+    "data",
+    "assinatura"
+  ]
+}

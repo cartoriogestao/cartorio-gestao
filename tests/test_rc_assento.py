@@ -26,6 +26,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import rc_assento as RC                          # noqa: E402
 from nucleo_schema import init_nucleo_schema     # noqa: E402
@@ -42,7 +44,7 @@ SV = {
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     init_nucleo_schema(con)
@@ -818,3 +820,102 @@ def test_o_titular_da_naturalidade_cobre_as_especies_que_tem_o_campo():
     com_campo = {e for e, campos in RC.CAMPOS_DO_TERMO_POR_ESPECIE.items()
                  if "naturalidade_declarada" in campos}
     assert com_campo == set(RC.TITULAR_DA_NATURALIDADE)
+
+
+# ------------------------------------- a situação se confere com a linha presa
+#
+# L039R (varredura do mesmo padrão da ressalva 1 do L039): o lançamento
+# (averbar, anotar, retificar) e a correção da ficha conferiam a situação do
+# assento sem prender a linha. Com a ponte, a transação da rota já pega a
+# trava única do banco; sem ela, um cancelamento ao mesmo tempo (o da rota de
+# lavratura quando o selo falha) passava pela conferência. Os testes usam
+# conexões do psycopg sem a ponte — como a transação vai ficar quando a ponte
+# sair.
+
+import banco_pg                                  # noqa: E402
+from bd_nativo import banco as banco_nativo      # noqa: E402
+
+SO_NO_POSTGRES = pytest.mark.skipif(
+    not banco_pg.ativo(),
+    reason="trava de linha: só existe com o PostgreSQL ligado (CG_PG_DSN)")
+
+
+def _psycopg_puro(con, *, autocommit=False):
+    """Uma conexão do psycopg no schema do teste, SEM a ponte."""
+    import psycopg
+    pg = psycopg.connect(banco_pg.dsn(), autocommit=autocommit)
+    pg.execute(f'SET search_path TO "{con.schema}", public')
+    if not autocommit:
+        pg.commit()
+    return pg
+
+
+def _cancelado_no_meio(con, assento_id, faz):
+    """Uma conexão cancela o assento e ainda não confirmou; `faz(outra)` roda
+    noutra, num fio, e tem de ESPERAR a linha. Devolve o erro dela, ou None."""
+    import threading
+    import time
+    um, dois = _psycopg_puro(con), _psycopg_puro(con)
+    vigia = _psycopg_puro(con, autocommit=True)
+    try:
+        banco_nativo(um).escrever(
+            "UPDATE rc_assentos SET situacao='CANCELADO' WHERE id=%s",
+            (assento_id,))
+        pid = banco_nativo(dois).valor("SELECT pg_backend_pid() AS pid")
+        saida: dict = {}
+
+        def corre():
+            try:
+                faz(dois)
+                dois.commit()
+            except Exception as erro:  # o teste confere qual
+                saida["erro"] = erro
+                dois.rollback()
+
+        fio = threading.Thread(target=corre)
+        fio.start()
+        for _ in range(200):
+            if banco_nativo(vigia).valor(
+                    "SELECT count(*) AS n FROM pg_locks WHERE pid=%s AND NOT granted",
+                    (pid,)):
+                break
+            time.sleep(0.05)
+        um.commit()
+        fio.join(30)
+        return saida.get("erro")
+    finally:
+        for c in (um, dois, vigia):
+            c.close()
+
+
+@SO_NO_POSTGRES
+def test_averbacao_que_chega_no_meio_do_cancelamento_e_recusada():
+    con = banco()
+    r = nascimento(con)
+    con.commit()
+
+    def averba(outra):
+        RC.averbar(outra, r["assento_id"], teor="Averbação de reconhecimento.",
+                   agora=AGORA)
+
+    erro = _cancelado_no_meio(con, r["assento_id"], averba)
+    assert isinstance(erro, RC.RcError), erro
+    assert "situação CANCELADO" in str(erro)
+    assert [a["tipo"] for a in RC.atos_do(con, r["assento_id"])] == ["REGISTRO"]
+
+
+@SO_NO_POSTGRES
+def test_correcao_que_chega_no_meio_do_cancelamento_e_recusada():
+    con = banco()
+    r = nascimento(con)
+    con.commit()
+
+    def corrige(outra):
+        RC.corrigir_informacoes(outra, r["assento_id"], nome="JOÃO DA SILVA SOUZA",
+                                motivo="Grafia do sobrenome conferida no livro.",
+                                agora=AGORA)
+
+    erro = _cancelado_no_meio(con, r["assento_id"], corrige)
+    assert isinstance(erro, RC.RcError), erro
+    assert "assento ativo" in str(erro)
+    assert RC.assento(con, r["assento_id"])["nome"] == "JOÃO DA SILVA"

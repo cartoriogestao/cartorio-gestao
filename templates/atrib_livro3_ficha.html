@@ -215,7 +215,34 @@
             <td>{{ p.documento_tipo or '' }} {{ p.documento_numero or '—' }}</td>
             <td>{{ p.papel or '—' }}</td>
             <td>
-              <form method="post" action="{{ url_for('livro3_parte_remover', parte_id=p.id) }}">
+              {#  EDITAR — 19/10/2026. Corrige a ficha; o teor e o selo do
+                  ato ficam como foram lavrados. O antes vai à auditoria. #}
+              <details class="parte-editar">
+                <summary class="small">editar</summary>
+                <form method="post" class="grid2" style="padding-top:6px"
+                      action="{{ url_for('livro3_parte_editar', parte_id=p.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <label style="grid-column:1/-1">Nome
+                    <input name="nome" required minlength="3" value="{{ p.nome }}"></label>
+                  <label>CPF ou CNPJ<input name="documento" value="{{ p.documento_numero or '' }}"></label>
+                  <label>Papel
+                    <select name="papel" required>
+                      {% set codigos = (papeis or []) | map('first') | list %}
+                      {% if p.papel and p.papel not in codigos %}
+                      <option value="{{ p.papel }}" selected>{{ p.papel }} (texto antigo)</option>
+                      {% endif %}
+                      {% for codigo, rotulo in (papeis or []) %}
+                      <option value="{{ codigo }}" title="{{ rotulo }}" {% if p.papel == codigo %}selected{% endif %}>{{ rotulo.split(' — ')[0] }}</option>
+                      {% endfor %}
+                    </select></label>
+                  <div class="actions"><button class="small primary">Gravar correção</button></div>
+                </form>
+              </details>
+              {#  O NOME VAI POR data-nome, e nao dentro do texto do JavaScript:
+                  um D'AVILA fecharia a aspa do confirm e o botao nao retiraria. #}
+              <form method="post" action="{{ url_for('livro3_parte_remover', parte_id=p.id) }}"
+                    data-nome="{{ p.nome }}"
+                    onsubmit="return confirm('Retirar ' + this.dataset.nome + ' das partes deste registro?');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button class="small">retirar</button>
               </form>
@@ -238,12 +265,15 @@
           <option value="{{ codigo }}" title="{{ rotulo }}">{{ rotulo.split(' — ')[0] }}</option>
           {% endfor %}
         </select></label>
-      <div class="actions"><button class="primary">Acrescentar parte</button></div>
+      <div class="actions"><button class="primary">+ Acrescentar parte</button>
+        <small class="muted">acrescente quantas forem precisas, uma de cada vez —
+          vale também para registro já lavrado e selado: a parte entra na
+          ficha, e o teor e o selo do ato não mudam.</small></div>
     </form>
     <p class="small muted">Os papéis vêm do que esta casa usou: nas 25 partes
-      que o E-Ofício guardou no Livro 3 são <strong>Emitente/Creditado</strong>
+      que o sistema antigo guardou no Livro 3 são <strong>Emitente/Creditado</strong>
       (14), <strong>Credor(a)</strong> (9) e <strong>Proprietário(a)</strong>
-      (2); os demais vêm do catálogo do próprio E-Ofício.</p>
+      (2); os demais vêm do catálogo do próprio sistema antigo.</p>
 
     {% if registro.condicoes %}
     {#  O TEXTO DO REGISTRO FICA AO LADO DO FORMULARIO, e nao noutra tela: no

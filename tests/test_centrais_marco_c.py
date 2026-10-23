@@ -31,6 +31,7 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import banco_pg  # noqa: E402
 import centrais_cred as CRED  # noqa: E402
 import centrais_fila as FILA  # noqa: E402
 import centrais_http as HTTP  # noqa: E402
@@ -112,6 +113,7 @@ class _BancoFalso:
 
     def __init__(self, caminho):
         self.caminho = str(caminho)
+        banco_pg.registrar_banco(caminho)
         c = self.connect()
         SCH.init_centrais_schema(c)
         c.commit()

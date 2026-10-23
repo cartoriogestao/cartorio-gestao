@@ -1,0 +1,1 @@
+CERTIFICO, {pedido}, que revendo nesta Serventia os Livros de Registro de Protestos de Letras e Outros Títulos, a partir do mês de {desde}, neles NÃO ENCONTREI protesto contra {identificacao}. Período de Busca: {periodo_anos} Anos.

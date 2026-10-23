@@ -1,0 +1,11 @@
+{
+  "chave": "PT_INSTRUMENTO_INTIMACAO_EDITAL",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto — certidão da intimação por edital, com o motivo",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {intimacao} do instrumento (art. 22, IV) quando a última intimação foi por edital e há motivo da não-entrega.",
+  "campos": [
+    "data",
+    "motivo"
+  ]
+}

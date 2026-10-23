@@ -1,0 +1,97 @@
+<!doctype html>
+{# A REMESSA AO TRIBUNAL (LG07) — página própria, sem o menu, porque o ofício
+   de cancelamento é papel: a mesma página serve a tela e o «Imprimir». O
+   pacote de gratuidade não se imprime: aqui ele se baixa e se marca enviado.
+   Sem nome de escrevente no papel: ele sai de casa. #}
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>{% if r.tipo == 'CANCELAMENTO' %}Pedido de cancelamento de selos nº {{ r.id }}{% else %}Pacote do Portal do Selo nº {{ r.id }}{% endif %}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #111; margin: 1.5cm; }
+  h1 { font-size: 14pt; margin: 0 0 .4em; }
+  table { border-collapse: collapse; width: 100%; margin: .6em 0 1em; }
+  th, td { border: 1px solid #bbb; padding: 3px 5px; vertical-align: top; text-align: left; font-size: 9.5pt; }
+  th { background: #eee; }
+  .barra { background: #f2f2f2; border: 1px solid #ccc; padding: .5em .8em; margin-bottom: 1em; }
+  .barra a, .barra button, .barra form { margin-right: 1em; }
+  .recado { padding: .3em .6em; margin: .3em 0; border: 1px solid #999; }
+  .recado.danger { border-color: #b00020; color: #b00020; }
+  .assinatura { margin-top: 3em; }
+  .assinatura div { border-top: 1px solid #333; width: 60%; margin-top: 3em; padding-top: .2em; }
+  @media print { .barra { display: none; } body { margin: 0; } }
+</style>
+</head>
+<body>
+<div class="barra">
+  <a href="{{ url_for('selo_cancelamentos' if r.tipo == 'CANCELAMENTO' else 'selo_gratuidades_portal') }}">← Voltar</a>
+  {% if r.tipo == 'CANCELAMENTO' %}<button type="button" onclick="window.print()">Imprimir</button>{% endif %}
+  <a href="{{ url_for('selo_portal_remessa_csv', remessa_id=r.id) }}">Baixar a lista (CSV)</a>
+  {% if pode and r.tipo == 'GRATUIDADE' %}
+  <form method="post" action="{{ url_for('selo_portal_remessa_pacote', remessa_id=r.id) }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Baixar o pacote (um PDF por selo)</button>
+  </form>
+  {% endif %}
+  {% with mensagens = get_flashed_messages(with_categories=true) %}
+    {% for categoria, m in mensagens %}<div class="recado {{ categoria }}">{{ m }}</div>{% endfor %}
+  {% endwith %}
+  {% if r.comunicado_em %}
+    <p><strong>{% if r.tipo == 'CANCELAMENTO' %}Comunicado ao TJMA{% else %}Enviado ao Portal{% endif %}
+      em {{ r.comunicado_em[:10] }}</strong>{% if r.comunicado_por %} por {{ r.comunicado_por }}{% endif %}{% if r.protocolo %} — protocolo {{ r.protocolo }}{% endif %}.</p>
+  {% elif pode %}
+  <form method="post" action="{{ url_for('selo_portal_remessa_comunicado', remessa_id=r.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Protocolo ou nº do Malote Digital <input type="text" name="protocolo" maxlength="200"></label>
+    <button type="submit">{% if r.tipo == 'CANCELAMENTO' %}Marcar «comunicado ao TJMA» hoje{% else %}Marcar «enviado ao Portal» hoje{% endif %}</button>
+  </form>
+  <form method="post" action="{{ url_for('selo_portal_remessa_descartar', remessa_id=r.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Descartar este rascunho (os selos voltam a faltar)</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if r.tipo == 'CANCELAMENTO' %}
+<p>{{ sv.unit_name }} — CNS {{ sv.ri_cns }}{% if sv.endereco_completo %}<br>{{ sv.endereco_completo }}{% endif %}</p>
+<p style="text-align:right">{{ sv.cidade_uf }}{% if sv.cidade_uf %}, {% endif %}{{ hoje[8:10] }}/{{ hoje[5:7] }}/{{ hoje[:4] }}.</p>
+<h1>Pedido de cancelamento de selos de fiscalização eletrônicos — nº {{ r.id }}/{{ r.gerado_em[:4] }}</h1>
+<p>À Corregedoria Geral do Foro Extrajudicial do Tribunal de Justiça do Estado do Maranhão —
+  setor do Selo de Fiscalização Eletrônico.</p>
+<p>Comunico que os {{ r.itens|length }} selo(s) de fiscalização eletrônico(s) abaixo, desta
+  serventia, foram cancelados ou inutilizados no período de {{ r.inicio[8:10] }}/{{ r.inicio[5:7] }}/{{ r.inicio[:4] }}
+  a {{ r.fim[8:10] }}/{{ r.fim[5:7] }}/{{ r.fim[:4] }}, pelos motivos indicados, e solicito o
+  cancelamento deles no sistema do Selo de Fiscalização Eletrônico (Código de Normas
+  Extrajudicial do Maranhão — Prov. COGEX 28/2026, arts. 134 e 135).</p>
+{% else %}
+<h1>Pacote do Portal do Selo — ressarcimento de atos gratuitos — nº {{ r.id }}</h1>
+<p>{{ r.itens|length }} selo(s) gratuito(s) obtidos de {{ r.inicio[8:10] }}/{{ r.inicio[5:7] }}/{{ r.inicio[:4] }}
+  a {{ r.fim[8:10] }}/{{ r.fim[5:7] }}/{{ r.fim[:4] }}. O pacote traz um PDF por selo, com o número
+  do selo no nome (comprovante da gratuidade + cópia da certidão do ato), e a lista em CSV.</p>
+{% endif %}
+<table>
+  <thead><tr><th>#</th><th>Selo</th><th>Ato</th><th>Obtido em</th>{% if r.tipo == 'CANCELAMENTO' %}<th>Cancelado em</th><th>Motivo</th>{% else %}<th>Arquivo</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for i in r.itens %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td><code>{{ i.numero }}</code></td>
+      <td>{{ i.ato }}</td>
+      <td>{{ (i.obtido_em or '')[:10] }}</td>
+      {% if r.tipo == 'CANCELAMENTO' %}
+      <td>{{ (i.cancelado_em or '')[:10] }}</td>
+      <td>{{ i.motivo_cancelamento or '(sem motivo registrado)' }}</td>
+      {% else %}
+      <td>{{ i.numero }}.pdf</td>
+      {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if r.tipo == 'CANCELAMENTO' %}
+<div class="assinatura">
+  <div>{{ sv.serventia_titular or '' }}<br>{{ sv.serventia_titulo }}</div>
+</div>
+{% endif %}
+</body>
+</html>

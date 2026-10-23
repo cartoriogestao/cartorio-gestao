@@ -1,0 +1,1 @@
+Motivo do encerramento: {motivo}.

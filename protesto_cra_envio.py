@@ -31,13 +31,13 @@ se lê mais por tela nenhuma.
 from __future__ import annotations
 
 import re
-import sqlite3
 from typing import Any, Callable
 
 import centrais_cred as CRED
 import cra21_api as CRA
 import protesto_cra_xml as PCRAXML
 import protesto_retorno as PRE
+from bd_nativo import banco
 
 # SDTBFOCRT → Confirmacao; retorno final → Retorno; ANDAMENTO → TituloComplemento.
 #
@@ -65,6 +65,15 @@ NOME_FEBRABAN = re.compile(r"^[CRM][0-9A-Z]{3}\d{4}\.\d{3}$")
 
 _CODIGO_RELATORIO = re.compile(r"<codigo>\s*(\d+)\s*</codigo>", re.IGNORECASE)
 _CODIGOS_OK = frozenset({"0000", "0001"})
+_OCORRENCIA = re.compile(r"<ocorrencia>(.*?)</ocorrencia>", re.IGNORECASE | re.DOTALL)
+_DECLARACAO_XML = re.compile(r"^\s*<\?xml[^>]*\?>", re.IGNORECASE)
+
+#: O que da recusa vai à TELA: o motivo da `<ocorrencia>` até este tamanho e um
+#: trecho curto do começo da resposta. A resposta INTEIRA vai só para
+#: `pt_retornos.cra_envio_erro`, até `CORTE_DO_ERRO` (LH08, revisão do LH07).
+TRECHO_NA_TELA = 240
+TRECHO_DA_RESPOSTA = 160
+CORTE_DO_ERRO = 4000
 
 
 class CraEnvioError(CRA.CraError):
@@ -102,6 +111,12 @@ def user_dados_do_arquivo(conteudo: str, tipo: str = "SDTBFOCRT") -> str:
         raise CraEnvioError(str(erro)) from erro
 
 
+def _trecho(texto: str, limite: int = TRECHO_NA_TELA) -> str:
+    """O texto numa linha só, cortado em `limite` com «…» quando passa. Só calcula."""
+    liso = " ".join(str(texto or "").split())
+    return liso if len(liso) <= limite else liso[:limite - 1].rstrip() + "…"
+
+
 def interpretar_resposta_envio(texto: str, *, o_que: str) -> dict[str, Any]:
     """Lê ``<codigo>`` do retorno SOAP quando existir; senão aceita texto livre."""
     bruto = str(texto or "").strip()
@@ -117,13 +132,26 @@ def interpretar_resposta_envio(texto: str, *, o_que: str) -> dict[str, Any]:
         explicacao = CRA.CODIGOS_MEDIDOS.get(codigo)
         if explicacao:
             raise CRA.CraRecusou(
-                f"A CRA recusou ao {o_que} (código {codigo}): {explicacao}")
+                f"A CRA recusou ao {o_que} (código {codigo}): {explicacao}",
+                bruto=bruto)
+        # A explicação da CRA mora em <ocorrencia>, DEPOIS do cabeçalho do
+        # relatório; os 240 primeiros caracteres eram só o cabeçalho, e o
+        # código 2154 do retorno RTAB2110.261 (21/10/2026) ficou gravado sem
+        # o motivo. Vai o motivo primeiro, e um trecho curto do começo da
+        # resposta (o nome do arquivo que ela cita). O bruto INTEIRO ia junto
+        # na frase — para a tela, o `flash` no cookie da sessão e a auditoria
+        # (revisão do LH07); agora vai à parte, só para o campo de erro.
+        ocorrencia = _OCORRENCIA.search(bruto)
+        motivo = (_trecho(ocorrencia.group(1)) if ocorrencia
+                  else "a resposta não traz <ocorrencia>")
+        inicio = _trecho(_DECLARACAO_XML.sub("", bruto), TRECHO_DA_RESPOSTA)
         raise CRA.CraRecusou(
-            f"A CRA recusou ao {o_que} (código {codigo}). Resposta: "
-            f"{bruto[:240]}")
+            f"A CRA recusou ao {o_que} (código {codigo}): {motivo}. "
+            f"Início da resposta: {inicio}", bruto=bruto)
     upper = bruto.upper()
     if "INVÁLIDO" in upper or "INVALIDO" in upper or "CORROMPIDO" in upper:
-        raise CRA.CraRecusou(f"A CRA recusou ao {o_que}: {bruto[:240]}")
+        raise CRA.CraRecusou(f"A CRA recusou ao {o_que}: {bruto[:240]}",
+                             bruto=bruto)
     return {"ok": True, "codigo": None, "resposta": bruto}
 
 
@@ -135,7 +163,7 @@ def interpretar_resposta_envio(texto: str, *, o_que: str) -> dict[str, Any]:
 # gravar o resultado (transação curta).
 
 
-def montar_complemento(con: sqlite3.Connection, andamento_id: int,
+def montar_complemento(con: Any, andamento_id: int,
                        quando: str) -> str:
     """O andamento no XML da `TituloComplemento`. SÓ LÊ.
 
@@ -148,8 +176,9 @@ def montar_complemento(con: sqlite3.Connection, andamento_id: int,
     # O andamento que sai EM PAR com um retorno fala de pagamento, protesto ou
     # desistência — e o código de cada um no `<complementos>` não foi medido.
     # Só o andamento do apontamento («AA») foi ensaiado; o outro não se inventa.
-    if con.execute("SELECT 1 FROM pt_retornos WHERE par_id=?",
-                   (int(andamento_id),)).fetchone():
+    bd = banco(con)
+    if bd.um("SELECT 1 FROM pt_retornos WHERE par_id = %s",
+             (int(andamento_id),)):
         raise CraEnvioError(
             f"O andamento #{andamento_id} acompanha um retorno, e o código de "
             f"andamento de pagamento/protesto/desistência não foi medido na CRA — "
@@ -158,13 +187,13 @@ def montar_complemento(con: sqlite3.Connection, andamento_id: int,
     def el(tag: str, valor: Any) -> str:
         return f"<{tag}>{escape(str(valor if valor is not None else ''))}</{tag}>"
 
-    linhas = con.execute(
+    linhas = bd.ler(
         """SELECT t.apresentante_codigo, t.protocolo, t.numero_titulo,
                   t.nosso_numero, t.valor_centavos, t.saldo_centavos,
                   (SELECT d.documento_numero FROM pt_devedores d
-                    WHERE d.titulo_id = t.id ORDER BY d.id LIMIT 1) documento
+                    WHERE d.titulo_id = t.id ORDER BY d.id LIMIT 1) AS documento
              FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
-            WHERE a.retorno_id = ? ORDER BY a.id""", (int(andamento_id),)).fetchall()
+            WHERE a.retorno_id = %s ORDER BY a.id""", (int(andamento_id),))
     if not linhas:
         raise CraEnvioError(
             f"O andamento #{andamento_id} não tem título nenhum — gere-o de novo "
@@ -202,7 +231,8 @@ def interpretar_resposta_complemento(texto: str, *, o_que: str) -> dict[str, Any
     try:
         raiz = ET.fromstring(bruto.encode("latin-1", errors="replace"))
     except ET.ParseError:
-        raise CRA.CraRecusou(f"A CRA respondeu ao {o_que} fora do XML: {bruto[:240]}")
+        raise CRA.CraRecusou(f"A CRA respondeu ao {o_que} fora do XML: {bruto[:240]}",
+                             bruto=bruto)
     if raiz.tag == "relatorio":
         return interpretar_resposta_envio(bruto, o_que=o_que)
     recusas, aceitos = [], 0
@@ -218,11 +248,12 @@ def interpretar_resposta_complemento(texto: str, *, o_que: str) -> dict[str, Any
     if recusas or not aceitos:
         raise CRA.CraRecusou(
             f"A CRA recusou ao {o_que}: " + ("; ".join(recusas[:10])
-                                             or "nenhum título confirmado"))
+                                             or "nenhum título confirmado"),
+            bruto=bruto)
     return {"ok": True, "codigo": "2322", "resposta": bruto[:500]}
 
 
-def _preparar(linha: Any, *, con: sqlite3.Connection | None = None,
+def _preparar(linha: Any, *, con: Any | None = None,
               forcar: bool = False) -> dict[str, Any]:
     """Confere o arquivo gravado e o deixa pronto para a rede. SÓ LÊ."""
     retorno_id = linha["id"]
@@ -280,14 +311,14 @@ def _agora_local() -> str:
     return datetime.now().replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def _gravar_envio(con: sqlite3.Connection, preparado: dict, lido: dict, *,
+def _gravar_envio(con: Any, preparado: dict, lido: dict, *,
                   qual: str, usuario: str | None,
                   agora: str | None = None) -> dict[str, Any]:
     agora = agora or _agora_local()
-    con.execute(
-        """UPDATE pt_retornos SET cra_enviado_em=?, cra_enviado_ambiente=?,
-               cra_envio_resumo=?, cra_enviado_por=?, cra_envio_erro=NULL
-           WHERE id=?""",
+    banco(con).escrever(
+        """UPDATE pt_retornos SET cra_enviado_em=%s, cra_enviado_ambiente=%s,
+               cra_envio_resumo=%s, cra_enviado_por=%s, cra_envio_erro=NULL
+           WHERE id=%s""",
         (agora, qual, (lido.get("resposta") or "")[:500], usuario,
          int(preparado["retorno_id"])))
     return {"retorno_id": int(preparado["retorno_id"]),
@@ -295,12 +326,20 @@ def _gravar_envio(con: sqlite3.Connection, preparado: dict, lido: dict, *,
             "nome_arquivo": preparado["nome_arquivo"], "ambiente": qual, **lido}
 
 
-def _registrar_falha(con: sqlite3.Connection, retorno_id: int, *,
+def _o_que_se_guarda(erro: BaseException) -> str:
+    """A frase da tela e, atrás dela, a resposta inteira da Central, quando a
+    recusa a trouxe (`CraRecusou.bruto`). É o que vai para o campo de erro do
+    arquivo — e só para ele. Só calcula."""
+    bruto = str(getattr(erro, "bruto", "") or "")
+    return f"{erro} Resposta: {bruto}" if bruto else str(erro)
+
+
+def _registrar_falha(con: Any, retorno_id: int, *,
                      ambiente: str, erro: str) -> None:
-    con.execute(
-        """UPDATE pt_retornos SET cra_envio_erro=?, cra_enviado_ambiente=?
-           WHERE id=?""",
-        (str(erro)[:500], str(ambiente or "")[:20], int(retorno_id)))
+    banco(con).escrever(
+        """UPDATE pt_retornos SET cra_envio_erro=%s, cra_enviado_ambiente=%s
+           WHERE id=%s""",
+        (str(erro)[:CORTE_DO_ERRO], str(ambiente or "")[:20], int(retorno_id)))
 
 
 def enviar_pos_remessa(
@@ -359,20 +398,24 @@ def enviar_pos_remessa(
                 falhas.append({"retorno_id": rid, "operacao": operacao,
                                "erro": str(erro)})
 
-    resultados: list[tuple[dict, dict | None, str | None]] = []
+    # (preparado, o que a CRA respondeu, a frase da tela, o que vai ao campo de
+    # erro) — a frase é curta; o campo de erro leva também a resposta (LH08).
+    resultados: list[tuple[dict, dict | None, str | None, str | None]] = []
     confirmacao_falhou = any(f["operacao"] == "Confirmacao" for f in falhas)
     for preparado in preparados:                   # 2. a rede — sem transação
         if preparado["operacao"] == "TituloComplemento" and confirmacao_falhou:
             # O andamento fala de protocolos que a confirmação apresenta; sem
             # ela a Central recusaria título a título. Espera o reenvio.
-            resultados.append((preparado, None,
-                               "A confirmação do lote não entrou na CRA; o "
-                               "andamento espera por ela."))
+            espera = ("A confirmação do lote não entrou na CRA; o "
+                      "andamento espera por ela.")
+            resultados.append((preparado, None, espera, espera))
             continue
         try:
-            resultados.append((preparado, _transmitir(preparado, qual, pasta), None))
+            resultados.append((preparado, _transmitir(preparado, qual, pasta),
+                               None, None))
         except (CRA.CraError, CRED.CredencialError) as erro:
-            resultados.append((preparado, None, str(erro)))
+            resultados.append((preparado, None, str(erro),
+                               _o_que_se_guarda(erro)))
             if preparado["operacao"] == "Confirmacao":
                 confirmacao_falhou = True
 
@@ -381,13 +424,13 @@ def enviar_pos_remessa(
         for falha in falhas:                       # as da preparação
             _registrar_falha(con, falha["retorno_id"], ambiente=qual,
                              erro=falha["erro"])
-        for preparado, lido, erro in resultados:
+        for preparado, lido, erro, guardado in resultados:
             if erro is None:
                 enviados.append(_gravar_envio(con, preparado, lido, qual=qual,
                                               usuario=usuario))
             else:
                 _registrar_falha(con, preparado["retorno_id"], ambiente=qual,
-                                 erro=erro)
+                                 erro=guardado)
                 falhas.append({"retorno_id": preparado["retorno_id"],
                                "operacao": preparado["operacao"], "erro": erro})
 
@@ -424,16 +467,16 @@ def enviar_arquivo(transacao: Callable[[], Any], retorno_id: int, *,
             raise CraEnvioError(f"O arquivo #{retorno_id} não existe.")
         if str(linha["cra_enviado_ambiente"] or "") == "EOFICIO":
             raise CraEnvioError(
-                "Esta linha não é um arquivo: é o registro de que o E-Ofício já "
+                "Esta linha não é um arquivo: é o registro de que o sistema antigo já "
                 "informou a CRA antes da virada (14/10/2026). Não há o que enviar.")
         preparado = _preparar(linha, con=con, forcar=forcar)
-    erro = None
+    erro = guardado = None
     try:                                           # 2. a rede — sem transação
         lido = _transmitir(preparado, qual, pasta)
     except (CRA.CraError, CRED.CredencialError) as e:
-        lido, erro = None, str(e)
+        lido, erro, guardado = None, str(e), _o_que_se_guarda(e)
     with transacao() as con:                       # 3. gravar — curta
         if erro is None:
             return _gravar_envio(con, preparado, lido, qual=qual, usuario=usuario)
-        _registrar_falha(con, int(retorno_id), ambiente=qual, erro=erro)
+        _registrar_falha(con, int(retorno_id), ambiente=qual, erro=guardado)
     raise CraEnvioError(erro)

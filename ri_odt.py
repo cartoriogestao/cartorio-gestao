@@ -2292,47 +2292,19 @@ def cabecalho_certidao_completo_odf(sv: dict | None) -> tuple[str, dict]:
     return brasao_odf + texto_odf, imagens
 
 
-MODELO_CABECALHO_PADRAO = """<table border="1" cols="6.5cm,5.8cm,3.7cm">
-<tr>
-  <td rowspan="2"><b>REGISTRO DE IMÓVEIS</b><br>
-    <b>SERVENTIA EXTRAJUDICIAL DO</b><br>
-    <b>OFÍCIO ÚNICO DE {{ serventia.cidade|upper }}/{{ serventia.uf }}</b><br>
-    <b>{{ serventia.registrador|upper }}</b><br>
-    {{ serventia.titulo_registrador }}<br>
-    <b>{{ serventia.substituta|upper }}</b><br>
-    {{ serventia.titulo_substituta }}</td>
-  <td class="matricula-destaque"><b>MATRÍCULA Nº {{ m.numero }}</b>{% if m.cnm %}<br>CNM Nº {{ m.cnm }}{% endif %}</td>
-  <td><b>FICHA Nº {{ ficha_numero }}</b></td>
-</tr>
-<tr>
-  <td><b>LIVRO Nº {{ livro_ficha }} - REGISTRO GERAL</b></td>
-  <td>USUÁRIO<br>{{ usuario_impressao }}</td>
-</tr>
-</table>
-"""
+# `MODELO_CABECALHO_PADRAO` — o texto de fábrica do papel RI_CABECALHO — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/ri/RI_CABECALHO.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 
 # Modelo baseado na ficha real da serventia (MODELO EM WORD.docx):
 # cabecalho repetido por pagina, bloco de denominacao, bloco do imovel,
 # e os atos separados pela linha -.-.-.- , cada um com rotulo R-01/4012.
-MODELO_FICHA_PADRAO = """{% if data_abertura_br or m.logradouro or m.cidade or protocolo_atual %}<p>{% if data_abertura_br %}<b>DATA DE ABERTURA DA FICHA: </b>{{ data_abertura_br }}. {% endif %}{% if m.logradouro %}<b>DENOMINAÇÃO: </b>{{ m.logradouro }}. {% endif %}{% if m.cidade %}<b>LOCALIZAÇÃO: </b>Município de {{ m.cidade }}, Estado {{ "do" if m.uf != "SP" else "de" }} {{ uf_extenso }}. {% endif %}{% if protocolo_atual %}<b>PROTOCOLO: </b>Nº {{ protocolo_atual }}{% endif %}</p>{% endif %}
-
-{% set usa_teor_como_miolo = (m.tipo_ficha == "ACERVO" or (m.tipo_ficha == "ESTRUTURADA" and not m.descricao_perimetro)) and teor_odf %}
-{% if usa_teor_como_miolo %}
-{{ teor_odf }}
-{% else %}
-<p><b>IMÓVEL: </b>{% if m.descricao_perimetro %}{{ m.descricao_perimetro }}{% else %}{{ m.logradouro or "" }}{% if m.numero_predial %}, nº {{ m.numero_predial }}{% endif %}{% if m.bairro %}, {{ m.bairro }}{% endif %}{% if m.cidade %}, {{ m.cidade }}/{{ m.uf }}{% endif %}{% if m.area_valor %}, com a área de {{ m.area_valor }} {{ m.area_unidade or "" }}{% endif %}{% endif %}.{% if m.confrontacoes %} <b>CONFRONTAÇÕES: </b>{{ m.confrontacoes }}.{% endif %}{% if m.car or m.nirf or m.incra or m.sigef or m.ccir %} {% if m.ccir %}<b>CCIR: </b>{{ m.ccir }}. {% endif %}{% if m.car %}<b>CAR: </b>{{ m.car }}. {% endif %}{% if m.incra %}<b>INCRA: </b>{{ m.incra }}. {% endif %}{% if m.sigef %}<b>SIGEF: </b>{{ m.sigef }}. {% endif %}{% if m.nirf %}<b>NIRF: </b>{{ m.nirf }}.{% endif %}{% endif %}{% set props_ab = proprietarios_abertura if proprietarios_abertura else proprietarios %}{% if props_ab %} <b>PROPRIETÁRIO(S): </b>{% for p in props_ab %}{{ p.nome }}{% if p.qualificacao %}, {{ p.qualificacao }}{% endif %}{% if p.documento_numero %}, inscrito no {{ p.documento_tipo }} sob o nº {{ p.documento_numero }}{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.{% endif %}{% if m.registro_anterior %} <b>REGISTRO ANTERIOR: </b>{{ m.registro_anterior|trim }}{% if not (m.registro_anterior|trim).endswith('.') %}.{% endif %}{% endif %}{% if abertura_fecho %} {{ abertura_fecho }}{% endif %}{% if abertura_assinatura %} {{ abertura_assinatura }}{% endif %}</p>
-{% endif %}
-{{ selo_abertura_odf }}
-
-{% for a in atos %}
-{{ separador }}
-<p class="ato-cab"><b>{{ a.rotulo }} – </b>{% if a.natureza_titulo %}<b>{{ a.natureza_titulo|upper }}.</b>{% endif %}{% if a.protocolo %} <b>PROTOCOLO Nº {{ a.protocolo_cab or a.protocolo }}</b>{% if a.protocolo_data_cab %}, DE {{ a.protocolo_data_cab }}{% elif a.data_ato %}, DE {{ a.data_ato }}{% endif %}.{% endif %}{% if a.cancelado %} <b>(ATO CANCELADO)</b>{% endif %}</p>
-{% if a.teor_odf %}{{ a.teor_odf }}{% endif %}
-{% if a.fecho %}<p>{{ a.fecho }}</p>{% endif %}
-{% if a.selo_odf %}{{ a.selo_odf }}{% endif %}
-{% endfor %}
-"""
+# `MODELO_FICHA_PADRAO` — o texto de fábrica do papel RI_FICHA — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/ri/RI_FICHA.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 
 # O MOLDE DA CERTIDAO, E O MIOLO DE CADA TIPO — 18/09/2026, problema #75.
@@ -2353,7 +2325,7 @@ MODELO_FICHA_PADRAO = """{% if data_abertura_br or m.logradouro or m.cidade or p
 #     MODELO_CERTIDAO_PADRAO            o que TODA certidao tem: a abertura
 #                                       ("Certifico ... neles encontrei a
 #                                       MATRICULA Nº ..."), a finalidade, a
-#                                       validade do art. 53, e quem assina
+#                                       validade do art. 553, e quem assina
 #                                       — em dois desenhos: o do inteiro teor,
 #                                       que ja traz o cabecalho da ficha, e o
 #                                       dos outros, que abre com o timbre.
@@ -2374,54 +2346,10 @@ MODELO_FICHA_PADRAO = """{% if data_abertura_br or m.logradouro or m.cidade or p
 # sua forma mais cara (relato #79, do dia anterior).
 MARCADOR_DO_MIOLO = "{{ miolo_do_tipo }}"
 
-MODELO_CERTIDAO_PADRAO = """{# Certidao RI.
-   HOTFIX-2026-10-09-01 (oficial, via Carla, 09/10/2026): o fecho NAO
-   assina mais pela substituta/registrador; fica o local/data e, na
-   impressao, `_assinatura_de_quem_emitiu` (quem expediu). Altera a
-   decisao de 23/09/2026 (molde fechava com quem responde pela serventia).
-
-   Inteiro teor por TEXTO (16/09/2026): cabecalho da ficha na impressao.
-   Texto corrido. Introducao: "inteiro teor segue". Fecho "Era o que nela
-   continha." DEPOIS de todo o teor. Nos atos, o teor com destaque do rotulo
-   (R-01/...:- em negrito) se ainda nao vier no texto.
-
-   O TEOR SAI EM TODA FICHA QUE O TENHA — relato #79, 17/09/2026.
-
-     A condicao era `{% if m.tipo_ficha == "ACERVO" %}`. Medido na producao:
-     das 1.985 matriculas, **1.979 sao ACERVO e 6 sao ESTRUTURADA** — e as 6
-     perderam o teor na certidao. A da matricula 4.016 saiu com **674
-     caracteres**: a introducao, o «cujo inteiro teor segue:», e «Era o que
-     nela continha.» sem nada entre os dois.
-
-     **A PERGUNTA CERTA NAO E DE QUE TIPO A FICHA E; E SE ELA TEM TEOR.** A
-     guarda que a ficha de papel usa — `MODELO_FICHA_PADRAO`, decisao de
-     16/09 sobre a linha de assinatura — responde a outra pergunta (o que o
-     papel da FICHA imprime), e nao se muda por causa disto.
-
-     Nao vai ao papel da certidao o ato cujo texto ja esta escrito no teor:
-     quem decide isso e `contexto_ficha`, com `atos_fora_do_teor`.
-#}
-{% if tipo_certidao == "INTEIRO_TEOR" %}
-<p align="center"><b>{{ tipo_certidao_nome|upper }}</b></p>
-<p>Certifico, a pedido de parte interessada{% if requerente %} — <b>{{ requerente }}</b>{% if requerente_documento %}, {{ requerente_documento }}{% endif %}{% endif %}, que, revendo os livros de Registro de Imóveis a meu cargo, neles encontrei a <b>MATRÍCULA Nº {{ m.numero }}</b>{% if m.livro %}, do Livro {{ m.livro }}{% endif %}{% if m.folha %}, folha {{ m.folha }}{% endif %}{% if m.cnm %}, CNM {{ m.cnm }}{% endif %}, cujo <b>inteiro teor segue</b>:</p>
-{{ miolo_do_tipo }}{% if clausula_prenotacoes_abertas %}{{ clausula_prenotacoes_abertas }}{% endif %}{% if finalidade %}<p><b>FINALIDADE: </b>{{ finalidade }}</p>{% endif %}<p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Certidão emitida em {{ hoje_extenso }}. Dou fé.</p>
-<p align="center">{{ serventia.cidade }}/{{ serventia.uf }}, {{ hoje_extenso }}.</p>
-{% else %}
-<p align="center"><b>{{ serventia.nome|upper }}</b></p>
-<p align="center">CNS {{ serventia.cns }} — {{ serventia.cidade }}/{{ serventia.uf }}</p>
-<p align="center"><b>{{ tipo_certidao_nome|upper }}</b></p>
-<p>Certifico, a pedido de parte interessada{% if requerente %} — <b>{{ requerente }}</b>{% if requerente_documento %}, {{ requerente_documento }}{% endif %}{% endif %}, que, revendo os livros de Registro de Imóveis a meu cargo, neles encontrei a <b>MATRÍCULA Nº {{ m.numero }}</b>{% if m.livro %}, do Livro {{ m.livro }}{% endif %}{% if m.folha %}, folha {{ m.folha }}{% endif %}{% if m.cnm %}, CNM {{ m.cnm }}{% endif %}, cujo teor é o seguinte:</p>
-<p><b>IMÓVEL: </b>{% if m.descricao_perimetro %}{{ m.descricao_perimetro }}{% else %}{{ m.logradouro or "" }}{% if m.bairro %}, {{ m.bairro }}{% endif %}{% if m.cidade %}, {{ m.cidade }}/{{ m.uf }}{% endif %}{% if m.area_valor %}, área de {{ m.area_valor }} {{ m.area_unidade or "" }}{% endif %}{% endif %}.</p>
-{% if proprietarios %}
-<p><b>PROPRIETÁRIO(S) ATUAL(IS): </b>{% for p in proprietarios %}{{ p.nome }}{% if p.documento_numero %}, {{ p.documento_tipo }} {{ p.documento_numero }}{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.</p>
-{% else %}
-<p><b>PROPRIETÁRIO:</b> não consta titularidade ativa registrada nesta matrícula.</p>
-{% endif %}
-{{ miolo_do_tipo }}{% if clausula_prenotacoes_abertas %}{{ clausula_prenotacoes_abertas }}{% endif %}{% if finalidade %}<p><b>FINALIDADE: </b>{{ finalidade }}</p>{% endif %}
-<p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Certidão emitida em {{ hoje_extenso }}. Dou fé.</p>
-<p align="center">{{ serventia.cidade }}/{{ serventia.uf }}, {{ hoje_extenso }}.</p>
-{% endif %}
-"""
+# `MODELO_CERTIDAO_PADRAO` — o texto de fábrica do papel RI_CERTIDAO — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/ri/RI_CERTIDAO.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 
 # --------------------------------------------------------- os miolos
@@ -2438,7 +2366,10 @@ MODELO_CERTIDAO_PADRAO = """{# Certidao RI.
 # onus e afirmacao sobre o imovel, e a do molde e afirmacao sobre a matricula e
 # a data de hoje. Separadas, cada uma se conserta sozinha.
 
-MIOLO_CERTIDAO_INTEIRO_TEOR = """{% if teor_odf %}{{ teor_odf }}{% endif %}{{ selo_abertura_odf }}{% for a in atos %}{% if teor_odf or not loop.first %}<p class="separa-ato" style="border-bottom:0.06cm double #000;margin:0.12cm 0;padding:0;line-height:0;font-size:0;">&nbsp;</p>{% endif %}{{ a.teor_certidao_odf }}{% if a.selo_odf %}{{ a.selo_odf }}{% endif %}{% endfor %}<p>Era o que nela continha.</p>"""
+# `MIOLO_CERTIDAO_INTEIRO_TEOR` — o texto de fábrica do papel RI_CERTIDAO_INTEIRO_TEOR — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/ri/RI_CERTIDAO_INTEIRO_TEOR.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 # O fecho «Era o que nela continha.» VAI NO MIOLO, e nao no molde, porque ele
 # fecha o TEOR: a certidao de onus nao reproduz teor nenhum, e a frase ali
@@ -2460,26 +2391,15 @@ MIOLO_CERTIDAO_INTEIRO_TEOR = """{% if teor_odf %}{{ teor_odf }}{% endif %}{{ se
 # `resultado_onus`, `resultado_acoes`, `itens_onus` e `itens_acoes` vêm de
 # `contexto_ficha` (o que o sistema sabe) ou da escolha do balcão. O `onus` de
 # antes continua no contexto, para quem tiver editado este miolo na tela.
-MIOLO_CERTIDAO_ONUS = """
-<p align="center"><b>ÔNUS E GRAVAMES</b></p>
-{% if resultado_onus == "POSITIVA" %}
-<p><b>HÁ ÔNUS REAIS</b> sobre o imóvel objeto desta matrícula, assim caracterizados:</p>
-{% for a in itens_onus %}<p><b>{{ "abcdefghijklmnopqrstuvwxyz"[loop.index0] if loop.index0 < 26 else loop.index }}) {{ a.rotulo }}</b>{% if a.natureza %} ({{ a.natureza }}){% endif %}{% if a.data_extenso %}, {{ a.data_extenso }}{% elif a.data_ato %}, {{ a.data_ato }}{% endif %}{% if a.texto %} — {{ a.texto }}{% endif %}</p>{% endfor %}
-{% else %}
-<p><b>NADA CONSTA</b> de ônus reais, gravames ou restrições sobre o imóvel objeto desta matrícula, até a presente data: o imóvel encontra-se <b>LIVRE E DESEMBARAÇADO DE TODOS OS ÔNUS REAIS, LEGAIS OU CONVENCIONAIS</b>.</p>
-{% endif %}
-<p align="center"><b>AÇÕES REAIS E PESSOAIS REIPERSECUTÓRIAS</b></p>
-{% if resultado_acoes == "POSITIVA" %}
-<p><b>CONSTA REGISTRO</b> de citação de ação real ou pessoal reipersecutória relativa ao imóvel, assim caracterizado:</p>
-{% for a in itens_acoes %}<p><b>{{ "abcdefghijklmnopqrstuvwxyz"[loop.index0] if loop.index0 < 26 else loop.index }}) {{ a.rotulo }}</b>{% if a.natureza %} ({{ a.natureza }}){% endif %}{% if a.data_extenso %}, {{ a.data_extenso }}{% elif a.data_ato %}, {{ a.data_ato }}{% endif %}{% if a.texto %} — {{ a.texto }}{% endif %}</p>{% endfor %}
-{% else %}
-<p><b>NÃO CONSTA</b> registro de citação de ações reais ou pessoais reipersecutórias relativas ao imóvel objeto desta matrícula.</p>
-{% endif %}
-"""
+# `MIOLO_CERTIDAO_ONUS` — o texto de fábrica do papel RI_CERTIDAO_ONUS — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/ri/RI_CERTIDAO_ONUS.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
-MIOLO_CERTIDAO_PROPRIEDADE = """
-<p>Certifico que a propriedade do imóvel acima descrito encontra-se registrada em nome do(s) titular(es) indicado(s), conforme os atos constantes da matrícula.</p>
-"""
+# `MIOLO_CERTIDAO_PROPRIEDADE` — o texto de fábrica do papel RI_CERTIDAO_PROPRIEDADE — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/ri/RI_CERTIDAO_PROPRIEDADE.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 # A CADEIA DOMINIAL E A VINTENÁRIA — construídas na produção em 28/09/2026
 # (3.6.233, `_apply_dominial_patch.py`, e a segunda passada do mesmo dia, a das
@@ -2500,37 +2420,15 @@ MIOLO_CERTIDAO_PROPRIEDADE = """
 #
 # A data do período da vintenária vai em dd/mm/aaaa — a 3.6.233 imprimia a data
 # crua do banco (`2006-10-14`), que é a lição da certidão 6/2026 (28/08).
-MIOLO_CERTIDAO_DOMINIAL = """
-<p align="center"><b>CADEIA DOMINIAL</b></p>
-{% for b in cadeia_matriculas %}{% if cadeia_matriculas|length > 1 %}
-<p align="center"><b>Matrícula N.º {{ b.numero }} ({{ b.papel }})</b></p>
-{% if b.registro_anterior %}<p><i>Registro anterior: {{ b.registro_anterior }}</i></p>{% endif %}{% endif %}
-{% if b.atos %}
-<p>Constam os seguintes atos de transmissão de domínio, na ordem cronológica:</p>
-{% for a in b.atos %}<p><b>{{ a.rotulo }}</b>{% if a.data_extenso %} — {{ a.data_extenso }}{% elif a.data_ato %} — {{ a.data_ato }}{% endif %}{% if a.natureza_titulo %}: {{ a.natureza_titulo }}{% endif %}</p>{% if a.teor_odf %}{{ a.teor_odf }}{% elif a.teor %}<p>{{ a.teor }}</p>{% endif %}{% if not loop.last %}<p class="separa-ato" style="border-bottom:0.06cm double #000;margin:0.12cm 0;padding:0;line-height:0;font-size:0;">&nbsp;</p>{% endif %}{% endfor %}
-{% else %}
-<p><b>NADA CONSTA</b> de ato de transmissão de domínio lavrado nesta matrícula, além da abertura, até a presente data.</p>
-{% endif %}
-{% if not loop.last %}<p class="separa-ato" style="border-bottom:0.06cm double #000;margin:0.18cm 0;padding:0;line-height:0;font-size:0;">&nbsp;</p>{% endif %}
-{% endfor %}
-"""
+# `MIOLO_CERTIDAO_DOMINIAL` — o texto de fábrica do papel RI_CERTIDAO_DOMINIAL — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/ri/RI_CERTIDAO_DOMINIAL.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
-MIOLO_CERTIDAO_VINTENARIA = """
-<p align="center"><b>CERTIDÃO VINTENÁRIA — ÚLTIMOS {{ anos_periodo }} ANOS</b></p>
-<p>Período considerado: de {{ desde_periodo }} a {{ ate_periodo }} ({{ anos_periodo }} anos).</p>
-<p align="center"><b>TRANSMISSÕES DE DOMÍNIO NO PERÍODO</b></p>
-{% if dominio_periodo %}
-{% for a in dominio_periodo %}<p><b>{{ a.rotulo }}</b>{% if a.data_extenso %} — {{ a.data_extenso }}{% elif a.data_ato %} — {{ a.data_ato }}{% endif %}{% if a.natureza_titulo %}: {{ a.natureza_titulo }}{% endif %}</p>{% if a.teor_odf %}{{ a.teor_odf }}{% elif a.teor %}<p>{{ a.teor }}</p>{% endif %}{% if not loop.last %}<p class="separa-ato" style="border-bottom:0.06cm double #000;margin:0.12cm 0;padding:0;line-height:0;font-size:0;">&nbsp;</p>{% endif %}{% endfor %}
-{% else %}
-<p><b>NADA CONSTA</b> de transmissão de domínio no período indicado.</p>
-{% endif %}
-<p align="center"><b>ÔNUS E GRAVAMES NO PERÍODO</b></p>
-{% if onus_periodo %}
-{% for a in onus_periodo %}<p><b>{{ a.rotulo }}</b>{% if a.data_extenso %} — {{ a.data_extenso }}{% elif a.data_ato %} — {{ a.data_ato }}{% endif %}{% if a.natureza_titulo %}: {{ a.natureza_titulo }}{% endif %}</p>{% endfor %}
-{% else %}
-<p><b>NADA CONSTA</b> de ônus reais, gravames ou restrições lavrados no período indicado.</p>
-{% endif %}
-"""
+# `MIOLO_CERTIDAO_VINTENARIA` — o texto de fábrica do papel RI_CERTIDAO_VINTENARIA — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/ri/RI_CERTIDAO_VINTENARIA.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 # **A «CERTIDAO NEGATIVA DE MATRICULA» NAO TEM MIOLO, porque nao existe mais**
 # — problema #75, 18/09/2026. O texto dela dizia «NADA CONSTA em nome do
@@ -2553,42 +2451,10 @@ MIOLO_DA_CERTIDAO: dict[str, str] = {
 }
 
 
-MODELO_NOTA_PADRAO = """<p align="center"><b>{{ serventia.nome|upper }}</b></p>
-<p align="center">CNS {{ serventia.cns }} — {{ serventia.cidade }}/{{ serventia.uf }}</p>
-<p align="center"><b>NOTA DEVOLUTIVA Nº {{ nota.numero }}</b></p>
-<p></p>
-
-<p><b>PROTOCOLO Nº {{ protocolo.numero }}</b>, prenotado em {{ protocolo.data_prenotacao }}.
-{% if protocolo.apresentante %}<b>APRESENTANTE:</b> {{ protocolo.apresentante }}
-{%- if protocolo.apresentante_documento %}, {{ protocolo.apresentante_documento }}{% endif %}.{% endif %}
-{% if protocolo.matricula_numero %}<b>MATRÍCULA:</b> {{ protocolo.matricula_numero }}.{% endif %}
-{% if protocolo.objeto %}<b>OBJETO:</b> {{ protocolo.objeto }}.{% endif %}</p>
-
-<p>Examinado o título apresentado, verificou-se que ele <b>não se encontra em condições de
-registro</b>, pelas razões a seguir. Ficam formuladas as seguintes exigências:</p>
-
-{{ exigencias_odf }}
-
-{% if nota.fundamentacao %}
-<p><b>FUNDAMENTAÇÃO:</b> {{ nota.fundamentacao }}</p>
-{% endif %}
-
-<p>O interessado poderá cumprir as exigências e <b>reapresentar o título dentro do prazo de
-vigência da prenotação</b>, hipótese em que o título será objeto do mesmo lançamento no
-Livro 1 — Protocolo, recebendo igual número de ordem, na forma do art. 44 do Código de
-Normas da CGJ/TJMA.{% if nota.prazo_ate %} A prenotação vigora até <b>{{ nota.prazo_ate }}</b>.{% endif %}</p>
-
-<p>Cessados os efeitos da prenotação sem o cumprimento das exigências, a reapresentação
-demandará <b>novo protocolo</b>, com os emolumentos correspondentes.</p>
-
-<p>Fica ressalvado ao interessado o direito de requerer a suscitação de dúvida, nos termos
-dos arts. 198 a 204 da Lei nº 6.015/1973.</p>
-
-<p></p>
-<p align="center">{{ serventia.cidade }}/{{ serventia.uf }}, {{ hoje_extenso }}.</p>
-<p align="center">{{ serventia.substituta or serventia.registrador }}</p>
-<p align="center">{{ "Tabeliã Registradora Substituta" if serventia.substituta else "Tabelião Registrador" }}</p>
-"""
+# `MODELO_NOTA_PADRAO` — o texto de fábrica do papel RI_NOTA — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/ri/RI_NOTA.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 
 def carimbo_da_certidao_odf(selo_texto, *, rotulo: str = "SELO DA CERTIDÃO",
@@ -2661,3 +2527,17 @@ def png_do_qr_do_selo(numero) -> bytes | None:
         return buf.getvalue() or None
     except Exception:                                        # noqa: BLE001
         return None
+
+
+def __getattr__(nome: str):
+    """Os nomes antigos do texto de fábrica, lidos da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06A (19/10/2026) e mora em `modelos_padrao/`.
+    Quem ainda importa o nome antigo recebe o padrão da base — o MESMO que o
+    papel imprime, e não uma cópia que ficou para trás. Nome que não é de papel
+    continua sendo `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)

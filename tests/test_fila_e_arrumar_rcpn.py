@@ -24,6 +24,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -119,6 +121,54 @@ def test_termo_pelo_modelo_leva_o_cpf_digitado_na_conferencia(casa):
     con.close()
     assert a["cpf_registrado"] == "00000000191"
     assert "no CPF n.º 000.000.001-91" in a["teor"]
+
+
+def test_termo_pelo_modelo_que_quebra_no_meio_nao_desfaz_a_lavratura(casa, monkeypatch):
+    """L056R, 17/10/2026 — no PostgreSQL o SAVEPOINT do termo sumia na hora (o
+    RELEASE do savepoint de proteção da ponte o levava junto), e o RELEASE e o
+    ROLLBACK TO da rota estouravam: a lavratura inteira voltava atrás. O que se
+    guarda aqui é a promessa da rota: o termo que quebra no meio volta atrás
+    SOZINHO, e o assento fica lavrado, com o aviso."""
+    import rc_termo as RCT
+    from bd_nativo import banco
+
+    def _quebra_no_meio(con, assento_id, **_k):
+        banco(con).escrever("UPDATE rc_assentos SET teor = %s WHERE id = %s",
+                            ("METADE DO TERMO", assento_id))
+        raise RCT.TermoError("modelo quebrado de propósito.")
+
+    monkeypatch.setattr(RCT, "congelar", _quebra_no_meio)
+    dados = _rascunho_nascimento()
+    assert not dados.get("teor")
+    slug, conf = _abrir_e_conferir(casa, dados)
+    antes = _quantos(casa)
+    lav = _como_o_navegador(conf, ("acao", "lavrar"), folha_seguranca=FOLHAS[2])
+    r = casa["c"].post(f"/rcpn/novo/{slug}", data=lav, follow_redirects=True)
+    assert r.status_code == 200
+    assert _quantos(casa) == antes + 1
+    con = _con(casa)
+    teor = con.execute("SELECT teor FROM rc_assentos ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    assert not teor                     # a metade do termo voltou atrás
+    pagina = r.get_data(as_text=True)
+    assert "não pôde ser escrito pelo" in pagina
+    assert "modelo quebrado de propósito." in pagina
+
+
+def test_ponto_de_retorno_que_falha_sobe_como_erro_do_sqlite3():
+    """L056R, 18/10/2026 — o `_ponto_de_retorno` manda o comando cru ao
+    PostgreSQL, por fora da ponte, e o erro dele subia como `psycopg.Error`.
+    Pelo `con.execute` de antes ele subia como o do `sqlite3`, que é o que o
+    sistema apanha (armadilha 3 do manual da conversão)."""
+    import atribuicoes_web as AW
+    from banco_de_teste import conexao_de_teste
+    con = conexao_de_teste()
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            AW._ponto_de_retorno(con, "RELEASE ponto_que_nao_existe")
+    finally:
+        con.rollback()
+        con.close()
 
 
 # ------------------------------------------------------------- a fila

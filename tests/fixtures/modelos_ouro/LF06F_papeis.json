@@ -1,0 +1,1024 @@
+{
+ "_como": "Gerado ANTES do LF06F, das f-strings, constantes e templates do commit 2c41e90, por tests/fixtures/modelos_ouro/ouro_lf06f.py. Não regerar: depois da mudança as frases moram na base, e regerar faria o teste comparar a base com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "atrib_certidao.montar_teor(modelo_da_casa)": {
+   "ok": "AJUSTE no Livro \"A-5\" de Registro de Pessoas Jurídicas, fls. 67, ATO n. 148 datada de 31/01/2022, ATA DE CONSTITUIÇÃO: Teor de exemplo do registro da associação.\n\n--- AVERBAÇÃO n. 374 ---\nTipo do ato: ALTERAÇÃO DE ESTATUTO.\nAverbação de exemplo.\n\n--- AVERBAÇÃO n. AV-2 ---\nOutra averbação de exemplo."
+  },
+  "atrib_certidao.montar_teor(registro_e_averbacoes)": {
+   "ok": "CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"A-5\" de Registro de Pessoas Jurídicas, fls. 67, ATO n. 148 datada de 31/01/2022, encontrei o seguinte registro, ATA DE CONSTITUIÇÃO. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -\n\nTeor de exemplo do registro da associação.\n\n--- AVERBAÇÃO n. 374 ---\nTipo do ato: ALTERAÇÃO DE ESTATUTO.\nAverbação de exemplo.\n\n--- AVERBAÇÃO n. AV-2 ---\nOutra averbação de exemplo."
+  },
+  "atrib_certidao.montar_teor(registro_e_uma_averbacao)": {
+   "ok": "CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"A-5\" de Registro de Pessoas Jurídicas, fls. 67, ATO n. 148 datada de 31/01/2022, encontrei o seguinte registro, ATA DE CONSTITUIÇÃO. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -\n\nTeor de exemplo do registro da associação.\n\n--- AVERBAÇÃO n. AV-2 ---\nOutra averbação de exemplo."
+  },
+  "atrib_certidao.montar_teor(sem_serie_nem_numero)": {
+   "ok": "CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"?\" de Registro, fls. 67 datada de 31/01/2022, encontrei o seguinte registro, ATA DE CONSTITUIÇÃO. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -\n\nTeor de exemplo do registro da associação.\n\n--- AVERBAÇÃO n. 374 ---\nTipo do ato: ALTERAÇÃO DE ESTATUTO.\nAverbação de exemplo.\n\n--- AVERBAÇÃO n. AV-2 ---\nOutra averbação de exemplo."
+  },
+  "atrib_certidao.montar_teor(so_averbacoes)": {
+   "ok": "CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"A-5\" de Registro de Pessoas Jurídicas, fls. 67, ATO n. 148 datada de 31/01/2022, ao qual constam as seguintes averbações, as quais ora certifico. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -\n\n--- AVERBAÇÃO n. 374 ---\nTipo do ato: ALTERAÇÃO DE ESTATUTO.\nAverbação de exemplo.\n\n--- AVERBAÇÃO n. AV-2 ---\nOutra averbação de exemplo."
+  },
+  "atrib_certidao.montar_teor(so_averbacoes_sem_teor)": {
+   "erro": "CertidaoError: Nenhuma averbação com teor foi selecionada para esta certidão, e o registro-base também não foi marcado — marque ao menos um ato com conteúdo para certificar."
+  },
+  "atrib_certidao.montar_teor(so_uma_averbacao)": {
+   "ok": "CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"A-5\" de Registro de Pessoas Jurídicas, fls. 67, ATO n. 148 datada de 31/01/2022, ao qual constam as seguintes averbações, as quais ora certifico. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -\n\n--- AVERBAÇÃO n. AV-2 ---\nOutra averbação de exemplo."
+  },
+  "atrib_certidao.montar_teor(td_sem_folha_nem_data)": {
+   "ok": "CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"B\" de Registro de Títulos e Documentos, ATO n. 1508, encontrei o seguinte registro, ATA DE CONSTITUIÇÃO. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -\n\nTeor de exemplo do registro da associação.\n\n--- AVERBAÇÃO n. 374 ---\nTipo do ato: ALTERAÇÃO DE ESTATUTO.\nAverbação de exemplo.\n\n--- AVERBAÇÃO n. AV-2 ---\nOutra averbação de exemplo."
+  },
+  "atrib_certidao.montar_teor(td_so_averbacoes)": {
+   "ok": "CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"B\" de Registro de Títulos e Documentos, ATO n. 1508, ao qual constam as seguintes averbações, as quais ora certifico. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -\n\n--- AVERBAÇÃO n. 374 ---\nTipo do ato: ALTERAÇÃO DE ESTATUTO.\nAverbação de exemplo."
+  },
+  "caixa_schema.AVISO_ORCAMENTO": {
+   "ok": "Este documento corresponde a MERO CÁLCULO DE EMOLUMENTOS, feito a pedido do interessado. NÃO representa a prática de ato, não gera direito à prenotação nem à reserva de valores, e os emolumentos indicados são os vigentes na data de emissão, sujeitos a alteração por ato normativo."
+  },
+  "rg_certidao_pdf.contexto_certidao('','')": {
+   "ok": {
+    "atribuicao": "Registro Civil das Pessoas Jurídicas",
+    "certidao_ano": "",
+    "certidao_numero": "",
+    "cidade": "",
+    "cns": "",
+    "data_apresentacao": "31/01/2022",
+    "data_extenso": "8 de setembro de 2026",
+    "data_registro": "31/01/2022",
+    "denominacao": "—",
+    "email": "",
+    "endereco": "",
+    "full_name": "",
+    "funcao": "",
+    "identificacao_curta": "Registro Nº 148",
+    "identificacao_data": "31/01/2022",
+    "livro": "Livro de Registro Civil das Pessoas Jurídicas A-5",
+    "natureza": "—",
+    "numero": "148",
+    "objeto_certificado": "o registro",
+    "oficial": "",
+    "pagina": "000001",
+    "paginas": "1",
+    "paginas_extenso": "uma",
+    "protocolo": "—",
+    "telefone": "",
+    "total_paginas": "000001",
+    "uf": "MA",
+    "unit_short": ""
+   }
+  },
+  "rg_certidao_pdf.contexto_certidao('ATA DE CONSTITUIÇÃO','')": {
+   "ok": {
+    "atribuicao": "Registro Civil das Pessoas Jurídicas",
+    "certidao_ano": "",
+    "certidao_numero": "",
+    "cidade": "",
+    "cns": "",
+    "data_apresentacao": "31/01/2022",
+    "data_extenso": "8 de setembro de 2026",
+    "data_registro": "31/01/2022",
+    "denominacao": "—",
+    "email": "",
+    "endereco": "",
+    "full_name": "",
+    "funcao": "",
+    "identificacao_curta": "Registro Nº 148",
+    "identificacao_data": "31/01/2022",
+    "livro": "Livro de Registro Civil das Pessoas Jurídicas A-5",
+    "natureza": "ATA DE CONSTITUIÇÃO",
+    "numero": "148",
+    "objeto_certificado": "o registro de ATA DE CONSTITUIÇÃO",
+    "oficial": "",
+    "pagina": "000001",
+    "paginas": "1",
+    "paginas_extenso": "uma",
+    "protocolo": "—",
+    "telefone": "",
+    "total_paginas": "000001",
+    "uf": "MA",
+    "unit_short": ""
+   }
+  },
+  "rg_certidao_pdf.contexto_certidao('ATA','a(s) averbação(ões) nº 374')": {
+   "ok": {
+    "atribuicao": "Registro Civil das Pessoas Jurídicas",
+    "certidao_ano": "",
+    "certidao_numero": "",
+    "cidade": "",
+    "cns": "",
+    "data_apresentacao": "31/01/2022",
+    "data_extenso": "8 de setembro de 2026",
+    "data_registro": "31/01/2022",
+    "denominacao": "—",
+    "email": "",
+    "endereco": "",
+    "full_name": "",
+    "funcao": "",
+    "identificacao_curta": "Registro Nº 148",
+    "identificacao_data": "31/01/2022",
+    "livro": "Livro de Registro Civil das Pessoas Jurídicas A-5",
+    "natureza": "ATA",
+    "numero": "148",
+    "objeto_certificado": "a(s) averbação(ões) nº 374",
+    "oficial": "",
+    "pagina": "000001",
+    "paginas": "1",
+    "paginas_extenso": "uma",
+    "protocolo": "—",
+    "telefone": "",
+    "total_paginas": "000001",
+    "uf": "MA",
+    "unit_short": ""
+   }
+  },
+  "rg_certidao_pdf.livro_impresso(None,None)": {
+   "ok": "Livro de Registro Civil das Pessoas Jurídicas A"
+  },
+  "rg_certidao_pdf.livro_impresso(PJ_A,05)": {
+   "ok": "Livro de Registro Civil das Pessoas Jurídicas A-5"
+  },
+  "rg_certidao_pdf.livro_impresso(TD_B,007)": {
+   "ok": "Livro de Registro de Títulos e Documentos B-7"
+  },
+  "rg_certidao_pdf.livro_impresso(TD_B,None)": {
+   "ok": "Livro de Registro de Títulos e Documentos B"
+  },
+  "rg_certidao_pdf.montar_capa(selo=False)": {
+   "ok": [
+    "OFÍCIO",
+    "ÚNICO",
+    "DE",
+    "EXEMPLO",
+    "/",
+    "UF",
+    "—",
+    "CNS",
+    "000000",
+    "Oficial:",
+    "Registro",
+    "Civil",
+    "das",
+    "Pessoas",
+    "Jurídicas",
+    "Nº",
+    "148",
+    "de",
+    "31/01/2022",
+    "Certifico",
+    "e",
+    "dou",
+    "fé",
+    "que",
+    "o",
+    "documento,",
+    "contendo",
+    "1",
+    "(uma)",
+    "página(s)",
+    "(arquivo",
+    "anexo),",
+    "foi",
+    "apresentado",
+    "em",
+    "31/01/2022,",
+    "protocolado",
+    "sob",
+    "nº",
+    "—,",
+    "referente",
+    "ao",
+    "registro",
+    "nº",
+    "148",
+    "de",
+    "31/01/2022,",
+    "no",
+    "Livro",
+    "de",
+    "Registro",
+    "Civil",
+    "das",
+    "Pessoas",
+    "Jurídicas",
+    "A-7",
+    "desta",
+    "serventia.",
+    "A",
+    "presente",
+    "certidão",
+    "tem",
+    "por",
+    "objeto",
+    "o",
+    "registro",
+    "de",
+    "ATA.",
+    "Denominação",
+    "—",
+    "Natureza:",
+    "ATA",
+    "Cidade",
+    "Exemplo,",
+    "8",
+    "de",
+    "setembro",
+    "de",
+    "2026.",
+    "Eu,",
+    "FULANO",
+    "DE",
+    "EXEMPLO,",
+    "Escrevente,",
+    "o",
+    "subscrevo",
+    "e",
+    "assino.",
+    "Emolumentos",
+    "R$",
+    "0,00",
+    "FERC",
+    "R$",
+    "0,00",
+    "FADEP",
+    "R$",
+    "0,00",
+    "FEMP",
+    "R$",
+    "0,00",
+    "FERRFIS",
+    "R$",
+    "0,00",
+    "Total",
+    "R$",
+    "0,00",
+    "selo",
+    "/",
+    "verificação",
+    "QR",
+    "/",
+    "autenticação"
+   ]
+  },
+  "rg_certidao_pdf.montar_capa(selo=True)": {
+   "ok": [
+    "OFÍCIO",
+    "ÚNICO",
+    "DE",
+    "EXEMPLO",
+    "/",
+    "UF",
+    "—",
+    "CNS",
+    "000000",
+    "Oficial:",
+    "Registro",
+    "Civil",
+    "das",
+    "Pessoas",
+    "Jurídicas",
+    "Nº",
+    "148",
+    "de",
+    "31/01/2022",
+    "Certifico",
+    "e",
+    "dou",
+    "fé",
+    "que",
+    "o",
+    "documento,",
+    "contendo",
+    "1",
+    "(uma)",
+    "página(s)",
+    "(arquivo",
+    "anexo),",
+    "foi",
+    "apresentado",
+    "em",
+    "31/01/2022,",
+    "protocolado",
+    "sob",
+    "nº",
+    "—,",
+    "referente",
+    "ao",
+    "registro",
+    "nº",
+    "148",
+    "de",
+    "31/01/2022,",
+    "no",
+    "Livro",
+    "de",
+    "Registro",
+    "Civil",
+    "das",
+    "Pessoas",
+    "Jurídicas",
+    "A-7",
+    "desta",
+    "serventia.",
+    "A",
+    "presente",
+    "certidão",
+    "tem",
+    "por",
+    "objeto",
+    "o",
+    "registro",
+    "de",
+    "ATA.",
+    "Denominação",
+    "—",
+    "Natureza:",
+    "ATA",
+    "Cidade",
+    "Exemplo,",
+    "8",
+    "de",
+    "setembro",
+    "de",
+    "2026.",
+    "Eu,",
+    "FULANO",
+    "DE",
+    "EXEMPLO,",
+    "Escrevente,",
+    "o",
+    "subscrevo",
+    "e",
+    "assino.",
+    "Emolumentos",
+    "R$",
+    "0,00",
+    "FERC",
+    "R$",
+    "0,00",
+    "FADEP",
+    "R$",
+    "0,00",
+    "FEMP",
+    "R$",
+    "0,00",
+    "FERRFIS",
+    "R$",
+    "0,00",
+    "Total",
+    "R$",
+    "0,00",
+    "selo",
+    "da",
+    "certidão",
+    "AVESVD000000EXEMPLO0000001",
+    "Total",
+    "R$",
+    "20,00",
+    "Emol",
+    "R$",
+    "18,00",
+    "FERC",
+    "R$",
+    "0,50",
+    "FEMP",
+    "R$",
+    "0,75",
+    "FADEP",
+    "R$",
+    "0,75",
+    "Consulte",
+    "em",
+    "https://selo.tjma.jus.br"
+   ]
+  },
+  "rg_certidao_pdf.montar_folha_interna": {
+   "ok": [
+    "Página",
+    "000002/000003",
+    "Registro",
+    "Nº",
+    "148",
+    "31/01/2022",
+    "Protocolo",
+    "nº",
+    "—",
+    "de",
+    "31/01/2022:",
+    "certidão",
+    "de",
+    "o",
+    "registro",
+    "de",
+    "ATA,",
+    "sob",
+    "nº",
+    "148",
+    "em",
+    "31/01/2022",
+    "neste",
+    "OFÍCIO",
+    "ÚNICO",
+    "DE",
+    "EXEMPLO",
+    "/",
+    "UF",
+    "—",
+    "Registro",
+    "de",
+    "Títulos",
+    "e",
+    "Documentos.",
+    "Assinado",
+    "por",
+    "FULANO",
+    "DE",
+    "EXEMPLO",
+    "—",
+    "Escrevente.",
+    "Emolumentos",
+    "R$",
+    "0,00",
+    "FERC",
+    "R$",
+    "0,00",
+    "FADEP",
+    "R$",
+    "0,00",
+    "FEMP",
+    "R$",
+    "0,00",
+    "FERRFIS",
+    "R$",
+    "0,00",
+    "Total",
+    "R$",
+    "0,00"
+   ]
+  },
+  "rg_certidao_pdf.textos_prontos(TD, natureza)": {
+   "ok": {
+    "cabecalho": "OFÍCIO ÚNICO DE EXEMPLO / UF — CNS 000000\nOficial: \n",
+    "chave_capa": "RTD_CERTIDAO_CAPA",
+    "chave_faixa": "RTD_CERTIDAO_FAIXA",
+    "corpo": "Certifico e dou fé que o documento, contendo 1 (uma) página(s) (arquivo anexo), foi apresentado em 31/01/2022, protocolado sob nº —, referente ao registro nº 148 de 31/01/2022, no Livro de Registro de Títulos e Documentos B-7 desta serventia. A presente certidão tem por objeto o registro de ATA.",
+    "ctx": {
+     "atribuicao": "Registro de Títulos e Documentos",
+     "certidao_ano": "",
+     "certidao_numero": "",
+     "cidade": "Cidade Exemplo",
+     "cns": "000000",
+     "data_apresentacao": "31/01/2022",
+     "data_extenso": "8 de setembro de 2026",
+     "data_registro": "31/01/2022",
+     "denominacao": "—",
+     "email": "",
+     "endereco": "",
+     "full_name": "FULANO DE EXEMPLO",
+     "funcao": "Escrevente",
+     "identificacao_curta": "Registro Nº 148",
+     "identificacao_data": "31/01/2022",
+     "livro": "Livro de Registro de Títulos e Documentos B-7",
+     "natureza": "ATA",
+     "numero": "148",
+     "objeto_certificado": "o registro de ATA",
+     "oficial": "",
+     "pagina": "000001",
+     "paginas": "1",
+     "paginas_extenso": "uma",
+     "protocolo": "—",
+     "telefone": "",
+     "total_paginas": "000001",
+     "uf": "MA",
+     "unit_short": "OFÍCIO ÚNICO DE EXEMPLO / UF"
+    },
+    "denominacao": "Denominação\n—\nNatureza:\nATA",
+    "faixa": "Protocolo nº — de 31/01/2022: certidão de o registro de ATA, sob nº 148 em 31/01/2022 neste OFÍCIO ÚNICO DE EXEMPLO / UF — Registro de Títulos e Documentos. Assinado por FULANO DE EXEMPLO — Escrevente.",
+    "fecho": "Cidade Exemplo, 8 de setembro de 2026.\nEu, FULANO DE EXEMPLO, Escrevente, o subscrevo e assino.",
+    "titulo": "Registro de Títulos e Documentos\nNº 148 de 31/01/2022"
+   }
+  },
+  "rg_teor_rtdpj.encerramento(AVERBACAO)": {
+   "ok": "Era o que continha o documento apresentado para averbação, arquivado em sua íntegra mediante digitalização. Eu, FULANO DE EXEMPLO, Escrevente, o subscrevo e assino."
+  },
+  "rg_teor_rtdpj.encerramento(REGISTRO)": {
+   "ok": "Era o que continha o documento apresentado para registro, arquivado em sua íntegra mediante digitalização. Eu, FULANO DE EXEMPLO, Escrevente, o subscrevo e assino."
+  },
+  "rg_teor_rtdpj.encerramento(sem nome)": {
+   "erro": "TeorRtdpjError: O teor precisa do nome de quem lavra (sessão)."
+  },
+  "rg_teor_rtdpj.intro(AVERBACAO,'','')": {
+   "ok": "CERTIFICO que me foi apresentado para ser AVERBADO no Registro nº 1508 o documento digitalizado abaixo:"
+  },
+  "rg_teor_rtdpj.intro(AVERBACAO,'','01/09/2026')": {
+   "ok": "CERTIFICO que me foi apresentado para ser AVERBADO no Registro nº 1508 o documento digitalizado abaixo:\nData da assinatura: 01/09/2026."
+  },
+  "rg_teor_rtdpj.intro(AVERBACAO,'ALTERAÇÃO DE ESTATUTO','')": {
+   "ok": "CERTIFICO que me foi apresentado para ser AVERBADO no Registro nº 1508 o documento digitalizado abaixo:\nTipo do ato: ALTERAÇÃO DE ESTATUTO."
+  },
+  "rg_teor_rtdpj.intro(AVERBACAO,'ALTERAÇÃO DE ESTATUTO','01/09/2026')": {
+   "ok": "CERTIFICO que me foi apresentado para ser AVERBADO no Registro nº 1508 o documento digitalizado abaixo:\nTipo do ato: ALTERAÇÃO DE ESTATUTO.\nData da assinatura: 01/09/2026."
+  },
+  "rg_teor_rtdpj.intro(REGISTRO,'','')": {
+   "ok": "CERTIFICO que me foi apresentado para ser REGISTRADO no Registro nº 1508 o documento digitalizado abaixo:"
+  },
+  "rg_teor_rtdpj.intro(REGISTRO,'','01/09/2026')": {
+   "ok": "CERTIFICO que me foi apresentado para ser REGISTRADO no Registro nº 1508 o documento digitalizado abaixo:\nData da assinatura: 01/09/2026."
+  },
+  "rg_teor_rtdpj.intro(REGISTRO,'ALTERAÇÃO DE ESTATUTO','')": {
+   "ok": "CERTIFICO que me foi apresentado para ser REGISTRADO no Registro nº 1508 o documento digitalizado abaixo:\nTipo do ato: ALTERAÇÃO DE ESTATUTO."
+  },
+  "rg_teor_rtdpj.intro(REGISTRO,'ALTERAÇÃO DE ESTATUTO','01/09/2026')": {
+   "ok": "CERTIFICO que me foi apresentado para ser REGISTRADO no Registro nº 1508 o documento digitalizado abaixo:\nTipo do ato: ALTERAÇÃO DE ESTATUTO.\nData da assinatura: 01/09/2026."
+  },
+  "rg_teor_rtdpj.intro(sem numero)": {
+   "erro": "TeorRtdpjError: O teor precisa do número do registro."
+  },
+  "rg_teor_rtdpj.linha_data": {
+   "ok": "Cidade Exemplo/MA, 8 de setembro de 2026."
+  },
+  "rg_teor_rtdpj.linhas_cabecalho(None)": {
+   "ok": [
+    "OFÍCIO ÚNICO DE EXEMPLO / UF — CNS 000000",
+    "Registro Civil das Pessoas Jurídicas"
+   ]
+  },
+  "rg_teor_rtdpj.linhas_cabecalho(PJ_A)": {
+   "ok": [
+    "OFÍCIO ÚNICO DE EXEMPLO / UF — CNS 000000",
+    "Registro Civil das Pessoas Jurídicas"
+   ]
+  },
+  "rg_teor_rtdpj.linhas_cabecalho(TD_B)": {
+   "ok": [
+    "OFÍCIO ÚNICO DE EXEMPLO / UF — CNS 000000",
+    "Registro de Títulos e Documentos"
+   ]
+  },
+  "rg_teor_rtdpj.montar_pagina(arquivamento)": {
+   "ok": [
+    "OFÍCIO",
+    "ÚNICO",
+    "DE",
+    "EXEMPLO",
+    "/",
+    "UF",
+    "—",
+    "CNS",
+    "000000",
+    "Registro",
+    "Civil",
+    "das",
+    "Pessoas",
+    "Jurídicas",
+    "CERTIFICO",
+    "que",
+    "me",
+    "foi",
+    "apresentado",
+    "para",
+    "ser",
+    "AVERBADO",
+    "no",
+    "Registro",
+    "nº",
+    "148",
+    "o",
+    "documento",
+    "digitalizado",
+    "abaixo:",
+    "Era",
+    "o",
+    "que",
+    "continha",
+    "o",
+    "documento",
+    "apresentado",
+    "para",
+    "averbação,",
+    "arquivado",
+    "em",
+    "sua",
+    "íntegra",
+    "mediante",
+    "digitalização.",
+    "Eu,",
+    "FULANO",
+    "DE",
+    "EXEMPLO,",
+    "Escrevente,",
+    "o",
+    "subscrevo",
+    "e",
+    "assino.",
+    "Cidade",
+    "Exemplo/MA,",
+    "8",
+    "de",
+    "setembro",
+    "de",
+    "2026.",
+    "Escrevente:",
+    "________________________________",
+    "selo",
+    "averbação",
+    "selo",
+    "arquivamento",
+    "1/1"
+   ]
+  },
+  "rg_teor_rtdpj.montar_pagina(com selo)": {
+   "ok": [
+    "OFÍCIO",
+    "ÚNICO",
+    "DE",
+    "EXEMPLO",
+    "/",
+    "UF",
+    "—",
+    "CNS",
+    "000000",
+    "Registro",
+    "Civil",
+    "das",
+    "Pessoas",
+    "Jurídicas",
+    "CERTIFICO",
+    "que",
+    "me",
+    "foi",
+    "apresentado",
+    "para",
+    "ser",
+    "AVERBADO",
+    "no",
+    "Registro",
+    "nº",
+    "148",
+    "o",
+    "documento",
+    "digitalizado",
+    "abaixo:",
+    "Era",
+    "o",
+    "que",
+    "continha",
+    "o",
+    "documento",
+    "apresentado",
+    "para",
+    "averbação,",
+    "arquivado",
+    "em",
+    "sua",
+    "íntegra",
+    "mediante",
+    "digitalização.",
+    "Eu,",
+    "FULANO",
+    "DE",
+    "EXEMPLO,",
+    "Escrevente,",
+    "o",
+    "subscrevo",
+    "e",
+    "assino.",
+    "Cidade",
+    "Exemplo/MA,",
+    "8",
+    "de",
+    "setembro",
+    "de",
+    "2026.",
+    "Escrevente:",
+    "________________________________",
+    "selo",
+    "averbação",
+    "AVESVD000000EXEMPLO0000001",
+    "Total",
+    "R$",
+    "20,00",
+    "Emol",
+    "R$",
+    "18,00",
+    "FERC",
+    "R$",
+    "0,50",
+    "FEMP",
+    "R$",
+    "0,75",
+    "FADEP",
+    "R$",
+    "0,75",
+    "Consulte",
+    "em",
+    "https://selo.tjma.jus.br",
+    "selo",
+    "arquivamento",
+    "selo",
+    "15.9.1",
+    "AVESVD000000EXEMPLO0000001",
+    "Total",
+    "R$",
+    "20,00",
+    "Emol",
+    "R$",
+    "18,00",
+    "FERC",
+    "R$",
+    "0,50",
+    "FEMP",
+    "R$",
+    "0,75",
+    "FADEP",
+    "R$",
+    "0,75",
+    "Consulte",
+    "em",
+    "https://selo.tjma.jus.br",
+    "1/1"
+   ]
+  },
+  "rg_teor_rtdpj.montar_pagina(faixa)": {
+   "ok": [
+    "OFÍCIO",
+    "ÚNICO",
+    "DE",
+    "EXEMPLO",
+    "/",
+    "UF",
+    "—",
+    "CNS",
+    "000000",
+    "Registro",
+    "Civil",
+    "das",
+    "Pessoas",
+    "Jurídicas",
+    "CERTIFICO",
+    "que",
+    "me",
+    "foi",
+    "apresentado",
+    "para",
+    "ser",
+    "AVERBADO",
+    "no",
+    "Registro",
+    "nº",
+    "148",
+    "o",
+    "documento",
+    "digitalizado",
+    "abaixo:",
+    "Era",
+    "o",
+    "que",
+    "continha",
+    "o",
+    "documento",
+    "apresentado",
+    "para",
+    "averbação,",
+    "arquivado",
+    "em",
+    "sua",
+    "íntegra",
+    "mediante",
+    "digitalização.",
+    "Eu,",
+    "FULANO",
+    "DE",
+    "EXEMPLO,",
+    "Escrevente,",
+    "o",
+    "subscrevo",
+    "e",
+    "assino.",
+    "Cidade",
+    "Exemplo/MA,",
+    "8",
+    "de",
+    "setembro",
+    "de",
+    "2026.",
+    "Escrevente:",
+    "________________________________",
+    "selo",
+    "averbação",
+    "1/1"
+   ]
+  },
+  "rg_teor_rtdpj.teor_texto_curto": {
+   "ok": "CERTIFICO que me foi apresentado para ser AVERBADO no Registro nº 148 o documento digitalizado abaixo:\nTipo do ato: ATA.\nData da assinatura: 02/09/2026."
+  },
+  "rg_teor_rtdpj.textos_prontos(ajuste com partes vazias)": {
+   "ok": {
+    "chave": "RCPJ_TEOR_AVERBACAO",
+    "data": "Cidade Exemplo/MA, 8 de setembro de 2026.",
+    "encerramento": "Era o que continha o documento apresentado para averbação, arquivado em sua íntegra mediante digitalização. Eu, FULANO DE EXEMPLO, Escrevente, o subscrevo e assino.",
+    "intro": "CERTIFICO que me foi apresentado para ser AVERBADO no Registro nº 148 o documento digitalizado abaixo:\nTipo do ato: ATA.",
+    "linhas_cabecalho": [
+     "OFÍCIO ÚNICO DE EXEMPLO / UF — CNS 000000",
+     "Registro Civil das Pessoas Jurídicas"
+    ]
+   }
+  },
+  "rg_teor_rtdpj.textos_prontos(ajuste sem marcas, RTD registro)": {
+   "ok": {
+    "chave": "RTD_TEOR_REGISTRO",
+    "data": "Cidade Exemplo/MA, 8 de setembro de 2026.",
+    "encerramento": "Era o que continha o documento apresentado para registro, arquivado em sua íntegra mediante digitalização. Eu, FULANO DE EXEMPLO, Escrevente, o subscrevo e assino.",
+    "intro": "CERTIFICO que me foi apresentado para ser REGISTRADO no Registro nº 148 o documento digitalizado abaixo:\nTipo do ato: ATA.",
+    "linhas_cabecalho": [
+     "OFÍCIO ÚNICO DE EXEMPLO / UF — CNS 000000",
+     "Registro de Títulos e Documentos"
+    ]
+   }
+  },
+  "wa_balcao.rascunhar(None)": {
+   "ok": "Recebemos sua mensagem. Um escrevente vai responder por aqui. Para urgencia, ligue. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_balcao.rascunhar(horario)": {
+   "ok": "Bom dia. Sobre o expediente: por favor confirmar horario de balcao no balcao ou pelo telefone. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_balcao.rascunhar(inventada)": {
+   "ok": "Recebemos sua mensagem. Um escrevente vai responder por aqui. Para urgencia, ligue. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.bloco_contato(endereco completo)": {
+   "ok": "SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.bloco_contato(sem cidade_uf)": {
+   "ok": "SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.bloco_contato(sem serventia)": {
+   "ok": ", Oficio unico de /MA. Telefone . E-mail ."
+  },
+  "wa_textos.bloco_contato(serventia)": {
+   "ok": "SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.endereco_da_casa(endereco completo)": {
+   "ok": "Praça de Exemplo, s/n, Centro"
+  },
+  "wa_textos.endereco_da_casa(sem cidade_uf)": {
+   "ok": "Rua de Exemplo, 100, CEP 00000-000, Cidade Exemplo-MA"
+  },
+  "wa_textos.endereco_da_casa(sem serventia)": {
+   "ok": ", CEP , -MA"
+  },
+  "wa_textos.endereco_da_casa(serventia)": {
+   "ok": "Rua de Exemplo, 100, CEP 00000-000, Cidade Exemplo-MA"
+  },
+  "wa_textos.rascunho_certidao(endereco completo)": {
+   "ok": "Pedido de certidao se resolve no balcao, com documento de identificacao. Nao enviamos pelo WhatsApp dado de livro, CPF, instrumento nem o teor da certidao. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_certidao(sem cidade_uf)": {
+   "ok": "Pedido de certidao se resolve no balcao, com documento de identificacao. Nao enviamos pelo WhatsApp dado de livro, CPF, instrumento nem o teor da certidao. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_certidao(sem serventia)": {
+   "ok": "Pedido de certidao se resolve no balcao, com documento de identificacao. Nao enviamos pelo WhatsApp dado de livro, CPF, instrumento nem o teor da certidao. , Oficio unico de /MA. Telefone . E-mail ."
+  },
+  "wa_textos.rascunho_certidao(serventia)": {
+   "ok": "Pedido de certidao se resolve no balcao, com documento de identificacao. Nao enviamos pelo WhatsApp dado de livro, CPF, instrumento nem o teor da certidao. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_documentos(endereco completo)": {
+   "ok": "Para dizer exatamente quais documentos levar, precisamos saber o ato (certidao, firma, escritura, protesto). Compareca ao balcao ou ligue para orientarmos. Nao enviamos lista completa automaticamente. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_documentos(sem cidade_uf)": {
+   "ok": "Para dizer exatamente quais documentos levar, precisamos saber o ato (certidao, firma, escritura, protesto). Compareca ao balcao ou ligue para orientarmos. Nao enviamos lista completa automaticamente. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_documentos(sem serventia)": {
+   "ok": "Para dizer exatamente quais documentos levar, precisamos saber o ato (certidao, firma, escritura, protesto). Compareca ao balcao ou ligue para orientarmos. Nao enviamos lista completa automaticamente. , Oficio unico de /MA. Telefone . E-mail ."
+  },
+  "wa_textos.rascunho_documentos(serventia)": {
+   "ok": "Para dizer exatamente quais documentos levar, precisamos saber o ato (certidao, firma, escritura, protesto). Compareca ao balcao ou ligue para orientarmos. Nao enviamos lista completa automaticamente. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_endereco(endereco completo)": {
+   "ok": "Estamos em Praça de Exemplo, s/n, Centro. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_endereco(sem cidade_uf)": {
+   "ok": "Estamos em Rua de Exemplo, 100, CEP 00000-000, Cidade Exemplo-MA. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_endereco(sem serventia)": {
+   "ok": "Estamos em , CEP , -MA. , Oficio unico de /MA. Telefone . E-mail ."
+  },
+  "wa_textos.rascunho_endereco(serventia)": {
+   "ok": "Estamos em Rua de Exemplo, 100, CEP 00000-000, Cidade Exemplo-MA. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_firma(endereco completo)": {
+   "ok": "Reconhecimento de firma e abertura de ficha se fazem no balcao, com a pessoa presente. Nao enviamos dado de cadastro nem instrumento pelo WhatsApp. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_firma(sem cidade_uf)": {
+   "ok": "Reconhecimento de firma e abertura de ficha se fazem no balcao, com a pessoa presente. Nao enviamos dado de cadastro nem instrumento pelo WhatsApp. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_firma(sem serventia)": {
+   "ok": "Reconhecimento de firma e abertura de ficha se fazem no balcao, com a pessoa presente. Nao enviamos dado de cadastro nem instrumento pelo WhatsApp. , Oficio unico de /MA. Telefone . E-mail ."
+  },
+  "wa_textos.rascunho_firma(serventia)": {
+   "ok": "Reconhecimento de firma e abertura de ficha se fazem no balcao, com a pessoa presente. Nao enviamos dado de cadastro nem instrumento pelo WhatsApp. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_horario(endereco completo)": {
+   "ok": "Bom dia. Sobre o expediente: por favor confirmar horario de balcao no balcao ou pelo telefone. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_horario(sem cidade_uf)": {
+   "ok": "Bom dia. Sobre o expediente: por favor confirmar horario de balcao no balcao ou pelo telefone. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_horario(sem serventia)": {
+   "ok": "Bom dia. Sobre o expediente: por favor confirmar horario de balcao no balcao ou pelo telefone. , Oficio unico de /MA. Telefone . E-mail ."
+  },
+  "wa_textos.rascunho_horario(serventia)": {
+   "ok": "Bom dia. Sobre o expediente: por favor confirmar horario de balcao no balcao ou pelo telefone. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_outros(endereco completo)": {
+   "ok": "Recebemos sua mensagem. Um escrevente vai responder por aqui. Para urgencia, ligue. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_outros(sem cidade_uf)": {
+   "ok": "Recebemos sua mensagem. Um escrevente vai responder por aqui. Para urgencia, ligue. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_outros(sem serventia)": {
+   "ok": "Recebemos sua mensagem. Um escrevente vai responder por aqui. Para urgencia, ligue. , Oficio unico de /MA. Telefone . E-mail ."
+  },
+  "wa_textos.rascunho_outros(serventia)": {
+   "ok": "Recebemos sua mensagem. Um escrevente vai responder por aqui. Para urgencia, ligue. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_protesto(endereco completo)": {
+   "ok": "Assunto de protesto se trata no balcao. Nao enviamos pelo WhatsApp valor, titulo, CPF nem informacao de protesto. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_protesto(sem cidade_uf)": {
+   "ok": "Assunto de protesto se trata no balcao. Nao enviamos pelo WhatsApp valor, titulo, CPF nem informacao de protesto. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  },
+  "wa_textos.rascunho_protesto(sem serventia)": {
+   "ok": "Assunto de protesto se trata no balcao. Nao enviamos pelo WhatsApp valor, titulo, CPF nem informacao de protesto. , Oficio unico de /MA. Telefone . E-mail ."
+  },
+  "wa_textos.rascunho_protesto(serventia)": {
+   "ok": "Assunto de protesto se trata no balcao. Nao enviamos pelo WhatsApp valor, titulo, CPF nem informacao de protesto. SERVENTIA EXTRAJUDICIAL DE EXEMPLO, Oficio unico de Cidade Exemplo/MA. Telefone (99) 0000-0000. E-mail contato@exemplo.invalid."
+  }
+ },
+ "telas": {
+  "atrib_certidao.emitir(registro cancelado)": {
+   "ok": "CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"B-7\" de Registro de Títulos e Documentos, fls. 79, ATO n. 1508 datada de 15/12/2022, encontrei o seguinte registro, ESTATUTO DE ASSOCIAÇÃO. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -\n\nTeor de exemplo do registro.\n\n--- AVERBAÇÃO n. 2 ---\nAverbação de exemplo.\n\nCERTIFICO ainda que o referido registro encontra-se CANCELADO nesta Serventia."
+  },
+  "atrib_certidao.emitir(so averbacoes)": {
+   "ok": "CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"B-7\" de Registro de Títulos e Documentos, fls. 79, ATO n. 1508 datada de 15/12/2022, ao qual constam as seguintes averbações, as quais ora certifico. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -\n\n--- AVERBAÇÃO n. 2 ---\nTipo do ato: ALTERAÇÃO DE ESTATUTO.\nAverbação de exemplo."
+  },
+  "atribuicoes_certidao_imprimir(duas averbacoes)": {
+   "ok": {
+    "data_apresentacao": "2026-09-02",
+    "identificacao_curta": "Averbações nº 2, 3",
+    "identificacao_data": "2026-09-02",
+    "natureza": "ALTERAÇÃO DE ESTATUTO",
+    "objeto_certificado": "a(s) averbação(ões) nº 2 (ALTERAÇÃO DE ESTATUTO), nº 3",
+    "protocolo": ""
+   }
+  },
+  "atribuicoes_certidao_imprimir(registro)": {
+   "ok": {
+    "data_apresentacao": "",
+    "identificacao_curta": "",
+    "identificacao_data": "",
+    "natureza": "ESTATUTO DE ASSOCIAÇÃO",
+    "objeto_certificado": "",
+    "protocolo": ""
+   }
+  },
+  "atribuicoes_certidao_imprimir(uma averbacao)": {
+   "ok": {
+    "data_apresentacao": "2026-09-01",
+    "identificacao_curta": "Averbação nº 2",
+    "identificacao_data": "2026-09-01",
+    "natureza": "ALTERAÇÃO DE ESTATUTO",
+    "objeto_certificado": "a(s) averbação(ões) nº 2 (ALTERAÇÃO DE ESTATUTO)",
+    "protocolo": ""
+   }
+  },
+  "atribuicoes_certidao_odt(cancelada)": {
+   "ok": "<text:p text:style-name=\"P-centro\"><text:span text:style-name=\"T-negrito\">Ofício Único de Cidade Exemplo/MA</text:span></text:p>\n<text:p text:style-name=\"P-centro\">Tabelião e Oficial de Registro: Mario Exemplo dos Santos</text:p>\n<text:p text:style-name=\"P-centro\">CNS 000000 — Cidade Exemplo-MA</text:p>\n<text:p/>\n<text:p text:style-name=\"P-centro\"><text:span text:style-name=\"T-negrito\">CERTIDÃO n. 1/2026</text:span></text:p>\n<text:p text:style-name=\"P-centro\"><text:span text:style-name=\"T-negrito\">CERTIDÃO CANCELADA — Motivo de exemplo do cancelamento.</text:span></text:p>\n<text:p/>\n<text:p text:style-name=\"P-just\">CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"B-7\" de Registro de Títulos e Documentos, fls. 79, ATO n. 1508 datada de 15/12/2022, encontrei o seguinte registro, ESTATUTO DE ASSOCIAÇÃO. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -</text:p>\n<text:p text:style-name=\"P-just\">Teor de exemplo do registro.</text:p>\n<text:p text:style-name=\"P-just\">--- AVERBAÇÃO n. 2 --- Averbação de exemplo.</text:p>\n<text:p/>\n<text:p text:style-name=\"P-just\">Cidade Exemplo-MA, «HOJE».</text:p>\n<text:p/>\n<text:p/>\n<text:p text:style-name=\"P-centro\">_________________________________</text:p>\n<text:p text:style-name=\"P-centro\">Mario Exemplo dos Santos</text:p>\n<text:p text:style-name=\"P-centro\">Tabelião e Oficial de Registro</text:p>\n<text:p/>\n<text:p text:style-name=\"P-just\">Certidão n. 1/2026, emitida em 2026-09-08T10:00:00. Autenticidade: 34f29a68a239bb2d2d33f996c926cf4576e9e0358b6b33f88d51a43cd000a030</text:p>"
+  },
+  "atribuicoes_certidao_odt(rcpj_rtd)": {
+   "ok": "<text:p text:style-name=\"P-centro\"><text:span text:style-name=\"T-negrito\">Ofício Único de Cidade Exemplo/MA</text:span></text:p>\n<text:p text:style-name=\"P-centro\">Tabelião e Oficial de Registro: Mario Exemplo dos Santos</text:p>\n<text:p text:style-name=\"P-centro\">CNS 000000 — Cidade Exemplo-MA</text:p>\n<text:p/>\n<text:p text:style-name=\"P-centro\"><text:span text:style-name=\"T-negrito\">CERTIDÃO n. 1/2026</text:span></text:p>\n<text:p/>\n<text:p text:style-name=\"P-just\">CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"B-7\" de Registro de Títulos e Documentos, fls. 79, ATO n. 1508 datada de 15/12/2022, encontrei o seguinte registro, ESTATUTO DE ASSOCIAÇÃO. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -</text:p>\n<text:p text:style-name=\"P-just\">Teor de exemplo do registro.</text:p>\n<text:p text:style-name=\"P-just\">--- AVERBAÇÃO n. 2 --- Averbação de exemplo.</text:p>\n<text:p/>\n<text:p text:style-name=\"P-just\">Cidade Exemplo-MA, «HOJE».</text:p>\n<text:p/>\n<text:p/>\n<text:p text:style-name=\"P-centro\">_________________________________</text:p>\n<text:p text:style-name=\"P-centro\">Mario Exemplo dos Santos</text:p>\n<text:p text:style-name=\"P-centro\">Tabelião e Oficial de Registro</text:p>\n<text:p/>\n<text:p text:style-name=\"P-just\">Certidão n. 1/2026, emitida em 2026-09-08T10:00:00. Autenticidade: 34f29a68a239bb2d2d33f996c926cf4576e9e0358b6b33f88d51a43cd000a030</text:p>"
+  },
+  "atribuicoes_certidao_odt(teor com cabecalho)": {
+   "ok": "<text:p text:style-name=\"P-centro\"><text:span text:style-name=\"T-negrito\">CERTIDÃO n. 1/2026</text:span></text:p>\n<text:p/>\n<text:p text:style-name=\"P-just\">CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia no Livro \"B-7\" de Registro de Títulos e Documentos, fls. 79, ATO n. 1508 datada de 15/12/2022, encontrei o seguinte registro, ESTATUTO DE ASSOCIAÇÃO. Para conhecimento de terceiros e sua conservação: COM O SEGUINTE TEOR: -</text:p>\n<text:p text:style-name=\"P-just\">REPÚBLICA FEDERATIVA DO BRASIL SERVENTIA EXTRAJUDICIAL DE EXEMPLO Teor de exemplo.</text:p>\n<text:p text:style-name=\"P-just\">--- AVERBAÇÃO n. 2 --- Averbação de exemplo.</text:p>\n<text:p/>\n<text:p text:style-name=\"P-just\">Cidade Exemplo-MA, «HOJE».</text:p>\n<text:p/>\n<text:p/>\n<text:p text:style-name=\"P-centro\">_________________________________</text:p>\n<text:p text:style-name=\"P-centro\">Mario Exemplo dos Santos</text:p>\n<text:p text:style-name=\"P-centro\">Tabelião e Oficial de Registro</text:p>\n<text:p/>\n<text:p text:style-name=\"P-just\">Certidão n. 1/2026, emitida em 2026-09-08T10:00:00. Autenticidade: b76405746d32b0f2dfbfbdab4db3ef25ef8b3967eb7b27e6f4b19e04bf7f9236</text:p>"
+  },
+  "caixa_orcamento(orcamento)": {
+   "ok": "<text:p text:style-name=\"P-centro\"><text:span text:style-name=\"T-negrito\">Ofício Único de Cidade Exemplo/MA</text:span></text:p>\n<text:p text:style-name=\"P-centro\">Tabelião e Oficial de Registro: Mario Exemplo dos Santos</text:p>\n<text:p text:style-name=\"P-centro\">CNPJ — CNS 000000 — Telefone</text:p>\n<text:p text:style-name=\"P-centro\">Cidade Exemplo-MA</text:p>\n<text:p text:style-name=\"P-centro\"><text:span text:style-name=\"T-negrito\">CÁLCULO DE EMOLUMENTOS Nº 2026.09.46</text:span></text:p>\n<text:p text:style-name=\"P-just\"><text:span text:style-name=\"T-negrito\">Este documento corresponde a MERO CÁLCULO DE EMOLUMENTOS, feito a pedido do interessado. NÃO representa a prática de ato, não gera direito à prenotação nem à reserva de valores, e os emolumentos indicados são os vigentes na data de emissão, sujeitos a alteração por ato normativo.</text:span></text:p>\n<text:p text:style-name=\"P-just\"><text:span text:style-name=\"T-negrito\">Interessado:</text:span> FULANO DE EXEMPLO.</text:p>\n<text:p text:style-name=\"P-just\"><text:span text:style-name=\"T-negrito\">Assunto:</text:span> orçamento de certidão</text:p>\n<table:table table:name=\"Tab1\" table:style-name=\"Tab-cab\"><table:table-column table:style-name=\"Col-2-2cm\"/><table:table-column table:style-name=\"Col-6-4cm\"/><table:table-column table:style-name=\"Col-1-4cm\"/><table:table-column table:style-name=\"Col-2-6cm\"/><table:table-column table:style-name=\"Col-3-4cm\"/><table:table-row><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\"><text:span text:style-name=\"T-negrito\">Código TJ</text:span></text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\"><text:span text:style-name=\"T-negrito\">Ato</text:span></text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\"><text:span text:style-name=\"T-negrito\">Qtd</text:span></text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\"><text:span text:style-name=\"T-negrito\">Base de cálculo</text:span></text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\"><text:span text:style-name=\"T-negrito\">Total</text:span></text:p></table:table-cell></table:table-row><table:table-row><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">16.24.4</text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">um ato de exemplo</text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">1</text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">—</text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">None</text:p></table:table-cell></table:table-row></table:table>\n<text:p text:style-name=\"P-just\"><text:span text:style-name=\"T-negrito\">COMPOSIÇÃO:</text:span> emolumentos R$ 0,00; FERC R$ 0,00; FADEP R$ 0,00; FEMP R$ 0,00; FERRFIS R$ 0,00.</text:p>\n<text:p text:style-name=\"P-just\"><text:span text:style-name=\"T-negrito\">TOTAL: R$ 0,00</text:span> (zero reais).</text:p>\n<text:p text:style-name=\"P-just\">Valores conforme a tabela de emolumentos vigente (vigência —), atualizada por Resolução-GP do Tribunal de Justiça do Maranhão.</text:p>\n<text:p text:style-name=\"P-just\">Cidade Exemplo/MA, «HOJE».</text:p>\n<text:p/>\n<text:p/>\n<table:table table:name=\"Tab2\" table:style-name=\"Tab-cab\"><table:table-column table:style-name=\"Col-7-6cm\"/><table:table-column table:style-name=\"Col-7-6cm\"/><table:table-row><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">_________________________________</text:p></table:table-cell><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">_________________________________</text:p></table:table-cell></table:table-row><table:table-row><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">MARIO EXEMPLO DOS SANTOS</text:p></table:table-cell><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">FULANO DE EXEMPLO</text:p></table:table-cell></table:table-row><table:table-row><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">Escrevente</text:p></table:table-cell><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">Requerente</text:p></table:table-cell></table:table-row></table:table>\n<text:p text:style-name=\"P-just\">Dados pessoais parcialmente ocultados na forma da Lei 13.709/2018 — LGPD.</text:p>"
+  },
+  "caixa_orcamento(protocolo)": {
+   "ok": "<text:p text:style-name=\"P-centro\"><text:span text:style-name=\"T-negrito\">Ofício Único de Cidade Exemplo/MA</text:span></text:p>\n<text:p text:style-name=\"P-centro\">Tabelião e Oficial de Registro: Mario Exemplo dos Santos</text:p>\n<text:p text:style-name=\"P-centro\">CNPJ — CNS 000000 — Telefone</text:p>\n<text:p text:style-name=\"P-centro\">Cidade Exemplo-MA</text:p>\n<text:p text:style-name=\"P-centro\"><text:span text:style-name=\"T-negrito\">ORÇAMENTO Nº 2026.09.46</text:span></text:p>\n<text:p text:style-name=\"P-just\"><text:span text:style-name=\"T-negrito\">Interessado:</text:span> FULANO DE EXEMPLO.</text:p>\n<text:p text:style-name=\"P-just\"><text:span text:style-name=\"T-negrito\">Assunto:</text:span> orçamento de certidão</text:p>\n<table:table table:name=\"Tab1\" table:style-name=\"Tab-cab\"><table:table-column table:style-name=\"Col-2-2cm\"/><table:table-column table:style-name=\"Col-6-4cm\"/><table:table-column table:style-name=\"Col-1-4cm\"/><table:table-column table:style-name=\"Col-2-6cm\"/><table:table-column table:style-name=\"Col-3-4cm\"/><table:table-row><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\"><text:span text:style-name=\"T-negrito\">Código TJ</text:span></text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\"><text:span text:style-name=\"T-negrito\">Ato</text:span></text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\"><text:span text:style-name=\"T-negrito\">Qtd</text:span></text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\"><text:span text:style-name=\"T-negrito\">Base de cálculo</text:span></text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\"><text:span text:style-name=\"T-negrito\">Total</text:span></text:p></table:table-cell></table:table-row><table:table-row><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">16.24.4</text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">um ato de exemplo</text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">1</text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">—</text:p></table:table-cell><table:table-cell table:style-name=\"Cel-grade\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">None</text:p></table:table-cell></table:table-row></table:table>\n<text:p text:style-name=\"P-just\"><text:span text:style-name=\"T-negrito\">COMPOSIÇÃO:</text:span> emolumentos R$ 0,00; FERC R$ 0,00; FADEP R$ 0,00; FEMP R$ 0,00; FERRFIS R$ 0,00.</text:p>\n<text:p text:style-name=\"P-just\"><text:span text:style-name=\"T-negrito\">TOTAL: R$ 0,00</text:span> (zero reais).</text:p>\n<text:p text:style-name=\"P-just\">Valores conforme a tabela de emolumentos vigente (vigência —), atualizada por Resolução-GP do Tribunal de Justiça do Maranhão.</text:p>\n<text:p text:style-name=\"P-just\">Cidade Exemplo/MA, «HOJE».</text:p>\n<text:p/>\n<text:p/>\n<table:table table:name=\"Tab2\" table:style-name=\"Tab-cab\"><table:table-column table:style-name=\"Col-7-6cm\"/><table:table-column table:style-name=\"Col-7-6cm\"/><table:table-row><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">_________________________________</text:p></table:table-cell><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">_________________________________</text:p></table:table-cell></table:table-row><table:table-row><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">MARIO EXEMPLO DOS SANTOS</text:p></table:table-cell><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">FULANO DE EXEMPLO</text:p></table:table-cell></table:table-row><table:table-row><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">Escrevente</text:p></table:table-cell><table:table-cell table:style-name=\"Tab-cab.cel\" office:value-type=\"string\"><text:p text:style-name=\"P-celula\">Requerente</text:p></table:table-cell></table:table-row></table:table>\n<text:p text:style-name=\"P-just\">Dados pessoais parcialmente ocultados na forma da Lei 13.709/2018 — LGPD.</text:p>"
+  },
+  "rcpj_rtd_etiqueta(com selo)": {
+   "ok": "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n<title>Etiqueta de registro — n. 1</title>\n<style>\n  @page {\n    size: 100.0mm 30.0mm;\n    margin: 0;\n  }\n  html, body { margin: 0; padding: 0; background: #fff; }\n  body {\n    font-family: \"Arial Narrow\", Arial, Helvetica, sans-serif;\n    color: #000;\n    -webkit-print-color-adjust: exact;\n  }\n  .etiqueta {\n    width: 100.0mm;\n    height: 30.0mm;\n    padding: 0.8mm;\n    /* O deslocamento corrige o driver que empurra a impressão para um lado.\n       É o único jeito de acertar sem mexer na impressora. */\n    transform: translate(0.0mm,\n                         1.0mm);\n    box-sizing: border-box;\n    overflow: hidden;\n    display: flex;\n    gap: 2mm;\n    font-size: 6.0pt;\n    line-height: 1.15;\n  }\n  \n  .coluna { flex: 1; min-width: 0;\n            display: flex; flex-direction: column; justify-content: flex-start;\n            gap: 1mm; }\n  .cartorio { font-weight: 700; text-transform: uppercase;\n              font-size: 6.3pt;\n              line-height: 1.1; }\n  .onde { font-weight: 700; }\n  .linha { display: flex; gap: 2mm; flex-wrap: wrap; }\n  .rodape { font-size: 5.28pt; }\n  .selo { font-family: Consolas, \"Courier New\", monospace; font-weight: 700;\n          letter-spacing: -.15px; }\n  \n  .valores { font-family: Consolas, \"Courier New\", monospace;\n             font-size: 4.68pt;\n             letter-spacing: -.2px; line-height: 1.15; }\n  .quem { text-align: right; white-space: nowrap; }\n  .qr { flex: 0 0 auto; width: 16.0mm;\n        display: flex; flex-direction: column; align-items: center;\n        justify-content: center; gap: .6mm; }\n  .qr svg { display: block; width: 16.0mm;\n            height: 16.0mm; }\n  .qr-rotulo { font-size: 3.72pt;\n               text-align: center; line-height: 1.1; }\n\n  .tela { padding: 18px; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }\n  .moldura { border: 1px dashed #b9c9d6; display: inline-block; background: #fff;\n             box-shadow: 0 1px 6px rgba(16,24,40,.12); }\n  .barra { margin-bottom: 14px; display: flex; gap: 8px; align-items: center;\n           flex-wrap: wrap; }\n  .barra a, .barra button { font: inherit; font-size: 13px; border: 1px solid #b9c5cd;\n    border-radius: 6px; background: #fff; color: #1d3443; padding: 8px 12px;\n    cursor: pointer; text-decoration: none; }\n  .barra .primary { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }\n  .aviso { color: #65727e; font-size: 12px; margin-top: 12px; max-width: 620px;\n           line-height: 1.5; }\n  @media print {\n    .tela { padding: 0; }\n    .barra, .aviso, .rotulo { display: none !important; }\n    .moldura { border: 0; box-shadow: none; display: block; }\n  }\n</style>\n</head>\n<body>\n<div class=\"tela\">\n  <div class=\"barra\">\n    <button class=\"primary\" onclick=\"window.print()\">Imprimir</button>\n    <a href=\"/rcpj-rtd/titulo/1\">&larr; Voltar ao título</a>\n    <span style=\"font-size:12px;color:#65727e\">\n      100&times;30 mm\n    </span>\n  </div>\n\n  <div class=\"rotulo\" style=\"font-size:12px;color:#65727e;margin-bottom:6px\">\n    Assim vai sair na tira:</div>\n\n  <div class=\"moldura\">\n    <div class=\"etiqueta\">\n      <div class=\"coluna\">\n        <div>\n          <div class=\"cartorio\">Ofício Único de Cidade Exemplo/MA</div>\n          <div class=\"onde\">\n            Registro — Livro TD_B n. 1,\n            fl. 1, sob o n. 1\n          </div>\n          <div>«HOJE» · protocolo n. 1</div>\n          <div>Estatuto de associação</div>\n          <div>ASSOCIAÇÃO DE EXEMPLO</div>\n        </div>\n        <div class=\"rodape\">\n          \n          <div class=\"selo\">REGTER000000ABCDEFGHIJKL1234</div>\n          \n          <div class=\"quem\">\n            <div>MARIO EXEMPLO DOS SANTOS — Escrevente</div>\n          </div>\n        </div>\n      </div>\n      \n      <div class=\"qr\">\n        <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16.0mm\" height=\"16.0mm\" viewBox=\"0 0 16.0 16.0\" class=\"segno\"><path transform=\"scale(0.48484848484848486)\" class=\"qrline\" stroke=\"#000\" d=\"M0 0.5h7m2 0h1m2 0h1m1 0h1m1 0h1m1 0h2m1 0h3m2 0h7m-33 1h1m5 0h1m3 0h4m1 0h3m2 0h2m2 0h1m1 0h1m5 0h1m-33 1h1m1 0h3m1 0h1m1 0h2m1 0h1m2 0h3m2 0h1m1 0h1m1 0h1m2 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m1 0h1m2 0h3m1 0h2m6 0h1m2 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m1 0h1m1 0h1m3 0h1m2 0h2m1 0h5m1 0h1m1 0h3m1 0h1m-33 1h1m5 0h1m1 0h2m3 0h1m1 0h1m1 0h1m3 0h2m1 0h1m1 0h1m5 0h1m-33 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-25 1h1m2 0h1m2 0h1m3 0h4m2 0h1m-25 1h1m1 0h5m4 0h5m1 0h1m2 0h1m1 0h1m1 0h1m1 0h5m-28 1h3m4 0h2m2 0h1m1 0h6m1 0h2m1 0h2m1 0h2m1 0h1m-30 1h1m1 0h2m1 0h1m1 0h3m1 0h2m2 0h1m1 0h2m3 0h1m2 0h1m1 0h1m-31 1h1m1 0h1m2 0h1m1 0h2m1 0h1m1 0h1m5 0h1m1 0h2m1 0h1m1 0h1m2 0h5m-33 1h2m1 0h2m1 0h2m1 0h4m2 0h2m4 0h3m1 0h1m1 0h1m1 0h1m1 0h2m-31 1h2m1 0h1m2 0h1m1 0h3m5 0h1m1 0h1m2 0h3m3 0h1m1 0h2m-32 1h2m1 0h1m1 0h1m3 0h1m4 0h4m1 0h1m3 0h4m1 0h1m1 0h1m-32 1h1m1 0h1m1 0h1m3 0h5m1 0h2m2 0h1m1 0h2m2 0h3m2 0h2m-29 1h1m2 0h2m1 0h1m1 0h1m3 0h4m2 0h1m1 0h1m1 0h2m1 0h4m1 0h1m-32 1h3m1 0h1m2 0h1m2 0h1m4 0h2m1 0h3m1 0h1m1 0h3m1 0h2m1 0h1m-32 1h1m1 0h1m1 0h2m1 0h2m1 0h2m2 0h2m1 0h1m2 0h1m2 0h1m2 0h2m1 0h2m-32 1h1m1 0h2m3 0h3m2 0h1m3 0h1m2 0h1m1 0h2m3 0h6m-28 1h3m1 0h2m3 0h1m2 0h1m2 0h1m1 0h3m5 0h1m1 0h2m-33 1h6m1 0h1m1 0h1m1 0h1m2 0h1m3 0h1m1 0h1m2 0h4m3 0h1m1 0h1m-33 1h1m1 0h1m3 0h2m1 0h3m1 0h3m1 0h2m2 0h2m1 0h1m3 0h1m2 0h1m-32 1h1m1 0h1m2 0h1m2 0h1m2 0h1m1 0h4m1 0h1m1 0h3m1 0h3m2 0h2m1 0h1m-33 1h1m1 0h3m1 0h1m6 0h2m2 0h2m3 0h1m1 0h5m1 0h3m-25 1h2m1 0h3m3 0h5m2 0h1m3 0h1m1 0h1m1 0h1m-33 1h7m2 0h2m1 0h2m1 0h4m4 0h2m1 0h1m1 0h1m1 0h2m-32 1h1m5 0h1m1 0h2m1 0h1m2 0h1m3 0h4m1 0h2m3 0h4m-32 1h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h1m2 0h1m3 0h1m1 0h2m1 0h6m1 0h1m-32 1h1m1 0h3m1 0h1m1 0h3m3 0h5m1 0h2m1 0h3m2 0h5m-33 1h1m1 0h3m1 0h1m1 0h2m1 0h1m2 0h4m2 0h2m1 0h2m1 0h2m1 0h2m-31 1h1m5 0h1m2 0h1m1 0h4m4 0h1m1 0h3m4 0h3m-31 1h7m1 0h1m2 0h4m2 0h2m5 0h1m2 0h1m2 0h2\"/></svg>\n\n        <div class=\"qr-rotulo\">confira o selo<br>selo.tjma.jus.br</div>\n      </div>\n      \n    </div>\n  </div>\n\n  <div class=\"aviso\">\n    Na janela de impressão, escolha a impressora térmica e deixe a escala em\n    <strong>100%</strong> — “ajustar à página” encolhe a etiqueta e desalinha tudo.\n    Saindo torta ou cortada, use\n    <a href=\"/rcpj-rtd/etiqueta/ajuste\">Ajustar a etiqueta de\n    registro</a>: lá dá para mexer nas medidas sem gastar a tira.\n    \n    <br><br>O QR leva a <strong>selo.tjma.jus.br</strong>, o portal do selo eletrônico\n    do TJMA. O número segue impresso ao lado, para quem preferir digitar.\n    \n  </div>\n</div>\n\n<div class=\"aviso\" id=\"estouro\" style=\"display:none;color:#b42318;font-weight:600\">\n  <span id=\"estouro-texto\"></span>\n</div>\n\n<script>\n/* ---------------------------------------------------------------------------\n   NÃO DEIXAR O TEOR SER CORTADO EM SILÊNCIO.\n\n   A tira tem `overflow: hidden` — precisa ter, senão o texto que não coube\n   vaza por cima da etiqueta seguinte no rolo. Mas cortar em silêncio é o pior\n   defeito que esta tela poderia ter: a etiqueta sai bonita, é colada no\n   título, e o número do registro ficou de fora.\n\n   É a mesma medição da etiqueta de firma, e aqui ela pesa mais: o teor daqui\n   tem natureza e requerente, que são campos de texto livre e podem ser longos.\n--------------------------------------------------------------------------- */\nwindow.addEventListener(\"load\", function () {\n  var tira = document.querySelector(\".etiqueta\");\n  var sobra = tira.scrollHeight - tira.clientHeight;\n  var largura = tira.scrollWidth - tira.clientWidth;\n\n  if (sobra > 1 || largura > 1) {\n    var caixa = document.getElementById(\"estouro\");\n    document.getElementById(\"estouro-texto\").innerHTML =\n      \"<strong>O teor não cabe nesta etiqueta e vai sair cortado.</strong> \" +\n      \"Faltam cerca de \" + Math.ceil(sobra * 0.2646) + \" mm de altura. \" +\n      \"Encurte a natureza do registro, ou aumente a altura da tira em \" +\n      \"<a href='/rcpj-rtd/etiqueta/ajuste'>Ajustar a etiqueta \" +\n      \"de registro</a>. Etiqueta cortada colada num título de terceiro não tem \" +\n      \"conserto depois.\";\n    caixa.style.display = \"block\";\n    caixa.scrollIntoView({ block: \"center\" });\n    return;                     /* e NÃO abre a impressão sozinha */\n  }\n\n  setTimeout(function () { window.print(); }, 120);\n});\n</script>\n</body>\n</html>"
+  },
+  "rcpj_rtd_etiqueta(sem selo)": {
+   "ok": "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n<title>Etiqueta de registro — n. 1</title>\n<style>\n  @page {\n    size: 100.0mm 30.0mm;\n    margin: 0;\n  }\n  html, body { margin: 0; padding: 0; background: #fff; }\n  body {\n    font-family: \"Arial Narrow\", Arial, Helvetica, sans-serif;\n    color: #000;\n    -webkit-print-color-adjust: exact;\n  }\n  .etiqueta {\n    width: 100.0mm;\n    height: 30.0mm;\n    padding: 0.8mm;\n    /* O deslocamento corrige o driver que empurra a impressão para um lado.\n       É o único jeito de acertar sem mexer na impressora. */\n    transform: translate(0.0mm,\n                         1.0mm);\n    box-sizing: border-box;\n    overflow: hidden;\n    display: flex;\n    gap: 2mm;\n    font-size: 6.0pt;\n    line-height: 1.15;\n  }\n  \n  .coluna { flex: 1; min-width: 0;\n            display: flex; flex-direction: column; justify-content: flex-start;\n            gap: 1mm; }\n  .cartorio { font-weight: 700; text-transform: uppercase;\n              font-size: 6.3pt;\n              line-height: 1.1; }\n  .onde { font-weight: 700; }\n  .linha { display: flex; gap: 2mm; flex-wrap: wrap; }\n  .rodape { font-size: 5.28pt; }\n  .selo { font-family: Consolas, \"Courier New\", monospace; font-weight: 700;\n          letter-spacing: -.15px; }\n  \n  .valores { font-family: Consolas, \"Courier New\", monospace;\n             font-size: 4.68pt;\n             letter-spacing: -.2px; line-height: 1.15; }\n  .quem { text-align: right; white-space: nowrap; }\n  .qr { flex: 0 0 auto; width: 16.0mm;\n        display: flex; flex-direction: column; align-items: center;\n        justify-content: center; gap: .6mm; }\n  .qr svg { display: block; width: 16.0mm;\n            height: 16.0mm; }\n  .qr-rotulo { font-size: 3.72pt;\n               text-align: center; line-height: 1.1; }\n\n  .tela { padding: 18px; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }\n  .moldura { border: 1px dashed #b9c9d6; display: inline-block; background: #fff;\n             box-shadow: 0 1px 6px rgba(16,24,40,.12); }\n  .barra { margin-bottom: 14px; display: flex; gap: 8px; align-items: center;\n           flex-wrap: wrap; }\n  .barra a, .barra button { font: inherit; font-size: 13px; border: 1px solid #b9c5cd;\n    border-radius: 6px; background: #fff; color: #1d3443; padding: 8px 12px;\n    cursor: pointer; text-decoration: none; }\n  .barra .primary { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }\n  .aviso { color: #65727e; font-size: 12px; margin-top: 12px; max-width: 620px;\n           line-height: 1.5; }\n  @media print {\n    .tela { padding: 0; }\n    .barra, .aviso, .rotulo { display: none !important; }\n    .moldura { border: 0; box-shadow: none; display: block; }\n  }\n</style>\n</head>\n<body>\n<div class=\"tela\">\n  <div class=\"barra\">\n    <button class=\"primary\" onclick=\"window.print()\">Imprimir</button>\n    <a href=\"/rcpj-rtd/titulo/1\">&larr; Voltar ao título</a>\n    <span style=\"font-size:12px;color:#65727e\">\n      100&times;30 mm\n    </span>\n  </div>\n\n  <div class=\"rotulo\" style=\"font-size:12px;color:#65727e;margin-bottom:6px\">\n    Assim vai sair na tira:</div>\n\n  <div class=\"moldura\">\n    <div class=\"etiqueta\">\n      <div class=\"coluna\">\n        <div>\n          <div class=\"cartorio\">Ofício Único de Cidade Exemplo/MA</div>\n          <div class=\"onde\">\n            Registro — Livro TD_B n. 1,\n            fl. 1, sob o n. 1\n          </div>\n          <div>«HOJE» · protocolo n. 1</div>\n          <div>Estatuto de associação</div>\n          <div>ASSOCIAÇÃO DE EXEMPLO</div>\n        </div>\n        <div class=\"rodape\">\n          \n          \n          \n          <div class=\"quem\">\n            <div>MARIO EXEMPLO DOS SANTOS — Escrevente</div>\n          </div>\n        </div>\n      </div>\n      \n    </div>\n  </div>\n\n  <div class=\"aviso\">\n    Na janela de impressão, escolha a impressora térmica e deixe a escala em\n    <strong>100%</strong> — “ajustar à página” encolhe a etiqueta e desalinha tudo.\n    Saindo torta ou cortada, use\n    <a href=\"/rcpj-rtd/etiqueta/ajuste\">Ajustar a etiqueta de\n    registro</a>: lá dá para mexer nas medidas sem gastar a tira.\n    \n    <br><br><strong>Este registro ainda está sem selo.</strong> A etiqueta sai sem\n    o número e sem o QR — anote o selo no ato antes de colar.\n    \n  </div>\n</div>\n\n<div class=\"aviso\" id=\"estouro\" style=\"display:none;color:#b42318;font-weight:600\">\n  <span id=\"estouro-texto\"></span>\n</div>\n\n<script>\n/* ---------------------------------------------------------------------------\n   NÃO DEIXAR O TEOR SER CORTADO EM SILÊNCIO.\n\n   A tira tem `overflow: hidden` — precisa ter, senão o texto que não coube\n   vaza por cima da etiqueta seguinte no rolo. Mas cortar em silêncio é o pior\n   defeito que esta tela poderia ter: a etiqueta sai bonita, é colada no\n   título, e o número do registro ficou de fora.\n\n   É a mesma medição da etiqueta de firma, e aqui ela pesa mais: o teor daqui\n   tem natureza e requerente, que são campos de texto livre e podem ser longos.\n--------------------------------------------------------------------------- */\nwindow.addEventListener(\"load\", function () {\n  var tira = document.querySelector(\".etiqueta\");\n  var sobra = tira.scrollHeight - tira.clientHeight;\n  var largura = tira.scrollWidth - tira.clientWidth;\n\n  if (sobra > 1 || largura > 1) {\n    var caixa = document.getElementById(\"estouro\");\n    document.getElementById(\"estouro-texto\").innerHTML =\n      \"<strong>O teor não cabe nesta etiqueta e vai sair cortado.</strong> \" +\n      \"Faltam cerca de \" + Math.ceil(sobra * 0.2646) + \" mm de altura. \" +\n      \"Encurte a natureza do registro, ou aumente a altura da tira em \" +\n      \"<a href='/rcpj-rtd/etiqueta/ajuste'>Ajustar a etiqueta \" +\n      \"de registro</a>. Etiqueta cortada colada num título de terceiro não tem \" +\n      \"conserto depois.\";\n    caixa.style.display = \"block\";\n    caixa.scrollIntoView({ block: \"center\" });\n    return;                     /* e NÃO abre a impressão sozinha */\n  }\n\n  setTimeout(function () { window.print(); }, 120);\n});\n</script>\n</body>\n</html>"
+  },
+  "rcpj_rtd_etiquetas_selos_externos(manual)": {
+   "ok": "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n<title>Etiquetas de selos externos — RCPJ e RTD</title>\n<style>\n  @page {\n    size: 100.0mm 30.0mm;\n    margin: 0;\n  }\n  * { box-sizing: border-box; }\n  html, body { margin: 0; padding: 0; background: #fff; }\n  body { font-family: \"Arial Narrow\", Arial, Helvetica, sans-serif; color: #000;\n         -webkit-print-color-adjust: exact; print-color-adjust: exact; }\n  .etiqueta {\n    width: 100.0mm;\n    height: 30.0mm;\n    padding: 0.8mm;\n    transform: translate(0.0mm,\n                         1.0mm);\n    overflow: hidden; display: flex; gap: 2mm;\n    font-size: 6.0pt;\n    line-height: 1.15;\n    break-after: page; page-break-after: always;\n  }\n  .etiqueta:last-child { break-after: auto; page-break-after: auto; }\n  .conteudo { flex: 1; min-width: 0; display: flex; flex-direction: column;\n              justify-content: space-between; }\n  .cartorio { font-weight: 700; text-transform: uppercase;\n              font-size: 6.3pt;\n              line-height: 1.08; }\n  .titulo { font-weight: 700; margin-top: .4mm; }\n  .detalhe { margin-top: .5mm; white-space: pre-line; }\n  .selo { font-family: Consolas, \"Courier New\", monospace; font-weight: 700;\n          letter-spacing: -.15px; white-space: nowrap; }\n  .valores { font-family: Consolas, \"Courier New\", monospace;\n             font-size: 4.68pt;\n             letter-spacing: -.2px; line-height: 1.12; }\n  .qr { flex: 0 0 16.0mm; display: flex;\n        flex-direction: column; justify-content: center; align-items: center;\n        gap: .5mm; }\n  .qr svg { display: block; width: 16.0mm;\n            height: 16.0mm; }\n  .qr-rotulo { font-size: 3.72pt;\n               text-align: center; line-height: 1.05; }\n  .controles { padding: 18px; font: 14px Segoe UI, Arial, sans-serif;\n               background: #f3f6f8; }\n  .controles button, .controles a { display: inline-block; margin-right: 8px;\n    border: 1px solid #b9c5cd; border-radius: 6px; background: #fff;\n    color: #1d3443; padding: 8px 12px; cursor: pointer; text-decoration: none; }\n  .controles button { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }\n  .aviso-estouro { color: #b42318; font-weight: 600; margin-top: 10px; }\n  .previews { background: #edf1f4; padding: 18px; }\n  .previews .etiqueta { background: #fff; margin-bottom: 14px;\n                        box-shadow: 0 1px 6px rgba(16,24,40,.18); }\n  @media print {\n    .controles { display: none !important; }\n    .previews { padding: 0; background: #fff; }\n    .previews .etiqueta { margin: 0; box-shadow: none; }\n  }\n</style>\n</head>\n<body>\n<div class=\"controles\">\n  <button type=\"button\" id=\"imprimir\">Imprimir 1 etiqueta(s)</button>\n  <a href=\"/rcpj-rtd/etiquetas/selos-externos\">&larr; Voltar à seleção</a>\n  <span>100&times;30 mm · escala 100%</span>\n  <div id=\"estouro\" class=\"aviso-estouro\" hidden></div>\n</div>\n<div class=\"previews\">\n\n  <section class=\"etiqueta\">\n    <div class=\"conteudo\">\n      <div>\n        <div class=\"cartorio\">Ofício Único de Cidade Exemplo/MA</div>\n        <div class=\"titulo\">RCPJ E RTD — REGISTRO/AVERBAÇÃO</div>\n        <div class=\"detalhe\">Averbação n. 2\nAlteração da diretoria.</div>\n      </div>\n      <div>\n        <div class=\"selo\">REGTER000000ABCDEFGHIJKL1234</div>\n        \n      </div>\n    </div>\n    \n    <div class=\"qr\">\n      <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16.0mm\" height=\"16.0mm\" viewBox=\"0 0 16.0 16.0\" class=\"segno\"><path transform=\"scale(0.48484848484848486)\" class=\"qrline\" stroke=\"#000\" d=\"M0 0.5h7m2 0h1m2 0h1m1 0h1m1 0h1m1 0h2m1 0h3m2 0h7m-33 1h1m5 0h1m3 0h4m1 0h3m2 0h2m2 0h1m1 0h1m5 0h1m-33 1h1m1 0h3m1 0h1m1 0h2m1 0h1m2 0h3m2 0h1m1 0h1m1 0h1m2 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m1 0h1m2 0h3m1 0h2m6 0h1m2 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m1 0h1m1 0h1m3 0h1m2 0h2m1 0h5m1 0h1m1 0h3m1 0h1m-33 1h1m5 0h1m1 0h2m3 0h1m1 0h1m1 0h1m3 0h2m1 0h1m1 0h1m5 0h1m-33 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-25 1h1m2 0h1m2 0h1m3 0h4m2 0h1m-25 1h1m1 0h5m4 0h5m1 0h1m2 0h1m1 0h1m1 0h1m1 0h5m-28 1h3m4 0h2m2 0h1m1 0h6m1 0h2m1 0h2m1 0h2m1 0h1m-30 1h1m1 0h2m1 0h1m1 0h3m1 0h2m2 0h1m1 0h2m3 0h1m2 0h1m1 0h1m-31 1h1m1 0h1m2 0h1m1 0h2m1 0h1m1 0h1m5 0h1m1 0h2m1 0h1m1 0h1m2 0h5m-33 1h2m1 0h2m1 0h2m1 0h4m2 0h2m4 0h3m1 0h1m1 0h1m1 0h1m1 0h2m-31 1h2m1 0h1m2 0h1m1 0h3m5 0h1m1 0h1m2 0h3m3 0h1m1 0h2m-32 1h2m1 0h1m1 0h1m3 0h1m4 0h4m1 0h1m3 0h4m1 0h1m1 0h1m-32 1h1m1 0h1m1 0h1m3 0h5m1 0h2m2 0h1m1 0h2m2 0h3m2 0h2m-29 1h1m2 0h2m1 0h1m1 0h1m3 0h4m2 0h1m1 0h1m1 0h2m1 0h4m1 0h1m-32 1h3m1 0h1m2 0h1m2 0h1m4 0h2m1 0h3m1 0h1m1 0h3m1 0h2m1 0h1m-32 1h1m1 0h1m1 0h2m1 0h2m1 0h2m2 0h2m1 0h1m2 0h1m2 0h1m2 0h2m1 0h2m-32 1h1m1 0h2m3 0h3m2 0h1m3 0h1m2 0h1m1 0h2m3 0h6m-28 1h3m1 0h2m3 0h1m2 0h1m2 0h1m1 0h3m5 0h1m1 0h2m-33 1h6m1 0h1m1 0h1m1 0h1m2 0h1m3 0h1m1 0h1m2 0h4m3 0h1m1 0h1m-33 1h1m1 0h1m3 0h2m1 0h3m1 0h3m1 0h2m2 0h2m1 0h1m3 0h1m2 0h1m-32 1h1m1 0h1m2 0h1m2 0h1m2 0h1m1 0h4m1 0h1m1 0h3m1 0h3m2 0h2m1 0h1m-33 1h1m1 0h3m1 0h1m6 0h2m2 0h2m3 0h1m1 0h5m1 0h3m-25 1h2m1 0h3m3 0h5m2 0h1m3 0h1m1 0h1m1 0h1m-33 1h7m2 0h2m1 0h2m1 0h4m4 0h2m1 0h1m1 0h1m1 0h2m-32 1h1m5 0h1m1 0h2m1 0h1m2 0h1m3 0h4m1 0h2m3 0h4m-32 1h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h1m2 0h1m3 0h1m1 0h2m1 0h6m1 0h1m-32 1h1m1 0h3m1 0h1m1 0h3m3 0h5m1 0h2m1 0h3m2 0h5m-33 1h1m1 0h3m1 0h1m1 0h2m1 0h1m2 0h4m2 0h2m1 0h2m1 0h2m1 0h2m-31 1h1m5 0h1m2 0h1m1 0h4m4 0h1m1 0h3m4 0h3m-31 1h7m1 0h1m2 0h4m2 0h2m5 0h1m2 0h1m2 0h2\"/></svg>\n\n      <div class=\"qr-rotulo\">confira o selo<br>selo.tjma.jus.br</div>\n    </div>\n    \n  </section>\n\n</div>\n<script>\nfunction etiquetasQueNaoCabem() {\n  return Array.from(document.querySelectorAll(\".etiqueta\")).filter(function (x) {\n    return x.scrollHeight - x.clientHeight > 1 || x.scrollWidth - x.clientWidth > 1;\n  });\n}\ndocument.getElementById(\"imprimir\").addEventListener(\"click\", function () {\n  var ruins = etiquetasQueNaoCabem();\n  if (ruins.length) {\n    var aviso = document.getElementById(\"estouro\");\n    aviso.textContent = ruins.length + \" etiqueta(s) não cabem na tira. \" +\n      \"Ajuste as medidas antes de imprimir.\";\n    aviso.hidden = false;\n    return;\n  }\n  window.print();\n});\n</script>\n</body>\n</html>"
+  },
+  "rcpj_rtd_etiquetas_selos_externos(razao)": {
+   "ok": "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n<title>Etiquetas de selos externos — RCPJ e RTD</title>\n<style>\n  @page {\n    size: 100.0mm 30.0mm;\n    margin: 0;\n  }\n  * { box-sizing: border-box; }\n  html, body { margin: 0; padding: 0; background: #fff; }\n  body { font-family: \"Arial Narrow\", Arial, Helvetica, sans-serif; color: #000;\n         -webkit-print-color-adjust: exact; print-color-adjust: exact; }\n  .etiqueta {\n    width: 100.0mm;\n    height: 30.0mm;\n    padding: 0.8mm;\n    transform: translate(0.0mm,\n                         1.0mm);\n    overflow: hidden; display: flex; gap: 2mm;\n    font-size: 6.0pt;\n    line-height: 1.15;\n    break-after: page; page-break-after: always;\n  }\n  .etiqueta:last-child { break-after: auto; page-break-after: auto; }\n  .conteudo { flex: 1; min-width: 0; display: flex; flex-direction: column;\n              justify-content: space-between; }\n  .cartorio { font-weight: 700; text-transform: uppercase;\n              font-size: 6.3pt;\n              line-height: 1.08; }\n  .titulo { font-weight: 700; margin-top: .4mm; }\n  .detalhe { margin-top: .5mm; white-space: pre-line; }\n  .selo { font-family: Consolas, \"Courier New\", monospace; font-weight: 700;\n          letter-spacing: -.15px; white-space: nowrap; }\n  .valores { font-family: Consolas, \"Courier New\", monospace;\n             font-size: 4.68pt;\n             letter-spacing: -.2px; line-height: 1.12; }\n  .qr { flex: 0 0 16.0mm; display: flex;\n        flex-direction: column; justify-content: center; align-items: center;\n        gap: .5mm; }\n  .qr svg { display: block; width: 16.0mm;\n            height: 16.0mm; }\n  .qr-rotulo { font-size: 3.72pt;\n               text-align: center; line-height: 1.05; }\n  .controles { padding: 18px; font: 14px Segoe UI, Arial, sans-serif;\n               background: #f3f6f8; }\n  .controles button, .controles a { display: inline-block; margin-right: 8px;\n    border: 1px solid #b9c5cd; border-radius: 6px; background: #fff;\n    color: #1d3443; padding: 8px 12px; cursor: pointer; text-decoration: none; }\n  .controles button { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }\n  .aviso-estouro { color: #b42318; font-weight: 600; margin-top: 10px; }\n  .previews { background: #edf1f4; padding: 18px; }\n  .previews .etiqueta { background: #fff; margin-bottom: 14px;\n                        box-shadow: 0 1px 6px rgba(16,24,40,.18); }\n  @media print {\n    .controles { display: none !important; }\n    .previews { padding: 0; background: #fff; }\n    .previews .etiqueta { margin: 0; box-shadow: none; }\n  }\n</style>\n</head>\n<body>\n<div class=\"controles\">\n  <button type=\"button\" id=\"imprimir\">Imprimir 2 etiqueta(s)</button>\n  <a href=\"/rcpj-rtd/etiquetas/selos-externos\">&larr; Voltar à seleção</a>\n  <span>100&times;30 mm · escala 100%</span>\n  <div id=\"estouro\" class=\"aviso-estouro\" hidden></div>\n</div>\n<div class=\"previews\">\n\n  <section class=\"etiqueta\">\n    <div class=\"conteudo\">\n      <div>\n        <div class=\"cartorio\">Ofício Único de Cidade Exemplo/MA</div>\n        <div class=\"titulo\">RCPJ E RTD — SELO ELETRÔNICO</div>\n        <div class=\"detalhe\">Ato: 15.5.1, 10/09/2026 10:30:00, ASSOCIAÇÃO DE EXEMPLO</div>\n      </div>\n      <div>\n        <div class=\"selo\">REGTER000000EXTERNO00000001</div>\n        <div class=\"valores\">Total R$ 20,00 Emol R$ 18,00 FERC R$ 0,50 FEMP R$ 0,75 FADEP R$ 0,75</div>\n      </div>\n    </div>\n    \n    <div class=\"qr\">\n      <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16.0mm\" height=\"16.0mm\" viewBox=\"0 0 16.0 16.0\" class=\"segno\"><path transform=\"scale(0.48484848484848486)\" class=\"qrline\" stroke=\"#000\" d=\"M0 0.5h7m2 0h2m3 0h1m1 0h4m1 0h3m2 0h7m-33 1h1m5 0h1m3 0h3m2 0h3m2 0h2m2 0h1m1 0h1m5 0h1m-33 1h1m1 0h3m1 0h1m1 0h2m1 0h1m2 0h3m2 0h1m1 0h1m1 0h1m2 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m1 0h1m2 0h2m2 0h4m4 0h1m2 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m1 0h1m1 0h1m6 0h1m2 0h5m1 0h1m1 0h3m1 0h1m-33 1h1m5 0h1m1 0h1m2 0h1m1 0h1m1 0h1m1 0h1m3 0h2m1 0h1m1 0h1m5 0h1m-33 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-25 1h1m1 0h1m3 0h2m2 0h4m2 0h1m-25 1h1m1 0h5m2 0h7m1 0h1m1 0h2m1 0h1m1 0h1m1 0h5m-29 1h1m2 0h1m1 0h1m1 0h1m2 0h1m1 0h1m1 0h1m1 0h4m1 0h2m1 0h2m1 0h2m1 0h1m-32 1h2m2 0h3m2 0h1m4 0h1m2 0h1m1 0h2m3 0h1m2 0h1m1 0h1m-29 1h2m1 0h1m4 0h1m7 0h1m1 0h2m1 0h1m1 0h1m2 0h5m-33 1h4m1 0h4m1 0h1m4 0h4m2 0h3m1 0h1m1 0h1m1 0h1m1 0h2m-31 1h3m3 0h1m1 0h2m8 0h1m2 0h3m3 0h1m1 0h2m-31 1h1m1 0h5m2 0h1m1 0h1m1 0h1m1 0h2m5 0h4m1 0h1m1 0h1m-32 1h1m2 0h1m1 0h1m2 0h1m6 0h1m2 0h2m1 0h1m2 0h3m2 0h2m-31 1h1m1 0h1m3 0h1m1 0h3m2 0h5m2 0h1m1 0h1m1 0h2m1 0h4m1 0h1m-32 1h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m2 0h1m2 0h3m1 0h1m1 0h3m1 0h2m1 0h1m-31 1h1m2 0h4m1 0h1m1 0h1m2 0h2m1 0h1m2 0h2m1 0h1m2 0h2m1 0h2m-30 1h2m3 0h4m3 0h1m1 0h1m1 0h2m1 0h2m3 0h6m-31 1h1m4 0h2m2 0h1m5 0h8m5 0h1m1 0h2m-33 1h3m1 0h1m6 0h2m1 0h1m5 0h1m1 0h5m3 0h1m1 0h1m-33 1h1m4 0h5m1 0h5m1 0h2m1 0h3m1 0h1m3 0h1m2 0h1m-32 1h1m1 0h2m1 0h1m5 0h1m3 0h1m2 0h1m1 0h3m1 0h3m2 0h3m-32 1h1m2 0h2m1 0h2m2 0h2m2 0h2m1 0h2m3 0h1m1 0h5m1 0h3m-25 1h3m1 0h1m1 0h1m3 0h3m3 0h1m3 0h1m1 0h1m1 0h1m-33 1h7m3 0h2m3 0h2m1 0h1m2 0h1m1 0h2m1 0h1m1 0h1m1 0h2m-32 1h1m5 0h1m1 0h1m9 0h4m1 0h2m3 0h4m-32 1h1m1 0h3m1 0h1m1 0h1m1 0h3m1 0h6m1 0h2m1 0h6m1 0h1m-32 1h1m1 0h3m1 0h1m1 0h2m2 0h1m4 0h1m2 0h6m2 0h5m-33 1h1m1 0h3m1 0h1m1 0h2m3 0h1m1 0h1m1 0h1m3 0h1m1 0h2m1 0h2m1 0h2m-31 1h1m5 0h1m2 0h2m1 0h4m4 0h4m4 0h3m-31 1h7m1 0h4m3 0h1m1 0h2m5 0h1m2 0h1m2 0h2\"/></svg>\n\n      <div class=\"qr-rotulo\">confira o selo<br>selo.tjma.jus.br</div>\n    </div>\n    \n  </section>\n\n  <section class=\"etiqueta\">\n    <div class=\"conteudo\">\n      <div>\n        <div class=\"cartorio\">Ofício Único de Cidade Exemplo/MA</div>\n        <div class=\"titulo\">RCPJ E RTD — SELO ELETRÔNICO</div>\n        <div class=\"detalhe\">Ato: 15.5.1, 10/09/2026 10:30:00, ASSOCIAÇÃO DE EXEMPLO</div>\n      </div>\n      <div>\n        <div class=\"selo\">REGTER000000EXTERNO00000002</div>\n        <div class=\"valores\">Total R$ 20,00 Emol R$ 18,00 FERC R$ 0,50 FEMP R$ 0,75 FADEP R$ 0,75</div>\n      </div>\n    </div>\n    \n    <div class=\"qr\">\n      <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16.0mm\" height=\"16.0mm\" viewBox=\"0 0 16.0 16.0\" class=\"segno\"><path transform=\"scale(0.48484848484848486)\" class=\"qrline\" stroke=\"#000\" d=\"M0 0.5h7m1 0h2m1 0h1m1 0h1m4 0h1m1 0h2m4 0h7m-33 1h1m5 0h1m4 0h1m1 0h1m2 0h3m1 0h1m5 0h1m5 0h1m-33 1h1m1 0h3m1 0h1m1 0h3m2 0h3m1 0h1m2 0h3m3 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m3 0h2m4 0h2m3 0h1m1 0h2m1 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m4 0h1m1 0h2m1 0h1m2 0h1m1 0h1m2 0h1m1 0h1m1 0h3m1 0h1m-33 1h1m5 0h1m1 0h2m3 0h1m3 0h2m3 0h1m3 0h1m5 0h1m-33 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-24 1h2m1 0h1m1 0h1m4 0h2m-21 1h1m1 0h1m3 0h2m1 0h1m1 0h2m2 0h2m6 0h2m2 0h1m2 0h1m1 0h1m-31 1h2m1 0h1m1 0h1m1 0h1m4 0h3m2 0h2m2 0h1m2 0h1m2 0h1m2 0h1m-33 1h1m3 0h1m1 0h1m1 0h2m1 0h1m1 0h7m1 0h3m2 0h1m2 0h4m-33 1h3m1 0h2m3 0h2m1 0h1m2 0h1m4 0h1m2 0h3m1 0h3m1 0h2m-33 1h2m1 0h2m1 0h1m2 0h1m1 0h1m1 0h3m2 0h4m4 0h3m-29 1h1m1 0h4m2 0h2m1 0h2m2 0h1m2 0h1m1 0h2m1 0h1m1 0h1m1 0h1m1 0h4m-32 1h2m3 0h3m1 0h1m1 0h1m1 0h3m1 0h3m1 0h3m2 0h2m3 0h1m-30 1h1m1 0h1m2 0h2m2 0h1m6 0h1m5 0h3m1 0h1m-30 1h2m2 0h3m2 0h1m5 0h1m3 0h1m3 0h2m1 0h2m2 0h2m-32 1h2m2 0h2m1 0h1m2 0h1m4 0h2m1 0h3m2 0h4m2 0h1m2 0h1m-33 1h2m4 0h1m3 0h4m1 0h1m1 0h5m1 0h5m1 0h2m1 0h1m-31 1h1m2 0h1m1 0h3m2 0h1m1 0h3m2 0h1m2 0h1m1 0h1m1 0h1m1 0h2m1 0h1m-32 1h1m1 0h1m2 0h2m1 0h2m1 0h4m3 0h1m2 0h1m3 0h2m1 0h1m-28 1h1m1 0h2m2 0h3m1 0h1m2 0h2m2 0h1m1 0h4m1 0h3m4 0h1m-33 1h2m1 0h2m1 0h2m1 0h4m2 0h2m1 0h2m1 0h1m1 0h4m2 0h1m2 0h1m-30 1h1m1 0h1m2 0h2m1 0h1m8 0h1m1 0h1m2 0h3m1 0h1m1 0h1m-32 1h2m1 0h1m1 0h4m4 0h1m1 0h2m1 0h3m2 0h8m-23 1h3m2 0h3m3 0h3m2 0h1m3 0h1m3 0h1m-33 1h7m1 0h1m1 0h1m2 0h1m1 0h1m1 0h6m1 0h1m1 0h1m1 0h3m1 0h1m-33 1h1m5 0h1m2 0h2m1 0h1m1 0h2m3 0h2m2 0h2m3 0h2m1 0h1m-32 1h1m1 0h3m1 0h1m2 0h1m2 0h4m2 0h1m1 0h2m1 0h6m3 0h1m-33 1h1m1 0h3m1 0h1m5 0h1m1 0h2m1 0h2m1 0h1m1 0h2m1 0h1m1 0h3m1 0h2m-33 1h1m1 0h3m1 0h1m1 0h3m3 0h3m2 0h4m1 0h2m1 0h2m1 0h3m-33 1h1m5 0h1m3 0h5m3 0h1m1 0h1m1 0h3m2 0h3m-30 1h7m1 0h2m1 0h1m1 0h4m1 0h3m1 0h9m1 0h1\"/></svg>\n\n      <div class=\"qr-rotulo\">confira o selo<br>selo.tjma.jus.br</div>\n    </div>\n    \n  </section>\n\n</div>\n<script>\nfunction etiquetasQueNaoCabem() {\n  return Array.from(document.querySelectorAll(\".etiqueta\")).filter(function (x) {\n    return x.scrollHeight - x.clientHeight > 1 || x.scrollWidth - x.clientWidth > 1;\n  });\n}\ndocument.getElementById(\"imprimir\").addEventListener(\"click\", function () {\n  var ruins = etiquetasQueNaoCabem();\n  if (ruins.length) {\n    var aviso = document.getElementById(\"estouro\");\n    aviso.textContent = ruins.length + \" etiqueta(s) não cabem na tira. \" +\n      \"Ajuste as medidas antes de imprimir.\";\n    aviso.hidden = false;\n    return;\n  }\n  window.print();\n});\n</script>\n</body>\n</html>"
+  },
+  "rcpj_rtd_titulo_nota(prazo e fundamento)": {
+   "ok": "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n<title>Nota devolutiva — título n. 1</title>\n<style>\n  @page { size: A4; margin: 22mm 20mm; }\n  html, body { margin: 0; padding: 0; background: #fff; }\n  body { font-family: Georgia, \"Times New Roman\", serif; color: #000;\n         font-size: 12pt; line-height: 1.5; }\n  .folha { max-width: 170mm; margin: 0 auto; padding: 18px; }\n  .cabecalho { text-align: center; margin-bottom: 18px; line-height: 1.3; }\n  .cabecalho .nome { font-weight: 700; font-size: 13pt; text-transform: uppercase; }\n  .cabecalho small { font-size: 9pt; }\n  h1 { font-size: 13pt; text-align: center; text-transform: uppercase;\n       letter-spacing: .04em; margin: 22px 0 16px; }\n  table.dados { width: 100%; border-collapse: collapse; margin-bottom: 16px; }\n  table.dados th { text-align: left; width: 38%; font-weight: 400;\n                   font-style: italic; padding: 3px 8px 3px 0; vertical-align: top; }\n  table.dados td { padding: 3px 0; vertical-align: top; }\n  .exigencias { border: 1px solid #000; padding: 12px 14px; margin: 14px 0;\n                white-space: pre-wrap; }\n  .fecho { margin-top: 34px; }\n  .assinatura { margin-top: 46px; text-align: center; }\n  .assinatura .linha { border-top: 1px solid #000; width: 70mm; margin: 0 auto 4px; }\n  .barra { padding: 14px 18px; background: #f4f7f9; font-family: Segoe UI, Arial, sans-serif;\n           font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }\n  .barra a, .barra button { font: inherit; border: 1px solid #b9c5cd; border-radius: 6px;\n    background: #fff; color: #1d3443; padding: 8px 12px; cursor: pointer;\n    text-decoration: none; }\n  .barra .primary { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }\n  @media print { .barra { display: none !important; } .folha { padding: 0; } }\n</style>\n</head>\n<body>\n\n<div class=\"barra\">\n  <button class=\"primary\" onclick=\"window.print()\">Imprimir</button>\n  <a href=\"/rcpj-rtd/titulo/1\">&larr; Voltar ao título</a>\n</div>\n\n<div class=\"folha\">\n  <div class=\"cabecalho\">\n    <div class=\"nome\">Ofício Único de Cidade Exemplo/MA</div>\n    <small> — CEP  — Cidade Exemplo/MA<br>\n      CNS 000000 · CNPJ  ·\n       · </small>\n  </div>\n\n  <h1>Nota devolutiva</h1>\n\n  <p>Pelo presente, comunico ao apresentante que o título abaixo identificado,\n  submetido a qualificação registral, <strong>não pôde ser registrado</strong>\n  nesta serventia, pelas exigências adiante lançadas.</p>\n\n  <table class=\"dados\">\n    <tbody>\n      <tr><th>Atribuição</th><td>RTD — Registro de Títulos e Documentos</td></tr>\n      <tr><th>Protocolo</th><td><strong>n. 1</strong>, Livro de Protocolo, fl. 1</td></tr>\n      <tr><th>Apresentado em</th><td>03/09/2026, às «HORA»</td></tr>\n      <tr><th>Apresentante</th><td>ASSOCIAÇÃO DE EXEMPLO — 00000010000127</td></tr>\n      <tr><th>Natureza do título</th><td>Estatuto de associação</td></tr>\n      <tr><th>Qualificação em</th><td>«HOJE»</td></tr>\n    </tbody>\n  </table>\n\n  <p><strong>EXIGÊNCIAS A CUMPRIR:</strong></p>\n  <div class=\"exigencias\">Falta a ata de eleição da diretoria.\nFalta a lista.</div>\n\n  \n  <p><strong>FUNDAMENTO:</strong></p>\n  <div class=\"exigencias\">Lei 6.015/1973, art. 121.</div>\n  \n\n  \n  <p>O apresentante poderá cumprir as exigências até\n  <strong>20/09/2026</strong>, reapresentando o título nesta\n  serventia.</p>\n  \n\n  <p class=\"fecho\">Cidade Exemplo/MA, «HOJE».</p>\n\n  <div class=\"assinatura\">\n    <div class=\"linha\"></div>\n    <div>MARIO EXEMPLO DOS SANTOS</div>\n    <div><small>Escrevente</small></div>\n  </div>\n</div>\n</body>\n</html>"
+  },
+  "rcpj_rtd_titulo_nota(sem prazo)": {
+   "ok": "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n<title>Nota devolutiva — título n. 1</title>\n<style>\n  @page { size: A4; margin: 22mm 20mm; }\n  html, body { margin: 0; padding: 0; background: #fff; }\n  body { font-family: Georgia, \"Times New Roman\", serif; color: #000;\n         font-size: 12pt; line-height: 1.5; }\n  .folha { max-width: 170mm; margin: 0 auto; padding: 18px; }\n  .cabecalho { text-align: center; margin-bottom: 18px; line-height: 1.3; }\n  .cabecalho .nome { font-weight: 700; font-size: 13pt; text-transform: uppercase; }\n  .cabecalho small { font-size: 9pt; }\n  h1 { font-size: 13pt; text-align: center; text-transform: uppercase;\n       letter-spacing: .04em; margin: 22px 0 16px; }\n  table.dados { width: 100%; border-collapse: collapse; margin-bottom: 16px; }\n  table.dados th { text-align: left; width: 38%; font-weight: 400;\n                   font-style: italic; padding: 3px 8px 3px 0; vertical-align: top; }\n  table.dados td { padding: 3px 0; vertical-align: top; }\n  .exigencias { border: 1px solid #000; padding: 12px 14px; margin: 14px 0;\n                white-space: pre-wrap; }\n  .fecho { margin-top: 34px; }\n  .assinatura { margin-top: 46px; text-align: center; }\n  .assinatura .linha { border-top: 1px solid #000; width: 70mm; margin: 0 auto 4px; }\n  .barra { padding: 14px 18px; background: #f4f7f9; font-family: Segoe UI, Arial, sans-serif;\n           font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }\n  .barra a, .barra button { font: inherit; border: 1px solid #b9c5cd; border-radius: 6px;\n    background: #fff; color: #1d3443; padding: 8px 12px; cursor: pointer;\n    text-decoration: none; }\n  .barra .primary { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }\n  @media print { .barra { display: none !important; } .folha { padding: 0; } }\n</style>\n</head>\n<body>\n\n<div class=\"barra\">\n  <button class=\"primary\" onclick=\"window.print()\">Imprimir</button>\n  <a href=\"/rcpj-rtd/titulo/1\">&larr; Voltar ao título</a>\n</div>\n\n<div class=\"folha\">\n  <div class=\"cabecalho\">\n    <div class=\"nome\">Ofício Único de Cidade Exemplo/MA</div>\n    <small> — CEP  — Cidade Exemplo/MA<br>\n      CNS 000000 · CNPJ  ·\n       · </small>\n  </div>\n\n  <h1>Nota devolutiva</h1>\n\n  <p>Pelo presente, comunico ao apresentante que o título abaixo identificado,\n  submetido a qualificação registral, <strong>não pôde ser registrado</strong>\n  nesta serventia, pelas exigências adiante lançadas.</p>\n\n  <table class=\"dados\">\n    <tbody>\n      <tr><th>Atribuição</th><td>RTD — Registro de Títulos e Documentos</td></tr>\n      <tr><th>Protocolo</th><td><strong>n. 1</strong>, Livro de Protocolo, fl. 1</td></tr>\n      <tr><th>Apresentado em</th><td>03/09/2026, às «HORA»</td></tr>\n      <tr><th>Apresentante</th><td>ASSOCIAÇÃO DE EXEMPLO — 00000010000127</td></tr>\n      <tr><th>Natureza do título</th><td>Estatuto de associação</td></tr>\n      <tr><th>Qualificação em</th><td>«HOJE»</td></tr>\n    </tbody>\n  </table>\n\n  <p><strong>EXIGÊNCIAS A CUMPRIR:</strong></p>\n  <div class=\"exigencias\">Falta a ata de eleição da diretoria.</div>\n\n  \n\n  \n  \n  <p>O apresentante poderá cumprir as exigências e reapresentar o título nesta\n  serventia. <em>Nesta nota não foi fixado prazo.</em></p>\n  \n\n  <p class=\"fecho\">Cidade Exemplo/MA, «HOJE».</p>\n\n  <div class=\"assinatura\">\n    <div class=\"linha\"></div>\n    <div>MARIO EXEMPLO DOS SANTOS</div>\n    <div><small>Escrevente</small></div>\n  </div>\n</div>\n</body>\n</html>"
+  }
+ }
+}

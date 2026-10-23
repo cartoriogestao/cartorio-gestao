@@ -1,0 +1,2 @@
+===FAIXA===
+Protocolo nº {protocolo} de {data_apresentacao}: certidão de {objeto_certificado}, sob nº {numero} em {data_registro} neste {unit_short} — {atribuicao}. Assinado por {full_name} — {funcao}.

@@ -126,8 +126,9 @@ AS LISTAS DAS CAIXAS SÃO MEDIDAS, E NUNCA ESCRITAS
 """
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
+
+from bd_nativo import banco
 
 
 class SeloEmitidoError(ValueError):
@@ -254,25 +255,27 @@ def nome_da_atribuicao(atribuicao: Any) -> str:
     return ATRIBUICOES.get(a, a) if a else "—"
 
 
-def opcoes(con: sqlite3.Connection) -> dict:
+def opcoes(con) -> dict:
     """O que existe no razão, para as caixas da tela. **SÓ LÊ.**
 
     **Medido, e nunca escrito à mão** — a lição do menu e da lista das cargas:
     lista escrita noutro arquivo envelhece na tarde em que se escreve, e aqui
     ela faria o operador procurar por um valor que a tela deixou de oferecer.
     """
+    bd = banco(con)
+
     def distintos(coluna: str) -> list[str]:
-        return [r[0] for r in con.execute(
-            f"SELECT DISTINCT {coluna} FROM sd_selos "
+        return [r["valor"] for r in bd.ler(
+            f"SELECT DISTINCT {coluna} AS valor FROM sd_selos "
             f"WHERE {coluna} IS NOT NULL AND TRIM({coluna}) <> '' "
-            f"ORDER BY {coluna}").fetchall()]
+            f"ORDER BY {coluna}")]
 
     # OS TIPOS SÃO CORTADOS EM PYTHON, e não com `SUBSTR` no SQL: o corte é a
     # única coisa que a consulta faria com a coluna, e recortar depois de ler
     # custa uma coluna por linha. **Módulo novo entra com zero acoplamento.**
     quantos: dict[str, int] = {}
-    for (numero,) in con.execute("SELECT numero FROM sd_selos"):
-        p = _texto(numero)[:6].upper()
+    for r in bd.ler("SELECT numero FROM sd_selos ORDER BY id"):
+        p = _texto(r["numero"])[:6].upper()
         if p:
             quantos[p] = quantos.get(p, 0) + 1
     tipos = sorted(
@@ -300,17 +303,17 @@ def _onde(*, inicio: Any = None, fim: Any = None, atribuicao: Any = None,
     """
     onde, params = ["1=1"], []
     if _texto(inicio):
-        onde.append("obtido_em >= ?")
+        onde.append("obtido_em >= %s")
         params.append(_texto(inicio))
     if _texto(fim):
         # **O DIA INTEIRO, e não até a meia-noite dele.** Ver FECHA_O_DIA.
-        onde.append("obtido_em <= ?")
+        onde.append("obtido_em <= %s")
         params.append(_texto(fim) + FECHA_O_DIA)
     if _texto(atribuicao):
-        onde.append("UPPER(COALESCE(atribuicao,'')) = ?")
+        onde.append("UPPER(COALESCE(atribuicao,'')) = %s")
         params.append(_texto(atribuicao).upper())
     if _texto(caminho):
-        onde.append("caminho = ?")
+        onde.append("caminho = %s")
         params.append(_texto(caminho))
     if _texto(quem):
         # **POR PEDAÇO E SEM CAIXA, E ISSO FOI MEDIDO EM 15/09/2026.** O acervo
@@ -339,7 +342,7 @@ def _onde(*, inicio: Any = None, fim: Any = None, atribuicao: Any = None,
         # 26.278 selos — os 19 valores distintos de `obtido_por` são todos
         # sem acento —, e resolver isso pediria uma coluna normalizada que só
         # esta tela usaria.
-        onde.append("UPPER(COALESCE(obtido_por,'')) LIKE ?")
+        onde.append("UPPER(COALESCE(obtido_por,'')) ILIKE %s")
         params.append(f"%{_texto(quem).upper()}%")
     if _texto(tipo):
         # O TIPO É O PREFIXO DO NÚMERO, e aqui ele se filtra **sem recortar no
@@ -351,10 +354,10 @@ def _onde(*, inicio: Any = None, fim: Any = None, atribuicao: Any = None,
             raise SeloEmitidoError(
                 f"Tipo de ato inválido: «{tipo}». São as letras e os números do "
                 "começo do selo, como «RECFIR».")
-        onde.append("UPPER(COALESCE(numero,'')) LIKE ?")
+        onde.append("UPPER(COALESCE(numero,'')) ILIKE %s")
         params.append(f"{p}%")
     if _texto(numero):
-        onde.append("UPPER(COALESCE(numero,'')) LIKE ?")
+        onde.append("UPPER(COALESCE(numero,'')) ILIKE %s")
         params.append(f"%{_texto(numero).upper()}%")
 
     situacao = _texto(situacao).upper()
@@ -373,7 +376,7 @@ def _onde(*, inicio: Any = None, fim: Any = None, atribuicao: Any = None,
     return " AND ".join(onde), params
 
 
-def resumo(con: sqlite3.Connection, **filtros) -> dict:
+def resumo(con, **filtros) -> dict:
     """Os números do que o filtro alcança. **SÓ LÊ.**
 
     **Conta o que o filtro ALCANÇA, e não o razão inteiro** — número que não
@@ -395,12 +398,12 @@ def resumo(con: sqlite3.Connection, **filtros) -> dict:
     constrói.
     """
     onde, params = _onde(**filtros)
-    linha = con.execute(
+    linha = banco(con).um(
         f"""SELECT COUNT(*) AS total,
                    SUM(CASE WHEN {CANCELADO} THEN 1 ELSE 0 END) AS cancelados,
                    SUM(CASE WHEN {ORFAO} THEN 1 ELSE 0 END) AS orfaos,
                    MIN(obtido_em) AS primeiro, MAX(obtido_em) AS ultimo
-              FROM sd_selos WHERE {onde}""", params).fetchone()
+              FROM sd_selos WHERE {onde}""", params)
     d = dict(linha)
     d["cancelados"] = int(d["cancelados"] or 0)
     d["orfaos"] = int(d["orfaos"] or 0)
@@ -408,7 +411,7 @@ def resumo(con: sqlite3.Connection, **filtros) -> dict:
     return d
 
 
-def procurar(con: sqlite3.Connection, *, pagina: int = 1,
+def procurar(con, *, pagina: int = 1,
              por_pagina: int = POR_PAGINA_PADRAO, **filtros) -> dict:
     """A lista, paginada. **SÓ LÊ.**
 
@@ -424,16 +427,17 @@ def procurar(con: sqlite3.Connection, *, pagina: int = 1,
                             POR_PAGINA_MAXIMO))
     pagina = max(1, int(pagina or 1))
     onde, params = _onde(**filtros)
-    total = con.execute(
-        f"SELECT COUNT(*) FROM sd_selos WHERE {onde}", params).fetchone()[0]
-    linhas = [dict(r) for r in con.execute(
+    bd = banco(con)
+    total = bd.valor(
+        f"SELECT COUNT(*) AS n FROM sd_selos WHERE {onde}", params)
+    linhas = [dict(r) for r in bd.ler(
         f"""SELECT id, numero, texto, caminho, atribuicao, tabela, ato_id,
                    referencia, obtido_em, obtido_por, usado_em, cancelado_em,
                    cancelado_por, motivo_cancelamento, ambiente
               FROM sd_selos WHERE {onde}
              ORDER BY obtido_em DESC, id DESC
-             LIMIT ? OFFSET ?""",
-        params + [por_pagina, (pagina - 1) * por_pagina]).fetchall()]
+             LIMIT %s OFFSET %s""",
+        params + [por_pagina, (pagina - 1) * por_pagina])]
     for x in linhas:
         # **A MESMA RÉGUA DO FILTRO**, pela função que mora ao lado dele. Era
         # `"USADO" if x["ato_id"] else "ORFAO"`, e é esse `if` que fazia a tela
@@ -508,7 +512,7 @@ _COLUNAS_DO_GRUPO: dict[str, tuple[str, ...]] = {
 }
 
 
-def por_grupo(con: sqlite3.Connection, campo: str, **filtros: Any) -> list[dict]:
+def por_grupo(con, campo: str, **filtros: Any) -> list[dict]:
     """Quantos selos por usuário, tipo, especialidade, mês ou dia. **SÓ LÊ.**
 
     **É O QUE RESPONDE A PERGUNTA DO OFICIAL.** «Controlar os selos emitidos»
@@ -529,13 +533,14 @@ def por_grupo(con: sqlite3.Connection, campo: str, **filtros: Any) -> list[dict]
     onde, params = _onde(**filtros)
     coluna = _COLUNAS_DO_GRUPO[campo][0]
     contas: dict[str, list[int]] = {}
-    for linha in con.execute(
-            f"SELECT {coluna}, CASE WHEN {CANCELADO} THEN 1 ELSE 0 END "
-            f"FROM sd_selos WHERE {onde}", params):
-        chave = _chave_do_grupo(campo, {coluna: linha[0]})
+    for linha in banco(con).ler(
+            f"SELECT {coluna} AS valor, "
+            f"CASE WHEN {CANCELADO} THEN 1 ELSE 0 END AS cancelado "
+            f"FROM sd_selos WHERE {onde} ORDER BY id", params):
+        chave = _chave_do_grupo(campo, {coluna: linha["valor"]})
         acumulado = contas.setdefault(chave, [0, 0])
         acumulado[0] += 1
-        acumulado[1] += int(linha[1] or 0)
+        acumulado[1] += int(linha["cancelado"] or 0)
     grupos = [{"chave": c, "quantos": v[0], "cancelados": v[1]}
               for c, v in contas.items()]
     if campo in ("dia", "mes"):
@@ -566,7 +571,7 @@ def numeros_informados(valores: Any) -> list[str]:
     return numeros
 
 
-def procurar_externos_rtdpj(con: sqlite3.Connection, *, inicio: Any = None,
+def procurar_externos_rtdpj(con, *, inicio: Any = None,
                             fim: Any = None, busca: Any = None,
                             limite: int = 200) -> list[dict]:
     """Selos do RTDPJ vindos de fora do sistema, disponíveis para etiqueta.
@@ -587,38 +592,39 @@ def procurar_externos_rtdpj(con: sqlite3.Connection, *, inicio: Any = None,
             SEM_CANCELAR]
     params: list[Any] = []
     if _texto(inicio):
-        onde.append("obtido_em >= ?")
+        onde.append("obtido_em >= %s")
         params.append(_texto(inicio))
     if _texto(fim):
-        onde.append("obtido_em <= ?")
+        onde.append("obtido_em <= %s")
         params.append(_texto(fim) + FECHA_O_DIA)
     if _texto(busca):
         termo = f"%{_texto(busca).upper()}%"
-        onde.append("(UPPER(numero) LIKE ? OR UPPER(COALESCE(texto,'')) LIKE ?)")
+        onde.append("(UPPER(numero) ILIKE %s OR UPPER(COALESCE(texto,'')) ILIKE %s)")
         params.extend((termo, termo))
     limite = max(1, min(int(limite or 200), 500))
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         f"""SELECT id, numero, texto, caminho, atribuicao, referencia,
                    obtido_em, obtido_por, qr_token
               FROM sd_selos
              WHERE {' AND '.join(onde)}
-             ORDER BY obtido_em DESC, id DESC LIMIT ?""",
-        params + [limite]).fetchall()]
+             ORDER BY obtido_em DESC, id DESC LIMIT %s""",
+        params + [limite])]
 
 
-def externos_rtdpj_para_etiqueta(con: sqlite3.Connection,
+def externos_rtdpj_para_etiqueta(con,
                                  valores: Any) -> list[dict]:
     """Confere e devolve os selos externos escolhidos, na ordem pedida."""
     numeros = numeros_informados(valores)
     if not numeros:
         raise SeloEmitidoError("Marque ao menos um selo para imprimir.")
-    marcas = ",".join("?" for _ in numeros)
-    achados = {str(r["numero"]).upper(): dict(r) for r in con.execute(
+    marcas = ",".join("%s" for _ in numeros)
+    achados = {str(r["numero"]).upper(): dict(r) for r in banco(con).ler(
         f"""SELECT id, numero, texto, caminho, atribuicao, referencia,
                    tabela, ato_id, obtido_em, obtido_por, cancelado_em,
                    qr_token
-              FROM sd_selos WHERE UPPER(numero) IN ({marcas})""",
-        numeros).fetchall()}
+              FROM sd_selos WHERE UPPER(numero) IN ({marcas})
+             ORDER BY id""",
+        numeros)}
     faltam = [n for n in numeros if n not in achados]
     if faltam:
         raise SeloEmitidoError(

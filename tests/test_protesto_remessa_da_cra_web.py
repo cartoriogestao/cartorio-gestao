@@ -19,7 +19,7 @@ def test_a_remessa_da_cra_vai_direto_a_conferencia_e_nao_grava(s, monkeypatch):
                         lambda qual, nome, amb, com_imagem=False:
                         EXEMPLO.read_text(encoding="latin-1"))
     tela = s["c"].get("/protesto/remessas").get_data(as_text=True)
-    assert "Trazer e conferir" in tela
+    assert "Baixar todas e conferir" in tela
     html = s["c"].post("/protesto/remessas/da-cra",
                        data={"csrf_token": _token(tela), "o_que": "remessa",
                              "nome": "B2371410.261"},
@@ -77,3 +77,46 @@ def test_o_retorno_tem_o_botao_enviar_a_cra(s, monkeypatch):
                        data={"csrf_token": _token(tela)},
                        follow_redirects=True).get_data(as_text=True)
     assert "entrou na CRA" in html and "0000" in html
+
+
+def test_todas_as_remessas_sem_numero_vao_a_conferencia_sem_gravar(s, monkeypatch):
+    import re
+    import cra21_web as CRAW
+    chamadas = []
+
+    def trazer(qual, nome, amb, com_imagem=False):
+        chamadas.append((qual, nome))
+        return EXEMPLO.read_text(encoding="latin-1")
+
+    monkeypatch.setattr(CRAW, "_trazer", trazer)
+    tela = s["c"].get("/protesto/remessas").get_data(as_text=True)
+    form = re.search(r'<form[^>]+action="/protesto/remessas/da-cra".*?</form>',
+                     tela, re.S).group()
+    assert 'name="o_que" value="pendentes"' in form
+    assert 'name="nome"' not in form
+    r = s["c"].post("/protesto/remessas/da-cra", data={
+        "csrf_token": _token(tela), "o_que": "pendentes"}, follow_redirects=True)
+    assert r.status_code == 200
+    assert chamadas == [("pendentes", "")]
+    assert "Receber" in r.get_data(as_text=True)
+    with _con(s) as con:
+        assert con.execute("SELECT COUNT(*) FROM pt_remessas").fetchone()[0] == 0
+        assert con.execute("SELECT COUNT(*) FROM pt_titulos").fetchone()[0] == 0
+
+
+def test_aviso_realista_da_api_aparece_sem_pedir_raiz_remessa(s, monkeypatch):
+    import cra21_api as API
+    monkeypatch.setattr(API, '_bater', lambda *a, **kw:
+        '<return>&lt;?xml version="1.0"?&gt;&lt;relatorio&gt;'
+        '&lt;codigo&gt;0003&lt;/codigo&gt;&lt;ocorrencia&gt;'
+        'SEM REMESSAS PENDENTES&lt;/ocorrencia&gt;&lt;/relatorio&gt;</return>')
+    tela = s['c'].get('/protesto/remessas').get_data(as_text=True)
+    r = s['c'].post('/protesto/remessas/da-cra', data={
+        'csrf_token': _token(tela), 'o_que': 'pendentes'}, follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert '0003' in html and 'SEM REMESSAS PENDENTES' in html
+    assert 'A raiz esperada' not in html
+    with _con(s) as con:
+        assert con.execute('SELECT COUNT(*) FROM pt_remessas').fetchone()[0] == 0
+        assert con.execute('SELECT COUNT(*) FROM pt_titulos').fetchone()[0] == 0

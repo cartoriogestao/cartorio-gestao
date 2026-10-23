@@ -26,6 +26,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import rc_cpf as CPF                                           # noqa: E402
 
@@ -162,7 +164,7 @@ def test_uma_filiacao_basta():
 
 
 def _banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("CREATE TABLE rc_assentos (id INTEGER PRIMARY KEY, "
                 "especie TEXT, numero INTEGER, nome TEXT, data_ato TEXT, "
@@ -334,7 +336,7 @@ def test_reescrever_teor_cpf_a_partir_do_antigo():
 
 
 def test_gravar_no_registrado_atualiza_documento():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE rc_pessoas (
@@ -359,7 +361,7 @@ def test_gravar_no_registrado_atualiza_documento():
 
 
 def _banco_do_casal():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE rc_pessoas (

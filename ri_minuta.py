@@ -32,6 +32,8 @@ from __future__ import annotations
 import re
 import sqlite3
 
+from bd_nativo import banco
+
 A_REVISAR = "A_REVISAR"
 LAVRADA = "LAVRADA"
 DESCARTADA = "DESCARTADA"
@@ -120,18 +122,19 @@ def criar(con: sqlite3.Connection, *, matricula_id: int, tipo: str, teor: str,
         if numero <= 0:
             raise MinutaError("O número pretendido tem de ser maior que zero.")
 
-    cur = con.execute(
+    novo = banco(con).escrever(
         """INSERT INTO ri_minutas
            (matricula_id, tipo, numero_pretendido, data_pretendida, teor,
             natureza_titulo, protocolo, prenotacao, modelo_codigo,
             origem, origem_chave, observacao, situacao, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (int(matricula_id), tipo, numero, _texto(data_pretendida) or None, teor,
          _texto(natureza_titulo) or None, _texto(protocolo) or None,
          _texto(prenotacao) or None, _texto(modelo_codigo) or None,
          _texto(origem) or MANUAL, _texto(origem_chave) or None,
          _texto(observacao) or None, A_REVISAR, agora, usuario))
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
 
 
 def atualizar(con: sqlite3.Connection, minuta_id: int, *, teor: str,
@@ -171,7 +174,8 @@ def atualizar(con: sqlite3.Connection, minuta_id: int, *, teor: str,
     Devolve quantas partes ficaram gravadas quando a lista foi mandada, e
     `None` quando ninguém mexeu nelas.
     """
-    m = uma(con, minuta_id)
+    bd = banco(con)
+    m = _presa(bd, minuta_id)
     if not m:
         raise MinutaError("Minuta não encontrada.")
     if m["situacao"] != A_REVISAR:
@@ -213,10 +217,11 @@ def atualizar(con: sqlite3.Connection, minuta_id: int, *, teor: str,
     def _ou_o_que_havia(novo, chave):
         return m[chave] if novo is None else (_texto(novo) or None)
 
-    con.execute(
-        """UPDATE ri_minutas SET teor=?, tipo=?, numero_pretendido=?,
-               data_pretendida=?, natureza_titulo=?, protocolo=?, prenotacao=?,
-               atualizado_em=?, atualizado_por=? WHERE id=?""",
+    bd.escrever(
+        """UPDATE ri_minutas SET teor=%s, tipo=%s, numero_pretendido=%s,
+               data_pretendida=%s, natureza_titulo=%s, protocolo=%s,
+               prenotacao=%s, atualizado_em=%s, atualizado_por=%s
+         WHERE id=%s""",
         (teor, tipo_novo, numero,
          _ou_o_que_havia(data_pretendida, "data_pretendida"),
          _ou_o_que_havia(natureza_titulo, "natureza_titulo"),
@@ -228,38 +233,51 @@ def atualizar(con: sqlite3.Connection, minuta_id: int, *, teor: str,
     # `with` da rota, um erro de tipo de ato ou de número derruba tudo — e a
     # lista de partes não pode ter sido trocada por uma revisão que recusou.
     if partes is not None:
-        return guardar_partes(con, int(minuta_id), partes)
+        return guardar_partes(bd, int(minuta_id), partes)
     return None
 
 
 def listar(con: sqlite3.Connection, matricula_id: int, *,
            situacao: str | None = A_REVISAR) -> list[dict]:
     """As minutas daquela ficha. Só LÊ."""
-    sql = "SELECT * FROM ri_minutas WHERE matricula_id=?"
+    sql = "SELECT * FROM ri_minutas WHERE matricula_id=%s"
     args: list = [int(matricula_id)]
     if situacao:
-        sql += " AND situacao=?"
+        sql += " AND situacao=%s"
         args.append(situacao)
     sql += " ORDER BY COALESCE(numero_pretendido, 999999), id"
-    return [dict(r) for r in con.execute(sql, args)]
+    return banco(con).ler(sql, args)
 
 
 def uma(con: sqlite3.Connection, minuta_id: int) -> dict | None:
     """Uma minuta pelo id. Só LÊ."""
-    r = con.execute("SELECT * FROM ri_minutas WHERE id=?",
-                    (int(minuta_id),)).fetchone()
-    return dict(r) if r else None
+    return banco(con).um("SELECT * FROM ri_minutas WHERE id=%s",
+                         (int(minuta_id),))
+
+
+def _presa(bd, minuta_id: int) -> dict | None:
+    """A minuta lida para GRAVAR: presa (`FOR UPDATE`) até o fim da transação.
+
+    LD10, 21/10/2026. `atualizar` e `descartar` conferem «já virou ato?» e
+    gravam por cima; lida solta, a minuta que outra aba está lavrando ainda
+    parece «a revisar», e a revisão cairia no texto que foi ao livro — ou o
+    descarte marcaria DESCARTADA a procedência de um ato. Presa, quem chega
+    no meio espera a lavratura e lê a situação de depois.
+    """
+    bd._escrita()
+    return bd.um("SELECT * FROM ri_minutas WHERE id=%s FOR UPDATE",
+                 (int(minuta_id),))
 
 
 def quantas_a_revisar(con: sqlite3.Connection,
                       matricula_id: int | None = None) -> int:
     """Quantas esperam revisão. Só LÊ — para a ficha e para a lista do dia."""
-    sql = "SELECT COUNT(*) FROM ri_minutas WHERE situacao=?"
+    sql = "SELECT COUNT(*) AS n FROM ri_minutas WHERE situacao=%s"
     args: list = [A_REVISAR]
     if matricula_id is not None:
-        sql += " AND matricula_id=?"
+        sql += " AND matricula_id=%s"
         args.append(int(matricula_id))
-    return int(con.execute(sql, args).fetchone()[0])
+    return int(banco(con).valor(sql, args))
 
 
 def marcar_lavrada(con: sqlite3.Connection, minuta_id: int, *, ato_id: int,
@@ -271,9 +289,9 @@ def marcar_lavrada(con: sqlite3.Connection, minuta_id: int, *, ato_id: int,
     saiu de qual minuta?». Apagar seria perder a procedência justamente no
     momento em que ela passa a valer.
     """
-    con.execute(
-        """UPDATE ri_minutas SET situacao=?, ato_id=?, atualizado_em=?,
-               atualizado_por=? WHERE id=?""",
+    banco(con).escrever(
+        """UPDATE ri_minutas SET situacao=%s, ato_id=%s, atualizado_em=%s,
+               atualizado_por=%s WHERE id=%s""",
         (LAVRADA, int(ato_id), agora, usuario, int(minuta_id)))
 
 
@@ -292,16 +310,17 @@ def descartar(con: sqlite3.Connection, minuta_id: int, *, motivo: str,
         raise MinutaError(
             "Escreva o motivo do descarte com pelo menos dez letras — «não "
             "serve» não explica nada a quem ler depois.")
-    m = uma(con, minuta_id)
+    bd = banco(con)
+    m = _presa(bd, minuta_id)
     if not m:
         raise MinutaError("Minuta não encontrada.")
     if m["situacao"] == LAVRADA:
         raise MinutaError(
             "Esta minuta já virou ato — o que se desfaz agora é o ato, por "
             "averbação, e não a minuta.")
-    con.execute(
-        """UPDATE ri_minutas SET situacao=?, observacao=?, atualizado_em=?,
-               atualizado_por=? WHERE id=?""",
+    bd.escrever(
+        """UPDATE ri_minutas SET situacao=%s, observacao=%s, atualizado_em=%s,
+               atualizado_por=%s WHERE id=%s""",
         (DESCARTADA,
          ((m["observacao"] + "\n") if m["observacao"] else "")
          + f"DESCARTADA: {motivo}",
@@ -325,7 +344,8 @@ def guardar_partes(con, minuta_id: int, partes) -> int:
 
     Devolve quantas entraram.
     """
-    con.execute("DELETE FROM ri_minuta_partes WHERE minuta_id=?",
+    bd = banco(con)
+    bd.escrever("DELETE FROM ri_minuta_partes WHERE minuta_id=%s",
                 (int(minuta_id),))
     entraram = 0
     for ordem, p in enumerate(partes or []):
@@ -336,11 +356,11 @@ def guardar_partes(con, minuta_id: int, partes) -> int:
             # vazia faria a proxima lavratura oferecer um nome que nao
             # existe.
             continue
-        con.execute(
+        bd.escrever(
             """INSERT INTO ri_minuta_partes
                (minuta_id, nome, documento_tipo, documento_numero,
                 qualificacao, papel, ordem)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (int(minuta_id), nome,
              (p.get("documento_tipo") or None),
              (str(p.get("documento_numero") or "").strip() or None),
@@ -352,10 +372,10 @@ def guardar_partes(con, minuta_id: int, partes) -> int:
 
 def partes(con, minuta_id: int) -> list[dict]:
     """As partes desta minuta, na ordem em que foram guardadas. So LE."""
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT nome, documento_tipo, documento_numero, qualificacao, papel
-             FROM ri_minuta_partes WHERE minuta_id=? ORDER BY ordem, id""",
-        (int(minuta_id),))]
+             FROM ri_minuta_partes WHERE minuta_id=%s ORDER BY ordem, id""",
+        (int(minuta_id),))
 
 
 # ------------------------------------- o ato que volta porque o selo nao saiu
@@ -407,7 +427,8 @@ def voltar_do_ato(con, ato_id: int, *, agora: str, por: str | None = None,
 
     Devolve `{"minuta_id", "partes", "reaproveitou"}`.
     """
-    a = con.execute("SELECT * FROM ri_atos WHERE id=?", (int(ato_id),)).fetchone()
+    bd = banco(con)
+    a = bd.um("SELECT * FROM ri_atos WHERE id=%s", (int(ato_id),))
     if not a:
         raise MinutaError("O ato não existe mais — nada a suspender.")
     rotulo = f"{a['tipo']}-{int(a['numero']):02d}"
@@ -417,18 +438,18 @@ def voltar_do_ato(con, ato_id: int, *, agora: str, por: str | None = None,
             f"O ato {rotulo} tem selo ({a['selo_texto'][:28]}…) e por isso "
             f"não se suspende: selo pago amarrado a ato que deixa de existir "
             f"é selo órfão.")
-    depois = con.execute(
-        "SELECT COUNT(*) FROM ri_atos WHERE matricula_id=? AND id>?",
-        (a["matricula_id"], int(ato_id))).fetchone()[0]
+    depois = int(bd.valor(
+        "SELECT COUNT(*) AS n FROM ri_atos WHERE matricula_id=%s AND id>%s",
+        (a["matricula_id"], int(ato_id))))
     if depois:
         raise MinutaError(
             f"O ato {rotulo} não é o último da ficha — há {depois} ato(s) "
             f"depois dele. Tirar um do meio deixaria o seguinte apontando "
             f"para um hash que não existe mais.")
-    no_caixa = con.execute(
-        """SELECT COUNT(*) FROM cx_lancamentos
-            WHERE origem='ATO' AND origem_chave LIKE ?""",
-        (f"ri_atos:{int(ato_id)}:%",)).fetchone()[0]
+    no_caixa = int(bd.valor(
+        """SELECT COUNT(*) AS n FROM cx_lancamentos
+            WHERE origem='ATO' AND origem_chave ILIKE %s""",
+        (f"ri_atos:{int(ato_id)}:%",)))
     if no_caixa:
         raise MinutaError(
             f"O ato {rotulo} tem {no_caixa} lançamento(s) no caixa. Dinheiro "
@@ -437,52 +458,63 @@ def voltar_do_ato(con, ato_id: int, *, agora: str, por: str | None = None,
     # A MINUTA DE ONDE ELE SAIU VOLTA PARA A FILA, em vez de nascer outra:
     # duas minutas para o mesmo ato na mesma ficha, e quem a abrisse nao
     # saberia qual revisar.
-    de_onde = con.execute(
-        "SELECT id FROM ri_minutas WHERE ato_id=? ORDER BY id LIMIT 1",
-        (int(ato_id),)).fetchone()
+    de_onde = bd.um(
+        "SELECT id FROM ri_minutas WHERE ato_id=%s ORDER BY id LIMIT 1",
+        (int(ato_id),))
     nota = (f"Suspensa em {agora[:10]}: o ato {rotulo} foi lavrado e o selo "
             f"não saiu" + (f" — {motivo}" if motivo else "") +
             ". O texto e as partes ficaram guardados para lavrar de novo.")
 
     if de_onde:
         minuta_id = int(de_onde["id"])
-        con.execute(
+        bd.escrever(
             """UPDATE ri_minutas
-                  SET situacao=?, ato_id=NULL, teor=?, natureza_titulo=?,
-                      protocolo=?, prenotacao=?, numero_pretendido=?,
-                      data_pretendida=?, atualizado_em=?, atualizado_por=?,
-                      observacao=COALESCE(observacao || char(10), '') || ?
-                WHERE id=?""",
+                  SET situacao=%s, ato_id=NULL, teor=%s, natureza_titulo=%s,
+                      protocolo=%s, prenotacao=%s, numero_pretendido=%s,
+                      data_pretendida=%s, atualizado_em=%s, atualizado_por=%s,
+                      observacao=COALESCE(observacao || chr(10), '') || %s
+                WHERE id=%s""",
             (A_REVISAR, a["teor"], a["natureza_titulo"], a["protocolo"],
              a["prenotacao"], a["numero"], a["data_ato"], agora, por, nota,
              minuta_id))
         reaproveitou = True
     else:
-        cur = con.execute(
+        novo = bd.escrever(
             """INSERT INTO ri_minutas
                (matricula_id, tipo, numero_pretendido, data_pretendida, teor,
                 natureza_titulo, protocolo, prenotacao, modelo_codigo,
                 origem, origem_chave, observacao, situacao, criado_em,
                 criado_por)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id""",
             (a["matricula_id"], a["tipo"], a["numero"], a["data_ato"],
              a["teor"], a["natureza_titulo"], a["protocolo"], a["prenotacao"],
              a["modelo_codigo"], DESFEITO_DE_ATO,
              f"ri_atos:{int(ato_id)} {rotulo}", nota, A_REVISAR, agora, por))
-        minuta_id = int(cur.lastrowid)
+        minuta_id = int(novo[0]["id"])
         reaproveitou = False
 
     # AS PARTES VAO JUNTO — e sem isto o ato relavrado nasce sem dono.
-    quantas = guardar_partes(con, minuta_id, [
-        dict(r) for r in con.execute(
-            """SELECT nome, documento_tipo, documento_numero, qualificacao,
-                      papel FROM ri_partes WHERE ato_id=? ORDER BY id""",
-            (int(ato_id),))])
+    quantas = guardar_partes(bd, minuta_id, bd.ler(
+        """SELECT nome, documento_tipo, documento_numero, qualificacao,
+                  papel FROM ri_partes WHERE ato_id=%s ORDER BY id""",
+        (int(ato_id),)))
 
-    con.execute("DELETE FROM ri_partes WHERE ato_id=?", (int(ato_id),))
+    bd.escrever("DELETE FROM ri_partes WHERE ato_id=%s", (int(ato_id),))
     # A NOTA DE REVISAO FICA NA FICHA: `ato_id` NULL e nota da matricula.
-    con.execute("UPDATE ri_revisoes SET ato_id=NULL WHERE ato_id=?",
+    bd.escrever("UPDATE ri_revisoes SET ato_id=NULL WHERE ato_id=%s",
                 (int(ato_id),))
-    con.execute("DELETE FROM ri_atos WHERE id=?", (int(ato_id),))
+    # A PRENOTACAO SE SOLTA DO ATO QUE DEIXA DE EXISTIR — LD03, 21/10/2026.
+    # A lavratura a amarra ao primeiro ato que sai dela (`amarrar_prenotacao`,
+    # na transacao do ato), e `ri_protocolos.ato_id` tem chave estrangeira
+    # para `ri_atos` (a producao migrada tambem). Sem esta linha o DELETE
+    # abaixo estourava a chave, a suspensao falhava e o ato com selo recusado
+    # FICAVA de pe no livro, sem selo — medido pelas telas, com o selador
+    # recusando: «FOREIGN KEY constraint failed». Solta-la devolve a
+    # prenotacao ao que era antes do ato: aberta e sem ato, guardando a
+    # prioridade para o ato relavrado.
+    bd.escrever("UPDATE ri_protocolos SET ato_id=NULL WHERE ato_id=%s",
+                (int(ato_id),))
+    bd.escrever("DELETE FROM ri_atos WHERE id=%s", (int(ato_id),))
     return {"minuta_id": minuta_id, "partes": quantas,
             "reaproveitou": reaproveitou, "rotulo": rotulo}

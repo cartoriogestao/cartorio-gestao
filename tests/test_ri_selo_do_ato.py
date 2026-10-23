@@ -66,6 +66,12 @@ def casa(tmp_path):
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
     Database(banco).create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA,
                                 "ADMIN")
+    # LX16: selo pago só sai com protocolo pago — o escrevente atende um
+    # protocolo do balcão com os itens do RI que estes testes lavram.
+    from protocolo_de_teste import atender_protocolo_pago
+    with Database(banco).transaction() as con_cx:
+        atender_protocolo_pago(con_cx, usuario="MARIO EXEMPLO DOS SANTOS",
+                               codigos=("16.3", "16.39"), atribuicao="RI")
     c = app.test_client()
     c.post("/login",
            data={"username": "mario", "password": SENHA,

@@ -1,0 +1,1 @@
+Faço saber que pretendem casar-se {nubente1_nome} e {nubente2_nome}{estado_civil}{filiacao}{domicilio}, e que apresentaram os documentos exigidos pelo artigo 1.525 do Código Civil. Se alguém souber de algum impedimento, oponha-o na forma da lei. Lavro o presente para ser publicado em meio eletrônico, no {onde_se_publica}. {cidade_uf}, {data}.

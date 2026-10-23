@@ -1,0 +1,14 @@
+{
+  "chave": "RI_CANCELAMENTO_INDICADOR_REAL",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Cancelamento no Indicador Real (Livro 2)",
+  "formato": "JINJA",
+  "explica": "Lançamento no Indicador Real (Livro 4) do cancelamento de ato da matrícula; vai ao livro e, gravado, não muda mais.",
+  "campos": [
+    "averbacao",
+    "imovel",
+    "matricula",
+    "motivo",
+    "rotulo"
+  ]
+}

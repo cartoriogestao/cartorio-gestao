@@ -1,0 +1,81 @@
+{#
+  O protocolo que paga o selo, ESCOLHIDO pelo escrevente na tela do ato.
+
+  Escrito UMA vez para todas as telas que selam (firma, autenticação, cartão,
+  escritura, certidão do RI, prenotação...). Decisão do oficial, 22/10/2026:
+  «escrevente confirma» — o candidato único vem marcado, mas o sistema nunca
+  escolhe sozinho: com um protocolo pago só na casa, o selo de quem não pagou
+  gastaria o pagamento de quem pagou.
+
+  A lista vem de `ato_selado.candidatos_do_ato(con, tabela=..., pedidos=...)`.
+  `pedidos` é [(código, quantidade), ...] — a certidão do RI manda dois.
+  A rota lê o campo `nome_campo` e chama `ato_selado.escolher_protocolo_do_selo`
+  ANTES de pedir o selo (e grava a auditoria fora da transação).
+
+  Dois usos:
+    - DENTRO do <form> do ato (sem `url_de_selar`): só os campos.
+        {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
+        {{ protocolo_do_selo(candidatos, pedidos, atendendo=atendendo) }}
+    - SOZINHO, no quadro de «aguardando cobertura» (com `url_de_selar`, a rota
+      da TELA que sela de novo, montada por ela): formulário próprio.
+        {{ protocolo_do_selo(candidatos, pedidos, url_de_selar=url,
+                             csrf_token=csrf_token) }}
+#}
+{% macro protocolo_do_selo(candidatos, pedidos, atendendo=None, url_de_selar=None,
+                           csrf_token=None, nome_campo="protocolo_selo") %}
+{% set pre = (candidatos or [])|selectattr('pre_marcado')|list %}
+{% set marcado = (atendendo.id if atendendo else None) %}
+{% if marcado is none and pre %}{% set marcado = pre[0].protocolo_id %}{% endif %}
+{% if marcado is none and candidatos and candidatos|length == 1 %}{% set marcado = candidatos[0].protocolo_id %}{% endif %}
+{% if url_de_selar %}
+<form method="post" action="{{ url_de_selar }}" class="protocolo-do-selo">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+{% endif %}
+<fieldset class="protocolo-do-selo">
+  <legend>Protocolo que paga o selo</legend>
+  {% if pedidos %}
+  <p class="muted">Este ato pede:
+    {% for codigo, quantidade in pedidos %}<strong>{% if codigo.endswith('*') %}item do grupo {{ codigo[:-2] }} da tabela{% else %}{{ codigo }}{% endif %}</strong>{% if quantidade > 1 %} × {{ quantidade }}{% endif %}{% if not loop.last %} ou {% endif %}{% endfor %}.
+  </p>
+  {% endif %}
+  {% if atendendo %}
+  <p>Você está atendendo o protocolo <strong>{{ atendendo.numero }}</strong>.</p>
+  {% endif %}
+  {% if candidatos %}
+  <table>
+    <thead><tr><th></th><th>Protocolo</th><th>Interessado</th><th>Itens com saldo</th><th>Cobre?</th></tr></thead>
+    <tbody>
+    {% for c in candidatos %}
+      <tr>
+        <td><input type="radio" name="{{ nome_campo }}" value="{{ c.protocolo_id }}"
+                   id="{{ nome_campo }}-{{ c.protocolo_id }}"
+                   {% if c.protocolo_id == marcado %}checked{% endif %}></td>
+        <td><label for="{{ nome_campo }}-{{ c.protocolo_id }}">{{ c.numero }}</label></td>
+        <td>{{ c.interessado or '—' }}</td>
+        <td>
+          {% for it in c.itens %}{{ it.codigo }} ×{{ it.saldo }}{% if not it.pago %} (não pago){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}
+        </td>
+        <td>
+          {% if c.cobre_tudo %}sim{% else %}
+            {% for f in c.faltam %}faltam {{ f.faltam }} do {{ f.codigo }}{% if not loop.last %}; {% endif %}{% endfor %}
+            — acrescente no protocolo
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Confira se o protocolo é de quem está no balcão: o selo gasta o pagamento dele.</p>
+  {% else %}
+  <p>Nenhum protocolo pago desta atribuição tem
+    {% for codigo, quantidade in pedidos %}{% if codigo.endswith('*') %}item do grupo {{ codigo[:-2] }}{% else %}{{ codigo }}{% endif %}{% if not loop.last %} / {% endif %}{% endfor %}
+    com saldo nos últimos 30 dias. Abra o protocolo e registre o pagamento no caixa antes de selar.</p>
+  {% endif %}
+  {% if url_de_selar and candidatos %}
+  <button type="submit">Atender este protocolo e selar de novo</button>
+  {% endif %}
+</fieldset>
+{% if url_de_selar %}
+</form>
+{% endif %}
+{% endmacro %}

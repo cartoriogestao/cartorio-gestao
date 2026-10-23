@@ -42,7 +42,6 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
-import sqlite3
 import ssl
 import time
 import unicodedata
@@ -50,6 +49,7 @@ import urllib.parse
 from datetime import datetime
 from typing import Any
 
+from bd_nativo import banco
 import centrais_cred as CRED
 import centrais_trava_sandbox as TRAVA
 import notas_censec as NC
@@ -302,6 +302,16 @@ def montar_envio(con, ano: int, mes: int, quinzena: int, cns: Any) -> dict:
         if sep["aptos"]:
             corpo[chave] = [traduzir(x["linha"]) for x in sep["aptos"]]
             atos[central] = [x["ato"] for x in sep["aptos"]]
+    # A CTP DAS ESCRITURAS VAI NA CARGA DA 2ª QUINZENA — 22/10/2026. A CTP é
+    # mensal e a carga é quinzenal; a quinzena que fecha o mês leva as
+    # escrituras do mês inteiro (A CONFERIR com a CENSEC). Ver `censec_ctp`.
+    if int(quinzena) == 2:
+        import censec_ctp as CTP
+        sep = CTP.declaracoes_do_mes(con, ano, mes, cns)
+        impedidos[CTP.CENTRAL] = sep["impedidos"]
+        if sep["aptos"]:
+            corpo["declaracoes"] = [x["linha"] for x in sep["aptos"]]
+            atos[CTP.CENTRAL] = [x["ato"] for x in sep["aptos"]]
     return {"corpo": corpo, "atos": atos, "impedidos": impedidos,
             "prazo": NC.prazo_de_fechamento(ano, mes, quinzena)}
 
@@ -318,8 +328,13 @@ def conferir_corpo(corpo: dict) -> list[str]:
     q = corpo.get("quinzena") or {}
     if q.get("mesReferencia") not in MESES[1:] or q.get("quinzenaReferencia") not in (1, 2):
         p.append("quinzena de referência inválida")
-    if not any(corpo.get(k) for k in ("atosCep", "atosCesdi", "testamentos")):
+    if not any(corpo.get(k) for k in ("atosCep", "atosCesdi", "testamentos",
+                                      "declaracoes")):
         p.append("nenhum ato apto nesta quinzena — nada a enviar")
+    if corpo.get("declaracoes"):
+        import censec_ctp as CTP
+        for i, item in enumerate(corpo["declaracoes"], 1):
+            p += CTP.conferir(item, f"CTP, declaração {i}")
 
     def onde(a):
         return f"livro {a.get('livro', '?')}, fl. {a.get('folha', '?')}"
@@ -523,7 +538,6 @@ def enviar_quinzena(db, ano: int, mes: int, quinzena: int, *, cns: Any,
     """
     qual = str(ambiente or CRED.HOMOLOGACAO).upper()
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         envio = montar_envio(con, ano, mes, quinzena, cns)
     resultado = enviar_carga(envio["corpo"], qual, pasta=pasta)
     resultado.update({"ambiente": qual, "atos": envio["atos"],
@@ -536,6 +550,7 @@ def enviar_quinzena(db, ano: int, mes: int, quinzena: int, *, cns: Any,
         json.dumps(envio["corpo"], ensure_ascii=False).encode("utf-8")).hexdigest()
     inicio, fim = NC.periodo_da_quinzena(ano, mes, quinzena)
     with db.transaction() as con:
+        bd = banco(con)
         for central, atos in envio["atos"].items():
             resumo = resultado["por_central"].get(central, {"sucesso": False,
                                                             "erro": "sem resultado"})
@@ -545,27 +560,27 @@ def enviar_quinzena(db, ano: int, mes: int, quinzena: int, *, cns: Any,
                 resumo.get("erro"),
                 f"{len(resumo.get('recusas') or [])} ato(s) recusado(s)"
                 if resumo.get("recusas") else ""]))
-            cur = con.execute(
+            remessa_id = bd.escrever(
                 """INSERT INTO nt_remessas(central, competencia, ano_referencia,
                        mes_referencia, quinzena, periodo_inicio, periodo_fim, situacao,
                        quantidade, arquivo_nome, arquivo_sha256, protocolo_central,
                        mensagem, gerada_em, gerada_por, enviada_em, enviada_por,
                        criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   RETURNING id""",
                 (central, f"{ano:04d}-{mes:02d}", ano, mes, quinzena, inicio, fim,
                  situacao, len(atos), f"API {CAMINHO['carga_json']}", sha,
                  resumo.get("carga_id"), mensagem, agora, por,
                  agora if situacao != "REJEITADA" else None,
-                 por if situacao != "REJEITADA" else None, agora))
-            remessa_id = cur.lastrowid
+                 por if situacao != "REJEITADA" else None, agora))[0]["id"]
             recusados = {(str(x.get("livro") or ""), str(x.get("folha") or "")): x
                          for x in resumo.get("recusas") or []}
             for a in atos:
                 rec = recusados.get((str(a.get("livro") or ""), str(a.get("folha") or "")))
                 item_sit = "REJEITADA" if (rec or situacao == "REJEITADA") else situacao
-                con.execute(
+                bd.escrever(
                     """INSERT INTO nt_remessa_itens(remessa_id, ato_id, situacao,
-                           mensagem, criado_em) VALUES (?,?,?,?,?)""",
+                           mensagem, criado_em) VALUES (%s,%s,%s,%s,%s)""",
                     (remessa_id, a["id"], item_sit,
                      "; ".join(rec["mensagens"]) if rec else None, agora))
             resultado["remessas"].append({"central": central, "id": remessa_id,

@@ -1,0 +1,23 @@
+@@BRASAO@@
+<p align="center"><b>{{ sv.unit_name }}</b></p>
+<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
+<p align="center">CNPJ {{ sv.serventia_cnpj }} — CNS {{ sv.ri_cns }} — Telefone {{ sv.serventia_telefone }}</p>
+<p align="center">{{ sv.endereco_completo }}</p>
+<table border="0" cols="5.3cm,5.3cm,5.4cm">
+<tr><td><b>LIVRO {{ a.livro or '—' }}</b></td><td><b>FOLHA {{ a.folha or '—' }}{% if a.folha_final and a.folha_final != a.folha %} A {{ a.folha_final }}{% endif %}</b></td><td><b>{% if a.termo %}TERMO {{ a.termo }}{% elif a.numero_ordem %}ORDEM {{ a.numero_ordem }}{% endif %}</b></td></tr>
+</table>
+<p align="center"><b>{{ titulo_do_instrumento|upper }}</b></p>
+<p></p>
+@@TEOR@@
+<p></p>
+@@SELO@@
+{% if anotacoes %}
+<p><b>ANOTAÇÕES À MARGEM</b></p>
+{% for n in anotacoes %}<p>{{ loop.index }}. {{ n.texto }}{% if n.selo %} (selo {{ n.selo }}){% endif %}</p>
+{% endfor %}
+{% endif %}
+<p><small>Traslado extraído nesta data, conferido e achado conforme com o ato lavrado no
+livro próprio desta Serventia{% if anotacoes %}, com as anotações constantes da margem
+transcritas acima{% endif %}.</small></p>
+<p>{{ sv.cidade_uf }}, {{ data_extenso }}.</p>
+@@ASSINATURAS@@

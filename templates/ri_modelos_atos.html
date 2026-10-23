@@ -41,7 +41,7 @@
     <ol class="small">{% for r in m.requisitos %}<li>{{ r }}</li>{% endfor %}</ol>
     <p><strong>Teor do modelo</strong>
       <small class="muted">o que está entre [colchetes] é preenchimento manual</small></p>
-    <div class="teor">{{ m.corpo|safe }}</div>
+    <div class="teor">{{ m.corpo|sem_script }}</div>
     {% if matricula_id %}
     <div class="actions">
       <a class="button primary" href="{{ url_for('ri_preencher_modelo', matricula_id=matricula_id, codigo=m.codigo) }}">

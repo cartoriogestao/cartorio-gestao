@@ -1,0 +1,11 @@
+DECISÃO. Processo de usucapião extrajudicial n. {numero}, modalidade {modalidade}, requerido por {requerente}, tendo por objeto {imovel}.
+
+Os autos vieram instruídos com a ata notarial, a planta e o memorial descritivo assinados por profissional habilitado, as certidões e a prova da posse, na forma do art. 216-A da Lei 6.015/1973.
+
+Os titulares de direitos registrados e os confrontantes foram cientificados; a União, o Estado e o Município tomaram ciência; o edital foi publicado, e decorreram os prazos sem impugnação.
+
+[COMPLETAR: o que dos autos comprova o tempo e a natureza da posse, e por que a modalidade invocada é a cabível.]
+
+Do exposto, RECONHEÇO a usucapião e DETERMINO o registro da aquisição em nome de {requerente}, procedendo-se à abertura de matrícula, se for o caso.
+
+{cidade}-{uf}, nesta data. {titular} — {titulo}.

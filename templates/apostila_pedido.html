@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block title %}Apostila de Haia — pedido {{ p.id }}{% endblock %}
+{% block heading %}<h1>Apostila de Haia — pedido {{ p.id }}</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <p><a href="{{ url_for('apostila_lista') }}">← Pedidos</a> ·
+     <a href="{{ url_for('apostila_controle') }}">Controle das apostilas</a></p>
+  <p>Recebido em <strong>{{ p.recebido_em }}</strong> · atribuição <strong>{{ p.atribuicao }}</strong>
+     (ato {{ p.ato }}) · quem pede: <strong>{{ p.requerente_nome }}</strong>
+     {% if p.pais_destino %} · destino: {{ p.pais_destino }}{% endif %}
+     · protocolo geral: <strong>{{ p.protocolo_numero or 'não informado' }}</strong></p>
+  {% if p.observacao %}<p class="muted">{{ p.observacao }}</p>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Documentos</h2>
+  {% for a in p.apostilas %}
+  <div class="panel">
+    <h3>Documento {{ loop.index }} — {{ tipos.get(a.documento_tipo, a.documento_tipo) }}
+        · <span>{{ situacoes.get(a.situacao, a.situacao) }}</span></h3>
+    <p>{% if a.documento_descricao %}{{ a.documento_descricao }} · {% endif %}
+       {% if a.documento_data %}de {{ a.documento_data }} · {% endif %}
+       {% if a.signatario_nome %}assinado por {{ a.signatario_nome }}, {{ a.signatario_cargo }}{% endif %}
+       {% if a.autoridade %} · selo/carimbo de {{ a.autoridade }}{% endif %}</p>
+    <p class="small">Tabela {{ a.codigo_tj or '—' }}: emolumento R$ {{ a.valores.emolumentos }} · FERC R$ {{ a.valores.ferc }}
+       · FEMP R$ {{ a.valores.femp }} · FADEP R$ {{ a.valores.fadep }} · FERRFIS R$ {{ a.valores.ferrfis }}
+       · <strong>total R$ {{ a.valores.total }}</strong></p>
+    {% if a.ordem %}<p>Nº de ordem no controle: <strong>{{ a.ordem }}</strong> · código {{ a.codigo_cnj }}
+       · emitida em {{ a.emitida_em }} · selo {{ a.selo or 'FALTA' }}
+       · cobrança {{ 'no protocolo geral' if a.protocolo_item_id else 'FALTA' }}
+       · <a href="{{ url_for('apostila_certidao', apostila_id=a.id) }}">certidão</a></p>{% endif %}
+    {% if a.motivo %}<p class="muted">Motivo: {{ a.motivo }}</p>{% endif %}
+
+    {% if pode_fazer and a.situacao == 'PENDENTE' %}
+    <form method="post" action="{{ url_for('apostila_emitir', apostila_id=a.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Número/código da apostila no sistema do CNJ <input type="text" name="codigo_cnj" maxlength="60" required></label>
+      <label>Emitida em <input type="date" name="emitida_em" value="{{ hoje }}" max="{{ hoje }}" required></label>
+      <label>Selo <input type="text" name="selo" maxlength="60"></label>
+      <label>Item do protocolo geral que pagou
+        <select name="protocolo_item_id">
+          <option value="">— ainda não cobrada —</option>
+          {% for i in itens %}<option value="{{ i.id }}">{{ i.codigo_ato }} — {{ i.descricao }} (saldo {{ i.saldo }})</option>{% endfor %}
+        </select></label>
+      <button type="submit">Registrar emissão</button>
+    </form>
+    <form method="post" action="{{ url_for('apostila_recusar', apostila_id=a.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Motivo da recusa <input type="text" name="motivo" maxlength="1000" required></label>
+      <button type="submit">Recusar o documento</button>
+    </form>
+    {% endif %}
+    {% if pode_fazer and a.situacao == 'EMITIDA' and not a.selo %}
+    <form method="post" action="{{ url_for('apostila_selo', apostila_id=a.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Selo <input type="text" name="selo" maxlength="60" required></label>
+      <button type="submit">Gravar o selo</button>
+    </form>
+    {% endif %}
+    {% if pode_cancelar and a.situacao == 'EMITIDA' %}
+    <form method="post" action="{{ url_for('apostila_cancelar', apostila_id=a.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Motivo do cancelamento no CNJ <input type="text" name="motivo" maxlength="1000" required></label>
+      <button type="submit">Cancelar a apostila</button>
+    </form>
+    {% endif %}
+  </div>
+  {% else %}<p class="muted">Nenhum documento incluído.</p>{% endfor %}
+</section>
+
+{% if pode_fazer %}
+<section class="panel">
+  <h2>Incluir documento</h2>
+  <p class="muted">Uma apostila por documento. Informe quem assinou e em que qualidade — ou, no documento sem
+  assinatura, a autoridade que pôs o selo ou carimbo (Convenção da Apostila, art. 7º).</p>
+  <form method="post" action="{{ url_for('apostila_documento_novo', pedido_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Tipo
+      <select name="documento_tipo" required>
+        {% for v, n in tipos.items() %}<option value="{{ v }}">{{ n }}</option>{% endfor %}
+      </select></label>
+    <label>Descrição <input type="text" name="documento_descricao" maxlength="300"></label>
+    <label>Data do documento <input type="date" name="documento_data" max="{{ hoje }}"></label>
+    <label>Quem assinou <input type="text" name="signatario_nome" maxlength="200"></label>
+    <label>Cargo ou função <input type="text" name="signatario_cargo" maxlength="200"></label>
+    <label>Selo ou carimbo de (autoridade) <input type="text" name="autoridade" maxlength="200"></label>
+    <button type="submit">Incluir</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

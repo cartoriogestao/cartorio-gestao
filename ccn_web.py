@@ -14,12 +14,12 @@ extensão, de dentro da aba do portal (a Cloudflare só deixa passar navegador).
 """
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 
 from flask import abort, flash, jsonify, redirect, render_template, request, send_file, url_for
 
+from bd_nativo import banco
 import ccn_consulta as CQ
 import ccn_envio as CE
 
@@ -48,7 +48,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         if ambiente not in CE.AMBIENTES:
             ambiente = "HOMOLOGACAO"
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             resumo = CE.resumo(con, ambiente)
             lotes = CE.lotes(con)
         for l in lotes:
@@ -76,7 +75,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         try:
             montar = _montar()
             with db.transaction() as con:
-                con.row_factory = sqlite3.Row
                 r = CE.gerar_lote(con, _pasta(), ambiente=ambiente, usuario=usuario_nome(),
                                   agora=_agora(), montar=montar, maximo=maximo)
         except (CE.CcnError, ValueError) as erro:
@@ -97,16 +95,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     @roles_required("ADMIN", "MANAGER")
     def notas_ccn_lote(lote_id: int):
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             if not CE.tem_tabelas(con):
                 abort(404)
-            lote = con.execute("SELECT * FROM nt_ccn_lotes WHERE id=?", (lote_id,)).fetchone()
+            bd = banco(con)
+            lote = bd.um("SELECT * FROM nt_ccn_lotes WHERE id = %s", (lote_id,))
             if lote is None:
                 abort(404)
-            itens = [dict(r) for r in con.execute(
+            itens = bd.ler(
                 """SELECT i.*, c.nome, c.numero FROM nt_ccn_itens i
                      LEFT JOIN nt_cartoes c ON c.id = i.cartao_id
-                    WHERE i.lote_id=? ORDER BY i.posicao""", (lote_id,))]
+                    WHERE i.lote_id = %s ORDER BY i.posicao, i.id""", (lote_id,))
         lote = dict(lote)
         codigo = (CE.codigo_do_lote(app.secret_key, lote_id)
                   if lote["situacao"] in ("GERADO", "ENVIADO", "FALHOU", "COM_ERROS") else None)
@@ -118,12 +116,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def notas_ccn_arquivo(lote_id: int):
         """O XML, para quem preferir subir pela tela de importação do portal."""
         with db.connect() as con:
-            lote = con.execute("SELECT arquivo_nome, caminho FROM nt_ccn_lotes WHERE id=?",
-                               (lote_id,)).fetchone() if CE.tem_tabelas(con) else None
-        if lote is None or not Path(lote[1]).is_file():
+            lote = banco(con).um("SELECT arquivo_nome, caminho FROM nt_ccn_lotes WHERE id = %s",
+                                 (lote_id,)) if CE.tem_tabelas(con) else None
+        if lote is None or not Path(lote["caminho"]).is_file():
             abort(404)
-        return send_file(lote[1], mimetype="text/xml", as_attachment=True,
-                         download_name=lote[0])
+        return send_file(lote["caminho"], mimetype="text/xml", as_attachment=True,
+                         download_name=lote["arquivo_nome"])
 
     @app.route("/notas/ccn/lotes/<int:lote_id>/descartar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER")

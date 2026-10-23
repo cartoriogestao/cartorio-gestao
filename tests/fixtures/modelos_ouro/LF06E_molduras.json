@@ -1,0 +1,53 @@
+{
+ "_como": "Capturado em 19/10/2026 com atribuicoes_web.py INTACTO (o do commit 2c41e90 — `git diff --quiet atribuicoes_web.py` conferido na hora), ANTES de a moldura ler a peça PT_MOLDURAS: é o HTML que cada rota do protesto entrega a `html_para_odf`, com o título semeado por `ouro_lf06e.semear_molduras`. O teor dentro dele já vinha dos módulos migrados, que o ouro principal (LF06E_protesto.json) prova iguais aos de antes. Não regerar.",
+ "molduras": {
+  "aviso": {
+   "html": [
+    "<p>AVISO DE INTIMAÇÃO PARA PAGAMENTO</p><p>&#160;</p><p>Aviso n. 901/2026 — Protocolo n. 2609080001</p><p>&#160;</p><p>Fica V. Sa. INTIMADO(A) a pagar, ou a apresentar as razões que tiver, até 11/09/2026, o título abaixo apresentado para protesto neste tabelionato. Não havendo pagamento nem manifestação até essa data, o título será protestado na forma da Lei nº 9.492/1997.</p><p>&#160;</p><p>Devedor: MARIA DE EXEMPLO, CPF/CNPJ 000.000.001-91</p><p>Endereço: Rua de Exemplo, 10, Centro, Cidade Exemplo/MA, CEP 65000-000</p><p>Título: Duplicata de Venda Mercantil por Indicação, n. 123</p><p>Valor: R$ 1.000,00 — vencimento em 01/08/2026</p><p>Aceite: com aceite</p><p>Credor (sacador/favorecido): EMPRESA DE EXEMPLO LTDA, CPF/CNPJ 00.000.042/0001-22</p><p>Apresentante: BANCO DE EXEMPLO</p><p>Prazo-limite para pagamento: 11/09/2026</p><p>&#160;</p><p>Ofício Único de Cidade Exemplo/MA — Cidade Exemplo-MA. Telefone . Horário de funcionamento: segunda a sexta, das 8h às 17h.</p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">Mario Exemplo dos Santos</p><p align=\"center\">Tabelião e Oficial de Registro</p><p align=\"center\">- - - - - - - - - - DESTAQUE AQUI — volta assinado ao cartório - - - - - - - - - -</p><p align=\"center\"><strong>COMPROVANTE DE RECEBIMENTO DA INTIMAÇÃO</strong></p><table cols=\"3cm,14cm\"><tr><td><p>@@QRPAPEL@@</p></td><td><p>Aviso n. 901/2026 — Protocolo n. 2609080001</p><p>Devedor: MARIA DE EXEMPLO</p><p>Título: Duplicata de Venda Mercantil por Indicação, n. 123 — R$ 1.000,00</p></td></tr></table><p>Recebido em ___/___/______ às ___:___   Assinatura: __________________________</p><p>Nome legível: _____________________________   Documento: _______________</p><p>Relação com o devedor: ( ) o próprio ( ) outra: ___________   Entregador: _______________</p><p><strong>TENTATIVAS DE ENTREGA — preencha se não entregou (fundamenta o edital)</strong></p><p>1ª: ___/___/___ ___:___ ( ) ausente ( ) recusou ( ) fora da zona ( ) outro ________ Entregador: _________</p><p>2ª: ___/___/___ ___:___ ( ) ausente ( ) recusou ( ) fora da zona ( ) outro ________ Entregador: _________</p>"
+   ],
+   "status": 200
+  },
+  "certidao": {
+   "html": [
+    "<p align=\"center\"><b>CERTIDÃO POSITIVA DE PROTESTO</b></p><p align=\"center\">n. 7/2026</p><p></p><p>TEOR DE EXEMPLO.</p><p></p><p>Cidade Exemplo-MA, 8 de setembro de 2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">Mario Exemplo dos Santos</p><p align=\"center\">Tabelião e Oficial de Registro</p><p></p><p><font size=\"8\">Certidão n. 7/2026, emitida em 2026-09-08T10:00:00. Autenticidade: abc123</font></p>"
+   ],
+   "status": 200
+  },
+  "certidao_cancelada": {
+   "html": [
+    "<p align=\"center\"><b>CERTIDÃO NEGATIVA DE PROTESTO</b></p><p align=\"center\">n. 8/2026</p><p align=\"center\"><b>CERTIDÃO CANCELADA — erro de exemplo</b></p><p></p><p>TEOR NEGATIVO DE EXEMPLO.</p><p></p><p>Cidade Exemplo-MA, 9 de setembro de 2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">Mario Exemplo dos Santos</p><p align=\"center\">Tabelião e Oficial de Registro</p><p></p><p><font size=\"8\">Certidão n. 8/2026, emitida em 2026-09-09T10:00:00. Autenticidade: abc124</font></p>"
+   ],
+   "status": 200
+  },
+  "editais_do_dia": {
+   "html": [
+    "<p>EDITAL DE EXEMPLO</p><p>&#160;</p><p>linha 2</p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">Mario Exemplo dos Santos</p><p align=\"center\">Tabelião e Oficial de Registro</p>"
+   ],
+   "status": 200
+  },
+  "edital": {
+   "html": [
+    "<p>EDITAL DE EXEMPLO</p><p>&#160;</p><p>linha 2</p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">Mario Exemplo dos Santos</p><p align=\"center\">Tabelião e Oficial de Registro</p>"
+   ],
+   "status": 200
+  },
+  "instrumento": {
+   "html": [
+    "<p align=\"center\"><b>INSTRUMENTO DE PROTESTO</b></p><p align=\"center\">n. 3/2026</p><p></p><p>TEOR DO INSTRUMENTO.</p><p></p><p>Cidade Exemplo-MA, 15 de setembro de 2026.</p><p></p><p></p><p align=\"center\">_________________________________</p><p align=\"center\">Mario Exemplo dos Santos</p><p align=\"center\">Tabelião e Oficial de Registro</p><p></p><p><font size=\"8\">Instrumento n. 3/2026, emitido em 2026-09-16T10:00:00. Autenticidade: def456</font></p>"
+   ],
+   "status": 200
+  },
+  "livro_pagamentos": {
+   "html": [
+    "<p align=\"center\"><b>LIVRO DE REGISTRO DE PAGAMENTOS</b></p><p align=\"center\">01/09/2026 a 30/09/2026 — 3 lançamento(s) — Código de Normas do TJMA, art. 930</p><table border=\"1\"><tr><th>Nº de ordem</th><th>Data</th><th>Protocolo</th><th>Natureza</th><th>Valor pago</th><th>Emolumentos</th><th>Devedor</th><th>Favorecido</th><th>Ocorrências</th></tr><tr><td>5</td><td>11/09/2026</td><td>2609080001</td><td>Duplicata de Venda Mercantil por Indicação</td><td>1.000,00</td><td>43,21</td><td>MARIA DE EXEMPLO</td><td>EMPRESA DE EXEMPLO LTDA</td><td>pago por cheque — cheque n. 000001 do Banco de Exemplo</td></tr><tr><td>6</td><td>18/09/2026</td><td>2609090002</td><td>XYZ</td><td>0,00 (saldo do título)</td><td>não consta</td><td>JOÃO DE EXEMPLO</td><td></td><td>pagamento registrado no E-Ofício (forma não consta)</td></tr><tr><td>7</td><td>19/09/2026</td><td>2609090002</td><td>XYZ</td><td>0,00 (saldo do título)</td><td>não consta</td><td>JOÃO DE EXEMPLO</td><td></td><td>pago por PIX</td></tr></table><p></p><p align=\"center\">_________________________________</p><p align=\"center\">Mario Exemplo dos Santos</p><p align=\"center\">Tabelião e Oficial de Registro</p>"
+   ],
+   "status": 200
+  },
+  "livro_protocolo": {
+   "html": [
+    "<p align=\"center\"><b>LIVRO DE PROTOCOLO</b></p><p align=\"center\">01/09/2026 a 30/09/2026 — 2 lançamento(s) — Código de Normas do TJMA, art. 908</p><table border=\"1\"><tr><th>Nº de ordem</th><th>Protocolo</th><th>Data</th><th>Natureza</th><th>Valor</th><th>Apresentante</th><th>Devedor</th><th>Ocorrências</th></tr><tr><td>1</td><td>2609080001</td><td>08/09/2026</td><td>Duplicata de Venda Mercantil por Indicação</td><td>1.234,56</td><td>BANCO DE EXEMPLO</td><td>MARIA DE EXEMPLO</td><td>intimado pessoalmente em 09/09/2026; intimado pessoalmente em 10/09/2026; pago em 11/09/2026</td></tr><tr><td>2</td><td>2609090002</td><td>09/09/2026</td><td>XYZ</td><td>50,00</td><td>237</td><td>JOÃO DE EXEMPLO</td><td>intimado por edital em 12/09/2026; protestado em 15/09/2026; sustação judicial em 16/09/2026; protesto cancelado em 17/09/2026; pago em 18/09/2026; pago em 19/09/2026</td></tr></table><p></p><p align=\"center\">_________________________________</p><p align=\"center\">Mario Exemplo dos Santos</p><p align=\"center\">Tabelião e Oficial de Registro</p>"
+   ],
+   "status": 200
+  }
+ }
+}

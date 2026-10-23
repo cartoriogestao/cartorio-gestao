@@ -1,0 +1,28 @@
+<p align="center"><b>{{ sv.unit_name }}</b></p>
+<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
+<p align="center">CNPJ {{ sv.serventia_cnpj }} — CNS {{ sv.ri_cns }} — Telefone {{ sv.serventia_telefone }}</p>
+<p align="center">{{ sv.endereco_completo }}</p>
+<p align="center"><b>{% if orcamento %}CÁLCULO DE EMOLUMENTOS{% else %}ORÇAMENTO{% endif %} Nº {{ p.numero }}</b></p>
+{% if orcamento %}<p><b>{{ aviso }}</b></p>{% endif %}
+<p><b>Interessado:</b> {{ p.interessado or '—' }}{% if documento %}, CPF/CNPJ {{ documento }}{% endif %}.
+{% if telefone %} <b>Telefone:</b> {{ telefone }}.{% endif %}
+{% if email %} <b>E-mail:</b> {{ email }}.{% endif %}</p>
+{% if p.assunto %}<p><b>Assunto:</b> {{ p.assunto }}</p>{% endif %}
+<table border="1" cols="2.2cm,6.4cm,1.4cm,2.6cm,3.4cm">
+<tr><td><b>Código TJ</b></td><td><b>Ato</b></td><td><b>Qtd</b></td><td><b>Base de cálculo</b></td><td><b>Total</b></td></tr>
+{% for i in itens %}<tr><td>{{ i.codigo_ato or '—' }}</td><td>{{ i.descricao or '—' }}</td><td>{{ i.quantidade }}</td><td>{{ i.base_calculo or '—' }}</td><td>{{ i.valor_total }}</td></tr>
+{% endfor %}
+</table>
+<p><b>COMPOSIÇÃO:</b> emolumentos R$ {{ soma.emolumentos }}; FERC R$ {{ soma.ferc }};
+FADEP R$ {{ soma.fadep }}; FEMP R$ {{ soma.femp }}; FERRFIS R$ {{ soma.ferrfis }}.</p>
+<p><b>TOTAL: R$ {{ soma.total }}</b> ({{ extenso }}).</p>
+<p>Valores conforme a tabela de emolumentos vigente (vigência {{ vigencia }}),
+atualizada por Resolução-GP do Tribunal de Justiça do Maranhão.</p>
+<p>{{ sv.cidade_uf }}, {{ data }}.</p>
+<p></p><p></p>
+<table cols="7.6cm,7.6cm">
+<tr><td>_________________________________</td><td>_________________________________</td></tr>
+<tr><td>{{ emitido_por }}</td><td>{{ p.interessado or 'Requerente' }}</td></tr>
+<tr><td>{{ funcao or 'Escrevente' }}</td><td>Requerente</td></tr>
+</table>
+<p><small>Dados pessoais parcialmente ocultados na forma da Lei 13.709/2018 — LGPD.</small></p>

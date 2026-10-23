@@ -164,38 +164,30 @@ def test_na_procuracao_o_procurador_e_o_outorgado():
     assert NC.qualidade_cep("ASSINA A ROGO", "PROCURACAO") == "Interveniente"
 
 
-def test_a_trava_ignora_o_que_a_propria_lavratura_preenche():
+def test_a_trava_ignora_o_que_a_propria_lavratura_preenche(monkeypatch):
     """Antes de lavrar não há livro nem folha — eles saem do lançamento."""
     ato = {"id": 1, "tipo": "ATA", "data": None, "livro": None, "folha": None,
            "tipo_cesdi": None, "tipo_testamento": None}
 
-    class Con:
-        def execute(self, *_):
-            class R:
-                def fetchall(self_inner):
-                    return [{"nome": "X", "qualificacao": "REQUERENTE", "documento": None}]
-            return R()
+    monkeypatch.setattr(NC, "_partes_do_ato", lambda con, ato_id: [
+        {"nome": "X", "qualificacao": "REQUERENTE", "documento": None}])
 
-    assert NC.impedimentos_para_lavrar(Con(), ato) == []
+    assert NC.impedimentos_para_lavrar(None, ato) == []
 
 
-def test_o_ato_anterior_de_outra_serventia_nao_trava():
+def test_o_ato_anterior_de_outra_serventia_nao_trava(monkeypatch):
     """Revogação de ato de fora: o anterior só se informa depois de lavrar."""
     ato = {"id": 1, "tipo": "REVOGACAO", "data": "2026-10-09", "livro": None,
            "folha": None, "tipo_cesdi": None, "tipo_testamento": None,
            "anterior_livro": None, "anterior_folha": None, "anterior_cns": None}
 
-    class Con:
-        def execute(self, *_):
-            class R:
-                def fetchall(self_inner):
-                    return [{"nome": "X", "qualificacao": "OUTORGANTE", "documento": None}]
-            return R()
+    partes = [{"nome": "X", "qualificacao": "OUTORGANTE", "documento": None}]
+    monkeypatch.setattr(NC, "_partes_do_ato", lambda con, ato_id: partes)
 
-    assert NC.impedimentos_para_lavrar(Con(), ato) == []
+    assert NC.impedimentos_para_lavrar(None, ato) == []
     # e a remessa continua acusando
     assert any(p.campo.startswith("referentes")
-               for p in NC.conferir_ato_cep(ato, Con().execute().fetchall()))
+               for p in NC.conferir_ato_cep(ato, partes))
 
 
 def test_cesdi_e_rcto_nao_travam_porque_nao_ha_onde_corrigir():

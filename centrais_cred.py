@@ -81,7 +81,11 @@ from typing import Any
 # BOM; `json.loads` em texto lido só com `utf-8` falha e `tem()` devolve falso.
 CODIFICACAO_DO_ARQUIVO = "utf-8-sig"
 
-# AS OITO CENTRAIS, e o arquivo de cada uma.
+# AS NOVE CENTRAIS, MAIS OS CORREIOS E O BANCO DO BOLETO — onze arquivos.
+#
+#   **Esta linha dizia «AS OITO» com nove na tabela** (a CENSEC entrou em
+#   09/10/2026 sem a conta ser refeita) — conferido ao acrescentar as duas do
+#   LG06, em 19/10/2026.
 #
 #   **O comentário dizia «AS TRÊS» com quatro na linha de baixo**, e depois
 #   «AS CINCO» com seis, e depois «AS SETE» com sete — o mesmo descuido, três
@@ -100,6 +104,13 @@ CRA, CENPROT, ONRTDPJ, ONRCPN, ONR, RESOLVE, SIRC, CNIB = (
     "CRA", "CENPROT", "ONRTDPJ", "ONRCPN", "ONR", "RESOLVE", "SIRC", "CNIB")
 # A CENSEC (CNB-CF) — a carga das Notas por API, 09/10/2026. Ver `censec_api`.
 CENSEC = "CENSEC"
+# OS CORREIOS E O BANCO DO BOLETO NÃO SÃO CENTRAIS, E MORAM AQUI ASSIM MESMO
+# (LG06, 19/10/2026) — o AR digital da intimação e o boleto do devedor do
+# Protesto. O que se guarda é o mesmo tipo de segredo (o par do contrato), e o
+# pedaço que guarda segredo fora do banco é um só: um décimo primeiro arquivo
+# com outro corpo seria a versão divergente que o cabeçalho proíbe. As duas
+# integrações nascem DESLIGADAS — ver `protesto_integracoes`.
+CORREIOS, BANCO_BOLETO = "CORREIOS", "BANCO_BOLETO"
 
 ARQUIVO_DA_CENTRAL: dict[str, str] = {
     CRA: "cra.cred",
@@ -111,6 +122,8 @@ ARQUIVO_DA_CENTRAL: dict[str, str] = {
     SIRC: "sirc.cred",
     CNIB: "cnib.cred",
     CENSEC: "censec.cred",
+    CORREIOS: "correios.cred",
+    BANCO_BOLETO: "boleto.cred",
 }
 
 # O QUE CADA UMA GUARDA. **`PAR` é usuário e senha; `TOKEN` é um segredo só.**
@@ -184,6 +197,13 @@ FORMA_DA_CENTRAL: dict[str, str] = {
     #   segundo esquema declarado (`AppToken`, no `Authorization`) não é o das
     #   cargas. A chave é gerada pelo próprio cartório, dentro da CENSEC.
     CENSEC: TOKEN,
+    # OS CORREIOS E O BANCO SÃO `PAR`, e é o que se sabe ANTES do contrato: a
+    # API dos Correios autentica o usuário do contrato com um código de acesso,
+    # e os bancos de cobrança registrada entregam um `client_id` com o
+    # `client secret`. Se o contrato que chegar disser outra forma, muda-se
+    # AQUI — o transporte de cada um ainda não foi escrito (LG06).
+    CORREIOS: PAR,
+    BANCO_BOLETO: PAR,
 }
 
 # COMO SE CHAMAM AS DUAS METADES DO PAR, EM CADA CENTRAL.
@@ -201,6 +221,10 @@ ROTULOS_DO_PAR: dict[str, tuple[str, str]] = {
     # **`Cliente_ID` e `Secret_Code`** — e é o mesmo nome em outra língua, o
     # que é justamente o que faz alguém preencher o campo errado.
     CNIB: ("client_id", "client secret"),
+    # O que o contrato dos Correios entrega: o usuário (o do «Meu Correios» da
+    # serventia) e o código de acesso às APIs — que NÃO é a senha do portal.
+    CORREIOS: ("usuário do contrato", "código de acesso à API"),
+    BANCO_BOLETO: ("client_id", "client secret"),
 }
 PAR_PADRAO: tuple[str, str] = ("usuário", "senha")
 
@@ -319,6 +343,8 @@ NOME_DA_CENTRAL: dict[str, str] = {
     SIRC: "SIRC — Sistema Nacional de Informação de Registro Civil (INSS)",
     CNIB: "CNIB — Central Nacional de Indisponibilidade de Bens (ONR)",
     CENSEC: "CENSEC — carga da CEP, CESDI e RCTO por API (CNB-CF)",
+    CORREIOS: "Correios — AR digital da intimação do Protesto",
+    BANCO_BOLETO: "Banco do boleto — cobrança do devedor do Protesto",
 }
 
 # OS AMBIENTES QUE CADA UMA TEM. A ONRTDPJ tem **um só**, e é o de verdade —
@@ -582,6 +608,19 @@ def _conferir_senha_da_cenprot(senha: str) -> None:
             "→ Informações de Autenticação da API.")
 
 
+def _so_do_servico(arquivo: Any) -> None:
+    """A ACL do segredo, NA HORA em que ele é gravado (revisão de segurança
+    de 22/10/2026, M6). `proteger_segredos` só roda na subida: o `.cred`
+    regravado pela tela ficava legível por Usuários até o próximo reinício.
+    O que não deu certo vai ao log, como `restringir` já faz; a gravação
+    não falha por isso."""
+    try:
+        import permissao_local as PERM
+        PERM.restringir(arquivo, pasta=False, de_novo=True)
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
 def gravar(central: Any, *, usuario: str, senha: str,
            ambiente: Any = None, pasta: Any = None) -> Path:
     """Guarda o par daquela Central e ambiente. ESCREVE EM DISCO, não no banco.
@@ -623,6 +662,7 @@ def gravar(central: Any, *, usuario: str, senha: str,
     guardado[onde] = {"usuario": u, "senha": s}
     destino.write_text(json.dumps(guardado, ensure_ascii=False),
                        encoding="utf-8")
+    _so_do_servico(destino)
     return destino
 
 
@@ -733,6 +773,7 @@ def gravar_token(central: Any, *, token: str, ambiente: Any = None,
     guardado[onde] = {"token": valor}
     destino.write_text(json.dumps(guardado, ensure_ascii=False),
                        encoding="utf-8")
+    _so_do_servico(destino)
     return destino
 
 
@@ -792,6 +833,7 @@ def apagar(central: Any, ambiente: Any = None, pasta: Any = None) -> bool:
     guardado.pop(_ambiente(ambiente, central))
     caminho_.write_text(json.dumps(guardado, ensure_ascii=False),
                         encoding="utf-8")
+    _so_do_servico(caminho_)
     return True
 
 

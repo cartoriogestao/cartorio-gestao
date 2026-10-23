@@ -21,21 +21,28 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import tempfile
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
+import banco_pg                                    # noqa: E402
 import papel_seguranca as PP                       # noqa: E402
+from bd_nativo import banco as banco_nativo        # noqa: E402
 
 AGORA = "2026-08-27T10:00:00"
 DEPOIS = "2026-08-27T15:30:00"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     PP.init_papel_schema(con)
     return con
@@ -318,7 +325,7 @@ def test_o_modulo_nao_lavra_nada():
 
 
 def _acervo_falso() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE tbPapelMoedaRCPN (
@@ -363,6 +370,40 @@ def test_a_carga_do_papel_e_repetivel():
     con = banco()
     acervo = _acervo_falso()
     AC.carregar_papel(con, acervo, agora=AGORA)
+    de_novo = AC.carregar_papel(con, acervo, agora=DEPOIS)
+    assert de_novo.inseridos == 0
+    assert de_novo.repetidos == 5
+    assert PP.estoque(con)["total"] == 5
+
+
+def test_a_folha_que_aparece_entre_o_olhar_e_o_gravar_conta_como_repetida(monkeypatch):
+    """Duas cargas ao mesmo tempo: a outra grava a folha DEPOIS que esta olhou
+    `pp_folhas` e nao a viu. No SQLite a escrita unica impedia isso; no
+    PostgreSQL o `UNIQUE` de `pp_folhas.codigo` estouraria a carga inteira.
+    Ela tem de contar a folha como repetida e seguir — e o estoque nao duplica.
+    """
+    import acervo_carga as AC
+
+    con = banco()
+    acervo = _acervo_falso()
+    AC.carregar_papel(con, acervo, agora=AGORA)
+
+    class _Cego:
+        """Um `bd` que nao ve o que ja esta em `pp_folhas`: e o que a carga ve
+        quando a outra grava entre o olhar e o INSERT."""
+
+        def __init__(self, bd):
+            self._bd = bd
+
+        def um(self, sql, *args, **kwargs):
+            if "FROM pp_folhas WHERE codigo" in sql:
+                return None
+            return self._bd.um(sql, *args, **kwargs)
+
+        def __getattr__(self, nome):
+            return getattr(self._bd, nome)
+
+    monkeypatch.setattr(AC, "banco", lambda c: _Cego(banco_nativo(c)))
     de_novo = AC.carregar_papel(con, acervo, agora=DEPOIS)
     assert de_novo.inseridos == 0
     assert de_novo.repetidos == 5
@@ -472,3 +513,128 @@ def test_listar_com_limite_continua_cortando_quando_pedido():
     _caixa(con, "1000000", "1000300")
     so_dez = PP.listar(con, situacao="EM BRANCO", limite=10)
     assert len(so_dez) == 10
+
+
+# ------------------------------------------------ dois balcoes ao mesmo tempo
+#
+# RESSALVA DA REVISAO DO L035 (17/10/2026): `usar`, `inutilizar`,
+# `recuperar_do_ato` e `vincular_primeira_via` liam a folha e gravavam por
+# cima sem prender a linha, e `receber_remessa` conferia a faixa sem trava.
+# Duas conexoes de verdade, como dois balcoes: o primeiro grava e ainda nao
+# confirmou; o segundo chega no meio.
+
+
+def _dois_balcoes(primeiro, segundo, *, antes=None):
+    """`primeiro` numa conexao, sem confirmar; `segundo` noutra, ao mesmo
+    tempo; so entao o primeiro confirma. Devolve o que o segundo devolveu
+    (`valor`) ou levantou (`erro`), e uma conexao para conferir o banco."""
+    caminho = str(Path(tempfile.mkdtemp(prefix="cg_teste_")) / "teste.sqlite3")
+    banco_pg.registrar_banco(caminho)
+    base = sqlite3.connect(caminho)
+    PP.init_papel_schema(base)
+    _caixa(base)
+    if antes:
+        antes(base)
+    base.commit()
+    um, dois = sqlite3.connect(caminho), sqlite3.connect(caminho)
+    pid = banco_nativo(dois).valor("SELECT pg_backend_pid() AS pid")
+    primeiro(um)
+    saida: dict = {}
+
+    def vez_do_segundo():
+        try:
+            saida["valor"] = segundo(dois)
+            dois.commit()
+        except Exception as erro:  # o teste confere qual
+            saida["erro"] = erro
+            dois.rollback()
+
+    fio = threading.Thread(target=vez_do_segundo)
+    fio.start()
+    # O segundo tem de estar ESPERANDO uma trava quando o primeiro confirma;
+    # sem isto o teste passaria sem disputa nenhuma.
+    for _ in range(200):
+        if banco_nativo(base).valor(
+                "SELECT count(*) AS n FROM pg_locks WHERE pid=%s AND NOT granted",
+                (pid,)):
+            break
+        time.sleep(0.05)
+    um.commit()
+    fio.join(30)
+    um.close()
+    dois.close()
+    return saida, base
+
+
+def test_duas_certidoes_ao_mesmo_tempo_nao_gastam_a_mesma_folha():
+    """O defeito do docstring de `usar`: duas certidoes na mesma folha."""
+    saida, con = _dois_balcoes(
+        lambda c: PP.usar(c, "7225136", tabela="rc_certidoes", ato_id=1,
+                          agora=AGORA),
+        lambda c: PP.usar(c, "7225136", tabela="rc_certidoes", ato_id=2,
+                          agora=DEPOIS))
+    assert isinstance(saida.get("erro"), PP.PapelError), saida
+    assert "já foi usada" in str(saida["erro"])
+    assert PP.ler(con, "7225136")["ato_id"] == 1
+    assert len(PP.movimentos_da_folha(con, "7225136")) == 1
+
+
+def test_folha_gasta_no_meio_nao_se_inutiliza_por_cima():
+    saida, con = _dois_balcoes(
+        lambda c: PP.usar(c, "7225136", tabela="rc_certidoes", ato_id=1,
+                          agora=AGORA),
+        lambda c: PP.inutilizar(c, "7225136", motivo="rasgou", agora=DEPOIS))
+    assert isinstance(saida.get("erro"), PP.PapelError), saida
+    folha = PP.ler(con, "7225136")
+    assert folha["situacao"] == "USADA"
+    assert folha["inutilizada_motivo"] is None
+
+
+def test_a_mesma_faixa_recebida_em_dois_balcoes_ao_mesmo_tempo():
+    """Com outro zero a esquerda, o `UNIQUE(codigo)` nao pega: so a trava."""
+    saida, con = _dois_balcoes(
+        lambda c: _caixa(c, "7225200", "7225205"),
+        lambda c: _caixa(c, "07225200", "07225205"))
+    assert isinstance(saida.get("erro"), PP.PapelError), saida
+    assert "já estão cadastradas" in str(saida["erro"])
+    assert PP.estoque(con)["total"] == 16          # 10 da caixa de sempre + 6
+
+
+def test_o_mesmo_ato_devolvido_em_dois_balcoes_nao_duplica_o_historico():
+    saida, con = _dois_balcoes(
+        lambda c: PP.recuperar_do_ato(c, tabela="rc_certidoes", ato_id=7,
+                                      agora=DEPOIS),
+        lambda c: PP.recuperar_do_ato(c, tabela="rc_certidoes", ato_id=7,
+                                      agora=DEPOIS),
+        antes=lambda c: PP.usar(c, "7225136", tabela="rc_certidoes", ato_id=7,
+                                agora=AGORA))
+    assert saida.get("valor", {}).get("quantas") == 0, saida
+    assert [(m["situacao_anterior"], m["situacao_nova"])
+            for m in PP.movimentos_da_folha(con, "7225136")] \
+        == [("EM BRANCO", "USADA"), ("USADA", "EM BRANCO")]
+
+
+def test_a_1a_via_amarrada_em_dois_balcoes_ganha_um_vinculo_so():
+    def amarrar(c):
+        return PP.vincular_primeira_via(c, "7225136", certidao_id=9,
+                                        agora=DEPOIS)
+    saida, con = _dois_balcoes(
+        amarrar, amarrar,
+        antes=lambda c: PP.usar(c, "7225136", tabela="rc_atos", ato_id=3,
+                                agora=AGORA))
+    assert "erro" not in saida, saida
+    vinculos = [m for m in PP.movimentos_da_folha(con, "7225136")
+                if m["tabela"] == "rc_certidoes"]
+    assert len(vinculos) == 1
+
+
+def test_recuperacao_ignora_consulta_cuja_tabela_juntada_nao_existe():
+    """`rc_atos` junta `rc_assentos`. No SQLite, faltar qualquer uma das duas
+    dava «no such table», e a consulta era pulada; conferir so a tabela-alvo
+    derrubava a abertura de um banco menor (ressalva da revisao do L035)."""
+    con = banco()
+    _caixa(con)
+    con.execute("CREATE TABLE rc_atos (id INTEGER PRIMARY KEY, "
+                "assento_id INTEGER, tipo TEXT)")
+    assert PP.recuperar_cancelados_existentes(con, agora=DEPOIS) \
+        == {"quantas": 0, "por_tabela": {}}

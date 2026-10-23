@@ -4,11 +4,24 @@
 
 {% if not (r.selo or "")|trim %}
 <div class="notice warning">
+  {% if suspenso %}
+  {# SUSPENSO ESPERANDO PAGAMENTO — 22/10/2026, decisão do oficial: o ato
+     fica de pé, sem etiqueta, e sela depois do pagamento por este botão. #}
+  <strong>Suspenso: o selo pago não saiu por falta de protocolo ou pagamento.</strong>
+  Escolha o protocolo pago e clique em selar. Sem selo não se imprime etiqueta.
+  <form method="post" action="{{ url_for('notas_reconhecimento_selar', reconhecimento_id=r.id) }}">
+    <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
+    {{ protocolo_do_selo(candidatos_selo, [], atendendo=atendendo) }}
+    <button class="primary">Selar</button>
+  </form>
+  {% else %}
   <strong>Pendente de selo — o escrevente deve selar.</strong>
   <form method="post" action="{{ url_for('notas_reconhecimento_selar', reconhecimento_id=r.id) }}" style="display:inline">
     <input type="hidden" name="csrf_token" value="{{csrf_token}}">
     <button class="primary">Selar</button>
   </form>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -18,12 +31,20 @@
   {% if not r.cancelado %}
     {# Abre noutra aba: a janela de impressão sai por cima, e o operador volta
        para o ato sem perder o lugar nem recarregar a tela. #}
-    <a class="button primary" target="_blank"
-       href="{{ url_for('notas_reconhecimento_etiqueta', reconhecimento_id=r.id) }}">
-      {% if r.etiqueta_impressoes %}Reimprimir etiqueta{% else %}Imprimir etiqueta{% endif %}</a>
+    {# POST com o token (M8, lote LX11): imprimir soma a contagem da segunda via. #}
+    <form method="post" target="_blank" style="display:inline"
+          action="{{ url_for('notas_reconhecimento_etiqueta', reconhecimento_id=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button primary">
+      {% if r.etiqueta_impressoes %}Reimprimir etiqueta{% else %}Imprimir etiqueta{% endif %}</button></form>
     {% if r.etiqueta_impressoes %}
       <span class="small muted">já impressa {{ r.etiqueta_impressoes }}&times;{% if r.etiqueta_impressa_em %},
         a última em {{ r.etiqueta_impressa_em[:16].replace('T', ' ') }}{% endif %}</span>
+    {% endif %}
+    {# A COMUNICAÇÃO DE VENDA AO DETRAN (LG04, item 13.22) parte do
+       reconhecimento do documento de veículo (serviço 414), quando o balcão a
+       pede — `nt_veiculo_detran` confere a autenticidade (art. 865, II). #}
+    {% if r.servico_codigo == 414 %}
+    <a class="button" href="{{ url_for('notas_veiculos', reconhecimento_id=r.id) }}">Comunicar a venda ao DETRAN</a>
     {% endif %}
   {% endif %}
 </div>
@@ -92,11 +113,13 @@
                style="max-height:70px;max-width:300px;border:1px solid #ccc">{% else %}—{% endif %}</td>
         {% if r.especie == 'AUTENTICIDADE' %}
         <td class="small">
-          <a class="button small" target="_blank"
-             href="{{ url_for('notas_reconhecimento_termo_comparecimento',
-                              reconhecimento_id=r.id, parte_id=p.id) }}">
+          {# POST com o token (M8, lote LX11): o termo grava a presença. #}
+          <form method="post" target="_blank" style="display:inline"
+                action="{{ url_for('notas_reconhecimento_termo_comparecimento',
+                                   reconhecimento_id=r.id, parte_id=p.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button small">
             {% if presencas.get('%s:%s' % (r.id, p.id)) %}Reimprimir{% else %}Gerar{% endif %}
-            termo</a>
+            termo</button></form>
         </td>
         {% endif %}
       </tr>

@@ -86,6 +86,8 @@ import sqlite3
 from collections.abc import Callable
 from typing import Any
 
+from bd_nativo import banco
+
 from rc_modelos_livres_schema import (
     CASAMENTO,
     ESPECIES,
@@ -242,7 +244,7 @@ def claro(nome: str, rotulo: str, vem_de: Callable[[dict], str], *,
 # ------------------------------------------------- os claros de uma pessoa
 #
 # **UM CAMPO POR COLUNA QUE EXISTE, E NENHUM A MAIS.** Cada linha desta tabela
-# foi conferida contra o `PRAGMA table_info(rc_pessoas)` da producao em
+# foi conferida contra as colunas de `rc_pessoas` da producao em
 # 07/09/2026 — nao ha aqui campo que eu tenha suposto.
 #
 # `idade_no_fato` e `documento_orgao` EXISTEM na tabela e estao **vazias em
@@ -714,8 +716,8 @@ def conferir_corpo(especie: str, texto: str) -> str:
     # `cidadeexemplo@cartorio.ch` no rodape seria recusado como «texto do
     # E-Oficio», e o oficial nao teria como gravar o rodape da casa.
     if "@" in corpo and CLARO_DO_EOFICIO.search(corpo):
-        return ("Este texto ainda tem claros do E-Ofício, escritos com «@». "
-                "Use o botão «Converter do E-Ofício» antes de gravar.")
+        return ("Este texto ainda tem claros do sistema antigo, escritos com «@». "
+                "Use o botão «Converter — não grava» antes de gravar.")
 
     conhecidos = nomes_dos_claros(esp)
     desconhecidos = [c for c in claros_do_texto(corpo) if c not in conhecidos]
@@ -731,25 +733,25 @@ def conferir_corpo(especie: str, texto: str) -> str:
 def contexto(con: sqlite3.Connection, assento_id: int, *, serventia: dict,
              hoje: str) -> dict:
     """Tudo o que o modelo precisa daquele assento. Só lê."""
-    con.row_factory = sqlite3.Row
-    linha = con.execute("SELECT * FROM rc_assentos WHERE id = ?",
-                        (assento_id,)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT * FROM rc_assentos WHERE id = %s",
+                  (assento_id,))
     if not linha:
         raise ModeloLivreError(f"Não achei o assento nº {assento_id}.")
     a = dict(linha)
 
-    todas = [dict(p) for p in con.execute(
-        "SELECT * FROM rc_pessoas WHERE assento_id = ? ORDER BY ordem, id",
-        (assento_id,))]
+    todas = bd.ler(
+        "SELECT * FROM rc_pessoas WHERE assento_id = %s ORDER BY ordem, id",
+        (assento_id,))
     # **A PRIMEIRA DE CADA PAPEL**, e não a última: a ordem é a do acervo, e o
     # pai vem antes da mãe por causa dela.
     quem: dict[str, dict] = {}
     for p in todas:
         quem.setdefault(_texto(p.get("papel")).upper(), p)
 
-    ato = con.execute(
-        """SELECT * FROM rc_atos WHERE assento_id = ? AND tipo = 'REGISTRO'
-            ORDER BY id LIMIT 1""", (assento_id,)).fetchone()
+    ato = bd.um(
+        """SELECT * FROM rc_atos WHERE assento_id = %s AND tipo = 'REGISTRO'
+            ORDER BY id LIMIT 1""", (assento_id,))
 
     return {"a": a, "d": _dados_do_acervo(a), "quem": quem, "todas": todas,
             "ato": dict(ato) if ato else {}, "sv": dict(serventia or {}),
@@ -1077,27 +1079,25 @@ def _nome_valido(nome: str) -> str:
 def listar(con: sqlite3.Connection, *, especie: str = "",
            incluir_inativos: bool = True) -> list[dict]:
     """Os modelos cadastrados, na ordem em que a tela mostra."""
-    con.row_factory = sqlite3.Row
     onde, args = [], []
     if especie:
-        onde.append("especie = ?")
+        onde.append("especie = %s")
         args.append(_especie_valida(especie))
     if not incluir_inativos:
         onde.append("ativo = 1")
     sql = "SELECT * FROM rc_modelos_livres"
     if onde:
         sql += " WHERE " + " AND ".join(onde)
-    sql += " ORDER BY especie, nome COLLATE NOCASE"
-    return [dict(r) for r in con.execute(sql, args)]
+    sql += " ORDER BY especie, nome COLLATE public.cg_nocase, id"
+    return banco(con).ler(sql, args)
 
 
 def ler(con: sqlite3.Connection, modelo_id: int) -> dict:
-    con.row_factory = sqlite3.Row
-    r = con.execute("SELECT * FROM rc_modelos_livres WHERE id = ?",
-                    (modelo_id,)).fetchone()
+    r = banco(con).um("SELECT * FROM rc_modelos_livres WHERE id = %s",
+                      (modelo_id,))
     if not r:
         raise ModeloLivreError(f"Não achei o modelo nº {modelo_id}.")
-    return dict(r)
+    return r
 
 
 def criar(con: sqlite3.Connection, *, especie: str, nome: str, corpo: str,
@@ -1109,16 +1109,16 @@ def criar(con: sqlite3.Connection, *, especie: str, nome: str, corpo: str,
     if ruim:
         raise ModeloLivreError(ruim)
     try:
-        cur = con.execute(
+        novo = banco(con).escrever(
             """INSERT INTO rc_modelos_livres
                    (especie, nome, corpo, ativo, criado_em, criado_por)
-               VALUES (?,?,?,1,?,?)""",
+               VALUES (%s,%s,%s,1,%s,%s) RETURNING id""",
             (esp, limpo, corpo.strip(), agora, quem))
     except sqlite3.IntegrityError as erro:
         raise ModeloLivreError(
             f"Já existe um modelo de {NOME_DA_ESPECIE[esp]} chamado "
             f"«{limpo}».") from erro
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
 
 
 def salvar(con: sqlite3.Connection, modelo_id: int, *, nome: str, corpo: str,
@@ -1136,11 +1136,11 @@ def salvar(con: sqlite3.Connection, modelo_id: int, *, nome: str, corpo: str,
     if ruim:
         raise ModeloLivreError(ruim)
     try:
-        con.execute(
+        banco(con).escrever(
             """UPDATE rc_modelos_livres
-                  SET nome = ?, corpo = ?, atualizado_em = ?,
-                      atualizado_por = ?
-                WHERE id = ?""",
+                  SET nome = %s, corpo = %s, atualizado_em = %s,
+                      atualizado_por = %s
+                WHERE id = %s""",
             (limpo, corpo.strip(), agora, quem, modelo_id))
     except sqlite3.IntegrityError as erro:
         raise ModeloLivreError(
@@ -1157,17 +1157,16 @@ def ativar(con: sqlite3.Connection, modelo_id: int, *, ativo: bool,
     está na mão do cidadão.
     """
     ler(con, modelo_id)
-    con.execute(
-        """UPDATE rc_modelos_livres SET ativo = ?, atualizado_em = ?,
-               atualizado_por = ? WHERE id = ?""",
+    banco(con).escrever(
+        """UPDATE rc_modelos_livres SET ativo = %s, atualizado_em = %s,
+               atualizado_por = %s WHERE id = %s""",
         (1 if ativo else 0, agora, quem, modelo_id))
 
 
 def para_o_assento(con: sqlite3.Connection, assento_id: int) -> list[dict]:
     """Os modelos ativos que servem àquele assento. Só lê."""
-    con.row_factory = sqlite3.Row
-    r = con.execute("SELECT especie FROM rc_assentos WHERE id = ?",
-                    (assento_id,)).fetchone()
+    r = banco(con).um("SELECT especie FROM rc_assentos WHERE id = %s",
+                      (assento_id,))
     if not r:
         raise ModeloLivreError(f"Não achei o assento nº {assento_id}.")
     especie = _texto(r["especie"]).upper()
@@ -1178,10 +1177,9 @@ def para_o_assento(con: sqlite3.Connection, assento_id: int) -> list[dict]:
 
 def quantos_por_especie(con: sqlite3.Connection) -> dict[str, int]:
     """Quantos modelos ativos há em cada espécie. Só lê — é o número da tela."""
-    con.row_factory = sqlite3.Row
     saida = {e: 0 for e in ESPECIES}
-    for r in con.execute(
-            """SELECT especie, COUNT(*) n FROM rc_modelos_livres
+    for r in banco(con).ler(
+            """SELECT especie, COUNT(*) AS n FROM rc_modelos_livres
                 WHERE ativo = 1 GROUP BY especie"""):
         if r["especie"] in saida:
             saida[r["especie"]] = int(r["n"])

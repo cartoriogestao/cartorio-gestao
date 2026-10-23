@@ -4,7 +4,7 @@
 
 <div class="notice">
   <strong>O selador desta serventia não está na internet.</strong> A configuração do
-  E-Ofício aponta para um endereço como <code>https://IP-DO-SELADOR:443</code> — uma máquina da
+  sistema antigo aponta para um endereço como <code>https://IP-DO-SELADOR:443</code> — uma máquina da
   <em>rede local</em> do escritório, que é quem guarda o estoque de selo e conversa com
   o TJMA. Por isso o endereço se configura aqui, e o sistema nunca cai sozinho no
   endereço de fábrica (<code>{{ padrao_de_fabrica }}</code>): mandar o pedido para a
@@ -77,26 +77,10 @@
   {% endif %}
 </section>
 
-<section class="panel">
-  <h2>Trazer do E-Ofício</h2>
-  <p>
-    A configuração já está na casa, na tabela <code>tbSeladorConfiguracao</code> do
-    acervo do E-Ofício — endereço, usuário e senha. Trazer daqui evita o pior caminho,
-    que é abrir a tela do E-Ofício, ler a senha e redigitar.
-  </p>
-  {% if tem_acervo %}
-    <form method="post" onsubmit="return confirm('Isto substitui o endereço, o usuário e a senha do selador pelos do E-Ofício. Continuar?')">
-      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
-      <input type="hidden" name="acao" value="importar">
-      <button class="button" type="submit">Importar do E-Ofício</button>
-    </form>
-  {% else %}
-    <div class="notice warn">
-      Não achei <code>acervo_eoficio.sqlite3</code> na pasta de dados. Sem ele,
-      preencha abaixo à mão.
-    </div>
-  {% endif %}
-</section>
+{# A seção «Trazer do E-Ofício» (botão «Importar do E-Ofício», que lia a
+   tbSeladorConfiguracao do acervo) saiu em 17/10/2026, por decisão do
+   oficial: a importação terminou. O POST acao=importar continua na rota
+   (selador_web.selador_config → selador_config.importar_do_eoficio). #}
 
 <section class="panel">
   <h2>Conferir o certificado</h2>
@@ -209,7 +193,7 @@
 <section class="panel">
   <h2>Selos obtidos e não usados</h2>
   <p class="small muted">
-    No acervo do E-Ofício há <strong>1.304 selos assim</strong> — 5% de todos —, e
+    No acervo do sistema antigo há <strong>1.304 selos assim</strong> — 5% de todos —, e
     apenas cinco foram cancelados. É o rastro de quem obteve selo e perdeu o ato no
     meio. Aqui o selo entra no razão na hora em que chega, antes de o ato terminar,
     justamente para aparecer nesta lista em vez de sumir.

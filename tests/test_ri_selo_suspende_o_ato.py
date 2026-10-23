@@ -205,7 +205,7 @@ def test_a_unidade_do_protocolo_volta_ao_suspender(cg_casa):
             """INSERT INTO cx_protocolos (numero, data_abertura, situacao,
                    finalizado, gratuito, deposito_previo, origem, criado_em,
                    tipo)
-               VALUES ('2026.09.23','2026-09-14','A_PAGAR',0,0,'0,00',
+               VALUES ('2026.09.23','2026-09-14','A_PAGAR',0,0,0,
                        'MANUAL','2026-09-14T09:00','IMOVEL')""")
         prot = int(cur.lastrowid)
         cur = con.execute(
@@ -237,7 +237,7 @@ def test_nunca_devolve_mais_do_que_foi_gasto(cg_casa):
             """INSERT INTO cx_protocolos (numero, data_abertura, situacao,
                    finalizado, gratuito, deposito_previo, origem, criado_em,
                    tipo)
-               VALUES ('2026.09.24','2026-09-14','A_PAGAR',0,0,'0,00',
+               VALUES ('2026.09.24','2026-09-14','A_PAGAR',0,0,0,
                        'MANUAL','2026-09-14T09:00','IMOVEL')""")
         prot = int(cur.lastrowid)
         cur = con.execute(

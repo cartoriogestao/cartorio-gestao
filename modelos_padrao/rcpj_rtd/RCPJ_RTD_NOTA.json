@@ -1,0 +1,19 @@
+{
+  "chave": "RCPJ_RTD_NOTA",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Nota devolutiva — RCPJ/RTD",
+  "formato": "JINJA",
+  "explica": "O papel que volta com o título de qualificação negativa: as exigências, o fundamento e o prazo. Prazo em branco não se inventa — o papel diz que ele não foi fixado.",
+  "campos": [
+    "apresentado_em",
+    "data_extenso",
+    "funcao",
+    "nome_da_atribuicao",
+    "oficial",
+    "prazo_ate",
+    "q",
+    "qualificado_em",
+    "sv",
+    "t"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "chave": "RI_PRENOTACAO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Comprovante de prenotação",
+  "formato": "JINJA",
+  "explica": "O papel que o cliente leva ao prenotar, com o prazo.",
+  "campos": [
+    "data",
+    "documento",
+    "email",
+    "emitido_por",
+    "faltam",
+    "funcao",
+    "hoje_extenso",
+    "limite",
+    "p",
+    "prazo",
+    "sv",
+    "telefone"
+  ]
+}

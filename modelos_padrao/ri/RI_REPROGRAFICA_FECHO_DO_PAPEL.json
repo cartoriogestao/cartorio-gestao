@@ -1,0 +1,8 @@
+{
+  "chave": "RI_REPROGRAFICA_FECHO_DO_PAPEL",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Fecho do papel da certidão reprográfica",
+  "formato": "JINJA",
+  "explica": "O encerramento impresso depois da última página reproduzida, no modelo da casa (20/10/2026). Só o papel: o fecho gravado no livro com a certidão é o RI_REPROGRAFICA_FECHO, que o papel não imprime (ri_digitalizacao).",
+  "campos": []
+}

@@ -1,0 +1,1 @@
+CANCELAMENTO no Indicador Real. Fica anotado o cancelamento do ato {{ rotulo }} da matrícula {{ matricula }}, lavrado pela averbação {{ averbacao }}. Imóvel: {{ imovel }}. FUNDAMENTO: {{ motivo }}

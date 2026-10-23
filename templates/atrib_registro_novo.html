@@ -56,6 +56,11 @@
 
       <label style="grid-column:1/-1">Teor <small>(opcional agora)</small>
         <textarea name="teor" rows="8">{{ form.get('teor','') }}</textarea></label>
+
+      {# o que o termo do livro declara (LD09): o extrato do Livro C, a
+         inscrição da pessoa jurídica, a matrícula do periódico #}
+      {% from '_declaracoes_do_termo.html' import quadros %}
+      {{ quadros(declaracoes_do_termo, series, form) }}
     </div>
   </section>
 

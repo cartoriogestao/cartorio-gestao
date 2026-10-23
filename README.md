@@ -65,7 +65,10 @@ panorama de todas as telas.
 5. Nos computadores do balcão, execute `INSTALAR_CLIENTE.cmd` uma vez.
 
 O passo a passo completo, a rede, as atualizações e as credenciais das
-Centrais estão em [`docs/INSTALACAO.md`](docs/INSTALACAO.md).
+Centrais estão em [`docs/INSTALACAO.md`](docs/INSTALACAO.md); o que o servidor
+e a casa configuram para a instalação ficar segura (pastas, banco, firewall,
+rotinas, chave das atualizações, backup e papéis), em
+[`docs/SEGURANCA_IMPLANTACAO.md`](docs/SEGURANCA_IMPLANTACAO.md).
 
 ## Onde ficam as coisas
 

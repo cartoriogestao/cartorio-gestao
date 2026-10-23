@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ABERTURA_PROCURACAO__varios_procuradores",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Procuração — vários procuradores",
+  "formato": "CHAVES",
+  "explica": "Quando há mais de um procurador.",
+  "campos": [
+    "procuradores"
+  ]
+}

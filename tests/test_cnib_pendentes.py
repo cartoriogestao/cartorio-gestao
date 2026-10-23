@@ -326,3 +326,63 @@ def test_a_importacao_grava_a_forma_normalizada():
     invisível por nome."""
     importador = (RAIZ / "ri_import.py").read_text(encoding="utf-8")
     assert "normalizar_busca(p.get(\"NOME\"))" in importador
+
+
+
+# ------------------------------------- a carga e o que a Central ja trouxe
+
+
+@pytest.fixture()
+def con_solto():
+    """Banco só deste teste: a carga mexe no espelho, e o da casa é do módulo."""
+    sys.path.insert(0, str(RAIZ / "tests"))
+    from banco_de_teste import conexao_de_teste
+    from ri_schema import init_ri_schema
+    c = conexao_de_teste()
+    c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+    init_ri_schema(c)
+    yield c
+    c.close()
+
+
+def test_a_carga_preserva_a_ordem_que_a_central_ja_atualizou(con_solto):
+    """L044R. Quando a guarda do `DO UPDATE` barra, o `RETURNING` não devolve
+    linha — e no nativo isso é lista vazia, não `None`. Conferir `is None`
+    mandava a ordem preservada para `linha[0]`, e a carga inteira caía com
+    IndexError no primeiro arquivo mais velho que a Central."""
+    import ri_import as IMP
+    from bd_nativo import banco
+    bd = banco(con_solto)
+    da_central = bd.escrever(
+        """INSERT INTO ri_cnib_ordens (protocolo_cnib, data_pedido, processo,
+               ativa, origem)
+           VALUES ('202301.0101.00000001-IA-001', '2026-09-20',
+                   'PROCESSO DA CENTRAL', 0, 'CNIB') RETURNING id""")[0]["id"]
+    bd.escrever(
+        """INSERT INTO ri_cnib_pessoas (ordem_id, nome, nome_norm, documento, origem)
+           VALUES (%s, 'BELTRANO DE TAL EXEMPLO', 'beltrano de tal exemplo',
+                   '00011122233', 'CNIB')""", (da_central,))
+
+    imp = IMP.Importador(con_solto)
+    imp.importar_cnib(
+        [{"id": 10, "PROTOCOLOINDISPONIBILIDADE": "202301.0101.00000001-IA-001",
+          "DATAPEDIDO": "2023-01-01", "NUMERODOPROCESSO": "PROCESSO DO ARQUIVO"},
+         {"id": 11, "PROTOCOLOINDISPONIBILIDADE": "202301.0101.00000002-IA-002",
+          "DATAPEDIDO": "2023-01-02", "NUMERODOPROCESSO": "OUTRO PROCESSO"}],
+        [{"id": 100, "id_Registro": 10, "NOME": "FULANA DE TAL EXEMPLO",
+          "CPFCNPJ": "00012345678"},
+         {"id": 101, "id_Registro": 11, "NOME": "CICLANO DE TAL EXEMPLO",
+          "CPFCNPJ": "00098765432"}])
+
+    assert imp.contagem["cnib_ordens_preservadas"] == 1
+    assert imp.contagem["cnib_pessoas_preservadas"] == 1
+    assert imp.contagem["cnib_ordens"] == 1 and imp.contagem["cnib_pessoas"] == 1
+    assert imp.rejeitados == [], "a pessoa da ordem preservada não é quarentena"
+    ordem = bd.um("SELECT processo, ativa, origem FROM ri_cnib_ordens WHERE id=%s",
+                  (da_central,))
+    assert ordem == {"processo": "PROCESSO DA CENTRAL", "ativa": 0, "origem": "CNIB"}, (
+        "o arquivo do E-Oficio sobrescreveu a ordem que a Central já atualizou")
+    assert [p["nome"] for p in bd.ler(
+        "SELECT nome FROM ri_cnib_pessoas WHERE ordem_id=%s ORDER BY id",
+        (da_central,))] == ["BELTRANO DE TAL EXEMPLO"]

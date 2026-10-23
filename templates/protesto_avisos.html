@@ -42,6 +42,41 @@
   </table>
 </section>
 
+{#
+  APONTADOS SEM AVISO (21/10/2026). Os títulos que vieram do E-Ofício sem
+  aviso neste sistema não apareciam em lugar nenhum para intimação: a tela só
+  listava o que já tinha aviso. Agora todo título apontado está à vista.
+#}
+<section class="panel" id="apontados-sem-aviso">
+  <div class="panel-head">
+    <span>Apontados sem aviso — a intimar</span><small>{{ sem_aviso | length }}</small>
+  </div>
+  {% if not sem_aviso %}
+    <p style="padding:14px">Todo título apontado tem aviso.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Apontado em</th><th>Protocolo</th><th>Devedor</th><th></th></tr></thead>
+    <tbody>
+      {% for t in sem_aviso %}
+      <tr>
+        <td>{{ t.apontado_em or '—' }}</td>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=t.titulo_id) }}">{{ t.protocolo or t.titulo_id }}</a>
+            <div><small>título {{ t.numero_titulo or '—' }}</small></div></td>
+        <td>{{ t.devedor_nome or '—' }}</td>
+        <td>
+          <form method="post" style="display:inline"
+                action="{{ url_for('protesto_aviso_emitir', titulo_id=t.titulo_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button small primary">Emitir aviso</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
 <section class="panel">
   <div class="panel-head">
     <span>Saíram e esperam desfecho</span><small>{{ esperando | length }}</small>
@@ -347,10 +382,35 @@
 
 <div class="notice">
   <strong>O aviso desta casa era também o boleto</strong>, e o boleto não está
-  aqui. O código de barras do E-Ofício tem duas coisas que não se explicam — o
+  aqui. O código de barras do sistema antigo tem duas coisas que não se explicam — o
   verificador do nosso número e a origem do fator de vencimento —, e código de
   barras errado é boleto que o leitor aceita e o dinheiro cai no lugar errado.
   O que está medido e o que falta estão em
   <code>DOCUMENTACAO/AVISO_DE_INTIMACAO_MEDIDO.md</code>.
 </div>
+{% if antigos %}
+<section class="panel" id="apontados-antigos">
+  <div class="panel-head">
+    <span>Apontados antigos — decidir</span><small>{{ antigos | length }}</small>
+  </div>
+  <p style="padding:0 14px">
+    Apontados há mais de {{ antigo_dias }} dias e sem desfecho. Não é
+    intimação a fazer: confira no papel se o título foi pago, retirado ou
+    devolvido, e lance o ato na ficha.
+  </p>
+  <table class="table">
+    <thead><tr><th>Apontado em</th><th>Protocolo</th><th>Devedor</th><th>Avisos</th></tr></thead>
+    <tbody>
+      {% for t in antigos %}
+      <tr>
+        <td>{{ t.apontado_em or '—' }}</td>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=t.titulo_id) }}">{{ t.protocolo or t.titulo_id }}</a></td>
+        <td>{{ t.devedor_nome or '—' }}</td>
+        <td>{{ t.avisos }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,15 @@
+
+<p align="center"><b>CERTIDÃO VINTENÁRIA — ÚLTIMOS {{ anos_periodo }} ANOS</b></p>
+<p>Período considerado: de {{ desde_periodo }} a {{ ate_periodo }} ({{ anos_periodo }} anos).</p>
+<p align="center"><b>TRANSMISSÕES DE DOMÍNIO NO PERÍODO</b></p>
+{% if dominio_periodo %}
+{% for a in dominio_periodo %}<p><b>{{ a.rotulo }}</b>{% if a.data_extenso %} — {{ a.data_extenso }}{% elif a.data_ato %} — {{ a.data_ato }}{% endif %}{% if a.natureza_titulo %}: {{ a.natureza_titulo }}{% endif %}</p>{% if a.teor_odf %}{{ a.teor_odf }}{% elif a.teor %}<p>{{ a.teor }}</p>{% endif %}{% if not loop.last %}<p class="separa-ato" style="border-bottom:0.06cm double #000;margin:0.12cm 0;padding:0;line-height:0;font-size:0;">&nbsp;</p>{% endif %}{% endfor %}
+{% else %}
+<p><b>NADA CONSTA</b> de transmissão de domínio no período indicado.</p>
+{% endif %}
+<p align="center"><b>ÔNUS E GRAVAMES NO PERÍODO</b></p>
+{% if onus_periodo %}
+{% for a in onus_periodo %}<p><b>{{ a.rotulo }}</b>{% if a.data_extenso %} — {{ a.data_extenso }}{% elif a.data_ato %} — {{ a.data_ato }}{% endif %}{% if a.natureza_titulo %}: {{ a.natureza_titulo }}{% endif %}</p>{% endfor %}
+{% else %}
+<p><b>NADA CONSTA</b> de ônus reais, gravames ou restrições lavrados no período indicado.</p>
+{% endif %}

@@ -1,0 +1,17 @@
+{
+  "chave": "CAIXA_WHATSAPP",
+  "atribuicao": "Caixa e protocolo",
+  "nome": "Rascunhos do WhatsApp ao cliente",
+  "formato": "CHAVES",
+  "explica": "O rascunho que o Balcão WhatsApp sugere para cada assunto — quem escolhe o assunto é wa_balcao.classificar — e a assinatura da casa (===CONTATO===). Sem acento de propósito. O escrevente confere antes de enviar.",
+  "campos": [
+    "nome",
+    "cidade",
+    "telefone",
+    "email",
+    "endereco",
+    "cep",
+    "uf",
+    "contato"
+  ]
+}

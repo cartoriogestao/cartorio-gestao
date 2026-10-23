@@ -1,0 +1,21 @@
+{
+  "chave": "US_EDITAL",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Edital da usucapião extrajudicial",
+  "formato": "CHAVES",
+  "explica": "O edital para terceiros interessados (Lei 6.015/1973, art. 216-A, § 4º; Código TJMA, art. 755). Congela no movimento ao montar. A frase da origem registrária (art. 755, § 2º), a posse, as linhas do imóvel e o prazo são peças deste papel.",
+  "campos": [
+    "serventia",
+    "oficial",
+    "cargo",
+    "numero",
+    "do_ano",
+    "modalidade",
+    "requerente",
+    "imovel",
+    "sobre_a_origem",
+    "sobre_a_posse",
+    "prazo_texto",
+    "lugar_e_data"
+  ]
+}

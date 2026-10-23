@@ -18,16 +18,17 @@ da tela de assinaturas, que custou três respostas.
 from __future__ import annotations
 
 import json
-import sqlite3
 
 from flask import Response, flash, redirect, render_template, request, url_for
 
 import arquivo_visivel as VIS
+from bd_nativo import banco
 import centrais_cred as CRED
 import onrcpn_certidao_api as API
 import rc_certidao as RCE
 import rc_pedidos as PED
 import rc_pedidos_schema as ESQ
+from seguranca_web import MAIOR_INTEGER, numero_digitado  # LD13: o número que a tela mandou
 
 # QUEM VÊ E QUEM RESPONDE. Ver o cabeçalho.
 QUEM_CONFERE = ("ADMIN", "MANAGER", "USER")
@@ -80,7 +81,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         modulo = (request.args.get("modulo") or "").strip().upper() or None
         situacao = (request.args.get("situacao") or ESQ.PENDENTE).strip().upper()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             try:
                 fila = PED.pendentes(con, modulo=modulo,
                                      situacao=situacao or None)
@@ -131,7 +131,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """
         campos = _valores_da_certidao()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             p = PED.pedido(con, pedido_id)
             if p is None:
                 flash("Pedido não encontrado.", "danger")
@@ -173,7 +172,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("rcpn_pedido", pedido_id=pedido_id))
         try:
             with db.transaction() as con:
-                con.row_factory = sqlite3.Row
                 PED.amarrar_assento(
                     con, pedido_id, assento_id,
                     motivo=(request.form.get("motivo") or "").strip())
@@ -209,16 +207,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         **Não lavra nada** — quem lavrou foi a tela do assento.
         """
-        try:
-            assento_id = int(request.form.get("assento_id") or 0)
-        except ValueError:
-            assento_id = 0
+        # `rc_pedidos.assento_id` é `integer`, e aqui ninguém confere antes de
+        # gravar: o número que não cabe derrubava o UPDATE (LD13).
+        assento_id = numero_digitado(request.form.get("assento_id"),
+                                     maximo=MAIOR_INTEGER)
         if not assento_id:
             flash("Informe o assento que foi lavrado.", "danger")
             return redirect(url_for("rcpn_pedido", pedido_id=pedido_id))
         try:
             with db.transaction() as con:
-                con.row_factory = sqlite3.Row
                 PED.marcar_registrado(con, pedido_id, assento_id=assento_id,
                                       agora=agora(), usuario=usuario_nome())
         except RECUSAS_DO_BALCAO as erro:
@@ -253,7 +250,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """Cria a certidão eletrônica na Central. **Ainda não a entrega.**"""
         campos = _valores_da_certidao()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             p = PED.pedido(con, pedido_id)
         if p is None or not p.get("assento_id"):
             flash("Este pedido ainda não está amarrado a um assento.", "danger")
@@ -304,7 +300,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """O que iria para a Central, e o que impede. SÓ LÊ."""
         campos = _valores_da_certidao()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             # **O SELO DO REGISTRO VEM PREENCHIDO** — «acho que selado já»,
             # o oficial no mesmo pedido. O sistema **não compra** selo por
             # aqui (esta casa nunca selou certidão eletrônica, e escolher um
@@ -316,9 +311,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 campos["selo"] = RCE.selo_do_registro(con, assento_id) or ""
             conferido = PED.conferir(con, assento_id, cns=_cns(), **campos)
             ja_saiu = PED.eletronicas_do_assento(con, assento_id)
-            assento = con.execute(
+            assento = banco(con).um(
                 "SELECT id, especie, numero, nome, matricula FROM rc_assentos "
-                "WHERE id=?", (int(assento_id),)).fetchone()
+                "WHERE id=%s", (int(assento_id),))
         return campos, conferido, ja_saiu, (dict(assento) if assento else None)
 
     @app.route("/rcpn/<int:assento_id>/certidao-eletronica",
@@ -368,7 +363,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         campos = _valores_da_certidao()
         if not campos["selo"]:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 campos["selo"] = RCE.selo_do_registro(con, assento_id) or ""
         volta = url_for("rcpn_certidao_eletronica_nova", assento_id=assento_id)
         try:
@@ -495,7 +489,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         campos = _valores_da_certidao()
         try:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 if not campos["selo"]:
                     campos["selo"] = RCE.selo_do_registro(con, assento_id) or ""
                 corpo = PED.corpo_crc(con, assento_id, cns=_cns(), **campos)
@@ -519,7 +512,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """
         try:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 corpo = PED.corpo_crc_da_eletronica(
                     con, eletronica_id, cns=_cns())
         except RECUSAS_DO_BALCAO as erro:
@@ -540,7 +532,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         `rc_pedidos_schema`: binário não entra num banco que viaja no backup.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             linha = PED.eletronica(con, eletronica_id)
         if not linha:
             flash("Certidão eletrônica não encontrada.", "danger")
@@ -570,9 +561,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         não estava; é o defeito da rota que ignora o próprio
         redirecionamento, que este projeto pagou duas vezes numa noite.
         """
-        if volta.isdigit():
-            return redirect(url_for("rcpn_pedido", pedido_id=int(volta)))
-        if volta.startswith("assento:") and volta[8:].isdigit():
+        # O «²» e os 5.000 dígitos passavam pelo `isdigit()` e caíam no
+        # `int()` — DEPOIS de a Central já ter respondido (LD13).
+        pedido = numero_digitado(volta)
+        if pedido is not None:
+            return redirect(url_for("rcpn_pedido", pedido_id=pedido))
+        assento = numero_digitado(volta[8:]) if volta.startswith("assento:") else None
+        if assento is not None:
             return redirect(url_for("rcpn_certidao_eletronica_nova",
-                                    assento_id=int(volta[8:])))
+                                    assento_id=assento))
         return redirect(url_for("rcpn_pedidos"))

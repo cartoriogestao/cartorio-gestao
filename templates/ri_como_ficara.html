@@ -42,7 +42,7 @@
       <h3 style="margin-top:0">{{ a.tipo }}-{{ a.numero }}
         <small class="muted">{{ fmt_date(a.data_ato) }}</small>
         {% if a.cancelado %}<span class="badge alta">cancelado</span>{% endif %}</h3>
-      <div class="teor">{{ (a.teor or '')|safe }}</div>
+      <div class="teor">{{ (a.teor or '')|sem_script }}</div>
     </article>
     {% endfor %}
 
@@ -59,7 +59,7 @@
       <p class="small danger" style="margin-top:0">
         O número <strong>{{ rascunho.numero_previsto }}</strong> ainda não é deste
         ato: ele fica com quem lavrar primeiro nesta matrícula.</p>
-      <div class="teor">{{ (rascunho.teor or '')|safe }}</div>
+      <div class="teor">{{ (rascunho.teor or '')|sem_script }}</div>
       <p class="small muted" style="margin-top:10px">
         Rascunho guardado em {{ fmt_dt(rascunho.atualizado_em) }}
         {%- if rascunho.criado_por %} por {{ rascunho.criado_por }}{% endif %}.

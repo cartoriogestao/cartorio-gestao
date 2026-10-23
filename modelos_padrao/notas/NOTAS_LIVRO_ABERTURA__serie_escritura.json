@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_LIVRO_ABERTURA__serie_escritura",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Nome da série ESCRITURA nos termos do livro",
+  "formato": "CHAVES",
+  "explica": "O nome da série, no plural e por extenso, nos termos de abertura e de encerramento.",
+  "campos": []
+}

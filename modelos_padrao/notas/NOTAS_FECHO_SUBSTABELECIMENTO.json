@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_FECHO_SUBSTABELECIMENTO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Fecho do substabelecimento",
+  "formato": "CHAVES",
+  "explica": "O fecho do teor do substabelecimento montado pelo sistema, depois do objeto.",
+  "campos": []
+}

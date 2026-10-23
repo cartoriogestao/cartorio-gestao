@@ -1,0 +1,907 @@
+{
+ "_como": "Gerado ANTES do LF06C, na árvore do commit 2c41e90 exportada intocada, por tests/fixtures/modelos_ouro/ouro_lf06c.py gerar comunicacoes. Não regerar: depois da mudança o texto mora na pasta dos padrões, e regerar faria o teste comparar a pasta com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "rc_anotacao.resumo_do_assento(casamento_sem_numero)": {
+   "ok": "CASAMENTO registrado sob o termo nº None, livro B-1, lavrado em 2026-08-01, de JOÃO DE EXEMPLO."
+  },
+  "rc_anotacao.resumo_do_assento(cheio)": {
+   "ok": "NASCIMENTO registrado sob o termo nº 123, livro A-3, lavrado em 2026-09-03T10:00:00, o fato deu-se em 2026-09-01, de MARIA DE EXEMPLO, matrícula 000000 01 55 2026 1 00003 123 0000123 45."
+  },
+  "rc_anotacao.resumo_do_assento(obito_vazio)": {
+   "ok": "OBITO registrado sob o termo nº 9."
+  },
+  "rc_anotacao.resumo_do_assento(sem_assento)": {
+   "erro": "AnotacaoError: Não achei o assento nº 55."
+  },
+  "rc_comunicacoes.montar(ECONOMIA)": {
+   "ok": {
+    "entram": [
+     901,
+     902,
+     903,
+     904
+    ],
+    "ficam_de_fora": [],
+    "quantos": 4,
+    "quantos_no_mes": 4,
+    "texto": "SERVENTIA DE EXEMPLO\nCidade Exemplo/MA\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Ministério da Economia\nFundamento: art. 226, II — art. 52, § 3º, da Lei 6.015/1973\n\nComunicamos, para os fins do art. 52, § 3º, da Lei de Registros Públicos, os óbitos lavrados nesta serventia na competência 2026-09:\n\n1. MARIA DE EXEMPLO, termo nº 1201, livro C-4, falecido em 2026-09-05, 75 anos, CPF 000.000.001-91, DO nº 3000000001, matrícula 000000 01 55 2026 4 00012 201 0001201 11.\n2. (sem nome), idade não informada no assento.\n3. JOÃO DE EXEMPLO, falecido em 2026-09-12, 26 anos.\n4. ANA DE EXEMPLO, termo nº 1204, livro C-4, falecido em 2026-09-18, 7 anos, DO nº 3000000004.\n\nTotal: 4 de 4 óbito(s) lavrados no mês.\n\nCidade Exemplo/MA.\n\n_________________________________\nFULANA DE EXEMPLO\nOficiala Registradora\n"
+   }
+  },
+  "rc_comunicacoes.montar(ECONOMIA,idade_zero)": {
+   "ok": {
+    "entram": [
+     905,
+     902
+    ],
+    "ficam_de_fora": [],
+    "quantos": 2,
+    "quantos_no_mes": 2,
+    "texto": "SERVENTIA DE EXEMPLO\nCidade Exemplo/MA\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Ministério da Economia\nFundamento: art. 226, II — art. 52, § 3º, da Lei 6.015/1973\n\nComunicamos, para os fins do art. 52, § 3º, da Lei de Registros Públicos, os óbitos lavrados nesta serventia na competência 2026-09:\n\n1. JOÃO DE EXEMPLO FILHO, falecido em 2026-09-24, 0 anos.\n2. (sem nome), idade não informada no assento.\n\nTotal: 2 de 2 óbito(s) lavrados no mês.\n\nCidade Exemplo/MA.\n\n_________________________________\nFULANA DE EXEMPLO\nOficiala Registradora\n"
+   }
+  },
+  "rc_comunicacoes.montar(ELEITORAL)": {
+   "ok": {
+    "entram": [
+     901,
+     902,
+     903
+    ],
+    "ficam_de_fora": [
+     904
+    ],
+    "quantos": 3,
+    "quantos_no_mes": 4,
+    "texto": "SERVENTIA DE EXEMPLO\nCidade Exemplo/MA\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Juiz(íza) Eleitoral\nFundamento: art. 226, I, do Código de Normas do TJMA\n\nComunicamos, para cancelamento das inscrições de alistamento eleitoral, os óbitos lavrados nesta serventia na competência 2026-09 — sob as penas do art. 293 do Código Eleitoral:\n\n1. MARIA DE EXEMPLO, termo nº 1201, livro C-4, falecido em 2026-09-05, 75 anos, CPF 000.000.001-91, DO nº 3000000001, matrícula 000000 01 55 2026 4 00012 201 0001201 11.\n2. (sem nome), idade não informada no assento.\n3. JOÃO DE EXEMPLO, falecido em 2026-09-12, 26 anos.\n\nTotal: 3 de 4 óbito(s) lavrados no mês.\n\nCidade Exemplo/MA.\n\n_________________________________\nFULANA DE EXEMPLO\nOficiala Registradora\n"
+   }
+  },
+  "rc_comunicacoes.montar(ELEITORAL,serventia_com_None)": {
+   "ok": {
+    "entram": [
+     901
+    ],
+    "ficam_de_fora": [],
+    "quantos": 1,
+    "quantos_no_mes": 1,
+    "texto": "None\nNone/None\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Juiz(íza) Eleitoral\nFundamento: art. 226, I, do Código de Normas do TJMA\n\nComunicamos, para cancelamento das inscrições de alistamento eleitoral, os óbitos lavrados nesta serventia na competência 2026-09 — sob as penas do art. 293 do Código Eleitoral:\n\n1. MARIA DE EXEMPLO, termo nº 1201, livro C-4, falecido em 2026-09-05, 75 anos, CPF 000.000.001-91, DO nº 3000000001, matrícula 000000 01 55 2026 4 00012 201 0001201 11.\n\nTotal: 1 de 1 óbito(s) lavrados no mês.\n\nNone/None.\n\n_________________________________\nNone\nNone\n"
+   }
+  },
+  "rc_comunicacoes.montar(IDENTIFICACAO)": {
+   "ok": {
+    "entram": [
+     901,
+     902,
+     903,
+     904
+    ],
+    "ficam_de_fora": [],
+    "quantos": 4,
+    "quantos_no_mes": 4,
+    "texto": "SERVENTIA DE EXEMPLO\nCidade Exemplo/MA\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Instituto de Identificação do Maranhão\nFundamento: art. 226, IV — art. 80, parágrafo único, da Lei 6.015/1973\n\nComunicamos, para os fins do art. 80, parágrafo único, da Lei de Registros Públicos, os óbitos lavrados nesta serventia na competência 2026-09:\n\n1. MARIA DE EXEMPLO, termo nº 1201, livro C-4, falecido em 2026-09-05, 75 anos, CPF 000.000.001-91, DO nº 3000000001, matrícula 000000 01 55 2026 4 00012 201 0001201 11.\n2. (sem nome), idade não informada no assento.\n3. JOÃO DE EXEMPLO, falecido em 2026-09-12, 26 anos.\n4. ANA DE EXEMPLO, termo nº 1204, livro C-4, falecido em 2026-09-18, 7 anos, DO nº 3000000004.\n\nTotal: 4 de 4 óbito(s) lavrados no mês.\n\nCidade Exemplo/MA.\n\n_________________________________\nFULANA DE EXEMPLO\nOficiala Registradora\n"
+   }
+  },
+  "rc_comunicacoes.montar(JUNTA_MILITAR)": {
+   "ok": {
+    "entram": [
+     902,
+     903
+    ],
+    "ficam_de_fora": [
+     901,
+     904
+    ],
+    "quantos": 2,
+    "quantos_no_mes": 4,
+    "texto": "SERVENTIA DE EXEMPLO\nCidade Exemplo/MA\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Circunscrição de Recrutamento (Junta de Serviço Militar)\nFundamento: Lei 4.375/1964 — Lei do Serviço Militar\n\nComunicamos, relação dos óbitos de nacionais do sexo masculino, de dezessete a quarenta e cinco anos de idade, inclusive, os óbitos lavrados nesta serventia na competência 2026-09:\n\n1. (sem nome), idade não informada no assento.\n2. JOÃO DE EXEMPLO, falecido em 2026-09-12, 26 anos.\n\nTotal: 2 de 4 óbito(s) lavrados no mês.\n\nCidade Exemplo/MA.\n\n_________________________________\nFULANA DE EXEMPLO\nOficiala Registradora\n"
+   }
+  },
+  "rc_comunicacoes.montar(JUNTA_MILITAR,so_mulheres)": {
+   "ok": {
+    "entram": [],
+    "ficam_de_fora": [
+     901,
+     904
+    ],
+    "quantos": 0,
+    "quantos_no_mes": 2,
+    "texto": "SERVENTIA DE EXEMPLO\nCidade Exemplo/MA\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Circunscrição de Recrutamento (Junta de Serviço Militar)\nFundamento: Lei 4.375/1964 — Lei do Serviço Militar\n\nComunicamos, relação dos óbitos de nacionais do sexo masculino, de dezessete a quarenta e cinco anos de idade, inclusive, os óbitos lavrados nesta serventia na competência 2026-09:\n\nNada consta: nenhum óbito nesta competência alcança este destino.\n\nTotal: 0 de 2 óbito(s) lavrados no mês.\n\nCidade Exemplo/MA.\n\n_________________________________\nFULANA DE EXEMPLO\nOficiala Registradora\n"
+   }
+  },
+  "rc_comunicacoes.montar(RECEITA)": {
+   "ok": {
+    "entram": [
+     901,
+     902,
+     903,
+     904
+    ],
+    "ficam_de_fora": [],
+    "quantos": 4,
+    "quantos_no_mes": 4,
+    "texto": "SERVENTIA DE EXEMPLO\nCidade Exemplo/MA\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Receita Federal do Brasil\nFundamento: art. 226, III — art. 80, parágrafo único, da Lei 6.015/1973\n\nComunicamos, para os fins do art. 80, parágrafo único, da Lei de Registros Públicos, os óbitos lavrados nesta serventia na competência 2026-09:\n\n1. MARIA DE EXEMPLO, termo nº 1201, livro C-4, falecido em 2026-09-05, 75 anos, CPF 000.000.001-91, DO nº 3000000001, matrícula 000000 01 55 2026 4 00012 201 0001201 11.\n2. (sem nome), idade não informada no assento.\n3. JOÃO DE EXEMPLO, falecido em 2026-09-12, 26 anos.\n4. ANA DE EXEMPLO, termo nº 1204, livro C-4, falecido em 2026-09-18, 7 anos, DO nº 3000000004.\n\nTotal: 4 de 4 óbito(s) lavrados no mês.\n\nCidade Exemplo/MA.\n\n_________________________________\nFULANA DE EXEMPLO\nOficiala Registradora\n"
+   }
+  },
+  "rc_comunicacoes.montar(RECEITA,mes_vazio,serventia_vazia)": {
+   "ok": {
+    "entram": [],
+    "ficam_de_fora": [],
+    "quantos": 0,
+    "quantos_no_mes": 0,
+    "texto": "\n/\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Receita Federal do Brasil\nFundamento: art. 226, III — art. 80, parágrafo único, da Lei 6.015/1973\n\nComunicamos, para os fins do art. 80, parágrafo único, da Lei de Registros Públicos, os óbitos lavrados nesta serventia na competência 2026-09:\n\nNada consta: nenhum óbito nesta competência alcança este destino.\n\nTotal: 0 de 0 óbito(s) lavrados no mês.\n\n/.\n\n_________________________________\n\n\n"
+   }
+  },
+  "rc_comunicacoes.montar(destino_que_nao_existe)": {
+   "erro": "ComunicacaoError: «CORREIO» não é um destino da comunicação mensal. Os cinco são: ELEITORAL (Juiz(íza) Eleitoral), ECONOMIA (Ministério da Economia), RECEITA (Receita Federal do Brasil), IDENTIFICACAO (Instituto de Identificação do Maranhão), JUNTA_MILITAR (Circunscrição de Recrutamento (Junta de Serviço Militar))."
+  },
+  "rc_comunicacoes.montar(eleitoral_minusculo)": {
+   "ok": {
+    "entram": [
+     903
+    ],
+    "ficam_de_fora": [],
+    "quantos": 1,
+    "quantos_no_mes": 1,
+    "texto": "SERVENTIA DE EXEMPLO\nCidade Exemplo/MA\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Juiz(íza) Eleitoral\nFundamento: art. 226, I, do Código de Normas do TJMA\n\nComunicamos, para cancelamento das inscrições de alistamento eleitoral, os óbitos lavrados nesta serventia na competência 2026-09 — sob as penas do art. 293 do Código Eleitoral:\n\n1. JOÃO DE EXEMPLO, falecido em 2026-09-12, 26 anos.\n\nTotal: 1 de 1 óbito(s) lavrados no mês.\n\nCidade Exemplo/MA.\n\n_________________________________\nFULANA DE EXEMPLO\nOficiala Registradora\n"
+   }
+  },
+  "rc_comunicacoes.registrar_envio(ELEITORAL)": {
+   "ok": {
+    "gravado": [
+     [
+      "ENVIADA",
+      "SERVENTIA DE EXEMPLO\nCidade Exemplo/MA\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Juiz(íza) Eleitoral\nFundamento: art. 226, I, do Código de Normas do TJMA\n\nComunicamos, para cancelamento das inscrições de alistamento eleitoral, os óbitos lavrados nesta serventia na competência 2026-09 — sob as penas do art. 293 do Código Eleitoral:\n\n1. MARIA DE EXEMPLO, termo nº 1201, livro C-4, falecido em 2026-09-05, 75 anos, CPF 000.000.001-91, DO nº 3000000001, matrícula 000000 01 55 2026 4 00012 201 0001201 11.\n2. (sem nome), idade não informada no assento.\n3. JOÃO DE EXEMPLO, falecido em 2026-09-12, 26 anos.\n\nTotal: 3 de 4 óbito(s) lavrados no mês.\n\nCidade Exemplo/MA.\n\n_________________________________\nFULANA DE EXEMPLO\nOficiala Registradora\n",
+      3,
+      "b48cbbac0f3b1725324af8c6bbf655fbaff9ab22264ce2a34720b66eb9197719",
+      "2026-10-03",
+      "OFÍCIO",
+      "PROT-EXEMPLO-1",
+      "FULANA DE EXEMPLO",
+      7
+     ]
+    ],
+    "volta": {
+     "quantos": 3,
+     "situacao": "ENVIADA"
+    }
+   }
+  },
+  "rc_comunicacoes.registrar_envio(JUNTA_MILITAR,nada_consta)": {
+   "ok": {
+    "gravado": [
+     [
+      "ENVIADA",
+      "SERVENTIA DE EXEMPLO\nCidade Exemplo/MA\n\nCOMUNICAÇÃO MENSAL DE ÓBITOS — 2026-09\nDestinatário: Circunscrição de Recrutamento (Junta de Serviço Militar)\nFundamento: Lei 4.375/1964 — Lei do Serviço Militar\n\nComunicamos, relação dos óbitos de nacionais do sexo masculino, de dezessete a quarenta e cinco anos de idade, inclusive, os óbitos lavrados nesta serventia na competência 2026-09:\n\nNada consta: nenhum óbito nesta competência alcança este destino.\n\nTotal: 0 de 2 óbito(s) lavrados no mês.\n\nCidade Exemplo/MA.\n\n_________________________________\nFULANA DE EXEMPLO\nOficiala Registradora\n",
+      0,
+      "d006f315c0cf1c7c115d31d15cb70d937b8f091953cf162b7b88c8987440fff7",
+      "2026-10-03",
+      "OFÍCIO",
+      "PROT-EXEMPLO-1",
+      "FULANA DE EXEMPLO",
+      7
+     ]
+    ],
+    "volta": {
+     "quantos": 0,
+     "situacao": "ENVIADA"
+    }
+   }
+  },
+  "rc_cpf.reescrever_teor_cpf(antigo_com_espacos)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91. S1. 08/09/2026. FULANA DE EXEMPLO, Escrevente."
+  },
+  "rc_cpf.reescrever_teor_cpf(antigo_so_selo)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91. S1."
+  },
+  "rc_cpf.reescrever_teor_cpf(digito_errado)": {
+   "ok": null
+  },
+  "rc_cpf.reescrever_teor_cpf(nao_e_cpf)": {
+   "ok": null
+  },
+  "rc_cpf.reescrever_teor_cpf(nome_com_ponto)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91, referente ao primeiro nubente, MARIA S. S1. 08/09/2026. FULANA DE EXEMPLO, Escrevente."
+  },
+  "rc_cpf.reescrever_teor_cpf(nome_e_rotulo)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91, referente ao primeiro nubente, MARIA DE EXEMPLO. S1. 08/09/2026. FULANA DE EXEMPLO, Escrevente."
+  },
+  "rc_cpf.reescrever_teor_cpf(none)": {
+   "ok": null
+  },
+  "rc_cpf.reescrever_teor_cpf(sem_nada)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91, referente ao primeiro nubente, MARIA DE EXEMPLO."
+  },
+  "rc_cpf.reescrever_teor_cpf(simples)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91. S1. 08/09/2026. FULANA DE EXEMPLO, Escrevente."
+  },
+  "rc_cpf.reescrever_teor_cpf(so_nome)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91. S1. 08/09/2026. FULANA DE EXEMPLO, Escrevente."
+  },
+  "rc_cpf.reescrever_teor_cpf(so_rotulo)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91. S1. 08/09/2026. FULANA DE EXEMPLO, Escrevente."
+  },
+  "rc_cpf.reescrever_teor_cpf(vazio)": {
+   "ok": null
+  },
+  "rc_cpf.texto_averbacao(completo)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91. SELO-EXEMPLO-1. 08/09/2026. FULANA DE EXEMPLO, Escrevente."
+  },
+  "rc_cpf.texto_averbacao(completo_sem_funcao)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91. SELO-EXEMPLO-2. 08/09/2026. FULANA DE EXEMPLO."
+  },
+  "rc_cpf.texto_averbacao(formatado)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91."
+  },
+  "rc_cpf.texto_averbacao(invalido)": {
+   "erro": "CpfError: O CPF «00000000192» não fecha o dígito verificador. Confira com quem está no balcão — número errado na certidão não se desfaz depois."
+  },
+  "rc_cpf.texto_averbacao(nome_e_rotulo)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91, referente ao primeiro nubente, MARIA DE EXEMPLO."
+  },
+  "rc_cpf.texto_averbacao(simples)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91."
+  },
+  "rc_cpf.texto_averbacao(so_nome)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91, referente a JOÃO DE EXEMPLO."
+  },
+  "rc_cpf.texto_averbacao(so_rotulo)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91, referente ao segundo nubente."
+  },
+  "rc_cpf.texto_averbacao(tudo)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91, referente ao primeiro nubente, MARIA DE EXEMPLO. S1. 08/09/2026. FULANA DE EXEMPLO, Oficiala."
+  },
+  "rc_cpf.texto_averbacao(usuario_operador)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91. S1."
+  },
+  "rc_cpf.texto_averbacao(usuario_robo)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91."
+  },
+  "rc_etiqueta_averbacao.arquivo_odt(anotacao,deslocada)": {
+   "ok": {
+    "META-INF/manifest.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\">\n <manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>\n <manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>\n <manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>\n</manifest:manifest>\n",
+    "content.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"\n xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"\n xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"\n xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" office:version=\"1.2\">\n <office:automatic-styles>\n  <style:style style:name=\"P\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-top=\"0cm\" fo:margin-bottom=\"0.05cm\"\n     fo:line-height=\"1.1*\" fo:text-align=\"justify\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"5.0pt\"\n     style:font-name-asian=\"Arial\" style:font-size-asian=\"5.0pt\"/>\n  </style:style>\n  <style:style style:name=\"P-cab\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.05cm\" fo:text-align=\"center\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"5.0pt\"\n     fo:font-weight=\"bold\" fo:text-transform=\"uppercase\"/>\n  </style:style>\n  <style:style style:name=\"P-tit\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.05cm\" fo:text-align=\"center\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"5.0pt\"\n     fo:font-weight=\"bold\"/>\n  </style:style>\n  <style:style style:name=\"P-ref\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.08cm\" fo:text-align=\"left\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"6.0pt\"/>\n  </style:style>\n  <style:style style:name=\"P-selo\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-top=\"0.05cm\" fo:margin-bottom=\"0cm\"/>\n   <style:text-properties style:font-name=\"Courier New\" fo:font-size=\"5.0pt\"\n     fo:font-weight=\"bold\"/>\n  </style:style>\n </office:automatic-styles>\n <office:body><office:text>\n<text:p text:style-name=\"P-cab\">SERVENTIA DE EXEMPLO</text:p>\n<text:p text:style-name=\"P-tit\">ANOTACAO</text:p>\n<text:p text:style-name=\"P-ref\">Livro A-3 · fl. 12 · termo 123 · assento 55 · MARIA DE EXEMPLO</text:p>\n<text:p text:style-name=\"P\">Averbo o divórcio &lt;do casal&gt; &amp; mais.<text:line-break/><text:line-break/>fim</text:p>\n </office:text></office:body>\n</office:document-content>\n",
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "nomes": [
+     "mimetype",
+     "META-INF/manifest.xml",
+     "styles.xml",
+     "content.xml"
+    ],
+    "styles.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"\n xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"\n xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"\n xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" office:version=\"1.2\">\n <office:automatic-styles>\n  <style:page-layout style:name=\"pm1\">\n   <style:page-layout-properties\n     fo:page-width=\"5.5000cm\"\n     fo:page-height=\"5.0cm\"\n     style:print-orientation=\"portrait\"\n     fo:margin-top=\"0.4000cm\"\n     fo:margin-bottom=\"0.1500cm\"\n     fo:margin-left=\"0.1500cm\"\n     fo:margin-right=\"0.4500cm\"/>\n  </style:page-layout>\n </office:automatic-styles>\n <office:master-styles>\n  <style:master-page style:name=\"Standard\" style:page-layout-name=\"pm1\"/>\n </office:master-styles>\n</office:document-styles>\n"
+   }
+  },
+  "rc_etiqueta_averbacao.arquivo_odt(cheio)": {
+   "ok": {
+    "META-INF/manifest.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\">\n <manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>\n <manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>\n <manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>\n</manifest:manifest>\n",
+    "content.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"\n xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"\n xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"\n xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" office:version=\"1.2\">\n <office:automatic-styles>\n  <style:style style:name=\"P\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-top=\"0cm\" fo:margin-bottom=\"0.05cm\"\n     fo:line-height=\"1.1*\" fo:text-align=\"justify\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"7.0pt\"\n     style:font-name-asian=\"Arial\" style:font-size-asian=\"7.0pt\"/>\n  </style:style>\n  <style:style style:name=\"P-cab\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.05cm\" fo:text-align=\"center\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"7.0pt\"\n     fo:font-weight=\"bold\" fo:text-transform=\"uppercase\"/>\n  </style:style>\n  <style:style style:name=\"P-tit\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.05cm\" fo:text-align=\"center\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"7.0pt\"\n     fo:font-weight=\"bold\"/>\n  </style:style>\n  <style:style style:name=\"P-ref\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.08cm\" fo:text-align=\"left\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"6.0pt\"/>\n  </style:style>\n  <style:style style:name=\"P-selo\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-top=\"0.05cm\" fo:margin-bottom=\"0cm\"/>\n   <style:text-properties style:font-name=\"Courier New\" fo:font-size=\"7.0pt\"\n     fo:font-weight=\"bold\"/>\n  </style:style>\n </office:automatic-styles>\n <office:body><office:text>\n<text:p text:style-name=\"P-cab\">SERVENTIA DE EXEMPLO</text:p>\n<text:p text:style-name=\"P-tit\">AVERBACAO</text:p>\n<text:p text:style-name=\"P-ref\">Livro A-3 · fl. 12 · termo 123 · assento 55 · MARIA DE EXEMPLO</text:p>\n<text:p text:style-name=\"P\">Averbo o divórcio &lt;do casal&gt; &amp; mais.<text:line-break/><text:line-break/>fim</text:p>\n<text:p text:style-name=\"P\">Lavrado por: FULANA DE EXEMPLO.</text:p>\n<text:p text:style-name=\"P-selo\">Selo: SELO-EXEMPLO-1.</text:p>\n </office:text></office:body>\n</office:document-content>\n",
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "nomes": [
+     "mimetype",
+     "META-INF/manifest.xml",
+     "styles.xml",
+     "content.xml"
+    ],
+    "styles.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"\n xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"\n xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"\n xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" office:version=\"1.2\">\n <office:automatic-styles>\n  <style:page-layout style:name=\"pm1\">\n   <style:page-layout-properties\n     fo:page-width=\"5.5000cm\"\n     fo:page-height=\"5.0cm\"\n     style:print-orientation=\"portrait\"\n     fo:margin-top=\"0.1500cm\"\n     fo:margin-bottom=\"0.1500cm\"\n     fo:margin-left=\"0.1500cm\"\n     fo:margin-right=\"0.1500cm\"/>\n  </style:page-layout>\n </office:automatic-styles>\n <office:master-styles>\n  <style:master-page style:name=\"Standard\" style:page-layout-name=\"pm1\"/>\n </office:master-styles>\n</office:document-styles>\n"
+   }
+  },
+  "rc_etiqueta_averbacao.arquivo_odt(cpf)": {
+   "ok": {
+    "META-INF/manifest.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\">\n <manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>\n <manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>\n <manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>\n</manifest:manifest>\n",
+    "content.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"\n xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"\n xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"\n xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" office:version=\"1.2\">\n <office:automatic-styles>\n  <style:style style:name=\"P\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-top=\"0cm\" fo:margin-bottom=\"0.05cm\"\n     fo:line-height=\"1.1*\" fo:text-align=\"justify\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"7.0pt\"\n     style:font-name-asian=\"Arial\" style:font-size-asian=\"7.0pt\"/>\n  </style:style>\n  <style:style style:name=\"P-cab\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.05cm\" fo:text-align=\"center\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"7.0pt\"\n     fo:font-weight=\"bold\" fo:text-transform=\"uppercase\"/>\n  </style:style>\n  <style:style style:name=\"P-tit\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.05cm\" fo:text-align=\"center\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"7.0pt\"\n     fo:font-weight=\"bold\"/>\n  </style:style>\n  <style:style style:name=\"P-ref\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.08cm\" fo:text-align=\"left\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"6.0pt\"/>\n  </style:style>\n  <style:style style:name=\"P-selo\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-top=\"0.05cm\" fo:margin-bottom=\"0cm\"/>\n   <style:text-properties style:font-name=\"Courier New\" fo:font-size=\"7.0pt\"\n     fo:font-weight=\"bold\"/>\n  </style:style>\n </office:automatic-styles>\n <office:body><office:text>\n<text:p text:style-name=\"P-cab\">SERVENTIA DE EXEMPLO</text:p>\n<text:p text:style-name=\"P-tit\">AVERBACAO</text:p>\n<text:p text:style-name=\"P-ref\">Livro A-3 · fl. 0 · assento 55</text:p>\n<text:p text:style-name=\"P\">Averbo neste assento o CPF n. 000.000.001-91. SELO-EXEMPLO-2. 08/09/2026. FULANA DE EXEMPLO, Escrevente.</text:p>\n </office:text></office:body>\n</office:document-content>\n",
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "nomes": [
+     "mimetype",
+     "META-INF/manifest.xml",
+     "styles.xml",
+     "content.xml"
+    ],
+    "styles.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"\n xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"\n xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"\n xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" office:version=\"1.2\">\n <office:automatic-styles>\n  <style:page-layout style:name=\"pm1\">\n   <style:page-layout-properties\n     fo:page-width=\"5.5000cm\"\n     fo:page-height=\"5.0cm\"\n     style:print-orientation=\"portrait\"\n     fo:margin-top=\"0.1500cm\"\n     fo:margin-bottom=\"0.1500cm\"\n     fo:margin-left=\"0.1500cm\"\n     fo:margin-right=\"0.1500cm\"/>\n  </style:page-layout>\n </office:automatic-styles>\n <office:master-styles>\n  <style:master-page style:name=\"Standard\" style:page-layout-name=\"pm1\"/>\n </office:master-styles>\n</office:document-styles>\n"
+   }
+  },
+  "rc_etiqueta_averbacao.arquivo_odt(nu)": {
+   "ok": {
+    "META-INF/manifest.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\">\n <manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>\n <manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>\n <manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>\n</manifest:manifest>\n",
+    "content.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"\n xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"\n xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"\n xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" office:version=\"1.2\">\n <office:automatic-styles>\n  <style:style style:name=\"P\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-top=\"0cm\" fo:margin-bottom=\"0.05cm\"\n     fo:line-height=\"1.1*\" fo:text-align=\"justify\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"7.0pt\"\n     style:font-name-asian=\"Arial\" style:font-size-asian=\"7.0pt\"/>\n  </style:style>\n  <style:style style:name=\"P-cab\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.05cm\" fo:text-align=\"center\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"7.0pt\"\n     fo:font-weight=\"bold\" fo:text-transform=\"uppercase\"/>\n  </style:style>\n  <style:style style:name=\"P-tit\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.05cm\" fo:text-align=\"center\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"7.0pt\"\n     fo:font-weight=\"bold\"/>\n  </style:style>\n  <style:style style:name=\"P-ref\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.08cm\" fo:text-align=\"left\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"6.0pt\"/>\n  </style:style>\n  <style:style style:name=\"P-selo\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-top=\"0.05cm\" fo:margin-bottom=\"0cm\"/>\n   <style:text-properties style:font-name=\"Courier New\" fo:font-size=\"7.0pt\"\n     fo:font-weight=\"bold\"/>\n  </style:style>\n </office:automatic-styles>\n <office:body><office:text>\n<text:p text:style-name=\"P-cab\"> </text:p>\n<text:p text:style-name=\"P-tit\">ATO</text:p>\n<text:p text:style-name=\"P-ref\">assento None</text:p>\n<text:p text:style-name=\"P\"> </text:p>\n </office:text></office:body>\n</office:document-content>\n",
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "nomes": [
+     "mimetype",
+     "META-INF/manifest.xml",
+     "styles.xml",
+     "content.xml"
+    ],
+    "styles.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"\n xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"\n xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"\n xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" office:version=\"1.2\">\n <office:automatic-styles>\n  <style:page-layout style:name=\"pm1\">\n   <style:page-layout-properties\n     fo:page-width=\"5.5000cm\"\n     fo:page-height=\"5.0cm\"\n     style:print-orientation=\"portrait\"\n     fo:margin-top=\"0.1500cm\"\n     fo:margin-bottom=\"0.1500cm\"\n     fo:margin-left=\"0.1500cm\"\n     fo:margin-right=\"0.1500cm\"/>\n  </style:page-layout>\n </office:automatic-styles>\n <office:master-styles>\n  <style:master-page style:name=\"Standard\" style:page-layout-name=\"pm1\"/>\n </office:master-styles>\n</office:document-styles>\n"
+   }
+  },
+  "rc_etiqueta_averbacao.arquivo_odt(retificacao,deslocada)": {
+   "ok": {
+    "META-INF/manifest.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\">\n <manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>\n <manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>\n <manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>\n</manifest:manifest>\n",
+    "content.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"\n xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"\n xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"\n xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" office:version=\"1.2\">\n <office:automatic-styles>\n  <style:style style:name=\"P\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-top=\"0cm\" fo:margin-bottom=\"0.05cm\"\n     fo:line-height=\"1.1*\" fo:text-align=\"justify\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"5.0pt\"\n     style:font-name-asian=\"Arial\" style:font-size-asian=\"5.0pt\"/>\n  </style:style>\n  <style:style style:name=\"P-cab\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.05cm\" fo:text-align=\"center\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"5.0pt\"\n     fo:font-weight=\"bold\" fo:text-transform=\"uppercase\"/>\n  </style:style>\n  <style:style style:name=\"P-tit\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.05cm\" fo:text-align=\"center\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"5.0pt\"\n     fo:font-weight=\"bold\"/>\n  </style:style>\n  <style:style style:name=\"P-ref\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-bottom=\"0.08cm\" fo:text-align=\"left\"/>\n   <style:text-properties style:font-name=\"Arial\" fo:font-size=\"6.0pt\"/>\n  </style:style>\n  <style:style style:name=\"P-selo\" style:family=\"paragraph\">\n   <style:paragraph-properties fo:margin-top=\"0.05cm\" fo:margin-bottom=\"0cm\"/>\n   <style:text-properties style:font-name=\"Courier New\" fo:font-size=\"5.0pt\"\n     fo:font-weight=\"bold\"/>\n  </style:style>\n </office:automatic-styles>\n <office:body><office:text>\n<text:p text:style-name=\"P-cab\">SERVENTIA DE EXEMPLO</text:p>\n<text:p text:style-name=\"P-tit\">RETIFICACAO</text:p>\n<text:p text:style-name=\"P-ref\">Livro A-3 · fl. 12 · termo 123 · assento 55 · MARIA DE EXEMPLO</text:p>\n<text:p text:style-name=\"P\">Averbo o divórcio &lt;do casal&gt; &amp; mais.<text:line-break/><text:line-break/>fim</text:p>\n<text:p text:style-name=\"P\">Lavrado por: FULANA DE EXEMPLO.</text:p>\n<text:p text:style-name=\"P-selo\">Selo: SELO-EXEMPLO-1.</text:p>\n </office:text></office:body>\n</office:document-content>\n",
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "nomes": [
+     "mimetype",
+     "META-INF/manifest.xml",
+     "styles.xml",
+     "content.xml"
+    ],
+    "styles.xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"\n xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"\n xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"\n xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" office:version=\"1.2\">\n <office:automatic-styles>\n  <style:page-layout style:name=\"pm1\">\n   <style:page-layout-properties\n     fo:page-width=\"5.5000cm\"\n     fo:page-height=\"5.0cm\"\n     style:print-orientation=\"portrait\"\n     fo:margin-top=\"0.4000cm\"\n     fo:margin-bottom=\"0.1500cm\"\n     fo:margin-left=\"0.1500cm\"\n     fo:margin-right=\"0.4500cm\"/>\n  </style:page-layout>\n </office:automatic-styles>\n <office:master-styles>\n  <style:master-page style:name=\"Standard\" style:page-layout-name=\"pm1\"/>\n </office:master-styles>\n</office:document-styles>\n"
+   }
+  },
+  "rc_etiqueta_averbacao.teor_com_lavratura(cpf)": {
+   "ok": "Averbo neste assento o CPF n. 000.000.001-91. S1."
+  },
+  "rc_etiqueta_averbacao.teor_com_lavratura(espacos)": {
+   "ok": "Averbo o divórcio do casal.\nLavrado por: FULANA DE EXEMPLO."
+  },
+  "rc_etiqueta_averbacao.teor_com_lavratura(ja_tem_linha)": {
+   "ok": "Averbo o divórcio.\n  lavrado POR: OUTRA DE EXEMPLO"
+  },
+  "rc_etiqueta_averbacao.teor_com_lavratura(no_meio_da_linha)": {
+   "ok": "Averbo, e foi Lavrado por: alguém, o divórcio.\nLavrado por: FULANA DE EXEMPLO."
+  },
+  "rc_etiqueta_averbacao.teor_com_lavratura(none)": {
+   "ok": ""
+  },
+  "rc_etiqueta_averbacao.teor_com_lavratura(sem_nome)": {
+   "ok": "Averbo o divórcio do casal."
+  },
+  "rc_etiqueta_averbacao.teor_com_lavratura(teor_vazio)": {
+   "ok": ""
+  },
+  "rc_etiqueta_averbacao.teor_com_selo(acrescenta)": {
+   "ok": "Averbo o divórcio.\nLavrado por: FULANA DE EXEMPLO.\nSelo: SELO-EXEMPLO-1."
+  },
+  "rc_etiqueta_averbacao.teor_com_selo(em_branco)": {
+   "ok": "Averbo o divórcio."
+  },
+  "rc_etiqueta_averbacao.teor_com_selo(ja_esta_no_texto)": {
+   "ok": "Averbo o divórcio. SELO-EXEMPLO-1."
+  },
+  "rc_etiqueta_averbacao.teor_com_selo(none)": {
+   "ok": "Averbo o divórcio."
+  },
+  "rc_etiqueta_averbacao.teor_com_selo(outra_linha_de_selo)": {
+   "ok": "Averbo o divórcio.\nselo: OUTRO-SELO"
+  },
+  "rc_etiqueta_averbacao.teor_com_selo(teor_vazio)": {
+   "ok": ""
+  },
+  "rc_funai.montar(cheio)": {
+   "ok": {
+    "assento_id": 55,
+    "faltando": [],
+    "nome": "MARIA DE EXEMPLO",
+    "teor": "SERVENTIA DE EXEMPLO\nCNS 000000\n\nÀ FUNDAÇÃO NACIONAL DOS POVOS INDÍGENAS — FUNAI\n\nComunicação de assento de nascimento de pessoa indígena, na forma do art. 253, § 2º, do Código de Normas da Corregedoria Geral da Justiça do Estado do Maranhão, para as providências necessárias ao registro administrativo.\n\nNome: MARIA DE EXEMPLO\nData do nascimento: 2026-09-01\nData do assento: 2026-09-03T10:00:00\nLivro: A-3   Folha: 12   Termo: 123\nMatrícula: 000000 01 55 2026 1 00003 123 0000123 45\nPovo, etnia, grupo, clã ou família indígena: POVO DE EXEMPLO\nAldeia ou comunidade: ALDEIA DE EXEMPLO\n"
+   }
+  },
+  "rc_funai.montar(cheio,sem_etnia_nem_aldeia)": {
+   "ok": {
+    "assento_id": 55,
+    "faltando": [
+     "Povo, etnia, grupo, clã ou família indígena",
+     "Aldeia ou comunidade"
+    ],
+    "nome": "MARIA DE EXEMPLO",
+    "teor": "SERVENTIA DE EXEMPLO\nCNS 000000\n\nÀ FUNDAÇÃO NACIONAL DOS POVOS INDÍGENAS — FUNAI\n\nComunicação de assento de nascimento de pessoa indígena, na forma do art. 253, § 2º, do Código de Normas da Corregedoria Geral da Justiça do Estado do Maranhão, para as providências necessárias ao registro administrativo.\n\nNome: MARIA DE EXEMPLO\nData do nascimento: 2026-09-01\nData do assento: 2026-09-03T10:00:00\nLivro: A-3   Folha: 12   Termo: 123\nMatrícula: 000000 01 55 2026 1 00003 123 0000123 45\nPovo, etnia, grupo, clã ou família indígena: [COMPLETAR: a etnia, que o sistema não deduz]\nAldeia ou comunidade: [COMPLETAR: a aldeia, que o sistema não guarda]\n"
+   }
+  },
+  "rc_funai.montar(numero_zero)": {
+   "ok": {
+    "assento_id": 55,
+    "faltando": [
+     "Aldeia ou comunidade"
+    ],
+    "nome": null,
+    "teor": "SERVENTIA DE EXEMPLO\nCNS 000000\n\nÀ FUNDAÇÃO NACIONAL DOS POVOS INDÍGENAS — FUNAI\n\nComunicação de assento de nascimento de pessoa indígena, na forma do art. 253, § 2º, do Código de Normas da Corregedoria Geral da Justiça do Estado do Maranhão, para as providências necessárias ao registro administrativo.\n\nNome: [COMPLETAR: nome]\nData do nascimento: [COMPLETAR]\nData do assento: [COMPLETAR]\nLivro: A   Folha: 0   Termo: 0\nMatrícula: [COMPLETAR: matrícula]\nPovo, etnia, grupo, clã ou família indígena: POVO DE EXEMPLO\nAldeia ou comunidade: [COMPLETAR: a aldeia, que o sistema não guarda]\n"
+   }
+  },
+  "rc_funai.montar(obito)": {
+   "erro": "FunaiError: A comunicação do art. 253, § 2º é do assento de NASCIMENTO de indígena — este assento é de outra espécie."
+  },
+  "rc_funai.montar(parda)": {
+   "erro": "FunaiError: Este assento não está declarado como de pessoa indígena. Se for, corrija a cor/raça do assento antes de comunicar — o ofício afirma à FUNAI uma coisa que tem de estar no livro."
+  },
+  "rc_funai.montar(queda_do_livro_e_do_termo)": {
+   "ok": {
+    "assento_id": 55,
+    "faltando": [
+     "Povo, etnia, grupo, clã ou família indígena"
+    ],
+    "nome": "MARIA DE EXEMPLO",
+    "teor": "SERVENTIA\nCNS \n\nÀ FUNDAÇÃO NACIONAL DOS POVOS INDÍGENAS — FUNAI\n\nComunicação de assento de nascimento de pessoa indígena, na forma do art. 253, § 2º, do Código de Normas da Corregedoria Geral da Justiça do Estado do Maranhão, para as providências necessárias ao registro administrativo.\n\nNome: MARIA DE EXEMPLO\nData do nascimento: 2026-09-01\nData do assento: 2026-09-03T10:00:00\nLivro: B-2   Folha: [COMPLETAR: folha]   Termo: 77\nMatrícula: 000000 01 55 2026 1 00003 123 0000123 45\nPovo, etnia, grupo, clã ou família indígena: [COMPLETAR: a etnia, que o sistema não deduz]\nAldeia ou comunidade: ALDEIA DE EXEMPLO\n"
+   }
+  },
+  "rc_funai.montar(sem_assento)": {
+   "erro": "FunaiError: Esse assento não existe."
+  },
+  "rc_funai.montar(vazio)": {
+   "ok": {
+    "assento_id": 55,
+    "faltando": [
+     "Povo, etnia, grupo, clã ou família indígena",
+     "Aldeia ou comunidade"
+    ],
+    "nome": null,
+    "teor": "SERVENTIA\nCNS \n\nÀ FUNDAÇÃO NACIONAL DOS POVOS INDÍGENAS — FUNAI\n\nComunicação de assento de nascimento de pessoa indígena, na forma do art. 253, § 2º, do Código de Normas da Corregedoria Geral da Justiça do Estado do Maranhão, para as providências necessárias ao registro administrativo.\n\nNome: [COMPLETAR: nome]\nData do nascimento: [COMPLETAR]\nData do assento: [COMPLETAR]\nLivro: A   Folha: [COMPLETAR: folha]   Termo: [COMPLETAR]\nMatrícula: [COMPLETAR: matrícula]\nPovo, etnia, grupo, clã ou família indígena: [COMPLETAR: a etnia, que o sistema não deduz]\nAldeia ou comunidade: [COMPLETAR: a aldeia, que o sistema não guarda]\n"
+   }
+  },
+  "rc_modelos_livres.conferir_corpo(chaves)": {
+   "ok": ""
+  },
+  "rc_modelos_livres.conferir_corpo(claro_com_espaco)": {
+   "ok": ""
+  },
+  "rc_modelos_livres.conferir_corpo(claro_desconhecido)": {
+   "ok": "O sistema não sabe preencher: {nome_do_pai}. Confira a lista de claros ao lado."
+  },
+  "rc_modelos_livres.montar(chaves)": {
+   "ok": {
+    "texto": "Certifico que MARIA DE EXEMPLO, termo 123, livro A-3, folha 12. Cidade Exemplo/MA, DEZENOVE DE OUTUBRO DE DOIS MIL E VINTE E SEIS.",
+    "vazios": []
+   }
+  },
+  "rc_modelos_livres.montar(claro_com_espaco)": {
+   "ok": {
+    "texto": "Certifico que { nome }, termo 123.",
+    "vazios": []
+   }
+  },
+  "rc_modelos_livres.montar(claro_desconhecido)": {
+   "erro": "ModeloLivreError: O modelo tem claro que o sistema não sabe preencher: {nome_do_pai}."
+  },
+  "rc_modelos_livres.valores(CASAMENTO)": {
+   "ok": {
+    "cartorio": "SERVENTIA DE EXEMPLO",
+    "celebrante": "",
+    "cidade": "Cidade Exemplo",
+    "data_de_hoje": "19/10/2026",
+    "data_de_hoje_extenso": "DEZENOVE DE OUTUBRO DE DOIS MIL E VINTE E SEIS",
+    "data_do_casamento": "01/09/2026",
+    "data_do_casamento_extenso": "PRIMEIRO DE SETEMBRO DE DOIS MIL E VINTE E SEIS",
+    "data_do_registro": "03/09/2026",
+    "data_do_registro_extenso": "TRES DE SETEMBRO DE DOIS MIL E VINTE E SEIS",
+    "email_do_cartorio": "",
+    "endereco_do_cartorio": "",
+    "estado": "",
+    "filiacao_nubente1": "",
+    "filiacao_nubente2": "",
+    "folha": "12",
+    "funcao_do_registrador": "Oficiala Registradora",
+    "hora_do_casamento": "",
+    "livro": "A-3",
+    "local_da_celebracao": "",
+    "mae_nubente1_bairro": "",
+    "mae_nubente1_cep": "",
+    "mae_nubente1_cidade": "",
+    "mae_nubente1_cpf": "",
+    "mae_nubente1_data_nascimento": "",
+    "mae_nubente1_data_nascimento_extenso": "",
+    "mae_nubente1_endereco": "",
+    "mae_nubente1_estado_civil": "",
+    "mae_nubente1_idade": "",
+    "mae_nubente1_nacionalidade": "",
+    "mae_nubente1_naturalidade": "",
+    "mae_nubente1_naturalidade_cidade": "",
+    "mae_nubente1_naturalidade_uf": "",
+    "mae_nubente1_nome": "",
+    "mae_nubente1_nome_pos": "",
+    "mae_nubente1_orgao": "",
+    "mae_nubente1_pais": "",
+    "mae_nubente1_profissao": "",
+    "mae_nubente1_qualificacao": "",
+    "mae_nubente1_rg": "",
+    "mae_nubente1_sexo": "",
+    "mae_nubente1_uf": "",
+    "mae_nubente2_bairro": "",
+    "mae_nubente2_cep": "",
+    "mae_nubente2_cidade": "",
+    "mae_nubente2_cpf": "",
+    "mae_nubente2_data_nascimento": "",
+    "mae_nubente2_data_nascimento_extenso": "",
+    "mae_nubente2_endereco": "",
+    "mae_nubente2_estado_civil": "",
+    "mae_nubente2_idade": "",
+    "mae_nubente2_nacionalidade": "",
+    "mae_nubente2_naturalidade": "",
+    "mae_nubente2_naturalidade_cidade": "",
+    "mae_nubente2_naturalidade_uf": "",
+    "mae_nubente2_nome": "",
+    "mae_nubente2_nome_pos": "",
+    "mae_nubente2_orgao": "",
+    "mae_nubente2_pais": "",
+    "mae_nubente2_profissao": "",
+    "mae_nubente2_qualificacao": "",
+    "mae_nubente2_rg": "",
+    "mae_nubente2_sexo": "",
+    "mae_nubente2_uf": "",
+    "matricula": "000000 01 55 2026 1 00003 123 0000123 45",
+    "nome": "MARIA DE EXEMPLO",
+    "nubente1_bairro": "Centro",
+    "nubente1_cep": "65000-000",
+    "nubente1_cidade": "Cidade Exemplo",
+    "nubente1_cpf": "00000000191",
+    "nubente1_data_nascimento": "04/05/1990",
+    "nubente1_data_nascimento_extenso": "QUATRO DE MAIO DE MIL NOVECENTOS E NOVENTA",
+    "nubente1_endereco": "Rua de Exemplo, 1",
+    "nubente1_estado_civil": "casada",
+    "nubente1_idade": "",
+    "nubente1_nacionalidade": "brasileira",
+    "nubente1_naturalidade": "Cidade Exemplo/MA",
+    "nubente1_naturalidade_cidade": "Cidade Exemplo",
+    "nubente1_naturalidade_uf": "MA",
+    "nubente1_nome": "MARIA DE EXEMPLO",
+    "nubente1_nome_pos": "",
+    "nubente1_orgao": "",
+    "nubente1_pais": "",
+    "nubente1_profissao": "Lavradora",
+    "nubente1_qualificacao": "brasileira, casada, lavradora, portador(a) de documento n.º 00000000191, natural de Cidade Exemplo, MA, nascido(a) aos 1990-05-04, residente e domiciliado(a) em Rua de Exemplo, 1, Centro, Cidade Exemplo, MA",
+    "nubente1_rg": "",
+    "nubente1_sexo": "feminino",
+    "nubente1_uf": "MA",
+    "nubente2_bairro": "Centro",
+    "nubente2_cep": "65000-000",
+    "nubente2_cidade": "Cidade Exemplo",
+    "nubente2_cpf": "",
+    "nubente2_data_nascimento": "04/05/1990",
+    "nubente2_data_nascimento_extenso": "QUATRO DE MAIO DE MIL NOVECENTOS E NOVENTA",
+    "nubente2_endereco": "Rua de Exemplo, 1",
+    "nubente2_estado_civil": "casada",
+    "nubente2_idade": "",
+    "nubente2_nacionalidade": "brasileira",
+    "nubente2_naturalidade": "Cidade Exemplo/MA",
+    "nubente2_naturalidade_cidade": "Cidade Exemplo",
+    "nubente2_naturalidade_uf": "MA",
+    "nubente2_nome": "JOÃO DE EXEMPLO",
+    "nubente2_nome_pos": "",
+    "nubente2_orgao": "SSP/MA",
+    "nubente2_pais": "",
+    "nubente2_profissao": "Lavradora",
+    "nubente2_qualificacao": "brasileira, casada, lavradora, portador(a) do RG n.º 123456, expedido por SSP/MA, natural de Cidade Exemplo, MA, nascido(a) aos 1990-05-04, residente e domiciliado(a) em Rua de Exemplo, 1, Centro, Cidade Exemplo, MA",
+    "nubente2_rg": "123456",
+    "nubente2_sexo": "masculino",
+    "nubente2_uf": "MA",
+    "nubentes": "MARIA DE EXEMPLO e JOÃO DE EXEMPLO",
+    "pai_nubente1_bairro": "",
+    "pai_nubente1_cep": "",
+    "pai_nubente1_cidade": "",
+    "pai_nubente1_cpf": "",
+    "pai_nubente1_data_nascimento": "",
+    "pai_nubente1_data_nascimento_extenso": "",
+    "pai_nubente1_endereco": "",
+    "pai_nubente1_estado_civil": "",
+    "pai_nubente1_idade": "",
+    "pai_nubente1_nacionalidade": "",
+    "pai_nubente1_naturalidade": "",
+    "pai_nubente1_naturalidade_cidade": "",
+    "pai_nubente1_naturalidade_uf": "",
+    "pai_nubente1_nome": "",
+    "pai_nubente1_nome_pos": "",
+    "pai_nubente1_orgao": "",
+    "pai_nubente1_pais": "",
+    "pai_nubente1_profissao": "",
+    "pai_nubente1_qualificacao": "",
+    "pai_nubente1_rg": "",
+    "pai_nubente1_sexo": "",
+    "pai_nubente1_uf": "",
+    "pai_nubente2_bairro": "",
+    "pai_nubente2_cep": "",
+    "pai_nubente2_cidade": "",
+    "pai_nubente2_cpf": "",
+    "pai_nubente2_data_nascimento": "",
+    "pai_nubente2_data_nascimento_extenso": "",
+    "pai_nubente2_endereco": "",
+    "pai_nubente2_estado_civil": "",
+    "pai_nubente2_idade": "",
+    "pai_nubente2_nacionalidade": "",
+    "pai_nubente2_naturalidade": "",
+    "pai_nubente2_naturalidade_cidade": "",
+    "pai_nubente2_naturalidade_uf": "",
+    "pai_nubente2_nome": "",
+    "pai_nubente2_nome_pos": "",
+    "pai_nubente2_orgao": "",
+    "pai_nubente2_pais": "",
+    "pai_nubente2_profissao": "",
+    "pai_nubente2_qualificacao": "",
+    "pai_nubente2_rg": "",
+    "pai_nubente2_sexo": "",
+    "pai_nubente2_uf": "",
+    "regime_de_bens": "COMUNHAO_PARCIAL",
+    "registrador": "FULANA DE EXEMPLO",
+    "selo": "SELO-EXEMPLO-1",
+    "telefone_do_cartorio": "",
+    "termo": "123",
+    "testemunhas": "MARIA DE EXEMPLO e ANA DE EXEMPLO",
+    "uf": "MA"
+   }
+  },
+  "rc_modelos_livres.valores(NASCIMENTO)": {
+   "ok": {
+    "ano_do_nascimento": "2026",
+    "avo_materna_nome": "JOÃO DE EXEMPLO",
+    "avo_materno_nome": "",
+    "avo_paterna_nome": "",
+    "avo_paterno_nome": "",
+    "avos_maternos": "JOÃO DE EXEMPLO",
+    "avos_paternos": "",
+    "cartorio": "SERVENTIA DE EXEMPLO",
+    "cidade": "Cidade Exemplo",
+    "cor_ou_raca": "Parda",
+    "cpf_do_registrado": "00000000191",
+    "data_de_hoje": "19/10/2026",
+    "data_de_hoje_extenso": "DEZENOVE DE OUTUBRO DE DOIS MIL E VINTE E SEIS",
+    "data_do_nascimento": "01/09/2026",
+    "data_do_nascimento_extenso": "PRIMEIRO DE SETEMBRO DE DOIS MIL E VINTE E SEIS",
+    "data_do_registro": "03/09/2026",
+    "data_do_registro_extenso": "TRES DE SETEMBRO DE DOIS MIL E VINTE E SEIS",
+    "declarante_bairro": "",
+    "declarante_cep": "",
+    "declarante_cidade": "",
+    "declarante_cpf": "",
+    "declarante_data_nascimento": "",
+    "declarante_data_nascimento_extenso": "",
+    "declarante_endereco": "",
+    "declarante_estado_civil": "",
+    "declarante_idade": "",
+    "declarante_nacionalidade": "",
+    "declarante_naturalidade": "",
+    "declarante_naturalidade_cidade": "",
+    "declarante_naturalidade_uf": "",
+    "declarante_nome": "",
+    "declarante_nome_pos": "",
+    "declarante_orgao": "",
+    "declarante_pais": "",
+    "declarante_profissao": "",
+    "declarante_qualificacao": "",
+    "declarante_rg": "",
+    "declarante_sexo": "",
+    "declarante_uf": "",
+    "dia_do_nascimento": "01",
+    "dnv": "",
+    "email_do_cartorio": "",
+    "endereco_do_cartorio": "",
+    "endereco_do_nascimento": "",
+    "estado": "",
+    "filiacao": "MARIA DE EXEMPLO e JOÃO DE EXEMPLO",
+    "folha": "12",
+    "funcao_do_registrador": "Oficiala Registradora",
+    "hora_do_nascimento": "10:30",
+    "livro": "A-3",
+    "local_do_nascimento": "",
+    "mae_bairro": "Centro",
+    "mae_cep": "65000-000",
+    "mae_cidade": "Cidade Exemplo",
+    "mae_cpf": "",
+    "mae_data_nascimento": "04/05/1990",
+    "mae_data_nascimento_extenso": "QUATRO DE MAIO DE MIL NOVECENTOS E NOVENTA",
+    "mae_endereco": "Rua de Exemplo, 1",
+    "mae_estado_civil": "casada",
+    "mae_idade": "",
+    "mae_nacionalidade": "brasileira",
+    "mae_naturalidade": "Cidade Exemplo/MA",
+    "mae_naturalidade_cidade": "Cidade Exemplo",
+    "mae_naturalidade_uf": "MA",
+    "mae_nome": "JOÃO DE EXEMPLO",
+    "mae_nome_pos": "",
+    "mae_orgao": "SSP/MA",
+    "mae_pais": "",
+    "mae_profissao": "Lavradora",
+    "mae_qualificacao": "brasileira, casada, lavradora, portador(a) do RG n.º 123456, expedido por SSP/MA, natural de Cidade Exemplo, MA, nascido(a) aos 1990-05-04, residente e domiciliado(a) em Rua de Exemplo, 1, Centro, Cidade Exemplo, MA",
+    "mae_rg": "123456",
+    "mae_sexo": "masculino",
+    "mae_uf": "MA",
+    "matricula": "000000 01 55 2026 1 00003 123 0000123 45",
+    "mes_do_nascimento": "09",
+    "naturalidade_declarada": "",
+    "nome": "MARIA DE EXEMPLO",
+    "ordem_de_gemeo": "",
+    "pai_bairro": "Centro",
+    "pai_cep": "65000-000",
+    "pai_cidade": "Cidade Exemplo",
+    "pai_cpf": "00000000191",
+    "pai_data_nascimento": "04/05/1990",
+    "pai_data_nascimento_extenso": "QUATRO DE MAIO DE MIL NOVECENTOS E NOVENTA",
+    "pai_endereco": "Rua de Exemplo, 1",
+    "pai_estado_civil": "casada",
+    "pai_idade": "",
+    "pai_nacionalidade": "brasileira",
+    "pai_naturalidade": "Cidade Exemplo/MA",
+    "pai_naturalidade_cidade": "Cidade Exemplo",
+    "pai_naturalidade_uf": "MA",
+    "pai_nome": "MARIA DE EXEMPLO",
+    "pai_nome_pos": "",
+    "pai_orgao": "",
+    "pai_pais": "",
+    "pai_profissao": "Lavradora",
+    "pai_qualificacao": "brasileira, casada, lavradora, portador(a) de documento n.º 00000000191, natural de Cidade Exemplo, MA, nascido(a) aos 1990-05-04, residente e domiciliado(a) em Rua de Exemplo, 1, Centro, Cidade Exemplo, MA",
+    "pai_rg": "",
+    "pai_sexo": "feminino",
+    "pai_uf": "MA",
+    "registrado_bairro": "Centro",
+    "registrado_cep": "65000-000",
+    "registrado_cidade": "Cidade Exemplo",
+    "registrado_cpf": "00000000191",
+    "registrado_data_nascimento": "04/05/1990",
+    "registrado_data_nascimento_extenso": "QUATRO DE MAIO DE MIL NOVECENTOS E NOVENTA",
+    "registrado_endereco": "Rua de Exemplo, 1",
+    "registrado_estado_civil": "casada",
+    "registrado_idade": "",
+    "registrado_nacionalidade": "brasileira",
+    "registrado_naturalidade": "Cidade Exemplo/MA",
+    "registrado_naturalidade_cidade": "Cidade Exemplo",
+    "registrado_naturalidade_uf": "MA",
+    "registrado_nome": "MARIA DE EXEMPLO",
+    "registrado_nome_pos": "",
+    "registrado_orgao": "",
+    "registrado_pais": "",
+    "registrado_profissao": "Lavradora",
+    "registrado_qualificacao": "brasileira, casada, lavradora, portador(a) de documento n.º 00000000191, natural de Cidade Exemplo, MA, nascido(a) aos 1990-05-04, residente e domiciliado(a) em Rua de Exemplo, 1, Centro, Cidade Exemplo, MA",
+    "registrado_rg": "",
+    "registrado_sexo": "feminino",
+    "registrado_uf": "MA",
+    "registrador": "FULANA DE EXEMPLO",
+    "selo": "SELO-EXEMPLO-1",
+    "telefone_do_cartorio": "",
+    "termo": "123",
+    "uf": "MA"
+   }
+  },
+  "rc_modelos_livres.valores(OBITO)": {
+   "ok": {
+    "atestante": "",
+    "cartorio": "SERVENTIA DE EXEMPLO",
+    "causa_da_morte": "causa de exemplo",
+    "cidade": "Cidade Exemplo",
+    "cor_ou_raca": "Parda",
+    "cpf_do_falecido": "00000000191",
+    "data_de_hoje": "19/10/2026",
+    "data_de_hoje_extenso": "DEZENOVE DE OUTUBRO DE DOIS MIL E VINTE E SEIS",
+    "data_do_obito": "01/09/2026",
+    "data_do_obito_extenso": "PRIMEIRO DE SETEMBRO DE DOIS MIL E VINTE E SEIS",
+    "data_do_registro": "03/09/2026",
+    "data_do_registro_extenso": "TRES DE SETEMBRO DE DOIS MIL E VINTE E SEIS",
+    "declaracao_de_obito": "3000000001",
+    "declarante_bairro": "Centro",
+    "declarante_cep": "65000-000",
+    "declarante_cidade": "Cidade Exemplo",
+    "declarante_cpf": "",
+    "declarante_data_nascimento": "04/05/1990",
+    "declarante_data_nascimento_extenso": "QUATRO DE MAIO DE MIL NOVECENTOS E NOVENTA",
+    "declarante_endereco": "Rua de Exemplo, 1",
+    "declarante_estado_civil": "casada",
+    "declarante_idade": "",
+    "declarante_nacionalidade": "brasileira",
+    "declarante_naturalidade": "Cidade Exemplo/MA",
+    "declarante_naturalidade_cidade": "Cidade Exemplo",
+    "declarante_naturalidade_uf": "MA",
+    "declarante_nome": "JOÃO DE EXEMPLO",
+    "declarante_nome_pos": "",
+    "declarante_orgao": "SSP/MA",
+    "declarante_pais": "",
+    "declarante_profissao": "Lavradora",
+    "declarante_qualificacao": "brasileira, casada, lavradora, portador(a) do RG n.º 123456, expedido por SSP/MA, natural de Cidade Exemplo, MA, nascido(a) aos 1990-05-04, residente e domiciliado(a) em Rua de Exemplo, 1, Centro, Cidade Exemplo, MA",
+    "declarante_rg": "123456",
+    "declarante_sexo": "masculino",
+    "declarante_uf": "MA",
+    "documento_do_atestante": "",
+    "email_do_cartorio": "",
+    "endereco_do_cartorio": "",
+    "endereco_do_obito": "",
+    "estado": "",
+    "falecido_bairro": "Centro",
+    "falecido_cep": "65000-000",
+    "falecido_cidade": "Cidade Exemplo",
+    "falecido_cpf": "00000000191",
+    "falecido_data_nascimento": "04/05/1990",
+    "falecido_data_nascimento_extenso": "QUATRO DE MAIO DE MIL NOVECENTOS E NOVENTA",
+    "falecido_endereco": "Rua de Exemplo, 1",
+    "falecido_estado_civil": "casada",
+    "falecido_idade": "",
+    "falecido_nacionalidade": "brasileira",
+    "falecido_naturalidade": "Cidade Exemplo/MA",
+    "falecido_naturalidade_cidade": "Cidade Exemplo",
+    "falecido_naturalidade_uf": "MA",
+    "falecido_nome": "MARIA DE EXEMPLO",
+    "falecido_nome_pos": "",
+    "falecido_orgao": "",
+    "falecido_pais": "",
+    "falecido_profissao": "Lavradora",
+    "falecido_qualificacao": "brasileira, casada, lavradora, portador(a) de documento n.º 00000000191, natural de Cidade Exemplo, MA, nascido(a) aos 1990-05-04, residente e domiciliado(a) em Rua de Exemplo, 1, Centro, Cidade Exemplo, MA",
+    "falecido_rg": "",
+    "falecido_sexo": "feminino",
+    "falecido_uf": "MA",
+    "filiacao": "",
+    "folha": "12",
+    "funcao_do_registrador": "Oficiala Registradora",
+    "hora_do_obito": "",
+    "idade_do_falecido": "75",
+    "livro": "A-3",
+    "local_do_obito": "",
+    "local_do_sepultamento": "",
+    "mae_bairro": "",
+    "mae_cep": "",
+    "mae_cidade": "",
+    "mae_cpf": "",
+    "mae_data_nascimento": "",
+    "mae_data_nascimento_extenso": "",
+    "mae_endereco": "",
+    "mae_estado_civil": "",
+    "mae_idade": "",
+    "mae_nacionalidade": "",
+    "mae_naturalidade": "",
+    "mae_naturalidade_cidade": "",
+    "mae_naturalidade_uf": "",
+    "mae_nome": "",
+    "mae_nome_pos": "",
+    "mae_orgao": "",
+    "mae_pais": "",
+    "mae_profissao": "",
+    "mae_qualificacao": "",
+    "mae_rg": "",
+    "mae_sexo": "",
+    "mae_uf": "",
+    "matricula": "000000 01 55 2026 1 00003 123 0000123 45",
+    "municipio_do_obito": "Cidade Exemplo/MA",
+    "nome": "MARIA DE EXEMPLO",
+    "pai_bairro": "",
+    "pai_cep": "",
+    "pai_cidade": "",
+    "pai_cpf": "",
+    "pai_data_nascimento": "",
+    "pai_data_nascimento_extenso": "",
+    "pai_endereco": "",
+    "pai_estado_civil": "",
+    "pai_idade": "",
+    "pai_nacionalidade": "",
+    "pai_naturalidade": "",
+    "pai_naturalidade_cidade": "",
+    "pai_naturalidade_uf": "",
+    "pai_nome": "",
+    "pai_nome_pos": "",
+    "pai_orgao": "",
+    "pai_pais": "",
+    "pai_profissao": "",
+    "pai_qualificacao": "",
+    "pai_rg": "",
+    "pai_sexo": "",
+    "pai_uf": "",
+    "possui_bens": "",
+    "possui_filho": "",
+    "registrador": "FULANA DE EXEMPLO",
+    "selo": "SELO-EXEMPLO-1",
+    "telefone_do_cartorio": "",
+    "termo": "123",
+    "tipo_de_morte": "",
+    "titulo_de_eleitor": "",
+    "uf": "MA",
+    "uf_do_obito": "MA"
+   }
+  },
+  "rc_pedidos._averbacoes(tres)": {
+   "ok": "AV-1: Averbo o divórcio do casal. | Anoto o casamento. | Retifico o nome."
+  },
+  "rc_pedidos._averbacoes(vazio)": {
+   "ok": ""
+  },
+  "rc_termo.qualificacao(cnh)": {
+   "ok": "portador(a) de CNH n.º 999, expedido por DETRAN/MA"
+  },
+  "rc_termo.qualificacao(cpf_cheio)": {
+   "ok": "brasileira, solteira, lavradora, inscrito(a) no CPF n.º 000.000.001-91, expedido por SSP/MA, natural de Cidade Exemplo, MA, nascido(a) aos 1990-05-04, residente e domiciliado(a) em Rua de Exemplo, 1, Centro, Cidade Exemplo, MA"
+  },
+  "rc_termo.qualificacao(none)": {
+   "ok": ""
+  },
+  "rc_termo.qualificacao(rg)": {
+   "ok": "portador(a) do RG n.º 123456"
+  },
+  "rc_termo.qualificacao(sem_tipo)": {
+   "ok": "portador(a) de documento n.º 777, natural de MA"
+  },
+  "rc_termo.qualificacao(so_uf)": {
+   "ok": "natural de MA, residente e domiciliado(a) em MA"
+  },
+  "rc_termo.qualificacao(vazio)": {
+   "ok": ""
+  }
+ },
+ "grupo": "comunicacoes",
+ "textos": {}
+}

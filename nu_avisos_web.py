@@ -7,6 +7,8 @@ from flask import flash, jsonify, redirect, render_template, request, session, u
 
 import nu_avisos_gestao as NAV
 import tarefa_processo as TP
+from seguranca_web import destino_interno, volta_do_referer  # M1/B3 (LX11): o «volte para» só leva a caminho desta casa
+from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 
 
 _MODAL_SUPRIMIDO = frozenset({
@@ -63,6 +65,16 @@ def _vigencia_do_form(form):
     return ini, fim
 
 
+def _dia_da_semana(x) -> int:
+    """O dia marcado (0 = segunda … 6 = domingo). O que não é número é o
+    mesmo recado do dia fora da semana — e não o `int()` que derrubava a tela
+    (LD13)."""
+    dia = numero_digitado(x)
+    if dia is None:
+        raise NAV.AvisoGestaoError("Dia da semana inválido (use Seg a Dom).")
+    return dia
+
+
 def _recorrencia_do_form(form):
     rec = form.get("recorrente") == "1"
     hora = form.get("recorrencia_hora")
@@ -71,13 +83,39 @@ def _recorrencia_do_form(form):
     for x in raw:
         if x in (None, ""):
             continue
-        dias.append(int(x))
+        dias.append(_dia_da_semana(x))
     if not dias:
         leg = form.get("recorrencia_dia_semana")
         if leg not in (None, ""):
-            dias = [int(leg)]
+            dias = [_dia_da_semana(leg)]
     mask = NAV.dias_bitmask(dias) if dias else None
     return rec, mask, (hora or None)
+
+
+def _barra_do_form(form) -> dict:
+    """Os campos da barra fixa. Sem a marca `barra_campos`, nada se altera.
+
+    A marca existe porque a caixa de papel desmarcada não chega no POST: sem
+    ela, «desmarquei MANAGER» e «formulário antigo, sem o campo» seriam o
+    mesmo pedido.
+    """
+    if form.get("barra_campos") != "1":
+        return {}
+    return {
+        "modo": form.get("modo") or NAV.MODO_JANELA,
+        "barra_dia_mes": form.get("barra_dia_mes"),
+        "barra_papeis": form.getlist("barra_papeis"),
+        "avisei_dias": form.get("avisei_dias"),
+    }
+
+
+def _destino(form, padrao: str) -> str:
+    # Só caminho interno: o `next` vem do formulário, e da barra que está em
+    # toda tela; endereço de fora viraria um redirecionamento aberto. A régua
+    # é a da casa (`destino_interno`, LX11): a de antes deixava passar
+    # `/\fora.exemplo`, que o navegador lê como `//fora.exemplo` (LX20,
+    # ressalva da revisão do LX17).
+    return destino_interno((form.get("next") or "").strip(), padrao)
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str):
@@ -108,6 +146,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "nu_avisos_ux_compacta": False,
             "nu_tarefas_faixa": None,
             "nu_tarefas_faixa_sem_responsavel": None,
+            "nu_barras_fixas": None,
         }
         try:
             request.endpoint
@@ -125,10 +164,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # trava nada; a trava só é pedida no UPDATE, quando há aviso
             # recorrente para reativar — e o `with` faz o commit.
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 NAV.processar_recorrencias(con, agora=agora())
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 dispensados = _dispensados_efetivos(con, uid, _hoje())
                 pendentes = NAV.pendentes_para_usuario(
                     con, uid, hoje=_hoje(), dispensados=dispensados
@@ -137,6 +174,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 ux_compacta = NAV.banco_e_sandbox(con)
                 overlay_fechado = _overlay_fechado(modo_teste, _hoje())
                 papel = usuario_papel()
+                # A barra fixa não depende da janela nem da caixa de areia:
+                # vale em toda tela, para todo usuário, até a baixa do mês.
+                barras = NAV.barras_para_usuario(con, uid, hoje=_hoje(), papel=papel)
                 tarefas_crit = TP.contagem_tier_critico_tarefas(con, uid)
                 tarefas_alta = TP.contagem_tier_alta_tarefas(con, uid)
                 tarefas_media, tarefas_baixa = TP.contagem_media_baixa_notificacao(con, uid)
@@ -248,6 +288,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "nu_avisos_ux_compacta": ux_compacta,
                 "nu_tarefas_faixa": nu_tarefas_faixa,
                 "nu_tarefas_faixa_sem_responsavel": nu_tarefas_faixa_sem_resp,
+                "nu_barras_fixas": NAV.empilhar_barras(barras),
             }
         except sqlite3.Error:
             return vazio
@@ -257,12 +298,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def nu_avisos_lista():
         if usuario_papel() == "ADMIN":
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 linhas = NAV.listar_admin(con)
-            return render_template("avisos_admin_lista.html", linhas=linhas)
+                historico = NAV.historico_barras(con, hoje=_hoje())
+            return render_template(
+                "avisos_admin_lista.html", linhas=linhas, historico_barras=historico
+            )
         uid = usuario_id()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             ativos = NAV.listar_ativos_vigentes(con, hoje=_hoje())
             dispensados = _dispensados_efetivos(con, uid, _hoje())
         return render_template(
@@ -277,7 +319,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def nu_avisos_detalhe(aviso_id: int):
         uid = usuario_id()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             aviso = NAV.obter(con, aviso_id)
             if not aviso or not int(aviso["ativo"]):
                 flash("Aviso não encontrado ou inativo.", "danger")
@@ -302,7 +343,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if not NAV.obter(con, aviso_id):
                     raise NAV.AvisoGestaoError("Aviso não encontrado.")
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 aviso_row = NAV.obter(con, aviso_id)
                 eh_prior = aviso_row and NAV.eh_prioritario(aviso_row)
             if modo_teste and not (eh_prior and usuario_papel() == "ADMIN"):
@@ -319,10 +359,63 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     )
         except NAV.AvisoGestaoError as erro:
             flash(str(erro), "danger")
-            return redirect(request.referrer or url_for("nu_avisos_lista"))
+            return redirect(volta_do_referer(request.referrer, request.host, url_for("nu_avisos_lista")))
         audit("NU_AVISO_DISPENSA", "nu_aviso_dispensa", aviso_id, {"user_id": uid})
-        dest = request.form.get("next") or request.referrer or url_for("dashboard")
+        dest = destino_interno(request.form.get("next"), "") or volta_do_referer(
+            request.referrer, request.host, url_for("dashboard"))
         return redirect(dest)
+
+    # A BAIXA E O «AVISEI» DA BARRA FIXA (LX17). A rota barra o AUDITOR, que
+    # não grava; QUEM pode dar baixa é o aviso que diz (`barra_papeis`), e o
+    # módulo confere. A linha do audit_logs é gravada lá, na mesma transação —
+    # por isso estas duas rotas não chamam o `audit`.
+    @app.route("/avisos/<int:aviso_id>/pago", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def nu_avisos_marcar_pago(aviso_id: int):
+        try:
+            with db.transaction() as con:
+                mes = NAV.marcar_pago(
+                    con,
+                    aviso_id,
+                    user_id=usuario_id(),
+                    papel=usuario_papel(),
+                    data_pagamento=request.form.get("data_pagamento"),
+                    guia=request.form.get("guia"),
+                    agora=agora(),
+                    hoje=_hoje(),
+                    ip=request.remote_addr,
+                )
+        except NAV.AvisoGestaoError as erro:
+            flash(str(erro), "danger")
+        else:
+            flash(f"Marcado pago o mês {mes[5:7]}/{mes[:4]}.", "success")
+        return redirect(_destino(request.form, url_for("dashboard")))
+
+    @app.route("/avisos/<int:aviso_id>/avisei", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def nu_avisos_avisei(aviso_id: int):
+        try:
+            with db.transaction() as con:
+                ate = NAV.registrar_avisei(
+                    con,
+                    aviso_id,
+                    user_id=usuario_id(),
+                    palavra=request.form.get("palavra"),
+                    agora=agora(),
+                    hoje=_hoje(),
+                    ip=request.remote_addr,
+                )
+        except NAV.AvisoGestaoError as erro:
+            flash(str(erro), "danger")
+        else:
+            flash(
+                f"Registrado o «avisei». A barra volta em {ate[8:10]}/{ate[5:7]}, "
+                "se o mês ainda não estiver pago.",
+                "success",
+            )
+        return redirect(_destino(request.form, url_for("dashboard")))
 
 
     @app.route("/avisos/fechar-modal", methods=["POST"])
@@ -331,7 +424,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         uid = usuario_id()
         hoje = _hoje()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             modo_teste = NAV.modal_modo_teste(con)
             ux_compacta = NAV.banco_e_sandbox(con)
             dispensados = _dispensados_efetivos(con, uid, hoje)
@@ -356,7 +448,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     )
             _marcar_overlay_fechado(modo_teste, hoje)
         audit("NU_AVISO_FECHAR_MODAL", "nu_avisos", None, {"user_id": uid})
-        dest = request.form.get("next") or request.referrer or url_for("dashboard")
+        dest = destino_interno(request.form.get("next"), "") or volta_do_referer(
+            request.referrer, request.host, url_for("dashboard"))
         return redirect(dest)
 
     @app.route("/avisos/dispensar-normais-faixa", methods=["POST"])
@@ -388,9 +481,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     )
         except NAV.AvisoGestaoError as erro:
             flash(str(erro), "danger")
-            return redirect(request.referrer or url_for("dashboard"))
+            return redirect(volta_do_referer(request.referrer, request.host, url_for("dashboard")))
         audit("NU_AVISO_DISPENSA_FAIXA_VERDE", "nu_aviso_dispensa", None, {"n": n})
-        dest = request.form.get("next") or request.referrer or url_for("dashboard")
+        dest = destino_interno(request.form.get("next"), "") or volta_do_referer(
+            request.referrer, request.host, url_for("dashboard"))
         return redirect(dest)
 
     @app.route("/avisos/dispensar-importantes-faixa", methods=["POST"])
@@ -431,9 +525,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     )
         except NAV.AvisoGestaoError as erro:
             flash(str(erro), "danger")
-            return redirect(request.referrer or url_for("dashboard"))
+            return redirect(volta_do_referer(request.referrer, request.host, url_for("dashboard")))
         audit("NU_AVISO_DISPENSA_FAIXA_VERMELHA", "nu_aviso_dispensa", None, {"n": n})
-        dest = request.form.get("next") or request.referrer or url_for("dashboard")
+        dest = destino_interno(request.form.get("next"), "") or volta_do_referer(
+            request.referrer, request.host, url_for("dashboard"))
         return redirect(dest)
 
     @app.route("/avisos/pendentes.json")
@@ -477,6 +572,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     recorrente=rec,
                     recorrencia_dias=dias_mask,
                     recorrencia_hora=hh,
+                    **_barra_do_form(request.form),
                 )
         except NAV.AvisoGestaoError as erro:
             flash(str(erro), "danger")
@@ -490,7 +586,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN")
     def nu_avisos_admin_editar(aviso_id: int):
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             aviso = NAV.obter(con, aviso_id)
         if not aviso:
             flash("Aviso não encontrado.", "danger")
@@ -501,6 +596,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             with db.transaction() as con:
                 rec, dias_mask, hh = _recorrencia_do_form(request.form)
                 v_ini, v_fim = _vigencia_do_form(request.form)
+                barra = _barra_do_form(request.form)
                 NAV.atualizar(
                     con,
                     aviso_id,
@@ -514,6 +610,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     recorrente=rec,
                     recorrencia_dias=dias_mask,
                     recorrencia_hora=hh,
+                    manter_barra=not barra,
+                    **barra,
                 )
         except NAV.AvisoGestaoError as erro:
             flash(str(erro), "danger")

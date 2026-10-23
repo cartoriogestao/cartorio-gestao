@@ -30,10 +30,13 @@ O TERMO E A CERTIDAO SAO PAPEIS DIFERENTES, E ISSO DECIDE O DESENHO
     que o declarante assinou — e é o papel assinado que vale.
 
 DE ONDE VEM O MODELO
-    De `modelos_da_casa`, o catálogo do relato #28: **o código é o piso e a
-    tabela é o ajuste**. Os padrões que este módulo traz foram lidos dos treze
-    modelos do E-Ofício — é o precedente real desta casa, e não um texto que eu
-    tenha redigido.
+    De `modelos_da_casa`, o catálogo do relato #28: **o padrão da base é o
+    piso e o ajuste da casa vence**. O corpo de cada termo é o papel
+    `RC_TERMO_*` (`modelos_padrao/rcpn/`), e as frases ocasionais são peças
+    dele, montadas por `rc_modelos_do_livro`. Os três modelos Jinja lidos dos
+    treze do E-Ofício (`MODELO_TERMO_*`), com o `contexto()` que os
+    preenchia, saíram no LF06C (19/10/2026): ninguém os usava, e eram o
+    catálogo outra vez, noutro formato.
 
     **O CABEÇALHO NÃO VEIO JUNTO, E É DELIBERADO.** Os modelos do E-Ofício
     trazem o oficial impresso no texto, e dois deles trazem a **oficial
@@ -45,9 +48,10 @@ DE ONDE VEM O MODELO
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
 
 import rc_assento as ASSENTO
+import rc_textos as TEXTOS
+from bd_nativo import banco
 
 
 class TermoError(ValueError):
@@ -55,91 +59,6 @@ class TermoError(ValueError):
 
 
 # --------------------------------------------------------------- os modelos
-#
-# LIDOS DOS TREZE MODELOS DO E-OFICIO, em 29/08/2026. O que mudou em relacao ao
-# original: o cabecalho saiu (ver acima), os campos `@nome` viraram `{{ nome }}`
-# do Jinja — que e o motor de modelo desta casa —, e o endereco da lei ficou
-# onde estava, porque **exigencia sem endereco e exigencia que ninguem
-# confere**.
-
-MODELO_TERMO_NASCIMENTO = """\
-<p align="center"><b>REGISTRO DE NASCIMENTO</b></p>
-<p><strong>Termo: {{ a.numero }}</strong> &nbsp; <strong>Livro: {{ a.livro }}</strong> &nbsp; <strong>Folha: {{ a.folha }}</strong></p>
-<p align="justify">Aos {{ a.data_ato_extenso }}, neste Município de
-{{ sv.cidade }}, Estado do {{ sv.estado }}, neste ofício, compareceu o(a) Sr.(a)
-{{ declarante.nome }}{% if declarante.qualificacao %}, {{ declarante.qualificacao }}{% endif %},
-{% if a.dnv %}apresentou a DNV n.º {{ a.dnv }}, e {% endif %}declarou que no dia
-{{ a.data_fato_extenso }}{% if a.hora_fato %}, às {{ a.hora_fato }}{% endif %},
-{% if a.local_fato_nome %}em {{ a.local_fato_nome }}{% if a.local_fato_endereco %},
-{{ a.local_fato_endereco }}{% endif %}, {% endif %}localizada na cidade de
-{{ a.municipio_fato }}, nasceu uma criança do sexo {{ a.sexo_extenso }}{% if a.cor_raca %},
-cor {{ a.cor_raca }}{% endif %}, que recebeu o nome de: &ldquo;<strong>{{ a.nome }}</strong>&rdquo;,
-sendo filho(a) de {{ pai.nome or '(não declarado)' }}{% if pai.qualificacao %},
-{{ pai.qualificacao }}{% endif %}, e de {{ mae.nome or '(não declarada)' }}{% if mae.qualificacao %},
-{{ mae.qualificacao }}{% endif %}{% if mae.idade_no_fato %}, tendo a mãe, na ocasião do
-parto, {{ mae.idade_no_fato }} anos de idade{% endif %}{% if avos_paternos or avos_maternos %},
-tendo como avós paternos: {{ avos_paternos or 'não declarados' }} e maternos:
-{{ avos_maternos or 'não declarados' }}{% endif %}.
-{% if a.naturalidade_declarada %}A naturalidade declarada é de
-{{ a.naturalidade_declarada }}, na forma do art. 54, § 4º, da Lei Federal
-n.º 6.015/1973. {% endif %}
-{% if a.cpf_registrado %}Inscrito no CPF n.º {{ a.cpf_registrado }}. {% endif %}
-Lido e achado conforme, o(a) declarante assina. Eu, {{ sv.registrador }},
-{{ sv.titulo }}, dou fé e assino.{% if a.matricula %} Matrícula
-{{ a.matricula }}.{% endif %} {{ sv.cidade }}/{{ sv.uf }},
-{{ a.data_ato_extenso }}.</p>
-{% if a.selo %}<p>{{ a.selo }}</p>{% endif %}
-"""
-
-MODELO_TERMO_OBITO = """\
-<p align="center"><b>REGISTRO DE ÓBITO</b></p>
-<p><strong>Termo: {{ a.numero }}</strong> &nbsp; <strong>Livro: {{ a.livro }}</strong> &nbsp; <strong>Folha: {{ a.folha }}</strong></p>
-<p align="justify">Aos {{ a.data_ato_extenso }}, neste Município de
-{{ sv.cidade }}, Estado do {{ sv.estado }}, neste ofício, compareceu o(a) Sr.(a)
-{{ declarante.nome }}{% if declarante.qualificacao %}, {{ declarante.qualificacao }}{% endif %},
-{% if a.numero_do %}apresentou a Declaração de Óbito n.º {{ a.numero_do }}, e {% endif %}
-declarou que no dia {{ a.data_fato_extenso }}{% if a.hora_fato %}, às {{ a.hora_fato }}{% endif %},
-{% if a.local_fato_nome %}em {{ a.local_fato_nome }}{% if a.local_fato_endereco %},
-{{ a.local_fato_endereco }}{% endif %}, {% endif %}faleceu
-<strong>{{ falecido.nome }}</strong>{% if falecido.qualificacao %}, {{ falecido.qualificacao }}{% endif %}
-{%- if falecido.idade_no_fato %}, com {{ falecido.idade_no_fato }} de idade{% endif %}
-{%- if a.cor_raca %}, cor {{ a.cor_raca }}{% endif %}
-{%- if falecido.estado_civil %}, {{ falecido.estado_civil }}{% endif %},
-{% if pai.nome or mae.nome %}filho(a) de {{ pai.nome or '(não declarado)' }} e de
-{{ mae.nome or '(não declarada)' }}, {% endif %}
-{%- if a.causa_morte %}sendo a causa da morte {{ a.causa_morte }}{% if a.atestante %},
-atestada por {{ a.atestante }}{% endif %}. {% endif %}
-{%- if a.local_sepultamento %}O sepultamento deu-se em {{ a.local_sepultamento }}. {% endif %}
-{%- if a.eleitor %}{{ a.eleitor }} {% endif %}
-{%- if a.possui_bens %}{{ a.possui_bens }} {% endif %}
-Lido e achado conforme, o(a) declarante assina. Eu, {{ sv.registrador }},
-{{ sv.titulo }}, dou fé e assino.{% if a.matricula %} Matrícula
-{{ a.matricula }}.{% endif %} {{ sv.cidade }}/{{ sv.uf }},
-{{ a.data_ato_extenso }}.</p>
-{% if a.selo %}<p>{{ a.selo }}</p>{% endif %}
-"""
-
-MODELO_TERMO_CASAMENTO = """\
-<p align="center"><b>REGISTRO DE CASAMENTO</b></p>
-<p><strong>Termo: {{ a.numero }}</strong> &nbsp; <strong>Livro: {{ a.livro }}</strong> &nbsp; <strong>Folha: {{ a.folha }}</strong></p>
-<p align="justify">Aos {{ a.data_ato_extenso }}, neste Município de
-{{ sv.cidade }}, Estado do {{ sv.estado }}, perante mim, {{ sv.registrador }},
-{{ sv.titulo }}, e as testemunhas ao final assinadas, compareceram os
-contraentes <strong>{{ nubente1.nome }}</strong>{% if nubente1.qualificacao %},
-{{ nubente1.qualificacao }}{% endif %}, e <strong>{{ nubente2.nome }}</strong>{% if nubente2.qualificacao %},
-{{ nubente2.qualificacao }}{% endif %}, e, tendo sido cumpridas as formalidades
-legais da habilitação, receberam-se em matrimônio, sob o regime da
-{{ a.regime_bens or '(regime não informado)' }}.
-{% if nubente1.nome_pos %}O(a) contraente {{ nubente1.nome }} passou a assinar:
-{{ nubente1.nome_pos }}. {% endif %}
-{%- if nubente2.nome_pos %}O(a) contraente {{ nubente2.nome }} passou a assinar:
-{{ nubente2.nome_pos }}. {% endif %}
-Lido e achado conforme, os contraentes e as testemunhas assinam. Eu,
-{{ sv.registrador }}, {{ sv.titulo }}, dou fé e assino.{% if a.matricula %}
-Matrícula {{ a.matricula }}.{% endif %} {{ sv.cidade }}/{{ sv.uf }},
-{{ a.data_ato_extenso }}.</p>
-{% if a.selo %}<p>{{ a.selo }}</p>{% endif %}
-"""
 
 # A especie manda no modelo, e nao o chamador. E a mesma regra da serie
 # (`rc_assento.SERIE_DA_ESPECIE`): deixar o balcao escolher o modelo seria
@@ -184,7 +103,7 @@ def especies_com_termo() -> tuple[str, ...]:
 # sem a informacao: ele AFIRMA que ha um RG e nao diz qual.
 
 
-def qualificacao(pessoa: dict | sqlite3.Row | None) -> str:
+def qualificacao(pessoa: dict | None) -> str:
     """A qualificação de uma pessoa, com o que houver. Só calcula."""
     if not pessoa:
         return ""
@@ -224,84 +143,7 @@ def qualificacao(pessoa: dict | sqlite3.Row | None) -> str:
     return ", ".join(partes)
 
 
-def _pessoas_por_papel(con: sqlite3.Connection,
-                       assento_id: int) -> dict[str, dict]:
-    con.row_factory = sqlite3.Row
-    achadas: dict[str, dict] = {}
-    for r in con.execute(
-            """SELECT * FROM rc_pessoas WHERE assento_id = ?
-                ORDER BY ordem, id""", (assento_id,)):
-        d = dict(r)
-        d["qualificacao"] = qualificacao(d)
-        achadas.setdefault(str(d.get("papel") or "").upper(), d)
-    return achadas
-
-
-def _juntar_avos(pessoas: dict[str, dict], lado: str) -> str:
-    """«JOÃO DA SILVA e MARIA DA SILVA», ou o que houver dos dois.
-
-    OS AVOS PATERNOS SAO OS DO PAI, e o termo do E-Oficio os escreve nesta
-    ordem. Este projeto ja mediu a numeracao de filiacao no acervo em 28/08 e o
-    texto do termo a confirma pelo outro lado — que e o tipo de conferencia que
-    vale, porque as duas fontes sao independentes.
-    """
-    nomes = [pessoas.get(f"AVO_{lado}", {}).get("nome"),
-             pessoas.get(f"AVO_{lado[:-1]}A", {}).get("nome")]
-    nomes = [str(x).strip() for x in nomes if x]
-    return " e ".join(dict.fromkeys(nomes))
-
-
 # ------------------------------------------------------------------ o teor
-
-
-def contexto(con: sqlite3.Connection, assento_id: int, *,
-             serventia: dict, livro: str = "", folha: str = "",
-             selo: str = "") -> dict[str, Any]:
-    """Tudo o que o modelo do termo precisa. Só lê.
-
-    A DATA POR EXTENSO SAI DA MESMA FUNCAO DOS TERMOS DE LIVRO —
-    `livro_nucleo.por_extenso`, via `rc_certidao.data_por_extenso`. Uma segunda
-    forma de escrever data faria o termo e a certidao do mesmo assento
-    discordarem no papel.
-    """
-    from rc_certidao import data_por_extenso
-
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT * FROM rc_assentos WHERE id = ?",
-                    (assento_id,)).fetchone()
-    if not a:
-        raise TermoError(f"Não achei o assento nº {assento_id}.")
-    a = dict(a)
-
-    pessoas = _pessoas_por_papel(con, assento_id)
-    especie = str(a.get("especie") or "").upper()
-
-    a["data_ato_extenso"] = data_por_extenso(a.get("data_ato"))
-    a["data_fato_extenso"] = data_por_extenso(a.get("data_fato"))
-    a["sexo_extenso"] = {"M": "masculino", "F": "feminino"}.get(
-        str(a.get("sexo") or "").upper()[:1], "")
-    a["livro"] = livro or a.get("livro_volume") or ""
-    a["folha"] = folha or ""
-    a["selo"] = selo or ""
-    a["municipio_fato"] = a.get("naturalidade_declarada") or serventia.get(
-        "cidade", "")
-
-    vazia: dict = {"nome": "", "qualificacao": ""}
-    return {
-        "a": a,
-        "sv": serventia,
-        "especie": especie,
-        "declarante": pessoas.get("DECLARANTE", vazia),
-        "registrado": pessoas.get("REGISTRADO", vazia),
-        "falecido": pessoas.get("FALECIDO", vazia),
-        "nubente1": pessoas.get("NUBENTE1", vazia),
-        "nubente2": pessoas.get("NUBENTE2", vazia),
-        "pai": pessoas.get("PAI", vazia),
-        "mae": pessoas.get("MAE", vazia),
-        "avos_paternos": _juntar_avos(pessoas, "PATERNO"),
-        "avos_maternos": _juntar_avos(pessoas, "MATERNO"),
-        "pessoas": pessoas,
-    }
 
 
 def montar(con: sqlite3.Connection, assento_id: int, *, serventia: dict,
@@ -329,17 +171,19 @@ def montar_para_conferir(con: sqlite3.Connection, assento_id: int, *,
     aprova o que o livro não monta; por isso `montar` passou a chamar esta, e
     a tela também.
     """
+    import modelos_da_casa as MODELOS
     import modelos_motor_versao as VERSAO
     import rc_modelos_do_livro as LIVRO
 
+    bd = banco(con)
     especie = str(
-        con.execute("SELECT especie FROM rc_assentos WHERE id = ?",
-                    (assento_id,)).fetchone()[0] or "").upper()
+        bd.valor("SELECT especie FROM rc_assentos WHERE id = %s",
+                 (assento_id,)) or "").upper()
     chave = MODELO_DA_ESPECIE.get(especie)
     if not chave:
         raise TermoError(
             f"Não há modelo de termo para {ASSENTO.NOME_DA_ESPECIE.get(especie, especie)}. "
-            "O E-Ofício não tinha modelo para essa espécie e esta casa nunca "
+            "O sistema antigo não tinha modelo para essa espécie e esta casa nunca "
             "lavrou nenhuma — inventar a forma de um ato que ninguém praticou "
             "é o que a correição acha.")
 
@@ -355,18 +199,17 @@ def montar_para_conferir(con: sqlite3.Connection, assento_id: int, *,
     # -> nao consulta o Editor; None/vazio -> corpo_de legado (dentro do helper).
     corpo, _origem = VERSAO.corpo_do_termo(con, chave)
     if corpo is None and chave:
-        import modelos_da_casa as MODELOS
         corpo = MODELOS.corpo_de(con, chave)
 
     ruim = LIVRO.conferir_corpo(chave.replace("RC_TERMO_", ""), corpo)
     if ruim:
         raise TermoError(ruim)
 
-    pessoas = [dict(p) for p in con.execute(
-        "SELECT * FROM rc_pessoas WHERE assento_id = ? ORDER BY ordem, id",
+    pessoas = [dict(p) for p in bd.ler(
+        "SELECT * FROM rc_pessoas WHERE assento_id = %s ORDER BY ordem, id",
         (assento_id,))]
-    assento = dict(con.execute(
-        "SELECT * FROM rc_assentos WHERE id = ?", (assento_id,)).fetchone())
+    assento = dict(bd.um(
+        "SELECT * FROM rc_assentos WHERE id = %s", (assento_id,)))
     assento["livro_do_ato"] = livro
     assento["folha_do_ato"] = folha
     assento["selo_do_ato"] = selo
@@ -379,35 +222,57 @@ def montar_para_conferir(con: sqlite3.Connection, assento_id: int, *,
              **quem_assina_da_serventia(serventia)}
 
     try:
-        if chave == "RC_TERMO_CASAMENTO":
-            documentos = _documentos_da_habilitacao(con, assento_id)
-            r = LIVRO.montar_casamento_do_assento(
-                assento, pessoas, corpo, documentos=documentos, **comum)
-        elif chave == "RC_TERMO_LIVRO_E":
-            r = LIVRO.montar_livro_e_do_assento(
-                assento, pessoas, corpo, **comum)
-        elif chave == "RC_TERMO_OBITO":
-            # **AS MARCAS SAO DICIONARIO PARA A PONTE, E LISTA NO MODULO.**
-            #
-            #   `do_assento` devolve a LISTA das quatro, cada uma com rotulo
-            #   e estado — que e o que a TELA precisa para desenhar as
-            #   caixinhas. A ponte do termo pergunta outra coisa:
-            #   `marcas.get("obito_eleitor")`, comparado com `SIM`.
-            #
-            #   Passar a lista nao estoura aqui: estoura la dentro, com
-            #   `'list' object has no attribute 'get'` — **HTTP 500 no meio
-            #   da lavratura de um obito**. E eu tinha acabado de corrigir a
-            #   assinatura desta mesma chamada sem olhar o TIPO do que ela
-            #   devolve; quem pegou foi o teste que monta um obito de
-            #   verdade, e nao a releitura.
-            import rc_marcas_do_obito as MARCAS
-            r = LIVRO.montar_obito_do_assento(
-                assento, pessoas, corpo,
-                marcas={m["chave"]: m["estado"]
-                        for m in MARCAS.do_assento(assento)}, **comum)
-        else:
-            r = LIVRO.montar_do_assento(assento, pessoas, corpo, **comum)
-    except LIVRO.ModeloError as erro:
+        # **AS FRASES DO TERMO SÃO LIDAS DEZ CHAMADAS ABAIXO DAQUI** (LF06C):
+        # a qualificação de cada parte (papel `RC_QUALIFICACAO`) e as peças de
+        # cada termo (`RC_TERMO_*__dnv`, `__sepultamento`…) saem de dentro das
+        # funções puras de `rc_modelos_do_livro`, que não têm conexão — e a
+        # prévia do motor (`modelos_motor_termo`) as chama sem banco, lendo o
+        # padrão. Aqui, que é quem lavra, `lendo_da_casa` faz essas mesmas
+        # leituras passarem pela busca única: o ajuste da casa vale no termo
+        # que vai para o livro, sem pendurar `con` em dez assinaturas.
+        with TEXTOS.lendo_da_casa(con):
+            if chave == "RC_TERMO_CASAMENTO":
+                documentos = _documentos_da_habilitacao(con, assento_id)
+                # A HABILITAÇÃO DESTA CASA DÁ A DATA DOS PROCLAMAS — LD01,
+                # 21/10/2026. O termo a escrevia só quando a habilitação era
+                # de fora (o balcão a digitava); a desta casa tem o edital
+                # gravado (LRP art. 70, 4º; CN-MA art. 284, IV).
+                habilitacao = _habilitacao_desta_casa(con, assento_id, assento)
+                if habilitacao:
+                    if not str(assento.get("proclamas_data") or "").strip():
+                        assento["proclamas_data"] = habilitacao.get("edital_em")
+                    if not documentos:
+                        documentos = _documentos_da_habilitacao(
+                            con, assento_id, habilitacao_id=habilitacao["id"])
+                r = LIVRO.montar_casamento_do_assento(
+                    assento, pessoas, corpo, documentos=documentos, **comum)
+            elif chave == "RC_TERMO_LIVRO_E":
+                r = LIVRO.montar_livro_e_do_assento(
+                    assento, pessoas, corpo, **comum)
+            elif chave == "RC_TERMO_OBITO":
+                # **AS MARCAS SAO DICIONARIO PARA A PONTE, E LISTA NO MODULO.**
+                #
+                #   `do_assento` devolve a LISTA das quatro, cada uma com
+                #   rotulo e estado — que e o que a TELA precisa para desenhar
+                #   as caixinhas. A ponte do termo pergunta outra coisa:
+                #   `marcas.get("obito_eleitor")`, comparado com `SIM`.
+                #
+                #   Passar a lista nao estoura aqui: estoura la dentro, com
+                #   `'list' object has no attribute 'get'` — **HTTP 500 no
+                #   meio da lavratura de um obito**. E eu tinha acabado de
+                #   corrigir a assinatura desta mesma chamada sem olhar o TIPO
+                #   do que ela devolve; quem pegou foi o teste que monta um
+                #   obito de verdade, e nao a releitura.
+                import rc_marcas_do_obito as MARCAS
+                r = LIVRO.montar_obito_do_assento(
+                    assento, pessoas, corpo,
+                    marcas={m["chave"]: m["estado"]
+                            for m in MARCAS.do_assento(assento)}, **comum)
+            else:
+                r = LIVRO.montar_do_assento(assento, pessoas, corpo, **comum)
+    except (LIVRO.ModeloError, MODELOS.ModeloError) as erro:
+        # A peça que falta na pasta (e sem ajuste da casa) chega aqui com o
+        # nome do arquivo — a mensagem já é a do balcão.
         raise TermoError(str(erro)) from erro
     except (KeyError, IndexError, ValueError) as erro:
         raise TermoError(
@@ -484,8 +349,28 @@ def quem_assina_da_serventia(serventia: dict) -> dict:
             for n in LIVRO.QUEM_ASSINA_VEM_DE_FORA}
 
 
+def _habilitacao_desta_casa(con, assento_id: int,
+                            assento: dict) -> dict | None:
+    """A habilitação DESTA casa que autorizou o casamento, ou None. Só lê.
+
+    Casamento à vista de habilitação de outra serventia não tem habilitação
+    aqui (o balcão digita a serventia, a data e os documentos). A ligação é a
+    de `habilitacao.habilitacao_relacionada_ao_assento`: o assento amarrado
+    na celebração, ou o `habilitacao_id` que a tela de lavrar grava — e que,
+    desde o LD01, já está no assento quando o termo se escreve.
+    """
+    if str(assento.get("habilitacao_serventia") or "").strip():
+        return None
+    bd = banco(con)
+    if not bd.tem_tabela("hc_habilitacoes"):
+        return None
+    import habilitacao as HAB
+    return HAB.habilitacao_relacionada_ao_assento(bd, assento_id)
+
+
 def _documentos_da_habilitacao(con: sqlite3.Connection,
-                               assento_id: int) -> list[dict]:
+                               assento_id: int, *,
+                               habilitacao_id: int | None = None) -> list[dict]:
     """Os documentos da habilitação ligada ao assento. Só lê.
 
     **PEDIDO DO OFICIAL**: «no casamento, apresentar relação dos documentos
@@ -503,11 +388,23 @@ def _documentos_da_habilitacao(con: sqlite3.Connection,
     # `hc_habilitacoes.casamento_assento_id`. Eu escrevi o `JOIN` ao contrario
     # na primeira versao, e ele nao estouraria: `sqlite3.Error` viraria lista
     # vazia, e **o termo sairia sem a relacao de documentos, calado**.
+    bd = banco(con)
     try:
-        return [dict(x) for x in con.execute(
+        # No PostgreSQL um erro de SQL aborta a transação da rota; por isso a
+        # ausência da tabela/coluna se pergunta antes, em vez de se apanhar.
+        if not (bd.tem_tabela("hc_documentos")
+                and bd.tem_coluna("hc_habilitacoes", "casamento_assento_id")):
+            return []
+        if habilitacao_id is not None:
+            # A habilitação já achada pela tela de lavrar (LD01): o assento
+            # ainda não foi amarrado a ela na celebração.
+            return [dict(x) for x in bd.ler(
+                """SELECT * FROM hc_documentos WHERE habilitacao_id = %s
+                    ORDER BY id""", (int(habilitacao_id),))]
+        return [dict(x) for x in bd.ler(
             """SELECT d.* FROM hc_documentos d
                  JOIN hc_habilitacoes h ON h.id = d.habilitacao_id
-                WHERE h.casamento_assento_id = ? ORDER BY d.id""",
+                WHERE h.casamento_assento_id = %s ORDER BY d.id""",
             (assento_id,))]
     except sqlite3.Error:
         # SEM A LIGACAO, O TERMO SAI SEM A RELACAO — e nao estoura. A coluna
@@ -529,9 +426,9 @@ def congelar(con: sqlite3.Connection, assento_id: int, *, serventia: dict,
     Corrigir termo é **averbar ao lado**, que é o que a lei manda e o que
     `rc_assento` já sabe fazer com os três atos da divisão tripartite.
     """
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT teor FROM rc_assentos WHERE id = ?",
-                    (assento_id,)).fetchone()
+    bd = banco(con)
+    a = bd.um("SELECT teor FROM rc_assentos WHERE id = %s",
+              (assento_id,))
     if not a:
         raise TermoError(f"Não achei o assento nº {assento_id}.")
     if (a["teor"] or "").strip():
@@ -542,9 +439,9 @@ def congelar(con: sqlite3.Connection, assento_id: int, *, serventia: dict,
 
     texto = montar(con, assento_id, serventia=serventia, livro=livro,
                    folha=folha, selo=selo)
-    con.execute(
-        """UPDATE rc_assentos SET teor = ?, teor_formato = 'html'
-            WHERE id = ?""", (texto, assento_id))
+    bd.escrever(
+        """UPDATE rc_assentos SET teor = %s, teor_formato = 'html'
+            WHERE id = %s""", (texto, assento_id))
     return texto
 
 
@@ -749,9 +646,9 @@ def texto_para_mostrar(con: sqlite3.Connection, assento_id: int, *,
     não é gravar.** O importado não congela só porque a prévia abriu; gravar
     continua sendo `congelar`, uma vez só, com confirmação.
     """
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT * FROM rc_assentos WHERE id = ?",
-                    (assento_id,)).fetchone()
+    bd = banco(con)
+    a = bd.um("SELECT * FROM rc_assentos WHERE id = %s",
+              (assento_id,))
     if not a:
         raise TermoError(f"Não achei o assento nº {assento_id}.")
     a = dict(a)
@@ -816,11 +713,11 @@ def quantos_termos_faltam(con) -> dict:
     quantos são, e com a palavra que os descreve: *informações importadas*, e não
     *termos a escrever*.
     """
-    con.row_factory = sqlite3.Row
-    linhas = [dict(r) for r in con.execute(
+    linhas = [dict(r) for r in banco(con).ler(
         """SELECT id, origem FROM rc_assentos
             WHERE COALESCE(teor, '') = ''
-              AND COALESCE(situacao, 'ATIVO') <> 'CANCELADO'""")]
+              AND COALESCE(situacao, 'ATIVO') <> 'CANCELADO'
+         ORDER BY id""")]
     do_acervo = [x for x in linhas if veio_do_acervo(x)]
     return {"a_escrever": len(linhas) - len(do_acervo),
             "importados": len(do_acervo),
@@ -839,14 +736,13 @@ def assentos_sem_termo(con: sqlite3.Connection,
     O termo deles existe em papel e foi assinado. O caminho para eles é a
     **certidão**, que se monta dos campos.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         """SELECT id, serie, especie, numero, nome, data_ato, origem
              FROM rc_assentos
             WHERE COALESCE(teor, '') = ''
-              AND COALESCE(origem, '') <> ?
+              AND COALESCE(origem, '') <> %s
               AND COALESCE(situacao, 'ATIVO') <> 'CANCELADO'
-         ORDER BY id DESC LIMIT ?""",
+         ORDER BY id DESC LIMIT %s""",
         (ORIGEM_SEM_TERMO_A_ESCREVER, limite))]
 
 
@@ -859,14 +755,13 @@ def informacoes_importadas(con: sqlite3.Connection,
     se cada um já tem o **PDF do termo** anexado, que é a única coisa que ainda
     pode ser trazida do papel.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         """SELECT a.id, a.serie, a.especie, a.numero, a.nome, a.data_ato,
                   a.livro_volume, a.matricula,
-                  (SELECT COUNT(*) FROM attachments x
-                    WHERE x.entity_type = ? AND x.entity_id = a.id) AS anexos
+                  (SELECT COUNT(*)::int FROM attachments x
+                    WHERE x.entity_type = %s AND x.entity_id = a.id) AS anexos
              FROM rc_assentos a
-            WHERE COALESCE(a.origem, '') = ?
+            WHERE COALESCE(a.origem, '') = %s
               AND COALESCE(a.situacao, 'ATIVO') <> 'CANCELADO'
-         ORDER BY a.data_ato IS NULL, a.data_ato DESC, a.id DESC LIMIT ?""",
+         ORDER BY a.data_ato IS NULL, a.data_ato DESC, a.id DESC LIMIT %s""",
         (ANEXO_DO_TERMO, ORIGEM_SEM_TERMO_A_ESCREVER, limite))]

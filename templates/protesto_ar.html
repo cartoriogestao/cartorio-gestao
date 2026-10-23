@@ -1,0 +1,147 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>AR digital — intimação pelos Correios</h1>{% endblock %}
+{% block content %}
+
+<p class="muted">
+  O aviso de intimação pode ir pelos Correios com <strong>AR digital</strong>:
+  o canhoto assinado volta como imagem, e a entrega lavra a intimação pessoal
+  pelo mesmo caminho da entrega feita pela casa (CN-MA art. 921). O AR que não voltar até o prazo-limite pede a intimação por
+  pessoa da casa (art. 921, § 2º).
+</p>
+
+{# O MODO, dito antes de qualquer botão — a integração nasce DESLIGADA. #}
+{% if cfg.modo == 'DESLIGADO' %}
+<div class="alert alert-warning">
+  <strong>A integração com os Correios está DESLIGADA</strong> — é como ela
+  nasce. Nada se posta por aqui até o administrador ligá-la em
+  {% if user.role == 'ADMIN' %}<a href="{{ url_for('gestor_protesto_integracoes') }}">Gestor → Integrações do Protesto</a>{% else %}Gestor → Integrações do Protesto{% endif %}
+  (primeiro em homologação, com o serviço falso). A entrega pela mão da casa
+  continua em <a href="{{ url_for('protesto_avisos') }}">Avisos e editais</a>.
+</div>
+{% elif cfg.modo == 'HOMOLOGACAO' %}
+<div class="alert alert-info">
+  <strong>HOMOLOGAÇÃO — {{ cfg.provedor_nome }}.</strong> Nada sai da casa e
+  nada vale no livro: o AR que «voltar» não lavra intimação nem vira
+  comprovante. Use para aprender o caminho.
+</div>
+{% else %}
+<div class="alert alert-warning">
+  <strong>PRODUÇÃO — {{ cfg.provedor_nome }}.</strong> O que for postado daqui
+  vai à casa do devedor, e tem custo (CN-MA art. 921, § 4º).
+</div>
+{% endif %}
+
+{% if atrasados %}
+<section class="cartao">
+  <h2>AR que não voltou no prazo</h2>
+  <p class="small muted">Chegaram ao prazo-limite sem retorno. A intimação vai
+    por pessoa da casa: emita outro aviso na ficha do título e entregue pela
+    mão (CN-MA art. 921, § 2º).</p>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Objeto</th><th>Aviso</th><th>Título</th><th>Devedor</th>
+        <th>Prazo-limite</th></tr></thead>
+      <tbody>
+      {% for p in atrasados %}
+        <tr>
+          <td>{{ p.codigo_objeto or '—' }}</td>
+          <td>{{ p.aviso_numero }}/{{ p.aviso_ano }}</td>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.numero_titulo or ('#' ~ p.titulo_id) }}</a></td>
+          <td>{{ p.devedor_nome or '—' }}</td>
+          <td><strong>{{ fmt_date(p.prazo_limite) }}</strong></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="cartao">
+  <h2>Avisos emitidos que podem ir pelo correio</h2>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Aviso</th><th>Título</th><th>Devedor</th><th>CEP</th>
+        <th>Prazo-limite</th><th></th></tr></thead>
+      <tbody>
+      {% for a in postaveis %}
+        <tr>
+          <td>{{ a.numero }}/{{ a.ano }}</td>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=a.titulo_id) }}">{{ a.numero_titulo or ('#' ~ a.titulo_id) }}</a></td>
+          <td>{{ a.devedor_nome or '—' }}</td>
+          <td>{{ a.cep or '—' }}</td>
+          <td>{{ fmt_date(a.prazo_limite) if a.prazo_limite else '—' }}</td>
+          <td>
+            {% if a.porque_nao %}
+              <span class="small muted">{{ a.porque_nao }}</span>
+            {% elif pode_enviar and cfg.modo != 'DESLIGADO' %}
+            <form method="post" action="{{ url_for('protesto_ar_postar', aviso_id=a.id) }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button" type="submit">Postar com AR</button>
+            </form>
+            {% else %}
+              <span class="small muted">pode ir</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">Nenhum aviso emitido esperando
+          entrega.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="cartao">
+  <h2>O que foi postado {% if cfg.modo == 'HOMOLOGACAO' %}(homologação){% endif %}</h2>
+  <p class="small muted">
+    Postados: {{ contas.POSTADA }} · entregues: {{ contas.ENTREGUE }} ·
+    não entregues: {{ contas.NAO_ENTREGUE }} · a conferir: {{ contas.CONFERIR }}
+    · falharam: {{ contas.FALHOU }}
+  </p>
+  {% if cfg.modo != 'DESLIGADO' %}
+  <form method="post" action="{{ url_for('protesto_ar_retornos') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button secondary" type="submit">Buscar os AR que voltaram</button>
+  </form>
+  {% endif %}
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Objeto</th><th>Aviso</th><th>Título</th><th>Situação</th>
+        <th>Prazo-limite</th><th>Retorno</th><th>Observação</th></tr></thead>
+      <tbody>
+      {% for p in postagens %}
+        <tr>
+          <td>{{ p.codigo_objeto or '—' }}</td>
+          <td>{{ p.aviso_numero }}/{{ p.aviso_ano }}</td>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.numero_titulo or ('#' ~ p.titulo_id) }}</a></td>
+          <td>{{ p.situacao }}</td>
+          <td>{{ fmt_date(p.prazo_limite) if p.prazo_limite else '—' }}</td>
+          <td>
+            {% if p.entrega_em %}{{ fmt_date(p.entrega_em) }}{% if p.recebedor %} — {{ p.recebedor }}{% endif %}{% endif %}
+            {% if p.situacao == 'POSTADA' and cfg.modo == 'HOMOLOGACAO' and p.ambiente == 'HOMOLOGACAO' and pode_enviar %}
+            <form method="post" action="{{ url_for('protesto_ar_simular', postagem_id=p.id) }}" class="small">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label><input type="radio" name="entregue" value="1" checked> entregue</label>
+              <label><input type="radio" name="entregue" value="0"> não entregue:</label>
+              <select name="motivo">
+                <option value="">—</option>
+                {% for codigo, rotulo in motivos.items() %}<option value="{{ codigo }}">{{ rotulo }}</option>{% endfor %}
+              </select>
+              <input type="date" name="data" value="{{ hoje }}">
+              <input type="text" name="recebedor" placeholder="quem assinou (fictício)">
+              <button class="button secondary" type="submit">Simular retorno</button>
+            </form>
+            {% endif %}
+          </td>
+          <td class="small muted">{{ p.observacao or '' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="muted">Nenhuma postagem neste ambiente.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

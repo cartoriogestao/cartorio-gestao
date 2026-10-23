@@ -1,0 +1,43 @@
+{
+ "_como": "Gerado ANTES do LF06B, na árvore exportada do commit 2c41e90 (git archive), por ouro_lf06b.gerar. Não regerar depois da mudança: o teste compararia a base com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "_contexto_modelo(area_frase, area sem unidade)": {
+   "ok": "IMÓVEL: Lote de Exemplo, com área de 2,5 ."
+  },
+  "_contexto_modelo(area_frase, com logradouro e area)": {
+   "ok": "IMÓVEL: Rua de Exemplo, 100, com área de 360,00 m²."
+  },
+  "_contexto_modelo(area_frase, sem area)": {
+   "ok": "IMÓVEL: Rua de Exemplo, 100."
+  },
+  "_contexto_modelo(area_frase, sem logradouro)": {
+   "ok": "IMÓVEL: [DESCREVER O IMÓVEL]."
+  },
+  "_contexto_modelo(protocolo_frase, aberta)": {
+   "ok": "PROTOCOLO N. 11546, DE 23/09/2026."
+  },
+  "_contexto_modelo(protocolo_frase, sem prenotacao)": {
+   "ok": "[INFORMAR O PROTOCOLO]."
+  },
+  "ri_aplicar_modelo(area_frase, area sem unidade)": {
+   "ok": "IMÓVEL: Lote de Exemplo, com área de 2,5 ."
+  },
+  "ri_aplicar_modelo(area_frase, com logradouro e area)": {
+   "ok": "IMÓVEL: Rua de Exemplo, 100, com área de 360,00 m²."
+  },
+  "ri_aplicar_modelo(area_frase, sem area)": {
+   "ok": "IMÓVEL: Rua de Exemplo, 100."
+  },
+  "ri_aplicar_modelo(area_frase, sem logradouro)": {
+   "ok": "IMÓVEL: [DESCREVER]."
+  },
+  "ri_aplicar_modelo(protocolo_frase, aberta)": {
+   "ok": "PROTOCOLO N. 11546, DE 23/09/2026."
+  },
+  "ri_aplicar_modelo(protocolo_frase, sem prenotacao)": {
+   "ok": "[INFORMAR O PROTOCOLO]."
+  }
+ },
+ "parte": "g"
+}

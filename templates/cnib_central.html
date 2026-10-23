@@ -29,7 +29,7 @@
       {% endif %}
     {% else %}
       <p class="danger"><strong>Esta cópia nunca foi atualizada pela Central.</strong>
-        Tudo o que está aqui veio do acervo do E-Ofício, e é um retrato de
+        Tudo o que está aqui veio do acervo do sistema antigo, e é um retrato de
         {{ fmt_date(espelho.retrato_do_acervo) }}.</p>
     {% endif %}
     <p class="small muted">A data acima <strong>não é</strong> a da ordem mais
@@ -44,15 +44,8 @@
   <div class="panel-head"><span>Falta isto para poder buscar</span></div>
   <div style="padding:14px">
     <ul>{% for f in pronto.falta %}<li>{{ f }}</li>{% endfor %}</ul>
-    {% if not tem_credencial and tem_acervo %}
-    <form method="post" action="{{ url_for('cnib_credencial_do_acervo') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="primary">Trazer o par do CNIB do acervo do E-Ofício</button>
-      <span class="small muted">O par desta serventia está dentro do acervo, e
-        não em papel nenhum. Ele é lido e guardado fora do banco no mesmo
-        passo &mdash; a senha não passa por esta tela.</span>
-    </form>
-    {% endif %}
+    {# «Trazer o par do CNIB do acervo do E-Ofício» saiu em 17/10/2026: a
+       importação terminou. A rota cnib_credencial_do_acervo fica, sem botão. #}
   </div>
 </section>
 {% endif %}

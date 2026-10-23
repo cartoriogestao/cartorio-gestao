@@ -18,7 +18,9 @@ OS TRÊS DEGRAUS
     ```
 
     O terceiro é a regra que `modelos_da_casa` já paga: **o código é o piso, a
-    tabela é o ajuste** — e por isso «voltar ao padrão» é apagar a linha.
+    tabela é o ajuste** — e por isso «voltar ao padrão» é apagar a linha. Desde
+    o LF06A (19/10/2026) o piso não mora mais no código: mora na pasta
+    `modelos_padrao/`, carregada na base auxiliar, e a regra é a mesma.
 
 O QUE FOI MEDIDO EM 07/09/2026, e o que cada medição decidiu
 
@@ -55,6 +57,8 @@ from __future__ import annotations
 
 import re
 import sqlite3
+
+from bd_nativo import banco
 import string
 from typing import Any
 
@@ -170,12 +174,11 @@ DO_LEGADO = "legado"
 
 def _linha(con: sqlite3.Connection, atribuicao: str, ato: str,
            parte: str) -> str | None:
-    con.row_factory = sqlite3.Row
-    r = con.execute(
+    r = banco(con).um(
         """SELECT corpo FROM mo_elementos
-            WHERE atribuicao = ? AND ato = ? AND parte = ?
+            WHERE atribuicao = %s AND ato = %s AND parte = %s
               AND COALESCE(ativo, 1) = 1 AND COALESCE(corpo, '') <> ''""",
-        (atribuicao, ato, parte)).fetchone()
+        (atribuicao, ato, parte))
     return str(r["corpo"]) if r else None
 
 
@@ -215,7 +218,7 @@ def elemento(con: sqlite3.Connection, *, atribuicao: str, ato: str,
     if comum is not None:
         return {"texto": comum, "de_onde": DA_ATRIBUICAO, "proprio": False}
 
-    # O PISO. Só o corpo tem padrão escrito no programa; o encerramento e o
+    # O PISO. Só o corpo tem padrão (na base, desde o LF06A); o encerramento e o
     # rodapé nascem vazios, e vazio **não acrescenta nada**.
     if p == CORPO and alvo:
         return {"texto": CASA.padrao_de(alvo), "de_onde": DO_PADRAO,
@@ -348,15 +351,26 @@ def _explica(parte: str) -> str:
 
 
 def _quantos(con: sqlite3.Connection, atribuicao: str) -> int:
-    con.row_factory = sqlite3.Row
-    r = con.execute(
-        """SELECT COUNT(*) n FROM mo_elementos
-            WHERE atribuicao = ? AND COALESCE(corpo, '') <> ''""",
-        (atribuicao,)).fetchone()
+    r = banco(con).um(
+        """SELECT COUNT(*) AS n FROM mo_elementos
+            WHERE atribuicao = %s AND COALESCE(corpo, '') <> ''""",
+        (atribuicao,))
     return int(r["n"])
 
 
 # ============================================================ conferir e gravar
+
+# OS PAPÉIS QUE SE CONFEREM PELA PRÓPRIA MONTAGEM — LF06F, 19/10/2026.
+#
+#   O boneco (`_ENSAIO`) só tem `hoje`, `agora` e `sv`. Um papel em Jinja que
+#   use `t`, `e` ou `c` estoura nele com «'t' is undefined» em TODO ajuste — a
+#   casa não grava nem o próprio padrão, e o papel fica editável só no nome.
+#   O módulo do papel registra aqui a conferência dele (a mesma montagem da
+#   emissão, com um caso de exemplo), na subida das rotas; quem não registrou
+#   continua no boneco, como sempre foi. A chave é a do papel no catálogo, e a
+#   função devolve o erro ou `""`.
+CONFERIDORES: dict[str, Any] = {}
+
 
 def conferir(atribuicao: str, ato: str, parte: str, texto: str) -> str:
     """O que há de errado naquele elemento, ou `""`. Só calcula.
@@ -377,9 +391,17 @@ def conferir(atribuicao: str, ato: str, parte: str, texto: str) -> str:
     if not corpo.strip():
         return ""
 
+    proprio = CONFERIDORES.get(_texto(ato).upper()) if p == CORPO else None
+    if proprio is not None:
+        return proprio(corpo) or ""
+
     formato = formato_do_ato(ato) if _texto(ato) else formato_da_atribuicao(atrib)
     if formato == CASA.CHAVES:
-        return _conferir_chaves(corpo)
+        # o encerramento e o rodapé PRÓPRIOS do papel entram no mesmo texto
+        # que o montador preenche (`montar_documento`): conferem-se igual
+        return (_conferir_chaves(corpo)
+                or (_conferir_claros_do_padrao(_texto(ato).upper(), corpo)
+                    if _texto(ato) else ""))
     erro = CASA.conferir(corpo, _ENSAIO)
     return erro or ""
 
@@ -408,6 +430,27 @@ def _conferir_chaves(corpo: str) -> str:
     if corpo.count("{") != corpo.count("}"):
         return "Há chave aberta sem fechar. Cada claro se escreve {assim}."
     return ""
+
+
+def _conferir_claros_do_padrao(ato: str, corpo: str) -> str:
+    """Claro que o padrão não usa, num papel que só aceita os dele. LF06D.
+
+    **O MONTADOR DAS NOTAS PREENCHE OS CLAROS DO PADRÃO, E SÓ ELES** — a
+    fórmula do reconhecimento recebe `{quem}`, a abertura do teor recebe a data
+    e a cidade. Um `{cartorio}` escrito na tela passaria pela conferência das
+    chaves e estouraria no balcão. O papel declara isso no catálogo
+    (`so_claros_do_padrao`); os termos do Registro Civil, que aceitam claros
+    além dos do padrão, não declaram, e seguem com a conferência deles.
+
+    **A RÉGUA É A DO `modelos_da_casa.conferir_claros`** — a mesma que o
+    montador usa ao preencher (`Textos.preencher` → `preencher`). Duas réguas
+    diriam coisas diferentes do mesmo texto na tela e no balcão; o LF06C já
+    tinha juntado a do Registro Civil a ela.
+    """
+    c = CASA.POR_CHAVE.get(ato) or {}
+    if not c.get("so_claros_do_padrao"):
+        return ""
+    return CASA.conferir_claros(corpo, c.get("campos") or ())
 
 
 def salvar(con: sqlite3.Connection, *, atribuicao: str, ato: str, parte: str,
@@ -439,16 +482,21 @@ def salvar(con: sqlite3.Connection, *, atribuicao: str, ato: str, parte: str,
         restaurar(con, atribuicao=atrib, ato=alvo, parte=p)
         return
 
-    con.execute(
+    # SOBRE QUAL PADRÃO ESTE CORPO FOI ESCRITO (LF06A): é o que deixa a tela
+    # dizer «o padrão mudou depois do seu ajuste» numa versão nova. Só o corpo
+    # de um ato tem padrão; o resto fica nulo.
+    base = CASA.impressao_sob_o_ajuste(alvo) if (alvo and p == CORPO) else None
+    banco(con).escrever(
         """INSERT INTO mo_elementos
                (atribuicao, ato, parte, corpo, ativo, atualizado_em,
-                atualizado_por)
-           VALUES (?,?,?,?,1,?,?)
+                atualizado_por, base_impressao)
+           VALUES (%s,%s,%s,%s,1,%s,%s,%s)
            ON CONFLICT(atribuicao, ato, parte) DO UPDATE SET
                corpo = excluded.corpo, ativo = 1,
                atualizado_em = excluded.atualizado_em,
-               atualizado_por = excluded.atualizado_por""",
-        (atrib, alvo, p, limpo, agora, quem))
+               atualizado_por = excluded.atualizado_por,
+               base_impressao = excluded.base_impressao""",
+        (atrib, alvo, p, limpo, agora, quem, base))
 
 
 def esta_ajustado(con: sqlite3.Connection, ato: str) -> bool:
@@ -460,11 +508,10 @@ def esta_ajustado(con: sqlite3.Connection, ato: str) -> bool:
     """
     alvo = _texto(ato).upper()
     atrib = atribuicao_do_ato(alvo)
-    con.row_factory = sqlite3.Row
-    r = con.execute(
-        """SELECT 1 FROM mo_elementos
-            WHERE atribuicao = ? AND ato = ? AND COALESCE(corpo, '') <> ''
-            LIMIT 1""", (atrib, alvo)).fetchone()
+    r = banco(con).um(
+        """SELECT 1 AS um FROM mo_elementos
+            WHERE atribuicao = %s AND ato = %s AND COALESCE(corpo, '') <> ''
+            ORDER BY id LIMIT 1""", (atrib, alvo))
     if r:
         return True
     # O legado das duas tabelas antigas conta como ajuste — é ajuste da casa.
@@ -476,7 +523,7 @@ def restaurar(con: sqlite3.Connection, *, atribuicao: str, ato: str,
     """Apaga o ajuste e volta ao degrau de cima. Devolve se havia ajuste."""
     atrib = atribuicao_valida(atribuicao)
     p = parte_valida(parte)
-    cur = con.execute(
-        "DELETE FROM mo_elementos WHERE atribuicao=? AND ato=? AND parte=?",
-        (atrib, _texto(ato).upper(), p))
-    return cur.rowcount > 0
+    apagadas = banco(con).escrever(
+        "DELETE FROM mo_elementos WHERE atribuicao=%s AND ato=%s AND parte=%s "
+        "RETURNING id", (atrib, _texto(ato).upper(), p))
+    return len(apagadas) > 0

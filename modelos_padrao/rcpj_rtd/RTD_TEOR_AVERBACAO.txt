@@ -1,0 +1,12 @@
+===CABECALHO===
+{unit_short} — CNS {cns}
+{atribuicao}
+Averbação nº {numero_averbacao}
+===INTRO===
+CERTIFICO que me foi apresentado para ser AVERBADO no Registro nº {numero} o documento digitalizado abaixo:
+Tipo do ato: {natureza_ato}.
+Data da assinatura: {data_assinatura}.
+===ENCERRAMENTO===
+Era o que continha o documento apresentado para averbação, arquivado em sua íntegra mediante digitalização. Eu, {full_name}, {funcao}, o subscrevo e assino.
+===DATA===
+{cidade}/{uf}, {data_extenso}.

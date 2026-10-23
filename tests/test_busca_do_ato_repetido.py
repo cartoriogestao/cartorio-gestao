@@ -35,8 +35,14 @@ registros torrens.
 from __future__ import annotations
 
 import sqlite3
+import sys
+from pathlib import Path
 
 import emolumentos as EMOL
+
+RAIZ = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RAIZ / "tests"))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 # O caso real, reduzido: o cabeçalho da faixa, três sub-itens, e cada um deles
 # repetido três vezes como está no banco da casa. Só o terceiro tem preço.
@@ -49,7 +55,7 @@ PRECO = {"16.45.1": "105,61", "16.45.18": "4.253,21", "16.45.23": "12.976,81"}
 def _tabela_com_os_repetidos(caminho) -> sqlite3.Connection:
     """A tabela do tribunal como ela está no banco da casa: cada código do TJ
     em três linhas de serviço, e o preço numa só."""
-    con = sqlite3.connect(str(caminho))
+    con = conexao_de_teste()
     con.execute("""CREATE TABLE cx_vigencias (codigo INTEGER PRIMARY KEY,
                    vigente INTEGER NOT NULL DEFAULT 0)""")
     con.execute("""CREATE TABLE cx_servicos (codigo INTEGER PRIMARY KEY,

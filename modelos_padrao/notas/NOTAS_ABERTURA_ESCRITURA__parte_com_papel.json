@@ -1,0 +1,11 @@
+{
+  "chave": "NOTAS_ABERTURA_ESCRITURA__parte_com_papel",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Escritura — parte com o seu papel",
+  "formato": "CHAVES",
+  "explica": "Cada parte da escritura (e do substabelecimento, da revogação, da ata) quando o escrevente lhe deu um papel: «como VENDEDOR, …».",
+  "campos": [
+    "papel",
+    "qualificacao"
+  ]
+}

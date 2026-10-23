@@ -29,6 +29,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import rc_assento as RC                                          # noqa: E402
 import rc_modelos_do_livro as ML                                 # noqa: E402
@@ -44,7 +46,7 @@ SV = {"ri_cidade": "Cidade Exemplo", "ri_uf": "MA"}
 # ------------------------------------------------------ o número em aberto
 
 def _nucleo_minimo() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.execute("CREATE TABLE nu_numeracao (serie TEXT PRIMARY KEY, proximo INTEGER)")
     con.execute("CREATE TABLE nu_implantacao (chave TEXT, situacao TEXT, titulo TEXT)")
     return con
@@ -72,7 +74,7 @@ def test_informado_o_numero_ou_sem_pendencia_lavra():
     con = _nucleo_minimo()
     con.execute("INSERT INTO nu_implantacao VALUES ('numeracao:RC_E', 'RESOLVIDA', 'x')")
     RC.numero_sem_dono(con, "RC_E")
-    RC.numero_sem_dono(sqlite3.connect(":memory:"), "RC_E")   # sem as tabelas
+    RC.numero_sem_dono(conexao_de_teste(), "RC_E")   # sem as tabelas
 
 
 # ------------------------------------------------------------- os papéis
@@ -354,7 +356,7 @@ def test_corrigir_o_regime_da_uniao_estavel(casa):
 
 
 def test_regime_em_especie_que_nao_tem_e_recusado():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("CREATE TABLE rc_assentos (id INTEGER PRIMARY KEY, especie TEXT, "
                 "situacao TEXT, nome TEXT, regime_bens TEXT, dados_json TEXT)")

@@ -1,0 +1,10 @@
+{
+  "chave": "RI_REPROGRAFICA_CAPA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Capa da certidão reprográfica",
+  "formato": "JINJA",
+  "explica": "O texto da folha 1 da certidão reprográfica no modelo da casa (20/10/2026): o CERTIFICO e a ressalva de legibilidade, entre o título e a primeira página reproduzida. O sistema escreve no claro, em itálico, a identificação do documento (matrícula ou registro, livro, folha, CNM) e as páginas por extenso; o cabeçalho sai do cadastro da serventia (ri_digitalizacao).",
+  "campos": [
+    "identificacao"
+  ]
+}

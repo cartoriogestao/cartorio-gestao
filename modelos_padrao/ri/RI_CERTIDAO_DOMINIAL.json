@@ -1,0 +1,10 @@
+{
+  "chave": "RI_CERTIDAO_DOMINIAL",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão — o miolo da cadeia dominial",
+  "formato": "JINJA",
+  "explica": "Atos de transmissão de domínio na ordem cronológica (compra e venda, doação, partilha, usucapião…), desta matrícula e das matrículas de origem que existem no banco.",
+  "campos": [
+    "cadeia_matriculas"
+  ]
+}

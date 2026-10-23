@@ -1,0 +1,1 @@
+{{ ato }} – ENCERRAMENTO DA MATRÍCULA. «PREENCHER: motivo e fundamento do encerramento», procede-se ao encerramento da Matrícula nº {{ numero }}, do Livro nº {{ livro }}, passando o imóvel a constar da Matrícula nº «PREENCHER: matrícula de destino», feitas as remissões recíprocas. {{ fecho }}

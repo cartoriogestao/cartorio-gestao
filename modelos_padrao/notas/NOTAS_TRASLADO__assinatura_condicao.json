@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_TRASLADO__assinatura_condicao",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Linha de assinatura — condição",
+  "formato": "CHAVES",
+  "explica": "A condição de quem assina, sob o nome.",
+  "campos": [
+    "condicao"
+  ]
+}

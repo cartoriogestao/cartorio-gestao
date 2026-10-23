@@ -1,0 +1,24 @@
+{
+  "chave": "RCPJ_LIVRO_CONTABIL_TERMO_ABERTURA",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Livro contábil — termo de abertura",
+  "formato": "CHAVES",
+  "explica": "O termo de abertura do livro que o RCPJ autentica (Código Civil, art. 1.181). Congelado na autenticação.",
+  "campos": [
+    "tipo_livro",
+    "numero_livro",
+    "pj_nome",
+    "pj_cnpj",
+    "folhas",
+    "folha_de",
+    "folha_ate",
+    "unit_name",
+    "cns",
+    "numero",
+    "ano",
+    "cidade_uf",
+    "data_extenso",
+    "full_name",
+    "funcao"
+  ]
+}

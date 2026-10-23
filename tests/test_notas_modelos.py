@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import notas_modelos as NM                       # noqa: E402
 from notas_schema import init_notas_schema        # noqa: E402
@@ -24,7 +26,7 @@ from ri_modelos_atos import campos_do_modelo, preencher   # noqa: E402
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")      # como a producao
     init_notas_schema(con)

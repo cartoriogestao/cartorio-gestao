@@ -77,7 +77,10 @@
     <tbody>
       {% for a in certidao.achados_lista %}
       <tr>
-        <td>{{ a.numero_titulo }}<div><small>{{ a.especie }}</small></div></td>
+        <td>{{ a.numero_titulo }}<div><small>{{ a.especie }}</small></div>
+            {#- O devedor gravado sem CPF/CNPJ (LD12): o teor não diz, a tela sim. #}
+            {%- if a.so_pelo_nome %}<div><small><strong>entrou só pelo nome</strong> — o
+              devedor foi gravado sem CPF/CNPJ; confira a identidade</small></div>{% endif %}</td>
         <td>R$ {{ a.valor }}</td>
         <td>{{ a.data_protesto }}</td>
         <td>{% if a.livro %}Livro {{ a.livro }}{% endif %}

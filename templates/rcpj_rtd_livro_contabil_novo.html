@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{#
+  O PEDIDO DE AUTENTICAÇÃO DE LIVRO — o balcão do RCPJ (LG04).
+
+  O pedido não numera: o número do controle e os termos nascem quando quem
+  qualifica autentica. As folhas «de/até» são conferidas contra a quantidade,
+  porque o termo afirma as duas.
+#}
+{% block heading %}<h1>Pedido de autenticação de livro (RCPJ)</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="notice">
+  Livro da sociedade simples, associação ou fundação inscrita neste RCPJ
+  (Código Civil, art. 1.181). O mesmo livro — mesmo CNPJ, tipo e número de
+  ordem — <strong>não se autentica duas vezes</strong>.
+</div>
+
+<form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <fieldset>
+    <legend>A pessoa jurídica</legend>
+    <label>Nome <input name="pj_nome" required value="{{ form.pj_nome or '' }}"></label>
+    <label>CNPJ <input name="pj_cnpj" required value="{{ form.pj_cnpj or '' }}"></label>
+    <label>Registro no RCPJ <span class="muted">(id, se houver)</span>
+      <input name="registro_id" value="{{ form.registro_id or '' }}"></label>
+  </fieldset>
+  <fieldset>
+    <legend>O livro</legend>
+    <label>Tipo
+      <select name="tipo_livro" required>
+        {% for chave, rotulo in TIPOS.items() %}
+        <option value="{{ chave }}"{% if form.tipo_livro == chave %} selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Qual é <span class="muted">(no «outro livro»)</span>
+      <input name="tipo_descricao" value="{{ form.tipo_descricao or '' }}"></label>
+    <label>Número de ordem do livro <input type="number" min="1" name="numero_livro" required value="{{ form.numero_livro or '' }}"></label>
+    <label>Folhas <input type="number" min="1" name="folhas" required value="{{ form.folhas or '' }}"></label>
+    <label>Numeradas de <input type="number" min="1" name="folha_de" value="{{ form.folha_de or '' }}"></label>
+    <label>até <input type="number" min="1" name="folha_ate" value="{{ form.folha_ate or '' }}"></label>
+    <label>Forma
+      <select name="forma">
+        {% for chave, rotulo in FORMAS.items() %}
+        <option value="{{ chave }}"{% if form.forma == chave %} selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select></label>
+  </fieldset>
+  <fieldset>
+    <legend>Quem apresentou</legend>
+    <label>Nome <input name="apresentante_nome" value="{{ form.apresentante_nome or '' }}"></label>
+    <label>CPF <input name="apresentante_documento" value="{{ form.apresentante_documento or '' }}"></label>
+  </fieldset>
+  <button type="submit" class="primary">Registrar o pedido</button>
+  <a class="button" href="{{ url_for('rcpj_rtd_livro_contabil_lista') }}">Voltar</a>
+</form>
+{% endblock %}

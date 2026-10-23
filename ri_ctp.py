@@ -317,6 +317,14 @@ def _papel(parte: dict) -> str:
     passarem a falar a mesma lingua, junte, e apague os dois avisos juntos.
     """
     p = _sem_acento(parte.get("papel"))
+    # QUEM ACOMPANHA UMA PARTE NÃO É PARTE — 21/10/2026, na DOI de 09/2026:
+    # «cônjuge do adquirente» CONTÉM «adquirente», e a cônjuge do comprador da
+    # [n.] entrava como segunda compradora. É a armadilha do «procurador do
+    # vendedor» das Notas (`notas_doi.lados_das_partes`), deste lado. O
+    # descarte vem ANTES da procura.
+    if p.lstrip().startswith(("conjuge", "procurador", "representante",
+                              "testemunha", "anuente", "interveniente")):
+        return ""
     if any(t in p for t in ("transmitente", "alienante", "vendedor", "outorgante",
                             "doador", "cedente", "executado", "fiduciante")):
         return "ALIENANTE"
@@ -337,7 +345,11 @@ def _pessoa(parte: dict, dados: dict) -> dict:
     else:
         reg["motivoNaoIdentificacaoNi"] = (dados.get("motivo_sem_ni") or "2")
 
-    participacao = _decimal(parte.get("participacao"))
+    # A PARTICIPAÇÃO DIGITADA NA TELA TAMBÉM VALE — `notas_doi.conferir_do_ctp`
+    # já a aceitava (`participacao_<id>`), e o arquivo saía com «não consta»:
+    # a conferência aprovava o que o papel não levava (21/10/2026).
+    participacao = _decimal(parte.get("participacao")
+                            or dados.get(f"participacao_{parte.get('id')}"))
     if participacao:
         reg["participacao"] = participacao
         reg["indicadorNaoConstaParticipacaoOperacao"] = False
@@ -401,7 +413,11 @@ def montar_registro(ato: dict, m: dict, partes: list[dict], dados: dict,
     if base is not None:
         reg["valorBaseCalculoItbiItcmd"] = base
     else:
-        reg["IndicadorNaoConstaValorBaseCalculoItbiItcmd"] = True
+        # COM «i» MINÚSCULO — 22/10/2026. Até aqui saía `IndicadorNaoConsta…`,
+        # e nem o contrato da CENSEC (`Doi.CtpData`, Swagger 2.71.2) nem o
+        # layout do DOI-Web têm essa grafia: o DOI-Web recusou a DOI de 09/2026
+        # por ela. `ri_doi.no_layout_do_doiweb` continua aceitando a antiga.
+        reg["indicadorNaoConstaValorBaseCalculoItbiItcmd"] = True
 
     forma = dados.get("forma_pagamento") or "11"
     reg["formaPagamento"] = forma

@@ -140,8 +140,12 @@ def test_a_ponte_entrega_o_lote_e_recebe_o_resultado(con, cg_casa):
     cg_casa["db"].create_user("oficial", "OFICIAL DE ENSAIO", SENHA, "ADMIN")
     _cartao(con, "ANA PRIMEIRA", "00000000191")
     con.commit()
+    # a ponte lê o relógio de verdade, e o código vence em 24 h (M11, 22/10/2026):
+    # o lote deste ensaio é gerado AGORA, e não na data fixa dos outros testes
+    from datetime import datetime
     r = CE.gerar_lote(con, Path(cg_casa["dados"]), ambiente="HOMOLOGACAO", usuario="T",
-                      agora=AGORA, montar=_formato_de_ensaio)
+                      agora=datetime.now().isoformat(timespec="seconds"),
+                      montar=_formato_de_ensaio)
     con.commit()
     cod = CE.codigo_do_lote(app.secret_key, r["lote_id"])
     c = app.test_client()                                  # sem sessão, como a extensão
@@ -172,3 +176,135 @@ def test_a_tela_abre_e_oferece_o_lote_quando_o_xsd_esta_na_casa(cg_casa, monkeyp
                         lambda: {"pronto": False, "motivo": "o XSD v4 do CNB não está"})
     html = c.get("/notas/ccn").get_data(as_text=True)
     assert "XSD v4" in html and "Gerar lote" not in html
+
+
+# ================================================== CONSERTO DO L027R (18/10/2026)
+# O LOTE SE CONFERE PRESO. Com a ponte, a transação da rota já pega a trava
+# única do banco e nada corre ao mesmo tempo. Sem ela, dois lotes gerados ao
+# mesmo tempo levariam as mesmas pessoas, o descarte apagaria o resultado do
+# CCN gravado no meio, e o resultado que chega depois do descarte reabriria o
+# lote. Quem confere quem está em lote e quem fecha o lote pega a trava do
+# assunto; quem confere a situação do lote prende a linha.
+
+import banco_pg  # noqa: E402
+
+so_no_postgres = pytest.mark.skipif(
+    not banco_pg.ativo(), reason="mede as travas do PostgreSQL (CG_PG_DSN)")
+
+ASSUNTO = "nt_ccn_itens.cartao_id"
+
+
+def _outra_conexao(con):
+    """Uma conexão do psycopg no schema do teste, SEM a ponte."""
+    import psycopg
+    pg = psycopg.connect(banco_pg.dsn(), autocommit=True)
+    pg.execute(f'SET search_path TO "{con.schema}", public')
+    return pg
+
+
+def _assunto_livre(con) -> bool:
+    """Outra conexão consegue a trava do assunto agora? Não espera por ela."""
+    with _outra_conexao(con) as outra:
+        return bool(outra.execute("SELECT pg_try_advisory_xact_lock(hashtext(%s))",
+                                  (ASSUNTO,)).fetchone()[0])
+
+
+def _lote_preso(con, lote_id) -> bool:
+    """A linha do lote já está presa por outra transação? Não espera por ela."""
+    import psycopg
+    with _outra_conexao(con) as outra:
+        try:
+            outra.execute("SELECT id FROM nt_ccn_lotes WHERE id=%s FOR UPDATE NOWAIT",
+                          (lote_id,))
+        except psycopg.errors.LockNotAvailable:
+            return True
+        return False
+
+
+def _vigiar(monkeypatch, olhar, quando) -> list:
+    """Antes de cada comando do módulo que `quando(sql)` escolhe, anota `olhar()`."""
+    import bd_nativo
+    vistos: list = []
+
+    class Vigiado(bd_nativo.Banco):
+        def _rodar(self, sql, parametros=None):
+            if quando(sql):
+                vistos.append(olhar())
+            return super()._rodar(sql, parametros)
+
+    monkeypatch.setattr(CE, "banco", Vigiado)
+    return vistos
+
+
+def _comando(sql: str) -> str:
+    return sql.lstrip().split(None, 1)[0].upper()
+
+
+def _lote_gerado(con, cg_casa) -> dict:
+    _cartao(con, "ANA PRIMEIRA", "00000000191")
+    con.commit()
+    r = CE.gerar_lote(con, Path(cg_casa["dados"]), ambiente="HOMOLOGACAO", usuario="T",
+                      agora=AGORA, montar=_formato_de_ensaio)
+    con.commit()
+    return dict(con.execute("SELECT * FROM nt_ccn_lotes WHERE id=?", (r["lote_id"],)).fetchone())
+
+
+@so_no_postgres
+def test_gerar_lote_confere_quem_ja_esta_em_lote_sob_a_trava(con, cg_casa, monkeypatch):
+    _cartao(con, "ANA PRIMEIRA", "00000000191")
+    con.commit()
+    assert _assunto_livre(con)
+    livres = _vigiar(monkeypatch, lambda: _assunto_livre(con),
+                     lambda sql: "nt_ccn_" in sql and _comando(sql) != "CREATE")
+    try:
+        CE.gerar_lote(con, Path(cg_casa["dados"]), ambiente="HOMOLOGACAO", usuario="T",
+                      agora=AGORA, montar=_formato_de_ensaio)
+        assert livres and not any(livres), (
+            "quem já está em lote foi conferido fora da trava: dois lotes gerados "
+            "ao mesmo tempo levariam as mesmas pessoas")
+    finally:
+        con.rollback()
+
+
+@so_no_postgres
+def test_descartar_confere_a_situacao_com_a_linha_presa(con, cg_casa, monkeypatch):
+    lote = _lote_gerado(con, cg_casa)
+    assert not _lote_preso(con, lote["id"])
+    presos = _vigiar(monkeypatch, lambda: _lote_preso(con, lote["id"]),
+                     lambda sql: _comando(sql) == "UPDATE")
+    try:
+        CE.descartar(con, lote["id"], "ensaio de descarte do lote", AGORA)
+        assert presos and all(presos), (
+            "a situação do lote foi conferida com a linha solta: o resultado do "
+            "CCN gravado no meio viraria DESCARTADO")
+    finally:
+        con.rollback()
+
+
+@so_no_postgres
+def test_resultado_fecha_o_lote_preso_e_sob_a_trava(con, cg_casa, monkeypatch):
+    lote = _lote_gerado(con, cg_casa)
+    vistos = _vigiar(monkeypatch,
+                     lambda: (_assunto_livre(con), _lote_preso(con, lote["id"])),
+                     lambda sql: _comando(sql) == "UPDATE")
+    try:
+        CE.registrar_resultado(con, lote, {"import": {"id": "i", "status": "Successful"}},
+                               AGORA)
+        assert vistos and all(not livre and preso for livre, preso in vistos), vistos
+    finally:
+        con.rollback()
+
+
+def test_resultado_que_chega_depois_do_descarte_nao_reabre_o_lote(con, cg_casa):
+    """O `lote` lido pela ponte antes do descarte não manda: manda a linha."""
+    lote = _lote_gerado(con, cg_casa)            # lido ainda GERADO
+    CE.descartar(con, lote["id"], "ensaio de descarte do lote", AGORA)
+    con.commit()
+    with pytest.raises(CE.CcnError, match="descartado"):
+        CE.registrar_resultado(con, lote, {"import": {"id": "i", "status": "Successful"}},
+                               AGORA)
+    con.rollback()
+    assert con.execute("SELECT situacao FROM nt_ccn_lotes WHERE id=?",
+                       (lote["id"],)).fetchone()[0] == "DESCARTADO"
+    assert {r[0] for r in con.execute("SELECT situacao FROM nt_ccn_itens WHERE lote_id=?",
+                                      (lote["id"],))} == {"NO_LOTE"}

@@ -1,7 +1,9 @@
-"""OS MOLDES DE CASAMENTO E DE ÓBITO, derivados do de nascimento.
+"""OS MOLDES DE CASAMENTO E DE ÓBITO — E, DESDE O LD01, DE NATIMORTO E DO
+LIVRO E —, derivados do de nascimento.
 
 Ordem do oficial em 01/09/2026: *«aplique essas correções nas outras certidões
-de registro civil também»*.
+de registro civil também»*. E em 21/10/2026, sobre os defeitos que o LT01
+achou: *«corrija tudo»* — o natimorto e o Livro E não tinham papel nenhum.
 
 **HAVIA UM MOLDE SÓ, E AS OUTRAS DUAS ESPÉCIES NÃO IMPRIMIAM NADA.** Desde a
 passada da manhã, `ESPECIES_QUE_O_MOLDE_SERVE` recusa casamento e óbito — o
@@ -87,6 +89,35 @@ OBITO = (
     (("DEIXOU FILHOS",), ("@deixoufilhos",)),
 )
 
+# O NATIMORTO E O LIVRO E — LD01, 21/10/2026. Os dois não tinham papel, e a
+# guarda de `rc_certidao_odt` os recusava (o natimorto não afirma nascimento
+# com vida; o Livro E registra seis coisas diferentes entre si). O natimorto
+# ganha as caixas do que o assento dele tem — o parto, o lugar, a Declaração
+# de Óbito, os pais e o sepultamento —, e não tem CPF (CNN art. 479-A, § 1º).
+# O Livro E tem UM papel para as seis espécies, como tem um termo só: a
+# espécie, o título registrado e uma caixa com o que a lei pede daquela
+# espécie (`rc_certidao.linhas_do_livro_e`); o título do papel é marcador,
+# porque muda com a espécie.
+NATIMORTO = (
+    (("DATA DO PARTO POR EXTENSO", "HORA"),
+     ("@dataobitoextenso", "@horaobito")),
+    (("LOCAL DO PARTO", "MUNICÍPIO", "UF"),
+     ("@localfalecimento", "@municipio_falecimento", "@uf_falecimento")),
+    (("SEXO", "NÚMERO DA DECLARAÇÃO DE ÓBITO"),
+     ("@sexofalecido", "@numerodo")),
+    (("NOME DO(A) GENITOR(ES)",), ("@filiacaofalecido",)),
+    (("LOCAL DE SEPULTAMENTO / CREMAÇÃO",), ("@sepultamento",)),
+    (("DATA DO REGISTRO",), ("@DATAREGISTROEXTENSOSN",)),
+)
+
+LIVRO_E = (
+    (("ESPÉCIE DO REGISTRO", "NÚMERO DO CPF"),
+     ("@livroe_especie", "@cpfnascido")),
+    (("TÍTULO REGISTRADO",), ("@livroe_titulo",)),
+    (("O QUE A LEI MANDA CONSTAR",), ("@livroe_indicacoes",)),
+    (("DATA DO REGISTRO",), ("@DATAREGISTROEXTENSOSN",)),
+)
+
 ESPECIES = {
     "casamento": {
         "arquivo": "certidao_casamento_modelo.odt",
@@ -103,6 +134,22 @@ ESPECIES = {
         "nome_marca": "@nomefalecido",
         "matricula_marca": "@matriculaobito",
         "linhas": OBITO,
+    },
+    "natimorto": {
+        "arquivo": "certidao_natimorto_modelo.odt",
+        "titulo": "CERTIDÃO DE NATIMORTO",
+        "nome_rotulo": "NOME:",
+        "nome_marca": "@nomefalecido",
+        "matricula_marca": "@matriculaobito",
+        "linhas": NATIMORTO,
+    },
+    "livro_e": {
+        "arquivo": "certidao_livro_e_modelo.odt",
+        "titulo": "@titulolivroe",
+        "nome_rotulo": "NOME:",
+        "nome_marca": "@nomenascido",
+        "matricula_marca": "@matriculanascido",
+        "linhas": LIVRO_E,
     },
 }
 
@@ -192,8 +239,11 @@ def montar(especie: str) -> bytes:
     # A REGIÃO QUE MUDA: do rótulo «CPF» até a tabela da DNV. O que vem antes
     # (título, nome, matrícula) e o que vem depois (averbações, anotações,
     # fecho, selos) fica igual — é o desenho do oficial.
+    # O RÓTULO VIROU «NÚMERO DO CPF» no molde que o oficial ajustou (o desta
+    # ferramenta escrevia «CPF»): a região começa no rótulo que termina em CPF.
     primeiro = next(i for i, (t, a, b) in enumerate(pedacos)
-                    if t == "text:p" and _so_texto(corpo[a:b]).strip() == "CPF")
+                    if t == "text:p"
+                    and _so_texto(corpo[a:b]).strip().endswith("CPF"))
     ultimo = next(i for i, (t, a, b) in enumerate(pedacos)
                   if t == "table:table" and "@declaracaonascidovivo" in corpo[a:b])
 

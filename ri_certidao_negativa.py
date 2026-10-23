@@ -27,10 +27,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from datetime import date, timedelta
 from typing import Any
 
+from bd_nativo import banco
 from certidao_texto import sem_linha_de_assinatura_a_mao
 from ri_schema import VALIDADE_CERTIDAO_DIAS, normalizar_busca
 
@@ -38,7 +38,7 @@ TIPO = "NEGATIVA_IMOVEL"
 NOME_DO_TIPO = "Certidão negativa de imóvel"
 
 # Chave do papel no catalogo (Administrativo → Modelos). Texto de fabrica
-# abaixo; o oficial edita na tela sem tocar no codigo.
+# em `modelos_padrao/ri/` (LF06A); o oficial edita na tela sem tocar no codigo.
 CHAVE_MODELO = "RI_CERTIDAO_NEGATIVA_IMOVEL"
 
 
@@ -46,25 +46,17 @@ class CertidaoNegativaError(ValueError):
     """Recusa de dominio: busca achou algo, ou faltou criterio."""
 
 
-MODELO_PADRAO = """\
-<p align="center"><b>{{ serventia.nome|upper }}</b></p>
-<p align="center">CNS {{ serventia.cns }} — {{ serventia.cidade }}/{{ serventia.uf }}</p>
-<p align="center"><b>CERTIDÃO NEGATIVA DE IMÓVEL</b></p>
-<p>Certifico, a pedido de parte interessada{% if requerente %} — <b>{{ requerente }}</b>{% if requerente_documento %}, {{ requerente_documento }}{% endif %}{% endif %}, que, feitas as buscas nos livros e indicadores do Registro de Imóveis a meu cargo{% if criterio_rotulo %} — <b>{{ criterio_rotulo }}</b>{% endif %} —, <b>NADA CONSTA</b> de matrícula ou registro{% if pesquisado %} em nome de <b>{{ pesquisado }}</b>{% if pesquisado_documento %}, {{ pesquisado_documento }}{% endif %}{% endif %}{% if imovel_busca %} sobre o imóvel indicado («{{ imovel_busca }}»){% endif %} nos livros de Registro de Imóveis desta Serventia, até a presente data.</p>
-{% if finalidade %}<p><b>FINALIDADE: </b>{{ finalidade }}</p>{% endif %}
-{% if protocolo %}<p><b>PROTOCOLO/PRENOTAÇÃO: </b>{{ protocolo }}</p>{% endif %}
-<p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 53 do Código de Normas da CGJ/TJMA. Certidão emitida em {{ hoje_extenso }}{% if hora_emissao %}, às {{ hora_emissao }}{% endif %}. Dou fé.</p>
-<p align="center">{{ serventia.cidade }}/{{ serventia.uf }}, {{ hoje_extenso }}.</p>
-<p align="center">{{ lavrou_nome }}</p>
-<p align="center">{{ lavrou_funcao }}</p>
-"""
+# `MODELO_PADRAO` — o texto de fábrica do papel RI_CERTIDAO_NEGATIVA_IMOVEL — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/ri/RI_CERTIDAO_NEGATIVA_IMOVEL.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 
 def so_digitos(texto: Any) -> str:
     return "".join(ch for ch in str(texto or "") if ch.isdigit())
 
 
-def buscar_por_pessoa(con: sqlite3.Connection, busca: str,
+def buscar_por_pessoa(con: Any, busca: str,
                       *, so_proprietarios: bool = False) -> list[dict]:
     """A mesma régua do Indicador Pessoal: nome normalizado por trecho;
     documento completo. Devolve os grupos achados (pode ser lista vazia)."""
@@ -74,24 +66,23 @@ def buscar_por_pessoa(con: sqlite3.Connection, busca: str,
             "Informe o nome ou o CPF/CNPJ para buscar antes de emitir a "
             "certidão negativa.")
     doc = so_digitos(busca) or busca
-    onde = ["(p.nome_norm LIKE ? OR p.documento_numero = ?)"]
+    onde = ["(p.nome_norm ILIKE %s OR p.documento_numero = %s)"]
     params: list[Any] = [f"%{normalizar_busca(busca)}%", doc]
     if so_proprietarios:
         onde.append("p.proprietario_ativo = 1")
     filtro = " AND ".join(onde)
-    rows = con.execute(
+    return banco(con).ler(
         f"""SELECT COALESCE(NULLIF(p.documento_numero,''), p.nome_norm) chave,
                   MAX(p.nome) nome, MAX(p.documento_tipo) doc_tipo,
                   MAX(p.documento_numero) doc,
                   COUNT(DISTINCT p.matricula_id) n_matriculas
            FROM ri_partes p WHERE {filtro}
-           GROUP BY chave ORDER BY n_matriculas DESC, nome LIMIT 60""",
+           GROUP BY chave ORDER BY n_matriculas DESC, nome, chave LIMIT 60""",
         params,
-    ).fetchall()
-    return [dict(r) for r in rows]
+    )
 
 
-def buscar_por_imovel(con: sqlite3.Connection, busca: str,
+def buscar_por_imovel(con: Any, busca: str,
                       *, bairro: str = "", tipo: str = "") -> list[dict]:
     """A mesma régua do Indicador Real: descrição normalizada por trecho."""
     busca = (busca or "").strip()
@@ -101,22 +92,22 @@ def buscar_por_imovel(con: sqlite3.Connection, busca: str,
             "de emitir a certidão negativa.")
     onde, params = ["1=1"], []
     if busca:
-        onde.append("m.imovel_norm LIKE ?")
+        onde.append("m.imovel_norm ILIKE %s")
         params.append(f"%{normalizar_busca(busca)}%")
     if (bairro or "").strip():
-        onde.append("m.bairro = ?")
+        onde.append("m.bairro = %s")
         params.append(bairro.strip())
     if tipo in ("R", "U"):
-        onde.append("m.rural_urbano = ?")
+        onde.append("m.rural_urbano = %s")
         params.append(tipo)
     filtro = " AND ".join(onde)
-    rows = con.execute(
+    return banco(con).ler(
         f"""SELECT m.id, m.numero, m.logradouro, m.bairro
             FROM ri_matriculas m WHERE {filtro}
-            ORDER BY CAST(m.numero AS INTEGER) LIMIT 60""",
+            ORDER BY coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0), m.id
+            LIMIT 60""",
         params,
-    ).fetchall()
-    return [dict(r) for r in rows]
+    )
 
 
 def conferir_negativa(achados: list) -> None:
@@ -127,27 +118,39 @@ def conferir_negativa(achados: list) -> None:
             f"{len(achados)} resultado(s). Negativa só quando nada consta.")
 
 
-def montar_identificacao(busca: str, *, modo: str) -> dict:
-    """O que entra no papel sobre o critério da busca."""
+def montar_identificacao(busca: str, *, modo: str, con=None) -> dict:
+    """O que entra no papel sobre o critério da busca.
+
+    O TEXTO SAIU DAQUI — LF06B (19/10/2026): cada frase do critério é papel do
+    catálogo (`modelos_padrao/ri/RI_NEGATIVA_CRITERIO_*.txt`), e a casa a edita
+    na tela de Modelos. A REGRA ficou aqui: documento, nome ou descrição do
+    imóvel é decidido pelo que se digitou e pelo modo. Sem `con`, sai o padrão
+    da base.
+    """
+    import ri_frases as FRASES
+
     busca = (busca or "").strip()
     doc = so_digitos(busca)
     if modo == "PESSOA":
         if doc and len(doc) in (11, 14) and doc == so_digitos(busca):
             # Busca foi só o documento.
             return {
-                "criterio_rotulo": f"pelo documento {doc}",
+                "criterio_rotulo": FRASES.frase(
+                    "RI_NEGATIVA_CRITERIO_DOCUMENTO", con, documento=doc),
                 "pesquisado": "",
                 "pesquisado_documento": doc,
                 "imovel_busca": "",
             }
         return {
-            "criterio_rotulo": f"pelo nome «{busca}»",
+            "criterio_rotulo": FRASES.frase(
+                "RI_NEGATIVA_CRITERIO_NOME", con, nome=busca),
             "pesquisado": busca,
             "pesquisado_documento": "",
             "imovel_busca": "",
         }
     return {
-        "criterio_rotulo": f"pela descrição do imóvel «{busca}»",
+        "criterio_rotulo": FRASES.frase(
+            "RI_NEGATIVA_CRITERIO_IMOVEL", con, descricao=busca),
         "pesquisado": "",
         "pesquisado_documento": "",
         "imovel_busca": busca,
@@ -172,3 +175,17 @@ def validade_ate(hoje: date) -> str:
 def limpar_corpo(corpo: str) -> str:
     """Preferência da casa: sem traço de assinatura à mão na certidão."""
     return sem_linha_de_assinatura_a_mao(corpo or "")
+
+
+def __getattr__(nome: str):
+    """Os nomes antigos do texto de fábrica, lidos da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06A (19/10/2026) e mora em `modelos_padrao/`.
+    Quem ainda importa o nome antigo recebe o padrão da base — o MESMO que o
+    papel imprime, e não uma cópia que ficou para trás. Nome que não é de papel
+    continua sendo `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)

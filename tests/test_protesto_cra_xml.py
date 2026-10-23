@@ -74,3 +74,19 @@ def test_xml_com_dtd_e_recusado():
     bruto = _arquivo_xml().replace(b'<remessa>', b'<!DOCTYPE remessa><remessa>')
     with pytest.raises(XML.RemessaXmlError, match="DTD"):
         XML.ler(bruto)
+
+
+@pytest.mark.parametrize("bruto,esperado", [
+    (b'<?xml version="1.0"?><relatorio><codigo>0003</codigo><ocorrencia>SEM REMESSAS PENDENTES</ocorrencia></relatorio>', '0003'),
+    (b'<?xml version="1.0"?><erro><codigo>1</codigo><mensagem>Falha na autenticacao</mensagem></erro>', 'autenticacao'),
+])
+def test_aviso_da_cra_em_arquivo_mostra_o_motivo_e_nao_erro_de_raiz(bruto, esperado):
+    with pytest.raises(XML.RemessaXmlError, match=esperado) as erro:
+        XML.ler(bruto)
+    assert 'não contém remessas' in str(erro.value)
+
+
+def test_atributo_desconhecido_na_raiz_continua_recusado():
+    bruto = _arquivo_xml().replace(b'<remessa>', b'<remessa inesperado="1">')
+    with pytest.raises(XML.RemessaXmlError, match='atributos não previstos.*inesperado'):
+        XML.ler(bruto)

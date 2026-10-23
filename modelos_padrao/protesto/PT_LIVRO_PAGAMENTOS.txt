@@ -1,0 +1,13 @@
+ESPECIE = em espécie
+CHEQUE = por cheque
+PIX = por PIX
+TRANSFERENCIA = por transferência bancária
+BOLETO = por boleto
+CARTAO = por cartão
+pago = pago {forma}
+pago_com_identificacao = pago {forma} — {identificacao}
+eoficio = pagamento registrado no E-Ofício (forma não consta)
+sem_forma = forma de pagamento não consta
+sem_emolumentos = não consta
+saldo = {valor} (saldo do título)
+sem_natureza = não consta

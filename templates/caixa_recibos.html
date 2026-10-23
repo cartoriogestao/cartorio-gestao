@@ -24,7 +24,9 @@
         <td class="small">{{ r.pagador }}</td>
         <td class="small">{{ r.protocolo_numero or '—' }}</td>
         <td style="text-align:right">{{ r.valor_total }}</td>
-        <td><a class="small" href="{{ url_for('caixa_recibo_odt', recibo_id=r.id) }}">2ª via</a></td>
+        <td><a class="small" href="{{ url_for('caixa_recibo_odt', recibo_id=r.id) }}">2ª via</a>
+          {# A NOTA DO RECIBO (LG01): o número, se já saiu; senão, o caminho para emitir. #}
+          <br><a class="small" href="{{ url_for('nfse_recibo', recibo_id=r.id) }}">{% if r.nfse_numero or r.nfse_chave %}NFS-e {{ r.nfse_numero or '' }}{% else %}Emitir NFS-e{% endif %}</a></td>
       </tr>
     {% else %}<tr><td colspan="6" class="muted small">Nenhum recibo ainda.</td></tr>
     {% endfor %}</tbody>

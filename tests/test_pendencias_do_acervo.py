@@ -103,7 +103,7 @@ def test_mas_continua_alcancavel_num_quadro_proprio(casa):
     """Apagar faria perder o que ainda pode ser corrigido um dia."""
     _escritura(casa, origem="EOFICIO", data="2020-06-04", id_=911)
     corpo = _corpo(_tela(casa))
-    assert "do acervo do E-Ofício" in corpo
+    assert "do acervo do sistema antigo" in corpo
     assert "/notas/atos/911" in corpo
     assert "remetidas no tempo delas" in corpo
 

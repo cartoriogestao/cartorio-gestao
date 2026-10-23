@@ -1,0 +1,3 @@
+<table border="0" cols="5.3cm,5.3cm,5.4cm">
+<tr><td><b>LIVRO {{ a.livro or '—' }}</b></td><td><b>FOLHA #FOLHA_PAGINA#</b></td><td><b>{% if a.termo %}TERMO {{ a.termo }}{% elif a.numero_ordem %}ORDEM {{ a.numero_ordem }}{% endif %}</b></td></tr>
+</table>

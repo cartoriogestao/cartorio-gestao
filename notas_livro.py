@@ -70,8 +70,10 @@ from __future__ import annotations
 
 import math
 import re
-import sqlite3
 from typing import Any
+
+import modelos_da_casa as MODELOS
+from bd_nativo import banco
 
 # --------------------------------------------------------------- constantes
 
@@ -110,14 +112,27 @@ LIVRO_DO_ATO = {
 }
 
 # Nome da serie no termo de abertura, no plural e por extenso.
-NOME_DA_SERIE = {
-    "ESCRITURA": "Escrituras Publicas",
-    "PROCURACAO": "Procuracoes",
-    "SUBSTABELECIMENTO": "Substabelecimentos",
-    "TESTAMENTO": "Testamentos Publicos",
-    "TESTAMENTO_CERRADO": "Registro de Testamentos Cerrados",
-    "ATA": "Atas Notariais",
+#
+# O NOME SAIU DAQUI NO LF06D (19/10/2026): cada um e uma peca do termo de
+# abertura (`modelos_padrao/notas/NOTAS_LIVRO_ABERTURA__serie_*.txt`), lida por
+# `nome_da_serie`. Aqui fica qual serie tem nome proprio; `NOME_DA_SERIE`, o
+# nome antigo, continua respondendo (`__getattr__`), lido da base.
+PECA_DA_SERIE = {
+    "ESCRITURA": "NOTAS_LIVRO_ABERTURA__serie_escritura",
+    "PROCURACAO": "NOTAS_LIVRO_ABERTURA__serie_procuracao",
+    "SUBSTABELECIMENTO": "NOTAS_LIVRO_ABERTURA__serie_substabelecimento",
+    "TESTAMENTO": "NOTAS_LIVRO_ABERTURA__serie_testamento",
+    "TESTAMENTO_CERRADO": "NOTAS_LIVRO_ABERTURA__serie_testamento_cerrado",
+    "ATA": "NOTAS_LIVRO_ABERTURA__serie_ata",
 }
+
+
+def nome_da_serie(serie: str, *, con: Any = None, sem_nome: str | None = None) -> str:
+    """O nome da serie, por extenso — da base. Serie sem nome: `sem_nome`, ou a
+    propria serie em Title Case, que e o que o termo sempre escreveu."""
+    if serie in PECA_DA_SERIE:
+        return MODELOS.textos(con)(PECA_DA_SERIE[serie])
+    return sem_nome if sem_nome is not None else serie.title()
 
 
 class LivroError(ValueError):
@@ -247,7 +262,7 @@ def estimar_paginas(teor: Any,
 
 # ------------------------------------------------------------- contador do termo
 
-def _semente(con: sqlite3.Connection, serie: str) -> int:
+def _semente(con, serie: str) -> int:
     """O maior numero de termo ja em uso na serie, LENDO e nada mais.
 
     Semear importa: o acervo do E-Oficio trouxe 213 procuracoes e 45 escrituras
@@ -255,31 +270,34 @@ def _semente(con: sqlite3.Connection, serie: str) -> int:
     1985 — e o livro nao aceita dois termos com o mesmo numero.
     """
     tipos = [t for t, s in LIVRO_DO_ATO.items() if s == serie] or [serie]
-    marcas = ",".join("?" for _ in tipos)
-    maior = con.execute(
-        f"""SELECT MAX(x) m FROM (
-                SELECT MAX(COALESCE(termo, 0)) x FROM nt_atos WHERE tipo IN ({marcas})
+    maior = banco(con).valor(
+        """SELECT MAX(x) AS m FROM (
+                SELECT MAX(COALESCE(termo, 0)) AS x FROM nt_atos WHERE tipo = ANY(%s)
                 UNION ALL
-                SELECT MAX(COALESCE(numero_ordem, 0)) x FROM nt_atos WHERE tipo IN ({marcas})
-            )""", tipos + tipos).fetchone()
-    return int((maior["m"] if maior and maior["m"] is not None else 0) or 0)
+                SELECT MAX(COALESCE(numero_ordem, 0)) AS x FROM nt_atos WHERE tipo = ANY(%s)
+            ) AS t""", (tipos, tipos))
+    return int(maior or 0)
 
 
-def _garantir_contador(con: sqlite3.Connection, serie: str) -> sqlite3.Row:
+def _garantir_contador(con, serie: str) -> dict:
     """A linha do contador da serie, criada na primeira vez. ESCREVE."""
-    linha = con.execute("SELECT * FROM nt_termos WHERE serie=?", (serie,)).fetchone()
+    bd = banco(con)
+    # A linha nasce uma vez so: dois balcoes semeando a mesma serie ao mesmo
+    # tempo dariam chave repetida no meio do lancamento.
+    bd.travar("nt_termos.serie")
+    linha = bd.um("SELECT * FROM nt_termos WHERE serie = %s FOR UPDATE", (serie,))
     if linha:
         return linha
-    base = _semente(con, serie)
-    con.execute(
+    base = _semente(bd, serie)
+    bd.escrever(
         """INSERT INTO nt_termos(serie, proximo, maior_em_uso, observacao)
-           VALUES (?,?,?,?)""",
+           VALUES (%s, %s, %s, %s)""",
         (serie, base + 1, base,
          "semeado a partir do maior numero de ordem do acervo"))
-    return con.execute("SELECT * FROM nt_termos WHERE serie=?", (serie,)).fetchone()
+    return bd.um("SELECT * FROM nt_termos WHERE serie = %s FOR UPDATE", (serie,))
 
 
-def proximo_termo(con: sqlite3.Connection, serie: str,
+def proximo_termo(con, serie: str,
                   consumir: bool = True) -> int:
     """O proximo numero de termo da serie. Continuo, nunca reinicia.
 
@@ -289,18 +307,22 @@ def proximo_termo(con: sqlite3.Connection, serie: str,
     segundos preso no `busy_timeout` quando outro balcao esta lavrando, e
     depois devolve 500. Tela de leitura le.
     """
-    linha = con.execute("SELECT * FROM nt_termos WHERE serie=?", (serie,)).fetchone()
+    bd = banco(con)
     if not consumir:
-        return int(linha["proximo"]) if linha else _semente(con, serie) + 1
-    linha = _garantir_contador(con, serie)
+        linha = bd.um("SELECT * FROM nt_termos WHERE serie = %s", (serie,))
+        return int(linha["proximo"]) if linha else _semente(bd, serie) + 1
+    # FOR UPDATE (dentro de `_garantir_contador`): o contador e lido e gravado
+    # na mesma transacao, com a linha presa ate o fim dela.
+    linha = _garantir_contador(bd, serie)
     numero = int(linha["proximo"])
-    con.execute(
-        """UPDATE nt_termos SET proximo=?, maior_em_uso=MAX(COALESCE(maior_em_uso,0),?)
-           WHERE serie=?""", (numero + 1, numero, serie))
+    bd.escrever(
+        """UPDATE nt_termos SET proximo = %s,
+                  maior_em_uso = GREATEST(COALESCE(maior_em_uso, 0), %s)
+           WHERE serie = %s""", (numero + 1, numero, serie))
     return numero
 
 
-def fixar_termo(con: sqlite3.Connection, serie: str, proximo: int,
+def fixar_termo(con, serie: str, proximo: int,
                 usuario: str | None, motivo: str | None, agora: str) -> None:
     """Corrige o contador a mao, como a tela de numeracao do RI faz.
 
@@ -308,40 +330,46 @@ def fixar_termo(con: sqlite3.Connection, serie: str, proximo: int,
     duplicado, e o `ux_nt_atos_termo` recusaria depois, no meio do atendimento.
     Melhor recusar aqui, com o motivo na tela.
     """
-    linha = _garantir_contador(con, serie)
+    bd = banco(con)
+    linha = _garantir_contador(bd, serie)
     maior = int(linha["maior_em_uso"] or 0)
     if int(proximo) <= maior:
         raise LivroError(
             f"O termo {proximo} é igual ou menor que o maior já usado nesta "
             f"série ({maior}). Isso criaria termo repetido no livro.")
-    con.execute(
-        """UPDATE nt_termos SET proximo=?, fixado_em=?, fixado_por=?, observacao=?
-           WHERE serie=?""",
+    bd.escrever(
+        """UPDATE nt_termos SET proximo = %s, fixado_em = %s, fixado_por = %s,
+                  observacao = %s
+           WHERE serie = %s""",
         (int(proximo), agora, usuario, (motivo or "").strip() or None, serie))
 
 
 # ------------------------------------------------------------- os termos do livro
 
 def texto_termo_abertura(serie: str, numero: Any, folhas: int, sv: dict,
-                         data_extenso: str, folha_inicial: int = 1) -> str:
+                         data_extenso: str, folha_inicial: int = 1, *,
+                         con: Any = None) -> str:
     """O termo de abertura, na forma do art. 30, I, da Lei 8.935/1994.
 
     Diz o que o livro e, quantas folhas tem, como estao numeradas e quem
     responde pela serventia. Sem isso o livro e um maco de papel.
+
+    O TEXTO MORA NA BASE DESDE O LF06D (`NOTAS_LIVRO_ABERTURA`); aqui ficam as
+    contas — a ultima folha, o numero por extenso. O termo ja gravado no livro
+    (`nt_livros.termo_abertura`) nao muda.
     """
+    textos = MODELOS.textos(con)
     ultima = int(folha_inicial) + int(folhas) - 1
-    return (
-        f"TERMO DE ABERTURA. Este Livro n. {numero}, de "
-        f"{NOME_DA_SERIE.get(serie, serie.title())}, contem "
-        f"{com_algarismos(folhas, feminino=True)} folhas, numeradas de "
-        f"{com_algarismos(folha_inicial, feminino=True)} a "
-        f"{com_algarismos(ultima, feminino=True)}, todas por mim rubricadas, e "
-        f"servira para a lavratura dos atos de sua especie nesta "
-        f"{sv.get('unit_name', '')}, CNS {sv.get('ri_cns', '')}, "
-        f"{sv.get('ri_cidade', '')}-{sv.get('ri_uf', '')}. "
-        f"{sv.get('ri_cidade', '')}-{sv.get('ri_uf', '')}, {data_extenso}. "
-        f"{sv.get('serventia_titular', '')} — {sv.get('serventia_titulo', '')}."
-    )
+    return textos.preencher(
+        "NOTAS_LIVRO_ABERTURA", numero=numero,
+        serie=nome_da_serie(serie, con=textos),
+        folhas=com_algarismos(folhas, feminino=True),
+        primeira=com_algarismos(folha_inicial, feminino=True),
+        ultima=com_algarismos(ultima, feminino=True),
+        serventia=sv.get('unit_name', ''), cns=sv.get('ri_cns', ''),
+        cidade=sv.get('ri_cidade', ''), uf=sv.get('ri_uf', ''),
+        data_extenso=data_extenso, titular=sv.get('serventia_titular', ''),
+        titulo=sv.get('serventia_titulo', ''))
 
 
 def texto_termo_encerramento(serie: str, numero: Any, folhas: int,
@@ -350,42 +378,47 @@ def texto_termo_encerramento(serie: str, numero: Any, folhas: int,
                              ultimo_termo: int | None,
                              sv: dict, data_extenso: str,
                              folha_inicial: int = 1,
-                             motivo: str | None = None) -> str:
+                             motivo: str | None = None, *,
+                             con: Any = None) -> str:
     """O termo de encerramento, com o que foi usado e o que foi inutilizado.
 
     A parte que costuma faltar e a ultima: dizer o que sobrou em branco e que
     ficou inutilizado. Folha em branco dentro de livro encerrado e a porta
     aberta do art. 795, § 2º.
+
+    QUAIS FRASES ENTRAM E REGRA, E FICA AQUI; o texto de cada uma e peca do
+    papel `NOTAS_LIVRO_ENCERRAMENTO`, na base desde o LF06D.
     """
+    textos = MODELOS.textos(con)
     ultima_capacidade = int(folha_inicial) + int(folhas) - 1
     usada = int(ultima_usada) if ultima_usada else None
-    partes = [
-        f"TERMO DE ENCERRAMENTO. Fica encerrado o presente Livro n. {numero}, "
-        f"de {NOME_DA_SERIE.get(serie, serie.title())}, com "
-        f"{com_algarismos(folhas, feminino=True)} folhas."
-    ]
+    frases = []
     if usada:
-        partes.append(
-            f"Foram utilizadas as folhas de "
-            f"{com_algarismos(folha_inicial, feminino=True)} a "
-            f"{com_algarismos(usada, feminino=True)}.")
+        frases.append(textos.preencher(
+            "NOTAS_LIVRO_ENCERRAMENTO__usadas",
+            primeira=com_algarismos(folha_inicial, feminino=True),
+            ultima=com_algarismos(usada, feminino=True)))
     else:
-        partes.append("Nenhuma folha foi utilizada.")
+        frases.append(textos("NOTAS_LIVRO_ENCERRAMENTO__nenhuma"))
     if primeiro_termo and ultimo_termo:
-        partes.append(
-            f"Nelas foram lavrados os termos de n. {com_algarismos(primeiro_termo)} "
-            f"a n. {com_algarismos(ultimo_termo)}.")
+        frases.append(textos.preencher(
+            "NOTAS_LIVRO_ENCERRAMENTO__termos", primeiro=com_algarismos(primeiro_termo),
+            ultimo=com_algarismos(ultimo_termo)))
     if usada is not None and usada < ultima_capacidade:
-        partes.append(
-            f"As folhas de {com_algarismos(usada + 1, feminino=True)} a "
-            f"{com_algarismos(ultima_capacidade, feminino=True)} ficam "
-            f"INUTILIZADAS por este termo, nada mais podendo nelas ser lancado.")
+        frases.append(textos.preencher(
+            "NOTAS_LIVRO_ENCERRAMENTO__inutilizadas",
+            primeira=com_algarismos(usada + 1, feminino=True),
+            ultima=com_algarismos(ultima_capacidade, feminino=True)))
     if motivo:
-        partes.append(f"Motivo do encerramento: {motivo.strip()}.")
-    partes.append(
-        f"{sv.get('ri_cidade', '')}-{sv.get('ri_uf', '')}, {data_extenso}. "
-        f"{sv.get('serventia_titular', '')} — {sv.get('serventia_titulo', '')}.")
-    return " ".join(partes)
+        frases.append(textos.preencher("NOTAS_LIVRO_ENCERRAMENTO__motivo",
+                                       motivo=motivo.strip()))
+    return textos.preencher(
+        "NOTAS_LIVRO_ENCERRAMENTO", numero=numero,
+        serie=nome_da_serie(serie, con=textos),
+        folhas=com_algarismos(folhas, feminino=True), frases=" ".join(frases),
+        cidade=sv.get('ri_cidade', ''), uf=sv.get('ri_uf', ''),
+        data_extenso=data_extenso, titular=sv.get('serventia_titular', ''),
+        titulo=sv.get('serventia_titulo', ''))
 
 
 # ------------------------------------------------------------- livros
@@ -411,7 +444,7 @@ def ultima_folha(livro: Any) -> int:
     return int(livro["folha_inicial"] or 1) + capacidade(livro) - 1
 
 
-def folha_livre(con: sqlite3.Connection, livro: Any) -> int:
+def folha_livre(con, livro: Any) -> int:
     """A primeira folha livre do livro. So LE — nao grava nada.
 
     POR QUE ISTO EXISTE
@@ -426,9 +459,9 @@ def folha_livre(con: sqlite3.Connection, livro: Any) -> int:
     """
     inicio = int(livro["folha_inicial"] or 1)
     maior = inicio - 1
-    for linha in con.execute(
+    for linha in banco(con).ler(
             """SELECT folha, folha_final, folha_inicial_num, folha_final_num
-               FROM nt_atos WHERE livro_id=?""", (livro["id"],)):
+               FROM nt_atos WHERE livro_id = %s ORDER BY id""", (livro["id"],)):
         for valor in (linha["folha_final_num"], linha["folha_inicial_num"],
                       linha["folha_final"], linha["folha"]):
             n = inteiro(valor)
@@ -437,23 +470,25 @@ def folha_livre(con: sqlite3.Connection, livro: Any) -> int:
     return max(int(livro["folha_atual"] or inicio), maior + 1, inicio)
 
 
-def sincronizar_folha_atual(con: sqlite3.Connection, livro_id: int) -> int:
+def sincronizar_folha_atual(con, livro_id: int) -> int:
     """Grava em `folha_atual` a primeira folha livre. ESCREVE.
 
     So se chama de dentro de transacao de escrita — nunca de uma tela de
     leitura. Para a tela, use `folha_livre`, que faz a mesma conta sem gravar.
     """
-    livro = con.execute("SELECT * FROM nt_livros WHERE id=?", (livro_id,)).fetchone()
+    bd = banco(con)
+    bd._escrita()
+    livro = bd.um("SELECT * FROM nt_livros WHERE id = %s FOR UPDATE", (livro_id,))
     if not livro:
         raise LivroError("Livro não encontrado.")
-    proxima = folha_livre(con, livro)
+    proxima = folha_livre(bd, livro)
     if proxima != int(livro["folha_atual"] or 0):
-        con.execute("UPDATE nt_livros SET folha_atual=? WHERE id=?",
+        bd.escrever("UPDATE nt_livros SET folha_atual = %s WHERE id = %s",
                     (proxima, livro_id))
     return proxima
 
 
-def numero_do_proximo_livro(con: sqlite3.Connection, serie: str) -> str:
+def numero_do_proximo_livro(con, serie: str) -> str:
     """O numero seguinte da serie, lido do maior numero ja existente.
 
     Numero de livro e texto na tabela porque o acervo tem `2-F` e coisas assim.
@@ -461,23 +496,25 @@ def numero_do_proximo_livro(con: sqlite3.Connection, serie: str) -> str:
     atrapalha a sequencia, e o primeiro livro de uma serie vazia e o 1.
     """
     maior = 0
-    for linha in con.execute("SELECT numero FROM nt_livros WHERE tipo=?", (serie,)):
+    for linha in banco(con).ler(
+            "SELECT numero FROM nt_livros WHERE tipo = %s ORDER BY id", (serie,)):
         n = inteiro(linha["numero"])
         if n is not None:
             maior = max(maior, n)
     return str(maior + 1)
 
 
-def livro_da_vez(con: sqlite3.Connection, serie: str) -> sqlite3.Row | None:
+def livro_da_vez(con, serie: str) -> dict | None:
     """O livro aberto da serie. None se nao houver. So LE.
 
     Havendo mais de um aberto — o que nao deveria acontecer, e acontece quando
     alguem abre dois pela tela — vale o de MENOR numero: escritura-se o livro
     velho ate ele encher, nao se pula para o novo.
     """
-    linhas = list(con.execute(
-        """SELECT * FROM nt_livros WHERE tipo=? AND ativo=1 AND encerrado=0""",
-        (serie,)))
+    linhas = banco(con).ler(
+        """SELECT * FROM nt_livros WHERE tipo = %s AND ativo = 1 AND encerrado = 0
+            ORDER BY id""",
+        (serie,))
     if not linhas:
         return None
     linhas.sort(key=lambda r: (inteiro(r["numero"]) if inteiro(r["numero"]) is not None
@@ -485,7 +522,7 @@ def livro_da_vez(con: sqlite3.Connection, serie: str) -> sqlite3.Row | None:
     return linhas[0]
 
 
-def abrir_livro(con: sqlite3.Connection, serie: str, sv: dict, agora: str,
+def abrir_livro(con, serie: str, sv: dict, agora: str,
                 data_extenso: str, usuario: str | None = None,
                 numero: Any = None, folhas: int | None = None,
                 abertura: str | None = None, complemento: str = "",
@@ -497,7 +534,7 @@ def abrir_livro(con: sqlite3.Connection, serie: str, sv: dict, agora: str,
     livro nascia sem termo — que e o mesmo que nascer sem identidade. Quando o
     texto nao vem, este modulo escreve o padrao.
     """
-    if serie not in NOME_DA_SERIE:
+    if serie not in PECA_DA_SERIE:
         raise LivroError(f"Série de livro desconhecida: {serie!r}.")
     folhas = int(folhas or CAPACIDADE_PADRAO)
     if folhas < 1:
@@ -505,65 +542,86 @@ def abrir_livro(con: sqlite3.Connection, serie: str, sv: dict, agora: str,
     if folhas > LIMITE_POR_EXTENSO:
         raise LivroError(f"{folhas} folhas não é um livro plausível.")
     folha_inicial = max(1, int(folha_inicial or 1))
-    numero = str(numero or numero_do_proximo_livro(con, serie)).strip()
+    bd = banco(con)
+    textos = MODELOS.textos(con)
+    # O numero do livro e lido para numerar: trava a serie antes de ler.
+    bd.travar("nt_livros.numero")
+    numero = str(numero or numero_do_proximo_livro(bd, serie)).strip()
     if not numero:
         raise LivroError("Informe o número do livro.")
     complemento = (complemento or "").strip()
-    ja = con.execute(
-        """SELECT id FROM nt_livros WHERE tipo=? AND numero=? AND complemento=?""",
-        (serie, numero, complemento)).fetchone()
+    ja = bd.um(
+        """SELECT id FROM nt_livros WHERE tipo = %s AND numero = %s
+              AND complemento = %s""",
+        (serie, numero, complemento))
+    # A DESCRICAO DO LIVRO E DADO, E NAO PAPEL (revisao do LF06D): e o nome
+    # com que o livro se acha nas listas, e o que a importacao do E-Oficio
+    # tambem grava. Sai do padrao — os mesmos bytes do `NOME_DA_SERIE` de
+    # antes —, e nao do ajuste da casa: mudar o nome dos livros novos e
+    # pergunta para o oficial. O TERMO segue o ajuste (o papel e da casa).
+    descricao = nome_da_serie(serie)
     if ja:
-        raise LivroError(f"Já existe {NOME_DA_SERIE[serie]} n. {numero}.")
-    texto = (termo or "").strip() or texto_termo_abertura(
-        serie, numero, folhas, sv, data_extenso, folha_inicial)
-    cur = con.execute(
+        raise LivroError(f"Já existe {descricao} n. {numero}.")
+    try:
+        texto = (termo or "").strip() or texto_termo_abertura(
+            serie, numero, folhas, sv, data_extenso, folha_inicial, con=textos)
+    except MODELOS.ModeloError as erro:
+        raise LivroError(str(erro)) from erro
+    novo = bd.escrever(
         """INSERT INTO nt_livros
            (tipo, numero, complemento, descricao, folhas, folha_inicial,
             folha_atual, abertura, termo_abertura, aberto_por, automatico,
             encerrado, ativo, criado_em)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,0,1,?)""",
-        (serie, numero, complemento, NOME_DA_SERIE[serie], folhas,
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 1, %s)
+           RETURNING id""",
+        (serie, numero, complemento, descricao, folhas,
          folha_inicial, folha_inicial,
          abertura or agora[:10], texto, usuario, 1 if automatico else 0, agora))
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
 
 
-def encerrar_livro(con: sqlite3.Connection, livro_id: int, sv: dict, agora: str,
+def encerrar_livro(con, livro_id: int, sv: dict, agora: str,
                    data_extenso: str, usuario: str | None = None,
                    motivo: str | None = None, termo: str | None = None) -> dict:
     """Encerra o livro, escrevendo o que foi usado e o que ficou inutilizado."""
-    livro = con.execute("SELECT * FROM nt_livros WHERE id=?", (livro_id,)).fetchone()
+    bd = banco(con)
+    bd._escrita()
+    livro = bd.um("SELECT * FROM nt_livros WHERE id = %s FOR UPDATE", (livro_id,))
     if not livro:
         raise LivroError("Livro não encontrado.")
     if int(livro["encerrado"] or 0):
         raise LivroError("Este livro já está encerrado.")
-    pendente = con.execute(
-        """SELECT COUNT(*) n FROM nt_atos
-           WHERE livro_id=? AND situacao='EM_LAVRATURA'""", (livro_id,)).fetchone()
-    if pendente and int(pendente["n"] or 0):
+    pendente = int(bd.valor(
+        """SELECT COUNT(*) AS n FROM nt_atos
+           WHERE livro_id = %s AND situacao = 'EM_LAVRATURA'""", (livro_id,)) or 0)
+    if pendente:
         raise LivroError(
-            f"Há {pendente['n']} ato(s) em lavratura neste livro. Encerre ou "
+            f"Há {pendente} ato(s) em lavratura neste livro. Encerre ou "
             f"cancele cada um antes de encerrar o livro.")
-    uso = con.execute(
-        """SELECT MIN(termo) pri, MAX(termo) ult, MAX(COALESCE(folha_final_num,
-                  folha_inicial_num)) ultima
-           FROM nt_atos WHERE livro_id=?""", (livro_id,)).fetchone()
+    uso = bd.um(
+        """SELECT MIN(termo) AS pri, MAX(termo) AS ult,
+                  MAX(COALESCE(folha_final_num, folha_inicial_num)) AS ultima
+           FROM nt_atos WHERE livro_id = %s""", (livro_id,))
     ultima = inteiro(uso["ultima"] if uso else None)
     if ultima is None:
         ultima = max(int(livro["folha_inicial"] or 1) - 1,
                      int(livro["folha_atual"] or 1) - 1)
-    texto = (termo or "").strip() or texto_termo_encerramento(
-        livro["tipo"], livro["numero"], capacidade(livro), ultima,
-        inteiro(uso["pri"] if uso else None), inteiro(uso["ult"] if uso else None),
-        sv, data_extenso, int(livro["folha_inicial"] or 1), motivo)
+    try:
+        texto = (termo or "").strip() or texto_termo_encerramento(
+            livro["tipo"], livro["numero"], capacidade(livro), ultima,
+            inteiro(uso["pri"] if uso else None), inteiro(uso["ult"] if uso else None),
+            sv, data_extenso, int(livro["folha_inicial"] or 1), motivo, con=con)
+    except MODELOS.ModeloError as erro:
+        # o ajuste da casa que nao monta: a rota mostra o nome do papel
+        raise LivroError(str(erro)) from erro
     inutilizadas = None
     fim = ultima_folha(livro)
     if ultima is not None and ultima < fim:
         inutilizadas = f"{ultima + 1}-{fim}"
-    con.execute(
-        """UPDATE nt_livros SET encerrado=1, ativo=0, encerramento=?,
-           termo_encerramento=?, encerrado_por=?, folhas_inutilizadas=?
-           WHERE id=?""",
+    bd.escrever(
+        """UPDATE nt_livros SET encerrado = 1, ativo = 0, encerramento = %s,
+           termo_encerramento = %s, encerrado_por = %s, folhas_inutilizadas = %s
+           WHERE id = %s""",
         (agora[:10], texto, usuario, inutilizadas, livro_id))
     return {"livro_id": livro_id, "numero": livro["numero"],
             "ultima_folha_usada": ultima, "folhas_inutilizadas": inutilizadas,
@@ -572,7 +630,7 @@ def encerrar_livro(con: sqlite3.Connection, livro_id: int, sv: dict, agora: str,
 
 # ------------------------------------------------------------- o lancamento
 
-def previsao(con: sqlite3.Connection, tipo: str, paginas: Any = None) -> dict:
+def previsao(con, tipo: str, paginas: Any = None) -> dict:
     """O que a tela mostra ANTES de lancar: que livro, que folha, que termo.
 
     Nao consome numero nenhum. Serve para o escrevente conferir antes de
@@ -584,7 +642,7 @@ def previsao(con: sqlite3.Connection, tipo: str, paginas: Any = None) -> dict:
     folhas = folhas_de(paginas) if paginas else 1
     livro = livro_da_vez(con, serie)
     dados: dict[str, Any] = {
-        "serie": serie, "serie_nome": NOME_DA_SERIE.get(serie, serie),
+        "serie": serie, "serie_nome": nome_da_serie(serie, con=con, sem_nome=serie),
         "termo": proximo_termo(con, serie, consumir=False),
         "folhas": folhas, "paginas_reservadas": paginas_reservadas(folhas),
         "restam": None,
@@ -610,7 +668,7 @@ def previsao(con: sqlite3.Connection, tipo: str, paginas: Any = None) -> dict:
     return dados
 
 
-def lancar_ato(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
+def lancar_ato(con, ato_id: int, sv: dict, agora: str,
                data_extenso: str, paginas: Any = None,
                usuario: str | None = None,
                capacidade_novo_livro: int | None = None) -> dict:
@@ -619,7 +677,7 @@ def lancar_ato(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
     E O UNICO LUGAR QUE ESCREVE ESSES CAMPOS. Uma vez lancado, o ato nao volta
     a passar por aqui — a folha do livro foi gasta e nao se devolve.
 
-    Roda inteiro dentro da transacao do chamador, que ja e `BEGIN IMMEDIATE`.
+    Roda inteiro dentro da transacao do chamador, e trava `nt_livros.folha`.
     Dois balcoes lancando ao mesmo tempo serializam: o segundo espera, le o
     `folha_atual` ja incrementado pelo primeiro e recebe a folha seguinte. A
     rede de baixo e o indice unico `ux_nt_atos_folha`, que transforma qualquer
@@ -631,7 +689,11 @@ def lancar_ato(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
         o livro e encerrado — dizendo no termo quais folhas ficaram
         inutilizadas — e o ato inteiro comeca no livro seguinte.
     """
-    ato = con.execute("SELECT * FROM nt_atos WHERE id=?", (ato_id,)).fetchone()
+    bd = banco(con)
+    # Livro, folha e termo sao lidos para numerar: trava antes de ler, e o ato
+    # fica preso ate o fim da transacao (ele e lido e gravado aqui).
+    bd.travar("nt_livros.folha")
+    ato = bd.um("SELECT * FROM nt_atos WHERE id = %s FOR UPDATE", (ato_id,))
     if not ato:
         raise LivroError("Ato não encontrado.")
 
@@ -672,23 +734,23 @@ def lancar_ato(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
         or estimar_paginas(ato["teor"])
     folhas = folhas_de(paginas_texto)
 
-    livro = livro_da_vez(con, serie)
+    livro = livro_da_vez(bd, serie)
     aberto_agora = False
     encerrado = None
 
     if livro is None:
-        novo = abrir_livro(con, serie, sv, agora, data_extenso, usuario,
+        novo = abrir_livro(bd, serie, sv, agora, data_extenso, usuario,
                            folhas=capacidade_novo_livro, automatico=True)
-        livro = con.execute("SELECT * FROM nt_livros WHERE id=?", (novo,)).fetchone()
+        livro = bd.um("SELECT * FROM nt_livros WHERE id = %s", (novo,))
         aberto_agora = True
 
-    inicio = sincronizar_folha_atual(con, livro["id"])
+    inicio = sincronizar_folha_atual(bd, livro["id"])
     ultima_do_livro = ultima_folha(livro)
 
     if inicio + folhas - 1 > ultima_do_livro:
         # Nao cabe inteiro: encerra este e abre — ou aproveita — o seguinte.
         encerrado = encerrar_livro(
-            con, livro["id"], sv, agora, data_extenso, usuario,
+            bd, livro["id"], sv, agora, data_extenso, usuario,
             motivo=(f"livro completo — o ato seguinte ocupa "
                     f"{com_algarismos(folhas, feminino=True)} folhas e não cabe "
                     f"no que restava"))
@@ -697,15 +759,14 @@ def lancar_ato(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
         # tela. Abrir um terceiro deixaria um livro fantasma, com termo de
         # abertura escrito e nenhum ato dentro, que a correicao pergunta de
         # onde saiu. Aproveita o que existe.
-        livro = livro_da_vez(con, serie)
+        livro = livro_da_vez(bd, serie)
         if livro is None:
-            novo = abrir_livro(con, serie, sv, agora, data_extenso, usuario,
+            novo = abrir_livro(bd, serie, sv, agora, data_extenso, usuario,
                                folhas=capacidade_novo_livro or anterior,
                                automatico=True)
-            livro = con.execute("SELECT * FROM nt_livros WHERE id=?",
-                                (novo,)).fetchone()
+            livro = bd.um("SELECT * FROM nt_livros WHERE id = %s", (novo,))
             aberto_agora = True
-        inicio = sincronizar_folha_atual(con, livro["id"])
+        inicio = sincronizar_folha_atual(bd, livro["id"])
         ultima_do_livro = ultima_folha(livro)
         if inicio + folhas - 1 > ultima_do_livro:
             raise LivroError(
@@ -717,16 +778,16 @@ def lancar_ato(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
     fim = inicio + folhas - 1
     # O texto termina no verso quando o numero de paginas escritas e par.
     verso_final = (paginas_texto % PAGINAS_POR_FOLHA) == 0
-    termo = proximo_termo(con, serie, consumir=True)
+    termo = proximo_termo(bd, serie, consumir=True)
 
-    con.execute(
+    bd.escrever(
         """UPDATE nt_atos SET
-               livro_id=?, livro=?, livro_complemento=?, serie=?,
-               folha=?, folha_final=?, folha_inicial_num=?, folha_final_num=?,
-               folhas=?, paginas=?, verso_final=?,
-               termo=?, situacao=?,
-               lancado_em=?, lancado_por=?
-           WHERE id=?""",
+               livro_id = %s, livro = %s, livro_complemento = %s, serie = %s,
+               folha = %s, folha_final = %s, folha_inicial_num = %s,
+               folha_final_num = %s, folhas = %s, paginas = %s, verso_final = %s,
+               termo = %s, situacao = %s,
+               lancado_em = %s, lancado_por = %s
+           WHERE id = %s""",
         (livro["id"], livro["numero"],
          (livro["complemento"] or "").strip() or None, serie,
          rotulo_folha(inicio), rotulo_folha(fim, verso=verso_final),
@@ -734,7 +795,7 @@ def lancar_ato(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
          1 if verso_final else 0, termo, "LAVRADO",
          agora, usuario, ato_id))
 
-    con.execute("UPDATE nt_livros SET folha_atual=? WHERE id=?",
+    bd.escrever("UPDATE nt_livros SET folha_atual = %s WHERE id = %s",
                 (fim + 1, livro["id"]))
 
     fechou_agora = None
@@ -744,10 +805,10 @@ def lancar_ato(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
         # e sempre a hora pior.
         anterior = capacidade(livro)
         fechou_agora = encerrar_livro(
-            con, livro["id"], sv, agora, data_extenso, usuario,
+            bd, livro["id"], sv, agora, data_extenso, usuario,
             motivo="livro completo")
-        if livro_da_vez(con, serie) is None:
-            abrir_livro(con, serie, sv, agora, data_extenso, usuario,
+        if livro_da_vez(bd, serie) is None:
+            abrir_livro(bd, serie, sv, agora, data_extenso, usuario,
                         folhas=capacidade_novo_livro or anterior,
                         automatico=True)
 
@@ -770,7 +831,7 @@ def lancar_ato(con: sqlite3.Connection, ato_id: int, sv: dict, agora: str,
 
 # ------------------------------------------------------------- acervo
 
-def desambiguar_folhas_do_acervo(con: sqlite3.Connection) -> int:
+def desambiguar_folhas_do_acervo(con) -> int:
     """Da complemento de folha aos atos do acervo que dividem a mesma folha.
 
     POR QUE ISTO IMPORTA
@@ -788,8 +849,9 @@ def desambiguar_folhas_do_acervo(con: sqlite3.Connection) -> int:
     Idempotente: rodar duas vezes nao muda nada, e nao toca em ato que ja tenha
     complemento posto a mao.
     """
+    bd = banco(con)
     grupos: dict[tuple, list] = {}
-    for linha in con.execute(
+    for linha in bd.ler(
             """SELECT id, tipo, livro_id, livro, folha, numero_ordem,
                       folha_complemento
                FROM nt_atos
@@ -816,25 +878,26 @@ def desambiguar_folhas_do_acervo(con: sqlite3.Connection) -> int:
             if (ato["folha_complemento"] or "").strip():
                 continue
             sufixo = letras[posicao] if posicao < len(letras) else str(posicao + 1)
-            con.execute("UPDATE nt_atos SET folha_complemento=? WHERE id=?",
+            bd.escrever("UPDATE nt_atos SET folha_complemento = %s WHERE id = %s",
                         (sufixo, ato["id"]))
             mudou += 1
     return mudou
 
 
-def conferir_livro(con: sqlite3.Connection, livro_id: int) -> dict:
+def conferir_livro(con, livro_id: int) -> dict:
     """Confere o livro contra si mesmo. E o que a correicao pergunta.
 
     Devolve as tres perguntas que o livro tem de responder sozinho: ha folha
     pulada, ha folha repetida, e a numeracao dos termos corre sem furo.
     """
-    livro = con.execute("SELECT * FROM nt_livros WHERE id=?", (livro_id,)).fetchone()
+    bd = banco(con)
+    livro = bd.um("SELECT * FROM nt_livros WHERE id = %s", (livro_id,))
     if not livro:
         raise LivroError("Livro não encontrado.")
-    atos = [r for r in con.execute(
+    atos = bd.ler(
         """SELECT id, termo, folha, folha_inicial_num, folha_final_num, situacao
-           FROM nt_atos WHERE livro_id=?
-           ORDER BY COALESCE(folha_inicial_num, 0), id""", (livro_id,))]
+           FROM nt_atos WHERE livro_id = %s
+           ORDER BY COALESCE(folha_inicial_num, 0), id""", (livro_id,))
     inicio = int(livro["folha_inicial"] or 1)
     ocupadas: dict[int, list[int]] = {}
     buracos, repetidas = [], []
@@ -885,40 +948,93 @@ def parse_livro_folha_busca(busca: str) -> tuple[str | None, str | None]:
     return m.group(1).strip(), m.group(2).strip()
 
 
+def _cabecalho_do_comparecimento(sv: dict) -> str:
+    """O cabecalho da serventia no termo de comparecimento — fica no programa.
+
+    Decisao do oficial de 07/09/2026: «cabecalho dos atos vamos deixar num
+    ajuste separado para manter a forma e diminuir o risco de ir errado». O
+    texto do termo foi para a base no LF06D; o cabecalho entra nele pronto, no
+    claro `{cabecalho}`.
+    """
+    return (
+        f'<p align="center"><b>{sv.get("unit_name") or ""}</b><br/>'
+        f'{sv.get("serventia_titulo") or ""}: {sv.get("serventia_titular") or ""}<br/>'
+        f'CNS {sv.get("ri_cns") or ""} - {sv.get("endereco_completo") or ""}</p>')
+
+
 def texto_termo_comparecimento(
     *,
     sv: dict,
     reconhecimento: dict,
     parte: dict,
     data_extenso: str,
+    con: Any = None,
+    ordem: int | None = None,
 ) -> str:
+    """O termo que a parte assina ao reconhecer por autenticidade.
+
+    O TEXTO MORA NA BASE DESDE O LF06D (`NOTAS_TERMO_COMPARECIMENTO`, e as
+    pecas do documento, do selo e de quem assina); aqui fica o que decide se
+    cada uma entra.
+
+    A ORDEM ENTRA QUANDO HA (LD02, 21/10/2026): o termo de presenca «contera
+    a ordem, o nome, o documento...» (CN-MA art. 866). Ela vem de
+    `ordem_da_presenca`, na mesma transacao que grava o termo; sem ela (o
+    montador chamado avulso) o claro fica vazio e o texto e o de antes.
+    """
+    textos = MODELOS.textos(con)
     nome = (parte.get("nome") or parte.get("nome_cartao") or "").strip()
     doc = (parte.get("documento") or parte.get("documento_cartao") or "").strip()
-    doc_linha = f", portador(a) do CPF/CNPJ n {doc}" if doc else ""
+    doc_linha = (", " + textos.preencher("NOTAS_TERMO_COMPARECIMENTO__documento",
+                                         documento=doc) if doc else "")
     doc_desc = (
         reconhecimento.get("documento_descricao")
         or reconhecimento.get("documento_tipo")
-        or "documento apresentado"
+        or textos("NOTAS_TERMO_COMPARECIMENTO__documento_apresentado")
     )
     doc_desc = str(doc_desc).strip()
     selo = (reconhecimento.get("selo") or "").strip()
-    selo_linha = f" Selo n {selo}." if selo else ""
+    selo_linha = (" " + textos.preencher("NOTAS_TERMO_COMPARECIMENTO__selo", selo=selo)
+                  if selo else "")
     oficial = (reconhecimento.get("oficial") or "").strip()
     funcao = (reconhecimento.get("oficial_funcao") or "").strip()
     assina = " - ".join(x for x in (oficial, funcao) if x)
-    return (
-        f'<p align="center"><b>{sv.get("unit_name") or ""}</b><br/>'
-        f'{sv.get("serventia_titulo") or ""}: {sv.get("serventia_titular") or ""}<br/>'
-        f'CNS {sv.get("ri_cns") or ""} - {sv.get("endereco_completo") or ""}</p>'
-        f"<p><b>TERMO DE COMPARECIMENTO</b></p>"
-        f"<p>Saibam quantos este publico instrumento virem que, aos "
-        f"{data_extenso}, nesta serventia, compareceu "
-        f"<b>{nome}</b>{doc_linha}, reconhecendo por <b>autenticidade</b> "
-        f"a assinatura constante de {doc_desc}.{selo_linha}</p>"
-        f"<p>E, por ser verdade, firmou o presente termo.</p>"
-        f"<p>________________________________<br/>{nome}</p>"
-        f"<p>________________________________<br/>{assina or 'Oficial / escrevente'}</p>"
-    )
+    ordem_linha = (textos.preencher("NOTAS_TERMO_COMPARECIMENTO__ordem",
+                                    ordem=int(ordem)) if ordem else "")
+    return textos.preencher(
+        "NOTAS_TERMO_COMPARECIMENTO", cabecalho=_cabecalho_do_comparecimento(sv),
+        ordem=ordem_linha,
+        data_extenso=data_extenso, nome=nome, documento=doc_linha,
+        documento_apresentado=doc_desc, selo=selo_linha,
+        quem_assina=assina or textos("NOTAS_TERMO_COMPARECIMENTO__quem_assina"))
+
+
+def ordem_da_presenca(con, *, reconhecimento_id: int, parte_id: int) -> int:
+    """O numero de ordem do termo de presenca desta firma. Le para numerar.
+
+    «No reconhecimento de firma por autenticidade devera o notario proceder
+    ao preenchimento de termo de presenca, que contera a ORDEM, o nome, o
+    documento de identificacao, a numeracao do selo...» — CN-MA art. 866. Ate
+    o LD02 (21/10/2026) a presenca nascia com `ordem` nula.
+
+    A ORDEM E UMA SO PARA A CASA, e continua da maior gravada — a do acervo do
+    E-Oficio (`intOrdem`) inclusive: numero que recomeca e numero que repete.
+    O TERMO EMITIDO DE NOVO GUARDA A SUA: a segunda via da mesma firma nao
+    gasta numero. A TRAVA VEM ANTES DA LEITURA, como em todo numero desta
+    casa — dois balcoes juntos leriam o mesmo maior —, e vale ate o fim da
+    transacao em que `registrar_presenca_reconhecimento` grava.
+    """
+    bd = banco(con)
+    bd.travar("nt_presencas.ordem")
+    ja = bd.um(
+        """SELECT ordem FROM nt_presencas WHERE origem = %s AND origem_chave = %s
+            ORDER BY id LIMIT 1""",
+        (ORIGEM_PRESENCA_RECONHECIMENTO,
+         chave_presenca_reconhecimento(reconhecimento_id, parte_id)))
+    if ja and ja["ordem"] is not None:
+        return int(ja["ordem"])
+    maior = bd.valor("SELECT MAX(ordem) AS n FROM nt_presencas")
+    return int(maior or 0) + 1
 
 
 def registrar_presenca_reconhecimento(
@@ -934,17 +1050,26 @@ def registrar_presenca_reconhecimento(
     conteudo: str,
     oficial: str | None,
     agora: str,
+    ordem: int | None = None,
 ) -> int:
+    """Grava (ou atualiza) a presenca desta firma. ESCREVE.
+
+    `ordem` vem de `ordem_da_presenca`, na mesma transacao. A presenca que ja
+    tinha numero o guarda: a segunda via nao renumera.
+    """
     chave = chave_presenca_reconhecimento(reconhecimento_id, parte_id)
-    linha = con.execute(
-        "SELECT id FROM nt_presencas WHERE origem=? AND origem_chave=?",
+    bd = banco(con)
+    linha = bd.um(
+        """SELECT id FROM nt_presencas WHERE origem = %s AND origem_chave = %s
+            ORDER BY id LIMIT 1""",
         (ORIGEM_PRESENCA_RECONHECIMENTO, chave),
-    ).fetchone()
+    )
     if linha:
-        con.execute(
-            """UPDATE nt_presencas SET data=?, nome=?, documento=?,
-               cartao_id=?, reconhecimento_id=?, selo=?, quantidade=1,
-               conteudo=?, oficial=? WHERE id=?""",
+        bd.escrever(
+            """UPDATE nt_presencas SET data = %s, nome = %s, documento = %s,
+               cartao_id = %s, reconhecimento_id = %s, selo = %s, quantidade = 1,
+               conteudo = %s, oficial = %s, ordem = COALESCE(ordem, %s)
+             WHERE id = %s""",
             (
                 data,
                 nome,
@@ -954,18 +1079,20 @@ def registrar_presenca_reconhecimento(
                 selo,
                 conteudo,
                 oficial,
-                linha[0],
+                ordem,
+                linha["id"],
             ),
         )
-        return int(linha[0])
-    cur = con.execute(
+        return int(linha["id"])
+    novo = bd.escrever(
         """INSERT INTO nt_presencas
            (data, ordem, nome, documento, cartao_id, reconhecimento_id, selo,
             quantidade, conteudo, oficial, origem, origem_chave, criado_em)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+           RETURNING id""",
         (
             data,
-            None,
+            ordem,
             nome,
             documento,
             cartao_id,
@@ -979,4 +1106,18 @@ def registrar_presenca_reconhecimento(
             agora,
         ),
     )
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
+
+
+def __getattr__(nome: str):
+    """Os nomes antigos do texto de fabrica, lidos da base dos padroes.
+
+    `NOME_DA_SERIE` saiu deste modulo no LF06D (19/10/2026): o nome de cada
+    serie mora em `modelos_padrao/`. Quem ainda le o nome antigo recebe o
+    dicionario lido da base. Nome que nao e de papel continua sendo
+    `AttributeError`.
+    """
+    if nome == "NOME_DA_SERIE":
+        textos = MODELOS.textos()
+        return {serie: textos(peca) for serie, peca in PECA_DA_SERIE.items()}
+    raise AttributeError(f"module {__name__!r} has no attribute {nome!r}")

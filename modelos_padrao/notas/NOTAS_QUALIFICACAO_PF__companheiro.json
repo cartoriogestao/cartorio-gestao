@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_QUALIFICACAO_PF__companheiro",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Qualificação de pessoa física — o companheiro",
+  "formato": "CHAVES",
+  "explica": "Completa a união estável com o nome do companheiro ou companheira, quando informado.",
+  "campos": [
+    "companheiro"
+  ]
+}

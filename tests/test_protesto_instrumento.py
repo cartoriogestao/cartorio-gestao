@@ -9,9 +9,10 @@ O QUE ESTES TESTES GUARDAM
       - **o § único do art. 22 é uma dispensa CONDICIONAL**, e a condição se
         pergunta ao banco: sem cópia arquivada o papel diz que a dispensa não
         se aplica, em vez de afirmar um arquivo que ninguém conferiu;
-      - **o item II fica declarado em falta**, com o motivo medido — o
-        arquivo da CRA não traz endereço de apresentante, e o acervo não tem
-        cadastro dele;
+      - **o item II fica declarado em falta** quando o apresentante não tem
+        endereço — o arquivo da CRA não o traz; desde o LD08 ele vem do
+        título (o balcão o pede) ou do cadastro dos apresentantes, pelo
+        código, e então vai ao instrumento e o item se satisfaz;
       - **o teor congela**, e aqui por uma razão a mais que no termo: ele vai
         ser assinado, e assinatura é sobre bytes determinados;
       - **emitir põe o papel na fila de assinatura da casa**;
@@ -28,9 +29,12 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import protesto_instrumento as PI
 from as_schema import init_as_schema
+from nucleo_schema import init_nucleo_schema
 from pt_schema import init_pt_schema
 
 AGORA = "2026-09-01T17:00:00"
@@ -38,8 +42,11 @@ SERVENTIA = "Ofício Único de Cidade Exemplo/MA"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
+    # `pt_atos.livro_id` aponta para `nu_livros`, e o PostgreSQL nativo
+    # cobra a chave estrangeira ja na criacao: o nucleo vem antes.
+    init_nucleo_schema(con)
     init_pt_schema(con)
     init_as_schema(con)
     # A `attachments` e da casa inteira; aqui basta a forma que o modulo le.
@@ -128,18 +135,60 @@ def test_a_conferencia_percorre_os_dez_itens_do_art_22():
     assert c["pode_emitir"] is True
 
 
-def test_o_item_II_fica_em_falta_com_o_motivo_medido():
-    """O ENDEREÇO DO APRESENTANTE NÃO ESTÁ EM FONTE NENHUMA, e isso foi medido:
-    o cabeçalho da remessa da CRA traz código (3) e nome (40) e nenhuma posição
-    de endereço; o acervo não tem cadastro de apresentante — `tbCedente` é o
-    CEDENTE, outro papel. Calar seria assinar papel omitindo item da lei."""
+def test_o_item_II_fica_em_falta_com_o_motivo_e_onde_cadastrar():
+    """SEM ENDEREÇO DO APRESENTANTE, O ITEM II FALTA, e o motivo diz onde se
+    conserta. Medido em 01/09/2026: o cabeçalho da remessa da CRA traz código
+    (3) e nome (40) e nenhuma posição de endereço. Desde o LD08 o endereço tem
+    fonte — o título ou o cadastro dos apresentantes —, e o motivo deixou de
+    ser «não está em fonte nenhuma»: o título 237 deste teste não está no
+    cadastro. Calar seria assinar papel omitindo item da lei."""
     con = banco()
     tid = protestado(con)
     c = PI.conferir(con, tid)
     item = next(i for i in c["itens"] if i["inciso"] == "II")
+    assert item["tem"] is False
     assert item["falta"] == "endereço do apresentante"
-    assert "não está em fonte nenhuma" in item["porque"]
+    assert "cadastro dos apresentantes" in item["porque"]
     assert "art. 22, II" in PI.por_que_nao_esta_completo(c)
+    teor = PI.emitir(con, tid, serventia=SERVENTIA, agora=AGORA)["teor"]
+    assert "Apresentante: BANCO X." in teor and "endereço Rua" not in teor
+
+
+def test_com_o_endereco_no_cadastro_o_item_II_se_satisfaz_e_vai_ao_papel():
+    """Lei 9.492/1997, art. 22, II; CN-MA art. 914, III (LD08). O banco que
+    manda pela CRA é um só para muitos títulos: o endereço dele se cadastra uma
+    vez, pelo código, e chega ao instrumento — e ao corpo que se assina."""
+    import protesto_cenprot_xml as X
+    con = banco()
+    tid = protestado(con)
+    X.gravar_apresentante(con, codigo="237", nome="BANCO X DO CADASTRO",
+                          documento="00000010000127", tipo_apresentante="0",
+                          endereco="Avenida Exemplo, 500, Cidade Exemplo/MA",
+                          agora=AGORA)
+    c = PI.conferir(con, tid)
+    item = next(i for i in c["itens"] if i["inciso"] == "II")
+    assert item["tem"] is True
+    assert not any(i["inciso"] == "II" for i in c["faltando"])
+    emitido = PI.emitir(con, tid, serventia=SERVENTIA, agora=AGORA)
+    # o NOME é o do título (o que a CRA mandou); o endereço, o do cadastro
+    assert ("Apresentante: BANCO X, endereço Avenida Exemplo, 500, Cidade "
+            "Exemplo/MA.") in emitido["teor"]
+    corpo = PI.instrumento(con, emitido["id"])["corpo"]
+    assert corpo["apresentante"]["endereco"] == "Avenida Exemplo, 500, Cidade Exemplo/MA"
+
+
+def test_o_titulo_do_balcao_traz_o_proprio_endereco_do_apresentante():
+    """O título do balcão não tem código da CRA: o endereço é o que quem o
+    apresentou informou (CN-MA art. 884, I), gravado no título."""
+    con = banco()
+    tid = protestado(con, apresentante_codigo=None, origem="MANUAL",
+                     apresentante_nome="CARLA EXEMPLO",
+                     apresentante_endereco="Rua das Flores, 10, Cidade Exemplo/MA")
+    assert next(i for i in PI.conferir(con, tid)["itens"]
+                if i["inciso"] == "II")["tem"] is True
+    teor = PI.emitir(con, tid, serventia=SERVENTIA, agora=AGORA)["teor"]
+    assert ("Apresentante: CARLA EXEMPLO, endereço Rua das Flores, 10, Cidade "
+            "Exemplo/MA.") in teor
 
 
 def test_os_itens_V_e_VI_dizem_que_so_cabem_na_letra_de_cambio():

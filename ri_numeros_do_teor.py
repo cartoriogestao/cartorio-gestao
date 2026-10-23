@@ -71,17 +71,24 @@ import re
 import sqlite3
 from html import unescape
 
+from bd_nativo import banco
+
 # `AV-28/1.490`, `R-1/1306`, `AV 3 / 2.765` — a letra, o numero do ato, a barra
 # e a matricula. A barra e obrigatoria: e ela que diz de qual ficha o ato e.
 ROTULO = re.compile(r"\b(AV|R)[\s.\-]{0,2}(\d{1,3})\s*/\s*([\d.]{1,12})",
                     re.IGNORECASE)
+# O rotulo com o CNM da matricula — `R.02/000000.2.0009001-76`. HOTFIX
+# SANDBOX-2026-10-19-02 (certidao de inteiro teor da 9.001 com dois R-01).
+ROTULO_CNM = re.compile(
+    r"\b(AV|R)[\s.\-]{0,2}(\d{1,3})\s*/\s*(\d{6}\.\d\.\d{7}-\d{2})",
+    re.IGNORECASE)
 
 
 def _so_digitos(v) -> str:
     return "".join(c for c in str(v or "") if c.isdigit()).lstrip("0")
 
 
-def citados_no_teor(numero_da_matricula, teor) -> list[dict]:
+def citados_no_teor(numero_da_matricula, teor, cnm=None) -> list[dict]:
     """Os atos que o texto da ficha atribui A ESTA matricula.
 
     Devolve `[{tipo, numero, rotulo, trecho}]`, com o trecho em volta para
@@ -93,9 +100,17 @@ def citados_no_teor(numero_da_matricula, teor) -> list[dict]:
         return []
     texto = str(teor or "")
     achados: dict[tuple, dict] = {}
-    for m in ROTULO.finditer(texto):
+    # HOTFIX SANDBOX-2026-10-19-02: a transcricao da digitalizacao escreve o
+    # rotulo com o CNM — `R.02/000000.2.0009001-76` — e o `ROTULO` antigo
+    # ([\d.]{1,12}) nao o le. Na 9.001 o piso dizia «proximo: 2» com o R.02
+    # escrito na ficha. O CNM e desta matricula; conta como o numero dela.
+    meu_cnm = _so_digitos(cnm)
+    padroes = [ROTULO] + ([ROTULO_CNM] if meu_cnm else [])
+    casamentos = [m for p in padroes for m in p.finditer(texto)]
+    casamentos.sort(key=lambda m: m.start())
+    for m in casamentos:
         tipo, numero, alvo = m.group(1).upper(), int(m.group(2)), m.group(3)
-        if _so_digitos(alvo) != meu:
+        if _so_digitos(alvo) not in (meu, meu_cnm or meu):
             continue
         chave = (tipo, numero)
         if chave in achados:
@@ -131,16 +146,16 @@ def piso_do_proximo(con: sqlite3.Connection, matricula_id: int) -> dict:
     SO CALCULA. Nao grava, nao consome numero e nao cria ato — as tres coisas
     que uma funcao de contador desta casa nunca faz.
     """
-    con.row_factory = sqlite3.Row
-    m = con.execute("SELECT id, numero, teor FROM ri_matriculas WHERE id = ?",
-                    (int(matricula_id),)).fetchone()
+    bd = banco(con)
+    m = bd.um("SELECT id, numero, cnm, teor FROM ri_matriculas WHERE id = %s",
+              (int(matricula_id),))
     if not m:
         return {"em_atos": 0, "no_teor": 0, "proximo": 1,
                 "divergente": False, "citados": []}
-    em_atos = int(con.execute(
-        "SELECT MAX(numero) n FROM ri_atos WHERE matricula_id = ?",
-        (int(matricula_id),)).fetchone()["n"] or 0)
-    citados = citados_no_teor(m["numero"], m["teor"])
+    em_atos = int(bd.valor(
+        "SELECT MAX(numero) AS n FROM ri_atos WHERE matricula_id = %s",
+        (int(matricula_id),)) or 0)
+    citados = citados_no_teor(m["numero"], m["teor"], m["cnm"])
     no_teor = max((c["numero"] for c in citados), default=0)
     return {
         "em_atos": em_atos,
@@ -159,12 +174,11 @@ def ja_usado_na_ficha(con: sqlite3.Connection, matricula_id: int,
     ato AV-03»). Ela nao via o que esta escrito na ficha — e era ali que
     estavam os 756 casos.
     """
-    con.row_factory = sqlite3.Row
-    m = con.execute("SELECT numero, teor FROM ri_matriculas WHERE id = ?",
-                    (int(matricula_id),)).fetchone()
+    m = banco(con).um("SELECT numero, cnm, teor FROM ri_matriculas WHERE id = %s",
+                      (int(matricula_id),))
     if not m:
         return None
-    for c in citados_no_teor(m["numero"], m["teor"]):
+    for c in citados_no_teor(m["numero"], m["teor"], m["cnm"]):
         if c["numero"] == int(numero):
             return c
     return None
@@ -183,19 +197,19 @@ def matriculas_em_risco(con: sqlite3.Connection,
     recorte de texto no banco. Sao 1.508 fichas — roda em segundos, e esta tela
     se abre uma vez.
     """
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     em_risco = []
-    for m in con.execute(
-            """SELECT id, numero, livro, teor FROM ri_matriculas
+    for m in bd.ler(
+            """SELECT id, numero, cnm, livro, teor FROM ri_matriculas
                 WHERE teor IS NOT NULL AND teor <> ''
-                ORDER BY id""").fetchall():
-        citados = citados_no_teor(m["numero"], m["teor"])
+                ORDER BY id"""):
+        citados = citados_no_teor(m["numero"], m["teor"], m["cnm"])
         if not citados:
             continue
         no_teor = max(c["numero"] for c in citados)
-        em_atos = int(con.execute(
-            "SELECT MAX(numero) n FROM ri_atos WHERE matricula_id = ?",
-            (m["id"],)).fetchone()["n"] or 0)
+        em_atos = int(bd.valor(
+            "SELECT MAX(numero) AS n FROM ri_atos WHERE matricula_id = %s",
+            (m["id"],)) or 0)
         if no_teor > em_atos:
             em_risco.append({
                 "matricula_id": m["id"], "numero": m["numero"],
@@ -301,7 +315,7 @@ def texto_escrito_no_teor(teor_da_ficha, teor_do_ato) -> bool:
     return bool(alvo) and alvo in _sem_marcas(teor_da_ficha)
 
 
-def atos_fora_do_teor(teor_da_ficha, atos) -> list:
+def atos_fora_do_teor(teor_da_ficha, atos, matricula=None) -> list:
     """Os atos cujo texto AINDA NAO esta escrito no teor da ficha.
 
     E o que a ficha mostra depois do teor gravado. O ato que o texto ja conta
@@ -312,23 +326,141 @@ def atos_fora_do_teor(teor_da_ficha, atos) -> list:
     quem chama ja os ordenou por data, e reordenar aqui poria a leitura em
     ordem diferente da que a tela escolheu.
 
-    **A DECISAO E PEDIDA A `texto_escrito_no_teor`, E NAO ESCRITA DE NOVO
-    AQUI.** A primeira versao desta funcao refazia a conta por dentro — chamava
-    `_sem_marcas` nos dois lados e comparava —, e o varredor de funcao sem tela
-    a acusou como orfa no mesmo dia: `texto_escrito_no_teor` ficava sem
-    chamador nenhum, porque quem devia chama-la decidiu por conta propria.
-
-    **E ele estava certo em acusar, e nao so por burocracia.** Duas contas
+    **A DECISAO E PEDIDA A `texto_escrito_no_teor` (e, com a matricula, a
+    `ato_transcrito_no_teor`), E NAO ESCRITA DE NOVO AQUI.** Duas contas
     dizendo «este texto ja esta escrito na ficha» divergem no primeiro
-    conserto — e e esta conta que decide se um ato APARECE na ficha: a versao
-    que ficasse para tras apagaria um ato da leitura, e ninguem desconfia de
-    uma ficha que abre. E a licao da `normalizar_nome` outra vez, agora dentro
-    do mesmo arquivo.
+    conserto — e e esta conta que decide se um ato APARECE na ficha.
+
+    HOTFIX SANDBOX-2026-10-19-02 — certidao de inteiro teor 70/2026, mat.
+    9.001, saiu com DOIS R-01 (19/10/2026). Desde 06/10/2026 o teor de 3.972
+    fichas foi SUBSTITUIDO pela transcricao da digitalizacao (ordem do
+    oficial: «vale a digitalizacao»). A transcricao traz o ato inteiro, mas
+    nao com as mesmas letras do E-Oficio — quebra de pagina no meio
+    («[Ficha — Matricula 9.001 — pagina 3 de 4]»), rotulo com o CNM, a linha
+    de assinatura. A comparacao pelo texto INTEIRO dava «nao esta no teor», e
+    o ato do E-Oficio saia de novo depois do teor. Medido na producao em
+    19/10/2026: **1.078 atos em 391 matriculas** saiam assim.
+
+    Com `matricula` (linha com `numero` e `cnm`), um ato tambem conta como
+    escrito quando `ato_transcrito_no_teor` diz que sim. Sem `matricula`, a
+    regra e a de sempre.
     """
+    numero = cnm = None
+    if matricula is not None:
+        dm = matricula if isinstance(matricula, dict) else dict(matricula)
+        numero, cnm = dm.get("numero"), dm.get("cnm")
+    cabecas = (cabecas_no_teor(numero, teor_da_ficha, cnm)
+               if numero is not None else set())
+    blocos = _blocos(teor_da_ficha) if cabecas else set()
     fora = []
     for a in atos or []:
         linha = a if isinstance(a, dict) else dict(a)
         if texto_escrito_no_teor(teor_da_ficha, linha.get("teor")):
             continue
+        if cabecas and ato_transcrito_no_teor(
+                teor_da_ficha, linha, numero, cnm,
+                _cabecas=cabecas, _blocos_do_teor=blocos):
+            continue
         fora.append(a)
     return fora
+
+
+# ---------------------------------------- o ato TRANSCRITO dentro do teor
+#
+# HOTFIX SANDBOX-2026-10-19-02. A pergunta continua a de `texto_escrito_no_
+# teor` — «este ato ja esta escrito na ficha?» —, mas para o teor que e a
+# TRANSCRICAO da ficha de papel, em que as letras nao batem uma a uma com o
+# E-Oficio. Duas provas, as DUAS exigidas:
+#
+#   1. O ROTULO DE CABECA. O teor abre um paragrafo com o rotulo do ato e o
+#      numero (ou o CNM) DESTA matricula — `R-01/000000.2.0009001-76 (COMPRA
+#      E VENDA)`. Rotulo citado no meio da frase NAO conta (a licao da
+#      matricula 11, que cita AV-2, R-3, AV-4 e AV-5 dentro do R-1).
+#   2. O TEXTO PARECIDO. Pelo menos 25% das sequencias de 6 palavras do ato
+#      estao no teor. Sem isso o rotulo bate e o ato e outro — medido: o
+#      ato 2.962 da 3.138 esta gravado como R-1 e o texto dele e o R-02 (a
+#      cedula), que a transcricao nao traz; ele continua saindo.
+#
+# E UMA GUARDA: ato com selo gravado (`selo_texto`) nunca e escondido. Ato
+# selado foi lavrado com selo do TJMA — se o rotulo dele bate com o da ficha,
+# e numeracao em conflito, e o certo e o papel mostrar os dois para alguem
+# conferir, e nao sumir com um ato selado.
+
+ROTULO_CABECA = re.compile(
+    r"(AV|R)[\s.\-]{0,2}0*(\d{1,3})\s*/\s*([\d.\-]{1,24}\d)", re.IGNORECASE)
+_PALAVRAS_POR_BLOCO = 6
+LIMIAR_TEXTO_TRANSCRITO = 0.25
+
+
+def _linhas_do_teor(teor) -> list[str]:
+    t = re.sub(r"(?i)<\s*(br|/?p|/?div|li|/?h\d|tr)\b[^>]*>", "\n",
+               str(teor or ""))
+    t = unescape(re.sub(r"(?s)<[^>]+>", " ", t))
+    return [ln.strip() for ln in t.split("\n")]
+
+
+def cabecas_no_teor(numero_da_matricula, teor, cnm=None) -> set:
+    """Os rotulos `(tipo, numero)` que ABREM um paragrafo do teor e nomeiam
+    esta matricula (pelo numero ou pelo CNM). So le."""
+    meu = _so_digitos(numero_da_matricula)
+    if not meu:
+        return set()
+    meu_cnm = _so_digitos(cnm) or meu
+    achados = set()
+    for ln in _linhas_do_teor(teor):
+        ln = re.sub(r"^[\s\-\u2013\u2014.:*]*", "", ln)
+        m = ROTULO_CABECA.match(ln)
+        if m and _so_digitos(m.group(3)) in (meu, meu_cnm):
+            achados.add((m.group(1).upper(), int(m.group(2))))
+    return achados
+
+
+def _blocos(texto) -> set:
+    palavras = re.findall(r"\w+", _sem_marcas(texto))
+    k = _PALAVRAS_POR_BLOCO
+    return {tuple(palavras[i:i + k])
+            for i in range(max(0, len(palavras) - k + 1))}
+
+
+def _rotulos_do_ato(ato, meu, meu_cnm) -> set:
+    rot = set()
+    try:
+        rot.add((str(ato.get("tipo") or "").upper(), int(ato.get("numero"))))
+    except (TypeError, ValueError):
+        pass
+    # O rotulo com que o PROPRIO texto do ato abre, se nomear esta matricula
+    # (o E-Oficio gravou atos com o numero da coluna diferente do texto).
+    linhas = [ln for ln in _linhas_do_teor(ato.get("teor")) if ln]
+    if linhas:
+        m = ROTULO_CABECA.match(re.sub(r"^[\s\-\u2013\u2014.:*]*", "",
+                                       linhas[0]))
+        if m and _so_digitos(m.group(3)) in (meu, meu_cnm):
+            rot.add((m.group(1).upper(), int(m.group(2))))
+    return rot
+
+
+def ato_transcrito_no_teor(teor_da_ficha, ato, numero_da_matricula, cnm=None,
+                           *, _cabecas=None, _blocos_do_teor=None) -> bool:
+    """Este ato ja esta TRANSCRITO no teor (rotulo de cabeca + texto parecido)?
+
+    So le. Ato sem teor ou com selo gravado devolve `False`.
+    """
+    linha = ato if isinstance(ato, dict) else dict(ato)
+    if str(linha.get("selo_texto") or "").strip():
+        return False
+    if not str(linha.get("teor") or "").strip():
+        return False
+    meu = _so_digitos(numero_da_matricula)
+    if not meu:
+        return False
+    meu_cnm = _so_digitos(cnm) or meu
+    cabecas = (_cabecas if _cabecas is not None
+               else cabecas_no_teor(numero_da_matricula, teor_da_ficha, cnm))
+    if not (_rotulos_do_ato(linha, meu, meu_cnm) & cabecas):
+        return False
+    do_ato = _blocos(linha.get("teor"))
+    if not do_ato:
+        return False
+    do_teor = (_blocos_do_teor if _blocos_do_teor is not None
+               else _blocos(teor_da_ficha))
+    return len(do_ato & do_teor) / len(do_ato) >= LIMIAR_TEXTO_TRANSCRITO

@@ -1,0 +1,26 @@
+{
+  "chave": "PT_CERTIDAO_LINHA",
+  "atribuicao": "Protesto",
+  "nome": "Certidão positiva e de cancelamento — linha de cada protesto",
+  "formato": "CHAVES",
+  "explica": "Uma linha por rótulo, no formato «nome = texto». O NOME é do sistema e não muda; o TEXTO é seu. Linha apagada, ou deixada sem texto, volta ao padrão — o sistema nunca fica sem a palavra. Cada nome é um pedaço da linha que a certidão escreve para cada protesto achado (Prov. CNJ 134, art. 51): o sistema decide QUAIS pedaços entram (o que o título tem), junta-os com «; » e fecha com ponto. Os pedaços «_com_» são a forma com o dado a mais: «protocolo_com_data» (LD08) é o protocolo com a data da protocolização, que é a do apontamento (CNN art. 259, parágrafo único, VII). «endosso» (LD08) é o tipo do endosso (CNN art. 259, parágrafo único, V), e «endosso_M» e «endosso_T» são as palavras do tipo, pelo código do leiaute da CRA (M mandato, T translativo); sem endosso, o pedaço não entra. «sustacao_precaria», «sustacao_precaria_em_segredo» e «fecho_precaria» (LH13, 21/10/2026) são do Código Nacional de Normas, art. 263-K (Prov. CN 253/2026): o protesto cuja ordem judicial de suspensão é PROVISÓRIA sai como «CONSTA COM SUSTAÇÃO JUDICIAL PRECÁRIA», com o caráter provisório, o juízo e o número da ação ao fim da linha; no segredo de justiça, a linha diz só a sustação e o número do processo; e o fecho («Resultado emitido em cumprimento à decisão judicial — Processo nº …») vem depois de todas as linhas, um por processo. Os quatro últimos (LD04) são do parágrafo do Livro de Protocolo, que a certidão só traz a requerimento escrito do próprio devedor ou por determinação judicial (CN-MA art. 906, § 2º): a abertura e, para cada título apontado que não chegou a protesto, o protocolo com a data, o número do título e as ocorrências averbadas no livro.",
+  "campos": [
+    "ordem",
+    "numero_titulo",
+    "especie",
+    "protocolo",
+    "valor",
+    "data",
+    "apresentante",
+    "credor",
+    "documento",
+    "tipo",
+    "motivo",
+    "livro",
+    "folha",
+    "numero_ordem",
+    "juizo",
+    "processo",
+    "ocorrencias"
+  ]
+}

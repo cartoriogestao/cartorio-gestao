@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Uso de IA — incidentes e fornecedores{% endblock %}
+{% block heading %}<h1>Uso de IA — incidentes e fornecedores</h1>{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <p>O que se registra aqui entra no <a href="{{ url_for('gestor_relatorio_ia') }}">relatório anual do uso de IA</a>
+  à COGEX (Código de Normas do MA, art. 170, § 4º): os <strong>incidentes ou falhas</strong> com a
+  mitigação, e os <strong>dados de cada fornecedor</strong>, que o relatório compara com o requisito do MA.</p>
+  <p class="muted"><strong>{{ aviso }}</strong></p>
+</section>
+
+<section class="panel">
+  <h2>Cautelas</h2>
+  <p class="muted">A leitura diária do gestor vai ao Claude sem máscara (sua decisão de 06/10/2026). Quando a
+  chave do Claude falta, ela cai no provedor reserva da tela do agente — e lá vai <strong>com máscara</strong>,
+  salvo se você liberar aqui.</p>
+  <form method="post" action="{{ url_for('gestor_ia_cautelas') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label><input type="checkbox" name="reserva_sem_mascara" value="1" {% if reserva_sem_mascara %}checked{% endif %}>
+      Permitir sem máscara no provedor reserva</label>
+    <button type="submit">Gravar</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Registrar incidente ou falha</h2>
+  <p class="muted">Descreva o fato, e não a pessoa: nome, CPF, e-mail e telefone não entram — o que parecer
+  dado de pessoa é mascarado antes de gravar. Incidente crítico não espera o relatório anual.</p>
+  <form method="post" action="{{ url_for('gestor_ia_incidente') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Data <input type="date" name="data" required></label>
+    <label>Sistema
+      <select name="sistema">
+        {% for s in catalogo %}<option value="{{ s.codigo }}">{{ s.nome }}</option>{% endfor %}
+        <option value="">outro / vários</option>
+      </select></label>
+    <label>O que aconteceu <textarea name="o_que" rows="2" required></textarea></label>
+    <label>Impacto <textarea name="impacto" rows="2"></textarea></label>
+    <label>Causa <textarea name="causa" rows="2"></textarea></label>
+    <label>Ação de mitigação <textarea name="mitigacao" rows="2"></textarea></label>
+    <label>A quem foi comunicado <input type="text" name="comunicado_a"></label>
+    <button type="submit">Registrar</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Incidentes registrados</h2>
+  {% if incidentes %}
+  <div class="table-wrap"><table>
+    <tr><th>Data</th><th>Sistema</th><th>O que aconteceu</th><th>Impacto</th><th>Causa</th>
+        <th>Mitigação</th><th>Comunicado a</th><th>Registrado por</th></tr>
+    {% for i in incidentes %}
+    <tr><td>{{ i.data }}</td><td>{{ nome_da_finalidade(i.sistema) if i.sistema else '—' }}</td>
+        <td>{{ i.o_que }}</td><td>{{ i.impacto or '—' }}</td><td>{{ i.causa or '—' }}</td>
+        <td>{{ i.mitigacao or '—' }}</td><td>{{ i.comunicado_a or '—' }}</td>
+        <td class="small muted">{{ i.registrado_por }} em {{ i.registrado_em[:10] }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">Nenhum incidente registrado.</p>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Dados dos fornecedores</h2>
+  <p class="muted">Requisito do MA, pelo resumo: {{ requisito }}. O relatório mostra como pendência o que
+  contrariar o requisito — quem decide é o oficial.</p>
+  {% for p in provedores %}
+  {% set d = fornecedores.get(p.id) or {} %}
+  <form method="post" action="{{ url_for('gestor_ia_fornecedor') }}" class="panel">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="provedor" value="{{ p.id }}">
+    <h3>{{ p.nome }}</h3>
+    <label>Empresa <input type="text" name="empresa" value="{{ d.get('empresa') or '' }}"></label>
+    <label>País onde processa <input type="text" name="pais_processa" value="{{ d.get('pais_processa') or '' }}"></label>
+    <label>País onde armazena <input type="text" name="pais_armazena" value="{{ d.get('pais_armazena') or '' }}"></label>
+    <label>Guarda o que recebe?
+      <select name="retencao"><option value="">—</option>
+        {% for v, n in retencoes.items() %}<option value="{{ v }}" {% if d.get('retencao') == v %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select></label>
+    <label>Prazo ou política de retenção <input type="text" name="retencao_prazo" value="{{ d.get('retencao_prazo') or '' }}"></label>
+    <label>Usa os dados para treinamento?
+      <select name="treinamento"><option value="">—</option>
+        {% for v, n in respostas.items() %}<option value="{{ v }}" {% if d.get('treinamento') == v %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select></label>
+    <label>ISO 27001
+      <select name="iso27001"><option value="">—</option>
+        {% for v, n in respostas.items() %}<option value="{{ v }}" {% if d.get('iso27001') == v %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select></label>
+    <label>Contrato <input type="text" name="contrato" value="{{ d.get('contrato') or '' }}"></label>
+    <button type="submit">Gravar</button>
+    {% if d.get('atualizado_em') %}<span class="small muted">gravado por {{ d.get('atualizado_por') }} em {{ d.get('atualizado_em')[:10] }}</span>{% endif %}
+  </form>
+  {% endfor %}
+</section>
+{% endblock %}

@@ -51,9 +51,10 @@ não se procurar o que não existe, em vez de aparecer como se já funcionasse.
 from __future__ import annotations
 
 import re
-import sqlite3
 from datetime import date
 from typing import Any
+
+from bd_nativo import banco
 
 #: `@login` no texto do andamento — relato #110 (notificar sem passar a tarefa).
 _MENCAO_LOGIN = re.compile(r"@([A-Za-z0-9_]+)")
@@ -122,6 +123,20 @@ STATUS_SEM_SERVICO = ("CONCLUIDA", "CANCELADA")
 #: Quem derrubou o filtro negativo foi o teste da tarefa fora do vocabulário —
 #: escrito por mim, e ele acusou a minha própria régua, não o teste.
 SITUACOES_ABERTAS = tuple(s for s in SITUACOES if s not in STATUS_SEM_SERVICO)
+
+
+#: Marcador que os consumidores ainda não convertidos (via ponte) esperam;
+#: sai junto com `_pg`.
+_Q = "?"
+
+
+def _pg(sql: str) -> str:
+    """Os pedaços de WHERE que este módulo ENTREGA (`condicao_aberta`,
+    `filtro_da_vista`) e o de `tarefa_suspensao` ainda trazem `?`, porque quem
+    os consome (`database`, `processos`, `carga_da_equipe`) ainda passa pela
+    ponte, que troca `?` por `%s`. Aqui, que executa nativo, a troca é feita no
+    ponto de uso. Sai quando esses consumidores forem convertidos."""
+    return sql.replace("%", "%%").replace("?", "%s")
 
 
 def condicao_aberta(coluna: str = "status") -> tuple[str, list[str]]:
@@ -246,7 +261,7 @@ def filtro_da_vista(vista: str | None, usuario_id: int | None) -> tuple[list[str
                 "(t.assigned_user_id IS NULL OR t.assigned_user_id<>?)",
                 (
                     "EXISTS (SELECT 1 FROM task_history h WHERE h.task_id=t.id"
-                    " AND h.action='PASSAGEM' AND h.user_id=?)"
+                    f" AND h.action='PASSAGEM' AND h.user_id={_Q})"
                 ),
             ],
             [*params_abertas, usuario_id, usuario_id],
@@ -259,9 +274,9 @@ def filtro_da_vista(vista: str | None, usuario_id: int | None) -> tuple[list[str
                 abertas,
                 (
                     "EXISTS (SELECT 1 FROM task_history n WHERE n.task_id=t.id"
-                    " AND n.action='NOTIFICACAO' AND n.new_value=?"
+                    f" AND n.action='NOTIFICACAO' AND n.new_value={_Q}"
                     " AND n.id > COALESCE((SELECT MAX(r.id) FROM task_history r"
-                    " WHERE r.task_id=t.id AND r.user_id=? AND r.action='NOTA'), 0))"
+                    f" WHERE r.task_id=t.id AND r.user_id={_Q} AND r.action='NOTA'), 0))"
                 ),
             ],
             [*params_abertas, uid, usuario_id],
@@ -271,7 +286,7 @@ def filtro_da_vista(vista: str | None, usuario_id: int | None) -> tuple[list[str
 
 
 def contagem_por_vista(
-    con: sqlite3.Connection, usuario_id: int | None, sector: str | None = None
+    con: Any, usuario_id: int | None, sector: str | None = None
 ) -> dict[str, int]:
     """Quantos em cada vista — pela MESMA régua que monta a lista.
 
@@ -289,7 +304,7 @@ def contagem_por_vista(
             params.append(sector)
         where = ("WHERE " + " AND ".join(filtros)) if filtros else ""
         fora[vista] = int(
-            con.execute(f"SELECT COUNT(*) FROM tasks t {where}", params).fetchone()[0]
+            banco(con).valor(_pg(f"SELECT COUNT(*) FROM tasks t {where}"), params)
         )
     return fora
 
@@ -300,7 +315,7 @@ _VISTAS_NOTIFICACAO = (VISTA_COMIGO, VISTA_PEDIRAM_RESPOSTA)
 
 
 def _contagem_notificacao(
-    con: sqlite3.Connection,
+    con: Any,
     usuario_id: int,
     filtros_extra: list[str],
     params_extra: tuple[Any, ...] = (),
@@ -319,8 +334,8 @@ def _contagem_notificacao(
         filtros.append(nao_suspensa)
         where = "WHERE " + " AND ".join(filtros)
         total += int(
-            con.execute(f"SELECT COUNT(*) FROM tasks t {where}",
-                        (*params, *params_extra, *params_suspensao)).fetchone()[0]
+            banco(con).valor(_pg(f"SELECT COUNT(*) FROM tasks t {where}"),
+                             (*params, *params_extra, *params_suspensao))
         )
     return total
 
@@ -334,7 +349,7 @@ def _hoje_iso(hoje: date | str | None = None) -> str:
 
 
 def contagem_tier_critico_tarefas(
-    con: sqlite3.Connection, usuario_id: int, hoje: date | str | None = None
+    con: Any, usuario_id: int, hoje: date | str | None = None
 ) -> int:
     """CRÍTICA ou prazo vencido (qualquer prioridade) — tier Crítico."""
     h = _hoje_iso(hoje)
@@ -349,7 +364,7 @@ def contagem_tier_critico_tarefas(
 
 
 def contagem_tier_alta_tarefas(
-    con: sqlite3.Connection, usuario_id: int, hoje: date | str | None = None
+    con: Any, usuario_id: int, hoje: date | str | None = None
 ) -> int:
     """Prioridade ALTA ainda no prazo — tier Importante."""
     h = _hoje_iso(hoje)
@@ -365,7 +380,7 @@ def contagem_tier_alta_tarefas(
 
 
 def contagem_media_baixa_notificacao(
-    con: sqlite3.Connection, usuario_id: int, hoje: date | str | None = None
+    con: Any, usuario_id: int, hoje: date | str | None = None
 ) -> tuple[int, int]:
     """MÉDIA e BAIXA em aberto, no prazo — faixa «Tarefas pendentes»."""
     h = _hoje_iso(hoje)
@@ -381,12 +396,12 @@ def contagem_media_baixa_notificacao(
     return media, baixa
 
 
-def contagem_criticas_notificacao(con: sqlite3.Connection, usuario_id: int) -> int:
+def contagem_criticas_notificacao(con: Any, usuario_id: int) -> int:
     """Compatível com chamadas antigas — equivale ao tier Crítico completo."""
     return contagem_tier_critico_tarefas(con, usuario_id)
 
 
-def contagem_pendentes_nao_criticas(con: sqlite3.Connection, usuario_id: int) -> int:
+def contagem_pendentes_nao_criticas(con: Any, usuario_id: int) -> int:
     """Soma MÉDIA+BAIXA (no prazo) — compatibilidade."""
     m, b = contagem_media_baixa_notificacao(con, usuario_id)
     return m + b
@@ -412,14 +427,14 @@ def texto_tarefas_media_baixa_intro(media: int, baixa: int) -> str:
 
 
 def contagem_pendentes_notificacao(
-    con: sqlite3.Connection, usuario_id: int
+    con: Any, usuario_id: int
 ) -> int:
     """Comigo + Pediram minha resposta — as vistas de `contagem_por_vista`, sem
     as suspensas (relato #132): «pendente» é cobrança, e a suspensa não se cobra."""
     return _contagem_notificacao(con, usuario_id, [])
 
 
-def contagem_sem_responsavel_abertas(con: sqlite3.Connection) -> int:
+def contagem_sem_responsavel_abertas(con: Any) -> int:
     """Tarefas abertas (vocabulário conhecido) sem responsável — só ADMIN no modal/faixa.
     A suspensa fica fora (relato #132): ninguém precisa pegá-la enquanto espera."""
     import tarefa_suspensao as TS
@@ -429,7 +444,7 @@ def contagem_sem_responsavel_abertas(con: sqlite3.Connection) -> int:
         f"SELECT COUNT(*) FROM tasks t WHERE t.assigned_user_id IS NULL AND ({abertas})"
         f" AND {nao_suspensa}"
     )
-    return int(con.execute(sql, [*params, *params_suspensao]).fetchone()[0])
+    return int(banco(con).valor(_pg(sql), [*params, *params_suspensao]))
 
 
 def texto_tarefas_pendentes(quantidade: int) -> str:
@@ -445,7 +460,7 @@ def texto_sem_responsavel(quantidade: int) -> str:
 
 
 def tarefas_fora_do_vocabulario(
-    con: sqlite3.Connection, sector: str | None = None
+    con: Any, sector: str | None = None
 ) -> int:
     """Quantas tarefas têm situação que o sistema não conhece.
 
@@ -465,9 +480,9 @@ def tarefas_fora_do_vocabulario(
         filtros.append("t.sector=?")
         params.append(sector)
     return int(
-        con.execute(
-            f"SELECT COUNT(*) FROM tasks t WHERE {' AND '.join(filtros)}", params
-        ).fetchone()[0]
+        banco(con).valor(
+            _pg(f"SELECT COUNT(*) FROM tasks t WHERE {' AND '.join(filtros)}"), params
+        )
     )
 
 
@@ -589,14 +604,12 @@ def rotulo_da_acao(acao: str | None) -> str:
     return texto
 
 
-def nome_do_usuario(con: sqlite3.Connection, usuario_id: int | None) -> str | None:
+def nome_do_usuario(con: Any, usuario_id: int | None) -> str | None:
     """O nome de quem fez, ou None. Nome não se inventa, e a ficha mostra '—'."""
     if usuario_id is None:
         return None
-    linha = con.execute(
-        "SELECT full_name FROM users WHERE id=?", (usuario_id,)
-    ).fetchone()
-    return linha[0] if linha else None
+    linha = banco(con).um("SELECT full_name FROM users WHERE id=%s", (usuario_id,))
+    return linha["full_name"] if linha else None
 
 
 # --------------------------------------------------------------------------
@@ -604,8 +617,8 @@ def nome_do_usuario(con: sqlite3.Connection, usuario_id: int | None) -> str | No
 # --------------------------------------------------------------------------
 
 
-def _linha_da_tarefa(con: sqlite3.Connection, task_id: int) -> sqlite3.Row:
-    linha = con.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+def _linha_da_tarefa(con: Any, task_id: int) -> dict:
+    linha = banco(con).um("SELECT * FROM tasks WHERE id=%s", (task_id,))
     if not linha:
         raise ProcessoError("Tarefa não encontrada.")
     return linha
@@ -621,7 +634,7 @@ def _motivo_limpo(motivo: str | None) -> str:
 
 
 def _registrar(
-    con: sqlite3.Connection,
+    con: Any,
     task_id: int,
     acao: str,
     usuario_id: int,
@@ -631,15 +644,15 @@ def _registrar(
     novo: str | None = None,
     nota: str | None = None,
 ) -> None:
-    con.execute(
+    banco(con).escrever(
         "INSERT INTO task_history(task_id,ts,user_id,action,old_value,new_value,note)"
-        " VALUES (?,?,?,?,?,?,?)",
+        " VALUES (%s,%s,%s,%s,%s,%s,%s)",
         (task_id, agora, usuario_id, acao, antigo, novo, nota),
     )
 
 
 def reabrir(
-    con: sqlite3.Connection,
+    con: Any,
     task_id: int,
     motivo: str,
     usuario_id: int,
@@ -670,9 +683,9 @@ def reabrir(
             f"«{linha['status']}». Só o que foi concluído precisa ser reaberto."
         )
     instante = agora
-    con.execute(
-        "UPDATE tasks SET status=?, completed_at=NULL, completed_by=NULL, "
-        "updated_at=? WHERE id=?",
+    banco(con).escrever(
+        "UPDATE tasks SET status=%s, completed_at=NULL, completed_by=NULL, "
+        "updated_at=%s WHERE id=%s",
         (STATUS_DE_REABERTURA, instante, task_id),
     )
     # A SUSPENSÃO QUE SOBROU NÃO VOLTA COM A TAREFA (relato #132): quem a
@@ -693,7 +706,7 @@ def reabrir(
 
 
 def passar_para(
-    con: sqlite3.Connection,
+    con: Any,
     task_id: int,
     para_user_id: int,
     motivo: str,
@@ -731,9 +744,9 @@ def passar_para(
             f"A tarefa já está com {nome_do_usuario(con, de_quem) or 'esta pessoa'}"
             " — escolha outra pessoa para receber."
         )
-    destino = con.execute(
-        "SELECT id, full_name, active FROM users WHERE id=?", (para_user_id,)
-    ).fetchone()
+    destino = banco(con).um(
+        "SELECT id, full_name, active FROM users WHERE id=%s", (para_user_id,)
+    )
     if not destino:
         raise ProcessoError("Escolha a pessoa que vai receber a tarefa.")
     if not destino["active"]:
@@ -744,8 +757,8 @@ def passar_para(
             "está trabalhando hoje."
         )
     instante = agora
-    con.execute(
-        "UPDATE tasks SET assigned_user_id=?, updated_at=? WHERE id=?",
+    banco(con).escrever(
+        "UPDATE tasks SET assigned_user_id=%s, updated_at=%s WHERE id=%s",
         (para_user_id, instante, task_id),
     )
     _registrar(
@@ -763,7 +776,7 @@ def passar_para(
 
 
 def usuarios_mencionados_no_texto(
-    con: sqlite3.Connection, texto: str
+    con: Any, texto: str
 ) -> list[int]:
     """Resolve `@login` no andamento para ids de usuário ativos (#110)."""
     vistos: set[str] = set()
@@ -773,17 +786,17 @@ def usuarios_mencionados_no_texto(
         if chave in vistos:
             continue
         vistos.add(chave)
-        linha = con.execute(
-            "SELECT id FROM users WHERE lower(username)=? AND active=1",
+        linha = banco(con).um(
+            "SELECT id FROM users WHERE lower(username)=%s AND active=1 ORDER BY id LIMIT 1",
             (chave,),
-        ).fetchone()
+        )
         if linha:
-            ids.append(int(linha[0]))
+            ids.append(int(linha["id"]))
     return ids
 
 
 def notificar_para(
-    con: sqlite3.Connection,
+    con: Any,
     task_id: int,
     para_user_id: int,
     texto: str,
@@ -808,9 +821,9 @@ def notificar_para(
             "Para pedir resposta a outra pessoa, escolha alguém que não seja "
             "você — ou use só «Registrar»."
         )
-    destino = con.execute(
-        "SELECT id, full_name, active FROM users WHERE id=?", (para_user_id,)
-    ).fetchone()
+    destino = banco(con).um(
+        "SELECT id, full_name, active FROM users WHERE id=%s", (para_user_id,)
+    )
     if not destino:
         raise ProcessoError("Escolha quem deve responder.")
     if not destino["active"]:

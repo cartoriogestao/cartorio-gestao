@@ -55,12 +55,12 @@ import io
 import json
 import os
 import shutil
-import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import ri_digitalizacao as RDIGI
+from bd_nativo import banco
 from rc_schema import CHAVE_DO_CORTE_DA_DIGITALIZACAO
 from storage import hash_file, safe_component, unique_path
 
@@ -121,14 +121,14 @@ def _normalizar_instante(valor: Any) -> str:
 
 # ------------------------------------------------------------------ leitura
 
-def atual_do_assento(con: sqlite3.Connection, assento_id: int) -> dict | None:
+def atual_do_assento(con, assento_id: int) -> dict | None:
     """A digitalização oficial do assento, ou None. Só LÊ."""
-    row = con.execute(
-        f"SELECT {', '.join(_COLUNAS)} FROM rc_assentos WHERE id=?",
-        (int(assento_id),)).fetchone()
-    if not row or not row[0]:
+    row = banco(con).um(
+        f"SELECT {', '.join(_COLUNAS)} FROM rc_assentos WHERE id=%s",
+        (int(assento_id),))
+    if not row or not row["digi_path"]:
         return None
-    dados = dict(zip(_COLUNAS, tuple(row)))
+    dados = {c: row[c] for c in _COLUNAS}
     # PERGUNTA PELO ARQUIVO, E NÃO SÓ PELA COLUNA — a régua do RI
     # (`_tem_digitalizacao`): caminho gravado apontando para arquivo que sumiu
     # faria a certidão prometer uma reprodução que ninguém consegue montar.
@@ -137,14 +137,13 @@ def atual_do_assento(con: sqlite3.Connection, assento_id: int) -> dict | None:
     return dados
 
 
-def obrigatoria_desde(con: sqlite3.Connection) -> str | None:
+def obrigatoria_desde(con) -> str | None:
     """O instante a partir do qual o registro lavrado obriga. Só LÊ."""
-    if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
-                       "AND name='settings'").fetchone():
+    bd = banco(con)
+    if not bd.tem_tabela("settings"):
         return None
-    row = con.execute("SELECT value FROM settings WHERE key=?",
-                      (CHAVE_DO_CORTE,)).fetchone()
-    valor = _normalizar_instante(row[0] if row else "")
+    valor = _normalizar_instante(
+        bd.valor("SELECT value FROM settings WHERE key=%s", (CHAVE_DO_CORTE,)) or "")
     return valor or None
 
 
@@ -178,21 +177,20 @@ def _prazo(assento: dict, hoje: date) -> dict:
             "dias": (hoje - lavrado).days}
 
 
-def situacao(con: sqlite3.Connection, assento_id: int,
+def situacao(con, assento_id: int,
              hoje: date | None = None) -> dict | None:
     """O que a ficha mostra sobre o termo digitalizado. Só LÊ."""
     hoje = hoje or date.today()
-    con.row_factory = sqlite3.Row
-    row = con.execute(
+    bd = banco(con)
+    assento = bd.um(
         f"""SELECT id, especie, origem, situacao, criado_em,
                    {', '.join(_COLUNAS)}
-              FROM rc_assentos WHERE id=?""", (int(assento_id),)).fetchone()
-    if not row:
+              FROM rc_assentos WHERE id=%s""", (int(assento_id),))
+    if not assento:
         return None
-    assento = dict(row)
-    desde = obrigatoria_desde(con)
+    desde = obrigatoria_desde(bd)
     saida: dict[str, Any] = {
-        "digi": atual_do_assento(con, assento_id),
+        "digi": atual_do_assento(bd, assento_id),
         "obrigatoria": obriga(assento, desde),
         "desde": desde,
         "pendente": False,
@@ -203,26 +201,26 @@ def situacao(con: sqlite3.Connection, assento_id: int,
     return saida
 
 
-def pendentes(con: sqlite3.Connection, hoje: date | None = None) -> list[dict]:
+def pendentes(con, hoje: date | None = None) -> list[dict]:
     """Os registros lavrados aqui sem o termo assinado digitalizado. Só LÊ.
 
     Ordenados pelo prazo: o que venceu primeiro vem primeiro.
     """
     hoje = hoje or date.today()
-    desde = obrigatoria_desde(con)
+    bd = banco(con)
+    desde = obrigatoria_desde(bd)
     if not desde:
         return []
-    con.row_factory = sqlite3.Row
     saida = []
-    marcas = ",".join("?" for _ in ORIGENS_QUE_OBRIGAM)
-    for row in con.execute(
+    marcas = ",".join("%s" for _ in ORIGENS_QUE_OBRIGAM)
+    for assento in bd.ler(
             f"""SELECT id, especie, numero, nome, livro_volume, origem,
                        situacao, criado_em, {', '.join(_COLUNAS)}
                   FROM rc_assentos
                  WHERE origem IN ({marcas})
-                   AND COALESCE(situacao, 'ATIVO') <> 'CANCELADO'""",
+                   AND COALESCE(situacao, 'ATIVO') <> 'CANCELADO'
+                 ORDER BY id""",
             tuple(sorted(ORIGENS_QUE_OBRIGAM))):
-        assento = dict(row)
         if not obriga(assento, desde) or _baixou_a_pendencia(assento):
             continue
         assento.update(_prazo(assento, hoje))
@@ -279,10 +277,11 @@ def gravar_upload(db, *, assento_id: int, arquivo, usuario: str) -> dict:
     nome = Path(arquivo.filename or "termo").name
     ext = _validar_extensao(nome)
     with db.connect() as con:
-        if not con.execute("SELECT 1 FROM rc_assentos WHERE id=?",
-                           (int(assento_id),)).fetchone():
+        bd = banco(con)
+        if not bd.um("SELECT 1 AS um FROM rc_assentos WHERE id=%s",
+                     (int(assento_id),)):
             raise DigitalizacaoError("Assento não encontrado.")
-        atual = atual_do_assento(con, assento_id)
+        atual = atual_do_assento(bd, assento_id)
     pasta = pasta_do_assento(raiz_arquivos(db), assento_id)
     pasta.mkdir(parents=True, exist_ok=True)
     _guardar_no_historico(pasta, atual)
@@ -292,11 +291,11 @@ def gravar_upload(db, *, assento_id: int, arquivo, usuario: str) -> dict:
     sha = hash_file(estavel)
     agora = db.now()
     with db.transaction() as con:
-        con.execute(
+        banco(con).escrever(
             """UPDATE rc_assentos
-                  SET digi_path=?, digi_nome=?, digi_sha256=?, digi_em=?,
-                      digi_por=?, digi_origem=?
-                WHERE id=?""",
+                  SET digi_path=%s, digi_nome=%s, digi_sha256=%s, digi_em=%s,
+                      digi_por=%s, digi_origem=%s
+                WHERE id=%s""",
             (str(estavel.resolve()), nome, sha, agora, usuario, ORIGEM_BALCAO,
              int(assento_id)))
     return {"path": str(estavel.resolve()), "nome": nome, "sha256": sha,
@@ -315,10 +314,10 @@ def _auditar(db_ou_con, quem: str, acao: str, assento_id: int, detalhes: dict,
     if _e_banco(db_ou_con):
         db_ou_con.log(None, quem, acao, "rc_assentos", int(assento_id), detalhes)
         return
-    db_ou_con.execute(
+    banco(db_ou_con).escrever(
         """INSERT INTO audit_logs(ts, user_id, username_snapshot, action,
                entity_type, entity_id, details, ip_address)
-           VALUES (?, NULL, ?, ?, 'rc_assentos', ?, ?, NULL)""",
+           VALUES (%s, NULL, %s, %s, 'rc_assentos', %s, %s, NULL)""",
         (agora, quem, acao, int(assento_id),
          json.dumps(detalhes, ensure_ascii=False, default=str)))
 
@@ -328,9 +327,8 @@ def _raiz_para(db_ou_con, raiz: Path | str | None) -> Path:
         return Path(raiz)
     if _e_banco(db_ou_con):
         return raiz_arquivos(db_ou_con)
-    row = db_ou_con.execute(
-        "SELECT value FROM settings WHERE key='archive_root'").fetchone()
-    configurada = (row[0] if row else "") or ""
+    configurada = banco(db_ou_con).valor(
+        "SELECT value FROM settings WHERE key='archive_root'") or ""
     if configurada.strip():
         return Path(configurada.strip())
     raise DigitalizacaoError(
@@ -392,10 +390,11 @@ def anexar_digitalizacao(db_ou_con, assento_id: int, caminho_arquivo,
 
     con = db_ou_con.connect() if _e_banco(db_ou_con) else db_ou_con
     try:
-        if not con.execute("SELECT 1 FROM rc_assentos WHERE id=?",
-                           (int(assento_id),)).fetchone():
+        bd = banco(con)
+        if not bd.um("SELECT 1 AS um FROM rc_assentos WHERE id=%s",
+                     (int(assento_id),)):
             raise DigitalizacaoError(f"Assento {assento_id} não encontrado.")
-        atual = atual_do_assento(con, assento_id)
+        atual = atual_do_assento(bd, assento_id)
     finally:
         if con is not db_ou_con:
             con.close()
@@ -424,14 +423,14 @@ def anexar_digitalizacao(db_ou_con, assento_id: int, caminho_arquivo,
     parametros = (str(destino.resolve()), fonte.name, sha, agora, quem, origem,
                   int(assento_id))
     sql = """UPDATE rc_assentos
-                SET digi_path=?, digi_nome=?, digi_sha256=?, digi_em=?,
-                    digi_por=?, digi_origem=?
-              WHERE id=?"""
+                SET digi_path=%s, digi_nome=%s, digi_sha256=%s, digi_em=%s,
+                    digi_por=%s, digi_origem=%s
+              WHERE id=%s"""
     if _e_banco(db_ou_con):
         with db_ou_con.transaction() as tx:
-            tx.execute(sql, parametros)
+            banco(tx).escrever(sql, parametros)
     else:
-        db_ou_con.execute(sql, parametros)
+        banco(db_ou_con).escrever(sql, parametros)
     _auditar(db_ou_con, quem, "RCPN_DIGITALIZACAO_ANEXADA", assento_id,
              {"nome": fonte.name, "sha256": sha, "origem": origem,
               "fonte": str(fonte), "substituiu": (atual or {}).get("digi_nome")},
@@ -456,20 +455,23 @@ def gravar_teor_transcrito(db_ou_con, assento_id: int, teor: str, quem: str,
         raise DigitalizacaoError("Teor vazio — não há o que gravar.")
     agora = agora or _agora()
     quem = (quem or "").strip() or "CARGA"
-    sql = """UPDATE rc_assentos SET teor=?, teor_formato=?
-              WHERE id=? AND (teor IS NULL OR TRIM(teor)='')"""
+    sql = """UPDATE rc_assentos SET teor=%s, teor_formato=%s
+              WHERE id=%s AND (teor IS NULL OR TRIM(teor)='')
+          RETURNING id"""
     parametros = (texto, formato or "texto", int(assento_id))
     if _e_banco(db_ou_con):
         with db_ou_con.transaction() as tx:
-            if not tx.execute("SELECT 1 FROM rc_assentos WHERE id=?",
-                              (int(assento_id),)).fetchone():
+            bd = banco(tx)
+            if not bd.um("SELECT 1 AS um FROM rc_assentos WHERE id=%s",
+                         (int(assento_id),)):
                 raise DigitalizacaoError(f"Assento {assento_id} não encontrado.")
-            gravou = tx.execute(sql, parametros).rowcount == 1
+            gravou = len(bd.escrever(sql, parametros)) == 1
     else:
-        if not db_ou_con.execute("SELECT 1 FROM rc_assentos WHERE id=?",
-                                 (int(assento_id),)).fetchone():
+        bd = banco(db_ou_con)
+        if not bd.um("SELECT 1 AS um FROM rc_assentos WHERE id=%s",
+                     (int(assento_id),)):
             raise DigitalizacaoError(f"Assento {assento_id} não encontrado.")
-        gravou = db_ou_con.execute(sql, parametros).rowcount == 1
+        gravou = len(bd.escrever(sql, parametros)) == 1
     if gravou:
         _auditar(db_ou_con, quem, "RCPN_TEOR_TRANSCRITO", assento_id,
                  {"origem": (origem or "").upper(), "teor_len": len(texto)},
@@ -503,9 +505,9 @@ def congelar_para_certidao(db, assento_id: int) -> dict:
             "nome": atual.get("digi_nome") or origem.name}
 
 
-def marcar_certidao(con: sqlite3.Connection, certidao_id: int, sha256: str) -> None:
+def marcar_certidao(con, certidao_id: int, sha256: str) -> None:
     """A certidão saiu da digitalização oficial: guarda o sha. ESCREVE."""
-    con.execute("UPDATE rc_certidoes SET digitalizacao_sha256=? WHERE id=?",
+    banco(con).escrever("UPDATE rc_certidoes SET digitalizacao_sha256=%s WHERE id=%s",
                 (sha256, int(certidao_id)))
 
 

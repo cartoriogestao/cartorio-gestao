@@ -1,0 +1,26 @@
+{
+  "chave": "RT_NOTIFICACAO_CONFRONTANTE",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Notificação do confrontante (retificação de área)",
+  "formato": "CHAVES",
+  "explica": "O papel entregue ao confrontante na retificação de área e no georreferenciamento, com o recibo destacável. Congela no registro do confrontante ao notificar: mudar o modelo não reescreve o que já foi entregue. As frases que o processo decide (a divisa, a planta, o prazo, o silêncio) são peças deste papel, na mesma pasta.",
+  "campos": [
+    "serventia",
+    "numero",
+    "do_ano",
+    "sobre_matricula",
+    "nome",
+    "qualidade",
+    "endereco",
+    "requerente",
+    "imovel",
+    "sobre_a_planta",
+    "prazo_texto",
+    "silencio",
+    "silencio_artigo",
+    "atrasada_artigo",
+    "lugar_e_data",
+    "oficial",
+    "cargo"
+  ]
+}

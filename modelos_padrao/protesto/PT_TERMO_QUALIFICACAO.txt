@@ -1,0 +1,2 @@
+Registro do protesto: {lugar}, em {data}.
+{protocolo} {apresentante} {titulo} {credor} {devedor}

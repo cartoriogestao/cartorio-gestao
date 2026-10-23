@@ -10,6 +10,13 @@
      selo, está mal posicionado e passando da parte do carimbo, entrando no
      campo das averbações».
 
+E o TERMO LONGO, hotfix da produção de 21/10/2026, 15h16 (no fim do arquivo):
+     o registro tardio de 2.610 caracteres saía em três páginas — as
+     assinaturas saltavam para uma a mais. Com menos de
+     `rc_folha.ASSINATURAS_EM_PAR_A_PARTIR_DE` assinaturas, acima de 1.650
+     caracteres a letra desce a 9,5 pt e as assinaturas ficam lado a lado;
+     acima de 2.300, 9 pt.
+
 O que estes testes guardam está escrito em cada um. Usuários de teste:
 mario (ADMIN, da fixture). Nenhum documento real.
 """
@@ -17,6 +24,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -514,3 +522,172 @@ def test_no_papel_a_frente_cabe_numa_pagina_e_a_pauta_desce(casa):
     assert m["paginas"] == 2, m
     assert m["sobra_embaixo_mm"] < 26, m
     assert m["sobra_embaixo_mm"] > 5, m
+
+
+# ================================= o termo longo (hotfix 21/10/2026, 15h16)
+#
+# Só layout (`templates/rcpn_folha_impressa.html`), trazido no LH08. Onde há
+# menos de quatro assinaturas: acima de 1.650 caracteres, `termo-longo` (9,5
+# pt, entrelinha 1,26, assinaturas lado a lado); acima de 2.300, também
+# `termo-muito-longo` (9 pt, entrelinha 1,2). Conta-se pelo `striptags`.
+
+# Um parágrafo de termo tardio, só com nomes de ensaio. Repetido e cortado,
+# dá o tamanho que o teste pede.
+PARAGRAFO_TARDIO = (
+    "Registro lavrado fora do prazo legal, nos termos do art. 46 da Lei nº "
+    "6.015/1973, à vista do requerimento nº 7/2026 assinado pelo registrando "
+    "JOAO EXEMPLO DE ENSAIO, nascido em Cidade Exemplo, filho de MARIA "
+    "EXEMPLO DE ENSAIO, com as testemunhas BEATRIZ EXEMPLO e CARLA EXEMPLO, "
+    "que conhecem o registrando e afirmam a verdade do declarado. ")
+
+
+def _teor_de(letras: int) -> str:
+    """Texto com exatamente `letras` caracteres na conta do `striptags`
+    (espaço repetido vira um só, e as pontas saem)."""
+    texto = (PARAGRAFO_TARDIO * (letras // len(PARAGRAFO_TARDIO) + 1))[:letras]
+    texto = texto[:-1] + "." if texto.endswith(" ") else texto
+    assert len(" ".join(texto.split())) == letras
+    return texto
+
+
+def _com_teor(casa, aid: int, teor: str) -> None:
+    con = _con(casa)
+    with con:
+        con.execute("UPDATE rc_assentos SET teor=? WHERE id=?", (teor, aid))
+    con.close()
+
+
+def _classes_das_faces(html: str) -> list[str]:
+    return re.findall(r'<div class="(folha(?: [^"]*)?)">', html)
+
+
+def _regra_css(html: str, seletor: str) -> str:
+    achado = re.search(re.escape(seletor) + r"\s*\{([^}]*)\}", html)
+    assert achado, f"faltou a regra {seletor}"
+    return " ".join(achado.group(1).split())
+
+
+def _nascimento_com_teor(casa, letras: int) -> int:
+    aid = _nascimento(casa)
+    _registro(casa, aid)
+    _com_teor(casa, aid, _teor_de(letras))
+    return aid
+
+
+def test_o_termo_longo_desce_um_ponto_e_poe_as_assinaturas_lado_a_lado(casa):
+    """O nascimento assina com duas linhas (declarante e quem lavrou): menos
+    de quatro, e com 2.000 caracteres a frente ganha `termo-longo`. O verso,
+    sem termo, continua como era."""
+    aid = _nascimento_com_teor(casa, 2000)
+    html = _abrir(casa, f"/rcpn/{aid}/folha")
+    assert _classes_das_faces(html) == ["folha termo-longo", "folha"]
+    assert _regra_css(html, ".folha.termo-longo") == "font-size: 9.5pt;"
+    assert _regra_css(html, ".folha.termo-longo .termo") == "line-height: 1.26;"
+    lado_a_lado = _regra_css(html, ".folha.termo-longo .assinaturas-do-termo")
+    assert "display: flex;" in lado_a_lado and "flex-wrap: wrap;" in lado_a_lado
+    assert "flex: 1 1 40%;" in _regra_css(
+        html, ".folha.termo-longo .assinaturas-do-termo .assinatura")
+    # As duas linhas continuam lá, com os nomes — só a disposição muda.
+    assert html.count('class="assinatura"') == 2
+    assert "JOSE ENSAIO NASCIMENTO" in html
+    assert 'class="assinaturas-do-termo"' in html
+
+
+def test_acima_de_2300_caracteres_a_letra_desce_a_9_pontos(casa):
+    """O caso da produção: o tardio de 2.610 caracteres."""
+    aid = _nascimento_com_teor(casa, 2610)
+    html = _abrir(casa, f"/rcpn/{aid}/folha")
+    assert _classes_das_faces(html) == [
+        "folha termo-longo termo-muito-longo", "folha"]
+    assert _regra_css(html, ".folha.termo-muito-longo") == "font-size: 9pt;"
+    assert _regra_css(html, ".folha.termo-muito-longo .termo") == "line-height: 1.2;"
+
+
+@pytest.mark.parametrize("letras,classes", [
+    (1650, "folha"),
+    (1651, "folha termo-longo"),
+    (2300, "folha termo-longo"),
+    (2301, "folha termo-longo termo-muito-longo"),
+])
+def test_os_limites_do_termo_longo_sao_1650_e_2300_caracteres(casa, letras,
+                                                              classes):
+    aid = _nascimento_com_teor(casa, letras)
+    html = _abrir(casa, f"/rcpn/{aid}/folha")
+    assert _classes_das_faces(html)[0] == classes
+
+
+def test_as_marcas_do_html_nao_contam_como_caractere_do_termo(casa):
+    """Teor gravado em HTML: 1.600 caracteres de texto em mais de 2.400 de
+    marca. Quem decide é o texto que vai ao papel."""
+    aid = _nascimento(casa)
+    _registro(casa, aid)
+    palavras = _teor_de(1600).split(" ")
+    teor = "<p>" + " ".join(f'<span class="x">{p}</span>' for p in palavras) + "</p>"
+    assert len(teor) > 2400
+    _com_teor(casa, aid, teor)
+    html = _abrir(casa, f"/rcpn/{aid}/folha")
+    assert _classes_das_faces(html) == ["folha", "folha"]
+
+
+def test_o_termo_curto_sai_como_antes(casa):
+    """O nascimento montado dos campos é curto: folha sem classe nova, a
+    letra de 10,5 pt e a entrelinha de 1,35 de sempre."""
+    aid = _nascimento(casa)
+    _registro(casa, aid)
+    html = _abrir(casa, f"/rcpn/{aid}/folha")
+    assert "compareceu" in html
+    assert _classes_das_faces(html) == ["folha", "folha"]
+    assert 'class="assinaturas-do-termo"' in html
+    assert "font-size: 10.5pt;" in _regra_css(html, "body")
+    assert "line-height: 1.35;" in _regra_css(html, ".termo")
+
+
+def test_com_quatro_assinaturas_ou_mais_o_termo_longo_nao_mexe_na_folha(casa):
+    """O casamento já põe as assinaturas em par (relato #124): o termo
+    longo não lhe tira um ponto da letra."""
+    aid = _casamento(casa)
+    _testemunhas(casa, aid, "CARLA ENSAIO TESTEMUNHA",
+                 "BEATRIZ ENSAIO TESTEMUNHA")
+    _registro(casa, aid)
+    _com_teor(casa, aid, _teor_de(2610))
+    html = _abrir(casa, f"/rcpn/{aid}/folha")
+    assert html.count('class="assinatura"') >= FOLHA.ASSINATURAS_EM_PAR_A_PARTIR_DE
+    assert _classes_das_faces(html) == ["folha", "folha"]
+    assert 'class="assinaturas-do-termo em-par"' in html
+
+
+CHROME_DO_MAC = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+
+
+def _paginas_do_pdf(casa, aid: int) -> int:
+    """Páginas do PDF que a rota imprime pelo Chrome — o mesmo HTML da tela.
+
+    No servidor o Chrome está num dos caminhos do Windows; na máquina de
+    desenvolvimento, `chrome_caminho` aponta o do Mac. Sem nenhum, pula."""
+    import impressao_pdf as PDFIMP
+    pdfium = pytest.importorskip("pypdfium2")
+    if PDFIMP.onde_esta_o_chrome() is None:
+        achado = shutil.which("google-chrome") or (
+            str(CHROME_DO_MAC) if CHROME_DO_MAC.exists() else None)
+        if not achado:
+            pytest.skip("sem Chrome/Edge nesta máquina para imprimir a folha")
+        casa["db"].set_settings({"chrome_caminho": achado})
+    r = casa["cliente"].get(f"/rcpn/{aid}/folha/papel")
+    if r.status_code != 200 or not r.data.startswith(b"%PDF"):
+        pytest.skip("o Chrome não devolveu o PDF nesta rodada")
+    return len(pdfium.PdfDocument(r.data))
+
+
+def test_no_papel_o_termo_longo_do_tardio_fica_em_duas_paginas(casa):
+    """Frente e verso são DUAS páginas: com 2.610 caracteres as assinaturas
+    não saltam para uma terceira (antes do hotfix, três — medido no LH08). O
+    cabeçalho leva endereço e contato, como o da produção — é ele que decide
+    quanto sobra para o termo."""
+    casa["db"].set_settings({
+        "unit_name": "Ofício Único de Cidade Exemplo",
+        "serventia_endereco": "Rua de Ensaio, 100, Centro",
+        "serventia_cep": "00000-000",
+        "serventia_telefone": "(00) 0000-0000",
+        "serventia_email": "contato@exemplo.invalid"})
+    aid = _nascimento_com_teor(casa, 2610)
+    assert _paginas_do_pdf(casa, aid) == 2

@@ -72,11 +72,8 @@ def fallbacks_da_casa(db) -> list[str]:
             v = ""
         if v:
             saida.append(v)
-    try:
-        for u in db.list_users(active_only=True):
-            n = (u["full_name"] or "").strip() or (u["username"] or "").strip()
-            if n:
-                saida.append(n)
-    except Exception:
-        pass
+    # O PRIMEIRO USUÁRIO DO CADASTRO NÃO ASSINA ATO DE NINGUÉM (revisão de
+    # segurança de 22/10/2026, A6): cair em `list_users` punha no selo o nome
+    # de quem por acaso está no alto da lista. Sem a substituta e o oficial
+    # cadastrados, a resposta é «não há humano», e quem pede o selo recusa.
     return saida

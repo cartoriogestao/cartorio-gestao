@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -35,7 +34,9 @@ AQUI = Path(__file__).resolve().parent.parent
 if str(AQUI) not in sys.path:
     sys.path.insert(0, str(AQUI))
 
+import banco_pg  # noqa: E402
 import revisao_previa as RV  # noqa: E402
+from bd_nativo import banco  # noqa: E402
 from gestor_expedientes import desmascarar, mascarar  # noqa: E402
 
 TAMANHO_DO_LOTE = 25
@@ -55,30 +56,35 @@ pasta `_mapas/`. Não invente: se o texto não permite concluir, não aponte.
 
 
 def _atos(con, atribuicoes, desde, com_acervo):
+    bd = banco(con)
     if "RI" in atribuicoes:
         sql = """SELECT a.id, a.matricula_id, a.tipo, a.numero, a.teor, a.natureza_titulo,
-                        m.numero FROM ri_atos a JOIN ri_matriculas m ON m.id = a.matricula_id
+                        m.numero AS matricula_numero FROM ri_atos a JOIN ri_matriculas m ON m.id = a.matricula_id
                   WHERE COALESCE(a.cancelado,0) = 0 AND COALESCE(a.teor,'') <> ''
-                    AND COALESCE(a.lavrado_em, a.data_ato, '') >= ?"""
+                    AND COALESCE(a.lavrado_em, a.data_ato, '') >= %s"""
         if not com_acervo:
             sql += " AND COALESCE(a.acervo,0) = 0"
-        for aid, mid, tipo, num, teor, nat, mnum in con.execute(sql + " ORDER BY a.id", (desde,)):
+        for r in bd.ler(sql + " ORDER BY a.id", (desde,)):
+            aid, mid, tipo, num = r["id"], r["matricula_id"], r["tipo"], r["numero"]
+            teor, mnum = r["teor"], r["matricula_numero"]
             yield {"atribuicao": "RI", "alvo_id": mid, "ato_id": aid,
                    "hash": RV.hash_do_ato(tipo, teor), "rotulo": f"{tipo}-{num} da matrícula {mnum}",
                    "dossie": RV.dossie_ri_lavrado(con, aid)}
     if "NOTAS" in atribuicoes:
-        for aid, tipo, teor in con.execute(
+        for r in bd.ler(
                 """SELECT id, tipo, teor FROM nt_atos WHERE COALESCE(teor,'') <> ''
                       AND situacao NOT IN ('CANCELADO','EM_LAVRATURA')
-                      AND COALESCE(data, '') >= ? ORDER BY id""", (desde,)):
+                      AND COALESCE(data, '') >= %s ORDER BY id""", (desde,)):
+            aid, tipo, teor = r["id"], r["tipo"], r["teor"]
             yield {"atribuicao": "NOTAS", "alvo_id": aid, "ato_id": aid,
                    "hash": RV.hash_do_ato(tipo, teor), "rotulo": f"{tipo} das Notas id {aid}",
                    "dossie": RV.dossie_notas(con, aid)}
     if "LIVRO3" in atribuicoes:
-        for aid, rid, teor, tipo in con.execute(
+        for r in bd.ler(
                 """SELECT id, registro_id, teor, tipo FROM ra_atos
-                    WHERE COALESCE(teor,'') <> '' AND COALESCE(data_ato, criado_em, '') >= ?
+                    WHERE COALESCE(teor,'') <> '' AND COALESCE(data_ato, criado_em, '') >= %s
                     ORDER BY id""", (desde,)):
+            aid, rid, teor, tipo = r["id"], r["registro_id"], r["teor"], r["tipo"]
             yield {"atribuicao": "LIVRO3", "alvo_id": aid, "ato_id": aid,
                    "hash": RV.hash_do_ato(tipo, teor), "rotulo": f"Livro 3, ato id {aid}",
                    "dossie": f"LIVRO 3 — REGISTRO id {rid}\n\n=== ATO JÁ LAVRADO ===\n"
@@ -119,9 +125,14 @@ def exportar(con, saida: Path, *, atribuicoes=("RI", "NOTAS", "LIVRO3"),
 
 def importar(con, pasta: Path) -> dict:
     RV.init_schema(con)
+    bd = banco(con)
     indice = json.loads((pasta / "_mapas" / "indice.json").read_text(encoding="utf-8"))
     gravados = repetidos = desconhecidos = 0
     agora = datetime.now().isoformat(timespec="seconds")
+    # «Já foi importada?» vale até o commit do fim. No SQLite, a primeira
+    # gravação prendia o banco até ele; sem a trava, duas importações da mesma
+    # pasta ao mesmo tempo gravam tudo em dobro (rv_revisoes não tem chave única).
+    bd.travar("rv_revisoes.hash_texto")
     for arquivo in sorted((pasta / "resultados").glob("*.jsonl")):
         for linha in arquivo.read_text(encoding="utf-8").splitlines():
             if not linha.strip():
@@ -134,16 +145,16 @@ def importar(con, pasta: Path) -> dict:
             mapa = json.loads((pasta / "_mapas" / f"{r['arquivo']}.json").read_text(encoding="utf-8"))
             resultado = desmascarar(RV._ler_json(json.dumps(
                 {"achados": r.get("achados") or [], "parecer": r.get("parecer") or ""})), mapa)
-            if con.execute("""SELECT 1 FROM rv_revisoes WHERE atribuicao=? AND alvo_id=?
-                                 AND hash_texto=? AND origem='AGENTE'""",
-                           (item["atribuicao"], item["alvo_id"], item["hash"])).fetchone():
+            if bd.um("""SELECT 1 AS um FROM rv_revisoes WHERE atribuicao=%s AND alvo_id=%s
+                                 AND hash_texto=%s AND origem='AGENTE'""",
+                     (item["atribuicao"], item["alvo_id"], item["hash"])):
                 repetidos += 1
                 continue
-            con.execute(
+            bd.escrever(
                 """INSERT INTO rv_revisoes (atribuicao, alvo_id, hash_texto, rotulo, dossie,
                        situacao, pedido_em, pedido_por, terminado_em, provedor, modelo,
                        resultado_json, graves, origem)
-                   VALUES (?,?,?,?,?, 'PRONTA', ?, 'revisão em lote', ?, 'agente', ?, ?, ?, 'AGENTE')""",
+                   VALUES (%s,%s,%s,%s,%s, 'PRONTA', %s, 'revisão em lote', %s, 'agente', %s, %s, %s, 'AGENTE')""",
                 (item["atribuicao"], item["alvo_id"], item["hash"], item["rotulo"],
                  f"(ato {item['ato_id']}; dossiê na pasta {pasta.name})", agora, agora,
                  r.get("modelo") or "agente", json.dumps(resultado, ensure_ascii=False),
@@ -173,12 +184,12 @@ def main(argv=None) -> int:
     i.add_argument("--pasta", required=True)
     a = p.parse_args(argv)
     if a.cmd == "exportar":
-        con = sqlite3.connect(f"file:{a.banco}?mode=ro", uri=True)
+        con = banco_pg.conectar(f"file:{a.banco}?mode=ro", uri=True)
         print(exportar(con, Path(a.saida), atribuicoes=a.atribuicoes.split(","),
                        desde=a.desde, com_acervo=a.com_acervo,
                        sem_mascara=False if a.com_mascara else None))
     else:
-        con = sqlite3.connect(a.banco, timeout=60)
+        con = banco_pg.conectar(a.banco, timeout=60)
         print(importar(con, Path(a.pasta)))
     return 0
 

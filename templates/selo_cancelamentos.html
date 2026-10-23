@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}Selos cancelados — pedido ao TJMA{% endblock %}
+{% block heading %}<h1>Selos cancelados: pedido de cancelamento ao TJMA</h1>{% endblock %}
+{% block content %}
+<section class="card">
+  <p>O sistema marca o selo como cancelado <strong>aqui</strong>; o Tribunal só fica sabendo
+    quando o oficial pede. Escolha o período, gere o ofício com <strong>todos</strong> os selos
+    cancelados que ainda não foram pedidos, mande pelo Malote Digital e volte para marcar
+    «comunicado». (Código de Normas do MA, arts. 127, 134 e 135.)</p>
+  {% if conta.n %}<p><strong>{{ conta.n }} selo(s) cancelado(s) desde {{ desde[8:10] }}/{{ desde[5:7] }}/{{ desde[:4] }}
+    ainda sem comunicação ao TJMA.</strong></p>{% else %}<p>Nenhum selo cancelado desde
+    {{ desde[8:10] }}/{{ desde[5:7] }}/{{ desde[:4] }} falta comunicar.</p>{% endif %}
+  <form method="get" action="{{ url_for('selo_cancelamentos') }}">
+    <label>De <input type="date" name="inicio" value="{{ inicio }}" required></label>
+    <label>até <input type="date" name="fim" value="{{ fim }}" required></label>
+    <button class="button" type="submit">Ver</button>
+  </form>
+  {% if pode %}
+  <form method="post" action="{{ url_for('selo_cancelamento_oficio_gerar') }}" style="margin-top:.6em">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="inicio" value="{{ inicio }}">
+    <input type="hidden" name="fim" value="{{ fim }}">
+    <button class="button primary" type="submit">Gerar o ofício com os selos ainda não pedidos deste período</button>
+  </form>
+  {% endif %}
+</section>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Selo</th><th>Ato</th><th>Cancelado em</th><th>Motivo</th><th>Pedido ao TJMA</th></tr></thead>
+  <tbody>
+  {% for s in lista %}
+    <tr>
+      <td><code>{{ s.numero }}</code></td>
+      <td>{{ s.ato }}</td>
+      <td>{{ (s.cancelado_em or '')[:16]|replace('T', ' ') }}</td>
+      <td>{{ s.motivo_cancelamento or '(sem motivo registrado)' }}</td>
+      <td>{% if s.pedido == 'COMUNICADO' %}Comunicado em {{ (s.comunicado_em or '')[:10] }}
+          (<a href="{{ url_for('selo_portal_remessa', remessa_id=s.remessa_id) }}">ofício nº {{ s.remessa_id }}</a>)
+          {% elif s.pedido == 'RASCUNHO' %}<strong>No ofício nº <a href="{{ url_for('selo_portal_remessa', remessa_id=s.remessa_id) }}">{{ s.remessa_id }}</a>, ainda não mandado</strong>
+          {% else %}<strong>Não pedido</strong>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">Nenhum selo cancelado neste período.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<h2>Ofícios</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Nº</th><th>Período</th><th>Selos</th><th>Gerado</th><th>Comunicado</th></tr></thead>
+  <tbody>
+  {% for r in remessas %}
+    <tr>
+      <td><a href="{{ url_for('selo_portal_remessa', remessa_id=r.id) }}">{{ r.id }}</a></td>
+      <td>{{ r.inicio }} a {{ r.fim }}</td>
+      <td>{{ r.selos }}</td>
+      <td>{{ (r.gerado_em or '')[:10] }} · {{ r.gerado_por }}</td>
+      <td>{% if r.comunicado_em %}{{ r.comunicado_em[:10] }}{% if r.protocolo %} · {{ r.protocolo }}{% endif %}{% else %}<strong>ainda não</strong>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">Nenhum ofício gerado ainda.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if e_admin %}
+<section class="card">
+  <form method="post" action="{{ url_for('selo_cancelamento_desde') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>O aviso do topo conta os cancelados desde
+      <input type="date" name="desde" value="{{ desde }}" required></label>
+    <button class="button" type="submit">Gravar</button>
+    <small>Antes desta data, o selo cancelado não vira aviso — mas continua na lista acima, para pedir.</small>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

@@ -25,6 +25,7 @@ import sqlite3
 from flask import flash, redirect, render_template, request, url_for
 
 import papel_seguranca as PP
+from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
@@ -60,7 +61,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return vazio
         try:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 quadro = PP.estoque(con)
         except sqlite3.Error:
             return vazio
@@ -71,7 +71,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def rcpn_papel():
         """O estoque das folhas de segurança."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             quadro = PP.estoque(con)
             caixas = PP.remessas(con)
             # FICHA_FOLHA_SEGURANCA_20261009: as usadas com o assento (nome e
@@ -150,6 +149,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
     @app.route("/rcpn/papel/inutilizar", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def rcpn_papel_inutilizar():
         """A folha estragou. ESCREVE.
 

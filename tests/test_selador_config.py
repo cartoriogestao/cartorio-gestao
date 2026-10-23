@@ -29,6 +29,8 @@ import pytest
 
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — referencia acervo_eoficio ou sqlite de producao
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import selador                                   # noqa: E402
 import selador_config as SC                      # noqa: E402
@@ -40,7 +42,7 @@ SENHA = "abcde123"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     SC.init_selador_schema(con)
     return con
@@ -204,6 +206,25 @@ def test_o_teste_de_conexao_fica_gravado():
     linha = con.execute("SELECT * FROM sd_config").fetchone()
     assert linha["ultimo_teste_ok"] == 0
     assert linha["ultimo_teste_mensagem"] == "tempo esgotado"
+
+
+# ------------------------------------------------------------- o razao
+
+def test_o_saldo_do_aparelho_volta_com_os_centavos():
+    # O saldo e dinheiro, e o `gestor_fiscal` mede o preco do selo pela queda
+    # dele. Com `REAL` no DDL nativo a coluna nascia float4 no PostgreSQL, que
+    # perde o centavo a partir de 131.072: 150000.37 voltava 150000.38, e a
+    # queda ate 149999.92 media 0,46 onde o selo custou 0,45.
+    con = banco()
+    for numero, saldo in (("AUTENT0000000000000000001", 150000.37),
+                          ("AUTENT0000000000000000002", 149999.92)):
+        con.execute(
+            "INSERT INTO sd_selos (numero, saldo_remanescente, obtido_em) "
+            "VALUES (?,?,?)", (numero, saldo, AGORA))
+    saldos = [r["saldo_remanescente"] for r in con.execute(
+        "SELECT saldo_remanescente FROM sd_selos ORDER BY numero")]
+    assert saldos == [150000.37, 149999.92]
+    assert round(saldos[0] - saldos[1], 2) == 0.45
 
 
 # ------------------------------------------------------- vindo do E-Oficio

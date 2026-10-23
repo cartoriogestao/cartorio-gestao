@@ -64,6 +64,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+import tetos_de_entrada as TETO
+from bd_nativo import banco
+
 SCHEMA = """
 -- O AJUSTE DO OFICIAL NO PAPEL DA CERTIDAO. O CODIGO E O PISO; ESTA TABELA E
 -- O AJUSTE — sem linha aqui vale o `.odt` do pacote, e «voltar ao padrao» e
@@ -71,7 +74,7 @@ SCHEMA = """
 -- a tabela: aqui o conteudo e BINARIO (um zip do OpenDocument), e nao texto.
 CREATE TABLE IF NOT EXISTS mo_moldes (
     chave TEXT PRIMARY KEY,        -- ver MOLDES, neste modulo
-    arquivo BLOB NOT NULL,         -- o .odt inteiro
+    arquivo BYTEA NOT NULL,         -- o .odt inteiro
     nome_arquivo TEXT,             -- o nome com que ele chegou, para a tela
     tamanho INTEGER NOT NULL,      -- bytes, para a tela dizer o tamanho
     sha256 TEXT NOT NULL,          -- para conferir que e o mesmo arquivo
@@ -83,7 +86,7 @@ CREATE TABLE IF NOT EXISTS mo_moldes (
 
 def init_modelos_moldes_schema(con: sqlite3.Connection) -> None:
     """Cria a tabela do ajuste do molde. Idempotente."""
-    con.executescript(SCHEMA)
+    banco(con).escrever(SCHEMA)
 
 
 # ------------------------------------------------------------- o catálogo
@@ -168,10 +171,9 @@ def nome_do_arquivo_padrao(chave: str) -> str:
 
 
 def _linha(con: sqlite3.Connection, chave: str):
-    con.row_factory = sqlite3.Row
     try:
-        return con.execute(
-            "SELECT * FROM mo_moldes WHERE chave = ?", (chave,)).fetchone()
+        return banco(con).um(
+            "SELECT * FROM mo_moldes WHERE chave = %s", (chave,))
     except sqlite3.OperationalError:
         # Instalacao a meio de migrar: o papel continua saindo do pacote.
         # **Documento que nao sai e pior que documento sem o ajuste novo** — a
@@ -242,7 +244,9 @@ def marcadores_de(arquivo: bytes) -> set[str]:
     conta.
     """
     with zipfile.ZipFile(BytesIO(arquivo)) as z:
-        x = z.read("content.xml").decode("utf-8")
+        # COM TETO (LX12, LS02 M2): o molde vem do formulário, e o
+        # `content.xml` de um `.odt` de 1 KB pode se abrir em gigabytes.
+        x = TETO.ler_membro(z, "content.xml").decode("utf-8")
     x = x[x.find("<office:body"):]
     x = re.sub(r"<text:tab/>", " ", x)
     x = re.sub(r"<text:line-break/>", " ", x)
@@ -264,6 +268,12 @@ def conferir(chave: str, arquivo: bytes) -> str | None:
     try:
         with zipfile.ZipFile(BytesIO(arquivo)) as z:
             nomes = set(z.namelist())
+            # A ZIP-BOMBA SE RECUSA AQUI, ANTES DE GRAVAR (LX12, LS02 M2): o
+            # índice do pacote diz quanto ele se abre, e `marcadores_de`, logo
+            # abaixo, ainda corta a leitura se o índice mentir.
+            TETO.conferir_pacote(z)
+    except TETO.TetoExcedido as erro:
+        return str(erro)
     except zipfile.BadZipFile:
         return ("Este arquivo não é um .odt. Abra o molde no LibreOffice e "
                 "grave como «Documento de texto ODF (.odt)».")
@@ -271,16 +281,33 @@ def conferir(chave: str, arquivo: bytes) -> str | None:
         return ("Falta o conteúdo dentro do arquivo (`content.xml`). Ele pode "
                 "ter chegado incompleto — envie de novo.")
 
+    # O ÍNDICE QUE MENTE TAMBÉM VOLTA COMO RECUSA (LX20, ressalva do LX12):
+    # `conferir_pacote` acima confia no tamanho que o índice DECLARA; o
+    # `content.xml` que diz 200 bytes e traz mais só aparece na leitura —
+    # `TetoExcedido` do corte, ou `BadZipFile` do CRC que o `zipfile` confere
+    # ao parar no tamanho declarado. Sem isto a exceção escapava de
+    # `conferir`, e a tela dizia «Não deu para gravar o papel» em vez do
+    # motivo.
+    try:
+        marcadores = marcadores_de(arquivo)
+    except TETO.TetoExcedido as erro:
+        return str(erro)
+    except (zipfile.BadZipFile, UnicodeDecodeError):
+        return ("O conteúdo deste .odt não se lê: o arquivo chegou corrompido, "
+                "ou o índice do pacote não confere com o que ele traz. Abra o "
+                "molde no LibreOffice e grave de novo como «Documento de texto "
+                "ODF (.odt)».")
+
     import rc_certidao_odt as ODT
     vocabulario = set(ODT.valores({}, {}, {}))
-    faltando = sorted(marcadores_de(arquivo) - vocabulario)
+    faltando = sorted(marcadores - vocabulario)
     if faltando:
         return ("Este molde usa marcadores que o sistema não sabe preencher, "
                 "e eles sairiam escritos na certidão: "
                 + ", ".join(faltando) + ".")
 
     matricula = MATRICULA_DA_ESPECIE[c["especie"]]
-    if matricula not in marcadores_de(arquivo):
+    if matricula not in marcadores:
         return (f"O molde está sem a matrícula ({matricula}). Ela é a "
                 "identidade nacional da certidão: sem ela o papel não serve "
                 "para conferir o registro noutra serventia.")
@@ -298,10 +325,10 @@ def salvar(con: sqlite3.Connection, chave: str, *, arquivo: bytes,
     if erro:
         raise PapelError(erro)
     resumo = hashlib.sha256(arquivo).hexdigest()
-    con.execute(
+    banco(con).escrever(
         """INSERT INTO mo_moldes (chave, arquivo, nome_arquivo, tamanho,
                sha256, atualizado_em, atualizado_por)
-           VALUES (?,?,?,?,?,?,?)
+           VALUES (%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT(chave) DO UPDATE SET
                arquivo = excluded.arquivo,
                nome_arquivo = excluded.nome_arquivo,
@@ -309,7 +336,7 @@ def salvar(con: sqlite3.Connection, chave: str, *, arquivo: bytes,
                sha256 = excluded.sha256,
                atualizado_em = excluded.atualizado_em,
                atualizado_por = excluded.atualizado_por""",
-        (c["chave"], sqlite3.Binary(arquivo),
+        (c["chave"], bytes(arquivo),
          (nome_arquivo or "").strip() or nome_do_arquivo_padrao(c["chave"]),
          len(arquivo), resumo, agora, quem))
     return resumo
@@ -319,10 +346,12 @@ def restaurar(con: sqlite3.Connection, chave: str) -> bool:
     """Joga fora o ajuste e volta ao molde do pacote. Diz se havia ajuste."""
     c = _do_catalogo(chave)
     try:
-        cur = con.execute("DELETE FROM mo_moldes WHERE chave = ?", (c["chave"],))
+        apagadas = banco(con).escrever(
+            "DELETE FROM mo_moldes WHERE chave = %s RETURNING chave",
+            (c["chave"],))
     except sqlite3.OperationalError:
         return False
-    return cur.rowcount > 0
+    return len(apagadas) > 0
 
 
 def chave_da_especie(especie) -> str | None:

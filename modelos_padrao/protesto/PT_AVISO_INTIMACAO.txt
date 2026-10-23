@@ -1,0 +1,16 @@
+AVISO DE INTIMAÇÃO PARA PAGAMENTO
+
+Aviso n. {numero}/{ano} — Protocolo n. {protocolo}
+
+Fica V. Sa. INTIMADO(A) a pagar, ou a apresentar as razões que tiver, até {prazo_limite}, o título abaixo apresentado para protesto neste tabelionato. Não havendo pagamento nem manifestação até essa data, o título será protestado na forma da Lei nº 9.492/1997.
+
+Devedor: {devedor}{documento_do_devedor}
+Endereço: {endereco}
+Título: {especie}, n. {numero_titulo}
+Valor: R$ {valor}{vencimento}
+Aceite: {aceite}
+Credor (sacador/favorecido): {credor}
+Apresentante: {apresentante}{documento_do_apresentante}
+Prazo-limite para pagamento: {prazo_limite}
+
+{serventia} — {endereco_da_serventia}. Telefone {telefone}. Horário de funcionamento: {horario}.

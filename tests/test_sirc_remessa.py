@@ -27,6 +27,8 @@ import pytest
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — suite pesada + DROP TABLE
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import rc_matricula as RCM                                       # noqa: E402
 import sirc_remessa as SIRC                                      # noqa: E402
@@ -1344,10 +1346,14 @@ def test_arquivo_mrc_bate_byte_a_byte_com_o_comando_do_manual():
     numa época de OpenSSL mais antigo, não bate mais). O resultado
     ficou fixo aqui como o valor medido. Medido de novo em 10/10/2026 com o
     CNS fictício 999999 (sanitização B3): `openssl aes-128-ecb -k 999999 -e
-    -nosalt -md md5` deu exatamente os bytes abaixo."""
-    import gzip
+    -nosalt -md md5` deu exatamente os bytes abaixo.
+
+    O GZIP conferido é o que o módulo cifra (`_comprimido`), e não o
+    `gzip.compress` cru: o byte 9 do cabeçalho do cru é o do sistema que
+    roda o teste (0a no Windows, 13 no Mac), e a medição foi feita com o do
+    Windows."""
     conteudo = "conteudo de teste xml"
-    gz = gzip.compress(conteudo.encode("utf-8"), mtime=0)
+    gz = SIRC._comprimido(conteudo)
     assert gz.hex() == (
         "1f8b080000000000020a4bcecf2b492d4dc95748495528492d2e4"
         "955a8c8cd0100766430b615000000")
@@ -1398,6 +1404,27 @@ def test_arquivo_mrc_e_deterministico():
     diferente a cada chamada, só porque o relógio mudou."""
     xml = "<a>teste</a>"
     assert SIRC.arquivo_mrc(xml, cns="000000") == SIRC.arquivo_mrc(xml, cns="000000")
+
+
+@pytest.mark.parametrize("sistema", [0x03, 0x0A, 0x13, 0xFF])
+def test_o_mrc_sai_igual_qualquer_que_seja_o_sistema_que_comprimiu(monkeypatch, sistema):
+    """O zlib escreve no cabeçalho do GZIP o byte do sistema que comprimiu (3
+    no Linux, 10 no Windows, 19 no Mac, 255 no Python 3.13+), e esse byte cai
+    no primeiro bloco cifrado. Aqui o `gzip.compress` finge ser cada um deles:
+    o `.mrc` tem de sair o mesmo, o medido contra o openssl."""
+    import gzip
+    original = gzip.compress
+
+    def comprime_como(dados, *args, **kwargs):
+        gz = bytearray(original(dados, *args, **kwargs))
+        gz[9] = sistema
+        return bytes(gz)
+
+    monkeypatch.setattr(gzip, "compress", comprime_como)
+    mrc = SIRC.arquivo_mrc("conteudo de teste xml", cns="999999")
+    assert mrc.hex() == (
+        "edde2d33bfc79d61071f5694d1a1be433cee72b2d185422eb7be64e8"
+        "c391215f65305b3900d52b38eb69d9013a6b98cf")
 
 
 # ------------------------------------------------ o que veio do acervo
@@ -1581,7 +1608,7 @@ def test_a_chave_do_envio_e_a_do_gestor():
 
 
 def test_o_ja_enviado_sai_da_remessa_e_o_alterado_depois_volta():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.execute("CREATE TABLE ge_envios (central TEXT, referencia TEXT, "
                 "situacao TEXT DEFAULT 'ENVIADO')")
     con.execute("INSERT INTO ge_envios (central, referencia) VALUES "
@@ -1603,14 +1630,14 @@ def test_o_ja_enviado_sai_da_remessa_e_o_alterado_depois_volta():
 
 
 def test_sem_a_tabela_do_gestor_nada_sai_da_remessa():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     pend = [{"onde": "rc_assentos", "assento_id": 1, "data_ato": "2026-09-10"}]
     assert SIRC.sem_os_ja_enviados(con, pend) == pend
     assert SIRC.ja_enviados(con) == set()
 
 
 def test_o_cancelamento_enviado_sai_da_lista():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.execute("CREATE TABLE ge_envios (central TEXT, referencia TEXT, "
                 "situacao TEXT DEFAULT 'ENVIADO')")
     con.execute("INSERT INTO ge_envios (central, referencia) VALUES "
@@ -1665,10 +1692,11 @@ def test_o_painel_conta_so_o_que_nao_foi_enviado(casa):
     antes = SIRC.quantas_pendentes(con)
     ref = SIRC.referencia_do_envio(
         next(p for p in SIRC.pendentes_de_remessa(con) if p["assento_id"] == aid))
-    con.execute("CREATE TABLE IF NOT EXISTS ge_envios (central TEXT, "
-                "referencia TEXT, situacao TEXT DEFAULT 'ENVIADO')")
-    con.execute("INSERT INTO ge_envios (central, referencia) VALUES ('SIRC', ?)",
-                (ref,))
+    # `ge_envios` nasce na subida desde o LH09 (21/10/2026), com o que o
+    # gestor exige de todo envio: quando saiu, quando e por quem se registrou.
+    con.execute("INSERT INTO ge_envios (central, referencia, enviado_em, registrado_em, "
+                "registrado_por) VALUES ('SIRC', ?, '2026-10-21T10:00:00', "
+                "'2026-10-21T10:00:00', 'mario')", (ref,))
     con.commit()
     assert SIRC.quantas_pendentes(con) == antes - 1
     assert rc_obrigacoes._quantas("sirc_remessa", con)["quantas"] == antes - 1

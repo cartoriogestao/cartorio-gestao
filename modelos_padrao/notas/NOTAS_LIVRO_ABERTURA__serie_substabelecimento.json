@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_LIVRO_ABERTURA__serie_substabelecimento",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Nome da série SUBSTABELECIMENTO nos termos do livro",
+  "formato": "CHAVES",
+  "explica": "O nome da série, no plural e por extenso, nos termos de abertura e de encerramento.",
+  "campos": []
+}

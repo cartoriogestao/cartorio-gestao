@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -55,6 +54,7 @@ from typing import Any
 import agente_ferramentas as FER
 import agente_provedores as PROV
 import agente_schema as AG
+from bd_nativo import banco
 import ajuda_privacidade as PRIV
 
 # O REGISTRO DA CASA. Ele só é usado para uma coisa, e é a que não pode ficar
@@ -471,7 +471,6 @@ AVISO_DE_RODADA_MUDA = (
 def _ordem_de_agora(db: Any, sessao_id: int) -> int:
     """O número do próximo passo desta sessão, lido agora. **SÓ LÊ.**"""
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         return AG.proxima_ordem(con, int(sessao_id))
 
 
@@ -494,7 +493,6 @@ def _a_rodada_nao_escreveu_nada(db: Any, sessao_id: int, *, desde: int,
     """
     try:
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             if AG.proxima_ordem(con, int(sessao_id)) != int(desde):
                 return                  # escreveu: não há silêncio a cobrir
             sessao = AG.ler_sessao(con, int(sessao_id))
@@ -591,6 +589,7 @@ def _preparo(db: Any, *, pasta_de_dados: Any, hoje: str,
         teto_turnos = AG.teto_de_turnos(con)
         teto_sessoes = AG.teto_de_sessoes(con)
         ligada = AG.escrita_ligada(con)
+        sem_confirmacao = AG.escrita_sem_confirmacao(con)
 
     prov = PROV.normalizar_provedor(provedor or configurado)
     pedido_de_modelo = str(modelo or "").strip() or modelo_gravado
@@ -613,7 +612,7 @@ def _preparo(db: Any, *, pasta_de_dados: Any, hoje: str,
 
     return {"provedor": prov, "modelo": escolhido, "teto_de_turnos": teto_turnos,
             "teto_de_sessoes": teto_sessoes, "escrita_ligada": bool(ligada),
-            "do_dia": do_dia}
+            "escrita_sem_confirmacao": bool(sem_confirmacao), "do_dia": do_dia}
 
 
 
@@ -625,14 +624,24 @@ def _instrucao_do_momento(preparo: dict[str, Any], *, agora: str, usuario: str,
     de onde se perguntou são as únicas linhas que mudam no meio de uma conversa;
     deixando-as por último, o começo da instrução fica idêntico de um turno para
     o outro — e é o começo que o provedor reaproveita.
+
+    **O NOME DE QUEM PEDIU NÃO VAI (LS03, B2).** A conversa sobe mascarada, mas
+    esta instrução não passa pela barreira, e levava o nome do operador por
+    extenso a cada turno. O modelo precisa saber o PAPEL — é ele que decide o
+    que se pode pedir —, e o papel é sempre ADMIN, porque o console só abre
+    para ele. `usuario` continua na assinatura: quem chama não muda, e o nome
+    segue para o registro de uso (`ia_uso`), que fica na casa.
     """
     nome = PROV.PROVEDORES[preparo["provedor"]]["nome"]
     escrita = ("LIGADA" if preparo["escrita_ligada"] else "DESLIGADA")
+    if preparo["escrita_ligada"] and not preparo.get("escrita_sem_confirmacao"):
+        escrita += (" — a mudança de alcance fica PROPOSTA, e só vale depois "
+                    "que o oficial a aplicar na tela do agente")
     linhas = [
         INSTRUCAO,
         "ONDE VOCÊ ESTÁ AGORA:",
         f"    - Versão do sistema: {versao or 'não informada'}.",
-        f"    - Quem pediu: {usuario or 'não identificado'}.",
+        "    - Quem pediu: um administrador do sistema (papel ADMIN).",
         f"    - Provedor: {nome}, no modelo {preparo['modelo']}.",
         f"    - Ferramentas que mudam o sistema: {escrita}.",
         f"    - Turnos desta sessão: no máximo {preparo['teto_de_turnos']}, e o "
@@ -804,20 +813,24 @@ def _completar(eventos: list[dict]) -> list[dict]:
 # ------------------------------------------------------------- a gravação
 
 
-def _grava_pedido(con: sqlite3.Connection, sessao_id: int, *, pedido: str,
+def _grava_pedido(con: Any, sessao_id: int, *, pedido: str,
                   agora: str) -> None:
     """Grava a fala do oficial. **ESCREVE.** O texto já vem mascarado."""
+    # A ordem é o MAX + 1 de `proxima_ordem`: trava antes de ler, como todo
+    # número que se lê para gravar. As outras gravações daqui fazem o mesmo.
+    banco(con).travar("ag_passos.ordem")
     AG.registrar_passo(con, sessao_id, ordem=AG.proxima_ordem(con, sessao_id),
                        tipo=AG.PEDIDO, conteudo=pedido, agora=agora)
 
 
-def _grava_turno(con: sqlite3.Connection, sessao_id: int, *, texto: str,
+def _grava_turno(con: Any, sessao_id: int, *, texto: str,
                  chamadas: list[dict], agora: str) -> None:
     """Grava o que o modelo disse e o que ele pediu. **ESCREVE.**
 
     O texto e os argumentos já vêm mascarados de quem chamou. Mascarar de novo
     aqui seria a segunda régua — e a segunda régua é a que diverge.
     """
+    banco(con).travar("ag_passos.ordem")
     ordem = AG.proxima_ordem(con, sessao_id)
     if texto:
         AG.registrar_passo(con, sessao_id, ordem=ordem, tipo=AG.TEXTO,
@@ -833,9 +846,10 @@ def _grava_turno(con: sqlite3.Connection, sessao_id: int, *, texto: str,
         ordem += 1
 
 
-def _grava_resultados(con: sqlite3.Connection, sessao_id: int, *,
+def _grava_resultados(con: Any, sessao_id: int, *,
                       resultados: list[dict], agora: str) -> None:
     """Grava o que cada ferramenta devolveu. **ESCREVE.**"""
+    banco(con).travar("ag_passos.ordem")
     ordem = AG.proxima_ordem(con, sessao_id)
     for resultado in resultados:
         AG.registrar_passo(con, sessao_id, ordem=ordem, tipo=AG.RESULTADO,
@@ -846,9 +860,10 @@ def _grava_resultados(con: sqlite3.Connection, sessao_id: int, *,
         ordem += 1
 
 
-def _aviso(con: sqlite3.Connection, sessao_id: int, texto: str, *,
+def _aviso(con: Any, sessao_id: int, texto: str, *,
            agora: str) -> None:
     """Grava um recado para quem lê a tela, e não para o modelo. **ESCREVE.**"""
+    banco(con).travar("ag_passos.ordem")
     AG.registrar_passo(con, sessao_id, ordem=AG.proxima_ordem(con, sessao_id),
                        tipo=AG.AVISO, conteudo=texto, agora=agora)
 
@@ -868,7 +883,6 @@ def _rodar(db: Any, *, sessao_id: int, pedidos: list[str], preparo: dict,
     diagnóstico inteiro por causa da última chamada.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         sessao = AG.ler_sessao(con, sessao_id)
     # OS NÚMEROS SOMAM ATRAVÉS DAS RETOMADAS. O teto de turnos vale por rodada
     # — cada fala nova do oficial é uma decisão dele, e é o humano que segura o
@@ -885,7 +899,7 @@ def _rodar(db: Any, *, sessao_id: int, pedidos: list[str], preparo: dict,
     erro = ""
     modelo = str(preparo["modelo"])
 
-    def _fecha(con: sqlite3.Connection, situacao: str, falha: str) -> None:
+    def _fecha(con: Any, situacao: str, falha: str) -> None:
         """Fecha a conta da sessão. **ESCREVE.** Soma o que havia com o de agora."""
         AG.atualizar_sessao(con, sessao_id, estado=situacao,
                             turnos=turnos_antes + turnos,
@@ -908,7 +922,6 @@ def _rodar(db: Any, *, sessao_id: int, pedidos: list[str], preparo: dict,
     forcado = False
     while True:
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             ligada = AG.escrita_ligada(con)
             passos = AG.passos_da_sessao(con, sessao_id)
 
@@ -966,11 +979,15 @@ def _rodar(db: Any, *, sessao_id: int, pedidos: list[str], preparo: dict,
         conversa = _poupar(_conversa(pedidos, passos))
 
         try:
+            # O REGISTRO DO USO DE IA (LF01): o transporte grava a sessão e
+            # quem pediu, e nada da conversa — que já sobe mascarada (`_seguro`).
             resposta = PROV.conversar(
                 pasta_de_dados, provedor=preparo["provedor"],
                 sistema=instrucao, conversa=conversa,
                 ferramentas=ferramentas,
-                modelo=modelo, maximo_de_saida=maximo_de_saida, prazo=prazo)
+                modelo=modelo, maximo_de_saida=maximo_de_saida, prazo=prazo,
+                modulo="agente", finalidade="agente", usuario=usuario,
+                referencia=f"ag_sessoes:{sessao_id}", mascarado=True)
         except PROV.AgenteError as falha:
             estado = AG.ERRO
             erro = str(falha)
@@ -1111,7 +1128,7 @@ def _rodar(db: Any, *, sessao_id: int, pedidos: list[str], preparo: dict,
 # ------------------------------------------------ quem ficou sem resposta
 
 
-def recuperar_sessoes_interrompidas(con: sqlite3.Connection, *,
+def recuperar_sessoes_interrompidas(con: Any, *,
                                     agora: str) -> int:
     """Fecha as sessões que ficaram ABERTAS porque o programa parou no meio.
     **ESCREVE.** Devolve quantas fechou.
@@ -1131,9 +1148,13 @@ def recuperar_sessoes_interrompidas(con: sqlite3.Connection, *,
     **É IDEMPOTENTE**, como a recuperação das folhas presas: sessão já fechada
     não se move de novo, e chamar duas vezes não escreve o aviso duas vezes.
     """
-    abertas = list(con.execute(
+    # Lê e grava as mesmas linhas: FOR UPDATE, senão duas aberturas do banco ao
+    # mesmo tempo fechariam a mesma sessão duas vezes, com dois avisos.
+    bd = banco(con)
+    bd._escrita()
+    abertas = bd.ler(
         "SELECT id, turnos, tokens_de_entrada, tokens_de_saida FROM ag_sessoes "
-        "WHERE estado = ? ORDER BY id", (AG.ABERTA,)))
+        "WHERE estado = %s ORDER BY id FOR UPDATE", (AG.ABERTA,))
     for sessao in abertas:
         _aviso(con, int(sessao["id"]), AVISO_DE_INTERRUPCAO, agora=agora)
         AG.atualizar_sessao(
@@ -1233,7 +1254,6 @@ def _retomar_rodada(db: Any, sessao_id: int, *, pedido: str,
         pedido, o_que="Escreva o que você quer acrescentar à conversa.")
     hora = _relogio(agora)
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         sessao = AG.ler_sessao(con, int(sessao_id))
     if not sessao:
         raise AgenteRecusado(f"Não achei a sessão #{int(sessao_id)}.")
@@ -1309,7 +1329,6 @@ def andamento(db: Any, sessao_id: int, *, desde: int = 0,
     ferramenta pode ter dezenas de linhas.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         sessao = AG.ler_sessao(con, int(sessao_id))
         if not sessao:
             raise AgenteRecusado(f"Não achei a sessão #{int(sessao_id)}.")
@@ -1317,9 +1336,9 @@ def andamento(db: Any, sessao_id: int, *, desde: int = 0,
                                                   ordem=desde)]
         mudancas = [dict(m) for m in AG.mudancas_desde(con, int(sessao_id),
                                                       mudanca_id=mudanca_desde)]
-        total = con.execute(
-            "SELECT COUNT(*) c FROM ag_passos WHERE sessao_id = ?",
-            (int(sessao_id),)).fetchone()["c"]
+        total = int(banco(con).valor(
+            "SELECT COUNT(*) AS c FROM ag_passos WHERE sessao_id = %s",
+            (int(sessao_id),)))
     return {
         "sessao": dict(sessao),
         "rodando": em_curso(sessao_id),
@@ -1407,7 +1426,6 @@ def retrato(db: Any, sessao_id: int) -> dict:
     lista na mão — e é a mesma conta que o `andamento` faz.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         sessao = AG.ler_sessao(con, int(sessao_id))
         if not sessao:
             raise AgenteRecusado(f"Não achei a sessão #{int(sessao_id)}.")
@@ -1430,7 +1448,6 @@ def painel(db: Any, *, pasta_de_dados: Any, hoje: Any) -> dict:
     uma leitura só, porque a tela é uma só.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         config = AG.config_para_tela(con)
         sessoes = [dict(r) for r in AG.sessoes_recentes(con)]
         mudancas = [dict(r) for r in AG.mudancas_recentes(con)]
@@ -1502,7 +1519,6 @@ def resumo_para_a_gaveta(db: Any, *, pasta_de_dados: Any, hoje: Any) -> dict:
     ligada.
     """
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         config = AG.config_para_tela(con)
         ultimas = [dict(r) for r in AG.sessoes_recentes(con, limite=1)]
         do_dia = AG.contagem_do_dia(con, desde=str(hoje or "")[:10])
@@ -1529,7 +1545,8 @@ def config_para_tela(db: Any) -> dict:
 
 def salvar_config(db: Any, *, provedor: Any = None, modelo: Any = None,
                   teto_de_turnos: Any = None, teto_de_sessoes: Any = None,
-                  escrita_ligada: Any = None) -> dict:
+                  escrita_ligada: Any = None,
+                  escrita_sem_confirmacao: Any = None) -> dict:
     """Grava a configuração do agente. **ESCREVE.**
 
     **Os tetos passam por aqui e são presos nos limites duros** — quem digita
@@ -1555,6 +1572,9 @@ def salvar_config(db: Any, *, provedor: Any = None, modelo: Any = None,
         if escrita_ligada is not None:
             AG.gravar_config(con, AG.CHAVE_ESCRITA,
                              "1" if _ligado(escrita_ligada) else "0")
+        if escrita_sem_confirmacao is not None:
+            AG.gravar_config(con, AG.CHAVE_SEM_CONFIRMACAO,
+                             "1" if _ligado(escrita_sem_confirmacao) else "0")
         return AG.config_para_tela(con)
 
 
@@ -1596,3 +1616,15 @@ def desfazer(db: Any, mudanca_id: int, *, agora: Any, usuario: str) -> dict:
     """
     hora = _relogio(agora)
     return FER.desfazer(db, int(mudanca_id), agora=hora(), usuario=usuario)
+
+
+def aplicar(db: Any, mudanca_id: int, *, agora: Any, usuario: str) -> dict:
+    """Aplica a mudança que o agente deixou PROPOSTA. **ESCREVE.**
+
+    É o clique do oficial que o LS03 (M4) pôs entre o modelo e o sistema: com a
+    confirmação ligada, o agente só propõe, e quem muda é quem clica aqui. Mora
+    no domínio pelo mesmo motivo do desfazer — as recusas são as mesmas, venha
+    o clique da tela ou de onde vier.
+    """
+    hora = _relogio(agora)
+    return FER.aplicar(db, int(mudanca_id), agora=hora(), usuario=usuario)

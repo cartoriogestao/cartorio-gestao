@@ -1,0 +1,12 @@
+{
+  "chave": "NOTAS_ABERTURA_SUBSTABELECIMENTO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Abertura do substabelecimento",
+  "formato": "CHAVES",
+  "explica": "O começo do teor do substabelecimento montado pelo sistema («SAIBAM…»), antes das partes. Data, cidade e estado são claros.",
+  "campos": [
+    "data_extenso",
+    "cidade",
+    "uf_extenso"
+  ]
+}

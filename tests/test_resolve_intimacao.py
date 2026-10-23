@@ -282,6 +282,23 @@ def test_os_que_podem_ir_vem_primeiro_na_lista(s):
     assert RI.candidatos(con, limite=1)[0]["id"] == apontado
 
 
+def test_os_devedores_do_mesmo_titulo_saem_na_ordem_em_que_entraram(s):
+    """Desempate do L042R: a lista ordena pelo título, e os devedores do mesmo
+    título empatavam — no PostgreSQL, sem `d.id`, saíam na ordem que o banco
+    quisesse. Os ids vão ao contrário de propósito: é assim que o empate aparece."""
+    tid = _titulo(s)
+    con = sqlite3.connect(s["banco"])
+    con.execute("DELETE FROM pt_devedores WHERE titulo_id = ?", (tid,))
+    for ident, nome in ((90003, "SEGUNDO DEVEDOR DE TAL"),
+                        (90002, "PRIMEIRO DEVEDOR DE TAL")):
+        con.execute("INSERT INTO pt_devedores (id, titulo_id, nome) VALUES (?, ?, ?)",
+                    (ident, tid, nome))
+    con.commit()
+    nomes = [x["devedor_nome"] for x in RI.candidatos(con) if x["id"] == tid]
+    con.close()
+    assert nomes == ["PRIMEIRO DEVEDOR DE TAL", "SEGUNDO DEVEDOR DE TAL"]
+
+
 # ------------------------------------------------ o identificador
 
 

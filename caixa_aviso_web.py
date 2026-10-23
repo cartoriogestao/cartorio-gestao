@@ -12,6 +12,7 @@ from datetime import datetime
 from flask import request, session
 
 import caixa_aviso as CA
+from bd_nativo import banco
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
@@ -30,9 +31,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         try:
             nome = usuario_nome()
             with db.connect() as con:
-                papel = con.execute("SELECT role FROM users WHERE id = ?",
-                                    (session.get("user_id"),)).fetchone()
-                e_admin = bool(papel and papel[0] == "ADMIN")
+                papel = banco(con).valor("SELECT role FROM users WHERE id = %s",
+                                         (session.get("user_id"),))
+                e_admin = papel == "ADMIN"
                 fim = db.get_setting(CA.CHAVE_FIM, CA.FIM_PADRAO)
                 aviso = CA.situacao(con, nome, datetime.now(), fim, e_admin=e_admin)
         except (sqlite3.Error, RuntimeError, KeyError):

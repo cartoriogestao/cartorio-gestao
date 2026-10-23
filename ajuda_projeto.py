@@ -52,6 +52,7 @@ from typing import Any
 import ajuda_base as BASE
 import ajuda_mapa as MAPA
 import ajuda_regras as REGRAS
+from bd_nativo import banco
 
 RAIZ = Path(__file__).resolve().parent
 # A PASTA VEM DA BASE, E NÃO DE UMA SEGUNDA ESCRITA DO CAMINHO. Quem lê os
@@ -257,7 +258,7 @@ def conferir_biblioteca() -> str:
             "acervo de leitura ficou para trás.)")
 
 
-def relatos(con: sqlite3.Connection) -> dict:
+def relatos(con: Any) -> dict:
     """O que foi apontado nesta casa, e em que pé está — medido na tabela.
 
     RESPONDE «O QUE JA FOI FEITO E O QUE FALTA» com o dado da propria casa, e
@@ -265,19 +266,18 @@ def relatos(con: sqlite3.Connection) -> dict:
     lista sem numero nao serve: aqui cada um vem com o `#`, que e o mesmo
     numero da tela e do relatorio.
     """
-    con.row_factory = sqlite3.Row
-    linhas = [dict(r) for r in con.execute(
+    linhas = banco(con).ler(
         """SELECT id, titulo, situacao, onde, versao, primeira_em, fechado_em,
                   fechado_nota
              FROM aj_problemas
             WHERE origem = 'RELATADO'
-         ORDER BY id""")]
+         ORDER BY id""")
     abertos = [x for x in linhas if (x["situacao"] or "") == "ABERTO"]
     return {"todos": linhas, "abertos": abertos,
             "quantos": len(linhas), "quantos_abertos": len(abertos)}
 
 
-def pendencias_declaradas(con: sqlite3.Connection) -> list[dict]:
+def pendencias_declaradas(con: Any) -> list[dict]:
     """O que só o oficial pode informar — de `implantacao`, e não daqui.
 
     PENDENCIA E DECLARADA, NAO ADIVINHADA, e quem a declara e quem a descobriu.
@@ -295,9 +295,9 @@ def pendencias_declaradas(con: sqlite3.Connection) -> list[dict]:
     """
     import implantacao
     # `abertas` monta dicionario a partir da linha, e para isso a conexao
-    # precisa da `row_factory`. O `db.connect()` da casa ja a traz; um `con`
-    # cru, nao — e ali o erro sai falando de sequencia de dicionario, que nao
-    # diz a ninguem o que fazer. Uma linha aqui poupa esse enigma.
+    # precisa devolver linhas nomeadas. O `db.connect()` da casa ja as traz; um
+    # `con` cru, nao — e ali o erro sai falando de sequencia de dicionario, que
+    # nao diz a ninguem o que fazer. Uma linha aqui poupa esse enigma.
     #
     # (A frase original citava a mensagem do SQLite ao pe da letra, e ela tem
     #  dentro uma palavra de comando de escrita. O varredor que prova que este
@@ -310,11 +310,10 @@ def pendencias_declaradas(con: sqlite3.Connection) -> list[dict]:
     #  justamente esse nome, e derrubou a suite inteira: eu tinha citado, no
     #  comentario que manda nao citar. Dois varredores diferentes, o mesmo
     #  engano, e ele custou uma rodada de vinte e nove minutos.)
-    con.row_factory = sqlite3.Row
     return [dict(x) for x in implantacao.abertas(con)]
 
 
-def resumo(con: sqlite3.Connection, versao: str = "") -> dict:
+def resumo(con: Any, versao: str = "") -> dict:
     """Tudo junto, para a tela e para o contexto da consulta."""
     r = relatos(con)
     docs = documentos()
@@ -327,7 +326,7 @@ def resumo(con: sqlite3.Connection, versao: str = "") -> dict:
     }
 
 
-def para_a_consulta(con: sqlite3.Connection, *, versao: str = "",
+def para_a_consulta(con: Any, *, versao: str = "",
                     documento_pedido: str = "") -> str:
     """O texto que vai junto da pergunta. É a fatia, e não a biblioteca.
 
@@ -425,7 +424,7 @@ def para_a_consulta(con: sqlite3.Connection, *, versao: str = "",
     return "\n".join(partes)
 
 
-def mudancas_medidas(con: sqlite3.Connection) -> list[str]:
+def mudancas_medidas(con: Any) -> list[str]:
     """O que mudou entre as duas ultimas versoes medidas. So LE.
 
     **E O QUE A AJUDA NAO SABIA, E NINGUEM ESCREVIA.** Havia um roteiro por
@@ -446,10 +445,9 @@ def mudancas_medidas(con: sqlite3.Connection) -> list[str]:
     ja estava escrita e ninguem a lia. Ver `_notas_do_desenvolvimento`.
     """
     try:
-        linhas = con.execute(
+        linhas = banco(con).ler(
             "SELECT versao, medida_em, fotografia FROM aj_mapas "
-            "ORDER BY id DESC LIMIT 2"
-        ).fetchall()
+            "ORDER BY id DESC LIMIT 2")
     except sqlite3.Error:
         # BANCO ANTIGO, SEM A TABELA. Nao ha o que comparar, e isto some da
         # tela, que e o que a falta de dado e. Um vazio aqui NAO vira «nada
@@ -530,7 +528,7 @@ def _primeira_frase(texto: str, limite: int = 240) -> str:
     return recorte.rsplit(" ", 1)[0] + " […]"
 
 
-def _notas_do_desenvolvimento(con: sqlite3.Connection, *, desde: str) -> list[str]:
+def _notas_do_desenvolvimento(con: Any, *, desde: str) -> list[str]:
     """O que o desenvolvimento escreveu sobre os relatos. SO LE.
 
     **A JANELA E ABERTA EM CIMA, E ISSO E MEDIDO.** Ela comeca na versao que a
@@ -546,12 +544,12 @@ def _notas_do_desenvolvimento(con: sqlite3.Connection, *, desde: str) -> list[st
     if not desde:
         return []
     try:
-        achados = con.execute(
+        achados = banco(con).ler(
             "SELECT id, situacao, nota_dev_estado, nota_dev, nota_dev_em "
             "FROM aj_problemas "
             "WHERE nota_dev IS NOT NULL AND TRIM(nota_dev) <> '' "
-            "  AND nota_dev_em IS NOT NULL AND nota_dev_em > ? "
-            "ORDER BY nota_dev_em, id", (str(desde),)).fetchall()
+            "  AND nota_dev_em IS NOT NULL AND nota_dev_em > %s "
+            "ORDER BY nota_dev_em, id", (str(desde),))
     except sqlite3.Error:
         # BANCO DE ANTES DAS COLUNAS. Nao e erro: e uma instalacao que ainda
         # nao tem notas, e a secao some — dizer «nenhuma nota» seria afirmar

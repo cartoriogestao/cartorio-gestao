@@ -1,0 +1,13 @@
+<!doctype html>
+{# O REQUERIMENTO DO REGISTRO TARDIO, IMPRESSO DIRETO DA TELA DE PREENCHER —
+   21/10/2026. Mesma macro da conferência (`_requerimento_tardio.html`): dois
+   papéis para o mesmo requerimento divergiriam no primeiro conserto. #}
+{% from '_requerimento_tardio.html' import requerimento_tardio %}
+<html lang="pt-BR"><head><meta charset="utf-8">
+<title>Requerimento de registro tardio</title>
+<style>@page { margin: 15mm } body { margin: 0 auto; max-width: 180mm; background: #fff; color: #000 }
+h2, h3 { page-break-after: avoid }</style></head>
+<body>
+{{ requerimento_tardio(form, sv, regra, hoje_br) }}
+<script>window.addEventListener("load", function () { window.print(); });</script>
+</body></html>

@@ -1,0 +1,10 @@
+{
+  "chave": "RI_NEGATIVA_CRITERIO_BAIRRO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Negativa de imóvel — busca pelo bairro",
+  "formato": "JINJA",
+  "explica": "Como a certidão negativa de imóvel diz o critério da busca quando só o bairro foi informado; a rota da negativa decide (ri_web).",
+  "campos": [
+    "bairro"
+  ]
+}

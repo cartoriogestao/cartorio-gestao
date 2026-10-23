@@ -7,6 +7,19 @@
   {% if r.caminho_pdf %}
   <a class="button" href="{{ url_for('notas_sinal_pdf', sinal_id=r.sinal_id) }}" target="_blank">PDF do sinal</a>
   {% endif %}
+  {# A ETIQUETA DO SINAL — LD02, 21/10/2026. O reconhecimento selava e não
+     tinha papel: o documento saía do balcão sem o selo nele (CN-MA art. 131;
+     art. 874). É a mesma tira do reconhecimento de firma, por POST com o
+     token, porque imprimir soma a contagem da segunda via. #}
+  {% if not r.cancelado %}
+  <form method="post" target="_blank" style="display:inline"
+        action="{{ url_for('notas_sinal_reconhecimento_etiqueta', reconhecimento_id=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button class="button primary">
+    {% if r.etiqueta_impressoes %}Reimprimir etiqueta{% else %}Imprimir etiqueta{% endif %}</button></form>
+  {% if r.etiqueta_impressoes %}
+    <span class="small muted">já impressa {{ r.etiqueta_impressoes }}&times;</span>
+  {% endif %}
+  {% endif %}
 </div>
 <section class="panel" style="padding:14px">
   <p><strong>Titular:</strong> {{ r.titular }}</p>

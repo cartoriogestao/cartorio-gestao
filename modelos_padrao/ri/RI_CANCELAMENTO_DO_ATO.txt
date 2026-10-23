@@ -1,0 +1,1 @@
+CANCELAMENTO DO ATO {{ rotulo }}. Nos termos do requerimento e da documentação apresentada, fica cancelado o ato {{ rotulo }} desta matrícula. FUNDAMENTO: {{ motivo }}

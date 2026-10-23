@@ -114,6 +114,9 @@ def test_o_escrevente_abre_a_carga(cg_casa):
 def test_o_campo_aceita_outro_caminho_e_a_previa_e_a_daquele_arquivo(s, tmp_path):
     """O CAMPO é a razão de a tela existir: aponta para outro acervo."""
     outro = _acervo_no_disco(tmp_path / "copia_de_outra_maquina.sqlite3")
+    # A cópia mora na pasta de importação que o oficial gravou: caminho
+    # digitado fora das pastas da casa não é aberto desde o LX12 (LS02 A2).
+    s["app"].extensions["db"].set_settings({"pastas_de_importacao": str(tmp_path)})
     c = s["c"]
     html = c.post(TELA, data={"csrf_token": _token(c.get(TELA).get_data(as_text=True)),
                               "o_que": "conferir", "caminho": str(outro)},
@@ -194,22 +197,31 @@ def test_importar_de_novo_nao_duplica_nada(s):
 
 
 def test_a_lista_do_livro_3_tem_as_duas_portas(s):
-    """O mesmo desenho do RCPN: o lote do acervo e o registro digitado."""
+    """Eram duas portas, o lote do acervo e o registro digitado. Desde
+    17/10/2026 (importação do E-Ofício encerrada) o lote saiu da tela: fica o
+    registro digitado, e a rota do lote continua pelo endereço."""
     html = s["c"].get("/livro3").get_data(as_text=True)
     assert "Entrar com registro" in html
-    assert "Importar do acervo" in html
-    assert TELA in html
+    assert "Importar do acervo" not in html
+    assert TELA not in html
     assert "manual/LIVRO3_REGISTRO" in html
 
 
 def test_as_importacoes_do_ri_levam_ao_livro_3(s):
+    """O link para o lote do E-Ofício saiu em 17/10/2026; o do registro
+    manual do Livro 3 fica."""
     html = s["c"].get("/registro-imoveis/importacoes").get_data(as_text=True)
-    assert TELA in html
+    assert TELA not in html
     assert "Livro 3" in html
-    assert "não traz o Livro 3" in html
+    assert "manual/LIVRO3_REGISTRO" in html
+    assert "não traz o Livro 3" not in html
 
 
 def test_a_lista_do_livro_3_aponta_a_carga_quando_esta_vazia(s):
+    """Desde 17/10/2026 a lista vazia não aponta mais para a carga do
+    E-Ofício: a importação terminou."""
     html = s["c"].get("/livro3").get_data(as_text=True)
     assert "Nada aqui" in html
-    assert "Importar do acervo" in html
+    assert "Importar do acervo" not in html
+    assert TELA not in html
+    assert "/atribuicoes/importar" not in html

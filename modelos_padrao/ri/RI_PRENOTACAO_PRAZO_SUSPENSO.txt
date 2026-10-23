@@ -1,0 +1,1 @@
+{{ limite }} — prazo suspenso desde {{ desde }} ({{ motivo }}); o limite avança pelos dias úteis parados

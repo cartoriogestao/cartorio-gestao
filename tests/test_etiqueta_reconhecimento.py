@@ -36,6 +36,9 @@ sys.path.insert(0, str(RAIZ))
 
 from notas_schema import texto_da_etiqueta            # noqa: E402
 
+sys.path.insert(0, str(RAIZ / "tests"))
+from protocolo_de_teste import atender_protocolo_pago  # noqa: E402
+
 AGORA = "2026-08-17 09:00:00"
 
 
@@ -60,6 +63,14 @@ def test_o_fecho_e_acrescentado():
     assert saida == ("RECONHEÇO POR SEMELHANÇA A FIRMA DE MARIA DA SILVA. DOU FÉ. "
                      "EM TEST. DA VERDADE. CIDADE EXEMPLO-MA,17/08/2026.")
     assert "_" not in saida
+
+
+def _imprimir(c, url, **kw):
+    """A etiqueta é POST com o token desde o LX11 (M8 do LS01): GET que grava
+    a contagem não passava pelo CSRF."""
+    with c.session_transaction() as sessao:
+        token = sessao["csrf_token"]
+    return c.post(url, data={"csrf_token": token}, **kw)
 
 
 def test_ato_importado_nao_ganha_o_fecho_duas_vezes():
@@ -141,6 +152,13 @@ def serventia(cg_casa):
                                    abertura, criado_em)
            VALUES ('MARIA DA SILVA','MARIA DA SILVA','52998224725','MANUAL',1,
                    '2026-01-10',?)""", (AGORA,))
+    # O CLIENTE PAGOU ANTES, como no balcão — desde o LX16 (19/10/2026) o
+    # selo pago só sai com protocolo e pagamento. Sem isto o selo nem é
+    # pedido, a rota desfaz o reconhecimento e não há etiqueta a imprimir. É
+    # dado de teste, e não exceção na trava: o caminho que o escrevente faz
+    # pelas telas está em `test_o_balcao_abre_o_protocolo_paga_e_reconhece`.
+    atender_protocolo_pago(con, usuario="LAURA MARIA DA COSTA",
+                           codigos=("13.17.2",))
     con.commit()
     cartao = con.execute("SELECT id FROM nt_cartoes").fetchone()[0]
     con.close()
@@ -197,7 +215,7 @@ def sem_o_selo(s):
 
 
 def etiqueta(s):
-    return s["cliente"].get(f"/notas/reconhecimento/{s['rec']}/etiqueta")
+    return _imprimir(s["cliente"], f"/notas/reconhecimento/{s['rec']}/etiqueta")
 
 
 def test_a_etiqueta_abre_com_o_teor_completo(serventia):
@@ -299,7 +317,7 @@ def test_ato_cancelado_nao_imprime_etiqueta(serventia):
     s["cliente"].post(f"/notas/reconhecimento/{s['rec']}",
                       data={"csrf_token": token, "acao": "cancelar",
                             "motivo": "erro de digitação"}, follow_redirects=True)
-    r = s["cliente"].get(f"/notas/reconhecimento/{s['rec']}/etiqueta",
+    r = _imprimir(s["cliente"], f"/notas/reconhecimento/{s['rec']}/etiqueta",
                          follow_redirects=True)
     texto = r.get_data(as_text=True)
     assert "não se imprime etiqueta" in texto
@@ -313,7 +331,7 @@ def test_ato_cancelado_nao_imprime_etiqueta(serventia):
 
 
 def test_ato_inexistente_da_404(serventia):
-    assert serventia["cliente"].get(
+    assert _imprimir(serventia["cliente"],
         "/notas/reconhecimento/99999/etiqueta").status_code == 404
 
 
@@ -653,3 +671,194 @@ def test_selo_sem_texto_nao_poe_rotulos_secos_na_etiqueta(serventia):
     assert "RECFIR000000D0XB4FK298AWP401" in html
     assert _linha_de_valores(html) is None, (
         "sem texto no razão não há linha — e não uma linha de rótulos secos")
+# ======================================== o balcão, com a trava do selo pago
+#
+# A bancada de cima chega com o protocolo pago montado à mão
+# (`atender_protocolo_pago`). Este teste faz o caminho que o ESCREVENTE faz
+# pelas telas, depois do LX16: o reconhecimento é recusado, o quadro «Para
+# selar este ato falta» diz o que falta, e cada falta se resolve num botão
+# até o ato sair selado. Se algum passo não tiver saída, o balcão para — e é
+# isso que este teste existe para pegar.
+
+def _token(html: str) -> str:
+    return re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+
+
+def _flashes(html: str) -> list[str]:
+    return [re.sub(r"<[^>]+>", " ", m) for m in
+            re.findall(r'<div class="flash [^"]*" data-aviso>(.*?)</div>', html,
+                       re.DOTALL)]
+
+
+def test_o_balcao_abre_o_protocolo_paga_e_reconhece(cg_casa):
+    """Reconhecer firma com a trava do selo pago, só pelas telas, como USER.
+
+    O papel é o do escrevente (USER), e não o do oficial: é quem está no
+    balcão, e a válvula do ADMIN («liberar este selo») não serve a ele.
+    """
+    if not _tem_cryptography():
+        pytest.skip("o selador de mentira precisa de `cryptography`")
+    import selador_cliente as CL
+    import selador_config as SC
+    from bd_nativo import banco as nativo
+    from selador_falso import SeladorFalso, impressao_digital
+
+    app, banco, dados = cg_casa["app"], cg_casa["banco"], cg_casa["dados"]
+    cg_casa["db"].create_user("escrevente", "PEDRO EXEMPLO ALVES",
+                              "Senha#12345", "USER")
+    cg_casa["db"].set_settings({"ri_cidade": "Cidade Exemplo", "ri_uf": "MA",
+                                "ri_cns": "000000",
+                                "selo_tabela_custas_em": "2026-01-01"})
+    con = sqlite3.connect(banco)
+    bd = nativo(con)
+    bd.escrever("""INSERT INTO cx_servicos
+                       (codigo, codigo_tj, descricao, descricao_norm, ativo)
+                   VALUES (413, '13.17.2',
+                           'Reconhecimento de firma, por assinatura',
+                           'RECONHECIMENTO DE FIRMA, POR ASSINATURA', 1)
+                   ON CONFLICT DO NOTHING""")
+    # O PREÇO DO ITEM, que o caixa lê da tabela vigente: o valor do protocolo
+    # não se digita. Valores de exemplo, não os da tabela do TJMA.
+    vigencia = bd.valor("SELECT codigo FROM cx_vigencias WHERE vigente = 1 "
+                        "ORDER BY codigo LIMIT 1")
+    if vigencia is None:
+        vigencia = 1
+        bd.escrever("INSERT INTO cx_vigencias (codigo, descricao, vigente) "
+                    "VALUES (%s, '2026', 1)", (vigencia,))
+    bd.escrever("""INSERT INTO cx_servico_valores (servico, vigencia,
+                       emolumentos, ferc, femp, fadep, ferrfis, total)
+                   VALUES (413, %s, '16,31', '0,50', '0,65', '0,65', '0,00',
+                           '18,11')
+                   ON CONFLICT DO NOTHING""", (vigencia,))
+    cartao = bd.escrever(
+        """INSERT INTO nt_cartoes (nome, nome_norm, documento, origem, ativo,
+                                   abertura, criado_em)
+           VALUES ('MARIA DA SILVA','MARIA DA SILVA','52998224725','MANUAL',1,
+                   '2026-01-10',%s) RETURNING id""", (AGORA,))[0]["id"]
+    con.commit()
+    con.close()
+
+    c = app.test_client()
+    c.post("/login", data={"username": "escrevente", "password": "Senha#12345",
+                           "csrf_token": _token(c.get("/login").get_data(as_text=True))},
+           follow_redirects=True)
+
+    def reconhecer():
+        token = _token(c.get("/notas/reconhecimento").get_data(as_text=True))
+        return c.post("/notas/reconhecimento",
+                      data={"csrf_token": token, "acao": "reconhecer",
+                            "cartao_id": str(cartao), "especie": "SEMELHANCA"},
+                      follow_redirects=True)
+
+    def ler(sql, parametros=()):
+        con = sqlite3.connect(banco)
+        try:
+            return nativo(con).um(sql, parametros)
+        finally:
+            con.close()
+
+    def quantos_atos():
+        return ler("SELECT count(*) AS n FROM nt_reconhecimentos")["n"]
+
+    with SeladorFalso() as aparelho:
+        SC.gravar_credencial(dados, "fulano.detal123", "abcde123", agora=AGORA)
+        CL.esquecer_tokens()
+        con = sqlite3.connect(banco)
+        with con:
+            SC.gravar(con, base_url=aparelho.base, usuario="fulano.detal123",
+                      agora=AGORA)
+            CL.fixar_certificado(con, aparelho.base, sha256=impressao_digital(),
+                                 agora=AGORA, usuario="TESTE")
+        con.close()
+
+        # 1. SEM PROTOCOLO: o ato fica SUSPENSO, sem selo e sem etiqueta —
+        #    22/10/2026, decisão do oficial («pode ser suspenso, com botão
+        #    para selar depois do pagamento»), que é o que o relato #77
+        #    pedia. Até essa data este passo cobrava o ato APAGADO; o teste
+        #    foi virado, e não apagado.
+        r = reconhecer()
+        assert quantos_atos() == 1
+        suspenso = ler("SELECT id, selo FROM nt_reconhecimentos ORDER BY id DESC LIMIT 1")
+        assert not (suspenso["selo"] or "").strip()
+        recado = " ".join(_flashes(r.get_data(as_text=True)))
+        assert "SUSPENSO" in recado and "escolha o protocolo" in recado.lower()
+        # E o suspenso não imprime etiqueta: colada, poria no mundo o ato sem
+        # o selo pago.
+        tela = c.get(f"/notas/reconhecimento/{suspenso['id']}").get_data(as_text=True)
+        etiqueta = c.post(f"/notas/reconhecimento/{suspenso['id']}/etiqueta",
+                          data={"csrf_token": _token(tela)}, follow_redirects=True)
+        assert "suspenso esperando o pagamento" in " ".join(
+            _flashes(etiqueta.get_data(as_text=True)))
+
+        # 2. O QUADRO, sem procurar: o menu «Selo e caixa» não aparece para
+        #    USER, e voltar ao balcão deixava o escrevente com a frase e
+        #    nenhuma porta. A recusa leva direto ao quadro, com os botões.
+        assert r.request.path == "/selo/cobertura", (
+            "a recusa por falta de protocolo não levou ao quadro «Selo e caixa»")
+        quadro = r.get_data(as_text=True)
+        assert "Para selar este ato falta:" in quadro
+        assert "Abrir protocolo" in quadro
+        assert 'href="/caixa/protocolos/novo"' in quadro
+
+        # 3. ABRIR O PROTOCOLO, pelo botão do quadro.
+        r = c.get("/caixa/protocolos/novo")
+        assert r.status_code == 302
+        lista = c.get(r.headers["Location"]).get_data(as_text=True)
+        r = c.post("/caixa/protocolos",
+                   data={"csrf_token": _token(lista), "acao": "novo",
+                         "interessado": "MARIA DA SILVA",
+                         "telefone": "(99) 90000-0000", "atribuicao": "NOTAS"})
+        assert r.status_code == 302, "o protocolo não abriu"
+        pid = int(re.search(r"/caixa/protocolos/(\d+)", r.headers["Location"]).group(1))
+        ficha = c.get(f"/caixa/protocolos/{pid}").get_data(as_text=True)
+
+        # 4. O ITEM DO RECONHECIMENTO, pelo serviço — o código 13.17.2 é o
+        #    que a trava procura no envelope do selo.
+        c.post(f"/caixa/protocolos/{pid}/itens",
+               data={"csrf_token": _token(ficha), "acao": "acrescentar",
+                     "servico": "413", "quantidade": "1"})
+        numero = ler("SELECT numero FROM cx_protocolos WHERE id = %s",
+                     (pid,))["numero"]
+        con = sqlite3.connect(banco)
+        itens = nativo(con).ler("SELECT id, codigo_ato FROM cx_protocolo_atos "
+                                "WHERE protocolo_id = %s ORDER BY id", (pid,))
+        con.close()
+        assert [i["codigo_ato"] for i in itens] == ["13.17.2"]
+        item_id = itens[0]["id"]
+
+        # 5. O PAGAMENTO: o caixa do escrevente aberto, e o item quitado.
+        caixa = c.get("/caixa").get_data(as_text=True)
+        c.post("/caixa", data={"csrf_token": _token(caixa), "acao": "abrir",
+                               "saldo_inicial": "0,00"})
+        c.post(f"/caixa/protocolos/{pid}/itens",
+               data={"csrf_token": _token(ficha), "acao": "quitar",
+                     "item_id": str(item_id), "forma_pagamento": "DINHEIRO"})
+        assert ler("SELECT quitado FROM cx_protocolo_atos WHERE id = %s",
+                   (item_id,))["quitado"] == 1, "o item não foi quitado no caixa"
+
+        # 6. ATENDER O PROTOCOLO, no quadro: daqui em diante todo selo pago do
+        #    escrevente procura o item ali.
+        quadro = c.get("/selo/cobertura").get_data(as_text=True)
+        r = c.post("/selo/cobertura/atender",
+                   data={"csrf_token": _token(quadro), "protocolo": numero},
+                   follow_redirects=True).get_data(as_text=True)
+        assert f"Você está atendendo o protocolo {numero}" in r
+        assert "✗" not in r.split("Protocolo que estou atendendo")[0], (
+            "o quadro ainda aponta falta depois do protocolo pago")
+
+        # 7. SELAR O SUSPENSO pelo botão da ficha, com o protocolo escolhido:
+        #    o mesmo ato sai selado, sem lavrar outro.
+        ficha_do_ato = c.get(f"/notas/reconhecimento/{suspenso['id']}").get_data(as_text=True)
+        assert "Suspenso" in ficha_do_ato and str(pid) in ficha_do_ato
+        html = c.post(f"/notas/reconhecimento/{suspenso['id']}/selar",
+                      data={"csrf_token": _token(ficha_do_ato),
+                            "protocolo_selo": str(pid)},
+                      follow_redirects=True).get_data(as_text=True)
+        assert quantos_atos() == 1, "selar o suspenso lavrou outro ato"
+
+    ato = ler("SELECT id, selo FROM nt_reconhecimentos ORDER BY id DESC LIMIT 1")
+    assert ato is not None, "o reconhecimento não foi lavrado: " + " ".join(_flashes(html))
+    assert ato["selo"], "o reconhecimento foi lavrado sem selo"
+    assert ler("SELECT quantidade_usada FROM cx_protocolo_atos WHERE id = %s",
+               (item_id,))["quantidade_usada"] == 1, (
+        "o selo não gastou a unidade do item pago")

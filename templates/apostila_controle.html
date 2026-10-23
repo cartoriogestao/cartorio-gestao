@@ -1,0 +1,64 @@
+<!doctype html>
+{# O CONTROLE DAS APOSTILAS EMITIDAS (LG03) — página própria, sem o menu,
+   porque é papel. Entram as emitidas e as canceladas depois de emitidas: as
+   duas ocupam número, e o controle sem a cancelada teria buraco. É o registro
+   do art. 7º da Convenção da Apostila (número e data; quem assinou e em que
+   qualidade, ou a autoridade do selo/carimbo). #}
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Controle das apostilas de Haia — {{ sv.unit_name }}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #111; margin: 1.5cm; }
+  h1 { font-size: 16pt; margin: 0 0 .2em; }
+  table { border-collapse: collapse; width: 100%; margin: .3em 0 .8em; }
+  th, td { border: 1px solid #bbb; padding: 3px 5px; vertical-align: top; text-align: left; font-size: 9.5pt; }
+  th { background: #eee; }
+  td.n, th.n { text-align: right; white-space: nowrap; }
+  .cancelada td { color: #8a1c1c; }
+  .muted { color: #555; font-size: 9.5pt; }
+  .barra { background: #f2f2f2; border: 1px solid #ccc; padding: .5em .8em; margin-bottom: 1em; }
+  .barra a, .barra button, .barra label { margin-right: 1em; }
+  @media print { .barra { display: none; } body { margin: 0; } }
+</style>
+</head>
+<body>
+<div class="barra">
+  <a href="{{ url_for('apostila_lista') }}">← Apostila de Haia</a>
+  <form method="get" action="{{ url_for('apostila_controle') }}" style="display:inline">
+    <label>De <input type="date" name="de" value="{{ r.de }}"></label>
+    <label>Até <input type="date" name="ate" value="{{ r.ate }}"></label>
+    <button type="submit">Filtrar</button>
+  </form>
+  <button type="button" onclick="window.print()">Imprimir</button>
+  {% with mensagens = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in mensagens %}<p>{{ m }}</p>{% endfor %}
+  {% endwith %}
+</div>
+<h1>Controle das apostilas de Haia</h1>
+<p>{{ sv.unit_name }}{% if sv.ri_cns %} — CNS {{ sv.ri_cns }}{% endif %}
+   · período: {{ r.de or 'desde o início' }} a {{ r.ate or 'hoje' }}</p>
+<p class="muted">Código de Normas do MA, art. 875; Convenção da Apostila (Decreto nº 8.660/2016), art. 7º.
+   Resolução CNJ nº 228/2016 e arts. 195 a 216 do Código Nacional de Normas: conferir no texto oficial.</p>
+{% if r.linhas %}
+<table>
+  <tr><th class="n">Nº de ordem</th><th>Emitida em</th><th>Código (CNJ)</th><th>Documento</th>
+      <th>Assinado por / qualidade</th><th>Selo ou carimbo de</th><th>Selo</th><th class="n">Total (R$)</th><th>Situação</th></tr>
+  {% for x in r.linhas %}
+  <tr{% if x.situacao == 'CANCELADA' %} class="cancelada"{% endif %}>
+    <td class="n">{{ x.ordem }}</td><td>{{ x.emitida_em }}</td><td>{{ x.codigo_cnj }}</td>
+    <td>{{ x.tipo_nome }}{% if x.documento_descricao %} — {{ x.documento_descricao }}{% endif %}</td>
+    <td>{% if x.signatario_nome %}{{ x.signatario_nome }}, {{ x.signatario_cargo }}{% else %}—{% endif %}</td>
+    <td>{{ x.autoridade or '—' }}</td><td>{{ x.selo or 'FALTA' }}</td>
+    <td class="n">{{ x.valores.total }}</td>
+    <td>{{ situacoes.get(x.situacao, x.situacao) }}{% if x.motivo %}: {{ x.motivo }}{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+<p>{{ r.emitidas }} emitida(s), {{ r.canceladas }} cancelada(s). Total das emitidas: R$ {{ r.total }}
+   (emolumentos R$ {{ r.emolumentos }}).</p>
+{% else %}
+<p class="muted">Nenhuma apostila emitida no período.</p>
+{% endif %}
+</body>
+</html>

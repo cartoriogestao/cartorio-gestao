@@ -1,0 +1,136 @@
+{# A REVISÃO DA TRANSCRIÇÃO PELA IA — LH11, pedido do oficial em 21/10/2026: «colocar
+   IA pra revisar as certidões transcritas (principalmente as de livros antigos)».
+   Entra DENTRO do formulário de emitir a certidão, para a justificativa viajar junto
+   com o pedido de emitir. Os dois botões daqui (revisar, dar por conferida) mandam
+   formulários próprios, que moram FORA deste (`form=`): formulário dentro de
+   formulário o navegador desmonta. Quem trava ou libera é a rota de emitir
+   (`revisao_transcricao.conferir_para_emitir`); esta tela só mostra.
+   Uso: {% if transcricao_painel %}{% include '_revisao_transcricao.html' %}{% endif %} #}
+{% set tp = transcricao_painel %}
+{% set r = tp.vale or tp.ultima %}
+<fieldset class="span2" id="certidao-transcricao"
+          data-situacao="{{ r.situacao if r else '' }}"
+          data-url-andamento="{{ url_for('ri_transcricao_andamento', matricula_id=m.id) }}"
+          style="border:2px solid #5b3fa0;border-radius:8px;padding:10px 14px">
+  <legend><strong>Revisão da transcrição pela IA</strong>
+    <span class="small muted">— certidão de inteiro teor (pelo texto ou pela reprodução)</span></legend>
+  <p class="small muted" style="margin:4px 0">
+    A IA confere o texto transcrito desta ficha
+    ({{ tp.paginas }} página(s) escaneada(s){% if tp.faltando %}, {{ tp.faltando }} sem arquivo{% endif %}{% if tp.atos_do_acervo %};
+    {{ tp.atos_do_acervo }} ato(s) do E-Ofício que saem depois do teor{% endif %})
+    contra a página do livro e aponta as divergências. Ela <strong>não corrige</strong> o texto:
+    corrigir é pelo caminho de correção, com auditoria, e teor selado não se altera.
+    {% if tp.manda_imagem %}A imagem da página vai ao provedor da IA — decisão do oficial de
+    21/10/2026, só nesta revisão.{% else %}<strong>O envio da imagem está desligado</strong>
+    (Configurações): a revisão confere só o texto contra a ficha e diz que não viu a página.{% endif %}
+  </p>
+  {# Sem IA nesta casa (sem chave, desligada, SANDBOX) o quadro nem aparece:
+     `revisao_transcricao.painel` devolve None, como a revisão prévia. #}
+  {% if not r or not tp.vale or r.situacao == 'ERRO' %}
+  <button type="submit" class="button" form="form-transcricao-ia">Revisar a transcrição com IA</button>
+  {% endif %}
+
+  {% if r %}
+    {% if not tp.vale %}
+    <div class="notice warning small" style="margin:8px 0">O texto ou as páginas mudaram depois da
+      última revisão ({{ r.pedido_em }}): ela não vale para a ficha como está. Revise de novo — a
+      certidão sai sem revisão se ninguém pedir.</div>
+    {% endif %}
+    {% if r.situacao in ['PENDENTE', 'LENDO'] %}
+      <p class="small"><strong>Lendo…</strong> pedida em {{ r.pedido_em }} por {{ r.pedido_por or '—' }}.
+        A tela se atualiza sozinha quando terminar.</p>
+    {% elif r.situacao == 'ERRO' %}
+      <p class="small notice warning">A IA não respondeu na revisão pedida em {{ r.pedido_em }}. A
+        certidão pode sair sem ela — a tela vai dizer que saiu sem revisão. Tente de novo mais tarde.</p>
+    {% else %}
+      <p class="small" style="margin:6px 0">
+        <strong>{{ r.graves }} divergência(s) GRAVE(S)</strong>{% if r.graves_pendentes != r.graves %}
+        ({{ r.graves_pendentes }} ainda não resolvida(s)){% endif %}, {{ r.leves }} leve(s),
+        {{ r.avisos|length }} aviso(s) — {{ r.paginas_vistas }} de {{ r.paginas }} página(s) vista(s),
+        revisada em {{ r.terminado_em }} por {{ r.pedido_por or '—' }}.
+        {% if r.parecer %}<br><em>{{ r.parecer }}</em>{% endif %}</p>
+      {% if r.divergencias %}
+      <div class="table-wrap"><table class="small">
+        <thead><tr><th></th><th>Gravidade</th><th>Pág.</th><th>Trecho</th><th>O texto diz</th>
+          <th>A página diz</th></tr></thead>
+        <tbody>
+        {% for d in r.divergencias %}{% set i = loop.index0 %}
+          {% set pg = r.lista_de_paginas[d.pagina - 1] if d.pagina and d.pagina <= r.lista_de_paginas|length else None %}
+          <tr>
+            <td>{% if user and user.role in ['ADMIN', 'MANAGER'] and tp.vale and not d.conferida %}
+              <input type="checkbox" name="indice" value="{{ i }}" form="form-transcricao-conferir"
+                     title="dar por conferida no livro">{% endif %}</td>
+            <td>{% if d.gravidade == 'GRAVE' %}<span class="badge alta">GRAVE</span>{% else %}leve{% endif %}
+              <span class="muted">{{ d.o_que }}</span>
+              {% if d.conferida %}<br><span class="muted">conferida por {{ d.conferida.por }}
+                em {{ d.conferida.em }}{% if d.conferida.obs %}: {{ d.conferida.obs }}{% endif %}</span>{% endif %}</td>
+            <td>{% if pg and pg.imagem_id %}<a href="{{ url_for('ri_imagem', imagem_id=pg.imagem_id, p=pg.quadro) }}" target="_blank">{{ d.pagina }}</a>
+              {% elif pg %}<a href="{{ url_for('ri_conferir_ficha', matricula_id=m.id) }}" target="_blank">{{ d.pagina }}</a>
+              {% else %}—{% endif %}</td>
+            <td>{{ d.trecho }}</td>
+            <td>{{ d.texto_diz }}</td>
+            <td>{{ d.pagina_diz }}</td>
+          </tr>
+          {% if user and user.role in ['ADMIN', 'MANAGER'] and tp.vale and not d.conferida %}
+          <tr><td></td><td colspan="5"><input name="obs_{{ i }}" form="form-transcricao-conferir"
+              maxlength="600" style="width:100%"
+              placeholder="como foi conferida no livro (obrigatório na GRAVE, mínimo de dez letras)"></td></tr>
+          {% endif %}
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% if user and user.role in ['ADMIN', 'MANAGER'] and tp.vale %}
+      <button type="submit" class="button" form="form-transcricao-conferir">Dar as marcadas por
+        conferidas no livro</button>
+      <span class="small muted">O texto não muda; a divergência deixa de pedir justificativa.</span>
+      {% endif %}
+      {% endif %}
+      {% if r.avisos %}
+      <ul class="small">{% for a in r.avisos %}<li>{{ a.o_que }}</li>{% endfor %}</ul>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
+  {% if tp.graves_pendentes %}
+  <label class="span2" style="display:block;margin-top:8px">
+    <strong>Por que a certidão sai assim mesmo</strong> — {{ tp.graves_pendentes }} divergência(s)
+    grave(s) não resolvida(s). Mínimo de dez letras; fica gravada com a certidão.
+    <textarea name="transcricao_justificativa" rows="2" style="width:100%"></textarea>
+  </label>
+  {% endif %}
+  <p class="small muted" style="margin:6px 0 0">
+    Divergência verdadeira se corrige no texto pelo caminho de sempre (a
+    <a href="{{ url_for('ri_conferir_ficha', matricula_id=m.id) }}" target="_blank">conferência da
+    ficha contra o livro</a>, ou averbação de retificação em ato selado) e se revisa de novo.
+  </p>
+</fieldset>
+<script>
+  (function () {
+    var quadro = document.getElementById('certidao-transcricao');
+    if (!quadro) return;
+    var form = quadro.closest('form');
+    var tipo = form && form.querySelector('select[name=tipo]');
+    // O quadro só vale para o inteiro teor: nos outros tipos ele some.
+    function mostrar() { if (tipo) quadro.style.display = tipo.value === 'INTEIRO_TEOR' ? '' : 'none'; }
+    if (location.hash === '#certidao-transcricao') {
+      if (tipo) tipo.value = 'INTEIRO_TEOR';
+      var gaveta = quadro.closest('details');
+      if (gaveta) gaveta.open = true;
+    }
+    if (tipo) { tipo.addEventListener('change', mostrar); mostrar(); }
+    var s = quadro.dataset.situacao;
+    if (s === 'PENDENTE' || s === 'LENDO') {
+      (function acompanhar() {
+        setTimeout(function () {
+          fetch(quadro.dataset.urlAndamento, {credentials: 'same-origin'})
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+              if (j.situacao !== 'PENDENTE' && j.situacao !== 'LENDO') {
+                location.hash = 'certidao-transcricao'; location.reload();
+              } else { acompanhar(); }
+            }).catch(function () { acompanhar(); });
+        }, 5000);
+      })();
+    }
+  })();
+</script>

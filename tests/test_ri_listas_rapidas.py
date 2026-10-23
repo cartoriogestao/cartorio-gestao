@@ -142,5 +142,8 @@ def test_o_indicador_real_tambem_pagina_pelo_id():
     """A mesma forma estava em duas telas, e as duas foram consertadas."""
     rota = _corpo_da_rota("ri_indicador_real")
     assert "WHERE m.id IN (" in rota
-    assert rota.count("ORDER BY m.bairro, m.logradouro, "
-                      "CAST(m.numero AS INTEGER)") == 2
+    # PostgreSQL nativo (lote L059): o CAST do SQLite virou a leitura do
+    # prefixo numerico, com 0 para o que nao e numero, como o SQLite fazia.
+    # E o NULL vai na frente, como no SQLite (ressalva do L059, lote L059R).
+    assert rota.count("ORDER BY m.bairro NULLS FIRST, m.logradouro NULLS FIRST,") == 2
+    assert rota.count("coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0)") == 2

@@ -1,0 +1,10 @@
+{
+  "chave": "PT_TERMO_INTIMACAO_DIGITAL",
+  "atribuicao": "Protesto",
+  "nome": "Termo do protesto — intimação por meio eletrônico",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {edital} do termo quando a intimação foi digital, confirmada pela plataforma (CN-MA art. 919, § 1º; art. 921, § 6º, II). O LIVRO LAVRA O PADRÃO DESTA FRASE: o protesto lançado não segue o ajuste gravado aqui enquanto o oficial não decidir que siga, porque mudar o que se escreve no livro é regra de negócio (LF06E).",
+  "campos": [
+    "data"
+  ]
+}

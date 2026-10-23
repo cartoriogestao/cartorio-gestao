@@ -1,0 +1,15 @@
+{
+  "chave": "RC_ANOTACAO_CRC_COMPLETA",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Anotação da CRC — completa",
+  "formato": "CHAVES",
+  "explica": "A anotação que conserva a narrativa da comunicação recebida pela CRC e fecha com a assinatura e a data em branco (o modelo 2 da tela); sai na tela para o escrevente conferir e copiar, e não se congela. {narrativa} é o texto da comunicação já emendado pelo traço (ou só o ponto, quando ela não traz texto), {frase_origem} é a peça «Origem: …», que só entra quando a comunicação diz a serventia, e {cidade} é a do destino, ou o traço.",
+  "campos": [
+    "ato",
+    "codigo",
+    "narrativa",
+    "frase_origem",
+    "assinatura",
+    "cidade"
+  ]
+}

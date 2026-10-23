@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_RECONHECIMENTO_SINAL",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Reconhecimento do sinal público",
+  "formato": "CHAVES",
+  "explica": "O teor do reconhecimento AUTÔNOMO do sinal público, sem a firma.",
+  "campos": [
+    "quem"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "chave": "RI_FECHO_DO_ATO_SEM_TITULO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Fecho do ato (sem a função)",
+  "formato": "JINJA",
+  "explica": "O mesmo fecho do ato, quando o cadastro de quem praticou não traz a função. A escolha entre os dois é do código.",
+  "campos": [
+    "cidade",
+    "data_extenso",
+    "nome",
+    "uf"
+  ]
+}

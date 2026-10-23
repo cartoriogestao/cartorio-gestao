@@ -256,6 +256,12 @@
     <form method="post" class="stack" style="padding:0 14px 14px">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="acao" value="habilitar">
+      {# O PROTOCOLO QUE PAGA O SELO DA HABILITAÇÃO — 22/10/2026: a
+         habilitação 3 caiu em «aguardando cobertura» sem protocolo para
+         escolher. O escrevente confirma qual protocolo pago cobre o 14.1.x. #}
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
+      {% set s_selo = seletor_do_selo('hc_habilitacoes') %}
+      {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
       <button class="primary">Habilitar</button>
       {% if not prazo_venceu %}
       <span class="small muted">prazo de oposição até {{ fmt_date(h.edital_prazo_ate) }} (em curso — não impede habilitar)</span>
@@ -283,10 +289,13 @@
          num dia de aparelho fora do ar ficaria sem selo para sempre — e o
          selo dela é o do casamento inteiro, reaproveitado no assento. #}
       {% if not h.selo %}
-      <form method="post" class="inline-form"
+      <form method="post" class="stack"
             action="{{ url_for('rcpn_habilitacao_selar', habilitacao_id=h.id) }}"
             style="margin-top:8px">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
+        {% set s_selo = seletor_do_selo('hc_habilitacoes') %}
+        {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
         <button class="primary">Pedir o selo ao aparelho</button>
         <span class="small muted">É um selo só: ele vale pela habilitação e
           pelo assento de casamento (item 14.1.1).</span>

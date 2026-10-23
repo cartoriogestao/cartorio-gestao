@@ -33,6 +33,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import rc_assento as RC                           # noqa: E402
 import rc_certidao as CE                          # noqa: E402
@@ -51,7 +53,7 @@ MATRICULA = "000000015519971000111270010385 01"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     init_nucleo_schema(con)

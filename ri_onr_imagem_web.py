@@ -15,6 +15,8 @@ from contextlib import closing
 from flask import abort, flash, redirect, url_for
 
 import gestor_cargas_ri as GCR
+import seguranca_web as SEGWEB  # B2 (LX11): exceção inesperada não vai para a tela
+from bd_nativo import banco
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str):
@@ -26,7 +28,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             with closing(db.connect()) as con:
                 return GCR.situacao_da_imagem(con, int(matricula_id), db.db_path)
         except Exception as erro:                       # noqa: BLE001
-            return {"estado": "DESCONHECIDO", "motivo": f"{type(erro).__name__}: {erro}"}
+            return {"estado": "DESCONHECIDO", "motivo": SEGWEB.recado_de_erro(
+                erro, "situacao_da_imagem_onr", "não foi possível ler a situação; "
+                "o detalhe ficou no registro do servidor")}
 
     app.add_template_global(situacao_da_imagem_onr, "situacao_da_imagem_onr")
 
@@ -37,16 +41,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def ri_onr_imagem_converter(matricula_id: int):
         """Converte agora a digitalização desta ficha para a pasta do CSL2."""
         with closing(db.connect()) as con:
-            r = con.execute("SELECT numero, digi_path FROM ri_matriculas WHERE id=?",
-                            (matricula_id,)).fetchone()
+            r = banco(con).um("SELECT numero, digi_path FROM ri_matriculas WHERE id=%s",
+                              (matricula_id,))
         if not r:
             abort(404)
-        if not (r[1] or "").strip():
+        if not (r["digi_path"] or "").strip():
             flash("Esta matrícula não tem digitalização oficial para converter.", "danger")
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
         linha = GCR.converter_em_segundo_plano(db, matricula_id)
         audit("RI_DIGITALIZACAO_ONR_CONVERTER", "RI_MATRICULA", matricula_id,
-              {"numero": r[0], "comecou": linha is not None})
+              {"numero": r["numero"], "comecou": linha is not None})
         if linha is None:
             flash("A conversão não pôde começar (a ficha não vai ao ONR, ou a pasta do "
                   "CSL2 está inacessível). A rodada das 07:30 tenta de novo.", "warning")

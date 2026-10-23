@@ -1,0 +1,11 @@
+{
+  "chave": "RCPJ_RTD_CERTIDAO_SO_AVERBACOES",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Certidão de inteiro teor — só averbações (texto congelado)",
+  "formato": "CHAVES",
+  "explica": "A abertura da certidão quando o registro-base foi desmarcado e só se certificam averbações (atrib_certidao.eh_so_averbacoes). Congelado em at_certidoes na emissão. O {onde} e o bloco de cada averbação são peças de RCPJ_CERTIDAO.",
+  "campos": [
+    "onde",
+    "teor"
+  ]
+}

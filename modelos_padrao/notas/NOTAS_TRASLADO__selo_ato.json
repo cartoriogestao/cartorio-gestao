@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_TRASLADO__selo_ato",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Rótulo do selo — outro ato",
+  "formato": "CHAVES",
+  "explica": "O rótulo do quadro do selo quando o tipo do ato não tem rótulo próprio.",
+  "campos": []
+}

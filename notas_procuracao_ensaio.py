@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from bd_nativo import banco
 from jinja2.sandbox import SandboxedEnvironment
 
 from ri_modelos_atos import preencher as preencher_modelo
@@ -72,16 +73,16 @@ def montar_teor(
     lavrado_titulo: str = "Tabeliao e Oficial de Registro",
 ) -> str:
     """Mesma cadeia de `notas_ato_preencher` (Jinja + campos do modelo)."""
-    row = con.execute(
-        "SELECT corpo FROM nt_modelos WHERE codigo=? AND ativo=1",
+    row = banco(con).um(
+        "SELECT corpo FROM nt_modelos WHERE codigo=%s AND ativo=1",
         (MODELO_CODIGO,),
-    ).fetchone()
+    )
     if not row:
         raise RuntimeError(f"Modelo {MODELO_CODIGO} ausente no banco")
     partes = [dict(p) for p in PARTES]
     ctx = NT.contexto_jinja_partes(partes)
     env = SandboxedEnvironment(autoescape=False)
-    corpo_jinja = env.from_string(row[0]).render(
+    corpo_jinja = env.from_string(row["corpo"]).render(
         sv=dados_serventia(db.get_settings),
         lavrado_nome=lavrado_nome,
         lavrado_titulo=lavrado_titulo,

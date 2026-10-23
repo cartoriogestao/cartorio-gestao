@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_FECHO_ESCRITURA__testemunha",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Teor — condição da testemunha",
+  "formato": "CHAVES",
+  "explica": "Como a testemunha aparece na lista de quem assina e sob a linha de assinatura.",
+  "campos": []
+}

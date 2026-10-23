@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Informações importadas do E-Ofício{% endblock %}
+{% block title %}Informações importadas do sistema antigo{% endblock %}
 {% block content %}
-<h1>Informações importadas do E-Ofício</h1>
+<h1>Informações importadas do sistema antigo</h1>
 
 <div class="actions">
   <a class="button" href="{{ url_for('rcpn_assento_novo') }}">Preencher pelos documentos</a>
@@ -12,7 +12,7 @@
 <div class="card">
   <p><strong>{{ quadro.importados }}</strong>
      {{ 'assento veio' if quadro.importados == 1 else 'assentos vieram' }}
-     do acervo do E-Ofício.</p>
+     do acervo do sistema antigo.</p>
   <p class="small muted">
     <strong>Isto não é uma lista de trabalho.</strong> O termo destes assentos
     já existe — <strong>em papel, assinado, no livro</strong> — e não será

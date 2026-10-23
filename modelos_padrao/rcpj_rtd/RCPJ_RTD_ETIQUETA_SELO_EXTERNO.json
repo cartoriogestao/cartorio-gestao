@@ -1,0 +1,11 @@
+{
+  "chave": "RCPJ_RTD_ETIQUETA_SELO_EXTERNO",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Etiqueta de selo externo — RCPJ/RTD",
+  "formato": "JINJA",
+  "explica": "A tira dos selos emitidos fora deste sistema. O título dela é peça: RCPJ_RTD_ETIQUETA_SELO_EXTERNO__manual (selo digitado) e __razao (selo do razão).",
+  "campos": [
+    "e",
+    "serventia"
+  ]
+}

@@ -141,6 +141,9 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="lancamento_id" value="{{ l.id }}">
               <input name="motivo" placeholder="motivo do estorno" size="16" required>
+              {# lançamento de caixa já fechado: outra pessoa (oficial/gerente) aprova com a senha — 22/10/2026 #}
+              <input name="aprovador" placeholder="aprovador (caixa fechado)" size="14" autocomplete="off">
+              <input type="password" name="aprovador_senha" placeholder="senha" size="8" autocomplete="new-password">
               <button class="small" name="acao" value="estornar">estornar</button>
             </form>
             <form method="post" style="display:inline"

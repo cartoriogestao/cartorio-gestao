@@ -30,8 +30,9 @@ tem de estar pendurada nela, e não num ato que ainda não há.
 """
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
+
+from bd_nativo import banco
 
 # AS PALAVRAS E OS PISOS SÃO OS DO LIVRO 2, lidos de lá. Ver o cabeçalho.
 from ri_revisao import ABERTA, BAIXADA, ORIGENS, SITUACOES  # noqa: F401
@@ -50,7 +51,7 @@ def _texto(valor: Any) -> str:
     return "" if valor is None else str(valor).strip()
 
 
-def anotar(con: sqlite3.Connection, *, registro_id: int, assunto: str,
+def anotar(con, *, registro_id: int, assunto: str,
            nota: str, agora: str, ato_id=None, minuta_id=None,
            origem: str = "MANUAL", usuario=None) -> int:
     """Anota o que precisa ser conferido. ESCREVE. Devolve o `id`.
@@ -69,30 +70,30 @@ def anotar(con: sqlite3.Connection, *, registro_id: int, assunto: str,
             f"nota que não explica o que conferir não ajuda quem vai conferir.")
     if origem not in ORIGENS:
         raise RevisaoError(f"Origem de nota desconhecida: {origem!r}.")
-    if con.execute("SELECT 1 FROM ra_registros WHERE id=?",
-                   (int(registro_id),)).fetchone() is None:
+    bd = banco(con)
+    if bd.um("SELECT 1 AS x FROM ra_registros WHERE id=%s",
+             (int(registro_id),)) is None:
         raise RevisaoError("Registro do Livro 3 não encontrado.")
     # A NOTA NÃO CAI NA FICHA DE OUTRO REGISTRO. Ninguém desconfia de uma nota
     # que aparece onde se esperava encontrar alguma.
-    if ato_id and con.execute(
-            "SELECT 1 FROM ra_atos WHERE id=? AND registro_id=?",
-            (int(ato_id), int(registro_id))).fetchone() is None:
+    if ato_id and bd.um(
+            "SELECT 1 AS x FROM ra_atos WHERE id=%s AND registro_id=%s",
+            (int(ato_id), int(registro_id))) is None:
         raise RevisaoError("Esse ato não é deste registro.")
-    if minuta_id and con.execute(
-            "SELECT 1 FROM ra_minutas WHERE id=? AND registro_id=?",
-            (int(minuta_id), int(registro_id))).fetchone() is None:
+    if minuta_id and bd.um(
+            "SELECT 1 AS x FROM ra_minutas WHERE id=%s AND registro_id=%s",
+            (int(minuta_id), int(registro_id))) is None:
         raise RevisaoError("Essa minuta não é deste registro.")
-    cursor = con.execute(
+    return int(bd.escrever(
         """INSERT INTO ra_revisoes(registro_id, ato_id, minuta_id, assunto,
                                    nota, origem, situacao, anotada_em,
                                    anotada_por)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(registro_id), ato_id, minuta_id, assunto, nota, origem, ABERTA,
-         agora, _texto(usuario) or None))
-    return int(cursor.lastrowid)
+         agora, _texto(usuario) or None))[0]["id"])
 
 
-def baixar(con: sqlite3.Connection, revisao_id: int, *, decisao: str,
+def baixar(con, revisao_id: int, *, decisao: str,
            agora: str, usuario=None) -> None:
     """Fecha a nota, **com o que se decidiu escrito dentro**. ESCREVE."""
     decisao = _texto(decisao)
@@ -101,21 +102,22 @@ def baixar(con: sqlite3.Connection, revisao_id: int, *, decisao: str,
             f"Escreva o que você decidiu, com pelo menos {MINIMO_DO_TEXTO} "
             f"letras — «ok» e «conferi» não respondem à pergunta que a nota "
             f"fez, e é esta linha que a correição lê.")
-    linha = con.execute("SELECT situacao FROM ra_revisoes WHERE id=?",
-                        (int(revisao_id),)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT situacao FROM ra_revisoes WHERE id=%s",
+                  (int(revisao_id),))
     if not linha:
         raise RevisaoError("Nota de revisão não encontrada.")
-    if _texto(linha[0]) == BAIXADA:
+    if _texto(linha["situacao"]) == BAIXADA:
         raise RevisaoError(
             "Esta nota já foi baixada. Se há coisa nova a dizer, anote outra "
             "— assim ficam as duas, e a ordem em que se decidiu.")
-    con.execute(
-        """UPDATE ra_revisoes SET situacao=?, baixa_decisao=?, baixada_em=?,
-               baixada_por=? WHERE id=?""",
+    bd.escrever(
+        """UPDATE ra_revisoes SET situacao=%s, baixa_decisao=%s, baixada_em=%s,
+               baixada_por=%s WHERE id=%s""",
         (BAIXADA, decisao, agora, _texto(usuario) or None, int(revisao_id)))
 
 
-def do_registro(con: sqlite3.Connection, registro_id: int, *,
+def do_registro(con, registro_id: int, *,
                 so_abertas: bool = False) -> list[dict]:
     """As notas daquele registro. Só lê.
 
@@ -123,19 +125,17 @@ def do_registro(con: sqlite3.Connection, registro_id: int, *,
     meses depois, e uma ficha que só mostra o que falta esconde justamente a
     resposta.
     """
-    sql = "SELECT * FROM ra_revisoes WHERE registro_id=?"
+    sql = "SELECT * FROM ra_revisoes WHERE registro_id=%s"
     params: list = [int(registro_id)]
     if so_abertas:
-        sql += " AND situacao=?"
+        sql += " AND situacao=%s"
         params.append(ABERTA)
-    return [dict(x) for x in
-            con.execute(sql + " ORDER BY id", params).fetchall()]
+    return banco(con).ler(sql + " ORDER BY id", params)
 
 
-def abertas(con: sqlite3.Connection) -> list[dict]:
+def abertas(con) -> list[dict]:
     """Tudo o que espera conferência no Livro 3, da casa inteira. Só lê."""
-    linhas = con.execute(
-        """SELECT r.*, g.numero registro_numero
+    return banco(con).ler(
+        """SELECT r.*, g.numero AS registro_numero
              FROM ra_revisoes r JOIN ra_registros g ON g.id = r.registro_id
-            WHERE r.situacao=? ORDER BY r.id""", (ABERTA,)).fetchall()
-    return [dict(x) for x in linhas]
+            WHERE r.situacao=%s ORDER BY r.id""", (ABERTA,))

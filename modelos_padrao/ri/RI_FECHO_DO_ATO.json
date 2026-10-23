@@ -1,0 +1,15 @@
+{
+  "chave": "RI_FECHO_DO_ATO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Fecho do ato (com a função de quem praticou)",
+  "formato": "JINJA",
+  "explica": "O fecho de cada ato na ficha e na certidão: cidade, data, «Dou fé.» e quem praticou o ato, com a função. Quem decide se ele sai é o código: ato sem data ou sem o nome de quem praticou, ou cujo teor já diz «dou fé», sai sem fecho.",
+  "campos": [
+    "artigo",
+    "cidade",
+    "data_extenso",
+    "nome",
+    "titulo",
+    "uf"
+  ]
+}

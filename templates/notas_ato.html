@@ -15,7 +15,7 @@
     <select name="especie_procuracao">
       <option value="">— escolha, para o selo sair —</option>
       {% for c in caminhos %}
-      <option value="{{ c.chave }}">{{ c.chave|replace('_', ' ')|capitalize }}
+      <option value="{{ c.chave }}">{{ 'INSS' if c.chave == 'INSS' else c.chave|replace('_', ' ')|capitalize }}
         ({{ c.caminho }})</option>
       {% endfor %}
     </select>
@@ -222,7 +222,7 @@
           {% if user.role in ['ADMIN','MANAGER','USER'] %}
           <form method="post" class="inline-form" style="display:inline"
                 action="{{ url_for('notas_ato_anexo_retirar', ato_id=a.id, attachment_id=x.id) }}"
-                onsubmit="return confirm('Retirar ' + {{ x.original_name|tojson }} + ' deste ato?\n\nO arquivo continua guardado no acervo e a auditoria registra a retirada.')">
+                onsubmit="return confirm('Retirar ' + {{ x.original_name|tojson|forceescape }} + ' deste ato?\n\nO arquivo continua guardado no acervo e a auditoria registra a retirada.')">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit" class="small">Retirar</button>
           </form>
@@ -329,7 +329,35 @@
               {% endfor %}
             </select>
             <button name="acao" value="papel_doi" class="small">Salvar papel</button>
-          </form></td>
+          </form>
+          {# O QUE O CNN ART. 111 PÕE NA QUALIFICAÇÃO — LD07, 21/10/2026: o documento
+             de identidade (ou a filiação), a união estável, e o cônjuge e o regime
+             de quem é casado. O que faltar sai marcado no teor e trava a lavratura. #}
+          {% if (p.tipo_pessoa or 'F') != 'J' %}
+          <details class="small"{% if not p.testemunha and (not (p.identidade or p.filiacao) or p.uniao_estavel not in ('SIM', 'NAO')) %} open{% endif %}>
+            <summary>Identidade, união estável e cônjuge
+              {%- if p.identidade %} · {{ p.identidade }}{% elif p.filiacao %} · filiação{% endif %}
+              {%- if p.uniao_estavel == 'SIM' %} · convive em união estável{% elif p.uniao_estavel == 'NAO' %} · não convive em união estável{% endif %}</summary>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="parte_id" value="{{ p.id }}">
+              <input name="identidade" size="18" value="{{ p.identidade or '' }}" placeholder="RG n. e órgão"
+                     aria-label="Documento de identidade de {{ p.nome }}">
+              <input name="filiacao" size="22" value="{{ p.filiacao or '' }}" placeholder="filiação, se não há documento"
+                     aria-label="Filiação de {{ p.nome }}">
+              <select name="uniao_estavel" aria-label="União estável de {{ p.nome }}">
+                <option value="" {% if p.uniao_estavel not in ('SIM', 'NAO') %}selected{% endif %}>União estável?</option>
+                <option value="NAO" {% if p.uniao_estavel == 'NAO' %}selected{% endif %}>não convive</option>
+                <option value="SIM" {% if p.uniao_estavel == 'SIM' %}selected{% endif %}>convive</option>
+              </select>
+              <input name="conjuge" size="18" value="{{ p.conjuge or '' }}" placeholder="cônjuge ou companheiro(a)"
+                     aria-label="Cônjuge ou companheiro de {{ p.nome }}">
+              <input name="regime_bens" size="16" list="regimes-de-bens" value="{{ p.regime_bens or '' }}"
+                     placeholder="regime de bens" aria-label="Regime de bens de {{ p.nome }}">
+              <button name="acao" value="qualificacao_civil" class="small">Salvar</button>
+            </form>
+          </details>
+          {% endif %}</td>
         <td class="small">{% if p.cartao_id %}ficha de firma{% else %}digitada{% endif %}</td>
         <td><form method="post" class="inline-form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -347,6 +375,13 @@
                  'ANUENTE', 'REQUERENTE', 'REQUERIDO', 'VENDEDOR(A)', 'COMPRADOR(A)',
                  'DOADOR(A)', 'DONATÁRIO(A)', 'USUFRUTUÁRIO'] %}
     <option value="{{ q }}">
+    {% endfor %}
+  </datalist>
+  {# Entra no teor como «sob o regime de bens da <isto>» (LD07). #}
+  <datalist id="regimes-de-bens">
+    {% for r in ['comunhão parcial', 'comunhão universal', 'separação convencional',
+                 'separação obrigatória', 'participação final nos aquestos'] %}
+    <option value="{{ r }}">
     {% endfor %}
   </datalist>
   <div class="panel-subhead" style="padding:10px 14px 0;border-top:1px solid var(--border, #e5e5e5)">
@@ -389,6 +424,12 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="cartao_id" value="{{ c.id }}">
               <input name="qualificacao" size="16" placeholder="outorgante...">
+              {# o RG, a filiação e o cônjuge vêm da ficha; a união estável, daqui (LD07) #}
+              <select name="uniao_estavel" aria-label="União estável de {{ c.nome }}">
+                <option value="">União estável?</option>
+                <option value="NAO">não convive</option>
+                <option value="SIM">convive</option>
+              </select>
               <label class="check small"><input type="checkbox" name="testemunha" value="1"> testemunha</label>
               <button class="primary small" name="acao" value="parte_cartao">Incluir</button>
             </form>
@@ -410,6 +451,17 @@
         <label>Estado civil <input name="estado_civil"></label>
         <label>Profissão <input name="profissao"></label>
         <label>Qualificação no ato <input name="qualificacao" placeholder="outorgante, herdeiro..."></label>
+        {# O QUE O CNN ART. 111 PÕE NA QUALIFICAÇÃO — LD07, 21/10/2026 #}
+        <label>Documento de identidade <input name="identidade" placeholder="RG n. e órgão"></label>
+        <label>Filiação <small>(se não há documento)</small> <input name="filiacao"></label>
+        <label>União estável
+          <select name="uniao_estavel">
+            <option value="">—</option>
+            <option value="NAO">não convive</option>
+            <option value="SIM">convive</option>
+          </select></label>
+        <label>Cônjuge ou companheiro(a) <input name="conjuge"></label>
+        <label>Regime de bens <small>(casado)</small> <input name="regime_bens" list="regimes-de-bens"></label>
         <label class="span2">Endereço <input name="endereco"></label>
         <label>Cidade <input name="cidade" value="{{ (sv.ri_cidade or '')|upper }}"></label>
         <label>UF <input name="uf" value="{{ sv.ri_uf or '' }}" size="3"></label>
@@ -528,7 +580,7 @@
          montagem: uma versão «parecida» divergiria no primeiro conserto, e a
          tela passaria a mostrar uma coisa e o papel a levar outra. #}
       <div class="teor-previa" data-teor-previa>
-        {% if a.teor %}{{ a.teor | safe }}
+        {% if a.teor %}{{ a.teor | sem_script }}
         {% else %}<p class="muted">Sem teor ainda. Monte com as partes, escreva
           ao lado, ou traga de um arquivo.</p>{% endif %}
       </div>
@@ -733,7 +785,7 @@
     <div><small class="muted">Termo</small><div><strong>{{ a.termo or a.numero_ordem or '— acervo, sem termo —' }}</strong></div></div>
     <div><small class="muted">Folha</small><div>{{ a.folha or '—' }}{% if a.folha_final and a.folha_final != a.folha %} a {{ a.folha_final }}{% endif %}</div></div>
     <div><small class="muted">Ocupa</small><div>{{ a.folhas or '—' }} folha(s), {{ a.paginas or '—' }} página(s)</div></div>
-    <div class="span2 small muted">{% if a.lancado_em %}Lançado em {{ a.lancado_em }}{% if a.lancado_por %} por {{ a.lancado_por }}{% endif %}.{% else %}Ato do acervo, trazido do E-Ofício com o livro e a folha que já tinha.{% endif %}
+    <div class="span2 small muted">{% if a.lancado_em %}Lançado em {{ a.lancado_em }}{% if a.lancado_por %} por {{ a.lancado_por }}{% endif %}.{% else %}Ato do acervo, trazido do sistema antigo com o livro e a folha que já tinha.{% endif %}
       {% if face_em_branco %}O texto termina na frente da folha {{ a.folha_final }}; o verso
       <strong>{{ face_em_branco[0] }}</strong> já sai inutilizado na última página do
       <a href="{{ url_for('notas_ato_termo_livro', ato_id=a.id) }}">Termo do livro</a>.{% endif %}</div>
@@ -757,6 +809,23 @@
   {% else %}
   {% if arquivamento and arquivamento.obrigatorio %}
   {{ confirmar_arquivamento(a, arquivamento, csrf_token) }}
+  {% endif %}
+  {% if a.tipo == 'ATA_USUCAPIAO' %}
+  {# O VALOR DO IMÓVEL DA ATA PARA USUCAPIÃO — LD02, 21/10/2026. Ela é ato de
+     conteúdo econômico, e os emolumentos se cobram pelo valor venal do imóvel
+     (CNN art. 423, I; o item 13.14.3 remete às faixas do 13.1): sem o valor o
+     selo não sai, e a ficha dizia «informe o valor» sem ter onde. Em
+     centavos, como o resto da casa: «100.000,00» já vem com eles. #}
+  <form method="post" action="{{ url_for('notas_escritura_valor', ato_id=a.id) }}"
+        class="grid2" style="padding:14px 14px 0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="voltar" value="ato">
+    <label>Valor do imóvel (venal do último IPTU/ITR, ou o de mercado)
+      <input name="valor" inputmode="numeric" placeholder="100.000,00 — com os centavos"
+             value="{{ (a.valor_transacao|centavos_reais) if a.valor_transacao else '' }}"></label>
+    <div><button>{% if a.valor_transacao %}Corrigir o valor{% else %}Gravar o valor{% endif %}</button>
+      <span class="small muted">CNN art. 423, I — é por ele que sai a faixa do selo.</span></div>
+  </form>
   {% endif %}
   <form method="post" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -825,6 +894,8 @@
          lavratura do ato. lançar no livro deve ser depois». Tudo o que o
          clique leva (revisão, item do selo, arquivamento) se preenche antes.
          #}
+      {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('nt_atos') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
       <div class="span2"><button class="primary" name="acao" value="lancar"
              {% if not a.teor %}disabled title="Escreva o teor antes de lançar"
              {% elif arquivamento and arquivamento.obrigatorio and not arquivamento.confirmado %}disabled title="Confirme as folhas do arquivamento antes de lançar"{% endif %}>Lançar no livro</button></div>
@@ -1238,6 +1309,27 @@
   </form>
   {% endif %}
 </section>
+
+{% if a.tipo in TIPOS_DE_TESTAMENTO_DO_ATO %}
+{# O TESTAMENTO — LG04, 19/10/2026: o tipo que vai ao RCTO da CENSEC (art. 785,
+   I, do Código de Normas) e o sigilo da certidão enquanto vive o testador
+   (art. 851, §§ 4º e 5º), que a tela de certidões das Notas aplica. #}
+<details class="panel" open>
+  <summary>Testamento — RCTO e sigilo</summary>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Tipo no RCTO <select name="tipo_testamento">
+      {% for t in TIPOS_DE_TESTAMENTO_DO_ATO[a.tipo] %}<option value="{{ t }}" {% if a.tipo_testamento == t %}selected{% endif %}>{{ TIPO_TESTAMENTO[t] }}</option>{% endfor %}
+    </select></label>
+    <div><button name="acao" value="tipo_testamento">Guardar o tipo</button></div>
+    <p class="small muted span2">Enquanto vive o testador, certidão deste
+      testamento só sai a ele, por requerimento escrito arquivado na serventia;
+      com a certidão de óbito apresentada, a qualquer pessoa (Código de Normas,
+      art. 851, §§ 4º e 5º). A tela de certidões das Notas confere isso antes
+      de emitir.</p>
+  </form>
+</details>
+{% endif %}
 
 <details class="panel">
   <summary>Tornar sem efeito, revogar ou cancelar</summary>

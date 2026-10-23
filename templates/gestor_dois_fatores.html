@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block title %}Verificação em duas etapas — Gestor{% endblock %}
+{% block heading %}<h1>Verificação em duas etapas — Gestor</h1>{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <p>Cada usuário ativa a sua em <a href="{{ url_for('dois_fatores') }}">Verificação em duas etapas</a>.
+  Aqui o Gestor <strong>exige</strong> a verificação por perfil, tira a trava de quem errou o código cinco
+  vezes e <strong>zera</strong> a de quem perdeu o celular e os códigos de recuperação.</p>
+  <p class="muted small">Base: Código de Normas do MA (Prov. COGEX 28/2026), art. 159, V — controle de acesso
+  lógico com identificação pessoal e intransferível. O art. 165 manda manter à disposição da Corregedoria as
+  senhas de perfil de administrador: com a verificação exigida para o ADMIN, guarde junto os códigos de
+  recuperação, e o acesso da inspeção se faz na presença do delegatário ou do preposto (parágrafo único).</p>
+</section>
+
+<section class="panel">
+  <h2>Exigir para os perfis</h2>
+  <form method="post" action="{{ url_for('gestor_dois_fatores_exigir') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for p in papeis %}
+    <label><input type="checkbox" name="papel_{{ p }}" value="1"{% if p in exigidos %} checked{% endif %}> {{ p }}</label>
+    {% endfor %}
+    <p class="muted small">Vale na próxima entrada: quem já está dentro não sai. Quem ainda não tem o celular
+    cadastrado é levado a cadastrá-lo logo depois da senha.</p>
+    <button type="submit">Gravar a exigência</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Usuários</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Usuário</th><th>Nome</th><th>Perfil</th><th>Verificação</th><th>Códigos</th><th>Ações</th></tr>
+    {% for l in linhas %}
+    <tr{% if not l.active %} class="muted"{% endif %}>
+      <td>{{ l.username }}</td><td>{{ l.full_name }}</td><td>{{ l.role }}</td>
+      <td>{% if l.estado == 'ATIVO' %}ativa desde {{ fmt_dt(l.ativado_em) }}{% elif l.estado == 'PENDENTE' %}começada, sem confirmar{% else %}desligada{% endif %}
+          {% if l.role in exigidos and l.estado != 'ATIVO' %}<br><strong>exigida — cadastra na próxima entrada</strong>{% endif %}
+          {% if l.bloqueado_ate %}<br><strong>travada até {{ l.bloqueado_ate[11:16] }}</strong>{% endif %}</td>
+      <td>{{ l.restantes if l.estado == 'ATIVO' else '—' }}</td>
+      <td>
+        {% if l.bloqueado_ate %}
+        <form method="post" action="{{ url_for('gestor_dois_fatores_desbloquear') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="user_id" value="{{ l.id }}">
+          <button type="submit">Tirar a trava</button>
+        </form>
+        {% endif %}
+        {% if l.estado != 'NENHUM' and l.id != user.id %}
+        <details><summary>Zerar</summary>
+        <form method="post" action="{{ url_for('gestor_dois_fatores_zerar') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="user_id" value="{{ l.id }}">
+          <label>Motivo <input name="motivo" required maxlength="200"></label>
+          <label>Sua senha <input type="password" name="senha" required autocomplete="current-password"></label>
+          <button type="submit">Zerar a verificação</button>
+        </form></details>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</section>
+
+{% endblock %}

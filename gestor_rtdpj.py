@@ -46,9 +46,10 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 from datetime import date, datetime
 from typing import Callable
+
+from bd_nativo import banco
 
 QUEM = "gestor"
 
@@ -184,16 +185,12 @@ def _achado(chave, regra, gravidade, setor, titulo, detalhe="", prazo=None) -> d
 
 
 def _tem_tabela(con, nome: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                       (nome,)).fetchone() is not None
+    return banco(con).tem_tabela(nome)
 
 
 def _tem_colunas(con, tabela: str, *colunas: str) -> bool:
-    try:
-        con.execute(f"SELECT {', '.join(colunas)} FROM {tabela} LIMIT 0")
-    except sqlite3.OperationalError:
-        return False
-    return True
+    bd = banco(con)
+    return all(bd.tem_coluna(tabela, c) for c in colunas)
 
 
 def _dia(texto) -> date | None:
@@ -247,7 +244,7 @@ def atendidos(con) -> list[dict]:
                              "usado_por_ato_id")):
         return []
     saida: dict[int, dict] = {}
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT t.id titulo_id, t.numero, t.atribuicao, t.apresentante,
                       t.data_apresentacao, a.id ato_id, a.tipo, a.numero_ordem,
                       a.data_ato, a.registro_id, g.numero registro_numero,
@@ -291,7 +288,7 @@ def regra_titulo_parado(con, hoje: date) -> list[dict]:
         return []
     ja_atendidos = {t["titulo_id"] for t in atendidos(con)}
     saida = []
-    for t in con.execute(
+    for t in banco(con).ler(
             """SELECT t.*, (SELECT MAX(q.data_qualificacao) FROM rg_qualificacoes q
                              WHERE q.titulo_id = t.id) AS qualificado_em,
                       (SELECT q.prazo_ate FROM rg_qualificacoes q
@@ -299,7 +296,7 @@ def regra_titulo_parado(con, hoje: date) -> list[dict]:
                         AS prazo_da_exigencia
                  FROM rg_titulos t
                 WHERE t.situacao IN ('APRESENTADO','QUALIFICADO','EXIGENCIA')
-                  AND t.data_apresentacao >= ?
+                  AND t.data_apresentacao >= %s
                 ORDER BY t.id""", (IMPLANTACAO,)):
         if int(t["id"]) in ja_atendidos:
             continue                    # é a regra de cima, com saída própria
@@ -339,9 +336,9 @@ def selos_do_ato(con, ato_id: int) -> list[tuple[str, str]]:
     if not _tem_tabela(con, "sd_selos"):
         return []
     return [(codigo_do_selo(r["referencia"], r["texto"]), r["numero"])
-            for r in con.execute(
+            for r in banco(con).ler(
                 """SELECT numero, referencia, texto FROM sd_selos
-                    WHERE tabela = 'rg_atos' AND ato_id = ?
+                    WHERE tabela = 'rg_atos' AND ato_id = %s
                       AND cancelado_em IS NULL ORDER BY id""", (int(ato_id),))]
 
 
@@ -369,14 +366,15 @@ def selos_trocados(con) -> list[dict]:
     if not _tem_tabela(con, "sd_selos"):
         return []
     saida = []
-    for a in con.execute(
+    for a in banco(con).ler(
             """SELECT a.id, a.tipo, a.selo, a.numero_ordem, a.registro_id,
                       COALESCE(a.etiqueta_impressoes, 0) impressoes,
                       g.numero registro_numero, g.serie
                  FROM rg_atos a JOIN rg_registros g ON g.id = a.registro_id
                 WHERE COALESCE(a.selo, '') <> ''
                   AND EXISTS (SELECT 1 FROM sd_selos s WHERE s.tabela = 'rg_atos'
-                                 AND s.ato_id = a.id)"""):
+                                 AND s.ato_id = a.id)
+                ORDER BY a.id"""):
         selos = selos_do_ato(con, int(a["id"]))
         certo = principal_dos_selos(selos)
         if certo and certo != a["selo"]:
@@ -405,11 +403,12 @@ def regra_certidao_sem_selo(con, hoje: date) -> list[dict]:
     if not _tem_tabela(con, "at_certidoes"):
         return []
     saida = []
-    for c in con.execute(
+    for c in banco(con).ler(
             """SELECT id, numero, ano, registro_id, registro_numero, emitida_em
                  FROM at_certidoes
                 WHERE atribuicao = 'RCPJ_RTD' AND COALESCE(selo, '') = ''
-                  AND COALESCE(cancelada, 0) = 0 AND emitida_em >= ?""",
+                  AND COALESCE(cancelada, 0) = 0 AND emitida_em >= %s
+                ORDER BY id""",
             (IMPLANTACAO,)):
         saida.append(_achado(
             f"RTDPJ_CERTIDAO:{c['id']}", CERTIDAO_SEM_SELO, "CRITICO",
@@ -490,9 +489,9 @@ def regra_livro(con, hoje: date) -> list[dict]:
     regra de cima."""
     import escrituracao as ESC
     saida = []
-    for lv in con.execute(
+    for lv in banco(con).ler(
             """SELECT id, serie, numero FROM nu_livros
-                WHERE (serie LIKE 'PJ%' OR serie LIKE 'TD%')
+                WHERE (serie ILIKE 'PJ%' OR serie ILIKE 'TD%')
                   AND COALESCE(encerrado, 0) = 0 ORDER BY id"""):
         r = ESC.conferir_livro(con, int(lv["id"]))
         for n, frase in enumerate(r.get("achados") or []):
@@ -515,17 +514,20 @@ def regra_sem_pagamento(con, hoje: date) -> list[dict]:
                              "quitado", "lancamento_id")):
         return []
     saida = []
-    for p in con.execute(
+    bd = banco(con)
+    for p in bd.ler(
             """SELECT id, numero, interessado, data_abertura, situacao,
                       valor_total
                  FROM cx_protocolos
                 WHERE atribuicao IN ('RCPJ','RTD','RTDPJ')
-                  AND data_abertura >= ?
-                  AND situacao NOT IN ('PAGO','CANCELADO')""", (IMPLANTACAO,)):
-        usados = con.execute(
+                  AND data_abertura >= %s
+                  AND situacao NOT IN ('PAGO','CANCELADO')
+                ORDER BY id""", (IMPLANTACAO,)):
+        usados = bd.ler(
             """SELECT valor_total, quitado, lancamento_id FROM cx_protocolo_atos
-                WHERE protocolo_id = ? AND usado_por_tabela IS NOT NULL""",
-            (int(p["id"]),)).fetchall()
+                WHERE protocolo_id = %s AND usado_por_tabela IS NOT NULL
+                ORDER BY id""",
+            (int(p["id"]),))
         devidos = [u for u in usados
                    if not int(u["quitado"] or 0) and u["lancamento_id"] is None]
         if not devidos:
@@ -543,17 +545,18 @@ def regra_sem_pagamento(con, hoje: date) -> list[dict]:
 
 def regra_registro_repetido(con, hoje: date) -> list[dict]:
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT serie, numero, COUNT(*) n, MIN(id) primeiro, MAX(id) ultimo
                  FROM rg_registros WHERE numero IS NOT NULL
-                GROUP BY serie, numero HAVING COUNT(*) > 1"""):
+                GROUP BY serie, numero HAVING COUNT(*) > 1
+                ORDER BY serie, numero"""):
         saida.append(_achado(
             f"RTDPJ_REPETIDO:{r['serie']}:{r['numero']}", REGISTRO_REPETIDO,
             "ATENCAO", SETOR_QUALIFICACAO,
             f"O registro n. {r['numero']} ({r['serie']}) está {r['n']} vezes na base",
             f"Fichas /rcpj-rtd/{r['primeiro']} e "
             f"/rcpj-rtd/{r['ultimo']}. Veio assim do acervo do "
-            f"E-Ofício; qual fica é decisão do oficial, à vista do livro."))
+            f"sistema antigo; qual fica é decisão do oficial, à vista do livro."))
     return saida
 
 
@@ -564,9 +567,9 @@ def regra_corrigido(con, hoje: date) -> list[dict]:
         return []
     desde = date.fromordinal(hoje.toordinal() - 7).isoformat()
     saida = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT id, ts, action, details FROM audit_logs
-                WHERE action LIKE 'GESTOR_RTDPJ_%' AND ts >= ? ORDER BY id""",
+                WHERE action ILIKE 'GESTOR_RTDPJ_%%' AND ts >= %s ORDER BY id""",
             (desde,)):
         try:
             d = json.loads(r["details"] or "{}")
@@ -595,14 +598,13 @@ REGRAS: tuple[tuple[str, Callable], ...] = (
 )
 
 
-def conferir(con: sqlite3.Connection, hoje: date, *,
+def conferir(con, hoje: date, *,
              central: Callable | None = None) -> list[dict]:
     """Roda as regras do RTD/PJ. Só lê (e a Central, por GET).
 
     Regra que quebra vira `NAO_MEDIU` com o erro à vista — nunca lista vazia.
     `central` existe para o teste não falar com a rede.
     """
-    con.row_factory = sqlite3.Row
     if not _tem_tabela(con, "rg_registros"):
         return []
     achados: list[dict] = []
@@ -624,16 +626,16 @@ def conferir(con: sqlite3.Connection, hoje: date, *,
 
 def _auditar(con, acao: str, entidade: str, entidade_id, resumo: str,
              antes, depois, agora: str) -> None:
-    con.execute(
+    banco(con).escrever(
         """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
                entity_type, entity_id, details)
-           VALUES (?, NULL, ?, ?, ?, ?, ?)""",
+           VALUES (%s, NULL, %s, %s, %s, %s, %s)""",
         (agora, QUEM, acao, entidade, entidade_id,
          json.dumps({"resumo": resumo, "antes": antes, "depois": depois},
                     ensure_ascii=False, default=str)))
 
 
-def corrigir(con: sqlite3.Connection, hoje: date | None = None, *,
+def corrigir(con, hoje: date | None = None, *,
              agora: str | None = None, escrever: Callable = print) -> dict:
     """As duas correções mecânicas. ESCREVE — na transação de quem chama.
 
@@ -648,7 +650,6 @@ def corrigir(con: sqlite3.Connection, hoje: date | None = None, *,
     Cada mudança deixa uma linha na auditoria com o antes e o depois, e a
     regra `RTDPJ_CORRIGIDO` a põe no relatório para o oficial revisar.
     """
-    con.row_factory = sqlite3.Row
     agora = agora or datetime.now().isoformat(timespec="seconds")
     feito = {"titulos": 0, "selos": 0, "pulados": []}
     if not _tem_tabela(con, "rg_registros"):
@@ -667,9 +668,9 @@ def corrigir(con: sqlite3.Connection, hoje: date | None = None, *,
                 + ("a versão instalada não tem a saída" if concluir is None
                    else "atos em registros diferentes — decide quem qualifica"))
             continue
-        antes = con.execute(
-            "SELECT situacao, registro_id, observacao FROM rg_titulos WHERE id=?",
-            (t["titulo_id"],)).fetchone()
+        antes = banco(con).um(
+            "SELECT situacao, registro_id, observacao FROM rg_titulos WHERE id=%s",
+            (t["titulo_id"],))
         r = concluir(con, t["titulo_id"], ato_id=int(t["atos"][0]["ato_id"]),
                      agora=agora, usuario="o agente do RTD/PJ")
         _auditar(con, "GESTOR_RTDPJ_TITULO_CONCLUIDO", "rg_titulos",
@@ -682,7 +683,8 @@ def corrigir(con: sqlite3.Connection, hoje: date | None = None, *,
         escrever(f"  RTD/PJ: título n. {t['numero']} concluído — {r['nota']}")
 
     for a in selos_trocados(con):
-        con.execute("UPDATE rg_atos SET selo=? WHERE id=?", (a["certo"], a["id"]))
+        banco(con).escrever("UPDATE rg_atos SET selo=%s WHERE id=%s",
+                            (a["certo"], a["id"]))
         _auditar(con, "GESTOR_RTDPJ_SELO_PRINCIPAL", "rg_atos", a["id"],
                  f"{'AV' if a['tipo'] == 'AVERBACAO' else a['tipo'].title()} n. "
                  f"{a['numero_ordem'] or '?'} do registro n. "

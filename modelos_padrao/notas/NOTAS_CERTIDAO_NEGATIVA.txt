@@ -1,0 +1,3 @@
+<p><b>CERTIFICO</b>, a pedido de {{ requerente or 'parte interessada' }}{% if requerente_documento %}, {{ requerente_documento }}{% endif %}, que, feitas as buscas nos livros deste Tabelionato de Notas {{ periodo }}, em nome de <b>{{ nome }}</b>{% if documento %}, {{ documento }}{% endif %}, <b>NADA CONSTA</b>.</p>
+{% if finalidade %}<p><b>FINALIDADE:</b> {{ finalidade }}</p>{% endif %}
+<p>O referido é verdade e dou fé.</p>

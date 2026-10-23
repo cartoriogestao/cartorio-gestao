@@ -243,6 +243,43 @@ def test_os_trimestres_comecam_no_do_corte_e_so_os_fechados():
     assert G._trimestres(date(2027, 1, 2)) == [(2026, 3), (2026, 4)]
 
 
+# ------------------------------------------------------- a linha de comando
+
+@pytest.fixture()
+def fora_do_sistema(monkeypatch):
+    """O Agendador roda `--banco` fora do sistema: ninguém instala o desvio do
+    `sqlite3.connect`, e o `sqlite3` cru é recusado pelo acesso nativo."""
+    banco_pg = pytest.importorskip("banco_pg")
+    if not banco_pg.ativo():
+        pytest.skip("o módulo é nativo: só roda no PostgreSQL")
+    monkeypatch.setattr(sqlite3, "connect", banco_pg._CONNECT_ORIGINAL)
+
+
+#: o cabeçalho fictício de `test_ibge_geracao` — sem ele o IBGE recusa a remessa.
+IBGE_FICTICIO = {"ibge_uf": "21", "ibge_municipio": "98765",
+                 "ibge_distrito": "05", "ibge_cartorio": "01"}
+
+
+def test_a_linha_de_comando_mede_pela_porta_do_banco(cg_casa, casa, fora_do_sistema,
+                                                     capsys, sem_agente_do_rcpn):
+    """Revisão do L004: o `main()` abria `sqlite3.connect` cru. E a medição
+    roda as cinco cargas num `con` sem `row_factory`, como o do Agendador."""
+    cg_casa["db"].set_settings(IBGE_FICTICIO)
+    assert G.main(["--banco", str(cg_casa["banco"]), "--so-medir",
+                   "--hoje", HOJE.isoformat()]) == 0
+    medido = json.loads(capsys.readouterr().out)
+    assert {c: medido[c].get("erro") for c in G.CANAIS} == {c: None for c in G.CANAIS}
+
+
+def test_a_linha_de_comando_roda_pela_porta_do_banco(cg_casa, casa, fora_do_sistema,
+                                                     sem_agente_do_rcpn):
+    cg_casa["db"].set_settings(IBGE_FICTICIO)
+    assert G.main(["--banco", str(cg_casa["banco"]), "--hoje", HOJE.isoformat()]) == 0
+    linhas = casa["con"].execute(
+        "SELECT canal, situacao FROM ge_rcpn_cargas ORDER BY id").fetchall()
+    assert [tuple(x) for x in linhas] == [(c, "OK") for c in G.CANAIS]
+
+
 # ------------------------------------------------------- ligado no gestor
 
 def test_o_agente_esta_ligado_no_gestor():

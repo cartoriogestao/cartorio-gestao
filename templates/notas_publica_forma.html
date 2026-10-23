@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}Pública forma — Notas{% endblock %}
+{% block heading %}<h1>Pública forma</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
+  <a class="button" href="{{ url_for('notas_publica_forma_configuracao') }}">Configuração</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Nova pública forma</span></div>
+  {% if not item %}
+    <p class="small" style="padding:0 14px"><strong>Falta o item da tabela.</strong>
+      A tabela de emolumentos importada não tem item próprio de pública forma, e a casa
+      ainda não disse qual cobra. Sem ele o selo não sai — informe em
+      <a href="{{ url_for('notas_publica_forma_configuracao') }}">Configuração</a>.</p>
+  {% elif preco %}
+    <p class="small muted" style="padding:0 14px">Item {{ preco.codigo_tj }} — {{ preco.descricao or '' }}: {{ preco.total }}.</p>
+  {% else %}
+    <p class="small" style="padding:0 14px">O item {{ item }} não tem preço na tabela de hoje — confira a tabela importada.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('notas_publica_forma_emitir') }}" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Documento apresentado <input name="documento_especie" required placeholder="certidão, diploma, contrato..."></label>
+    <label>Expedido por <input name="documento_expedidor"></label>
+    <label class="span2">Descrição do original <input name="documento_descricao" placeholder="folhas, frente e verso, número"></label>
+    <label>Apresentante <input name="apresentante" required></label>
+    <label>CPF/CNPJ do apresentante <input name="apresentante_documento"></label>
+    <label>Folhas <input type="number" name="folhas" value="1" min="1"></label>
+    <label class="span2">Transcrição integral do original
+      <textarea name="transcricao" rows="10" required></textarea></label>
+    <label class="span2">Rasura, emenda ou adulteração vista no original (deixe em branco se não houver)
+      <textarea name="ressalvas" rows="2"></textarea></label>
+    {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
+    {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('nt_publicas_formas') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+    <div class="span2"><button class="primary">Emitir</button>
+      <span class="small muted">O teor fica congelado; se o selo não sair, a pública forma fica suspensa e a ficha oferece selar de novo.</span></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Últimas</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Data</th><th>Documento</th><th>Apresentante</th><th>Situação</th><th>Selo</th></tr></thead>
+    <tbody>
+    {% for p in ultimas %}
+      <tr>
+        <td><a href="{{ url_for('notas_publica_forma_ver', pf_id=p.id) }}"><strong>{{ p.numero }}/{{ p.ano }}</strong></a></td>
+        <td class="small">{{ fmt_date(p.data) }}</td>
+        <td class="small">{{ p.documento_especie }}</td>
+        <td class="small">{{ p.apresentante }}</td>
+        <td class="small">{{ SITUACOES.get(p.situacao, p.situacao) }}</td>
+        <td class="small">{{ p.selo or '—' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Nenhuma ainda.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

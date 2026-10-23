@@ -46,6 +46,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import ajuda as AJ                                 # noqa: E402
 import ajuda_problemas as AP                       # noqa: E402
@@ -59,7 +61,7 @@ SETEMBRO = "2026-09-17T11:18:00"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     AJ.init_ajuda_schema(con)
     AP.init_problemas_schema(con)
@@ -74,7 +76,7 @@ def banco() -> sqlite3.Connection:
 
 
 def test_banco_anterior_recebe_a_prova_da_leitura_de_codigo():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.executescript(
         """CREATE TABLE aj_problemas (
                id INTEGER PRIMARY KEY,

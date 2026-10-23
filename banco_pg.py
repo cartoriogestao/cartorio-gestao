@@ -106,21 +106,71 @@ def e_banco_da_casa(db_path: Any) -> bool:
     return chave in _BANCOS_DA_CASA or chave.endswith(NOME_DO_BANCO_PRINCIPAL)
 
 
-def conectar(db_path: Any, *, fechar_no_with: bool = False, **kw):
+def conectar(db_path: Any, *, fechar_no_with: bool = False,
+             linhas_com_nome: bool = False, **kw):
     """A porta única: SQLite como sempre, ou a conexão do PostgreSQL.
 
     `fechar_no_with` reproduz o `ClosingConnection` de `database.py` (o `with`
     fecha a conexão além de confirmar). O `sqlite3.connect` puro não fecha.
+    `linhas_com_nome` é o `row_factory = sqlite3.Row` de `database.connect`
+    (lote L072): as linhas saem com nome (`row["coluna"]`) desde a abertura.
     """
     if not ativo():
-        return _CONNECT_ORIGINAL(db_path, **kw)
+        con = _CONNECT_ORIGINAL(db_path, **kw)
+        if linhas_com_nome:
+            con.row_factory = sqlite3.Row
+        return con
     # A MESMA RÉGUA DO DESVIO: só o banco da casa vai ao PostgreSQL. O L7
     # trocou 48 `sqlite3.connect` de tools/ por esta porta (15/10, 22h), e
     # sem isto o acervo do E-Ofício ou uma cópia aberta por ela virariam um
     # schema vazio no PostgreSQL, calados.
     if not e_banco_da_casa(db_path):
-        return _CONNECT_ORIGINAL(db_path, **kw)
-    return Conexao(db_path, fechar_no_with=fechar_no_with)
+        con = _sqlite_comum(db_path, **kw)
+        if linhas_com_nome:
+            con.row_factory = sqlite3.Row
+        return con
+    return Conexao(db_path, fechar_no_with=fechar_no_with,
+                   linhas_com_nome=linhas_com_nome)
+
+
+def conectar_sqlite(caminho: Any, *, so_leitura: bool = True, **kw) -> sqlite3.Connection:
+    """Um arquivo SQLite DE VERDADE, sem passar pelo desvio — lote LH09, 21/10/2026.
+
+    É a porta do acervo do E-Ofício (`acervo_eoficio.sqlite3`, 229 tabelas
+    `tb*`, estático), que NÃO vai para o PostgreSQL. O desvio do
+    `sqlite3.connect` e o `conectar` decidem pelo NOME do arquivo
+    (`e_banco_da_casa`): um acervo enviado com o nome do banco da casa, ou um
+    caminho registrado por engano, cairia no PostgreSQL — num schema vazio, ou
+    no próprio banco da casa. Aqui o nome não decide nada.
+
+    `so_leitura` (o padrão) abre com `mode=ro`: quem só lê não grava, e o
+    arquivo que falta não nasce vazio. Só quem MONTA o acervo (a carga do
+    E-Ofício, `acervo_eoficio.carregar`, e a atualização ao vivo do Protesto,
+    `acervo_eo_vivo`) abre para escrever."""
+    texto, _ = _caminho_e_modo(caminho)
+    if so_leitura:
+        return _CONNECT_ORIGINAL(Path(texto).resolve().as_uri() + "?mode=ro", uri=True, **kw)
+    return _CONNECT_ORIGINAL(texto, **kw)
+
+
+class _ConexaoSqlite(sqlite3.Connection):
+    """A conexão SQLite de sempre (acervo, cópias, bancos soltos) enquanto o
+    PostgreSQL está ligado. Só muda o `.backup()`: o destino pode ter caído no
+    PostgreSQL pelo nome (`cartorio_gestao.sqlite3`) e o `.backup()` do
+    sqlite3 recusa o que não é `sqlite3.Connection` — era o TypeError de
+    test_backup (P04)."""
+
+    def backup(self, target, *args, **kw):
+        if isinstance(target, Conexao):
+            return target._receber_de_sqlite(self, *args, **kw)
+        return super().backup(target, *args, **kw)
+
+
+def _sqlite_comum(database, *args, **kw):
+    # `factory` posicional é o 6º argumento do sqlite3.connect
+    if "factory" not in kw and len(args) < 5:
+        kw["factory"] = _ConexaoSqlite
+    return _CONNECT_ORIGINAL(database, *args, **kw)
 
 
 def _connect_desviado(database, *args, **kw):
@@ -137,6 +187,8 @@ def _connect_desviado(database, *args, **kw):
         fecha = bool(fabrica is not None and fabrica is not sqlite3.Connection
                      and getattr(fabrica, "__name__", "") == "ClosingConnection")
         return Conexao(database, fechar_no_with=fecha)
+    if ativo():
+        return _sqlite_comum(database, *args, **kw)
     return _CONNECT_ORIGINAL(database, *args, **kw)
 
 
@@ -444,6 +496,11 @@ def _trocar_no_codigo(sql: str, trocas) -> str:
                 trecho = padrao.sub(novo, trecho)
         elif trecho.startswith("`") or trecho.startswith("["):
             trecho = '"' + trecho[1:-1].replace('"', '""') + '"'
+        elif trecho == '""':
+            # `""` no SQLite é o texto vazio (identificador que não existe vira
+            # literal); no PostgreSQL é erro de sintaxe — identificador vazio
+            # não existe lá. `COALESCE(x, "") = ""` (importar_padrao, P04).
+            trecho = "''"
         saida.append(trecho)
     return "".join(saida)
 
@@ -628,6 +685,9 @@ _RE_ALTER_ADD = re.compile(
     r"^\s*ALTER\s+TABLE\s+(?P<nome>\"[^\"]+\"|\w+)\s+ADD\s+(?:COLUMN\s+)?(?P<def>.+)$",
     re.I | re.S)
 _RE_CREATE_INDEX = re.compile(r"^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\b", re.I)
+_RE_DROP_TABLE = re.compile(
+    r"^\s*DROP\s+TABLE\s+(?P<se>IF\s+EXISTS\s+)?(?:main\.)?(?P<nome>\"[^\"]+\"|`[^`]+`|\w+)\s*;?\s*$",
+    re.I)
 _RE_INSERT = re.compile(
     r"^\s*(?P<verbo>INSERT\s+OR\s+IGNORE|INSERT\s+OR\s+REPLACE|REPLACE|INSERT)\s+INTO\s+"
     r"(?P<nome>\"[^\"]+\"|\w+)\s*(?P<cols>\([^)]*\))?", re.I | re.S)
@@ -798,6 +858,10 @@ def _instalar_funcoes(c, schema: str) -> None:
     marca = hashlib.sha1(texto.encode("utf-8")).hexdigest()
     c.execute("CREATE COLLATION IF NOT EXISTS public.cg_nocase "
               "(provider = icu, locale = 'und-u-ks-level2', deterministic = false)")
+    # O pg_trgm (indice do imovel, ri_schema) nasce AQUI, sob a trava do preparo:
+    # criado so no ri_schema, quatro processos subindo juntos num banco novo
+    # batiam no `pg_extension_name_index` (medido na suite com -n 4, 18/10/2026).
+    c.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA public")
     c.execute("CREATE TABLE IF NOT EXISTS public.cg_funcoes (marca TEXT PRIMARY KEY)")
     c.execute("SELECT 1 FROM public.cg_funcoes WHERE marca=%s", (marca,))
     if c.fetchone() is None:
@@ -846,6 +910,11 @@ def schemas_criados() -> list[str]:
 _RESERVATORIO: dict[str, list] = {}
 _TRAVA_RESERVATORIO = threading.Lock()
 _MAXIMO_POR_BANCO = 8
+# Teto do processo inteiro: a suíte passa por centenas de bancos, e 8 por
+# banco sem teto geral esgotou o `max_connections` do servidor (16/10/2026,
+# 6 trabalhadores, 2.800 erros «too many clients»). Passou do teto, fecha-se
+# a guardada do banco usado há mais tempo.
+_MAXIMO_NO_TOTAL = 8
 
 
 def _tomar_do_reservatorio(schema: str):
@@ -876,12 +945,31 @@ def _devolver_ao_reservatorio(schema: str, pg) -> None:
         except Exception:  # noqa: BLE001
             pass
         return
+    sobra = []
     with _TRAVA_RESERVATORIO:
-        fila = _RESERVATORIO.setdefault(dsn() + "|" + schema, [])
+        chave = dsn() + "|" + schema
+        fila = _RESERVATORIO.pop(chave, [])
+        _RESERVATORIO[chave] = fila  # o mais recente vai para o fim
         if len(fila) < _MAXIMO_POR_BANCO:
             fila.append(pg)
-            return
-    pg.close()
+            pg = None
+            total = sum(len(f) for f in _RESERVATORIO.values())
+            for outra in list(_RESERVATORIO):
+                if total <= _MAXIMO_NO_TOTAL:
+                    break
+                velhas = _RESERVATORIO[outra]
+                while velhas and total > _MAXIMO_NO_TOTAL:
+                    sobra.append(velhas.pop(0))
+                    total -= 1
+                if not velhas:
+                    del _RESERVATORIO[outra]
+    if pg is not None:
+        sobra.append(pg)
+    for velha in sobra:
+        try:
+            velha.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def esvaziar_reservatorio(schema: str | None = None) -> None:
@@ -1046,7 +1134,7 @@ def marca_do_codigo() -> str:
     for arq in candidatos:
         try:
             st = arq.stat()
-            if arq.suffix == ".py" and arq.name != "banco_pg.py" and arq.parent == raiz:
+            if arq.suffix == ".py" and arq.name not in ("banco_pg.py", "bd_nativo.py") and arq.parent == raiz:
                 texto = arq.read_bytes()
                 if b"CREATE TABLE" not in texto and b"ALTER TABLE" not in texto:
                     continue
@@ -1256,7 +1344,8 @@ def _fuso_local() -> str:
 class Conexao:
     """`sqlite3.Connection`, falando com o PostgreSQL."""
 
-    def __init__(self, db_path: Any, *, fechar_no_with: bool = False):
+    def __init__(self, db_path: Any, *, fechar_no_with: bool = False,
+                 linhas_com_nome: bool = False):
         if psycopg is None:
             raise OperationalError(
                 "O sistema está configurado para o PostgreSQL (CG_PG_DSN), mas o "
@@ -1265,7 +1354,8 @@ class Conexao:
         self.schema = schema_do_caminho(db_path)
         self._so_leitura = _caminho_e_modo(db_path)[1]
         self._fechar_no_with = fechar_no_with
-        self.row_factory = None
+        # `linhas_com_nome`: a `sqlite3.Row` da ponte desde a abertura (L072).
+        self.row_factory = Linha if linhas_com_nome else None
         self.isolation_level = ""
         self.total_changes = 0
         self._em_transacao = False
@@ -1431,9 +1521,157 @@ class Conexao:
         return None
 
     def backup(self, destino, **_k) -> None:
-        raise OperationalError(
-            "Cópia do banco pelo SQLite não existe no PostgreSQL: use o pg_dump "
-            "(ver banco_pg.copiar_para_arquivo).")
+        """O `.backup()` do sqlite3: o destino fica uma cópia deste banco.
+
+        Destino SQLite (a cópia «antes da carga» do ri_web e do caixa_web) →
+        exportação: as tabelas com o DDL original do SQLite (`cg_ddl`), as
+        linhas, os índices e as visões. Destino PostgreSQL (outra `Conexao`) →
+        cópia de schema a schema, dentro do servidor. Em ambos, o que havia
+        no destino sai antes, como no SQLite."""
+        if isinstance(destino, Conexao):
+            self._copiar_para_schema(destino)
+        elif isinstance(destino, sqlite3.Connection):
+            self._exportar_para_sqlite(destino)
+        else:
+            raise TypeError("backup() argument 'target' must be sqlite3.Connection, "
+                            f"not {type(destino).__name__}")
+
+    def _exportar_para_sqlite(self, alvo: sqlite3.Connection) -> None:
+        objetos = self._cru("SELECT type, name, sql FROM sqlite_master") or []
+        tabelas = sorted((n, s) for t, n, s in objetos if t == "table")
+        indices = [s for t, _n, s in objetos if t == "index" and s]
+        visoes = [s for t, _n, s in objetos if t == "view" and s]
+        if alvo.in_transaction:
+            alvo.commit()
+        fk = alvo.execute("PRAGMA foreign_keys").fetchone()[0]
+        alvo.execute("PRAGMA foreign_keys=OFF")
+        try:
+            alvo.execute("BEGIN")
+            try:
+                velhos = alvo.execute("SELECT type, name FROM sqlite_master "
+                                      "WHERE type IN ('view', 'table') AND name NOT LIKE 'sqlite_%' "
+                                      "ORDER BY type DESC").fetchall()
+                for tipo, nome in velhos:
+                    alvo.execute(f'DROP {tipo.upper()} IF EXISTS "{nome}"')
+                for nome, ddl in tabelas:
+                    colunas = self._colunas(nome)
+                    lista = ", ".join('"' + c.replace('"', '""') + '"' for c in colunas)
+                    if ddl and not re.search(r"\bAS\s+SELECT\b", ddl, re.I):
+                        alvo.execute(ddl)
+                    else:
+                        alvo.execute(f'CREATE TABLE "{nome}" ({lista})')
+                    linhas = self._cru(f'SELECT {lista} FROM {self._qual(nome)}') or []
+                    if linhas:
+                        alvo.executemany(
+                            f'INSERT INTO "{nome}" ({lista}) VALUES ({", ".join("?" * len(colunas))})',
+                            [tuple(_valor_do_banco(v) for v in x) for x in linhas])
+                for ddl in indices + visoes:
+                    alvo.execute(ddl)
+                versao = self._cru("SELECT valor FROM cg_meta WHERE chave='user_version'")
+                if versao:
+                    alvo.execute(f"PRAGMA user_version={int(versao[0][0])}")
+                alvo.commit()
+            except BaseException:
+                alvo.rollback()
+                raise
+        except psycopg.Error as erro:
+            raise _traduzir_erro(erro) from erro
+        finally:
+            alvo.execute(f"PRAGMA foreign_keys={int(fk)}")
+
+    def _copiar_para_schema(self, destino: "Conexao") -> None:
+        origem, alvo = self.schema, destino.schema
+        if origem == alvo:
+            return
+        de, para = f'"{origem}".', f'"{alvo}".'
+        apoio = ("cg_meta", "cg_ddl", "cg_fk_pendentes")
+
+        def trocar(texto: str) -> str:  # o catálogo qualifica o schema de origem
+            return texto.replace(de, para).replace(f"{origem}.", para)
+
+        if destino._em_transacao:
+            destino.commit()
+        destino._comecar(True)
+        try:
+            cru = destino._cru
+            for nome, tipo in cru(
+                    "SELECT c.relname, c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = %s AND c.relkind IN ('r', 'p', 'v', 'm') AND c.relname <> ALL(%s) "
+                    "ORDER BY c.relkind DESC", (alvo, list(apoio) + ["sqlite_master", "sqlite_sequence"])) or []:
+                tipo_sql = {"v": "VIEW", "m": "MATERIALIZED VIEW"}.get(tipo, "TABLE")
+                cru(f'DROP {tipo_sql} IF EXISTS {para}"{nome}" CASCADE')
+            tabelas = [x[0] for x in cru(
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = %s AND c.relkind IN ('r', 'p') AND c.relname <> ALL(%s) "
+                "ORDER BY c.relname", (origem, list(apoio))) or []]
+            for t in tabelas:
+                cru(f'CREATE TABLE {para}"{t}" (LIKE {de}"{t}" INCLUDING DEFAULTS INCLUDING IDENTITY '
+                    f'INCLUDING GENERATED INCLUDING CONSTRAINTS)')
+                lista = ", ".join('"' + c[0].replace('"', '""') + '"' for c in cru(
+                    "SELECT attname FROM pg_attribute WHERE attrelid = to_regclass(%s) "
+                    "AND attnum > 0 AND NOT attisdropped AND attgenerated = '' ORDER BY attnum",
+                    (f'{de}"{t}"',)) or [])
+                cru(f'INSERT INTO {para}"{t}" ({lista}) OVERRIDING SYSTEM VALUE SELECT {lista} FROM {de}"{t}"')
+            for t in apoio:
+                cru(f'DELETE FROM {para}"{t}"')
+                cru(f'INSERT INTO {para}"{t}" OVERRIDING SYSTEM VALUE SELECT * FROM {de}"{t}"')
+            # índices e chaves com o MESMO nome (o sqlite_master os acha pelo nome)
+            for t, indice, chave, definicao in cru(
+                    "SELECT t.relname, pg_get_indexdef(x.indexrelid), k.conname, pg_get_constraintdef(k.oid) "
+                    "FROM pg_index x JOIN pg_class t ON t.oid = x.indrelid "
+                    "JOIN pg_namespace n ON n.oid = t.relnamespace "
+                    "LEFT JOIN pg_constraint k ON k.conindid = x.indexrelid AND k.conrelid = t.oid "
+                    " AND k.contype IN ('p', 'u', 'x') "
+                    "WHERE n.nspname = %s AND t.relkind IN ('r', 'p') AND t.relname <> ALL(%s) "
+                    "ORDER BY x.indisprimary DESC, x.indexrelid", (origem, list(apoio))) or []:
+                if chave:
+                    cru(f'ALTER TABLE {para}"{t}" ADD CONSTRAINT "{chave}" {trocar(definicao)}')
+                else:
+                    cru(trocar(indice))
+            for t, chave, definicao in cru(
+                    "SELECT c.relname, k.conname, pg_get_constraintdef(k.oid) FROM pg_constraint k "
+                    "JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = %s AND k.contype = 'f' ORDER BY k.oid", (origem,)) or []:
+                cru(f'ALTER TABLE {para}"{t}" ADD CONSTRAINT "{chave}" {trocar(definicao)}')
+            for t, coluna in cru(
+                    "SELECT c.relname, a.attname FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %s "
+                    "AND a.attidentity IN ('a', 'd') AND NOT a.attisdropped", (alvo,)) or []:
+                cru(f"SELECT setval(pg_get_serial_sequence(%s, %s), "
+                    f'COALESCE((SELECT MAX("{coluna}") FROM {para}"{t}"), 0) + 1, false)',
+                    (f'{para}"{t}"', coluna))
+            for v, corpo in cru(
+                    "SELECT c.relname, pg_get_viewdef(c.oid) FROM pg_class c "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %s "
+                    "AND c.relkind = 'v' AND c.relname NOT IN ('sqlite_master', 'sqlite_sequence') "
+                    "ORDER BY c.oid", (origem,)) or []:
+                cru(f'CREATE VIEW {para}"{v}" AS {trocar(corpo)}')
+        except psycopg.Error as erro:
+            destino.rollback()
+            raise _traduzir_erro(erro) from erro
+        except BaseException:
+            destino.rollback()
+            raise
+        destino.commit()
+        destino._esquecer()
+
+    def _receber_de_sqlite(self, origem: sqlite3.Connection, **kw) -> None:
+        """`sqlite3.connect(x).backup(sqlite3.connect(y))` com `y` caindo aqui
+        porque o NOME é o do banco da casa (o instantâneo do backup.py se chama
+        `cartorio_gestao.sqlite3`). Cópia é ARQUIVO — a mesma regra do
+        `VACUUM INTO` e do `backup_database`, que viram pg_dump em disco —, e
+        o schema deste caminho está vazio: grava o arquivo SQLite. Se o schema
+        tem tabelas, isto seria restaurar uma cópia SQLite por cima do banco
+        da casa no PostgreSQL: recusa à vista, nunca calado."""
+        if self._cru("SELECT 1 FROM sqlite_master WHERE type = 'table' LIMIT 1"):
+            raise OperationalError(
+                "Restaurar uma cópia SQLite por cima do banco no PostgreSQL não é "
+                "feito pelo .backup(): use a importação do banco.")
+        arquivo = _CONNECT_ORIGINAL(_caminho_e_modo(self.db_path)[0])
+        try:
+            sqlite3.Connection.backup(origem, arquivo, **kw)
+        finally:
+            arquivo.close()
 
     def iterdump(self):  # pragma: no cover
         raise OperationalError("iterdump não existe no PostgreSQL: use o pg_dump.")
@@ -1474,13 +1712,75 @@ class Conexao:
         _GRAVACAO["linhas"].append(texto)
 
     def _comecar(self, imediata: bool) -> None:
-        if not self._em_transacao:
+        nova = not self._em_transacao
+        if nova:
             self._cru("BEGIN")
             self._em_transacao = True
             self._travada = False
         if imediata and not self._travada:
-            self._cru("SELECT pg_advisory_xact_lock(%s)", (self._chave_trava,))
+            # A TRAVA QUE NÃO VEM (lock_timeout do busy_timeout) é o «database
+            # is locked» do SQLite: sobe traduzida — o LockNotAvailable cru
+            # ninguém apanha como sqlite3.OperationalError (achado do P04 em
+            # test_disputa_de_escrita). Transação aberta aqui volta atrás, como
+            # o BEGIN IMMEDIATE que não abre; a que já vinha aberta continua
+            # viva (o SAVEPOINT impede o PostgreSQL de condená-la inteira).
+            try:
+                if not nova:
+                    self._cru("SAVEPOINT cg_trava")
+                self._cru("SELECT pg_advisory_xact_lock(%s)", (self._chave_trava,))
+                if not nova:
+                    self._cru("RELEASE SAVEPOINT cg_trava")
+            except psycopg.Error as erro:
+                try:
+                    self._cru("ROLLBACK" if nova else "ROLLBACK TO SAVEPOINT cg_trava")
+                    if not nova:
+                        self._cru("RELEASE SAVEPOINT cg_trava")
+                except psycopg.Error:
+                    pass
+                if nova:
+                    self._em_transacao = False
+                raise _traduzir_erro(erro) from erro
             self._travada = True
+
+    def _ponto_de_retorno(self, texto: str) -> None:
+        """SAVEPOINT, RELEASE ou ROLLBACK TO de quem chama — fora do `cg_sp`.
+
+        O SAVEPOINT DE QUEM CHAMA MORRIA NA HORA (LX01, 19/10/2026). Ele ia pelo
+        `_rodar`, que põe cada comando dentro do `cg_sp` e o solta no fim — e o
+        RELEASE de um savepoint leva junto todo savepoint aberto depois dele. O
+        ROLLBACK TO seguinte estourava com «savepoint "x" does not exist», e
+        quem desfazia por savepoint a recusa da lavratura do RCPN não desfazia
+        nada. O L056R tinha contornado isso só no termo pelo modelo
+        (`atribuicoes_web._ponto_de_retorno`); aqui é a raiz.
+
+        RELEASE E ROLLBACK TO CONTINUAM PROTEGIDOS: nome que não existe é erro
+        que, no SQLite, não derruba a transação. O `cg_sp` abre ANTES do
+        comando; quando o comando dá certo, o próprio PostgreSQL apaga o `cg_sp`
+        junto (foi aberto depois do savepoint de quem chama), e só no erro se
+        volta a ele. O SAVEPOINT vai cru: não há o que proteger.
+
+        A TRAVA ÚNICA SE PEDE DE NOVO depois do ROLLBACK TO: a trava de
+        transação pega depois do savepoint é solta pelo PostgreSQL junto com o
+        resto (medido em 19/10/2026), e a escrita seguinte não pode contar com
+        ela. Pedir outra vez a que ainda se tem não custa nada.
+        """
+        verbo = texto.split(None, 1)[0].upper()
+        try:
+            with self._pg.cursor() as c:
+                if verbo == "SAVEPOINT":
+                    c.execute(texto)
+                    return
+                c.execute("SAVEPOINT cg_sp")
+                try:
+                    c.execute(texto)
+                except psycopg.Error:
+                    c.execute("ROLLBACK TO SAVEPOINT cg_sp")
+                    c.execute("RELEASE SAVEPOINT cg_sp")
+                    raise
+        except psycopg.Error as erro:
+            raise _traduzir_erro(erro) from erro
+        if verbo == "ROLLBACK":
+            self._travada = False
 
     def _executar(self, cur: Cursor, sql: str, parametros: Any, *,
                   em_lote: bool = False, de_script: bool = False) -> None:
@@ -1511,7 +1811,8 @@ class Conexao:
         if re.match(r"^\s*(SAVEPOINT|RELEASE|ROLLBACK\s+TO)\b", texto, re.I):
             if not self._em_transacao:
                 self._comecar(False)
-            self._rodar(cur, texto, None)
+            self._ponto_de_retorno(texto)
+            cur._carregar((), [], -1)
             return
         m = _RE_PRAGMA.match(texto)
         if m:
@@ -1533,6 +1834,10 @@ class Conexao:
             return
         if _RE_CREATE_TABLE.match(texto):
             self._criar_tabela(cur, texto)
+            return
+        m = _RE_DROP_TABLE.match(texto)
+        if m:
+            self._apagar_tabela(cur, m.group("nome"), bool(m.group("se")))
             return
         m = _RE_ALTER_ADD.match(texto)
         if m and not re.match(r"^\s*(CONSTRAINT|PRIMARY|UNIQUE|FOREIGN|CHECK)\b",
@@ -1784,6 +2089,38 @@ class Conexao:
                           (tabela, comando))
             if fks:
                 self._tentar_fks_pendentes()
+
+    def _apagar_tabela(self, cur: Cursor, nome_tab: str, se_existir: bool) -> None:
+        """`DROP TABLE` como o do SQLite, que apaga a tabela mesmo com outra
+        apontando para ela (a FK da outra fica lá, à espera). O PostgreSQL
+        recusa sem CASCADE — e o CASCADE leva a FK da outra tabela junto. Por
+        isso ela vai, antes, para `cg_fk_pendentes`: quando a tabela voltar a
+        existir, a FK volta com ela (`_tentar_fks_pendentes`). Visão que
+        dependa da tabela também cai — no SQLite ela ficaria, quebrada."""
+        tabela = _nome(nome_tab.strip("`"))
+        fks = self._cru(
+            "SELECT conrelid::regclass::text, conname, pg_get_constraintdef(oid) "
+            "FROM pg_constraint WHERE contype = 'f' AND confrelid = to_regclass(%s) "
+            "AND conrelid <> confrelid ORDER BY oid", (self._qual(tabela),)) or []
+        comando = f'DROP TABLE {"IF EXISTS " if se_existir else ""}"{tabela}" CASCADE'
+        propria = bool(fks) and not self._em_transacao
+        if propria:
+            self._comecar(False)
+        try:
+            self._rodar(cur, comando, None)
+            for filha, nome_fk, definicao in fks:
+                if "NOT VALID" not in definicao.upper():
+                    definicao += " NOT VALID"
+                self._cru("INSERT INTO cg_fk_pendentes(tabela, comando, erro) VALUES (%s, %s, %s)",
+                          (filha, f'ALTER TABLE {filha} ADD CONSTRAINT "{nome_fk}" {definicao}',
+                           f"falta: {tabela} (DROP TABLE)"))
+        except BaseException:
+            if propria:
+                self.rollback()
+            raise
+        if propria:
+            self.commit()
+        self._esquecer()
 
     def _definicao_de_coluna(self, parte: str) -> str:
         if re.match(r"^\s*(CONSTRAINT|PRIMARY|UNIQUE|CHECK)\b", parte, re.I):
@@ -2059,7 +2396,7 @@ def copiar_para_arquivo(db_path: Any, destino: Any) -> Path:
     import shutil
     import subprocess
     pasta = (os.environ.get("CG_PG_BIN") or "").strip()
-    exe = (Path(pasta) / "pg_dump.exe") if pasta else None
+    exe = (Path(pasta) / ("pg_dump.exe" if os.name == "nt" else "pg_dump")) if pasta else None
     if not exe or not exe.exists():
         achado = shutil.which("pg_dump")
         exe = Path(achado) if achado else None
@@ -2072,3 +2409,203 @@ def copiar_para_arquivo(db_path: Any, destino: Any) -> Path:
     if proc.returncode != 0:
         raise OperationalError("pg_dump falhou: " + (proc.stderr or proc.stdout)[-500:])
     return destino
+
+
+# ------------------------------------------------- a conferência da carga
+# A CARGA DA VIRADA NÃO MORA AQUI, E POR ISSO ELA SE CONFERE AQUI — lote LH07,
+# 21/10/2026. Quem leva os dados do SQLite da produção para o PostgreSQL é o
+# `tools/migrar_para_postgres.py` (roteiro da virada, passo B3; na branch desde
+# o LH10, a mesma versão da entrega de 17/10); o
+# `_receber_de_sqlite` acima não carrega nada no PostgreSQL (grava o arquivo,
+# ou recusa). E o banco da produção tem colunas que o código dela não conhecia:
+# `pt_avisos.origem`/`origem_chave` (1.676 avisos do E-Ofício),
+# `pt_editais.origem`/`origem_chave`, `rc_assentos.tardio_requerimento`. Coluna
+# que não chega ao PostgreSQL some CALADA — a tela não a lê, e ninguém a
+# procura. Esta conferência compara o arquivo com o schema DEPOIS da carga e
+# diz o nome de cada tabela, coluna e contagem que não bate.
+
+def _nome_sql(nome: str) -> str:
+    return '"' + str(nome).replace('"', '""') + '"'
+
+
+# TABELA DO ARQUIVO QUE NÃO É DO SISTEMA não se cobra da carga — lote LH09,
+# 21/10/2026. `_ping` (uma coluna `x` sem tipo, 0 linhas) está no banco da
+# produção e nenhum código a cria: não há `_ping` no código, nas ferramentas
+# nem na história do repositório. É sobra de um teste de escrita feito à mão no
+# servidor. O código não a cria; a carga pode deixá-la para trás, e a
+# conferência a lista em `tabelas_ignoradas` (o aviso) em vez de dar a carga
+# por incompleta. Se a carga a trouxer, também não é defeito.
+TABELAS_FORA_DA_CARGA = {
+    "_ping": "não é do sistema: nenhum código a cria (sobra de teste de escrita "
+             "feito à mão no servidor, 0 linhas); a carga a ignora",
+}
+
+
+# O QUE O AJUSTE TIROU DE PROPÓSITO não é perda — lote LH10, 21/10/2026. O
+# roteiro confere a carga DEPOIS do `tools/ajuste_pos_migracao.sql` (e antes de
+# subir o código). No modo guardar, o ajuste põe NULL no valor que não converte
+# (2.015 em `ri_matriculas.criado_por` no ensaio de 21/10) e apaga a linha
+# repetida na chave de um UNIQUE do código, e antes guarda cada um em
+# `cg_ajuste_guardados` (coluna '*' = a linha inteira, em JSON). Sem descontar
+# isso, a conferência sairia com 1 por causa da própria decisão do oficial, e a
+# perda de verdade ficaria no meio do esperado. Desconta-se EXATAMENTE o que
+# está guardado e continua fora (valor ainda NULL, linha ainda ausente): a
+# diferença que sobra além disso continua sendo perda.
+
+def _tirado_pelo_ajuste(c, schema: str, no_pg: dict) -> tuple[dict, dict]:
+    """({tabela: linhas apagadas}, {(tabela, coluna): valores a menos}) que
+    `cg_ajuste_guardados` explica, como estão AGORA no schema."""
+    import json
+    linhas: dict[str, int] = {}
+    valores: dict[tuple[str, str], int] = {}
+    if "cg_ajuste_guardados" not in no_pg:
+        return linhas, valores
+    guardados = f"{_nome_sql(schema)}.cg_ajuste_guardados"
+    c.execute(f"SELECT tabela, coluna FROM {guardados} GROUP BY tabela, coluna "
+              f"ORDER BY tabela, coluna")
+    for tabela, coluna in c.fetchall():
+        colunas = no_pg.get(str(tabela).lower())
+        if not colunas or "id" not in colunas:
+            continue
+        alvo = f"{_nome_sql(schema)}.{_nome_sql(tabela)}"
+        if coluna == "*":
+            c.execute(f"SELECT g.valor_original FROM {guardados} g WHERE g.tabela = %s "
+                      f"AND g.coluna = '*' AND NOT EXISTS (SELECT 1 FROM {alvo} t "
+                      f"WHERE t.id = g.linha_id) ORDER BY g.linha_id", (tabela,))
+            for (original,) in c.fetchall():
+                linhas[tabela.lower()] = linhas.get(tabela.lower(), 0) + 1
+                for nome, valor in json.loads(original or "{}").items():
+                    if valor is not None:
+                        chave = (tabela.lower(), str(nome).lower())
+                        valores[chave] = valores.get(chave, 0) + 1
+        elif str(coluna).lower() in colunas:
+            c.execute(f"SELECT count(*) FROM {guardados} g JOIN {alvo} t ON t.id = g.linha_id "
+                      f"WHERE g.tabela = %s AND g.coluna = %s AND t.{_nome_sql(coluna)} IS NULL",
+                      (tabela, coluna))
+            chave = (tabela.lower(), str(coluna).lower())
+            valores[chave] = valores.get(chave, 0) + int(c.fetchone()[0])
+    return linhas, valores
+
+
+def conferir_carga_de_sqlite(origem: Any, db_path: Any) -> dict:
+    """O arquivo SQLite `origem` contra o schema PostgreSQL de `db_path`. Só LÊ.
+
+    Para cada tabela do arquivo: se ela existe no PostgreSQL, que colunas do
+    arquivo NÃO existem lá (a lista do aviso), se o número de linhas bate e,
+    coluna a coluna, se o número de valores preenchidos bate (uma coluna que
+    existe nos dois lados e veio vazia também é dado perdido). Nome de tabela
+    e de coluna se compara sem caixa: o PostgreSQL guarda em minúscula.
+
+    Devolve `ok` e as quatro listas — `tabelas_que_nao_vieram`,
+    `colunas_que_nao_vieram` ({tabela: [colunas]}), `linhas_diferentes` e
+    `valores_diferentes` ({tabela: {coluna: {"sqlite": n, "pg": m}}}) —, mais
+    o aviso `tabelas_ignoradas` ({tabela: por quê}): as do arquivo que não são
+    do sistema (`TABELAS_FORA_DA_CARGA`), que não pesam no `ok`.
+
+    Depois do `tools/ajuste_pos_migracao.sql` no modo guardar, a diferença que
+    é EXATAMENTE o que ele guardou em `cg_ajuste_guardados` e ainda está fora
+    sai das duas listas e vai para `linhas_guardadas_pelo_ajuste` e
+    `valores_guardados_pelo_ajuste` (mesma forma), que também não pesam no
+    `ok`: é a decisão do oficial, e não perda (ver `_tirado_pelo_ajuste`).
+    """
+    if psycopg is None or not ativo():
+        raise OperationalError("A conferência da carga precisa do PostgreSQL ligado (CG_PG_DSN).")
+    arquivo = Path(_caminho_e_modo(origem)[0]).resolve()
+    if not arquivo.is_file():
+        raise OperationalError(f"O arquivo SQLite da carga não existe: {arquivo}")
+    schema = schema_do_caminho(db_path)
+    saida: dict[str, Any] = {"schema": schema, "tabelas_que_nao_vieram": [],
+                             "colunas_que_nao_vieram": {}, "linhas_diferentes": {},
+                             "valores_diferentes": {}, "tabelas_ignoradas": {},
+                             "linhas_guardadas_pelo_ajuste": {},
+                             "valores_guardados_pelo_ajuste": {}}
+    sq = _CONNECT_ORIGINAL(arquivo.as_uri() + "?mode=ro", uri=True)
+    try:
+        with psycopg.connect(dsn(), autocommit=True) as pg, pg.cursor() as c:
+            c.execute("SELECT table_name, column_name FROM information_schema.columns "
+                      "WHERE table_schema = %s ORDER BY table_name, ordinal_position",
+                      (schema,))
+            no_pg: dict[str, dict[str, str]] = {}
+            for tabela, coluna in c.fetchall():
+                no_pg.setdefault(tabela.lower(), {})[coluna.lower()] = coluna
+            linhas_tiradas, valores_tirados = _tirado_pelo_ajuste(c, schema, no_pg)
+            tabelas = [t for (t,) in sq.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' "
+                "AND name NOT LIKE 'sqlite%' ORDER BY name")]
+            for tabela in tabelas:
+                if tabela.lower() in TABELAS_FORA_DA_CARGA:
+                    saida["tabelas_ignoradas"][tabela] = TABELAS_FORA_DA_CARGA[tabela.lower()]
+                    continue
+                colunas = [d[0] for d in sq.execute(
+                    f"SELECT * FROM {_nome_sql(tabela)} LIMIT 0").description]
+                destino = no_pg.get(tabela.lower())
+                if destino is None:
+                    saida["tabelas_que_nao_vieram"].append(tabela)
+                    continue
+                faltam = [x for x in colunas if x.lower() not in destino]
+                if faltam:
+                    saida["colunas_que_nao_vieram"][tabela] = faltam
+                comuns = [x for x in colunas if x.lower() in destino]
+                lista = "".join(f", count({_nome_sql(x)})" for x in comuns)
+                de_la = sq.execute(f"SELECT count(*){lista} FROM {_nome_sql(tabela)}").fetchone()
+                lista_pg = "".join(f", count({_nome_sql(destino[x.lower()])})" for x in comuns)
+                c.execute(f"SELECT count(*){lista_pg} FROM {_nome_sql(schema)}."
+                          f"{_nome_sql(tabela.lower())}")
+                de_ca = c.fetchone()
+                if de_la[0] != de_ca[0]:
+                    par = {"sqlite": de_la[0], "pg": de_ca[0]}
+                    if de_la[0] - de_ca[0] == linhas_tiradas.get(tabela.lower(), 0):
+                        saida["linhas_guardadas_pelo_ajuste"][tabela] = par
+                    else:
+                        saida["linhas_diferentes"][tabela] = par
+                diferentes: dict[str, dict] = {}
+                guardados: dict[str, dict] = {}
+                for x, a, b in zip(comuns, de_la[1:], de_ca[1:]):
+                    if a == b:
+                        continue
+                    tirados = valores_tirados.get((tabela.lower(), x.lower()), 0)
+                    (guardados if tirados and a - b == tirados else diferentes)[x] = {"sqlite": a, "pg": b}
+                if diferentes:
+                    saida["valores_diferentes"][tabela] = diferentes
+                if guardados:
+                    saida["valores_guardados_pelo_ajuste"][tabela] = guardados
+    finally:
+        sq.close()
+    saida["ok"] = not (saida["tabelas_que_nao_vieram"] or saida["colunas_que_nao_vieram"]
+                       or saida["linhas_diferentes"] or saida["valores_diferentes"])
+    return saida
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """`python banco_pg.py conferir-carga <copia.sqlite3> [<caminho do banco>]`
+
+    Para o roteiro da virada (`docs/ROTEIRO_DA_VIRADA.md`), depois da carga
+    (B3) e do ajuste (B4), e antes de subir o código: imprime a conferência e
+    sai com 1 se alguma coisa não veio. O que o ajuste guardou sai em AVISO,
+    sem pesar. Sem o caminho do banco vale o `CG_PG_SCHEMA` (é o que a
+    produção usa)."""
+    import json
+    import sys
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) not in (2, 3) or args[0] != "conferir-carga":
+        print(main.__doc__)
+        return 2
+    feito = conferir_carga_de_sqlite(args[1], args[2] if len(args) == 3 else NOME_DO_BANCO_PRINCIPAL)
+    print(json.dumps(feito, ensure_ascii=False, indent=1))
+    for tabela, motivo in feito["tabelas_ignoradas"].items():
+        print(f"AVISO: a tabela {tabela} do arquivo ficou fora da conferência — {motivo}.",
+              file=sys.stderr)
+    for tabela, par in feito["linhas_guardadas_pelo_ajuste"].items():
+        print(f"AVISO: {tabela}: {par['sqlite'] - par['pg']} linha(s) a menos no PostgreSQL — "
+              f"guardadas inteiras pelo ajuste em cg_ajuste_guardados (não é perda).",
+              file=sys.stderr)
+    for tabela, colunas in feito["valores_guardados_pelo_ajuste"].items():
+        for coluna, par in colunas.items():
+            print(f"AVISO: {tabela}.{coluna}: {par['sqlite'] - par['pg']} valor(es) a menos no "
+                  f"PostgreSQL — guardados pelo ajuste em cg_ajuste_guardados (não é perda).",
+                  file=sys.stderr)
+    return 0 if feito["ok"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

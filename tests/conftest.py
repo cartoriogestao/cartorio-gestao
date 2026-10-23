@@ -330,6 +330,7 @@ def _limpar_acervo(data_dir: Path) -> None:
                     pass
     # Sidecars no DATA_DIR (credenciais, caches) — o restore SQL nao os apaga.
     manter = {_DB_NAME, _SEED_NAME, "arquivos"}
+    manter |= {_DB_NAME + "-wal", _DB_NAME + "-shm", _DB_NAME + "-journal"}
     for filho in list(data_dir.iterdir()):
         if filho.name in manter:
             continue
@@ -522,3 +523,8 @@ def _cg_pg_apaga_schemas_do_teste():
                 banco_pg.devolver_schema(esquema)
             except Exception:  # noqa: BLE001
                 pass
+
+
+def pytest_configure(config):
+    # A marca existia só no pytest.ini da instalação (fora do GitHub).
+    config.addinivalue_line("markers", "lento: teste demorado; o gate rápido usa -m 'not lento'")

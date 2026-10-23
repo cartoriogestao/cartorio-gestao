@@ -101,6 +101,15 @@ def _ficha_com_ato(casa, *, numero=6, selo=None, cancelado=0, encerrada=0):
     return mid, ato_id
 
 
+def _cobrir(casa, *, usuario="MARIO EXEMPLO DOS SANTOS", codigos=("16.1",)):
+    """O selo à mão passa pela trava do selo pago (revisão de 22/10/2026,
+    A9): o balcão atende um protocolo pago antes de digitar o selo, como já
+    faz para o selo automático (`test_habilitacao_web`)."""
+    from protocolo_de_teste import atender_protocolo_pago
+    with casa["db"].transaction() as con:
+        atender_protocolo_pago(con, usuario=usuario, codigos=codigos)
+
+
 def _selar(casa, mid, ato_id, cliente=None, **campos):
     c = cliente or casa["cliente"]
     html = c.get(f"/registro-imoveis/{mid}").get_data(as_text=True)
@@ -253,6 +262,7 @@ SELO_A_MAO = ("Poder Judiciário - TJMA. Selo: REGAVD000000ABCD1234EFGH9876 "
 def test_o_selo_digitado_a_mao_fica_no_ato(casa):
     """O caminho de quando o aparelho esta fora do ar."""
     mid, ato_id = _ficha_com_ato(casa)
+    _cobrir(casa)
     _selar(casa, mid, ato_id, selo_texto=SELO_A_MAO, emolumentos="80,00")
     a = _ato(casa, ato_id)
     assert a["selo_texto"] == SELO_A_MAO
@@ -267,6 +277,7 @@ def test_o_selo_a_mao_entra_no_razao_dos_selos(casa):
     faz. Sem o razao, um selo de 2023 podia ser digitado hoje como novo.
     """
     mid, ato_id = _ficha_com_ato(casa)
+    _cobrir(casa)
     _selar(casa, mid, ato_id, selo_texto=SELO_A_MAO)
     con = _con(casa)
     r = con.execute("SELECT * FROM sd_selos WHERE numero=?",
@@ -281,8 +292,24 @@ def test_o_selo_a_mao_entra_no_razao_dos_selos(casa):
 def test_o_selo_a_mao_nao_exige_natureza_nem_item(casa):
     """Quem digita a etiqueta ja tem o selo em maos — nada e pedido a rede."""
     mid, ato_id = _ficha_com_ato(casa)
+    _cobrir(casa)
     _selar(casa, mid, ato_id, selo_texto=SELO_A_MAO)
     assert _ato(casa, ato_id)["selo_texto"] == SELO_A_MAO
+
+
+def test_sem_protocolo_em_atendimento_o_selo_a_mao_e_recusado(casa):
+    """A trava do selo pago vale também para o selo digitado (revisão de
+    segurança de 22/10/2026, A9): sem protocolo pago em atendimento, sem
+    lançamento e sem liberação do ADMIN, o número não entra — nem no ato,
+    nem no razão —, e a tela diz o que falta."""
+    mid, ato_id = _ficha_com_ato(casa)
+    html = _selar(casa, mid, ato_id, selo_texto=SELO_A_MAO).get_data(as_text=True)
+    assert "não entrou" in html
+    assert not _ato(casa, ato_id)["selo_texto"]
+    con = _con(casa)
+    quantos = con.execute("SELECT COUNT(*) FROM sd_selos").fetchone()[0]
+    con.close()
+    assert quantos == 0, "selo sem cobertura nao pode ficar no razao"
 
 
 def test_codigo_de_selo_com_forma_errada_e_recusado(casa):

@@ -25,9 +25,10 @@ O QUE ELE NÃO FAZ
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from pathlib import Path
 from typing import Any
+
+from bd_nativo import banco
 
 # Códigos do CCN (1–10). Esta casa colhe os quatro de identificação:
 # polegar e indicador de cada mão. Decisão do oficial em 31/08/2026.
@@ -59,11 +60,11 @@ def _sha256(conteudo: bytes) -> str:
     return hashlib.sha256(conteudo).hexdigest()
 
 
-def _cartao(con: sqlite3.Connection, cartao_id: int) -> dict:
-    linha = con.execute(
-        "SELECT id, nome, documento FROM nt_cartoes WHERE id=?",
+def _cartao(con: Any, cartao_id: int) -> dict:
+    linha = banco(con).um(
+        "SELECT id, nome, documento FROM nt_cartoes WHERE id=%s",
         (int(cartao_id),),
-    ).fetchone()
+    )
     if not linha:
         raise CadastroBioError(
             "Não há cartão com esse número. Abra o cadastro da pessoa em "
@@ -89,24 +90,26 @@ def _gravar_arquivo(destino: Path, dados: bytes, anterior: str | None) -> None:
         pass
 
 
-def _linha_existente(con: sqlite3.Connection, cartao_id: int, especie: str,
+def _linha_existente(con: Any, cartao_id: int, especie: str,
                      dedo: int | None) -> dict | None:
     if especie == ESPECIE_FOTO:
-        linha = con.execute(
+        linha = banco(con).um(
             """SELECT * FROM nt_cadastro_imagens
-                WHERE cartao_id=? AND especie=?""",
+                WHERE cartao_id=%s AND especie=%s
+                ORDER BY id LIMIT 1""",
             (int(cartao_id), ESPECIE_FOTO),
-        ).fetchone()
+        )
     else:
-        linha = con.execute(
+        linha = banco(con).um(
             """SELECT * FROM nt_cadastro_imagens
-                WHERE cartao_id=? AND especie=? AND dedo=?""",
+                WHERE cartao_id=%s AND especie=%s AND dedo=%s
+                ORDER BY id LIMIT 1""",
             (int(cartao_id), ESPECIE_DIGITAL, int(dedo)),
-        ).fetchone()
+        )
     return dict(linha) if linha else None
 
 
-def _guardar(con: sqlite3.Connection, *, cartao_id: int, especie: str,
+def _guardar(con: Any, *, cartao_id: int, especie: str,
              dedo: int | None, dados: bytes, agora: str, por: str | None,
              destino: Path, presencial: int) -> dict:
     digest = _sha256(dados)
@@ -118,25 +121,24 @@ def _guardar(con: sqlite3.Connection, *, cartao_id: int, especie: str,
     _gravar_arquivo(destino, dados, anterior["caminho"] if anterior else None)
 
     if anterior:
-        con.execute(
+        banco(con).escrever(
             """UPDATE nt_cadastro_imagens
-                  SET caminho=?, nome_arquivo=?, sha256=?, bytes=?,
-                      presencial=?, colhido_em=?, colhido_por=?
-                WHERE id=?""",
+                  SET caminho=%s, nome_arquivo=%s, sha256=%s, bytes=%s,
+                      presencial=%s, colhido_em=%s, colhido_por=%s
+                WHERE id=%s""",
             (caminho, nome, digest, tamanho, int(presencial), agora, quem,
              anterior["id"]),
         )
         row_id = int(anterior["id"])
     else:
-        cur = con.execute(
+        row_id = int(banco(con).escrever(
             """INSERT INTO nt_cadastro_imagens
                (cartao_id, especie, dedo, caminho, nome_arquivo, sha256, bytes,
                 presencial, colhido_em, colhido_por)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (int(cartao_id), especie, dedo, caminho, nome, digest, tamanho,
              int(presencial), agora, quem),
-        )
-        row_id = int(cur.lastrowid)
+        )[0]["id"])
 
     return {
         "id": row_id,
@@ -153,7 +155,7 @@ def _guardar(con: sqlite3.Connection, *, cartao_id: int, especie: str,
     }
 
 
-def colher_foto(con: sqlite3.Connection, cartao_id: int, jpeg_bytes: bytes,
+def colher_foto(con: Any, cartao_id: int, jpeg_bytes: bytes,
                 agora: str, por: str | None, pasta_base: Any) -> dict:
     """Grava a fotografia do cadastro. ESCREVE arquivo e linha.
 
@@ -174,7 +176,7 @@ def colher_foto(con: sqlite3.Connection, cartao_id: int, jpeg_bytes: bytes,
     )
 
 
-def colher_digital(con: sqlite3.Connection, cartao_id: int, dedo: int,
+def colher_digital(con: Any, cartao_id: int, dedo: int,
                    png_bytes: bytes, agora: str, por: str | None,
                    pasta_base: Any) -> dict:
     """Grava a digital de um dos quatro dedos da casa. ESCREVE arquivo e linha.
@@ -211,20 +213,20 @@ def colher_digital(con: sqlite3.Connection, cartao_id: int, dedo: int,
     )
 
 
-def imagens_do_cadastro(con: sqlite3.Connection, cartao_id: int) -> list[dict]:
+def imagens_do_cadastro(con: Any, cartao_id: int) -> list[dict]:
     """As imagens do cadastro, foto primeiro. Só LÊ. Sem o blob."""
     _cartao(con, cartao_id)
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT id, cartao_id, especie, dedo, caminho, nome_arquivo,
                   sha256, bytes, presencial, colhido_em, colhido_por
              FROM nt_cadastro_imagens
-            WHERE cartao_id=?
+            WHERE cartao_id=%s
             ORDER BY CASE especie WHEN 'FOTO' THEN 0 ELSE 1 END, dedo, id""",
         (int(cartao_id),),
-    )]
+    )
 
 
-def estado(con: sqlite3.Connection, cartao_id: int) -> dict:
+def estado(con: Any, cartao_id: int) -> dict:
     """O que o cadastro já tem, e o que falta, em português. Só LÊ.
 
     `pronto_para_ccn_minimo` é CPF + nome — o mínimo que o CCN aceita.

@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block title %}Gratuidades — Portal do Selo{% endblock %}
+{% block heading %}<h1>Gratuidades: o que o Portal do Selo pede</h1>{% endblock %}
+{% block content %}
+<section class="card">
+  <p>Para o ressarcimento, o Portal do Selo pede, <strong>para cada selo gratuito</strong>, o
+    comprovante da gratuidade (declaração de pobreza, decisão, documento da gratuidade legal…)
+    <strong>e</strong> a cópia da certidão do ato praticado. Pode ser um PDF só com os dois.
+    Quando as duas peças estão guardadas, o selo vai para o pacote: um PDF por selo, com o número
+    do selo no nome.</p>
+  <form method="get" action="{{ url_for('selo_gratuidades_portal') }}">
+    <label>De <input type="date" name="inicio" value="{{ inicio }}"></label>
+    <label>até <input type="date" name="fim" value="{{ fim }}"></label>
+    <label>Mostrar
+      <select name="situacao">
+        <option value="FALTANDO"{% if situacao == 'FALTANDO' %} selected{% endif %}>Falta comprovante ou certidão</option>
+        {% for k, v in SP.SITUACOES_DA_GRATUIDADE.items() %}
+        <option value="{{ k }}"{% if situacao == k %} selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+        <option value="TODAS"{% if situacao == 'TODAS' %} selected{% endif %}>Todos</option>
+      </select></label>
+    <button class="button" type="submit">Ver</button>
+  </form>
+  {% if pode %}
+  <form method="post" action="{{ url_for('selo_gratuidade_pacote_gerar') }}" style="margin-top:.6em">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="inicio" value="{{ inicio }}">
+    <input type="hidden" name="fim" value="{{ fim }}">
+    <button class="button primary" type="submit">Gerar o pacote com os selos prontos deste período</button>
+  </form>
+  {% endif %}
+</section>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Selo</th><th>Ato</th><th>Data</th><th>Quem obteve</th><th>Situação</th><th>Arquivos</th>{% if guarda %}<th>Guardar</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for s in lista %}
+    <tr id="selo-{{ s.id }}">
+      <td><code>{{ s.numero }}</code></td>
+      <td>{{ s.ato }}</td>
+      <td>{{ (s.obtido_em or '')[:16]|replace('T', ' ') }}</td>
+      <td>{{ s.obtido_por or '' }}</td>
+      <td>{% if s.situacao in SP.FALTANDO %}<strong>{{ SP.SITUACOES_DA_GRATUIDADE[s.situacao] }}</strong>{% else %}{{ SP.SITUACOES_DA_GRATUIDADE[s.situacao] }}{% endif %}</td>
+      <td>{% for p in s.pecas %}
+        <div><a href="/arquivo/{{ p.id }}/ver" target="_blank">{{ p.original_name }}</a>
+          <small>— {{ SP.PECAS[p.peca] }}{% if p.tipo_comprovante %} · {{ SP.TIPOS_DE_COMPROVANTE.get(p.tipo_comprovante, '') }}{% endif %}</small>
+          {% if guarda and p.entity_type == 'SELO_GRATUIDADE' %}
+          <form method="post" action="{{ url_for('selo_gratuidade_classificar', attachment_id=p.id) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="situacao" value="{{ situacao }}">
+            <select name="peca">
+              <option value="COMPROVANTE"{% if p.peca == 'COMPROVANTE' %} selected{% endif %}>só o comprovante</option>
+              <option value="AMBOS"{% if p.peca == 'AMBOS' %} selected{% endif %}>comprovante + certidão</option>
+            </select>
+            <select name="tipo" required>
+              <option value="">tipo do comprovante…</option>
+              {% for k, v in SP.TIPOS_DE_COMPROVANTE.items() %}<option value="{{ k }}"{% if p.tipo_comprovante == k %} selected{% endif %}>{{ v }}</option>{% endfor %}
+            </select>
+            <button class="button" type="submit">Marcar</button>
+          </form>
+          {% endif %}
+        </div>
+      {% else %}—{% endfor %}</td>
+      {% if guarda %}
+      <td>{% if s.situacao in SP.FALTANDO or s.situacao == 'PRONTO' %}
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('selo_gratuidade_peca', selo_id=s.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="situacao" value="{{ situacao }}">
+          <select name="peca" required>
+            {% for k, v in SP.PECAS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+          </select>
+          <select name="tipo">
+            <option value="">tipo do comprovante…</option>
+            {% for k, v in SP.TIPOS_DE_COMPROVANTE.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+          </select>
+          <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" multiple required>
+          <button class="button primary" type="submit">Guardar</button>
+        </form>{% endif %}
+      </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="{{ 7 if guarda else 6 }}">Nenhum selo gratuito nesta situação.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if remessas %}
+<h2>Pacotes</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Nº</th><th>Período</th><th>Selos</th><th>Gerado</th><th>Enviado ao Portal</th></tr></thead>
+  <tbody>
+  {% for r in remessas %}
+    <tr>
+      <td><a href="{{ url_for('selo_portal_remessa', remessa_id=r.id) }}">{{ r.id }}</a></td>
+      <td>{{ r.inicio }} a {{ r.fim }}</td>
+      <td>{{ r.selos }}</td>
+      <td>{{ (r.gerado_em or '')[:10] }} · {{ r.gerado_por }}</td>
+      <td>{% if r.comunicado_em %}{{ r.comunicado_em[:10] }}{% if r.protocolo %} · {{ r.protocolo }}{% endif %}{% else %}<strong>ainda não</strong>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

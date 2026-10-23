@@ -109,7 +109,7 @@ def test_o_codigo_interno_do_eoficio_nao_passa_por_ocorrencia():
     # Traduzi-lo como se fosse mandaria dado invalido para a Central.
     with pytest.raises(CRA.CraError) as erro:
         CRA.ocorrencia("C")
-    assert "código interno do E-Ofício" in str(erro.value)
+    assert "código interno do sistema antigo" in str(erro.value)
     assert "1.027" in str(erro.value)
 
 

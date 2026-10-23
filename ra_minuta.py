@@ -39,6 +39,8 @@ que estava para sair?».
 from __future__ import annotations
 
 import sqlite3
+
+from bd_nativo import banco
 from typing import Any
 
 import ra_expurgo as EXP
@@ -101,22 +103,24 @@ def criar(con: sqlite3.Connection, *, registro_id: int, tipo: str, teor: str,
         raise MinutaError(
             f"Escreva o teor da minuta — pelo menos {MINIMO_DO_TEOR} letras. "
             f"Minuta vazia ocupa a fila fingindo que há trabalho escrito.")
-    if con.execute("SELECT 1 FROM ra_registros WHERE id=?",
-                   (int(registro_id),)).fetchone() is None:
+    bd = banco(con)
+    if bd.um("SELECT 1 AS um FROM ra_registros WHERE id=%s",
+             (int(registro_id),)) is None:
         raise MinutaError("Registro do Livro 3 não encontrado.")
-    cursor = con.execute(
+    novo = bd.escrever(
         """INSERT INTO ra_minutas
               (registro_id, tipo, numero_pretendido, data_pretendida, teor,
                natureza_titulo, codigo_tj, base_calculo_centavos, protocolo,
                origem, origem_chave, observacao, situacao, criado_em,
                criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (int(registro_id), tipo, numero_pretendido, data_pretendida,
          _texto(teor), _texto(natureza_titulo) or None,
          _texto(codigo_tj) or None, base_calculo_centavos,
          _texto(protocolo) or None, origem, _texto(origem_chave) or None,
          _texto(observacao) or None, A_REVISAR, agora, _texto(usuario) or None))
-    return int(cursor.lastrowid)
+    return int(novo[0]["id"])
 
 
 def atualizar(con: sqlite3.Connection, minuta_id: int, *, teor: str,
@@ -134,7 +138,7 @@ def atualizar(con: sqlite3.Connection, minuta_id: int, *, teor: str,
     mandasse só o teor apagaria o item da tabela de custas, que é justamente o
     que o selo exige. É o defeito do padrão do `get` pelo outro lado.
     """
-    m = uma(con, minuta_id)
+    m = _minuta_para_gravar(banco(con), minuta_id)
     if not m:
         raise MinutaError("Minuta não encontrada.")
     if m["situacao"] == LAVRADA:
@@ -151,17 +155,17 @@ def atualizar(con: sqlite3.Connection, minuta_id: int, *, teor: str,
     novo_tipo = _texto(tipo).upper() or m["tipo"]
     if novo_tipo not in TIPOS:
         raise MinutaError(f"Tipo de ato desconhecido no Livro 3: {tipo!r}.")
-    con.execute(
+    banco(con).escrever(
         """UPDATE ra_minutas
-              SET teor=?, tipo=?,
-                  numero_pretendido=COALESCE(?, numero_pretendido),
-                  data_pretendida=COALESCE(?, data_pretendida),
-                  natureza_titulo=COALESCE(?, natureza_titulo),
-                  codigo_tj=COALESCE(?, codigo_tj),
-                  base_calculo_centavos=COALESCE(?, base_calculo_centavos),
-                  protocolo=COALESCE(?, protocolo),
-                  atualizado_em=?, atualizado_por=?
-            WHERE id=?""",
+              SET teor=%s, tipo=%s,
+                  numero_pretendido=COALESCE(%s, numero_pretendido),
+                  data_pretendida=COALESCE(%s, data_pretendida),
+                  natureza_titulo=COALESCE(%s, natureza_titulo),
+                  codigo_tj=COALESCE(%s, codigo_tj),
+                  base_calculo_centavos=COALESCE(%s, base_calculo_centavos),
+                  protocolo=COALESCE(%s, protocolo),
+                  atualizado_em=%s, atualizado_por=%s
+            WHERE id=%s""",
         (_texto(teor), novo_tipo, numero_pretendido, data_pretendida,
          _texto(natureza_titulo) or None, _texto(codigo_tj) or None,
          base_calculo_centavos, _texto(protocolo) or None,
@@ -177,16 +181,16 @@ def descartar(con: sqlite3.Connection, minuta_id: int, *, motivo: str,
             f"Escreva o motivo do descarte com pelo menos "
             f"{MINIMO_DO_MOTIVO} letras — «não serve» não explica nada a quem "
             f"ler depois.")
-    m = uma(con, minuta_id)
+    m = _minuta_para_gravar(banco(con), minuta_id)
     if not m:
         raise MinutaError("Minuta não encontrada.")
     if m["situacao"] == LAVRADA:
         raise MinutaError(
             "Esta minuta já virou ato — o que se desfaz agora é o ato, por "
             "averbação, e não a minuta.")
-    con.execute(
-        """UPDATE ra_minutas SET situacao=?, observacao=?, atualizado_em=?,
-               atualizado_por=? WHERE id=?""",
+    banco(con).escrever(
+        """UPDATE ra_minutas SET situacao=%s, observacao=%s, atualizado_em=%s,
+               atualizado_por=%s WHERE id=%s""",
         (DESCARTADA, motivo, agora, _texto(usuario) or None, int(minuta_id)))
 
 
@@ -224,8 +228,18 @@ def voltar_do_ato(con: sqlite3.Connection, ato_id: int, *, agora: str,
 
     Devolve `{"minuta_id", "rotulo", "descancelou"}`.
     """
-    a = con.execute("SELECT * FROM ra_atos WHERE id=?",
-                    (int(ato_id),)).fetchone()
+    bd = banco(con)
+    a = bd.um("SELECT registro_id FROM ra_atos WHERE id=%s", (int(ato_id),))
+    if not a:
+        raise MinutaError("O ato não existe mais — nada a devolver.")
+    # AS TRÊS RECUSAS SE CONFEREM DENTRO DA TRAVA DA LAVRATURA
+    # (`ra_registro._proximo_ato`, a mesma de `ra_correcoes.renumerar`) e com
+    # o ato PRESO: um ato lavrado no meio faria este deixar de ser o último, e
+    # o selo ou o dinheiro gravados no meio sairiam apagados junto com ele. A
+    # trava vem antes do FOR UPDATE, na ordem de quem renumera — ao contrário,
+    # os dois se esperariam.
+    bd.travar(f"ra_atos.numero:{int(a['registro_id'])}")
+    a = bd.um("SELECT * FROM ra_atos WHERE id=%s FOR UPDATE", (int(ato_id),))
     if not a:
         raise MinutaError("O ato não existe mais — nada a devolver.")
     a = dict(a)
@@ -236,9 +250,9 @@ def voltar_do_ato(con: sqlite3.Connection, ato_id: int, *, agora: str,
             f"O ato {rotulo} tem selo ({_texto(a['selo'])[:28]}…) e por isso "
             f"não volta para as minutas: selo pago amarrado a ato que deixa "
             f"de existir é selo órfão.")
-    depois = con.execute(
-        "SELECT COUNT(*) FROM ra_atos WHERE registro_id=? AND id>?",
-        (a["registro_id"], int(ato_id))).fetchone()[0]
+    depois = int(bd.valor(
+        "SELECT COUNT(*) FROM ra_atos WHERE registro_id=%s AND id>%s",
+        (a["registro_id"], int(ato_id))))
     if depois:
         raise MinutaError(
             f"O ato {rotulo} não é o último do registro — há {depois} ato(s) "
@@ -261,12 +275,16 @@ def voltar_do_ato(con: sqlite3.Connection, ato_id: int, *, agora: str,
         origem=DESFEITO_DE_ATO, origem_chave=f"ra_atos:{int(ato_id)}",
         observacao=_texto(motivo) or None, usuario=usuario)
 
-    # O CANCELAMENTO QUE ESTE ATO CAUSOU SE DESFAZ COM ELE.
-    registro = con.execute("SELECT situacao FROM ra_registros WHERE id=?",
-                           (a["registro_id"],)).fetchone()
-    descancelou = bool(registro and _texto(registro[0]).upper() == "CANCELADO")
+    # O CANCELAMENTO QUE ESTE ATO CAUSOU SE DESFAZ COM ELE. FOR UPDATE: o
+    # descancelamento (`ra_correcoes.descancelar`) prende a mesma linha, e sem
+    # isto os dois devolveriam a ficha a ATIVO e cada um contaria que foi ele.
+    registro = bd.um(
+        "SELECT situacao FROM ra_registros WHERE id=%s FOR UPDATE",
+        (a["registro_id"],))
+    descancelou = bool(registro
+                       and _texto(registro["situacao"]).upper() == "CANCELADO")
     if descancelou:
-        con.execute("UPDATE ra_registros SET situacao='ATIVO' WHERE id=?",
+        bd.escrever("UPDATE ra_registros SET situacao='ATIVO' WHERE id=%s",
                     (a["registro_id"],))
 
     # A ATA DE OCORRENCIA NASCE AQUI, NA MESMA TRANSACAO — item 6 da fila.
@@ -274,16 +292,16 @@ def voltar_do_ato(con: sqlite3.Connection, ato_id: int, *, agora: str,
     # escrito naquele ato», e essa resposta so existe na ata, porque o ato
     # saiu do livro. Ata sem ato desfeito, e ato desfeito sem ata, sao os dois
     # jeitos de isto dar errado.
-    numero_do_registro = con.execute(
-        "SELECT numero FROM ra_registros WHERE id=?",
-        (a["registro_id"],)).fetchone()
+    numero_do_registro = bd.um(
+        "SELECT numero FROM ra_registros WHERE id=%s",
+        (a["registro_id"],))
     expurgo_id = EXP.registrar(
         con, registro_id=a["registro_id"],
-        registro_numero=(numero_do_registro[0] if numero_do_registro else None),
+        registro_numero=(numero_do_registro["numero"] if numero_do_registro else None),
         ato=a, motivo=motivo, agora=agora, usuario=usuario,
         minuta_id=minuta_id)
 
-    con.execute("DELETE FROM ra_atos WHERE id=?", (int(ato_id),))
+    bd.escrever("DELETE FROM ra_atos WHERE id=%s", (int(ato_id),))
     return {"minuta_id": minuta_id, "rotulo": rotulo,
             "descancelou": descancelou, "expurgo_id": expurgo_id}
 
@@ -299,17 +317,31 @@ def marcar_lavrada(con: sqlite3.Connection, minuta_id: int, *, ato_id: int,
     **A MINUTA NÃO SE APAGA AO VIRAR ATO**: ela é a prova de que aquele texto
     existia antes e de onde veio.
     """
-    m = uma(con, minuta_id)
+    m = _minuta_para_gravar(banco(con), minuta_id)
     if not m:
         raise MinutaError("Minuta não encontrada.")
     if m["situacao"] == LAVRADA:
         raise MinutaError(
             f"Esta minuta já foi lavrada (ato {m['ato_id']}). Lavrá-la de novo "
             f"poria o mesmo texto duas vezes no livro.")
-    con.execute(
-        """UPDATE ra_minutas SET situacao=?, ato_id=?, atualizado_em=?,
-               atualizado_por=? WHERE id=?""",
+    banco(con).escrever(
+        """UPDATE ra_minutas SET situacao=%s, ato_id=%s, atualizado_em=%s,
+               atualizado_por=%s WHERE id=%s""",
         (LAVRADA, int(ato_id), agora, _texto(usuario) or None, int(minuta_id)))
+
+
+def _minuta_para_gravar(bd, minuta_id: int) -> dict | None:
+    """A minuta com a linha PRESA, para quem confere a situação e grava.
+
+    `uma` só lê, e a tela a chama. Quem confere «já virou ato?» e depois
+    grava precisa segurar a linha até o fim da transação: no SQLite a escrita
+    era uma por vez; no PostgreSQL, sem o FOR UPDATE, a minuta lavrada ao
+    mesmo tempo passa pela conferência e sai descartada ou com outro texto.
+    """
+    bd._escrita()
+    linha = bd.um("SELECT * FROM ra_minutas WHERE id=%s FOR UPDATE",
+                  (int(minuta_id),))
+    return dict(linha) if linha else None
 
 
 # ------------------------------------------------------------------ leitura
@@ -317,8 +349,8 @@ def marcar_lavrada(con: sqlite3.Connection, minuta_id: int, *, ato_id: int,
 
 def uma(con: sqlite3.Connection, minuta_id: int) -> dict | None:
     """Uma minuta, ou `None`. Só lê."""
-    linha = con.execute("SELECT * FROM ra_minutas WHERE id=?",
-                        (int(minuta_id),)).fetchone()
+    linha = banco(con).um("SELECT * FROM ra_minutas WHERE id=%s",
+                          (int(minuta_id),))
     return dict(linha) if linha else None
 
 
@@ -326,13 +358,13 @@ def listar(con: sqlite3.Connection, registro_id: int,
            *, situacao: str | None = A_REVISAR) -> list[dict]:
     """As minutas daquele registro. `situacao=None` traz todas. Só lê."""
     if situacao is None:
-        linhas = con.execute(
-            "SELECT * FROM ra_minutas WHERE registro_id=? ORDER BY id",
-            (int(registro_id),)).fetchall()
+        linhas = banco(con).ler(
+            "SELECT * FROM ra_minutas WHERE registro_id=%s ORDER BY id",
+            (int(registro_id),))
     else:
-        linhas = con.execute(
-            "SELECT * FROM ra_minutas WHERE registro_id=? AND situacao=? "
-            "ORDER BY id", (int(registro_id), situacao)).fetchall()
+        linhas = banco(con).ler(
+            "SELECT * FROM ra_minutas WHERE registro_id=%s AND situacao=%s "
+            "ORDER BY id", (int(registro_id), situacao))
     return [dict(x) for x in linhas]
 
 
@@ -342,10 +374,10 @@ def a_revisar(con: sqlite3.Connection) -> list[dict]:
     É o que o painel dos inacabados pergunta — e é por ela que uma minuta
     esquecida num registro que ninguém abre volta a aparecer.
     """
-    linhas = con.execute(
+    linhas = banco(con).ler(
         """SELECT m.*, r.numero registro_numero
              FROM ra_minutas m JOIN ra_registros r ON r.id = m.registro_id
-            WHERE m.situacao=? ORDER BY m.id""", (A_REVISAR,)).fetchall()
+            WHERE m.situacao=%s ORDER BY m.id""", (A_REVISAR,))
     return [dict(x) for x in linhas]
 
 
@@ -373,16 +405,17 @@ def como_ficara(con: sqlite3.Connection, registro_id: int,
     AV-2, AV-3 —, e não o `numero_pretendido` que a minuta guarda: aquele é
     sugestão de quem escreveu, este é o que o livro dará se o ato sair agora.
     """
-    registro = con.execute("SELECT * FROM ra_registros WHERE id=?",
-                           (int(registro_id),)).fetchone()
+    bd = banco(con)
+    registro = bd.um("SELECT * FROM ra_registros WHERE id=%s",
+                     (int(registro_id),))
     if not registro:
         raise MinutaError("Registro do Livro 3 não encontrado.")
     m = uma(con, minuta_id)
     if not m or int(m["registro_id"]) != int(registro_id):
         raise MinutaError("Essa minuta não é deste registro.")
-    atos = [dict(x) for x in con.execute(
-        "SELECT * FROM ra_atos WHERE registro_id=? ORDER BY numero, id",
-        (int(registro_id),)).fetchall()]
+    atos = bd.ler(
+        "SELECT * FROM ra_atos WHERE registro_id=%s ORDER BY numero, id",
+        (int(registro_id),))
     previsto = (max((int(a["numero"]) for a in atos), default=0)) + 1
     m = dict(m)
     m["numero_previsto"] = previsto

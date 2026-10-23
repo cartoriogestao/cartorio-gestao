@@ -43,6 +43,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 import escrituracao as ESC
 import livro_nucleo as LN
 
@@ -213,14 +214,15 @@ def declarar(con: sqlite3.Connection, chave: str, *, tipo: str, titulo: str,
         raise ImplantacaoError(
             f"Tipo de pendência desconhecido: {tipo!r}. Os que existem são "
             f"{', '.join(TIPOS)}.")
-    cur = con.execute(
-        """INSERT OR IGNORE INTO nu_implantacao(chave, tipo, atribuicao,
+    novas = banco(con).escrever(
+        """INSERT INTO nu_implantacao(chave, tipo, atribuicao,
                titulo, motivo, consequencia, serie, situacao, declarada_em,
                declarada_por)
-           VALUES (?,?,?,?,?,?,?,'ABERTA',?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,'ABERTA',%s,%s)
+           ON CONFLICT DO NOTHING RETURNING chave""",
         (chave, tipo, atribuicao, titulo, motivo, consequencia, serie, agora,
          usuario))
-    return cur.rowcount > 0
+    return len(novas) > 0
 
 
 def declarar_numeracao(con: sqlite3.Connection, serie: str, motivo: str, *,
@@ -287,9 +289,9 @@ def resolver_numero(con: sqlite3.Connection, chave: str, proximo: Any, *,
     novo = ESC.fixar_numeracao(
         con, linha["serie"], proximo, usuario=usuario, agora=agora,
         motivo=(observacao or "informado na aba de implantação"))
-    con.execute(
-        """UPDATE nu_implantacao SET situacao='RESOLVIDA', valor=?,
-               observacao=?, resolvida_em=?, resolvida_por=? WHERE chave=?""",
+    banco(con).escrever(
+        """UPDATE nu_implantacao SET situacao='RESOLVIDA', valor=%s,
+               observacao=%s, resolvida_em=%s, resolvida_por=%s WHERE chave=%s""",
         (str(novo), observacao, agora, usuario, chave))
     return {"chave": chave, "serie": linha["serie"], "proximo": novo}
 
@@ -309,9 +311,9 @@ def resolver_decisao(con: sqlite3.Connection, chave: str, *, observacao: str,
         raise ImplantacaoError(
             "Escreva o que foi decidido. «Resolvido» sozinho não responde a "
             "pergunta que a inspeção faz seis meses depois.")
-    con.execute(
-        """UPDATE nu_implantacao SET situacao='RESOLVIDA', observacao=?,
-               resolvida_em=?, resolvida_por=? WHERE chave=?""",
+    banco(con).escrever(
+        """UPDATE nu_implantacao SET situacao='RESOLVIDA', observacao=%s,
+               resolvida_em=%s, resolvida_por=%s WHERE chave=%s""",
         (texto, agora, usuario, chave))
     return {"chave": chave, "observacao": texto}
 
@@ -331,9 +333,9 @@ def dispensar(con: sqlite3.Connection, chave: str, *, motivo: str, agora: str,
         raise ImplantacaoError(
             "Dispensar exige motivo escrito. Dispensar é decisão sua; ignorar "
             "não é.")
-    con.execute(
-        """UPDATE nu_implantacao SET situacao='DISPENSADA', observacao=?,
-               resolvida_em=?, resolvida_por=? WHERE chave=?""",
+    banco(con).escrever(
+        """UPDATE nu_implantacao SET situacao='DISPENSADA', observacao=%s,
+               resolvida_em=%s, resolvida_por=%s WHERE chave=%s""",
         (texto, agora, usuario, chave))
     return {"chave": chave, "motivo": texto}
 
@@ -348,22 +350,21 @@ def reabrir(con: sqlite3.Connection, chave: str, *, agora: str,
     linha = ler(con, chave)
     if not linha:
         raise ImplantacaoError(f"Pendência {chave!r} não encontrada.")
-    con.execute(
+    banco(con).escrever(
         """UPDATE nu_implantacao SET situacao='ABERTA', resolvida_em=NULL,
-               resolvida_por=NULL WHERE chave=?""", (chave,))
+               resolvida_por=NULL WHERE chave=%s""", (chave,))
     return {"chave": chave}
 
 
 # -------------------------------------------------------------- consultas
 
 
-def ler(con: sqlite3.Connection, chave: str) -> sqlite3.Row | None:
+def ler(con: sqlite3.Connection, chave: str) -> dict | None:
     """Uma pendência. Só LÊ."""
-    return con.execute("SELECT * FROM nu_implantacao WHERE chave=?",
-                       (chave,)).fetchone()
+    return banco(con).um("SELECT * FROM nu_implantacao WHERE chave=%s", (chave,))
 
 
-def _com_atribuicao(linha: sqlite3.Row) -> dict:
+def _com_atribuicao(linha: dict) -> dict:
     d = dict(linha)
     numero = d.get("atribuicao")
     d["atribuicao_nome"] = NOME_DA_ATRIBUICAO.get(numero, "Todas")
@@ -389,16 +390,16 @@ def abertas(con: sqlite3.Connection) -> list[dict]:
     Em ordem de atribuição e depois de título — a aba se lê por atribuição,
     que é como o balcão pensa.
     """
-    return [_com_atribuicao(r) for r in con.execute(
+    return [_com_atribuicao(r) for r in banco(con).ler(
         """SELECT * FROM nu_implantacao WHERE situacao='ABERTA'
-            ORDER BY COALESCE(atribuicao, 99), tipo, titulo""")]
+            ORDER BY COALESCE(atribuicao, 99), tipo, titulo, chave""")]
 
 
 def fechadas(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
     """O que já foi resolvido ou dispensado, do mais novo. Só LÊ."""
-    return [_com_atribuicao(r) for r in con.execute(
+    return [_com_atribuicao(r) for r in banco(con).ler(
         """SELECT * FROM nu_implantacao WHERE situacao<>'ABERTA'
-            ORDER BY resolvida_em DESC, chave LIMIT ?""", (int(limite),))]
+            ORDER BY resolvida_em DESC NULLS LAST, chave LIMIT %s""", (int(limite),))]
 
 
 def contagem(con: sqlite3.Connection) -> dict:
@@ -407,9 +408,9 @@ def contagem(con: sqlite3.Connection) -> dict:
     Chamada em TODA tela, junto do resto das estatísticas. Por isso é uma
     consulta só, sobre um índice, e não abre transação de escrita.
     """
-    linhas = list(con.execute(
-        """SELECT COALESCE(atribuicao, 99) a, COUNT(*) n
-             FROM nu_implantacao WHERE situacao='ABERTA' GROUP BY 1"""))
+    linhas = banco(con).ler(
+        """SELECT COALESCE(atribuicao, 99) AS a, COUNT(*) AS n
+             FROM nu_implantacao WHERE situacao='ABERTA' GROUP BY 1 ORDER BY 1""")
     por_atribuicao = {int(r["a"]): int(r["n"]) for r in linhas}
     return {
         "abertas": sum(por_atribuicao.values()),

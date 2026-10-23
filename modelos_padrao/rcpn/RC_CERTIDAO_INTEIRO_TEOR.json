@@ -1,0 +1,17 @@
+{
+  "chave": "RC_CERTIDAO_INTEIRO_TEOR",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Certidão de inteiro teor do Registro Civil — introdução",
+  "formato": "CHAVES",
+  "explica": "A introdução da certidão de inteiro teor do Registro Civil, em texto corrido ou por cópia reprográfica. Congela em rc_certidoes.teor, com o hash, na emissão; o teor colado do livro (ou a imagem) vem depois dela. {titulo} é o título da espécie; {lugar} (de cidade/UF), {cns}, {matricula} e {onde} (livro, folha e termo) o sistema monta com os dados da serventia e do assento, e somem quando faltam; {especie} e {nome} são os do assento; {fim} é a peça da modalidade — «COM O SEGUINTE TEOR:» ou a da cópia reprográfica. As peças «Era o que cabia certificar.» e «CERTIDÃO CANCELADA — {motivo}» entram só na impressão.",
+  "campos": [
+    "titulo",
+    "lugar",
+    "cns",
+    "especie",
+    "nome",
+    "matricula",
+    "onde",
+    "fim"
+  ]
+}

@@ -17,12 +17,13 @@ Só mede por padrão; grava com `--confirmar`. O banco é o da produção se
 from __future__ import annotations
 
 import argparse
-import sqlite3
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import banco_pg  # noqa: E402
 import produtividade as PR  # noqa: E402
+from bd_nativo import banco as abrir_banco  # noqa: E402
 
 BANCO_PRODUCAO = r"C:\ProgramData\CartorioGestao\cartorio_gestao.sqlite3"
 
@@ -33,9 +34,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--banco", default=BANCO_PRODUCAO)
     ap.add_argument("--confirmar", action="store_true")
     a = ap.parse_args(argv)
-    con = sqlite3.connect(a.banco, timeout=30)
+    # PELA PORTA DO BANCO: o Agendador roda isto fora do sistema, onde ninguém
+    # instala o desvio do `sqlite3.connect`, e `produtividade` já é nativo.
+    con = banco_pg.conectar(a.banco, timeout=30)
     try:
-        con.execute("BEGIN IMMEDIATE")
+        # A trava do BEGIN IMMEDIATE vira a do assunto: ler os cronômetros
+        # abertos e fechá-los é um passo só. Sem ela, o Agendador e uma
+        # execução à mão leriam o mesmo registro aberto e o fechariam duas vezes.
+        abrir_banco(con).travar("prod_registros.cronometro")
         fechados = PR.encerrar_esquecidos(con)
         for f in fechados:
             print(f"{f['responsavel_nome']}: «{f['tarefa']}» {f['data_registro']} "

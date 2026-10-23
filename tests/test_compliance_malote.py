@@ -23,13 +23,16 @@ if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
 import compliance as CP                                          # noqa: E402
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 AGORA = datetime(2026, 10, 14, 9, 0)          # uma quarta-feira
 
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.executescript("""
         CREATE TABLE expedientes (id INTEGER PRIMARY KEY, internal_protocol TEXT, source TEXT,
             subject TEXT, stage TEXT, created_at TEXT);

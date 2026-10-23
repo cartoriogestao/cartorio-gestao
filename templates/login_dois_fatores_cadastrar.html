@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Cadastrar a verificação em duas etapas{% endblock %}
+{% block auth_content %}
+<h1>{{ APP_NAME }}</h1><p class="muted">{{ unit_name }}</p>
+<p>Senha conferida para <strong>{{ conta }}</strong>. O Gestor exige a verificação em duas
+etapas para o seu perfil: cadastre o celular para entrar.</p>
+{% if pendente %}
+  {% include '_dois_fatores_chave.html' %}
+  <form method="post" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="confirmar">
+    <label>Código do aplicativo<input name="codigo" inputmode="numeric" autocomplete="one-time-code" autofocus required></label>
+    <button class="primary">Ativar e entrar</button>
+  </form>
+{% else %}
+  <form method="post" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="iniciar">
+    <button class="primary">Gerar a chave</button>
+  </form>
+{% endif %}
+<p class="small"><a href="{{ url_for('login') }}">Voltar</a></p>
+{% endblock %}

@@ -7,6 +7,7 @@ from __future__ import annotations
 from flask import flash, redirect, render_template, request, url_for
 
 import acervo_correcao as AC
+from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
@@ -19,8 +20,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def acervo_corrigir():
         tabela = (request.values.get("tabela") or "").strip()
         termo = (request.values.get("termo") or "").strip()
-        row_id = request.values.get("id")
-        row_id = int(row_id) if row_id and row_id.isdigit() else None
+        row_id = numero_digitado(request.values.get("id"))
 
         if request.method == "POST" and request.form.get("acao") == "salvar":
             motivo = request.form.get("motivo", "")

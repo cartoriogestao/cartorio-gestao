@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_RECONHECIMENTO_AUTENTICIDADE__firmas",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Reconhecimento por autenticidade — várias firmas",
+  "formato": "CHAVES",
+  "explica": "Quando a etiqueta reconhece mais de uma firma (e sem sinal público).",
+  "campos": [
+    "quem"
+  ]
+}

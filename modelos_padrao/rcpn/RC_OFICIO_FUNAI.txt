@@ -1,0 +1,14 @@
+{serventia_nome}
+CNS {cns}
+
+À FUNDAÇÃO NACIONAL DOS POVOS INDÍGENAS — FUNAI
+
+Comunicação de assento de nascimento de pessoa indígena, na forma do art. 253, § 2º, do Código de Normas da Corregedoria Geral da Justiça do Estado do Maranhão, para as providências necessárias ao registro administrativo.
+
+Nome: {nome}
+Data do nascimento: {data_nascimento}
+Data do assento: {data_assento}
+Livro: {livro}   Folha: {folha}   Termo: {termo}
+Matrícula: {matricula}
+Povo, etnia, grupo, clã ou família indígena: {etnia}
+Aldeia ou comunidade: {aldeia}

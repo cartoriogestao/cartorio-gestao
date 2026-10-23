@@ -1,0 +1,9 @@
+CERTIFICO E DOU FÉ, a pedido de parte interessada, que revendo os livros próprios desta Serventia {onde}, a pessoa jurídica abaixo tem, nesta data, a seguinte situação, em breve relato:
+
+Denominação: {denominacao}
+Endereço da sede: {sede}
+CNPJ: {cnpj}
+Objeto social: {objeto}{capital}{socios}{diretoria}
+Data do último ato registrado ou averbado nesta Serventia: {ultimo_ato}
+
+O referido é verdade e dou fé.

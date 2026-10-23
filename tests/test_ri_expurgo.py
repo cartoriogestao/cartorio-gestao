@@ -23,6 +23,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import ri_expurgo as EX                                    # noqa: E402
 from ri_schema import hash_ato, init_ri_schema, verifica_cadeia  # noqa: E402
@@ -36,7 +38,7 @@ MOTIVO = ("Ato lavrado em teste de implantação do sistema; selo cancelado no T
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.execute("PRAGMA foreign_keys=ON")
     c.row_factory = sqlite3.Row
     c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT)")
@@ -114,6 +116,22 @@ def test_averbacao_que_cancelou_outro_ato_nao_se_expurga(con):
     con.execute("UPDATE ri_atos SET cancelado=1, cancelado_por_ato_id=? WHERE id=?",
                 (canceladora, alvo))
     assert any("cancelou o R-01" in r for r in EX.impedimentos(con, canceladora))
+
+
+def test_averbacao_que_cancelou_dois_atos_cita_o_primeiro(con):
+    """`cancelado_por_ato_id` não é único. O SQLite dava o de menor id; sem
+    ORDER BY, o PostgreSQL dá o que estiver primeiro no disco — e o UPDATE
+    grava a linha nova no fim, por isso o R-02 é marcado antes."""
+    m = matricula(con)
+    r1 = ato(con, m, "R", 1)
+    r2 = ato(con, m, "R", 2)
+    canceladora = ato(con, m, "AV", 3)
+    for alvo in (r2, r1):
+        con.execute("UPDATE ri_atos SET cancelado=1, cancelado_por_ato_id=? WHERE id=?",
+                    (canceladora, alvo))
+    razoes = EX.impedimentos(con, canceladora)
+    assert any("cancelou o R-01" in r for r in razoes)
+    assert not any("cancelou o R-02" in r for r in razoes)
 
 
 def test_ato_citado_em_certidao_viva_nao_se_expurga(con):

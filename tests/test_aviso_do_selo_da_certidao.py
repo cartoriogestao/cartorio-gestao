@@ -31,17 +31,23 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
 
 import rc_certidao as RCE
+import nucleo_schema
 import rc_schema
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 AGORA = "2026-09-10T16:00:00"
 
 
 @pytest.fixture()
 def con(tmp_path):
-    c = sqlite3.connect(tmp_path / "t.sqlite3")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
+    # `rc_atos.livro_id` aponta para `nu_livros` (FK): o PostgreSQL cobra a
+    # FK na criacao, e o banco da casa cria o nucleo antes do RCPN.
+    nucleo_schema.init_nucleo_schema(c)
     rc_schema.init_rc_schema(c)
     # `rc_certidoes` nasce em `rc_certidao.py`, e nao em `rc_schema` — o
     # predicado da 1a via conta as certidoes ativas, e sem a tabela ele

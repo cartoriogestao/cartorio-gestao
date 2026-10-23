@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_FECHO_ESCRITURA",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Fecho da escritura",
+  "formato": "CHAVES",
+  "explica": "O fecho do teor da escritura montado pelo sistema, depois do objeto.",
+  "campos": []
+}

@@ -23,6 +23,9 @@ import protesto_aviso as AV
 import protesto_instrumento as PI
 import protesto_livros as PLIV
 import protesto_termo as TERMO
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 SV = {"unit_name": "SERVENTIA EXTRAJUDICIAL DE CIDADE EXEMPLO",
       "serventia_titular": "MARIO EXEMPLO DOS SANTOS",
@@ -74,7 +77,7 @@ def test_o_aviso_traz_os_itens_do_art_920(s):
 def test_o_prazo_limite_e_o_terceiro_dia_util_do_protocolo():
     """Lei 9.492, art. 12; CN-MA arts. 913, I e 925, § 4º. Protocolo de uma
     quinta (15/10/2026): sexta, segunda e terça — 20/10/2026."""
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.execute("CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT)")
     assert AV.prazo_limite(con, {"protocolo": "2610150001"}) == "2026-10-20"
     assert AV.prazo_limite(con, {"protocolo": "0"}) is None

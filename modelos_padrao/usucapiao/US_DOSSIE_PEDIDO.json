@@ -1,0 +1,8 @@
+{
+  "chave": "US_DOSSIE_PEDIDO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Pedido de análise do dossiê da usucapião",
+  "formato": "CHAVES",
+  "explica": "O que o dossiê do processo pede a quem vai analisá-lo (advogado, assessoria, ferramenta). O resto do dossiê é o processo listado, e não texto da casa: só este pedido é modelo.",
+  "campos": []
+}

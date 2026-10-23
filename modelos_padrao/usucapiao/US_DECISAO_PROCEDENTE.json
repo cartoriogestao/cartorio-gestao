@@ -1,0 +1,17 @@
+{
+  "chave": "US_DECISAO_PROCEDENTE",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Decisão da usucapião — procedente",
+  "formato": "CHAVES",
+  "explica": "Reconhece a usucapião e determina o registro. É a SUGESTÃO que a ficha do processo oferece: o oficial completa o trecho [COMPLETAR], e o teor lavrado congela na decisão.",
+  "campos": [
+    "numero",
+    "modalidade",
+    "requerente",
+    "imovel",
+    "cidade",
+    "uf",
+    "titular",
+    "titulo"
+  ]
+}

@@ -15,8 +15,10 @@ duplicação inútil: a minuta pode ser descartada, revisada ou reescrita — a 
 """
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
+
+import ri_frases
+from bd_nativo import banco
 
 
 class ExpurgoError(ValueError):
@@ -28,41 +30,32 @@ def _texto(valor: Any) -> str:
 
 
 def compor_ata(*, registro_numero: Any, ato: dict, motivo: str, agora: str,
-               usuario: Any, minuta_id: Any = None) -> str:
+               usuario: Any, minuta_id: Any = None, con: Any = None) -> str:
     """O texto da ata. **Só monta — não grava e não decide.**
 
     Ela é escrita para ser lida por gente, meses depois, e por isso diz o que
     aconteceu em vez de listar campos: o que era o ato, o que estava escrito
     nele, por que saiu e para onde foi.
+
+    O TEXTO SAIU DAQUI — LF06B (19/10/2026): a redação é o papel
+    RI_LIVRO3_ATA_EXPURGO (tela de Modelos), que NÃO é o do Livro 2 — as duas
+    atas contam coisas diferentes. Aqui fica o que cada claro vale. A ata é
+    gravada com o desfazer e lá fica: editar o modelo muda só as atas novas.
+    Com `con`, vale o ajuste da casa; sem ele, o padrão.
     """
-    rotulo = f"{_texto(ato.get('tipo'))}-{_texto(ato.get('numero'))}"
-    linhas = [
-        "ATA DE OCORRÊNCIA — LIVRO 3 (REGISTRO AUXILIAR)",
-        "",
-        (f"Registro nº {registro_numero}. Ato {rotulo}, "
-         f"de {_texto(ato.get('data_ato')) or 'data não informada'}."),
-        "",
-        (f"Em {agora}, o ato acima foi DESFEITO e devolvido à condição de "
-         f"minuta"
-         + (f" (minuta nº {minuta_id})" if minuta_id else "")
-         + f", por {_texto(usuario) or 'usuário não identificado'}."),
-        "",
-        f"MOTIVO: {_texto(motivo) or 'não informado'}.",
-        "",
-        ("O ato não chegou a receber selo — ato com selo não se desfaz por "
-         "este caminho."),
-        "",
-        "TEOR DO ATO DESFEITO, como estava:",
-        "",
-        _texto(ato.get("teor")) or _texto(ato.get("motivo_cancelamento"))
-        or "(o ato não tinha teor escrito)",
-        "",
-        "Nada mais. Esta ata é a única cópia do que saiu do livro.",
-    ]
-    return "\n".join(linhas)
+    return ri_frases.frase(
+        "RI_LIVRO3_ATA_EXPURGO", con,
+        registro_numero=registro_numero,
+        rotulo=f"{_texto(ato.get('tipo'))}-{_texto(ato.get('numero'))}",
+        data_ato=_texto(ato.get("data_ato")) or "data não informada",
+        agora=agora, minuta_id=minuta_id,
+        usuario=_texto(usuario) or "usuário não identificado",
+        motivo=_texto(motivo) or "não informado",
+        teor=(_texto(ato.get("teor")) or _texto(ato.get("motivo_cancelamento"))
+              or "(o ato não tinha teor escrito)"))
 
 
-def registrar(con: sqlite3.Connection, *, registro_id: int,
+def registrar(con: Any, *, registro_id: int,
               registro_numero: Any, ato: dict, motivo: str, agora: str,
               usuario: Any, minuta_id: Any = None) -> int:
     """Grava a ata. ESCREVE. Devolve o `id`.
@@ -71,37 +64,38 @@ def registrar(con: sqlite3.Connection, *, registro_id: int,
     que impede a ata existir sem o desfazer, e o desfazer sem a ata.
     """
     ata = compor_ata(registro_numero=registro_numero, ato=ato, motivo=motivo,
-                     agora=agora, usuario=usuario, minuta_id=minuta_id)
-    cursor = con.execute(
+                     agora=agora, usuario=usuario, minuta_id=minuta_id,
+                     con=con)
+    return int(banco(con).escrever(
         """INSERT INTO ra_expurgos(registro_id, registro_numero, ato_rotulo,
                                    ato_tipo, ato_numero, ato_data, ato_selo,
                                    ato_teor, minuta_id, motivo, ata,
                                    expurgado_em, expurgado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (int(registro_id), registro_numero,
          f"{_texto(ato.get('tipo'))}-{_texto(ato.get('numero'))}",
          ato.get("tipo"), ato.get("numero"), ato.get("data_ato"),
          ato.get("selo"), ato.get("teor") or ato.get("motivo_cancelamento"),
          minuta_id, _texto(motivo) or None, ata, agora,
-         _texto(usuario) or None))
-    return int(cursor.lastrowid)
+         _texto(usuario) or None))[0]["id"])
 
 
-def um(con: sqlite3.Connection, expurgo_id: int) -> dict | None:
+def um(con: Any, expurgo_id: int) -> dict | None:
     """Uma ata, ou `None`. Só lê."""
-    linha = con.execute("SELECT * FROM ra_expurgos WHERE id=?",
-                        (int(expurgo_id),)).fetchone()
+    linha = banco(con).um("SELECT * FROM ra_expurgos WHERE id=%s",
+                          (int(expurgo_id),))
     return dict(linha) if linha else None
 
 
-def listar(con: sqlite3.Connection, registro_id: int | None = None
+def listar(con: Any, registro_id: int | None = None
            ) -> list[dict]:
     """As atas — de um registro, ou da casa inteira. Só lê."""
     if registro_id is None:
-        linhas = con.execute(
-            "SELECT * FROM ra_expurgos ORDER BY id DESC").fetchall()
+        linhas = banco(con).ler(
+            "SELECT * FROM ra_expurgos ORDER BY id DESC")
     else:
-        linhas = con.execute(
-            "SELECT * FROM ra_expurgos WHERE registro_id=? ORDER BY id DESC",
-            (int(registro_id),)).fetchall()
+        linhas = banco(con).ler(
+            "SELECT * FROM ra_expurgos WHERE registro_id=%s ORDER BY id DESC",
+            (int(registro_id),))
     return [dict(x) for x in linhas]

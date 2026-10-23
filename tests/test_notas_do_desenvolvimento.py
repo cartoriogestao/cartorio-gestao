@@ -28,6 +28,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import ajuda_problemas as PROB                                   # noqa: E402
 import notas_do_desenvolvimento as ND                            # noqa: E402
@@ -37,7 +39,7 @@ AGORA = "2026-08-31 12:00:00"
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     PROB.init_problemas_schema(c)
     return c
@@ -235,7 +237,7 @@ def test_problema_que_nao_existe_aqui_nao_e_erro(con):
 def test_a_passada_nunca_derruba_a_subida(con):
     """**Balcão parado é pior que nota faltando.** Um banco sem as colunas
     devolve o motivo em vez de estourar."""
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     c.execute("CREATE TABLE aj_problemas (id INTEGER PRIMARY KEY, "
               "impressao TEXT)")

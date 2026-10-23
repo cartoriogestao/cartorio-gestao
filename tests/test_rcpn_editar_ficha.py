@@ -12,6 +12,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import rc_assento as RC                          # noqa: E402
 from nucleo_schema import init_nucleo_schema     # noqa: E402
@@ -29,7 +31,7 @@ SENHA = "Senha#12345"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     init_nucleo_schema(con)

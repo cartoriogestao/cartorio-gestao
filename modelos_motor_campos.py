@@ -288,11 +288,14 @@ _TRECHOS_TERMO = (
      "Fecho do termo («Lido e achado conforme… Eu, {{escrevente}}, "
      "{{funcao_do_escrevente}}, … assino.») — quem assina vem da regra viva "
      "da serventia, não se digita."),
+    # A data da celebração entrou na declaração no LD01 (21/10/2026, LRP art.
+    # 70, 4º): o claro é opcional no trecho, para o ajuste de antes da casa
+    # continuar sendo reconhecido.
     ("declaracao_casados_regime",
-     r"E, não havendo impedimento, foram declarados casados sob o regime de "
-     r"\{regime_bens\}\.",
+     r"E, não havendo impedimento, foram declarados casados"
+     r"(?:\{frase_da_celebracao\})? sob o regime de \{regime_bens\}\.",
      "Código Civil, art. 1.535; Lei 6.015/1973, art. 70",
-     "Declaração de casamento e regime de bens."),
+     "Declaração de casamento, a data da celebração e o regime de bens."),
     ("naturalidade_art54",
      r"\{frase_naturalidade\}",
      "Lei 6.015/1973, art. 54, § 4º",

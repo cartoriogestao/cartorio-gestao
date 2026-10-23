@@ -1,0 +1,12 @@
+{
+  "chave": "PT_LIVRO_PAGAMENTOS",
+  "atribuicao": "Protesto",
+  "nome": "Livro de Registro de Pagamentos — ocorrências",
+  "formato": "CHAVES",
+  "explica": "Uma linha por rótulo, no formato «nome = texto». O NOME é do sistema e não muda; o TEXTO é seu. Linha apagada, ou deixada sem texto, volta ao padrão — o sistema nunca fica sem a palavra. As formas de pagamento (os nomes em maiúsculas são as formas que o sistema aceita) e as frases da coluna de ocorrências do livro (CN-MA art. 930, h).",
+  "campos": [
+    "forma",
+    "identificacao",
+    "valor"
+  ]
+}

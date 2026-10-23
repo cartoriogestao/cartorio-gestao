@@ -1,0 +1,10 @@
+{
+  "chave": "PT_AVISO_CANHOTO_TENTATIVA",
+  "atribuicao": "Protesto",
+  "nome": "Canhoto do aviso — linha de cada tentativa",
+  "formato": "CHAVES",
+  "explica": "Uma linha por tentativa de entrega; {n} é o número dela (o sistema põe duas).",
+  "campos": [
+    "n"
+  ]
+}

@@ -283,7 +283,7 @@ def test_o_titulo_do_arquivo_vira_apontamento_no_vocabulario_do_protesto():
 # ------------------------------------------------------------- o retorno
 #
 # `cra_retorno_exemplo.txt` e o arquivo real `R2371208 (1).221`, de
-# `C:\ARPNET\CRA\Cancelamentos` — apesar do nome da pasta, o cabecalho diz
+# `C:\ProgramData\CartorioGestao\arquivos\eoficio\CRA\Cancelamentos` — apesar do nome da pasta, o cabecalho diz
 # SDTBFORTP, e e por ai que se sabe. Nao ha nome nem endereco de pessoa na
 # linha de titulo do retorno (vem tudo em branco), entao nao ha o que
 # mascarar: os valores, o protocolo e as datas sao os de verdade.
@@ -447,7 +447,7 @@ def test_os_quatro_tipos_do_catalogo_tem_layout():
 # arquivo real e reescreve-lo tem de sair identico byte a byte, inclusive nos
 # campos que ninguem identificou.
 #
-# Medido em 24/08/2026 contra os 572 arquivos reais de C:\ARPNET\CRA:
+# Medido em 24/08/2026 contra os 572 arquivos reais de C:\ProgramData\CartorioGestao\arquivos\eoficio\CRA:
 #   BFOSDTTPR  191 identicos, 6 recusados (multi-lote), 0 diferentes
 #   SDTBFOCRT  179 identicos de 179
 #   SDTBFORTP  188 identicos, 6 recusados, 0 diferentes

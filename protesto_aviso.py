@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any
 
 import protesto as PT
+from bd_nativo import banco
 from protesto_certidao import formatar_documento
 
 # OS MOTIVOS DE NAO-ENTREGA, do catalogo desta casa — `tbMotivoNEntrega`, 13
@@ -126,10 +127,10 @@ def cidade_ibge(con: sqlite3.Connection) -> str:
     """
     valores = {}
     try:
-        for chave, valor in con.execute(
+        for linha in banco(con).ler(
                 "SELECT key, value FROM settings WHERE key IN "
-                "('ibge_uf', 'ibge_municipio')"):
-            valores[chave] = str(valor or "").strip()
+                "('ibge_uf', 'ibge_municipio') ORDER BY key"):
+            valores[linha["key"]] = str(linha["value"] or "").strip()
     except sqlite3.OperationalError:
         return ""
     if not valores.get("ibge_uf") or not valores.get("ibge_municipio"):
@@ -184,17 +185,17 @@ def proximo_numero(con: sqlite3.Connection, ano: int) -> int:
     chama isto, e contador consumido num GET fica preso no `busy_timeout`
     enquanto outro balcao lavra. E a mesma forma de `protesto_certidao`.
     """
-    linha = con.execute("SELECT MAX(numero) n FROM pt_avisos WHERE ano=?",
-                        (int(ano),)).fetchone()
+    linha = banco(con).um("SELECT MAX(numero) AS n FROM pt_avisos WHERE ano=%s",
+                          (int(ano),))
     return int(linha["n"] if linha and linha["n"] else 0) + 1
 
 
-def _devedor(con: sqlite3.Connection, titulo_id: int) -> sqlite3.Row | None:
-    return con.execute(
+def _devedor(con: sqlite3.Connection, titulo_id: int) -> dict | None:
+    return banco(con).um(
         """SELECT nome, documento_tipo, documento_numero, endereco, bairro,
                   cep, cidade, uf
-             FROM pt_devedores WHERE titulo_id=? ORDER BY id LIMIT 1""",
-        (int(titulo_id),)).fetchone()
+             FROM pt_devedores WHERE titulo_id=%s ORDER BY id LIMIT 1""",
+        (int(titulo_id),))
 
 
 def emitir(con: sqlite3.Connection, titulo_id: int, *, hoje: str, agora: str,
@@ -209,7 +210,8 @@ def emitir(con: sqlite3.Connection, titulo_id: int, *, hoje: str, agora: str,
     `endereco` sobrepoe o do cadastro, para o caso de o balcao ter recebido um
     endereco melhor no guiche.
     """
-    tit = PT.titulo(con, titulo_id)
+    bd = banco(con)
+    tit = PT.titulo_para_gravar(bd, titulo_id)
     if not tit:
         raise AvisoError(f"Título {titulo_id} não encontrado.")
     if tit["situacao"] not in SITUACOES_QUE_ACEITAM_AVISO:
@@ -219,7 +221,7 @@ def emitir(con: sqlite3.Connection, titulo_id: int, *, hoje: str, agora: str,
             f"apontamento é o primeiro ato, e é ele que dá o protocolo que vai "
             f"no aviso.")
 
-    dev = _devedor(con, titulo_id)
+    dev = _devedor(bd, titulo_id)
     if dev is None:
         raise AvisoError(
             f"O título {tit['numero_titulo']} está sem devedor cadastrado, e "
@@ -229,17 +231,19 @@ def emitir(con: sqlite3.Connection, titulo_id: int, *, hoje: str, agora: str,
         raise AvisoError("O devedor está sem nome, e o aviso é endereçado a ele.")
 
     ano = int(str(hoje)[:4])
-    numero = proximo_numero(con, ano)
+    bd.travar("pt_avisos.numero")
+    numero = proximo_numero(bd, ano)
     try:
-        cur = con.execute(
+        aviso_id = int(bd.escrever(
             """INSERT INTO pt_avisos(titulo_id, numero, ano, devedor_nome,
                    devedor_documento, endereco, bairro, cep, cidade, uf,
                    situacao, emitido_em, emitido_por, criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,'EMITIDO',?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'EMITIDO',%s,%s,%s)
+               RETURNING id""",
             (int(titulo_id), numero, ano, fonte.get("nome"),
              fonte.get("documento_numero"), fonte.get("endereco"),
              fonte.get("bairro"), fonte.get("cep"), fonte.get("cidade"),
-             fonte.get("uf"), agora, usuario, agora))
+             fonte.get("uf"), agora, usuario, agora))[0]["id"])
     except sqlite3.IntegrityError as erro:
         # A trava e `UNIQUE(numero, ano)`, e ela existe porque dois balcoes
         # podem emitir no mesmo segundo. Quem perde a corrida tenta de novo
@@ -249,7 +253,7 @@ def emitir(con: sqlite3.Connection, titulo_id: int, *, hoje: str, agora: str,
             f"O número {numero}/{ano} acabou de ser usado por outro "
             f"atendimento. Emita de novo — o próximo número sai livre."
         ) from erro
-    return {"aviso_id": int(cur.lastrowid), "numero": numero, "ano": ano,
+    return {"aviso_id": aviso_id, "numero": numero, "ano": ano,
             "titulo_id": int(titulo_id), "situacao": "EMITIDO",
             "devedor_nome": fonte.get("nome")}
 
@@ -279,7 +283,8 @@ def registrar_entrega(con: sqlite3.Connection, aviso_id: int, *,
     o edital. "Tentou-se duas vezes e nao havia ninguem" e o que a inspecao le;
     "entregue" sozinho nao conta essa historia.
     """
-    aviso = ler(con, aviso_id)
+    bd = banco(con)
+    aviso = _aviso_para_gravar(bd, aviso_id)
     if not aviso:
         raise AvisoError(f"Aviso {aviso_id} não encontrado.")
     if aviso["situacao"] not in ("EMITIDO", "NAO_ENTREGUE"):
@@ -309,11 +314,11 @@ def registrar_entrega(con: sqlite3.Connection, aviso_id: int, *,
                           else "")))
         ato_id = lavrado["ato_id"]
 
-    con.execute(
+    bd.escrever(
         """INSERT INTO pt_tentativas(aviso_id, titulo_id, quando, entregador,
                entregue, motivo, recebido_por, observacao, criado_em,
                criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (int(aviso_id), int(aviso["titulo_id"]), (quando or agora), entregador,
          1 if entregue else 0, (None if entregue else _inteiro(motivo)),
          recebido_por, observacao, agora, usuario))
@@ -321,16 +326,16 @@ def registrar_entrega(con: sqlite3.Connection, aviso_id: int, *,
     # O AVISO GUARDA O DESFECHO; a tabela acima guarda o caminho ate ele. E a
     # mesma divisao do acervo: `tbBoletoApto.bitEntregue` ao lado de
     # `tbBoletoControleNEntrega`.
-    con.execute(
-        """UPDATE pt_avisos SET situacao=?, entregue=?, entrega_em=?,
-               entregador=?, motivo=?, recebido_por=?, observacao=?, ato_id=?
-            WHERE id=?""",
+    bd.escrever(
+        """UPDATE pt_avisos SET situacao=%s, entregue=%s, entrega_em=%s,
+               entregador=%s, motivo=%s, recebido_por=%s, observacao=%s, ato_id=%s
+            WHERE id=%s""",
         (situacao, 1 if entregue else 0, (quando or agora), entregador,
          (None if entregue else _inteiro(motivo)), recebido_por, observacao,
          ato_id, int(aviso_id)))
     return {"aviso_id": int(aviso_id), "situacao": situacao, "ato_id": ato_id,
             "vai_para_edital": (not entregue),
-            "tentativas": len(tentativas(con, aviso_id))}
+            "tentativas": len(tentativas(bd, aviso_id))}
 
 
 # ----------------------------------------------------------------- o edital
@@ -362,6 +367,10 @@ def registrar_entrega(con: sqlite3.Connection, aviso_id: int, *,
 
 CHAVE_DO_HORARIO = "serventia_horario"
 
+# O aceite que a remessa informa: «A» com, «N» sem. Como cada um se escreve no
+# papel é a peça `PT_AVISO_ROTULOS` (LF06E); outro código é «não informado».
+ACEITES = ("A", "N")
+
 
 def prazo_limite(con: sqlite3.Connection, titulo: Any) -> str | None:
     """O dia previsto para a lavratura — 3 dias úteis da protocolização. Só LÊ.
@@ -378,9 +387,8 @@ def prazo_limite(con: sqlite3.Connection, titulo: Any) -> str | None:
         dia = _date(2000 + int(s[:2]), int(s[2:4]), int(s[4:6]))
     except ValueError:
         return None
-    linha = con.execute("SELECT value FROM settings WHERE key='ri_feriados_locais'"
-                        ).fetchone()
-    feriados = ler_feriados_locais((linha[0] if linha else "") or "")
+    linha = banco(con).um("SELECT value FROM settings WHERE key='ri_feriados_locais'")
+    feriados = ler_feriados_locais((linha["value"] if linha else "") or "")
     return soma_dias_uteis(dia, 3, feriados).isoformat()
 
 
@@ -395,74 +403,95 @@ def montar_teor_do_aviso(con: sqlite3.Connection, aviso: Any, *,
 
     O endereço é o que CONGELOU no aviso, e não o do cadastro de hoje.
     """
-    import protesto_cra as CRA
+    import protesto_pecas as PECAS
     av = dict(aviso)
-    tit = PT.titulo(con, int(av["titulo_id"]))
+    bd = banco(con)
+    tit = PT.titulo(bd, int(av["titulo_id"]))
     if not tit:
         raise AvisoError("O título deste aviso não foi encontrado.")
     t = dict(tit)
-    horario = (con.execute("SELECT value FROM settings WHERE key=?",
-                           (CHAVE_DO_HORARIO,)).fetchone() or [""])[0] or ""
+    horario = bd.valor("SELECT value FROM settings WHERE key=%s",
+                       (CHAVE_DO_HORARIO,)) or ""
     if not horario.strip():
         raise AvisoError(
             "O aviso precisa do horário de funcionamento do tabelionato "
             "(Código de Normas, art. 920), e ele não está configurado. "
             "Informe-o em Administrativo → Configurações "
             f"(«{CHAVE_DO_HORARIO}»).")
-    limite = prazo_limite(con, t)
+    limite = prazo_limite(bd, t)
     if not limite:
         raise AvisoError(
             f"O protocolo do título ({t.get('protocolo') or 'vazio'}) não diz a "
             f"data da protocolização, e sem ela não há prazo-limite — o aviso "
             f"não sai sem o prazo (Código de Normas, art. 920).")
-    especie = CRA.ESPECIES.get(str(t.get("especie") or "").upper(),
-                               t.get("especie") or "")
-    aceite = {"A": "com aceite", "N": "sem aceite"}.get(
-        str(t.get("aceite") or "").upper()[:1], "aceite não informado")
+    especie = PECAS.vocabulario(con, "PT_ESPECIES").get(
+        str(t.get("especie") or "").upper(), t.get("especie") or "")
+    # O TEXTO DO AVISO É O PAPEL `PT_AVISO_INTIMACAO` (LF06E, 19/10/2026), e os
+    # rótulos dos dados são a peça `PT_AVISO_ROTULOS` — o oficial edita os dois
+    # na tela de Modelos. Daqui saem os VALORES dos claros, a decisão de o
+    # pedaço opcional entrar (o documento, o vencimento) e a juntura dele.
+    rotulo = PECAS.vocabulario(con, "PT_AVISO_ROTULOS")
+
+    def _r(nome: str, **claros: Any) -> str:
+        return PECAS.preencher(rotulo[nome], "PT_AVISO_ROTULOS", AvisoError,
+                               **claros)
+
+    codigo_do_aceite = str(t.get("aceite") or "").upper()[:1]
+    aceite = (rotulo[codigo_do_aceite] if codigo_do_aceite in ACEITES
+              else _r("sem_aceite"))
     endereco = ", ".join(x for x in (av.get("endereco"), av.get("bairro"),
                                      av.get("cidade") and (
                                          f"{av['cidade']}/{av.get('uf') or ''}"),
                                      av.get("cep") and f"CEP {av['cep']}") if x)
     credor = (t.get("cedente_nome") or "").strip()
     if credor and t.get("cedente_documento"):
-        credor += f", CPF/CNPJ {formatar_documento(t['cedente_documento'])}"
-    apresentante = (t.get("apresentante_nome") or t.get("apresentante_codigo")
-                    or "").strip()
-    casa = str(sv.get("unit_name") or "").strip()
-    linhas = [
-        "AVISO DE INTIMAÇÃO PARA PAGAMENTO",
-        "",
-        f"Aviso n. {av['numero']}/{av['ano']} — Protocolo n. {t.get('protocolo')}",
-        "",
-        (f"Fica V. Sa. INTIMADO(A) a pagar, ou a apresentar as razões que tiver, "
-         f"até {_br(limite)}, o título abaixo apresentado para protesto neste "
-         f"tabelionato. Não havendo pagamento nem manifestação até essa data, "
-         f"o título será protestado na forma da Lei nº 9.492/1997."),
-        "",
-        f"Devedor: {av.get('devedor_nome') or ''}"
-        + (f", CPF/CNPJ {formatar_documento(av['devedor_documento'])}"
-           if av.get("devedor_documento") else ""),
-        f"Endereço: {endereco or 'não informado pelo apresentante'}",
-        f"Título: {especie}, n. {t.get('numero_titulo') or 'sem número'}",
-        f"Valor: R$ {_reais(t.get('saldo_centavos') or t.get('valor_centavos'))}"
-        + (f" — vencimento em {_br(t['data_vencimento'])}"
-           if t.get("data_vencimento") else ""),
-        f"Aceite: {aceite}",
-        f"Credor (sacador/favorecido): {credor or 'não informado'}",
-        f"Apresentante: {apresentante or 'não informado'}",
-        f"Prazo-limite para pagamento: {_br(limite)}",
-        "",
-        (f"{casa} — {sv.get('endereco_completo') or ''}. Telefone "
-         f"{sv.get('serventia_telefone') or sv.get('telefone') or ''}. "
-         f"Horário de funcionamento: {horario.strip()}."),
-    ]
-    return "\n".join(linhas)
+        credor += ", " + _r("documento", documento=formatar_documento(
+            t["cedente_documento"]))
+    # O APRESENTANTE «COM RESPECTIVOS CPF E/OU CNPJ» — CN-MA art. 923; CNN art.
+    # 356, § 4º (LD08, 21/10/2026). O nome é o do título, e o documento vem do
+    # título (balcão) ou do cadastro dos apresentantes, pelo código da CRA:
+    # `protesto.apresentante_do_titulo`. Sem documento o claro vem vazio, como
+    # o do devedor, e a linha diz só o nome.
+    ap = PT.apresentante_do_titulo(bd, t)
+    apresentante = ap["nome"]
+    return _papel(con, "PT_AVISO_INTIMACAO",
+                  numero=av["numero"], ano=av["ano"],
+                  protocolo=t.get("protocolo"), prazo_limite=_br(limite),
+                  devedor=av.get("devedor_nome") or "",
+                  documento_do_devedor=(
+                      ", " + _r("documento", documento=formatar_documento(
+                          av["devedor_documento"]))
+                      if av.get("devedor_documento") else ""),
+                  endereco=endereco or _r("sem_endereco"),
+                  especie=especie,
+                  numero_titulo=t.get("numero_titulo") or _r("sem_numero"),
+                  valor=_reais(t.get("saldo_centavos") or t.get("valor_centavos")),
+                  vencimento=(" — " + _r("vencimento",
+                                         data=_br(t["data_vencimento"]))
+                              if t.get("data_vencimento") else ""),
+                  aceite=aceite, credor=credor or _r("nao_informado"),
+                  apresentante=apresentante or _r("nao_informado"),
+                  documento_do_apresentante=(
+                      ", " + _r("documento", documento=formatar_documento(
+                          ap["documento"]))
+                      if apresentante and ap["documento"] else ""),
+                  serventia=str(sv.get("unit_name") or "").strip(),
+                  endereco_da_serventia=sv.get("endereco_completo") or "",
+                  telefone=(sv.get("serventia_telefone") or sv.get("telefone")
+                            or ""),
+                  horario=horario.strip())
 
 
-def montar_teor_do_edital(*, aviso: sqlite3.Row | dict, titulo: sqlite3.Row,
+def _papel(con: Any, chave: str, **claros: Any) -> str:
+    """O papel (ou a peça) do aviso, com o ajuste da casa ou o padrão."""
+    import protesto_pecas as PECAS
+    return PECAS.montar(con, chave, AvisoError, **claros)
+
+
+def montar_teor_do_edital(*, aviso: dict, titulo: dict,
                           sv: dict, hoje: str,
                           data_extenso: str | None = None,
-                          limite: str | None = None) -> str:
+                          limite: str | None = None, con: Any = None) -> str:
     """O teor do edital. So calcula.
 
     O ACERVO NAO GUARDA O TEXTO — `tbEdital` tem a data, quem publicou e o
@@ -486,42 +515,42 @@ def montar_teor_do_edital(*, aviso: sqlite3.Row | dict, titulo: sqlite3.Row,
     protocolo = str(titulo["protocolo"] or "").strip()
     valor = _reais(titulo["saldo_centavos"])
     quando = (data_extenso or "").strip() or str(hoje)
-    linhas = [
-        "EDITAL DE INTIMAÇÃO",
-        "",
-        (f"{casa}, na forma da lei, FAZ SABER a quem interessar possa que, "
-         "tendo sido infrutífera a tentativa de intimação pessoal, fica pelo "
-         "presente edital INTIMADO(A):"),
-        "",
-        f"{devedor}" + (f", inscrito(a) no CPF/CNPJ sob o nº {documento}"
-                        if documento else ""),
-        "",
-        # O EDITAL SE LIMITA AO QUE O CN-MA, art. 922, § 3º, MANDA: devedor,
-        # identificação do título, valor, PRAZO-LIMITE e o tabelionato com
-        # endereço e telefone. Até 14/10/2026 ele dizia «no prazo legal» sem
-        # data e trazia apresentante e credor, que o parágrafo não pede.
-        ("do apontamento para protesto do título abaixo, para que, até "
-         f"{_br(limite) if limite else 'o prazo legal'}, compareça a esta "
-         "Serventia a fim de pagá-lo, ou, querendo, apresente as razões que "
-         "tiver:"),
-        "",
-        f"Protocolo: {protocolo or 'A CONFERIR'}",
-        f"Título: {titulo['numero_titulo'] or 'sem número'}"
-        + (f" — espécie {titulo['especie']}" if titulo["especie"] else ""),
-        f"Valor: R$ {valor}",
-        f"Prazo-limite para pagamento: {_br(limite)}" if limite else "",
-        "",
-        ("Decorrido o prazo sem manifestação, o título será protestado na "
-         "forma da Lei nº 9.492, de 10 de setembro de 1997."),
-        "",
-        (f"{casa} — {sv.get('endereco_completo') or ''}. Telefone "
-         f"{sv.get('serventia_telefone') or sv.get('telefone') or ''}."),
-        "",
+    # O TEXTO DO EDITAL É O PAPEL `PT_EDITAL_INTIMACAO` (LF06E, 19/10/2026),
+    # que o oficial edita na tela de Modelos; ele CONGELA na publicação, e o
+    # já publicado não muda. O EDITAL SE LIMITA AO QUE O CN-MA, art. 922, § 3º,
+    # MANDA: devedor, identificação do título, valor, PRAZO-LIMITE e o
+    # tabelionato com endereço e telefone. Até 14/10/2026 ele dizia «no prazo
+    # legal» sem data e trazia apresentante e credor, que o parágrafo não pede.
+    #
+    # SEM PRAZO-LIMITE (protocolo que não diz a data), a linha que o traz sai
+    # EM BRANCO — a regra é daqui, e não do texto.
+    import protesto_pecas as PECAS
+    rotulo = PECAS.vocabulario(con, "PT_EDITAL_ROTULOS")
+
+    def _r(nome: str, **claros: Any) -> str:
+        return PECAS.preencher(rotulo[nome], "PT_EDITAL_ROTULOS", AvisoError,
+                               **claros)
+
+    modelo = PECAS.texto(con, "PT_EDITAL_INTIMACAO")
+    if not limite:
+        modelo = "\n".join("" if "{prazo_limite}" in linha else linha
+                           for linha in modelo.split("\n"))
+    return PECAS.preencher(
+        modelo, "PT_EDITAL_INTIMACAO", AvisoError,
+        serventia=casa, devedor=devedor,
+        documento_do_devedor=(
+            ", " + _r("inscrito", documento=documento) if documento else ""),
+        ate_quando=_br(limite) if limite else _r("sem_prazo"),
+        protocolo=protocolo or _r("sem_protocolo"),
+        numero_titulo=titulo["numero_titulo"] or _r("sem_numero"),
+        especie=(" — " + _r("especie", especie=titulo["especie"])
+                 if titulo["especie"] else ""),
+        valor=valor, prazo_limite=_br(limite),
+        endereco_da_serventia=sv.get("endereco_completo") or "",
+        telefone=sv.get("serventia_telefone") or sv.get("telefone") or "",
         # A DATA POR EXTENSO, como em todo papel que esta casa assina.
         # `2026-08-25` e formato de banco de dados, e nao de edital afixado.
-        f"{cidade}/{uf}, {quando}." if cidade else f"{quando}.",
-    ]
-    return "\n".join(linhas)
+        local_e_data=f"{cidade}/{uf}, {quando}" if cidade else quando)
 
 
 def _reais(centavos: Any) -> str:
@@ -540,8 +569,8 @@ def hash_edital(numero: int, ano: int, teor: str, agora: str) -> str:
 
 def proximo_numero_do_edital(con: sqlite3.Connection, ano: int) -> int:
     """O proximo numero de edital do exercicio. So LE."""
-    linha = con.execute("SELECT MAX(numero) n FROM pt_editais WHERE ano=?",
-                        (int(ano),)).fetchone()
+    linha = banco(con).um("SELECT MAX(numero) AS n FROM pt_editais WHERE ano=%s",
+                          (int(ano),))
     return int(linha["n"] if linha and linha["n"] else 0) + 1
 
 
@@ -560,7 +589,8 @@ def publicar_edital(con: sqlite3.Connection, aviso_id: int, *, sv: dict,
     substitui a intimacao pessoal, e se ele mudar depois ninguem sabe o que
     foi afixado.
     """
-    aviso = ler(con, aviso_id)
+    bd = banco(con)
+    aviso = _aviso_para_gravar(bd, aviso_id)
     if not aviso:
         raise AvisoError(f"Aviso {aviso_id} não encontrado.")
     if aviso["situacao"] != "NAO_ENTREGUE":
@@ -574,7 +604,7 @@ def publicar_edital(con: sqlite3.Connection, aviso_id: int, *, sv: dict,
     # esgotados todos os meios de localização razoavelmente disponíveis». Onde
     # a Intimação Digital cabe e não foi tentada, ou ainda está correndo, o
     # edital pede o motivo escrito; onde ela confirmou, o edital não cabe.
-    caminho = depois_da_nao_entrega(con, aviso)
+    caminho = depois_da_nao_entrega(bd, aviso)
     if caminho["edital"] == "RECUSADO":
         raise AvisoError(caminho["frase"])
     porque = " ".join(str(justificativa or "").split())
@@ -585,15 +615,16 @@ def publicar_edital(con: sqlite3.Connection, aviso_id: int, *, sv: dict,
     sobre_a_resolve = caminho["resumo"] + (f"; motivo: {porque}" if porque
                                            else "")
 
-    tit = PT.titulo(con, int(aviso["titulo_id"]))
+    tit = PT.titulo(bd, int(aviso["titulo_id"]))
     if not tit:
         raise AvisoError(f"Título {aviso['titulo_id']} não encontrado.")
 
     ano = int(str(hoje)[:4])
-    numero = proximo_numero_do_edital(con, ano)
+    bd.travar("pt_editais.numero")
+    numero = proximo_numero_do_edital(bd, ano)
     teor = montar_teor_do_edital(aviso=aviso, titulo=tit, sv=sv, hoje=hoje,
-                                 limite=prazo_limite(con, tit),
-                                 data_extenso=data_extenso)
+                                 limite=prazo_limite(bd, tit),
+                                 data_extenso=data_extenso, con=bd)
     codigo = f"ED-{ano}-{numero:04d}"
 
     lavrado = PT.lancar_intimacao(
@@ -603,21 +634,20 @@ def publicar_edital(con: sqlite3.Connection, aviso_id: int, *, sv: dict,
                      f"{motivo_rotulo(aviso['motivo'])}; Intimação Digital: "
                      f"{sobre_a_resolve}"))
     try:
-        cur = con.execute(
+        edital_id = int(bd.escrever(
             """INSERT INTO pt_editais(numero, ano, aviso_id, titulo_id,
                    publicado_em, publicado_por, cidade_ibge, teor, hash_teor,
                    ato_id, criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (numero, ano, int(aviso_id), int(aviso["titulo_id"]), hoje,
-             usuario, cidade_ibge(con), teor,
-             hash_edital(numero, ano, teor, agora), lavrado["ato_id"], agora))
+             usuario, cidade_ibge(bd), teor,
+             hash_edital(numero, ano, teor, agora), lavrado["ato_id"], agora))[0]["id"])
     except sqlite3.IntegrityError as erro:
         raise AvisoError(
             f"O edital {numero}/{ano} acabou de ser usado por outro "
             f"atendimento. Publique de novo — o próximo número sai livre."
         ) from erro
-    edital_id = int(cur.lastrowid)
-    con.execute("UPDATE pt_avisos SET situacao='EDITAL', edital_id=? WHERE id=?",
+    bd.escrever("UPDATE pt_avisos SET situacao='EDITAL', edital_id=%s WHERE id=%s",
                 (edital_id, int(aviso_id)))
     return {"edital_id": edital_id, "numero": numero, "ano": ano,
             "codigo": codigo, "teor": teor, "ato_id": lavrado["ato_id"],
@@ -627,10 +657,25 @@ def publicar_edital(con: sqlite3.Connection, aviso_id: int, *, sv: dict,
 # --------------------------------------------------------------- consultas
 
 
-def ler(con: sqlite3.Connection, aviso_id: int) -> sqlite3.Row | None:
+def ler(con: sqlite3.Connection, aviso_id: int) -> dict | None:
     """O aviso. So LE."""
-    return con.execute("SELECT * FROM pt_avisos WHERE id=?",
-                       (int(aviso_id),)).fetchone()
+    return banco(con).um("SELECT * FROM pt_avisos WHERE id=%s",
+                         (int(aviso_id),))
+
+
+def _aviso_para_gravar(con: sqlite3.Connection, aviso_id: int) -> dict | None:
+    """O aviso, com a linha PRESA ate o fim da transacao (FOR UPDATE).
+
+    Para quem confere a situacao do aviso e grava em cima dela. Sem a linha
+    presa, duas entregas do mesmo aviso ao mesmo tempo lavrariam duas
+    intimacoes, e a entrega e o edital juntos deixariam o aviso publicado em
+    cima de uma entrega. Com ela, o segundo espera o primeiro e le a situacao
+    ja gravada. `ler` continua so lendo, para as telas.
+    """
+    bd = banco(con)
+    bd._escrita()
+    return bd.um("SELECT * FROM pt_avisos WHERE id=%s FOR UPDATE",
+                 (int(aviso_id),))
 
 
 def tentativas(con: sqlite3.Connection, aviso_id: int) -> list[dict]:
@@ -639,8 +684,8 @@ def tentativas(con: sqlite3.Connection, aviso_id: int) -> list[dict]:
     E o rastro que justifica o edital. Sem ele, "publicou-se edital" fica sem
     o "porque" — e o porque e o que a inspecao pergunta.
     """
-    return [dict(r) for r in con.execute(
-        """SELECT * FROM pt_tentativas WHERE aviso_id=? ORDER BY id""",
+    return [dict(r) for r in banco(con).ler(
+        """SELECT * FROM pt_tentativas WHERE aviso_id=%s ORDER BY id""",
         (int(aviso_id),))]
 
 
@@ -649,19 +694,101 @@ def do_titulo(con: sqlite3.Connection, titulo_id: int) -> list[dict]:
 
     LISTA, e nao um so: 255 titulos do acervo tem mais de um aviso.
     """
-    return [dict(r) for r in con.execute(
-        """SELECT a.*, e.numero edital_numero, e.publicado_em edital_em
+    return [dict(r) for r in banco(con).ler(
+        """SELECT a.*, e.numero AS edital_numero, e.publicado_em AS edital_em
              FROM pt_avisos a LEFT JOIN pt_editais e ON e.id = a.edital_id
-            WHERE a.titulo_id=? ORDER BY a.id DESC""", (int(titulo_id),))]
+            WHERE a.titulo_id=%s ORDER BY a.id DESC""", (int(titulo_id),))]
 
 
-def esperando_entrega(con: sqlite3.Connection, limite: int = 200) -> list[dict]:
-    """Avisos que sairam e ainda nao tiveram desfecho. So LE."""
-    return [dict(r) for r in con.execute(
+def esperando_entrega(con: sqlite3.Connection, limite: int = 200, *,
+                      hoje: str | None = None) -> list[dict]:
+    """Avisos que sairam e ainda nao tiveram desfecho. So LE.
+
+    Com `hoje`, deixa de fora o aviso de titulo APONTADO HA MAIS DE
+    `ANTIGO_DIAS` — esse vai para «apontados antigos», porque aviso de 2022
+    sem desfecho nao esta na rua: e pendencia velha a decidir (21/10/2026).
+    """
+    bd = banco(con)
+    linhas = [dict(r) for r in bd.ler(
         """SELECT a.*, t.numero_titulo, t.protocolo, t.saldo_centavos
              FROM pt_avisos a JOIN pt_titulos t ON t.id = a.titulo_id
-            WHERE a.situacao='EMITIDO' ORDER BY a.id LIMIT ?""",
+            WHERE a.situacao='EMITIDO' ORDER BY a.id LIMIT %s""",
         (int(limite),))]
+    if hoje is None:
+        return linhas
+    corte = _corte_dos_antigos(hoje)
+    antigos = {t["titulo_id"] for t in _apontados(bd)
+               if (t["apontado_em"] or "") < corte}
+    return [a for a in linhas if a["titulo_id"] not in antigos]
+
+
+# APONTADO HA MAIS DE SEIS MESES NAO E INTIMACAO A FAZER: e pendencia velha.
+# Medido em 21/10/2026: dos 29 titulos apontados trazidos do E-Oficio, 18
+# entraram entre 02/10 e 13/10 (e um em 03/08) e 10 entre 2020 e 2022 — esses
+# nunca foram baixados la. Decisao do oficial: ficam separados, «apontados
+# antigos — decidir», para conferir no papel se foram pagos, retirados ou
+# devolvidos. O prazo e regua de tela, e nao de lei.
+ANTIGO_DIAS = 180
+
+
+def _corte_dos_antigos(hoje: str) -> str:
+    from datetime import date, timedelta
+    return (date.fromisoformat(str(hoje)[:10])
+            - timedelta(days=ANTIGO_DIAS)).isoformat()
+
+
+def _apontados(con: sqlite3.Connection) -> list[dict]:
+    """Os titulos APONTADOS, com a data do apontamento e os avisos. So LE.
+
+    O titulo sem apontamento valido (`apontado_em` vazio) vem PRIMEIRO, como
+    vinha no SQLite — o NULL do PostgreSQL iria para o fim sem o NULLS FIRST.
+    """
+    saida = []
+    for t in banco(con).ler(
+            """SELECT t.id AS titulo_id, t.protocolo, t.numero_titulo,
+                      t.saldo_centavos, t.origem,
+                      (SELECT MIN(x.data_ato) FROM pt_atos x
+                        WHERE x.titulo_id = t.id AND x.tipo = 'APONTAMENTO'
+                          AND x.cancelado = 0) AS apontado_em,
+                      (SELECT d.nome FROM pt_devedores d
+                        WHERE d.titulo_id = t.id ORDER BY d.id LIMIT 1)
+                          AS devedor_nome,
+                      (SELECT COUNT(*) FROM pt_avisos a
+                        WHERE a.titulo_id = t.id AND a.situacao <> 'CANCELADO')
+                          AS avisos_vivos,
+                      (SELECT COUNT(*) FROM pt_avisos a
+                        WHERE a.titulo_id = t.id) AS avisos
+                 FROM pt_titulos t
+                WHERE t.situacao = 'APONTADO'
+                ORDER BY apontado_em NULLS FIRST, t.id"""):
+        linha = dict(t)
+        # `pt_atos.data_ato` e TEXTO, aqui e na producao: `AAAA-MM-DD` da
+        # carga do E-Oficio, `AAAA-MM-DDTHH:MM:SS` do balcao — e o corte dos
+        # antigos compara texto. O `str()` mantem a conta certa se a coluna um
+        # dia virar `date`: o psycopg devolveria `datetime.date`, e `[:10]`
+        # nele estoura (revisao do LH06, conferida no LH08).
+        linha["apontado_em"] = str(linha["apontado_em"] or "")[:10] or None
+        linha["avisos_vivos"] = int(linha["avisos_vivos"])
+        linha["avisos"] = int(linha["avisos"])
+        saida.append(linha)
+    return saida
+
+
+def apontados_sem_aviso(con: sqlite3.Connection, hoje: str) -> list[dict]:
+    """Apontados recentes SEM aviso vivo — a lista que faltava (21/10/2026).
+
+    Antes dela, titulo apontado sem aviso so aparecia na propria ficha, e os
+    que vieram do E-Oficio sumiram da vista. So LE.
+    """
+    corte = _corte_dos_antigos(hoje)
+    return [t for t in _apontados(con)
+            if not t["avisos_vivos"] and (t["apontado_em"] or "") >= corte]
+
+
+def apontados_antigos(con: sqlite3.Connection, hoje: str) -> list[dict]:
+    """Apontados ha mais de `ANTIGO_DIAS` — a decidir, nao a intimar. So LE."""
+    corte = _corte_dos_antigos(hoje)
+    return [t for t in _apontados(con) if (t["apontado_em"] or "") < corte]
 
 
 def esperando_edital(con: sqlite3.Connection, limite: int = 200) -> list[dict]:
@@ -675,32 +802,33 @@ def esperando_edital(con: sqlite3.Connection, limite: int = 200) -> list[dict]:
     nao espera edital, e ficar na lista convidaria a publicar um edital que
     nao cabe.
     """
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         """SELECT a.*, t.numero_titulo, t.protocolo, t.saldo_centavos
              FROM pt_avisos a JOIN pt_titulos t ON t.id = a.titulo_id
             WHERE a.situacao='NAO_ENTREGUE' AND t.situacao='APONTADO'
-            ORDER BY a.entrega_em, a.id
-            LIMIT ?""", (int(limite),))]
+            ORDER BY a.entrega_em NULLS FIRST, a.id
+            LIMIT %s""", (int(limite),))]
 
 
 def editais_do_dia(con: sqlite3.Connection, dia: str) -> list[dict]:
     """Os editais publicados naquele dia, para a folha da parede. So LE."""
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         """SELECT e.*, t.numero_titulo, t.protocolo
              FROM pt_editais e JOIN pt_titulos t ON t.id = e.titulo_id
-            WHERE e.publicado_em = ? ORDER BY e.numero""", (str(dia)[:10],))]
+            WHERE e.publicado_em = %s ORDER BY e.numero, e.id""", (str(dia)[:10],))]
 
 
-def edital(con: sqlite3.Connection, edital_id: int) -> sqlite3.Row | None:
+def edital(con: sqlite3.Connection, edital_id: int) -> dict | None:
     """O edital, com o teor congelado. So LE."""
-    return con.execute("SELECT * FROM pt_editais WHERE id=?",
-                       (int(edital_id),)).fetchone()
+    return banco(con).um("SELECT * FROM pt_editais WHERE id=%s",
+                         (int(edital_id),))
 
 
 def contagens(con: sqlite3.Connection) -> dict:
     """Quantos avisos em cada situacao. So LE — para o alto da tela."""
-    achado = {r["situacao"]: r["n"] for r in con.execute(
-        "SELECT situacao, COUNT(*) n FROM pt_avisos GROUP BY situacao")}
+    achado = {r["situacao"]: r["n"] for r in banco(con).ler(
+        "SELECT situacao, COUNT(*) AS n FROM pt_avisos GROUP BY situacao "
+        "ORDER BY situacao")}
     return {s: int(achado.get(s, 0)) for s in SITUACOES}
 
 
@@ -747,18 +875,17 @@ RESOLVE_NAO_DEU = frozenset({"NAO_ENRIQUECIDO", "SEM_RESPOSTA", "REJEITADO",
 
 def _ultima_na_resolve(con: sqlite3.Connection, titulo_id: int) -> dict | None:
     """A última Intimação Digital deste título, em PRODUÇÃO. Só LÊ."""
-    if not con.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' "
-            "AND name='rs_intimacoes'").fetchone():
+    bd = banco(con)
+    if not bd.tem_tabela("rs_intimacoes"):
         return None
     import centrais_cred as CRED
-    linha = con.execute(
+    linha = bd.um(
         """SELECT id, identificador, intimacao_id, estado, estado_em,
                   enviada_em
              FROM rs_intimacoes
-            WHERE titulo_id = ? AND ambiente = ?
+            WHERE titulo_id = %s AND ambiente = %s
             ORDER BY id DESC LIMIT 1""",
-        (int(titulo_id), CRED.PRODUCAO)).fetchone()
+        (int(titulo_id), CRED.PRODUCAO))
     return dict(linha) if linha else None
 
 
@@ -775,15 +902,16 @@ def depois_da_nao_entrega(con: sqlite3.Connection, aviso: Any) -> dict:
     """
     import resolve_intimacao as RS
     titulo_id = int(aviso["titulo_id"])
-    tit = con.execute(
+    bd = banco(con)
+    tit = bd.um(
         """SELECT t.id, t.situacao, t.chave_cenprot,
                   (SELECT d.nome FROM pt_devedores d
                     WHERE d.titulo_id = t.id ORDER BY d.id LIMIT 1)
                       AS devedor_nome
-             FROM pt_titulos t WHERE t.id = ?""", (titulo_id,)).fetchone()
+             FROM pt_titulos t WHERE t.id = %s""", (titulo_id,))
     classe = (RS.situacao_do_titulo(dict(tit)) if tit
               else {"pode_ir": False, "porque_nao": "o título não existe"})
-    ultima = _ultima_na_resolve(con, titulo_id)
+    ultima = _ultima_na_resolve(bd, titulo_id)
     estado = str((ultima or {}).get("estado") or "").strip().upper()
 
     if ultima is None and classe["pode_ir"]:
@@ -838,7 +966,8 @@ def lavrar_intimacao_digital(con: sqlite3.Connection, aviso_id: int, *,
     `protesto.lancar_intimacao`, modo pessoal **digital** — é a marca que faz o
     termo do protesto dizer «intimado por meio eletrônico».
     """
-    aviso = ler(con, aviso_id)
+    bd = banco(con)
+    aviso = _aviso_para_gravar(bd, aviso_id)
     if not aviso:
         raise AvisoError(f"Aviso {aviso_id} não encontrado.")
     if aviso["situacao"] != "NAO_ENTREGUE":
@@ -846,7 +975,7 @@ def lavrar_intimacao_digital(con: sqlite3.Connection, aviso_id: int, *,
             f"O aviso {aviso['numero']}/{aviso['ano']} está "
             f"{aviso['situacao']}. A intimação digital entra no lugar do "
             f"aviso que não foi entregue.")
-    caminho = depois_da_nao_entrega(con, aviso)
+    caminho = depois_da_nao_entrega(bd, aviso)
     if caminho["passo"] != "LAVRAR_DIGITAL":
         raise AvisoError(
             "A Resolve ainda não confirmou a intimação deste devedor. "
@@ -862,7 +991,7 @@ def lavrar_intimacao_digital(con: sqlite3.Connection, aviso_id: int, *,
                      + f" (CN-MA art. 921, § 6º, II); aviso "
                        f"{aviso['numero']}/{aviso['ano']} não entregue: "
                        f"{motivo_rotulo(aviso['motivo'])}"))
-    con.execute("UPDATE pt_avisos SET ato_id=? WHERE id=?",
+    bd.escrever("UPDATE pt_avisos SET ato_id=%s WHERE id=%s",
                 (lavrado["ato_id"], int(aviso_id)))
     return {"aviso_id": int(aviso_id), "ato_id": lavrado["ato_id"],
             "identificador": ultima.get("identificador")}
@@ -889,11 +1018,11 @@ SITUACOES_COM_COMPROVANTE = ("ENTREGUE", "NAO_ENTREGUE", "EDITAL")
 def ja_tem_este_comprovante(con: sqlite3.Connection, aviso_id: int,
                             conteudo: bytes) -> bool:
     """Se este mesmo arquivo já está anexado a este aviso. Só LÊ."""
-    return con.execute(
-        """SELECT 1 FROM attachments
-            WHERE entity_type=? AND entity_id=? AND sha256=?""",
+    return banco(con).um(
+        """SELECT 1 AS um FROM attachments
+            WHERE entity_type=%s AND entity_id=%s AND sha256=%s""",
         (ENTIDADE_DO_COMPROVANTE, int(aviso_id),
-         hashlib.sha256(bytes(conteudo or b"")).hexdigest())).fetchone() \
+         hashlib.sha256(bytes(conteudo or b"")).hexdigest())) \
         is not None
 # O que se aceita, e a assinatura de cada tipo nos primeiros bytes: a lista é
 # curta porque o arquivo abre NA TELA (`/arquivo/<id>/ver`), e arquivo de fora
@@ -919,7 +1048,8 @@ def guardar_comprovante(con: sqlite3.Connection, aviso_id: int, *, nome: Any,
     anexo — a frente e o verso, ou a via corrigida —, e o mesmo arquivo duas
     vezes é recusado pelo conteúdo.
     """
-    aviso = ler(con, aviso_id)
+    bd = banco(con)
+    aviso = _aviso_para_gravar(bd, aviso_id)
     if not aviso:
         raise AvisoError(f"Aviso {aviso_id} não encontrado.")
     # A TENTATIVA TAMBÉM SE PROVA (15/10/2026, pedido do oficial: «um campo de
@@ -951,42 +1081,43 @@ def guardar_comprovante(con: sqlite3.Connection, aviso_id: int, *, nome: Any,
             f"O arquivo diz ser {ext} e não é — o conteúdo não começa como um "
             f"{ext[1:].upper()}. Salve de novo do scanner e anexe.")
     sha = hashlib.sha256(conteudo).hexdigest()
-    if con.execute(
+    if bd.um(
             """SELECT id FROM attachments
-                WHERE entity_type=? AND entity_id=? AND sha256=?""",
-            (ENTIDADE_DO_COMPROVANTE, int(aviso_id), sha)).fetchone():
+                WHERE entity_type=%s AND entity_id=%s AND sha256=%s
+                ORDER BY id LIMIT 1""",
+            (ENTIDADE_DO_COMPROVANTE, int(aviso_id), sha)):
         raise AvisoError("Este arquivo já está anexado a este aviso.")
 
     destino = (Path(pasta_de_arquivos) / "Protesto" / "Intimacoes"
                / str(int(aviso["titulo_id"])))
     destino.mkdir(parents=True, exist_ok=True)
-    n = len(comprovantes(con, aviso_id)) + 1
+    n = len(comprovantes(bd, aviso_id)) + 1
     arquivo = destino / f"aviso-{aviso['numero']}-{aviso['ano']}-{n}{ext}"
     while arquivo.exists():
         n += 1
         arquivo = destino / f"aviso-{aviso['numero']}-{aviso['ano']}-{n}{ext}"
     arquivo.write_bytes(conteudo)
-    cur = con.execute(
+    anexo_id = int(bd.escrever(
         """INSERT INTO attachments(entity_type, entity_id, original_name,
                stored_name, stored_path, sha256, size_bytes, description,
                uploaded_by, uploaded_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (ENTIDADE_DO_COMPROVANTE, int(aviso_id), nome_limpo or arquivo.name,
          arquivo.name, str(arquivo), sha, len(conteudo),
          (f"Comprovante da intimação — aviso {aviso['numero']}/{aviso['ano']}"
           if aviso["situacao"] == "ENTREGUE" else
           f"Comprovante da tentativa de entrega — aviso "
           f"{aviso['numero']}/{aviso['ano']}"),
-         usuario_id, agora))
-    return {"anexo_id": int(cur.lastrowid), "aviso_id": int(aviso_id),
+         usuario_id, agora))[0]["id"])
+    return {"anexo_id": anexo_id, "aviso_id": int(aviso_id),
             "nome": arquivo.name}
 
 
 def comprovantes(con: sqlite3.Connection, aviso_id: int) -> list[dict]:
     """Os comprovantes daquele aviso. Só LÊ."""
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         """SELECT id, original_name, size_bytes, uploaded_at
-             FROM attachments WHERE entity_type=? AND entity_id=?
+             FROM attachments WHERE entity_type=%s AND entity_id=%s
             ORDER BY id""", (ENTIDADE_DO_COMPROVANTE, int(aviso_id)))]
 
 
@@ -996,22 +1127,32 @@ def entregues(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
     A lista de trabalho do upload: o que foi entregue e ainda não tem o papel
     anexado vem no alto, porque é o que a correição pergunta.
     """
-    linhas = [dict(r) for r in con.execute(
-        """SELECT a.*, t.numero_titulo, t.protocolo,
+    bd = banco(con)
+    # O AVISO TRAZIDO DO E-OFÍCIO NÃO É TRABALHO DE UPLOAD (21/10/2026): o
+    # papel dele é do arquivo do E-Ofício, e os 68 entregues em mãos viriam ao
+    # alto como «falta o comprovante». A coluna `origem` chega ao esquema com
+    # a carga dos avisos do E-Ofício (LH07); antes dela não há aviso dessa
+    # origem, e a lista é a de sempre.
+    fora_o_eoficio = ("AND COALESCE(a.origem, '') <> 'EOFICIO'"
+                      if bd.tem_coluna("pt_avisos", "origem") else "")
+    linhas = [dict(r) for r in bd.ler(
+        f"""SELECT a.*, t.numero_titulo, t.protocolo,
                   (SELECT COUNT(*) FROM attachments x
-                    WHERE x.entity_type = ? AND x.entity_id = a.id)
+                    WHERE x.entity_type = %s AND x.entity_id = a.id)
                       AS n_comprovantes
              FROM pt_avisos a JOIN pt_titulos t ON t.id = a.titulo_id
             WHERE a.situacao = 'ENTREGUE'
+              {fora_o_eoficio}
             ORDER BY CASE WHEN (SELECT COUNT(*) FROM attachments x
-                                 WHERE x.entity_type = ?
+                                 WHERE x.entity_type = %s
                                    AND x.entity_id = a.id) = 0
                           THEN 0 ELSE 1 END,
-                     a.entrega_em DESC, a.id DESC
-            LIMIT ?""",
+                     a.entrega_em DESC NULLS LAST, a.id DESC
+            LIMIT %s""",
         (ENTIDADE_DO_COMPROVANTE, ENTIDADE_DO_COMPROVANTE, int(limite)))]
     for linha in linhas:
-        linha["comprovantes"] = comprovantes(con, linha["id"])
+        linha["n_comprovantes"] = int(linha["n_comprovantes"])
+        linha["comprovantes"] = comprovantes(bd, linha["id"])
     return linhas
 
 
@@ -1031,43 +1172,51 @@ def entregues(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
 
 def canhoto_do_aviso(con: sqlite3.Connection, aviso: Any) -> dict:
     """O comprovante destacável do aviso. Só calcula."""
-    import protesto_cra as CRA
+    import protesto_pecas as PECAS
     av = dict(aviso)
-    tit = PT.titulo(con, int(av["titulo_id"]))
+    tit = PT.titulo(banco(con), int(av["titulo_id"]))
     if not tit:
         raise AvisoError("O título deste aviso não foi encontrado.")
     t = dict(tit)
-    especie = CRA.ESPECIES.get(str(t.get("especie") or "").upper(),
-                               t.get("especie") or "")
+    especie = PECAS.vocabulario(con, "PT_ESPECIES").get(
+        str(t.get("especie") or "").upper(), t.get("especie") or "")
+    # O TEXTO DO CANHOTO SÃO AS PEÇAS `PT_AVISO_CANHOTO_*` (LF06E, 19/10/2026),
+    # que o oficial edita na tela de Modelos: uma linha do papel por linha da
+    # peça. Daqui saem os valores e QUANTAS tentativas o papel traz.
+    rotulo = PECAS.vocabulario(con, "PT_AVISO_ROTULOS")
     return {
-        "titulo": "COMPROVANTE DE RECEBIMENTO DA INTIMAÇÃO",
-        "identificacao": [
-            f"Aviso n. {av['numero']}/{av['ano']} — Protocolo n. "
-            f"{t.get('protocolo') or '—'}",
-            f"Devedor: {av.get('devedor_nome') or ''}",
-            f"Título: {especie}, n. {t.get('numero_titulo') or 'sem número'} "
-            f"— R$ {_reais(t.get('saldo_centavos') or t.get('valor_centavos'))}",
-        ],
+        "titulo": _papel(con, "PT_AVISO_CANHOTO_TITULO"),
+        "identificacao": _papel(
+            con, "PT_AVISO_CANHOTO_IDENTIFICACAO", numero=av["numero"],
+            ano=av["ano"], protocolo=t.get("protocolo") or rotulo["sem_protocolo"],
+            devedor=av.get("devedor_nome") or "", especie=especie,
+            numero_titulo=t.get("numero_titulo") or rotulo["sem_numero"],
+            valor=_reais(t.get("saldo_centavos") or t.get("valor_centavos")),
+        ).split("\n"),
         # TRÊS LINHAS, E CURTAS: o canhoto cabe no pé da MESMA folha do aviso
         # (medido no PDF do LibreOffice: com cinco linhas ele passava para a
         # segunda folha, que é exatamente o que o pedido quer evitar).
-        "campos": [
-            "Recebido em ___/___/______ às ___:___   Assinatura: "
-            "__________________________",
-            "Nome legível: _____________________________   Documento: "
-            "_______________",
-            "Relação com o devedor: ( ) o próprio ( ) outra: ___________   "
-            "Entregador: _______________",
-        ],
+        "campos": _papel(con, "PT_AVISO_CANHOTO_CAMPOS").split("\n"),
         # AS TENTATIVAS (15/10/2026): «um campo de tentativa, onde se coloca
         # quando tentou, para fundamentar a expedição de edital». São o
         # rastro que o art. 922 pede — «esgotados todos os meios» — escrito
         # por quem foi ao endereço, no mesmo papel que volta ao cartório.
-        "tentativas_titulo": ("TENTATIVAS DE ENTREGA — preencha se não "
-                              "entregou (fundamenta o edital)"),
-        "tentativas": [
-            f"{n}ª: ___/___/___ ___:___ ( ) ausente ( ) recusou ( ) fora da "
-            f"zona ( ) outro ________ Entregador: _________"
-            for n in (1, 2)
-        ],
+        "tentativas_titulo": _papel(con, "PT_AVISO_CANHOTO_TENTATIVAS_TITULO"),
+        "tentativas": [_papel(con, "PT_AVISO_CANHOTO_TENTATIVA", n=n)
+                       for n in (1, 2)],
     }
+
+
+def __getattr__(nome: str):
+    """Os nomes do texto de fábrica do aviso, lidos da base dos padrões.
+
+    O TEXTO DO AVISO, DO EDITAL E DO CANHOTO SAIU DESTE MÓDULO NO LF06E
+    (19/10/2026) e mora em `modelos_padrao/protesto/`. Quem pede o nome dele
+    (`AVISO_DE_INTIMACAO`, `EDITAL_DE_INTIMACAO`...) recebe o padrão da base — o
+    MESMO que o papel imprime. Nome que não é de papel continua sendo
+    `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)

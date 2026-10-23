@@ -164,8 +164,29 @@
     {% endfor %}
   </section>
 
+  {# O APRESENTANTE (LD04, 21/10/2026) — quem traz o título: o próprio credor
+     ou quem o representa. Vai ao aviso, ao registro e ao instrumento (Lei
+     9.492/1997, art. 22, II; CN-MA arts. 884, I, 914, III, e 920). Até aqui
+     esta tela não o pedia, e o cedente se chamava «quem apresenta». #}
   <section class="panel" style="grid-column:1/-1">
-    <div class="panel-head"><span>Cedente</span><small>quem apresenta — opcional</small></div>
+    <div class="panel-head"><span>Apresentante</span><small>quem traz o título — vai ao aviso, ao registro e ao instrumento</small></div>
+    <div class="grid2" style="padding:14px">
+      <label style="grid-column:1/-1">Nome
+        <input name="apresentante_nome" value="{{ form.get('apresentante_nome','') }}"
+               placeholder="O credor, ou quem o representa"></label>
+      {# O CPF/CNPJ e o endereço (LD08): CN-MA art. 884, I. O documento vai ao
+         aviso (art. 923); o endereço, ao registro e ao instrumento (Lei
+         9.492/1997, art. 22, II). #}
+      <label>CPF/CNPJ
+        <input name="apresentante_documento" value="{{ form.get('apresentante_documento','') }}"></label>
+      <label>Endereço completo
+        <input name="apresentante_endereco" value="{{ form.get('apresentante_endereco','') }}"
+               placeholder="Rua, número, bairro, cidade/UF"></label>
+    </div>
+  </section>
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Cedente</span><small>o credor (sacador/favorecido) — opcional</small></div>
     <div class="grid2" style="padding:14px">
       <label style="grid-column:1/-1">Nome
         <input name="cedente_nome" value="{{ form.get('cedente_nome','') }}"></label>

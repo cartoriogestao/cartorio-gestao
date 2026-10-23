@@ -44,7 +44,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import sqlite3
 import sys
 from datetime import date
 from pathlib import Path
@@ -53,6 +52,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
+from bd_nativo import banco  # noqa: E402
 from tools import iniciar_sandbox as KIT  # noqa: E402
 
 #: (usuário, nome, perfil, senha) — senhas fracas e óbvias DE PROPÓSITO.
@@ -129,8 +129,9 @@ def _usuarios(db) -> str:
     criados = []
     for usuario, nome, papel, senha in USUARIOS_DE_DEMONSTRACAO:
         with db.connect() as con:
-            existe = con.execute("SELECT 1 FROM users WHERE username=? COLLATE NOCASE",
-                                 (usuario,)).fetchone()
+            existe = banco(con).um("SELECT 1 AS um FROM users WHERE username=%s"
+                                   " COLLATE public.cg_nocase ORDER BY id LIMIT 1",
+                                   (usuario,))
         if not existe:
             db.create_user(usuario, nome, senha, papel)
             criados.append(usuario)
@@ -149,7 +150,6 @@ def _livros(db) -> str:
     for codigo in sorted(LN.SERIES):
         dia = hoje if LN.SERIES[codigo].diario else None
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             if ESC.livro_da_vez(con, codigo, dia=dia):
                 continue
         with db.transaction() as con:
@@ -164,7 +164,7 @@ def _folhas(db) -> str:
     import papel_seguranca as PS
     de, ate = FAIXA_DAS_FOLHAS
     with db.connect() as con:
-        if con.execute("SELECT 1 FROM pp_folhas WHERE codigo=?", (de,)).fetchone():
+        if banco(con).um("SELECT 1 AS um FROM pp_folhas WHERE codigo=%s LIMIT 1", (de,)):
             return "já estavam no estoque"
     with db.transaction() as con:
         caixa = PS.receber_remessa(
@@ -197,39 +197,38 @@ def _notas(db) -> str:
     from ri_web import data_por_extenso
 
     with db.connect() as con:
-        if con.execute("SELECT 1 FROM nt_atos WHERE origem='MANUAL' AND origem_chave=?",
-                       (MARCA_PROCURACAO,)).fetchone():
+        if banco(con).um("SELECT 1 AS um FROM nt_atos WHERE origem='MANUAL'"
+                         " AND origem_chave=%s LIMIT 1", (MARCA_PROCURACAO,)):
             return "já existia"
     agora = db.now()
     hoje = agora[:10]
     sv = db.get_settings()
     oficial = USUARIOS_DE_DEMONSTRACAO[0][1]
     with db.transaction() as con:
-        con.row_factory = sqlite3.Row
-        cur = con.execute(
+        bd = banco(con)
+        ato_id = int(bd.escrever(
             """INSERT INTO nt_atos
                (tipo, serie, data, hora, situacao, natureza, modelo_codigo,
                 interessado, teor_formato, lavrado_nome, lavrado_titulo,
                 origem, origem_chave, criado_em)
-               VALUES ('PROCURACAO','PROCURACAO',?,?,'EM_LAVRATURA','Procuracao',?,?,
-                       'html',?,?,'MANUAL',?,?)""",
+               VALUES ('PROCURACAO','PROCURACAO',%s,%s,'EM_LAVRATURA','Procuracao',%s,%s,
+                       'html',%s,%s,'MANUAL',%s,%s) RETURNING id""",
             (hoje, agora[11:16], NPE.MODELO_CODIGO, NPE.INTERESSADO, oficial,
-             "Tabelião e Oficial de Registro", MARCA_PROCURACAO, agora))
-        ato_id = int(cur.lastrowid)
+             "Tabelião e Oficial de Registro", MARCA_PROCURACAO, agora))[0]["id"])
         for p in NPE.PARTES:
-            con.execute(
+            bd.escrever(
                 """INSERT INTO nt_ato_partes
                    (ato_id, nome, nome_norm, documento, tipo_pessoa, qualificacao,
                     nacionalidade, estado_civil, profissao, endereco, testemunha,
                     ordem, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (ato_id, p["nome"], NP.normalizar(p["nome"]), p["documento"],
                  p["tipo_pessoa"], p["qualificacao"], p["nacionalidade"],
                  p["estado_civil"], p["profissao"], p["endereco"], p["testemunha"],
                  p["ordem"], agora))
         teor = NPE.montar_teor(con, db, lavrado_nome=oficial)
-        con.execute(
-            "UPDATE nt_atos SET teor=?, modelo_valores=? WHERE id=?",
+        bd.escrever(
+            "UPDATE nt_atos SET teor=%s, modelo_valores=%s WHERE id=%s",
             (teor, json.dumps(NPE.MODELO_VALORES, ensure_ascii=False), ato_id))
         NL.lancar_ato(con, ato_id, sv, agora,
                       data_por_extenso(date.fromisoformat(hoje)),
@@ -239,15 +238,15 @@ def _notas(db) -> str:
             con, NPE.SELO_ENSAIO.format(cns=cns), tabela="nt_atos", ato_id=ato_id,
             atribuicao="NOTAS", agora=agora, cns=cns, usuario=oficial,
             texto="Selo de demonstração — procuração pública do sandbox")
-        con.execute("UPDATE nt_atos SET situacao='LAVRADO' WHERE id=?", (ato_id,))
+        bd.escrever("UPDATE nt_atos SET situacao='LAVRADO' WHERE id=%s", (ato_id,))
     return "procuração lavrada"
 
 
 def _protesto(db) -> str:
     import protesto_certidao as PC
     with db.connect() as con:
-        if con.execute("SELECT 1 FROM pt_certidoes WHERE requerente=?",
-                       (REQUERENTE_PROTESTO,)).fetchone():
+        if banco(con).um("SELECT 1 AS um FROM pt_certidoes WHERE requerente=%s LIMIT 1",
+                         (REQUERENTE_PROTESTO,)):
             return "já existia"
     nome = "FULANO DE TAL DEMONSTRAÇÃO"
     agora = db.now()
@@ -264,28 +263,41 @@ def _ri(db, app) -> str:
     if app is None:
         return None  # sem o aplicativo não há a tela; o passo fica de fora
     with db.connect() as con:
-        if con.execute("SELECT 1 FROM ri_matriculas WHERE logradouro=?",
-                       (LOGRADOURO_RI,)).fetchone():
+        if banco(con).um("SELECT 1 AS um FROM ri_matriculas WHERE logradouro=%s LIMIT 1",
+                         (LOGRADOURO_RI,)):
             return "já existia"
-        admin = con.execute("SELECT id FROM users WHERE username=?",
-                            (USUARIOS_DE_DEMONSTRACAO[0][0],)).fetchone()
+        admin = banco(con).um("SELECT id FROM users WHERE username=%s ORDER BY id LIMIT 1",
+                              (USUARIOS_DE_DEMONSTRACAO[0][0],))
     if not admin:
         raise CargaRecusada("o usuário admin de demonstração não existe")
+    # ENTRA PELO /login, COMO QUEM USA O SISTEMA. A sessão montada à mão (só
+    # `user_id`, token e última atividade) voltava para o login desde o LX11:
+    # falta o carimbo da senha (M3) e a hora da entrada (prazo absoluto), e
+    # uma cópia de `abrir_sessao` aqui divergiria no próximo conserto dela.
+    usuario, _nome, _papel, senha = USUARIOS_DE_DEMONSTRACAO[0]
     cliente = app.test_client()
+    tela = cliente.get("/login").get_data(as_text=True)
+    achado = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', tela)
+    entrada = cliente.post("/login", data={
+        "username": usuario, "password": senha,
+        "csrf_token": achado.group(1) if achado else ""})
     with cliente.session_transaction() as sessao:
-        sessao["user_id"] = int(admin[0])
-        sessao["csrf_token"] = "carga-de-demonstracao"
-        sessao["last_activity"] = db.now()
+        token = sessao.get("csrf_token") if sessao.get("user_id") else None
+    if not token:
+        raise CargaRecusada(
+            f"o admin de demonstração não entrou pelo login (HTTP "
+            f"{entrada.status_code}): a senha dele foi trocada, ou a casa exige "
+            f"a verificação em duas etapas")
     resposta = cliente.post("/registro-imoveis/nova", data={
-        "csrf_token": "carga-de-demonstracao", "livro": "2",
+        "csrf_token": token, "livro": "2",
         "cidade": "Cidade Exemplo", "uf": "MA", "rural_urbano": "URBANO",
         "logradouro": LOGRADOURO_RI, "numero_predial": "10", "bairro": "Centro",
         "area_valor": "360", "area_unidade": "m2",
         "descricao_perimetro": "Lote urbano FICTÍCIO, só para demonstração do sandbox.",
     })
     with db.connect() as con:
-        if con.execute("SELECT 1 FROM ri_matriculas WHERE logradouro=?",
-                       (LOGRADOURO_RI,)).fetchone():
+        if banco(con).um("SELECT 1 AS um FROM ri_matriculas WHERE logradouro=%s LIMIT 1",
+                         (LOGRADOURO_RI,)):
             return "matrícula aberta"
     corpo = resposta.get_data(as_text=True)
     aviso = re.search(r'class="[^"]*alert[^"]*"[^>]*>\s*(.*?)\s*<', corpo, re.S)

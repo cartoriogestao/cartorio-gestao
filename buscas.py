@@ -51,6 +51,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+from bd_nativo import banco
+
 
 class BuscaError(ValueError):
     """Recusa de regra, com a frase pronta para o balcão."""
@@ -223,12 +225,13 @@ def busca_do_protocolo(con, numero: Any, atribuicao: Any) -> str | None:
     texto = str(numero or "").strip()
     if not texto:
         return None
-    linhas = con.execute(
+    linhas = banco(con).ler(
         """SELECT a.codigo_ato FROM cx_protocolo_atos a
              JOIN cx_protocolos p ON p.id = a.protocolo_id
-            WHERE p.numero = ? AND a.usado_em IS NULL
-              AND a.codigo_ato IS NOT NULL""", (texto,)).fetchall()
-    return busca_entre([r[0] for r in linhas], atribuicao)
+            WHERE p.numero = %s AND a.usado_em IS NULL
+              AND a.codigo_ato IS NOT NULL
+            ORDER BY a.id""", (texto,))
+    return busca_entre([r["codigo_ato"] for r in linhas], atribuicao)
 
 
 def codigos_dos_servicos(con, servicos: Any) -> list[str]:
@@ -236,10 +239,10 @@ def codigos_dos_servicos(con, servicos: Any) -> list[str]:
     numeros = [int(s) for s in (servicos or ()) if str(s).strip().isdigit()]
     if not numeros:
         return []
-    lugares = ",".join("?" * len(numeros))
-    return [str(r[0]) for r in con.execute(
+    lugares = ",".join(["%s"] * len(numeros))
+    return [str(r["codigo_tj"]) for r in banco(con).ler(
         f"""SELECT codigo_tj FROM cx_servicos WHERE codigo IN ({lugares})
-              AND codigo_tj IS NOT NULL""", numeros).fetchall()]
+              AND codigo_tj IS NOT NULL ORDER BY codigo""", numeros)]
 
 
 def servico_da_busca(con, codigo: Any) -> int | None:
@@ -250,16 +253,16 @@ def servico_da_busca(con, codigo: Any) -> int | None:
     a régua de `emolumentos.buscar`. Pegar o primeiro poria no recibo um
     serviço sem valor.
     """
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT s.codigo FROM cx_servicos s
              LEFT JOIN cx_servico_valores v
                     ON v.servico = s.codigo
                    AND v.vigencia = (SELECT codigo FROM cx_vigencias
                                       WHERE vigente = 1)
-            WHERE s.codigo_tj = ?
+            WHERE s.codigo_tj = %s
             ORDER BY (v.total IS NULL), s.ativo DESC, s.codigo
-            LIMIT 1""", (str(codigo or "").strip(),)).fetchone()
-    return int(linha[0]) if linha else None
+            LIMIT 1""", (str(codigo or "").strip(),))
+    return int(linha["codigo"]) if linha else None
 
 
 def _data(valor: Any) -> date | None:

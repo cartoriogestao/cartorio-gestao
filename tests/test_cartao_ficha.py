@@ -124,22 +124,47 @@ def test_a_ficha_nao_mascara_o_documento(casa):
     assert "***" not in texto
 
 
-def test_so_o_cliente_assina_a_ficha(casa):
-    """MUDOU EM 31/08/2026, POR ORDEM DO OFICIAL: «o oficial nao assina a
-    ficha de assinatura, so o cliente».
+def test_o_cliente_assina_os_autografos_e_o_preposto_so_a_conferencia(casa):
+    """MUDOU DE NOVO EM 21/10/2026 — e este teste se chamava «so o cliente
+    assina a ficha» (`test_so_o_cliente_assina_a_ficha`).
 
-    ESTE TESTE AFIRMAVA O CONTRARIO, e chamava-se «a ficha leva a assinatura
-    de quem atendeu». A assinatura do escrevente estava no papel desde antes,
-    e nao veio do meu engano do relato #27 — mas «so o cliente» alcanca as
-    duas, a dele e a do delegatario.
+    Em 31/08/2026 o oficial mandou: «o oficial nao assina a ficha de
+    assinatura, so o cliente», e a assinatura do escrevente saiu junto. O
+    CN-MA art. 864, § 1º, VI, porem, pede na ficha o «nome, assinatura e
+    carimbo do tabeliao ou do seu substituto ou outro preposto designado que
+    verificou a regularidade do preenchimento». Perguntado (LD02/LD07), o
+    oficial respondeu «9 b» (LH13): ao pe da ficha, «Preenchimento conferido
+    por: NOME — funcao», com linha de assinatura e espaco para o carimbo, DO
+    ESCREVENTE QUE ABRIU O CARTAO.
 
-    O cartao de autografo e o padrao de assinatura DA PESSOA: quem assina um
-    padrao de comparacao e quem esta sendo padronizado. A serventia colhe; a
-    fe dela aparece no reconhecimento, que e outro papel.
+    O que continua da decisao de 31/08: o cartao e o padrao de assinatura DA
+    PESSOA, e o CLIENTE assina so os autografos e o fecho dele — a linha nova
+    nao e dele. E o delegatario continua fora: quem assina a conferencia e o
+    preposto gravado no cartao na abertura, e nao quem esta logado imprimindo
+    (aqui, MARIO).
     """
-    texto = _ficha(casa, _cartao(casa))
+    texto = _ficha(casa, _cartao(casa, conferente_nome="CARLA EXEMPLO",
+                                 conferente_funcao="Escrevente Autorizada"))
     assert "MARIO EXEMPLO DOS SANTOS" not in texto
     assert "o titular do cartão" in texto
+    conferencia = texto.split("o titular do cartão", 1)[1]
+    assert " ".join(conferencia.split()).startswith(
+        "Preenchimento conferido por: CARLA EXEMPLO — Escrevente Autorizada")
+    assert "assinatura e carimbo de quem conferiu o preenchimento" in conferencia
+    # a linha do preposto nao leva o nome do cliente embaixo
+    assert "MARIA DAS DORES DA SILVA" not in conferencia
+
+
+def test_cartao_de_antes_da_regra_deixa_o_conferente_para_a_caneta(casa):
+    """O cartao aberto antes de 21/10/2026 — e o que veio do E-Oficio — nao
+    guardou quem conferiu, e nao se deduz: quem imprime a segunda via hoje
+    nao foi quem conferiu naquele dia. A linha sai com o claro, para o
+    preposto escrever a mao, e nunca com o nome de quem esta logado."""
+    texto = _ficha(casa, _cartao(casa))
+    conferencia = texto.split("o titular do cartão", 1)[1]
+    assert "Preenchimento conferido por:" in conferencia
+    assert "____" in conferencia.split("assinatura e carimbo", 1)[0]
+    assert "MARIO EXEMPLO DOS SANTOS" not in texto
 
 
 # --------------------------------------- o que só aparece quando é o caso
@@ -299,3 +324,101 @@ def test_ajuste_do_modelo_aparece_na_ficha(casa):
                    quem="mario", agora="2026-09-07T16:00")
     texto = _ficha(casa, cid)
     assert "TEXTO DA CASA" in texto
+
+
+# ================================================== CONSERTO DO L058R (18/10/2026)
+# QUEM MEXE NA FILA DE FICHAS DO CARTÃO TRAVA O MESMO ASSUNTO.
+# O envio conferia a duplicata (pelo sha256) e contava a favorita ANTES de
+# pegar `nt_cartao_imagens.ordem`; trocar a favorita e remover uma ficha não
+# pegavam trava nenhuma. Hoje a trava única da ponte esconde a corrida. Sem
+# ela, a mesma ficha enviada duas vezes ao mesmo tempo entrava duas vezes, e o
+# cartão podia ficar com duas favoritas, ou com nenhuma.
+
+import banco_pg  # noqa: E402
+
+so_no_postgres = pytest.mark.skipif(
+    not banco_pg.ativo(), reason="mede a trava do assunto (CG_PG_DSN)")
+
+FILA = "nt_cartao_imagens.ordem"
+
+
+def _assunto_livre(chave: str) -> bool:
+    """Outra conexão consegue a trava do assunto agora? Não espera por ela."""
+    import psycopg
+    with psycopg.connect(banco_pg.dsn(), autocommit=True) as outra:
+        return bool(outra.execute(
+            "SELECT pg_try_advisory_xact_lock(hashtext(%s))", (chave,)).fetchone()[0])
+
+
+def _fila_vigiada(monkeypatch) -> list[tuple[str, bool]]:
+    """Cada comando da transação que toca a fila anota se a trava estava livre."""
+    import bd_nativo
+    import notas_web as NW
+    vistos: list[tuple[str, bool]] = []
+
+    class Vigiado(bd_nativo.Banco):
+        def _rodar(self, sql, parametros=None):
+            if ("nt_cartao_imagens" in sql and self._ponte is not None
+                    and self._ponte._em_transacao):
+                vistos.append((" ".join(sql.split()), _assunto_livre(FILA)))
+            return super()._rodar(sql, parametros)
+
+    monkeypatch.setattr(NW, "banco", Vigiado)
+    return vistos
+
+
+def _soltos(vistos: list[tuple[str, bool]]) -> list[str]:
+    return [sql for sql, livre in vistos if livre]
+
+
+@so_no_postgres
+def test_o_envio_confere_a_duplicata_com_a_fila_travada(casa, tmp_path, monkeypatch):
+    cid = _cartao(casa)
+    casa["db"].set_settings({"archive_root": str(tmp_path / "arquivos")})
+    c = casa["cliente"]
+    token = _token(c.get(f"/notas/cartoes/{cid}").get_data(as_text=True))
+    vistos = _fila_vigiada(monkeypatch)
+    r = c.post(f"/notas/cartoes/{cid}/fichas",
+               data={"csrf_token": token,
+                     "ficha": [(io.BytesIO(b"\x89PNG\r\n\x1a\nficha"), "ficha.png")]},
+               content_type="multipart/form-data")
+    assert r.status_code == 302
+    assert any("sha256=%s" in sql for sql, _ in vistos), vistos
+    assert any("COUNT(*)" in sql for sql, _ in vistos), vistos
+    assert not _soltos(vistos), f"comando da fila sem a trava: {_soltos(vistos)}"
+
+
+def _duas_fichas(casa, cid: int) -> tuple[int, int]:
+    con = sqlite3.connect(casa["banco"])
+    with con:
+        ids = [int(con.execute(
+            """INSERT INTO nt_cartao_imagens (cartao_id, ordem, nome_arquivo,
+                                              favorita, criado_em)
+               VALUES (?,?,?,?,?)""",
+            (cid, ordem, f"ficha-{ordem}.png", favorita,
+             "2026-10-18T10:00:00")).lastrowid)
+            for ordem, favorita in ((1, 1), (2, 0))]
+    con.close()
+    return ids[0], ids[1]
+
+
+@so_no_postgres
+@pytest.mark.parametrize("acao", ["favorita", "remover"])
+def test_trocar_e_remover_a_favorita_travam_a_fila(casa, monkeypatch, acao):
+    cid = _cartao(casa)
+    primeira, segunda = _duas_fichas(casa, cid)
+    c = casa["cliente"]
+    token = _token(c.get(f"/notas/cartoes/{cid}").get_data(as_text=True))
+    alvo = segunda if acao == "favorita" else primeira
+    vistos = _fila_vigiada(monkeypatch)
+    r = c.post(f"/notas/cartoes/imagem/{alvo}/gerir",
+               data={"csrf_token": token, "acao": acao})
+    assert r.status_code == 302
+    assert vistos, "a ação não tocou a fila dentro da transação"
+    assert not _soltos(vistos), f"comando da fila sem a trava: {_soltos(vistos)}"
+    con = sqlite3.connect(casa["banco"])
+    favoritas = [linha[0] for linha in con.execute(
+        "SELECT id FROM nt_cartao_imagens WHERE cartao_id=? AND favorita=1",
+        (cid,))]
+    con.close()
+    assert favoritas == [segunda]

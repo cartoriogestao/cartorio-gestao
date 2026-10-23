@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import sys
+import threading
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -21,6 +22,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import carga_da_equipe as CARGA
 import gestor_rotina as GR
@@ -92,7 +95,7 @@ def test_as_colunas_entram_so_por_acrescimo_e_a_migracao_e_idempotente(casa):
 
 
 def test_a_regua_tolera_tabela_montada_a_mao():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.execute("CREATE TABLE tasks (id INTEGER PRIMARY KEY, status TEXT, due_date TEXT)")
     assert TS.condicao_nao_suspensa(None, HOJE, con=con) == ("1=1", [])
     assert TS.condicao_suspensa(None, HOJE, con=con) == ("0=1", [])
@@ -137,6 +140,29 @@ def test_a_suspensa_nao_escalona_nem_toca_o_sino(casa):
     with db.connect() as con:
         assert TP.contagem_tier_critico_tarefas(con, mario) == criticas_antes - 1
         assert TP.contagem_pendentes_notificacao(con, mario) == 0
+
+
+def test_as_faixas_alta_e_media_baixa_do_sino_tambem_deixam_a_suspensa_de_fora(casa):
+    """As faixas «Importante» (ALTA) e «Tarefas pendentes» (MÉDIA e BAIXA) contam
+    pela mesma régua da Crítica — e nenhum teste as chamava (revisão do L021,
+    17/10/2026: só a assinatura delas tinha mudado na conversão)."""
+    db = casa["db"]
+    mario = _uid(db, "mario")
+    no_prazo = (date.today() + timedelta(days=30)).isoformat()
+    with db.connect() as con:
+        alta_antes = TP.contagem_tier_alta_tarefas(con, mario)
+        media_antes, baixa_antes = TP.contagem_media_baixa_notificacao(con, mario)
+    tarefas = [_tarefa(db, f"Faixa {p} do sino", priority=p, due_date=no_prazo)
+               for p in ("ALTA", "MEDIA", "BAIXA")]
+    with db.connect() as con:
+        assert TP.contagem_tier_alta_tarefas(con, mario) == alta_antes + 1
+        assert TP.contagem_media_baixa_notificacao(con, mario) == (media_antes + 1,
+                                                                  baixa_antes + 1)
+    for tid in tarefas:
+        _suspender(db, tid, hoje=date.today())
+    with db.connect() as con:
+        assert TP.contagem_tier_alta_tarefas(con, mario) == alta_antes
+        assert TP.contagem_media_baixa_notificacao(con, mario) == (media_antes, baixa_antes)
 
 
 def test_a_suspensa_sai_da_carga_da_pauta_e_da_cobranca_do_gestor(casa):
@@ -267,6 +293,108 @@ def test_concluir_a_suspensa_encerra_a_suspensao_junto(casa):
     assert not TS.esta_suspensa(_linha(db, tid))
 
 
+# ------------------------------------------- dois balcões ao mesmo tempo
+#
+# RESSALVA 2 DA REVISÃO DO L047 (17/10/2026), consertada no L047R. Suspender,
+# retomar e a volta automática leem a tarefa e gravam nela, e o vencimento sai
+# do que foi lido. Sem `FOR UPDATE`, o segundo balcão lia o estado de antes de
+# o primeiro confirmar, esperava a vez e gravava por cima: duas suspensões no
+# rastro, ou o vencimento andado duas vezes.
+
+def _segundo_balcao(db, chamar):
+    """Roda `chamar(con)` noutra conexão e noutra thread, e confirma.
+
+    O segundo chega enquanto o primeiro ainda não confirmou — o mesmo desenho
+    de `test_ri_disputa_e_ordem_no_postgres`.
+    """
+    resposta: dict = {}
+
+    def rodar():
+        con = db.connect()
+        try:
+            resposta["r"] = chamar(con)
+            con.commit()
+        except Exception as erro:  # noqa: BLE001 — o teste mostra qual foi
+            con.rollback()
+            resposta["erro"] = erro
+        finally:
+            con.close()
+
+    t = threading.Thread(target=rodar, daemon=True)
+    t.start()
+    t.join(1.0)
+    return t, resposta
+
+
+def _dois_balcoes(db, primeiro, segundo) -> dict:
+    """O primeiro grava e ainda não confirmou quando o segundo chega."""
+    con = db.connect()
+    try:
+        primeiro(con)
+        t, resposta = _segundo_balcao(db, segundo)
+        con.commit()
+    finally:
+        con.close()
+    t.join(20)
+    assert not t.is_alive(), "o segundo balcão ficou preso"
+    return resposta
+
+
+def test_duas_suspensoes_ao_mesmo_tempo_a_segunda_ve_a_primeira(casa):
+    db = casa["db"]
+    tid = _tarefa(db)
+    mario = _uid(db, "mario")
+    resposta = _dois_balcoes(
+        db,
+        lambda c: TS.suspender(c, tid, modo=TS.MODO_CONDICAO,
+                               motivo="Emitida nota devolutiva ao cliente",
+                               condicao="Aguardando o retorno do cliente com o documento",
+                               usuario_id=mario, agora=AGORA, hoje=HOJE),
+        lambda c: TS.suspender(c, tid, modo=TS.MODO_PRAZO,
+                               motivo="Aguardando o cliente pagar a diferença",
+                               ate="2026-10-25", usuario_id=mario, agora=AGORA, hoje=HOJE))
+    assert isinstance(resposta.get("erro"), TS.SuspensaoError), (
+        f"o segundo balcão suspendeu por cima da suspensão do primeiro: {resposta}")
+    assert "já está suspensa" in str(resposta["erro"])
+    assert [h["action"] for h in _historico(db, tid)].count("SUSPENSA") == 1
+    linha = _linha(db, tid)
+    assert linha["suspensa_ate"] is None and linha["due_date"] == "2026-10-01"
+
+
+def test_duas_retomadas_ao_mesmo_tempo_nao_andam_o_vencimento_duas_vezes(casa):
+    db = casa["db"]
+    tid = _tarefa(db)
+    _suspender(db, tid)                                      # em 15/10, por condição
+    mario, beatriz = _uid(db, "mario"), _uid(db, "beatriz")
+    resposta = _dois_balcoes(
+        db,
+        lambda c: TS.retomar(c, tid, motivo="O cliente voltou com a certidão pedida",
+                             usuario_id=beatriz, agora="2026-10-25T10:00:00",
+                             hoje=date(2026, 10, 25)),
+        lambda c: TS.retomar(c, tid, motivo="Retorno do cliente registrado no balcão",
+                             usuario_id=mario, agora="2026-10-27T10:00:00",
+                             hoje=date(2026, 10, 27)))
+    assert isinstance(resposta.get("erro"), TS.SuspensaoError), (
+        f"o segundo balcão retomou o que o primeiro já tinha retomado: {resposta}")
+    assert "não está suspensa" in str(resposta["erro"])
+    assert _linha(db, tid)["due_date"] == "2026-10-11"       # 01/10 + 10, e não + 12
+    assert [h["action"] for h in _historico(db, tid)].count("RETOMADA") == 1
+
+
+def test_duas_passadas_da_manutencao_ao_mesmo_tempo_fecham_o_rastro_uma_vez(casa):
+    db = casa["db"]
+    tid = _tarefa(db)
+    _suspender(db, tid, modo=TS.MODO_PRAZO, ate="2026-10-25", condicao=None)
+
+    def passada(c):
+        return TS.encerrar_as_vencidas(c, agora="2026-10-25T07:00:00", hoje=date(2026, 10, 25))
+
+    resposta = _dois_balcoes(db, passada, passada)
+    assert "erro" not in resposta, resposta.get("erro")
+    assert resposta["r"] == 0, "a segunda passada fechou de novo o que a primeira fechou"
+    assert [h["action"] for h in _historico(db, tid)].count("RETOMADA") == 1
+
+
 # ------------------------------------------------------- Processos
 def test_processos_mostra_o_selo_e_nao_conta_como_vencido(casa):
     db = casa["db"]
@@ -323,7 +451,14 @@ def test_a_tela_recusa_sem_derrubar(casa):
 
 def test_o_auditor_ve_mas_nao_suspende_nem_retoma(casa):
     """Decisão do oficial em 15/10/2026: «o AUDITOR não suspende nem retoma;
-    só vê»."""
+    só vê».
+
+    **O POST LEVA 403, E NÃO MAIS O RECADO** — LX22B2, 20/10/2026. O LX11 pôs
+    `roles_required(*PRATICA, metodos=("POST",))` na rota da tarefa inteira (o
+    AUDITOR não grava em rota nenhuma), e a recusa chega antes da guarda da
+    ação. A regra é a mesma, mais larga: o que se confere é que ele leva 403 e
+    que a tarefa não se moveu.
+    """
     from conftest import cg_login
     db = casa["db"]
     db.create_user("carla", "CARLA EXEMPLO LIMA", SENHA, "AUDITOR")
@@ -334,17 +469,16 @@ def test_o_auditor_ve_mas_nao_suspende_nem_retoma(casa):
     assert "Nota devolutiva" in html and "Suspender a cobrança" not in html
     r = auditor.post(f"/tarefas/{tid}", data={
         "csrf_token": _token(html), "action": "suspender", "modo": "CONDICAO",
-        "condicao": "Aguardando o retorno do cliente", "motivo": "Nota devolutiva emitida"},
-        follow_redirects=True)
-    assert "auditor só consulta" in r.get_data(as_text=True)
+        "condicao": "Aguardando o retorno do cliente", "motivo": "Nota devolutiva emitida"})
+    assert r.status_code == 403
     assert _linha(db, tid)["suspensa_desde"] is None
     _suspender(db, tid, hoje=date.today())
     html = auditor.get(f"/tarefas/{tid}").get_data(as_text=True)
     assert "SUSPENSA até:" in html and "Retomar agora" not in html
     r = auditor.post(f"/tarefas/{tid}", data={
         "csrf_token": _token(html), "action": "retomar",
-        "motivo": "Tentativa de retomar pelo auditor"}, follow_redirects=True)
-    assert "auditor só consulta" in r.get_data(as_text=True)
+        "motivo": "Tentativa de retomar pelo auditor"})
+    assert r.status_code == 403
     assert TS.esta_suspensa(_linha(db, tid))
 
 

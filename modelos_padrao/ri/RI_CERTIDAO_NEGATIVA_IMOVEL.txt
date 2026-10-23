@@ -1,0 +1,11 @@
+<p align="center"><b>{{ serventia.nome|upper }}</b></p>
+<p align="center">CNS {{ serventia.cns }} — {{ serventia.cidade }}/{{ serventia.uf }}</p>
+<p align="center"><b>CERTIDÃO NEGATIVA DE IMÓVEL</b></p>
+<p>Certifico, a pedido de parte interessada{% if requerente %} — <b>{{ requerente }}</b>{% if requerente_documento %}, {{ requerente_documento }}{% endif %}{% endif %}, que, feitas as buscas nos livros e indicadores do Registro de Imóveis a meu cargo{% if criterio_rotulo %} — <b>{{ criterio_rotulo }}</b>{% endif %} —, <b>NADA CONSTA</b> de matrícula ou registro{% if pesquisado %} em nome de <b>{{ pesquisado }}</b>{% if pesquisado_documento %}, {{ pesquisado_documento }}{% endif %}{% endif %}{% if imovel_busca %} sobre o imóvel indicado («{{ imovel_busca }}»){% endif %} nos livros de Registro de Imóveis desta Serventia, até a presente data.</p>
+{% if imovel_busca %}<p>Fica ressalvada a possível existência de matrícula ou transcrição com descrição diversa da apresentada que possa englobar o referido imóvel, na forma do art. 554 do Código de Normas da CGJ/TJMA.</p>
+{% endif %}{% if finalidade %}<p><b>FINALIDADE: </b>{{ finalidade }}</p>{% endif %}
+{% if protocolo %}<p><b>PROTOCOLO/PRENOTAÇÃO: </b>{{ protocolo }}</p>{% endif %}
+<p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 553 do Código de Normas da CGJ/TJMA. Certidão emitida em {{ hoje_extenso }}{% if hora_emissao %}, às {{ hora_emissao }}{% endif %}. Dou fé.</p>
+<p align="center">{{ serventia.cidade }}/{{ serventia.uf }}, {{ hoje_extenso }}.</p>
+<p align="center">{{ lavrou_nome }}</p>
+<p align="center">{{ lavrou_funcao }}</p>

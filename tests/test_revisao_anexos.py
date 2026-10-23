@@ -22,6 +22,7 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import banco_pg                      # noqa: E402
 import revisao_anexos as RA          # noqa: E402
 import revisao_previa as RV          # noqa: E402
 
@@ -80,7 +81,7 @@ class IA:
         self.revisoes: list[str] = []
 
     def __call__(self, pasta, *, provedor, sistema, conversa, ferramentas, modelo,
-                 maximo_de_saida):
+                 maximo_de_saida, **_registro):
         pedido = conversa[0]
         self.imagens += len(pedido.get("imagens") or [])
         if sistema == RA.INSTRUCAO_TRIAGEM:
@@ -102,6 +103,8 @@ class IA:
 @pytest.fixture()
 def casa(tmp_path):
     banco = tmp_path / "casa.sqlite3"
+    # módulo nativo não roda no SQLite solto: o arquivo é registrado como «banco da casa»
+    banco_pg.registrar_banco(banco)
     con = sqlite3.connect(banco)
     con.executescript("""
         CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
@@ -156,7 +159,9 @@ def test_o_que_a_triagem_descarta_nao_se_transcreve(casa):
     ia = IA(importante=False)
     r = RA.ler(casa["con"], casa["pasta"], ORIGEM, conversar=ia)
     assert ia.triagens == 1 and ia.transcricoes == 0
-    assert ia.imagens == 1                         # só a primeira página subiu
+    # a triagem viu as três (LX13: viu o arquivo inteiro, e só por isso o
+    # descarte vale); nenhuma subiu à transcrição
+    assert ia.imagens == 3
     assert r["bloco"] == ""
     assert r["resumo"][0]["importante"] is False
     assert "comprovante" in r["resumo"][0]["motivo"]
@@ -167,7 +172,7 @@ def test_digitalizado_vai_em_grupos_de_tres_paginas(casa):
     ia = IA()
     RA.ler(casa["con"], casa["pasta"], ORIGEM, conversar=ia)
     assert ia.transcricoes == 2                    # 3 + 1
-    assert ia.imagens == 1 + 4                     # triagem + as quatro
+    assert ia.imagens == 3 + 4                     # triagem (até três) + as quatro
 
 
 def test_passou_de_40_paginas_avisa_e_nao_transcreve_o_excesso(casa):
@@ -176,7 +181,7 @@ def test_passou_de_40_paginas_avisa_e_nao_transcreve_o_excesso(casa):
     r = RA.ler(casa["con"], casa["pasta"], ORIGEM, conversar=ia)
     assert r["resumo"][0]["lidas"] == 40
     assert "45 páginas" in r["aviso"] and "Ficaram sem leitura" in r["aviso"]
-    assert ia.imagens == 1 + 40
+    assert ia.imagens == 3 + 40
 
 
 def test_com_mascara_ligada_nenhum_anexo_sobe(casa):
@@ -207,6 +212,34 @@ def test_peticao_em_word_se_le_sem_imagem(casa):
     r = RA.ler(casa["con"], casa["pasta"], ORIGEM, conversar=ia)
     assert ia.imagens == 0 and ia.transcricoes == 0
     assert "PETICAO DE INVENTARIO\nherdeiro JOSE DA SILVA" in r["bloco"]
+
+
+@pytest.mark.skipif(not banco_pg.ativo(), reason="a trava é a da ponte do PostgreSQL")
+def test_a_triagem_vai_a_rede_sem_segurar_a_escrita_do_balcao(casa):
+    """Achado do L042R: o esquema virou uma escrita sem confirmação, e a trava
+    do banco ficava presa enquanto a IA respondia. Quem gravasse no meio — o
+    balcão — esperava 15 s e levava «database is locked»."""
+    anexar(casa, "escritura.pdf", pdf_com_texto([TEXTO_LONGO]))
+    gravou: list[str] = []
+
+    class IAQueEsperaOBalcao(IA):
+        def __call__(self, pasta, **k):
+            if k["sistema"] == RA.INSTRUCAO_TRIAGEM:
+                balcao = sqlite3.connect(casa["banco"])
+                try:
+                    balcao.execute("INSERT INTO settings (key, value) VALUES (?, ?)",
+                                   ("teste_balcao_no_meio", "1"))
+                    balcao.commit()
+                    gravou.append("gravou")
+                except sqlite3.OperationalError as erro:
+                    gravou.append(str(erro))
+                finally:
+                    balcao.close()
+            return super().__call__(pasta, **k)
+
+    r = RA.ler(casa["con"], casa["pasta"], ORIGEM, conversar=IAQueEsperaOBalcao())
+    assert gravou == ["gravou"]
+    assert "JOSE DA SILVA" in r["bloco"]
 
 
 # ------------------------------------------------------------- na revisão

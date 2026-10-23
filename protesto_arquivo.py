@@ -14,7 +14,7 @@ DE ONDE VEIO O LAYOUT
     protestos a SERASA, nao para receber titulos da Central.
 
     Entao o layout abaixo foi MEDIDO. Ha 99 arquivos reais em
-    `C:\\ARPNET\\CRA`, com 1.058 registros de titulo. Cada campo foi conferido
+    `arquivos\\eoficio\\CRA`, com 1.058 registros de titulo. Cada campo foi conferido
     contra o que o E-Oficio gravou para o MESMO titulo em `tbAvisoProtesto`,
     e a taxa de acerto de cada um esta escrita ao lado. Os 1.058 registros
     casaram por numero do titulo — 100%.

@@ -1,0 +1,23 @@
+{
+  "chave": "CAIXA_ORCAMENTO",
+  "atribuicao": "Caixa e protocolo",
+  "nome": "Orçamento",
+  "formato": "JINJA",
+  "explica": "O que o ato vai custar, com os fundos separados.",
+  "campos": [
+    "aviso",
+    "data",
+    "documento",
+    "email",
+    "emitido_por",
+    "extenso",
+    "funcao",
+    "itens",
+    "orcamento",
+    "p",
+    "soma",
+    "sv",
+    "telefone",
+    "vigencia"
+  ]
+}

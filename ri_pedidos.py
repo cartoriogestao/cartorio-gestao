@@ -51,6 +51,7 @@ import sqlite3
 from datetime import date
 from typing import Any, Mapping
 
+from bd_nativo import banco
 from ri_schema import dias_uteis_entre, normalizar_busca
 
 
@@ -138,16 +139,14 @@ def etapa(p: Mapping, ultima: Mapping | None, hoje: str) -> str:
 
 def qualificacoes_de(con: sqlite3.Connection, protocolo_id: int) -> list[dict]:
     """As qualificações de uma prenotação, da primeira à última. SÓ LÊ."""
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        """SELECT * FROM ri_qualificacoes WHERE protocolo_id=?
-           ORDER BY ordem""", (int(protocolo_id),))]
+    return banco(con).ler(
+        """SELECT * FROM ri_qualificacoes WHERE protocolo_id=%s
+           ORDER BY ordem, id""", (int(protocolo_id),))
 
 
-def _prenotacao(con: sqlite3.Connection, protocolo_id: int) -> sqlite3.Row:
-    con.row_factory = sqlite3.Row
-    p = con.execute("SELECT * FROM ri_protocolos WHERE id=?",
-                    (int(protocolo_id),)).fetchone()
+def _prenotacao(con: sqlite3.Connection, protocolo_id: int) -> dict:
+    p = banco(con).um("SELECT * FROM ri_protocolos WHERE id=%s",
+                      (int(protocolo_id),))
     if not p:
         raise PedidoError(f"Não achei a prenotação id {protocolo_id}.")
     return p
@@ -156,20 +155,22 @@ def _prenotacao(con: sqlite3.Connection, protocolo_id: int) -> sqlite3.Row:
 def _gravar(con: sqlite3.Connection, protocolo_id: int, *, resultado: str,
             fundamentacao: str | None, nota_id: int | None, quem: str | None,
             usuario_id: int | None, agora: str) -> dict:
-    ultima = con.execute(
-        "SELECT MAX(ordem) FROM ri_qualificacoes WHERE protocolo_id=?",
-        (int(protocolo_id),)).fetchone()[0]
+    bd = banco(con)
+    bd.travar("ri_qualificacoes.ordem")
+    ultima = bd.valor(
+        "SELECT MAX(ordem) AS n FROM ri_qualificacoes WHERE protocolo_id=%s",
+        (int(protocolo_id),))
     ordem = int(ultima or 0) + 1
-    cur = con.execute(
+    novo = bd.escrever(
         """INSERT INTO ri_qualificacoes
            (protocolo_id, ordem, resultado, fundamentacao, nota_id,
             data_qualificacao, qualificada_por, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(protocolo_id), ordem, resultado,
          (fundamentacao or "").strip() or None,
          int(nota_id) if nota_id else None,
-         agora[:10], (quem or "").strip() or None, agora, usuario_id))
-    return {"id": int(cur.lastrowid), "ordem": ordem, "resultado": resultado}
+         agora[:10], (quem or "").strip() or None, agora, usuario_id))[0]["id"]
+    return {"id": int(novo), "ordem": ordem, "resultado": resultado}
 
 
 def qualificar_positiva(con: sqlite3.Connection, protocolo_id: int, *,
@@ -230,9 +231,9 @@ def registrar_negativa(con: sqlite3.Connection, protocolo_id: int, *,
 def _anotacoes(con: sqlite3.Connection, tabela: str) -> dict[int, dict]:
     """Quem está cuidando e o que falta — a anotação de `inacabados`. SÓ LÊ."""
     try:
-        return {int(r["item_id"]): dict(r) for r in con.execute(
+        return {int(r["item_id"]): r for r in banco(con).ler(
             """SELECT item_id, texto, responsavel, ate FROM ex_anotacoes
-               WHERE tabela=?""", (tabela,))}
+               WHERE tabela=%s ORDER BY id""", (tabela,))}
     except sqlite3.OperationalError as erro:
         if "no such table" in str(erro):
             return {}
@@ -280,46 +281,46 @@ def listar(con: sqlite3.Connection, *, hoje: date,
     prenotação ele entra, e de propósito: as treze abertas sem apresentante
     vieram de lá, e estão vencidas esperando decisão.
     """
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     iso = hoje.isoformat()
 
-    prenot = [dict(r) for r in con.execute(
+    prenot = bd.ler(
         """SELECT * FROM ri_protocolos WHERE situacao IN ('ABERTO','DEVOLVIDO')
-           ORDER BY numero""")]
+           ORDER BY numero, id""")
     ids = [p["id"] for p in prenot]
 
     ultimas: dict[int, dict] = {}
-    for r in con.execute(
+    for r in bd.ler(
             """SELECT protocolo_id, ordem, resultado, data_qualificacao,
                       qualificada_por
-               FROM ri_qualificacoes ORDER BY protocolo_id, ordem"""):
+               FROM ri_qualificacoes ORDER BY protocolo_id, ordem, id"""):
         ultimas[int(r["protocolo_id"])] = dict(r)
 
     geral: dict[int, dict] = {}
-    for r in con.execute(
+    for r in bd.ler(
             """SELECT id, numero, ri_protocolo_id FROM cx_protocolos
                WHERE ri_protocolo_id IS NOT NULL ORDER BY id"""):
         geral.setdefault(int(r["ri_protocolo_id"]), dict(r))
 
     saldo: dict[int, int] = {}
     from caixa_schema import centavos
-    for r in con.execute(
+    for r in bd.ler(
             """SELECT ri_protocolo_id, saldo, encerrado FROM cx_depositos
-               WHERE ri_protocolo_id IS NOT NULL"""):
+               WHERE ri_protocolo_id IS NOT NULL ORDER BY id"""):
         if not r["encerrado"]:
             pid = int(r["ri_protocolo_id"])
             saldo[pid] = saldo.get(pid, 0) + centavos(r["saldo"])
 
     minutas: dict[str, int] = {}
-    for r in con.execute(
+    for r in bd.ler(
             """SELECT protocolo, prenotacao FROM ri_minutas
-               WHERE situacao='A_REVISAR'"""):
+               WHERE situacao='A_REVISAR' ORDER BY id"""):
         chave = _digitos(r["protocolo"]) or _digitos(r["prenotacao"])
         if chave:
             minutas[chave] = minutas.get(chave, 0) + 1
 
-    anot_p = _anotacoes(con, "ri_protocolos")
-    anot_c = _anotacoes(con, "cx_protocolos")
+    anot_p = _anotacoes(bd, "ri_protocolos")
+    anot_c = _anotacoes(bd, "cx_protocolos")
 
     pedidos: list[dict] = []
     for p in prenot:
@@ -360,7 +361,7 @@ def listar(con: sqlite3.Connection, *, hoje: date,
             "anotacao": anot_p.get(p["id"]),
         })
 
-    for r in con.execute(
+    for r in bd.ler(
             """SELECT * FROM cx_protocolos
                WHERE atribuicao='RI' AND ri_protocolo_id IS NULL
                  AND COALESCE(origem,'') <> 'EOFICIO'

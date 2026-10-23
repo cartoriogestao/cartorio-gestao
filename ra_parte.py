@@ -42,8 +42,9 @@ e porque catálogo da casa não é invenção; **os três medidos vêm primeiro*
 """
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
+
+from bd_nativo import banco
 
 # OS TRÊS MEDIDOS, na ordem de uso, e depois o resto do catálogo da casa.
 PAPEIS: tuple[tuple[str, str], ...] = (
@@ -54,6 +55,11 @@ PAPEIS: tuple[tuple[str, str], ...] = (
     ("ANUENTE", "Anuente — do catálogo da casa; não aparece nas 25"),
     ("DEVEDOR", "Devedor(a) — do catálogo da casa; não aparece nas 25"),
     ("INTERVENIENTE", "Interveniente — do catálogo da casa; não aparece nas 25"),
+    # 19/10/2026 — pedido do oficial («adicionar mais partes no ato»). O
+    # registro 9.005 (cédula bancária) tem garantidor e cônjuge que outorga;
+    # sem esses papéis, a tela antiga gravava o papel em texto livre.
+    ("GARANTIDOR", "Garantidor(a) — garante a dívida sem ser o emitente"),
+    ("OUTORGANTE", "Outorgante/Cônjuge anuente — consente no ato"),
 )
 
 NOMES_DOS_PAPEIS: dict[str, str] = {c: r.split(" — ")[0] for c, r in PAPEIS}
@@ -89,15 +95,15 @@ def tipo_do_documento(numero: Any) -> str | None:
     return None
 
 
-def listar(con: sqlite3.Connection, registro_id: int) -> list[dict]:
+def listar(con: Any, registro_id: int) -> list[dict]:
     """As partes daquele registro, na ordem em que entraram. Só lê."""
-    linhas = con.execute(
-        "SELECT * FROM ra_partes WHERE registro_id=? ORDER BY id",
-        (int(registro_id),)).fetchall()
+    linhas = banco(con).ler(
+        "SELECT * FROM ra_partes WHERE registro_id=%s ORDER BY id",
+        (int(registro_id),))
     return [dict(x) for x in linhas]
 
 
-def para_o_selo(con: sqlite3.Connection, registro_id: int) -> list[dict]:
+def para_o_selo(con: Any, registro_id: int) -> list[dict]:
     """As partes na forma que o envelope do selo quer: `{nome, documento}`.
 
     **Sem documento também vai**, e isso é medido: a casa mandou `{nome}`
@@ -109,7 +115,7 @@ def para_o_selo(con: sqlite3.Connection, registro_id: int) -> list[dict]:
             for p in listar(con, registro_id) if _texto(p["nome"])]
 
 
-def acrescentar(con: sqlite3.Connection, *, registro_id: int, nome: str,
+def acrescentar(con: Any, *, registro_id: int, nome: str,
                 papel: str, documento: Any = None, ato_id=None,
                 origem: str = "MANUAL") -> int:
     """Põe uma parte no registro. ESCREVE. Devolve o `id`."""
@@ -118,35 +124,126 @@ def acrescentar(con: sqlite3.Connection, *, registro_id: int, nome: str,
         raise ParteError(
             "Escreva o nome da parte — é ele que vai dentro do selo, e é por "
             "ele que a pesquisa nacional de bens acha a pessoa.")
-    papel = _texto(papel).upper()
-    if papel not in NOMES_DOS_PAPEIS:
-        raise ParteError(
-            f"Papel desconhecido: {papel!r}. Os desta casa estão na caixa — "
-            f"emitente, credor, proprietário, avalista, anuente, devedor e "
-            f"interveniente.")
-    if con.execute("SELECT 1 FROM ra_registros WHERE id=?",
-                   (int(registro_id),)).fetchone() is None:
+    papel = _papel_valido(papel)
+    bd = banco(con)
+    if bd.um("SELECT 1 FROM ra_registros WHERE id=%s",
+             (int(registro_id),)) is None:
         raise ParteError("Registro do Livro 3 não encontrado.")
     documento = so_digitos(documento)
-    cursor = con.execute(
+    return int(bd.escrever(
         """INSERT INTO ra_partes(registro_id, ato_id, nome, documento_tipo,
                                  documento_numero, papel, origem)
-           VALUES (?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(registro_id), ato_id, nome, tipo_do_documento(documento),
-         documento or None, papel, origem))
-    return int(cursor.lastrowid)
+         documento or None, papel, origem))[0]["id"])
 
 
-def remover(con: sqlite3.Connection, parte_id: int) -> int:
+def _papel_valido(papel: Any, *, atual: Any = None) -> str:
+    """O código do papel, ou `ParteError`.
+
+    **O papel antigo, em texto livre, continua valendo enquanto não se
+    mexe nele** — a tela de registro novo gravava o que se digitasse
+    («Emitente principal / devedor:» no 9.005), e editar o nome de uma parte
+    dessas não pode obrigar a trocar o papel junto.
+    """
+    bruto = _texto(papel)
+    codigo = bruto.upper()
+    if codigo in NOMES_DOS_PAPEIS:
+        return codigo
+    if atual is not None and bruto and bruto == _texto(atual):
+        return bruto
+    raise ParteError(
+        f"Papel desconhecido: {bruto!r}. Os desta casa estão na caixa — "
+        f"emitente, credor, proprietário, avalista, anuente, devedor, "
+        f"interveniente, garantidor e outorgante.")
+
+
+def partes_do_formulario(nomes: list, tipos: list, numeros: list,
+                         papeis: list) -> list[dict]:
+    """As linhas «+ Adicionar parte» do registro novo, já conferidas.
+
+    Quantas vierem — **não há mais limite de duas**. Linha sem nome é linha
+    em branco e não conta; linha com nome passa pela mesma regra de
+    `acrescentar` (nome de 3 letras, papel do catálogo, documento só com os
+    dígitos). Só lê; quem grava é `ra_registro.registrar`.
+    """
+    def em(lista: list, i: int) -> str:
+        return _texto(lista[i]) if i < len(lista) else ""
+
+    partes: list[dict] = []
+    for i, nome in enumerate(nomes or []):
+        nome = _texto(nome)
+        if not nome:
+            continue
+        if len(nome) < 3:
+            raise ParteError(f"Parte {i + 1}: escreva o nome inteiro.")
+        try:
+            papel = _papel_valido(em(papeis, i))
+        except ParteError as erro:
+            raise ParteError(f"Parte {i + 1} ({nome}): {erro}") from None
+        documento = so_digitos(em(numeros, i))
+        tipo = tipo_do_documento(documento) or (
+            em(tipos, i).upper() if documento and em(tipos, i) else None)
+        partes.append({"nome": nome, "documento_tipo": tipo,
+                       "documento_numero": documento or None,
+                       "papel": papel})
+    return partes
+
+
+def editar(con: Any, parte_id: int, *, nome: str, papel: str,
+           documento: Any = None) -> dict:
+    """Corrige uma parte do registro. ESCREVE. Devolve `{registro_id, antes,
+    depois}` — o `antes` vai para a auditoria inteiro.
+
+    **Não toca no teor nem no selo**: a parte é da ficha (`ra_partes`), e o
+    ato selado continua como foi lavrado. A regra antiga — «tira e põe de
+    novo» — continua valendo para quem preferir; esta é para o nome com uma
+    letra trocada, sem perder a ordem das partes.
+
+    **A LINHA FICA PRESA (`FOR UPDATE`) entre ler e gravar**: o papel antigo
+    só vale se for o que está gravado, e o `antes` da auditoria tem de ser o
+    que esta correção substituiu — duas correções ao mesmo tempo na mesma
+    parte, sem a trava, deixariam a segunda auditando um `antes` que já não
+    existia.
+    """
+    bd = banco(con)
+    bd._escrita()
+    linha = bd.um(
+        """SELECT registro_id, nome, documento_tipo, documento_numero, papel
+             FROM ra_partes WHERE id=%s FOR UPDATE""", (int(parte_id),))
+    if not linha:
+        raise ParteError("Parte não encontrada.")
+    registro_id = int(linha["registro_id"])
+    antes = {"nome": linha["nome"], "documento_tipo": linha["documento_tipo"],
+             "documento_numero": linha["documento_numero"],
+             "papel": linha["papel"]}
+    nome = _texto(nome)
+    if len(nome) < 3:
+        raise ParteError("Escreva o nome da parte — é ele que vai dentro do "
+                         "selo.")
+    papel = _papel_valido(papel, atual=linha["papel"])
+    documento = so_digitos(documento)
+    depois = {"nome": nome, "documento_tipo": tipo_do_documento(documento),
+              "documento_numero": documento or None, "papel": papel}
+    bd.escrever(
+        """UPDATE ra_partes SET nome=%s, documento_tipo=%s,
+                  documento_numero=%s, papel=%s WHERE id=%s""",
+        (depois["nome"], depois["documento_tipo"], depois["documento_numero"],
+         depois["papel"], int(parte_id)))
+    return {"registro_id": registro_id, "antes": antes, "depois": depois}
+
+
+def remover(con: Any, parte_id: int) -> int:
     """Tira uma parte do registro. ESCREVE. Devolve o `registro_id`.
 
     **Parte se tira, e não se corrige por cima**: quem digitou o nome errado
     tira e põe de novo, e assim o que ficou gravado é sempre o que alguém
     escreveu inteiro — e não a metade de duas digitações.
     """
-    linha = con.execute("SELECT registro_id FROM ra_partes WHERE id=?",
-                        (int(parte_id),)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT registro_id FROM ra_partes WHERE id=%s",
+                  (int(parte_id),))
     if not linha:
         raise ParteError("Parte não encontrada.")
-    con.execute("DELETE FROM ra_partes WHERE id=?", (int(parte_id),))
-    return int(linha[0])
+    bd.escrever("DELETE FROM ra_partes WHERE id=%s", (int(parte_id),))
+    return int(linha["registro_id"])

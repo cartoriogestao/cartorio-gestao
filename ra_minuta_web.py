@@ -14,9 +14,11 @@ import json
 
 from flask import Response, abort, flash, redirect, render_template, request, url_for
 
+from bd_nativo import banco
 import ra_expurgo as EXP
 import ra_minuta as MIN
 import ra_selo as RS
+from seguranca_web import destino_interno  # M1/B3 (LX11): o «volte para» só leva a caminho desta casa
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
@@ -126,9 +128,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   {"motivo": motivo[:200]})
             flash("Minuta descartada, com o motivo escrito nela. Ela continua "
                   "na ficha — descartada não some.", "success")
-        return redirect(request.form.get("voltar")
-                        or url_for("livro3_registro",
-                                   registro_id=m["registro_id"]))
+        return redirect(destino_interno(request.form.get("voltar"),
+                                        url_for("livro3_registro",
+                                                registro_id=m["registro_id"])))
 
     @app.route("/livro3/ato/<int:ato_id>/devolver-a-minuta", methods=["POST"])
     @login_required
@@ -147,8 +149,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         É do ADMIN e do gerente: desfazer ato é decisão de quem assina.
         """
         with db.connect() as con:
-            a = con.execute("SELECT registro_id FROM ra_atos WHERE id=?",
-                            (ato_id,)).fetchone()
+            a = banco(con).um("SELECT registro_id FROM ra_atos WHERE id=%s",
+                              (ato_id,))
         if not a:
             abort(404)
         registro_id = a["registro_id"]
@@ -238,9 +240,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         depois, porque apagar o que outra tela guardou não é desta rota.
         """
         with db.connect() as con:
-            r = con.execute(
-                "SELECT * FROM rascunhos_de_tela WHERE id=?",
-                (rascunho_id,)).fetchone()
+            r = banco(con).um(
+                "SELECT * FROM rascunhos_de_tela WHERE id=%s",
+                (rascunho_id,))
         if not r:
             abort(404)
         try:

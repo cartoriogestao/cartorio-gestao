@@ -29,6 +29,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import acervo_carga as AC                            # noqa: E402
 import ato_selado as AS                              # noqa: E402
@@ -43,7 +45,7 @@ SELO_CANCELADO = "CERTID000000NNRLQN37MGQ9J507"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     init_nucleo_schema(con)
     init_pt_schema(con)
@@ -60,7 +62,7 @@ def banco() -> sqlite3.Connection:
 
 
 def acervo() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE tbSeloIndividual (
@@ -152,6 +154,40 @@ def test_a_carga_dos_selos_e_repetivel():
     con = banco()
     velho = acervo()
     AC.carregar_selos(con, velho, agora=AGORA)
+    de_novo = AC.carregar_selos(con, velho, agora=AGORA)
+    assert de_novo.inseridos == 0
+    assert de_novo.repetidos == 4
+    assert con.execute("SELECT COUNT(*) c FROM sd_selos").fetchone()["c"] == 4
+
+
+def test_o_selo_que_aparece_entre_o_olhar_e_o_gravar_conta_como_repetido(monkeypatch):
+    """Duas cargas ao mesmo tempo: a outra grava o selo DEPOIS que esta olhou
+    `sd_selos` e não o viu. No SQLite a escrita única impedia isso; no
+    PostgreSQL o `UNIQUE` de `sd_selos.numero` estouraria a carga inteira.
+    Ela tem de contar o selo como repetido e seguir — e o razão não duplica.
+    """
+    from bd_nativo import banco as banco_nativo
+
+    con = banco()
+    velho = acervo()
+    AC.carregar_selos(con, velho, agora=AGORA)
+
+    class _Cego:
+        """Um `bd` que não vê o que já está em `sd_selos`: é o que a carga vê
+        quando a outra grava entre o olhar e o INSERT."""
+
+        def __init__(self, bd):
+            self._bd = bd
+
+        def um(self, sql, *args, **kwargs):
+            if "FROM sd_selos WHERE numero" in sql:
+                return None
+            return self._bd.um(sql, *args, **kwargs)
+
+        def __getattr__(self, nome):
+            return getattr(self._bd, nome)
+
+    monkeypatch.setattr(AC, "banco", lambda c: _Cego(banco_nativo(c)))
     de_novo = AC.carregar_selos(con, velho, agora=AGORA)
     assert de_novo.inseridos == 0
     assert de_novo.repetidos == 4

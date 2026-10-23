@@ -271,3 +271,39 @@ def test_o_agente_nao_lanca_nao_sela_nao_cobra_nao_apaga_nao_envia():
     for verbo in ("INSERT", "UPDATE", "DELETE"):
         assert f"{verbo} INTO" not in fonte and f"{verbo} nt_" not in fonte \
             and f"{verbo} FROM" not in fonte
+
+
+# ================================================== CONSERTO DO L025R (18/10/2026)
+# A LINHA DE COMANDO DO PAINEL RODA FORA DO SISTEMA: ninguém monta `Database()`
+# e o desvio do `sqlite3.connect` não existe. A conversão do L025 tinha trocado
+# o `sqlite3.connect(file:...?mode=ro)` por `psycopg.connect(--banco)`: o
+# `--banco` deixou de aceitar o caminho do banco (virou DSN), e a promessa «só
+# lê o banco» ficou sem guarda nenhuma.
+
+import banco_pg                                                   # noqa: E402
+from bd_nativo import banco                                       # noqa: E402
+
+
+@pytest.mark.skipif(not banco_pg.ativo(), reason="mede a porta do PostgreSQL (CG_PG_DSN)")
+def test_o_painel_pela_linha_de_comando_abre_o_banco_pelo_caminho_e_so_le(
+        con, cg_casa, tmp_path, monkeypatch, capsys):
+    _ato(con, situacao="EM_LAVRATURA", data="2026-09-29", teor="<p>" + "x" * 300 + "</p>")
+    con.commit()
+    monkeypatch.setattr(sqlite3, "connect", banco_pg._CONNECT_ORIGINAL)
+    recusa: dict = {}
+    original = AN.escrever_relatorio
+
+    def escrever_relatorio(c, hoje, pasta):
+        try:
+            banco(c).escrever("UPDATE nt_livros SET folha_atual = folha_atual")
+        except sqlite3.OperationalError as erro:
+            recusa["erro"] = str(erro)
+        c.rollback()
+        return original(c, hoje, pasta)
+
+    monkeypatch.setattr(AN, "escrever_relatorio", escrever_relatorio)
+    assert AN.main(["--banco", str(cg_casa["banco"]), "--hoje", HOJE.isoformat(),
+                    "--saida", str(tmp_path)]) == 0
+    caminho = Path(capsys.readouterr().out.strip())
+    assert "Minutas em lavratura" in caminho.read_text(encoding="utf-8")
+    assert "readonly" in recusa.get("erro", ""), "a linha de comando abriu o banco para escrever"

@@ -885,8 +885,11 @@ clique.
 - O backup leva banco e arquivos. **Não copie o arquivo do banco com o sistema
   aberto** como forma de backup.
 - Mantenha **uma segunda cópia em outro disco** ou fora da serventia.
-- Credenciais (`*.cred`) e `secret.key` **não vão no backup, de propósito**:
-  guarde-os à parte, em local seguro, para reinstalar o servidor.
+- Credenciais (`*.cred`), `secret.key` e `cofre.key` **não vão no backup, de
+  propósito**: guarde-os à parte, em local seguro, para reinstalar o servidor.
+- Em **Proteção do backup** dá para ligar a **cifra do pacote** (desligada de
+  fábrica) e tirar o acervo do E-Ofício do completo. Como restaurar um pacote,
+  cifrado ou não: `docs/BACKUP.md`.
 
 **Atualizações.** As versões chegam como **pacotes `.cgu` assinados** por quem
 mantém o sistema, com o **SHA-256** enviado por **canal separado**. **Só o

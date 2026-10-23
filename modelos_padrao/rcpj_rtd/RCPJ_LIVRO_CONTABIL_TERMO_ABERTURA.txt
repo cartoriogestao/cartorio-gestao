@@ -1,0 +1,10 @@
+TERMO DE ABERTURA
+
+Este livro, {tipo_livro} nº {numero_livro}, de {pj_nome}, inscrita no CNPJ sob o nº {pj_cnpj}, contém {folhas} folhas, numeradas de {folha_de} a {folha_ate}, e destina-se à escrituração dessa pessoa jurídica.
+
+Autenticado no Registro Civil das Pessoas Jurídicas de {unit_name} — CNS {cns}, sob o nº {numero}/{ano} do controle de autenticação de livros.
+
+{cidade_uf}, {data_extenso}.
+
+{full_name}
+{funcao}

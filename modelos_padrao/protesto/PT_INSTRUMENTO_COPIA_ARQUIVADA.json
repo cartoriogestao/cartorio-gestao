@@ -1,0 +1,8 @@
+{
+  "chave": "PT_INSTRUMENTO_COPIA_ARQUIVADA",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto — menção da cópia arquivada",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {copia} do instrumento quando há imagem do título arquivada — o sistema pergunta ao banco, e não afirma.",
+  "campos": []
+}

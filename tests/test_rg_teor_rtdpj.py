@@ -19,6 +19,8 @@ from PIL import Image
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import modelos_da_casa as CASA  # noqa: E402
 import rg_teor_averbacao as TEOR_OLD  # noqa: E402
@@ -31,7 +33,7 @@ def _folha(cor=(240, 240, 240), size=(800, 1100)) -> Image.Image:
 
 
 def _con_com_mo():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.executescript(RI_SCHEMA)
     return con
 
@@ -466,7 +468,7 @@ def test_com_arquivamento_nao_supoe_primeira_averbacao():
     registro mesmo sem selo 15.22 nenhum. Agora só reserva a faixa quando o
     próprio ato tem o selo — nem a 1ª, nem qualquer outra, ganha de graça.
     """
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.executescript(
         """
         CREATE TABLE rg_atos(
@@ -491,6 +493,22 @@ def test_com_arquivamento_nao_supoe_primeira_averbacao():
     # ordem, e sim porque o operador marcou aquele item para este ato.
     assert TEOR.com_arquivamento_para_ato(con, 1, 76) is True
     assert TEOR.com_arquivamento_para_ato(con, 1, 75) is False
+
+
+def test_sem_sd_selos_a_transacao_de_quem_chama_continua():
+    """Revisão do L018: o `except` em volta da consulta a `sd_selos` deixaria a
+    transação do PostgreSQL abortada? Não: com a transação aberta, o
+    `bd_nativo` põe o comando num SAVEPOINT e volta a ele quando falha. O que
+    se gravou antes e o que se grava depois saem confirmados juntos."""
+    con = conexao_de_teste()
+    con.execute("CREATE TABLE rg_atos (id INTEGER PRIMARY KEY, tipo TEXT)")
+    con.commit()
+    con.execute("INSERT INTO rg_atos (id, tipo) VALUES (1, 'REGISTRO')")
+    assert TEOR.tem_selo_arquivamento(con, 1) is False
+    con.execute("INSERT INTO rg_atos (id, tipo) VALUES (2, 'AVERBACAO')")
+    con.commit()
+    assert [r[0] for r in con.execute(
+        "SELECT id FROM rg_atos ORDER BY id")] == [1, 2]
 
 
 def test_selos_extra_nao_quebra_e_reserva_mais_altura():
@@ -582,3 +600,89 @@ def test_gerar_pdf_com_selos_extra_produz_pdf_valido(tmp_path):
         selo_averbacao=_selo_de_teste(),
         selos_extra=extras)
     assert pdf.startswith(b"%PDF-1.4")
+
+
+# ---------------------------------- o que o termo declara além do teor (LD09)
+
+
+def _intro_de_cada_folha(monkeypatch, **kw) -> list[str]:
+    """A intro que `gerar_pdf` manda desenhar em cada folha, na ordem."""
+    vistas: list[str] = []
+    montar = TEOR.montar_pagina
+
+    def capturar(src, *, textos, **resto):
+        vistas.append(textos["intro"])
+        return montar(src, textos=textos, **resto)
+
+    monkeypatch.setattr(TEOR, "montar_pagina", capturar)
+    assert TEOR.gerar_pdf(lavrante_nome="FULANO DE EXEMPLO",
+                          lavrante_funcao="Escrevente", **kw).startswith(b"%PDF")
+    return vistas
+
+
+def test_a_linha_de_declaracao_vazia_sai_inteira_e_a_do_certifico_fica():
+    """A linha só de claros do LD09 sai quando falta um deles — «Protocolizado
+    em , sob o nº .» seria rótulo sem valor no papel assinado. A que tem também
+    um claro de sempre fica: o ajuste da casa que pôs o apresentante dentro do
+    CERTIFICO não perde a frase do CERTIFICO no ato sem título."""
+    molde = ("CERTIFICO, apresentado por {apresentante}, o Registro nº {numero}:\n"
+             "Protocolizado em {data_protocolo}, sob o nº {protocolo}.\n"
+             "Texto sem claro nenhum.\n"
+             "Valor: {valor}.")
+    vazio = {"numero": "12", "apresentante": "", "data_protocolo": "02/10/2026",
+             "protocolo": "", "valor": ""}
+    assert TEOR._sem_declaracao_vazia(molde, vazio) == (
+        "CERTIFICO, apresentado por {apresentante}, o Registro nº {numero}:\n"
+        "Texto sem claro nenhum.")
+    cheio = dict(vazio, apresentante="SICRANO DE EXEMPLO", protocolo="7",
+                 valor="R$ 1,00")
+    assert TEOR._sem_declaracao_vazia(molde, cheio) == molde
+
+
+def test_as_declaracoes_saem_na_primeira_folha_e_nao_em_todas(monkeypatch):
+    """O extrato no alto de CADA folha encolheria a imagem de todas: da
+    segunda em diante, a intro de antes delas — o CERTIFICO e a natureza."""
+    folhas = _intro_de_cada_folha(
+        monkeypatch, numero_registro=9, imagens=[_folha(), _folha(), _folha()],
+        serie="TD_C", tipo_ato="REGISTRO", natureza_ato="Contrato de exemplo",
+        protocolo="7", data_protocolo="02/10/2026", apresentante="SICRANO DE EXEMPLO",
+        declaracoes={"valor": "R$ 1,00", "prazo": "doze meses"})
+    assert len(folhas) == 3
+    assert "Protocolizado em 02/10/2026, sob o nº 7." in folhas[0]
+    assert "Apresentante: SICRANO DE EXEMPLO." in folhas[0]
+    assert "Valor: R$ 1,00." in folhas[0] and "Prazo: doze meses." in folhas[0]
+    for seguinte in folhas[1:]:
+        assert seguinte == TEOR.intro(9, tipo_ato="REGISTRO",
+                                      natureza_ato="Contrato de exemplo")
+        assert "Valor" not in seguinte and "Apresentante" not in seguinte
+
+
+def test_o_total_de_paginas_sai_no_livro_f_e_so_nele(monkeypatch):
+    """LRP art. 127-A, § 3º: o termo do registro para conservação diz o total
+    de páginas registradas — a conta das folhas que o PDF traslada. Nos livros
+    B e C a lei não o pede, e o termo deles não muda."""
+    tres = [_folha(), _folha(), _folha()]
+    f = _intro_de_cada_folha(monkeypatch, numero_registro=5, imagens=tres,
+                             serie="TD_F", tipo_ato="REGISTRO")
+    assert "Total de páginas registradas: 3 páginas." in f[0]
+    um = _intro_de_cada_folha(monkeypatch, numero_registro=5, imagens=[_folha()],
+                              serie="TD_F", tipo_ato="REGISTRO")
+    assert "Total de páginas registradas: 1 página." in um[0]
+    b = _intro_de_cada_folha(monkeypatch, numero_registro=5, imagens=tres,
+                             serie="TD_B", tipo_ato="REGISTRO")
+    assert not any("páginas" in x for x in b)
+
+
+def test_o_cabecalho_da_averbacao_diz_o_numero_dela_e_a_previa_nao_inventa():
+    """O número de ordem da própria averbação (LRP arts. 149 e 153) no alto da
+    folha; a prévia da averbação ainda sem número não ganha «Averbação nº »."""
+    com = TEOR.textos_prontos(numero_registro=4321, lavrante_nome="F",
+                              lavrante_funcao="E", serie="TD_B",
+                              tipo_ato="AVERBACAO", numero_averbacao=4322)
+    assert "Averbação nº 4322" in com["linhas_cabecalho"]
+    sem = TEOR.textos_prontos(numero_registro=4321, lavrante_nome="F",
+                              lavrante_funcao="E", serie="TD_B",
+                              tipo_ato="AVERBACAO")
+    assert not any("Averbação" in ln for ln in sem["linhas_cabecalho"])
+    # a intro, que vai ao livro, é a mesma com e sem o número
+    assert com["intro"] == sem["intro"] == TEOR.intro(4321)

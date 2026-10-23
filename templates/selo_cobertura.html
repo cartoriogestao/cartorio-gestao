@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{# SELO × CAIXA (LX16) — o quadro «Para selar este ato falta». Frases curtas,
+   o porquê em uma linha, e o botão de cada falta no próprio lugar. A regra é
+   de `ato_selado.cobrir_o_selo`; aqui só se mostra e se resolve. #}
+{% block title %}Selo e caixa{% endblock %}
+{% block heading %}<h1>Selo e caixa</h1>{% endblock %}
+{% block content %}
+<section class="card">
+  {% if tabela and ato_id is not none %}<p><strong>{{ rotulo }}</strong> — ato {{ ato_id }}</p>{% endif %}
+  <h2>{{ quadro.titulo }}</h2>
+  <ul style="list-style:none;padding-left:0">
+  {% for i in quadro.itens %}
+    <li style="margin:.5em 0">
+      <span style="font-size:1.3em;color:{{ '#1b7f3b' if i.ok else '#b00020' }}">{{ i.marca }}</span>
+      {{ i.texto }}
+      {% if i.porque %}<br><small>Por quê: {{ i.porque }}</small>{% endif %}
+      {% if not i.ok and i.acao == 'abrir_protocolo' %}
+        <a class="button" href="{{ url_for('caixa_protocolos_novo') }}">{{ i.botao }}</a>
+      {% elif not i.ok and i.acao == 'registrar_pagamento' %}
+        <a class="button" href="{{ url_for('caixa_protocolo', protocolo_id=(ligados[0].protocolo_id if ligados else (atendendo.id if atendendo else 0))) if (ligados or atendendo) else url_for('caixa_protocolos') }}">{{ i.botao }}</a>
+      {% elif i.acao == 'comprovante' %}
+        <a class="button" href="{{ url_for('gratuidade_comprovantes') }}">{{ i.botao }}</a>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+  {% if quadro.pode_selar %}<p><strong>Tudo certo:</strong> volte ao ato e peça o selo de novo.</p>{% endif %}
+</section>
+
+{% if pedidos %}
+<section class="card">
+  {# Os protocolos pagos da atribuição do ato — 22/10/2026. O escrevente
+     escolhe; o candidato único vem marcado, e nada se escolhe sozinho. #}
+  {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
+  {{ protocolo_do_selo(candidatos, pedidos, atendendo=atendendo,
+                       url_de_selar=url_de_selar, csrf_token=csrf_token) }}
+  {% if not url_de_selar %}<p><small>Escolha o protocolo na tela do ato e peça o selo de novo.</small></p>{% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Protocolo que estou atendendo</h2>
+  <p><small>Marque uma vez: todo selo pago que você tirar procura o item neste protocolo, pelo código do serviço.</small></p>
+  {% if atendendo %}
+    <p>Protocolo <strong>{{ atendendo.numero }}</strong>{% if atendendo.interessado %} — {{ atendendo.interessado }}{% endif %}.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('selo_cobertura_atender', tabela=tabela or '', ato_id=ato_id if ato_id is not none else '') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Número do protocolo <input name="protocolo" placeholder="2026.10.15"></label>
+    <button class="button primary" type="submit">Atender este protocolo</button>
+    {% if atendendo %}<button class="button" type="submit" name="encerrar" value="1">Encerrar o atendimento</button>{% endif %}
+  </form>
+  {% if disponiveis %}
+  <table>
+    <thead><tr><th>Item</th><th>Serviço</th><th>Sobram</th><th>Pago?</th><th></th></tr></thead>
+    <tbody>
+    {% for it in disponiveis %}
+      <tr>
+        <td><code>{{ it.codigo_ato }}</code></td>
+        <td>{{ it.descricao or '' }}</td>
+        <td>{{ it.saldo }}</td>
+        <td>{{ '✓ pago' if it.quitado else ('diferido' if it.diferido_quem else '✗ falta pagar') }}</td>
+        <td>
+          {% if tabela and ato_id is not none %}
+          <form method="post" action="{{ url_for('selo_cobertura_vincular', tabela=tabela, ato_id=ato_id) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="item_id" value="{{ it.id }}">
+            <button class="button" type="submit">Ligar este ato a este item</button>
+          </form>
+          {% endif %}
+          {% if not it.quitado and saldo > 0 %}
+          <form method="post" action="{{ url_for('selo_cobertura_deposito', tabela=tabela or '', ato_id=ato_id if ato_id is not none else '') }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="item_id" value="{{ it.id }}">
+            <button class="button" type="submit">Usar depósito prévio (saldo R$ {{ reais(saldo) }})</button>
+          </form>
+          {% endif %}
+          {% if pode_diferir and not it.quitado %}
+          <details><summary>Registrar diferimento (a posteriori / CRA)</summary>
+            <form method="post" action="{{ url_for('selo_cobertura_diferir', tabela=tabela, ato_id=ato_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="item_id" value="{{ it.id }}">
+              <label>Quem paga <input name="quem_paga" required></label>
+              <label>Até quando <input type="date" name="quando" required></label>
+              <label>Fundamento <input name="motivo" required placeholder="Protesto a posteriori — devedor paga no cancelamento"></label>
+              <button class="button" type="submit">Registrar</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+{% if eh_admin and tabela and ato_id is not none and not quadro.pode_selar %}
+<section class="card">
+  <h2>Liberar este selo sem cobertura (só o oficial)</h2>
+  <p><small>Fica na auditoria e na lista «selos liberados sem cobertura». O pagamento continua cobrado de quem obtiver o selo.</small></p>
+  <form method="post" action="{{ url_for('selo_cobertura_liberar', tabela=tabela, ato_id=ato_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Justificativa <input name="justificativa" required minlength="15" size="60"></label>
+    <button class="button danger" type="submit">Liberar este selo</button>
+  </form>
+</section>
+{% endif %}
+
+{% if aguardando %}
+<section class="card">
+  <h2>Atos aguardando cobertura</h2>
+  <ul>
+  {% for a in aguardando %}
+    <li><a href="{{ url_for('selo_cobertura', tabela=a.tabela, ato_id=a.ato_id) }}">{{ a.tabela|replace('_', ' ') }} {{ a.ato_id }}</a> — desde {{ (a.desde or '')[:16]|replace('T', ' ') }}</li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

@@ -50,9 +50,9 @@
             {# Reimprimir do dia anterior é rotina: a etiqueta enrosca, sai
                torta, ou o documento volta. Ter de abrir o ato para isso é um
                clique a mais em algo que se faz o tempo todo. #}
-            <br><a class="small" target="_blank"
-               href="{{ url_for('notas_reconhecimento_etiqueta', reconhecimento_id=r.id) }}"
-               >{% if r.etiqueta_impressoes %}reimprimir{% else %}imprimir{% endif %} etiqueta</a>
+            <br><form method="post" target="_blank" style="display:inline"
+               action="{{ url_for('notas_reconhecimento_etiqueta', reconhecimento_id=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button small"
+               >{% if r.etiqueta_impressoes %}reimprimir{% else %}imprimir{% endif %} etiqueta</button></form>
             {%- if r.etiqueta_impressoes %} <span class="muted">({{ r.etiqueta_impressoes }}&times;)</span>{% endif %}
           {%- endif %}</td>
       </tr>

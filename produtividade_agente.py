@@ -47,13 +47,15 @@ from __future__ import annotations
 import argparse
 import html
 import re
-import sqlite3
 import statistics
 import unicodedata
 from collections import Counter, defaultdict
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+
+import banco_pg
+from bd_nativo import banco
 
 BANCO_PRODUCAO = r"C:\ProgramData\CartorioGestao\cartorio_gestao.sqlite3"
 
@@ -93,7 +95,9 @@ ACOES_DE_RITMO = ("RCPN_CERTIDAO", "RCPN_AVERBAR_CPF", "NT_RECONHECIMENTO",
 # Temas do controle diário: o primeiro que casar leva. Texto sem acento,
 # minúsculo. As palavras saíram dos 182 lançamentos de 06–09/10/2026.
 TEMAS = (
-    ("pausa", r"lanch|almoc|banheiro|agua|exame|^teste$"),
+    # 20/10/2026: «indo arrumar meu filho pra escola» caía em «outros» e
+    # contava como hora sem tema; é pausa, e a crítica tem de dizer isso.
+    ("pausa", r"lanch|almoc|banheiro|agua|exame|^teste$|filho|escola"),
     ("Portal do Selo", r"portal|selos? pend|lanc\w* (os )?selos"),
     ("CRC / e-Protocolo", r"crc|e.?protocolo"),
     ("ONR", r"onr|reprograf"),
@@ -102,8 +106,13 @@ TEMAS = (
     # OS NOMES DOS COLEGAS VÊM DA EQUIPE CADASTRADA, e não do código: nome real
     # da equipe não fica escrito no programa (portão anti-vazamento,
     # 15/10/2026). `tema_de` troca o marcador pelos primeiros nomes.
-    ("ajudar colega", r"ajud\w* (a )?(colega{colegas})"),
+    ("ajudar colega", r"ajud\w* (a |as )?(colega|meninas|equipe{colegas})"),
     ("aprender / robô", r"aprend|robo|chat"),
+    # 20/10/2026: a qualificação do RI (título de domínio, escritura, geo,
+    # baixa, cédula, nota devolutiva) não tinha tema e saía como «outros» —
+    # nos lançamentos da substituta, eram 7 dos 9 «outros» de 13 a 19/10.
+    ("RI: qualificação / títulos", r"qualific|titulo d|escritura|\bgeo\b|georref|nota devolutiva|"
+                                   r"\bbaixa\b|cedula|usucapi|mandato translat|depositos? previo"),
     ("RCPN: registro", r"registro|termo de casamento|habilita|casamento|obito|retifica"),
     ("RCPN: 2ª via", r"2.? ?via|certidao|materializ"),
     ("Notas: procuração", r"procura"),
@@ -111,6 +120,11 @@ TEMAS = (
     ("protocolo / orçamento / caixa", r"protocolo|orcamento|fechamento de cx|\bcx\b"),
     ("balcão (sem dizer o quê)", r"balcao|atend|clientes?"),
     ("RI: fichas / digitalização / livros", r"ficha|matricula|digitaliz|livros?|inteiro teor"),
+    # Depois dos temas de conteúdo: «iniciando trabalhos, verificando
+    # notificações do usucapião» é usucapião, e não abertura do dia.
+    ("início do expediente", r"^inician?do (o )?(expediente|trabalho)"),
+    # «cumprindo tarefa #117» diz qual é: não é tarefa «sem dizer quais».
+    ("tarefas numeradas (#)", r"tarefa\s*#\s*\d+"),
     ("tarefas / pendências (sem dizer quais)", r"tarefa|pendenc|check|trabalhos"),
     ("TI", r"impressora|impress|driver"),
     ("protesto", r"protest"),
@@ -151,23 +165,30 @@ def tema_de(tarefa: Any, colegas: tuple[str, ...] = ()) -> str:
     return "outros"
 
 
-def abrir_somente_leitura(caminho: str = BANCO_PRODUCAO) -> sqlite3.Connection:
-    return sqlite3.connect(f"file:{caminho}?mode=ro", uri=True)
+def abrir_somente_leitura(caminho: str = BANCO_PRODUCAO) -> Any:
+    """Conexão psycopg somente-leitura no PostgreSQL (`CG_PG_DSN`).
+
+    `caminho` ficou só por compatibilidade com o `--banco` antigo: o banco
+    agora é o PostgreSQL, e não há mais arquivo para abrir.
+    """
+    import psycopg
+    con = psycopg.connect(banco_pg.dsn())
+    con.read_only = True
+    return con
 
 
-def pessoas(con: sqlite3.Connection) -> list[dict[str, Any]]:
+def pessoas(con: Any) -> list[dict[str, Any]]:
     """Equipe humana ativa — sem robô e sem o usuário `teste`."""
-    # Sem PRAGMA (teto zero de portabilidade): tenta com a coluna do robô e,
-    # numa instalação que ainda não a tem, sem ela.
+    bd = banco(con)
     base = "SELECT id, username, full_name, funcao FROM users WHERE active=1 AND username<>'teste'"
-    try:
-        linhas = con.execute(base + " AND COALESCE(eh_robo,0)=0 ORDER BY id").fetchall()
-    except sqlite3.OperationalError:
-        linhas = con.execute(base + " ORDER BY id").fetchall()
+    if bd.tem_coluna("users", "eh_robo"):
+        base += " AND coalesce(eh_robo,0)=0"
+    linhas = bd.ler(base + " ORDER BY id")
     saida = []
-    for uid, user, nome, funcao in linhas:
-        saida.append({"id": uid, "username": user, "nome": nome or user,
-                      "funcao": funcao or ""})
+    for r in linhas:
+        user, nome = r["username"], r["full_name"]
+        saida.append({"id": r["id"], "username": user, "nome": nome or user,
+                      "funcao": r["funcao"] or ""})
     return saida
 
 
@@ -189,9 +210,10 @@ def _dono_do_selo(obtido_por: Any, equipe: list[dict[str, Any]]) -> str | None:
 
 # -------------------------------------------------------------------- medidas
 
-def medir(con: sqlite3.Connection, desde: str, ate: str | None = None) -> dict[str, Any]:
+def medir(con: Any, desde: str, ate: str | None = None) -> dict[str, Any]:
     ate = ate or "9999-12-31"
-    equipe = pessoas(con)
+    bd = banco(con)
+    equipe = pessoas(bd)
     por: dict[str, dict[str, Any]] = {
         p["username"]: {"pessoa": p, "selos": Counter(), "selos_semana": Counter(),
                         "entregas": Counter(), "retrabalho": Counter(),
@@ -201,10 +223,12 @@ def medir(con: sqlite3.Connection, desde: str, ate: str | None = None) -> dict[s
         for p in equipe}
 
     # 1. selos
-    for obtido_por, obtido_em, tabela in con.execute(
+    for r in bd.ler(
             "SELECT obtido_por, obtido_em, tabela FROM sd_selos "
-            "WHERE obtido_em >= ? AND obtido_em < ? AND cancelado_em IS NULL",
+            "WHERE obtido_em >= %s AND obtido_em < %s AND cancelado_em IS NULL "
+            "ORDER BY id",
             (desde, ate + "~")):
+        obtido_por, obtido_em, tabela = r["obtido_por"], r["obtido_em"], r["tabela"]
         u = _dono_do_selo(obtido_por, equipe)
         if u:
             por[u]["selos"][tabela or "?"] += 1
@@ -215,9 +239,11 @@ def medir(con: sqlite3.Connection, desde: str, ate: str | None = None) -> dict[s
     # 2. audit_logs: entregas, retrabalho, dias e horário, ritmo
     marcas: dict[tuple[str, str], list[datetime]] = defaultdict(list)
     por_dia: dict[str, dict[date, list[datetime]]] = defaultdict(lambda: defaultdict(list))
-    for user, ts, acao in con.execute(
-            "SELECT lower(username_snapshot), ts, action FROM audit_logs "
-            "WHERE ts >= ? AND ts < ? AND user_id IS NOT NULL", (desde, ate + "~")):
+    for r in bd.ler(
+            "SELECT lower(username_snapshot) AS usuario, ts, action FROM audit_logs "
+            "WHERE ts >= %s AND ts < %s AND user_id IS NOT NULL ORDER BY id",
+            (desde, ate + "~")):
+        user, ts, acao = r["usuario"], r["ts"], r["action"]
         if user not in por:
             continue
         d = _quando(ts)
@@ -243,12 +269,16 @@ def medir(con: sqlite3.Connection, desde: str, ate: str | None = None) -> dict[s
 
     # 3. controle diário (prod_registros)
     ids = {p["id"]: p["username"] for p in equipe}
-    colegas = tuple(sorted({(p.get("full_name") or "").split()[0]
-                            for p in equipe if (p.get("full_name") or "").split()}))
-    for uid, d, hi, hf, pausa, tarefa, obs in con.execute(
+    # 20/10/2026: lia `full_name`, que `pessoas()` não devolve (devolve
+    # `nome`) — a tupla saía sempre vazia e «ajudando <colega>» nunca casava.
+    colegas = tuple(sorted({p["nome"].split()[0] for p in equipe if p["nome"].split()}))
+    for r in bd.ler(
             "SELECT responsavel_user_id, data_registro, hora_inicio, hora_fim, pausas_min, "
-            "tarefa, observacoes FROM prod_registros WHERE data_registro >= ? AND data_registro <= ?",
+            "tarefa, observacoes FROM prod_registros "
+            "WHERE data_registro >= %s AND data_registro <= %s ORDER BY id",
             (desde, ate)):
+        uid, hi, hf, pausa = r["responsavel_user_id"], r["hora_inicio"], r["hora_fim"], r["pausas_min"]
+        tarefa, obs = r["tarefa"], r["observacoes"]
         u = ids.get(uid)
         if not u:
             continue
@@ -267,11 +297,17 @@ def medir(con: sqlite3.Connection, desde: str, ate: str | None = None) -> dict[s
     # 15/10/2026: enquanto espera a data ou a condição, ela não é aberta a
     # cobrar de ninguém, nem vencida.
     import tarefa_suspensao as TS
-    cond_suspensa, params_suspensa = TS.condicao_suspensa(None, hoje, con=con)
-    suspensas = {r[0] for r in con.execute(
-        f"SELECT id FROM tasks WHERE {cond_suspensa}", params_suspensa)}
-    for tid, uid, status, venc in con.execute(
-            "SELECT id, assigned_user_id, status, due_date FROM tasks"):
+    # A régua é a de `TS.esta_suspensa`, aplicada em Python às linhas lidas.
+    tem_suspensao = (bd.tem_coluna("tasks", "suspensa_desde")
+                     and bd.tem_coluna("tasks", "suspensa_ate"))
+    colunas_susp = ", suspensa_desde, suspensa_ate" if tem_suspensao else ""
+    tarefas = bd.ler(
+        "SELECT id, assigned_user_id, status, due_date" + colunas_susp
+        + " FROM tasks ORDER BY id")
+    suspensas = {r["id"] for r in tarefas
+                 if tem_suspensao and TS.esta_suspensa(r, hoje)}
+    for r in tarefas:
+        tid, uid, status, venc = r["id"], r["assigned_user_id"], r["status"], r["due_date"]
         u = ids.get(uid)
         if not u or tid in suspensas:
             continue
@@ -282,10 +318,12 @@ def medir(con: sqlite3.Connection, desde: str, ate: str | None = None) -> dict[s
 
     # 5. certidões do RCPN: o assento já estava no sistema ou foi digitado na hora?
     certidao = Counter()
-    for emitida, criado, origem in con.execute(
+    for r in bd.ler(
             "SELECT c.emitida_em, a.criado_em, a.origem FROM rc_certidoes c "
-            "LEFT JOIN rc_assentos a ON a.id=c.assento_id WHERE c.emitida_em >= ? AND c.emitida_em < ?",
+            "LEFT JOIN rc_assentos a ON a.id=c.assento_id "
+            "WHERE c.emitida_em >= %s AND c.emitida_em < %s ORDER BY c.id",
             (desde, ate + "~")):
+        emitida, criado = r["emitida_em"], r["criado_em"]
         if str(criado or "")[:10] == str(emitida or "")[:10]:
             certidao["digitado no mesmo dia"] += 1
         else:
@@ -293,10 +331,11 @@ def medir(con: sqlite3.Connection, desde: str, ate: str | None = None) -> dict[s
 
     # 6. acervo do RCPN com teor (o que permite certidão sem digitar)
     acervo = []
-    for especie, total, com_teor in con.execute(
-            "SELECT especie, COUNT(*), SUM(CASE WHEN length(COALESCE(teor,''))>200 THEN 1 ELSE 0 END) "
-            "FROM rc_assentos GROUP BY especie ORDER BY 2 DESC"):
-        acervo.append((especie, total, com_teor or 0))
+    for r in bd.ler(
+            "SELECT especie, count(*)::int AS total, "
+            "sum(CASE WHEN length(coalesce(teor,''))>200 THEN 1 ELSE 0 END)::int AS com_teor "
+            "FROM rc_assentos GROUP BY especie ORDER BY 2 DESC, especie"):
+        acervo.append((r["especie"], r["total"], r["com_teor"] or 0))
 
     return {"desde": desde, "ate": ate, "por": por, "certidao_rcpn": certidao,
             "acervo_rcpn": acervo, "medido_em": datetime.now().isoformat(timespec="minutes")}

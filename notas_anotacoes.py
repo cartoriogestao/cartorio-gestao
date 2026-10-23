@@ -51,6 +51,8 @@ import re
 import sqlite3
 from typing import Any
 
+import modelos_da_casa as MODELOS
+from bd_nativo import banco
 from notas_livro import LIVRO_DO_ATO
 from notas_schema import (ANOTACAO_ENCERRA, ATO_PEDE_ANOTACAO, TIPOS_ANOTACAO,
                           TIPOS_ATO)
@@ -60,17 +62,31 @@ class AnotacaoError(ValueError):
     """Regra de anotacao violada. A rota trata com flash, nao com HTTP 500."""
 
 
+class ModeloDaMargemError(AnotacaoError):
+    """O ajuste da casa do texto da margem nao monta. LF06D.
+
+    E `AnotacaoError` — a rota ja a mostra com flash —, mas com nome proprio
+    porque `anotar_ato_anterior` engole a `AnotacaoError` («ja anotada») e
+    esta ela NAO pode engolir: o lancamento sairia sem a anotacao que pediu, e
+    o lancamento e a anotacao sao um ato so (`notas_web`, «A ANOTAÇÃO À MARGEM
+    SAI NA MESMA TRANSAÇÃO»).
+    """
+
+
 # Como cada tipo de anotacao se escreve na margem. O sujeito e SEMPRE o ato
 # anotado: quem le a margem da procuracao quer saber o que aconteceu com ELA.
-_VERBO = {
-    "REVOGACAO": "REVOGADA",
-    "RENUNCIA": "EXTINTA POR RENÚNCIA DO MANDATÁRIO",
-    "SUBSTABELECIMENTO": "SUBSTABELECIDA",
-    "RETIFICACAO": "RETIFICADA",
-    "ADITAMENTO": "ADITADA",
-    "CANCELAMENTO": "CANCELADA",
-    "ORDEM_JUDICIAL": "ANOTADA POR ORDEM JUDICIAL",
-    "OUTRA": "ANOTADA",
+# O TEXTO DE CADA VERBO saiu daqui no LF06D (19/10/2026): mora na base dos
+# padroes, uma peca por tipo (`NOTAS_ANOTACAO_MARGEM__verbo_*`). Aqui fica qual
+# tipo tem verbo proprio — o resto e «OUTRA».
+PECA_DO_VERBO = {
+    "REVOGACAO": "NOTAS_ANOTACAO_MARGEM__verbo_revogacao",
+    "RENUNCIA": "NOTAS_ANOTACAO_MARGEM__verbo_renuncia",
+    "SUBSTABELECIMENTO": "NOTAS_ANOTACAO_MARGEM__verbo_substabelecimento",
+    "RETIFICACAO": "NOTAS_ANOTACAO_MARGEM__verbo_retificacao",
+    "ADITAMENTO": "NOTAS_ANOTACAO_MARGEM__verbo_aditamento",
+    "CANCELAMENTO": "NOTAS_ANOTACAO_MARGEM__verbo_cancelamento",
+    "ORDEM_JUDICIAL": "NOTAS_ANOTACAO_MARGEM__verbo_ordem_judicial",
+    "OUTRA": "NOTAS_ANOTACAO_MARGEM__verbo_outra",
 }
 
 
@@ -87,42 +103,60 @@ def _dia(iso: Any) -> str:
 def texto_padrao(tipo: str, ato_novo: Any = None, sv: dict | None = None,
                  data: str | None = None, externa: bool = False,
                  serventia_externa: str | None = None,
-                 cns_externa: str | None = None) -> str:
+                 cns_externa: str | None = None, *, con: Any = None) -> str:
     """A frase que vai para a margem.
 
     Diz TRES coisas, que sao as que quem le a margem precisa: o que aconteceu,
     por qual ato, e onde esse ato esta. Sem as tres, a anotacao obriga a
     procurar — e anotacao que obriga a procurar nao cumpre o seu papel.
+
+    CADA PEDACO DA FRASE MORA NA BASE DESDE O LF06D (o papel
+    `NOTAS_ANOTACAO_MARGEM` e as pecas dele); quais entram, e em que ordem, e
+    regra, e fica aqui. A anotacao gravada na margem nao muda.
     """
+    textos = MODELOS.textos(con)
     sv = sv or {}
-    verbo = _VERBO.get(tipo, _VERBO["OUTRA"])
+    verbo = textos(PECA_DO_VERBO.get(tipo, PECA_DO_VERBO["OUTRA"]))
     if externa:
-        onde = (serventia_externa or "").strip() or "serventia não informada"
+        onde = ((serventia_externa or "").strip()
+                or textos("NOTAS_ANOTACAO_MARGEM__serventia_nao_informada"))
         if (cns_externa or "").strip():
-            onde += f", CNS {cns_externa.strip()}"
-        origem = f"por ato lavrado em {onde}"
+            onde += ", " + textos.preencher("NOTAS_ANOTACAO_MARGEM__cns",
+                                            cns=cns_externa.strip())
+        origem = textos.preencher("NOTAS_ANOTACAO_MARGEM__externa", serventia=onde)
     else:
-        origem = f"por ato lavrado nesta {sv.get('unit_name', 'Serventia')}"
+        origem = textos.preencher(
+            "NOTAS_ANOTACAO_MARGEM",
+            serventia=(sv["unit_name"] if "unit_name" in sv
+                       else textos("NOTAS_ANOTACAO_MARGEM__serventia_padrao")))
 
     partes = [f"{verbo} {origem}"]
     if ato_novo is not None:
         a = dict(ato_novo)
         rotulo = TIPOS_ATO.get(a.get("tipo"), a.get("tipo") or "ato")
-        detalhe = [f"em {_dia(a.get('data'))}", f"— {rotulo}"]
+        detalhe = [textos.preencher("NOTAS_ANOTACAO_MARGEM__data", data=_dia(a.get("data"))),
+                   textos.preencher("NOTAS_ANOTACAO_MARGEM__tipo", tipo=rotulo)]
         if a.get("livro"):
             folha = a.get("folha") or "—"
             fim = a.get("folha_final")
-            detalhe.append(f", Livro {a['livro']}, folha {folha}"
-                           + (f" a {fim}" if fim and fim != folha else ""))
+            detalhe.append(
+                ", " + textos.preencher("NOTAS_ANOTACAO_MARGEM__livro",
+                                        livro=a["livro"], folha=folha)
+                + (" " + textos.preencher("NOTAS_ANOTACAO_MARGEM__folha_final",
+                                          folha_final=fim)
+                   if fim and fim != folha else ""))
         if a.get("termo"):
-            detalhe.append(f", termo nº {a['termo']}")
+            detalhe.append(", " + textos.preencher("NOTAS_ANOTACAO_MARGEM__termo",
+                                                   termo=a["termo"]))
         elif a.get("numero_ordem"):
-            detalhe.append(f", nº de ordem {a['numero_ordem']}")
+            detalhe.append(", " + textos.preencher(
+                "NOTAS_ANOTACAO_MARGEM__numero_de_ordem", ordem=a["numero_ordem"]))
         if a.get("selo"):
-            detalhe.append(f", selo {a['selo']}")
+            detalhe.append(", " + textos.preencher("NOTAS_ANOTACAO_MARGEM__selo",
+                                                   selo=a["selo"]))
         partes.append(" ".join(detalhe).replace(" ,", ","))
     elif data:
-        partes.append(f"em {_dia(data)}")
+        partes.append(textos.preencher("NOTAS_ANOTACAO_MARGEM__data", data=_dia(data)))
 
     texto = " ".join(partes).strip()
     return re.sub(r"\s+", " ", texto).rstrip(".") + "."
@@ -134,13 +168,13 @@ def do_ato(con: sqlite3.Connection, ato_id: int) -> list[dict]:
     Ordem cronologica e a ordem da margem do livro: a segunda anotacao vem
     depois da primeira porque foi escrita depois, e pode corrigi-la.
     """
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT n.*, a.tipo tipo_ato_relacionado, a.livro livro_relacionado,
                   a.folha folha_relacionada, a.termo termo_relacionado
            FROM nt_ato_anotacoes n
            LEFT JOIN nt_atos a ON a.id = n.ato_relacionado_id
-           WHERE n.ato_id = ?
-           ORDER BY n.data, n.id""", (ato_id,))]
+           WHERE n.ato_id = %s
+           ORDER BY n.data, n.id""", (ato_id,))
 
 
 def anotar(con: sqlite3.Connection, ato_id: int, tipo: str, agora: str,
@@ -155,11 +189,12 @@ def anotar(con: sqlite3.Connection, ato_id: int, tipo: str, agora: str,
     Roda dentro da transacao do chamador, no molde da casa. Devolve o que foi
     escrito, para o `audit()` que vem DEPOIS de fechar o `with`.
     """
+    bd = banco(con)
     tipo = (tipo or "").upper()
     if tipo not in TIPOS_ANOTACAO:
         raise AnotacaoError(f"Tipo de anotação desconhecido: {tipo!r}.")
 
-    ato = con.execute("SELECT * FROM nt_atos WHERE id=?", (ato_id,)).fetchone()
+    ato = bd.um("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
     if not ato:
         raise AnotacaoError("Ato não encontrado.")
     if (ato["situacao"] or "") == "EM_LAVRATURA":
@@ -171,13 +206,21 @@ def anotar(con: sqlite3.Connection, ato_id: int, tipo: str, agora: str,
     if ato_relacionado_id:
         if int(ato_relacionado_id) == int(ato_id):
             raise AnotacaoError("Um ato não se anota a si mesmo.")
-        relacionado = con.execute("SELECT * FROM nt_atos WHERE id=?",
-                                  (ato_relacionado_id,)).fetchone()
+        relacionado = bd.um("SELECT * FROM nt_atos WHERE id=%s",
+                            (ato_relacionado_id,))
         if not relacionado:
             raise AnotacaoError("O ato que gerou a anotação não foi encontrado.")
 
-    corpo = (texto or "").strip() or texto_padrao(
-        tipo, relacionado, sv, data, externa, serventia_externa, cns_externa)
+    # COM A CONEXAO, VALE O AJUSTE DA CASA (revisao do LF06D): o texto da
+    # margem e papel da tela de Modelos, e sem `con` a busca so leria o padrao
+    # — a casa editaria a frase e a margem continuaria a de fabrica. A margem
+    # ja escrita nao muda: o ajuste vale para a proxima.
+    try:
+        corpo = (texto or "").strip() or texto_padrao(
+            tipo, relacionado, sv, data, externa, serventia_externa, cns_externa,
+            con=con)
+    except MODELOS.ModeloError as erro:
+        raise ModeloDaMargemError(str(erro)) from erro
     quando = (data or "").strip()[:10] or (
         relacionado["data"] if relacionado else agora[:10])
 
@@ -189,20 +232,22 @@ def anotar(con: sqlite3.Connection, ato_id: int, tipo: str, agora: str,
     # iguais na margem, transcritas no traslado como "1. ... 2. ... 3. ...", e
     # sem como apagar.
     if not ato_relacionado_id:
-        igual = con.execute(
+        igual = bd.um(
             """SELECT id FROM nt_ato_anotacoes
-               WHERE ato_id=? AND tipo=? AND data=? AND texto=?""",
-            (ato_id, tipo, quando, corpo)).fetchone()
+               WHERE ato_id=%s AND tipo=%s AND data=%s AND texto=%s
+               ORDER BY id LIMIT 1""",
+            (ato_id, tipo, quando, corpo))
         if igual:
             raise AnotacaoError("Esta anotação já está na margem deste ato.")
 
     try:
-        cur = con.execute(
+        novo = bd.escrever(
             """INSERT INTO nt_ato_anotacoes
                (ato_id, data, tipo, texto, selo, ato_relacionado_id,
                 lavrado_por, criado_por, origem_externa, serventia_externa,
                 cns_externa, criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id""",
             (ato_id, quando, tipo, corpo,
              (selo or "").strip().upper() or
              (relacionado["selo"] if relacionado else None),
@@ -229,9 +274,9 @@ def anotar(con: sqlite3.Connection, ato_id: int, tipo: str, agora: str,
     if nova_situacao:
         atual = (ato["situacao"] or "")
         if atual == "LAVRADO":
-            con.execute(
-                """UPDATE nt_atos SET situacao=?, revogado_em=?, revogado_por=?,
-                       sem_efeito_motivo=? WHERE id=?""",
+            bd.escrever(
+                """UPDATE nt_atos SET situacao=%s, revogado_em=%s, revogado_por=%s,
+                       sem_efeito_motivo=%s WHERE id=%s""",
                 (nova_situacao, quando, criado_por or lavrado_por, corpo, ato_id))
             mudou = True
         elif atual != nova_situacao:
@@ -242,7 +287,7 @@ def anotar(con: sqlite3.Connection, ato_id: int, tipo: str, agora: str,
                      f"{atual.replace('_', ' ').lower()}; a anotação entrou na "
                      f"margem e a situação não mudou.")
 
-    return {"anotacao_id": int(cur.lastrowid), "ato_id": ato_id, "tipo": tipo,
+    return {"anotacao_id": int(novo[0]["id"]), "ato_id": ato_id, "tipo": tipo,
             "data": quando, "texto": corpo,
             "ato_relacionado_id": ato_relacionado_id,
             "aviso": avisa,
@@ -300,7 +345,7 @@ def _mesma_serventia(ato: dict, sv: dict) -> bool:
 
 
 def localizar_ato_anterior(con: sqlite3.Connection, ato: Any,
-                           sv: dict | None = None) -> sqlite3.Row | None:
+                           sv: dict | None = None) -> dict | None:
     """Acha, no acervo desta serventia, o ato que o novo revoga ou substabelece.
 
     Procura pelos campos `anterior_*`, que ja existiam para a remessa a CENSEC.
@@ -318,8 +363,8 @@ def localizar_ato_anterior(con: sqlite3.Connection, ato: Any,
     """
     a = dict(ato)
     if a.get("anterior_ato_id"):
-        return con.execute("SELECT * FROM nt_atos WHERE id=?",
-                           (a["anterior_ato_id"],)).fetchone()
+        return banco(con).um("SELECT * FROM nt_atos WHERE id=%s",
+                             (a["anterior_ato_id"],))
 
     if not _mesma_serventia(a, sv or {}):
         return None
@@ -337,15 +382,16 @@ def localizar_ato_anterior(con: sqlite3.Connection, ato: Any,
     if not livro or not folha:
         return None
 
-    marcas = ",".join("?" for _ in tipos)
-    achados = [r for r in con.execute(
+    marcas = ",".join("%s" for _ in tipos)
+    achados = banco(con).ler(
         f"""SELECT a.*, l.tipo serie_do_livro FROM nt_atos a
             LEFT JOIN nt_livros l ON l.id = a.livro_id
-            WHERE a.id <> ? AND a.situacao <> 'EM_LAVRATURA'
+            WHERE a.id <> %s AND a.situacao <> 'EM_LAVRATURA'
               AND a.tipo IN ({marcas})
-              AND REPLACE(UPPER(TRIM(COALESCE(a.livro,''))),'-','') = ?
-              AND UPPER(TRIM(COALESCE(a.folha,''))) = ?""",
-        [a["id"], *tipos, livro.upper().replace("-", ""), folha.upper()])]
+              AND REPLACE(UPPER(TRIM(COALESCE(a.livro,''))),'-','') = %s
+              AND UPPER(TRIM(COALESCE(a.folha,''))) = %s
+            ORDER BY a.id""",
+        [a["id"], *tipos, livro.upper().replace("-", ""), folha.upper()])
 
     # Cautela 3: quando o candidato tem livro identificado, a serie dele tem de
     # ser a mesma. Sem livro identificado (acervo solto), o filtro de tipo ja
@@ -366,7 +412,8 @@ def anotar_ato_anterior(con: sqlite3.Connection, ato_id: int, sv: dict,
     pode ser identificado com seguranca — e nesses casos ele fica na lista de
     `pendentes`, que e onde alguem resolve a mao.
     """
-    ato = con.execute("SELECT * FROM nt_atos WHERE id=?", (ato_id,)).fetchone()
+    bd = banco(con)
+    ato = bd.um("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
     if not ato:
         raise AnotacaoError("Ato não encontrado.")
     tipo_anotacao = ATO_PEDE_ANOTACAO.get((ato["tipo"] or "").upper())
@@ -378,7 +425,7 @@ def anotar_ato_anterior(con: sqlite3.Connection, ato_id: int, sv: dict,
         return None
 
     if not ato["anterior_ato_id"]:
-        con.execute("UPDATE nt_atos SET anterior_ato_id=? WHERE id=?",
+        bd.escrever("UPDATE nt_atos SET anterior_ato_id=%s WHERE id=%s",
                     (anterior["id"], ato_id))
 
     try:
@@ -386,6 +433,8 @@ def anotar_ato_anterior(con: sqlite3.Connection, ato_id: int, sv: dict,
                       ato_relacionado_id=ato_id, sv=sv,
                       lavrado_por=ato["lavrado_nome"], criado_por=usuario,
                       data=ato["data"])
+    except ModeloDaMargemError:
+        raise                       # o texto nao monta: o lancamento volta junto
     except AnotacaoError:
         # Ja anotada — o ato foi relancado ou alguem anotou a mao antes.
         return None
@@ -410,9 +459,11 @@ def vincular_anterior(con: sqlite3.Connection, ato_id: int, anterior_id: int,
     # Clicar na linha errada da lista de candidatos, voltar e clicar na certa
     # — o gesto mais natural do balcao — deixava DUAS procuracoes revogadas, e
     # a errada invisivel, porque a tela da revogacao passa a mostrar so a nova.
-    ja = con.execute(
-        """SELECT ato_id FROM nt_ato_anotacoes WHERE ato_relacionado_id=?""",
-        (ato_id,)).fetchall()
+    bd = banco(con)
+    ja = bd.ler(
+        """SELECT ato_id FROM nt_ato_anotacoes WHERE ato_relacionado_id=%s
+           ORDER BY id""",
+        (ato_id,))
     if ja and any(int(r["ato_id"]) != int(anterior_id) for r in ja):
         outros = ", ".join(str(r["ato_id"]) for r in ja)
         raise AnotacaoError(
@@ -420,18 +471,17 @@ def vincular_anterior(con: sqlite3.Connection, ato_id: int, anterior_id: int,
             f"apaga: para corrigir, anote à margem daquele ato uma retificação "
             f"dizendo o que houve, e só então vincule o ato certo.")
 
-    anterior = con.execute("SELECT * FROM nt_atos WHERE id=?",
-                           (anterior_id,)).fetchone()
+    anterior = bd.um("SELECT * FROM nt_atos WHERE id=%s", (anterior_id,))
     if not anterior:
         raise AnotacaoError("Ato anterior não encontrado.")
     if (anterior["situacao"] or "") == "EM_LAVRATURA":
         raise AnotacaoError("O ato anterior ainda está em lavratura.")
-    con.execute(
-        """UPDATE nt_atos SET anterior_ato_id=?, anterior_livro=?,
-               anterior_folha=?, anterior_data=?, anterior_cns=?,
-               anterior_cartorio=?, anterior_cidade=?, anterior_uf=?,
-               anterior_livro_complemento=?, anterior_folha_complemento=?
-           WHERE id=?""",
+    bd.escrever(
+        """UPDATE nt_atos SET anterior_ato_id=%s, anterior_livro=%s,
+               anterior_folha=%s, anterior_data=%s, anterior_cns=%s,
+               anterior_cartorio=%s, anterior_cidade=%s, anterior_uf=%s,
+               anterior_livro_complemento=%s, anterior_folha_complemento=%s
+           WHERE id=%s""",
         (anterior["id"], anterior["livro"], anterior["folha"], anterior["data"],
          sv.get("ri_cns"), sv.get("unit_name"), sv.get("ri_cidade"),
          sv.get("ri_uf"), anterior["livro_complemento"],
@@ -453,26 +503,26 @@ def candidatos(con: sqlite3.Connection, busca: str, tipo_ato: str = "",
     onde = ["a.situacao <> 'EM_LAVRATURA'"]
     args: list[Any] = []
     if tipo_ato:
-        onde.append("a.tipo = ?")
+        onde.append("a.tipo = %s")
         args.append(tipo_ato.upper())
     alvo = f"%{busca.upper()}%"
-    onde.append("""(UPPER(COALESCE(a.interessado,'')) LIKE ?
-                    OR UPPER(COALESCE(a.selo,'')) LIKE ?
-                    OR UPPER(COALESCE(a.livro,'')) = ?
-                    OR CAST(a.termo AS TEXT) = ?
-                    OR CAST(a.numero_ordem AS TEXT) = ?
+    onde.append("""(UPPER(COALESCE(a.interessado,'')) LIKE %s
+                    OR UPPER(COALESCE(a.selo,'')) LIKE %s
+                    OR UPPER(COALESCE(a.livro,'')) = %s
+                    OR CAST(a.termo AS TEXT) = %s
+                    OR CAST(a.numero_ordem AS TEXT) = %s
                     OR EXISTS (SELECT 1 FROM nt_ato_partes p
                                WHERE p.ato_id = a.id
-                                 AND UPPER(COALESCE(p.nome,'')) LIKE ?))""")
+                                 AND UPPER(COALESCE(p.nome,'')) LIKE %s))""")
     args += [alvo, alvo, busca.upper(), busca, busca, alvo]
-    linhas = con.execute(
-        f"""SELECT a.*, (SELECT GROUP_CONCAT(p.nome, ' / ') FROM nt_ato_partes p
+    return banco(con).ler(
+        f"""SELECT a.*, (SELECT string_agg(p.nome, ' / ' ORDER BY p.id)
+                         FROM nt_ato_partes p
                          WHERE p.ato_id = a.id AND p.testemunha=0) nomes,
-                   (SELECT COUNT(*) FROM nt_ato_anotacoes n
+                   (SELECT COUNT(*)::int FROM nt_ato_anotacoes n
                     WHERE n.ato_id = a.id) anotacoes
             FROM nt_atos a WHERE {' AND '.join(onde)}
-            ORDER BY a.data DESC, a.id DESC LIMIT ?""", args + [limite])
-    return [dict(r) for r in linhas]
+            ORDER BY a.data DESC, a.id DESC LIMIT %s""", args + [limite])
 
 
 def pendentes(con: sqlite3.Connection) -> list[dict]:
@@ -484,9 +534,10 @@ def pendentes(con: sqlite3.Connection) -> list[dict]:
     anterior de outra serventia, que se anota por oficio e nao por aqui.
     """
     tipos = tuple(ATO_PEDE_ANOTACAO)
-    marcas = ",".join("?" for _ in tipos)
-    linhas = con.execute(
-        f"""SELECT a.*, (SELECT GROUP_CONCAT(p.nome, ' / ') FROM nt_ato_partes p
+    marcas = ",".join("%s" for _ in tipos)
+    linhas = banco(con).ler(
+        f"""SELECT a.*, (SELECT string_agg(p.nome, ' / ' ORDER BY p.id)
+                         FROM nt_ato_partes p
                          WHERE p.ato_id = a.id AND p.testemunha=0) nomes
             FROM nt_atos a
             WHERE a.tipo IN ({marcas})

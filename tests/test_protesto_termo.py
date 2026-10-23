@@ -42,6 +42,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import modelos_da_casa as MOD
 import protesto as PT
@@ -54,7 +56,7 @@ SV = {"unit_name": "SERVENTIA", "cidade": "Cidade Exemplo", "uf": "MA"}
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     init_nucleo_schema(con)
     init_pt_schema(con)

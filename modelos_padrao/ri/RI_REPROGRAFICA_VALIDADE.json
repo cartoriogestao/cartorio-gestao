@@ -1,0 +1,10 @@
+{
+  "chave": "RI_REPROGRAFICA_VALIDADE",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão reprográfica — validade",
+  "formato": "JINJA",
+  "explica": "O fecho de validade da certidão por reprodução da matrícula digitalizada. Entra quando a certidão tem data de expedição; congela no hash da certidão.",
+  "campos": [
+    "hoje_extenso"
+  ]
+}

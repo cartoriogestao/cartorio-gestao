@@ -118,7 +118,7 @@ def onde_esta_o_conversor(get_setting=None) -> Path | None:
     """
     if get_setting is not None:
         escrito = str(get_setting("libreoffice_caminho", "") or "").strip()
-        if escrito:
+        if escrito and programa_configurado_confiavel(escrito, NOMES_DO_CONVERSOR):
             p = Path(escrito)
             return p if p.exists() else None
     for caminho in CAMINHOS_CONHECIDOS:
@@ -511,11 +511,42 @@ CAMINHOS_CHROME: tuple[str, ...] = (
 )
 
 
+#: Onde um programa configurado PODE morar (revisão de segurança de
+#: 22/10/2026, M3): `chrome_caminho` e `libreoffice_caminho` eram executados
+#: pelo serviço, como SYSTEM, fossem o que fossem — um ADMIN da tela virava
+#: SYSTEM com um caminho. Só as pastas de programas e só os executáveis certos.
+NOMES_DO_CHROME = ("chrome.exe", "msedge.exe", "chromium.exe")
+NOMES_DO_CONVERSOR = ("soffice.exe", "soffice.com", "soffice.bin")
+
+
+def _raizes_de_programas() -> list[Path]:
+    raizes = []
+    for chave in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
+        v = (os.environ.get(chave) or "").strip()
+        if v:
+            raizes.append(Path(v))
+    if not raizes:
+        raizes = [Path(r"C:\Program Files"), Path(r"C:\Program Files (x86)")]
+    return raizes
+
+
+def programa_configurado_confiavel(caminho, nomes: tuple[str, ...]) -> bool:
+    """O caminho digitado nas configurações pode ser executado? Só calcula."""
+    try:
+        p = Path(str(caminho or "")).resolve()
+    except (OSError, ValueError):
+        return False
+    if p.name.lower() not in nomes:
+        return False
+    return any(p == raiz.resolve() or raiz.resolve() in p.parents
+               for raiz in _raizes_de_programas())
+
+
 def onde_esta_o_chrome(get_setting=None) -> Path | None:
     """Chrome/Edge desta maquina, ou None. So LE."""
     if get_setting is not None:
         escrito = str(get_setting("chrome_caminho", "") or "").strip()
-        if escrito:
+        if escrito and programa_configurado_confiavel(escrito, NOMES_DO_CHROME):
             p = Path(escrito)
             return p if p.exists() else None
     for caminho in CAMINHOS_CHROME:
@@ -581,6 +612,14 @@ def pdf_de_html_chrome(html: bytes | str, *, nome: str = "documento",
             "--no-first-run",
             "--no-default-browser-check",
             "--no-pdf-header-footer",
+            # SEM REDE (revisão de segurança de 22/10/2026, A8): a página que
+            # o Chrome abre do disco é o corpo escrito no balcão, já filtrado;
+            # ainda assim, nada do que ela pedir sai desta máquina. O proxy
+            # aponta para uma porta fechada e o DNS não resolve nome nenhum —
+            # as imagens em `data:` e o próprio arquivo não passam por nenhum
+            # dos dois.
+            "--proxy-server=127.0.0.1:1",
+            "--host-rules=MAP * ~NOTFOUND",
             f"--print-to-pdf={pdf_path}",
             html_path.resolve().as_uri(),
         ]

@@ -79,7 +79,9 @@ def _ato(casa, tipo: str) -> int:
         aid = int(cur.lastrowid)
         # As duas pontas com o cadastro inteiro: a trava da procuração
         # (13/10/2026) recusa outorgante ou outorgado incompletos, e o que
-        # estes testes medem é o arquivamento, que vem depois dela.
+        # estes testes medem é o arquivamento, que vem depois dela. Inteiro
+        # inclui, desde o LD07 (21/10/2026), o documento de identidade e a
+        # união estável que o CNN art. 111 pôs na qualificação.
         for ordem, (nome, qualif, doc) in enumerate((
                 ("MARIO EXEMPLO", "OUTORGANTE", "00000000191"),
                 ("BEATRIZ EXEMPLO", "OUTORGADO", "00000000272")), start=1):
@@ -87,10 +89,10 @@ def _ato(casa, tipo: str) -> int:
                 """INSERT INTO nt_ato_partes (ato_id, nome, nome_norm,
                        qualificacao, documento, nacionalidade, estado_civil,
                        profissao, endereco, tipo_pessoa, testemunha, ordem,
-                       criado_em)
+                       identidade, uniao_estavel, criado_em)
                    VALUES (?,?,?,?,?,'brasileira','solteira','lavradora',
                            'Rua Grande, 10, Cidade Exemplo/MA','F',0,?,
-                           '2026-10-15T10:00:00')""",
+                           '1234567 SSP/MA','NAO','2026-10-15T10:00:00')""",
                 (aid, nome, nome.lower(), qualif, doc, ordem))
     con.close()
     return aid

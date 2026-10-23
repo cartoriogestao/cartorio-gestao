@@ -1,0 +1,21 @@
+{
+  "chave": "RTD_TEOR_AVERBACAO",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Teor de averbação — RTD",
+  "formato": "CHAVES",
+  "explica": "Teor de averbação no Registro de Títulos e Documentos (séries TD_*). Mesma forma (intro sem hoje + faixa do selo); muda só a linha da atribuição. O cabeçalho diz o número de ordem da própria averbação (LD09, 21/10/2026; LRP arts. 149 e 153; CN-MA art. 968); a linha sai na prévia, que ainda não tem número.",
+  "campos": [
+    "unit_short",
+    "cns",
+    "atribuicao",
+    "numero",
+    "natureza_ato",
+    "data_assinatura",
+    "full_name",
+    "funcao",
+    "cidade",
+    "uf",
+    "data_extenso",
+    "numero_averbacao"
+  ]
+}

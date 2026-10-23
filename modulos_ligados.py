@@ -39,6 +39,7 @@ esta guarda contra **todas** as rotas do sistema.
 """
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Callable
 from typing import Any
 
@@ -61,6 +62,12 @@ PAPEIS_DO_ALCANCE: dict[str, tuple[str, ...]] = {
 # alcance já foi mexido — módulo sem chave é de TODOS, que é o normal.
 CHAVE_DA_CONFIGURACAO: dict[str, str] = {
     "PROTESTO": "modulo_protesto_alcance",
+    # A APOSTILA DE HAIA (LG03, 19/10/2026) NÃO É UM DOS OITO de `modulos.py`:
+    # é um serviço que atravessa quatro atribuições, e as telas dela moram no
+    # Administrativo. Por isso a guarda dela não é a do `before_request`, que
+    # pergunta pelo módulo da tela, e sim a das próprias rotas
+    # (`apostila_web`) — mas a REGRA do alcance é esta, e não uma segunda.
+    "APOSTILA": "modulo_apostila_alcance",
 }
 
 # A CHAVE DA PRIMEIRA VERSÃO, LIDA COMO COMPATIBILIDADE.
@@ -79,6 +86,9 @@ CHAVE_ANTIGA: dict[str, str] = {
 # quem decide é isto.
 ALCANCE_DE_FABRICA: dict[str, str] = {
     "PROTESTO": ADMIN,
+    # A serventia não apostila hoje: o módulo chega FECHADO, e quem o abre é o
+    # oficial, no Gestor, no dia em que ela for habilitada.
+    "APOSTILA": NINGUEM,
 }
 
 # O QUE A TELA DIZ A QUEM BATER NA PORTA E NÃO PUDER ENTRAR.
@@ -97,10 +107,53 @@ MOTIVO_POR_ALCANCE: dict[str, dict[str, str]] = {
                 "Administrativo → Configurações há a opção de liberar para "
                 "todos os usuários."),
     },
+    "APOSTILA": {
+        NINGUEM: ("A Apostila de Haia está desligada nesta serventia: ela só "
+                  "é ligada quando a serventia for habilitada a apostilar. "
+                  "Para ligar: Administrativo → Apostila de Haia, com o "
+                  "oficial."),
+        ADMIN: ("A Apostila de Haia está aberta apenas para o oficial. Se "
+                "você precisa dela para atender, peça a ele — em "
+                "Administrativo → Apostila de Haia há a opção de liberar para "
+                "todos os usuários."),
+    },
 }
 
 MOTIVO_PADRAO = ("Este módulo não está aberto para o seu usuário nesta "
                  "serventia. O que estava lavrado continua guardado.")
+
+# QUEM FICA DE FORA PELA FUNÇÃO, mesmo com o alcance TODOS — ordem do oficial
+# em 21/10/2026, ao abrir o Protesto inteiro às escreventes: «[NOME] eh
+# auxiliar, nao era pra poder». O auxiliar tem o MESMO papel (USER) da
+# escrevente, e por isso a régua é a FUNÇÃO cadastrada na tela Usuários, e não
+# o papel. Função em branco não fecha nada — fechar por falta de cadastro
+# trancaria a escrevente que ainda não teve a função preenchida. **O ADMIN
+# nunca fica de fora**, nem com função de auxiliar (a conta do analista de
+# sistemas é assim).
+FUNCOES_DE_FORA: dict[str, tuple[str, ...]] = {
+    "PROTESTO": ("AUXILIAR",),
+}
+
+MOTIVO_DA_FUNCAO: dict[str, str] = {
+    "PROTESTO": ("O Protesto é operado pelas escreventes autorizadas e pela "
+                 "substituta; a função de auxiliar não o opera. Quem decide "
+                 "isso é o oficial."),
+}
+
+
+def _funcao(valor: Any) -> str:
+    """Sem acento e em maiúsculas — «Auxiliar», «AUXILIAR» e «auxiliar» são a
+    mesma função."""
+    s = unicodedata.normalize("NFKD", str(valor or ""))
+    return "".join(c for c in s if not unicodedata.combining(c)).strip().upper()
+
+
+def fora_pela_funcao(modulo: Any, papel: Any = None, funcao: Any = None) -> bool:
+    """A função cadastrada tira este operador deste módulo? Só calcula."""
+    if _nome(papel) == ADMIN:
+        return False
+    f = _funcao(funcao)
+    return bool(f) and any(f.startswith(x) for x in FUNCOES_DE_FORA.get(_nome(modulo), ()))
 
 
 def _nome(chave: Any) -> str:
@@ -140,13 +193,15 @@ def alcance(get_setting: Callable[..., Any], chave: Any) -> str:
 
 
 def pode_entrar(get_setting: Callable[..., Any], modulo_da_tela: Any,
-                papel: Any = None) -> bool:
+                papel: Any = None, funcao: Any = None) -> bool:
     """Este operador pode abrir esta tela? Só LÊ.
 
     `modulo_da_tela` é o que `modulos.modulo_da_tela(endpoint)` devolveu —
     recebido pronto, de propósito: quem decide de que módulo é a tela é aquele
     módulo, e não este.
     """
+    if fora_pela_funcao(modulo_da_tela, papel, funcao):
+        return False
     ate_onde = alcance(get_setting, modulo_da_tela)
     permitidos = PAPEIS_DO_ALCANCE.get(ate_onde, ())
     if not permitidos:
@@ -155,7 +210,7 @@ def pode_entrar(get_setting: Callable[..., Any], modulo_da_tela: Any,
 
 
 def escondidos(get_setting: Callable[..., Any],
-               papel: Any = None) -> frozenset[str]:
+               papel: Any = None, funcao: Any = None) -> frozenset[str]:
     """Os módulos que o menu NÃO oferece a este operador. Só LÊ.
 
     **O nome mudou de `desligados` para `escondidos`** quando o interruptor
@@ -164,11 +219,14 @@ def escondidos(get_setting: Callable[..., Any],
     defeito que este projeto já pagou três vezes.
     """
     return frozenset(nome for nome in CHAVE_DA_CONFIGURACAO
-                     if not pode_entrar(get_setting, nome, papel))
+                     if not pode_entrar(get_setting, nome, papel, funcao))
 
 
-def motivo(chave: Any, ate_onde: Any = None) -> str:
+def motivo(chave: Any, ate_onde: Any = None, papel: Any = None,
+           funcao: Any = None) -> str:
     """A frase para quem bateu na porta. Só calcula."""
     nome = _nome(chave)
+    if fora_pela_funcao(nome, papel, funcao) and nome in MOTIVO_DA_FUNCAO:
+        return MOTIVO_DA_FUNCAO[nome]
     por_alcance = MOTIVO_POR_ALCANCE.get(nome) or {}
     return por_alcance.get(_nome(ate_onde)) or MOTIVO_PADRAO

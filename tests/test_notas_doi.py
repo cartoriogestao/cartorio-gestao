@@ -274,15 +274,32 @@ def test_os_indicadores_da_parte_dizem_a_verdade():
     assert a["indicadorEstrangeiro"] is True
     assert a["indicadorEspolio"] is True
     assert a["indicadorConjuge"] is True
-    assert a["niConjuge"] == "11144477735"
-    assert a["indicadorConjugeParticipante"] is True
+    # OS NOMES DO DOI-WEB, e não os da CTP — 22/10/2026: o layout oficial
+    # (`/api/layout-doiweb.json`) chama o cônjuge de `cpfConjuge` e
+    # `indicadorConjugeParticipa`; `niConjuge` e `…Participante` não existem lá.
+    assert a["cpfConjuge"] == "11144477735"
+    assert a["indicadorCpfConjugeIdentificado"] is True
+    assert a["indicadorConjugeParticipa"] is True
+    assert "niConjuge" not in a and "indicadorConjugeParticipante" not in a
     assert a["indicadorRepresentante"] is True
 
 
 def test_parte_sem_conjuge_nao_ganha_campo_de_conjuge():
     a = DOI.declarar(declaracao(), "000000", "2198765")["alienantes"][0]
     assert a["indicadorConjuge"] is False
-    assert "niConjuge" not in a and "regimeBens" not in a
+    assert "cpfConjuge" not in a and "regimeBens" not in a
+
+
+def test_a_escritura_sai_no_layout_oficial_do_doi_web():
+    """Escritura e registro vão no MESMO arquivo; o DOI-Web recusa campo que
+    não está no layout dele — e recusou, na DOI de 09/2026, a chave
+    `IndicadorNaoConsta…` com «I» maiúsculo."""
+    import ri_doi
+    reg = DOI.declarar(declaracao(), "000000", "2198765")
+    assert ri_doi.conferir_layout(reg) == []
+    sem_base = DOI.declarar(declaracao(valor_base_calculo=None), "000000", "2198765")
+    assert sem_base.get("indicadorNaoConstaValorBaseCalculoItbiItcmd") is True
+    assert "IndicadorNaoConstaValorBaseCalculoItbiItcmd" not in sem_base
 
 
 def test_o_registro_rural_vai_com_destinacao_3_e_denominacao():

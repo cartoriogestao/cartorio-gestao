@@ -36,8 +36,11 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import protesto_imagens as PI
+from nucleo_schema import init_nucleo_schema
 from pt_schema import init_pt_schema
 
 AGORA = "2026-08-31T15:00:00"
@@ -48,8 +51,11 @@ NOME_REAL = "49000005243_00000002135_01.pdf"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
+    # `pt_atos.livro_id` aponta para `nu_livros`, e o PostgreSQL nativo
+    # cobra a chave estrangeira ja na criacao: o nucleo vem antes.
+    init_nucleo_schema(con)
     init_pt_schema(con)
     # `attachments` e a tabela geral da casa; aqui monta-se so o que o modulo
     # usa, porque ela nasce em `database.py` e nao num esquema de atribuicao.
@@ -178,6 +184,29 @@ def test_o_nosso_numero_casa_por_DIGITOS():
     tid = titulo(con, nosso="17375280/041")
     r = PI.conferir(con, pacote(("17375280041_00000002135_01.pdf", b"%PDF x")))
     assert r["entram"] and r["entram"][0]["titulo_id"] == tid
+
+
+def test_dois_devedores_com_o_documento_a_tela_mostra_o_primeiro_cadastrado():
+    """RESSALVA DO L012R: `ORDER BY t.id LIMIT 1` sobre o JOIN dos devedores
+    deixava ao PostgreSQL escolher QUAL devedor a conferência mostra. O SQLite
+    dava o primeiro cadastrado (o `rowid`); agora o desempate é `d.id`."""
+    con = banco()
+    tid = titulo(con)
+    con.execute(
+        """INSERT INTO pt_devedores(titulo_id, nome, documento_tipo,
+               documento_numero) VALUES (?,'SEGUNDO DEVEDOR DE EXEMPLO','CPF',
+               '00000002135')""", (tid,))
+    # O UPDATE do documento (coluna com índice) faz o PostgreSQL gravar a linha do primeiro
+    # devedor de novo, depois da do segundo: a ordem em que as linhas estão
+    # gravadas deixa de ser a do id.
+    primeiro = con.execute(
+        "SELECT id, nome FROM pt_devedores WHERE titulo_id=? ORDER BY id",
+        (tid,)).fetchone()
+    # Os mesmos dígitos, com a máscara: o título continua casando.
+    con.execute("UPDATE pt_devedores SET documento_numero='0000000213-5' "
+                "WHERE id=?", (primeiro["id"],))
+    r = PI.conferir(con, pacote((NOME_REAL, b"%PDF x")))
+    assert r["entram"][0]["devedor"] == primeiro["nome"]
 
 
 # --------------------------------------------------- conferir nao grava

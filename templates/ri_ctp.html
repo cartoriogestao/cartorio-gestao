@@ -137,7 +137,7 @@
           <select name="i{{ l.ato.id }}_forma_pagamento" {% if fechada %}disabled{% endif %}>
             <option value="">—</option>
             {% for cod, desc in FORMA_PAGAMENTO.items() %}
-              <option value="{{ cod }}" {% if l.dados.forma_pagamento == cod %}selected{% endif %}>
+              <option value="{{ cod }}" {% if (l.dados.forma_pagamento or l.doi.forma_pagamento) == cod %}selected{% endif %}>
                 {{ desc }}</option>
             {% endfor %}
           </select>
@@ -173,6 +173,39 @@
                  {% if fechada %}disabled{% endif %}>
         </label>
         {% endif %}
+        {# O QUE A DOI PEDE E A CTP NÃO — 22/10/2026. A DOI de 09/2026 saiu
+           sem estes campos e foi corrigida à mão; agora se digitam aqui, e o
+           que dá para ler do teor vem pré-preenchido para conferir. #}
+        <label>Folha do ato, para a DOI (onde começa e termina)
+          <input name="i{{ l.ato.id }}_folha_ato" value="{{ l.doi.folha_ato or '' }}"
+                 maxlength="7" placeholder="ex.: 2-2v" {% if fechada %}disabled{% endif %}>
+        </label>
+        <label>Natureza do título, para a DOI
+          <select name="i{{ l.ato.id }}_natureza_titulo" {% if fechada %}disabled{% endif %}>
+            <option value="">—</option>
+            {% for cod, desc in NATUREZA_TITULO_DOI.items() %}
+              <option value="{{ cod }}" {% if (l.doi.natureza_titulo or '')|string == cod %}selected{% endif %}>
+                {{ desc }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% if (l.m.rural_urbano or '').upper().startswith('R') %}
+        <label>Denominação do imóvel (nome da fazenda, sítio, lote)
+          <input name="i{{ l.ato.id }}_denominacao" value="{{ l.doi.denominacao or '' }}"
+                 maxlength="200" {% if fechada %}disabled{% endif %}>
+        </label>
+        {% endif %}
+        <label>Última parcela (se a prazo)
+          <input type="month" name="i{{ l.ato.id }}_ultima_parcela"
+                 value="{{ (l.doi.ultima_parcela or '')[:7] }}" {% if fechada %}disabled{% endif %}>
+        </label>
+        <label>Valor pago até a data do ato (se a prazo)
+          <input name="i{{ l.ato.id }}_valor_pago_ate_ato" value="{{ l.doi.valor_pago_ate_ato or '' }}"
+                 placeholder="0,00" {% if fechada %}disabled{% endif %}>
+        </label>
+        <label class="small"><input type="checkbox" name="i{{ l.ato.id }}_doi_anterior"
+          value="1" {% if l.doi.doi_anterior %}checked{% endif %}
+          {% if fechada %}disabled{% endif %}> o título registrado diz «Emitida a DOI»</label>
         <label>Motivo, se faltar CPF/CNPJ de alguma parte
           <select name="i{{ l.ato.id }}_motivo_sem_ni" {% if fechada %}disabled{% endif %}>
             <option value="">—</option>
@@ -199,11 +232,17 @@
         <strong>Falta para este ato entrar na carga:</strong>
         <ul class="small">{% for p in l.pendencias %}<li>{{ p }}</li>{% endfor %}</ul>
         {% if l.acervo %}
-        <p class="small">Este ato <strong>veio do acervo do E-Ofício</strong>. Lá as partes
+        <p class="small">Este ato <strong>veio do acervo do sistema antigo</strong>. Lá as partes
         foram gravadas todas como «proprietário», sem separar quem transmitiu de quem
         adquiriu, e o valor do negócio não foi importado. A CTP é para os atos lavrados
         deste ponto em diante; para incluir um ato antigo é preciso completar os dados à mão.</p>
         {% endif %}
+      </div>
+      {% endif %}
+      {% if l.doi_pendencias %}
+      <div class="notice warning" style="margin-top:10px">
+        <strong>Falta para este ato entrar na DOI:</strong>
+        <ul class="small">{% for p in l.doi_pendencias %}<li>{{ p }}</li>{% endfor %}</ul>
       </div>
       {% endif %}
     </div>

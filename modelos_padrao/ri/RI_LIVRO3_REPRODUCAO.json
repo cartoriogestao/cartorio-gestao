@@ -1,0 +1,12 @@
+{
+  "chave": "RI_LIVRO3_REPRODUCAO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Teor da certidão do Livro 3 por reprodução",
+  "formato": "JINJA",
+  "explica": "O teor gravado no livro quando a certidão do Livro 3 é por reprodução da digitalização; entra quando quem emite escolhe a fonte DIGITALIZACAO (atrib_certidao).",
+  "campos": [
+    "paginas",
+    "registro_numero",
+    "sha256"
+  ]
+}

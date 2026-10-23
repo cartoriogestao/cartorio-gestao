@@ -1,0 +1,12 @@
+{
+  "chave": "PT_CERTIDAO_CANCELAMENTO",
+  "atribuicao": "Protesto",
+  "nome": "Certidão de protestos cancelados",
+  "formato": "CHAVES",
+  "explica": "Certifica protestos encontrados e as respectivas baixas e cancelamentos.",
+  "campos": [
+    "cabeca",
+    "corpo",
+    "fecho"
+  ]
+}

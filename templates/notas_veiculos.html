@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}Comunicação de venda de veículo — Notas{% endblock %}
+{% block heading %}<h1>Comunicação de venda de veículo</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
+  <a class="button" href="{{ url_for('notas_veiculo_configuracao') }}">Configuração</a>
+</div>
+
+<p class="small" style="padding:0 4px">
+  {% if ligada %}Integração com o DETRAN <strong>ligada</strong>, em {{ ambiente|lower }}.
+  {% else %}Integração com o DETRAN <strong>desligada</strong> (o padrão): comunique no portal do DETRAN e registre o protocolo na ficha.{% endif %}
+  A firma no CRV/ATPV é reconhecida por autenticidade (Código de Normas do MA, art. 865, II).
+  {% if preco %}Item {{ preco.codigo_tj }}: {{ preco.total }}.{% endif %}
+</p>
+
+<section class="panel">
+  <div class="panel-head"><span>Nova comunicação</span></div>
+  <form method="post" action="{{ url_for('notas_veiculo_nova') }}" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="reconhecimento_id" value="{{ sugestao.reconhecimento_id or '' }}">
+    {% if sugestao.reconhecimento_id %}<p class="span2 small">Do reconhecimento de firma nº {{ sugestao.reconhecimento_id }}.</p>{% endif %}
+    <label>Documento
+      <select name="documento">{% for k, v in DOCUMENTOS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+    <label>Placa <input name="placa" required value="{{ sugestao.placa or '' }}" placeholder="ABC1D23"></label>
+    <label>RENAVAM <input name="renavam" required inputmode="numeric"></label>
+    <label>Data da venda <input type="date" name="data_venda" required></label>
+    <label>Vendedor <input name="vendedor_nome" required value="{{ sugestao.vendedor_nome or '' }}"></label>
+    <label>CPF/CNPJ do vendedor <input name="vendedor_documento" required value="{{ sugestao.vendedor_documento or '' }}"></label>
+    <label>Comprador <input name="comprador_nome" required></label>
+    <label>CPF/CNPJ do comprador <input name="comprador_documento" required></label>
+    <label>Valor da venda <input name="valor" placeholder="25.000,00"></label>
+    <label>Município / UF <input name="municipio" size="18"> <input name="uf" size="2" maxlength="2"></label>
+    <div class="span2"><button class="primary">Registrar</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Últimas</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Placa</th><th>Venda</th><th>Situação</th><th>Protocolo</th><th>Selo</th></tr></thead>
+    <tbody>
+    {% for c in ultimas %}
+      <tr>
+        <td><a href="{{ url_for('notas_veiculo', com_id=c.id) }}"><strong>{{ c.id }}</strong></a></td>
+        <td>{{ c.placa }}</td>
+        <td class="small">{{ fmt_date(c.data_venda) }}</td>
+        <td class="small">{{ SITUACOES.get(c.situacao, c.situacao) }}</td>
+        <td class="small">{{ c.protocolo_detran or '—' }}</td>
+        <td class="small">{{ c.selo or '—' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Nenhuma ainda.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

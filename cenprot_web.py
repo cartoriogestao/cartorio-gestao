@@ -44,7 +44,12 @@ QUEM_OPERA = ("ADMIN", "MANAGER", "USER")
 # QUEM CONFIGURA E QUEM MANDA. **Enviar muda coisa na Central** — aprova
 # anuência, orça certidão, cancela protesto —, e por isso não é do balcão.
 # É a mesma separação da ajuda do Claude: consultar abre, configurar não.
-QUEM_ENVIA = ("ADMIN", "MANAGER")
+#
+# 21/10/2026 — ORDEM DO OFICIAL: «dar acesso às escreventes operarem todo o
+# protesto, em especial operar as API, CRA etc.». Era ("ADMIN", "MANAGER"); o
+# balcão passou a enviar. Quem decide se o Protesto é do balcão continua sendo
+# o alcance do módulo (`modulos_ligados`), que vem antes desta guarda.
+QUEM_ENVIA = ("ADMIN", "MANAGER", "USER")
 
 # O QUE VOLTA COMO FRASE, E NAO COMO HTTP 500 — e **o teste de tela me pegou
 # sem a terceira**. A falta de credencial estoura `centrais_cred.

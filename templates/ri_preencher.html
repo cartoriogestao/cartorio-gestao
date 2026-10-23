@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_parte_do_ato.html' import parte_do_ato %}
 {% block heading %}<h1>{{ modelo.nome }} — matrícula {{ m.numero }}</h1>{% endblock %}
 {% block content %}
 <div class="actions">
@@ -79,6 +80,84 @@
     <div class="teor" id="documento-editavel"></div>
   </section>
 
+  {# O ATO INTEIRO, E NÃO SÓ O TEXTO — LD03, 21/10/2026. «Enviar para a
+     lavratura» mandava tipo, natureza, modelo, data e teor; a lavratura
+     recusava pelo item de custa e o texto se perdia. O que vem abaixo é o que
+     a ficha pergunta ao lavrar: de onde vem a prioridade (a prenotação), de
+     onde vem o pagamento (o protocolo geral e os itens), quem são as partes e
+     o valor declarado. #}
+  {% if minuta_guardada %}<input type="hidden" name="minuta_guardada" value="{{ minuta_guardada }}">{% endif %}
+  {# A MARCA DESTA TELA — LD10: o clique duplo em «Enviar» chega antes do
+     número da minuta, e é por ela que o segundo envio acha a minuta do
+     primeiro em vez de criar outra. #}
+  <input type="hidden" name="envio" value="{{ envio }}">
+  <section class="panel" id="titulo-da-lavratura">
+    <div class="panel-head"><span>Protocolo desta lavratura</span>
+      <span class="muted small">a prenotação dá a prioridade; o protocolo geral,
+        os itens que viram selo</span></div>
+    <div class="form-grid">
+      <label class="span2">Prenotação (Livro 1)
+        <select name="prenotacao_id">
+          <option value="">— sem prenotação —</option>
+          {% for p in titulo.abertas %}
+          <option value="{{ p.id }}"{% if titulo.prenotacao and titulo.prenotacao.id == p.id %} selected{% endif %}>
+            {{ p.numero }} — {{ fmt_date(p.data_prenotacao) }} — {{ p.apresentante or 'sem apresentante' }}</option>
+          {% endfor %}
+        </select>
+        <small>É ela que entra na frase do protocolo e que se amarra ao ato.
+          Trocou? Clique em «Atualizar prévia».</small></label>
+      <div class="span2 small">
+        {% if titulo.caixa %}
+          Protocolo geral <strong>{{ titulo.caixa.numero }}</strong>{% if titulo.caixa.interessado %} — {{ titulo.caixa.interessado }}{% endif %}.
+          {% if not titulo.itens %}<strong>Ele não tem item com saldo</strong> — sem o item da tabela o ato não se lavra.{% endif %}
+        {% else %}
+          <strong>Sem protocolo geral para esta prenotação.</strong> Sem o item da
+          tabela o ato não se lavra: escolha a prenotação do título, ou diga em
+          <a href="{{ url_for('selo_cobertura') }}">«Estou atendendo este protocolo»</a>
+          qual protocolo você está atendendo.
+        {% endif %}
+      </div>
+      {% if titulo.itens %}
+      <input type="hidden" name="itens_da_tela" value="1">
+      <div class="span2">
+        <strong>Itens deste protocolo que valem para este ato</strong>
+        <small class="muted">o que não marcar fica para o próximo ato do mesmo protocolo</small>
+        {% for i in titulo.itens %}
+        <label class="check"><input type="checkbox" name="protocolo_item_id" value="{{ i.id }}"{% if i.id in titulo.marcados %} checked{% endif %}>
+          {{ i.codigo_ato }} — {{ i.descricao or '—' }} <small class="muted">(ainda cabem {{ i.saldo }})</small></label>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <label>Valor declarado (base de cálculo)
+        <input name="base_calculo" value="{{ base_calculo }}" placeholder="100.000,00">
+        <small>O registro com valor declarado (16.3) o exige.</small></label>
+    </div>
+  </section>
+
+  <datalist id="papeis-ri">
+    {% for x in PAPEIS_RI %}<option value="{{ x }}">{% endfor %}
+  </datalist>
+  <section class="panel partes-do-ato" data-partes-do-ato>
+    <div class="partes-cabeca">
+      <strong>Partes do ato</strong>
+      <small class="muted" data-contagem>bloco sem nome não é gravado; o papel
+        decide quem passa a ser titular (adquirente) e quem deixa de ser
+        (transmitente)</small>
+    </div>
+    {% for pa in partes %}{{ parte_do_ato(pa) }}{% endfor %}
+    {{ parte_do_ato() }}
+    <template data-modelo-parte>{{ parte_do_ato() }}</template>
+    <div data-partes-vazias></div>
+    <button type="button" class="ghost" data-acrescentar-parte hidden>
+      Acrescentar parte</button>
+    {% if pede_adquirentes %}
+    <label class="span2">Qualificação do(s) adquirente(s) — vai no texto, no lugar do marcador
+      <textarea name="adquirentes" rows="2"
+                placeholder="nome completo, nacionalidade, estado civil e regime de bens, profissão, domicílio e CPF/CNPJ">{{ adquirentes }}</textarea>
+    </label>
+    {% endif %}
+  </section>
+
   <!-- ------------------------------------------------- PRÉVIA -->
   <section class="panel">
     <div class="panel-head"><span>Prévia do ato</span>
@@ -87,7 +166,14 @@
     <div class="teor"><pre class="teor-texto" id="previa">{{ texto }}</pre></div>
   </section>
 
-  {% if pendentes %}
+  {% if bloqueiam %}
+  {# O CAMPO DO MODELO EM BRANCO NÃO VAI AO LIVRO — a lavratura o recusa
+     (LD03), e por isso aqui não há «Lavrar mesmo assim» para ele. #}
+  <div class="notice danger">
+    <strong>Ainda faltam {{ bloqueiam|length }} campo(s) do modelo:</strong>
+    {{ bloqueiam|join(' · ') }} — o livro não recebe campo do modelo em branco.
+  </div>
+  {% elif pendentes %}
   <div class="notice warning">
     <strong>Ainda faltam {{ pendentes|length }} campo(s):</strong>
     {{ pendentes|join(' · ') }}
@@ -116,11 +202,37 @@
      operação imobiliária sem depender do texto livre da natureza. #}
   <input type="hidden" name="modelo_codigo" value="{{ modelo.codigo }}">
   <input type="hidden" name="data_ato" value="{{ hoje }}">
+  {# O QUE A FICHA MANDA AO LAVRAR, e que daqui não ia — LD03. A minuta é a
+     procedência do texto: a recusa da lavratura volta para ela. #}
+  <input type="hidden" name="minuta_id" value="{{ minuta_guardada }}">
+  <input type="hidden" name="protocolo" value="{{ titulo.prenotacao.numero if titulo.prenotacao else '' }}">
+  <input type="hidden" name="protocolo_id" value="{{ titulo.caixa.id if titulo.caixa else '' }}">
+  {% for i in titulo.itens if i.id in titulo.marcados %}
+  <input type="hidden" name="protocolo_item_id" value="{{ i.id }}">
+  {% endfor %}
+  <input type="hidden" name="base_calculo" value="{{ base_calculo }}">
+  {% for pa in partes %}
+  <input type="hidden" name="parte_nome" value="{{ pa.nome }}">
+  <input type="hidden" name="parte_documento" value="{{ pa.documento_numero or '' }}">
+  <input type="hidden" name="parte_papel" value="{{ pa.papel or '' }}">
+  <input type="hidden" name="parte_qualificacao" value="{{ pa.qualificacao or '' }}">
+  <input type="hidden" name="parte_documento_tipo" value="{{ pa.documento_tipo or '' }}">
+  {% endfor %}
   <textarea name="teor" class="oculta">{{ texto }}</textarea>
   {% with revisao_url=url_for('revisao_previa_ri', matricula_id=m.id) %}{% include '_revisao_previa.html' %}{% endwith %}
   <div class="notice ok">
     <strong>Texto pronto.</strong> Confira acima e conclua a lavratura — o ato entra na
     cadeia de integridade e não poderá mais ser editado.
+    <div class="small">
+      Prenotação {{ titulo.prenotacao.numero if titulo.prenotacao else '— nenhuma —' }}
+      · protocolo geral {{ titulo.caixa.numero if titulo.caixa else '— nenhum —' }}
+      · itens: {% for i in titulo.itens if i.id in titulo.marcados %}{{ i.codigo_ato }}{% if not loop.last %}, {% endif %}{% else %}nenhum{% endfor %}
+      · {{ partes|length }} parte(s).
+      O texto ficou guardado na minuta: se a lavratura recusar, ele volta
+      nela. Ato gratuito, arquivamento (16.39), vários selos ou o protocolo da
+      CNIB se lavram <a href="{{ url_for('ri_ficha', matricula_id=m.id, minuta=minuta_guardada, lavrar=1) }}#novo-ato">pela
+      ficha, com esta minuta</a>.
+    </div>
     <button class="primary">Lavrar {{ modelo.tipo }}-{{ '%02d'|format(numero) }}</button>
   </div>
 </form>

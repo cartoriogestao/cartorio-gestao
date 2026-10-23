@@ -36,6 +36,7 @@ from typing import Any
 import ato_selado as AS
 import emolumentos as EMO
 import selo_no_papel as SNP
+from bd_nativo import banco
 
 
 # Marcadores estaveis: a previa e os testes os reconhecem; regravar o teor
@@ -165,23 +166,21 @@ def servico_do_codigo_tj(con: sqlite3.Connection, codigo_tj: str) -> dict | None
     codigo = str(codigo_tj or "").strip()
     if not codigo:
         return None
-    r = con.execute(
-        """SELECT s.codigo, s.codigo_tj, s.descricao, v.emolumentos, v.ferc,
-                  v.femp, v.fadep, v.ferrfis, v.total
+    r = banco(con).um(
+        """SELECT s.codigo AS servico, s.codigo_tj, s.descricao,
+                  v.emolumentos, v.ferc, v.femp, v.fadep, v.ferrfis, v.total
              FROM cx_servicos s
              LEFT JOIN cx_servico_valores v
                     ON v.servico = s.codigo
                    AND v.vigencia = (SELECT codigo FROM cx_vigencias
-                                      WHERE vigente=1 LIMIT 1)
-            WHERE s.codigo_tj=? AND COALESCE(s.ativo,1)=1
+                                      WHERE vigente=1 ORDER BY codigo LIMIT 1)
+            WHERE s.codigo_tj=%s AND COALESCE(s.ativo,1)=1
             ORDER BY s.codigo LIMIT 1""",
         (codigo,),
-    ).fetchone()
+    )
     if not r:
         return None
-    return dict(zip(
-        ("servico", "codigo_tj", "descricao", "emolumentos", "ferc",
-         "femp", "fadep", "ferrfis", "total"), r))
+    return dict(r)
 
 
 def calcular_itens(
@@ -289,37 +288,35 @@ def protocolos_do_caixa_abertos(
     Inclui `ri_protocolo_id` e o numero da prenotacao ligada, quando a
     coluna e a tabela `ri_protocolos` existirem. Nao inventa ligacao.
     """
-    cols = {r[1] for r in con.execute("PRAGMA table_info(cx_protocolos)")}
-    tem_fk = "ri_protocolo_id" in cols
-    tem_ri = con.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ri_protocolos'"
-    ).fetchone()
-    # `? IS NULL OR` mantem o recorte opcional sem montar o WHERE em pedacos
+    bd = banco(con)
+    tem_fk = bd.tem_coluna("cx_protocolos", "ri_protocolo_id")
+    tem_ri = bd.tem_tabela("ri_protocolos")
+    # `%s IS NULL OR` mantem o recorte opcional sem montar o WHERE em pedacos
     # — `atribuicao` e coluna so de `cx_protocolos` (medido: `ri_protocolos`
     # nao tem uma), e por isso o `c.` basta nas tres consultas.
-    filtro = " AND (? IS NULL OR c.atribuicao = ?)"
+    filtro = " AND (%s::text IS NULL OR c.atribuicao = %s)"
     recorte = (atribuicao, atribuicao)
     if tem_fk and tem_ri:
-        return [dict(x) for x in con.execute(
+        return bd.ler(
             f"""SELECT c.id, c.numero, c.interessado, c.ri_protocolo_id,
                        r.numero AS prenotacao_numero
                   FROM cx_protocolos c
                   LEFT JOIN ri_protocolos r ON r.id = c.ri_protocolo_id
                  WHERE c.situacao IN ('ABERTO', 'A_PAGAR'){filtro}
-                 ORDER BY c.id DESC LIMIT 80""", recorte)]
+                 ORDER BY c.id DESC LIMIT 80""", recorte)
     if tem_fk:
-        return [dict(x) for x in con.execute(
+        return bd.ler(
             f"""SELECT c.id, c.numero, c.interessado, c.ri_protocolo_id,
                        NULL AS prenotacao_numero
                   FROM cx_protocolos c
                  WHERE c.situacao IN ('ABERTO', 'A_PAGAR'){filtro}
-                 ORDER BY c.id DESC LIMIT 80""", recorte)]
-    return [dict(x) for x in con.execute(
+                 ORDER BY c.id DESC LIMIT 80""", recorte)
+    return bd.ler(
         f"""SELECT c.id, c.numero, c.interessado,
                    NULL AS ri_protocolo_id, NULL AS prenotacao_numero
               FROM cx_protocolos c
              WHERE c.situacao IN ('ABERTO', 'A_PAGAR'){filtro}
-             ORDER BY c.id DESC LIMIT 80""", recorte)]
+             ORDER BY c.id DESC LIMIT 80""", recorte)
 
 
 def caixa_ligado_a_prenotacao(
@@ -334,16 +331,15 @@ i_protocolo_id = prenotacao. So le.
     """
     if ri_protocolo_id is None or not str(ri_protocolo_id).strip().isdigit():
         return None
-    r = con.execute(
+    return banco(con).um(
         """SELECT c.id, c.numero, c.interessado, c.ri_protocolo_id,
                   r.numero AS prenotacao_numero
              FROM cx_protocolos c
              LEFT JOIN ri_protocolos r ON r.id = c.ri_protocolo_id
-            WHERE c.ri_protocolo_id=? AND c.situacao IN ('ABERTO', 'A_PAGAR')
+            WHERE c.ri_protocolo_id=%s AND c.situacao IN ('ABERTO', 'A_PAGAR')
             ORDER BY c.id DESC LIMIT 1""",
         (int(ri_protocolo_id),),
-    ).fetchone()
-    return dict(r) if r else None
+    )
 
 
 def depositos_da_prenotacao(
@@ -357,13 +353,13 @@ def depositos_da_prenotacao(
     """
     if ri_protocolo_id is None or not str(ri_protocolo_id).strip().isdigit():
         return []
-    return [dict(x) for x in con.execute(
+    return banco(con).ler(
         """SELECT id, numero, data, depositante, valor, saldo, protocolo_id,
                   encerrado, observacao
              FROM cx_depositos
-            WHERE ri_protocolo_id=?
+            WHERE ri_protocolo_id=%s
             ORDER BY data, id""",
-        (int(ri_protocolo_id),))]
+        (int(ri_protocolo_id),))
 
 
 def resolver_protocolo_caixa(
@@ -386,14 +382,14 @@ i_protocolo_id = prenotacao (FK);
     depositos = depositos_da_prenotacao(con, ri_protocolo_id)
     escolhido = None
     if protocolo_caixa_id is not None and str(protocolo_caixa_id).strip().isdigit():
-        r = con.execute(
+        r = banco(con).um(
             """SELECT c.id, c.numero, c.interessado, c.ri_protocolo_id,
                       r.numero AS prenotacao_numero
                  FROM cx_protocolos c
                  LEFT JOIN ri_protocolos r ON r.id = c.ri_protocolo_id
-                WHERE c.id=?""",
+                WHERE c.id=%s""",
             (int(protocolo_caixa_id),),
-        ).fetchone()
+        )
         if r:
             escolhido = dict(r)
             return {

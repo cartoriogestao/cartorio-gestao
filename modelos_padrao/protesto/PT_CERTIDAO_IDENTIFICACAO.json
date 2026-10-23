@@ -1,0 +1,12 @@
+{
+  "chave": "PT_CERTIDAO_IDENTIFICACAO",
+  "atribuicao": "Protesto",
+  "nome": "Certidão negativa — nome com o documento",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {identificacao} da negativa quando há CPF ou CNPJ; sem documento, sai só o nome. {tipo_documento} é CPF, CNPJ ou «documento».",
+  "campos": [
+    "nome",
+    "tipo_documento",
+    "documento"
+  ]
+}

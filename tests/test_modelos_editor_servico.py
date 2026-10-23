@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -22,13 +21,18 @@ from modelos_editor_schema import (
     STATUS_PUBLICADA, STATUS_RASCUNHO, init_modelos_editor_schema,
 )
 
+sys.path.insert(0, str(RAIZ / "tests"))
+from banco_de_teste import conexao_de_teste  # noqa: E402
+
 AGORA = "2026-10-05T15:00:00"
 
 
 @pytest.fixture()
 def con(tmp_path):
-    c = sqlite3.connect(tmp_path / "t.sqlite3")
-    c.row_factory = sqlite3.Row
+    c = conexao_de_teste()
+    # `ri_schema` aponta para `users` (FK): o PostgreSQL cobra a FK
+    # na criacao, e o banco da casa cria `users` antes. Aqui basta o esqueleto.
+    c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
     ri_schema.init_ri_schema(c)
     ESQ.init_modelos_elementos_schema(c)
     MOLDES.init_modelos_moldes_schema(c)

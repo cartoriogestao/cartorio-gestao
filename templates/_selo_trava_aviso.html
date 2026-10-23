@@ -1,0 +1,18 @@
+{# SELO × CAIXA (LX16). A barra VERMELHA da trava desligada é para TODOS,
+   enquanto ela estiver assim — só o oficial a desliga, e todo mundo precisa
+   saber que o selo está saindo sem conferência. A segunda é de quem obteve
+   selo liberado sem cobertura: o pagamento continua cobrado. Barras fixas no
+   topo, e não janela. #}
+{% if selo_trava_barra %}
+<div role="alert" data-selo-trava style="position:sticky;top:0;z-index:50;background:#b00020;color:#fff;
+     padding:12px 18px;font-size:16px;font-weight:700;border-bottom:4px solid #6d0014">
+  {{ selo_trava_barra }}
+</div>
+{% endif %}
+{% if selo_pagar_aviso %}
+<div role="alert" style="background:#b00020;color:#fff;padding:10px 18px;font-size:15px;
+     font-weight:700;border-bottom:4px solid #6d0014">
+  Você tem {{ selo_pagar_aviso }} selo(s) liberado(s) pelo oficial ainda sem pagamento no caixa.
+  <a style="color:#fff;text-decoration:underline" href="{{ url_for('selo_cobertura') }}">Ver o que falta</a>.
+</div>
+{% endif %}

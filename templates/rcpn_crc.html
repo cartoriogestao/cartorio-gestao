@@ -168,6 +168,9 @@
   </form>
 </div>
 
+{# O ENVIO PELO WEB SERVICE é só do oficial e do gerente (LX12, 19/10/2026), como a
+   rota diz: o escrevente não vê o botão que lhe daria 403. #}
+{% if user and user.role in ['ADMIN', 'MANAGER'] %}
 <div class="card">
   <h3 style="margin-top:0">Enviar direto pelo web service, assinado com o A3</h3>
   <form method="post" action="{{ url_for('rcpn_crc_enviar') }}"
@@ -205,6 +208,7 @@
 </div>
 {% endif %}
 {% endif %}
+{% endif %}
 
 <div class="card">
   <p class="small muted">
@@ -214,7 +218,7 @@
     assentos</strong>, o mais antigo de 1955.
   </p>
   <p class="small muted">
-    É por isso que esta tela <strong>não</strong> filtra o que veio do E-Ofício,
+    É por isso que esta tela <strong>não</strong> filtra o que veio do sistema antigo,
     enquanto a <a href="{{ url_for('rcpn_sirc') }}">remessa do SIRC</a> filtra: lá
     o prazo é de um dia útil e conta do <em>registro</em>, e um nascimento de 1955
     apareceria com vinte e cinco mil dias de atraso. <strong>Mesmo número, duas

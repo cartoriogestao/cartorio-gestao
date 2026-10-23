@@ -1,0 +1,18 @@
+{
+  "chave": "RCPJ_CERTIDAO_FAIXA",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Certidão PDF — faixa RCPJ",
+  "formato": "CHAVES",
+  "explica": "Texto da faixa no topo de cada folha interna da certidão RCPJ (protocolo, registro, lavrante) — acima da imagem do documento anexado.",
+  "campos": [
+    "protocolo",
+    "data_apresentacao",
+    "objeto_certificado",
+    "numero",
+    "data_registro",
+    "unit_short",
+    "atribuicao",
+    "full_name",
+    "funcao"
+  ]
+}

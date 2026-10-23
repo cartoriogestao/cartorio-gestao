@@ -22,6 +22,9 @@
        href="{{ url_for('rcpj_rtd_titulos', atribuicao=a.codigo) }}">{{ a.nome }}</a>
   {% endfor %}
   <a class="button" href="{{ url_for('rcpj_rtd_registros', atribuicao=atribuicao) }}">Registros já lavrados</a>
+  {% if atribuicao == 3 %}
+  <a class="button" href="{{ url_for('rcpj_rtd_livro_contabil_lista') }}">Livros contábeis</a>
+  {% endif %}
 </div>
 
 <div class="notice">

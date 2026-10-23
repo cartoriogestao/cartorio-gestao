@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
 
+import rc_textos as TEXTOS
 from ri_odt import (
     bloco_selo_odf,
     carimbo_da_certidao_odf,
@@ -69,6 +70,18 @@ NOME_DA_ESPECIE: dict[str, str] = {
     "OBITO": "óbito",
     "NATIMORTO": "natimorto",
 }
+
+# A INTRODUÇÃO É TEXTO DA CASA, e mora na pasta dos padrões desde o LF06C
+# (19/10/2026): `modelos_padrao/rcpn/RC_CERTIDAO_INTEIRO_TEOR.txt`, com o fim
+# de cada modalidade como peça, e as duas frases da impressão (o fecho e a
+# certidão cancelada) também. TITULOS e NOME_DA_ESPECIE ficam aqui: são o
+# vocabulário que preenche {titulo} e {especie}, e `_paragrafos_html` acha o
+# título pelo começo dele.
+CHAVE_DO_PAPEL = "RC_CERTIDAO_INTEIRO_TEOR"
+PECA_COM_O_SEGUINTE_TEOR = "RC_CERTIDAO_INTEIRO_TEOR__com_o_seguinte_teor"
+PECA_REPROGRAFICA = "RC_CERTIDAO_INTEIRO_TEOR__reprografica"
+PECA_FECHO = "RC_CERTIDAO_INTEIRO_TEOR__fecho"
+PECA_CANCELADA = "RC_CERTIDAO_INTEIRO_TEOR__cancelada"
 
 _BRASAO = Path(__file__).resolve().parent / "static" / "brasao.jpg"
 
@@ -120,8 +133,15 @@ def _limpo(v: Any) -> str:
 def introducao(*, especie: Any, nome: Any, matricula: Any = None,
                livro: Any = None, folha: Any = None, termo: Any = None,
                cns: Any = None, cidade: Any = None, uf: Any = None,
-               modo: str = INTEIRO_TEXTO) -> str:
-    """A introdução padrão da certidão de inteiro teor. Só calcula."""
+               modo: str = INTEIRO_TEXTO, modelo: str | None = None) -> str:
+    """A introdução da certidão de inteiro teor. Só calcula.
+
+    O TEXTO É O PAPEL `RC_CERTIDAO_INTEIRO_TEOR` (LF06C): `modelo` é o que
+    vale na casa, lido pela busca única por quem tem a conexão
+    (`rc_certidao.emitir`); sem ele, o padrão da base. A REGRA fica aqui: o
+    dado que falta some junto com o conector dele, e a modalidade escolhe a
+    peça do fim.
+    """
     esp = str(especie or "").strip().upper()
     cabeca = titulo(esp)
     onde_partes = []
@@ -140,24 +160,13 @@ def introducao(*, especie: Any, nome: Any, matricula: Any = None,
     elif _limpo(cidade):
         lugar = f" de {_limpo(cidade)}"
 
-    if normalizar_modalidade(modo) == INTEIRO_REPRO:
-        corpo = (
-            f"CERTIFICO E DOU FÉ que, a pedido de parte interessada, revendo "
-            f"os livros próprios desta Serventia Extrajudicial do Ofício Único"
-            f"{lugar}{cns_txt}, encontrei o assento de "
-            f"{_especie_por_extenso(esp)} de {_limpo(nome) or '—'}{mat}, "
-            f"{onde}e passo a reproduzir, por cópia reprográfica, o teor "
-            f"constante do livro de papel, na imagem abaixo."
-        )
-    else:
-        corpo = (
-            f"CERTIFICO E DOU FÉ que, a pedido de parte interessada, revendo "
-            f"os livros próprios desta Serventia Extrajudicial do Ofício Único"
-            f"{lugar}{cns_txt}, encontrei o assento de "
-            f"{_especie_por_extenso(esp)} de {_limpo(nome) or '—'}{mat}, "
-            f"{onde}COM O SEGUINTE TEOR:"
-        )
-    return f"{cabeca}\n\n{corpo}"
+    fim = TEXTOS.texto(PECA_REPROGRAFICA
+                       if normalizar_modalidade(modo) == INTEIRO_REPRO
+                       else PECA_COM_O_SEGUINTE_TEOR)
+    return (modelo or TEXTOS.texto(CHAVE_DO_PAPEL)).format(
+        titulo=cabeca, lugar=lugar, cns=cns_txt,
+        especie=_especie_por_extenso(esp), nome=_limpo(nome) or "—",
+        matricula=mat, onde=onde, fim=fim)
 
 
 def entre_aspas(teor_colado: Any) -> str:
@@ -182,7 +191,7 @@ def entre_aspas(teor_colado: Any) -> str:
 
 
 def _campo_ato(ato: Any, chave: str) -> Any:
-    """Lê campo de dict ou sqlite3.Row sem impor tipo."""
+    """Lê campo de dict ou de linha do banco sem impor tipo."""
     if ato is None:
         return None
     if isinstance(ato, dict):
@@ -483,8 +492,12 @@ def _rodape_html(certidao: dict, sv: dict, hoje_extenso: str) -> str:
 
 
 def _com_fecho_certificar(teor_html: str) -> str:
-    """Cola «Era o que cabia certificar.» no fim do último <p> do teor."""
-    fecho = " Era o que cabia certificar."
+    """Cola «Era o que cabia certificar.» no fim do último <p> do teor.
+
+    A frase é peça do papel (LF06C); o espaço que a separa do teor é cola,
+    e fica aqui — o ajuste da casa é gravado sem espaço nas pontas.
+    """
+    fecho = " " + TEXTOS.texto(PECA_FECHO)
     html = str(teor_html or "")
     if not html:
         return f"<p>{escape(fecho.strip())}</p>"
@@ -495,20 +508,27 @@ def _com_fecho_certificar(teor_html: str) -> str:
     return html[:idx] + escape(fecho) + html[idx:]
 
 
+def _cancelada_html(certidao: dict) -> str:
+    """A linha «CERTIDÃO CANCELADA — motivo» da impressão, ou ``""``.
+
+    A frase é peça do papel (LF06C), e se escapa INTEIRA depois de montada:
+    o motivo é digitado no balcão, e o ajuste da casa também pode trazer `&`.
+    """
+    if not certidao.get("cancelada_em"):
+        return ""
+    frase = TEXTOS.peca(PECA_CANCELADA,
+                        motivo=str(certidao.get("cancelada_motivo") or ""))
+    return f'<p align="center"><b>{escape(frase)}</b></p>'
+
+
 def html_da_certidao_texto(certidao: dict, sv: dict, *,
                             hoje_extenso: str) -> str:
     """HTML da via em texto corrido — cabeçalho Notas + teor + selo/QR + emitente."""
-    cancelada = ""
-    if certidao.get("cancelada_em"):
-        motivo = escape(str(certidao.get("cancelada_motivo") or ""))
-        cancelada = (
-            f'<p align="center"><b>CERTIDÃO CANCELADA — {motivo}</b></p>'
-        )
     teor = str(certidao.get("teor") or "")
     return (
         f"{_cabecalho_notas_html(sv, certidao)}"
         f"{_com_fecho_certificar(_paragrafos_html(teor))}"
-        f"{cancelada}"
+        f"{_cancelada_html(certidao)}"
         f"{_rodape_html(certidao, sv, hoje_extenso)}"
     )
 
@@ -559,17 +579,11 @@ def html_da_certidao_repro(certidao: dict, sv: dict, *,
     intro = re.sub(
         r"\n*\[Cópia reprográfica do assento anexa a esta certidão\.\]\s*",
         "\n\n", intro).strip()
-    cancelada = ""
-    if certidao.get("cancelada_em"):
-        motivo = escape(str(certidao.get("cancelada_motivo") or ""))
-        cancelada = (
-            f'<p align="center"><b>CERTIDÃO CANCELADA — {motivo}</b></p>'
-        )
     return (
         f"{_cabecalho_notas_html(sv, certidao)}"
         f"{_com_fecho_certificar(_paragrafos_html(intro))}"
         f"<p>{marca_imagem}</p>"
-        f"{cancelada}"
+        f"{_cancelada_html(certidao)}"
         f"{_rodape_html(certidao, sv, hoje_extenso)}"
     )
 
@@ -683,3 +697,18 @@ MIGRACOES_CERTIDAO: tuple[tuple[str, str], ...] = (
     ("imagem_margem_esq_cm", "REAL"),
     ("imagem_margem_sup_cm", "REAL"),
 )
+
+
+def __getattr__(nome: str):
+    """O nome do papel no catálogo, lido da base dos padrões.
+
+    `INTRODUCAO` NUNCA FOI CONSTANTE: a introdução era uma f-string dentro de
+    `introducao` até o LF06C (19/10/2026). O catálogo precisa de um nome para
+    o papel (`modelos_papeis/rcpn.py`), e é este que responde — o padrão da
+    base, o MESMO que a certidão congela. Nome que não é de papel continua
+    sendo `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)

@@ -1,0 +1,19 @@
+{
+  "chave": "RI_LIVRO3_CERTIDAO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão do Livro 3 Auxiliar",
+  "formato": "CHAVES",
+  "explica": "A certidão de inteiro teor de um registro do Livro 3 Auxiliar.",
+  "campos": [
+    "numero",
+    "natureza",
+    "situacao",
+    "titulo_tipo",
+    "titulo_numero",
+    "prenotacao",
+    "valor",
+    "partes",
+    "teor",
+    "atos"
+  ]
+}

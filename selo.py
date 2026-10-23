@@ -102,7 +102,7 @@ CAMINHOS: dict[str, str] = {
 # Ontem o caminho do selo de PROTESTO era desconhecido: os selos existiam no
 # acervo — PROTIT, LIQTIT, DILIGE, ARQUIV — mas o endereco chamado nao ficara
 # gravado. A documentacao oficial do Selador, achada em
-# C:\\ARPNET\\C11\\Selo Eletronico\\selador-doc, tem os dez caminhos do protesto e
+# arquivos\\eoficio\\Selo Eletronico\\selador-doc, tem os dez caminhos do protesto e
 # mais 171. Estao todos em `selador.ENDPOINTS`, que passa a ser a fonte.
 #
 # Este dicionario fica, vazio, porque a proxima lacuna vai aparecer — e e melhor

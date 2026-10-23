@@ -48,7 +48,9 @@ O QUE ELE NAO CONFERE, E DIZ QUE NAO
 from __future__ import annotations
 
 import hashlib
-import sqlite3
+from typing import Any
+
+from bd_nativo import banco
 
 # O tipo de conteudo do PKCS#7 assinado — OID 1.2.840.113549.1.7.2.
 TIPO_ASSINADO = "signed_data"
@@ -219,7 +221,7 @@ def por_que_nao_serve(resultado: dict) -> str:
 # --------------------------------------------------------------- a fila
 
 
-def pendentes(con: sqlite3.Connection, *, entidade: str | None = None,
+def pendentes(con: Any, *, entidade: str | None = None,
               limite: int = 200) -> list[dict]:
     """Os papeis que esperam assinatura. So LE.
 
@@ -229,22 +231,22 @@ def pendentes(con: sqlite3.Connection, *, entidade: str | None = None,
     """
     onde, args = "WHERE assinado_em IS NULL", []
     if entidade:
-        onde += " AND entidade = ?"
+        onde += " AND entidade = %s"
         args.append(entidade)
     args.append(int(limite))
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         f"""SELECT id, entidade, entidade_id, titulo, sha256_documento,
                    criado_em
               FROM as_documentos {onde}
-             ORDER BY id DESC LIMIT ?""", args)]
+             ORDER BY id DESC LIMIT %s""", args)
 
 
-def contagens(con: sqlite3.Connection) -> dict:
+def contagens(con: Any) -> dict:
     """Quantos esperam e quantos ja voltaram, por entidade. So LE."""
-    linhas = con.execute(
+    linhas = banco(con).ler(
         """SELECT entidade,
-                  SUM(CASE WHEN assinado_em IS NULL THEN 1 ELSE 0 END) espera,
-                  SUM(CASE WHEN assinado_em IS NOT NULL THEN 1 ELSE 0 END) feito
+                  SUM(CASE WHEN assinado_em IS NULL THEN 1 ELSE 0 END)::int AS espera,
+                  SUM(CASE WHEN assinado_em IS NOT NULL THEN 1 ELSE 0 END)::int AS feito
              FROM as_documentos GROUP BY entidade ORDER BY entidade""")
     return {r["entidade"]: {"espera": int(r["espera"] or 0),
                             "assinados": int(r["feito"] or 0)}

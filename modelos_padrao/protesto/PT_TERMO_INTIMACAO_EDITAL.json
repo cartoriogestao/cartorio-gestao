@@ -1,0 +1,11 @@
+{
+  "chave": "PT_TERMO_INTIMACAO_EDITAL",
+  "atribuicao": "Protesto",
+  "nome": "Termo do protesto — intimação por edital, com o motivo",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {edital} do termo quando a última intimação foi por edital e o aviso traz o motivo da não-entrega. O LIVRO LAVRA O PADRÃO DESTA FRASE: o protesto lançado não segue o ajuste gravado aqui enquanto o oficial não decidir que siga, porque mudar o que se escreve no livro é regra de negócio (LF06E).",
+  "campos": [
+    "data",
+    "motivo"
+  ]
+}

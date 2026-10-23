@@ -58,6 +58,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import ajuda_base as BASE                                        # noqa: E402
 import ajuda_projeto as PROJ                                     # noqa: E402
@@ -294,7 +296,7 @@ def test_buscar_em_tudo_procura_nas_tres_fontes_numa_chamada_so():
     """É o pedido dele: uma chamada em vez de três."""
     # Um termo que só o oficial escreveu — e ele tem de aparecer junto.
     termo = "zircônio ornamental de prova"
-    with sqlite3.connect(":memory:") as con:
+    with conexao_de_teste() as con:
         BASE.init_ajuda_base_schema(con)
         BASE.gravar_verbete(con, titulo="A prova da busca única da ajuda",
                             texto=f"Este verbete fala do {termo}, e de mais nada.",
@@ -369,7 +371,7 @@ def test_o_contexto_nao_leva_o_texto_da_base():
 
 def test_o_contexto_leva_o_titulo_do_verbete_e_nao_o_texto_dele():
     """A regra da fatia: o título deixa pedir o resto."""
-    with sqlite3.connect(":memory:") as con:
+    with conexao_de_teste() as con:
         BASE.init_ajuda_base_schema(con)
         BASE.gravar_verbete(
             con, titulo="Como se confere a folha de segurança do civil",
@@ -396,7 +398,7 @@ def test_o_contexto_diz_que_nao_carregou_em_vez_de_dizer_zero(sem_poluir_o_indic
 
 
 def test_verbete_curto_e_recusado_pelo_mesmo_piso_das_notas():
-    with sqlite3.connect(":memory:") as con:
+    with conexao_de_teste() as con:
         BASE.init_ajuda_base_schema(con)
         with pytest.raises(BASE.BaseError) as erro:
             BASE.gravar_verbete(con, titulo="ok", texto="sim", por="MARIO")
@@ -408,7 +410,7 @@ def test_verbete_curto_e_recusado_pelo_mesmo_piso_das_notas():
 
 
 def test_alterar_verbete_que_nao_existe_recusa_em_vez_de_criar_outro():
-    with sqlite3.connect(":memory:") as con:
+    with conexao_de_teste() as con:
         BASE.init_ajuda_base_schema(con)
         with pytest.raises(BASE.BaseError) as erro:
             BASE.gravar_verbete(con, id_=999, titulo="Título trocado por engano",
@@ -418,13 +420,13 @@ def test_alterar_verbete_que_nao_existe_recusa_em_vez_de_criar_outro():
 
 def test_apagar_verbete_que_nao_existe_devolve_falso():
     """`rowcount` é resposta; «deu certo» é suposição."""
-    with sqlite3.connect(":memory:") as con:
+    with conexao_de_teste() as con:
         BASE.init_ajuda_base_schema(con)
         assert BASE.apagar_verbete(con, id_=123) is False
 
 
 def test_verbete_gravado_alterado_e_apagado_na_base():
-    with sqlite3.connect(":memory:") as con:
+    with conexao_de_teste() as con:
         BASE.init_ajuda_base_schema(con)
         n = BASE.gravar_verbete(con, titulo="O selo do casamento é um só",
                                 texto="Ele é emitido na habilitação e "
@@ -444,7 +446,7 @@ def test_verbete_gravado_alterado_e_apagado_na_base():
 
 def test_o_verbete_entra_na_busca_como_uma_fonte_a_mais():
     """Ele é lido com a mesma convicção dos documentos — e é por isso o piso."""
-    with sqlite3.connect(":memory:") as con:
+    with conexao_de_teste() as con:
         BASE.init_ajuda_base_schema(con)
         BASE.gravar_verbete(con, titulo="O caminho do selo da escritura",
                             texto="O ato de livro não estava em CAMINHO_DAS_NOTAS.",
@@ -607,3 +609,66 @@ def test_a_tela_nao_e_do_balcao(casa):
     assert r.status_code in (302, 403), (
         "o balcão não escreve na base de conhecimento da ajuda"
     )
+
+
+# ================================================== CONSERTO DO L025R (18/10/2026)
+# ALTERAR O VERBETE CONFERE QUE ELE AINDA EXISTE, E GRAVA. Com a ponte, a
+# transação da rota já pega a trava única do banco e o apagar de outra tela não
+# entra no meio; sem ela, só o FOR UPDATE segura — senão a alteração cai em
+# linha nenhuma e a tela diz «Gravado» sem nada gravado.
+
+import threading                                                  # noqa: E402
+import time                                                       # noqa: E402
+
+import banco_pg                                                   # noqa: E402
+
+
+def _psycopg_puro(con, *, autocommit=False):
+    """Uma conexão do psycopg no schema do teste, SEM a ponte — como a
+    transação vai ficar quando a ponte sair."""
+    import psycopg
+    pg = psycopg.connect(banco_pg.dsn(), autocommit=autocommit)
+    pg.execute(f'SET search_path TO "{con.schema}", public')
+    if not autocommit:
+        pg.commit()
+    return pg
+
+
+@pytest.mark.skipif(not banco_pg.ativo(), reason="mede a transação do PostgreSQL (CG_PG_DSN)")
+def test_alterar_verbete_que_outra_tela_apaga_no_meio_recusa():
+    with conexao_de_teste() as con:
+        BASE.init_ajuda_base_schema(con)
+        n = BASE.gravar_verbete(con, titulo="O selo do casamento é um só",
+                                texto="Ele é emitido na habilitação e espelhado no assento.",
+                                por="OFICIAL", agora="2026-09-18 15:00:00")
+        con.commit()
+        um, dois = _psycopg_puro(con), _psycopg_puro(con)
+        vigia = _psycopg_puro(con, autocommit=True)
+        pid = dois.execute("SELECT pg_backend_pid()").fetchone()[0]
+        assert BASE.apagar_verbete(um, id_=n) is True     # apagou e não confirmou
+        saida: dict = {}
+
+        def alterar():
+            try:
+                saida["id"] = BASE.gravar_verbete(
+                    dois, id_=n, titulo="O selo do casamento é um só",
+                    texto="Texto corrigido, e mais longo que o piso.",
+                    por="SUBSTITUTO", agora="2026-09-18 15:10:00")
+                dois.commit()
+            except Exception as erro:  # o teste confere qual
+                saida["erro"] = erro
+                dois.rollback()
+
+        fio = threading.Thread(target=alterar)
+        fio.start()
+        for _ in range(200):      # a alteração tem de estar ESPERANDO a linha
+            if vigia.execute("SELECT count(*) FROM pg_locks WHERE pid=%s AND NOT granted",
+                             (pid,)).fetchone()[0]:
+                break
+            time.sleep(0.05)
+        um.commit()
+        fio.join(30)
+        for c in (um, dois, vigia):
+            c.close()
+        assert isinstance(saida.get("erro"), BASE.BaseError), saida
+        assert "não existe mais" in str(saida["erro"])

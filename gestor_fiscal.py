@@ -70,7 +70,6 @@ from __future__ import annotations
 
 import html
 import json
-import sqlite3
 import time
 import urllib.error
 import urllib.request
@@ -80,6 +79,7 @@ from pathlib import Path
 from typing import Callable
 
 import gestor_conferencia as GC
+from bd_nativo import banco
 
 URL_CONSULTA = "https://selo.tjma.jus.br/portal-selo/portal-cidadao/selos/consulta/{}"
 #: O espaço entre dois pedidos ao portal — o mesmo do script de 09/10/2026.
@@ -105,7 +105,7 @@ REGRAS_SEM_TAREFA = frozenset({
     "FISCAL_PORTAL_SEM_RESPOSTA", "FISCAL_CANCELADO_SO_NO_SISTEMA",
     "FISCAL_VALOR_DIVERGENTE", "FISCAL_ISENCAO_DIVERGENTE",
     "FISCAL_GRATUIDADE_SEM_MOTIVO", "FISCAL_GRATUIDADE_EM_ANALISE",
-    "FISCAL_SELOS_FORA_DO_SISTEMA",
+    "FISCAL_SELOS_FORA_DO_SISTEMA", "FISCAL_ISENTOS_DO_DIA",
 })
 
 ROTULOS = {
@@ -119,6 +119,7 @@ ROTULOS = {
     "FISCAL_GRATUIDADE_EM_ANALISE": "Gratuidades aguardando análise do TJ",
     "FISCAL_SELOS_FORA_DO_SISTEMA": "Selos que saíram do aparelho sem passar pelo sistema",
     "FISCAL_PORTAL_SEM_RESPOSTA": "Selos ainda não conferidos no Portal do Selo",
+    "FISCAL_ISENTOS_DO_DIA": "Selos que saíram isentos ou gratuitos no dia",
 }
 
 
@@ -160,8 +161,7 @@ def _total_no_texto(texto) -> float | None:
 
 
 def _tem_tabela(con, nome: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                       (nome,)).fetchone() is not None
+    return banco(con).tem_tabela(nome)
 
 
 # ------------------------------------------------------- a resposta do portal
@@ -239,11 +239,12 @@ def _a_consultar(con, hoje: date) -> list[str]:
     reconsulta = (hoje - timedelta(days=DIAS_ENTRE_RECONSULTAS)).isoformat()
     janela = (hoje - timedelta(days=JANELA_DE_RECONSULTA)).isoformat()
     fila = []
-    for r in con.execute(
+    for r in banco(con).ler(
             """SELECT s.numero, s.obtido_em, s.cancelado_em, p.consultado_em,
                       p.situacao, p.analise, p.cancelado
                  FROM sd_selos s LEFT JOIN ge_portal_selos p ON p.numero = s.numero
-                WHERE s.obtido_em >= ? AND COALESCE(s.ambiente, 'PRODUCAO') = 'PRODUCAO'""",
+                WHERE s.obtido_em >= %s AND COALESCE(s.ambiente, 'PRODUCAO') = 'PRODUCAO'
+                ORDER BY s.id""",
             (GC.IMPLANTACAO,)):
         if r["consultado_em"] is None:
             prioridade = 0
@@ -266,7 +267,7 @@ def _a_consultar(con, hoje: date) -> list[str]:
     return [n for _p, _o, n in sorted(fila)]
 
 
-def consultar_portal(con: sqlite3.Connection, hoje: date, *, teto: int = TETO_POR_RODADA,
+def consultar_portal(con, hoje: date, *, teto: int = TETO_POR_RODADA,
                      espera: float = ESPERA_ENTRE_PEDIDOS,
                      buscar: Callable[[str], tuple[int, str]] | None = None,
                      dormir: Callable[[float], None] = time.sleep) -> dict:
@@ -274,10 +275,13 @@ def consultar_portal(con: sqlite3.Connection, hoje: date, *, teto: int = TETO_PO
     Fala com a rede; cada resposta se grava na hora, para uma queda no meio não
     perder o que já se consultou."""
     from gestor_schema import init_gestor_schema
-    con.row_factory = sqlite3.Row
-    init_gestor_schema(con)
+    # O esquema nativo não confirma sozinho (o `executescript` confirmava): sem
+    # o commit, a trava única da ponte ficava presa durante a ida à rede.
+    with con:
+        init_gestor_schema(con)
+    bd = banco(con)
     buscar = buscar or _buscar_no_portal
-    fila = _a_consultar(con, hoje)
+    fila = _a_consultar(bd, hoje)
     feito = Counter()
     for i, numero in enumerate(fila[:max(0, int(teto))]):
         if i and espera:
@@ -290,26 +294,32 @@ def consultar_portal(con: sqlite3.Connection, hoje: date, *, teto: int = TETO_PO
             linha["erro"] = f"{type(erro).__name__}: {erro}"
         linha["consultado_em"] = _agora()
         colunas = list(linha)
+        # A linha leva todas as colunas da tabela e a chave é o número (não há
+        # id): regravar por cima é o mesmo que o REPLACE fazia.
         with con:
-            con.execute(
-                f"INSERT OR REPLACE INTO ge_portal_selos ({', '.join(colunas)}) "
-                f"VALUES ({', '.join('?' * len(colunas))})", [linha[c] for c in colunas])
+            bd.escrever(
+                f"INSERT INTO ge_portal_selos ({', '.join(colunas)}) "
+                f"VALUES ({', '.join(['%s'] * len(colunas))}) "
+                f"ON CONFLICT (numero) DO UPDATE SET "
+                f"{', '.join(f'{c} = EXCLUDED.{c}' for c in colunas if c != 'numero')}",
+                [linha[c] for c in colunas])
         feito[linha["situacao"]] += 1
     return {"na_fila": len(fila), "consultados": sum(feito.values()), **dict(feito)}
 
 
 # ------------------------------------------------------ o saldo do aparelho
 
-def saldo_do_aparelho(con: sqlite3.Connection, desde: str, ate: str | None = None) -> dict:
+def saldo_do_aparelho(con, desde: str, ate: str | None = None) -> dict:
     """As quedas do saldo do selador entre dois selos seguidos do sistema.
 
     Devolve o custo medido de cada classe, os pares lidos, as recargas e, por
     dia, quanto caiu a mais do que os selos do sistema explicam. `nao_mediu`
     traz o motivo quando a conta não fecha — e então os dias vêm vazios."""
-    linhas = [r for r in con.execute(
+    linhas = [r for r in banco(con).ler(
         """SELECT numero, obtido_em, saldo_remanescente, texto FROM sd_selos
-            WHERE obtido_em >= ? AND saldo_remanescente IS NOT NULL
-              AND COALESCE(ambiente, 'PRODUCAO') = 'PRODUCAO'""", (desde,))]
+            WHERE obtido_em >= %s AND saldo_remanescente IS NOT NULL
+              AND COALESCE(ambiente, 'PRODUCAO') = 'PRODUCAO'
+            ORDER BY id""", (desde,))]
     linhas.sort(key=lambda r: (_ordem(r["obtido_em"]), r["numero"]))
     pares, recargas = [], []
     anterior = None
@@ -357,15 +367,16 @@ def saldo_do_aparelho(con: sqlite3.Connection, desde: str, ate: str | None = Non
 # --------------------------------------------------------------- a regra
 
 def _selos_conferidos(con):
-    return con.execute(
+    return banco(con).ler(
         """SELECT s.numero, s.obtido_em, s.usado_em, s.cancelado_em, s.motivo_cancelamento,
                   s.tabela, s.ato_id, s.texto, s.obtido_por,
                   p.situacao, p.cancelado, p.data_cancelado, p.isento, p.motivo_isencao,
                   p.analise, p.motivo_indeferimento, p.prazo_recurso, p.codigo_ato,
                   p.valor_ato, p.escrevente, p.consultado_em
              FROM sd_selos s JOIN ge_portal_selos p ON p.numero = s.numero
-            WHERE s.obtido_em >= ? AND COALESCE(s.ambiente, 'PRODUCAO') = 'PRODUCAO'
-              AND p.situacao IN ('ACHADO', 'NAO_ACHADO')""", (GC.IMPLANTACAO,)).fetchall()
+            WHERE s.obtido_em >= %s AND COALESCE(s.ambiente, 'PRODUCAO') = 'PRODUCAO'
+              AND p.situacao IN ('ACHADO', 'NAO_ACHADO')
+            ORDER BY s.id""", (GC.IMPLANTACAO,))
 
 
 def _isento_na_casa(con, tabela, ato_id):
@@ -373,8 +384,8 @@ def _isento_na_casa(con, tabela, ato_id):
         return None
     if not GC._coluna_existe(con, tabela, "isento"):
         return None
-    r = con.execute(f"SELECT isento FROM {tabela} WHERE id = ?", (ato_id,)).fetchone()
-    return None if r is None or r[0] is None else bool(r[0])
+    r = banco(con).um(f"SELECT isento FROM {tabela} WHERE id = %s", (ato_id,))
+    return None if r is None or r["isento"] is None else bool(r["isento"])
 
 
 def _onde(r) -> str:
@@ -468,11 +479,12 @@ def _regras_dos_selos(con, hoje: date) -> list[dict]:
 
 def _sem_resposta(con, hoje: date) -> list[dict]:
     limite = (hoje - timedelta(days=1)).isoformat()
-    pendentes = [r["obtido_em"] for r in con.execute(
+    pendentes = [r["obtido_em"] for r in banco(con).ler(
         """SELECT s.obtido_em FROM sd_selos s
              LEFT JOIN ge_portal_selos p ON p.numero = s.numero
-            WHERE s.obtido_em >= ? AND COALESCE(s.ambiente, 'PRODUCAO') = 'PRODUCAO'
-              AND (p.numero IS NULL OR p.situacao = 'ERRO')""", (GC.IMPLANTACAO,))
+            WHERE s.obtido_em >= %s AND COALESCE(s.ambiente, 'PRODUCAO') = 'PRODUCAO'
+              AND (p.numero IS NULL OR p.situacao = 'ERRO')
+            ORDER BY s.id""", (GC.IMPLANTACAO,))
         if _ordem(r["obtido_em"])[:10] < limite]
     if not pendentes:
         return []
@@ -504,25 +516,56 @@ def _regras_do_saldo(con, hoje: date) -> list[dict]:
         f"sistema (R$ {GC._brl(m['valor'])} de saldo)",
         f"Em {m['dias']} dia(s). Preço medido de um selo: R$ "
         f"{GC._brl(s['custo']['pago'])}. Quem os tirou não se sabe daqui — o Protesto ainda "
-        "é praticado no E-Ofício. A lista por dia está no relatório fiscal.",
+        "é praticado no sistema antigo. A lista por dia está no relatório fiscal.",
         None, "saldo devolvido pelo selador a cada selo")
         for mes, m in sorted(por_mes.items()) if m["selos"]]
 
 
-def conferir(con: sqlite3.Connection, hoje: date) -> list[dict]:
+def _isentos_do_dia(bd, hoje: date) -> list[dict]:
+    """Os selos que saíram ISENTOS ou GRATUITOS no dia, para o oficial ler.
+
+    Revisão de segurança da 3.7.0 (22/10/2026, A9): a gratuidade NÃO trava —
+    regra do oficial de 19/10 — e por isso é a porta que a trava do selo pago
+    não fecha; o que a fecha é alguém ler, todo dia, o que saiu isento. Sem
+    tarefa: é relato, e o oficial decide.
+    """
+    de = hoje.isoformat()
+    ate = date.fromordinal(hoje.toordinal() + 1).isoformat()
+    linhas = bd.ler("""SELECT numero, tabela, ato_id, atribuicao, obtido_por, texto
+                         FROM sd_selos
+                        WHERE obtido_em >= %s AND obtido_em < %s
+                          AND cancelado_em IS NULL
+                        ORDER BY obtido_em""", (de, ate))
+    isentos = [r for r in linhas if _isento_no_texto(r.get("texto"))]
+    if not isentos:
+        return []
+    detalhe = "; ".join(
+        f"{r['numero']} ({r.get('tabela') or '?'}:{r.get('ato_id') or '?'}, "
+        f"{r.get('obtido_por') or 'sem escrevente'})" for r in isentos[:30])
+    if len(isentos) > 30:
+        detalhe += f"; … e mais {len(isentos) - 30}"
+    return [GC._achado(f"FISCAL:ISENTOS:{de}", "FISCAL_ISENTOS_DO_DIA", "ATENCAO",
+                       "FISCAL", f"{len(isentos)} selo(s) isento(s) em {hoje:%d/%m/%Y}",
+                       detalhe,
+                       fundamento="Isenção se confere todo dia: a gratuidade não "
+                                  "passa pela trava do selo pago.")]
+
+
+def conferir(con, hoje: date) -> list[dict]:
     """Tudo o que o agente financeiro aponta. SÓ LÊ (o que o portal disse já
     está em `ge_portal_selos`). Cada parte que quebra vira NAO_MEDIU."""
-    con.row_factory = sqlite3.Row
-    if not _tem_tabela(con, "ge_portal_selos") or not _tem_tabela(con, "sd_selos"):
+    bd = banco(con)
+    if not _tem_tabela(bd, "ge_portal_selos") or not _tem_tabela(bd, "sd_selos"):
         return [GC._achado("FISCAL:SEM_TABELA", "FISCAL_PORTAL_SEM_RESPOSTA", "NAO_MEDIU",
                            "TI", "O agente financeiro não achou as tabelas dos selos",
                            "Falta sd_selos ou ge_portal_selos neste banco.")]
     achados = []
     for nome, parte in (("FISCAL_SELOS", _regras_dos_selos),
                         ("FISCAL_PORTAL_SEM_RESPOSTA", _sem_resposta),
-                        ("FISCAL_SELOS_FORA_DO_SISTEMA", _regras_do_saldo)):
+                        ("FISCAL_SELOS_FORA_DO_SISTEMA", _regras_do_saldo),
+                        ("FISCAL_ISENTOS_DO_DIA", _isentos_do_dia)):
         try:
-            achados.extend(parte(con, hoje))
+            achados.extend(parte(bd, hoje))
         except Exception as erro:                       # noqa: BLE001
             achados.append(GC._achado(
                 f"NAO_MEDIU:{nome}", nome, "NAO_MEDIU", "TI",
@@ -533,17 +576,19 @@ def conferir(con: sqlite3.Connection, hoje: date) -> list[dict]:
 
 # ------------------------------------------------------------- o relatório
 
-def apurar_mes(con: sqlite3.Connection, ano: int, mes: int) -> dict:
+def apurar_mes(con, ano: int, mes: int) -> dict:
     comp = f"{ano:04d}-{mes:02d}"
-    linhas = con.execute(
+    bd = banco(con)
+    linhas = bd.ler(
         """SELECT s.numero, s.obtido_em, s.cancelado_em, s.tabela, s.ato_id, s.obtido_por,
                   p.situacao, p.cancelado, p.isento, p.motivo_isencao, p.analise,
                   p.motivo_indeferimento, p.prazo_recurso, p.codigo_ato, p.valor_ato,
                   p.emolumento, p.escrevente
              FROM sd_selos s LEFT JOIN ge_portal_selos p ON p.numero = s.numero
-            WHERE s.obtido_em LIKE ? AND s.obtido_em >= ?
-              AND COALESCE(s.ambiente, 'PRODUCAO') = 'PRODUCAO'""",
-        (comp + "%", GC.IMPLANTACAO)).fetchall()
+            WHERE s.obtido_em ILIKE %s AND s.obtido_em >= %s
+              AND COALESCE(s.ambiente, 'PRODUCAO') = 'PRODUCAO'
+            ORDER BY s.id""",
+        (comp + "%", GC.IMPLANTACAO))
     situacao = Counter(r["situacao"] or "SEM_CONSULTA" for r in linhas)
     gratuidade = defaultdict(lambda: {"qtd": 0, "valor": 0.0, "emol": 0.0})
     motivos = defaultdict(lambda: {"qtd": 0, "valor": 0.0})
@@ -561,7 +606,7 @@ def apurar_mes(con: sqlite3.Connection, ano: int, mes: int) -> dict:
             m["valor"] += float(r["valor_ato"] or 0)
         if r["analise"] in ("INDEFERIDA", "EM_ANALISE"):
             lista.append(r)
-    saldo = saldo_do_aparelho(con, GC.IMPLANTACAO)
+    saldo = saldo_do_aparelho(bd, GC.IMPLANTACAO)
     dias = {d: v for d, v in saldo["dias"].items() if d.startswith(comp)}
     return {"comp": comp, "total": len(linhas), "situacao": dict(situacao),
             "cancelados_tj": sum(1 for r in linhas if r["cancelado"]),
@@ -571,8 +616,8 @@ def apurar_mes(con: sqlite3.Connection, ano: int, mes: int) -> dict:
             "saldo": saldo, "dias": dict(sorted(dias.items()))}
 
 
-def relatorio_html(con: sqlite3.Connection, ano: int, mes: int, hoje: date) -> str:
-    r = apurar_mes(con, ano, mes)
+def relatorio_html(con, ano: int, mes: int, hoje: date) -> str:
+    r = apurar_mes(banco(con), ano, mes)
     e = html.escape
     parcial = (ano, mes) == (hoje.year, hoje.month)
     st = r["situacao"]
@@ -614,7 +659,7 @@ def relatorio_html(con: sqlite3.Connection, ano: int, mes: int, hoje: date) -> s
             f"<table><tr><th>Dia</th><th>Selos por fora</th><th>Saldo a mais</th></tr>{dias}</table>"
             "<p><small>«Por fora» quer dizer: o saldo do aparelho caiu mais do que os selos do "
             "sistema explicam. Quem os tirou o agente não sabe — o Protesto ainda é praticado "
-            "no E-Ofício, que sela no mesmo aparelho.</small></p>")
+            "no sistema antigo, que sela no mesmo aparelho.</small></p>")
     return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Fiscal {mes:02d}/{ano}</title><style>
@@ -660,9 +705,8 @@ motivo, não o documento.</li>
 </body></html>"""
 
 
-def escrever_relatorio(con: sqlite3.Connection, hoje: date, pasta: Path) -> list[Path]:
+def escrever_relatorio(con, hoje: date, pasta: Path) -> list[Path]:
     """Grava o relatório fiscal do mês corrente e do anterior (se depois do corte)."""
-    con.row_factory = sqlite3.Row
     pasta.mkdir(parents=True, exist_ok=True)
     meses = {(hoje.year, hoje.month)}
     anterior = hoje.replace(day=1) - timedelta(days=1)

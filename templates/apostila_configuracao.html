@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}Apostila de Haia — configuração{% endblock %}
+{% block heading %}<h1>Apostila de Haia — configuração</h1>{% endblock %}
+{% block content %}
+{# A CONFIGURAÇÃO FICA FORA DA GUARDA DO ALCANCE, e é só do oficial: com o
+   módulo fechado, é por aqui que ele o abre. Ver `apostila_web.py`. #}
+<section class="panel">
+  <p>A serventia só apostila depois de habilitada. Até lá o módulo fica <strong>fechado</strong>:
+  as telas não abrem, e nada do que estiver gravado se apaga.</p>
+  <form method="post" action="{{ url_for('apostila_configuracao') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Quem usa a Apostila de Haia
+      <select name="alcance">
+        <option value="NINGUEM" {% if alcance == 'NINGUEM' %}selected{% endif %}>Ninguém — módulo desligado</option>
+        <option value="ADMIN" {% if alcance == 'ADMIN' %}selected{% endif %}>Somente o oficial (administrador)</option>
+        <option value="TODOS" {% if alcance == 'TODOS' %}selected{% endif %}>Todos os usuários</option>
+      </select></label>
+    <label>Serviço da tabela de emolumentos que cobra a apostila
+      <select name="servico">
+        <option value="">— o primeiro da tabela com o nome «Apostila de Haia» —</option>
+        {% for s in servicos %}<option value="{{ s.codigo }}" {% if servico == s.codigo|string %}selected{% endif %}>{{ s.codigo_tj }} — {{ s.descricao }}</option>{% endfor %}
+      </select></label>
+    {% if not servicos %}<p class="muted">A tabela de emolumentos carregada não tem serviço com o nome da
+    apostila. Importe a tabela antes de registrar documentos.</p>{% endif %}
+    <button type="submit">Gravar</button>
+  </form>
+  {% if alcance != 'NINGUEM' %}<p><a href="{{ url_for('apostila_lista') }}">Abrir a Apostila de Haia</a></p>{% endif %}
+</section>
+{% endblock %}

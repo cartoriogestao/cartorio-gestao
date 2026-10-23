@@ -1,0 +1,7 @@
+DECISÃO. Processo de usucapião extrajudicial n. {numero}, requerido por {requerente}.
+
+Houve impugnação [COMPLETAR: de quem, e em que data]. Nos termos do art. 216-A, § 10, da Lei 6.015/1973, o oficial não julga a impugnação: os autos são remetidos ao juízo competente.
+
+REMETAM-SE os autos ao Juízo da Comarca, dando-se ciência ao requerente.
+
+{cidade}-{uf}, nesta data. {titular} — {titulo}.

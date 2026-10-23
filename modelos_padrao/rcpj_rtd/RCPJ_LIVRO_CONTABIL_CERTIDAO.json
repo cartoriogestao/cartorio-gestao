@@ -1,0 +1,27 @@
+{
+  "chave": "RCPJ_LIVRO_CONTABIL_CERTIDAO",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Livro contábil — certidão da autenticação",
+  "formato": "CHAVES",
+  "explica": "A certidão de que o livro foi autenticado, montada do que a autenticação congelou.",
+  "campos": [
+    "unit_name",
+    "cns",
+    "numero",
+    "ano",
+    "data_autenticacao",
+    "tipo_livro",
+    "numero_livro",
+    "pj_nome",
+    "pj_cnpj",
+    "folhas",
+    "folha_de",
+    "folha_ate",
+    "forma",
+    "selo",
+    "cidade_uf",
+    "data_extenso",
+    "full_name",
+    "funcao"
+  ]
+}

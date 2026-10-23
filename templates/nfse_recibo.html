@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block title %}NFS-e do recibo {{ item.recibo.numero }}/{{ item.recibo.ano }}{% endblock %}
+{% block heading %}<h1>NFS-e do recibo {{ item.recibo.numero }}/{{ item.recibo.ano }}</h1>{% endblock %}
+{% block content %}
+{% set r = item.recibo %}
+{% set t = item.tomador %}
+{% set viva = item.nota %}
+<div class="actions">
+  <a class="button" href="{{ url_for('nfse_fila') }}">&larr; Fila da NFS-e</a>
+  <a class="button" href="{{ url_for('caixa_recibos') }}">Recibos</a>
+</div>
+
+<section class="panel">
+  <h2>O recibo</h2>
+  <p>Emitido em {{ fmt_date(r.data_emissao) }} · total <strong>R$ {{ r.valor_total }}</strong>
+    {% if r.protocolo_numero %}· protocolo {{ r.protocolo_numero }}{% endif %}
+    {% if r.cancelado %}· <span class="badge alta">cancelado</span>{% endif %}</p>
+  <p>Valor do serviço (emolumento): <strong>R$ {{ reais(item.base) }}</strong>
+    {% if item.iss is not none %}· ISS R$ {{ reais(item.iss) }} ({{ cfg.nfse_aliquota }}%){% else %}· alíquota pelo cadastro do município{% endif %}</p>
+  <p class="muted small">Os fundos (FERC, FADEP, FEMP, FERRFIS) são repasses e não entram no valor do serviço.
+    {% if r.nfse_numero or r.nfse_chave %}<br>No recibo: NFS-e nº {{ r.nfse_numero or '—' }} · chave {{ r.nfse_chave }}{% endif %}</p>
+</section>
+
+{% if item.pendencias and not (viva and viva.situacao == 'EMITIDA') %}
+<section class="panel">
+  <h2>O que falta para a nota sair</h2>
+  <ul>{% for p in item.pendencias %}<li>{{ p }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Tomador</h2>
+  <p>{{ t.nome or 'sem nome' }} · {{ mascarar(t.documento) or 'sem CPF/CNPJ' }}
+    {% if t.tem_endereco %}· {{ t.logradouro }}, {{ t.numero }} — {{ t.bairro }} · CEP {{ t.cep }}{% endif %}</p>
+  {% if papel in quem_opera and not (viva and viva.situacao in ['EMITIDA', 'ENVIANDO']) %}
+  <p class="muted small">O teor do recibo não muda: o que se completa aqui vale para a nota, e o endereço fica
+    guardado pelo CPF/CNPJ para o próximo recibo da mesma pessoa.</p>
+  <form method="post" action="{{ url_for('nfse_recibo', recibo_id=r.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>CPF ou CNPJ <input name="documento" value="{{ t.documento }}" size="20" required></label>
+    <label>Nome <input name="nome" value="{{ t.nome }}" size="40"></label>
+    <label>CEP <input name="cep" value="{{ t.cep }}" size="10"></label>
+    <label>Município (código IBGE) <input name="municipio" value="{{ t.municipio }}" size="9"></label>
+    <label>Logradouro <input name="logradouro" value="{{ t.logradouro }}" size="40"></label>
+    <label>Número <input name="numero" value="{{ t.numero }}" size="8"></label>
+    <label>Complemento <input name="complemento" value="{{ t.complemento }}" size="20"></label>
+    <label>Bairro <input name="bairro" value="{{ t.bairro }}" size="24"></label>
+    <label>E-mail <input name="email" value="{{ t.email }}" size="30"></label>
+    <button type="submit">Gravar o tomador</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if papel in quem_opera and ligada and not viva and not item.pendencias %}
+<section class="panel">
+  <form method="post" action="{{ url_for('nfse_emitir', recibo_id=r.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Emitir NFS-e</button>
+  </form>
+</section>
+{% endif %}
+
+{% for n in notas|reverse %}
+<section class="panel">
+  <div class="panel-head"><h2>DPS {{ n.serie }}/{{ n.numero_dps }} — {{ situacoes[n.situacao] }}</h2>
+    <span class="small">{{ n.ambiente }}</span></div>
+  <p>{% if n.numero_nfse %}NFS-e nº <strong>{{ n.numero_nfse }}</strong> · {% endif %}
+    {% if n.chave %}chave <code>{{ n.chave }}</code>{% endif %}
+    {% if n.mensagem %}<br><span class="muted">{{ n.mensagem }}</span>{% endif %}
+    {% if n.motivo_cancelamento %}<br>Cancelada em {{ n.cancelada_em }} por {{ n.cancelada_por }}: {{ n.motivo_cancelamento }}{% endif %}</p>
+  <div class="actions">
+    {% if n.chave %}<a class="button" href="{{ url_for('nfse_danfse', nota_id=n.id) }}">DANFSe (PDF)</a>{% endif %}
+    {% if papel in ['ADMIN', 'MANAGER', 'AUDITOR'] %}<a class="button" href="{{ url_for('nfse_xml', nota_id=n.id) }}">XML</a>{% endif %}
+  </div>
+  {% if papel in quem_opera and ligada and n.situacao in ['ENVIANDO', 'REJEITADA'] %}
+  <form method="post" action="{{ url_for('nfse_reenviar', nota_id=n.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Reenviar</button>
+    <span class="muted small">seguro: a mesma DPS não vira duas notas</span>
+  </form>
+  {% endif %}
+  {% if papel in quem_cancela and n.situacao != 'CANCELADA' %}
+  <details><summary>Cancelar</summary>
+    <form method="post" action="{{ url_for('nfse_cancelar', nota_id=n.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Motivo <select name="motivo">{% for k, v in motivos.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+      <label>Justificativa <input name="justificativa" size="60" minlength="15" required></label>
+      <button type="submit">Pedir o cancelamento</button>
+    </form>
+  </details>
+  {% endif %}
+  {% if rastro[n.id] %}
+  <details><summary>Rastro ({{ rastro[n.id]|length }})</summary>
+    <ul class="small">{% for e in rastro[n.id] %}<li>{{ e.quando }} · {{ e.operacao }} · {{ e.resultado }}{% if e.mensagem %} — {{ e.mensagem }}{% endif %}{% if e.usuario %} ({{ e.usuario }}){% endif %}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

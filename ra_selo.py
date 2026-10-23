@@ -48,10 +48,10 @@ Ele diz o que falta para selar e monta o pedido; quem fala com a rede e
 """
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
 
 import ato_selado as AS
+from bd_nativo import banco
 
 # O LIVRO QUE VAI DENTRO DO SELO. **`'3'`, e nao o volume da matricula** — no
 # Livro 2 este campo leva `2-Q`, `2S`; nos envelopes de Livro 3 medidos ele
@@ -124,19 +124,21 @@ def itens_disponiveis(con) -> list[tuple[str, str]]:
     O 16.45 é cabeçalho por faixa: o código selável é o subitem adequado
     ao valor, não o cabeçalho sem preço. Não limita a busca aos primeiros 30.
     """
-    try:
-        linhas = con.execute(
-            """SELECT s.codigo_tj, MAX(s.descricao) descricao
-                 FROM cx_servicos s
-                 JOIN cx_servico_valores v ON v.servico=s.codigo
-                 JOIN cx_vigencias g ON g.codigo=v.vigencia AND g.vigente=1
-                WHERE s.ativo=1 AND s.codigo_tj LIKE '16.%'
-                  AND v.total IS NOT NULL
-                GROUP BY s.codigo_tj
-                ORDER BY s.codigo_tj""").fetchall()
-    except sqlite3.OperationalError:  # instalação ainda sem tabela importada
-        linhas = []
-    return [(str(r[0]), str(r[1] or "")) for r in linhas]
+    bd = banco(con)
+    # instalação ainda sem tabela importada
+    if not all(bd.tem_tabela(t) for t in
+               ("cx_servicos", "cx_servico_valores", "cx_vigencias")):
+        return []
+    linhas = bd.ler(
+        """SELECT s.codigo_tj, MAX(s.descricao) AS descricao
+             FROM cx_servicos s
+             JOIN cx_servico_valores v ON v.servico=s.codigo
+             JOIN cx_vigencias g ON g.codigo=v.vigencia AND g.vigente=1
+            WHERE s.ativo=1 AND s.codigo_tj ILIKE '16.%'
+              AND v.total IS NOT NULL
+            GROUP BY s.codigo_tj
+            ORDER BY s.codigo_tj""")
+    return [(str(r["codigo_tj"]), str(r["descricao"] or "")) for r in linhas]
 
 
 def encerrar_prenotacao_apos_arquivamento(con, registro_id: int) -> dict | None:
@@ -145,17 +147,17 @@ def encerrar_prenotacao_apos_arquivamento(con, registro_id: int) -> dict | None:
     A identificação é o número gravado em ra_registros.prenotacao. Sem
     correspondência inequívoca, não altera nenhum protocolo.
     """
-    r = con.execute("SELECT prenotacao FROM ra_registros WHERE id=?",
-                    (int(registro_id),)).fetchone()
-    bruto = str((r[0] if r else None) or "").strip()
+    bd = banco(con)
+    bruto = str(bd.valor("SELECT prenotacao FROM ra_registros WHERE id = %s",
+                         (int(registro_id),)) or "").strip()
     if not bruto:
         return None
     dig = "".join(c for c in bruto if c.isdigit())
-    linhas = con.execute(
+    linhas = bd.ler(
         """SELECT id, numero, situacao FROM ri_protocolos
-            WHERE CAST(numero AS TEXT)=?
-               OR REPLACE(CAST(numero AS TEXT), '.', '')=?
-            ORDER BY id DESC LIMIT 2""", (bruto, dig or bruto)).fetchall()
+            WHERE numero::text = %s
+               OR REPLACE(numero::text, '.', '') = %s
+            ORDER BY id DESC LIMIT 2""", (bruto, dig or bruto))
     if not linhas:
         return {"achou": False, "numero": bruto}
     if len(linhas) > 1:
@@ -164,11 +166,11 @@ def encerrar_prenotacao_apos_arquivamento(con, registro_id: int) -> dict | None:
     if p["situacao"] != "ABERTO":
         return {"achou": True, "numero": p["numero"],
                 "situacao": p["situacao"], "ja_encerrada": True}
-    con.execute(
+    bd.escrever(
         """UPDATE ri_protocolos
               SET situacao='ENCERRADO',
                   situacao_anterior=COALESCE(situacao_anterior, situacao)
-            WHERE id=? AND situacao='ABERTO'""", (int(p["id"]),))
+            WHERE id = %s AND situacao='ABERTO'""", (int(p["id"]),))
     return {"achou": True, "numero": p["numero"], "encerrou": True,
             "protocolo_id": int(p["id"])}
 

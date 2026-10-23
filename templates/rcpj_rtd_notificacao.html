@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{#
+  A FICHA DA NOTIFICAÇÃO — as idas, as diligências cobradas, o resultado, a
+  certidão e a averbação, na ordem em que acontecem (LG04).
+
+  A TELA OFERECE, O DOMÍNIO RECUSA (`rg_notificacao`): domingo, feriado, fora
+  das 6h às 20h (CN-MA, art. 986, § 4º), negativa sem três idas em dias e
+  turnos alternados (art. 987, § 2º), certidão antes do registro (art. 988,
+  § 2º). A frase da recusa volta como aviso.
+#}
+{% block heading %}<h1>Notificação — {{ n.destinatario_nome }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+{% set opera = user.role in ['ADMIN','MANAGER','USER'] %}
+{% set qualifica = user.role in ['ADMIN','MANAGER'] %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpj_rtd_notificacoes') }}">&larr; Notificações</a>
+  {% if registro %}<a class="button" href="{{ url_for('rcpj_rtd_registro', registro_id=registro.id) }}">O registro nº {{ registro.numero or '—' }}</a>{% endif %}
+  {% if n.titulo_id %}<a class="button" href="{{ url_for('rcpj_rtd_titulo', titulo_id=n.titulo_id) }}">O título</a>{% endif %}
+</div>
+{% for a in alertas %}<div class="flash warning">{{ a }}</div>{% endfor %}
+
+<section class="panel">
+  <div class="panel-head"><span>O destinatário</span><small>{{ SITUACOES.get(n.situacao, n.situacao) }}</small></div>
+  <table class="table">
+    <tr><th>Nome</th><td>{{ n.destinatario_nome }}</td><th>CPF/CNPJ</th><td>{{ n.destinatario_documento or '—' }}</td></tr>
+    <tr><th>Endereço</th><td>{{ n.endereco }}</td><th>Zona</th><td>{{ ZONAS.get(n.zona, n.zona) }}{% if n.distancia_km %} — {{ n.distancia_km }} km{% endif %}</td></tr>
+    <tr><th>Apresentado em</th><td>{{ br(n.apresentado_em) }}</td><th>1ª diligência até</th><td>{{ br(n.prazo_primeira) }} <small>(art. 987)</small></td></tr>
+    <tr><th>Registro</th><td>{% if registro %}nº {{ registro.numero or '—' }} ({{ registro.serie }}){% else %}<strong>ainda não registrado</strong> — a certidão espera o registro (art. 988, § 2º){% endif %}</td>
+        <th>Resultado</th><td>{{ br(n.resultado_em) if n.resultado_em else '—' }}{% if averbar_ate and not n.averbacao_ato_id %} — averbar até {{ br(averbar_ate) }}{% endif %}{% if n.averbacao_ato_id %} — averbado{% endif %}</td></tr>
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Diligências</span><small>{{ idas|length }}</small></div>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Nº</th><th>Dia</th><th>Hora</th><th>Turno</th><th>Endereço</th><th>Resultado</th><th>Observação</th></tr></thead>
+    <tbody>
+    {% for i in idas %}
+      <tr><td>{{ i.numero }}ª{% if i.a_pedido %} <small>(a pedido)</small>{% endif %}</td><td>{{ br(i.data) }}</td><td>{{ i.hora }}</td>
+          <td>{{ NOME_DO_TURNO.get(i.turno, i.turno) }}</td><td>{{ i.endereco }}</td>
+          <td>{{ RESULTADOS.get(i.resultado, i.resultado) }}</td><td>{{ i.observacao or '' }}</td></tr>
+    {% else %}
+      <tr><td colspan="7">Nenhuma diligência ainda.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if opera and n.situacao == 'EM_DILIGENCIA' %}
+  <form method="post" class="form" style="padding:14px"
+        action="{{ url_for('rcpj_rtd_notificacao_diligencia', notificacao_id=n.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Dia<input type="date" name="data" value="{{ hoje }}" required></label>
+    <label>Hora<input type="time" name="hora" required></label>
+    <label>Endereço (se outro)<input name="endereco" placeholder="{{ n.endereco }}"></label>
+    <label>Resultado<select name="resultado">{% for chave, rotulo in RESULTADOS.items() %}<option value="{{ chave }}">{{ rotulo }}</option>{% endfor %}</select></label>
+    <label>Observação<textarea name="observacao" rows="2"></textarea></label>
+    {% if pede_pedido %}
+    <label><input type="checkbox" name="a_pedido" value="1"> O apresentante pediu esta diligência a mais (art. 987, § 3º — item 15.8.1.1)</label>
+    {% endif %}
+    {% if proxima %}
+    {% set p = precos.get(proxima[0]) %}
+    <p><small>Esta diligência é cobrada: item {{ proxima[0] }}{% if p and p.preco is not none %} — R$ {{ '%.2f'|format(p.preco / 100) }}{% elif p %} — {{ p.motivo }}{% endif %}. O selo sai depois de gravar.</small></p>
+    <label><input type="checkbox" name="cobrar" value="1"> Lançar no meu caixa</label>
+    {% else %}
+    <p><small>Esta diligência está coberta pelo item da primeira (15.8.1 — até três por destinatário).</small></p>
+    {% endif %}
+    {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
+    {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_notificacao_diligencias') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+    <button class="button" type="submit">Registrar a diligência</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Diligências cobradas e selos</span></div>
+  <table class="table">
+    <thead><tr><th>Item</th><th>Quantidade</th><th>Cobre</th><th>Selo</th><th></th></tr></thead>
+    <tbody>
+    {% for d in diligencias %}
+      <tr><td>{{ d.codigo_tj }}</td><td>{{ d.quantidade }}</td><td>{{ d.idas_cobertas }} ida(s)</td>
+          <td>{% if d.selo_situacao == 'SELADO' %}{{ d.selo }}{% else %}<strong>{{ d.selo_situacao }}</strong> {{ d.selo_motivo or '' }}{% endif %}</td>
+          <td>{% if opera and d.selo_situacao != 'SELADO' %}
+            <form method="post" action="{{ url_for('rcpj_rtd_notificacao_selar', tabela='rg_notificacao_diligencias', ato_id=d.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button">Selar de novo</button></form>{% endif %}</td></tr>
+    {% else %}
+      <tr><td colspan="5">—</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Resultado, certidão e averbação</span></div>
+  <div style="padding:14px">
+  {% if n.situacao == 'EM_DILIGENCIA' %}
+    {% if negativa_motivo %}<p><small>{{ negativa_motivo }}</small></p>{% endif %}
+    {% if qualifica %}
+    <form method="post" action="{{ url_for('rcpj_rtd_notificacao_negativa', notificacao_id=n.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_notificacao_certidoes') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+      <button class="button" type="submit">Certificar o resultado negativo</button></form>
+    {% endif %}
+  {% endif %}
+  {% for c in certidoes %}
+    <p><a href="{{ url_for('rcpj_rtd_notificacao_certidao_ver', certidao_id=c.id) }}">Certidão {{ c.tipo|lower }} nº {{ c.numero }}/{{ c.ano }}</a>
+      — selo: {% if c.selo_situacao == 'SELADO' %}{{ c.selo }}{% else %}<strong>{{ c.selo_situacao }}</strong> {{ c.selo_motivo or '' }}{% endif %}</p>
+    {% if opera and c.selo_situacao != 'SELADO' %}
+    <form method="post" action="{{ url_for('rcpj_rtd_notificacao_selar', tabela='rg_notificacao_certidoes', ato_id=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button">Selar a certidão de novo</button></form>
+    {% endif %}
+  {% endfor %}
+  {% if qualifica and n.situacao in ['POSITIVA','NEGATIVA'] and not certidoes %}
+    {% set p = precos.get('15.8.2') %}
+    <form method="post" class="form" action="{{ url_for('rcpj_rtd_notificacao_certidao', notificacao_id=n.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <p><small>Certidão à margem do registro, item 15.8.2{% if p and p.preco is not none %} — R$ {{ '%.2f'|format(p.preco / 100) }}{% elif p %} — {{ p.motivo }}{% endif %}.</small></p>
+      <label><input type="checkbox" name="cobrar" value="1"> Lançar no meu caixa</label>
+      {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_notificacao_certidoes') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+      <button class="button" type="submit">Emitir a certidão de notificação {{ n.situacao|lower }}</button></form>
+  {% endif %}
+  {% if qualifica and certidoes and not n.averbacao_ato_id %}
+    <form method="post" action="{{ url_for('rcpj_rtd_notificacao_averbar', notificacao_id=n.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button" type="submit">Averbar o resultado à margem do registro</button></form>
+  {% endif %}
+  </div>
+</section>
+{% endblock %}

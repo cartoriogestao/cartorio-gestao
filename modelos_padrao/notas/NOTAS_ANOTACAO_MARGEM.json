@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ANOTACAO_MARGEM",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Anotação à margem — o ato desta serventia",
+  "formato": "CHAVES",
+  "explica": "A frase da anotação à margem diz o que aconteceu (o verbo, uma peça por tipo de anotação), por qual ato e onde ele está. Cada pedaço é peça; quem decide qual entra é o código. A anotação gravada não muda.",
+  "campos": [
+    "serventia"
+  ]
+}

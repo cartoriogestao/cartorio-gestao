@@ -48,6 +48,8 @@ O CASAMENTO TEM DOIS PRINCIPAIS, E A CONTA SÓ SOUBE DISSO EM 09/09/2026
 from __future__ import annotations
 
 import sqlite3
+
+from bd_nativo import banco
 from typing import Any
 
 
@@ -203,23 +205,25 @@ def pendentes(con: sqlite3.Connection, limite: int = 500) -> list[dict]:
     SQLite acertaria aqui por sorte do formato ISO, mas assento com data em
     branco ou com lixo entraria — e a régua de quem entra tem de ser uma só.
     """
-    con.row_factory = sqlite3.Row
-    assentos = con.execute(
+    bd = banco(con)
+    assentos = bd.ler(
         """SELECT id, especie, numero, nome, data_ato, livro_volume,
                   cpf_registrado
              FROM rc_assentos
             WHERE COALESCE(situacao,'ATIVO') <> 'CANCELADO'
               AND especie IN ('NASCIMENTO','CASAMENTO','OBITO')
-         ORDER BY data_ato IS NULL, data_ato, id""").fetchall()
+         ORDER BY data_ato IS NULL, data_ato, id""")
     saida: list[dict] = []
     for a in assentos:
         if not alcanca(a["data_ato"]):
             continue
-        pessoas = [dict(x) for x in con.execute(
-            "SELECT * FROM rc_pessoas WHERE assento_id=?", (a["id"],))]
+        pessoas = [dict(x) for x in bd.ler(
+            "SELECT * FROM rc_pessoas WHERE assento_id=%s ORDER BY ordem, id",
+            (a["id"],))]
         try:
-            atos = [dict(x) for x in con.execute(
-                "SELECT * FROM rc_atos WHERE assento_id=?", (a["id"],))]
+            atos = [dict(x) for x in bd.ler(
+                "SELECT * FROM rc_atos WHERE assento_id=%s ORDER BY id",
+                (a["id"],))]
         except sqlite3.Error:
             # MEIA LISTA E MELHOR QUE LISTA NENHUMA, e a falta fica visivel.
             atos = []

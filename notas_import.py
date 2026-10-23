@@ -12,11 +12,11 @@ ORDEM DA CARGA, E POR QUE ELA IMPORTA
 
     Inverter isso quebra chave estrangeira. Ja aconteceu: na carga da tabela de
     emolumentos as vigencias entraram por ultimo e a producao recusou tudo,
-    porque la o PRAGMA foreign_keys esta LIGADO e no teste estava desligado.
+    porque la a checagem de chave estrangeira esta LIGADA e no teste estava desligado.
     Desde entao a ordem e explicita e o teste roda com a trava ligada.
 
 REPETIVEL POR CONSTRUCAO
-    Todo INSERT e OR IGNORE contra um indice unico parcial sobre
+    Todo INSERT e ON CONFLICT DO NOTHING contra um indice unico parcial sobre
     (origem, origem_chave). Rodar duas vezes nao duplica, e o que foi digitado
     a mao — que tem origem MANUAL e fica fora do indice — sobrevive intacto.
 
@@ -29,12 +29,12 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
+from bd_nativo import banco
 from notas_schema import init_notas_schema
 
 # Nome do arquivo exportado -> o que ele contem. Os nomes vem do
@@ -290,9 +290,10 @@ def texto_para_html(texto: Any) -> str | None:
 class Carga:
     """Roda a carga inteira e conta tudo o que aconteceu."""
 
-    def __init__(self, con: sqlite3.Connection, pasta: Path,
+    def __init__(self, con, pasta: Path,
                  progresso=None) -> None:
         self.con = con
+        self.bd = banco(con)
         self.pasta = Path(pasta)
         self.progresso = progresso
         self.agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -307,14 +308,14 @@ class Carga:
             self.contas[chave] = self.contas.get(chave, 0) + n
 
     def _contar_insert(self, cur, chave: str) -> bool:
-        """Conta pelo rowcount do proprio INSERT OR IGNORE.
+        """Conta pelo RETURNING do proprio INSERT ... ON CONFLICT DO NOTHING.
 
-        Na primeira versao eu contava por `con.total_changes`, que e CUMULATIVO
+        Na primeira versao eu contava pelo total de mudancas da conexao, que e CUMULATIVO
         na conexao: a segunda carga relatou 4.060 cartoes importados tendo
         inserido zero. O numero do relatorio tem de ser o que aconteceu, senao
         a carga incremental fica impossivel de conferir.
         """
-        if cur.rowcount:
+        if cur:
             self._conta(chave)
             return True
         self._conta(f"{chave}_ja_existentes")
@@ -325,10 +326,10 @@ class Carga:
             self.progresso(texto)
 
     def _rejeita(self, tabela: str, chave: Any, motivo: str, linha: dict) -> None:
-        self.con.execute(
+        self.bd.escrever(
             """INSERT INTO nt_rejeitados
                (importacao_id, tabela, chave, motivo, conteudo, criado_em)
-               VALUES (?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s)""",
             (self.importacao_id, tabela, str(chave), motivo,
              json.dumps(linha, ensure_ascii=False)[:4000], self.agora))
         self._conta(f"rejeitados_{tabela}")
@@ -341,24 +342,28 @@ class Carga:
     def dominios(self) -> None:
         self._aviso("domínios das centrais")
         for r in _ler(self._arq("censec_tipos")):
-            self.con.execute(
-                "INSERT OR REPLACE INTO nt_censec_tipos(central,codigo,descricao) VALUES (?,?,?)",
+            self.bd.escrever(
+                "INSERT INTO nt_censec_tipos(central,codigo,descricao) VALUES (%s,%s,%s)"
+                " ON CONFLICT (central, codigo) DO UPDATE SET descricao = excluded.descricao",
                 (_txt(r.get("tipo")), r.get("codigo"), _txt(r.get("descricao"))))
             self._conta("censec_tipos")
         for r in _ler(self._arq("censec_naturezas")):
-            self.con.execute(
-                "INSERT OR REPLACE INTO nt_censec_naturezas(codigo,tipo_ato,descricao) VALUES (?,?,?)",
+            self.bd.escrever(
+                "INSERT INTO nt_censec_naturezas(codigo,tipo_ato,descricao) VALUES (%s,%s,%s)"
+                " ON CONFLICT (codigo, tipo_ato) DO UPDATE SET descricao = excluded.descricao",
                 (r.get("intCodigoNaturezaEscritura"), r.get("intCodigoTipoAto"),
                  _txt(r.get("strDescricao"))))
             self._conta("censec_naturezas")
         for r in _ler(self._arq("censec_qualificacoes")):
-            self.con.execute(
-                "INSERT OR REPLACE INTO nt_censec_qualificacoes(codigo,central,descricao) VALUES (?,?,?)",
+            self.bd.escrever(
+                "INSERT INTO nt_censec_qualificacoes(codigo,central,descricao) VALUES (%s,%s,%s)"
+                " ON CONFLICT (codigo) DO UPDATE SET central = excluded.central, descricao = excluded.descricao",
                 (r.get("intCodigo"), _txt(r.get("strCENSEC")), _txt(r.get("strDescricao"))))
             self._conta("censec_qualificacoes")
         for r in _ler(self._arq("doi_transacoes")):
-            self.con.execute(
-                "INSERT OR REPLACE INTO nt_doi_transacoes(codigo,descricao,ativo) VALUES (?,?,?)",
+            self.bd.escrever(
+                "INSERT INTO nt_doi_transacoes(codigo,descricao,ativo) VALUES (%s,%s,%s)"
+                " ON CONFLICT (codigo) DO UPDATE SET descricao = excluded.descricao, ativo = excluded.ativo",
                 (r.get("intCodigoDOI"), _txt(r.get("strDescricao")), _sim(r.get("bitativo"))))
             self._conta("doi_transacoes")
         for r in _ler(self._arq("doi_tipos_imovel")):
@@ -370,8 +375,9 @@ class Carga:
             desc = _txt(r.get("strDescricao") or r.get("descricao"))
             if cod is None or not desc:
                 continue
-            self.con.execute(
-                "INSERT OR REPLACE INTO nt_doi_tipos_imovel(codigo,descricao) VALUES (?,?)",
+            self.bd.escrever(
+                "INSERT INTO nt_doi_tipos_imovel(codigo,descricao) VALUES (%s,%s)"
+                " ON CONFLICT (codigo) DO UPDATE SET descricao = excluded.descricao",
                 (cod, desc))
             self._conta("doi_tipos_imovel")
 
@@ -385,8 +391,8 @@ class Carga:
             if codigo is None or not nome:
                 self._rejeita("nt_cartoes", codigo, "sem código ou sem nome", r)
                 continue
-            cur = self.con.execute(
-                """INSERT OR IGNORE INTO nt_cartoes
+            cur = self.bd.escrever(
+                """INSERT INTO nt_cartoes
                    (numero, nome, nome_norm, tipo_pessoa, documento, rg, rg_orgao,
                     rg_uf, rg_emissao, nascimento, sexo, nacionalidade, naturalidade,
                     estado_civil, conjuge, profissao, pai, mae, endereco,
@@ -396,8 +402,9 @@ class Carga:
                     motivo_bloqueio, somente_autenticidade, ativo, biometria,
                     biometria_dedo, selo_abertura, observacao, abertura,
                     origem, origem_chave, importacao_id, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-                           ?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'EOFICIO', ?, ?, ?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                           %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'EOFICIO', %s, %s, %s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (codigo, nome, normalizar(nome),
                  (_txt(r.get("strTipoPessoa")) or "F")[:1],
                  _digitos(r.get("strCPF")) or _digitos(r.get("strCNPJ")),
@@ -445,9 +452,10 @@ class Carga:
             self._contar_insert(cur, "cartoes")
         # indice de tradução: codigo do E-Oficio -> id nosso
         self.cartao_por_codigo = {
-            int(r[0]): int(r[1]) for r in self.con.execute(
-                "SELECT origem_chave, id FROM nt_cartoes WHERE origem='EOFICIO'")
-            if str(r[0]).isdigit()}
+            int(r["origem_chave"]): int(r["id"]) for r in self.bd.ler(
+                "SELECT origem_chave, id FROM nt_cartoes WHERE origem='EOFICIO'"
+                " ORDER BY id")
+            if str(r["origem_chave"]).isdigit()}
 
     # ---- 3. imagens
 
@@ -465,10 +473,11 @@ class Carga:
                 continue
             # a ordem sai do sufixo: RF210703-2.JPG e a segunda via
             m = re.search(r"-(\d+)\.[A-Za-z]+$", nome)
-            cur = self.con.execute(
-                """INSERT OR IGNORE INTO nt_cartao_imagens
+            cur = self.bd.escrever(
+                """INSERT INTO nt_cartao_imagens
                    (cartao_id, ordem, nome_arquivo, caminho, favorita, data, criado_em)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (cartao, int(m.group(1)) if m else 1, nome, _txt(r.get("strPath")),
                  _sim(r.get("bitFavorito")), _data(r.get("dtmData")), self.agora))
             self._contar_insert(cur, "imagens")
@@ -496,33 +505,34 @@ class Carga:
             selo = _txt(r.get("strselo")) or _txt(r.get("strSelo"))
             ligadas = partes.get(selo or "", [])
             servico = ligadas[0].get("intCodigoServico") if ligadas else None
-            cur = self.con.execute(
-                """INSERT OR IGNORE INTO nt_reconhecimentos
+            cur = self.bd.escrever(
+                """INSERT INTO nt_reconhecimentos
                    (data, especie, selo, codigo_seguranca, servico_codigo,
                     quantidade, documento_descricao, veiculo_placa,
                     conteudo_financeiro, sinal_publico, texto, oficial,
                     origem, origem_chave, importacao_id, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'EOFICIO', ?, ?, ?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'EOFICIO', %s, %s, %s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (data, especie, selo, _txt(r.get("strCodigoSeguranca")), servico,
                  r.get("intQtosporEtiqueta") or 1, _txt(r.get("strDescDoc")),
                  _txt(r.get("strPlaca")), 1 if servico == 416 else 0,
                  1 if ligadas and _sim(ligadas[0].get("bitSinalPublico")) else 0,
                  texto or None, _txt(r.get("strOficial")),
                  str(chave), self.importacao_id, self.agora))
-            if not cur.rowcount:
+            if not cur:
                 self._conta("reconhecimentos_ja_existentes")
                 continue
             self._conta("reconhecimentos")
-            rid = int(cur.lastrowid)
+            rid = int(cur[0]["id"])
             for p in ligadas:
                 cartao = self.cartao_por_codigo.get(p.get("intCodigoFirma"))
                 if not cartao:
                     self._rejeita("nt_reconhecimento_partes", selo,
                                   "cartão não encontrado", p)
                     continue
-                self.con.execute(
+                self.bd.escrever(
                     """INSERT INTO nt_reconhecimento_partes
-                       (reconhecimento_id, cartao_id, criado_em) VALUES (?,?,?)""",
+                       (reconhecimento_id, cartao_id, criado_em) VALUES (%s,%s,%s)""",
                     (rid, cartao, self.agora))
                 self._conta("reconhecimento_partes")
 
@@ -536,16 +546,17 @@ class Carga:
                 self._rejeita("nt_presencas", chave, "sem chave, nome ou data", r)
                 continue
             selo = _txt(r.get("strSelo"))
-            rec = self.con.execute(
-                "SELECT id FROM nt_reconhecimentos WHERE selo=? LIMIT 1", (selo,)).fetchone()
-            cur = self.con.execute(
-                """INSERT OR IGNORE INTO nt_presencas
+            rec = self.bd.um(
+                "SELECT id FROM nt_reconhecimentos WHERE selo=%s ORDER BY id LIMIT 1", (selo,))
+            cur = self.bd.escrever(
+                """INSERT INTO nt_presencas
                    (data, ordem, nome, documento, reconhecimento_id, selo,
                     quantidade, conteudo, oficial, origem, origem_chave,
                     importacao_id, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?, 'EOFICIO', ?, ?, ?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, 'EOFICIO', %s, %s, %s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (data, r.get("intOrdem"), nome, _digitos(r.get("strCPF")),
-                 rec[0] if rec else None, selo, r.get("intQte") or 1,
+                 rec["id"] if rec else None, selo, r.get("intQte") or 1,
                  _txt(r.get("strConteudo")), _txt(r.get("strUserid")),
                  str(chave), self.importacao_id, self.agora))
             self._contar_insert(cur, "presencas")
@@ -560,12 +571,13 @@ class Carga:
             if chave is None or not data:
                 self._rejeita("nt_autenticacoes", chave, "sem chave ou sem data", r)
                 continue
-            cur = self.con.execute(
-                """INSERT OR IGNORE INTO nt_autenticacoes
+            cur = self.bd.escrever(
+                """INSERT INTO nt_autenticacoes
                    (data, tipo, selo, codigo_seguranca, servico_codigo, folhas,
                     documento_descricao, documento_tipo, texto, oficial,
                     origem, origem_chave, importacao_id, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?, 'EOFICIO', ?, ?, ?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'EOFICIO', %s, %s, %s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (data,
                  "INTERNET" if r.get("intCodigoTextoImpresso") == 2 else "PADRAO",
                  _txt(r.get("strSelo")), _txt(r.get("strCodigoSeguranca")),
@@ -586,11 +598,12 @@ class Carga:
             desc = (_txt(r.get("strDescricaoLivro")) or "").upper()
             tipo = "ESCRITURA" if "ESCRITURA" in desc else "PROCURACAO"
             comp = _txt(r.get("strLivroComp")) or ""
-            cur = self.con.execute(
-                """INSERT OR IGNORE INTO nt_livros
+            cur = self.bd.escrever(
+                """INSERT INTO nt_livros
                    (tipo, numero, complemento, descricao, folhas, folha_atual,
                     abertura, ativo, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (tipo, str(numero), comp, _txt(r.get("strDescricaoLivro")),
                  r.get("intNFL"), r.get("intFolha"), _data(r.get("dtmDataAbertura")),
                  _sim(r.get("bitAtivo")), self.agora))
@@ -607,11 +620,12 @@ class Carga:
             if not corpo:
                 self._rejeita("nt_modelos", chave, "modelo sem texto", r)
                 continue
-            cur = self.con.execute(
-                """INSERT OR IGNORE INTO nt_modelos
+            cur = self.bd.escrever(
+                """INSERT INTO nt_modelos
                    (codigo, tipo, nome, nome_norm, corpo, tipo_ato_censec,
                     fins_previdenciarios, ativo, origem, origem_chave, criado_em)
-                   VALUES (?, 'PROCURACAO', ?,?,?,?,?,?, 'EOFICIO', ?, ?)""",
+                   VALUES (%s, 'PROCURACAO', %s,%s,%s,%s,%s,%s, 'EOFICIO', %s, %s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (f"PROC-{chave}", nome, normalizar(nome), texto_para_html(corpo),
                  3 if _sim(r.get("bitFinsPrevidenciarios")) else 2,
                  _sim(r.get("bitFinsPrevidenciarios")),
@@ -630,13 +644,14 @@ class Carga:
                 self._rejeita("nt_modelos", chave, "modelo de escritura sem texto", r)
                 continue
             central, natureza, cesdi, testamento = _censec_do_modelo(r)
-            cur = self.con.execute(
-                """INSERT OR IGNORE INTO nt_modelos
+            cur = self.bd.escrever(
+                """INSERT INTO nt_modelos
                    (codigo, tipo, nome, nome_norm, corpo, central_censec,
                     natureza_censec, tipo_cesdi, tipo_testamento,
                     tipo_ato_censec, doi_transacao, com_imovel, ativo,
                     origem, origem_chave, criado_em)
-                   VALUES (?, 'ESCRITURA', ?,?,?,?,?,?,?,?,?,?,1, 'EOFICIO', ?, ?)""",
+                   VALUES (%s, 'ESCRITURA', %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1, 'EOFICIO', %s, %s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (f"ESC-{chave}", nome, normalizar(nome), texto_para_html(corpo),
                  central, natureza, cesdi, testamento,
                  r.get("intTipoCEP"), r.get("intTipoTransacaoDOI"),
@@ -648,10 +663,10 @@ class Carga:
     def _livro_id(self, tipo: str, numero: Any) -> int | None:
         if numero in (None, ""):
             return None
-        r = self.con.execute(
-            "SELECT id FROM nt_livros WHERE tipo=? AND numero=? LIMIT 1",
-            (tipo, str(numero))).fetchone()
-        return int(r[0]) if r else None
+        r = self.bd.um(
+            "SELECT id FROM nt_livros WHERE tipo=%s AND numero=%s ORDER BY id LIMIT 1",
+            (tipo, str(numero)))
+        return int(r["id"]) if r else None
 
     def procuracoes(self) -> None:
         self._aviso("procurações")
@@ -677,16 +692,17 @@ class Carga:
                 continue
             tipo_mod = tipos.get(r.get("intCodigoTipoProcuracao"), {})
             teor = rtf_para_texto(r.get("memProcuracao"))
-            cur = self.con.execute(
-                """INSERT OR IGNORE INTO nt_atos
+            cur = self.bd.escrever(
+                """INSERT INTO nt_atos
                    (tipo, numero_ordem, livro_id, livro, folha, folha_final, data,
                     hora, situacao, natureza, modelo_codigo, interessado, teor,
                     teor_formato, traslado, folhas, assinado_serventia,
                     dispensou_testemunha, local_assinatura, acervo,
                     sem_efeito_motivo, revogado_em, observacao,
                     origem, origem_chave, importacao_id, criado_em)
-                   VALUES ('PROCURACAO', ?,?,?,?,?,?,?,?,?,?,?,?, 'html',
-                           ?,?,?,?,?,?,?,?,?, 'EOFICIO', ?, ?, ?)""",
+                   VALUES ('PROCURACAO', %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'html',
+                           %s,%s,%s,%s,%s,%s,%s,%s,%s, 'EOFICIO', %s, %s, %s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (r.get("intNumeroOrdem_Notas"),
                  self._livro_id("PROCURACAO", r.get("intLivro")),
                  _txt(r.get("intLivro")), _txt(r.get("intFolha")),
@@ -703,11 +719,11 @@ class Carga:
                  _sim(r.get("bitAcervo")), _txt(r.get("memMotivoSemEfeito")),
                  _data(r.get("dtmDataRevogacao")), _txt(r.get("memObs")),
                  f"PROC:{prot}", self.importacao_id, self.agora))
-            if not cur.rowcount:
+            if not cur:
                 self._conta("procuracoes_ja_existentes")
                 continue
             self._conta("procuracoes")
-            self._gravar_partes(int(cur.lastrowid), partes.get(prot, []))
+            self._gravar_partes(int(cur[0]["id"]), partes.get(prot, []))
 
     def _partes_de_escritura(self) -> tuple[dict, dict]:
         """As partes de cada escritura, e quantas escrituras cada protocolo tem.
@@ -755,7 +771,7 @@ class Carga:
             # A chave e o `id`, nao o protocolo: um mesmo protocolo gera varias
             # escrituras em sequencia — 2020.08.219 rendeu quatro, nas folhas
             # 48, 53, 58 e 63 do livro 28. Usando o protocolo, cinco das 45
-            # escrituras eram descartadas em silencio pelo INSERT OR IGNORE.
+            # escrituras eram descartadas em silencio pelo ON CONFLICT DO NOTHING.
             chave = _txt(r.get("id")) or _txt(r.get("strProtocolo"))
             data = _data(r.get("dtmData"))
             if not chave or not data:
@@ -764,8 +780,8 @@ class Carga:
             tipo_mod = tipos.get(r.get("intCodigoTipoEscritura"), {})
             _, natureza_cep, tipo_cesdi, tipo_testamento = _censec_do_modelo(tipo_mod)
             teor = rtf_para_texto(r.get("memEscritura"))
-            cur = self.con.execute(
-                """INSERT OR IGNORE INTO nt_atos
+            cur = self.bd.escrever(
+                """INSERT INTO nt_atos
                    (tipo, numero_ordem, livro_id, livro, folha, folha_final, data,
                     situacao, natureza, natureza_censec, tipo_cesdi, tipo_testamento,
                     modelo_codigo, interessado,
@@ -779,9 +795,10 @@ class Carga:
                     doi_matricula, anterior_livro_complemento,
                     anterior_folha_complemento,
                     origem, origem_chave, importacao_id, criado_em)
-                   VALUES ('ESCRITURA', ?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'html',
-                           ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-                           ?,?,?, 'EOFICIO', ?, ?, ?)""",
+                   VALUES ('ESCRITURA', %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'html',
+                           %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                           %s,%s,%s, 'EOFICIO', %s, %s, %s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (r.get("intNumeroOrdem_Notas"),
                  self._livro_id("ESCRITURA", r.get("intLivroRegistro")),
                  _txt(r.get("strLivro_Registro")), _txt(r.get("strFolha_Registro")),
@@ -835,7 +852,7 @@ class Carga:
                     "saber quais das partes compareceram a este ato",
                     # Guarda o cartao junto com o papel: a tela que resolve a
                     # duvida precisa oferecer PESSOAS, e nao so o rotulo.
-                    {"ato_id": int(cur.lastrowid),
+                    {"ato_id": int(cur[0]["id"]),
                      "livro": _txt(r.get("strLivro_Registro")),
                      "folha": _txt(r.get("strFolha_Registro")),
                      "partes": [{"cartao_id": self.cartao_por_codigo.get(codigo),
@@ -843,26 +860,26 @@ class Carga:
                                 for codigo, papel in lista]})
                 self._conta("escritura_partes_ambiguas")
                 continue
-            self._gravar_partes(int(cur.lastrowid), lista)
+            self._gravar_partes(int(cur[0]["id"]), lista)
 
     def _gravar_partes(self, ato_id: int, lista: list[tuple[int, str]]) -> None:
         for ordem, (codigo, papel) in enumerate(lista, 1):
             cartao = self.cartao_por_codigo.get(codigo)
-            dados = self.con.execute(
-                "SELECT nome, documento, tipo_pessoa FROM nt_cartoes WHERE id=?",
-                (cartao,)).fetchone() if cartao else None
+            dados = self.bd.um(
+                "SELECT nome, documento, tipo_pessoa FROM nt_cartoes WHERE id=%s",
+                (cartao,)) if cartao else None
             if not dados:
                 self._rejeita("nt_ato_partes", codigo,
                               "parte aponta cartão inexistente",
                               {"ato_id": ato_id, "codigo": codigo, "papel": papel})
                 continue
-            self.con.execute(
+            self.bd.escrever(
                 """INSERT INTO nt_ato_partes
                    (ato_id, cartao_id, nome, nome_norm, documento, tipo_pessoa,
                     qualificacao, testemunha, ordem, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (ato_id, cartao, dados[0], normalizar(dados[0]), dados[1],
-                 dados[2] or "F", papel, 1 if papel == "TESTEMUNHA" else 0,
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (ato_id, cartao, dados["nome"], normalizar(dados["nome"]),
+                 dados["documento"], dados["tipo_pessoa"] or "F", papel, 1 if papel == "TESTEMUNHA" else 0,
                  ordem, self.agora))
             self._conta("ato_partes")
 
@@ -870,11 +887,11 @@ class Carga:
 
     def rodar(self) -> dict:
         init_notas_schema(self.con)
-        cur = self.con.execute(
+        cur = self.bd.escrever(
             """INSERT INTO nt_importacoes (iniciada_em, origem, pasta, situacao)
-               VALUES (?, 'EOFICIO', ?, 'EM_ANDAMENTO')""",
+               VALUES (%s, 'EOFICIO', %s, 'EM_ANDAMENTO') RETURNING id""",
             (self.agora, str(self.pasta)))
-        self.importacao_id = int(cur.lastrowid)
+        self.importacao_id = int(cur[0]["id"])
 
         self.dominios()
         self.cartoes()
@@ -887,14 +904,14 @@ class Carga:
         self.procuracoes()
         self.escrituras()
 
-        self.con.execute(
-            """UPDATE nt_importacoes SET terminada_em=?, resumo=?, situacao='CONCLUIDA'
-               WHERE id=?""",
+        self.bd.escrever(
+            """UPDATE nt_importacoes SET terminada_em=%s, resumo=%s, situacao='CONCLUIDA'
+               WHERE id=%s""",
             (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
              json.dumps(self.contas, ensure_ascii=False), self.importacao_id))
         return dict(self.contas)
 
 
-def importar(con: sqlite3.Connection, pasta: str | Path, progresso=None) -> dict:
+def importar(con, pasta: str | Path, progresso=None) -> dict:
     """Carrega o acervo de notas. Pode rodar quantas vezes precisar."""
     return Carga(con, Path(pasta), progresso).rodar()

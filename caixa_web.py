@@ -21,12 +21,19 @@ import caixa_protocolo as CXP
 import contato_do_cliente as CONTATO
 import protocolo_documentos as PDOC
 import modelos_da_casa as MODELOS
+from bd_nativo import banco
 from caixa_import import importar as importar_caixa
-from caixa_schema import (AVISO_ORCAMENTO, FORMAS_PAGAMENTO, FUNCOES, NATUREZAS,
+from caixa_schema import (FORMAS_PAGAMENTO, FUNCOES, NATUREZAS,
+                          PECA_DO_AVISO_ORCAMENTO,
                           TIPOS_DOCUMENTO, TIPOS_PROTOCOLO, CaixaError,
                           centavos, cobrar_item_do_protocolo, hash_lancamento,
                           hash_recibo, por_extenso, reais, resumo_caixa)
 from ri_odt import gerar_odt, html_para_odf
+import seguranca_web as SEGWEB  # B2 (LX11): exceção inesperada não vai para a tela
+# O número que a tela mandou (LD13): o que não é número de id vira None, e o
+# `WHERE id=%s` com None não acha nada — no PostgreSQL o texto cru («abc», 30
+# dígitos) comparado com a coluna `bigint` derrubava a consulta.
+from seguranca_web import MAIOR_INTEGER, PAGINA_MAIS_ALTA, numero_digitado
 from serventia import (dados as dados_serventia, mascarar_documento,
                        mascarar_email, mascarar_telefone, mascarar_texto)
 
@@ -53,104 +60,20 @@ SITUACOES = {
     **CXP.ENCERRAMENTOS,
 }
 
-MODELO_RECIBO = """<p align="center"><b>{{ sv.unit_name }}</b></p>
-<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
-<p align="center">CNPJ {{ sv.serventia_cnpj }} — CNS {{ sv.ri_cns }} — Telefone {{ sv.serventia_telefone }}</p>
-<p align="center">{{ sv.endereco_completo }}</p>
-<p align="center"><b>RECIBO Nº {{ r.numero }}/{{ r.ano }}</b></p>
-<p><b>Recebemos de:</b> {{ r.pagador }}{% if documento %}, inscrito(a) no
-CPF/CNPJ sob o nº {{ documento }}{% endif %}{% if telefone %}, telefone {{ telefone }}{% endif %}.</p>
-<p><b>A importância de:</b> R$ {{ r.valor_total }} ({{ r.valor_extenso }}).</p>
-{% if r.protocolo_numero %}<p><b>Referente ao protocolo nº</b> {{ r.protocolo_numero }}.</p>{% endif %}
-{% if lancamento %}<p><b>Lançamento de caixa nº</b> {{ lancamento }}.</p>{% endif %}
-{% if itens %}
-<p><b>DISCRIMINAÇÃO</b></p>
-<table border="1" cols="7.0cm,2.4cm,3.0cm,3.4cm">
-<tr><td><b>Ato</b></td><td><b>Código TJ</b></td><td><b>Emolumentos</b></td><td><b>Total</b></td></tr>
-{% for i in itens %}<tr><td>{{ i.descricao or '—' }}</td><td>{{ i.codigo_ato or '—' }}</td><td>{{ i.emolumentos or '—' }}</td><td>{{ i.valor_total or '—' }}</td></tr>
-{% endfor %}
-</table>
-{% endif %}
-{% if tem_fundos %}<p><b>COMPOSIÇÃO:</b> emolumentos R$ {{ fundos.emolumentos }};
-FERC R$ {{ fundos.ferc }}; FADEP R$ {{ fundos.fadep }}; FEMP R$ {{ fundos.femp }};
-FERRFIS R$ {{ fundos.ferrfis }}.</p>{% endif %}
-{% if r.forma_pagamento %}<p><b>Forma de pagamento:</b> {{ r.forma_pagamento }}.</p>{% endif %}
-{% if r.observacao %}<p>{{ observacao }}</p>{% endif %}
-<p>{{ sv.cidade_uf }}, {{ data_extenso }}.</p>
-<p align="center">_______________________________________</p>
-<p align="center">{{ emitido_por }}{% if funcao %}<br>{{ funcao }}{% endif %}</p>
-<p><small>Documento emitido pelo sistema em {{ agora }}. Conferência: {{ r.hash_recibo[:16] }}.
-Dados pessoais parcialmente ocultados na forma da Lei 13.709/2018 — LGPD.</small></p>
-"""
+# `MODELO_RECIBO` — o texto de fábrica do papel CAIXA_RECIBO — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/caixa/CAIXA_RECIBO.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
-MODELO_ORCAMENTO = """<p align="center"><b>{{ sv.unit_name }}</b></p>
-<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
-<p align="center">CNPJ {{ sv.serventia_cnpj }} — CNS {{ sv.ri_cns }} — Telefone {{ sv.serventia_telefone }}</p>
-<p align="center">{{ sv.endereco_completo }}</p>
-<p align="center"><b>{% if orcamento %}CÁLCULO DE EMOLUMENTOS{% else %}ORÇAMENTO{% endif %} Nº {{ p.numero }}</b></p>
-{% if orcamento %}<p><b>{{ aviso }}</b></p>{% endif %}
-<p><b>Interessado:</b> {{ p.interessado or '—' }}{% if documento %}, CPF/CNPJ {{ documento }}{% endif %}.
-{% if telefone %} <b>Telefone:</b> {{ telefone }}.{% endif %}
-{% if email %} <b>E-mail:</b> {{ email }}.{% endif %}</p>
-{% if p.assunto %}<p><b>Assunto:</b> {{ p.assunto }}</p>{% endif %}
-<table border="1" cols="2.2cm,6.4cm,1.4cm,2.6cm,3.4cm">
-<tr><td><b>Código TJ</b></td><td><b>Ato</b></td><td><b>Qtd</b></td><td><b>Base de cálculo</b></td><td><b>Total</b></td></tr>
-{% for i in itens %}<tr><td>{{ i.codigo_ato or '—' }}</td><td>{{ i.descricao or '—' }}</td><td>{{ i.quantidade }}</td><td>{{ i.base_calculo or '—' }}</td><td>{{ i.valor_total }}</td></tr>
-{% endfor %}
-</table>
-<p><b>COMPOSIÇÃO:</b> emolumentos R$ {{ soma.emolumentos }}; FERC R$ {{ soma.ferc }};
-FADEP R$ {{ soma.fadep }}; FEMP R$ {{ soma.femp }}; FERRFIS R$ {{ soma.ferrfis }}.</p>
-<p><b>TOTAL: R$ {{ soma.total }}</b> ({{ extenso }}).</p>
-<p>Valores conforme a tabela de emolumentos vigente (vigência {{ vigencia }}),
-atualizada por Resolução-GP do Tribunal de Justiça do Maranhão.</p>
-<p>{{ sv.cidade_uf }}, {{ data }}.</p>
-<p></p><p></p>
-<table cols="7.6cm,7.6cm">
-<tr><td>_________________________________</td><td>_________________________________</td></tr>
-<tr><td>{{ emitido_por }}</td><td>{{ p.interessado or 'Requerente' }}</td></tr>
-<tr><td>{{ funcao or 'Escrevente' }}</td><td>Requerente</td></tr>
-</table>
-<p><small>Dados pessoais parcialmente ocultados na forma da Lei 13.709/2018 — LGPD.</small></p>
-"""
+# `MODELO_ORCAMENTO` — o texto de fábrica do papel CAIXA_ORCAMENTO — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/caixa/CAIXA_ORCAMENTO.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
-MODELO_RECEPCAO = """<p align="center"><b>{{ sv.unit_name }}</b></p>
-<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
-<p align="center">CNPJ {{ sv.serventia_cnpj }} — CNS {{ sv.ri_cns }} — Telefone {{ sv.serventia_telefone }}</p>
-<p align="center">{{ sv.endereco_completo }}</p>
-<p align="center"><b>PROTOCOLO DE RECEPÇÃO Nº {{ p.numero }}</b></p>
-<p>Recebemos nesta data, de <b>{{ p.interessado or '—' }}</b>{% if documento %},
-inscrito(a) no CPF/CNPJ sob o nº {{ documento }}{% endif %}{% if telefone %},
-telefone {{ telefone }}{% endif %}{% if email %}, e-mail {{ email }}{% endif %}, o(s)
-documento(s) abaixo, para o fim indicado.</p>
-<table border="1" cols="4.6cm,11.4cm">
-<tr><td><b>Atribuição</b></td><td>{{ p.atribuicao }}</td></tr>
-<tr><td><b>Assunto</b></td><td>{{ p.assunto or '—' }}</td></tr>
-{% if p.documento_descricao %}<tr><td><b>Documento apresentado</b></td><td>{{ p.documento_descricao }}</td></tr>{% endif %}
-{% if p.documento_tipo %}<tr><td><b>Tipo</b></td><td>{{ p.documento_tipo }}{% if p.documento_numero %} nº {{ p.documento_numero }}{% endif %}</td></tr>{% endif %}
-<tr><td><b>Recebido em</b></td><td>{{ data }}{% if p.hora %} às {{ p.hora }}{% endif %}</td></tr>
-{% if p.previsao_entrega %}<tr><td><b>Previsão de entrega</b></td><td>{{ previsao }}</td></tr>{% endif %}
-</table>
-{% if itens %}
-<p><b>ATOS PREVISTOS E VALORES</b></p>
-<table border="1" cols="2.2cm,7.8cm,1.4cm,4.6cm">
-<tr><td><b>Código TJ</b></td><td><b>Ato</b></td><td><b>Qtd</b></td><td><b>Total</b></td></tr>
-{% for i in itens %}<tr><td>{{ i.codigo_ato or '—' }}</td><td>{{ i.descricao or '—' }}</td><td>{{ i.quantidade }}</td><td>{{ i.valor_total }}{% if i.quitado %} (quitado){% endif %}</td></tr>
-{% endfor %}
-</table>
-<p><b>TOTAL: R$ {{ soma.total }}</b>{% if pendente.total_centavos %} — <b>a quitar: R$ {{ pendente.total }}</b>{% endif %}.</p>
-{% endif %}
-{% if p.observacao %}<p><b>Observação:</b> {{ observacao }}</p>{% endif %}
-<p>A retirada do documento depende da apresentação deste protocolo e da quitação
-dos emolumentos devidos.</p>
-<p>{{ sv.cidade_uf }}, {{ data }}.</p>
-<p></p><p></p>
-<table cols="7.6cm,7.6cm">
-<tr><td>_________________________________</td><td>_________________________________</td></tr>
-<tr><td>{{ emitido_por }}</td><td>{{ p.interessado or 'Apresentante' }}</td></tr>
-<tr><td>{{ funcao or 'Escrevente' }}</td><td>Apresentante</td></tr>
-</table>
-<p><small>Dados pessoais parcialmente ocultados na forma da Lei 13.709/2018 — LGPD.</small></p>
-"""
+# `MODELO_RECEPCAO` — o texto de fábrica do papel CAIXA_RECEPCAO — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/caixa/CAIXA_RECEPCAO.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 
 def _atos_da_tabela(db, busca, limite=LIMITE_DA_BUSCA_DE_ATOS):
@@ -169,8 +92,33 @@ def _atos_da_tabela(db, busca, limite=LIMITE_DA_BUSCA_DE_ATOS):
     if not termo:
         return []
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         return EMOL.buscar(con, termo, limite=limite)
+
+
+def segunda_assinatura_do_estorno(db, *, papel: str, usuario_id: int,
+                                  aprovador: str | None, senha: str | None) -> str:
+    """O estorno de lançamento de caixa JÁ FECHADO é de duas pessoas. Só lê.
+
+    Revisão de segurança da 3.7.0 (22/10/2026, M2): qualquer USER estornava
+    lançamento de caixa fechado — e até conferido — com um motivo de uma
+    palavra, e o item estornado voltava a poder ser quitado: o laço
+    quitar/estornar/quitar sem segunda assinatura. Agora quem estorna é
+    oficial ou gerente, e OUTRA pessoa com o mesmo papel aprova com a senha
+    dela, na hora. Devolve "" quando pode, ou a frase da recusa.
+    """
+    if str(papel or "").upper() not in ("ADMIN", "MANAGER"):
+        return ("Estorno de lançamento de caixa já fechado é do oficial ou do "
+                "gerente, com a aprovação de outra pessoa.")
+    nome = str(aprovador or "").strip()
+    if not nome or not senha:
+        return ("Estorno de caixa fechado precisa da aprovação de OUTRA pessoa: "
+                "informe o usuário e a senha do aprovador (oficial ou gerente).")
+    quem = db.authenticate(nome, str(senha))
+    if not quem or str(quem["role"] or "").upper() not in ("ADMIN", "MANAGER"):
+        return "Aprovador não reconhecido, ou sem perfil de oficial ou gerente."
+    if int(quem["id"]) == int(usuario_id or 0):
+        return "O aprovador tem de ser outra pessoa — não quem está estornando."
+    return ""
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str):
@@ -183,8 +131,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     def q(sql, params=()):
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            return list(con.execute(sql, params))
+            return banco(con).ler(sql, params)
 
     def q1(sql, params=()):
         linhas = q(sql, params)
@@ -213,7 +160,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     def caixa_aberto(operador: str):
         return q1("""SELECT * FROM cx_caixas
-                     WHERE operador_nome=? AND situacao='ABERTO'
+                     WHERE operador_nome=%s AND situacao='ABERTO'
                      ORDER BY data DESC LIMIT 1""", (operador,))
 
     def lancamentos_do_caixa(caixa_id):
@@ -221,7 +168,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 q("""SELECT l.*, p.numero protocolo_numero
                      FROM cx_lancamentos l
                      LEFT JOIN cx_protocolos p ON p.id = l.protocolo_id
-                     WHERE l.caixa_id=? ORDER BY l.id""", (caixa_id,))]
+                     WHERE l.caixa_id=%s ORDER BY l.id""", (caixa_id,))]
 
     # ------------------------------------------------------------- caixa
 
@@ -241,10 +188,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     return redirect(url_for("caixa"))
                 hoje = date.today().isoformat()
                 with db.transaction() as con:
-                    con.execute(
-                        """INSERT OR IGNORE INTO cx_caixas
+                    banco(con).escrever(
+                        """INSERT INTO cx_caixas
                            (data, operador_nome, saldo_inicial, aberto_em, situacao)
-                           VALUES (?,?,?,?, 'ABERTO')""",
+                           VALUES (%s,%s,%s,%s, 'ABERTO')
+                           ON CONFLICT DO NOTHING""",
                         (hoje, operador,
                          reais(centavos(request.form.get("saldo_inicial"))), db.now()))
                 audit("CAIXA_ABERTO", "CAIXA", None, {"operador": operador, "data": hoje})
@@ -266,8 +214,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 #
                 #   E por isso ela **não pode ser do próprio operador**: o
                 #   sistema recusa, com a frase que diz por quê.
-                alvo = q1("SELECT * FROM cx_caixas WHERE id=?",
-                          (request.form.get("caixa_id"),))
+                alvo = q1("SELECT * FROM cx_caixas WHERE id=%s",
+                          (numero_digitado(request.form.get("caixa_id")),))
                 if not alvo:
                     flash("Não achei esse caixa.", "danger")
                     return redirect(url_for("caixa"))
@@ -280,10 +228,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           "conferência é do oficial ou do gerente — se fosse "
                           "da mesma pessoa, não valeria nada.", "danger")
                     return redirect(url_for("caixa"))
+                # QUEM CONFERE É O OFICIAL OU O GERENTE (revisão de segurança
+                # de 22/10/2026, M2): a regra estava escrita no texto acima e
+                # não na rota — qualquer USER conferia o caixa do colega. Vem
+                # depois da recusa do próprio caixa, que é a que fala de quem
+                # clicou.
+                if usuario_papel() not in ("ADMIN", "MANAGER"):
+                    flash("A conferência do caixa é do oficial ou do gerente.",
+                          "danger")
+                    return redirect(url_for("caixa"))
                 with db.transaction() as con:
-                    con.execute(
-                        """UPDATE cx_caixas SET conferido_por=?, conferido_em=?
-                           WHERE id=? AND conferido_em IS NULL""",
+                    banco(con).escrever(
+                        """UPDATE cx_caixas SET conferido_por=%s, conferido_em=%s
+                           WHERE id=%s AND conferido_em IS NULL""",
                         (usuario_id(), db.now(), alvo["id"]))
                 audit("CAIXA_CONFERIDO", "CAIXA", alvo["id"],
                       {"data": alvo["data"], "operador": alvo["operador_nome"],
@@ -313,33 +270,37 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # protocolo, que o usuario digita, e o de ordem do lancamento,
                 # que o sistema gera. Nomes distintos para nao trocar um pelo outro.
                 numero_protocolo = (request.form.get("protocolo") or "").strip()
-                prot = (q1("SELECT id FROM cx_protocolos WHERE numero=?",
+                prot = (q1("SELECT id FROM cx_protocolos WHERE numero=%s",
                            (numero_protocolo,)) if numero_protocolo else None)
                 if numero_protocolo and not prot:
                     flash(f"O protocolo {numero_protocolo} não existe. "
                           f"Lançamento não feito.", "danger")
                     return redirect(url_for("caixa"))
-                anterior = q1("""SELECT hash_lancamento FROM cx_lancamentos
-                                 WHERE caixa_id=? ORDER BY id DESC LIMIT 1""",
-                              (aberto["id"],))
-                h = hash_lancamento(aberto["id"], date.today().isoformat(), natureza,
-                                    reais(valor), request.form.get("descricao") or "",
-                                    anterior["hash_lancamento"] if anterior else None)
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
+                    bd = banco(con)
+                    bd.travar("cx_lancamentos.numero")
+                    # O anterior se lê DEPOIS da trava: lido antes, dois
+                    # lançamentos ao mesmo tempo encadeavam no mesmo hash.
+                    anterior = bd.um(
+                        """SELECT hash_lancamento FROM cx_lancamentos
+                           WHERE caixa_id=%s ORDER BY id DESC LIMIT 1""",
+                        (aberto["id"],))
+                    h = hash_lancamento(aberto["id"], date.today().isoformat(), natureza,
+                                        reais(valor), request.form.get("descricao") or "",
+                                        anterior["hash_lancamento"] if anterior else None)
                     ano = date.today().year
-                    ultimo = con.execute(
-                        "SELECT MAX(numero) n FROM cx_lancamentos WHERE ano=?",
-                        (ano,)).fetchone()
-                    numero_ordem = int((ultimo["n"] or 0)) + 1
-                    con.execute(
+                    ultimo = bd.valor(
+                        "SELECT MAX(numero) AS n FROM cx_lancamentos WHERE ano=%s",
+                        (ano,))
+                    numero_ordem = int((ultimo or 0)) + 1
+                    bd.escrever(
                         """INSERT INTO cx_lancamentos
                            (numero, ano, caixa_id, protocolo_id, data, hora,
                             natureza, sentido,
                             forma_pagamento, descricao, pagador, pagador_documento,
                             valor, emolumentos, ferc, fadep, femp, ferrfis, selo,
                             hash_lancamento, criado_em)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (numero_ordem, ano, aberto["id"], prot["id"] if prot else None,
                          date.today().isoformat(), datetime.now().strftime("%H:%M"),
                          natureza, sentido,
@@ -360,58 +321,77 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return redirect(url_for("caixa"))
 
             if acao == "estornar":
-                lid = request.form.get("lancamento_id")
+                lid = numero_digitado(request.form.get("lancamento_id"))
                 motivo = (request.form.get("motivo") or "").strip()
                 if not motivo:
                     flash("O estorno precisa de motivo.", "danger")
                     return redirect(url_for("caixa"))
-                orig = q1("SELECT * FROM cx_lancamentos WHERE id=?", (lid,))
-                if not orig or orig["estornado"]:
-                    flash("Lançamento não encontrado ou já estornado.", "danger")
-                    return redirect(url_for("caixa"))
                 with db.transaction() as con:
-                    cur = con.execute(
+                    bd = banco(con)
+                    # A marca `estornado` se lê e se grava aqui dentro, com a
+                    # linha presa: lida antes, dois cliques estornavam o mesmo
+                    # lançamento duas vezes.
+                    bd._escrita()
+                    orig = bd.um("SELECT * FROM cx_lancamentos WHERE id=%s FOR UPDATE",
+                                 (lid,))
+                    if not orig or orig["estornado"]:
+                        flash("Lançamento não encontrado ou já estornado.", "danger")
+                        return redirect(url_for("caixa"))
+                    # ESTORNO DE CAIXA JÁ FECHADO É DE DUAS PESSOAS (22/10/2026,
+                    # M2) — ver `segunda_assinatura_do_estorno`.
+                    if int(orig["caixa_id"] or 0) != int(aberto["id"]):
+                        recusa = segunda_assinatura_do_estorno(
+                            db, papel=usuario_papel(), usuario_id=usuario_id(),
+                            aprovador=request.form.get("aprovador"),
+                            senha=request.form.get("aprovador_senha"))
+                        if recusa:
+                            flash(recusa, "danger")
+                            return redirect(url_for("caixa"))
+                    estorno_id = bd.escrever(
                         """INSERT INTO cx_lancamentos
                            (caixa_id, protocolo_id, data, hora, natureza, sentido,
                             descricao, valor, estorna_id, motivo_estorno, criado_em)
-                           VALUES (?,?,?,?, 'ESTORNO','ESTORNO', ?,?,?,?,?)""",
+                           VALUES (%s,%s,%s,%s, 'ESTORNO','ESTORNO', %s,%s,%s,%s,%s)
+                           RETURNING id""",
                         (aberto["id"], orig["protocolo_id"], date.today().isoformat(),
                          datetime.now().strftime("%H:%M"),
                          f"Estorno do lançamento {lid}: {motivo}",
-                         orig["valor"], lid, motivo, db.now()))
-                    con.execute(
-                        """UPDATE cx_lancamentos SET estornado=1, estornado_por_id=?,
-                           motivo_estorno=? WHERE id=?""",
-                        (int(cur.lastrowid), motivo, lid))
+                         orig["valor"], lid, motivo, db.now()))[0]["id"]
+                    bd.escrever(
+                        """UPDATE cx_lancamentos SET estornado=1, estornado_por_id=%s,
+                           motivo_estorno=%s WHERE id=%s""",
+                        (int(estorno_id), motivo, lid))
                     # F13: o estorno desfaz a quitacao do item e devolve o
                     # protocolo a A_PAGAR quando ainda houver item em aberto.
-                    con.execute(
+                    bd.escrever(
                         """UPDATE cx_protocolo_atos
                               SET quitado=0, quitado_em=NULL, quitado_por=NULL,
                                   lancamento_id=NULL
-                            WHERE lancamento_id=?""",
+                            WHERE lancamento_id=%s""",
                         (lid,))
                     if orig["protocolo_id"]:
-                        pendente = con.execute(
-                            """SELECT COUNT(*) n FROM cx_protocolo_atos
-                               WHERE protocolo_id=? AND COALESCE(quitado,0)=0""",
-                            (orig["protocolo_id"],)).fetchone()
+                        pendente = bd.um(
+                            """SELECT COUNT(*) AS n FROM cx_protocolo_atos
+                               WHERE protocolo_id=%s AND COALESCE(quitado,0)=0""",
+                            (orig["protocolo_id"],))
                         n_pend = int((pendente["n"] if pendente else 0) or 0)
                         if n_pend > 0:
-                            con.execute(
+                            bd.escrever(
                                 """UPDATE cx_protocolos SET situacao='A_PAGAR'
-                                   WHERE id=? AND situacao='PAGO'""",
+                                   WHERE id=%s AND situacao='PAGO'""",
                                 (orig["protocolo_id"],))
                 audit("CAIXA_ESTORNO", "CAIXA", aberto["id"],
-                      {"lancamento": lid, "motivo": motivo})
+                      {"lancamento": lid, "motivo": motivo,
+                       "caixa_do_lancamento": orig["caixa_id"],
+                       "aprovador": (request.form.get("aprovador") or "").strip() or None})
                 flash("Estornado. A quitação do item foi desfeita; o lançamento "
                       "original continua na lista, marcado.",
                       "success")
                 return redirect(url_for("caixa"))
 
             if acao == "editar":
-                lid = request.form.get("lancamento_id")
-                l = q1("SELECT * FROM cx_lancamentos WHERE id=?", (lid,))
+                lid = numero_digitado(request.form.get("lancamento_id"))
+                l = q1("SELECT * FROM cx_lancamentos WHERE id=%s", (lid,))
                 if not l or l["excluido"] or l["estornado"]:
                     flash("Lançamento não encontrado, já excluído ou estornado.", "danger")
                     return redirect(url_for("caixa"))
@@ -433,12 +413,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     return redirect(url_for("caixa"))
                 natureza = request.form.get("natureza") or l["natureza"]
                 with db.transaction() as con:
-                    con.execute(
-                        """UPDATE cx_lancamentos SET valor=?, natureza=?, sentido=?,
-                           forma_pagamento=?, descricao=?, pagador=?,
-                           pagador_documento=?, emolumentos=?, ferc=?, fadep=?,
-                           femp=?, ferrfis=?, selo=?, editado_em=?, editado_por=?,
-                           historico=? WHERE id=?""",
+                    banco(con).escrever(
+                        """UPDATE cx_lancamentos SET valor=%s, natureza=%s, sentido=%s,
+                           forma_pagamento=%s, descricao=%s, pagador=%s,
+                           pagador_documento=%s, emolumentos=%s, ferc=%s, fadep=%s,
+                           femp=%s, ferrfis=%s, selo=%s, editado_em=%s, editado_por=%s,
+                           historico=%s WHERE id=%s""",
                         (reais(novo_valor), natureza,
                          NATUREZAS.get(natureza, (l["sentido"], ""))[0],
                          request.form.get("forma_pagamento") or l["forma_pagamento"],
@@ -459,12 +439,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return redirect(url_for("caixa"))
 
             if acao == "excluir":
-                lid = request.form.get("lancamento_id")
+                lid = numero_digitado(request.form.get("lancamento_id"))
                 motivo = (request.form.get("motivo") or "").strip()
                 if not motivo:
                     flash("A exclusão precisa de motivo.", "danger")
                     return redirect(url_for("caixa"))
-                l = q1("SELECT * FROM cx_lancamentos WHERE id=?", (lid,))
+                l = q1("SELECT * FROM cx_lancamentos WHERE id=%s", (lid,))
                 if not l or l["excluido"]:
                     flash("Lançamento não encontrado ou já excluído.", "danger")
                     return redirect(url_for("caixa"))
@@ -477,9 +457,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           "o cliente tem uma via na mão.", "danger")
                     return redirect(url_for("caixa"))
                 with db.transaction() as con:
-                    con.execute(
-                        """UPDATE cx_lancamentos SET excluido=1, motivo_exclusao=?,
-                           excluido_em=?, excluido_por=? WHERE id=?""",
+                    banco(con).escrever(
+                        """UPDATE cx_lancamentos SET excluido=1, motivo_exclusao=%s,
+                           excluido_em=%s, excluido_por=%s WHERE id=%s""",
                         (motivo, db.now(), usuario_nome(), lid))
                 audit("CAIXA_LANCAMENTO_EXCLUIDO", "CAIXA", aberto["id"],
                       {"lancamento": lid, "valor": l["valor"], "motivo": motivo})
@@ -507,10 +487,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     #   a correição faz é «quem fechou este dia». A auditoria
                     #   guardava o nome, mas quem lê o caixa não abre a
                     #   auditoria: lê o caixa.
-                    con.execute(
-                        """UPDATE cx_caixas SET situacao='FECHADO', valor_esperado=?,
-                           valor_contado=?, diferenca=?, justificativa=?,
-                           fechado_em=?, fechado_por=? WHERE id=?""",
+                    banco(con).escrever(
+                        """UPDATE cx_caixas SET situacao='FECHADO', valor_esperado=%s,
+                           valor_contado=%s, diferenca=%s, justificativa=%s,
+                           fechado_em=%s, fechado_por=%s WHERE id=%s""",
                         (reais(res["em_especie"]), reais(contado), reais(diferenca),
                          justificativa or None, db.now(), usuario_id(),
                          aberto["id"]))
@@ -524,7 +504,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         lanc = lancamentos_do_caixa(aberto["id"]) if aberto else []
         res = resumo_caixa(lanc, aberto["saldo_inicial"] if aberto else 0)
-        anteriores = q("""SELECT * FROM cx_caixas WHERE operador_nome=?
+        anteriores = q("""SELECT * FROM cx_caixas WHERE operador_nome=%s
                           ORDER BY data DESC LIMIT 15""", (operador,))
         # O QUE ESPERA CONFERÊNCIA — e nunca o do próprio operador.
         #
@@ -537,8 +517,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         #   sempre.
         a_conferir = q("""SELECT * FROM cx_caixas
                            WHERE situacao='FECHADO' AND conferido_em IS NULL
-                             AND operador_nome <> ?
-                           ORDER BY data DESC LIMIT 30""", (operador,))
+                             AND operador_nome <> %s
+                           ORDER BY data DESC, id DESC LIMIT 30""", (operador,))
         return render_template("caixa.html", aberto=aberto, lancamentos=lanc,
                                resumo=res, anteriores=anteriores,
                                a_conferir=a_conferir, operador=operador,
@@ -602,6 +582,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("A data do depósito não é uma data válida.",
                           "danger")
                     return redirect(url_for("caixa_depositos"))
+                # O PROTOCOLO DO ORÇAMENTO (LD06; CN-MA art. 198, I e VI). O
+                # orçamento de mais de um ato se monta no protocolo — o «mero
+                # cálculo» é um protocolo —, e o depósito que aponta para ele
+                # guarda os itens com os fundos. Número que não existe é
+                # recusado antes de gravar: depósito apontado para o nada é a
+                # coluna I vazia que o livro acusa.
+                numero_protocolo = (request.form.get("protocolo") or "").strip()
+                protocolo_id = None
+                if numero_protocolo:
+                    achado = q1("""SELECT id FROM cx_protocolos WHERE numero=%s
+                                   ORDER BY id LIMIT 1""", (numero_protocolo,))
+                    if not achado:
+                        flash(f"O protocolo {numero_protocolo} não existe.", "danger")
+                        return redirect(url_for("caixa_depositos"))
+                    protocolo_id = int(achado["id"])
                 # A CRIAÇÃO DO DEPÓSITO VIVE EM `caixa_depositos.py`, e não aqui.
                 #
                 #   Ela passou a ser chamada também pela tela do título do
@@ -611,7 +606,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 #   usuário: a mesma regra em dois arquivos, e um deles
                 #   divergindo em silêncio.
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     try:
                         feito = DEP.criar(
                             con, valor_centavos=valor, depositante=depositante,
@@ -620,6 +614,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                             observacao=request.form.get("observacao"),
                             forma_pagamento=request.form.get("forma_pagamento"),
                             caixa_id=aberto["id"] if aberto else None,
+                            protocolo_id=protocolo_id,
                             # O TIPO DO SERVIÇO — relato #50, segunda metade.
                             # Opcional, e o que vier é conferido lá dentro: uma
                             # atribuição fora do vocabulário ou um serviço que
@@ -649,11 +644,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # ver que foi entendido, e não descobrir na lista depois.
                 de_que = (f" — {DEP.ATRIBUICOES[feito['atribuicao']]}"
                           if feito["atribuicao"] else "")
+                orcamento = feito.get("orcamento")
                 flash(f"Depósito {feito['numero']} — R$ {feito['valor']} registrado"
                       f"{quando}{de_que}"
                       + (" e lançado no caixa." if feito["lancado_no_caixa"]
-                         else ". Abra o caixa para que ele entre no movimento do dia."),
+                         else ". Abra o caixa para que ele entre no movimento do dia.")
+                      + (f" Orçamento de R$ {orcamento['soma']['total']} guardado, "
+                         f"pelos valores de {orcamento['de_onde']}."
+                         if orcamento else ""),
                       "success")
+                # SEM ORÇAMENTO O DEPÓSITO ENTRA — o oficial decidiu em
+                # 17/09/2026 que o tipo é opcional —, mas a tela diz o que o
+                # livro vai cobrar (art. 198, VI) e o recibo não vai trazer
+                # (art. 197).
+                if not orcamento:
+                    flash("Este depósito ficou sem orçamento: informe o serviço ou o "
+                          "protocolo do orçamento, senão o recibo sai sem a "
+                          "discriminação dos valores previstos (CN-MA art. 197) e o "
+                          "livro aponta a falta (art. 198, VI).", "warning")
                 # A DIVERGÊNCIA SAI DEPOIS, e em aviso: o depósito foi
                 # registrado — o vínculo manda —, mas alguém precisa conferir
                 # qual dos dois está certo. Some-la seria gravar dinheiro
@@ -677,7 +685,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           "ou do gerente.", "danger")
                     return redirect(url_for("caixa_depositos"))
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     feito = DEP.gravar_tipos_do_vinculo(con)
                 if feito["gravados"]:
                     audit("DEPOSITO_PREVIO_TIPO_DO_VINCULO", "DEPOSITO", 0, feito)
@@ -691,78 +698,130 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return redirect(url_for("caixa_depositos"))
 
             if acao == "usar":
-                did = request.form.get("deposito_id")
+                did = numero_digitado(request.form.get("deposito_id"))
                 usar = centavos(request.form.get("valor_usar"))
                 numero = (request.form.get("protocolo") or "").strip()
-                d = q1("SELECT * FROM cx_depositos WHERE id=?", (did,))
-                if not d or d["encerrado"]:
-                    flash("Depósito não encontrado ou já encerrado.", "danger")
-                    return redirect(url_for("caixa_depositos"))
-                saldo = centavos(d["saldo"])
-                if usar <= 0 or usar > saldo:
-                    flash(f"O depósito tem saldo de R$ {reais(saldo)}. "
-                          f"Não dá para usar R$ {reais(usar)}.", "danger")
-                    return redirect(url_for("caixa_depositos"))
-                prot = q1("SELECT id FROM cx_protocolos WHERE numero=?",
-                          (numero,)) if numero else None
-                if numero and not prot:
-                    flash(f"O protocolo {numero} não existe.", "danger")
-                    return redirect(url_for("caixa_depositos"))
-                novo = saldo - usar
                 aberto = caixa_aberto(operador)
                 with db.transaction() as con:
-                    con.execute(
-                        """UPDATE cx_depositos SET saldo=?, encerrado=?,
-                           protocolo_id=COALESCE(?, protocolo_id), atualizado_em=?
-                           WHERE id=?""",
+                    bd = banco(con)
+                    bd._escrita()
+                    prot = bd.um("""SELECT id FROM cx_protocolos WHERE numero=%s
+                                    ORDER BY id LIMIT 1""",
+                                 (numero,)) if numero else None
+                    if numero and not prot:
+                        flash(f"O protocolo {numero} não existe.", "danger")
+                        return redirect(url_for("caixa_depositos"))
+                    # OS ITENS A PAGAR DO PROTOCOLO SE PRENDEM ANTES DO
+                    # DEPÓSITO (LD06), na ordem do selo (item → depósito): o
+                    # «usar» passou a quitá-los, e o selo do mesmo protocolo
+                    # prende nessa ordem.
+                    a_pagar = DEP.prender_itens_a_pagar(bd, prot["id"]) if prot else []
+                    # O SALDO SE LÊ AQUI DENTRO, COM A LINHA PRESA (FOR
+                    # UPDATE): lido antes da transação, dois cliques no mesmo
+                    # depósito gastavam o mesmo saldo duas vezes.
+                    d = bd.um("SELECT * FROM cx_depositos WHERE id=%s FOR UPDATE",
+                              (did,))
+                    if not d or d["encerrado"]:
+                        flash("Depósito não encontrado ou já encerrado.", "danger")
+                        return redirect(url_for("caixa_depositos"))
+                    saldo = centavos(d["saldo"])
+                    if usar <= 0 or usar > saldo:
+                        flash(f"O depósito tem saldo de R$ {reais(saldo)}. "
+                              f"Não dá para usar R$ {reais(usar)}.", "danger")
+                        return redirect(url_for("caixa_depositos"))
+                    # «USAR» NO PROTOCOLO QUITA O ITEM (LD06; CN-MA art. 202).
+                    # Baixava o saldo e deixava o item a pagar: a trava do selo
+                    # pedia o pagamento de novo e o caixa o cobrava em dinheiro.
+                    # Agora o valor quita os itens inteiros que ele cobre, pelo
+                    # mesmo débito do quadro «Selo e caixa».
+                    quitados = DEP.quitar_itens_com_o_deposito(
+                        bd, int(d["id"]), a_pagar, usar, agora=db.now(),
+                        quem=operador)
+                    pelos_itens = sum(int(f["valor_centavos"]) for f in quitados)
+                    novo = saldo - usar
+                    bd.escrever(
+                        """UPDATE cx_depositos SET saldo=%s, encerrado=%s,
+                           protocolo_id=COALESCE(%s, protocolo_id), atualizado_em=%s
+                           WHERE id=%s""",
                         (reais(novo), 1 if novo == 0 else 0,
                          prot["id"] if prot else None, db.now(), did))
                     if aberto:
                         # Consumir depósito NÃO é entrada nova de dinheiro: o
                         # valor já entrou quando foi depositado. Lança-se o uso
                         # para deixar rastro, sem mexer no saldo em espécie.
-                        con.execute(
+                        bd.escrever(
                             """INSERT INTO cx_lancamentos
                                (caixa_id, protocolo_id, data, hora, natureza,
                                 sentido, forma_pagamento, descricao, pagador,
                                 valor, criado_em)
-                               VALUES (?,?,?,?, 'RECEBIMENTO','ENTRADA',
-                                       'DEPOSITO_PREVIO', ?,?,?,?)""",
+                               VALUES (%s,%s,%s,%s, 'RECEBIMENTO','ENTRADA',
+                                       'DEPOSITO_PREVIO', %s,%s,%s,%s)""",
                             (aberto["id"], prot["id"] if prot else None,
                              date.today().isoformat(), datetime.now().strftime("%H:%M"),
                              f"Uso do depósito prévio nº {did}"
                              + (f" no protocolo {numero}" if numero else ""),
                              d["depositante"], reais(usar), db.now()))
-                audit("DEPOSITO_PREVIO_USADO", "DEPOSITO", did,
-                      {"usado": reais(usar), "saldo": reais(novo), "protocolo": numero})
+                # O RASTRO DE CADA PARTE NUM LUGAR SÓ. O que quitou item já
+                # está em `cx_deposito_usos`, com o item — é de lá que o livro
+                # lê a conversão com o ato (art. 198, IV); só o resto vai como
+                # uso solto. Escrito nos dois, o livro contaria o mesmo
+                # dinheiro duas vezes.
+                resto = usar - pelos_itens
+                if quitados:
+                    audit("DEPOSITO_PREVIO_ITENS_QUITADOS", "DEPOSITO", did,
+                          {"protocolo": numero, "valor": reais(pelos_itens),
+                           "itens": [{"item": int(f["item"]["id"]),
+                                      "codigo": f["item"]["codigo_ato"],
+                                      "valor": reais(f["valor_centavos"])}
+                                     for f in quitados]})
+                if resto:
+                    audit("DEPOSITO_PREVIO_USADO", "DEPOSITO", did,
+                          {"usado": reais(resto), "saldo": reais(novo),
+                           "protocolo": numero})
+                quais = ", ".join(str(f["item"]["codigo_ato"] or f["item"]["id"])
+                                  for f in quitados)
                 flash(f"R$ {reais(usar)} consumidos. Saldo do depósito: R$ {reais(novo)}."
+                      + (f" Quitado(s) com o depósito no protocolo {numero}: {quais}"
+                         f" — R$ {reais(pelos_itens)}." if quitados else "")
                       + (" Depósito encerrado." if novo == 0 else ""), "success")
+                # O ITEM QUE O VALOR NÃO COBRE CONTINUA A PAGAR, e a tela diz:
+                # é o item que o balcão cobraria de novo sem saber que parte do
+                # dinheiro do cliente já foi usada neste protocolo.
+                if a_pagar and len(quitados) < len(a_pagar):
+                    flash(f"{len(a_pagar) - len(quitados)} item(ns) do protocolo "
+                          f"{numero} continua(m) a pagar: o valor usado não cobre "
+                          f"o preço inteiro dele(s).", "warning")
                 return redirect(url_for("caixa_depositos"))
 
             if acao == "devolver":
-                did = request.form.get("deposito_id")
+                did = numero_digitado(request.form.get("deposito_id"))
                 motivo = (request.form.get("motivo") or "").strip()
-                d = q1("SELECT * FROM cx_depositos WHERE id=?", (did,))
-                if not d or d["encerrado"]:
-                    flash("Depósito não encontrado ou já encerrado.", "danger")
-                    return redirect(url_for("caixa_depositos"))
-                saldo = centavos(d["saldo"])
                 aberto = caixa_aberto(operador)
-                if not aberto:
-                    flash("Abra o caixa para devolver: o dinheiro sai da gaveta.", "danger")
-                    return redirect(url_for("caixa_depositos"))
                 with db.transaction() as con:
-                    con.execute(
+                    bd = banco(con)
+                    # FOR UPDATE, como no `usar`: o que se devolve é o saldo
+                    # de agora, e não o de antes de outro clique gastar parte.
+                    bd._escrita()
+                    d = bd.um("SELECT * FROM cx_depositos WHERE id=%s FOR UPDATE",
+                              (did,))
+                    if not d or d["encerrado"]:
+                        flash("Depósito não encontrado ou já encerrado.", "danger")
+                        return redirect(url_for("caixa_depositos"))
+                    saldo = centavos(d["saldo"])
+                    if not aberto:
+                        flash("Abra o caixa para devolver: o dinheiro sai da gaveta.", "danger")
+                        return redirect(url_for("caixa_depositos"))
+                    bd.escrever(
                         """UPDATE cx_depositos SET saldo='0,00', encerrado=1,
-                           observacao=COALESCE(observacao,'') || ?, atualizado_em=?
-                           WHERE id=?""",
+                           observacao=COALESCE(observacao,'') || %s, atualizado_em=%s
+                           WHERE id=%s""",
                         (f" | Devolvido em {date.today().isoformat()}: {motivo}",
                          db.now(), did))
-                    con.execute(
+                    bd.escrever(
                         """INSERT INTO cx_lancamentos
                            (caixa_id, data, hora, natureza, sentido, descricao,
                             pagador, valor, criado_em)
-                           VALUES (?,?,?, 'DEVOLUCAO','SAIDA', ?,?,?,?)""",
+                           VALUES (%s,%s,%s, 'DEVOLUCAO','SAIDA', %s,%s,%s,%s)""",
                         (aberto["id"], date.today().isoformat(),
                          datetime.now().strftime("%H:%M"),
                          f"Devolução do depósito prévio nº {did}: {motivo}",
@@ -789,12 +848,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if mostrar == "ABERTOS":
             onde.append("d.encerrado=0")
         if busca:
-            onde.append("(d.depositante LIKE ? OR d.depositante_documento LIKE ?)")
+            onde.append("(d.depositante ILIKE %s OR d.depositante_documento ILIKE %s)")
             params += [f"%{busca}%", f"%{busca}%"]
         if filtro == "SEM":
             onde.append("d.atribuicao IS NULL")
         elif filtro:
-            onde.append("d.atribuicao=?")
+            onde.append("d.atribuicao=%s")
             params.append(filtro)
 
         # O ESPELHO: cada depósito diz a que título ou ato pertence, e leva até
@@ -804,7 +863,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         rows = [dict(r) for r in
                 q(f"""{DEP.SQL_COM_VINCULO}
                       WHERE {' AND '.join(onde)}
-                      ORDER BY d.encerrado, d.data DESC LIMIT 300""", params)]
+                      ORDER BY d.encerrado, d.data DESC, d.id LIMIT 300""", params)]
         # A BUSCA DO SERVIÇO É DO SERVIDOR, e não do navegador. A do protocolo
         # (relato #53) é instantânea porque o formulário dela não recarrega ao
         # digitar; aqui o formulário **é** o cadastro do depósito, e uma busca
@@ -817,7 +876,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # UMA CONEXÃO DE LEITURA PARA A TELA INTEIRA — abrir uma por depósito
         # faria trezentas conexões para desenhar uma lista.
         with db.connect() as con_leitura:
-            con_leitura.row_factory = sqlite3.Row
             if termo_servico:
                 achados_servico = DEP.buscar_servicos(con_leitura, termo_servico)
             # A SUGESTÃO DO FORMULÁRIO é a mesma régua do cadastro: com o
@@ -835,8 +893,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # sem tipo gravado, que são os seis antigos até o botão da tela
                 # ser apertado uma vez.
                 d["tipo"] = DEP.tipo_do_deposito(con_leitura, d)
+                # O ORÇAMENTO CONGELADO (LD06): o total à vista na lista, e o
+                # «sem orçamento» do depósito que o livro vai cobrar.
+                orcamento = DEP.orcamento_gravado(d)
+                d["orcamento_total"] = (orcamento["soma"].get("total")
+                                        if orcamento else None)
         total = q1("""SELECT COUNT(*) n,
-                      COALESCE(SUM(CAST(REPLACE(REPLACE(saldo,'.',''),',','.') AS REAL)),0) s
+                      COALESCE(SUM(COALESCE(substring(
+                          replace(replace(saldo,'.',''),',','.')
+                          FROM '^[+-]{0,1}[0-9]*[.]{0,1}[0-9]+')::float8, 0)),0) AS s
                       FROM cx_depositos WHERE encerrado=0""")
         # QUANTOS ESTÃO SEM TIPO — é a lista que se declara, e não a que se
         # esconde: são os que o vínculo não respondeu, e o número fica à vista
@@ -846,7 +911,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         por_atribuicao = [dict(r) for r in q(
             """SELECT atribuicao, COUNT(*) n FROM cx_depositos
                 WHERE atribuicao IS NOT NULL GROUP BY atribuicao
-                ORDER BY n DESC""")]
+                ORDER BY n DESC, atribuicao""")]
         return render_template("caixa_depositos.html", rows=rows, busca=busca,
                                mostrar=mostrar, total=total, FORMAS=FORMAS_PAGAMENTO,
                                ATRIBUICOES=DEP.ATRIBUICOES, filtro=filtro,
@@ -878,57 +943,97 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          p.interessado_documento, p.telefone, p.tipo tipo_protocolo
                   FROM cx_lancamentos l
                   LEFT JOIN cx_protocolos p ON p.id = l.protocolo_id
-                  WHERE l.id=?""", (lancamento_id,))
+                  WHERE l.id=%s""", (lancamento_id,))
         if not l:
             abort(404)
-        if l["recibo_id"]:
-            flash("Este lançamento já tem recibo.", "warning")
-            return redirect(url_for("caixa"))
 
         ano = date.today().year
+        # SÓ OS ITENS QUE ESTE LANÇAMENTO PAGOU (LT06, 20/10/2026). A lista era
+        # a do protocolo inteiro, pagos ou não, e os fundos somavam todos: o
+        # recibo dizia «R$ 6,21» e discriminava R$ 51,57. Recibo é prova de
+        # pagamento — a frase de `caixa_recibo_do_protocolo` —, e o do
+        # atendimento inteiro continua sendo aquele. Lançamento que não quitou
+        # item (o do ato, o avulso) fica sem lista, e os fundos saem dele.
         itens = [dict(r) for r in
-                 q("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=?",
-                   (l["protocolo_id"],))] if l["protocolo_id"] else []
+                 q("""SELECT * FROM cx_protocolo_atos
+                       WHERE protocolo_id=%s AND lancamento_id=%s ORDER BY id""",
+                   (l["protocolo_id"], lancamento_id))] if l["protocolo_id"] else []
         fundos = {f: reais(sum(centavos(i.get(f)) for i in itens) or centavos(l[f]))
                   for f in ("emolumentos", "ferc", "fadep", "femp", "ferrfis")}
+        # O RECIBO DO DEPÓSITO PRÉVIO TRAZ O ORÇAMENTO (LD06). «A escrituração
+        # do Livro de Controle de Depósito Prévio não exime o delegatário da
+        # obrigação de fornecer ao usuário o respectivo recibo, que deverá
+        # incluir a discriminação orçamentária de todos os valores previstos
+        # para o serviço requerido» (CN-MA art. 197). A discriminação é a do
+        # orçamento congelado no depósito, com os fundos, e a observação diz
+        # com todas as letras que é ORÇAMENTO: o dinheiro é adiantamento, e só
+        # vira emolumento quando o ato for praticado (art. 202).
+        observacao = None  # recibo de pagamento: sem aviso de orçamento
+        deposito = (q1("""SELECT numero, orcamento FROM cx_depositos
+                           WHERE lancamento_id=%s ORDER BY id LIMIT 1""",
+                       (lancamento_id,))
+                    if l["natureza"] == "DEPOSITO_PREVIO" else None)
+        orcamento = DEP.orcamento_gravado(deposito) if deposito else None
+        if deposito:
+            observacao = (f"Depósito prévio nº {deposito['numero']}: adiantamento "
+                          f"para a prática futura do ato (CN-MA art. 195).")
+        if orcamento:
+            itens = list(orcamento["itens"])
+            fundos = {f: orcamento["soma"].get(f) or "0,00"
+                      for f in ("emolumentos", "ferc", "fadep", "femp", "ferrfis")}
+            observacao += (" A discriminação acima é o ORÇAMENTO de todos os valores "
+                           "previstos para o serviço requerido (CN-MA art. 197), no "
+                           f"total de R$ {orcamento['soma'].get('total')}, e não "
+                           "recibo de emolumentos de ato praticado: o depósito se "
+                           "converte em emolumentos quando o ato for praticado "
+                           "(art. 202), e o que sobrar é devolvido.")
         pagador = (l["pagador"] or l["interessado"] or "").strip() or "Não informado"
 
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
-            ultimo = con.execute("SELECT MAX(numero) n FROM cx_recibos WHERE ano=?",
-                                 (ano,)).fetchone()
-            numero = int((ultimo["n"] or 0)) + 1
+            bd = banco(con)
+            bd.travar("cx_recibos.numero")
+            # A MARCA DO RECIBO SE CONFERE DEPOIS DA TRAVA: lida antes, dois
+            # cliques passavam juntos e o mesmo lançamento saía em dois recibos.
+            marca = bd.um("SELECT recibo_id FROM cx_lancamentos WHERE id=%s FOR UPDATE",
+                          (lancamento_id,))
+            if marca and marca["recibo_id"]:
+                flash("Este lançamento já tem recibo.", "warning")
+                return redirect(url_for("caixa"))
+            ultimo = bd.valor("SELECT MAX(numero) AS n FROM cx_recibos WHERE ano=%s",
+                              (ano,))
+            numero = int((ultimo or 0)) + 1
             r = {"numero": numero, "ano": ano, "pagador": pagador,
                  "pagador_documento": l["pagador_documento"],
                  "protocolo_numero": l["protocolo_numero"],
                  "valor_total": l["valor"], "valor_extenso": por_extenso(centavos(l["valor"])),
                  "forma_pagamento": FORMAS_PAGAMENTO.get(l["forma_pagamento"] or "", ""),
-                 "observacao": None}  # recibo de pagamento: sem aviso de orçamento
+                 "observacao": observacao}
             # O contato do cliente fica gravado inteiro no recibo (e prova de
             # quem pagou); a mascara so acontece na hora de imprimir.
             corpo = json.dumps(
                 {"itens": itens, "fundos": fundos,
                  "documento": l["pagador_documento"] or l["interessado_documento"],
                  "telefone": l["telefone"],
-                 "lancamento": f"{l['numero']}/{l['ano']}" if l["numero"] else None},
+                 "lancamento": f"{l['numero']}/{l['ano']}" if l["numero"] else None,
+                 **({"orcamento": True} if orcamento else {})},
                 ensure_ascii=False)
             h = hash_recibo(numero, ano, pagador, l["valor"],
                             date.today().isoformat(), corpo)
-            cur = con.execute(
+            recibo_id = int(bd.escrever(
                 """INSERT INTO cx_recibos
                    (numero, ano, data_emissao, protocolo_id, protocolo_numero,
                     pagador, pagador_documento, valor_total, valor_extenso,
                     forma_pagamento, discriminacao, corpo, observacao,
                     hash_recibo, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   RETURNING id""",
                 (numero, ano, date.today().isoformat(), l["protocolo_id"],
                  l["protocolo_numero"], pagador,
                  l["pagador_documento"] or l["interessado_documento"],
                  l["valor"], r["valor_extenso"], r["forma_pagamento"],
-                 corpo, corpo, r["observacao"], h, db.now()))
-            con.execute("UPDATE cx_lancamentos SET recibo_id=? WHERE id=?",
-                        (int(cur.lastrowid), lancamento_id))
-            recibo_id = int(cur.lastrowid)
+                 corpo, corpo, r["observacao"], h, db.now()))[0]["id"])
+            bd.escrever("UPDATE cx_lancamentos SET recibo_id=%s WHERE id=%s",
+                        (recibo_id, lancamento_id))
 
         audit("RECIBO_EMITIDO", "RECIBO", recibo_id,
               {"numero": numero, "ano": ano, "valor": l["valor"]})
@@ -951,7 +1056,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         congelado e hash. Duas formas de recibo na mesma casa seria uma a mais
         para conferir.
         """
-        p = q1("SELECT * FROM cx_protocolos WHERE id=?", (protocolo_id,))
+        p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
         itens = [i for i in q(
@@ -959,19 +1064,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       l.recibo_id
                  FROM cx_protocolo_atos a
                  JOIN cx_lancamentos l ON l.id = a.lancamento_id
-                WHERE a.protocolo_id=? AND COALESCE(l.excluido, 0) = 0
+                WHERE a.protocolo_id=%s AND COALESCE(l.excluido, 0) = 0
                 ORDER BY a.id""", (protocolo_id,))]
         if not itens:
             flash("Nenhum serviço deste protocolo entrou no caixa ainda. "
                   "Recibo é prova de pagamento — quite os itens primeiro.",
                   "warning")
-            return redirect(url_for("caixa_protocolo",
-                                    protocolo_id=protocolo_id))
-        ja = [i for i in itens if i["recibo_id"]]
-        if ja:
-            flash(f"{len(ja)} serviço(s) deste protocolo já estão num recibo. "
-                  f"Dois recibos do mesmo dinheiro é o que ninguém consegue "
-                  f"conferir depois.", "danger")
             return redirect(url_for("caixa_protocolo",
                                     protocolo_id=protocolo_id))
 
@@ -986,11 +1084,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         forma = FORMAS_PAGAMENTO.get(itens[0]["forma_pagamento"] or "", "")
 
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
-            ultimo = con.execute(
-                "SELECT MAX(numero) n FROM cx_recibos WHERE ano=?",
-                (ano,)).fetchone()
-            numero = int(ultimo["n"] or 0) + 1
+            bd = banco(con)
+            bd.travar("cx_recibos.numero")
+            # A MARCA DO RECIBO SE CONFERE DEPOIS DA TRAVA, como no recibo do
+            # lançamento: lida antes, dois cliques passavam juntos e o mesmo
+            # dinheiro saía em dois recibos.
+            com_recibo = {r["id"] for r in bd.ler(
+                """SELECT id, recibo_id FROM cx_lancamentos
+                    WHERE id = ANY(%s) ORDER BY id FOR UPDATE""",
+                ([int(i["lancamento_id"]) for i in itens],)) if r["recibo_id"]}
+            ja = [i for i in itens if i["lancamento_id"] in com_recibo]
+            if ja:
+                flash(f"{len(ja)} serviço(s) deste protocolo já estão num recibo. "
+                      f"Dois recibos do mesmo dinheiro é o que ninguém consegue "
+                      f"conferir depois.", "danger")
+                return redirect(url_for("caixa_protocolo",
+                                        protocolo_id=protocolo_id))
+            ultimo = bd.valor(
+                "SELECT MAX(numero) AS n FROM cx_recibos WHERE ano=%s",
+                (ano,))
+            numero = int(ultimo or 0) + 1
             extenso = por_extenso(total)
             corpo = json.dumps(
                 {"itens": [dict(i) for i in itens], "fundos": fundos,
@@ -999,24 +1112,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 ensure_ascii=False, default=str)
             h = hash_recibo(numero, ano, pagador, reais(total),
                             date.today().isoformat(), corpo)
-            cur = con.execute(
+            recibo_id = int(bd.escrever(
                 """INSERT INTO cx_recibos
                    (numero, ano, data_emissao, protocolo_id, protocolo_numero,
                     pagador, pagador_documento, valor_total, valor_extenso,
                     forma_pagamento, discriminacao, corpo, observacao,
                     hash_recibo, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   RETURNING id""",
                 (numero, ano, date.today().isoformat(), protocolo_id,
                  p["numero"], pagador, documento, reais(total), extenso, forma,
                  corpo, corpo,
                  None,  # recibo quitado: sem aviso de mero cálculo
-                 h, db.now()))
-            recibo_id = int(cur.lastrowid)
+                 h, db.now()))[0]["id"])
             # TODOS OS LANÇAMENTOS DO RECIBO FICAM MARCADOS. Sem isso, o mesmo
             # dinheiro sairia num segundo recibo — e dois recibos do mesmo
             # pagamento é o que ninguém consegue conferir depois.
             for i in itens:
-                con.execute("UPDATE cx_lancamentos SET recibo_id=? WHERE id=?",
+                bd.escrever("UPDATE cx_lancamentos SET recibo_id=%s WHERE id=%s",
                             (recibo_id, i["lancamento_id"]))
 
         audit("RECIBO_DO_PROTOCOLO", "RECIBO", recibo_id,
@@ -1027,7 +1140,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/caixa/recibo/<int:recibo_id>/odt")
     @roles_required("ADMIN", "MANAGER", "USER")
     def caixa_recibo_odt(recibo_id):
-        r = q1("SELECT * FROM cx_recibos WHERE id=?", (recibo_id,))
+        r = q1("SELECT * FROM cx_recibos WHERE id=%s", (recibo_id,))
         if not r:
             abort(404)
         dados = json.loads(r["discriminacao"] or "{}")
@@ -1044,6 +1157,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         html = env.from_string(_modelo).render(
             r=dict(r), itens=dados.get("itens", []), fundos=fundos,
             tem_fundos=tem_fundos, lancamento=dados.get("lancamento"),
+            # a discriminação do recibo do depósito prévio é ORÇAMENTO (art. 197)
+            orcamento=bool(dados.get("orcamento")),
             sv=bloco_serventia(),
             documento=mascarar_documento(dados.get("documento")),
             telefone=mascarar_telefone(dados.get("telefone")),
@@ -1051,6 +1166,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             data_extenso=fmt_date(r["data_emissao"]),
             emitido_por=usuario_nome(), funcao=usuario_funcao(),
             agora=datetime.now().strftime("%d/%m/%Y %H:%M"))
+        # O AJUSTE DA CASA SAI SEM O QUE EXECUTA (22/10/2026, A7); o padrão,
+        # como saía.
+        html = MODELOS.sem_o_que_executa(_modelo, html)
         arquivo = gerar_odt(html_para_odf(html), titulo=f"Recibo {r['numero']}/{r['ano']}")
         audit("RECIBO_IMPRESSO", "RECIBO", recibo_id, {"numero": r["numero"]})
         return Response(arquivo, mimetype="application/vnd.oasis.opendocument.text",
@@ -1063,7 +1181,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         busca = (request.args.get("busca") or "").strip()
         onde, params = ["1=1"], []
         if busca:
-            onde.append("(pagador LIKE ? OR protocolo_numero LIKE ? OR numero LIKE ?)")
+            onde.append("(pagador ILIKE %s OR protocolo_numero ILIKE %s OR numero::text ILIKE %s)")
             params += [f"%{busca}%", f"%{busca}%", f"%{busca}%"]
         rows = q(f"""SELECT * FROM cx_recibos WHERE {' AND '.join(onde)}
                      ORDER BY ano DESC, numero DESC LIMIT 200""", params)
@@ -1073,6 +1191,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/caixa/protocolos", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    # O AUDITOR ve a tela; o que ela GRAVA (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
     def caixa_protocolos():
         """Protocolo geral. Por padrão mostra o que continua em aberto."""
         if request.method == "POST" and request.form.get("acao") == "novo":
@@ -1094,21 +1214,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             prefixo = f"{hoje.year}.{hoje.month:02d}."
             try:
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
-                    ultimo = con.execute(
-                        """SELECT numero FROM cx_protocolos WHERE numero LIKE ?
-                           ORDER BY CAST(SUBSTR(numero, ?) AS INTEGER) DESC LIMIT 1""",
-                        (prefixo + "%", len(prefixo) + 1)).fetchone()
+                    bd = banco(con)
+                    bd.travar("cx_protocolos.numero")
+                    # O sufixo e' lido pelo prefixo numerico, como o CAST do
+                    # SQLite lia (sem numero nenhum, conta como zero).
+                    ultimo = bd.um(
+                        """SELECT numero FROM cx_protocolos
+                            WHERE starts_with(numero, %(prefixo)s)
+                            ORDER BY COALESCE(substring(substring(numero FROM %(inicio)s)
+                                                        FROM '^[0-9]+')::bigint, 0) DESC
+                            LIMIT 1""",
+                        {"prefixo": prefixo, "inicio": len(prefixo) + 1})
                     seq = (int(ultimo["numero"].split(".")[-1]) + 1) if ultimo else 1
                     numero = f"{prefixo}{seq}"
-                    cur = con.execute(
+                    novo = bd.escrever(
                         """INSERT INTO cx_protocolos
                            (numero, data_abertura, hora, atribuicao, interessado,
                             interessado_documento, telefone, email, assunto,
                             observacao, previsao_entrega, tipo,
                             documento_tipo, documento_numero, documento_descricao,
                             situacao, criado_em)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'ABERTO', ?)""",
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s)
+                           RETURNING id""",
                         (numero, hoje.isoformat(), datetime.now().strftime("%H:%M"),
                          request.form.get("atribuicao") or "OUTROS", interessado,
                          (request.form.get("interessado_documento") or "").strip() or None,
@@ -1123,14 +1250,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          (request.form.get("documento_numero") or "").strip() or None,
                          (request.form.get("documento_descricao") or "").strip() or None,
                          db.now()))
-                    pid = int(cur.lastrowid)
+                    pid = int(novo[0]["id"])
                     # Ponte com a prenotacao do RI: so quando o balcao escolheu.
                     # Sem escolha, a coluna fica vazia — lavrar nao adivinha.
                     ri_pid = (request.form.get("ri_protocolo_id") or "").strip()
                     atrib = (request.form.get("atribuicao") or "").strip().upper()
                     ligacao = None
                     if atrib == "RI" and ri_pid.isdigit():
-                        ligacao = CXP.vincular_ri(con, pid, int(ri_pid))
+                        # Número que não é de prenotação nenhuma («²», dígitos
+                        # demais) é o mesmo «não achei» do número que não existe.
+                        ri_numero = numero_digitado(ri_pid)
+                        if ri_numero is None:
+                            raise CXP.ProtocoloError(
+                                f"Não achei a prenotação {ri_pid[:20]}. Confira o "
+                                f"número no Livro 1 antes de vincular.")
+                        ligacao = CXP.vincular_ri(con, pid, ri_numero)
             except CXP.ProtocoloError as e:
                 flash(str(e), "danger")
                 return redirect(url_for("caixa_protocolos"))
@@ -1152,36 +1286,34 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         situacao = (request.args.get("situacao") or "ANDAMENTO").strip().upper()
         atribuicao = (request.args.get("atribuicao") or "").strip().upper()
         busca = (request.args.get("busca") or "").strip()
-        try:
-            pagina = max(1, int(request.args.get("pagina") or 1))
-        except (TypeError, ValueError):
-            pagina = 1
+        # A página que não é número, ou que o OFFSET não aguenta, é a primeira.
+        pagina = max(1, numero_digitado(request.args.get("pagina"),
+                                        maximo=PAGINA_MAIS_ALTA) or 1)
 
         onde, params = ["1=1"], []
         if situacao == "ANDAMENTO":
             onde.append("situacao IN ('ABERTO', 'A_PAGAR')")
         elif situacao and situacao != "TODAS":
-            onde.append("situacao=?")
+            onde.append("situacao=%s")
             params.append(situacao)
         if atribuicao:
-            onde.append("atribuicao=?")
+            onde.append("atribuicao=%s")
             params.append(atribuicao)
         if busca:
-            onde.append("(numero LIKE ? OR interessado LIKE ? OR assunto LIKE ?)")
+            onde.append("(numero ILIKE %s OR interessado ILIKE %s OR assunto ILIKE %s)")
             params += [f"%{busca}%", f"%{busca}%", f"%{busca}%"]
         filtro = " AND ".join(onde)
 
         total = q1(f"SELECT COUNT(*) n FROM cx_protocolos WHERE {filtro}", params)["n"]
         rows = q(f"""SELECT * FROM cx_protocolos WHERE {filtro}
                      ORDER BY data_abertura DESC, numero DESC
-                     LIMIT ? OFFSET ?""", params + [POR_PAGINA, (pagina - 1) * POR_PAGINA])
+                     LIMIT %s OFFSET %s""", params + [POR_PAGINA, (pagina - 1) * POR_PAGINA])
         resumo = q("""SELECT situacao, COUNT(*) n FROM cx_protocolos
-                      GROUP BY situacao ORDER BY n DESC""")
+                      GROUP BY situacao ORDER BY n DESC, situacao""")
         por_atrib = q("""SELECT atribuicao, COUNT(*) n FROM cx_protocolos
                          WHERE situacao IN ('ABERTO', 'A_PAGAR')
-                         GROUP BY atribuicao ORDER BY n DESC""")
+                         GROUP BY atribuicao ORDER BY n DESC, atribuicao""")
         with db.connect() as con_ri:
-            con_ri.row_factory = sqlite3.Row
             prenotacoes_ri = CXP.prenotacoes_abertas(con_ri)
         return render_template("caixa_protocolos.html", rows=rows, resumo=resumo,
                                por_atrib=por_atrib, situacao=situacao,
@@ -1206,9 +1338,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not ato_id:
             return ""
         if tabela == "rg_atos":
-            linha = con.execute(
+            linha = banco(con).um(
                 """SELECT tipo, numero_ordem, rotulo FROM rg_atos
-                    WHERE id=?""", (int(ato_id),)).fetchone()
+                    WHERE id=%s""", (int(ato_id),))
             if not linha:
                 return ""
             tipo = str(linha["tipo"] or "").strip().upper()
@@ -1217,9 +1349,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      "CANCELAMENTO": "Cancelamento"}
             return f"{nomes.get(tipo, tipo.title())} nº {numero}".strip()
         if tabela == "at_certidoes":
-            linha = con.execute(
+            linha = banco(con).um(
                 """SELECT numero, ano FROM at_certidoes
-                    WHERE id=?""", (int(ato_id),)).fetchone()
+                    WHERE id=%s""", (int(ato_id),))
             if not linha:
                 return ""
             return f"Certidão nº {linha['numero']}/{linha['ano']}"
@@ -1227,16 +1359,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/caixa/protocolos/<int:protocolo_id>", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    # O AUDITOR ve a tela; o que ela GRAVA (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
     def caixa_protocolo(protocolo_id):
         if request.method == "POST" and request.form.get("acao") == "contato":
             # Telefone e e-mail mudam com frequencia e nao sao ato: podem ser
             # corrigidos direto, com registro na auditoria.
             with db.transaction() as con:
-                con.execute(
-                    """UPDATE cx_protocolos SET telefone=?, email=?,
-                       interessado_documento=?, previsao_entrega=?,
-                       documento_tipo=?, documento_numero=?,
-                       documento_descricao=? WHERE id=?""",
+                banco(con).escrever(
+                    """UPDATE cx_protocolos SET telefone=%s, email=%s,
+                       interessado_documento=%s, previsao_entrega=%s,
+                       documento_tipo=%s, documento_numero=%s,
+                       documento_descricao=%s WHERE id=%s""",
                     ((request.form.get("telefone") or "").strip() or None,
                      (request.form.get("email") or "").strip() or None,
                      (request.form.get("interessado_documento") or "").strip() or None,
@@ -1301,7 +1435,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         if not ri_pid.isdigit():
                             raise CXP.ProtocoloError(
                                 "Escolha a prenotação do Livro 1 para vincular.")
-                        feito = CXP.vincular_ri(con, protocolo_id, int(ri_pid))
+                        ri_numero = numero_digitado(ri_pid)
+                        if ri_numero is None:
+                            raise CXP.ProtocoloError(
+                                f"Não achei a prenotação {ri_pid[:20]}. Confira o "
+                                f"número no Livro 1 antes de vincular.")
+                        feito = CXP.vincular_ri(con, protocolo_id, ri_numero)
                     else:
                         feito = CXP.desvincular_ri(con, protocolo_id)
             except CXP.ProtocoloError as e:
@@ -1320,13 +1459,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     f"prenotação removido.", "success")
             return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
 
-        p = q1("SELECT * FROM cx_protocolos WHERE id=?", (protocolo_id,))
+        p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
         atos = [dict(r) for r in
-                q("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=? ORDER BY id",
+                q("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=%s ORDER BY id",
                   (protocolo_id,))]
-        lanc = q("""SELECT * FROM cx_lancamentos WHERE protocolo_id=?
+        lanc = q("""SELECT * FROM cx_lancamentos WHERE protocolo_id=%s
                     ORDER BY data, id""", (protocolo_id,))
         soma = EMOL.somar_itens(atos)
         pendente = EMOL.somar_itens([a for a in atos if not a["quitado"]])
@@ -1344,7 +1483,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # e rotulo que conta errado e' pior que rotulo nenhum.
         faltam = len([a for a in atos if not a["quitado"]])
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             # **O QUE JÁ FOI LAVRADO COM ESTE ITEM** — achado do oficial em
             # 12/09/2026: «por que eu não vejo no protocolo menção às
             # averbações feitas?». O item marcava `usado_em`/
@@ -1377,7 +1515,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         ri_fk = p["ri_protocolo_id"] if "ri_protocolo_id" in p.keys() else None
         if atrib_p.upper() == "RI" or ri_fk:
             with db.connect() as con_ri:
-                con_ri.row_factory = sqlite3.Row
                 if ri_fk:
                     prenotacao_ligada = CXP.prenotacao_por_id(con_ri, int(ri_fk))
                 prenotacoes_ri = CXP.prenotacoes_abertas(con_ri)
@@ -1434,7 +1571,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """Anexa um ou mais documentos para qualificação ao protocolo. ESCREVE."""
         from storage import save_upload
         volta = url_for("caixa_protocolo", protocolo_id=protocolo_id) + "#documentos-qualificacao"
-        p = q1("SELECT * FROM cx_protocolos WHERE id=?", (protocolo_id,))
+        p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
         enviados = [f for f in request.files.getlist("documento") if f and f.filename]
@@ -1484,7 +1621,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def caixa_protocolo_documento_retirar(protocolo_id, anexo_id):
         """Retira o documento da lista, com motivo. Não apaga nada. ESCREVE."""
         volta = url_for("caixa_protocolo", protocolo_id=protocolo_id) + "#documentos-qualificacao"
-        if not q1("SELECT id FROM cx_protocolos WHERE id=?", (protocolo_id,)):
+        if not q1("SELECT id FROM cx_protocolos WHERE id=%s", (protocolo_id,)):
             abort(404)
         try:
             with db.transaction() as con:
@@ -1528,7 +1665,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         except (TypeError, ValueError):
             limite = 30
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             linhas = EMOL.buscar(con, termo, limite=limite) if termo else []
         if request.args.get("formato") == "html":
             return render_template("_atos_da_tabela_fragmento.html",
@@ -1557,7 +1693,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         usa — duas montagens da mesma lista divergiriam no primeiro conserto, e
         a lista que aparece ao digitar deixaria de ser a que aparece ao clicar.
         """
-        if not q1("SELECT id FROM cx_protocolos WHERE id=?", (protocolo_id,)):
+        if not q1("SELECT id FROM cx_protocolos WHERE id=%s", (protocolo_id,)):
             abort(404)
         busca = (request.args.get("busca") or "").strip()
         achados = _atos_da_tabela(db, busca) if busca else []
@@ -1589,13 +1725,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         mesmo que nao ter por onde encerrar.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             parados = CXP.abertos_sem_item(con)
             total = CXP.quantos_abertos_sem_item(con)
         return render_template("caixa_protocolos_parados.html",
                                parados=parados, total=total)
 
-    @app.route("/caixa/protocolos/<int:protocolo_id>/recepcao")
+    @app.route("/caixa/protocolos/<int:protocolo_id>/recepcao", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def caixa_recepcao(protocolo_id):
         """Protocolo de recepção: o comprovante que fica com o cliente.
@@ -1603,12 +1738,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         É o documento que prova o que entrou no balcão — quem trouxe, o que
         trouxe e para quê. Sai do cartório, então CPF, telefone e e-mail vão
         mascarados (Lei 13.709/2018, art. 6º, III — só o necessário).
+
+        POST COM O TOKEN (M8 do LS01, lote LX11). Era GET, e GET que grava
+        não passa pelo CSRF da casa: o `SameSite=Lax` manda o cookie em link
+        vindo de fora, e bastava um link ou `<img>` com o id para gravar em
+        nome de quem estivesse logado. O botão da tela manda o formulário. Aqui grava a
+        hora da recepção (`recepcao_em`).
         """
-        p = q1("SELECT * FROM cx_protocolos WHERE id=?", (protocolo_id,))
+        p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
         itens = [dict(r) for r in
-                 q("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=? ORDER BY id",
+                 q("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=%s ORDER BY id",
                    (protocolo_id,))]
         soma = EMOL.somar_itens(itens)
         pendente = EMOL.somar_itens([i for i in itens if not i["quitado"]])
@@ -1630,7 +1771,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         arquivo = gerar_odt(html_para_odf(html),
                             titulo=f"Protocolo de recepção {p['numero']}")
         with db.transaction() as con:
-            con.execute("UPDATE cx_protocolos SET recepcao_em=? WHERE id=?",
+            banco(con).escrever("UPDATE cx_protocolos SET recepcao_em=%s WHERE id=%s",
                         (db.now(), protocolo_id))
         audit("RECEPCAO_EMITIDA", "PROTOCOLO", protocolo_id, {"numero": p["numero"]})
         return Response(arquivo, mimetype="application/vnd.oasis.opendocument.text",
@@ -1648,7 +1789,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         fixo, e se escolhe pelo código; ou depende do valor do negócio, e se
         informa a base para achar a faixa.
         """
-        p = q1("SELECT * FROM cx_protocolos WHERE id=?", (protocolo_id,))
+        p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
         acao = request.form.get("acao")
@@ -1668,9 +1809,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     "danger",
                 )
                 return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
-            try:
-                quantidade = int(request.form.get("quantidade") or 1)
-            except (TypeError, ValueError):
+            # A QUANTIDADE VAI PARA `cx_protocolo_atos.quantidade` (`integer`):
+            # o número que não cabe nela derrubava o INSERT (LD13).
+            quantidade = numero_digitado(request.form.get("quantidade") or "1",
+                                         maximo=MAIOR_INTEGER)
+            if quantidade is None:
                 flash("A quantidade precisa ser um numero inteiro.", "danger")
                 return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
             # O ITEM 16.31: a MESMA garantia estipulada em mais de um imóvel.
@@ -1683,28 +1826,34 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash("O numero de imoveis precisa ser um numero inteiro.", "danger")
                 return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 item = EMOL.calcular_item(
-                    con, servico=int(servico) if servico.isdigit() else None,
-                    tabela=int(tabela) if tabela.isdigit() else None,
+                    con, servico=numero_digitado(servico),
+                    tabela=numero_digitado(tabela),
                     base=base, quantidade=quantidade, imoveis=imoveis)
             if not item:
                 flash("Não encontrei esse ato na tabela vigente. "
                       "Confira o código ou o valor do negócio.", "danger")
                 return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+            # No 16.31 a quantidade é multiplicada pelos imóveis: cada um cabe,
+            # e o produto pode não caber na coluna (LD13).
+            if int(item["quantidade"]) > MAIOR_INTEGER:
+                flash("A quantidade vezes o número de imóveis passa do que o "
+                      "protocolo guarda. Confira os dois campos.", "danger")
+                return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
             with db.transaction() as con:
-                con.execute(
+                bd = banco(con)
+                bd.escrever(
                     """INSERT INTO cx_protocolo_atos
                        (protocolo_id, descricao, codigo_ato, quantidade,
                         valor_total, emolumentos, ferc, fadep, femp, ferrfis,
                         servico_codigo, base_calculo, origem_valor)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (protocolo_id, item["descricao"], item["codigo_tj"],
                      item["quantidade"], item["total"], item["emolumentos"],
                      item["ferc"], item["fadep"], item["femp"], item["ferrfis"],
                      item["servico_codigo"], item["base_calculo"],
                      item["origem_valor"]))
-                _atualizar_total(con, protocolo_id)
+                _atualizar_total(bd, protocolo_id)
             audit("PROTOCOLO_ITEM_ACRESCENTADO", "PROTOCOLO", protocolo_id,
                   {"codigo_tj": item["codigo_tj"], "total": item["total"],
                    "imoveis": item.get("imoveis"),
@@ -1734,14 +1883,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # outro caminho — o botão «cobrar» da ficha do ato. Dois trilhos
             # para o mesmo dinheiro é como eles divergem: o protocolo dizia que
             # o cliente pagou e o caixa não tinha o lançamento.
-            item_id = request.form.get("item_id")
+            item_id = numero_digitado(request.form.get("item_id"))
             aberto = caixa_aberto(usuario_nome())
             agora = db.now()
             try:
+                if item_id is None:
+                    raise CaixaError("Escolha o item do protocolo a quitar.")
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     r = cobrar_item_do_protocolo(
-                        con, int(item_id),
+                        con, item_id,
                         caixa_id=int(aberto["id"]) if aberto else 0,
                         agora=agora, hoje=agora[:10], hora=agora[11:16],
                         forma_pagamento=request.form.get("forma_pagamento"),
@@ -1785,7 +1935,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # nao se adivinha como o cliente pagou.
             pendentes_id = [int(r["id"]) for r in q(
                 """SELECT id FROM cx_protocolo_atos
-                   WHERE protocolo_id=? AND quitado=0 ORDER BY id""",
+                   WHERE protocolo_id=%s AND quitado=0 ORDER BY id""",
                 (protocolo_id,))]
             aberto = caixa_aberto(usuario_nome())
             if not pendentes_id:
@@ -1808,7 +1958,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 for item_id in pendentes_id:
                     try:
                         with db.transaction() as con:
-                            con.row_factory = sqlite3.Row
                             r = cobrar_item_do_protocolo(
                                 con, item_id,
                                 caixa_id=int(aberto["id"]),
@@ -1860,34 +2009,53 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # sai por ESTORNO, que deixa rastro — apagar a linha faria a
             # conferência do dia fechar sem que ninguém soubesse por quê. Aqui
             # se desfaz só a marca; o estorno é na tela do caixa.
-            item_id = request.form.get("item_id")
-            ja = q1("SELECT lancamento_id FROM cx_protocolo_atos WHERE id=?",
-                    (item_id,))
-            if ja and ja["lancamento_id"]:
-                flash("Este item já entrou no caixa. Para desfazer, estorne o "
-                      f"lançamento {ja['lancamento_id']} na tela do caixa — "
-                      "dinheiro que entrou sai por estorno, e não apagando.",
-                      "danger")
-                return redirect(url_for("caixa_protocolo",
-                                        protocolo_id=protocolo_id))
+            item_id = numero_digitado(request.form.get("item_id"))
             with db.transaction() as con:
-                con.execute(
+                bd = banco(con)
+                # A CONFERÊNCIA SE FAZ COM A LINHA PRESA (LD06): lida fora da
+                # transação, o «usar» do depósito ou a quitação em dinheiro do
+                # outro balcão cabiam entre a leitura e a gravação, e o item
+                # pago se reabria — o cliente pagaria de novo.
+                bd._escrita()
+                ja = bd.um("""SELECT lancamento_id, quitado_por FROM cx_protocolo_atos
+                               WHERE id=%s FOR UPDATE""", (item_id,))
+                if ja and ja["lancamento_id"]:
+                    flash("Este item já entrou no caixa. Para desfazer, estorne o "
+                          f"lançamento {ja['lancamento_id']} na tela do caixa — "
+                          "dinheiro que entrou sai por estorno, e não apagando.",
+                          "danger")
+                    return redirect(url_for("caixa_protocolo",
+                                            protocolo_id=protocolo_id))
+                # O ITEM PAGO PELO DEPÓSITO PRÉVIO NÃO SE REABRE AQUI (LD06):
+                # reabrir só a marca deixaria o dinheiro gasto no depósito e o
+                # item a pagar — e o cliente pagaria duas vezes o mesmo serviço.
+                if ja and str(ja["quitado_por"] or "").startswith("DEPÓSITO PRÉVIO"):
+                    qual = ja["quitado_por"][len("DEPÓSITO PRÉVIO"):].strip()
+                    flash(f"Este item foi pago com o depósito prévio {qual}. "
+                          "Reabrir a quitação deixaria o valor gasto no depósito e "
+                          "o item a pagar de novo; se o uso do depósito foi engano, "
+                          "leve ao oficial — a correção é no depósito, com o rastro.",
+                          "danger")
+                    return redirect(url_for("caixa_protocolo",
+                                            protocolo_id=protocolo_id))
+                bd.escrever(
                     """UPDATE cx_protocolo_atos SET quitado=0, quitado_em=NULL,
-                       quitado_por=NULL WHERE id=? AND protocolo_id=?""",
+                       quitado_por=NULL WHERE id=%s AND protocolo_id=%s""",
                     (item_id, protocolo_id))
-                _atualizar_situacao(con, protocolo_id)
+                _atualizar_situacao(bd, protocolo_id)
             audit("PROTOCOLO_ITEM_DESQUITADO", "PROTOCOLO", protocolo_id,
                   {"item": item_id})
             flash("Item marcado como não quitado.", "warning")
             return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
 
         if acao == "remover":
-            item_id = request.form.get("item_id")
+            item_id = numero_digitado(request.form.get("item_id"))
             with db.transaction() as con:
-                con.execute("""DELETE FROM cx_protocolo_atos
-                               WHERE id=? AND protocolo_id=? AND quitado=0""",
+                bd = banco(con)
+                bd.escrever("""DELETE FROM cx_protocolo_atos
+                               WHERE id=%s AND protocolo_id=%s AND quitado=0""",
                             (item_id, protocolo_id))
-                _atualizar_total(con, protocolo_id)
+                _atualizar_total(bd, protocolo_id)
             audit("PROTOCOLO_ITEM_REMOVIDO", "PROTOCOLO", protocolo_id, {"item": item_id})
             flash("Item removido. Item já quitado não se remove.", "success")
             return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
@@ -1896,14 +2064,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     def _atualizar_total(con, protocolo_id):
         """Recalcula o total do protocolo a partir dos itens."""
-        con.row_factory = sqlite3.Row
-        itens = [dict(r) for r in
-                 con.execute("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=?",
-                             (protocolo_id,))]
+        bd = banco(con)
+        itens = bd.ler("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=%s ORDER BY id",
+                       (protocolo_id,))
         soma = EMOL.somar_itens(itens)
-        con.execute("UPDATE cx_protocolos SET valor_total=? WHERE id=?",
+        bd.escrever("UPDATE cx_protocolos SET valor_total=%s WHERE id=%s",
                     (soma["total"], protocolo_id))
-        _atualizar_situacao(con, protocolo_id)
+        _atualizar_situacao(bd, protocolo_id)
 
     def _atualizar_situacao(con, protocolo_id):
         """A situação vem dos itens: todos quitados, protocolo pago.
@@ -1911,13 +2078,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         É a mesma regra da carga do E-Ofício — a situação se deduz do que
         aconteceu, não de um campo que alguém marca à mão e esquece.
         """
-        con.row_factory = sqlite3.Row
-        linha = con.execute(
-            """SELECT COUNT(*) total, COALESCE(SUM(quitado),0) quitados
-               FROM cx_protocolo_atos WHERE protocolo_id=?""",
-            (protocolo_id,)).fetchone()
-        atual = con.execute("SELECT situacao, tipo FROM cx_protocolos WHERE id=?",
-                            (protocolo_id,)).fetchone()
+        bd = banco(con)
+        linha = bd.um(
+            """SELECT COUNT(*) AS total, COALESCE(SUM(quitado),0)::bigint AS quitados
+               FROM cx_protocolo_atos WHERE protocolo_id=%s""",
+            (protocolo_id,))
+        atual = bd.um("SELECT situacao, tipo FROM cx_protocolos WHERE id=%s",
+                      (protocolo_id,))
         if atual and atual["situacao"] in ("CANCELADO", "ENTREGUE"):
             return
         if not linha["total"]:
@@ -1926,34 +2093,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             nova = "PAGO"
         else:
             nova = "A_PAGAR"
-        con.execute("UPDATE cx_protocolos SET situacao=?, finalizado=? WHERE id=?",
+        bd.escrever("UPDATE cx_protocolos SET situacao=%s, finalizado=%s WHERE id=%s",
                     (nova, 1 if nova == "PAGO" else 0, protocolo_id))
 
     @app.route("/caixa/protocolos/<int:protocolo_id>/orcamento")
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
     def caixa_orcamento(protocolo_id):
         """Gera o orçamento em .odt, com os itens e a composição dos fundos."""
-        p = q1("SELECT * FROM cx_protocolos WHERE id=?", (protocolo_id,))
+        p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
         itens = [dict(r) for r in
-                 q("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=? ORDER BY id",
+                 q("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=%s ORDER BY id",
                    (protocolo_id,))]
         if not itens:
             flash("O protocolo não tem itens para orçar.", "warning")
             return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
         soma = EMOL.somar_itens(itens)
         s = db.get_settings()
-        vig = q1("SELECT codigo FROM cx_vigencias WHERE vigente=1")
+        vig = q1("SELECT codigo FROM cx_vigencias WHERE vigente=1 ORDER BY codigo")
 
         from jinja2.sandbox import SandboxedEnvironment
         env = SandboxedEnvironment(autoescape=False)
         with db.connect() as _c:
             _modelo = MODELOS.corpo_de(_c, "CAIXA_ORCAMENTO")
+            # o aviso de «mero cálculo» é peça do orçamento desde o LF06F
+            _aviso = MODELOS.texto_do_papel(_c, PECA_DO_AVISO_ORCAMENTO)
         html = env.from_string(_modelo).render(
             p=dict(p), itens=itens, soma=soma,
             extenso=por_extenso(soma["total_centavos"]),
-            orcamento=(p["tipo"] == "ORCAMENTO"), aviso=AVISO_ORCAMENTO,
+            orcamento=(p["tipo"] == "ORCAMENTO"), aviso=_aviso,
             vigencia=vig["codigo"] if vig else "—",
             sv=bloco_serventia(),
             documento=mascarar_documento(p["interessado_documento"]),
@@ -1973,10 +2142,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/caixa/emolumentos", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    # O AUDITOR ve a tela; o que ela GRAVA (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
     def caixa_emolumentos():
         """Consulta da tabela do TJMA, importada do E-Ofício."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             if request.method == "POST" and request.form.get("acao") == "importar":
                 # A pasta e a do arquivo achado, nao a pasta de trabalho.
                 achados = procurar_arquivos("dom_servico.jsonl")
@@ -1999,12 +2169,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return redirect(url_for("caixa_emolumentos"))
 
             vigencias = [dict(r) for r in
-                         con.execute("SELECT * FROM cx_vigencias ORDER BY codigo DESC")]
+                         banco(con).ler("SELECT * FROM cx_vigencias ORDER BY codigo DESC")]
             vigente = next((v["codigo"] for v in vigencias if v["vigente"]), None)
             busca = (request.args.get("busca") or "").strip()
             resultados = EMOL.buscar(con, busca) if busca else []
             valor = (request.args.get("valor") or "").strip()
-            tabela = int(request.args.get("tabela") or EMOL.TABELA_RI)
+            tabela = numero_digitado(request.args.get("tabela"))
+            if tabela is None:      # vazio ou que não é número: a tabela do RI
+                tabela = EMOL.TABELA_RI
             faixa = EMOL.faixa_por_valor(con, valor, tabela) if valor else None
 
         return render_template("caixa_emolumentos.html", vigencias=vigencias,
@@ -2036,8 +2208,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 with db.transaction() as con:
                     rel = importar_caixa(con, pasta, None)
             except Exception as erro:
-                flash(f"A importação falhou e nada foi gravado: {erro}. "
-                      f"Cópia de segurança em {copia.name}.", "danger")
+                flash(SEGWEB.recado_de_erro(
+                    erro, "caixa_importar", "A importação falhou e nada foi "
+                    "gravado; o detalhe ficou no registro do servidor.")
+                      + f" Cópia de segurança em {copia.name}.", "danger")
                 return redirect(url_for("caixa_importar"))
             audit("CAIXA_IMPORTADO", "CAIXA", None, rel)
             ja = (rel.get("protocolos_ja_existentes", 0)
@@ -2051,7 +2225,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"Cópia de segurança: {copia.name}.", "success")
             return redirect(url_for("caixa_protocolos"))
 
-        ja = q1("SELECT COUNT(*) n FROM cx_protocolos")["n"]
+        ja = q1("SELECT COUNT(*) AS n FROM cx_protocolos")["n"]
         return render_template("caixa_importar.html", pasta=str(pasta) if pasta else None,
                                ja_importado=ja)
 
+
+def __getattr__(nome: str):
+    """Os nomes antigos do texto de fábrica, lidos da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06A (19/10/2026) e mora em `modelos_padrao/`.
+    Quem ainda importa o nome antigo recebe o padrão da base — o MESMO que o
+    papel imprime, e não uma cópia que ficou para trás. Nome que não é de papel
+    continua sendo `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)

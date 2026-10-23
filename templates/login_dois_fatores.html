@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}Verificação em duas etapas{% endblock %}
+{% block auth_content %}
+<h1>{{ APP_NAME }}</h1><p class="muted">{{ unit_name }}</p>
+<p>Senha conferida para <strong>{{ conta }}</strong>. Falta o código do aplicativo autenticador.</p>
+<form method="post" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Código<input name="codigo" inputmode="numeric" autocomplete="one-time-code" autofocus required></label>
+  <button class="primary">Entrar</button>
+</form>
+<p class="muted small">Sem o celular? Digite um dos códigos de recuperação (formato <code>abcde-fghjk</code>);
+cada um vale uma vez. {{ tentativas }} códigos errados seguidos travam a verificação por {{ bloqueio }} minutos.</p>
+<p class="small"><a href="{{ url_for('login') }}">Voltar e entrar com outro usuário</a></p>
+{% endblock %}

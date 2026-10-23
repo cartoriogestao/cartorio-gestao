@@ -113,7 +113,7 @@ def o_que_sai(teor: str | None) -> list[tuple[int, str, str]]:
     vistas = 0
     for i, linha in enumerate(linhas):
         if SEPARADOR.match(linha):
-            fora.append((i + 1, linha, "separador de pontilhado do E-Ofício"))
+            fora.append((i + 1, linha, "separador de pontilhado do sistema antigo"))
             continue
         if CONFERENCIA.match(linha):
             fora.append((i + 1, linha, "palavra de conferência solta"))

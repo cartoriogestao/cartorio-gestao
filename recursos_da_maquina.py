@@ -65,8 +65,8 @@ O QUE ESTA RESERVA FAZ, E O QUE ELA NAO FAZ
     custa 44 ms sozinho, e a vazao fica presa em ~20 pedidos por segundo
     independente de quantas linhas atendem — 1, 4 ou 12 dao o mesmo numero, e
     so a espera cresce. Isso e serializacao DENTRO do servidor, e tem dono
-    proprio: cada pedido abre uma conexao nova e roda `PRAGMA
-    journal_mode=WAL` nela (`database.py`), o que pede trava exclusiva. Esta
+    proprio: cada pedido abre uma conexao nova e roda o ajuste
+    `journal_mode=WAL` nela (`database.py`), o que pede trava exclusiva. Esta
     reserva nao mexe nisso e nao finge ter mexido.
 
 QUANTO SE RESERVA, e por que este numero

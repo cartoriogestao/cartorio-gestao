@@ -28,8 +28,9 @@ CONFERIDA CONTRA 255 CASOS REAIS, e acertou 255:
 """
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
+
+from bd_nativo import banco
 
 # ------------------------------------------------------------------ a norma
 
@@ -322,7 +323,7 @@ def explicar(matricula: Any) -> list[str]:
 # -------------------------------------------------- o varredor do acervo
 
 
-def matriculas_com_digito_errado(con: sqlite3.Connection,
+def matriculas_com_digito_errado(con,
                                  limite: int = 500) -> list[dict]:
     """Os assentos cuja matrícula não fecha. **Só lê — não conserta nada.**
 
@@ -335,11 +336,11 @@ def matriculas_com_digito_errado(con: sqlite3.Connection,
     Esta lista achou **um** caso no acervo desta casa: o nascimento nº 19132.
     """
     achados = []
-    for linha in con.execute(
+    for linha in banco(con).ler(
             "SELECT id, especie, numero, nome, data_ato, matricula, origem "
             "FROM rc_assentos "
             "WHERE TRIM(COALESCE(matricula,'')) <> '' "
-            "ORDER BY id LIMIT ?", (limite,)):
+            "ORDER BY id LIMIT %s", (limite,)):
         d = dict(linha)
         r = confere(d["matricula"])
         if not r["ok"]:
@@ -350,8 +351,7 @@ def matriculas_com_digito_errado(con: sqlite3.Connection,
     return achados
 
 
-def quantas_sem_matricula(con: sqlite3.Connection) -> int:
-    linha = con.execute(
-        "SELECT COUNT(*) FROM rc_assentos "
-        "WHERE TRIM(COALESCE(matricula,'')) = ''").fetchone()
-    return int(linha[0])
+def quantas_sem_matricula(con) -> int:
+    return int(banco(con).valor(
+        "SELECT COUNT(*) AS n FROM rc_assentos "
+        "WHERE TRIM(COALESCE(matricula,'')) = ''"))

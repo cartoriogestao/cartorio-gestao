@@ -27,6 +27,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
+
 # As duas situações, e não mais: ou a nota espera alguém, ou alguém respondeu.
 ABERTA = "ABERTA"
 BAIXADA = "BAIXADA"
@@ -42,10 +44,9 @@ class RevisaoError(ValueError):
     """Erro de regra, com mensagem pronta para o balcão."""
 
 
-def _linha(con: sqlite3.Connection, revisao_id: int) -> sqlite3.Row | None:
-    con.row_factory = sqlite3.Row
-    return con.execute("SELECT * FROM ri_revisoes WHERE id=?",
-                       (int(revisao_id),)).fetchone()
+def _linha(con: sqlite3.Connection, revisao_id: int) -> dict | None:
+    return banco(con).um("SELECT * FROM ri_revisoes WHERE id=%s",
+                         (int(revisao_id),))
 
 
 def anotar(con: sqlite3.Connection, *, matricula_id: int, assunto: str,
@@ -69,30 +70,31 @@ def anotar(con: sqlite3.Connection, *, matricula_id: int, assunto: str,
         raise RevisaoError(
             f"Origem {origem!r} não existe. As que há são: {', '.join(ORIGENS)}.")
 
-    if not con.execute("SELECT 1 FROM ri_matriculas WHERE id=?",
-                       (int(matricula_id),)).fetchone():
+    bd = banco(con)
+    if not bd.um("SELECT 1 AS um FROM ri_matriculas WHERE id=%s",
+                 (int(matricula_id),)):
         raise RevisaoError(f"Matrícula {matricula_id} não encontrada.")
     if ato_id is not None:
-        dono = con.execute("SELECT matricula_id FROM ri_atos WHERE id=?",
-                           (int(ato_id),)).fetchone()
+        dono = bd.um("SELECT matricula_id FROM ri_atos WHERE id=%s",
+                     (int(ato_id),))
         if not dono:
             raise RevisaoError(f"Ato {ato_id} não encontrado.")
         # O ato tem de ser DESTA matrícula. Sem esta conferência, um id trocado
         # penduraria a nota na ficha de outro imóvel — e ninguém desconfia de
         # uma nota que aparece onde se esperava encontrar alguma.
-        if int(dono[0]) != int(matricula_id):
+        if int(dono["matricula_id"]) != int(matricula_id):
             raise RevisaoError(
-                f"O ato {ato_id} é da matrícula {dono[0]}, e não da "
+                f"O ato {ato_id} é da matrícula {dono['matricula_id']}, e não da "
                 f"{matricula_id}. A nota ficaria na ficha errada.")
 
-    cur = con.execute(
+    novo = bd.escrever(
         """INSERT INTO ri_revisoes
            (matricula_id, ato_id, assunto, nota, origem, situacao,
             anotada_em, anotada_por)
-           VALUES (?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(matricula_id), int(ato_id) if ato_id is not None else None,
-         assunto, texto, origem, ABERTA, agora, usuario))
-    return {"id": int(cur.lastrowid), "assunto": assunto, "situacao": ABERTA}
+         assunto, texto, origem, ABERTA, agora, usuario))[0]["id"]
+    return {"id": int(novo), "assunto": assunto, "situacao": ABERTA}
 
 
 def baixar(con: sqlite3.Connection, revisao_id: int, *, decisao: str,
@@ -111,54 +113,51 @@ def baixar(con: sqlite3.Connection, revisao_id: int, *, decisao: str,
             f"Esta nota já foi baixada em {linha['baixada_em']}. O que foi "
             f"decidido continua escrito nela.")
 
-    con.execute(
+    banco(con).escrever(
         """UPDATE ri_revisoes
-           SET situacao=?, baixada_em=?, baixada_por=?, baixa_decisao=?
-           WHERE id=?""",
+           SET situacao=%s, baixada_em=%s, baixada_por=%s, baixa_decisao=%s
+           WHERE id=%s""",
         (BAIXADA, agora, usuario, texto, int(revisao_id)))
     return {"id": int(revisao_id), "situacao": BAIXADA, "decisao": texto}
 
 
 def da_matricula(con: sqlite3.Connection, matricula_id: int,
-                 *, so_abertas: bool = False) -> list[sqlite3.Row]:
+                 *, so_abertas: bool = False) -> list[dict]:
     """As notas daquela matrícula, das mais novas para as mais antigas. SÓ LÊ."""
-    con.row_factory = sqlite3.Row
-    sql = """SELECT r.*, a.tipo ato_tipo, a.numero ato_numero
+    sql = """SELECT r.*, a.tipo AS ato_tipo, a.numero AS ato_numero
              FROM ri_revisoes r
              LEFT JOIN ri_atos a ON a.id = r.ato_id
-             WHERE r.matricula_id=?"""
+             WHERE r.matricula_id=%s"""
     if so_abertas:
         sql += f" AND r.situacao='{ABERTA}'"
     sql += " ORDER BY r.id DESC"
-    return con.execute(sql, (int(matricula_id),)).fetchall()
+    return banco(con).ler(sql, (int(matricula_id),))
 
 
 def do_ato(con: sqlite3.Connection, ato_id: int,
-           *, so_abertas: bool = False) -> list[sqlite3.Row]:
+           *, so_abertas: bool = False) -> list[dict]:
     """As notas daquele ato. SÓ LÊ."""
-    con.row_factory = sqlite3.Row
-    sql = "SELECT * FROM ri_revisoes WHERE ato_id=?"
+    sql = "SELECT * FROM ri_revisoes WHERE ato_id=%s"
     if so_abertas:
         sql += f" AND situacao='{ABERTA}'"
     sql += " ORDER BY id DESC"
-    return con.execute(sql, (int(ato_id),)).fetchall()
+    return banco(con).ler(sql, (int(ato_id),))
 
 
-def abertas(con: sqlite3.Connection) -> list[sqlite3.Row]:
+def abertas(con: sqlite3.Connection) -> list[dict]:
     """Tudo o que espera conferência, da casa inteira. SÓ LÊ.
 
     É a tela que se abre antes de selar o dia: o ato, a matrícula e o que
     falta olhar em cada um.
     """
-    con.row_factory = sqlite3.Row
-    return con.execute(
-        f"""SELECT r.*, m.numero matricula_numero, m.livro matricula_livro,
-                   a.tipo ato_tipo, a.numero ato_numero, a.data_ato
+    return banco(con).ler(
+        f"""SELECT r.*, m.numero AS matricula_numero, m.livro AS matricula_livro,
+                   a.tipo AS ato_tipo, a.numero AS ato_numero, a.data_ato
             FROM ri_revisoes r
             JOIN ri_matriculas m ON m.id = r.matricula_id
             LEFT JOIN ri_atos a ON a.id = r.ato_id
             WHERE r.situacao='{ABERTA}'
-            ORDER BY r.anotada_em DESC, r.id DESC""").fetchall()
+            ORDER BY r.anotada_em DESC, r.id DESC""")
 
 
 # NÃO HÁ `quantas_abertas` AQUI, e ela chegou a existir.

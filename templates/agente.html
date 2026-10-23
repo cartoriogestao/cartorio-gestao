@@ -140,15 +140,29 @@
         <td><small>{{ m.alvo or '—' }}</small></td>
         <td><small>{{ m.antes or '(vazio)' }} ? {{ m.depois }}</small></td>
         <td>
-          {% if m.revertida_em %}<span class="badge">desfeita</span>
+          {% if m.revertida_em %}<span class="badge">{% if m.situacao == 'PROPOSTA' %}descartada{% else %}desfeita{% endif %}</span>
             <br><small class="muted">{{ (m.revertida_em or '')[:16] | replace('T', ' ') }}
             {% if m.revertida_por %} · {{ m.revertida_por }}{% endif %}</small>
           {% elif not m.reversivel %}<span class="badge media">só acréscimo</span>
             <br><small class="muted">acrescentou informação: não há o que voltar</small>
+          {% elif m.situacao == 'PROPOSTA' %}<span class="badge media">proposta</span>
+            <br><small class="muted">nada mudou ainda: vale quando você aplicar</small>
           {% else %}<span class="badge alta">de pé</span>{% endif %}
         </td>
         <td>
-          {% if m.reversivel and not m.revertida_em %}
+          {% if m.situacao == 'PROPOSTA' and not m.revertida_em %}
+          <form method="post" style="display:inline"
+                action="{{ url_for('agente_aplicar', mudanca_id=m.id) }}"
+                onsubmit="return confirm('Aplicar: «{{ m.alvo }}» passa de «{{ m.antes }}» para «{{ m.depois }}»?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button small primary">aplicar</button>
+          </form>
+          <form method="post" style="display:inline"
+                action="{{ url_for('agente_desfazer', mudanca_id=m.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button small">descartar</button>
+          </form>
+          {% elif m.reversivel and not m.revertida_em %}
           <form method="post" style="display:inline"
                 action="{{ url_for('agente_desfazer', mudanca_id=m.id) }}"
                 onsubmit="return confirm('Voltar «{{ m.alvo }}» para «{{ m.antes }}»?')">

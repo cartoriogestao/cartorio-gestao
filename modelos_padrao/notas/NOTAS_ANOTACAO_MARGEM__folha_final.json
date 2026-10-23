@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ANOTACAO_MARGEM__folha_final",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Anotação à margem — folha final",
+  "formato": "CHAVES",
+  "explica": "Quando o ato ocupa mais de uma folha.",
+  "campos": [
+    "folha_final"
+  ]
+}

@@ -36,7 +36,6 @@ NÃO ESCREVE NADA: abre o banco em modo somente leitura e não toca em arquivo.
 from __future__ import annotations
 
 import json
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -44,6 +43,8 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 import agente  # precisa da raiz no caminho
+import banco_pg  # noqa: E402
+from bd_nativo import banco  # noqa: E402
 
 BANCO_PADRAO = r"C:\ProgramData\CartorioGestao\cartorio_gestao.sqlite3"
 
@@ -93,27 +94,26 @@ def _milhar(n: float) -> str:
 
 
 def main(argv: list[str]) -> int:
-    con = sqlite3.connect(f"file:{BANCO_PADRAO}?mode=ro", uri=True)
-    con.row_factory = sqlite3.Row
+    con = banco_pg.conectar(f"file:{BANCO_PADRAO}?mode=ro")
+    bd = banco(con)
 
     if len(argv) > 1:
         sessao_id = int(argv[1])
     else:
-        linha = con.execute(
+        linha = bd.um(
             "SELECT id FROM ag_sessoes "
-            "ORDER BY (tokens_de_entrada + tokens_de_saida) DESC LIMIT 1").fetchone()
+            "ORDER BY (tokens_de_entrada + tokens_de_saida) DESC, id LIMIT 1")
         if linha is None:
             print("Não há sessão nenhuma gravada neste banco.")
             return 0
         sessao_id = int(linha["id"])
 
-    sessao = con.execute("SELECT * FROM ag_sessoes WHERE id = ?",
-                         (sessao_id,)).fetchone()
+    sessao = bd.um("SELECT * FROM ag_sessoes WHERE id = %s", (sessao_id,))
     if sessao is None:
         print(f"Não existe sessão {sessao_id} neste banco.")
         return 1
-    passos = [dict(p) for p in con.execute(
-        "SELECT * FROM ag_passos WHERE sessao_id = ? ORDER BY ordem", (sessao_id,))]
+    passos = bd.ler(
+        "SELECT * FROM ag_passos WHERE sessao_id = %s ORDER BY ordem, id", (sessao_id,))
 
     print(f"=== a sessão {sessao_id}, como ela está gravada ===")
     print("estado={} turnos={} entrada={} saida={}".format(

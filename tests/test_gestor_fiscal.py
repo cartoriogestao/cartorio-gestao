@@ -18,6 +18,8 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import gestor_conferencia as GC  # noqa: E402
 import gestor_fiscal as GF  # noqa: E402
@@ -29,7 +31,7 @@ HOJE = date(2026, 10, 9)
 
 
 def _banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     init_selador_schema(con)
     init_gestor_schema(con)
@@ -175,6 +177,37 @@ def test_queda_de_rede_grava_erro_e_segue():
     assert con.execute("SELECT erro FROM ge_portal_selos WHERE numero=?", (a,)).fetchone()[0] \
         .startswith("OSError")
     assert b
+
+
+def test_a_ida_ao_portal_nao_prende_o_balcao():
+    # CONSERTO DO L051R (18/10/2026). O `executescript` do esquema confirmava
+    # o que estava aberto; o `bd.escrever` que o trocou abre a transação com a
+    # trava única da ponte e não confirma. A consulta roda o esquema e vai à
+    # rede: até a primeira resposta se gravar (30 s de espera no pior caso),
+    # quem gravasse no balcão esperava a trava e levava «database is locked».
+    con = _banco()
+    _selo(con, 1)
+    con.commit()
+    balcao = sqlite3.connect(con.db_path)
+    gravou = []
+
+    def buscar(numero):
+        balcao.execute("PRAGMA busy_timeout = 500")
+        try:
+            balcao.execute("BEGIN IMMEDIATE")
+            balcao.rollback()
+            gravou.append("gravou")
+        except sqlite3.OperationalError as erro:
+            gravou.append(str(erro))
+        return 200, _resposta(numero)
+
+    try:
+        GF.consultar_portal(con, HOJE, buscar=buscar, dormir=lambda s: None)
+    finally:
+        balcao.close()
+    assert gravou == ["gravou"], (
+        "a consulta ao portal foi à rede com a trava da ponte presa pelo esquema: "
+        f"o balcão não gravou ({gravou})")
 
 
 # ---------------------------------------------------------- a conferência

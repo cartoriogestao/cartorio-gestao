@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_TRASLADO__assinatura",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Linha de assinatura",
+  "formato": "CHAVES",
+  "explica": "Uma linha de assinatura, com o nome embaixo.",
+  "campos": [
+    "nome"
+  ]
+}

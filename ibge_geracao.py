@@ -38,6 +38,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 import ibge_remessa as IBGE
 import ibge_schema as IB
 
@@ -83,16 +84,18 @@ def lugar(con: sqlite3.Connection, cidade: Any, uf: Any) -> dict:
     linha = None
     if nome:
         if sigla:
-            linha = con.execute(
-                "SELECT * FROM ib_municipios WHERE nome_norm=? AND uf=?",
-                (nome, sigla)).fetchone()
+            linha = banco(con).um(
+                "SELECT * FROM ib_municipios WHERE nome_norm=%s AND uf=%s"
+                " ORDER BY codigo_ibge",
+                (nome, sigla))
         if linha is None:
             # SEM UF, SÓ VALE SE O NOME FOR ÚNICO NO BRASIL. Há dezenas de
             # «Bom Jesus»; escolher o primeiro poria a estatística no estado
             # errado, e ninguém notaria nunca.
-            achados = con.execute(
-                "SELECT * FROM ib_municipios WHERE nome_norm=? LIMIT 2",
-                (nome,)).fetchall()
+            achados = banco(con).ler(
+                "SELECT * FROM ib_municipios WHERE nome_norm=%s"
+                " ORDER BY codigo_ibge LIMIT 2",
+                (nome,))
             linha = achados[0] if len(achados) == 1 else None
     if linha is None:
         return {"uf": UF_IGNORADA, "municipio": MUNICIPIO_IGNORADO,
@@ -142,9 +145,8 @@ def cabecalho(config: dict) -> dict:
                 if not str(config.get(chave) or "").strip()]
     if faltando:
         raise IbgeError(
-            f"A remessa do IBGE não sai sem {', '.join(faltando)}. Isso vem da "
-            f"carga do acervo (Livros e acervo → Trazer o acervo do E-Ofício) "
-            f"ou se informa em Administrativo → Configurações.")
+            f"A remessa do IBGE não sai sem {', '.join(faltando)}. Isso se "
+            f"informa em Administrativo → Configurações.")
     return {
         "UF-PESQUISA": str(config["ibge_uf"]).strip().zfill(2),
         "MUN-PESQUISA": str(config["ibge_municipio"]).strip().zfill(5),
@@ -205,7 +207,7 @@ def identificacao(assento: Any, ato: Any, *, ano: int, trimestre: int) -> dict:
 
 def _valor(linha: Any, nome: str) -> Any:
     """Uma coluna que pode não existir — coluna de migração estoura com
-    `IndexError` num `sqlite3.Row`, e um relatório não pode virar HTTP 500."""
+    `IndexError` numa linha do banco, e um relatório não pode virar HTTP 500."""
     if linha is None:
         return None
     try:
@@ -408,8 +410,8 @@ def conferir(linhas: list[str], layout) -> dict:
 def _pessoas_por_papel(con: sqlite3.Connection, assento_id: Any) -> dict:
     """As pessoas daquele assento, indexadas pelo papel. So LE."""
     saida: dict[str, Any] = {}
-    for r in con.execute(
-            "SELECT * FROM rc_pessoas WHERE assento_id=? ORDER BY ordem, id",
+    for r in banco(con).ler(
+            "SELECT * FROM rc_pessoas WHERE assento_id=%s ORDER BY ordem, id",
             (int(assento_id),)):
         saida.setdefault(r["papel"], r)
     return saida
@@ -576,13 +578,16 @@ def montar(con: sqlite3.Connection, *, ano: int, trimestre: int,
     de, ate = _do_trimestre(ano, trimestre)
     arquivos: dict[str, list[str]] = {}
     fora: list[dict] = []
-    for assento in con.execute(
-            "SELECT a.*, t.data_ato, t.folha, t.rotulo, t.livro_id"
+    # As colunas do ato levam apelido: com o mesmo nome do assento (`data_ato`),
+    # o dict ficaria com a do ato, e a linha do banco dava a do assento.
+    for assento in banco(con).ler(
+            "SELECT a.*, t.data_ato AS ato_data_ato, t.folha AS ato_folha,"
+            "       t.rotulo AS ato_rotulo, t.livro_id AS ato_livro_id"
             "  FROM rc_assentos a"
             "  JOIN rc_atos t ON t.assento_id = a.id AND t.tipo = 'REGISTRO'"
-            " WHERE t.data_ato >= ? AND t.data_ato <= ?"
+            " WHERE t.data_ato >= %s AND t.data_ato <= %s"
             "   AND COALESCE(a.situacao,'ATIVO') <> 'CANCELADO'"
-            " ORDER BY a.especie, a.numero", (de, ate)):
+            " ORDER BY a.especie, a.numero NULLS FIRST, a.id", (de, ate)):
         especie = str(assento["especie"] or "").strip().upper()
         alvo = MONTADOR_DA_ESPECIE.get(especie)
         if not alvo:
@@ -655,12 +660,11 @@ def trimestres_com_movimento(con: sqlite3.Connection) -> list[dict]:
     entra no mapa de janeiro. Usar a data do fato poria o registro tardio num
     trimestre que já foi entregue, e entrega refeita é conversa com o IBGE.
     """
-    con.row_factory = sqlite3.Row
     por_trimestre: dict[tuple, dict] = {}
-    for linha in con.execute(
+    for linha in banco(con).ler(
             """SELECT data_ato, origem FROM rc_assentos
                 WHERE data_ato IS NOT NULL AND TRIM(data_ato) <> ''
-                  AND COALESCE(situacao,'ATIVO') <> 'CANCELADO'"""):
+                  AND COALESCE(situacao,'ATIVO') <> 'CANCELADO' ORDER BY id"""):
         bruto = _valor_texto(linha["data_ato"])[:10]
         if len(bruto) < 7 or not bruto[:4].isdigit() or not bruto[5:7].isdigit():
             continue
@@ -682,9 +686,8 @@ def trimestres_com_movimento(con: sqlite3.Connection) -> list[dict]:
 
 def entregas(con: sqlite3.Connection) -> dict[tuple, dict]:
     """O que já foi ao IBGE, por trimestre. Só lê."""
-    con.row_factory = sqlite3.Row
     return {(x["ano"], x["trimestre"]): dict(x)
-            for x in con.execute("SELECT * FROM ib_entregas")}
+            for x in banco(con).ler("SELECT * FROM ib_entregas ORDER BY ano, trimestre")}
 
 
 def a_prestar(con: sqlite3.Connection, *, hoje: str) -> list[dict]:
@@ -738,18 +741,19 @@ def registrar_entrega(con: sqlite3.Connection, *, ano: int, trimestre: int,
         raise ValueError("O trimestre vai de 1 a 4.")
     if not _valor_texto(teor):
         raise ValueError("Não dá para registrar a entrega sem o arquivo.")
-    ja = con.execute("SELECT id FROM ib_entregas WHERE ano=? AND trimestre=?",
-                     (int(ano), int(trimestre))).fetchone()
+    bd = banco(con)
+    ja = bd.um("SELECT id FROM ib_entregas WHERE ano=%s AND trimestre=%s",
+               (int(ano), int(trimestre)))
     if ja:
         raise ValueError(
             f"O {trimestre}º trimestre de {ano} já está registrado como "
             "entregue. Se houve uma segunda remessa, ela é retificação — e essa "
             "conversa é com o IBGE.")
-    cur = con.execute(
+    novo = bd.escrever(
         """INSERT INTO ib_entregas (ano, trimestre, teor, hash_teor, quantos,
                enviada_em, canal, protocolo, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(ano), int(trimestre), teor,
          hashlib.sha256(teor.encode("utf-8")).hexdigest(), int(quantos or 0),
          agora, _valor_texto(canal), _valor_texto(protocolo), agora, por))
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])

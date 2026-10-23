@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ABERTURA_PROCURACAO__varios_outorgantes",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Procuração — comparecimento de vários outorgantes",
+  "formato": "CHAVES",
+  "explica": "Quando mais de um outorga. Segue a nomeação do procurador.",
+  "campos": [
+    "outorgantes"
+  ]
+}

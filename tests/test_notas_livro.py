@@ -26,6 +26,9 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
+import banco_pg                                # noqa: E402
 
 import notas_livro as NL                       # noqa: E402
 from notas_schema import init_notas_schema     # noqa: E402
@@ -41,7 +44,7 @@ SV = {
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     init_notas_schema(con)
@@ -341,9 +344,12 @@ def test_o_termo_nao_colide_com_o_numero_de_ordem_do_acervo():
     e = lancar(con, novo_ato(con, "ESCRITURA"), paginas=2)
     p = lancar(con, novo_ato(con, "PROCURACAO"), paginas=2)
     assert e["termo"] == 46 and p["termo"] == 1
+    # `HAVING COUNT(*)`, e não o apelido: o PostgreSQL não enxerga no HAVING
+    # o nome dado a uma coluna do SELECT (o SQLite enxergava).
     repetidos = con.execute(
-        """SELECT numero_ordem, COUNT(*) n FROM nt_atos
-           WHERE numero_ordem IS NOT NULL GROUP BY numero_ordem HAVING n > 1""").fetchall()
+        """SELECT numero_ordem, COUNT(*) AS n FROM nt_atos
+           WHERE numero_ordem IS NOT NULL GROUP BY numero_ordem
+           HAVING COUNT(*) > 1""").fetchall()
     assert repetidos == []
 
 
@@ -465,6 +471,8 @@ def test_dois_balcoes_lancando_ao_mesmo_tempo_nao_pegam_a_mesma_folha():
     """
     with tempfile.TemporaryDirectory() as pasta:
         caminho = str(Path(pasta) / "cartorio.db")
+        # módulo nativo não roda no SQLite solto: o arquivo é «banco da casa»
+        banco_pg.registrar_banco(caminho)
         base = sqlite3.connect(caminho)
         base.row_factory = sqlite3.Row
         init_notas_schema(base)
@@ -673,12 +681,17 @@ def test_folha_livre_le_e_sincronizar_grava():
                    VALUES ('ESCRITURA','2011-05-04',?,'1','139','LAVRADO',?)""",
                 (lid, AGORA))
     con.commit()
-    antes = con.total_changes
+    # O que se confere é o `folha_atual` gravado, e não o `total_changes` da
+    # conexão: a escrita nativa (PostgreSQL) não passa pelo contador da ponte.
+    def gravada():
+        return con.execute("SELECT folha_atual FROM nt_livros WHERE id=?",
+                           (lid,)).fetchone()["folha_atual"]
+    antes = gravada()
     livro = con.execute("SELECT * FROM nt_livros WHERE id=?", (lid,)).fetchone()
     assert NL.folha_livre(con, livro) == 140
-    assert con.total_changes == antes
+    assert gravada() == antes == 1
     assert NL.sincronizar_folha_atual(con, lid) == 140
-    assert con.total_changes > antes
+    assert gravada() == 140
 
 
 # ------------------------------------------------------------- migração real
@@ -696,7 +709,7 @@ def test_a_migracao_sobrevive_a_um_banco_de_producao():
     """
     from notas_schema import INDICES_IMPORTACAO, SCHEMA
 
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     con.executescript(SCHEMA)
@@ -733,7 +746,7 @@ def test_a_migracao_sobrevive_a_um_banco_de_producao():
 def test_o_livro_do_acervo_recebe_o_ato_novo_depois_da_ultima_folha_usada():
     from notas_schema import SCHEMA
 
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
     con.execute("""INSERT INTO nt_livros(tipo, numero, folhas, folha_atual, criado_em)
@@ -761,6 +774,8 @@ def test_quatro_balcoes_lavrando_ao_mesmo_tempo():
 
     with tempfile.TemporaryDirectory() as pasta:
         caminho = str(Path(pasta) / "cartorio.db")
+        # módulo nativo não roda no SQLite solto: o arquivo é «banco da casa»
+        banco_pg.registrar_banco(caminho)
         base = sqlite3.connect(caminho)
         base.row_factory = sqlite3.Row
         base.execute("PRAGMA journal_mode=WAL")

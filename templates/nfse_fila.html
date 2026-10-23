@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% block title %}NFS-e — Administrativo{% endblock %}
+{% block heading %}<h1>NFS-e dos emolumentos</h1>{% endblock %}
+{% block content %}
+{# A FILA DO BALCÃO (LG01). Um recibo pago vira uma nota, por cliente. O que
+   falta dado aparece primeiro, com a frase do que falta; o que ficou no meio
+   do caminho (rede caiu, emissor recusou) aparece em seguida — e nada some
+   da fila sem virar nota ou sem ser cancelado. #}
+<div class="actions">
+  <a class="button" href="{{ url_for('caixa') }}">&larr; Caixa</a>
+  {% if papel == 'ADMIN' %}<a class="button" href="{{ url_for('nfse_gestor') }}">Configuração (Gestor)</a>{% endif %}
+</div>
+
+<div class="notice">
+  Emissor: <strong>{{ cfg.nfse_provedor }}</strong> · ambiente <strong>{{ ambiente }}</strong>
+  {% if not ligada %}· <span class="badge alta">desligada</span>{% endif %}.
+  A base do ISS é o <strong>emolumento</strong>; os fundos (FERC, FADEP, FEMP, FERRFIS) são repasses e
+  ficam fora do valor do serviço, ditos na descrição da nota.
+</div>
+
+{% if faltas %}
+<section class="panel">
+  <h2>Antes da primeira nota</h2>
+  <ul>{% for f in faltas %}<li>{{ f }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<form class="filters" method="get">
+  <label>Recibos do dia <input type="date" name="data" value="{{ data }}"></label>
+  <button>Mostrar</button>
+  {% if data %}<a href="{{ url_for('nfse_fila') }}">todos</a>{% endif %}
+</form>
+
+{% if papel in quem_cancela and ligada and not faltas %}
+<form method="post" action="{{ url_for('nfse_lote') }}" class="filters">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="data" value="{{ data or hoje }}">
+  <button type="submit">Emitir as NFS-e de {{ fmt_date(data or hoje) }}</button>
+  <span class="muted small">leva os prontos e os que ficaram na fila; os com pendência ficam</span>
+</form>
+{% endif %}
+
+{% macro tabela(itens, vazio, com_nota=False) %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Recibo</th><th>Data</th><th>Tomador</th>
+      <th style="text-align:right">Emolumento</th><th style="text-align:right">ISS</th>
+      <th>{{ 'Nota' if com_nota else 'O que falta' }}</th><th></th></tr></thead>
+    <tbody>{% for i in itens %}
+      <tr>
+        <td>{{ i.recibo.numero }}/{{ i.recibo.ano }}{% if i.recibo.cancelado %}<br><span class="badge alta">recibo cancelado</span>{% endif %}</td>
+        <td class="small">{{ fmt_date(i.recibo.data_emissao) }}</td>
+        <td class="small">{{ i.tomador.nome or '—' }}<br><span class="muted">{{ i.documento_mascarado or 'sem CPF/CNPJ' }}</span></td>
+        <td style="text-align:right">{{ reais(i.base) }}</td>
+        <td style="text-align:right">{{ reais(i.iss) if i.iss is not none else '—' }}</td>
+        <td class="small">{% if com_nota and i.nota %}{{ situacoes[i.nota.situacao] }}{% if i.nota.numero_nfse %} nº {{ i.nota.numero_nfse }}{% endif %}{% if i.nota.mensagem %}<br><span class="muted">{{ i.nota.mensagem }}</span>{% endif %}
+          {% else %}{% for p in i.pendencias %}{{ p }}<br>{% else %}pronto para emitir{% endfor %}{% endif %}</td>
+        <td><a class="small" href="{{ url_for('nfse_recibo', recibo_id=i.recibo.id) }}">abrir</a></td>
+      </tr>
+    {% else %}<tr><td colspan="7" class="muted small">{{ vazio }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+{% endmacro %}
+
+{% if grupos.a_cancelar %}
+<section class="panel">
+  <div class="panel-head"><h2>Recibo cancelado com NFS-e emitida</h2><span>{{ grupos.a_cancelar|length }}</span></div>
+  <p class="muted">A nota continua valendo para o fisco até ser cancelada no emissor.</p>
+  {{ tabela(grupos.a_cancelar, '', True) }}
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><h2>Com pendência</h2><span>{{ grupos.pendentes|length }}</span></div>
+  {{ tabela(grupos.pendentes, 'Nenhum recibo com dado faltando.') }}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Prontos para emitir</h2><span>{{ grupos.prontos|length }}</span></div>
+  {{ tabela(grupos.prontos, 'Nenhum recibo esperando nota.') }}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Na fila (aguardando o emissor)</h2><span>{{ grupos.enviando|length }}</span></div>
+  {{ tabela(grupos.enviando, 'Nada no meio do caminho.', True) }}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Recusadas pelo emissor</h2><span>{{ grupos.rejeitadas|length }}</span></div>
+  {{ tabela(grupos.rejeitadas, 'Nenhuma recusa.', True) }}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Emitidas</h2><span>{{ grupos.emitidas|length }}</span></div>
+  {{ tabela(grupos.emitidas, 'Nenhuma NFS-e emitida ainda.', True) }}
+</section>
+{% endblock %}

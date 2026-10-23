@@ -1,0 +1,13 @@
+INTIMACAO = intimado
+PAGAMENTO = pago
+DESISTENCIA = retirado pelo apresentante
+PROTESTO = protestado
+CANCELAMENTO = protesto cancelado
+SUSTACAO = sustação judicial
+REVOGACAO_SUSTACAO = sustação revogada
+EFEITO_SUSPENSIVO = efeitos suspensos por ordem judicial
+por_edital = {ocorrencia} por edital
+pessoalmente = {ocorrencia} pessoalmente
+com_data = {ocorrencia} em {data}
+sem_ocorrencia = sem ocorrência
+sem_natureza = não consta

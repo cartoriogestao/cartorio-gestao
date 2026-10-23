@@ -1,0 +1,8 @@
+{
+  "chave": "RI_PRENOTACOES_ABERTAS_NAO_HA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Prenotação em aberto — não há",
+  "formato": "JINJA",
+  "explica": "Frase da certidão da matrícula que afirma não haver título prenotado nem protocolo em aberto; entra quando a busca das prenotações abertas volta vazia (ri_web).",
+  "campos": []
+}

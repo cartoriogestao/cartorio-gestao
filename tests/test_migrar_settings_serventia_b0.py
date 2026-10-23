@@ -75,13 +75,29 @@ def test_grava_so_o_vazio_com_backup_e_segunda_vez_e_no_op(tmp_path):
     assert s["serventia_titular"] == "Titular Ficticio"
     assert s["outra_chave"] == "x"
     assert "unit_name" not in r1["gravadas"]
-    # o backup e o banco ANTES da escrita
+    # o backup e o banco ANTES da escrita (e abre como SQLite, com as linhas)
     assert _settings(r1["backup"]).get("serventia_titular") is None
+    assert _settings(r1["backup"])["unit_name"] == "JA PREENCHIDO"
+    assert _settings(r1["backup"])["outra_chave"] == "x"
 
     r2 = MIG.migrar(banco, perfil, agora=dt.datetime(2026, 10, 5, 15, 0, 1))
     assert r2["gravadas"] == {} and r2["backup"] is None
     assert _settings(banco) == s
     assert len(list((tmp_path / "backups").iterdir())) == 1
+
+
+def test_pendencias_recebe_a_conexao_como_antes_da_migracao(tmp_path):
+    """A assinatura publica NAO muda (manual da conversao): quem chama passa a
+    conexao aberta, e o acesso nativo se tira dela por dentro."""
+    banco = _banco(tmp_path, {"unit_name": "JA PREENCHIDO", "ri_uf": "  "})
+    con = MIG.banco_pg.conectar(str(banco))
+    try:
+        faltam = MIG.pendencias(con, _perfil(tmp_path))
+    finally:
+        con.close()
+    assert "unit_name" not in faltam
+    assert faltam["ri_uf"] == "ZZ"
+    assert faltam["serventia_titular"] == "Titular Ficticio"
 
 
 def test_simular_nao_grava_nem_faz_backup(tmp_path):

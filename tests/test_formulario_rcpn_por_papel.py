@@ -104,7 +104,7 @@ def test_as_respostas_do_obito_entram_no_termo_da_lavratura(casa):
     assert (a["obito_eleitor"], a["obito_possui_bens"],
             a["obito_possui_filho"]) == ("SIM", "NAO", "SIM")
     teor = a["teor"] or ""
-    assert "Era eleitor." in teor
+    assert "Era eleitora." in teor     # a falecida é do sexo F (LD01)
     assert "Não deixou bens." in teor
     assert "Deixou filhos." in teor
 
@@ -126,6 +126,9 @@ NOVOS = {
 }
 
 
+ABREM_BLOCO = {"registro_tardio"}
+
+
 def test_os_campos_novos_estao_na_tela_e_nenhum_e_exigido(casa):
     for slug, campos in NOVOS.items():
         html = casa["c"].get(f"/rcpn/novo/{slug}").get_data(as_text=True)
@@ -134,6 +137,10 @@ def test_os_campos_novos_estao_na_tela_e_nenhum_e_exigido(casa):
             assert m, (slug, c)
             assert "required" not in m.group(0), (slug, c)
             # e mora num bloco condicional, que o script mostra só quando cabe
+            # — menos a marca do registro tardio (21/10/2026), que é ela
+            # mesma a chave que abre o bloco do tardio.
+            if c in ABREM_BLOCO:
+                continue
             assert "data-se-campo" in html[:m.start()][-2500:], (slug, c)
 
 

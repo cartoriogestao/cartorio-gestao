@@ -1,0 +1,19 @@
+{
+  "chave": "NOTAS_PUBLICA_FORMA",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Pública forma",
+  "formato": "JINJA",
+  "explica": "A transcrição integral, pelo tabelião, do documento apresentado, com a certificação de que está conforme o original e a ressalva da rasura ou adulteração que se viu.",
+  "campos": [
+    "ano",
+    "apresentante",
+    "apresentante_documento",
+    "documento_descricao",
+    "documento_especie",
+    "documento_expedidor",
+    "folhas",
+    "numero",
+    "ressalvas",
+    "transcricao"
+  ]
+}

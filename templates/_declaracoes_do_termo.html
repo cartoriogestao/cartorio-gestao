@@ -1,0 +1,31 @@
+{#
+  AS DECLARAÇÕES QUE O TERMO DO LIVRO FAZ (LD09, 21/10/2026).
+
+  O Livro B do RTD traslada o documento, e o termo o encerra. Os outros três
+  livros DECLARAM no termo o que a lei enumera: o extrato do Livro C (LRP art.
+  143), a inscrição da pessoa jurídica (art. 120) e a matrícula do periódico
+  (art. 123, I). Um quadro por livro da atribuição — só vale o do livro
+  escolhido, e o de outro livro preenchido é recusado, e não esquecido
+  (`rg_registro.declaracoes_do_livro`). O que se escreve aqui vai para o ato,
+  e o termo o reimprime igual em toda segunda via.
+
+  `declaracoes`: `rg_registro.DECLARACOES_POR_SERIE`; `series`: os livros da
+  tela (`codigo`, `nome`); `form`: o formulário que voltou com erro.
+#}
+{% macro quadros(declaracoes, series, form) %}
+{% for s in series if declaracoes.get(s.codigo) %}
+{% set livro = declaracoes[s.codigo] %}
+<details style="grid-column:1/-1">
+  <summary>Declarações do termo — {{ livro.quadro }}</summary>
+  <p style="margin:6px 0"><small>Só para o registro no livro {{ s.codigo }}.
+    O que ficar em branco não sai no termo.</small></p>
+  <div class="grid2">
+    {% for claro, rotulo in livro.campos %}
+    <label>{{ rotulo }}
+      <input name="declaracao_{{ claro }}"
+             value="{{ (form or {}).get('declaracao_' ~ claro, '') }}"></label>
+    {% endfor %}
+  </div>
+</details>
+{% endfor %}
+{% endmacro %}

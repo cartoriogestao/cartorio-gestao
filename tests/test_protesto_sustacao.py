@@ -50,6 +50,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import protesto as PT
 from nucleo_schema import init_nucleo_schema
@@ -63,7 +65,7 @@ PROCESSO = "0800123-45.2026.8.10.0100"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     init_nucleo_schema(con)
     init_pt_schema(con)
@@ -387,6 +389,10 @@ def protestar(con, tid):
 
 
 def suspender(con, tid, **k):
+    """A ordem DEFINITIVA, se o teste não disser outra: desde o LH13
+    (21/10/2026) o caráter é obrigatório, e a definitiva é a que mantém a
+    regra de antes na certidão (o protesto fica fora — CNN art. 263-K, I)."""
+    k.setdefault("carater", "DEFINITIVA")
     return PT.lancar_efeito_suspensivo(con, tid, juizo=JUIZO,
                                        processo=PROCESSO, agora=AGORA, **k)
 
@@ -449,6 +455,9 @@ def test_a_CERTIDAO_diz_que_os_efeitos_estao_suspensos():
     # suspensos os efeitos, a publicidade para — o protesto NÃO entra na
     # certidão comum. Até aqui este teste exigia o contrário («o protesto não
     # pode sumir»). Com ordem judicial expressa, ele entra, com a nota.
+    # E DESDE 21/10/2026 (LH13, CNN art. 263-K) isso vale para a decisão
+    # DEFINITIVA, que é a de `suspender`; a provisória sai como sustação
+    # precária — ver os testes do art. 263-K, abaixo.
     assert PC.buscar(con, documento="04785512388") == []
     achados = PC.buscar(con, documento="04785512388",
                         autorizacao="ORDEM_JUDICIAL")
@@ -493,3 +502,155 @@ def test_os_dois_pares_de_ordem_e_revogacao_estao_declarados():
     assert PT.ORDEM_JUDICIAL_E_A_REVOGACAO == {
         "SUSTACAO": "REVOGACAO_SUSTACAO",
         "EFEITO_SUSPENSIVO": "REVOGACAO_EFEITO_SUSPENSIVO"}
+
+
+# ------------------------------------------------ CNN art. 263-K (LH13)
+#
+# O oficial, 21/10/2026 (pergunta 18, letra a): seguir o Código Nacional de
+# Normas, art. 263-K (Prov. CN 253/2026), no lugar da sua decisão de 14/10 pelo
+# CN-MA. A decisão PROVISÓRIA sai na certidão a terceiro como «CONSTA COM
+# SUSTAÇÃO JUDICIAL PRECÁRIA»; a DEFINITIVA fica fora; a que manda emitir
+# negativa cumpre-se nos limites; no segredo de justiça, só a sustação e o
+# número do processo. A ordem lançada antes, sem a marca, fica como estava.
+
+FECHO = ("Resultado emitido em cumprimento à decisão judicial — Processo nº "
+         + PROCESSO + ".")
+
+
+def _a_terceiro(con, **k):
+    """O que a certidão pedida por terceiro (sem autorização) diz da MARIA."""
+    import protesto_certidao as PC
+    achados = PC.buscar(con, documento="04785512388", **k)
+    teor = PC.montar_teor(tipo=PC.tipo_para(achados), nome="MARIA SANTOS",
+                          documento="04785512388", achados=achados,
+                          desde="2021-09-01", hoje=HOJE, con=con)
+    return achados, teor
+
+
+def test_a_ordem_nova_exige_o_carater_da_decisao():
+    con = banco()
+    tid = titulo(con)
+    protestar(con, tid)
+    for carater in (None, "", "LIMINAR"):
+        with pytest.raises(PT.ProtestoError, match="caráter da decisão"):
+            suspender(con, tid, carater=carater)
+    assert PT.efeito_suspensivo_em_vigor(con, tid) is None
+
+
+def test_a_decisao_provisoria_sai_na_certidao_como_sustacao_judicial_precaria():
+    """CNN art. 263-K, III: os dados do registro, o número da ação, o caráter
+    provisório e o fecho. A certidão é a POSITIVA — cobrada e selada como ela
+    (não há item próprio na tabela)."""
+    import protesto_certidao as PC
+    con = banco()
+    tid = titulo(con)
+    protestar(con, tid)
+    suspender(con, tid, carater="PROVISORIA")
+    achados, teor = _a_terceiro(con)
+    assert len(achados) == 1 and achados[0]["sustacao_precaria"] is True
+    assert PC.tipo_para(achados) == "POSITIVA"
+    for esperado in ("Título n. 84713/1", "protestado em 01/09/2026",
+                     "CONSTA COM SUSTAÇÃO JUDICIAL PRECÁRIA",
+                     f"decisão judicial de caráter provisório ({JUIZO}), na ação "
+                     f"n. {PROCESSO}", FECHO):
+        assert esperado in teor, (esperado, teor)
+    assert teor.rstrip().endswith(FECHO), teor
+    assert "EFEITOS SUSPENSOS" not in teor
+
+
+def test_a_decisao_definitiva_fica_fora_da_certidao():
+    """CNN art. 263-K, I: «NADA CONSTA», inclusive quando a sustação veio de
+    decisão judicial definitiva."""
+    con = banco()
+    tid = titulo(con)
+    protestar(con, tid)
+    suspender(con, tid, carater="DEFINITIVA")
+    achados, teor = _a_terceiro(con)
+    assert achados == [] and "NÃO ENCONTREI" in teor
+    assert PROCESSO not in teor
+
+
+def test_a_ordem_que_manda_emitir_negativa_se_cumpre_nos_exatos_limites():
+    """CNN art. 263-K, § 1º: a decisão provisória que manda expressamente
+    emitir negativa tira da certidão o protesto DELA — e só ele: o outro
+    protesto da mesma pessoa continua na positiva."""
+    con = banco()
+    suspenso = titulo(con)
+    protestar(con, suspenso)
+    suspender(con, suspenso, carater="PROVISORIA", manda_negativa=True)
+    _, teor = _a_terceiro(con)
+    assert "NÃO ENCONTREI" in teor
+    outro = titulo(con, numero="99999/2")
+    protestar(con, outro)
+    achados, teor = _a_terceiro(con)
+    assert [a["numero_titulo"] for a in achados] == ["99999/2"]
+    assert "84713/1" not in teor and "PRECÁRIA" not in teor and PROCESSO not in teor
+
+
+def test_no_segredo_de_justica_a_certidao_diz_so_a_sustacao_e_o_processo():
+    """CNN art. 263-K, § 1º: nada do título, do valor, do credor, do registro
+    nem do juízo — a sustação, o número do processo e o fecho."""
+    con = banco()
+    tid = titulo(con)
+    protestar(con, tid)
+    suspender(con, tid, carater="PROVISORIA", segredo_de_justica=True)
+    achados, teor = _a_terceiro(con)
+    assert len(achados) == 1
+    assert (f"1) CONSTA COM SUSTAÇÃO JUDICIAL PRECÁRIA, na ação n. {PROCESSO}."
+            in teor), teor
+    assert teor.rstrip().endswith(FECHO), teor
+    for fora in ("84713/1", "1.482,78", "protestado em", "Livro", JUIZO):
+        assert fora not in teor, (fora, teor)
+
+
+def test_a_ordem_sem_marca_fica_fora_ate_alguem_marcar():
+    """A ordem lançada antes de 21/10/2026 não tem a marca: o protesto fica
+    fora da certidão, como ficava, e ela aparece em `ordens_sem_marca` para a
+    tela avisar. Marcada provisória, a certidão seguinte já diz a sustação
+    precária — e quem marcou e quando ficam no ato."""
+    con = banco()
+    tid = titulo(con)
+    protestar(con, tid)
+    ato = suspender(con, tid)["ato_id"]
+    con.execute("UPDATE pt_atos SET ordem_carater = NULL, ordem_marcada_em = NULL,"
+                " ordem_marcada_por = NULL WHERE id = ?", (ato,))
+    assert _a_terceiro(con)[0] == []
+    assert [o["ato_id"] for o in PT.ordens_sem_marca(con)] == [ato]
+
+    PT.marcar_ordem_judicial(con, ato, carater="PROVISORIA",
+                             agora="2026-10-21T10:00:00", usuario="escrevente")
+    achados, teor = _a_terceiro(con)
+    assert achados[0]["sustacao_precaria"] and FECHO in teor
+    assert PT.ordens_sem_marca(con) == []
+    ordem = PT.efeito_suspensivo_em_vigor(con, tid)
+    assert (ordem["ordem_marcada_por"], ordem["ordem_marcada_em"]) == (
+        "escrevente", "2026-10-21T10:00:00")
+    # o juízo e o processo do ato não se reescrevem
+    assert (ordem["juizo"], ordem["processo"]) == (JUIZO, PROCESSO)
+
+
+def test_a_ordem_revogada_ou_de_protesto_cancelado_nao_pede_marca():
+    """A lista das ordens a marcar é só das que VALEM sobre protesto em pé: a
+    revogada e a do protesto cancelado não mudam certidão nenhuma."""
+    con = banco()
+    revogada = titulo(con)
+    protestar(con, revogada)
+    a = suspender(con, revogada)["ato_id"]
+    PT.lancar_revogacao_efeito_suspensivo(con, revogada, agora=AGORA)
+    cancelado = titulo(con, numero="77777/3")
+    protestar(con, cancelado)
+    b = suspender(con, cancelado)["ato_id"]
+    PT.lancar_cancelamento(con, cancelado, hipotese="ORDEM_JUDICIAL",
+                           fundamento="Sentença que mandou cancelar.", agora=AGORA)
+    con.execute("UPDATE pt_atos SET ordem_carater = NULL WHERE id IN (?, ?)", (a, b))
+    assert PT.ordens_sem_marca(con) == []
+
+
+def test_so_a_ordem_de_efeito_suspensivo_leva_a_marca():
+    """A sustação chega antes do protesto, e título sem protesto lavrado não
+    entra em certidão nenhuma: marcá-la não mudaria nada."""
+    con = banco()
+    tid = titulo(con)
+    ato = sustar(con, tid)["ato_id"]
+    with pytest.raises(PT.ProtestoError, match="art. 263-K"):
+        PT.marcar_ordem_judicial(con, ato, carater="PROVISORIA", agora=AGORA)

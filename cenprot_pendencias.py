@@ -32,10 +32,10 @@ escrito aqui saiu do contrato, e há teste que confere cada um contra ele.
 from __future__ import annotations
 
 import json
-import sqlite3
 from typing import Any
 
 import cenprot_api as API
+from bd_nativo import banco
 import centrais_cred as CRED
 import cn_schema as CN
 import custas
@@ -173,7 +173,7 @@ def _lista_da_resposta(resposta: Any) -> list[dict]:
     return []
 
 
-def _titulo_da_pendencia(con: sqlite3.Connection, item: dict) -> int | None:
+def _titulo_da_pendencia(con: Any, item: dict) -> int | None:
     """O título desta casa, achado pela chave ou pelo protocolo. Só LÊ.
 
     **A CHAVE VEM PRIMEIRO PORQUE ELA É NACIONAL** — carrega o código IBGE do
@@ -187,22 +187,22 @@ def _titulo_da_pendencia(con: sqlite3.Connection, item: dict) -> int | None:
     """
     chave = PC.so_digitos(_procurar(item, CAMPO_DA_CHAVE) or "")
     if chave and PC.decompor_chave(chave):
-        linha = con.execute(
-            "SELECT id FROM pt_titulos WHERE chave_cenprot = ? LIMIT 2",
-            (chave,)).fetchall()
+        linha = banco(con).ler(
+            "SELECT id FROM pt_titulos WHERE chave_cenprot = %s ORDER BY id LIMIT 2",
+            (chave,))
         if len(linha) == 1:
-            return int(linha[0][0])
+            return int(linha[0]["id"])
         if len(linha) > 1:
             # Duas linhas com a mesma chave é defeito de dado, e escolher uma
             # seria escolher no escuro. Fica sem casar, e à vista.
             return None
     protocolo = str(_procurar(item, CAMPO_DO_PROTOCOLO) or "").strip()
     if protocolo:
-        linha = con.execute(
-            "SELECT id FROM pt_titulos WHERE TRIM(protocolo) = ? LIMIT 2",
-            (protocolo,)).fetchall()
+        linha = banco(con).ler(
+            "SELECT id FROM pt_titulos WHERE TRIM(protocolo) = %s ORDER BY id LIMIT 2",
+            (protocolo,))
         if len(linha) == 1:
-            return int(linha[0][0])
+            return int(linha[0]["id"])
     return None
 
 
@@ -253,11 +253,12 @@ def baixar(db, especie: Any, *, ambiente: Any = CRED.PRODUCAO,
             titulo_id = _titulo_da_pendencia(con, item)
             if titulo_id is None:
                 sem_titulo += 1
-            cur = con.execute(
-                """INSERT OR IGNORE INTO cn_pendencias
+            novas = banco(con).escrever(
+                """INSERT INTO cn_pendencias
                        (especie, ambiente, codigo, chave, titulo_id, teor,
                         resumo, baixada_em, baixada_por, situacao)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT DO NOTHING RETURNING id""",
                 (qual, onde, codigo,
                  PC.so_digitos(_procurar(item, CAMPO_DA_CHAVE) or "") or None,
                  titulo_id, json.dumps(item, ensure_ascii=False),
@@ -266,7 +267,7 @@ def baixar(db, especie: Any, *, ambiente: Any = CRED.PRODUCAO,
             # `OR IGNORE` não estoura no repetido, e contar tentativa foi
             # exatamente o que fez a carga dizer «entraram 20» com a tabela
             # em zero.
-            if cur.rowcount:
+            if novas:
                 entraram += 1
             else:
                 repetidas += 1
@@ -278,38 +279,37 @@ def baixar(db, especie: Any, *, ambiente: Any = CRED.PRODUCAO,
 # ------------------------------------------------------------------ olhar
 
 
-def abertas(con: sqlite3.Connection, *, especie: Any = None,
+def abertas(con: Any, *, especie: Any = None,
             ambiente: Any = None, limite: int = 200) -> list[dict]:
     """A fila do balcão: o que chegou e ainda não foi respondido. Só LÊ."""
-    onde = ["p.situacao NOT IN (?, ?)"]
+    onde = ["p.situacao NOT IN (%s, %s)"]
     valores: list[Any] = [CN.ENVIADA, CN.DISPENSADA]
     if especie:
-        onde.append("p.especie = ?")
+        onde.append("p.especie = %s")
         valores.append(_especie(especie))
     if ambiente:
-        onde.append("p.ambiente = ?")
+        onde.append("p.ambiente = %s")
         valores.append(str(ambiente).strip().upper())
     valores.append(int(limite))
-    linhas = con.execute(
+    return banco(con).ler(
         f"""SELECT p.*, t.numero_titulo, t.protocolo AS titulo_protocolo,
                    t.situacao AS titulo_situacao
               FROM cn_pendencias p
               LEFT JOIN pt_titulos t ON t.id = p.titulo_id
              WHERE {' AND '.join(onde)}
              ORDER BY p.especie, p.baixada_em DESC, p.id DESC
-             LIMIT ?""", valores).fetchall()
-    return [dict(linha) for linha in linhas]
+             LIMIT %s""", valores)
 
 
-def uma(con: sqlite3.Connection, pendencia_id: int) -> dict | None:
+def uma(con: Any, pendencia_id: int) -> dict | None:
     """Uma pendência, com o teor aberto para a tela mostrar. Só LÊ."""
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT p.*, t.numero_titulo, t.protocolo AS titulo_protocolo,
                   t.situacao AS titulo_situacao,
                   t.valor_centavos AS titulo_valor_centavos
              FROM cn_pendencias p
              LEFT JOIN pt_titulos t ON t.id = p.titulo_id
-            WHERE p.id = ?""", (int(pendencia_id),)).fetchone()
+            WHERE p.id = %s""", (int(pendencia_id),))
     if linha is None:
         return None
     fora = dict(linha)
@@ -326,7 +326,7 @@ def uma(con: sqlite3.Connection, pendencia_id: int) -> dict | None:
     return fora
 
 
-def retirada_sugerida(con: sqlite3.Connection, pendencia: dict,
+def retirada_sugerida(con: Any, pendencia: dict,
                       *, hoje: str) -> dict:
     """O que o devedor paga para retirar aquele título. Só LÊ.
 
@@ -371,7 +371,7 @@ def retirada_sugerida(con: sqlite3.Connection, pendencia: dict,
                        f"(R$ {int(valor) / 100:.2f})")}
 
 
-def custa_de_cancelamento_sugerida(con: sqlite3.Connection, pendencia: dict,
+def custa_de_cancelamento_sugerida(con: Any, pendencia: dict,
                                    *, hoje: str) -> dict:
     """A custa de cancelamento daquele título. Só LÊ.
 
@@ -414,7 +414,7 @@ def custa_de_cancelamento_sugerida(con: sqlite3.Connection, pendencia: dict,
                        f"(R$ {int(valor) / 100:.2f})")}
 
 
-def painel(con: sqlite3.Connection) -> list[dict]:
+def painel(con: Any) -> list[dict]:
     """Quantas esperam, por espécie — para a tela do dia do Protesto.
 
     **CONTA, E NÃO JULGA.** Um zero aqui pode ser «nada chegou hoje» ou «ainda
@@ -425,28 +425,29 @@ def painel(con: sqlite3.Connection) -> list[dict]:
     # SÓ A PRODUÇÃO CONTA (14/10/2026). Pendência de homologação que sobrou no
     # banco não é trabalho de ninguém — contá-la faria o número nunca zerar.
     fora = []
+    bd = banco(con)
     for especie in CN.ESPECIES:
-        linha = con.execute(
+        linha = bd.um(
             """SELECT COUNT(*) AS quantas, MAX(baixada_em) AS ultima
                  FROM cn_pendencias
-                WHERE especie = ? AND ambiente = ?
-                  AND situacao NOT IN (?, ?)""",
-            (especie, CRED.PRODUCAO, CN.ENVIADA, CN.DISPENSADA)).fetchone()
-        ultima = con.execute(
-            """SELECT MAX(baixada_em) FROM cn_pendencias
-                WHERE especie = ? AND ambiente = ?""",
-            (especie, CRED.PRODUCAO)).fetchone()
+                WHERE especie = %s AND ambiente = %s
+                  AND situacao NOT IN (%s, %s)""",
+            (especie, CRED.PRODUCAO, CN.ENVIADA, CN.DISPENSADA))
+        ultima = bd.um(
+            """SELECT MAX(baixada_em) AS ultima FROM cn_pendencias
+                WHERE especie = %s AND ambiente = %s""",
+            (especie, CRED.PRODUCAO))
         fora.append({"especie": especie,
                      "nome": CN.NOME_DA_ESPECIE[especie],
                      "esperando": int(linha["quantas"] or 0),
-                     "ultima_baixa": (ultima[0] if ultima else None)})
+                     "ultima_baixa": (ultima["ultima"] if ultima else None)})
     return fora
 
 
 # ------------------------------------------------------------ decidir
 
 
-def _o_cancelamento_ja_esta_lavrado(con: sqlite3.Connection,
+def _o_cancelamento_ja_esta_lavrado(con: Any,
                                     pendencia_id: int) -> None:
     """Responder «cancelei» à CENPROT só depois de cancelar. Só LÊ.
 
@@ -457,10 +458,10 @@ def _o_cancelamento_ja_esta_lavrado(con: sqlite3.Connection,
     informa a Central. Informar antes faria a Central dar o protesto por
     cancelado enquanto o livro desta casa continua dizendo que ele está de pé.
     """
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT p.especie, p.titulo_id, t.situacao
              FROM cn_pendencias p LEFT JOIN pt_titulos t ON t.id = p.titulo_id
-            WHERE p.id = ?""", (pendencia_id,)).fetchone()
+            WHERE p.id = %s""", (pendencia_id,))
     if linha is None or linha["especie"] != CN.CANCELAMENTO:
         return
     if linha["titulo_id"] is None:
@@ -476,16 +477,16 @@ def _o_cancelamento_ja_esta_lavrado(con: sqlite3.Connection,
             f"informe a Central.")
 
 
-def decidir(con: sqlite3.Connection, pendencia_id: int, *, decisao: dict,
+def decidir(con: Any, pendencia_id: int, *, decisao: dict,
             quem: str = "", agora: str) -> None:
     """Guarda o que o oficial decidiu. **NÃO MANDA NADA À CENTRAL.**
 
     Separar isto do envio é a forma de `conferir`/`receber` da remessa: entre
     decidir e mandar cabe uma releitura, e o que sobe muda coisa na Central.
     """
-    linha = con.execute(
-        "SELECT situacao, ambiente FROM cn_pendencias WHERE id = ?",
-        (int(pendencia_id),)).fetchone()
+    linha = banco(con).um(
+        "SELECT situacao, ambiente FROM cn_pendencias WHERE id = %s",
+        (int(pendencia_id),))
     if linha is None:
         raise PendenciaError("Essa pendência não existe mais na lista.")
     # PENDÊNCIA DE HOMOLOGAÇÃO NÃO SE DECIDE MAIS (14/10/2026): decidida, ela
@@ -501,16 +502,16 @@ def decidir(con: sqlite3.Connection, pendencia_id: int, *, decisao: dict,
     if not isinstance(decisao, dict) or not decisao:
         raise PendenciaError("Informe a decisão antes de gravar.")
     _o_cancelamento_ja_esta_lavrado(con, int(pendencia_id))
-    con.execute(
+    banco(con).escrever(
         """UPDATE cn_pendencias
-              SET decisao = ?, decidida_em = ?, decidida_por = ?,
-                  situacao = ?
-            WHERE id = ?""",
+              SET decisao = %s, decidida_em = %s, decidida_por = %s,
+                  situacao = %s
+            WHERE id = %s""",
         (json.dumps(decisao, ensure_ascii=False), agora, quem or None,
          CN.DECIDIDA, int(pendencia_id)))
 
 
-def dispensar(con: sqlite3.Connection, pendencia_id: int, *, motivo: str,
+def dispensar(con: Any, pendencia_id: int, *, motivo: str,
               quem: str = "", agora: str) -> None:
     """Tira da fila o que não é desta casa ou não tem o que responder.
 
@@ -522,20 +523,20 @@ def dispensar(con: sqlite3.Connection, pendencia_id: int, *, motivo: str,
         raise PendenciaError(
             "Escreva por que esta pendência sai da lista — sem o motivo, quem "
             "olhar daqui a seis meses não terá como saber.")
-    linha = con.execute(
-        "SELECT situacao FROM cn_pendencias WHERE id = ?",
-        (int(pendencia_id),)).fetchone()
+    linha = banco(con).um(
+        "SELECT situacao FROM cn_pendencias WHERE id = %s",
+        (int(pendencia_id),))
     if linha is None:
         raise PendenciaError("Essa pendência não existe mais na lista.")
     if linha["situacao"] == CN.ENVIADA:
         raise PendenciaError(
             "Essa pendência já foi respondida à CENPROT, e o que subiu não se "
             "apaga daqui.")
-    con.execute(
+    banco(con).escrever(
         """UPDATE cn_pendencias
-              SET situacao = ?, dispensa_motivo = ?, decidida_em = ?,
-                  decidida_por = ?
-            WHERE id = ?""",
+              SET situacao = %s, dispensa_motivo = %s, decidida_em = %s,
+                  decidida_por = %s
+            WHERE id = %s""",
         (CN.DISPENSADA, str(motivo).strip(), agora, quem or None,
          int(pendencia_id)))
 
@@ -543,16 +544,15 @@ def dispensar(con: sqlite3.Connection, pendencia_id: int, *, motivo: str,
 # ------------------------------------------------------------- enviar
 
 
-def decididas(con: sqlite3.Connection, especie: Any,
+def decididas(con: Any, especie: Any,
               ambiente: Any = CRED.PRODUCAO) -> list[dict]:
     """O que já tem decisão e ainda não subiu. Só LÊ — é o que o envio manda."""
-    linhas = con.execute(
+    return banco(con).ler(
         """SELECT * FROM cn_pendencias
-            WHERE especie = ? AND ambiente = ? AND situacao = ?
+            WHERE especie = %s AND ambiente = %s AND situacao = %s
             ORDER BY id""",
         (_especie(especie), str(ambiente).strip().upper(),
-         CN.DECIDIDA)).fetchall()
-    return [dict(linha) for linha in linhas]
+         CN.DECIDIDA))
 
 
 def enviar(db, especie: Any, *, ambiente: Any = CRED.PRODUCAO,
@@ -598,11 +598,11 @@ def enviar(db, especie: Any, *, ambiente: Any = CRED.PRODUCAO,
     texto = json.dumps(resposta, ensure_ascii=False)[:4000]
     with db.transaction() as con:
         for linha in fila:
-            con.execute(
+            banco(con).escrever(
                 """UPDATE cn_pendencias
-                      SET situacao = ?, enviada_em = ?, enviada_por = ?,
-                          resposta = ?
-                    WHERE id = ? AND situacao = ?""",
+                      SET situacao = %s, enviada_em = %s, enviada_por = %s,
+                          resposta = %s
+                    WHERE id = %s AND situacao = %s""",
                 (CN.ENVIADA, agora, quem or None, texto, linha["id"],
                  CN.DECIDIDA))
     return {"especie": qual, "ambiente": onde, "enviadas": len(fila),

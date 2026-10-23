@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{#
+  O PAPEL DA AUTENTICAÇÃO (LG04): os termos saem como foram CONGELADOS na
+  autenticação; a certidão é montada do que ela guarda. Imprima pelo navegador.
+#}
+{% block heading %}<h1>{% if qual == 'abertura' %}Termo de abertura{% elif qual == 'encerramento' %}Termo de encerramento{% else %}Certidão de autenticação{% endif %}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpj_rtd_livro_contabil_ficha', livro_id=l.id) }}">Voltar à ficha</a>
+  <span class="muted">Imprima pelo navegador (Ctrl+P).</span>
+</div>
+<pre class="papel" style="white-space: pre-wrap; font-family: serif;">{{ texto }}</pre>
+{% if l.selo %}
+{# O selo da autenticação, conferível no papel (LT05): QR, consulta e o que o
+   selo declara — desenhado aqui, e não dentro do texto congelado. #}
+<div class="selo-da-autenticacao" style="display:flex; gap:12px; align-items:center">
+  {% if marca.qr %}<div class="qr">{{ marca.qr|safe }}</div>{% endif %}
+  <div><small>SELO DIGITAL DO TJMA: <strong>{{ l.selo }}</strong>
+    {% if valores %}<br>{{ valores }}{% endif %}
+    {% if consulta %}<br>Confira em {{ consulta }}{% endif %}</small></div>
+</div>
+{% endif %}
+{% endblock %}

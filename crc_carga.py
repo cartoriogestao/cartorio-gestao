@@ -53,6 +53,7 @@ from ibge_schema import normalizar_nome as _sem_acento
 from ibge_geracao import lugar as _lugar_ibge
 from ri_schema import valida_cpf_cnpj as _cpf_valido
 import rc_matricula as _RCM
+from bd_nativo import banco
 
 VERSAO = "2.6"
 ACAO_CARGA = "CARGA"
@@ -581,11 +582,10 @@ def _ibge_carregado(con: sqlite3.Connection) -> bool:
     criou `ib_municipios` estourava aqui, e a lavratura inteira cairia por uma
     tabela de apoio que a própria docstring diz não dever travar nada.
     """
-    try:
-        return con.execute(
-            "SELECT 1 FROM ib_municipios LIMIT 1").fetchone() is not None
-    except sqlite3.OperationalError:
+    bd = banco(con)
+    if not bd.tem_tabela("ib_municipios"):
         return False
+    return bd.um("SELECT 1 AS um FROM ib_municipios LIMIT 1") is not None
 
 
 
@@ -1057,10 +1057,9 @@ def _quantos_gemeos(assento: dict) -> str:
 
 def _pessoas_do_assento(con: sqlite3.Connection,
                         assento_id: int) -> dict[str, dict]:
-    con.row_factory = sqlite3.Row
     achadas: dict[str, dict] = {}
-    for r in con.execute(
-            """SELECT * FROM rc_pessoas WHERE assento_id = ?
+    for r in banco(con).ler(
+            """SELECT * FROM rc_pessoas WHERE assento_id = %s
                 ORDER BY ordem, id""", (assento_id,)):
         achadas.setdefault(_texto(r["papel"]).upper(), dict(r))
     return achadas
@@ -1522,15 +1521,14 @@ def montar(con: sqlite3.Connection, assentos: list[int], *, cns: str) -> dict:
     só o que deu certo produziria um arquivo bem formado e incompleto — e a
     Central o aceitaria, que é o pior desfecho.
     """
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     por_movimento: dict[str, list[str]] = {}
     retidos: list[dict] = []
     a_arrumar: list[dict] = []
     indice = 0
 
     for aid in assentos:
-        a = con.execute("SELECT * FROM rc_assentos WHERE id = ?",
-                        (aid,)).fetchone()
+        a = bd.um("SELECT * FROM rc_assentos WHERE id = %s", (aid,))
         if not a:
             retidos.append({"assento_id": aid,
                             "faltas": ["o assento não existe"]})
@@ -1584,10 +1582,9 @@ def montar(con: sqlite3.Connection, assentos: list[int], *, cns: str) -> dict:
 
 def _pessoas_do_assento(con: sqlite3.Connection, assento_id: Any) -> dict:
     """As pessoas daquele assento, por papel — como `o_que_falta` as espera."""
-    con.row_factory = sqlite3.Row
     saida: dict[str, dict] = {}
-    for linha in con.execute(
-            "SELECT * FROM rc_pessoas WHERE assento_id=? ORDER BY ordem",
+    for linha in banco(con).ler(
+            "SELECT * FROM rc_pessoas WHERE assento_id=%s ORDER BY ordem, id",
             (int(assento_id),)):
         papel = _texto(linha["papel"]).upper()
         if papel and papel not in saida:
@@ -1625,14 +1622,13 @@ def em_quarentena(con: sqlite3.Connection, limite: int = 20_000) -> list[dict]:
     jurídico, um segundo significado. A mesma palavra em dois lugares não quer
     dizer a mesma coisa.
     """
-    con.row_factory = sqlite3.Row
     retidos = []
-    for linha in con.execute(
+    for linha in banco(con).ler(
             """SELECT * FROM rc_assentos
                 WHERE especie IN ('NASCIMENTO','NATIMORTO','CASAMENTO',
                                   'CASAMENTO_RELIGIOSO','OBITO')
                   AND COALESCE(situacao,'ATIVO') = 'ATIVO'
-             ORDER BY data_ato, id LIMIT ?""", (limite,)):
+             ORDER BY data_ato NULLS FIRST, id LIMIT %s""", (limite,)):
         assento = dict(linha)
         faltas = o_que_falta(con, assento,
                              _pessoas_do_assento(con, assento["id"]))
@@ -1690,20 +1686,20 @@ def pendentes_de_carga(con: sqlite3.Connection, limite: int = 20_000, *,
     #   **Quem me pegou foi o teste que guarda isso**, e o texto dele diz o
     #   que eu tinha esquecido: «a carga é *justamente* a subida do acervo
     #   histórico — excluí-lo apagaria a razão de ela existir».
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     if incluir_ja_enviados:
-        return [dict(r) for r in con.execute(
+        return bd.ler(
             """SELECT id, especie, numero, nome, data_ato, matricula
                  FROM rc_assentos
                 WHERE especie IN ('NASCIMENTO','NATIMORTO','CASAMENTO',
                                   'CASAMENTO_RELIGIOSO','OBITO')
                   AND COALESCE(situacao,'ATIVO') = 'ATIVO'
-             ORDER BY data_ato, id LIMIT ?""", (limite,))]
-    return [dict(r) for r in con.execute(
+             ORDER BY data_ato NULLS FIRST, id LIMIT %s""", (limite,))
+    return bd.ler(
         """SELECT id, especie, numero, nome, data_ato, matricula
              FROM rc_assentos
             WHERE especie IN ('NASCIMENTO','NATIMORTO','CASAMENTO',
                               'CASAMENTO_RELIGIOSO','OBITO')
               AND COALESCE(situacao,'ATIVO') = 'ATIVO'
               AND id NOT IN (SELECT assento_id FROM rc_crc_lote_assentos)
-         ORDER BY data_ato, id LIMIT ?""", (limite,))]
+         ORDER BY data_ato NULLS FIRST, id LIMIT %s""", (limite,))

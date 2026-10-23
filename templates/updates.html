@@ -136,7 +136,9 @@
       {% endif %}
       {% if ins.assinatura %}
         {% if ins.assinatura.situacao == 'ASSINADO' %}
-          <p class="small"><strong>Assinatura:</strong> conferida — pacote assinado pela chave do oficial <code>{{ins.assinatura.chave}}</code>.</p>
+          <p class="small"><strong>Assinatura:</strong> conferida agora, contra o pacote — assinado pela chave do oficial <code>{{ins.assinatura.chave}}</code>.</p>
+        {% elif ins.assinatura.situacao == 'NAO_CONFERIDA' %}
+          <p class="small"><strong>Assinatura:</strong> <strong>não pôde ser conferida</strong> — {{ins.assinatura.observacao}}. Esta preparação foi recusada; prepare o pacote de novo.</p>
         {% else %}
           <p class="small"><strong>Assinatura:</strong> este pacote <strong>não é assinado</strong>{% if ins.assinatura.observacao %} ({{ins.assinatura.observacao}}){% endif %}. Esta instalação ainda não exige assinatura; confira o SHA-256 por um canal separado antes de aprovar.</p>
         {% endif %}

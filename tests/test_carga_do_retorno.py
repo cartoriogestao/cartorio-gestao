@@ -53,6 +53,8 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import acervo_carga as AC
 import protesto_retorno as PR
@@ -64,7 +66,7 @@ AGORA = "2026-09-01T10:00:00"
 
 def acervo() -> sqlite3.Connection:
     """O acervo mínimo, com as colunas que esta passada lê de verdade."""
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE tbAvisoProtesto (intChave REAL, strCB TEXT,
@@ -87,7 +89,7 @@ def acervo() -> sqlite3.Connection:
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     init_nucleo_schema(con)
     init_pt_schema(con)

@@ -31,6 +31,8 @@ POR QUE ELE AVISA E NÃO TRAVA
 from __future__ import annotations
 
 import sqlite3
+
+from bd_nativo import banco
 from typing import Any
 
 
@@ -171,24 +173,24 @@ def registrar(con: sqlite3.Connection, *, tabela: str, ato_id: int,
     if not _texto(tabela) or int(ato_id or 0) < 1:
         raise ChecklistError("Diga de que ato é este checklist.")
     r = conferir(especie, marcados)
-    cur = con.execute(
+    bd = banco(con)
+    novo = bd.escrever(
         """INSERT INTO rc_checklists (tabela, ato_id, especie, conferidos,
                esperados, faltaram, resumo, criado_em, criado_por)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (_texto(tabela), int(ato_id), _texto(especie).upper(),
          r["conferidos"], r["esperados"],
          ";".join(x["chave"] for x in r["faltam"]),
          resumo_para_gravar(especie, marcados), agora, por))
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
 
 
 def do_ato(con: sqlite3.Connection, *, tabela: str, ato_id: int) -> dict | None:
     """O checklist daquele ato, se houver. Só lê."""
-    con.row_factory = sqlite3.Row
-    linha = con.execute(
-        """SELECT * FROM rc_checklists WHERE tabela=? AND ato_id=?
+    linha = banco(con).um(
+        """SELECT * FROM rc_checklists WHERE tabela=%s AND ato_id=%s
             ORDER BY id DESC LIMIT 1""",
-        (_texto(tabela), int(ato_id))).fetchone()
+        (_texto(tabela), int(ato_id)))
     return dict(linha) if linha else None
 
 
@@ -200,8 +202,7 @@ def atos_sem_checklist(con: sqlite3.Connection,
     e um assento de 1955 não podia ter passado por um checklist criado em 2026.
     Contá-lo poria setenta anos de livro numa lista com prazo zero.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(x) for x in con.execute(
+    return [dict(x) for x in banco(con).ler(
         """SELECT a.id, a.especie, a.numero, a.nome, a.data_ato
              FROM rc_assentos a
             WHERE COALESCE(a.origem,'') <> 'EOFICIO'
@@ -210,7 +211,7 @@ def atos_sem_checklist(con: sqlite3.Connection,
                                WHERE c.tabela = 'rc_assentos'
                                  AND c.ato_id = a.id)
          ORDER BY a.data_ato IS NULL, a.data_ato DESC, a.id DESC
-            LIMIT ?""", (limite,))]
+            LIMIT %s""", (limite,))]
 
 
 def quantas_pendentes(con: sqlite3.Connection) -> int:

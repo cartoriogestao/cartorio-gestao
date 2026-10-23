@@ -87,5 +87,14 @@
   {% else %}<p class="muted">Nenhum erro aberto.</p>{% endif %}
 </section>
 {% endif %}
+{# O LEMBRETE DE JANEIRO (LF01): o relatório do uso de IA do ano que fechou,
+   à COGEX. Só o ADMIN o recebe, e só em janeiro. #}
+{% if relatorio_ia_no_painel %}
+<section class="panel"><div class="panel-head"><h2>Relatório de IA do ano anterior ({{ relatorio_ia_no_painel.ano }})</h2>
+  <a href="{{ url_for('gestor_relatorio_ia', ano=relatorio_ia_no_painel.ano) }}">abrir o relatório</a></div>
+  <p>O Código de Normas do MA (art. 170, § 4º) pede o relatório anual do uso de IA à COGEX. Confira os
+  incidentes e os dados dos fornecedores antes de assinar — e conferir o texto oficial do Código de Normas.</p>
+</section>
+{% endif %}
 </div>
 {% endblock %}

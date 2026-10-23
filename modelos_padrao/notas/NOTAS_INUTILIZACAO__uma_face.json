@@ -1,0 +1,14 @@
+{
+  "chave": "NOTAS_INUTILIZACAO__uma_face",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Inutilização — uma face",
+  "formato": "CHAVES",
+  "explica": "Quando é uma face só.",
+  "campos": [
+    "face",
+    "livro",
+    "numero",
+    "quantas",
+    "razao"
+  ]
+}

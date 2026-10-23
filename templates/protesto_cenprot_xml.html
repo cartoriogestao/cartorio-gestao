@@ -14,7 +14,7 @@
   <strong>D</strong>, com os pagos, retirados e cancelados. Apontamento a casa
   não manda: o título já tem a chave da Central.
   Entra só o que <strong>este sistema lavrou</strong> e ainda não foi a
-  arquivo nenhum — o que veio do E-Ofício ele mesmo já mandou.
+  arquivo nenhum — o que veio do sistema antigo ele mesmo já mandou.
   O campo <em>edital</em> vai verdadeiro quando o edital foi publicado.
 </div>
 
@@ -50,7 +50,8 @@
     </tbody>
   </table>
   {% endif %}
-  {% if l.entram and user.role == 'ADMIN' %}
+  {# 21/10/2026: gerar o arquivo do dia passou a ser também das escreventes (ordem do oficial). #}
+  {% if l.entram and user.role in ['ADMIN','MANAGER','USER'] %}
   <form method="post" action="{{ url_for('protesto_cenprot_xml_gerar') }}" style="padding:10px 14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="letra" value="{{ letra }}">
@@ -82,37 +83,39 @@
   {% endif %}
 </section>
 
-<section class="panel">
+<section class="panel" id="apresentantes">
   <div class="panel-head">
     <span>Cadastro dos apresentantes</span>
     <small>{{ cadastro | length }}</small>
   </div>
   <p style="padding:0 14px">
     O arquivo da CRA traz só o código e o nome do apresentante; o XML pede
-    também o <strong>CNPJ</strong> e o <strong>tipo</strong>. O cadastro do
-    E-Ofício tem os dois — traga-o uma vez; o que faltar, cadastre aqui.
+    também o <strong>CNPJ</strong> e o <strong>tipo</strong>. O aviso de
+    intimação leva o CNPJ (Código de Normas, art. 923), e o registro e o
+    instrumento do protesto, o <strong>endereço</strong> (Lei 9.492/1997, art.
+    22, II). O que faltar, cadastre aqui.
   </p>
-  <div style="padding:0 14px 10px">
-    <form method="post" action="{{ url_for('protesto_cenprot_xml_apresentantes_do_acervo') }}" style="display:inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" {% if not tem_acervo %}disabled title="O acervo do E-Ofício não está nesta máquina"{% endif %}>Trazer do E-Ofício</button>
-    </form>
-  </div>
+  {# O botão «Trazer do E-Ofício» (o cadastro tbCobrador do acervo) saiu em
+     17/10/2026: a importação terminou. A rota
+     protesto_cenprot_xml_apresentantes_do_acervo fica, sem botão. #}
   <form method="post" action="{{ url_for('protesto_cenprot_xml_apresentante') }}" style="padding:0 14px 14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Código <input name="codigo" size="4" maxlength="3" required></label>
     <label>Nome <input name="nome" size="30" required></label>
     <label>CNPJ ou CPF <input name="documento" size="18" required></label>
     <label>Tipo <input name="tipo_apresentante" size="3" required></label>
+    <label>Endereço completo <input name="endereco" size="40"
+           placeholder="Rua, número, bairro, cidade/UF"></label>
     <button type="submit">Gravar</button>
   </form>
   {% if cadastro %}
   <table class="table">
-    <thead><tr><th>Código</th><th>Nome</th><th>Documento</th><th>Tipo</th><th>Origem</th></tr></thead>
+    <thead><tr><th>Código</th><th>Nome</th><th>Documento</th><th>Tipo</th><th>Endereço</th><th>Origem</th></tr></thead>
     <tbody>
       {% for a in cadastro %}
       <tr><td>{{ a.codigo }}</td><td>{{ a.nome }}</td><td>{{ a.documento or '—' }}</td>
-          <td>{{ a.tipo_apresentante or '—' }}</td><td>{{ a.origem }}</td></tr>
+          <td>{{ a.tipo_apresentante or '—' }}</td><td>{{ a.endereco or '—' }}</td>
+          <td>{{ a.origem }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

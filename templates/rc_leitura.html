@@ -19,6 +19,12 @@
     <code>{{ modelos.manuscrito }}</code> · impresso (RG, CPF, residência):
     <code>{{ modelos.impresso }}</code>.
   </p>
+  {# O TETO E O CUSTO À VISTA (LX12, LS02 M4, 19/10/2026): cada página é uma
+     chamada paga ao provedor, e a recusa acima do teto vem antes de enviar. #}
+  <p class="small muted">
+    Até <strong>{{ teto_paginas }} páginas</strong> por leitura: cada página é
+    uma chamada paga à IA. Anexe só os documentos do ato.
+  </p>
 </div>
 
 {% if zdr.situacao == 'NEGADO' %}

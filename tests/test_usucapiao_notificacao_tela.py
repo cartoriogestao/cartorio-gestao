@@ -261,9 +261,19 @@ def test_a_tela_diz_o_que_ja_se_tentou_e_qual_e_a_proxima_forma(casa):
     pula direto para o edital** — que custa, demora, e sem a frustracao
     registrada e nulo.
 
-    O caso: MARIA ja foi notificada pessoalmente nos testes acima; a proxima
-    forma da norma e o RTD.
+    O caso: MARIA foi notificada pessoalmente; a proxima forma da norma e o
+    RTD.
+
+    > **A NOTIFICACAO DA MARIA SE EXPEDE AQUI, e nao «nos testes acima»**
+    > (medido em 19/10/2026, no PostgreSQL): o xdist reparte os testes de
+    > um arquivo entre processos, e cada processo monta o seu `casa`. No
+    > processo em que `test_expedir_leva_ao_papel_pronto_para_imprimir` nao
+    > rodava, a ficha vinha sem o quadro e o teste reprovava a tela estando
+    > ela certa — sozinho falhava igual; o arquivo inteiro com `-n 0`
+    > passava. Expedir de novo a MARIA pessoalmente nao muda o que se mede:
+    > a forma repetida conta uma vez so (`_tentativas_por_destinatario`).
     """
+    _expedir(casa)
     html = _ficha(casa)
     assert "o que já se tentou" in html
     assert "MARIA DAS DORES SOUSA" in html

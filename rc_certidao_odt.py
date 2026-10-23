@@ -13,16 +13,27 @@ from xml.sax.saxutils import escape
 
 PASTA_DOS_MOLDES = Path(__file__).resolve().parent / "modelos"
 
-# O MOLDE DE CADA ESPECIE. Sao tres arquivos, e nao um com condicoes dentro:
-# quem os edita e o oficial, no LibreOffice, e um papel por especie e o que ele
-# consegue abrir e ajustar. Os de casamento e obito nasceram do de nascimento
-# — mesma geometria, mesmas cores, mesmas caixas de selo —, e o script que os
-# deriva mora em `tools/moldes_do_civil.py`.
+# O MOLDE DE CADA ESPECIE. Sao cinco arquivos (eram tres ate o LD01), e nao um
+# com condicoes dentro: quem os edita e o oficial, no LibreOffice, e um papel
+# por especie e o que ele consegue abrir e ajustar. Os de casamento, obito,
+# natimorto e Livro E nasceram do de nascimento — mesma geometria, mesmas
+# cores, mesmas caixas de selo —, e o script que os deriva mora em
+# `tools/moldes_do_civil.py`.
 MOLDE_DA_ESPECIE: dict[str, str] = {
     "NASCIMENTO": "certidao_nascimento_modelo.odt",
     "CASAMENTO": "certidao_casamento_modelo.odt",
     "CASAMENTO_RELIGIOSO": "certidao_casamento_modelo.odt",
     "OBITO": "certidao_obito_modelo.odt",
+    # O NATIMORTO E O LIVRO E — LD01, 21/10/2026, derivados do de nascimento
+    # pela mesma ferramenta. O Livro E é UM papel para as seis espécies, como
+    # é um termo só; o título dele é marcador (`@titulolivroe`).
+    "NATIMORTO": "certidao_natimorto_modelo.odt",
+    "EMANCIPACAO": "certidao_livro_e_modelo.odt",
+    "INTERDICAO": "certidao_livro_e_modelo.odt",
+    "AUSENCIA": "certidao_livro_e_modelo.odt",
+    "TUTELA": "certidao_livro_e_modelo.odt",
+    "UNIAO_ESTAVEL": "certidao_livro_e_modelo.odt",
+    "OPCAO_NACIONALIDADE": "certidao_livro_e_modelo.odt",
 }
 
 # O de nascimento continua alcancavel pelo nome antigo — ha codigo e teste que
@@ -60,12 +71,15 @@ def molde_da_especie(especie) -> Path:
 # entao casamento e obito nao imprimiam nada: a guarda os recusava, e com
 # razao — mas isso deixava o balcao sem papel para as duas.
 #
-# **O NATIMORTO E O LIVRO E CONTINUAM DE FORA**, e nao por esquecimento: o
-# natimorto tem campos proprios (a certidao dele nao afirma nascimento com
-# vida) e o Livro E registra seis coisas diferentes entre si. Papel derivado
-# no chute para elas seria o defeito que esta guarda existe para impedir.
-ESPECIES_QUE_O_MOLDE_SERVE: frozenset[str] = frozenset(
-    {"NASCIMENTO", "CASAMENTO", "CASAMENTO_RELIGIOSO", "OBITO"})
+# **O NATIMORTO E O LIVRO E FICARAM DE FORA ATÉ O LD01 (21/10/2026)**, e não
+# por esquecimento: o natimorto tem campos próprios (a certidão dele não
+# afirma nascimento com vida) e o Livro E registra seis coisas diferentes
+# entre si. Papel derivado no chute seria o defeito que esta guarda existe
+# para impedir — e por isso os dois ganharam molde PRÓPRIO, com as caixas do
+# que o assento deles tem, e não o de nascimento: o 1º de natimorto sai
+# gratuito (LRP art. 30) e não tinha o que imprimir. O «OUTRO» continua
+# recusado: não se sabe o que ele registra.
+ESPECIES_QUE_O_MOLDE_SERVE: frozenset[str] = frozenset(MOLDE_DA_ESPECIE)
 
 
 class MoldeError(ValueError):
@@ -469,6 +483,12 @@ def valores(quadro: dict, certidao: dict, sv: dict) -> dict[str, str]:
         "@anonascfalecido": str(dma_nasc.get("ano") or "").strip() or " ",
         "@deixoubens": _txt(q.get("bens")),
         "@deixoufilhos": _txt(q.get("filhos")),
+        # --- NATIMORTO E LIVRO E (LD01) ---
+        "@numerodo": _txt(q.get("numero_do")),
+        "@titulolivroe": _up(q.get("titulo_livro_e") or "CERTIDÃO"),
+        "@livroe_especie": _txt(q.get("livro_e_especie")),
+        "@livroe_titulo": _txt(q.get("livro_e_titulo")),
+        "@livroe_indicacoes": _txt(q.get("livro_e_indicacoes")),
         # **CINCO MARCADORES MEUS NOMEAVAM CAMPO QUE O QUADRO NAO TEM** —
         # `profissao`, `cor_raca`, `domicilio`, `numero_do` e `eleitor`.
         # Escritos assim, o molde traria rotulo que nunca preenche, e rotulo
@@ -721,8 +741,9 @@ def arquivo_da_certidao(quadro: dict, certidao: dict, sv: dict,
     especie = str((quadro or {}).get("especie") or "").strip().upper()
     if especie and especie not in ESPECIES_QUE_O_MOLDE_SERVE:
         raise MoldeError(
-            f"Esta casa tem molde de certidão para nascimento, casamento e "
-            f"óbito, e esta é de {especie}: no molde de outra espécie sairia "
+            f"Esta casa tem molde de certidão para nascimento, casamento, "
+            f"óbito, natimorto e as espécies do Livro E, e esta é de "
+            f"{especie}: no molde de outra espécie sairia "
             f"um papel com o cabeçalho errado e com campos que não existem "
             f"neste assento. O teor está na ficha da certidão e pode ser "
             f"conferido ali; o molde desta espécie ainda não foi construído.")

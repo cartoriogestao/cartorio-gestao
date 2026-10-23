@@ -1,0 +1,14 @@
+{
+  "chave": "RI_CERTIDAO_VINTENARIA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão — o miolo da vintenária",
+  "formato": "JINJA",
+  "explica": "Transmissões de domínio e ônus nos últimos N anos (padrão 20; aceita 10/15/20/30).",
+  "campos": [
+    "anos_periodo",
+    "ate_periodo",
+    "desde_periodo",
+    "dominio_periodo",
+    "onus_periodo"
+  ]
+}

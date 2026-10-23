@@ -1,0 +1,18 @@
+{
+  "chave": "RTD_CERTIDAO_NOTIFICACAO_POSITIVA",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Certidão de notificação — positiva (RTD)",
+  "formato": "CHAVES",
+  "explica": "Texto congelado em rg_notificacao_certidoes na emissão. A notificação efetivada: a quem, onde, quando e como (entregue, a procurador com poderes específicos ou com recusa). CN-MA, arts. 986 a 993.",
+  "campos": [
+    "onde",
+    "destinatario",
+    "documento",
+    "endereco",
+    "data_da_notificacao",
+    "hora_da_notificacao",
+    "como",
+    "cidade",
+    "data_extenso"
+  ]
+}

@@ -21,11 +21,21 @@
   <form method="post" action="{{ url_for('notas_certidao_emitir') }}" class="grid2" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="ato_id" value="{{ ato.id }}">
+    {# A FORMA DA CERTIDÃO — LD02, 21/10/2026: «cópia integral ou resumida»
+       (Código de Normas, art. 851). O breve relato traz os elementos do livro
+       (espécie, livro, folha, termo, data, partes e selo), sem o teor. #}
+    <label>Forma da certidão
+      <select name="tipo">
+        {% if ato.teor %}<option value="INTEIRO_TEOR" selected>Inteiro teor — reproduz o ato</option>{% endif %}
+        <option value="BREVE_RELATO">Breve relato — os elementos do ato, resumidos</option>
+      </select>
+      {% if not ato.teor %}<small>Este ato está sem o teor no sistema: o inteiro teor
+        se tira do livro físico; o breve relato sai dos campos do livro.</small>{% endif %}</label>
     {% include '_notas_certidao_campos.html' %}
     {{ campo_busca(busca_da_certidao('NOTAS', ato.data,
          identificado='ato indicado pelo livro ' ~ (ato.livro or '—') ~ ', folha ' ~ (ato.folha or '—'))) }}
     {{ quadro(receita, caixa, protocolos) }}
-    <div class="actions" style="grid-column:1/-1"><button class="button primary">Emitir certidão de inteiro teor</button></div>
+    <div class="actions" style="grid-column:1/-1"><button class="button primary">Emitir certidão de inteiro teor ou em breve relato</button></div>
   </form>
 </section>
 {% endif %}

@@ -127,7 +127,9 @@ def test_guardar_o_teor_nao_apaga_mais_a_folha(serventia):
     assert depois["folha"] == "1"
     assert depois["folha_final"] == antes["folha_final"]
     assert depois["termo"] == 1
-    assert "segunda versao" in depois["teor"]
+    # E O TEOR DO ATO LANÇADO FICA COMO FOI PARA O LIVRO (LX12, LS02 M10): o
+    # formulário não o regrava mais — corrigir ato lançado é retificação.
+    assert "primeira versao" in depois["teor"]
 
 
 def test_a_tela_do_teor_nao_tem_mais_campo_de_folha(serventia):

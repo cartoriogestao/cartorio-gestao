@@ -10,6 +10,8 @@ import re
 from typing import Any
 
 import rc_certidao as RCE
+import rc_textos as TEXTOS
+from bd_nativo import banco
 
 
 def so_digitos(valor: Any) -> str:
@@ -78,7 +80,8 @@ def _nome_existe(nome: str) -> bool:
 def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
     """Monta as células da impressão. SÓ CALCULA."""
     aid = int(certidao["assento_id"])
-    row = con.execute("SELECT * FROM rc_assentos WHERE id=?", (aid,)).fetchone()
+    bd = banco(con)
+    row = bd.um("SELECT * FROM rc_assentos WHERE id=%s", (aid,))
     a = dict(row) if row else {}
     especie = str(a.get("especie") or certidao.get("especie") or "").upper()
     titulo = RCE.titulo_do_modelo(especie)
@@ -86,18 +89,25 @@ def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
         titulo = titulo[:-4]
     dados = _dados(a)
     quem = RCE._por_papel(RCE.pessoas(con, aid))
-    atos = [dict(x) for x in con.execute(
-        """SELECT tipo, teor FROM rc_atos WHERE assento_id=?
+    atos = [dict(x) for x in bd.ler(
+        """SELECT tipo, teor FROM rc_atos WHERE assento_id=%s
            AND tipo IN ('AVERBACAO','ANOTACAO','RETIFICACAO')
-           ORDER BY id""", (aid,)).fetchall()]
+           ORDER BY id""", (aid,))]
     acrescer = []
     for x in atos:
-        rotulo = str(x.get("tipo") or "").capitalize()
+        rotulo = RCE.rotulo_do_ato(x.get("tipo"))
         acrescer.append(f"{rotulo}: {str(x.get('teor') or '').strip()}".strip())
+    # A INSCRIÇÃO DO ART. 21, PARÁGRAFO ÚNICO, DA LRP — a mesma peça do teor
+    # congelado (LD01), pela busca única: o papel diz o que o teor diz. Só
+    # quando há alteração que a certidão não transcreve (22/10/2026).
+    if RCE.alteracoes_fora_da_certidao(atos):
+        acrescer.append(RCE._texto_da_casa(RCE.PECA_ENVOLVE_AVERBACAO, con)
+                        or TEXTOS.texto(RCE.PECA_ENVOLVE_AVERBACAO))
     if str(a.get("situacao") or "").upper() == "CANCELADO":
-        acrescer.append(
-            "CERTIFICO ainda que o referido assento encontra-se "
-            "CANCELADO nesta Serventia.")
+        # A MESMA FRASE DO TEOR CONGELADO, e não uma cópia dela: a peça do
+        # papel da certidão em resumo (LF06C), pela busca única.
+        acrescer.append(RCE._texto_da_casa(RCE.PECA_CANCELADO, con)
+                        or TEXTOS.texto(RCE.PECA_CANCELADO))
     anota = "\n".join(acrescer)
 
     # CPF do registrado: assento.cpf_registrado / pessoa REGISTRADO, depois
@@ -170,9 +180,16 @@ def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
             dados, "strCidade", "strUF"))
         local = RCE._local_do_nascimento(dados) or str(
             a.get("local_fato_nome") or "").strip()
-        mun_nasc, mun_uf = _cidade_uf(RCE._lugar(
-            a.get("local_fato_endereco") or dados.get("strMunicipioNascimento"),
-            dados.get("strUFNascimento") or sv.get("ri_uf")))
+        # O MUNICÍPIO É O DO LOCAL, E NÃO A RUA — LD01, 21/10/2026. A célula
+        # MUNICÍPIO DE NASCIMENTO lia `local_fato_endereco` (rua, número e
+        # bairro), e o município de fato não saía (LRP art. 54, 1º). Ele mora
+        # agora em `local_fato_municipio`; o do acervo, no blob.
+        # Sem município, a UF sozinha não vai para a célula do município.
+        municipio = (a.get("local_fato_municipio")
+                     or dados.get("strMunicipioNascimento"))
+        mun_nasc, mun_uf = (_cidade_uf(RCE._lugar(
+            municipio, dados.get("strUFNascimento") or sv.get("ri_uf")))
+            if str(municipio or "").strip() else ("", ""))
         if not mun_nasc and local and "/" in local:
             # se o local já traz cidade/UF no fim, não duplicar no município
             mun_nasc, mun_uf = "", ""
@@ -210,6 +227,8 @@ def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
         })
     elif especie in ("CASAMENTO", "CASAMENTO_RELIGIOSO"):
         q.update(_quadro_casamento(a, quem, dados, do_fato, dma_fato))
+    elif especie in RCE.ESPECIES_DO_LIVRO_E:
+        q.update(_quadro_livro_e(especie, a, quem))
     else:
         q.update(_quadro_obito(a, quem, dados, do_fato, dma_fato))
     return q
@@ -303,8 +322,12 @@ def _quadro_obito(a, quem, dados, do_fato, dma_fato) -> dict:
         "strMunicipioNaturalidade", "strUFNaturalidade"))
     local = str(a.get("local_fato_nome") or dados.get("strNomeLocalObito")
                 or "").strip()
+    # O MUNICÍPIO DO FALECIMENTO DO ÓBITO LAVRADO AQUI — LD01, 21/10/2026: só
+    # se lia do blob do acervo, e a célula saía em branco (LRP art. 80, 2º;
+    # CN-MA art. 255, II). O do ato novo mora em `local_fato_municipio`.
     mun, mun_uf = _cidade_uf(RCE._lugar(
-        dados.get("strMunicipioObito") or dados.get("strMunicipioFalecido"),
+        a.get("local_fato_municipio") or dados.get("strMunicipioObito")
+        or dados.get("strMunicipioFalecido"),
         dados.get("strUFObito") or dados.get("strUFFalecido")))
     gen = "; ".join(n for n in (
         RCE._nome(quem.get("MAE")), RCE._nome(quem.get("PAI"))) if n)
@@ -318,8 +341,13 @@ def _quadro_obito(a, quem, dados, do_fato, dma_fato) -> dict:
             RCE._de(quem, "FALECIDO", "sexo", dados, "strSexo")),
         "estado_civil": RCE._de(quem, "FALECIDO", "estado_civil", dados,
                                 "strEstadoCivil"),
+        # O QUE A LAVRATURA DESTA CASA GRAVA EM COLUNA — LT01, 20/10/2026. O
+        # quadro só lia o blob do acervo (`dados_json`), e o papel do óbito
+        # lavrado aqui saía com cônjuge, bens e filhos em branco, que o termo
+        # declara (LRP art. 80, 4º, 7º e 10º). O acervo continua mandando.
         "conjuge": RCE._de(quem, "FALECIDO", "nome_pos", dados,
-                           "strNomeConjuge") or dados.get("strNomeConjuge") or "",
+                           "strNomeConjuge") or dados.get("strNomeConjuge")
+                   or str(a.get("obito_conjuge_nome") or "").strip(),
         "idade": RCE._idade_no_obito(nasc, a.get("data_fato"))
                  or str(dados.get("intIdade") or ""),
         "dma_nascimento": partes_data(nasc),
@@ -337,6 +365,48 @@ def _quadro_obito(a, quem, dados, do_fato, dma_fato) -> dict:
         "sepultamento_mun": str(dados.get("strMunicipioSepultamento") or "").strip(),
         "sepultamento_uf": str(dados.get("strUFSepultamento") or "").strip(),
         "declarante": RCE._nome(quem.get("DECLARANTE")),
-        "bens": str(dados.get("strBens") or "").strip(),
-        "filhos": str(dados.get("strFilhos") or "").strip(),
+        # A DECLARAÇÃO DE ÓBITO — o papel do natimorto (LD01) a imprime; o do
+        # óbito não tem a caixa.
+        "numero_do": str(a.get("numero_do")
+                         or dados.get("strNumeroDeclaracaoObito") or "").strip(),
+        "bens": (str(dados.get("strBens") or "").strip()
+                 or _sim_ou_nao(a.get("obito_possui_bens"))),
+        "filhos": (str(dados.get("strFilhos") or "").strip()
+                   or str(a.get("obito_filhos") or "").strip()
+                   or _sim_ou_nao(a.get("obito_possui_filho"))),
+    }
+
+
+def _sim_ou_nao(marca) -> str:
+    """A resposta de `rc_marcas_do_obito` como o papel a escreve. Só calcula.
+
+    «Não perguntado» fica em branco: o termo já declara o que se ignorou
+    (CN-MA art. 255, § 1º), e o papel não afirma o que ninguém respondeu.
+    A marca se lê por `normalizar`, a mesma régua do termo (`rc_termo`), para
+    o «S» ou o «1» de uma carga antiga dizer no papel o que disse no livro.
+    Desde o LD01 o breve relato do óbito também a imprime, pela mesma
+    função (`rc_certidao.marca_no_papel`)."""
+    return RCE.marca_no_papel(marca)
+
+
+def _quadro_livro_e(especie: str, a: dict, quem: dict) -> dict:
+    """As células do papel do Livro E. Só calcula.
+
+    **O PAPEL DIZ O QUE O BREVE RELATO DIZ** — LD01, 21/10/2026: as linhas
+    são as de `rc_certidao.linhas_do_livro_e`, a mesma régua do teor. A
+    espécie e o título registrado têm caixa própria; o resto (curador, tutor,
+    companheiros, limites, registros) vai numa caixa só, «RÓTULO: valor», na
+    ordem da lista — as seis espécies registram coisas diferentes entre si,
+    e uma caixa por elemento faria um molde por espécie.
+    """
+    linhas = RCE.linhas_do_livro_e(especie, a, quem)
+    por_rotulo = dict(linhas)
+    resto = [f"{rotulo}: {valor or RCE.SEM_DADO}" for rotulo, valor in linhas
+             if rotulo not in ("ESPÉCIE DO REGISTRO", "TÍTULO REGISTRADO")]
+    return {
+        "nome": str(a.get("nome") or "").strip().upper(),
+        "titulo_livro_e": RCE.titulo_do_modelo(especie),
+        "livro_e_especie": por_rotulo.get("ESPÉCIE DO REGISTRO") or "",
+        "livro_e_titulo": por_rotulo.get("TÍTULO REGISTRADO") or "",
+        "livro_e_indicacoes": "; ".join(resto),
     }

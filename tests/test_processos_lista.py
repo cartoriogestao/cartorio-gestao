@@ -9,6 +9,9 @@ from __future__ import annotations
 import re
 
 import processos as PR
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 
 def _um(db, sql, args=()):
@@ -89,7 +92,7 @@ import processo_pasta as PASTA  # noqa: E402
 
 
 def test_a_etapa_do_ri_vem_da_regua_do_agente_do_ri():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.executescript("""
         CREATE TABLE ri_protocolos (id INTEGER PRIMARY KEY, numero INTEGER, natureza_titulo TEXT, ato_id INTEGER,
             situacao TEXT, data_limite TEXT, prazo_suspenso_desde TEXT);

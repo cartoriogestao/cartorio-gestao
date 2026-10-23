@@ -174,6 +174,33 @@ def diagnostico(nomes_no_banco: list[str], raiz: str | Path | list) -> dict:
     }
 
 
+# COMO COMEÇA UM ARQUIVO QUE É FICHA — TIFF (o das fichas do E-Ofício, nas
+# duas ordens de byte e no BigTIFF), PDF, PNG, JPEG, GIF e BMP.
+ASSINATURAS_DE_FICHA = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+",
+                        b"%PDF", b"\x89PNG", b"\xff\xd8\xff", b"GIF8", b"BM")
+
+
+def parece_ficha(caminho: str | Path) -> bool:
+    """O arquivo começa como imagem ou PDF? Só LÊ os primeiros bytes.
+
+    POR QUE EXISTE (LS02, 19/10/2026)
+        Quando o Pillow falta ou não converte, a tela da ficha entrega o
+        arquivo CRU. O caminho dele sai da pasta que o gerente digita na tela
+        de imagens e do nome que ele mesmo pode renomear — juntos, apontavam a
+        «ficha» para o `secret.key` ou um `.cred` da pasta de dados, e o
+        arquivo inteiro descia para quem abrisse a página.
+
+    A ficha de verdade, mesmo corrompida, começa com a assinatura do formato;
+    o que não começa assim não é ficha, e não se entrega.
+    """
+    try:
+        with open(caminho, "rb") as arquivo:
+            inicio = arquivo.read(8)
+    except OSError:
+        return False
+    return inicio.startswith(ASSINATURAS_DE_FICHA)
+
+
 def pillow_disponivel() -> bool:
     """Se falta o Pillow, a ficha nao abre — e o motivo nao e o caminho.
 

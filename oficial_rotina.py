@@ -34,6 +34,7 @@ import traceback
 from datetime import date, datetime
 from pathlib import Path
 
+from bd_nativo import banco
 import oficial_decisoes as OD
 import oficial_obrigacoes as OO
 import oficial_pauta as OP
@@ -48,19 +49,20 @@ def _agora() -> str:
 
 
 def _historico(con, task_id: int, acao: str, nota: str, antes=None, depois=None) -> None:
-    con.execute(
+    banco(con).escrever(
         """INSERT INTO task_history (task_id, ts, user_id, action, old_value,
-               new_value, note) VALUES (?, ?, NULL, ?, ?, ?, ?)""",
+               new_value, note) VALUES (%s, %s, NULL, %s, %s, %s, %s)""",
         (task_id, _agora(), acao, antes, depois, nota))
 
 
 def _quem_cuida_da_ti(con) -> tuple[int | None, int | None]:
     """O titular e o substituto da TI pela distribuição do oficial; senão o ADMIN."""
     try:
-        linha = con.execute("SELECT user_id, substituto_id FROM ge_responsaveis "
-                            "WHERE setor='TI'").fetchone()
+        linha = banco(con).um("SELECT user_id, substituto_id FROM ge_responsaveis "
+                              "WHERE setor='TI'")
         if linha:
-            return int(linha[0]), (int(linha[1]) if linha[1] else None)
+            return (int(linha["user_id"]),
+                    (int(linha["substituto_id"]) if linha["substituto_id"] else None))
     except sqlite3.Error:
         pass
     return OP.dono_da_mesa(con), None
@@ -79,10 +81,11 @@ def sincronizar_tarefas_dos_robos(con: sqlite3.Connection, achados: list[dict],
     agora = _agora()
     titular, substituto = _quem_cuida_da_ti(con)
     criadas = fechadas = atualizadas = 0
-    marcas = ",".join("?" * len(ABERTA))
-    abertas = {r[1]: r[0] for r in con.execute(
-        f"""SELECT id, source_ref FROM tasks WHERE source_type = ?
-              AND status NOT IN ({marcas})""", (SOURCE_TYPE, *ABERTA))}
+    bd = banco(con)
+    marcas = ",".join(["%s"] * len(ABERTA))
+    abertas = {r["source_ref"]: r["id"] for r in bd.ler(
+        f"""SELECT id, source_ref FROM tasks WHERE source_type = %s
+              AND status NOT IN ({marcas}) ORDER BY id""", (SOURCE_TYPE, *ABERTA))}
     for chave, a in criticos.items():
         ref = f"{SOURCE_TYPE}:{chave}"
         descricao = (f"{a['titulo']}\n\nO que se mediu: {a['detalhe']}\n\n"
@@ -90,26 +93,27 @@ def sincronizar_tarefas_dos_robos(con: sqlite3.Connection, achados: list[dict],
                      "Tarefa aberta pelo robô oficial. Ela fecha sozinha na primeira "
                      "rodada em que o robô voltar a rodar bem — não precisa concluir à mão.")
         if ref in abertas:
-            con.execute("UPDATE tasks SET description=?, updated_at=? WHERE id=?",
+            bd.escrever("UPDATE tasks SET description=%s, updated_at=%s WHERE id=%s",
                         (descricao, agora, abertas[ref]))
             atualizadas += 1
             continue
-        cur = con.execute(
+        novo = bd.escrever(
             """INSERT INTO tasks (source_type, source_ref, title, description, sector,
                    system_name, priority, status, start_date, due_date, assigned_user_id,
                    backup_user_id, evidence_required, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'TI', 'Robô oficial', 'CRITICA', 'ABERTA', ?, ?, ?, ?,
-                       0, ?, ?)""",
+               VALUES (%s, %s, %s, %s, 'TI', 'Robô oficial', 'CRITICA', 'ABERTA', %s, %s, %s, %s,
+                       0, %s, %s)
+               RETURNING id""",
             (SOURCE_TYPE, ref, f"[Robô] {a['robo_nome']}: {a['titulo']}"[:200], descricao,
              hoje.isoformat(), hoje.isoformat(), titular, substituto, agora, agora))
-        _historico(con, int(cur.lastrowid), "CRIADA", "Aberta pelo robô oficial.")
+        _historico(bd, int(novo[0]["id"]), "CRIADA", "Aberta pelo robô oficial.")
         criadas += 1
     for ref, task_id in abertas.items():
         if ref[len(SOURCE_TYPE) + 1:] in criticos:
             continue
-        con.execute("UPDATE tasks SET status='CONCLUIDA', completed_at=?, updated_at=? "
-                    "WHERE id=?", (agora, agora, task_id))
-        _historico(con, task_id, "ALTEROU_STATUS",
+        bd.escrever("UPDATE tasks SET status='CONCLUIDA', completed_at=%s, updated_at=%s "
+                    "WHERE id=%s", (agora, agora, task_id))
+        _historico(bd, task_id, "ALTEROU_STATUS",
                    "O robô voltou a rodar bem — fechada pelo robô oficial.",
                    antes="ABERTA", depois="CONCLUIDA")
         fechadas += 1

@@ -1,0 +1,12 @@
+{
+  "chave": "RI_PRENOTACAO_PRAZO_SUSPENSO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Comprovante de prenotação — prazo suspenso",
+  "formato": "JINJA",
+  "explica": "O que o comprovante de prenotação diz no lugar do limite quando o prazo está suspenso (dúvida, usucapião, editais…). Quem decide se a prenotação está suspensa, e o nome do motivo, é o código (`ri_prenotacao_prazo`).",
+  "campos": [
+    "desde",
+    "limite",
+    "motivo"
+  ]
+}

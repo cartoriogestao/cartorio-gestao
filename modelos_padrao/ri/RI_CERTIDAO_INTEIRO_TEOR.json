@@ -1,0 +1,20 @@
+{
+  "chave": "RI_CERTIDAO_INTEIRO_TEOR",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão — o miolo do inteiro teor",
+  "formato": "JINJA",
+  "explica": "O teor da ficha — ou, na ficha estruturada sem teor, a abertura como a ficha a imprime — e os atos que não estão escritos nela, cada um com o seu fecho e o seu selo, fechados por «Era o que nela continha.» A frase fecha o TEOR, e por isso mora aqui, e não no molde.",
+  "campos": [
+    "abertura_assinatura",
+    "abertura_fecho",
+    "atos",
+    "data_abertura_br",
+    "m",
+    "proprietarios",
+    "proprietarios_abertura",
+    "protocolo_atual",
+    "selo_abertura_odf",
+    "teor_odf",
+    "uf_extenso"
+  ]
+}

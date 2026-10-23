@@ -1,0 +1,32 @@
+REGISTRO Nº {numero}{folha}
+SITUAÇÃO: {situacao}
+NATUREZA: {natureza}
+
+TÍTULO: {titulo_tipo}, nº {titulo_numero}
+DATA DO TÍTULO: {data_titulo}
+VALOR: {valor}
+PARCELAS: {parcelas}
+VENCIMENTO INICIAL: {vencimento_inicial}
+VENCIMENTO FINAL: {vencimento}
+JUROS: {juros}
+PRENOTAÇÃO: {prenotacao}
+CNM: {cnm}
+
+PARTES:
+{partes}
+
+TEOR:
+{teor}
+
+GARANTIA:
+{garantia}
+
+CONDIÇÕES:
+{condicoes}
+
+ATOS:
+{atos}
+
+--------------------------------------------------------------------
+Ficha impressa do Livro 3 em {impresso_em}. Este papel reproduz a ficha
+como ela está no sistema; ele não é certidão e não certifica nada.

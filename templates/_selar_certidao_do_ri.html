@@ -1,0 +1,23 @@
+{# A CERTIDÃO DO RI QUE FICOU ESPERANDO O SELO — 22/10/2026, dia da 3.7.0.
+   A trava do selo pago deixa a certidão gravada e sem selo quando o protocolo
+   pago não está ligado a ela; antes ela era cancelada sozinha (83 e 84/2026).
+   Uma macro só para a ficha e para a lista de certidões: duas cópias
+   divergiriam no primeiro conserto. Quem liga o protocolo é «Selo e caixa»;
+   quem pede o selo de novo é o botão daqui. #}
+{# `base` é o item base pelo tipo (16.24.4 ou 16.24.1): «Selo e caixa» só acha
+   candidato com ao menos um `pedido`. A folha acrescida fica de fora — as
+   folhas só se sabem recontando o teor, e o «faltam» dela aparece no «Selar». #}
+{% macro botao(c, csrf_token, base) %}
+  <span class="badge alta">Sem selo — aguardando pagamento</span>
+  {% if base.get(c.tipo) %}
+  <a class="small" href="{{ url_for('selo_cobertura', tabela='ri_certidoes', ato_id=c.id,
+                                    pedido=base[c.tipo] ~ ':1',
+                                    selar=url_for('ri_certidao_selar', certidao_id=c.id)) }}"
+     >Escolher o protocolo</a>
+  {% endif %}
+  <form method="post" style="display:inline"
+        action="{{ url_for('ri_certidao_selar', certidao_id=c.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button small">Selar</button>
+  </form>
+{% endmacro %}

@@ -32,6 +32,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
+from bd_nativo import banco
 import centrais_log as LOG
 import centrais_schema as SCH
 
@@ -67,15 +68,13 @@ def espera_da_tentativa(tentativas: int) -> int:
 def _como_dict(linha: Any) -> dict | None:
     if linha is None:
         return None
-    if isinstance(linha, sqlite3.Row):
-        return {k: linha[k] for k in linha.keys()}
     return dict(linha)
 
 
 def item(con: sqlite3.Connection, item_id: int) -> dict | None:
     """Um item da fila, ou None. Só LÊ."""
-    return _como_dict(con.execute(
-        "SELECT * FROM centrais_fila WHERE id = ?", (int(item_id),)).fetchone())
+    return _como_dict(banco(con).um(
+        "SELECT * FROM centrais_fila WHERE id = %s", (int(item_id),)))
 
 
 def enfileirar(con: sqlite3.Connection, central: str, operacao: str,
@@ -100,21 +99,22 @@ def enfileirar(con: sqlite3.Connection, central: str, operacao: str,
     if amb not in (HOMOLOGACAO, PRODUCAO, "TESTES"):
         raise FilaError(f"Ambiente desconhecido: «{ambiente}».")
     chave_limpa = (str(chave).strip() or None) if chave is not None else None
+    bd = banco(con)
     if chave_limpa:
-        ja = con.execute(
-            "SELECT id FROM centrais_fila WHERE central = ? AND operacao = ?"
-            " AND ambiente = ? AND chave = ?",
-            (qual, oper, amb, chave_limpa)).fetchone()
+        ja = bd.um(
+            "SELECT id FROM centrais_fila WHERE central = %s AND operacao = %s"
+            " AND ambiente = %s AND chave = %s ORDER BY id",
+            (qual, oper, amb, chave_limpa))
         if ja:
-            return int(ja[0])
+            return int(ja["id"])
     quando = LOG.agora()
-    cur = con.execute(
+    novo = int(bd.escrever(
         "INSERT INTO centrais_fila (central, operacao, ambiente, payload_ref,"
         " chave, status, tentativas, max_tentativas, criado_em,"
-        " atualizado_em, criado_por) VALUES (?,?,?,?,?,?,0,?,?,?,?)",
+        " atualizado_em, criado_por) VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s)"
+        " RETURNING id",
         (qual, oper, amb, ref, chave_limpa, SCH.PENDENTE,
-         max(1, int(max_tentativas)), quando, quando, por))
-    novo = int(cur.lastrowid)
+         max(1, int(max_tentativas)), quando, quando, por))[0]["id"])
     LOG.registrar(con, qual, oper, "ENFILEIRADO", ambiente=amb, fila_id=novo,
                   mensagem=f"referência {ref}")
     return novo
@@ -127,18 +127,20 @@ def devolver_presos(con: sqlite3.Connection, *,
     É o processo que morreu no meio. Devolve quantos voltaram. ESCREVE.
     """
     corte = _hora(datetime.now() - timedelta(minutes=int(minutos)))
-    presos = con.execute(
+    bd = banco(con)
+    presos = bd.ler(
         "SELECT id, central, operacao, ambiente FROM centrais_fila"
-        " WHERE status = ? AND atualizado_em < ?",
-        (SCH.PROCESSANDO, corte)).fetchall()
+        " WHERE status = %s AND atualizado_em < %s ORDER BY id",
+        (SCH.PROCESSANDO, corte))
     quando = LOG.agora()
     for p in presos:
-        con.execute(
-            "UPDATE centrais_fila SET status = ?, atualizado_em = ?"
-            " WHERE id = ? AND status = ?",
-            (SCH.PENDENTE, quando, p[0], SCH.PROCESSANDO))
-        LOG.registrar(con, p[1], p[2], "DEVOLVIDO_A_FILA", nivel=SCH.AVISO,
-                      ambiente=p[3], fila_id=p[0],
+        bd.escrever(
+            "UPDATE centrais_fila SET status = %s, atualizado_em = %s"
+            " WHERE id = %s AND status = %s",
+            (SCH.PENDENTE, quando, p["id"], SCH.PROCESSANDO))
+        LOG.registrar(con, p["central"], p["operacao"], "DEVOLVIDO_A_FILA",
+                      nivel=SCH.AVISO,
+                      ambiente=p["ambiente"], fila_id=p["id"],
                       mensagem=f"ficou processando mais de {minutos} min")
     return len(presos)
 
@@ -153,26 +155,28 @@ def pegar_proximo(con: sqlite3.Connection, *, central: str | None = None,
     impede dois processos de pegarem o mesmo item. `ambientes` filtra —
     por padrão, **produção fica de fora**.
     """
-    onde = ["status = ?", "(proxima_tentativa_em IS NULL"
-            " OR proxima_tentativa_em <= ?)"]
+    bd = banco(con)
+    onde = ["status = %s", "(proxima_tentativa_em IS NULL"
+            " OR proxima_tentativa_em <= %s)"]
     args: list[Any] = [SCH.PENDENTE, LOG.agora()]
     if central:
-        onde.append("central = ?")
+        onde.append("central = %s")
         args.append(str(central).strip().upper())
     if operacao:
-        onde.append("operacao = ?")
+        onde.append("operacao = %s")
         args.append(str(operacao).strip())
     if ambientes:
-        onde.append("ambiente IN (" + ",".join("?" * len(ambientes)) + ")")
+        onde.append("ambiente IN (" + ",".join(["%s"] * len(ambientes)) + ")")
         args.extend(str(a).upper() for a in ambientes)
-    linha = con.execute(
+    bd._escrita()
+    linha = bd.um(
         "SELECT * FROM centrais_fila WHERE " + " AND ".join(onde)
-        + " ORDER BY id LIMIT 1", args).fetchone()
+        + " ORDER BY id LIMIT 1 FOR UPDATE", args)
     if linha is None:
         return None
-    con.execute(
-        "UPDATE centrais_fila SET status = ?, tentativas = tentativas + 1,"
-        " atualizado_em = ? WHERE id = ?",
+    bd.escrever(
+        "UPDATE centrais_fila SET status = %s, tentativas = tentativas + 1,"
+        " atualizado_em = %s WHERE id = %s",
         (SCH.PROCESSANDO, LOG.agora(), linha["id"]))
     return item(con, linha["id"])
 
@@ -183,10 +187,10 @@ def marcar_enviado(con: sqlite3.Connection, item_id: int, *,
     """A Central recebeu. **Recebido não é confirmado.** ESCREVE."""
     atual = _exigir(con, item_id)
     quando = LOG.agora()
-    con.execute(
-        "UPDATE centrais_fila SET status = ?, erro = NULL, resposta_ref = ?,"
-        " enviado_em = ?, atualizado_em = ?, proxima_tentativa_em = NULL"
-        " WHERE id = ?",
+    banco(con).escrever(
+        "UPDATE centrais_fila SET status = %s, erro = NULL, resposta_ref = %s,"
+        " enviado_em = %s, atualizado_em = %s, proxima_tentativa_em = NULL"
+        " WHERE id = %s",
         (SCH.ENVIADO, resposta_ref, quando, quando, int(item_id)))
     LOG.registrar(con, atual["central"], atual["operacao"], "ENVIADO",
                   ambiente=atual["ambiente"], fila_id=int(item_id),
@@ -199,10 +203,10 @@ def marcar_confirmado(con: sqlite3.Connection, item_id: int, *,
     """A Central confirmou o processamento. ESCREVE."""
     atual = _exigir(con, item_id)
     quando = LOG.agora()
-    con.execute(
-        "UPDATE centrais_fila SET status = ?, confirmado_em = ?,"
-        " atualizado_em = ?, resposta_ref = COALESCE(?, resposta_ref)"
-        " WHERE id = ?",
+    banco(con).escrever(
+        "UPDATE centrais_fila SET status = %s, confirmado_em = %s,"
+        " atualizado_em = %s, resposta_ref = COALESCE(%s, resposta_ref)"
+        " WHERE id = %s",
         (SCH.CONFIRMADO, quando, quando, resposta_ref, int(item_id)))
     LOG.registrar(con, atual["central"], atual["operacao"], "CONFIRMADO",
                   ambiente=atual["ambiente"], fila_id=int(item_id))
@@ -226,9 +230,9 @@ def marcar_falha(con: sqlite3.Connection, item_id: int, erro: Any, *,
         novo = SCH.PENDENTE
         proxima = _hora(agora_dt + timedelta(
             minutes=espera_da_tentativa(tentativas)))
-    con.execute(
-        "UPDATE centrais_fila SET status = ?, erro = ?,"
-        " proxima_tentativa_em = ?, atualizado_em = ? WHERE id = ?",
+    banco(con).escrever(
+        "UPDATE centrais_fila SET status = %s, erro = %s,"
+        " proxima_tentativa_em = %s, atualizado_em = %s WHERE id = %s",
         (novo, texto, proxima, _hora(agora_dt), int(item_id)))
     LOG.registrar(con, atual["central"], atual["operacao"], "FALHA",
                   nivel=SCH.ERRO if esgotou else SCH.AVISO,
@@ -252,9 +256,9 @@ def reprocessar(con: sqlite3.Connection, item_id: int, *,
         raise FilaError(
             f"O item {item_id} está «{atual['status']}» e não se reprocessa — "
             f"só os que falharam ou foram cancelados voltam à fila.")
-    con.execute(
-        "UPDATE centrais_fila SET status = ?, tentativas = 0,"
-        " proxima_tentativa_em = NULL, atualizado_em = ? WHERE id = ?",
+    banco(con).escrever(
+        "UPDATE centrais_fila SET status = %s, tentativas = 0,"
+        " proxima_tentativa_em = NULL, atualizado_em = %s WHERE id = %s",
         (SCH.PENDENTE, LOG.agora(), int(item_id)))
     LOG.registrar(con, atual["central"], atual["operacao"], "REPROCESSO",
                   ambiente=atual["ambiente"], fila_id=int(item_id),
@@ -271,8 +275,8 @@ def cancelar(con: sqlite3.Connection, item_id: int, *,
     if atual["status"] not in (SCH.PENDENTE, SCH.FALHOU):
         raise FilaError(
             f"O item {item_id} está «{atual['status']}» e não se cancela.")
-    con.execute(
-        "UPDATE centrais_fila SET status = ?, atualizado_em = ? WHERE id = ?",
+    banco(con).escrever(
+        "UPDATE centrais_fila SET status = %s, atualizado_em = %s WHERE id = %s",
         (SCH.CANCELADO, LOG.agora(), int(item_id)))
     LOG.registrar(con, atual["central"], atual["operacao"], "CANCELADO",
                   ambiente=atual["ambiente"], fila_id=int(item_id),
@@ -326,15 +330,16 @@ def resumo_por_central(con: sqlite3.Connection) -> list[dict]:
     tabela (versão anterior que não reabriu o banco) devolve lista vazia.
     """
     try:
-        linhas = con.execute(
+        linhas = banco(con).ler(
             "SELECT central, status, COUNT(*) AS n FROM centrais_fila"
-            " GROUP BY central, status ORDER BY central").fetchall()
+            " GROUP BY central, status ORDER BY central, status")
     except sqlite3.OperationalError as erro:
         if "no such table" in str(erro).lower():
             return []
         raise
     por: dict[str, dict] = {}
-    for c, s, n in linhas:
+    for r in linhas:
+        c, s, n = r["central"], r["status"], r["n"]
         d = por.setdefault(c, {"central": c, "total": 0,
                                **{x: 0 for x in SCH.SITUACOES}})
         d[s] = d.get(s, 0) + int(n)
@@ -345,16 +350,16 @@ def resumo_por_central(con: sqlite3.Connection) -> list[dict]:
 def ultimas_falhas(con: sqlite3.Connection, *, central: str | None = None,
                    limite: int = 20) -> list[dict]:
     """Os itens com erro (FALHOU, ou PENDENTE esperando nova tentativa). Só LÊ."""
-    sql = ("SELECT * FROM centrais_fila WHERE (status = ? OR"
-           " (status = ? AND erro IS NOT NULL))")
+    sql = ("SELECT * FROM centrais_fila WHERE (status = %s OR"
+           " (status = %s AND erro IS NOT NULL))")
     args: list[Any] = [SCH.FALHOU, SCH.PENDENTE]
     if central:
-        sql += " AND central = ?"
+        sql += " AND central = %s"
         args.append(str(central).strip().upper())
-    sql += " ORDER BY atualizado_em DESC, id DESC LIMIT ?"
+    sql += " ORDER BY atualizado_em DESC, id DESC LIMIT %s"
     args.append(max(1, min(int(limite), 500)))
     try:
-        return [_como_dict(x) for x in con.execute(sql, args).fetchall()]
+        return [_como_dict(x) for x in banco(con).ler(sql, args)]
     except sqlite3.OperationalError as erro:
         if "no such table" in str(erro).lower():
             return []
@@ -366,18 +371,18 @@ def listar(con: sqlite3.Connection, *, central: str | None = None,
     """Os itens da fila, mais recentes primeiro, com filtro opcional. Só LÊ."""
     onde, args = [], []
     if central:
-        onde.append("central = ?")
+        onde.append("central = %s")
         args.append(str(central).strip().upper())
     if status:
-        onde.append("status = ?")
+        onde.append("status = %s")
         args.append(str(status).strip().upper())
     sql = "SELECT * FROM centrais_fila"
     if onde:
         sql += " WHERE " + " AND ".join(onde)
-    sql += " ORDER BY id DESC LIMIT ?"
+    sql += " ORDER BY id DESC LIMIT %s"
     args.append(max(1, min(int(limite), 1000)))
     try:
-        return [_como_dict(x) for x in con.execute(sql, args).fetchall()]
+        return [_como_dict(x) for x in banco(con).ler(sql, args)]
     except sqlite3.OperationalError as erro:
         if "no such table" in str(erro).lower():
             return []

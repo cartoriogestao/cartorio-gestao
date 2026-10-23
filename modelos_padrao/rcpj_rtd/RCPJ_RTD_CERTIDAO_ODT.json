@@ -1,0 +1,15 @@
+{
+  "chave": "RCPJ_RTD_CERTIDAO_ODT",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Certidão RCPJ/RTD — papel por texto (.odt)",
+  "formato": "JINJA",
+  "explica": "O papel da certidão quando os atos não têm digitalização: cabeçalho da casa (só se o teor não trouxer o dele), número, CERTIDÃO CANCELADA, o teor congelado, local, data, quem assina e a autenticidade. O teor não muda aqui: ele vem de at_certidoes.",
+  "campos": [
+    "blocos",
+    "c",
+    "cancelada",
+    "com_cabecalho",
+    "hoje",
+    "sv"
+  ]
+}

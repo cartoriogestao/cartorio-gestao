@@ -20,6 +20,7 @@ import zipfile
 from io import BytesIO
 from xml.sax.saxutils import escape
 
+from bd_nativo import banco
 import etiqueta as ETQ
 import rc_certidao as RCE
 
@@ -37,9 +38,9 @@ def nome_de_quem_lavrou(con: sqlite3.Connection, criado_por) -> str:
     if not texto or texto.lower() in {"operador", "none", "null"}:
         return ""
     if texto.isdigit():
-        linha = con.execute(
-            "SELECT full_name, username FROM users WHERE id=?",
-            (int(texto),)).fetchone()
+        linha = banco(con).um(
+            "SELECT full_name, username FROM users WHERE id=%s",
+            (int(texto),))
         if not linha:
             return ""
         return (str(linha["full_name"] or "").strip()
@@ -60,16 +61,16 @@ def funcao_de_quem_lavrou(con: sqlite3.Connection, criado_por) -> str:
         return ""
     try:
         if texto.isdigit():
-            linha = con.execute(
-                "SELECT funcao FROM users WHERE id=?",
-                (int(texto),)).fetchone()
+            linha = banco(con).um(
+                "SELECT funcao FROM users WHERE id=%s",
+                (int(texto),))
         else:
-            linha = con.execute(
+            linha = banco(con).um(
                 "SELECT funcao FROM users "
-                "WHERE full_name=? OR username=? "
-                "ORDER BY CASE WHEN full_name=? THEN 0 ELSE 1 END "
+                "WHERE full_name=%s OR username=%s "
+                "ORDER BY CASE WHEN full_name=%s THEN 0 ELSE 1 END, id "
                 "LIMIT 1",
-                (texto, texto, texto)).fetchone()
+                (texto, texto, texto))
     except sqlite3.OperationalError:
         return ""
     if not linha:
@@ -116,7 +117,8 @@ def sincronizar_teor_do_ato(con: sqlite3.Connection, ato_id: int) -> str | None:
     (CPF + selo + data + usuario[, função]) depois que o selo existir — livro,
     etiqueta e certidao passam a ver o texto completo.
     """
-    ato = con.execute("SELECT * FROM rc_atos WHERE id=?", (int(ato_id),)).fetchone()
+    bd = banco(con)
+    ato = bd.um("SELECT * FROM rc_atos WHERE id=%s", (int(ato_id),))
     if not ato:
         return None
     lavrou = nome_de_quem_lavrou(con, ato["criado_por"])
@@ -131,22 +133,23 @@ def sincronizar_teor_do_ato(con: sqlite3.Connection, ato_id: int) -> str | None:
         novo = teor_com_lavratura(str(ato["teor"] or ""), lavrou)
         novo = teor_com_selo(novo, ato["selo"])
     if novo != (ato["teor"] or "").strip():
-        con.execute("UPDATE rc_atos SET teor=? WHERE id=?", (novo, int(ato_id)))
+        bd.escrever("UPDATE rc_atos SET teor=%s WHERE id=%s", (novo, int(ato_id)))
     return novo
 
 
 def dados_da_etiqueta(con: sqlite3.Connection, ato_id: int,
                       sv: dict | None = None) -> dict:
     """Tudo o que a etiqueta imprime / o ODT leva. So LE."""
-    ato = con.execute("SELECT * FROM rc_atos WHERE id=?", (int(ato_id),)).fetchone()
+    bd = banco(con)
+    ato = bd.um("SELECT * FROM rc_atos WHERE id=%s", (int(ato_id),))
     if not ato:
         raise LookupError("Ato %s nao encontrado." % ato_id)
     if str(ato["tipo"] or "").upper() not in (
             "AVERBACAO", "ANOTACAO", "RETIFICACAO"):
         raise ValueError(
             "So ha etiqueta de margem para averbacao, anotacao ou retificacao.")
-    assento = con.execute(
-        "SELECT * FROM rc_assentos WHERE id=?", (ato["assento_id"],)).fetchone()
+    assento = bd.um(
+        "SELECT * FROM rc_assentos WHERE id=%s", (ato["assento_id"],))
     if not assento:
         raise LookupError("Assento %s nao encontrado." % ato["assento_id"])
     try:

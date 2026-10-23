@@ -35,8 +35,9 @@ isso é de quem está com a gaveta.
 from __future__ import annotations
 
 import re
-import sqlite3
 from datetime import datetime
+
+from bd_nativo import banco
 
 CHAVE_FIM = "caixa_fim_do_expediente"
 FIM_PADRAO = "14:00"
@@ -55,28 +56,29 @@ def fim_do_expediente(texto: str | None) -> tuple[int, int]:
     return int(h), int(mi)
 
 
-def situacao(con: sqlite3.Connection, operador_nome: str, agora: datetime,
+def situacao(con, operador_nome: str, agora: datetime,
              fim: str | None = None, *, e_admin: bool = False) -> dict | None:
     """O que o aviso diz a esta pessoa agora, ou None quando não há o que dizer."""
     hoje = agora.date().isoformat()
-    meus = con.execute(
+    bd = banco(con)
+    meus = bd.ler(
         """SELECT id, data, aberto_em FROM cx_caixas
-            WHERE operador_nome = ? AND situacao = 'ABERTO' AND data >= ?
-            ORDER BY data""", (operador_nome or "", INICIO_DO_SISTEMA)).fetchall()
-    de_outros_dias = [m for m in meus if m[1] < hoje]
+            WHERE operador_nome = %s AND situacao = 'ABERTO' AND data >= %s
+            ORDER BY data, id""", (operador_nome or "", INICIO_DO_SISTEMA))
+    de_outros_dias = [m for m in meus if m["data"] < hoje]
     hora, minuto = fim_do_expediente(fim)
     passou = (agora.hour, agora.minute) >= (hora, minuto)
     outros = []
     if e_admin:
-        outros = [{"operador": r[0], "data": r[1]} for r in con.execute(
+        outros = [{"operador": r["operador_nome"], "data": r["data"]} for r in bd.ler(
             """SELECT operador_nome, data FROM cx_caixas
-                WHERE situacao = 'ABERTO' AND data >= ? AND data < ?
-                  AND operador_nome <> ? ORDER BY data""",
+                WHERE situacao = 'ABERTO' AND data >= %s AND data < %s
+                  AND operador_nome <> %s ORDER BY data, id""",
             (INICIO_DO_SISTEMA, hoje, operador_nome or ""))]
     if de_outros_dias:
         nivel = "BLOQUEIO" if not e_admin else "VENCIDO"
-        dias = [m[1] for m in de_outros_dias]
-    elif passou and any(m[1] == hoje for m in meus):
+        dias = [m["data"] for m in de_outros_dias]
+    elif passou and any(m["data"] == hoje for m in meus):
         nivel, dias = "FIM_DO_EXPEDIENTE", [hoje]
     elif outros:
         nivel, dias = "OUTROS", []

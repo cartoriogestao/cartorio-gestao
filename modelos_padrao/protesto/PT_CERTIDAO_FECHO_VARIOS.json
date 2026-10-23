@@ -1,0 +1,8 @@
+{
+  "chave": "PT_CERTIDAO_FECHO_VARIOS",
+  "atribuicao": "Protesto",
+  "nome": "Certidão de cancelamento — fecho de vários protestos",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {fecho} da certidão de cancelamento quando ela mostra MAIS DE UM protesto.",
+  "campos": []
+}

@@ -1,0 +1,20 @@
+{
+  "chave": "US_OFICIO_AO_ENTE",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Ofício de ciência ao ente público (usucapião)",
+  "formato": "CHAVES",
+  "explica": "O ofício à União, ao Estado ou ao Município (Lei 6.015/1973, art. 216-A, § 3º) — um por ente, os três de uma vez. Congela no movimento ao montar. A posse, as linhas do imóvel e o prazo são peças deste papel.",
+  "campos": [
+    "serventia",
+    "numero",
+    "do_ano",
+    "ente",
+    "requerente",
+    "imovel",
+    "sobre_a_posse",
+    "prazo_texto",
+    "lugar_e_data",
+    "oficial",
+    "cargo"
+  ]
+}

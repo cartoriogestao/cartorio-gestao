@@ -13,6 +13,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 from crc_carga import CrcError
 
 
@@ -33,15 +34,16 @@ def registrar_envio(con: sqlite3.Connection, assentos: list[int], *,
     """
     if not assentos:
         raise CrcError("Nenhum assento para registrar como enviado.")
-    cur = con.execute(
+    bd = banco(con)
+    lote_id = int(bd.escrever(
         """INSERT INTO rc_crc_lotes (canal, ambiente, quantos, resposta,
                nota, enviado_em, enviado_por)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (canal, ambiente, len(assentos), resposta, nota, agora, por))
-    lote_id = int(cur.lastrowid)
-    con.executemany(
-        "INSERT INTO rc_crc_lote_assentos (lote_id, assento_id) VALUES (?, ?)",
-        [(lote_id, a) for a in assentos])
+           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (canal, ambiente, len(assentos), resposta, nota, agora, por))[0]["id"])
+    for a in assentos:
+        bd.escrever(
+            "INSERT INTO rc_crc_lote_assentos (lote_id, assento_id) VALUES (%s, %s)",
+            (lote_id, a))
     return lote_id
 
 
@@ -52,18 +54,16 @@ def historico_de_envios(con: sqlite3.Connection, limite: int = 200) -> list[dict
     Central disse" — meses depois, sem precisar confiar na memória de
     quem estava no balcão naquele dia.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM rc_crc_lotes ORDER BY enviado_em DESC LIMIT ?",
-        (limite,))]
+    return banco(con).ler(
+        "SELECT * FROM rc_crc_lotes ORDER BY enviado_em DESC, id DESC LIMIT %s",
+        (limite,))
 
 
 def assentos_do_lote(con: sqlite3.Connection, lote_id: int) -> list[dict]:
     """Os assentos de um lote de envio, com nome e espécie. Só lê."""
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT a.id, a.especie, a.numero, a.nome, a.matricula
              FROM rc_crc_lote_assentos la
              JOIN rc_assentos a ON a.id = la.assento_id
-            WHERE la.lote_id = ?
-         ORDER BY a.data_ato, a.id""", (lote_id,))]
+            WHERE la.lote_id = %s
+         ORDER BY a.data_ato NULLS FIRST, a.id""", (lote_id,))

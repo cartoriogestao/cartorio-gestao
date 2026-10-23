@@ -1,0 +1,11 @@
+{# A CHAVE DA ATIVAÇÃO EM CURSO — o QR e a mesma chave para digitar.
+   Só aparece enquanto a ativação está PENDENTE; ativada, nunca mais. #}
+<ol class="small">
+  <li>Abra o aplicativo autenticador do celular (Google Authenticator, Microsoft
+      Authenticator, FreeOTP ou outro que leia TOTP).</li>
+  <li>Leia o QR abaixo — ou, sem câmera, digite a chave.</li>
+  <li>Digite o código de seis dígitos que o aplicativo mostrar.</li>
+</ol>
+{% if qr_svg %}<div class="qr-dois-fatores">{{ qr_svg }}</div>{% endif %}
+<p>Chave: <code>{{ chave_digitavel }}</code></p>
+<p class="muted small">Não fotografe nem envie esta chave a ninguém: quem a tiver gera os seus códigos.</p>

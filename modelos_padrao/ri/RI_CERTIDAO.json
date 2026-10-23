@@ -1,0 +1,20 @@
+{
+  "chave": "RI_CERTIDAO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão — o molde",
+  "formato": "JINJA",
+  "explica": "O que TODA certidão tem: a abertura («neles encontrei a MATRÍCULA Nº …»), a finalidade, a validade de 30 dias do art. 553 e quem assina. O texto do tipo escolhido entra onde o marcador manda — e é isto que o editar daqui ajusta.",
+  "campos": [
+    "clausula_prenotacoes_abertas",
+    "finalidade",
+    "hoje_extenso",
+    "m",
+    "miolo_do_tipo",
+    "proprietarios",
+    "requerente",
+    "requerente_documento",
+    "serventia",
+    "tipo_certidao",
+    "tipo_certidao_nome"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "chave": "PT_CERTIDAO_INSCRITO",
+  "atribuicao": "Protesto",
+  "nome": "Certidão positiva e de cancelamento — inscrição do devedor",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: segue o nome do devedor na abertura das certidões positiva e de cancelamento quando há CPF ou CNPJ; sem documento, não entra.",
+  "campos": [
+    "tipo_documento",
+    "documento"
+  ]
+}

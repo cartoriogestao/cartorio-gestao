@@ -15,13 +15,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import produtividade as PR
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 UID = 7
 DIA = datetime(2026, 10, 9)
 
 
 def _con() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     PR.init_produtividade_schema(con)
     return con

@@ -1,0 +1,13 @@
+{
+  "chave": "RTD_CERTIDAO_NOTIFICACAO_NEGATIVA__ida",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Notificação negativa — uma diligência da lista",
+  "formato": "CHAVES",
+  "explica": "Cada diligência frustrada, na lista da certidão negativa.",
+  "campos": [
+    "ordem",
+    "data",
+    "hora",
+    "resultado"
+  ]
+}

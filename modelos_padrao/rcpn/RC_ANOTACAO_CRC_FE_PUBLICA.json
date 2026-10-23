@@ -1,0 +1,20 @@
+{
+  "chave": "RC_ANOTACAO_CRC_FE_PUBLICA",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Anotação da CRC — com fé pública",
+  "formato": "CHAVES",
+  "explica": "A anotação que menciona a comunicação eletrônica pela CRC e fecha com «Dou fé.» (o modelo 3 da tela); sai na tela para o escrevente conferir e copiar, e não se congela. Os claros depois de {ato} — {de_quem}, {ocorrido_em}, {indicacao}, {lavrado_em} e {novos_nomes} — trazem a própria pontuação e ficam vazios quando a comunicação não tem o dado; {assinatura} também, e vem depois do ponto da data.",
+  "campos": [
+    "origem",
+    "codigo",
+    "ato",
+    "de_quem",
+    "ocorrido_em",
+    "indicacao",
+    "lavrado_em",
+    "novos_nomes",
+    "cidade",
+    "hoje",
+    "assinatura"
+  ]
+}

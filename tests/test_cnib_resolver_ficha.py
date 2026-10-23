@@ -7,7 +7,7 @@ from ri_schema import consultar_cnib
 class ResolverFichaTests(AvisoCnibTests):
  def _post(self,decisao='NAO_E_A_PESSOA',motivo='Documento conferido: trata-se de outra pessoa.',protocolo=None,token=True):
   with self.app.test_client() as client:
-   with client.session_transaction() as s:s['user_id']=self.uid
+   self._entrar(client)
    h=client.get(f'/registro-imoveis/{self.mid}').get_data(as_text=True)
    if 'id="cnib-pendente"' in h:
     self.assertIn('Não é a mesma pessoa',h);self.assertIn('Ordem já baixada',h)

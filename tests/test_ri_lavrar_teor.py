@@ -15,6 +15,9 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
+
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import ri_lavrar_teor as RITEOR  # noqa: E402
 import ri_odt  # noqa: E402
@@ -51,7 +54,7 @@ def test_sem_fecho_antigo_nao_duplica():
 
 
 def test_itens_do_protocolo_acompanham_quando_ha():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE cx_protocolos(
@@ -80,7 +83,7 @@ def test_sem_protocolo_catalogo_com_texto_completo(monkeypatch):
         "ato_selado.itens_medidos_do_ato_do_ri",
         lambda: [("16.3", 40), ("16.9", 10)],
     )
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.executescript("""
         CREATE TABLE cx_vigencias(codigo INTEGER, vigente INTEGER);
         INSERT INTO cx_vigencias VALUES (2026, 1);
@@ -121,7 +124,7 @@ def test_carimbo_inclui_relacao_de_emolumentos():
 
 def test_resolver_une_prenotacao_e_caixa_por_fk():
     """Com ri_protocolo_id preenchido, a prenotacao traz o caixa sozinha."""
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE ri_protocolos(
@@ -157,7 +160,7 @@ def test_resolver_une_prenotacao_e_caixa_por_fk():
 
 
 def test_resolver_escolha_manual_vence_a_fk():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE ri_protocolos(
@@ -183,7 +186,7 @@ def test_resolver_escolha_manual_vence_a_fk():
 
 def test_resolver_sem_fk_mostra_so_deposito_sem_inventar_join():
     """Sem ri_protocolo_id no caixa, nao adivinha — so expoe deposito."""
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE ri_protocolos(
@@ -227,7 +230,7 @@ def test_caixa_ligado_aceita_a_pagar(tmp_path):
     """OP A_PAGAR vinculada a prenotacao aparece no lavrar (caso 3110/Edilson)."""
     import sqlite3
     import ri_lavrar_teor as RIL
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE cx_protocolos(
@@ -265,7 +268,7 @@ def test_o_recorte_por_atribuicao_separa_os_protocolos():
     `atribuicao="RI"` fica um; sem ela, os dois — o recorte e opcional, e
     `None` nao pode esconder protocolo nenhum.
     """
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.executescript("""
         CREATE TABLE cx_protocolos(

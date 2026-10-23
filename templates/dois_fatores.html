@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}Verificação em duas etapas{% endblock %}
+{% block heading %}<h1>Verificação em duas etapas</h1>{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <p>Com a verificação ligada, a senha sozinha não entra: falta o código de seis dígitos que o
+  aplicativo autenticador do seu celular mostra, e que muda a cada 30 segundos. Quem descobrir a sua
+  senha continua do lado de fora — e o rastro do sistema continua sendo seu (Código de Normas do MA,
+  Prov. COGEX 28/2026, art. 159, V: acesso «com identificação pessoal e intransferível»).</p>
+  {% if exigido %}<p><strong>O Gestor exige a verificação para o seu perfil.</strong> Desativada, ela é
+  pedida de novo na próxima entrada.</p>{% endif %}
+</section>
+
+{% if sit.estado == 'ATIVO' %}
+<section class="panel">
+  <h2>Ativa</h2>
+  <p>Desde {{ fmt_dt(sit.ativado_em) if sit.ativado_em else '—' }}. Códigos de recuperação que restam:
+  <strong>{{ sit.restantes }}</strong>{% if sit.restantes <= 3 %} — gere novos antes que acabem{% endif %}.</p>
+  {% if sit.bloqueado_ate %}<p class="flash danger">Travada por tentativas erradas até {{ sit.bloqueado_ate[11:16] }}.</p>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Gerar novos códigos de recuperação</h2>
+  <p class="muted">Os dez de agora deixam de valer.</p>
+  <form method="post" action="{{ url_for('dois_fatores_codigos') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Sua senha <input type="password" name="senha" required autocomplete="current-password"></label>
+    <label>Código do aplicativo <input name="codigo" inputmode="numeric" autocomplete="one-time-code" required></label>
+    <button type="submit">Gerar novos códigos</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Desativar</h2>
+  <p class="muted">Pede a senha <strong>e</strong> um código (do aplicativo ou de recuperação). Trocou de
+  celular? Desative aqui e ative de novo com o celular novo.</p>
+  <form method="post" action="{{ url_for('dois_fatores_desativar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Sua senha <input type="password" name="senha" required autocomplete="current-password"></label>
+    <label>Código <input name="codigo" autocomplete="one-time-code" required></label>
+    <button type="submit">Desativar</button>
+  </form>
+</section>
+
+{% elif pendente %}
+<section class="panel">
+  <h2>Ativar — leia o QR</h2>
+  {% include '_dois_fatores_chave.html' %}
+  <form method="post" action="{{ url_for('dois_fatores_confirmar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Código do aplicativo <input name="codigo" inputmode="numeric" autocomplete="one-time-code" autofocus required></label>
+    <button type="submit" class="primary">Ativar</button>
+  </form>
+  <form method="post" action="{{ url_for('dois_fatores_cancelar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="link-button">Desistir</button>
+  </form>
+</section>
+
+{% else %}
+<section class="panel">
+  <h2>Desligada</h2>
+  {% if sit.estado == 'PENDENTE' %}<p class="flash warning">Havia uma ativação começada cuja chave não abre
+  mais nesta instalação. Comece de novo.</p>{% endif %}
+  <form method="post" action="{{ url_for('dois_fatores_iniciar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="primary">Ativar a verificação em duas etapas</button>
+  </form>
+</section>
+{% endif %}
+
+{% endblock %}

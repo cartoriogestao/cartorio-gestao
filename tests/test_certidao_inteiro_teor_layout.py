@@ -173,12 +173,17 @@ def test_a_validade_cita_o_artigo_do_codigo_de_normas(casa):
     **art. 53** — «(...) estas deverão ser atualizadas, observando-se o prazo
     de validade de 30 (trinta) dias». O prazo estava certo; faltava o endereço.
 
+    O ARTIGO É O 553 DESDE O LH13 — o oficial, 21/10/2026 («14 a»): no Código
+    vigente (Prov. COGEX 28/2026) a certidão do RI «consignará a validade de
+    30 (trinta) dias» pelo art. 553; o art. 53 passou a tratar da sentença na
+    suscitação de dúvida.
+
     Numa certidão, quem confere é o banco, o comprador e o juiz."""
     con = _con(casa)
     with con:
         mid = _matricula_com_ato(con)
     corpo = _emitir(casa, mid)["corpo"]
-    assert "art. 53 do Código de Normas" in corpo
+    assert "art. 553 do Código de Normas" in corpo
     assert "30 (trinta) dias" in corpo
     assert "inteiro teor segue" in corpo.lower()
     assert "era o que nela continha" in corpo.lower()
@@ -201,8 +206,27 @@ def test_a_data_por_extenso_e_a_mesma_funcao_da_casa():
 
 def test_o_modelo_usa_a_peca_pronta_e_nao_a_crua():
     """Fica vermelho se alguém voltar a imprimir `a.data_ato` sozinho — que é
-    como o defeito nasceu: a peça pronta ao lado, e o modelo chamando a crua."""
-    modelo = (RAIZ / "ri_odt.py").read_text(encoding="utf-8")
-    assert "{{ a.data_extenso }}" in modelo
+    como o defeito nasceu: a peça pronta ao lado, e o modelo chamando a crua.
+
+    **O TEXTO DO MODELO SAIU DO `ri_odt.py`** no LF06A/B: mora em
+    `modelos_padrao/ri/` e chega ao papel pela base. Ler o código-fonte
+    passou a medir o vazio — o `not in` dava verde para sempre e o `in` ficou
+    vermelho sem defeito nenhum. O teste lê o padrão pela busca única
+    (`modelos_da_casa.padrao_de`), que é o MESMO texto que o papel imprime.
+    """
+    import modelos_da_casa as MOD
+    from modelos_papeis import CATALOGO
+
+    do_ri_odt = {c["chave"]: MOD.padrao_de(c["chave"])
+                 for c in CATALOGO if c["padrao"][0] == "ri_odt"}
+    # os miolos que põem a data do ato ao lado do rótulo (`AV-28/582 — …`)
+    for chave in ("RI_CERTIDAO_ONUS", "RI_CERTIDAO_DOMINIAL",
+                  "RI_CERTIDAO_VINTENARIA"):
+        assert "{{ a.data_extenso }}" in do_ri_odt[chave], chave
     # a forma crua só sobrevive como reserva, depois do `elif`
-    assert "{% if a.data_ato %} — {{ a.data_ato }}{% endif %}" not in modelo
+    for chave, texto in do_ri_odt.items():
+        assert "{% if a.data_ato %} — {{ a.data_ato }}{% endif %}" not in texto, chave
+        crua = texto.count("{{ a.data_ato }}")
+        reserva = len(re.findall(
+            r"\{% elif a\.data_ato %\}[^{]*\{\{ a\.data_ato \}\}", texto))
+        assert crua == reserva, f"{chave}: `a.data_ato` impresso fora do `elif`"

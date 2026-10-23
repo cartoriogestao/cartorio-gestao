@@ -14,8 +14,10 @@ from __future__ import annotations
 from flask import abort, flash, redirect, render_template, request, url_for
 
 import serventia as SERV
+import tetos_de_entrada as TETO
 import wa_balcao as WA
 import wa_puxar as PUXAR
+from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit):
@@ -23,6 +25,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     def _serventia() -> dict:
         return SERV.dados(db.get_settings)
+
+    # Os rascunhos são o papel CAIXA_WHATSAPP do catálogo desde o LF06F; a
+    # tela de Modelos os confere com os claros deles, e não com o boneco geral.
+    app.extensions.setdefault("conferidores_de_modelo", {})[
+        WA.TEXTOS.MODELO] = WA.TEXTOS.conferir
+    import modelos_elementos as ELEM
+    ELEM.CONFERIDORES[WA.TEXTOS.MODELO] = WA.TEXTOS.conferir
 
     def _con():
         return db.connect()
@@ -32,7 +41,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         """Callback da Cloud API. Sem login. CSRF isento neste endpoint.
 
         Producao: a Meta aponta para o worker na VPS (equipetextual.com.br), nao para aqui.
-        Este POST so vale com X-Wa-Test (dev) ou HMAC se app_secret gravado.
+        Este POST so vale com X-Wa-Test (dev, e so da propria maquina) ou HMAC
+        se app_secret gravado.
         """
         if request.method == "GET":
             modo = (request.args.get("hub.mode") or "").strip()
@@ -44,7 +54,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 return challenge, 200, {"Content-Type": "text/plain; charset=utf-8"}
             abort(403)
 
-        header_teste = request.headers.get("X-Wa-Test", "")
+        # O POST DE TESTE SÓ VALE DA PRÓPRIA MÁQUINA (LS02, 19/10/2026).
+        #
+        #   Sem `app_secret` gravado — e a casa não o grava, porque a entrada
+        #   de verdade vem pela caixa-postal (`/whatsapp/puxar`) —, bastava o
+        #   cabeçalho `X-Wa-Test: 1` para qualquer máquina da rede, SEM LOGIN,
+        #   pôr na fila do balcão a conversa que quisesse, com o número e o
+        #   nome que quisesse: a resposta do escrevente iria para o número de
+        #   quem forjou. O teste de desenvolvimento roda no próprio servidor;
+        #   é a mesma régua da ponte do CCN (`ccn_web.LOCAIS`).
+        # O CORPO TEM TETO, E A RECUSA VEM ANTES DE LER (LX12, LS02 M5,
+        # 19/10/2026). Esta rota não tem login, e o teto geral do app é de
+        # 200 MB: qualquer máquina mandava 200 MB que o servidor lia inteiros
+        # para a memória antes de o HMAC dizer não. A entrada da Meta é JSON
+        # de poucos KB; 2 MB (`corpo_anonimo_bytes`) é folga de sobra. O
+        # `Content-Length` declarado se recusa já; o corpo sem ele (chunked)
+        # é cortado na leitura pelo `max_content_length` desta requisição.
+        teto = TETO.valor("corpo_anonimo_bytes")
+        if (request.content_length or 0) > teto:
+            abort(413)
+        request.max_content_length = teto
+        header_teste = (request.headers.get("X-Wa-Test", "")
+                        if request.remote_addr in ("127.0.0.1", "::1") else "")
         sig = request.headers.get("X-Hub-Signature-256", "")
         bruto = request.get_data(cache=True) or b""
         payload = request.get_json(silent=True)
@@ -78,6 +109,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     @login_required
     def whatsapp_config():
         if request.method == "POST":
+            # GRAVAR É SÓ DO ADMIN (LS01, 19/10/2026); ver a tela segue de todos.
+            # Esta tela grava o token da Meta e a `caixa_url` — e o «puxar»
+            # manda o segredo da caixa-postal, como `Bearer`, para a URL que
+            # estiver gravada. Aberta a qualquer login, o balcão trocava a URL
+            # pela de fora e o próximo «puxar» entregava o segredo; trocava o
+            # token e as respostas aos clientes saíam pela conta de outro. É a
+            # regra de `configuracoes_central`: credencial de central, só ADMIN.
+            if app.extensions["usuario_papel"]() != "ADMIN":
+                abort(403)
             with db.transaction() as con:
                 WA.gravar_tela_config(con, request.form)
             audit("wa_config", "wa_config", None, {"ok": True})
@@ -90,6 +130,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     @app.route("/whatsapp/puxar", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def whatsapp_puxar():
         with db.transaction() as con:
             r = PUXAR.puxar_pendentes(
@@ -121,6 +162,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     @app.route("/whatsapp/<int:conversa_id>/rascunho", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def whatsapp_salvar_rascunho(conversa_id: int):
         texto = (request.form.get("rascunho") or "").strip()
         with db.transaction() as con:
@@ -133,6 +175,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     @app.route("/whatsapp/<int:conversa_id>/enviar", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def whatsapp_enviar(conversa_id: int):
         try:
             with db.transaction() as con:
@@ -149,6 +192,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     @app.route("/whatsapp/<int:conversa_id>/resolver", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def whatsapp_resolver(conversa_id: int):
         with db.transaction() as con:
             if not WA.conversa(con, conversa_id):

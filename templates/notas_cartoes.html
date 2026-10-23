@@ -21,9 +21,8 @@
      href="{{ url_for('notas_reconhecimentos') }}">Reconhecimentos feitos</a>
   <a class="button{% if aqui == 'cartoes' %} primary{% endif %}"
      href="{{ url_for('notas_cartoes') }}">Cartões de autógrafo</a>
-  {% if user.role in ['ADMIN','MANAGER'] %}
-  <a class="button" href="{{ url_for('notas_assinaturas') }}">Trazer autógrafos do E-Ofício</a>
-  {% endif %}
+  {# «Trazer autógrafos do E-Ofício» saiu em 17/10/2026: a importação
+     terminou. A rota fica, sem link. #}
 </div>
 
 <section class="cards">
@@ -37,7 +36,8 @@
     «Assinaturas digitalizadas deveria ser campo dos cartoes» — o oficial, em
     27/08/2026. A tela dela nao e um campo: e o mutirao que traz os arquivos do
     E-Oficio para dentro. Saiu do menu e virou o botao abaixo, junto do numero
-    que diz quanto falta.
+    que diz quanto falta. (Em 17/10/2026 o botao tambem saiu: a importacao
+    terminou. O numero fica.)
   #}
   <div class="stat{% if resumo.sem_assinatura %} warning{% endif %}">
     <strong>{{ resumo.sem_assinatura }}</strong><small>sem autógrafo</small></div>
@@ -90,7 +90,11 @@
     <label>CPF/CNPJ <input name="documento"></label>
     <label>RG <input name="rg"></label>
     <label>Órgão emissor <input name="rg_orgao"></label>
+    {# A data de emissão vai à ficha junto com o RG (CN-MA art. 864, § 1º, IV). #}
+    <label>Emissão do RG <input type="date" name="rg_emissao"></label>
     <label>Nascimento <input type="date" name="nascimento"></label>
+    {# «se houver, o número do título eleitoral» (CN-MA art. 864, § 1º, III) — LD07 #}
+    <label>Título eleitoral <input name="titulo_eleitor"></label>
     <label>Nacionalidade <input name="nacionalidade" value="BRASILEIRA"></label>
     <label>Estado civil <input name="estado_civil"></label>
     <label>Profissão <input name="profissao"></label>
@@ -109,6 +113,8 @@
       Pessoa politicamente exposta — Provimento CNJ 88/2019, art. 20</label>
     <label class="span2 check"><input type="checkbox" name="confirmar_duplicata" value="1">
       Já conferi: não é a mesma pessoa de um cartão existente</label>
+    {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
+    {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('nt_cartoes') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
     <div class="span2"><button class="primary" name="acao" value="novo">Abrir cartão</button>
       <span class="small muted">O sistema avisa duplicidade; se o selo de abertura falhar, o cartão não abre sem confirmação expressa.</span></div>
   </form>

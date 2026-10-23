@@ -14,11 +14,13 @@ import math
 import mimetypes
 import re
 import os
+import secrets
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from storage import save_upload
+from storage import nome_simples, save_upload
+import html_sem_script as HSS
 
 import importar_padrao as IMPP
 import impressao_web as IMPW
@@ -26,6 +28,7 @@ from flask import (Response, abort, flash, redirect, render_template,
                    request, session, url_for)
 
 import ato_selado as AS
+from bd_nativo import ERROS_DO_BANCO, banco
 # O SELO DE BUSCA QUE VAI JUNTO COM A CERTIDÃO — pedido do oficial, 15/10/2026.
 import buscas as BU
 import certidao_folhas as CFOLHAS
@@ -36,10 +39,12 @@ import papel_seguranca as PP
 
 from ri_modelos_atos import (pendencias as pendencias_modelo,
                              MODELOS as MODELOS_ATOS, abas_do_modelo, campos_do_modelo,
-                             por_codigo as modelo_por_codigo, preencher as preencher_modelo)
+                             por_codigo as modelo_por_codigo, preencher as preencher_modelo,
+                             por_preencher as por_preencher_do_modelo)
 import caixa_depositos as DEP
 from caixa_schema import centavos, reais
 import notas_doi as NDOI
+import ri_doi as RDOI
 import onr_carga as OCG
 import ri_fichas_do_disco as RFD
 import ri_imagens as RIMG
@@ -58,8 +63,7 @@ from serventia import (dados as dados_serventia, mascarar_documento,
                        mascarar_email, mascarar_telefone, mascarar_texto)
 from ri_onr import (TIPO_IMOVEL_ONR, gerar_indicador_pessoal, gerar_indicador_real,
                     nome_arquivo)
-from ri_odt import (MODELO_CABECALHO_PADRAO, MODELO_CERTIDAO_PADRAO, MODELO_FICHA_PADRAO,
-                    MODELO_NOTA_PADRAO, MIOLO_DA_CERTIDAO,
+from ri_odt import (MIOLO_DA_CERTIDAO,
                     bloco_selo_html, bloco_selo_odf,
                     carimbo_da_certidao_odf, png_do_qr_do_selo,
                     carimbo_compacto_html, carimbo_compacto_odf,
@@ -80,6 +84,7 @@ import modelos_da_casa as MODELOS
 import ri_documentos as RDOC
 import notas_selo as NSELO
 import caixa_protocolo as CXPROT
+import pastas_da_casa as PDC
 import contato_do_cliente as CONTATO
 import emolumentos as EMOL
 import ri_minuta as RIMIN
@@ -88,6 +93,7 @@ import ri_numeros_do_teor as NUMT
 import ri_revisao as RV
 import ri_onus as RIONUS
 import ri_onus_ia as RONIA
+import revisao_transcricao as RTRANS
 # A CADEIA DOMINIAL E A VINTENÁRIA — a régua de quais atos entram mora em
 # `ri_dominial` (a mesma família de `ri_onus`). Reconstituída em 14/10/2026: o
 # que a 3.6.233/234 ligou aqui em 28/09 se perdeu nos pacotes seguintes.
@@ -100,6 +106,11 @@ import ri_cnm as CNM
 import ri_correcoes as RC
 import ri_expurgo as EXP
 import ra_registro as RA3
+from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
+# O número que a tela mandou (LD10; mora em `seguranca_web` desde o LD13).
+from seguranca_web import (DIGITOS_DE_UM_NUMERO,  # noqa: F401 — `ri_web.` nos testes
+                           PAGINA_MAIS_ALTA, numero_digitado)
+import seguranca_web as SEGWEB  # B2 (LX11): exceção inesperada não vai para a tela
 from ri_schema import (
     PRAZO_PRENOTACAO,
     TIPOS_CERTIDAO,
@@ -127,6 +138,28 @@ QUALIF_RESUMO = ("nome completo, nacionalidade, estado civil e regime de bens, "
                  "profissao, domicilio e CPF/CNPJ")
 
 POR_PAGINA = 50
+
+
+class MoldeSemMarcador(MODELOS.ModeloError):
+    """O molde da certidão salvo sem o marcador do miolo (relato #75).
+
+    É a ÚNICA recusa de modelo que vai inteira à tela da certidão: a frase é
+    de `conferir_marcadores`, escrita para o balcão, e diz o que repor. O
+    resto do `ModeloError` que `corpo_certidao` pode levantar — o padrão que
+    não está na base, a base que precisa do PostgreSQL — leva o nome do
+    schema, o caminho do arquivo e a variável de ambiente: é da casa, e vai
+    ao log com a frase genérica (regra B2 do LX11; LX22B2 #1). Subclasse, e
+    não `ModeloError` puro, para o `except` da rota separar as duas.
+    """
+
+
+class CancelamentoNaoSeDesfaz(ValueError):
+    """A averbação de cancelamento sem selo não pôde ser desfeita (LD03).
+
+    Tem selo, não é a última da ficha ou tem dinheiro no caixa — as três
+    recusas de `ri_minuta.voltar_do_ato`. A rota diz as duas coisas: o selo
+    não saiu E o cancelamento ficou de pé.
+    """
 
 
 # `_qr_colado` FOI APAGADA EM 14/09/2026, e não desligada.
@@ -187,7 +220,57 @@ def _mensagem_cib_obrigatorio() -> str:
 
 
 def data_por_extenso(d) -> str:
-    return f"{d.day} de {MESES[d.month - 1]} de {d.year}" 
+    return f"{d.day} de {MESES[d.month - 1]} de {d.year}"
+
+
+def fecho_de_quem_praticou(cidade: str, uf: str, data_iso: str | None,
+                           teor: str | None, nome: str | None = None,
+                           titulo: str | None = None,
+                           tratamento: str | None = None, *,
+                           lido: dict | None = None) -> str:
+    """Monta o "Cidade Exemplo/MA, data. Dou fe. ..." de um ato. Só monta.
+
+    O TEXTO SAIU DAQUI — LF06B (19/10/2026). A frase mora na base dos
+    padroes (`RI_FECHO_DO_ATO`, e `RI_FECHO_DO_ATO_SEM_TITULO` quando o
+    cadastro nao traz a funcao), e a casa a edita na tela de Modelos. A
+    REGRA continua aqui: sem data ou sem nome nao ha fecho, e teor que ja
+    diz «dou fe» nao o repete. `lido` e o que a ficha leu UMA vez
+    (`ri_frases.ler`, ajuste da casa → padrao); sem ele sai o padrao.
+
+    UMA REGRA PARA OS DOIS LIVROS — LH13, 21/10/2026. Morava dentro das rotas
+    (`registrar_rotas.fecho_do_ato`, que continua chamando esta). Saiu para
+    cá porque a ficha do Livro 3 (`ra_ficha_odt`) passou a fechar cada ato
+    como o Livro 2 — o oficial, «15 a»: CN-MA art. 458, «todo
+    registro/averbação deve ser datado e subscrito».
+
+    DE ONDE VEM O NOME
+        Do proprio ato, gravado na hora da lavratura. Nao se deduz por
+        periodo. A serventia teve, ao longo dos anos, delegatarios,
+        substitutos, interinos e escreventes que se alternaram e se
+        misturaram no mesmo intervalo — deduzir pela data acertaria as
+        vezes e erraria as outras, sem avisar qual foi qual.
+
+    E O ACERVO?
+        Nao precisa: em 1.197 dos 1.239 atos herdados, e em 1.450 das
+        1.507 matriculas, o fecho com o nome de quem praticou ja esta
+        escrito dentro do proprio teor. Ele sai na impressao porque o teor
+        sai. Nos 3% restantes o ato sai sem fecho, que e o certo: melhor
+        faltar o nome do que atribuir o ato a quem nao o praticou.
+    """
+    import ri_frases
+    if not data_iso or not nome:
+        return ""
+    if teor and re.search(r"dou\s+f[ée]", teor[:20000], re.I):
+        return ""
+    try:
+        extenso = data_por_extenso(date.fromisoformat(data_iso))
+    except (TypeError, ValueError):
+        return ""
+    artigo = "A" if (tratamento or "O").upper().startswith("A") else "O"
+    chave = "RI_FECHO_DO_ATO" if titulo else "RI_FECHO_DO_ATO_SEM_TITULO"
+    modelo = (lido or {}).get(chave) or ri_frases.texto(chave)
+    return ri_frases.montar(modelo, cidade=cidade, uf=uf, data_extenso=extenso,
+                            artigo=artigo, titulo=titulo, nome=nome)
 
 
 # NAO RESSELAR O ACERVO — HOTFIX-2026-10-09-08 (09/10/2026). Depois que o
@@ -259,6 +342,21 @@ def selos_do_ato_rotulados(tipo, etiquetas) -> list:
 MARCA_A_PREENCHER = "«PREENCHER"
 
 
+_MARCA_DO_ENVIO = re.compile(r"[0-9a-f]{32}")
+
+
+def _marca_do_envio(veio) -> str:
+    """A marca da tela «Preencher o modelo»: a que veio no formulário, ou uma
+    nova quando a tela abre. Só calcula.
+
+    Ela entra na `origem_chave` da minuta (`_guardar_a_minuta_do_modelo`), e
+    por isso só se aceita no formato que se sorteia aqui — texto livre do
+    formulário não vira chave de minuta nenhuma.
+    """
+    marca = str(veio or "").strip().lower()
+    return marca if _MARCA_DO_ENVIO.fullmatch(marca) else secrets.token_hex(16)
+
+
 def _numero_da_matricula_por_extenso_de_pontos(numero) -> str:
     s = str(numero or "").strip()
     return f"{int(s):,}".replace(",", ".") if s.isdigit() else s
@@ -272,81 +370,65 @@ def _livro_da_matricula(m) -> str:
 
 
 def modelos_de_encerramento(m, numero_ato: int, data_iso: str, quem,
-                            cidade: str = "", uf: str = "MA") -> list[dict]:
-    """Os modelos de teor do encerramento. Só monta texto; não grava nada."""
+                            cidade: str = "", uf: str = "MA", *,
+                            con=None) -> list[dict]:
+    """Os modelos de teor do encerramento. Só monta texto; não grava nada.
+
+    O TEXTO SAIU DAQUI — LF06B (19/10/2026): os cinco teores e os três fechos
+    são papéis do catálogo (`modelos_padrao/ri/RI_ENCERRAMENTO_*.txt`), e a
+    casa os edita na tela de Modelos. A REGRA ficou aqui: qual fecho entra
+    (com título, sem título, sem quem assina), o número do ato e da matrícula
+    e os rótulos da tela. O «PREENCHER» vai literal no texto; `MARCA_A_PREENCHER`
+    continua aqui porque é ela que recusa a lavratura do trecho que sobrou.
+    Sem `con`, sai o padrão da base.
+    """
+    import ri_frases as FRASES
+
     num = _numero_da_matricula_por_extenso_de_pontos(m.get("numero"))
     livro = _livro_da_matricula(m)
-    cab = f"AV-{int(numero_ato):02d}/{num}"
+    ato = f"AV-{int(numero_ato):02d}/{num}"
     try:
         d = date.fromisoformat(str(data_iso)[:10])
     except (TypeError, ValueError):
         d = date.today()
     quando = f"{d.day:02d} de {MESES[d.month - 1]} de {d.year}"
     nome, titulo, artigo = (list(quem or ()) + [None, None, None])[:3]
-    if nome:
-        assina = (f"{(artigo or 'O')} {titulo}, _____________ {nome}." if titulo
-                  else f"_____________ {nome}.")
+    lugar = {"cidade": cidade, "uf": uf, "data": quando}
+    if nome and titulo:
+        fecho = FRASES.frase("RI_ENCERRAMENTO_FECHO", con, artigo=(artigo or "O"),
+                             titulo=titulo, nome=nome, **lugar)
+    elif nome:
+        fecho = FRASES.frase("RI_ENCERRAMENTO_FECHO_SEM_TITULO", con, nome=nome,
+                             **lugar)
     else:
-        assina = f"{MARCA_A_PREENCHER}: quem assina»."
-    fecho = f"{cidade}/{uf}, {quando}. Dou fé. {assina}"
-
-    def P(o):
-        return f"{MARCA_A_PREENCHER}: {o}»"
-
-    esta = f"da Matrícula nº {num}, do Livro nº {livro}"
+        fecho = FRASES.frase("RI_ENCERRAMENTO_FECHO_SEM_NOME", con, **lugar)
+    claros = {"ato": ato, "numero": num, "livro": livro, "fecho": fecho}
     return [
         {"codigo": "TECNICA",
          "natureza": "Encerramento da matrícula por mudança da técnica de escrituração e remissão à nova matrícula",
          "rotulo": "Mudança da técnica de escrituração (remissão à nova matrícula)",
          "motivo": "Mudança da técnica de escrituração, com remissão à nova matrícula",
-         "teor": (f"{cab} – ENCERRAMENTO DA MATRÍCULA POR MUDANÇA DA TÉCNICA DE ESCRITURAÇÃO "
-                  f"E REMISSÃO À NOVA MATRÍCULA. Em razão da adoção da escrituração eletrônica, "
-                  f"mediante abertura de nova matrícula, procede-se, de ofício, ao encerramento {esta}, "
-                  f"passando a continuidade dos assentamentos registrais do imóvel à Matrícula nº "
-                  f"{P('nova matrícula')}, do Livro nº 2 – Registro Geral, desta Serventia, para a qual "
-                  f"foram transpostos os assentos registrais ativos pertinentes, mantidas as remissões "
-                  f"recíprocas e preservada a continuidade registral. O presente ato decorre "
-                  f"exclusivamente da mudança da técnica de escrituração e não importa transmissão de "
-                  f"domínio, desmembramento, unificação, nem alteração da descrição do imóvel, da "
-                  f"titularidade, dos direitos, ônus ou gravames existentes. Os atos registrais "
-                  f"posteriores relativos ao imóvel serão praticados exclusivamente na nova matrícula. "
-                  f"Fundamento: arts. 426, 427, §§ 1º e 2º, e 495, IV, do Código de Normas da "
-                  f"Corregedoria Geral do Foro Extrajudicial do Maranhão – Provimento COGEX nº 28/2026. "
-                  f"{fecho}")},
+         "teor": FRASES.frase("RI_ENCERRAMENTO_TECNICA", con, **claros)},
         {"codigo": "DESMEMBRAMENTO",
          "natureza": "Encerramento da matrícula por desmembramento",
          "rotulo": "Desmembramento total (áreas em novas matrículas)",
          "motivo": "Desmembramento total do imóvel em novas matrículas",
-         "teor": (f"{cab} – ENCERRAMENTO DA MATRÍCULA POR DESMEMBRAMENTO. Tendo em vista o "
-                  f"desmembramento total do imóvel objeto desta matrícula, nos termos de "
-                  f"{P('título/procedimento e data')}, procede-se ao encerramento {esta}, passando as "
-                  f"áreas resultantes a constar das Matrículas nº {P('matrículas abertas')}, desta "
-                  f"Serventia, feitas as remissões recíprocas. {fecho}")},
+         "teor": FRASES.frase("RI_ENCERRAMENTO_DESMEMBRAMENTO", con, **claros)},
         {"codigo": "UNIFICACAO",
          "natureza": "Encerramento da matrícula por unificação",
          "rotulo": "Unificação / fusão com outro(s) imóvel(is)",
          "motivo": "Unificação do imóvel com outro(s), em nova matrícula",
-         "teor": (f"{cab} – ENCERRAMENTO DA MATRÍCULA POR UNIFICAÇÃO. Em virtude da unificação do "
-                  f"imóvel objeto desta matrícula com {P('imóvel(is) e matrícula(s) unificados')}, nos "
-                  f"termos de {P('título/requerimento e data')}, procede-se ao encerramento {esta}, "
-                  f"passando o imóvel unificado a constar da Matrícula nº {P('nova matrícula')}, desta "
-                  f"Serventia, feitas as remissões recíprocas. {fecho}")},
+         "teor": FRASES.frase("RI_ENCERRAMENTO_UNIFICACAO", con, **claros)},
         {"codigo": "CIRCUNSCRICAO",
          "natureza": "Encerramento da matrícula por transferência de circunscrição",
          "rotulo": "Transferência para outra circunscrição / serventia",
          "motivo": "Imóvel passou a pertencer a outra circunscrição imobiliária",
-         "teor": (f"{cab} – ENCERRAMENTO DA MATRÍCULA POR TRANSFERÊNCIA DE CIRCUNSCRIÇÃO. Tendo em "
-                  f"vista que o imóvel objeto desta matrícula passou a pertencer à circunscrição do "
-                  f"{P('serventia de destino')}, conforme {P('fundamento/comunicação')}, procede-se ao "
-                  f"encerramento {esta}, nesta Serventia, devendo os atos posteriores relativos ao "
-                  f"imóvel ser praticados naquela Serventia. {fecho}")},
+         "teor": FRASES.frase("RI_ENCERRAMENTO_CIRCUNSCRICAO", con, **claros)},
         {"codigo": "LIVRE",
          "natureza": "Encerramento de matrícula",
          "rotulo": "Outro motivo (texto livre)",
          "motivo": "",
-         "teor": (f"{cab} – ENCERRAMENTO DA MATRÍCULA. {P('motivo e fundamento do encerramento')}, "
-                  f"procede-se ao encerramento {esta}, passando o imóvel a constar da Matrícula nº "
-                  f"{P('matrícula de destino')}, feitas as remissões recíprocas. {fecho}")},
+         "teor": FRASES.frase("RI_ENCERRAMENTO_LIVRE", con, **claros)},
     ]
 
 
@@ -405,16 +487,16 @@ def _cnm_da_casa(digitos: str) -> str:
 def _condicao_de_busca_da_matricula(busca: str) -> tuple[str, list]:
     """O SQL da caixa de busca da lista de matriculas, e os parametros dele."""
     digitos = _numero_digitado(busca)
-    dentro_da_parte = ["p.nome_norm LIKE ?"]
+    dentro_da_parte = ["p.nome_norm ILIKE %s"]
     params = [f"%{busca}%", f"%{normalizar_busca(busca)}%"]
     if digitos:
-        dentro_da_parte.append("p.documento_numero = ?")
+        dentro_da_parte.append("p.documento_numero = %s")
         params.append(digitos)
-    condicoes = ["m.logradouro LIKE ?",
+    condicoes = ["m.logradouro ILIKE %s",
                  "EXISTS (SELECT 1 FROM ri_partes p WHERE p.matricula_id = m.id"
                  " AND (" + " OR ".join(dentro_da_parte) + "))"]
     if digitos:
-        condicoes += ["m.numero = ?", "m.cnm = ?"]
+        condicoes += ["m.numero = %s", "m.cnm = %s"]
         params += [digitos, _cnm_da_casa(digitos)]
     return "(" + " OR ".join(condicoes) + ")", params
 
@@ -450,7 +532,12 @@ def teor_seguro(teor: str | None, formato: str | None) -> str:
     if html.lower().count("<p") >= 4:
         from ri_odt import html_em_texto_corrido
         html = html_em_texto_corrido(html, None)
-    return html
+    # AS EXPRESSÕES DE CIMA NÃO BASTAVAM (LS02, 19/10/2026): `<svg/onload=…>`
+    # e `<img src=x/onerror=…>` passavam, porque o `_EVENTOS` procura espaço
+    # antes do `on`; `href=javascript:` sem aspas também. O teor do acervo
+    # entra pela importação, que o balcão dispara com a pasta que quiser.
+    # A última palavra é do filtro que lê o HTML de verdade.
+    return HSS.limpar(html)
 
 
 def procurar_exportacoes(limite: int = 8) -> list[dict]:
@@ -570,43 +657,10 @@ def procurar_arquivos(nome: str, limite: int = 8) -> list[Path]:
 #   comentario em `ri_nova_matricula`.
 SERIE_DA_MATRICULA = "2"
 
-MODELO_PRENOTACAO = """<p align="center"><b>{{ sv.unit_name }}</b></p>
-<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
-<p align="center">CNPJ {{ sv.serventia_cnpj }} — CNS {{ sv.ri_cns }} — Telefone {{ sv.serventia_telefone }}</p>
-<p align="center">{{ sv.endereco_completo }}</p>
-<p align="center"><b>COMPROVANTE DE PRENOTAÇÃO</b></p>
-<p align="center"><b>Protocolo nº {{ p.numero }} — Livro 1-A de Protocolo</b></p>
-<p>Recebemos nesta serventia, do(a) apresentante abaixo, o título adiante
-descrito, que fica <b>prenotado</b> no Livro de Protocolo sob o número acima,
-na forma dos arts. 174 a 186 da Lei 6.015/1973.</p>
-<table border="1" cols="4.6cm,11.4cm">
-<tr><td><b>Apresentante</b></td><td>{{ p.apresentante or '—' }}</td></tr>
-{% if documento %}<tr><td><b>CPF/CNPJ</b></td><td>{{ documento }}</td></tr>{% endif %}
-{% if telefone %}<tr><td><b>Telefone</b></td><td>{{ telefone }}</td></tr>{% endif %}
-{% if email %}<tr><td><b>E-mail</b></td><td>{{ email }}</td></tr>{% endif %}
-<tr><td><b>Natureza do título</b></td><td>{{ p.natureza_titulo or '—' }}</td></tr>
-{% if p.documento_descricao %}<tr><td><b>Documento apresentado</b></td><td>{{ p.documento_descricao }}</td></tr>{% endif %}
-{% if p.objeto %}<tr><td><b>Objeto</b></td><td>{{ p.objeto }}</td></tr>{% endif %}
-{% if p.matricula_numero %}<tr><td><b>Matrícula</b></td><td>{{ p.matricula_numero }}</td></tr>{% endif %}
-<tr><td><b>Prenotado em</b></td><td>{{ data }}{% if p.hora %} às {{ p.hora }}{% endif %}</td></tr>
-{% if p.livro_destino %}<tr><td><b>Livro de destino</b></td><td>Livro {{ p.livro_destino }} — {{ 'matrículas' if p.livro_destino == '2' else 'demais atos do RI' }}</td></tr>{% endif %}
-<tr><td><b>Prazo da prenotação</b></td><td>{{ limite or 'a apurar' }}{% if faltam is not none %}{% if faltam > 0 %} — faltam {{ faltam }} dia(s) útil(eis){% else %} — <b>prazo vencido</b>{% endif %}{% endif %}</td></tr>
-</table>
-<p>A prenotação vigora por {{ prazo }} dias úteis contados desta data
-(Lei 6.015/1973, art. 205, e Código de Normas da CGJ/MA, arts. 436 e 452).
-Vencido o prazo sem que o registro se ultime, cessam os seus efeitos e o
-título perde a prioridade.</p>
-<p>Havendo exigência, será expedida nota devolutiva, e o título poderá
-reingressar no mesmo protocolo enquanto viger a prenotação.</p>
-<p>{{ sv.cidade_uf }}, {{ hoje_extenso }}.</p>
-<p></p><p></p>
-<table cols="7.6cm,7.6cm">
-<tr><td>_________________________________</td><td>_________________________________</td></tr>
-<tr><td>{{ emitido_por }}</td><td>{{ p.apresentante or 'Apresentante' }}</td></tr>
-<tr><td>{{ funcao }}</td><td>Apresentante</td></tr>
-</table>
-<p><small>Dados pessoais parcialmente ocultados na forma da Lei 13.709/2018 — LGPD.</small></p>
-"""
+# `MODELO_PRENOTACAO` — o texto de fábrica do papel RI_PRENOTACAO — saiu daqui no LF06A
+# (19/10/2026): mora em `modelos_padrao/ri/RI_PRENOTACAO.txt`, com os mesmos bytes, e
+# chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
+# continua respondendo — ver `__getattr__` no fim deste módulo.
 
 
 
@@ -635,27 +689,29 @@ def prenotacoes_abertas_da_matricula(
         pid = int(d["id"])
         por_id.setdefault(pid, d)
 
-    rows = con.execute(
+    bd = banco(con)
+    rows = bd.ler(
         """SELECT id, numero, data_prenotacao, data_limite, situacao,
                   natureza_titulo, objeto, matricula_id, matricula_numero
              FROM ri_protocolos
             WHERE situacao='ABERTO'
-              AND (matricula_id=?
-                   OR (? != '' AND CAST(matricula_numero AS TEXT)=?))
+              AND (matricula_id=%s
+                   OR (%s != '' AND CAST(matricula_numero AS TEXT)=%s))
             ORDER BY data_prenotacao, numero""",
         (mid, num, num),
-    ).fetchall()
+    )
     for r in rows:
         _guardar(r)
 
     # Protocolos citados nos atos desta matrícula (ainda ABERTO).
-    atos_proto = con.execute(
+    atos_proto = bd.ler(
         """SELECT DISTINCT protocolo FROM ri_atos
-            WHERE matricula_id=?
+            WHERE matricula_id=%s
               AND protocolo IS NOT NULL
-              AND TRIM(CAST(protocolo AS TEXT)) != ''""",
+              AND TRIM(CAST(protocolo AS TEXT)) != ''
+            ORDER BY protocolo""",
         (mid,),
-    ).fetchall()
+    )
     digitos: list[str] = []
     textos: list[str] = []
     for a in atos_proto:
@@ -671,10 +727,10 @@ def prenotacoes_abertas_da_matricula(
         partes = []
         params: list = []
         for t in textos:
-            partes.append("CAST(numero AS TEXT)=?")
+            partes.append("CAST(numero AS TEXT)=%s")
             params.append(t)
         for d in digitos:
-            partes.append("REPLACE(CAST(numero AS TEXT), '.', '')=?")
+            partes.append("REPLACE(CAST(numero AS TEXT), '.', '')=%s")
             params.append(d)
         sql = (
             """SELECT id, numero, data_prenotacao, data_limite, situacao,
@@ -684,7 +740,7 @@ def prenotacoes_abertas_da_matricula(
             + " OR ".join(partes)
             + ") ORDER BY data_prenotacao, numero"
         )
-        for r in con.execute(sql, params).fetchall():
+        for r in bd.ler(sql, params):
             _guardar(r)
 
     lista = list(por_id.values())
@@ -696,49 +752,48 @@ def prenotacoes_abertas_da_matricula(
 
 
 def clausula_html_prenotacoes_abertas(
-        prenotacoes: list[dict], *, fmt_date=str) -> str:
+        prenotacoes: list[dict], *, fmt_date=str, con=None) -> str:
     """HTML do fecho sobre protocolo/prenotação em aberto. Só calcula.
 
     Redação no padrão da casa («CERTIFICO ainda que…»), espelhando
     Protesto/RCPN/RCPJ. Afirma existência OU inexistência — nunca omite.
     Lei 6.015/1973 (prenotação / prioridade) e Provimento CNJ 149/2023
     (Código Nacional de Normas do Foro Extrajudicial).
+
+    O TEXTO SAIU DAQUI — LF06B (19/10/2026): cada frase é papel do catálogo
+    (`modelos_padrao/ri/RI_PRENOTACOES_ABERTAS_*.txt`), e a casa a edita na
+    tela de Modelos. A REGRA ficou aqui: há ou não há, um ou vários, e qual
+    dado do protocolo entra na lista. Os dados entram já escapados para HTML.
+    Sem `con`, sai o padrão da base.
     """
     from xml.sax.saxutils import escape
 
-    base_legal = (
-        "na forma da Lei nº 6.015/1973 e do Código Nacional de "
-        "Normas do Foro Extrajudicial (Provimento CNJ nº 149/2023)"
-    )
+    import ri_frases as FRASES
+
     if not prenotacoes:
-        return (
-            "<p>CERTIFICO ainda que, nesta data, <b>não há</b> "
-            "título prenotado nem protocolo em aberto referente a esta "
-            f"matrícula, {base_legal}.</p>"
-        )
+        return FRASES.frase("RI_PRENOTACOES_ABERTAS_NAO_HA", con)
     itens = []
     for p in prenotacoes:
         numero = escape(str(p.get("numero") or "").strip())
         data = fmt_date(p.get("data_prenotacao")) if p.get("data_prenotacao") else ""
-        pedacos = [f"Protocolo nº <b>{numero}</b>"]
+        pedacos = [FRASES.frase("RI_PRENOTACOES_ABERTAS_ITEM_PROTOCOLO", con,
+                                numero=numero)]
         if data:
-            pedacos.append(f"prenotado em {escape(str(data))}")
+            pedacos.append(FRASES.frase("RI_PRENOTACOES_ABERTAS_ITEM_DATA", con,
+                                        data=escape(str(data))))
         nat = str(p.get("natureza_titulo") or "").strip()
         if nat:
-            pedacos.append(f"natureza {escape(nat)}")
+            pedacos.append(FRASES.frase("RI_PRENOTACOES_ABERTAS_ITEM_NATUREZA", con,
+                                        natureza=escape(nat)))
         obj = str(p.get("objeto") or "").strip()
         if obj:
-            pedacos.append(f"objeto {escape(obj)}")
+            pedacos.append(FRASES.frase("RI_PRENOTACOES_ABERTAS_ITEM_OBJETO", con,
+                                        objeto=escape(obj)))
         itens.append(", ".join(pedacos))
     lista = "; ".join(itens)
-    plural = len(prenotacoes) != 1
-    ha = "há"
-    titulo = "título(s) prenotado(s)" if plural else "título prenotado"
-    ref = "referente(s)" if plural else "referente"
-    return (
-        f"<p>CERTIFICO ainda que, nesta data, <b>{ha}</b> {titulo} em aberto "
-        f"{ref} a esta matrícula, {base_legal}: {lista}.</p>"
-    )
+    if len(prenotacoes) == 1:
+        return FRASES.frase("RI_PRENOTACOES_ABERTAS_HA_UMA", con, lista=lista)
+    return FRASES.frase("RI_PRENOTACOES_ABERTAS_HA_VARIAS", con, lista=lista)
 
 
 
@@ -817,10 +872,197 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return f" Busca {busca}: selo {r['numero']}."
         return f" A busca {busca} ficou SEM SELO: {r['motivo']}"
 
+    def _pedir_os_selos_da_certidao_do_ri(*, certidao_id: int, tipo: str,
+                                          folhas, requerente,
+                                          requerente_documento,
+                                          matricula: str, isento: bool,
+                                          motivo_isencao) -> dict:
+        """Os selos da certidão do RI, item por item. FALA COM A REDE.
+
+        UM LUGAR SÓ PARA A EMISSÃO, A NEGATIVA E O «SELAR DE NOVO» — 22/10/2026.
+        A 3.7.0 trouxe a trava do selo pago, e a certidão passou a poder ficar
+        «aguardando cobertura» (protocolo e pagamento). Quem pede o selo de novo
+        tem de mandar **as mesmas referências** da emissão — `ri_certidoes:ID`
+        no item base e `ri_certidoes:ID:código` na folha acrescida —, senão o
+        SID muda e o aparelho vende um segundo selo para a mesma certidão. Três
+        cópias deste laço divergiriam justamente nisso.
+
+        **O ITEM BASE QUE NÃO SAI PARA O LAÇO.** Antes, a folha acrescida era
+        pedida mesmo com o item base recusado, e uma certidão podia ficar só
+        com o selo da folha — que não existe sozinho.
+
+        Devolve `saiu` (números), `faltou` (motivos) e `aguardando` — True
+        quando o item base não saiu só por falta de protocolo ou pagamento, e
+        não por recusa do aparelho.
+        """
+        versao = AS.versao_da_tabela_de_custas(
+            "/selo/imovel/certidao",
+            db.get_setting("selo_tabela_custas_em", ""))
+        if not versao:
+            raise AS.AtoError(
+                "falta a versão da tabela de custas, em Administrativo → "
+                "Configurações (data da tabela em vigor).")
+        saiu, faltou, aguardando = [], [], False
+        for indice, (codigo_do_item, quantidade) in enumerate(
+                AS.itens_da_certidao_do_ri(tipo, folhas)):
+            envelope = AS.envelope_da_certidao_do_ri(
+                tipo=tipo,
+                escrevente=app.extensions["usuario_nome"](),
+                versao_tabela=versao,
+                quantidade=quantidade,
+                codigo_do_item=codigo_do_item,
+                requerente=requerente,
+                requerente_documento=requerente_documento,
+                matricula=matricula,
+                isento=isento,
+                motivo_isencao=motivo_isencao)
+            # **A REFERENCIA DO PRIMEIRO ITEM NAO MUDA**, e e dela que sai o
+            # SID: trocar a forma faria o aparelho vender selo novo onde antes
+            # devolvia o mesmo. O item da folha acrescida, que e novo, leva a
+            # sua propria — uma referencia so para dois itens traria o mesmo
+            # selo duas vezes.
+            referencia = (f"ri_certidoes:{certidao_id}" if indice == 0
+                          else f"ri_certidoes:{certidao_id}:{codigo_do_item}")
+            r = AS.selar_o_ato_lavrado(
+                db, Path(app.config["DATA_DIR"]),
+                tabela="ri_certidoes",
+                ato_id=certidao_id, tipo=tipo, atribuicao="IMOVEL",
+                agora=datetime.now().isoformat(timespec="seconds"),
+                cns=db.get_setting("ri_cns", ""),
+                usuario=app.extensions["usuario_nome"](),
+                dados=envelope, referencia=referencia)
+            if r["selado"]:
+                saiu.append(r["numero"])
+                continue
+            faltou.append(r["motivo"])
+            if indice == 0:
+                aguardando = bool(r.get("aguardando_cobertura"))
+                break
+        return {"saiu": saiu, "faltou": faltou, "aguardando": aguardando}
+
+    def _recado_dos_selos_da_certidao(pedido: dict) -> str:
+        """A frase da tela sobre os selos pedidos. Só monta texto."""
+        saiu, faltou = pedido["saiu"], pedido["faltou"]
+        if saiu:
+            recado = f" Selo {', '.join(saiu)}."
+            if faltou:
+                recado += f" ({len(faltou)} item(ns) sem selo: {faltou[0]})"
+            return recado
+        return f" SEM SELO: {faltou[0] if faltou else ''}"
+
+    def _busca_pedida_na_emissao(certidao_id: int) -> str | None:
+        """O código da busca escolhida quando a certidão foi emitida. Só LÊ.
+
+        `ri_certidoes` não tem coluna para a busca: a escolha só ficou na
+        auditoria da emissão (`busca` na certidão da ficha, `item_busca` na
+        negativa). O «selar de novo» precisa dela para pedir o selo da busca
+        com a mesma referência — sem ela, a busca ficaria sem selo calada.
+        """
+        linha = q1("""SELECT details FROM audit_logs
+                       WHERE entity_type='RI_CERTIDAO' AND entity_id=%s
+                         AND action IN ('RI_CERTIDAO_EMITIDA',
+                                        'RI_CERTIDAO_NEGATIVA_EMITIDA')
+                       ORDER BY id DESC LIMIT 1""", (int(certidao_id),))
+        if not linha or not linha["details"]:
+            return None
+        try:
+            detalhes = json.loads(linha["details"])
+        except (TypeError, ValueError):
+            return None
+        return (detalhes.get("busca") or detalhes.get("item_busca") or None)
+
+    def _certidoes_aguardando_selo(ids) -> set[int]:
+        """Quais destas certidões estão «aguardando cobertura». Só LÊ.
+
+        A lista é da trava do selo pago (`cx_selo_aguardando`, 3.7.0). Sem a
+        tabela — instalação sem a trava — nenhuma está esperando.
+        """
+        ids = [int(i) for i in ids if i is not None]
+        if not ids:
+            return set()
+        with db.connect() as con:
+            bd = banco(con)
+            if not bd.tem_tabela("cx_selo_aguardando"):
+                return set()
+            marcas = ",".join(["%s"] * len(ids))
+            return {int(r["ato_id"]) for r in bd.ler(
+                f"""SELECT ato_id FROM cx_selo_aguardando
+                     WHERE tabela='ri_certidoes' AND ato_id IN ({marcas})""",
+                ids)}
+
+    def _codigo_base_da_certidao() -> dict:
+        """O item base de cada tipo de certidão do RI, a negativa inclusive. Só calcula."""
+        return {**AS.CODIGO_DA_CERTIDAO_DO_RI,
+                RINEG.TIPO: AS.CODIGO_DA_CERTIDAO_NEGATIVA_DE_IMOVEL}
+
+    def _candidatos_da_certidao_do_ri(con, pedidos=None) -> list[dict]:
+        """Os protocolos pagos que a escrevente pode escolher para a certidão. Só LÊ.
+
+        Com `pedidos` (o «Selar» de uma certidão já gravada, folhas contadas),
+        a lista é a deles. Sem eles (a ficha, antes de escolher o tipo), são
+        os protocolos com o item BASE das duas famílias — 16.24.4 (inteiro
+        teor, ônus, cadeia) e 16.24.1 (propriedade, negativa) —, sem repetir.
+        """
+        if pedidos:
+            return AS.candidatos_do_ato(con, tabela="ri_certidoes",
+                                        pedidos=pedidos)
+        vistos, saida = set(), []
+        for base in sorted(set(AS.CODIGO_DA_CERTIDAO_DO_RI.values())):
+            for c in AS.candidatos_do_ato(con, tabela="ri_certidoes",
+                                          pedidos=[(base, 1)]):
+                if c["protocolo_id"] not in vistos:
+                    vistos.add(c["protocolo_id"])
+                    saida.append(c)
+        return saida
+
+    def _atender_o_protocolo_escolhido(form) -> str | None:
+        """O protocolo marcado na tela vira o «em atendimento». ESCREVE.
+
+        Devolve a recusa para o balcão, ou None. Vazio não mexe em nada (o
+        atendimento que já havia continua). A auditoria vai FORA da transação
+        — regra da casa —, com o que `escolher_protocolo_do_selo` devolveu.
+        """
+        try:
+            with db.transaction() as con:
+                feito = AS.escolher_protocolo_do_selo(
+                    con, usuario=app.extensions["usuario_nome"](),
+                    protocolo=form.get("protocolo_selo"), agora=db.now())
+        except CXPROT.ProtocoloError as erro:
+            return str(erro)
+        if feito:
+            audit("SELO_PROTOCOLO_EM_ATENDIMENTO", "CX_PROTOCOLO",
+                  feito["protocolo_id"], {"numero": feito["numero"]})
+        return None
+
+    def _protocolos_do_selo_ri(tabela: str, codigo: str, ri_protocolo_id=None) -> dict:
+        """Os protocolos pagos que podem pagar este selo do RI, para a tela. Só LÊ.
+
+        Serve as telas que selam além da certidão — a prenotação (16.1), a
+        abertura (16.2), o arquivamento (16.39) e a negativa (16.24.1) —, que
+        a desenham com a macro `_protocolo_do_selo.html`. Na prenotação, o
+        protocolo de caixa dela (`cx_protocolos.ri_protocolo_id`) vem
+        pré-marcado; marcado não é escolhido: a escrevente confirma.
+        """
+        pedidos = [(codigo, 1)]
+        with db.connect() as con:
+            bd = banco(con)
+            pre = None
+            if ri_protocolo_id:
+                linha = bd.um("""SELECT id FROM cx_protocolos WHERE ri_protocolo_id=%s
+                                  ORDER BY id DESC LIMIT 1""", (int(ri_protocolo_id),))
+                pre = linha["id"] if linha else None
+            return {"candidatos": AS.candidatos_do_ato(
+                        con, tabela=tabela, pedidos=pedidos,
+                        pre_marcar_protocolo_id=pre),
+                    "atendendo": CXPROT.em_atendimento(
+                        bd, app.extensions["usuario_nome"]()),
+                    "pedidos": pedidos}
+
+    app.jinja_env.globals["protocolos_do_selo_ri"] = _protocolos_do_selo_ri
+
     def q(sql, params=()):
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            return list(con.execute(sql, params))
+            return banco(con).ler(sql, params)
 
     def q1(sql, params=()):
         linhas = q(sql, params)
@@ -917,41 +1159,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     def fecho_do_ato(cidade: str, uf: str, data_iso: str | None, teor: str | None,
                      nome: str | None = None, titulo: str | None = None,
-                     tratamento: str | None = None) -> str:
-        """Monta o "Cidade Exemplo/MA, data. Dou fe. ..." de um ato.
+                     tratamento: str | None = None, *,
+                     lido: dict | None = None) -> str:
+        """O fecho de um ato da ficha e da certidão do Livro 2. Só monta.
 
-        DE ONDE VEM O NOME
-            Do proprio ato, gravado na hora da lavratura. Nao se deduz por
-            periodo. A serventia teve, ao longo dos anos, delegatarios,
-            substitutos, interinos e escreventes que se alternaram e se
-            misturaram no mesmo intervalo — deduzir pela data acertaria as
-            vezes e erraria as outras, sem avisar qual foi qual.
-
-        E O ACERVO?
-            Nao precisa: em 1.197 dos 1.239 atos herdados, e em 1.450 das
-            1.507 matriculas, o fecho com o nome de quem praticou ja esta
-            escrito dentro do proprio teor. Ele sai na impressao porque o teor
-            sai. Nos 3% restantes o ato sai sem fecho, que e o certo: melhor
-            faltar o nome do que atribuir o ato a quem nao o praticou.
+        A REGRA MORA FORA DAS ROTAS desde o LH13 (21/10/2026), em
+        `fecho_de_quem_praticou`: a ficha do Livro 3 passou a fechar cada ato
+        como o Livro 2 («15 a»), e uma regra escrita duas vezes diverge no
+        primeiro conserto. Este nome fica porque é o que a ficha e a certidão
+        chamam, e o que o ouro do LF06B (parte D) alcança pelo objeto de código.
         """
-        if not data_iso or not nome:
-            return ""
-        if teor and re.search(r"dou\s+f[ée]", teor[:20000], re.I):
-            return ""
-        try:
-            extenso = data_por_extenso(date.fromisoformat(data_iso))
-        except (TypeError, ValueError):
-            return ""
-        artigo = "A" if (tratamento or "O").upper().startswith("A") else "O"
-        assina = f" {artigo} {titulo} ({nome})." if titulo else f" {nome}."
-        return f"{cidade}/{uf}, {extenso}. Dou fé.{assina}"
+        return fecho_de_quem_praticou(cidade, uf, data_iso, teor, nome, titulo,
+                                      tratamento, lido=lido)
 
     def fecho_da_abertura(cidade: str, uf: str, data_iso: str | None,
                           teor: str | None, nome: str | None = None,
                           titulo: str | None = None,
                           tratamento: str | None = None,
-                          tipo_ficha: str | None = None) -> dict:
+                          tipo_ficha: str | None = None, *,
+                          lido: dict | None = None) -> dict:
         """O fecho da ABERTURA da matricula, com espaco para assinar.
+
+        A FRASE SAIU DAQUI — LF06B (19/10/2026): «… O referido e verdade e dou
+        fe.» mora na base (`RI_FECHO_DA_ABERTURA`) e se edita na tela de
+        Modelos. Quando ela entra, e a linha de assinar com o nome e a funcao,
+        continuam sendo decididos aqui — a ordem da assinatura e do oficial.
+        `lido`: ver `fecho_do_ato`.
 
         PEDIDO DO OFICIAL EM 16/09/2026: «precisa ter espaco pra quem abriu a
         matricula assinar».
@@ -1010,6 +1243,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         ele. O receio era de um papel que nao existe, e deduzi-lo da coluna —
         em vez de ler o molde — foi «dado cru nao e resposta».
         """
+        import ri_frases
         # ACERVO ANTERIOR A 4.015 SEGUE O DOCUMENTO IMPORTADO — decisao da
         # serventia em 17/09/2026. Nao se acrescenta selo, fecho, linha de
         # assinatura nem nome de quem abriu: qualquer texto gerado hoje
@@ -1079,11 +1313,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         frase = ""
         if data_iso and not ja_diz_dou_fe:
             try:
-                frase = (f"{cidade}/{uf}, "
-                         f"{data_por_extenso(date.fromisoformat(data_iso))}. "
-                         f"O referido é verdade e dou fé.")
+                extenso = data_por_extenso(date.fromisoformat(data_iso))
             except (TypeError, ValueError):
-                frase = ""
+                extenso = None
+            if extenso:
+                modelo = ((lido or {}).get("RI_FECHO_DA_ABERTURA")
+                          or ri_frases.texto("RI_FECHO_DA_ABERTURA"))
+                frase = ri_frases.montar(modelo, cidade=cidade, uf=uf,
+                                         data_extenso=extenso)
         # A LINHA TEM O TAMANHO DA DO DOCUMENTO DELE — 32 sublinhados,
         # contados no `MATRICULA_4016_FICHA_ABERTURA.docx`.
         if ja_tem_linha:
@@ -1134,7 +1371,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         linha = q1("SELECT MAX(data_pedido) d, COUNT(*) n FROM ri_cnib_ordens WHERE ativa=1")
         base = linha["d"] if linha else None
         quantas = linha["n"] if linha else 0
-        marcas = ",".join("?" * len(CNIBATZ.SITUACOES_QUE_ANDAM))
+        marcas = ",".join(["%s"] * len(CNIBATZ.SITUACOES_QUE_ANDAM))
         leitura = q1(f"""SELECT ate FROM ri_cnib_leituras
                           WHERE situacao IN ({marcas}) AND terminada_em IS NOT NULL
                           ORDER BY ate DESC, id DESC LIMIT 1""",
@@ -1183,7 +1420,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     # comeco. No SQLite o DESC ja as manda para o fim; no Postgres, que e para
     # onde este sistema pode ir um dia, o DESC as traria para a PRIMEIRA linha.
     # Com a string vazia as duas concordam, e a consulta deixa de depender de
-    # quem a executa.
+    # quem a executa. Na ordem do livro, o `NULLS FIRST` faz o mesmo pela ficha
+    # sem livro: o SQLite a punha no comeco, e o PostgreSQL a poria no fim.
     ORDENS_DA_LISTA = {
         "livro": "Ordem do livro",
         "atos": "Últimos atos praticados",
@@ -1192,13 +1430,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     }
 
     ORDEM_SQL = {
-        "livro": "m.livro_norm, CAST(m.numero AS INTEGER), m.numero",
+        "livro": ("m.livro_norm NULLS FIRST,"
+                  " coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0),"
+                  " m.numero, m.id"),
         "atos": ("COALESCE((SELECT MAX(a.data_ato) FROM ri_atos a"
                  " WHERE a.matricula_id=m.id), '') DESC,"
-                 " CAST(m.numero AS INTEGER) DESC, m.numero DESC"),
+                 " coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0) DESC,"
+                 " m.numero DESC, m.id DESC"),
         "abertura": ("COALESCE(m.data_abertura, '') DESC,"
-                     " CAST(m.numero AS INTEGER) DESC, m.numero DESC"),
-        "numero": "CAST(m.numero AS INTEGER) DESC, m.numero DESC",
+                     " coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0) DESC,"
+                     " m.numero DESC, m.id DESC"),
+        "numero": ("coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0) DESC,"
+                   " m.numero DESC, m.id DESC"),
     }
 
     @app.route("/registro-imoveis")
@@ -1210,17 +1453,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         ordem = (request.args.get("ordem") or "").strip()
         if ordem not in ORDEM_SQL:
             ordem = "livro"
-        pagina = max(1, int(request.args.get("pagina") or 1))
+        # LD13: «abc» no endereço era 500, e a página de 18 dígitos estoura o OFFSET.
+        pagina = max(1, numero_digitado(request.args.get("pagina"),
+                                        maximo=PAGINA_MAIS_ALTA) or 1)
 
         onde, params = ["1=1"], []
         if busca:
             condicao, params = _condicao_de_busca_da_matricula(busca)
             onde.append(condicao)
         if tipo in ROTULO_TIPO_FICHA:
-            onde.append("m.tipo_ficha = ?")
+            onde.append("m.tipo_ficha = %s")
             params.append(tipo)
         if livro:
-            onde.append("m.livro_norm = ?")
+            onde.append("m.livro_norm = %s")
             params.append(livro)
         filtro = " AND ".join(onde)
 
@@ -1266,14 +1511,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                        AND COALESCE(a.acervo,0)=0
                        AND NOT EXISTS (SELECT 1 FROM sd_selos s WHERE s.tabela='ri_atos'
                                         AND s.ato_id=a.id AND s.cancelado_em IS NULL)
-                       AND UPPER(COALESCE(a.teor,'')) NOT GLOB '*[A-Z][A-Z][A-Z][A-Z][A-Z][A-Z][0-9][0-9][0-9][0-9][0-9][0-9]*'
-                       AND UPPER(COALESCE(a.teor,'')) NOT LIKE '%SELO GERAL%'
+                       AND UPPER(COALESCE(a.teor,'')) !~ '[A-Z][A-Z][A-Z][A-Z][A-Z][A-Z][0-9][0-9][0-9][0-9][0-9][0-9]'
+                       AND UPPER(COALESCE(a.teor,'')) NOT ILIKE '%%SELO GERAL%%'
                      ORDER BY a.id DESC LIMIT 1) ato_sem_selo
                 FROM ri_matriculas m
                 WHERE m.id IN (
                     SELECT id FROM ri_matriculas m WHERE {filtro}
                      ORDER BY {ordenacao}
-                     LIMIT ? OFFSET ?)
+                     LIMIT %s OFFSET %s)
                 ORDER BY {ordenacao}""",
             params + [POR_PAGINA, (pagina - 1) * POR_PAGINA],
         )
@@ -1283,17 +1528,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         ids_sem_selo = [r["ato_sem_selo"] for r in rows if r["ato_sem_selo"]]
         rotulos_sem_selo: dict = {}
         if ids_sem_selo:
-            for a in q(f"SELECT id, tipo, numero FROM ri_atos WHERE id IN ({','.join('?' * len(ids_sem_selo))})",
+            for a in q(f"SELECT id, tipo, numero FROM ri_atos WHERE id IN ({','.join(['%s'] * len(ids_sem_selo))}) ORDER BY id",
                        ids_sem_selo):
                 num = a["numero"]
                 rotulos_sem_selo[a["id"]] = f"{a['tipo']}-{num:02d}" if isinstance(num, int) else f"{a['tipo']}-{num}"
-        livros = q("SELECT livro_norm, COUNT(*) c FROM ri_matriculas GROUP BY livro_norm ORDER BY livro_norm")
+        livros = q("SELECT livro_norm, COUNT(*) c FROM ri_matriculas GROUP BY livro_norm "
+                   "ORDER BY livro_norm NULLS FIRST")
         # COALESCE obrigatorio: em tabela vazia o SUM do SQLite devolve NULL,
         # nao zero, e o template quebraria ao comparar None com inteiro.
         resumo = q1("""SELECT COUNT(*) total,
-                          COALESCE(SUM(CASE WHEN tipo_ficha='ACERVO' THEN 1 ELSE 0 END),0) acervo,
-                          COALESCE(SUM(CASE WHEN tipo_ficha='ESTRUTURADA' THEN 1 ELSE 0 END),0) estruturada,
-                          COALESCE(SUM(CASE WHEN conferido=1 THEN 1 ELSE 0 END),0) conferidas
+                          COALESCE(SUM(CASE WHEN tipo_ficha='ACERVO' THEN 1 ELSE 0 END),0)::bigint acervo,
+                          COALESCE(SUM(CASE WHEN tipo_ficha='ESTRUTURADA' THEN 1 ELSE 0 END),0)::bigint estruturada,
+                          COALESCE(SUM(CASE WHEN conferido=1 THEN 1 ELSE 0 END),0)::bigint conferidas
                        FROM ri_matriculas""")
         return render_template(
             "ri_matriculas.html", rows=rows, total=total, pagina=pagina,
@@ -1321,10 +1567,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if numero < 1:
             numero = max([int(a["numero"] or 0) for a in atos] or [0]) + 1
         hoje_iso = date.today().isoformat()
-        modelos = modelos_de_encerramento(
-            m, numero, hoje_iso, quem_pratica_o_ato(),
-            cidade=(db.get_setting("ri_cidade", "") or ""),
-            uf=(db.get_setting("ri_uf", "") or "MA"))
+        # O TEXTO DOS MODELOS MORA NA BASE (LF06B): com `con`, o ajuste que a
+        # casa gravou na tela de Modelos vence o padrao.
+        with db.connect() as _c_frases:
+            modelos = modelos_de_encerramento(
+                m, numero, hoje_iso, quem_pratica_o_ato(),
+                cidade=(db.get_setting("ri_cidade", "") or ""),
+                uf=(db.get_setting("ri_uf", "") or "MA"), con=_c_frases)
         escolhido = "TECNICA" if m.get("tipo_ficha") == "ACERVO" else "LIVRE"
         mo = next(x for x in modelos if x["codigo"] == escolhido)
         return {"numero": numero, "modelos": modelos, "escolhido": escolhido,
@@ -1335,7 +1584,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/registro-imoveis/<int:matricula_id>")
     @login_required
     def ri_ficha(matricula_id):
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         m = dict(m)
@@ -1351,11 +1600,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         #   dia. Ver `tests/test_ri_regra_acervo_4015.py`.
         if matricula_de_acervo(m["numero"]):
             m["tipo_ficha"] = "ACERVO"
-        atos = q("""SELECT * FROM ri_atos WHERE matricula_id=?
+        atos = q("""SELECT * FROM ri_atos WHERE matricula_id=%s
                     ORDER BY numero, tipo""", (matricula_id,))
-        partes = q("""SELECT * FROM ri_partes WHERE matricula_id=?
-                      ORDER BY proprietario_ativo DESC, nome""", (matricula_id,))
-        imagens = q("SELECT * FROM ri_imagens WHERE matricula_id=? ORDER BY ordem", (matricula_id,))
+        partes = q("""SELECT * FROM ri_partes WHERE matricula_id=%s
+                      ORDER BY proprietario_ativo DESC, nome, id""", (matricula_id,))
+        imagens = q("SELECT * FROM ri_imagens WHERE matricula_id=%s "
+                    "ORDER BY ordem NULLS FIRST, id", (matricula_id,))
         with db.connect() as _c_cnib:
             cnib_dos_atos = CNIB.consultas_da_matricula(_c_cnib, matricula_id)
 
@@ -1374,7 +1624,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # PRIMEIRO; a ficha precisa mostrar todos os carimbos do razão.
         selo_do_ato: dict[int, list[str]] = {}
         if atos:
-            lugares = ",".join("?" * len(atos))
+            lugares = ",".join(["%s"] * len(atos))
             # HOTFIX-2026-10-07-04/selos (Beatriz 08/10/2026, mat. 4019): selo
             # CANCELADO no razão não vai ao carimbo (R-01 saía com 2 selos de
             # registro), e o 16.39 do ato não se repete como «averbação 2/2»
@@ -1406,13 +1656,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if dig:
                     brutos.append(dig)
             if brutos:
-                lugares = ",".join("?" * len(brutos))
+                lugares = ",".join(["%s"] * len(brutos))
                 for r in q(
                     f"""SELECT CAST(numero AS TEXT) numero, selo_prenotacao
                           FROM ri_protocolos
                          WHERE REPLACE(CAST(numero AS TEXT), '.', '')
                                IN ({lugares})
-                            OR CAST(numero AS TEXT) IN ({lugares})""",
+                            OR CAST(numero AS TEXT) IN ({lugares})
+                         ORDER BY id""",
                     brutos + brutos,
                 ):
                     dig = "".join(
@@ -1423,11 +1674,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 nums = list({v for v in selo_da_prenotacao.values() if v})
                 etiq: dict[str, str] = {}
                 if nums:
-                    lugares = ",".join("?" * len(nums))
+                    lugares = ",".join(["%s"] * len(nums))
                     for r in q(
                         f"""SELECT numero, texto FROM sd_selos
                              WHERE numero IN ({lugares})
-                             ORDER BY obtido_em""",
+                             ORDER BY obtido_em, id""",
                         nums,
                     ):
                         etiq.setdefault(r["numero"], r["texto"])
@@ -1458,7 +1709,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             arq_num = str(a["selo_arquivamento"] or "").strip()
             if arq_num:
                 arq_et = q1(
-                    """SELECT texto FROM sd_selos WHERE numero=?
+                    """SELECT texto FROM sd_selos WHERE numero=%s
                         ORDER BY obtido_em DESC LIMIT 1""", (arq_num,))
                 arq_txt = (str((arq_et or {})["texto"] or "").strip()
                            if arq_et else "") or arq_num
@@ -1472,8 +1723,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         def carimbo_da_abertura() -> str:
             do_razao = q1(
                 """SELECT texto FROM sd_selos
-                    WHERE tabela='ri_matriculas' AND ato_id=?
-                    ORDER BY obtido_em DESC LIMIT 1""", (matricula_id,))
+                    WHERE tabela='ri_matriculas' AND ato_id=%s
+                    ORDER BY obtido_em DESC, id DESC LIMIT 1""", (matricula_id,))
             etiqueta = (str((do_razao or {})["texto"] or "").strip()
                         if do_razao else "") or m["selo_abertura_texto"]
             if not etiqueta:
@@ -1492,7 +1743,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if atos:
             for r in q(f"""SELECT ato_id, COUNT(*) n FROM sd_selos
                             WHERE tabela='ri_atos' AND cancelado_em IS NULL
-                              AND ato_id IN ({",".join("?" * len(atos))})
+                              AND ato_id IN ({",".join(["%s"] * len(atos))})
                             GROUP BY ato_id""", [int(x["id"]) for x in atos]):
                 _n_razao[int(r["ato_id"])] = int(r["n"])
         atos = [dict(a) | {"carimbo": carimbo_da_tela(a),
@@ -1531,7 +1782,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # O ato sem teor tambem entra: sem texto nao ha o que comparar, e ele
         # ainda tem rotulo, natureza e data para mostrar. Sao 5 fichas nesta
         # casa sem texto nenhum e com ato — e nelas o painel abria vazio.
-        fora_do_teor = NUMT.atos_fora_do_teor(m["teor"], atos)
+        fora_do_teor = NUMT.atos_fora_do_teor(m["teor"], atos, matricula=m)
         # O TEXTO DO ATO SAI UMA VEZ SÓ — relato #71, 18/09/2026.
         #
         #   «mostra duas vezes as 3 averbaçoes feitas» — Carla, na tela
@@ -1575,7 +1826,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         # Indisponibilidade das partes desta matricula, na copia local da CNIB.
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             cnib = consultar_cnib(
                 con,
                 [p["documento_numero"] for p in partes if p["documento_numero"]],
@@ -1585,8 +1835,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             cnib_decisoes = CNIB.decisoes_da_matricula(con, matricula_id)
         base_data, base_n = cnib_referencia()
 
-        protocolos = q("""SELECT * FROM ri_protocolos WHERE matricula_id=?
-                          ORDER BY numero DESC""", (matricula_id,))
+        protocolos = q("""SELECT * FROM ri_protocolos WHERE matricula_id=%s
+                          ORDER BY numero DESC, id DESC""", (matricula_id,))
         # OS PROTOCOLOS ABERTOS, para o ato escolher em vez de digitar.
         #
         #   Ate 28/08/2026 o campo «Protocolo» da lavratura era texto livre, e
@@ -1613,7 +1863,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                               (SELECT COUNT(*) FROM cx_depositos d
                                 WHERE d.ri_protocolo_id=p.id) AS depositos_n
                          FROM ri_protocolos p WHERE p.situacao='ABERTO'
-                        ORDER BY p.numero DESC LIMIT 60""")
+                        ORDER BY p.numero DESC, p.id DESC LIMIT 60""")
 
         audit("RI_FICHA_CONSULTADA", "RI_MATRICULA", matricula_id,
               {"numero": m["numero"], "livro": m["livro_norm"], "cnib": len(cnib)})
@@ -1621,14 +1871,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # Ela vem AO LADO da consulta ao CNIB, que ja roda aqui: sao duas
         # listas diferentes, de fontes diferentes, e nenhuma substitui a outra.
         with db.connect() as _c:
-            _c.row_factory = sqlite3.Row
             fraudes = FR.conferir_pessoas(_c, [
                 {"nome": x.get("nome"), "documento": x.get("documento_numero"),
                  "papel_no_ato": (x.get("papel") or x.get("qualificacao")
                                   or "parte")}
                 for x in map(dict, partes)])
         with db.connect() as _c:
-            _c.row_factory = sqlite3.Row
             rascunho = RASC.da_matricula(_c, matricula_id)
             # OS DOCUMENTOS DO PROTOCOLO, PARA QUEM ESTA LAVRANDO — relato #25:
             # «o ato em que se vincula a esse determinado protocolo precisa
@@ -1663,10 +1911,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # recusaria pelo mesmo motivo («Os nomes das partes devem ser
         # informados»), que foi exatamente o caso da AV-05 da 3.110 em 15/09.
         minuta_partes = []
-        if (request.args.get("minuta") or "").isdigit():
+        if numero_digitado(request.args.get("minuta")) is not None:
             with db.connect() as _c:
-                _c.row_factory = sqlite3.Row
-                escolhida = RIMIN.uma(_c, int(request.args["minuta"]))
+                escolhida = RIMIN.uma(_c, numero_digitado(request.args["minuta"]))
                 if (escolhida
                         and escolhida["matricula_id"] == matricula_id
                         and escolhida["situacao"] == RIMIN.A_REVISAR):
@@ -1677,12 +1924,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # balcao jogar dois «protocolo» sem entender. A FK
         # cx_protocolos.ri_protocolo_id liga quando preenchida; senao, a
         # ponte da casa e o deposito previo. Nao se inventa join.
+        # O NÚMERO DO ENDEREÇO TEM TAMANHO (`numero_digitado`, LD10): o que
+        # não é número que o banco guarde vale como não escolhido.
         prenotacao_escolhida_id = request.args.get("prenotacao_id")
-        if prenotacao_escolhida_id and not str(prenotacao_escolhida_id).isdigit():
+        if prenotacao_escolhida_id and numero_digitado(prenotacao_escolhida_id) is None:
             prenotacao_escolhida_id = None
         protocolo_caixa_arg = request.args.get("protocolo_id")
+        if protocolo_caixa_arg and numero_digitado(protocolo_caixa_arg) is None:
+            protocolo_caixa_arg = None
         with db.connect() as _cx:
-            _cx.row_factory = sqlite3.Row
             protocolos_caixa = RITEOR.protocolos_do_caixa_abertos(_cx)
             # O PROTOCOLO DA CERTIDAO SE ESCOLHE DA LISTA — relato #76,
             # 17/09/2026: «ter que lembrar o numero do protocolo de
@@ -1745,14 +1995,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if prenotacao_escolhida is None:
                 prenotacao_escolhida = q1(
                     "SELECT id, numero, data_prenotacao, natureza_titulo, "
-                    "apresentante FROM ri_protocolos WHERE id=?",
+                    "apresentante FROM ri_protocolos WHERE id=%s",
                     (int(prenotacao_escolhida_id),))
 
         # AS CERTIDÕES DESTA FICHA — 16/09/2026, para reimprimir sem
         # reemitir. As vinte últimas bastam: quem procura uma de 2019 usa a
         # tela de certidões, que busca; aqui o caso é «acabei de emitir e a
         # impressora engasgou».
-        certidoes = q("""SELECT * FROM ri_certidoes WHERE matricula_id=?
+        certidoes = q("""SELECT * FROM ri_certidoes WHERE matricula_id=%s
                          ORDER BY ano DESC, numero DESC LIMIT 20""",
                       (matricula_id,))
         # QUANTAS CERTIDÕES A FICHA JÁ SOLTOU, E QUANTAS NÃO VALEM MAIS —
@@ -1775,11 +2025,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         #   passar de vinte, e a tela passa a dizer que está mostrando menos que
         #   o total (o aviso logo abaixo do título, na ficha).
         contagem = q1("""SELECT COUNT(*) emitidas,
-                                COALESCE(SUM(cancelada), 0) canceladas
-                           FROM ri_certidoes WHERE matricula_id=?""",
+                                COALESCE(SUM(cancelada), 0)::bigint canceladas
+                           FROM ri_certidoes WHERE matricula_id=%s""",
                       (matricula_id,))
         certidoes_canceladas = contagem["canceladas"] if contagem else 0
         certidoes_emitidas = contagem["emitidas"] if contagem else 0
+        # OS PROTOCOLOS QUE PODEM PAGAR A CERTIDÃO, para a escrevente escolher
+        # no formulário de emitir (22/10/2026, trava do selo pago).
+        with db.connect() as _c_selo:
+            candidatos_do_selo_da_certidao = _candidatos_da_certidao_do_ri(_c_selo)
+            atendendo_do_selo = CXPROT.em_atendimento(
+                banco(_c_selo), app.extensions["usuario_nome"]())
 
         # STUB ARQUIVADO DO LOTE OCR — 22/09/2026: a matrícula 1009 (e 1354)
         # ficou sem digitalização/atos de propósito; o scan era de outra
@@ -1797,7 +2053,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if _mo:
                 _alvo = q1(
                     "SELECT id, numero FROM ri_matriculas "
-                    "WHERE cast(numero as text)=?",
+                    "WHERE cast(numero as text)=%s",
                     (_mo.group(1),))
                 if _alvo and str(_alvo["id"]) != str(matricula_id):
                     matricula_corrigida = dict(_alvo)
@@ -1821,6 +2077,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
             certidoes=certidoes, certidoes_canceladas=certidoes_canceladas,
             certidoes_emitidas=certidoes_emitidas,
+            certidoes_aguardando_selo=_certidoes_aguardando_selo(
+                [c["id"] for c in certidoes]),
+            candidatos_do_selo_da_certidao=candidatos_do_selo_da_certidao,
+            CODIGO_BASE_DA_CERTIDAO=_codigo_base_da_certidao(),
+            atendendo_do_selo=atendendo_do_selo,
             stub_arquivado=stub_arquivado,
             matricula_corrigida=matricula_corrigida,
             TIPOS_CERTIDAO=TIPOS_CERTIDAO,
@@ -1914,14 +2175,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/registro-imoveis/<int:matricula_id>/conferir", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_conferir(matricula_id):
-        m = q1("SELECT numero, conferido FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT numero, conferido FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         novo = 0 if m["conferido"] else 1
         with db.transaction() as con:
-            con.execute(
-                """UPDATE ri_matriculas SET conferido=?, conferido_em=?, conferido_por=?
-                   WHERE id=?""",
+            banco(con).escrever(
+                """UPDATE ri_matriculas SET conferido=%s, conferido_em=%s, conferido_por=%s
+                   WHERE id=%s""",
                 (novo, db.now() if novo else None, None, matricula_id),
             )
         audit("RI_MATRICULA_CONFERIDA" if novo else "RI_CONFERENCIA_REVOGADA",
@@ -1938,10 +2199,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def ri_numeracao():
         if request.method == "POST":
             livro = (request.form.get("livro") or "").strip().upper()
-            try:
-                proximo = int(request.form.get("proximo_numero") or 0)
-            except ValueError:
-                proximo = 0
+            # LD13: 30 dígitos passavam pelo `int()` e estouravam no INSERT;
+            # o que não é número continua sendo o 0 que a régua abaixo recusa.
+            proximo = numero_digitado(request.form.get("proximo_numero")) or 0
             # O maior em uso e da SERIE, nao do volume: os livros 2, 2A ... 2S sao
             # volumes do mesmo Livro 2, e a matricula e numerada pela serventia.
             # Olhar so o volume foi o que fez nascer a 4011 depois da 4013.
@@ -1954,9 +2214,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       "danger")
             else:
                 with db.transaction() as con:
-                    con.execute(
+                    banco(con).escrever(
                         """INSERT INTO ri_numeracao(livro, proximo_numero, maior_em_uso, fixado_em, observacao)
-                           VALUES (?,?,?,?,?)
+                           VALUES (%s,%s,%s,%s,%s)
                            ON CONFLICT(livro) DO UPDATE SET proximo_numero=excluded.proximo_numero,
                              fixado_em=excluded.fixado_em, observacao=excluded.observacao""",
                         (livro, proximo, maior, db.now(),
@@ -1989,6 +2249,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         #   errada sozinho. Agora ela mostra o que vale, e o cru embaixo.
         series = {}
         with db.connect() as con:
+            bd = banco(con)
             for r in rows:
                 if r["serie"] in series:
                     series[r["serie"]]["volumes"] += 1
@@ -1998,9 +2259,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     "proximo": r["proximo_da_serie"],
                     "maior": r["maior_da_serie"],
                     "volumes": 1,
-                    "matriculas": con.execute(
-                        "SELECT COUNT(*) n FROM ri_matriculas "
-                        "WHERE livro_norm LIKE ?", (r["serie"] + "%",)).fetchone()[0],
+                    "matriculas": bd.valor(
+                        "SELECT COUNT(*) AS n FROM ri_matriculas "
+                        "WHERE livro_norm ILIKE %s", (r["serie"] + "%",)),
                 }
         return render_template("ri_numeracao.html", rows=rows, series=sorted(series.values(), key=lambda x: x['serie']))
 
@@ -2263,17 +2524,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if matricula is not None:
                 mid = int(matricula["id"])
             else:
-                mid = int(q1("SELECT matricula_id FROM ri_atos WHERE id=?", (int(ato_id),))["matricula_id"])
+                mid = int(q1("SELECT matricula_id FROM ri_atos WHERE id=%s", (int(ato_id),))["matricula_id"])
             achadas = limpar([(r["nome"], r["documento_numero"]) for r in q(
-                "SELECT nome, documento_numero FROM ri_partes WHERE matricula_id=? "
+                "SELECT nome, documento_numero FROM ri_partes WHERE matricula_id=%s "
                 "AND proprietario_ativo=1 ORDER BY id", (mid,))])
             if not achadas:
                 ult = q1("""SELECT p.ato_id FROM ri_partes p JOIN ri_atos a ON a.id=p.ato_id
-                            WHERE p.matricula_id=? AND COALESCE(a.cancelado,0)=0
+                            WHERE p.matricula_id=%s AND COALESCE(a.cancelado,0)=0
                             ORDER BY a.numero DESC, p.ato_id DESC LIMIT 1""", (mid,))
                 if ult:
                     achadas = limpar([(r["nome"], r["documento_numero"]) for r in q(
-                        "SELECT nome, documento_numero FROM ri_partes WHERE ato_id=? "
+                        "SELECT nome, documento_numero FROM ri_partes WHERE ato_id=%s "
                         "ORDER BY id", (ult["ato_id"],))])
         except Exception:
             achadas = []
@@ -2434,10 +2695,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """
         ja = set()
         with db.connect() as con:
-            con.row_factory = __import__('sqlite3').Row
-            for r in con.execute(
+            for r in banco(con).ler(
                 "SELECT referencia FROM sd_selos "
-                "WHERE tabela='ri_atos' AND ato_id=? AND cancelado_em IS NULL",
+                "WHERE tabela='ri_atos' AND ato_id=%s AND cancelado_em IS NULL "
+                "ORDER BY id",
                 (int(ato_id),)):
                 ref = str(r["referencia"] or "").strip()
                 if ref:
@@ -2611,10 +2872,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # selo_texto via vincular_ao_ato.
         if selo_do_ato is None:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
-                row = con.execute(
-                    "SELECT selo_texto FROM ri_atos WHERE id=?",
-                    (int(ato_id),)).fetchone()
+                row = banco(con).um(
+                    "SELECT selo_texto FROM ri_atos WHERE id=%s",
+                    (int(ato_id),))
                 selo_do_ato = (row["selo_texto"] if row else None)
 
         r = AS.selar_o_ato_lavrado(
@@ -2630,22 +2890,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # (quando nao selado, vincular nao roda — mas por precaução).
             if selo_do_ato:
                 with db.transaction() as con:
-                    con.execute(
-                        "UPDATE ri_atos SET selo_texto=? WHERE id=?",
+                    banco(con).escrever(
+                        "UPDATE ri_atos SET selo_texto=%s WHERE id=%s",
                         (selo_do_ato, int(ato_id)))
             return {"ok": False, "motivo": r["motivo"]}
 
         with db.transaction() as con:
-            con.execute(
+            bd = banco(con)
+            bd.escrever(
                 """UPDATE ri_atos
-                      SET selo_texto=COALESCE(?, selo_texto),
-                          selo_arquivamento=?,
-                          folhas_arquivamento=?
-                    WHERE id=?""",
+                      SET selo_texto=COALESCE(%s, selo_texto),
+                          selo_arquivamento=%s,
+                          folhas_arquivamento=%s
+                    WHERE id=%s""",
                 (selo_do_ato or None, r["numero"], q, int(ato_id)))
             # Arquivamento 16.39 ok -> encerra a prenotação do ato (Beatriz
             # 23/09/2026). Falha aqui NÃO desfaz o selo: só registra o recado.
-            enc = encerrar_prenotacao_do_ato_apos_arquivamento(con, int(ato_id))
+            enc = encerrar_prenotacao_do_ato_apos_arquivamento(bd, int(ato_id))
         if enc and enc.get("encerrou"):
             try:
                 audit(
@@ -2665,6 +2926,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/registro-imoveis/protocolo", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def ri_protocolo():
         if request.method == "POST":
             if request.form.get("acao") == "encerrar":
@@ -2684,7 +2946,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("Encerrar prenotação é do oficial ou do gerente — "
                           "não do balcão.", "danger")
                     return redirect(url_for("ri_protocolo"))
-                pid = int(request.form.get("protocolo_id") or 0)
+                # LD13: «abc» era 500; 30 dígitos davam «marcado como
+                # encerrado» sem nada encerrado. O vazio segue o 0 de antes.
+                pid = numero_digitado(request.form.get("protocolo_id") or 0)
+                if pid is None:
+                    flash("Não achei a prenotação a encerrar: o número que veio da "
+                          "tela não é de prenotação nenhuma. Nada foi encerrado.",
+                          "danger")
+                    return redirect(url_for("ri_protocolo"))
                 motivo = (request.form.get("motivo") or "").strip()
                 if len(motivo) < 5:
                     flash("Informe o motivo do encerramento (mínimo 5 caracteres). "
@@ -2698,10 +2967,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           f"Use: {', '.join(sorted(permitidas))}.", "danger")
                     return redirect(url_for("ri_protocolo"))
                 with db.transaction() as con:
-                    con.execute(
-                        """UPDATE ri_protocolos SET situacao=?,
-                               anotacao=COALESCE(anotacao,'') || ?
-                         WHERE id=?""",
+                    banco(con).escrever(
+                        """UPDATE ri_protocolos SET situacao=%s,
+                               anotacao=COALESCE(anotacao,'') || %s
+                         WHERE id=%s""",
                         (situacao,
                          f"\n[Encerrado] {motivo}",
                          pid))
@@ -2744,17 +3013,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # ligação do outro título sem ninguém ver.
             cx_escolhido = (request.form.get("cx_protocolo_id") or "").strip()
             if cx_escolhido:
-                g = q1("SELECT id, numero, atribuicao, ri_protocolo_id FROM cx_protocolos WHERE id=?",
-                       (int(cx_escolhido) if cx_escolhido.isdigit() else -1,))
+                # LD13: o «²» e os 5.000 dígitos passavam pelo `isdigit()` e
+                # caíam no `int()`; agora são o «não existe» do texto.
+                g = q1("SELECT id, numero, atribuicao, ri_protocolo_id FROM cx_protocolos WHERE id=%s",
+                       (numero_digitado(cx_escolhido),))
                 if not g or (g["atribuicao"] or "").upper() != "RI" or g["ri_protocolo_id"]:
                     flash("O protocolo geral indicado não existe, não é do Registro de "
                           "Imóveis ou já tem prenotação. Nada foi prenotado.", "danger")
                     return redirect(url_for("ri_protocolo"))
             with db.transaction() as con:
-                con.row_factory = sqlite3.Row
-                ultimo = con.execute("SELECT MAX(numero) n FROM ri_protocolos WHERE livro=?",
-                                     (livro,)).fetchone()
-                numero = int((ultimo["n"] or 0)) + 1
+                bd = banco(con)
+                bd.travar("ri_protocolos.numero")
+                ultimo = bd.valor("SELECT MAX(numero) AS n FROM ri_protocolos WHERE livro=%s",
+                                  (livro,))
+                numero = int((ultimo or 0)) + 1
                 # F10: a data da prenotação é a do momento (Lei 6.015 arts. 182/186/205).
                 # Retroativa/futura digitável quebrava a prioridade.
                 data = db.now()[:10]
@@ -2776,10 +3048,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 mat = (request.form.get("matricula_numero") or "").strip()
                 mid = None
                 if mat:
-                    achou = con.execute("SELECT id FROM ri_matriculas WHERE numero=? LIMIT 1",
-                                        (mat,)).fetchone()
+                    achou = bd.um("SELECT id FROM ri_matriculas WHERE numero=%s ORDER BY id LIMIT 1",
+                                  (mat,))
                     mid = achou["id"] if achou else None
-                cur = con.execute(
+                novo = bd.escrever(
                     """INSERT INTO ri_protocolos
                        (numero, livro, livro_destino, data_prenotacao, hora,
                         apresentante, apresentante_documento,
@@ -2787,7 +3059,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         telefone, email, documento_descricao,
                         reurb, reurb_tipo,
                         situacao, anotacao, origem, criado_em, criado_por)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'ABERTO', ?, 'MANUAL', ?, ?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s, 'MANUAL', %s, %s)
+                       RETURNING id""",
                     (numero, livro, destino, data, datetime.now().strftime("%H:%M:%S"),
                      (request.form.get("apresentante") or "").strip() or None,
                      so_digitos(request.form.get("apresentante_documento")) or None,
@@ -2803,8 +3076,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      tipo_reurb or None,
                      (request.form.get("anotacao") or "").strip() or None,
                      db.now(), app.extensions["usuario_id"]()),  # quem prenotou (robô incluso); criado_por e FK para users(id): o NOME aqui dava 500 em toda prenotacao (06/10/2026)
-                )
-                novo = int(cur.lastrowid)
+                )[0]["id"]
+                novo = int(novo)
                 # TODA PRENOTAÇÃO TEM PROTOCOLO GERAL — decisão do oficial,
                 # 12/10/2026 («criar automático»). Medido antes: das 31
                 # prenotações abertas, 1 tinha protocolo geral; dos 22 gerais
@@ -2812,9 +3085,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # botão «Prenotar este título» da ficha dele), liga-se àquele;
                 # sem ele, abre-se um aqui, na MESMA transação — prenotação sem
                 # o geral é o que deixava o dinheiro e o título sem se achar.
-                cx_id = (request.form.get("cx_protocolo_id") or "").strip()
-                if cx_id.isdigit():
-                    geral = CXPROT.vincular_ri(con, int(cx_id), novo)
+                cx_id = numero_digitado(request.form.get("cx_protocolo_id"))
+                if cx_id is not None:
+                    geral = CXPROT.vincular_ri(con, cx_id, novo)
                     geral_numero = geral["protocolo_numero"]
                 else:
                     geral = CXPROT.abrir(
@@ -2834,6 +3107,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # O SELO SAI AGORA, FORA DA TRANSACAO — «o selo deve ser emitido
             # quando praticado o ato». A prenotacao E ato: tem livro, numero,
             # custas e selo proprio, e 829 dela estao no acervo.
+            #
+            # O PROTOCOLO QUE PAGA O SELO DELA (22/10/2026, trava do selo
+            # pago): o marcado na tela, ou — vindo do «Prenotar este título» —
+            # o protocolo geral que a escrevente escolheu para este título no
+            # mesmo formulário. Recusa não desfaz a prenotação: a prioridade
+            # se conta da hora em que o título entrou.
+            _cx = numero_digitado(request.form.get("cx_protocolo_id"))
+            recusa = _atender_o_protocolo_escolhido({"protocolo_selo": (
+                request.form.get("protocolo_selo")
+                or (str(_cx) if _cx is not None else ""))})
+            if recusa:
+                flash(recusa, "warning")
             selado = _selar_a_prenotacao(novo, numero, request.form)
             audit("RI_PRENOTACAO", "RI_PROTOCOLO", novo,
                   {"numero": numero, "livro": livro, "livro_destino": destino,
@@ -2850,11 +3135,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         busca = (request.args.get("busca") or "").strip()
         onde, params = ["1=1"], []
         if situacao:
-            onde.append("p.situacao = ?")
+            onde.append("p.situacao = %s")
             params.append(situacao)
         if busca:
-            onde.append("(CAST(p.numero AS TEXT) LIKE ? OR p.objeto LIKE ? "
-                        "OR p.apresentante LIKE ? OR p.matricula_numero LIKE ?)")
+            onde.append("(CAST(p.numero AS TEXT) ILIKE %s OR p.objeto ILIKE %s "
+                        "OR p.apresentante ILIKE %s OR p.matricula_numero ILIKE %s)")
             params += [f"%{busca}%"] * 4
         filtro = " AND ".join(onde)
 
@@ -2862,10 +3147,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      LEFT JOIN ri_matriculas m ON m.id = p.matricula_id
                      WHERE {filtro} ORDER BY p.livro, p.numero DESC LIMIT 300""", params)
         resumo = q1("""SELECT COUNT(*) total,
-                    COALESCE(SUM(CASE WHEN situacao='ABERTO' THEN 1 ELSE 0 END),0) abertos,
-                    COALESCE(SUM(CASE WHEN situacao='ABERTO' AND data_limite < date('now') AND prazo_suspenso_desde IS NULL THEN 1 ELSE 0 END),0) vencidos,
-                    COALESCE(SUM(CASE WHEN apresentante IS NULL THEN 1 ELSE 0 END),0) sem_apresentante
-                    FROM ri_protocolos""")
+                    COALESCE(SUM(CASE WHEN situacao='ABERTO' THEN 1 ELSE 0 END),0)::bigint abertos,
+                    COALESCE(SUM(CASE WHEN situacao='ABERTO' AND data_limite < %s AND prazo_suspenso_desde IS NULL THEN 1 ELSE 0 END),0)::bigint vencidos,
+                    COALESCE(SUM(CASE WHEN apresentante IS NULL THEN 1 ELSE 0 END),0)::bigint sem_apresentante
+                    FROM ri_protocolos""", (date.today().isoformat(),))
         feriados = ler_feriados_locais(db.get_setting("ri_feriados_locais", ""))
         hoje = date.today()
         restam = {}
@@ -2880,10 +3165,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # preenchido com quem já se identificou no balcão — e leva o número do
         # geral escondido, para a prenotação se ligar a ele e não abrir outro.
         de_cx = None
-        cx_arg = (request.args.get("cx") or "").strip()
-        if cx_arg.isdigit():
-            de_cx = q1("""SELECT * FROM cx_protocolos WHERE id=? AND atribuicao='RI'
-                          AND ri_protocolo_id IS NULL""", (int(cx_arg),))
+        cx_arg = numero_digitado(request.args.get("cx"))
+        if cx_arg is not None:
+            de_cx = q1("""SELECT * FROM cx_protocolos WHERE id=%s AND atribuicao='RI'
+                          AND ri_protocolo_id IS NULL""", (cx_arg,))
         return render_template("ri_protocolo.html", rows=rows, resumo=resumo,
                                de_cx=dict(de_cx) if de_cx else None,
                                situacao=situacao, busca=busca, hoje=hoje.isoformat(),
@@ -2909,7 +3194,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     #     correição pergunta.
 
     def _protocolo_ou_404(protocolo_id: int):
-        p = q1("SELECT * FROM ri_protocolos WHERE id=?", (protocolo_id,))
+        p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
         return p
@@ -2929,6 +3214,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/registro-imoveis/protocolo/<int:protocolo_id>",
                methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    # O AUDITOR ve a tela; o que ela GRAVA (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
     def ri_protocolo_ver(protocolo_id):
         p = _protocolo_ou_404(protocolo_id)
 
@@ -2950,11 +3237,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     return redirect(url_for("ri_protocolo_ver",
                                             protocolo_id=protocolo_id))
                 with db.transaction() as con:
-                    con.execute(
+                    banco(con).escrever(
                         """UPDATE ri_protocolos
-                           SET situacao='ABERTO', situacao_anterior=?,
-                               reaberto_em=?, reaberto_por=?, motivo_reabertura=?
-                           WHERE id=?""",
+                           SET situacao='ABERTO', situacao_anterior=%s,
+                               reaberto_em=%s, reaberto_por=%s, motivo_reabertura=%s
+                           WHERE id=%s""",
                         (p["situacao"], db.now(),
                          app.extensions["usuario_nome"](), motivo, protocolo_id))
                 audit("RI_PROTOCOLO_REABERTO", "RI_PROTOCOLO", protocolo_id,
@@ -2985,7 +3272,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     antigo = p[campo] if campo in p.keys() else None
                     if (antigo or None) == novo:
                         continue
-                    sets.append(f"{campo}=?")
+                    sets.append(f"{campo}=%s")
                     valores.append(novo)
                     mudou[rotulo] = {"antes": antigo, "depois": novo}
                 if not mudou:
@@ -2993,20 +3280,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     return redirect(url_for("ri_protocolo_ver",
                                             protocolo_id=protocolo_id))
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     # Mudou o número da matrícula: reamarra o vínculo interno.
                     # Sem isto o protocolo mostraria uma matrícula no texto e
                     # continuaria ligado a outra por dentro — que é pior do que
                     # não estar ligado a nenhuma, porque parece certo.
+                    bd = banco(con)
                     novo_mat = (request.form.get("matricula_numero") or "").strip()
-                    if "matricula_numero=?" in sets:
-                        achou = con.execute(
-                            "SELECT id FROM ri_matriculas WHERE numero=? LIMIT 1",
-                            (novo_mat,)).fetchone() if novo_mat else None
-                        sets.append("matricula_id=?")
+                    if "matricula_numero=%s" in sets:
+                        achou = bd.um(
+                            "SELECT id FROM ri_matriculas WHERE numero=%s ORDER BY id LIMIT 1",
+                            (novo_mat,)) if novo_mat else None
+                        sets.append("matricula_id=%s")
                         valores.append(achou["id"] if achou else None)
-                    con.execute(
-                        f"UPDATE ri_protocolos SET {', '.join(sets)} WHERE id=?",
+                    bd.escrever(
+                        f"UPDATE ri_protocolos SET {', '.join(sets)} WHERE id=%s",
                         valores + [protocolo_id])
                 # A AUDITORIA GUARDA O ANTES E O DEPOIS, e não só "editado".
                 #   "Protocolo 11548 editado" não responde a pergunta que a
@@ -3025,11 +3312,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 depositante = ((request.form.get("depositante") or "").strip()
                                or (p["apresentante"] or "").strip())
                 operador = app.extensions["usuario_nome"]()
-                aberto = q1("""SELECT * FROM cx_caixas WHERE operador_nome=?
+                aberto = q1("""SELECT * FROM cx_caixas WHERE operador_nome=%s
                                AND situacao='ABERTO' ORDER BY data DESC LIMIT 1""",
                             (operador,))
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     try:
                         feito = DEP.criar(
                             con, valor_centavos=valor, depositante=depositante,
@@ -3062,7 +3348,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # ----------------------------------- caixa / orçamento (#89)
             if acao == "abrir_caixa":
                 with db.connect() as con:
-                    con.row_factory = sqlite3.Row
                     ligado = RITEOR.caixa_ligado_a_prenotacao(con, protocolo_id)
                 if ligado:
                     return redirect(url_for("caixa_protocolo",
@@ -3103,7 +3388,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         # ------------------------------------------------------------- GET
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             depositos = DEP.do_titulo(con, protocolo_id)
         saldo = DEP.saldo_do_titulo(depositos)
         feriados = ler_feriados_locais(db.get_setting("ri_feriados_locais", ""))
@@ -3116,7 +3400,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                           feriados)
             except ValueError:
                 restam = None
-        notas = q("""SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=?
+        notas = q("""SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=%s
                      ORDER BY id DESC""", (protocolo_id,))
         with db.connect() as _q:
             qualificacoes = PED.qualificacoes_de(_q, protocolo_id)
@@ -3127,7 +3411,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # como se perde a que vale.
         historico = q("""SELECT ts, username_snapshot AS quem, action, details
                          FROM audit_logs
-                         WHERE entity_type='RI_PROTOCOLO' AND entity_id=?
+                         WHERE entity_type='RI_PROTOCOLO' AND entity_id=%s
                          ORDER BY id DESC LIMIT 30""", (protocolo_id,))
         with db.connect() as _c:
             documentos = RDOC.documentos_de(_c, RDOC.ENTIDADE_RI, protocolo_id)
@@ -3136,16 +3420,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         caixa_soma = None
         caixa_protocolo_id = None
         with db.connect() as _cx:
-            _cx.row_factory = sqlite3.Row
             res_caixa = RITEOR.resolver_protocolo_caixa(
                 _cx, ri_protocolo_id=protocolo_id)
             caixa_ligado = res_caixa.get("caixa")
             caixa_protocolo_id = res_caixa.get("protocolo_caixa_id")
             if caixa_protocolo_id:
                 caixa_atos = [
-                    dict(r) for r in _cx.execute(
+                    dict(r) for r in banco(_cx).ler(
                         """SELECT * FROM cx_protocolo_atos
-                           WHERE protocolo_id=? ORDER BY id""",
+                           WHERE protocolo_id=%s ORDER BY id""",
                         (int(caixa_protocolo_id),))]
                 if caixa_atos:
                     caixa_soma = EMOL.somar_itens(caixa_atos)
@@ -3269,7 +3552,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         título a conserva. Sai do cartório, então CPF, telefone e e-mail vão
         mascarados (Lei 13.709/2018, art. 6º, III).
         """
-        p = q1("SELECT * FROM ri_protocolos WHERE id=?", (protocolo_id,))
+        p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
         from jinja2.sandbox import SandboxedEnvironment
@@ -3279,18 +3562,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # nome da substituta e a funcao "Escrevente" para todo mundo.
         usuario = app.extensions["usuario_nome"]()
         funcao = app.extensions["usuario_funcao"]()
+        import ri_frases
         with db.connect() as _c:
             _modelo = MODELOS.corpo_de(_c, "RI_PRENOTACAO")
+            _modelo_suspenso = ri_frases.texto("RI_PRENOTACAO_PRAZO_SUSPENSO", _c)
         limite = fmt_date(p["data_limite"]) if p["data_limite"] else ""
         suspenso = PRAZO.suspensa(p)
         if suspenso:
             # O modelo e editavel pela casa e so conhece `limite`/`faltam`: a
             # suspensao vai no proprio texto do limite, e `faltam` some para
             # o papel nao dizer «prazo vencido» de prenotacao viva.
-            limite = (f"{limite} — prazo suspenso desde "
-                      f"{fmt_date(p['prazo_suspenso_desde'])} "
-                      f"({PRAZO.MOTIVOS.get(p['prazo_suspenso_motivo'], p['prazo_suspenso_motivo'])}); "
-                      f"o limite avança pelos dias úteis parados").strip(" —")
+            #
+            # A FRASE MORA NA BASE — LF06B (`RI_PRENOTACAO_PRAZO_SUSPENSO`);
+            # quando ela entra e o nome do motivo continuam sendo daqui.
+            limite = ri_frases.montar(
+                _modelo_suspenso, limite=limite,
+                desde=fmt_date(p['prazo_suspenso_desde']),
+                motivo=PRAZO.MOTIVOS.get(p['prazo_suspenso_motivo'],
+                                         p['prazo_suspenso_motivo'])).strip(" —")
         html = env.from_string(_modelo).render(
             p=dict(p), sv=dados_serventia(db.get_settings),
             documento=mascarar_documento(p["apresentante_documento"]),
@@ -3362,7 +3651,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         achados = []
         if busca:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 achados = consultar_cnib(con, [busca], [busca])
             audit("RI_CNIB_CONSULTADA", "RI_CNIB", None,
                   {"busca": busca, "achados": len(achados)})
@@ -3376,7 +3664,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         decisao = request.form.get("decisao") or ""
         try:
             with db.transaction() as con:
-                con.row_factory = sqlite3.Row
                 decisao_id = CNIB.resolver_ocorrencia(
                     con, matricula_id=matricula_id,
                     protocolo=request.form.get("protocolo_cnib"),
@@ -3409,12 +3696,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         fosse trocada.
         """
         if request.method == "POST":
+            # LD13: «abc» era 500, e 30 dígitos estouravam no INSERT da decisão.
+            matricula_da_ordem = numero_digitado(request.form.get("matricula_id") or 0)
+            if matricula_da_ordem is None:
+                flash("A matrícula desta ordem não veio certa da tela. Abra a "
+                      "lista de novo e decida por ela.", "danger")
+                return redirect(url_for("ri_cnib_pendentes"))
             try:
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     decisao_id = CNIB.decidir(
                         con,
-                        matricula_id=int(request.form.get("matricula_id") or 0),
+                        matricula_id=matricula_da_ordem,
                         ordem={
                             "protocolo_cnib": request.form.get("protocolo_cnib"),
                             "nome": request.form.get("pessoa_nome"),
@@ -3443,7 +3735,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("ri_cnib_pendentes"))
 
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             pendentes = CNIB.pendentes(con)
         base_data, base_n = cnib_referencia()
         return render_template("ri_cnib_pendentes.html", pendentes=pendentes,
@@ -3523,12 +3814,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         a partir de texto lido por programa.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             lista = NUMT.matriculas_em_risco(con)
+            bd = banco(con)
             for x in lista:
-                linha = con.execute(
-                    "SELECT tipo_ficha FROM ri_matriculas WHERE id=?",
-                    (x["matricula_id"],)).fetchone()
+                linha = bd.um(
+                    "SELECT tipo_ficha FROM ri_matriculas WHERE id=%s",
+                    (x["matricula_id"],))
                 x["tipo_ficha"] = linha["tipo_ficha"] if linha else None
         # AS ESTRUTURADAS PRIMEIRO, e não as de maior distância: são as únicas
         # em que o sistema numera SOZINHO, e por isso as únicas em que o erro
@@ -3552,7 +3843,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         a averbação, ver como a matrícula vai ler com ela dentro, e só então
         lavrar.
         """
-        if not q1("SELECT id FROM ri_matriculas WHERE id=?", (matricula_id,)):
+        if not q1("SELECT id FROM ri_matriculas WHERE id=%s", (matricula_id,)):
             abort(404)
         acao = request.form.get("acao")
         try:
@@ -3596,7 +3887,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         contador desta casa.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             try:
                 visao = RASC.como_ficara(con, matricula_id)
             except RASC.RascunhoError:
@@ -3612,7 +3902,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         por acaso.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             lista = RASC.abertos(con)
         return render_template("ri_rascunhos.html", rascunhos=lista)
 
@@ -3776,6 +4065,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             artigo = "A" if titulo.split()[-1].lower().endswith("a") else "O"
         return nome, titulo, artigo
 
+    # O LIVRO 3 PERGUNTA A MESMA COISA — LH13, 21/10/2026 («15 a»: «como no
+    # Livro 2»). As rotas dele moram em `atribuicoes_web`, registradas depois
+    # destas, e pegam daqui o MESMO objeto — como `usuario_nome` no `app` —,
+    # e não uma segunda cópia da regra do artigo.
+    app.extensions["quem_pratica_o_ato"] = quem_pratica_o_ato
+
     def _marcar_a_ficha_encerrada(con, matricula_id: int, *, motivo: str,
                                   destino: str, data_ato: str) -> None:
         """Escreve as marcas do encerramento na ficha. ESCREVE.
@@ -3792,22 +4087,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         `data_encerramento`, e nada de `destino_encerramento`. É a forma que
         `ri_encerrar_matricula` já usava.
         """
-        con.execute(
+        bd = banco(con)
+        bd.escrever(
             """UPDATE ri_matriculas SET encerrada=1, situacao='ENCERRADA',
-                   motivo_encerramento=?, data_encerramento=?,
+                   motivo_encerramento=%s, data_encerramento=%s,
                    reaberta_em=NULL, reaberta_por=NULL, motivo_reabertura=NULL,
-                   atualizado_em=? WHERE id=?""",
+                   atualizado_em=%s WHERE id=%s""",
             (motivo + (f" Destino: {destino}." if destino else ""),
              data_ato, db.now(), int(matricula_id)))
         # Titularidade deixa de ser atual numa matricula encerrada.
-        con.execute(
-            "UPDATE ri_partes SET proprietario_ativo=0 WHERE matricula_id=?",
+        bd.escrever(
+            "UPDATE ri_partes SET proprietario_ativo=0 WHERE matricula_id=%s",
             (int(matricula_id),))
 
     @app.route("/registro-imoveis/<int:matricula_id>/atos", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_lavrar_ato(matricula_id):
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         if m["encerrada"]:
@@ -3824,10 +4120,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         e_acervo = (m["tipo_ficha"] == "ACERVO"
                     or matricula_de_acervo(m["numero"]))
         if e_acervo:
-            try:
-                numero = int(request.form.get("numero") or 0)
-            except ValueError:
-                numero = 0
+            # LD13: 30 dígitos passavam pelo `int()` e estouravam no INSERT do
+            # ato; o que não é número continua sendo o 0 recusado aqui.
+            numero = numero_digitado(request.form.get("numero")) or 0
             if numero <= 0:
                 flash("Nesta ficha de acervo o número do ato precisa ser informado, "
                       "conforme o livro físico.", "danger")
@@ -3856,7 +4151,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # texto seria fabricar ato com data e conteudo adivinhados, e ainda
             # po-lo na corrente de hash — ver `ri_numeros_do_teor`.
             with db.connect() as _c:
-                _c.row_factory = sqlite3.Row
                 piso = NUMT.piso_do_proximo(_c, matricula_id)
             numero = piso["proximo"]
 
@@ -3864,7 +4158,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # que os 756 casos passavam: o numero estava livre em `ri_atos` e
         # ocupado no papel.
         with db.connect() as _c:
-            _c.row_factory = sqlite3.Row
             no_papel = NUMT.ja_usado_na_ficha(_c, matricula_id, numero)
         if no_papel:
             flash(
@@ -3874,7 +4167,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 f"conforme o livro físico.", "danger")
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
-        existe = q1("SELECT tipo, numero FROM ri_atos WHERE matricula_id=? AND numero=?",
+        existe = q1("SELECT tipo, numero FROM ri_atos WHERE matricula_id=%s AND numero=%s",
                     (matricula_id, numero))
         if existe:
             flash(f"O número {numero} já está ocupado nesta matrícula pelo ato "
@@ -3898,6 +4191,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"pelo texto do ato (o rótulo, a frase do protocolo) e lavre "
                   f"de novo. Nada foi lavrado.", "danger")
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+
+        # O [CAMPO] DO MODELO QUE NINGUÉM PREENCHEU TAMBÉM NÃO ENTRA — LD03,
+        # 21/10/2026 («corrija tudo»; o LT03 achou). A guarda de cima recusa o
+        # `{{ }}`, que é do motor, e deixava passar o colchete de propósito: o
+        # acervo transcrito tem colchete legítimo («[rubrica]»). Mas o colchete
+        # do MODELO informado em `modelo_codigo` é outra coisa — «[DATA DA
+        # ESCRITURA]» no livro é o R-1 sem a data do título (LRP art. 176,
+        # § 1º, III, 4), e o teor congela na corrente de hash. A régua é a do
+        # próprio modelo (`ri_modelos_atos.por_preencher`). Antes de número e
+        # selo; e quem veio de uma minuta volta para ela, com o texto dentro.
+        faltam_no_modelo = por_preencher_do_modelo(
+            teor, request.form.get("modelo_codigo"))
+        if faltam_no_modelo:
+            flash(f"O texto ainda traz {len(faltam_no_modelo)} campo(s) do "
+                  f"modelo por preencher — {'; '.join(faltam_no_modelo[:6])}"
+                  f"{' …' if len(faltam_no_modelo) > 6 else ''}. No livro "
+                  f"sairiam assim, entre colchetes. Preencha e lavre de novo. "
+                  f"Nada foi lavrado.", "danger")
+            minuta_da_recusa = (request.form.get("minuta_id") or "").strip()
+            return redirect(url_for(
+                "ri_ficha", matricula_id=matricula_id,
+                **({"minuta": minuta_da_recusa, "lavrar": 1}
+                   if minuta_da_recusa.isdigit() else {})))
 
         # MODELO DE ENCERRAMENTO NÃO PREENCHIDO — HOTFIX-2026-10-08-08. O
         # «PREENCHER…» é do modelo que o botão «Encerrar matrícula» põe no
@@ -3991,12 +4307,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         codigos_escolhidos = []
         if tem_multi_selo:
             codigos_escolhidos = list(_codigos_de_selo_do_form(request.form))
-        ids_protocolo_item = [x for x in request.form.getlist("protocolo_item_id")
-                             if str(x).strip().isdigit()]
-        protocolo_caixa_id = (request.form.get("protocolo_id") or "").strip()
+        # LD13: o «²» e os 5.000 dígitos passavam pelo `isdigit()` e caíam no
+        # `int()` de baixo; o que não é número fica de fora, como antes.
+        ids_protocolo_item = [n for n in map(numero_digitado,
+                                             request.form.getlist("protocolo_item_id"))
+                              if n is not None]
+        protocolo_caixa_id = numero_digitado(request.form.get("protocolo_id"))
         with db.connect() as _cx:
-            _cx.row_factory = sqlite3.Row
-            if (not tem_multi_selo) and ids_protocolo_item and protocolo_caixa_id.isdigit():
+            if ((not tem_multi_selo) and ids_protocolo_item
+                    and protocolo_caixa_id is not None):
                 # O ITEM SE GASTA POR UNIDADE, E ESTA ERA A TERCEIRA COPIA DA
                 # CONDICAO ERRADA — relato do oficial em 15/09/2026, a segunda
                 # vez no mesmo dia: «preenchi tudo, escolhi o ato sem valor
@@ -4015,9 +4334,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 #   justamente a da rota que lavra. `itens_disponiveis` e a
                 #   unica leitura da regra; repeti-la aqui e como as duas
                 #   divergem — foi assim que esta ficou para tras.
-                escolhidos = {int(x) for x in ids_protocolo_item}
-                for item in CXPROT.itens_disponiveis(_cx,
-                                                     int(protocolo_caixa_id)):
+                escolhidos = set(ids_protocolo_item)
+                for item in CXPROT.itens_disponiveis(_cx, protocolo_caixa_id):
                     if int(item["id"]) not in escolhidos:
                         continue
                     c = str(item["codigo_ato"] or "").strip()
@@ -4144,10 +4462,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         #   regra que numera e sela, e elas divergiriam no primeiro conserto.
         #   Aqui a minuta e so a procedencia do teor que o operador revisou.
         minuta = None
-        if (request.form.get("minuta_id") or "").isdigit():
+        if numero_digitado(request.form.get("minuta_id")) is not None:
             with db.connect() as _c:
-                _c.row_factory = sqlite3.Row
-                escolhida = RIMIN.uma(_c, int(request.form["minuta_id"]))
+                escolhida = RIMIN.uma(_c, numero_digitado(request.form["minuta_id"]))
             if not escolhida or escolhida["matricula_id"] != matricula_id \
                     or escolhida["situacao"] != RIMIN.A_REVISAR:
                 flash("A minuta indicada não é desta matrícula ou já saiu da "
@@ -4185,16 +4502,54 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       "lugar do balcão, e que a correição lê.", "danger")
                 return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
-        anterior = q1("""SELECT hash_ato FROM ri_atos WHERE matricula_id=?
-                         ORDER BY id DESC LIMIT 1""", (matricula_id,))
-        hash_anterior = anterior["hash_ato"] if anterior else None
-        h = hash_ato(m["numero"], tipo, numero, data_ato, teor, hash_anterior)
-
         # QUEM ASSINA ESTE ATO — relato #65: quem está logado, e não se escolhe.
         pratica_nome, pratica_titulo, pratica_artigo = quem_pratica_o_ato()
 
         with db.transaction() as con:
-            cur = con.execute(
+            bd = banco(con)
+            # O NÚMERO E O HASH ANTERIOR SE LEEM DE NOVO, DENTRO DA TRAVA — a
+            # mesma chave do cancelamento e do encerramento. O piso, a recusa
+            # do número ocupado e o elo da corrente foram lidos lá em cima,
+            # fora da transação: um ato lavrado nesse meio-tempo na mesma ficha
+            # daria dois atos com o mesmo número (R-05 e AV-05 cabem no índice
+            # único, que é por tipo) e a corrente de hash bifurcada.
+            bd.travar("ri_atos.numero")
+            # A MINUTA SE CONFERE DE NOVO, PRESA — LD10, 21/10/2026, achado ao
+            # prender a minuta da tela do modelo. A conferência lá de cima
+            # («ainda a revisar») foi lida fora da transação: a mesma minuta
+            # aberta em duas abas passava as duas por ela e virava DOIS atos do
+            # mesmo texto, com dois selos — medido pelas telas, AV-01 e AV-02 —,
+            # e a minuta ficava apontando só para o segundo. Presa aqui, dentro
+            # da trava da numeração, a segunda aba acha a minuta já lavrada e
+            # para; quem também a prende antes de gravar — a «Guardar
+            # revisão» e o descarte (`ri_minuta._presa`) e a tela do modelo —
+            # espera o ato sair e lê «lavrada».
+            if minuta:
+                bd._escrita()
+                presa = bd.um("SELECT situacao FROM ri_minutas WHERE id=%s FOR UPDATE",
+                              (int(minuta["id"]),))
+                if not presa or presa["situacao"] != RIMIN.A_REVISAR:
+                    flash("A minuta indicada já saiu da fila de revisão enquanto "
+                          "este ato era lavrado (outra aba a lavrou ou a "
+                          "descartou). O ato não foi lavrado — confira a ficha.",
+                          "danger")
+                    abort(redirect(url_for("ri_ficha", matricula_id=matricula_id)))
+            if not e_acervo:
+                numero = NUMT.piso_do_proximo(bd, matricula_id)["proximo"]
+            existe = bd.um("""SELECT tipo, numero FROM ri_atos
+                              WHERE matricula_id=%s AND numero=%s
+                              ORDER BY id LIMIT 1""", (matricula_id, numero))
+            if existe:
+                flash(f"O número {numero} já está ocupado nesta matrícula pelo ato "
+                      f"{existe['tipo']}-{existe['numero']:02d}. A numeração é contínua entre "
+                      f"registros e averbações.", "danger")
+                # A exceção desfaz a transação, e o Flask devolve o redirect.
+                abort(redirect(url_for("ri_ficha", matricula_id=matricula_id)))
+            anterior = bd.um("""SELECT hash_ato FROM ri_atos WHERE matricula_id=%s
+                                ORDER BY id DESC LIMIT 1""", (matricula_id,))
+            hash_anterior = anterior["hash_ato"] if anterior else None
+            h = hash_ato(m["numero"], tipo, numero, data_ato, teor, hash_anterior)
+            ato_id = bd.escrever(
                 """INSERT INTO ri_atos
                    (matricula_id, tipo, numero, data_ato, natureza_titulo, protocolo,
                     prenotacao, teor, teor_formato, cancelado, acervo, origem,
@@ -4203,7 +4558,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     emolumentos, modelo_codigo,
                     lavrado_nome, lavrado_titulo, lavrado_tratamento,
                     hash_ato, hash_anterior, lavrado_em, lavrado_por)
-                   VALUES (?,?,?,?,?,?,?,?, 'texto', 0, 0, 'MANUAL', ?,?,?,?,?,?,?, ?,?,?, ?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, 'texto', 0, 0, 'MANUAL', %s,%s,%s,%s,%s,%s,%s, %s,%s,%s, %s,%s,%s,%s)
+                   RETURNING id""",
                 (matricula_id, tipo, numero, data_ato,
                  (request.form.get("natureza_titulo") or "").strip() or None,
                  (request.form.get("protocolo") or "").strip() or None,
@@ -4218,8 +4574,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  # amanhã, este ato continua dizendo o que dizia hoje.
                  pratica_nome, pratica_titulo, pratica_artigo,
                  h, hash_anterior, db.now(), None),
-            )
-            ato_id = int(cur.lastrowid)
+            )[0]["id"]
+            ato_id = int(ato_id)
 
             # Consome UMA UNIDADE de cada item apontado para este ato.
             #
@@ -4249,7 +4605,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             #   186), e sem a amarração a pergunta «qual ato saiu desta
             #   prenotação» se responde comparando datas à mão.
             amarrado = amarrar_prenotacao(
-                con, request.form.get("protocolo"),
+                bd, request.form.get("protocolo"),
                 matricula_id=matricula_id, ato_id=ato_id)
             # AS PARTES VÊM DO BLOCO POR PARTE — relato #86, 18/09/2026, e a
             # leitura é a MESMA de quem guarda a revisão da minuta
@@ -4262,10 +4618,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # blocos e o `getlist` sempre leu quantos viessem — era o DESENHO
             # que parava na terceira parte. Medido na produção: 44 atos desta
             # casa têm mais de três, e o maior tem 22 (R-1 da 3.757).
-            for parte in _partes_da_tela(request.form):
+            #
+            # O TITULAR SAI DA RÉGUA ÚNICA — LD03, 21/10/2026. Aqui estava
+            # `papel.startswith("propriet")`, e `ri_correcoes.PAPEL_DE_TITULAR`
+            # (a régua da correção de parte) já contava o adquirente e o
+            # nu-proprietário: as duas divergiam, e o R-1 de compra e venda
+            # deixava a compradora fora do quadro de titulares — a certidão de
+            # propriedade afirmava o vendedor (LRP art. 19, § 9º). Quem
+            # transmitiu sai do quadro depois do selo, mais abaixo.
+            partes_do_ato = _partes_da_tela(request.form)
+            for parte in partes_do_ato:
                 nome = parte["nome"]
                 doc = so_digitos(parte["documento_numero"])
-                papel = (parte["papel"] or "").lower()
+                titular = RC.e_titular(parte["papel"])
                 # A QUALIFICACAO VOLTA PARA A LINHA, e este e o outro lado do
                 # campo escondido — sem isto o campo invisivel nao serve de nada.
                 # A corrente inteira ja a carregava: `voltar_do_ato` copia a
@@ -4281,20 +4646,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # desta tela, e o tipo informado entra como recurso quando o
                 # documento nao decide — a linha que veio do acervo sem numero e
                 # com o tipo gravado nao pode perder o tipo.
-                tipo = ("CPF" if len(doc) == 11
-                        else "CNPJ" if len(doc) == 14
-                        else (parte["documento_tipo"] or None))
-                con.execute(
+                #
+                # E ELE TEM NOME PROPRIO — LD03, 21/10/2026. Chamava-se `tipo`,
+                # o mesmo nome do tipo do ATO, e o laco o trocava: com partes,
+                # o rotulo da consulta CNIB, a auditoria e o recado da tela
+                # saiam «CPF-1» no lugar de «R-1».
+                tipo_documento = ("CPF" if len(doc) == 11
+                                  else "CNPJ" if len(doc) == 14
+                                  else (parte["documento_tipo"] or None))
+                bd.escrever(
                     """INSERT INTO ri_partes
                        (matricula_id, ato_id, nome, nome_norm, documento_tipo,
                         documento_numero, documento_valido, papel, qualificacao,
                         proprietario, proprietario_ativo, origem)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?, 'MANUAL')""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'MANUAL')""",
                     (matricula_id, ato_id, nome, normalizar_busca(nome),
-                     tipo, doc or None, 1 if doc and valida_cpf_cnpj(doc) else 0,
+                     tipo_documento, doc or None,
+                     1 if doc and valida_cpf_cnpj(doc) else 0,
                      parte["papel"] or None, parte["qualificacao"],
-                     1 if papel.startswith("propriet") else 0,
-                     1 if papel.startswith("propriet") else 0),
+                     1 if titular else 0, 1 if titular else 0),
                 )
             consulta_cnib = CNIB.gravar_consulta_do_ato(
                 con, ato_id=ato_id, matricula_id=matricula_id,
@@ -4314,7 +4684,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # fechou — ou o ato no livro com a ficha aberta.
             if encerra:
                 _marcar_a_ficha_encerrada(
-                    con, matricula_id, motivo=encerra_motivo,
+                    bd, matricula_id, motivo=encerra_motivo,
                     destino=encerra_destino, data_ato=data_ato)
 
         # O SELO SAI AGORA, COM O ATO JA LAVRADO — e FORA da transação dele.
@@ -4398,7 +4768,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if motivo_selo and saiu_do_selo["suspende"]:
             try:
                 with db.transaction() as con:
-                    con.row_factory = sqlite3.Row
                     CNIB.soltar_do_ato(con, ato_id)
                     voltou = RIMIN.voltar_do_ato(
                         con, ato_id, agora=db.now(),
@@ -4454,6 +4823,77 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("ri_ficha", matricula_id=matricula_id,
                                     minuta=voltou["minuta_id"]))
 
+        # QUEM TRANSMITIU SAI DO QUADRO DE TITULARES — LD03, 21/10/2026, e SÓ
+        # AGORA, com o ato de pé. Na transação do ato, a suspensão de cima
+        # apagaria as partes novas (`voltar_do_ato`) e deixaria o vendedor já
+        # fora: a matrícula ficaria sem dono nenhum. A regra é de
+        # `ri_correcoes`, ao lado da que diz quem é titular.
+        #
+        # E O QUE DÁ ERRADO AQUI NÃO VIRA 500 — LD10, 21/10/2026 (ressalva da
+        # revisão do LD03). Esta transação é a segunda: quando ela abre, o ato
+        # já está no livro, com número, hash e selo. Um erro aqui (a trava da
+        # ficha que não veio, a conexão que caiu) virava a tela de erro com o
+        # R-1 lavrado e o vendedor ainda titular — e quem lavrou ia achar que
+        # nada tinha saído. Agora o quadro fica como estava (a transação volta
+        # inteira), o ato fica de pé, e a pendência vai para a auditoria e
+        # para o recado, com o caminho do conserto.
+        #
+        # SÓ O ERRO DO BANCO VIRA RECADO — LD13, 21/10/2026 (ressalva da
+        # revisão do LD10). O LD10 apanhava `Exception`, e o defeito de
+        # programação (o `TypeError` de amanhã em `titulares_que_transmitiram`)
+        # virava um recado e uma linha de auditoria, sem rastro no log de erro.
+        # Agora o recado é para o que o banco recusou (`ERROS_DO_BANCO`: a
+        # trava da ficha que não veio, a conexão que caiu), e o traceback vai
+        # ao log também — a auditoria guarda só a frase. O resto sobe para a
+        # tela de erro, que o anota com o traceback. A auditoria de dentro do
+        # `except` não pode trazer de volta o 500 que ele evita: o banco que
+        # recusou o quadro pode recusar a linha dela também.
+        quadro = {"sairam": [], "a_conferir": []}
+        quadro_falhou = None
+        try:
+            with db.transaction() as con:
+                quadro = RC.titulares_que_transmitiram(
+                    con, matricula_id, ato_id, partes_do_ato)
+        except ERROS_DO_BANCO as erro:
+            quadro_falhou = str(erro) or erro.__class__.__name__
+            app.logger.error(
+                "Lavratura do %s-%s da matrícula %s: o ato ficou de pé e o "
+                "quadro de titulares não foi atualizado.", tipo, numero,
+                m["numero"], exc_info=erro)
+            try:
+                audit("RI_TITULARES_NAO_ATUALIZADOS", "RI_ATO", ato_id,
+                      {"matricula": m["numero"], "ato": f"{tipo}-{numero}",
+                       "erro": quadro_falhou,
+                       "transmitentes": [p["nome"] for p in partes_do_ato
+                                         if RC.e_transmitente(p["papel"])]})
+            except Exception as falha_do_rastro:  # noqa: BLE001 — o ato já está lavrado
+                app.logger.error(
+                    "A auditoria RI_TITULARES_NAO_ATUALIZADOS do ato %s não foi "
+                    "gravada.", ato_id, exc_info=falha_do_rastro)
+        # O HOMÔNIMO NÃO SAI, E A TELA E A AUDITORIA DIZEM — LD10: o
+        # transmitente que o documento não identifica fica no quadro, e quem
+        # decide qual linha é a dele é gente, em «Corrigir».
+        if quadro["a_conferir"]:
+            audit("RI_TITULARES_A_CONFERIR", "RI_ATO", ato_id,
+                  {"matricula": m["numero"], "ato": f"{tipo}-{numero}",
+                   "sairam": quadro["sairam"], "a_conferir": quadro["a_conferir"]})
+        sairam_da_titularidade = quadro["sairam"]
+        recado_dos_titulares = (
+            f" {', '.join(sairam_da_titularidade)} deixou(aram) de figurar "
+            f"como titular(es) atual(is) — a transmissão foi lançada neste "
+            f"ato. Se foi de parte ideal, ponha de volta em Partes → "
+            f"Corrigir (titular), com o motivo."
+            if sairam_da_titularidade else "")
+        if quadro["a_conferir"]:
+            recado_dos_titulares += (" Quadro de titulares a conferir: "
+                                     + " ".join(quadro["a_conferir"]))
+        if quadro_falhou:
+            recado_dos_titulares += (
+                f" O ato ficou lavrado, mas o quadro de titulares NÃO foi "
+                f"atualizado ({quadro_falhou}): quem transmitiu continua como "
+                f"titular atual. Tire-o em Partes → Corrigir (titular), com o "
+                f"motivo.")
+
         motivo_selo = _motivo_da_falha_do_selo(recado_do_selo)
         if motivo_selo:
             # CHEGA AQUI SO O QUE NAO SE SUSPENDE — hoje, o ato de ACERVO sem
@@ -4494,10 +4934,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                   request.form.getlist("parte_documento")))
             # Numero do selo do ato recem-gravado (para restaurar selo_texto).
             with db.connect() as _c_arq:
-                _c_arq.row_factory = sqlite3.Row
-                _row_arq = _c_arq.execute(
-                    "SELECT selo_texto FROM ri_atos WHERE id=?",
-                    (ato_id,)).fetchone()
+                _row_arq = banco(_c_arq).um(
+                    "SELECT selo_texto FROM ri_atos WHERE id=%s",
+                    (ato_id,))
                 selo_ato_atual = (_row_arq["selo_texto"] if _row_arq else None)
             arq = _selar_arquivamento_do_ri(
                 ato_id=ato_id, folhas=folhas_arquivamento,
@@ -4525,10 +4964,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  f"nenhuma averbação adicional foi lavrada — não é mais "
                  f"possível lavrar atos nela." if encerra else "")
               + f"{recado_da_prenotacao(amarrado)}{recado_do_selo}{recado_do_arquivamento}"
+              + recado_dos_titulares
               + CNIB.recado_da_consulta(consulta_cnib),
               "warning" if ("SEM SELO" in recado_do_selo
                             or "PENDENTE" in recado_do_arquivamento
-                            or consulta_cnib["resultado"] == CNIB.POSITIVO)
+                            or consulta_cnib["resultado"] == CNIB.POSITIVO
+                            or quadro["a_conferir"] or quadro_falhou)
               else "success")
         return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
@@ -4544,7 +4985,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         ELA NÃO LAVRA. A minuta entra `A_REVISAR` e cai no mesmo painel da
         ficha. Quem a transforma em ato é a rota de sempre.
         """
-        if not q1("SELECT id FROM ri_matriculas WHERE id=?", (matricula_id,)):
+        if not q1("SELECT id FROM ri_matriculas WHERE id=%s", (matricula_id,)):
             abort(404)
         voltar = redirect(url_for("ri_ficha", matricula_id=matricula_id))
         try:
@@ -4584,7 +5025,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         atende. O que é do oficial é descartar e encerrar.
         """
         with db.connect() as _c:
-            _c.row_factory = sqlite3.Row
             m0 = RIMIN.uma(_c, minuta_id)
         if not m0:
             abort(404)
@@ -4631,7 +5071,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         virar ato e a mesma decisao de nao praticar o ato.
         """
         with db.connect() as _c:
-            _c.row_factory = sqlite3.Row
             m0 = RIMIN.uma(_c, minuta_id)
         if not m0:
             abort(404)
@@ -4655,6 +5094,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/registro-imoveis/<int:matricula_id>/selar-abertura",
                methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def ri_selar_abertura(matricula_id):
         """Sela a ABERTURA de uma matricula que ja existe. FALA COM A REDE.
 
@@ -4692,7 +5132,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         import selo_robo as SR
         if SR.exige_humano_para_selar():
             abort(403)
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         voltar = redirect(url_for("ri_ficha", matricula_id=matricula_id))
@@ -4736,21 +5176,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # aparelho depois de o ato existir.
         partes = [{"nome": r["nome"], "documento": r["documento_numero"]}
                   for r in q("""SELECT nome, documento_numero FROM ri_partes
-                                 WHERE matricula_id=? AND ato_id IS NULL
+                                 WHERE matricula_id=%s AND ato_id IS NULL
                                  ORDER BY id""", (matricula_id,))]
         if not selo_a_mao and not partes:
             flash("Para selar a abertura, a ficha precisa de quem é o dono do "
                   "imóvel: o selo exige os nomes das partes, e esta matrícula "
                   "não tem nenhuma cadastrada.", "danger")
             return voltar
+        # O PROTOCOLO QUE PAGA O SELO (22/10/2026, trava do selo pago).
+        if not selo_a_mao:
+            recusa = _atender_o_protocolo_escolhido(request.form)
+            if recusa:
+                flash(recusa, "danger")
+                return voltar
 
         # O QUE FOI INFORMADO FICA NA FICHA, E ANTES DA REDE — se o aparelho
         # nao responder, a relacao de emolumentos digitada nao se perde.
         if emolumentos:
             with db.transaction() as con:
-                con.execute(
-                    """UPDATE ri_matriculas SET emolumentos_abertura=?
-                        WHERE id=?""", (emolumentos, matricula_id))
+                banco(con).escrever(
+                    """UPDATE ri_matriculas SET emolumentos_abertura=%s
+                        WHERE id=%s""", (emolumentos, matricula_id))
 
         if selo_a_mao:
             # O SELO DIGITADO A MAO PASSA PELO RAZAO, e nao so pela coluna —
@@ -4772,9 +5218,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash(f"O selo digitado não entrou: {erro}", "danger")
                 return voltar
             with db.transaction() as con:
-                con.execute(
-                    """UPDATE ri_matriculas SET selo_abertura_texto=?
-                        WHERE id=?""", (selo_a_mao, matricula_id))
+                banco(con).escrever(
+                    """UPDATE ri_matriculas SET selo_abertura_texto=%s
+                        WHERE id=%s""", (selo_a_mao, matricula_id))
             audit("RI_ABERTURA_SELADA_A_MAO", "RI_MATRICULA", matricula_id,
                   {"matricula": m["numero"],
                    "selo": codigo or selo_a_mao[:40],
@@ -4842,12 +5288,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         import selo_robo as SR
         if SR.exige_humano_para_selar():
             abort(403)
-        p = q1("SELECT * FROM ri_protocolos WHERE id=?", (protocolo_id,))
+        p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
         if (p["selo_prenotacao"] or "").strip():
             flash(f"Prenotação {p['numero']} já tem selo: {p['selo_prenotacao']}.",
                   "warning")
+            return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
+        recusa = _atender_o_protocolo_escolhido(request.form)
+        if recusa:
+            flash(recusa, "danger")
             return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
         selado = _selar_a_prenotacao(protocolo_id, p["numero"], request.form)
         motivo = _motivo_da_falha_do_selo(selado)
@@ -4895,10 +5345,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         import selo_robo as SR
         if SR.exige_humano_para_selar():
             abort(403)
-        a = q1("SELECT * FROM ri_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM ri_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (a["matricula_id"],))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (a["matricula_id"],))
         if not m:
             abort(404)
         voltar = redirect(url_for("ri_ficha", matricula_id=a["matricula_id"]))
@@ -4912,10 +5362,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if str(a["selo_texto"] or "").strip():
             faltam_guard = _fila_de_selos_faltando(int(ato_id), codigos_pedido_guard)
             with db.connect() as con:
-                n_no_razao = con.execute(
-                    "SELECT COUNT(*) FROM sd_selos WHERE tabela='ri_atos' "
-                    "AND ato_id=? AND cancelado_em IS NULL",
-                    (int(ato_id),)).fetchone()[0]
+                n_no_razao = banco(con).valor(
+                    "SELECT COUNT(*) AS n FROM sd_selos WHERE tabela='ri_atos' "
+                    "AND ato_id=%s AND cancelado_em IS NULL",
+                    (int(ato_id),))
             # Selo so na coluna, sem linha no razao: caminho antigo/ manual —
             # recusa re-selar. Com linhas no razao e fila faltando, completa
             # multi-selo parcial (AV-01/4001, Beatriz 24/09/2026).
@@ -4932,9 +5382,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # so ADMIN/MANAGER, e so com «Selar mesmo assim» confirmado.
         if not str(a["selo_texto"] or "").strip():
             with db.connect() as con:
-                _nr = con.execute(
-                    "SELECT COUNT(*) FROM sd_selos WHERE tabela='ri_atos' "
-                    "AND ato_id=? AND cancelado_em IS NULL", (int(ato_id),)).fetchone()[0]
+                _nr = banco(con).valor(
+                    "SELECT COUNT(*) AS n FROM sd_selos WHERE tabela='ri_atos' "
+                    "AND ato_id=%s AND cancelado_em IS NULL", (int(ato_id),))
             _js = motivo_ja_selado(a, _nr)
             if _js:
                 _uid = session.get("user_id")
@@ -4981,12 +5431,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # aparelho nao responder, a qualificacao digitada nao se perde e a
         # proxima tentativa ja abre preenchida.
         with db.transaction() as con:
-            con.execute(
-                """UPDATE ri_atos SET natureza_titulo=COALESCE(?, natureza_titulo),
-                       codigo_tj=COALESCE(?, codigo_tj),
-                       base_calculo_centavos=COALESCE(?, base_calculo_centavos),
-                       isento=?, motivo_isencao=?
-                     WHERE id=?""",
+            banco(con).escrever(
+                """UPDATE ri_atos SET natureza_titulo=COALESCE(%s, natureza_titulo),
+                       codigo_tj=COALESCE(%s, codigo_tj),
+                       base_calculo_centavos=COALESCE(%s, base_calculo_centavos),
+                       isento=%s, motivo_isencao=%s
+                     WHERE id=%s""",
                 (natureza or None, codigo_tj, base_calculo or None,
                  1 if isento else 0, motivo_isencao or None, ato_id))
 
@@ -5017,9 +5467,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash(f"O selo digitado não entrou: {erro}", "danger")
                 return voltar
             with db.transaction() as con:
-                con.execute(
-                    """UPDATE ri_atos SET selo_texto=?,
-                           emolumentos=COALESCE(?, emolumentos) WHERE id=?""",
+                banco(con).escrever(
+                    """UPDATE ri_atos SET selo_texto=%s,
+                           emolumentos=COALESCE(%s, emolumentos) WHERE id=%s""",
                     (selo_a_mao, emolumentos or None, ato_id))
             audit("RI_ATO_SELADO_A_MAO", "RI_ATO", ato_id,
                   {"matricula": m["numero"], "ato": rotulo,
@@ -5032,7 +5482,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return voltar
 
         partes = [(r["nome"], r["documento_numero"]) for r in q(
-            "SELECT nome, documento_numero FROM ri_partes WHERE ato_id=?",
+            "SELECT nome, documento_numero FROM ri_partes WHERE ato_id=%s ORDER BY id",
             (ato_id,))]
         saiu = _selar_itens_do_ato_do_ri(
             ato_id=ato_id, tipo=a["tipo"], numero=a["numero"], matricula=m,
@@ -5045,8 +5495,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # em selo_texto (vincular_ao_ato sobrescreve). Igual ao arquivamento.
         if selo_texto_antes:
             with db.transaction() as con:
-                con.execute(
-                    "UPDATE ri_atos SET selo_texto=? WHERE id=?",
+                banco(con).escrever(
+                    "UPDATE ri_atos SET selo_texto=%s WHERE id=%s",
                     (selo_texto_antes, int(ato_id)))
 
         # ELA DEVOLVE DICIONARIO DESDE 16/09/2026, E ESTA ROTA LIA TEXTO —
@@ -5089,7 +5539,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     _folhas = int((request.form.get("folhas_arquivamento") or "0").strip() or 0)
                 except ValueError:
                     _folhas = 0
-                _a2 = q1("SELECT * FROM ri_atos WHERE id=?", (ato_id,))
+                _a2 = q1("SELECT * FROM ri_atos WHERE id=%s", (ato_id,))
                 if _folhas < 1:
                     flash("Arquivamento não pedido: informe as folhas (>= 1). "
                           "Use «Selar arquivamento» no ato.", "warning")
@@ -5134,10 +5584,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         import selo_robo as SR
         if SR.exige_humano_para_selar():
             abort(403)
-        a = q1("SELECT * FROM ri_atos WHERE id=?", (ato_id,))
+        a = q1("SELECT * FROM ri_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (a["matricula_id"],))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (a["matricula_id"],))
         if not m:
             abort(404)
         voltar = redirect(url_for("ri_ficha", matricula_id=a["matricula_id"]))
@@ -5160,8 +5610,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "danger")
             return voltar
         partes = [(r["nome"], r["documento_numero"]) for r in q(
-            "SELECT nome, documento_numero FROM ri_partes WHERE ato_id=?",
+            "SELECT nome, documento_numero FROM ri_partes WHERE ato_id=%s ORDER BY id",
             (ato_id,))]
+        recusa = _atender_o_protocolo_escolhido(request.form)
+        if recusa:
+            flash(recusa, "danger")
+            return voltar
         arq = _selar_arquivamento_do_ri(
             ato_id=ato_id, folhas=folhas,
             selo_do_ato=a["selo_texto"], partes=partes,
@@ -5201,23 +5655,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          m["nome"] + " " + m["natureza"] + " " + m["fundamentacao"])]
         # Vindo da ficha, o catálogo já sabe em qual matrícula o ato será lavrado.
         mid = request.args.get("matricula")
-        alvo = q1("SELECT id, numero FROM ri_matriculas WHERE id=?", (mid,)) if mid else None
+        alvo = q1("SELECT id, numero FROM ri_matriculas WHERE id=%s", (mid,)) if mid else None
         return render_template("ri_modelos_atos.html", modelos=lista, tipo=tipo,
                                busca=request.args.get("busca") or "",
                                total=len(MODELOS_ATOS),
                                matricula_id=(alvo["id"] if alvo else None),
                                matricula_numero=(alvo["numero"] if alvo else None))
 
-    def _contexto_modelo(m, modelo):
-        """Parte fixa do ato: o que o sistema já sabe da matrícula."""
-        proximo = int((q1("SELECT MAX(numero) n FROM ri_atos WHERE matricula_id=?",
+    def _contexto_modelo(m, modelo, prenotacao=None):
+        """Parte fixa do ato: o que o sistema já sabe da matrícula.
+
+        `prenotacao` é a que a tela do modelo escolheu (LD03): com ela, a frase
+        do protocolo sai do título que se está lavrando, e não só da
+        prenotação que já está amarrada à matrícula — a que abriu a ficha só
+        se amarra no primeiro ato, e a frase saía «[INFORMAR O PROTOCOLO]».
+        """
+        proximo = int((q1("SELECT MAX(numero) n FROM ri_atos WHERE matricula_id=%s",
                           (m["id"],)) or {"n": 0})["n"] or 0) + 1
         partes = q("""SELECT nome, documento_tipo, documento_numero, qualificacao
-                      FROM ri_partes WHERE matricula_id=? AND proprietario_ativo=1
-                      ORDER BY nome""", (m["id"],))
-        protocolo = q1("""SELECT numero, data_prenotacao FROM ri_protocolos
-                          WHERE matricula_id=? AND situacao='ABERTO'
-                          ORDER BY numero DESC LIMIT 1""", (m["id"],))
+                      FROM ri_partes WHERE matricula_id=%s AND proprietario_ativo=1
+                      ORDER BY nome, id""", (m["id"],))
+        protocolo = prenotacao or q1("""SELECT numero, data_prenotacao FROM ri_protocolos
+                          WHERE matricula_id=%s AND situacao='ABERTO'
+                          ORDER BY numero DESC, id DESC LIMIT 1""", (m["id"],))
 
         def descreve(p):
             t = [p["nome"]]
@@ -5228,19 +5688,155 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return ", ".join(t)
 
         prop = "; ".join(descreve(p) for p in partes) or "[QUALIFICAR AS PARTES]"
+        # AS FRASES DA PARTE FIXA MORAM NA BASE — LF06B (`RI_MINUTA_PROTOCOLO`,
+        # o mesmo da CNIB, e `RI_MINUTA_IMOVEL`/`_AREA`). Quando cada uma entra,
+        # e o [MARCADOR] do que o sistema nao sabe, continuam aqui.
+        import ri_frases
+        with db.connect() as _c_frases:
+            protocolo_frase = (
+                ri_frases.frase("RI_MINUTA_PROTOCOLO", _c_frases,
+                                numero=protocolo["numero"],
+                                data=fmt_date(protocolo["data_prenotacao"]))
+                if protocolo else "[INFORMAR O PROTOCOLO].")
+            area_frase = ri_frases.frase(
+                "RI_MINUTA_IMOVEL", _c_frases,
+                imovel=m["logradouro"] or "[DESCREVER O IMÓVEL]",
+                area=(ri_frases.frase("RI_MINUTA_IMOVEL_AREA", _c_frases,
+                                      valor=m["area_valor"],
+                                      unidade=m["area_unidade"] or "")
+                      if m["area_valor"] else ""))
         return proximo, {
             "rotulo": rotulo_ato(modelo["tipo"], proximo, m["numero"]),
             "matricula": m["numero"],
             "transmitentes": prop,
             "adquirentes": "[QUALIFICAR O(S) ADQUIRENTE(S) — " + QUALIF_RESUMO + "]",
             "proprietarios_frase": prop,
-            "protocolo_frase": (f"PROTOCOLO N. {protocolo['numero']}, DE "
-                                f"{fmt_date(protocolo['data_prenotacao'])}."
-                                if protocolo else "[INFORMAR O PROTOCOLO]."),
-            "area_frase": (f"IMÓVEL: {m['logradouro'] or '[DESCREVER O IMÓVEL]'}"
-                           + (f", com área de {m['area_valor']} {m['area_unidade'] or ''}"
-                              if m["area_valor"] else "") + "."),
+            "protocolo_frase": protocolo_frase,
+            "area_frase": area_frase,
         }
+
+    def _titulo_da_tela_do_modelo(m, form) -> dict:
+        """A prenotação, o protocolo geral e os itens da tela do modelo. Só LÊ.
+
+        É O QUE A TELA NÃO PERGUNTAVA — LD03, 21/10/2026 (o defeito t do LT03):
+        «Enviar para a lavratura» mandava só o texto, e a lavratura recusa ato
+        sem item de custa desde 15/09/2026.
+
+          - A PRENOTAÇÃO: a escolhida na tela; na primeira vez, a aberta já
+            amarrada à matrícula e, sem ela, a do protocolo geral que quem está
+            logado atende («Estou atendendo este protocolo»). A que abriu a
+            ficha só se amarra a ela no primeiro ato, e por isso a segunda.
+            «— sem prenotação —» escolhido fica sem: escolher é da tela.
+          - O PROTOCOLO GERAL: `_caixa_do_titulo`, a régua do cancelamento.
+          - OS ITENS: os que têm saldo, marcados por padrão como na ficha; o
+            que a tela desmarcou fica desmarcado (`itens_da_tela` diz que a
+            lista veio no formulário).
+        """
+        colunas = "id, numero, data_prenotacao, natureza_titulo, apresentante"
+        with db.connect() as con:
+            bd = banco(con)
+            abertas = [dict(p) for p in CXPROT.prenotacoes_abertas(con, limite=80)]
+            escolhida = numero_digitado(form.get("prenotacao_id"))
+            prenotacao = None
+            if escolhida is not None:
+                prenotacao = bd.um(f"""SELECT {colunas} FROM ri_protocolos
+                                        WHERE id=%s AND situacao='ABERTO'""",
+                                   (escolhida,))
+            elif "prenotacao_id" not in form:
+                prenotacao = bd.um(f"""SELECT {colunas} FROM ri_protocolos
+                                        WHERE matricula_id=%s AND situacao='ABERTO'
+                                        ORDER BY numero DESC, id DESC LIMIT 1""",
+                                   (m["id"],))
+                atendendo = (None if prenotacao else CXPROT.em_atendimento(
+                    bd, app.extensions["usuario_nome"]()))
+                if atendendo and atendendo.get("ri_protocolo_id"):
+                    prenotacao = bd.um(f"""SELECT {colunas} FROM ri_protocolos
+                                            WHERE id=%s AND situacao='ABERTO'""",
+                                       (int(atendendo["ri_protocolo_id"]),))
+            caixa = _caixa_do_titulo(con, prenotacao["id"] if prenotacao else None)
+            itens = CXPROT.itens_disponiveis(con, caixa["id"]) if caixa else []
+        if prenotacao and all(p["id"] != prenotacao["id"] for p in abertas):
+            abertas.insert(0, dict(prenotacao))
+        if form.get("itens_da_tela") == "1":
+            # LD13: o «²» passava pelo `isdigit()` e caía no `int()`.
+            marcados = {n for n in map(numero_digitado, form.getlist("protocolo_item_id"))
+                        if n is not None}
+        else:
+            marcados = {int(i["id"]) for i in itens}
+        return {"abertas": abertas, "prenotacao": prenotacao, "caixa": caixa,
+                "itens": itens, "marcados": marcados}
+
+    def _guardar_a_minuta_do_modelo(con, m, modelo, texto: str, titulo: dict,
+                                    partes: list[dict], minuta_id,
+                                    envio: str) -> int:
+        """O texto da tela do modelo vira minuta antes de ir à lavratura. ESCREVE.
+
+        POR QUE MINUTA — LD03, 21/10/2026: a recusa da lavratura voltava para
+        a ficha crua, e o texto preenchido campo a campo se perdia (o recado
+        ainda dizia «nada se perdeu»). Quem veio de minuta volta para a MESMA
+        minuta, com o texto e as partes (`ri_lavrar_ato`, `minuta_pedida`), e
+        a minuta que não se lavrou fica na fila da ficha — «Minutas a revisar
+        e lavrar». E o mesmo «Enviar» duas vezes não cria duas: a tela
+        devolve o número, e ela se atualiza.
+
+        O DUPLO «ENVIAR» TAMBÉM NÃO — LD10, 21/10/2026 (ressalva da revisão do
+        LD03). O número (`minuta_guardada`) só chega no envio que vem DEPOIS de
+        a tela voltar; o clique duplo manda os dois sem ele, e cada um criava a
+        sua minuta. A tela leva agora a marca do envio (`envio`, sorteada
+        quando ela abre), e a marca entra na `origem_chave`: sob a trava da
+        ficha, o segundo envio da MESMA tela acha a minuta do primeiro e a
+        atualiza. A marca é da tela, e não do modelo: a mesma ficha pode ter
+        duas minutas do mesmo modelo (dois cancelamentos de ônus), e o envio
+        de uma não pode escrever por cima da outra.
+
+        E A MINUTA SE PRENDE ANTES DE SE CONFERIR A SITUAÇÃO (`FOR UPDATE`):
+        lida solta, a minuta que outra aba está lavrando ainda parece «a
+        revisar», e o texto desta tela cairia por cima do que foi ao livro —
+        a procedência do ato passaria a dizer outra coisa.
+
+        UMA A REVISAR POR MARCA — LD13, 21/10/2026 (ressalva da revisão do
+        LD10). A marca pode estar em mais de uma minuta da ficha: a lavrada ou
+        descartada e a que a mesma tela mandou depois. A busca pela marca
+        procura a que está A REVISAR, e não a mais nova: com uma descartada
+        mais nova (a corrida da suspensão do selo devolve a primeira à fila
+        depois de a outra aba ter criado a sua), a mais nova criava uma
+        segunda a revisar, e a fila mostrava duas com o mesmo texto. Sem
+        índice único, de propósito: a suspensão (`ri_minuta.voltar_do_ato`)
+        devolve a minuta lavrada à fila, e um índice a faria falhar — o ato
+        ficaria no livro sem selo, que é pior que a minuta repetida. Quem
+        garante aqui é a trava da ficha, que põe um envio atrás do outro.
+        """
+        protocolo = str(titulo["prenotacao"]["numero"]) if titulo["prenotacao"] else ""
+        quem = _quem_mexeu_na_minuta()
+        origem_chave = f"modelo:{modelo['codigo']}:{envio}"
+        bd = banco(con)
+        bd.travar(f"ri_minutas.modelo:{int(m['id'])}")
+        bd._escrita()
+        atual = None
+        guardada = numero_digitado(minuta_id)
+        if guardada is not None:
+            atual = bd.um("SELECT * FROM ri_minutas WHERE id=%s FOR UPDATE",
+                          (guardada,))
+        if not atual or atual["matricula_id"] != m["id"] \
+                or atual["situacao"] != RIMIN.A_REVISAR:
+            atual = bd.um("""SELECT * FROM ri_minutas
+                              WHERE matricula_id=%s AND origem_chave=%s AND situacao=%s
+                              ORDER BY id DESC LIMIT 1 FOR UPDATE""",
+                          (m["id"], origem_chave, RIMIN.A_REVISAR))
+        if atual and atual["situacao"] == RIMIN.A_REVISAR:
+            RIMIN.atualizar(bd, int(atual["id"]), teor=texto, agora=db.now(),
+                            tipo=modelo["tipo"],
+                            natureza_titulo=modelo["natureza"],
+                            protocolo=protocolo, partes=partes, usuario=quem)
+            return int(atual["id"])
+        nova = RIMIN.criar(
+            bd, matricula_id=m["id"], tipo=modelo["tipo"], teor=texto,
+            agora=db.now(), natureza_titulo=modelo["natureza"],
+            protocolo=protocolo or None, modelo_codigo=modelo["codigo"],
+            origem=RIMIN.MANUAL, origem_chave=origem_chave,
+            observacao="Preenchida na tela «Preencher o modelo».", usuario=quem)
+        RIMIN.guardar_partes(bd, nova, partes)
+        return nova
 
     @app.route("/registro-imoveis/<int:matricula_id>/preencher/<codigo>",
                methods=["GET", "POST"])
@@ -5252,9 +5848,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         Documento — o texto do ato com os marcadores editáveis no lugar.
 
         As duas escrevem nos mesmos valores; trocar de aba não perde nada.
+
+        E «ENVIAR PARA A LAVRATURA» LEVA O ATO INTEIRO — LD03, 21/10/2026
+        («corrija tudo»; o LT03 achou). Ia para `/atos` só tipo, natureza,
+        modelo, data e teor: sem a prenotação, sem o item da tabela e sem as
+        partes, e a lavratura recusava pelo item (CN-MA art. 130, § 2º). Agora
+        a tela pergunta o título (`_titulo_da_tela_do_modelo`), as partes, o
+        valor declarado e a qualificação do adquirente — o que a parte fixa
+        não sabe —, e o texto vira minuta antes de ir. Quem lavra continua
+        sendo a rota de sempre: uma segunda porta para lavrar seria uma
+        segunda versão da regra que numera, sela e cobra.
+
+        O CAMPO DO MODELO EM BRANCO NÃO VAI, nem com «Lavrar mesmo assim»: a
+        lavratura o recusa desde o mesmo lote (`por_preencher_do_modelo`), e a
+        marca que confirmava ficaria prometendo o que não acontece. Ela fica
+        para o colchete que o escrevente escreveu de propósito.
         """
         modelo = modelo_por_codigo(codigo)
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not modelo or not m:
             abort(404)
         if m["encerrada"]:
@@ -5264,14 +5875,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         campos = campos_do_modelo(modelo)
         valores = {c["chave"]: (request.form.get("c_" + c["chave"]) or "").strip()
                    for c in campos}
-        numero, fixo = _contexto_modelo(m, modelo)
+        titulo = _titulo_da_tela_do_modelo(m, request.form)
+        numero, fixo = _contexto_modelo(m, modelo, prenotacao=titulo["prenotacao"])
+        # O ADQUIRENTE SÓ O TÍTULO DIZ — a parte fixa escreve o marcador
+        # dele, e até aqui a tela não tinha onde preenchê-lo: o registro saía
+        # da tela com «[QUALIFICAR O(S) ADQUIRENTE(S) …]» no texto.
+        adquirentes = (request.form.get("adquirentes") or "").strip()
+        if adquirentes:
+            fixo["adquirentes"] = adquirentes
 
         # Marcadores trocados primeiro; depois o Jinja resolve a parte fixa.
         corpo = preencher_modelo(modelo, valores)
         try:
             html = render_modelo(corpo, fixo)
         except Exception as erro:
-            flash(f"O modelo tem um erro: {erro}", "danger")
+            flash(f"O modelo tem um erro: {SEGWEB.erro_do_modelo(erro, 'ri_modelo')}", "danger")
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
         texto = re.sub(r"<[^>]+>", "", html)
@@ -5279,22 +5897,51 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # Campo em branco e escolha nao feita. Clausula opcional nao entra:
         # nao marcar tambem e uma decisao.
         pendentes = pendencias_modelo(texto)
+        # O que a lavratura recusa: os campos DO MODELO (e da parte fixa).
+        bloqueiam = por_preencher_do_modelo(texto, modelo["codigo"])
+        partes = _partes_da_tela(request.form)
+        tela = {
+            "m": m, "modelo": modelo, "abas": abas_do_modelo(modelo),
+            "valores": valores, "texto": texto, "pendentes": pendentes,
+            "bloqueiam": bloqueiam, "numero": numero,
+            "hoje": date.today().isoformat(), "titulo": titulo, "partes": partes,
+            "adquirentes": adquirentes,
+            "pede_adquirentes": "adquirentes" in modelo["corpo"],
+            "base_calculo": (request.form.get("base_calculo") or "").strip(),
+            # O NÚMERO DA MINUTA QUE ESTA TELA GUARDOU, para o segundo «Enviar»
+            # atualizá-la. Tem nome próprio: `minuta_id` é o campo de quem
+            # LAVRA a minuta, e só `ri_lavrar_ato` o lê
+            # (`test_so_a_rota_de_lavrar_aceita_minuta`).
+            "minuta_guardada": (request.form.get("minuta_guardada") or "").strip(),
+            # A MARCA DESTA TELA (LD10): sorteada quando ela abre e repetida
+            # em cada envio dela — o clique duplo chega antes do número da
+            # minuta, e é por ela que o segundo acha o primeiro.
+            "envio": _marca_do_envio(request.form.get("envio")),
+            "PAPEIS_RI": RC.PAPEIS, "enviar": False,
+        }
 
         if request.method == "POST" and request.form.get("acao") == "lavrar":
-            if pendentes and request.form.get("confirmar_pendencias") != "1":
+            if bloqueiam:
+                flash(f"Ainda há {len(bloqueiam)} campo(s) do modelo por "
+                      f"preencher — {'; '.join(bloqueiam[:6])}"
+                      f"{' …' if len(bloqueiam) > 6 else ''}. O livro não "
+                      f"recebe campo do modelo em branco: preencha e envie de "
+                      f"novo.", "warning")
+            elif pendentes and request.form.get("confirmar_pendencias") != "1":
                 flash(f"Ainda há {len(pendentes)} campo(s) por preencher. "
                       f"Confirme se quiser lavrar assim mesmo.", "warning")
             else:
-                return render_template(
-                    "ri_preencher.html", m=m, modelo=modelo,
-                    abas=abas_do_modelo(modelo), valores=valores, texto=texto,
-                    pendentes=pendentes, numero=numero,
-                    hoje=date.today().isoformat(), enviar=True)
+                try:
+                    with db.transaction() as con:
+                        tela["minuta_guardada"] = str(_guardar_a_minuta_do_modelo(
+                            con, m, modelo, texto, titulo, partes,
+                            tela["minuta_guardada"], tela["envio"]))
+                except RIMIN.MinutaError as erro:
+                    flash(f"{erro} Nada foi enviado.", "danger")
+                else:
+                    tela["enviar"] = True
 
-        return render_template("ri_preencher.html", m=m, modelo=modelo,
-                               abas=abas_do_modelo(modelo), valores=valores,
-                               texto=texto, pendentes=pendentes, numero=numero,
-                               hoje=date.today().isoformat(), enviar=False)
+        return render_template("ri_preencher.html", **tela)
 
     @app.route("/registro-imoveis/<int:matricula_id>/modelo/<codigo>")
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -5306,18 +5953,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         conteúdo de ato registral.
         """
         modelo = modelo_por_codigo(codigo)
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not modelo or not m:
             abort(404)
 
-        proximo = int((q1("SELECT MAX(numero) n FROM ri_atos WHERE matricula_id=?",
+        proximo = int((q1("SELECT MAX(numero) n FROM ri_atos WHERE matricula_id=%s",
                           (matricula_id,)) or {"n": 0})["n"] or 0) + 1
         partes = q("""SELECT nome, documento_tipo, documento_numero, qualificacao
-                      FROM ri_partes WHERE matricula_id=? AND proprietario_ativo=1
-                      ORDER BY nome""", (matricula_id,))
+                      FROM ri_partes WHERE matricula_id=%s AND proprietario_ativo=1
+                      ORDER BY nome, id""", (matricula_id,))
         protocolo = q1("""SELECT numero, data_prenotacao FROM ri_protocolos
-                          WHERE matricula_id=? AND situacao='ABERTO'
-                          ORDER BY numero DESC LIMIT 1""", (matricula_id,))
+                          WHERE matricula_id=%s AND situacao='ABERTO'
+                          ORDER BY numero DESC, id DESC LIMIT 1""", (matricula_id,))
 
         def descreve(p):
             partes_txt = [p["nome"]]
@@ -5329,23 +5976,37 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return ", ".join(partes_txt)
 
         proprietarios = "; ".join(descreve(p) for p in partes) or "[QUALIFICAR AS PARTES]"
+        # AS MESMAS FRASES DE `_contexto_modelo`, lidas da base (LF06B). O
+        # marcador do imovel sem logradouro e outro aqui («[DESCREVER]») — era
+        # assim antes, e o teor sugerido nao muda nesta passada.
+        import ri_frases
+        with db.connect() as _c_frases:
+            protocolo_frase = (
+                ri_frases.frase("RI_MINUTA_PROTOCOLO", _c_frases,
+                                numero=protocolo["numero"],
+                                data=fmt_date(protocolo["data_prenotacao"]))
+                if protocolo else "[INFORMAR O PROTOCOLO].")
+            area_frase = ri_frases.frase(
+                "RI_MINUTA_IMOVEL", _c_frases,
+                imovel=m["logradouro"] or "[DESCREVER]",
+                area=(ri_frases.frase("RI_MINUTA_IMOVEL_AREA", _c_frases,
+                                      valor=m["area_valor"],
+                                      unidade=m["area_unidade"] or "")
+                      if m["area_valor"] else ""))
         contexto = {
             "rotulo": rotulo_ato(modelo["tipo"], proximo, m["numero"]),
             "matricula": m["numero"],
             "transmitentes": proprietarios,
             "adquirentes": "[QUALIFICAR O(S) ADQUIRENTE(S) — " + QUALIF_RESUMO + "]",
             "proprietarios_frase": proprietarios,
-            "protocolo_frase": (f"PROTOCOLO N. {protocolo['numero']}, DE "
-                                f"{fmt_date(protocolo['data_prenotacao'])}."
-                                if protocolo else "[INFORMAR O PROTOCOLO]."),
-            "area_frase": (f"IMÓVEL: {m['logradouro'] or '[DESCREVER]'}"
-                           + (f", com área de {m['area_valor']} {m['area_unidade'] or ''}"
-                              if m["area_valor"] else "") + "."),
+            "protocolo_frase": protocolo_frase,
+            "area_frase": area_frase,
         }
         try:
             texto = render_modelo(modelo["corpo"], contexto)
         except Exception as erro:
-            return Response(f"Erro no modelo: {erro}", mimetype="text/plain", status=500)
+            return Response(f"Erro no modelo: {SEGWEB.erro_do_modelo(erro, 'ri_minuta')}",
+                            mimetype="text/plain", status=500)
 
         # Texto puro para cair na caixa de teor da lavratura.
         limpo = re.sub(r"<[^>]+>", "", texto)
@@ -5413,7 +6074,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/registro-imoveis/<int:matricula_id>/editar", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_editar_matricula(matricula_id):
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         m = dict(m)
@@ -5528,21 +6189,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "anterior e do novo.", "danger")
             return redirect(url_for("ri_editar_matricula", matricula_id=matricula_id))
 
-        atribuicoes = ", ".join(f"{c}=?" for c in valores)
+        atribuicoes = ", ".join(f"{c}=%s" for c in valores)
         conflito = False
         with db.transaction() as con:
             # A conferência da versão se refaz DENTRO da transação: entre a
             # leitura lá de cima e o BEGIN IMMEDIATE outro balcão pode ter
             # gravado. Havendo conflito, nada é escrito.
-            agora_linha = con.execute("SELECT * FROM ri_matriculas WHERE id=?",
-                                      (matricula_id,)).fetchone()
+            bd = banco(con)
+            bd._escrita()
+            agora_linha = bd.um("SELECT * FROM ri_matriculas WHERE id=%s FOR UPDATE",
+                                (matricula_id,))
             if (versao_da_tela is not None and agora_linha is not None
                     and _versao_do_cadastro(dict(agora_linha)) != versao_da_tela):
                 conflito = True
             else:
-                con.execute(
-                    f"""UPDATE ri_matriculas SET {atribuicoes}, imovel_norm=?,
-                        atualizado_em=? WHERE id=?""",
+                bd.escrever(
+                    f"""UPDATE ri_matriculas SET {atribuicoes}, imovel_norm=%s,
+                        atualizado_em=%s WHERE id=%s""",
                     list(valores.values())
                     + [normalizar_busca(" ".join(str(
                         valores.get(c, m[c]) or "") for c in
@@ -5564,6 +6227,161 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     # ------------------------------------- cancelamento e encerramento
 
+    def _caixa_do_titulo(con, prenotacao_id) -> dict | None:
+        """O protocolo geral de onde sai o item do ato deste título. Só LÊ.
+
+        DUAS FONTES, NESTA ORDEM, e nenhuma é adivinhação (LD03, 21/10/2026):
+
+          1. o protocolo geral ligado à prenotação (`cx_protocolos.
+             ri_protocolo_id`), se não estiver encerrado — e PAGO conta: é o
+             estado de quem já pagou e espera o ato. (`RITEOR.
+             caixa_ligado_a_prenotacao` olha só ABERTO e A_PAGAR, que é a
+             lista do que se ESCOLHE; aqui é o título que se está lavrando.)
+          2. o que quem está logado diz estar atendendo («Estou atendendo este
+             protocolo», LX16) — o mesmo lugar onde a trava do selo procura o
+             pagamento. Mas não o de OUTRO título: se ele está ligado a outra
+             prenotação, não é deste ato.
+        """
+        bd = banco(con)
+        prenotacao = (int(prenotacao_id)
+                      if str(prenotacao_id or "").strip().isdigit() else None)
+        if prenotacao is not None and bd.tem_coluna("cx_protocolos", "ri_protocolo_id"):
+            ligado = bd.um(
+                """SELECT * FROM cx_protocolos
+                    WHERE ri_protocolo_id=%s AND situacao NOT IN (%s, %s)
+                    ORDER BY id DESC LIMIT 1""",
+                (prenotacao, CXPROT.ENTREGUE, CXPROT.CANCELADO))
+            if ligado:
+                return ligado
+        atendendo = CXPROT.em_atendimento(bd, app.extensions["usuario_nome"]())
+        if not atendendo or CXPROT.esta_encerrado(atendendo.get("situacao")):
+            return None
+        de_outro = atendendo.get("ri_protocolo_id")
+        if prenotacao is not None and de_outro and int(de_outro) != prenotacao:
+            return None
+        return atendendo
+
+    def _item_do_cancelamento(form, protocolo_escrito: str) -> dict:
+        """O item de custa da averbação de cancelamento, e de onde ele sai. Só LÊ.
+
+        A AVERBAÇÃO DE CANCELAMENTO É ATO COMO QUALQUER OUTRO, e o selo dela
+        pede o item da tabela, como o da lavratura comum (`falta_para_selar`).
+        A tela pergunta; quando não se informou, ele sai do título:
+
+          1. os itens marcados (`protocolo_id` + `protocolo_item_id`), como na
+             lavratura;
+          2. o código digitado (`codigo_tj`) — o selo procura o pagamento no
+             protocolo em atendimento (a trava do LX16);
+          3. o protocolo geral do título (`_caixa_do_titulo`), e SÓ se ele
+             tiver UM item com saldo. Com dois, escolher seria adivinhar qual
+             serviço o cliente pagou — a régua de `caixa_protocolo.
+             itens_para_o_selo` — e a tela pergunta.
+
+        Devolve `{"codigos", "itens", "recado"}`: `codigos` é a fila do selo
+        (um por item), `itens` os ids que o cancelamento gasta (uma unidade
+        cada) e `recado` o que falta escolher quando o título não decide.
+        """
+        # LD13: o «²» e os 5.000 dígitos passavam pelo `isdigit()` e caíam no
+        # `int()`; o que não é número fica de fora, como o texto já ficava.
+        ids = {n for n in map(numero_digitado, form.getlist("protocolo_item_id"))
+               if n is not None}
+        protocolo_id = numero_digitado(form.get("protocolo_id"))
+        codigo = (form.get("codigo_tj") or "").strip()
+        with db.connect() as con:
+            if ids and protocolo_id is not None:
+                marcados = [i for i in CXPROT.itens_disponiveis(con, protocolo_id)
+                            if int(i["id"]) in ids]
+                if marcados:
+                    return {"codigos": [str(i["codigo_ato"]).strip() for i in marcados],
+                            "itens": [int(i["id"]) for i in marcados], "recado": ""}
+            if codigo:
+                return {"codigos": [codigo], "itens": [], "recado": ""}
+            prenotacao = None
+            numero = numero_digitado(protocolo_escrito)
+            if numero is not None:
+                prenotacao = banco(con).um(
+                    """SELECT id FROM ri_protocolos WHERE numero=%s
+                        ORDER BY id DESC LIMIT 1""", (numero,))
+            caixa = _caixa_do_titulo(con, prenotacao["id"] if prenotacao else None)
+            disponiveis = CXPROT.itens_disponiveis(con, caixa["id"]) if caixa else []
+        if len(disponiveis) == 1:
+            unico = disponiveis[0]
+            return {"codigos": [str(unico["codigo_ato"]).strip()],
+                    "itens": [int(unico["id"])], "recado": ""}
+        if disponiveis:
+            return {"codigos": [], "itens": [], "recado": (
+                f"O protocolo {caixa['numero']} tem {len(disponiveis)} itens com "
+                f"saldo ({', '.join(str(i['codigo_ato']) for i in disponiveis)}): "
+                f"escolha o desta averbação em «Item da tabela de custas» — "
+                f"escolher por você seria adivinhar qual serviço o cliente pagou.")}
+        return {"codigos": [], "itens": [], "recado": ""}
+
+    def _desfazer_o_cancelamento(con, *, novo_id: int, alvo_id: int,
+                                 itens: list[int]) -> None:
+        """Desfaz a averbação de cancelamento cujo selo não saiu. ESCREVE.
+
+        É A SUSPENSÃO DA LAVRATURA COMUM («selo recusado suspende ato», ordem
+        do oficial em 16/09/2026; «nenhum ato fica de pé sem selo», relato
+        #77), com uma diferença: o cancelamento NÃO volta a ser minuta. O teor
+        dele é a frase do motivo sobre o rótulo do ato, e relavrá-lo pela
+        minuta lavraria a averbação sem marcar o ato cancelado — o livro diria
+        uma coisa e a ficha outra. Ele se desfaz inteiro: o ato volta a valer,
+        o lançamento dos indicadores sai, a prenotação se solta (a chave
+        estrangeira não deixaria apagar a averbação com ela amarrada) e a
+        unidade do protocolo volta.
+
+        AS TRÊS RECUSAS de `ri_minuta.voltar_do_ato`, pela mesma razão: ato
+        com selo não se desfaz (selo pago amarrado a ato que some é selo
+        órfão), só a cauda da corrente de hash, e dinheiro no caixa sai por
+        estorno. Sob a trava da numeração, a mesma do cancelamento: nenhum ato
+        entra na ficha no meio.
+        """
+        bd = banco(con)
+        bd.travar("ri_atos.numero")
+        bd._escrita()
+        av = bd.um("SELECT * FROM ri_atos WHERE id=%s FOR UPDATE", (int(novo_id),))
+        if not av:
+            raise CancelamentoNaoSeDesfaz(
+                "a averbação de cancelamento não existe mais.")
+        rotulo_av = f"AV-{int(av['numero']):02d}"
+        com_selo = str(av["selo_texto"] or "").strip()
+        if not com_selo and bd.tem_tabela("sd_selos"):
+            com_selo = int(bd.valor(
+                """SELECT COUNT(*) AS n FROM sd_selos WHERE tabela='ri_atos'
+                    AND ato_id=%s AND cancelado_em IS NULL""", (int(novo_id),)))
+        if com_selo:
+            raise CancelamentoNaoSeDesfaz(
+                f"a {rotulo_av} já tem selo — selo pago amarrado a ato que deixa "
+                f"de existir é selo órfão.")
+        if int(bd.valor("""SELECT COUNT(*) AS n FROM ri_atos
+                            WHERE matricula_id=%s AND id>%s""",
+                        (av["matricula_id"], int(novo_id)))):
+            raise CancelamentoNaoSeDesfaz(
+                f"a {rotulo_av} não é mais o último ato da ficha — tirá-la do "
+                f"meio quebraria a corrente de hash.")
+        if bd.tem_tabela("cx_lancamentos") and int(bd.valor(
+                """SELECT COUNT(*) AS n FROM cx_lancamentos
+                    WHERE origem='ATO' AND origem_chave ILIKE %s""",
+                (f"ri_atos:{int(novo_id)}:%",))):
+            raise CancelamentoNaoSeDesfaz(
+                f"a {rotulo_av} tem lançamento no caixa — dinheiro que entrou "
+                f"sai por estorno.")
+        bd.escrever("UPDATE ri_protocolos SET ato_id=NULL WHERE ato_id=%s",
+                    (int(novo_id),))
+        bd.escrever("""UPDATE ri_atos SET cancelado=0, cancelado_por_ato_id=NULL
+                        WHERE id=%s AND cancelado_por_ato_id=%s""",
+                    (int(alvo_id), int(novo_id)))
+        if bd.tem_tabela("ri_indicador_lancamentos"):
+            bd.escrever("""DELETE FROM ri_indicador_lancamentos
+                            WHERE averbacao_id=%s AND origem='CANCELAMENTO'""",
+                        (int(novo_id),))
+        for item_id in itens:
+            CXPROT.devolver_item(con, int(item_id), quantas=1)
+        if bd.tem_tabela("cx_item_do_ato"):
+            bd.escrever("""DELETE FROM cx_item_do_ato
+                            WHERE tabela='ri_atos' AND ato_id=%s""", (int(novo_id),))
+        bd.escrever("DELETE FROM ri_atos WHERE id=%s", (int(novo_id),))
+
     @app.route("/registro-imoveis/atos/<int:ato_id>/cancelar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_cancelar_ato(ato_id):
@@ -5572,15 +6390,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         O ato original permanece intacto na ficha, apenas marcado. Em registro
         publico nao se apaga assento: o cancelamento e ele proprio um ato, com
         numero, data e teor - e assim que a historia do imovel continua legivel.
+
+        E ELA NASCE SELADA — LD03, 21/10/2026 («corrija tudo»; o LT03 achou).
+        Até aqui a averbação de cancelamento era o único ato do Livro 2 que se
+        lavrava sem pedir o selo nem o item da tabela: ficava de pé no livro,
+        sem selo, até alguém usar «Selar este ato». Nenhum ato se conclui sem o
+        selo (CN-MA art. 130, § 2º), e a lavratura comum já cumpria isso
+        (relato #77). Agora é o mesmo caminho dela: o que a tela sabe se recusa
+        antes (`falta_para_selar`), o item sai do título (`_item_do_cancelamento`)
+        e se gasta na transação do ato, o selo é pedido fora dela, e o selo que
+        não sai desfaz o cancelamento inteiro (`_desfazer_o_cancelamento`) — o
+        ato volta a valer e o fundamento digitado volta no recado.
+
+        A FICHA DE ACERVO segue a regra da lavratura comum (decisão do oficial,
+        16/09/2026): sem item de custa, o cancelamento fica lavrado e o recado
+        diz que saiu sem selo.
         """
-        alvo = q1("SELECT * FROM ri_atos WHERE id=?", (ato_id,))
+        alvo = q1("SELECT * FROM ri_atos WHERE id=%s", (ato_id,))
         if not alvo:
             abort(404)
         if alvo["cancelado"]:
             flash("Este ato já está cancelado.", "warning")
             return redirect(url_for("ri_ficha", matricula_id=alvo["matricula_id"]))
 
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (alvo["matricula_id"],))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (alvo["matricula_id"],))
         motivo = (request.form.get("motivo") or "").strip()
         if not motivo:
             flash("Informe o fundamento do cancelamento.", "danger")
@@ -5588,32 +6421,86 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         rotulo = rotulo_ato(alvo["tipo"], alvo["numero"], m["numero"])
         data_ato = (request.form.get("data_ato") or "").strip() or db.now()[:10]
-        teor = (f"CANCELAMENTO DO ATO {rotulo}. Nos termos do requerimento e da "
-                f"documentação apresentada, fica cancelado o ato {rotulo} desta "
-                f"matrícula. FUNDAMENTO: {motivo}")
+        # O TEXTO MORA NA BASE — LF06B (`RI_CANCELAMENTO_DO_ATO`); o rotulo e
+        # o fundamento sao daqui. Vai ao livro e congela no hash do ato.
+        import ri_frases
+        with db.connect() as _c_frases:
+            teor = ri_frases.frase("RI_CANCELAMENTO_DO_ATO", _c_frases,
+                                   rotulo=rotulo, motivo=motivo)
+
+        # O QUE A TELA SABE SE RECUSA AQUI, COM O ATO AINDA VALENDO — a régua
+        # da lavratura comum (`falta_para_selar`): natureza, item da tabela,
+        # gratuidade com o motivo escrito. A natureza que o selo leva é a que
+        # a ficha sempre gravou nesta averbação, salvo a tela dizer outra.
+        protocolo_escrito = (request.form.get("protocolo") or "").strip()
+        natureza = ((request.form.get("natureza_titulo") or "").strip()
+                    or "Cancelamento de ato")
+        isento, motivo_isencao = ler_isencao_do_form(request.form)
+        motivo_isencao = motivo_isencao or ""
+        e_acervo = (m["tipo_ficha"] == "ACERVO" or matricula_de_acervo(m["numero"]))
+        cobranca = _item_do_cancelamento(request.form, protocolo_escrito)
+        codigo_tj = cobranca["codigos"][0] if cobranca["codigos"] else None
+        impedimento = cobranca["recado"] or falta_para_selar(
+            natureza=natureza, codigo_tj=codigo_tj, isento=isento,
+            motivo_isencao=motivo_isencao, selo_a_mao=None, e_acervo=e_acervo)
+        if impedimento:
+            flash(f"{impedimento} O cancelamento NÃO foi lavrado — {rotulo} "
+                  f"continua valendo e nada mudou na ficha.", "danger")
+            return redirect(url_for("ri_ficha", matricula_id=m["id"]))
+        with db.connect() as _cx:
+            emolumentos = RITEOR.frase_emolumentos_curta(
+                RITEOR.calcular_itens(_cx, cobranca["codigos"], base_calculo=None))
 
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
-            ultimo = con.execute("SELECT MAX(numero) n FROM ri_atos WHERE matricula_id=?",
-                                 (m["id"],)).fetchone()
-            numero = int((ultimo["n"] or 0)) + 1
-            anterior = con.execute("""SELECT hash_ato FROM ri_atos WHERE matricula_id=?
-                                      ORDER BY id DESC LIMIT 1""", (m["id"],)).fetchone()
+            bd = banco(con)
+            bd.travar("ri_atos.numero")
+            # O ALVO SE CONFERE DE NOVO, PRESO — a conferência lá de cima foi
+            # lida fora da transação. Dois cliques em «Cancelar o ato por
+            # averbação» (ou duas abas) passariam os dois por ela e lavrariam
+            # duas averbações para o mesmo ato, com dois selos e duas unidades
+            # do protocolo. A trava da numeração põe um atrás do outro; o
+            # segundo acha o ato já cancelado e para aqui.
+            bd._escrita()
+            preso = bd.um("SELECT cancelado FROM ri_atos WHERE id=%s FOR UPDATE",
+                          (ato_id,))
+            if not preso or preso["cancelado"]:
+                flash("Este ato já está cancelado.", "warning")
+                # A exceção desfaz a transação, e o Flask devolve o redirect.
+                abort(redirect(url_for("ri_ficha", matricula_id=m["id"])))
+            ultimo = bd.valor("SELECT MAX(numero) AS n FROM ri_atos WHERE matricula_id=%s",
+                              (m["id"],))
+            numero = int((ultimo or 0)) + 1
+            anterior = bd.um("""SELECT hash_ato FROM ri_atos WHERE matricula_id=%s
+                                ORDER BY id DESC LIMIT 1""", (m["id"],))
             hash_anterior = anterior["hash_ato"] if anterior else None
             h = hash_ato(m["numero"], "AV", numero, data_ato, teor, hash_anterior)
-            cur = con.execute(
+            novo_id = bd.escrever(
                 """INSERT INTO ri_atos
                    (matricula_id, tipo, numero, data_ato, natureza_titulo, protocolo,
                     teor, teor_formato, cancelado, acervo, origem,
+                    codigo_tj, isento, motivo_isencao, emolumentos,
                     lavrado_nome, lavrado_titulo, lavrado_tratamento,
                     hash_ato, hash_anterior, lavrado_em)
-                   VALUES (?, 'AV', ?, ?, 'Cancelamento de ato', ?, ?, 'texto', 0, 0,
-                           'MANUAL', ?,?,?, ?, ?, ?)""",
-                (m["id"], numero, data_ato,
-                 (request.form.get("protocolo") or "").strip() or None,
-                 teor, *quem_pratica_o_ato(), h, hash_anterior, db.now()),
-            )
-            novo_id = int(cur.lastrowid)
+                   VALUES (%s, 'AV', %s, %s, %s, %s, %s, 'texto', 0, 0,
+                           'MANUAL', %s,%s,%s,%s, %s,%s,%s, %s, %s, %s)
+                   RETURNING id""",
+                (m["id"], numero, data_ato, natureza, protocolo_escrito or None,
+                 teor, codigo_tj, 1 if isento else 0, motivo_isencao or None,
+                 emolumentos, *quem_pratica_o_ato(), h, hash_anterior, db.now()),
+            )[0]["id"]
+            novo_id = int(novo_id)
+            # A UNIDADE DO PROTOCOLO SE GASTA AQUI, NA TRANSAÇÃO DO ATO, como
+            # na lavratura comum: é o item ligado ao ato que a trava do selo
+            # acha primeiro (`ato_selado.cobrir_o_selo`), e ela não gasta outra.
+            # A lista foi lida sem prender; se a unidade acabou no meio, nada
+            # se lavra — cancelamento sem o item seria selo sem pagamento.
+            for item_id in cobranca["itens"]:
+                if not CXPROT.consumir_item(con, item_id, ato_id=novo_id,
+                                            tabela="ri_atos", agora=db.now()):
+                    flash("O item do protocolo acabou enquanto o cancelamento "
+                          "era lavrado (outro ato o usou). O cancelamento NÃO "
+                          f"foi lavrado — {rotulo} continua valendo.", "danger")
+                    abort(redirect(url_for("ri_ficha", matricula_id=m["id"])))
             # A AVERBAÇÃO DE CANCELAMENTO TAMBÉM CONSOME PRENOTAÇÃO, e ela é
             # ato como qualquer outro: entrou por título prenotado, ocupa lugar
             # no livro e tem prioridade.
@@ -5626,11 +6513,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             #   chegou ao fim. Conferido no `.cgu` anterior: o defeito ja estava
             #   la, nao nasceu desta passada.
             amarrado = amarrar_prenotacao(
-                con, request.form.get("protocolo"),
+                bd, request.form.get("protocolo"),
                 matricula_id=m["id"], ato_id=novo_id)
             # O ato original nao e apagado nem reescrito: so recebe a marca e o
             # ponteiro para a averbacao que o cancelou.
-            con.execute("UPDATE ri_atos SET cancelado=1, cancelado_por_ato_id=? WHERE id=?",
+            bd.escrever("UPDATE ri_atos SET cancelado=1, cancelado_por_ato_id=%s WHERE id=%s",
                         (novo_id, ato_id))
             # Indicadores (Livros 4 e 5): lancamento proprio de cancelamento,
             # alem da averbacao no Livro 2 (pedido 18/09/2026).
@@ -5639,6 +6526,51 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 averbacao_numero=numero, motivo=motivo,
                 usuario=_usuario_atual(), agora=db.now(),
                 data_lancamento=data_ato)
+
+        # O SELO SAI AGORA, FORA DA TRANSAÇÃO — o mesmo desenho da lavratura
+        # comum: a chamada ao selador leva até 20 s, e dentro da transação ela
+        # seguraria a trava da numeração da casa inteira esse tempo todo.
+        saiu_do_selo = _selar_itens_do_ato_do_ri(
+            ato_id=novo_id, tipo="AV", numero=numero, matricula=m,
+            base_calculo=None, codigos_tj=cobranca["codigos"],
+            descricao_natureza=natureza, protocolo=protocolo_escrito,
+            partes=[], selo_a_mao=None, isento=isento,
+            motivo_isencao=motivo_isencao or None)
+        recado_do_selo = saiu_do_selo["recado"]
+        motivo_selo = _motivo_da_falha_do_selo(recado_do_selo)
+        if motivo_selo and saiu_do_selo["suspende"]:
+            try:
+                with db.transaction() as con:
+                    _desfazer_o_cancelamento(con, novo_id=novo_id, alvo_id=ato_id,
+                                             itens=cobranca["itens"])
+            except (CancelamentoNaoSeDesfaz, sqlite3.Error) as erro:
+                # DESFAZER FALHOU: a averbação FICA, e a tela diz as duas
+                # coisas — sumir com ela aqui seria o pior dos mundos.
+                audit("RI_CANCELAMENTO_SEM_SELO_NAO_DESFEITO", "RI_ATO", novo_id,
+                      {"matricula": m["numero"], "ato_cancelado": rotulo,
+                       "averbacao": f"AV-{numero:02d}", "motivo": motivo_selo,
+                       "desfazer_falhou": str(erro)})
+                flash(f"O selo não saiu ({motivo_selo}) e o cancelamento NÃO "
+                      f"pôde ser desfeito: {erro} A AV-{numero:02d} continua "
+                      f"lavrada e aparece na lista de atos sem selo.", "danger")
+                return redirect(url_for("ri_ficha", matricula_id=m["id"]))
+            audit("RI_CANCELAMENTO_DESFEITO_SEM_SELO", "RI_ATO", ato_id,
+                  {"matricula": m["numero"], "ato_cancelado": rotulo,
+                   "averbacao": f"AV-{numero:02d}", "hash": h,
+                   "motivo_do_selo": motivo_selo, "fundamento": motivo,
+                   "itens_devolvidos": cobranca["itens"]})
+            flash(f"O selo não saiu: {motivo_selo} O cancelamento NÃO foi "
+                  f"lavrado — {rotulo} continua valendo e nada mudou na ficha. "
+                  f"O fundamento digitado foi «{motivo}»: corrija o que faltou "
+                  f"e cancele de novo.", "warning")
+            return redirect(url_for("ri_ficha", matricula_id=m["id"]))
+
+        # AS FOLHAS DO ATO CANCELADO VOLTAM AO ESTOQUE SÓ COM O CANCELAMENTO DE
+        # PÉ — devolver antes e desfazer depois deixaria folha em branco no
+        # estoque e o ato valendo. `recuperar_do_ato` é idempotente, e a
+        # conferência de cada abertura (`recuperar_cancelados_existentes`)
+        # acerta o que uma queda aqui deixar para trás.
+        with db.transaction() as con:
             folhas_recuperadas = PP.recuperar_do_ato(
                 con, tabela="ri_atos", ato_id=ato_id, agora=db.now(),
                 usuario=_usuario_atual(), motivo=motivo)
@@ -5646,6 +6578,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         audit("RI_ATO_CANCELADO", "RI_ATO", ato_id,
               {"matricula": m["numero"], "ato_cancelado": rotulo,
                "averbacao": f"AV-{numero:02d}", "motivo": motivo,
+               "selo": recado_do_selo.strip() or None,
                **folhas_recuperadas})
         recado_folha = (
             f" Folha(s) {', '.join(folhas_recuperadas['codigos'])} "
@@ -5653,7 +6586,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if folhas_recuperadas["codigos"] else "")
         flash(f"{rotulo} cancelado pela averbação AV-{numero:02d}. "
               f"O ato original permanece na ficha, marcado como cancelado."
-              f"{recado_folha}{recado_da_prenotacao(amarrado)}", "success")
+              f"{recado_folha}{recado_da_prenotacao(amarrado)}{recado_do_selo}",
+              "warning" if "SEM SELO" in recado_do_selo else "success")
         return redirect(url_for("ri_ficha", matricula_id=m["id"]))
 
     def _dados_sv() -> dict:
@@ -5721,7 +6655,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         ri_selar_abertura recusa sem dono. So entra se a abertura ainda nao
         tem selo.
         """
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         voltar = redirect(url_for("ri_ficha", matricula_id=matricula_id))
@@ -5742,12 +6676,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 else (request.form.get("documento_tipo") or None))
         papel = (request.form.get("papel") or "proprietario").strip() or "proprietario"
         with db.transaction() as con:
-            con.execute(
+            banco(con).escrever(
                 """INSERT INTO ri_partes
                    (matricula_id, ato_id, nome, nome_norm, documento_tipo,
                     documento_numero, documento_valido, papel, qualificacao,
                     proprietario, proprietario_ativo, origem, origem_chave)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (matricula_id, None, nome, normalizar_busca(nome),
                  tipo, doc or None,
                  1 if doc and valida_cpf_cnpj(doc) else (0 if doc else None),
@@ -5769,7 +6703,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         Nao e edicao de ato: e qualificacao. O papel decide quem e titular
         atual, e titular errado deixa a certidao de propriedade em branco.
         """
-        p = q1("SELECT matricula_id FROM ri_partes WHERE id=?", (parte_id,))
+        p = q1("SELECT matricula_id FROM ri_partes WHERE id=%s", (parte_id,))
         if not p:
             abort(404)
         titular = request.form.get("titular")
@@ -5859,7 +6793,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/registro-imoveis/expurgos/<int:expurgo_id>/ata.odt")
     @roles_required("ADMIN", "MANAGER", "AUDITOR")
     def ri_expurgo_ata(expurgo_id):
-        e = q1("SELECT * FROM ri_expurgos WHERE id=?", (expurgo_id,))
+        e = q1("SELECT * FROM ri_expurgos WHERE id=%s", (expurgo_id,))
         if not e:
             abort(404)
         arquivo = gerar_odt(texto_para_odf(e["ata"]),
@@ -5878,7 +6812,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         Encerramento tambem e ato: fica registrado na ficha com numero e teor,
         e nao apenas como um campo mudado no banco.
         """
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         if m["encerrada"]:
@@ -5900,13 +6834,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         #   essa marca. Procurar por ela acharia nada e lavraria o ato dobrado.
         if m["reaberta_em"] and m["data_encerramento"]:
             with db.transaction() as con:
-                con.execute(
+                bd = banco(con)
+                bd.escrever(
                     """UPDATE ri_matriculas SET encerrada=1, situacao='ENCERRADA',
                        reaberta_em=NULL, reaberta_por=NULL, motivo_reabertura=NULL,
-                       atualizado_em=? WHERE id=?""",
+                       atualizado_em=%s WHERE id=%s""",
                     (db.now(), matricula_id))
-                con.execute(
-                    "UPDATE ri_partes SET proprietario_ativo=0 WHERE matricula_id=?",
+                bd.escrever(
+                    "UPDATE ri_partes SET proprietario_ativo=0 WHERE matricula_id=%s",
                     (matricula_id,))
             audit("RI_MATRICULA_REENCERRADA", "RI_MATRICULA", matricula_id,
                   {"numero": m["numero"], "encerrada_em": m["data_encerramento"]})
@@ -5922,33 +6857,40 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
         data_ato = (request.form.get("data_encerramento") or "").strip() or db.now()[:10]
-        teor = (f"ENCERRAMENTO DESTA MATRÍCULA. MOTIVO: {motivo}."
-                + (f" O imóvel passa a constar da(s) matrícula(s) {destino}." if destino else ""))
+        # O TEXTO MORA NA BASE — LF06B (`RI_ENCERRAMENTO_DIRETO` e, com
+        # destino informado, `RI_ENCERRAMENTO_DIRETO_DESTINO`); a regra de
+        # quando o destino entra e daqui. Vai ao livro e congela.
+        import ri_frases
+        with db.connect() as _c_frases:
+            teor = (ri_frases.frase("RI_ENCERRAMENTO_DIRETO", _c_frases, motivo=motivo)
+                    + (" " + ri_frases.frase("RI_ENCERRAMENTO_DIRETO_DESTINO", _c_frases,
+                                             destino=destino) if destino else ""))
 
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
-            ultimo = con.execute("SELECT MAX(numero) n FROM ri_atos WHERE matricula_id=?",
-                                 (matricula_id,)).fetchone()
-            numero = int((ultimo["n"] or 0)) + 1
-            anterior = con.execute("""SELECT hash_ato FROM ri_atos WHERE matricula_id=?
-                                      ORDER BY id DESC LIMIT 1""", (matricula_id,)).fetchone()
+            bd = banco(con)
+            bd.travar("ri_atos.numero")
+            ultimo = bd.valor("SELECT MAX(numero) AS n FROM ri_atos WHERE matricula_id=%s",
+                              (matricula_id,))
+            numero = int((ultimo or 0)) + 1
+            anterior = bd.um("""SELECT hash_ato FROM ri_atos WHERE matricula_id=%s
+                                ORDER BY id DESC LIMIT 1""", (matricula_id,))
             hash_anterior = anterior["hash_ato"] if anterior else None
             h = hash_ato(m["numero"], "AV", numero, data_ato, teor, hash_anterior)
-            con.execute(
+            bd.escrever(
                 """INSERT INTO ri_atos
                    (matricula_id, tipo, numero, data_ato, natureza_titulo, teor,
                     teor_formato, cancelado, acervo, origem,
                     lavrado_nome, lavrado_titulo, lavrado_tratamento,
                     hash_ato, hash_anterior, lavrado_em)
-                   VALUES (?, 'AV', ?, ?, 'Encerramento de matrícula', ?, 'texto',
-                           0, 0, 'MANUAL', ?,?,?, ?, ?, ?)""",
+                   VALUES (%s, 'AV', %s, %s, 'Encerramento de matrícula', %s, 'texto',
+                           0, 0, 'MANUAL', %s,%s,%s, %s, %s, %s)""",
                 (matricula_id, numero, data_ato, teor, *quem_pratica_o_ato(),
                  h, hash_anterior, db.now()),
             )
             # AS MARCAS DO ENCERRAMENTO MORAM NUM LUGAR SÓ. Esta rota e a de
             # lavrar (quando o ato lavrado É o encerramento) chamam a mesma
             # função — duas cópias divergiriam no primeiro conserto.
-            _marcar_a_ficha_encerrada(con, matricula_id, motivo=motivo,
+            _marcar_a_ficha_encerrada(bd, matricula_id, motivo=motivo,
                                       destino=destino, data_ato=data_ato)
 
         audit("RI_MATRICULA_ENCERRADA", "RI_MATRICULA", matricula_id,
@@ -5994,7 +6936,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         abrir esta ficha daqui a dois anos vai ver um ato de encerramento no
         meio dela e a matricula aberta, e precisa saber por que.
         """
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         voltar = redirect(url_for("ri_ficha", matricula_id=matricula_id))
@@ -6012,10 +6954,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         agora = db.now()
         quem = app.extensions["usuario_nome"]()
         with db.transaction() as con:
-            con.execute(
+            banco(con).escrever(
                 """UPDATE ri_matriculas SET encerrada=0, situacao='ATIVO',
-                   reaberta_em=?, reaberta_por=?, motivo_reabertura=?,
-                   atualizado_em=? WHERE id=?""",
+                   reaberta_em=%s, reaberta_por=%s, motivo_reabertura=%s,
+                   atualizado_em=%s WHERE id=%s""",
                 (agora, quem, motivo, agora, matricula_id))
 
         audit("RI_MATRICULA_REABERTA", "RI_MATRICULA", matricula_id,
@@ -6074,7 +7016,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             #   e 4019 —, e o 4015 e numero desta serventia. E pergunta para
             #   ele, e nao conserto de quem programa.
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 proximo = RC.proximo_numero(con, livro)
             # HOTFIX-2026-10-13-06: reabrir o rascunho salvo (?rascunho_id=N).
             form_ini = do_arquivo["valores"] if do_arquivo else request.form
@@ -6106,18 +7047,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # nenhuma tem QR. As colunas ficam no esquema, e a ficha continua
         # mostrando o que houver nelas; o que saiu foi o campo de entrada.
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
             # O numero vem da SERIE, nao do volume. Contar por volume abriu a
             # matricula 4011 em 18/08/2026 quando a serventia ja tinha a 4013 no
             # volume 2S: numero de matricula nao se repete na serventia.
+            bd = banco(con)
+            bd.travar("ri_numeracao.livro")
             numero = RC.proximo_numero(con, livro)
             e_acervo = matricula_de_acervo(numero)
             pessoa_da_abertura = ((None, None, None) if e_acervo
                                   else quem_pratica_o_ato())
-            if not con.execute("SELECT 1 FROM ri_numeracao WHERE livro=?", (livro,)).fetchone():
-                con.execute(
+            if not bd.um("SELECT 1 AS um FROM ri_numeracao WHERE livro=%s", (livro,)):
+                bd.escrever(
                     """INSERT INTO ri_numeracao(livro, proximo_numero, maior_em_uso, fixado_em, observacao)
-                       VALUES (?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s)""",
                     (livro, numero, numero - 1, db.now(),
                      "Livro aberto ao cadastrar a primeira matrícula"),
                 )
@@ -6144,21 +7086,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                        do_arquivo=None, form=request.form,
                                        rascunho_id=request.form.get("_rascunho_id_tela", type=int))  # HOTFIX-2026-10-13-06
 
-            cur = con.execute(
+            novo_id = bd.escrever(
                 """INSERT INTO ri_matriculas
                    (numero, complemento, livro, livro_norm, folha, data_abertura,
                     selo_abertura_texto, selo_abertura_qr, selo_abertura_qr_mime,
                     selo_abertura_qr_2, selo_abertura_qr_2_mime, emolumentos_abertura,
                     tipo_ficha, situacao, conferido, rural_urbano, logradouro, numero_predial,
                     bairro, cidade, uf, cep, area_valor, area_unidade, descricao_perimetro,
+                    confrontacoes, inscricao_municipal,
                     registro_anterior, teor, teor_formato, cnm, cib, origem, criado_em,
                     criado_por, aberta_nome, aberta_titulo, aberta_tratamento)
-                   VALUES (:numero,'',:livro,:livro_norm,:folha,:data_abertura,
-                    :selo_texto,:qr1,:mime1,:qr2,:mime2,:emolumentos,
-                    :tipo_ficha,'ATIVA',:conferido,:rural_urbano,:logradouro,:numero_predial,
-                    :bairro,:cidade,:uf,:cep,:area_valor,:area_unidade,:descricao_perimetro,
-                    :registro_anterior,:teor,'texto',:cnm,:cib,'MANUAL',:criado_em,NULL,
-                    :aberta_nome,:aberta_titulo,:aberta_tratamento)""",
+                   VALUES (%(numero)s,'',%(livro)s,%(livro_norm)s,%(folha)s,%(data_abertura)s,
+                    %(selo_texto)s,%(qr1)s,%(mime1)s,%(qr2)s,%(mime2)s,%(emolumentos)s,
+                    %(tipo_ficha)s,'ATIVA',%(conferido)s,%(rural_urbano)s,%(logradouro)s,%(numero_predial)s,
+                    %(bairro)s,%(cidade)s,%(uf)s,%(cep)s,%(area_valor)s,%(area_unidade)s,%(descricao_perimetro)s,
+                    %(confrontacoes)s,%(inscricao_municipal)s,
+                    %(registro_anterior)s,%(teor)s,'texto',%(cnm)s,%(cib)s,'MANUAL',%(criado_em)s,NULL,
+                    %(aberta_nome)s,%(aberta_titulo)s,%(aberta_tratamento)s)
+                   RETURNING id""",
                 {
                  # QUEM ABRIU A MATRICULA, CONGELADO AQUI — pedido do oficial
                  # em 16/09/2026: «precisa ter espaco pra quem abriu a
@@ -6200,6 +7145,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  "area_valor": (request.form.get("area_valor") or "").strip() or None,
                  "area_unidade": (request.form.get("area_unidade") or "").strip() or None,
                  "descricao_perimetro": (request.form.get("descricao_perimetro") or "").strip() or None,
+                 # LT03 (20/10/2026): a tela passou a pedir as confrontações —
+                 # LRP art. 176, § 1º, II, 3. A coluna já existia e a ficha já
+                 # a imprimia; faltava quem a gravasse na abertura.
+                 "confrontacoes": (request.form.get("confrontacoes") or "").strip() or None,
+                 # e a designação cadastral (LRP art. 176, § 1º, II, 3, b).
+                 "inscricao_municipal": (request.form.get("inscricao_municipal") or "").strip() or None,
                  "registro_anterior": (request.form.get("registro_anterior") or "").strip() or None,
                  "teor": (request.form.get("teor") or "").strip() or None,
                  # O CÓDIGO NACIONAL DA MATRÍCULA — débito do backlog.
@@ -6219,8 +7170,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  "cnm": _cnm_da_matricula(livro, numero),
                  "cib": _cib_normalizado(_cib) or None,
                  "criado_em": db.now()},
-            )
-            novo_id = int(cur.lastrowid)
+            )[0]["id"]
+            novo_id = int(novo_id)
             # PROPRIETARIO DA ABERTURA — 23/09/2026 (Beatriz 4018/4019).
             # Sem isto a ficha nasce sem ri_partes com ato_id IS NULL e
             # ri_selar_abertura recusa. Acervo nao pede: abertura historica.
@@ -6230,17 +7181,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     prop_doc = so_digitos(request.form.get("proprietario_documento") or "")
                     prop_tipo = ("CPF" if len(prop_doc) == 11
                                  else "CNPJ" if len(prop_doc) == 14 else None)
-                    con.execute(
+                    bd.escrever(
                         """INSERT INTO ri_partes
                            (matricula_id, ato_id, nome, nome_norm, documento_tipo,
                             documento_numero, documento_valido, papel, qualificacao,
                             proprietario, proprietario_ativo, origem, origem_chave)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (novo_id, None, prop_nome, normalizar_busca(prop_nome),
                          prop_tipo, prop_doc or None,
                          1 if prop_doc and valida_cpf_cnpj(prop_doc) else
                          (0 if prop_doc else None),
-                         "proprietario", None, 1, 1, "MANUAL",
+                         # A QUALIFICAÇÃO DO DONO DA ABERTURA — LT03, 20/10/2026:
+                         # LRP art. 176, § 1º, II, 4, e CN-MA art. 479, I. Era
+                         # `None` escrito, e a ficha saía só com nome e CPF.
+                         "proprietario",
+                         (request.form.get("proprietario_qualificacao") or "").strip() or None,
+                         1, 1, "MANUAL",
                          "abertura_nova_matricula"),
                     )
             # Avanca a serie inteira: todos os volumes passam a apontar para o
@@ -6259,13 +7215,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     # ------------------------------------------- ficha modelo e LibreOffice
 
     def contexto_ficha(matricula_id: int, para_odt: bool = True) -> dict:
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         m = dict(m)
         if matricula_de_acervo(m["numero"]):
             m["tipo_ficha"] = "ACERVO"
-        atos = q("""SELECT * FROM ri_atos WHERE matricula_id=?
+        atos = q("""SELECT * FROM ri_atos WHERE matricula_id=%s
                     ORDER BY numero, tipo""", (matricula_id,))
         # O ATO QUE O TEOR JA CONTA NAO SE REPETE NO PAPEL — e o que decide
         # isso e o TEOR IR AO PAPEL, e nao o tipo da ficha.
@@ -6297,9 +7253,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             m["tipo_ficha"] = "ACERVO"
             m["_teor_no_papel"] = True  # HOTFIX-2026-10-15-01: nao e acervo, o selo de abertura sai
         teor_vai_ao_papel = (m["tipo_ficha"] == "ACERVO") or not para_odt
-        atos_para_o_papel = (NUMT.atos_fora_do_teor(m["teor"], atos)
+        atos_para_o_papel = (NUMT.atos_fora_do_teor(m["teor"], atos, matricula=m)
                              if teor_vai_ao_papel else atos)
-        partes = q("SELECT * FROM ri_partes WHERE matricula_id=?", (matricula_id,))
+        partes = q("SELECT * FROM ri_partes WHERE matricula_id=%s ORDER BY id", (matricula_id,))
         s = db.get_settings()
 
         # O CARIMBO LE A ETIQUETA DO RAZAO, E NAO A COLUNA DO ATO — correcao de
@@ -6333,7 +7289,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # PRIMEIRO via setdefault. Agora a lista inteira vai ao carimbo.
         selo_do_ato: dict[int, list[str]] = {}
         if atos:
-            lugares = ",".join("?" * len(atos))
+            lugares = ",".join(["%s"] * len(atos))
             # HOTFIX-2026-10-07-04/selos (Beatriz 08/10/2026, mat. 4019): selo
             # CANCELADO no razão não vai ao carimbo (R-01 saía com 2 selos de
             # registro), e o 16.39 do ato não se repete como «averbação 2/2»
@@ -6357,8 +7313,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # os valores mora em `sd_selos`.
         _abertura = q1(
             """SELECT texto, numero, qr_token FROM sd_selos
-                WHERE tabela='ri_matriculas' AND ato_id=?
-                ORDER BY obtido_em DESC LIMIT 1""", (matricula_id,))
+                WHERE tabela='ri_matriculas' AND ato_id=%s
+                ORDER BY obtido_em DESC, id DESC LIMIT 1""", (matricula_id,))
         selo_da_abertura = dict(_abertura) if _abertura else {}
 
         def etiqueta_da_abertura() -> str | None:
@@ -6391,12 +7347,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if _d:
                 _nums_proto.append(_d)
         if _nums_proto:
-            _lug = ",".join("?" * len(_nums_proto))
+            _lug = ",".join(["%s"] * len(_nums_proto))
             for _r in q(
                 f"""SELECT CAST(numero AS TEXT) numero, selo_prenotacao
                       FROM ri_protocolos
                      WHERE REPLACE(CAST(numero AS TEXT), '.', '') IN ({_lug})
-                        OR CAST(numero AS TEXT) IN ({_lug})""",
+                        OR CAST(numero AS TEXT) IN ({_lug})
+                     ORDER BY id""",
                 _nums_proto + _nums_proto,
             ):
                 _d = "".join(
@@ -6406,10 +7363,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             _selos = list({v for v in _prenot_por_digito.values() if v})
             _etiq: dict[str, str] = {}
             if _selos:
-                _lug = ",".join("?" * len(_selos))
+                _lug = ",".join(["%s"] * len(_selos))
                 for _r in q(
                     f"""SELECT numero, texto FROM sd_selos
-                         WHERE numero IN ({_lug}) ORDER BY obtido_em""",
+                         WHERE numero IN ({_lug}) ORDER BY obtido_em, id""",
                     _selos,
                 ):
                     _etiq.setdefault(_r["numero"], _r["texto"])
@@ -6444,11 +7401,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     return None, None
                 arq_et = None
                 with db.connect() as _c:
-                    _c.row_factory = sqlite3.Row
-                    arq_et = _c.execute(
-                        """SELECT texto FROM sd_selos WHERE numero=?
+                    arq_et = banco(_c).um(
+                        """SELECT texto FROM sd_selos WHERE numero=%s
                             ORDER BY obtido_em DESC LIMIT 1""",
-                        (arq_num,)).fetchone()
+                        (arq_num,))
                 arq_txt = (str((arq_et["texto"] if arq_et else "") or "").strip()
                            or arq_num)
                 try:
@@ -6574,9 +7530,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # Prenotações ABERTO desta matrícula — fecho da certidão
         # (Lei 6.015/1973 + Provimento CNJ 149/2023). Pedido Beatriz 23/09/2026.
         with db.connect() as _c_pren:
-            _c_pren.row_factory = sqlite3.Row
             _prenot_abertas = prenotacoes_abertas_da_matricula(
                 _c_pren, matricula_id, m.get("numero"))
+            # O TEXTO DA CLAUSULA MORA NA BASE (LF06B); a regra fica aqui.
+            _clausula_prenot = clausula_html_prenotacoes_abertas(
+                _prenot_abertas, fmt_date=fmt_date, con=_c_pren)
         # CABEÇALHO DO ATO COM A DATA DA PRENOTAÇÃO — HOTFIX-2026-10-07-04
         # (Beatriz, mat. 4019). O molde imprimia «PROTOCOLO Nº 11546, DE
         # 2026-09-23» (data do ATO, em ISO); o cabeçalho pede o número e a
@@ -6616,11 +7574,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     if _dig and _d_ato:
                         _r = q1(
                             """SELECT data_prenotacao FROM ri_protocolos
-                                WHERE REPLACE(CAST(numero AS TEXT), '.', '') = ?
-                                  AND date(data_prenotacao) <= date(?)
-                                  AND date(data_prenotacao) >= date(?, '-365 days')
-                                ORDER BY data_prenotacao DESC LIMIT 1""",
-                            (_dig, _d_ato.isoformat(), _d_ato.isoformat()))
+                                WHERE REPLACE(CAST(numero AS TEXT), '.', '') = %s
+                                  AND date(data_prenotacao) <= %s
+                                  AND date(data_prenotacao) >= %s
+                                ORDER BY data_prenotacao DESC, id DESC LIMIT 1""",
+                            (_dig, _d_ato.isoformat(),
+                             (_d_ato - timedelta(days=365)).isoformat()))
                         if _r:
                             _d_pre = _data_iso_ou_br(_r["data_prenotacao"])
                 if _d_pre:
@@ -6629,9 +7588,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         f"DE {_d_pre.year}")
             except Exception:                                  # noqa: BLE001
                 continue
-
-        _clausula_prenot = clausula_html_prenotacoes_abertas(
-            _prenot_abertas, fmt_date=fmt_date)
 
         # Onus sao REGISTROS e AVERBACOES restritivos nao cancelados —
         # hipoteca, alienacao fiduciaria, usufruto e servidao sao R. A regra
@@ -6651,6 +7607,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 except ValueError:
                     pass
 
+        # AS FRASES DOS FECHOS — LF06B: lidas UMA vez por ficha (ajuste da casa
+        # → padrao da base), e nao uma conexao por ato.
+        import ri_frases
+        with db.connect() as _c_frases:
+            _fechos = ri_frases.ler(_c_frases, "RI_FECHO_DO_ATO",
+                                    "RI_FECHO_DO_ATO_SEM_TITULO",
+                                    "RI_FECHO_DA_ABERTURA")
         _ctx = {
             **RONIA.padrao_do_sistema(_onus),
             "_fragmentos": fragmentos,
@@ -6664,7 +7627,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         m["cidade"] or s.get("ri_cidade", ""),
                         m["uf"] or s.get("ri_uf", "MA"),
                         a["data_ato"], a["teor"], a["lavrado_nome"],
-                        a["lavrado_titulo"], a["lavrado_tratamento"])
+                        a["lavrado_titulo"], a["lavrado_tratamento"],
+                        lido=_fechos)
                     if para_odt else None),
                 # Certidao inteiro teor: destaca R-01/AV-02 no miolo.
                 # O TEOR VAI INTEIRO — 14/10/2026. Ate aqui ele passava por
@@ -6709,7 +7673,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     m["cidade"] or s.get("ri_cidade", ""),
                     m["uf"] or s.get("ri_uf", "MA"),
                     a["data_ato"], a["teor"],
-                    a["lavrado_nome"], a["lavrado_titulo"], a["lavrado_tratamento"]),
+                    a["lavrado_nome"], a["lavrado_titulo"], a["lavrado_tratamento"],
+                    lido=_fechos),
             } for a in atos_para_o_papel],
             "partes": [dict(p) for p in partes],
             "proprietarios": [dict(p) for p in partes if p["proprietario_ativo"]],
@@ -6760,7 +7725,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 m["aberta_titulo"] if "aberta_titulo" in m.keys() else None,
                 m["aberta_tratamento"] if "aberta_tratamento" in m.keys()
                 else None,
-                tipo_ficha=m["tipo_ficha"])["frase"],
+                tipo_ficha=m["tipo_ficha"], lido=_fechos)["frase"],
             "abertura_assinatura": fecho_da_abertura(
                 m["cidade"] or s.get("ri_cidade", ""),
                 m["uf"] or s.get("ri_uf", "MA"),
@@ -6769,7 +7734,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 m["aberta_titulo"] if "aberta_titulo" in m.keys() else None,
                 m["aberta_tratamento"] if "aberta_tratamento" in m.keys()
                 else None,
-                tipo_ficha=m["tipo_ficha"])["assinatura"],
+                tipo_ficha=m["tipo_ficha"], lido=_fechos)["assinatura"],
             # O CARIMBO DA ABERTURA TEM O MESMO DESENHO DO ATO — e desde
             # 16/09 os dois sao uma linha so, sem QR e sem link.
             "selo_abertura_odf": ("" if (m["tipo_ficha"] == "ACERVO"
@@ -6778,7 +7743,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                         etiqueta_da_abertura(),
                                         rotulo="SELO DE ABERTURA")),
             "protocolo_atual": (q1("""SELECT numero FROM ri_protocolos
-                                      WHERE matricula_id=? ORDER BY numero DESC LIMIT 1""",
+                                      WHERE matricula_id=%s ORDER BY numero DESC, id DESC LIMIT 1""",
                                    (matricula_id,)) or {"numero": None})["numero"],
             "separador": SEPARADOR_DE_ATO_HTML,
             "uf_extenso": UF_EXTENSO.get((m["uf"] or "MA").upper(), m["uf"] or ""),
@@ -6832,7 +7797,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """
         from jinja2.sandbox import SandboxedEnvironment
         env = SandboxedEnvironment(autoescape=False)
-        return env.from_string(corpo).render(**contexto)
+        html = env.from_string(corpo).render(**contexto)
+        # O AJUSTE DA CASA SAI SEM O QUE EXECUTA (revisão de segurança de
+        # 22/10/2026, A7): o corpo vem de `ri_modelos` ou do catálogo, que o
+        # papel USER edita, e o que sai daqui vai ao navegador (`|safe`) e ao
+        # Chrome que conta as folhas. O texto de fábrica sai byte a byte como
+        # saía; o QR do carimbo é PNG em data-URI, que o filtro deixa.
+        return MODELOS.sem_o_que_executa(corpo, html)
 
     # A CONFERENCIA DO RI E CONTRA UMA MATRICULA DE VERDADE, e nao contra um
     # boneco — era o que esta tela ja fazia, e e melhor: o boneco pega erro de
@@ -6921,15 +7892,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @login_required
     def ri_ficha_odt(matricula_id):
         modelo_id = request.args.get("modelo")
-        # O CATALOGO DA CASA DECIDE — relato #28. Ele ja olha `ri_modelos`
-        # como legado, de modo que quem tivesse um ajuste ali nao o perde.
+        # O CATALOGO DA CASA DECIDE — relato #28. O ajuste que estivesse em
+        # `ri_modelos` virou ajuste do catalogo na subida (LF06A), de modo que
+        # quem tivesse um ajuste ali nao o perde.
         #
         # O `?modelo=<id>` CONTINUA VALENDO, e vem antes: e como a tela
-        # «Modelos de documento» do RI experimenta um modelo especifico. Sem
-        # ele, quem manda e o modelo que vale para a casa.
-        modelo = (q1("SELECT * FROM ri_modelos WHERE id=? AND ativo=1", (modelo_id,))
-                  if modelo_id else None)
-        if modelo:
+        # «Modelos de documento» do RI experimentava um modelo especifico. Ele
+        # e achado PELO CAMINHO NOVO (`modelo_legado_ri`): a linha velha fica
+        # desligada depois da subida, e procura-la so ativa faria a ficha cair
+        # calada no modelo da casa (revisao do LF06A). Numero que nao se acha
+        # AVISA e nao imprime — ficha com outro modelo no lugar do pedido e
+        # pior que ficha nenhuma. Sem `?modelo=`, manda o modelo da casa.
+        modelo = None
+        if modelo_id:
+            with db.connect() as _c:
+                modelo = MODELOS.modelo_legado_ri(_c, modelo_id)
+            if not modelo:
+                flash(f"O modelo n.º {modelo_id} não foi encontrado entre os "
+                      "modelos do Registro de Imóveis, e a ficha não foi "
+                      "impressa. Imprima sem escolher modelo para usar o da "
+                      "casa (Administrativo → Modelos).", "warning")
+                return redirect(url_for("ri_ficha", matricula_id=matricula_id))
             corpo_modelo = modelo["corpo"]
         else:
             with db.connect() as _c:
@@ -6939,7 +7922,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         try:
             html = render_modelo(corpo_modelo, contexto)
         except Exception as erro:
-            flash(f"O modelo da ficha tem um erro: {erro}", "danger")
+            flash(f"O modelo da ficha tem um erro: {SEGWEB.erro_do_modelo(erro, 'ri_ficha')}",
+                  "danger")
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
         # O teor ja vem convertido para ODF no contexto; o resto do modelo e HTML.
@@ -7017,17 +8001,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             SELECT 'Ato' origem, a.data_ato data, a.selo_texto selo, a.emolumentos valor,
                    m.numero||' — '||a.tipo||'-'||a.numero referencia, m.id matricula_id
             FROM ri_atos a JOIN ri_matriculas m ON m.id = a.matricula_id
-            WHERE a.selo_texto IS NOT NULL AND a.data_ato BETWEEN ? AND ?
+            WHERE a.selo_texto IS NOT NULL AND a.data_ato BETWEEN %s AND %s
             UNION ALL
             SELECT 'Certidão', c.data_emissao, c.selo_texto, c.emolumentos,
                    'nº '||c.numero||'/'||c.ano, c.matricula_id
             FROM ri_certidoes c
-            WHERE c.selo_texto IS NOT NULL AND c.data_emissao BETWEEN ? AND ?
+            WHERE c.selo_texto IS NOT NULL AND c.data_emissao BETWEEN %s AND %s
             UNION ALL
             SELECT 'Prenotação', p.data_prenotacao, p.selo_prenotacao, NULL,
                    'protocolo '||p.numero, p.matricula_id
             FROM ri_protocolos p
-            WHERE p.selo_prenotacao IS NOT NULL AND p.data_prenotacao BETWEEN ? AND ?
+            WHERE p.selo_prenotacao IS NOT NULL AND p.data_prenotacao BETWEEN %s AND %s
             ORDER BY data DESC, referencia""",
             (inicio, fim, inicio, fim, inicio, fim))
 
@@ -7073,7 +8057,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         #   selo em setembro, e some da tela justamente quem mais precisa
         #   aparecer.
         with db.connect() as _c:
-            _c.row_factory = sqlite3.Row
             sem_selo_lista = {
                 "Ato": AS.atos_sem_selo(_c, "ri_atos"),
                 "Certidão": AS.atos_sem_selo(_c, "ri_certidoes"),
@@ -7101,11 +8084,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         enquanto o interessado cumpre as exigencias. Reingressando no prazo, o
         titulo aproveita o mesmo numero de ordem (Codigo TJMA, art. 44).
         """
-        p = q1("SELECT * FROM ri_protocolos WHERE id=?", (protocolo_id,))
+        p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
-        notas = q("""SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=?
-                     ORDER BY numero DESC""", (protocolo_id,))
+        notas = q("""SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=%s
+                     ORDER BY numero DESC, id DESC""", (protocolo_id,))
 
         if request.method == "GET":
             return render_template("ri_nota.html", p=p, notas=notas,
@@ -7118,23 +8101,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("ri_nota_devolutiva", protocolo_id=protocolo_id))
 
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
-            ultimo = con.execute("""SELECT MAX(numero) n FROM ri_notas_devolutivas
-                                    WHERE protocolo_id=?""", (protocolo_id,)).fetchone()
-            numero = int((ultimo["n"] or 0)) + 1
-            cur = con.execute(
+            bd = banco(con)
+            bd.travar("ri_notas_devolutivas.numero")
+            ultimo = bd.valor("""SELECT MAX(numero) AS n FROM ri_notas_devolutivas
+                                 WHERE protocolo_id=%s""", (protocolo_id,))
+            numero = int((ultimo or 0)) + 1
+            nota_id = bd.escrever(
                 """INSERT INTO ri_notas_devolutivas
                    (protocolo_id, numero, data_nota, exigencias, fundamentacao,
                     prazo_ate, situacao, emitida_em)
-                   VALUES (?,?,?,?,?,?, 'ABERTA', ?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s, 'ABERTA', %s)
+                   RETURNING id""",
                 (protocolo_id, numero,
                  (request.form.get("data_nota") or "").strip() or db.now()[:10],
                  json.dumps(exigencias, ensure_ascii=False),
                  (request.form.get("fundamentacao") or "").strip() or None,
                  p["data_limite"], db.now()),
-            )
-            nota_id = int(cur.lastrowid)
-            con.execute("UPDATE ri_protocolos SET situacao='DEVOLVIDO' WHERE id=?",
+            )[0]["id"]
+            nota_id = int(nota_id)
+            bd.escrever("UPDATE ri_protocolos SET situacao='DEVOLVIDO' WHERE id=%s",
                         (protocolo_id,))
             # A NOTA É A QUALIFICAÇÃO NEGATIVA, e as duas nascem juntas: nota
             # sem esta linha faria o painel dos pedidos dizer «a qualificar»
@@ -7154,10 +8139,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/registro-imoveis/notas/<int:nota_id>.odt")
     @login_required
     def ri_nota_odt(nota_id):
-        n = q1("SELECT * FROM ri_notas_devolutivas WHERE id=?", (nota_id,))
+        n = q1("SELECT * FROM ri_notas_devolutivas WHERE id=%s", (nota_id,))
         if not n:
             abort(404)
-        p = q1("SELECT * FROM ri_protocolos WHERE id=?", (n["protocolo_id"],))
+        p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (n["protocolo_id"],))
         s = db.get_settings()
         try:
             lista = json.loads(n["exigencias"])
@@ -7185,7 +8170,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         try:
             html = render_modelo(_corpo, contexto)
         except Exception as erro:
-            flash(f"O modelo da nota tem um erro: {erro}", "danger")
+            flash(f"O modelo da nota tem um erro: {SEGWEB.erro_do_modelo(erro, 'ri_nota')}",
+                  "danger")
             return redirect(url_for("ri_protocolo"))
 
         arquivo = gerar_odt(html_para_odf(html))
@@ -7208,22 +8194,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         Dentro da vigencia da prenotacao, o titulo volta ao MESMO protocolo -
         nao se abre outro. Fora do prazo, e preciso protocolo novo.
         """
-        n = q1("SELECT * FROM ri_notas_devolutivas WHERE id=?", (nota_id,))
+        n = q1("SELECT * FROM ri_notas_devolutivas WHERE id=%s", (nota_id,))
         if not n:
             abort(404)
-        p = q1("SELECT * FROM ri_protocolos WHERE id=?", (n["protocolo_id"],))
+        p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (n["protocolo_id"],))
         quando = (request.form.get("data_reingresso") or "").strip() or db.now()[:10]
 
         dentro_do_prazo = PRAZO.suspensa(p) or (
             bool(p["data_limite"]) and quando <= p["data_limite"])
         with db.transaction() as con:
-            con.execute("""UPDATE ri_notas_devolutivas SET situacao=?, data_reingresso=?,
-                           observacao_reingresso=? WHERE id=?""",
+            bd = banco(con)
+            bd.escrever("""UPDATE ri_notas_devolutivas SET situacao=%s, data_reingresso=%s,
+                           observacao_reingresso=%s WHERE id=%s""",
                         ("CUMPRIDA" if dentro_do_prazo else "FORA_DO_PRAZO", quando,
                          (request.form.get("observacao") or "").strip() or None, nota_id))
             if dentro_do_prazo:
-                con.execute("""UPDATE ri_protocolos SET situacao='ABERTO', data_reingresso=?
-                               WHERE id=?""", (quando, p["id"]))
+                bd.escrever("""UPDATE ri_protocolos SET situacao='ABERTO', data_reingresso=%s
+                               WHERE id=%s""", (quando, p["id"]))
 
         audit("RI_REINGRESSO", "RI_NOTA", nota_id,
               {"protocolo": p["numero"], "data": quando, "no_prazo": dentro_do_prazo})
@@ -7272,14 +8259,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         FROM ri_partes p
                         JOIN ri_matriculas m ON m.id = p.matricula_id
                         LEFT JOIN ri_atos a ON a.id = p.ato_id
-                        WHERE COALESCE(a.data_ato, m.data_abertura) BETWEEN ? AND ?
+                        WHERE COALESCE(a.data_ato, m.data_abertura) BETWEEN %s AND %s
                         ORDER BY COALESCE(a.data_ato, m.data_abertura), m.numero, p.nome""",
                      (inicio, fim))
 
         # Indicador Real: matrículas abertas no período.
         matriculas = q("""SELECT * FROM ri_matriculas
-                          WHERE data_abertura BETWEEN ? AND ?
-                          ORDER BY CAST(numero AS INTEGER)""", (inicio, fim))
+                          WHERE data_abertura BETWEEN %s AND %s
+                          ORDER BY coalesce(substring(numero FROM '^[0-9]+')::bigint, 0), id""",
+                       (inicio, fim))
 
         if request.method == "POST":
             tipo = (request.form.get("tipo") or "PESSOAL").upper()
@@ -7331,7 +8319,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """A conferencia da carga completa. SO LE."""
         raiz = raiz_imagens()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             quadro = OCG.prontidao(con, raiz)
             faltando = OCG.matriculas_sem_imagem(con, raiz, limite=50)                 if quadro["erro_do_disco"] is None else []
             # O QUADRO QUE SE COPIA NO FORMULARIO DE ADESAO. Ele pede numeros
@@ -7356,7 +8343,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """
         cns = db.get_setting("ri_cns", "")
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             conferencia = OCG.conferir_indicador_pessoal(con)
             conteudo = OCG.gerar_indicador_pessoal(con, cns)
         arquivo = f"IndicadorPessoal_CARGA_COMPLETA_{db.now()[:10]}.XML"
@@ -7382,7 +8368,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         busca = (request.args.get("busca") or "").strip()
         bairro = (request.args.get("bairro") or "").strip()
         tipo = (request.args.get("tipo") or "").strip()
-        pagina = max(1, int(request.args.get("pagina") or 1))
+        # LD13: «abc» no endereço era 500, e a página de 18 dígitos estoura o OFFSET.
+        pagina = max(1, numero_digitado(request.args.get("pagina"),
+                                        maximo=PAGINA_MAIS_ALTA) or 1)
 
         onde, params = ["1=1"], []
         if busca:
@@ -7391,17 +8379,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # «contem» ali traria as mesmas 782 fichas do «1». A descricao (o
             # `imovel_norm`) continua por trecho, que e o proposito da tela.
             digitos = _numero_digitado(busca)
-            condicoes = ["m.imovel_norm LIKE ?"]
+            condicoes = ["m.imovel_norm ILIKE %s"]
             params.append(f"%{normalizar_busca(busca)}%")
             if digitos:
-                condicoes += ["m.numero = ?", "m.cnm = ?"]
+                condicoes += ["m.numero = %s", "m.cnm = %s"]
                 params += [digitos, _cnm_da_casa(digitos)]
             onde.append("(" + " OR ".join(condicoes) + ")")
         if bairro:
-            onde.append("m.bairro = ?")
+            onde.append("m.bairro = %s")
             params.append(bairro)
         if tipo in ("R", "U"):
-            onde.append("m.rural_urbano = ?")
+            onde.append("m.rural_urbano = %s")
             params.append(tipo)
         filtro = " AND ".join(onde)
 
@@ -7411,21 +8399,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # inteiras — com os 31,8 MB de teor — para escolher cinquenta. Aqui a
         # subconsulta ordena e pagina sobre colunas curtas, e so entao as 50
         # linhas cheias sao buscadas.
+        #   `NULLS FIRST`: o SQLite punha a ficha sem bairro ou sem logradouro
+        #   no comeco; o PostgreSQL, sem dizer, a mandaria para o fim.
         rows = q(f"""SELECT m.*,
                        (SELECT COUNT(*) FROM ri_partes p
                         WHERE p.matricula_id=m.id AND p.proprietario_ativo=1) n_prop
                      FROM ri_matriculas m
                      WHERE m.id IN (
                          SELECT id FROM ri_matriculas m WHERE {filtro}
-                          ORDER BY m.bairro, m.logradouro, CAST(m.numero AS INTEGER)
-                          LIMIT ? OFFSET ?)
-                     ORDER BY m.bairro, m.logradouro, CAST(m.numero AS INTEGER)""",
+                          ORDER BY m.bairro NULLS FIRST, m.logradouro NULLS FIRST,
+                                   coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0), m.id
+                          LIMIT %s OFFSET %s)
+                     ORDER BY m.bairro NULLS FIRST, m.logradouro NULLS FIRST,
+                              coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0), m.id""",
                  params + [POR_PAGINA, (pagina - 1) * POR_PAGINA])
         bairros = q("""SELECT bairro, COUNT(*) c FROM ri_matriculas
                        WHERE bairro IS NOT NULL AND TRIM(bairro)<>''
                        GROUP BY bairro ORDER BY bairro""")
         with db.connect() as con_l:
-            con_l.row_factory = sqlite3.Row
             lancamentos = RILANC.listar(con_l, 4, busca=busca, limite=40)
         return render_template("ri_indicador_real.html", rows=rows, total=total,
                                busca=busca, bairro=bairro, tipo=tipo, bairros=bairros,
@@ -7450,7 +8441,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # regua das outras duas telas de busca do RI (ver `_numero_digitado`).
             # Quem digita o CPF inteiro, com ou sem pontuacao, acha; quem digita
             # quatro digitos soltos deixa de achar o homonimo de outro CPF.
-            onde = ["(p.nome_norm LIKE ? OR p.documento_numero = ?)"]
+            onde = ["(p.nome_norm ILIKE %s OR p.documento_numero = %s)"]
             params = [f"%{normalizar_busca(busca)}%", so_digitos(busca) or busca]
             if so_proprietarios:
                 onde.append("p.proprietario_ativo = 1")
@@ -7465,21 +8456,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                   MAX(p.qualificacao) qualificacao,
                                   COUNT(DISTINCT p.matricula_id) n_matriculas
                            FROM ri_partes p WHERE {filtro}
-                           GROUP BY chave ORDER BY n_matriculas DESC, nome LIMIT 60""",
+                           GROUP BY chave ORDER BY n_matriculas DESC, nome, chave LIMIT 60""",
                        params)
             total = len(grupos)
             for g in grupos:
-                vinculos = q("""SELECT DISTINCT m.id, m.numero, m.livro_norm, m.logradouro,
+                vinculos = q("""SELECT m.id, m.numero, m.livro_norm, m.logradouro,
                                        m.bairro, m.encerrada,
                                        MAX(p.proprietario_ativo) ativo, MAX(p.papel) papel
                                 FROM ri_partes p JOIN ri_matriculas m ON m.id=p.matricula_id
-                                WHERE COALESCE(NULLIF(p.documento_numero,''), p.nome_norm)=?
-                                GROUP BY m.id ORDER BY CAST(m.numero AS INTEGER)""",
+                                WHERE COALESCE(NULLIF(p.documento_numero,''), p.nome_norm)=%s
+                                GROUP BY m.id
+                                ORDER BY coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0), m.id""",
                              (g["chave"],))
                 pessoas.append({"pessoa": g, "matriculas": vinculos})
 
         with db.connect() as con_l:
-            con_l.row_factory = sqlite3.Row
             lancamentos = RILANC.listar(con_l, 5, busca=busca, limite=40)
         return render_template("ri_indicador_pessoal.html", pessoas=pessoas,
                                busca=busca, total=total, so_proprietarios=so_proprietarios,
@@ -7541,12 +8532,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         except BU.BuscaError as erro:
             flash(str(erro), "danger")
             return _voltar_negativa(modo, busca, bairro, tipo_ru, so_prop)
+        # O PROTOCOLO QUE PAGA O SELO (22/10/2026), antes de numerar.
+        recusa = _atender_o_protocolo_escolhido(request.form)
+        if recusa:
+            flash(recusa, "danger")
+            return _voltar_negativa(modo, busca, bairro, tipo_ru, so_prop)
 
         hoje = date.today()
         agora = datetime.now()
         try:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 if modo == "PESSOA":
                     achados = RINEG.buscar_por_pessoa(
                         con, busca, so_proprietarios=so_prop)
@@ -7558,10 +8553,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash(str(erro), "danger")
             return _voltar_negativa(modo, busca, bairro, tipo_ru, so_prop)
 
-        ids = RINEG.montar_identificacao(busca, modo=modo)
-        if modo == "IMOVEL" and bairro and not ids.get("imovel_busca"):
-            ids["imovel_busca"] = bairro
-            ids["criterio_rotulo"] = f"pelo bairro «{bairro}»"
+        # O TEXTO DO CRITERIO MORA NA BASE (LF06B): com `con`, o ajuste da casa.
+        import ri_frases
+        with db.connect() as _c_frases:
+            ids = RINEG.montar_identificacao(busca, modo=modo, con=_c_frases)
+            if modo == "IMOVEL" and bairro and not ids.get("imovel_busca"):
+                ids["imovel_busca"] = bairro
+                ids["criterio_rotulo"] = ri_frases.frase(
+                    "RI_NEGATIVA_CRITERIO_BAIRRO", _c_frases, bairro=bairro)
 
         _sv0 = dados_serventia(db.get_settings)
         sv = _sv0 | {
@@ -7601,26 +8600,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         }
         try:
             with db.connect() as _c:
-                _c.row_factory = sqlite3.Row
                 texto_modelo = MODELOS.corpo_de(_c, RINEG.CHAVE_MODELO)
-            corpo = render_modelo(texto_modelo or RINEG.MODELO_PADRAO, contexto)
+            corpo = render_modelo(
+                texto_modelo or MODELOS.padrao_de(RINEG.CHAVE_MODELO), contexto)
         except Exception as erro:
-            flash(f"O modelo da certidao negativa tem um erro: {erro}",
+            flash("O modelo da certidao negativa tem um erro: "
+                  f"{SEGWEB.erro_do_modelo(erro, 'ri_certidao_negativa')}",
                   "danger")
             return _voltar_negativa(modo, busca, bairro, tipo_ru, so_prop)
         corpo = RINEG.limpar_corpo(corpo)
 
         validade = RINEG.validade_ate(hoje)
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
-            ultimo = con.execute(
-                "SELECT MAX(numero) n FROM ri_certidoes WHERE ano=?",
-                (hoje.year,)).fetchone()
-            numero = int((ultimo["n"] or 0)) + 1
+            bd = banco(con)
+            bd.travar("ri_certidoes.numero")
+            ultimo = bd.valor(
+                "SELECT MAX(numero) AS n FROM ri_certidoes WHERE ano=%s",
+                (hoje.year,))
+            numero = int((ultimo or 0)) + 1
             criterio = ids.get("criterio_rotulo") or busca
             h = RINEG.hash_do_corpo(
                 numero, hoje.year, corpo, hoje.isoformat(), criterio)
-            cur = con.execute(
+            certidao_id = bd.escrever(
                 """INSERT INTO ri_certidoes
                    (numero, ano, tipo, matricula_id, matricula_numero,
                     requerente, requerente_documento, finalidade,
@@ -7628,8 +8629,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     protocolo, selo_texto, emolumentos, hash_certidao,
                     origem, emitida_em, emitida_por, emitida_por_nome,
                     emitida_por_funcao, isento, motivo_isencao, fonte_corpo)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?, 'html', ?,?,?,?,
-                           'MANUAL', ?, ?, ?, ?, ?, ?, 'TEXTO')""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'html', %s,%s,%s,%s,
+                           'MANUAL', %s, %s, %s, %s, %s, %s, 'TEXTO')
+                   RETURNING id""",
                 (numero, hoje.year, RINEG.TIPO, None, None,
                  requerente or None, requerente_documento, finalidade,
                  hoje.isoformat(), validade, corpo, protocolo, None, None,
@@ -7637,8 +8639,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  (app.extensions["usuario_nome"]() or "").strip() or None,
                  (app.extensions["usuario_funcao"]() or "").strip() or None,
                  1 if isento else 0, motivo_isencao),
-            )
-            certidao_id = int(cur.lastrowid)
+            )[0]["id"]
+            certidao_id = int(certidao_id)
 
         audit("RI_CERTIDAO_NEGATIVA_EMITIDA", "RI_CERTIDAO", certidao_id,
               {"numero": numero, "ano": hoje.year, "tipo": RINEG.TIPO,
@@ -7648,14 +8650,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # Selo automatico — sem bypass «mesmo se o selo falhar».
         recado_do_selo = ""
         folhas_contadas_msg = ""
+        aguardando = False
         try:
-            versao = AS.versao_da_tabela_de_custas(
-                "/selo/imovel/certidao",
-                db.get_setting("selo_tabela_custas_em", ""))
-            if not versao:
-                raise AS.AtoError(
-                    "falta a versao da tabela de custas, em Administrativo "
-                    "→ Configuracoes (data da tabela em vigor).")
             folhas = CFOLHAS.decidir_folhas_antes_de_emitir(
                 fonte="TEXTO", caminho_digi=None, paginas_digi=None,
                 corpo_html=corpo, folhas_informadas=None,
@@ -7663,53 +8659,39 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             folhas_contadas_msg = (
                 f" {folhas} folha(s) contabilizada(s) pelo sistema."
                 if folhas else "")
-            saiu, faltou = [], []
-            for codigo_do_item, quantidade in AS.itens_da_certidao_do_ri(
-                    RINEG.TIPO, folhas):
-                envelope = AS.envelope_da_certidao_do_ri(
-                    tipo=RINEG.TIPO,
-                    escrevente=app.extensions["usuario_nome"](),
-                    versao_tabela=versao,
-                    quantidade=quantidade,
-                    codigo_do_item=codigo_do_item,
-                    requerente=requerente,
-                    requerente_documento=requerente_documento,
-                    matricula="",
-                    isento=isento,
-                    motivo_isencao=motivo_isencao)
-                referencia = (
-                    f"ri_certidoes:{certidao_id}" if not saiu and not faltou
-                    else f"ri_certidoes:{certidao_id}:{codigo_do_item}")
-                r = AS.selar_o_ato_lavrado(
-                    db, Path(app.config["DATA_DIR"]),
-                    tabela="ri_certidoes",
-                    ato_id=certidao_id, tipo=RINEG.TIPO, atribuicao="IMOVEL",
-                    agora=datetime.now().isoformat(timespec="seconds"),
-                    cns=db.get_setting("ri_cns", ""),
-                    usuario=app.extensions["usuario_nome"](),
-                    dados=envelope, referencia=referencia)
-                (saiu if r["selado"] else faltou).append(
-                    r["numero"] if r["selado"] else r["motivo"])
-            if saiu:
-                recado_do_selo = f" Selo {', '.join(saiu)}."
-                if faltou:
-                    recado_do_selo += (
-                        f" ({len(faltou)} item(ns) sem selo: {faltou[0]})")
-            else:
-                recado_do_selo = f" SEM SELO: {faltou[0] if faltou else ''}"
+            pedido = _pedir_os_selos_da_certidao_do_ri(
+                certidao_id=certidao_id, tipo=RINEG.TIPO, folhas=folhas,
+                requerente=requerente,
+                requerente_documento=requerente_documento, matricula="",
+                isento=isento, motivo_isencao=motivo_isencao)
+            recado_do_selo = _recado_dos_selos_da_certidao(pedido)
+            aguardando = pedido["aguardando"]
         except (AS.AtoError, ValueError) as erro:
             recado_do_selo = f" SEM SELO: {erro}"
 
         motivo_selo = _motivo_da_falha_do_selo(recado_do_selo)
+        if motivo_selo and aguardando:
+            # AGUARDANDO COBERTURA NÃO É SELO RECUSADO (22/10/2026). O selo
+            # nem foi pedido: falta ligar o protocolo e o pagamento. Cancelar
+            # aqui queimava um número por tentativa (83 e 84/2026 na produção);
+            # a certidão fica de pé, sem poder ser impressa, até o selo sair.
+            audit("RI_CERTIDAO_AGUARDANDO_COBERTURA", "RI_CERTIDAO",
+                  certidao_id, {"numero": numero, "ano": hoje.year,
+                                "tipo": RINEG.TIPO, "motivo": motivo_selo})
+            flash(f"{RINEG.NOME_DO_TIPO} n. {numero}/{hoje.year} gravada, "
+                  f"mas SEM SELO: {motivo_selo} Ela não pode ser impressa "
+                  "até o selo sair. Ligue o protocolo pago e clique em "
+                  "«Selar» na lista de certidões.", "warning")
+            return redirect(url_for("ri_certidoes", busca=str(numero)))
         if motivo_selo:
             quando = db.now()
             quem = app.extensions["usuario_nome"]()
             with db.transaction() as con:
-                con.execute(
+                banco(con).escrever(
                     """UPDATE ri_certidoes
-                          SET cancelada=1, motivo_cancelamento=?,
-                              cancelada_em=?, cancelada_por=?
-                        WHERE id=?""",
+                          SET cancelada=1, motivo_cancelamento=%s,
+                              cancelada_em=%s, cancelada_por=%s
+                        WHERE id=%s""",
                     (f"Selo nao emitido: {motivo_selo}", quando, quem,
                      certidao_id))
             audit("RI_CERTIDAO_NAO_EMITIDA_SELO_FALHOU", "RI_CERTIDAO",
@@ -7747,7 +8729,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         ninguém consegue montar.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             digi = RDIGI.atual_da_matricula(con, matricula_id)
         return bool(digi and digi.get("digi_path")
                     and Path(digi["digi_path"]).is_file())
@@ -7762,7 +8743,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         arquivo fica pronto para a certidao de inteiro teor por reproducao
         e marcado como pendente de envio ao ONR (sem transmitir ainda).
         """
-        m = q1("SELECT id, numero FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT id, numero FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         arquivo = request.files.get("arquivo")
@@ -7791,7 +8772,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @login_required
     def ri_baixar_digitalizacao(matricula_id):
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             digi = RDIGI.atual_da_matricula(con, matricula_id)
         if not digi or not digi.get("digi_path"):
             abort(404)
@@ -7821,7 +8801,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def ri_miniatura_digitalizacao(matricula_id):
         """Primeira pagina do arquivo oficial para a ficha inicial. So le."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             digi = RDIGI.atual_da_matricula(con, matricula_id)
         if not digi or not digi.get("digi_path"):
             abort(404)
@@ -7847,8 +8826,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     # ------------------------------------------- fichas digitalizadas
 
     def raiz_imagens() -> Path:
-        return Path(db.get_setting("ri_imagens_raiz",
-                                   r"C:\ARPNET\C11\ONR\IMAGENS"))
+        configurada = (db.get_setting("ri_imagens_raiz", "") or "").strip()
+        if configurada:
+            return Path(configurada)
+        return PDC.do_eoficio("ONR_IMAGENS", banco=db.db_path,
+                              archive_root=db.get_setting("archive_root", ""))
 
     @app.route("/registro-imoveis/imagens/resolver", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER")
@@ -7862,9 +8844,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         raiz = raiz_imagens()
         if request.method == "GET":
             n = q1("""SELECT COUNT(*) total,
-                   COALESCE(SUM(CASE WHEN caminho IS NOT NULL THEN 1 ELSE 0 END),0) resolvidas,
-                   COALESCE(SUM(CASE WHEN caminho_interno IS NOT NULL THEN 1 ELSE 0 END),0) copiadas,
-                   COALESCE(SUM(bytes),0) bytes FROM ri_imagens""")
+                   COALESCE(SUM(CASE WHEN caminho IS NOT NULL THEN 1 ELSE 0 END),0)::bigint resolvidas,
+                   COALESCE(SUM(CASE WHEN caminho_interno IS NOT NULL THEN 1 ELSE 0 END),0)::bigint copiadas,
+                   COALESCE(SUM(bytes),0)::bigint bytes FROM ri_imagens""")
             # O diagnóstico só roda quando ainda há ficha por resolver: varrer
             # a pasta inteira à toa deixaria a tela lenta depois de pronta.
             diag = None
@@ -7872,7 +8854,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 nomes = [r["nome_arquivo"] for r in
                          q("""SELECT nome_arquivo FROM ri_imagens
                               WHERE nome_arquivo IS NOT NULL AND caminho IS NULL
-                              LIMIT 500""")]
+                              ORDER BY id LIMIT 500""")]
                 diag = RIMG.diagnostico(nomes, raiz)
             return render_template("ri_imagens.html", raiz=str(raiz),
                                    existe=RIMG.e_pasta(raiz),
@@ -7904,12 +8886,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         achadas = perdidas = 0
         exemplos_perdidos: list[str] = []
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
-            for linha in con.execute(
-                    "SELECT id, nome_arquivo FROM ri_imagens WHERE nome_arquivo IS NOT NULL"):
+            bd = banco(con)
+            for linha in bd.ler(
+                    "SELECT id, nome_arquivo FROM ri_imagens WHERE nome_arquivo IS NOT NULL "
+                    "ORDER BY id"):
                 caminho = RIMG.achar(linha["nome_arquivo"], indice)
                 if caminho:
-                    con.execute("UPDATE ri_imagens SET caminho=? WHERE id=?",
+                    bd.escrever("UPDATE ri_imagens SET caminho=%s WHERE id=%s",
                                 (caminho, linha["id"]))
                     achadas += 1
                 else:
@@ -7953,7 +8936,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         raiz = raiz_imagens()
         try:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 achado = RFD.conferir(con, raiz)
                 painel = RFD.quadro(con)
                 faltando = RFD.incompletas(con, raiz)
@@ -8053,8 +9035,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         total_bytes = 0
 
         linhas = q("""SELECT id, matricula_id, nome_arquivo, caminho, caminho_interno
-                      FROM ri_imagens WHERE nome_arquivo IS NOT NULL""")
+                      FROM ri_imagens WHERE nome_arquivo IS NOT NULL ORDER BY id""")
         with db.transaction() as con:
+            bd = banco(con)
             for linha in linhas:
                 relativo = linha["caminho_interno"]
                 if relativo and (destino.parent.parent / relativo).is_file():
@@ -8064,15 +9047,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if not origem or not origem.is_file():
                     faltando += 1
                     continue
+                # O NOME QUE JÁ ESTAVA GRAVADO também se confere: a recusa no
+                # renomear vale do conserto em diante (LS02), e um nome com
+                # pasta dentro levaria a cópia para fora do acervo.
+                if not nome_simples(linha["nome_arquivo"]):
+                    erros.append(f"{linha['nome_arquivo']}: o nome tem pasta "
+                                 "dentro, e a cópia sairia do acervo")
+                    continue
                 sub = destino / str(linha["matricula_id"] or "sem_matricula")
                 sub.mkdir(parents=True, exist_ok=True)
                 alvo = sub / linha["nome_arquivo"]
                 try:
                     shutil.copy2(origem, alvo)
                     dados = alvo.read_bytes()
-                    con.execute(
-                        """UPDATE ri_imagens SET caminho_interno=?, sha256=?, bytes=?,
-                           copiado_em=? WHERE id=?""",
+                    bd.escrever(
+                        """UPDATE ri_imagens SET caminho_interno=%s, sha256=%s, bytes=%s,
+                           copiado_em=%s WHERE id=%s""",
                         (str(alvo.relative_to(destino.parent.parent)),
                          hashlib.sha256(dados).hexdigest(), len(dados),
                          db.now(), linha["id"]),
@@ -8101,12 +9091,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         «pagina 7» da tela deixa de ser a setima folha do livro de papel — que
         e a unica coisa que esse numero quer dizer.
         """
-        linhas = con.execute(
-            """SELECT id FROM ri_imagens WHERE matricula_id=?
-                ORDER BY COALESCE(ordem, 999999), id""", (matricula_id,)).fetchall()
+        bd = banco(con)
+        linhas = bd.ler(
+            """SELECT id FROM ri_imagens WHERE matricula_id=%s
+                ORDER BY COALESCE(ordem, 999999), id""", (matricula_id,))
         for posicao, linha in enumerate(linhas, start=1):
-            con.execute("UPDATE ri_imagens SET ordem=? WHERE id=?",
-                        (posicao, linha[0]))
+            bd.escrever("UPDATE ri_imagens SET ordem=%s WHERE id=%s",
+                        (posicao, linha["id"]))
 
     @app.route("/registro-imoveis/<int:matricula_id>/imagens", methods=["POST"])
     @roles_required("ADMIN", "MANAGER")
@@ -8124,12 +9115,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         **EXCLUIR TIRA DA FICHA E NAO APAGA O ARQUIVO** — ver o cabecalho de
         `scratchpad/organizar_as_digitalizacoes.py` e o aviso na tela.
         """
-        m = q1("SELECT id, numero FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT id, numero FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         acao = (request.form.get("acao") or "").strip().lower()
-        img_id = int(request.form.get("imagem_id") or 0)
-        img = q1("SELECT * FROM ri_imagens WHERE id=? AND matricula_id=?",
+        # LD13: «abc» era 500; o que não é número não acha imagem nenhuma.
+        img_id = numero_digitado(request.form.get("imagem_id") or 0)
+        img = q1("SELECT * FROM ri_imagens WHERE id=%s AND matricula_id=%s",
                  (img_id, matricula_id))
         if not img:
             # NAO SE MEXE NA IMAGEM DE OUTRA FICHA, e a conferencia e aqui: o
@@ -8142,8 +9134,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         nome = img["nome_arquivo"] or "(sem nome)"
         if acao == "excluir":
             with db.transaction() as con:
-                con.execute("DELETE FROM ri_imagens WHERE id=?", (img_id,))
-                _normalizar_a_ordem(con, matricula_id)
+                bd = banco(con)
+                bd.travar("ri_imagens.ordem")
+                bd.escrever("DELETE FROM ri_imagens WHERE id=%s", (img_id,))
+                _normalizar_a_ordem(bd, matricula_id)
             audit("RI_IMAGEM_TIRADA_DA_FICHA", "RI_MATRICULA", matricula_id,
                   {"numero": m["numero"], "imagem_id": img_id,
                    "nome_arquivo": nome, "ordem_que_tinha": img["ordem"],
@@ -8158,9 +9152,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if not novo:
                 flash("O nome não pode ficar vazio.", "danger")
                 return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+            # O NOME É SÓ DE ARQUIVO (LS02, 19/10/2026). Ele vai depois para
+            # `ri_copiar_imagens`, que copia para `pasta / nome` como SYSTEM:
+            # com `..\` ou `C:\` no nome, a cópia saía do acervo e podia
+            # sobrescrever o próprio sistema.
+            if not nome_simples(novo):
+                flash("O nome é só o do arquivo, sem pasta: tire as barras, "
+                      "os dois-pontos e o «..».", "danger")
+                return redirect(url_for("ri_ficha", matricula_id=matricula_id))
             with db.transaction() as con:
-                con.execute("UPDATE ri_imagens SET nome_arquivo=? WHERE id=?",
-                            (novo, img_id))
+                banco(con).escrever("UPDATE ri_imagens SET nome_arquivo=%s WHERE id=%s",
+                                    (novo, img_id))
             audit("RI_IMAGEM_RENOMEADA", "RI_MATRICULA", matricula_id,
                   {"numero": m["numero"], "imagem_id": img_id,
                    "antes": nome, "depois": novo})
@@ -8170,16 +9172,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         if acao in ("subir", "descer", "ordem"):
             if acao == "ordem":
-                pedida = (request.form.get("ordem") or "").strip()
-                if not pedida.isdigit() or int(pedida) < 1:
+                # LD13: o «²» e os 5.000 dígitos passavam pelo `isdigit()` e
+                # caíam no `int()`.
+                destino = numero_digitado(request.form.get("ordem"))
+                if destino is None or destino < 1:
                     flash("A página tem de ser um número a partir de 1.",
                           "danger")
                     return redirect(url_for("ri_ficha",
                                             matricula_id=matricula_id))
-                destino = int(pedida)
             else:
                 destino = int(img["ordem"] or 1) + (-1 if acao == "subir" else 1)
-            quantas = q1("SELECT COUNT(*) n FROM ri_imagens WHERE matricula_id=?",
+            quantas = q1("SELECT COUNT(*) n FROM ri_imagens WHERE matricula_id=%s",
                          (matricula_id,))["n"]
             destino = max(1, min(destino, quantas))
             if destino == int(img["ordem"] or 0):
@@ -8189,10 +9192,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # cai imediatamente antes de quem ocupa o lugar, e a
                 # normalizacao seguinte resolve o resto. Trocar duas a duas
                 # exigiria um caso para cada sentido, e e onde se erra.
-                con.execute("UPDATE ri_imagens SET ordem=? WHERE id=?",
-                            (destino - 0.5 if destino < int(img["ordem"] or 0)
-                             else destino + 0.5, img_id))
-                _normalizar_a_ordem(con, matricula_id)
+                #   No PostgreSQL `ordem` e inteiro de verdade e o 0,5 se
+                #   arredondaria: a meia casa se faz dobrando as ordens da
+                #   ficha, e a pagina vai para 2*destino -1 ou +1.
+                #   A trava faz o que o BEGIN IMMEDIATE fazia: duas reordenacoes
+                #   da mesma ficha nao se misturam na renumeracao.
+                bd = banco(con)
+                bd.travar("ri_imagens.ordem")
+                bd.escrever("UPDATE ri_imagens SET ordem=ordem*2 WHERE matricula_id=%s",
+                            (matricula_id,))
+                bd.escrever("UPDATE ri_imagens SET ordem=%s WHERE id=%s",
+                            (2 * destino - 1 if destino < int(img["ordem"] or 0)
+                             else 2 * destino + 1, img_id))
+                _normalizar_a_ordem(bd, matricula_id)
             audit("RI_IMAGEM_REORDENADA", "RI_MATRICULA", matricula_id,
                   {"numero": m["numero"], "imagem_id": img_id,
                    "nome_arquivo": nome, "de": img["ordem"], "para": destino})
@@ -8210,7 +9222,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         para PNG na hora. Sem Pillow instalado, entregamos o TIFF original para
         download - melhor baixar do que nao ver.
         """
-        img = q1("SELECT * FROM ri_imagens WHERE id=?", (imagem_id,))
+        img = q1("SELECT * FROM ri_imagens WHERE id=%s", (imagem_id,))
         if not img:
             abort(404)
         # A copia do proprio sistema tem precedencia: a origem pertence ao
@@ -8225,7 +9237,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if caminho is None:
             abort(404)
 
-        pagina = int(request.args.get("p") or 0)
+        # LD13: «abc», «²» e 5.000 dígitos no endereço eram 500.
+        pagina = numero_digitado(request.args.get("p"), maximo=PAGINA_MAIS_ALTA) or 0
 
         def entregar_original(motivo: str):
             """O TIFF cru, quando nao da para converter.
@@ -8237,7 +9250,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 arquivo que nao abre" — que foi exatamente o que aconteceu.
                 Acrescentar `.tif` custa nada e faz o arquivo virar imagem
                 para quem recebe.
+
+            SÓ O QUE COMEÇA COMO IMAGEM OU PDF (LS02, 19/10/2026): o caminho
+            vem da pasta e do nome que a tela de imagens deixa digitar, e
+            entregava cru qualquer arquivo do servidor — o `secret.key`
+            inclusive. Ver `ri_imagens.parece_ficha`.
             """
+            if not RIMG.parece_ficha(caminho):
+                app.logger.warning(
+                    "A ficha %s aponta para %s, que não é imagem nem PDF: "
+                    "não foi entregue.", imagem_id, caminho)
+                abort(404)
             nome = caminho.name
             if "." not in nome or nome.rsplit(".", 1)[1].isdigit():
                 nome += ".tif"
@@ -8284,12 +9307,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @login_required
     def ri_conferir_ficha(matricula_id):
         """Tela de conferencia: dado importado de um lado, digitalizacao do outro."""
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         m = dict(m)
-        imagens = q("""SELECT * FROM ri_imagens WHERE matricula_id=?
-                       ORDER BY ordem, nome_arquivo""", (matricula_id,))
+        imagens = q("""SELECT * FROM ri_imagens WHERE matricula_id=%s
+                       ORDER BY ordem NULLS FIRST, nome_arquivo NULLS FIRST, id""",
+                    (matricula_id,))
         # Ha duas fontes deliberadamente separadas: as paginas antigas do
         # E-Oficio (`ri_imagens`) e o arquivo oficial atual enviado pelo balcao
         # (`digi_*`). A conferencia so conhecia a primeira. Matriculas novas,
@@ -8310,12 +9334,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "em": m.get("digi_em"),
                 "por": m.get("digi_por"),
             }
-        atos = q("""SELECT * FROM ri_atos WHERE matricula_id=?
+        atos = q("""SELECT * FROM ri_atos WHERE matricula_id=%s
                     ORDER BY COALESCE(data_ato,'9999'), numero""", (matricula_id,))
-        partes = q("SELECT * FROM ri_partes WHERE matricula_id=? ORDER BY nome", (matricula_id,))
+        partes = q("SELECT * FROM ri_partes WHERE matricula_id=%s ORDER BY nome, id",
+                   (matricula_id,))
         proximas = q("""SELECT id, numero, livro_norm FROM ri_matriculas
-                        WHERE conferido=0 AND id<>? ORDER BY livro_norm,
-                        CAST(numero AS INTEGER) LIMIT 1""", (matricula_id,))
+                        WHERE conferido=0 AND id<>%s ORDER BY livro_norm NULLS FIRST,
+                        coalesce(substring(numero FROM '^[0-9]+')::bigint, 0), id
+                        LIMIT 1""", (matricula_id,))
         return render_template("ri_conferir.html", m=m, imagens=imagens, atos=atos,
                                digitalizacao=digitalizacao,
                                partes=partes, teor_seguro=teor_seguro,
@@ -8330,8 +9356,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         busca = (request.args.get("busca") or "").strip()
         onde, params = ["1=1"], []
         if busca:
-            onde.append("(CAST(c.numero AS TEXT) LIKE ? OR c.matricula_numero LIKE ? "
-                        "OR c.requerente LIKE ?)")
+            onde.append("(CAST(c.numero AS TEXT) ILIKE %s OR c.matricula_numero ILIKE %s "
+                        "OR c.requerente ILIKE %s)")
             params += [f"%{busca}%"] * 3
         rows = q(f"""SELECT c.*, m.id mid FROM ri_certidoes c
                      LEFT JOIN ri_matriculas m ON m.id = c.matricula_id
@@ -8339,12 +9365,99 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      ORDER BY c.ano DESC, c.numero DESC LIMIT 300""", params)
         hoje = date.today().isoformat()
         resumo = q1("""SELECT COUNT(*) total,
-            COALESCE(SUM(CASE WHEN origem='EOFICIO' THEN 1 ELSE 0 END),0) importadas,
-            COALESCE(SUM(CASE WHEN origem='MANUAL' THEN 1 ELSE 0 END),0) emitidas,
-            COALESCE(SUM(CASE WHEN cancelada=1 THEN 1 ELSE 0 END),0) canceladas
+            COALESCE(SUM(CASE WHEN origem='EOFICIO' THEN 1 ELSE 0 END),0)::bigint importadas,
+            COALESCE(SUM(CASE WHEN origem='MANUAL' THEN 1 ELSE 0 END),0)::bigint emitidas,
+            COALESCE(SUM(CASE WHEN cancelada=1 THEN 1 ELSE 0 END),0)::bigint canceladas
             FROM ri_certidoes""")
         return render_template("ri_certidoes.html", rows=rows, resumo=resumo,
-                               busca=busca, hoje=hoje, TIPOS=ROTULOS_CERTIDAO_RI)
+                               busca=busca, hoje=hoje, TIPOS=ROTULOS_CERTIDAO_RI,
+                               aguardando_selo=_certidoes_aguardando_selo(
+                                   [r["id"] for r in rows]),
+                               CODIGO_BASE_DA_CERTIDAO=_codigo_base_da_certidao())
+
+    @app.route("/registro-imoveis/certidoes/<int:certidao_id>/selar",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def ri_certidao_selar(certidao_id):
+        """Pede de novo o selo da certidão que ficou aguardando cobertura.
+
+        22/10/2026, dia da 3.7.0: a trava do selo pago deixa a certidão sem
+        selo quando o protocolo pago não está ligado a ela, e a 3.7.0 não
+        tinha como pedir o selo DEPOIS — só emitir, imprimir e cancelar. Quem
+        resolveu o protocolo e o pagamento em «Selo e caixa» volta aqui.
+
+        **AS MESMAS REFERÊNCIAS DA EMISSÃO** (`_pedir_os_selos_da_certidao_do_ri`):
+        com elas o aparelho devolve o selo que já existir em vez de vender
+        outro. As folhas se recontam do teor congelado, como na emissão.
+        """
+        c = q1("SELECT * FROM ri_certidoes WHERE id=%s", (certidao_id,))
+        if not c:
+            abort(404)
+        voltar = (url_for("ri_ficha", matricula_id=c["matricula_id"])
+                  + "#certidoes-da-ficha" if c["matricula_id"]
+                  else url_for("ri_certidoes", busca=str(c["numero"])))
+        if c["cancelada"]:
+            flash("Esta certidão está cancelada: não se sela certidão "
+                  "cancelada. Emita outra.", "danger")
+            return redirect(voltar)
+        if str(c["selo_texto"] or "").strip():
+            flash("Esta certidão já tem selo. Para outra via, clique no número "
+                  "dela: reimprimir não pede selo novo.", "success")
+            return redirect(voltar)
+        if int(certidao_id) not in _certidoes_aguardando_selo([certidao_id]):
+            flash("Esta certidão não está esperando selo — ela não ficou "
+                  "«aguardando cobertura». Selo de certidão antiga se digita "
+                  "à mão.", "warning")
+            return redirect(voltar)
+        # O protocolo marcado no quadro («Atender este protocolo e selar de
+        # novo», `_protocolo_do_selo.html`) chega como `protocolo_selo`.
+        recusa = _atender_o_protocolo_escolhido(request.form)
+        if recusa:
+            flash(recusa, "danger")
+            return redirect(voltar)
+        fonte = str(c["fonte_corpo"] or "TEXTO").upper()
+        caminho_digi = c["digi_path"] if fonte == "DIGITALIZACAO" else None
+        paginas = None
+        if caminho_digi and Path(caminho_digi).is_file():
+            try:
+                paginas = len(RDIGI.paginas_png(Path(caminho_digi)))
+            except ValueError:
+                paginas = None
+        try:
+            folhas = CFOLHAS.decidir_folhas_antes_de_emitir(
+                fonte=fonte, caminho_digi=caminho_digi, paginas_digi=paginas,
+                corpo_html=c["corpo"], folhas_informadas=None,
+                get_setting=db.get_setting)
+            pedido = _pedir_os_selos_da_certidao_do_ri(
+                certidao_id=int(certidao_id), tipo=c["tipo"], folhas=folhas,
+                requerente=c["requerente"],
+                requerente_documento=c["requerente_documento"],
+                matricula=c["matricula_numero"] or "",
+                isento=bool(c["isento"]), motivo_isencao=c["motivo_isencao"])
+        except (AS.AtoError, ValueError) as erro:
+            flash(f"O selo não saiu: {erro}", "danger")
+            return redirect(voltar)
+        recado = _recado_dos_selos_da_certidao(pedido)
+        if not pedido["saiu"]:
+            audit("RI_CERTIDAO_SELO_PEDIDO_DE_NOVO", "RI_CERTIDAO", certidao_id,
+                  {"numero": c["numero"], "ano": c["ano"], "selado": False,
+                   "motivo": (pedido["faltou"] or [""])[0]})
+            flash(f"A certidão nº {c['numero']}/{c['ano']} continua sem selo e "
+                  f"não pode ser impressa.{recado}", "warning")
+            return redirect(voltar)
+        busca = _busca_pedida_na_emissao(int(certidao_id))
+        if busca:
+            recado += _selar_a_busca_da_certidao_do_ri(
+                certidao_id=int(certidao_id), busca=busca,
+                nome=c["requerente"], documento=c["requerente_documento"],
+                matricula=c["matricula_numero"] or "",
+                isento=bool(c["isento"]), motivo_isencao=c["motivo_isencao"])
+        audit("RI_CERTIDAO_SELO_PEDIDO_DE_NOVO", "RI_CERTIDAO", certidao_id,
+              {"numero": c["numero"], "ano": c["ano"], "selado": True,
+               "selos": pedido["saiu"], **({"busca": busca} if busca else {})})
+        flash(f"Certidão nº {c['numero']}/{c['ano']} selada.{recado} "
+              "Já pode ser impressa.", "success")
+        return redirect(url_for("ri_certidao_odt", certidao_id=certidao_id))
 
     # A CADEIA DOMINIAL E A VINTENÁRIA — 28/09/2026, reconstituídas em
     # 14/10/2026 (o código da 3.6.233/234 foi construído direto na produção e
@@ -8395,7 +9508,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 continue
             vistos.add(numero)
             achadas = q("SELECT id FROM ri_matriculas "
-                        "WHERE CAST(numero AS TEXT)=?", (numero,))
+                        "WHERE CAST(numero AS TEXT)=%s", (numero,))
             if len(achadas) != 1:
                 nao_achadas.append(
                     f"{numero} (" + ("não existe no banco" if not achadas
@@ -8420,7 +9533,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         **SAO DOIS TEXTOS, E NAO UM** — problema #75, 18/09/2026. O molde
         (`RI_CERTIDAO`) traz o que toda certidao tem — a abertura, a finalidade,
-        a validade do art. 53, quem assina — e carrega o marcador que diz ONDE
+        a validade do art. 553, quem assina — e carrega o marcador que diz ONDE
         o texto do tipo entra. Cada tipo tem o seu miolo no catalogo
         (`RI_CERTIDAO_INTEIRO_TEOR`, `RI_CERTIDAO_ONUS`,
         `RI_CERTIDAO_PROPRIEDADE`), e o oficial edita os quatro na mesma tela.
@@ -8446,15 +9559,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # com a MESMA regua: sem ela, o molde salvo sem o marcador sairia com a
         # abertura, a validade e a assinatura, e sem o teor — a certidao
         # afirmando «cujo inteiro teor segue:» e nao reproduzindo nada.
+        #
+        # `MoldeSemMarcador` (um `ModeloError`), e nao `ValueError` cru: a
+        # frase e para quem edita o modelo, e a rota a mostra como mostra o
+        # erro do Jinja (LX22B2) — so ela, e nao todo `ModeloError` (LX24).
         if (_erro := MODELOS.conferir_marcadores("RI_CERTIDAO", _corpo)):
-            raise ValueError(_erro)
+            raise MoldeSemMarcador(_erro)
 
         # O TÍTULO DA CERTIDÃO DE ÔNUS DIZ SE ELA É POSITIVA OU NEGATIVA —
         # 13/10/2026. Antes saía «CERTIDÃO NEGATIVA DE ÔNUS REAIS» também sobre
         # imóvel hipotecado: o nome do tipo era o título do papel.
-        _nome = (RONIA.titulo(contexto.get("resultado_onus"),
-                              contexto.get("resultado_acoes"))
-                 if tipo == "ONUS" else TIPOS_CERTIDAO.get(tipo, tipo))
+        # A frase do titulo mora na base (LF06B, `RI_ONUS_TITULO`): com `con`,
+        # vale o ajuste da casa.
+        with db.connect() as _c_frases:
+            _nome = (RONIA.titulo(contexto.get("resultado_onus"),
+                                  contexto.get("resultado_acoes"), con=_c_frases)
+                     if tipo == "ONUS" else TIPOS_CERTIDAO.get(tipo, tipo))
         # A DOMINIAL E A VINTENÁRIA MONTAM A CADEIA SE NINGUÉM MONTOU — é o caso
         # de quem chama sem a tela (a remontagem, o ensaio): vale o padrão, 20
         # anos e a origem seguida pelo registro anterior. E a vintenária diz os
@@ -8512,6 +9632,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash(str(erro), "danger")
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
+        # O PROTOCOLO QUE PAGA O SELO, escolhido na tela (22/10/2026): vira o
+        # «em atendimento» ANTES de numerar, para a recusa (protocolo
+        # encerrado, inexistente) não deixar certidão gravada para trás.
+        recusa = _atender_o_protocolo_escolhido(request.form)
+        if recusa:
+            flash(recusa, "danger")
+            return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+
         contexto = contexto_ficha(matricula_id, para_odt=False)
         m = contexto["m"]
 
@@ -8560,6 +9688,41 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 contexto, tipo, anos=request.form.get("anos"),
                 origens_digitadas=request.form.get("origens"))
 
+        # A REVISÃO DA TRANSCRIÇÃO PELA IA — LH11, pedido do oficial em
+        # 21/10/2026. Na certidão de inteiro teor (pelo texto ou pela
+        # reprodução, quando a ficha tem texto transcrito) a divergência GRAVE
+        # ainda não resolvida pede justificativa escrita, e a recusa vem ANTES
+        # de número e selo, como a do ônus. A IA fora do ar NÃO trava: a
+        # certidão sai, e a tela diz que saiu sem revisão. A régua mora em
+        # `revisao_transcricao.conferir_para_emitir`; o que der errado nela
+        # também não trava — o balcão parado é pior que a revisão atrasada.
+        # Ela se repete com a linha da revisão presa dentro da transação que
+        # numera (`reconferir_na_emissao`, LH12; depois da trava do número e
+        # num SAVEPOINT próprio, LH15): esta aqui recusa cedo.
+        transcricao = None
+
+        def _recusa_da_transcricao(erro):
+            audit("RI_CERTIDAO_TRANSCRICAO_RECUSADA", "RI_MATRICULA", int(matricula_id),
+                  {"graves": erro.graves, "revisao_id": erro.revisao_id})
+            flash(str(erro), "danger")
+            return redirect(url_for("ri_ficha", matricula_id=matricula_id)
+                            + "#certidao-transcricao")
+
+        if tipo == "INTEIRO_TEOR":
+            try:
+                with db.connect() as _c_rt:
+                    transcricao = RTRANS.conferir_para_emitir(
+                        _c_rt, Path(app.config["DATA_DIR"]), RDIGI.raiz_arquivos(db),
+                        matricula_id,
+                        justificativa=request.form.get("transcricao_justificativa") or "")
+            except RTRANS.TranscricaoPendente as erro:
+                return _recusa_da_transcricao(erro)
+            except Exception:                         # noqa: BLE001 — não trava a certidão
+                app.logger.warning("A revisão da transcrição da matrícula %s não pôde ser "
+                                   "conferida na emissão.", matricula_id, exc_info=True)
+                transcricao = {"situacao": "ERRO", "revisao_id": None,
+                               "recado": "a revisão não pôde ser conferida agora"}
+
         hoje = date.today()
         # 30 dias corridos, conforme o Codigo de Normas do TJMA.
         validade = (hoje + timedelta(days=VALIDADE_CERTIDAO_DIAS)).isoformat()
@@ -8587,13 +9750,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             fonte_pedida = "TEXTO"
 
         digi_info = None
-        proximo = q1("SELECT COALESCE(MAX(numero),0)+1 n FROM ri_certidoes WHERE ano=?",
+        proximo = q1("SELECT COALESCE(MAX(numero),0)+1 n FROM ri_certidoes WHERE ano=%s",
                      (hoje.year,))["n"]
         contexto["certidao_numero"] = proximo
 
         if fonte_pedida == "DIGITALIZACAO":
             with db.connect() as _c:
-                _c.row_factory = sqlite3.Row
                 digi_info = RDIGI.atual_da_matricula(_c, matricula_id)
             if (not digi_info or not digi_info.get("digi_path")
                     or not Path(digi_info["digi_path"]).is_file()):
@@ -8608,42 +9770,90 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             except ValueError as erro:
                 flash(str(erro), "danger")
                 return redirect(url_for("ri_ficha", matricula_id=matricula_id))
-            corpo = RDIGI.corpo_resumo_digitalizacao(
-                matricula=m["numero"], paginas=n_paginas,
-                sha256=digi_info["digi_sha256"] or "")
+            with db.connect() as _c_frases:       # o fecho mora na base (LF06B)
+                corpo = RDIGI.corpo_resumo_digitalizacao(
+                    matricula=m["numero"], paginas=n_paginas,
+                    sha256=digi_info["digi_sha256"] or "", con=_c_frases)
             # Fecho igual à via por texto corrido: protocolo em aberto + validade.
             corpo = (corpo or "") + (contexto.get("clausula_prenotacoes_abertas") or "")
             _hoje_ext = (contexto.get("hoje_extenso") or "").strip()
             if _hoje_ext:
-                corpo += (
-                    "<p><b>VALIDADE: </b>30 (trinta) dias contados da data de "
-                    "expedição, na forma do art. 53 do Código de Normas da "
-                    f"CGJ/TJMA. Certidão emitida em {_hoje_ext}. Dou fé.</p>"
-                )
+                # A FRASE MORA NA BASE — LF06B (`RI_REPROGRAFICA_VALIDADE`).
+                import ri_frases
+                with db.connect() as _c_frases:
+                    corpo += ri_frases.frase("RI_REPROGRAFICA_VALIDADE", _c_frases,
+                                             hoje_extenso=_hoje_ext)
         else:
             try:
                 corpo = corpo_certidao(tipo, contexto)
-            except Exception as erro:
+            except MoldeSemMarcador as erro:
+                # O MOLDE SEM A EMENDA TEM DE DIZER O QUE FALTA — LX22B2,
+                # 20/10/2026. Desde o LX11 o `except Exception` abaixo manda
+                # para o log tudo o que nao e erro do Jinja (B2: texto do banco
+                # nao vai a tela), e a recusa do relato #75 — frase escrita
+                # para o balcao, sem nada do servidor — virou «nao foi possivel
+                # concluir»: o escrevente ficava sem saber que era so repor
+                # `{{ miolo_do_tipo }}`.
+                #
+                # SO ESTA RECUSA (LX24, ressalva 1 do LX22B2). O `ModeloError`
+                # de `corpo_de` diz o schema da base, o arquivo que falta e a
+                # variavel de ambiente: esse cai no `except Exception` e vai
+                # ao log.
                 flash(f"O modelo de certidao tem um erro: {erro}", "danger")
                 return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+            except Exception as erro:
+                flash("O modelo de certidao tem um erro: "
+                      f"{SEGWEB.erro_do_modelo(erro, 'ri_certidao')}", "danger")
+                return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
-        with db.transaction() as con:
-            con.row_factory = sqlite3.Row
-            ultimo = con.execute("SELECT MAX(numero) n FROM ri_certidoes WHERE ano=?",
-                                 (hoje.year,)).fetchone()
-            numero = int((ultimo["n"] or 0)) + 1
+        recusa_de_dentro = RTRANS.RecusaGuardada()
+        with recusa_de_dentro, db.transaction() as con:
+            bd = banco(con)
+            # A TRAVA DO NÚMERO PRIMEIRO, E A LINHA DA REVISÃO DEPOIS (LH15) —
+            # a ordem da casa: a trava de assunto antes do `FOR UPDATE`. A
+            # segunda emissão espera na porta, pelo número, sem segurar linha
+            # nenhuma; e ela fica fora do SAVEPOINT de baixo, que a soltaria.
+            bd.travar("ri_certidoes.numero")
+            # A REVISÃO DA TRANSCRIÇÃO OUTRA VEZ, COM A LINHA PRESA, ANTES DE
+            # LER O NÚMERO (LH12). A conferência lá de cima leu sem prender
+            # nada; é a decisão daqui que vai para `ri_transcricao_emissoes`. A
+            # recusa volta atrás sem nada gravado e é dada depois do `with` (ver
+            # `RecusaGuardada`); o erro inesperado não trava, como lá em cima.
+            #
+            # NUM SAVEPOINT PRÓPRIO (LH15, a ressalva da revisão do LH12). Sem
+            # a ponte, o erro de SQL aqui — a linha da revisão presa além do
+            # `lock_timeout`, o deadlock, o erro em `mostrar` — condenava a
+            # transação, e o número logo abaixo virava 500. O SAVEPOINT desfaz
+            # só a reconferência (que não grava nada), e a certidão sai «sem
+            # revisão», a regra do LH11 para a revisão que não se pôde ver.
+            try:
+                with bd.ponto_de_retorno("rt_reconferencia"):
+                    transcricao = RTRANS.reconferir_na_emissao(
+                        bd, transcricao, matricula_id=matricula_id,
+                        justificativa=request.form.get("transcricao_justificativa") or "")
+            except RTRANS.TranscricaoPendente:
+                raise
+            except Exception:                         # noqa: BLE001 — não trava a certidão
+                app.logger.warning("A revisão da transcrição da matrícula %s não pôde ser "
+                                   "reconferida na emissão.", matricula_id, exc_info=True)
+                transcricao = {"situacao": "ERRO", "revisao_id": None,
+                               "recado": "a revisão não pôde ser conferida agora"}
+            ultimo = bd.valor("SELECT MAX(numero) AS n FROM ri_certidoes WHERE ano=%s",
+                              (hoje.year,))
+            numero = int((ultimo or 0)) + 1
             if fonte_pedida == "TEXTO" and numero != proximo:
                 corpo = corpo_certidao(tipo, contexto | {"certidao_numero": numero})
             h = hash_certidao(numero, hoje.year, tipo, m["numero"], corpo, hoje.isoformat())
-            cur = con.execute(
+            certidao_id = bd.escrever(
                 """INSERT INTO ri_certidoes
                    (numero, ano, tipo, matricula_id, matricula_numero, requerente,
                     requerente_documento, finalidade, data_emissao, validade_ate,
                     corpo, corpo_formato, protocolo, selo_texto, emolumentos,
                     hash_certidao, origem, emitida_em, emitida_por,
                     emitida_por_nome, emitida_por_funcao, isento, motivo_isencao)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?, 'html', ?,?,?,?, 'MANUAL',
-                           ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'html', %s,%s,%s,%s, 'MANUAL',
+                           %s, %s, %s, %s, %s, %s)
+                   RETURNING id""",
                 (numero, hoje.year, tipo, matricula_id, m["numero"],
                  (request.form.get("requerente") or "").strip() or None,
                  so_digitos(request.form.get("requerente_documento")) or None,
@@ -8672,31 +9882,37 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  (app.extensions["usuario_nome"]() or "").strip() or None,
                  (app.extensions["usuario_funcao"]() or "").strip() or None,
                  1 if isento else 0, motivo_isencao),
-            )
-            certidao_id = int(cur.lastrowid)
+            )[0]["id"]
+            certidao_id = int(certidao_id)
 
             if fonte_pedida == "DIGITALIZACAO" and digi_info:
-                con.execute(
+                bd.escrever(
                     """UPDATE ri_certidoes
-                          SET fonte_corpo=?, digi_path=?, digi_sha256=?
-                        WHERE id=?""",
+                          SET fonte_corpo=%s, digi_path=%s, digi_sha256=%s
+                        WHERE id=%s""",
                     ("DIGITALIZACAO", digi_info["digi_path"],
                      digi_info["digi_sha256"], certidao_id))
             else:
-                con.execute(
-                    "UPDATE ri_certidoes SET fonte_corpo=? WHERE id=?",
+                bd.escrever(
+                    "UPDATE ri_certidoes SET fonte_corpo=%s WHERE id=%s",
                     ("TEXTO", certidao_id))
+
+            # EM QUE PÉ ESTAVA A REVISÃO DA TRANSCRIÇÃO (LH11): a justificativa
+            # de quem emitiu com divergência grave fica com a certidão.
+            RTRANS.gravar_na_certidao(bd, transcricao, certidao_id=certidao_id,
+                                      matricula_id=matricula_id,
+                                      usuario=app.extensions["usuario_nome"]())
 
             # O QUE A CERTIDÃO DE ÔNUS AFIRMOU, e quem escolheu — gravado ao
             # lado do corpo, para a lista e a correição não terem de ler o papel.
             if tipo == "ONUS":
-                con.execute(
+                bd.escrever(
                     """UPDATE ri_certidoes
-                          SET resultado_onus=?, resultado_acoes=?, onus_sugestao_id=?,
-                              onus_justificativa=?, onus_escolhido_por=?,
-                              onus_proprietario_conferencia=?,
-                              onus_proprietario_justificativa=?
-                        WHERE id=?""",
+                          SET resultado_onus=%s, resultado_acoes=%s, onus_sugestao_id=%s,
+                              onus_justificativa=%s, onus_escolhido_por=%s,
+                              onus_proprietario_conferencia=%s,
+                              onus_proprietario_justificativa=%s
+                        WHERE id=%s""",
                     (contexto.get("resultado_onus"), contexto.get("resultado_acoes"),
                      contexto.get("onus_sugestao_id"),
                      contexto.get("onus_justificativa") or None,
@@ -8704,12 +9920,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      contexto.get("onus_proprietario_conferencia"),
                      contexto.get("onus_proprietario_justificativa") or None,
                      certidao_id))
+        if recusa_de_dentro.erro is not None:
+            return _recusa_da_transcricao(recusa_de_dentro.erro)
 
         audit("RI_CERTIDAO_EMITIDA", "RI_CERTIDAO", certidao_id,
               {"numero": numero, "ano": hoje.year, "tipo": tipo,
                "matricula": m["numero"], "hash": h,
                # a busca escolhida (15/10/2026), inclusive o «.9» sem selo
                **({"busca": busca} if busca else {}),
+               # a revisão da transcrição (LH11): só a situação, o id e a conta
+               **({"transcricao": transcricao["situacao"],
+                   "transcricao_revisao_id": transcricao.get("revisao_id"),
+                   "transcricao_graves": transcricao.get("graves_pendentes") or 0}
+                  if transcricao and transcricao["situacao"] not in (
+                      "DESLIGADA", "SEM_TEXTO") else {}),
                **({"resultado_onus": contexto.get("resultado_onus"),
                    "resultado_acoes": contexto.get("resultado_acoes"),
                    "onus_escolhido_por": contexto.get("onus_escolhido_por"),
@@ -8727,10 +9951,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     db, certidao_id=certidao_id,
                     origem=Path(digi_info["digi_path"]))
                 with db.transaction() as con:
-                    con.execute(
+                    banco(con).escrever(
                         """UPDATE ri_certidoes
-                              SET digi_path=?, digi_sha256=?
-                            WHERE id=?""",
+                              SET digi_path=%s, digi_sha256=%s
+                            WHERE id=%s""",
                         (snap["path"], snap["sha256"], certidao_id))
             except ValueError as erro:
                 flash(str(erro), "danger")
@@ -8759,15 +9983,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # de novo. Com selo à mão o sistema não conta folhas, e a frase fica
         # vazia, que é a verdade.
         folhas_contadas_msg = ""
+        aguardando = False
         if not (request.form.get("selo_texto") or "").strip():
             try:
-                versao = AS.versao_da_tabela_de_custas(
-                    "/selo/imovel/certidao",
-                    db.get_setting("selo_tabela_custas_em", ""))
-                if not versao:
-                    raise AS.AtoError(
-                        "falta a versão da tabela de custas, em Administrativo → "
-                        "Configurações (data da tabela em vigor).")
                 # **A CERTIDAO DE MAIS DE UMA FOLHA SAO DOIS SELOS** —
                 # 21/09/2026, medido nos 667 envelopes do acervo agrupados
                 # pelo protocolo: `16.24.4` + `16.24.4.1` em 99 protocolos e
@@ -8801,61 +10019,48 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 folhas_contadas_msg = (
                     f" {folhas} folha(s) contabilizada(s) pelo sistema."
                     if folhas else "")
-                saiu, faltou = [], []
-                for codigo_do_item, quantidade in AS.itens_da_certidao_do_ri(
-                        tipo, folhas):
-                    envelope = AS.envelope_da_certidao_do_ri(
-                        tipo=tipo,
-                        escrevente=app.extensions["usuario_nome"](),
-                        versao_tabela=versao,
-                        quantidade=quantidade,
-                        codigo_do_item=codigo_do_item,
-                        requerente=request.form.get("requerente"),
-                        requerente_documento=request.form.get(
-                            "requerente_documento"),
-                        matricula=m["numero"],
-                        isento=isento,
-                        motivo_isencao=motivo_isencao)
-                    # **A REFERENCIA DO PRIMEIRO ITEM NAO MUDA**, e e dela que
-                    # sai o SID: trocar a forma faria o aparelho vender selo
-                    # novo onde antes devolvia o mesmo. O item da folha
-                    # acrescida, que e novo, leva a sua propria — uma
-                    # referencia so para dois itens traria o mesmo selo duas
-                    # vezes.
-                    referencia = (f"ri_certidoes:{certidao_id}" if not saiu
-                                  and not faltou
-                                  else f"ri_certidoes:{certidao_id}:"
-                                       f"{codigo_do_item}")
-                    r = AS.selar_o_ato_lavrado(
-                        db, Path(app.config["DATA_DIR"]),
-                        tabela="ri_certidoes",
-                        ato_id=certidao_id, tipo=tipo, atribuicao="IMOVEL",
-                        agora=datetime.now().isoformat(timespec="seconds"),
-                        cns=db.get_setting("ri_cns", ""),
-                        usuario=app.extensions["usuario_nome"](),
-                        dados=envelope, referencia=referencia)
-                    (saiu if r["selado"] else faltou).append(
-                        r["numero"] if r["selado"] else r["motivo"])
-                if saiu:
-                    recado_do_selo = f" Selo {', '.join(saiu)}."
-                    if faltou:
-                        recado_do_selo += (f" ({len(faltou)} item(ns) sem "
-                                           f"selo: {faltou[0]})")
-                else:
-                    recado_do_selo = f" SEM SELO: {faltou[0] if faltou else ''}"
+                pedido = _pedir_os_selos_da_certidao_do_ri(
+                    certidao_id=certidao_id, tipo=tipo, folhas=folhas,
+                    requerente=request.form.get("requerente"),
+                    requerente_documento=request.form.get(
+                        "requerente_documento"),
+                    matricula=m["numero"], isento=isento,
+                    motivo_isencao=motivo_isencao)
+                recado_do_selo = _recado_dos_selos_da_certidao(pedido)
+                aguardando = pedido["aguardando"]
             except (AS.AtoError, ValueError) as erro:
                 recado_do_selo = f" SEM SELO: {erro}"
 
         motivo_selo = _motivo_da_falha_do_selo(recado_do_selo)
+        if motivo_selo and aguardando:
+            # AGUARDANDO COBERTURA NÃO É SELO RECUSADO (22/10/2026). Medido na
+            # produção no dia da 3.7.0: a Gerlany quitou o protocolo
+            # 2026.10.61 e as certidões 83 e 84 da matrícula 3252 foram
+            # CANCELADAS sozinhas, porque o protocolo não estava marcado como
+            # «em atendimento». O selo nem chegou a ser pedido; cancelar
+            # queimava um número por tentativa. A certidão fica de pé, sem
+            # poder ser impressa (`ri_certidao_odt` recusa), e o botão
+            # «Selar» da ficha pede o selo com as mesmas referências.
+            audit("RI_CERTIDAO_AGUARDANDO_COBERTURA", "RI_CERTIDAO",
+                  certidao_id, {"numero": numero, "ano": hoje.year,
+                                "tipo": tipo, "matricula": m["numero"],
+                                "motivo": motivo_selo,
+                                **({"busca": busca} if busca else {})})
+            flash(f"Certidão nº {numero}/{hoje.year} gravada, mas SEM SELO: "
+                  f"{motivo_selo} Ela não pode ser impressa até o selo sair. "
+                  "Ligue o protocolo pago e clique em «Selar» na lista de "
+                  "certidões desta ficha.", "warning")
+            return redirect(url_for("ri_ficha", matricula_id=matricula_id)
+                            + "#certidoes-da-ficha")
         if motivo_selo:
             quando = db.now()
             quem = app.extensions["usuario_nome"]()
             with db.transaction() as con:
-                con.execute(
+                banco(con).escrever(
                     """UPDATE ri_certidoes
-                          SET cancelada=1, motivo_cancelamento=?,
-                              cancelada_em=?, cancelada_por=?
-                        WHERE id=?""",
+                          SET cancelada=1, motivo_cancelamento=%s,
+                              cancelada_em=%s, cancelada_por=%s
+                        WHERE id=%s""",
                     (f"Selo não emitido: {motivo_selo}", quando, quem,
                      certidao_id))
             audit("RI_CERTIDAO_NAO_EMITIDA_SELO_FALHOU", "RI_CERTIDAO",
@@ -8876,14 +10081,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 documento=request.form.get("requerente_documento"),
                 matricula=m["numero"], isento=isento,
                 motivo_isencao=motivo_isencao)
-        _nome_emitida = (RONIA.titulo(contexto.get("resultado_onus"),
-                                      contexto.get("resultado_acoes"))
-                         if tipo == "ONUS" else TIPOS_CERTIDAO[tipo])
+        with db.connect() as _c_frases:           # o titulo mora na base (LF06B)
+            _nome_emitida = (RONIA.titulo(contexto.get("resultado_onus"),
+                                          contexto.get("resultado_acoes"),
+                                          con=_c_frases)
+                             if tipo == "ONUS" else TIPOS_CERTIDAO[tipo])
         flash(f"{_nome_emitida} nº {numero}/{hoje.year} emitida. "
               f"Válida até {validade}. O teor foi congelado nesta data."
               f"{folhas_contadas_msg}"
               f"{recado_do_selo}",
               "success" if "SEM SELO" not in recado_do_selo else "warning")
+        if RTRANS.recado_da_emissao(transcricao):
+            flash(RTRANS.recado_da_emissao(transcricao).strip(), "warning")
         if tipo == "ONUS":
             por_palavra = [a["rotulo"] for a in contexto.get("onus") or []
                            if a.get("conferir")]
@@ -9016,13 +10225,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/registro-imoveis/certidoes/<int:certidao_id>.odt")
     @login_required
     def ri_certidao_odt(certidao_id):
-        c = q1("SELECT * FROM ri_certidoes WHERE id=?", (certidao_id,))
+        c = q1("SELECT * FROM ri_certidoes WHERE id=%s", (certidao_id,))
         if not c:
             abort(404)
         if not c["corpo"]:
-            flash("Esta certidão foi importada do E-Ofício sem o teor. "
+            flash("Esta certidão foi importada do sistema antigo sem o teor. "
                   "Ela consta no livro, mas não pode ser reimpressa aqui.", "warning")
             return redirect(url_for("ri_certidoes"))
+        # CERTIDÃO ESPERANDO SELO NÃO SAI EM PAPEL (22/10/2026). Na produção,
+        # a certidão 83/2026 foi impressa duas vezes sem selo, depois de a
+        # trava do selo pago a deixar sem cobertura. Papel de certidão sem selo
+        # é papel que a serventia não pode entregar; quem resolve é o «Selar».
+        if (not c["cancelada"] and not str(c["selo_texto"] or "").strip()
+                and int(certidao_id) in _certidoes_aguardando_selo([certidao_id])):
+            flash(f"A certidão nº {c['numero']}/{c['ano']} ainda está SEM SELO "
+                  "(aguardando protocolo e pagamento) e não pode ser impressa. "
+                  "Ligue o protocolo pago em «Selo e caixa» e clique em "
+                  "«Selar».", "warning")
+            return redirect(url_for("ri_ficha", matricula_id=c["matricula_id"])
+                            + "#certidoes-da-ficha" if c["matricula_id"]
+                            else url_for("ri_certidoes", busca=str(c["numero"])))
 
         fonte = None
         try:
@@ -9072,23 +10294,43 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                   or str(c["selo_texto"] or "").strip())
                 selo_qr_bytes = png_do_qr_do_selo(numero_do_selo)
                 selo_qr_mime = "image/png" if selo_qr_bytes else None
+            # O MODELO DA CASA DA REPROGRAFICA (substituta, 20/10/2026; LH02):
+            # o papel identifica a matricula (livro, folha, CNM), a data da
+            # emissao e quem assina, e o cabecalho le o cadastro da serventia.
+            # So LE; o teor congelado nao muda.
+            _m_repro = (q1("SELECT numero, livro, folha, cnm FROM ri_matriculas "
+                           "WHERE id=%s", (c["matricula_id"],))
+                        if c["matricula_id"] else None)
+            _ident_repro = (RDIGI.identificacao_da_matricula(
+                _m_repro["numero"], _m_repro["livro"], _m_repro["folha"],
+                _m_repro["cnm"]) if _m_repro else "")
             try:
-                arquivo = RDIGI.odt_da_digitalizacao(
-                    Path(digi_path),
-                    selo_texto=_etiqueta_da_certidao(c),
-                    selo_qr=selo_qr_bytes,
-                    selo_qr_mime=selo_qr_mime,
-                    nome=f'certidao-{c["numero"]}-{c["ano"]}',
-                    rotulo_selo="SELO DA CERTIDAO",
-                    # Quem expediu, sem o branco da caneta - 23/09/2026.
-                    assinatura_odf=(
-                        "" if _corpo_ja_traz_quem_emitiu(
-                            c["corpo"] if "corpo" in c.keys() else None,
-                            (str(c["emitida_por_nome"] or "").strip()
-                             if "emitida_por_nome" in c.keys() else ""))
-                        else _assinatura_de_quem_emitiu(c)),
-                    # Titulo na 1a folha + fecho (protocolo aberto) no final.
-                    corpo_html=(c["corpo"] if "corpo" in c.keys() else None))
+                # o CERTIFICO e o fecho moram na base (LF06B; `RI_REPROGRAFICA_*`)
+                with db.connect() as _c_frases:
+                    arquivo = RDIGI.odt_da_digitalizacao(
+                        Path(digi_path),
+                        con=_c_frases,
+                        identificacao=_ident_repro,
+                        data_emissao=str(c["data_emissao"] or c["emitida_em"] or "")[:10],
+                        signatario=(str(c["emitida_por_nome"] or "").strip()
+                                    if "emitida_por_nome" in c.keys() else "",
+                                    str(c["emitida_por_funcao"] or "").strip()
+                                    if "emitida_por_funcao" in c.keys() else ""),
+                        serventia=dados_serventia(db.get_settings),
+                        selo_texto=_etiqueta_da_certidao(c),
+                        selo_qr=selo_qr_bytes,
+                        selo_qr_mime=selo_qr_mime,
+                        nome=f'certidao-{c["numero"]}-{c["ano"]}',
+                        rotulo_selo="SELO DA CERTIDAO",
+                        # Quem expediu, sem o branco da caneta - 23/09/2026.
+                        assinatura_odf=(
+                            "" if _corpo_ja_traz_quem_emitiu(
+                                c["corpo"] if "corpo" in c.keys() else None,
+                                (str(c["emitida_por_nome"] or "").strip()
+                                 if "emitida_por_nome" in c.keys() else ""))
+                            else _assinatura_de_quem_emitiu(c)),
+                        # Titulo na 1a folha + fecho (protocolo aberto) no final.
+                        corpo_html=(c["corpo"] if "corpo" in c.keys() else None))
             except ValueError as erro:
                 flash(str(erro), "danger")
                 return redirect(url_for("ri_certidoes"))
@@ -9222,22 +10464,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         NÃO FALHA O FLUXO: sem protocolo no ato, protocolo inexistente, ou já
         encerrado — devolve None / recado e segue. Não mexe em selos.
         """
-        row = con.execute(
-            "SELECT protocolo FROM ri_atos WHERE id=?", (int(ato_id),)
-        ).fetchone()
+        bd = banco(con)
+        row = bd.um(
+            "SELECT protocolo FROM ri_atos WHERE id=%s", (int(ato_id),)
+        )
         if not row:
             return None
         bruto = str(row["protocolo"] or "").strip()
         if not bruto:
             return None
         dig = "".join(ch for ch in bruto if ch.isdigit())
-        linha = con.execute(
+        # Le a situacao e grava na MESMA linha: o `FOR UPDATE` faz o segundo
+        # arquivamento esperar o primeiro e ler «já encerrada», em vez de
+        # contar ao balcao que encerrou o que outro ja tinha encerrado.
+        bd._escrita()
+        linha = bd.um(
             """SELECT id, numero, situacao FROM ri_protocolos
-                WHERE CAST(numero AS TEXT)=?
-                   OR REPLACE(CAST(numero AS TEXT), '.', '')=?
-                ORDER BY id DESC LIMIT 1""",
+                WHERE CAST(numero AS TEXT)=%s
+                   OR REPLACE(CAST(numero AS TEXT), '.', '')=%s
+                ORDER BY id DESC LIMIT 1 FOR UPDATE""",
             (bruto, dig or bruto),
-        ).fetchone()
+        )
         if linha is None:
             return {"achou": False, "numero": bruto}
         if str(linha["situacao"] or "") != "ABERTO":
@@ -9247,11 +10494,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "ja_encerrada": True,
                 "situacao": linha["situacao"],
             }
-        con.execute(
+        bd.escrever(
             """UPDATE ri_protocolos
                   SET situacao='ENCERRADO',
                       situacao_anterior=COALESCE(situacao_anterior, situacao)
-                WHERE id=? AND situacao='ABERTO'""",
+                WHERE id=%s AND situacao='ABERTO'""",
             (int(linha["id"]),),
         )
         return {
@@ -9307,9 +10554,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         numero = str(protocolo_escrito or "").strip()
         if not numero:
             return None
-        linha = con.execute(
-            """SELECT id, situacao, ato_id FROM ri_protocolos
-                WHERE numero = ? ORDER BY id DESC LIMIT 1""", (numero,)).fetchone()
+        bd = banco(con)
+        # `numero` e inteiro no banco: o que nao e numero nao acha prenotacao
+        # nenhuma (o SQLite comparava e nao achava; o PostgreSQL recusaria).
+        #   LE E GRAVA A MESMA LINHA, e o `FOR UPDATE` a segura ate o fim da
+        #   transacao: sem o BEGIN IMMEDIATE do SQLite, dois atos lavrados ao
+        #   mesmo tempo passariam os dois pelo `ato_id` vazio, e o segundo
+        #   roubaria do primeiro o elo da prioridade.
+        #   E O NUMERO TEM TAMANHO (`numero_digitado`, LD10): o que nao cabe
+        #   no banco nao acha prenotacao nenhuma, em vez de derrubar a rota.
+        linha = None
+        procurado = numero_digitado(numero)
+        if procurado is not None:
+            bd._escrita()
+            linha = bd.um(
+                """SELECT id, situacao, ato_id FROM ri_protocolos
+                    WHERE numero = %s ORDER BY id DESC LIMIT 1 FOR UPDATE""",
+                (procurado,))
         if linha is None:
             return {"achou": False, "numero": numero}
         if linha["ato_id"]:
@@ -9317,10 +10578,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if str(linha["situacao"] or "") != "ABERTO":
             return {"achou": True, "numero": numero,
                     "situacao": linha["situacao"]}
-        con.execute(
+        bd.escrever(
             """UPDATE ri_protocolos
-                  SET ato_id = ?, matricula_id = COALESCE(matricula_id, ?)
-                WHERE id = ?""", (ato_id, matricula_id, linha["id"]))
+                  SET ato_id = %s, matricula_id = COALESCE(matricula_id, %s)
+                WHERE id = %s""", (ato_id, matricula_id, linha["id"]))
         return {"achou": True, "numero": numero, "amarrou": True}
 
     def recado_da_prenotacao(r) -> str:
@@ -9358,7 +10619,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         emitiu; se ele divergir do calculado, quem manda é o emitido — e a
         divergência é assunto para o oficial, não para um `UPDATE`.
         """
-        m = q1("SELECT * FROM ri_matriculas WHERE id=?", (matricula_id,))
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
         if not m:
             abort(404)
         if (m["cnm"] or "").strip():
@@ -9371,7 +10632,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "danger")
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
         with db.transaction() as con:
-            con.execute("UPDATE ri_matriculas SET cnm=? WHERE id=? "
+            banco(con).escrever("UPDATE ri_matriculas SET cnm=%s WHERE id=%s "
                         "AND COALESCE(cnm,'')=''", (codigo, matricula_id))
         audit("RI_CNM_GRAVADO", "RI_MATRICULA", matricula_id, {"cnm": codigo})
         flash(f"CNM {codigo} gravado. Ele não foi inventado: é o CNS, o livro "
@@ -9394,7 +10655,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         Campo de redirecionamento livre é porta aberta, e esta rota mexe no
         registro de um papel que já está na mão de alguém.
         """
-        certidao = q1("SELECT * FROM ri_certidoes WHERE id=?", (certidao_id,))
+        certidao = q1("SELECT * FROM ri_certidoes WHERE id=%s", (certidao_id,))
         if not certidao:
             abort(404)
         # `matricula_id` vazio cai na lista: certidão órfã não tem ficha para
@@ -9440,12 +10701,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         #   expurgo e o rascunho.
         quem = (app.extensions["usuario_nome"]() or "").strip() or None
         with db.transaction() as con:
-            con.execute(
+            banco(con).escrever(
                 """UPDATE ri_certidoes
-                      SET cancelada=1, motivo_cancelamento=?, cancelada_em=?,
-                          cancelada_por=?, declaracao_selo_tjma_em=?,
-                          declaracao_selo_tjma_por=?
-                    WHERE id=?""",
+                      SET cancelada=1, motivo_cancelamento=%s, cancelada_em=%s,
+                          cancelada_por=%s, declaracao_selo_tjma_em=%s,
+                          declaracao_selo_tjma_por=%s
+                    WHERE id=%s""",
                 (motivo, quando, quem, quando, quem, certidao_id))
             resultado = CANC.concluir(
                 con, tabela="ri_certidoes", ato_id=certidao_id,
@@ -9478,11 +10739,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             (SELECT COUNT(*) FROM ri_matriculas WHERE origem='MANUAL') manuais,
             (SELECT COUNT(*) FROM ri_atos WHERE origem='MANUAL') atos_manuais""")
 
-        if request.method == "GET":
-            return render_template("ri_importar.html", atual=atual,
-                                   candidatas=procurar_exportacoes())
+        pasta_da_casa = app.extensions["pasta_da_casa"]
 
-        pasta = Path((request.form.get("pasta") or "").strip())
+        def _da_casa(candidata: dict) -> bool:
+            try:
+                pasta_da_casa(candidata["caminho"])
+                return True
+            except PDC.ForaDaCasa:
+                return False
+
+        if request.method == "GET":
+            # A tela só oferece a pasta que a importação aceita (LX12): uma
+            # sugestão que o POST recusaria é um clique para nada.
+            return render_template("ri_importar.html", atual=atual,
+                                   candidatas=[c for c in procurar_exportacoes()
+                                               if _da_casa(c)])
+
+        # SÓ PASTA DA CASA (LS02 A3; LX12, 19/10/2026). O teor HTML que esta
+        # carga grava é o que a ficha mostra (o C6 do LS02 entrava por aqui),
+        # e `\\maquina\x` levava o servidor, como SYSTEM, à rede.
+        try:
+            pasta = pasta_da_casa((request.form.get("pasta") or "").strip())
+        except PDC.ForaDaCasa as recusa:
+            flash(str(recusa), "danger")
+            return redirect(url_for("ri_importar"))
         if not (pasta / "matriculas.jsonl").exists():
             flash(f"Não encontrei matriculas.jsonl em {pasta}. "
                   f"Confira o caminho da pasta exportada.", "danger")
@@ -9507,7 +10787,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         import shutil
         from ri_import import Importador
 
-        usuario = app.extensions["usuario_nome"]()
+        # O NÚMERO DE QUEM CARREGA, E NÃO O NOME (19/10/2026). O Importador o
+        # grava em ri_importacoes.usuario_id, ri_matriculas.criado_por,
+        # ri_atos.lavrado_por e ri_numeracao.fixado_por — as quatro são id de
+        # `users`. Com o nome, o SQLite aceitava (as 2.014 matrículas da carga
+        # antiga ficaram com o nome em `criado_por`); no PostgreSQL a coluna é
+        # bigint e a carga inteira cai na primeira linha.
+        usuario_id = app.extensions["usuario_id"]()
         # Copia de seguranca antes de mexer: snapshot consistente pelo proprio SQLite.
         # Fora da pasta do banco — ordem do oficial em 11/10/2026.
         import pasta_das_copias
@@ -9521,12 +10807,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         try:
             with db.transaction() as con:
                 if substituir:
+                    bd = banco(con)
                     # Preserva o que foi lavrado aqui; remove so o que veio do E-Oficio.
-                    con.execute("DELETE FROM ri_partes WHERE origem='EOFICIO'")
-                    con.execute("DELETE FROM ri_atos WHERE origem='EOFICIO'")
-                    con.execute("DELETE FROM ri_imagens WHERE matricula_id IN "
+                    bd.escrever("DELETE FROM ri_partes WHERE origem='EOFICIO'")
+                    bd.escrever("DELETE FROM ri_atos WHERE origem='EOFICIO'")
+                    bd.escrever("DELETE FROM ri_imagens WHERE matricula_id IN "
                                 "(SELECT id FROM ri_matriculas WHERE origem='EOFICIO')")
-                    con.execute("DELETE FROM ri_protocolos WHERE origem='EOFICIO'")
+                    bd.escrever("DELETE FROM ri_protocolos WHERE origem='EOFICIO'")
                     # O CNIB TAMBEM TEM AS DUAS ORIGENS DESDE 18/09/2026 — o
                     # atualizador da Central grava `origem='CNIB'`, e so o que
                     # veio do E-Oficio se substitui.
@@ -9540,16 +10827,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     #
                     #   As pessoas saem antes das ordens por causa da chave
                     #   estrangeira de `ri_cnib_pessoas.ordem_id`.
-                    con.execute("DELETE FROM ri_cnib_pessoas WHERE origem='EOFICIO'")
-                    con.execute("DELETE FROM ri_cnib_ordens WHERE origem='EOFICIO'")
-                    con.execute("DELETE FROM ri_rejeitados")
-                    con.execute("DELETE FROM ri_matriculas WHERE origem='EOFICIO'")
-                imp = Importador(con, usuario)
+                    bd.escrever("DELETE FROM ri_cnib_pessoas WHERE origem='EOFICIO'")
+                    bd.escrever("DELETE FROM ri_cnib_ordens WHERE origem='EOFICIO'")
+                    bd.escrever("DELETE FROM ri_rejeitados")
+                    bd.escrever("DELETE FROM ri_matriculas WHERE origem='EOFICIO'")
+                imp = Importador(con, usuario_id)
                 relatorio = imp.executar(pasta)
         except Exception as erro:
             audit("RI_IMPORTACAO_FALHOU", "RI_IMPORTACAO", None, {"erro": str(erro)[:400]})
-            flash(f"A importação falhou e nada foi gravado: {erro}. "
-                  f"O banco anterior está salvo em {copia.name}.", "danger")
+            flash(SEGWEB.recado_de_erro(
+                erro, "ri_importar", "A importação falhou e nada foi gravado; "
+                "o detalhe ficou no registro do servidor.")
+                  + f" O banco anterior está salvo em {copia.name}.", "danger")
             return redirect(url_for("ri_importar"))
 
         audit("RI_IMPORTACAO", "RI_IMPORTACAO", None, relatorio)
@@ -9596,13 +10885,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if not escolhida:
                 flash("Informe a pasta onde estão os arquivos digitados.", "danger")
                 return redirect(url_for("ri_matriculas_doc"))
+            # SÓ PASTA DA CASA (LS02 A3; LX12, 19/10/2026) — a régua de
+            # `pastas_da_casa.dentro_da_casa`, a mesma das outras importações.
+            try:
+                app.extensions["pasta_da_casa"](escolhida)
+            except PDC.ForaDaCasa as recusa:
+                flash(str(recusa), "danger")
+                return redirect(url_for("ri_matriculas_doc"))
             try:
                 res = extrair_doc(escolhida, destino)
             except FileNotFoundError as erro:
                 flash(f"{erro}", "danger")
                 return redirect(url_for("ri_matriculas_doc"))
             except Exception as erro:                     # noqa: BLE001
-                flash(f"A leitura falhou: {type(erro).__name__}: {erro}", "danger")
+                flash(SEGWEB.recado_de_erro(
+                    erro, "ri_matriculas_doc", "A leitura falhou; o detalhe "
+                    "ficou no registro do servidor."), "danger")
                 return redirect(url_for("ri_matriculas_doc"))
             if escolhida != pasta:
                 db.set_settings({"ri_pasta_matriculas_doc": escolhida})
@@ -9623,14 +10921,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             arquivo = achados[0] if achados else None
         informado = (request.values.get("arquivo") or "").strip()
         if informado:
-            arquivo = Path(informado)
+            # O ARQUIVO INFORMADO TAMBÉM (LS02 A3; LX12): lê-se qualquer JSONL
+            # que o serviço alcance, e por GET — o link basta.
+            try:
+                arquivo = app.extensions["pasta_da_casa"](informado)
+            except PDC.ForaDaCasa as recusa:
+                flash(str(recusa), "danger")
+                return redirect(url_for("ri_matriculas_doc"))
 
         if not arquivo or not arquivo.exists():
             return render_template("ri_matriculas_doc.html", arquivo=None, linhas=[],
                                    resumo={}, filtro="", pagina=1, paginas=1,
                                    total=0, pasta=pasta)
 
-        acervo = q("SELECT id, numero, teor, tipo_ficha, conferido, livro FROM ri_matriculas")
+        acervo = q("SELECT id, numero, teor, tipo_ficha, conferido, livro FROM ri_matriculas ORDER BY id")
         no_sistema, vistos, ambiguos = {}, set(), set()
         for r in acervo:
             n = str(r["numero"])
@@ -9657,25 +10961,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
             gravadas = atualizadas = 0
             with db.transaction() as con:
+                bd = banco(con)
                 for l in novas:
                     corpo = teor_html_doc(l["texto"])
                     if l["matricula_id"]:
                         # Volta a NAO CONFERIDA: o teor mudou, e conferencia
                         # antiga nao vale para texto novo.
-                        con.execute("""UPDATE ri_matriculas
-                                       SET teor=?, teor_formato='html',
-                                           conferido=0, atualizado_em=?
-                                       WHERE id=?""",
+                        bd.escrever("""UPDATE ri_matriculas
+                                       SET teor=%s, teor_formato='html',
+                                           conferido=0, atualizado_em=%s
+                                       WHERE id=%s""",
                                     (corpo, db.now(), l["matricula_id"]))
                         atualizadas += 1
                     else:
-                        con.execute(
+                        bd.escrever(
                             """INSERT INTO ri_matriculas
                                (numero, complemento, tipo_ficha, situacao, conferido,
                                 livro, livro_norm, teor, teor_formato, observacao,
                                 origem, origem_chave, criado_em)
-                               VALUES (?, '', 'ACERVO', 'ATIVA', 0, ?, ?, ?, 'html', ?,
-                                       'DOC', ?, ?)""",
+                               VALUES (%s, '', 'ACERVO', 'ATIVA', 0, %s, %s, %s, 'html', %s,
+                                       'DOC', %s, %s)""",
                             (l["numero"], "2", "2", corpo,
                              f"Digitada em Word: {l['arquivo']}", l["arquivo"], db.now()))
                         gravadas += 1
@@ -9689,7 +10994,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         filtro = (request.args.get("situacao") or "").strip().upper()
         if filtro:
             linhas = [l for l in linhas if l["situacao"] == filtro]
-        pagina = max(1, int(request.args.get("pagina") or 1))
+        # LD13: «abc» e o «²» no endereço eram 500 (o recorte é em Python).
+        pagina = max(1, numero_digitado(request.args.get("pagina"),
+                                        maximo=PAGINA_MAIS_ALTA) or 1)
         total = len(linhas)
         paginas = max(1, (total + POR_PAGINA - 1) // POR_PAGINA)
         recorte = linhas[(pagina - 1) * POR_PAGINA: pagina * POR_PAGINA]
@@ -9723,16 +11030,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
             if acao == "sugerir":
                 with db.transaction() as con:
+                    bd = banco(con)
                     for nome, cargo, trat, titulo, ini, fim, obs in SUGESTAO_DELEGATARIOS:
-                        ja = con.execute("SELECT id FROM ri_delegatarios WHERE nome=?",
-                                         (nome,)).fetchone()
+                        ja = bd.um("SELECT id FROM ri_delegatarios WHERE nome=%s",
+                                   (nome,))
                         if ja:
                             continue
-                        con.execute(
+                        bd.escrever(
                             """INSERT INTO ri_delegatarios
                                (nome, cargo, tratamento, titulo, inicio, fim,
                                 confirmado, observacao, criado_em)
-                               VALUES (?,?,?,?,?,?,0,?,?)""",
+                               VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s)""",
                             (nome, cargo, trat, titulo, ini or None, fim or None,
                              obs, db.now()))
                 audit("RI_DELEGATARIOS_SUGESTAO", "RI_DELEGATARIO", None, {})
@@ -9747,11 +11055,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("O nome é obrigatório.", "danger")
                     return redirect(url_for("ri_delegatarios"))
                 with db.transaction() as con:
-                    con.execute(
+                    banco(con).escrever(
                         """INSERT INTO ri_delegatarios
                            (nome, cargo, tratamento, titulo, inicio, fim, confirmado,
                             observacao, criado_em)
-                           VALUES (?,?,?,?,?,?,?,?,?)""",
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (nome, request.form.get("cargo") or "TITULAR",
                          request.form.get("tratamento") or "O",
                          (request.form.get("titulo") or "").strip() or None,
@@ -9767,7 +11075,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if acao == "excluir":
                 did = request.form.get("id")
                 with db.transaction() as con:
-                    con.execute("DELETE FROM ri_delegatarios WHERE id=?", (did,))
+                    banco(con).escrever("DELETE FROM ri_delegatarios WHERE id=%s", (did,))
                 audit("RI_DELEGATARIO_EXCLUIDO", "RI_DELEGATARIO", did, {})
                 flash("Removido do cadastro. Atos já lavrados não mudam: o nome "
                       "deles ficou gravado no próprio ato.", "success")
@@ -9775,14 +11083,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
             # salvar em lote
             with db.transaction() as con:
+                bd = banco(con)
                 for d in delegatarios():
                     pref = f"d{d['id']}_"
                     if not any(k.startswith(pref) for k in request.form):
                         continue
-                    con.execute(
-                        """UPDATE ri_delegatarios SET nome=?, cargo=?, tratamento=?,
-                           titulo=?, inicio=?, fim=?, confirmado=?, observacao=?
-                           WHERE id=?""",
+                    bd.escrever(
+                        """UPDATE ri_delegatarios SET nome=%s, cargo=%s, tratamento=%s,
+                           titulo=%s, inicio=%s, fim=%s, confirmado=%s, observacao=%s
+                           WHERE id=%s""",
                         ((request.form.get(pref + "nome") or d["nome"]).strip(),
                          request.form.get(pref + "cargo") or d["cargo"],
                          request.form.get(pref + "tratamento") or d["tratamento"],
@@ -9813,8 +11122,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # mundo que ler esta consulta, e uma guarda no template deixaria a
         # próxima tela que a usasse com o mesmo defeito.
         acervo = q1("""SELECT COUNT(*) total,
-                              COALESCE(SUM(CASE WHEN teor LIKE '%ou f%'
-                                                THEN 1 ELSE 0 END), 0) com_fecho
+                              COALESCE(SUM(CASE WHEN teor ILIKE '%%ou f%%'
+                                                THEN 1 ELSE 0 END), 0)::bigint com_fecho
                        FROM ri_atos WHERE teor IS NOT NULL AND teor <> ''""")
         faixa = q1("""SELECT MIN(data_ato) primeiro, MAX(data_ato) ultimo
                       FROM ri_atos WHERE data_ato IS NOT NULL""")
@@ -9825,6 +11134,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/registro-imoveis/ctp", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "AUDITOR")
+    # O AUDITOR ve a tela; o que ela GRAVA (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", metodos=("POST",))
     def ri_ctp():
         """CTP — Comunicação de Transações às Prefeituras (CENSEC / CNB-CF).
 
@@ -9841,28 +11152,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         tipo_servico = db.get_setting("ri_ctp_tipo_servico", "1")
         tipo_ato_ctp = db.get_setting("ri_ctp_tipo_ato", "1")
 
-        remessa = q1("SELECT * FROM ri_ctp_remessas WHERE competencia=?", (competencia,))
+        remessa = q1("SELECT * FROM ri_ctp_remessas WHERE competencia=%s", (competencia,))
         fechada = bool(remessa and remessa["situacao"] == "FECHADA")
 
         atos = q("""SELECT a.*, m.numero matricula_numero, m.id mid
                     FROM ri_atos a JOIN ri_matriculas m ON m.id = a.matricula_id
-                    WHERE a.cancelado = 0 AND substr(a.data_ato, 1, 7) = ?
-                    ORDER BY a.data_ato, CAST(m.numero AS INTEGER), a.numero""",
+                    WHERE a.cancelado = 0 AND substr(a.data_ato, 1, 7) = %s
+                    ORDER BY a.data_ato,
+                             coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0),
+                             a.numero, a.id""",
                  (competencia,))
 
         salvos = {r["ato_id"]: r for r in
-                  q("SELECT * FROM ri_ctp_itens WHERE competencia=?", (competencia,))}
+                  q("SELECT * FROM ri_ctp_itens WHERE competencia=%s", (competencia,))}
 
         if request.method == "POST" and not fechada:
             acao = request.form.get("acao") or "salvar"
 
             if acao == "sem_transacoes":
                 with db.transaction() as con:
-                    con.execute(
+                    banco(con).escrever(
                         """INSERT INTO ri_ctp_remessas
                            (competencia, situacao, quantidade, sem_transacoes,
                             observacao, gerado_em, gerado_por, fechado_em, fechado_por)
-                           VALUES (?, 'FECHADA', 0, 1, ?, ?, ?, ?, ?)
+                           VALUES (%s, 'FECHADA', 0, 1, %s, %s, %s, %s, %s)
                            ON CONFLICT(competencia) DO UPDATE SET
                              situacao='FECHADA', quantidade=0, sem_transacoes=1,
                              observacao=excluded.observacao,
@@ -9877,6 +11190,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
             # Grava o que foi digitado, ato a ato.
             with db.transaction() as con:
+                bd = banco(con)
                 for a in atos:
                     pref = f"i{a['id']}_"
                     if not any(k.startswith(pref) for k in request.form):
@@ -9885,11 +11199,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                              for k in request.form if k.startswith(pref)}
                     operacao = dados.get("operacao") or ""
                     incluir = 1 if request.form.get(f"incluir_{a['id']}") else 0
-                    con.execute(
+                    bd.escrever(
                         """INSERT INTO ri_ctp_itens
                            (competencia, ato_id, matricula_id, operacao, dados,
                             incluir, atualizado_em)
-                           VALUES (?,?,?,?,?,?,?)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s)
                            ON CONFLICT(competencia, ato_id) DO UPDATE SET
                              operacao=excluded.operacao, dados=excluded.dados,
                              incluir=excluded.incluir,
@@ -9897,7 +11211,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         (competencia, a["id"], a["matricula_id"], operacao,
                          json.dumps(dados, ensure_ascii=False), incluir, db.now()))
             salvos = {r["ato_id"]: r for r in
-                      q("SELECT * FROM ri_ctp_itens WHERE competencia=?", (competencia,))}
+                      q("SELECT * FROM ri_ctp_itens WHERE competencia=%s", (competencia,))}
 
             if acao == "salvar":
                 flash("Dados da CTP guardados.", "success")
@@ -9907,10 +11221,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         linhas, registros, com_pendencia = [], [], 0
         for a in atos:
             ato = dict(a)
-            m = dict(q1("SELECT * FROM ri_matriculas WHERE id=?", (ato["matricula_id"],)))
+            m = dict(q1("SELECT * FROM ri_matriculas WHERE id=%s", (ato["matricula_id"],)))
             partes = [dict(p) for p in
                       q("""SELECT * FROM ri_partes
-                           WHERE ato_id=? OR (ato_id IS NULL AND matricula_id=?)
+                           WHERE ato_id=%s OR (ato_id IS NULL AND matricula_id=%s)
                            ORDER BY id""", (ato["id"], ato["matricula_id"]))]
 
             salvo = salvos.get(ato["id"])
@@ -9935,6 +11249,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "ato": ato, "m": m, "partes": partes, "dados": dados,
                 "incluir": incluir, "pendencias": pendencias, "entra": entra,
                 "origem_sugestao": origem_sugestao,
+                # O QUE A DOI PEDE E A CTP NÃO — a folha do ato, a natureza do
+                # título, o valor pago a prazo… (DOI de 09/2026). Mostra-se
+                # aqui, pré-preenchido do teor, porque é aqui que se digita.
+                "doi": RDOI.com_sugestoes(ato, m, dados),
+                "doi_pendencias": (RDOI.pendencias(ato, m, dados)
+                                   if dados.get("operacao") else []),
                 # Ato herdado do E-Ofício não tem transmitente nem adquirente:
                 # a carga veio com todas as partes como "proprietário". A tela
                 # precisa dizer isso, senão a pendência parece defeito.
@@ -9951,12 +11271,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             arquivo = nome_ctp(cns, competencia)
             fechar = request.form.get("acao") == "fechar"
             with db.transaction() as con:
-                con.execute(
+                banco(con).escrever(
                     """INSERT INTO ri_ctp_remessas
                        (competencia, situacao, quantidade, sem_transacoes,
                         arquivo_nome, arquivo_hash, conteudo, gerado_em, gerado_por,
                         fechado_em)
-                       VALUES (?,?,?,0,?,?,?,?,?,?)
+                       VALUES (%s,%s,%s,0,%s,%s,%s,%s,%s,%s)
                        ON CONFLICT(competencia) DO UPDATE SET
                          situacao=excluded.situacao, quantidade=excluded.quantidade,
                          sem_transacoes=0,
@@ -9986,7 +11306,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             prontos=len(registros), com_pendencia=com_pendencia,
             TIPO_OPERACAO=TIPO_OPERACAO, FORMA_PAGAMENTO=FORMA_PAGAMENTO,
             TIPO_IMOVEL_CTP=TIPO_IMOVEL_CTP, MOTIVO_SEM_NI=MOTIVO_SEM_NI,
-            TIPO_PARTE=TIPO_PARTE_TRANSACIONADA)
+            TIPO_PARTE=TIPO_PARTE_TRANSACIONADA,
+            NATUREZA_TITULO_DOI=RDOI.NATUREZA_TITULO)
 
     # ================================================== DOI — Receita Federal
     #
@@ -10000,6 +11321,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/registro-imoveis/doi", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "AUDITOR")
+    # O AUDITOR ve a tela; o que ela GRAVA (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", metodos=("POST",))
     def ri_doi():
         """DOI — Declaração sobre Operações Imobiliárias (Receita Federal)."""
         hoje = date.today().isoformat()
@@ -10009,7 +11332,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         cns = db.get_setting("ri_cns", "")
         ibge = codigo_ibge_da_casa(db.get_setting)
 
-        remessa = q1("SELECT * FROM ri_doi_remessas WHERE competencia=?", (competencia,))
+        remessa = q1("SELECT * FROM ri_doi_remessas WHERE competencia=%s", (competencia,))
         entregue = bool(remessa and remessa["situacao"] == "ENTREGUE")
 
         if request.method == "POST" and not entregue:
@@ -10018,11 +11341,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
             if acao == "negativa":
                 with db.transaction() as con:
-                    con.execute(
+                    banco(con).escrever(
                         """INSERT INTO ri_doi_remessas
                            (competencia, situacao, quantidade, negativa, prazo,
                             observacao, gerado_em, entregue_em)
-                           VALUES (?, 'ENTREGUE', 0, 1, ?, ?, ?, ?)
+                           VALUES (%s, 'ENTREGUE', 0, 1, %s, %s, %s, %s)
                            ON CONFLICT(competencia) DO UPDATE SET
                              situacao='ENTREGUE', quantidade=0, negativa=1,
                              observacao=excluded.observacao,
@@ -10056,15 +11379,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           "danger")
                     return redirect(url_for("ri_doi", competencia=competencia))
                 with db.transaction() as con:
-                    cur = con.execute(
+                    bd = banco(con)
+                    bd.escrever(
                         """UPDATE ri_doi_remessas
-                              SET situacao='ENTREGUE', recibo=?, protocolo=?,
-                                  entregue_em=COALESCE(entregue_em, ?)
-                            WHERE competencia=?""",
+                              SET situacao='ENTREGUE', recibo=%s, protocolo=%s,
+                                  entregue_em=COALESCE(entregue_em, %s)
+                            WHERE competencia=%s""",
                         (numero,
                          (request.form.get("protocolo") or "").strip() or None,
                          agora, competencia))
-                    quantas = cur.rowcount
+                    quantas = bd.linhas_afetadas
                 if not quantas:
                     flash(f"Não há remessa da DOI de {competencia} neste "
                           f"sistema, e por isso o recibo não foi guardado — "
@@ -10081,11 +11405,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # ---- monta as declarações a partir do que já foi digitado para a CTP
         atos = q("""SELECT a.*, m.numero matricula_numero
                     FROM ri_atos a JOIN ri_matriculas m ON m.id = a.matricula_id
-                    WHERE a.cancelado = 0 AND substr(a.data_ato, 1, 7) = ?
-                    ORDER BY a.data_ato, CAST(m.numero AS INTEGER), a.numero""",
+                    WHERE a.cancelado = 0 AND substr(a.data_ato, 1, 7) = %s
+                    ORDER BY a.data_ato,
+                             coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0),
+                             a.numero, a.id""",
                  (competencia,))
         salvos = {r["ato_id"]: r for r in
-                  q("SELECT * FROM ri_ctp_itens WHERE competencia=?", (competencia,))}
+                  q("SELECT * FROM ri_ctp_itens WHERE competencia=%s", (competencia,))}
 
         # ------------------- AS ESCRITURAS DO TABELIONATO ENTRAM NO MESMO
         #
@@ -10119,82 +11445,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         escrituras = q("""SELECT * FROM nt_atos
                            WHERE tipo = 'ESCRITURA' AND com_imovel = 1
                              AND COALESCE(situacao,'') <> 'SEM_EFEITO'
-                             AND data >= ? AND data < ?
+                             AND data >= %s AND data < %s
                            ORDER BY data, id""", (primeiro, seguinte))
 
         linhas, registros, impedidas = [], [], []
         for e in escrituras:
             ato = dict(e)
-            # A CHAVE E `motivo`, E NUNCA `texto`: e a que
-            # `Impedimento.como_dict` devolve, e e por ela que
-            # `resumo_impedimentos` conta os motivos no alto da tela. Com a
-            # outra palavra as escrituras ficariam de fora da conferencia —
-            # presentes na lista, ausentes da conta que se le antes de gerar o
-            # arquivo. Eu escrevi `texto` na primeira versao.
-            problemas = []
-            # `str(...)` PORQUE `doi_transacao` E COLUNA INTEGER: o `11` que
-            # a tela gravou como texto volta do banco como o numero 11, e
-            # `.strip()` num numero estoura a tela inteira. A afinidade da
-            # coluna converte na entrada, calada, e so aparece na leitura.
-            for chave, rotulo in (("doi_transacao", "a operação imobiliária"),
-                                  ("doi_matricula", "a matrícula do imóvel")):
-                if not str(ato.get(chave) or "").strip():
-                    problemas.append({"campo": chave,
-                                      "motivo": f"falta {rotulo}"})
-            if str(ato.get("doi_transacao") or "") not in TIPO_OPERACAO:
-                problemas.append({"campo": "doi_transacao",
-                                  "motivo": "operação imobiliária inválida"})
-            if not ato.get("valor_transacao") or ato["valor_transacao"] <= 0:
-                problemas.append({"campo": "valor_transacao",
-                                  "motivo": "falta o valor total da operação"})
-            torna = ato.get("doi_torna_dinheiro") or 0
-            if torna < 0 or (ato.get("valor_transacao") and torna > ato["valor_transacao"]):
-                problemas.append({"campo": "doi_torna_dinheiro",
-                                  "motivo": "torna em dinheiro inválida para o valor total"})
-            if torna and str(ato.get("doi_transacao") or "") != "13":
-                problemas.append({"campo": "doi_torna_dinheiro",
-                                  "motivo": "torna em dinheiro exige operação Permuta"})
-
             partes_e = [dict(x) for x in q(
-                "SELECT * FROM nt_ato_partes WHERE ato_id=? ORDER BY id",
+                "SELECT * FROM nt_ato_partes WHERE ato_id=%s ORDER BY id",
                 (ato["id"],))]
-            # QUEM ALIENOU E QUEM ADQUIRIU SAI DA QUALIFICACAO, medida — e nao
-            # de um campo `papel`, que esta tabela nao tem. Ver
-            # `notas_doi.lados_das_partes`: o procurador e descartado ANTES de
-            # se procurar o vendedor, porque «PROCURADOR DO VENDEDOR» contem
-            # «VENDEDOR» e o CPF de quem so assinou por outro iria a Receita
-            # como o de quem vendeu.
-            alienantes, adquirentes, duvidas = NDOI.lados_das_partes(partes_e)
-            if not partes_e:
-                problemas.append({"campo": "partes",
-                                  "motivo": "falta lançar as partes da escritura"})
-            else:
-                if not alienantes:
-                    problemas.append({
-                        "campo": "alienantes",
-                        "motivo": "nenhuma parte foi qualificada como quem "
-                                  "alienou (vendedor, cedente, doador)"})
-                if not adquirentes:
-                    problemas.append({
-                        "campo": "adquirentes",
-                        "motivo": "nenhuma parte foi qualificada como quem "
-                                  "adquiriu (comprador, cessionário, donatário)"})
-                for d in duvidas:
-                    problemas.append({
-                        "campo": "partes",
-                        "motivo": f"não dá para saber de que lado "
-                                  f"{d.get('nome')} está: a qualificação é "
-                                  f"«{d.get('qualificacao') or 'em branco'}»"})
-                # A SOMA DA PARTICIPACAO DE CADA LADO, que a Receita valida
-                # entre 99% e 100% — e fora da faixa ela recusa o ARQUIVO
-                # INTEIRO, e nao a linha. A ficha ja recusa no balcao; esta
-                # conferencia pega o que foi gravado ANTES desta versao, que e
-                # onde o percentual nao existia.
-                for rotulo, lado in (("alienantes", alienantes),
-                                     ("adquirentes", adquirentes)):
-                    for x in NDOI.conferir_participacoes(lado, rotulo) if lado else []:
-                        problemas.append(x.como_dict())
-
+            # A MONTAGEM E A CONFERÊNCIA DA ESCRITURA MORAM EM
+            # `notas_doi.declaracao_da_escritura` desde 22/10/2026: a CTP da
+            # CENSEC declara as mesmas escrituras, e o montador é um só.
+            reg_e, problemas = NDOI.declaracao_da_escritura(ato, partes_e, cns, ibge)
             rotulo_e = (f"Escritura {ato.get('numero_ordem') or ato['id']}"
                         f" — {ato.get('natureza') or 'sem natureza'}")
             if problemas:
@@ -10203,22 +11466,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 impedidas.append({"ato": ato | {"rotulo": rotulo_e},
                                   "problemas": problemas})
             else:
-                registros.append(NDOI.declarar(
-                    {"operacao": ato["doi_transacao"],
-                     "natureza_titulo": 2,          # escritura pública
-                     "data_ato": (ato.get("data") or "")[:10],
-                     "livro": ato.get("livro"), "folha": ato.get("folha"),
-                     "valor_operacao": ato.get("valor_transacao"),
-                     "houve_permuta": str(ato.get("doi_transacao") or "") == "13",
-                     "houve_pagamento_dinheiro": bool(ato.get("doi_torna_dinheiro")),
-                     "valor_especie": ato.get("doi_torna_dinheiro"),
-                     "imovel": {"matricula": ato.get("doi_matricula"),
-                                "tipo": ato.get("doi_tipo_imovel"),
-                                "logradouro": ato.get("doi_endereco"),
-                                "area": ato.get("doi_area")},
-                     "alienantes": alienantes, "adquirentes": adquirentes,
-                     "ato_id": ato["id"]},
-                    cns, ibge))
+                registros.append(reg_e)
             # A OPERACAO VAI COMO TEXTO PORQUE `TIPO_OPERACAO` E TABELA DE
             # TEXTO. A coluna e INTEGER, e o `11` volta do banco como numero:
             # `TIPO_OPERACAO.get(11)` nao acha nada, e a tela mostrava o
@@ -10235,16 +11483,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             salvo = salvos.get(ato["id"])
             dados = json.loads(salvo["dados"]) if salvo and salvo["dados"] else {}
             incluir = bool(salvo["incluir"]) if salvo else True
-            m = dict(q1("SELECT * FROM ri_matriculas WHERE id=?", (ato["matricula_id"],)))
+            m = dict(q1("SELECT * FROM ri_matriculas WHERE id=%s", (ato["matricula_id"],)))
             partes = [dict(p) for p in
                       q("""SELECT * FROM ri_partes
-                           WHERE ato_id=? OR (ato_id IS NULL AND matricula_id=?)
+                           WHERE ato_id=%s OR (ato_id IS NULL AND matricula_id=%s)
                            ORDER BY id""", (ato["id"], ato["matricula_id"]))]
 
             problemas = NDOI.conferir_do_ctp(ato, m, partes, dados)
+            # A DECLARAÇÃO DO RI É DO DOI-WEB, E NÃO DA CTP — 22/10/2026. Até
+            # aqui saía `montar_registro`, o montador da CENSEC, com serviço
+            # «Notarial», sem livro, natureza nem registro, e com a folha da
+            # matrícula: ver `ri_doi`. E ela passa pelo layout oficial antes de
+            # entrar no arquivo — o que ele recusar, a Receita recusaria.
+            if dados.get("operacao"):
+                problemas += [NDOI.Impedimento("doi", x)
+                              for x in RDOI.pendencias(ato, m, dados)]
+            reg = None
+            if incluir and dados.get("operacao") and not problemas:
+                reg = RDOI.montar(ato, m, partes, dados, cns, ibge)
+                problemas += [NDOI.Impedimento("layout", x)
+                              for x in RDOI.conferir_layout(reg)]
             entra = bool(incluir and dados.get("operacao") and not problemas)
             if entra:
-                registros.append(montar_registro(ato, m, partes, dados, cns, ibge))
+                registros.append(reg)
             elif incluir:
                 impedidas.append({"ato": ato, "problemas": [x.como_dict()
                                                             for x in problemas]})
@@ -10262,11 +11523,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             conteudo = NDOI.gerar_carga(registros, cns, competencia)
             arquivo = NDOI.nome_arquivo(cns, competencia)
             with db.transaction() as con:
-                con.execute(
+                banco(con).escrever(
                     """INSERT INTO ri_doi_remessas
                        (competencia, situacao, quantidade, negativa, prazo,
                         arquivo_nome, arquivo_hash, conteudo, gerado_em)
-                       VALUES (?, 'GERADA', ?, 0, ?, ?, ?, ?, ?)
+                       VALUES (%s, 'GERADA', %s, 0, %s, %s, %s, %s, %s)
                        ON CONFLICT(competencia) DO UPDATE SET
                          situacao='GERADA', quantidade=excluded.quantidade,
                          negativa=0, arquivo_nome=excluded.arquivo_nome,
@@ -10312,7 +11573,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "AUDITOR")
     def ri_doi_arquivo(competencia):
         """Rebaixa o arquivo como foi gerado. O que vale é o que foi entregue."""
-        r = q1("SELECT * FROM ri_doi_remessas WHERE competencia=?", (competencia,))
+        r = q1("SELECT * FROM ri_doi_remessas WHERE competencia=%s", (competencia,))
         if not r or not r["conteudo"]:
             abort(404)
         return Response(r["conteudo"].encode("utf-8"), mimetype="application/json",
@@ -10326,7 +11587,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         Regerar poderia produzir conteúdo diferente se algum cadastro mudou
         no meio do caminho — e o que vale é o que foi transmitido."""
-        r = q1("SELECT * FROM ri_ctp_remessas WHERE competencia=?", (competencia,))
+        r = q1("SELECT * FROM ri_ctp_remessas WHERE competencia=%s", (competencia,))
         if not r or not r["conteudo"]:
             abort(404)
         return Response(r["conteudo"].encode("utf-8"), mimetype="application/json",
@@ -10342,6 +11603,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/registro-imoveis/importacoes", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    # O AUDITOR ve a tela; o que ela GRAVA (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
     def ri_importacoes():
         if request.method == "POST" and request.form.get("acao") == "tipo_imovel":
             # A carga do acervo descartou tbRI.intTipoImovel, que esta
@@ -10376,13 +11639,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
             alvo = q("""SELECT id, origem_chave FROM ri_matriculas
                         WHERE origem='EOFICIO'
-                          AND COALESCE(TRIM(tipo_imovel),'')=''""")
+                          AND COALESCE(TRIM(tipo_imovel),'')=''
+                        ORDER BY id""")
             pares = [(por_chave[r["origem_chave"]], r["id"])
                      for r in alvo if r["origem_chave"] in por_chave]
             if pares:
                 with db.transaction() as con:
-                    con.executemany("UPDATE ri_matriculas SET tipo_imovel=? WHERE id=?",
-                                    pares)
+                    bd = banco(con)
+                    for par in pares:
+                        bd.escrever("UPDATE ri_matriculas SET tipo_imovel=%s WHERE id=%s",
+                                    par)
             audit("RI_TIPO_IMOVEL_COMPLETADO", "RI_MATRICULA", None,
                   {"atualizadas": len(pares), "sem_tipo_na_origem": sem_tipo})
             flash(f"{len(pares)} matrícula(s) receberam o tipo do imóvel. "
@@ -10394,7 +11660,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          WHERE COALESCE(TRIM(tipo_imovel),'')=''""")["n"]
         imps = q("SELECT * FROM ri_importacoes ORDER BY id DESC")
         rej = q("""SELECT entidade, motivo, COUNT(*) qtd FROM ri_rejeitados
-                   GROUP BY entidade, motivo ORDER BY qtd DESC""")
+                   GROUP BY entidade, motivo ORDER BY qtd DESC, entidade, motivo""")
         detalhe = q("""SELECT * FROM ri_rejeitados ORDER BY id DESC LIMIT 300""")
         # **O PADRÃO DE OUTRO SISTEMA TAMBÉM ENTRA POR AQUI** — as duas
         # espécies do RI (`importar_padrao.py`, relato #31): matrícula e
@@ -10404,11 +11670,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # caminhos gravou um registro específico.
         manuais_matricula = q(
             """SELECT id, numero, livro, folha, criado_em FROM ri_matriculas
-               WHERE origem=? ORDER BY id DESC LIMIT 50""",
+               WHERE origem=%s ORDER BY id DESC LIMIT 50""",
             (IMPP.MARCA_DA_ORIGEM,))
         manuais_livro3 = q(
             """SELECT id, numero, natureza, titulo_numero, criado_em
-               FROM ra_registros WHERE origem=? ORDER BY id DESC LIMIT 50""",
+               FROM ra_registros WHERE origem=%s ORDER BY id DESC LIMIT 50""",
             (IMPP.MARCA_DA_ORIGEM,))
         return render_template(
             "ri_importacoes.html", imps=imps, rej=rej, detalhe=detalhe,
@@ -10444,7 +11710,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("ri_importacoes"))
 
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             lista_de_campos = [c for c in IMPP.campos(con, especie)
                               if c["nome"] != "valor_centavos"]
             tem_valor = any(c["nome"] == "valor_centavos"
@@ -10486,7 +11751,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     except IMPP.ImportacaoError as e:
                         erro = str(e)
                     except sqlite3.Error as e:
-                        erro = f"O banco recusou: {e}"
+                        erro = SEGWEB.recado_de_erro(
+                            e, "ri_importacoes", "O banco recusou o registro; o "
+                            "detalhe ficou no registro do servidor.")
             else:
                 numero = (request.form.get("campo_numero") or "").strip()
                 valores: dict[str, str] = {}
@@ -10516,7 +11783,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          "registros": [registro]}, ensure_ascii=False)
                     try:
                         with db.connect() as con:
-                            con.row_factory = sqlite3.Row
                             quadro = IMPP.conferir(con, texto)
                     except IMPP.ImportacaoError as e:
                         erro = str(e)
@@ -10538,3 +11804,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             nome_da_especie=modelo["nome"], campos=lista_de_campos,
             tem_valor=tem_valor, quadro=quadro, erro=erro, texto=texto,
             valores=valores_digitados, vocabularios=vocabularios)
+
+
+def __getattr__(nome: str):
+    """Os nomes antigos do texto de fábrica, lidos da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06A (19/10/2026) e mora em `modelos_padrao/`.
+    Quem ainda importa o nome antigo recebe o padrão da base — o MESMO que o
+    papel imprime, e não uma cópia que ficou para trás. Nome que não é de papel
+    continua sendo `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)

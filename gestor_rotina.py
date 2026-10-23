@@ -30,10 +30,11 @@ import argparse
 import html
 import sqlite3
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import agente_notas as AGN
+import banco_pg
 import gestor_cargas_rcpn as GCRC
 import gestor_cargas_ri as GCR
 import gestor_conferencia as GC
@@ -41,6 +42,7 @@ import gestor_fiscal as GFI
 import gestor_protesto as GPT
 import gestor_rcpn as GRC
 import gestor_rtdpj as GRT
+from bd_nativo import banco as _banco
 from gestor_schema import init_gestor_schema
 
 QUEM = "gestor"
@@ -88,7 +90,7 @@ NOME_DO_SETOR = {
 CHAVE_DA_DISTRIBUICAO = "gestor_distribuicao"
 
 
-def distribuicao_configurada(con: sqlite3.Connection) -> tuple:
+def distribuicao_configurada(con) -> tuple:
     """A distribuição gravada em `settings`, como tupla de 4-tuplas.
 
     Linha torta não derruba a manhã do gestor: é ignorada, e a conferência da
@@ -96,14 +98,14 @@ def distribuicao_configurada(con: sqlite3.Connection) -> tuple:
     """
     import json
     try:
-        linha = con.execute("SELECT value FROM settings WHERE key = ?",
-                            (CHAVE_DA_DISTRIBUICAO,)).fetchone()
+        linha = _banco(con).um("SELECT value FROM settings WHERE key = %s",
+                               (CHAVE_DA_DISTRIBUICAO,))
     except sqlite3.OperationalError:
         return ()
-    if not linha or not str(linha[0] or "").strip():
+    if not linha or not str(linha["value"] or "").strip():
         return ()
     try:
-        bruto = json.loads(linha[0])
+        bruto = json.loads(linha["value"])
     except ValueError:
         return ()
     saida = []
@@ -252,11 +254,11 @@ ORDEM_PRIORIDADE = ("CRITICA", "ALTA", "MEDIA", "BAIXA")
 
 #: De onde se infere quem responde por cada setor: quem mais lançou ali.
 QUEM_LANCA = {
-    "RCPN": "SELECT criado_por FROM rc_atos WHERE criado_em >= ?",
-    "RI": "SELECT lavrado_por FROM ri_atos WHERE lavrado_em >= ? AND COALESCE(acervo,0)=0",
-    "NOTAS": "SELECT criado_por FROM nt_atos WHERE criado_em >= ?",
-    "RCPJ_RTD": "SELECT criado_por FROM rg_atos WHERE criado_em >= ?",
-    "PROTESTO": "SELECT criado_por FROM pt_atos WHERE criado_em >= ?",
+    "RCPN": "SELECT criado_por FROM rc_atos WHERE criado_em >= %s ORDER BY id",
+    "RI": "SELECT lavrado_por FROM ri_atos WHERE lavrado_em >= %s AND COALESCE(acervo,0)=0 ORDER BY id",
+    "NOTAS": "SELECT criado_por FROM nt_atos WHERE criado_em >= %s ORDER BY id",
+    "RCPJ_RTD": "SELECT criado_por FROM rg_atos WHERE criado_em >= %s ORDER BY id",
+    "PROTESTO": "SELECT criado_por FROM pt_atos WHERE criado_em >= %s ORDER BY id",
 }
 
 
@@ -264,28 +266,33 @@ def _agora() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _pg(sql: str) -> str:
+    """O pedaço de WHERE que `tarefa_suspensao` (ainda na ponte) devolve com `?`."""
+    return sql.replace("?", "%s")
+
+
 # ------------------------------------------------------------ responsáveis
 
 def _admin(con) -> int | None:
-    r = con.execute(
+    r = _banco(con).um(
         """SELECT id FROM users WHERE role = 'ADMIN' AND active = 1
-              AND COALESCE(eh_robo,0) = 0 ORDER BY id LIMIT 1""").fetchone()
-    return r[0] if r else None
+              AND COALESCE(eh_robo,0) = 0 ORDER BY id LIMIT 1""")
+    return r["id"] if r else None
 
 
 def _pessoas(con) -> dict[str, int]:
     """Login e nome completo, em maiúsculas, apontando para o id ativo."""
     pessoas = {}
-    for r in con.execute(
+    for r in _banco(con).ler(
             """SELECT id, username, full_name FROM users
-                WHERE active = 1 AND COALESCE(eh_robo,0) = 0"""):
+                WHERE active = 1 AND COALESCE(eh_robo,0) = 0 ORDER BY id"""):
         for nome in (r["username"], r["full_name"]):
             if nome:
                 pessoas[nome.strip().upper()] = r["id"]
     return pessoas
 
 
-def aplicar_distribuicao(con: sqlite3.Connection,
+def aplicar_distribuicao(con,
                          distribuicao=None,
                          *, por: str = "oficial") -> list[str]:
     """Grava a distribuição do oficial. Devolve o que não deu para gravar.
@@ -304,8 +311,9 @@ def aplicar_distribuicao(con: sqlite3.Connection,
     if distribuicao is None:
         distribuicao = distribuicao_configurada(con)
     pessoas = _pessoas(con)
-    oficiais = {r["setor"] for r in con.execute(
-        "SELECT setor FROM ge_responsaveis WHERE origem = 'OFICIAL'")}
+    bd = _banco(con)
+    oficiais = {r["setor"] for r in bd.ler(
+        "SELECT setor FROM ge_responsaveis WHERE origem = 'OFICIAL' ORDER BY setor")}
     faltou = []
     for setor, titular, substituto, rodizio in distribuicao:
         if setor in oficiais:
@@ -317,10 +325,10 @@ def aplicar_distribuicao(con: sqlite3.Connection,
             faltou.append(f"{NOME_DO_SETOR.get(setor, setor)}: o usuário "
                           f"«{ausente}» não existe ou está inativo")
             continue
-        con.execute(
+        bd.escrever(
             """INSERT INTO ge_responsaveis (setor, user_id, substituto_id,
                    rodizio, origem, definido_em, definido_por)
-               VALUES (?, ?, ?, ?, 'OFICIAL', ?, ?)
+               VALUES (%s, %s, %s, %s, 'OFICIAL', %s, %s)
                ON CONFLICT(setor) DO UPDATE SET user_id=excluded.user_id,
                    substituto_id=excluded.substituto_id,
                    rodizio=excluded.rodizio, origem='OFICIAL',
@@ -330,7 +338,7 @@ def aplicar_distribuicao(con: sqlite3.Connection,
     return faltou
 
 
-def inferir_responsaveis(con: sqlite3.Connection) -> dict[str, dict]:
+def inferir_responsaveis(con) -> dict[str, dict]:
     """Quem responde por cada setor: {setor: {titular, substituto, rodizio}}.
 
     Só preenche o setor que ninguém definiu, e o que o oficial definiu
@@ -339,7 +347,8 @@ def inferir_responsaveis(con: sqlite3.Connection) -> dict[str, dict]:
     admin, que não é quem lavra.
     """
     pessoas = _pessoas(con)
-    definidos = {r["setor"]: r for r in con.execute("SELECT * FROM ge_responsaveis")}
+    bd = _banco(con)
+    definidos = {r["setor"]: r for r in bd.ler("SELECT * FROM ge_responsaveis ORDER BY setor")}
     admin = _admin(con)
     for setor in SETORES:
         if setor in definidos:
@@ -350,7 +359,8 @@ def inferir_responsaveis(con: sqlite3.Connection) -> dict[str, dict]:
         if sql:
             contagem: dict[int, int] = {}
             try:
-                for (nome,) in con.execute(sql, (GC.IMPLANTACAO,)):
+                for linha in bd.ler(sql, (GC.IMPLANTACAO,)):
+                    nome = next(iter(linha.values()))
                     uid = pessoas.get(str(nome or "").strip().upper())
                     if uid:
                         contagem[uid] = contagem.get(uid, 0) + 1
@@ -360,20 +370,20 @@ def inferir_responsaveis(con: sqlite3.Connection) -> dict[str, dict]:
                 escolhido = max(contagem, key=contagem.get)
         escolhido = escolhido or admin
         if escolhido:
-            con.execute(
+            bd.escrever(
                 """INSERT INTO ge_responsaveis
                        (setor, user_id, origem, definido_em, definido_por)
-                   VALUES (?, ?, 'INFERIDO', ?, ?)""",
+                   VALUES (%s, %s, 'INFERIDO', %s, %s)""",
                 (setor, escolhido, _agora(), QUEM))
     return {r["setor"]: {"titular": r["user_id"], "substituto": r["substituto_id"],
                          "rodizio": bool(r["rodizio"]), "origem": r["origem"]}
-            for r in con.execute("SELECT * FROM ge_responsaveis")}
+            for r in bd.ler("SELECT * FROM ge_responsaveis ORDER BY setor")}
 
 
 def _carga_aberta(con, user_id: int) -> int:
-    return con.execute(
-        """SELECT count(*) FROM tasks WHERE assigned_user_id = ?
-              AND status NOT IN ('CONCLUIDA','CANCELADA')""", (user_id,)).fetchone()[0]
+    return int(_banco(con).valor(
+        """SELECT count(*) FROM tasks WHERE assigned_user_id = %s
+              AND status NOT IN ('CONCLUIDA','CANCELADA')""", (user_id,)))
 
 
 def _pessoa(setor: str) -> int | None:
@@ -386,12 +396,12 @@ def _pessoa(setor: str) -> int | None:
 def _nome_do_setor(con, setor: str) -> str:
     pessoa = _pessoa(setor)
     if pessoa is not None:
-        r = con.execute("SELECT full_name FROM users WHERE id = ?", (pessoa,)).fetchone()
-        return r[0] if r else setor
+        r = _banco(con).um("SELECT full_name FROM users WHERE id = %s", (pessoa,))
+        return r["full_name"] if r else setor
     return NOME_DO_SETOR.get(setor, setor)
 
 
-def escolher_responsavel(con: sqlite3.Connection, responsaveis: dict[str, dict],
+def escolher_responsavel(con, responsaveis: dict[str, dict],
                          setor: str) -> tuple[int | None, int | None]:
     """(responsável, substituto) para uma tarefa NOVA daquele setor.
 
@@ -415,21 +425,22 @@ def escolher_responsavel(con: sqlite3.Connection, responsaveis: dict[str, dict],
 
 # ---------------------------------------------------------------- achados
 
-def gravar_achados(con: sqlite3.Connection, achados: list[dict],
+def gravar_achados(con, achados: list[dict],
                    hoje: date) -> dict:
+    bd = _banco(con)
     agora = _agora()
     vistos = set()
     novos = 0
     for a in achados:
         vistos.add(a["chave"])
-        linha = con.execute("SELECT id, resolvido_em FROM ge_achados WHERE chave = ?",
-                            (a["chave"],)).fetchone()
+        linha = bd.um("SELECT id, resolvido_em FROM ge_achados WHERE chave = %s",
+                      (a["chave"],))
         if linha is None:
             novos += 1
-            con.execute(
+            bd.escrever(
                 """INSERT INTO ge_achados (chave, regra, gravidade, setor, titulo,
                        detalhe, prazo, fundamento, primeiro_visto_em, ultimo_visto_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (a["chave"], a["regra"], a["gravidade"], a["setor"], a["titulo"],
                  a["detalhe"], a["prazo"], a["fundamento"], agora, agora))
         else:
@@ -437,18 +448,18 @@ def gravar_achados(con: sqlite3.Connection, achados: list[dict],
             # virou «pronto para o visto» / «com ponto» com a MESMA chave, e a
             # linha ficou com o nome velho — o despacho, que conta por regra,
             # dizia «0 caixas para o visto» com 42 esperando.
-            con.execute(
-                """UPDATE ge_achados SET regra=?, gravidade=?, setor=?, titulo=?,
-                       detalhe=?, prazo=?, fundamento=?, ultimo_visto_em=?,
-                       resolvido_em=NULL WHERE id=?""",
+            bd.escrever(
+                """UPDATE ge_achados SET regra=%s, gravidade=%s, setor=%s, titulo=%s,
+                       detalhe=%s, prazo=%s, fundamento=%s, ultimo_visto_em=%s,
+                       resolvido_em=NULL WHERE id=%s""",
                 (a["regra"], a["gravidade"], a["setor"], a["titulo"], a["detalhe"],
                  a["prazo"], a["fundamento"], agora, linha["id"]))
     resolvidos = 0
-    for r in con.execute("SELECT id, chave FROM ge_achados WHERE resolvido_em IS NULL"
-                         ).fetchall():
+    for r in bd.ler("SELECT id, chave FROM ge_achados WHERE resolvido_em IS NULL "
+                    "ORDER BY id"):
         if r["chave"] not in vistos:
             resolvidos += 1
-            con.execute("UPDATE ge_achados SET resolvido_em=? WHERE id=?",
+            bd.escrever("UPDATE ge_achados SET resolvido_em=%s WHERE id=%s",
                         (agora, r["id"]))
     return {"novos": novos, "resolvidos": resolvidos}
 
@@ -457,9 +468,9 @@ def gravar_achados(con: sqlite3.Connection, achados: list[dict],
 
 def _historico(con, task_id: int, acao: str, *, antes=None, depois=None,
                nota: str = "") -> None:
-    con.execute(
+    _banco(con).escrever(
         """INSERT INTO task_history (task_id, ts, user_id, action, old_value,
-               new_value, note) VALUES (?, ?, NULL, ?, ?, ?, ?)""",
+               new_value, note) VALUES (%s, %s, NULL, %s, %s, %s, %s)""",
         (task_id, _agora(), acao, antes, depois, nota))
 
 
@@ -475,7 +486,7 @@ def _descricao(itens: list[dict]) -> str:
     return "\n".join(linhas)
 
 
-def sincronizar_tarefas(con: sqlite3.Connection, achados: list[dict],
+def sincronizar_tarefas(con, achados: list[dict],
                         responsaveis: dict[str, dict], hoje: date) -> dict:
     grupos: dict[tuple[str, str], list[dict]] = {}
     for a in achados:
@@ -483,8 +494,9 @@ def sincronizar_tarefas(con: sqlite3.Connection, achados: list[dict],
             continue
         grupos.setdefault((a["regra"], a["setor"]), []).append(a)
 
-    abertas = {r["source_ref"]: r for r in con.execute(
-        """SELECT * FROM tasks WHERE source_type = ?""", (SOURCE_TYPE,))}
+    bd = _banco(con)
+    abertas = {r["source_ref"]: r for r in bd.ler(
+        """SELECT * FROM tasks WHERE source_type = %s ORDER BY id""", (SOURCE_TYPE,))}
     criadas = fechadas = reabertas = 0
     agora = _agora()
     tocadas = set()
@@ -516,18 +528,19 @@ def sincronizar_tarefas(con: sqlite3.Connection, achados: list[dict],
         tarefa = abertas.get(ref)
         if tarefa is None:
             dono, substituto = escolher_responsavel(con, responsaveis, setor)
-            cur = con.execute(
+            novo_id = bd.escrever(
                 """INSERT INTO tasks (source_type, source_ref, title, description,
                        sector, system_name, priority, status, start_date, due_date,
                        assigned_user_id, backup_user_id, evidence_required,
                        legal_ref, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,'ABERTA',?,?,?,?,0,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,'ABERTA',%s,%s,%s,%s,0,%s,%s,%s)
+                   RETURNING id""",
                 (SOURCE_TYPE, ref, titulo, descricao,
                  "Caixa" if _pessoa(setor) is not None else SETORES.get(setor, setor),
                  f"Conferência diária — {_nome_do_setor(con, setor)}",
                  prioridade, hoje.isoformat(), vencimento, dono, substituto,
-                 fundamento, agora, agora))
-            _historico(con, cur.lastrowid, "CRIADA",
+                 fundamento, agora, agora))[0]["id"]
+            _historico(con, novo_id, "CRIADA",
                        nota=f"Aberta pela conferência: {len(itens)} pendência(s).")
             criadas += 1
             continue
@@ -539,16 +552,16 @@ def sincronizar_tarefas(con: sqlite3.Connection, achados: list[dict],
         do_setor = {r.get("titular"), r.get("substituto")} - {None}
         if do_setor and tarefa["assigned_user_id"] not in do_setor:
             dono, substituto = escolher_responsavel(con, responsaveis, setor)
-            con.execute(
-                """UPDATE tasks SET assigned_user_id=?, backup_user_id=?, updated_at=?
-                    WHERE id=?""", (dono, substituto, agora, tarefa["id"]))
+            bd.escrever(
+                """UPDATE tasks SET assigned_user_id=%s, backup_user_id=%s, updated_at=%s
+                    WHERE id=%s""", (dono, substituto, agora, tarefa["id"]))
             _historico(con, tarefa["id"], "PASSAGEM",
                        antes=str(tarefa["assigned_user_id"]), depois=str(dono),
                        nota="Passada pela distribuição do oficial de 06/10/2026.")
         if tarefa["status"] in ("CONCLUIDA", "CANCELADA"):
-            con.execute(
+            bd.escrever(
                 """UPDATE tasks SET status='ABERTA', completed_at=NULL,
-                       completed_by=NULL, updated_at=? WHERE id=?""",
+                       completed_by=NULL, updated_at=%s WHERE id=%s""",
                 (agora, tarefa["id"]))
             _historico(con, tarefa["id"], "REABERTA", antes=tarefa["status"],
                        depois="ABERTA",
@@ -557,9 +570,9 @@ def sincronizar_tarefas(con: sqlite3.Connection, achados: list[dict],
         if (tarefa["description"] != descricao or tarefa["title"] != titulo
                 or tarefa["priority"] != prioridade
                 or tarefa["due_date"] != vencimento):
-            con.execute(
-                """UPDATE tasks SET title=?, description=?, priority=?, due_date=?,
-                       legal_ref=?, updated_at=? WHERE id=?""",
+            bd.escrever(
+                """UPDATE tasks SET title=%s, description=%s, priority=%s, due_date=%s,
+                       legal_ref=%s, updated_at=%s WHERE id=%s""",
                 (titulo, descricao, prioridade, vencimento, fundamento, agora,
                  tarefa["id"]))
             if tarefa["priority"] != prioridade:
@@ -572,9 +585,9 @@ def sincronizar_tarefas(con: sqlite3.Connection, achados: list[dict],
     for ref, tarefa in abertas.items():
         if ref in tocadas or tarefa["status"] in ("CONCLUIDA", "CANCELADA"):
             continue
-        con.execute(
-            """UPDATE tasks SET status='CONCLUIDA', completed_at=?, updated_at=?
-                WHERE id=?""", (agora, agora, tarefa["id"]))
+        bd.escrever(
+            """UPDATE tasks SET status='CONCLUIDA', completed_at=%s, updated_at=%s
+                WHERE id=%s""", (agora, agora, tarefa["id"]))
         # Fechar porque a regra deixou de gerar tarefa NÃO é «não há mais pendência»:
         # a pendência pode continuar, e a nota tem de dizer a razão verdadeira.
         partes = (ref or "").split(":")
@@ -599,7 +612,7 @@ def sincronizar_tarefas(con: sqlite3.Connection, achados: list[dict],
 ORIGENS_COBRADAS = ("GESTOR", "EXPEDIENTE", "MANUAL", "INSPECAO")
 
 
-def cobrar_vencidas(con: sqlite3.Connection, hoje: date) -> int:
+def cobrar_vencidas(con, hoje: date) -> int:
     """A cobrança do dia das tarefas vencidas da equipe — UM RELATO POR PESSOA.
 
     Até 12/10/2026 era uma NOTA em cada tarefa vencida, todo dia (208 notas do
@@ -616,30 +629,32 @@ def cobrar_vencidas(con: sqlite3.Connection, hoje: date) -> int:
     # A SUSPENSA NÃO SE COBRA — relato #132, 15/10/2026: a suspensão existe
     # para isto, e a prioridade dela também não sobe enquanto espera.
     nao_suspensa, params_suspensao = TS.condicao_nao_suspensa("t", hoje, con=con)
+    bd = _banco(con)
     cobradas = 0
     por_pessoa: dict[int, list[str]] = {}
-    for t in con.execute(
+    for t in bd.ler(
             f"""SELECT t.id, t.priority, t.due_date, t.backup_user_id, t.source_type,
                       t.title, t.assigned_user_id
                   FROM tasks t JOIN users u ON u.id = t.assigned_user_id
-                 WHERE t.source_type IN ({','.join('?' * len(ORIGENS_COBRADAS))})
+                 WHERE t.source_type IN ({','.join(['%s'] * len(ORIGENS_COBRADAS))})
                    AND t.status NOT IN ('CONCLUIDA','CANCELADA')
                    AND (u.role <> 'ADMIN' OR t.source_type = 'GESTOR')
-                   AND t.due_date IS NOT NULL AND t.due_date < ?
-                   AND {nao_suspensa}""",
-            (*ORIGENS_COBRADAS, hoje.isoformat(), *params_suspensao)).fetchall():
+                   AND t.due_date IS NOT NULL AND t.due_date < %s
+                   AND {_pg(nao_suspensa)}
+                 ORDER BY t.id""",
+            (*ORIGENS_COBRADAS, hoje.isoformat(), *params_suspensao)):
         dias = (hoje - GC._dia(t["due_date"])).days
         if t["priority"] != "CRITICA" and t["source_type"] == SOURCE_TYPE:
-            con.execute("UPDATE tasks SET priority='CRITICA', updated_at=? WHERE id=?",
+            bd.escrever("UPDATE tasks SET priority='CRITICA', updated_at=%s WHERE id=%s",
                         (_agora(), t["id"]))
             _historico(con, t["id"], "ALTEROU_PRIORITY", antes=t["priority"],
                        depois="CRITICA")
         quem_cobre = ""
         if t["backup_user_id"]:
-            nome = con.execute("SELECT full_name FROM users WHERE id = ?",
-                               (t["backup_user_id"],)).fetchone()
+            nome = bd.um("SELECT full_name FROM users WHERE id = %s",
+                         (t["backup_user_id"],))
             if nome:
-                quem_cobre = f" Na falta do responsável, cobre: {nome[0]}."
+                quem_cobre = f" Na falta do responsável, cobre: {nome['full_name']}."
         por_pessoa.setdefault(t["assigned_user_id"], []).append(
             f"   #{t['id']} [{t['priority']}] {t['title']} — vencida há {dias} dia(s).{quem_cobre}")
         cobradas += 1
@@ -653,9 +668,10 @@ def cobrar_vencidas(con: sqlite3.Connection, hoje: date) -> int:
     # Quem resolveu as vencidas entre uma rodada e outra não pode continuar lendo
     # a cobrança da manhã: o relato do dia passa a dizer que está em dia.
     RD.init_schema(con)
-    for (uid,) in con.execute(
-            "SELECT destinatario_id FROM rd_relatos WHERE dia=? AND origem='GESTOR_COBRANCA'",
-            (hoje.isoformat(),)).fetchall():
+    for r in bd.ler(
+            "SELECT destinatario_id FROM rd_relatos WHERE dia=%s AND origem='GESTOR_COBRANCA' "
+            "ORDER BY id", (hoje.isoformat(),)):
+        uid = r["destinatario_id"]
         if uid not in por_pessoa:
             RD.publicar(con, dia=hoje, origem="GESTOR_COBRANCA", destinatario_id=uid,
                         titulo="Cobrança do dia — nenhuma tarefa vencida agora",
@@ -666,21 +682,22 @@ def cobrar_vencidas(con: sqlite3.Connection, hoje: date) -> int:
 
 # --------------------------------------------------------------- relatório
 
-def relatorio_html(con: sqlite3.Connection, hoje: date, resumo: dict) -> str:
-    nomes = {r["id"]: r["full_name"] for r in con.execute("SELECT id, full_name FROM users")}
+def relatorio_html(con, hoje: date, resumo: dict) -> str:
+    bd = _banco(con)
+    nomes = {r["id"]: r["full_name"] for r in bd.ler("SELECT id, full_name FROM users ORDER BY id")}
     resp = {r["setor"]: (nomes.get(r["user_id"], "?"), r["origem"],
                          nomes.get(r["substituto_id"]) if r["substituto_id"] else None,
                          bool(r["rodizio"]))
-            for r in con.execute(
+            for r in bd.ler(
                 """SELECT setor, user_id, origem, substituto_id, rodizio
-                     FROM ge_responsaveis""")}
-    abertos = con.execute(
-        """SELECT * FROM ge_achados WHERE resolvido_em IS NULL""").fetchall()
+                     FROM ge_responsaveis ORDER BY setor""")}
+    abertos = bd.ler(
+        """SELECT * FROM ge_achados WHERE resolvido_em IS NULL ORDER BY id""")
     abertos = sorted(abertos, key=lambda a: (GC.GRAVIDADES.index(a["gravidade"]),
                                              a["prazo"] or "9999", a["regra"]))
-    resolvidos = con.execute(
-        """SELECT * FROM ge_achados WHERE resolvido_em LIKE ?""",
-        (hoje.isoformat() + "%",)).fetchall()
+    resolvidos = bd.ler(
+        """SELECT * FROM ge_achados WHERE resolvido_em LIKE %s ORDER BY id""",
+        (hoje.isoformat() + "%",))
     e = html.escape
     linhas = "".join(
         f"<tr class='g-{a['gravidade'].lower()}'><td>{e(a['gravidade'])}</td>"
@@ -742,9 +759,10 @@ sistema — registre o protocolo em ge_envios e o achado some.</small></p>
 DESPACHO = "DESPACHO"
 
 
-def despacho_do_oficial(con: sqlite3.Connection, hoje: date, resumo: dict,
+def despacho_do_oficial(con, hoje: date, resumo: dict,
                         dono: int | None) -> str:
     import gestor_expedientes as GX
+    bd = _banco(con)
     linhas = [f"Despacho do agente gestor — {hoje:%d/%m/%Y}", ""]
     import tarefa_suspensao as TS
     # A SUSPENSA FICA FORA DO DESPACHO (relato #132): ela não pede decisão
@@ -752,13 +770,13 @@ def despacho_do_oficial(con: sqlite3.Connection, hoje: date, resumo: dict,
     nao_suspensa, params_suspensao = TS.condicao_nao_suspensa(None, hoje, con=con)
     nao_suspensa_t, params_suspensao_t = TS.condicao_nao_suspensa("t", hoje, con=con)
     if dono is not None:
-        minhas = con.execute(
+        minhas = bd.ler(
             f"""SELECT id, title, priority, due_date FROM tasks
-                WHERE assigned_user_id = ? AND status NOT IN ('CONCLUIDA','CANCELADA')
-                  AND source_type <> ? AND {nao_suspensa}
+                WHERE assigned_user_id = %s AND status NOT IN ('CONCLUIDA','CANCELADA')
+                  AND source_type <> %s AND {_pg(nao_suspensa)}
                 ORDER BY CASE priority WHEN 'CRITICA' THEN 0 WHEN 'ALTA' THEN 1
-                         WHEN 'MEDIA' THEN 2 ELSE 3 END, due_date""",
-            (dono, DESPACHO, *params_suspensao)).fetchall()
+                         WHEN 'MEDIA' THEN 2 ELSE 3 END, due_date NULLS FIRST, id""",
+            (dono, DESPACHO, *params_suspensao))
         linhas.append(f"1. O QUE SÓ VOCÊ DECIDE ({len(minhas)} tarefa(s) com você)")
         for m in minhas[:25]:
             prazo = f" — prazo {m['due_date'][8:10]}/{m['due_date'][5:7]}" if m["due_date"] else ""
@@ -766,8 +784,8 @@ def despacho_do_oficial(con: sqlite3.Connection, hoje: date, resumo: dict,
             linhas.append(f"   #{m['id']} [{m['priority']}] {m['title']}{prazo}{vencida}")
         linhas.append("")
     def conta(regra):
-        return con.execute("SELECT count(*) FROM ge_achados WHERE regra = ? "
-                           "AND resolvido_em IS NULL", (regra,)).fetchone()[0]
+        return int(bd.valor("SELECT count(*) FROM ge_achados WHERE regra = %s "
+                            "AND resolvido_em IS NULL", (regra,)))
     linhas += ["2. CAIXAS",
                f"   {conta('CAIXA_PRONTO_PARA_VISTO')} fecham e esperam o seu visto; "
                f"{conta('CAIXA_COM_PONTOS')} têm ponto a explicar; "
@@ -778,22 +796,23 @@ def despacho_do_oficial(con: sqlite3.Connection, hoje: date, resumo: dict,
         linhas.append(f"   {c['protocolo'] or '#' + str(c['id'])}: {c['resumo'] or c['assunto']}")
     linhas.append("")
     linhas.append("4. A EQUIPE — tarefas abertas e vencidas de cada um")
-    for nome, abertas, vencidas in con.execute(
-            f"""SELECT u.full_name, count(*),
-                      sum(CASE WHEN t.due_date < ? THEN 1 ELSE 0 END)
+    for r in bd.ler(
+            f"""SELECT u.full_name AS nome, count(*)::int AS abertas,
+                      sum(CASE WHEN t.due_date < %s THEN 1 ELSE 0 END)::int AS vencidas
                  FROM tasks t JOIN users u ON u.id = t.assigned_user_id
-                WHERE t.status NOT IN ('CONCLUIDA','CANCELADA') AND t.source_type <> ?
-                  AND {nao_suspensa_t}
-                GROUP BY u.id ORDER BY 3 DESC, 2 DESC""",
+                WHERE t.status NOT IN ('CONCLUIDA','CANCELADA') AND t.source_type <> %s
+                  AND {_pg(nao_suspensa_t)}
+                GROUP BY u.id ORDER BY 3 DESC, 2 DESC, u.id""",
             (hoje.isoformat(), DESPACHO, *params_suspensao_t)):
-        linhas.append(f"   {nome}: {abertas} aberta(s), {vencidas or 0} vencida(s)")
+        linhas.append(f"   {r['nome']}: {r['abertas']} aberta(s), {r['vencidas'] or 0} vencida(s)")
     linhas.append("")
-    envios = con.execute(
-        f"""SELECT regra, count(*) FROM ge_achados WHERE resolvido_em IS NULL
-             AND regra IN ({','.join('?' * len(_REGRAS_DE_CENTRAL))}) GROUP BY regra""",
-        _REGRAS_DE_CENTRAL).fetchall()
+    envios = bd.ler(
+        f"""SELECT regra, count(*)::int AS n FROM ge_achados WHERE resolvido_em IS NULL
+             AND regra IN ({','.join(['%s'] * len(_REGRAS_DE_CENTRAL))}) GROUP BY regra
+             ORDER BY regra""",
+        _REGRAS_DE_CENTRAL)
     linhas.append("5. CENTRAIS — o que ainda não foi registrado como enviado")
-    linhas += [f"   {ROTULOS.get(r, r)}: {n}" for r, n in envios] or ["   nada pendente"]
+    linhas += [f"   {ROTULOS.get(e['regra'], e['regra'])}: {e['n']}" for e in envios] or ["   nada pendente"]
     linhas += ["", "6. O QUE O AGENTE FEZ NESTA RODADA",
                f"   {resumo.get('novos', 0)} achado(s) novo(s), {resumo.get('resolvidos', 0)} "
                f"resolvido(s); {resumo.get('criadas', 0)} tarefa(s) aberta(s), "
@@ -802,16 +821,43 @@ def despacho_do_oficial(con: sqlite3.Connection, hoje: date, resumo: dict,
     if triagem.get("triados"):
         linhas.append(f"   Malote: {triagem['triados']} expediente(s) lido(s), "
                       f"{triagem.get('tarefas', 0)} tarefa(s) aberta(s) para quem cumpre.")
+    linhas += [""] + _fraudes_entradas_pela_ia(con, hoje)
     linhas += ["", "Lembrete: credenciais de produção da CRA e CENPROT, ONR, ON-RCPN e "
                "Resolve, e o login nos portais da CRC, CENSEC, DOI/e-CAC e SIRC-Web.",
                "", "Este relato se renova a cada rodada; o de ontem fica no histórico."]
     return "\n".join(linhas)
 
 
+def _fraudes_entradas_pela_ia(con, hoje: date) -> list[str]:
+    """A seção 7 do despacho: a lista diária do que a IA pôs em Fraudes (LX13, A4-b).
+
+    DESDE A RODADA ANTERIOR que terminou, e não desde ontem: sem rodada no fim
+    de semana, «ontem» perderia o sábado. A primeira rodada olha sete dias. A
+    janela começa no INÍCIO da rodada anterior — o que entrou durante ela sai
+    nas duas listas, e repetir é melhor que perder."""
+    import malote_fraudes as MF
+    anterior = _banco(con).valor(
+        """SELECT max(iniciada_em) AS m FROM ge_execucoes
+            WHERE hoje < %s AND terminada_em IS NOT NULL AND erro IS NULL""",
+        (hoje.isoformat(),))
+    desde = anterior or (hoje - timedelta(days=7)).isoformat()
+    entradas = MF.entradas_pela_ia(con, desde)
+    linhas = [f"7. FRAUDES ENTRADAS PELA IA ({len(entradas)}) — sem revisão antes, por sua ordem "
+              "de 13/10/2026; confira em Fraudes e inative o que estiver errado"]
+    for a in entradas[:40]:
+        quem = a["nome"] or a["documento"] or "?"
+        linhas.append(f"   #{a['id']} {quem} — {MF._ROTULO.get(a['papel'], a['papel'])} — {a['origem']}")
+    if len(entradas) > 40:
+        linhas.append(f"   … e mais {len(entradas) - 40}: veja a tela de Fraudes")
+    if not entradas:
+        linhas.append("   nenhuma desde a rodada anterior")
+    return linhas
+
+
 _REGRAS_DE_CENTRAL = tuple(sorted(REGRAS_DAS_CENTRAIS))
 
 
-def publicar_despacho(con: sqlite3.Connection, hoje: date, resumo: dict) -> int | None:
+def publicar_despacho(con, hoje: date, resumo: dict) -> int | None:
     """O despacho do dia do oficial — num RELATO, e não numa tarefa.
 
     Ordem do oficial em 12/10/2026: «não acho interessante todo dia criar um
@@ -839,13 +885,13 @@ def publicar_despacho(con: sqlite3.Connection, hoje: date, resumo: dict) -> int 
 
 
 
-def rodar(con: sqlite3.Connection, hoje: date, *, pasta_dados: Path | None = None,
+def rodar(con, hoje: date, *, pasta_dados: Path | None = None,
           pasta_relatorio: Path | None = None, triagem: dict | None = None) -> dict:
-    con.row_factory = sqlite3.Row
+    bd = _banco(con)
     init_gestor_schema(con)
-    exe = con.execute(
-        "INSERT INTO ge_execucoes (iniciada_em, hoje) VALUES (?, ?)",
-        (_agora(), hoje.isoformat())).lastrowid
+    exe = bd.escrever(
+        "INSERT INTO ge_execucoes (iniciada_em, hoje) VALUES (%s, %s) RETURNING id",
+        (_agora(), hoje.isoformat()))[0]["id"]
     try:
         achados = GC.conferir(con, hoje, pasta_dados=pasta_dados)
         faltou = aplicar_distribuicao(con)
@@ -867,10 +913,10 @@ def rodar(con: sqlite3.Connection, hoje: date, *, pasta_dados: Path | None = Non
             caminho = pasta_relatorio / f"conferencia_{hoje.isoformat()}.html"
             caminho.write_text(relatorio_html(con, hoje, resumo), encoding="utf-8")
         resumo["relatorio"] = str(caminho) if caminho else None
-        con.execute(
-            """UPDATE ge_execucoes SET terminada_em=?, achados=?, novos=?,
-                   resolvidos=?, tarefas_criadas=?, tarefas_fechadas=?,
-                   tarefas_cobradas=?, nao_mediu=?, relatorio=? WHERE id=?""",
+        bd.escrever(
+            """UPDATE ge_execucoes SET terminada_em=%s, achados=%s, novos=%s,
+                   resolvidos=%s, tarefas_criadas=%s, tarefas_fechadas=%s,
+                   tarefas_cobradas=%s, nao_mediu=%s, relatorio=%s WHERE id=%s""",
             (_agora(), resumo["achados"], resumo["novos"], resumo["resolvidos"],
              resumo["criadas"], resumo["fechadas"], resumo["cobradas"],
              resumo["nao_mediu"], resumo["relatorio"], exe))
@@ -878,8 +924,8 @@ def rodar(con: sqlite3.Connection, hoje: date, *, pasta_dados: Path | None = Non
         return resumo
     except Exception as erro:
         con.rollback()
-        con.execute(
-            "UPDATE ge_execucoes SET terminada_em=?, erro=? WHERE id=?",
+        bd.escrever(
+            "UPDATE ge_execucoes SET terminada_em=%s, erro=%s WHERE id=%s",
             (_agora(), f"{type(erro).__name__}: {erro}", exe))
         con.commit()
         raise
@@ -905,9 +951,12 @@ def rodada_diaria(banco: Path, pasta_dados: Path | None, pasta_relatorio: Path |
     if not banco.exists():
         escrever(f"ERRO: banco não encontrado em {banco}")
         return 2
-    # O `timeout` da conexão JÁ É a espera pela trava; um PRAGMA a mais aqui
-    # seria acoplamento ao SQLite que o teto de portabilidade não aceita.
-    con = sqlite3.connect(str(banco), timeout=60)
+    # O `timeout` da conexão JÁ É a espera pela trava; nenhum ajuste extra
+    # da conexão é preciso aqui.
+    # PELA PORTA (`banco_pg.conectar`), e não pelo `sqlite3.connect`: o
+    # Agendador roda fora do sistema, ninguém instala o desvio, e o acesso
+    # nativo recusa o sqlite3 cru. Vale também para as leituras do fim.
+    con = banco_pg.conectar(str(banco), timeout=60)
     try:
         import gestor_leitura
         lido = gestor_leitura.ler_pendentes(con, pasta_dados or banco.parent)
@@ -951,9 +1000,17 @@ def rodada_diaria(banco: Path, pasta_dados: Path | None, pasta_relatorio: Path |
     # (09/10/2026): o título já atendido e o selo da prenotação na coluna do
     # ato. O que ele mudou volta no relatório, para o oficial revisar.
     try:
-        with con:
-            feito = GRT.corrigir(con, hoje, escrever=escrever)
-        escrever(f"  agente do RTD/PJ: {feito}")
+        # O INTERRUPTOR (revisão de 22/10/2026, M19): a correção escreve em
+        # ato lavrado sem clique; agora o oficial a desliga nas configurações.
+        _lig = _banco(con).um("SELECT value FROM settings WHERE key = %s",
+                              ("rtdpj_corrigir_automatico",))
+        if str((_lig["value"] if _lig else "LIGADO") or "LIGADO").strip().upper() == "DESLIGADO":
+            escrever("  agente do RTD/PJ: correção automática DESLIGADA nas "
+                     "configurações — nada foi mudado.")
+        else:
+            with con:
+                feito = GRT.corrigir(con, hoje, escrever=escrever)
+            escrever(f"  agente do RTD/PJ: {feito}")
     except Exception:                                   # noqa: BLE001
         escrever("AVISO: o agente do RTD/PJ não corrigiu nada (a conferência roda).")
         escrever(traceback.format_exc())
@@ -982,7 +1039,7 @@ def rodada_diaria(banco: Path, pasta_dados: Path | None, pasta_relatorio: Path |
         return 0
     try:
         import gestor_financeiro
-        leitura = sqlite3.connect(f"file:{banco}?mode=ro", uri=True, timeout=60)
+        leitura = banco_pg.conectar(f"file:{banco}?mode=ro", uri=True, timeout=60)
         try:
             for caminho in gestor_financeiro.escrever(leitura, hoje, pasta_relatorio):
                 escrever(f"  relatório: {caminho}")
@@ -995,7 +1052,7 @@ def rodada_diaria(banco: Path, pasta_dados: Path | None, pasta_relatorio: Path |
     # A tela mora no pacote; até ele subir, o arquivo do dia é o caminho.
     try:
         import gestor_erros
-        leitura = sqlite3.connect(f"file:{banco}?mode=ro", uri=True, timeout=60)
+        leitura = banco_pg.conectar(f"file:{banco}?mode=ro", uri=True, timeout=60)
         try:
             caminho = gestor_erros.escrever_html(leitura, hoje or date.today(), pasta_relatorio)
             escrever(f"  relatório: {caminho}")
@@ -1007,7 +1064,7 @@ def rodada_diaria(banco: Path, pasta_dados: Path | None, pasta_relatorio: Path |
     # O PAINEL DAS NOTAS (09/10/2026): minutas com a revisão, livros, termos e a
     # CENSEC por quinzena. Abre o banco só para ler, como os dois de cima.
     try:
-        leitura = sqlite3.connect(f"file:{banco}?mode=ro", uri=True, timeout=60)
+        leitura = banco_pg.conectar(f"file:{banco}?mode=ro", uri=True, timeout=60)
         try:
             caminho = AGN.escrever_relatorio(leitura, hoje or date.today(), pasta_relatorio)
             escrever(f"  relatório: {caminho}")
@@ -1019,7 +1076,7 @@ def rodada_diaria(banco: Path, pasta_dados: Path | None, pasta_relatorio: Path |
     # O RELATÓRIO FISCAL (09/10/2026): selos × Portal do Selo, gratuidades e o
     # saldo do selador, do mês corrente e do anterior. Só lê.
     try:
-        leitura = sqlite3.connect(f"file:{banco}?mode=ro", uri=True, timeout=60)
+        leitura = banco_pg.conectar(f"file:{banco}?mode=ro", uri=True, timeout=60)
         try:
             for caminho in GFI.escrever_relatorio(leitura, hoje or date.today(), pasta_relatorio):
                 escrever(f"  relatório: {caminho}")

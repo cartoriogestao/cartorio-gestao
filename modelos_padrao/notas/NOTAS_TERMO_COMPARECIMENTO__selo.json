@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_TERMO_COMPARECIMENTO__selo",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Termo de comparecimento — selo",
+  "formato": "CHAVES",
+  "explica": "Entra no fim do parágrafo quando o reconhecimento já tem selo.",
+  "campos": [
+    "selo"
+  ]
+}

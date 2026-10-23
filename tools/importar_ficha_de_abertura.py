@@ -52,6 +52,10 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+import banco_pg  # noqa: E402
+# COM OUTRO NOME: `main` chama de `banco` o caminho do arquivo, e o nome curto
+# escondia a função — era o TypeError da revisão do L021.
+from bd_nativo import banco as abrir_banco  # noqa: E402
 
 # OS ROTULOS SAO OS DO DOCUMENTO DA CASA, e nao inventados: conferidos no
 # `MATRICULA_4016_FICHA_ABERTURA.docx` em 15/09/2026, os onze aparecem.
@@ -182,10 +186,12 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
-    con = sqlite3.connect(banco)
-    con.row_factory = sqlite3.Row
-    m = con.execute("SELECT * FROM ri_matriculas WHERE numero=?",
-                    (str(args.matricula).strip(),)).fetchone()
+    # PELA PORTA DO BANCO, e não `sqlite3.connect`: fora do sistema ninguém
+    # instala o desvio, e o `sqlite3` cru é recusado pelo acesso nativo.
+    con = banco_pg.conectar(banco)
+    bd = abrir_banco(con)
+    m = bd.um("SELECT * FROM ri_matriculas WHERE numero=%s ORDER BY id LIMIT 1",
+              (str(args.matricula).strip(),))
     if not m:
         print(f"Matrícula {args.matricula} não existe no banco.", file=sys.stderr)
         return 1
@@ -230,8 +236,8 @@ def main() -> int:
         return 1
 
     # RECUSA 1: nao se importa por cima.
-    ja_tem = list(con.execute(
-        "SELECT id, nome FROM ri_partes WHERE matricula_id=?", (m["id"],)))
+    ja_tem = bd.ler(
+        "SELECT id, nome FROM ri_partes WHERE matricula_id=%s ORDER BY id", (m["id"],))
     print(f"\npartes que a ficha já tem: {len(ja_tem)}")
     if ja_tem:
         print(f"\nRECUSA: a ficha já tem {len(ja_tem)} parte(s) — "
@@ -277,7 +283,7 @@ def main() -> int:
     import pasta_das_copias as _PC
     copia = _PC.destino_da_copia(copia, Path(banco))
     try:
-        con.execute("VACUUM INTO ?", (str(copia),))
+        banco_pg.copiar_para_arquivo(banco, copia)
     except sqlite3.OperationalError:
         shutil.copy2(banco, copia)
     print(f"\nCópia do banco guardada em:\n  {copia}")
@@ -285,30 +291,30 @@ def main() -> int:
     agora = datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
     with con:
         for p in partes:
-            con.execute(
+            bd.escrever(
                 """INSERT INTO ri_partes
                    (matricula_id, ato_id, nome, nome_norm, documento_tipo,
                     documento_numero, documento_valido, qualificacao, papel,
                     proprietario, proprietario_ativo, origem, origem_chave)
-                   VALUES (?, NULL, ?, ?, ?, ?, 0, ?, 'proprietario', ?, ?,
-                           'MANUAL', ?)""",
+                   VALUES (%s, NULL, %s, %s, %s, %s, 0, %s, 'proprietario', %s, %s,
+                           'MANUAL', %s)""",
                 (m["id"], p["nome"], _sem_acento(p["nome"]),
                  "CNPJ" if "/" in p["documento_numero"] else "CPF",
                  re.sub(r"\D", "", p["documento_numero"]),
                  p["qualificacao"], p["proprietario_ativo"],
                  p["proprietario_ativo"], docx.name))
-        con.execute(
+        bd.escrever(
             """UPDATE ri_matriculas
-                  SET area_valor=COALESCE(NULLIF(area_valor,''), ?),
-                      area_unidade=COALESCE(NULLIF(area_unidade,''), ?),
-                      descricao_perimetro=COALESCE(NULLIF(descricao_perimetro,''), ?),
-                      registro_anterior=COALESCE(NULLIF(registro_anterior,''), ?),
-                      emolumentos_abertura=COALESCE(NULLIF(emolumentos_abertura,''), ?),
+                  SET area_valor=COALESCE(NULLIF(area_valor,''), %s),
+                      area_unidade=COALESCE(NULLIF(area_unidade,''), %s),
+                      descricao_perimetro=COALESCE(NULLIF(descricao_perimetro,''), %s),
+                      registro_anterior=COALESCE(NULLIF(registro_anterior,''), %s),
+                      emolumentos_abertura=COALESCE(NULLIF(emolumentos_abertura,''), %s),
                       rural_urbano=CASE
                           WHEN rural_urbano IN ('R','U') THEN rural_urbano
-                          ELSE COALESCE(?, rural_urbano) END,
-                      atualizado_em=?
-                WHERE id=?""",
+                          ELSE COALESCE(%s, rural_urbano) END,
+                      atualizado_em=%s
+                WHERE id=%s""",
             (area.group(1) if area else None,
              (area.group(2).lower() if area else None),
              campos["descricao_perimetro"] or None,
@@ -316,10 +322,10 @@ def main() -> int:
              campos["emolumentos"] or None,
              rural,
              agora, m["id"]))
-        con.execute(
+        bd.escrever(
             """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
                    entity_type, entity_id, details)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (agora, None, "tools/importar_ficha_de_abertura.py",
              "RI_ABERTURA_IMPORTADA", "RI_MATRICULA", int(m["id"]),
              ('{"matricula": "%s", "arquivo": "%s", "partes": %d, '
@@ -329,9 +335,9 @@ def main() -> int:
               % (m["numero"], docx.name, len(partes)))))
 
     print(f"\n{len(partes)} parte(s) gravadas e os campos preenchidos.")
-    for d in con.execute("""SELECT nome, documento_numero, proprietario_ativo
-                              FROM ri_partes WHERE matricula_id=? ORDER BY id""",
-                         (m["id"],)):
+    for d in bd.ler("""SELECT nome, documento_numero, proprietario_ativo
+                         FROM ri_partes WHERE matricula_id=%s ORDER BY id""",
+                    (m["id"],)):
         print(f"   {d['nome']} · {d['documento_numero']} · "
               f"{'ativo' if d['proprietario_ativo'] else 'cônjuge'}")
     print("\nFALTA O SELO DA ABERTURA — item 16.2. Ele não sai daqui.")

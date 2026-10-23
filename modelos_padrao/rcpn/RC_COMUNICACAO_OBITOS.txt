@@ -1,0 +1,18 @@
+{serventia_nome}
+{cidade}/{uf}
+
+COMUNICAÇÃO MENSAL DE ÓBITOS — {competencia}
+Destinatário: {destinatario}
+Fundamento: {fundamento}
+
+Comunicamos, {finalidade}, os óbitos lavrados nesta serventia na competência {competencia}{aviso}:
+
+{relacao}
+
+Total: {quantos} de {quantos_no_mes} óbito(s) lavrados no mês.
+
+{cidade}/{uf}.
+
+_________________________________
+{registrador}
+{titulo}

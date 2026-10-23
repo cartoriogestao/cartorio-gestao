@@ -36,9 +36,10 @@ A CONTAGEM MORA NUM LUGAR SÓ
 """
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 from typing import Any, Callable
+
+from bd_nativo import banco
 
 CODIGO_DO_ARQUIVAMENTO = "13.30"
 
@@ -112,7 +113,7 @@ def folhas_do_arquivo(nome: Any, caminho: Any) -> int | None:
     return None
 
 
-def anexos_do_ato(con: sqlite3.Connection, ato: Any) -> list[dict]:
+def anexos_do_ato(con: Any, ato: Any) -> list[dict]:
     """Os documentos do ato E os do Protocolo Geral ligado a ele. So LE.
 
     A leitura é a de `protocolo_documentos.anexos_do_ato_de_notas` (relato
@@ -143,12 +144,12 @@ def anexos_do_ato(con: sqlite3.Connection, ato: Any) -> list[dict]:
 # O PONTO ÚNICO DE EXTENSÃO. Cada fonte recebe (con, ato) e devolve
 # [{nome, caminho, origem, tipo}]. Hoje uma só, que já junta o ato e o
 # Protocolo Geral (`nt_atos.protocolo_id`).
-FONTES_DOS_ANEXOS: tuple[Callable[[sqlite3.Connection, Any], list[dict]], ...] = (
+FONTES_DOS_ANEXOS: tuple[Callable[[Any, Any], list[dict]], ...] = (
     anexos_do_ato,
 )
 
 
-def contar_folhas(con: sqlite3.Connection, ato: Any) -> dict:
+def contar_folhas(con: Any, ato: Any) -> dict:
     """A sugestão de folhas, e de onde ela veio. So LE.
 
     Devolve `{total, anexos, itens, nao_contados, texto}`, com `texto` na
@@ -188,7 +189,7 @@ def contar_folhas(con: sqlite3.Connection, ato: Any) -> dict:
             "nao_contados": nao_contados, "texto": texto}
 
 
-def situacao(con: sqlite3.Connection, ato: Any) -> dict:
+def situacao(con: Any, ato: Any) -> dict:
     """O que a tela precisa saber do arquivamento deste ato. So LE."""
     obrigatorio = arquivamento_obrigatorio(ato["tipo"])
     contagem = contar_folhas(con, ato) if obrigatorio else None
@@ -227,18 +228,18 @@ def _chave_do_item(ato_id: int) -> str:
     return f"nt_atos:{int(ato_id)}:{CODIGO_DO_ARQUIVAMENTO}"
 
 
-def _servico_do_arquivamento(con: sqlite3.Connection) -> int | None:
+def _servico_do_arquivamento(con: Any) -> int | None:
     """O serviço 13.30 que tem valor na tabela vigente. So LE."""
-    r = con.execute(
+    r = banco(con).um(
         """SELECT s.codigo FROM cx_servicos s
              JOIN cx_servico_valores v ON v.servico = s.codigo
              JOIN cx_vigencias g ON g.codigo = v.vigencia AND g.vigente = 1
-            WHERE s.codigo_tj = ? ORDER BY s.ativo DESC, s.codigo LIMIT 1""",
-        (CODIGO_DO_ARQUIVAMENTO,)).fetchone()
-    return int(r[0]) if r else None
+            WHERE s.codigo_tj = %s ORDER BY s.ativo DESC, s.codigo LIMIT 1""",
+        (CODIGO_DO_ARQUIVAMENTO,))
+    return int(r["codigo"]) if r else None
 
 
-def lancar_item_no_protocolo(con: sqlite3.Connection, ato: Any,
+def lancar_item_no_protocolo(con: Any, ato: Any,
                              folhas: int) -> dict:
     """Põe (ou ajusta) o 13.30 × folhas no protocolo do ato. GRAVA.
 
@@ -256,32 +257,34 @@ def lancar_item_no_protocolo(con: sqlite3.Connection, ato: Any,
                 "motivo": ("o ato não está ligado a um protocolo geral — "
                            "ligue-o, e o 13.30 entra nas custas ao confirmar "
                            "de novo; ou acrescente o item no caixa.")}
-    p = con.execute("SELECT situacao FROM cx_protocolos WHERE id=?",
-                    (int(pid),)).fetchone()
+    bd = banco(con)
+    p = bd.um("SELECT situacao FROM cx_protocolos WHERE id = %s",
+              (int(pid),))
     if not p:
         return {"lancado": False, "acao": None, "item_id": None,
                 "motivo": "o protocolo ligado ao ato não existe."}
-    if p[0] in ("CANCELADO", "ENTREGUE"):
+    if p["situacao"] in ("CANCELADO", "ENTREGUE"):
         return {"lancado": False, "acao": None, "item_id": None,
-                "motivo": (f"o protocolo está {p[0].lower()}; o 13.30 não "
+                "motivo": (f"o protocolo está {p['situacao'].lower()}; o 13.30 não "
                            f"entrou nas custas.")}
     chave = _chave_do_item(ato["id"])
     cols = ("id, quantidade, quitado, origem")
-    meu = con.execute(
-        f"SELECT {cols} FROM cx_protocolo_atos WHERE origem=? AND origem_chave=?",
-        (ORIGEM_DO_ITEM, chave)).fetchone()
+    meu = bd.um(
+        f"SELECT {cols} FROM cx_protocolo_atos "
+        f"WHERE origem = %s AND origem_chave = %s ORDER BY id LIMIT 1",
+        (ORIGEM_DO_ITEM, chave))
     if meu is None:
-        meu = con.execute(
+        meu = bd.um(
             f"""SELECT {cols} FROM cx_protocolo_atos
-                 WHERE protocolo_id=? AND codigo_ato=? AND origem='MANUAL'
+                 WHERE protocolo_id = %s AND codigo_ato = %s AND origem = 'MANUAL'
                  ORDER BY id LIMIT 1""",
-            (int(pid), CODIGO_DO_ARQUIVAMENTO)).fetchone()
-    if meu is not None and int(meu[2] or 0):
-        if int(meu[1] or 0) == int(folhas):
-            return {"lancado": True, "acao": "ja_quitado", "item_id": meu[0],
+            (int(pid), CODIGO_DO_ARQUIVAMENTO))
+    if meu is not None and int(meu["quitado"] or 0):
+        if int(meu["quantidade"] or 0) == int(folhas):
+            return {"lancado": True, "acao": "ja_quitado", "item_id": meu["id"],
                     "motivo": ""}
         raise ArquivamentoError(
-            f"o item 13.30 do protocolo já foi quitado com {meu[1]} folha(s); "
+            f"o item 13.30 do protocolo já foi quitado com {meu['quantidade']} folha(s); "
             f"para mudar para {folhas}, estorne no caixa antes de confirmar.")
     servico = _servico_do_arquivamento(con)
     item = (EMOL.calcular_item(con, servico=servico, quantidade=int(folhas))
@@ -295,46 +298,47 @@ def lancar_item_no_protocolo(con: sqlite3.Connection, ato: Any,
                item["femp"], item["ferrfis"], item["servico_codigo"],
                item["origem_valor"])
     if meu is not None:
-        con.execute(
+        bd.escrever(
             """UPDATE cx_protocolo_atos
-                  SET descricao=?, codigo_ato=?, quantidade=?, valor_total=?,
-                      emolumentos=?, ferc=?, fadep=?, femp=?, ferrfis=?,
-                      servico_codigo=?, origem_valor=?, origem=?, origem_chave=?
-                WHERE id=?""",
-            (*valores, ORIGEM_DO_ITEM, chave, meu[0]))
-        item_id, acao = meu[0], ("adotado" if meu[3] == "MANUAL"
-                                 else "ajustado")
+                  SET descricao = %s, codigo_ato = %s, quantidade = %s,
+                      valor_total = %s, emolumentos = %s, ferc = %s,
+                      fadep = %s, femp = %s, ferrfis = %s,
+                      servico_codigo = %s, origem_valor = %s, origem = %s,
+                      origem_chave = %s
+                WHERE id = %s""",
+            (*valores, ORIGEM_DO_ITEM, chave, meu["id"]))
+        item_id, acao = meu["id"], ("adotado" if meu["origem"] == "MANUAL"
+                                    else "ajustado")
     else:
-        item_id = con.execute(
+        item_id = bd.escrever(
             """INSERT INTO cx_protocolo_atos
                    (protocolo_id, descricao, codigo_ato, quantidade,
                     valor_total, emolumentos, ferc, fadep, femp, ferrfis,
                     servico_codigo, origem_valor, origem, origem_chave)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (int(pid), *valores, ORIGEM_DO_ITEM, chave)).lastrowid
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id""",
+            (int(pid), *valores, ORIGEM_DO_ITEM, chave))[0]["id"]
         acao = "lancado"
     # O total e a situação do protocolo pela MESMA conta do caixa.
-    cur = con.execute("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=?",
-                      (int(pid),))
-    nomes = [d[0] for d in cur.description]
-    itens = [dict(zip(nomes, r)) for r in cur.fetchall()]
+    itens = bd.ler("SELECT * FROM cx_protocolo_atos WHERE protocolo_id = %s "
+                   "ORDER BY id", (int(pid),))
     situacao = CXP.situacao_pelos_itens(con, int(pid))
-    con.execute("UPDATE cx_protocolos SET valor_total=?, situacao=?, "
-                "finalizado=? WHERE id=?",
+    bd.escrever("UPDATE cx_protocolos SET valor_total = %s, situacao = %s, "
+                "finalizado = %s WHERE id = %s",
                 (EMOL.somar_itens(itens)["total"], situacao,
                  1 if situacao == "PAGO" else 0, int(pid)))
     return {"lancado": True, "acao": acao, "item_id": item_id, "motivo": ""}
 
 
-def confirmar(con: sqlite3.Connection, ato_id: int, *, folhas: Any,
+def confirmar(con: Any, ato_id: int, *, folhas: Any,
               usuario: Any, agora: Any) -> dict:
     """O escrevente confirma — ou corrige — as folhas arquivadas. GRAVA.
 
     Grava o número sugerido pela contagem, de onde ele veio, o confirmado,
     quem e quando. Recusa sem anexo e recusa número que não é inteiro >= 1.
     """
-    ato = con.execute("SELECT * FROM nt_atos WHERE id=?",
-                      (int(ato_id),)).fetchone()
+    bd = banco(con)
+    ato = bd.um("SELECT * FROM nt_atos WHERE id = %s", (int(ato_id),))
     if not ato:
         raise ArquivamentoError("O ato não existe.")
     if not arquivamento_obrigatorio(ato["tipo"]):
@@ -353,12 +357,13 @@ def confirmar(con: sqlite3.Connection, ato_id: int, *, folhas: Any,
         raise ArquivamentoError(
             "Informe quantas folhas foram arquivadas (número inteiro, 1 ou "
             "mais).")
-    con.execute(
+    bd.escrever(
         """UPDATE nt_atos
-              SET folhas_arquivamento=?, arquivamento_folhas_sugeridas=?,
-                  arquivamento_origem_sugestao=?,
-                  arquivamento_confirmado_em=?, arquivamento_confirmado_por=?
-            WHERE id=?""",
+              SET folhas_arquivamento = %s, arquivamento_folhas_sugeridas = %s,
+                  arquivamento_origem_sugestao = %s,
+                  arquivamento_confirmado_em = %s,
+                  arquivamento_confirmado_por = %s
+            WHERE id = %s""",
         (n, contagem["total"], contagem["texto"], str(agora),
          str(usuario or ""), int(ato_id)))
     # Na MESMA transação: confirmação sem o item nas custas seria o dinheiro
@@ -370,7 +375,7 @@ def confirmar(con: sqlite3.Connection, ato_id: int, *, folhas: Any,
             "custas": custas}
 
 
-def exigir_para_selar(con: sqlite3.Connection, ato: Any) -> int | None:
+def exigir_para_selar(con: Any, ato: Any) -> int | None:
     """As folhas confirmadas, ou a recusa. So LE.
 
     None quando o tipo não é dos obrigados (o opcional segue como estava).

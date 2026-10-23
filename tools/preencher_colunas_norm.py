@@ -60,7 +60,6 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -68,15 +67,17 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import banco_pg                                                        # noqa: E402
 import importar_padrao as IMP                                          # noqa: E402
+from bd_nativo import banco                                            # noqa: E402
 
 
-def _colunas_de(con: sqlite3.Connection, tabela: str) -> list[tuple]:
+def _colunas_de(con, tabela: str) -> list[tuple]:
     """As mesmas colunas que o importador lê — nome, obrigatório, padrão, pk.
 
-    **A régua é `importar_padrao._colunas`, e não uma `PRAGMA` escrita aqui.**
-    O que `_derivar` espera é a lista com o NOME na posição zero; uma `PRAGMA`
-    crua devolve o `cid` ali, e o efeito seria o pior possível: nenhuma coluna
+    **A régua é `importar_padrao._colunas`, e não uma consulta ao esquema escrita aqui.**
+    O que `_derivar` espera é a lista com o NOME na posição zero; a consulta
+    crua ao esquema do SQLite devolve o `cid` ali, e o efeito seria o pior possível: nenhuma coluna
     «encontrada», zero linhas a preencher, e o relatório dizendo que está tudo
     certo. Aconteceu na primeira versão deste arquivo, e quem apanhou foi a
     contagem — que dizia 6 e o script dizia 0.
@@ -84,30 +85,31 @@ def _colunas_de(con: sqlite3.Connection, tabela: str) -> list[tuple]:
     return IMP._colunas(con, tabela)
 
 
-def _casos(con: sqlite3.Connection) -> list[dict]:
+def _casos(con) -> list[dict]:
     """O que está vazio, o que a régua da casa escreveria, e o que diverge.
 
     Ela é o corpo do script: as três coisas saem juntas porque a pergunta do
     oficial é uma só — «o que esta coluna deixou de achar, e o que está certo?»
     """
+    bd = banco(con)
     achados: list[dict] = []
     for (tabela, coluna), (fontes, _funcao) in IMP.DERIVACOES.items():
-        colunas = _colunas_de(con, tabela)
+        colunas = _colunas_de(bd, tabela)
         existentes = {c[0] if isinstance(c, (tuple, list)) else c
                       for c in colunas}
         if coluna not in existentes:
             continue
         select = ", ".join(["id", *fontes])
-        for linha in con.execute(f'SELECT {select} FROM "{tabela}"'):
-            valores = dict(zip(fontes, list(linha)[1:]))
+        for linha in bd.ler(f'SELECT {select} FROM "{tabela}" ORDER BY id'):
+            valores = {f: linha[f] for f in fontes}
             if not any(IMP._texto(v) for v in valores.values()):
                 continue            # sem fonte não há o que derivar
             novinha: dict = dict(valores)
             IMP._derivar(tabela, colunas, novinha)
             certo = novinha.get(coluna, "")
-            atual = con.execute(
-                f'SELECT "{coluna}" FROM "{tabela}" WHERE id=?',
-                (linha["id"],)).fetchone()[0]
+            atual = bd.valor(
+                f'SELECT "{coluna}" AS atual FROM "{tabela}" WHERE id=%s',
+                (linha["id"],))
             if IMP._texto(atual) == certo or not certo:
                 continue
             achados.append({"tabela": tabela, "coluna": coluna,
@@ -117,16 +119,17 @@ def _casos(con: sqlite3.Connection) -> list[dict]:
     return achados
 
 
-def _descricao(con: sqlite3.Connection, achado: dict) -> str:
+def _descricao(con, achado: dict) -> str:
     """O rótulo humano da linha — o número da ficha, o nome da parte."""
+    bd = banco(con)
     if achado["tabela"] == "ri_matriculas":
-        r = con.execute("SELECT numero, livro, origem FROM ri_matriculas "
-                        "WHERE id=?", (achado["id"],)).fetchone()
+        r = bd.um("SELECT numero, livro, origem FROM ri_matriculas "
+                  "WHERE id=%s", (achado["id"],))
         return (f"ficha {r['numero']} (Livro {r['livro'] or '—'}, "
                 f"origem {r['origem'] or '—'})")
     if achado["tabela"] == "ri_partes":
-        r = con.execute("SELECT nome, matricula_id FROM ri_partes "
-                        "WHERE id=?", (achado["id"],)).fetchone()
+        r = bd.um("SELECT nome, matricula_id FROM ri_partes "
+                  "WHERE id=%s", (achado["id"],))
         return f"parte «{r['nome']}» da matrícula id={r['matricula_id']}"
     return f"id={achado['id']}"
 
@@ -153,19 +156,18 @@ def main() -> int:
         print(f"Não achei o banco em: {caminho}", file=sys.stderr)
         return 1
 
-    con = sqlite3.connect(caminho)
-    con.row_factory = sqlite3.Row
+    con = banco_pg.conectar(caminho)
+    bd = banco(con)
 
     print("=== As colunas que a busca consulta, e o que ficou vazio ===")
     for (tabela, coluna), (fontes, _f) in IMP.DERIVACOES.items():
-        vazias = con.execute(
-            f'SELECT COUNT(*) FROM "{tabela}" WHERE COALESCE("{coluna}",\'\')=\'\''
-        ).fetchone()[0]
-        total = con.execute(f'SELECT COUNT(*) FROM "{tabela}"').fetchone()[0]
+        vazias = int(bd.valor(
+            f'SELECT COUNT(*) AS n FROM "{tabela}" WHERE COALESCE("{coluna}",\'\')=\'\''))
+        total = int(bd.valor(f'SELECT COUNT(*) AS n FROM "{tabela}"'))
         print(f"  {tabela}.{coluna:<14} vazias: {vazias:>5} de {total:>6}"
               f"   (de {' + '.join(fontes)})")
 
-    achados = _casos(con)
+    achados = _casos(bd)
     vazios = [a for a in achados if a["era_vazio"]]
     divergentes = [a for a in achados if not a["era_vazio"]]
 
@@ -180,7 +182,7 @@ def main() -> int:
     for (tabela, coluna), lista in sorted(por_coluna.items()):
         print(f"\n  {tabela}.{coluna} — {len(lista)} linha(s):")
         for a in lista[:12]:
-            print(f"    · {_descricao(con, a):<48} → {a['certo']!r}")
+            print(f"    · {_descricao(bd, a):<48} → {a['certo']!r}")
         if len(lista) > 12:
             print(f"    · … e mais {len(lista) - 12}")
 
@@ -190,7 +192,7 @@ def main() -> int:
         # pode ser a função que mudou. Sobrescrever calado apagaria o ajuste.
         print(f"\n=== Divergem, e NÃO serão tocadas ({len(divergentes)}) ===")
         for a in divergentes[:12]:
-            print(f"    · {_descricao(con, a):<48} tem {a['atual']!r}, "
+            print(f"    · {_descricao(bd, a):<48} tem {a['atual']!r}, "
                   f"a função diria {a['certo']!r}")
         if len(divergentes) > 12:
             print(f"    · … e mais {len(divergentes) - 12}")
@@ -217,8 +219,8 @@ def main() -> int:
     import pasta_das_copias as _PC
     copia = _PC.destino_da_copia(copia, Path(caminho))
     try:
-        con.execute("VACUUM INTO ?", (str(copia),))
-    except sqlite3.OperationalError:
+        banco_pg.copiar_para_arquivo(caminho, copia)
+    except banco_pg.OperationalError:
         # `VACUUM INTO` é do SQLite 3.27+. Onde não houver, copia o arquivo —
         # e aí o banco precisa estar quieto, o que é o caso de um script que o
         # oficial roda fora do expediente.
@@ -228,8 +230,8 @@ def main() -> int:
     # REABRE DEPOIS DO VACUUM INTO — a sequência que, na 1.197, deixou o SQLite
     # com estado residual de «readonly database» no INSERT seguinte.
     con.close()
-    con = sqlite3.connect(caminho)
-    con.row_factory = sqlite3.Row
+    con = banco_pg.conectar(caminho)
+    bd = banco(con)
 
     # **A GRAVAÇÃO É A MESMA DO SISTEMA, E NÃO UMA SEGUNDA VERSÃO DELA.** Desde
     # 15/09/2026 a abertura do banco também preenche estas colunas
@@ -248,9 +250,8 @@ def main() -> int:
 
     print("\n=== Como conferir que pegou ===")
     for (tabela, coluna), _l in sorted(por_coluna.items()):
-        vazias = con.execute(
-            f'SELECT COUNT(*) FROM "{tabela}" WHERE COALESCE("{coluna}",\'\')=\'\''
-        ).fetchone()[0]
+        vazias = int(bd.valor(
+            f'SELECT COUNT(*) AS n FROM "{tabela}" WHERE COALESCE("{coluna}",\'\')=\'\''))
         print(f"  {tabela}.{coluna}: vazias agora = {vazias}")
     print("\nAbra a ficha 3.110 no sistema e use o filtro de livro: ela passa a "
           "aparecer, que é o relato #55.")

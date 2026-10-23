@@ -10,14 +10,19 @@ está no módulo de domínio.
 """
 from __future__ import annotations
 
-import sqlite3
 from datetime import date
 from pathlib import Path
 
 from flask import abort, flash, redirect, render_template, request, url_for
 
+from bd_nativo import banco
 import pld_coaf as PLD
+from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 from storage import save_upload
+
+#: Os reais inteiros (valor sem vírgula) cujos centavos ainda cabem em
+#: `pld_casos.valor_centavos` (`bigint`).
+_REAIS_QUE_CABEM = (2 ** 63 - 1) // 100
 
 ENDERECO_DO_SISCOAF = "https://siscoaf.coaf.gov.br/siscoaf-internet/"
 ENTIDADE_DO_RECIBO = "PLD_CASO"
@@ -62,8 +67,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def pld_abrir():
         valor = (request.form.get("valor") or "").strip()
         try:
-            centavos = PLD.centavos(valor) if valor and "," in valor else (
-                int(valor) * 100 if valor.isdigit() else None)
+            # SEM VÍRGULA SÃO REAIS INTEIROS. O que tem cara de número e não
+            # cabe (dígitos demais, «²») se recusa com recado — o de 30 dígitos
+            # derrubava o INSERT (LD13). Texto sem dígito continua sem valor.
+            if valor and "," in valor:
+                centavos = PLD.centavos(valor)
+            elif valor.isdigit():
+                reais_inteiros = numero_digitado(valor, maximo=_REAIS_QUE_CABEM)
+                if reais_inteiros is None:
+                    raise PLD.PldError("O valor da operação não é um número que o "
+                                       "sistema guarde. Confira o valor.")
+                centavos = reais_inteiros * 100
+            else:
+                centavos = None
             with db.transaction() as con:
                 cid = PLD.abrir_para_analise(
                     con, referencia=request.form.get("referencia") or "",
@@ -85,10 +101,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             except PLD.PldError:
                 abort(404)
             texto = c["texto_comunicacao"] or PLD.montar_comunicacao(con, caso_id)
-            recibos = con.execute(
+            recibos = banco(con).ler(
                 """SELECT id, original_name, uploaded_at FROM attachments
-                    WHERE entity_type=? AND entity_id=? ORDER BY id""",
-                (ENTIDADE_DO_RECIBO, caso_id)).fetchall()
+                    WHERE entity_type = %s AND entity_id = %s ORDER BY id""",
+                (ENTIDADE_DO_RECIBO, caso_id))
         return render_template("pld_caso.html", c=c, texto=texto, recibos=recibos,
                                SITUACOES=PLD.SITUACOES, reais=PLD.reais,
                                siscoaf=ENDERECO_DO_SISCOAF, hoje=date.today().isoformat(),

@@ -27,11 +27,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from datetime import date, timedelta
 from typing import Any
 
 import hc_schema as HC
+from bd_nativo import banco
 
 
 class HabilitacaoError(ValueError):
@@ -59,7 +59,7 @@ def _norm(nome: Any) -> str | None:
     return normalizar_nome(n) if n else None
 
 
-def _andamento(con: sqlite3.Connection, habilitacao_id: int, o_que: str, *,
+def _andamento(con, habilitacao_id: int, o_que: str, *,
                quando: str, detalhe: str | None = None,
                antes: str | None = None, depois: str | None = None,
                quem: str | None = None) -> None:
@@ -69,45 +69,43 @@ def _andamento(con: sqlite3.Connection, habilitacao_id: int, o_que: str, *,
     semanas, «o que aconteceu e quando» é a pergunta que mais se repete, e a
     resposta não pode depender de alguém ter lembrado de anotar.
     """
-    con.execute(
+    banco(con).escrever(
         """INSERT INTO hc_andamento(habilitacao_id, quando, o_que, detalhe,
                situacao_antes, situacao_depois, quem)
-           VALUES (?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
         (int(habilitacao_id), quando, o_que, detalhe, antes, depois, quem))
 
 
-def _hab(con: sqlite3.Connection, habilitacao_id: int) -> sqlite3.Row:
-    con.row_factory = sqlite3.Row
-    r = con.execute("SELECT * FROM hc_habilitacoes WHERE id=?",
-                    (int(habilitacao_id),)).fetchone()
+def _hab(con, habilitacao_id: int) -> dict:
+    r = banco(con).um("SELECT * FROM hc_habilitacoes WHERE id=%s",
+                      (int(habilitacao_id),))
     if not r:
         raise HabilitacaoError(
             f"Habilitação {habilitacao_id} não encontrada.")
     return r
 
 
-def _mudar(con: sqlite3.Connection, habilitacao_id: int, campos: dict) -> None:
-    partes = ", ".join(f"{k}=?" for k in campos)
-    con.execute(f"UPDATE hc_habilitacoes SET {partes} WHERE id=?",
+def _mudar(con, habilitacao_id: int, campos: dict) -> None:
+    partes = ", ".join(f"{k}=%s" for k in campos)
+    banco(con).escrever(f"UPDATE hc_habilitacoes SET {partes} WHERE id=%s",
                 (*campos.values(), int(habilitacao_id)))
 
 
 # ------------------------------------------------------------- abrir
 
 
-def proximo_numero(con: sqlite3.Connection, ano: int) -> int:
+def proximo_numero(con, ano: int) -> int:
     """O próximo número do exercício. Só LÊ.
 
     Por EXERCÍCIO, como o recibo do caixa e a certidão: a habilitação é peça
     que se arquiva por ano, e «habilitação 12/2026» é como o balcão a chama.
     """
-    con.row_factory = sqlite3.Row
-    r = con.execute("SELECT MAX(numero) n FROM hc_habilitacoes WHERE ano=?",
-                    (int(ano),)).fetchone()
+    r = banco(con).um("SELECT MAX(numero) AS n FROM hc_habilitacoes WHERE ano=%s",
+                      (int(ano),))
     return int((r["n"] or 0)) + 1
 
 
-def abrir(con: sqlite3.Connection, dados: dict, *, agora: str,
+def abrir(con, dados: dict, *, agora: str,
           usuario: str | None = None) -> int:
     """Abre o processo e monta o checklist da lei. ESCREVE.
 
@@ -137,7 +135,12 @@ def abrir(con: sqlite3.Connection, dados: dict, *, agora: str,
             f"{', '.join(HC.REGIMES)}.")
 
     ano = int(str(agora)[:4])
-    numero = proximo_numero(con, ano)
+    bd = banco(con)
+    # Trava por assunto ANTES de ler o maior número: dois balcões abrindo
+    # juntos leriam o mesmo `max(numero)+1`. `proximo_numero` continua só
+    # lendo.
+    bd.travar("hc_habilitacoes.numero")
+    numero = proximo_numero(bd, ano)
     colunas = {
         "numero": numero, "ano": ano,
         "data_entrada": _txt(dados.get("data_entrada")) or str(agora)[:10],
@@ -158,11 +161,11 @@ def abrir(con: sqlite3.Connection, dados: dict, *, agora: str,
             colunas[f"{lado}_{campo}"] = _txt(dados.get(f"{lado}_{campo}"))
         colunas[f"{lado}_nome_norm"] = _norm(dados.get(f"{lado}_nome"))
 
-    marcas = ",".join("?" * len(colunas))
-    cur = con.execute(
-        f"INSERT INTO hc_habilitacoes ({','.join(colunas)}) VALUES ({marcas})",
-        tuple(colunas.values()))
-    novo = int(cur.lastrowid)
+    marcas = ",".join(["%s"] * len(colunas))
+    novo = int(bd.escrever(
+        f"INSERT INTO hc_habilitacoes ({','.join(colunas)}) VALUES ({marcas}) "
+        f"RETURNING id",
+        tuple(colunas.values()))[0]["id"])
 
     for codigo, descricao, fundamento in HC.DOCUMENTOS_DA_HABILITACAO:
         for lado in ("NUBENTE1", "NUBENTE2"):
@@ -170,10 +173,10 @@ def abrir(con: sqlite3.Connection, dados: dict, *, agora: str,
                 estado = (colunas[f"{lado.lower()}_estado_civil"] or "").upper()
                 if estado.startswith("SOLTEIR") or not estado:
                     continue
-            con.execute(
+            bd.escrever(
                 """INSERT INTO hc_documentos(habilitacao_id, codigo, descricao,
                        fundamento, de_quem, criado_em)
-                   VALUES (?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
                 (novo, codigo, descricao, fundamento, lado, agora))
 
     _andamento(con, novo, "Processo aberto", quando=agora,
@@ -185,18 +188,17 @@ def abrir(con: sqlite3.Connection, dados: dict, *, agora: str,
 # --------------------------------------------------------- documentos
 
 
-def marcar_documento(con: sqlite3.Connection, documento_id: int, *,
+def marcar_documento(con, documento_id: int, *,
                      apresentado: bool, agora: str,
                      usuario: str | None = None) -> None:
     """Marca um item do checklist como apresentado, ou desmarca. ESCREVE."""
-    con.row_factory = sqlite3.Row
-    d = con.execute("SELECT * FROM hc_documentos WHERE id=?",
-                    (int(documento_id),)).fetchone()
+    d = banco(con).um("SELECT * FROM hc_documentos WHERE id=%s",
+                      (int(documento_id),))
     if not d:
         raise HabilitacaoError("Item de documento não encontrado.")
-    con.execute(
-        """UPDATE hc_documentos SET apresentado=?, apresentado_em=?,
-               apresentado_por=? WHERE id=?""",
+    banco(con).escrever(
+        """UPDATE hc_documentos SET apresentado=%s, apresentado_em=%s,
+               apresentado_por=%s WHERE id=%s""",
         (1 if apresentado else 0, agora if apresentado else None,
          usuario if apresentado else None, int(documento_id)))
     _andamento(con, d["habilitacao_id"],
@@ -206,7 +208,7 @@ def marcar_documento(con: sqlite3.Connection, documento_id: int, *,
                quem=usuario)
 
 
-def dispensar_documento(con: sqlite3.Connection, documento_id: int, *,
+def dispensar_documento(con, documento_id: int, *,
                         motivo: str, agora: str,
                         usuario: str | None = None) -> None:
     """Dispensa um item, com motivo escrito. ESCREVE.
@@ -221,33 +223,31 @@ def dispensar_documento(con: sqlite3.Connection, documento_id: int, *,
             "Escreva o motivo da dispensa com pelo menos dez letras — é ele "
             "que responde, depois, por que a habilitação correu sem este "
             "documento.")
-    con.row_factory = sqlite3.Row
-    d = con.execute("SELECT * FROM hc_documentos WHERE id=?",
-                    (int(documento_id),)).fetchone()
+    d = banco(con).um("SELECT * FROM hc_documentos WHERE id=%s",
+                      (int(documento_id),))
     if not d:
         raise HabilitacaoError("Item de documento não encontrado.")
-    con.execute(
-        """UPDATE hc_documentos SET dispensado=1, dispensado_motivo=?,
-               dispensado_em=?, dispensado_por=? WHERE id=?""",
+    banco(con).escrever(
+        """UPDATE hc_documentos SET dispensado=1, dispensado_motivo=%s,
+               dispensado_em=%s, dispensado_por=%s WHERE id=%s""",
         (motivo, agora, usuario, int(documento_id)))
     _andamento(con, d["habilitacao_id"], "Documento dispensado", quando=agora,
                detalhe=f"{d['descricao']} ({d['de_quem']}) — {motivo}",
                quem=usuario)
 
 
-def o_que_falta(con: sqlite3.Connection, habilitacao_id: int) -> list[dict]:
+def o_que_falta(con, habilitacao_id: int) -> list[dict]:
     """Os itens ainda não apresentados nem dispensados. Só LÊ."""
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         """SELECT * FROM hc_documentos
-            WHERE habilitacao_id=? AND apresentado=0 AND dispensado=0
+            WHERE habilitacao_id=%s AND apresentado=0 AND dispensado=0
             ORDER BY id""", (int(habilitacao_id),))]
 
 
 # -------------------------------------------------------------- edital
 
 
-def publicar_edital(con: sqlite3.Connection, habilitacao_id: int, *,
+def publicar_edital(con, habilitacao_id: int, *,
                     teor: str, agora: str, hoje: str | None = None,
                     usuario: str | None = None) -> dict:
     """Publica o edital de proclamas e abre o prazo de HC.PRAZO_DO_EDITAL dias. ESCREVE.
@@ -296,7 +296,117 @@ def publicar_edital(con: sqlite3.Connection, habilitacao_id: int, *,
             "hash": assinatura}
 
 
-def prazo_vencido(h: sqlite3.Row | dict, hoje: Any = None) -> bool:
+#: A peça do teor do registro do edital no Livro D (CN-MA art. 267).
+PECA_DO_REGISTRO_NO_LIVRO_D = "RC_EDITAL_PROCLAMAS_FOLHA__registro_no_livro_d"
+
+
+def registrar_o_edital_no_livro_d(con, habilitacao_id: int, *, sv: dict,
+                                  agora: str, data_extenso: str,
+                                  usuario: str | None = None) -> dict:
+    """Registra o edital publicado no Livro D e o amarra à habilitação. ESCREVE.
+
+    **NENHUM CÓDIGO GRAVAVA `proclamas_assento_id`** — LD01, 21/10/2026. O selo
+    da habilitação desta casa exige livro, folha e termo do registro do edital
+    no Livro D (HOTFIX-2026-10-07-05), e o vínculo só nascia nos testes, por
+    SQL: pelas telas, a habilitação nunca chegava ao HABILITADO — o selo
+    falhava e a expedição era desfeita. A norma manda o mesmo: o edital
+    «será registrado no Livro de Registro de Proclamas (Livro "D")» (CN-MA
+    art. 265; LRP art. 67 e art. 33), em ordem cronológica (art. 266), e o
+    registro conterá a época da publicação e os documentos apresentados (art.
+    267).
+
+    QUEM LANÇA NO LIVRO É `rc_assento.lavrar_assento`, o mesmo de todo assento
+    — número, folha e matrícula pela série RC_D —, e o teor é a peça do papel
+    da folha do edital (o Livro D pode ser formado por uma via do edital, CN-MA
+    art. 266, parágrafo único). O selo NÃO se pede aqui: é o da habilitação
+    (item 14.1.1), que leva este livro, folha e termo, e que
+    `espelhar_o_selo_no_livro_d` anota no registro quando sai.
+
+    UMA VEZ SÓ, E COM A LINHA PRESA: a trava do assunto e depois a linha da
+    habilitação (`FOR UPDATE`), para dois cliques não lavrarem dois registros
+    do mesmo edital. Já registrado, devolve o que existe.
+    """
+    import rc_assento as RC
+    import livro_nucleo as LN
+    import rc_modelos_do_livro as ML
+    import rc_textos as TEXTOS
+
+    bd = banco(con)
+    bd.travar("hc_habilitacoes.livro_d")
+    bd._escrita()
+    h = bd.um("SELECT * FROM hc_habilitacoes WHERE id = %s FOR UPDATE",
+              (int(habilitacao_id),))
+    if not h:
+        raise HabilitacaoError(f"Habilitação {habilitacao_id} não encontrada.")
+    if h["proclamas_assento_id"]:
+        return {"assento_id": int(h["proclamas_assento_id"]), "novo": False}
+    if not h["edital_em"]:
+        raise HabilitacaoError(
+            "O edital ainda não foi publicado — o que se registra no Livro D é "
+            "o edital, com a data em que saiu.")
+
+    def _br(iso: Any) -> str:
+        d = _dia(iso)
+        return d.strftime("%d/%m/%Y") if d else str(iso or "")
+
+    documentos = ML.relacao_de_documentos(documentos_de(bd, habilitacao_id))
+    teor = TEXTOS.peca(
+        PECA_DO_REGISTRO_NO_LIVRO_D, numero=h["numero"], ano=h["ano"],
+        publicado_em=_br(h["edital_em"]), onde_se_publica=HC.ONDE_SE_PUBLICA,
+        prazo_ate=_br(h["edital_prazo_ate"]),
+        documentos=documentos or "os documentos do art. 1.525 do Código Civil",
+        teor=_txt(h["edital_teor"]) or "")
+    try:
+        r = RC.lavrar_assento(
+            con, especie="PROCLAMAS",
+            nome=f"{h['nubente1_nome']} e {h['nubente2_nome']}", sv=sv,
+            agora=agora, data_extenso=data_extenso,
+            data_fato=str(h["edital_em"])[:10], teor=teor,
+            dados={"habilitacao_id": int(habilitacao_id)}, usuario=usuario)
+    except (RC.RcError, LN.LivroError) as erro:
+        raise HabilitacaoError(
+            f"O edital não pôde ser registrado no Livro D: {erro}") from erro
+    _mudar(con, habilitacao_id, {"proclamas_assento_id": int(r["assento_id"])})
+    _andamento(con, habilitacao_id, "Edital registrado no Livro D", quando=agora,
+               detalhe=(f"Livro {r.get('livro_numero')}, folha {r.get('rotulo')}, "
+                        f"termo {r.get('numero_ordem')}"), quem=usuario)
+    return {"assento_id": int(r["assento_id"]), "novo": True,
+            "livro": r.get("livro_numero"), "folha": r.get("rotulo"),
+            "termo": r.get("numero_ordem")}
+
+
+def espelhar_o_selo_no_livro_d(con, habilitacao_id: int) -> str | None:
+    """Anota no registro do Livro D o selo que a habilitação comprou. ESCREVE.
+
+    É O MESMO SELO, E NÃO OUTRO — LD01. O envelope da habilitação leva o
+    livro, a folha e o termo deste registro, e o item `14.1.1` cobre a
+    habilitação inteira; comprar um segundo selo para o registro do edital
+    gastaria o dinheiro do casal duas vezes. Sem a anotação, o registro
+    ficaria em `atos_sem_selo` para sempre, e alguém acabaria comprando.
+
+    NÃO COMPRA NADA E NÃO FALA COM A REDE; não sobrescreve selo que já esteja
+    lá (o do papel assinado manda). A linha do ato fica presa entre a
+    conferência e a escrita.
+    """
+    h = _hab(con, habilitacao_id)
+    selo = (h["selo"] or "").strip()
+    assento_id = h["proclamas_assento_id"]
+    if not selo or not assento_id:
+        return None
+    bd = banco(con)
+    bd._escrita()
+    ato = bd.um(
+        """SELECT id, COALESCE(selo,'') AS selo FROM rc_atos
+            WHERE assento_id = %s AND tipo = 'REGISTRO'
+            ORDER BY id LIMIT 1 FOR UPDATE""", (int(assento_id),))
+    if not ato or ato["selo"].strip():
+        return None
+    bd.escrever("UPDATE rc_atos SET selo = %s WHERE id = %s",
+                (selo, int(ato["id"])))
+    return selo
+
+
+def prazo_vencido(h: dict, hoje: Any = None) -> bool:
     """O prazo do edital já se esgotou? Só calcula."""
     ate = _dia(h["edital_prazo_ate"] if "edital_prazo_ate" in
                (h.keys() if hasattr(h, "keys") else h) else None)
@@ -308,7 +418,7 @@ def prazo_vencido(h: sqlite3.Row | dict, hoje: Any = None) -> bool:
 # ------------------------------------------------------------ oposição
 
 
-def registrar_publicacao(con: sqlite3.Connection, habilitacao_id: int, *,
+def registrar_publicacao(con, habilitacao_id: int, *,
                          protocolo: str, agora: str,
                          usuario: str | None = None) -> None:
     """Guarda o protocolo que o e-Proclamas devolveu. ESCREVE.
@@ -342,7 +452,7 @@ def registrar_publicacao(con: sqlite3.Connection, habilitacao_id: int, *,
                detalhe=f"protocolo {protocolo}", quem=usuario)
 
 
-def registrar_oposicao(con: sqlite3.Connection, habilitacao_id: int, *,
+def registrar_oposicao(con, habilitacao_id: int, *,
                        quem: str, teor: str, agora: str,
                        usuario: str | None = None) -> None:
     """Registra impedimento oposto por terceiro. ESCREVE.
@@ -375,7 +485,7 @@ def registrar_oposicao(con: sqlite3.Connection, habilitacao_id: int, *,
                depois="COM_OPOSICAO", quem=usuario)
 
 
-def decidir_oposicao(con: sqlite3.Connection, habilitacao_id: int, *,
+def decidir_oposicao(con, habilitacao_id: int, *,
                      decisao: str, fundamento: str, agora: str,
                      usuario: str | None = None) -> None:
     """O oficial decide sobre o impedimento oposto. ESCREVE.
@@ -413,7 +523,7 @@ def decidir_oposicao(con: sqlite3.Connection, habilitacao_id: int, *,
 # ---------------------------------------------------------- habilitar
 
 
-def habilitar(con: sqlite3.Connection, habilitacao_id: int, *, agora: str,
+def habilitar(con, habilitacao_id: int, *, agora: str,
               hoje: str | None = None, usuario: str | None = None,
               teor: str | None = None) -> dict:
     """O oficial atesta que nada obsta ao casamento. ESCREVE.
@@ -463,10 +573,12 @@ def habilitar(con: sqlite3.Connection, habilitacao_id: int, *, agora: str,
     dia = _dia(hoje or agora) or date.today()
     vale_ate = dia + timedelta(days=HC.VALIDADE_DA_HABILITACAO)
     ano = dia.year
-    con.row_factory = sqlite3.Row
-    ultimo = con.execute(
-        "SELECT MAX(certidao_numero) n FROM hc_habilitacoes WHERE certidao_ano=?",
-        (ano,)).fetchone()
+    bd = banco(con)
+    bd.travar("hc_habilitacoes.certidao_numero")
+    ultimo = bd.um(
+        "SELECT MAX(certidao_numero) AS n FROM hc_habilitacoes "
+        "WHERE certidao_ano=%s",
+        (ano,))
     numero = int((ultimo["n"] or 0)) + 1
     corpo = (teor or "").strip() or None
     assinatura = hashlib.sha256(
@@ -488,7 +600,7 @@ def habilitar(con: sqlite3.Connection, habilitacao_id: int, *, agora: str,
 
 
 def cancelar_expedicao_sem_selo(
-        con: sqlite3.Connection, habilitacao_id: int, *, agora: str,
+        con, habilitacao_id: int, *, agora: str,
         usuario: str | None, motivo: str) -> None:
     """Cancela só a EXPEDIÇÃO cujo selo não saiu. ESCREVE.
 
@@ -521,7 +633,7 @@ def cancelar_expedicao_sem_selo(
         antes="HABILITADO", depois=volta, quem=usuario)
 
 
-def habilitacao_vencida(h: sqlite3.Row | dict, hoje: Any = None) -> bool:
+def habilitacao_vencida(h: dict, hoje: Any = None) -> bool:
     """A certidão de habilitação já venceu? Só calcula."""
     chaves = h.keys() if hasattr(h, "keys") else h
     ate = _dia(h["habilitacao_vale_ate"] if "habilitacao_vale_ate" in chaves
@@ -531,7 +643,7 @@ def habilitacao_vencida(h: sqlite3.Row | dict, hoje: Any = None) -> bool:
     return (_dia(hoje) or date.today()) > ate
 
 
-def valores_para_lavrar_casamento(h: sqlite3.Row | dict) -> dict:
+def valores_para_lavrar_casamento(h: dict) -> dict:
     """Campos do formulário de casamento a partir da HC. Só LÊ."""
     chaves = h.keys() if hasattr(h, "keys") else h
 
@@ -571,20 +683,20 @@ def valores_para_lavrar_casamento(h: sqlite3.Row | dict) -> dict:
     return {k: v for k, v in valores.items() if v}
 
 
-def habilitacao_relacionada_ao_assento(con: sqlite3.Connection,
+def habilitacao_relacionada_ao_assento(con,
                                        assento_id: int) -> dict | None:
     """HC celebrada ou pendente ligada a este assento de casamento. Só LÊ."""
-    con.row_factory = sqlite3.Row
-    celebrada = con.execute(
+    bd = banco(con)
+    celebrada = bd.um(
         """SELECT * FROM hc_habilitacoes
-            WHERE casamento_assento_id=?
+            WHERE casamento_assento_id=%s
             ORDER BY id DESC LIMIT 1""",
-        (int(assento_id),)).fetchone()
+        (int(assento_id),))
     if celebrada:
         return dict(celebrada)
-    ass = con.execute(
-        "SELECT especie, dados_json FROM rc_assentos WHERE id=?",
-        (int(assento_id),)).fetchone()
+    ass = bd.um(
+        "SELECT especie, dados_json FROM rc_assentos WHERE id=%s",
+        (int(assento_id),))
     if not ass:
         return None
     if str(ass["especie"] or "").upper() not in (
@@ -597,8 +709,8 @@ def habilitacao_relacionada_ao_assento(con: sqlite3.Connection,
     hid = dados.get("habilitacao_id")
     if not hid:
         return None
-    pendente = con.execute(
-        "SELECT * FROM hc_habilitacoes WHERE id=?", (int(hid),)).fetchone()
+    pendente = bd.um(
+        "SELECT * FROM hc_habilitacoes WHERE id=%s", (int(hid),))
     if not pendente:
         return None
     if pendente["situacao"] != "HABILITADO":
@@ -608,7 +720,7 @@ def habilitacao_relacionada_ao_assento(con: sqlite3.Connection,
     return dict(pendente)
 
 
-def casamentos_da_habilitacao(con: sqlite3.Connection,
+def casamentos_da_habilitacao(con,
                               habilitacao_id: int) -> list[dict]:
     """Os assentos de casamento lavrados A PARTIR desta habilitação. Só LÊ.
 
@@ -616,9 +728,8 @@ def casamentos_da_habilitacao(con: sqlite3.Connection,
     ele que a ficha oferece o casamento para escolher, em vez de pedir um
     número que se confunde com o do termo (o defeito de 07/10/2026).
     """
-    con.row_factory = sqlite3.Row
     achados = []
-    for a in con.execute(
+    for a in banco(con).ler(
             """SELECT id, nome, numero, livro_volume, data_ato, dados_json
                  FROM rc_assentos
                 WHERE especie IN ('CASAMENTO','CASAMENTO_RELIGIOSO')
@@ -635,7 +746,7 @@ def casamentos_da_habilitacao(con: sqlite3.Connection,
     return achados
 
 
-def registrar_celebracao(con: sqlite3.Connection, habilitacao_id: int, *,
+def registrar_celebracao(con, habilitacao_id: int, *,
                          assento_id: int, agora: str, hoje: str | None = None,
                          usuario: str | None = None) -> None:
     """Amarra o assento de casamento à habilitação que o autorizou. ESCREVE.
@@ -657,9 +768,10 @@ def registrar_celebracao(con: sqlite3.Connection, habilitacao_id: int, *,
         raise HabilitacaoError(
             f"A habilitação venceu em {h['habilitacao_vale_ate']} (noventa "
             f"dias, CC art. 1.532). O processo precisa ser refeito.")
-    existe = con.execute(
+    bd = banco(con)
+    existe = bd.um(
         "SELECT especie, nome, numero, livro_volume, dados_json "
-        "FROM rc_assentos WHERE id=?", (int(assento_id),)).fetchone()
+        "FROM rc_assentos WHERE id=%s", (int(assento_id),))
     if not existe:
         raise HabilitacaoError(
             f"O assento {assento_id} não existe — lavre o casamento antes de "
@@ -685,10 +797,10 @@ def registrar_celebracao(con: sqlite3.Connection, habilitacao_id: int, *,
         raise HabilitacaoError(
             f"O casamento {assento_id} foi lavrado a partir de outra "
             f"habilitação (#{ligada}) — um casamento não pode responder a duas.")
-    outro = con.execute(
+    outro = bd.um(
         """SELECT id, numero, ano FROM hc_habilitacoes
-            WHERE casamento_assento_id=? AND id<>?""",
-        (int(assento_id), int(habilitacao_id))).fetchone()
+            WHERE casamento_assento_id=%s AND id<>%s ORDER BY id LIMIT 1""",
+        (int(assento_id), int(habilitacao_id)))
     if outro:
         raise HabilitacaoError(
             f"O assento {assento_id} já está ligado à habilitação "
@@ -708,7 +820,7 @@ def registrar_celebracao(con: sqlite3.Connection, habilitacao_id: int, *,
                antes="HABILITADO", depois="CELEBRADO", quem=usuario)
 
 
-def espelhar_o_selo_no_assento(con: sqlite3.Connection,
+def espelhar_o_selo_no_assento(con,
                               habilitacao_id: int) -> str | None:
     """Põe no assento de casamento o selo que a habilitação já comprou. ESCREVE.
 
@@ -738,18 +850,19 @@ def espelhar_o_selo_no_assento(con: sqlite3.Connection,
     assento_id = h["casamento_assento_id"]
     if not selo or not assento_id:
         return None
-    ato = con.execute(
-        """SELECT id, COALESCE(selo,'') selo FROM rc_atos
-            WHERE assento_id = ? AND tipo = 'REGISTRO'
-            ORDER BY id LIMIT 1""", (int(assento_id),)).fetchone()
+    bd = banco(con)
+    ato = bd.um(
+        """SELECT id, COALESCE(selo,'') AS selo FROM rc_atos
+            WHERE assento_id = %s AND tipo = 'REGISTRO'
+            ORDER BY id LIMIT 1""", (int(assento_id),))
     if not ato or ato["selo"].strip():
         return None
-    con.execute("UPDATE rc_atos SET selo = ? WHERE id = ?",
+    bd.escrever("UPDATE rc_atos SET selo = %s WHERE id = %s",
                 (selo, int(ato["id"])))
     return selo
 
 
-def registrar_uniao_estavel(con: sqlite3.Connection, habilitacao_id: int, *,
+def registrar_uniao_estavel(con, habilitacao_id: int, *,
                             processo: str, agora: str,
                             usuario: str | None = None) -> None:
     """Anota qual união estável esta conversão converte. ESCREVE.
@@ -780,7 +893,7 @@ def registrar_uniao_estavel(con: sqlite3.Connection, habilitacao_id: int, *,
                detalhe=processo, quem=usuario)
 
 
-def arquivar(con: sqlite3.Connection, habilitacao_id: int, *, motivo: str,
+def arquivar(con, habilitacao_id: int, *, motivo: str,
              agora: str, usuario: str | None = None) -> None:
     """Arquiva o processo, com motivo escrito. ESCREVE."""
     motivo = (motivo or "").strip()
@@ -803,7 +916,7 @@ def arquivar(con: sqlite3.Connection, habilitacao_id: int, *, motivo: str,
 # ------------------------------------------------------ o que fazer agora
 
 
-def proximos_passos(con: sqlite3.Connection, habilitacao_id: int,
+def proximos_passos(con, habilitacao_id: int,
                     hoje: Any = None) -> list[str]:
     """O que falta fazer, calculado do estado. Só LÊ.
 
@@ -866,36 +979,33 @@ def proximos_passos(con: sqlite3.Connection, habilitacao_id: int,
     return passos
 
 
-def listar(con: sqlite3.Connection, *, situacao: str | None = None,
+def listar(con, *, situacao: str | None = None,
            busca: str | None = None, limite: int = 200) -> list[dict]:
     """As habilitações, filtradas. Só LÊ."""
-    con.row_factory = sqlite3.Row
     onde, params = ["1=1"], []
     if situacao:
-        onde.append("situacao=?")
+        onde.append("situacao=%s")
         params.append(situacao)
     if busca:
         alvo = f"%{_norm(busca) or ''}%"
-        onde.append("(nubente1_nome_norm LIKE ? OR nubente2_nome_norm LIKE ? "
-                    "OR CAST(numero AS TEXT) LIKE ?)")
+        onde.append("(nubente1_nome_norm ILIKE %s OR nubente2_nome_norm ILIKE %s "
+                    "OR CAST(numero AS TEXT) ILIKE %s)")
         params += [alvo, alvo, f"%{busca.strip()}%"]
-    return [dict(r) for r in con.execute(
+    return [dict(r) for r in banco(con).ler(
         f"""SELECT * FROM hc_habilitacoes WHERE {' AND '.join(onde)}
-             ORDER BY ano DESC, numero DESC LIMIT ?""",
+             ORDER BY ano DESC, numero DESC, id DESC LIMIT %s""",
         (*params, int(limite)))]
 
 
-def andamento_de(con: sqlite3.Connection, habilitacao_id: int) -> list[dict]:
+def andamento_de(con, habilitacao_id: int) -> list[dict]:
     """O histórico do processo, do mais antigo ao mais novo. Só LÊ."""
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM hc_andamento WHERE habilitacao_id=? ORDER BY id",
+    return [dict(r) for r in banco(con).ler(
+        "SELECT * FROM hc_andamento WHERE habilitacao_id=%s ORDER BY id",
         (int(habilitacao_id),))]
 
 
-def documentos_de(con: sqlite3.Connection, habilitacao_id: int) -> list[dict]:
+def documentos_de(con, habilitacao_id: int) -> list[dict]:
     """O checklist inteiro, apresentados e não. Só LÊ."""
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM hc_documentos WHERE habilitacao_id=? ORDER BY id",
+    return [dict(r) for r in banco(con).ler(
+        "SELECT * FROM hc_documentos WHERE habilitacao_id=%s ORDER BY id",
         (int(habilitacao_id),))]

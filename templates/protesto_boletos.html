@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Boleto do devedor</h1>{% endblock %}
+{% block content %}
+
+<p class="muted">
+  O boleto registrado (com PIX, quando o banco oferece) para o devedor pagar
+  até o prazo-limite — que é o vencimento dele (CN-MA art. 925, § 4º). Quem gera a linha digitável, o código de barras e o PIX é
+  o <strong>banco</strong>; o sistema não monta código de barras.
+  A baixa é automática <strong>só quando tudo bate</strong>: valor igual ao do
+  boleto, título aceitando pagamento e sem sustação. O resto vira pendência
+  para alguém decidir.
+</p>
+
+{% if cfg.modo == 'DESLIGADO' %}
+<div class="alert alert-warning">
+  <strong>A integração com o banco está DESLIGADA</strong> — é como ela nasce.
+  Quem liga é o administrador, em
+  {% if user.role == 'ADMIN' %}<a href="{{ url_for('gestor_protesto_integracoes') }}">Gestor → Integrações do Protesto</a>{% else %}Gestor → Integrações do Protesto{% endif %}
+  (primeiro em homologação, com o serviço falso).
+</div>
+{% elif cfg.modo == 'HOMOLOGACAO' %}
+<div class="alert alert-info">
+  <strong>HOMOLOGAÇÃO — {{ cfg.provedor_nome }}.</strong> Os boletos daqui
+  <strong>não se pagam</strong> (a linha diz «NAO PAGAR»), e o pagamento
+  simulado não dá baixa no título.
+</div>
+{% else %}
+<div class="alert alert-warning">
+  <strong>PRODUÇÃO — {{ cfg.provedor_nome }}.</strong> O boleto emitido daqui
+  é cobrança registrada de verdade.
+</div>
+{% endif %}
+{% if cfg.modo != 'DESLIGADO' %}
+<p class="small muted">Tarifa do boleto repassada ao devedor (CN-MA art. 925,
+  § 5º): R$ {{ (cfg.tarifa_centavos or 0)|centavos_reais }}.</p>
+{% endif %}
+
+{% if pendencias %}
+<section class="cartao">
+  <h2>Pagamentos a conferir</h2>
+  <p class="small muted">O dinheiro entrou e a baixa não saiu sozinha. Decida
+    (baixa na ficha do título, ou devolução pelo caixa) e escreva o que foi
+    feito.</p>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Pago em</th><th>Nosso número</th><th>Título</th>
+        <th>Valor pago</th><th>Por que não deu baixa</th><th></th></tr></thead>
+      <tbody>
+      {% for l in pendencias %}
+        <tr>
+          <td>{{ fmt_date(l.pago_em) if l.pago_em else '—' }}</td>
+          <td>{{ l.nosso_numero or '—' }}</td>
+          <td>{% if l.titulo_id %}<a href="{{ url_for('protesto_titulo', titulo_id=l.titulo_id) }}">{{ l.numero_titulo or ('#' ~ l.titulo_id) }}</a>{% else %}—{% endif %}</td>
+          <td>R$ {{ l.valor_pago_centavos|centavos_reais }}</td>
+          <td class="small">{{ l.motivo or '' }}</td>
+          <td>
+            {% if pode_enviar %}
+            <form method="post" action="{{ url_for('protesto_boleto_resolver', liquidacao_id=l.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="text" name="conferencia" placeholder="o que foi feito" required>
+              <button class="button secondary" type="submit">Resolvida</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if a_cancelar %}
+<section class="cartao">
+  <h2>Boletos vivos de título já resolvido</h2>
+  <p class="small muted">O título foi pago no balcão, desistido ou encerrado, e
+    o boleto continua aberto no banco: cancele antes que o devedor pague duas
+    vezes.</p>
+  <ul>
+  {% for b in a_cancelar %}
+    <li>{{ b.nosso_numero }} — título <a href="{{ url_for('protesto_titulo', titulo_id=b.titulo_id) }}">{{ b.numero_titulo }}</a> ({{ b.situacao_do_titulo }})</li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="cartao">
+  <h2>Títulos que podem ter boleto</h2>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Título</th><th>Protocolo</th><th>Devedor</th>
+        <th>Valor do título</th><th>Vencimento (prazo-limite)</th><th></th></tr></thead>
+      <tbody>
+      {% for t in emitiveis %}
+        <tr>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}">{{ t.numero_titulo or ('#' ~ t.id) }}</a></td>
+          <td>{{ t.protocolo or '—' }}</td>
+          <td>{{ t.devedor_nome or '—' }}</td>
+          <td>R$ {{ (t.saldo_centavos or t.valor_centavos or 0)|centavos_reais }}</td>
+          <td>{{ fmt_date(t.prazo_limite) if t.prazo_limite else '—' }}</td>
+          <td>
+            {% if t.porque_nao %}
+              <span class="small muted">{{ t.porque_nao }}</span>
+            {% elif pode_enviar and cfg.modo != 'DESLIGADO' %}
+            <form method="post" action="{{ url_for('protesto_boleto_emitir', titulo_id=t.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label class="small">Emolumentos e despesas (R$)
+                <input type="text" name="emolumentos" inputmode="decimal" required size="8"></label>
+              <button class="button" type="submit">Emitir boleto</button>
+            </form>
+            {% else %}
+              <span class="small muted">pode ter boleto</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">Nenhum título esperando o prazo.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="cartao">
+  <h2>Boletos emitidos {% if cfg.modo == 'HOMOLOGACAO' %}(homologação){% endif %}</h2>
+  {% if cfg.modo != 'DESLIGADO' %}
+  <form method="post" action="{{ url_for('protesto_boletos_pagamentos') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button secondary" type="submit">Buscar pagamentos no banco</button>
+  </form>
+  {% endif %}
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Título</th><th>Situação</th><th>Composição</th>
+        <th>Total</th><th>Vencimento</th><th>Linha digitável / PIX</th><th></th></tr></thead>
+      <tbody>
+      {% for b in boletos %}
+        <tr>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=b.titulo_id) }}">{{ b.numero_titulo or ('#' ~ b.titulo_id) }}</a></td>
+          <td>{{ b.situacao }}{% if b.observacao %}<br><span class="small muted">{{ b.observacao }}</span>{% endif %}</td>
+          <td class="small">título R$ {{ b.valor_titulo_centavos|centavos_reais }}
+            + emolumentos R$ {{ b.emolumentos_centavos|centavos_reais }}
+            {% if b.tarifa_centavos %}+ tarifa R$ {{ b.tarifa_centavos|centavos_reais }}{% endif %}</td>
+          <td><strong>R$ {{ b.valor_centavos|centavos_reais }}</strong></td>
+          <td>{{ fmt_date(b.vencimento) }}</td>
+          <td class="small"><code>{{ b.linha_digitavel or '—' }}</code>
+            {% if b.pix_copia_e_cola %}<br>PIX: <code>{{ b.pix_copia_e_cola }}</code>{% endif %}</td>
+          <td>
+            {% if b.situacao == 'EMITIDO' and pode_enviar and cfg.modo != 'DESLIGADO' %}
+            <form method="post" action="{{ url_for('protesto_boleto_cancelar', boleto_id=b.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="text" name="motivo" placeholder="motivo" required size="12">
+              <button class="button secondary" type="submit">Cancelar</button>
+            </form>
+            {% if cfg.modo == 'HOMOLOGACAO' and b.ambiente == 'HOMOLOGACAO' %}
+            <form method="post" action="{{ url_for('protesto_boleto_simular', boleto_id=b.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="date" name="pago_em" value="{{ hoje }}">
+              <input type="text" name="valor" placeholder="valor (vazio = o do boleto)" size="10">
+              <button class="button secondary" type="submit">Simular pagamento</button>
+            </form>
+            {% endif %}
+            {% elif b.situacao == 'SEM_RESPOSTA' and cfg.modo != 'DESLIGADO' %}
+            <form method="post" action="{{ url_for('protesto_boleto_conferir', boleto_id=b.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button secondary" type="submit">Conferir no banco</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="muted">Nenhum boleto neste ambiente.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

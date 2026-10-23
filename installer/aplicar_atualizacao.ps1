@@ -121,6 +121,7 @@ try {
     throw 'O pacote original mudou depois da aprovacao.'
   }
   $payload=Join-Path $StageDir 'payload'
+  $declarados=@{}
   foreach($item in $meta.checked_files){
     $source=SafeTarget $payload ([string]$item.path)
     if(-not (Test-Path -LiteralPath $source -PathType Leaf)){
@@ -128,6 +129,17 @@ try {
     }
     if((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne [string]$item.sha256){
       throw "Arquivo preparado alterado depois da aprovacao: $($item.path)"
+    }
+    $declarados[$source.ToLowerInvariant()]=$true
+  }
+  #   NADA ENTRA QUE O MANIFESTO NAO DECLARE (revisao de seguranca de 22/10/2026, C1).
+  #     O robocopy /E copia a pasta preparada INTEIRA, e a conferencia de cima so olha
+  #     os arquivos listados: um `.pth` ou um `.py` plantado na preparacao iria para a
+  #     instalacao sem ter passado por hash nenhum. Arquivo a mais e recusa, com o
+  #     servico ainda no ar — NADA FOI ALTERADO.
+  foreach($f in (Get-ChildItem -LiteralPath $payload -File -Recurse -Force)){
+    if(-not $declarados.ContainsKey($f.FullName.ToLowerInvariant())){
+      throw "A preparacao contem arquivo que o manifesto nao declara: $($f.FullName). NADA FOI ALTERADO."
     }
   }
 

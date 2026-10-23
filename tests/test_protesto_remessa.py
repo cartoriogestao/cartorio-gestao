@@ -35,6 +35,8 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import ato_selado as AS
 import protesto_arquivo as PA
@@ -55,7 +57,7 @@ RETORNO = (Path(__file__).parent / "cra_retorno_exemplo.txt").read_bytes()
 
 @pytest.fixture()
 def con():
-    c = sqlite3.connect(":memory:")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     init_nucleo_schema(c)
     init_pt_schema(c)
@@ -233,6 +235,28 @@ def test_arquivo_com_dois_lotes_entra_como_duas_remessas(con):
             "SELECT apresentante_codigo FROM pt_titulos WHERE remessa_id=?",
             (remessa_id,)).fetchone()[0]
         assert dono == codigo
+
+
+def test_titulos_da_remessa_trazem_os_devedores_na_ordem_do_cadastro(con):
+    """RESSALVA DO L012R: `ORDER BY t.id` sobre o JOIN dos devedores deixava
+    ao PostgreSQL a ordem dos devedores do mesmo titulo. O SQLite dava a do
+    cadastro (o `rowid`); agora o desempate e `d.id`."""
+    r = receber(con)
+    remessa_id = r["remessas"][0]
+    tid = con.execute("SELECT id FROM pt_titulos WHERE remessa_id=?",
+                      (remessa_id,)).fetchone()[0]
+    con.execute("INSERT INTO pt_devedores(titulo_id, nome) VALUES (?, ?)",
+                (tid, "SEGUNDO DEVEDOR DE EXEMPLO"))
+    # O UPDATE de coluna com índice faz o PostgreSQL gravar a linha do primeiro
+    # devedor de novo, depois da do segundo: a ordem em que as linhas estão
+    # gravadas deixa de ser a do id.
+    primeiro = con.execute(
+        "SELECT id, nome FROM pt_devedores WHERE titulo_id=? ORDER BY id",
+        (tid,)).fetchone()
+    con.execute("UPDATE pt_devedores SET documento_numero='00000000191' "
+                "WHERE id=?", (primeiro["id"],))
+    nomes = [t["devedor_nome"] for t in PRM.titulos_da_remessa(con, remessa_id)]
+    assert nomes == [primeiro["nome"], "SEGUNDO DEVEDOR DE EXEMPLO"]
 
 
 def test_cada_lote_ganha_a_sua_confirmacao(con):

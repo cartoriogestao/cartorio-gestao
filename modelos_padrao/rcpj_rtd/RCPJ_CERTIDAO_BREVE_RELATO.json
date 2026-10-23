@@ -1,0 +1,18 @@
+{
+  "chave": "RCPJ_CERTIDAO_BREVE_RELATO",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Certidão em breve relato — RCPJ",
+  "formato": "CHAVES",
+  "explica": "Certidão do RCPJ em breve relato da situação atual da pessoa jurídica (CN-MA art. 420, II): denominação, sede, CNPJ, objeto, capital, sócios com as participações ou a diretoria, e a data do último ato. Os dados vêm da ficha do registro, gravados por quem leu o estatuto e as averbações; congelado em at_certidoes na emissão. As peças «__capital», «__socios» e «__diretoria» entram quando a ficha as tem.",
+  "campos": [
+    "onde",
+    "denominacao",
+    "sede",
+    "cnpj",
+    "objeto",
+    "capital",
+    "socios",
+    "diretoria",
+    "ultimo_ato"
+  ]
+}

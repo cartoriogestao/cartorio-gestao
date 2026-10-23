@@ -1,0 +1,14 @@
+{
+  "chave": "NOTAS_TRASLADO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Traslado",
+  "formato": "JINJA",
+  "explica": "A via da escritura que se entrega à parte.",
+  "campos": [
+    "a",
+    "anotacoes",
+    "data_extenso",
+    "sv",
+    "titulo_do_instrumento"
+  ]
+}

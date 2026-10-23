@@ -1,0 +1,1 @@
+O imóvel passa a constar da(s) matrícula(s) {{ destino }}.

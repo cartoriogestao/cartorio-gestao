@@ -1,0 +1,751 @@
+{
+ "_como": "Gerado ANTES do LF06E, das frases ainda no código do commit 2c41e90, por tests/fixtures/modelos_ouro/ouro_lf06e.py. Não regerar: depois da mudança as frases moram na base, e regerar faria o teste comparar a base com ela mesma.",
+ "banco": {
+  "aviso(cheio)": {
+   "ok": "AVISO DE INTIMAÇÃO PARA PAGAMENTO\n\nAviso n. 901/2026 — Protocolo n. 2609080001\n\nFica V. Sa. INTIMADO(A) a pagar, ou a apresentar as razões que tiver, até 11/09/2026, o título abaixo apresentado para protesto neste tabelionato. Não havendo pagamento nem manifestação até essa data, o título será protestado na forma da Lei nº 9.492/1997.\n\nDevedor: MARIA DE EXEMPLO, CPF/CNPJ 000.000.001-91\nEndereço: Rua de Exemplo, 10, Centro, Cidade Exemplo/MA, CEP 65000-000\nTítulo: Duplicata de Venda Mercantil por Indicação, n. 123\nValor: R$ 1.000,00 — vencimento em 01/08/2026\nAceite: com aceite\nCredor (sacador/favorecido): EMPRESA DE EXEMPLO LTDA, CPF/CNPJ 00.000.042/0001-22\nApresentante: BANCO DE EXEMPLO\nPrazo-limite para pagamento: 11/09/2026\n\nSERVENTIA EXTRAJUDICIAL DE EXEMPLO — Rua de Exemplo, 1, Centro. Telefone (99) 0000-0000. Horário de funcionamento: segunda a sexta, das 8h às 17h."
+  },
+  "aviso(magro)": {
+   "ok": "AVISO DE INTIMAÇÃO PARA PAGAMENTO\n\nAviso n. 902/2026 — Protocolo n. 2609090002\n\nFica V. Sa. INTIMADO(A) a pagar, ou a apresentar as razões que tiver, até 14/09/2026, o título abaixo apresentado para protesto neste tabelionato. Não havendo pagamento nem manifestação até essa data, o título será protestado na forma da Lei nº 9.492/1997.\n\nDevedor: JOÃO DE EXEMPLO\nEndereço: não informado pelo apresentante\nTítulo: XYZ, n. sem número\nValor: R$ 50,00\nAceite: aceite não informado\nCredor (sacador/favorecido): não informado\nApresentante: 237\nPrazo-limite para pagamento: 14/09/2026\n\nSERVENTIA EXTRAJUDICIAL DE EXEMPLO — Rua de Exemplo, 1, Centro. Telefone (99) 0000-0000. Horário de funcionamento: segunda a sexta, das 8h às 17h."
+  },
+  "canhoto(cheio)": {
+   "ok": {
+    "campos": [
+     "Recebido em ___/___/______ às ___:___   Assinatura: __________________________",
+     "Nome legível: _____________________________   Documento: _______________",
+     "Relação com o devedor: ( ) o próprio ( ) outra: ___________   Entregador: _______________"
+    ],
+    "identificacao": [
+     "Aviso n. 901/2026 — Protocolo n. 2609080001",
+     "Devedor: MARIA DE EXEMPLO",
+     "Título: Duplicata de Venda Mercantil por Indicação, n. 123 — R$ 1.000,00"
+    ],
+    "tentativas": [
+     "1ª: ___/___/___ ___:___ ( ) ausente ( ) recusou ( ) fora da zona ( ) outro ________ Entregador: _________",
+     "2ª: ___/___/___ ___:___ ( ) ausente ( ) recusou ( ) fora da zona ( ) outro ________ Entregador: _________"
+    ],
+    "tentativas_titulo": "TENTATIVAS DE ENTREGA — preencha se não entregou (fundamenta o edital)",
+    "titulo": "COMPROVANTE DE RECEBIMENTO DA INTIMAÇÃO"
+   }
+  },
+  "canhoto(magro)": {
+   "ok": {
+    "campos": [
+     "Recebido em ___/___/______ às ___:___   Assinatura: __________________________",
+     "Nome legível: _____________________________   Documento: _______________",
+     "Relação com o devedor: ( ) o próprio ( ) outra: ___________   Entregador: _______________"
+    ],
+    "identificacao": [
+     "Aviso n. 902/2026 — Protocolo n. 2609090002",
+     "Devedor: JOÃO DE EXEMPLO",
+     "Título: XYZ, n. sem número — R$ 50,00"
+    ],
+    "tentativas": [
+     "1ª: ___/___/___ ___:___ ( ) ausente ( ) recusou ( ) fora da zona ( ) outro ________ Entregador: _________",
+     "2ª: ___/___/___ ___:___ ( ) ausente ( ) recusou ( ) fora da zona ( ) outro ________ Entregador: _________"
+    ],
+    "tentativas_titulo": "TENTATIVAS DE ENTREGA — preencha se não entregou (fundamenta o edital)",
+    "titulo": "COMPROVANTE DE RECEBIMENTO DA INTIMAÇÃO"
+   }
+  },
+  "livro_de_pagamentos": {
+   "ok": [
+    {
+     "data": "11/09/2026",
+     "devedor": "MARIA DE EXEMPLO",
+     "emolumentos": "43,21",
+     "favorecido": "EMPRESA DE EXEMPLO LTDA",
+     "folha": null,
+     "livro": null,
+     "natureza": "Duplicata de Venda Mercantil por Indicação",
+     "ocorrencias": "pago por cheque — cheque n. 000001 do Banco de Exemplo",
+     "ordem": 5,
+     "protocolo": "2609080001",
+     "titulo": "123",
+     "valor": "1.000,00"
+    },
+    {
+     "data": "18/09/2026",
+     "devedor": "JOÃO DE EXEMPLO",
+     "emolumentos": "não consta",
+     "favorecido": "",
+     "folha": null,
+     "livro": null,
+     "natureza": "XYZ",
+     "ocorrencias": "pagamento registrado no E-Ofício (forma não consta)",
+     "ordem": 6,
+     "protocolo": "2609090002",
+     "titulo": "",
+     "valor": "0,00 (saldo do título)"
+    },
+    {
+     "data": "19/09/2026",
+     "devedor": "JOÃO DE EXEMPLO",
+     "emolumentos": "não consta",
+     "favorecido": "",
+     "folha": null,
+     "livro": null,
+     "natureza": "XYZ",
+     "ocorrencias": "pago por PIX",
+     "ordem": 7,
+     "protocolo": "2609090002",
+     "titulo": "",
+     "valor": "0,00 (saldo do título)"
+    }
+   ]
+  },
+  "livro_de_protocolo": {
+   "ok": [
+    {
+     "apresentante": "BANCO DE EXEMPLO",
+     "data": "08/09/2026",
+     "devedor": "MARIA DE EXEMPLO",
+     "natureza": "Duplicata de Venda Mercantil por Indicação",
+     "ocorrencias": "intimado pessoalmente em 09/09/2026; intimado pessoalmente em 10/09/2026; pago em 11/09/2026",
+     "ordem": 1,
+     "protocolo": "2609080001",
+     "titulo": "123",
+     "valor": "1.234,56"
+    },
+    {
+     "apresentante": "237",
+     "data": "09/09/2026",
+     "devedor": "JOÃO DE EXEMPLO",
+     "natureza": "XYZ",
+     "ocorrencias": "intimado por edital em 12/09/2026; protestado em 15/09/2026; sustação judicial em 16/09/2026; protesto cancelado em 17/09/2026; pago em 18/09/2026; pago em 19/09/2026",
+     "ordem": 2,
+     "protocolo": "2609090002",
+     "titulo": "",
+     "valor": "50,00"
+    }
+   ]
+  }
+ },
+ "commit": "2c41e90",
+ "funcoes": {
+  "certidao(CANCELAMENTO,ajuste antigo)": {
+   "ok": "[CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91.] [1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento). 2) Título n. 456; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 21/09/2026.] [CERTIFICO ainda que nos referidos livros e folhas constam as BAIXAS e o CANCELAMENTOS dos mesmos de acordo com o art. 26 da lei 9492/97.] [MARIA DE EXEMPLO] [a requerimento verbal de parte interessada]"
+  },
+  "certidao(CANCELAMENTO,cnpj)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CNPJ: 00.000.042/0001-22. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento). CERTIFICO ainda que no referido livro e folha consta a BAIXA e o CANCELAMENTO do mesmo de acordo com o art. 26 da lei 9492/97. O referido é verdade e aos próprios livros em meu poder e Cartório reporto e dou fé."
+  },
+  "certidao(CANCELAMENTO,devedor)": {
+   "ok": "CERTIFICO a requerimento escrito do próprio devedor, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento). CERTIFICO ainda que no referido livro e folha consta a BAIXA e o CANCELAMENTO do mesmo de acordo com o art. 26 da lei 9492/97. O referido é verdade e aos próprios livros em meu poder e Cartório reporto e dou fé."
+  },
+  "certidao(CANCELAMENTO,devedor_com_nome)": {
+   "ok": "CERTIFICO a requerimento escrito do próprio devedor, MARIA DE EXEMPLO, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento). CERTIFICO ainda que no referido livro e folha consta a BAIXA e o CANCELAMENTO do mesmo de acordo com o art. 26 da lei 9492/97. O referido é verdade e aos próprios livros em meu poder e Cartório reporto e dou fé."
+  },
+  "certidao(CANCELAMENTO,documento_torto)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no documento: 123. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento). CERTIFICO ainda que no referido livro e folha consta a BAIXA e o CANCELAMENTO do mesmo de acordo com o art. 26 da lei 9492/97. O referido é verdade e aos próprios livros em meu poder e Cartório reporto e dou fé."
+  },
+  "certidao(CANCELAMENTO,dois)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento). 2) Título n. 456; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 21/09/2026. CERTIFICO ainda que nos referidos livros e folhas constam as BAIXAS e o CANCELAMENTOS dos mesmos de acordo com o art. 26 da lei 9492/97. O referido é verdade e aos próprios livros em meu poder e Cartório reporto e dou fé."
+  },
+  "certidao(CANCELAMENTO,ordem)": {
+   "ok": "CERTIFICO por determinação judicial expressa, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento). CERTIFICO ainda que no referido livro e folha consta a BAIXA e o CANCELAMENTO do mesmo de acordo com o art. 26 da lei 9492/97. O referido é verdade e aos próprios livros em meu poder e Cartório reporto e dou fé."
+  },
+  "certidao(CANCELAMENTO,ordem_com_ref)": {
+   "ok": "CERTIFICO por determinação judicial expressa (1ª Vara de Exemplo, processo 0000000-00.2026.8.10.0000), que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento). CERTIFICO ainda que no referido livro e folha consta a BAIXA e o CANCELAMENTO do mesmo de acordo com o art. 26 da lei 9492/97. O referido é verdade e aos próprios livros em meu poder e Cartório reporto e dou fé."
+  },
+  "certidao(CANCELAMENTO,requerente)": {
+   "ok": "CERTIFICO a requerimento de JOÃO DE EXEMPLO, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento). CERTIFICO ainda que no referido livro e folha consta a BAIXA e o CANCELAMENTO do mesmo de acordo com o art. 26 da lei 9492/97. O referido é verdade e aos próprios livros em meu poder e Cartório reporto e dou fé."
+  },
+  "certidao(CANCELAMENTO,sem_documento)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento). CERTIFICO ainda que no referido livro e folha consta a BAIXA e o CANCELAMENTO do mesmo de acordo com o art. 26 da lei 9492/97. O referido é verdade e aos próprios livros em meu poder e Cartório reporto e dou fé."
+  },
+  "certidao(CANCELAMENTO,verbal)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento). CERTIFICO ainda que no referido livro e folha consta a BAIXA e o CANCELAMENTO do mesmo de acordo com o art. 26 da lei 9492/97. O referido é verdade e aos próprios livros em meu poder e Cartório reporto e dou fé."
+  },
+  "certidao(INVENTADA)": {
+   "erro": "CertidaoError: Tipo de certidão desconhecido: 'INVENTADA'. Os que existem são: NEGATIVA, POSITIVA, CANCELAMENTO."
+  },
+  "certidao(NEGATIVA,ajuste antigo)": {
+   "ok": "a requerimento de JOÃO DE EXEMPLO|Setembro de 2021|MARIA DE EXEMPLO CPF: 000.000.001-91|5|MARIA DE EXEMPLO"
+  },
+  "certidao(NEGATIVA,cnpj)": {
+   "ok": "CERTIFICO, a requerimento verbal de parte interessada, que revendo nesta Serventia os Livros de Registro de Protestos de Letras e Outros Títulos, a partir do mês de Janeiro de 2020, neles NÃO ENCONTREI protesto contra MARIA DE EXEMPLO CNPJ: 00.000.042/0001-22. Período de Busca: 6 Anos."
+  },
+  "certidao(NEGATIVA,devedor)": {
+   "ok": "CERTIFICO, a requerimento escrito do próprio devedor, que revendo nesta Serventia os Livros de Registro de Protestos de Letras e Outros Títulos, a partir do mês de Setembro de 2021, neles NÃO ENCONTREI protesto contra MARIA DE EXEMPLO CPF: 000.000.001-91. Período de Busca: 5 Anos."
+  },
+  "certidao(NEGATIVA,devedor_com_nome)": {
+   "ok": "CERTIFICO, a requerimento escrito do próprio devedor, MARIA DE EXEMPLO, que revendo nesta Serventia os Livros de Registro de Protestos de Letras e Outros Títulos, a partir do mês de Setembro de 2021, neles NÃO ENCONTREI protesto contra MARIA DE EXEMPLO CPF: 000.000.001-91. Período de Busca: 5 Anos."
+  },
+  "certidao(NEGATIVA,documento_torto)": {
+   "ok": "CERTIFICO, a requerimento verbal de parte interessada, que revendo nesta Serventia os Livros de Registro de Protestos de Letras e Outros Títulos, a partir do mês de Janeiro de 2020, neles NÃO ENCONTREI protesto contra MARIA DE EXEMPLO documento: 123. Período de Busca: 6 Anos."
+  },
+  "certidao(NEGATIVA,ordem)": {
+   "ok": "CERTIFICO, por determinação judicial expressa, que revendo nesta Serventia os Livros de Registro de Protestos de Letras e Outros Títulos, a partir do mês de Setembro de 2021, neles NÃO ENCONTREI protesto contra MARIA DE EXEMPLO CPF: 000.000.001-91. Período de Busca: 5 Anos."
+  },
+  "certidao(NEGATIVA,ordem_com_ref)": {
+   "ok": "CERTIFICO, por determinação judicial expressa (1ª Vara de Exemplo, processo 0000000-00.2026.8.10.0000), que revendo nesta Serventia os Livros de Registro de Protestos de Letras e Outros Títulos, a partir do mês de Setembro de 2021, neles NÃO ENCONTREI protesto contra MARIA DE EXEMPLO CPF: 000.000.001-91. Período de Busca: 5 Anos."
+  },
+  "certidao(NEGATIVA,requerente)": {
+   "ok": "CERTIFICO, a requerimento de JOÃO DE EXEMPLO, que revendo nesta Serventia os Livros de Registro de Protestos de Letras e Outros Títulos, a partir do mês de Setembro de 2021, neles NÃO ENCONTREI protesto contra MARIA DE EXEMPLO CPF: 000.000.001-91. Período de Busca: 5 Anos."
+  },
+  "certidao(NEGATIVA,sem_documento)": {
+   "ok": "CERTIFICO, a requerimento verbal de parte interessada, que revendo nesta Serventia os Livros de Registro de Protestos de Letras e Outros Títulos, a partir do mês de Janeiro de 2020, neles NÃO ENCONTREI protesto contra MARIA DE EXEMPLO. Período de Busca: 6 Anos."
+  },
+  "certidao(NEGATIVA,verbal)": {
+   "ok": "CERTIFICO, a requerimento verbal de parte interessada, que revendo nesta Serventia os Livros de Registro de Protestos de Letras e Outros Títulos, a partir do mês de Setembro de 2021, neles NÃO ENCONTREI protesto contra MARIA DE EXEMPLO CPF: 000.000.001-91. Período de Busca: 5 Anos."
+  },
+  "certidao(POSITIVA,ajuste antigo)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91.\n1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7.\nPedido: a requerimento verbal de parte interessada. Dou fé. MARIA DE EXEMPLO"
+  },
+  "certidao(POSITIVA,ajuste quebrado)": {
+   "erro": "CertidaoError: O modelo da certidão positiva está incompleto: 'nao_existe'."
+  },
+  "certidao(POSITIVA,cnpj)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CNPJ: 00.000.042/0001-22. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,desde 1999)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de 1999 até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,desde 2000)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,desde 2005)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e cinco até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,desde 2010)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e dez até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,desde 2016)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e dezesseis até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,desde 2020)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,desde 2021)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,desde 2026)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e seis até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,devedor)": {
+   "ok": "CERTIFICO a requerimento escrito do próprio devedor, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,devedor_com_nome)": {
+   "ok": "CERTIFICO a requerimento escrito do próprio devedor, MARIA DE EXEMPLO, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,documento_torto)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no documento: 123. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,dois)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7. 2) Título n. 456; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,ordem)": {
+   "ok": "CERTIFICO por determinação judicial expressa, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,ordem_com_ref)": {
+   "ok": "CERTIFICO por determinação judicial expressa (1ª Vara de Exemplo, processo 0000000-00.2026.8.10.0000), que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,requerente)": {
+   "ok": "CERTIFICO a requerimento de JOÃO DE EXEMPLO, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,sem achado)": {
+   "erro": "CertidaoError: Não há protesto a certificar: a busca não achou nada, e a certidão que cabe é a NEGATIVA, não a POSITIVA."
+  },
+  "certidao(POSITIVA,sem_documento)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "certidao(POSITIVA,verbal)": {
+   "ok": "CERTIFICO a requerimento verbal de parte interessada, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de dois mil e vinte e um até a presente data, neles encontrei protesto contra MARIA DE EXEMPLO e inscrito no CPF: 000.000.001-91. 1) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "descricao_do_documento(completo)": {
+   "ok": "Registro do protesto: Livro 10, folha 42v, sob o n.º 7, em 10/09/2026. Protocolo n.º 2609080001, de 08/09/2026. Título: Duplicata de Venda Mercantil por Indicação, n.º 123, emitido em 01/07/2026, vencido em 01/08/2026, valor R$ 1.234,56, valor protestado R$ 1.000,00. Apresentante: BANCO DE EXEMPLO. Credor (sacador/favorecido): EMPRESA DE EXEMPLO LTDA, CPF/CNPJ 00000042000122. Devedor: MARIA DE EXEMPLO, CPF 00000000191, endereço Rua de Exemplo, 10, Centro, Cidade Exemplo/MA. Devedor: JOÃO DE EXEMPLO. Tipo: protesto comum. Motivo: falta de pagamento."
+  },
+  "descricao_do_documento(minimo)": {
+   "ok": "Título: XYZ, n.º sem número, valor R$ 0,00."
+  },
+  "descricao_do_documento(sem_lugar)": {
+   "ok": "Registro do protesto: livro e folha não constam, em 10/09/2026. Protocolo n.º 2609080001. Título: espécie não informada, n.º 123, emitido em 01/07/2026, vencido em 01/08/2026, valor R$ 1.234,56. Apresentante: 001. Credor (sacador/favorecido): EMPRESA DE EXEMPLO LTDA. Devedor: MARIA DE EXEMPLO, CPF 00000000191, endereço Rua de Exemplo, 10, Centro, Cidade Exemplo/MA. Devedor: JOÃO DE EXEMPLO. Tipo: protesto para fins falimentares. Motivo: falta de aceite."
+  },
+  "edital(completo)": {
+   "ok": "EDITAL DE INTIMAÇÃO\n\nSERVENTIA EXTRAJUDICIAL DE EXEMPLO, na forma da lei, FAZ SABER a quem interessar possa que, tendo sido infrutífera a tentativa de intimação pessoal, fica pelo presente edital INTIMADO(A):\n\nMARIA DE EXEMPLO, inscrito(a) no CPF/CNPJ sob o nº 000.000.001-91\n\ndo apontamento para protesto do título abaixo, para que, até 11/09/2026, compareça a esta Serventia a fim de pagá-lo, ou, querendo, apresente as razões que tiver:\n\nProtocolo: 2609080001\nTítulo: 123 — espécie DMI\nValor: R$ 1.234,56\nPrazo-limite para pagamento: 11/09/2026\n\nDecorrido o prazo sem manifestação, o título será protestado na forma da Lei nº 9.492, de 10 de setembro de 1997.\n\nSERVENTIA EXTRAJUDICIAL DE EXEMPLO — Rua de Exemplo, 1, Centro. Telefone (99) 0000-0000.\n\nCidade Exemplo/MA, 8 de setembro de 2026."
+  },
+  "edital(magro)": {
+   "ok": "EDITAL DE INTIMAÇÃO\n\n, na forma da lei, FAZ SABER a quem interessar possa que, tendo sido infrutífera a tentativa de intimação pessoal, fica pelo presente edital INTIMADO(A):\n\n\n\ndo apontamento para protesto do título abaixo, para que, até 11/09/2026, compareça a esta Serventia a fim de pagá-lo, ou, querendo, apresente as razões que tiver:\n\nProtocolo: A CONFERIR\nTítulo: sem número\nValor: R$ 0,00\nPrazo-limite para pagamento: 11/09/2026\n\nDecorrido o prazo sem manifestação, o título será protestado na forma da Lei nº 9.492, de 10 de setembro de 1997.\n\n — . Telefone .\n\n2026-09-08."
+  },
+  "edital(sem limite, sem extenso)": {
+   "ok": "EDITAL DE INTIMAÇÃO\n\nSERVENTIA EXTRAJUDICIAL DE EXEMPLO, na forma da lei, FAZ SABER a quem interessar possa que, tendo sido infrutífera a tentativa de intimação pessoal, fica pelo presente edital INTIMADO(A):\n\nMARIA DE EXEMPLO, inscrito(a) no CPF/CNPJ sob o nº 000.000.001-91\n\ndo apontamento para protesto do título abaixo, para que, até o prazo legal, compareça a esta Serventia a fim de pagá-lo, ou, querendo, apresente as razões que tiver:\n\nProtocolo: 2609080001\nTítulo: 123 — espécie DMI\nValor: R$ 1.234,56\n\n\nDecorrido o prazo sem manifestação, o título será protestado na forma da Lei nº 9.492, de 10 de setembro de 1997.\n\nSERVENTIA EXTRAJUDICIAL DE EXEMPLO — Rua de Exemplo, 1, Centro. Telefone (99) 0000-0000.\n\nCidade Exemplo/MA, 2026-09-08."
+  },
+  "frase_da_intimacao_pessoal": {
+   "ok": [
+    "O devedor foi intimado pessoalmente em 08/09/2026.",
+    "O devedor foi intimado por meio eletrônico, com o recebimento confirmado em 08/09/2026.",
+    ""
+   ]
+  },
+  "frase_do_edital": {
+   "ok": [
+    "O devedor foi intimado por Edital em 08/09/2026 pelo motivo Ausente.",
+    "O devedor foi intimado por Edital em 08/09/2026.",
+    ""
+   ]
+  },
+  "instrumento(ajuste antigo)": {
+   "ok": "SERVENTIA DE EXEMPLO desta praça x Não consta desta serventia cópia arquivada do título, pelo que não se aplica a dispensa do parágrafo único do art. 22 da Lei n.º 9.492/1997. CERTIFICO que não consta ato de intimação lavrado para este título."
+  },
+  "instrumento(ajuste com marcador inventado)": {
+   "erro": "InstrumentoError: O modelo do instrumento pede um campo que o sistema não sabe preencher: 'nao_existe'. Confira o texto em Modelos da casa."
+  },
+  "instrumento(copia=False,edital)": {
+   "ok": "O SERVENTIA DE EXEMPLO, Tabelionato de Protesto de Títulos, DECLARA PROTESTADO o documento abaixo descrito, pagável na praça de Cidade Exemplo - MA, em virtude do que se fez a intimação devida, na forma da Lei, para que o devedor se manifestasse a respeito; pelo que, para garantia do credor, foi lavrado este Protesto, por motivo de falta de pagamento. Título: Duplicata de exemplo. Não consta desta serventia cópia arquivada do título, pelo que não se aplica a dispensa do parágrafo único do art. 22 da Lei n.º 9.492/1997. CERTIFICO que a intimação foi feita por EDITAL, publicado em 08/09/2026, pelo motivo Ausente."
+  },
+  "instrumento(copia=False,edital_sem_motivo)": {
+   "ok": "O SERVENTIA DE EXEMPLO, Tabelionato de Protesto de Títulos, DECLARA PROTESTADO o documento abaixo descrito, pagável na praça de Cidade Exemplo - MA, em virtude do que se fez a intimação devida, na forma da Lei, para que o devedor se manifestasse a respeito; pelo que, para garantia do credor, foi lavrado este Protesto, por motivo de falta de pagamento. Título: Duplicata de exemplo. Não consta desta serventia cópia arquivada do título, pelo que não se aplica a dispensa do parágrafo único do art. 22 da Lei n.º 9.492/1997. CERTIFICO que a intimação foi feita por EDITAL, publicado em 08/09/2026."
+  },
+  "instrumento(copia=False,nenhuma)": {
+   "ok": "O SERVENTIA DE EXEMPLO, Tabelionato de Protesto de Títulos, DECLARA PROTESTADO o documento abaixo descrito, pagável na praça de Cidade Exemplo - MA, em virtude do que se fez a intimação devida, na forma da Lei, para que o devedor se manifestasse a respeito; pelo que, para garantia do credor, foi lavrado este Protesto, por motivo de falta de pagamento. Título: Duplicata de exemplo. Não consta desta serventia cópia arquivada do título, pelo que não se aplica a dispensa do parágrafo único do art. 22 da Lei n.º 9.492/1997. CERTIFICO que não consta ato de intimação lavrado para este título."
+  },
+  "instrumento(copia=False,pessoal)": {
+   "ok": "O SERVENTIA DE EXEMPLO, Tabelionato de Protesto de Títulos, DECLARA PROTESTADO o documento abaixo descrito, pagável na praça de Cidade Exemplo - MA, em virtude do que se fez a intimação devida, na forma da Lei, para que o devedor se manifestasse a respeito; pelo que, para garantia do credor, foi lavrado este Protesto, por motivo de falta de pagamento. Título: Duplicata de exemplo. Não consta desta serventia cópia arquivada do título, pelo que não se aplica a dispensa do parágrafo único do art. 22 da Lei n.º 9.492/1997. CERTIFICO que a intimação foi entregue no endereço do devedor em 08/09/2026."
+  },
+  "instrumento(copia=False,sem_modo)": {
+   "ok": "O SERVENTIA DE EXEMPLO, Tabelionato de Protesto de Títulos, DECLARA PROTESTADO o documento abaixo descrito, pagável na praça de Cidade Exemplo - MA, em virtude do que se fez a intimação devida, na forma da Lei, para que o devedor se manifestasse a respeito; pelo que, para garantia do credor, foi lavrado este Protesto, por motivo de falta de pagamento. Título: Duplicata de exemplo. Não consta desta serventia cópia arquivada do título, pelo que não se aplica a dispensa do parágrafo único do art. 22 da Lei n.º 9.492/1997. CERTIFICO que a intimação foi entregue no endereço do devedor em 08/09/2026."
+  },
+  "instrumento(copia=True,edital)": {
+   "ok": "O SERVENTIA DE EXEMPLO, Tabelionato de Protesto de Títulos, DECLARA PROTESTADO o documento abaixo descrito, pagável na praça de Cidade Exemplo - MA, em virtude do que se fez a intimação devida, na forma da Lei, para que o devedor se manifestasse a respeito; pelo que, para garantia do credor, foi lavrado este Protesto, por motivo de falta de pagamento. Título: Duplicata de exemplo. Fica dispensada a transcrição literal do documento, na forma do parágrafo único do art. 22 da Lei n.º 9.492/1997, por conservar esta serventia cópia digital do título, arquivada sob este protesto. CERTIFICO que a intimação foi feita por EDITAL, publicado em 08/09/2026, pelo motivo Ausente."
+  },
+  "instrumento(copia=True,edital_sem_motivo)": {
+   "ok": "O SERVENTIA DE EXEMPLO, Tabelionato de Protesto de Títulos, DECLARA PROTESTADO o documento abaixo descrito, pagável na praça de Cidade Exemplo - MA, em virtude do que se fez a intimação devida, na forma da Lei, para que o devedor se manifestasse a respeito; pelo que, para garantia do credor, foi lavrado este Protesto, por motivo de falta de pagamento. Título: Duplicata de exemplo. Fica dispensada a transcrição literal do documento, na forma do parágrafo único do art. 22 da Lei n.º 9.492/1997, por conservar esta serventia cópia digital do título, arquivada sob este protesto. CERTIFICO que a intimação foi feita por EDITAL, publicado em 08/09/2026."
+  },
+  "instrumento(copia=True,nenhuma)": {
+   "ok": "O SERVENTIA DE EXEMPLO, Tabelionato de Protesto de Títulos, DECLARA PROTESTADO o documento abaixo descrito, pagável na praça de Cidade Exemplo - MA, em virtude do que se fez a intimação devida, na forma da Lei, para que o devedor se manifestasse a respeito; pelo que, para garantia do credor, foi lavrado este Protesto, por motivo de falta de pagamento. Título: Duplicata de exemplo. Fica dispensada a transcrição literal do documento, na forma do parágrafo único do art. 22 da Lei n.º 9.492/1997, por conservar esta serventia cópia digital do título, arquivada sob este protesto. CERTIFICO que não consta ato de intimação lavrado para este título."
+  },
+  "instrumento(copia=True,pessoal)": {
+   "ok": "O SERVENTIA DE EXEMPLO, Tabelionato de Protesto de Títulos, DECLARA PROTESTADO o documento abaixo descrito, pagável na praça de Cidade Exemplo - MA, em virtude do que se fez a intimação devida, na forma da Lei, para que o devedor se manifestasse a respeito; pelo que, para garantia do credor, foi lavrado este Protesto, por motivo de falta de pagamento. Título: Duplicata de exemplo. Fica dispensada a transcrição literal do documento, na forma do parágrafo único do art. 22 da Lei n.º 9.492/1997, por conservar esta serventia cópia digital do título, arquivada sob este protesto. CERTIFICO que a intimação foi entregue no endereço do devedor em 08/09/2026."
+  },
+  "instrumento(copia=True,sem_modo)": {
+   "ok": "O SERVENTIA DE EXEMPLO, Tabelionato de Protesto de Títulos, DECLARA PROTESTADO o documento abaixo descrito, pagável na praça de Cidade Exemplo - MA, em virtude do que se fez a intimação devida, na forma da Lei, para que o devedor se manifestasse a respeito; pelo que, para garantia do credor, foi lavrado este Protesto, por motivo de falta de pagamento. Título: Duplicata de exemplo. Fica dispensada a transcrição literal do documento, na forma do parágrafo único do art. 22 da Lei n.º 9.492/1997, por conservar esta serventia cópia digital do título, arquivada sob este protesto. CERTIFICO que a intimação foi entregue no endereço do devedor em 08/09/2026."
+  },
+  "instrumento_por_extenso": {
+   "ok": [
+    "1 de setembro de 2026",
+    "2026-13-01",
+    "",
+    "x"
+   ]
+  },
+  "linha_do_protesto(aceite_falimentar)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto para fins falimentares por falta de aceite; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "linha_do_protesto(cancelado)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026 (pagamento)."
+  },
+  "linha_do_protesto(cancelado_sem_motivo)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; CANCELADO em 20/09/2026."
+  },
+  "linha_do_protesto(cedente_e_o_devedor)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "linha_do_protesto(cedente_sem_documento)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA; protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "linha_do_protesto(completa)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "linha_do_protesto(devolucao)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de devolução; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "linha_do_protesto(minima)": {
+   "ok": "3) Título n. 9; valor R$ 10,00; protestado em 08/09/2026; livro e folha não constam do acervo."
+  },
+  "linha_do_protesto(motivo_desconhecido)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "linha_do_protesto(saldo_igual)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7."
+  },
+  "linha_do_protesto(sem_lugar)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; livro e folha não constam do acervo."
+  },
+  "linha_do_protesto(so_folha)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; fl. 42."
+  },
+  "linha_do_protesto(suspenso)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; EFEITOS SUSPENSOS por ordem judicial (1ª Vara de Exemplo 0000000-00.2026.8.10.0000)."
+  },
+  "linha_do_protesto(suspenso_sem_juizo)": {
+   "ok": "3) Título n. 123; espécie DMI; protocolo 2609080001; valor R$ 1.234,56; valor protestado R$ 1.000,00; emitido em 01/07/2026; vencido em 01/08/2026; apresentante BANCO DE EXEMPLO; credor EMPRESA DE EXEMPLO LTDA (00.000.042/0001-22); protesto comum por falta de pagamento; protestado em 08/09/2026; Livro 10, fl. 42, n. 7; EFEITOS SUSPENSOS por ordem judicial."
+  },
+  "mes_e_ano": {
+   "ok": [
+    "Janeiro de 2026",
+    "Fevereiro de 2026",
+    "Março de 2026",
+    "Abril de 2026",
+    "Maio de 2026",
+    "Junho de 2026",
+    "Julho de 2026",
+    "Agosto de 2026",
+    "Setembro de 2026",
+    "Outubro de 2026",
+    "Novembro de 2026",
+    "Dezembro de 2026"
+   ]
+  },
+  "por_extenso_ano(1999)": {
+   "ok": "1999"
+  },
+  "por_extenso_ano(2000)": {
+   "ok": "dois mil"
+  },
+  "por_extenso_ano(2001)": {
+   "ok": "dois mil e um"
+  },
+  "por_extenso_ano(2009)": {
+   "ok": "dois mil e nove"
+  },
+  "por_extenso_ano(2010)": {
+   "ok": "dois mil e dez"
+  },
+  "por_extenso_ano(2011)": {
+   "ok": "dois mil e onze"
+  },
+  "por_extenso_ano(2019)": {
+   "ok": "dois mil e dezenove"
+  },
+  "por_extenso_ano(2020)": {
+   "ok": "dois mil e vinte"
+  },
+  "por_extenso_ano(2021)": {
+   "ok": "dois mil e vinte e um"
+  },
+  "por_extenso_ano(2030)": {
+   "ok": "dois mil e trinta"
+  },
+  "por_extenso_ano(2099)": {
+   "ok": "dois mil e noventa e nove"
+  },
+  "por_extenso_ano(2100)": {
+   "ok": "2100"
+  },
+  "termo(ajuste antigo)": {
+   "ok": "LIVRO: COMUM / FALTA DE PAGAMENTO O devedor foi intimado por Edital em 08/09/2026 pelo motivo Ausente."
+  },
+  "termo(ajuste com marcador inventado)": {
+   "erro": "TermoError: O modelo do termo do protesto tem um marcador que não existe: 'base'. Os que valem são {tipo}, {motivo} e {edital} — as demais frases são texto, e se escrevem inteiras no modelo."
+  },
+  "termo(data_torta,1)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE PAGAMENTO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026."
+  },
+  "termo(data_torta,2F)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO PARA FINS FALIMENTARES LAVRADO POR FALTA DE ACEITE. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026."
+  },
+  "termo(data_torta,3C)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE DEVOLUÇÃO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026."
+  },
+  "termo(digital,1)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE PAGAMENTO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por meio eletrônico, com o recebimento confirmado em 08/09/2026."
+  },
+  "termo(digital,2F)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO PARA FINS FALIMENTARES LAVRADO POR FALTA DE ACEITE. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por meio eletrônico, com o recebimento confirmado em 08/09/2026."
+  },
+  "termo(digital,3C)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE DEVOLUÇÃO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por meio eletrônico, com o recebimento confirmado em 08/09/2026."
+  },
+  "termo(edital,1)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE PAGAMENTO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026 pelo motivo Ausente."
+  },
+  "termo(edital,2F)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO PARA FINS FALIMENTARES LAVRADO POR FALTA DE ACEITE. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026 pelo motivo Ausente."
+  },
+  "termo(edital,3C)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE DEVOLUÇÃO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026 pelo motivo Ausente."
+  },
+  "termo(edital_e_pessoal,1)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE PAGAMENTO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026."
+  },
+  "termo(edital_e_pessoal,2F)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO PARA FINS FALIMENTARES LAVRADO POR FALTA DE ACEITE. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026."
+  },
+  "termo(edital_e_pessoal,3C)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE DEVOLUÇÃO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026."
+  },
+  "termo(edital_motivo_com_espacos,1)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE PAGAMENTO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026 pelo motivo Mudou-se de vez."
+  },
+  "termo(edital_motivo_com_espacos,2F)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO PARA FINS FALIMENTARES LAVRADO POR FALTA DE ACEITE. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026 pelo motivo Mudou-se de vez."
+  },
+  "termo(edital_motivo_com_espacos,3C)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE DEVOLUÇÃO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026 pelo motivo Mudou-se de vez."
+  },
+  "termo(edital_sem_motivo,1)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE PAGAMENTO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026."
+  },
+  "termo(edital_sem_motivo,2F)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO PARA FINS FALIMENTARES LAVRADO POR FALTA DE ACEITE. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026."
+  },
+  "termo(edital_sem_motivo,3C)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE DEVOLUÇÃO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado por Edital em 08/09/2026."
+  },
+  "termo(nada,1)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE PAGAMENTO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente."
+  },
+  "termo(nada,2F)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO PARA FINS FALIMENTARES LAVRADO POR FALTA DE ACEITE. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente."
+  },
+  "termo(nada,3C)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE DEVOLUÇÃO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente."
+  },
+  "termo(pessoal,1)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE PAGAMENTO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado pessoalmente em 08/09/2026."
+  },
+  "termo(pessoal,2F)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO PARA FINS FALIMENTARES LAVRADO POR FALTA DE ACEITE. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado pessoalmente em 08/09/2026."
+  },
+  "termo(pessoal,3C)": {
+   "ok": "CERTIFICO que não houve manifestação e que o responsável acima mencionado e qualificado foi intimado conforme preceitua a Lei Federal específica de Protesto e normas determinadas pela Corregedoria Geral de Justiça do Estado do Maranhão. PROTESTO COMUM LAVRADO POR FALTA DE DEVOLUÇÃO. Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente. O devedor foi intimado pessoalmente em 08/09/2026."
+  },
+  "termo(sem motivo)": {
+   "erro": "TermoError: O título não diz o motivo do protesto (falta de pagamento, de aceite ou de devolução) — ele vem no arquivo da CRA. Informe-o na ficha do título antes de lavrar."
+  },
+  "termo(tipo torto)": {
+   "erro": "TermoError: O tipo de protesto «X» não é comum (C) nem para fins falimentares (F). Corrija-o na ficha do título."
+  },
+  "vocabulario": {
+   "ok": {
+    "CATALOGO_CANCELAMENTO": {
+     "ANUENCIA_CREDOR": {
+      "fundamento_legal": "Lei 9.492/1997, art. 26, § 1º; Código de Normas do TJMA, art. 942, § 2º — declaração de anuência, com identificação completa e firma reconhecida, de quem figurou como credor (ou endossatário, no endosso translativo), na impossibilidade de apresentar o título original. O pedido de cancelamento do APRESENTANTE entra por aqui (decisão do oficial em 14/10/2026).",
+      "rotulo": "Anuência do credor ou do apresentante"
+     },
+     "ORDEM_JUDICIAL": {
+      "fundamento_legal": "Decisão judicial determinando o cancelamento do registro do protesto.",
+      "rotulo": "Ordem judicial"
+     },
+     "PAGAMENTO": {
+      "fundamento_legal": "Lei 9.492/1997, art. 26 — apresentação do título ou documento de dívida protestado, com prova da quitação.",
+      "rotulo": "Pagamento do título"
+     }
+    },
+    "ESPECIES": {
+     "CAC": "Contrato de Adesao ao Cred Direto",
+     "CACI": "Contrato de Abertura de Cred Indicacao",
+     "CADC": "Contrato de Adesao Cred Direto Caixa",
+     "CAM": "Contrato de Arrendamento Mercantil",
+     "CBI": "Cédula de Crédito Bancário por Indicação",
+     "CC": "Contrato de Câmbio",
+     "CCB": "Cédula de Crédito Bancário",
+     "CCC": "Cédula de Crédito Comercial",
+     "CCE": "Cédula de Crédito à Exportação",
+     "CCI": "Cédula de Crédito Industrial",
+     "CCJ": "Carta de Credito Judicial",
+     "CCR": "Cédula de Crédito Rural",
+     "CD": "Confissão de Dívida – Apenas para fins de falência (uma declaração do devedor)",
+     "CDA": "Certidão da Dívida Ativa",
+     "CDI": "Certidao de Divida por Indicação",
+     "CDT": "Certidao de Debito do Tribunal",
+     "CF": "Contrato de Financiamento",
+     "CH": "Cheque",
+     "CHP": "Cédula Hipotecária",
+     "CJV": "Conta Judicialmente Verificada – Verificação de livro de empresa – protesto de um processo judicial – falência",
+     "CL": "Contrato de Leasing",
+     "CLC": "Contrato de Locacao",
+     "CM": "Contrato de Mútuo",
+     "CPH": "Cédula Rural Pignoratícia Hipotecária",
+     "CPS": "Conta de Prestação de Serviços – Profissional liberal – declaração do profissional, documentos comprobatórios e notificação do devedor, pelo Cartório de Registro de Títulos e Documentos",
+     "CRC": "Contrato de Cred Rotativo de Cheque",
+     "CRH": "Cédula Rural Hipotecária",
+     "CRJ": "Certidao de Credito Judicial",
+     "CRP": "Cédula Rural Pignoratícia",
+     "CRPH": "Cedula Rural Pignorat Hipotecaria",
+     "CT": "Espécie de Contrato",
+     "DD": "Documento de Divida",
+     "DM": "Duplicata de Venda Mercantil",
+     "DMI": "Duplicata de Venda Mercantil por Indicação",
+     "DR": "Duplicata Rural",
+     "DRI": "Duplicata Rural por Indicação",
+     "DS": "Duplicata de Prestação de Serviços – Original",
+     "DSI": "Duplicata de Prestação de Serviços por Indicação – Comprovante de prestação dos serviços",
+     "DV": "Diversos - Quando não enquadrar na relação acima.",
+     "EC": "Encargos Condominiais",
+     "ED": "Encargos Condominais",
+     "FPS": "Fatura de Prestacao de Servico",
+     "FVM": "Fatura de Venda Mercantil",
+     "LC": "Letra de Câmbio",
+     "NCC": "Nota de Crédito Comercial",
+     "NCE": "Nota de Crédito à Exportação",
+     "NCI": "Nota de Crédito Industrial",
+     "NCR": "Nota de Crédito Rural",
+     "ND": "Nota de Debito",
+     "NP": "Nota Promissória",
+     "NPR": "Nota Promissória Rural",
+     "OD": "Ordem de Servico",
+     "RA": "Recibo de Aluguel – Só para pessoa jurídica (contrato aluguel e recibo)",
+     "RFED": "Warrant",
+     "RPS": "Recibo de Prest Servico",
+     "RPSI": "Recibo de Prest Servico Indicacao",
+     "SJ": "Sentença Judicial",
+     "TA": "Termo de Acordo – Ex. Ação trabalhista",
+     "TAJ": "Termo de Acordo Judicial",
+     "TJD": "Titulo Executivo Judicial Definitivo",
+     "TM": "Triplicata de Venda Mercantil",
+     "TS": "Triplicata de Prestação de Serviços",
+     "W": "Warrant",
+     "ZZZ": "Outros"
+    },
+    "FORMAS": {
+     "BOLETO": "por boleto",
+     "CARTAO": "por cartão",
+     "CHEQUE": "por cheque",
+     "ESPECIE": "em espécie",
+     "PIX": "por PIX",
+     "TRANSFERENCIA": "por transferência bancária"
+    },
+    "MESES": [
+     [
+      "janeiro",
+      "fevereiro",
+      "março",
+      "abril",
+      "maio",
+      "junho",
+      "julho",
+      "agosto",
+      "setembro",
+      "outubro",
+      "novembro",
+      "dezembro"
+     ],
+     [
+      "janeiro",
+      "fevereiro",
+      "março",
+      "abril",
+      "maio",
+      "junho",
+      "julho",
+      "agosto",
+      "setembro",
+      "outubro",
+      "novembro",
+      "dezembro"
+     ]
+    ],
+    "MOTIVOS_NAO_ENTREGA": [
+     {
+      "codigo": 11,
+      "contador": true,
+      "edital": false,
+      "motivo": "Ausente",
+      "usos": 1068
+     },
+     {
+      "codigo": 2,
+      "contador": false,
+      "edital": false,
+      "motivo": "Endereço não encontrado",
+      "usos": 13
+     },
+     {
+      "codigo": 3,
+      "contador": false,
+      "edital": false,
+      "motivo": "Recusou-se a receber",
+      "usos": 6
+     },
+     {
+      "codigo": 4,
+      "contador": false,
+      "edital": false,
+      "motivo": "Falecido",
+      "usos": 4
+     },
+     {
+      "codigo": 12,
+      "contador": true,
+      "edital": false,
+      "motivo": "Fechado",
+      "usos": 4
+     },
+     {
+      "codigo": 8,
+      "contador": false,
+      "edital": false,
+      "motivo": "Destinatário desconhecido",
+      "usos": 1
+     },
+     {
+      "codigo": 9,
+      "contador": false,
+      "edital": false,
+      "motivo": "Endereço incompleto",
+      "usos": 0
+     },
+     {
+      "codigo": 14,
+      "contador": false,
+      "edital": false,
+      "motivo": "Fora do perímetro",
+      "usos": 0
+     },
+     {
+      "codigo": 10,
+      "contador": false,
+      "edital": false,
+      "motivo": "Informação fornecida pelo porteiro/síndico",
+      "usos": 0
+     },
+     {
+      "codigo": 1,
+      "contador": false,
+      "edital": true,
+      "motivo": "Mudou-se",
+      "usos": 0
+     },
+     {
+      "codigo": 13,
+      "contador": false,
+      "edital": false,
+      "motivo": "Não procurado",
+      "usos": 0
+     },
+     {
+      "codigo": 5,
+      "contador": false,
+      "edital": true,
+      "motivo": "Não é o número indicado",
+      "usos": 0
+     }
+    ],
+    "MOTIVO_NO_LIVRO": [
+     "FALTA DE PAGAMENTO",
+     "FALTA DE ACEITE",
+     "FALTA DE DEVOLUÇÃO",
+     "FALTA DE PAGAMENTO",
+     "",
+     ""
+    ],
+    "OCORRENCIA_DO_ATO": {
+     "CANCELAMENTO": "protesto cancelado",
+     "DESISTENCIA": "retirado pelo apresentante",
+     "EFEITO_SUSPENSIVO": "efeitos suspensos por ordem judicial",
+     "INTIMACAO": "intimado",
+     "PAGAMENTO": "pago",
+     "PROTESTO": "protestado",
+     "REVOGACAO_SUSTACAO": "sustação revogada",
+     "SUSTACAO": "sustação judicial"
+    },
+    "TIPO_NO_LIVRO": [
+     "COMUM",
+     "PARA FINS FALIMENTARES",
+     "COMUM",
+     "COMUM",
+     "PARA FINS FALIMENTARES",
+     ""
+    ],
+    "motivo_rotulo": [
+     "Ausente",
+     "Endereço não encontrado",
+     "Não existe o número indicado",
+     "motivo 99",
+     "motivo None"
+    ]
+   }
+  }
+ },
+ "mudado_na_arvore": []
+}

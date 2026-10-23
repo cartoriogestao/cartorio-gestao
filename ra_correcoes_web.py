@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from flask import abort, flash, redirect, request, url_for
 
+from bd_nativo import banco
 import ra_correcoes as CORR
 import ra_selo as RS
 
@@ -91,8 +92,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         dentro dele, e o selo não se reescreve.
         """
         with db.connect() as con:
-            if con.execute("SELECT 1 FROM ra_registros WHERE id=?",
-                           (registro_id,)).fetchone() is None:
+            if banco(con).um("SELECT 1 FROM ra_registros WHERE id=%s",
+                             (registro_id,)) is None:
                 abort(404)
         try:
             with db.transaction() as con:

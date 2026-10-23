@@ -25,6 +25,7 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+from bd_nativo import banco                                      # noqa: E402
 import gestor_conferencia as GC                                  # noqa: E402
 import gestor_envios as GE                                       # noqa: E402
 import gestor_rotina as GR                                       # noqa: E402
@@ -486,6 +487,74 @@ def test_a_doi_comeca_em_setembro_e_nao_em_agosto(con):
     chaves = {a["chave"] for a in GC.conferir(con, date(2026, 10, 25))
               if a["regra"] == "DOI"}
     assert chaves == {"DOI:2026-09"}
+
+
+def _doi_de_setembro(con) -> dict:
+    doi = [a for a in GC.conferir(con, date(2026, 10, 25)) if a["regra"] == "DOI"]
+    assert len(doi) == 1
+    return doi[0]
+
+
+def test_a_doi_conta_o_registro_do_ri_e_nao_sugere_negativa(con):
+    """21/10/2026: setembro tinha compra e venda e doações registradas no RI,
+    e o achado mandava «conferir se cabe declaração negativa» — ele só
+    contava as escrituras das Notas. O registro (R) conta; a averbação não."""
+    bd = banco(con)
+    mid = _matricula(con, "9002")
+    bd.escrever(
+        """INSERT INTO ri_atos (matricula_id, tipo, numero, data_ato, hash_ato,
+               lavrado_em, natureza_titulo) VALUES (%s, 'R', 1, '2026-09-28',
+               'hx', '2026-09-28T10:00:00', 'COMPRA E VENDA')""", (mid,))
+    bd.escrever(
+        """INSERT INTO ri_atos (matricula_id, tipo, numero, data_ato, hash_ato,
+               hash_anterior, lavrado_em, natureza_titulo) VALUES (%s, 'AV', 2,
+               '2026-09-28', 'hy', 'hx', '2026-09-28T11:00:00',
+               'CANCELAMENTO DE HIPOTECA')""", (mid,))
+    doi = _doi_de_setembro(con)
+    assert "1 registro(s) no Registro de Imóveis" in doi["detalhe"]
+    assert "negativa" not in doi["detalhe"].replace("não cabe negativa", "")
+    assert doi["setor"] == "RI"
+
+
+def test_so_averbacao_e_registro_cancelado_no_mes_ainda_pedem_a_negativa(con):
+    """A averbação não transmite e o registro cancelado não vale: com só eles
+    no mês, o achado continua mandando conferir a negativa, e é das Notas."""
+    bd = banco(con)
+    mid = _matricula(con, "9003")
+    bd.escrever(
+        """INSERT INTO ri_atos (matricula_id, tipo, numero, data_ato, hash_ato,
+               lavrado_em, natureza_titulo, cancelado) VALUES (%s, 'R', 1,
+               '2026-09-28', 'hc', '2026-09-28T10:00:00', 'DOACAO', 1)""", (mid,))
+    bd.escrever(
+        """INSERT INTO ri_atos (matricula_id, tipo, numero, data_ato, hash_ato,
+               hash_anterior, lavrado_em, natureza_titulo) VALUES (%s, 'AV', 2,
+               '2026-09-29', 'hd', 'hc', '2026-09-29T10:00:00',
+               'CANCELAMENTO DE HIPOTECA')""", (mid,))
+    doi = _doi_de_setembro(con)
+    assert "conferir se cabe declaração negativa" in doi["detalhe"]
+    assert "registro(s)" not in doi["detalhe"]
+    assert doi["setor"] == "NOTAS"
+
+
+def test_escritura_com_imovel_em_lavratura_no_mes_vira_aviso_e_nao_conta(con):
+    """A escritura «em lavratura» pode ter sido assinada no papel: não conta
+    como ato, mas o achado avisa. Com escritura lavrada e registro no RI no
+    mesmo mês, os dois aparecem e o achado continua das Notas."""
+    bd = banco(con)
+    for situacao in ("EM_LAVRATURA", "LAVRADO"):
+        bd.escrever(
+            """INSERT INTO nt_atos (tipo, data, situacao, com_imovel, criado_em)
+               VALUES ('ESCRITURA', '2026-09-20', %s, 1, %s)""", (situacao, AGORA))
+    mid = _matricula(con, "9004")
+    bd.escrever(
+        """INSERT INTO ri_atos (matricula_id, tipo, numero, data_ato, hash_ato,
+               lavrado_em, natureza_titulo) VALUES (%s, 'R', 1, '2026-09-28',
+               'he', '2026-09-28T10:00:00', 'COMPRA E VENDA')""", (mid,))
+    doi = _doi_de_setembro(con)
+    assert "1 registro(s) no Registro de Imóveis" in doi["detalhe"]
+    assert "1 escritura(s) com imóvel lavrada(s) nas Notas" in doi["detalhe"]
+    assert "Há 1 escritura(s) com imóvel ainda «em lavratura»" in doi["detalhe"]
+    assert doi["setor"] == "NOTAS"
 
 
 def test_obito_anterior_ao_corte_fica_fora_da_lista_do_mes(con):

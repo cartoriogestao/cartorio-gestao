@@ -54,18 +54,12 @@
 <section class="panel" style="border-left:3px solid var(--cor-do-modulo)">
   <div class="panel-head">
     <span>Entrar com registro</span>
-    <small>acervo em lote · ou digitar um a um</small>
+    <small>digitar um a um</small>
   </div>
   <div class="cards" style="padding:14px; margin-bottom:0">
-    {% if user.role in ['ADMIN','MANAGER'] %}
-    <a class="card" href="{{ url_for('livro3_importar_acervo') }}"
-       style="text-decoration:none; color:inherit">
-      <strong>Importar do acervo</strong>
-      <p><small>O acervo do E-Ofício (com o campo do caminho). Traz o registro,
-        as <strong>partes</strong> e as <strong>averbações</strong> — com prévia
-        antes de gravar.</small></p>
-    </a>
-    {% endif %}
+    {# O CARTÃO «Importar do acervo» (o Livro 3 do E-Ofício) SAIU em
+       17/10/2026, por decisão do oficial: a importação terminou. A rota
+       `livro3_importar_acervo` fica, sem link. #}
     <a class="card" href="{{ url_for('ri_importacao_manual', especie='LIVRO3_REGISTRO') }}"
        style="text-decoration:none; color:inherit">
       <strong>Digitar as informações</strong>
@@ -80,10 +74,7 @@
     </a>
   </div>
   <p style="padding:0 14px 14px" class="small muted">
-    <strong>São dois caminhos, e eles não se confundem.</strong>
-    <em>Importar do acervo</em> é o lote — o acervo que já veio do E-Ofício, com
-    as partes e as averbações que o registro teve depois. <em>Digitar</em> abre o
-    formulário de um registro só, e ele <strong>não toma número nem sela</strong>:
+    <em>Digitar</em> abre o formulário de um registro só, e ele <strong>não toma número nem sela</strong>:
     aqui é acervo, e acervo entra com o número que já tem no papel.
   </p>
 </section>
@@ -132,8 +123,6 @@
     <a class="button" href="{{ url_for('rcpn_assento_novo', especie_url='casamento') }}">+ Casamento</a>
     <a class="button" href="{{ url_for('rcpn_assento_novo', especie_url='obito') }}">+ Óbito</a>
     <a class="button" href="{{ url_for('rcpn_averbacoes') }}">Averbações</a>
-  {% elif chave == 'livro3' and user.role in ['ADMIN','MANAGER'] %}
-    <a class="button" href="{{ url_for('livro3_importar_acervo') }}">Importar do acervo</a>
   {% endif %}
 </div>
 {% endif %}
@@ -188,20 +177,9 @@
   {% if not linhas %}
     <p style="padding:14px">
       Nada aqui.
-      {% if not termo and not situacao %}
-        O acervo do E-Ofício entra pela tela
-        {% if chave == 'rcpn' %}
-          da carga Admin,
-          <a href="{{ url_for('atribuicoes_importar') }}">Trazer das atribuições</a>.
-        {% elif chave == 'livro3' %}
-          <a href="{{ url_for('livro3_importar_acervo') }}">Importar do acervo
-          (Livro 3)</a> — é por onde entram os registros com as partes e as
-          averbações (ou pela carga Admin em
-          <a href="{{ url_for('atribuicoes_importar') }}">Trazer das atribuições</a>).
-        {% else %}
-          <a href="{{ url_for('atribuicoes_importar') }}">Trazer das atribuições</a>.
-        {% endif %}
-      {% else %}
+      {# O caminho para a carga do E-Ofício saiu daqui em 17/10/2026: a
+         importação terminou. #}
+      {% if termo or situacao %}
         Nenhum registro casou com o filtro.
       {% endif %}
     </p>

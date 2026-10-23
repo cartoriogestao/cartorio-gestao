@@ -13,6 +13,9 @@ from __future__ import annotations
 from flask import flash, redirect, render_template, request, url_for
 
 import ri_revisao as RV
+from bd_nativo import banco
+from seguranca_web import destino_interno  # M1/B3 (LX11): o «volte para» só leva a caminho desta casa
+from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
@@ -31,15 +34,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # O que já foi respondido continua à vista, e de propósito: a
             # decisão escrita é o que a correição lê, e uma tela que só
             # mostra o que falta esconde justamente a resposta.
-            baixadas = con.execute(
-                """SELECT r.*, m.numero matricula_numero,
-                          a.tipo ato_tipo, a.numero ato_numero
+            baixadas = banco(con).ler(
+                """SELECT r.*, m.numero AS matricula_numero,
+                          a.tipo AS ato_tipo, a.numero AS ato_numero
                    FROM ri_revisoes r
                    JOIN ri_matriculas m ON m.id = r.matricula_id
                    LEFT JOIN ri_atos a ON a.id = r.ato_id
-                   WHERE r.situacao=?
-                   ORDER BY r.baixada_em DESC LIMIT 30""",
-                (RV.BAIXADA,)).fetchall()
+                   WHERE r.situacao=%s
+                   ORDER BY r.baixada_em DESC, r.id DESC LIMIT 30""",
+                (RV.BAIXADA,))
         return render_template("ri_revisoes.html", notas=notas,
                                baixadas=baixadas, fmt_date=fmt_date)
 
@@ -70,19 +73,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   {"decisao": decisao[:200]})
             flash("Nota de revisão baixada, com o que você decidiu escrito "
                   "nela.", "success")
-        return redirect(request.form.get("voltar")
-                        or url_for("ri_revisoes"))
+        return redirect(destino_interno(request.form.get("voltar"),
+                                        url_for("ri_revisoes")))
 
     @app.route("/registro-imoveis/<int:matricula_id>/revisoes",
                methods=["POST"])
     @login_required
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_revisao_anotar(matricula_id):
-        ato_id = request.form.get("ato_id") or None
+        ato_bruto = request.form.get("ato_id") or None
+        ato_id = numero_digitado(ato_bruto) if ato_bruto else None
         try:
+            # O ato que não é número é o mesmo «não encontrado» de `anotar`
+            # (LD13): o `int()` aqui dentro derrubava a tela.
+            if ato_bruto and ato_id is None:
+                raise RV.RevisaoError(f"Ato {ato_bruto[:20]} não encontrado.")
             with db.transaction() as con:
                 RV.anotar(con, matricula_id=matricula_id,
-                          ato_id=int(ato_id) if ato_id else None,
+                          ato_id=ato_id,
                           assunto=request.form.get("assunto") or "",
                           nota=request.form.get("nota") or "",
                           agora=db.now(), origem="MANUAL",

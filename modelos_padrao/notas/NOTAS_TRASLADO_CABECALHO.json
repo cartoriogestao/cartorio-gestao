@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_TRASLADO_CABECALHO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Cabeçalho das páginas do traslado",
+  "formato": "JINJA",
+  "explica": "A linha LIVRO / FOLHA / TERMO que se repete no alto de cada página do traslado e do termo do livro. #FOLHA_PAGINA# vira o número da página.",
+  "campos": [
+    "a"
+  ]
+}

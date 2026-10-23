@@ -34,7 +34,8 @@
     aparece aqui.</span>
   {% endif %}
   {% if p.tipo != 'ORCAMENTO' %}
-  <a class="button" href="{{ url_for('caixa_recepcao', protocolo_id=p.id) }}">Protocolo de recepção</a>
+  {# POST com o token (M8, lote LX11): emitir grava a hora da recepção. #}
+  <form method="post" action="{{ url_for('caixa_recepcao', protocolo_id=p.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button">Protocolo de recepção</button></form>
   {#
     UM RECIBO SÓ, DO ATENDIMENTO INTEIRO — decisão do oficial em 27/08/2026.
     Quem pede três cópias autenticadas e uma certidão na mesma ida ao balcão

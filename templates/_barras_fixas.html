@@ -1,0 +1,56 @@
+{# A BARRA FIXA DOS AVISOS — LX17, pedido do oficial em 19/10/2026: «a janela
+   de avisos tem sido ignorada pelos escreventes».
+
+   SEM O BOTÃO DE FECHAR, DE PROPÓSITO. As faixas de `_faixas_compactas.html`
+   se fecham (relato #62); esta não: some quando quem tem o papel do aviso
+   informa a data e a guia do pagamento. A única que se oculta é a do
+   FERJ/FERC, e só digitando «avisei» — e o servidor é quem confere a palavra.
+
+   NO FLUXO DA PÁGINA, ANTES DO TÍTULO, e não `position:fixed`: barra flutuando
+   por cima cobriria o menu e os botões da tela (o teste de layout confere).
+   Duas à vista; o resto atrás do «+N». #}
+{% macro barra_fixa(b) %}
+<div class="barra-fixa" role="alert" data-barra-fixa="{{ b.id }}">
+  <div class="barra-fixa-texto">
+    <strong>{{ b.titulo }}</strong> — {{ b.corpo }}
+    <span class="barra-fixa-mes">(mês {{ b.mes_rotulo }})</span>
+  </div>
+  <div class="barra-fixa-acoes">
+    {% if b.pode_marcar_pago %}
+    <details class="barra-fixa-pago">
+      <summary>Pago — informar data/guia</summary>
+      <form method="post" action="{{ url_for('nu_avisos_marcar_pago', aviso_id=b.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <label>Data do pagamento
+          <input type="date" name="data_pagamento" required max="{{ b.hoje }}" value="{{ b.hoje }}"></label>
+        <label>Guia
+          <input name="guia" maxlength="60" autocomplete="off"></label>
+        <button type="submit">Confirmar pago</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if b.aceita_avisei %}
+    <form method="post" class="barra-fixa-avisei"
+          action="{{ url_for('nu_avisos_avisei', aviso_id=b.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <label>Já avisou quem paga? Digite «avisei»
+        <input name="palavra" required autocomplete="off" size="8"></label>
+      <button type="submit">Ocultar {% if (b.avisei_dias or 1)|int == 1 %}até amanhã{% else %}por {{ b.avisei_dias }} dias{% endif %}</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+{% if nu_barras_fixas %}
+<div class="barras-fixas" data-barras-fixas>
+  {% for b in nu_barras_fixas.visiveis %}{{ barra_fixa(b) }}{% endfor %}
+  {% if nu_barras_fixas.resto %}
+  <details class="barras-fixas-mais">
+    <summary>+{{ nu_barras_fixas.resto|length }}</summary>
+    {% for b in nu_barras_fixas.resto %}{{ barra_fixa(b) }}{% endfor %}
+  </details>
+  {% endif %}
+</div>
+{% endif %}

@@ -13,16 +13,18 @@ mandar não.
 from __future__ import annotations
 
 import json
-import sqlite3
 
 from flask import flash, redirect, render_template, request, url_for
 
+from bd_nativo import banco
 import centrais_cred as CENTCRED
 import resolve_api as API
 import resolve_intimacao as RI
 
 QUEM_OPERA = ("ADMIN", "MANAGER", "USER")
-QUEM_ENVIA = ("ADMIN", "MANAGER")
+# 21/10/2026 — ordem do oficial: as escreventes operam todo o Protesto,
+# inclusive as APIs. Era ("ADMIN", "MANAGER").
+QUEM_ENVIA = ("ADMIN", "MANAGER", "USER")
 
 # O QUE VOLTA COMO FRASE, E NÃO COMO HTTP 500. São três de propósito, e a
 # terceira é a que me pegou na CENPROT: falta de credencial estoura
@@ -55,7 +57,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         """Os títulos que podem ir, e o que já foi. SÓ LÊ."""
         ambiente = ambiente_pedido()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             titulos = RI.candidatos(con)
             quadro = RI.quantos_podem_ir(con)
             enviadas = RI.abertas(con, ambiente=ambiente)
@@ -118,7 +119,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def protesto_resolve_ficha(intimacao_id: int):
         """O que subiu, o que a Central respondeu, e o histórico. SÓ LÊ."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             item = RI.uma(con, intimacao_id)
         if item is None:
             flash("Essa intimação não existe.", "warning")
@@ -140,7 +140,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         quando alguém perguntar por que o título foi a edital.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             item = RI.uma(con, intimacao_id)
         if item is None or not (item.get("intimacao_id") or "").strip():
             flash("Essa intimação não tem número na Central.", "warning")
@@ -156,8 +155,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             return redirect(url_for("protesto_resolve_ficha",
                                     intimacao_id=intimacao_id))
         with db.transaction() as con:
-            con.execute(
-                "UPDATE rs_intimacoes SET historico = ? WHERE id = ?",
+            banco(con).escrever(
+                "UPDATE rs_intimacoes SET historico = %s WHERE id = %s",
                 (json.dumps(historico, ensure_ascii=False)[:4000],
                  intimacao_id))
         flash("Histórico atualizado.", "success")
@@ -174,7 +173,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         está lá.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             item = RI.uma(con, intimacao_id)
         if item is None or not (item.get("intimacao_id") or "").strip():
             flash("Essa intimação não tem número na Central.", "warning")

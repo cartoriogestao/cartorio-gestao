@@ -24,6 +24,16 @@ A NORMA QUE ORIENTA O TEXTO — art. 369
     (III) a serventia, o livro, a folha e o número do registro. Os três modelos
     abaixo cobrem esses elementos, em estilos curtos ou mais longos — a casa
     escolhe qual cola na margem.
+
+O TEXTO DOS MODELOS MORA EM `modelos_padrao/rcpn/` (LF06C, 19/10/2026)
+    «Não deveríamos ter modelos no código; deveriam estar no banco, para
+     editar com mais facilidade.» — o oficial. Cada modelo é um papel do
+    catálogo (`RC_ANOTACAO_CRC_COMPACTA`, `_COMPLETA`, `_FE_PUBLICA`), e cada
+    frase que a comunicação pode trazer ou não — a data do óbito, o livro, a
+    serventia de origem — é uma peça dele. A REGRA de qual frase entra, por
+    espécie e pelo dado que veio, fica aqui, com a pontuação que as emenda. O
+    que se LÊ da CRC («passou a assinar», o título do ato) não é modelo: é o
+    eco do texto da Central, e também fica.
 """
 from __future__ import annotations
 
@@ -32,6 +42,8 @@ import re
 from datetime import date
 from html.parser import HTMLParser
 from typing import Any
+
+import rc_textos as TEXTOS
 
 
 class AnotacaoCrcError(ValueError):
@@ -307,6 +319,46 @@ def ler_arquivo(html: str) -> list[dict]:
 
 
 # --------------------------------------------------------------- gerar texto
+#
+# OS TRÊS PAPÉIS E AS PEÇAS DE CADA UM. `CHAVES_DO_MODELO` é o que a tela lê
+# da casa pela busca única antes de chamar `gerar`: o papel do modelo
+# escolhido e as peças que ele pode usar — e só elas, para não ir ao banco
+# atrás de texto que a montagem não pede.
+
+CHAVE_COMPACTA = "RC_ANOTACAO_CRC_COMPACTA"
+CHAVE_COMPLETA = "RC_ANOTACAO_CRC_COMPLETA"
+CHAVE_FE_PUBLICA = "RC_ANOTACAO_CRC_FE_PUBLICA"
+
+CHAVES_DO_MODELO: dict[str, tuple[str, ...]] = {
+    "compacto": (CHAVE_COMPACTA,
+                 "RC_ANOTACAO_CRC_COMPACTA__ocorrido_em",
+                 "RC_ANOTACAO_CRC_COMPACTA__registrado_sob",
+                 "RC_ANOTACAO_CRC_COMPACTA__lavrado_sob",
+                 "RC_ANOTACAO_CRC_COMPACTA__na_serventia",
+                 "RC_ANOTACAO_CRC_COMPACTA__referente_a",
+                 "RC_ANOTACAO_CRC_COMPACTA__comunicacao_de"),
+    "completo": (CHAVE_COMPLETA,
+                 "RC_ANOTACAO_CRC_COMPLETA__origem"),
+    "fe_publica": (CHAVE_FE_PUBLICA,
+                   "RC_ANOTACAO_CRC_FE_PUBLICA__ocorrido_em",
+                   "RC_ANOTACAO_CRC_FE_PUBLICA__lavrado_em"),
+}
+
+
+def _texto_de(chave: str, textos: dict[str, str] | None) -> str:
+    """O texto do papel ou da peça que vale nesta montagem. Só lê.
+
+    O que a tela leu da casa vem em `textos`; o que não veio — a chamada sem
+    conexão, o teste, a ferramenta avulsa — é o padrão da base. Texto vazio
+    também cai no padrão, como no `protesto_termo.montar`: uma peça apagada
+    por engano tiraria da margem um elemento do art. 369 sem ninguém ver.
+    """
+    return (textos or {}).get(chave) or TEXTOS.texto(chave)
+
+
+def _peca(chave: str, textos: dict[str, str] | None, **claros: Any) -> str:
+    """A peça com os claros preenchidos. Só calcula."""
+    return _texto_de(chave, textos).format(**claros)
 
 
 def _hoje_br(hoje: str | date | None) -> str:
@@ -347,79 +399,98 @@ def _indicacao_registro(c: dict) -> str:
     return ", ".join(pedacos)
 
 
-def _texto_compacto(c: dict, *, hoje_br: str) -> str:
+def _texto_compacto(c: dict, *, hoje_br: str,
+                    textos: dict[str, str] | None = None) -> str:
+    """O modelo 1 (`RC_ANOTACAO_CRC_COMPACTA`). Só calcula.
+
+    O papel é a moldura — data, ato e código —, e `{complemento}` são as
+    frases que a espécie pede e o dado permite, cada uma peça do papel. A
+    ordem e a pontuação entre elas são da regra, e ficam aqui.
+    """
     tipo_h = _titulo_humano(c["tipo"], c.get("titulo", ""))
     ind = _indicacao_registro(c)
     nome = c.get("nome_principal") or c.get("falecido") or ""
     codigo = c.get("codigo") or ""
+    origem = c.get("origem_serventia")
 
+    complemento = ""
     if c["tipo"] == "OBITO":
-        fato = ""
+        # O «de» entra mesmo sem nome («anoto o óbito de , na serventia …»):
+        # é o texto de antes, e o ouro do LF06C o guarda como estava.
+        complemento = f" de {nome}"
         if c.get("data_fato"):
-            fato = f", ocorrido em {c['data_fato']}"
-        corpo = (
-            f"ANOTAÇÃO: Aos {hoje_br}, anoto o {tipo_h} de {nome}{fato}"
-        )
+            complemento += _peca("RC_ANOTACAO_CRC_COMPACTA__ocorrido_em",
+                                 textos, data=c["data_fato"])
         if ind:
-            corpo += f", registrado sob {ind}"
-        if c.get("origem_serventia"):
-            corpo += f", na serventia {c['origem_serventia']}"
-        corpo += f" (Comunicação nº {codigo})."
-        return corpo
-
-    if c["tipo"] == "CASAMENTO":
+            complemento += _peca("RC_ANOTACAO_CRC_COMPACTA__registrado_sob",
+                                 textos, indicacao=ind)
+        if origem:
+            complemento += _peca("RC_ANOTACAO_CRC_COMPACTA__na_serventia",
+                                 textos, origem=origem)
+    elif c["tipo"] == "CASAMENTO":
         quem = " e ".join(c["conjuges"]) if c.get("conjuges") else nome
-        corpo = f"ANOTAÇÃO: Aos {hoje_br}, anoto o {tipo_h}"
         if quem:
-            corpo += f" de {quem}"
+            complemento += f" de {quem}"
         if ind:
-            corpo += f", lavrado sob {ind}"
+            complemento += _peca("RC_ANOTACAO_CRC_COMPACTA__lavrado_sob",
+                                 textos, indicacao=ind)
         if c.get("data_lavratura"):
-            corpo += f", em {c['data_lavratura']}"
-        if c.get("origem_serventia"):
-            corpo += f", na serventia {c['origem_serventia']}"
+            complemento += f", em {c['data_lavratura']}"
+        if origem:
+            complemento += _peca("RC_ANOTACAO_CRC_COMPACTA__na_serventia",
+                                 textos, origem=origem)
         if c.get("rename_frases"):
-            corpo += ". " + "; ".join(c["rename_frases"])
-        corpo += f" (Comunicação nº {codigo})."
-        return corpo
+            complemento += ". " + "; ".join(c["rename_frases"])
+    else:
+        # OUTRO
+        if nome:
+            complemento += " " + _peca("RC_ANOTACAO_CRC_COMPACTA__referente_a",
+                                       textos, nome=nome)
+        if ind:
+            complemento += f" ({ind})"
+        if origem:
+            complemento += _peca("RC_ANOTACAO_CRC_COMPACTA__comunicacao_de",
+                                 textos, origem=origem)
 
-    # OUTRO
-    corpo = f"ANOTAÇÃO: Aos {hoje_br}, anoto o {tipo_h}"
-    if nome:
-        corpo += f" referente a {nome}"
-    if ind:
-        corpo += f" ({ind})"
-    if c.get("origem_serventia"):
-        corpo += f", comunicação de {c['origem_serventia']}"
-    corpo += f" (Comunicação nº {codigo})."
-    return corpo
+    return _texto_de(CHAVE_COMPACTA, textos).format(
+        hoje=hoje_br, ato=tipo_h, complemento=complemento, codigo=codigo)
 
 
-def _texto_completo(c: dict, *, cidade_destino: str,
-                    assinatura: str) -> str:
+def _texto_completo(c: dict, *, cidade_destino: str, assinatura: str,
+                    textos: dict[str, str] | None = None) -> str:
+    """O modelo 2 (`RC_ANOTACAO_CRC_COMPLETA`). Só calcula.
+
+    A narrativa da comunicação entra emendada por « - »; sem ela, o código
+    fecha com ponto. «Origem: …» é peça, e só entra quando a comunicação diz
+    a serventia.
+    """
     tipo_h = _titulo_humano(c["tipo"], c.get("titulo", ""))
     codigo = c.get("codigo") or ""
     narrativa = c.get("texto_corpo") or ""
     # Corta «OBSERVAÇÕES» se sobrou
     narrativa = re.sub(r"(?i)\s*OBSERVA[CÇ][OÕ]ES\s*:.*$", "", narrativa).strip()
 
-    partes = [
-        f"Comunicação de {tipo_h}: Código da comunicação: {codigo} - "
-        f"{narrativa}" if narrativa else
-        f"Comunicação de {tipo_h}: Código da comunicação: {codigo}."
-    ]
+    frase_origem = ""
     if c.get("origem_serventia"):
-        partes.append(f"Origem: {c['origem_serventia']}.")
+        frase_origem = " " + _peca("RC_ANOTACAO_CRC_COMPLETA__origem", textos,
+                                   origem=c["origem_serventia"])
     cidade = cidade_destino or _cidade_do_destino(c.get("destino", ""))
-    partes.append(
-        f"Eu, {assinatura}, que anotei. "
-        f"{cidade or '______________'}, ___/___/____."
-    )
-    return " ".join(partes)
+    return _texto_de(CHAVE_COMPLETA, textos).format(
+        ato=tipo_h, codigo=codigo,
+        narrativa=f" - {narrativa}" if narrativa else ".",
+        frase_origem=frase_origem, assinatura=assinatura,
+        cidade=cidade or "______________")
 
 
 def _texto_fe_publica(c: dict, *, hoje_br: str, cidade_destino: str,
-                      assinatura: str) -> str:
+                      assinatura: str,
+                      textos: dict[str, str] | None = None) -> str:
+    """O modelo 3 (`RC_ANOTACAO_CRC_FE_PUBLICA`). Só calcula.
+
+    Cada claro entre o ato e o ponto traz a própria pontuação e fica vazio
+    quando a comunicação não tem o dado; a data do óbito só vale no óbito, e
+    os nomes novos, só no casamento.
+    """
     tipo_h = _titulo_humano(c["tipo"], c.get("titulo", ""))
     origem = c.get("origem_serventia") or "serventia de origem"
     codigo = c.get("codigo") or ""
@@ -427,35 +498,38 @@ def _texto_fe_publica(c: dict, *, hoje_br: str, cidade_destino: str,
     nome = c.get("nome_principal") or c.get("falecido") or ""
     cidade = cidade_destino or _cidade_do_destino(c.get("destino", ""))
 
-    meio = f"o {tipo_h}"
-    if nome:
-        meio += f" de {nome}"
+    ocorrido_em = ""
     if c["tipo"] == "OBITO" and c.get("data_fato"):
-        meio += f", ocorrido em {c['data_fato']}"
-    if ind:
-        meio += f", {ind}"
+        ocorrido_em = _peca("RC_ANOTACAO_CRC_FE_PUBLICA__ocorrido_em", textos,
+                            data=c["data_fato"])
+    lavrado_em = ""
     if c.get("data_lavratura"):
-        meio += f", lavrado em {c['data_lavratura']}"
+        lavrado_em = _peca("RC_ANOTACAO_CRC_FE_PUBLICA__lavrado_em", textos,
+                           data=c["data_lavratura"])
+    novos_nomes = ""
     if c["tipo"] == "CASAMENTO" and c.get("rename_frases"):
-        meio += ". " + "; ".join(c["rename_frases"])
+        novos_nomes = ". " + "; ".join(c["rename_frases"])
 
-    texto = (
-        f"ANOTAÇÃO: Conforme comunicação recebida da {origem}, por meio "
-        f"eletrônico, através da Central do Registro Civil "
-        f"(Código nº {codigo}), {meio}. Dou fé. "
-        f"{cidade or '______________'}, {hoje_br}."
-    )
-    if assinatura:
-        texto += f" {assinatura}."
-    return texto
+    return _texto_de(CHAVE_FE_PUBLICA, textos).format(
+        origem=origem, codigo=codigo, ato=tipo_h,
+        de_quem=f" de {nome}" if nome else "",
+        ocorrido_em=ocorrido_em,
+        indicacao=f", {ind}" if ind else "",
+        lavrado_em=lavrado_em, novos_nomes=novos_nomes,
+        cidade=cidade or "______________", hoje=hoje_br,
+        assinatura=f" {assinatura}." if assinatura else "")
 
 
 def gerar(comuns: list[dict], modelo: str, *, hoje=None,
           assinatura: str | None = None, cidade_destino: str | None = None,
-          especie: str | None = None) -> dict:
+          especie: str | None = None,
+          textos: dict[str, str] | None = None) -> dict:
     """Monta os textos de anotação. NÃO ESCREVE no banco nem no assento.
 
     `especie` filtra por 'OBITO', 'CASAMENTO' ou None (todos).
+    `textos` é o que a tela leu da casa pela busca única — chave → texto, do
+    papel e das peças de `CHAVES_DO_MODELO[modelo]`; o que faltar sai do
+    padrão da base. Esta função continua pura: quem tem a conexão lê.
     Devolve ``{ok, modelo, itens:[{codigo,titulo,texto,...}], texto}``.
     """
     mid = (modelo or "").strip().lower()
@@ -480,14 +554,15 @@ def gerar(comuns: list[dict], modelo: str, *, hoje=None,
         if filtro and c.get("tipo") != filtro:
             continue
         if mid == "compacto":
-            texto = _texto_compacto(c, hoje_br=hoje_br)
+            texto = _texto_compacto(c, hoje_br=hoje_br, textos=textos)
         elif mid == "completo":
             texto = _texto_completo(
-                c, cidade_destino=cidade, assinatura=assina or ASSINATURA_PADRAO)
+                c, cidade_destino=cidade, assinatura=assina or ASSINATURA_PADRAO,
+                textos=textos)
         else:
             texto = _texto_fe_publica(
                 c, hoje_br=hoje_br, cidade_destino=cidade,
-                assinatura=assina)
+                assinatura=assina, textos=textos)
 
         itens.append({
             "codigo": c.get("codigo"),
@@ -508,3 +583,19 @@ def gerar(comuns: list[dict], modelo: str, *, hoje=None,
         "itens": itens,
         "texto": "\n\n".join(x["texto"] for x in itens),
     }
+
+
+def __getattr__(nome: str):
+    """Os nomes antigos dos três modelos, lidos da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06C (19/10/2026) e mora em
+    `modelos_padrao/rcpn/`. `ANOTACAO_COMPACTA`, `ANOTACAO_COMPLETA` e
+    `ANOTACAO_FE_PUBLICA` são os nomes que o catálogo dá aos três papéis, e
+    quem os pede recebe o padrão da base — o MESMO que a anotação usa, e não
+    uma cópia que ficou para trás. Nome que não é de papel continua sendo
+    `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)

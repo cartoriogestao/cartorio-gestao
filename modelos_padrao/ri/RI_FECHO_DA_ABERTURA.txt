@@ -1,0 +1,1 @@
+{{ cidade }}/{{ uf }}, {{ data_extenso }}. O referido é verdade e dou fé.

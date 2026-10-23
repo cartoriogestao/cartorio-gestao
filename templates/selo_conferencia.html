@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{# A CONFERÊNCIA DO GESTOR (LX16): o que saiu sem cobertura e o que falta de
+   comprovante, por escrevente. O interruptor da trava é só do ADMIN. #}
+{% block title %}Selos × caixa — conferência{% endblock %}
+{% block heading %}<h1>Selos × caixa — conferência</h1>{% endblock %}
+{% block content %}
+<section class="card">
+  <h2 id="trava">Trava do selo pago</h2>
+  <p>A trava está <strong>{{ 'LIGADA' if trava_ligada else 'DESLIGADA' }}</strong>.</p>
+  {% if eh_admin %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if trava_ligada %}
+      <label>Justificativa <input name="justificativa" required minlength="15" size="60"></label>
+      <button class="button danger" type="submit" name="acao" value="desligar">Desligar a trava</button>
+    {% else %}
+      <input type="hidden" name="justificativa" value="">
+      <button class="button primary" type="submit" name="acao" value="ligar">Religar a trava</button>
+    {% endif %}
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Selos liberados sem cobertura</h2>
+  {% if liberados %}
+  <table><thead><tr><th>Ato</th><th>Selo</th><th>Quem obteve</th><th>Liberado por</th><th>Justificativa</th></tr></thead><tbody>
+  {% for l in liberados %}
+    <tr><td><a href="{{ url_for('selo_cobertura', tabela=l.tabela, ato_id=l.ato_id) }}">{{ l.rotulo }} {{ l.ato_id }}</a></td>
+        <td>{{ l.selos|join(', ') }}</td><td>{{ l.obtido_por or '' }}</td>
+        <td>{{ l.liberado_por or '' }} em {{ (l.liberado_em or '')[:10] }}</td><td>{{ l.justificativa }}</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% else %}<p>Nenhum.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Gratuidades sem comprovante há {{ prazo }} dias ou mais, por escrevente</h2>
+  {% if gratuitos %}
+  <table><thead><tr><th>Escrevente</th><th>Quantos</th><th>Mais antigo</th></tr></thead><tbody>
+  {% for g in gratuitos %}
+    <tr><td>{{ g.escrevente }}</td><td>{{ g.quantos }}</td>
+        <td><code>{{ g.mais_antigo.numero }}</code> — {{ g.dias }} dia(s)</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% else %}<p>Nenhuma.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Atos aguardando cobertura</h2>
+  {% if aguardando %}<ul>{% for a in aguardando %}
+    <li><a href="{{ url_for('selo_cobertura', tabela=a.tabela, ato_id=a.ato_id) }}">{{ a.tabela|replace('_', ' ') }} {{ a.ato_id }}</a> — {{ a.usuario or '' }}, desde {{ (a.desde or '')[:10] }}</li>
+  {% endfor %}</ul>{% else %}<p>Nenhum.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Selos pagos sem protocolo ou sem pagamento, desde {{ desde[8:10] }}/{{ desde[5:7] }}/{{ desde[:4] }}</h2>
+  <p><small>Os de antes desta versão não travaram nada: a lista é para conferir.</small></p>
+  {% if eh_admin %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Desde <input type="date" name="desde" value="{{ desde }}"></label>
+    <button class="button" type="submit" name="acao" value="desde">Mudar a data</button>
+  </form>
+  {% endif %}
+  {% if pagos_sem_cobertura %}
+  <table><thead><tr><th>Selo</th><th>Ato</th><th>Quem</th><th>Quando</th></tr></thead><tbody>
+  {% for s in pagos_sem_cobertura %}
+    <tr><td><code>{{ s.numero }}</code></td><td>{{ s.rotulo }} {{ s.ato_id or '' }}</td>
+        <td>{{ s.obtido_por or '' }}</td><td>{{ (s.obtido_em or '')[:16]|replace('T', ' ') }}</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% if pagos_cortados %}
+  <p data-pagos-cortados><strong>A lista mostra só os {{ pagos_limite }} mais antigos.</strong>
+     Há mais selos sem cobertura depois deles: resolva estes, ou mude a data «Desde».</p>
+  {% endif %}
+  {% else %}<p>Nenhum.</p>{% endif %}
+</section>
+{% endblock %}

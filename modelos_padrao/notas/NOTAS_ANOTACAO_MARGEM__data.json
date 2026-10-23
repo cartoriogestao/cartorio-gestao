@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ANOTACAO_MARGEM__data",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Anotação à margem — data",
+  "formato": "CHAVES",
+  "explica": "A data do ato que gerou a anotação.",
+  "campos": [
+    "data"
+  ]
+}

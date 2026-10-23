@@ -1,0 +1,16 @@
+{
+  "chave": "PT_TERMO_QUALIFICACAO",
+  "atribuicao": "Protesto",
+  "nome": "Termo do protesto — qualificação do registro",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA põe no alto do termo do protesto — o «acima mencionado e qualificado» do texto da casa. A Lei 9.492/1997, art. 22, I a VII, manda o registro conter o número de ordem e a data do registro, a data e o número da protocolização, o apresentante, as indicações do título e o devedor com documento e endereço; o art. 21, § 4º, diz que «os devedores não poderão deixar de figurar no termo» (CN-MA art. 914). Por isso ela entra sempre, mesmo no termo que a casa personalizou. {lugar} e {data} são os do registro; {protocolo}, {apresentante}, {titulo}, {credor} e {devedor} (todos) o sistema escreve com as frases do instrumento (PT_INSTRUMENTO_DESCRICAO), para o registro e o instrumento baterem. Claro sem o fato entra vazio, e a linha que fica sem nenhum some. O LIVRO LAVRA O PADRÃO DESTA FRASE, como as da intimação (LF06E).",
+  "campos": [
+    "lugar",
+    "data",
+    "protocolo",
+    "apresentante",
+    "titulo",
+    "credor",
+    "devedor"
+  ]
+}

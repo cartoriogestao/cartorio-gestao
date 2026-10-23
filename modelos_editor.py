@@ -15,6 +15,8 @@ import sqlite3
 import zipfile
 from typing import Any, Callable
 
+import tetos_de_entrada as TETO
+from bd_nativo import banco
 import modelos_da_casa as CASA
 import modelos_elementos as ELEM
 import modelos_moldes as MOLDES
@@ -149,13 +151,12 @@ def listar_modelos_rcpn(con: sqlite3.Connection) -> list[dict]:
 
 
 def _versao_status(con, area, template_id, parte, status):
-    con.row_factory = sqlite3.Row
-    return con.execute(
+    return banco(con).um(
         """SELECT id, sha256, autor, criado_em, nota, status
              FROM mo_versoes
-            WHERE area=? AND template_id=? AND parte=? AND status=?
+            WHERE area = %s AND template_id = %s AND parte = %s AND status = %s
             ORDER BY id DESC LIMIT 1""",
-        (area, template_id, parte, status)).fetchone()
+        (area, template_id, parte, status))
 
 
 # ============================================================ vigente (hoje)
@@ -218,8 +219,8 @@ def carregar(con: sqlite3.Connection, *, area: str, template_id: str,
     for st in ordem:
         row = _versao_status(con, a, t, p, st)
         if row:
-            full = con.execute(
-                "SELECT * FROM mo_versoes WHERE id=?", (row["id"],)).fetchone()
+            full = banco(con).um(
+                "SELECT * FROM mo_versoes WHERE id = %s", (row["id"],))
             out = _row_para_dict(full, origem=st)
             break
     if out is None:
@@ -272,11 +273,11 @@ def chave_ligada(con_ou_settings, area: str = AREA_RCPN) -> bool:
     chave = chave_da_area(a)
     if hasattr(con_ou_settings, "execute"):
         try:
-            row = con_ou_settings.execute(
-                "SELECT value FROM settings WHERE key=?", (chave,)).fetchone()
+            row = banco(con_ou_settings).um(
+                "SELECT value FROM settings WHERE key = %s", (chave,))
             if row is None:
                 return False
-            val = row[0] if not isinstance(row, sqlite3.Row) else row["value"]
+            val = row["value"]
             return str(val or "0").strip() == "1"
         except sqlite3.OperationalError:
             return False
@@ -296,8 +297,8 @@ def definir_chave(con: sqlite3.Connection, area: str, ligada: bool,
     if via_db_set:
         via_db_set({chave: val})
         return
-    con.execute(
-        "INSERT INTO settings(key,value) VALUES(?,?) "
+    banco(con).escrever(
+        "INSERT INTO settings(key,value) VALUES(%s,%s) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         (chave, val))
 
@@ -324,8 +325,8 @@ def conteudo_publicado_se_ligado(
     row = _versao_status(con, a, t, p, STATUS_PUBLICADA)
     if not row:
         return None
-    full = con.execute(
-        "SELECT * FROM mo_versoes WHERE id=?", (row["id"],)).fetchone()
+    full = banco(con).um(
+        "SELECT * FROM mo_versoes WHERE id = %s", (row["id"],))
     return _row_para_dict(full, origem=STATUS_PUBLICADA)
 
 
@@ -398,8 +399,7 @@ def validar(con: sqlite3.Connection, *, area: str, template_id: str,
     texto = conteudo if conteudo is not None else ""
     if conteudo_blob and p == PARTE_MOLDE:
         try:
-            with zipfile.ZipFile(io.BytesIO(conteudo_blob)) as z:
-                texto = z.read("content.xml").decode("utf-8", errors="replace")
+            texto = _content_xml(conteudo_blob)
         except Exception as err:
             erros.append({
                 "linha": 0, "coluna": 0, "codigo": "odt_invalido",
@@ -433,8 +433,7 @@ def validar(con: sqlite3.Connection, *, area: str, template_id: str,
         vig_txt = vig.get("conteudo") or ""
         if vig.get("conteudo_blob"):
             try:
-                with zipfile.ZipFile(io.BytesIO(vig["conteudo_blob"])) as z:
-                    vig_txt = z.read("content.xml").decode("utf-8", errors="replace")
+                vig_txt = _content_xml(vig["conteudo_blob"])
             except Exception:
                 vig_txt = ""
         vig_ph = _placeholders_no_texto(vig_txt)
@@ -551,15 +550,15 @@ def salvar_rascunho(con: sqlite3.Connection, *, area: str, template_id: str,
     # Arquiva rascunho anterior (histórico preserva)
     ant = _versao_status(con, a, t, p, STATUS_RASCUNHO)
     if ant:
-        con.execute(
-            "UPDATE mo_versoes SET status=? WHERE id=?",
+        banco(con).escrever(
+            "UPDATE mo_versoes SET status = %s WHERE id = %s",
             (STATUS_ARQUIVADA, ant["id"]))
 
-    cur = con.execute(
+    banco(con).escrever(
         """INSERT INTO mo_versoes
            (area, template_id, parte, conteudo, conteudo_blob, sha256,
             status, autor, criado_em, nota)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (a, t, p, texto, blob, sha, STATUS_RASCUNHO,
          autor or None, agora or "", nota or None))
     return carregar(con, area=a, template_id=t, parte=p, qual="rascunho")
@@ -617,22 +616,22 @@ def publicar(con: sqlite3.Connection, *, area: str, template_id: str,
     # Arquiva publicada anterior
     ant = _versao_status(con, a, t, p, STATUS_PUBLICADA)
     if ant:
-        con.execute(
-            "UPDATE mo_versoes SET status=? WHERE id=?",
+        banco(con).escrever(
+            "UPDATE mo_versoes SET status = %s WHERE id = %s",
             (STATUS_ARQUIVADA, ant["id"]))
 
     # Arquiva rascunho correspondente (vira o histórico da publicação)
     rasc = _versao_status(con, a, t, p, STATUS_RASCUNHO)
     if rasc:
-        con.execute(
-            "UPDATE mo_versoes SET status=? WHERE id=?",
+        banco(con).escrever(
+            "UPDATE mo_versoes SET status = %s WHERE id = %s",
             (STATUS_ARQUIVADA, rasc["id"]))
 
-    con.execute(
+    banco(con).escrever(
         """INSERT INTO mo_versoes
            (area, template_id, parte, conteudo, conteudo_blob, sha256,
             status, autor, criado_em, nota)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (a, t, p, texto, blob, sha, STATUS_PUBLICADA,
          autor or None, agora or "", nota or "publicada"))
     return carregar(con, area=a, template_id=t, parte=p, qual="publicada")
@@ -644,29 +643,35 @@ def historico(con: sqlite3.Connection, *, area: str, template_id: str,
     t = _tpl_ok(template_id)
     p = _parte_ok(t, parte)
     garantir_schema(con)
-    con.row_factory = sqlite3.Row
-    rows = con.execute(
+    return banco(con).ler(
         """SELECT id, area, template_id, parte, sha256, status, autor,
                   criado_em, nota, length(conteudo) AS tam_texto,
                   length(conteudo_blob) AS tam_blob
              FROM mo_versoes
-            WHERE area=? AND template_id=? AND parte=?
-            ORDER BY id DESC LIMIT ?""",
-        (a, t, p, limite)).fetchall()
-    return [dict(r) for r in rows]
+            WHERE area = %s AND template_id = %s AND parte = %s
+            ORDER BY id DESC LIMIT %s""",
+        (a, t, p, limite))
 
 
 def _content_xml(blob: bytes) -> str:
+    """O `content.xml` do `.odt`, com teto (LX12, LS02 M2, 19/10/2026).
+
+    O molde chega do formulário; sem teto, um `.odt` de 1 KB que se abre em
+    gigabytes (zip-bomba) derrubava o servidor na validação ou no diff. A
+    recusa é `TetoExcedido` (um `ValueError`), que a validação já mostra como
+    «ODT inválido».
+    """
     with zipfile.ZipFile(io.BytesIO(blob)) as z:
-        return z.read("content.xml").decode("utf-8", errors="replace")
+        TETO.conferir_pacote(z)
+        return TETO.ler_membro(z, "content.xml").decode("utf-8", errors="replace")
 
 
 def diff_versoes(con: sqlite3.Connection, id_a: int, id_b: int) -> dict:
     """Diff textual entre duas versões. Para ODT: diff do content.xml + sha."""
     garantir_schema(con)
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT * FROM mo_versoes WHERE id=?", (id_a,)).fetchone()
-    b = con.execute("SELECT * FROM mo_versoes WHERE id=?", (id_b,)).fetchone()
+    bd = banco(con)
+    a = bd.um("SELECT * FROM mo_versoes WHERE id = %s", (id_a,))
+    b = bd.um("SELECT * FROM mo_versoes WHERE id = %s", (id_b,))
     if not a or not b:
         raise VersaoNaoEncontrada("Versão não encontrada para diff.")
 
@@ -705,16 +710,14 @@ def historico_geral(con: sqlite3.Connection, *, area: str,
     """Últimas versões de todos os modelos da área (sem filtrar por modelo)."""
     a = _area_ok(area)
     garantir_schema(con)
-    con.row_factory = sqlite3.Row
-    rows = con.execute(
+    return banco(con).ler(
         """SELECT id, area, template_id, parte, sha256, status, autor,
                   criado_em, nota, length(conteudo) AS tam_texto,
                   length(conteudo_blob) AS tam_blob
              FROM mo_versoes
-            WHERE area=?
-            ORDER BY id DESC LIMIT ?""",
-        (a, limite)).fetchall()
-    return [dict(r) for r in rows]
+            WHERE area = %s
+            ORDER BY id DESC LIMIT %s""",
+        (a, limite))
 
 
 def par_para_diff(con: sqlite3.Connection, *, id_a: int = 0, id_b: int = 0,
@@ -731,35 +734,35 @@ def par_para_diff(con: sqlite3.Connection, *, id_a: int = 0, id_b: int = 0,
     if id_a and id_b:
         return id_a, id_b
     garantir_schema(con)
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     um = id_b or id_a
     if um:
-        row = con.execute(
-            "SELECT id, area, template_id, parte FROM mo_versoes WHERE id=?",
-            (um,)).fetchone()
+        row = bd.um(
+            "SELECT id, area, template_id, parte FROM mo_versoes WHERE id = %s",
+            (um,))
         if not row:
             raise VersaoNaoEncontrada("Versão não encontrada para diff.")
-        ant = con.execute(
+        ant = bd.um(
             """SELECT id FROM mo_versoes
-                WHERE area=? AND template_id=? AND parte=? AND id<?
+                WHERE area = %s AND template_id = %s AND parte = %s AND id < %s
                 ORDER BY id DESC LIMIT 1""",
-            (row["area"], row["template_id"], row["parte"], um)).fetchone()
+            (row["area"], row["template_id"], row["parte"], um))
         return (int(ant["id"]), um) if ant else None
     a = _area_ok(area)
     if template_id:
         t = _tpl_ok(template_id)
         p = _parte_ok(t, parte)
     else:
-        ultima = con.execute(
-            """SELECT template_id, parte FROM mo_versoes WHERE area=?
-                ORDER BY id DESC LIMIT 1""", (a,)).fetchone()
+        ultima = bd.um(
+            """SELECT template_id, parte FROM mo_versoes WHERE area = %s
+                ORDER BY id DESC LIMIT 1""", (a,))
         if not ultima:
             return None
         t, p = ultima["template_id"], ultima["parte"]
-    duas = con.execute(
+    duas = bd.ler(
         """SELECT id FROM mo_versoes
-            WHERE area=? AND template_id=? AND parte=?
-            ORDER BY id DESC LIMIT 2""", (a, t, p)).fetchall()
+            WHERE area = %s AND template_id = %s AND parte = %s
+            ORDER BY id DESC LIMIT 2""", (a, t, p))
     if len(duas) < 2:
         return None
     return int(duas[1]["id"]), int(duas[0]["id"])
@@ -769,9 +772,8 @@ def restaurar_como_rascunho(con: sqlite3.Connection, versao_id: int, *,
                             autor: str = "", agora: str = "") -> dict:
     """Copia uma versão antiga como novo rascunho."""
     garantir_schema(con)
-    con.row_factory = sqlite3.Row
-    row = con.execute(
-        "SELECT * FROM mo_versoes WHERE id=?", (versao_id,)).fetchone()
+    row = banco(con).um(
+        "SELECT * FROM mo_versoes WHERE id = %s", (versao_id,))
     if not row:
         raise EditorError("Versão não encontrada.")
     return salvar_rascunho(
@@ -817,8 +819,8 @@ def semear_v1(con: sqlite3.Connection, *, area: str = AREA_RCPN,
                 })
                 continue
             if ant and forcar:
-                con.execute(
-                    "UPDATE mo_versoes SET status=? WHERE id=?",
+                banco(con).escrever(
+                    "UPDATE mo_versoes SET status = %s WHERE id = %s",
                     (STATUS_ARQUIVADA, ant["id"]))
             sha = vig["sha256"]
             # Conferência byte a byte
@@ -826,18 +828,18 @@ def semear_v1(con: sqlite3.Connection, *, area: str = AREA_RCPN,
                 assert _sha_texto(vig["conteudo_blob"]) == sha
             else:
                 assert _sha_texto(vig["conteudo"] or "") == sha
-            cur = con.execute(
+            vid = banco(con).escrever(
                 """INSERT INTO mo_versoes
                    (area, template_id, parte, conteudo, conteudo_blob, sha256,
                     status, autor, criado_em, nota)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   RETURNING id""",
                 (a, t, p, vig.get("conteudo"), vig.get("conteudo_blob"),
                  sha, STATUS_PUBLICADA, autor, agora or "",
-                 "semente v1 = vigente"))
-            vid = cur.lastrowid
+                 "semente v1 = vigente"))[0]["id"]
             # Validar igualdade
-            row = con.execute(
-                "SELECT * FROM mo_versoes WHERE id=?", (vid,)).fetchone()
+            row = banco(con).um(
+                "SELECT * FROM mo_versoes WHERE id = %s", (vid,))
             if p == PARTE_MOLDE:
                 assert bytes(row["conteudo_blob"]) == vig["conteudo_blob"]
             else:

@@ -234,8 +234,7 @@ def montar(con, conferidos: list[dict], atos: list[dict]) -> dict:
 
 
 if __name__ == "__main__":
-    import sqlite3
-
+    import banco_pg
     import conferir_para_a_crc as CONF
 
     conferencia, extracao, banco, prefixo = sys.argv[1:5]
@@ -247,8 +246,9 @@ if __name__ == "__main__":
     # de `montar` recusaria o segundo documento do mesmo ato, que é o certo:
     # quem decide qual papel vale é `juntar_o_mesmo_ato`, num lugar só.
     atos, _ = CONF.juntar_o_mesmo_ato(extraidos)
-    con = sqlite3.connect(f"file:{banco}?mode=ro", uri=True)
-    con.row_factory = sqlite3.Row
+    # PELA PORTA DO BANCO: `importar_padrao` já é nativo e recusa o `sqlite3`
+    # cru, e fora do sistema ninguém instala o desvio do `sqlite3.connect`.
+    con = banco_pg.conectar(f"file:{banco}?mode=ro", uri=True)
     try:
         saida = montar(con, conferidos, atos)
     finally:

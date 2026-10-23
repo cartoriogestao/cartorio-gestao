@@ -9,13 +9,15 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
 
+from banco_de_teste import conexao_de_teste
 from modelos_editor_schema import init_modelos_editor_schema, SCHEMA
 
 
 @pytest.fixture()
 def con(tmp_path):
-    c = sqlite3.connect(tmp_path / "t.sqlite3")
+    c = conexao_de_teste()
     c.row_factory = sqlite3.Row
     yield c
     c.close()

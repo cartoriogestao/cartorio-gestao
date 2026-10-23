@@ -1,0 +1,16 @@
+{
+  "chave": "NOTAS_CERTIDAO_POSITIVA",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Certidão positiva de atos",
+  "formato": "JINJA",
+  "explica": "Busca pela parte (nome ou documento) que achou atos: relaciona livro, folha, data e qualificação.",
+  "campos": [
+    "achados",
+    "documento",
+    "finalidade",
+    "nome",
+    "periodo",
+    "requerente",
+    "requerente_documento"
+  ]
+}

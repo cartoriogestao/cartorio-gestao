@@ -67,12 +67,12 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
 
 import gestor_conferencia as GC
+from bd_nativo import banco
 
 SETOR = "PROTESTO"
 
@@ -136,15 +136,14 @@ ROTULOS = {
 # ---------------------------------------------------------------- miúdos
 
 def _tem_tabela(con, nome: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                       (nome,)).fetchone() is not None
+    return banco(con).tem_tabela(nome)
 
 
 def _configuracao(con, chave: str, padrao: str = "") -> str:
     if not _tem_tabela(con, "settings"):
         return padrao
-    r = con.execute("SELECT value FROM settings WHERE key=?", (chave,)).fetchone()
-    return (r[0] or "").strip() if r and (r[0] or "").strip() else padrao
+    r = banco(con).um("SELECT value FROM settings WHERE key=%s", (chave,))
+    return (r["value"] or "").strip() if r and (r["value"] or "").strip() else padrao
 
 
 def _feriados(con) -> set[date]:
@@ -463,8 +462,8 @@ def _regras_do_fluxo(con, fluxo: dict, hoje: date, feriados) -> list[dict]:
 
     # 1.g  O QUE A PASTA TEM E O SISTEMA NÃO — protesto praticado por fora.
     if _tem_tabela(con, "pt_titulos"):
-        no_sistema = {str(r[0]) for r in con.execute(
-            "SELECT protocolo FROM pt_titulos WHERE protocolo IS NOT NULL")}
+        no_sistema = {str(r["protocolo"]) for r in banco(con).ler(
+            "SELECT protocolo FROM pt_titulos WHERE protocolo IS NOT NULL ORDER BY id")}
         fora = sorted(p for p, t in conf.items()
                       if p not in no_sistema and t["apontado"]
                       and not GC.antes_do_corte(t["apontado"]))
@@ -475,7 +474,7 @@ def _regras_do_fluxo(con, fluxo: dict, hoje: date, feriados) -> list[dict]:
                 f"{len(fora)} título(s) apontado(s) desde {_br(primeiro)} que não estão "
                 "no sistema",
                 "Estão nas confirmações da pasta da CRA e não em `pt_titulos`: o protesto "
-                "está sendo praticado no E-Ofício. A inspeção 0000524 deu 30 dias para o "
+                "está sendo praticado no sistema antigo. A inspeção 0000524 deu 30 dias para o "
                 "Livro de Protocolo e o Livro de Registro de Pagamentos (recomendação 5), "
                 "e esses livros só saem do sistema quando o ato é lavrado nele. "
                 f"Protocolos: {', '.join(fora[:12])}{'…' if len(fora) > 12 else ''}.",
@@ -496,7 +495,7 @@ def _atos(con) -> dict[int, list[dict]]:
     if not _tem_tabela(con, "pt_atos"):
         return {}
     por_titulo: dict[int, list[dict]] = defaultdict(list)
-    for r in con.execute("""SELECT id, titulo_id, tipo, data_ato, detalhe_json, cancelado,
+    for r in banco(con).ler("""SELECT id, titulo_id, tipo, data_ato, detalhe_json, cancelado,
                                    livro_id, folha, origem
                               FROM pt_atos ORDER BY id"""):
         d = dict(r)
@@ -526,9 +525,9 @@ def _regras_do_sistema(con, hoje: date, feriados,
     if not _tem_tabela(con, "pt_titulos"):
         return []
     saida: list[dict] = []
-    titulos = {r["id"]: dict(r) for r in con.execute(
+    titulos = {r["id"]: dict(r) for r in banco(con).ler(
         """SELECT id, numero_titulo, protocolo, especie, situacao, data_vencimento,
-                  apresentante_codigo, criado_em FROM pt_titulos""")}
+                  apresentante_codigo, criado_em FROM pt_titulos ORDER BY id""")}
     atos = _atos(con)
     tem_avisos = _tem_tabela(con, "pt_avisos")
 
@@ -586,9 +585,9 @@ def _regras_do_sistema(con, hoje: date, feriados,
                     f"Intimação de {_br(i['dia'])} depois do 1º dia útil — {rot}",
                     f"Apontado em {_br(apont['dia'])}.", None, ART_919))
             if (i["detalhe"].get("modo") or "").upper() == "EDITAL" and tem_avisos:
-                tentou = con.execute(
-                    """SELECT COUNT(*) FROM pt_avisos WHERE titulo_id=?
-                          AND situacao IN ('NAO_ENTREGUE','EDITAL')""", (tid,)).fetchone()[0]
+                tentou = banco(con).valor(
+                    """SELECT COUNT(*) AS n FROM pt_avisos WHERE titulo_id=%s
+                          AND situacao IN ('NAO_ENTREGUE','EDITAL')""", (tid,))
                 if not tentou:
                     saida.append(GC._achado(
                         f"PT_EDITAL:{i['id']}", "PROTESTO_EDITAL_SEM_DILIGENCIA", "ATENCAO",
@@ -656,18 +655,19 @@ def _certidoes_negativas(con, titulos: dict, atos: dict) -> list[dict]:
         return []
     so = lambda x: "".join(ch for ch in str(x or "") if ch.isdigit())  # noqa: E731
     protestos_do_doc: dict[str, list[tuple]] = defaultdict(list)
-    for r in con.execute("SELECT titulo_id, documento_numero FROM pt_devedores"):
-        doc = so(r[1])
+    for r in banco(con).ler("SELECT titulo_id, documento_numero FROM pt_devedores ORDER BY id"):
+        doc = so(r["documento_numero"])
         if len(doc) not in (11, 14):
             continue
-        lista = atos.get(r[0], [])
+        lista = atos.get(r["titulo_id"], [])
         for p in (a for a in lista if a["tipo"] == "PROTESTO" and not a["cancelado"]):
             fim = next((a["dia"] for a in lista if a["tipo"] == "CANCELAMENTO"
                         and not a["cancelado"] and a["id"] > p["id"]), None)
-            protestos_do_doc[doc].append((p["dia"], fim, r[0]))
+            protestos_do_doc[doc].append((p["dia"], fim, r["titulo_id"]))
     saida = []
-    for c in con.execute("""SELECT id, numero, ano, documento, nome, emitida_em
-                              FROM pt_certidoes WHERE tipo='NEGATIVA' AND cancelada=0"""):
+    for c in banco(con).ler("""SELECT id, numero, ano, documento, nome, emitida_em
+                              FROM pt_certidoes WHERE tipo='NEGATIVA' AND cancelada=0
+                              ORDER BY id"""):
         dia = _d(c["emitida_em"])
         if not dia or GC.antes_do_corte(dia):
             continue
@@ -693,7 +693,13 @@ def _modelo_do_termo(con) -> list[dict]:
         import modelos_da_casa as MC
         texto = MC.corpo_de(con, PT.CHAVE_NO_CATALOGO)
     except Exception:                                   # noqa: BLE001 — cai no padrão
-        texto = PT.TEXTO_BASE
+        # O PADRÃO DA BASE (LF06A): o `TEXTO_BASE` de antes era o começo dele,
+        # e saiu do código com o resto do termo. Sem banco nem pasta, não há
+        # texto a conferir — e o alerta cala, como calava.
+        try:
+            texto = MC.padrao_de(PT.CHAVE_NO_CATALOGO)
+        except Exception:                               # noqa: BLE001
+            texto = ""
     if "9.430" not in (texto or ""):
         return []
     return [GC._achado(
@@ -707,10 +713,9 @@ def _modelo_do_termo(con) -> list[dict]:
 
 # --------------------------------------------------------------- a regra
 
-def conferir(con: sqlite3.Connection, hoje: date, *, pasta_cra: Path | None = None) -> list[dict]:
+def conferir(con, hoje: date, *, pasta_cra: Path | None = None) -> list[dict]:
     """Tudo o que o agente do Protesto aponta. SÓ LÊ. Cada parte que quebra
     vira NAO_MEDIU, e as outras continuam."""
-    con.row_factory = sqlite3.Row
     feriados = _feriados(con)
     achados: list[dict] = []
     pasta = Path(pasta_cra) if pasta_cra else _pasta_cra(con)

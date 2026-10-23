@@ -1,0 +1,1 @@
+AVERBAÇÃO DE NOTIFICAÇÃO NEGATIVA. Certifico que, realizadas {quantas} diligências em dias e horários alternados no endereço {endereco}, não foi localizado(a) {destinatario}{documento}, conforme a certidão de notificação nº {certidao}. {cidade}, {data_extenso}.

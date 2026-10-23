@@ -51,6 +51,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 from typing import Any
 
+import tetos_de_entrada as TETO
+
 
 class TeorArquivoError(ValueError):
     """Impedimento de regra, com mensagem pronta para o balcao."""
@@ -106,9 +108,19 @@ def _extensao(nome: Any) -> str:
 
 
 def _abrir(conteudo: bytes, ext: str) -> ET.Element:
+    """O XML do conteúdo do arquivo — com teto do que ele descompacta.
+
+    O TETO É DO LX12 (LS02 M1, 19/10/2026): `pacote.read` lia o `content.xml`
+    sem limite, e um `.odt` de 1 KB que se abre em gigabytes (zip-bomba)
+    derrubava o único processo do servidor. O teto é o da casa
+    (`tetos_de_entrada`), generoso: nenhum teor de verdade chega perto.
+    """
     try:
         with zipfile.ZipFile(io.BytesIO(conteudo)) as pacote:
-            bruto = pacote.read(_CONTEUDO[ext])
+            TETO.conferir_pacote(pacote)
+            bruto = TETO.ler_membro(pacote, _CONTEUDO[ext])
+    except TETO.TetoExcedido as erro:
+        raise TeorArquivoError(str(erro)) from erro
     except KeyError as erro:
         raise TeorArquivoError(
             f"Este arquivo {ext} não tem o conteúdo esperado dentro. Se ele "
@@ -237,8 +249,11 @@ def _texto_do_odt(no: ET.Element, estilos: dict[str, set[str]],
     for filho in no:
         marca = filho.tag.split("}")[-1]
         if marca == "s":                    # <text:s/> — espaços
+            # COM TETO (LX12, LS02 M1): `text:c="2000000000"` pedia dois
+            # bilhões de espaços — 2 GB num elemento de 30 bytes — e
+            # `text:c="abc"` dava 500. Inválido vale 1, como no ODF sem c.
             quantos = filho.get(f'{{{_ODF["text"]}}}c')
-            partes.append(" " * int(quantos or 1))
+            partes.append(" " * TETO.vezes_text_c(quantos or 1))
         elif marca in ("tab", "line-break"):
             partes.append(" ")
         elif marca == "span":

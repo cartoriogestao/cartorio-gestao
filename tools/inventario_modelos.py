@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import sqlite3
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+import banco_pg  # noqa: E402
+from bd_nativo import banco  # noqa: E402
 
 _SKIP = {"__pycache__", ".git", "tmp", "tests", "node_modules", ".venv", "runtime", "DOCUMENTACAO"}
 
@@ -108,13 +110,15 @@ def _relatorio_minutas(db_path: str | None) -> None:
     print(f"  ESCRITURA no seed: {len(esc)} (com 'declarat' no nome: {len(decl)})")
 
     if db_path:
-        con = sqlite3.connect(db_path)
-        rows = con.execute(
-            "SELECT tipo, count(*) FROM nt_modelos GROUP BY tipo ORDER BY 2 DESC"
-        ).fetchall()
+        con = banco_pg.conectar(db_path)
+        bd = banco(con)
+        rows = bd.ler(
+            "SELECT tipo, count(*) AS n FROM nt_modelos GROUP BY tipo "
+            "ORDER BY 2 DESC, tipo"
+        )
         print(f"nt_modelos no banco ({db_path}):")
-        for t, c in rows:
-            print(f"  {t}: {c}")
+        for r in rows:
+            print(f"  {r['tipo']}: {r['n']}")
         con.close()
 
 
@@ -160,19 +164,20 @@ def main() -> int:
         print(f"{chave:28} {tipo:12} {pad:48} {refs}")
 
     if args.db:
-        con = sqlite3.connect(args.db)
+        con = banco_pg.conectar(args.db)
+        bd = banco(con)
         print(
             "DB mo_elementos=%s mo_modelos=%s"
             % (
-                con.execute("SELECT count(*) FROM mo_elementos").fetchone()[0],
-                con.execute("SELECT count(*) FROM mo_modelos").fetchone()[0],
+                bd.valor("SELECT count(*) FROM mo_elementos"),
+                bd.valor("SELECT count(*) FROM mo_modelos"),
             )
         )
-        for r in con.execute(
+        for r in bd.ler(
             "SELECT atribuicao, ato, parte, atualizado_por, atualizado_em "
             "FROM mo_elementos ORDER BY id"
         ):
-            print("  override:", r)
+            print("  override:", tuple(r.values()))
 
     if erros:
         print("FALHAS:")

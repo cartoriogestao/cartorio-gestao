@@ -1,0 +1,36 @@
+<p align="center"><b>{{ sv.unit_name }}</b></p>
+<p align="center">{{ sv.serventia_titulo }}: {{ sv.serventia_titular }}</p>
+<p align="center">CNPJ {{ sv.serventia_cnpj }} — CNS {{ sv.ri_cns }} — Telefone {{ sv.serventia_telefone }}</p>
+<p align="center">{{ sv.endereco_completo }}</p>
+<p align="center"><b>COMPROVANTE DE PRENOTAÇÃO</b></p>
+<p align="center"><b>Protocolo nº {{ p.numero }} — Livro 1-A de Protocolo</b></p>
+<p>Recebemos nesta serventia, do(a) apresentante abaixo, o título adiante
+descrito, que fica <b>prenotado</b> no Livro de Protocolo sob o número acima,
+na forma dos arts. 174 a 186 da Lei 6.015/1973.</p>
+<table border="1" cols="4.6cm,11.4cm">
+<tr><td><b>Apresentante</b></td><td>{{ p.apresentante or '—' }}</td></tr>
+{% if documento %}<tr><td><b>CPF/CNPJ</b></td><td>{{ documento }}</td></tr>{% endif %}
+{% if telefone %}<tr><td><b>Telefone</b></td><td>{{ telefone }}</td></tr>{% endif %}
+{% if email %}<tr><td><b>E-mail</b></td><td>{{ email }}</td></tr>{% endif %}
+<tr><td><b>Natureza do título</b></td><td>{{ p.natureza_titulo or '—' }}</td></tr>
+{% if p.documento_descricao %}<tr><td><b>Documento apresentado</b></td><td>{{ p.documento_descricao }}</td></tr>{% endif %}
+{% if p.objeto %}<tr><td><b>Objeto</b></td><td>{{ p.objeto }}</td></tr>{% endif %}
+{% if p.matricula_numero %}<tr><td><b>Matrícula</b></td><td>{{ p.matricula_numero }}</td></tr>{% endif %}
+<tr><td><b>Prenotado em</b></td><td>{{ data }}{% if p.hora %} às {{ p.hora }}{% endif %}</td></tr>
+{% if p.livro_destino %}<tr><td><b>Livro de destino</b></td><td>Livro {{ p.livro_destino }} — {{ 'matrículas' if p.livro_destino == '2' else 'demais atos do RI' }}</td></tr>{% endif %}
+<tr><td><b>Prazo da prenotação</b></td><td>{{ limite or 'a apurar' }}{% if faltam is not none %}{% if faltam > 0 %} — faltam {{ faltam }} dia(s) útil(eis){% else %} — <b>prazo vencido</b>{% endif %}{% endif %}</td></tr>
+</table>
+<p>A prenotação vigora por {{ prazo }} dias úteis contados desta data
+(Lei 6.015/1973, art. 205, e Código de Normas da CGJ/MA, arts. 436 e 452).
+Vencido o prazo sem que o registro se ultime, cessam os seus efeitos e o
+título perde a prioridade.</p>
+<p>Havendo exigência, será expedida nota devolutiva, e o título poderá
+reingressar no mesmo protocolo enquanto viger a prenotação.</p>
+<p>{{ sv.cidade_uf }}, {{ hoje_extenso }}.</p>
+<p></p><p></p>
+<table cols="7.6cm,7.6cm">
+<tr><td>_________________________________</td><td>_________________________________</td></tr>
+<tr><td>{{ emitido_por }}</td><td>{{ p.apresentante or 'Apresentante' }}</td></tr>
+<tr><td>{{ funcao }}</td><td>Apresentante</td></tr>
+</table>
+<p><small>Dados pessoais parcialmente ocultados na forma da Lei 13.709/2018 — LGPD.</small></p>

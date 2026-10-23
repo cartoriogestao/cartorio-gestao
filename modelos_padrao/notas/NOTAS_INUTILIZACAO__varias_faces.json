@@ -1,0 +1,15 @@
+{
+  "chave": "NOTAS_INUTILIZACAO__varias_faces",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Inutilização — várias faces",
+  "formato": "CHAVES",
+  "explica": "Quando são duas faces ou mais.",
+  "campos": [
+    "primeira",
+    "ultima",
+    "livro",
+    "numero",
+    "quantas",
+    "razao"
+  ]
+}

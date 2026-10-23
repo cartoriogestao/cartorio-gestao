@@ -1,0 +1,8 @@
+{
+  "chave": "RI_CERTIDAO_PROPRIEDADE",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão — o miolo da propriedade",
+  "formato": "JINJA",
+  "explica": "Quem é o dono hoje, na forma que esta casa escreve.",
+  "campos": []
+}

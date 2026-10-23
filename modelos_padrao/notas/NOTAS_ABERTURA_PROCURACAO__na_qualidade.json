@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ABERTURA_PROCURACAO__na_qualidade",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Procuração — papel da parte",
+  "formato": "CHAVES",
+  "explica": "Depois da qualificação, com vírgula, quando o papel da parte não é o óbvio (anuente, cônjuge, representante).",
+  "campos": [
+    "papel"
+  ]
+}

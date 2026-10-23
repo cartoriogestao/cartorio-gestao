@@ -34,6 +34,9 @@ import unicodedata
 from datetime import date, datetime
 from typing import Any
 
+import modelos_da_casa as MODELOS
+from bd_nativo import banco
+
 # A epigrafe e o fecho mudam conforme o ato. Testamento tem forma propria e
 # nao entra aqui: e ato de forma vinculada, e montar por template seria
 # temerario — o modulo devolve so a moldura e o tabeliao escreve.
@@ -41,38 +44,26 @@ from typing import Any
 # A PROCURAÇÃO PARA EM «perante mim, Tabelião,» — 14/10/2026. O resto
 # («compareceu como OUTORGANTE:» ou «compareceram como OUTORGANTES:») depende
 # de quantos outorgam, e `montar` o escreve. Antes vinha fixo no singular.
-ABERTURAS = {
-    "PROCURACAO": ("SAIBAM quantos este público instrumento de procuração bastante "
-                   "virem que, aos {data_extenso}, nesta cidade de {cidade}, "
-                   "Estado {uf_extenso}, nesta Serventia Extrajudicial, perante mim, "
-                   "Tabelião,"),
-    "ESCRITURA": ("SAIBAM quantos este público instrumento virem que, aos "
-                  "{data_extenso}, nesta cidade de {cidade}, Estado {uf_extenso}, "
-                  "nesta Serventia Extrajudicial, perante mim, Tabelião, "
-                  "compareceram as partes entre si justas e contratadas, a saber:"),
-    "SUBSTABELECIMENTO": ("SAIBAM quantos este público instrumento de substabelecimento "
-                          "virem que, aos {data_extenso}, nesta cidade de {cidade}, "
-                          "Estado {uf_extenso}, perante mim, Tabelião, compareceu:"),
-    "REVOGACAO": ("SAIBAM quantos este público instrumento de revogação virem que, "
-                  "aos {data_extenso}, nesta cidade de {cidade}, Estado {uf_extenso}, "
-                  "perante mim, Tabelião, compareceu:"),
-    "ATA": ("ATA NOTARIAL. Aos {data_extenso}, nesta cidade de {cidade}, Estado "
-            "{uf_extenso}, a pedido da parte adiante qualificada, eu, Tabelião, "
-            "compareci e constatei os fatos que adiante narro:"),
+#
+# O TEXTO DE CADA ABERTURA E DE CADA FECHO SAIU DAQUI NO LF06D (19/10/2026):
+# mora em `modelos_padrao/notas/NOTAS_ABERTURA_*.txt` e `NOTAS_FECHO_*.txt`, um
+# papel por tipo de ato, editável na tela de Modelos. Aqui fica qual tipo tem
+# abertura — o que não tem é de forma vinculada. `ABERTURAS` e `FECHOS`, os
+# nomes antigos, continuam respondendo (`__getattr__`), lidos da base.
+PAPEL_DA_ABERTURA = {
+    "PROCURACAO": "NOTAS_ABERTURA_PROCURACAO",
+    "ESCRITURA": "NOTAS_ABERTURA_ESCRITURA",
+    "SUBSTABELECIMENTO": "NOTAS_ABERTURA_SUBSTABELECIMENTO",
+    "REVOGACAO": "NOTAS_ABERTURA_REVOGACAO",
+    "ATA": "NOTAS_ABERTURA_ATA",
 }
 
-FECHOS = {
-    "PROCURACAO": ("E, de como assim o disse, do que dou fé, pediu-me e lhe lavrei "
-                   "este instrumento, que lhe foi lido em voz alta, achou conforme, "
-                   "aceitou e assina."),
-    "ESCRITURA": ('Nada mais. O presente assento foi lido e achado conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.'),
-    "SUBSTABELECIMENTO": ("E, de como assim o disse, do que dou fé, pediu-me e lhe "
-                          "lavrei este instrumento, que lhe foi lido, achou conforme "
-                          "e assina."),
-    "REVOGACAO": ("E, de como assim o disse, do que dou fé, pediu-me e lhe lavrei "
-                  "este instrumento, que lhe foi lido, achou conforme e assina."),
-    "ATA": ("Do que, para constar, lavrei a presente ata notarial, que vai por mim "
-            "assinada. Dou fé."),
+PAPEL_DO_FECHO = {
+    "PROCURACAO": "NOTAS_FECHO_PROCURACAO",
+    "ESCRITURA": "NOTAS_FECHO_ESCRITURA",
+    "SUBSTABELECIMENTO": "NOTAS_FECHO_SUBSTABELECIMENTO",
+    "REVOGACAO": "NOTAS_FECHO_REVOGACAO",
+    "ATA": "NOTAS_FECHO_ATA",
 }
 
 # O que falta na qualificacao aparece assim, e nao em branco: campo vazio passa
@@ -89,40 +80,111 @@ UF_EXTENSO = {
 }
 
 
-def qualificar(parte: dict | Any) -> str:
+def qualificar(parte: dict | Any, *, con: Any = None) -> str:
     """A qualificação de uma parte, na forma do art. 215, § 1º, do Código Civil.
 
     Ordem consagrada: nome, nacionalidade, estado civil, profissão, documento
     e domicílio. O que faltar sai marcado entre colchetes.
+
+    A FRASE MORA NA BASE DESDE O LF06D — `NOTAS_QUALIFICACAO_PF` e `_PJ`; o
+    que falta, e como se marca, continua decidido aqui.
     """
+    textos = MODELOS.textos(con)
     p = dict(parte)
     nome = (p.get("nome") or "").strip().upper() or _falta("nome")
-    pedacos = [f"<b>{nome}</b>"]
 
     if (p.get("tipo_pessoa") or "F").upper() == "J":
         doc = (p.get("documento") or "").strip()
-        pedacos.append("pessoa jurídica de direito privado")
-        pedacos.append(f"inscrita no CNPJ sob o nº {doc}" if doc
-                       else f"inscrita no CNPJ sob o nº {_falta('cnpj')}")
-        if p.get("endereco"):
-            pedacos.append(f"com sede em {p['endereco']}")
-        else:
-            pedacos.append(f"com sede em {_falta('endereço')}")
-        return ", ".join(pedacos)
+        return textos.preencher(
+            "NOTAS_QUALIFICACAO_PJ", nome=nome, documento=doc or _falta('cnpj'),
+            endereco=p['endereco'] if p.get("endereco") else _falta('endereço'))
 
-    pedacos.append((p.get("nacionalidade") or "").strip().lower()
-                   or _falta("nacionalidade"))
-    pedacos.append((p.get("estado_civil") or "").strip().lower()
-                   or _falta("estado civil"))
-    pedacos.append((p.get("profissao") or "").strip().lower()
-                   or _falta("profissão"))
     doc = (p.get("documento") or "").strip()
-    pedacos.append(f"inscrito(a) no CPF sob o nº {doc}" if doc
-                   else f"inscrito(a) no CPF sob o nº {_falta('cpf')}")
     endereco = (p.get("endereco") or "").strip()
-    pedacos.append(f"residente e domiciliado(a) em {endereco}" if endereco
-                   else f"residente e domiciliado(a) em {_falta('endereço')}")
-    return ", ".join(pedacos)
+    estado_civil = (p.get("estado_civil") or "").strip().lower()
+    return textos.preencher(
+        "NOTAS_QUALIFICACAO_PF", nome=nome,
+        nacionalidade=(p.get("nacionalidade") or "").strip().lower()
+        or _falta("nacionalidade"),
+        estado_civil=estado_civil or _falta("estado civil"),
+        conjuge=_conjuge(p, estado_civil, textos),
+        uniao_estavel=_uniao_estavel(p, textos),
+        profissao=(p.get("profissao") or "").strip().lower() or _falta("profissão"),
+        identidade=_identidade(p, textos),
+        documento=doc or _falta('cpf'), endereco=endereco or _falta('endereço'))
+
+
+# O QUE O CNN ART. 111 ACRESCENTOU À QUALIFICAÇÃO — LD07, 21/10/2026. «No ato
+# notarial, serão inseridos na qualificação dos sujeitos: o nome completo ...;
+# o documento de identificação, ou, na sua falta, a filiação; o número de CPF;
+# a nacionalidade; o estado civil; a existência de união estável; a profissão;
+# e o domicílio» — e o CC art. 215, § 1º, III, e o CN-MA art. 798, V, pedem o
+# cônjuge e o regime de bens de quem é casado. Até aqui a qualificação só tinha
+# os seis do Código Civil.
+#
+#   A REGRA DO QUE FALTA É A DOS OUTROS SEIS: sai marcado entre colchetes, e a
+#   trava da lavratura (o campo em branco do teor) não deixa o ato ir ao livro
+#   assim. A TESTEMUNHA fica de fora da marca: o art. 111 fala dos sujeitos do
+#   ato, e a testemunha não é parte — o que ela tiver cadastrado entra, o que
+#   não tiver não se cobra. O CÔNJUGE também, por outra razão: ver `_conjuge`.
+#
+#   Os dados moram na parte do ato (`nt_ato_partes`: `identidade`, `filiacao`,
+#   `uniao_estavel`, `conjuge`, `regime_bens`); a parte que vem do cartão de
+#   autógrafo já traz o RG, a filiação e o cônjuge de lá (`notas_partes`).
+def _parte_do_ato(p: dict) -> bool:
+    return not p.get("testemunha")
+
+
+def _identidade(p: dict, textos) -> str:
+    """O documento de identidade — ou, na falta dele, a filiação."""
+    identidade = " ".join(str(p.get("identidade") or "").split())
+    if identidade:
+        return textos.preencher("NOTAS_QUALIFICACAO_PF__identidade", identidade=identidade)
+    filiacao = " ".join(str(p.get("filiacao") or "").split())
+    if filiacao:
+        return textos.preencher("NOTAS_QUALIFICACAO_PF__filiacao", filiacao=filiacao)
+    return ", " + _falta("documento de identidade ou filiação") if _parte_do_ato(p) else ""
+
+
+#: As respostas da parte sobre a união estável, como a tela as grava.
+UNIAO_ESTAVEL = ("SIM", "NAO")
+
+
+def _uniao_estavel(p: dict, textos) -> str:
+    """A existência de união estável, como a parte a declarou."""
+    resposta = str(p.get("uniao_estavel") or "").strip().upper()
+    if resposta == "SIM":
+        companheiro = " ".join(str(p.get("conjuge") or "").split())
+        return (textos("NOTAS_QUALIFICACAO_PF__uniao_estavel_sim")
+                + (textos.preencher("NOTAS_QUALIFICACAO_PF__companheiro",
+                                    companheiro=companheiro) if companheiro else ""))
+    if resposta == "NAO":
+        return textos("NOTAS_QUALIFICACAO_PF__uniao_estavel_nao")
+    return ", " + _falta("união estável — sim ou não") if _parte_do_ato(p) else ""
+
+
+def _casado(estado_civil: str) -> bool:
+    return unicodedata.normalize("NFKD", estado_civil or "").lower().startswith("casad")
+
+
+def _conjuge(p: dict, estado_civil: str, textos) -> str:
+    """O cônjuge e o regime de bens de quem é casado. Quem não é: nada.
+
+    NÃO SE MARCA A FALTA DOS DOIS: a lei os pede «quando necessário» (CC art.
+    215, § 1º, III) e o CN-MA, «quando se tratar de bens imóveis» (art. 798,
+    V) — e este montador não sabe de que é o ato. Exigir sempre ou só no ato
+    de imóvel é pergunta ao oficial (relatorios/LD07.perguntas.md). Dito um
+    dos dois, o outro sai marcado: a qualificação começada não fica pela metade.
+    """
+    if not _casado(estado_civil) or str(p.get("uniao_estavel") or "").upper() == "SIM":
+        return ""
+    conjuge = " ".join(str(p.get("conjuge") or "").split())
+    regime = " ".join(str(p.get("regime_bens") or "").split())
+    if not (conjuge or regime):
+        return ""
+    return textos.preencher("NOTAS_QUALIFICACAO_PF__conjuge",
+                            conjuge=conjuge or _falta("cônjuge"),
+                            regime_bens=regime or _falta("regime de bens"))
 
 
 def _escapar(texto: Any) -> str:
@@ -216,7 +278,7 @@ def teor_sem_titulos_duplicados(teor: str | None, titulos: list[str]) -> str:
 CHAVE_ASSINANTES = "assinantes_do_ato_e_a_condicao_em_que_assinam"
 
 
-def texto_dos_assinantes(partes: list) -> str:
+def texto_dos_assinantes(partes: list, *, con: Any = None) -> str:
     """Nome e condição de quem assina o ato, tirados da qualificação do formulário.
 
     Serve o campo `[ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]` do fecho
@@ -239,29 +301,33 @@ def texto_dos_assinantes(partes: list) -> str:
         nome = (d.get("nome") or "").strip().upper()
         if not nome:
             continue
-        pedacos.append(f"{nome}, Testemunha")
+        pedacos.append(f"{nome}, {MODELOS.textos(con)('NOTAS_FECHO_ESCRITURA__testemunha')}")
     return "; ".join(pedacos)
 
 
 def bloco_de_assinaturas(partes: list, lavrado_nome: str | None = None,
-                         lavrado_titulo: str | None = None) -> str:
+                         lavrado_titulo: str | None = None, *,
+                         con: Any = None) -> str:
     """Linhas de assinatura do instrumento: comparecentes, testemunhas e lavrado.
 
     O FECHO DIZ QUE TODOS ASSINAM; estas linhas são onde a caneta passa. O
     traslado, o termo do livro e o teor montado por `montar` usam o MESMO
     bloco — 1º traslado e termo do livro ficam alinhados nas assinaturas.
+
+    A LINHA DE ASSINATURA MORA NA BASE DESDE O LF06D (peças `assinatura` e
+    `assinatura_condicao` do traslado); quem assina, e em que ordem, é regra.
     """
+    textos = MODELOS.textos(con)
     principais = [p for p in partes if not dict(p).get("testemunha")]
     testemunhas = [p for p in partes if dict(p).get("testemunha")]
     blocos: list[str] = []
 
     def _linha(nome: str, condicao: str | None = None) -> None:
-        blocos.append("<p></p>")
-        blocos.append("<p></p>")
-        blocos.append('<p align="center">_________________________________</p>')
-        blocos.append(f'<p align="center">{_escapar(nome)}</p>')
+        blocos.append(textos.preencher("NOTAS_TRASLADO__assinatura",
+                                       nome=_escapar(nome)))
         if condicao:
-            blocos.append(f'<p align="center">{_escapar(condicao)}</p>')
+            blocos.append(textos.preencher("NOTAS_TRASLADO__assinatura_condicao",
+                                           condicao=_escapar(condicao)))
 
     for p in principais:
         d = dict(p)
@@ -272,7 +338,7 @@ def bloco_de_assinaturas(partes: list, lavrado_nome: str | None = None,
     for t in testemunhas:
         d = dict(t)
         nome = (d.get("nome") or "").strip().upper() or _falta("nome")
-        _linha(nome, "Testemunha")
+        _linha(nome, textos("NOTAS_FECHO_ESCRITURA__testemunha"))
 
     quem = (lavrado_nome or "").strip()
     if quem:
@@ -298,19 +364,20 @@ def montar(tipo: str, partes: list, poderes: str | None,
            data_extenso: str, cidade: str = "", uf: str = "MA",
            objeto: str | None = None,
            lavrado_nome: str | None = None,
-           lavrado_titulo: str | None = None) -> str:
+           lavrado_titulo: str | None = None, *, con: Any = None) -> str:
     """Monta o teor completo em HTML.
 
     `poderes` e o corpo do modelo — a parte que o E-Oficio guardava e que aqui
     entra tal como esta. `objeto` substitui os poderes quando o ato nao usa
     modelo, para a escritura de teor livre.
     """
-    abertura = ABERTURAS.get(tipo)
-    if not abertura:
+    textos = MODELOS.textos(con)
+    papel_da_abertura = PAPEL_DA_ABERTURA.get(tipo)
+    if not papel_da_abertura:
         # Testamento e testamento cerrado tem forma vinculada: nao se monta por
         # template. Devolve so a qualificacao, para o tabeliao construir em volta.
-        blocos = ["<p><b>PARTES</b></p>"]
-        blocos += [f"<p>{qualificar(p)}.</p>" for p in partes]
+        blocos = [textos("NOTAS_QUALIFICACAO_PF__partes_do_testamento")]
+        blocos += [f"<p>{qualificar(p, con=textos)}.</p>" for p in partes]
         return "\n".join(blocos)
 
     # O ATO SAI EM TEXTO CORRIDO, NUM PARÁGRAFO SÓ — 14/10/2026, ordem do
@@ -331,18 +398,19 @@ def montar(tipo: str, partes: list, poderes: str | None,
     #   me foi dito que nomeia e constitui seu bastante PROCURADOR: …, a quem
     #   confere …» (a procuração 212, de 07/08/2026, é o modelo copiado).
     uf_extenso = UF_EXTENSO.get((uf or "").upper(), f"de {uf}")
-    pedacos = [abertura.format(data_extenso=data_extenso, cidade=cidade,
-                               uf_extenso=uf_extenso)]
+    pedacos = [textos.preencher(papel_da_abertura, data_extenso=data_extenso,
+                                cidade=cidade, uf_extenso=uf_extenso)]
 
     principais = [p for p in partes if not dict(p).get("testemunha")]
     testemunhas = [p for p in partes if dict(p).get("testemunha")]
     corpo = _em_linha(poderes or objeto or "")
 
     if tipo == "PROCURACAO":
-        pedacos.append(_comparecimento_da_procuracao(principais, corpo))
+        pedacos.append(_comparecimento_da_procuracao(principais, corpo, textos))
     else:
         if principais:
-            pedacos.append("; e ".join(_parte_com_rotulo(p) for p in principais) + ".")
+            pedacos.append("; e ".join(_parte_com_rotulo(p, textos)
+                                       for p in principais) + ".")
         else:
             pedacos.append(_falta("nenhuma parte cadastrada no ato") + ".")
         pedacos.append(_fechar_frase(corpo) if corpo else
@@ -350,12 +418,13 @@ def montar(tipo: str, partes: list, poderes: str | None,
 
     if testemunhas:
         nomes = "; ".join((dict(t).get("nome") or "").strip().upper() for t in testemunhas)
-        pedacos.append(f"Presentes as testemunhas: {nomes}.")
+        pedacos.append(textos.preencher("NOTAS_FECHO_ESCRITURA__testemunhas",
+                                        nomes=nomes))
 
-    fecho = FECHOS.get(tipo, FECHOS["ESCRITURA"])
+    fecho = textos(PAPEL_DO_FECHO.get(tipo, "NOTAS_FECHO_ESCRITURA"))
     # O fecho da escritura pede quem assina e em que condição — o mesmo campo
     # que «Preencher a partir do modelo» já completa sozinho com as partes.
-    assinantes = texto_dos_assinantes(partes)
+    assinantes = texto_dos_assinantes(partes, con=textos)
     if assinantes:
         fecho = fecho.replace(f"[{CHAVE_ASSINANTES_ROTULO}]", assinantes)
     pedacos.append(fecho)
@@ -366,7 +435,8 @@ def montar(tipo: str, partes: list, poderes: str | None,
     # Elas continuam linhas próprias: são onde a caneta passa, e não o meio
     # do texto.
     return "\n".join([f"<p>{texto}</p>", MARCA_ASSINATURAS, bloco_de_assinaturas(
-        partes, lavrado_nome=lavrado_nome, lavrado_titulo=lavrado_titulo)])
+        partes, lavrado_nome=lavrado_nome, lavrado_titulo=lavrado_titulo,
+        con=textos)])
 
 
 CHAVE_ASSINANTES_ROTULO = "ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM"
@@ -384,6 +454,22 @@ def claros_de_x(teor: str | None) -> list[str]:
     """As fileiras de X que sobraram no texto — dado do modelo não escrito."""
     plano = re.sub(r"<[^>]+>", " ", teor or "")
     return sorted({m.group(0) for m in _CLARO_DE_X.finditer(plano)})
+
+
+# A escolha `{ROTULO: a | b}` e a cláusula `«SE ROTULO: …»` que o leitor dos
+# modelos não alcança — uma dentro da outra, como na minuta do usufruto e na
+# das diretivas antecipadas. Não viram campo nem pendência, e iam ao livro com
+# as chaves (LT02, 20/10/2026). O rótulo é o do leitor: até seis palavras em
+# maiúsculas antes dos dois pontos.
+_MARCA_SOBRANDO = re.compile(
+    r"\{\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 ]{1,60}):|«\s*(SE [^:«»]{1,60}):")
+
+
+def marcas_de_modelo_sobrando(teor: str | None) -> list[str]:
+    """Os rótulos de escolha e de cláusula do modelo que sobraram no texto."""
+    plano = re.sub(r"<[^>]+>", " ", teor or "")
+    return sorted({" ".join((m.group(1) or m.group(2)).split())
+                   for m in _MARCA_SOBRANDO.finditer(plano)})
 
 
 def _em_linha(html: str | None) -> str:
@@ -424,60 +510,71 @@ def _rotulo(parte) -> str:
     return (dict(parte).get("qualificacao") or "").strip().upper()
 
 
-def _parte_com_rotulo(parte) -> str:
+def _parte_com_rotulo(parte, textos: Any = None) -> str:
     """«como VENDEDOR, <qualificação>» — a forma da escritura 256 do E-Ofício."""
+    textos = MODELOS.textos(textos)
     rotulo = _rotulo(parte)
-    return f"como {rotulo}, {qualificar(parte)}" if rotulo else qualificar(parte)
+    if not rotulo:
+        return qualificar(parte, con=textos)
+    return textos.preencher("NOTAS_ABERTURA_ESCRITURA__parte_com_papel", papel=rotulo,
+                            qualificacao=qualificar(parte, con=textos))
 
 
-def _qualificacao_no_lado(parte, *, esperado: tuple[str, ...]) -> str:
+def _qualificacao_no_lado(parte, *, esperado: tuple[str, ...],
+                          textos: Any = None) -> str:
     """A qualificação da parte; o papel só aparece quando não é o óbvio.
 
     Na procuração, «OUTORGANTE» e «PROCURADOR» já estão ditos pela própria
     frase. Papel diferente (anuente, cônjuge, representante) continua escrito
     — sumir com ele apagaria o que o escrevente qualificou.
     """
+    textos = MODELOS.textos(textos)
     rotulo = _rotulo(parte)
-    texto = qualificar(parte)
+    texto = qualificar(parte, con=textos)
     if rotulo and not any(x in _sem_acento_maiusculo(rotulo) for x in esperado):
-        texto += f", na qualidade de {rotulo}"
+        texto += ", " + textos.preencher("NOTAS_ABERTURA_PROCURACAO__na_qualidade",
+                                         papel=rotulo)
     return texto
 
 
-def _comparecimento_da_procuracao(principais: list, poderes: str) -> str:
+def _comparecimento_da_procuracao(principais: list, poderes: str,
+                                  textos: Any = None) -> str:
     """Comparecimento, reconhecimento, nomeação e poderes — numa frase corrida.
 
     Copiado da procuração 212 do E-Ofício (07/08/2026), o precedente mais
     recente desta casa. O plural acompanha quantos outorgam e quantos são
     nomeados; o gênero fica em «(a)», como já faz `qualificar`, porque a
     parte não tem sexo cadastrado.
+
+    AS DUAS METADES DA FRASE MORAM NA BASE DESDE O LF06D — peças da abertura da
+    procuração, uma no singular e outra no plural para cada lado; quantos são
+    de cada lado é regra, e fica aqui.
     """
+    textos = MODELOS.textos(textos)
     lado_a, lado_b = [], []
     for p in principais:
         alvo = (lado_b if any(x in _sem_acento_maiusculo(dict(p).get("qualificacao"))
                               for x in _SEGUNDA_PARTE) else lado_a)
         alvo.append(p)
     varios = len(lado_a) > 1
-    frase = ("compareceram como OUTORGANTES: " if varios
-             else "compareceu como OUTORGANTE: ")
     if lado_a:
-        frase += "; e ".join(_qualificacao_no_lado(p, esperado=("OUTORGANT",))
-                             for p in lado_a)
+        outorgantes = "; e ".join(_qualificacao_no_lado(p, esperado=("OUTORGANT",),
+                                                        textos=textos) for p in lado_a)
     else:
-        frase += _falta("outorgante — inclua quem outorga no quadro Partes")
-    frase += ("; reconhecidos como os próprios" if varios
-              else "; reconhecido(a) como o(a) próprio(a)")
-    frase += (" à vista dos documentos apresentados, de cuja identidade, "
-              "capacidade e livre manifestação de vontade dou fé.")
-    frase += (" Pelos OUTORGANTES me foi dito que nomeiam e constituem"
-              if varios else " Pelo(a) OUTORGANTE me foi dito que nomeia e constitui")
-    frase += (" seus bastantes PROCURADORES: " if len(lado_b) > 1
-              else " seu(sua) bastante PROCURADOR(A): ")
+        outorgantes = _falta("outorgante — inclua quem outorga no quadro Partes")
     if lado_b:
-        frase += "; e ".join(_qualificacao_no_lado(p, esperado=("OUTORGAD", "PROCURADOR"))
-                             for p in lado_b)
+        procuradores = "; e ".join(
+            _qualificacao_no_lado(p, esperado=("OUTORGAD", "PROCURADOR"), textos=textos)
+            for p in lado_b)
     else:
-        frase += _falta("procurador — inclua o outorgado no quadro Partes")
+        procuradores = _falta("procurador — inclua o outorgado no quadro Partes")
+    frase = (textos.preencher("NOTAS_ABERTURA_PROCURACAO__varios_outorgantes"
+                              if varios else "NOTAS_ABERTURA_PROCURACAO__um_outorgante",
+                              outorgantes=outorgantes)
+             + " " + textos.preencher(
+                 "NOTAS_ABERTURA_PROCURACAO__varios_procuradores" if len(lado_b) > 1
+                 else "NOTAS_ABERTURA_PROCURACAO__um_procurador",
+                 procuradores=procuradores))
     if not poderes:
         return frase + ", " + _falta("poderes — escolha um modelo ou escreva aqui") + "."
     plano = re.sub(r"<[^>]+>", "", poderes).lstrip()
@@ -508,13 +605,14 @@ def _sem_acento_maiusculo(texto) -> str:
     return "".join(c for c in s if not unicodedata.combining(c))
 
 
-def partes_por_lado(partes: list) -> tuple[str, str]:
+def partes_por_lado(partes: list, *, con: Any = None) -> tuple[str, str]:
     """Monta `outorgantes` e `outorgados` para os modelos de `notas_modelos.py`.
 
     O QUE FALTAR FICA MARCADO, E NÃO EM BRANCO — a mesma regra de `_falta()`:
     lado sem parte nenhuma sairia sem ninguém notar, e quem confere o teor
     precisa ver que falta qualificar alguém, não uma lacuna muda.
     """
+    textos = MODELOS.textos(con)
     primeira, segunda = [], []
     for p in partes:
         d = dict(p)
@@ -522,7 +620,7 @@ def partes_por_lado(partes: list) -> tuple[str, str]:
             continue
         alvo = (segunda if any(x in _sem_acento_maiusculo(d.get("qualificacao"))
                                for x in _SEGUNDA_PARTE) else primeira)
-        alvo.append(qualificar(d))
+        alvo.append(qualificar(d, con=textos))
     outorgantes = ("; ".join(primeira) or
                    _falta("outorgante(s) — qualifique a parte no ato"))
     outorgados = ("; ".join(segunda) or
@@ -530,34 +628,56 @@ def partes_por_lado(partes: list) -> tuple[str, str]:
     return outorgantes, outorgados
 
 
-def testemunhas_qualificadas(partes: list) -> str:
+def testemunhas_qualificadas(partes: list, *, con: Any = None) -> str:
     """Texto Jinja `{{ testemunhas }}` nos modelos de ata e testamento."""
     ts = [p for p in partes if dict(p).get("testemunha")]
     if not ts:
         return _falta("testemunha(s) — cadastre no ato se houver")
-    return "; ".join(qualificar(t) for t in ts)
+    textos = MODELOS.textos(con)
+    return "; ".join(qualificar(t, con=textos) for t in ts)
 
 
-def contexto_jinja_partes(partes: list) -> dict[str, str]:
+def contexto_jinja_partes(partes: list, *, con: Any = None) -> dict[str, str]:
     """Variáveis Jinja comuns aos modelos de `notas_modelos.py`."""
-    outorgantes, outorgados = partes_por_lado(partes)
+    textos = MODELOS.textos(con)
+    outorgantes, outorgados = partes_por_lado(partes, con=textos)
     return {
         "outorgantes": outorgantes,
         "outorgados": outorgados,
-        "testemunhas": testemunhas_qualificadas(partes),
+        "testemunhas": testemunhas_qualificadas(partes, con=textos),
     }
 
 
 def pendencias_da_qualificacao(partes: list) -> list[str]:
-    """Diz quem está incompleto, com nome, antes de o ato ser lavrado."""
+    """Diz quem está incompleto, com nome, antes de o ato ser lavrado.
+
+    Desde o LD07 (21/10/2026) conta também o que o CNN art. 111 pôs na
+    qualificação da pessoa física — o documento de identidade ou a filiação,
+    a união estável — e, de quem é casado e disse um dos dois, o cônjuge ou o
+    regime de bens que falta: os mesmos que `qualificar` marca entre colchetes.
+    """
     faltas = []
     for p in partes:
         d = dict(p)
         if d.get("testemunha"):
             continue
-        exigidos = ("documento",) if (d.get("tipo_pessoa") or "F").upper() == "J" else \
+        fisica = (d.get("tipo_pessoa") or "F").upper() != "J"
+        exigidos = ("documento",) if not fisica else \
                    ("documento", "nacionalidade", "estado_civil", "profissao", "endereco")
         vazios = [c.replace("_", " ") for c in exigidos if not str(d.get(c) or "").strip()]
+        if fisica:
+            if not (str(d.get("identidade") or "").strip()
+                    or str(d.get("filiacao") or "").strip()):
+                vazios.append("documento de identidade ou filiação")
+            uniao = str(d.get("uniao_estavel") or "").strip().upper()
+            if uniao not in UNIAO_ESTAVEL:
+                vazios.append("união estável")
+            # o cônjuge e o regime só contam quando um dos dois foi dito — a
+            # mesma regra de `_conjuge`
+            casal = (("cônjuge", "conjuge"), ("regime de bens", "regime_bens"))
+            if (_casado(str(d.get("estado_civil") or "")) and uniao != "SIM"
+                    and any(str(d.get(campo) or "").strip() for _, campo in casal)):
+                vazios += [c for c, campo in casal if not str(d.get(campo) or "").strip()]
         if vazios:
             faltas.append(f"{d.get('nome') or 'parte sem nome'}: {', '.join(vazios)}")
     return faltas
@@ -620,7 +740,8 @@ def atualizar_teor_para_data_de_selo(
     """
     from ri_web import data_por_extenso
 
-    row = con.execute("SELECT * FROM nt_atos WHERE id=?", (int(ato_id),)).fetchone()
+    bd = banco(con)
+    row = bd.um("SELECT * FROM nt_atos WHERE id=%s", (int(ato_id),))
     if not row:
         return {"ok": False, "motivo": "ato inexistente"}
     ato = dict(row)
@@ -679,20 +800,37 @@ def atualizar_teor_para_data_de_selo(
                  "sozinho. O texto NÃO foi mexido: confira a data escrita no teor.")
 
     if modelo_valores_json is not None:
-        con.execute(
-            """UPDATE nt_atos SET data=?, hora=?, teor=?, modelo_valores=?
-               WHERE id=?""",
+        bd.escrever(
+            """UPDATE nt_atos SET data=%s, hora=%s, teor=%s, modelo_valores=%s
+               WHERE id=%s""",
             (data_iso, hora, teor_novo, modelo_valores_json, int(ato_id)),
         )
     elif teor_novo is not None:
-        con.execute(
-            "UPDATE nt_atos SET data=?, hora=?, teor=? WHERE id=?",
+        bd.escrever(
+            "UPDATE nt_atos SET data=%s, hora=%s, teor=%s WHERE id=%s",
             (data_iso, hora, teor_novo, int(ato_id)),
         )
     else:
-        con.execute(
-            "UPDATE nt_atos SET data=?, hora=? WHERE id=?",
+        bd.escrever(
+            "UPDATE nt_atos SET data=%s, hora=%s WHERE id=%s",
             (data_iso, hora, int(ato_id)),
         )
     return {"ok": True, "alterou_teor": teor_novo is not None, "data": data_iso,
             "aviso": aviso}
+
+
+def __getattr__(nome: str):
+    """Os nomes antigos do texto de fábrica, lidos da base dos padrões.
+
+    `ABERTURAS` e `FECHOS` saíram deste módulo no LF06D (19/10/2026) e moram em
+    `modelos_padrao/`. Quem ainda os lê recebe o dicionário lido da base — o
+    MESMO texto que o teor usa. Nome que não é de papel continua sendo
+    `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    if nome in ("ABERTURAS", "FECHOS"):
+        textos = MODELOS.textos()
+        papeis = PAPEL_DA_ABERTURA if nome == "ABERTURAS" else PAPEL_DO_FECHO
+        return {tipo: textos(papel) for tipo, papel in papeis.items()}
+    return MODELOS.constante_antiga(__name__, nome)

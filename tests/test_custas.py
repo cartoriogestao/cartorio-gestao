@@ -26,6 +26,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import custas                                    # noqa: E402
 import emolumentos                                # noqa: E402
@@ -36,11 +38,15 @@ VIGENCIA_2026 = 10022
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     # `init_caixa_schema` tem uma migracao sobre `users`, que e do esquema
     # geral. No banco da serventia ela ja existe; aqui basta o esqueleto.
     con.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
+    # `cx_protocolos` aponta para a prenotacao e a matricula do RI: o
+    # PostgreSQL cobra a FK, e o banco da casa cria as duas antes.
+    con.execute("CREATE TABLE IF NOT EXISTS ri_protocolos (id INTEGER PRIMARY KEY)")
+    con.execute("CREATE TABLE IF NOT EXISTS ri_matriculas (id INTEGER PRIMARY KEY)")
     init_caixa_schema(con)
     return con
 
@@ -199,7 +205,7 @@ def test_sem_tabela_carregada_a_mensagem_e_de_balcao():
     con = banco()
     with pytest.raises(custas.CustasError) as erro:
         custas.vigencia_do_dia(con, "2026-08-21")
-    assert "Importe a tabela do E-Ofício" in str(erro.value)
+    assert "Importe a tabela do sistema antigo" in str(erro.value)
 
 
 def test_data_invalida_nao_derruba_com_ValueError_cru():
@@ -382,3 +388,16 @@ def test_sem_o_arquivo_de_vigencia_o_import_avisa_em_vez_de_silenciar(tmp_path):
     rel = emolumentos.importar(con, tmp_path)
     assert any("Sem dom_vigencia.jsonl" in a for a in rel["avisos"])
     assert rel["vigente"] == VIGENCIA_2026
+
+
+def test_o_codigo_da_tabela_e_o_do_e_oficio_e_o_banco_nao_inventa_outro():
+    """`cx_vigencias.codigo` e `cx_servicos.codigo` sao os numeros do E-Oficio
+    (10022, 25...). Com IDENTITY, a sequencia do PostgreSQL nao anda com o
+    numero gravado a mao: um INSERT sem codigo ganhava 1, 2... por conta
+    propria, e esse numero pode ser o de outro ato na proxima carga."""
+    con = banco()
+    for sql in ("INSERT INTO cx_vigencias(descricao) VALUES ('sem codigo')",
+                "INSERT INTO cx_servicos(codigo_tj, descricao) "
+                "VALUES ('17.2', 'sem codigo')"):
+        with pytest.raises(sqlite3.IntegrityError):
+            con.execute(sql)

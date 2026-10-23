@@ -20,7 +20,6 @@ O QUE ESTES TESTES GUARDAM, e cada um custou uma decisão:
 """
 from __future__ import annotations
 
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -35,13 +34,18 @@ import modelos_previa as PREVIA
 import modelos_elementos_schema as ESQ
 import ri_schema
 
+sys.path.insert(0, str(RAIZ / "tests"))
+from banco_de_teste import conexao_de_teste  # noqa: E402
+
 AGORA = "2026-09-07T16:00:00"
 
 
 @pytest.fixture()
 def con(tmp_path):
-    c = sqlite3.connect(tmp_path / "t.sqlite3")
-    c.row_factory = sqlite3.Row
+    c = conexao_de_teste()
+    # `ri_schema` aponta para `users` (FK): o PostgreSQL cobra a FK
+    # na criacao, e o banco da casa cria `users` antes. Aqui basta o esqueleto.
+    c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
     # `ri_schema` traz `mo_modelos`, que é o legado que a resolução consulta.
     ri_schema.init_ri_schema(c)
     ESQ.init_modelos_elementos_schema(c)
@@ -198,11 +202,33 @@ def test_as_certidoes_de_rcpj_e_rtd_estao_no_catalogo():
     elas. `modelos_da_casa.py` não foi tocado.
     """
     chaves = {a["chave"] for a in ELEM.atos_da_atribuicao(ESQ.RCPJ_RTD)}
+    # LF06F (19/10/2026): os papéis do RCPJ/RTD que ainda moravam no código —
+    # a certidão só de averbações, o papel por texto, a nota devolutiva, as
+    # duas etiquetas e as frases do desenho dos PDFs. Os em HTML (Jinja) não
+    # entram no encerramento comum (`elementos_comuns: False`), e por isso a
+    # atribuição continua toda em chaves.
     assert chaves == {"RCPJ_CERTIDAO", "RTD_CERTIDAO",
                      "RCPJ_TEOR_AVERBACAO", "RCPJ_TEOR_REGISTRO",
                      "RTD_TEOR_AVERBACAO", "RTD_TEOR_REGISTRO",
                      "RCPJ_CERTIDAO_CAPA", "RCPJ_CERTIDAO_FAIXA",
-                     "RTD_CERTIDAO_CAPA", "RTD_CERTIDAO_FAIXA"}
+                     "RTD_CERTIDAO_CAPA", "RTD_CERTIDAO_FAIXA",
+                     "RCPJ_RTD_CERTIDAO_SO_AVERBACOES", "RCPJ_RTD_CERTIDAO_ODT",
+                     "RCPJ_RTD_NOTA", "RCPJ_RTD_ETIQUETA",
+                     "RCPJ_RTD_ETIQUETA_SELO_EXTERNO", "RCPJ_RTD_PDF_MOLDURA",
+                     # LG04 (19/10/2026): a certidão da notificação do RTD e
+                     # os termos e a certidão da autenticação de livro do
+                     # RCPJ — todos em chaves, como a atribuição.
+                     "RTD_CERTIDAO_NOTIFICACAO_POSITIVA",
+                     "RTD_CERTIDAO_NOTIFICACAO_NEGATIVA",
+                     "RCPJ_LIVRO_CONTABIL_TERMO_ABERTURA",
+                     "RCPJ_LIVRO_CONTABIL_TERMO_ENCERRAMENTO",
+                     "RCPJ_LIVRO_CONTABIL_CERTIDAO",
+                     # LD05 (21/10/2026): o termo do cancelamento do RCPJ e o
+                     # do RTD, em chaves como os outros teores.
+                     "RCPJ_TEOR_CANCELAMENTO", "RTD_TEOR_CANCELAMENTO",
+                     # e a certidão negativa do RTD e do RCPJ e o breve
+                     # relato do RCPJ (LD05)
+                     "RCPJ_RTD_CERTIDAO_NEGATIVA", "RCPJ_CERTIDAO_BREVE_RELATO"}
     assert ELEM.formato_da_atribuicao(ESQ.RCPJ_RTD) == CASA.CHAVES
 
 
@@ -283,7 +309,16 @@ def test_o_quadro_traz_os_papeis_e_as_partes(con):
     # ficha, molde e nota. O número vem do catálogo; se alguém acrescentar ou
     # retirar um papel editável, este assert avisa. 14/10/2026: 11 → 13, com
     # os miolos da certidão dominial e da vintenária reconstituídos.
-    assert len(q["atos"]) == 13
+    # 19/10/2026 (LF06G): 13 → 22, com os papéis da retificação de área (1) e
+    # da usucapião extrajudicial (8) — procedimentos do Registro de Imóveis,
+    # que saíram do código para a pasta dos padrões.
+    #
+    # 19/10/2026 (LF06B): mais as FRASES do RI que saíram das f-strings dos
+    # módulos (`ri_frases`) — elas também se editam aqui. Quantas são, e por
+    # quê, quem conta é `test_modelos_da_casa`; aqui fica o 22 dos papéis.
+    frases = {c["chave"] for c in CASA.CATALOGO if c["padrao"][0] == "ri_frases"}
+    assert frases
+    assert len(q["atos"]) == 22 + len(frases)
     for a in q["atos"]:
         assert [p["parte"] for p in a["partes"]] == list(ESQ.PARTES)
 

@@ -6,8 +6,10 @@
 <section class="panel notice warning">
   <strong>Pendente de selo — o escrevente deve selar.</strong>
   {% if not (user.eh_robo if user is defined and user.eh_robo is defined else false) %}
-  <form method="post" action="{{ url_for('notas_cartao_selar', cartao_id=c.id) }}" style="display:inline">
+  <form method="post" action="{{ url_for('notas_cartao_selar', cartao_id=c.id) }}">
     <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
+    {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('nt_cartoes') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
     <button class="primary">Selar</button>
   </form>
   {% endif %}
@@ -284,8 +286,10 @@
   <div class="grid2" style="padding:14px">
     <div><small class="muted">CPF/CNPJ</small><div>{{ c.documento or '—' }}
       {% if doc_valido is false %}<span class="badge alta">dígito não confere</span>{% endif %}</div></div>
-    <div><small class="muted">RG</small><div>{{ c.rg or '—' }} {{ c.rg_orgao or '' }}</div></div>
+    <div><small class="muted">RG</small><div>{{ c.rg or '—' }} {{ c.rg_orgao or '' }}
+      {%- if c.rg_emissao %}, emitido em {{ fmt_date(c.rg_emissao) }}{% endif %}</div></div>
     <div><small class="muted">Nascimento</small><div>{{ fmt_date(c.nascimento) if c.nascimento else '—' }}</div></div>
+    <div><small class="muted">Título eleitoral</small><div>{{ c.titulo_eleitor or '—' }}</div></div>
     <div><small class="muted">Estado civil</small><div>{{ c.estado_civil or '—' }}</div></div>
     <div><small class="muted">Profissão</small><div>{{ c.profissao or '—' }}</div></div>
     <div><small class="muted">Nacionalidade</small><div>{{ c.nacionalidade or '—' }}</div></div>
@@ -298,7 +302,7 @@
     <div><small class="muted">Celular</small><div>{{ c.celular or c.telefone or '—' }}</div></div>
     <div><small class="muted">E-mail</small><div>{{ c.email or '—' }}</div></div>
     <div><small class="muted">Cartão aberto em</small><div>{{ fmt_date(c.abertura) if c.abertura else '—' }}</div></div>
-    <div><small class="muted">Origem</small><div>{{ c.origem }}{% if c.origem_chave %} · nº {{ c.origem_chave }} no E-Ofício{% endif %}</div></div>
+    <div><small class="muted">Origem</small><div>{{ c.origem }}{% if c.origem_chave %} · nº {{ c.origem_chave }} no sistema antigo{% endif %}</div></div>
   </div>
 </section>
 
@@ -340,7 +344,9 @@
     <label>CPF/CNPJ <input name="documento" value="{{ c.documento or '' }}"></label>
     <label>RG <input name="rg" value="{{ c.rg or '' }}"></label>
     <label>Órgão <input name="rg_orgao" value="{{ c.rg_orgao or '' }}"></label>
+    <label>Emissão do RG <input type="date" name="rg_emissao" value="{{ c.rg_emissao or '' }}"></label>
     <label>Nascimento <input type="date" name="nascimento" value="{{ c.nascimento or '' }}"></label>
+    <label>Título eleitoral <input name="titulo_eleitor" value="{{ c.titulo_eleitor or '' }}"></label>
     <label>Nacionalidade <input name="nacionalidade" value="{{ c.nacionalidade or '' }}"></label>
     <label>Estado civil <input name="estado_civil" value="{{ c.estado_civil or '' }}"></label>
     <label>Profissão <input name="profissao" value="{{ c.profissao or '' }}"></label>

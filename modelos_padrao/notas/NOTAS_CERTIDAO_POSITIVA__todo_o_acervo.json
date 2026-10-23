@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_CERTIDAO_POSITIVA__todo_o_acervo",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Certidão — período da busca (todo o acervo)",
+  "formato": "CHAVES",
+  "explica": "O período em que se buscou, nas certidões positiva e negativa. Sem período.",
+  "campos": []
+}

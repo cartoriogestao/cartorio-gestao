@@ -4,7 +4,9 @@ A ROTA SO LIGA OS FIOS. O webhook local (teste ou reenvio da caixa-postal)
 chama `aplicar_entrada`. A tela le o que ja esta no SQLite.
 
 Envio a Cloud API e so no botao do escrevente. Autoenvio continua desligado.
-Nunca logar access_token, app_secret nem caixa_segredo.
+Nunca logar access_token, app_secret nem caixa_segredo — e, desde o LX14, eles
+nem moram no banco: `ler_config`/`gravar_config` os mandam ao cofre
+(`whatsapp.cred`, ver `wa_schema.SEGREDOS` e `cofre_cred`).
 
 Idempotencia: a mesma `meta_id` nao cria segunda mensagem.
 """
@@ -13,13 +15,15 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import sqlite3
 import urllib.error
 import urllib.request
 from datetime import datetime
 from typing import Any, Callable
 from unicodedata import normalize
 
+from bd_nativo import banco
+
+import cofre_cred as COFRE
 import serventia as SERV
 import wa_schema as WA
 import wa_textos as TEXTOS
@@ -68,35 +72,44 @@ def classificar(texto: str) -> str:
     return "outros"
 
 
-def rascunhar(texto: str, etiqueta: str | None, serventia: Any = None) -> str:
-    """Rascunho curto no tom de cartorio. Nao envia. Nao inventa horario."""
+def rascunhar(texto: str, etiqueta: str | None, serventia: Any = None,
+              con: Any = None) -> str:
+    """Rascunho curto no tom de cartorio. Nao envia. Nao inventa horario.
+
+    Com `con`, o texto e o ajuste da casa no papel CAIXA_WHATSAPP (LF06F);
+    sem ele, o padrao da base.
+    """
     et = (etiqueta or "outros").strip().lower() or "outros"
     if et not in TEXTOS.POR_ETIQUETA:
         et = "outros"
     fn = TEXTOS.POR_ETIQUETA[et]
-    return fn(serventia)
+    return fn(serventia, con=con)
 
 
-def ler_config(con: sqlite3.Connection, chave: str) -> str:
-    linha = con.execute(
-        "SELECT valor FROM wa_config WHERE chave=?", (chave,)
-    ).fetchone()
+def ler_config(con: Any, chave: str) -> str:
+    if chave in WA.SEGREDOS:
+        return COFRE.ler_segredo(con, COFRE.WHATSAPP, chave).strip()
+    linha = banco(con).um(
+        "SELECT valor FROM wa_config WHERE chave=%s", (chave,)
+    )
     if not linha:
         return ""
-    if isinstance(linha, sqlite3.Row):
-        return (linha["valor"] or "").strip()
-    return (linha[0] or "").strip()
+    return (linha["valor"] or "").strip()
 
 
-def gravar_config(con: sqlite3.Connection, chave: str, valor: str) -> None:
-    con.execute(
-        "INSERT INTO wa_config(chave, valor) VALUES (?, ?) "
+def gravar_config(con: Any, chave: str, valor: str) -> None:
+    """Grava uma configuracao. O segredo vai ao cofre, e nao ao banco."""
+    if chave in WA.SEGREDOS:
+        COFRE.gravar_segredo(con, COFRE.WHATSAPP, chave, valor)
+        return
+    banco(con).escrever(
+        "INSERT INTO wa_config(chave, valor) VALUES (%s, %s) "
         "ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor",
         (chave, valor or ""),
     )
 
 
-def verify_token_salvo(con: sqlite3.Connection) -> str:
+def verify_token_salvo(con: Any) -> str:
     """O token que o GET do webhook confere. Vazio vira o de desenvolvimento."""
     t = ler_config(con, WA.CHAVE_VERIFY)
     return t or WA.VERIFY_TOKEN_DEV
@@ -112,34 +125,44 @@ def mascarar_segredo(valor: str) -> str:
     return "••••" + t[-4:]
 
 
-def pode_enviar_meta(con: sqlite3.Connection) -> bool:
+def pode_enviar_meta(con: Any) -> bool:
     return bool(ler_config(con, WA.CHAVE_TOKEN) and ler_config(con, WA.CHAVE_PHONE))
 
 
-def config_para_tela(con: sqlite3.Connection) -> dict:
-    token = ler_config(con, WA.CHAVE_TOKEN)
-    secret = ler_config(con, WA.CHAVE_APP_SECRET)
-    caixa_seg = ler_config(con, WA.CHAVE_CAIXA_SEGREDO)
+def config_para_tela(con: Any) -> dict:
+    """O que a tela mostra. DE SEGREDO, SO «CONFIGURADO» (LX14; B1 do LS03).
+
+    O `verify_token` ia inteiro no `value=` do campo, e os outros com os
+    ultimos quatro — para qualquer login, porque ver a tela e de todos. Agora
+    nenhum pedaco de segredo chega ao HTML: so se ele esta gravado.
+    """
+    guardado = COFRE.ler(COFRE.pasta_do_banco(con), COFRE.WHATSAPP)
     return {
-        "verify_token": ler_config(con, WA.CHAVE_VERIFY),
+        "tem_verify_token": bool(guardado.get(WA.CHAVE_VERIFY)),
         "phone_number_id": ler_config(con, WA.CHAVE_PHONE),
-        "access_token_mascarado": mascarar_segredo(token),
-        "tem_access_token": bool(token),
-        "app_secret_mascarado": mascarar_segredo(secret),
-        "tem_app_secret": bool(secret),
+        "tem_access_token": bool(guardado.get(WA.CHAVE_TOKEN)),
+        "tem_app_secret": bool(guardado.get(WA.CHAVE_APP_SECRET)),
         "caixa_url": ler_config(con, WA.CHAVE_CAIXA_URL),
-        "caixa_segredo_mascarado": mascarar_segredo(caixa_seg),
-        "tem_caixa_segredo": bool(caixa_seg),
+        "tem_caixa_segredo": bool(guardado.get(WA.CHAVE_CAIXA_SEGREDO)),
+        "modo_teste": modo_teste_ligado(con),
         "pode_enviar": pode_enviar_meta(con),
         "caixa_url_documentada": WA.CAIXA_URL_DOCUMENTADA,
         "webhook_publico": WA.WEBHOOK_PUBLICO_DOCUMENTADO,
     }
 
 
-def gravar_tela_config(con: sqlite3.Connection, form: dict) -> None:
-    """Grava o que a tela mandou. Campo de segredo vazio = nao altera."""
-    gravar_config(con, WA.CHAVE_VERIFY,
-                  (form.get("verify_token") or "").strip())
+def gravar_tela_config(con: Any, form: dict) -> None:
+    """Grava o que a tela mandou. Campo de segredo vazio = nao altera.
+
+    O `verify_token` tambem passou a obedecer a isso (LX14): a tela nao o
+    mostra mais, e o campo vazio que antes o apagava apagaria sempre, a cada
+    «guardar». Voltar ao de desenvolvimento e a caixa «apagar_verify_token».
+    """
+    verify = (form.get("verify_token") or "").strip()
+    if verify:
+        gravar_config(con, WA.CHAVE_VERIFY, verify)
+    elif form.get("apagar_verify_token"):
+        gravar_config(con, WA.CHAVE_VERIFY, "")
     gravar_config(con, WA.CHAVE_PHONE,
                   (form.get("phone_number_id") or "").strip())
     token = (form.get("access_token") or "").strip()
@@ -153,6 +176,8 @@ def gravar_tela_config(con: sqlite3.Connection, form: dict) -> None:
     caixa_seg = (form.get("caixa_segredo") or "").strip()
     if caixa_seg:
         gravar_config(con, WA.CHAVE_CAIXA_SEGREDO, caixa_seg)
+    gravar_config(con, WA.CHAVE_MODO_TESTE,
+                  "1" if form.get("modo_teste") == "1" else "")
 
 
 def assinatura_hub(app_secret: str, corpo: bytes, header: str) -> bool:
@@ -168,25 +193,39 @@ def assinatura_hub(app_secret: str, corpo: bytes, header: str) -> bool:
         app_secret.encode("utf-8"), corpo, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(esperado.lower(), recebido.lower())
-def post_de_teste_liberado(con: sqlite3.Connection, header_teste: str = "") -> bool:
-    """POST local de desenvolvimento: header X-Wa-Test: 1 e sem app_secret.
+
+
+def modo_teste_ligado(con: Any) -> bool:
+    return ler_config(con, WA.CHAVE_MODO_TESTE) == "1"
+
+
+def post_de_teste_liberado(con: Any, header_teste: str = "") -> bool:
+    """POST local de desenvolvimento: header X-Wa-Test: 1 COM O MODO LIGADO.
+
+    O MODO DE TESTE É UMA CHAVE DA CONFIGURAÇÃO, E NASCE DESLIGADO (M6 do
+    LS01, lote LX11). Antes bastava não ter `app_secret` gravado — e é o de
+    fábrica, porque a entrada de verdade vem pela caixa-postal: o cabeçalho
+    sozinho punha conversa forjada na fila do balcão. O LS02 já o restringiu
+    à própria máquina (`wa_web`); agora ele vale só com o ADMIN tendo ligado
+    o modo, de propósito, na tela de configuração.
 
     Com app_secret gravado, so entra quem trouxer HMAC valido (reenvio da
-    caixa-postal no host XMPP, ou teste que assina o corpo). O tunel no
-    SERVIDOR do Cartorio Gestao e proibido: este endpoint nao deve ser
-    publico.
+    caixa-postal no host XMPP, ou teste que assina o corpo), ligado ou não o
+    modo. O tunel no SERVIDOR do Cartorio Gestao e proibido: este endpoint
+    nao deve ser publico.
     """
-    if ler_config(con, WA.CHAVE_APP_SECRET):
+    if ler_config(con, WA.CHAVE_APP_SECRET) or not modo_teste_ligado(con):
         return False
     return str(header_teste or "").strip() == "1"
 
 
-def post_permitido(con: sqlite3.Connection, header_teste: str = "",
+def post_permitido(con: Any, header_teste: str = "",
                    corpo: bytes = b"", signature_header: str = "") -> bool:
     """Este POST entra na fila?
 
     - Com `app_secret` gravado: exige HMAC SHA256 `X-Hub-Signature-256` valido.
-    - Sem secret: so `X-Wa-Test: 1`. Nao abre o webhook para o mundo.
+    - Sem secret: so `X-Wa-Test: 1`, e so com o modo de teste LIGADO.
+    - Sem secret e sem o modo: RECUSA. Nao abre o webhook para o mundo.
     Producao inbound nao chega direto neste Flask: chega na caixa-postal
     (host XMPP) e o Cartorio Gestao puxa.
     """
@@ -244,27 +283,28 @@ def _mensagens_do_payload(payload: Any) -> list[tuple[dict, dict]]:
     return saida
 
 
-def _ja_tem_meta(con: sqlite3.Connection, meta_id: str) -> bool:
+def _ja_tem_meta(con: Any, meta_id: str) -> bool:
     if not meta_id:
         return False
-    linha = con.execute(
-        "SELECT id FROM wa_mensagem WHERE meta_id=?", (meta_id,)
-    ).fetchone()
+    linha = banco(con).um(
+        "SELECT id FROM wa_mensagem WHERE meta_id=%s", (meta_id,)
+    )
     return bool(linha)
 
 
-def _conversa_por_wa(con: sqlite3.Connection, wa_id: str) -> sqlite3.Row | None:
-    return con.execute(
-        "SELECT * FROM wa_conversa WHERE wa_id=?", (wa_id,)
-    ).fetchone()
+def _conversa_por_wa(con: Any, wa_id: str) -> dict | None:
+    return banco(con).um(
+        "SELECT * FROM wa_conversa WHERE wa_id=%s", (wa_id,)
+    )
 
 
-def aplicar_entrada(con: sqlite3.Connection, payload_meta: Any,
+def aplicar_entrada(con: Any, payload_meta: Any,
                     serventia: Any = None, agora: str | None = None) -> dict:
     """Grava conversa+mensagem, classifica e rascunha. Idempotente por meta_id.
 
     Nao envia nada a Meta. auto_ok permanece 0.
     """
+    bd = banco(con)
     quando = agora or agora_iso()
     if serventia is None:
         serventia = SERV.PADRAO
@@ -273,6 +313,10 @@ def aplicar_entrada(con: sqlite3.Connection, payload_meta: Any,
     ids: list[int] = []
     for msg, nomes in _mensagens_do_payload(payload_meta):
         meta_id = str(msg.get("id") or msg.get("meta_id") or "").strip()
+        # "Ja chegou?" e "ja tem conversa deste numero?" valem ate o INSERT.
+        # O BEGIN IMMEDIATE do SQLite punha duas entradas iguais em fila;
+        # sem a trava, as duas passam e a segunda bate no indice unico.
+        bd.travar("wa_mensagem.meta_id")
         if meta_id and _ja_tem_meta(con, meta_id):
             repetidas += 1
             continue
@@ -282,33 +326,32 @@ def aplicar_entrada(con: sqlite3.Connection, payload_meta: Any,
         texto = _texto_da_mensagem(msg)
         nome = str(nomes.get(wa_id) or msg.get("nome") or "").strip()
         etiqueta = classificar(texto)
-        rascunho = rascunhar(texto, etiqueta, serventia)
+        rascunho = rascunhar(texto, etiqueta, serventia, con=con)
         bruto = json.dumps(msg, ensure_ascii=False)
         existente = _conversa_por_wa(con, wa_id)
         if existente:
-            cid = int(existente["id"] if isinstance(existente, sqlite3.Row)
-                      else existente[0])
-            con.execute(
+            cid = int(existente["id"])
+            bd.escrever(
                 """UPDATE wa_conversa
-                      SET nome=COALESCE(NULLIF(?, ''), nome),
-                          etiqueta=?, rascunho=?, status=?,
-                          auto_ok=0, atualizado_em=?
-                    WHERE id=?""",
+                      SET nome=COALESCE(NULLIF(%s, ''), nome),
+                          etiqueta=%s, rascunho=%s, status=%s,
+                          auto_ok=0, atualizado_em=%s
+                    WHERE id=%s""",
                 (nome, etiqueta, rascunho, WA.ABERTA, quando, cid),
             )
         else:
-            cur = con.execute(
+            cid = int(bd.escrever(
                 """INSERT INTO wa_conversa
                        (wa_id, nome, etiqueta, status, rascunho,
                         auto_ok, atualizado_em)
-                   VALUES (?, ?, ?, ?, ?, 0, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, 0, %s)
+                   RETURNING id""",
                 (wa_id, nome, etiqueta, WA.ABERTA, rascunho, quando),
-            )
-            cid = int(cur.lastrowid)
-        con.execute(
+            )[0]["id"])
+        bd.escrever(
             """INSERT INTO wa_mensagem
                    (conversa_id, direcao, texto, bruto_json, criado_em, meta_id)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (cid, DIR_IN, texto, bruto, quando, meta_id or None),
         )
         criadas += 1
@@ -316,8 +359,8 @@ def aplicar_entrada(con: sqlite3.Connection, payload_meta: Any,
     return {"criadas": criadas, "repetidas": repetidas, "conversa_ids": ids}
 
 
-def listar_conversas(con: sqlite3.Connection) -> list[dict]:
-    linhas = con.execute(
+def listar_conversas(con: Any) -> list[dict]:
+    linhas = banco(con).ler(
         """SELECT c.id, c.wa_id, c.nome, c.etiqueta, c.status, c.rascunho,
                   c.auto_ok, c.atualizado_em,
                   (SELECT m.texto FROM wa_mensagem m
@@ -325,45 +368,46 @@ def listar_conversas(con: sqlite3.Connection) -> list[dict]:
                     ORDER BY m.id DESC LIMIT 1) AS ultimo_texto
              FROM wa_conversa c
             ORDER BY c.atualizado_em DESC, c.id DESC"""
-    ).fetchall()
+    )
     return [dict(r) for r in linhas]
 
 
-def conversa(con: sqlite3.Connection, conversa_id: int) -> dict | None:
-    row = con.execute(
-        "SELECT * FROM wa_conversa WHERE id=?", (int(conversa_id),)
-    ).fetchone()
+def conversa(con: Any, conversa_id: int) -> dict | None:
+    bd = banco(con)
+    row = bd.um(
+        "SELECT * FROM wa_conversa WHERE id=%s", (int(conversa_id),)
+    )
     if not row:
         return None
-    msgs = con.execute(
+    msgs = bd.ler(
         """SELECT * FROM wa_mensagem
-            WHERE conversa_id=?
+            WHERE conversa_id=%s
             ORDER BY id ASC""",
         (int(conversa_id),),
-    ).fetchall()
+    )
     d = dict(row)
     d["mensagens"] = [dict(m) for m in msgs]
     return d
 
 
-def salvar_rascunho(con: sqlite3.Connection, conversa_id: int, texto: str,
+def salvar_rascunho(con: Any, conversa_id: int, texto: str,
                     agora: str | None = None) -> None:
     quando = agora or agora_iso()
-    con.execute(
+    banco(con).escrever(
         """UPDATE wa_conversa
-              SET rascunho=?, atualizado_em=?
-            WHERE id=?""",
+              SET rascunho=%s, atualizado_em=%s
+            WHERE id=%s""",
         (texto, quando, int(conversa_id)),
     )
 
 
-def resolver(con: sqlite3.Connection, conversa_id: int,
+def resolver(con: Any, conversa_id: int,
              agora: str | None = None) -> None:
     quando = agora or agora_iso()
-    con.execute(
+    banco(con).escrever(
         """UPDATE wa_conversa
-              SET status=?, atualizado_em=?
-            WHERE id=?""",
+              SET status=%s, atualizado_em=%s
+            WHERE id=%s""",
         (WA.RESOLVIDA, quando, int(conversa_id)),
     )
 
@@ -411,7 +455,7 @@ def _http_post_json(url: str, corpo: dict, headers: dict,
         ) from e
 
 
-def enviar_rascunho(con: sqlite3.Connection, conversa_id: int,
+def enviar_rascunho(con: Any, conversa_id: int,
                     agora: str | None = None,
                     http_post: Callable | None = None) -> dict:
     """POST na Graph Cloud API. So o rascunho conferido. Nao autoenvia."""
@@ -442,16 +486,17 @@ def enviar_rascunho(con: sqlite3.Connection, conversa_id: int,
         raise EnvioErro(_mensagem_erro_graph(bruto, status))
     meta_id = _id_da_graph(bruto) or None
     quando = agora or agora_iso()
-    con.execute(
+    bd = banco(con)
+    bd.escrever(
         """INSERT INTO wa_mensagem
                (conversa_id, direcao, texto, bruto_json, criado_em, meta_id)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (int(conversa_id), DIR_OUT, texto, None, quando, meta_id),
     )
-    con.execute(
+    bd.escrever(
         """UPDATE wa_conversa
-              SET status=?, atualizado_em=?
-            WHERE id=?""",
+              SET status=%s, atualizado_em=%s
+            WHERE id=%s""",
         (WA.AGUARDANDO, quando, int(conversa_id)),
     )
     return {"ok": True, "meta_id": meta_id}

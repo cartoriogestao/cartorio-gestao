@@ -67,6 +67,7 @@ from typing import Any
 # Escrever aqui uma segunda — e ela seria parecida, que e como duas regras
 # divergem — faria a resposta a «o que mudou» nomear o modulo errado.
 import modulos
+from bd_nativo import banco
 
 # O teto do que vai junto da pergunta. Não é estética: é a conta do mês. Acima
 # disto a fatia sai cortada, e o corte fica DITO no texto — mapa que some sem
@@ -208,7 +209,7 @@ def _arquivos_do_sistema(raiz: Path) -> dict[str, dict]:
 # ------------------------------------------------------------- o banco
 
 
-def _tabelas(con: sqlite3.Connection) -> dict[str, list[str]]:
+def _tabelas(con: Any) -> dict[str, list[str]]:
     """Os nomes das tabelas e das colunas desta instalação. Só LÊ.
 
     NÃO PERGUNTA O ESQUEMA AO BANCO PELA PORTA QUE SÓ O SQLite TEM — aquela
@@ -217,9 +218,8 @@ def _tabelas(con: sqlite3.Connection) -> dict[str, list[str]]:
     custa o mesmo: um `SELECT` que não traz linha nenhuma devolve a descrição
     das colunas sem tirar do balcão um dado sequer.
 
-    O catálogo (`sqlite_master`) continua sendo do SQLite; em Postgres o mesmo
-    se lê de `information_schema`. Fica numa função só, que é onde a troca
-    caberia num lugar só.
+    O catálogo agora é o `information_schema` do PostgreSQL (o antigo catálogo
+    do SQLite saiu na migração). Fica numa função só.
 
     (A porta não está escrita aqui com o nome dela de propósito. O varredor de
     portabilidade lê o arquivo inteiro, comentário incluído, e contaria a
@@ -230,25 +230,28 @@ def _tabelas(con: sqlite3.Connection) -> dict[str, list[str]]:
     """
     achados: dict[str, list[str]] = {}
     try:
-        nomes = [r[0] for r in con.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+        linhas = banco(con).ler(
+            "SELECT t.table_name AS tabela, c.column_name AS coluna "
+            "FROM information_schema.tables t "
+            "LEFT JOIN information_schema.columns c "
+            "  ON c.table_schema = t.table_schema "
+            " AND c.table_name = t.table_name "
+            "WHERE t.table_schema = current_schema() "
+            "  AND t.table_type = 'BASE TABLE' "
+            "ORDER BY t.table_name, c.ordinal_position")
     except sqlite3.Error:
         return achados
-    for nome in nomes:
-        if nome.startswith("sqlite_"):
-            continue
-        try:
-            cur = con.execute(f'SELECT * FROM "{nome}" LIMIT 0')
-            achados[nome] = [d[0] for d in (cur.description or [])]
-        except sqlite3.Error:
-            achados[nome] = []
+    for r in linhas:
+        colunas = achados.setdefault(r["tabela"], [])
+        if r["coluna"] is not None:
+            colunas.append(r["coluna"])
     return achados
 
 
 # ------------------------------------------------------------- a medição
 
 
-def medir(app, con: sqlite3.Connection, *, versao: str = "",
+def medir(app, con: Any, *, versao: str = "",
           raiz: Any = None) -> dict:
     """Mede o sistema como ele está nesta máquina, agora. Só LÊ.
 
@@ -307,7 +310,7 @@ def medir(app, con: sqlite3.Connection, *, versao: str = "",
     }
 
 
-def do_processo(app, con: sqlite3.Connection, *, versao: str = "") -> dict:
+def do_processo(app, con: Any, *, versao: str = "") -> dict:
     """O mapa medido uma vez e guardado enquanto o servidor viver.
 
     O código não muda debaixo do servidor em execução — atualizar o sistema

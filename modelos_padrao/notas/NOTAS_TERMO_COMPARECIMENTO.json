@@ -1,0 +1,17 @@
+{
+  "chave": "NOTAS_TERMO_COMPARECIMENTO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Termo de comparecimento",
+  "formato": "CHAVES",
+  "explica": "O termo que a parte assina ao reconhecer firma por autenticidade. O cabeçalho da serventia vem montado do programa ({cabecalho}), como nos outros papéis — decisão do oficial de 07/09/2026.",
+  "campos": [
+    "cabecalho",
+    "ordem",
+    "data_extenso",
+    "nome",
+    "documento",
+    "documento_apresentado",
+    "selo",
+    "quem_assina"
+  ]
+}

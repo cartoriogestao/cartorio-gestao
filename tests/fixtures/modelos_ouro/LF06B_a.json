@@ -1,0 +1,459 @@
+{
+ "_como": "Gerado ANTES do LF06B, na árvore exportada do commit 2c41e90 (git archive), por ouro_lf06b.gerar. Não regerar depois da mudança: o teste compararia a base com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "clausula_html_prenotacoes_abertas([])": {
+   "ok": "<p>CERTIFICO ainda que, nesta data, <b>não há</b> título prenotado nem protocolo em aberto referente a esta matrícula, na forma da Lei nº 6.015/1973 e do Código Nacional de Normas do Foro Extrajudicial (Provimento CNJ nº 149/2023).</p>"
+  },
+  "clausula_html_prenotacoes_abertas([]) sem fmt_date": {
+   "ok": "<p>CERTIFICO ainda que, nesta data, <b>não há</b> título prenotado nem protocolo em aberto referente a esta matrícula, na forma da Lei nº 6.015/1973 e do Código Nacional de Normas do Foro Extrajudicial (Provimento CNJ nº 149/2023).</p>"
+  },
+  "clausula_html_prenotacoes_abertas(duas)": {
+   "ok": "<p>CERTIFICO ainda que, nesta data, <b>há</b> título(s) prenotado(s) em aberto referente(s) a esta matrícula, na forma da Lei nº 6.015/1973 e do Código Nacional de Normas do Foro Extrajudicial (Provimento CNJ nº 149/2023): Protocolo nº <b>4.321</b>, prenotado em 08/09/2026, natureza Escritura pública de compra e venda, objeto Lote 10 da Quadra 2; Protocolo nº <b>77</b>.</p>"
+  },
+  "clausula_html_prenotacoes_abertas(tres com escape)": {
+   "ok": "<p>CERTIFICO ainda que, nesta data, <b>há</b> título(s) prenotado(s) em aberto referente(s) a esta matrícula, na forma da Lei nº 6.015/1973 e do Código Nacional de Normas do Foro Extrajudicial (Provimento CNJ nº 149/2023): Protocolo nº <b>12&lt;b&gt;</b>, prenotado em 01/09/2026, natureza Cédula &amp; aditivo, objeto \"casa\" &lt;1&gt;; Protocolo nº <b></b>, objeto Gleba de exemplo; Protocolo nº <b>4.321</b>, prenotado em 08/09/2026, natureza Escritura pública de compra e venda, objeto Lote 10 da Quadra 2.</p>"
+  },
+  "clausula_html_prenotacoes_abertas(uma completa)": {
+   "ok": "<p>CERTIFICO ainda que, nesta data, <b>há</b> título prenotado em aberto referente a esta matrícula, na forma da Lei nº 6.015/1973 e do Código Nacional de Normas do Foro Extrajudicial (Provimento CNJ nº 149/2023): Protocolo nº <b>4.321</b>, prenotado em 08/09/2026, natureza Escritura pública de compra e venda, objeto Lote 10 da Quadra 2.</p>"
+  },
+  "clausula_html_prenotacoes_abertas(uma sem fmt_date)": {
+   "ok": "<p>CERTIFICO ainda que, nesta data, <b>há</b> título prenotado em aberto referente a esta matrícula, na forma da Lei nº 6.015/1973 e do Código Nacional de Normas do Foro Extrajudicial (Provimento CNJ nº 149/2023): Protocolo nº <b>4.321</b>, prenotado em 2026-09-08, natureza Escritura pública de compra e venda, objeto Lote 10 da Quadra 2.</p>"
+  },
+  "clausula_html_prenotacoes_abertas(uma so numero)": {
+   "ok": "<p>CERTIFICO ainda que, nesta data, <b>há</b> título prenotado em aberto referente a esta matrícula, na forma da Lei nº 6.015/1973 e do Código Nacional de Normas do Foro Extrajudicial (Provimento CNJ nº 149/2023): Protocolo nº <b>77</b>.</p>"
+  },
+  "modelos_de_encerramento(m2, artigo A)": {
+   "ok": [
+    {
+     "codigo": "TECNICA",
+     "motivo": "Mudança da técnica de escrituração, com remissão à nova matrícula",
+     "natureza": "Encerramento da matrícula por mudança da técnica de escrituração e remissão à nova matrícula",
+     "rotulo": "Mudança da técnica de escrituração (remissão à nova matrícula)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR MUDANÇA DA TÉCNICA DE ESCRITURAÇÃO E REMISSÃO À NOVA MATRÍCULA. Em razão da adoção da escrituração eletrônica, mediante abertura de nova matrícula, procede-se, de ofício, ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando a continuidade dos assentamentos registrais do imóvel à Matrícula nº «PREENCHER: nova matrícula», do Livro nº 2 – Registro Geral, desta Serventia, para a qual foram transpostos os assentos registrais ativos pertinentes, mantidas as remissões recíprocas e preservada a continuidade registral. O presente ato decorre exclusivamente da mudança da técnica de escrituração e não importa transmissão de domínio, desmembramento, unificação, nem alteração da descrição do imóvel, da titularidade, dos direitos, ônus ou gravames existentes. Os atos registrais posteriores relativos ao imóvel serão praticados exclusivamente na nova matrícula. Fundamento: arts. 426, 427, §§ 1º e 2º, e 495, IV, do Código de Normas da Corregedoria Geral do Foro Extrajudicial do Maranhão – Provimento COGEX nº 28/2026. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. A Oficiala Substituta, _____________ FULANA DE EXEMPLO."
+    },
+    {
+     "codigo": "DESMEMBRAMENTO",
+     "motivo": "Desmembramento total do imóvel em novas matrículas",
+     "natureza": "Encerramento da matrícula por desmembramento",
+     "rotulo": "Desmembramento total (áreas em novas matrículas)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR DESMEMBRAMENTO. Tendo em vista o desmembramento total do imóvel objeto desta matrícula, nos termos de «PREENCHER: título/procedimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando as áreas resultantes a constar das Matrículas nº «PREENCHER: matrículas abertas», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. A Oficiala Substituta, _____________ FULANA DE EXEMPLO."
+    },
+    {
+     "codigo": "UNIFICACAO",
+     "motivo": "Unificação do imóvel com outro(s), em nova matrícula",
+     "natureza": "Encerramento da matrícula por unificação",
+     "rotulo": "Unificação / fusão com outro(s) imóvel(is)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR UNIFICAÇÃO. Em virtude da unificação do imóvel objeto desta matrícula com «PREENCHER: imóvel(is) e matrícula(s) unificados», nos termos de «PREENCHER: título/requerimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel unificado a constar da Matrícula nº «PREENCHER: nova matrícula», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. A Oficiala Substituta, _____________ FULANA DE EXEMPLO."
+    },
+    {
+     "codigo": "CIRCUNSCRICAO",
+     "motivo": "Imóvel passou a pertencer a outra circunscrição imobiliária",
+     "natureza": "Encerramento da matrícula por transferência de circunscrição",
+     "rotulo": "Transferência para outra circunscrição / serventia",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR TRANSFERÊNCIA DE CIRCUNSCRIÇÃO. Tendo em vista que o imóvel objeto desta matrícula passou a pertencer à circunscrição do «PREENCHER: serventia de destino», conforme «PREENCHER: fundamento/comunicação», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, nesta Serventia, devendo os atos posteriores relativos ao imóvel ser praticados naquela Serventia. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. A Oficiala Substituta, _____________ FULANA DE EXEMPLO."
+    },
+    {
+     "codigo": "LIVRE",
+     "motivo": "",
+     "natureza": "Encerramento de matrícula",
+     "rotulo": "Outro motivo (texto livre)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA. «PREENCHER: motivo e fundamento do encerramento», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel a constar da Matrícula nº «PREENCHER: matrícula de destino», feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. A Oficiala Substituta, _____________ FULANA DE EXEMPLO."
+    }
+   ]
+  },
+  "modelos_de_encerramento(m2, nome vazio)": {
+   "ok": [
+    {
+     "codigo": "TECNICA",
+     "motivo": "Mudança da técnica de escrituração, com remissão à nova matrícula",
+     "natureza": "Encerramento da matrícula por mudança da técnica de escrituração e remissão à nova matrícula",
+     "rotulo": "Mudança da técnica de escrituração (remissão à nova matrícula)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR MUDANÇA DA TÉCNICA DE ESCRITURAÇÃO E REMISSÃO À NOVA MATRÍCULA. Em razão da adoção da escrituração eletrônica, mediante abertura de nova matrícula, procede-se, de ofício, ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando a continuidade dos assentamentos registrais do imóvel à Matrícula nº «PREENCHER: nova matrícula», do Livro nº 2 – Registro Geral, desta Serventia, para a qual foram transpostos os assentos registrais ativos pertinentes, mantidas as remissões recíprocas e preservada a continuidade registral. O presente ato decorre exclusivamente da mudança da técnica de escrituração e não importa transmissão de domínio, desmembramento, unificação, nem alteração da descrição do imóvel, da titularidade, dos direitos, ônus ou gravames existentes. Os atos registrais posteriores relativos ao imóvel serão praticados exclusivamente na nova matrícula. Fundamento: arts. 426, 427, §§ 1º e 2º, e 495, IV, do Código de Normas da Corregedoria Geral do Foro Extrajudicial do Maranhão – Provimento COGEX nº 28/2026. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. «PREENCHER: quem assina»."
+    },
+    {
+     "codigo": "DESMEMBRAMENTO",
+     "motivo": "Desmembramento total do imóvel em novas matrículas",
+     "natureza": "Encerramento da matrícula por desmembramento",
+     "rotulo": "Desmembramento total (áreas em novas matrículas)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR DESMEMBRAMENTO. Tendo em vista o desmembramento total do imóvel objeto desta matrícula, nos termos de «PREENCHER: título/procedimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando as áreas resultantes a constar das Matrículas nº «PREENCHER: matrículas abertas», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. «PREENCHER: quem assina»."
+    },
+    {
+     "codigo": "UNIFICACAO",
+     "motivo": "Unificação do imóvel com outro(s), em nova matrícula",
+     "natureza": "Encerramento da matrícula por unificação",
+     "rotulo": "Unificação / fusão com outro(s) imóvel(is)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR UNIFICAÇÃO. Em virtude da unificação do imóvel objeto desta matrícula com «PREENCHER: imóvel(is) e matrícula(s) unificados», nos termos de «PREENCHER: título/requerimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel unificado a constar da Matrícula nº «PREENCHER: nova matrícula», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. «PREENCHER: quem assina»."
+    },
+    {
+     "codigo": "CIRCUNSCRICAO",
+     "motivo": "Imóvel passou a pertencer a outra circunscrição imobiliária",
+     "natureza": "Encerramento da matrícula por transferência de circunscrição",
+     "rotulo": "Transferência para outra circunscrição / serventia",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR TRANSFERÊNCIA DE CIRCUNSCRIÇÃO. Tendo em vista que o imóvel objeto desta matrícula passou a pertencer à circunscrição do «PREENCHER: serventia de destino», conforme «PREENCHER: fundamento/comunicação», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, nesta Serventia, devendo os atos posteriores relativos ao imóvel ser praticados naquela Serventia. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. «PREENCHER: quem assina»."
+    },
+    {
+     "codigo": "LIVRE",
+     "motivo": "",
+     "natureza": "Encerramento de matrícula",
+     "rotulo": "Outro motivo (texto livre)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA. «PREENCHER: motivo e fundamento do encerramento», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel a constar da Matrícula nº «PREENCHER: matrícula de destino», feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. «PREENCHER: quem assina»."
+    }
+   ]
+  },
+  "modelos_de_encerramento(m2, sem nome)": {
+   "ok": [
+    {
+     "codigo": "TECNICA",
+     "motivo": "Mudança da técnica de escrituração, com remissão à nova matrícula",
+     "natureza": "Encerramento da matrícula por mudança da técnica de escrituração e remissão à nova matrícula",
+     "rotulo": "Mudança da técnica de escrituração (remissão à nova matrícula)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR MUDANÇA DA TÉCNICA DE ESCRITURAÇÃO E REMISSÃO À NOVA MATRÍCULA. Em razão da adoção da escrituração eletrônica, mediante abertura de nova matrícula, procede-se, de ofício, ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando a continuidade dos assentamentos registrais do imóvel à Matrícula nº «PREENCHER: nova matrícula», do Livro nº 2 – Registro Geral, desta Serventia, para a qual foram transpostos os assentos registrais ativos pertinentes, mantidas as remissões recíprocas e preservada a continuidade registral. O presente ato decorre exclusivamente da mudança da técnica de escrituração e não importa transmissão de domínio, desmembramento, unificação, nem alteração da descrição do imóvel, da titularidade, dos direitos, ônus ou gravames existentes. Os atos registrais posteriores relativos ao imóvel serão praticados exclusivamente na nova matrícula. Fundamento: arts. 426, 427, §§ 1º e 2º, e 495, IV, do Código de Normas da Corregedoria Geral do Foro Extrajudicial do Maranhão – Provimento COGEX nº 28/2026. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. «PREENCHER: quem assina»."
+    },
+    {
+     "codigo": "DESMEMBRAMENTO",
+     "motivo": "Desmembramento total do imóvel em novas matrículas",
+     "natureza": "Encerramento da matrícula por desmembramento",
+     "rotulo": "Desmembramento total (áreas em novas matrículas)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR DESMEMBRAMENTO. Tendo em vista o desmembramento total do imóvel objeto desta matrícula, nos termos de «PREENCHER: título/procedimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando as áreas resultantes a constar das Matrículas nº «PREENCHER: matrículas abertas», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. «PREENCHER: quem assina»."
+    },
+    {
+     "codigo": "UNIFICACAO",
+     "motivo": "Unificação do imóvel com outro(s), em nova matrícula",
+     "natureza": "Encerramento da matrícula por unificação",
+     "rotulo": "Unificação / fusão com outro(s) imóvel(is)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR UNIFICAÇÃO. Em virtude da unificação do imóvel objeto desta matrícula com «PREENCHER: imóvel(is) e matrícula(s) unificados», nos termos de «PREENCHER: título/requerimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel unificado a constar da Matrícula nº «PREENCHER: nova matrícula», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. «PREENCHER: quem assina»."
+    },
+    {
+     "codigo": "CIRCUNSCRICAO",
+     "motivo": "Imóvel passou a pertencer a outra circunscrição imobiliária",
+     "natureza": "Encerramento da matrícula por transferência de circunscrição",
+     "rotulo": "Transferência para outra circunscrição / serventia",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR TRANSFERÊNCIA DE CIRCUNSCRIÇÃO. Tendo em vista que o imóvel objeto desta matrícula passou a pertencer à circunscrição do «PREENCHER: serventia de destino», conforme «PREENCHER: fundamento/comunicação», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, nesta Serventia, devendo os atos posteriores relativos ao imóvel ser praticados naquela Serventia. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. «PREENCHER: quem assina»."
+    },
+    {
+     "codigo": "LIVRE",
+     "motivo": "",
+     "natureza": "Encerramento de matrícula",
+     "rotulo": "Outro motivo (texto livre)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA. «PREENCHER: motivo e fundamento do encerramento», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel a constar da Matrícula nº «PREENCHER: matrícula de destino», feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. «PREENCHER: quem assina»."
+    }
+   ]
+  },
+  "modelos_de_encerramento(m2, sem titulo)": {
+   "ok": [
+    {
+     "codigo": "TECNICA",
+     "motivo": "Mudança da técnica de escrituração, com remissão à nova matrícula",
+     "natureza": "Encerramento da matrícula por mudança da técnica de escrituração e remissão à nova matrícula",
+     "rotulo": "Mudança da técnica de escrituração (remissão à nova matrícula)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR MUDANÇA DA TÉCNICA DE ESCRITURAÇÃO E REMISSÃO À NOVA MATRÍCULA. Em razão da adoção da escrituração eletrônica, mediante abertura de nova matrícula, procede-se, de ofício, ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando a continuidade dos assentamentos registrais do imóvel à Matrícula nº «PREENCHER: nova matrícula», do Livro nº 2 – Registro Geral, desta Serventia, para a qual foram transpostos os assentos registrais ativos pertinentes, mantidas as remissões recíprocas e preservada a continuidade registral. O presente ato decorre exclusivamente da mudança da técnica de escrituração e não importa transmissão de domínio, desmembramento, unificação, nem alteração da descrição do imóvel, da titularidade, dos direitos, ônus ou gravames existentes. Os atos registrais posteriores relativos ao imóvel serão praticados exclusivamente na nova matrícula. Fundamento: arts. 426, 427, §§ 1º e 2º, e 495, IV, do Código de Normas da Corregedoria Geral do Foro Extrajudicial do Maranhão – Provimento COGEX nº 28/2026. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "DESMEMBRAMENTO",
+     "motivo": "Desmembramento total do imóvel em novas matrículas",
+     "natureza": "Encerramento da matrícula por desmembramento",
+     "rotulo": "Desmembramento total (áreas em novas matrículas)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR DESMEMBRAMENTO. Tendo em vista o desmembramento total do imóvel objeto desta matrícula, nos termos de «PREENCHER: título/procedimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando as áreas resultantes a constar das Matrículas nº «PREENCHER: matrículas abertas», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "UNIFICACAO",
+     "motivo": "Unificação do imóvel com outro(s), em nova matrícula",
+     "natureza": "Encerramento da matrícula por unificação",
+     "rotulo": "Unificação / fusão com outro(s) imóvel(is)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR UNIFICAÇÃO. Em virtude da unificação do imóvel objeto desta matrícula com «PREENCHER: imóvel(is) e matrícula(s) unificados», nos termos de «PREENCHER: título/requerimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel unificado a constar da Matrícula nº «PREENCHER: nova matrícula», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "CIRCUNSCRICAO",
+     "motivo": "Imóvel passou a pertencer a outra circunscrição imobiliária",
+     "natureza": "Encerramento da matrícula por transferência de circunscrição",
+     "rotulo": "Transferência para outra circunscrição / serventia",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR TRANSFERÊNCIA DE CIRCUNSCRIÇÃO. Tendo em vista que o imóvel objeto desta matrícula passou a pertencer à circunscrição do «PREENCHER: serventia de destino», conforme «PREENCHER: fundamento/comunicação», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, nesta Serventia, devendo os atos posteriores relativos ao imóvel ser praticados naquela Serventia. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "LIVRE",
+     "motivo": "",
+     "natureza": "Encerramento de matrícula",
+     "rotulo": "Outro motivo (texto livre)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA. «PREENCHER: motivo e fundamento do encerramento», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel a constar da Matrícula nº «PREENCHER: matrícula de destino», feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. _____________ FULANO DE EXEMPLO."
+    }
+   ]
+  },
+  "modelos_de_encerramento(m2, titulo e artigo)": {
+   "ok": [
+    {
+     "codigo": "TECNICA",
+     "motivo": "Mudança da técnica de escrituração, com remissão à nova matrícula",
+     "natureza": "Encerramento da matrícula por mudança da técnica de escrituração e remissão à nova matrícula",
+     "rotulo": "Mudança da técnica de escrituração (remissão à nova matrícula)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR MUDANÇA DA TÉCNICA DE ESCRITURAÇÃO E REMISSÃO À NOVA MATRÍCULA. Em razão da adoção da escrituração eletrônica, mediante abertura de nova matrícula, procede-se, de ofício, ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando a continuidade dos assentamentos registrais do imóvel à Matrícula nº «PREENCHER: nova matrícula», do Livro nº 2 – Registro Geral, desta Serventia, para a qual foram transpostos os assentos registrais ativos pertinentes, mantidas as remissões recíprocas e preservada a continuidade registral. O presente ato decorre exclusivamente da mudança da técnica de escrituração e não importa transmissão de domínio, desmembramento, unificação, nem alteração da descrição do imóvel, da titularidade, dos direitos, ônus ou gravames existentes. Os atos registrais posteriores relativos ao imóvel serão praticados exclusivamente na nova matrícula. Fundamento: arts. 426, 427, §§ 1º e 2º, e 495, IV, do Código de Normas da Corregedoria Geral do Foro Extrajudicial do Maranhão – Provimento COGEX nº 28/2026. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. O Oficial Registrador, _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "DESMEMBRAMENTO",
+     "motivo": "Desmembramento total do imóvel em novas matrículas",
+     "natureza": "Encerramento da matrícula por desmembramento",
+     "rotulo": "Desmembramento total (áreas em novas matrículas)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR DESMEMBRAMENTO. Tendo em vista o desmembramento total do imóvel objeto desta matrícula, nos termos de «PREENCHER: título/procedimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando as áreas resultantes a constar das Matrículas nº «PREENCHER: matrículas abertas», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. O Oficial Registrador, _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "UNIFICACAO",
+     "motivo": "Unificação do imóvel com outro(s), em nova matrícula",
+     "natureza": "Encerramento da matrícula por unificação",
+     "rotulo": "Unificação / fusão com outro(s) imóvel(is)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR UNIFICAÇÃO. Em virtude da unificação do imóvel objeto desta matrícula com «PREENCHER: imóvel(is) e matrícula(s) unificados», nos termos de «PREENCHER: título/requerimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel unificado a constar da Matrícula nº «PREENCHER: nova matrícula», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. O Oficial Registrador, _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "CIRCUNSCRICAO",
+     "motivo": "Imóvel passou a pertencer a outra circunscrição imobiliária",
+     "natureza": "Encerramento da matrícula por transferência de circunscrição",
+     "rotulo": "Transferência para outra circunscrição / serventia",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR TRANSFERÊNCIA DE CIRCUNSCRIÇÃO. Tendo em vista que o imóvel objeto desta matrícula passou a pertencer à circunscrição do «PREENCHER: serventia de destino», conforme «PREENCHER: fundamento/comunicação», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, nesta Serventia, devendo os atos posteriores relativos ao imóvel ser praticados naquela Serventia. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. O Oficial Registrador, _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "LIVRE",
+     "motivo": "",
+     "natureza": "Encerramento de matrícula",
+     "rotulo": "Outro motivo (texto livre)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA. «PREENCHER: motivo e fundamento do encerramento», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel a constar da Matrícula nº «PREENCHER: matrícula de destino», feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. O Oficial Registrador, _____________ FULANO DE EXEMPLO."
+    }
+   ]
+  },
+  "modelos_de_encerramento(m2, titulo sem artigo)": {
+   "ok": [
+    {
+     "codigo": "TECNICA",
+     "motivo": "Mudança da técnica de escrituração, com remissão à nova matrícula",
+     "natureza": "Encerramento da matrícula por mudança da técnica de escrituração e remissão à nova matrícula",
+     "rotulo": "Mudança da técnica de escrituração (remissão à nova matrícula)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR MUDANÇA DA TÉCNICA DE ESCRITURAÇÃO E REMISSÃO À NOVA MATRÍCULA. Em razão da adoção da escrituração eletrônica, mediante abertura de nova matrícula, procede-se, de ofício, ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando a continuidade dos assentamentos registrais do imóvel à Matrícula nº «PREENCHER: nova matrícula», do Livro nº 2 – Registro Geral, desta Serventia, para a qual foram transpostos os assentos registrais ativos pertinentes, mantidas as remissões recíprocas e preservada a continuidade registral. O presente ato decorre exclusivamente da mudança da técnica de escrituração e não importa transmissão de domínio, desmembramento, unificação, nem alteração da descrição do imóvel, da titularidade, dos direitos, ônus ou gravames existentes. Os atos registrais posteriores relativos ao imóvel serão praticados exclusivamente na nova matrícula. Fundamento: arts. 426, 427, §§ 1º e 2º, e 495, IV, do Código de Normas da Corregedoria Geral do Foro Extrajudicial do Maranhão – Provimento COGEX nº 28/2026. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. O Escrevente Autorizada, _____________ FULANA DE EXEMPLO."
+    },
+    {
+     "codigo": "DESMEMBRAMENTO",
+     "motivo": "Desmembramento total do imóvel em novas matrículas",
+     "natureza": "Encerramento da matrícula por desmembramento",
+     "rotulo": "Desmembramento total (áreas em novas matrículas)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR DESMEMBRAMENTO. Tendo em vista o desmembramento total do imóvel objeto desta matrícula, nos termos de «PREENCHER: título/procedimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando as áreas resultantes a constar das Matrículas nº «PREENCHER: matrículas abertas», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. O Escrevente Autorizada, _____________ FULANA DE EXEMPLO."
+    },
+    {
+     "codigo": "UNIFICACAO",
+     "motivo": "Unificação do imóvel com outro(s), em nova matrícula",
+     "natureza": "Encerramento da matrícula por unificação",
+     "rotulo": "Unificação / fusão com outro(s) imóvel(is)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR UNIFICAÇÃO. Em virtude da unificação do imóvel objeto desta matrícula com «PREENCHER: imóvel(is) e matrícula(s) unificados», nos termos de «PREENCHER: título/requerimento e data», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel unificado a constar da Matrícula nº «PREENCHER: nova matrícula», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. O Escrevente Autorizada, _____________ FULANA DE EXEMPLO."
+    },
+    {
+     "codigo": "CIRCUNSCRICAO",
+     "motivo": "Imóvel passou a pertencer a outra circunscrição imobiliária",
+     "natureza": "Encerramento da matrícula por transferência de circunscrição",
+     "rotulo": "Transferência para outra circunscrição / serventia",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA POR TRANSFERÊNCIA DE CIRCUNSCRIÇÃO. Tendo em vista que o imóvel objeto desta matrícula passou a pertencer à circunscrição do «PREENCHER: serventia de destino», conforme «PREENCHER: fundamento/comunicação», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, nesta Serventia, devendo os atos posteriores relativos ao imóvel ser praticados naquela Serventia. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. O Escrevente Autorizada, _____________ FULANA DE EXEMPLO."
+    },
+    {
+     "codigo": "LIVRE",
+     "motivo": "",
+     "natureza": "Encerramento de matrícula",
+     "rotulo": "Outro motivo (texto livre)",
+     "teor": "AV-03/1.234 – ENCERRAMENTO DA MATRÍCULA. «PREENCHER: motivo e fundamento do encerramento», procede-se ao encerramento da Matrícula nº 1.234, do Livro nº 2 – Registro Geral, passando o imóvel a constar da Matrícula nº «PREENCHER: matrícula de destino», feitas as remissões recíprocas. Cidade Exemplo/MA, 08 de setembro de 2026. Dou fé. O Escrevente Autorizada, _____________ FULANA DE EXEMPLO."
+    }
+   ]
+  },
+  "modelos_de_encerramento(m3, sem cidade, uf padrao)": {
+   "ok": [
+    {
+     "codigo": "TECNICA",
+     "motivo": "Mudança da técnica de escrituração, com remissão à nova matrícula",
+     "natureza": "Encerramento da matrícula por mudança da técnica de escrituração e remissão à nova matrícula",
+     "rotulo": "Mudança da técnica de escrituração (remissão à nova matrícula)",
+     "teor": "AV-12/56A – ENCERRAMENTO DA MATRÍCULA POR MUDANÇA DA TÉCNICA DE ESCRITURAÇÃO E REMISSÃO À NOVA MATRÍCULA. Em razão da adoção da escrituração eletrônica, mediante abertura de nova matrícula, procede-se, de ofício, ao encerramento da Matrícula nº 56A, do Livro nº 3 – A, passando a continuidade dos assentamentos registrais do imóvel à Matrícula nº «PREENCHER: nova matrícula», do Livro nº 2 – Registro Geral, desta Serventia, para a qual foram transpostos os assentos registrais ativos pertinentes, mantidas as remissões recíprocas e preservada a continuidade registral. O presente ato decorre exclusivamente da mudança da técnica de escrituração e não importa transmissão de domínio, desmembramento, unificação, nem alteração da descrição do imóvel, da titularidade, dos direitos, ônus ou gravames existentes. Os atos registrais posteriores relativos ao imóvel serão praticados exclusivamente na nova matrícula. Fundamento: arts. 426, 427, §§ 1º e 2º, e 495, IV, do Código de Normas da Corregedoria Geral do Foro Extrajudicial do Maranhão – Provimento COGEX nº 28/2026. /MA, 31 de janeiro de 2026. Dou fé. O Oficial Registrador, _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "DESMEMBRAMENTO",
+     "motivo": "Desmembramento total do imóvel em novas matrículas",
+     "natureza": "Encerramento da matrícula por desmembramento",
+     "rotulo": "Desmembramento total (áreas em novas matrículas)",
+     "teor": "AV-12/56A – ENCERRAMENTO DA MATRÍCULA POR DESMEMBRAMENTO. Tendo em vista o desmembramento total do imóvel objeto desta matrícula, nos termos de «PREENCHER: título/procedimento e data», procede-se ao encerramento da Matrícula nº 56A, do Livro nº 3 – A, passando as áreas resultantes a constar das Matrículas nº «PREENCHER: matrículas abertas», desta Serventia, feitas as remissões recíprocas. /MA, 31 de janeiro de 2026. Dou fé. O Oficial Registrador, _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "UNIFICACAO",
+     "motivo": "Unificação do imóvel com outro(s), em nova matrícula",
+     "natureza": "Encerramento da matrícula por unificação",
+     "rotulo": "Unificação / fusão com outro(s) imóvel(is)",
+     "teor": "AV-12/56A – ENCERRAMENTO DA MATRÍCULA POR UNIFICAÇÃO. Em virtude da unificação do imóvel objeto desta matrícula com «PREENCHER: imóvel(is) e matrícula(s) unificados», nos termos de «PREENCHER: título/requerimento e data», procede-se ao encerramento da Matrícula nº 56A, do Livro nº 3 – A, passando o imóvel unificado a constar da Matrícula nº «PREENCHER: nova matrícula», desta Serventia, feitas as remissões recíprocas. /MA, 31 de janeiro de 2026. Dou fé. O Oficial Registrador, _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "CIRCUNSCRICAO",
+     "motivo": "Imóvel passou a pertencer a outra circunscrição imobiliária",
+     "natureza": "Encerramento da matrícula por transferência de circunscrição",
+     "rotulo": "Transferência para outra circunscrição / serventia",
+     "teor": "AV-12/56A – ENCERRAMENTO DA MATRÍCULA POR TRANSFERÊNCIA DE CIRCUNSCRIÇÃO. Tendo em vista que o imóvel objeto desta matrícula passou a pertencer à circunscrição do «PREENCHER: serventia de destino», conforme «PREENCHER: fundamento/comunicação», procede-se ao encerramento da Matrícula nº 56A, do Livro nº 3 – A, nesta Serventia, devendo os atos posteriores relativos ao imóvel ser praticados naquela Serventia. /MA, 31 de janeiro de 2026. Dou fé. O Oficial Registrador, _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "LIVRE",
+     "motivo": "",
+     "natureza": "Encerramento de matrícula",
+     "rotulo": "Outro motivo (texto livre)",
+     "teor": "AV-12/56A – ENCERRAMENTO DA MATRÍCULA. «PREENCHER: motivo e fundamento do encerramento», procede-se ao encerramento da Matrícula nº 56A, do Livro nº 3 – A, passando o imóvel a constar da Matrícula nº «PREENCHER: matrícula de destino», feitas as remissões recíprocas. /MA, 31 de janeiro de 2026. Dou fé. O Oficial Registrador, _____________ FULANO DE EXEMPLO."
+    }
+   ]
+  },
+  "modelos_de_encerramento(numero vazio, uf PI)": {
+   "ok": [
+    {
+     "codigo": "TECNICA",
+     "motivo": "Mudança da técnica de escrituração, com remissão à nova matrícula",
+     "natureza": "Encerramento da matrícula por mudança da técnica de escrituração e remissão à nova matrícula",
+     "rotulo": "Mudança da técnica de escrituração (remissão à nova matrícula)",
+     "teor": "AV-01/ – ENCERRAMENTO DA MATRÍCULA POR MUDANÇA DA TÉCNICA DE ESCRITURAÇÃO E REMISSÃO À NOVA MATRÍCULA. Em razão da adoção da escrituração eletrônica, mediante abertura de nova matrícula, procede-se, de ofício, ao encerramento da Matrícula nº , do Livro nº 2 – Registro Geral, passando a continuidade dos assentamentos registrais do imóvel à Matrícula nº «PREENCHER: nova matrícula», do Livro nº 2 – Registro Geral, desta Serventia, para a qual foram transpostos os assentos registrais ativos pertinentes, mantidas as remissões recíprocas e preservada a continuidade registral. O presente ato decorre exclusivamente da mudança da técnica de escrituração e não importa transmissão de domínio, desmembramento, unificação, nem alteração da descrição do imóvel, da titularidade, dos direitos, ônus ou gravames existentes. Os atos registrais posteriores relativos ao imóvel serão praticados exclusivamente na nova matrícula. Fundamento: arts. 426, 427, §§ 1º e 2º, e 495, IV, do Código de Normas da Corregedoria Geral do Foro Extrajudicial do Maranhão – Provimento COGEX nº 28/2026. Cidade Exemplo/PI, 01 de dezembro de 2026. Dou fé. _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "DESMEMBRAMENTO",
+     "motivo": "Desmembramento total do imóvel em novas matrículas",
+     "natureza": "Encerramento da matrícula por desmembramento",
+     "rotulo": "Desmembramento total (áreas em novas matrículas)",
+     "teor": "AV-01/ – ENCERRAMENTO DA MATRÍCULA POR DESMEMBRAMENTO. Tendo em vista o desmembramento total do imóvel objeto desta matrícula, nos termos de «PREENCHER: título/procedimento e data», procede-se ao encerramento da Matrícula nº , do Livro nº 2 – Registro Geral, passando as áreas resultantes a constar das Matrículas nº «PREENCHER: matrículas abertas», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/PI, 01 de dezembro de 2026. Dou fé. _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "UNIFICACAO",
+     "motivo": "Unificação do imóvel com outro(s), em nova matrícula",
+     "natureza": "Encerramento da matrícula por unificação",
+     "rotulo": "Unificação / fusão com outro(s) imóvel(is)",
+     "teor": "AV-01/ – ENCERRAMENTO DA MATRÍCULA POR UNIFICAÇÃO. Em virtude da unificação do imóvel objeto desta matrícula com «PREENCHER: imóvel(is) e matrícula(s) unificados», nos termos de «PREENCHER: título/requerimento e data», procede-se ao encerramento da Matrícula nº , do Livro nº 2 – Registro Geral, passando o imóvel unificado a constar da Matrícula nº «PREENCHER: nova matrícula», desta Serventia, feitas as remissões recíprocas. Cidade Exemplo/PI, 01 de dezembro de 2026. Dou fé. _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "CIRCUNSCRICAO",
+     "motivo": "Imóvel passou a pertencer a outra circunscrição imobiliária",
+     "natureza": "Encerramento da matrícula por transferência de circunscrição",
+     "rotulo": "Transferência para outra circunscrição / serventia",
+     "teor": "AV-01/ – ENCERRAMENTO DA MATRÍCULA POR TRANSFERÊNCIA DE CIRCUNSCRIÇÃO. Tendo em vista que o imóvel objeto desta matrícula passou a pertencer à circunscrição do «PREENCHER: serventia de destino», conforme «PREENCHER: fundamento/comunicação», procede-se ao encerramento da Matrícula nº , do Livro nº 2 – Registro Geral, nesta Serventia, devendo os atos posteriores relativos ao imóvel ser praticados naquela Serventia. Cidade Exemplo/PI, 01 de dezembro de 2026. Dou fé. _____________ FULANO DE EXEMPLO."
+    },
+    {
+     "codigo": "LIVRE",
+     "motivo": "",
+     "natureza": "Encerramento de matrícula",
+     "rotulo": "Outro motivo (texto livre)",
+     "teor": "AV-01/ – ENCERRAMENTO DA MATRÍCULA. «PREENCHER: motivo e fundamento do encerramento», procede-se ao encerramento da Matrícula nº , do Livro nº 2 – Registro Geral, passando o imóvel a constar da Matrícula nº «PREENCHER: matrícula de destino», feitas as remissões recíprocas. Cidade Exemplo/PI, 01 de dezembro de 2026. Dou fé. _____________ FULANO DE EXEMPLO."
+    }
+   ]
+  },
+  "montar_identificacao(IMOVEL cpf)": {
+   "ok": {
+    "criterio_rotulo": "pela descrição do imóvel «00000000191»",
+    "imovel_busca": "00000000191",
+    "pesquisado": "",
+    "pesquisado_documento": ""
+   }
+  },
+  "montar_identificacao(IMOVEL descricao)": {
+   "ok": {
+    "criterio_rotulo": "pela descrição do imóvel «Rua de Exemplo, 10 — Cidade Exemplo»",
+    "imovel_busca": "Rua de Exemplo, 10 — Cidade Exemplo",
+    "pesquisado": "",
+    "pesquisado_documento": ""
+   }
+  },
+  "montar_identificacao(IMOVEL vazio)": {
+   "ok": {
+    "criterio_rotulo": "pela descrição do imóvel «»",
+    "imovel_busca": "",
+    "pesquisado": "",
+    "pesquisado_documento": ""
+   }
+  },
+  "montar_identificacao(PESSOA None)": {
+   "ok": {
+    "criterio_rotulo": "pelo nome «»",
+    "imovel_busca": "",
+    "pesquisado": "",
+    "pesquisado_documento": ""
+   }
+  },
+  "montar_identificacao(PESSOA cnpj)": {
+   "ok": {
+    "criterio_rotulo": "pelo documento 00000042000122",
+    "imovel_busca": "",
+    "pesquisado": "",
+    "pesquisado_documento": "00000042000122"
+   }
+  },
+  "montar_identificacao(PESSOA cpf com mascara)": {
+   "ok": {
+    "criterio_rotulo": "pelo documento 00000000191",
+    "imovel_busca": "",
+    "pesquisado": "",
+    "pesquisado_documento": "00000000191"
+   }
+  },
+  "montar_identificacao(PESSOA cpf)": {
+   "ok": {
+    "criterio_rotulo": "pelo documento 00000000191",
+    "imovel_busca": "",
+    "pesquisado": "",
+    "pesquisado_documento": "00000000191"
+   }
+  },
+  "montar_identificacao(PESSOA nome)": {
+   "ok": {
+    "criterio_rotulo": "pelo nome «FULANO DE EXEMPLO»",
+    "imovel_busca": "",
+    "pesquisado": "FULANO DE EXEMPLO",
+    "pesquisado_documento": ""
+   }
+  },
+  "montar_identificacao(PESSOA numero curto)": {
+   "ok": {
+    "criterio_rotulo": "pelo nome «12345»",
+    "imovel_busca": "",
+    "pesquisado": "12345",
+    "pesquisado_documento": ""
+   }
+  },
+  "montar_identificacao(PESSOA vazio)": {
+   "ok": {
+    "criterio_rotulo": "pelo nome «»",
+    "imovel_busca": "",
+    "pesquisado": "",
+    "pesquisado_documento": ""
+   }
+  },
+  "selos_do_ato_rotulados(AV, dois comuns + arq + mat)": {
+   "ok": [
+    [
+     "PRENOT000000AAAAAAAAAAAAAAAA",
+     "SELO DE PRENOTAÇÃO"
+    ],
+    [
+     "REGAVD000000BBBBBBBBBBBBBBBB",
+     "SELO DE AVERBAÇÃO 1/2"
+    ],
+    [
+     "ARQUIV000000CCCCCCCCCCCCCCCC",
+     "SELO DE ARQUIVAMENTO"
+    ],
+    [
+     "AVESVD000000EEEEEEEEEEEEEEEE",
+     "SELO DE AVERBAÇÃO 2/2"
+    ],
+    [
+     "MATRIC000000DDDDDDDDDDDDDDDD",
+     "SELO DE ABERTURA"
+    ]
+   ]
+  },
+  "selos_do_ato_rotulados(R, reg+pre)": {
+   "ok": [
+    [
+     "PRENOT000000AAAAAAAAAAAAAAAA",
+     "SELO DE PRENOTAÇÃO"
+    ],
+    [
+     "REGAVD000000BBBBBBBBBBBBBBBB",
+     "SELO DE REGISTRO"
+    ]
+   ]
+  },
+  "selos_do_ato_rotulados(R, vazio)": {
+   "ok": []
+  }
+ },
+ "parte": "a"
+}

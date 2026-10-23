@@ -1,0 +1,8 @@
+{
+  "chave": "RI_REPROGRAFICA_FECHO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Fecho da certidão reprográfica",
+  "formato": "JINJA",
+  "explica": "O fecho do corpo da certidão de inteiro teor reprográfica do Livro 2, gravado no livro; entra sempre, depois do resumo técnico que o sistema escreve. Desde o modelo da casa (20/10/2026) o papel não o imprime: imprime o RI_REPROGRAFICA_FECHO_DO_PAPEL (ri_digitalizacao).",
+  "campos": []
+}

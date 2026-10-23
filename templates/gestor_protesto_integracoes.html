@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Integrações do Protesto — Correios e banco</h1>{% endblock %}
+{% block content %}
+
+<p class="muted">
+  O AR digital dos Correios e o boleto do devedor <strong>nascem
+  desligados</strong>. Ligue primeiro em <strong>homologação</strong>: ela fala
+  com o serviço falso desta casa, sem rede, e nada do que voltar vale no livro.
+  A <strong>produção</strong> só se liga com o transporte do contrato escrito —
+  e hoje ele não existe para nenhum dos dois (falta o contrato).
+</p>
+<p class="small muted">
+  A credencial (o par do contrato) <strong>não se digita aqui</strong>: ela vai
+  em <a href="{{ url_for('settings') }}#cfg-centrais">Administrativo →
+  Configurações → Centrais</a>, e fica gravada fora do banco de dados, como a
+  das Centrais. Esta tela só diz se ela foi informada.
+</p>
+
+{% for q in quadro %}
+<section class="cartao">
+  <h2>{{ q.nome }}</h2>
+  <p>Agora: <strong>{{ q.rotulo_do_modo }}</strong>
+    {% if q.modo != 'DESLIGADO' %}· {{ q.provedor_nome }}{% endif %}</p>
+  <p class="small">Credencial ({{ q.nome_da_central }}):
+    homologação {{ 'informada' if q.credencial.HOMOLOGACAO else 'não informada' }} ·
+    produção {{ 'informada' if q.credencial.PRODUCAO else 'não informada' }}</p>
+
+  <form method="post" action="{{ url_for('gestor_protesto_integracoes_salvar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="integracao" value="{{ q.integracao }}">
+    <label>Modo
+      <select name="modo">
+        {% for m in modos %}<option value="{{ m }}" {% if m == q.modo %}selected{% endif %}>{{ rotulos[m] }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Provedor
+      <select name="provedor">
+        {% for pv in q.provedores %}<option value="{{ pv.codigo }}" {% if pv.codigo == q.provedor %}selected{% endif %}>{{ pv.nome }}{% if not pv.pronto %} — sem transporte{% endif %}</option>{% endfor %}
+      </select>
+    </label>
+    {% if q.integracao == 'BOLETO' %}
+    <label>Tarifa do boleto repassada ao devedor (R$, CN-MA art. 925, § 5º)
+      <input type="text" name="tarifa" inputmode="decimal" size="8"
+             value="{{ (q.tarifa_centavos or 0)|centavos_reais }}">
+    </label>
+    {% endif %}
+    <button class="button" type="submit">Gravar</button>
+  </form>
+
+  {% if q.modo != 'DESLIGADO' %}
+  <form method="post" action="{{ url_for('gestor_protesto_integracoes_testar') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="integracao" value="{{ q.integracao }}">
+    <button class="button secondary" type="submit">Testar a ligação</button>
+  </form>
+  {% endif %}
+
+  {% for pv in q.provedores if not pv.pronto %}
+  <p class="small muted"><strong>{{ pv.nome }}:</strong> {{ pv.falta }}</p>
+  {% endfor %}
+</section>
+{% endfor %}
+{% endblock %}

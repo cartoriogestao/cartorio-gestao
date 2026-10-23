@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% block title %}Livro Diário Auxiliar{% endblock %}
+{% block heading %}<h1>Livro Diário Auxiliar da Receita e da Despesa — {{ comp[5:7] }}/{{ comp[:4] }}</h1>{% endblock %}
+{% block content %}
+{# O LIVRO DIÁRIO AUXILIAR (LG08) — arts. 190 a 207 do Código de Normas do MA.
+   A receita sai do SELO (dia de uso, um ato por linha); a despesa se lança
+   aqui. O que vai assinado é a VERSÃO GERADA, e não esta tela: gerar grava a
+   fotografia do mês, e gerar de novo é retificação com motivo (art. 206). #}
+<section class="panel">
+  <form method="get" action="{{ url_for('livro_diario') }}">
+    <label>Mês <input type="month" name="mes" value="{{ comp }}"></label>
+    <button class="button" type="submit">Abrir</button>
+    <a href="{{ url_for('livros_obrigatorios') }}">Livros obrigatórios</a>
+  </form>
+  <p>Gerar até <strong>{{ situacao.prazo }}</strong> — o 5º dia útil do mês seguinte (art. 205).
+  {% if situacao.aberto %}<span class="badge">mês em curso</span>
+  {% elif situacao.gerado %}<span class="badge">gerado — {{ situacao.versoes }} versão(ões){% if not situacao.no_prazo %}, a primeira fora do prazo{% endif %}</span>
+  {% elif situacao.atrasado %}<span class="badge danger">não gerado e fora do prazo</span>
+  {% else %}<span class="badge warning">ainda não gerado</span>{% endif %}
+  {% if situacao.movimento_mudou %}<span class="badge danger">o movimento mudou depois da última geração — conferir e, se for o caso, retificar</span>{% endif %}</p>
+  <p class="muted">A receita é o emolumento do ato praticado, lido do selo no dia em que ele foi usado
+  (arts. 190, I, 191 e 203); fundos e imposto vêm em coluna própria e não são receita. Selo isento
+  e diferido aparecem, mas não somam receita. Selo de homologação não entra.</p>
+</section>
+
+<section class="panel">
+  <h2>Demonstrativo do mês (art. 190, IV)</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Receita bruta (emolumentos)</th><td>R$ {{ em_reais(livro.receita_bruta) }}</td></tr>
+    <tr><th>Despesas</th><td>R$ {{ em_reais(livro.despesas) }}</td></tr>
+    <tr><th>Receita líquida</th><td>R$ {{ em_reais(livro.receita_liquida) }}</td></tr>
+    {% for f, nome in fundos %}<tr><th>{{ nome }} (não é receita)</th><td>R$ {{ em_reais(livro.fundos[f]) }}</td></tr>{% endfor %}
+    <tr><th>Atos (selos) no mês</th><td>{{ livro.atos }} — {{ livro.isentos }} isento(s), {{ livro.diferidos }} diferido(s){% if livro.sem_valor %}, <strong>{{ livro.sem_valor }} sem valor no texto do selo</strong>{% endif %}</td></tr>
+    {% for esp, v in livro.por_especialidade.items() %}<tr><th>Receita — {{ esp }}</th><td>R$ {{ em_reais(v) }}</td></tr>{% endfor %}
+  </table></div>
+  <p class="small">O que o art. 190 pede e o sistema não tem de onde ler:</p>
+  <ul class="small">{% for x in fora %}<li>{{ x }}</li>{% endfor %}</ul>
+</section>
+
+{% if pode_gerar and not situacao.aberto %}
+<section class="panel">
+  <h2>{% if versoes %}Retificar o livro do mês{% else %}Gerar o livro do mês{% endif %}</h2>
+  <form method="post" action="{{ url_for('livro_diario_gerar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="mes" value="{{ comp }}">
+    {% if versoes %}
+    <p>O livro deste mês já foi gerado. Nova geração só para retificação necessária, circunstanciada, e a versão
+    anterior fica guardada (art. 206).</p>
+    <label>O que muda e por quê <textarea name="motivo" rows="3" required></textarea></label>
+    {% endif %}
+    <button class="button" type="submit">{% if versoes %}Gerar a retificação{% else %}Gerar o livro de {{ comp[5:7] }}/{{ comp[:4] }}{% endif %}</button>
+  </form>
+</section>
+{% endif %}
+
+{% if versoes %}
+<section class="panel">
+  <h2>Versões geradas</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Versão</th><th>Gerada em</th><th>Por</th><th>Receita bruta</th><th>Despesas</th><th>Motivo da retificação</th><th></th></tr>
+    {% for v in versoes %}
+    <tr><td>{{ v.versao }}</td><td>{{ v.gerado_em[:16] }}</td><td>{{ v.gerado_por }}</td>
+        <td>R$ {{ em_reais(v.receita_bruta) }}</td><td>R$ {{ em_reais(v.despesas) }}</td>
+        <td class="small">{{ v.motivo or '—' }}</td>
+        <td><a href="{{ url_for('livro_diario_versao', geracao_id=v.id) }}">abrir para imprimir</a></td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Despesas do mês (art. 190, II)</h2>
+  {% if pode_lancar %}
+  <form method="post" action="{{ url_for('livro_diario_despesa') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Data do pagamento <input type="date" name="data" max="{{ hoje }}" required></label>
+    <label>Descrição detalhada <input type="text" name="descricao" maxlength="300" required></label>
+    <label>Espécie do documento <input type="text" name="documento_especie" maxlength="80" placeholder="nota fiscal, recibo, guia…" required></label>
+    <label>Número do documento <input type="text" name="documento_numero" maxlength="80"></label>
+    <label>Valor (R$) <input type="text" name="valor" inputmode="decimal" required></label>
+    <button class="button" type="submit">Lançar a despesa</button>
+  </form>
+  {% endif %}
+  {% if despesas %}
+  <div class="table-wrap"><table>
+    <tr><th>Data</th><th>Descrição</th><th>Documento</th><th>Valor</th><th>Lançada</th><th></th></tr>
+    {% for d in despesas %}
+    <tr{% if d.anulada_em %} class="muted"{% endif %}>
+      <td>{{ d.data }}</td><td>{{ d.descricao }}</td>
+      <td>{{ d.documento_especie }} {{ d.documento_numero }}</td>
+      <td>R$ {{ em_reais(d.valor) }}</td>
+      <td class="small">{{ d.lancado_em[:16] }} — {{ d.lancado_por }}</td>
+      <td>{% if d.anulada_em %}<span class="badge">anulada</span> <span class="small">{{ d.motivo_anulacao }}</span>
+          {% elif pode_lancar %}
+          <form method="post" action="{{ url_for('livro_diario_anular', despesa_id=d.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="mes" value="{{ comp }}">
+            <input type="text" name="motivo" maxlength="1000" placeholder="por que anular" required>
+            <button class="button" type="submit">Anular</button>
+          </form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">Nenhuma despesa lançada neste mês.</p>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Dia a dia (art. 190, I a III)</h2>
+  {% for d in livro.dias %}
+  <h3>{{ d.dia }}</h3>
+  {% if d.receitas %}
+  <div class="table-wrap"><table>
+    <tr><th>Especialidade</th><th>Ato</th><th>Selo</th><th>Tipo</th><th>Protocolo/ato</th><th>Emolumentos</th>
+        {% for f, nome in fundos %}<th>{{ nome }}</th>{% endfor %}</tr>
+    {% for r in d.receitas %}
+    <tr><td>{{ r.especialidade }}</td><td>{{ r.ato or '—' }}{% if r.descricao %} — {{ r.descricao }}{% endif %}</td>
+        <td class="small">{{ r.selo }}</td><td>{{ r.tipo }}</td><td class="small">{{ r.referencia or '—' }}</td>
+        <td>{{ em_reais(r.emolumentos) }}</td>
+        {% for f, nome in fundos %}<td>{{ em_reais(r.fundos[f]) }}</td>{% endfor %}</tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+  {% for x in d.despesas %}<p class="small">Despesa: {{ x.descricao }} ({{ x.documento }}) — R$ {{ em_reais(x.valor) }}</p>{% endfor %}
+  <p class="small">Receita do dia R$ {{ em_reais(d.receita_dia) }} · despesa do dia R$ {{ em_reais(d.despesa_dia) }} ·
+     acumulado: receita R$ {{ em_reais(d.receita_acumulada) }}, despesa R$ {{ em_reais(d.despesa_acumulada) }} ·
+     transporte para o dia seguinte R$ {{ em_reais(d.transporte) }}</p>
+  {% else %}
+  <p class="muted">Nenhum selo usado e nenhuma despesa neste mês.</p>
+  {% endfor %}
+</section>
+{% endblock %}

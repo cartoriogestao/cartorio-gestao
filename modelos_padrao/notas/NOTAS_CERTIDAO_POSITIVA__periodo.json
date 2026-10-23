@@ -1,0 +1,11 @@
+{
+  "chave": "NOTAS_CERTIDAO_POSITIVA__periodo",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Certidão — período da busca (periodo)",
+  "formato": "CHAVES",
+  "explica": "O período em que se buscou, nas certidões positiva e negativa. Com início e fim.",
+  "campos": [
+    "de",
+    "ate"
+  ]
+}

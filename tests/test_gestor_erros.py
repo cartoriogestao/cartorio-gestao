@@ -76,10 +76,14 @@ def test_o_autor_vem_da_auditoria_quando_a_coluna_esta_vazia(cg_casa):
     assert l["ato"] == "R-1 da matrícula 4300" and l["link"].startswith("/registro-imoveis/")
 
 
-def test_a_coluna_do_ato_ganha_e_o_login_vira_nome(cg_casa):
-    cg_casa["db"].create_user("beatriz", "Beatriz Exemplo de Souza", SENHA, "USER")
+def test_a_coluna_do_ato_ganha_e_o_numero_do_usuario_vira_nome(cg_casa):
+    """`ri_atos.lavrado_por` é id de `users` (19/10/2026). O teste gravava o
+    login «BEATRIZ», que o SQLite aceitava; nenhuma rota grava login ali (a
+    lavratura grava NULL, e a carga do E-Ofício, agora, o número), e o
+    PostgreSQL recusa texto na coluna."""
+    uid = cg_casa["db"].create_user("beatriz", "Beatriz Exemplo de Souza", SENHA, "USER")
     con = _con(cg_casa)
-    _, aid = _ato_do_ri(con, lavrado_por="BEATRIZ")
+    _, aid = _ato_do_ri(con, lavrado_por=uid)
     # Era ATO_SEM_SELO, que saiu em 06/10/2026 («não existe ato lavrado sem selo»).
     _achado(con, f"CNIB_ATO:{aid}", "REGISTRO_SEM_CNIB")
     (l,) = GER.relatorio(con)["linhas"]
@@ -115,7 +119,8 @@ def test_pendencia_da_casa_nao_entra_e_o_filtro_de_situacao_vale(cg_casa):
 
 def test_so_o_administrador_ve_a_tela_e_o_painel(cg_casa_logada):
     con = _con(cg_casa_logada)
-    _, aid = _ato_do_ri(con, lavrado_por="mario")
+    mario = con.execute("SELECT id FROM users WHERE username='mario'").fetchone()[0]
+    _, aid = _ato_do_ri(con, lavrado_por=mario)       # id, e não o login: ver o teste acima
     _achado(con, f"CNIB_ATO:{aid}", "REGISTRO_SEM_CNIB")
     con.commit()
     c = cg_casa_logada["c"]
@@ -144,3 +149,45 @@ def test_o_arquivo_do_dia_sai(cg_casa, tmp_path):
     _achado(con, f"CNIB_ATO:{aid}", "REGISTRO_SEM_CNIB")
     p = GER.escrever_html(con, date(2026, 10, 6), tmp_path)
     assert p.name == "erros_2026-10-06.html" and "R-1 da matrícula 4300" in p.read_text("utf-8")
+
+
+def test_a_carga_do_e_oficio_grava_o_numero_de_quem_carregou_e_o_relatorio_acha_o_nome(
+        cg_casa_logada, tmp_path):
+    """A carga gravava o NOME de quem carregou nas quatro colunas que são id de
+    `users` (19/10/2026). O SQLite aceitava — daí as 2.014 matrículas com o
+    nome em `criado_por` na produção —; no PostgreSQL a coluna é bigint e a
+    carga inteira caía, com «nada foi gravado». Com o número, a autoria do ato
+    carregado chega ao relatório pelo cadastro."""
+    import json
+    import re
+    pasta = tmp_path / "exportacao_eoficio"
+    pasta.mkdir()
+    (pasta / "matriculas.jsonl").write_text(json.dumps(
+        {"intChave": 1, "strMatricula": "9001", "strLivro": "2",
+         "memTextoFicha": "FICHA DE TESTE"}) + "\n", encoding="utf-8")
+    (pasta / "atos.jsonl").write_text(json.dumps(
+        {"intChave": 10, "strMatricula": "9001", "strTipoReg": "R", "strNReg": "1",
+         "dtmData": "2001-02-03", "memTexto": "R-1 DE TESTE"}) + "\n", encoding="utf-8")
+    # A pasta da exportação é a de importação que o oficial gravou: caminho
+    # digitado fora das pastas da casa não entra desde o LX12 (LS02 A3).
+    cg_casa_logada["db"].set_settings({"pastas_de_importacao": str(tmp_path)})
+    c = cg_casa_logada["c"]
+    html = c.get("/registro-imoveis/importar").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    r = c.post("/registro-imoveis/importar", data={"csrf_token": token, "pasta": str(pasta)},
+               follow_redirects=True)
+    assert "Carga concluída" in r.get_data(as_text=True)
+
+    con = _con(cg_casa_logada)
+    mario = con.execute("SELECT id FROM users WHERE username='mario'").fetchone()[0]
+    (mid, livro, criado_por), = con.execute(
+        """SELECT id, livro_norm, criado_por FROM ri_matriculas WHERE origem='EOFICIO'
+            ORDER BY id""").fetchall()
+    (aid, lavrado_por), = con.execute(
+        "SELECT id, lavrado_por FROM ri_atos WHERE matricula_id=? ORDER BY id", (mid,)).fetchall()
+    importou = con.execute("SELECT usuario_id FROM ri_importacoes ORDER BY id DESC").fetchone()[0]
+    fixou = con.execute("SELECT fixado_por FROM ri_numeracao WHERE livro=?", (livro,)).fetchone()[0]
+    assert [int(x) for x in (criado_por, lavrado_por, importou, fixou)] == [mario] * 4
+    _achado(con, f"CNIB_ATO:{aid}", "REGISTRO_SEM_CNIB")
+    (l,) = GER.relatorio(con)["linhas"]
+    assert l["quem"] == "MARIO EXEMPLO DOS SANTOS" and l["como"] == "lavrou"

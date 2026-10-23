@@ -1,0 +1,1 @@
+ANOTAÇÃO: Aos {hoje}, anoto o {ato}{complemento} (Comunicação nº {codigo}).

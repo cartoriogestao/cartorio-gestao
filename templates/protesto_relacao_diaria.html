@@ -1,0 +1,184 @@
+{#
+  A certidão diária em forma de relação (LG05) — Lei 9.492/1997, art. 29;
+  CN-MA art. 949. Uma por entidade habilitada e por dia que já fechou, com o
+  teor congelado. O envio pela CENPROT nasce DESLIGADO.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Certidão diária em relação</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
+  <a class="button" href="{{ url_for('protesto_certidoes') }}">Certidões</a>
+</div>
+
+<div class="notice">
+  A relação traz os <strong>protestos lavrados e os cancelamentos
+  efetuados</strong> no dia, e vai só à entidade que <strong>se habilitou
+  antes</strong> <small>({{ fundamento }}, § 1º)</small>. Dia sem nada gera
+  <strong>certidão negativa</strong> (§ 5º); cada registro incluído é
+  emolumento (§ 4º) — cobre no caixa pelo item da tabela.
+  <br><br>
+  <strong>{{ aviso }}</strong>
+  <br><br>
+  <small>A relação é do dia que <strong>já fechou</strong>: a de hoje sai
+  amanhã, para não perder o protesto lavrado à tarde. O protesto com os efeitos
+  suspensos por ordem judicial não entra.</small>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Envio pela CENPROT</span>
+    <small>{{ d.modo | lower }}</small></div>
+  <p style="padding:14px 14px 0">
+    {% if d.modo == 'DESLIGADO' %}
+      <strong>Desligado.</strong> Entregue a relação pelo canal da entidade e
+      registre a entrega abaixo.
+    {% elif d.modo == 'HOMOLOGACAO' %}
+      <strong>Homologação.</strong> O envio sai e <em>não conta como
+      entrega</em>.
+    {% else %}
+      <strong>Produção.</strong> O envio registra a entrega com o protocolo da
+      Central.
+    {% endif %}
+    <small>O serviço da CENPROT para a relação ainda não está medido: até lá o
+      envio de verdade recusa, com o motivo. A credencial mora no cofre das
+      Centrais, fora do banco.</small>
+  </p>
+  {% if user.role == 'ADMIN' %}
+  <form method="post" action="{{ url_for('protesto_relacao_configuracao') }}"
+        class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Modo
+      <select name="modo">
+        {% for m in modos %}<option value="{{ m }}"{% if m == d.modo %} selected{% endif %}>{{ m | lower }}</option>{% endfor %}
+      </select></label>
+    <div class="actions"><button class="button">Salvar o modo</button></div>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Entidades habilitadas</span>
+    <small>{{ d.entidades | length }}</small></div>
+  {% if d.entidades %}
+  <table class="table">
+    <thead><tr><th>Entidade</th><th>Canal</th><th>Habilitação</th><th>Situação</th><th></th></tr></thead>
+    <tbody>
+      {% for e in d.entidades %}
+      <tr>
+        <td>{{ e.nome }}<div><small>CNPJ {{ e.documento }}{% if e.contato %} · {{ e.contato }}{% endif %}</small></div></td>
+        <td>{{ canais[e.canal] }}</td>
+        <td>{{ e.habilitacao }}<div><small>desde {{ e.habilitada_em }}</small></div></td>
+        <td>{{ e.situacao }}{% if e.motivo_suspensao %}<div><small>{{ e.motivo_suspensao }}</small></div>{% endif %}</td>
+        <td>
+          {% if e.situacao == 'HABILITADA' and user.role == 'ADMIN' %}
+          <form method="post" action="{{ url_for('protesto_relacao_entidade_suspender', entidade_id=e.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="motivo" required minlength="10" placeholder="motivo (§ 3º)">
+            <button class="button">Suspender</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p style="padding:14px">Nenhuma entidade habilitada. A relação só sai para quem se habilitou antes.</p>
+  {% endif %}
+  {% if user.role in quem_envia %}
+  <form method="post" action="{{ url_for('protesto_relacao_entidade_habilitar') }}"
+        class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div style="grid-column:1/-1"><strong>Habilitar entidade</strong></div>
+    <label>Nome <input name="nome" required></label>
+    <label>CNPJ <input name="documento" required inputmode="numeric"></label>
+    <label>Canal
+      <select name="canal">{% for k, v in canais.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+    <label>Habilitação <small>(o pedido ou o processo)</small> <input name="habilitacao" required></label>
+    <label>Habilitada em <input type="date" name="habilitada_em" value="{{ hoje }}" required></label>
+    <label>Contato <input name="contato" placeholder="e-mail ou portal"></label>
+    <div class="actions"><button class="button">Habilitar</button></div>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Gerar a relação</span></div>
+  {% if d.entidades | selectattr('situacao', 'equalto', 'HABILITADA') | list %}
+  <form method="post" action="{{ url_for('protesto_relacao_gerar') }}" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Dia <input type="date" name="dia" value="{{ ontem }}" max="{{ ontem }}" required></label>
+    <label>Entidade
+      <select name="entidade_id" required>
+        {% for e in d.entidades if e.situacao == 'HABILITADA' %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}
+      </select></label>
+    <div class="actions"><button class="button">Gerar</button></div>
+  </form>
+  {% else %}
+    <p style="padding:14px">Habilite uma entidade antes.</p>
+  {% endif %}
+  {% if d.faltam %}
+  <div style="padding:0 14px 14px">
+    <strong>Dias úteis sem relação gerada</strong> <small>(últimos 30 dias)</small>
+    <ul>{% for f in d.faltam %}<li>{{ f.nome }}: {{ f.dias | join(', ') }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>A entregar</span><small>{{ d.a_entregar | length }}</small></div>
+  {% if not d.a_entregar %}
+    <p style="padding:14px">Toda relação gerada já foi entregue.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Relação</th><th>Dia</th><th>Entidade</th><th>Registros</th><th>Entregar</th></tr></thead>
+    <tbody>
+      {% for r in d.a_entregar %}
+      <tr>
+        <td><a href="{{ url_for('protesto_relacao_arquivo', relacao_id=r.id) }}">{{ r.numero }}/{{ r.ano }}</a></td>
+        <td>{{ r.dia }}</td><td>{{ r.entidade_nome }}</td>
+        <td>{% if r.negativa %}negativa{% else %}{{ r.registros }}{% endif %}
+            {% if r.envio_ambiente %}<div><small>enviada em {{ r.envio_ambiente | lower }}</small></div>{% endif %}</td>
+        <td>
+          <form method="post" action="{{ url_for('protesto_relacao_entregar', relacao_id=r.id) }}" class="grid2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Forma
+              <select name="forma" required>{% for k, v in formas.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+            <label>Comprovante <input name="comprovante" required></label>
+            <label>Entregue em <input type="date" name="entregue_em" value="{{ hoje }}"></label>
+            <div class="actions"><button class="button">Registrar a entrega</button></div>
+          </form>
+          {% if r.entidade_canal == 'CENPROT' and user.role in quem_envia %}
+          <form method="post" action="{{ url_for('protesto_relacao_enviar', relacao_id=r.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button"{% if d.modo == 'DESLIGADO' %} disabled{% endif %}>Enviar pela CENPROT</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Últimas relações</span></div>
+  {% if not d.relacoes %}
+    <p style="padding:14px">Nenhuma relação gerada ainda.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Relação</th><th>Dia</th><th>Entidade</th><th>P / C</th><th>Entregue</th></tr></thead>
+    <tbody>
+      {% for r in d.relacoes %}
+      <tr><td><a href="{{ url_for('protesto_relacao_arquivo', relacao_id=r.id) }}">{{ r.numero }}/{{ r.ano }}</a></td>
+          <td>{{ r.dia }}</td><td>{{ r.entidade_nome }}</td>
+          <td>{% if r.negativa %}negativa{% else %}{{ r.protestos }} / {{ r.cancelamentos }}{% endif %}</td>
+          <td>{% if r.entregue_em %}{{ r.entregue_em }} — {{ formas.get(r.forma_entrega, r.forma_entrega) }}{% else %}não{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

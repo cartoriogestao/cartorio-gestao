@@ -1,0 +1,16 @@
+{
+  "chave": "RCPJ_RTD_PDF_MOLDURA",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Frases e rótulos dos PDFs — RCPJ/RTD",
+  "formato": "CHAVES",
+  "explica": "As frases curtas que o desenho dos PDFs do teor e da certidão escreve: a linha de assinatura, os rótulos das áreas do selo, «Consulte em», «Página», o nome do livro e o objeto certificado. Cada parte entre ===MARCAS===; parte apagada volta ao padrão.",
+  "campos": [
+    "funcao",
+    "endereco",
+    "natureza",
+    "numero",
+    "averbacoes",
+    "ordem",
+    "ordens"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "chave": "PT_QUITACAO",
+  "atribuicao": "Protesto",
+  "nome": "Quitação do título pago no tabelionato",
+  "formato": "CHAVES",
+  "explica": "O papel que o devedor leva ao pagar o título no tabelionato — Lei 9.492/1997, art. 19, § 2º («dará a respectiva quitação»), e CN-MA art. 927. Não é o recibo dos emolumentos, que sai pelo Caixa: é a quitação do VALOR DO TÍTULO. Sai do pagamento já lançado no Livro de Registro de Pagamentos (art. 930, § 1º), e não congela: remonta-se a cada impressão, do que o ato guardou. Uma frase por linha; claro sem o fato entra vazio, e a linha que fica sem nenhum some — {cheque} só existe no pagamento em cheque, e é ele que põe no papel a quitação condicionada (art. 19, § 3º; art. 927, parágrafo único).",
+  "campos": [
+    "data",
+    "valor",
+    "devedor",
+    "titulo",
+    "protocolo",
+    "credor",
+    "forma",
+    "identificacao",
+    "cheque",
+    "emolumentos",
+    "lancamento"
+  ]
+}

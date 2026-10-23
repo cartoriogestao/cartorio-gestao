@@ -1,0 +1,12 @@
+{
+  "chave": "NOTAS_TERMO_LIVRO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Termo do livro",
+  "formato": "JINJA",
+  "explica": "O instrumento que vai para o livro de notas — mesmo cabeçalho do traslado (brasão e serventia), teor, assinaturas dos comparecentes e carimbo compacto do selo (sem QR). Distinto do traslado entregue à parte.",
+  "campos": [
+    "a",
+    "sv",
+    "titulo_do_instrumento"
+  ]
+}

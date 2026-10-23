@@ -27,9 +27,13 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+RAIZ = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
 
+import banco_pg                                 # noqa: E402
 import escrituracao as E                        # noqa: E402
+from banco_de_teste import conexao_de_teste     # noqa: E402
 import livro_nucleo as LN                       # noqa: E402
 from nucleo_schema import init_nucleo_schema    # noqa: E402
 
@@ -43,11 +47,21 @@ SV = {
 }
 
 
-def banco(caminho: str = ":memory:") -> sqlite3.Connection:
-    con = sqlite3.connect(caminho)
+def banco(caminho: str | None = None) -> sqlite3.Connection:
+    # O modulo e PostgreSQL nativo: o banco do teste e o «banco da casa» da
+    # ponte (no modo PostgreSQL, um schema proprio), e nao um `:memory:`.
+    if caminho is None:
+        con = conexao_de_teste()
+    else:
+        banco_pg.registrar_banco(caminho)
+        con = sqlite3.connect(caminho)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     init_nucleo_schema(con)
+    # O esquema nativo nao confirma sozinho (o `executescript` confirmava):
+    # sem o commit, a primeira conexao segura a trava de escrita e a
+    # segunda nem chega a criar o esquema.
+    con.commit()
     return con
 
 
@@ -69,9 +83,9 @@ def test_o_nucleo_atende_as_seis_atribuicoes():
 
 def test_toda_serie_conhecida_abre_livro_e_recebe_ato():
     con = banco()
-    for codigo, s in LN.SERIES.items():
+    for i, (codigo, s) in enumerate(LN.SERIES.items(), start=1):
         dia = "2026-08-21" if s.diario else None
-        lugar = reservar(con, codigo, hash(codigo) % 100000, dia=dia)
+        lugar = reservar(con, codigo, i, dia=dia)
         assert lugar["numero_ordem"] == 1, codigo
         assert lugar["folha"] == 1, codigo
         assert lugar["livro_numero"] == "1", codigo
@@ -536,3 +550,118 @@ def test_a_serie_desconhecida_da_mensagem_de_balcao_e_nao_KeyError():
         E.abrir_livro(con, "LIVRO_QUE_NAO_EXISTE", sv=SV, agora=AGORA,
                       data_extenso=EXTENSO)
     assert "não existe no núcleo" in str(erro.value)
+
+
+# ================================================== CONSERTO DO L051R (18/10/2026)
+# QUEM MEXE NAS FACES DO LIVRO TRAVA O MESMO ASSUNTO DO `reservar`.
+# Inutilizar a face, encerrar o livro e encerrar o dia conferem o que o livro
+# tem (a face livre, «já encerrado», quantos atos entraram) e gravam logo
+# depois. O `reservar` pega `nu_lugares.lugar` antes de achar o lugar; estes
+# três não pegavam nada. Com dois escritores ao mesmo tempo, o ato reservado
+# caía na face que se inutilizava, ou entrava no livro (ou no dia) que se
+# encerrava sem constar do termo. Hoje a trava única da ponte esconde a
+# corrida; sem a ponte, só a trava do assunto a impede.
+
+so_no_postgres = pytest.mark.skipif(
+    not banco_pg.ativo(), reason="mede a trava do assunto (CG_PG_DSN)")
+
+LUGAR = "nu_lugares.lugar"
+
+
+def _assunto_livre(chave: str) -> bool:
+    """Outra conexão consegue a trava do assunto agora? Não espera por ela."""
+    import psycopg
+    with psycopg.connect(banco_pg.dsn(), autocommit=True) as outra:
+        return bool(outra.execute(
+            "SELECT pg_try_advisory_xact_lock(hashtext(%s))", (chave,)).fetchone()[0])
+
+
+def _leituras_vigiadas(monkeypatch) -> list[bool]:
+    """Cada comando do módulo anota se a trava do lugar estava livre nele."""
+    import bd_nativo
+    livres: list[bool] = []
+
+    class Vigiado(bd_nativo.Banco):
+        def _rodar(self, sql, parametros=None):
+            if "pg_advisory" not in sql:
+                livres.append(_assunto_livre(LUGAR))
+            return super()._rodar(sql, parametros)
+
+    monkeypatch.setattr(E, "banco", Vigiado)
+    return livres
+
+
+@so_no_postgres
+def test_inutilizar_confere_a_face_sob_a_trava_do_lugar(monkeypatch):
+    con = banco()
+    livro = E.abrir_livro(con, "RC_A", sv=SV, agora=AGORA, data_extenso=EXTENSO)
+    con.commit()
+    assert _assunto_livre(LUGAR)
+    livres = _leituras_vigiadas(monkeypatch)
+    try:
+        E.inutilizar(con, livro, "5", motivo="folha rasgada na impressão",
+                     sv=SV, agora=AGORA, data_extenso=EXTENSO)
+        assert livres and not any(livres), (
+            "a face foi conferida fora da trava do `reservar`: um ato reservado "
+            "ao mesmo tempo cairia na folha que se inutiliza")
+    finally:
+        con.rollback()
+
+
+@so_no_postgres
+def test_encerrar_o_livro_conta_os_atos_sob_a_trava_do_lugar(monkeypatch):
+    con = banco()
+    livro = E.abrir_livro(con, "RC_A", sv=SV, agora=AGORA, data_extenso=EXTENSO,
+                          folhas=10)
+    reservar(con, "RC_A", 1)
+    con.commit()
+    assert _assunto_livre(LUGAR)
+    livres = _leituras_vigiadas(monkeypatch)
+    try:
+        E.encerrar_livro(con, livro, sv=SV, agora=AGORA, data_extenso=EXTENSO)
+        assert livres and not any(livres), (
+            "o livro foi conferido e contado fora da trava do `reservar`: um ato "
+            "reservado ao mesmo tempo entraria no livro encerrado, fora do termo")
+    finally:
+        con.rollback()
+
+
+@so_no_postgres
+def test_encerrar_o_dia_conta_os_atos_sob_a_trava_do_lugar(monkeypatch):
+    con = banco()
+    reservar(con, "TD_PROTOCOLO", 1, dia="2026-08-21")
+    con.commit()
+    assert _assunto_livre(LUGAR)
+    livres = _leituras_vigiadas(monkeypatch)
+    try:
+        E.encerrar_o_dia(con, "TD_PROTOCOLO", "2026-08-21", sv=SV,
+                         agora=AGORA, dia_extenso=EXTENSO)
+        assert livres and not any(livres), (
+            "o dia foi conferido e contado fora da trava do `reservar`: um "
+            "protocolo do mesmo dia ficaria fora do termo de encerramento")
+    finally:
+        con.rollback()
+
+
+# ================================================== PROVA DO L065R (18/10/2026)
+# A PASSADA DAS COLUNAS NOVAS DO NÚCLEO é a única lógica do esquema que mudou
+# na conversão: o `PRAGMA table_info` virou `bd.tem_coluna`. `MIGRACOES` está
+# vazia hoje, e nenhum teste passava por ela. Aqui ela ganha uma coluna de
+# teste e o esquema roda duas vezes: a coluna entra uma vez só, e a segunda
+# passada não repete o ALTER (que estouraria «duplicate column name»).
+
+def test_a_coluna_nova_do_nucleo_entra_uma_vez_so(monkeypatch):
+    import nucleo_schema
+    monkeypatch.setattr(nucleo_schema, "MIGRACOES",
+                        (("nu_livros", "coluna_do_teste", "TEXT"),))
+    con = banco()                       # a primeira passada, já confirmada
+    try:
+        init_nucleo_schema(con)         # a segunda: a coluna já existe
+        con.commit()
+        assert con.execute(
+            "SELECT count(*) FROM information_schema.columns"
+            " WHERE table_schema = current_schema()"
+            " AND table_name = 'nu_livros' AND column_name = 'coluna_do_teste'"
+        ).fetchone()[0] == 1
+    finally:
+        con.close()

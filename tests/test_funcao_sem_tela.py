@@ -240,7 +240,11 @@ NASCIDAS_DEPOIS_DA_3_6_51: dict[str, str] = {
     "html_odt_da_certidao": "rc_certidao_odt — A CONFERIR: devolve string vazia",
     #
     # Estas tres sao auxiliares legitimas, e nao acusam nada.
-    "sem_mascara": "ajuda — nome antigo, delega para `historicas_sem_protecao`",
+    #
+    # `sem_mascara` SAIU DAQUI EM 19/10/2026 (LF06G), e quem a tirou da lista
+    # foi o LF01: `templates/gestor_relatorio_ia.html` passou a escrever
+    # `{{ f.sem_mascara }}` (o contador do relatório da IA), e o varredor, que
+    # casa nome com nome, a dá por alcançada. Medido com `git log -S`.
     # `nome_do_dedo` SAIU DAQUI EM 07/09/2026: o relato #39 ligou a colheita
     # das quatro digitais ao cartao, e `notas_web` usa o rotulo tanto na tela
     # quanto na confirmacao da captura.
@@ -458,7 +462,14 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     "api_campos": _JS, "api_previa": _JS, "api_trechos_bloqueados": _JS,
     "arquivo_xml": _ONR_XML, "ato_entra": _ONR_XML, "completar_ficha": _ONR_XML,
     "donos_presumidos": _ONR_XML, "indicador_em_xml": _ONR_XML,
-    "atendimento": _SAEC, "atendimentos": _SAEC, "cobranca": _SAEC,
+    # `cobranca` e `mensagem_documento_invalido` SAÍRAM em 20/10/2026 (LX22B2),
+    # porque o varredor já as alcança. A segunda tem porta de verdade: o erro de
+    # documento da apostila e das Notas (`apostila.py`, `nt_publica_forma.py`,
+    # `nt_veiculo_detran.py`). A PRIMEIRA, NÃO: o LG05 pôs uma variável
+    # `cobranca` numa rota de `atribuicoes_web` (a do ato do protesto), e nome
+    # igual conta como um só (ver «O QUE ELE NAO PROVA», no topo). A operação do
+    # SAEC continua sem botão, como as vizinhas desta linha.
+    "atendimento": _SAEC, "atendimentos": _SAEC,
     "detalhes_do_protocolo": _SAEC, "gerar_cobranca": _SAEC,
     "interagir_no_atendimento": _SAEC, "tipos_de_pagamento": _SAEC,
     "validar_token_do_protocolo": _SAEC,
@@ -475,7 +486,6 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     "host_da_serventia": "selador_config — " + _SEM + " (só a própria base_sugerida a chama)",
     "base_sugerida": "selador_config — " + _TESTE,
     "buscar_duplicatas_por_documento": "cpf_cnpj — " + _TESTE,
-    "mensagem_documento_invalido": "cpf_cnpj — " + _TESTE,
     "carregar_privada": "assinatura_da_atualizacao — a porta é `tools/criar_atualizacao.py` (assinar o .cgu)",
     # 14/10/2026: a porta é `tools/conferir_instalacao.py emergencia`, que o
     # SERVIDOR\ATUALIZAR_SISTEMA.cmd chama depois de copiar — de propósito sem
@@ -542,6 +552,57 @@ ACHADAS_EM_14_10_2026: dict[str, str] = {
     "testar_pela_fila": "protesto_centrais_fila — " + _FILA,
 }
 
+# LF06A, 19/10/2026 — os modelos saíram do código para a base dos padrões. As
+# que estão aqui não são ação de balcão, e cada uma diz por quê.
+#
+# `texto_do_papel` SAIU DAQUI NO MESMO DIA, com o LF06G: a notificação da
+# retificação, os papéis da usucapião e o dossiê a chamam, e as telas deles a
+# alcançam — era o que a entrada dela esperava dos lotes seguintes. O LF06B
+# chegou ao mesmo lugar por outro lado: as frases do RI a leem por
+# `ri_frases.texto`, e a ficha, a certidão e o cancelamento chegam a ela.
+# O LF06C também: os papéis do Registro Civil a leem por `rc_textos.texto`.
+ACHADAS_EM_19_10_2026: dict[str, str] = {
+    "constante_antiga":
+        "modelos_da_casa — chamada pelo `__getattr__` dos catorze módulos que "
+        "guardavam o texto; o varredor não segue `__getattr__`",
+    "esquecer_padroes":
+        "modelos_da_casa — para quem recarregou a base no mesmo processo "
+        "(teste, ferramenta); o serviço recarrega ao reiniciar na atualização",
+    # LF06D, mesmo dia — os textos das Notas foram para a base.
+    "tipos_autenticacao":
+        "notas_schema — devolve o `TIPOS_AUTENTICACAO` antigo (texto + item), "
+        "lido da base, pelo `__getattr__` do módulo; o varredor não segue "
+        "`__getattr__`, e a tela usa `AUTENTICACOES`, que não precisa do texto",
+}
+
+
+# 20/10/2026 (LX22B2) — AS CINCO QUE A SEGUNDA LEVA DA MIGRAÇÃO DEIXOU.
+#
+# Medido contra `relatorios/base_antes_dos_lotes.log` (a suíte de antes dos
+# lotes LX10–LX21 e LG01–LG08): a lista de órfãs de lá tinha 32 nomes, a da
+# suíte de 19/10 22:53 tem 37, e a diferença é exatamente esta. Nenhuma é
+# tela anunciada que faltou: duas são a régua da RFC que o teste confere, uma
+# é peça da ponte que a conversão esvaziou, e duas perderam o chamador DE
+# PROPÓSITO — o lote que as trocou fez a troca certa e não apagou a velha.
+ACHADAS_EM_20_10_2026: dict[str, str] = {
+    # LG02 — o servidor confere o código passo a passo por `hotp` dentro de
+    # `passo_aceito`; `totp` é o código que o APLICATIVO calcula, e o teste o
+    # usa para fazer de aplicativo (vetores da RFC 6238, apêndice B).
+    "totp": "dois_fatores — " + _TESTE + " (o aplicativo do celular é quem calcula; LG02)",
+    "de_base32": "dois_fatores — inverso de `em_base32`; " + _TESTE + " (LG02)",
+    # Só `Conexao.executescript` a chama, e os lotes nativos trocaram todo
+    # `executescript` do caminho das telas por `bd.escrever` por comando.
+    "dividir_comandos": "banco_pg — só a ponte (`Conexao.executescript`) a chama, e a "
+                        "conversão nativa tirou o último `executescript` das telas",
+    # LX14 (B1 do LS03): a tela dos robôs e a do WhatsApp mostram só
+    # «configurado», sem os últimos quatro do segredo. A troca é a regra nova;
+    # a máscara ficou sem chamador.
+    "mascarar_segredo": "robo_schema/wa_balcao — " + _SEM + " (o LX14 tirou a máscara da tela)",
+    # LX16: a barra das gratuidades passou a dizer também o selo mais antigo, e
+    # `aviso` faz a conta inteira; a contagem solta ficou sem chamador.
+    "quantos_pendentes": "gratuidade_comprovante — " + _SEM + " (o LX16 a trocou por `aviso`)",
+}
+
 
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
@@ -554,7 +615,9 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_08_10_2026)
             | set(ACHADAS_EM_12_10_2026)
             | set(ACHADAS_EM_13_10_2026)
-            | set(ACHADAS_EM_14_10_2026))
+            | set(ACHADAS_EM_14_10_2026)
+            | set(ACHADAS_EM_19_10_2026)
+            | set(ACHADAS_EM_20_10_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

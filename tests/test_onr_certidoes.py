@@ -18,6 +18,9 @@ import pytest
 
 import onr_certidoes as OC
 import onr_wsoficio as WS
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[3]
 WSDL = RAIZ / "FONTES_EXTERNAS" / "onr_wsoficio" / "producao" / "Certidoes.wsdl"
@@ -34,7 +37,7 @@ XML_ENSAIO = """<?xml version="1.0" encoding="UTF-16"?>
 
 
 def _con():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.execute("CREATE TABLE ri_matriculas (id INTEGER PRIMARY KEY, numero TEXT)")
     con.execute("INSERT INTO ri_matriculas(id, numero) VALUES (77, '1234')")
     con.execute("""CREATE TABLE attachments (id INTEGER PRIMARY KEY AUTOINCREMENT,

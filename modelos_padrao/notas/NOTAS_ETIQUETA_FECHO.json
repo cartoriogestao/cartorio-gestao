@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_ETIQUETA_FECHO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Fecho da etiqueta",
+  "formato": "CHAVES",
+  "explica": "O fecho que a etiqueta acrescenta ao teor do reconhecimento ou da autenticação, antes do local e da data. Etiqueta importada que já traz «DA VERDADE» sai como foi impressa.",
+  "campos": []
+}

@@ -29,6 +29,8 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import rc_assento as RC                                  # noqa: E402
 import rc_centrais_na_lavratura as CENT                  # noqa: E402
@@ -47,7 +49,7 @@ SENHA = "Senha#12345"
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     init_nucleo_schema(con)
@@ -130,6 +132,42 @@ def test_a_recusa_desfaz_tudo_e_nao_consome_numero():
     # completo, lavra — e com o PRIMEIRO número: a recusa não gastou nenhum
     r = nascimento(con)
     assert r["numero_ordem"] == 1
+
+
+def test_depois_da_recusa_desfeita_a_lavratura_seguinte_grava_com_a_trava_do_banco():
+    """LX01, 19/10/2026 — o ROLLBACK TO solta, no PostgreSQL, a trava de
+    transação pega depois do savepoint, e a ponte seguia achando que a tinha:
+    a lavratura de depois da recusa gravaria sem a trava única do banco, e
+    duas lavraturas ao mesmo tempo poderiam tirar o mesmo número."""
+    con = banco()
+    con.commit()                  # a trava da criação do banco não conta
+    con.execute("SAVEPOINT x")
+    with pytest.raises(CENT.FaltaParaAsCentraisError):
+        nascimento(con, local_ibge=None)
+    con.execute("ROLLBACK TO x")
+    con.execute("RELEASE x")
+    nascimento(con)
+    # a chave de 64 bits aparece no pg_locks partida em duas metades de 32
+    travas = con.execute(
+        "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' "
+        "AND pid = pg_backend_pid() AND classid::bigint = ? AND objid::bigint = ?",
+        (con._chave_trava >> 32, con._chave_trava & 0xFFFFFFFF)).fetchone()[0]
+    assert travas == 1
+
+
+def test_savepoint_que_nao_existe_da_erro_e_o_que_ja_se_gravou_fica():
+    """LX01, 19/10/2026 — o savepoint de quem chama agora vai ao PostgreSQL por
+    fora da proteção da ponte. O RELEASE e o ROLLBACK TO de nome errado têm de
+    continuar como no SQLite: dão erro, e a transação segue com o que já
+    gravou, em vez de ficar condenada até o fim."""
+    con = banco()
+    nascimento(con)
+    with pytest.raises(sqlite3.OperationalError):
+        con.execute("RELEASE ponto_que_nao_existe")
+    with pytest.raises(sqlite3.OperationalError):
+        con.execute("ROLLBACK TO ponto_que_nao_existe")
+    con.commit()
+    assert _conta(con, "rc_assentos") == 1
 
 
 def test_o_texto_diz_cada_campo_e_para_qual_central():

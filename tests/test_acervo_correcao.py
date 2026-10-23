@@ -18,6 +18,7 @@ import glob
 import re
 import sqlite3
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -143,6 +144,43 @@ def test_corrigir_recusa_se_nada_mudou(casa):
     with pytest.raises(AC.CorrecaoError, match="Nenhum campo mudou"):
         AC.corrigir(con, "ri_matriculas", mid, {"cidade": "Imperatriz"}, "motivo")
     con.close()
+
+
+def test_duas_correcoes_da_mesma_linha_a_segunda_le_o_antes_certo(casa):
+    """O «antes» vai para a auditoria: tem de ser o valor que a linha tinha.
+
+    Ressalva do L001, consertada no L001R: `corrigir` lê a linha e grava nela.
+    Sem `FOR UPDATE`, o segundo balcão lia a cidade de antes da primeira
+    correção e auditava um «antes» que já não existia. Duas conexões no mesmo
+    banco são dois balcões; o segundo roda numa thread.
+    """
+    mid = _matricula(casa["banco"], cidade="Imperatriz")
+    primeiro = sqlite3.connect(casa["banco"])
+    AC.corrigir(primeiro, "ri_matriculas", mid, {"cidade": "Cidade Exemplo"},
+                "primeira correção")
+    resposta: dict = {}
+
+    def segundo_balcao():
+        con = sqlite3.connect(casa["banco"])
+        try:
+            resposta["r"] = AC.corrigir(con, "ri_matriculas", mid,
+                                        {"cidade": "Cidade Outra"},
+                                        "segunda correção")
+            con.commit()
+        except Exception as erro:  # noqa: BLE001 — o teste mostra qual foi
+            resposta["erro"] = erro
+        finally:
+            con.close()
+
+    t = threading.Thread(target=segundo_balcao, daemon=True)
+    t.start()
+    t.join(1.0)     # o segundo chega enquanto o primeiro ainda não confirmou
+    primeiro.commit()
+    primeiro.close()
+    t.join(15)
+    assert not t.is_alive(), "o segundo balcão ficou preso"
+    assert "erro" not in resposta, resposta.get("erro")
+    assert resposta["r"]["mudancas"]["cidade"]["antes"] == "Cidade Exemplo"
 
 
 def test_tabela_desconhecida_e_recusada(casa):

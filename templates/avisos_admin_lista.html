@@ -11,6 +11,7 @@
       <tr>
         <th>Título</th>
         <th>Importância</th>
+        <th>Modo</th>
         <th class="col-ativo">Ativo</th>
         <th class="col-acoes">Ações</th>
       </tr>
@@ -26,6 +27,7 @@
           {% elif (row.prioridade or 0)|int == 1 %}
           <span class="badge alta" title="prioridade {{ row.prioridade }}">Importante</span>
           {% else %}<span class="muted">Normal</span>{% endif %}</td>
+        <td class="aviso-admin-modo">{% if row.modo == 'BARRA' %}<span class="badge alta">Barra fixa{% if row.barra_dia_mes %} · mensal, dia {{ row.barra_dia_mes }}{% endif %}</span>{% else %}<span class="muted">Janela</span>{% endif %}</td>
         <td class="aviso-admin-ativo">
           <form method="post"
                 class="aviso-admin-toggle-form"
@@ -58,6 +60,7 @@
                 <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm2.92 2.83H5v-.92l9.06-9.06.92.92L5.92 20.08zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"/>
               </svg>
             </a>
+            {% if not row.chave %}{# o aviso do sistema renasce na subida: desliga-se, nao se remove #}
             <form method="post"
                   class="aviso-admin-remover-form"
                   action="{{ url_for('nu_avisos_admin_remover', aviso_id=row.id) }}"
@@ -72,13 +75,37 @@
                 </svg>
               </button>
             </form>
+            {% endif %}
           </div>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4">Nenhum aviso cadastrado.</td></tr>
+      <tr><td colspan="5">Nenhum aviso cadastrado.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </section>
+{# QUEM MARCOU PAGO EM CADA MÊS (LX17) — e quem disse «avisei». O mês sem
+   baixa aparece também: a lista que só mostrasse os pagos esconderia o mês
+   em que ninguém pagou. #}
+{% if historico_barras %}
+<section class="panel">
+  <div class="panel-head"><span>Barras fixas — quem marcou pago em cada mês</span></div>
+  <table class="table avisos-barras-historico">
+    <thead>
+      <tr><th>Mês</th><th>Aviso</th><th>Pago</th><th>«Avisei»</th></tr>
+    </thead>
+    <tbody>
+      {% for h in historico_barras %}
+      <tr>
+        <td>{{ h.mes_rotulo }}</td>
+        <td>{{ h.titulo }}</td>
+        <td>{% if h.baixa %}{{ h.baixa.usuario_nome }}, em {{ fmt_dt(h.baixa.marcado_em) }} — pago em {{ fmt_date(h.baixa.data_pagamento) }}{% if h.baixa.guia %}, guia {{ h.baixa.guia }}{% endif %}{% else %}<strong>Não marcado</strong>{% endif %}</td>
+        <td>{% for v in h.avisei %}{{ v.usuario_nome }} ({{ fmt_dt(v.avisado_em) }}){% if not loop.last %}; {% endif %}{% else %}<span class="muted">—</span>{% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 {% endblock %}

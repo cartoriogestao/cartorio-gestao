@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Livro de Controle de Depósito Prévio{% endblock %}
+{% block heading %}<h1>Livro de Controle de Depósito Prévio</h1>{% endblock %}
+{% block content %}
+{# O LIVRO DE CONTROLE DE DEPÓSITO PRÉVIO (LG08) — art. 188, III, e arts. 195 a
+   202 do Código de Normas do MA. Só LÊ: o depósito se cadastra, usa e devolve
+   em Caixa → Depósito prévio; aqui ele aparece na forma do art. 198, com o
+   que falta em cada coluna dito por extenso. #}
+<section class="panel">
+  <p>As seis indicações do art. 198, depósito a depósito. O depósito se registra, usa e devolve em
+  <a href="{{ url_for('caixa_depositos') }}">Caixa → Depósito prévio</a>; a conversão e a devolução vêm do
+  rastro dessa tela. <a href="{{ url_for('livros_obrigatorios') }}">Livros obrigatórios</a></p>
+  <form method="get" action="{{ url_for('livro_deposito_previo') }}">
+    <label>Ano <input type="number" name="ano" value="{{ ano }}" min="2000" max="2100"></label>
+    <button class="button" type="submit">Filtrar</button>
+  </form>
+  <p>Depositado R$ {{ reais(livro.total_depositado) }} · convertido em emolumentos R$ {{ reais(livro.total_convertido) }} ·
+     devolvido R$ {{ reais(livro.total_devolvido) }} · saldo R$ {{ reais(livro.saldo) }}
+     {% if livro.com_falta %}<span class="badge warning">{{ livro.com_falta }} depósito(s) com falta para o art. 198</span>{% endif %}</p>
+  <p class="muted">Os valores do art. 201 (juiz de paz, edital, postagem, centrais, outras serventias,
+  encargos de cartão, distribuição) também se registram neste livro e não no Diário Auxiliar.</p>
+</section>
+
+<section class="panel">
+  {% if livro.linhas %}
+  <div class="table-wrap"><table>
+    <tr><th>Depósito</th><th>I — protocolo ou pedido</th><th>II — data</th><th>III — valor</th>
+        <th>IV — conversão em emolumentos</th><th>V — devolução</th><th>VI — orçamento</th><th>Saldo</th><th>O que falta</th></tr>
+    {% for x in livro.linhas %}
+    <tr>
+      <td>{{ x.numero }}<br><span class="small">{{ x.depositante }}</span></td>
+      <td>{{ x.protocolo or '—' }}</td>
+      <td>{{ x.data }}</td>
+      <td>R$ {{ reais(x.valor) }}</td>
+      <td class="small">{% for m in x.conversoes %}{{ m.data }}: R$ {{ reais(m.valor) }}{% if m.protocolo %} — protocolo {{ m.protocolo }}{% endif %}{% if m.ato %} ({{ m.ato }}){% endif %}<br>{% else %}—{% endfor %}</td>
+      <td class="small">{% for m in x.devolucoes %}{{ m.data }}: R$ {{ reais(m.valor) }} — {{ m.motivo or 'sem justificativa' }}<br>{% else %}—{% endfor %}</td>
+      <td class="small">{% for o in x.orcamento_linhas %}{{ o }}<br>{% else %}{{ x.orcamento or '—' }}{% endfor %}</td>
+      <td>R$ {{ reais(x.saldo) }}{% if x.encerrado %}<br><span class="small">encerrado</span>{% endif %}</td>
+      <td class="small">{% for f in x.faltas %}{{ f }}<br>{% endfor %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">Nenhum depósito prévio no período.</p>{% endif %}
+</section>
+{% endblock %}

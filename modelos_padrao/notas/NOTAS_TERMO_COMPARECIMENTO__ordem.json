@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_TERMO_COMPARECIMENTO__ordem",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Termo de comparecimento — ordem",
+  "formato": "CHAVES",
+  "explica": "Entra logo depois do título quando o termo tem o número de ordem (CN-MA art. 866: o termo de presença «conterá a ordem»).",
+  "campos": [
+    "ordem"
+  ]
+}

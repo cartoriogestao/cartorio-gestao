@@ -212,6 +212,67 @@ def test_o_papel_diz_por_qual_forma_foi_notificado():
     assert "Pessoalmente" in papel and "598" in papel
 
 
+def test_forma_que_a_norma_ganhar_sem_peca_sai_com_o_texto_da_norma(monkeypatch):
+    """Ressalva da revisão do LF06G (LX18). A forma no recibo virou peça
+    (`US_NOTIFICACAO__forma_<chave>`), e a lista das formas continua sendo a
+    da norma. Forma que a norma ganhar antes de alguém escrever a peça saía
+    como recusa — o papel parado à espera de um `.txt`. Agora sai com o texto
+    da norma, como saía antes do LF06G."""
+    nova = {"forma": "EXEMPLO", "artigo": "art. 598",
+            "o_que": "Por um meio de exemplo que a norma passou a prever"}
+    monkeypatch.setitem(UN.FORMA_POR_CHAVE, "EXEMPLO", nova)
+    papel = UN.montar(processo=PROCESSO,
+                      notificacao=dict(NOTIFICACAO, forma="EXEMPLO"),
+                      serventia=SERVENTIA)
+    assert ("Forma da notificação: Por um meio de exemplo que a norma passou "
+            "a prever\n(art. 598)") in papel
+
+
+def test_as_formas_que_tem_peca_continuam_saindo_da_peca(monkeypatch):
+    """A queda na norma é só para a peça que não existe: as quatro de hoje
+    saem da peça, e não da norma — trocada a frase da norma, o papel não
+    muda (é a peça que o oficial edita)."""
+    for f in RT.COMO_NOTIFICAR:
+        monkeypatch.setitem(UN.FORMA_POR_CHAVE, f["forma"],
+                            dict(f, o_que="FRASE QUE SÓ A NORMA TERIA"))
+        papel = UN.montar(processo=PROCESSO,
+                          notificacao=dict(NOTIFICACAO, forma=f["forma"]),
+                          serventia=SERVENTIA)
+        assert f"Forma da notificação: {f['o_que']}\n" in papel, f["forma"]
+        assert "FRASE QUE SÓ A NORMA TERIA" not in papel, f["forma"]
+
+
+def test_quem_expede_a_notificacao_passa_a_conexao_da_casa():
+    """Ressalva da revisão do LF06G (LX18): sem `con`, o montador usa o
+    padrão de fábrica e o ajuste da casa não chega ao papel. Os quatro
+    pontos que expedem — a notificação, o edital e o ofício da usucapião e a
+    notificação da retificação — passam `con`; quem chamar um montador sem
+    ela, num relatório ou num PDF, aparece aqui."""
+    import ast
+    montadores = {"montar", "montar_edital", "montar_oficio_ao_ente"}
+    chamadas = []
+    for arq in sorted(RAIZ.glob("*.py")):
+        fonte = arq.read_bytes()
+        if b"us_notificacao" not in fonte and b"rt_notificacao" not in fonte:
+            continue
+        arvore = ast.parse(fonte)
+        nomes = {a.asname or a.name for n in ast.walk(arvore)
+                 if isinstance(n, ast.Import) for a in n.names
+                 if a.name in ("us_notificacao", "rt_notificacao")}
+        for n in ast.walk(arvore):
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                    and n.func.attr in montadores
+                    and isinstance(n.func.value, ast.Name)
+                    and n.func.value.id in nomes):
+                chamadas.append((arq.name, n.func.attr,
+                                 any(k.arg == "con" for k in n.keywords)))
+    assert sorted(c[:2] for c in chamadas) == [
+        ("retificacao.py", "montar"), ("usucapiao.py", "montar"),
+        ("usucapiao.py", "montar_edital"),
+        ("usucapiao.py", "montar_oficio_ao_ente")]
+    assert all(com for *_, com in chamadas), chamadas
+
+
 # ------------------------------------------------------ o manual
 
 

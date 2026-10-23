@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable
 
+import ia_uso as USO
 import robo_schema as SCH
 
 # URLs documentadas (chat completions / messages).
@@ -74,19 +75,9 @@ def rascunho_local(prompt: str, pedido: str,
     return "\n".join(linhas)
 
 
-def chamar_provedor(
-    provedor: str,
-    api_key: str,
-    system: str,
-    user: str,
-    *,
-    timeout: float = 30.0,
-) -> str:
-    """Chamada HTTP unica. Sem SDK. Testes devem mockar esta funcao.
-
-    Grok/GPT/DeepSeek: JSON estilo OpenAI chat completions.
-    Claude: Messages API (x-api-key + anthropic-version).
-    """
+def _pedir(provedor: str, api_key: str, system: str, user: str, *,
+           timeout: float) -> dict[str, Any]:
+    """A chamada em si, sem o registro: texto, tokens e modelo."""
     prov = (provedor or "").strip().lower()
     if prov not in URLS:
         raise ValueError(f"provedor desconhecido: {provedor!r}")
@@ -144,7 +135,74 @@ def chamar_provedor(
         out = (msg.get("content") or "").strip()
     if not out:
         raise RuntimeError("resposta vazia do provedor")
-    return out
+    uso = parsed.get("usage") or {}
+    return {"texto": out, "modelo": str(parsed.get("model") or modelo),
+            "entrada": int(uso.get("input_tokens") or uso.get("prompt_tokens") or 0),
+            "saida": int(uso.get("output_tokens") or uso.get("completion_tokens") or 0)}
+
+
+def _motivo(erro: BaseException) -> tuple[str, str]:
+    """O resultado e o resumo de forma fixa da falha, para o `ia_uso`.
+
+    Nunca a mensagem: a do provedor pode trazer de volta o que subiu.
+    """
+    if isinstance(erro, urllib.error.HTTPError):
+        return (USO.RECUSADO if 400 <= erro.code < 500 and erro.code != 429
+                else USO.ERRO), f"HTTP {erro.code}"
+    if isinstance(erro, ValueError) and not isinstance(erro, json.JSONDecodeError):
+        return USO.RECUSADO, ("sem chave" if "api_key" in str(erro)
+                              else "provedor desconhecido")
+    if isinstance(erro, (TimeoutError, urllib.error.URLError, OSError)):
+        return USO.ERRO, ("sem resposta no prazo" if "timed out" in str(erro).lower()
+                          else "sem rede")
+    if isinstance(erro, json.JSONDecodeError):
+        return USO.ERRO, "resposta ilegível"
+    if isinstance(erro, RuntimeError):
+        return USO.ERRO, "resposta vazia"
+    return USO.ERRO, type(erro).__name__
+
+
+def chamar_provedor(
+    provedor: str,
+    api_key: str,
+    system: str,
+    user: str,
+    *,
+    timeout: float = 30.0,
+    pasta_de_dados: Any = None,
+    modulo: str = "",
+    finalidade: str = "",
+    usuario: str = "",
+    atribuicao: str = "",
+    referencia: str = "",
+    mascarado: bool | None = None,
+) -> str:
+    """Chamada HTTP unica. Sem SDK. Testes devem mockar esta funcao.
+
+    Grok/GPT/DeepSeek: JSON estilo OpenAI chat completions.
+    Claude: Messages API (x-api-key + anthropic-version).
+
+    CADA CHAMADA FICA REGISTRADA (LF01): é um dos dois transportes de IA do
+    sistema, e grava em `ia_uso` como `agente_provedores.conversar` — quando,
+    de onde, para quê, quem, provedor, modelo, tokens e como terminou, e
+    NUNCA o texto. Sem `pasta_de_dados` o registro vai para o log do sistema
+    (não há banco onde gravar), e a chamada segue igual.
+    """
+    registro = {"modulo": modulo, "finalidade": finalidade, "usuario": usuario,
+                "atribuicao": atribuicao, "referencia": referencia,
+                "mascarado": mascarado,
+                "provedor": (provedor or "").strip().lower(),
+                "modelo": MODELOS_PADRAO.get((provedor or "").strip().lower(), "")}
+    try:
+        lida = _pedir(provedor, api_key, system, user, timeout=timeout)
+    except Exception as erro:
+        resultado, motivo = _motivo(erro)
+        USO.registrar(pasta_de_dados, **registro, resultado=resultado, erro=motivo)
+        raise
+    registro["modelo"] = lida["modelo"] or registro["modelo"]
+    USO.registrar(pasta_de_dados, **registro, resultado=USO.OK,
+                  tokens_entrada=lida["entrada"], tokens_saida=lida["saida"])
+    return lida["texto"]
 
 
 def rascunhar(
@@ -154,11 +212,16 @@ def rascunhar(
     *,
     api_key: str | None = None,
     chamar: Callable[..., str] | None = None,
+    **registro: Any,
 ) -> dict[str, str]:
     """Gera rascunho. Retorna {texto, modo, aviso}.
 
     Sem chave → local. Com chave → chamar_provedor (ou `chamar` injetado).
     Falha de rede/API → local com aviso. Nunca levanta a chave.
+
+    `registro` são os dados do uso de IA que `chamar_provedor` grava
+    (`pasta_de_dados`, `modulo`, `finalidade`, `usuario`, `referencia`...).
+    O modo local não fala com provedor nenhum, e por isso não registra.
     """
     if hasattr(robo, "keys"):
         prompt = robo["prompt"] or ""
@@ -181,7 +244,7 @@ def rascunhar(
 
     fn = chamar or chamar_provedor
     try:
-        texto = fn(provedor, key, system, user)
+        texto = fn(provedor, key, system, user, **registro)
         return {
             "texto": texto,
             "modo": SCH.MODO_API,

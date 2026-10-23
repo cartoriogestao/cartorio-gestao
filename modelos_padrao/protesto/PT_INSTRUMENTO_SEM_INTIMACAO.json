@@ -1,0 +1,8 @@
+{
+  "chave": "PT_INSTRUMENTO_SEM_INTIMACAO",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto — sem intimação lavrada",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {intimacao} do instrumento quando o título não tem ato de intimação.",
+  "campos": []
+}

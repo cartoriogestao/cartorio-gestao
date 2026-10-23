@@ -3,10 +3,13 @@
 import sqlite3
 import pytest
 import rc_averbacao_modelos as RAM
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 
 def _banco():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("CREATE TABLE rc_assentos(id INTEGER PRIMARY KEY, serie TEXT, especie TEXT, numero INT,"
                 " livro_volume TEXT, data_ato TEXT, data_fato TEXT, situacao TEXT, dados_json TEXT, nome TEXT)")
@@ -63,6 +66,23 @@ def test_campos_obrigatorios_e_parte():
 def test_listar_por_especie():
     assert RAM.listar("NASCIMENTO")[0]["slug"] == "retificacao-data-registro"
     assert RAM.listar("PROCLAMAS") == []
+
+
+def test_cidade_sem_settings_nao_derruba_a_transacao_de_quem_chama():
+    """Revisão do L014 (ressalva 3). No PostgreSQL, comando que falha dentro da
+    transação a condena inteira («current transaction is aborted»), mesmo com a
+    exceção apanhada. Sem `settings`, a cidade volta vazia E a transação da rota
+    segue viva: o `bd_nativo` isola cada comando num SAVEPOINT."""
+    con = conexao_de_teste()
+    con.execute("CREATE TABLE notas_do_teste(id INTEGER PRIMARY KEY, texto TEXT)")
+    con.commit()
+    con.execute("BEGIN IMMEDIATE")
+    con.execute("INSERT INTO notas_do_teste(texto) VALUES ('antes')")
+    assert RAM.cidade_da_casa(con) == RAM.CIDADE_PADRAO
+    con.execute("INSERT INTO notas_do_teste(texto) VALUES ('depois')")
+    con.commit()
+    assert [r[0] for r in con.execute(
+        "SELECT texto FROM notas_do_teste ORDER BY id")] == ["antes", "depois"]
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Monitoramento do devedor</h1>{% endblock %}
+{% block content %}
+
+<p class="muted">
+  Os devedores com título em andamento, juntos por CPF/CNPJ, os com alerta
+  primeiro. O painel <strong>conta e aponta</strong>; quem decide o protesto,
+  o edital e a intimação é quem assina.
+</p>
+
+<section class="cartao">
+  <h2>Buscar pelo CPF ou CNPJ</h2>
+  {# A BUSCA É POST: o número não vai para o endereço da página (LGPD). #}
+  <form method="post" action="{{ url_for('protesto_devedores_buscar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="text" name="documento" inputmode="numeric" autocomplete="off"
+           placeholder="CPF ou CNPJ" required>
+    <button class="button" type="submit">Abrir o painel</button>
+  </form>
+</section>
+
+<section class="cartao">
+  <h2>Em andamento ({{ r.total }})</h2>
+  <div class="table-wrap">
+    <table class="tabela">
+      <thead><tr><th>Devedor</th><th>CPF/CNPJ</th><th>Títulos</th>
+        <th>Valor em aberto</th><th>Alertas</th></tr></thead>
+      <tbody>
+      {% for d in r.devedores %}
+        <tr>
+          <td><a href="{{ url_for('protesto_devedor', devedor_id=d.devedor_id) }}">{{ d.nome or '—' }}</a></td>
+          <td>{{ d.documento_formatado }}</td>
+          <td>{{ d.n_titulos }}</td>
+          <td>R$ {{ d.valor_centavos|centavos_reais }}</td>
+          <td>
+            {% for a in d.contagem %}
+              <strong>{{ a.rotulo }}</strong>{% if a.n > 1 %} ({{ a.n }}){% endif %}{% if not loop.last %} · {% endif %}
+            {% else %}<span class="muted">—</span>{% endfor %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">Nenhum título em andamento.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if r.titulos_sem_documento %}
+  <p class="small muted">{{ r.titulos_sem_documento }} título(s) em andamento
+    têm devedor sem CPF/CNPJ e não entram aqui — homônimo não é a mesma pessoa.
+    Eles estão em <a href="{{ url_for('protesto_titulos') }}">Títulos</a>.</p>
+  {% endif %}
+</section>
+
+<section class="cartao">
+  <h2>O que cada alerta quer dizer</h2>
+  <ul class="small">
+  {% for codigo, a in alertas.items() %}
+    <li><strong>{{ a.rotulo }}</strong> — {{ a.frase }} <span class="muted">({{ a.base }})</span></li>
+  {% endfor %}
+  </ul>
+</section>
+{% endblock %}

@@ -1,0 +1,1 @@
+Registro do edital de proclamas da habilitação n.º {numero}/{ano}, publicado em {publicado_em} no {onde_se_publica}, com prazo para oposição até {prazo_ate}. Os nubentes apresentaram {documentos}. Teor do edital publicado: {teor}

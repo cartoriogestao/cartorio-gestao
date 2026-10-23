@@ -141,6 +141,28 @@ def test_historico_e_assentos_do_lote(casa):
     assert nomes == {"MARIA ÍSIS", "JOÃO PEDRO"}
 
 
+def test_assento_sem_data_do_ato_vem_primeiro_como_no_sqlite(casa):
+    """No SQLite o NULL vinha primeiro no `ORDER BY data_ato`; no PostgreSQL
+    vai por último, e com o `LIMIT` o assento sem data sairia da lista da
+    carga. `NULLS FIRST` guarda a ordem de antes (revisão do L004)."""
+    con = _con(casa)
+    com_data = _assento(con, "MARIA ÍSIS", numero=1)
+    sem_data = _assento(con, "JOÃO PEDRO", numero=2)
+    with con:
+        con.execute("UPDATE rc_assentos SET data_ato = NULL WHERE id = ?",
+                    (sem_data,))
+    assert [a["id"] for a in CRC.pendentes_de_carga(con)] == [sem_data, com_data]
+    assert [a["id"] for a in CRC.pendentes_de_carga(con, limite=1)] == [sem_data]
+
+    lote_id = CRCENVIOS.registrar_envio(con, [com_data, sem_data], agora=AGORA,
+                                        por="mario", canal="MANUAL")
+    con.commit()
+    assert [a["id"] for a in CRCENVIOS.assentos_do_lote(con, lote_id)] == [
+        sem_data, com_data]
+    assert [a["id"] for a in CRC.pendentes_de_carga(
+        con, incluir_ja_enviados=True)] == [sem_data, com_data]
+
+
 def test_a_carga_nao_ganhou_a_escrita_que_o_varredor_proibe():
     """`crc_carga.py` continua só medindo e avisando — quem escreve o lote
     é `crc_envios.py`, e não ele."""
@@ -275,9 +297,15 @@ def test_enviar_so_marca_como_enviado_quem_entrou_de_verdade(casa, monkeypatch):
     monkeypatch.setattr(atribuicoes_web.CRCSOAP, "enviar_carga", _enviar_carga)
 
     html = _token_html(casa)
+    # O DRIVER É UM DOS DA LISTA DA TELA (LS02, 19/10/2026): a rota passou a
+    # recusar o que não está em `DRIVERS_CONHECIDOS` — o nome vira
+    # `WinDLL(driver)` no assinador, como SYSTEM. Este teste mede quem sai da
+    # pendência, e não o driver; o `fake.dll` era só enchimento.
     r = casa["cliente"].post(
         "/rcpn/crc/enviar",
-        data=_campos(html, [bom, ruim], driver="fake.dll", pin="000000",
+        data=_campos(html, [bom, ruim],
+                     driver=atribuicoes_web.CRCA3.DRIVERS_CONHECIDOS[0],
+                     pin="000000",
                     ambiente="HOMOLOGACAO"),
         follow_redirects=True)
     assert r.status_code == 200

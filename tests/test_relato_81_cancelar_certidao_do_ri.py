@@ -66,6 +66,8 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import cancelamento_certidao as CANC
 import rc_certidao as CE
@@ -583,15 +585,26 @@ def test_a_regua_do_motivo_e_a_MESMA_no_RI_e_no_RCPN(cg_casa_logada):
             pass          # a recusa é o veredito, e ela diz o porquê
         return CE.ler(con, certidao_id)["cancelada_em"] is not None
 
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
+    # `rc_certidoes` aponta para `rc_assentos`: o PostgreSQL cobra a FK, e
+    # o banco da casa cria `rc_assentos` antes (database.init_db).
+    # E `rc_atos.livro_id` aponta para `nu_livros`: o nucleo vem antes.
+    import nucleo_schema
+    import rc_schema
+    nucleo_schema.init_nucleo_schema(con)
+    rc_schema.init_rc_schema(con)
     CE.init_rc_certidao_schema(con)
     with con:
+        assento_id = int(con.execute(
+            """INSERT INTO rc_assentos (serie, especie, nome, criado_em)
+               VALUES ('RC_A', 'NASCIMENTO', 'FULANO DE TAL',
+                       '2026-09-17T09:00')""").lastrowid)
         cur = con.execute(
             """INSERT INTO rc_certidoes (numero, ano, assento_id, especie, nome,
                    teor, emitida_em, emitida_por)
-               VALUES (1, 2026, 1, 'NASCIMENTO', 'FULANO DE TAL', '<p>x</p>',
-                       '2026-09-17T09:00', 'FULANA DE TAL')""")
+               VALUES (1, 2026, ?, 'NASCIMENTO', 'FULANO DE TAL', '<p>x</p>',
+                       '2026-09-17T09:00', 'FULANA DE TAL')""", (assento_id,))
         rc_id = int(cur.lastrowid)
 
     # o lado do RCPN

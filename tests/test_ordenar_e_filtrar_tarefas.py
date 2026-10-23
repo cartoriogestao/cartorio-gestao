@@ -12,6 +12,9 @@ from datetime import date
 
 import produtividade as PRD
 import tarefa_ordem as TO
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 
 def _tarefa(db, titulo, **campos):
@@ -25,7 +28,7 @@ def _titulos(html: str, *nomes: str) -> list[str]:
 
 # ----------------------------------------------------------------- a régua
 def test_toda_ordem_vira_sql_valido_nos_dois_sentidos():
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.executescript("""
         CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT, status TEXT, priority TEXT,
             due_date TEXT, created_at TEXT, sector TEXT, source_type TEXT, assigned_user_id INT);

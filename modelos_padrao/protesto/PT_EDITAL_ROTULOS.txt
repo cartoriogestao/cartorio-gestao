@@ -1,0 +1,5 @@
+inscrito = inscrito(a) no CPF/CNPJ sob o nº {documento}
+especie = espécie {especie}
+sem_prazo = o prazo legal
+sem_protocolo = A CONFERIR
+sem_numero = sem número

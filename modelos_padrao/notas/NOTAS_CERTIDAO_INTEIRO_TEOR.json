@@ -1,0 +1,18 @@
+{
+  "chave": "NOTAS_CERTIDAO_INTEIRO_TEOR",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Certidão de inteiro teor",
+  "formato": "JINJA",
+  "explica": "Certidão do ato identificado por livro e folha: reproduz o teor do livro, o selo do ato com o que o selo declara e as anotações à margem.",
+  "campos": [
+    "a",
+    "anotacoes",
+    "data_do_ato",
+    "finalidade",
+    "requerente",
+    "requerente_documento",
+    "rotulo_tipo",
+    "selos_do_ato",
+    "teor"
+  ]
+}

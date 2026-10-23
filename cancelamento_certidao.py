@@ -15,6 +15,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 import papel_seguranca as PAPEL
 
 
@@ -66,7 +67,7 @@ def _sem_tabela(erro: sqlite3.OperationalError) -> bool:
     return "no such table" in str(erro).lower()
 
 
-def concluir(con: sqlite3.Connection, *, tabela: str, ato_id: int,
+def concluir(con: Any, *, tabela: str, ato_id: int,
              motivo: str, agora: str, usuario: str | None = None) -> dict:
     """Espelha selos cancelados e recupera folhas. ESCREVE, sem rede.
 
@@ -75,17 +76,19 @@ def concluir(con: sqlite3.Connection, *, tabela: str, ato_id: int,
     qualquer outro erro de banco continua subindo e desfaz a transacao.
     """
     selos: list[str] = []
+    bd = banco(con)
     try:
-        selos = [str(r[0]) for r in con.execute(
+        selos = [str(r["numero"]) for r in bd.ler(
             """SELECT numero FROM sd_selos
-                 WHERE tabela=? AND ato_id=? AND cancelado_em IS NULL""",
-            (str(tabela), int(ato_id))).fetchall()]
+                 WHERE tabela=%s AND ato_id=%s AND cancelado_em IS NULL
+                 ORDER BY id""",
+            (str(tabela), int(ato_id)))]
         if selos:
-            con.execute(
+            bd.escrever(
                 """UPDATE sd_selos
-                      SET cancelado_em=?, cancelado_por=?,
-                          motivo_cancelamento=?
-                    WHERE tabela=? AND ato_id=? AND cancelado_em IS NULL""",
+                      SET cancelado_em=%s, cancelado_por=%s,
+                          motivo_cancelamento=%s
+                    WHERE tabela=%s AND ato_id=%s AND cancelado_em IS NULL""",
                 (agora, str(usuario or "").strip() or None,
                  (motivo or "").strip(), str(tabela), int(ato_id)))
     except sqlite3.OperationalError as erro:

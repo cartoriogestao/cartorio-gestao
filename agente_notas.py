@@ -50,13 +50,13 @@ from __future__ import annotations
 
 import html
 import re
-import sqlite3
 import unicodedata
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable
 
 import gestor_conferencia as GC
+from bd_nativo import banco
 
 #: O corte de 10/09/2026 é o do gestor: ato anterior não vira cobrança
 #: (ordem do oficial). Um número só na casa — importado, e não copiado.
@@ -117,18 +117,11 @@ def _dia(valor) -> date | None:
     return GC._dia(valor)
 
 
-def _tem_tabela(con: sqlite3.Connection, nome: str) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                       (nome,)).fetchone() is not None
+def _tem_tabela(con, nome: str) -> bool:
+    return banco(con).tem_tabela(nome)
 
 
-def _colunas(con: sqlite3.Connection, tabela: str) -> set[str]:
-    """As colunas da tabela, lidas do cursor — sem PRAGMA (teto zero)."""
-    cur = con.execute(f"SELECT * FROM {tabela} LIMIT 0")
-    return {d[0] for d in cur.description}
-
-
-def _pronto(con: sqlite3.Connection) -> bool:
+def _pronto(con) -> bool:
     """O banco tem as Notas com as colunas que estas regras leem?
 
     Banco sem as Notas não é defeito para cobrar: é instalação que não usa a
@@ -137,7 +130,8 @@ def _pronto(con: sqlite3.Connection) -> bool:
     """
     if not (_tem_tabela(con, "nt_atos") and _tem_tabela(con, "nt_ato_partes")):
         return False
-    return {"termo", "lancado_em", "tipo_cesdi"} <= _colunas(con, "nt_atos")
+    bd = banco(con)
+    return all(bd.tem_coluna("nt_atos", c) for c in ("termo", "lancado_em", "tipo_cesdi"))
 
 
 def _nome(tipo) -> str:
@@ -159,10 +153,10 @@ def _rotulo_ato(a) -> str:
     return f"{tipo} {a['id']} ({onde})"
 
 
-def _partes(con: sqlite3.Connection, ato_id: int) -> list[sqlite3.Row]:
-    return con.execute(
-        """SELECT * FROM nt_ato_partes WHERE ato_id = ? ORDER BY ordem, id""",
-        (ato_id,)).fetchall()
+def _partes(con, ato_id: int) -> list[dict]:
+    return banco(con).ler(
+        """SELECT * FROM nt_ato_partes WHERE ato_id = %s ORDER BY ordem, id""",
+        (ato_id,))
 
 
 def _documento_ruim(doc) -> str | None:
@@ -219,7 +213,7 @@ def _claros_no_texto(teor) -> list[str]:
 
 # --------------------------------------------------------------- a revisão
 
-def revisar_minuta(con: sqlite3.Connection, ato) -> list[dict]:
+def revisar_minuta(con, ato) -> list[dict]:
     """O que falta antes de lavrar este ato. Só lê.
 
     Cada item é {item, fundamento}. A lista é OBJETIVA — o que se confere no
@@ -227,7 +221,7 @@ def revisar_minuta(con: sqlite3.Connection, ato) -> list[dict]:
     juízo sobre o negócio continua sendo de quem lavra (art. 169, IV).
     """
     if isinstance(ato, int):
-        ato = con.execute("SELECT * FROM nt_atos WHERE id = ?", (ato,)).fetchone()
+        ato = banco(con).um("SELECT * FROM nt_atos WHERE id = %s", (ato,))
     if ato is None:
         return []
     itens: list[dict] = []
@@ -322,7 +316,7 @@ def _quinzenas(desde: str, hoje: date) -> list[tuple[int, int, int]]:
 _PARTE_NO_MOTIVO = re.compile(r"^(?P<nome>[^:]+): (?P<resto>qualificação .+)$")
 
 
-def regra_censec_por_ato(con: sqlite3.Connection, hoje: date) -> list[dict]:
+def regra_censec_por_ato(con, hoje: date) -> list[dict]:
     """Cada ato lavrado que a carga da CENSEC recusaria — e por quê.
 
     A regra «CENSEC» do gestor diz que a QUINZENA não foi enviada; esta diz
@@ -392,7 +386,7 @@ def regra_censec_por_ato(con: sqlite3.Connection, hoje: date) -> list[dict]:
     return saida
 
 
-def regra_livros(con: sqlite3.Connection, hoje: date) -> list[dict]:
+def regra_livros(con, hoje: date) -> list[dict]:
     """O livro conferido contra si mesmo, só no que este sistema lançou.
 
     Três perguntas da correição: dois atos na mesma folha, termo repetido, e
@@ -415,19 +409,21 @@ def regra_livros(con: sqlite3.Connection, hoje: date) -> list[dict]:
         return (i, f) if i else None
 
     saida = []
-    atos = con.execute(
+    bd = banco(con)
+    atos = bd.ler(
         """SELECT * FROM nt_atos WHERE situacao <> 'EM_LAVRATURA'
-              AND lancado_em IS NOT NULL AND livro_id IS NOT NULL""").fetchall()
+              AND lancado_em IS NOT NULL AND livro_id IS NOT NULL ORDER BY id""")
 
     # dois atos na mesma folha do mesmo livro
     por_livro: dict[int, list] = {}
     for a in atos:
         por_livro.setdefault(a["livro_id"], []).append(a)
     for livro_id, lista in por_livro.items():
-        outros = con.execute(
+        outros = bd.ler(
             """SELECT id, folha, folha_final, folha_inicial_num, folha_final_num
-                 FROM nt_atos WHERE livro_id = ? AND situacao <> 'EM_LAVRATURA'""",
-            (livro_id,)).fetchall()
+                 FROM nt_atos WHERE livro_id = %s AND situacao <> 'EM_LAVRATURA'
+                 ORDER BY id""",
+            (livro_id,))
         for a in lista:
             fa = faixa(a)
             if not fa:
@@ -450,7 +446,7 @@ def regra_livros(con: sqlite3.Connection, hoje: date) -> list[dict]:
 
     # termo repetido e termo do contador sem ato
     if _tem_tabela(con, "nt_termos"):
-        contador = {r["serie"]: r for r in con.execute("SELECT * FROM nt_termos")}
+        contador = {r["serie"]: r for r in bd.ler("SELECT * FROM nt_termos ORDER BY serie")}
         series: dict[str, list] = {}
         for a in atos:
             if a["termo"] is not None:
@@ -488,8 +484,8 @@ def regra_livros(con: sqlite3.Connection, hoje: date) -> list[dict]:
 
     # mais de um livro aberto da mesma espécie
     abertos: dict[str, list] = {}
-    for r in con.execute("""SELECT * FROM nt_livros WHERE COALESCE(ativo,1) = 1
-                               AND COALESCE(encerrado,0) = 0"""):
+    for r in bd.ler("""SELECT * FROM nt_livros WHERE COALESCE(ativo,1) = 1
+                               AND COALESCE(encerrado,0) = 0 ORDER BY tipo, id"""):
         abertos.setdefault(r["tipo"], []).append(r)
     for tipo, livros in abertos.items():
         if len(livros) > 1:
@@ -504,7 +500,7 @@ def regra_livros(con: sqlite3.Connection, hoje: date) -> list[dict]:
     return saida
 
 
-def regra_anotacao_a_margem(con: sqlite3.Connection, hoje: date) -> list[dict]:
+def regra_anotacao_a_margem(con, hoje: date) -> list[dict]:
     """Revogação, renúncia e substabelecimento lavrados sem a anotação à margem.
 
     Procuração revogada que continua «limpa» no livro é a procuração que o
@@ -520,15 +516,17 @@ def regra_anotacao_a_margem(con: sqlite3.Connection, hoje: date) -> list[dict]:
     from notas_schema import ATO_PEDE_ANOTACAO
     tipos = tuple(ATO_PEDE_ANOTACAO)
     saida = []
-    for a in con.execute(
-            f"""SELECT * FROM nt_atos WHERE situacao = 'LAVRADO' AND data >= ?
-                   AND tipo IN ({','.join('?' * len(tipos))})""", (CORTE, *tipos)):
+    bd = banco(con)
+    for a in bd.ler(
+            f"""SELECT * FROM nt_atos WHERE situacao = 'LAVRADO' AND data >= %s
+                   AND tipo IN ({','.join(['%s'] * len(tipos))}) ORDER BY id""",
+            (CORTE, *tipos)):
         if a["anterior_ato_id"]:
-            anotado = con.execute(
-                """SELECT 1 FROM nt_ato_anotacoes WHERE ato_id = ?
-                      AND (ato_relacionado_id = ? OR ato_relacionado_id IS NULL)
-                      AND tipo = ?""",
-                (a["anterior_ato_id"], a["id"], ATO_PEDE_ANOTACAO[a["tipo"]])).fetchone()
+            anotado = bd.um(
+                """SELECT 1 FROM nt_ato_anotacoes WHERE ato_id = %s
+                      AND (ato_relacionado_id = %s OR ato_relacionado_id IS NULL)
+                      AND tipo = %s LIMIT 1""",
+                (a["anterior_ato_id"], a["id"], ATO_PEDE_ANOTACAO[a["tipo"]]))
             if anotado:
                 continue
             detalhe = (f"Anotar à margem do ato {a['anterior_ato_id']} a "
@@ -539,10 +537,10 @@ def regra_anotacao_a_margem(con: sqlite3.Connection, hoje: date) -> list[dict]:
             # Ato de outra serventia: comunica-se por carta (§ 1º). Desde o
             # relato #129 (14/10/2026) há onde guardar o comprovante — a
             # obrigação ABERTA em `nt_comunicacoes_origem` vira achado.
-            aberta = (_tem_tabela(con, "nt_comunicacoes_origem") and con.execute(
+            aberta = (_tem_tabela(con, "nt_comunicacoes_origem") and bd.um(
                 """SELECT destinatario FROM nt_comunicacoes_origem
-                   WHERE ato_id = ? AND situacao = 'ABERTA'""",
-                (a["id"],)).fetchone())
+                   WHERE ato_id = %s AND situacao = 'ABERTA' ORDER BY id LIMIT 1""",
+                (a["id"],)))
             if not aberta:
                 continue
             saida.append(GC._achado(
@@ -564,7 +562,7 @@ def regra_anotacao_a_margem(con: sqlite3.Connection, hoje: date) -> list[dict]:
     return saida
 
 
-def regra_escritura_de_imovel(con: sqlite3.Connection, hoje: date) -> list[dict]:
+def regra_escritura_de_imovel(con, hoje: date) -> list[dict]:
     """Escritura de imóvel JÁ LAVRADA sem CNIB, imposto ou DOI no texto.
 
     Três coisas que o texto da escritura tem de dizer e que se conferem por
@@ -574,9 +572,9 @@ def regra_escritura_de_imovel(con: sqlite3.Connection, hoje: date) -> list[dict]
     if not _pronto(con):
         return []
     saida = []
-    for a in con.execute(
+    for a in banco(con).ler(
             """SELECT * FROM nt_atos WHERE situacao = 'LAVRADO' AND tipo = 'ESCRITURA'
-                  AND data >= ? AND lancado_em IS NOT NULL""", (CORTE,)):
+                  AND data >= %s AND lancado_em IS NOT NULL ORDER BY id""", (CORTE,)):
         if not _trata_de_imovel(a):
             continue
         plano = _sem_acento(_plano(a["teor"]))
@@ -602,7 +600,7 @@ def regra_escritura_de_imovel(con: sqlite3.Connection, hoje: date) -> list[dict]
     return saida
 
 
-def regra_minutas(con: sqlite3.Connection, hoje: date) -> list[dict]:
+def regra_minutas(con, hoje: date) -> list[dict]:
     """Cada ato EM LAVRATURA com texto — o que falta antes de lançar no livro.
 
     É a revisão (`revisar_minuta`) virando fila. Rascunho vazio fica para a
@@ -611,9 +609,9 @@ def regra_minutas(con: sqlite3.Connection, hoje: date) -> list[dict]:
     if not _pronto(con):
         return []
     saida = []
-    for a in con.execute(
+    for a in banco(con).ler(
             """SELECT * FROM nt_atos WHERE situacao = 'EM_LAVRATURA'
-                  AND teor IS NOT NULL AND length(teor) > 200"""):
+                  AND teor IS NOT NULL AND length(teor) > 200 ORDER BY id"""):
         itens = revisar_minuta(con, a)
         if not itens:
             continue
@@ -626,7 +624,7 @@ def regra_minutas(con: sqlite3.Connection, hoje: date) -> list[dict]:
     return saida
 
 
-def regra_rascunhos(con: sqlite3.Connection, hoje: date) -> list[dict]:
+def regra_rascunhos(con, hoje: date) -> list[dict]:
     """Rascunho vazio, rascunho já substituído e rascunho parado.
 
     **O SUBSTITUÍDO SE RECONHECE PELAS PARTES.** Medido em 09/10/2026: o
@@ -638,7 +636,8 @@ def regra_rascunhos(con: sqlite3.Connection, hoje: date) -> list[dict]:
     if not _pronto(con):
         return []
     saida = []
-    for a in con.execute("SELECT * FROM nt_atos WHERE situacao = 'EM_LAVRATURA'"):
+    bd = banco(con)
+    for a in bd.ler("SELECT * FROM nt_atos WHERE situacao = 'EM_LAVRATURA' ORDER BY id"):
         desde = _dia(a["data"]) or _dia((a["criado_em"] or "")[:10]) or hoje
         dias = (hoje - desde).days
         docs = {re.sub(r"\D", "", p["documento"] or "") for p in _partes(con, a["id"])}
@@ -646,9 +645,10 @@ def regra_rascunhos(con: sqlite3.Connection, hoje: date) -> list[dict]:
         texto = (a["teor"] or "").strip()
         motivo = None
         if docs:
-            for l in con.execute(
+            for l in bd.ler(
                     """SELECT id, data, livro, folha, termo, tipo FROM nt_atos
-                        WHERE situacao = 'LAVRADO' AND tipo = ? AND data >= ? AND id <> ?""",
+                        WHERE situacao = 'LAVRADO' AND tipo = %s AND data >= %s AND id <> %s
+                        ORDER BY id""",
                     (a["tipo"], a["data"], a["id"])):
                 ldocs = {re.sub(r"\D", "", p["documento"] or "")
                          for p in _partes(con, l["id"])}
@@ -673,7 +673,7 @@ def regra_rascunhos(con: sqlite3.Connection, hoje: date) -> list[dict]:
     return saida
 
 
-def regra_pdf_assinado(con: sqlite3.Connection, hoje: date) -> list[dict]:
+def regra_pdf_assinado(con, hoje: date) -> list[dict]:
     """Ato lançado há mais de uma semana sem o PDF assinado anexado.
 
     O PDF assinado é a prova de que o ato foi assinado por quem devia — pedido
@@ -684,16 +684,17 @@ def regra_pdf_assinado(con: sqlite3.Connection, hoje: date) -> list[dict]:
     if not _pronto(con) or not _tem_tabela(con, "attachments"):
         return []
     saida = []
-    for a in con.execute(
-            """SELECT * FROM nt_atos WHERE situacao = 'LAVRADO' AND data >= ?
-                  AND lancado_em IS NOT NULL""", (CORTE,)):
+    bd = banco(con)
+    for a in bd.ler(
+            """SELECT * FROM nt_atos WHERE situacao = 'LAVRADO' AND data >= %s
+                  AND lancado_em IS NOT NULL ORDER BY id""", (CORTE,)):
         lancado = _dia((a["lancado_em"] or "")[:10])
         if not lancado or (hoje - lancado).days < DIAS_SEM_PDF_ASSINADO:
             continue
-        tem = con.execute(
-            """SELECT 1 FROM attachments WHERE entity_type = 'NT_ATO' AND entity_id = ?
-                  AND lower(COALESCE(description,'')) LIKE '%assinad%'""",
-            (a["id"],)).fetchone()
+        tem = bd.um(
+            """SELECT 1 FROM attachments WHERE entity_type = 'NT_ATO' AND entity_id = %s
+                  AND lower(COALESCE(description,'')) LIKE '%%assinad%%' LIMIT 1""",
+            (a["id"],))
         if tem:
             continue
         dias = (hoje - lancado).days
@@ -789,14 +790,13 @@ GUIA = {
 
 # ------------------------------------------------------- o encaixe no gestor
 
-def conferir(con: sqlite3.Connection, hoje: date) -> list[dict]:
+def conferir(con, hoje: date) -> list[dict]:
     """Todas as regras das Notas — é o que a conferência do gestor chama.
 
     Regra que quebra vira NAO_MEDIU com o NOME DELA, e as outras seguem: um
     defeito na conta da CENSEC não pode calar a da anotação à margem. (A ponte
     do gestor também apanha, mas ali o erro levaria o nome do agente inteiro.)
     """
-    con.row_factory = sqlite3.Row
     achados: list[dict] = []
     for nome, regra in REGRAS:
         try:
@@ -828,29 +828,28 @@ def registrar_na_didatica() -> None:
 
 # ------------------------------------------------------------- o relatório
 
-def painel(con: sqlite3.Connection, hoje: date) -> dict:
+def painel(con, hoje: date) -> dict:
     """Tudo o que o relatório das Notas mostra. Só lê."""
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     dados: dict = {"hoje": hoje, "pronto": _pronto(con)}
     if not dados["pronto"]:
         return dados
     dados["achados"] = conferir(con, hoje)
     dados["minutas"] = []
-    for a in con.execute("""SELECT * FROM nt_atos WHERE situacao = 'EM_LAVRATURA'
+    for a in bd.ler("""SELECT * FROM nt_atos WHERE situacao = 'EM_LAVRATURA'
                               ORDER BY data, id"""):
         dados["minutas"].append({"ato": a, "itens": revisar_minuta(con, a),
                                  "partes": len(_partes(con, a["id"]))})
     dados["livros"] = []
     if _tem_tabela(con, "nt_livros"):
         import notas_livro as NL
-        for l in con.execute("""SELECT * FROM nt_livros WHERE COALESCE(ativo,1)=1
+        for l in bd.ler("""SELECT * FROM nt_livros WHERE COALESCE(ativo,1)=1
                                    AND COALESCE(encerrado,0)=0 ORDER BY tipo, id"""):
-            ultimo = con.execute(
-                """SELECT max(data) FROM nt_atos WHERE livro_id = ?""", (l["id"],)
-            ).fetchone()[0]
+            ultimo = bd.valor(
+                """SELECT max(data) FROM nt_atos WHERE livro_id = %s""", (l["id"],))
             dados["livros"].append({"livro": l, "folha_livre": NL.folha_livre(con, l),
                                     "ultimo_ato": ultimo})
-    dados["termos"] = list(con.execute("SELECT * FROM nt_termos ORDER BY serie")) \
+    dados["termos"] = bd.ler("SELECT * FROM nt_termos ORDER BY serie") \
         if _tem_tabela(con, "nt_termos") else []
     import notas_censec as NC
     dados["censec"] = []
@@ -860,25 +859,25 @@ def painel(con: sqlite3.Connection, hoje: date) -> dict:
             sep = NC.separar(con, central, ano, mes, q)
             linha[central] = (len(sep["aptos"]), len(sep["impedidos"]))
             linha["prazo"] = sep["prazo"]
-        enviada = con.execute(
-            """SELECT count(*) FROM nt_remessas WHERE ano_referencia = ?
-                  AND mes_referencia = ? AND quinzena = ?
+        enviada = int(bd.valor(
+            """SELECT count(*) FROM nt_remessas WHERE ano_referencia = %s
+                  AND mes_referencia = %s AND quinzena = %s
                   AND situacao IN ('ENVIADA','CONFIRMADA')""", (ano, mes, q)
-        ).fetchone()[0] if (_tem_tabela(con, "nt_remessas")
-                            and "quinzena" in _colunas(con, "nt_remessas")) else 0
+        )) if (bd.tem_tabela("nt_remessas")
+               and bd.tem_coluna("nt_remessas", "quinzena")) else 0
         linha["enviada"] = enviada
         dados["censec"].append(linha)
     inicio = (hoje - timedelta(days=30)).isoformat()
     dados["balcao"] = {
-        "reconhecimentos": con.execute(
-            "SELECT count(*) FROM nt_reconhecimentos WHERE data >= ? AND cancelado = 0",
-            (inicio,)).fetchone()[0],
-        "autenticacoes": con.execute(
-            "SELECT count(*) FROM nt_autenticacoes WHERE data >= ? AND cancelado = 0",
-            (inicio,)).fetchone()[0],
-        "atos_lavrados": con.execute(
-            "SELECT count(*) FROM nt_atos WHERE situacao = 'LAVRADO' AND data >= ?",
-            (inicio,)).fetchone()[0],
+        "reconhecimentos": int(bd.valor(
+            "SELECT count(*) FROM nt_reconhecimentos WHERE data >= %s AND cancelado = 0",
+            (inicio,))),
+        "autenticacoes": int(bd.valor(
+            "SELECT count(*) FROM nt_autenticacoes WHERE data >= %s AND cancelado = 0",
+            (inicio,))),
+        "atos_lavrados": int(bd.valor(
+            "SELECT count(*) FROM nt_atos WHERE situacao = 'LAVRADO' AND data >= %s",
+            (inicio,))),
     }
     return dados
 
@@ -887,7 +886,7 @@ _COR = {"CRITICO": "#b00020", "VENCIDO": "#b00020", "NAO_MEDIU": "#6a1b9a",
         "PRAZO": "#c45100", "ATENCAO": "#5f6368"}
 
 
-def relatorio_html(con: sqlite3.Connection, hoje: date) -> str:
+def relatorio_html(con, hoje: date) -> str:
     """O painel do dia das Notas, numa página que se abre no navegador."""
     d = painel(con, hoje)
     e = html.escape
@@ -976,7 +975,7 @@ def relatorio_html(con: sqlite3.Connection, hoje: date) -> str:
     return "".join(out)
 
 
-def escrever_relatorio(con: sqlite3.Connection, hoje: date, pasta: Path) -> Path:
+def escrever_relatorio(con, hoje: date, pasta: Path) -> Path:
     """Grava `notas_AAAA-MM-DD.html` na pasta dos relatórios. Só lê o banco."""
     pasta = Path(pasta)
     pasta.mkdir(parents=True, exist_ok=True)
@@ -998,8 +997,13 @@ def main(argv=None) -> int:
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:                                   # noqa: BLE001
         pass
-    con = sqlite3.connect(f"file:{a.banco}?mode=ro", uri=True, timeout=60)
-    con.row_factory = sqlite3.Row
+    # PELA PORTA (`banco_pg.conectar`): `--banco` continua sendo o CAMINHO do
+    # banco, como sempre foi, e o `mode=ro` continua valendo — no PostgreSQL
+    # vira `default_transaction_read_only`, e o próprio servidor recusa a
+    # escrita. A linha de comando roda fora do sistema, ninguém instala o
+    # desvio, e o acesso nativo recusa o sqlite3 cru.
+    import banco_pg
+    con = banco_pg.conectar(f"file:{a.banco}?mode=ro", uri=True, timeout=60)
     try:
         caminho = escrever_relatorio(con, _dia(a.hoje) or date.today(), Path(a.saida))
     finally:

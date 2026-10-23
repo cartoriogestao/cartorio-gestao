@@ -1,0 +1,10 @@
+{
+  "chave": "RI_ENCERRAMENTO_DIRETO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Encerramento da matrícula lavrado direto",
+  "formato": "JINJA",
+  "explica": "O teor do ato de encerramento lavrado pelo botão «Encerrar» com o motivo informado. Vai ao livro e congela no hash do ato.",
+  "campos": [
+    "motivo"
+  ]
+}

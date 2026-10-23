@@ -29,6 +29,7 @@ import re
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 from modelos_motor_contexto import (
     chave_termo,
     corrigir_pessoas_naturais,
@@ -764,15 +765,14 @@ def contexto_termo_de_assento(con: sqlite3.Connection, assento_id: int, *,
     `USAR_CONTEUDO_PUBLICADO_EDITOR` e a chave da área estiverem ligadas;
     senão `modelos_da_casa.corpo_de` (caminho atual).
     """
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT * FROM rc_assentos WHERE id = ?",
-                    (int(assento_id),)).fetchone()
+    bd = banco(con)
+    a = bd.um("SELECT * FROM rc_assentos WHERE id = %s", (int(assento_id),))
     if not a:
         raise LookupError(f"Não achei o assento nº {assento_id}.")
     assento = dict(a)
-    pessoas = [dict(p) for p in con.execute(
-        "SELECT * FROM rc_pessoas WHERE assento_id = ? ORDER BY ordem, id",
-        (int(assento_id),))]
+    pessoas = bd.ler(
+        "SELECT * FROM rc_pessoas WHERE assento_id = %s ORDER BY ordem, id",
+        (int(assento_id),))
     chave = chave_termo(assento.get("especie"))
     documentos = None
     origem_corpo = "rascunho"

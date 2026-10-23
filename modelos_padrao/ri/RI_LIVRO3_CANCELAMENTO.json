@@ -1,0 +1,10 @@
+{
+  "chave": "RI_LIVRO3_CANCELAMENTO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Averbação de cancelamento do registro (Livro 3)",
+  "formato": "JINJA",
+  "explica": "Teor da averbação que cancela o registro do Livro 3, com o motivo; vai ao livro e, gravado, não muda mais.",
+  "campos": [
+    "motivo"
+  ]
+}

@@ -41,6 +41,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from bd_nativo import banco
+
 # As duas etapas em que `update_expediente_stage` grava `completed_at` — e por
 # isso as duas em que o expediente esta, de fato, encerrado.
 ETAPAS_QUE_ENCERRAM = ("RESPONDIDO", "ARQUIVADO")
@@ -71,11 +73,10 @@ def tarefas_do_expediente(con: sqlite3.Connection,
     `CANCELADA` NAO CONTA COMO ABERTA nem como concluida: tarefa cancelada e
     trabalho que se decidiu nao fazer, e ela nao pode segurar o expediente.
     """
-    con.row_factory = sqlite3.Row
-    linhas = [dict(r) for r in con.execute(
+    linhas = banco(con).ler(
         """SELECT id, title, status FROM tasks
-            WHERE linked_expediente_id = ? ORDER BY id""",
-        (int(expediente_id),))]
+            WHERE linked_expediente_id = %s ORDER BY id""",
+        (int(expediente_id),))
     abertas = [x for x in linhas
                if str(x["status"] or "").upper() not in ("CONCLUIDA", "CANCELADA")]
     return {
@@ -95,9 +96,8 @@ def o_que_falta_para_encerrar(con: sqlite3.Connection,
     recusa nada**: quem decide encerrar com tarefa aberta e o oficial. Isto e
     aviso, e nao trava — a mesma regra da lista de atencao para fraudes.
     """
-    con.row_factory = sqlite3.Row
-    e = con.execute("SELECT id, internal_protocol, subject, stage FROM expedientes "
-                    "WHERE id = ?", (int(expediente_id),)).fetchone()
+    e = banco(con).um("SELECT id, internal_protocol, subject, stage FROM expedientes "
+                      "WHERE id = %s", (int(expediente_id),))
     if not e:
         raise ExpedienteError(f"Não achei o expediente {expediente_id}.")
     tarefas = tarefas_do_expediente(con, expediente_id)
@@ -132,9 +132,8 @@ def recado_da_tarefa_concluida(con: sqlite3.Connection, task_id: int) -> dict | 
     sistema nao fecha sozinho, mas para de ficar calado: diz o que sobrou e
     manda o operador ao lugar de encerrar.
     """
-    con.row_factory = sqlite3.Row
-    t = con.execute("SELECT linked_expediente_id FROM tasks WHERE id = ?",
-                    (int(task_id),)).fetchone()
+    t = banco(con).um("SELECT linked_expediente_id FROM tasks WHERE id = %s",
+                      (int(task_id),))
     if not t or not t["linked_expediente_id"]:
         return None
     try:
@@ -161,11 +160,10 @@ def expedientes_com_tudo_concluido(con: sqlite3.Connection) -> list[dict]:
     casa esta nela desde que a tarefa dele foi concluida. Sem esta lista, ele
     so apareceria a quem abrisse aquele expediente por acaso.
     """
-    con.row_factory = sqlite3.Row
     prontos = []
-    for e in con.execute(
+    for e in banco(con).ler(
             """SELECT id, internal_protocol, subject, stage, deadline_date
-                 FROM expedientes ORDER BY id""").fetchall():
+                 FROM expedientes ORDER BY id"""):
         if esta_encerrado(e["stage"]):
             continue
         t = tarefas_do_expediente(con, e["id"])

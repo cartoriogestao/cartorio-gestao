@@ -27,10 +27,10 @@ FUNDAMENTO
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import date, datetime
 
 import us_tjma as TJMA
+from bd_nativo import banco
 
 from flask import (Response, abort, flash, redirect, render_template,
                    request, url_for)
@@ -61,15 +61,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     usuario_id = app.extensions["usuario_id"]
     archive_root = app.extensions["archive_root"]
 
+    # OS PAPÉIS DA USUCAPIÃO SÃO EDITÁVEIS NA TELA DE MODELOS DESDE O LF06G, e
+    # a tela confere cada ajuste com a régua de quem o preenche: o claro que o
+    # papel não tem é recusado ao gravar, e não na hora de expedir.
+    _conferidores = app.extensions.setdefault("conferidores_de_modelo", {})
+    for _chave in UN.CLAROS_POR_PAPEL:
+        _conferidores[_chave] = (
+            lambda corpo, _k=_chave: UN.conferir_modelo(_k, corpo))
+    for _chave in (*US.PAPEL_DA_DECISAO.values(), US.PAPEL_DO_PEDIDO):
+        _conferidores[_chave] = (
+            lambda corpo, _k=_chave: US.conferir_modelo(_k, corpo))
+
     def _campo(nome: str) -> str:
         return (request.form.get(nome) or "").strip()
 
     def _ler():
-        con = db.connect()
-        con.row_factory = sqlite3.Row
-        return con
+        return db.connect()
 
-    def _pasta_pecas_usucapiao(p: sqlite3.Row | dict) -> object:
+    def _pasta_pecas_usucapiao(p: dict) -> object:
         """Pasta própria dos autos no arquivo do Cartório Gestão.
 
         A peça pode ter vindo do scanner, do balcão ou de um PDF já OCRizado,
@@ -92,29 +101,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         onde, params = [], []
         if termo:
-            onde.append("(numero LIKE ? OR requerente_nome LIKE ? "
-                        "OR imovel_descricao LIKE ?)")
+            onde.append("(numero ILIKE %s OR requerente_nome ILIKE %s "
+                        "OR imovel_descricao ILIKE %s)")
             params += [f"%{termo}%"] * 3
         if etapa in US.ORDEM_DAS_ETAPAS:
-            onde.append("etapa = ?")
+            onde.append("etapa = %s")
             params.append(etapa)
         if situacao in US.SITUACOES:
-            onde.append("situacao = ?")
+            onde.append("situacao = %s")
             params.append(situacao)
         filtro = (" WHERE " + " AND ".join(onde)) if onde else ""
 
         with _ler() as con:
-            linhas = [dict(r) for r in con.execute(
-                f"SELECT * FROM us_processos{filtro} ORDER BY id DESC LIMIT ?",
-                (*params, POR_PAGINA))]
-            por_etapa = [dict(r) for r in con.execute(
-                "SELECT etapa, COUNT(*) n FROM us_processos GROUP BY etapa")]
+            bd = banco(con)
+            linhas = bd.ler(
+                f"SELECT * FROM us_processos{filtro} ORDER BY id DESC LIMIT %s",
+                (*params, POR_PAGINA))
+            por_etapa = bd.ler(
+                "SELECT etapa, COUNT(*) AS n FROM us_processos GROUP BY etapa"
+                " ORDER BY etapa")
+            for e in por_etapa:
+                e["n"] = int(e["n"])
             # Quem tem prazo vencido aparece marcado na lista, e não só na
             # ficha: processo que espera resposta é o que se esquece.
-            vencidos = {r["processo_id"] for r in con.execute(
+            vencidos = {r["processo_id"] for r in bd.ler(
                 """SELECT DISTINCT processo_id FROM us_movimentos
                     WHERE prazo_fim IS NOT NULL AND respondido_em IS NULL
-                      AND prazo_fim < ?""", (hoje(),))}
+                      AND prazo_fim < %s""", (hoje(),))}
         return render_template("usucapiao_lista.html", linhas=linhas,
                                por_etapa=por_etapa, vencidos=vencidos,
                                termo=termo, etapa=etapa, situacao=situacao,
@@ -190,7 +203,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 "prazos": US.prazos_abertos(con, processo_id, hoje()),
                 "decisoes": [dict(x) for x in US.decisoes(con, processo_id)],
                 "analises": [dict(x) for x in US.analises(con, processo_id)],
-                "modelos": US.modelos_de_decisao(p, sv()),
+                # COM `con`, O AJUSTE DA CASA (LF06G): o modelo editado na
+                # tela de Modelos é o que a ficha oferece.
+                "modelos": US.modelos_de_decisao(p, sv(), con=con),
             }
         return render_template(
             "usucapiao_ficha.html", **dados, hoje=hoje(),
@@ -432,10 +447,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         Registro Civil e da certidão de protesto.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            mov = con.execute(
-                "SELECT * FROM us_movimentos WHERE id=? AND processo_id=?",
-                (movimento_id, processo_id)).fetchone()
+            mov = banco(con).um(
+                "SELECT * FROM us_movimentos WHERE id=%s AND processo_id=%s",
+                (movimento_id, processo_id))
             p = US.processo(con, processo_id)
         if mov is None or p is None:
             abort(404)
@@ -471,10 +485,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         tela. `?formato=odt` entrega o editável.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            mov = con.execute(
-                "SELECT * FROM us_movimentos WHERE id=? AND processo_id=?",
-                (movimento_id, processo_id)).fetchone()
+            mov = banco(con).um(
+                "SELECT * FROM us_movimentos WHERE id=%s AND processo_id=%s",
+                (movimento_id, processo_id))
             p = US.processo(con, processo_id)
         if mov is None or p is None:
             abort(404)
@@ -548,9 +561,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(f"Resposta desconhecida: {resposta!r}.", "danger")
             return voltar
         with db.transaction() as con:
-            con.execute(
-                """UPDATE us_movimentos SET respondido_em=?, resposta=?,
-                       resposta_teor=? WHERE id=? AND processo_id=?""",
+            banco(con).escrever(
+                """UPDATE us_movimentos SET respondido_em=%s, resposta=%s,
+                       resposta_teor=%s WHERE id=%s AND processo_id=%s""",
                 (agora(), resposta, _campo("resposta_teor") or None,
                  movimento_id, processo_id))
             US.movimentar(
@@ -614,8 +627,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             if not p:
                 flash("Processo não encontrado.", "danger")
                 return redirect(url_for("usucapiao_processos"))
-            d = US.montar_dossie(con, processo_id, hoje=hoje(),
-                                 mascarar=mascarar)
+            # O PEDIDO DO DOSSIÊ É TEXTO DA CASA (LF06G), e o ajuste que não
+            # monta volta à ficha com o recado — e não como erro 500 (LX18).
+            try:
+                d = US.montar_dossie(con, processo_id, hoje=hoje(),
+                                     mascarar=mascarar)
+            except US.UsucapiaoError as erro:
+                flash(str(erro), "danger")
+                return redirect(url_for("usucapiao_processo",
+                                        processo_id=processo_id))
         # Gerar dossiê é tirar dado da casa: fica na auditoria, com o sha256 do
         # que saiu e se foi mascarado.
         audit("USUCAPIAO_DOSSIE", "us_processos", processo_id,

@@ -9,7 +9,7 @@
 <label>Folhas da certidão
   <input type="number" name="folhas" value="" min="1" step="1" placeholder="auto">
   <small>O sistema conta antes de emitir. Mais de uma folha cobra a folha acrescida
-    (13.12.3), num selo próprio — como a casa fez no E-Ofício.</small></label>
+    (13.12.3), num selo próprio — como a casa fez no sistema antigo.</small></label>
 <label style="display:flex;gap:8px;align-items:flex-start">
   <input type="checkbox" name="eletronica" value="1">
   <span><strong>Certidão eletrônica</strong> (13.12.4)<br>
@@ -21,3 +21,18 @@
 <label>Motivo da gratuidade <input name="motivo_gratuidade" maxlength="500"></label>
 <label>Selo <small>(opcional — digitado à mão, quando o selador não responde)</small>
   <input name="selo" pattern="[A-Za-z0-9]*"></label>
+{% if sob_sigilo %}
+{# O SIGILO DO TESTAMENTO — LG04, Código de Normas, art. 851, §§ 4º e 5º. Só
+   aparece quando o pedido alcança testamento; quem decide é
+   `notas_certidao.fundamento_do_sigilo`, de novo, ao emitir. #}
+<div class="notice warning" style="grid-column:1/-1">
+  <strong>Testamento: certidão sob sigilo.</strong> Enquanto vive o testador,
+  só a ele — pelo CPF no campo do requerente e com requerimento escrito
+  arquivado (§ 4º). Com a certidão de óbito apresentada, a qualquer pessoa (§ 5º).
+</div>
+<label style="display:flex;gap:8px;align-items:flex-start">
+  <input type="checkbox" name="requerimento_escrito" value="1">
+  <span><strong>Requerimento escrito do testador recebido e arquivado</strong></span></label>
+<label>Certidão de óbito do testador <small>(matrícula ou livro/folha/termo)</small>
+  <input name="obito_apresentado" maxlength="200"></label>
+{% endif %}

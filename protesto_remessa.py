@@ -72,10 +72,12 @@ import json
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 import protesto as PT
 import protesto_arquivo as PA
 import protesto_cra as CRA
 import protesto_cra_xml as PCRAXML
+import protesto_cra_imagens as PCIMG
 
 # O tipo do arquivo que CHEGA. Note que o codigo nao e o espelho dos outros
 # tres: os de saida sao `SDTBFO...` e a remessa e `BFOSDTTPR`. Nao e engano de
@@ -184,18 +186,19 @@ def _exigir_remessa(a: PA.Arquivo) -> None:
 
 
 def remessa_pelo_hash(con: sqlite3.Connection,
-                      hash_arquivo: str) -> sqlite3.Row | None:
+                      hash_arquivo: str) -> dict | None:
     """A remessa que ja entrou com esse mesmo arquivo. So LE."""
-    return con.execute("SELECT * FROM pt_remessas WHERE hash_arquivo=?",
-                       (hash_arquivo,)).fetchone()
+    return banco(con).um(
+        "SELECT * FROM pt_remessas WHERE hash_arquivo=%s ORDER BY id LIMIT 1",
+        (hash_arquivo,))
 
 
 def remessa_pela_chave_xml(con: sqlite3.Connection,
-                           chave: str) -> sqlite3.Row | None:
+                           chave: str) -> dict | None:
     """Lote XML que ja entrou com a mesma chave de idempotencia. So LE."""
-    return con.execute(
-        "SELECT * FROM pt_remessas WHERE origem_xml_chave=?", (chave,)
-    ).fetchone()
+    return banco(con).um(
+        "SELECT * FROM pt_remessas WHERE origem_xml_chave=%s "
+        "ORDER BY id LIMIT 1", (chave,))
 
 
 def _ambiente_cra(ambiente: str) -> str:
@@ -229,15 +232,15 @@ def _titulos_vivos_iguais(con: sqlite3.Connection, dados: dict) -> list[dict]:
     ap = (dados.get("apresentante_codigo") or "").strip()
     if not nosso or not ap:
         return []
-    marcas = ",".join("?" * len(SITUACOES_VIVAS))
-    return [dict(r) for r in con.execute(
+    marcas = ",".join(["%s"] * len(SITUACOES_VIVAS))
+    return banco(con).ler(
         f"""SELECT id, numero_titulo, nosso_numero, situacao, protocolo,
                    criado_em
               FROM pt_titulos
-             WHERE nosso_numero = ? AND apresentante_codigo = ?
+             WHERE nosso_numero = %s AND apresentante_codigo = %s
                AND situacao IN ({marcas})
              ORDER BY id DESC LIMIT 5""",
-        (nosso, ap, *SITUACOES_VIVAS))]
+        (nosso, ap, *SITUACOES_VIVAS))
 
 
 def conferir(con: sqlite3.Connection, conteudo: str | bytes) -> dict:
@@ -309,6 +312,7 @@ def conferir_xml(con: sqlite3.Connection, bruto: str | bytes,
         "ja_entrou": [x["ja_entrou"] for x in lotes if x["ja_entrou"]],
         "xml_sha256": previa.sha256,
         "nome_arquivo_xml": previa.nome_arquivo,
+        "imagens": sum(len(g["arquivos"]) for g in previa.imagens),
     }
 
 
@@ -318,6 +322,23 @@ def _conferir_lote_xml(con: sqlite3.Connection, conteudo: str | bytes,
     lote = _conferir_lote(con, conteudo)
     chave = PCRAXML.chave_idempotencia(ambiente, hash_lote)
     ja = remessa_pela_chave_xml(con, chave)
+    if not ja:
+        # O LOTE QUE ENTROU ANTES DO 3.6.293.3 tem a chave calculada COM o
+        # t51 (a imagem); o mesmo lote baixado agora com imagem dá outra
+        # chave. Compara-se então o conteúdo de 600 posições sem as 19 do t51.
+        inicio = sum(PCRAXML.LARGURAS["tr"][:50])
+        def sem_imagem(texto):
+            return "\n".join(linha[:inicio] + " " * 19 + linha[inicio + 19:]
+                             if len(linha) == 600 and linha.startswith("1") else linha
+                             for linha in str(texto).splitlines())
+        for anterior in banco(con).ler(
+                "SELECT * FROM pt_remessas WHERE origem_xml_chave IS NOT NULL "
+                "AND apresentante_codigo=%s AND dia=%s AND numero_da_remessa=%s "
+                "ORDER BY id",
+                (lote["apresentante_codigo"], lote["dia"], lote["numero_da_remessa"])):
+            if sem_imagem(anterior["conteudo"]) == sem_imagem(lote["conteudo"]):
+                ja = anterior
+                break
     lote["origem_xml_ambiente"] = ambiente
     lote["origem_xml_hash_lote"] = hash_lote
     lote["origem_xml_chave"] = chave
@@ -420,15 +441,35 @@ def receber_xml(con: sqlite3.Connection, bruto: str | bytes, *, ambiente: str,
                 agora: str, data_extenso: str, sv: dict,
                 nome_arquivo: str | None = None, apontar: bool = True,
                 marca: str | None = None, confirmar: bool = True,
-                usuario: str | None = None) -> dict:
-    """Recebe remessa XML da CRA, lote a lote, na mesma transacao dos titulos."""
+                usuario: str | None = None, pasta_de_arquivos=None,
+                usuario_id: int | None = None) -> dict:
+    """Recebe remessa XML da CRA, lote a lote, na mesma transacao dos titulos.
+
+    AS IMAGENS t51 ENTRAM NA MESMA TRANSACAO (3.6.293.3): falhar ao gravar uma
+    delas desfaz o recebimento inteiro, e o XML continua na copia local para
+    tentar de novo sem pedir outro download a CRA.
+
+    A TRAVA VEM ANTES DA CONFERENCIA, porque e ela que decide se o lote «ja
+    entrou» (pela chave XML ou, depois do 3.6.293.3, pelo conteudo sem a
+    imagem): dois cliques no Receber esperam um pelo outro, e o segundo ve o
+    primeiro gravado. Enquanto a ponte existir a trava unica ja faz isso.
+    """
+    banco(con).travar("pt_remessas.recebimento")
+    previa = PCRAXML.ler(bruto)
+    if previa.imagens and pasta_de_arquivos is None:
+        raise RemessaError("Informe a pasta de arquivos para receber as imagens da CRA.")
     visto = conferir_xml(con, bruto, ambiente)
     if not nome_arquivo and visto.get("nome_arquivo_xml"):
         nome_arquivo = visto["nome_arquivo_xml"]
-    return _receber_visto(
+    resultado = _receber_visto(
         con, visto, agora=agora, data_extenso=data_extenso, sv=sv,
         nome_arquivo=nome_arquivo, apontar=apontar, marca=marca,
         confirmar=confirmar, usuario=usuario, duplicidade_por="origem_xml_chave")
+
+    resultado["imagens_anexadas"] = PCIMG.anexar(
+        con, previa.imagens, resultado, pasta=pasta_de_arquivos,
+        agora=agora, usuario_id=usuario_id) if previa.imagens else 0
+    return resultado
 
 
 def _receber_visto(con: sqlite3.Connection, visto: dict, *, agora: str,
@@ -504,13 +545,15 @@ def _receber_lote(con: sqlite3.Connection, visto: dict, *, agora: str,
     oficial poe o aviso de intimacao no mesmo movimento do recebimento, e nao
     se intima titulo que nao foi apontado.
     """
-    cur = con.execute(
+    bd = banco(con)
+    remessa_id = int(bd.escrever(
         """INSERT INTO pt_remessas(tipo, apresentante_codigo, apresentante_nome,
                dia, numero_da_remessa, nome_arquivo, conteudo, hash_arquivo,
                titulos, recebidos, recusados, apontados, recusas_json,
                achados_json, recebida_em, recebida_por,
                origem_xml_ambiente, origem_xml_hash_lote, origem_xml_chave)
-           VALUES (?,?,?,?,?,?,?,?,?,0,?,0,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,0,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (visto["tipo"], visto["apresentante_codigo"], visto["apresentante_nome"],
          visto["dia"], visto["numero_da_remessa"], nome_arquivo,
          visto["conteudo"], visto["hash_arquivo"], visto["quantidade"],
@@ -522,8 +565,7 @@ def _receber_lote(con: sqlite3.Connection, visto: dict, *, agora: str,
                     ensure_ascii=False),
          json.dumps(visto["achados"], ensure_ascii=False), agora, usuario,
          visto.get("origem_xml_ambiente"), visto.get("origem_xml_hash_lote"),
-         visto.get("origem_xml_chave")))
-    remessa_id = int(cur.lastrowid)
+         visto.get("origem_xml_chave")))[0]["id"])
 
     entraram: list[dict] = []
     apontados = 0
@@ -534,7 +576,7 @@ def _receber_lote(con: sqlite3.Connection, visto: dict, *, agora: str,
             con, linha["dados"], origem="CRA",
             origem_chave=f"CRA:{remessa_id}:{linha['sequencial']}",
             usuario=usuario, agora=agora)
-        con.execute("UPDATE pt_titulos SET remessa_id=? WHERE id=?",
+        bd.escrever("UPDATE pt_titulos SET remessa_id=%s WHERE id=%s",
                     (remessa_id, titulo_id))
         lugar = None
         if apontar:
@@ -552,9 +594,9 @@ def _receber_lote(con: sqlite3.Connection, visto: dict, *, agora: str,
             agora=agora, marca=marca, usuario=usuario)
         confirmacao_id = confirmacao["retorno_id"]
 
-    con.execute(
-        """UPDATE pt_remessas SET recebidos=?, apontados=?, confirmacao_id=?
-            WHERE id=?""",
+    bd.escrever(
+        """UPDATE pt_remessas SET recebidos=%s, apontados=%s, confirmacao_id=%s
+            WHERE id=%s""",
         (len(entraram), apontados, confirmacao_id, remessa_id))
     return {
         **visto,
@@ -617,9 +659,10 @@ def _confirmar(con: sqlite3.Connection, *, remessa_id: int, visto: dict,
 
     protocolo_do = {}
     for x in entraram:
-        r = con.execute("SELECT protocolo FROM pt_titulos WHERE id=?",
-                        (int(x["titulo_id"]),)).fetchone()
-        protocolo_do[int(x["sequencial"])] = str((r[0] if r else "") or "").strip()
+        r = banco(con).um("SELECT protocolo FROM pt_titulos WHERE id=%s",
+                          (int(x["titulo_id"]),))
+        protocolo_do[int(x["sequencial"])] = str(
+            (r["protocolo"] if r else "") or "").strip()
 
     # O título do arquivo casa com o da conferência PELA ORDEM: o k-ésimo
     # registro «1» do lote é `visto["titulos"][k]`, e é o `sequencial` DELE
@@ -655,12 +698,13 @@ def _confirmar(con: sqlite3.Connection, *, remessa_id: int, visto: dict,
     titulos = [x for x in saida if x[:1] == "1"]
     nome = PRE.nome_do_arquivo(TIPO_DA_CONFIRMACAO, visto["apresentante_codigo"],
                                visto["dia"] or str(agora)[:10], con=con)
-    cur = con.execute(
+    retorno_id = banco(con).escrever(
         """INSERT INTO pt_retornos(tipo, par_id, apresentante_codigo,
                apresentante_nome, dia, numero_da_remessa, marca, titulos,
                soma_centavos, nome_arquivo, conteudo, hash_arquivo, gerado_em,
                gerado_por)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (TIPO_DA_CONFIRMACAO, None, visto["apresentante_codigo"],
          visto["apresentante_nome"], str(agora)[:10],
          _inteiro(visto["numero_da_remessa"]),
@@ -668,8 +712,8 @@ def _confirmar(con: sqlite3.Connection, *, remessa_id: int, visto: dict,
          None,
          len(titulos),
          sum(_inteiro(t[inicio[17]:inicio[17] + larg[17]], 0) for t in titulos),
-         nome, texto, PRE.hash_retorno(texto), agora, usuario))
-    return {"retorno_id": int(cur.lastrowid), "nome_arquivo": nome,
+         nome, texto, PRE.hash_retorno(texto), agora, usuario))[0]["id"]
+    return {"retorno_id": int(retorno_id), "nome_arquivo": nome,
             "titulos": len(titulos), "conteudo": texto,
             "remessa_id": remessa_id}
 
@@ -692,15 +736,15 @@ def _inteiro(valor: Any, padrao: int = 1) -> int:
 # --------------------------------------------------------------- consultas
 
 
-def remessa(con: sqlite3.Connection, remessa_id: int) -> sqlite3.Row | None:
+def remessa(con: sqlite3.Connection, remessa_id: int) -> dict | None:
     """A remessa recebida, com o arquivo inteiro. So LE."""
-    return con.execute("SELECT * FROM pt_remessas WHERE id=?",
-                       (int(remessa_id),)).fetchone()
+    return banco(con).um("SELECT * FROM pt_remessas WHERE id=%s",
+                         (int(remessa_id),))
 
 
 def listar(con: sqlite3.Connection, limite: int = 60) -> list[dict]:
     """As remessas recebidas, da mais nova para a mais velha. So LE."""
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT r.id, r.tipo, r.apresentante_codigo, r.apresentante_nome,
                   r.dia, r.numero_da_remessa, r.nome_arquivo, r.titulos,
                   r.recebidos, r.recusados, r.apontados, r.confirmacao_id,
@@ -708,21 +752,21 @@ def listar(con: sqlite3.Connection, limite: int = 60) -> list[dict]:
                   c.nome_arquivo confirmacao_nome
              FROM pt_remessas r
              LEFT JOIN pt_retornos c ON c.id = r.confirmacao_id
-            ORDER BY r.id DESC LIMIT ?""", (int(limite),))]
+            ORDER BY r.id DESC LIMIT %s""", (int(limite),))
 
 
 def titulos_da_remessa(con: sqlite3.Connection, remessa_id: int) -> list[dict]:
     """Que titulos entraram naquela remessa. So LE."""
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT t.id, t.numero_titulo, t.nosso_numero, t.especie,
                   t.saldo_centavos, t.situacao, t.protocolo,
                   d.nome devedor_nome
              FROM pt_titulos t
              LEFT JOIN pt_devedores d ON d.titulo_id = t.id
-            WHERE t.remessa_id = ? ORDER BY t.id""", (int(remessa_id),))]
+            WHERE t.remessa_id = %s ORDER BY t.id, d.id""", (int(remessa_id),))
 
 
-def recusas(linha: sqlite3.Row | dict) -> list[dict]:
+def recusas(linha: dict) -> list[dict]:
     """Os titulos que a remessa trouxe e o contrato recusou. So LE.
 
     Guardados no proprio lote, e nao so mostrados na hora: quando o

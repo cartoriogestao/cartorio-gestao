@@ -1,0 +1,10 @@
+{
+  "chave": "RCPJ_RTD_ETIQUETA",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Etiqueta de registro — RCPJ/RTD (tira 100×30)",
+  "formato": "JINJA",
+  "explica": "O que sai na tira colada no título de papel: onde o registro ficou, a data, o protocolo, o selo e o QR. A medida da tira se ajusta em «Ajustar a etiqueta de registro».",
+  "campos": [
+    "e"
+  ]
+}

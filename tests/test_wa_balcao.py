@@ -37,6 +37,10 @@ def _sessao(cg_casa):
     dados = cg_casa['dados']
     bd = cg_casa['db']
     bd.create_user("tabeliao", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    # O `X-Wa-Test` destes testes só entra com o modo de teste LIGADO (LX11,
+    # M6 do LS01): de fábrica ele nasce desligado e o webhook recusa.
+    with bd.transaction() as con:
+        WA.gravar_config(con, SCH.CHAVE_MODO_TESTE, "1")
     c = app.test_client()
     c.post("/login",
            data={"username": "tabeliao", "password": SENHA,
@@ -418,3 +422,73 @@ def test_puxar_mock_aplica_pendente(s):
     n = con.execute("SELECT COUNT(*) FROM wa_conversa").fetchone()[0]
     assert n == 1
     con.close()
+
+
+# ------------------------------------------- revisao do L023 (PostgreSQL nativo)
+
+
+def test_segunda_mensagem_sem_nome_guarda_o_nome_e_com_nome_troca(cg_casa):
+    """`COALESCE(NULLIF(%s, ''), nome)` no UPDATE da conversa que ja existe:
+    nome vazio nao apaga o que havia; nome novo troca."""
+    import sqlite3
+    con = sqlite3.connect(cg_casa["banco"])
+    try:
+        WA.aplicar_entrada(con, _payload("oi", meta_id="wamid.nome-1"))
+        sem_nome = {"messages": [{"from": "5599988887777", "id": "wamid.nome-2",
+                                  "text": {"body": "oi de novo"}}]}
+        assert WA.aplicar_entrada(con, sem_nome)["criadas"] == 1
+        con.commit()
+        assert [c["nome"] for c in WA.listar_conversas(con)] == ["Fulano da Silva"]
+
+        com_nome = _payload("sou eu", meta_id="wamid.nome-3")
+        contato = com_nome["entry"][0]["changes"][0]["value"]["contacts"][0]
+        contato["profile"]["name"] = "Ciclano de Tal"
+        WA.aplicar_entrada(con, com_nome)
+        con.commit()
+        convs = WA.listar_conversas(con)
+        assert [c["nome"] for c in convs] == ["Ciclano de Tal"]
+        assert len(WA.conversa(con, convs[0]["id"])["mensagens"]) == 3
+    finally:
+        con.close()
+
+
+def test_a_entrada_confere_se_ja_chegou_dentro_da_trava(cg_casa, monkeypatch):
+    """No SQLite, o BEGIN IMMEDIATE do webhook punha em fila duas entradas
+    iguais (a Meta reenvia; duas pessoas puxam a caixa-postal juntas), e a
+    segunda contava como repetida. Sem a ponte, "ja chegou?" e "ja tem
+    conversa deste numero?" so valem se conferidos dentro da trava."""
+    import sqlite3
+
+    import banco_pg
+    if not banco_pg.ativo():
+        pytest.skip("modulo nativo: so roda com o PostgreSQL ligado (CG_PG_DSN)")
+    import psycopg
+
+    def livre() -> bool:
+        with psycopg.connect(banco_pg.dsn(), autocommit=True) as outra:
+            return bool(outra.execute(
+                "SELECT pg_try_advisory_xact_lock(hashtext(%s))",
+                ("wa_mensagem.meta_id",)).fetchone()[0])
+
+    vistas = []
+    ja_tem_meta, conversa_por_wa = WA._ja_tem_meta, WA._conversa_por_wa
+
+    def espia_meta(con, meta_id):
+        vistas.append(("meta_id", livre()))
+        return ja_tem_meta(con, meta_id)
+
+    def espia_wa(con, wa_id):
+        vistas.append(("wa_id", livre()))
+        return conversa_por_wa(con, wa_id)
+
+    monkeypatch.setattr(WA, "_ja_tem_meta", espia_meta)
+    monkeypatch.setattr(WA, "_conversa_por_wa", espia_wa)
+    con = sqlite3.connect(cg_casa["banco"])
+    try:
+        r = WA.aplicar_entrada(con, _payload("oi", meta_id="wamid.trava-1"))
+        con.commit()
+    finally:
+        con.close()
+    assert r["criadas"] == 1
+    assert vistas == [("meta_id", False), ("wa_id", False)], \
+        "a conferencia rodou com a trava livre"

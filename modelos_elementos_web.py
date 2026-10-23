@@ -31,22 +31,30 @@ O QUE ESTA TELA NÃO FAZ
 """
 from __future__ import annotations
 
-from flask import flash, jsonify, redirect, render_template, request, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 
+from bd_nativo import banco
 import modelos_elementos as ELEM
 import modelos_previa as PREVIA
+import seguranca_web as SEGWEB  # B2 (LX11): exceção inesperada não vai para a tela
 from modelos_elementos_schema import (
     ATRIBUICOES,
     CABECALHO_FICOU_DE_FORA,
     NOME_DA_ATRIBUICAO,
 )
 
-# SÓ ADMIN E GERENTE, e o motivo não é hierarquia: o elemento é a forma de um
-# documento que a serventia assina, e uma vírgula fora do lugar num elemento
-# **da atribuição** sai em todo papel dela até alguém reparar.
-# Mesmas roles de `/modelos` (`modelos_web`): quem ajusta papel assinado inclui
-# USER — escrevente autorizado; negar só aqui dava 403 com link visível no menu.
+# QUEM ABRE A TELA inclui o USER: o link está no menu de cada atribuição, e é
+# por aqui que o balcão vê com que forma o papel sai. Negar a tela só aqui dava
+# 403 com link visível no menu.
 QUEM_EDITA: tuple[str, ...] = ("ADMIN", "MANAGER", "USER")
+
+# QUEM GRAVA É SÓ ADMIN E GERENTE (LX12, 19/10/2026 — achado M6 do LS02), e o
+# motivo não é hierarquia: o elemento é a forma de um documento que a serventia
+# assina, e uma vírgula fora do lugar num elemento **da atribuição** sai em
+# todo papel dela até alguém reparar. O mesmo vale para `nt_modelos.corpo`, a
+# minuta de onde nasce o teor de todo ato notarial. É a régua de `/modelos`
+# (`modelos_web.QUEM_GRAVA`).
+QUEM_GRAVA: tuple[str, ...] = ("ADMIN", "MANAGER")
 
 # O endpoint de cada atribuição. O sufixo `_papeis` está em todos de propósito:
 # `ri_modelos` e `rcpn_modelos` já existiam com outro sentido — a tabela velha
@@ -77,11 +85,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
     usuario_nome = app.extensions["usuario_nome"]
 
+    def _so_quem_grava() -> None:
+        """403 para quem não grava modelo — ver `QUEM_GRAVA`."""
+        if app.extensions["usuario_papel"]() not in QUEM_GRAVA:
+            abort(403)
+
     def _tela(atribuicao: str):
         """A tela de uma atribuição. É a mesma para as seis."""
         atrib = ELEM.atribuicao_valida(atribuicao)
 
         if request.method == "POST":
+            _so_quem_grava()
             ato = (request.form.get("ato") or "").strip().upper()
             parte = (request.form.get("parte") or "").strip().upper()
             corpo = request.form.get("corpo") or ""
@@ -110,7 +124,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             except ELEM.ElementoError as erro:
                 flash(str(erro), "danger")
             except Exception as erro:                        # noqa: BLE001
-                flash(f"Não deu para gravar: {erro}", "danger")
+                flash(SEGWEB.recado_de_erro(erro, "modelos_elementos",
+                                            "Não deu para gravar; o detalhe ficou "
+                                            "no registro do servidor."), "danger")
             return redirect(url_for(ROTA_DA_ATRIBUICAO[atrib], editar=ato))
 
         with db.connect() as con:
@@ -163,6 +179,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """A biblioteca inteira das minutas notariais, agora editável."""
         codigo = (request.values.get("codigo") or "").strip()
         if request.method == "POST":
+            _so_quem_grava()
             nome = (request.form.get("nome") or "").strip()
             corpo = request.form.get("corpo") or ""
             fundamento = (request.form.get("fundamento") or "").strip()
@@ -174,14 +191,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     c for c in unicodedata.normalize("NFKD", nome.upper())
                     if not unicodedata.combining(c)).split())
                 with db.transaction() as con:
-                    existe = con.execute("SELECT id FROM nt_modelos WHERE codigo=?",
-                                         (codigo,)).fetchone()
+                    bd = banco(con)
+                    existe = bd.um("SELECT id FROM nt_modelos WHERE codigo=%s",
+                                   (codigo,))
                     if not existe:
                         flash("Modelo notarial não encontrado.", "danger")
                         return redirect(url_for("notas_modelos_de_atos"))
-                    con.execute("""UPDATE nt_modelos SET nome=?, nome_norm=?,
-                                   corpo=?, fundamento=?, atualizado_em=?
-                                   WHERE codigo=?""",
+                    bd.escrever("""UPDATE nt_modelos SET nome=%s, nome_norm=%s,
+                                   corpo=%s, fundamento=%s, atualizado_em=%s
+                                   WHERE codigo=%s""",
                                 (nome, nome_norm, corpo.strip(), fundamento or None,
                                  db.now(), codigo))
                 audit("NT_MODELO_AJUSTADO", "nt_modelos", codigo,
@@ -192,17 +210,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         busca = (request.args.get("busca") or "").strip()
         with db.connect() as con:
-            con.row_factory = __import__("sqlite3").Row
+            bd = banco(con)
             params: list = []
             filtro = "WHERE ativo=1"
             if busca:
-                filtro += " AND (nome LIKE ? OR codigo LIKE ? OR tipo LIKE ?)"
+                filtro += " AND (nome ILIKE %s OR codigo ILIKE %s OR tipo ILIKE %s)"
                 params.extend([f"%{busca}%"] * 3)
-            modelos = [dict(r) for r in con.execute(
-                f"SELECT * FROM nt_modelos {filtro} ORDER BY tipo,nome_norm", params)]
+            modelos = bd.ler(
+                f"SELECT * FROM nt_modelos {filtro} ORDER BY tipo,nome_norm, id",
+                params)
             if codigo:
-                atual = con.execute("SELECT * FROM nt_modelos WHERE codigo=?",
-                                    (codigo,)).fetchone()
+                atual = bd.um("SELECT * FROM nt_modelos WHERE codigo=%s",
+                              (codigo,))
             else:
                 atual = modelos[0] if modelos else None
         atual = dict(atual) if atual else None

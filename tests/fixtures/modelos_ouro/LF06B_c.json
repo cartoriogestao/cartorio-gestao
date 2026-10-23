@@ -1,0 +1,540 @@
+{
+ "_como": "Gerado ANTES do LF06B, na árvore exportada do commit 2c41e90 (git archive), por ouro_lf06b.gerar. Não regerar depois da mudança: o teste compararia a base com ela mesma.",
+ "commit": "2c41e90",
+ "funcoes": {
+  "ra_expurgo.compor_ata(cheia)": {
+   "ok": "ATA DE OCORRÊNCIA — LIVRO 3 (REGISTRO AUXILIAR)\n\nRegistro nº 12. Ato AV-2, de 2026-10-01.\n\nEm 19/10/2026 10:30, o ato acima foi DESFEITO e devolvido à condição de minuta (minuta nº 55), por escrevente.exemplo.\n\nMOTIVO: Lançado na ficha errada.\n\nO ato não chegou a receber selo — ato com selo não se desfaz por este caminho.\n\nTEOR DO ATO DESFEITO, como estava:\n\nAV-2 — Averbação de exemplo, FULANO DE EXEMPLO.\n\nNada mais. Esta ata é a única cópia do que saiu do livro."
+  },
+  "ra_expurgo.compor_ata(motivo_cancelamento)": {
+   "ok": "ATA DE OCORRÊNCIA — LIVRO 3 (REGISTRO AUXILIAR)\n\nRegistro nº 13. Ato AV-3, de data não informada.\n\nEm 19/10/2026 10:30, o ato acima foi DESFEITO e devolvido à condição de minuta, por usuário não identificado.\n\nMOTIVO: não informado.\n\nO ato não chegou a receber selo — ato com selo não se desfaz por este caminho.\n\nTEOR DO ATO DESFEITO, como estava:\n\nCancelado a pedido.\n\nNada mais. Esta ata é a única cópia do que saiu do livro."
+  },
+  "ra_expurgo.compor_ata(vazia)": {
+   "ok": "ATA DE OCORRÊNCIA — LIVRO 3 (REGISTRO AUXILIAR)\n\nRegistro nº 13. Ato -, de data não informada.\n\nEm 19/10/2026 10:30, o ato acima foi DESFEITO e devolvido à condição de minuta, por usuário não identificado.\n\nMOTIVO: não informado.\n\nO ato não chegou a receber selo — ato com selo não se desfaz por este caminho.\n\nTEOR DO ATO DESFEITO, como estava:\n\n(o ato não tinha teor escrito)\n\nNada mais. Esta ata é a única cópia do que saiu do livro."
+  },
+  "ra_expurgo.registrar": {
+   "ok": {
+    "devolveu": 101,
+    "escritas": [
+     {
+      "parametros": [
+       30,
+       12,
+       "AV-2",
+       "AV",
+       2,
+       "2026-10-01",
+       null,
+       "  AV-2 — Averbação de exemplo, FULANO DE EXEMPLO.  ",
+       55,
+       "Lançado na ficha errada",
+       "ATA DE OCORRÊNCIA — LIVRO 3 (REGISTRO AUXILIAR)\n\nRegistro nº 12. Ato AV-2, de 2026-10-01.\n\nEm 19/10/2026 10:30, o ato acima foi DESFEITO e devolvido à condição de minuta (minuta nº 55), por escrevente.exemplo.\n\nMOTIVO: Lançado na ficha errada.\n\nO ato não chegou a receber selo — ato com selo não se desfaz por este caminho.\n\nTEOR DO ATO DESFEITO, como estava:\n\nAV-2 — Averbação de exemplo, FULANO DE EXEMPLO.\n\nNada mais. Esta ata é a única cópia do que saiu do livro.",
+       "19/10/2026 10:30",
+       "escrevente.exemplo"
+      ],
+      "sql": "INSERT INTO ra_expurgos(registro_id, registro_numero, ato_rotulo, ato_tipo, ato_numero, ato_data, ato_selo, ato_teor, minuta_id, motivo, ata, expurgado_em, expurgado_por) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id"
+     }
+    ]
+   }
+  },
+  "ra_registro.cancelar(com_partes)": {
+   "ok": {
+    "devolveu": {
+     "ato_id": 101,
+     "motivo": "Quitação da cédula apresentada em Cidade Exemplo.",
+     "numero": 2,
+     "registro_id": 30,
+     "rotulo": "AV-2"
+    },
+    "escritas": [
+     {
+      "parametros": [
+       30,
+       "AV",
+       2,
+       "2026-10-19 10:30:00",
+       "Cancelamento do registro. Quitação da cédula apresentada em Cidade Exemplo.",
+       "Quitação da cédula apresentada em Cidade Exemplo.",
+       "MANUAL",
+       "2026-10-19 10:30:00",
+       "escrevente.exemplo"
+      ],
+      "sql": "INSERT INTO ra_atos(registro_id, tipo, numero, data_ato, teor, motivo_cancelamento, origem, criado_em, criado_por) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     },
+     {
+      "parametros": [
+       30
+      ],
+      "sql": "UPDATE ra_registros SET situacao='CANCELADO' WHERE id = %s"
+     },
+     {
+      "parametros": [
+       4,
+       "CANCELAMENTO",
+       "2026-10-19",
+       "CANCELAMENTO no Indicador Real. Fica anotado o cancelamento do registro 12 do Livro 3 (CEDULA_CREDITO_RURAL — Cédula Rural Pignoratícia (40/01800-8)), lavrado pela averbação AV-02. FUNDAMENTO: Quitação da cédula apresentada em Cidade Exemplo.",
+       "Quitação da cédula apresentada em Cidade Exemplo.",
+       3,
+       30,
+       12,
+       null,
+       "R",
+       null,
+       "R-12/Livro3",
+       101,
+       "AV-02",
+       "CEDULA_CREDITO_RURAL — Cédula Rural Pignoratícia (40/01800-8)",
+       "2026-10-19 10:30:00",
+       "escrevente.exemplo",
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, ra_registro_id, ra_registro_numero, ato_cancelado_id, ato_cancelado_tipo, ato_cancelado_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     },
+     {
+      "parametros": [
+       5,
+       "CANCELAMENTO",
+       "2026-10-19",
+       "CANCELAMENTO no Indicador Pessoal. Em relação a FULANO DE EXEMPLO, fica anotado o cancelamento do registro 12 do Livro 3, pela AV-02. FUNDAMENTO: Quitação da cédula apresentada em Cidade Exemplo.",
+       "Quitação da cédula apresentada em Cidade Exemplo.",
+       3,
+       30,
+       12,
+       "R-12/Livro3",
+       101,
+       "AV-02",
+       "CEDULA_CREDITO_RURAL — Cédula Rural Pignoratícia (40/01800-8)",
+       "FULANO DE EXEMPLO",
+       "CPF",
+       "00000000191",
+       "PROPRIETARIO",
+       501,
+       "2026-10-19 10:30:00",
+       "escrevente.exemplo",
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, ra_registro_id, ra_registro_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, pessoa_nome, pessoa_documento_tipo, pessoa_documento_numero, pessoa_papel, parte_id, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     }
+    ]
+   }
+  },
+  "ra_registro.cancelar(sem_partes)": {
+   "ok": {
+    "devolveu": {
+     "ato_id": 101,
+     "motivo": "Pedido do credor, por instrumento particular.",
+     "numero": 2,
+     "registro_id": 31,
+     "rotulo": "AV-2"
+    },
+    "escritas": [
+     {
+      "parametros": [
+       31,
+       "AV",
+       2,
+       "2026-10-19 10:30:00",
+       "Cancelamento do registro. Pedido do credor, por instrumento particular.",
+       "Pedido do credor, por instrumento particular.",
+       "MANUAL",
+       "2026-10-19 10:30:00",
+       "escrevente.exemplo"
+      ],
+      "sql": "INSERT INTO ra_atos(registro_id, tipo, numero, data_ato, teor, motivo_cancelamento, origem, criado_em, criado_por) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     },
+     {
+      "parametros": [
+       31
+      ],
+      "sql": "UPDATE ra_registros SET situacao='CANCELADO' WHERE id = %s"
+     },
+     {
+      "parametros": [
+       4,
+       "CANCELAMENTO",
+       "2026-10-19",
+       "CANCELAMENTO no Indicador Real. Fica anotado o cancelamento do registro 13 do Livro 3 (Registro Auxiliar), lavrado pela averbação AV-02. FUNDAMENTO: Pedido do credor, por instrumento particular.",
+       "Pedido do credor, por instrumento particular.",
+       3,
+       31,
+       13,
+       null,
+       "R",
+       null,
+       "R-13/Livro3",
+       101,
+       "AV-02",
+       "Registro Auxiliar",
+       "2026-10-19 10:30:00",
+       "escrevente.exemplo",
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, ra_registro_id, ra_registro_numero, ato_cancelado_id, ato_cancelado_tipo, ato_cancelado_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     },
+     {
+      "parametros": [
+       5,
+       "CANCELAMENTO",
+       "2026-10-19",
+       "CANCELAMENTO no Indicador Pessoal. Registro 13 do Livro 3 cancelado pela AV-02. Sem partes nominadas. FUNDAMENTO: Pedido do credor, por instrumento particular.",
+       "Pedido do credor, por instrumento particular.",
+       3,
+       31,
+       13,
+       "R-13/Livro3",
+       101,
+       "AV-02",
+       "Registro Auxiliar",
+       "2026-10-19 10:30:00",
+       "escrevente.exemplo",
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, ra_registro_id, ra_registro_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     }
+    ]
+   }
+  },
+  "ri_cnib.parte_fixa(acervo_sem_numero)": {
+   "ok": {
+    "numero": null,
+    "protocolo": 4321,
+    "protocolo_frase": "PROTOCOLO N. 4321, DE 01/10/2026.",
+    "rotulo": "AV-[NUMERO DO ATO]/1842"
+   }
+  },
+  "ri_cnib.parte_fixa(com_protocolo)": {
+   "ok": {
+    "numero": 5,
+    "protocolo": 4321,
+    "protocolo_frase": "PROTOCOLO N. 4321, DE 01/10/2026.",
+    "rotulo": "AV-05/1840"
+   }
+  },
+  "ri_cnib.parte_fixa(matricula_inexistente)": {
+   "ok": {
+    "numero": 5,
+    "protocolo": null,
+    "protocolo_frase": "[INFORMAR O PROTOCOLO].",
+    "rotulo": "[ROTULO DO ATO]"
+   }
+  },
+  "ri_cnib.parte_fixa(protocolo_data_ruim)": {
+   "ok": {
+    "numero": 5,
+    "protocolo": 1,
+    "protocolo_frase": "PROTOCOLO N. 1, DE ontem.",
+    "rotulo": "AV-05/1840"
+   }
+  },
+  "ri_cnib.parte_fixa(sem_con)": {
+   "ok": {
+    "numero": null,
+    "protocolo": null,
+    "protocolo_frase": "[INFORMAR O PROTOCOLO].",
+    "rotulo": "[ROTULO DO ATO]"
+   }
+  },
+  "ri_cnib.parte_fixa(sem_protocolo)": {
+   "ok": {
+    "numero": 12,
+    "protocolo": null,
+    "protocolo_frase": "[INFORMAR O PROTOCOLO].",
+    "rotulo": "AV-12/1840"
+   }
+  },
+  "ri_cnib.teor_preparado(cheia)": {
+   "ok": "<p><b>AV-05/1840 —</b> <b>INDISPONIBILIDADE DE BENS.</b> PROTOCOLO N. 4321, DE 01/10/2026. Nos termos da ordem de indisponibilidade registrada na Central Nacional de Indisponibilidade de Bens — CNIB sob o protocolo n. 202610190000001, determinada em 18/10/2026 pelo(a) Tribunal de Justiça de Exemplo — 1ª Vara de Cidade Exemplo, nos autos n. 0000000-00.2026.8.10.0000, fica averbada a INDISPONIBILIDADE do imovel objeto desta matricula, em razao de atingir FULANO DE EXEMPLO, 000.000.001-91. A indisponibilidade impede a pratica de atos de disposicao, permanecendo o imovel sujeito as restricoes ate ordem de cancelamento pela mesma via.</p>"
+  },
+  "ri_cnib.teor_preparado(sem_con)": {
+   "ok": "<p><b>[ROTULO DO ATO] —</b> <b>INDISPONIBILIDADE DE BENS.</b> [INFORMAR O PROTOCOLO]. Nos termos da ordem de indisponibilidade registrada na Central Nacional de Indisponibilidade de Bens — CNIB sob o protocolo n. 202610190000001, determinada em 18/10/2026 pelo(a) Tribunal de Justiça de Exemplo — 1ª Vara de Cidade Exemplo, nos autos n. 0000000-00.2026.8.10.0000, fica averbada a INDISPONIBILIDADE do imovel objeto desta matricula, em razao de atingir FULANO DE EXEMPLO, 000.000.001-91. A indisponibilidade impede a pratica de atos de disposicao, permanecendo o imovel sujeito as restricoes ate ordem de cancelamento pela mesma via.</p>"
+  },
+  "ri_cnib.teor_preparado(so_orgao)": {
+   "ok": "<p><b>AV-05/1840 —</b> <b>INDISPONIBILIDADE DE BENS.</b> PROTOCOLO N. 4321, DE 01/10/2026. Nos termos da ordem de indisponibilidade registrada na Central Nacional de Indisponibilidade de Bens — CNIB sob o protocolo n. 202610190000001, determinada em 18/10/2026 pelo(a) Tribunal de Justiça de Exemplo, nos autos n. 0000000-00.2026.8.10.0000, fica averbada a INDISPONIBILIDADE do imovel objeto desta matricula, em razao de atingir FULANO DE EXEMPLO, 000.000.001-91. A indisponibilidade impede a pratica de atos de disposicao, permanecendo o imovel sujeito as restricoes ate ordem de cancelamento pela mesma via.</p>"
+  },
+  "ri_cnib.teor_preparado(so_vara)": {
+   "ok": "<p><b>AV-05/1840 —</b> <b>INDISPONIBILIDADE DE BENS.</b> PROTOCOLO N. 4321, DE 01/10/2026. Nos termos da ordem de indisponibilidade registrada na Central Nacional de Indisponibilidade de Bens — CNIB sob o protocolo n. 202610190000001, determinada em 18/10/2026 pelo(a) 1ª Vara de Cidade Exemplo, nos autos n. 0000000-00.2026.8.10.0000, fica averbada a INDISPONIBILIDADE do imovel objeto desta matricula, em razao de atingir FULANO DE EXEMPLO, 000.000.001-91. A indisponibilidade impede a pratica de atos de disposicao, permanecendo o imovel sujeito as restricoes ate ordem de cancelamento pela mesma via.</p>"
+  },
+  "ri_cnib.teor_preparado(vazia)": {
+   "ok": "<p><b>AV-[NUMERO DO ATO]/1842 —</b> <b>INDISPONIBILIDADE DE BENS.</b> [INFORMAR O PROTOCOLO]. Nos termos da ordem de indisponibilidade registrada na Central Nacional de Indisponibilidade de Bens — CNIB sob o protocolo n. [PROTOCOLO CNIB], determinada em [DATA] pelo(a) [ORGAO / JUIZO], nos autos n. [PROCESSO], fica averbada a INDISPONIBILIDADE do imovel objeto desta matricula, em razao de atingir [NOME DO ATINGIDO], [CPF/CNPJ]. A indisponibilidade impede a pratica de atos de disposicao, permanecendo o imovel sujeito as restricoes ate ordem de cancelamento pela mesma via.</p>"
+  },
+  "ri_expurgo.texto_da_ata(cheia)": {
+   "ok": "ATA DE OCORRÊNCIA — EXPURGO DE ATO LAVRADO EM TESTE DE SISTEMA\n\nOfício Único de Exemplo — CNS 000000\nCidade Exemplo/MA, 19 de outubro de 2026.\n\n1. DO QUE SE TRATA\n\nDurante a implantação do sistema Cartório Gestão, e antes de sua entrada definitiva em operação, foi lavrado no sistema o ato abaixo identificado, cujo selo de fiscalização foi cancelado junto ao Tribunal de Justiça do Estado do Maranhão. Cancelado o selo, o ato não subsistiu como ato de registro. Lavra-se esta ata para que dele reste memória íntegra fora da ficha, e para que a ficha não afirme ato que não houve.\n\n2. DO ATO EXPURGADO\n\n   Ato ................. R-3/1840\n   Matrícula ........... nº 1840, Livro 2\n   Data do ato ......... 2026-08-18\n   Natureza ............ Compra e venda\n   Prenotação .......... 4321\n   Lavrado em .......... 2026-08-18 15:00:00\n   Praticado por ....... FULANO DE EXEMPLO, Escrevente Autorizado\n   Emolumentos ......... R$ 123,45\n   Selo no sistema ..... SELO-EXEMPLO-0001\n   Selo cancelado ...... SELO-EXEMPLO-0001\n   Hash de integridade . 0000000000000000000000000000000000000000000000000000000000000000\n\n   Partes que constavam do ato:\n   - FULANO DE EXEMPLO (CPF 00000000191) — PROPRIETARIO\n   - BELTRANA DE EXEMPLO (sem documento) — sem papel informado\n\n3. DO FUNDAMENTO\n\n   Ato lavrado em teste; selo cancelado no Tribunal.\n\n4. DO TEOR INTEGRAL DO ATO EXPURGADO\n\n   Transcreve-se abaixo, na íntegra e sem alteração, o teor que constava do ato, para que nada se perca:\n\n   R-3/1840 — Compra e venda.\n   Comprador: FULANO DE EXEMPLO.\n   \n   Valor: R$ 1,00.\n\n5. DO REGISTRO DESTA OCORRÊNCIA\n\nO ato foi removido da ficha da matrícula. Esta ata, o evento de auditoria correspondente e o cancelamento do selo junto ao Tribunal são, em conjunto, a prova do que houve. O número do ato volta a estar disponível na matrícula.\n\nLançada por: oficial.exemplo.\nCidade Exemplo/MA, 19 de outubro de 2026."
+  },
+  "ri_expurgo.texto_da_ata(sem_cidade)": {
+   "ok": "ATA DE OCORRÊNCIA — EXPURGO DE ATO LAVRADO EM TESTE DE SISTEMA\n\nServentia Extrajudicial\n/MA, 1º de janeiro de 2026.\n\n1. DO QUE SE TRATA\n\nDurante a implantação do sistema Cartório Gestão, e antes de sua entrada definitiva em operação, foi lavrado no sistema o ato abaixo identificado, cujo selo de fiscalização foi cancelado junto ao Tribunal de Justiça do Estado do Maranhão. Cancelado o selo, o ato não subsistiu como ato de registro. Lavra-se esta ata para que dele reste memória íntegra fora da ficha, e para que a ficha não afirme ato que não houve.\n\n2. DO ATO EXPURGADO\n\n   Ato ................. R-1/1\n   Matrícula ........... nº None\n   Data do ato ......... —\n   Natureza ............ —\n   Prenotação .......... —\n   Lavrado em .......... —\n   Praticado por ....... —\n   Emolumentos ......... —\n   Selo no sistema ..... —\n   Selo cancelado ...... —\n   Hash de integridade . —\n\n3. DO FUNDAMENTO\n\n   \n\n4. DO TEOR INTEGRAL DO ATO EXPURGADO\n\n   Transcreve-se abaixo, na íntegra e sem alteração, o teor que constava do ato, para que nada se perca:\n\n   (o ato não tinha teor)\n\n5. DO REGISTRO DESTA OCORRÊNCIA\n\nO ato foi removido da ficha da matrícula. Esta ata, o evento de auditoria correspondente e o cancelamento do selo junto ao Tribunal são, em conjunto, a prova do que houve. O número do ato volta a estar disponível na matrícula.\n\nLançada por: não identificado.\n/MA, 1º de janeiro de 2026."
+  },
+  "ri_expurgo.texto_da_ata(vazia)": {
+   "ok": "ATA DE OCORRÊNCIA — EXPURGO DE ATO LAVRADO EM TESTE DE SISTEMA\n\nServentia Extrajudicial\nCidade Exemplo/MA, 19 de outubro de 2026.\n\n1. DO QUE SE TRATA\n\nDurante a implantação do sistema Cartório Gestão, e antes de sua entrada definitiva em operação, foi lavrado no sistema o ato abaixo identificado, cujo selo de fiscalização foi cancelado junto ao Tribunal de Justiça do Estado do Maranhão. Cancelado o selo, o ato não subsistiu como ato de registro. Lavra-se esta ata para que dele reste memória íntegra fora da ficha, e para que a ficha não afirme ato que não houve.\n\n2. DO ATO EXPURGADO\n\n   Ato ................. AV-2/1841\n   Matrícula ........... nº 1841\n   Data do ato ......... —\n   Natureza ............ —\n   Prenotação .......... 99\n   Lavrado em .......... —\n   Praticado por ....... —\n   Emolumentos ......... —\n   Selo no sistema ..... —\n   Selo cancelado ...... —\n   Hash de integridade . —\n\n3. DO FUNDAMENTO\n\n   Selo cancelado.\n\n4. DO TEOR INTEGRAL DO ATO EXPURGADO\n\n   Transcreve-se abaixo, na íntegra e sem alteração, o teor que constava do ato, para que nada se perca:\n\n   (o ato não tinha teor)\n\n5. DO REGISTRO DESTA OCORRÊNCIA\n\nO ato foi removido da ficha da matrícula. Esta ata, o evento de auditoria correspondente e o cancelamento do selo junto ao Tribunal são, em conjunto, a prova do que houve. O número do ato volta a estar disponível na matrícula.\n\nLançada por: não identificado.\nCidade Exemplo/MA, 19 de outubro de 2026."
+  },
+  "ri_indicador_lancamentos.registrar_cancelamento_livro2(com_partes)": {
+   "ok": {
+    "devolveu": {
+     "livro4_id": 101,
+     "livro5_ids": [
+      102,
+      103
+     ],
+     "n_pessoas": 2
+    },
+    "escritas": [
+     {
+      "parametros": [
+       4,
+       "CANCELAMENTO",
+       "2026-10-19",
+       "CANCELAMENTO no Indicador Real. Fica anotado o cancelamento do ato R-03/1840 da matrícula 1840, lavrado pela averbação AV-04. Imóvel: Rua de Exemplo, 10 — Centro. FUNDAMENTO: Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       "Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       2,
+       7,
+       "1840",
+       70,
+       "R",
+       3,
+       "R-03/1840",
+       90,
+       "AV-04",
+       "Rua de Exemplo, 10 — Centro",
+       "2026-10-19 10:30:00",
+       "escrevente.exemplo",
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, matricula_id, matricula_numero, ato_cancelado_id, ato_cancelado_tipo, ato_cancelado_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     },
+     {
+      "parametros": [
+       5,
+       "CANCELAMENTO",
+       "2026-10-19",
+       "CANCELAMENTO no Indicador Pessoal. Em relação a FULANO DE EXEMPLO, fica anotado o cancelamento do ato R-03/1840 da matrícula 1840, pela AV-04. FUNDAMENTO: Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       "Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       2,
+       7,
+       "1840",
+       70,
+       "R",
+       3,
+       "R-03/1840",
+       90,
+       "AV-04",
+       "Rua de Exemplo, 10 — Centro",
+       "FULANO DE EXEMPLO",
+       "CPF",
+       "00000000191",
+       "PROPRIETARIO",
+       501,
+       "2026-10-19 10:30:00",
+       "escrevente.exemplo",
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, matricula_id, matricula_numero, ato_cancelado_id, ato_cancelado_tipo, ato_cancelado_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, pessoa_nome, pessoa_documento_tipo, pessoa_documento_numero, pessoa_papel, parte_id, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     },
+     {
+      "parametros": [
+       5,
+       "CANCELAMENTO",
+       "2026-10-19",
+       "CANCELAMENTO no Indicador Pessoal. Em relação a BELTRANA DE EXEMPLO, fica anotado o cancelamento do ato R-03/1840 da matrícula 1840, pela AV-04. FUNDAMENTO: Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       "Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       2,
+       7,
+       "1840",
+       70,
+       "R",
+       3,
+       "R-03/1840",
+       90,
+       "AV-04",
+       "Rua de Exemplo, 10 — Centro",
+       "BELTRANA DE EXEMPLO",
+       "CPF",
+       "00000000191",
+       "PROPRIETARIA",
+       502,
+       "2026-10-19 10:30:00",
+       "escrevente.exemplo",
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, matricula_id, matricula_numero, ato_cancelado_id, ato_cancelado_tipo, ato_cancelado_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, pessoa_nome, pessoa_documento_tipo, pessoa_documento_numero, pessoa_papel, parte_id, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     }
+    ]
+   }
+  },
+  "ri_indicador_lancamentos.registrar_cancelamento_livro2(sem_partes)": {
+   "ok": {
+    "devolveu": {
+     "livro4_id": 101,
+     "livro5_ids": [
+      102
+     ],
+     "n_pessoas": 0
+    },
+    "escritas": [
+     {
+      "parametros": [
+       4,
+       "CANCELAMENTO",
+       "2026-10-19",
+       "CANCELAMENTO no Indicador Real. Fica anotado o cancelamento do ato R-03/1841 da matrícula 1841, lavrado pela averbação AV-04. Imóvel: matrícula 1841. FUNDAMENTO: Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       "Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       2,
+       8,
+       "1841",
+       70,
+       "R",
+       3,
+       "R-03/1841",
+       90,
+       "AV-04",
+       "matrícula 1841",
+       "2026-10-19 10:30:00",
+       "escrevente.exemplo",
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, matricula_id, matricula_numero, ato_cancelado_id, ato_cancelado_tipo, ato_cancelado_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     },
+     {
+      "parametros": [
+       5,
+       "CANCELAMENTO",
+       "2026-10-19",
+       "CANCELAMENTO no Indicador Pessoal. Ato R-03/1841 da matrícula 1841 cancelado pela AV-04. Sem partes nominadas na ficha. FUNDAMENTO: Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       "Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       2,
+       8,
+       "1841",
+       70,
+       "R",
+       3,
+       "R-03/1841",
+       90,
+       "AV-04",
+       "matrícula 1841",
+       null,
+       "2026-10-19 10:30:00",
+       "escrevente.exemplo",
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, matricula_id, matricula_numero, ato_cancelado_id, ato_cancelado_tipo, ato_cancelado_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, pessoa_nome, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     }
+    ]
+   }
+  },
+  "ri_indicador_lancamentos.registrar_cancelamento_livro3(com_partes)": {
+   "ok": {
+    "devolveu": {
+     "livro4_id": 101,
+     "livro5_ids": [
+      102
+     ],
+     "n_pessoas": 1
+    },
+    "escritas": [
+     {
+      "parametros": [
+       4,
+       "CANCELAMENTO",
+       "2026-10-18",
+       "CANCELAMENTO no Indicador Real. Fica anotado o cancelamento do registro 12 do Livro 3 (CEDULA_CREDITO_RURAL — Cédula Rural Pignoratícia (40/01800-8)), lavrado pela averbação AV-02. FUNDAMENTO: Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       "Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       3,
+       30,
+       12,
+       null,
+       "R",
+       null,
+       "R-12/Livro3",
+       91,
+       "AV-02",
+       "CEDULA_CREDITO_RURAL — Cédula Rural Pignoratícia (40/01800-8)",
+       "2026-10-19 10:30:00",
+       null,
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, ra_registro_id, ra_registro_numero, ato_cancelado_id, ato_cancelado_tipo, ato_cancelado_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     },
+     {
+      "parametros": [
+       5,
+       "CANCELAMENTO",
+       "2026-10-18",
+       "CANCELAMENTO no Indicador Pessoal. Em relação a FULANO DE EXEMPLO, fica anotado o cancelamento do registro 12 do Livro 3, pela AV-02. FUNDAMENTO: Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       "Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       3,
+       30,
+       12,
+       "R-12/Livro3",
+       91,
+       "AV-02",
+       "CEDULA_CREDITO_RURAL — Cédula Rural Pignoratícia (40/01800-8)",
+       "FULANO DE EXEMPLO",
+       "CPF",
+       "00000000191",
+       "PROPRIETARIO",
+       501,
+       "2026-10-19 10:30:00",
+       null,
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, ra_registro_id, ra_registro_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, pessoa_nome, pessoa_documento_tipo, pessoa_documento_numero, pessoa_papel, parte_id, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     }
+    ]
+   }
+  },
+  "ri_indicador_lancamentos.registrar_cancelamento_livro3(sem_partes)": {
+   "ok": {
+    "devolveu": {
+     "livro4_id": 101,
+     "livro5_ids": [
+      102
+     ],
+     "n_pessoas": 0
+    },
+    "escritas": [
+     {
+      "parametros": [
+       4,
+       "CANCELAMENTO",
+       "2026-10-18",
+       "CANCELAMENTO no Indicador Real. Fica anotado o cancelamento do registro 13 do Livro 3 (Registro Auxiliar), lavrado pela averbação AV-02. FUNDAMENTO: Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       "Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       3,
+       31,
+       13,
+       null,
+       "R",
+       null,
+       "R-13/Livro3",
+       91,
+       "AV-02",
+       "Registro Auxiliar",
+       "2026-10-19 10:30:00",
+       null,
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, ra_registro_id, ra_registro_numero, ato_cancelado_id, ato_cancelado_tipo, ato_cancelado_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     },
+     {
+      "parametros": [
+       5,
+       "CANCELAMENTO",
+       "2026-10-18",
+       "CANCELAMENTO no Indicador Pessoal. Registro 13 do Livro 3 cancelado pela AV-02. Sem partes nominadas. FUNDAMENTO: Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       "Mandado judicial do processo 0000000-00.2026.8.10.0000, Cidade Exemplo.",
+       3,
+       31,
+       13,
+       "R-13/Livro3",
+       91,
+       "AV-02",
+       "Registro Auxiliar",
+       "2026-10-19 10:30:00",
+       null,
+       "CANCELAMENTO"
+      ],
+      "sql": "INSERT INTO ri_indicador_lancamentos (livro, especie, data_lancamento, teor, motivo, origem_livro, ra_registro_id, ra_registro_numero, ato_cancelado_rotulo, averbacao_id, averbacao_rotulo, imovel_resumo, criado_em, criado_por, origem) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+     }
+    ]
+   }
+  }
+ },
+ "parte": "c"
+}

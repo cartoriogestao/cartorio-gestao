@@ -1,0 +1,26 @@
+{
+  "chave": "PT_INSTRUMENTO_DESCRICAO",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto — descrição do documento",
+  "formato": "CHAVES",
+  "explica": "Uma linha por rótulo, no formato «nome = texto». O NOME é do sistema e não muda; o TEXTO é seu. Linha apagada, ou deixada sem texto, volta ao padrão — o sistema nunca fica sem a palavra. É o {descricao} do instrumento — o «documento abaixo descrito», item a item do CN-MA art. 914. O sistema decide QUAIS pedaços entram (o que o ato e o título têm); título, devedor e as partes do título se juntam com «, » e fecham com ponto. «apresentante_endereco» (LD08) é o apresentante com o endereço (Lei 9.492/1997, art. 22, II), quando o título ou o cadastro dos apresentantes o tem; sem ele, vale «apresentante». Os pedaços servem também ao registro do protesto (PT_TERMO_QUALIFICACAO).",
+  "campos": [
+    "lugar",
+    "data",
+    "livro",
+    "folha",
+    "numero_ordem",
+    "protocolo",
+    "especie",
+    "numero_titulo",
+    "valor",
+    "apresentante",
+    "credor",
+    "documento",
+    "devedor",
+    "tipo_documento",
+    "endereco",
+    "tipo",
+    "motivo"
+  ]
+}

@@ -1,0 +1,36 @@
+===ASSINATURA===
+{funcao}: ________________________________
+===SELO_AVERBACAO===
+selo averbação
+===SELO_ARQUIVAMENTO===
+selo arquivamento
+===SELO_CONSULTE===
+Consulte em {endereco}
+===SELO_CERTIDAO===
+selo da certidão
+===SELO_VAZIO===
+selo / verificação
+===QR_VAZIO===
+QR / autenticação
+===PAGINA===
+Página
+===LIVRO_RCPJ===
+Livro de Registro Civil das Pessoas Jurídicas
+===LIVRO_RTD===
+Livro de Registro de Títulos e Documentos
+===OBJETO===
+o registro de {natureza}
+===OBJETO_SEM_NATUREZA===
+o registro
+===IDENTIFICACAO===
+Registro Nº {numero}
+===OBJETO_AVERBACOES===
+a(s) averbação(ões) {averbacoes}
+===AVERBACAO_COM_NATUREZA===
+nº {ordem} ({natureza})
+===AVERBACAO_SEM_NATUREZA===
+nº {ordem}
+===IDENTIFICACAO_AVERBACAO===
+Averbação nº {ordens}
+===IDENTIFICACAO_AVERBACOES===
+Averbações nº {ordens}

@@ -1,0 +1,13 @@
+{
+  "chave": "RC_ANOTACAO_CRC_COMPACTA",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Anotação da CRC — compacta",
+  "formato": "CHAVES",
+  "explica": "A sugestão curta de anotação à margem, montada da comunicação que chegou pela CRC (o modelo 1 da tela); sai na tela para o escrevente conferir e copiar, e não se congela. {hoje} é a data da anotação, {ato} o ato comunicado e {codigo} o código da comunicação; {complemento} são as frases que a comunicação permite — o nome, as datas, livro/folha/termo e a serventia —, cada uma peça deste papel, que o sistema põe ou tira conforme o que veio.",
+  "campos": [
+    "hoje",
+    "ato",
+    "complemento",
+    "codigo"
+  ]
+}

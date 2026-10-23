@@ -47,9 +47,10 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import logging
 import socket
-import sqlite3
 import ssl
+import time
 import urllib.parse
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -57,6 +58,7 @@ from typing import Any
 
 import selador
 import selador_config as SC
+from bd_nativo import banco
 
 # Prazo curto de proposito: quem espera e o balcao, com a parte na frente.
 PRAZO_PADRAO = 20          # segundos
@@ -66,6 +68,21 @@ PRAZO_DO_TOKEN = 30
 # repetido dez vezes continua 400, e cada tentativa e uma chance de gerar selo.
 TENTATIVAS_DE_REDE = 2
 
+# O pedido LEGITIMO mais longo ao aparelho, contado em `selar`/`_despachar`:
+# o token (prazo proprio) e o pedido com a repeticao de rede — e, se o token
+# venceu no caminho (401), os dois de novo, uma vez. 2 × (30 + 2 × 20) = 140 s.
+PEDIDO_MAIS_LONGO = 2 * (PRAZO_DO_TOKEN + TENTATIVAS_DE_REDE * PRAZO_PADRAO)
+
+# Quanto um pedido espera pela trava do SID que outro pedido do MESMO ato
+# segura. Esperar sem prazo era deixar o balcao parado atras de uma trava
+# presa (LX21a #3). MAS O PRAZO TEM DE PASSAR DO PEDIDO MAIS LONGO (LX25,
+# revisao do LX24): com 30 s, o segundo balcao recebia «ja esta sendo pedido»
+# enquanto o primeiro ainda esperava o aparelho de forma legitima.
+ESPERA_PELO_SID = PEDIDO_MAIS_LONGO + 10    # segundos
+INTERVALO_DA_ESPERA = 0.2
+
+_LOG = logging.getLogger(__name__)
+
 
 class SeladorIndisponivel(RuntimeError):
     """Nao deu para falar com o selador. Mensagem pronta para a tela."""
@@ -73,6 +90,14 @@ class SeladorIndisponivel(RuntimeError):
 
 class CertificadoNaoConfere(SeladorIndisponivel):
     """O certificado apresentado nao e o que esta fixado."""
+
+
+class SeloJaGravado(SeladorIndisponivel):
+    """O numero que chegou ja esta no razao, de OUTRO dono. Mensagem pronta.
+
+    Filha de `SeladorIndisponivel` para cair onde a recusa do aparelho ja cai
+    — frase de balcao, e nao traceback. Ver `conferir_o_repetido`.
+    """
 
 
 # ------------------------------------------------------------- o certificado
@@ -206,7 +231,7 @@ def _falha_de_rede(base: str, erro: Exception) -> str:
     return f"Não consegui falar com o selador em {base}: {texto}"
 
 
-def fixar_certificado(con: sqlite3.Connection, base: str, *, sha256: str,
+def fixar_certificado(con, base: str, *, sha256: str,
                       agora: str, usuario: str | None = None,
                       prazo: int = PRAZO_PADRAO) -> Certificado:
     """Confirma e grava a impressao digital do selador. ESCREVE.
@@ -221,17 +246,17 @@ def fixar_certificado(con: sqlite3.Connection, base: str, *, sha256: str,
         raise CertificadoNaoConfere(
             f"A impressão digital informada não é a que o selador em {base} "
             f"apresenta agora. Ele apresenta {visto.legivel}.")
-    con.execute(
-        """UPDATE sd_config SET certificado_sha256=?, certificado_assunto=?,
-               certificado_valido_ate=?, certificado_fixado_em=?,
-               certificado_fixado_por=? WHERE id=1""",
+    banco(con).escrever(
+        """UPDATE sd_config SET certificado_sha256 = %s, certificado_assunto = %s,
+               certificado_valido_ate = %s, certificado_fixado_em = %s,
+               certificado_fixado_por = %s WHERE id=1""",
         (visto.sha256, visto.assunto, visto.valido_ate, agora, usuario))
     return visto
 
 
-def certificado_fixado(con: sqlite3.Connection) -> str | None:
-    linha = con.execute(
-        "SELECT certificado_sha256 FROM sd_config WHERE id=1").fetchone()
+def certificado_fixado(con) -> str | None:
+    linha = banco(con).um(
+        "SELECT certificado_sha256 FROM sd_config WHERE id=1")
     return (linha["certificado_sha256"] if linha else None) or None
 
 
@@ -305,7 +330,7 @@ def esquecer_tokens() -> None:
     _TOKENS.clear()
 
 
-def obter_token(con: sqlite3.Connection, pasta_de_dados: Any, *,
+def obter_token(con, pasta_de_dados: Any, *,
                 agora: datetime | None = None, prazo: int = PRAZO_DO_TOKEN,
                 forcar: bool = False) -> str:
     """O token do selador, do cache ou do Keycloak.
@@ -359,7 +384,7 @@ def obter_token(con: sqlite3.Connection, pasta_de_dados: Any, *,
         raise SeladorIndisponivel(
             f"O selador recusou o usuário e a senha (HTTP {status}). Esta "
             f"credencial é do próprio aparelho — não é usuário deste sistema "
-            f"nem do E-Ofício —, e quem a cria, troca ou desbloqueia é quem "
+            f"nem do sistema antigo —, e quem a cria, troca ou desbloqueia é quem "
             f"instalou o selador (FPFTech / TJMA). Se ela acabou de ser "
             f"importada do E-Ofício, pode ter sido trocada no aparelho depois.")
     validade = int(dados.get("expires_in") or 60)
@@ -380,7 +405,70 @@ def _sem_certificado(base: str) -> str:
 # ------------------------------------------------------------------- selar
 
 
-def selar(con: sqlite3.Connection, pasta_de_dados: Any, caminho: str,
+def _prender_o_sid(bd, assunto: str) -> None:
+    """Pega a trava de SESSAO do SID, esperando no maximo `ESPERA_PELO_SID`.
+
+    `pg_advisory_lock` esperava sem prazo nenhum (LX21a #3): se a trava
+    ficasse presa numa conexao viva do reservatorio, todo pedido do mesmo
+    ato parava o balcao para sempre. Aqui se tenta, e se tenta de novo, ate o
+    prazo — que cobre um pedido inteiro ao aparelho, com a repeticao de rede.
+    Passou o prazo, o outro pedido ainda esta em voo, ou a trava ficou presa:
+    nos dois casos o balcao recebe a frase, e nao uma tela parada.
+    """
+    limite = time.monotonic() + ESPERA_PELO_SID
+    while not bd.valor("SELECT pg_try_advisory_lock(hashtext(%s)) AS ok",
+                       (assunto,)):
+        if time.monotonic() >= limite:
+            raise SeladorIndisponivel(
+                "O selo deste ato já está sendo pedido ao selador por outro "
+                "balcão ou outra aba, e o pedido não terminou a tempo. Espere "
+                "um pouco e peça de novo: o segundo pedido devolve o selo do "
+                "primeiro, e não compra outro.")
+        time.sleep(INTERVALO_DA_ESPERA)
+
+
+def _soltar_o_sid(con, bd, assunto: str, *, saindo_por_erro: bool) -> None:
+    """Solta a trava de SESSAO do SID — e, se nao der, diz no log.
+
+    A trava de sessao NAO sai com o `rollback` nem com o `close()` da ponte:
+    a conexao volta ao reservatorio com ela. E transacao abortada recusa ate
+    o `pg_advisory_unlock` («current transaction is aborted»), que antes era
+    engolido por um `except: pass` — a trava ficava presa ate a conexao
+    morrer (LX21a #3).
+
+    SO SE DESFAZ A TRANSACAO QUANDO O `selar` JA ESTA SAINDO POR ERRO (LX25,
+    revisao do LX24). Ai ela ja esta perdida — o PostgreSQL nao deixa gravar
+    mais nada nela, e quem chamou vai desfaze-la de qualquer jeito —, entao
+    desfaz PRIMEIRO e solta de novo; o erro que sobe continua sendo o de
+    dentro do `selar`. NO SUCESSO, NUNCA: a transacao e de quem chamou e
+    pode levar a reserva da cobertura e o debito no deposito. Desfaze-la por
+    um unlock que falhou devolvia o selo pago (e gravado no razao logo
+    abaixo) sem a reserva e sem o debito. No sucesso se tenta soltar de novo
+    e, se ainda falhar, fica o log.
+    """
+    try:
+        bd.ler("SELECT pg_advisory_unlock(hashtext(%s)) AS ok", (assunto,))
+        return
+    except Exception:                                          # noqa: BLE001
+        if saindo_por_erro:
+            _LOG.warning("A trava %s não soltou na transação de quem selou "
+                         "(abortada?); desfaço a transação e solto de novo.",
+                         assunto, exc_info=True)
+        else:
+            _LOG.warning("A trava %s não soltou depois do selo obtido; a "
+                         "transação de quem selou fica, e solto de novo.",
+                         assunto, exc_info=True)
+    try:
+        if saindo_por_erro:
+            con.rollback()
+        bd.ler("SELECT pg_advisory_unlock(hashtext(%s)) AS ok", (assunto,))
+    except Exception:                                          # noqa: BLE001
+        _LOG.error("A trava %s ficou presa nesta conexão: o próximo pedido "
+                   "do mesmo ato espera %s s e recebe a frase de balcão.",
+                   assunto, ESPERA_PELO_SID, exc_info=True)
+
+
+def selar(con, pasta_de_dados: Any, caminho: str,
           dados: dict, *, referencia: Any, atribuicao: str, agora: str,
           cns: Any, tentativa: int = 1, usuario: str | None = None,
           prazo: int = PRAZO_PADRAO) -> list[selador.SeloGerado]:
@@ -402,34 +490,80 @@ def selar(con: sqlite3.Connection, pasta_de_dados: Any, caminho: str,
     if not fixado:
         raise SeladorIndisponivel(_sem_certificado(estado["base_em_uso"]))
 
+    bd = banco(con)
     chave = selador.sid(cns, atribuicao, referencia, tentativa)
-    ja = con.execute(
-        "SELECT * FROM sd_selos WHERE sid=? AND cancelado_em IS NULL",
-        (chave,)).fetchall()
-    if ja:
-        # O selo deste ato ja foi obtido. Devolver o que existe e o ponto do
-        # SID; pedir de novo compraria o segundo.
-        return [selador.SeloGerado(
-            numero=r["numero"], texto=r["texto"] or "",
-            data_geracao=r["data_geracao"],
-            saldo_remanescente=r["saldo_remanescente"]) for r in ja]
+    assunto = f"sd_selos.sid:{chave}"
+    # A TRAVA VEM ANTES DE OLHAR O RAZAO: sem ela, dois pedidos do mesmo ato
+    # ao mesmo tempo nao achariam nada e os dois iriam ao selador.
+    #
+    # E E DA SESSAO, E NAO DA TRANSACAO, ENQUANTO A REDE RESPONDE (LX21a,
+    # 20/10/2026). `travar` abre a escrita, e com a ponte a escrita pega a
+    # trava unica do banco: os 20 segundos do aparelho parariam todo balcao.
+    # A da sessao prende so este SID, e nada mais. Para gravar, a trava passa
+    # a ser a da transacao (a mesma chave), e fica ate o `commit` de quem
+    # chamou — como era antes. Pegar e soltar moram em `_prender_o_sid` e
+    # `_soltar_o_sid` (LX24): a espera tem prazo, e a soltura nao falha calada.
+    _prender_o_sid(bd, assunto)
+    saindo_por_erro = False
+    try:
+        ja = bd.ler(
+            "SELECT * FROM sd_selos WHERE sid = %s AND cancelado_em IS NULL "
+            "ORDER BY id",
+            (chave,))
+        if ja:
+            # O selo deste ato ja foi obtido. Devolver o que existe e o ponto
+            # do SID; pedir de novo compraria o segundo.
+            return [selador.SeloGerado(
+                numero=r["numero"], texto=r["texto"] or "",
+                data_geracao=r["data_geracao"],
+                saldo_remanescente=r["saldo_remanescente"]) for r in ja]
 
-    pedido = selador.montar_pedido(caminho, dados, sid_do_ato=chave,
-                                   base=estado["base_em_uso"])
-    token = obter_token(con, pasta_de_dados)
-    resposta = _despachar(con, pasta_de_dados, pedido, token, fixado, prazo)
-    if not resposta.ok:
-        raise SeladorIndisponivel(str(resposta.erro or
-                                      f"O selador recusou (HTTP {resposta.status})."))
+        pedido = selador.montar_pedido(caminho, dados, sid_do_ato=chave,
+                                       base=estado["base_em_uso"])
+        token = obter_token(con, pasta_de_dados)
+        resposta = _despachar(con, pasta_de_dados, pedido, token, fixado, prazo)
+        if not resposta.ok:
+            raise SeladorIndisponivel(str(resposta.erro or
+                                          f"O selador recusou (HTTP {resposta.status})."))
+        bd.travar(assunto)
+    except BaseException:
+        # Um `finally` cego nao sabe se o selo saiu: a soltura precisa
+        # saber, porque so na saida por erro ela pode desfazer a transacao.
+        saindo_por_erro = True
+        raise
+    finally:
+        _soltar_o_sid(con, bd, assunto, saindo_por_erro=saindo_por_erro)
+    # O NUMERO QUE O RAZAO JA TINHA NAO SOME MAIS CALADO (LD14, 21/10/2026).
+    # Era o «ignorar se ja existe» do SQLite, e na migracao `ON CONFLICT DO
+    # NOTHING`: o aparelho devolvia um numero ja gravado para OUTRO ato, a
+    # linha nova nao entrava, nada ia para o log, e o selo seguia para o
+    # vinculo como se fosse deste ato — o que o aparelho disse se perdia.
+    # Agora o conflito e conferido: o mesmo selo do mesmo pedido fica
+    # registrado, e o de outro dono e recusado. Ver `conferir_o_repetido`.
     for selo in resposta.selos:
-        con.execute(
-            """INSERT OR IGNORE INTO sd_selos(numero, texto, sid, caminho,
+        novo = bd.escrever(
+            """INSERT INTO sd_selos(numero, texto, sid, caminho,
                    atribuicao, referencia, data_geracao, saldo_remanescente,
                    ambiente, obtido_em, obtido_por)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               ON CONFLICT (numero) DO NOTHING RETURNING id""",
             (selo.numero, selo.texto, chave, caminho, atribuicao,
              str(referencia), selo.data_geracao, selo.saldo_remanescente,
              estado["ambiente"], agora, usuario))
+        if not novo:
+            # A resposta INTEIRA vai junto: a recusa desfaz a transacao, e os
+            # outros selos do mesmo pedido sairiam do razao sem rastro.
+            conferir_o_repetido(
+                bd, selo.numero, origem=DO_APARELHO,
+                iguais={"sid": chave, "caminho": caminho,
+                        "atribuicao": atribuicao,
+                        "referencia": str(referencia)},
+                chegou={"texto": selo.texto,
+                        "data_geracao": selo.data_geracao,
+                        "saldo_remanescente": selo.saldo_remanescente,
+                        "numeros_da_resposta": [s.numero
+                                                for s in resposta.selos]},
+                agora=agora, usuario=usuario)
     return resposta.selos
 
 
@@ -476,32 +610,166 @@ def _despachar(con, pasta_de_dados, pedido: dict, token: str, sha256: str,
 # ------------------------------------------------------------ o razao
 
 
-def vincular(con: sqlite3.Connection, numero: str, *, tabela: str,
+# De onde veio o numero que o razao ja tinha: vai na auditoria e muda a frase.
+DO_APARELHO = "APARELHO"
+A_MAO = "A_MAO"
+
+# O que a auditoria guarda da linha que ja estava gravada — o bastante para
+# a correicao achar o ato dono do selo sem abrir o banco.
+_CAMPOS_DO_RASTRO = ("id", "tabela", "ato_id", "referencia", "sid", "caminho",
+                     "atribuicao", "ambiente", "obtido_em", "obtido_por",
+                     "usado_em", "cancelado_em")
+
+
+def conferir_o_repetido(con, numero: str, *, iguais: dict, origem: str,
+                        agora: str, usuario: str | None = None,
+                        chegou: dict | None = None) -> dict:
+    """O numero que o INSERT achou ja gravado: o mesmo selo, ou outro dono?
+    ESCREVE (auditoria).
+
+    EXISTE PORQUE O RAZAO DESCARTAVA EM SILENCIO (LD14, achado da IA do
+    servidor no ensaio de 21/10/2026). `numero` e UNIQUE em `sd_selos`, e o
+    INSERT de `selar` ignorava o conflito, calado: o aparelho podia
+    devolver um numero ja gravado para outro ato que o sistema o amarrava a
+    este, sem linha nova e sem rastro do que o aparelho disse.
+
+    `iguais` sao os campos que dizem DE QUEM e o selo — quem chama escolhe,
+    porque o selo do aparelho se reconhece pelo pedido (SID, caminho,
+    referencia) e o digitado a mao pelo ato. Todos batem com a linha gravada:
+      - e o MESMO selo chegando de novo. Nao duplica — a linha que esta la e a
+        que vale —, mas registra: log e auditoria «SELO_REPETIDO», na
+        transacao de quem chama. Devolve a linha gravada.
+    Algum nao bate:
+      - e selo de OUTRO dono. Recusa com `SeloJaGravado`, dizendo onde ele
+        esta, e a linha gravada nao e tocada. A auditoria
+        «SELO_REPETIDO_RECUSADO» leva o que estava gravado, o que chegou e a
+        diferenca — e e gravada POR FORA (`_auditar_por_fora`), porque a
+        recusa desfaz a transacao de quem chama e levaria a linha junto.
+
+    A LINHA E LIDA PRESA (`FOR UPDATE`): quem compara e decide nao pode ver
+    o selo ser vinculado ou cancelado no meio. `numero` e unico, e o
+    `ORDER BY` so diz qual seria a primeira se nao fosse.
+    """
+    bd = banco(con)
+    bd._escrita()
+    gravado = bd.um(
+        """SELECT * FROM sd_selos WHERE numero = %s
+            ORDER BY id LIMIT 1 FOR UPDATE""", (numero,))
+    if gravado is None:
+        # O conflito existiu: so some se alguem APAGOU a linha no meio.
+        raise SeladorIndisponivel(
+            f"O selo {numero} sumiu do razão no meio da conferência. Tente "
+            f"de novo — e, se repetir, avise o oficial.")
+    diferencas = {campo: {"gravado": gravado.get(campo), "chegou": valor}
+                  for campo, valor in iguais.items()
+                  if gravado.get(campo) != valor}
+    detalhes = {"numero": numero, "origem": origem,
+                "gravado": {c: gravado.get(c) for c in _CAMPOS_DO_RASTRO},
+                "chegou": {**iguais, **(chegou or {})}}
+    if not diferencas:
+        _LOG.warning("Selo %s chegou de novo (%s) com os mesmos dados: nao "
+                     "duplica, fica a linha %s.", numero, origem, gravado["id"])
+        if bd.tem_tabela("audit_logs"):
+            _auditar(bd, acao="SELO_REPETIDO", usuario=usuario,
+                     entidade_id=gravado["id"], detalhes=detalhes, agora=agora)
+        return gravado
+    detalhes["diferencas"] = diferencas
+    _LOG.error("Selo %s recusado (%s): ja esta gravado com outros dados: %s",
+               numero, origem, diferencas)
+    auditado = _auditar_por_fora(bd, acao="SELO_REPETIDO_RECUSADO",
+                                 usuario=usuario, entidade_id=gravado["id"],
+                                 detalhes=detalhes, agora=agora)
+    raise SeloJaGravado(_recado_do_repetido(numero, gravado, origem=origem,
+                                            auditado=auditado))
+
+
+def _recado_do_repetido(numero: str, gravado: dict, *, origem: str,
+                        auditado: bool) -> str:
+    """A frase da recusa: onde o selo ja esta, e que nada ali foi mexido."""
+    onde = (f"no ato {gravado['ato_id']} de {gravado['tabela']}"
+            if gravado.get("tabela") else "no razão, ainda sem ato")
+    if gravado.get("cancelado_em"):
+        onde += f", cancelado em {gravado['cancelado_em']}"
+    quem = (f"O selador devolveu o selo {numero}, que já está gravado"
+            if origem == DO_APARELHO else f"O selo {numero} já está gravado")
+    rastro = ("a recusa ficou na auditoria" if auditado
+              else "a recusa ficou no log do sistema")
+    return (f"{quem} {onde}. Um selo serve a um ato só — usá-lo duas vezes "
+            f"é o que a inspeção aponta. O que estava gravado ficou como "
+            f"estava, e {rastro}.")
+
+
+def _auditar(bd, *, acao: str, usuario: Any, entidade_id: Any,
+             detalhes: dict, agora: str) -> None:
+    bd.escrever(
+        """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
+                                   entity_type, entity_id, details)
+           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+        (agora, None, usuario, acao, "SD_SELO", entidade_id,
+         json.dumps(detalhes, ensure_ascii=False, default=str)))
+
+
+def _auditar_por_fora(bd, *, acao: str, usuario: Any, entidade_id: Any,
+                      detalhes: dict, agora: str) -> bool:
+    """A auditoria da RECUSA, numa conexao a parte que confirma sozinha.
+    Nunca estoura: devolve se gravou.
+
+    POR QUE POR FORA: a recusa sobe como excecao, e quem chamou desfaz a
+    transacao — a linha escrita nela iria junto, e a recusa ficaria sem
+    rastro, que e o defeito que `conferir_o_repetido` fecha. E POR QUE NAO
+    `Database.log`, a transacao propria da casa: pela ponte ela pede a trava
+    unica do banco, que a transacao de quem chamou esta segurando —
+    esperaria e desistiria. Esta conexao e do psycopg, sem a ponte, no mesmo
+    schema: grava so a linha e confirma, sem trava nenhuma da casa.
+    """
+    try:
+        import psycopg
+        from psycopg import sql
+
+        import banco_pg
+        schema = bd.valor("SELECT current_schema() AS s")
+        with psycopg.connect(banco_pg.dsn(), autocommit=True) as pg:
+            pg.execute("SET lock_timeout = '2s'")
+            pg.execute(sql.SQL("SET search_path TO {}, public").format(
+                sql.Identifier(schema)))
+            outro = banco(pg)
+            if not outro.tem_tabela("audit_logs"):
+                return False
+            _auditar(outro, acao=acao, usuario=usuario,
+                     entidade_id=entidade_id, detalhes=detalhes, agora=agora)
+        return True
+    except Exception:                                          # noqa: BLE001
+        _LOG.exception("A auditoria %s do selo %s nao foi gravada; fica este "
+                       "log: %s", acao, detalhes.get("numero"), detalhes)
+        return False
+
+
+def vincular(con, numero: str, *, tabela: str,
              ato_id: int, agora: str) -> None:
     """Diz que o selo foi USADO por este ato. ESCREVE.
 
     Chamado quando o ato fica pronto, e nao quando o selo chega. Enquanto nao
     for chamado, o selo aparece como obtido e nao usado — que e a verdade.
     """
-    con.execute(
-        """UPDATE sd_selos SET tabela=?, ato_id=?, usado_em=?
-            WHERE numero=? AND usado_em IS NULL""",
+    banco(con).escrever(
+        """UPDATE sd_selos SET tabela = %s, ato_id = %s, usado_em = %s
+            WHERE numero = %s AND usado_em IS NULL""",
         (tabela, int(ato_id), agora, numero))
 
 
-def orfaos(con: sqlite3.Connection, limite: int = 200) -> list[dict]:
+def orfaos(con, limite: int = 200) -> list[dict]:
     """Selos obtidos, nao usados e nao cancelados. So LE.
 
     E a tela que faltava no E-Oficio. La havia 1.304 destes, 5% de tudo, e
     ninguem sabia — porque nao havia onde olhar.
     """
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT * FROM sd_selos
             WHERE usado_em IS NULL AND cancelado_em IS NULL
-            ORDER BY obtido_em DESC LIMIT ?""", (limite,))]
+            ORDER BY obtido_em DESC, id LIMIT %s""", (limite,))
 
 
-def registrar_cancelamento(con: sqlite3.Connection, numero: str, *,
+def registrar_cancelamento(con, numero: str, *,
                            motivo: str, agora: str,
                            usuario: str | None = None) -> None:
     """Marca o selo como cancelado no razao. ESCREVE.
@@ -516,16 +784,16 @@ def registrar_cancelamento(con: sqlite3.Connection, numero: str, *,
             "Escreva o motivo do cancelamento do selo com pelo menos dez "
             "letras — no acervo antigo nenhum dos 79 cancelamentos tem motivo, "
             "e é por isso que hoje ninguém sabe explicá-los.")
-    con.execute(
-        """UPDATE sd_selos SET cancelado_em=?, cancelado_por=?,
-               motivo_cancelamento=? WHERE numero=?""",
+    banco(con).escrever(
+        """UPDATE sd_selos SET cancelado_em = %s, cancelado_por = %s,
+               motivo_cancelamento = %s WHERE numero = %s""",
         (agora, usuario, razao, numero))
 
 
 # ------------------------------------------------------------- o teste
 
 
-def testar(con: sqlite3.Connection, pasta_de_dados: Any, *, agora: str,
+def testar(con, pasta_de_dados: Any, *, agora: str,
            prazo: int = PRAZO_PADRAO) -> dict:
     """Confere o caminho todo sem selar nada: rede, certificado e credencial.
 

@@ -53,6 +53,8 @@ from __future__ import annotations
 
 import re
 
+from bd_nativo import banco
+
 # --------------------------------------------------------- a qualificacao
 
 # Art. 34 do Codigo de Normas do TJMA, combinado com o art. 215, § 1º, do
@@ -224,23 +226,29 @@ COMUNS_PROCURACAO = [
 ]
 
 
-def _corpo(texto: str) -> str:
-    """Junta o modelo escrito em varias linhas num paragrafo unico.
-
-    O modelo e escrito quebrado no codigo, para caber na tela de quem o mantem;
-    o ato sai corrido, como manda o art. 795, § 2º, do Codigo de Normas.
-    """
-    return re.sub(r"\s*\n\s*", " ", texto.strip())
-
-
-MODELOS: list[dict] = [
+# O TEXTO DAS MINUTAS SAIU DAQUI NO LF06D (19/10/2026) — e o nome delas junto.
+#
+#     «Nao deveriamos ter modelos no codigo; deveriam estar no banco, para
+#      editar com mais facilidade.» — o oficial, 19/10/2026.
+#
+# O corpo de cada minuta mora em `modelos_padrao/notas/minutas/<codigo>.txt`, ja
+# CORRIDO (um paragrafo so, art. 795, § 2º — o que o `_corpo()` daqui fazia ao
+# juntar as linhas do codigo), com os mesmos bytes que esta lista montava; o
+# nome mora na ficha `<codigo>.json` ao lado. A subida carrega a pasta na base
+# dos padroes, e `minutas()` le de la (`modelos_da_casa.minuta_de_fabrica`).
+#
+# AQUI FICA O QUE E DO CODIGO: o tipo, a natureza e os codigos da CENSEC, os
+# requisitos da conferencia previa e a fundamentacao. Os comentarios dentro de
+# cada minuta continuam onde estavam e falam do texto dela, que esta no arquivo
+# de mesmo codigo. O AJUSTE DA CASA continua em `nt_modelos`, como sempre:
+# `instalar` so atualiza a linha que ninguem editou.
+MINUTAS: list[dict] = [
 
     # =================================================== ESCRITURAS
 
     {
         "codigo": "NT-ESC-COMPRA-VENDA",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de compra e venda de imóvel urbano",
         "natureza": "Compra e venda",
         "natureza_censec": 6,
         "tipo_ato_cep": 1,
@@ -258,116 +266,11 @@ MODELOS: list[dict] = [
         # escritura real de compra e venda rural — e que ele pediu para
         # imitar. O texto continua CORRIDO (art. 795, § 2º): os títulos são
         # marca dentro do mesmo parágrafo, e não linha em branco nem lista.
-        "corpo": _corpo("""<p>Saibam quantos este público
-instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês
-de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, {ONDE FOI LIDA: nesta
-serventia, situada na sede | no endereço [ENDEREÇO COMPLETO DA LAVRATURA], para
-onde me desloquei a pedido das partes}, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceram as partes entre si justas e contratadas, a
-saber: como OUTORGANTE VENDEDOR, {{ outorgantes }}; e como OUTORGADO COMPRADOR,
-{{ outorgados }}; todos reconhecidos como os próprios por mim, tabelião, à vista
-dos documentos apresentados, e declarando possuir capacidade civil,
-legitimidade e livre manifestação de vontade para a prática deste ato, do que
-dou fé. I - DO IMÓVEL OBJETO DA COMPRA E VENDA: Pelo OUTORGANTE VENDEDOR foi
-declarado que é senhor e legítimo possuidor do imóvel a seguir descrito:
-[DESCRIÇÃO DO IMÓVEL CONFORME A MATRÍCULA, COM CARACTERÍSTICAS, CONFRONTAÇÕES E
-LOCALIZAÇÃO], com inscrição cadastral n. [INSCRIÇÃO CADASTRAL] junto à
-Prefeitura Municipal. «SE EDIFICADO: O imóvel é edificado e recebe o número
-predial [NÚMERO PREDIAL] da [RUA DO IMÓVEL].» II - DA MATRÍCULA, DO TÍTULO
-AQUISITIVO E DA SITUAÇÃO REGISTRAL: O imóvel encontra-se matriculado sob o n.
-[MATRÍCULA] do [CARTÓRIO DE REGISTRO DE IMÓVEIS], figurando como titular o
-OUTORGANTE VENDEDOR, e tendo como registro anterior [NATUREZA E NÚMERO DO
-REGISTRO ANTERIOR]. A alienação compreenderá a integralidade do imóvel, com
-suas benfeitorias, acessões, servidões, direitos e ações. III - DO PREÇO, DA
-FORMA DE PAGAMENTO E DA QUITAÇÃO: Pelo presente instrumento e na melhor forma
-de direito, o OUTORGANTE VENDEDOR vende, como de fato vendido tem, o imóvel
-acima descrito ao OUTORGADO COMPRADOR, pelo preço certo e ajustado de
-[PREÇO POR EXTENSO] ([PREÇO EM ALGARISMOS]), que declara haver recebido
-{FORMA DE PAGAMENTO: em dinheiro em espécie | por transferência bancária | por
-transferência eletrônica entre contas de pagamento | por PIX | mediante cheque
-n. [NÚMERO DO CHEQUE], sacado contra o [BANCO DO CHEQUE]}, dando ao OUTORGADO
-COMPRADOR, pelo preço recebido, plena, geral, irrevogável e irretratável
-quitação, para nada mais reclamar a esse título. As partes declaram, sob
-responsabilidade civil e penal, que o preço e a forma de pagamento ora
-consignados correspondem à realidade econômica do negócio, tendo sido
-advertidas acerca dos deveres de informação, transparência e prevenção à
-lavagem de dinheiro e ao financiamento do terrorismo. IV - DO ITBI, DO INSS E
-DOS TRIBUTOS: Foi apresentado o comprovante de recolhimento do ITBI, guia n.
-[NÚMERO DA GUIA DE ITBI], recolhida em [DATA DO ITBI], no valor de
-[VALOR DO ITBI]. «SE ISENÇÃO OU IMUNIDADE: reconhecida pela autoridade
-fazendária a {BENEFÍCIO: isenção | imunidade} de ITBI, conforme
-[DOCUMENTO DO RECONHECIMENTO].» {INSS: As partes declaram não estar sujeitas às
-contribuições previdenciárias de que trata o artigo 47 da Lei n. 8.212, de
-1991 | Foi apresentada a Certidão Negativa de Débitos do INSS n.
-[NÚMERO DA CND], expedida em [DATA DA CND]}. O OUTORGANTE VENDEDOR responde
-pelos tributos e encargos cujo fato gerador seja anterior à tradição, cabendo
-ao OUTORGADO COMPRADOR os posteriores, ressalvada disposição legal ou ajuste
-expresso diverso. V - DA MODALIDADE DA VENDA, AD CORPUS, POSSE E EVICÇÃO: A
-presente compra e venda é celebrada na modalidade AD CORPUS, abrangendo a
-integralidade do imóvel objeto da matrícula acima referida, tomando-se a
-descrição, os limites e confrontações constantes do fólio real como elementos
-de identificação jurídica do objeto, sem vinculação do preço à unidade de
-medida. Em razão desta venda, o OUTORGANTE VENDEDOR transmite ao OUTORGADO
-COMPRADOR todo o domínio, direito, posse e ação que exercia sobre o imóvel,
-obrigando-se por si e seus sucessores a fazer esta venda sempre boa, firme e
-valiosa e a responder pela evicção de direito, na forma dos artigos 447 e
-seguintes do Código Civil. «SE POSSE ANTERIOR AO ATO: As partes declaram que a
-posse foi transmitida ao comprador em
-[DATA OU ÉPOCA DA TRANSMISSÃO DA POSSE], permanecendo ele desde então imitido
-na posse do imóvel.» VI - DAS DECLARAÇÕES DO OUTORGANTE VENDEDOR: O OUTORGANTE
-VENDEDOR declara, sob responsabilidade civil e penal: a) que possui
-legitimidade e disponibilidade jurídica para a alienação; b) que, ressalvado o
-que resultar da certidão atualizada da matrícula e das consultas obrigatórias,
-o imóvel encontra-se livre de ônus, gravames, constrições, indisponibilidades
-ou direitos de terceiros incompatíveis com a venda; c) que não celebrou
-promessa, cessão, locação, comodato ou outro negócio incompatível com a
-transmissão ora formalizada; d) que não tem conhecimento de demanda, litígio ou
-ato de autoridade que impeça a alienação; e) que as informações prestadas
-acerca do preço, do pagamento e da posse são verdadeiras; e f) que responde por
-fatos, débitos e obrigações anteriores à tradição nos limites da lei. VII - DAS
-DECLARAÇÕES DO OUTORGADO COMPRADOR: Pelo OUTORGADO COMPRADOR me foi dito que
-examinou o imóvel, sua localização, situação física, confrontações, acessos,
-benfeitorias e a descrição constante da matrícula, aceitando-o no estado em que
-se encontra, sem prejuízo da responsabilidade legal do OUTORGANTE VENDEDOR pela
-evicção e por fatos anteriores ao negócio. Declara ciência de que a propriedade
-imóvel somente se transfere com o registro deste título no Registro de Imóveis
-competente, na forma do artigo 1.245 do Código Civil, e autoriza a apresentação
-do traslado ao Registro de Imóveis. VIII - DAS CERTIDÕES, CONSULTAS E DOCUMENTOS
-ARQUIVADOS: Foram apresentados e ficam arquivados nesta serventia, física ou
-eletronicamente, conforme aplicável: os documentos de identificação e, se
-casados, as certidões de casamento dos comparecentes; a certidão atualizada da
-matrícula, expedida em [DATA DA CERTIDÃO DA MATRÍCULA]; e a certidão de
-propriedade e de ônus reais. «SE HOUVE CONSULTA À CNIB: Procedeu-se à consulta
-prévia à Central Nacional de Indisponibilidade de Bens sobre o OUTORGANTE
-VENDEDOR, sob o protocolo/hash [PROTOCOLO OU HASH DA CONSULTA À CNIB], nada
-constando em desfavor.» Quanto às certidões judiciais e administrativas não
-legalmente indispensáveis, o OUTORGADO COMPRADOR declara ter sido informado
-acerca de sua possibilidade e DISPENSA EXPRESSAMENTE SUA APRESENTAÇÃO,
-ASSUMINDO OS RISCOS DECORRENTES DA DISPENSA. IX - DA PUBLICIDADE, DA DOI, DA
-LGPD E DA PREVENÇÃO À LAVAGEM DE DINHEIRO: Fica consignado que será emitida a
-Declaração sobre Operação Imobiliária (DOI), nos termos do artigo 8º da Lei n.
-10.426, de 2002. Os comparecentes declaram ciência de que seus dados pessoais
-serão tratados na medida necessária ao cumprimento das atribuições legais e
-regulamentares da atividade notarial e registral, inclusive para qualificação,
-lavratura, arquivamento, emissão de selos, comunicações obrigatórias,
-fiscalização e registro, na forma da Lei n. 13.709/2018. Foram observadas as
-normas de prevenção à lavagem de dinheiro e ao financiamento do terrorismo,
-tendo as partes sido advertidas de que respondem pela exatidão das declarações
-acerca de preço, forma de pagamento, origem dos recursos, beneficiários e
-demais informações prestadas. X - DA BASE LEGAL, DA LEITURA E DO CONSENTIMENTO:
-A presente escritura é lavrada com fundamento nos artigos 108, 215, 481 e
-seguintes e 1.245 do Código Civil, na Lei n. 6.015/1973, na Lei n. 7.433/1985 e
-no Decreto n. 93.240/1986, no Código Nacional de Normas do Foro Extrajudicial,
-instituído pelo Provimento CNJ n. 149/2023 e suas alterações, e no Código de
-Normas do Foro Extrajudicial do Maranhão. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-COMPRA-VENDA-RURAL",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de compra e venda de imóvel rural",
         "natureza": "Compra e venda",
         "natureza_censec": 6,
         "tipo_ato_cep": 1,
@@ -391,164 +294,11 @@ Normas do Foro Extrajudicial do Maranhão. Nada mais. A presente escritura foi l
         # parágrafo, e não linha em branco nem lista. O que o modelo real
         # trazia preenchido (nome das partes, matrícula, CCIR, CNIB) volta
         # como marcador — o sistema não inventa esse dado.
-        "corpo": _corpo("""<p>Saibam quantos
-este público instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS])
-dias do mês de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO]
-([ANO EM ALGARISMOS]), nesta cidade de {{ sv.ri_cidade }}, Estado do
-{{ sv.ri_uf }}, nesta serventia, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceram as partes entre si justas e contratadas, a
-saber: como OUTORGANTE VENDEDOR, {{ outorgantes }}; e como OUTORGADO
-COMPRADOR, {{ outorgados }}; todos reconhecidos como os próprios por mim,
-tabelião, à vista dos documentos apresentados, e declarando possuir capacidade
-civil, legitimidade e livre manifestação de vontade para a prática deste ato,
-do que dou fé. I - DO IMÓVEL OBJETO DA COMPRA E VENDA: Pelo OUTORGANTE VENDEDOR
-foi declarado que é senhor e legítimo possuidor do imóvel rural denominado
-[DENOMINAÇÃO DO IMÓVEL], situado em [LOCALIZAÇÃO DO IMÓVEL], com área de
-[ÁREA POR EXTENSO] ([ÁREA EM ALGARISMOS]) hectares e perímetro de
-[PERÍMETRO], assim descrito e caracterizado: [DESCRIÇÃO DO IMÓVEL COM
-CONFRONTAÇÕES]. «SE GEORREFERENCIADO: Todas as coordenadas estão
-georreferenciadas ao Sistema Geodésico Brasileiro, datum SIRGAS2000, conforme
-planta, memorial descritivo e Termo de Responsabilidade Técnica n.
-[NÚMERO DO TRT], elaborados por [NOME DO TÉCNICO], Conselho
-[CONSELHO DO TÉCNICO] n. [NÚMERO NO CONSELHO], credenciado no INCRA sob o n.
-[CREDENCIAMENTO NO INCRA].» II - DA MATRÍCULA, DO TÍTULO AQUISITIVO E DA
-SITUAÇÃO REGISTRAL: O imóvel encontra-se matriculado sob o n. [MATRÍCULA] do
-[CARTÓRIO DE REGISTRO DE IMÓVEIS], figurando como titular o OUTORGANTE
-VENDEDOR, e tendo como registro anterior
-[NATUREZA E NÚMERO DO REGISTRO ANTERIOR]. A alienação compreenderá a
-integralidade do imóvel, com suas benfeitorias, acessões, servidões, direitos e
-ações. III - DO PREÇO, DA FORMA DE PAGAMENTO E DA QUITAÇÃO: Pelo presente
-instrumento e na melhor forma de direito, o OUTORGANTE VENDEDOR vende o imóvel
-acima descrito ao OUTORGADO COMPRADOR, pelo preço certo e ajustado de
-[PREÇO POR EXTENSO] ([PREÇO EM ALGARISMOS]), que declara haver recebido
-{FORMA DE PAGAMENTO: em dinheiro em espécie | por transferência bancária | por
-transferência eletrônica entre contas de pagamento | por PIX | mediante cheque
-n. [NÚMERO DO CHEQUE], sacado contra o [BANCO DO CHEQUE]}, dando ao OUTORGADO
-COMPRADOR, pelo preço recebido, plena, geral, irrevogável e irretratável
-quitação, para nada mais reclamar a esse título. As partes declaram, sob
-responsabilidade civil e penal, que o preço e a forma de pagamento ora
-consignados correspondem à realidade econômica do negócio, tendo sido
-advertidas acerca dos deveres de informação, transparência e prevenção à
-lavagem de dinheiro e ao financiamento do terrorismo. IV - DO ITBI E DOS
-TRIBUTOS: Foi apresentado o comprovante de recolhimento do ITBI, guia n.
-[NÚMERO DA GUIA DE ITBI], recolhida em [DATA DO ITBI], no valor de
-[VALOR DO ITBI]. «SE ISENÇÃO OU IMUNIDADE: reconhecida pela autoridade
-fazendária a {BENEFÍCIO: isenção | imunidade} de ITBI, conforme
-[DOCUMENTO DO RECONHECIMENTO].» O OUTORGANTE VENDEDOR responde pelos tributos
-e encargos cujo fato gerador seja anterior à tradição, cabendo ao OUTORGADO
-COMPRADOR os posteriores, ressalvada disposição legal ou ajuste expresso
-diverso. V - DO CCIR, DO ITR, DO CAR E DA IDENTIFICAÇÃO CADASTRAL RURAL: Foi
-apresentado o Certificado de Cadastro de Imóvel Rural - CCIR, exercício
-[EXERCÍCIO DO CCIR], código do imóvel n. [CÓDIGO DO IMÓVEL NO INCRA], do qual
-transcrevo resumidamente, na forma do artigo 802, § 5º, do Código de Normas:
-detentor [NOME DO DETENTOR], de nacionalidade [NACIONALIDADE DO DETENTOR];
-denominação [DENOMINAÇÃO NO CCIR]; área total de [ÁREA DO CCIR] e módulo
-fiscal de [MÓDULO FISCAL] — documento sem o qual o proprietário não pode
-desmembrar, arrendar, hipotecar, vender nem prometer em venda o imóvel rural,
-SOB PENA DE NULIDADE, na forma do artigo 802, § 3º, do Código de Normas e do
-artigo 22, § 1º, da Lei n. 4.947/1966. Foi igualmente apresentada a
-comprovação de quitação do Imposto sobre a Propriedade Territorial Rural dos
-cinco últimos exercícios, {ITR: mediante os recibos de pagamento referentes
-aos exercícios de [EXERCÍCIOS DO ITR] | mediante Certidão de Quitação de
-Tributos e Contribuições Federais n. [NÚMERO DA CERTIDÃO DE QUITAÇÃO],
-expedida em [DATA DA CERTIDÃO DE QUITAÇÃO] | sendo o imóvel pequena gleba
-rural de até trinta hectares, explorada pelo proprietário que não possui outro
-imóvel, hipótese de não incidência do artigo 20 da Lei n. 9.393/1996}.
-«SE CAR: Foi apresentado o Recibo de Inscrição do Imóvel Rural no Cadastro
-Ambiental Rural - CAR n. [NÚMERO DO CAR], relativo a [DENOMINAÇÃO NO CAR],
-área total declarada de [ÁREA DO CAR] hectares, em nome de
-[DETENTOR NO CAR].» «SE DIVERGÊNCIA CADASTRAL: Os documentos cadastrais
-apresentam denominação, área ou referências distintas da matrícula, o que não
-impede o registro do presente título — o CCIR, o CAR e a certidão do ITR
-possuem natureza cadastral e fiscal própria, não substituem a especialidade
-objetiva do Registro de Imóveis e poderão demandar atualização perante o
-INCRA/SNCR/CNIR, a Receita Federal e o órgão ambiental competente após o
-registro da transmissão.» VI - DA MODALIDADE DA VENDA, AD CORPUS, POSSE E
-EVICÇÃO: A presente compra e venda é celebrada na modalidade AD CORPUS,
-abrangendo a integralidade do imóvel objeto da matrícula acima referida,
-tomando-se a descrição, os limites, confrontações, área e perímetro constantes
-do fólio real como elementos de identificação jurídica do objeto, sem
-vinculação do preço à unidade de medida. Em razão desta venda, o OUTORGANTE
-VENDEDOR cede e transfere ao OUTORGADO COMPRADOR todo o domínio, direito, ação
-e posse que exerce sobre o imóvel, obrigando-se por si e seus sucessores a
-fazer a presente venda sempre boa, firme e valiosa e a responder pela evicção
-de direito, na forma dos artigos 447 e seguintes do Código Civil.
-«SE POSSE ANTERIOR AO ATO: As partes declaram que a posse foi transmitida ao
-comprador em [DATA OU ÉPOCA DA TRANSMISSÃO DA POSSE], permanecendo ele desde
-então imitido na posse do imóvel.» VII - DO GEORREFERENCIAMENTO, DA
-ESPECIALIDADE E DO REGISTRO: «SE GEORREFERENCIADO: As partes declaram ciência
-de que a descrição acima é georreferenciada ao Sistema Geodésico Brasileiro,
-datum SIRGAS2000, e o OUTORGANTE VENDEDOR compromete-se a prestar colaboração
-razoável e a assinar documentos que dependam de sua atuação como antigo
-titular para eventuais atualizações cadastrais posteriores, desde que tal
-providência não lhe imponha nova obrigação econômica nem altere o preço ou a
-substância do negócio.» A presente transmissão é lavrada segundo a descrição
-registral vigente. VIII - DAS DECLARAÇÕES DO OUTORGANTE VENDEDOR: O
-OUTORGANTE VENDEDOR declara, sob responsabilidade civil e penal: a) que possui
-legitimidade e disponibilidade jurídica para a alienação; b) que, ressalvado o
-que resultar da certidão atualizada da matrícula e das consultas obrigatórias,
-o imóvel encontra-se livre de ônus, gravames, constrições, indisponibilidades
-ou direitos de terceiros incompatíveis com a venda; c) que não celebrou
-promessa, cessão, arrendamento, parceria, comodato ou outro negócio
-incompatível com a transmissão ora formalizada; d) que não tem conhecimento de
-demanda, conflito possessório, restrição ambiental ou ato de autoridade que
-impeça a alienação; e) que as informações prestadas acerca do preço, da posse
-e da situação cadastral são verdadeiras; e f) que responde por fatos, débitos
-e obrigações anteriores à tradição nos limites da lei. IX - DAS DECLARAÇÕES DO
-OUTORGADO COMPRADOR: Pelo OUTORGADO COMPRADOR me foi dito que examinou o
-imóvel, sua localização, situação física, confrontações, acessos,
-benfeitorias, documentos cadastrais e fiscais e a descrição constante da
-matrícula, aceitando-o no estado em que se encontra, sem prejuízo da
-responsabilidade legal do OUTORGANTE VENDEDOR pela evicção e por fatos
-anteriores ao negócio. Declara ciência de que a propriedade imóvel somente se
-transfere com o registro deste título no Registro de Imóveis competente, na
-forma do artigo 1.245 do Código Civil, e autoriza a apresentação do traslado
-ao Registro de Imóveis, bem como a prática dos atos cadastrais complementares
-necessários após o registro. X - DAS CERTIDÕES, CONSULTAS E DOCUMENTOS
-ARQUIVADOS: Foram apresentados e ficam arquivados nesta serventia, física ou
-eletronicamente, conforme aplicável: os documentos de identificação e, se
-casados, as certidões de casamento dos comparecentes; a certidão atualizada da
-matrícula e de ônus reais, expedida em [DATA DA CERTIDÃO DA MATRÍCULA]; o
-comprovante do ITBI; o CCIR; e o comprovante do ITR. «SE CAR: o comprovante de
-inscrição no CAR.» «SE HOUVE CONSULTA À CNIB: Procedeu-se à consulta prévia à
-Central Nacional de Indisponibilidade de Bens sobre o OUTORGANTE VENDEDOR, sob
-o protocolo/hash [PROTOCOLO OU HASH DA CONSULTA À CNIB], nada constando em
-desfavor.» Quanto às certidões judiciais e administrativas não legalmente
-indispensáveis, o OUTORGADO COMPRADOR declara ter sido informado acerca de sua
-possibilidade e DISPENSA EXPRESSAMENTE SUA APRESENTAÇÃO, ASSUMINDO OS RISCOS
-DECORRENTES DA DISPENSA. XI - DA PUBLICIDADE, DA DOI, DA LGPD E DA PREVENÇÃO À
-LAVAGEM DE DINHEIRO: Fica consignado que será emitida a Declaração sobre
-Operação Imobiliária (DOI), nos termos do artigo 8º da Lei n. 10.426, de 2002,
-e do artigo 797 do Código de Normas. Os comparecentes declaram ciência de que
-seus dados pessoais serão tratados na medida necessária ao cumprimento das
-atribuições legais e regulamentares da atividade notarial e registral,
-inclusive para qualificação, lavratura, arquivamento, emissão de selos,
-comunicações obrigatórias, fiscalização e registro, na forma da Lei n.
-13.709/2018. Foram observadas as normas de prevenção à lavagem de dinheiro e
-ao financiamento do terrorismo, tendo as partes sido advertidas de que
-respondem pela exatidão das declarações acerca de preço, forma de pagamento,
-origem dos recursos, beneficiários e demais informações prestadas. XII - DA
-BASE LEGAL, DA LEITURA E DO CONSENTIMENTO: A presente escritura é lavrada com
-fundamento nos artigos 108, 215, 481 e seguintes e 1.245 do Código Civil, na
-Lei n. 6.015/1973, na Lei n. 7.433/1985 e no Decreto n. 93.240/1986, na Lei n.
-4.947/1966, na Lei n. 9.393/1996, no Decreto n. 4.449/2002, no Código Nacional
-de Normas do Foro Extrajudicial, instituído pelo Provimento CNJ n. 149/2023 e
-suas alterações, e no Código de Normas do Foro Extrajudicial do Maranhão.
-XIII - DOS EMOLUMENTOS: «SE SEM LAUDO DE AVALIAÇÃO MUNICIPAL: Para fins de
-cobrança dos emolumentos relativos à presente escritura, foi realizado
-orçamento com base no valor de referência constante da tabela do INCRA
-vigente, considerando-se o valor de [VALOR DE REFERÊNCIA POR HECTARE] por
-hectare, resultando no valor total de referência de
-[VALOR TOTAL DE REFERÊNCIA], sobre o qual foram calculados os emolumentos e
-demais acréscimos legais pertinentes ao ato, conforme tabela de emolumentos
-vigente.» Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-DOACAO",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de doação",
         "natureza": "Doação",
         "natureza_censec": 22,
         "tipo_ato_cep": 1,
@@ -568,45 +318,6 @@ vigente.» Nada mais. A presente escritura foi lida e achada conforme em todos o
             "incomunicabilidade sobre a legitima exige justa causa declarada no "
             "proprio ato (CC, art. 1.848)",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento
-virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de
-[MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia,
-perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram: como
-OUTORGANTE DOADOR, {{ outorgantes }}; e como OUTORGADO DONATÁRIO,
-{{ outorgados }}; reconhecidos como os próprios por mim, tabelião, à vista dos
-documentos apresentados, do que dou fé. E, pelo OUTORGANTE DOADOR, me foi dito
-que é senhor e legítimo possuidor do imóvel a seguir descrito:
-[DESCRIÇÃO DO IMÓVEL CONFORME A MATRÍCULA], havido conforme registro n.
-[NÚMERO DO REGISTRO ANTERIOR] da matrícula n. [MATRÍCULA] do
-[CARTÓRIO DE REGISTRO DE IMÓVEIS]. E que, por este instrumento e na melhor
-forma de direito, doa o referido imóvel ao OUTORGADO DONATÁRIO, a título
-gratuito e por liberalidade, atribuindo ao bem doado o valor de
-[VALOR ATRIBUÍDO POR EXTENSO] ([VALOR ATRIBUÍDO EM ALGARISMOS]).
-«SE ADIANTAMENTO DE LEGÍTIMA: A presente doação é feita ao descendente a título
-de adiantamento da legítima, e deverá ser conferida no inventário do doador, na
-forma dos artigos 544 e 2.002 do Código Civil.» «SE DISPENSA DE COLAÇÃO: O
-doador dispensa expressamente a colação, saindo a doação da parte disponível de
-seu patrimônio, na forma dos artigos 2.005 e 2.006 do Código Civil.»
-«SE RESERVA DE USUFRUTO: A doação é feita com reserva de usufruto vitalício em
-favor do OUTORGANTE DOADOR, ficando com o OUTORGADO DONATÁRIO a nua
-propriedade, usufruto que será objeto de registro próprio.» «SE CLÁUSULAS
-RESTRITIVAS: Grava o doador o imóvel doado com as cláusulas de
-INALIENABILIDADE, IMPENHORABILIDADE e INCOMUNICABILIDADE vitalícias, pela
-seguinte justa causa, que declara nos termos do artigo 1.848 do Código Civil:
-[JUSTA CAUSA DAS CLÁUSULAS RESTRITIVAS].» «SE REVERSÃO: Estipula o doador a
-cláusula de reversão, de modo que o imóvel doado retorne ao seu patrimônio se
-sobreviver ao OUTORGADO DONATÁRIO, na forma do artigo 547 do Código Civil.»
-Declara o OUTORGANTE DOADOR que a presente liberalidade não excede a parte de
-que poderia dispor em testamento e que lhe restam bens e renda suficientes para
-a própria subsistência, na forma dos artigos 548 e 549 do Código Civil. Pelo
-OUTORGADO DONATÁRIO me foi dito que ACEITA a presente doação em todos os seus
-termos e condições. Foram-me apresentados e ficam arquivados: a certidão
-atualizada da matrícula, expedida em [DATA DA CERTIDÃO DA MATRÍCULA]; e o
-comprovante de recolhimento do ITCMD, guia n. [NÚMERO DA GUIA DE ITCMD],
-recolhida em [DATA DO ITCMD]. Fica consignado que será emitida a Declaração
-sobre Operação Imobiliária (DOI). Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     # =================================================== PROCURAÇÕES
@@ -614,53 +325,16 @@ sobre Operação Imobiliária (DOI). Nada mais. A presente escritura foi lida e 
     {
         "codigo": "NT-PROC-PUBLICA",
         "tipo": "PROCURACAO",
-        "nome": "Procuração pública",
         "natureza": "Procuração",
         "tipo_ato_cep": 2,
         "fundamentacao": ("CC, arts. 653 a 692, com destaque para o art. 661, "
                           "§ 1º; CN/TJMA, arts. 831 a 833"),
         "requisitos": COMUNS_PROCURACAO,
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento virem
-que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de
-[MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia,
-perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceu como
-OUTORGANTE {{ outorgantes }}, reconhecido como o próprio por mim, tabelião, à
-vista dos documentos apresentados, do que dou fé. E, pelo OUTORGANTE, me foi
-dito que, por este instrumento, nomeia e constitui seu bastante procurador
-{{ outorgados }}, a quem confere os poderes de [DESCRIÇÃO DOS PODERES
-CONFERIDOS, DE FORMA CLARA E PRECISA], podendo para tanto assinar os documentos
-necessários, prestar declarações, requerer e retirar certidões, pagar e receber
-quitação, e praticar todos os demais atos necessários ao fiel cumprimento deste
-mandato. «SE PODERES ESPECIAIS: Confere ainda o OUTORGANTE, de forma expressa e
-na dicção do artigo 661, § 1º, do Código Civil, os poderes especiais de
-[PODERES ESPECIAIS: ALIENAR, GRAVAR, TRANSIGIR, RENUNCIAR, DAR QUITAÇÃO OU
-RECEBER CITAÇÃO], que não se presumem e que somente valem porque aqui
-declarados.» «SE PODERES SOBRE IMÓVEL: Os poderes ora conferidos alcançam o
-imóvel objeto da matrícula n. [MATRÍCULA] do [CARTÓRIO DE REGISTRO DE IMÓVEIS],
-tendo sido exigida e arquivada nesta serventia a certidão atualizada do registro
-de imóveis, expedida em [DATA DA CERTIDÃO DO REGISTRO DE IMÓVEIS], na forma do
-artigo 833 do Código de Normas.» «SE SUBSTABELECIMENTO PERMITIDO: Poderá o
-procurador substabelecer este mandato, com ou sem reserva de poderes.»
-«SE SUBSTABELECIMENTO VEDADO: É vedado ao procurador substabelecer este
-mandato.» «SE CAUSA PRÓPRIA: O presente mandato é outorgado EM CAUSA PRÓPRIA,
-na forma do artigo 685 do Código Civil, sendo irrevogável e não se extinguindo
-pela morte de qualquer das partes.» {PRAZO: O presente mandato vigorará por
-prazo indeterminado | O presente mandato terá validade até
-[DATA DE VALIDADE DA PROCURAÇÃO], extinguindo-se de pleno direito nessa data}.
-Nada mais. O presente instrumento de procuração foi lido e achado conforme em
-todos os seus termos por todos comparecentes. Emolumentos e selo de
-fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM
-QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após
-redigir, subscrever, assino em público e raso, encerrando o presente ato.
-Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-PROC-CAUSA-PROPRIA",
         "tipo": "PROCURACAO",
-        "nome": "Procuração em causa própria",
         "natureza": "Procuração em causa própria",
         "tipo_ato_cep": 2,
         "fundamentacao": ("CC, arts. 481 e seguintes e 685; CN/TJMA, arts. 834 e 835"),
@@ -675,38 +349,11 @@ Traslado emitido e entregue às partes após as assinaturas.</p>
             "Havendo transmissao onerosa de imovel, exigir o ITBI e a DOI: o "
             "ato produz efeito de alienacao",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento
-virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de
-[MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia,
-perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceu como
-OUTORGANTE {{ outorgantes }}, reconhecido como o próprio por mim, tabelião, do
-que dou fé. E, pelo OUTORGANTE, me foi dito que, por este instrumento, nomeia e
-constitui seu bastante procurador EM CAUSA PRÓPRIA {{ outorgados }}, na forma
-do artigo 685 do Código Civil, transferindo-lhe todos os direitos que detém
-sobre [OBJETO DA PROCURAÇÃO EM CAUSA PRÓPRIA], para que o exerça em seu próprio
-nome e proveito, podendo dispor do bem ou direito como lhe convier,
-independentemente de prestação de contas. «SE OPERAÇÃO ONEROSA: A presente
-outorga é feita a título oneroso, pelo preço certo e ajustado de
-[PREÇO POR EXTENSO] ([PREÇO EM ALGARISMOS]), já recebido pelo OUTORGANTE, que
-dá plena, geral e irrevogável quitação, regendo-se o negócio pelas normas da
-compra e venda, na forma do artigo 481 e seguintes do Código Civil e do artigo
-834, parágrafo único, do Código de Normas.» Declara o OUTORGANTE estar ciente
-de que o presente mandato é IRREVOGÁVEL, não se extingue pela sua morte nem
-pela do procurador, e dispensa a prestação de contas, na forma do artigo 685 do
-Código Civil. Nada mais. O presente instrumento de procuração foi lido e achado
-conforme em todos os seus termos por todos comparecentes. Emolumentos e selo
-de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO
-EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e
-após redigir, subscrever, assino em público e raso, encerrando o presente ato.
-Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-SUBSTABELECIMENTO",
         "tipo": "SUBSTABELECIMENTO",
-        "nome": "Substabelecimento de mandato",
         "natureza": "Substabelecimento",
         "tipo_ato_cep": 7,
         "fundamentacao": "CC, arts. 655 e 667, §§ 1º a 4º; CN/TJMA, art. 831",
@@ -724,42 +371,11 @@ Traslado emitido e entregue às partes após as assinaturas.</p>
             "sendo de outra, comunicar ao tabeliao que o lavrou, com "
             "comprovante de recebimento (CN, art. 831, § 1º)",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento
-virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de
-[MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia,
-perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceu como
-SUBSTABELECENTE {{ outorgantes }}, reconhecido como o próprio por mim,
-tabelião, do que dou fé. E, pelo SUBSTABELECENTE, me foi dito que é procurador
-de [NOME DO MANDANTE ORIGINÁRIO], conforme procuração lavrada em
-[DATA DA PROCURAÇÃO ORIGINÁRIA], no Livro [LIVRO DA PROCURAÇÃO ORIGINÁRIA],
-folhas [FOLHAS DA PROCURAÇÃO ORIGINÁRIA], do [SERVENTIA DA PROCURAÇÃO
-ORIGINÁRIA], inscrita sob o CNS [CNS DA SERVENTIA DE ORIGEM], e que, por este
-instrumento, SUBSTABELECE {RESERVA: COM reserva de iguais poderes, continuando
-a exercê-los | SEM reserva de poderes, deles se afastando integralmente} os
-poderes que lhe foram conferidos, em favor de {{ outorgados }}, para que os
-exerça nos exatos limites do mandato originário, [PODERES SUBSTABELECIDOS].
-Declara o SUBSTABELECENTE que o mandato originário está em pleno vigor, que não
-foi revogado nem renunciado, e que os poderes ora substabelecidos não excedem
-os que lhe foram outorgados. «SE VEDAÇÃO DE NOVO SUBSTABELECIMENTO: É vedado ao
-substabelecido substabelecer, no todo ou em parte, os poderes ora recebidos.»
-Fica ciente o SUBSTABELECENTE de que, no substabelecimento sem reserva,
-responde perante o mandante pelos prejuízos ocorridos sob a gerência do
-substabelecido se agiu com culpa na escolha deste ou nas instruções dadas, na
-forma do artigo 667, § 4º, do Código Civil. Nada mais. O presente
-substabelecimento foi lido e achado conforme em todos os seus termos por todos
-comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o
-ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos
-constatados e dos documentos apresentados e após redigir, subscrever, assino em
-público e raso, encerrando o presente ato. Traslado emitido e entregue às
-partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-REVOGACAO-MANDATO",
         "tipo": "REVOGACAO_PROCURACAO",
-        "nome": "Revogação de mandato",
         "natureza": "Revogação de procuração",
         "tipo_ato_cep": 6,
         "fundamentacao": "CC, arts. 682, I, 683, 686 e 687; CN/TJMA, arts. 831 e 832",
@@ -779,46 +395,11 @@ partes após as assinaturas.</p>
             "contenha clausula de irrevogabilidade nas hipoteses do art. 684 do "
             "Codigo Civil",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento virem
-que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de
-[MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia,
-perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceu como
-OUTORGANTE {{ outorgantes }}, reconhecido como o próprio por mim, tabelião, do
-que dou fé. E, pelo OUTORGANTE, me foi dito que, por instrumento público lavrado
-em [DATA DA PROCURAÇÃO REVOGADA], no Livro [LIVRO DA PROCURAÇÃO REVOGADA],
-folhas [FOLHAS DA PROCURAÇÃO REVOGADA], do [SERVENTIA DA PROCURAÇÃO REVOGADA],
-inscrita sob o CNS [CNS DA SERVENTIA DE ORIGEM], constituiu bastante procurador
-{{ outorgados }}, e que, por este instrumento e na melhor forma de direito,
-REVOGA integralmente aquele mandato, tornando-o sem efeito a partir desta data,
-para que dele não se use mais, cessando todos os poderes ali conferidos, na
-forma do artigo 682, I, do Código Civil. Fica o OUTORGANTE expressamente
-advertido por mim, tabelião, na forma do artigo 831, § 2º, do Código de Normas,
-de que é IMPRESCINDÍVEL notificar o mandatário desta revogação, e de que a
-revogação só produz efeito perante terceiros de boa-fé depois de conhecida, nos
-termos do artigo 686 do Código Civil, respondendo por perdas e danos na hipótese
-de mandato com cláusula de irrevogabilidade, conforme o artigo 683 do mesmo
-diploma. «SE MANDATÁRIO PRESENTE: Presente ao ato o mandatário, dá-se por
-notificado da revogação neste ato e devolve o instrumento de mandato, que fica
-arquivado nesta serventia.» «SE LAVRADO NESTA SERVENTIA: Procedi, nesta data, à
-anotação da presente revogação à margem do ato originário, sem qualquer ônus
-para as partes e sem aposição de selo, na forma do artigo 831 do Código de
-Normas.» «SE LAVRADO EM OUTRA SERVENTIA: Será comunicada a presente revogação ao
-tabelionato que lavrou o mandato, por meio que comprove o recebimento, mediante
-o pagamento da despesa postal pelo interessado, na forma do artigo 831, § 1º, do
-Código de Normas.» Nada mais. O presente instrumento de revogação foi lido e
-achado conforme em todos os seus termos por todos comparecentes. Emolumentos e
-selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A
-CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos
-apresentados e após redigir, subscrever, assino em público e raso, encerrando o
-presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-RENUNCIA-MANDATO",
         "tipo": "RENUNCIA_PROCURACAO",
-        "nome": "Renúncia de mandato",
         "natureza": "Renúncia de procuração",
         "tipo_ato_cep": 5,
         "fundamentacao": "CC, arts. 682, I, e 688; CN/TJMA, arts. 831 e 832",
@@ -833,36 +414,6 @@ presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
             "Anotar a margem do ato originario, ou comunicar a serventia de "
             "origem (CN, art. 831 e § 1º)",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento virem
-que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de
-[MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia,
-perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceu como
-RENUNCIANTE {{ outorgantes }}, reconhecido como o próprio por mim, tabelião, do
-que dou fé. E, pelo RENUNCIANTE, me foi dito que é procurador de
-[NOME DO MANDANTE], conforme instrumento público lavrado em
-[DATA DA PROCURAÇÃO RENUNCIADA], no Livro [LIVRO DA PROCURAÇÃO RENUNCIADA],
-folhas [FOLHAS DA PROCURAÇÃO RENUNCIADA], do [SERVENTIA DA PROCURAÇÃO
-RENUNCIADA], inscrita sob o CNS [CNS DA SERVENTIA DE ORIGEM], e que, por este
-instrumento e na melhor forma de direito, RENUNCIA aos poderes que lhe foram
-conferidos, deles se afastando integralmente a partir desta data, na forma do
-artigo 682, I, do Código Civil. Fica o RENUNCIANTE expressamente advertido por
-mim, tabelião, de que deve comunicar a renúncia ao mandante, e de que, sendo a
-renúncia intempestiva e ausente motivo legítimo, responde pelos prejuízos
-causados, salvo se provar que não podia continuar no mandato sem prejuízo
-considerável, na forma do artigo 688 do Código Civil. «SE LAVRADO NESTA
-SERVENTIA: Procedi, nesta data, à anotação da presente renúncia à margem do ato
-originário, sem qualquer ônus para as partes e sem aposição de selo, na forma do
-artigo 831 do Código de Normas.» «SE LAVRADO EM OUTRA SERVENTIA: Será comunicada
-a presente renúncia ao tabelionato que lavrou o mandato, por meio que comprove o
-recebimento, na forma do artigo 831, § 1º, do Código de Normas.» Nada mais. O
-presente instrumento de renúncia foi lido e achado conforme em todos os seus
-termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do
-ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos
-fatos constatados e dos documentos apresentados e após redigir, subscrever,
-assino em público e raso, encerrando o presente ato. Traslado emitido e
-entregue às partes após as assinaturas.</p>
-"""),
     },
 
     # =================================================== ATAS NOTARIAIS
@@ -870,7 +421,6 @@ entregue às partes após as assinaturas.</p>
     {
         "codigo": "NT-ATA-NOTARIAL",
         "tipo": "ATA_NOTARIAL",
-        "nome": "Ata notarial",
         "natureza": "Ata notarial",
         "tipo_ato_cep": 8,
         "fundamentacao": ("Lei 8.935/1994, art. 7º, III; CPC, art. 384; "
@@ -895,35 +445,11 @@ entregue às partes após as assinaturas.</p>
             "O tabeliao narra o que percebeu com os proprios sentidos; NAO "
             "emite juizo de valor nem conclusao juridica sobre o fato",
         ],
-        "corpo": _corpo("""<p>Saibam quantos esta ata notarial virem que, aos
-[DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de [MÊS POR EXTENSO] do ano
-de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), às [HORA POR EXTENSO]
-([HORA EM ALGARISMOS]) horas, nesta cidade de {{ sv.ri_cidade }}, Estado do
-{{ sv.ri_uf }}, {LUGAR DA LAVRATURA: nesta serventia | no local situado em [ENDEREÇO DA DILIGÊNCIA], onde me desloquei a pedido do solicitante, dentro dos limites da circunscrição desta delegação | em meio eletrônico, acessado a partir desta serventia}, perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }},
-compareceu como SOLICITANTE {{ outorgantes }}, reconhecido como o próprio por
-mim, tabelião, à vista dos documentos apresentados, do que dou fé. E, pelo
-SOLICITANTE, me foi requerido que eu constatasse e reduzisse a termo os fatos a
-seguir narrados, ao que atendi, passando a narrar objetivamente o que percebi
-com os meus próprios sentidos, sem emitir juízo de valor sobre o que constatei:
-[NARRAÇÃO CIRCUNSTANCIADA DOS FATOS, EM ORDEM CRONOLÓGICA, COM O QUE FOI VISTO,
-OUVIDO E CONSTATADO]. «SE HOUVER DOCUMENTO: O SOLICITANTE apresentou-me o
-documento a seguir identificado, cujo teor transcrevo integralmente, na forma do
-artigo 847, § 4º, do Código de Normas: [TEOR INTEGRAL DO DOCUMENTO].»
-«SE HOUVER ANEXO: Ficam anexados a esta ata, numerados sequencialmente e
-arquivados em pasta própria, os seguintes documentos: [RELAÇÃO DOS DOCUMENTOS
-ANEXADOS].» «SE HOUVER TESTEMUNHA: Presentes ao ato, como testemunhas,
-{{ testemunhas }}, que presenciaram os fatos ora narrados.» Nada mais havendo a
-constatar, encerro a presente ata às [HORA DO ENCERRAMENTO POR EXTENSO]
-([HORA DO ENCERRAMENTO EM ALGARISMOS]) horas. Esta ata foi por mim lida em voz
-alta ao SOLICITANTE «SE HOUVER TESTEMUNHA: e às testemunhas», que a acharam
-conforme e a assinam, do que dou fé.</p>
-"""),
     },
 
     {
         "codigo": "NT-ATA-USUCAPIAO",
         "tipo": "ATA_USUCAPIAO",
-        "nome": "Ata notarial para usucapião extrajudicial",
         "natureza": "Ata notarial de usucapião",
         "tipo_ato_cep": 9,
         "fundamentacao": ("Lei 6.015/1973, art. 216-A; CPC, art. 384; "
@@ -947,53 +473,11 @@ conforme e a assinam, do que dou fé.</p>
             "Certidoes negativas dos distribuidores da comarca da situacao do "
             "imovel e do domicilio do requerente",
         ],
-        "corpo": _corpo("""<p>Saibam quantos
-esta ata notarial virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do
-mês de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), às
-[HORA POR EXTENSO] ([HORA EM ALGARISMOS]) horas, nesta cidade de
-{{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia, perante mim,
-{{ lavrado_nome }}, {{ lavrado_titulo }}, compareceu como REQUERENTE
-{{ outorgantes }}, reconhecido como o próprio por mim, tabelião, do que dou fé.
-E, pelo REQUERENTE, me foi requerida a lavratura de ata notarial para fins de
-reconhecimento extrajudicial de usucapião, na modalidade
-{MODALIDADE: ordinária, do artigo 1.242 do Código Civil | extraordinária, do
-artigo 1.238 do Código Civil | especial rural, do artigo 191 da Constituição
-Federal | especial urbana, do artigo 183 da Constituição Federal | especial
-familiar, do artigo 1.240-A do Código Civil}, relativamente ao imóvel assim
-descrito e caracterizado: [DESCRIÇÃO DO IMÓVEL CONFORME PLANTA E MEMORIAL
-DESCRITIVO], «SE HOUVER MATRÍCULA: objeto da matrícula n. [MATRÍCULA] do
-[CARTÓRIO DE REGISTRO DE IMÓVEIS]», «SE NÃO HOUVER MATRÍCULA: sem matrícula
-aberta no Registro de Imóveis competente», confrontando com
-[NOMES E QUALIFICAÇÃO DOS CONFRONTANTES]. Passo a ATESTAR, com base nos
-documentos que me foram apresentados e nas declarações que colhi, o tempo de
-posse do REQUERENTE e de seus antecessores, na forma do artigo 846, parágrafo
-único, V, do Código de Normas: o REQUERENTE exerce posse sobre o imóvel desde
-[DATA DE INÍCIO DA POSSE DO REQUERENTE], de forma mansa, pacífica e
-ininterrupta, e sem oposição de quem quer que seja. «SE HOUVER ACESSÃO DE POSSE:
-Soma o REQUERENTE à sua a posse de seus antecessores, a saber:
-[NOMES DOS ANTECESSORES, PERÍODOS E FORMA DE TRANSMISSÃO DA POSSE], perfazendo
-o tempo total de [TEMPO TOTAL DE POSSE POR EXTENSO] ([TEMPO TOTAL DE POSSE EM
-ALGARISMOS]) anos, na forma do artigo 1.243 do Código Civil.» A posse assim
-atestada assenta-se nos seguintes elementos, que me foram apresentados e ficam
-arquivados: [RELAÇÃO DOS DOCUMENTOS QUE DEMONSTRAM A ORIGEM, A CONTINUIDADE E O
-TEMPO DA POSSE]. «SE HOUVER TESTEMUNHA: Presentes ao ato, como testemunhas,
-{{ testemunhas }}, que declararam conhecer o imóvel e confirmar o tempo de posse
-ora atestado.» Declara o REQUERENTE, sob as penas da lei, que não possui outro
-imóvel «SE ESPECIAL: urbano ou rural», e que a posse ora descrita nunca foi
-objeto de oposição judicial ou extrajudicial. CONSIGNO EXPRESSAMENTE que a
-presente ata notarial ATESTA O TEMPO DE POSSE, e não declara a propriedade nem
-reconhece a usucapião, cabendo ao Oficial de Registro de Imóveis competente a
-análise do pedido e a decisão sobre o registro, na forma do artigo 216-A da Lei
-n. 6.015, de 1973. Encerro a presente ata às [HORA DO ENCERRAMENTO POR EXTENSO]
-([HORA DO ENCERRAMENTO EM ALGARISMOS]) horas, que foi por mim lida em voz alta
-ao REQUERENTE, que a achou conforme e a assina, do que dou fé.</p>
-"""),
     },
 
     {
         "codigo": "NT-ATA-ADJUDICACAO",
         "tipo": "ATA_NOTARIAL",
-        "nome": "Ata notarial para adjudicação compulsória extrajudicial",
         "natureza": "Ata notarial",
         "tipo_ato_cep": 8,
         "fundamentacao": ("Lei 6.015/1973, art. 216-B; CN/TJMA, art. 848"),
@@ -1013,41 +497,35 @@ ao REQUERENTE, que a achou conforme e a assina, do que dou fé.</p>
             "homologacao judicial (§ 2º)",
             "Comprovacao do ITBI: a adjudicacao transmite a propriedade",
         ],
-        "corpo": _corpo("""<p>Saibam quantos esta ata notarial virem que, aos [DIA POR EXTENSO]
-([DIA EM ALGARISMOS]) dias do mês de [MÊS POR EXTENSO] do ano de
-[ANO POR EXTENSO] ([ANO EM ALGARISMOS]), às [HORA POR EXTENSO]
-([HORA EM ALGARISMOS]) horas, nesta cidade de {{ sv.ri_cidade }}, Estado do
-{{ sv.ri_uf }}, nesta serventia, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceu como REQUERENTE {{ outorgantes }}, na
-qualidade de {QUALIDADE: promitente comprador | cessionário}, reconhecido como
-o próprio por mim, tabelião, do que dou fé. E, pelo REQUERENTE, me foi
-requerida a lavratura de ata notarial para fins de adjudicação compulsória
-extrajudicial, na forma do artigo 216-B da Lei n. 6.015, de 1973, e do artigo
-848 do Código de Normas, relativamente ao imóvel objeto da matrícula n.
-[MATRÍCULA] do [CARTÓRIO DE REGISTRO DE IMÓVEIS], com inscrição cadastral n.
-[INSCRIÇÃO CADASTRAL], assim descrito: [DESCRIÇÃO DO IMÓVEL CONFORME A
-MATRÍCULA]. Foram-me apresentados e ficam arquivados nesta serventia, e passo a
-ATESTAR o que deles consta: o {TÍTULO: contrato de promessa de compra e venda |
-instrumento de cessão de direitos} celebrado em [DATA DO CONTRATO] entre
-[NOME DO PROMITENTE VENDEDOR] e o REQUERENTE, tendo por objeto o imóvel acima
-descrito; a prova da QUITAÇÃO integral do preço, consistente em
-[PROVA DA QUITAÇÃO]; a prova da NOTIFICAÇÃO do promitente vendedor para outorga
-da escritura definitiva, realizada em [DATA DA NOTIFICAÇÃO] por
-[FORMA DA NOTIFICAÇÃO], e a prova de sua INÉRCIA, decorrido o prazo de
-[PRAZO DA NOTIFICAÇÃO] sem que a escritura fosse outorgada; e a certidão de
-INEXISTÊNCIA DE LITÍGIO judicial ou arbitral envolvendo o contrato ou o imóvel,
-expedida em [DATA DA CERTIDÃO DE INEXISTÊNCIA DE LITÍGIO]. Foi ainda
-apresentado o comprovante de recolhimento do ITBI, guia n.
-[NÚMERO DA GUIA DE ITBI], recolhida em [DATA DO ITBI]. Diante do exposto,
-ATESTO o preenchimento dos requisitos legais para a adjudicação compulsória
-extrajudicial, servindo a presente ata como título hábil para ingresso no
-Registro de Imóveis competente, independentemente de homologação judicial, na
-forma do artigo 848, § 2º, do Código de Normas, ressalvada ao Oficial de
-Registro de Imóveis a qualificação do título, que lhe é privativa. Encerro a
-presente ata às [HORA DO ENCERRAMENTO POR EXTENSO]
-([HORA DO ENCERRAMENTO EM ALGARISMOS]) horas, que foi por mim lida em voz alta
-ao REQUERENTE, que a achou conforme e a assina, do que dou fé.</p>
-"""),
+    },
+
+    # A PROCURAÇÃO PARA FINS PREVIDENCIÁRIOS — LG04, 19/10/2026. O tipo de ato
+    # existia desde 15/10 (`notas_schema.TIPOS_ATO`, CEP tipo 3), e a minuta
+    # não: quem lavrava partia da procuração comum e o ato saía PROCURACAO, com
+    # o tipo errado na CEP. A regra que pesa é a do art. 109 da Lei 8.213/1991
+    # — o mandato do INSS não passa de doze meses, renovável —, e por isso a
+    # minuta pede a data de validade em vez de oferecer o «prazo indeterminado».
+    {
+        "codigo": "NT-PROC-PREVIDENCIARIA",
+        "tipo": "PROCURACAO_PREVIDENCIARIA",
+        "natureza": "Procuração para fins previdenciários",
+        "tipo_ato_cep": 3,
+        "fundamentacao": ("Lei 8.213/1991, art. 109; CC, arts. 653 a 692; "
+                          "CN/TJMA, arts. 831 a 833 (conferir no texto oficial "
+                          "a gratuidade e o termo de responsabilidade do INSS)"),
+        "requisitos": COMUNS_PROCURACAO + [
+            "O beneficio so se paga a procurador em caso de AUSENCIA, MOLESTIA "
+            "CONTAGIOSA ou IMPOSSIBILIDADE DE LOCOMOCAO do segurado — o motivo "
+            "vai escrito no ato (Lei 8.213/1991, art. 109)",
+            "Mandato com prazo NAO SUPERIOR A DOZE MESES, podendo ser renovado "
+            "(Lei 8.213/1991, art. 109): sem prazo indeterminado",
+            "O procurador assina no INSS o termo de responsabilidade; o ato "
+            "diz que ele tem poder para isso",
+            "Selo pelo caminho do INSS (/selo/notas/procuracao/inss) ou pelos "
+            "tres da procuracao; isencao so com o motivo escrito",
+            "Vai a CEP da CENSEC como «Procuracao para fins previdenciarios» "
+            "(tipo 3), e nao como procuracao comum",
+        ],
     },
 
     # =================================================== TESTAMENTO
@@ -1055,7 +533,6 @@ ao REQUERENTE, que a achou conforme e a assina, do que dou fé.</p>
     {
         "codigo": "NT-TESTAMENTO-PUBLICO",
         "tipo": "TESTAMENTO",
-        "nome": "Testamento público",
         "natureza": "Testamento",
         "tipo_testamento": 4,
         "fundamentacao": ("CC, arts. 1.857 a 1.867, 1.846 a 1.849 e 1.900 a 1.911; "
@@ -1098,83 +575,46 @@ ao REQUERENTE, que a achou conforme e a assina, do que dou fé.</p>
             "Remessa obrigatoria ao RCTO da CENSEC na quinzena da lavratura",
             "O testamento NAO se informa a CEP — so ao RCTO",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento de
-testamento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de
-[MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), às
-[HORA POR EXTENSO] ([HORA EM ALGARISMOS]) horas, nesta cidade de
-{{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, {LUGAR: nesta serventia | no
-endereço [ENDEREÇO DA LAVRATURA], para onde me desloquei a pedido do testador},
-perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceu como TESTADOR
-{{ outorgantes }}, reconhecido como o próprio por mim, tabelião, à vista dos
-documentos apresentados, do que dou fé; e, presentes ao ato desde o seu início e
-até o seu encerramento, as testemunhas instrumentárias {{ testemunhas }}, todas
-capazes, conhecidas de mim, tabelião, e não incidentes em nenhum dos
-impedimentos dos artigos 228 e 1.801 do Código Civil. DOU FÉ de que o TESTADOR
-se encontra em pleno gozo de suas faculdades mentais, orientado no tempo e no
-espaço, exprimindo sua vontade de forma livre, consciente e desembaraçada, sem
-qualquer sinal de coação, indução ou vício de vontade, e de que declarou fazê-lo
-de livre e espontânea vontade. E, pelo TESTADOR, na presença das testemunhas, me
-foram feitas as declarações que passo a escrever, na forma do artigo 1.864, I,
-do Código Civil: PRIMEIRO, declara chamar-se como acima qualificado e ser
-{ESTADO CIVIL DO TESTADOR: solteiro | casado | divorciado | viúvo | separado
-judicialmente | convivente em união estável}, «SE CASADO OU CONVIVENTE: sendo
-seu {CÔNJUGE OU CONVIVENTE: cônjuge | convivente} [NOME E QUALIFICAÇÃO DO
-CÔNJUGE OU CONVIVENTE], sob o regime de [REGIME DE BENS]». SEGUNDO, declara
-{FILHOS: não possuir filhos nem outros descendentes | possuir os seguintes
-filhos: [NOMES E QUALIFICAÇÃO DOS FILHOS]}, e {ASCENDENTES: não possuir
-ascendentes vivos | possuir os seguintes ascendentes vivos: [NOMES E
-QUALIFICAÇÃO DOS ASCENDENTES]}. TERCEIRO, declara que, tendo conhecimento de que
-a legítima dos herdeiros necessários corresponde à metade dos bens da herança e
-não pode ser objeto de disposição testamentária, na forma dos artigos 1.789,
-1.846 e 1.857, § 1º, do Código Civil, dispõe pelo presente testamento
-[OBJETO DA DISPOSIÇÃO: DA PARTE DISPONÍVEL OU DA TOTALIDADE DOS BENS, CONFORME O
-CASO], nos seguintes termos: [DISPOSIÇÕES TESTAMENTÁRIAS, COM A IDENTIFICAÇÃO DE
-CADA HERDEIRO OU LEGATÁRIO E DE CADA BEM OU QUOTA ATRIBUÍDA].
-«SE HOUVER LEGADO: QUARTO, institui os seguintes legados: [DESCRIÇÃO DOS BENS
-LEGADOS E IDENTIFICAÇÃO DOS LEGATÁRIOS].» «SE HOUVER CLÁUSULAS RESTRITIVAS:
-Grava os bens ora deixados com as cláusulas de INALIENABILIDADE,
-IMPENHORABILIDADE e INCOMUNICABILIDADE, declarando, para tanto e como exige o
-artigo 1.848 do Código Civil, a seguinte JUSTA CAUSA: [JUSTA CAUSA DAS CLÁUSULAS
-RESTRITIVAS].» «SE HOUVER SUBSTITUIÇÃO: Institui substituição, de modo que, não
-podendo ou não querendo aceitar o herdeiro ou legatário instituído, a ele se
-substitua [NOME E QUALIFICAÇÃO DO SUBSTITUTO], na forma dos artigos 1.947 e
-seguintes do Código Civil.» «SE HOUVER DESERDAÇÃO: Deserda o herdeiro necessário
-[NOME E QUALIFICAÇÃO DO DESERDADO], declarando expressamente a seguinte causa,
-como exigem os artigos 1.964 e 1.965 do Código Civil: [CAUSA DA DESERDAÇÃO].»
-«SE HOUVER TESTAMENTEIRO: Nomeia testamenteiro [NOME E QUALIFICAÇÃO DO
-TESTAMENTEIRO], a quem confere a posse e a administração da herança, e arbitra
-prêmio de [PRÊMIO DO TESTAMENTEIRO], na forma dos artigos 1.976 e seguintes do
-Código Civil.» «SE HOUVER RECONHECIMENTO DE FILHO: Reconhece como seu filho
-[NOME E QUALIFICAÇÃO DO FILHO RECONHECIDO], reconhecimento que é irrevogável e
-não perde eficácia ainda que o testamento venha a caducar por outra causa, na
-forma dos artigos 1.609, III, e 1.610 do Código Civil.» «SE REVOGAÇÃO DE
-TESTAMENTO ANTERIOR: REVOGA o TESTADOR, expressamente, o testamento anterior
-lavrado em [DATA DO TESTAMENTO REVOGADO], no Livro [LIVRO DO TESTAMENTO
-REVOGADO], folhas [FOLHAS DO TESTAMENTO REVOGADO], do [SERVENTIA DO TESTAMENTO
-REVOGADO], inscrita sob o CNS [CNS DA SERVENTIA DO TESTAMENTO REVOGADO], na
-forma do artigo 1.969 do Código Civil.» Assim o disse e assim eu escrevi, de
-acordo com as suas declarações. E, LAVRADO O INSTRUMENTO, EU O LI EM VOZ ALTA AO
-TESTADOR E ÀS DUAS TESTEMUNHAS, A UM SÓ TEMPO, na presença simultânea de todos,
-na forma do artigo 1.864, II, do Código Civil, tendo o TESTADOR declarado que o
-instrumento exprime fielmente a sua última vontade. «SE TESTADOR CEGO: Por ser o
-TESTADOR cego, este testamento lhe foi lido EM VOZ ALTA DUAS VEZES: a primeira
-por mim, tabelião, e a segunda pela testemunha [NOME DA TESTEMUNHA DESIGNADA
-PELO TESTADOR], por ele designada para esse fim, de tudo se fazendo esta
-circunstanciada menção, na forma do artigo 1.867 do Código Civil.»
-«SE TESTADOR SURDO QUE SABE LER: Por ser o TESTADOR surdo e saber ler, ele
-próprio leu este testamento, na presença das testemunhas e de mim, tabelião, na
-forma do artigo 1.866 do Código Civil.» «SE TESTADOR SURDO QUE NÃO SABE LER: Por
-ser o TESTADOR surdo e não saber ler, designou [NOME DE QUEM LEU EM SEU LUGAR]
-para ler este testamento em seu lugar, o que foi feito na presença das
-testemunhas, na forma do artigo 1.866 do Código Civil.» Em seguida à leitura, e
-achado conforme, assinam o TESTADOR, as duas testemunhas e eu, tabelião, na
-forma do artigo 1.864, III, do Código Civil. «SE TESTADOR NÃO ASSINA: Declaro
-que o TESTADOR não [MOTIVO: sabe | pode] assinar, motivo pelo qual assina a seu
-rogo a testemunha instrumentária [NOME DA TESTEMUNHA QUE ASSINA A ROGO], na
-forma do artigo 1.865 do Código Civil, colhendo-se ainda a impressão digital do
-TESTADOR.» Encerro este testamento às [HORA DO ENCERRAMENTO POR EXTENSO]
-([HORA DO ENCERRAMENTO EM ALGARISMOS]) horas, do que dou fé.</p>
-"""),
+    },
+
+    # O TESTAMENTO CERRADO — LG04, 19/10/2026. O tipo de ato e o livro existiam
+    # (`notas_schema`: «Testamento cerrado — auto de aprovação», «Livro de
+    # Registro de Testamentos Cerrados») e a minuta não. **O TABELIÃO NÃO
+    # ESCREVE O TESTAMENTO, APROVA-O**: o que entra no livro é o auto e a nota
+    # da aprovação e da entrega (CC, arts. 1.869 e 1.874), e o conteúdo fica
+    # cerrado com o testador — por isso a minuta não tem disposição nenhuma.
+    {
+        "codigo": "NT-TESTAMENTO-CERRADO",
+        "tipo": "TESTAMENTO_CERRADO",
+        "natureza": "Testamento cerrado",
+        "tipo_testamento": 2,
+        "fundamentacao": ("CC, arts. 1.868 a 1.875; Lei 8.935/1994, art. 7º, II; "
+                          "CN/TJMA, arts. 777, VII, 778, II, 785, I, 788, II, "
+                          "e 851, §§ 4º e 5º"),
+        "requisitos": [
+            "O testamento e ESCRITO pelo testador, ou por outra pessoa a seu "
+            "rogo, e ASSINADO pelo testador (CC, art. 1.868, caput)",
+            "Entregue pelo testador ao tabeliao NA PRESENCA DE DUAS "
+            "TESTEMUNHAS, declarando que aquele e o seu testamento e que quer "
+            "que seja aprovado (CC, art. 1.868, I e II)",
+            "O auto de aprovacao comeca IMEDIATAMENTE DEPOIS DA ULTIMA PALAVRA "
+            "do testador; sem espaco na ultima folha, o tabeliao apoe o sinal "
+            "publico e menciona a circunstancia (CC, art. 1.869)",
+            "O auto e LIDO ao testador e as testemunhas e assinado pelo "
+            "tabeliao, pelas testemunhas e pelo testador (CC, art. 1.868, III "
+            "e IV)",
+            "O tabeliao NAO le o conteudo nem o guarda: o instrumento e cerrado "
+            "e cosido e entregue ao testador (CC, arts. 1.869 e 1.874)",
+            "Nao pode testar em cerrado quem nao saiba ou nao possa ler "
+            "(CC, art. 1.872); o surdo-mudo pode, escrevendo na face externa "
+            "que aquele e o seu testamento (CC, art. 1.873)",
+            "No livro, a NOTA do lugar, dia, mes e ano da aprovacao e da "
+            "entrega (CC, art. 1.874)",
+            "Remessa obrigatoria ao RCTO da CENSEC, tipo «Cerrado» "
+            "(CN, art. 785, I)",
+            "Certidao so ao testador, por requerimento escrito, ou a qualquer "
+            "pessoa com a certidao de obito (CN, art. 851, §§ 4º e 5º)",
+        ],
     },
 
     # =================================================== SUCESSÕES
@@ -1182,7 +622,6 @@ TESTADOR.» Encerro este testamento às [HORA DO ENCERRAMENTO POR EXTENSO]
     {
         "codigo": "NT-ESC-CESSAO-HEREDITARIA",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de cessão de direitos hereditários",
         "natureza": "Cessão de direitos hereditários",
         "natureza_censec": 5,
         "tipo_ato_cep": 1,
@@ -1214,135 +653,21 @@ TESTADOR.» Encerro este testamento às [HORA DO ENCERRAMENTO POR EXTENSO]
             "em medida de superficie, VEDADA a especificacao em valor "
             "pecuniario (CN, art. 805 e paragrafo unico)",
         ],
-        "corpo": _corpo("""<p>Saibam quantos
-este público instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS])
-dias do mês de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO]
-([ANO EM ALGARISMOS]), nesta cidade de {{ sv.ri_cidade }}, Estado do
-{{ sv.ri_uf }}, nesta serventia, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceram: como CEDENTE, {{ outorgantes }}; e como
-CESSIONÁRIO, {{ outorgados }}; reconhecidos como os próprios por mim, tabelião,
-à vista dos documentos apresentados, do que dou fé. E, pelo CEDENTE, me foi dito
-que é herdeiro de [NOME DO AUTOR DA HERANÇA], falecido em
-[DATA DO ÓBITO DO AUTOR DA HERANÇA], na cidade de [LUGAR DO ÓBITO], conforme
-certidão de óbito lavrada sob o termo n. [TERMO DO ÓBITO], no Livro
-[LIVRO DO ÓBITO], folhas [FOLHAS DO ÓBITO], do [SERVENTIA DO REGISTRO DO ÓBITO],
-e que, na qualidade de [QUALIDADE DO CEDENTE NA SUCESSÃO], lhe cabe o quinhão
-hereditário correspondente a [FRAÇÃO DO QUINHÃO EM FRAÇÃO DECIMAL OU ORDINÁRIA]
-do acervo. E que, por este instrumento e na melhor forma de direito, CEDE E
-TRANSFERE ao CESSIONÁRIO a totalidade dos direitos hereditários que lhe cabem
-naquela sucessão, {ONEROSIDADE: a título oneroso, pelo preço certo e ajustado de
-[PREÇO POR EXTENSO] ([PREÇO EM ALGARISMOS]), já recebido, do que dá plena,
-geral e irrevogável quitação | a título gratuito, por mera liberalidade}.
-CIENTIFICO EXPRESSAMENTE o CESSIONÁRIO, na forma do artigo 803 do Código de
-Normas, e ele declara estar ciente, de que a presente cessão compreende não só o
-quinhão ou a quota ideal atribuível ao CEDENTE nos bens, MAS TAMBÉM,
-PROPORCIONALMENTE, AS DÍVIDAS DO ESPÓLIO, até o limite das forças da herança.
-Declara o CEDENTE que deu ciência aos demais coerdeiros da presente cessão, com
-especificação do valor, da forma de pagamento e das demais condições ora
-ajustadas, para os fins do direito de preferência do artigo 1.795 do Código
-Civil, ciência comprovada por [FORMA DA CIÊNCIA AOS COERDEIROS]. «SE COERDEIROS
-PRESENTES: Presentes ao ato os demais coerdeiros, {{ testemunhas }}, que
-declaram estar cientes da cessão e RENUNCIAR expressamente ao direito de
-preferência que lhes assiste.» «SE OUTORGA UXÓRIA: Comparece ainda ao ato, para
-dar a competente outorga, o cônjuge do CEDENTE, [NOME E QUALIFICAÇÃO DO CÔNJUGE
-DO CEDENTE], que anui à presente cessão em todos os seus termos, na forma do
-artigo 1.647, I, do Código Civil.» «SE DISPENSA DE OUTORGA: Fica dispensada a
-outorga do cônjuge, por ser o regime de bens o de [REGIME QUE DISPENSA A
-OUTORGA], na forma do artigo 1.647, caput, do Código Civil e do artigo 804,
-§ 4º, do Código de Normas.» «SE BEM INDIVIDUALIZADO: A presente cessão recai
-sobre bem individualizado da herança, a saber: [DESCRIÇÃO DO BEM
-INDIVIDUALIZADO], correspondendo ao quinhão ideal de [QUINHÃO IDEAL EM FRAÇÃO
-DECIMAL OU ORDINÁRIA]. FICAM AS PARTES CIENTES, na forma do artigo 805 do Código
-de Normas, de que este título NÃO É HÁBIL para ingresso no Registro de Imóveis
-até que seja feita a partilha.» Foram-me apresentados e ficam arquivados: a
-certidão de óbito do autor da herança; e o comprovante de recolhimento do
-imposto de transmissão, guia n. [NÚMERO DA GUIA DO IMPOSTO], recolhida em
-[DATA DO IMPOSTO]. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-INVENTARIO-PARTILHA",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de inventário e partilha",
         "natureza": "Inventário e partilha",
         "tipo_cesdi": 5,
         "fundamentacao": ("CPC, arts. 610 e 733; Lei 11.441/2007; Resolução CNJ "
                           "35/2007, arts. 20 a 25; CN/TJMA, arts. 806 a 813 e 821"),
         "requisitos": COMUNS_SUCESSAO,
-        "corpo": _corpo("""<p>Saibam quantos este
-público instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias
-do mês de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]),
-nesta cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia,
-perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram as partes a
-seguir qualificadas, todas maiores, capazes e concordes: {{ outorgantes }},
-reconhecidas como as próprias por mim, tabelião, à vista dos documentos
-apresentados, do que dou fé. <b>DO AUTOR DA HERANÇA.</b> Declaram os
-comparecentes que a presente escritura tem por objeto a sucessão de
-[NOME COMPLETO DO AUTOR DA HERANÇA], [QUALIFICAÇÃO COMPLETA DO AUTOR DA
-HERANÇA], que era casado sob o regime de [REGIME DE BENS DO AUTOR DA HERANÇA],
-«SE HOUVE PACTO ANTENUPCIAL: conforme pacto antenupcial lavrado em
-[DATA DO PACTO ANTENUPCIAL] e registrado sob o n. [REGISTRO DO PACTO
-ANTENUPCIAL] no [CARTÓRIO DO REGISTRO DO PACTO]». <b>DO ÓBITO.</b> O autor da
-herança faleceu em [DATA DO ÓBITO], na cidade de [LUGAR DO ÓBITO], conforme
-certidão de óbito expedida em [DATA DA EXPEDIÇÃO DA CERTIDÃO DE ÓBITO], lavrada
-sob o termo n. [TERMO DO ÓBITO], no Livro [LIVRO DO ÓBITO], folhas
-[FOLHAS DO ÓBITO], do [SERVENTIA DO REGISTRO DO ÓBITO]. <b>DA INEXISTÊNCIA DE
-TESTAMENTO E DE OUTROS HERDEIROS.</b> Declaram os comparecentes, SOB AS PENAS DA
-LEI, que o autor da herança não deixou testamento e não deixou outros herdeiros
-além dos aqui qualificados, o que se confirma pela certidão negativa expedida
-pela CENSEC em [DATA DA CERTIDÃO DA CENSEC], sob o n. [NÚMERO DA CERTIDÃO DA
-CENSEC], que fica arquivada nesta serventia. <b>DO CÔNJUGE SUPÉRSTITE.</b>
-{CÔNJUGE: Sobrevive ao autor da herança o cônjuge [NOME DO CÔNJUGE SUPÉRSTITE],
-a quem cabe a meação sobre os bens comuns | Não há cônjuge supérstite}.
-<b>DOS HERDEIROS.</b> São herdeiros do autor da herança
-[NOMES E QUALIFICAÇÃO DOS HERDEIROS, COM O VÍNCULO DE PARENTESCO], conforme
-certidões comprobatórias apresentadas e arquivadas. <b>DA NOMEAÇÃO DE
-INVENTARIANTE.</b> Nomeiam os comparecentes, de comum acordo, para exercer o
-encargo de INVENTARIANTE, [NOME DO INVENTARIANTE], que declara aceitá-lo.
-<b>DOS ADVOGADOS.</b> Assistem as partes neste ato
-[NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB DO ADVOGADO OU ADVOGADOS], que
-comparecem e assinam esta escritura, na forma do artigo 808, § 1º, do Código de
-Normas. <b>DOS BENS IMÓVEIS.</b> Compõem o acervo os seguintes bens imóveis:
-[DESCRIÇÃO DOS IMÓVEIS CONFORME AS MATRÍCULAS, COM VALORES ATRIBUÍDOS].
-<b>DOS DIREITOS, AÇÕES E BENS MÓVEIS.</b> Compõem ainda o acervo:
-[DESCRIÇÃO DOS BENS MÓVEIS, DIREITOS E AÇÕES, COM VALORES]. <b>DOS
-LITÍGIOS.</b> {LITÍGIOS: Declaram os comparecentes não existir litígio judicial
-ou extrajudicial sobre os bens ora inventariados | Declaram os comparecentes a
-existência do seguinte litígio: [DESCRIÇÃO DO LITÍGIO]}. <b>DAS DÍVIDAS.</b>
-{DÍVIDAS: Declaram os comparecentes que o espólio não possui dívidas | Declaram
-os comparecentes as seguintes dívidas do espólio: [DESCRIÇÃO DAS DÍVIDAS]}.
-<b>DAS RENÚNCIAS E CESSÕES.</b> «SE HOUVER RENÚNCIA OU CESSÃO:
-[RENÚNCIAS E CESSÕES, COM A IDENTIFICAÇÃO DE QUEM RENUNCIA OU CEDE E EM FAVOR DE
-QUEM].» <b>DA PARTILHA.</b> Os bens são partilhados da seguinte forma:
-[PARTILHA, COM O QUINHÃO DE CADA HERDEIRO E OS BENS QUE LHE TOCAM], observada a
-meação do cônjuge supérstite, quando houver, e os bens trazidos à colação.
-<b>DAS CERTIDÕES E DOCUMENTOS APRESENTADOS.</b> Foram-me apresentados e ficam
-arquivados: a certidão de óbito; as certidões de casamento e de vínculo de
-parentesco; as certidões de propriedade dos imóveis; as certidões negativas de
-tributos das Fazendas Federal, Estadual e Municipal em nome do espólio;
-«SE HOUVER IMÓVEL RURAL: o Certificado de Cadastro de Imóvel Rural com a
-certidão de quitação do Imposto Territorial Rural;» e a certidão da CENSEC.
-<b>DOS IMPOSTOS PAGOS.</b> Foi recolhido o ITCD, guia n.
-[NÚMERO DA GUIA DE ITCD], em [DATA DO ITCD], no valor de [VALOR DO ITCD].
-<b>DAS DECLARAÇÕES FINAIS.</b> Declaram as partes e os advogados a integral
-concordância com os termos desta escritura. «SE HOUVER INCAPAZ: A minuta final
-desta escritura foi submetida ao Ministério Público, que se manifestou em
-[DATA DO PARECER DO MINISTÉRIO PÚBLICO], e o ato foi aprovado pelo Juízo
-competente no procedimento n. [NÚMERO DO PROCEDIMENTO NO PJE], na forma do
-artigo 809 do Código de Normas.» «SE HOUVER PROCESSO JUDICIAL: Declaram as
-partes estar cientes de que esta escritura somente poderá ser registrada
-mediante a comprovação da extinção do processo judicial n.
-[NÚMERO DO PROCESSO JUDICIAL], e de que lhes é facultada a suspensão ou a
-desistência daquele feito, na forma do artigo 2º da Resolução n. 35 do Conselho
-Nacional de Justiça e do artigo 821 do Código de Normas.» Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-SOBREPARTILHA",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de sobrepartilha",
         "natureza": "Sobrepartilha",
         "tipo_cesdi": 6,
         "fundamentacao": ("CPC, arts. 669 e 670; Resolução CNJ 35/2007, art. 25; "
@@ -1355,51 +680,11 @@ Nacional de Justiça e do artigo 821 do Código de Normas.» Nada mais. A presen
             "Identificar o inventario anterior: se judicial, o processo e o "
             "juizo; se extrajudicial, o livro, folha, data e serventia",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público
-instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês
-de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia, perante
-mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram as partes a seguir
-qualificadas, todas maiores, capazes e concordes: {{ outorgantes }},
-reconhecidas como as próprias por mim, tabelião, do que dou fé. <b>DO AUTOR DA
-HERANÇA E DO ÓBITO.</b> Declaram que a presente escritura tem por objeto a
-sucessão de [NOME COMPLETO DO AUTOR DA HERANÇA], falecido em [DATA DO ÓBITO], na
-cidade de [LUGAR DO ÓBITO], conforme certidão lavrada sob o termo n.
-[TERMO DO ÓBITO], no Livro [LIVRO DO ÓBITO], folhas [FOLHAS DO ÓBITO], do
-[SERVENTIA DO REGISTRO DO ÓBITO]. <b>DA PARTILHA ANTERIOR.</b> O inventário e a
-partilha dos demais bens já foram realizados {PARTILHA ANTERIOR: judicialmente,
-nos autos do processo n. [NÚMERO DO PROCESSO DE INVENTÁRIO], que tramitou perante
-o [JUÍZO DO INVENTÁRIO], com sentença transitada em julgado em
-[DATA DO TRÂNSITO EM JULGADO] | por escritura pública lavrada em
-[DATA DA ESCRITURA ANTERIOR], no Livro [LIVRO DA ESCRITURA ANTERIOR], folhas
-[FOLHAS DA ESCRITURA ANTERIOR], do [SERVENTIA DA ESCRITURA ANTERIOR]}. <b>DOS
-BENS SOBREPARTILHÁVEIS.</b> Declaram os comparecentes que, após aquela partilha,
-verificou-se a existência dos seguintes bens, que não foram inventariados nem
-partilhados: [DESCRIÇÃO DOS BENS SOBREPARTILHÁVEIS, COM VALORES ATRIBUÍDOS], e
-que o motivo de não terem sido partilhados anteriormente foi
-[MOTIVO DA SOBREPARTILHA]. <b>DOS HERDEIROS.</b> São herdeiros
-[NOMES E QUALIFICAÇÃO DOS HERDEIROS, COM O VÍNCULO DE PARENTESCO].
-«SE HERDEIRO ERA INCAPAZ: Consigna-se que [NOME DO HERDEIRO ANTES INCAPAZ] era
-menor ou incapaz ao tempo do óbito, sendo hoje maior e plenamente capaz, o que
-não impede esta sobrepartilha extrajudicial, na forma do artigo 813 do Código de
-Normas e do artigo 25 da Resolução n. 35 do Conselho Nacional de Justiça.»
-<b>DOS ADVOGADOS.</b> Assistem as partes [NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB
-DO ADVOGADO], que comparece e assina esta escritura. <b>DA SOBREPARTILHA.</b> Os
-bens acima descritos são sobrepartilhados da seguinte forma:
-[SOBREPARTILHA, COM O QUINHÃO DE CADA HERDEIRO], observada a meação do cônjuge
-supérstite, quando houver. <b>DAS CERTIDÕES E DOS IMPOSTOS.</b> Foram
-apresentadas e ficam arquivadas as certidões negativas de tributos das Fazendas
-Federal, Estadual e Municipal, e a certidão da CENSEC sobre inexistência de
-testamento. Foi recolhido o ITCD, guia n. [NÚMERO DA GUIA DE ITCD], em
-[DATA DO ITCD]. <b>DAS DECLARAÇÕES FINAIS.</b> Declaram as partes e o advogado a
-integral concordância com os termos desta escritura. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-PARTILHA-ADJUDICACAO",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de partilha amigável ou adjudicação a herdeiro único",
         "natureza": "Partilha",
         "tipo_cesdi": 9,
         "fundamentacao": ("CPC, arts. 659 e 660; Resolução CNJ 35/2007; "
@@ -1416,56 +701,11 @@ integral concordância com os termos desta escritura. Nada mais. A presente escr
             "Avaliacao dos bens e recolhimento do imposto de transmissao, "
             "PREVIAMENTE (CN, art. 819, paragrafo unico)",
         ],
-        "corpo": _corpo("""<p>Saibam
-quantos este público instrumento virem que, aos [DIA POR EXTENSO]
-([DIA EM ALGARISMOS]) dias do mês de [MÊS POR EXTENSO] do ano de
-[ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta cidade de {{ sv.ri_cidade }},
-Estado do {{ sv.ri_uf }}, nesta serventia, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceram as partes a seguir qualificadas, todas
-maiores, capazes e concordes: {{ outorgantes }}, reconhecidas como as próprias
-por mim, tabelião, do que dou fé. <b>DO AUTOR DA HERANÇA E DO ÓBITO.</b>
-Declaram que a presente escritura tem por objeto a sucessão de
-[NOME COMPLETO DO AUTOR DA HERANÇA], [QUALIFICAÇÃO COMPLETA DO AUTOR DA
-HERANÇA], falecido em [DATA DO ÓBITO], na cidade de [LUGAR DO ÓBITO], conforme
-certidão lavrada sob o termo n. [TERMO DO ÓBITO], no Livro [LIVRO DO ÓBITO],
-folhas [FOLHAS DO ÓBITO], do [SERVENTIA DO REGISTRO DO ÓBITO]. <b>DA
-INEXISTÊNCIA DE TESTAMENTO.</b> Declaram, SOB AS PENAS DA LEI, que o autor da
-herança não deixou testamento nem outros herdeiros além dos aqui qualificados,
-conforme certidão negativa da CENSEC n. [NÚMERO DA CERTIDÃO DA CENSEC], expedida
-em [DATA DA CERTIDÃO DA CENSEC]. <b>DOS HERDEIROS.</b> {HERDEIROS: São herdeiros
-[NOMES E QUALIFICAÇÃO DOS HERDEIROS, COM O VÍNCULO DE PARENTESCO] | É herdeiro
-único [NOME E QUALIFICAÇÃO DO HERDEIRO ÚNICO], razão pela qual o presente ato é
-de ADJUDICAÇÃO, na forma do artigo 814 do Código de Normas}.
-«SE DIREITO DE REPRESENTAÇÃO: A sucessão se dá por direito de representação de
-[NOME DO REPRESENTADO], falecido em [DATA DO ÓBITO DO REPRESENTADO], conforme
-certidão de óbito apresentada e arquivada, na forma do artigo 816 do Código de
-Normas.» «SE HOUVER RENÚNCIA: Renuncia à herança [NOME DO RENUNCIANTE], de forma
-[MODALIDADE DA RENÚNCIA: ABDICATIVA, EM FAVOR DO MONTE, OU TRANSLATIVA, EM FAVOR
-DE HERDEIRO CERTO], renúncia que consta desta escritura, na forma do artigo 815
-do Código de Normas.» <b>DOS ADVOGADOS.</b> Assistem as partes
-[NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB DO ADVOGADO], que comparece e assina esta
-escritura, na forma do artigo 819 do Código de Normas. <b>DOS BENS.</b> Compõem
-o acervo os seguintes bens, previamente avaliados:
-[DESCRIÇÃO DOS BENS COM OS VALORES DA AVALIAÇÃO]. <b>DA
-{ATO: PARTILHA | ADJUDICAÇÃO}.</b> Os bens acima descritos são
-{ATO: partilhados da seguinte forma: [PARTILHA, COM O QUINHÃO DE CADA HERDEIRO E
-OS BENS QUE LHE TOCAM] | adjudicados integralmente ao herdeiro único acima
-qualificado}, observada a meação do cônjuge supérstite, quando houver. <b>DAS
-CERTIDÕES E DOS IMPOSTOS.</b> Foram apresentadas e ficam arquivadas as certidões
-negativas de tributos das Fazendas Federal, Estadual e Municipal, cujas
-informações ficam resumidas neste ato na forma do artigo 817, parágrafo único,
-do Código de Normas. Foi recolhido o imposto de transmissão, guia n.
-[NÚMERO DA GUIA DO IMPOSTO], em [DATA DO IMPOSTO], no valor de
-[VALOR DO IMPOSTO]. <b>DAS DECLARAÇÕES FINAIS.</b> Declaram as partes e o
-advogado a integral concordância com os termos desta escritura, que constitui
-título hábil para o registro imobiliário. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-NOMEACAO-INVENTARIANTE",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de nomeação de inventariante e declarações do espólio",
         "natureza": "Nomeação de inventariante",
         "tipo_cesdi": 8,
         "fundamentacao": "CPC, arts. 617 e 618; CN/TJMA, art. 810",
@@ -1480,35 +720,6 @@ título hábil para o registro imobiliário. Nada mais. A presente escritura foi
             "representacao e de declaracao",
             "Qualificacao completa do meeiro e de todos os herdeiros",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento virem que, aos
-[DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de [MÊS POR EXTENSO] do ano
-de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta cidade de {{ sv.ri_cidade }},
-Estado do {{ sv.ri_uf }}, nesta serventia, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceram o meeiro e os herdeiros a seguir
-qualificados: {{ outorgantes }}, reconhecidos como os próprios por mim,
-tabelião, do que dou fé. E, pelos comparecentes, me foi dito que
-[NOME COMPLETO DO AUTOR DA HERANÇA] faleceu em [DATA DO ÓBITO], na cidade de
-[LUGAR DO ÓBITO], conforme certidão de óbito lavrada sob o termo n.
-[TERMO DO ÓBITO], no Livro [LIVRO DO ÓBITO], folhas [FOLHAS DO ÓBITO], do
-[SERVENTIA DO REGISTRO DO ÓBITO], e que, antes da confecção da escritura
-pública definitiva de partilha, e na forma do artigo 810 do Código de Normas,
-prestam as seguintes declarações e nomeiam representante ao espólio. <b>DA
-NOMEAÇÃO.</b> Nomeiam, de comum acordo, [NOME E QUALIFICAÇÃO DO INVENTARIANTE]
-para representar o espólio, conferindo-lhe poderes para representá-lo perante
-estabelecimentos bancários e instituições fiscais, para acessar dados bancários
-e fiscais relevantes ao inventário e à partilha, e para tornar viável a
-transferência de titularidade de conta bancária da pessoa falecida.
-<b>DAS DECLARAÇÕES.</b> Declaram os comparecentes que
-[DECLARAÇÕES SOBRE O ACERVO, OS HERDEIROS E O ESTADO DO ESPÓLIO], e que não
-têm conhecimento de testamento deixado pelo autor da herança. <b>DA
-ADVERTÊNCIA.</b> FICAM OS COMPARECENTES EXPRESSAMENTE ADVERTIDOS por mim,
-tabelião, de que a presente escritura NÃO SUBSTITUI o inventário e a partilha,
-NÃO TRANSFERE a propriedade de bem algum e NÃO CONSTITUI título hábil para
-ingresso no Registro de Imóveis, prestando-se exclusivamente à representação e
-às declarações acima. <b>DOS ADVOGADOS.</b> Assistem as partes
-[NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB DO ADVOGADO], que comparece e assina
-esta escritura. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     # =================================================== FAMÍLIA
@@ -1516,7 +727,6 @@ esta escritura. Nada mais. A presente escritura foi lida e achada conforme em to
     {
         "codigo": "NT-ESC-DIVORCIO",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de divórcio consensual direto",
         "natureza": "Divórcio consensual",
         "tipo_cesdi": 4,
         "fundamentacao": ("CF, art. 226, § 6º, com a redação da EC 66/2010; CPC, "
@@ -1529,67 +739,11 @@ esta escritura. Nada mais. A presente escritura foi lida e achada conforme em to
             "Havendo partilha de imovel, o recolhimento do imposto de "
             "transmissao quando a divisao for desigual",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este
-público instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias
-do mês de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]),
-nesta cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia,
-perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram como
-DIVORCIANDOS {{ outorgantes }}, reconhecidos como os próprios por mim,
-tabelião, à vista dos documentos apresentados, do que dou fé. <b>DO
-CASAMENTO.</b> Declaram os DIVORCIANDOS que se casaram em [DATA DO CASAMENTO],
-sob o regime de [REGIME DE BENS], conforme certidão de casamento expedida em
-[DATA DA CERTIDÃO DE CASAMENTO], lavrada sob o termo n. [TERMO DO CASAMENTO], no
-Livro [LIVRO DO CASAMENTO], folhas [FOLHAS DO CASAMENTO], do
-[SERVENTIA DO REGISTRO DO CASAMENTO]. «SE HOUVE PACTO ANTENUPCIAL: O regime de
-bens foi estipulado por pacto antenupcial lavrado em [DATA DO PACTO
-ANTENUPCIAL], registrado sob o n. [REGISTRO DO PACTO ANTENUPCIAL] no
-[CARTÓRIO DO REGISTRO DO PACTO].» <b>DA VONTADE DE DIVORCIAR-SE.</b> Declaram
-os DIVORCIANDOS, de forma espontânea e isenta de vícios, que é firme e definitiva
-a vontade de dissolver o vínculo conjugal, requerendo o DIVÓRCIO na forma do
-artigo 226, § 6º, da Constituição Federal. <b>DOS FILHOS.</b>
-{FILHOS: Declaram os DIVORCIANDOS não haver filhos comuns | Declaram os
-DIVORCIANDOS haver os seguintes filhos comuns, todos maiores e capazes:
-[NOMES E QUALIFICAÇÃO DOS FILHOS MAIORES] | Declaram os DIVORCIANDOS haver os
-seguintes filhos comuns incapazes ou nascituros: [NOMES E DATAS DE NASCIMENTO
-DOS FILHOS INCAPAZES]}. «SE HOUVER FILHO INCAPAZ OU NASCITURO: FICA CONSIGNADO
-EXPRESSAMENTE, na forma do artigo 822, § 1º, do Código de Normas, que esta
-escritura NÃO CONTÉM E NÃO PODE CONTER qualquer previsão relativa a guarda,
-visitação e alimentos dos filhos incapazes ou nascituros, e que os DIVORCIANDOS
-SE COMPROMETEM A LEVAR ESSAS QUESTÕES AO PODER JUDICIÁRIO, observadas as regras
-de competência do Código de Processo Civil.» <b>DA PARTILHA DE BENS.</b>
-{PARTILHA: Declaram os DIVORCIANDOS que não possuem bens comuns a partilhar |
-Declaram os DIVORCIANDOS que os bens comuns são partilhados da seguinte forma:
-[DESCRIÇÃO E PARTILHA DOS BENS COMUNS, COM VALORES] | Declaram os DIVORCIANDOS
-que possuem bens comuns e que deixam a partilha para momento posterior, na forma
-do artigo 1.581 do Código Civil}. <b>DA PENSÃO ALIMENTÍCIA ENTRE OS
-CÔNJUGES.</b> {ALIMENTOS: Declaram os DIVORCIANDOS que dispensam mutuamente
-alimentos, deles abrindo mão de forma irrevogável | Fica ajustado que
-[NOME DE QUEM PAGA] pagará a [NOME DE QUEM RECEBE] pensão alimentícia mensal de
-[VALOR DA PENSÃO POR EXTENSO] ([VALOR DA PENSÃO EM ALGARISMOS]), reajustável por
-[CRITÉRIO DE REAJUSTE], até [PRAZO DA PENSÃO], mediante depósito em
-[FORMA DE PAGAMENTO DA PENSÃO]}. <b>DO NOME.</b>
-{NOME: Declaram os DIVORCIANDOS que ambos manterão o nome de casados |
-[NOME DE QUEM ALTERA] voltará a usar o nome de solteiro, qual seja,
-[NOME DE SOLTEIRO], devendo o registro civil proceder à devida averbação}.
-<b>DOS ADVOGADOS.</b> Assistem os DIVORCIANDOS neste ato
-[NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB, COM SEÇÃO E UNIDADE DA FEDERAÇÃO, DO
-ADVOGADO OU ADVOGADOS], que comparecem e assinam esta escritura, na forma do
-artigo 822, § 5º, do Código de Normas. <b>DAS DECLARAÇÕES FINAIS.</b>
-«SE HOUVER PROCESSO JUDICIAL: Foi apresentada certidão do juízo competente
-informando a [SITUAÇÃO DO PROCESSO: SUSPENSÃO OU DESISTÊNCIA] do processo n.
-[NÚMERO DO PROCESSO JUDICIAL].» Ficam os DIVORCIANDOS cientes de que esta
-escritura NÃO DEPENDE de homologação judicial e constitui título hábil para o
-registro civil, para o registro de imóveis e para o levantamento de importância
-depositada em instituições financeiras, na forma do artigo 822, § 4º, do Código
-de Normas, e de que devem apresentar o traslado no registro civil do assento de
-casamento para a devida averbação. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-SEPARACAO",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de separação consensual",
         "natureza": "Separação consensual",
         "tipo_cesdi": 1,
         "fundamentacao": ("CC, arts. 1.571 a 1.578; CPC, art. 733; Resolução CNJ "
@@ -1603,55 +757,11 @@ casamento para a devida averbação. Nada mais. A presente escritura foi lida e 
             "A separacao dissolve a SOCIEDADE conjugal, nao o VINCULO: os "
             "separados nao podem casar novamente ate a conversao em divorcio",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público
-instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês
-de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia, perante
-mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram como SEPARANDOS
-{{ outorgantes }}, reconhecidos como os próprios por mim, tabelião, do que dou
-fé. <b>DO CASAMENTO.</b> Declaram os SEPARANDOS que se casaram em
-[DATA DO CASAMENTO], sob o regime de [REGIME DE BENS], conforme certidão de
-casamento expedida em [DATA DA CERTIDÃO DE CASAMENTO], lavrada sob o termo n.
-[TERMO DO CASAMENTO], no Livro [LIVRO DO CASAMENTO], folhas
-[FOLHAS DO CASAMENTO], do [SERVENTIA DO REGISTRO DO CASAMENTO]. <b>DA VONTADE
-DE SEPARAR-SE.</b> Declaram os SEPARANDOS, de forma ESPONTÂNEA E ISENTA DE
-VÍCIOS, na forma do artigo 823, I, do Código de Normas, que não mais desejam
-manter a sociedade conjugal e que pretendem a SEPARAÇÃO conforme as cláusulas
-ora ajustadas. FICAM OS SEPARANDOS EXPRESSAMENTE ADVERTIDOS por mim, tabelião,
-de que a separação dissolve a SOCIEDADE conjugal mas NÃO O VÍNCULO MATRIMONIAL,
-razão pela qual não poderão contrair novo casamento enquanto não convertida a
-separação em divórcio. <b>DOS FILHOS.</b> {FILHOS: Declaram os SEPARANDOS não
-haver filhos comuns | Declaram os SEPARANDOS haver os seguintes filhos comuns,
-todos maiores e capazes: [NOMES E QUALIFICAÇÃO DOS FILHOS MAIORES] | Declaram os
-SEPARANDOS haver os seguintes filhos comuns incapazes ou nascituros:
-[NOMES E DATAS DE NASCIMENTO DOS FILHOS INCAPAZES]}. «SE HOUVER FILHO INCAPAZ OU
-NASCITURO: FICA CONSIGNADO EXPRESSAMENTE, na forma do artigo 822, § 1º, do
-Código de Normas, que esta escritura NÃO CONTÉM E NÃO PODE CONTER qualquer
-previsão relativa a guarda, visitação e alimentos dos filhos incapazes ou
-nascituros, e que os SEPARANDOS SE COMPROMETEM A LEVAR ESSAS QUESTÕES AO PODER
-JUDICIÁRIO.» <b>DA PARTILHA DE BENS.</b> {PARTILHA: Declaram os SEPARANDOS que
-não possuem bens comuns a partilhar | Declaram os SEPARANDOS que os bens comuns
-são partilhados da seguinte forma: [DESCRIÇÃO E PARTILHA DOS BENS COMUNS, COM
-VALORES] | Declaram os SEPARANDOS que deixam a partilha para momento posterior}.
-<b>DA PENSÃO ALIMENTÍCIA ENTRE OS CÔNJUGES.</b> {ALIMENTOS: Declaram os
-SEPARANDOS que dispensam mutuamente alimentos | Fica ajustado que
-[NOME DE QUEM PAGA] pagará a [NOME DE QUEM RECEBE] pensão alimentícia mensal de
-[VALOR DA PENSÃO POR EXTENSO] ([VALOR DA PENSÃO EM ALGARISMOS]), reajustável por
-[CRITÉRIO DE REAJUSTE]}. <b>DO NOME.</b> {NOME: Declaram os SEPARANDOS que ambos
-manterão o nome de casados | [NOME DE QUEM ALTERA] voltará a usar o nome de
-solteiro, qual seja, [NOME DE SOLTEIRO]}. <b>DOS ADVOGADOS.</b> Assistem os
-SEPARANDOS [NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB, COM SEÇÃO E UNIDADE DA
-FEDERAÇÃO, DO ADVOGADO], que comparece e assina esta escritura. <b>DAS
-DECLARAÇÕES FINAIS.</b> Ficam os SEPARANDOS cientes de que devem apresentar o
-traslado no registro civil do assento de casamento para a devida averbação.
-Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-CONVERSAO-DIVORCIO",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de conversão de separação em divórcio",
         "natureza": "Conversão de separação em divórcio",
         "tipo_cesdi": 3,
         "fundamentacao": ("CF, art. 226, § 6º; Resolução CNJ 35/2007, art. 52; "
@@ -1667,66 +777,11 @@ Nada mais. A presente escritura foi lida e achada conforme em todos os seus term
             "As condicoes da separacao podem ser mantidas ou alteradas "
             "(CN, art. 830)",
         ],
-        "corpo": _corpo("""<p>Saibam
-quantos este público instrumento virem que, aos [DIA POR EXTENSO]
-([DIA EM ALGARISMOS]) dias do mês de [MÊS POR EXTENSO] do ano de
-[ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta cidade de {{ sv.ri_cidade }},
-Estado do {{ sv.ri_uf }}, nesta serventia, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceram como DIVORCIANDOS {{ outorgantes }},
-reconhecidos como os próprios por mim, tabelião, do que dou fé. <b>DO CASAMENTO
-E DA SEPARAÇÃO.</b> Declaram os DIVORCIANDOS que se casaram em
-[DATA DO CASAMENTO], sob o regime de [REGIME DE BENS], conforme certidão de
-casamento lavrada sob o termo n. [TERMO DO CASAMENTO], no Livro
-[LIVRO DO CASAMENTO], folhas [FOLHAS DO CASAMENTO], do
-[SERVENTIA DO REGISTRO DO CASAMENTO], e que se separaram
-{SEPARAÇÃO: judicialmente, conforme sentença proferida nos autos do processo n.
-[NÚMERO DO PROCESSO DE SEPARAÇÃO] | extrajudicialmente, conforme escritura
-pública lavrada em [DATA DA ESCRITURA DE SEPARAÇÃO], no Livro
-[LIVRO DA ESCRITURA DE SEPARAÇÃO], folhas [FOLHAS DA ESCRITURA DE SEPARAÇÃO], do
-[SERVENTIA DA ESCRITURA DE SEPARAÇÃO]}. Foi-me apresentada e fica arquivada a
-certidão da averbação da separação no assento de casamento, averbação feita em
-[DATA DA AVERBAÇÃO DA SEPARAÇÃO], sendo ela BASTANTE para este ato e DISPENSADA
-a certidão atualizada do processo judicial, na forma do artigo 830 do Código de
-Normas e do artigo 52 da Resolução n. 35 do Conselho Nacional de Justiça. <b>DA CONVERSÃO.</b> Declaram os DIVORCIANDOS,
-de forma espontânea e isenta de vícios, que é firme e definitiva a vontade de
-CONVERTER a separação em DIVÓRCIO, dissolvendo o vínculo matrimonial na forma do
-artigo 226, § 6º, da Constituição Federal. <b>DAS CONDIÇÕES.</b>
-{CONDIÇÕES: Declaram os DIVORCIANDOS que MANTÊM integralmente as condições
-convencionadas na separação, nada havendo a alterar | Declaram os DIVORCIANDOS
-que ALTERAM as condições convencionadas na separação, nos seguintes termos:
-[ALTERAÇÕES ÀS CONDIÇÕES DA SEPARAÇÃO]}. <b>DOS FILHOS.</b>
-{FILHOS: Declaram os DIVORCIANDOS não haver filhos comuns | Declaram haver os
-seguintes filhos comuns, todos maiores e capazes: [NOMES E QUALIFICAÇÃO DOS
-FILHOS MAIORES] | Declaram haver filhos comuns incapazes ou nascituros:
-[NOMES E DATAS DE NASCIMENTO DOS FILHOS INCAPAZES]}. «SE HOUVER FILHO INCAPAZ OU
-NASCITURO: FICA CONSIGNADO EXPRESSAMENTE que esta conversão NÃO ALTERA em nada o
-que foi convencionado e homologado na separação em relação aos direitos desses
-filhos, razão pela qual é cabível a via extrajudicial na forma do artigo 822,
-§ 2º, do Código de Normas.» <b>DA PARTILHA DE BENS.</b>
-{PARTILHA: A partilha dos bens comuns já foi realizada na separação, nada
-havendo a partilhar | Os bens comuns são agora partilhados da seguinte forma:
-[DESCRIÇÃO E PARTILHA DOS BENS COMUNS, COM VALORES] | Os DIVORCIANDOS deixam a
-partilha para momento posterior}. <b>DA PENSÃO ALIMENTÍCIA ENTRE OS
-CÔNJUGES.</b> {ALIMENTOS: Ficam mantidos os alimentos ajustados na separação,
-nos mesmos termos | Declaram os DIVORCIANDOS que dispensam mutuamente
-alimentos, deles abrindo mão de forma irrevogável | Fica ajustado que
-[NOME DE QUEM PAGA] pagará a [NOME DE QUEM RECEBE] pensão alimentícia mensal de
-[VALOR DA PENSÃO POR EXTENSO] ([VALOR DA PENSÃO EM ALGARISMOS]), reajustável por
-[CRITÉRIO DE REAJUSTE]}. <b>DO NOME.</b> {NOME: Ambos manterão o nome
-que ora usam | [NOME DE QUEM ALTERA] voltará a usar o nome de solteiro, qual
-seja, [NOME DE SOLTEIRO]}. <b>DOS ADVOGADOS.</b> Assistem os DIVORCIANDOS
-[NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB, COM SEÇÃO E UNIDADE DA FEDERAÇÃO, DO
-ADVOGADO], que comparece e assina esta escritura. <b>DAS DECLARAÇÕES FINAIS.</b>
-Ficam os DIVORCIANDOS cientes de que esta escritura não depende de homologação
-judicial e de que devem apresentar o traslado no registro civil do assento de
-casamento para a devida averbação. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-RESTABELECIMENTO",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de restabelecimento da sociedade conjugal",
         "natureza": "Restabelecimento da sociedade conjugal",
         "tipo_cesdi": 2,
         "fundamentacao": ("CC, art. 1.577; Resolução CNJ 35/2007, arts. 49 e 51; "
@@ -1749,54 +804,11 @@ casamento para a devida averbação. Nada mais. A presente escritura foi lida e 
             "So se restabelece o que foi SEPARACAO: divorcio dissolve o "
             "vinculo e nao se restabelece — os divorciados casam de novo",
         ],
-        "corpo": _corpo("""<p>Saibam
-quantos este público instrumento virem que, aos [DIA POR EXTENSO]
-([DIA EM ALGARISMOS]) dias do mês de [MÊS POR EXTENSO] do ano de
-[ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta cidade de {{ sv.ri_cidade }},
-Estado do {{ sv.ri_uf }}, nesta serventia, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceram como RECONCILIANDOS {{ outorgantes }},
-reconhecidos como os próprios por mim, tabelião, do que dou fé. <b>DO CASAMENTO
-E DA SEPARAÇÃO.</b> Declaram os RECONCILIANDOS que se casaram em
-[DATA DO CASAMENTO], sob o regime de [REGIME DE BENS], conforme certidão de
-casamento lavrada sob o termo n. [TERMO DO CASAMENTO], no Livro
-[LIVRO DO CASAMENTO], folhas [FOLHAS DO CASAMENTO], do
-[SERVENTIA DO REGISTRO DO CASAMENTO], e que se separaram
-{SEPARAÇÃO: judicialmente, conforme sentença proferida nos autos do processo n.
-[NÚMERO DO PROCESSO DE SEPARAÇÃO], que tramitou perante o
-[JUÍZO DA SEPARAÇÃO] | extrajudicialmente, conforme escritura pública lavrada em
-[DATA DA ESCRITURA DE SEPARAÇÃO], no Livro [LIVRO DA ESCRITURA DE SEPARAÇÃO],
-folhas [FOLHAS DA ESCRITURA DE SEPARAÇÃO], do
-[SERVENTIA DA ESCRITURA DE SEPARAÇÃO]}, o que se comprova pela certidão que me
-foi apresentada e fica arquivada, necessária e suficiente para este ato na forma
-do artigo 828 do Código de Normas. <b>DO RESTABELECIMENTO.</b> Declaram os
-RECONCILIANDOS, de forma espontânea e isenta de vícios, que é firme a vontade de
-RESTABELECER A SOCIEDADE CONJUGAL, que passa a vigorar nos mesmos termos em que
-foi constituída, com o mesmo regime de bens, sem prejuízo dos direitos de
-terceiros adquiridos antes e durante a separação, qualquer que tenha sido o
-regime, na forma do artigo 1.577 e seu parágrafo único do Código Civil. <b>DA
-ORIENTAÇÃO PRESTADA.</b> FICAM OS RECONCILIANDOS EXPRESSAMENTE ORIENTADOS por
-mim, tabelião, na forma do artigo 829, I, do Código de Normas, sobre a
-NECESSIDADE DE APRESENTAR O TRASLADO desta escritura no registro civil do
-assento de casamento, para a devida averbação, e cientes de que a averbação do
-restabelecimento somente poderá ser efetivada depois da averbação da separação,
-podendo ambas ser simultâneas. «SE SEPARAÇÃO LAVRADA NESTA SERVENTIA: Procedi,
-nesta data, à anotação do presente restabelecimento à margem da escritura pública
-de separação consensual, na forma do artigo 829, II, do Código de Normas.»
-«SE SEPARAÇÃO LAVRADA EM OUTRA SERVENTIA: Será comunicado o presente
-restabelecimento ao tabelionato que lavrou a escritura de separação, para a
-anotação necessária, na forma do artigo 829, II, do Código de Normas.»
-«SE SEPARAÇÃO JUDICIAL: Será comunicado o presente restabelecimento ao juízo da
-separação judicial, na forma do artigo 829, III, do Código de Normas.» <b>DOS
-ADVOGADOS.</b> Assistem os RECONCILIANDOS [NOME, QUALIFICAÇÃO E INSCRIÇÃO NA
-OAB, COM SEÇÃO E UNIDADE DA FEDERAÇÃO, DO ADVOGADO], que comparece e assina esta
-escritura. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-UNIAO-ESTAVEL",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública declaratória de união estável",
         "natureza": "Declaratória de união estável",
         "natureza_censec": 15,
         "tipo_ato_cep": 1,
@@ -1816,39 +828,11 @@ escritura. Nada mais. A presente escritura foi lida e achada conforme em todos o
             "Havendo filhos, declara-los; a declaracao nao supre o registro de "
             "nascimento",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este
-público instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias
-do mês de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]),
-nesta cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia,
-perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram como
-DECLARANTES {{ outorgantes }}, reconhecidos como os próprios por mim, tabelião,
-à vista dos documentos apresentados, do que dou fé. E, pelos DECLARANTES, me foi
-dito que convivem em UNIÃO ESTÁVEL desde [DATA DE INÍCIO DA UNIÃO], de forma
-PÚBLICA, CONTÍNUA E DURADOURA, estabelecida com o objetivo de constituição de
-família, na forma do artigo 1.723 do Código Civil e do artigo 226, § 3º, da
-Constituição Federal. Declaram, SOB AS PENAS DA LEI, que não incidem em nenhum
-dos impedimentos do artigo 1.521 do Código Civil, «SE SEPARADO DE FATO:
-ressalvando que [NOME DE QUEM É CASADO] é casado mas se acha separado de fato
-desde [DATA DA SEPARAÇÃO DE FATO], hipótese em que a lei admite a união estável,
-na forma do artigo 1.723, § 1º, do Código Civil». <b>DO REGIME DE BENS.</b>
-{REGIME: Declaram os conviventes que, não havendo estipulação em contrário,
-aplica-se à união o regime da COMUNHÃO PARCIAL DE BENS, na forma do artigo 1.725
-do Código Civil | Declaram os conviventes que estipulam, para reger as relações
-patrimoniais da união, o regime da [REGIME DE BENS ESTIPULADO], com os seguintes
-efeitos: [EFEITOS PATRIMONIAIS ESTIPULADOS]}. <b>DOS FILHOS.</b>
-{FILHOS: Declaram os conviventes não haver filhos comuns | Declaram os
-conviventes haver os seguintes filhos comuns: [NOMES E DATAS DE NASCIMENTO DOS
-FILHOS]}. <b>DAS DECLARAÇÕES FINAIS.</b> Declaram os conviventes que a presente
-escritura produz efeitos desde a data de início da união acima declarada, e que
-estão cientes de que a declaração aqui feita não supre o registro de nascimento
-de eventuais filhos nem substitui os atos próprios do registro civil. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-DISSOLUCAO-UNIAO-ESTAVEL",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de dissolução de união estável",
         "natureza": "Dissolução de união estável",
         "natureza_censec": 20,
         "tipo_ato_cep": 1,
@@ -1867,45 +851,6 @@ de eventuais filhos nem substitui os atos próprios do registro civil. Nada mais
             "A dissolucao NAO se averba em assento de casamento; havendo "
             "escritura declaratoria anterior, anota-se a margem dela",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este
-público instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias
-do mês de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]),
-nesta cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia,
-perante mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram como
-CONVIVENTES {{ outorgantes }}, reconhecidos como os próprios por mim, tabelião,
-do que dou fé. <b>DA UNIÃO.</b> Declaram os CONVIVENTES que mantiveram união
-estável no período de [DATA DE INÍCIO DA UNIÃO] a [DATA DO FIM DA UNIÃO],
-«SE HOUVE ESCRITURA DECLARATÓRIA: união declarada por escritura pública lavrada
-em [DATA DA ESCRITURA DECLARATÓRIA], no Livro [LIVRO DA ESCRITURA DECLARATÓRIA],
-folhas [FOLHAS DA ESCRITURA DECLARATÓRIA], do
-[SERVENTIA DA ESCRITURA DECLARATÓRIA]», sob o regime de [REGIME DE BENS DA
-UNIÃO]. <b>DA DISSOLUÇÃO.</b> Declaram os CONVIVENTES, de forma espontânea e
-isenta de vícios, que é firme e definitiva a vontade de DISSOLVER a união
-estável, que se considera extinta desde [DATA DO FIM DA UNIÃO]. <b>DOS
-FILHOS.</b> {FILHOS: Declaram os CONVIVENTES não haver filhos comuns | Declaram
-haver os seguintes filhos comuns, todos maiores e capazes:
-[NOMES E QUALIFICAÇÃO DOS FILHOS MAIORES] | Declaram haver filhos comuns
-incapazes ou nascituros: [NOMES E DATAS DE NASCIMENTO DOS FILHOS INCAPAZES]}.
-«SE HOUVER FILHO INCAPAZ OU NASCITURO: FICA CONSIGNADO EXPRESSAMENTE, na forma
-do artigo 822, § 1º, do Código de Normas, que esta escritura NÃO CONTÉM E NÃO
-PODE CONTER qualquer previsão relativa a guarda, visitação e alimentos desses
-filhos, e que os CONVIVENTES SE COMPROMETEM A LEVAR ESSAS QUESTÕES AO PODER
-JUDICIÁRIO.» <b>DA PARTILHA DE BENS.</b> {PARTILHA: Declaram os CONVIVENTES que
-não possuem bens comuns a partilhar | Declaram os CONVIVENTES que os bens comuns
-são partilhados da seguinte forma: [DESCRIÇÃO E PARTILHA DOS BENS COMUNS, COM
-VALORES] | Declaram os CONVIVENTES que deixam a partilha para momento
-posterior}. <b>DA PENSÃO ALIMENTÍCIA.</b> {ALIMENTOS: Declaram os CONVIVENTES
-que dispensam mutuamente alimentos | Fica ajustado que [NOME DE QUEM PAGA]
-pagará a [NOME DE QUEM RECEBE] pensão alimentícia mensal de
-[VALOR DA PENSÃO POR EXTENSO] ([VALOR DA PENSÃO EM ALGARISMOS])}. <b>DO
-NOME.</b> {NOME: Nada há a alterar quanto ao nome dos CONVIVENTES |
-[NOME DE QUEM ALTERA] voltará a usar o nome de solteiro, qual seja,
-[NOME DE SOLTEIRO]}. <b>DOS ADVOGADOS.</b> Assistem os CONVIVENTES
-[NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB, COM SEÇÃO E UNIDADE DA FEDERAÇÃO, DO
-ADVOGADO], que comparece e assina esta escritura. «SE HOUVE ESCRITURA
-DECLARATÓRIA NESTA SERVENTIA: Procedi, nesta data, à anotação da presente
-dissolução à margem da escritura declaratória de união estável.» Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     # =================================================== GARANTIA E DÍVIDA
@@ -1913,7 +858,6 @@ dissolução à margem da escritura declaratória de união estável.» Nada mai
     {
         "codigo": "NT-ESC-HIPOTECA",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de hipoteca",
         "natureza": "Hipoteca",
         "natureza_censec": 24,
         "tipo_ato_cep": 1,
@@ -1939,56 +883,11 @@ dissolução à margem da escritura declaratória de união estável.» Nada mai
             "(CC, art. 1.428)",
             "Havendo hipoteca anterior, indicar o grau da nova",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento
-virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de
-[MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia, perante
-mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram: como DEVEDOR
-HIPOTECANTE, {{ outorgantes }}; e como CREDOR HIPOTECÁRIO, {{ outorgados }};
-reconhecidos como os próprios por mim, tabelião, à vista dos documentos
-apresentados, do que dou fé. <b>DA DÍVIDA.</b> Declara o DEVEDOR HIPOTECANTE que
-é devedor do CREDOR HIPOTECÁRIO da quantia de [VALOR DA DÍVIDA POR EXTENSO]
-([VALOR DA DÍVIDA EM ALGARISMOS]), proveniente de [ORIGEM DA DÍVIDA], a ser paga
-{PAGAMENTO: de uma só vez, em [DATA DO VENCIMENTO] | em
-[NÚMERO DE PARCELAS POR EXTENSO] ([NÚMERO DE PARCELAS EM ALGARISMOS]) parcelas
-mensais e sucessivas de [VALOR DA PARCELA POR EXTENSO] ([VALOR DA PARCELA EM
-ALGARISMOS]), vencendo-se a primeira em [DATA DA PRIMEIRA PARCELA]}, com juros de
-[TAXA DE JUROS] e correção por [CRITÉRIO DE CORREÇÃO]. <b>DO IMÓVEL DADO EM
-GARANTIA.</b> Para garantia da dívida acima especificada, o DEVEDOR HIPOTECANTE
-dá em HIPOTECA {GRAU: de primeiro grau | de segundo grau, subsistindo a hipoteca
-anterior registrada sob o n. [REGISTRO DA HIPOTECA ANTERIOR]} ao CREDOR
-HIPOTECÁRIO o seguinte imóvel, de sua exclusiva propriedade:
-[DESCRIÇÃO DO IMÓVEL CONFORME A MATRÍCULA, COM CARACTERÍSTICAS, CONFRONTAÇÕES E
-LOCALIZAÇÃO], objeto da matrícula n. [MATRÍCULA] do
-[CARTÓRIO DE REGISTRO DE IMÓVEIS], havido conforme registro n.
-[NÚMERO DO REGISTRO ANTERIOR], ao qual as partes atribuem o valor de
-[VALOR DO IMÓVEL POR EXTENSO] ([VALOR DO IMÓVEL EM ALGARISMOS]). <b>DAS
-CONDIÇÕES.</b> A presente hipoteca vigorará pelo prazo de
-[PRAZO DA HIPOTECA POR EXTENSO] ([PRAZO DA HIPOTECA EM ALGARISMOS]) anos, não
-excedendo o limite de trinta anos do artigo 1.485 do Código Civil. Obriga-se o
-DEVEDOR HIPOTECANTE a conservar o imóvel, a não aliená-lo nem gravá-lo sem o
-consentimento escrito do CREDOR HIPOTECÁRIO, e a manter em dia os tributos e
-encargos que sobre ele recaiam. CONSIGNO EXPRESSAMENTE, na forma do artigo 1.428
-do Código Civil, que É NULA a cláusula que autorize o CREDOR HIPOTECÁRIO a ficar
-com o imóvel se a dívida não for paga no vencimento, razão pela qual nenhuma
-estipulação neste sentido consta deste instrumento. «SE OUTORGA CONJUGAL:
-Comparece ainda ao ato, para dar a competente outorga, o cônjuge do DEVEDOR
-HIPOTECANTE, [NOME E QUALIFICAÇÃO DO CÔNJUGE], que anui à presente hipoteca em
-todos os seus termos, na forma do artigo 1.647, I, do Código Civil.»
-<b>DA ACEITAÇÃO.</b> Pelo CREDOR HIPOTECÁRIO me foi dito que aceita esta
-escritura em todos os seus termos. Ficam as partes cientes de que a hipoteca
-vale entre elas desde já, mas SOMENTE PRODUZ EFEITO CONTRA TERCEIROS depois de
-registrada no Registro de Imóveis competente, na forma dos artigos 1.227 e 1.492
-do Código Civil. Foram-me apresentados e ficam arquivados: a certidão atualizada
-da matrícula, expedida em [DATA DA CERTIDÃO DA MATRÍCULA]; e a certidão de ônus
-reais. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-ALIENACAO-FIDUCIARIA",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de alienação fiduciária de bem imóvel",
         "natureza": "Alienação fiduciária",
         "natureza_censec": 4,
         "tipo_ato_cep": 1,
@@ -2016,59 +915,11 @@ reais. Nada mais. A presente escritura foi lida e achada conforme em todos os se
             "e dispensavel por clausula",
             "Outorga do conjuge do fiduciante, salvo separacao absoluta",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento virem que, aos [DIA POR EXTENSO]
-([DIA EM ALGARISMOS]) dias do mês de [MÊS POR EXTENSO] do ano de
-[ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta cidade de {{ sv.ri_cidade }},
-Estado do {{ sv.ri_uf }}, nesta serventia, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceram: como FIDUCIANTE, {{ outorgantes }}; e como
-FIDUCIÁRIO, {{ outorgados }}; reconhecidos como os próprios por mim, tabelião,
-do que dou fé. <b>DO PRINCIPAL DA DÍVIDA.</b> Declara o FIDUCIANTE que é devedor
-do FIDUCIÁRIO da quantia principal de [VALOR DO PRINCIPAL POR EXTENSO]
-([VALOR DO PRINCIPAL EM ALGARISMOS]), proveniente de [ORIGEM DA DÍVIDA]. <b>DO
-PRAZO E DAS CONDIÇÕES DE REPOSIÇÃO.</b> A dívida será reposta em
-[NÚMERO DE PARCELAS POR EXTENSO] ([NÚMERO DE PARCELAS EM ALGARISMOS]) parcelas
-mensais e sucessivas de [VALOR DA PARCELA POR EXTENSO]
-([VALOR DA PARCELA EM ALGARISMOS]), vencendo-se a primeira em
-[DATA DA PRIMEIRA PARCELA] e a última em [DATA DA ÚLTIMA PARCELA], mediante
-[FORMA DE PAGAMENTO DAS PARCELAS]. <b>DA TAXA DE JUROS E DOS ENCARGOS.</b>
-Incidem sobre a dívida juros de [TAXA DE JUROS], correção monetária por
-[ÍNDICE DE CORREÇÃO], e os seguintes encargos: [ENCARGOS INCIDENTES]. <b>DA
-CONSTITUIÇÃO DA PROPRIEDADE FIDUCIÁRIA.</b> Em garantia do pagamento, o
-FIDUCIANTE ALIENA FIDUCIARIAMENTE ao FIDUCIÁRIO, transferindo-lhe a propriedade
-resolúvel e a posse indireta, o seguinte imóvel:
-[DESCRIÇÃO DO IMÓVEL CONFORME A MATRÍCULA], objeto da matrícula n. [MATRÍCULA]
-do [CARTÓRIO DE REGISTRO DE IMÓVEIS], por ele adquirido conforme
-[TÍTULO E MODO DE AQUISIÇÃO DO IMÓVEL], registro n.
-[NÚMERO DO REGISTRO ANTERIOR]. <b>DA LIVRE UTILIZAÇÃO PELO FIDUCIANTE.</b> Fica
-assegurada ao FIDUCIANTE, enquanto adimplente, a LIVRE UTILIZAÇÃO do imóvel, por
-sua conta e risco, na forma do artigo 24, V, da Lei n. 9.514, de 1997. <b>DO
-VALOR DO IMÓVEL PARA LEILÃO.</b> Para efeito de venda em público leilão, as
-partes atribuem ao imóvel o valor de [VALOR DO IMÓVEL PARA LEILÃO POR EXTENSO]
-([VALOR DO IMÓVEL PARA LEILÃO EM ALGARISMOS]), que será revisto segundo o
-seguinte critério: [CRITÉRIO DE REVISÃO DO VALOR DO IMÓVEL]. <b>DO PROCEDIMENTO
-EM CASO DE INADIMPLEMENTO.</b> Vencida e não paga, no todo ou em parte, a dívida,
-e constituído em mora o FIDUCIANTE, observar-se-á integralmente o procedimento
-dos artigos 26 e 27 da Lei n. 9.514, de 1997, a saber: o FIDUCIANTE será
-INTIMADO, a requerimento do FIDUCIÁRIO, pelo Oficial do Registro de Imóveis,
-para satisfazer, no prazo de QUINZE DIAS, a prestação vencida e as que se
-vencerem até a data do pagamento, os juros convencionais, as penalidades e os
-demais encargos; purgada a mora, convalesce o contrato; não purgada, e
-consolidada a propriedade em nome do FIDUCIÁRIO, este promoverá PÚBLICO LEILÃO
-nos prazos e condições do artigo 27, restituindo ao FIDUCIANTE a importância que
-sobejar, se houver. <b>DA ACEITAÇÃO E DO REGISTRO.</b> Pelo FIDUCIÁRIO me foi
-dito que aceita esta escritura em todos os seus termos. Ficam as partes cientes
-de que A PROPRIEDADE FIDUCIÁRIA SOMENTE SE CONSTITUI COM O REGISTRO desta
-escritura no Registro de Imóveis competente, na forma do artigo 23 da Lei n.
-9.514, de 1997. «SE OUTORGA CONJUGAL: Comparece ainda ao ato, para dar a
-competente outorga, o cônjuge do FIDUCIANTE, [NOME E QUALIFICAÇÃO DO CÔNJUGE],
-que anui à presente alienação fiduciária em todos os seus termos.» Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-CONFISSAO-DACAO",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de confissão de dívida e dação em pagamento",
         "natureza": "Confissão de dívida ou dação em pagamento",
         "natureza_censec": 10,
         "tipo_ato_cep": 1,
@@ -2088,52 +939,11 @@ que anui à presente alienação fiduciária em todos os seus termos.» Nada mai
             "Imoveis: e titulo executivo extrajudicial (CPC, art. 784, II e III)",
             "Outorga do conjuge do devedor, havendo imovel",
         ],
-        "corpo": _corpo("""<p>Saibam
-quantos este público instrumento virem que, aos [DIA POR EXTENSO]
-([DIA EM ALGARISMOS]) dias do mês de [MÊS POR EXTENSO] do ano de
-[ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta cidade de {{ sv.ri_cidade }},
-Estado do {{ sv.ri_uf }}, nesta serventia, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceram: como DEVEDOR, {{ outorgantes }}; e como
-CREDOR, {{ outorgados }}; reconhecidos como os próprios por mim, tabelião, do
-que dou fé. <b>DA CONFISSÃO DA DÍVIDA.</b> Declara o DEVEDOR, de forma livre e
-espontânea, que CONFESSA dever ao CREDOR a quantia certa e líquida de
-[VALOR DA DÍVIDA POR EXTENSO] ([VALOR DA DÍVIDA EM ALGARISMOS]), proveniente de
-[ORIGEM DA DÍVIDA], vencida em [DATA DO VENCIMENTO DA DÍVIDA], reconhecendo-a
-como dívida líquida, certa e exigível. <b>DA DAÇÃO EM PAGAMENTO.</b> Para
-solver integralmente a dívida ora confessada, e COM O EXPRESSO CONSENTIMENTO DO
-CREDOR em receber prestação diversa da que lhe é devida, na forma do artigo 356
-do Código Civil, o DEVEDOR DÁ EM PAGAMENTO ao CREDOR o seguinte imóvel, de sua
-exclusiva propriedade: [DESCRIÇÃO DO IMÓVEL CONFORME A MATRÍCULA], objeto da
-matrícula n. [MATRÍCULA] do [CARTÓRIO DE REGISTRO DE IMÓVEIS], havido conforme
-registro n. [NÚMERO DO REGISTRO ANTERIOR], ao qual as partes atribuem o preço
-certo de [VALOR ATRIBUÍDO AO IMÓVEL POR EXTENSO]
-([VALOR ATRIBUÍDO AO IMÓVEL EM ALGARISMOS]). <b>DAS RELAÇÕES ENTRE AS PARTES.</b>
-Determinado o preço da coisa dada em pagamento, as relações entre as partes
-regem-se pelas normas do contrato de compra e venda, na forma do artigo 357 do
-Código Civil. {SALDO: A dação solve integralmente a dívida, nada mais podendo
-ser reclamado a qualquer título | Sendo o valor do imóvel inferior ao da dívida,
-remanesce em favor do CREDOR o saldo de [VALOR DO SALDO POR EXTENSO]
-([VALOR DO SALDO EM ALGARISMOS]), a ser pago em [CONDIÇÕES DO SALDO] | Sendo o
-valor do imóvel superior ao da dívida, o CREDOR pagou ao DEVEDOR a diferença de
-[VALOR DA DIFERENÇA POR EXTENSO] ([VALOR DA DIFERENÇA EM ALGARISMOS]), do que
-este dá quitação}. <b>DA QUITAÇÃO E DA EVICÇÃO.</b> Dá o CREDOR ao DEVEDOR, pelo
-recebimento do imóvel, plena e geral quitação da dívida ora confessada. FICAM AS
-PARTES CIENTES, na forma do artigo 359 do Código Civil, de que, se o CREDOR for
-EVICTO da coisa recebida em pagamento, RESTABELECER-SE-Á a obrigação primitiva,
-ficando sem efeito a quitação ora dada, ressalvados os direitos de terceiros.
-«SE OUTORGA CONJUGAL: Comparece ainda ao ato, para dar a competente outorga, o
-cônjuge do DEVEDOR, [NOME E QUALIFICAÇÃO DO CÔNJUGE], que anui à presente dação
-em todos os seus termos.» Foram-me apresentados e ficam arquivados: a certidão
-atualizada da matrícula; e o comprovante de recolhimento do ITBI, guia n.
-[NÚMERO DA GUIA DE ITBI], recolhida em [DATA DO ITBI]. Fica consignado que será
-emitida a Declaração sobre Operação Imobiliária (DOI). Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-PERMUTA",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de permuta",
         "natureza": "Permuta",
         "natureza_censec": 6,
         "tipo_ato_cep": 1,
@@ -2152,54 +962,11 @@ emitida a Declaração sobre Operação Imobiliária (DOI). Nada mais. A present
             "Na CENSEC a permuta e informada na natureza 6, COMPRA E VENDA, que "
             "a contempla expressamente",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento
-virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de
-[MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia, perante
-mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram como PERMUTANTES
-{{ outorgantes }}, reconhecidos como os próprios por mim, tabelião, do que dou
-fé. <b>DO PRIMEIRO IMÓVEL.</b> Declara o PRIMEIRO PERMUTANTE,
-[NOME DO PRIMEIRO PERMUTANTE], que é senhor e legítimo possuidor do imóvel a
-seguir descrito: [DESCRIÇÃO DO PRIMEIRO IMÓVEL CONFORME A MATRÍCULA], objeto da
-matrícula n. [MATRÍCULA DO PRIMEIRO IMÓVEL] do
-[CARTÓRIO DO PRIMEIRO IMÓVEL], ao qual atribui o valor de
-[VALOR DO PRIMEIRO IMÓVEL POR EXTENSO] ([VALOR DO PRIMEIRO IMÓVEL EM
-ALGARISMOS]). <b>DO SEGUNDO IMÓVEL.</b> Declara o SEGUNDO PERMUTANTE,
-[NOME DO SEGUNDO PERMUTANTE], que é senhor e legítimo possuidor do imóvel a
-seguir descrito: [DESCRIÇÃO DO SEGUNDO IMÓVEL CONFORME A MATRÍCULA], objeto da
-matrícula n. [MATRÍCULA DO SEGUNDO IMÓVEL] do [CARTÓRIO DO SEGUNDO IMÓVEL], ao
-qual atribui o valor de [VALOR DO SEGUNDO IMÓVEL POR EXTENSO]
-([VALOR DO SEGUNDO IMÓVEL EM ALGARISMOS]). <b>DA PERMUTA.</b> E, por este
-instrumento e na melhor forma de direito, os PERMUTANTES PERMUTAM entre si os
-imóveis acima descritos, transmitindo cada um ao outro todo o domínio, direito,
-posse e ação que sobre eles exerciam, obrigando-se a fazer esta permuta sempre
-boa, firme e valiosa e a responder pela evicção de direito. {TORNA: Sendo os
-valores equivalentes, nada há a compensar entre os PERMUTANTES | Sendo os
-valores desiguais, [NOME DE QUEM PAGA A TORNA] paga a
-[NOME DE QUEM RECEBE A TORNA], a título de TORNA, a quantia de
-[VALOR DA TORNA POR EXTENSO] ([VALOR DA TORNA EM ALGARISMOS]), mediante
-[FORMA DE PAGAMENTO DA TORNA], do que este dá plena e geral quitação}. <b>DAS
-DESPESAS.</b> As despesas deste instrumento correm por conta dos PERMUTANTES em
-partes iguais, na forma do artigo 533, I, do Código Civil.
-«SE ASCENDENTE E DESCENDENTE: Sendo os PERMUTANTES ascendente e descendente e
-desiguais os valores permutados, comparecem ao ato, para consentir
-expressamente, na forma do artigo 533, II, do Código Civil, os demais
-descendentes e o cônjuge do alienante, a saber:
-[NOMES E QUALIFICAÇÃO DE QUEM CONSENTE].» «SE OUTORGA CONJUGAL: Comparecem ainda
-ao ato, para dar a competente outorga, os cônjuges dos PERMUTANTES,
-[NOMES E QUALIFICAÇÃO DOS CÔNJUGES], que anuem à presente permuta.» Foram-me
-apresentadas e ficam arquivadas as certidões atualizadas das duas matrículas e
-os comprovantes de recolhimento do ITBI relativos às duas transmissões, guias n.
-[NÚMEROS DAS GUIAS DE ITBI], recolhidas em [DATAS DO ITBI]. Fica consignado que
-serão emitidas as Declarações sobre Operação Imobiliária (DOI) correspondentes
-às duas transmissões. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-QUITACAO",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de quitação",
         "natureza": "Quitação",
         "natureza_censec": 34,
         "tipo_ato_cep": 1,
@@ -2216,39 +983,11 @@ serão emitidas as Declarações sobre Operação Imobiliária (DOI) corresponde
             "Sendo a quitacao de imovel, conferir se o caso e de quitacao ou de "
             "cancelamento de gravame — sao atos distintos",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento
-virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de
-[MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia, perante
-mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceu como CREDOR
-{{ outorgantes }}, reconhecido como o próprio por mim, tabelião, do que dou fé.
-E, pelo CREDOR, me foi dito que era credor de [NOME E QUALIFICAÇÃO DO DEVEDOR],
-da quantia de [VALOR DA DÍVIDA POR EXTENSO] ([VALOR DA DÍVIDA EM ALGARISMOS]),
-proveniente de [ESPÉCIE E ORIGEM DA DÍVIDA], e que recebeu o pagamento integral
-daquela quantia em [DATA DO PAGAMENTO], na cidade de [LUGAR DO PAGAMENTO],
-{PAGADOR: pelo próprio devedor | por [NOME DE QUEM PAGOU PELO DEVEDOR], que pagou
-pelo devedor}, mediante {FORMA DO PAGAMENTO: dinheiro em espécie | transferência
-bancária | transferência eletrônica entre contas de pagamento | PIX | cheque n.
-[NÚMERO DO CHEQUE], sacado contra o [BANCO DO CHEQUE]}. E que, por este
-instrumento e na melhor forma de direito, DÁ AO DEVEDOR PLENA, GERAL,
-IRREVOGÁVEL E IRRETRATÁVEL QUITAÇÃO da dívida acima especificada, para nada mais
-reclamar em tempo algum, a qualquer título. «SE HOUVER GARANTIA HIPOTECÁRIA: A
-dívida ora quitada era garantida por hipoteca sobre o imóvel objeto da matrícula
-n. [MATRÍCULA] do [CARTÓRIO DE REGISTRO DE IMÓVEIS], registrada sob o n.
-[REGISTRO DA HIPOTECA], e o CREDOR AUTORIZA expressamente o CANCELAMENTO daquele
-registro, servindo esta escritura de título hábil para tanto, na forma do artigo
-1.500 do Código Civil.» «SE HOUVER ALIENAÇÃO FIDUCIÁRIA: A dívida ora quitada
-era garantida por alienação fiduciária sobre o imóvel objeto da matrícula n.
-[MATRÍCULA] do [CARTÓRIO DE REGISTRO DE IMÓVEIS], e o CREDOR requer o
-CANCELAMENTO do registro da propriedade fiduciária, com a consequente
-consolidação da propriedade plena em nome do fiduciante.» Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-DISTRATO",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de distrato",
         "natureza": "Distrato",
         "natureza_censec": 21,
         "tipo_ato_cep": 1,
@@ -2264,38 +1003,6 @@ consolidação da propriedade plena em nome do fiduciante.» Nada mais. A presen
             "Fazenda municipal antes de lavrar",
             "Declarar o que cada parte restitui, e dar quitacao reciproca",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público instrumento
-virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês de
-[MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia, perante
-mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram como DISTRATANTES
-{{ outorgantes }}, reconhecidos como os próprios por mim, tabelião, do que dou
-fé. <b>DO CONTRATO DESFEITO.</b> Declaram os DISTRATANTES que celebraram entre
-si {INSTRUMENTO: escritura pública de [NATUREZA DO CONTRATO DESFEITO], lavrada em
-[DATA DO CONTRATO], no Livro [LIVRO DO CONTRATO], folhas [FOLHAS DO CONTRATO],
-do [SERVENTIA DO CONTRATO] | instrumento particular de
-[NATUREZA DO CONTRATO DESFEITO], firmado em [DATA DO CONTRATO]}, tendo por
-objeto [OBJETO DO CONTRATO DESFEITO]. <b>DO DISTRATO.</b> E que, por este
-instrumento e na melhor forma de direito, de comum acordo e por mútuo
-consentimento, DISTRATAM aquele contrato, tornando-o sem nenhum efeito a partir
-desta data, na forma dos artigos 472 e 473 do Código Civil, e observada a mesma
-forma exigida para o contrato ora desfeito. <b>DAS RESTITUIÇÕES.</b>
-{RESTITUIÇÕES: Declaram os DISTRATANTES que nada há a restituir, por não ter
-havido execução do contrato | Em razão do distrato, [NOME DE QUEM RESTITUI]
-restitui a [NOME DE QUEM RECEBE] [O QUE É RESTITUÍDO], e
-[NOME DE QUEM DEVOLVE O VALOR] devolve a [NOME DE QUEM RECEBE O VALOR] a quantia
-de [VALOR RESTITUÍDO POR EXTENSO] ([VALOR RESTITUÍDO EM ALGARISMOS]), mediante
-[FORMA DA RESTITUIÇÃO]}. «SE HOUVER RETENÇÃO: Fica retida, a título de
-[TÍTULO DA RETENÇÃO], a quantia de [VALOR RETIDO POR EXTENSO]
-([VALOR RETIDO EM ALGARISMOS]), com o que os DISTRATANTES expressamente
-concordam.» <b>DA QUITAÇÃO RECÍPROCA.</b> Dão-se os DISTRATANTES, mutuamente,
-plena, geral e irrevogável quitação de todas as obrigações decorrentes do
-contrato ora desfeito, para nada mais reclamarem um do outro, em tempo algum, a
-qualquer título. «SE HOUVER REGISTRO A CANCELAR: Requerem os DISTRATANTES o
-cancelamento do registro n. [REGISTRO A CANCELAR] da matrícula n. [MATRÍCULA] do
-[CARTÓRIO DE REGISTRO DE IMÓVEIS], servindo esta escritura de título hábil para
-tanto.» Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     # =================================================== PESSOA E FAMÍLIA
@@ -2303,7 +1010,6 @@ tanto.» Nada mais. A presente escritura foi lida e achada conforme em todos os 
     {
         "codigo": "NT-ESC-EMANCIPACAO",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de emancipação",
         "natureza": "Emancipação",
         "natureza_censec": 23,
         "tipo_ato_cep": 1,
@@ -2323,41 +1029,11 @@ tanto.» Nada mais. A presente escritura foi lida e achada conforme em todos os 
             "90 e 91) — advertir as partes disso no ato",
             "O menor deve comparecer e ser ouvido",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público
-instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês
-de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia, perante
-mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram como OUTORGANTES
-{{ outorgantes }}, e, como OUTORGADO EMANCIPANDO, {{ outorgados }}, reconhecidos
-como os próprios por mim, tabelião, à vista dos documentos apresentados, do que
-dou fé. <b>DA FILIAÇÃO E DA IDADE.</b> Declaram os OUTORGANTES que são
-{FILIAÇÃO: os pais | o pai | a mãe} do EMANCIPANDO, nascido em
-[DATA DE NASCIMENTO DO EMANCIPANDO], portanto com dezesseis anos completos,
-conforme certidão de nascimento lavrada sob o termo n.
-[TERMO DO NASCIMENTO], no Livro [LIVRO DO NASCIMENTO], folhas
-[FOLHAS DO NASCIMENTO], do [SERVENTIA DO REGISTRO DE NASCIMENTO], que me foi
-apresentada e fica arquivada. «SE UM DOS PAIS: Consigna-se que a concessão é
-feita por um dos pais na falta do outro, pelo seguinte motivo:
-[MOTIVO DA FALTA DO OUTRO GENITOR].» <b>DA CONCESSÃO.</b> E, pelos OUTORGANTES,
-me foi dito que, por este instrumento e na melhor forma de direito, CONCEDEM AO
-EMANCIPANDO A EMANCIPAÇÃO, cessando para ele a incapacidade civil e a autoridade
-parental, na forma do artigo 5º, parágrafo único, I, do Código Civil,
-independentemente de homologação judicial. <b>DA MANIFESTAÇÃO DO
-EMANCIPANDO.</b> Ouvido por mim, tabelião, o EMANCIPANDO declarou estar ciente
-da emancipação ora concedida e de que passará a responder pessoalmente por seus
-atos da vida civil. <b>DA ADVERTÊNCIA SOBRE O REGISTRO.</b> FICAM AS PARTES
-EXPRESSAMENTE ADVERTIDAS por mim, tabelião, de que a presente emancipação
-SOMENTE PRODUZIRÁ EFEITO DEPOIS DE REGISTRADA no Registro Civil das Pessoas
-Naturais do domicílio do emancipado, no Livro E, com a devida anotação no assento
-de nascimento, na forma dos artigos 89, 90 e 91 da Lei n. 6.015, de 1973, razão
-pela qual devem apresentar o traslado desta escritura àquele ofício. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-PACTO-ANTENUPCIAL",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de pacto antenupcial",
         "natureza": "Pacto antenupcial",
         "natureza_censec": 30,
         "tipo_ato_cep": 1,
@@ -2378,52 +1054,11 @@ pela qual devem apresentar o traslado desta escritura àquele ofício. Nada mais
             "pacto nao pode afastar o regime imposto por lei",
             "O pacto e ANTEnupcial: lavrado antes do casamento",
         ],
-        "corpo": _corpo("""<p>Saibam quantos este público
-instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS]) dias do mês
-de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta
-cidade de {{ sv.ri_cidade }}, Estado do {{ sv.ri_uf }}, nesta serventia, perante
-mim, {{ lavrado_nome }}, {{ lavrado_titulo }}, compareceram como NUBENTES
-{{ outorgantes }}, reconhecidos como os próprios por mim, tabelião, à vista dos
-documentos apresentados, do que dou fé. <b>DO CASAMENTO PROJETADO.</b> Declaram
-os NUBENTES que pretendem contrair matrimônio {HABILITAÇÃO: perante o
-[SERVENTIA DA HABILITAÇÃO], onde correm os autos de habilitação n.
-[NÚMERO DA HABILITAÇÃO] | e que ainda promoverão a habilitação perante o
-registro civil competente}. <b>DO REGIME DE BENS ESCOLHIDO.</b> E, pelos
-NUBENTES, me foi dito que, por este instrumento e na melhor forma de direito,
-ESTIPULAM que o casamento será regido pelo regime da
-{REGIME: COMUNHÃO UNIVERSAL DE BENS, comunicando-se todos os bens presentes e
-futuros dos cônjuges e suas dívidas passivas, com as exceções do artigo 1.668 do
-Código Civil | SEPARAÇÃO TOTAL DE BENS, permanecendo cada cônjuge na exclusiva
-propriedade, posse e administração de seus bens presentes e futuros, e podendo
-livremente aliená-los ou gravá-los de ônus real, na forma do artigo 1.687 do
-Código Civil | PARTICIPAÇÃO FINAL NOS AQUESTOS, na forma dos artigos 1.672 a
-1.686 do Código Civil, cabendo a cada cônjuge, à dissolução da sociedade
-conjugal, direito à metade dos bens adquiridos pelo casal a título oneroso na
-constância do casamento | COMUNHÃO PARCIAL DE BENS, com as cláusulas
-complementares a seguir estipuladas}. <b>DAS CLÁUSULAS COMPLEMENTARES.</b>
-{COMPLEMENTOS: Nada mais estipulam os NUBENTES além do regime acima escolhido |
-Estipulam os NUBENTES, ainda, as seguintes cláusulas:
-[CLÁUSULAS COMPLEMENTARES ESTIPULADAS PELOS NUBENTES]}.
-«SE PARTICIPAÇÃO FINAL COM LIVRE DISPOSIÇÃO: Convencionam os NUBENTES, na forma
-do artigo 1.656 do Código Civil, a LIVRE DISPOSIÇÃO DOS BENS IMÓVEIS
-PARTICULARES, dispensada a outorga do outro cônjuge para a alienação ou o
-gravame desses bens.» «SE HOUVER BENS A DECLARAR: Declaram os NUBENTES que
-possuem, nesta data, os seguintes bens particulares:
-[RELAÇÃO DOS BENS PARTICULARES DE CADA NUBENTE].» <b>DAS ADVERTÊNCIAS.</b>
-FICAM OS NUBENTES EXPRESSAMENTE ADVERTIDOS por mim, tabelião, de que: o presente
-pacto SERÁ INEFICAZ SE NÃO LHE SEGUIR O CASAMENTO, na forma do artigo 1.653 do
-Código Civil; é NULA qualquer convenção ou cláusula que contravenha disposição
-absoluta de lei, na forma do artigo 1.655; e o pacto SOMENTE PRODUZ EFEITO
-PERANTE TERCEIROS depois de REGISTRADO em livro especial no Registro de Imóveis
-do domicílio dos cônjuges, na forma do artigo 1.657, razão pela qual devem
-apresentar o traslado desta escritura àquele ofício. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-DIRETIVAS-VONTADE",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de diretivas antecipadas de vontade",
         "natureza": "Diretivas antecipadas de vontade",
         "natureza_censec": 55,
         "tipo_ato_cep": 1,
@@ -2450,51 +1085,11 @@ apresentar o traslado desta escritura àquele ofício. Nada mais. A presente esc
             "O tabeliao NAO avalia o merito medico das diretrizes: colhe a "
             "declaracao de vontade de pessoa capaz",
         ],
-        "corpo": _corpo("""<p>Saibam quantos
-este público instrumento virem que, aos [DIA POR EXTENSO] ([DIA EM ALGARISMOS])
-dias do mês de [MÊS POR EXTENSO] do ano de [ANO POR EXTENSO]
-([ANO EM ALGARISMOS]), nesta cidade de {{ sv.ri_cidade }}, Estado do
-{{ sv.ri_uf }}, {LUGAR: nesta serventia | no endereço [ENDEREÇO DA LAVRATURA],
-para onde me desloquei a pedido do declarante}, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceu como DECLARANTE {{ outorgantes }}, reconhecido
-como o próprio por mim, tabelião, à vista dos documentos apresentados, do que dou
-fé. DOU FÉ de que o DECLARANTE se encontra em pleno gozo de suas faculdades
-mentais, orientado no tempo e no espaço, exprimindo sua vontade de forma livre,
-consciente e desembaraçada, sem qualquer sinal de coação ou indução. <b>DAS
-DIRETIVAS.</b> E, pelo DECLARANTE, me foi dito que, no exercício de sua
-autonomia e na forma do artigo 876 do Código de Normas, expressa as seguintes
-diretrizes e vontades sobre os cuidados e tratamentos de saúde que deseja, ou
-não, receber no momento em que estiver incapacitado de expressar-se de forma
-livre e autônoma: [DIRETRIZES E VONTADES SOBRE CUIDADOS E TRATAMENTOS DE SAÚDE].
-«SE RECUSA DE TRATAMENTO: Declara expressamente que NÃO DESEJA ser submetido aos
-seguintes procedimentos ou tratamentos: [PROCEDIMENTOS E TRATAMENTOS RECUSADOS],
-ainda que deles possa resultar prolongamento artificial da vida.»
-«SE CUIDADOS PALIATIVOS: Declara desejar receber cuidados paliativos voltados ao
-alívio da dor e do sofrimento, com [PREFERÊNCIAS QUANTO AOS CUIDADOS
-PALIATIVOS].» «SE DOAÇÃO DE ÓRGÃOS: Declara sua vontade quanto à doação de
-órgãos e tecidos nos seguintes termos: [VONTADE QUANTO À DOAÇÃO DE ÓRGÃOS],
-ciente de que a manifestação deve ser confirmada por sua família no momento
-oportuno, na forma da legislação vigente.» <b>DO PROCURADOR DE SAÚDE.</b>
-«SE NOMEAR PROCURADOR DE SAÚDE: Nomeia o DECLARANTE, na forma do artigo 877 do
-Código de Normas, como seu PROCURADOR DE SAÚDE,
-[NOME E QUALIFICAÇÃO DO PROCURADOR DE SAÚDE], para representá-lo perante médicos
-e instituições de saúde, COM O FIM ESPECÍFICO de dar fiel cumprimento às
-diretrizes ora estabelecidas, e não para qualquer outra finalidade.
-«SE HOUVER SUBSTITUTO: Nomeia, como procurador de saúde substituto, na falta ou
-impedimento do primeiro, [NOME E QUALIFICAÇÃO DO PROCURADOR SUBSTITUTO].»»
-<b>DAS DECLARAÇÕES FINAIS.</b> Declara o DECLARANTE que estas diretivas poderão
-ser por ele revogadas ou alteradas a qualquer tempo, enquanto capaz, por novo
-instrumento público. CONSIGNO que, na forma do artigo 880 do Código de Normas, a
-existência desta escritura será por mim comunicada, de forma OBRIGATÓRIA,
-GRATUITA E SIGILOSA, à Central Notarial de Serviços Eletrônicos Compartilhados,
-no módulo Registro Central de Disposições de Última Vontade. Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 
     {
         "codigo": "NT-ESC-USUFRUTO",
         "tipo": "ESCRITURA",
-        "nome": "Escritura pública de instituição, reserva ou renúncia de usufruto",
         "natureza": "Usufruto",
         "natureza_censec": 46,
         "tipo_ato_cep": 1,
@@ -2517,47 +1112,6 @@ no módulo Registro Central de Disposições de Última Vontade. Nada mais. A pr
             "distinto do registro da doacao",
             "Na CENSEC, a natureza 46 contempla reserva, instituicao E renuncia",
         ],
-        "corpo": _corpo("""<p>Saibam
-quantos este público instrumento virem que, aos [DIA POR EXTENSO]
-([DIA EM ALGARISMOS]) dias do mês de [MÊS POR EXTENSO] do ano de
-[ANO POR EXTENSO] ([ANO EM ALGARISMOS]), nesta cidade de {{ sv.ri_cidade }},
-Estado do {{ sv.ri_uf }}, nesta serventia, perante mim, {{ lavrado_nome }},
-{{ lavrado_titulo }}, compareceram: como NU-PROPRIETÁRIO, {{ outorgantes }}; e
-como USUFRUTUÁRIO, {{ outorgados }}; reconhecidos como os próprios por mim,
-tabelião, do que dou fé. <b>DO IMÓVEL.</b> Declaram as partes que o ato tem por
-objeto o imóvel a seguir descrito: [DESCRIÇÃO DO IMÓVEL CONFORME A MATRÍCULA],
-objeto da matrícula n. [MATRÍCULA] do [CARTÓRIO DE REGISTRO DE IMÓVEIS], havido
-conforme registro n. [NÚMERO DO REGISTRO ANTERIOR], ao qual as partes atribuem o
-valor de [VALOR DO IMÓVEL POR EXTENSO] ([VALOR DO IMÓVEL EM ALGARISMOS]).
-<b>DO ATO.</b> {ATO: E, por este instrumento e na melhor forma de direito, o
-NU-PROPRIETÁRIO INSTITUI em favor do USUFRUTUÁRIO o USUFRUTO
-{DURAÇÃO: VITALÍCIO | pelo prazo de [PRAZO DO USUFRUTO POR EXTENSO]
-([PRAZO DO USUFRUTO EM ALGARISMOS]) anos} sobre o imóvel acima descrito,
-ficando o USUFRUTUÁRIO com o direito de usar e fruir do bem, e o
-NU-PROPRIETÁRIO com a nua propriedade | E, por este instrumento e na melhor
-forma de direito, o USUFRUTUÁRIO RENUNCIA ao usufruto que lhe foi instituído
-conforme registro n. [REGISTRO DO USUFRUTO] da referida matrícula,
-consolidando-se a propriedade plena em favor do NU-PROPRIETÁRIO, na forma do
-artigo 1.410, I, do Código Civil}. <b>DAS CONDIÇÕES DO USUFRUTO.</b> «SE
-INSTITUIÇÃO: Fica o USUFRUTUÁRIO obrigado a conservar o imóvel como se seu
-fosse, a pagar as despesas ordinárias de conservação e os tributos que sobre ele
-recaiam, e a restituí-lo ao fim do usufruto no estado em que o recebeu, salvo as
-deteriorações do uso regular. FICAM AS PARTES CIENTES de que o usufruto NÃO SE
-TRANSFERE por alienação, podendo apenas o seu exercício ser cedido, na forma do
-artigo 1.393 do Código Civil.» «SE PESSOA JURÍDICA: Sendo o USUFRUTUÁRIO pessoa
-jurídica, o usufruto extinguir-se-á com ela, ou em TRINTA ANOS da data em que
-começar a exercê-lo, na forma do artigo 1.410, III, do Código Civil.» «SE
-MAIS DE UM USUFRUTUÁRIO: Sendo o usufruto instituído em favor de duas ou mais
-pessoas, {ACRESCIMO: extinguir-se-á parte a parte em relação a cada uma que
-falecer, na forma do artigo 1.411 do Código Civil | fica EXPRESSAMENTE
-ESTIPULADO que o quinhão do que falecer ACRESCERÁ ao do sobrevivente, na forma
-da parte final do artigo 1.411 do Código Civil}.» <b>DOS TRIBUTOS E DO
-REGISTRO.</b> Foi apresentado o comprovante de recolhimento do imposto devido,
-guia n. [NÚMERO DA GUIA DO IMPOSTO], recolhida em [DATA DO IMPOSTO]. Ficam as
-partes cientes de que o ato somente produz efeito depois de
-{ATO: REGISTRADO | CANCELADO o registro} no Registro de Imóveis competente.
-Nada mais. A presente escritura foi lida e achada conforme em todos os seus termos por todos comparecentes. Emolumentos e selo de fiscalização ao final do ato. Assinam o ato [ASSINANTES DO ATO E A CONDIÇÃO EM QUE ASSINAM]. Dou fé dos fatos constatados e dos documentos apresentados e após redigir, subscrever, assino em público e raso, encerrando o presente ato. Traslado emitido e entregue às partes após as assinaturas.</p>
-"""),
     },
 ]
 
@@ -2571,13 +1125,13 @@ def instalar(con, agora: str) -> dict:
         Entram com origem 'SISTEMA', que e o que o indice unico parcial
         `ux_nt_modelos_origem` cobre. Rodar duas vezes nao duplica.
 
-        O modelo que a serventia editar a mao passa a valer, e o INSERT OR
-        IGNORE nao o desfaz: o texto de quem lavra ganha do texto de fabrica.
+        O modelo que a serventia editar a mao passa a valer, e o ON CONFLICT
+        DO NOTHING nao o desfaz: o texto de quem lavra ganha do texto de fabrica.
 
     E O QUE JA ESTAVA INSTALADO SE ATUALIZA SOZINHO, SE NINGUEM O EDITOU —
     achado em 07/09/2026, ao ajustar o modelo da escritura ao padrao da
     minuta: a linha de `NT-ESC-COMPRA-VENDA-RURAL` tinha entrado em
-    17/08/2026, e o `INSERT OR IGNORE` a deixou parada ali, com o texto
+    17/08/2026, e o `ON CONFLICT DO NOTHING` a deixou parada ali, com o texto
     ANTIGO, enquanto o codigo ja tinha o novo — porque esta funcao so roda
     dentro da carga do acervo, e o oficial nao ia reimportar o acervo so
     para pegar um modelo mais novo. Ninguem tinha editado a linha — nao ha
@@ -2592,14 +1146,16 @@ def instalar(con, agora: str) -> dict:
     editado.
     """
     resultado = {"novos": 0, "ja_existentes": 0, "atualizados": 0}
-    for m in MODELOS:
-        cur = con.execute(
-            """INSERT OR IGNORE INTO nt_modelos
+    bd = banco(con)
+    for m in minutas():
+        novo = bd.escrever(
+            """INSERT INTO nt_modelos
                (codigo, tipo, nome, nome_norm, corpo, fundamento,
                 central_censec, natureza_censec, tipo_ato_censec,
                 tipo_cesdi, tipo_testamento, com_imovel, ativo,
                 origem, origem_chave, criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,'SISTEMA',?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1,'SISTEMA',%s,%s)
+               ON CONFLICT DO NOTHING RETURNING id""",
             (m["codigo"], m["tipo"], m["nome"],
              _norm_nome(m["nome"]), m["corpo"], m.get("fundamentacao"),
              "RCTO" if m.get("tipo_testamento") else
@@ -2607,13 +1163,14 @@ def instalar(con, agora: str) -> dict:
              m.get("natureza_censec"), m.get("tipo_ato_cep"),
              m.get("tipo_cesdi"), m.get("tipo_testamento"),
              m.get("com_imovel", 0), m["codigo"], agora))
-        if cur.rowcount:
+        if novo:
             resultado["novos"] += 1
             continue
-        linha = con.execute(
+        linha = bd.um(
             "SELECT corpo, fundamento, atualizado_em FROM nt_modelos "
-            "WHERE codigo=? AND origem='SISTEMA'", (m["codigo"],)).fetchone()
-        corpo_gravado, fundamento_gravado, editado_em = linha[0], linha[1], linha[2]
+            "WHERE codigo = %s AND origem = 'SISTEMA'", (m["codigo"],))
+        corpo_gravado, fundamento_gravado, editado_em = (
+            linha["corpo"], linha["fundamento"], linha["atualizado_em"])
         if editado_em is not None:
             resultado["ja_existentes"] += 1     # a serventia editou — intocado
             continue
@@ -2621,8 +1178,8 @@ def instalar(con, agora: str) -> dict:
                 (fundamento_gravado or None) == (m.get("fundamentacao") or None):
             resultado["ja_existentes"] += 1     # já está no que o código diz
             continue
-        con.execute(
-            "UPDATE nt_modelos SET corpo=?, fundamento=? WHERE codigo=?",
+        bd.escrever(
+            "UPDATE nt_modelos SET corpo = %s, fundamento = %s WHERE codigo = %s",
             (m["corpo"], m.get("fundamentacao"), m["codigo"]))
         resultado["atualizados"] += 1
     return resultado
@@ -2636,15 +1193,28 @@ def _norm_nome(texto: str) -> str:
 
 # ------------------------------------------------------------- utilidades
 
+def minutas() -> list[dict]:
+    """As minutas de fábrica, inteiras — o que é do código mais o nome e o
+    corpo, LIDOS DA BASE (LF06D). Só lê. Na ordem desta lista."""
+    import modelos_da_casa as MODELOS_DA_CASA
+    saida = []
+    for m in MINUTAS:
+        de_fabrica = MODELOS_DA_CASA.minuta_de_fabrica(m["codigo"])
+        saida.append({**m, "nome": de_fabrica["nome"], "corpo": de_fabrica["corpo"]})
+    return saida
+
+
 def por_codigo(codigo: str) -> dict | None:
-    for m in MODELOS:
+    for m in MINUTAS:
         if m["codigo"] == codigo:
-            return m
+            import modelos_da_casa as MODELOS_DA_CASA
+            de_fabrica = MODELOS_DA_CASA.minuta_de_fabrica(codigo)
+            return {**m, "nome": de_fabrica["nome"], "corpo": de_fabrica["corpo"]}
     return None
 
 
 def por_tipo(tipo: str) -> list[dict]:
-    return [m for m in MODELOS if m["tipo"] == tipo]
+    return [m for m in minutas() if m["tipo"] == tipo]
 
 
 # Um espaco antes de pontuacao, dois espacos seguidos, ou espaco logo depois de
@@ -2693,3 +1263,16 @@ def claros_restantes(texto: str) -> list[str]:
     achados += re.findall(r"\{([^{}]{2,300})\}", texto)
     achados += re.findall(r"«([^«»]{2,1500})»", texto, re.S)
     return [re.sub(r"\s+", " ", a).strip()[:120] for a in achados]
+
+
+def __getattr__(nome: str):
+    """`MODELOS` — o nome antigo da lista — continua respondendo, lido da base.
+
+    Até o LF06D (19/10/2026) ela trazia o corpo de cada minuta escrito aqui;
+    quem ainda a lê (a ferramenta do inventário, os testes) recebe as mesmas
+    minutas, com o corpo da base. Nome que não existe continua sendo
+    `AttributeError`.
+    """
+    if nome == "MODELOS":
+        return minutas()
+    raise AttributeError(f"module {__name__!r} has no attribute {nome!r}")

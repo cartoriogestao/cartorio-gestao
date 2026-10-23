@@ -11,6 +11,7 @@ import sqlite3
 from flask import request, session
 
 import ri_digi_prazo as DP
+from bd_nativo import banco
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
@@ -27,9 +28,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return vazio
         try:
             with db.connect() as con:
-                papel = con.execute("SELECT role FROM users WHERE id = ?",
-                                    (session.get("user_id"),)).fetchone()
-                e_admin = bool(papel and papel[0] == "ADMIN")
+                papel = banco(con).um("SELECT role FROM users WHERE id = %s",
+                                      (session.get("user_id"),))
+                e_admin = bool(papel and papel["role"] == "ADMIN")
                 if not (onde.startswith("ri_") or e_admin):
                     return vazio
                 todas = DP.pendentes(con)

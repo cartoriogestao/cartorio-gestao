@@ -63,6 +63,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from flask import flash, jsonify, redirect, render_template, request, send_file, url_for
 
@@ -74,6 +75,8 @@ import ajuda_base as BASE
 import ajuda_mapa as MAPA
 import ajuda_projeto as PROJ
 import ajuda_problemas as AP
+from bd_nativo import banco
+from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 from serventia import dados as dados_da_serventia
 
 
@@ -118,6 +121,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
     def gere_a_lista() -> bool:
         return str(papel_do_usuario() or "") in AP.PAPEIS_QUE_GEREM
+
+    def e_admin() -> bool:
+        return str(papel_do_usuario() or "").strip().upper() == "ADMIN"
     versao = app.config.get("VERSION") or ""
 
     def _campo(nome: str, padrao: str = "") -> str:
@@ -162,7 +168,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return redirect(url + (f"#problema-{int(problema_id)}"
                                if problema_id else ""))
 
-    def _mapa(con: sqlite3.Connection) -> dict:
+    def _mapa(con: Any) -> dict:
         """O mapa desta instalação, medido uma vez por processo.
 
         Nunca derruba tela: um mapa que não se mede é uma resposta mais pobre,
@@ -197,7 +203,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """
         try:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 texto = MAPA.resumo(_mapa(con), onde)
                 texto = (texto + "\n\n" + BASE.para_o_contexto(con))
                 if com_projeto or documento:
@@ -239,7 +244,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return vazio
         try:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 return {
                     "ajuda_liberada": AJ.pode_usar(con, papel_do_usuario()),
                     "ajuda_problemas_aqui": AP.da_tela(con, onde),
@@ -266,11 +270,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         onde_de_origem = (request.args.get("onde") or "").strip()
 
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             liberado = AJ.pode_usar(con, papel_do_usuario())
             acesso = AJ.situacao_do_acesso(con)
             quadro = AJ.contagem(con, hoje())
-            recentes = AJ.listar(con, limite=15) if liberado else []
+            # SÓ AS SUAS, menos para o ADMIN (LS03 M3): a pergunta de um
+            # colega não é assunto de outro, e a tela não pode mostrá-la.
+            recentes = (AJ.listar(con, limite=15, de=login_do_usuario(),
+                                  todas=e_admin()) if liberado else [])
             # QUEM RESPONDE, lido na conexão que já estava aberta: a tela diz
             # qual é o provedor e o modelo em vigor, e é por ELE que a chave é
             # conferida. Sem isto, a tela diria «há chave» com a chave de outro
@@ -313,7 +319,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         contexto=contexto, modelo=modelo,
                         pasta_de_dados=pasta_de_dados(), agora=agora(),
                         papel=papel_do_usuario(), usuario=usuario_nome(),
-                        conhecimento=conhecimento,
+                        conhecimento=conhecimento, login=login_do_usuario(),
                         # A RAIZ E O `app` VÃO JUNTO porque as ferramentas de
                         # leitura precisam deles: ler o código da casa parte da
                         # raiz do programa, e o mapa das telas sai do `app`.
@@ -342,13 +348,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 except Exception:
                     pass
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 quadro = AJ.contagem(con, hoje())
-                recentes = AJ.listar(con, limite=15) if liberado else []
+                recentes = (AJ.listar(con, limite=15, de=login_do_usuario(),
+                                      todas=e_admin()) if liberado else [])
 
         return render_template(
             "ajuda.html", liberado=liberado, acesso=acesso, quadro=quadro,
-            recentes=recentes, tem_chave=tem_chave, resposta=resposta,
+            recentes=recentes, todas=e_admin(), tem_chave=tem_chave,
+            resposta=resposta,
             previa=previa, pergunta=pergunta, assunto=assunto, onde=onde or "",
             assuntos=AJ.ASSUNTOS, escolha=escolha,
             # AS DUAS ESCOLHAS SÃO DO PROVEDOR EM USO, e não uma lista fixa: o
@@ -380,7 +387,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 pasta_de_dados=pasta_de_dados(), agora=agora(),
                 papel=papel_do_usuario(), usuario=usuario_nome(),
                 conhecimento=conhecimento_da_tela(onde),
-                raiz=Path(app.root_path), app=app, versao=versao)
+                raiz=Path(app.root_path), app=app, versao=versao,
+                login=login_do_usuario())
         except (AJ.AjudaError, PROV.AgenteError) as erro:
             return jsonify({"ok": False, "erro": str(erro)}), 200
         except Exception:
@@ -399,9 +407,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/ajuda/<int:consulta_id>")
     @login_required
     def ajuda_consulta(consulta_id: int):
-        """Uma consulta como ela foi — o que saiu e o que voltou."""
+        """Uma consulta como ela foi — o que saiu e o que voltou.
+
+        SÓ DO DONO E DO ADMIN (LS03 M3): o número é sequencial, e quem tem a
+        ajuda liberada abria a consulta de qualquer colega trocando o número
+        no endereço. A recusa diz o mesmo que «não encontrada» — dizer «é de
+        outra pessoa» confirmaria que o número existe.
+        """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             if not AJ.pode_usar(con, papel_do_usuario()):
                 flash("A ajuda do sistema não está liberada para o seu perfil.",
                       "danger")
@@ -412,6 +425,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 # perfil errado; agora ha um.
                 return redirect(url_for("dashboard"))
             linha = AJ.ler(con, consulta_id)
+        if linha and not AJ.pode_ver(linha, papel=papel_do_usuario(),
+                                     login=login_do_usuario()):
+            linha = None
         if not linha:
             flash("Consulta não encontrada.", "danger")
             return redirect(url_for("ajuda_consultar"))
@@ -434,6 +450,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         try:
             with db.transaction() as con:
                 AJ.exigir_permissao(con, papel_do_usuario())
+                # A MESMA RÉGUA DA TELA DA CONSULTA: quem não a vê não a avalia.
+                alvo = AJ.ler(con, consulta_id)
+                if alvo and not AJ.pode_ver(alvo, papel=papel_do_usuario(),
+                                            login=login_do_usuario()):
+                    raise AJ.AjudaError(f"Consulta {consulta_id} não encontrada.")
                 AJ.avaliar(con, consulta_id, util=_campo("util") == "1",
                            observacao=_campo("observacao") or None)
         except AJ.AjudaError as erro:
@@ -450,9 +471,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """Alguém do balcão conta que algo deu errado. ESCREVE.
 
         NÃO PASSA PELA LISTA DE PERFIS, e não é esquecimento: anotar problema
-        não gasta e não manda nada para fora. Quem topa com o defeito é o
-        balcão, e o balcão não pode ficar sem poder avisar por causa de uma
+        não gasta e, NA HORA, não manda nada para fora. Quem topa com o defeito
+        é o balcão, e o balcão não pode ficar sem poder avisar por causa de uma
         regra que existe para outra coisa.
+
+        DEPOIS, PODE SAIR (LS03 B4): quando quem gere a lista pede a leitura
+        da ajuda, o título e o detalhe vão ao provedor de IA, pela barreira de
+        privacidade. A janela dizia «nada é enviado para fora», e isso deixou
+        de ser verdade no dia em que o diagnóstico passou a existir.
 
         E defeito que NÃO estoura o programa — o botão que não faz nada, o
         número que sai errado — é justamente o que máquina nenhuma percebe
@@ -527,15 +553,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         so_meus = (not gere) or request.args.get("meus") == "1"
         dono = login_do_usuario() if so_meus else None
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             AP.init_problemas_schema(con)
             exibir_badge_ambiente = AP.banco_e_sandbox(con)
             problemas = AP.listar(
                 con, situacao=AP.VISTAS[vista]["situacoes"],
                 criado_por=dono, ambiente_filtro=ambiente_filtro)
             quadro = AP.contagem(con, criado_por=dono)
-            relatorios = ([dict(r) for r in con.execute(
-                """SELECT * FROM aj_relatorios ORDER BY id DESC LIMIT 10""")]
+            relatorios = (banco(con).ler(
+                """SELECT * FROM aj_relatorios ORDER BY id DESC LIMIT 10""")
                 if gere else [])
             liberado = gere and AJ.pode_usar(con, papel_do_usuario())
             escolha = AJ.escolha_para_tela(con)
@@ -556,6 +581,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             ambiente_filtro=ambiente_filtro,
             ambientes_filtro=AP.AMBIENTES_FILTRO,
             params_url_lista_problemas=AP.params_url_lista_problemas,
+            le_com_banco=e_admin(),
+            # o traceback é de quem gere (22/10/2026, M14); o balcão vê o título
+            ve_detalhe=gere,
             tem_chave=PROV.tem_chave(pasta_de_dados(), escolha["provedor"]))
 
     @app.route("/ajuda/problemas/conferir", methods=["POST"])
@@ -572,7 +600,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         disputas = db.disputas_de_escrita()
         banco = db.conferencia_do_banco()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             achados = AP.conferir_a_casa(con, agora=quando,
                                          disputas=disputas, banco=banco)
         with db.transaction() as con:
@@ -607,7 +634,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         gere = gere_a_lista()
         if not gere:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 alvo = AP.ler(con, problema_id)
             if acao != "reabrir" or not alvo or not AP.pode_reabrir(
                     alvo, papel=papel_do_usuario(), login=login_do_usuario()):
@@ -656,7 +682,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """
         pedido = (request.args.get("documento") or "").strip()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             resumo = PROJ.resumo(con, versao=versao)
             texto = PROJ.para_a_consulta(con, versao=versao,
                                          documento_pedido=pedido)
@@ -683,9 +708,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         pedido = request.args.get("editar") or ""
         procura = (request.args.get("procurar") or "").strip()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             quadro = BASE.para_a_tela(con)
-            em_edicao = BASE.verbete(con, int(pedido)) if pedido.isdigit() else None
+            numero = numero_digitado(pedido)
+            em_edicao = BASE.verbete(con, numero) if numero is not None else None
             achado = (BASE.buscar_em_tudo(procura, con=con) if procura else "")
             # AS LINHAS QUE VÃO EM TODA PERGUNTA, medidas aqui dentro — a
             # conexão morre ao sair do `with`, e a tela não pode montá-las
@@ -709,10 +734,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         errado não fica no caderno de quem o escreveu — fica na resposta que o
         balcão vai receber como «a casa decidiu assim».
         """
-        id_ = int(_campo("id") or 0)
+        # O id que não é número não vira «verbete novo» (o vazio é que é):
+        # é o mesmo «não existe» da edição de um número apagado (LD13).
+        id_ = numero_digitado(_campo("id") or "0")
+        if id_ is None:
+            flash("Este verbete não existe — confira o número antes de gravar.",
+                  "danger")
+            return redirect(url_for("ajuda_base"))
         try:
             with db.transaction() as con:
-                con.row_factory = sqlite3.Row
                 alvo = BASE.gravar_verbete(
                     con, titulo=_campo("titulo"), texto=request.form.get("texto") or "",
                     assunto=_campo("assunto"), onde=_campo("onde"),
@@ -735,7 +765,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         tabela.
         """
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             antes = BASE.verbete(con, verbete_id)
         if not antes:
             flash("Esse verbete não existe mais — ele pode ter sido apagado "
@@ -775,7 +804,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash("Nem arquivo nem texto — não havia o que importar.", "warning")
             return redirect(url_for("ajuda_problemas"))
         with db.transaction() as con:
-            con.row_factory = sqlite3.Row
             r = AP.importar_notas(con, texto, agora=agora(),
                                   por=usuario_nome())
         if r["quantas"]:
@@ -828,7 +856,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """
         try:
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 mapa = _mapa(con)
             resultado = AP.diagnosticar(
                 db, problema_id, pasta_de_dados=pasta_de_dados(),
@@ -843,7 +870,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 # decisao do oficial e ler no escuro.
                 conhecimento=conhecimento_da_tela(
                     _campo("onde") or None, com_projeto=True,
-                    documento=_campo("documento")), mapa=mapa)
+                    documento=_campo("documento")), mapa=mapa,
+                login=login_do_usuario())
         except (AP.ProblemaError, AJ.AjudaError, PROV.AgenteError) as erro:
             flash(str(erro), "danger")
             return _volta_para_a_lista(problema_id)
@@ -851,6 +879,40 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               {"codigo": resultado.get("codigo")})
         flash("A ajuda leu o problema. A leitura é conselho — confira antes "
               "de mexer.", "success")
+        return _volta_para_a_lista(problema_id)
+
+    @app.route("/ajuda/problemas/<int:problema_id>/ler-com-banco",
+               methods=["POST"])
+    @roles_required("ADMIN")
+    def ajuda_problema_ler_com_banco(problema_id: int):
+        """A leitura do problema COM o banco e o código. Só do ADMIN.
+
+        A leitura comum (`ajuda_problema_diagnosticar`) roda com o catálogo do
+        balcão, porque o relato é escrito por qualquer login (LS03 A3). Esta é
+        a ação à parte: o ADMIN a pede para UM problema, sabendo que o texto
+        do relato vai junto e que o que o modelo escrever volta à lista de
+        quem relatou. Por isso ela é um botão próprio, e não o comportamento
+        de sempre. FALA COM A REDE.
+        """
+        try:
+            with db.connect() as con:
+                mapa = _mapa(con)
+            resultado = AP.diagnosticar(
+                db, problema_id, pasta_de_dados=pasta_de_dados(),
+                agora=agora(), papel=papel_do_usuario(),
+                usuario=usuario_nome(),
+                raiz=Path(app.root_path), app=app, versao=versao,
+                conhecimento=conhecimento_da_tela(
+                    _campo("onde") or None, com_projeto=True,
+                    documento=_campo("documento")), mapa=mapa,
+                login=login_do_usuario(), com_banco=True)
+        except (AP.ProblemaError, AJ.AjudaError, PROV.AgenteError) as erro:
+            flash(str(erro), "danger")
+            return _volta_para_a_lista(problema_id)
+        audit("AJUDA_PROBLEMA_LIDO_COM_BANCO", "aj_problemas", problema_id,
+              {"codigo": resultado.get("codigo")})
+        flash("A ajuda leu o problema com o banco e o código. A leitura é "
+              "conselho — confira antes de mexer.", "success")
         return _volta_para_a_lista(problema_id)
 
     @app.route("/ajuda/problemas/relatorio", methods=["POST"])
@@ -870,7 +932,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         disputas = db.disputas_de_escrita()
         banco = db.conferencia_do_banco()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             # A RÉGUA DE «EM ABERTO» É A MESMA DA LISTA — `em_aberto`, e não
             # um `!= 'RESOLVIDO'` escrito aqui. Escrita de dois jeitos, as
             # duas concordavam em quase tudo e discordavam exatamente no caso
@@ -932,7 +993,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("ajuda_configurar"))
 
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             acesso = AJ.situacao_do_acesso(con)
             quadro = AJ.contagem(con, hoje())
             historicas = AJ.historicas_sem_protecao(con, limite=20)

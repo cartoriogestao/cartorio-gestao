@@ -1,0 +1,1 @@
+CERTIFICO {pedido}, que revendo em meu Cartório, os livros de Registros de Protestos de Letras e Outros Títulos, a partir do ano de {ano_por_extenso} até a presente data, neles encontrei protesto contra {nome}{inscrito}.

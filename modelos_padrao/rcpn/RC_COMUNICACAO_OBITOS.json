@@ -1,0 +1,22 @@
+{
+  "chave": "RC_COMUNICACAO_OBITOS",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Comunicação mensal de óbitos",
+  "formato": "CHAVES",
+  "explica": "A relação dos óbitos lavrados no mês, mandada a cada um dos cinco destinos — os quatro do art. 226 do Código de Normas e a Junta de Serviço Militar. Congela com o hash quando a comunicação é registrada como enviada; a relação é montada pelo sistema, uma linha por óbito, com as frases que são peças deste papel.",
+  "campos": [
+    "serventia_nome",
+    "cidade",
+    "uf",
+    "competencia",
+    "destinatario",
+    "fundamento",
+    "finalidade",
+    "aviso",
+    "relacao",
+    "quantos",
+    "quantos_no_mes",
+    "registrador",
+    "titulo"
+  ]
+}

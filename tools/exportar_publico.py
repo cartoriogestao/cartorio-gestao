@@ -63,12 +63,17 @@ RAIZ = Path(__file__).resolve().parent.parent
 SEMENTES_DO_APP = ("app",)
 PASTAS = ("templates", "static", "tests", "tools", "installer", "modelos",
           "modelos_papeis", "schemas", "ci", ".github", "docs",
+          # O TEXTO DE FÁBRICA DOS PAPÉIS (LF06A, 19/10/2026): saiu do código
+          # para esta pasta, e sem ela a instalação nova não tem padrão nenhum.
+          "modelos_padrao",
           # A EXTENSÃO DO NAVEGADOR DO CCN (15/10/2026): sem ela o envio ao
           # CCN e a consulta não funcionam em outra serventia. Entra só a
           # extensão; o README e o contrato ficam (ver FORA_POR_DECISAO).
           "ccn_assistente")
 ARQUIVOS_DE_PROJETO = ("README.md", "requirements.txt", "requirements-build.txt",
                        "VERSAO.txt", ".gitignore", ".gitleaks.toml",
+                       # a pasta dos padrões vai byte a byte (LF06A)
+                       ".gitattributes",
                        ".env.example", "LICENSE", "LICENSE.md", "pyproject.toml",
                        # OS PONTOS DE ENTRADA DA INSTALAÇÃO (B5, 11/10/2026): o
                        # `installer/INSTALAR_SERVIDOR.cmd` chama o da raiz, e a

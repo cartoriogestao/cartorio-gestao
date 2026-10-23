@@ -35,6 +35,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+
+from bd_nativo import banco
 from typing import Any
 
 import centrais_cred as CRED
@@ -235,16 +237,16 @@ def candidatos(con: sqlite3.Connection, *, limite: int = 200) -> list[dict]:
     que esperam a chave, ficavam fora da lista.
     """
     que_nao_vao = sorted(SITUACOES_QUE_NAO_VAO)
-    marcas = ",".join("?" for _ in que_nao_vao)
-    linhas = con.execute(
+    marcas = ",".join("%s" for _ in que_nao_vao)
+    linhas = banco(con).ler(
         f"""SELECT t.*, d.nome AS devedor_nome,
                    d.documento_numero AS devedor_documento
               FROM pt_titulos t
               LEFT JOIN pt_devedores d ON d.titulo_id = t.id
              ORDER BY CASE WHEN UPPER(COALESCE(t.situacao, ''))
                                 IN ({marcas}) THEN 1 ELSE 0 END,
-                      t.id DESC
-             LIMIT ?""", [*que_nao_vao, int(limite)]).fetchall()
+                      t.id DESC, d.id
+             LIMIT %s""", [*que_nao_vao, int(limite)])
     return [_classificar(dict(linha)) for linha in linhas]
 
 
@@ -265,14 +267,14 @@ def quantos_podem_ir(con: sqlite3.Connection) -> dict:
     Um devedor por título na conta: a junção com `pt_devedores` repetiria o
     título que tem dois devedores, e o número deixaria de ser de títulos.
     """
-    linhas = con.execute(
+    linhas = banco(con).ler(
         """SELECT t.id, t.situacao, t.chave_cenprot, t.protocolo,
                   t.numero_titulo,
                   (SELECT d.nome FROM pt_devedores d
                     WHERE d.titulo_id = t.id ORDER BY d.id LIMIT 1)
                       AS devedor_nome
              FROM pt_titulos t
-            ORDER BY t.id DESC""").fetchall()
+            ORDER BY t.id DESC""")
     todos = [_classificar(dict(linha)) for linha in linhas]
     elegiveis = [x for x in todos if x["elegivel"]]
     sem_chave = [x for x in elegiveis if x["falta_chave"]]
@@ -295,9 +297,9 @@ def _quantos_enviados(con: sqlite3.Connection) -> int:
     """As intimações mandadas em PRODUÇÃO — as de homologação e testes que
     ficaram no banco não contam desde 14/10/2026."""
     try:
-        return int(con.execute(
-            "SELECT COUNT(*) FROM rs_intimacoes WHERE ambiente = ?",
-            (CRED.PRODUCAO,)).fetchone()[0])
+        return int(banco(con).valor(
+            "SELECT COUNT(*) AS n FROM rs_intimacoes WHERE ambiente = %s",
+            (CRED.PRODUCAO,)))
     except sqlite3.Error:
         return 0
 
@@ -333,20 +335,21 @@ def enviar(db, titulo_ids: Any, *, ambiente: Any = None, quem: str = "",
             "Nenhum título foi marcado. Marque os que devem ser intimados.")
 
     with db.transaction() as con:
-        con.row_factory = sqlite3.Row
-        marcadores = ",".join("?" for _ in ids)
-        linhas = con.execute(
+        bd = banco(con)
+        marcadores = ",".join("%s" for _ in ids)
+        linhas = bd.ler(
             f"""SELECT t.*, d.nome AS devedor_nome,
                        d.documento_numero AS devedor_documento,
                        d.endereco AS d_endereco, d.bairro AS d_bairro,
                        d.cep AS d_cep, d.cidade AS d_cidade, d.uf AS d_uf
                   FROM pt_titulos t
                   LEFT JOIN pt_devedores d ON d.titulo_id = t.id
-                 WHERE t.id IN ({marcadores})""", ids).fetchall()
-        ja = {int(r[0]): int(r[1]) for r in con.execute(
-            f"""SELECT titulo_id, COUNT(*) FROM rs_intimacoes
-                 WHERE ambiente = ? AND titulo_id IN ({marcadores})
-                 GROUP BY titulo_id""", [qual, *ids]).fetchall()}
+                 WHERE t.id IN ({marcadores})
+                 ORDER BY t.id, d.id""", ids)
+        ja = {int(r["titulo_id"]): int(r["n"]) for r in bd.ler(
+            f"""SELECT titulo_id, COUNT(*) AS n FROM rs_intimacoes
+                 WHERE ambiente = %s AND titulo_id IN ({marcadores})
+                 GROUP BY titulo_id""", [qual, *ids])}
 
     if not linhas:
         raise IntimacaoDigitalError("Não achei os títulos marcados.")
@@ -381,20 +384,22 @@ def enviar(db, titulo_ids: Any, *, ambiente: Any = None, quem: str = "",
     texto = json.dumps(resposta, ensure_ascii=False)[:4000]
     gravadas = 0
     with db.transaction() as con:
+        bd = banco(con)
         for corpo in lote:
             ident = corpo["identificador"]
             titulo_id, titulo = por_identificador[ident]
-            cur = con.execute(
-                """INSERT OR IGNORE INTO rs_intimacoes
+            bd.escrever(
+                """INSERT INTO rs_intimacoes
                        (titulo_id, ambiente, lote_id, intimacao_id,
                         identificador, teor, resumo, enviada_em, enviada_por,
                         resposta)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT DO NOTHING""",
                 (titulo_id, qual, lote_id or None,
                  devolvidas.get(ident) or None, ident,
                  json.dumps(corpo, ensure_ascii=False),
                  _resumo(corpo, titulo), agora, quem or None, texto))
-            if cur.rowcount:
+            if bd.linhas_afetadas:
                 gravadas += 1
     return {"ambiente": qual, "mandadas": len(lote), "gravadas": gravadas,
             "lote_id": lote_id, "resposta": resposta}
@@ -416,26 +421,27 @@ def abertas(con: sqlite3.Connection, *, ambiente: Any = None,
     """As intimações que esta casa mandou. SÓ LÊ."""
     onde, args = "", []
     if ambiente:
-        onde = "WHERE i.ambiente = ?"
+        onde = "WHERE i.ambiente = %s"
         args.append(str(ambiente).strip().upper())
-    linhas = con.execute(
+    linhas = banco(con).ler(
         f"""SELECT i.*, t.numero_titulo, t.protocolo, t.situacao
               FROM rs_intimacoes i
               JOIN pt_titulos t ON t.id = i.titulo_id
               {onde}
-             ORDER BY i.id DESC LIMIT ?""", [*args, int(limite)]).fetchall()
+             ORDER BY i.id DESC LIMIT %s""", [*args, int(limite)])
     return [dict(x) for x in linhas]
 
 
 def uma(con: sqlite3.Connection, intimacao_id: int) -> dict | None:
     """Uma intimação desta casa, com o título ao lado. SÓ LÊ."""
-    linha = con.execute(
+    linha = banco(con).um(
         """SELECT i.*, t.numero_titulo, t.protocolo, t.situacao,
                   t.valor_centavos, d.nome AS devedor_nome
              FROM rs_intimacoes i
              JOIN pt_titulos t ON t.id = i.titulo_id
              LEFT JOIN pt_devedores d ON d.titulo_id = t.id
-            WHERE i.id = ?""", (int(intimacao_id),)).fetchone()
+            WHERE i.id = %s
+            ORDER BY d.id LIMIT 1""", (int(intimacao_id),))
     if linha is None:
         return None
     fora = dict(linha)
@@ -480,7 +486,6 @@ def avisar(db, intimacao_id: int, qual: str, *, quem: str = "",
             f"Não sei avisar «{acao}». Sei: "
             + ", ".join(AVISOS_A_CENTRAL) + ".")
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
         item = uma(con, intimacao_id)
     if item is None:
         raise IntimacaoDigitalError("Essa intimação não existe nesta casa.")
@@ -497,9 +502,9 @@ def avisar(db, intimacao_id: int, qual: str, *, quem: str = "",
 
     agora = db.now()
     with db.transaction() as con:
-        con.execute(
-            """UPDATE rs_intimacoes SET estado = ?, estado_em = ?
-                WHERE id = ?""", (estado, agora, int(intimacao_id)))
+        banco(con).escrever(
+            """UPDATE rs_intimacoes SET estado = %s, estado_em = %s
+                WHERE id = %s""", (estado, agora, int(intimacao_id)))
     return {"id": int(intimacao_id), "estado": estado, "o_que": o_que,
             "resposta": resposta}
 
@@ -515,12 +520,11 @@ def atualizar_estados(db, *, ambiente: Any = None, quem: str = "",
     # SÓ PRODUÇÃO desde 14/10/2026 (até 13/10 o padrão daqui era `TESTES`).
     qual = CRED.ambiente_de_uso(CRED.RESOLVE, ambiente)
     with db.connect() as con:
-        con.row_factory = sqlite3.Row
-        fila = [dict(x) for x in con.execute(
+        fila = banco(con).ler(
             """SELECT id, intimacao_id, identificador FROM rs_intimacoes
-                WHERE ambiente = ? AND COALESCE(intimacao_id,'') <> ''
-                ORDER BY COALESCE(estado_em,'') ASC LIMIT ?""",
-            (qual, int(limite))).fetchall()]
+                WHERE ambiente = %s AND COALESCE(intimacao_id,'') <> ''
+                ORDER BY COALESCE(estado_em,'') ASC, id LIMIT %s""",
+            (qual, int(limite)))
 
     olhadas, mudaram, falhas = 0, 0, []
     agora = db.now()
@@ -533,14 +537,15 @@ def atualizar_estados(db, *, ambiente: Any = None, quem: str = "",
         olhadas += 1
         estado = str((resposta or {}).get("status") or "").strip().upper()
         with db.transaction() as con:
-            cur = con.execute(
+            bd = banco(con)
+            bd.escrever(
                 """UPDATE rs_intimacoes
-                      SET estado = ?, estado_em = ?, historico = ?
-                    WHERE id = ? AND COALESCE(estado,'') <> ?""",
+                      SET estado = %s, estado_em = %s, historico = %s
+                    WHERE id = %s AND COALESCE(estado,'') <> %s""",
                 (estado or None, agora,
                  json.dumps(resposta, ensure_ascii=False)[:4000],
                  item["id"], estado or ""))
-            if cur.rowcount:
+            if bd.linhas_afetadas:
                 mudaram += 1
     return {"ambiente": qual, "olhadas": olhadas, "mudaram": mudaram,
             "falhas": falhas}

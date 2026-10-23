@@ -224,6 +224,8 @@ def configurar(*, ambiente: str = PRODUCAO, pasta=None, id_parceiro=None, chave=
     tudo[ambiente] = d
     destino = caminho_da_credencial(pasta)
     destino.write_text(json.dumps(tudo, ensure_ascii=False), encoding="utf-8")
+    import centrais_cred as _CRED
+    _CRED._so_do_servico(destino)          # a ACL na hora (22/10/2026, M6)
     return destino
 
 
@@ -579,6 +581,8 @@ def main(argv=None) -> int:
         tudo.setdefault(a.ambiente, {})["hash_maiusculas"] = s.maiusculas
         caminho_da_credencial().write_text(json.dumps(tudo, ensure_ascii=False),
                                            encoding="utf-8")
+        import centrais_cred as _CRED
+        _CRED._so_do_servico(caminho_da_credencial())
         print("hash em", "MAIÚSCULAS" if s.maiusculas else "minúsculas", "(gravado)")
     return 0
 

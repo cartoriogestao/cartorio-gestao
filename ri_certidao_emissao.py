@@ -2,6 +2,8 @@
 from __future__ import annotations
 from typing import Any, Callable
 
+from bd_nativo import banco
+
 _contexto_ficha: Callable[..., dict] | None = None
 _corpo_certidao: Callable[..., str] | None = None
 _app = None
@@ -54,7 +56,7 @@ def teor_precisa_remontar_modelo(corpo: str | None) -> bool:
 def remontar_corpo_gravado(con, certidao_id: int, *, data_dir, agora: str) -> dict[str, Any]:
     from ri_schema import hash_certidao
     garantir_registrado(data_dir)
-    row = con.execute("SELECT * FROM ri_certidoes WHERE id=?", (int(certidao_id),)).fetchone()
+    row = banco(con).um("SELECT * FROM ri_certidoes WHERE id=%s", (int(certidao_id),))
     if not row:
         raise ValueError("Certidao nao encontrada.")
     linha = dict(row)
@@ -81,5 +83,6 @@ def remontar_corpo_gravado(con, certidao_id: int, *, data_dir, agora: str) -> di
     corpo = montar_corpo(matricula_id, tipo, certidao_numero=numero, data_dir=data_dir)
     data_emissao = str(linha["data_emissao"] or agora[:10])
     h = hash_certidao(numero, ano, tipo, matricula_numero, corpo, data_emissao)
-    con.execute("UPDATE ri_certidoes SET corpo=?, hash_certidao=? WHERE id=?", (corpo, h, int(certidao_id)))
+    banco(con).escrever("UPDATE ri_certidoes SET corpo=%s, hash_certidao=%s WHERE id=%s",
+                        (corpo, h, int(certidao_id)))
     return {"certidao_id": int(certidao_id), "atualizado": True, "corpo_len": len(corpo)}

@@ -1,0 +1,21 @@
+{
+  "chave": "NOTAS_LIVRO_ABERTURA",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Termo de abertura do livro de notas",
+  "formato": "CHAVES",
+  "explica": "O termo de abertura (Lei 8.935/1994, art. 30, I): o que o livro é, quantas folhas tem e quem responde. Gravado no livro ao abrir — o termo já lavrado não muda. O nome de cada série é peça deste papel.",
+  "campos": [
+    "numero",
+    "serie",
+    "folhas",
+    "primeira",
+    "ultima",
+    "serventia",
+    "cns",
+    "cidade",
+    "uf",
+    "data_extenso",
+    "titular",
+    "titulo"
+  ]
+}

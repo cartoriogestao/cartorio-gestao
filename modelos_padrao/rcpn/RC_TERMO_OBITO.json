@@ -1,0 +1,29 @@
+{
+  "chave": "RC_TERMO_OBITO",
+  "atribuicao": "Registro Civil das Pessoas Naturais",
+  "nome": "Termo de óbito",
+  "formato": "CHAVES",
+  "explica": "O texto do Livro C.",
+  "campos": [
+    "data_ato_extenso",
+    "cidade_do_ato",
+    "declarante_qualificacao",
+    "data_fato_extenso",
+    "frase_hora",
+    "local_do_fato",
+    "falecido_qualificacao",
+    "frase_filiacao",
+    "frase_estado_civil",
+    "frase_causa",
+    "frase_sepultamento",
+    "frase_eleitor",
+    "frase_testamento",
+    "frase_filhos",
+    "frase_deixou_bens",
+    "frase_identificacao",
+    "frase_declaracao_de_obito",
+    "frase_ignorados",
+    "escrevente",
+    "funcao_do_escrevente"
+  ]
+}

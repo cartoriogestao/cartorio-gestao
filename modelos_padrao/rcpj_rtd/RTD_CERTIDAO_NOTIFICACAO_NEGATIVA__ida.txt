@@ -1,0 +1,1 @@
+{ordem}ª em {data}, às {hora} ({resultado})

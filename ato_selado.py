@@ -65,17 +65,21 @@ from __future__ import annotations
 
 import nome_humano as NOMEHUM
 
+import logging
 import sqlite3
 from typing import Any
 
 import atribuicoes as ATR
 import custas as CU
+from bd_nativo import banco
 
 # `selador` E O CONTRATO, e entra aqui para CONFERIR o caminho composto do
 # civil em vez de confiar nele. No topo porque `caminho_do_civil` e
 # chamada de tela, e nao so de quem sela.
 import selador
 import selo as SELO
+
+_LOG = logging.getLogger(__name__)
 
 # As tabelas de ato que este modulo sabe selar. E lista fechada de proposito:
 # escrever selo numa tabela que nao e de ato seria gravar em qualquer lugar.
@@ -168,6 +172,17 @@ TABELAS_DE_ATO: dict[str, str] = {
     #   Esta entrada vira a quinta. O conserto e de uma linha e e naquele
     #   modulo, que nao e o desta passada: declarado ao oficial.
     "ri_matriculas": "Registro de Imóveis — abertura de matrícula",
+    # OS ATOS DO LG04 (19/10/2026), cada um com `selo` e `lancamento_id`, pela
+    # razão das certidões acima: nenhum mora em `rg_atos` nem em `nt_atos`. A
+    # diligência da notificação é selo por destinatário e por ida (15.8.1); a
+    # certidão dela, outro (15.8.2); a autenticação do livro contábil, a
+    # pública forma e a comunicação de venda de veículo (13.22) são atos de
+    # balcão sem livro de ato.
+    "rg_notificacao_diligencias": "RTD — diligência de notificação",
+    "rg_notificacao_certidoes": "RTD — certidão de notificação",
+    "rg_livros_contabeis": "RCPJ — autenticação de livro",
+    "nt_publicas_formas": "Notas — pública forma",
+    "nt_comunicacoes_veiculo": "Notas — comunicação de venda de veículo",
 }
 
 
@@ -1220,7 +1235,8 @@ def envelope_do_rtdpj(*, caminho: Any, codigo_tj: Any, escrevente: Any,
                       natureza_tipo: Any = 0, livro: Any = None,
                       folha: Any = None, protocolo: Any = None,
                       registro_averbacao: Any = None,
-                      quantidade: Any = 1) -> dict:
+                      quantidade: Any = 1, isento: bool = False,
+                      motivo_isencao: Any = None) -> dict:
     """O que vai dentro do pedido de selo do RCPJ/RTD. So calcula.
 
     Dois formatos, pelo caminho:
@@ -1230,6 +1246,14 @@ def envelope_do_rtdpj(*, caminho: Any, codigo_tj: Any, escrevente: Any,
     O PROTOCOLO NA AVERBACAO ESPECIFICA E OBRIGATORIO no schema. Sem ele, esta
     funcao recusa — quem chama decide cair no caminho generico ou deixar o
     ato sem selo. Inventar protocolo aqui seria o mesmo vicio do selo inventado.
+
+    O ATO GRATUITO LEVA `isento` (LD05, 21/10/2026) — CN-MA art. 133: o ato
+    isento ou gratuito tem selo de categoria propria, e sem este campo o
+    RTD/RCPJ nao tinha como lavrar um. E a forma `DadosIsento` do AtosEmGeral
+    (`selador.CAMPOS_ISENTO`: value + motivo), a mesma do arquivamento do RI e
+    das Notas, com o motivo escrito — e ele que a correicao le. No caminho
+    proprio da averbacao (RtdpjSemValorDeclarado) a isencao NAO esta medida:
+    recusa, em vez de mandar um campo que o aparelho nunca viu.
     """
     caminho = str(caminho or "").strip()
     faltando = [nome for nome, valor in
@@ -1244,12 +1268,24 @@ def envelope_do_rtdpj(*, caminho: Any, codigo_tj: Any, escrevente: Any,
     ato = {"codigo": str(codigo_tj).strip(),
            "codigoTabelaCusta": str(versao_tabela).strip()}
     pessoas = _partes_rtdpj(partes)
+    motivo = str(motivo_isencao or "").strip()
+    if isento and not motivo:
+        raise AtoError(
+            "Ato gratuito precisa do fundamento escrito — é ele que a "
+            "correição lê no selo (CN-MA art. 133).")
 
     if caminho == CAMINHO_RTDPJ_GERAL or caminho.endswith("/atos-em-geral"):
-        return {"escrevente": str(escrevente).strip(),
-                "partes": pessoas,
-                "quantidade": max(1, int(quantidade or 1)),
-                "ato": ato}
+        envelope = {"escrevente": str(escrevente).strip(),
+                    "partes": pessoas,
+                    "quantidade": max(1, int(quantidade or 1)),
+                    "ato": ato}
+        if isento:
+            envelope["isento"] = {"value": True, "motivo": motivo}
+        return envelope
+    if isento:
+        raise AtoError(
+            "O selo isento da averbação do RCPJ/RTD pelo caminho próprio não "
+            "está medido; o ato gratuito sela pelo caminho geral.")
 
     # RtdpjSemValorDeclarado — pessoa-juridica/averbacao e
     # ato-declarado/averbacao/integral/sem-valor.
@@ -2205,9 +2241,10 @@ def servico_do_codigo_tj(con: sqlite3.Connection, codigo_tj: str) -> dict | None
     e o preço (que mora em `cx_servicos`). Conferida contra o banco de
     produção: os 64 códigos medidos resolvem, sem falta nenhuma.
     """
-    linha = con.execute(
-        "SELECT codigo, codigo_tj, descricao FROM cx_servicos WHERE codigo_tj=?",
-        (str(codigo_tj or "").strip(),)).fetchone()
+    linha = banco(con).um(
+        """SELECT codigo, codigo_tj, descricao FROM cx_servicos
+            WHERE codigo_tj = %s ORDER BY codigo LIMIT 1""",
+        (str(codigo_tj or "").strip(),))
     return dict(linha) if linha else None
 
 
@@ -2259,9 +2296,9 @@ def receita_de_custas(con: sqlite3.Connection, caminho: str, *,
         # Mostrar "R$ 0,00" ali sem dizer o que e faria o balcao cobrar zero
         # por um ato que custa. Sao 151 dos 1.317 servicos com total zerado.
         if preco == 0 and not conta.get("gratuito"):
-            subitens = con.execute(
-                "SELECT COUNT(*) n FROM cx_servicos WHERE codigo_tj LIKE ?",
-                (f"{codigo_tj}.%",)).fetchone()["n"]
+            subitens = int(banco(con).valor(
+                "SELECT count(*) AS n FROM cx_servicos WHERE codigo_tj ILIKE %s",
+                (f"{codigo_tj}.%",)))
             if subitens:
                 item["por_faixa"] = True
                 item["subitens"] = subitens
@@ -2315,9 +2352,11 @@ def cobrar(con: sqlite3.Connection, *, tabela: str, ato_id: int,
                             gratuidade_codigo=gratuidade_codigo,
                             motivo_gratuidade=motivo_gratuidade)
     chave = f"{tabela}:{ato_id}:{servico}"
-    ja = con.execute(
+    bd = banco(con)
+    ja = bd.um(
         """SELECT id FROM cx_lancamentos
-            WHERE origem='ATO' AND origem_chave=?""", (chave,)).fetchone()
+            WHERE origem='ATO' AND origem_chave = %s ORDER BY id LIMIT 1""",
+        (chave,))
     if ja:
         # Cobrar duas vezes o mesmo ato e o mesmo item e o erro que o cliente
         # descobre no extrato. O indice unico de (origem, origem_chave) ja
@@ -2328,13 +2367,15 @@ def cobrar(con: sqlite3.Connection, *, tabela: str, ato_id: int,
             f"o cliente descobre no extrato.")
 
     from caixa_schema import reais
-    cur = con.execute(
+    novo = bd.escrever(
         """INSERT INTO cx_lancamentos(caixa_id, protocolo_id, data, hora,
                natureza, sentido, forma_pagamento, descricao, pagador,
                pagador_documento, valor, emolumentos, ferc, fadep, femp,
                ferrfis, selo, origem, origem_chave, criado_em, criado_por)
-           VALUES (?,?,?,?, 'RECEBIMENTO','ENTRADA', ?,?,?,?,?,?,?,?,?,?,?,
-                   'ATO', ?, ?, ?)""",
+           VALUES (%s,%s,%s,%s, 'RECEBIMENTO','ENTRADA',
+                   %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                   'ATO', %s, %s, %s)
+           RETURNING id""",
         (caixa_id, protocolo_id, hoje, hora, forma_pagamento,
          _texto_ou_none(descricao) or conta.get("descricao"),
          _texto_ou_none(pagador), _texto_ou_none(pagador_documento),
@@ -2343,8 +2384,8 @@ def cobrar(con: sqlite3.Connection, *, tabela: str, ato_id: int,
          str(conta.get("ferc") or "0,00"), str(conta.get("fadep") or "0,00"),
          str(conta.get("femp") or "0,00"), str(conta.get("ferrfis") or "0,00"),
          _texto_ou_none(selo), chave, agora, usuario_id))
-    lancamento_id = int(cur.lastrowid)
-    con.execute(f"UPDATE {tabela} SET lancamento_id=? WHERE id=?",
+    lancamento_id = int(novo[0]["id"])
+    bd.escrever(f"UPDATE {tabela} SET lancamento_id = %s WHERE id = %s",
                 (lancamento_id, int(ato_id)))
     return {"lancamento_id": lancamento_id, "conta": conta,
             "total_centavos": conta["total_centavos"],
@@ -2358,16 +2399,16 @@ def _texto_ou_none(v: Any) -> str | None:
 
 
 def lancamentos_do_ato(con: sqlite3.Connection, tabela: str,
-                       ato_id: int) -> list[sqlite3.Row]:
+                       ato_id: int) -> list[dict]:
     """O que já foi cobrado por este ato. So LE."""
-    return list(con.execute(
+    return banco(con).ler(
         """SELECT * FROM cx_lancamentos
-            WHERE origem='ATO' AND origem_chave LIKE ?
-            ORDER BY id""", (f"{tabela}:{int(ato_id)}:%",)))
+            WHERE origem='ATO' AND origem_chave ILIKE %s
+            ORDER BY id""", (f"{tabela}:{int(ato_id)}:%",))
 
 
 def selos_do_ato(con: sqlite3.Connection, tabela: str,
-                 ato_id: int) -> list[sqlite3.Row]:
+                 ato_id: int) -> list[dict]:
     """TODOS os selos deste ato — e não só os dois que `rg_atos` guarda. SÓ LÊ.
 
     Achado do oficial em 11/09/2026: um ato pode consumir mais de um item da
@@ -2379,9 +2420,9 @@ def selos_do_ato(con: sqlite3.Connection, tabela: str,
     selos de um ato — a ficha, o teor, a etiqueta — lê daqui, e não das duas
     colunas.
     """
-    return list(con.execute(
-        """SELECT * FROM sd_selos WHERE tabela=? AND ato_id=?
-            ORDER BY id""", (tabela, int(ato_id))))
+    return banco(con).ler(
+        """SELECT * FROM sd_selos WHERE tabela = %s AND ato_id = %s
+            ORDER BY id""", (tabela, int(ato_id)))
 
 
 # O ACERVO NAO VIRA PENDENCIA, e aqui ele viraria 2.783 vezes.
@@ -2429,9 +2470,11 @@ def _tem_coluna(con: sqlite3.Connection, tabela: str, coluna: str) -> bool:
     obrigatoria —, e por isso a forma portavel serve inteira. Onde ela nao
     servisse (como em `importar_padrao`, que precisa do «obrigatorio»), a
     divida se declara em vez de se disfarcar.
+
+    Na migracao para o PostgreSQL nativo, a pergunta vai ao
+    `information_schema` (via `bd_nativo`).
     """
-    cur = con.execute(f"SELECT * FROM {tabela} LIMIT 0")
-    return coluna in {d[0] for d in (cur.description or ())}
+    return banco(con).tem_coluna(tabela, coluna)
 
 
 def _so_o_que_esta_casa_lavrou(con: sqlite3.Connection, tabela: str) -> str:
@@ -2456,14 +2499,14 @@ def quantos_do_acervo_ficaram_de_fora(con: sqlite3.Connection, tabela: str,
     """
     if not _so_o_que_esta_casa_lavrou(con, tabela):
         return 0
-    return int(con.execute(
-        f"""SELECT COUNT(*) FROM {tabela}
-             WHERE {onde} AND COALESCE(origem,'') = ?""",
-        (MARCA_DO_ACERVO,)).fetchone()[0])
+    return int(banco(con).valor(
+        f"""SELECT count(*) AS n FROM {tabela}
+             WHERE {onde} AND COALESCE(origem,'') = %s""",
+        (MARCA_DO_ACERVO,)))
 
 
 def atos_sem_cobranca(con: sqlite3.Connection, tabela: str,
-                      limite: int = 200) -> list[sqlite3.Row]:
+                      limite: int = 200) -> list[dict]:
     """Os atos daquela tabela que ninguém cobrou. So LE.
 
     O par de `atos_sem_selo`, do lado do dinheiro: não basta o ato ter selo,
@@ -2476,10 +2519,10 @@ def atos_sem_cobranca(con: sqlite3.Connection, tabela: str,
     if tabela not in TABELAS_DE_ATO:
         raise AtoError(f"{tabela!r} não é tabela de ato.")
     onde = "COALESCE(lancamento_id, 0) = 0"
-    return list(con.execute(
+    return banco(con).ler(
         f"""SELECT * FROM {tabela}
              WHERE {onde}{_so_o_que_esta_casa_lavrou(con, tabela)}
-             ORDER BY id DESC LIMIT ?""", (int(limite),)))
+             ORDER BY id DESC LIMIT %s""", (int(limite),))
 
 
 def conferir_ato(codigo_do_ato: Any) -> dict:
@@ -2513,14 +2556,45 @@ def _ambiente_do_selo(con) -> str:
     """Rotulo gravado em sd_selos.ambiente — vem da config, sem valor fixo.
 
     No sandbox a config diz SIMULADO/SANDBOX; na producao, PRODUCAO.
+
+    A REGRA E A DO SELO AUTOMATICO: `selador_cliente.selar` grava o
+    `ambiente` de `SC.situacao`, que e o da linha de `sd_config` — ou
+    PRODUCAO, sem linha. Os dois caminhos do razao tem de dizer o mesmo.
+
+    CHAMAVA `SC.estado`, QUE NAO EXISTE (achado da IA do servidor no ensaio
+    de 21/10/2026). O `except Exception` engolia o AttributeError e o selo a
+    mao saia sempre PRODUCAO — tambem no selador em homologacao, que e
+    justamente quando o rotulo importa. Por isso nao ha mais `except`: so a
+    falta de configuracao cai no padrao, e com log; erro de programacao
+    sobe.
     """
-    try:
-        import selador_config as SC
-        est = SC.estado(con)
-        amb = str((est or {}).get("ambiente") or "PRODUCAO").strip().upper()
-        return amb if amb else "PRODUCAO"
-    except Exception:
+    import selador_config as SC
+    linha = SC._linha(con)
+    if not linha:
+        _LOG.warning("Selador sem configuracao (sd_config vazia): o selo "
+                     "digitado a mao fica marcado PRODUCAO.")
         return "PRODUCAO"
+    amb = str(linha.get("ambiente") or "").strip().upper()
+    return amb or "PRODUCAO"
+
+
+def _dados_do_selo_a_mao(texto: Any) -> dict:
+    """O «envelope» que o selo digitado permite montar. Só calcula.
+
+    O selo tirado no portal não tem envelope; o que ele tem é o TEXTO que o
+    aparelho imprimiu — e é dele que saem as duas coisas que a cobertura lê:
+    a marca «Selo Isento» (`selo_e_gratuito`: a gratuidade NÃO trava, regra do
+    oficial de 19/10/2026) e o item da tabela (`codigoAto`, que escolhe o item
+    do protocolo). Sem texto, o selo é tratado como pago.
+    """
+    lido = SELO.ler_texto(texto) if str(texto or "").strip() else {}
+    dados: dict = {}
+    if any(str(m).strip().lower() == "selo isento"
+           for m in (lido.get("marcas") or [])):
+        dados["isento"] = True
+    if lido.get("ato"):
+        dados["codigoAto"] = str(lido["ato"])
+    return dados
 
 
 def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
@@ -2542,6 +2616,18 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
         digitado por engano e recusado;
       - o selo repetido e recusado — `numero` e UNIQUE em `sd_selos`, e a
         mensagem diz em qual ato ele ja esta.
+
+    O MESMO SELO NO MESMO ATO NAO E RECUSA (LD14, 21/10/2026): e o
+    formulario enviado duas vezes. Nao duplica e fica registrado
+    («SELO_REPETIDO»). Em OUTRO ato — ou cancelado — e recusa, com a
+    auditoria «SELO_REPETIDO_RECUSADO» gravada por fora, porque a recusa
+    desfaz a transacao de quem chama. Ver `selador_cliente.conferir_o_repetido`.
+
+    O RAZAO E CONFERIDO PELO PROPRIO INSERT, e nao antes dele. O `SELECT`
+    antes e o `INSERT` depois deixavam dois balcoes digitando o mesmo selo
+    passarem os dois pelo «ainda nao existe» — e o segundo estourava o
+    UNIQUE em HTTP 500, em vez de ouvir onde o selo ja estava. O
+    `ON CONFLICT (numero)` decide sob a trava da propria chave.
     """
     if tabela not in TABELAS_DE_ATO:
         raise AtoError(
@@ -2558,24 +2644,59 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
         raise AtoError(
             f"O selo {bruto} não é desta serventia: o CNS dele não é o "
             f"{cns}. Confira se o código foi copiado do selo certo.")
-
-    ja = con.execute(
-        "SELECT tabela, ato_id FROM sd_selos WHERE numero=?", (bruto,)).fetchone()
-    if ja:
-        onde = (f"no ato {ja['ato_id']} de {ja['tabela']}"
-                if ja["tabela"] else "no razão, ainda sem ato")
+    if NOMEHUM.eh_rotulo_de_maquina(usuario):
+        # a mesma regra de `obter_selo` (22/10/2026, A6): máquina não assina
         raise AtoError(
-            f"O selo {bruto} já está gravado {onde}. Um selo serve a um ato "
-            f"só — usá-lo duas vezes é o que a inspeção aponta.")
+            f"O selo não entra em nome de máquina ({usuario}): um escrevente "
+            "digita o selo na tela do ato.")
 
-    con.execute(
+    import selador_cliente as CL
+    bd = banco(con)
+    # O SELO À MÃO PASSA PELA MESMA COBERTURA DO SELO AUTOMÁTICO (revisão de
+    # segurança da 3.7.0, 22/10/2026, achado A9). Até aqui a trava do selo
+    # pago vivia só em `obter_selo`: digitar o número de um selo tirado no
+    # portal gravava o ato como selado sem protocolo, sem pagamento e sem
+    # liberação — a porta ao lado da trava. Agora `cobrir_o_selo` decide com
+    # a MESMA régua (gratuito pelo texto do selo, trava desligada, item ligado
+    # ou quitado, lançamento, protocolo em atendimento, liberação do ADMIN) e,
+    # como o selo já saiu do aparelho, a reserva é CONFIRMADA na mesma
+    # transação, logo abaixo. Sem cobertura sobe `SeloSemCobertura`: a tela
+    # mostra o quadro, e a transação de quem chama volta — nada fica gravado.
+    # Banco sem o esquema da trava (teste de unidade montado à mão) sai pela
+    # régua de antes, como `_gravar_cobertura` já fazia.
+    cobertura: dict = {}
+    if bd.tem_tabela("cx_selo_coberturas"):
+        cobertura = cobrir_o_selo(
+            con, tabela=tabela, ato_id=int(ato_id),
+            referencia=f"{tabela}:{ato_id}", dados=_dados_do_selo_a_mao(texto),
+            usuario=usuario, agora=agora, cns=cns, atribuicao=atribuicao)
+        if not cobertura.get("coberto"):
+            quadro = cobertura.get("quadro") or {}
+            raise SeloSemCobertura(recado_da_cobertura(quadro), quadro)
+    novo = bd.escrever(
         """INSERT INTO sd_selos(numero, texto, sid, caminho, atribuicao,
                referencia, tabela, ato_id, ambiente, obtido_em, obtido_por,
                usado_em)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           ON CONFLICT (numero) DO NOTHING RETURNING id""",
         (bruto, texto, None, None, str(atribuicao),
          f"{tabela}:{ato_id}", tabela, int(ato_id), _ambiente_do_selo(con), agora,
          usuario, agora))
+    if not novo:
+        try:
+            # O dono do selo digitado e o ATO; cancelado nao volta a valer.
+            CL.conferir_o_repetido(
+                bd, bruto, origem=CL.A_MAO,
+                iguais={"tabela": tabela, "ato_id": int(ato_id),
+                        "cancelado_em": None},
+                chegou={"atribuicao": str(atribuicao), "texto": texto},
+                agora=agora, usuario=usuario)
+        except CL.SeloJaGravado as erro:
+            raise AtoError(str(erro)) from erro
+    # O selo já está no razão: a reserva da cobertura vira cobertura de
+    # verdade, na mesma transação (22/10/2026).
+    if cobertura.get("reserva"):
+        _confirmar_reserva(con, cobertura.get("reserva"), agora=agora)
     # A COLUNA DO SELO NAO SE CHAMA `selo` EM TODA TABELA DE ATO, e esta linha
     # supunha que sim. Achado em 15/09/2026, ao ligar «Selar este ato» do RI —
     # a primeira tela a chamar esta funcao com `ri_atos`:
@@ -2598,8 +2719,8 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
     #   a excecao aqui derrubaria a transacao inteira — o escrevente digitaria
     #   a etiqueta do selo que ja pagou e levaria um HTTP 500, com o ato
     #   continuando sem selo e sem nada no razao.
-    con.execute(f"UPDATE {tabela} SET {COLUNA_DO_SELO.get(tabela, 'selo')}=? "
-                f"WHERE id=?", (bruto, int(ato_id)))
+    bd.escrever(f"UPDATE {tabela} SET {COLUNA_DO_SELO.get(tabela, 'selo')} = %s "
+                f"WHERE id = %s", (bruto, int(ato_id)))
     return {"numero": bruto, "prefixo": codigo.prefixo,
             "descricao": SELO.PREFIXOS.get(codigo.prefixo, ""),
             "tabela": tabela, "ato_id": int(ato_id)}
@@ -2610,7 +2731,8 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
 
 def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
                referencia: Any, atribuicao: str, agora: str, cns: Any,
-               usuario: str | None = None) -> list:
+               usuario: str | None = None, tabela: str | None = None,
+               ato_id: Any = None) -> list:
     """Pede o selo ao aparelho da rede local. ESCREVE, em transacao PROPRIA.
 
     Recebe `db` e nao `con` DE PROPOSITO: a chamada tem prazo de 20 segundos e
@@ -2620,6 +2742,24 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
     Serve as CINCO atribuicoes: `atribuicoes.caminhos_da_atribuicao()` diz
     quais caminhos esta casa ja usou em cada uma, com quantos selos sairam por
     cada um — e todos eles estao no contrato de `selador.py`.
+
+    E A TRAVA DO SELO PAGO MORA AQUI (LX16, 19/10/2026), antes do aparelho:
+    sem protocolo e sem pagamento, o selo nao e pedido e sobe
+    `SeloSemCobertura` com o quadro do que falta. Ver `cobrir_o_selo`.
+
+    EM TRES PASSOS, E O APARELHO FICA NO DO MEIO, SEM NADA PRESO (LX21a,
+    20/10/2026). A primeira versao cobria e pedia na MESMA transacao, para o
+    debito voltar sozinho se o aparelho recusasse — e por isso segurava o
+    deposito, o item e a trava unica da ponte durante os 20 segundos da
+    rede: um aparelho lento parava o balcao inteiro.
+        a) numa transacao curta, RESERVA a cobertura (`cobrir_o_selo`: o
+           debito e a unidade ja saem do saldo, e a linha da cobertura fica
+           «RESERVADA») e confirma — o outro balcao ja le o saldo de depois;
+        b) pede o selo numa conexao SEM transacao aberta;
+        c) na mesma conexao, CONFIRMA a reserva junto com o selo no razao, ou
+           a ESTORNA se o aparelho falhou ou nao deu numero.
+    A reserva que a queda deixou no meio e conferida por
+    `estornar_reservas_orfas`, aqui mesmo e na subida.
     """
     import selador_cliente as CL  # importado aqui: so quem sela paga
     # SEGUNDA TRANCA: mesmo que `usuario_nome` falhe, o escrevente do envelope
@@ -2632,14 +2772,76 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
             "e a substituta/oficial nao esta cadastrada. Faca login com um "
             "usuario da serventia antes de selar.")
     if NOMEHUM.eh_rotulo_de_maquina(usuario):
-        usuario = humano
+        # MÁQUINA NÃO ASSINA, E NINGUÉM ASSINA POR ELA (revisão de segurança
+        # de 22/10/2026, A6). Até aqui o nome do robô era trocado pelo da
+        # substituta — que não praticou o ato. O robô deixa o ato pendente
+        # de selo; quem clica «Selar» é quem assina (`selo_robo`).
+        raise AtoError(
+            f"O selo não sai em nome de máquina ({usuario}). O ato fica "
+            "pendente de selo: um escrevente abre o ato e clica em Selar.")
     dados = dict(dados or {})
     if NOMEHUM.eh_rotulo_de_maquina(dados.get("escrevente")):
         dados["escrevente"] = humano
+    # UMA GRAFIA SÓ, DAQUI EM DIANTE (LX24): a cobertura, o SID do aparelho e
+    # o razão usam a mesma referência — senão ` PT_ATOS : 1 ` e `pt_atos:1`
+    # pagavam o selo do mesmo ato duas vezes. A grafia RECEBIDA fica guardada
+    # (LX25): o que já está gravado com ela — cobertura e selo de antes do
+    # LX24 — continua sendo achado, e não pago de novo.
+    recebida = referencia
+    referencia = referencia_do_selo(referencia, tabela, ato_id)
+    if tabela is None or ato_id is None:
+        tabela, ato_id = ato_da_referencia(referencia)
+    _conferir_as_orfas(db, agora=agora)
+    try:
+        with db.transaction() as con:
+            cobertura = cobrir_o_selo(con, tabela=tabela, ato_id=ato_id,
+                                      referencia=recebida, dados=dados,
+                                      usuario=usuario, agora=agora, cns=cns,
+                                      atribuicao=atribuicao)
+            # SEM COBERTURA, A TRANSACAO VOLTA (LX20, revisao do LX16): o
+            # selo nao vai ser pedido, entao nada do que a cobertura tentou —
+            # debito, quitacao, unidade — pode ficar.
+            if not cobertura["coberto"]:
+                raise _NaoCoberto(cobertura)
+    except _NaoCoberto as falta:
+        cobertura = falta.cobertura
+    if cobertura["coberto"]:
+        reserva = cobertura.get("reserva")
+        # `connect`, e nao `transaction`: esta abre ja com a trava unica da
+        # ponte, e o aparelho tem 20 segundos de prazo. O `with` confirma o
+        # selo no razao e a reserva juntos, ou desfaz os dois.
+        with db.connect() as con:
+            try:
+                # O SID DO ATO QUE JÁ TEM SELO É O GRAVADO (LX25): o selo de
+                # antes do LX24 está no SID da grafia crua, e pedir pela
+                # canônica seria outro SID — o aparelho venderia o segundo
+                # selo do mesmo ato.
+                do_sid = _selo_ja_obtido(
+                    banco(con), cns=cns, atribuicao=atribuicao,
+                    referencias=grafias_da_referencia(recebida, tabela, ato_id))
+                selos = CL.selar(con, pasta_de_dados, caminho, dados,
+                                 referencia=do_sid or referencia,
+                                 atribuicao=atribuicao,
+                                 agora=agora, cns=cns, usuario=usuario)
+            except Exception:
+                con.rollback()
+                _estornar_sem_estourar(con, reserva, agora=agora,
+                                       motivo="o selador falhou ou recusou")
+                raise
+            if selos:
+                _confirmar_reserva(con, reserva, agora=agora)
+            else:
+                _estornar_reserva(con, reserva, agora=agora,
+                                  motivo="o selador respondeu sem selo")
+            _tirar_aguardando(con, tabela=tabela, ato_id=ato_id)
+        return selos
+    # SEM COBERTURA: o ato fica «aguardando cobertura», com o motivo, numa
+    # transacao propria — a de cima voltou atras.
+    recado = recado_da_cobertura(cobertura.get("quadro") or {})
     with db.transaction() as con:
-        return CL.selar(con, pasta_de_dados, caminho, dados,
-                        referencia=referencia, atribuicao=atribuicao,
-                        agora=agora, cns=cns, usuario=usuario)
+        _marcar_aguardando(con, tabela=tabela, ato_id=ato_id, motivo=recado,
+                           usuario=usuario, agora=agora)
+    raise SeloSemCobertura(recado, cobertura.get("quadro"))
 
 
 
@@ -2705,7 +2907,13 @@ def selar_o_ato_lavrado(db, pasta_de_dados: Any, *, tabela: str, ato_id: int,
                            dados=dict(dados or {}),
                            referencia=referencia or f"{tabela}:{int(ato_id)}",
                            atribuicao=atribuicao, agora=agora, cns=cns,
-                           usuario=usuario)
+                           usuario=usuario, tabela=tabela, ato_id=ato_id)
+    except SeloSemCobertura as falta:
+        # NAO E FALHA DO APARELHO: o selo nem foi pedido. O quadro vai junto
+        # para a tela mostrar os botoes; o recado e a mesma frase para o
+        # robo e para o selo automatico.
+        return {"selado": False, "caminho": caminho, "motivo": str(falta),
+                "aguardando_cobertura": True, "quadro": falta.quadro}
     except Exception as erro:                                  # noqa: BLE001
         return {"selado": False, "caminho": caminho, "motivo": str(erro)}
 
@@ -2801,8 +3009,8 @@ def vincular_ao_ato(con: sqlite3.Connection, numero: Any, *, tabela: str,
     CL.vincular(con, str(numero), tabela=tabela, ato_id=int(ato_id),
                 agora=str(agora))
     coluna = COLUNA_DO_SELO.get(tabela, "selo")
-    con.execute(f"UPDATE {tabela} SET {coluna}=? WHERE id=?",
-                (str(numero), int(ato_id)))
+    banco(con).escrever(f"UPDATE {tabela} SET {coluna} = %s WHERE id = %s",
+                        (str(numero), int(ato_id)))
 
 
 # ------------------------------------------------------------ conferencia
@@ -2817,7 +3025,7 @@ def vincular_ao_ato(con: sqlite3.Connection, numero: Any, *, tabela: str,
 
 
 def atos_sem_selo(con: sqlite3.Connection, tabela: str,
-                  limite: int = 200) -> list[sqlite3.Row]:
+                  limite: int = 200) -> list[dict]:
     """Os atos daquela tabela que ainda nao tem selo. So LE.
 
     E a tela que a inspecao pede do outro lado: nao basta o selo ter ato, o
@@ -2847,10 +3055,10 @@ def atos_sem_selo(con: sqlite3.Connection, tabela: str,
     #   aparece em `atos_sem_selo`».
     coluna = COLUNA_DO_SELO.get(tabela, "selo")
     onde = f"COALESCE({coluna},'') = ''"
-    return list(con.execute(
+    return banco(con).ler(
         f"""SELECT * FROM {tabela}
              WHERE {onde}{_so_o_que_esta_casa_lavrou(con, tabela)}
-             ORDER BY id DESC LIMIT ?""", (int(limite),)))
+             ORDER BY id DESC LIMIT %s""", (int(limite),))
 
 
 def etiquetas_do_ato(con: sqlite3.Connection, tabela: Any, ato_id: Any,
@@ -2882,16 +3090,17 @@ def etiquetas_do_ato(con: sqlite3.Connection, tabela: Any, ato_id: Any,
     """
     achados: list[dict] = []
     try:
+        bd = banco(con)
         if tabela and ato_id:
-            achados = [dict(r) for r in con.execute(
+            achados = [dict(r) for r in bd.ler(
                 """SELECT numero, texto FROM sd_selos
-                    WHERE tabela=? AND ato_id=? ORDER BY obtido_em, id""",
-                (str(tabela), int(ato_id))).fetchall()]
+                    WHERE tabela = %s AND ato_id = %s ORDER BY obtido_em, id""",
+                (str(tabela), int(ato_id)))]
         codigo = str(numero or "").strip()
         if not achados and codigo:
-            achados = [dict(r) for r in con.execute(
-                "SELECT numero, texto FROM sd_selos WHERE numero=? ORDER BY id",
-                (codigo,)).fetchall()]
+            achados = [dict(r) for r in bd.ler(
+                "SELECT numero, texto FROM sd_selos WHERE numero = %s ORDER BY id",
+                (codigo,))]
     except sqlite3.Error:
         achados = []
     if not achados and str(numero or "").strip():
@@ -2976,6 +3185,62 @@ ITENS_MEDIDOS_DO_ATO_DE_LIVRO: dict[str, tuple[tuple[str, int], ...]] = {
     CAMINHO_DA_PROCURACAO["VENDA"]: (("13.9.3", 1),),
 }
 
+# A PROCURAÇÃO DO INSS TEM CAMINHO PRÓPRIO NO CONTRATO, e a casa nunca o usou
+# (LG04, 19/10/2026). `/selo/notas/procuracao/inss` é o mesmo schema
+# `ProcuracaoNotas` dos três de cima — o envelope é o mesmo, muda o endereço —,
+# e por isso ele entra como QUARTA escolha da previdenciária, sem tirar as três
+# que o oficial decidiu em 15/10/2026. Só a previdenciária o oferece: a
+# procuração comum que saísse por ele seria selo do INSS em ato que não é.
+CAMINHO_DA_PROCURACAO_DO_INSS = "/selo/notas/procuracao/inss"
+ESPECIE_DA_PROCURACAO_DO_INSS = "INSS"
+
+# O TESTAMENTO TEM CAMINHO PRÓPRIO NO CONTRATO (`/selo/notas/testamento`,
+# schema `TestamentoNotas`) e ITENS PRÓPRIOS NA TABELA — conferidos na de 2026
+# (`tests/custas_reais.json`, serviços 391 a 394):
+#
+#   13.10.1  Público sem conteúdo patrimonial
+#   13.10.2  Público com valor patrimonial
+#   13.10.3  Cerrado, incluindo todos os atos necessários
+#   13.10.4  Revogação de testamento (a revogação se faz por outro testamento,
+#            CC art. 1.969 — por isso o item é do público)
+#
+# Até o LG04 (19/10/2026) o caminho não existia aqui, e todo testamento lançado
+# ia a SUSPENSO_SELO: a tela dizia «ainda não há caminho de selo» e o ato
+# ficava com livro e folha reservados, sem selo e sem RCTO. O acervo não tem
+# envelope de testamento para medir; a forma é a da procuração (`dadosSelo` do
+# mesmo contrato, partes + quantidade + selo{livro, folha}), e a primeira
+# emissão em homologação é quem confirma. O zero diz «previsto na tabela», como
+# nos itens da ata — e não «nunca usado».
+CAMINHO_DO_TESTAMENTO = "/selo/notas/testamento"
+ITENS_DO_TESTAMENTO: dict[str, tuple[tuple[str, int], ...]] = {
+    "TESTAMENTO": (("13.10.1", 0), ("13.10.2", 0), ("13.10.4", 0)),
+    "TESTAMENTO_CERRADO": (("13.10.3", 0),),
+}
+ITENS_PREVISTOS_POR_CAMINHO: dict[str, tuple[tuple[str, int], ...]] = {
+    # «Outras procurações»: a tabela não tem item próprio da previdenciária.
+    # A gratuidade, quando couber, é o selo isento com o motivo escrito.
+    CAMINHO_DA_PROCURACAO_DO_INSS: (("13.9.3", 0),),
+}
+
+
+def conferir_item_do_testamento(tipo: Any, codigo_tj: Any) -> str | None:
+    """O item escolhido é de testamento DESTA espécie? Só calcula.
+
+    O cerrado custa 13.10.3 e o público 13.10.1/13.10.2: cobrar um pelo outro
+    é selo emitido com o valor errado, e selo não se desfaz. Devolve o recado
+    da recusa, ou `None` quando o item serve (ou o ato não é testamento).
+    """
+    especie = str(tipo or "").strip().upper()
+    itens = ITENS_DO_TESTAMENTO.get(especie)
+    if itens is None:
+        return None
+    validos = [codigo for codigo, _ in itens]
+    if str(codigo_tj or "").strip() not in validos:
+        return (f"o item {str(codigo_tj or '').strip() or '(vazio)'} não é de "
+                f"{'testamento cerrado' if especie == 'TESTAMENTO_CERRADO' else 'testamento público'}"
+                f" — use {' ou '.join(validos)}")
+    return None
+
 # Itens proprios da ata. O zero no segundo campo significa "previsto na
 # tabela", e nao zero usos: a tela distingue estes itens dos medidos no
 # acervo. O 13.14.2 nao e o selo principal; e o acrescimo por folha excedente
@@ -2984,6 +3249,63 @@ ITENS_DA_ATA: dict[str, tuple[tuple[str, int], ...]] = {
     "ATA": (("13.14.1", 0),),
     "ATA_USUCAPIAO": (("13.1", 0),),
 }
+
+# A ATA PARA USUCAPIAO SE COBRA PELA FAIXA, como a escritura com valor (LD02,
+# 21/10/2026): «a ata notarial sera considerada ato de conteudo economico,
+# devendo-se tomar por base para a cobranca de emolumentos o valor venal do
+# imovel» — CNN (Prov. 149/2023) art. 423, I. O item da tela e o da faixa do
+# 13.1 para o valor informado, e o selo recusa outro.
+TIPOS_COBRADOS_PELA_FAIXA = frozenset({"ESCRITURA", "ATA_USUCAPIAO"})
+
+# O ITEM PROPRIO DA ESPECIE NA TABELA (LD02, 21/10/2026). A tela do ato so
+# oferecia os itens MEDIDOS no caminho do selo — no substabelecimento, na
+# revogacao e na renuncia, os da procuracao; na separacao, no divorcio e na
+# extincao da uniao estavel sem bens, os da escritura sem valor —, e a tabela
+# de 2026 tem item proprio para eles (`tests/custas_reais.json`, servicos 385,
+# 389 e 390):
+#
+#   13.7    Escritura de separacao, divorcio e extincao de uniao estavel sem
+#           bens a partilhar
+#   13.9.5  Nos substabelecimentos de procuracoes (os emolumentos do 13.9.3)
+#   13.9.6  Revogacao de procuracao e de substabelecimento ou renuncia do
+#           mandato
+#
+# O caixa cobra pelo proprio, e o selo pedido pelo item da tela nao achava o
+# item pago no protocolo. O zero diz «previsto na tabela», como nos da ata.
+ITENS_PROPRIOS_POR_TIPO: dict[str, tuple[tuple[str, int], ...]] = {
+    "SUBSTABELECIMENTO": (("13.9.5", 0),),
+    "REVOGACAO": (("13.9.6", 0),),
+    "RENUNCIA": (("13.9.6", 0),),
+}
+ITEM_DA_FAMILIA_SEM_BENS = "13.7"
+# Separacao (1), conversao da separacao em divorcio (3) e divorcio direto (4),
+# no tipo da CESDI; a dissolucao da uniao estavel (20), na natureza da CEP.
+TIPOS_CESDI_DO_13_7 = frozenset({1, 3, 4})
+NATUREZAS_CEP_DO_13_7 = frozenset({20})
+
+
+def itens_proprios_da_especie(ato: Any) -> list[tuple[str, int]]:
+    """O item proprio da tabela para a especie deste ato de livro. So calcula.
+
+    A escritura de familia so leva o 13.7 SEM BENS A PARTILHAR — sem valor
+    declarado; com valor, quem decide o item e a faixa do 13.1. Quem escolhe
+    continua sendo quem atende: a lista poe o proprio primeiro, e nao tira os
+    medidos.
+    """
+    a = dict(ato or {})
+    tipo = str(a.get("tipo") or "").strip().upper()
+    if tipo in ITENS_PROPRIOS_POR_TIPO:
+        return list(ITENS_PROPRIOS_POR_TIPO[tipo])
+    if tipo == "ESCRITURA" and not a.get("valor_transacao"):
+        def _int(v):
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return None
+        if (_int(a.get("tipo_cesdi")) in TIPOS_CESDI_DO_13_7
+                or _int(a.get("natureza_censec")) in NATUREZAS_CEP_DO_13_7):
+            return [(ITEM_DA_FAMILIA_SEM_BENS, 0)]
+    return []
 
 
 def caminho_do_ato_de_livro_das_notas(
@@ -3008,6 +3330,10 @@ def caminho_do_ato_de_livro_das_notas(
     **A ATA DE USUCAPIAO TEM VALOR.** O item 13.14.3 manda calcular pela faixa
     13.1 conforme o valor do imovel; sem esse valor o pedido seria falso e e
     recusado antes de chegar ao aparelho.
+
+    **O TESTAMENTO, PUBLICO OU CERRADO, TEM CAMINHO PROPRIO** (LG04), e a
+    previdenciaria ganha o do INSS como quarta escolha — ver
+    `CAMINHO_DO_TESTAMENTO` e `CAMINHO_DA_PROCURACAO_DO_INSS`.
     """
     especie = str(tipo or "").strip().upper()
     if especie == "ESCRITURA":
@@ -3016,8 +3342,13 @@ def caminho_do_ato_de_livro_das_notas(
     # O SUBSTABELECIMENTO E A REVOGACAO SELAM PELO CAMINHO DA PROCURACAO —
     # decisao do oficial, 15/10/2026. O acervo nao tem precedente (nenhum
     # substabelecimento, e a unica revogacao sem selo); quem decidiu foi ele.
+    if especie in ITENS_DO_TESTAMENTO:
+        return CAMINHO_DO_TESTAMENTO
     if especie in TIPOS_QUE_SELAM_COMO_PROCURACAO:
         qual = str(especie_procuracao or "").strip().upper()
+        if (especie == "PROCURACAO_PREVIDENCIARIA"
+                and qual == ESPECIE_DA_PROCURACAO_DO_INSS):
+            return CAMINHO_DA_PROCURACAO_DO_INSS
         caminho = CAMINHO_DA_PROCURACAO.get(qual)
         if not caminho:
             raise AtoError(
@@ -3192,3 +3523,1377 @@ def suspende_o_ato(recado: Any) -> bool:
     if not str(recado or "").strip():
         return False
     return bool(getattr(recado, "suspende", True))
+
+
+# ===================================================== selo × caixa (LX16)
+#
+# «os selos pagos precisam estar sempre vinculados a um protocolo geral e à
+#  confirmação da entrada de um dinheiro. Não tem como permitir selo pago sem
+#  um protocolo e sem o registro de que o item foi pago ou entrou antes em
+#  depósito prévio. Essa cobrança precisa ser muito didática para os
+#  escreventes.»                                    — o oficial, 19/10/2026
+#
+# E A CORREÇÃO DELE, NO MESMO DIA: a GRATUIDADE NÃO TRAVA. «Geralmente temos o
+# comprovante da gratuidade só depois que o ato é praticado.» O selo gratuito
+# sai sempre, e a cobrança do comprovante é aviso à pessoa
+# (`gratuidade_comprovante`), como decidido em 11/10.
+#
+# A TRAVA MORA EM `obter_selo`, E SÓ ALI. É a única função que chama o
+# aparelho (`selador_cliente.selar`): todas as telas — RI, Notas, RCPN,
+# Protesto, RTD/RCPJ, certidões, robôs e selo automático — chegam a ela por
+# `selar_o_ato_lavrado`. Pôr a trava numa tela seria deixar as outras vinte
+# de fora; o teste `test_selo_e_caixa` percorre os caminhos e confere que
+# nenhum chama o aparelho por fora.
+#
+# O QUE COBRE UM SELO PAGO, nesta ordem:
+#   1. um item de PROTOCOLO GERAL ligado ao ato, e pago — quitado, ou pago
+#      agora pelo DEPÓSITO PRÉVIO do protocolo (débito sob FOR UPDATE, sem
+#      saldo negativo), ou DIFERIDO por lei (só o Protesto: a posteriori e
+#      CRA, com quem paga e quando);
+#   2. o lançamento do próprio ato no caixa (`cobrar`), com protocolo;
+#   3. o item do PROTOCOLO EM ATENDIMENTO do escrevente, pelo código do selo
+#      (uma unidade por selo);
+#   4. a liberação do ADMIN, com justificativa — e aí a pendência continua.
+# Com a trava desligada (só ADMIN, em Configurações), passa tudo, e a barra
+# vermelha fica no topo de todas as telas enquanto ela estiver assim.
+#
+# A COBERTURA É RESERVADA ANTES DO APARELHO E CONFIRMADA DEPOIS (LX21a,
+# 20/10/2026). O débito e a unidade saem do saldo numa transação curta, e a
+# linha de `cx_selo_coberturas` fica «RESERVADA»; o selo é pedido sem nada
+# preso; e a reserva vira «CONFIRMADA» junto com o selo no razão, ou é
+# ESTORNADA (o dinheiro volta ao depósito, a unidade volta ao item, a linha
+# sai e o porquê fica em `audit_logs`). Ver `obter_selo`.
+
+CHAVE_DA_TRAVA = "selo_trava_caixa"
+TRAVA_DESLIGADA = "DESLIGADA"
+#: Desde quando o oficial confere os selos que saíram ANTES desta versão
+#: (relatório «selos pagos sem protocolo/pagamento»). Configurável.
+CHAVE_DESDE_DA_CONFERENCIA = "selo_conferencia_desde"
+DESDE_DA_CONFERENCIA_PADRAO = "2026-01-01"
+#: Justificativa de quem libera ou desliga: frase que diga alguma coisa a
+#: quem ler daqui a dois anos, e não «ok».
+MINIMO_DA_JUSTIFICATIVA = 15
+PAPEL_QUE_LIBERA = "ADMIN"
+
+FORMA_GRATUITO = "GRATUITO"
+FORMA_ITEM_PAGO = "ITEM_PAGO"
+FORMA_DEPOSITO = "DEPOSITO"
+FORMA_DIFERIDO = "DIFERIDO"
+FORMA_LANCAMENTO = "LANCAMENTO"
+FORMA_LIBERADO = "LIBERADO"
+FORMA_TRAVA_DESLIGADA = "TRAVA_DESLIGADA"
+# A CERTIDÃO ELETRÔNICA DA CRC — 22/10/2026, o oficial: «o selo da
+# certidão eletrônica funciona com valores da CRC, não entram
+# imediatamente no caixa». O dinheiro vem pela Central, e a trava do selo
+# pago (que procura o protocolo pago no caixa) não o enxerga. A forma vale
+# SÓ para a certidão do RCPN gravada com a finalidade abaixo E com o item
+# 14.5.7 no envelope — não abre a trava para nenhum outro selo.
+FORMA_CENTRAL_CRC = "CENTRAL_CRC"
+FINALIDADE_CERTIDAO_ELETRONICA_CRC = "Certidão eletrônica — CRC (item 14.5.7)"
+CODIGO_CERTIDAO_ELETRONICA_CRC = "14.5.7"
+#: O que conta como dinheiro (ou diferimento legal) de verdade. Liberação e
+#: trava desligada deixam o selo sair, mas NÃO fecham a pendência.
+FORMAS_QUE_COBREM = frozenset({FORMA_ITEM_PAGO, FORMA_DEPOSITO,
+                               FORMA_DIFERIDO, FORMA_LANCAMENTO,
+                               FORMA_CENTRAL_CRC})
+
+#: A cobertura enquanto o selo está sendo pedido, e depois que ele saiu.
+RESERVADA = "RESERVADA"
+CONFIRMADA = "CONFIRMADA"
+COLUNAS_DA_RESERVA = (
+    ("situacao", "TEXT NOT NULL DEFAULT 'CONFIRMADA'"),
+    ("unidades_gastas", "integer NOT NULL DEFAULT 0"),
+    ("confirmada_em", "TEXT"))
+#: Reserva mais velha que isto é de um pedido que caiu no meio. O pedido mais
+#: longo que existe é o token (20 s) mais duas voltas de duas tentativas de
+#: 20 s no aparelho, mais a espera da trava — uns dois minutos; cinco dão folga
+#: sem deixar o escrevente esperando a manhã inteira.
+PRAZO_DA_RESERVA_EM_SEGUNDOS = 5 * 60
+
+# As frases do quadro. Curtas, sem jargão, com o porquê em uma linha.
+TITULO_DO_QUADRO = "Para selar este ato falta:"
+POR_QUE_PROTOCOLO = ("o selo pago precisa do protocolo do balcão: é por ele "
+                     "que o caixa sabe o que o cliente pediu.")
+POR_QUE_PAGAMENTO = ("selo pago só sai com o dinheiro registrado — pago no "
+                     "caixa ou guardado em depósito prévio.")
+POR_QUE_GRATUITO = ("o Portal do Selo pede o comprovante de cada selo "
+                    "gratuito.")
+O_QUE_VAI_NO_PDF = "um PDF com: comprovante + certidão do ato"
+
+SCHEMA_DA_TRAVA = """
+CREATE TABLE IF NOT EXISTS cx_selo_coberturas (
+    id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    referencia TEXT NOT NULL UNIQUE,
+    tabela TEXT,
+    ato_id bigint,
+    forma TEXT NOT NULL,
+    protocolo_id bigint,
+    item_id bigint,
+    deposito_id bigint,
+    lancamento_id bigint,
+    liberacao_id bigint,
+    valor_centavos bigint,
+    usuario TEXT,
+    criado_em TEXT NOT NULL,
+    situacao TEXT NOT NULL DEFAULT 'CONFIRMADA',
+    unidades_gastas integer NOT NULL DEFAULT 0,
+    confirmada_em TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_cx_selo_coberturas_ato ON cx_selo_coberturas (tabela, ato_id);
+CREATE TABLE IF NOT EXISTS cx_selo_liberacoes (
+    id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    tabela TEXT NOT NULL,
+    ato_id bigint NOT NULL,
+    justificativa TEXT NOT NULL,
+    liberado_por TEXT,
+    liberado_por_id bigint,
+    liberado_em TEXT NOT NULL,
+    usado_em TEXT,
+    usado_por TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_cx_selo_liberacoes_ato ON cx_selo_liberacoes (tabela, ato_id);
+CREATE TABLE IF NOT EXISTS cx_selo_aguardando (
+    tabela TEXT NOT NULL,
+    ato_id bigint NOT NULL,
+    motivo TEXT NOT NULL,
+    usuario TEXT,
+    desde TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL,
+    PRIMARY KEY (tabela, ato_id)
+)
+"""
+
+
+def init_trava_do_selo_schema(con) -> None:
+    """As tabelas da trava do selo e as do caixa que ela consulta.
+
+    Idempotente. Vem DEPOIS de `init_caixa_schema`: o diferimento entra em
+    `cx_protocolo_atos`.
+    """
+    import caixa_depositos as DEP
+    import caixa_protocolo as CXP
+    CXP.init_cobertura_schema(con)
+    DEP.init_usos_schema(con)
+    bd = banco(con)
+    for comando in SCHEMA_DA_TRAVA.split(";\n"):
+        if comando.strip():
+            bd.escrever(comando)
+    # A RESERVA (LX21a) chegou depois da tabela: quem já a tinha ganha as
+    # colunas aqui. O que estava gravado antes saiu na mesma transação do
+    # selo, e por isso é «CONFIRMADA» — o padrão da coluna.
+    for coluna, tipo in COLUNAS_DA_RESERVA:
+        if not bd.tem_coluna("cx_selo_coberturas", coluna):
+            bd.escrever(f"ALTER TABLE cx_selo_coberturas ADD COLUMN {coluna} {tipo}")
+    bd.escrever(
+        """CREATE INDEX IF NOT EXISTS ix_cx_selo_coberturas_reservadas
+               ON cx_selo_coberturas (criado_em) WHERE situacao = 'RESERVADA'""")
+    # NA SUBIDA, a reserva que a queda deixou no meio é conferida.
+    from datetime import datetime
+    estornar_reservas_orfas(
+        bd, agora=datetime.now().replace(microsecond=0).isoformat())
+
+
+class SeloSemCobertura(AtoError):
+    """O selo pago não foi pedido: falta protocolo ou pagamento.
+
+    `falta` é o quadro, item por item, para a tela mostrar com os botões.
+    """
+
+    def __init__(self, recado: str, quadro: dict | None = None):
+        super().__init__(recado)
+        self.quadro = quadro or {}
+
+
+class _NaoCoberto(Exception):
+    """Só para `obter_selo` desfazer a transação da cobertura que não cobriu."""
+
+    def __init__(self, cobertura: dict):
+        super().__init__("sem cobertura")
+        self.cobertura = cobertura
+
+
+class SeloEmAndamento(AtoError):
+    """O selo desta referência já está sendo pedido (outro balcão, outra aba).
+
+    Deixar o segundo pedido seguir seria selar com a cobertura do primeiro —
+    que pode ser estornada no instante seguinte, se o aparelho recusar.
+    """
+
+
+def _percorrer(dados: Any, profundidade: int = 3):
+    """(chave, valor) do envelope, descendo nos blocos `dadosSelo`, `selo`..."""
+    if profundidade < 0 or not isinstance(dados, dict):
+        return
+    for chave, valor in dados.items():
+        yield chave, valor
+        if isinstance(valor, dict):
+            yield from _percorrer(valor, profundidade - 1)
+
+
+def selo_e_gratuito(dados: Any) -> bool:
+    """O envelope pede selo ISENTO/GRATUITO? Só calcula.
+
+    É o que o aparelho lê: `isento: true` (o campo do contrato) ou
+    `isentoGratuito` ISENTO/GRATUITO (o dos registros de nascimento e óbito).
+    Os dois moram em `dadosSelo` na maioria dos envelopes.
+
+    E AS NOTAS MANDAM `isento: {value: true, motivo}` (LT02, 20/10/2026) — a
+    forma medida nos 8 selos isentos da procuração do INSS, que
+    `envelope_do_ato_de_livro_das_notas`, o arquivamento e a certidão das
+    Notas montam. Só o `true` solto era lido: a procuração previdenciária
+    isenta e a certidão gratuita ficavam presas na trava do selo pago,
+    contra a regra do oficial de 19/10 («a gratuidade NÃO trava»).
+    """
+    for chave, valor in _percorrer(dados):
+        if chave == "isento" and valor is True:
+            return True
+        if (chave == "isento" and isinstance(valor, dict)
+                and valor.get("value") is True):
+            return True
+        if (chave == "isentoGratuito"
+                and str(valor or "").strip().upper() in ("ISENTO", "GRATUITO")):
+            return True
+    return False
+
+
+_CHAVES_DO_CODIGO = ("codigoTipoAtoRegistro", "codigoTipoAtoCertidao",
+                     "codigoTipoAto", "codigoAto")
+
+
+def e_certidao_eletronica_da_crc(bd, tabela: Any, ato_id: Any, dados: Any) -> bool:
+    """O selo é o da certidão eletrônica da CRC (o valor vem pela Central)?
+    SÓ LÊ. Exige as duas coisas: a certidão do RCPN gravada com a finalidade
+    da CRC, e o item 14.5.7 no envelope."""
+    if tabela != "rc_certidoes" or ato_id is None:
+        return False
+    if codigo_do_envelope(dados) != CODIGO_CERTIDAO_ELETRONICA_CRC:
+        return False
+    linha = bd.um("SELECT finalidade FROM rc_certidoes WHERE id = %s",
+                  (int(ato_id),))
+    return bool(linha) and str(linha["finalidade"] or "").strip() == \
+        FINALIDADE_CERTIDAO_ELETRONICA_CRC
+
+
+def codigo_do_envelope(dados: Any) -> str | None:
+    """O item da tabela do TJ que o envelope sela (`13.1`, `16.3`). Só calcula.
+
+    Cada caminho dá um nome ao campo — medido nos envelopes deste módulo.
+    """
+    achados = dict(_percorrer(dados))
+    for chave in _CHAVES_DO_CODIGO:
+        if str(achados.get(chave) or "").strip():
+            return str(achados[chave]).strip()
+    for chave, valor in _percorrer(dados):
+        if chave == "ato" and isinstance(valor, dict) and str(valor.get("codigo") or "").strip():
+            return str(valor["codigo"]).strip()
+    return None
+
+
+def ato_da_referencia(referencia: Any) -> tuple[str | None, int | None]:
+    """`tabela:ato_id[:...]` → (tabela, ato_id). Toda tela que sela usa essa forma.
+
+    O que é só grafia (espaço, maiúscula) se normaliza: um ` RI_ATOS : 12`
+    vindo de robô é o mesmo ato, e travar por isso seria segurar selo pago
+    de verdade. O resto volta (None, None), e `cobrir_o_selo` diz no quadro
+    o que chegou, em vez de pedir protocolo para um ato que ela não sabe qual é.
+    """
+    partes = [p.strip() for p in str(referencia or "").split(":")]
+    if len(partes) >= 2 and partes[0].lower() in TABELAS_DE_ATO and partes[1].isdigit():
+        return partes[0].lower(), int(partes[1])
+    return None, None
+
+
+def referencia_do_selo(referencia: Any, tabela: Any = None,
+                       ato_id: Any = None) -> str:
+    """A grafia ÚNICA da referência do selo: `tabela:ato_id[:resto]`. Só calcula.
+
+    `ato_da_referencia` já lia ` PT_ATOS : 1 ` e `pt_atos:1` como o mesmo
+    ato — mas a chave da cobertura (`cx_selo_coberturas.referencia`, única)
+    e o SID do selador usavam o texto CRU (LX21a #1). Duas grafias do mesmo
+    ato não se enxergavam: duas reservas, dois débitos no depósito e dois
+    selos pagos ao aparelho para um ato só. `obter_selo` normaliza UMA vez,
+    na entrada, e daí em diante a cobertura, o SID e o razão (`sd_selos`)
+    usam esta forma.
+
+    Só muda o que é grafia do ato: a tabela vai em minúscula, o número sem
+    zero à esquerda e cada pedaço sem espaço em volta. O resto (`16.1:1`,
+    o código do item) segue como veio — é ele que separa os selos de um
+    mesmo ato. A referência que não é de ato (`robo:12`, `ATO-12`) só perde o
+    espaço das pontas: a tela que a mandou continua recebendo o quadro
+    «diga de que ato é».
+    """
+    texto = str(referencia or "").strip()
+    if not texto and tabela is not None and ato_id is not None:
+        texto = f"{tabela}:{ato_id}"
+    tab, ident = ato_da_referencia(texto)
+    if tab is None:
+        return texto
+    resto = [p.strip() for p in texto.split(":")[2:]]
+    return ":".join([tab, str(ident), *resto])
+
+
+def grafias_da_referencia(referencia: Any, tabela: Any = None,
+                          ato_id: Any = None) -> list[str]:
+    """As grafias em que a cobertura e o selo deste ato podem estar gravados. Só calcula.
+
+    A canônica (`referencia_do_selo`) primeiro — é nela que se grava daqui em
+    diante. Depois, se for outra, a CRUA, do jeito que o código de antes do
+    LX24 a usava: `str(referencia or f"{tabela}:{ato_id}")` na chave de
+    `cx_selo_coberturas`, e o mesmo texto no SID (`selador.sid` só tira o
+    espaço das pontas). Sem ela, o ato antigo gravado como «PT_ATOS:01» não
+    achava a própria cobertura nem o próprio selo, debitava de novo e ia ao
+    aparelho com um SID novo: um segundo selo pago (revisão do LX24).
+
+    Uma terceira grafia do mesmo ato (pedida como `pt_atos:1`, gravada como
+    «PT_ATOS:01») não é procurada: `tools/conferir_referencias_de_selo.sql`
+    mede se há referência fora da forma canônica na produção.
+    """
+    canonica = referencia_do_selo(referencia, tabela, ato_id)
+    if referencia:
+        crua = str(referencia)
+    elif tabela is not None and ato_id is not None:
+        crua = f"{tabela}:{ato_id}"
+    else:
+        crua = ""
+    return [canonica] + ([crua] if crua and crua != canonica else [])
+
+
+def _ler_setting(bd, chave: str) -> str:
+    if not bd.tem_tabela("settings"):
+        return ""
+    linha = bd.um("SELECT value FROM settings WHERE key = %s", (chave,))
+    return str((linha or {}).get("value") or "")
+
+
+def trava_ligada(con) -> bool:
+    """A trava do selo pago está valendo? Só LÊ. Ligada por padrão."""
+    return _ler_setting(banco(con), CHAVE_DA_TRAVA).strip().upper() != TRAVA_DESLIGADA
+
+
+def _auditar(bd, *, acao: str, usuario: Any, usuario_id: Any, entidade: str,
+             entidade_id: Any, detalhes: dict, agora: str) -> None:
+    import json
+    bd.escrever(
+        """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
+                                   entity_type, entity_id, details)
+           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+        (agora, usuario_id, usuario, acao, entidade,
+         int(entidade_id) if str(entidade_id or "").isdigit() else None,
+         json.dumps(detalhes, ensure_ascii=False, default=str)))
+
+
+def _so_admin(papel: Any, o_que: str) -> None:
+    if str(papel or "").upper() != PAPEL_QUE_LIBERA:
+        raise AtoError(f"Só o oficial (ADMIN) pode {o_que}. Peça a ele.")
+
+
+def _justificativa(texto: Any) -> str:
+    limpo = " ".join(str(texto or "").split())
+    if len(limpo) < MINIMO_DA_JUSTIFICATIVA:
+        raise AtoError(
+            f"Escreva a justificativa com pelo menos {MINIMO_DA_JUSTIFICATIVA} "
+            f"letras: ela fica na auditoria e é lida na correição.")
+    return limpo
+
+
+def ligar_trava(con, *, ligada: bool, papel: Any, usuario: Any,
+                usuario_id: Any, justificativa: Any, agora: str) -> dict:
+    """Liga ou desliga a trava do selo pago. ESCREVE. Só ADMIN.
+
+    Desligar pede justificativa e fica na auditoria; enquanto desligada, a
+    barra vermelha aparece para todos (`barra_da_trava`).
+    """
+    _so_admin(papel, "ligar ou desligar a trava do selo")
+    motivo = _justificativa(justificativa) if not ligada else " ".join(
+        str(justificativa or "").split())
+    bd = banco(con)
+    bd.escrever(
+        """INSERT INTO settings (key, value) VALUES (%s, %s)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""",
+        (CHAVE_DA_TRAVA, "LIGADA" if ligada else TRAVA_DESLIGADA))
+    _auditar(bd, acao="SELO_TRAVA_LIGADA" if ligada else "SELO_TRAVA_DESLIGADA",
+             usuario=usuario, usuario_id=usuario_id, entidade="SETTINGS",
+             entidade_id=None, detalhes={"justificativa": motivo}, agora=agora)
+    return {"ligada": bool(ligada)}
+
+
+def barra_da_trava(con) -> str | None:
+    """A frase da barra vermelha, quando a trava está desligada. Só LÊ."""
+    try:
+        if trava_ligada(con):
+            return None
+    except sqlite3.Error:
+        return None
+    return ("A trava do selo pago está DESLIGADA: selos estão saindo sem "
+            "protocolo e sem pagamento conferidos. Só o oficial religa, em "
+            "Configurações.")
+
+
+def liberar_selo(con, *, tabela: str, ato_id: int, justificativa: Any,
+                 papel: Any, usuario: Any, usuario_id: Any, agora: str) -> dict:
+    """A válvula de emergência: este ato sela sem cobertura. ESCREVE. Só ADMIN.
+
+    Nunca do escrevente. Fica em `audit_logs` e na lista «selos liberados sem
+    cobertura» do gestor — e a pendência (pagar) continua aberta para quem
+    obteve o selo, até o caixa registrar o pagamento.
+    """
+    _so_admin(papel, "liberar um selo sem cobertura")
+    if tabela not in TABELAS_DE_ATO:
+        raise AtoError(f"{tabela!r} não é tabela de ato.")
+    motivo = _justificativa(justificativa)
+    bd = banco(con)
+    novo = bd.escrever(
+        """INSERT INTO cx_selo_liberacoes (tabela, ato_id, justificativa,
+                                           liberado_por, liberado_por_id, liberado_em)
+           VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (tabela, int(ato_id), motivo, usuario,
+         int(usuario_id) if str(usuario_id or "").isdigit() else None, agora))
+    lib_id = int(novo[0]["id"])
+    _auditar(bd, acao="SELO_LIBERADO_SEM_COBERTURA", usuario=usuario,
+             usuario_id=usuario_id, entidade=tabela, entidade_id=ato_id,
+             detalhes={"liberacao_id": lib_id, "justificativa": motivo},
+             agora=agora)
+    return {"liberacao_id": lib_id, "tabela": tabela, "ato_id": int(ato_id)}
+
+
+def _liberacao(bd, tabela: str, ato_id: int) -> dict | None:
+    if not bd.tem_tabela("cx_selo_liberacoes"):
+        return None
+    return bd.um(
+        """SELECT * FROM cx_selo_liberacoes WHERE tabela = %s AND ato_id = %s
+            ORDER BY id LIMIT 1""", (tabela, int(ato_id)))
+
+
+def _lancamento_do_ato(bd, tabela: str, ato_id: int) -> dict | None:
+    """O lançamento do ato no caixa (`cobrar`), com protocolo. Só LÊ."""
+    if not bd.tem_tabela("cx_lancamentos"):
+        return None
+    return bd.um(
+        """SELECT * FROM cx_lancamentos
+            WHERE origem = 'ATO' AND origem_chave LIKE %s
+              AND sentido = 'ENTRADA' AND protocolo_id IS NOT NULL
+              AND coalesce(estornado, 0) = 0 AND coalesce(excluido, 0) = 0
+            ORDER BY id LIMIT 1""", (f"{tabela}:{int(ato_id)}:%",))
+
+
+def _selo_ja_obtido(bd, *, cns: Any, atribuicao: Any,
+                    referencias: list[str]) -> str | None:
+    """O aparelho já deu o selo desta referência? Pedir de novo NÃO compra outro.
+
+    `selador_cliente.selar` devolve o que está no razão pelo SID — e travar
+    aí deixaria o ato sem o selo que já foi pago. Confere cada grafia
+    (`grafias_da_referencia`, a canônica primeiro) e devolve AQUELA cujo SID
+    tem selo: é por ela que o selo tem de ser pedido de novo. None se nenhuma.
+    """
+    if not cns or not bd.tem_tabela("sd_selos"):
+        return None
+    for ref in referencias:
+        if not str(ref or "").strip():
+            continue
+        chave = selador.sid(cns, atribuicao, ref, 1)
+        if bd.valor("SELECT count(*) AS n FROM sd_selos "
+                    "WHERE sid = %s AND cancelado_em IS NULL", (chave,)):
+            return ref
+    return None
+
+
+def _cobertura_gravada(bd, grafias: list[str]) -> dict | None:
+    """A cobertura já gravada do ato, em qualquer das grafias. Só LÊ.
+
+    Havendo duas (o ato pago duas vezes antes do LX24), vale a canônica.
+    """
+    if not bd.tem_tabela("cx_selo_coberturas"):
+        return None
+    return bd.um(
+        """SELECT * FROM cx_selo_coberturas WHERE referencia = ANY(%s)
+            ORDER BY (referencia = %s) DESC, id LIMIT 1""",
+        (list(grafias), grafias[0]))
+
+
+def _gravar_cobertura(bd, *, referencia: str, tabela: Any, ato_id: Any,
+                      forma: str, usuario: Any, agora: str, item: Any = None,
+                      deposito: Any = None, lancamento: Any = None,
+                      liberacao: Any = None, unidades: int = 0) -> dict:
+    """Grava a cobertura RESERVADA — o selo ainda não foi pedido. ESCREVE.
+
+    A reserva leva tudo o que o estorno precisa para desfazer: o depósito e o
+    valor debitados, o item e quantas unidades a trava gastou dele.
+    """
+    from caixa_schema import centavos
+    reserva = {
+        "referencia": referencia, "tabela": tabela, "ato_id": ato_id,
+        "forma": forma,
+        "protocolo_id": (item or {}).get("protocolo_id")
+        or (lancamento or {}).get("protocolo_id"),
+        "item_id": (item or {}).get("id"),
+        "deposito_id": (deposito or {}).get("deposito_id"),
+        "lancamento_id": (lancamento or {}).get("id"),
+        "liberacao_id": (liberacao or {}).get("id"),
+        "valor_centavos": (deposito or {}).get("valor_centavos")
+        if deposito else (centavos((item or {}).get("valor_total")) if item else None),
+        "usuario": usuario, "unidades_gastas": int(unidades),
+        "situacao": RESERVADA}
+    if not bd.tem_tabela("cx_selo_coberturas"):
+        # Banco sem o esquema da trava (teste de unidade montado à mão): o
+        # selo sai pela mesma régua, só não fica o rastro — e o estorno
+        # trabalha com o que vai aqui.
+        return {"coberto": True, "forma": forma, "reserva": reserva}
+    bd.escrever(
+        """INSERT INTO cx_selo_coberturas
+               (referencia, tabela, ato_id, forma, protocolo_id, item_id,
+                deposito_id, lancamento_id, liberacao_id, valor_centavos,
+                usuario, criado_em, situacao, unidades_gastas)
+           VALUES (%(referencia)s, %(tabela)s, %(ato_id)s, %(forma)s,
+                   %(protocolo_id)s, %(item_id)s, %(deposito_id)s,
+                   %(lancamento_id)s, %(liberacao_id)s, %(valor_centavos)s,
+                   %(usuario)s, %(agora)s, %(situacao)s, %(unidades_gastas)s)
+           ON CONFLICT (referencia) DO NOTHING""",
+        reserva | {"agora": agora})
+    return {"coberto": True, "forma": forma, "reserva": reserva,
+            "protocolo": (item or {}).get("protocolo_numero"),
+            "deposito": (deposito or {}).get("numero")}
+
+
+#: De que atribuição é o protocolo que pode pagar o selo de cada tabela — na
+#: língua de `cx_protocolos.atribuicao` (medido na produção em 22/10/2026:
+#: RCPN, RI, NOTAS, FIRMAS e RTD nos últimos 30 dias). O balcão de firmas abre
+#: protocolo como FIRMAS ou como NOTAS, e os dois valem para ele. Tabela fora
+#: daqui não filtra — melhor mostrar a mais que esconder o pagamento certo.
+ATRIBUICOES_DO_ATO: dict[str, frozenset] = {
+    "pt_atos": frozenset({"PROTESTO"}),
+    "pt_certidoes": frozenset({"PROTESTO"}),
+    "at_certidoes": frozenset({"RTD", "RCPJ", "RI"}),
+    "rc_certidoes": frozenset({"RCPN"}),
+    "rc_atos": frozenset({"RCPN"}),
+    "hc_habilitacoes": frozenset({"RCPN"}),
+    "rg_atos": frozenset({"RTD", "RCPJ"}),
+    "rg_notificacao_diligencias": frozenset({"RTD", "RCPJ"}),
+    "rg_notificacao_certidoes": frozenset({"RTD", "RCPJ"}),
+    "rg_livros_contabeis": frozenset({"RTD", "RCPJ"}),
+    "ra_atos": frozenset({"RI"}),
+    "ri_atos": frozenset({"RI"}),
+    "ri_protocolos": frozenset({"RI"}),
+    "ri_certidoes": frozenset({"RI"}),
+    "ri_matriculas": frozenset({"RI"}),
+    "nt_atos": frozenset({"NOTAS"}),
+    "nt_certidoes": frozenset({"NOTAS"}),
+    "nt_publicas_formas": frozenset({"NOTAS", "FIRMAS"}),
+    "nt_comunicacoes_veiculo": frozenset({"NOTAS", "FIRMAS"}),
+    "nt_reconhecimentos": frozenset({"FIRMAS", "NOTAS"}),
+    "nt_autenticacoes": frozenset({"FIRMAS", "NOTAS"}),
+    "nt_cartoes": frozenset({"FIRMAS", "NOTAS"}),
+    "nt_sinais_reconhecimentos": frozenset({"FIRMAS", "NOTAS"}),
+}
+
+
+def atribuicoes_do_ato(tabela: Any) -> frozenset | None:
+    """As atribuições de protocolo que pagam o selo desta tabela, ou None. Só calcula."""
+    return ATRIBUICOES_DO_ATO.get(str(tabela or "").strip().lower())
+
+
+#: O grupo da tabela do TJ de cada atribuição de protocolo — medido na
+#: produção em 22/10/2026 (itens dos protocolos desde agosto): NOTAS e FIRMAS
+#: 13, RCPN 14, RTD e RCPJ 15, RI 16, PROTESTO 17.
+GRUPO_DA_ATRIBUICAO = {"NOTAS": "13", "FIRMAS": "13", "RCPN": "14", "RTD": "15",
+                       "RCPJ": "15", "RI": "16", "PROTESTO": "17"}
+
+
+def pedidos_padrao_do_ato(tabela: Any) -> list[tuple[str, int]]:
+    """A família de códigos da tela que ainda não sabe o item exato. Só calcula.
+
+    `[("14.*", 1)]` para o RCPN, por exemplo — o seletor mostra os protocolos
+    com qualquer item do grupo, e a cobertura do selo continua conferindo o
+    código exato quando o selo é pedido.
+    """
+    grupos = sorted({GRUPO_DA_ATRIBUICAO[a] for a in (atribuicoes_do_ato(tabela) or ())
+                     if a in GRUPO_DA_ATRIBUICAO})
+    return [(f"{g}.*", 1) for g in grupos]
+
+
+def quantidade_do_envelope(dados: Any) -> int:
+    """Quantas unidades o envelope pede (`quantidade`, folhas). Só calcula.
+
+    Envelope sem o campo pede uma. A certidão do RI manda a folha acrescida
+    (16.24.4.1) num selo só, com `quantidade` = folhas − 1.
+    """
+    for chave, valor in _percorrer(dados):
+        if chave == "quantidade":
+            try:
+                return max(1, int(valor))
+            except (TypeError, ValueError):
+                return 1
+    return 1
+
+
+def candidatos_do_ato(con, *, tabela: Any, pedidos: Any,
+                      pre_marcar_protocolo_id: Any = None,
+                      hoje: Any = None) -> list[dict]:
+    """Os protocolos que o escrevente pode escolher para pagar este ato. Só LÊ.
+
+    É `caixa_protocolo.candidatos_para_o_selo` com a atribuição do ato — a
+    mesma lista na tela do ato (macro `_protocolo_do_selo.html`) e no quadro.
+    """
+    import caixa_protocolo as CXP
+    return CXP.candidatos_para_o_selo(
+        con, pedidos, atribuicoes=atribuicoes_do_ato(tabela), hoje=hoje,
+        pre_marcar_protocolo_id=pre_marcar_protocolo_id)
+
+
+def seletor_do_ato(con, *, tabela: Any, usuario: Any, pedidos: Any = None,
+                   hoje: Any = None) -> dict:
+    """O que a macro `_protocolo_do_selo.html` precisa para esta tela. Só LÊ.
+
+    `{"candidatos", "pedidos", "atendendo"}`. Com `pedidos`, a lista é a de
+    `candidatos_do_ato`; sem eles, a família de códigos da atribuição
+    (`pedidos_padrao_do_ato`), e as famílias valem como ALTERNATIVAS — a
+    certidão do Livro 3 pode ser paga por item do RTD/RCPJ ou do RI, e um
+    protocolo entra se pagar qualquer uma delas.
+    """
+    import caixa_protocolo as CXP
+    atendendo = CXP.em_atendimento(con, usuario)
+    pre = (atendendo or {}).get("id")
+    explicitos = CXP.pedidos_do_selo(pedidos) if pedidos else []
+    grupos = [explicitos] if explicitos else [[p] for p in pedidos_padrao_do_ato(tabela)]
+    juntos: dict[int, dict] = {}
+    for grupo in grupos:
+        for c in candidatos_do_ato(con, tabela=tabela, pedidos=grupo,
+                                   pre_marcar_protocolo_id=pre, hoje=hoje):
+            ja = juntos.get(c["protocolo_id"])
+            if not ja:
+                juntos[c["protocolo_id"]] = c
+                continue
+            ids = {i["id"] for i in ja["itens"]}
+            ja["itens"] += [i for i in c["itens"] if i["id"] not in ids]
+            if c["cobre_tudo"] and not ja["cobre_tudo"]:
+                ja["cobre_tudo"], ja["faltam"] = True, []
+    lista = sorted(juntos.values(), key=lambda c: (not c["pre_marcado"],
+                                                   not c["cobre_tudo"],
+                                                   -c["protocolo_id"]))
+    return {"candidatos": lista,
+            "pedidos": explicitos or [p for g in grupos for p in g],
+            "atendendo": dict(atendendo) if atendendo else None}
+
+
+def escolher_protocolo_do_selo(con, *, usuario: Any, protocolo: Any,
+                               agora: str) -> dict | None:
+    """O protocolo que o escrevente ESCOLHEU na tela vira o «em atendimento». ESCREVE.
+
+    `protocolo` é o id ou o número vindo do formulário; vazio não faz nada e
+    devolve None (o atendimento que já havia continua). Quem chama grava a
+    auditoria `SELO_PROTOCOLO_EM_ATENDIMENTO` FORA da transação (regra da
+    casa), com o que esta função devolve. A cobertura continua pelo passo 3 de
+    `cobrir_o_selo`: não há caminho novo de dinheiro, só o passo que faltava
+    estar à vista.
+    """
+    import caixa_protocolo as CXP
+    bruto = str(protocolo or "").strip()
+    if not bruto:
+        return None
+    return CXP.atender(con, usuario=usuario, protocolo=bruto, agora=agora)
+
+
+def _cobre_o_item(bd, it: dict, *, tabela: str, ato_id: int, usuario: Any,
+                  agora: str) -> tuple[str, dict | None] | None:
+    """Este item paga o selo? (forma, débito) ou None. Pode ESCREVER (débito)."""
+    import caixa_depositos as DEP
+    import caixa_protocolo as CXP
+    if CXP.item_pago(it):
+        return FORMA_ITEM_PAGO, None
+    if tabela in CXP.TABELAS_QUE_DIFEREM and CXP.item_diferido(it):
+        return FORMA_DIFERIDO, None
+    pago = DEP.pagar_item(bd, it["id"], agora=agora, quem=usuario,
+                          tabela=tabela, ato_id=ato_id)
+    if pago and pago.get("ja_quitado"):
+        return FORMA_ITEM_PAGO, None
+    if pago:
+        return FORMA_DEPOSITO, pago
+    return None
+
+
+def cobrir_o_selo(con, *, tabela: Any, ato_id: Any, referencia: Any,
+                  dados: Any, usuario: Any, agora: str, cns: Any = None,
+                  atribuicao: Any = None) -> dict:
+    """O selo pago tem protocolo e dinheiro? RESERVA a cobertura. ESCREVE.
+
+    Devolve `{"coberto": True, "forma": ..., "reserva": ...}` ou
+    `{"coberto": False, "quadro": ...}`. O débito e a unidade já saem do
+    saldo aqui, e a cobertura fica «RESERVADA»: quem a confirma ou estorna é
+    `obter_selo`, depois do aparelho. A mesma referência pedida de novo não
+    debita nem gasta outra unidade: a cobertura dela já está gravada. E a que
+    está RESERVADA agora é de um pedido em voo — sobe `SeloEmAndamento`.
+    """
+    import caixa_protocolo as CXP
+    bd = banco(con)
+    if selo_e_gratuito(dados):
+        return {"coberto": True, "forma": FORMA_GRATUITO}
+    # A mesma grafia de `obter_selo`: chamada direta, sem passar por lá,
+    # também não abre segunda cobertura para o mesmo ato. A procura é pela
+    # canônica E pela crua (LX25) — a cobertura de antes do LX24 está na crua.
+    grafias = grafias_da_referencia(referencia, tabela, ato_id)
+    ref = grafias[0]
+    # A TRAVA VEM ANTES DE OLHAR: dois pedidos da mesma referência ao mesmo
+    # tempo leriam «sem cobertura» e debitariam duas vezes.
+    bd.travar(f"cx_selo_coberturas:{ref}")
+    ja = _cobertura_gravada(bd, grafias)
+    if ja and ja["situacao"] == RESERVADA and _reserva_vencida(ja, agora):
+        _resolver_reserva_orfa(bd, ja, agora=agora)
+        ja = _cobertura_gravada(bd, grafias)
+    if ja and ja["situacao"] == RESERVADA:
+        raise SeloEmAndamento(
+            "O selo deste ato já está sendo pedido ao selador (outro balcão ou "
+            "outra aba). Espere o primeiro pedido terminar e confira o ato: "
+            "pedir de novo agora gastaria o pagamento duas vezes. Se a máquina "
+            "caiu no meio do pedido, o sistema desfaz a reserva sozinho em "
+            f"{PRAZO_DA_RESERVA_EM_SEGUNDOS // 60} minutos.")
+    if ja:
+        return {"coberto": True, "forma": ja["forma"], "repetido": True}
+    if _selo_ja_obtido(bd, cns=cns, atribuicao=atribuicao, referencias=grafias):
+        return {"coberto": True, "forma": "JA_OBTIDO"}
+    if e_certidao_eletronica_da_crc(bd, tabela, ato_id, dados):
+        # O valor vem pela CRC, e não pelo caixa (22/10/2026).
+        return _gravar_cobertura(bd, referencia=ref, tabela=tabela,
+                                 ato_id=int(ato_id), forma=FORMA_CENTRAL_CRC,
+                                 usuario=usuario, agora=agora)
+    if not trava_ligada(bd):
+        return _gravar_cobertura(bd, referencia=ref, tabela=tabela, ato_id=ato_id,
+                                 forma=FORMA_TRAVA_DESLIGADA, usuario=usuario,
+                                 agora=agora)
+    if tabela is None or ato_id is None:
+        return {"coberto": False, "quadro": _quadro_sem_ato(ref)}
+    ato_id = int(ato_id)
+    gravar = dict(referencia=ref, tabela=tabela, ato_id=ato_id,
+                  usuario=usuario, agora=agora)
+    # 1. o item ligado ao ato — POR CÓDIGO quando dá (22/10/2026). A certidão
+    # do RI tem dois selos (16.24.4 e 16.24.4.1) com referências próprias:
+    # ligado só o 16.24.4, o selo da folha acrescida passava por ele sem item
+    # que o pagasse. Se nenhum item ligado tem o código do envelope — o ato
+    # lavrado do RI, cujo envelope leva o `codigo_tj` do formulário —, vale
+    # qualquer item ligado, como antes.
+    ligados = CXP.itens_do_ato(bd, tabela, ato_id)
+    codigo = codigo_do_envelope(dados)
+    do_codigo = [it for it in ligados
+                 if codigo and str(it.get("codigo_ato") or "").strip() == codigo]
+    for it in (do_codigo or ligados):
+        achou = _cobre_o_item(bd, it, tabela=tabela, ato_id=ato_id,
+                              usuario=usuario, agora=agora)
+        if achou:
+            return _gravar_cobertura(bd, forma=achou[0], item=it,
+                                     deposito=achou[1], **gravar)
+    # 2. o lançamento do próprio ato
+    lanc = _lancamento_do_ato(bd, tabela, ato_id)
+    if lanc:
+        return _gravar_cobertura(bd, forma=FORMA_LANCAMENTO, lancamento=lanc,
+                                 **gravar)
+    # 3. o protocolo em atendimento — as unidades que o envelope pede
+    # (22/10/2026: era uma por selo, e a folha acrescida da certidão do RI
+    # pede folhas − 1 num selo só; as outras ficavam «livres» para cobrir outro
+    # ato). Gasta o que o envelope pede até o saldo, e nunca menos de uma —
+    # cobrir com saldo menor que o pedido é o que já acontecia, e o que falta
+    # volta em `parcial` para a tela dizer.
+    pedidas = quantidade_do_envelope(dados)
+    atendendo = CXP.em_atendimento(bd, usuario)
+    if atendendo:
+        for it in CXP.itens_para_o_selo(bd, atendendo["id"], codigo):
+            # A LISTA FOI LIDA SEM PRENDER: outro ato do mesmo protocolo pode
+            # ter gasto a última unidade entre ela e aqui. Prende o item e
+            # confere o saldo de novo ANTES de pagar com o depósito — senão o
+            # débito ficava num item que este selo não vai usar.
+            bd._escrita()
+            preso = bd.um("SELECT * FROM cx_protocolo_atos WHERE id = %s FOR UPDATE",
+                          (int(it["id"]),))
+            if not preso or CXP.saldo_do_item(preso) <= 0:
+                continue
+            it = it | dict(preso)
+            achou = _cobre_o_item(bd, it, tabela=tabela, ato_id=ato_id,
+                                  usuario=usuario, agora=agora)
+            if not achou:
+                continue
+            gastas = CXP.consumir_item(bd, it["id"], ato_id=ato_id, tabela=tabela,
+                                       agora=agora, quantas=pedidas,
+                                       origem=CXP.ORIGEM_SELO, quem=usuario)
+            if not gastas:
+                # O ITEM ESTÁ PRESO DESDE A CONFERÊNCIA DO SALDO, e a unidade
+                # não tinha como sumir. Se sumiu, o débito de cima NÃO pode
+                # ficar sem o selo: a exceção desfaz a transação inteira.
+                raise AtoError(
+                    f"A unidade do item {it.get('codigo_ato') or ''} acabou "
+                    f"enquanto o selo era coberto. Nada foi debitado: peça o "
+                    f"selo de novo.")
+            coberto = _gravar_cobertura(bd, forma=achou[0], item=it,
+                                        deposito=achou[1], unidades=gastas,
+                                        **gravar)
+            if gastas < pedidas:
+                coberto["parcial"] = {"codigo": codigo, "pedidas": pedidas,
+                                      "gastas": gastas,
+                                      "faltam": pedidas - gastas}
+            return coberto
+    # 4. a liberação do ADMIN — o «usado» só se grava quando o selo sai
+    lib = _liberacao(bd, tabela, ato_id)
+    if lib:
+        return _gravar_cobertura(bd, forma=FORMA_LIBERADO, liberacao=lib, **gravar)
+    quadro = quadro_para_selar(bd, tabela=tabela, ato_id=ato_id,
+                               usuario=usuario, dados=dados)
+    return {"coberto": False, "quadro": quadro,
+            "faltam": quadro.get("faltam") or []}
+
+
+#: Por que o selo pago precisa saber de que ato é.
+POR_QUE_REFERENCIA = ("sem o ato, o caixa não acha o protocolo nem o pagamento "
+                      "dele — e liberar às cegas seria selo pago sem dinheiro.")
+
+
+def _quadro_sem_ato(referencia: str) -> dict:
+    """O quadro do pedido que não diz de que ato é. Só calcula.
+
+    Não é falta do escrevente — é a tela ou o robô que mandou a referência
+    fora da forma `tabela:número`. O quadro diz o que chegou e onde se
+    resolve, em vez de pedir um protocolo que não teria a que se ligar.
+    """
+    return {"titulo": TITULO_DO_QUADRO, "pode_selar": False, "gratuito": False,
+            "sem_ato": True,
+            "itens": [_linha(False,
+                             f"Dizer de que ato é este selo: o pedido chegou com "
+                             f"a referência «{referencia}», e não com "
+                             f"«tabela:número do ato».",
+                             POR_QUE_REFERENCIA, "Selar pela tela do ato",
+                             "selar_pela_tela")]}
+
+
+# --------------------------------------------- a reserva: confirmar ou estornar
+
+
+def _reserva_vencida(reserva: dict, agora: str) -> bool:
+    """A reserva é de um pedido que caiu no meio? Só calcula.
+
+    A conta é no Python (regra da casa). Data que não se lê conta como
+    vencida: reserva sem hora não é de pedido nenhum em voo.
+    """
+    from datetime import datetime
+    try:
+        feita = datetime.fromisoformat(str(reserva.get("criado_em") or "")[:19])
+        hoje = datetime.fromisoformat(str(agora or "")[:19])
+    except ValueError:
+        return True
+    return (hoje - feita).total_seconds() >= PRAZO_DA_RESERVA_EM_SEGUNDOS
+
+
+def _reserva_presa(bd, reserva: dict | None) -> dict | None:
+    """A linha da reserva, presa, se ainda está RESERVADA. ESCREVE (trava).
+
+    A trava é a mesma de `cobrir_o_selo`, e vem antes da linha: confirmar,
+    estornar e cobrir a mesma referência ficam um de cada vez.
+    """
+    if not reserva:
+        return None
+    if not bd.tem_tabela("cx_selo_coberturas"):
+        return reserva if reserva.get("situacao") == RESERVADA else None
+    bd.travar(f"cx_selo_coberturas:{reserva['referencia']}")
+    bd._escrita()
+    linha = bd.um("""SELECT * FROM cx_selo_coberturas
+                      WHERE referencia = %s FOR UPDATE""", (reserva["referencia"],))
+    return linha if linha and linha["situacao"] == RESERVADA else None
+
+
+def _confirmar_reserva(con, reserva: dict | None, *, agora: str) -> bool:
+    """O selo saiu: a reserva vira cobertura de verdade. ESCREVE.
+
+    Vai na MESMA transação que grava o selo no razão — os dois ficam, ou
+    nenhum. Devolve False quando não havia o que confirmar (selo gratuito,
+    repetido, já obtido, ou reserva que a conferência das órfãs desfez — e
+    aí o selo cai no relatório dos pagos sem cobertura, que é onde deve estar).
+    """
+    bd = banco(con)
+    linha = _reserva_presa(bd, reserva)
+    if not linha:
+        return False
+    if linha.get("forma") == FORMA_LIBERADO and linha.get("liberacao_id"):
+        bd.escrever(
+            """UPDATE cx_selo_liberacoes SET usado_em = coalesce(usado_em, %s),
+                      usado_por = coalesce(usado_por, %s) WHERE id = %s""",
+            (agora, linha.get("usuario"), int(linha["liberacao_id"])))
+    if bd.tem_tabela("cx_selo_coberturas"):
+        bd.escrever(
+            """UPDATE cx_selo_coberturas SET situacao = %s, confirmada_em = %s
+                WHERE referencia = %s""",
+            (CONFIRMADA, agora, linha["referencia"]))
+    return True
+
+
+def _devolver_ao_deposito(bd, linha: dict, *, agora: str, motivo: str) -> None:
+    """O débito da reserva volta ao depósito, e o item deixa de estar quitado.
+
+    O espelho de `caixa_depositos.pagar_item`, com o mesmo cuidado: o
+    depósito é lido com a linha presa, e o estorno fica em
+    `cx_deposito_usos` como uma linha de valor negativo — o débito continua
+    lá, e quem soma os usos chega ao saldo certo.
+
+    PRENDE O ITEM ANTES DO DEPÓSITO (revisão do LX21a), na ordem de
+    `pagar_item`. Ao contrário, o balcão que estorna (depósito → item) e o
+    que cobre outro ato do mesmo protocolo (item → depósito) se esperavam um
+    ao outro, e o PostgreSQL derrubava um dos dois por deadlock — a trava
+    única da ponte só escondia isso.
+    """
+    import caixa_protocolo as CXP
+    from caixa_schema import centavos, reais
+    valor = int(linha.get("valor_centavos") or 0)
+    if valor <= 0:
+        return
+    bd._escrita()
+    item = (bd.um("SELECT * FROM cx_protocolo_atos WHERE id = %s FOR UPDATE",
+                  (int(linha["item_id"]),))
+            if linha.get("item_id") else None)
+    d = bd.um("SELECT * FROM cx_depositos WHERE id = %s FOR UPDATE",
+              (int(linha["deposito_id"]),))
+    if d:
+        novo = centavos(d["saldo"]) + valor
+        bd.escrever(
+            """UPDATE cx_depositos SET saldo = %s, encerrado = 0, atualizado_em = %s
+                WHERE id = %s""", (reais(novo), agora, int(d["id"])))
+        if bd.tem_tabela("cx_deposito_usos"):
+            bd.escrever(
+                """INSERT INTO cx_deposito_usos
+                       (deposito_id, valor_centavos, saldo_depois_centavos,
+                        protocolo_id, item_id, tabela, ato_id, motivo,
+                        criado_em, criado_por)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (int(d["id"]), -valor, novo, linha.get("protocolo_id"),
+                 linha.get("item_id"), linha.get("tabela"), linha.get("ato_id"),
+                 f"Estorno da reserva do selo {linha['referencia']}: {motivo}",
+                 agora, linha.get("usuario")))
+    # Só desfaz a quitação que o depósito fez: a do caixa não é desta reserva.
+    if item and str(item.get("quitado_por") or "").startswith("DEPÓSITO PRÉVIO"):
+        bd.escrever(
+            """UPDATE cx_protocolo_atos
+                  SET quitado = 0, quitado_em = NULL, quitado_por = NULL
+                WHERE id = %s""", (int(item["id"]),))
+        CXP.atualizar_situacao(bd, item["protocolo_id"])
+
+
+def _devolver_a_unidade(bd, linha: dict) -> None:
+    """A unidade que a trava gastou volta ao item, e o rastro dela sai."""
+    import caixa_protocolo as CXP
+    unidades = int(linha.get("unidades_gastas") or 0)
+    if unidades <= 0 or not linha.get("item_id"):
+        return
+    CXP.devolver_item(bd, int(linha["item_id"]), quantas=unidades)
+    if bd.tem_tabela("cx_item_do_ato") and linha.get("ato_id") is not None:
+        chave = (str(linha["tabela"]), int(linha["ato_id"]), int(linha["item_id"]),
+                 CXP.ORIGEM_SELO)
+        bd.escrever(
+            """UPDATE cx_item_do_ato SET unidades = unidades - %s
+                WHERE tabela = %s AND ato_id = %s AND item_id = %s AND origem = %s""",
+            (unidades, *chave))
+        bd.escrever(
+            """DELETE FROM cx_item_do_ato
+                WHERE tabela = %s AND ato_id = %s AND item_id = %s AND origem = %s
+                  AND unidades <= 0""", chave)
+
+
+def _estornar_reserva(con, reserva: dict | None, *, agora: str,
+                      motivo: str) -> bool:
+    """O selo NÃO saiu: o débito e a unidade voltam, e a reserva sai. ESCREVE.
+
+    O rastro fica em `audit_logs` («SELO_RESERVA_ESTORNADA», com o depósito,
+    o valor, o item e o porquê). A linha da cobertura sai para a referência
+    poder ser coberta de novo — `referencia` é única. Devolve False quando
+    não havia reserva em aberto.
+    """
+    bd = banco(con)
+    linha = _reserva_presa(bd, reserva)
+    if not linha:
+        return False
+    if linha.get("forma") == FORMA_DEPOSITO and linha.get("deposito_id"):
+        _devolver_ao_deposito(bd, linha, agora=agora, motivo=motivo)
+    _devolver_a_unidade(bd, linha)
+    if bd.tem_tabela("cx_selo_coberturas"):
+        bd.escrever("DELETE FROM cx_selo_coberturas WHERE referencia = %s",
+                    (linha["referencia"],))
+    if bd.tem_tabela("audit_logs"):
+        _auditar(bd, acao="SELO_RESERVA_ESTORNADA", usuario=linha.get("usuario"),
+                 usuario_id=None, entidade=linha.get("tabela") or "SELO",
+                 entidade_id=linha.get("ato_id"),
+                 detalhes={"referencia": linha["referencia"],
+                           "forma": linha.get("forma"),
+                           "deposito_id": linha.get("deposito_id"),
+                           "valor_centavos": linha.get("valor_centavos"),
+                           "item_id": linha.get("item_id"),
+                           "unidades": linha.get("unidades_gastas"),
+                           "motivo": motivo},
+                 agora=agora)
+    return True
+
+
+def _estornar_sem_estourar(con, reserva: dict | None, *, agora: str,
+                           motivo: str) -> None:
+    """Estorna e confirma já — chamado com a falha do aparelho na mão.
+
+    Se o próprio estorno falhar (o banco caiu junto), quem sobe é a falha do
+    aparelho, que é a que o escrevente precisa ler; a reserva fica para
+    `estornar_reservas_orfas`, que a acha pelo prazo.
+    """
+    try:
+        _estornar_reserva(con, reserva, agora=agora, motivo=motivo)
+        con.commit()
+    except Exception:                                          # noqa: BLE001
+        # O rastro do estorno que falhou fica no log: sem ele, a reserva só
+        # reaparecia na conferência das órfãs, sem ninguém saber por quê.
+        _LOG.exception("estorno da reserva do selo %s falhou; fica para a "
+                       "conferência das órfãs", (reserva or {}).get("referencia"))
+        try:
+            con.rollback()
+        except Exception:                                      # noqa: BLE001
+            pass
+
+
+def _resolver_reserva_orfa(bd, linha: dict, *, agora: str) -> str:
+    """Reserva de pedido que caiu no meio: o selo saiu ou não? ESCREVE.
+
+    O razão responde. Selo da referência em `sd_selos` (e não cancelado) é
+    selo que saiu — a reserva se confirma; sem ele, estorna. Os dois deixam
+    rastro em `audit_logs`.
+    """
+    saiu = bd.tem_tabela("sd_selos") and bool(bd.valor(
+        """SELECT count(*) AS n FROM sd_selos
+            WHERE referencia = %s AND cancelado_em IS NULL""",
+        (linha["referencia"],)))
+    if saiu:
+        if _confirmar_reserva(bd, linha, agora=agora) and bd.tem_tabela("audit_logs"):
+            _auditar(bd, acao="SELO_RESERVA_CONFIRMADA_NA_CONFERENCIA",
+                     usuario=linha.get("usuario"), usuario_id=None,
+                     entidade=linha.get("tabela") or "SELO",
+                     entidade_id=linha.get("ato_id"),
+                     detalhes={"referencia": linha["referencia"],
+                               "forma": linha.get("forma")}, agora=agora)
+        return CONFIRMADA
+    _estornar_reserva(bd, linha, agora=agora,
+                      motivo="o pedido do selo caiu no meio (reserva órfã)")
+    return "ESTORNADA"
+
+
+def estornar_reservas_orfas(con, *, agora: str) -> list[dict]:
+    """Confere as reservas de pedidos que caíram no meio. ESCREVE.
+
+    Roda na subida (`init_trava_do_selo_schema`) e antes de cada pedido de
+    selo (`obter_selo`) — a consulta é pelo índice das reservadas, e quase
+    sempre não acha nada. Só toca na reserva mais velha que
+    `PRAZO_DA_RESERVA_EM_SEGUNDOS`: a mais nova é de um pedido em voo.
+    Devolve o que fez, uma linha por reserva.
+    """
+    bd = banco(con)
+    if not bd.tem_tabela("cx_selo_coberturas"):
+        return []
+    feitas = []
+    for r in bd.ler("""SELECT * FROM cx_selo_coberturas WHERE situacao = %s
+                        ORDER BY criado_em, id""", (RESERVADA,)):
+        if not _reserva_vencida(r, agora):
+            continue
+        feitas.append({"referencia": r["referencia"],
+                       "resultado": _resolver_reserva_orfa(bd, r, agora=agora)})
+    return feitas
+
+
+def _conferir_as_orfas(db, *, agora: str) -> None:
+    """`estornar_reservas_orfas` antes do pedido, na transação DELA. ESCREVE.
+
+    Fora da transação da cobertura por duas razões. A cobertura que não
+    cobre volta inteira (LX20) — e levaria junto o estorno da órfã, que
+    ficaria refeito e desfeito a cada pedido. E uma falha aqui (banco antigo,
+    reserva com dado torto) não pode impedir selo nenhum: a órfã espera a
+    próxima conferência, e o erro fica no log.
+
+    A pergunta vem antes, sem transação: quase sempre não há órfã, e abrir
+    uma transação a cada selo seria pegar a trava única da ponte à toa.
+    """
+    try:
+        with db.connect() as con:
+            bd = banco(con)
+            vencidas = bd.tem_tabela("cx_selo_coberturas") and any(
+                _reserva_vencida(r, agora) for r in bd.ler(
+                    """SELECT criado_em FROM cx_selo_coberturas
+                        WHERE situacao = %s ORDER BY criado_em, id""",
+                    (RESERVADA,)))
+        if not vencidas:
+            return
+        with db.transaction() as con:
+            estornar_reservas_orfas(con, agora=agora)
+    except Exception:                                          # noqa: BLE001
+        _LOG.exception("conferência das reservas órfãs do selo falhou")
+
+
+def _linha(ok: bool, texto: str, porque: str = "", botao: str | None = None,
+           acao: str | None = None) -> dict:
+    return {"ok": bool(ok), "marca": "✓" if ok else "✗", "texto": texto,
+            "porque": porque, "botao": botao, "acao": acao}
+
+
+def quadro_para_selar(con, *, tabela: Any, ato_id: Any, usuario: Any = None,
+                      dados: Any = None) -> dict:
+    """«Para selar este ato falta:» — item por item, com o botão de cada um. Só LÊ.
+
+    É o mesmo quadro na tela do ato, na tela da cobertura e no recado que a
+    rota mostra quando o selo não sai: o escrevente lê o que falta e onde se
+    resolve, sem erro técnico.
+    """
+    import caixa_depositos as DEP
+    import caixa_protocolo as CXP
+    from caixa_schema import reais
+    bd = banco(con)
+    if selo_e_gratuito(dados):
+        return {"titulo": TITULO_DO_QUADRO, "pode_selar": True, "gratuito": True,
+                "itens": [_linha(True, "Ato gratuito: sela sem pagamento."),
+                          _linha(True, f"Depois do ato, junte {O_QUE_VAI_NO_PDF}.",
+                                 POR_QUE_GRATUITO, "Juntar o comprovante",
+                                 "comprovante")]}
+    itens: list[dict] = []
+    if not trava_ligada(bd):
+        return {"titulo": TITULO_DO_QUADRO, "pode_selar": True, "gratuito": False,
+                "itens": [_linha(True, "A trava do selo está desligada pelo oficial.")]}
+    ligados = (CXP.itens_do_ato(bd, tabela, int(ato_id))
+               if tabela and ato_id is not None else [])
+    lanc = (_lancamento_do_ato(bd, tabela, int(ato_id))
+            if tabela and ato_id is not None else None)
+    atendendo = CXP.em_atendimento(bd, usuario)
+    candidatos = (CXP.itens_para_o_selo(bd, atendendo["id"], codigo_do_envelope(dados))
+                  if atendendo else [])
+    liberado = (_liberacao(bd, tabela, int(ato_id))
+                if tabela and ato_id is not None else None)
+    possiveis = ligados + candidatos
+
+    # 1. o protocolo
+    if ligados:
+        itens.append(_linha(True, f"Protocolo {ligados[0]['protocolo_numero']} "
+                                  f"ligado ao ato."))
+    elif lanc:
+        itens.append(_linha(True, "O ato foi lançado no caixa com protocolo."))
+    elif candidatos:
+        itens.append(_linha(True, f"Protocolo em atendimento: "
+                                  f"{atendendo['numero']} (item "
+                                  f"{candidatos[0].get('codigo_ato') or ''})."))
+    elif atendendo:
+        codigo = codigo_do_envelope(dados)
+        itens.append(_linha(
+            False, f"O protocolo {atendendo['numero']} não tem item "
+                   f"{codigo or 'deste serviço'} com unidade sobrando.",
+            POR_QUE_PROTOCOLO, "Abrir protocolo", "abrir_protocolo"))
+    else:
+        itens.append(_linha(False, "Ligar o ato a um protocolo do balcão.",
+                            POR_QUE_PROTOCOLO, "Abrir protocolo",
+                            "abrir_protocolo"))
+
+    # 2. o dinheiro
+    pago = bool(lanc) or any(CXP.item_pago(i) for i in possiveis) or any(
+        tabela in CXP.TABELAS_QUE_DIFEREM and CXP.item_diferido(i)
+        for i in possiveis)
+    if pago:
+        itens.append(_linha(True, "Pagamento registrado no caixa."))
+    elif possiveis:
+        alvo = possiveis[0]
+        saldo = DEP.saldo_do_protocolo(bd, alvo["protocolo_id"], tabela=tabela,
+                                       ato_id=ato_id)
+        itens.append(_linha(False, f"Registrar o pagamento do item "
+                                   f"{alvo.get('codigo_ato') or ''} do protocolo "
+                                   f"{alvo.get('protocolo_numero') or ''}.",
+                            POR_QUE_PAGAMENTO, "Registrar pagamento",
+                            "registrar_pagamento"))
+        if saldo > 0:
+            itens.append(_linha(False, "Ou usar o depósito prévio do protocolo.",
+                                "o dinheiro já entrou antes: o item é pago com ele.",
+                                f"Usar depósito prévio (saldo R$ {reais(saldo)})",
+                                "usar_deposito"))
+        if tabela in CXP.TABELAS_QUE_DIFEREM:
+            itens.append(_linha(False, "Ou registrar o diferimento (a posteriori / CRA).",
+                                "a lei manda o devedor pagar no fim: diga quem paga e quando.",
+                                "Registrar diferimento", "diferir"))
+    else:
+        itens.append(_linha(False, "Registrar o pagamento no caixa.",
+                            POR_QUE_PAGAMENTO, "Registrar pagamento",
+                            "registrar_pagamento"))
+    if liberado:
+        itens.append(_linha(True, "Liberado pelo oficial — o pagamento continua "
+                                  "pendente."))
+    pode = all(i["ok"] for i in itens[:2]) or bool(liberado)
+    # OS CANDIDATOS E O QUE FALTA (22/10/2026): o quadro passa a mostrar os
+    # protocolos pagos da atribuição do ato, para o escrevente escolher um e
+    # pedir o selo de novo — em vez de mandá-lo procurar o «Atender» noutra
+    # tela. E `faltam` diz, por código, quantas unidades pagas faltam.
+    codigo = codigo_do_envelope(dados)
+    pedidos = [(codigo, quantidade_do_envelope(dados))] if codigo else []
+    candidatos: list[dict] = []
+    faltam: list[dict] = []
+    if not pode and pedidos:
+        candidatos = candidatos_do_ato(
+            bd, tabela=tabela, pedidos=pedidos,
+            pre_marcar_protocolo_id=(atendendo or {}).get("id"))
+        do_atendido = next((c for c in candidatos if atendendo
+                            and c["protocolo_id"] == int(atendendo["id"])), None)
+        faltam = (do_atendido["faltam"] if do_atendido else
+                  [{"codigo": c, "pedidas": q, "saldo_pago": 0, "saldo": 0,
+                    "faltam": q} for c, q in pedidos])
+    return {"titulo": TITULO_DO_QUADRO, "pode_selar": pode, "gratuito": False,
+            "itens": itens, "pedidos": pedidos, "candidatos": candidatos,
+            "faltam": faltam}
+
+
+def recado_da_cobertura(quadro: dict) -> str:
+    """O quadro em uma frase, para as telas que só mostram o motivo."""
+    faltas = [i for i in (quadro or {}).get("itens", []) if not i["ok"]]
+    if (quadro or {}).get("sem_ato") and faltas:
+        # Não há o que resolver em «Selo e caixa»: falta a tela mandar o ato.
+        return (f"O selo não foi pedido. {TITULO_DO_QUADRO} "
+                f"✗ {faltas[0]['texto'].rstrip('.')}. Por quê: {faltas[0]['porque']} "
+                f"Peça o selo pela tela do ato, que manda a referência certa.")
+    if not faltas:
+        return "O selo não foi pedido: o ato está aguardando cobertura."
+    linhas = "; ".join(f"✗ {i['texto'].rstrip('.')}" for i in faltas)
+    porques = []
+    for i in faltas:
+        if i["porque"] and i["porque"] not in porques:
+            porques.append(i["porque"])
+    return (f"O selo não foi pedido — o ato está aguardando cobertura. "
+            f"{TITULO_DO_QUADRO} {linhas}. Por quê: {' '.join(porques)} "
+            f"Resolva em «Selo e caixa» e peça o selo de novo.")
+
+
+def _marcar_aguardando(con, *, tabela: Any, ato_id: Any, motivo: str,
+                       usuario: Any, agora: str) -> None:
+    if tabela is None or ato_id is None or not banco(con).tem_tabela("cx_selo_aguardando"):
+        return
+    banco(con).escrever(
+        """INSERT INTO cx_selo_aguardando (tabela, ato_id, motivo, usuario,
+                                           desde, atualizado_em)
+           VALUES (%s,%s,%s,%s,%s,%s)
+           ON CONFLICT (tabela, ato_id) DO UPDATE
+              SET motivo = EXCLUDED.motivo, usuario = EXCLUDED.usuario,
+                  atualizado_em = EXCLUDED.atualizado_em""",
+        (tabela, int(ato_id), motivo, usuario, agora, agora))
+
+
+def _tirar_aguardando(con, *, tabela: Any, ato_id: Any) -> None:
+    if tabela is None or ato_id is None or not banco(con).tem_tabela("cx_selo_aguardando"):
+        return
+    banco(con).escrever(
+        "DELETE FROM cx_selo_aguardando WHERE tabela = %s AND ato_id = %s",
+        (tabela, int(ato_id)))
+
+
+def aguardando_cobertura(con, limite: int = 200) -> list[dict]:
+    """Os atos que ficaram sem selo por falta de protocolo ou pagamento. Só LÊ.
+
+    Ato que a tela desfez depois (o reconhecimento sem selo não fica de pé)
+    sai da lista: não há o que selar.
+    """
+    bd = banco(con)
+    saida = []
+    for r in bd.ler("""SELECT * FROM cx_selo_aguardando
+                        ORDER BY desde, tabela, ato_id LIMIT %s""", (int(limite),)):
+        if r["tabela"] in TABELAS_DE_ATO and bd.um(
+                f"SELECT id FROM {r['tabela']} WHERE id = %s", (int(r["ato_id"]),)):
+            saida.append(r)
+    return saida
+
+
+def cobertura_de_verdade(con, tabela: str, ato_id: int) -> bool:
+    """O ato tem dinheiro (ou diferimento) registrado? Só LÊ.
+
+    É a pergunta da pendência: liberação e trava desligada deixam o selo sair,
+    mas só isto fecha a cobrança.
+    """
+    import caixa_protocolo as CXP
+    bd = banco(con)
+    formas = sorted(FORMAS_QUE_COBREM)
+    # A RESERVA NÃO CONTA: é selo em voo, que pode ser estornado.
+    if bd.valor(f"""SELECT count(*) AS n FROM cx_selo_coberturas
+                     WHERE tabela = %s AND ato_id = %s AND situacao = %s
+                       AND forma IN ({', '.join(['%s'] * len(formas))})""",
+                (tabela, int(ato_id), CONFIRMADA, *formas)):
+        return True
+    for it in CXP.itens_do_ato(bd, tabela, int(ato_id)):
+        if CXP.item_pago(it) or (tabela in CXP.TABELAS_QUE_DIFEREM
+                                 and CXP.item_diferido(it)):
+            return True
+    return bool(_lancamento_do_ato(bd, tabela, int(ato_id)))
+
+
+def liberados_sem_cobertura(con) -> list[dict]:
+    """A lista do gestor: selos que o ADMIN liberou e que ainda não foram pagos."""
+    bd = banco(con)
+    saida = []
+    for lib in bd.ler("SELECT * FROM cx_selo_liberacoes ORDER BY liberado_em, id"):
+        if cobertura_de_verdade(bd, lib["tabela"], lib["ato_id"]):
+            continue
+        selos = bd.ler("""SELECT numero, obtido_por, obtido_em FROM sd_selos
+                           WHERE tabela = %s AND ato_id = %s AND cancelado_em IS NULL
+                           ORDER BY id""", (lib["tabela"], int(lib["ato_id"])))
+        saida.append(lib | {
+            "rotulo": TABELAS_DE_ATO.get(lib["tabela"], lib["tabela"]),
+            "selos": [s["numero"] for s in selos],
+            "obtido_por": (selos[0]["obtido_por"] if selos else lib["usado_por"])})
+    return saida
+
+
+def _mesma_pessoa(a: Any, alvos: set[str]) -> bool:
+    import unicodedata
+    def norm(s):
+        return "".join(c for c in unicodedata.normalize("NFD", str(s or ""))
+                       if unicodedata.category(c) != "Mn").strip().lower()
+    return norm(a) in {norm(x) for x in alvos} - {""}
+
+
+def pagamentos_pendentes(con, *, nome: Any, username: Any = "") -> list[dict]:
+    """O que esta pessoa selou liberado e ainda não foi pago — a cobrança dela."""
+    alvos = {str(nome or ""), str(username or "")}
+    return [lib for lib in liberados_sem_cobertura(con)
+            if _mesma_pessoa(lib["obtido_por"], alvos)]
+
+
+def desde_da_conferencia(con) -> str:
+    import re
+    valor = _ler_setting(banco(con), CHAVE_DESDE_DA_CONFERENCIA)
+    return valor[:10] if re.match(r"^\d{4}-\d{2}-\d{2}", valor) else DESDE_DA_CONFERENCIA_PADRAO
+
+
+def selos_pagos_sem_cobertura(con, desde: str | None = None,
+                              limite: int = 500) -> list[dict]:
+    """Relatório do oficial: selo pago sem protocolo ou sem pagamento. Só LÊ.
+
+    Os de ANTES desta versão não travaram nada — saíram como sempre saíram —,
+    e é por isso que existe a lista: conferir a partir de uma data. O selo
+    isento não entra (é a outra lista, a do comprovante).
+
+    O LIMITE É DE SELOS SEM COBERTURA, e não de selos lidos (LX20, revisão
+    do LX16). Cortar a leitura em 500 e só depois tirar os cobertos deixava
+    os 500 mais antigos — quase todos pagos — ocuparem a lista, e o selo sem
+    pagamento que veio depois sumia do relatório que existe para achá-lo.
+    Por isso se lê de página em página, pela mesma ordem, até juntar
+    `limite` descobertos. Quem quer saber se ficou algum de fora pede
+    `limite + 1` (a tela da conferência faz assim).
+    """
+    bd = banco(con)
+    inicio = (desde or desde_da_conferencia(bd))[:10]
+    limite = max(1, int(limite))
+    pagina = max(limite, 200)
+    saida: list[dict] = []
+    depois = None           # (obtido_em, id) do último selo lido
+    while len(saida) < limite:
+        filtro, args = "", [inicio, "%Selo Isento%"]
+        if depois:
+            filtro = "AND (obtido_em, id) > (%s, %s)"
+            args += list(depois)
+        lidos = bd.ler(
+            f"""SELECT id, numero, tabela, ato_id, atribuicao, obtido_em, obtido_por
+                  FROM sd_selos
+                 WHERE obtido_em >= %s AND cancelado_em IS NULL
+                   AND coalesce(texto, '') NOT ILIKE %s {filtro}
+                 ORDER BY obtido_em, id LIMIT %s""",
+            (*args, pagina))
+        for s in lidos:
+            if s["tabela"] and s["ato_id"] is not None and cobertura_de_verdade(
+                    bd, s["tabela"], s["ato_id"]):
+                continue
+            saida.append(s | {"rotulo": TABELAS_DE_ATO.get(s["tabela"] or "", "sem ato")})
+            if len(saida) >= limite:
+                break
+        if len(lidos) < pagina:
+            break
+        depois = (lidos[-1]["obtido_em"], lidos[-1]["id"])
+    return saida

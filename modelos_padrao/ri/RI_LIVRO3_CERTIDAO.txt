@@ -1,0 +1,17 @@
+CERTIFICO E DOU FÉ, que revendo os livros próprios desta Serventia Imobiliária, a pedido de parte interessada encontrei no Livro 3 Auxiliar de Registro Geral de Imóveis, no registro n.{numero} o seguinte:-
+
+NATUREZA: {natureza}
+SITUAÇÃO: {situacao}
+
+TÍTULO: {titulo_tipo}, nº {titulo_numero}
+PRENOTAÇÃO: {prenotacao}
+VALOR: {valor}
+
+PARTES:
+{partes}
+
+TEOR DO REGISTRO:
+{teor}
+
+ATOS POSTERIORES AO REGISTRO:
+{atos}

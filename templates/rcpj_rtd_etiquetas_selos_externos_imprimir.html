@@ -70,23 +70,8 @@
 <div class="previews">
 {% for e in etiquetas %}
   <section class="etiqueta">
-    <div class="conteudo">
-      <div>
-        <div class="cartorio">{{ serventia.unit_name }}</div>
-        <div class="titulo">{{ e.titulo }}</div>
-        {% if e.detalhe %}<div class="detalhe">{{ e.detalhe }}</div>{% endif %}
-      </div>
-      <div>
-        <div class="selo">{{ e.numero }}</div>
-        {% if e.valores %}<div class="valores">{{ e.valores }}</div>{% endif %}
-      </div>
-    </div>
-    {% if e.qr %}
-    <div class="qr">
-      {{ e.qr|safe }}
-      <div class="qr-rotulo">confira o selo<br>selo.tjma.jus.br</div>
-    </div>
-    {% endif %}
+{# o teor da tira é o RCPJ_RTD_ETIQUETA_SELO_EXTERNO do catálogo (LF06F) -#}
+{{ e.papel|safe }}
   </section>
 {% endfor %}
 </div>

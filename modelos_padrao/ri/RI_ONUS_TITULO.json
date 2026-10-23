@@ -1,0 +1,11 @@
+{
+  "chave": "RI_ONUS_TITULO",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Título da certidão de ônus e ações",
+  "formato": "JINJA",
+  "explica": "O título da certidão de ônus e de ações reais e pessoais reipersecutórias; o resultado de cada parte, que o escrevente confirma, escreve «positiva» ou «negativa» nos claros (ri_onus_ia).",
+  "campos": [
+    "acoes",
+    "onus"
+  ]
+}

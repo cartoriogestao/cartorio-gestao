@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{#
+  AS NOTIFICAÇÕES EXTRAJUDICIAIS DO RTD — uma linha por destinatário (LG04).
+
+  O PRAZO É CONTA DA HORA DA TELA, E NÃO MARCA NO BANCO: GET não escreve.
+  A primeira diligência em até 10 dias da apresentação (CN-MA, art. 987) e a
+  averbação do resultado em 30 dias (art. 987, § 1º) aparecem como alerta.
+#}
+{% block heading %}<h1>Notificações extrajudiciais — RTD</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  <a class="button" href="{{ url_for('rcpj_rtd_notificacao_nova') }}">+ Nova notificação</a>
+  {% endif %}
+  <a class="button{% if not situacao %} primary{% endif %}" href="{{ url_for('rcpj_rtd_notificacoes') }}">Todas</a>
+  {% for chave, rotulo in SITUACOES.items() %}
+  <a class="button{% if situacao == chave %} primary{% endif %}"
+     href="{{ url_for('rcpj_rtd_notificacoes', situacao=chave) }}">{{ rotulo }}</a>
+  {% endfor %}
+</div>
+<section class="panel">
+  <div class="panel-head"><span>Destinatários</span><small>{{ linhas|length }}</small></div>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Destinatário</th><th>Apresentado</th><th>1ª diligência até</th>
+      <th>Diligências</th><th>Situação</th><th>O que falta</th></tr></thead>
+    <tbody>
+    {% for n in linhas %}
+      <tr>
+        <td><a href="{{ url_for('rcpj_rtd_notificacao', notificacao_id=n.id) }}">{{ n.destinatario_nome }}</a>
+            <br><small>{{ ZONAS.get(n.zona, n.zona) }}</small></td>
+        <td>{{ br(n.apresentado_em) }}</td>
+        <td>{{ br(n.prazo_primeira) }}</td>
+        <td>{{ n.quantas_idas }}</td>
+        <td>{{ SITUACOES.get(n.situacao, n.situacao) }}</td>
+        <td>{% for a in n.alertas %}<div class="flash warning">{{ a }}</div>{% else %}—{% endfor %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6">Nenhuma notificação.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

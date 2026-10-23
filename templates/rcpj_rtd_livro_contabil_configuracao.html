@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{#
+  O ITEM DA TABELA DO TJMA da autenticação de livro (LG04). Sem padrão de
+  propósito: a tabela importada não diz com clareza qual é, e item adivinhado
+  é cobrança errada com selo em cima.
+#}
+{% block heading %}<h1>Livros contábeis — item da tabela de emolumentos</h1>{% endblock %}
+{% block content %}
+<div class="notice">
+  Escreva o código do TJ do item com que esta casa cobra a autenticação de
+  livro (por exemplo, o da tabela XV vigente). O sistema não escolhe por você.
+</div>
+<form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Código do item <input name="item" value="{{ item }}"></label>
+  <button type="submit" class="primary">Gravar</button>
+  <a class="button" href="{{ url_for('rcpj_rtd_livro_contabil_lista') }}">Voltar</a>
+</form>
+{% if item %}
+<p>Item atual: <strong>{{ item }}</strong>{% if preco %} — {{ preco.descricao }}: R$ {{ preco.total }}{% else %} — sem preço na tabela do dia{% endif %}.</p>
+{% endif %}
+{% endblock %}

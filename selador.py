@@ -3,7 +3,7 @@ O contrato do Selador API do TJMA.
 
 DE ONDE VEM ESTE ARQUIVO
     Da documentacao OFICIAL do Selador, encontrada na maquina do E-Oficio em
-    C:\\ARPNET\\C11\\Selo Eletronico\\selador-doc — seis arquivos HTML, um por
+    arquivos\\eoficio\\Selo Eletronico\\selador-doc — seis arquivos HTML, um por
     atribuicao, gerados pelo proprio Tribunal e datados de 08/10/2017.
 
     Os enderecos, os nomes dos campos e os codigos de resposta abaixo NAO

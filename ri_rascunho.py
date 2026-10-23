@@ -40,6 +40,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from bd_nativo import banco
+
 TIPOS = ("R", "AV")
 
 
@@ -59,10 +61,9 @@ def numero_que_teria(con: sqlite3.Connection, matricula_id: int) -> int:
     grava nada: chamar esta funcao nao tira o numero de ninguem. A tela avisa
     que o numero e de quem lavrar primeiro.
     """
-    con.row_factory = sqlite3.Row
-    ultimo = con.execute(
-        "SELECT MAX(numero) n FROM ri_atos WHERE matricula_id = ?",
-        (int(matricula_id),)).fetchone()
+    ultimo = banco(con).um(
+        "SELECT MAX(numero) AS n FROM ri_atos WHERE matricula_id = %s",
+        (int(matricula_id),))
     return int(ultimo["n"] or 0) + 1
 
 
@@ -89,13 +90,13 @@ def salvar(con: sqlite3.Connection, matricula_id: int, *, tipo: str,
             "Escreva o texto do ato antes de guardar o rascunho — rascunho em "
             "branco só serve para alguém lavrar um ato vazio depois.")
 
-    con.row_factory = sqlite3.Row
-    con.execute(
+    bd = banco(con)
+    linha = bd.escrever(
         """INSERT INTO ri_rascunhos
               (matricula_id, tipo, teor, modelo_codigo, natureza_titulo,
                protocolo, prenotacao, data_ato, criado_por, criado_em,
                atualizado_em)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT(matricula_id) DO UPDATE SET
               tipo = excluded.tipo, teor = excluded.teor,
               modelo_codigo = excluded.modelo_codigo,
@@ -103,21 +104,18 @@ def salvar(con: sqlite3.Connection, matricula_id: int, *, tipo: str,
               protocolo = excluded.protocolo,
               prenotacao = excluded.prenotacao,
               data_ato = excluded.data_ato,
-              atualizado_em = excluded.atualizado_em""",
+              atualizado_em = excluded.atualizado_em
+           RETURNING id""",
         (int(matricula_id), str(tipo).upper(), limpo, modelo_codigo,
-         natureza_titulo, protocolo, prenotacao, data_ato, quem, agora, agora))
-    linha = con.execute(
-        "SELECT id FROM ri_rascunhos WHERE matricula_id = ?",
-        (int(matricula_id),)).fetchone()
+         natureza_titulo, protocolo, prenotacao, data_ato, quem, agora,
+         agora))[0]
     return int(linha["id"])
 
 
 def da_matricula(con: sqlite3.Connection, matricula_id: int) -> dict | None:
     """O rascunho daquela matricula, se houver. So LE."""
-    con.row_factory = sqlite3.Row
-    r = con.execute("SELECT * FROM ri_rascunhos WHERE matricula_id = ?",
-                    (int(matricula_id),)).fetchone()
-    return dict(r) if r else None
+    return banco(con).um("SELECT * FROM ri_rascunhos WHERE matricula_id = %s",
+                         (int(matricula_id),))
 
 
 def apagar(con: sqlite3.Connection, matricula_id: int) -> bool:
@@ -127,9 +125,10 @@ def apagar(con: sqlite3.Connection, matricula_id: int) -> bool:
     isso vale: rascunho **nao e ato**. Guardar o texto que alguem desistiu de
     escrever seria guardar o que a casa decidiu nao dizer.
     """
-    cur = con.execute("DELETE FROM ri_rascunhos WHERE matricula_id = ?",
-                      (int(matricula_id),))
-    return cur.rowcount > 0
+    bd = banco(con)
+    bd.escrever("DELETE FROM ri_rascunhos WHERE matricula_id = %s",
+                (int(matricula_id),))
+    return bd.linhas_afetadas > 0
 
 
 def como_ficara(con: sqlite3.Connection, matricula_id: int) -> dict:
@@ -143,16 +142,16 @@ def como_ficara(con: sqlite3.Connection, matricula_id: int) -> dict:
     a pergunta e «como esta ficha vai ler depois deste ato», e nao «onde este
     texto caberia».
     """
-    con.row_factory = sqlite3.Row
-    m = con.execute("SELECT * FROM ri_matriculas WHERE id = ?",
-                    (int(matricula_id),)).fetchone()
+    bd = banco(con)
+    m = bd.um("SELECT * FROM ri_matriculas WHERE id = %s",
+              (int(matricula_id),))
     if not m:
         raise RascunhoError(f"Não achei a matrícula {matricula_id}.")
-    atos = [dict(r) for r in con.execute(
-        """SELECT * FROM ri_atos WHERE matricula_id = ?
-            ORDER BY numero, id""", (int(matricula_id),))]
-    rascunho = da_matricula(con, matricula_id)
-    numero = numero_que_teria(con, matricula_id)
+    atos = bd.ler(
+        """SELECT * FROM ri_atos WHERE matricula_id = %s
+            ORDER BY numero, id""", (int(matricula_id),))
+    rascunho = da_matricula(bd, matricula_id)
+    numero = numero_que_teria(bd, matricula_id)
     if rascunho:
         rascunho = dict(rascunho)
         rascunho["numero_previsto"] = numero
@@ -193,8 +192,7 @@ def abertos(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
     Rascunho esquecido e trabalho que ninguem terminou — e sem esta lista ele
     so apareceria a quem abrisse aquela matricula por acaso.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(r) for r in con.execute(
-        """SELECT r.*, m.numero matricula_numero, m.livro matricula_livro
+    return banco(con).ler(
+        """SELECT r.*, m.numero AS matricula_numero, m.livro AS matricula_livro
              FROM ri_rascunhos r JOIN ri_matriculas m ON m.id = r.matricula_id
-            ORDER BY r.atualizado_em, r.id LIMIT ?""", (int(limite),))]
+            ORDER BY r.atualizado_em, r.id LIMIT %s""", (int(limite),))

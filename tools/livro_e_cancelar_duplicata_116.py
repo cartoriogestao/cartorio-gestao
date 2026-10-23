@@ -33,12 +33,15 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import banco_pg  # noqa: E402
+from bd_nativo import banco as abrir_banco  # noqa: E402
 
 BANCO_PADRAO = r"C:\ProgramData\CartorioGestao\cartorio_gestao.sqlite3"
 QUEM = "agente do RCPN (ordem do oficial em 13/10/2026)"
@@ -53,10 +56,10 @@ class Recusa(SystemExit):
     pass
 
 
-def medir(con: sqlite3.Connection) -> dict:
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT * FROM rc_assentos WHERE id=116").fetchone()
-    b = con.execute("SELECT * FROM rc_assentos WHERE id=6189").fetchone()
+def medir(con) -> dict:
+    bd = abrir_banco(con)
+    a = bd.um("SELECT * FROM rc_assentos WHERE id=116")
+    b = bd.um("SELECT * FROM rc_assentos WHERE id=6189")
     if not a or not b:
         raise Recusa("RECUSO: o 116 ou o 6189 não existe.")
     a, b = dict(a), dict(b)
@@ -71,23 +74,22 @@ def medir(con: sqlite3.Connection) -> dict:
     # pessoa não mora no código (portão anti-vazamento, 14/10/2026).
     if not (a["nome"] or "").strip() or a["nome"] != b["nome"]:
         raise Recusa("RECUSO: o 116 e o 6189 não têm o mesmo nome.")
-    presos = {t: con.execute(f"SELECT count(*) FROM {t} WHERE assento_id=116"
-                             ).fetchone()[0]
+    presos = {t: int(bd.valor(f"SELECT count(*) AS n FROM {t} WHERE assento_id=116"))
               for t in ("rc_pessoas", "rc_certidoes", "rc_anotacoes")}
     if any(presos.values()):
         raise Recusa(f"RECUSO: há coisa amarrada ao 116: {presos}.")
-    if con.execute("SELECT 1 FROM rc_atos WHERE assento_id=116 "
-                   "AND IFNULL(selo,'')!=''").fetchone():
+    if bd.um("SELECT 1 AS um FROM rc_atos WHERE assento_id=116 "
+             "AND coalesce(selo,'')!='' ORDER BY id LIMIT 1"):
         raise Recusa("RECUSO: o ato do 116 tem selo.")
-    outros = con.execute("SELECT count(*) FROM rc_assentos WHERE serie='RC_E' "
-                         "AND id!=116").fetchone()[0]
+    outros = int(bd.valor("SELECT count(*) AS n FROM rc_assentos WHERE serie='RC_E' "
+                          "AND id!=116"))
     if outros:
         raise Recusa(f"RECUSO: há {outros} outro(s) assento(s) no Livro E — o "
                      "contador não foi semeado só pelo 116.")
-    if con.execute("SELECT count(*) FROM nu_livros WHERE serie='RC_E'").fetchone()[0]:
+    if bd.valor("SELECT count(*) AS n FROM nu_livros WHERE serie='RC_E'"):
         raise Recusa("RECUSO: já existe Livro E aberto — tirar o contador agora "
                      "deixaria o próximo ato nascer com o número 1.")
-    num = con.execute("SELECT * FROM nu_numeracao WHERE serie='RC_E'").fetchone()
+    num = bd.um("SELECT * FROM nu_numeracao WHERE serie='RC_E' ORDER BY serie LIMIT 1")
     return {"assento_116": {k: a[k] for k in ("serie", "especie", "numero",
                                                "livro_volume", "matricula",
                                                "situacao")},
@@ -103,7 +105,7 @@ def main() -> int:
     args = ap.parse_args()
     banco = Path(args.banco)
 
-    ro = sqlite3.connect(f"file:{banco.as_posix()}?mode=ro", uri=True)
+    ro = banco_pg.conectar(f"file:{banco.as_posix()}?mode=ro", uri=True)
     medida = medir(ro)
     ro.close()
     print(json.dumps(medida, ensure_ascii=False, indent=1))
@@ -114,7 +116,6 @@ def main() -> int:
     # FORA DA PASTA DO BANCO — a regra de 11/10/2026 (`pasta_das_copias`),
     # a mesma dos outros scripts de `tools/`. Até 14/10/2026 esta ferramenta
     # gravava em `<pasta do banco>\backups`, ao lado do banco.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     import pasta_das_copias as _PC
     carimbo = datetime.now().strftime("%Y%m%dT%H%M%S")
     copia = _PC.destino_da_copia(
@@ -125,21 +126,24 @@ def main() -> int:
     if livre < tamanho * 2:
         raise Recusa(f"RECUSO: {livre / 2**20:.0f} MB livres e banco de "
                      f"{tamanho / 2**20:.0f} MB — a cópia não cabe com folga.")
-    con = sqlite3.connect(banco, timeout=30)
-    con.execute(f"VACUUM INTO '{copia.as_posix()}'")
+    con = banco_pg.conectar(banco, timeout=30)
+    bd = abrir_banco(con)
+    banco_pg.copiar_para_arquivo(banco, copia)
     print("CÓPIA", copia, f"{copia.stat().st_size / 2**20:.0f} MB")
-    con.row_factory = sqlite3.Row
     agora = datetime.now().isoformat(timespec="seconds")
     try:
-        con.execute("BEGIN IMMEDIATE")
-        medir(con)                                   # de novo, dentro da trava
-        n = con.execute("UPDATE rc_assentos SET situacao='CANCELADO' "
-                        "WHERE id=116 AND situacao='ATIVO'").rowcount
+        # A trava do BEGIN IMMEDIATE vira a do assunto: o contador do Livro E,
+        # com a MESMA chave de quem tira número dele (`escrituracao`,
+        # `acervo_carga`) — chave só deste script não excluiria ninguém.
+        bd.travar("nu_numeracao.proximo")
+        medir(bd)                                    # de novo, dentro da trava
+        n = len(bd.escrever("UPDATE rc_assentos SET situacao='CANCELADO' "
+                            "WHERE id=116 AND situacao='ATIVO' RETURNING id"))
         if n != 1:
             raise Recusa(f"RECUSO: o UPDATE mudou {n} linhas.")
-        antes = dict(con.execute("SELECT * FROM nu_numeracao WHERE serie='RC_E'"
-                                 ).fetchone() or {})
-        con.execute("DELETE FROM nu_numeracao WHERE serie='RC_E'")
+        antes = dict(bd.um("SELECT * FROM nu_numeracao WHERE serie='RC_E' "
+                           "ORDER BY serie LIMIT 1") or {})
+        bd.escrever("DELETE FROM nu_numeracao WHERE serie='RC_E'")
         for acao, tipo, eid, det in (
                 ("RCPN_ASSENTO_CANCELADO", "rc_assentos", 116,
                  {"motivo": MOTIVO, "mantido": 6189, "por": QUEM,
@@ -150,15 +154,15 @@ def main() -> int:
                   "motivo": "a semente vinha só do assento 116, cancelado; o "
                             "próximo número fica em aberto (pendência "
                             "numeracao:RC_E), por ordem do oficial"})):
-            con.execute(
+            bd.escrever(
                 "INSERT INTO audit_logs(ts, user_id, username_snapshot, action, "
                 "entity_type, entity_id, details, ip_address) "
-                "VALUES (?, NULL, ?, ?, ?, ?, ?, NULL)",
+                "VALUES (%s, NULL, %s, %s, %s, %s, %s, NULL)",
                 (agora, "agente-rcpn", acao, tipo, eid,
                  json.dumps(det, ensure_ascii=False)))
-        con.execute("COMMIT")
+        con.commit()
     except BaseException:
-        con.execute("ROLLBACK")
+        con.rollback()
         raise
     finally:
         con.close()

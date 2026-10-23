@@ -33,6 +33,8 @@ A SEGUNDA REGRA É UMA RECUSA, E ELA PROTEGE OS DOIS
 from __future__ import annotations
 
 import sqlite3
+
+from bd_nativo import banco
 import unicodedata
 from typing import Any
 
@@ -159,15 +161,14 @@ def pendentes(con: sqlite3.Connection, limite: int = 500) -> list[dict]:
     A LISTA É MEDIDA, sem tabela nova: quem sai dela é o assento que ganhou a
     ordem. É a disciplina de `inacabados.py`.
     """
-    con.row_factory = sqlite3.Row
-    linhas = con.execute(
+    linhas = banco(con).ler(
         """SELECT id, numero, nome, data_ato, ibge_gemeo, gemeo_ordem
              FROM rc_assentos
             WHERE especie = 'NASCIMENTO'
               AND COALESCE(situacao,'ATIVO') <> 'CANCELADO'
               AND ibge_gemeo IS NOT NULL
          ORDER BY data_ato IS NULL, data_ato, id
-            LIMIT ?""", (limite,)).fetchall()
+            LIMIT %s""", (limite,))
     saida = []
     for linha in linhas:
         d = dict(linha)
@@ -190,15 +191,14 @@ def irmaos(con: sqlite3.Connection, assento_id: int) -> list[dict]:
     vezes. Depender de duas amarrações produziria o par pela metade — e o par
     pela metade é o que faz a certidão de um irmão não citar o outro.
     """
-    con.row_factory = sqlite3.Row
-    return [dict(x) for x in con.execute(
+    return banco(con).ler(
         """SELECT id, numero, nome, matricula, gemeo_ordem
              FROM rc_assentos
-            WHERE (gemeo_irmao_id = ? OR id = (SELECT gemeo_irmao_id
-                                                 FROM rc_assentos WHERE id = ?))
-              AND id <> ?
-         ORDER BY gemeo_ordem, id""",
-        (int(assento_id), int(assento_id), int(assento_id)))]
+            WHERE (gemeo_irmao_id = %s OR id = (SELECT gemeo_irmao_id
+                                                 FROM rc_assentos WHERE id = %s))
+              AND id <> %s
+         ORDER BY gemeo_ordem NULLS FIRST, id""",
+        (int(assento_id), int(assento_id), int(assento_id)))
 
 
 def amarrar(con: sqlite3.Connection, assento_id: int, *, irmao_id: int,
@@ -214,14 +214,15 @@ def amarrar(con: sqlite3.Connection, assento_id: int, *, irmao_id: int,
     if int(ordem) < 1:
         raise GemeosError(
             "A ordem de nascimento começa em 1 — é o primeiro a nascer.")
+    bd = banco(con)
     for alvo in (assento_id, irmao_id):
-        existe = con.execute("SELECT id FROM rc_assentos WHERE id=?",
-                             (int(alvo),)).fetchone()
+        existe = bd.um("SELECT id FROM rc_assentos WHERE id=%s",
+                       (int(alvo),))
         if not existe:
             raise GemeosError(f"O assento {alvo} não existe.")
-    con.execute(
-        """UPDATE rc_assentos SET gemeo_ordem=?, gemeo_irmao_id=?
-            WHERE id=?""", (int(ordem), int(irmao_id), int(assento_id)))
+    bd.escrever(
+        """UPDATE rc_assentos SET gemeo_ordem=%s, gemeo_irmao_id=%s
+            WHERE id=%s""", (int(ordem), int(irmao_id), int(assento_id)))
 
 
 def artigos_citados() -> tuple[str, ...]:

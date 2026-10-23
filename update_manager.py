@@ -410,6 +410,18 @@ def inspect_staged(stage_dir: Path, install_dir: Path) -> dict[str, Any]:
     problemas: list[str] = []
     avisos: list[str] = []
 
+    # O QUE A TELA DIZ DA ASSINATURA SAI DE UMA CONFERÊNCIA FEITA AGORA, contra
+    # o pacote — e não da palavra gravada no meta na hora do upload (revisão
+    # de 22/10/2026, C1). Se não confere, a preparação é RECUSADA.
+    try:
+        assinatura_agora = reconferir_contra_o_pacote(meta, stage_dir)[
+            "assinatura"]
+    except UpdateError as erro:
+        problemas.append(f"Conferencia do pacote assinado: {erro}")
+        assinatura_agora = {"situacao": "NAO_CONFERIDA",
+                            "observacao": str(erro)}
+    meta["assinatura"] = assinatura_agora
+
     for item in meta.get("checked_files", []):
         rel = _safe_rel(item.get("path", ""))
         origem = payload / Path(rel)
@@ -521,7 +533,7 @@ def inspect_staged(stage_dir: Path, install_dir: Path) -> dict[str, Any]:
         "inspected_at": datetime.now().isoformat(timespec="seconds"),
         "validation_claim": (meta.get("manifest") or {}).get("validation") or {},
         # quem fez o pacote e de que estado do git ele saiu (12/10/2026)
-        "assinatura": meta.get("assinatura") or {"situacao": "NAO_ASSINADO"},
+        "assinatura": assinatura_agora,
         "source_commit": str((meta.get("manifest") or {}).get("source_commit") or ""),
         "conflitos": conflitos,
     }
@@ -529,6 +541,89 @@ def inspect_staged(stage_dir: Path, install_dir: Path) -> dict[str, Any]:
     meta["state"] = "READY_FOR_APPROVAL" if inspecao["ok"] else "REJECTED"
     _escrever_json(meta_path, meta)
     return inspecao
+
+
+def reconferir_contra_o_pacote(meta: dict[str, Any],
+                               stage_dir: Path) -> dict[str, Any]:
+    """Reabre o `.cgu` e confere, NA HORA, a assinatura e cada hash. Só lê.
+
+    A PREPARAÇÃO NÃO É PROVA (revisão de segurança da 3.7.0, 22/10/2026,
+    achado C1). A pasta `updates/staged` e o `_update_meta.json` são arquivos
+    do disco: quem puder escrever ali troca um `.py` do payload e reescreve o
+    hash — e a palavra «ASSINADO» — no meta. Até aqui a assinatura Ed25519 só
+    era conferida no upload (`validate_and_stage`); a tela, a aprovação e o
+    `aplicar_atualizacao.ps1` liam o meta e acreditavam nele.
+
+    Agora a inspeção e a aprovação reabrem o PACOTE ORIGINAL: a assinatura do
+    manifesto é conferida de novo contra as chaves de hoje, e cada arquivo da
+    preparação é comparado ao hash que o MANIFESTO ASSINADO declara — e não ao
+    que o meta diz. Arquivo a mais no payload é recusa: o `ps1` copia a pasta
+    inteira, e um `.pth` plantado ali iria para a instalação sem conferência.
+
+    Devolve `{"assinatura", "manifest"}` lidos do pacote. Recusa quando o
+    pacote sumiu ou mudou, quando a assinatura não confere, quando o manifesto
+    da preparação não é o do pacote, e quando a preparação difere dele.
+    """
+    import assinatura_da_atualizacao as ASS
+    pacote = Path(str(meta.get("package_path") or ""))
+    if not pacote.is_file():
+        raise UpdateError(
+            "O pacote original nao foi localizado para a conferencia final.")
+    if sha256_file(pacote) != str(meta.get("package_sha256") or ""):
+        raise UpdateError("O pacote original mudou depois da preparacao.")
+    with zipfile.ZipFile(pacote, "r") as zf:
+        nomes = set(zf.namelist())
+        if "update_manifest.json" not in nomes:
+            raise UpdateError("Pacote sem update_manifest.json.")
+        manifesto_bytes = zf.read("update_manifest.json")
+        try:
+            assinatura = ASS.conferir(
+                manifesto_bytes,
+                zf.read(ASS.NOME_NO_PACOTE) if ASS.NOME_NO_PACOTE in nomes
+                else None)
+        except ASS.AssinaturaRecusada as exc:
+            raise UpdateError(str(exc)) from exc
+    try:
+        manifesto = json.loads(manifesto_bytes.decode("utf-8"))
+    except Exception as exc:
+        raise UpdateError("Manifesto de atualizacao invalido.") from exc
+    if manifesto != meta.get("manifest"):
+        raise UpdateError(
+            "O manifesto da preparacao nao e o do pacote assinado.")
+    declarados: dict[str, str] = {}
+    for entry in manifesto.get("files") or []:
+        if not isinstance(entry, dict):
+            raise UpdateError("Entrada de arquivo invalida no manifesto.")
+        declarados[_safe_rel(str(entry.get("path", "")))] = _digest_valido(
+            entry.get("sha256"))
+    payload = Path(stage_dir) / "payload"
+    no_disco: dict[str, str] = {}
+    if payload.is_dir():
+        for caminho in payload.rglob("*"):
+            if caminho.is_file():
+                no_disco[caminho.relative_to(payload).as_posix()] = (
+                    sha256_file(caminho))
+    conhecidos = {rel.casefold() for rel in declarados}
+    a_mais = sorted(rel for rel in no_disco if rel.casefold() not in conhecidos)
+    if a_mais:
+        raise UpdateError(
+            "A preparacao contem arquivo que o manifesto assinado nao "
+            f"declara: {a_mais[0]}")
+    for rel, digest in declarados.items():
+        if no_disco.get(rel) != digest:
+            raise UpdateError(
+                f"A preparacao foi alterada depois da conferencia: {rel}")
+    # O `ps1` lê `checked_files` do meta: ele tem de ser o que o manifesto
+    # assinado declara, nem mais nem menos.
+    conferidos = {}
+    for item in meta.get("checked_files") or []:
+        if isinstance(item, dict):
+            conferidos[_safe_rel(str(item.get("path", "")))] = str(
+                item.get("sha256") or "").strip().lower()
+    if conferidos != declarados:
+        raise UpdateError(
+            "Os metadados da preparacao nao batem com o manifesto assinado.")
+    return {"assinatura": assinatura, "manifest": manifesto}
 
 
 def load_staged(stage_dir: Path) -> dict[str, Any]:
@@ -557,9 +652,11 @@ def revalidate_staged(stage_dir: Path) -> dict[str, Any]:
             raise UpdateError(
                 f"A preparacao foi alterada depois da conferencia: {item.get('path')}"
             )
-    pacote = Path(str(meta.get("package_path") or ""))
-    if not pacote.is_file() or sha256_file(pacote) != meta.get("package_sha256"):
-        raise UpdateError("O pacote original mudou depois da preparacao.")
+    # A ASSINATURA E OS HASHES SÃO RECONFERIDOS AQUI, CONTRA O PACOTE — e não
+    # lidos do meta (revisão de 22/10/2026, C1). É esta chamada que a
+    # aprovação (`mark_approved`) atravessa.
+    meta["assinatura"] = reconferir_contra_o_pacote(
+        meta, Path(stage_dir))["assinatura"]
     inspecao = meta.get("inspection") or {}
     if not inspecao.get("ok") or inspecao.get("executed_code") is not False:
         raise UpdateError("A inspecao estatica da atualizacao nao e valida.")

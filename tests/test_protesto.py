@@ -19,25 +19,34 @@ O QUE ELES CONFEREM
       - o protesto ocupa lugar no Livro de Registro de Protestos (1 por
         face, com verso) e exige titulo ja intimado;
       - a desistencia so cabe ANTES do protesto lavrado, e nao ocupa livro;
-      - o pagamento cabe em qualquer ponto do ciclo (apontado, intimado ou
-        protestado), ocupa o Livro de Registro de Pagamentos (120 por
-        folha, sem verso) e recusa titulo em situacao final;
-      - o cancelamento so cabe titulo PROTESTADO, exige hipotese do
-        catalogo (nao "Erro Material" generico) e fundamento proprio do
-        caso, com pelo menos dez letras.
+      - o pagamento cabe ANTES do protesto (apontado ou intimado), ocupa o
+        Livro de Registro de Pagamentos (120 por folha, sem verso) e recusa
+        titulo em situacao final; o PROTESTADO tambem se recusa desde
+        21/10/2026 (LH13: «protesto nao pode ser pago na serventia depois de
+        lavrar», o oficial);
+      - o cancelamento so cabe titulo PROTESTADO — e o PAGO com protesto em
+        pe, legado da regra de 24/08/2026, pela anuencia ou ordem judicial —,
+        exige hipotese do catalogo (nao "Erro Material" generico) e
+        fundamento proprio do caso, com pelo menos dez letras.
 """
 from __future__ import annotations
 
 import json
 import sqlite3
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
+import banco_pg                                  # noqa: E402
 import protesto as PT                            # noqa: E402
+from bd_nativo import banco as nativo            # noqa: E402
 from nucleo_schema import init_nucleo_schema     # noqa: E402
 from pt_schema import init_pt_schema             # noqa: E402
 
@@ -52,7 +61,7 @@ SV = {
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     init_nucleo_schema(con)
@@ -333,19 +342,122 @@ def test_nao_desiste_de_protesto_ja_lavrado():
         PT.lancar_desistencia(con, titulo_id, motivo="Credor pagou por fora", agora=AGORA)
 
 
+def _psycopg_puro(con, *, autocommit=False):
+    """Uma conexão do psycopg no schema do teste, SEM a ponte — como a
+    transação vai ficar quando a ponte sair."""
+    import psycopg
+    pg = psycopg.connect(banco_pg.dsn(), autocommit=autocommit)
+    pg.execute(f'SET search_path TO "{con.schema}", public')
+    if not autocommit:
+        pg.commit()
+    return pg
+
+
+def _ao_mesmo_tempo(con, primeiro, segundo):
+    """`primeiro` grava e ainda não confirmou; `segundo` chega no meio, por
+    outra conexão. Devolve o erro do segundo, ou None se ele passou."""
+    if not banco_pg.ativo():
+        pytest.skip("a corrida é do PostgreSQL sem a ponte")
+    con.commit()
+    um, dois = _psycopg_puro(con), _psycopg_puro(con)
+    vigia = _psycopg_puro(con, autocommit=True)
+    pid = nativo(dois).valor("SELECT pg_backend_pid() AS pid")
+    primeiro(um)
+    saida: dict = {}
+
+    def corre():
+        try:
+            segundo(dois)
+            dois.commit()
+        except Exception as erro:  # o teste confere qual
+            saida["erro"] = erro
+            dois.rollback()
+
+    fio = threading.Thread(target=corre)
+    fio.start()
+    for _ in range(200):          # o segundo tem de estar ESPERANDO a linha
+        if nativo(vigia).valor(
+                "SELECT count(*) AS n FROM pg_locks WHERE pid=%s AND NOT granted",
+                (pid,)):
+            break
+        time.sleep(0.05)
+    um.commit()
+    fio.join(30)
+    for c in (um, dois, vigia):
+        c.close()
+    return saida.get("erro")
+
+
+def test_desistencia_e_intimacao_ao_mesmo_tempo_nao_ressuscitam_o_titulo():
+    """Ressalva 4 da revisão do L036, o mesmo padrão no título: os `lancar_*`
+    conferiam a situação e gravavam por cima sem prender a linha. Com a
+    ponte, a trava única do banco põe tudo em fila; sem ela, só o FOR UPDATE
+    segura. A desistência grava e ainda não confirmou; a intimação chega no
+    meio — e, sem a linha presa, lia APONTADO e deixava o título desistido
+    como INTIMADO."""
+    con = banco()
+    titulo_id = _titulo_apontado(con)
+    erro = _ao_mesmo_tempo(
+        con,
+        lambda pg: PT.lancar_desistencia(pg, titulo_id, motivo="Credor pagou por fora",
+                                         agora=AGORA),
+        lambda pg: PT.lancar_intimacao(pg, titulo_id, modo="PESSOAL", agora=AGORA,
+                                       comprovante="AR 123"))
+    assert isinstance(erro, PT.ProtestoError), erro
+    assert "só se intima título já apontado" in str(erro)
+    assert PT.titulo(con, titulo_id)["situacao"] == "DESISTIDO"
+    assert [a["tipo"] for a in PT.atos_do(con, titulo_id)] == ["APONTAMENTO",
+                                                               "DESISTENCIA"]
+
+
+def test_sustacao_que_chega_durante_o_protesto_o_impede():
+    """Lei 9.492/1997, art. 17, § 1º, com as duas ao mesmo tempo: a sustação
+    não mexe na situação do título, e sem a linha presa o protesto conferia
+    «sem ordem em vigor» antes de ela confirmar — e lavrava o título sustado."""
+    con = banco()
+    titulo_id = _titulo_intimado(con)
+    erro = _ao_mesmo_tempo(
+        con,
+        lambda pg: PT.lancar_sustacao(pg, titulo_id, juizo="Vara Única da Comarca",
+                                      processo="0000000-00.2026.8.10.0000",
+                                      agora=AGORA),
+        lambda pg: PT.lancar_protesto(pg, titulo_id, sv=SV, agora=AGORA,
+                                      data_extenso=EXTENSO))
+    assert isinstance(erro, PT.ProtestoError), erro
+    assert "SUSTADO" in str(erro)
+    assert PT.titulo(con, titulo_id)["situacao"] == "INTIMADO"
+    assert "PROTESTO" not in [a["tipo"] for a in PT.atos_do(con, titulo_id)]
+
+
+def test_a_mesma_chave_cadastrada_ao_mesmo_tempo_devolve_o_mesmo_id():
+    """Ressalva 3 da revisão do L036: o cadastro conferia a chave de origem e
+    fazia o INSERT puro. Sem a ponte, o segundo cadastro não vê o primeiro
+    (ainda não confirmado), o INSERT espera o UNIQUE(origem, origem_chave) e
+    estoura — e a carga, que é «repetível por construção», cai em erro em vez
+    de devolver o id que já existe."""
+    con = banco()
+    ids: list[int] = []
+    cadastra = (lambda pg: ids.append(PT.cadastrar_titulo(
+        pg, titulo_bom(), origem="CRA", origem_chave="CRA:9:1", agora=AGORA)))
+    erro = _ao_mesmo_tempo(con, cadastra, cadastra)
+    assert erro is None, erro
+    assert len(ids) == 2 and ids[0] == ids[1]
+    assert nativo(con).valor("SELECT count(*) AS n FROM pt_titulos") == 1
+    assert len(PT.devedores_do(con, ids[0])) == 1
+
+
 # ------------------------------------------------------------- o pagamento
 
 
-@pytest.mark.parametrize("preparar", ["apontado", "intimado", "protestado"])
-def test_lanca_pagamento_em_qualquer_ponto_do_ciclo(preparar):
+@pytest.mark.parametrize("preparar", ["apontado", "intimado"])
+def test_lanca_pagamento_em_qualquer_ponto_antes_do_protesto(preparar):
+    """Apontado ou intimado, o título se paga. O «protestado» saiu desta lista
+    em 21/10/2026 (LH13): ver o teste logo abaixo."""
     con = banco()
     if preparar == "apontado":
         titulo_id = _titulo_apontado(con)
-    elif preparar == "intimado":
-        titulo_id = _titulo_intimado(con)
     else:
         titulo_id = _titulo_intimado(con)
-        PT.lancar_protesto(con, titulo_id, sv=SV, agora=AGORA, data_extenso=EXTENSO)
 
     lugar = PT.lancar_pagamento(con, titulo_id, sv=SV, agora=AGORA,
                                data_extenso=EXTENSO, valor_pago="1482.78")
@@ -357,6 +469,26 @@ def test_lanca_pagamento_em_qualquer_ponto_do_ciclo(preparar):
     assert detalhe == {"valor_pago_centavos": 148278}
 
     assert PT.titulo(con, titulo_id)["situacao"] == "PAGO"
+
+
+def test_o_protesto_lavrado_nao_se_paga_mais_na_serventia():
+    """O oficial, 21/10/2026 (LH13, pergunta 17, letra c): «protesto nao pode
+    ser pago na serventia depois de lavrar». Até então o pagamento cabia
+    também no PROTESTADO (decisão de 24/08/2026), e o título ficava PAGO com o
+    protesto em pé para sempre. A recusa diz o caminho: o credor, a carta de
+    anuência e o cancelamento (Lei 9.492/1997, art. 26, § 1º; CN-MA art. 942,
+    § 2º) — e não lança nada nem ocupa o Livro de Pagamentos."""
+    con = banco()
+    titulo_id = _titulo_protestado(con)
+    with pytest.raises(PT.ProtestoError, match="não se paga mais") as erro:
+        PT.lancar_pagamento(con, titulo_id, sv=SV, agora=AGORA,
+                            data_extenso=EXTENSO, valor_pago="1482.78",
+                            forma_pagamento="PIX")
+    assert "carta de anuência" in str(erro.value)
+    assert "art. 26, § 1º" in str(erro.value)
+    assert PT.titulo(con, titulo_id)["situacao"] == "PROTESTADO"
+    assert not [a for a in PT.atos_do(con, titulo_id) if a["tipo"] == "PAGAMENTO"]
+    assert "PROTESTADO" in PT.SITUACOES_SEM_PAGAMENTO
 
 
 def test_cento_e_vinte_pagamentos_cabem_numa_folha_so():
@@ -398,6 +530,31 @@ def test_pagamento_sem_valor_informado_grava_detalhe_vazio():
     assert json.loads(ato["detalhe_json"]) == {}
 
 
+def test_a_quitacao_do_pagamento_sem_titulo_recusa_com_recado():
+    """O CAMINHO DE ERRO QUE A REVISÃO DO LD04 ACHOU (LD11): o pagamento cujo
+    título não está no banco caía em `TypeError` dentro da quitação, e a rota
+    — que só apanha `QuitacaoError` — mostrava a página de erro em vez do
+    recado. O banco de hoje tem a chave estrangeira; para chegar ao caso, ela
+    sai do schema próprio deste teste, e o ato passa a apontar para um título
+    que não existe."""
+    import protesto_livros as PLIV
+    con = banco()
+    titulo_id = _titulo_apontado(con)
+    PT.lancar_pagamento(con, titulo_id, sv=SV, agora=AGORA, data_extenso=EXTENSO,
+                        valor_pago="1482.78")
+    ato = next(a for a in PT.atos_do(con, titulo_id) if a["tipo"] == "PAGAMENTO")
+    bd = nativo(con)
+    for fk in bd.ler("""SELECT conname FROM pg_constraint
+                         WHERE conrelid = 'pt_atos'::regclass AND contype = 'f'
+                           AND confrelid = 'pt_titulos'::regclass
+                         ORDER BY conname"""):
+        bd.escrever(f'ALTER TABLE pt_atos DROP CONSTRAINT "{fk["conname"]}"')
+    bd.escrever("UPDATE pt_atos SET titulo_id = %s WHERE id = %s",
+                (titulo_id + 1000, ato["id"]))
+    with pytest.raises(PLIV.QuitacaoError, match="não está no banco"):
+        PLIV.quitacao(con, ato["id"])
+
+
 # ---------------------------------------------------------- o cancelamento
 
 
@@ -418,6 +575,42 @@ def test_cancela_com_cada_hipotese_do_catalogo(hipotese):
     assert resultado["hipotese"] == hipotese
     assert resultado["fundamento_legal"] == PT.CATALOGO_CANCELAMENTO[hipotese]["fundamento_legal"]
     assert PT.titulo(con, titulo_id)["situacao"] == "CANCELADO"
+
+
+def test_o_cancelamento_lavra_o_termo_com_o_registro_que_cancela():
+    """Lei 9.492/1997, art. 26, § 6º: no registro eletrônico, «o termo do
+    cancelamento será lançado em documento apartado». Até o LD04 o ato
+    gravava a hipótese e o fundamento, e `pt_atos.teor` ficava vazio."""
+    con = banco()
+    titulo_id = _titulo_protestado(con)
+    PT.lancar_cancelamento(con, titulo_id, hipotese="PAGAMENTO",
+                           fundamento="Título apresentado com a prova da quitação",
+                           agora=AGORA)
+    protesto = next(a for a in PT.atos_do(con, titulo_id) if a["tipo"] == "PROTESTO")
+    baixa = next(a for a in PT.atos_do(con, titulo_id) if a["tipo"] == "CANCELAMENTO")
+    titulo = PT.titulo(con, titulo_id)
+    for esperado in ("CANCELAMENTO DO REGISTRO DE PROTESTO.",
+                     f"sob o n.º {protesto['numero_ordem']}",
+                     f"Protocolo n.º {titulo['protocolo']}",
+                     "Hipótese do cancelamento: Pagamento do título.",
+                     "Fundamento do caso: Título apresentado com a prova da quitação."):
+        assert esperado in baixa["teor"], (esperado, baixa["teor"])
+    assert "{" not in baixa["teor"] and "None" not in baixa["teor"]
+
+
+def test_termo_do_cancelamento_com_claro_inventado_recusa_sem_cancelar_nada():
+    """O CAMINHO DE ERRO: o modelo da casa gravado por fora da tela com um
+    claro que não existe recusa ANTES de gravar o ato — o título continua
+    PROTESTADO, e não há baixa sem termo (nem selo pedido para ela)."""
+    import protesto_termo as TERMO
+    con = banco()
+    titulo_id = _titulo_protestado(con)
+    with pytest.raises(TERMO.TermoError, match="PT_TERMO_CANCELAMENTO"):
+        PT.lancar_cancelamento(con, titulo_id, hipotese="PAGAMENTO",
+                               fundamento="Título apresentado com a prova da quitação.",
+                               agora=AGORA, modelo_do_termo="Cancelado em {quando}.")
+    assert PT.titulo(con, titulo_id)["situacao"] == "PROTESTADO"
+    assert not [a for a in PT.atos_do(con, titulo_id) if a["tipo"] == "CANCELAMENTO"]
 
 
 def test_hipotese_fora_do_catalogo_e_recusada():
@@ -443,4 +636,63 @@ def test_nao_cancela_titulo_que_nao_foi_protestado():
     with pytest.raises(PT.ProtestoError, match="só se cancela protesto já lavrado"):
         PT.lancar_cancelamento(con, titulo_id, hipotese="PAGAMENTO",
                                fundamento="Título pago antes do protesto.",
+                               agora=AGORA)
+
+
+def _pago_depois_de_protestado(con) -> int:
+    """O LEGADO DA REGRA DE 24/08/2026, montado como ele está no banco: o
+    protesto lavrado e, depois, o pagamento lançado na serventia, com o
+    título PAGO. Desde 21/10/2026 (LH13) o domínio não deixa mais chegar a
+    isso, e por isso o pagamento entra aqui direto na tabela."""
+    titulo_id = _titulo_protestado(con)
+    nativo(con).escrever(
+        """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json, origem,
+               criado_em) VALUES (%s, 'PAGAMENTO', %s, '{}', 'MANUAL', %s)""",
+        (titulo_id, AGORA, AGORA))
+    nativo(con).escrever("UPDATE pt_titulos SET situacao = 'PAGO' WHERE id = %s",
+                         (titulo_id,))
+    return titulo_id
+
+
+@pytest.mark.parametrize("hipotese", PT.HIPOTESES_DO_PAGO_DEPOIS_DO_PROTESTO)
+def test_o_pago_depois_do_protesto_pela_regra_antiga_se_cancela(hipotese):
+    """Sem isto o título pago aqui depois de protestado, entre 24/08 e
+    21/10/2026, ficava para sempre na certidão positiva: o cancelamento só
+    aceitava PROTESTADO. Pela decisão de 21/10 (LH13) ele se cancela pela
+    anuência do credor — e pela ordem judicial, que vale sempre."""
+    con = banco()
+    titulo_id = _pago_depois_de_protestado(con)
+    assert PT.protesto_em_pe(con, titulo_id)
+    assert set(PT.hipoteses_que_cabem(con, PT.titulo(con, titulo_id))) == set(
+        PT.HIPOTESES_DO_PAGO_DEPOIS_DO_PROTESTO)
+    PT.lancar_cancelamento(con, titulo_id, hipotese=hipotese,
+                           fundamento="Carta de anuência do credor, com firma.",
+                           agora=AGORA)
+    assert PT.titulo(con, titulo_id)["situacao"] == "CANCELADO"
+    assert not PT.protesto_em_pe(con, titulo_id)
+
+
+def test_o_pago_depois_do_protesto_nao_se_cancela_pelo_pagamento_lancado_aqui():
+    """Usar o pagamento do Livro de Pagamentos como prova da quitação era a
+    letra (a) da pergunta 17, que o oficial não escolheu: depois do protesto,
+    a anuência. A recusa diz isso, e o título continua PAGO."""
+    con = banco()
+    titulo_id = _pago_depois_de_protestado(con)
+    with pytest.raises(PT.ProtestoError, match="carta de anuência"):
+        PT.lancar_cancelamento(con, titulo_id, hipotese="PAGAMENTO",
+                               fundamento="Pago nesta serventia, com recibo.",
+                               agora=AGORA)
+    assert PT.titulo(con, titulo_id)["situacao"] == "PAGO"
+
+
+def test_o_pago_sem_protesto_continua_sem_cancelamento():
+    """O pago ANTES do protesto nunca teve protesto: não há o que cancelar, e
+    a exceção do legado não o alcança."""
+    con = banco()
+    titulo_id = _titulo_intimado(con)
+    PT.lancar_pagamento(con, titulo_id, sv=SV, agora=AGORA, data_extenso=EXTENSO)
+    assert PT.hipoteses_que_cabem(con, PT.titulo(con, titulo_id)) == {}
+    with pytest.raises(PT.ProtestoError, match="só se cancela protesto já lavrado"):
+        PT.lancar_cancelamento(con, titulo_id, hipotese="ANUENCIA_CREDOR",
+                               fundamento="Carta de anuência do credor, com firma.",
                                agora=AGORA)

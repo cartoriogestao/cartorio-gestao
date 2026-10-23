@@ -1,0 +1,10 @@
+{
+  "chave": "RI_LIVRO3_CERTIDAO_CANCELADA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão do Livro 3 (ODT) — aviso de cancelada",
+  "formato": "JINJA",
+  "explica": "O aviso que o código acrescenta sob o título quando a certidão foi cancelada, com o motivo gravado.",
+  "campos": [
+    "motivo"
+  ]
+}

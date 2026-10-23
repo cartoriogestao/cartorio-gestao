@@ -60,7 +60,6 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -68,27 +67,30 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import banco_pg  # noqa: E402
+from bd_nativo import banco  # noqa: E402
 
-def _atingidos(con: sqlite3.Connection) -> list[sqlite3.Row]:
+
+def _atingidos(bd) -> list[dict]:
     """Os atos cujo teor guarda o marcador. So le."""
     from ri_lavrar_teor import MARCA_EMOLUMENTOS, MARCA_SELO
     saida = []
-    for a in con.execute("""SELECT a.*, m.numero AS ficha
-                              FROM ri_atos a
-                              JOIN ri_matriculas m ON m.id = a.matricula_id
-                             ORDER BY a.id"""):
+    for a in bd.ler("""SELECT a.*, m.numero AS ficha
+                          FROM ri_atos a
+                          JOIN ri_matriculas m ON m.id = a.matricula_id
+                         ORDER BY a.id"""):
         teor = a["teor"] or ""
         if MARCA_SELO in teor or MARCA_EMOLUMENTOS in teor:
             saida.append(a)
     return saida
 
 
-def _atos_depois(con: sqlite3.Connection, ato: sqlite3.Row) -> list[sqlite3.Row]:
+def _atos_depois(bd, ato: dict) -> list[dict]:
     """Os atos que vem depois dele na mesma ficha. So le."""
-    return list(con.execute(
+    return bd.ler(
         """SELECT id, tipo, numero FROM ri_atos
-            WHERE matricula_id=? AND id>? ORDER BY id""",
-        (int(ato["matricula_id"]), int(ato["id"]))))
+            WHERE matricula_id=%s AND id>%s ORDER BY id""",
+        (int(ato["matricula_id"]), int(ato["id"])))
 
 
 def main() -> int:
@@ -112,15 +114,15 @@ def main() -> int:
         print(f"Não achei o banco em: {caminho}", file=sys.stderr)
         return 1
 
-    con = sqlite3.connect(caminho)
-    con.row_factory = sqlite3.Row
+    con = banco_pg.conectar(caminho)
+    bd = banco(con)
     from ri_lavrar_teor import sem_fecho_antigo
     from ri_schema import hash_ato
 
-    atingidos = _atingidos(con)
+    atingidos = _atingidos(bd)
     print(f"=== Atos com o marcador do selo dentro do teor: {len(atingidos)} ===")
     for a in atingidos:
-        depois = _atos_depois(con, a)
+        depois = _atos_depois(bd, a)
         print(f"  ato {a['id']} — {a['tipo']}-{a['numero']:02d} da ficha "
               f"{a['ficha']} — lavrado em {a['lavrado_em']}")
         print(f"     linhas no teor: {(a['teor'] or '').count(chr(10)) + 1} · "
@@ -136,9 +138,9 @@ def main() -> int:
         con.close()
         return 0
 
-    ato = con.execute("""SELECT a.*, m.numero AS ficha
-                           FROM ri_atos a JOIN ri_matriculas m ON m.id=a.matricula_id
-                          WHERE a.id=?""", (args.ato_id,)).fetchone()
+    ato = bd.um("""SELECT a.*, m.numero AS ficha
+                    FROM ri_atos a JOIN ri_matriculas m ON m.id=a.matricula_id
+                   WHERE a.id=%s""", (args.ato_id,))
     if not ato:
         print(f"Ato {args.ato_id} não encontrado.", file=sys.stderr)
         con.close()
@@ -150,7 +152,7 @@ def main() -> int:
         con.close()
         return 0
 
-    depois = _atos_depois(con, ato)
+    depois = _atos_depois(bd, ato)
     if depois:
         rotulos = ", ".join(f"{d['tipo']}-{d['numero']:02d}" for d in depois)
         print(f"\nRECUSA: o ato {ato['id']} tem atos depois dele na ficha "
@@ -185,21 +187,35 @@ def main() -> int:
     import pasta_das_copias as _PC
     copia = _PC.destino_da_copia(copia, Path(caminho))
     try:
-        con.execute("VACUUM INTO ?", (str(copia),))
-    except sqlite3.OperationalError:
+        banco_pg.copiar_para_arquivo(caminho, copia)
+    except banco_pg.OperationalError:
         shutil.copy2(caminho, copia)
     print(f"\nCópia do banco guardada em:\n  {copia}")
 
     agora = datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
     with con:
-        con.execute("UPDATE ri_atos SET teor=?, hash_ato=? WHERE id=?",
+        # A RECUSA SE CONFERE DE NOVO, DENTRO DA TRAVA DA LAVRATURA
+        # (`ri_atos.numero`, a de `ri_web`). A conferencia la de cima veio antes
+        # da copia do banco; um ato lavrado depois deste na ficha, nesse
+        # meio-tempo, ficaria com o `hash_anterior` do hash que se troca aqui.
+        bd.travar("ri_atos.numero")
+        relido = bd.um("SELECT teor, hash_ato FROM ri_atos WHERE id=%s FOR UPDATE",
+                       (int(ato["id"]),))
+        if (_atos_depois(bd, ato) or not relido
+                or (relido["teor"], relido["hash_ato"]) != (ato["teor"], ato["hash_ato"])):
+            print(f"\nRECUSA: o ato {ato['id']} mudou, ou ganhou ato depois dele na "
+                  "ficha, enquanto a cópia era tirada. Nada foi gravado — rode de "
+                  "novo para ver como ficou.", file=sys.stderr)
+            con.close()
+            return 1
+        bd.escrever("UPDATE ri_atos SET teor=%s, hash_ato=%s WHERE id=%s",
                     (limpo, novo_hash, int(ato["id"])))
         # O RASTRO FICA NO BANCO, e nao so nesta tela. Quem conferir a ficha
         # daqui a um ano precisa achar por que o hash daquele ato mudou.
-        con.execute(
+        bd.escrever(
             """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
                    entity_type, entity_id, details)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (agora, None, "tools/limpar_marcador_do_selo_no_teor.py",
              "RI_ATO_TEOR_CORRIGIDO", "RI_ATO", int(ato["id"]),
              (f'{{"ficha": "{ato["ficha"]}", '

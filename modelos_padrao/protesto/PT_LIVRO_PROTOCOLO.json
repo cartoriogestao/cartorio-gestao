@@ -1,0 +1,11 @@
+{
+  "chave": "PT_LIVRO_PROTOCOLO",
+  "atribuicao": "Protesto",
+  "nome": "Livro de Protocolo — ocorrências",
+  "formato": "CHAVES",
+  "explica": "Uma linha por rótulo, no formato «nome = texto». O NOME é do sistema e não muda; o TEXTO é seu. Linha apagada, ou deixada sem texto, volta ao padrão — o sistema nunca fica sem a palavra. O que se averba na coluna de ocorrências para cada ato (CN-MA art. 908, §§ 1º e 5º); os nomes em maiúsculas são os atos que o livro mostra.",
+  "campos": [
+    "ocorrencia",
+    "data"
+  ]
+}

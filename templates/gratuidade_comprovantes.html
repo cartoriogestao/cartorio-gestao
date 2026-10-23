@@ -7,6 +7,13 @@
     e que ainda estão sem o comprovante da gratuidade (declaração de pobreza, decisão
     judicial, ofício…). O Portal do Selo pode pedi-lo a qualquer momento. O aviso
     vermelho fica em todas as telas até o último ser guardado.</p>
+  {# LX16: um arquivo por selo basta — e é isto que ele deve ter. #}
+  <p><strong>Para cada selo, mande {{ o_que_vai }}.</strong> Um arquivo só basta;
+    se forem dois ou mais, também vale. Por quê: {{ por_que }}.
+    Tem só o comprovante? Marque «juntar com a certidão do ato» e o sistema faz o PDF
+    com a certidão que já está guardada para o selo.</p>
+  <p>O Portal do Selo pede também a <strong>cópia da certidão do ato</strong>:
+    <a href="{{ url_for('selo_gratuidades_portal') }}">guardar a certidão e ver o que falta para o Portal</a>.</p>
 </section>
 <div class="table-wrap">
 <table>
@@ -21,6 +28,11 @@
         <form method="post" enctype="multipart/form-data" action="{{ url_for('gratuidade_comprovante_subir', selo_id=p.id) }}" style="display:inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" multiple required>
+          <select name="fundamento" required>
+            <option value="">Fundamento da gratuidade…</option>
+            {% for chave, texto in fundamentos.items() %}<option value="{{ chave }}">{{ texto }}</option>{% endfor %}
+          </select>
+          <label><input type="checkbox" name="juntar" value="1"> juntar num PDF só com a certidão do ato</label>
           <button class="button primary" type="submit">Guardar</button>
         </form>
         {% if achados.get(p.numero|upper) %}

@@ -1,0 +1,8 @@
+{
+  "chave": "NOTAS_FECHO_REVOGACAO",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Fecho da revogação",
+  "formato": "CHAVES",
+  "explica": "O fecho do teor da revogação montado pelo sistema, depois do objeto.",
+  "campos": []
+}

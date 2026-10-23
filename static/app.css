@@ -1182,3 +1182,12 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
 @media(max-width:520px){.prod-rapida-linha{grid-template-columns:1fr 1fr}.prod-rapida-ou{display:none}.prod-rapida-rotulo{display:none}}
 @media print{.prod-rapida{display:none!important}}
 
+/* LX17 — barra fixa dos avisos: no fluxo do <main>, antes do título, sem position — flutuando, cobriria o menu e os botões. */
+.barra-fixa{background:#b00020;color:#fff;padding:10px 18px;border-bottom:3px solid #6d0014;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 16px;font-size:15px}
+.barra-fixa-texto{flex:1 1 320px;min-width:0}.barra-fixa-mes{font-weight:400;opacity:.9}
+.barra-fixa-acoes{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.barra-fixa form{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0}.barra-fixa label{color:#fff;font-weight:600;margin:0}
+.barra-fixa input{padding:3px 6px;border-radius:4px;border:1px solid #6d0014;color:#111;background:#fff}
+.barra-fixa button,.barra-fixa summary{cursor:pointer;background:#fff;color:#6d0014;border:0;border-radius:4px;padding:4px 10px;font-weight:700}
+.barra-fixa-pago[open]>summary{margin-bottom:6px}
+.barras-fixas-mais>summary{cursor:pointer;background:#6d0014;color:#fff;padding:4px 18px;font-weight:700}

@@ -1,0 +1,11 @@
+{
+  "chave": "NOTAS_LIVRO_ENCERRAMENTO__termos",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Encerramento — termos lavrados",
+  "formato": "CHAVES",
+  "explica": "Quando se sabe o primeiro e o último termo.",
+  "campos": [
+    "primeiro",
+    "ultimo"
+  ]
+}

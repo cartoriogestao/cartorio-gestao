@@ -21,7 +21,7 @@ CADA OBRIGAÇÃO DIZ DE ONDE SAIU, E SE FOI CONFERIDA
 from __future__ import annotations
 
 import calendar
-from datetime import date
+from datetime import date, timedelta
 
 #: As obrigações conferidas num documento desta casa.
 OBRIGACOES: tuple[dict, ...] = (
@@ -50,6 +50,37 @@ OBRIGACOES: tuple[dict, ...] = (
         "nota": "Apurar o percebido no mês de referência por especialidade e recolher. "
                 "Guardar o comprovante — é o que a correição pede.",
     },
+    # O LIVRO DIÁRIO AUXILIAR saiu de A_CONFIRMAR no LG08 (19/10/2026): o
+    # Código de Normas do MA dá os dois prazos, e o livro passou a existir
+    # (Administrativo → Livro Diário Auxiliar). O prazo é em DIA ÚTIL, contado
+    # com os feriados nacionais (`ri_schema`); feriado local a agenda não sabe.
+    {
+        "codigo": "LIVRO_DIARIO_MENSAL",
+        "titulo": "Gerar, assinar e rubricar o Livro Diário Auxiliar do mês anterior",
+        "periodicidade": "MENSAL",
+        "dia_util": 5,
+        "fundamento": "Código de Normas do MA (Prov. COGEX 28/2026), art. 205",
+        "fonte": "referencia/codigo_de_normas_extrajudicial_ma.txt (malote de "
+                 "27/05/2026) — lido em 19/10/2026",
+        "confirmada": True,
+        "antecedencia_dias": 7,
+        "nota": "Até o 5º dia útil do mês seguinte. Gerar de novo só para "
+                "retificação circunstanciada (art. 206).",
+    },
+    {
+        "codigo": "LIVRO_DIARIO_ANUAL",
+        "titulo": "Encaminhar o Livro Diário Auxiliar do exercício anterior à "
+                  "Coordenadoria de Análise de Contas e ao juiz corregedor permanente",
+        "periodicidade": "ANUAL",
+        "mes": 5, "dia_util": 1,
+        "fundamento": "Código de Normas do MA (Prov. COGEX 28/2026), art. 207",
+        "fonte": "referencia/codigo_de_normas_extrajudicial_ma.txt (malote de "
+                 "27/05/2026) — lido em 19/10/2026",
+        "confirmada": True,
+        "antecedencia_dias": 30,
+        "nota": "Até o primeiro dia útil de maio. O não encaminhamento no prazo "
+                "enseja processo administrativo disciplinar (art. 207, § 8º).",
+    },
 )
 
 #: O que provavelmente cabe ao delegatário mas NÃO está medido em documento
@@ -59,8 +90,12 @@ A_CONFIRMAR: tuple[dict, ...] = (
      "indicio": "havia um aviso semanal (segunda, 08h) criado no sistema e hoje desligado"},
     {"codigo": "JUSTICA_ABERTA", "titulo": "Justiça Aberta (CNJ) — produtividade e arrecadação",
      "indicio": "nenhum documento desta casa trata dela"},
-    {"codigo": "LIVRO_CAIXA_IR", "titulo": "Livro Diário da receita e despesa / carnê-leão",
-     "indicio": "nenhum documento desta casa trata dele"},
+    # O Livro Diário Auxiliar virou obrigação medida (LG08). Fica o imposto de
+    # renda: o Código de Normas só dá ao livro o espaço do IR (art. 190, VII,
+    # e § 10, facultativo); o prazo do carnê-leão é da Receita Federal.
+    {"codigo": "CARNE_LEAO", "titulo": "Carnê-leão (imposto de renda mensal do delegatário)",
+     "indicio": "o Código de Normas do MA só reserva espaço para o IR no Livro Diário "
+                "(art. 190, VII); o prazo não está em documento desta casa"},
 )
 
 
@@ -68,8 +103,29 @@ def _ultimo_dia(ano: int, mes: int) -> date:
     return date(ano, mes, calendar.monthrange(ano, mes)[1])
 
 
+def _dia_util(ano: int, mes: int, n: int) -> date:
+    """O n-ésimo dia útil do mês, com os feriados nacionais de `ri_schema`."""
+    from ri_schema import soma_dias_uteis
+    return soma_dias_uteis(date(ano, mes, 1) - timedelta(days=1), n)
+
+
 def proximo_vencimento(ob: dict, hoje: date) -> tuple[date, str]:
     """O próximo prazo da obrigação a partir de hoje, e a que período se refere."""
+    if ob.get("dia_util") and ob["periodicidade"] == "ANUAL":
+        prazo = _dia_util(hoje.year, ob["mes"], ob["dia_util"])
+        if prazo < hoje:
+            prazo = _dia_util(hoje.year + 1, ob["mes"], ob["dia_util"])
+        return prazo, f"ano de {prazo.year - 1}"
+    if ob.get("dia_util") and ob["periodicidade"] == "MENSAL":
+        # O prazo deste mês é o da referência do mês passado; passado o
+        # prazo, o próximo é o do mês que vem, que se refere a este.
+        ano, mes = hoje.year, hoje.month
+        prazo = _dia_util(ano, mes, ob["dia_util"])
+        if prazo < hoje:
+            ano, mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
+            prazo = _dia_util(ano, mes, ob["dia_util"])
+        ref_ano, ref_mes = (ano, mes - 1) if mes > 1 else (ano - 1, 12)
+        return prazo, f"referência {ref_mes:02d}/{ref_ano}"
     if ob["periodicidade"] == "ANUAL":
         prazo = date(hoje.year, ob["mes"], ob["dia"])
         if prazo < hoje:
@@ -113,7 +169,9 @@ def pergunta_das_nao_medidas() -> dict:
         "opcoes": ["Responder com o prazo de cada uma", "Nenhuma — já controlo por fora",
                    "Mandar o documento que trata dela"],
         "recomendacao": "Mandar o documento (circular, provimento ou o aviso do contador): "
-                        "com ele o prazo entra medido, como o do COAF e o do FIC.",
-        "o_que_espera": "Sem resposta, só o COAF e o FIC entram na agenda.",
+                        "com ele o prazo entra medido, como o do COAF, o do FIC e o do Livro "
+                        "Diário.",
+        "o_que_espera": "Sem resposta, só as obrigações medidas (COAF, FIC e Livro "
+                        "Diário) entram na agenda.",
         "gravidade": "INFO",
     }

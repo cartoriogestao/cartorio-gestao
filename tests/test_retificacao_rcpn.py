@@ -21,6 +21,8 @@ from __future__ import annotations
 import glob
 import sqlite3
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -28,6 +30,8 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import banco_pg                                                  # noqa: E402
+import bd_nativo                                                 # noqa: E402
 import retificacao_rcpn as RR                                    # noqa: E402
 import rr_tjma as NORMA                                          # noqa: E402
 
@@ -541,3 +545,85 @@ def test_o_modulo_nao_lavra_ato():
     codigo = (RAIZ / "retificacao_rcpn.py").read_text(encoding="utf-8")
     assert "INSERT INTO rc_atos" not in codigo
     assert "INSERT INTO rc_assentos" not in codigo
+
+
+# ------------------------------------------------ quando a ponte sair
+#
+# Com a ponte, a transação da rota já pega a trava única do banco, e nada
+# grava ao mesmo tempo. Estes testes usam conexões do psycopg SEM a ponte,
+# como a transação vai ficar quando ela sair (revisão do L018).
+
+
+def _psycopg_puro(con, *, autocommit=False):
+    import psycopg
+    pg = psycopg.connect(banco_pg.dsn(), autocommit=autocommit)
+    pg.execute(f'SET search_path TO "{con.schema}", public')
+    if not autocommit:
+        pg.commit()
+    return pg
+
+
+def _ao_mesmo_tempo(con, primeiro, segundo) -> dict:
+    """`primeiro` grava e ainda não confirmou; `segundo` chega no meio, por
+    outra conexão. Devolve {"r": o que o segundo devolveu} ou {"erro": ...}."""
+    um, dois = _psycopg_puro(con), _psycopg_puro(con)
+    vigia = _psycopg_puro(con, autocommit=True)
+    pid = bd_nativo.banco(dois).valor("SELECT pg_backend_pid() AS pid")
+    primeiro(um)
+    saida: dict = {}
+
+    def chega_no_meio():
+        try:
+            saida["r"] = segundo(dois)
+            dois.commit()
+        except Exception as erro:  # o teste confere qual
+            saida["erro"] = erro
+            dois.rollback()
+
+    fio = threading.Thread(target=chega_no_meio)
+    fio.start()
+    for _ in range(200):          # o segundo tem de estar ESPERANDO
+        if bd_nativo.banco(vigia).valor(
+                "SELECT count(*) AS n FROM pg_locks WHERE pid=%s AND NOT granted",
+                (pid,)):
+            break
+        time.sleep(0.05)
+    um.commit()
+    fio.join(30)
+    for c in (um, dois, vigia):
+        c.close()
+    return saida
+
+
+def test_duas_decisoes_ao_mesmo_tempo_nao_reescrevem_a_que_saiu(casa):
+    """`decidir` conferia «já decidido?» sem prender a linha: a segunda decisão
+    passava pela conferência, esperava só o UPDATE da primeira e gravava por
+    cima. Rever decisão é ato novo, e não reescrita da que saiu."""
+    con = _con(casa)
+    with con:
+        pid = _ate_a_decisao(con)
+    saida = _ao_mesmo_tempo(
+        con,
+        lambda c: RR.decidir(c, pid, decisao="DEFERIDO", fundamento=FUNDAMENTO,
+                             agora=AGORA, por="mario"),
+        lambda c: RR.decidir(c, pid, decisao="INDEFERIDO",
+                             fundamento=FUNDAMENTO, agora=AGORA, por="mario"))
+    assert isinstance(saida.get("erro"), RR.RetificacaoRcpnError), saida
+    assert "já foi decidido" in str(saida["erro"])
+    assert con.execute("SELECT decisao FROM rr_processos WHERE id=?",
+                       (pid,)).fetchone()["decisao"] == "DEFERIDO"
+
+
+def test_instruir_duas_vezes_ao_mesmo_tempo_nao_muda_o_prazo(casa):
+    """O prazo dos 10 dias úteis conta da instrução, e a segunda marca não o
+    recomeça — nem quando as duas chegam ao mesmo tempo."""
+    con = _con(casa)
+    with con:
+        pid = _abrir(con)
+    saida = _ao_mesmo_tempo(
+        con,
+        lambda c: RR.instruir(c, pid, agora=AGORA, por="mario"),
+        lambda c: RR.instruir(c, pid, agora="2026-08-27T09:00", por="mario"))
+    assert isinstance(saida.get("erro"), RR.RetificacaoRcpnError), saida
+    assert con.execute("SELECT instruido_em FROM rr_processos WHERE id=?",
+                       (pid,)).fetchone()["instruido_em"] == AGORA

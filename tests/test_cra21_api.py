@@ -456,3 +456,64 @@ def test_sem_credencial_de_producao_o_diagnostico_diz_qual_falta(tmp_path):
     d = API.diagnostico(pasta=tmp_path)
     assert d["ok"] is False and d["ambiente"] == CRED.PRODUCAO
     assert "PRODUÇÃO" in d["motivo"]
+
+
+@pytest.mark.parametrize("nome", ["", "   ", None])
+@pytest.mark.parametrize("dia,esperado", [
+    ((2026, 10, 19), "B0001910.261"),
+    ((2027, 1, 1), "B0000101.271"),
+])
+def test_todas_as_pendentes_sem_nome_usam_nome_tecnico_valido(
+        monkeypatch, tmp_path, nome, dia, esperado):
+    from datetime import date
+
+    class Hoje(date):
+        @classmethod
+        def today(cls):
+            return cls(*dia)
+
+    monkeypatch.setattr(API, "_date", Hoje)
+    tentativas, conexao = _finge_a_rede(
+        monkeypatch, tmp_path, resposta="<return>ok</return>")
+    assert API.remessas_pendentes(nome, pasta=tmp_path) == "ok"
+    assert tentativas == {"RemessaPendente": 1}
+    corpo = conexao.ultimo_corpo.decode()
+    assert f"<userArq>{esperado}</userArq>" in corpo
+    assert "<downloadImagem>2</downloadImagem>" in corpo
+
+
+def test_pendentes_preservam_nome_explicito_e_opcao_de_imagem(monkeypatch, tmp_path):
+    _, conexao = _finge_a_rede(monkeypatch, tmp_path, resposta="<return>ok</return>")
+    API.remessas_pendentes("B2371410.261", com_imagem=True, pasta=tmp_path)
+    corpo = conexao.ultimo_corpo.decode()
+    assert "<userArq>B2371410.261</userArq>" in corpo
+    assert "<downloadImagem>1</downloadImagem>" in corpo
+
+
+def test_pendentes_recusam_conteudo_no_lugar_do_nome():
+    with pytest.raises(API.CraError, match="não o conteúdo"):
+        API.remessas_pendentes("0" * 600 + "\nlinha")
+
+
+@pytest.mark.parametrize("operacao", ["remessa", "remessas_pendentes"])
+@pytest.mark.parametrize("aviso,codigo", [
+    ('<relatorio><codigo>0003</codigo><ocorrencia>SEM REMESSAS PENDENTES.</ocorrencia></relatorio>', '0003'),
+    ('<relatorio><codigo>0002</codigo><ocorrencia>NOME DO ARQUIVO INVÁLIDO.</ocorrencia></relatorio>', '0002'),
+    ('<erro><mensagem>Falha na autenticação.</mensagem><codigo>1</codigo></erro>', '1'),
+])
+def test_download_de_remessa_trata_aviso_antes_do_conferidor(
+        monkeypatch, tmp_path, operacao, aviso, codigo):
+    import html
+    tentativas, _ = _finge_a_rede(monkeypatch, tmp_path,
+                                resposta='<return>' + html.escape(aviso) + '</return>')
+    with pytest.raises(API.CraRecusou, match='código ' + codigo):
+        getattr(API, operacao)('B0001910.261', pasta=tmp_path)
+    assert sum(tentativas.values()) == 1
+
+
+def test_remessa_valida_passa_sem_alterar_o_conteudo(monkeypatch, tmp_path):
+    import html
+    xml = '<remessa><nome_arquivo>exemplo.xml</nome_arquivo></remessa>'
+    _finge_a_rede(monkeypatch, tmp_path,
+                 resposta='<return>' + html.escape(xml) + '</return>')
+    assert API.remessas_pendentes(pasta=tmp_path) == xml

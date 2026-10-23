@@ -2,7 +2,7 @@
 Exportacao para o ONR — Operador Nacional do Registro de Imoveis.
 
 O formato aqui NAO foi inferido de documentacao: foi levantado dos arquivos que
-esta serventia efetivamente enviou, encontrados em C:\\ARPNET\\C11\\ONR. Isso
+esta serventia efetivamente enviou, encontrados em arquivos\\eoficio\\ONR. Isso
 importa porque o ONR trocou a especificacao antiga em XML por modelos em JSON,
 e implementar contra o modelo errado seria trabalho perdido.
 
@@ -14,7 +14,7 @@ O que os arquivos reais mostraram:
 
                      CORRECAO DE 04/09/2026: aqui estava escrito "7.772 de
                      10.685 registros". Recontado nos 19 XML de
-                     C:\\ARPNET\\C11\\ONR, sao 10.781 <INDIVIDUO>: 7.812
+                     arquivos\\eoficio\\ONR, sao 10.781 <INDIVIDUO>: 7.812
                      onze zeros, 2.259 CPF, 604 CNPJ e 106 com catorze zeros.
                      A conclusao nao muda — 73% do que esta casa mandou tem o
                      documento zerado —, o numero, sim. Numero escrito em

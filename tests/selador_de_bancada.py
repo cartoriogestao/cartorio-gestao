@@ -31,7 +31,6 @@ o banco viaja no backup.
 """
 from __future__ import annotations
 
-import sqlite3
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -54,7 +53,7 @@ def tem_cryptography() -> bool:
 
 @contextmanager
 def ligar_o_selador(cg_casa, *, tabela_custas_em: str = "2026-01-01",
-                    cns: str = "000000"):
+                    cns: str = "000000", protocolo_pago: bool = True):
     """Sobe o aparelho, aponta-o nesta instalação, e desliga no fim.
 
     Devolve o `SeladorFalso`, para quem quiser mandá-lo **recusar** —
@@ -93,17 +92,41 @@ def ligar_o_selador(cg_casa, *, tabela_custas_em: str = "2026-01-01",
         SC.gravar_credencial(cg_casa["dados"], "fulano.detal123", "abcde123",
                              agora=AGORA)
         CL.esquecer_tokens()
-        con = sqlite3.connect(cg_casa["banco"])
+        with cg_casa["db"].transaction() as con:
+            SC.gravar(con, base_url=aparelho.base,
+                      usuario="fulano.detal123", agora=AGORA)
+            CL.fixar_certificado(con, aparelho.base,
+                                 sha256=impressao_digital(), agora=AGORA,
+                                 usuario="TESTE")
+        # E O BALCÃO JÁ RECEBEU (LX16, 19/10/2026): selo pago só sai com
+        # protocolo e pagamento. A bancada monta o protocolo pago, com um item
+        # por código, em atendimento por quem está cadastrado — a trava roda
+        # de verdade sobre ele. Quem mede a trava passa `protocolo_pago=False`.
+        #
+        # SÓ NA HORA DO SELO, e não ao subir: protocolo criado aqui seria o
+        # primeiro de `cx_protocolos`, e os testes que abrem o seu e o leem
+        # de volta («SELECT id FROM cx_protocolos») pegariam o da bancada. Na
+        # hora do selo o teste já montou o dele; e quem foi cadastrado depois
+        # da bancada também entra no atendimento.
+        cobrir_de_antes = None
+        if protocolo_pago:
+            import ato_selado as AS
+            try:
+                from protocolo_de_teste import atender_tudo_pago
+            except ImportError:
+                from tests.protocolo_de_teste import atender_tudo_pago
+            cobrir_de_antes = AS.cobrir_o_selo
+
+            def cobrir_com_o_balcao(con, **kw):
+                atender_tudo_pago(con)
+                return cobrir_de_antes(con, **kw)
+
+            AS.cobrir_o_selo = cobrir_com_o_balcao
         try:
-            with con:
-                SC.gravar(con, base_url=aparelho.base,
-                          usuario="fulano.detal123", agora=AGORA)
-                CL.fixar_certificado(con, aparelho.base,
-                                     sha256=impressao_digital(), agora=AGORA,
-                                     usuario="TESTE")
+            yield aparelho
         finally:
-            con.close()
-        yield aparelho
+            if cobrir_de_antes is not None:
+                AS.cobrir_o_selo = cobrir_de_antes
     finally:
         aparelho.__exit__(None, None, None)
         CL.esquecer_tokens()

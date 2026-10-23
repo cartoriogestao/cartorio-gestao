@@ -354,6 +354,36 @@ def test_o_gestor_conhece_o_agente_de_cargas():
     assert "rodada(con, banco, hoje" in Path(GR.__file__).read_text(encoding="utf-8")
 
 
+# ------------------------------------------------- fora do servidor (L030R)
+
+@pytest.fixture()
+def sem_desvio(monkeypatch):
+    """O processo do CLI: ninguém criou `Database`, e o `sqlite3.connect` é o de
+    fábrica — o desvio para o PostgreSQL só existe no servidor e na suíte."""
+    import banco_pg
+    monkeypatch.setattr(sqlite3, "connect", banco_pg._CONNECT_ORIGINAL)
+
+
+def test_o_envio_ao_onr_abre_o_postgresql_mesmo_sem_o_desvio(casa, com_credencial,
+                                                             sem_desvio):
+    """O `db` que vai ao `ri_onr_central` abria `sqlite3.connect`, e o módulo
+    nativo o recusava: o envio quebrava calado, como erro da rodada."""
+    mid = _matricula(casa["con"])
+    _parte(casa["con"], mid, "FULANO DE TAL")
+    r = G.cuidar_do_real(casa["con"], casa["banco"])
+    assert r["erros"] == [] and r["enviados"] == 1
+
+
+def test_o_cli_do_agente_roda_e_mede_fora_do_servidor(casa, sem_credencial, sem_desvio,
+                                                     capsys):
+    assert G.main(["--banco", str(casa["banco"]), "--hoje", HOJE.isoformat(),
+                   "--sem-imagens"]) == 0
+    assert casa["con"].execute("SELECT COUNT(*) FROM ge_onr_cargas WHERE tipo='RODADA' "
+                               "AND situacao='OK'").fetchone()[0] == 2
+    assert G.main(["--banco", str(casa["banco"]), "--so-medir"]) == 0
+    assert '"real"' in capsys.readouterr().out
+
+
 def test_o_agente_nao_lavra_nem_sela():
     nomes = [n for n in dir(G) if not n.startswith("_")]
     for proibido in ("lavrar", "selar", "cobrar", "obter_selo"):

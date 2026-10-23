@@ -34,6 +34,9 @@ O QUE SE MEDIU, E O QUE NÃO SE MEDIU
 from __future__ import annotations
 
 import sqlite3
+
+from bd_nativo import banco
+import rc_textos as TEXTOS
 from typing import Any
 
 
@@ -70,6 +73,15 @@ O_QUE_SE_PERGUNTA: tuple[dict, ...] = (
      "porque": "não há coluna de aldeia no acervo nem no assento; quem a sabe é "
                "quem atendeu o declarante"},
 )
+
+# O TEXTO DO OFICIO MORA NA PASTA DOS PADROES desde o LF06C (19/10/2026):
+# `modelos_padrao/rcpn/RC_OFICIO_FUNAI.txt`, editavel na tela de Modelos. Os
+# marcadores do que falta («[COMPLETAR: a etnia…]») sao PECAS dele — nada os
+# le de volta: quem diz o que falta e a lista `faltando`, calculada do que foi
+# digitado. A QUEDA de cada campo (a folha do ato, senao o volume do assento,
+# senao o marcador) continua aqui, e o «A» do livro e a «SERVENTIA» em branco
+# tambem: sao dado, e nao redacao.
+CHAVE_DO_PAPEL = "RC_OFICIO_FUNAI"
 
 
 def _texto(v: Any) -> str:
@@ -141,8 +153,7 @@ def pendentes(con: sqlite3.Connection, *, hoje: str = "",
     deixou o CNIB sem achar ninguém por nome, e a busca do Protesto antes dela.
     A consulta traz os nascimentos e quem decide é `e_indigena`, em Python.
     """
-    con.row_factory = sqlite3.Row
-    linhas = con.execute(
+    linhas = banco(con).ler(
         # NAO SE PEDE `a.folha`: LIVRO E FOLHA MORAM NO ATO, e nao no assento —
         # quem ocupa face do livro e o ATO. Eu pedi `a.folha` aqui e a consulta
         # estourou; quem me avisou foi o **painel**, que em vez de dizer «zero
@@ -157,7 +168,7 @@ def pendentes(con: sqlite3.Connection, *, hoje: str = "",
               AND a.cor_raca IS NOT NULL AND TRIM(a.cor_raca) <> ''
               AND f.id IS NULL
          ORDER BY a.data_ato IS NULL, a.data_ato, a.id
-            LIMIT ?""", (limite,)).fetchall()
+            LIMIT %s""", (limite,))
     saida = []
     for linha in linhas:
         d = dict(linha)
@@ -184,10 +195,13 @@ def montar(con: sqlite3.Connection, assento_id: int, *, serventia: dict,
     nome, e um sobrenome comum não é etnia. Vindo vazias, o ofício sai com o
     lugar marcado — que é honesto — em vez de sair com uma afirmação inventada
     sobre a origem de uma criança.
+
+    O TEXTO É O PAPEL `RC_OFICIO_FUNAI`, lido pela busca única — o ajuste da
+    casa, e na falta dele o padrão da base. O que já saiu não muda: o teor que
+    `registrar_envio` congelou, com o hash, é o de quando saiu.
     """
-    con.row_factory = sqlite3.Row
-    a = con.execute("SELECT * FROM rc_assentos WHERE id = ?",
-                    (assento_id,)).fetchone()
+    a = banco(con).um("SELECT * FROM rc_assentos WHERE id = %s",
+                      (assento_id,))
     if not a:
         raise FunaiError("Esse assento não existe.")
     a = dict(a)
@@ -212,25 +226,24 @@ def montar(con: sqlite3.Connection, assento_id: int, *, serventia: dict,
                 ((O_QUE_SE_PERGUNTA[0], etnia), (O_QUE_SE_PERGUNTA[1], aldeia))
                 if not _texto(valor)]
 
-    corpo = (
-        f"{_texto(serventia.get('nome')) or 'SERVENTIA'}\n"
-        f"CNS {_texto(serventia.get('cns'))}\n\n"
-        "À FUNDAÇÃO NACIONAL DOS POVOS INDÍGENAS — FUNAI\n\n"
-        "Comunicação de assento de nascimento de pessoa indígena, na forma do "
-        "art. 253, § 2º, do Código de Normas da Corregedoria Geral da Justiça "
-        "do Estado do Maranhão, para as providências necessárias ao registro "
-        "administrativo.\n\n"
-        f"Nome: {_texto(a.get('nome')) or '[COMPLETAR: nome]'}\n"
-        f"Data do nascimento: {_texto(a.get('data_fato')) or '[COMPLETAR]'}\n"
-        f"Data do assento: {_texto(a.get('data_ato')) or '[COMPLETAR]'}\n"
-        f"Livro: {_texto(onde.get('livro')) or _texto(a.get('livro_volume')) or 'A'}   "
-        f"Folha: {_texto(onde.get('folha')) or '[COMPLETAR: folha]'}   "
-        f"Termo: {_texto(onde.get('termo')) or _texto(a.get('numero')) or '[COMPLETAR]'}\n"
-        f"Matrícula: {_texto(a.get('matricula')) or '[COMPLETAR: matrícula]'}\n"
-        f"Povo, etnia, grupo, clã ou família indígena: "
-        f"{_texto(etnia) or '[COMPLETAR: a etnia, que o sistema não deduz]'}\n"
-        f"Aldeia ou comunidade: "
-        f"{_texto(aldeia) or '[COMPLETAR: a aldeia, que o sistema não guarda]'}\n")
+    def falta(peca: str) -> str:
+        return TEXTOS.texto(f"{CHAVE_DO_PAPEL}__{peca}", con)
+
+    corpo = TEXTOS.peca(
+        CHAVE_DO_PAPEL, con,
+        serventia_nome=_texto(serventia.get("nome")) or "SERVENTIA",
+        cns=_texto(serventia.get("cns")),
+        nome=_texto(a.get("nome")) or falta("completar_nome"),
+        data_nascimento=_texto(a.get("data_fato")) or falta("completar"),
+        data_assento=_texto(a.get("data_ato")) or falta("completar"),
+        livro=(_texto(onde.get("livro")) or _texto(a.get("livro_volume"))
+               or "A"),
+        folha=_texto(onde.get("folha")) or falta("completar_folha"),
+        termo=(_texto(onde.get("termo")) or _texto(a.get("numero"))
+               or falta("completar")),
+        matricula=_texto(a.get("matricula")) or falta("completar_matricula"),
+        etnia=_texto(etnia) or falta("completar_etnia"),
+        aldeia=_texto(aldeia) or falta("completar_aldeia"))
     return {"assento_id": assento_id, "teor": corpo, "faltando": faltando,
             "nome": a.get("nome")}
 
@@ -250,23 +263,25 @@ def registrar_envio(con: sqlite3.Connection, assento_id: int, *, agora: str,
     """
     if not _texto(teor):
         raise FunaiError("Não dá para registrar comunicação sem o ofício.")
-    ja = con.execute("SELECT id FROM rc_funai WHERE assento_id = ?",
-                     (assento_id,)).fetchone()
+    bd = banco(con)
+    ja = bd.um("SELECT id FROM rc_funai WHERE assento_id = %s",
+               (assento_id,))
     if ja:
         raise FunaiError(
             "Este nascimento já foi comunicado à FUNAI. Se precisar comunicar "
             "de novo, o caminho é um ofício novo, e não apagar o que saiu.")
     import hashlib
-    cur = con.execute(
+    novo = bd.escrever(
         """INSERT INTO rc_funai (assento_id, situacao, teor, hash_teor,
                etnia, aldeia, enviada_em, canal, protocolo, criado_em,
                criado_por)
-           VALUES (?,'ENVIADA',?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,'ENVIADA',%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
         (assento_id, teor,
          hashlib.sha256(teor.encode("utf-8")).hexdigest(),
          _texto(etnia), _texto(aldeia), agora, _texto(canal),
          _texto(protocolo), agora, por))
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
 
 
 def dispensar(con: sqlite3.Connection, assento_id: int, *, motivo: str,
@@ -280,23 +295,39 @@ def dispensar(con: sqlite3.Connection, assento_id: int, *, motivo: str,
         raise FunaiError(
             "Escreva por que esta comunicação não é devida — quem ler daqui a "
             "cinco anos precisa saber, e é isso que uma correição pergunta.")
-    ja = con.execute("SELECT id FROM rc_funai WHERE assento_id = ?",
-                     (assento_id,)).fetchone()
+    bd = banco(con)
+    ja = bd.um("SELECT id FROM rc_funai WHERE assento_id = %s",
+               (assento_id,))
     if ja:
         raise FunaiError("Este nascimento já saiu da lista.")
-    cur = con.execute(
+    novo = bd.escrever(
         """INSERT INTO rc_funai (assento_id, situacao, motivo, criado_em,
                criado_por, resolvida_por)
-           VALUES (?,'DISPENSADA',?,?,?,?)""",
+           VALUES (%s,'DISPENSADA',%s,%s,%s,%s)
+           RETURNING id""",
         (assento_id, _texto(motivo), agora, por, por))
-    return int(cur.lastrowid)
+    return int(novo[0]["id"])
 
 
 def historico(con: sqlite3.Connection, limite: int = 200) -> list[dict]:
     """O que já saiu e o que foi dispensado. Só lê."""
-    con.row_factory = sqlite3.Row
-    return [dict(x) for x in con.execute(
+    return banco(con).ler(
         """SELECT f.*, a.nome, a.numero, a.data_ato
              FROM rc_funai f
              JOIN rc_assentos a ON a.id = f.assento_id
-         ORDER BY f.criado_em DESC LIMIT ?""", (limite,)).fetchall()]
+         ORDER BY f.criado_em DESC, f.id DESC LIMIT %s""", (limite,))
+
+
+def __getattr__(nome: str):
+    """O nome do texto do ofício, lido da base dos padrões.
+
+    O TEXTO SAIU DESTE MÓDULO NO LF06C (19/10/2026) e mora em
+    `modelos_padrao/`. `OFICIO_A_FUNAI` nunca foi constante — o texto era
+    montado dentro de `montar` —; é o nome que o catálogo dá ao papel, e quem o
+    pede recebe o padrão da base, o MESMO que o ofício imprime. Nome que não é
+    de papel continua sendo `AttributeError`.
+    """
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)

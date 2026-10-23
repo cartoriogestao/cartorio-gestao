@@ -1,0 +1,11 @@
+{
+  "chave": "PT_CERTIDAO_POSITIVA",
+  "atribuicao": "Protesto",
+  "nome": "Certidão positiva de protesto",
+  "formato": "CHAVES",
+  "explica": "Certifica os protestos encontrados e seus dados.",
+  "campos": [
+    "cabeca",
+    "corpo"
+  ]
+}

@@ -1,0 +1,1 @@
+<tr><td><b>Prazo de oposição</b></td><td>até {prazo_ate} — ainda em curso na data desta certidão</td></tr>

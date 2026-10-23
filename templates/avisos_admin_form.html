@@ -9,6 +9,39 @@
   <label>Descrição (texto completo na página do aviso)
     <textarea name="corpo" required rows="8">{{ aviso_item.corpo if aviso_item else '' }}</textarea></label>
 
+  {# O MODO DE EXIBIÇÃO (LX17). A janela o escrevente fecha; a barra fixa fica
+     no topo de toda tela até quem tem o papel marcar «Pago». `barra_campos`
+     avisa a rota de que estes campos vieram — a caixa de papel desmarcada
+     não chega no POST. #}
+  {% set modo_atual = aviso_item.modo if aviso_item and aviso_item.modo else 'JANELA' %}
+  {% set papeis_atuais = (aviso_item.barra_papeis if aviso_item and aviso_item.barra_papeis else 'ADMIN,MANAGER').split(',') %}
+  <fieldset class="nu-avisos-admin-opcoes">
+    <legend class="muted"><small>Exibição</small></legend>
+    <input type="hidden" name="barra_campos" value="1">
+    <label>Modo de exibição
+      <select name="modo">
+        <option value="JANELA" {% if modo_atual == 'JANELA' %}selected{% endif %}>Janela (o escrevente fecha)</option>
+        <option value="BARRA" {% if modo_atual == 'BARRA' %}selected{% endif %}>Barra fixa no topo (some só com «Pago»)</option>
+      </select></label>
+    <label>Barra mensal — aparece a partir do dia (vazio: não se repete)
+      <input type="number" name="barra_dia_mes" min="1" max="31"
+             value="{{ aviso_item.barra_dia_mes if aviso_item and aviso_item.barra_dia_mes is not none else '' }}"></label>
+    <fieldset class="nu-avisos-barra-papeis">
+      <legend class="muted"><small>Quem pode marcar «Pago»</small></legend>
+      {% for p in ['ADMIN', 'MANAGER', 'USER'] %}
+      <label class="checkbox-label">
+        <input type="checkbox" name="barra_papeis" value="{{ p }}" {% if p in papeis_atuais %}checked{% endif %}>
+        {{ p }}
+      </label>
+      {% endfor %}
+    </fieldset>
+    {% if aviso_item and aviso_item.chave == 'FERJ_FERC' %}
+    <label>Dias que o «avisei» oculta a barra para quem o digitou
+      <input type="number" name="avisei_dias" min="1" max="31"
+             value="{{ aviso_item.avisei_dias or 1 }}"></label>
+    {% endif %}
+  </fieldset>
+
   <fieldset class="nu-avisos-admin-opcoes">
     <legend class="muted"><small>Importância, recorrência e vigência</small></legend>
     <label class="checkbox-label">

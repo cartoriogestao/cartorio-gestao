@@ -1,0 +1,10 @@
+{
+  "chave": "NOTAS_ANOTACAO_MARGEM__tipo",
+  "atribuicao": "Tabelionato de Notas",
+  "nome": "Anotação à margem — tipo do ato",
+  "formato": "CHAVES",
+  "explica": "O nome do tipo do ato que gerou a anotação.",
+  "campos": [
+    "tipo"
+  ]
+}

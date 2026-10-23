@@ -1,0 +1,8 @@
+{
+  "chave": "PT_INSTRUMENTO_PRACA",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto — praça não informada",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {praca} do instrumento quando o título não traz a praça de pagamento.",
+  "campos": []
+}

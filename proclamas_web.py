@@ -19,14 +19,13 @@ IdRC — e a tela diz, com todas as letras, que ele **não** prova o token.
 """
 from __future__ import annotations
 
-import sqlite3
-
 from flask import flash, redirect, render_template, request, url_for
 
 import centrais_cred as CRED
 import habilitacao as HAB
 import onrcpn_api as API
 import proclamas as PROC
+from bd_nativo import banco
 
 # QUEM VÊ E QUEM MANDA. Ver o cabeçalho — enviar não é do balcão.
 QUEM_CONFERE = ("ADMIN", "MANAGER", "USER")
@@ -66,7 +65,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def rcpn_proclamas():
         """As habilitações com edital publicado e que a Central ainda não tem."""
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
             fila = PROC.pendentes(con)
         return render_template(
             "rcpn_proclamas.html", fila=fila, cns=_cns(),
@@ -109,9 +107,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         cpf_fatura = (request.values.get("cpf_fatura") or "").strip()
         nome_fatura = (request.values.get("nome_fatura") or "").strip()
         with db.connect() as con:
-            con.row_factory = sqlite3.Row
-            h = con.execute("SELECT * FROM hc_habilitacoes WHERE id=?",
-                            (habilitacao_id,)).fetchone()
+            h = banco(con).um("SELECT * FROM hc_habilitacoes WHERE id = %s",
+                              (habilitacao_id,))
             if h is None:
                 flash("Habilitação não encontrada.", "danger")
                 return redirect(url_for("rcpn_proclamas"))
@@ -125,7 +122,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 return redirect(url_for("rcpn_proclamas"))
             enviados = PROC.enviados_de(con, habilitacao_id)
         return render_template(
-            "rcpn_proclama.html", h=dict(h), c=conferido, enviados=enviados,
+            "rcpn_proclama.html", h=h, c=conferido, enviados=enviados,
             publicacao=publicacao, livro_eletronico=livro,
             cpf_fatura=cpf_fatura, nome_fatura=nome_fatura,
             tem_credencial=API.tem_credencial(), base=API.BASE,

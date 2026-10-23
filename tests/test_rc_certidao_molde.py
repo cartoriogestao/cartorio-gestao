@@ -680,7 +680,14 @@ def test_o_molde_recusa_a_especie_que_ele_nao_serve():
     # cuja certidão não afirma nascimento com vida — e o Livro E, que registra
     # seis coisas diferentes entre si. Papel derivado no chute para elas é
     # exatamente o que esta guarda existe para impedir.
-    for especie in ("NATIMORTO", "PROCLAMAS", "OUTRO"):
+    #
+    # **E MUDARAM DE NOVO NO LD01 (21/10/2026)**: o natimorto e o Livro E
+    # ganharam molde PRÓPRIO — com as caixas do que o assento deles tem, e não
+    # o de nascimento —, porque a 1ª certidão do natimorto é gratuita (LRP art.
+    # 30) e não tinha o que imprimir (`test_fluxo_rcpn`). O que continua sem
+    # papel é o que não tem certidão de breve relato própria: o proclama e o
+    # «outro», que não se sabe o que registra.
+    for especie in ("PROCLAMAS", "OUTRO"):
         with pytest.raises(ODT.MoldeError) as e:
             ODT.arquivo_da_certidao({"especie": especie}, {}, {})
         assert especie in str(e.value)
@@ -706,7 +713,7 @@ def test_sem_especie_declarada_ele_nao_recusa():
 def test_a_recusa_diz_onde_o_teor_pode_ser_conferido():
     """Recusa sem saída manda o escrevente embora sem nada."""
     with pytest.raises(ODT.MoldeError) as e:
-        ODT.arquivo_da_certidao({"especie": "NATIMORTO"}, {}, {})
+        ODT.arquivo_da_certidao({"especie": "OUTRO"}, {}, {})
     assert "ficha da certidão" in str(e.value)
 
 
@@ -882,7 +889,9 @@ def test_nenhum_molde_deixa_marcador_cru_no_papel():
     import re
     import zipfile
     from io import BytesIO
-    for especie in ("NASCIMENTO", "CASAMENTO", "OBITO"):
+    # Os cinco moldes desde o LD01 (natimorto e Livro E), pela lista das
+    # espécies — molde novo entra na varredura sozinho.
+    for especie in sorted(ODT.MOLDE_DA_ESPECIE):
         if not ODT.molde_da_especie(especie).exists():
             continue
         bruto = ODT.arquivo_da_certidao({"especie": especie}, {}, {})
@@ -962,7 +971,9 @@ def test_a_matricula_esta_nos_tres_moldes():
     quando alguém fosse conferir o registro noutra serventia."""
     import re
     import zipfile
-    for especie in ("NASCIMENTO", "CASAMENTO", "OBITO"):
+    # Os cinco moldes desde o LD01 (natimorto e Livro E), pela lista das
+    # espécies — molde novo entra na varredura sozinho.
+    for especie in sorted(ODT.MOLDE_DA_ESPECIE):
         molde = ODT.molde_da_especie(especie)
         if not molde.exists():
             continue
@@ -1021,6 +1032,39 @@ def test_a_filiacao_propria_de_cada_conjuge_manda():
     conj = RCQ._quadro_casamento({}, quem, {}, "", {})["conjuges"]
     assert "PAI DE A" in conj[0]["genitores"] and "NÃO USAR" not in conj[0]["genitores"]
     assert "PAI DE B" in conj[1]["genitores"] and "NÃO USAR" not in conj[1]["genitores"]
+
+
+@tem_o_molde
+def test_o_natimorto_e_o_livro_e_saem_no_papel_deles_com_o_titulo_da_especie():
+    """LD01 (21/10/2026): o natimorto e as seis espécies do Livro E não tinham
+    papel. O do natimorto diz «CERTIDÃO DE NATIMORTO» e não afirma nascimento;
+    o do Livro E é um para as seis, e o título é o da espécie, vindo do quadro
+    (`rc_certidao.titulo_do_modelo`) — um papel de interdição que dissesse
+    «CERTIDÃO» e mais nada é o defeito que o lote consertou."""
+    import re
+    import zipfile
+    from io import BytesIO
+
+    def texto(quadro):
+        bruto = ODT.arquivo_da_certidao(quadro, {}, {})
+        xml = zipfile.ZipFile(BytesIO(bruto)).read("content.xml").decode("utf-8")
+        return re.sub(r"<[^>]+>", " ", xml)
+
+    nati = texto({"especie": "NATIMORTO", "nome": "NATIMORTO DE EXEMPLO",
+                  "numero_do": "11112222"})
+    assert "CERTIDÃO DE NATIMORTO" in nati and "11112222" in nati
+    assert "CERTIDÃO DE NASCIMENTO" not in nati
+    assert "NASCIDO VIVO" not in nati
+    inter = texto({"especie": "INTERDICAO", "nome": "PEDRO EXEMPLO",
+                   "titulo_livro_e": "CERTIDÃO DE INTERDIÇÃO",
+                   "livro_e_especie": "Interdição",
+                   "livro_e_titulo": "Sentença proferida em exemplo",
+                   "livro_e_indicacoes": "CURADOR(A): BEATRIZ EXEMPLO"})
+    for esperado in ("CERTIDÃO DE INTERDIÇÃO", "Interdição",
+                     "Sentença proferida em exemplo",
+                     "CURADOR(A): BEATRIZ EXEMPLO"):
+        assert esperado in inter, esperado
+    assert "CERTIDÃO DE NASCIMENTO" not in inter
 
 
 def test_a_lista_de_especies_servidas_e_a_dos_moldes_concordam():

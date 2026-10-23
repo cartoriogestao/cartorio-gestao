@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Revisar transcrições em lote{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Revisar transcrições em lote (IA)</h1>
+  <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Matrículas</a>
+</div>
+
+{# O LOTE DOS LIVROS ANTIGOS — LH11, pedido do oficial em 21/10/2026. A IA confere
+   o texto transcrito de cada ficha contra a página escaneada; o lote começa pelo
+   livro mais antigo, roda em segundo plano e pausa no teto da rodada. A regra está
+   em `revisao_transcricao_lote.py`. #}
+<section class="panel">
+  <div style="padding:14px">
+    <p>A IA lê cada ficha <strong>transcrita</strong> (com teor e com página escaneada) e
+    compara o texto com a página do livro: <strong>GRAVE</strong> é nome, documento, número
+    de matrícula/registro, área, medida, confrontação, valor, data, ônus, livro/folha;
+    <strong>leve</strong> é grafia, pontuação, abreviatura. Ela <strong>não corrige</strong>
+    nada — a lista diz onde conferir.</p>
+    <p class="small muted">A rodada para no teto de <strong>{{ cfg.teto_paginas }} páginas</strong>
+    ou de <strong>US$ {{ '%.2f'|format(cfg.teto_custo) }}</strong> (o administrador muda em
+    Configurações); continuar abre outra rodada. Ficha já revisada com o mesmo texto e as
+    mesmas páginas não se paga de novo.
+    {% if cfg.manda_imagem %}A imagem da página vai ao provedor da IA — decisão do oficial de
+    21/10/2026, só nesta revisão.{% else %}<strong>O envio da imagem está desligado</strong>:
+    a revisão confere só o texto contra a ficha.{% endif %}</p>
+    {% if no_sandbox %}
+    <div class="notice warning">No SANDBOX a revisão por IA não existe (ordem do oficial).</div>
+    {% elif not ligada %}
+    <div class="notice warning">A revisão por IA não está ligada nesta instalação (falta a chave
+      do provedor, ou ela foi desligada). Dá para ver a conta, mas não para rodar.</div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>O que revisar</span></div>
+  <form method="get" class="form-grid" style="padding:14px">
+    <label>Livro
+      <select name="livro">
+        <option value="">todos</option>
+        {% for l in livros %}<option value="{{ l }}" {% if filtro.livro == l %}selected{% endif %}>{{ l }}</option>{% endfor %}
+      </select></label>
+    <label>Aberta de<input type="date" name="de" value="{{ filtro.de }}"></label>
+    <label>até<input type="date" name="ate" value="{{ filtro.ate }}"></label>
+    <label class="checkbox-label"><input type="checkbox" name="so_sem_revisao" value="1"
+      {% if filtro.so_sem_revisao %}checked{% endif %}> Só as que nunca foram revisadas</label>
+    <div class="span2"><button class="button">Contar</button></div>
+  </form>
+  <div style="padding:0 14px 14px">
+    <p><strong>{{ previa.fichas }} ficha(s)</strong> transcrita(s), com
+      <strong>{{ previa.paginas }} página(s)</strong> e {{ previa.atos_do_acervo }} ato(s) do
+      E-Ofício — {{ previa.chamadas }} chamada(s) ao provedor, estimativa de
+      <strong>US$ {{ '%.2f'|format(previa.custo) }}</strong>
+      {% if previa.medido %}<span class="small muted">(pela média de {{ previa.medido }} chamada(s)
+      medidas no registro de uso de IA)</span>{% else %}<span class="small muted">(sem uso medido
+      ainda: pelo tamanho de um pedido de duas páginas)</span>{% endif %}.</p>
+    {% if previa.primeiras %}
+    <p class="small muted">Começa por: {% for c in previa.primeiras %}<a href="{{ url_for('ri_ficha', matricula_id=c.matricula_id) }}">{{ c.numero }}</a>{% if c.livro %} (liv. {{ c.livro }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% if previa.fichas > previa.primeiras|length %} …{% endif %}</p>
+    {% endif %}
+    {% if previa.fichas and ligada %}
+    <form method="post" action="{{ url_for('ri_transcricoes_lote') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="livro" value="{{ filtro.livro }}">
+      <input type="hidden" name="de" value="{{ filtro.de }}">
+      <input type="hidden" name="ate" value="{{ filtro.ate }}">
+      <input type="hidden" name="so_sem_revisao" value="{{ '1' if filtro.so_sem_revisao else '' }}">
+      <button class="primary">Criar o lote e começar</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+{% if lotes %}
+<section class="panel">
+  <div class="panel-head"><span>Lotes</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Criado</th><th>Escolha</th><th>Situação</th><th>Fichas</th>
+      <th>Páginas lidas</th><th>Custo</th></tr></thead>
+    <tbody>
+    {% for l in lotes %}
+      <tr>
+        <td><a href="{{ url_for('ri_transcricoes_lote_ver', lote_id=l.id) }}">{{ l.id }}</a></td>
+        <td class="small">{{ l.criado_em }} · {{ l.criado_por or '—' }}</td>
+        <td class="small">{{ l.filtro.livro or 'todos os livros' }}{% if l.filtro.de or l.filtro.ate %}, {{ l.filtro.de or '…' }} a {{ l.filtro.ate or '…' }}{% endif %}{% if l.filtro.so_sem_revisao %}, sem revisão{% endif %}</td>
+        <td class="small"><strong>{{ l.situacao }}</strong>{% if l.mensagem %}<br><span class="muted">{{ l.mensagem }}</span>{% endif %}</td>
+        <td class="small">{{ l.total_fichas }}</td>
+        <td class="small">{{ l.paginas_lidas }} de {{ l.total_paginas }}</td>
+        <td class="small">US$ {{ '%.2f'|format(l.custo) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

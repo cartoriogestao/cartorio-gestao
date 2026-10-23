@@ -1,0 +1,11 @@
+{
+  "chave": "PT_AVISO_ROTULOS",
+  "atribuicao": "Protesto",
+  "nome": "Aviso de intimação e canhoto — rótulos dos dados",
+  "formato": "CHAVES",
+  "explica": "Uma linha por rótulo, no formato «nome = texto». O NOME é do sistema e não muda; o TEXTO é seu. Linha apagada, ou deixada sem texto, volta ao padrão — o sistema nunca fica sem a palavra. O documento (do devedor e do credor) e o vencimento entram quando o título os tem; A e N são o aceite que a remessa informa; os «sem_» e o «nao_informado» são o que o papel diz quando o dado falta (CN-MA art. 920 — o claro não pode ficar em branco).",
+  "campos": [
+    "documento",
+    "data"
+  ]
+}

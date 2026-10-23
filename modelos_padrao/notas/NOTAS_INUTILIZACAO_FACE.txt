@@ -1,0 +1,1 @@
+<p align="center"><b>{livro} n. {numero} — FOLHA {face}</b></p><p align="center"><b>FACE INUTILIZADA</b></p>{riscos}<p>{texto}</p><p></p><p></p><p align="center">_________________________________</p><p align="center">{titular}</p><p align="center">{titulo}</p>

@@ -1,0 +1,43 @@
+<!doctype html>
+{# A CERTIDÃO DO CONTROLE (LG03): o que consta no controle das apostilas sobre
+   UMA apostila — é a conferência que a Convenção (art. 7º) manda a autoridade
+   fazer a pedido de quem tenha interesse. Não traz o nome de quem pediu: a
+   certidão é da apostila, e não do cliente. A certidão entregue a terceiro é
+   ato próprio, com selo e emolumento de certidão, cobrado no protocolo geral. #}
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Certidão — apostila nº de ordem {{ a.ordem }}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 12pt; color: #111; margin: 2cm; line-height: 1.5; }
+  h1 { font-size: 15pt; text-align: center; margin: 0 0 1em; }
+  .muted { color: #555; font-size: 9.5pt; }
+  .barra { background: #f2f2f2; border: 1px solid #ccc; padding: .5em .8em; margin-bottom: 1em; }
+  .barra a, .barra button { margin-right: 1em; }
+  .assinatura { margin-top: 3em; text-align: center; }
+  .assinatura div { border-top: 1px solid #333; width: 60%; margin: 3em auto 0; padding-top: .2em; }
+  @media print { .barra { display: none; } body { margin: 1.5cm; } }
+</style>
+</head>
+<body>
+<div class="barra">
+  <a href="{{ url_for('apostila_pedido', pedido_id=a.pedido_id) }}">← Pedido</a>
+  <button type="button" onclick="window.print()">Imprimir</button>
+</div>
+<p>{{ sv.unit_name }}{% if sv.ri_cns %} — CNS {{ sv.ri_cns }}{% endif %}{% if sv.cidade_uf %} — {{ sv.cidade_uf }}{% endif %}</p>
+<h1>Certidão</h1>
+<p>CERTIFICO, a pedido de parte interessada, que no controle das apostilas de Haia desta serventia
+consta, sob o <strong>nº de ordem {{ a.ordem }}</strong>, a apostila
+<strong>{{ a.codigo_cnj }}</strong>, emitida em <strong>{{ a.emitida_em }}</strong> no sistema do
+Conselho Nacional de Justiça, sobre {{ a.tipo_nome | lower }}{% if a.documento_descricao %}
+({{ a.documento_descricao }}){% endif %}{% if a.documento_data %}, datado de {{ a.documento_data }}{% endif %}{% if a.signatario_nome %},
+assinado por {{ a.signatario_nome }}, na qualidade de {{ a.signatario_cargo }}{% endif %}{% if a.autoridade %},
+com selo ou carimbo de {{ a.autoridade }}{% endif %}{% if a.selo %}, selo {{ a.selo }}{% endif %}.
+{% if a.situacao == 'CANCELADA' %}<strong>A apostila foi CANCELADA</strong>{% if a.encerrada_em %} em {{ a.encerrada_em[:10] }}{% endif %}{% if a.motivo %}, pelo motivo: {{ a.motivo }}{% endif %}.{% endif %}
+O referido é verdade e dou fé.</p>
+<p class="muted">Código de Normas do MA, art. 875; Convenção da Apostila (Decreto nº 8.660/2016), art. 7º.
+A autenticidade da apostila se confere no sistema do CNJ, pelo código acima.</p>
+<p>{{ sv.cidade_uf or '' }}{% if sv.cidade_uf %}, {% endif %}{{ hoje }}.</p>
+<div class="assinatura"><div>{{ emitida_por }}</div></div>
+</body>
+</html>

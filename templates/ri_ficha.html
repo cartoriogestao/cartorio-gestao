@@ -6,6 +6,8 @@
 {% from '_cancelar_certidao.html' import formulario as cancelar_certidao,
                                           motivo as motivo_do_cancelamento %}
 {% from '_parte_do_ato.html' import parte_do_ato %}
+{% from '_selar_certidao_do_ri.html' import botao as selar_certidao %}
+{% from '_protocolo_do_selo.html' import protocolo_do_selo %}
 {% from '_cnib_decidir.html' import resolver as resolver_cnib %}
 {% if cnib_pendencias %}
 <section id="cnib-pendente" role="alert" aria-label="Possivel indisponibilidade pendente"
@@ -1213,7 +1215,7 @@
    com o mesmo teor congelado e o mesmo selo; emitir de novo tomaria outro
    número, pediria outro selo e cobraria outra vez. #}
 {% if certidoes %}
-<details class="panel" open>
+<details class="panel" open id="certidoes-da-ficha">
   <summary><strong>Certidões emitidas desta matrícula</strong>
     <small class="muted">({{ certidoes_emitidas }}{% if certidoes_canceladas %},
       {{ certidoes_canceladas }} cancelada{{ 's' if certidoes_canceladas > 1 }}{% endif %})</small></summary>
@@ -1237,7 +1239,9 @@
         <td>{{ c.requerente or '—' }}</td>
         <td><small>{{ c.emitida_por_nome or '—' }}
           {%- if c.emitida_por_funcao %}<br>{{ c.emitida_por_funcao }}{% endif %}</small></td>
-        <td><small>{{ c.selo_texto and c.selo_texto[:28] or '—' }}</small></td>
+        <td>{% if c.id in certidoes_aguardando_selo and not c.cancelada and not c.selo_texto %}
+              {{ selar_certidao(c, csrf_token, CODIGO_BASE_DA_CERTIDAO) }}
+            {% else %}<small>{{ c.selo_texto and c.selo_texto[:28] or '—' }}</small>{% endif %}</td>
         {# CANCELAR DAQUI, DA FICHA — relato #81, 17/09/2026.
            «dar a possibilidade de cancelar certidao emitida, nos termos que ja
            temos no RCPN (...) ter mais controle das certidoes emitidas», e o
@@ -1340,6 +1344,17 @@
 <form id="form-onus-ia" method="post" hidden
       action="{{ url_for('ri_onus_sugerir', matricula_id=m.id) }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}"></form>
+{# A REVISÃO DA TRANSCRIÇÃO PELA IA (LH11): os botões do quadro mandam estes. #}
+{% if transcricao_painel %}
+<form id="form-transcricao-ia" method="post" hidden
+      action="{{ url_for('ri_transcricao_revisar', matricula_id=m.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}"></form>
+{% if transcricao_painel.vale %}
+<form id="form-transcricao-conferir" method="post" hidden
+      action="{{ url_for('ri_transcricao_conferir', revisao_id=transcricao_painel.vale.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}"></form>
+{% endif %}
+{% endif %}
 <details class="panel">
   <summary><strong>Emitir certidão desta matrícula</strong></summary>
   <form method="post" action="{{ url_for('ri_emitir_certidao', matricula_id=m.id) }}" class="form-grid">
@@ -1661,6 +1676,9 @@
           Texto extraído (livro antigo ou manuscrito)</option>
       </select>
     </label>
+    {# A IA CONFERE A TRANSCRIÇÃO CONTRA A PÁGINA (LH11, 21/10/2026). Só aparece
+       quando a ficha tem texto transcrito; a regra é da rota de emitir. #}
+    {% if transcricao_painel %}{% include '_revisao_transcricao.html' %}{% endif %}
     {#  AS FOLHAS DA CERTIDÃO — 21/09/2026, e o campo não existia.
 
         A rota lê `folhas` desde sempre e **nenhum modelo de tela o mandava**:
@@ -1772,6 +1790,25 @@
        de quem está no balcão», e isso deixou de valer no dia seguinte: ele
        mandou tirá-la «em nenhum serviço ou módulo», e a certidão sem selo
        passou a ser sempre cancelada, com o motivo na tela. #}
+    {# O PROTOCOLO QUE PAGA O SELO, escolhido aqui — 22/10/2026, dia da 3.7.0.
+       A trava do selo pago só acha o pagamento no protocolo que a escrevente
+       está atendendo, e esse passo morava escondido em «Selo e caixa»: as
+       certidões 83 e 84 da matrícula 3252 saíram sem selo com o protocolo
+       2026.10.61 quitado. Decisão do oficial: «escrevente confirma» — o
+       protocolo vem marcado quando há um só, e nunca é escolhido sozinho.
+       A lista traz quem tem o item base (16.24.4 ou 16.24.1); a folha
+       acrescida se confere na hora do selo, quando as folhas estão contadas. #}
+    <div class="span2">
+      {% if candidatos_do_selo_da_certidao %}
+        {{ protocolo_do_selo(candidatos_do_selo_da_certidao, [],
+                             atendendo=atendendo_do_selo) }}
+      {% else %}
+        <p class="small muted">Nenhum protocolo pago do RI com o item da
+          certidão (16.24.4 ou 16.24.1) nos últimos 30 dias. Abra o protocolo
+          e registre o pagamento no caixa antes de emitir — sem ele a certidão
+          fica gravada esperando o selo, e não pode ser impressa.</p>
+      {% endif %}
+    </div>
     {% if not m.conferido %}
     <div class="span2 notice warning small">
       Esta matrícula <strong>ainda não foi conferida contra o livro físico</strong>.
@@ -1877,6 +1914,10 @@
           <form method="post" class="form-grid" style="padding:8px"
                 action="{{ url_for('ri_selar_abertura', matricula_id=m.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {# O protocolo que paga o 16.2 — 22/10/2026, trava do selo pago. #}
+            {% set _ps_abertura = protocolos_do_selo_ri('ri_matriculas', '16.2') %}
+            <div class="span2">{{ protocolo_do_selo(_ps_abertura.candidatos,
+                _ps_abertura.pedidos, atendendo=_ps_abertura.atendendo) }}</div>
 
             <label>Item da tabela de custas <span class="obrigatorio">— o selo exige</span>
               <input name="codigo_tj" value="16.2" list="itens_da_abertura"
@@ -1962,6 +2003,11 @@
               <input name="documento" placeholder="opcional" autocomplete="off"></label>
             <label>Papel
               <input name="papel" value="proprietario" list="papeis-ri"></label>
+            {# A rota já gravava a qualificação; faltava o campo (LT03, 20/10/2026 —
+               LRP art. 176, § 1º, II, 4). #}
+            <label class="span2">Qualificação
+              <input name="qualificacao" autocomplete="off"
+                     placeholder="nacionalidade, estado civil, profissão, residência e domicílio"></label>
             <div class="span2"><button class="primary">Cadastrar proprietário</button></div>
           </form>
           {% endif %}
@@ -2080,7 +2126,7 @@
   A tabela de atos do sistema vai até
   {{ piso.em_atos if piso.em_atos else 'nenhum' }}, mas
   <strong>o texto da ficha já traz atos até o {{ piso.no_teor }}</strong> &mdash;
-  eles vieram do E-Ofício dentro do próprio teor, e não como linhas.
+  eles vieram do sistema antigo dentro do próprio teor, e não como linhas.
   <details style="margin-top:8px">
     <summary class="small">Onde isso está escrito na ficha</summary>
     <ul class="small">
@@ -2171,6 +2217,18 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
     <span class="muted small">índice &mdash; cada ato com o seu selo e os seus
       botões; o texto de cada um está no teor, abaixo, ou logo depois dele</span>
   </div>
+  {# As listas do «Cancelar este ato», uma vez só na página (o formulário se
+     repete em cada ato). #}
+  <datalist id="itens_do_cancelamento">
+    {% for codigo, usos in ITENS_DO_ATO_DO_RI %}
+      <option value="{{ codigo }}">{{ codigo }} — {{ usos }} uso(s) nesta casa</option>
+    {% endfor %}
+  </datalist>
+  <datalist id="prenotacoes_do_cancelamento">
+    {% for p in protocolos_abertos or [] %}
+      <option value="{{ p.numero }}">{{ p.numero }}{% if p.apresentante %} — {{ p.apresentante }}{% endif %}</option>
+    {% endfor %}
+  </datalist>
   <div class="timeline">
     {% for a in atos %}
     <article class="card{% if a.cancelado %} muted{% endif %}">
@@ -2200,10 +2258,31 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
             <input name="motivo" required placeholder="Decisão judicial, requerimento, erro material...">
           </label>
           <label>Data<input type="date" name="data_ato" value="{{ hoje }}"></label>
-          <label>Protocolo<input name="protocolo"></label>
+          <label>Protocolo<input name="protocolo" list="prenotacoes_do_cancelamento"
+                                 placeholder="número da prenotação" autocomplete="off"></label>
+          {# A AVERBAÇÃO DE CANCELAMENTO NASCE SELADA — LD03, 21/10/2026. Os
+             três campos abaixo são os que o selo pede e que a ficha não sabe;
+             o item, em branco, sai do protocolo geral do título quando ele tem
+             um só com saldo (`ri_web._item_do_cancelamento`). #}
+          <label>Item da tabela de custas <span class="obrigatorio">— o selo exige</span>
+            <input name="codigo_tj" list="itens_do_cancelamento" autocomplete="off"
+                   placeholder="16.22.2">
+            <small>Em branco, sai do protocolo geral da prenotação (ou do que
+              você está atendendo) quando ele tem um item só.</small></label>
+          <label>Natureza do título
+            <input name="natureza_titulo" list="naturezas_sauin" autocomplete="off"
+                   placeholder="Cancelamento de ato">
+            <small>Vai dentro do selo; em branco, «Cancelamento de ato».</small></label>
+          <label class="span2"><input type="checkbox" name="isento" value="1">
+            Cancelamento gratuito</label>
+          <label class="span2">Motivo da gratuidade
+            <input name="motivo_isencao" placeholder="obrigatório quando gratuito">
+            <small>É ele que sai dentro do selo e que a correição lê.</small></label>
           <div class="span2 notice small">
-            O cancelamento é lavrado como <strong>nova averbação</strong>. Este ato continua
-            na ficha, marcado — assento não se apaga.
+            O cancelamento é lavrado como <strong>nova averbação</strong>, com o
+            selo. Este ato continua na ficha, marcado — assento não se apaga. Se
+            o selo não sair, nada muda: o ato continua valendo e o recado diz
+            o porquê.
           </div>
           <div class="span2"><button class="danger">Cancelar o ato por averbação</button></div>
         </form>
@@ -2368,6 +2447,10 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <p class="span2 small muted">Gera o selo <strong>16.39</strong>
             (arquivamento por folha) sem alterar o selo do ato.</p>
+          {# O protocolo que paga o 16.39 — 22/10/2026, trava do selo pago. #}
+          {% set _ps_arq = protocolos_do_selo_ri('ri_atos', '16.39') %}
+          <div class="span2">{{ protocolo_do_selo(_ps_arq.candidatos, _ps_arq.pedidos,
+              atendendo=_ps_arq.atendendo, nome_campo='protocolo_selo') }}</div>
           <label>Folhas do documento / processo
             <input type="number" name="folhas_arquivamento" min="1" step="1"
                    required placeholder="ex.: 12"></label>
@@ -2526,7 +2609,7 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
       <p class="small muted" style="margin:8px 0 0">
         Este é o <strong>arquivo oficial da matrícula</strong> — é dele que sai a
         certidão de inteiro teor por reprodução{% if imagens %}. As páginas
-        mais abaixo vieram do acervo do E-Ofício e ficam só como referência
+        mais abaixo vieram do acervo do sistema antigo e ficam só como referência
         antiga{% endif %}.
       </p>
     </div>
@@ -2543,7 +2626,7 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
                    + imagens|rejectattr('caminho')|selectattr('caminho_interno')|list %}
 <section class="panel">
   <div class="panel-head">
-    <span>{% if m.digi_nome %}Páginas do acervo do E-Ofício — referência antiga{% else %}Fichas digitalizadas{% endif %} ({{ imagens|length }})</span>
+    <span>{% if m.digi_nome %}Páginas do acervo do sistema antigo — referência antiga{% else %}Fichas digitalizadas{% endif %} ({{ imagens|length }})</span>
     <a class="small" href="{{ url_for('ri_conferir_ficha', matricula_id=m.id) }}">
       abrir lado a lado com o teor</a>
   </div>

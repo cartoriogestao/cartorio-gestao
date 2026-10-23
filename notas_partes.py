@@ -35,6 +35,7 @@ import unicodedata
 from typing import Any
 
 import cpf_cnpj as CPFDOC
+from bd_nativo import banco
 
 # Quantos candidatos a busca devolve. Mais do que isto nao se le na tela, e
 # quem tem mais de vinte homonimos precisa refinar a busca, nao rolar a lista.
@@ -86,21 +87,21 @@ def buscar_cartoes(con: sqlite3.Connection, termo: str,
     if len(termo) < 3:
         return []
 
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     digitos = so_digitos(termo)
     onde, params = [], []
 
     if len(digitos) >= 11:
-        onde.append("c.documento = ?")
+        onde.append("c.documento = %s")
         params.append(digitos)
     else:
         alvo = normalizar(termo)
         # Prefixo de palavra: 'silva' acha 'JOSE DA SILVA', e nao acha
         # 'SILVANIA' por acidente de substring no meio de outra palavra.
-        onde.append("(c.nome_norm LIKE ? OR c.nome_norm LIKE ?)")
+        onde.append("(c.nome_norm ILIKE %s OR c.nome_norm ILIKE %s)")
         params += [f"{alvo}%", f"% {alvo}%"]
         if digitos:
-            onde.append("c.documento LIKE ?")
+            onde.append("c.documento ILIKE %s")
             params.append(f"%{digitos}%")
             onde = [f"({' OR '.join(onde)})"]
 
@@ -108,19 +109,19 @@ def buscar_cartoes(con: sqlite3.Connection, termo: str,
         onde.append("c.bloqueado = 0")
     filtro = " AND ".join(onde)
 
-    linhas = con.execute(f"""
+    linhas = bd.ler(f"""
         SELECT c.*,
                (SELECT COUNT(*) FROM nt_cartao_imagens i WHERE i.cartao_id = c.id) imagens,
                (SELECT i.id FROM nt_cartao_imagens i WHERE i.cartao_id = c.id
-                 ORDER BY i.favorita DESC, i.ordem LIMIT 1) imagem_id
+                 ORDER BY i.favorita DESC, i.ordem, i.id LIMIT 1) imagem_id
         FROM nt_cartoes c
         WHERE {filtro}
-        ORDER BY c.ativo DESC, c.bloqueado, c.nome_norm
-        LIMIT ?""", params + [limite]).fetchall()
-    return [dict(r) for r in linhas]
+        ORDER BY c.ativo DESC, c.bloqueado, c.nome_norm, c.id
+        LIMIT %s""", params + [limite])
+    return linhas
 
 
-def dados_para_parte(cartao: dict | sqlite3.Row) -> dict:
+def dados_para_parte(cartao: dict) -> dict:
     """Traduz o cartao de autografo em campos de parte, prontos para o ato."""
     c = dict(cartao)
     dados = {campo: c.get(campo) for campo in CAMPOS_HERDADOS}
@@ -132,10 +133,45 @@ def dados_para_parte(cartao: dict | sqlite3.Row) -> dict:
     lugar = ", ".join(p for p in partes if p)
     cidade = ", ".join(p for p in (c.get("cidade"), c.get("uf")) if p)
     dados["endereco_completo"] = " — ".join(p for p in (lugar, cidade) if p) or None
+    # O DOCUMENTO DE IDENTIDADE E A FILIACAO, numa linha cada, como entram na
+    # qualificacao (CNN art. 111 — LD07, 21/10/2026). A uniao estavel o cartao
+    # nao tem: e declaracao da parte em cada ato.
+    dados["identidade"] = " ".join(
+        str(x).strip() for x in (c.get("rg"), c.get("rg_orgao"), c.get("rg_uf"))
+        if x and str(x).strip()) or None
+    dados["filiacao"] = " e ".join(
+        str(x).strip() for x in (c.get("pai"), c.get("mae"))
+        if x and str(x).strip()) or None
     return dados
 
 
-def avisos_do_cartao(cartao: dict | sqlite3.Row) -> list[str]:
+#: Os campos da parte do ato que o CNN art. 111 pôs na qualificação (LD07).
+CAMPOS_DA_QUALIFICACAO_CIVIL = ("identidade", "filiacao", "uniao_estavel", "conjuge",
+                                "regime_bens")
+
+
+def qualificacao_civil(dados: dict, herdado: dict | None = None) -> dict:
+    """O documento de identidade, a filiação, a união estável, o cônjuge e o
+    regime de bens da parte, como `nt_ato_partes` os grava. Só calcula.
+
+    `dados` é o formulário; `herdado`, o que veio do cartão de autógrafo
+    (`dados_para_parte`). O que se digitou vence o do cartão. A união
+    estável só vale `SIM` ou `NAO` — é o que a parte declarou, e o cartão não
+    a tem (CNN art. 111 — LD07, 21/10/2026).
+    """
+    herdado = herdado or {}
+
+    def _um(campo: str):
+        valor = " ".join(str(dados.get(campo) or "").split())
+        return valor or (" ".join(str(herdado.get(campo) or "").split()) or None)
+
+    uniao = str(dados.get("uniao_estavel") or "").strip().upper()
+    return {"identidade": _um("identidade"), "filiacao": _um("filiacao"),
+            "uniao_estavel": uniao if uniao in ("SIM", "NAO") else None,
+            "conjuge": _um("conjuge"), "regime_bens": _um("regime_bens")}
+
+
+def avisos_do_cartao(cartao: dict) -> list[str]:
     """O que o balcao precisa ver antes de usar este cartao.
 
     Nao impede nada: quem decide e o tabeliao. Mas cartao bloqueado usado sem
@@ -183,11 +219,17 @@ def campos_faltantes(dados: dict, para: str = "ATO") -> list[str]:
 
 
 def criar_cartao(con: sqlite3.Connection, dados: dict, agora: str,
-                 usuario: str | None = None) -> int:
+                 usuario: str | None = None, funcao: str | None = None) -> int:
     """Abre um cartao de autografo novo e devolve o id.
 
     Serve tanto para o cadastro direto no balcao quanto para o caso em que a
     parte foi digitada do zero num ato e o operador pediu para guardar a ficha.
+
+    `usuario` e `funcao` sao o nome e a funcao de quem abre, e ficam no cartao
+    como quem CONFERIU O PREENCHIMENTO (CN-MA art. 864, § 1º, VI; decisao do
+    oficial de 21/10/2026, pergunta 9 b): e quem esta no balcao com a pessoa e
+    o documento na frente. Ate o LH13 o `usuario` chegava aqui e nao ia a
+    lugar nenhum.
     """
     nome = (dados.get("nome") or "").strip()
     if not nome:
@@ -202,7 +244,12 @@ def criar_cartao(con: sqlite3.Connection, dados: dict, agora: str,
         "ativo": 1, "abertura": dados.get("abertura") or agora[:10],
         "origem": "MANUAL", "criado_em": agora,
     }
-    for campo in ("rg", "rg_orgao", "rg_uf", "nascimento", "sexo",
+    # A DATA DE EMISSAO DA IDENTIDADE entra junto (LD02, 21/10/2026): a ficha
+    # traz o RG «junto com a data de emissao» (CN-MA art. 864, § 1º, IV). A
+    # coluna existia, e so a carga do E-Oficio a preenchia.
+    # E O TITULO ELEITORAL (LD07): «se houver», a ficha o traz (art. 864, § 1º, III).
+    for campo in ("rg", "rg_orgao", "rg_uf", "rg_emissao", "titulo_eleitor",
+                  "nascimento", "sexo",
                   "nacionalidade", "naturalidade", "estado_civil", "conjuge",
                   "profissao", "pai", "mae", "endereco", "endereco_numero",
                   "endereco_complemento", "bairro", "cidade", "uf",
@@ -218,12 +265,16 @@ def criar_cartao(con: sqlite3.Connection, dados: dict, agora: str,
     email = (dados.get("email") or "").strip()
     if email:
         campos["email"] = email
+    if (usuario or "").strip():
+        campos["conferente_nome"] = usuario.strip()
+    if (funcao or "").strip():
+        campos["conferente_funcao"] = funcao.strip()
 
     colunas = ", ".join(campos)
-    marcas = ", ".join("?" for _ in campos)
-    cur = con.execute(f"INSERT INTO nt_cartoes ({colunas}) VALUES ({marcas})",
-                      list(campos.values()))
-    return int(cur.lastrowid)
+    marcas = ", ".join("%s" for _ in campos)
+    return int(banco(con).escrever(
+        f"INSERT INTO nt_cartoes ({colunas}) VALUES ({marcas}) RETURNING id",
+        list(campos.values()))[0]["id"])
 
 
 def possivel_duplicata(con: sqlite3.Connection, nome: str,
@@ -234,15 +285,15 @@ def possivel_duplicata(con: sqlite3.Connection, nome: str,
     atos aponta para uma ficha e metade para a outra, e nenhuma das duas conta
     a historia inteira da pessoa.
     """
-    con.row_factory = sqlite3.Row
+    bd = banco(con)
     digitos = so_digitos(documento)
     if digitos:
-        achados = con.execute(
-            "SELECT * FROM nt_cartoes WHERE documento = ? LIMIT 5", (digitos,)).fetchall()
+        achados = bd.ler(
+            "SELECT * FROM nt_cartoes WHERE documento = %s ORDER BY id LIMIT 5", (digitos,))
         if achados:
-            return [dict(r) for r in achados]
+            return achados
     alvo = normalizar(nome)
     if len(alvo) < 5:
         return []
-    return [dict(r) for r in con.execute(
-        "SELECT * FROM nt_cartoes WHERE nome_norm = ? LIMIT 5", (alvo,)).fetchall()]
+    return bd.ler(
+        "SELECT * FROM nt_cartoes WHERE nome_norm = %s ORDER BY id LIMIT 5", (alvo,))

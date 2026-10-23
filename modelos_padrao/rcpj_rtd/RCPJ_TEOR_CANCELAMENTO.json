@@ -1,0 +1,19 @@
+{
+  "chave": "RCPJ_TEOR_CANCELAMENTO",
+  "atribuicao": "RCPJ e RTD",
+  "nome": "Termo de cancelamento — RCPJ",
+  "formato": "CHAVES",
+  "explica": "PDF do termo do cancelamento do registro (LRP art. 165; CN-MA art. 994, § 1º): cabeçalho da serventia, a certidão do cancelamento com a causa e o documento que o autorizou (o motivo gravado no ato), o documento digitalizado se houver, o encerramento datado e assinado e a faixa do selo.",
+  "campos": [
+    "unit_short",
+    "cns",
+    "atribuicao",
+    "numero",
+    "motivo",
+    "full_name",
+    "funcao",
+    "cidade",
+    "uf",
+    "data_extenso"
+  ]
+}

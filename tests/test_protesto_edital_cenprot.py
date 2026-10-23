@@ -34,8 +34,11 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import protesto_cenprot as CP
+from nucleo_schema import init_nucleo_schema
 from pt_schema import init_pt_schema
 
 AGORA = "2026-09-01T10:00:00"
@@ -47,8 +50,11 @@ ARQUIVO_REAL = _REAIS[0] if _REAIS else Path.home() / "Downloads" / "_inexistent
 
 
 def banco() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:")
+    con = conexao_de_teste()
     con.row_factory = sqlite3.Row
+    # `pt_atos.livro_id` aponta para `nu_livros`, e o PostgreSQL nativo
+    # cobra a chave estrangeira ja na criacao: o nucleo vem antes.
+    init_nucleo_schema(con)
     init_pt_schema(con)
     return con
 

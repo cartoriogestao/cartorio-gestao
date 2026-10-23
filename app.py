@@ -3,10 +3,10 @@ from __future__ import annotations
 import csv
 import io
 import hashlib
+import hmac
 import json
 import os
 import secrets
-import sqlite3
 import socket
 import sys
 import threading
@@ -24,10 +24,13 @@ import centrais_cred as CENTCRED
 import impressao_pdf as IMPPDF
 import cenprot_web
 import resolve_web
+import protesto_cobranca_web
 import cra21_web
 import wa_web
 import robo_web
 import modulos_ligados as MODLIG
+import pastas_da_casa as PDC
+import tetos_de_entrada as TETOS
 import ri_web
 import tarefa_processo as TP
 import tarefa_suspensao as TS
@@ -35,10 +38,14 @@ from flask import Flask, Response, abort, flash, g, redirect, render_template, r
 import backup as BKP
 from waitress import serve
 
+from bd_nativo import banco
 from database import Database
 from serventia import dados as dados_serventia
 from security import new_csrf_token, new_secret_key
 import arquivo_visivel as ARQVIS
+import html_sem_script as HSS
+import login_espera as LESP
+import seguranca_web as SEGWEB
 from storage import hash_file, safe_component, save_upload
 from network_discovery import DiscoveryResponder, best_local_ip_for, lan_ipv4_addresses
 from update_manager import (
@@ -59,7 +66,7 @@ APP_NAME = "Gestão Integrada da Serventia"
 # servidor avisou «quem respondeu está na versão 3.6.137, e a instalada é
 # 3.6.138» sobre uma atualização que tinha funcionado (504 de 505 arquivos
 # batendo byte a byte). `tests/test_os_dois_carimbos_da_versao.py` guarda isso.
-VERSION = "3.6.293"
+VERSION = "3.7.1"
 # 3.6.286 - 06/10/2026 Release do sandbox para o oficial: centrais (fila/log/trava), A3, editor/motor de modelos, produtividade, selo robo, F10-F12 do RI, SIRC (cancelados)
 # 3.6.285 - CENPROT: POST /token com form usuario/senha (x-www-form-urlencoded)
 # 3.6.284 - Projetos lista: coluna Atualizado (DD/MM/AA - HH:MM, fuso local)
@@ -110,7 +117,7 @@ VERSION = "3.6.293"
 # 3.6.219 — 26/09/2026 RI-01: rota `/ficha.odt` entrega ODF; PDF explícito com `?formato=pdf`.
 # 3.6.218 — 26/09/2026 Livro 2 sandbox: selo certidão RI alinhado (#75); seed ri_certidoes ensaio.
 # 3.6.217 — 25/09/2026 Pós-CGU: menu bolinha (summary/submenu), cache-bust app.css, ficha RI flex.
-# 3.6.204 - 25/09/2026 Beatriz: ficha.odt AttributeError sqlite3.Row.get natureza_titulo (contexto_ficha).
+# 3.6.204 - 25/09/2026 Beatriz: ficha.odt AttributeError em .get natureza_titulo (contexto_ficha).
 # 3.6.212 — 25/09/2026 RI fatia 2 (L3/US/ONR): títulos de aba usucapião; lembrete revisão junto ao selar L3.
 # 3.6.211 — 25/09/2026 Livros e acervo revisão: título ficha livro núcleo; importar padrão/RI alinhados ao menu; h1 E-Ofício e implantação.
 # 3.6.210 — 25/09/2026 Malote revisão: títulos de aba (inspeções, ficha inspeção, tarefa, prontos encerrar); empty state inspeções.
@@ -262,6 +269,13 @@ def create_app(test_config: dict | None = None) -> Flask:
         # problema aconteceu — nao pode importar `app`: seria import circular.
         VERSION=VERSION,
         MAX_CONTENT_LENGTH=200 * 1024 * 1024,
+        # O TETO DOS CAMPOS DE TEXTO DO FORMULÁRIO (sem contar os arquivos,
+        # que vão para disco). O Werkzeug 3.1 passou a limitar isso em 500 KB
+        # por conta própria e respondia 413 ao escrevente logado que colasse
+        # um teor longo — achado colateral da revisão de segurança de
+        # 22/10/2026. Dezesseis megabytes cabem o maior teor da casa e
+        # continuam sendo um teto; o anônimo tem o dele em `tetos_de_entrada`.
+        MAX_FORM_MEMORY_SIZE=16 * 1024 * 1024,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
     )
@@ -271,10 +285,51 @@ def create_app(test_config: dict | None = None) -> Flask:
     db = Database(data_dir / "cartorio_gestao.sqlite3")
     app.extensions["db"] = db
     app.extensions["backup_checked"] = False
+    # OS ARQUIVOS DE SEGREDO SÓ PARA O SERVIÇO (LX14; B6 do LS03): a chave do
+    # cookie, as chaves dos cofres, os `.cred` e o `servidor.log`. Falhar é
+    # aviso no log (`permissao_local`) — o servidor sobe assim mesmo.
+    import permissao_local
+    permissao_local.proteger_segredos(data_dir)
 
     def current_user():
+        """Quem está logado — e só enquanto o cadastro dele estiver ATIVO.
+
+        DESATIVAR TEM DE TIRAR DA TELA QUEM JÁ ESTÁ NELA (LS01, 19/10/2026).
+        A sessão é um cookie assinado que mora no navegador; desativar só
+        barrava o PRÓXIMO login (`authenticate`). Quem já estava dentro seguia
+        lavrando, gastando selo e lendo o acervo com o usuário desativado —
+        e o prazo de inatividade não o tirava, porque cada clique o renovava.
+        Desativação é o que a casa faz quando alguém sai; ela vale na hora.
+        """
         uid = session.get("user_id")
-        return db.get_user(int(uid)) if uid else None
+        user = db.get_user(int(uid)) if uid else None
+        if user and not user["active"]:
+            return None
+        return user
+
+    def carimbo_da_senha(uid) -> str:
+        """A versão da credencial que a sessão leva (M3 do LS01, lote LX11).
+
+        REDEFINIR A SENHA NÃO TIRAVA QUEM JÁ ESTAVA DENTRO. Com a senha vazada,
+        o ADMIN a redefinia e o cookie de quem entrou com ela seguia valendo até
+        a inatividade. A sessão guarda este carimbo no login; a senha nova muda
+        o carimbo, e o `before_request` encerra toda sessão com o carimbo
+        velho. É um HMAC do hash, com a chave da sessão: o cookie não leva
+        nada da senha, nem o hash dela.
+        """
+        with db.connect() as con:
+            linha = banco(con).um("SELECT password_hash FROM users WHERE id=%s",
+                                  (int(uid),))
+        if not linha:
+            return ""
+        return hmac.new(secret_key.encode("utf-8"),
+                        f"{int(uid)}:{linha['password_hash']}".encode("utf-8"),
+                        hashlib.sha256).hexdigest()[:32]
+
+    def prazo_absoluto_horas() -> int:
+        """B7: a sessão acaba depois de N horas, mesmo com clique o tempo
+        todo — o prazo de inatividade sozinho se renova a cada clique."""
+        return max(1, min(24 * 7, parse_int(db.get_setting("session_absolute_hours", "12")) or 12))
 
     # **PUBLICADA COMO AS OUTRAS QUATRO, E FALTAVA** — achado em 14/09/2026:
     # `retificacao_web.py` passou a pedir `app.extensions["current_user"]`,
@@ -365,7 +420,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     # AUDITOR precisa ver e onde ele nao pode praticar ato — a de notas e o
     # caso: ver o ato e conferencia, lancar no livro e gastar folha.
     def usuario_papel():
-        # `current_user()` devolve `sqlite3.Row`, que NAO tem `.get` — a
+        # `current_user()` devolve a linha do banco, que NAO tem `.get` — a
         # primeira versao disto era um lambda com `(current_user() or {}).get`
         # e levantava AttributeError em toda requisicao autenticada.
         user = current_user()
@@ -396,18 +451,33 @@ def create_app(test_config: dict | None = None) -> Flask:
             return view(*args, **kwargs)
         return wrapped
 
-    def roles_required(*roles):
+    def roles_required(*roles, metodos=None):
+        """Só estes papéis entram — ou, com `metodos`, só eles GRAVAM.
+
+        `metodos=("POST",)` é para a tela que todo login VÊ e onde só quem
+        pratica ato grava (M2 do LS01): o AUDITOR confere a lista de tarefas,
+        mas não cria tarefa. O GET dessas rotas segue como era, com o login.
+        """
         def deco(view):
             @wraps(view)
             def wrapped(*args, **kwargs):
                 user = current_user()
                 if not user:
                     return redirect(url_for("login"))
-                if user["role"] not in roles:
+                if (metodos is None or request.method in metodos) and user["role"] not in roles:
                     abort(403)
                 return view(*args, **kwargs)
+            # OS PAPÉIS FICAM À VISTA NA FUNÇÃO (LX12, 19/10/2026): o
+            # `/arquivo/<id>` abre o anexo pela regra da tela que o oferece, e
+            # lê a regra daqui — copiar a lista de papéis para lá faria as
+            # duas divergirem no dia em que a tela mudar. O `@wraps` de quem
+            # embrulhar depois leva o atributo junto.
+            wrapped.papeis_exigidos = tuple(roles)
             return wrapped
         return deco
+
+    # QUEM PRATICA ATO — a régua das rotas que o AUDITOR vê e não grava (M2).
+    PRATICA = SEGWEB.PRATICA
 
     def settings_dict():
         s = db.get_settings()
@@ -430,6 +500,19 @@ def create_app(test_config: dict | None = None) -> Flask:
     # na primeira execucao.
     app.extensions["archive_root"] = archive_root
 
+    def pasta_da_casa(caminho) -> Path:
+        """O caminho DIGITADO NA TELA, resolvido, se mora na casa; senão
+        `PDC.ForaDaCasa` com a mensagem pronta (LS02 A1–A3, LX12).
+
+        Uma implementação só, publicada como `archive_root`: Assinaturas,
+        Importar acervo, Livro 3 e Matrículas digitadas pedem a mesma régua.
+        """
+        return PDC.dentro_da_casa(caminho, PDC.raizes_da_casa(
+            data_dir=data_dir, archive_root=db.get_setting("archive_root", ""),
+            importacao=db.get_setting("pastas_de_importacao", "")))
+
+    app.extensions["pasta_da_casa"] = pasta_da_casa
+
     def backup_dir() -> Path:
         import pasta_das_copias
         return pasta_das_copias.pasta_de_backups(data_dir, db.get_setting("backup_dir", ""))
@@ -448,10 +531,17 @@ def create_app(test_config: dict | None = None) -> Flask:
             `BACKUP_AGORA.cmd` usa a mesma implementacao: uma so, para nao
             divergirem.
         """
+        # A CIFRA E O ACERVO SÃO OPÇÕES DA CASA (LX14), e as duas nascem como
+        # era: sem cifra, e com o acervo no completo. A senha da cifra mora no
+        # cofre (`backup.cred`), e não no banco — senão viajaria no próprio
+        # pacote que ela protege.
+        sem_acervo = db.get_setting("backup_completo_sem_acervo", "0") == "1"
         return BKP.gerar_pacote(db, target, archive_root(),
                                 com_arquivos=com_arquivos,
                                 app_nome=APP_NAME, versao=VERSION,
-                                acervo=data_dir / "acervo_eoficio.sqlite3")
+                                acervo=(None if sem_acervo
+                                        else data_dir / "acervo_eoficio.sqlite3"),
+                                senha_da_cifra=BKP.senha_da_cifra(data_dir) or None)
 
     def automatic_backup_once():
         """Backup diario do banco e backup completo semanal.
@@ -474,7 +564,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             try:
                 full_backup(diario, com_arquivos=False)
                 db.log(None, "SISTEMA", "AUTO_BACKUP_BANCO", "BACKUP", None,
-                       {"path": str(diario), "bytes": diario.stat().st_size})
+                       {"path": str(diario), "bytes": diario.stat().st_size,
+                        "cifrado": BKP.e_cifrado(diario)})
             except Exception as exc:
                 db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
                        {"error": str(exc), "tipo": "banco"})
@@ -493,7 +584,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             try:
                 full_backup(completo, com_arquivos=True)
                 db.log(None, "SISTEMA", "AUTO_BACKUP_COMPLETO", "BACKUP", None,
-                       {"path": str(completo), "bytes": completo.stat().st_size})
+                       {"path": str(completo), "bytes": completo.stat().st_size,
+                        "cifrado": BKP.e_cifrado(completo)})
             except Exception as exc:
                 db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
                        {"error": str(exc), "tipo": "completo"})
@@ -515,7 +607,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     def papel_de_quem_esta_logado():
         """O papel do usuario da sessao, ou None. So LE.
 
-        **`current_user()` devolve `sqlite3.Row`, e Row nao tem `.get`** — o
+        **`current_user()` devolve a linha do banco, e ela nao tem `.get`** — o
         primeiro conserto escreveu `(current_user() or {}).get("role")` e
         estourou em toda tela. Row indexa por nome e levanta `IndexError` na
         coluna que falta; por isso o acesso e por `keys()`.
@@ -525,10 +617,36 @@ def create_app(test_config: dict | None = None) -> Flask:
             return None
         return u["role"] if "role" in u.keys() else None
 
+    def funcao_de_quem_esta_logado():
+        """A função CADASTRADA do usuário da sessão, ou None. Só LÊ.
+
+        Não é `usuario_funcao()`, que cai no padrão da serventia quando falta
+        cadastro: aqui a falta tem de continuar falta (21/10/2026 — a guarda
+        do Protesto fecha pela função «Auxiliar», e o padrão inventaria uma).
+        """
+        u = current_user()
+        if not u:
+            return None
+        return u["funcao"] if "funcao" in u.keys() else None
+
     @app.before_request
     def before_request():
         if request.endpoint == "static":
             return
+        # O CORPO DO POST SEM LOGIN TEM TETO, E ELE VALE ANTES DE LER (LS02
+        # M5; LX12, 19/10/2026). O token de formulário, logo abaixo, lê
+        # `request.form` — e com isso qualquer máquina da rede fazia o servidor
+        # ler e gravar em temporário até 200 MB (o `MAX_CONTENT_LENGTH` de
+        # quem está logado e sobe anexo) antes da primeira recusa. Login e
+        # setup cabem em poucos KB. Pelo `Content-Length`, recusa sem ler; sem
+        # ele (corpo em pedaços), o mesmo teto vale na leitura. A ponte do CCN
+        # fica de fora: só atende a própria máquina e traz o lote inteiro.
+        if (request.method == "POST" and not session.get("user_id")
+                and request.endpoint != "ccn_ponte_resultado"):
+            teto = TETOS.valor("corpo_anonimo_bytes")
+            if (request.content_length or 0) > teto:
+                abort(413)
+            request.max_content_length = teto
         automatic_backup_once()
         # A LEITURA DIARIA DO CNIB, na mesma porta do backup automatico — e
         # pela mesma razao: e aqui que se sabe que a casa abriu hoje. Ela e
@@ -544,9 +662,35 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not db.has_users() and request.endpoint not in {"setup", "static", "health"}:
             return redirect(url_for("setup"))
         if session.get("user_id"):
+            # A SESSÃO DE QUEM FOI DESATIVADO (ou apagado) ACABA AQUI — e não
+            # rota a rota: `login_required` só olha o cookie. Ver `current_user`.
+            if current_user() is None:
+                session.clear()
+                flash("Sessão encerrada: este usuário foi desativado.", "warning")
+                return redirect(url_for("login"))
+            # A SENHA MUDOU DEPOIS DO LOGIN (M3) — ou a sessão é de antes do
+            # carimbo existir: as duas acabam aqui, e quem é o dono entra de novo.
+            carimbo = session.get("cred")
+            if not carimbo or not secrets.compare_digest(
+                    str(carimbo), carimbo_da_senha(session["user_id"])):
+                session.clear()
+                flash("Sessão encerrada: a senha desta conta foi trocada. "
+                      "Entre de novo.", "warning")
+                return redirect(url_for("login"))
+            now = datetime.now()
+            # O PRAZO ABSOLUTO (B7): conta do login, e não do último clique.
+            try:
+                inicio = datetime.fromisoformat(session.get("inicio") or "")
+            except ValueError:
+                inicio = None
+            horas = prazo_absoluto_horas()
+            if inicio is None or now - inicio > timedelta(hours=horas):
+                session.clear()
+                flash(f"Sessão encerrada: passou do prazo de {horas} horas "
+                      f"desde a entrada. Entre de novo.", "warning")
+                return redirect(url_for("login"))
             timeout = max(10, parse_int(db.get_setting("session_timeout_minutes", "60")) or 60)
             last = session.get("last_activity")
-            now = datetime.now()
             if last:
                 try:
                     elapsed = now - datetime.fromisoformat(last)
@@ -557,6 +701,17 @@ def create_app(test_config: dict | None = None) -> Flask:
                 except Exception:
                     pass
             session["last_activity"] = now.isoformat(timespec="seconds")
+            # O ROBÔ NÃO ENTRA NO QUE É DE GENTE (revisão de segurança de
+            # 22/10/2026, A6). Até aqui a única guarda do robô era a do selo
+            # automático; com a credencial dele — que mora num script — se
+            # abria usuários, atualizações, backup e caixa. A lista das rotas
+            # vedadas mora em `selo_robo.ROTAS_VEDADAS_AO_ROBO`, ao lado da
+            # regra que já dizia que robô não sela.
+            import selo_robo as SR
+            _quem = current_user()
+            if _quem is not None and SR.usuario_e_robo(_quem) and \
+                    SR.rota_vedada_ao_robo(request.endpoint):
+                abort(403)
         # Isentas do token de formulário: quem as chama não tem a sessão, e
         # cada uma se autentica por conta própria — o webhook pela assinatura
         # da Meta; a ponte do CCN (13/10/2026) pelo código do lote, e só
@@ -575,11 +730,51 @@ def create_app(test_config: dict | None = None) -> Flask:
         # teste que roda as duas contra todas as rotas.
         qual = MOD.modulo_da_tela(request.endpoint)
         quem = papel_de_quem_esta_logado()
-        if not MODLIG.pode_entrar(db.get_setting, qual, quem):
-            flash(MODLIG.motivo(qual, MODLIG.alcance(db.get_setting, qual)),
+        funcao = funcao_de_quem_esta_logado()
+        if not MODLIG.pode_entrar(db.get_setting, qual, quem, funcao):
+            flash(MODLIG.motivo(qual, MODLIG.alcance(db.get_setting, qual),
+                                quem, funcao),
                   "warning")
             return redirect(url_for("dashboard"))
         manutencao_do_dia()
+
+    @app.after_request
+    def cabecalhos_de_seguranca(resposta):
+        """Os cabeçalhos que o navegador obedece (B1 do LS01, lote LX11).
+
+        SAMEORIGIN deixa as prévias em `<iframe>` da própria casa e barra a
+        página de fora que põe o sistema num quadro invisível para o clique
+        cair no botão errado. `nosniff` não deixa o navegador «adivinhar» que
+        um anexo é HTML. O Referer não leva o endereço da tela (com id de ato)
+        para site de fora. A CSP vai só como RELATÓRIO: as telas têm script e
+        estilo na própria página, e uma CSP que bloqueia quebraria o balcão —
+        o relatório mostra no console o que teria sido barrado.
+        `setdefault`: a rota que já escolheu o seu cabeçalho fica com ele.
+        """
+        h = resposta.headers
+        h.setdefault("X-Frame-Options", "SAMEORIGIN")
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("Referrer-Policy", "same-origin")
+        h.setdefault("Content-Security-Policy-Report-Only",
+                     "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                     "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                     "object-src 'none'; base-uri 'self'; form-action 'self'; "
+                     "frame-ancestors 'self'")
+        # TODA EXPORTAÇÃO FICA NA AUDITORIA (revisão de segurança de
+        # 22/10/2026, M9): CSV, planilha e ZIP saem da casa, e até aqui só
+        # algumas rotas anotavam quem os pediu. Num lugar só, para a rota
+        # nova já nascer anotada. O papel de quem exporta não muda aqui.
+        import re as _re
+        _disp = str(h.get("Content-Disposition") or "")
+        if ("attachment" in _disp.lower() and session.get("user_id")
+                and _re.search(r"\.(csv|xlsx|zip)\b", _disp, _re.I)):
+            try:
+                audit("EXPORTACAO", "ARQUIVO", None, {
+                    "rota": request.endpoint, "arquivo": _disp[:200],
+                    "status": resposta.status_code})
+            except Exception:                              # noqa: BLE001
+                pass
+        return resposta
 
     def manutencao_do_dia():
         """As duas rotinas diarias, uma vez por dia, SEM PERDER DIA.
@@ -610,7 +805,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             A marca em `settings` sozinha e ler-e-depois-escrever: dois
             balcoes abrindo o sistema na mesma manha passavam os dois pela
             verificacao e rodavam as duas rotinas em paralelo, criando tarefa
-            futura em duplicidade. O `UPDATE ... WHERE value <> ?` decide no
+            futura em duplicidade. O `UPDATE ... WHERE value <> valor` decide no
             banco, dentro de uma transacao: quem alterar a linha ganhou o dia.
 
         POR QUE A FALHA FICA REGISTRADA
@@ -627,16 +822,19 @@ def create_app(test_config: dict | None = None) -> Flask:
         anterior = ""
         try:
             with db.transaction() as con:
-                con.execute(
-                    "INSERT OR IGNORE INTO settings(key, value) VALUES(?, '')",
+                bd = banco(con)
+                bd.escrever(
+                    "INSERT INTO settings(key, value) VALUES(%s, '') "
+                    "ON CONFLICT DO NOTHING",
                     ("manutencao_diaria_em",))
-                linha = con.execute(
-                    "SELECT value FROM settings WHERE key=?",
-                    ("manutencao_diaria_em",)).fetchone()
+                linha = bd.um(
+                    "SELECT value FROM settings WHERE key=%s",
+                    ("manutencao_diaria_em",))
                 anterior = (linha["value"] if linha else "") or ""
-                ganhou = con.execute(
-                    "UPDATE settings SET value=? WHERE key=? AND value<>?",
-                    (hoje, "manutencao_diaria_em", hoje)).rowcount
+                ganhou = len(bd.escrever(
+                    "UPDATE settings SET value=%s WHERE key=%s AND value<>%s "
+                    "RETURNING key",
+                    (hoje, "manutencao_diaria_em", hoje)))
             app.extensions["manutencao_em"] = hoje
             if not ganhou:
                 return
@@ -687,7 +885,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             # O que o menu NAO oferece a ESTE operador — depende de quem
             # esta olhando desde que o interruptor virou alcance.
             "MODULOS_ESCONDIDOS": MODLIG.escondidos(
-                db.get_setting, papel_de_quem_esta_logado()),
+                db.get_setting, papel_de_quem_esta_logado(),
+                funcao_de_quem_esta_logado()),
             "APP_NAME": APP_NAME,
             "VERSION": VERSION,
             "user": current_user(),
@@ -767,6 +966,26 @@ def create_app(test_config: dict | None = None) -> Flask:
         return Markup(re.sub(r"\*\*(.+?)\*\*", r"<strong>\g<1></strong>",
                              str(escape(pedaco))))
 
+    @app.template_filter("sem_script")
+    def _sem_script(conteudo):
+        """O teor escrito no balcão, na tela — no lugar do `|safe` (LS02).
+
+        O `|safe` dizia «isto é da casa», e o teor é de quem o digitou:
+        script gravado no teor rodava na sessão do oficial. Pelo decorador, e
+        não por `add_template_filter`, porque é dele que
+        `tools/conferir_antes_de_atualizar.py` tira os filtros que existem.
+        """
+        return HSS.sem_script(conteudo)
+
+    @app.template_filter("so_http")
+    def _so_http(valor):
+        """O link que veio de central, só se for `http(s):` (LX12, M9 do LS02).
+
+        Vazio = não vira link: `javascript:` vindo da central rodaria no
+        clique. Pelo decorador, pela mesma razão do `sem_script`.
+        """
+        return HSS.endereco_da_web(valor)
+
     @app.template_filter("centavos_reais")
     def _centavos_reais(valor):
         """Centavos inteiros -> '1.234,56'. O caixa conta em centavos; a tela mostra em reais."""
@@ -820,21 +1039,90 @@ def create_app(test_config: dict | None = None) -> Flask:
                     return redirect(url_for("login"))
         return render_template("setup.html")
 
+    def abrir_sessao(row, detalhes=None):
+        """A sessão de quem provou quem é — pela senha, ou pela senha e o código.
+
+        Uma só para os dois caminhos (LG02): o segundo passo da verificação em
+        duas etapas termina aqui também, e uma cópia dela em `dois_fatores_web`
+        divergiria no primeiro conserto da sessão.
+        """
+        session.clear()
+        session["csrf_token"] = new_csrf_token()
+        session["user_id"] = int(row["id"])
+        agora_iso = datetime.now().isoformat(timespec="seconds")
+        session["last_activity"] = agora_iso
+        session["inicio"] = agora_iso
+        session["cred"] = carimbo_da_senha(row["id"])
+        db.log(int(row["id"]), row["username"], "LOGIN_SUCCESS", "SESSION", None, detalhes, request.remote_addr)
+
+    app.extensions["abrir_sessao"] = abrir_sessao
+
+    def cadastro_pelo_login(username: str):
+        """O usuário com este login, ativo ou não — ou None. Só LÊ.
+
+        É só para o rastro e a espera do login: a senha quem confere é o
+        `db.authenticate`, com a régua dele.
+        """
+        if not username:
+            return None
+        with db.connect() as con:
+            return banco(con).um(
+                "SELECT id, username FROM users WHERE username = %s "
+                "COLLATE public.cg_nocase ORDER BY id LIMIT 1", (username,))
+
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "POST":
             username = request.form.get("username", "").strip()
-            row = db.authenticate(username, request.form.get("password", ""))
+            ip = request.remote_addr
+            alvo = cadastro_pelo_login(username)
+            # O RASTRO SÓ GUARDA O USUÁRIO QUE EXISTE (B5): quem digita a senha
+            # no campo do usuário não a deixa escrita na auditoria.
+            rastro = alvo["username"] if alvo else LESP.INEXISTENTE
+            chave = LESP.chave(secret_key, username)
+            uid_alvo = int(alvo["id"]) if alvo else None
+            # Da leitura da espera até o erro gravado, uma tentativa por vez
+            # para este usuário nesta máquina (`LESP.na_vez`).
+            with db.connect() as con, LESP.na_vez(con, chave, ip):
+                fim = LESP.espera(con, chave, ip, uid_alvo)
+                if fim:
+                    # Em espera, a senha nem é conferida — e a tentativa não conta.
+                    db.log(None, rastro, LESP.EM_ESPERA, "SESSION", None,
+                           LESP.detalhes(chave, ate=fim.isoformat()), ip)
+                    row = None
+                else:
+                    # `authenticate` gasta o mesmo PBKDF2 para o usuário que
+                    # não existe (B4): o tempo não diz quem é cadastrado.
+                    row = db.authenticate(username, request.form.get("password", ""))
+                    if not row:
+                        # O `db.log` desiste em 800 ms se a trava única do banco
+                        # não vier, e aí este erro não entra na contagem: sob
+                        # carga a espera fica mais branda, nunca mais dura.
+                        db.log(None, rastro, LESP.FALHA, "SESSION", None,
+                               LESP.detalhes(chave), ip)
+                        depois = LESP.espera(con, chave, ip, uid_alvo)
+            if fim:
+                flash(LESP.recado(fim), "danger")
+                return render_template("login.html"), 429
             if not row:
-                db.log(None, username or None, "LOGIN_FAILURE", "SESSION", None, None, request.remote_addr)
-                flash("Usuário ou senha inválidos.", "danger")
+                if depois:
+                    flash("Usuário ou senha inválidos. " + LESP.recado(depois), "danger")
+                else:
+                    flash("Usuário ou senha inválidos.", "danger")
             else:
-                session.clear()
-                session["csrf_token"] = new_csrf_token()
-                session["user_id"] = int(row["id"])
-                session["last_activity"] = datetime.now().isoformat(timespec="seconds")
-                db.log(int(row["id"]), row["username"], "LOGIN_SUCCESS", "SESSION", None, None, request.remote_addr)
-                return redirect(request.args.get("next") or url_for("dashboard"))
+                # Só caminho DESTE sistema (M1): `next=//fora.exemplo` levava
+                # quem acabou de entrar para uma página que imita esta.
+                destino = SEGWEB.destino_interno(request.args.get("next"), "")
+                # A SENHA SÓ NÃO BASTA para quem ativou a verificação em duas
+                # etapas, ou cujo papel o Gestor a exigiu (LG02): aí a entrada
+                # vira meia-sessão e segue para o código. Sem nenhum dos dois,
+                # o desvio devolve None e a entrada é a de sempre.
+                desvio = app.extensions["dois_fatores_depois_da_senha"](
+                    row, destino)
+                if desvio is not None:
+                    return desvio
+                abrir_sessao(row)
+                return redirect(destino or url_for("dashboard"))
         return render_template("login.html")
 
     @app.route("/logout", methods=["POST"])
@@ -843,6 +1131,52 @@ def create_app(test_config: dict | None = None) -> Flask:
         audit("LOGOUT", "SESSION")
         session.clear()
         return redirect(url_for("login"))
+
+    @app.route("/conta/senha", methods=["GET", "POST"])
+    @login_required
+    def minha_senha():
+        """«Trocar minha senha» — a senha atual, a nova e a confirmação (M4).
+
+        Aberta a todo papel, AUDITOR incluído: é a conta da própria pessoa.
+        A senha atual errada conta na MESMA espera do login (A4) — senão a
+        sessão esquecida aberta no balcão viraria o lugar de adivinhar a
+        senha sem freio. A força é a régua de sempre, `db.validate_password`.
+        """
+        if request.method == "POST":
+            eu = current_user()
+            atual = request.form.get("senha_atual", "")
+            nova = request.form.get("nova_senha", "")
+            ip = request.remote_addr
+            chave = LESP.chave(secret_key, eu["username"])
+            # A mesma vez do login: a senha atual errada é uma tentativa.
+            with db.connect() as con, LESP.na_vez(con, chave, ip):
+                fim = LESP.espera(con, chave, ip, int(eu["id"]))
+                confere = not fim and db.authenticate(eu["username"], atual)
+                if not fim and not confere:
+                    db.log(int(eu["id"]), eu["username"], LESP.FALHA, "SESSION", None,
+                           LESP.detalhes(chave, tela="minha_senha"), ip)
+            if fim:
+                flash(LESP.recado(fim), "danger")
+            elif not confere:
+                flash("A senha atual não confere.", "danger")
+            elif nova != request.form.get("confirmacao", ""):
+                flash("A nova senha e a repetição não conferem.", "danger")
+            elif nova == atual:
+                flash("A nova senha é igual à atual.", "danger")
+            else:
+                ok, msg = db.validate_password(nova)
+                if not ok:
+                    flash(msg, "danger")
+                else:
+                    db.reset_password(int(eu["id"]), nova)
+                    # Esta sessão segue; as outras, com o carimbo velho, caem.
+                    session["cred"] = carimbo_da_senha(eu["id"])
+                    audit("PASSWORD_CHANGED", "USER", int(eu["id"]))
+                    flash("Senha trocada. As outras sessões abertas com a senha "
+                          "antiga foram encerradas.", "success")
+                    return redirect(url_for("dashboard"))
+            return redirect(url_for("minha_senha"))
+        return render_template("conta_senha.html")
 
     @app.route("/")
     @login_required
@@ -871,7 +1205,6 @@ def create_app(test_config: dict | None = None) -> Flask:
         try:
             import inacabados as INAC
             with db.connect() as con:
-                con.row_factory = sqlite3.Row
                 andamento = [x for x in INAC.resumo(con, hoje=hoje)
                              if x["quantos"] or x["erro"]]
             # A ORDEM DE RELEVÂNCIA É A DO APERTO: o que está parado há mais
@@ -889,6 +1222,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/expedientes", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def expedientes():
         s = settings_dict()
         categories = json_list(s.get("categories", "[]"), ["Outros"])
@@ -935,9 +1269,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                 # processo» ou «só ciência», no alto da lista.
                 if request.form.get("voltar") == "processos":
                     with db.connect() as _c:
-                        criado = _c.execute("SELECT id FROM tasks WHERE linked_expediente_id=? "
-                                            "ORDER BY id DESC", (exp_id,)).fetchone()
-                    return redirect(url_for("task_detail", task_id=criado[0]) if criado
+                        criado = banco(_c).um(
+                            "SELECT id FROM tasks WHERE linked_expediente_id=%s "
+                            "ORDER BY id DESC LIMIT 1", (exp_id,))
+                    return redirect(url_for("task_detail", task_id=criado["id"]) if criado
                                     else url_for("processos_lista"))
                 return redirect(url_for("expediente_detail", expediente_id=exp_id))
         busca = (request.args.get("q") or "").strip()
@@ -962,7 +1297,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         linked_tasks = [t for t in db.list_tasks(limit=1000) if t["linked_expediente_id"] == expediente_id]
         # O QUE FALTA PARA ENCERRAR — e é aviso, não trava: quem decide fechar
         # com tarefa aberta é o oficial.
-        # `db.connect()` já devolve a conexão com `row_factory` posto — repetir
+        # `db.connect()` já devolve a conexão pronta — repetir
         # a linha aqui era supor que ela vem crua, e `app.py` nem importa
         # `sqlite3`. O teste de tela pegou.
         with db.connect() as _c:
@@ -986,6 +1321,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/expedientes/<int:expediente_id>/stage", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def expediente_stage(expediente_id):
         stage = request.form.get("stage", "")
         if stage not in EXPEDIENT_STAGES: abort(400)
@@ -996,6 +1332,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/expedientes/<int:expediente_id>/evidence", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def expediente_evidence(expediente_id):
         exp = db.get_expediente(expediente_id)
         if not exp: abort(404)
@@ -1016,6 +1353,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/tarefas", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def tasks():
         s = settings_dict()
         sectors = json_list(s.get("sectors", "[]"), [])
@@ -1093,6 +1431,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/tarefas/<int:task_id>", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def task_detail(task_id):
         row = db.get_task(task_id)
         if not row: abort(404)
@@ -1474,6 +1813,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/tarefas/<int:task_id>/evidence", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def task_evidence(task_id):
         row = db.get_task(task_id)
         if not row: abort(404)
@@ -1520,6 +1860,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/inspecoes/<int:inspection_id>", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def inspection_detail(inspection_id):
         row = db.get_inspection(inspection_id)
         if not row: abort(404)
@@ -1597,6 +1938,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/checklists", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def checklists():
         user = current_user()
         if request.method == "POST":
@@ -1618,6 +1960,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/checklists/<int:template_id>/start", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def checklist_start(template_id):
         run_id = db.start_checklist(template_id, request.form.get("reference", ""), int(current_user()["id"]))
         audit("CHECKLIST_STARTED", "CHECKLIST", run_id, {"template_id": template_id})
@@ -1625,11 +1968,14 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/checklists/run/<int:run_id>", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def checklist_run(run_id):
         run, items = db.get_checklist_run(run_id)
         if not run: abort(404)
         if request.method == "POST":
-            checked = {int(x) for x in request.form.getlist("checked")}
+            # LD13: «abc» numa caixa era 500; a que não é número não se marcou.
+            checked = {n for n in map(SEGWEB.numero_digitado, request.form.getlist("checked"))
+                       if n is not None}
             notes = {int(i["id"]): request.form.get(f"note_{i['id']}", "") for i in items}
             try:
                 db.save_checklist_run(run_id, checked, notes, request.form.get("action") == "finish")
@@ -1644,6 +1990,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/ti", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def assets():
         users = db.list_users(active_only=True)
         if request.method == "POST":
@@ -1660,6 +2007,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/ti/<int:asset_id>", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def asset_detail(asset_id):
         row = db.get_asset(asset_id)
         if not row: abort(404)
@@ -1678,6 +2026,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/lgpd", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def lgpd():
         users = db.list_users(active_only=True)
         if request.method == "POST":
@@ -1692,6 +2041,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/lgpd/<int:item_id>", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def lgpd_detail(item_id):
         row = db.get_lgpd_item(item_id)
         if not row: abort(404)
@@ -1708,6 +2058,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/atendimento", methods=["GET", "POST"])
     @login_required
+    @roles_required(*PRATICA, metodos=("POST",))
     def service_queue():
         if request.method == "POST" and request.form.get("action") == "new":
             tid = db.create_ticket(bool(request.form.get("priority")), request.form.get("service_type"))
@@ -1717,6 +2068,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.route("/atendimento/<int:ticket_id>/<action>", methods=["POST"])
     @login_required
+    @roles_required(*PRATICA)
     def ticket_action(ticket_id, action):
         if action not in {"call", "start", "finish"}: abort(400)
         db.update_ticket(ticket_id, action, int(current_user()["id"]))
@@ -1836,9 +2188,15 @@ def create_app(test_config: dict | None = None) -> Flask:
                 uid = parse_int(request.form.get("user_id"))
                 if uid:
                     marca = 1 if request.form.get("eh_robo") == "1" else 0
+                    alvo = db.get_user(uid)
+                    if marca and alvo and str(alvo["role"]).upper() not in ("USER", "AUDITOR"):
+                        # a mesma regra de `create_user` (22/10/2026, A6)
+                        flash("Robô só pode ter o perfil USER ou AUDITOR. Troque o "
+                              "perfil antes de marcar como robô.", "danger")
+                        return redirect(url_for("users"))
                     with db.transaction() as con:
-                        con.execute("UPDATE users SET eh_robo=? WHERE id=?",
-                                    (marca, uid))
+                        banco(con).escrever("UPDATE users SET eh_robo=%s WHERE id=%s",
+                                            (marca, uid))
                     audit("USER_EH_ROBO_ALTERADO", "USER", uid, {"eh_robo": marca})
                     flash("Marca de robô atualizada.", "success")
             elif action == "funcao":
@@ -1850,7 +2208,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 funcao = (request.form.get("funcao") or "").strip() or None
                 if uid:
                     with db.transaction() as con:
-                        con.execute("UPDATE users SET funcao=? WHERE id=?", (funcao, uid))
+                        banco(con).escrever("UPDATE users SET funcao=%s WHERE id=%s", (funcao, uid))
                     audit("USER_FUNCAO_ALTERADA", "USER", uid, {"funcao": funcao})
                     flash("Função atualizada.", "success")
             elif action == "toggle":
@@ -1866,9 +2224,29 @@ def create_app(test_config: dict | None = None) -> Flask:
                 uid = parse_int(request.form.get("user_id")); password = request.form.get("new_password", "")
                 ok, msg = db.validate_password(password)
                 if uid and ok:
-                    db.reset_password(uid, password); audit("PASSWORD_RESET", "USER", uid); flash("Senha redefinida.", "success")
+                    db.reset_password(uid, password); audit("PASSWORD_RESET", "USER", uid)
+                    # A senha nova derruba as sessões abertas com a velha (M3) —
+                    # menos a desta tela, quando o ADMIN redefine a própria.
+                    if int(uid) == int(current_user()["id"]):
+                        session["cred"] = carimbo_da_senha(uid)
+                    flash("Senha redefinida. Quem estava dentro com a senha "
+                          "antiga terá de entrar de novo.", "success")
                 else:
                     flash(msg if not ok else "Usuário inválido.", "danger")
+            elif action == "destravar":
+                # A ESPERA DO LOGIN (A4) SE DESFAZ AQUI, para todas as máquinas:
+                # é o caminho de quem errou a senha e já falou com o ADMIN.
+                uid = parse_int(request.form.get("user_id"))
+                target = db.get_user(uid) if uid else None
+                if target:
+                    eu = current_user()
+                    db.log(int(eu["id"]), eu["username"], LESP.DESTRAVADO, "USER",
+                           int(target["id"]),
+                           LESP.detalhes(LESP.chave(secret_key, target["username"]),
+                                         usuario=target["username"]),
+                           request.remote_addr)
+                    flash(f"Tentativas de login zeradas para {target['username']}.",
+                          "success")
             elif action == "cargos":
                 # OS CARGOS ERAM FIXOS NO CÓDIGO — pedido do oficial em
                 # 08/09/2026. `caixa_schema.FUNCOES` continua sendo o de
@@ -1888,8 +2266,11 @@ def create_app(test_config: dict | None = None) -> Flask:
                     flash("Cargos atualizados.", "success")
             return redirect(url_for("users"))
         from caixa_schema import FUNCOES
+        linhas = db.list_users()
+        with db.connect() as con:
+            em_espera = LESP.em_espera_na_casa(con, linhas, secret_key)
         return render_template(
-            "users.html", rows=db.list_users(), roles=ROLES,
+            "users.html", rows=linhas, roles=ROLES, em_espera=em_espera,
             funcoes=json_list(db.get_setting("funcoes_cargos", ""), list(FUNCOES)))
 
     @app.route("/saude")
@@ -2126,6 +2507,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                     audit("UPDATE_APPROVED", "SYSTEM", None, {
                         "from": VERSION, "to": versao_solicitada,
                         "package_sha256": aprovado["package_sha256"],
+                        # reconferida contra o pacote na aprovacao (22/10/2026)
+                        "assinatura": aprovado.get("assinatura"),
                         "backup": str(backup_target),
                     })
                     stage_path = Path(meta["stage_dir"])
@@ -2195,6 +2578,11 @@ def create_app(test_config: dict | None = None) -> Flask:
                    if request.form.get("ri_uf", "").strip() else {}),
                 "alert_days": str(max(1, parse_int(request.form.get("alert_days")) or 5)),
                 "session_timeout_minutes": str(max(10, parse_int(request.form.get("session_timeout_minutes")) or 60)),
+                # Campo que não veio não se grava por cima (o formulário antigo
+                # aberto numa aba não zera o prazo absoluto).
+                **({"session_absolute_hours": str(max(1, min(24 * 7, parse_int(
+                    request.form.get("session_absolute_hours")) or 12)))}
+                   if "session_absolute_hours" in request.form else {}),
                 "require_backup_assignee": "1" if request.form.get("require_backup_assignee") else "0",
                 "auto_backup": "1" if request.form.get("auto_backup") else "0",
                 # `cra_auto_enviar_homolog` SAIU DAQUI EM 14/10/2026 — a caixa
@@ -2208,6 +2596,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                 # própria agora: `configuracoes_cra_envio`.
                 "backup_retention": str(max(3, parse_int(request.form.get("backup_retention")) or 30)),
                 "archive_root": request.form.get("archive_root", "").strip(),
+                # Uma por linha, sem linha vazia (LX12): ver `pastas_da_casa`.
+                "pastas_de_importacao": "\n".join(
+                    x.strip() for x in request.form.get("pastas_de_importacao", "").splitlines()
+                    if x.strip()),
                 "backup_dir": request.form.get("backup_dir", "").strip(),
                 "network_host": request.form.get("network_host", "0.0.0.0").strip() or "0.0.0.0",
                 "network_port": str(max(1024, min(65535, parse_int(request.form.get("network_port")) or 8765))),
@@ -2236,10 +2628,28 @@ def create_app(test_config: dict | None = None) -> Flask:
                     request.form.get("modulo_protesto_alcance", "").strip().upper()
                     if request.form.get("modulo_protesto_alcance", "").strip().upper()
                     in MODLIG.ALCANCES else MODLIG.ALCANCE_DE_FABRICA["PROTESTO"]),
+                # OS DOIS INTERRUPTORES DAS ROTINAS QUE ESCREVEM SEM CLIQUE
+                # (revisão de 22/10/2026, A13 e M19), na forma do envio do ONR:
+                # caixa marcada = LIGADO; desmarcada desliga, que é o lado seguro.
+                "censec_envio_automatico": "LIGADO" if request.form.get("censec_envio_automatico") else "DESLIGADO",
+                "rtdpj_corrigir_automatico": "LIGADO" if request.form.get("rtdpj_corrigir_automatico") else "DESLIGADO",
                 "categories": json.dumps([x.strip() for x in request.form.get("categories", "").splitlines() if x.strip()], ensure_ascii=False),
                 "sources": json.dumps([x.strip() for x in request.form.get("sources", "").splitlines() if x.strip()], ensure_ascii=False),
                 "sectors": json.dumps([x.strip() for x in request.form.get("sectors", "").splitlines() if x.strip()], ensure_ascii=False),
             }
+            # CAMINHO DE REDE NÃO ENTRA NAS CONFIGURAÇÕES (revisão de segurança
+            # de 22/10/2026, M3): `archive_root`, `backup_dir` e as pastas de
+            # importação em `\\maquina\...` fariam o serviço, que roda como
+            # SYSTEM, entregar a credencial da máquina à rede a cada leitura. A
+            # régua é a de `pastas_da_casa._rede`, a mesma das importações.
+            import pastas_da_casa as PDC
+            de_rede = [c.strip() for c in (values["archive_root"], values["backup_dir"],
+                                            *values["pastas_de_importacao"].splitlines())
+                       if c and c.strip() and PDC._rede(c.strip())]
+            if de_rede:
+                flash(f"Caminho de rede não é aceito nas configurações ({de_rede[0]}): "
+                      "use uma pasta local do servidor. Nada foi salvo.", "danger")
+                return redirect(url_for("settings"))
             db.set_settings(values)
             audit("SETTINGS_CHANGED", "SETTINGS", None, values)
             flash("Configurações salvas. Alterações de host/porta entram em vigor após reiniciar o servidor.", "success")
@@ -2247,6 +2657,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         s = settings_dict()
         # O QUE ESTA INFORMADO, SEM O SEGREDO — `situacao` nunca devolve senha.
         return render_template("settings.html", s=s,
+                               backup_cifra=BKP.situacao_da_cifra(data_dir),
                                centrais=CENTCRED.situacao(), categories="\n".join(json_list(s.get("categories","[]"), [])), sources="\n".join(json_list(s.get("sources","[]"), [])), sectors="\n".join(json_list(s.get("sectors","[]"), [])), data_dir=data_dir)
 
     @app.route("/configuracoes/cra-envio", methods=["POST"])
@@ -2341,6 +2752,54 @@ def create_app(test_config: dict | None = None) -> Flask:
               {"central": central, "ambiente": ambiente, "acao": acao})
         return redirect(url_for("settings"))
 
+    @app.route("/configuracoes/backup-protecao", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN")
+    def configuracoes_backup_protecao():
+        """A cifra do pacote e o acervo no completo (LX14; A7 do LS03). ESCREVE.
+
+        ROTA PRÓPRIA, como a das Centrais: a senha da cifra vai ao cofre
+        (`backup.cred`), e não a `settings`, que viaja no backup — a senha iria
+        dentro do pacote que ela fecha. Só o «acervo fora do completo», que
+        não é segredo, vai a `settings`.
+
+        A SENHA NÃO ENTRA NA AUDITORIA nem na mensagem: registra-se QUE a cifra
+        foi ligada ou desligada.
+        """
+        acao = (request.form.get("acao") or "").strip().lower()
+        if acao == "senha":
+            senha = request.form.get("senha") or ""
+            if senha != (request.form.get("confirmacao") or ""):
+                flash("A senha e a confirmação não são iguais; nada mudou.", "danger")
+            else:
+                try:
+                    BKP.guardar_senha_da_cifra(data_dir, senha)
+                except BKP.BackupInvalido as erro:
+                    flash(f"Não liguei a cifra: {erro}.", "danger")
+                else:
+                    audit("BACKUP_CIFRA", "BACKUP", None, {"cifra": "ligada"})
+                    flash("Cifra do backup LIGADA: os próximos pacotes saem "
+                          "cifrados. Anote a senha FORA do servidor — sem ela, "
+                          "um pacote cifrado não abre, nem para quem fez o "
+                          "sistema.", "success")
+        elif acao == "desligar":
+            BKP.apagar_senha_da_cifra(data_dir)
+            audit("BACKUP_CIFRA", "BACKUP", None, {"cifra": "desligada"})
+            flash("Cifra do backup desligada: os próximos pacotes saem sem "
+                  "cifra. Os que já saíram cifrados continuam pedindo a senha "
+                  "de quando foram feitos.", "warning")
+        elif acao == "acervo":
+            valor = "1" if request.form.get("backup_completo_sem_acervo") else "0"
+            db.set_settings({"backup_completo_sem_acervo": valor})
+            audit("SETTINGS_CHANGED", "SETTINGS", None,
+                  {"backup_completo_sem_acervo": valor})
+            flash("O backup completo " + ("deixa de levar o acervo do E-Ofício "
+                  "— guarde uma cópia dele à parte." if valor == "1"
+                  else "volta a levar o acervo do E-Ofício."), "success")
+        else:
+            abort(400)
+        return redirect(url_for("settings"))
+
     @app.route("/backup", methods=["POST"])
     @login_required
     @roles_required("ADMIN")
@@ -2355,7 +2814,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     @roles_required("ADMIN", "AUDITOR")
     def integrity():
         with db.connect() as con:
-            rows = list(con.execute("SELECT * FROM attachments ORDER BY id DESC"))
+            rows = banco(con).ler("SELECT * FROM attachments ORDER BY id DESC")
         results = []
         for r in rows:
             p = Path(r["stored_path"])
@@ -2376,12 +2835,77 @@ def create_app(test_config: dict | None = None) -> Flask:
         if row["entity_type"] == "PLD_CASO" and usuario_papel() != "ADMIN":
             abort(404)
 
+    # DE QUE TELA É CADA ANEXO (LX12, 19/10/2026; LS02 «/arquivo/<id> serve
+    # qualquer anexo a qualquer logado»). O anexo abre para quem abre a tela
+    # que o oferece — a mesma guarda de papel e o mesmo alcance de módulo
+    # (Protesto só do oficial, por exemplo). Sem isto, o número trocado na
+    # barra trazia o anexo do módulo que o menu e a rota escondem.
+    #
+    # A REGRA SE LÊ DA TELA, e não se copia: os papéis vêm do `roles_required`
+    # dela (`papeis_exigidos`) e o módulo de `modulos.modulo_da_tela` — no dia
+    # em que a tela mudar, o anexo muda junto. Mais de uma tela = basta uma.
+    # Tipo que não está aqui só abre para o ADMIN: anexo de tela nova não sai
+    # aberto a todos por esquecimento (o teste `test_todo_tipo_de_anexo_...`
+    # cobra a lista contra quem grava anexo).
+    TELA_DO_ANEXO: dict[str, tuple[str, ...]] = {
+        "EXPEDIENTE": ("expediente_detail",),
+        "TASK": ("task_detail",),
+        "NT_ATO": ("notas_ato",),
+        "NT_COMUNICACAO_ORIGEM": ("notas_ato",),
+        "PROTOCOLO": ("caixa_protocolo",),
+        "RI_PROTOCOLO": ("ri_protocolo_ver",),
+        "RG_ATO": ("rcpj_rtd_registro",),
+        "RG_REGISTRO": ("rcpj_rtd_registro",),
+        "RG_TITULO": ("rcpj_rtd_titulo",),
+        "rc_termo": ("rcpn_assento",),
+        "rc_assento": ("rcpn_assento",),
+        "RC_LEITURA": ("rcpn_leitura_ficha",),
+        "HC_HABILITACAO": ("rcpn_habilitacao",),
+        "USUCAPIAO_PECA": ("usucapiao_processo",),
+        "RT_PECA": ("ri_retificacao",),
+        "PT_AVISO": ("protesto_avisos",),
+        "PT_TITULO": ("protesto_imagem",),
+        "SELO_GRATUIDADE": ("gratuidade_comprovantes", "selo_gratuidades_portal"),
+        "SELO_GRATUIDADE_CERTIDAO": ("selo_gratuidades_portal",),
+        "ONR_CERTIDAO": ("onr_certidao_ficha",),
+        "PLD_CASO": ("pld_caso",),
+    }
+    app.extensions["tela_do_anexo"] = TELA_DO_ANEXO
+
+    def _abre_pela_tela(endpoint: str, papel, funcao=None) -> bool:
+        view = app.view_functions.get(endpoint)
+        if view is None:
+            return False
+        papeis = getattr(view, "papeis_exigidos", None)
+        if papeis is not None and papel not in papeis:
+            return False
+        # A FUNÇÃO TAMBÉM CONTA AQUI (LH06, 21/10/2026): a auxiliar que o
+        # `before_request` tira do Protesto não pode baixar pelo endereço do
+        # anexo o comprovante do aviso nem a imagem do título — seria a porta
+        # dos fundos da mesma tela.
+        return MODLIG.pode_entrar(db.get_setting, MOD.modulo_da_tela(endpoint),
+                                  papel, funcao)
+
+    def _conferir_o_dono(row) -> None:
+        """404 se quem pede não abre a tela que oferece este anexo. Ver
+        `TELA_DO_ANEXO`. 404, e não 403, pela razão do `_sigilo_do_coaf`."""
+        _sigilo_do_coaf(row)
+        papel = usuario_papel()
+        telas = TELA_DO_ANEXO.get(row["entity_type"])
+        if telas is None:
+            if papel != "ADMIN":
+                abort(404)
+            return
+        funcao = funcao_de_quem_esta_logado()
+        if not any(_abre_pela_tela(t, papel, funcao) for t in telas):
+            abort(404)
+
     @app.route("/arquivo/<int:attachment_id>")
     @login_required
     def attachment_download(attachment_id):
         row = db.get_attachment(attachment_id)
         if not row: abort(404)
-        _sigilo_do_coaf(row)
+        _conferir_o_dono(row)
         path = Path(row["stored_path"])
         if not path.exists(): abort(404)
         audit("ATTACHMENT_DOWNLOADED", row["entity_type"], row["entity_id"], {"attachment_id": attachment_id})
@@ -2415,7 +2939,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         """
         row = db.get_attachment(attachment_id)
         if not row: abort(404)
-        _sigilo_do_coaf(row)
+        _conferir_o_dono(row)
         path = Path(row["stored_path"])
         if not path.exists(): abort(404)
         if not ARQVIS.abre_na_tela(row["original_name"]):
@@ -2449,6 +2973,11 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     import caixa_web
     caixa_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
+    # A NFS-e DOS EMOLUMENTOS (LG01) — a fila do caixa, o recibo diante da nota
+    # e a configuração do Gestor. Pelo emissor nacional; desligada por padrão.
+    import nfse_web
+    nfse_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     import notas_web
     notas_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
@@ -2515,13 +3044,34 @@ def create_app(test_config: dict | None = None) -> Flask:
     # ficha do titulo aponta para `rcpj_rtd_registro`, que nasce ali.
     import rg_web
     rg_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+    # OS ATOS DO LG04 (19/10/2026): a notificação extrajudicial e a autenticação
+    # de livros do RCPJ/RTD voltam para `rcpj_rtd_registro`, que nasce acima;
+    # a pública forma e a comunicação ao DETRAN são do balcão das Notas.
+    import nt_publica_forma
+    import nt_veiculo_detran
+    import rg_livro_contabil
+    import rg_notificacao
+    for _modulo_lg04 in (rg_notificacao, rg_livro_contabil, nt_publica_forma,
+                         nt_veiculo_detran):
+        _modulo_lg04.registrar_rotas(app, db, login_required, roles_required,
+                                     audit)
     # AS TELAS DA CENPROT vem DEPOIS das do Protesto, porque a fila delas
     # aponta para `pt_titulos` e os links levam a `protesto_titulo`.
     cenprot_web.registrar_rotas(app, db, login_required, roles_required, audit)
     resolve_web.registrar_rotas(app, db, login_required, roles_required, audit)
+    # O AR DIGITAL, O BOLETO E O PAINEL DO DEVEDOR (LG06) vem ao lado da
+    # Resolve: sao os outros caminhos da intimacao e do pagamento, e as telas
+    # deles apontam para `protesto_titulo` e `protesto_avisos`.
+    protesto_cobranca_web.registrar_rotas(app, db, login_required,
+                                          roles_required, audit)
     # A TELA DA CRA vem ao lado da da CENPROT: sao as duas Centrais, e a
     # credencial das duas mora no mesmo lugar, fora do banco.
     cra21_web.registrar_rotas(app, db, login_required, roles_required, audit)
+    # O REPASSE AO APRESENTANTE E A CERTIDÃO EM RELAÇÃO (LG05) vêm depois das
+    # do Protesto: as telas apontam para `protesto_titulo`, que nasce ali.
+    import protesto_repasse_web
+    protesto_repasse_web.registrar_rotas(app, db, login_required,
+                                         roles_required, audit)
     # O PAINEL DAS CENTRAIS — fila generica, ultimas falhas e o cofre (so
     # «informada/nao informada»). Marco (a) da base comum, 05/10/2026. Vem
     # depois da CRA e da CENPROT porque e o painel comum delas; so le, e o
@@ -2586,6 +3136,21 @@ def create_app(test_config: dict | None = None) -> Flask:
     import ri_onr_web
     ri_onr_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                fmt_date)
+
+    # A BASE DO MAPA DO ONR — o CSV que o QGIS junta ao polígono (LF02).
+    import ri_mapa_onr
+    ri_mapa_onr.registrar_rotas(app, db, login_required, roles_required, audit)
+
+    # A APOSTILA DE HAIA (LG03) — pedido, documento, emissão no CNJ, selo,
+    # cobrança e controle. Chega DESLIGADA (`modulos_ligados`, NINGUEM).
+    import apostila_web
+    apostila_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
+    # OS LIVROS OBRIGATÓRIOS (LG08) — o catálogo do Código de Normas do MA e
+    # os três livros administrativos de toda serventia (art. 188): Visitas e
+    # Correições, Diário Auxiliar e Controle de Depósito Prévio.
+    import livros_administrativos_web
+    livros_administrativos_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     # AS CERTIDÕES PEDIDAS PELO ONR (Ofício Eletrônico, Certidoes.asmx) —
     # buscar, guardar o arquivo assinado, enviar, finalizar ou devolver.
@@ -2694,6 +3259,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     import gestor_web
     gestor_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # A VERIFICAÇÃO EM DUAS ETAPAS (LG02, 19/10/2026): o segundo passo do
+    # login, a tela da conta e a do Gestor. Publica o desvio que o `/login`
+    # consulta depois da senha.
+    import dois_fatores_web
+    dois_fatores_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
     # O CAIXA QUE NÃO FECHA (06/10/2026): aviso vermelho depois do expediente,
     # e bloqueio das outras telas quando o caixa de ontem continua aberto.
     import caixa_aviso_web
@@ -2704,6 +3275,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     import gratuidade_comprovante_web
     gratuidade_comprovante_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                                fmt_date)
+
+    # O QUE SE DEVE AO PORTAL DO SELO (LG07, 19/10/2026): o pedido de
+    # cancelamento ao TJMA, com o aviso do cancelado não comunicado, e o pacote
+    # do ressarcimento — por selo gratuito, comprovante + certidão do ato.
+    import selo_portal_web
+    selo_portal_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     # OS RELATOS DO DIA (12/10/2026): o despacho do gestor, a cobrança e o
     # boletim do RCPN numa janela do painel, e não em tarefa que se acumula.
@@ -2727,6 +3304,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     # A CERTIDÃO DE ÔNUS POSITIVA OU NEGATIVA, com a sugestão da IA — 13/10/2026.
     import ri_onus_ia_web
     ri_onus_ia_web.registrar_rotas(app, db, login_required, roles_required, audit)
+    # A IA CONFERE A TRANSCRIÇÃO CONTRA A PÁGINA ESCANEADA (LH11, 21/10/2026):
+    # o botão no quadro da certidão de inteiro teor e o lote dos livros antigos.
+    import revisao_transcricao_web
+    revisao_transcricao_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     # O PLD/COAF (08/10/2026): a seleção do que se comunica ao COAF, a análise
     # documentada, o texto da comunicação e o registro do envio. Só do ADMIN.

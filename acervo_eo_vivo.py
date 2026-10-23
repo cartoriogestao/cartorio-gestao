@@ -36,6 +36,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
+import banco_pg
+
 NOME_ACERVO = "acervo_eoficio.sqlite3"
 
 # Mesma disciplina do EXPORTAR_TUDO.ps1: Integrated Security, so leitura.
@@ -258,7 +260,10 @@ def aplicar_jsonl_no_acervo(
     pasta_jsonl = Path(pasta_jsonl)
     caminho_acervo.parent.mkdir(parents=True, exist_ok=True)
     novo = not caminho_acervo.exists()
-    con = sqlite3.connect(caminho_acervo)
+    # SQLITE DE VERDADE (LH09): pela porta do SQLite, e nao pelo desvio do
+    # `sqlite3.connect`, que decide pelo nome do arquivo. Aqui se ESCREVE: e a
+    # atualizacao do acervo, no lugar.
+    con = banco_pg.conectar_sqlite(caminho_acervo, so_leitura=False)
     try:
         contagens: dict[str, int] = {}
         for nome in tabelas:

@@ -27,6 +27,7 @@ import json
 import sqlite3
 from datetime import datetime
 
+from bd_nativo import banco
 from oficial_schema import init_oficial_schema
 
 GRAVIDADES = ("CRITICO", "ATENCAO", "INFO")
@@ -57,26 +58,27 @@ def perguntar(con: sqlite3.Connection, *, chave: str, origem: str, pergunta: str
     init_oficial_schema(con)
     agora = _agora()
     opcoes_json = json.dumps(opcoes or [], ensure_ascii=False)
-    linha = con.execute("SELECT id, respondida_em FROM of_decisoes WHERE chave = ?",
-                        (chave,)).fetchone()
+    bd = banco(con)
+    linha = bd.um("SELECT id, respondida_em FROM of_decisoes WHERE chave = %s",
+                  (chave,))
     if linha:
-        if linha[1] is None:
-            con.execute(
-                """UPDATE of_decisoes SET pergunta=?, contexto=?, opcoes_json=?,
-                       recomendacao=?, o_que_espera=?, gravidade=?, prazo=?,
-                       vista_em=?, retirada_em=NULL WHERE id=?""",
+        if linha["respondida_em"] is None:
+            bd.escrever(
+                """UPDATE of_decisoes SET pergunta=%s, contexto=%s, opcoes_json=%s,
+                       recomendacao=%s, o_que_espera=%s, gravidade=%s, prazo=%s,
+                       vista_em=%s, retirada_em=NULL WHERE id=%s""",
                 (pergunta, contexto, opcoes_json, recomendacao, o_que_espera,
-                 gravidade, prazo, agora, linha[0]))
+                 gravidade, prazo, agora, linha["id"]))
         else:
-            con.execute("UPDATE of_decisoes SET vista_em=? WHERE id=?", (agora, linha[0]))
-        return int(linha[0])
-    cur = con.execute(
+            bd.escrever("UPDATE of_decisoes SET vista_em=%s WHERE id=%s",
+                        (agora, linha["id"]))
+        return int(linha["id"])
+    return int(bd.escrever(
         """INSERT INTO of_decisoes (chave, origem, pergunta, contexto, opcoes_json,
                recomendacao, o_que_espera, gravidade, prazo, criada_em, vista_em)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (chave, origem, pergunta, contexto, opcoes_json, recomendacao, o_que_espera,
-         gravidade, prazo, agora, agora))
-    return int(cur.lastrowid)
+         gravidade, prazo, agora, agora))[0]["id"])
 
 
 def responder(con: sqlite3.Connection, decisao_id: int, resposta: str, por: str) -> None:
@@ -86,11 +88,11 @@ def responder(con: sqlite3.Connection, decisao_id: int, resposta: str, por: str)
         raise DecisaoError("Escreva a resposta — uma palavra que seja.")
     if not (por or "").strip():
         raise DecisaoError("Diga quem está respondendo.")
-    cur = con.execute(
-        """UPDATE of_decisoes SET resposta=?, respondida_em=?, respondida_por=?
-            WHERE id=? AND respondida_em IS NULL""",
+    feito = banco(con).escrever(
+        """UPDATE of_decisoes SET resposta=%s, respondida_em=%s, respondida_por=%s
+            WHERE id=%s AND respondida_em IS NULL RETURNING id""",
         (resposta, _agora(), por.strip(), int(decisao_id)))
-    if cur.rowcount == 0:
+    if not feito:
         raise DecisaoError(f"A decisão #{decisao_id} não existe ou já foi respondida.")
 
 
@@ -98,19 +100,22 @@ def abertas(con: sqlite3.Connection) -> list[dict]:
     """As perguntas sem resposta, a mais grave e a de prazo mais curto primeiro."""
     if not _tem_tabela(con):
         return []
-    linhas = con.execute(
+    linhas = banco(con).ler(
         """SELECT id, chave, origem, pergunta, contexto, opcoes_json, recomendacao,
                   o_que_espera, gravidade, prazo, criada_em
-             FROM of_decisoes WHERE respondida_em IS NULL AND retirada_em IS NULL""").fetchall()
-    fora = [{"id": r[0], "chave": r[1], "origem": r[2], "pergunta": r[3],
-             "contexto": r[4] or "", "opcoes": json.loads(r[5] or "[]"),
-             "recomendacao": r[6] or "", "o_que_espera": r[7] or "",
-             "gravidade": r[8], "prazo": r[9], "criada_em": r[10]} for r in linhas]
+             FROM of_decisoes WHERE respondida_em IS NULL AND retirada_em IS NULL
+             ORDER BY id""")
+    fora = [{"id": r["id"], "chave": r["chave"], "origem": r["origem"],
+             "pergunta": r["pergunta"], "contexto": r["contexto"] or "",
+             "opcoes": json.loads(r["opcoes_json"] or "[]"),
+             "recomendacao": r["recomendacao"] or "",
+             "o_que_espera": r["o_que_espera"] or "",
+             "gravidade": r["gravidade"], "prazo": r["prazo"],
+             "criada_em": r["criada_em"]} for r in linhas]
     fora.sort(key=lambda d: (GRAVIDADES.index(d["gravidade"]), d["prazo"] or "9999",
                              d["criada_em"]))
     return fora
 
 
 def _tem_tabela(con) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
-                       "AND name='of_decisoes'").fetchone() is not None
+    return banco(con).tem_tabela("of_decisoes")

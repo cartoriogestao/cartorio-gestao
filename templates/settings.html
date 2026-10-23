@@ -32,6 +32,9 @@
     <label>Cidade (RI) <input name="ri_cidade" value="{{s.ri_cidade}}"></label>
     <label>UF (RI) <input name="ri_uf" value="{{s.ri_uf}}" size="3" maxlength="2"></label>
     <label>Pasta principal de arquivos<input name="archive_root" value="{{s.archive_root}}" placeholder="vazio = pasta padrão do sistema"></label>
+    {# LX12 (19/10/2026): caminho digitado nas importações só vale dentro da
+       pasta de dados, da pasta principal de arquivos ou de uma destas. #}
+    <label>Pastas de importação (uma por linha)<textarea name="pastas_de_importacao" rows="3" spellcheck="false" placeholder="vazio = só a pasta de dados e a pasta principal de arquivos">{{s.pastas_de_importacao}}</textarea></label>
     <label>Pasta de backups<input name="backup_dir" value="{{s.backup_dir}}" placeholder="vazio = pasta padrão"></label>
     <label>Dias de antecedência dos alertas<input type="number" name="alert_days" min="1" value="{{s.alert_days}}"></label>
     {# RELATO #34 DO OFICIAL, em 30/08/2026: «colocar o encerrar por
@@ -57,6 +60,14 @@
         <strong>Sessão longa é comodidade com preço:</strong> se o balcão ficar
         aberto e alguém passar pela máquina, o sistema não terá encerrado
         sozinho. Quem escolhe é você.</small>
+    </label>
+    {# O PRAZO ABSOLUTO (B7 do LS01, lote LX11): conta da entrada, e não do
+       último clique — a inatividade sozinha se renova a cada clique. #}
+    <label>Prazo máximo da sessão
+      <input type="number" name="session_absolute_hours" min="1" max="168"
+             value="{{s.session_absolute_hours or '12'}}">
+      <small>Em <strong>horas</strong> desde a entrada, mesmo com uso o tempo todo.
+        Passado o prazo, o sistema pede a senha de novo.</small>
     </label>
     <label>Host do servidor<input name="network_host" value="{{s.network_host}}"></label>
     <label>Porta HTTP<input type="number" name="network_port" value="{{s.network_port}}"></label>
@@ -102,6 +113,13 @@
       </select>
       <small class="muted small">Os títulos, protestos e selos continuam guardados em qualquer opção; o que muda é quem vê as telas.</small>
     </label>
+
+    <fieldset class="cfg-bloco span2">
+      <legend>Rotinas que escrevem sem clique</legend>
+      <p class="muted small cfg-bloco-intro">Duas rotinas gravam na produção sozinhas: o envio das quinzenas à CENSEC (madrugada) e a correção mecânica do RTD/PJ (rodada das 07:30). Desmarcar desliga a rotina no próximo ciclo; nada do que já foi enviado ou corrigido muda.</p>
+      <label class="checkbox-label span2"><input type="checkbox" name="censec_envio_automatico" {% if s.censec_envio_automatico in ('', None, 'LIGADO') %}checked{% endif %}> Envio automático das quinzenas à CENSEC</label>
+      <label class="checkbox-label span2"><input type="checkbox" name="rtdpj_corrigir_automatico" {% if s.rtdpj_corrigir_automatico in ('', None, 'LIGADO') %}checked{% endif %}> Correção automática do RTD/PJ na rodada diária</label>
+    </fieldset>
 
     <fieldset class="cfg-bloco span2">
       <legend>Política de senhas</legend>
@@ -251,11 +269,85 @@
     público (<code>SircWs/Movimento?wsdl</code>) só declara um endereço.
   </p>
 </section>
+<section class="panel" id="cfg-backup-protecao">
+  <h2>Proteção do backup</h2>
+  {# LX14 (A7 do LS03). A SENHA DA CIFRA NÃO VAI A `settings`: iria dentro do
+     pacote que ela fecha. Rota própria, gravando no cofre (`backup.cred`), e a
+     tela só diz se a cifra está ligada — nunca a senha. #}
+  <p class="muted small">
+    O pacote de backup leva o banco inteiro e, no completo, o acervo do
+    E-Ofício (que guarda a senha do selador). Com a cifra ligada, o pacote sai
+    cifrado com a senha abaixo; sem ela, sai o zip de sempre. A restauração
+    abre os dois. <strong>Anote a senha fora do servidor:</strong> sem ela, um
+    pacote cifrado não abre. Ver <code>docs/BACKUP.md</code>.
+  </p>
+  <p>
+    {% if backup_cifra == 'ligada' %}<strong>Cifra: ligada.</strong>
+    {% elif backup_cifra == 'perdida' %}<strong>Cifra: a senha guardada não
+    abre</strong> (a chave do cofre, <code>cofre.key</code>, sumiu). Os
+    pacotes estão saindo SEM cifra; grave a senha de novo.
+    {% else %}<strong>Cifra: desligada</strong> (o padrão).{% endif %}
+  </p>
+  <form method="post" action="{{ url_for('configuracoes_backup_protecao') }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="senha">
+    <label>Senha da cifra (mínimo 12 caracteres)<input type="password" name="senha" autocomplete="new-password"></label>
+    <label>Repita a senha<input type="password" name="confirmacao" autocomplete="new-password"></label>
+    <button class="button" type="submit">{% if backup_cifra == 'ligada' %}Trocar a senha{% else %}Ligar a cifra{% endif %}</button>
+  </form>
+  {% if backup_cifra != 'desligada' %}
+  <form method="post" action="{{ url_for('configuracoes_backup_protecao') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="desligar">
+    <button class="button" type="submit">Desligar a cifra</button>
+  </form>
+  {% endif %}
+  <form method="post" action="{{ url_for('configuracoes_backup_protecao') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="acervo">
+    <label class="checkbox-label"><input type="checkbox" name="backup_completo_sem_acervo" {% if s.backup_completo_sem_acervo=='1' %}checked{% endif %}>
+      Tirar o acervo do E-Ofício do backup completo (guarde uma cópia dele à parte)</label>
+    <button class="button" type="submit">Salvar</button>
+  </form>
+</section>
+<section class="panel" id="cfg-revisao-transcricao">
+  <h2>Revisão das transcrições pela IA (RI)</h2>
+  {# LH11 — A DECISÃO DO OFICIAL DE 21/10/2026 FICA ESCRITA AQUI E NO CÓDIGO
+     (`revisao_transcricao.py`): a imagem da página escaneada vai ao provedor da IA
+     SÓ nesta revisão, porque a página tem nomes e documento não se mascara. Rota
+     própria, como a do envio à CRA: só mexe nestas três chaves. #}
+  <p class="muted small">
+    A IA confere o texto transcrito das fichas antigas contra a página escaneada do
+    livro (no quadro da certidão de inteiro teor e em <em>Registro de Imóveis →
+    Revisar transcrições em lote</em>). <strong>Por decisão do oficial de
+    21/10/2026, a imagem da página vai ao provedor da IA, só nesta revisão</strong>
+    — a página tem nomes e não se mascara. Desligada, a imagem não sobe: a revisão
+    confere só o texto contra a ficha e diz que não viu a página.
+  </p>
+  {% set rtc = revisao_transcricao_cfg %}
+  <form method="post" action="{{ url_for('configuracoes_revisao_transcricao') }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="checkbox-label span2"><input type="checkbox" name="manda_imagem" value="1"
+      {% if not rtc or rtc.manda_imagem %}checked{% endif %}>
+      Mandar a imagem da página ao provedor da IA (revisao_transcricao_manda_imagem)</label>
+    <label>Teto de páginas por rodada do lote
+      <input type="number" name="teto_paginas" min="1" step="1"
+             value="{{ rtc.teto_paginas if rtc else '' }}"
+             placeholder="{{ rtc.padrao_paginas if rtc else '' }}"></label>
+    <label>Teto de custo por rodada (US$, estimado)
+      <input name="teto_custo" inputmode="decimal"
+             value="{{ '%.2f'|format(rtc.teto_custo) if rtc else '' }}"
+             placeholder="{{ rtc.padrao_custo if rtc else '' }}"></label>
+    <button class="button" type="submit">Salvar</button>
+  </form>
+</section>
 <section class="panel" id="cfg-admin">
   <h2>Administração</h2>
   <div class="actions">
     <form method="post" action="{{url_for('backup')}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button class="primary">Criar e baixar backup completo</button></form>
     <a class="button" href="{{url_for('integrity')}}">Verificar integridade dos anexos</a>
+    {# LX16: ligar/desligar a trava do selo pago — só o ADMIN, com justificativa. #}
+    <a class="button" href="{{url_for('selo_conferencia')}}#trava">Trava do selo pago (selo × caixa)</a>
   </div>
 </section>
 </div>

@@ -1,0 +1,1 @@
+<tr><td><b>Prazo encerrado em</b></td><td>{prazo_ate} — sem oposição</td></tr>

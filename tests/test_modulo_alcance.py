@@ -30,6 +30,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -108,7 +109,12 @@ def test_de_fabrica_o_protesto_e_do_oficial():
 def test_o_alcance_TODOS_abre_para_o_balcao():
     c = config(modulo_protesto_alcance="TODOS")
     assert MODLIG.pode_entrar(c, "PROTESTO", "USER") is True
-    assert MODLIG.escondidos(c, "USER") == frozenset()
+    # Só o Protesto: a Apostila de Haia (LG03) tem alcance próprio, e de
+    # fábrica fechado — abrir um não pode abrir o outro. O sandbox cobra
+    # `escondidos == frozenset()`, que é a casa sem a Apostila; aqui o menu
+    # esconde dela, e de mais nada.
+    assert "PROTESTO" not in MODLIG.escondidos(c, "USER")
+    assert MODLIG.escondidos(c, "USER") == frozenset({"APOSTILA"})
 
 
 def test_o_alcance_NINGUEM_fecha_ate_para_o_oficial():
@@ -235,3 +241,218 @@ def test_fechar_para_todos_nao_apaga_o_que_estava_lavrado(banco):
             con.execute("DELETE FROM settings "
                         "WHERE key='modulo_protesto_alcance'")
             con.commit()
+
+
+# ------------------------------------------- a função que fica de fora
+#
+# 21/10/2026 — ordem do oficial, ao abrir o Protesto inteiro às escreventes:
+# «[NOME] eh auxiliar, nao era pra poder». O auxiliar tem o mesmo papel
+# (USER) da escrevente; quem separa é a função cadastrada.
+
+
+def test_a_auxiliar_fica_de_fora_mesmo_com_o_protesto_aberto_a_todos():
+    ler = config(modulo_protesto_alcance="TODOS")
+    assert MODLIG.pode_entrar(ler, "PROTESTO", "USER", "Escrevente Autorizada")
+    assert not MODLIG.pode_entrar(ler, "PROTESTO", "USER", "Auxiliar")
+    assert not MODLIG.pode_entrar(ler, "PROTESTO", "MANAGER", "AUXILIAR")
+    assert "PROTESTO" in MODLIG.escondidos(ler, "USER", "auxiliar")
+
+
+def test_a_auxiliar_com_acento_ou_com_complemento_tambem_fica_de_fora():
+    """«Auxiliar», «AUXILIAR», «auxiliar» e «Auxiliar de cartório» são a mesma
+    função: a régua tira o acento e a caixa e olha o começo."""
+    ler = config(modulo_protesto_alcance="TODOS")
+    for funcao in ("Áuxiliar", " auxiliar ", "Auxiliar de cartório"):
+        assert not MODLIG.pode_entrar(ler, "PROTESTO", "USER", funcao), funcao
+    # E a escrevente que tem «auxiliar» no meio do nome da função não cai.
+    assert MODLIG.pode_entrar(ler, "PROTESTO", "USER", "Escrevente auxiliar")
+
+
+def test_o_admin_auxiliar_nunca_fica_de_fora():
+    """A conta do analista de sistemas é ADMIN com função de auxiliar."""
+    ler = config(modulo_protesto_alcance="TODOS")
+    assert MODLIG.pode_entrar(ler, "PROTESTO", "ADMIN", "Auxiliar")
+    assert "PROTESTO" not in MODLIG.escondidos(ler, "ADMIN", "Auxiliar")
+
+
+def test_funcao_em_branco_nao_fecha_e_os_outros_modulos_nao_mudam():
+    ler = config(modulo_protesto_alcance="TODOS")
+    assert MODLIG.pode_entrar(ler, "PROTESTO", "USER", None)
+    assert MODLIG.pode_entrar(ler, "PROTESTO", "USER", "")
+    for m in MOD.MODULOS:
+        if m["chave"] != "PROTESTO":
+            assert MODLIG.pode_entrar(ler, m["chave"], "USER", "Auxiliar")
+
+
+def test_a_funcao_nao_abre_o_que_o_alcance_fecha():
+    """A guarda da função só TIRA: com o Protesto do oficial, a escrevente
+    continua de fora, com a frase do alcance, e não a da função."""
+    assert not MODLIG.pode_entrar(SEM_CONFIG, "PROTESTO", "USER", "Escrevente")
+    assert "apenas para o oficial" in MODLIG.motivo(
+        "PROTESTO", MODLIG.ADMIN, "USER", "Escrevente")
+
+
+def test_a_frase_diz_por_que_a_auxiliar_nao_entra():
+    frase = MODLIG.motivo("PROTESTO", "TODOS", "USER", "Auxiliar")
+    assert "auxiliar" in frase
+    assert "oficial" in frase
+
+
+def test_auxiliar_de_cartorio_em_qualquer_caixa_e_com_espaco_fica_de_fora():
+    """Revisão do LH06 (conferida no LH08): a régua é «a função COMEÇA por
+    AUXILIAR», depois de tirar acento, caixa e o branco das pontas — tabulação
+    e espaço duro inclusive, que é o que sobra de cadastro colado de planilha.
+    Por isso «AUXILIAR DE CARTÓRIO» fica de fora, e com ela tudo o que começa
+    pela palavra («Auxiliares», «Auxiliar administrativo»). A regra é a da
+    ordem do oficial e não mudou: este teste só a deixa escrita."""
+    ler = config(modulo_protesto_alcance="TODOS")
+    for funcao in ("AUXILIAR DE CARTÓRIO", "  auxiliar de cartório  ",
+                   "aUxIlIaR", "\tAUXILIAR\n", " Auxiliar",
+                   "Auxiliares", "Auxiliar administrativo"):
+        assert MODLIG.fora_pela_funcao("PROTESTO", "USER", funcao), repr(funcao)
+        assert not MODLIG.pode_entrar(ler, "PROTESTO", "USER", funcao), repr(funcao)
+        assert "PROTESTO" in MODLIG.escondidos(ler, "USER", funcao), repr(funcao)
+        assert "a função de auxiliar não o opera" in MODLIG.motivo(
+            "PROTESTO", "TODOS", "USER", funcao), repr(funcao)
+    # A palavra no meio não fecha: é a escrevente, e não a auxiliar.
+    for funcao in ("Escrevente auxiliar", "ESCREVENTE AUXILIAR DE CARTÓRIO"):
+        assert MODLIG.pode_entrar(ler, "PROTESTO", "USER", funcao), repr(funcao)
+
+
+def _de_funcao(app, banco, usuario, papel, funcao):
+    """Entra com a conta e grava a função dela, como a tela Usuários grava."""
+    cliente = _entrar(app, banco, usuario, papel)
+    with banco.connect() as con:
+        con.execute("UPDATE users SET funcao=? WHERE username=?",
+                    (funcao, usuario))
+        con.commit()
+    return cliente
+
+
+def _token_da_casa(cliente) -> str:
+    html = cliente.get("/").get_data(as_text=True)
+    return re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+
+
+@pytest.fixture
+def aberto_a_todos(banco):
+    banco.set_settings({"modulo_protesto_alcance": "TODOS"})
+    yield
+    with banco.connect() as con:
+        con.execute("DELETE FROM settings WHERE key='modulo_protesto_alcance'")
+        con.commit()
+
+
+def test_a_auxiliar_nao_entra_pela_tela_nem_pelo_favorito(app, banco,
+                                                         aberto_a_todos):
+    aux = _de_funcao(app, banco, "alc_aux", "USER", "Auxiliar")
+    html = aux.get("/").get_data(as_text=True)
+    nav = html[html.find("<nav>"):html.find("</nav>")]
+    assert "<summary>Protesto</summary>" not in nav
+    for endereco in ("/protesto", "/protesto/cra/api", "/protesto/cenprot/pendencias"):
+        corpo = aux.get(endereco, follow_redirects=True).get_data(as_text=True)
+        assert "a função de auxiliar não o opera" in corpo, endereco
+
+
+@pytest.mark.parametrize("funcao", ["  AUXILIAR DE CARTÓRIO ", "auxiliar"])
+def test_a_auxiliar_cadastrada_em_maiusculas_ou_com_espaco_nao_entra_pela_tela(
+        app, banco, aberto_a_todos, funcao):
+    """A função vem da tela Usuários como foi digitada: a guarda do
+    `before_request` a lê do banco a cada pedido e a compara pela mesma régua."""
+    aux = _de_funcao(app, banco, "alc_aux_caixa", "USER", funcao)
+    r = aux.get("/protesto")
+    assert r.status_code == 302, (funcao, r.status_code)
+    assert urlsplit(r.headers["Location"]).path == "/", r.headers["Location"]
+    corpo = aux.get("/").get_data(as_text=True)
+    assert "a função de auxiliar não o opera" in corpo, funcao
+    nav = corpo[corpo.find("<nav>"):corpo.find("</nav>")]
+    assert "<summary>Protesto</summary>" not in nav
+
+
+# AS ROTAS QUE ESCREVEM NA CENTRAL OU ASSINAM COM O A3 — abertas ao USER em
+# 21/10/2026 (eram de ADMIN/MANAGER, e assinar era só do ADMIN). A auxiliar
+# bate na guarda da função ANTES de chegar a elas; a escrevente chega.
+ROTAS_DA_ORDEM = (
+    "/protesto/instrumentos/987654/assinar",
+    "/protesto/cenprot/pendencias/enviar",
+    "/protesto/cenprot/emolumentos/enviar",
+    "/protesto/cenprot-xml/gerar",
+    "/protesto/cenprot-xml/apresentantes",
+    "/protesto/cenprot-xml/apresentantes/acervo",
+    "/protesto/avisos/987654/resolve",
+    "/protesto/avisos/987654/base-cenprot/consultar",
+    "/protesto/avisos/987654/base-cenprot/cadastrar",
+    "/protesto/resolve/enviar",
+)
+
+
+@pytest.mark.parametrize("endereco", ROTAS_DA_ORDEM)
+def test_a_auxiliar_nao_assina_instrumento_nem_envia_a_cenprot(
+        app, banco, aberto_a_todos, endereco):
+    aux = _de_funcao(app, banco, "alc_aux", "USER", "Auxiliar")
+    r = aux.post(endereco, data={"csrf_token": _token_da_casa(aux)})
+    # De volta ao início, pela guarda do `before_request` — e não pela rota.
+    assert r.status_code == 302, (endereco, r.status_code)
+    assert urlsplit(r.headers["Location"]).path == "/", r.headers["Location"]
+    corpo = aux.get("/").get_data(as_text=True)
+    assert "a função de auxiliar não o opera" in corpo, endereco
+
+
+@pytest.mark.parametrize("papel,funcao", [("USER", "Escrevente Autorizada"),
+                                          ("USER", None),
+                                          ("ADMIN", "Auxiliar")])
+@pytest.mark.parametrize("endereco", ROTAS_DA_ORDEM)
+def test_a_escrevente_e_o_admin_auxiliar_chegam_as_rotas_da_ordem(
+        app, banco, aberto_a_todos, endereco, papel, funcao):
+    """Chegar é passar pelas duas guardas — a do módulo e a do papel: o que a
+    rota responde depois (404 do instrumento que não existe, a frase da
+    Central sem credencial) já é dela. Antes de 21/10/2026, 403."""
+    usuario = f"alc_{papel.lower()}_{(funcao or 'sem').split()[0].lower()}"
+    cliente = _de_funcao(app, banco, usuario, papel, funcao)
+    r = cliente.post(endereco, data={"csrf_token": _token_da_casa(cliente)})
+    assert r.status_code != 403, (endereco, papel, funcao)
+    if r.status_code == 302:     # a rota manda de volta à tela dela, não ao início
+        assert urlsplit(r.headers["Location"]).path != "/", r.headers["Location"]
+    corpo = cliente.get("/").get_data(as_text=True)
+    assert "a função de auxiliar não o opera" not in corpo
+
+
+def test_o_instrumento_a_assinar_chega_a_rota_so_para_quem_nao_e_auxiliar(
+        app, banco, aberto_a_todos):
+    """O 404 é a própria rota dizendo que o instrumento 987654 não existe —
+    prova de que a escrevente passou pelas guardas. A auxiliar volta ao
+    início com a frase, sem a rota abrir nada."""
+    endereco = "/protesto/instrumentos/987654/assinar"
+    escrevente = _de_funcao(app, banco, "alc_esc", "USER", "Escrevente")
+    assert escrevente.post(endereco, data={
+        "csrf_token": _token_da_casa(escrevente)}).status_code == 404
+    admin_aux = _de_funcao(app, banco, "alc_adm_aux", "ADMIN", "Auxiliar")
+    assert admin_aux.post(endereco, data={
+        "csrf_token": _token_da_casa(admin_aux)}).status_code == 404
+    aux = _de_funcao(app, banco, "alc_aux", "USER", "Auxiliar")
+    assert aux.post(endereco, data={
+        "csrf_token": _token_da_casa(aux)}).status_code == 302
+
+
+def test_a_auxiliar_nao_baixa_pelo_endereco_o_anexo_do_protesto(
+        app, banco, aberto_a_todos, tmp_path):
+    """A porta dos fundos da mesma tela: o comprovante do aviso se baixa por
+    `/arquivo/<id>`, que é do Administrativo. Quem não abre a tela dos avisos
+    não baixa o que ela oferece."""
+    aux = _de_funcao(app, banco, "alc_aux", "USER", "Auxiliar")
+    escrevente = _de_funcao(app, banco, "alc_esc", "USER", "Escrevente")
+    arquivo = tmp_path / "comprovante.pdf"
+    arquivo.write_bytes(b"%PDF-1.4 comprovante de teste")
+    with banco.connect() as con:
+        uid = con.execute("SELECT id FROM users WHERE username='alc_esc'"
+                          ).fetchone()["id"]
+    anexo = banco.add_attachment("PT_AVISO", 987654, {
+        "original_name": "comprovante.pdf", "stored_name": "comprovante.pdf",
+        "stored_path": str(arquivo), "sha256": "0" * 64,
+        "size_bytes": arquivo.stat().st_size}, uid)
+    try:
+        assert escrevente.get(f"/arquivo/{anexo}").status_code == 200
+        assert aux.get(f"/arquivo/{anexo}").status_code == 404
+        assert aux.get(f"/arquivo/{anexo}/ver").status_code == 404
+    finally:
+        banco.delete_attachment(anexo)

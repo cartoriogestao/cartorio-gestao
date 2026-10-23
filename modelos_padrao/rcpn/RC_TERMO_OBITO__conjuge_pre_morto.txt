@@ -1,0 +1,1 @@
+Era {estado_civil}, sendo cônjuge pré-morto {nome}

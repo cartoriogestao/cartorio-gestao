@@ -46,6 +46,7 @@ import json
 import sqlite3
 from typing import Any
 
+from bd_nativo import banco
 import protesto as PT
 
 TAMANHO_DO_REGISTRO = 127
@@ -299,21 +300,22 @@ def conferir(con: sqlite3.Connection, conteudo: str | bytes) -> dict:
     titulo achado e a situacao dele, ou que nao ha titulo com aquele
     protocolo.
     """
+    bd = banco(con)
     arquivo = ler(conteudo)
     assinatura = hash_arquivo(conteudo)
-    ja = pelo_hash(con, assinatura)
+    ja = pelo_hash(bd, assinatura)
 
     linhas = []
     cabem = nao_cabem = nao_achados = 0
     for t in arquivo["titulos"]:
-        achado = con.execute(
+        achado = bd.um(
             """SELECT t.id, t.numero_titulo, t.situacao, t.protocolo,
                       t.saldo_centavos, t.apresentante_codigo,
                       d.nome devedor_nome
                  FROM pt_titulos t
                  LEFT JOIN pt_devedores d ON d.titulo_id = t.id
-                WHERE t.protocolo = ? ORDER BY t.id LIMIT 1""",
-            (t["protocolo"],)).fetchone()
+                WHERE t.protocolo = %s ORDER BY t.id, d.id LIMIT 1""",
+            (t["protocolo"],))
         linha = {**t, "titulo": dict(achado) if achado else None}
         if achado is None:
             linha["situacao"] = "SEM TÍTULO"
@@ -354,10 +356,10 @@ def conferir(con: sqlite3.Connection, conteudo: str | bytes) -> dict:
     }
 
 
-def pelo_hash(con: sqlite3.Connection, assinatura: str) -> sqlite3.Row | None:
+def pelo_hash(con: sqlite3.Connection, assinatura: str) -> dict | None:
     """O arquivo de desistencia que ja entrou com esse mesmo conteudo. So LE."""
-    return con.execute("SELECT * FROM pt_desistencias WHERE hash_arquivo=?",
-                       (assinatura,)).fetchone()
+    return banco(con).um("SELECT * FROM pt_desistencias WHERE hash_arquivo=%s",
+                         (assinatura,))
 
 
 # ----------------------------------------------------------- aplicar
@@ -377,27 +379,28 @@ def aplicar(con: sqlite3.Connection, conteudo: str | bytes, *,
     Por isso o arquivo se GRAVA UMA VEZ (achado pelo hash) e a aplicacao e
     parcial por construcao.
     """
-    visto = conferir(con, conteudo)
+    bd = banco(con)
+    visto = conferir(bd, conteudo)
     escolhidos = {str(p).strip() for p in protocolos if str(p).strip()}
     if not escolhidos:
         raise DesistenciaError(
             "Nenhum título foi marcado. Marque os que o apresentante desistiu "
             "e mande aplicar.")
 
-    linha = pelo_hash(con, visto["hash_arquivo"])
+    linha = pelo_hash(bd, visto["hash_arquivo"])
     if linha is None:
-        cur = con.execute(
+        desistencia_id = int(bd.escrever(
             """INSERT INTO pt_desistencias(apresentante_codigo,
                    apresentante_nome, dia, nome_arquivo, conteudo,
                    hash_arquivo, titulos, soma_centavos, achados_json,
                    recebida_em, recebida_por)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id""",
             (visto["apresentante_codigo"], visto["apresentante_nome"],
              visto["dia"], nome_arquivo, visto["conteudo"],
              visto["hash_arquivo"], visto["quantidade"],
              visto["soma_centavos"],
-             json.dumps(visto["achados"], ensure_ascii=False), agora, usuario))
-        desistencia_id = int(cur.lastrowid)
+             json.dumps(visto["achados"], ensure_ascii=False), agora, usuario))[0]["id"])
     else:
         desistencia_id = int(linha["id"])
 
@@ -419,14 +422,14 @@ def aplicar(con: sqlite3.Connection, conteudo: str | bytes, *,
         r = PT.lancar_desistencia(
             con, int(t["titulo"]["id"]), motivo=motivo, agora=agora,
             usuario=usuario, origem="CRA")
-        con.execute("UPDATE pt_atos SET desistencia_id=? WHERE id=?",
+        bd.escrever("UPDATE pt_atos SET desistencia_id=%s WHERE id=%s",
                     (desistencia_id, r["ato_id"]))
         aplicados.append({**t, "ato_id": r["ato_id"]})
 
-    con.execute(
+    bd.escrever(
         """UPDATE pt_desistencias SET aplicados=(
-               SELECT COUNT(*) FROM pt_atos WHERE desistencia_id=?)
-            WHERE id=?""", (desistencia_id, desistencia_id))
+               SELECT COUNT(*) FROM pt_atos WHERE desistencia_id=%s)
+            WHERE id=%s""", (desistencia_id, desistencia_id))
     return {**visto, "desistencia_id": desistencia_id,
             "aplicados": aplicados, "recusados": recusados}
 
@@ -434,30 +437,30 @@ def aplicar(con: sqlite3.Connection, conteudo: str | bytes, *,
 # --------------------------------------------------------- consultas
 
 
-def desistencia(con: sqlite3.Connection, desistencia_id: int) -> sqlite3.Row | None:
+def desistencia(con: sqlite3.Connection, desistencia_id: int) -> dict | None:
     """O arquivo de desistencia guardado inteiro. So LE."""
-    return con.execute("SELECT * FROM pt_desistencias WHERE id=?",
-                       (int(desistencia_id),)).fetchone()
+    return banco(con).um("SELECT * FROM pt_desistencias WHERE id=%s",
+                         (int(desistencia_id),))
 
 
 def listar(con: sqlite3.Connection, limite: int = 60) -> list[dict]:
     """Os arquivos de desistencia recebidos, do mais novo para o mais velho."""
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT id, apresentante_codigo, apresentante_nome, dia,
                   nome_arquivo, titulos, aplicados, soma_centavos,
                   hash_arquivo, recebida_em, recebida_por
-             FROM pt_desistencias ORDER BY id DESC LIMIT ?""", (int(limite),))]
+             FROM pt_desistencias ORDER BY id DESC LIMIT %s""", (int(limite),))
 
 
 def atos_da_desistencia(con: sqlite3.Connection,
                         desistencia_id: int) -> list[dict]:
     """Que titulos foram desistidos por aquele arquivo. So LE."""
-    return [dict(r) for r in con.execute(
+    return banco(con).ler(
         """SELECT a.id ato_id, a.data_ato, a.detalhe_json, t.id titulo_id,
                   t.numero_titulo, t.protocolo, t.saldo_centavos, t.situacao
              FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
-            WHERE a.desistencia_id = ? ORDER BY a.id""",
-        (int(desistencia_id),))]
+            WHERE a.desistencia_id = %s ORDER BY a.id""",
+        (int(desistencia_id),))
 
 
 def _inteiro(valor: Any, padrao: int = 0) -> int:

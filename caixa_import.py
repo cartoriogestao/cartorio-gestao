@@ -34,6 +34,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
+from bd_nativo import banco
 from caixa_schema import centavos, reais
 
 # intAtribuicao do E-Oficio -> atribuicao da serventia.
@@ -90,6 +91,7 @@ class Carga:
 
     def __init__(self, con, pasta: Path, usuario_id: int | None = None):
         self.con = con
+        self.bd = banco(con)
         self.pasta = Path(pasta)
         self.usuario_id = usuario_id
         self.agora = datetime.now().isoformat(timespec="seconds")
@@ -108,28 +110,28 @@ class Carga:
     # ------------------------------------------------------------- apoio
 
     def _quarentena(self, entidade: str, chave: str, motivo: str) -> None:
-        self.con.execute(
+        self.bd.escrever(
             """INSERT INTO cx_rejeitados (importacao_id, entidade, chave_origem,
                                           motivo, conteudo)
-               VALUES (?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s)""",
             (self.importacao_id, entidade, chave, motivo, None))
         self.rel["quarentena"] += 1
 
     # ------------------------------------------------------------ etapas
 
     def executar(self) -> dict:
-        cur = self.con.execute(
+        novo = self.bd.escrever(
             """INSERT INTO cx_importacoes (arquivo, executada_em, executada_por)
-               VALUES (?,?,?)""",
+               VALUES (%s,%s,%s) RETURNING id""",
             (str(self.pasta), self.agora, self.usuario_id))
-        self.importacao_id = int(cur.lastrowid)
+        self.importacao_id = int(novo[0]["id"])
 
         custas = self._indexar_custas()
         no_caixa = self._protocolos_com_caixa()
         self._protocolos(custas, no_caixa)
         self._custas(custas)
         self._caixa()
-        self.con.execute("UPDATE cx_importacoes SET relatorio=? WHERE id=?",
+        self.bd.escrever("UPDATE cx_importacoes SET relatorio = %s WHERE id = %s",
                          (json.dumps(self.rel, ensure_ascii=False), self.importacao_id))
         return self.rel
 
@@ -180,14 +182,17 @@ class Carga:
                        + _cent(c.get("curValor_MP")) + _cent(c.get("curValor_DP"))
                        + _cent(c.get("curvalor_ferrfis"))
                        for c in custas.get(numero, []))
-            cur_prot = self.con.execute(
-                """INSERT OR IGNORE INTO cx_protocolos
+            cur_prot = self.bd.escrever(
+                """INSERT INTO cx_protocolos
                    (numero, data_abertura, hora, atribuicao, interessado,
                     interessado_documento, telefone, email, assunto, observacao,
                     prazo, situacao, finalizado, gratuito, motivo_gratuidade,
                     deposito_previo, valor_total, origem, origem_chave,
                     importacao_id, criado_em, criado_por)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'EOFICIO', ?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                           'EOFICIO', %s,%s,%s,%s)
+                   ON CONFLICT DO NOTHING
+                   RETURNING id""",
                 (numero, _data(r.get("dtmData")) or "", _texto(r.get("strHoras")),
                  ATRIBUICOES.get(r.get("intAtribuicao"), "OUTROS"),
                  _texto(r.get("strInteressado")),
@@ -199,15 +204,15 @@ class Carga:
                  1 if r.get("bitDepositoPrevio") else 0,
                  reais(soma) if soma else None,
                  numero, self.importacao_id, self.agora, self.usuario_id))
-            if cur_prot.rowcount:
+            if cur_prot:
                 self.rel["protocolos"] += 1
             else:
                 self.rel["protocolos_ja_existentes"] += 1
         self.rel["situacoes"] = situacoes
 
     def _custas(self, custas: dict) -> None:
-        ids = {r[0]: r[1] for r in
-               self.con.execute("SELECT numero, id FROM cx_protocolos")}
+        ids = {r["numero"]: r["id"] for r in
+               self.bd.ler("SELECT numero, id FROM cx_protocolos ORDER BY id")}
         for numero, linhas in custas.items():
             pid = ids.get(numero)
             if not pid:
@@ -240,19 +245,21 @@ class Carga:
                 femp = _cent(c.get("curValor_MP")) * quantidade
                 fadep = _cent(c.get("curValor_DP")) * quantidade
                 ferrfis = _cent(c.get("curvalor_ferrfis")) * quantidade
-                cur = self.con.execute(
-                    """INSERT OR IGNORE INTO cx_protocolo_atos
+                cur = self.bd.escrever(
+                    """INSERT INTO cx_protocolo_atos
                        (protocolo_id, descricao, codigo_ato, quantidade, selo,
                         valor_total, emolumentos, ferc, fadep, femp, ferrfis,
                         gratuito, origem, origem_chave)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'EOFICIO', ?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'EOFICIO', %s)
+                       ON CONFLICT DO NOTHING
+                       RETURNING id""",
                     (pid, _texto(c.get("strDescDoc")), _texto(c.get("strCodigoTJ")),
                      quantidade, _texto(c.get("curv_Selo")),
                      reais(emol + ferc + femp + fadep + ferrfis),
                      reais(emol), reais(ferc), reais(fadep), reais(femp),
                      reais(ferrfis), 1 if c.get("bitGratuito") else 0,
                      str(c.get("intID"))))
-                if cur.rowcount:
+                if cur:
                     self.rel["custas"] += 1
                 else:
                     self.rel["custas_ja_existentes"] += 1
@@ -262,8 +269,8 @@ class Carga:
         if not arq.exists():
             self.rel["avisos"].append("caixa.jsonl não encontrado.")
             return
-        prot = {r[0]: r[1] for r in
-                self.con.execute("SELECT numero, id FROM cx_protocolos")}
+        prot = {r["numero"]: r["id"] for r in
+                self.bd.ler("SELECT numero, id FROM cx_protocolos ORDER BY id")}
 
         formas: dict[str, str] = {}
         arq_rec = self.pasta / "caixa_recibo.jsonl"
@@ -284,16 +291,20 @@ class Carga:
 
             chave = (data, operador)
             if chave not in caixas:
-                cur = self.con.execute(
-                    """INSERT OR IGNORE INTO cx_caixas
+                cur = self.bd.escrever(
+                    """INSERT INTO cx_caixas
                        (data, operador_nome, saldo_inicial, aberto_em, situacao)
-                       VALUES (?,?, '0', ?, 'FECHADO')""",
+                       VALUES (%s,%s, '0', %s, 'FECHADO')
+                       ON CONFLICT DO NOTHING
+                       RETURNING id""",
                     (data, operador, self.agora))
-                linha = self.con.execute(
-                    "SELECT id FROM cx_caixas WHERE data=? AND operador_nome=?",
-                    (data, operador)).fetchone()
-                caixas[chave] = linha[0]
-                if cur.rowcount:
+                linha = self.bd.um(
+                    """SELECT id FROM cx_caixas
+                        WHERE data = %s AND operador_nome = %s
+                        ORDER BY id LIMIT 1""",
+                    (data, operador))
+                caixas[chave] = linha["id"]
+                if cur:
                     self.rel["caixas"] += 1
 
             sentido = SENTIDOS.get(_texto(r.get("strES")) or "E", "ENTRADA")
@@ -313,18 +324,20 @@ class Carga:
                                  "movimento de caixa aponta para protocolo que não "
                                  "existe no protocolo geral")
 
-            cur = self.con.execute(
-                """INSERT OR IGNORE INTO cx_lancamentos
+            cur = self.bd.escrever(
+                """INSERT INTO cx_lancamentos
                    (caixa_id, protocolo_id, data, hora, natureza, sentido,
                     forma_pagamento, descricao, valor, origem, origem_chave,
                     importacao_id, criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?, 'EOFICIO', ?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, 'EOFICIO', %s,%s,%s)
+                   ON CONFLICT DO NOTHING
+                   RETURNING id""",
                 (caixas[chave], pid, data, _texto(r.get("strHora")),
                  "RECEBIMENTO" if sentido == "ENTRADA" else "OUTRA_SAIDA",
                  sentido, formas.get(str(r.get("intChaveCX"))),
                  _texto(r.get("strHistorico")), reais(valor),
                  str(r.get("intChaveCX")), self.importacao_id, self.agora))
-            if cur.rowcount:
+            if cur:
                 self.rel["lancamentos"] += 1
             else:
                 self.rel["lancamentos_ja_existentes"] += 1

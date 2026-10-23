@@ -406,6 +406,158 @@ def test_o_arquivo_juntado_fica_na_prenotacao_e_o_pedido_entra(casa, monkeypatch
     assert json.loads(pedido["documentos_json"])[0]["anexo_id"] == anexo["id"]
 
 
+# ------------------------------------------------------------- a escolha (23/10/2026)
+#
+#     «acho que precisa ter campo de selecionar o protocolo e prenotação no ri
+#      para pegar os documentos pelo agente de minutas» · «no notas tbm»
+#
+# Medido na produção: 11 das 22 prenotações abertas não apontam para matrícula
+# nenhuma — o quadro não as via pela ficha.
+
+
+def _prenotacao_sem_matricula(casa, numero=11700) -> int:
+    con = _con(casa)
+    with con:
+        pid = int(con.execute(
+            """INSERT INTO ri_protocolos (numero, livro, data_prenotacao, natureza_titulo,
+                   situacao, criado_em)
+               VALUES (?, '1A', '2026-10-22', 'Escritura de doação', 'ABERTO',
+                       '2026-10-22T09:00')""", (numero,)).lastrowid)
+    con.close()
+    return pid
+
+
+def _protocolo_geral(casa, numero="2026.10.42", atribuicao="RI") -> int:
+    con = _con(casa)
+    with con:
+        pid = int(con.execute(
+            """INSERT INTO cx_protocolos (numero, data_abertura, atribuicao, interessado,
+                   situacao, criado_em)
+               VALUES (?, '2026-10-23', ?, 'MARIA EXEMPLO', 'ABERTO', '2026-10-23T09:00')""",
+            (numero, atribuicao)).lastrowid)
+    con.close()
+    return pid
+
+
+def test_prenotacao_sem_matricula_escolhida_pelo_numero_traz_os_documentos(casa):
+    mid, _ = _matricula_com_prenotacao(casa)
+    solta = _prenotacao_sem_matricula(casa)
+    anexo = _anexar(casa, "RI_PROTOCOLO", solta, nome="doacao.pdf")
+    con = _con(casa)
+    # sem escolher, o documento da prenotação solta não aparece — e não sobe
+    assert anexo not in [d["anexo_id"] for d in MI.documentos_disponiveis(con, MI.RI, mid)]
+    with pytest.raises(MI.MinutaIAError):
+        MI.pedir(con, MI.RI, mid, anexos_ids=[anexo])
+    # escolhida pelo número, aparece marcada e o pedido entra amarrado a ela
+    p = MI.prenotacao_por_numero(con, "11.700")
+    assert p["id"] == solta
+    docs = MI.documentos_disponiveis(con, MI.RI, mid, prenotacao_id=solta)
+    d = next(d for d in docs if d["anexo_id"] == anexo)
+    assert "(escolhida)" in d["origem"]
+    assert solta in [x["id"] for x in MI.prenotacoes_para_escolher(con, mid)]
+    con.close()
+    ia = IA()
+    pid = _pedir_e_executar(casa, MI.RI, mid, [anexo], ia, tipo_ato="R",
+                            prenotacao_id=solta)
+    pedido = _pedido(casa, pid)
+    assert pedido["prenotacao_id"] == solta and pedido["situacao"] == "PRONTA"
+
+
+@pytest.mark.parametrize("atribuicao", ["RI", "NOTAS"])
+def test_protocolo_geral_escolhido_traz_os_documentos_no_ri_e_nas_notas(casa, atribuicao):
+    alvo = (_matricula_com_prenotacao(casa)[0] if atribuicao == "RI"
+            else _ato_das_notas(casa))
+    pg = _protocolo_geral(casa, atribuicao=atribuicao)
+    anexo = _anexar(casa, "PROTOCOLO", pg, nome="rg.pdf")
+    con = _con(casa)
+    assert anexo not in [d["anexo_id"] for d in MI.documentos_disponiveis(con, atribuicao, alvo)]
+    assert MI.protocolo_por_numero(con, "2026.10.42")["id"] == pg
+    docs = MI.documentos_disponiveis(con, atribuicao, alvo, protocolo_id=pg)
+    assert "(escolhido)" in next(d for d in docs if d["anexo_id"] == anexo)["origem"]
+    with con:
+        pid = MI.pedir(con, atribuicao, alvo, anexos_ids=[anexo], protocolo_id=pg,
+                       tipo_ato="R" if atribuicao == "RI" else "", usuario="MARIO")
+    pedido = dict(con.execute("SELECT * FROM mi_pedidos WHERE id = ?", (pid,)).fetchone())
+    con.close()
+    assert pedido["protocolo_id"] == pg
+
+
+def test_numero_que_nao_existe_avisa_na_tela_e_nao_derruba_o_quadro(casa, monkeypatch):
+    monkeypatch.setattr(AP, "tem_chave", lambda *a, **k: True)
+    mid, _ = _matricula_com_prenotacao(casa)
+    aid = _ato_das_notas(casa)
+    ficha = casa["c"].get(f"/registro-imoveis/{mid}?mi_prenotacao=99999"
+                          "&mi_protocolo=2099.01.1").get_data(as_text=True)
+    assert 'id="agente-minutas"' in ficha
+    assert "Não há prenotação nº 99999" in ficha and "Não há protocolo geral nº 2099.01.1" in ficha
+    ato = casa["c"].get(f"/notas/atos/{aid}?mi_protocolo=2099.01.1").get_data(as_text=True)
+    assert 'id="agente-minutas"' in ato and "Não há protocolo geral nº 2099.01.1" in ato
+    # nas Notas não há escolha de prenotação
+    assert 'name="mi_prenotacao"' not in ato and 'name="mi_protocolo"' in ato
+
+
+def test_escolhida_na_tela_os_documentos_aparecem_e_o_pedido_leva_a_escolha(casa, monkeypatch):
+    monkeypatch.setattr(AP, "tem_chave", lambda *a, **k: True)
+    comecados = []
+    monkeypatch.setattr(MI, "preparar_em_segundo_plano",
+                        lambda banco, pasta, pid: comecados.append(pid))
+    mid, _ = _matricula_com_prenotacao(casa)
+    solta = _prenotacao_sem_matricula(casa)
+    anexo = _anexar(casa, "RI_PROTOCOLO", solta, nome="doacao.pdf")
+    html = casa["c"].get(f"/registro-imoveis/{mid}?mi_prenotacao=11700").get_data(as_text=True)
+    assert "doacao.pdf" in html
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    r = casa["c"].post(f"/agente-minutas/RI/{mid}/pedir", data={
+        "csrf_token": token, "tipo_ato": "R", "anexo": str(anexo),
+        "prenotacao_id": str(solta), "instrucao": "registro da doação"})
+    assert r.status_code == 302 and comecados
+    con = _con(casa)
+    pedido = con.execute("SELECT * FROM mi_pedidos WHERE id = ?", (comecados[0],)).fetchone()
+    con.close()
+    assert pedido["prenotacao_id"] == solta
+    assert json.loads(pedido["documentos_json"])[0]["anexo_id"] == anexo
+
+
+def test_a_revisao_herda_a_escolha_do_pedido_anterior(casa):
+    mid, _ = _matricula_com_prenotacao(casa)
+    solta = _prenotacao_sem_matricula(casa)
+    pg = _protocolo_geral(casa)
+    a1 = _anexar(casa, "RI_PROTOCOLO", solta, nome="doacao.pdf")
+    a2 = _anexar(casa, "PROTOCOLO", pg, nome="rg.pdf")
+    pid = _pedir_e_executar(casa, MI.RI, mid, [a1, a2], IA(), tipo_ato="R", prenotacao_id=solta,
+                            protocolo_id=pg)
+    con = _con(casa)
+    with con:
+        # a primeira versão já pousou sozinha; a revisão não repete a escolha
+        novo = MI.pedir(con, MI.RI, mid, anexos_ids=[a1, a2], anterior_id=pid,
+                        revisao="corrigir o valor", usuario="MARIO")
+    p = dict(con.execute("SELECT * FROM mi_pedidos WHERE id = ?", (novo,)).fetchone())
+    con.close()
+    assert p["prenotacao_id"] == solta and p["protocolo_id"] == pg
+
+
+def test_arquivo_juntado_vai_para_a_prenotacao_sem_matricula_escolhida(casa, monkeypatch):
+    monkeypatch.setattr(AP, "tem_chave", lambda *a, **k: True)
+    comecados = []
+    monkeypatch.setattr(MI, "preparar_em_segundo_plano",
+                        lambda banco, pasta, pid: comecados.append(pid))
+    mid, _ = _matricula_com_prenotacao(casa)
+    solta = _prenotacao_sem_matricula(casa)
+    html = casa["c"].get(f"/registro-imoveis/{mid}?mi_prenotacao=11700").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    r = casa["c"].post(f"/agente-minutas/RI/{mid}/pedir", data={
+        "csrf_token": token, "tipo_ato": "R", "prenotacao_destino": str(solta),
+        "prenotacao_id": str(solta), "instrucao": "registro da doação",
+        "arquivos": (io.BytesIO(PDF), "titulo.pdf")}, content_type="multipart/form-data")
+    assert r.status_code == 302 and comecados
+    con = _con(casa)
+    anexo = con.execute("""SELECT * FROM attachments WHERE entity_type = 'RI_PROTOCOLO'
+                             AND entity_id = ?""", (solta,)).fetchone()
+    pedido = con.execute("SELECT * FROM mi_pedidos WHERE id = ?", (comecados[0],)).fetchone()
+    con.close()
+    assert anexo["original_name"] == "titulo.pdf" and pedido["prenotacao_id"] == solta
+
+
 def test_o_agente_nao_lavra_nao_sela_nao_numera_nao_cobra():
     publicos = [n for n in dir(MI) if not n.startswith("_") and callable(getattr(MI, n))]
     proibidas = ("lavrar", "selar", "numerar", "cobrar", "lancar")

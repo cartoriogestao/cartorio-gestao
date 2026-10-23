@@ -66,7 +66,11 @@ def test_o_botao_esta_na_ficha_do_assento(bancada):
     assert "Emitir selo da certidão eletrônica (CRC)" in html
 
 
-def test_o_selo_sai_pela_segunda_via_com_o_14_5_7_e_sem_folha(bancada):
+def test_o_selo_sai_pelo_caminho_geral_com_o_14_5_7_e_sem_folha(bancada):
+    """ESTE TESTE ESPERAVA A SEGUNDA VIA até 23/10/2026 — e o aparelho real a
+    recusou na certidão 171 («É obrigatório informar os dados utilizados no
+    papel moeda»). Por ordem do oficial o selo da certidão eletrônica vai pelo
+    caminho geral do civil, no envelope dos 60 selos 14.5.7 de 2022–2024."""
     s, aparelho = bancada["s"], bancada["aparelho"]
     aid = _semear(s)
     r = _emitir_selo_crc(s, aid, requerente="BEATRIZ EXEMPLO")
@@ -74,10 +78,21 @@ def test_o_selo_sai_pela_segunda_via_com_o_14_5_7_e_sem_folha(bancada):
     assert any("Selo da certidão eletrônica:" in a for a in _avisos(html)), _avisos(html)
     selos = [p for p in aparelho.pedidos if p["caminho"].startswith("/selo/")]
     assert len(selos) == 1, [p["caminho"] for p in aparelho.pedidos]
-    assert selos[0]["caminho"].endswith("/selo/civil/nascimento/segunda-via")
+    assert selos[0]["caminho"].endswith("/selo/civil/atos-em-geral")
     corpo = json.loads(selos[0]["corpo"])
-    assert corpo["codigoTipoAtoCertidao"] == "14.5.7"
-    assert "papelMoeda" not in corpo
+    # O `escrevente` no alto do envelope é da SEGUNDA TRANCA de `obter_selo`
+    # (máquina não assina), e vai em todo envelope do civil que não o traz em
+    # cima — as certidões da segunda via saem assim e o aparelho as aceita.
+    topo = corpo.pop("escrevente", None)
+    assert topo in (None, corpo["dadosSelo"]["escrevente"])
+    assert sorted(corpo) == ["codigoAto", "dadosSelo", "nomesPartes", "quantidade"]
+    assert corpo["codigoAto"] == "14.5.7"
+    assert corpo["quantidade"] == 1
+    assert sorted(corpo["dadosSelo"]) == ["escrevente", "versaoTabelaDeCustas"]
+    parte = corpo["nomesPartes"]["parteAto"][0]
+    assert corpo["nomesPartes"]["nomePartes"] == [parte["nome"]] and parte["nome"]
+    assert len(parte["documento"]) == 11
+    assert "papelMoeda" not in json.dumps(corpo)
     con = _con(s)
     cert = con.execute("SELECT * FROM rc_certidoes ORDER BY id DESC LIMIT 1").fetchone()
     cob = con.execute("SELECT forma FROM cx_selo_coberturas WHERE tabela='rc_certidoes' "
@@ -151,3 +166,56 @@ def test_selo_isento_exige_motivo(bancada):
     con = _con(s)
     assert con.execute("SELECT COUNT(*) FROM rc_certidoes").fetchone()[0] == 0
     con.close()
+
+
+def test_so_a_certidao_eletronica_vai_pelo_caminho_geral():
+    """«Aplicar essa regra só pro selo da certidão eletrônica» — o oficial,
+    23/10/2026. A certidão comum continua pela segunda via da espécie."""
+    assert AS.CAMINHO_CERTIDAO_ELETRONICA_CRC == "/selo/civil/atos-em-geral"
+    assert AS.caminho_do_civil("NASCIMENTO", "CERTIDAO") == \
+        "/selo/civil/nascimento/segunda-via"
+
+
+def test_o_isento_do_caminho_geral_vai_como_a_casa_mandava():
+    env = AS.envelope_da_certidao_eletronica_crc(
+        nome_parte="JOAO ENSAIO", documento="", escrevente="CARLA ENSAIO",
+        versao_tabela="0120260101", isento=True, motivo_isencao="art. 30 da lei")
+    assert env["dadosSelo"]["isentoGratuito"] == "ISENTO"
+    assert env["dadosSelo"]["motivoIsentoGratuito"] == "ART. 30 DA LEI"
+    assert env["nomesPartes"]["parteAto"][0]["documento"] == "00000000000"
+    with pytest.raises(AS.AtoError, match="motivo"):
+        AS.envelope_da_certidao_eletronica_crc(
+            nome_parte="JOAO ENSAIO", documento="", escrevente="CARLA ENSAIO",
+            versao_tabela="0120260101", isento=True)
+
+
+def test_o_codigo_de_validacao_que_o_selador_devolve_aparece_na_tela(bancada):
+    """«O código de validação vem quando gera o selo pelo selador» — o oficial,
+    23/10/2026. O leitor guardava só número, texto, data e saldo; o resto da
+    resposta se perdia. Agora o que vier a mais aparece no aviso, como veio,
+    e a resposta inteira fica anotada em `selador_respostas.jsonl`."""
+    s, aparelho = bancada["s"], bancada["aparelho"]
+    aparelho.campos_a_mais = {"codigoValidacao": "ABCD1234ENSAIO"}
+    aid = _semear(s)
+    html = _emitir_selo_crc(s, aid).get_data(as_text=True)
+    aviso = next(a for a in _avisos(html) if "Selo da certidão eletrônica:" in a)
+    assert "codigoValidacao: ABCD1234ENSAIO" in aviso
+    anotado = Path(s["app"].config["DATA_DIR"]) / "selador_respostas.jsonl"
+    assert "ABCD1234ENSAIO" in anotado.read_text(encoding="utf-8")
+
+
+def test_sem_campo_a_mais_o_aviso_diz_que_nao_veio_codigo(bancada):
+    s = bancada["s"]
+    aid = _semear(s)
+    html = _emitir_selo_crc(s, aid).get_data(as_text=True)
+    aviso = next(a for a in _avisos(html) if "Selo da certidão eletrônica:" in a)
+    assert "não devolveu código de validação" in aviso
+
+
+def test_o_leitor_guarda_o_que_veio_alem_do_contrato():
+    import selador
+    selos = selador.ler_resposta({"resumos": [{
+        "numeroSelo": "CERELE000000ENSAIO0000000001", "textoSelo": "x",
+        "dataGeracao": "2026-10-23", "saldoRemanescente": 1.0,
+        "codigoValidacao": "ZZZ999"}]})
+    assert dict(selos[0].extras) == {"codigoValidacao": "ZZZ999"}

@@ -124,8 +124,10 @@ def test_o_total_da_tabela_fecha_com_emolumento_mais_os_quatro():
 
 
 def test_nenhum_selo_real_imprime_iss():
-    selos = json.loads(
-        (Path(__file__).parent / "selos_reais.json").read_text("utf-8"))["textos"]
+    amostra = Path(__file__).parent / "selos_reais.json"
+    if not amostra.is_file():        # real, fora do GitHub (23/10/2026)
+        pytest.skip("tests/selos_reais.json fica fora do repositório público")
+    selos = json.loads(amostra.read_text("utf-8"))["textos"]
     assert len(selos) == 39
     assert sum(1 for t in selos if re.search(r"\bISS\b", t)) == 0
     assert sum(1 for t in selos if "FERC" in t) == 39

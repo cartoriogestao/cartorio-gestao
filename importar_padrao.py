@@ -882,13 +882,18 @@ def manual(con, *, pasta: Any = None) -> str:
     """
     from pathlib import Path as _Path
 
-    base = _Path(pasta) if pasta else _Path(__file__).resolve().parent / "DOCUMENTACAO"
-    caminho = base / NOME_DO_MANUAL
+    # A DOCUMENTACAO da casa vem primeiro; a instalação feita do GitHub não a
+    # tem e traz a cópia pública em `docs/tecnico/` (23/10/2026) — sem esta
+    # segunda porta o manual de importação não saía em instalação nova.
+    raiz = _Path(__file__).resolve().parent
+    bases = [_Path(pasta)] if pasta else [raiz / "DOCUMENTACAO", raiz / "docs" / "tecnico"]
+    caminho = next((b / NOME_DO_MANUAL for b in bases if (b / NOME_DO_MANUAL).is_file()),
+                   bases[0] / NOME_DO_MANUAL)
     if not caminho.is_file():
         raise ImportacaoError(
             f"Nao achei o manual em {caminho}. Ele viaja com o sistema, na "
-            f"pasta DOCUMENTACAO — se ele sumiu, a atualizacao nao subiu "
-            f"inteira.")
+            f"pasta DOCUMENTACAO (ou docs/tecnico) — se ele sumiu, a "
+            f"atualizacao nao subiu inteira.")
     partes = [caminho.read_text(encoding="utf-8").rstrip("\n")]
 
     partes.append("\n\n---\n\n## Os campos de cada especie\n")

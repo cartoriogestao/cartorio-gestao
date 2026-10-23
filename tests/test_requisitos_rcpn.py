@@ -837,7 +837,7 @@ def test_sem_data_do_fato_o_termo_de_casamento_nao_inventa_a_celebracao():
 
 # ------------------------------------- a inscrição do art. 21 — 22/10/2026
 #
-# «andreia emitiu uma certidao agora que diz que existem elementos de
+# «[a escrevente] emitiu uma certidao agora que diz que existem elementos de
 #  averbacao a margem do termo [...] a expressao elementos a margem do termo
 #  so aparecem quando houver averbacao que nao aparece na certidao. A
 #  averbacao do CPF consta na certidao, por isso nao deve aparecer essa

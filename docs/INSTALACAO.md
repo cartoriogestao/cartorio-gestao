@@ -37,7 +37,7 @@ fica em `C:\ProgramData\CartorioGestao\logs`.
 
 | | |
 |---|---|
-| `cartorio_gestao.sqlite3` | o banco (SQLite, modo WAL) |
+| `iniciar_servidor_servico.cmd` | o lançador do serviço, com o endereço do banco (`CG_PG_DSN`, `CG_PG_SCHEMA`) |
 | `arquivos\` | documentos anexados e digitalizações |
 | `backups\` | backups automáticos e manuais |
 | `updates\` | pacotes aplicados e cópias para voltar atrás |
@@ -46,6 +46,11 @@ fica em `C:\ProgramData\CartorioGestao\logs`.
 
 Outra pasta pode ser usada definindo `CARTORIO_GESTAO_DATA` (ver
 `.env.example`).
+
+**O banco não fica nesta pasta: é o PostgreSQL** (desde a 3.7.0), num
+serviço próprio do servidor. O instalador ainda não o instala — veja
+[`REQUISITOS.md`](REQUISITOS.md#o-banco-de-dados-postgresql) antes do
+primeiro acesso.
 
 ## 2. O primeiro acesso
 

@@ -55,6 +55,54 @@ def _git(destino: Path, *args: str, ok: bool = False) -> str:
     return r.stdout.decode("utf-8", "replace").strip()
 
 
+def _denylists_da_casa() -> list[Path]:
+    """As deny-lists locais das árvores irmãs (INSTALAR e SANDBOX)."""
+    achadas = []
+    for pai in RAIZ.parents:
+        if pai.name == "CartorioGestao":
+            for rel in ("SERVIDOR/INSTALAR_CARTORIO_GESTAO", "SANDBOX/sistema"):
+                d = pai / rel / "ci" / "denylist.local.txt"
+                if d.is_file():
+                    achadas.append(d)
+            break
+    return achadas
+
+
+def _entradas(arq: Path) -> set[str]:
+    return {linha.strip() for linha in arq.read_text(encoding="utf-8").splitlines()
+            if linha.strip() and not linha.lstrip().startswith("#")}
+
+
+def conferir_denylist() -> bool:
+    """A deny-list desta árvore é a mais completa da casa?
+
+    23/10/2026: a v3.7.1 saiu do INSTALAR com três nomes da equipe dentro, e
+    o portão daqui disse «zero achados». A deny-list do INSTALAR tinha 34
+    linhas e a do SANDBOX, 43 — os primeiros nomes acrescentados em 14/10
+    nunca chegaram ao INSTALAR. Portão com lista velha é o carimbo que mente:
+    responde zero sobre o que não procurou. Por isso: sem deny-list, recusa;
+    com uma árvore irmã guardando entrada que esta não tem, recusa.
+    """
+    import hashlib
+    minha = RAIZ / "ci" / "denylist.local.txt"
+    if not minha.is_file():
+        print("RECUSADO: sem ci/denylist.local.txt o portão não procura os nomes da casa.")
+        return False
+    linhas = _entradas(minha)
+    sha = hashlib.sha256(minha.read_bytes()).hexdigest()
+    print(f"deny-list: {len(linhas)} entradas, SHA-256 {sha[:16]}…")
+    for outra in _denylists_da_casa():
+        if outra.resolve() == minha.resolve():
+            continue
+        faltam = _entradas(outra) - linhas
+        if faltam:
+            print(f"RECUSADO: a deny-list de {outra.parent.parent} tem {len(faltam)} "
+                  "entrada(s) que a desta árvore não tem. Copie a mais completa e "
+                  "rode de novo.")
+            return False
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     for s in (sys.stdout, sys.stderr):
         try:
@@ -68,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
     versao = (RAIZ / "VERSAO.txt").read_text(encoding="utf-8").strip()
 
     print(f"Publicação da versão {versao} (árvore: {RAIZ})\n")
+    if not conferir_denylist():
+        return 1
     if EXP.main(["--gerar", str(destino)]) != 0:
         print("\nNADA FOI GRAVADO no repositório público: o portão achou o que "
               "não pode sair. Resolva os achados acima e rode de novo.")

@@ -2941,8 +2941,11 @@ def selar_o_ato_lavrado(db, pasta_de_dados: Any, *, tabela: str, ato_id: int,
     if not numeros:
         return {"selado": False, "caminho": caminho,
                 "motivo": "O selador respondeu sem número de selo."}
+    # O QUE O APARELHO DEVOLVEU A MAIS (o código de validação — 23/10/2026)
+    # vai junto, do primeiro selo: a tela da CRC o mostra para copiar.
+    extras = dict(getattr(selos[0], "extras", ()) or ()) if selos else {}
     return {"selado": True, "caminho": caminho, "numeros": numeros,
-            "numero": numeros[0]}
+            "numero": numeros[0], "extras": extras}
 
 
 # ONDE O NUMERO DO SELO MORA EM CADA TABELA DE ATO — medido no banco vivo em
@@ -3591,6 +3594,52 @@ FORMA_TRAVA_DESLIGADA = "TRAVA_DESLIGADA"
 FORMA_CENTRAL_CRC = "CENTRAL_CRC"
 FINALIDADE_CERTIDAO_ELETRONICA_CRC = "Certidão eletrônica — CRC (item 14.5.7)"
 CODIGO_CERTIDAO_ELETRONICA_CRC = "14.5.7"
+
+# O CAMINHO DO SELO DA CERTIDÃO ELETRÔNICA É O GERAL DO CIVIL — 23/10/2026.
+#
+#   Pela segunda via (`DadosSegundaViaCertidao`) o aparelho recusou o pedido da
+#   certidão 171: «É obrigatório informar os dados utilizados no papel moeda»
+#   — o contrato diz que `papelMoeda` é opcional, e o aparelho o exige. A
+#   certidão eletrônica não sai em folha de segurança. O oficial mandou testar
+#   o caminho geral, que é o dos 60 selos 14.5.7 desta casa de 03/2022 a
+#   06/2024, e SÓ para este selo: as outras certidões seguem pela segunda via.
+#
+#   O envelope é o dos 1.238 medidos em `/selo/civil/atos-em-geral` (o último
+#   em 23/09/2024): `codigoAto`, `nomesPartes{nomePartes, parteAto}`,
+#   `dadosSelo{escrevente, versaoTabelaDeCustas}` e `quantidade`. O isento ia
+#   como `isentoGratuito: "ISENTO"` mais o motivo (17 dos 1.238).
+CAMINHO_CERTIDAO_ELETRONICA_CRC = "/selo/civil/atos-em-geral"
+
+
+def envelope_da_certidao_eletronica_crc(*, nome_parte: Any, documento: Any,
+                                        escrevente: Any, versao_tabela: Any,
+                                        isento: bool = False,
+                                        motivo_isencao: Any = None) -> dict:
+    """O pedido do selo 14.5.7 pelo caminho geral do civil. Só calcula."""
+    nome = str(nome_parte or "").strip()
+    faltando = [o for o, v in (("o nome da parte", nome),
+                               ("o escrevente", escrevente),
+                               ("a versão da tabela de custas", versao_tabela))
+                if not str(v or "").strip()]
+    if faltando:
+        raise AtoError(f"O selo da certidão eletrônica não sai sem "
+                       f"{', '.join(faltando)}.")
+    doc = "".join(c for c in str(documento or "") if c.isdigit()) or "00000000000"
+    dados_selo: dict[str, Any] = {"escrevente": str(escrevente).strip(),
+                                  "versaoTabelaDeCustas": str(versao_tabela).strip()}
+    if isento:
+        motivo = str(motivo_isencao or "").strip()
+        if not motivo:
+            raise AtoError(
+                "Ato gratuito / isento precisa do motivo escrito — é ele que a "
+                "conferência do Tribunal lê no selo.")
+        dados_selo["isentoGratuito"] = "ISENTO"
+        dados_selo["motivoIsentoGratuito"] = motivo.upper()
+    return {"codigoAto": CODIGO_CERTIDAO_ELETRONICA_CRC,
+            "nomesPartes": {"nomePartes": [nome],
+                            "parteAto": [{"documento": doc, "nome": nome}]},
+            "dadosSelo": dados_selo,
+            "quantidade": 1}
 #: O que conta como dinheiro (ou diferimento legal) de verdade. Liberação e
 #: trava desligada deixam o selo sair, mas NÃO fecham a pendência.
 FORMAS_QUE_COBREM = frozenset({FORMA_ITEM_PAGO, FORMA_DEPOSITO,

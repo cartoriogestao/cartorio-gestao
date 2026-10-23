@@ -102,3 +102,8 @@ _tmp_*.py
 # A pasta de dados do sandbox nasce ao lado do programa: banco, credenciais
 # de mentira e cópias de um ambiente fictício. Nunca vai para o Git.
 /sandbox_dados/
+
+# --- Sobra de ferramenta, zero byte (o empacotador também a exclui) ---
+/ERRO_POWERSHELL.txt
+# O carimbo da instalação: o instalador e o atualizador o escrevem na máquina.
+/install.json

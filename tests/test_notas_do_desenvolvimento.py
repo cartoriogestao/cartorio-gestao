@@ -32,7 +32,9 @@ sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import ajuda_problemas as PROB                                   # noqa: E402
-import notas_do_desenvolvimento as ND                            # noqa: E402
+# O diário da casa fica fora do GitHub (B2, 11/10/2026): no clone público
+# este módulo PULA (23/10/2026).
+ND = pytest.importorskip("notas_do_desenvolvimento")
 
 AGORA = "2026-08-31 12:00:00"
 

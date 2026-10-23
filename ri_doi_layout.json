@@ -1,0 +1,863 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "AdquirenteDTO": {
+      "type": "object",
+      "properties": {
+        "cpfConjuge": {
+          "type": "string",
+          "description": "Informar o CPF do cônjuge que consta no documento (título a ser registrado, matrícula/transcrição,escritura pública etc)",
+          "minLength": 11,
+          "maxLength": 11
+        },
+        "cpfInventariante": {
+          "type": "string",
+          "description": "CPF do Inventariante",
+          "minLength": 11,
+          "maxLength": 11
+        },
+        "indicadorConjuge": {
+          "type": "boolean",
+          "description": "Informar se o adquirente possui cônjuge"
+        },
+        "indicadorConjugeParticipa": {
+          "type": "boolean",
+          "description": "Informar se o cônjuge participa da operação"
+        },
+        "indicadorCpfConjugeIdentificado": {
+          "type": "boolean",
+          "description": "Informar se consta o CPF do cônjuge no documento (título a ser registrado, matrícula/transcrição,escritura pública etc)"
+        },
+        "indicadorEspolio": {
+          "type": "boolean",
+          "description": "Informar se a aquisição foi feita em nome de espólio."
+        },
+        "indicadorEstrangeiro": {
+          "type": "boolean",
+          "description": "Informar se o adquirente (s) é estrangeiro"
+        },
+        "indicadorNaoConstaParticipacaoOperacao": {
+          "type": "boolean",
+          "description": "Indicador que sinaliza que o percentual de participação não consta nos documentos"
+        },
+        "indicadorNiIdentificado": {
+          "type": "boolean",
+          "description": "Informar se consta CPF da(s) parte(s) no documento (título a ser registrado, matrícula/transcrição, escritura pública etc)"
+        },
+        "indicadorRepresentante": {
+          "type": "boolean",
+          "description": "Indicador que sinaliza que o(s) alienante(s) outorgou (aram) mandato a pessoa física ou jurídica para representá-lo(s) na operação imobiliária informada pela serventia"
+        },
+        "motivoNaoIdentificacaoNi": {
+          "$ref": "#/$defs/TipoMotivoNaoIdentificacaoNiParte",
+          "description": "Informar o motivo da ausência do CPF da parte"
+        },
+        "ni": {
+          "type": "string",
+          "description": "Identificador da parte",
+          "minLength": 11,
+          "maxLength": 14
+        },
+        "participacao": {
+          "type": "number",
+          "description": "Informar percentual conforme a participação de cada parte na operação levada a cartório. Exemplo: transmissão em razão de falecimento de 50% do imóvel. São dois herdeiros. Cada um tem 50% de participação na operação, pois ficou com metade da parte transmitida. A soma das participações não poderá ser inferior a 99,00% ou superior 100,00%. Até o limite de 3 inteiros e 4 casas decimais."
+        },
+        "regimeBens": {
+          "$ref": "#/$defs/RegimeBens",
+          "description": "Informar o regime de bens no casamento"
+        },
+        "representantes": {
+          "description": "Lista de Objetos no formato JSON com dados dos representantes",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RepresentanteDTO"
+          }
+        }
+      },
+      "required": [
+        "indicadorEspolio",
+        "indicadorEstrangeiro",
+        "indicadorNaoConstaParticipacaoOperacao",
+        "indicadorNiIdentificado"
+      ],
+      "additionalProperties": false
+    },
+    "AlienanteDTO": {
+      "type": "object",
+      "properties": {
+        "cpfConjuge": {
+          "type": "string",
+          "description": "Informar o CPF do cônjuge que consta no documento (título a ser registrado, matrícula/transcrição,escritura pública etc)",
+          "minLength": 11,
+          "maxLength": 11
+        },
+        "cpfInventariante": {
+          "type": "string",
+          "description": "CPF do Inventariante",
+          "minLength": 11,
+          "maxLength": 11
+        },
+        "indicadorConjuge": {
+          "type": "boolean",
+          "description": "Informar se o adquirente possui cônjuge"
+        },
+        "indicadorConjugeParticipa": {
+          "type": "boolean",
+          "description": "Informar se o cônjuge participa da operação"
+        },
+        "indicadorCpfConjugeIdentificado": {
+          "type": "boolean",
+          "description": "Informar se consta o CPF do cônjuge no documento (título a ser registrado, matrícula/transcrição,escritura pública etc)"
+        },
+        "indicadorEspolio": {
+          "type": "boolean",
+          "description": "Informar se a aquisição foi feita em nome de espólio."
+        },
+        "indicadorEstrangeiro": {
+          "type": "boolean",
+          "description": "Informar se o adquirente (s) é estrangeiro"
+        },
+        "indicadorNaoConstaParticipacaoOperacao": {
+          "type": "boolean",
+          "description": "Indicador que sinaliza que o percentual de participação não consta nos documentos"
+        },
+        "indicadorNiIdentificado": {
+          "type": "boolean",
+          "description": "Informar se consta CPF da(s) parte(s) no documento (título a ser registrado, matrícula/transcrição, escritura pública etc)"
+        },
+        "indicadorRepresentante": {
+          "type": "boolean",
+          "description": "Indicador que sinaliza que o(s) alienante(s) outorgou (aram) mandato a pessoa física ou jurídica para representá-lo(s) na operação imobiliária informada pela serventia"
+        },
+        "motivoNaoIdentificacaoNi": {
+          "$ref": "#/$defs/TipoMotivoNaoIdentificacaoNiParte",
+          "description": "Informar o motivo da ausência do CPF da parte"
+        },
+        "ni": {
+          "type": "string",
+          "description": "Identificador da parte",
+          "minLength": 11,
+          "maxLength": 14
+        },
+        "participacao": {
+          "type": "number",
+          "description": "Informar percentual conforme a participação de cada parte na operação levada a cartório. Exemplo: transmissão em razão de falecimento de 50% do imóvel. São dois herdeiros. Cada um tem 50% de participação na operação, pois ficou com metade da parte transmitida. A soma das participações não poderá ser inferior a 99,00% ou superior 100,00%. Até o limite de 3 inteiros e 4 casas decimais."
+        },
+        "regimeBens": {
+          "$ref": "#/$defs/RegimeBens",
+          "description": "Informar o regime de bens no casamento"
+        },
+        "representantes": {
+          "description": "Lista de Objetos no formato JSON com dados dos representantes",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RepresentanteDTO"
+          }
+        }
+      },
+      "required": [
+        "indicadorEspolio",
+        "indicadorEstrangeiro",
+        "indicadorNaoConstaParticipacaoOperacao",
+        "indicadorNiIdentificado"
+      ],
+      "additionalProperties": false
+    },
+    "DeclaracaoDadosBasicosDTO": {
+      "type": "object",
+      "properties": {
+        "adquirentes": {
+          "description": "Lista de Objetos no formato JSON com dados dos adquirentes",
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdquirenteDTO"
+          }
+        },
+        "alienantes": {
+          "description": "Lista de Objetos no formato JSON com dados dos alienantes",
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AlienanteDTO"
+          }
+        },
+        "areaConstruida": {
+          "type": "number",
+          "description": "Área Construída (m2). Informar de acordo com a matrícula. Até o limite de 12 inteiros e 4 casas decimais. Preenchimento em m2"
+        },
+        "areaImovel": {
+          "type": "number",
+          "description": "Área do lote urbano em m2 ou área do imóvel rural em ha. Informar de acordo com a matrícula. Até o limite de 13 inteiros e 2 casas "
+        },
+        "bairro": {
+          "type": "string",
+          "description": "Bairro do endereço do imóvel",
+          "maxLength": 150
+        },
+        "cep": {
+          "type": "string",
+          "description": "CEP do endereço do imóvel",
+          "maxLength": 8
+        },
+        "certidaoAutorizacaoTransferencia": {
+          "type": "string",
+          "description": "Informar o número da Certidão de Autorização para Transferência (CAT) emitida pela Secretaria de Patrimônio da União (SPU)",
+          "maxLength": 11
+        },
+        "cib": {
+          "type": "string",
+          "description": "Informar o código do imóvel no Cadastro Imobiliário Brasileiro (CIB). Cálculo do DV quando os caracteres originais são exclusivamente numéricos:algoritimo utilizado pelo Nirf, segundo a regra do Módulo 11. Cálculo do DV quando os caracteres originais não são exclusivamente numéricos: a) para cada caractere codificado, o seu valor será multiplicado pela sequência de fatores 4,3,9,5,7,1, e 8; b) a soma dos produtos será dividida por 31",
+          "maxLength": 8
+        },
+        "codigoIbge": {
+          "type": "string",
+          "description": "Informar o código IBGE do município onde se localiza o imóvel",
+          "maxLength": 7
+        },
+        "codigoIncra": {
+          "type": "string",
+          "description": "Informar o código do imóvel no Sistema Nacional de Cadastro Rural (SNCR)",
+          "maxLength": 13
+        },
+        "codigoNacionalMatricula": {
+          "type": "string",
+          "description": "Informar o Código Nacional de Matrícula (CNM). Formato: CCCCCCLNNNNNNNDD - O CNM informado será validado através do DV informado, seguindo o algoritmo módulo 97 base 10, conforme norma ISO 7064:2023",
+          "maxLength": 16
+        },
+        "complementoEndereco": {
+          "type": "string",
+          "description": "Complemento do endereço do imóvel",
+          "maxLength": 100
+        },
+        "complementoNumeroImovel": {
+          "type": "string",
+          "description": "Complemente do número do endereço do imóvel",
+          "maxLength": 10
+        },
+        "dataLavraturaRegistroAverbacao": {
+          "type": "string",
+          "format": "date",
+          "description": "Informar a data de lavratura / registro / averbação"
+        },
+        "dataNegocioJuridico": {
+          "type": "string",
+          "format": "date",
+          "description": "Informar a data da celebração do negócio jurídico"
+        },
+        "denominacao": {
+          "type": "string",
+          "description": "Informar o nome do imóvel rural que consta no documento (título a ser registrado, matrícula/transcrição,escritura pública etc), caso exista",
+          "maxLength": 200
+        },
+        "descricaoOutrasOperacoesImobiliarias": {
+          "type": "string",
+          "description": "Descrever a operação imobiliária se o valor selecionado na caixa for \"Outras Operações Imobiliárias\"",
+          "maxLength": 30
+        },
+        "destinacao": {
+          "$ref": "#/$defs/Destinacao",
+          "description": "Indica se o imóvel é rual ou urbano"
+        },
+        "existeDoiAnterior": {
+          "type": "boolean",
+          "description": "Informar se consta a expressão \"Emitida a DOI\" no título registrado"
+        },
+        "folha": {
+          "type": "string",
+          "description": "Páginas/Folhas (indicar nº início-fim)",
+          "maxLength": 7
+        },
+        "formaPagamento": {
+          "$ref": "#/$defs/FormaPagamento",
+          "description": "Selecionar a forma de pagamento dentre as opções da caixa"
+        },
+        "indicadorAlienacaoFiduciaria": {
+          "type": "boolean",
+          "description": "Informar se o imóvel foi objeto de alienação fiduciária na operação"
+        },
+        "indicadorAreaConstruidaNaoConsta": {
+          "type": "boolean",
+          "description": "Indicador de que a área de construção do imóvel não consta nos Documentos"
+        },
+        "indicadorAreaLoteNaoConsta": {
+          "type": "boolean",
+          "description": "Indicador de que a área do imóvel não consta nos Documentos. Vide Observações"
+        },
+        "indicadorImovelPublicoUniao": {
+          "type": "boolean",
+          "description": "Informar se o imóvel objeto da operação imobiliária é imóvel público da União"
+        },
+        "indicadorNaoConstaValorBaseCalculoItbiItcmd": {
+          "type": "boolean",
+          "description": "Assinalar a caixa se o valor da base de cálculo do ITBI/ITCMD não constar do documento"
+        },
+        "indicadorNaoConstaValorOperacaoImobiliaria": {
+          "type": "boolean",
+          "description": "Assinalar a caixa se o valor da operação imobiliária não constar do documento"
+        },
+        "indicadorPagamentoDinheiro": {
+          "type": "boolean",
+          "description": "Informar se houve pagamento em dinheiro"
+        },
+        "indicadorPermutaBens": {
+          "type": "boolean",
+          "description": "Informar se houve permuta de bens na operação imobiliária"
+        },
+        "inscricaoMunicipal": {
+          "type": "string",
+          "description": "Código da inscrição imobiliária",
+          "maxLength": 45
+        },
+        "localizacao": {
+          "type": "string",
+          "description": "Informar dados que possam ajudar na localização do imóvel, tais como: distrito, povoado, colônia, núcleo, rodovia/km, ramal, gleba, lote, etc. Exemplo: Partindo da Sede do Município,margem esquerda da BR 101, Km 60",
+          "maxLength": 200
+        },
+        "matricula": {
+          "type": "string",
+          "description": "Informar o número de ordem da matrícula do imóvel",
+          "maxLength": 7
+        },
+        "matriculaNotarialEletronica": {
+          "type": "string",
+          "description": "Informar a Matrícula Notarial Eletrônica (MNE). Formato: CCCCCCAAAAMMDDNNNNNNNNDD - A MNE deve ser validada através do DV informado, seguindo o algoritmo módulo 97 base 10, conforme norma ISO 7064:2023",
+          "maxLength": 24
+        },
+        "mesAnoUltimaParcela": {
+          "type": "string",
+          "format": "date",
+          "description": "Informar o mês e o ano de vencimento da última parcela para pagamento a prazo"
+        },
+        "municipiosUF": {
+          "description": "Demais municipios do imóvel rural",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MunicipioImovelDTO"
+          }
+        },
+        "naturezaTitulo": {
+          "$ref": "#/$defs/NaturezaTitulo",
+          "description": "Informar a natureza do título registrado"
+        },
+        "nomeLogradouro": {
+          "type": "string",
+          "description": "Logradouro do endereço do imóvel",
+          "maxLength": 150
+        },
+        "numeroImovel": {
+          "type": "string",
+          "description": "Número do endereço do imóvel",
+          "maxLength": 10
+        },
+        "numeroLivro": {
+          "type": "string",
+          "description": "Informar o número do livro em que o ato foi escriturado ou o título foi registrado",
+          "maxLength": 7
+        },
+        "numeroRegistro": {
+          "type": "string",
+          "description": "Informar o número de ordem do registro do título",
+          "maxLength": 30
+        },
+        "numeroRegistroAverbacao": {
+          "type": "string",
+          "description": "Informar o número do registro/averbação",
+          "maxLength": 7
+        },
+        "registroImobiliarioPatrimonial": {
+          "type": "string",
+          "description": "Informar a identificação do imóvel no cadastro da Secretaria de Patrimônio da União (SPU), ou seja, o número do Registro Imobiliário Patrimonial (RIP)",
+          "minLength": 13,
+          "maxLength": 13,
+          "pattern": "\\d{13}"
+        },
+        "retificacaoAto": {
+          "type": "boolean",
+          "description": "Informar se na operação atual houve retificação de ato anteriormente declarado"
+        },
+        "tipoAto": {
+          "$ref": "#/$defs/TipoAto",
+          "description": "Selecionar o tipo do ato em função do tipo de cartório"
+        },
+        "tipoDeclaracao": {
+          "$ref": "#/$defs/TipoDeclaracao",
+          "description": "Tipo da declaração"
+        },
+        "tipoImovel": {
+          "$ref": "#/$defs/TipoImovel",
+          "description": "Classificação de acordo com o uso finalistico da UI"
+        },
+        "tipoLivro": {
+          "$ref": "#/$defs/TipoLivro",
+          "description": "Selecionar o livro em que o ato foi escriturado dentre as opções da caixa"
+        },
+        "tipoLogradouro": {
+          "type": "string",
+          "description": "Tipo logradouro do endereço do imóvel",
+          "maxLength": 30
+        },
+        "tipoOperacaoImobiliaria": {
+          "$ref": "#/$defs/TipoOperacaoImobiliaria",
+          "description": "Selecionar o tipo de operação imobiliária dentre as opções da caixa"
+        },
+        "tipoParteTransacionada": {
+          "$ref": "#/$defs/TipoParteTransacionada",
+          "description": "Selecionar se a informação da parte transacionada do  imóvel será em percentual ou área"
+        },
+        "tipoServico": {
+          "$ref": "#/$defs/TipoServico",
+          "description": "Selecionar o tipo de serviço executado em relação à operação imobiliária declarada"
+        },
+        "transcricao": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Informar o número de ordem da transcrição. Até o limite de 8 inteiros"
+        },
+        "valorBaseCalculoItbiItcmd": {
+          "type": "number",
+          "description": "Informar o valor da base de cálculo do ITBI ou do ITCMD. Até o limite de 18 inteiros e 2 casas decimais"
+        },
+        "valorOperacaoImobiliaria": {
+          "type": "number",
+          "description": "Informar o valor da operação imobiliária. Até o limite de 18 inteiros e 2 casas decimais"
+        },
+        "valorPagoAteDataAto": {
+          "type": "number",
+          "description": "Informar o valor pago até a data do ato. Este campo somente deve ser  incluído se a opção \"A prazo\" do campo \"forma de pagamento\" for escolhida. Até o limite de 18 inteiros e 2 casas decimais"
+        },
+        "valorPagoMoedaCorrenteDataAto": {
+          "type": "number",
+          "description": "Informar o valor pago em espécie até a data do ato. Este campo somente deve ser  incluído se a informação no campo “indicadorPagamentoDinheiro” for True. Até o limite de 18 inteiros e 2 casas decimais"
+        },
+        "valorParteTransacionada": {
+          "type": "number",
+          "description": "Informar a quantidade de metros/hectares ou o percentual que foi objeto da operação imobiliária, conforme opção no campo tipoParteTransacionada. Até o limite de 18 inteiros e 2 casas decimais"
+        }
+      },
+      "required": [
+        "adquirentes",
+        "alienantes",
+        "dataLavraturaRegistroAverbacao",
+        "dataNegocioJuridico",
+        "destinacao",
+        "formaPagamento",
+        "indicadorImovelPublicoUniao",
+        "indicadorPagamentoDinheiro",
+        "indicadorPermutaBens",
+        "tipoDeclaracao",
+        "tipoOperacaoImobiliaria",
+        "tipoParteTransacionada",
+        "tipoServico",
+        "valorParteTransacionada"
+      ],
+      "additionalProperties": false
+    },
+    "Destinacao": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "1",
+          "title": "Urbano"
+        },
+        {
+          "const": "3",
+          "title": "Rural"
+        }
+      ]
+    },
+    "FormaPagamento": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "5",
+          "title": "Quitado à vista"
+        },
+        {
+          "const": "10",
+          "title": "Quitado a prazo"
+        },
+        {
+          "const": "11",
+          "title": "Quitado sem informação da forma de pagamento"
+        },
+        {
+          "const": "7",
+          "title": "A prazo"
+        },
+        {
+          "const": "9",
+          "title": "Não de aplica"
+        }
+      ]
+    },
+    "MunicipioImovelDTO": {
+      "type": "object",
+      "properties": {
+        "codigoIbge": {
+          "type": "string",
+          "description": "Informar o código IBGE do município do imóvel",
+          "maxLength": 7
+        }
+      },
+      "additionalProperties": false
+    },
+    "NaturezaTitulo": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "1",
+          "title": "Instrumento particular com força de escritura pública"
+        },
+        {
+          "const": "2",
+          "title": "Escritura Pública"
+        },
+        {
+          "const": "3",
+          "title": "Título Judicial"
+        },
+        {
+          "const": "4",
+          "title": "Contratos ou termos administrativos"
+        },
+        {
+          "const": "5",
+          "title": "Atos autênticos de países estrangeiros"
+        }
+      ]
+    },
+    "RegimeBens": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "1",
+          "title": "Separação de Bens"
+        },
+        {
+          "const": "2",
+          "title": "Comunhão Parcial de Bens"
+        },
+        {
+          "const": "3",
+          "title": "Comunhão Universal de Bens"
+        },
+        {
+          "const": "4",
+          "title": "Participação Final nos Aquestos"
+        }
+      ]
+    },
+    "RepresentanteDTO": {
+      "type": "object",
+      "properties": {
+        "ni": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TipoAto": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "1",
+          "title": "Escritura"
+        },
+        {
+          "const": "2",
+          "title": "Procuração"
+        },
+        {
+          "const": "3",
+          "title": "Averbação"
+        },
+        {
+          "const": "4",
+          "title": "Registro"
+        },
+        {
+          "const": "5",
+          "title": "Registros para fins de publicidade"
+        },
+        {
+          "const": "6",
+          "title": "Registro para fins de conservação"
+        }
+      ]
+    },
+    "TipoDeclaracao": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "0",
+          "title": "Original"
+        }
+      ]
+    },
+    "TipoImovel": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "15",
+          "title": "Loja"
+        },
+        {
+          "const": "31",
+          "title": "Galpão"
+        },
+        {
+          "const": "65",
+          "title": "Apartamento"
+        },
+        {
+          "const": "67",
+          "title": "Casa"
+        },
+        {
+          "const": "69",
+          "title": "Fazenda/Sítio/Chácara"
+        },
+        {
+          "const": "71",
+          "title": "Terreno/Fração"
+        },
+        {
+          "const": "89",
+          "title": "Outros"
+        },
+        {
+          "const": "90",
+          "title": "Sala"
+        },
+        {
+          "const": "91",
+          "title": "Conjunto de salas"
+        },
+        {
+          "const": "92",
+          "title": "Sobreloja"
+        },
+        {
+          "const": "93",
+          "title": "Vaga de Garagem"
+        },
+        {
+          "const": "94",
+          "title": "Laje"
+        },
+        {
+          "const": "95",
+          "title": "Estacionamento"
+        },
+        {
+          "const": "96",
+          "title": "Barraco"
+        }
+      ]
+    },
+    "TipoLivro": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "1",
+          "title": "Lv.2-Registro Geral(matrícula)"
+        },
+        {
+          "const": "2",
+          "title": "Transcrição das Transmissões"
+        }
+      ]
+    },
+    "TipoMotivoNaoIdentificacaoNiParte": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "1",
+          "title": "Sem CPF/CNPJ - Decisão Judicial"
+        },
+        {
+          "const": "2",
+          "title": "Não consta no documento"
+        }
+      ]
+    },
+    "TipoOperacaoImobiliaria": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "11",
+          "title": "Compra e Venda"
+        },
+        {
+          "const": "13",
+          "title": "Permuta"
+        },
+        {
+          "const": "15",
+          "title": "Adjudicação"
+        },
+        {
+          "const": "19",
+          "title": "Dação em Pagamento"
+        },
+        {
+          "const": "21",
+          "title": "Distrato de Negócio"
+        },
+        {
+          "const": "31",
+          "title": "Procuração em Causa Própria"
+        },
+        {
+          "const": "33",
+          "title": "Promessa de Compra e Venda"
+        },
+        {
+          "const": "35",
+          "title": "Promessa de Cessão de Direitos"
+        },
+        {
+          "const": "37",
+          "title": "Cessão de Direitos"
+        },
+        {
+          "const": "39",
+          "title": "Outros"
+        },
+        {
+          "const": "41",
+          "title": "Alienação por iniciativa particular ou leilão judicial"
+        },
+        {
+          "const": "45",
+          "title": "Incorporação e loteamento"
+        },
+        {
+          "const": "47",
+          "title": "Integralização/Subscrição de capital"
+        },
+        {
+          "const": "55",
+          "title": "Doação em adiantamento da legítima"
+        },
+        {
+          "const": "56",
+          "title": "Aforamento"
+        },
+        {
+          "const": "57",
+          "title": "Casamento em comunhão universal de bens"
+        },
+        {
+          "const": "58",
+          "title": "Cisão total ou parcial"
+        },
+        {
+          "const": "59",
+          "title": "Compra e venda de imóvel gravado por enfiteuse"
+        },
+        {
+          "const": "60",
+          "title": "Concessão de Direito Real de Uso (CDRU)"
+        },
+        {
+          "const": "61",
+          "title": "Concessão de Uso Especial para Fins de Moradia (CUEM)"
+        },
+        {
+          "const": "62",
+          "title": "Consolidação da Propriedade em Nome do Fiduciário"
+        },
+        {
+          "const": "63",
+          "title": "Desapropriação para fins de Reforma Agrária"
+        },
+        {
+          "const": "64",
+          "title": "Desapropriação, exceto para Reforma Agrária"
+        },
+        {
+          "const": "65",
+          "title": "Direito de laje"
+        },
+        {
+          "const": "66",
+          "title": "Direito de superfície"
+        },
+        {
+          "const": "67",
+          "title": "Doação, exceto em Adiantamento de Legítima"
+        },
+        {
+          "const": "68",
+          "title": "Incorporação"
+        },
+        {
+          "const": "69",
+          "title": "Inventário"
+        },
+        {
+          "const": "70",
+          "title": "Part. Separação/Divórcio/União Estável"
+        },
+        {
+          "const": "71",
+          "title": "Retorno de Capital Próprio na Extinção de Pessoa Jurídica"
+        },
+        {
+          "const": "72",
+          "title": "Retorno de Capital Próprio, exceto na Extinção de Pessoa Jurídica"
+        },
+        {
+          "const": "73",
+          "title": "Título de Domínio - TD"
+        },
+        {
+          "const": "74",
+          "title": "Usucapião"
+        }
+      ]
+    },
+    "TipoParteTransacionada": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "1",
+          "title": "%"
+        },
+        {
+          "const": "2",
+          "title": "ha/m²"
+        }
+      ]
+    },
+    "TipoServico": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "1",
+          "title": "Notarial"
+        },
+        {
+          "const": "2",
+          "title": "Registro de Imóveis"
+        },
+        {
+          "const": "3",
+          "title": "Registro de títulos e documentos"
+        }
+      ]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "declaracoes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DeclaracaoDadosBasicosDTO"
+      }
+    }
+  },
+  "additionalProperties": false
+}

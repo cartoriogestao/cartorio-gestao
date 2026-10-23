@@ -104,7 +104,13 @@
      2.610 caracteres): as assinaturas saltavam para uma pagina a mais entre a
      frente e o verso. So com o termo longo, e so onde ha menos de quatro
      assinaturas (o casamento ja as poe em par): letra um ponto menor,
-     entrelinha mais justa e as assinaturas lado a lado. */
+     entrelinha mais justa e as assinaturas lado a lado.
+     E O CASAMENTO TAMBEM - 23/10/2026, termo 1214 (2.4 mil caracteres e
+     seis assinaturas em tres pares): «so onde ha menos de quatro» deixava a
+     frente com a letra cheia, e os tres pares saltavam para uma pagina a
+     mais. O par nao bastava; agora o termo longo aperta toda especie, e o
+     casamento encurta o vao entre os pares. */
+  .folha.termo-longo .assinaturas-do-termo.em-par .assinatura { margin: 7mm 3mm 0; }
   .folha.termo-longo { font-size: 9.5pt; }
   .folha.termo-longo .termo { line-height: 1.26; }
   .folha.termo-longo .assinaturas-do-termo { margin-top: 3mm; display: flex;
@@ -113,6 +119,18 @@
                                                           margin: 8mm 3mm 0; }
   .folha.termo-muito-longo { font-size: 9pt; }
   .folha.termo-muito-longo .termo { line-height: 1.2; }
+  /* E COM O CARIMBO DO SELO - 23/10/2026, o mesmo termo 1214 depois de
+     selado: o carimbo com o QR ocupa uns 25 mm da frente, e o ultimo par
+     de assinaturas voltou a saltar para outra pagina. Termo longo COM
+     carimbo aperta mais um degrau: letra 8,5 pt, entrelinha 1,15, o
+     carimbo com menos folga e os pares de assinatura mais juntos. */
+  .folha.termo-longo.com-carimbo .assinaturas-do-termo { margin-top: 1mm; }
+  .folha.termo-longo.com-carimbo .assinaturas-do-termo .assinatura,
+  .folha.termo-longo.com-carimbo .assinaturas-do-termo.em-par .assinatura { margin: 7mm 3mm 0; }
+  .folha.termo-longo.com-carimbo .carimbo-do-selo .carimbo-com-qr { margin: 2px 0 !important;
+                                                                 padding: 3px !important; }
+  .folha.termo-muito-longo.com-carimbo { font-size: 8.5pt; }
+  .folha.termo-muito-longo.com-carimbo .termo { line-height: 1.15; }
 
   @media screen {
     body { background: #eceff3; padding: 8px 14px 14px; }
@@ -160,8 +178,7 @@
 
 {% for face in faces %}
 {% set letras = (face.termo or '')|striptags|length %}
-{% set poucas_assinaturas = (face.assinaturas or [])|length < folha.ASSINATURAS_EM_PAR_A_PARTIR_DE %}
-<div class="folha{% if poucas_assinaturas and letras > 1650 %} termo-longo{% endif %}{% if poucas_assinaturas and letras > 2300 %} termo-muito-longo{% endif %}">
+<div class="folha{% if letras > 1650 %} termo-longo{% endif %}{% if letras > 2300 %} termo-muito-longo{% endif %}{% if letras > 1650 and face.carimbo %} com-carimbo{% endif %}">
   {% if cabecalho %}
   <div class="cabecalho">
     <div><img src="{{ url_for('static', filename='brasao.jpg') }}"

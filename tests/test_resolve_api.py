@@ -319,3 +319,38 @@ def test_o_diagnostico_nao_usa_o_status_que_dispensa_chave():
     fonte = inspect.getsource(API.diagnostico)
     assert "intimacoes(" in fonte
     assert 'CAMINHO["status"]' not in fonte
+
+
+# ------------------------------------------- o 404 do PDF é «ainda não há»
+
+
+def test_o_404_do_pdf_e_aviso_de_que_ainda_nao_ha_e_nao_recusa(monkeypatch):
+    """23/10/2026, primeiro lote da produção: a intimação estava ENTREGUE por
+    e-mail, sem ciência, e a tela dizia «A Resolve recusou buscar os PDFs do
+    lote (HTTP 404)». O contrato declara esse 404 como «Nenhum PDF de
+    intimação foi encontrado para este lote»."""
+    corpo = {"message": "Nenhum PDF de intimação foi encontrado para este lote."}
+    monkeypatch.setattr(API, "_bater", lambda *a, **k: {
+        "status": 404, "json": corpo, "texto": json.dumps(corpo)})
+    for chamar in (lambda: API.pdfs_do_lote("6ada0000", "PRODUCAO"),
+                   lambda: API.pdf_da_intimacao("6ada0001", "PRODUCAO")):
+        with pytest.raises(API.ResolveSemPdf) as e:
+            chamar()
+        assert "ainda não tem o PDF" in str(e.value)
+        # continua sendo recusa da Central para quem já a apanhava assim
+        assert isinstance(e.value, API.ResolveRecusou)
+
+
+def test_o_pdf_que_existe_volta_como_antes(monkeypatch):
+    links = {"links": ["https://exemplo.invalid/a.pdf"]}
+    monkeypatch.setattr(API, "_bater", lambda *a, **k: {
+        "status": 200, "json": links, "texto": json.dumps(links)})
+    assert API.pdfs_do_lote("6ada0000", "PRODUCAO") == links
+
+
+def test_outra_recusa_do_pdf_continua_sendo_recusa(monkeypatch):
+    monkeypatch.setattr(API, "_bater", lambda *a, **k: {
+        "status": 401, "json": None, "texto": ""})
+    with pytest.raises(API.ResolveRecusou) as e:
+        API.pdfs_do_lote("6ada0000", "PRODUCAO")
+    assert not isinstance(e.value, API.ResolveSemPdf)

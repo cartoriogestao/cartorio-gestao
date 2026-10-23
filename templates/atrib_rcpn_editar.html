@@ -290,12 +290,17 @@
         {{ pessoa('filiacao1n2', 'Filiação 1 do segundo nubente', '', false, form, false, 'completo', false, true) }}
         {{ pessoa('filiacao2n2', 'Filiação 2 do segundo nubente', '', false, form, false, 'completo', false, true) }}
         {{ pessoa('testemunha', 'Testemunha', '', false, form) }}
+        {# A SEGUNDA TESTEMUNHA também se corrige — termo 1214, 23/10/2026:
+           com uma gaveta só, a segunda abria nela e, gravada, caía por cima
+           da primeira. #}
+        {{ pessoa('testemunha2', 'Segunda testemunha', '', false, form) }}
       {% elif assento.especie == 'OBITO' %}
         {{ pessoa('pessoa', 'Falecido', '', false, form, true, 'completo') }}
         {{ pessoa('filiacao1', 'Filiação 1 — mãe', '', false, form, false, 'completo', false, true) }}
         {{ pessoa('filiacao2', 'Filiação 2 — pai', '', false, form, false, 'completo', false, true) }}
         {{ pessoa('declarante', 'Declarante', '', false, form) }}
         {{ pessoa('testemunha', 'Testemunha', '', false, form) }}
+        {{ pessoa('testemunha2', 'Segunda testemunha', '', false, form) }}
       {% elif titulos_livro_e or assento.especie == 'OUTRO' %}
         {{ pessoas_do_livro_e(assento.especie, form) }}
       {% else %}

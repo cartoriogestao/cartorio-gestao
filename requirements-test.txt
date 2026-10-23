@@ -1,0 +1,10 @@
+# O que a SUITE precisa alem de `requirements.txt` (23/10/2026).
+#   pip install -r requirements.txt -r requirements-test.txt
+#   python -m pytest -n auto --dist loadfile -q tests/
+# O banco dos testes e o PostgreSQL: CG_TEST_BACKEND=pg e CG_PG_DSN apontando
+# para um servidor de teste (ver docs/REQUISITOS.md).
+pytest>=8,<10
+pytest-xdist>=3.5,<4
+# So os testes de captura de tela (ligados por variavel de ambiente) usam;
+# sem ele esses testes pulam.
+playwright>=1.40,<2

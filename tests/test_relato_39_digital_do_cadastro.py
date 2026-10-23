@@ -40,6 +40,14 @@ from pathlib import Path
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
+
+
+def _documento(nome: str) -> Path:
+    """O documento da casa (DOCUMENTACAO) ou, no clone público, a cópia
+    sanitizada em docs/tecnico (23/10/2026)."""
+    casa = RAIZ / "DOCUMENTACAO" / nome
+    return casa if casa.is_file() else RAIZ / "docs" / "tecnico" / nome
+
 sys.path.insert(0, str(RAIZ))
 
 import cadastro_biometria as CB                                  # noqa: E402
@@ -185,6 +193,6 @@ def test_a_exportacao_para_o_NOTARIADO_continua_declarada_impossivel():
     """A terceira metade do relato. **Não construir é a resposta certa**, e a
     razão está medida: a Cloudflare na rota da API e o `X-Signature` que exige
     CAdES por requisição, com o A3 que dá segfault no processo."""
-    doc = (RAIZ / "DOCUMENTACAO" / "O_CCN_E_AS_DUAS_PAREDES.md").read_text(
+    doc = _documento("O_CCN_E_AS_DUAS_PAREDES.md").read_text(
         encoding="utf-8")
     assert "Cloudflare" in doc and "X-Signature" in doc

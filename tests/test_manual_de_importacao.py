@@ -35,6 +35,14 @@ from pathlib import Path
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
+
+
+def _documento(nome: str) -> Path:
+    """O documento da casa (DOCUMENTACAO) ou, no clone público, a cópia
+    sanitizada em docs/tecnico (23/10/2026)."""
+    casa = RAIZ / "DOCUMENTACAO" / nome
+    return casa if casa.is_file() else RAIZ / "docs" / "tecnico" / nome
+
 sys.path.insert(0, str(RAIZ))
 
 import importar_padrao as IMP                                    # noqa: E402
@@ -110,7 +118,7 @@ def test_o_manual_baixado_leva_a_lista_de_campos(casa):
     # uma frase, como exemplo de coluna que ja e portugues. **Setima vez neste
     # projeto que um varredor bate na prosa** — desta vez foi um teste meu, no
     # dia em que consertei o mesmo defeito no teto de portabilidade.
-    em_disco = (RAIZ / "DOCUMENTACAO" / IMP.NOME_DO_MANUAL).read_text(
+    em_disco = _documento(IMP.NOME_DO_MANUAL).read_text(
         encoding="utf-8")
     assert "| `cor_raca` |" not in em_disco, (
         "a lista de campos foi transcrita dentro do documento — ela envelhece "

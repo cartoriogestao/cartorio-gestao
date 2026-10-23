@@ -13,6 +13,7 @@ uma função**. A instalação passo a passo está em
 | Windows 10 ou 11 (com PowerShell 5.1) | servidor | roda o sistema e a tarefa que o sobe com o Windows | sim |
 | Python 3.11 ou mais novo | servidor | executa o sistema (o instalador cria um Python próprio) | sim |
 | Pacotes Python de `requirements.txt` | servidor | instalados pelo instalador | sim |
+| PostgreSQL (a referência usa o 18) | servidor | o banco de dados — desde a 3.7.0 | sim |
 | Navegador atual (Chrome, Edge ou Firefox) | balcão e servidor | é a tela do sistema | sim |
 | LibreOffice | servidor | abre e converte os papéis `.odt` em PDF | sim, para imprimir em PDF |
 | Google Chrome ou Microsoft Edge | servidor | gera em PDF os papéis desenhados em HTML (folha do livro, prévia de certidão) | sim, para esses papéis |
@@ -72,6 +73,22 @@ HTML e convertidos em PDF pelo navegador, sem janela. O sistema procura o
 Windows. O Edge já vem no Windows 10 e 11. Se o navegador estiver em outro
 lugar, o caminho pode ser gravado na configuração `chrome_caminho` (tabela
 `settings`).
+
+### O banco de dados: PostgreSQL
+- **Desde a versão 3.7.0 o banco é o PostgreSQL** (a instalação de referência
+  usa o PostgreSQL 18, só em `localhost`). O sistema não roda mais no SQLite:
+  sem a variável `CG_PG_DSN`, ele recusa abrir o banco.
+- O serviço lê duas variáveis, postas no `iniciar_servidor_servico.cmd` da
+  pasta de dados: `CG_PG_DSN` (ex.: `host=127.0.0.1 port=5434 user=cg
+  dbname=cartorio`, **sem senha**) e `CG_PG_SCHEMA` (o schema da casa). A
+  senha do papel fica num `pgpass.conf` protegido, e o backup usa o `pg_dump`
+  da pasta indicada em `CG_PG_BIN`.
+- **O instalador ainda não instala nem configura o PostgreSQL**: isso é feito
+  à parte, antes do primeiro acesso. Senha SCRAM, `pgpass` e papel sem
+  superusuário estão em [`SEGURANCA_REDE.md`](SEGURANCA_REDE.md#o-postgresql-da-casa)
+  e em [`SEGURANCA_IMPLANTACAO.md`](SEGURANCA_IMPLANTACAO.md); a passagem de
+  uma instalação antiga (SQLite) para o PostgreSQL, em
+  [`ROTEIRO_DA_VIRADA.md`](ROTEIRO_DA_VIRADA.md).
 
 ### Rede
 - Porta **TCP 8765**: a aplicação. **UDP 8766**: a descoberta automática do

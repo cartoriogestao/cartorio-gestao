@@ -2773,7 +2773,7 @@ def test_o_deposito_previo_do_titulo_paga_a_abertura_e_o_registro_no_selo(casa):
 
 
 def test_a_certidao_sem_protocolo_atendido_espera_o_selo_e_sela_depois(casa):
-    """22/10/2026, dia da 3.7.0 na produção: a Gerlany quitou o protocolo
+    """22/10/2026, dia da 3.7.0 na produção: a escrevente quitou o protocolo
     2026.10.61 e as certidões 83 e 84 da matrícula 3252 foram CANCELADAS
     sozinhas — o protocolo pago não estava marcado como «em atendimento», e a
     trava do selo pago nem pediu o selo. A 83 ainda foi impressa duas vezes,

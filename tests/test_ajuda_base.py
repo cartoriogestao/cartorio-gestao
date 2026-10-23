@@ -57,6 +57,12 @@ from pathlib import Path
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
+# AS REGRAS E A DOCUMENTAÇÃO DA CASA FICAM FORA DO GITHUB (decisão do
+# oficial): no clone público este módulo PULA, em vez de falhar inteiro
+# por falta do material que ele lê (23/10/2026).
+if not (RAIZ / "CLAUDE.md").is_file() or not (RAIZ / "DOCUMENTACAO").is_dir():
+    pytest.skip("CLAUDE.md e DOCUMENTACAO/ ficam fora do repositório público",
+                allow_module_level=True)
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402

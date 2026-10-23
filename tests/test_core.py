@@ -1751,8 +1751,10 @@ def test_a_cobertura_que_nao_cobre_volta_tudo_o_que_tentou_gravar(_lx20s_aparelh
     monkeypatch.setattr(AS, "cobrir_o_selo", cobre_pela_metade)
     r = _lx20s_selar(con)
     assert r["selado"] is False and r.get("aguardando_cobertura") is True
+    # A chave vai como parâmetro: escrita literal ao lado de «key =» o
+    # gitleaks a lia como chave de API (23/10/2026).
     assert _lx20s_banco(con).valor(
-        "SELECT value FROM settings WHERE key = 'lx20_rastro_da_cobertura'") is None
+        "SELECT value FROM settings WHERE key = %s", ("lx20_rastro_da_cobertura",)) is None
     # O «aguardando cobertura» vai na transação dele, e fica.
     assert _lx20s_banco(con).valor(
         "SELECT count(*) AS n FROM cx_selo_aguardando WHERE tabela = 'pt_atos' AND ato_id = 1") == 1

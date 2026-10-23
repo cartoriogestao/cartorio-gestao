@@ -4848,11 +4848,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             dados = {}
         if isinstance(dados, dict) and dados.get("sexo"):
             form["sexo"] = dados["sexo"]
+        # O PAPEL QUE TEM DUAS GAVETAS (as testemunhas) — termo 1214,
+        # 23/10/2026: as duas caíam na gaveta `testemunha`, a segunda por cima
+        # da primeira, e a gaveta `testemunha2` abria vazia. A n-ésima pessoa
+        # do papel vai para a n-ésima gaveta, na ordem em que foram gravadas
+        # — a mesma que `RC.corrigir_informacoes` usa para gravar de volta.
+        vistas: dict[str, int] = {}
         for p in pessoas or []:
             papel = (p.get("papel") or "").strip().upper()
-            prefixo = RC.PREFIXO_DO_PAPEL.get(papel)
-            if not prefixo:
+            if papel not in RC.PREFIXO_DO_PAPEL:
                 continue
+            gavetas = RC.prefixos_do_papel(papel, assento["especie"])
+            n = vistas.get(papel, 0)
+            vistas[papel] = n + 1
+            if n >= len(gavetas):
+                continue
+            prefixo = gavetas[n]
             for c in RC.CAMPOS_DA_PESSOA:
                 valor = p.get(c)
                 if valor not in (None, ""):
@@ -8232,15 +8243,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(volta)
         certidao_id = int(r["certidao_id"])
         try:
-            envelope = _envelope_do_civil(
-                "rc_certidoes", certidao_id, "CERTIDAO", esp, None,
-                CODIGO_CERTIDAO_ELETRONICA, None, isento=selo_isento,
-                motivo_isencao=motivo_selo, quantidade=1)
+            # O CAMINHO GERAL, E SÓ PARA ESTE SELO — 23/10/2026: pela segunda
+            # via o aparelho exige a folha de segurança, que a certidão
+            # eletrônica não usa (ver AS.CAMINHO_CERTIDAO_ELETRONICA_CRC).
+            with db.connect() as con:
+                doc = banco(con).um(
+                    "SELECT nome, cpf_registrado FROM rc_assentos WHERE id=%s",
+                    (assento_id,))
+            envelope = AS.envelope_da_certidao_eletronica_crc(
+                nome_parte=(doc["nome"] if doc else ""),
+                documento=(doc["cpf_registrado"] if doc else None),
+                escrevente=usuario_nome(),
+                versao_tabela=AS.versao_da_tabela_de_custas(
+                    AS.CAMINHO_CERTIDAO_ELETRONICA_CRC,
+                    db.get_setting("selo_tabela_custas_em", "")),
+                isento=selo_isento, motivo_isencao=motivo_selo)
             res = AS.selar_o_ato_lavrado(
                 db, Path(app.config["DATA_DIR"]), tabela="rc_certidoes",
                 ato_id=certidao_id, tipo="CERTIDAO", atribuicao="RCPN",
                 agora=agora(), cns=sv().get("ri_cns"), usuario=usuario_nome(),
                 especie=esp, dados=envelope,
+                caminho=AS.CAMINHO_CERTIDAO_ELETRONICA_CRC,
                 referencia=(f"rc_certidoes:{certidao_id}:"
                             f"{CODIGO_CERTIDAO_ELETRONICA}:1"))
         except (AS.AtoError, sqlite3.Error) as erro:
@@ -8266,9 +8289,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               {"numero": r["numero"], "ano": r["ano"], "hash": r["hash"],
                "selo": res["numero"], "codigo": CODIGO_CERTIDAO_ELETRONICA,
                "isento": bool(selo_isento)})
+        # O QUE SE COPIA PARA A CRC — 23/10/2026: além do número, o código de
+        # validação e a linha de valores. A linha sai do texto do selo; o
+        # código, do que o aparelho devolveu além do número, como veio.
+        import selo_no_papel as SP
+        with db.connect() as con:
+            t = banco(con).um("SELECT texto FROM sd_selos WHERE numero=%s",
+                              (res["numero"],))
+        valores = SP.linha_de_valores((t["texto"] if t else "") or "")
+        extras = "; ".join(f"{k}: {v}" for k, v in (res.get("extras") or {}).items()
+                           if str(v or "").strip())
         flash(f"Selo da certidão eletrônica: {res['numero']} — copie-o para a "
-              f"CRC antes de subir o arquivo. Certidão n. "
-              f"{r['numero']}/{r['ano']} registrada com ele.", "success")
+              f"CRC antes de subir o arquivo. "
+              + (f"Valores: {valores}. " if valores else "")
+              + (f"O selador devolveu também: {extras}. " if extras else
+                 "O selador não devolveu código de validação nesta resposta. ")
+              + f"Certidão n. {r['numero']}/{r['ano']} registrada com ele.",
+              "success")
         return redirect(url_for("rcpn_certidao", certidao_id=certidao_id))
 
     @app.route("/rcpn/certidoes")

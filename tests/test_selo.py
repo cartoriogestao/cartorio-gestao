@@ -24,7 +24,13 @@ sys.path.insert(0, str(RAIZ))
 import atribuicoes as ATR      # noqa: E402
 import selo as S               # noqa: E402
 
-REAIS = json.loads((Path(__file__).parent / "selos_reais.json").read_text(encoding="utf-8"))
+# O ARQUIVO É REAL E FICA FORA DO GITHUB (`.gitignore`): no clone público
+# este módulo PULA, em vez de quebrar a coleta da suíte inteira (23/10/2026).
+_AMOSTRA = Path(__file__).parent / "selos_reais.json"
+if not _AMOSTRA.is_file():
+    pytest.skip("tests/selos_reais.json fica fora do repositório público",
+                allow_module_level=True)
+REAIS = json.loads(_AMOSTRA.read_text(encoding="utf-8"))
 TEXTOS = REAIS["textos"]
 # O CNS da amostra sai dela mesma, e não se escreve aqui: a amostra é real e
 # fica fora do repositório público, e o número da casa também (B3, 10/10/2026).

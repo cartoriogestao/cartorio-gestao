@@ -26,7 +26,13 @@ sys.path.insert(0, str(RAIZ))
 
 import selador as SD    # noqa: E402
 
-DADOS = json.loads((Path(__file__).parent / "selador_reais.json").read_text(encoding="utf-8"))
+# O ARQUIVO É REAL E FICA FORA DO GITHUB (`.gitignore`): no clone público
+# este módulo PULA, em vez de quebrar a coleta da suíte inteira (23/10/2026).
+_AMOSTRA = Path(__file__).parent / "selador_reais.json"
+if not _AMOSTRA.is_file():
+    pytest.skip("tests/selador_reais.json fica fora do repositório público",
+                allow_module_level=True)
+DADOS = json.loads(_AMOSTRA.read_text(encoding="utf-8"))
 SCHEMAS: dict[str, dict] = DADOS["schemas_oficiais"]
 PEDIDOS: dict[str, dict] = DADOS["pedidos"]
 FORA_DO_DOC = {x["onde"] for x in SD.ALEM_DA_DOCUMENTACAO}

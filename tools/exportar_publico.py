@@ -71,6 +71,7 @@ PASTAS = ("templates", "static", "tests", "tools", "installer", "modelos",
           # extensão; o README e o contrato ficam (ver FORA_POR_DECISAO).
           "ccn_assistente")
 ARQUIVOS_DE_PROJETO = ("README.md", "requirements.txt", "requirements-build.txt",
+                       "requirements-test.txt",
                        "VERSAO.txt", ".gitignore", ".gitleaks.toml",
                        # a pasta dos padrões vai byte a byte (LF06A)
                        ".gitattributes",
@@ -84,7 +85,15 @@ ARQUIVOS_DE_PROJETO = ("README.md", "requirements.txt", "requirements-build.txt"
                        "RODAR_SUITE_RAPIDA.cmd", "RODAR_SUITE_COMPLETA.cmd",
                        # O SANDBOX DE DEMONSTRAÇÃO (15/10/2026): um clique liga
                        # uma instalação fictícia e isolada para quem baixou.
-                       "INICIAR_SANDBOX.cmd")
+                       "INICIAR_SANDBOX.cmd",
+                       # OS ARQUIVOS DE DADOS QUE O CÓDIGO LÊ (23/10/2026): a
+                       # v3.7.1 saiu sem eles e o sistema público não subia —
+                       # `ri_doi` lê o layout da DOI ao ser importado, e as
+                       # funções do PostgreSQL moram num `.sql`. Ficavam de fora
+                       # como «arquivo solto». `dados_que_o_codigo_le` agora
+                       # recusa a publicação quando faltar outro.
+                       "pytest.ini", "banco_pg_funcoes.sql", "ri_doi_layout.json",
+                       "censec_ctp_esquema.json", "patches_natureza_averbacao.json")
 # A FICAR DE FORA ATÉ O OFICIAL DECIDIR (ver docstring).
 FORA_POR_DECISAO = ("DOCUMENTACAO/*", "CLAUDE.md", "AGENTS.md",
                     "modelos/_preview/*",
@@ -256,6 +265,36 @@ def selecionar(raiz: Path = RAIZ) -> dict:
     return {"entra": entra, "fora": dict(fora), "alcancados": alcancados}
 
 
+_LITERAL_DE_DADO = re.compile(
+    r"""["']([A-Za-z0-9_\-]+\.(?:json|sql|xsd|csv|ini|toml|xml|txt))["']""")
+
+
+def dados_que_o_codigo_le(raiz: Path, entra: list[str]) -> list[tuple[str, str]]:
+    """Arquivo de dados da RAIZ citado pelo código publicado e que não vai junto.
+
+    Devolve (quem cita, o arquivo). Só olha o nome solto num literal do código
+    (`Path(__file__).with_name("x.json")`, `RAIZ / "x.sql"`) que existe na raiz
+    desta árvore — e que não entrou nem foi tirado pelo `.gitignore`. O que o
+    `.gitignore` tira é decisão (selos reais, a deny-list local); o resto é
+    esquecimento, e foi assim que a v3.7.1 saiu sem subir.
+    """
+    publicados = set(entra)
+    candidatos = {}
+    for rel in entra:
+        if not rel.endswith(".py"):
+            continue
+        try:
+            texto = (raiz / rel).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for nome in _LITERAL_DE_DADO.findall(texto):
+            if nome not in publicados and (raiz / nome).is_file():
+                candidatos.setdefault(nome, rel)
+    ignorados = _ignorados_pelo_git(raiz, sorted(candidatos))
+    return sorted((quem, nome) for nome, quem in candidatos.items()
+                  if nome not in ignorados)
+
+
 MOLDES = (".odt", ".ott", ".ods", ".docx")
 # O que identifica a pessoa que salvou o arquivo, dentro de `meta.xml` (ODF) e
 # de `docProps/core.xml` (OOXML). Só o elemento sai; o resto do arquivo fica.
@@ -389,6 +428,14 @@ def main(argv: list[str] | None = None) -> int:
             encoding="utf-8")
         print(f"copiado para {destino}")
         base = destino
+
+    faltam_dados = dados_que_o_codigo_le(RAIZ, sel["entra"])
+    if faltam_dados:
+        print("\nFALTA NO PACOTE — arquivo de dados que o código publicado lê:")
+        for quem, nome in faltam_dados:
+            print(f"  {nome}  (citado em {quem})")
+        print("Ponha em ARQUIVOS_DE_PROJETO, ou no .gitignore se ficar de fora de propósito.")
+        return 1
 
     achados = varrer(base, sel["entra"],
                      Path(a.denylist_local) if a.denylist_local else None)

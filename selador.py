@@ -528,6 +528,11 @@ class SeloGerado:
     texto: str
     data_geracao: str | None = None
     saldo_remanescente: float | None = None
+    # O QUE O APARELHO DEVOLVEU ALÉM DO CONTRATO DE 2017 — 23/10/2026. O
+    # oficial: «o código de validação vem quando gera o selo pelo selador», e
+    # este leitor só guardava os quatro campos de cima. Pares (campo, valor)
+    # como vieram, para a tela mostrar e o razão anotar; nada é deduzido.
+    extras: tuple = ()
 
 
 def ler_resposta(corpo: Any) -> list[SeloGerado]:
@@ -552,11 +557,15 @@ def ler_resposta(corpo: Any) -> list[SeloGerado]:
         if not numero:
             raise SeladorError("O selador devolveu um resumo sem «numeroSelo».")
         saldo = (r or {}).get("saldoRemanescente")
+        conhecidos = {"numeroSelo", "textoSelo", "dataGeracao", "saldoRemanescente"}
         selos.append(SeloGerado(
             numero=numero,
             texto=str((r or {}).get("textoSelo") or "").strip(),
             data_geracao=(str(r.get("dataGeracao")) if r.get("dataGeracao") else None),
             saldo_remanescente=(float(saldo) if saldo is not None else None),
+            extras=tuple((str(k), v if isinstance(v, (str, int, float, bool)) or v is None
+                          else str(v))
+                         for k, v in (r or {}).items() if k not in conhecidos),
         ))
     return selos
 

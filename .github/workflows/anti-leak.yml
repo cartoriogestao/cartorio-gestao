@@ -35,6 +35,11 @@ jobs:
           if [ -n "$CG_DENYLIST_LOCAL" ]; then
             printf '%s\n' "$CG_DENYLIST_LOCAL" > ci/denylist.local.txt
             echo "deny-list local carregada do secret"
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            # 23/10/2026: sem a lista, a varredura diz «limpo» sobre os nomes
+            # que não procurou. Na main isso não pode passar como verde.
+            echo "::error::secret CG_DENYLIST_LOCAL ausente — a main não se publica sem a deny-list"
+            exit 1
           else
             echo "::warning::secret CG_DENYLIST_LOCAL ausente — só detectores genéricos"
           fi
@@ -47,7 +52,10 @@ jobs:
           CG_ANTI_VAZAMENTO_ESTRITO: "1"
         run: |
           pip install pytest
-          python -m pytest -p no:cacheprovider -o addopts="" tests/test_anti_vazamento.py -q
+          # --noconftest: o conftest do projeto abre o banco (psycopg, PostgreSQL desde a
+          # 3.7.0), e o motor anti-vazamento nao precisa dele. Sem isto a v3.7.1 falhou
+          # aqui (ModuleNotFoundError: psycopg) e o gitleaks nem rodou (23/10/2026).
+          python -m pytest --noconftest -p no:cacheprovider -o addopts="" tests/test_anti_vazamento.py -q
 
       - name: Apagar a deny-list local do runner
         if: always()

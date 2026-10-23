@@ -2053,6 +2053,12 @@ def corrigir_informacoes(con: Any, assento_id: int, *,
         sets["dados_json"] = novo_dj
 
     if pessoas:
+        # A SEGUNDA PESSOA DO MESMO PAPEL É A SEGUNDA LINHA — termo 1214,
+        # 23/10/2026. Eu procurava «a» testemunha com `LIMIT 1`, e as duas
+        # gavetas gravavam na mesma linha: a segunda testemunha ficou por cima
+        # da primeira, e o assento passou a ter a mesma pessoa duas vezes. A
+        # n-ésima do formulário é a n-ésima gravada (ordem do `id`).
+        vistas: dict[str, int] = {}
         for p in pessoas:
             papel = str(p.get("papel") or "").strip().upper()
             if not papel:
@@ -2060,10 +2066,13 @@ def corrigir_informacoes(con: Any, assento_id: int, *,
             campos = {c: p.get(c) for c in CAMPOS_DA_PESSOA if c in p}
             if not any(v not in (None, "") for v in campos.values()):
                 continue
+            n = vistas.get(papel, 0)
+            vistas[papel] = n + 1
+            chave = f"pessoa:{papel}" + (f"#{n + 1}" if n else "")
             existente = bd.um(
                 "SELECT * FROM rc_pessoas WHERE assento_id = %s AND papel = %s "
-                "ORDER BY id LIMIT 1",
-                (int(assento_id), papel))
+                "ORDER BY id LIMIT 1 OFFSET %s",
+                (int(assento_id), papel, n))
             if existente:
                 upd: dict[str, Any] = {}
                 for c, v in campos.items():
@@ -2083,7 +2092,7 @@ def corrigir_informacoes(con: Any, assento_id: int, *,
                         + ", ".join(f"{c} = %s" for c in upd)
                         + " WHERE id = %s",
                         (*upd.values(), int(existente["id"])))
-                    mudancas[f"pessoa:{papel}"] = {
+                    mudancas[chave] = {
                         k: {"de": existente[k] if k in existente.keys()
                             else None, "para": v}
                         for k, v in upd.items() if k != "nome_norm"}
@@ -2096,7 +2105,7 @@ def corrigir_informacoes(con: Any, assento_id: int, *,
                     usuario=usuario,
                     **{c: v for c, v in campos.items()
                        if v not in (None, "")})
-                mudancas[f"pessoa:{papel}"] = {
+                mudancas[chave] = {
                     "de": None, "para": campos.get("nome")}
 
     if "nome" in mudancas and not any(

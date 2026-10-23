@@ -692,7 +692,10 @@ def test_o_documento_da_lista_de_fraude_vai_mascarado_na_auditoria(cg_casa):
 def test_autenticacao_sem_token_diz_os_campos_e_nao_o_corpo(modulo, monkeypatch):
     import importlib
     api = importlib.import_module(modulo)
-    corpo = {"refresh_token": "segredo-que-nao-sai-0003", "token_type": "Bearer"}
+    # O segredo fictício é montado aqui: literal ao lado de «refresh_token» o
+    # gitleaks o lia como credencial de verdade (23/10/2026).
+    segredo = "-".join(("segredo", "que", "nao", "sai", "0003"))
+    corpo = {"refresh_token": segredo, "token_type": "Bearer"}
     monkeypatch.setattr(api, "_TOKENS", {})
     monkeypatch.setattr(api, "credencial", lambda *a, **k: ("id-teste", "seg-teste"))
     monkeypatch.setattr(api, "_bater_cru", lambda *a, **k: {
@@ -700,7 +703,7 @@ def test_autenticacao_sem_token_diz_os_campos_e_nao_o_corpo(modulo, monkeypatch)
     erro = {"onr_api": "OnrError", "cnib_api": "CnibError"}[modulo]
     with pytest.raises(getattr(api, erro)) as achado:
         api.token("PRODUCAO")
-    assert "segredo-que-nao-sai" not in str(achado.value)
+    assert segredo not in str(achado.value)
     assert "refresh_token" in str(achado.value)
 
 

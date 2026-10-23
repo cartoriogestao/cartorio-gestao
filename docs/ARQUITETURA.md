@@ -1,6 +1,6 @@
 # Arquitetura do Cartório Gestão
 
-Python 3.11 · Flask · SQLite (modo WAL) · waitress · Jinja2. Um processo só,
+Python 3.11 · Flask · PostgreSQL · waitress · Jinja2. Um processo só,
 num servidor Windows da serventia, atendendo os navegadores da rede local.
 
 ## As regras da casa
@@ -32,8 +32,12 @@ defeito real.
   transação curta.
 - **Credencial nunca no banco.** O banco viaja no backup; senhas e chaves
   ficam em `*.cred` na pasta de dados.
-- **Não se aumenta o acoplamento ao SQLite.** Data calculada no SQL, recorte
-  de texto no SQL e `PRAGMA` fora dos esquemas têm teto por módulo
+- **O banco é o PostgreSQL desde a 3.7.0**, por uma ponte (`banco_pg.py`)
+  que deixa o código escrito para o `sqlite3` falar com ele — parâmetros,
+  linhas, transações e mensagens de erro. O SQLite ficou só para o acervo
+  do sistema antigo, aberto para leitura.
+- **Não se aumenta o SQL no dialeto do SQLite.** Data calculada no SQL,
+  recorte de texto no SQL e `PRAGMA` fora dos esquemas têm teto por módulo
   (`tests/test_portabilidade.py`); módulo novo entra com zero.
 
 ## O núcleo — serve as seis atribuições
@@ -113,7 +117,7 @@ e um módulo de **domínio** que decide o que sobe. Princípios comuns:
   arquivos têm testes que dependem da ordem.
 - Há **varredores** que guardam regras estruturais: toda tela que grava manda
   `csrf_token`; toda rota que grava tem uma tela que a chama; toda tela abre
-  numa instalação nova; o acoplamento ao SQLite não cresce.
+  numa instalação nova; o SQL no dialeto do SQLite não cresce.
 - `tools/pytest_guard.py` impede duas suítes na mesma árvore ao mesmo tempo.
 
 ## O que vai para este repositório

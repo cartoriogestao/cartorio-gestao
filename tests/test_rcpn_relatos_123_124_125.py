@@ -642,9 +642,12 @@ def test_o_termo_curto_sai_como_antes(casa):
     assert "line-height: 1.35;" in _regra_css(html, ".termo")
 
 
-def test_com_quatro_assinaturas_ou_mais_o_termo_longo_nao_mexe_na_folha(casa):
-    """O casamento já põe as assinaturas em par (relato #124): o termo
-    longo não lhe tira um ponto da letra."""
+def test_o_casamento_longo_tambem_aperta_a_frente(casa):
+    """ESTE TESTE AFIRMAVA O CONTRÁRIO até 23/10/2026 — «com quatro
+    assinaturas ou mais, o termo longo não mexe na folha», porque o casamento
+    já põe as assinaturas em par. O par não bastou: o termo 1214 (2,4 mil
+    caracteres, seis assinaturas) saiu em três páginas. Agora o termo longo
+    aperta toda espécie, e no casamento o vão entre os pares encurta."""
     aid = _casamento(casa)
     _testemunhas(casa, aid, "CARLA ENSAIO TESTEMUNHA",
                  "BEATRIZ ENSAIO TESTEMUNHA")
@@ -652,8 +655,12 @@ def test_com_quatro_assinaturas_ou_mais_o_termo_longo_nao_mexe_na_folha(casa):
     _com_teor(casa, aid, _teor_de(2610))
     html = _abrir(casa, f"/rcpn/{aid}/folha")
     assert html.count('class="assinatura"') >= FOLHA.ASSINATURAS_EM_PAR_A_PARTIR_DE
-    assert _classes_das_faces(html) == ["folha", "folha"]
+    assert _classes_das_faces(html) == [
+        "folha termo-longo termo-muito-longo", "folha"]
     assert 'class="assinaturas-do-termo em-par"' in html
+    assert _regra_css(
+        html, ".folha.termo-longo .assinaturas-do-termo.em-par .assinatura"
+    ) == "margin: 7mm 3mm 0;"
 
 
 CHROME_DO_MAC = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
@@ -690,4 +697,55 @@ def test_no_papel_o_termo_longo_do_tardio_fica_em_duas_paginas(casa):
         "serventia_telefone": "(00) 0000-0000",
         "serventia_email": "contato@exemplo.invalid"})
     aid = _nascimento_com_teor(casa, 2610)
+    assert _paginas_do_pdf(casa, aid) == 2
+
+
+def test_no_papel_o_casamento_longo_fica_em_duas_paginas(casa):
+    """O termo 1214 de 23/10/2026: casamento de 2,4 mil caracteres, duas
+    testemunhas e o juiz de paz — seis linhas de assinatura em três pares.
+    Saía em TRÊS páginas (medido no papel da produção); frente e verso são
+    duas."""
+    casa["db"].set_settings({
+        "unit_name": "Ofício Único de Cidade Exemplo",
+        "serventia_endereco": "Rua de Ensaio, 100, Centro",
+        "serventia_cep": "00000-000",
+        "serventia_telefone": "(00) 0000-0000",
+        "serventia_email": "contato@exemplo.invalid"})
+    aid = _casamento(casa)
+    _testemunhas(casa, aid, "CARLA ENSAIO TESTEMUNHA",
+                 "BEATRIZ ENSAIO TESTEMUNHA")
+    _registro(casa, aid)
+    _com_teor(casa, aid, _teor_de(2464))
+    assert _paginas_do_pdf(casa, aid) == 2
+
+
+def test_o_casamento_longo_com_carimbo_aperta_mais_um_degrau(casa):
+    """O termo 1214 depois de selado (23/10/2026): o carimbo com o QR come
+    a folga da frente. Termo longo com carimbo ganha `com-carimbo`; sem
+    carimbo a folha continua como estava."""
+    aid = _casamento(casa)
+    _testemunhas(casa, aid, "CARLA ENSAIO TESTEMUNHA",
+                 "BEATRIZ ENSAIO TESTEMUNHA")
+    _registro(casa, aid, selo=SELO_CASAMENTO, etiqueta=ETIQUETA_CASAMENTO)
+    _com_teor(casa, aid, _teor_de(2464))
+    html = _abrir(casa, f"/rcpn/{aid}/folha")
+    assert _classes_das_faces(html) == [
+        "folha termo-longo termo-muito-longo com-carimbo", "folha"]
+    assert _regra_css(html, ".folha.termo-muito-longo.com-carimbo") == \
+        "font-size: 8.5pt;"
+
+
+def test_no_papel_o_casamento_longo_selado_fica_em_duas_paginas(casa):
+    """Com o carimbo do selo, o 1214 voltou a três páginas; são duas."""
+    casa["db"].set_settings({
+        "unit_name": "Ofício Único de Cidade Exemplo",
+        "serventia_endereco": "Rua de Ensaio, 100, Centro",
+        "serventia_cep": "00000-000",
+        "serventia_telefone": "(00) 0000-0000",
+        "serventia_email": "contato@exemplo.invalid"})
+    aid = _casamento(casa)
+    _testemunhas(casa, aid, "CARLA ENSAIO TESTEMUNHA",
+                 "BEATRIZ ENSAIO TESTEMUNHA")
+    _registro(casa, aid, selo=SELO_CASAMENTO, etiqueta=ETIQUETA_CASAMENTO)
+    _com_teor(casa, aid, _teor_de(2464))
     assert _paginas_do_pdf(casa, aid) == 2

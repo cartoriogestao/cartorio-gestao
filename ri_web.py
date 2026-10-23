@@ -10034,7 +10034,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         motivo_selo = _motivo_da_falha_do_selo(recado_do_selo)
         if motivo_selo and aguardando:
             # AGUARDANDO COBERTURA NÃO É SELO RECUSADO (22/10/2026). Medido na
-            # produção no dia da 3.7.0: a Gerlany quitou o protocolo
+            # produção no dia da 3.7.0: a escrevente quitou o protocolo
             # 2026.10.61 e as certidões 83 e 84 da matrícula 3252 foram
             # CANCELADAS sozinhas, porque o protocolo não estava marcado como
             # «em atendimento». O selo nem chegou a ser pedido; cancelar

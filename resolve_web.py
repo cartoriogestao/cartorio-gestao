@@ -182,7 +182,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 item["intimacao_id"],
                 CENTCRED.ambiente_de_uso(CENTCRED.RESOLVE, item["ambiente"]))
         except RECUSAS_DO_BALCAO as erro:
-            flash(str(erro), "danger")
+            flash(str(erro), "warning" if isinstance(erro, API.ResolveSemPdf)
+                  else "danger")
             return redirect(url_for("protesto_resolve_ficha",
                                     intimacao_id=intimacao_id))
         link = ""
@@ -220,7 +221,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         try:
             r = API.pdfs_do_lote(lote_id, ambiente)
         except RECUSAS_DO_BALCAO as erro:
-            flash(str(erro), "danger")
+            flash(str(erro), "warning" if isinstance(erro, API.ResolveSemPdf)
+                  else "danger")
             return redirect(url_for("protesto_resolve", ambiente=ambiente))
         links = (r or {}).get("links") or []
         flash(f"O lote tem {len(links)} comprovante(s): "

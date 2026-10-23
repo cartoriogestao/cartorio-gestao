@@ -35,6 +35,14 @@ from pathlib import Path
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
+
+
+def _documento(nome: str) -> Path:
+    """O documento da casa (DOCUMENTACAO) ou, no clone público, a cópia
+    sanitizada em docs/tecnico (23/10/2026)."""
+    casa = RAIZ / "DOCUMENTACAO" / nome
+    return casa if casa.is_file() else RAIZ / "docs" / "tecnico" / nome
+
 sys.path.insert(0, str(RAIZ))
 
 import importar_padrao as IP                                     # noqa: E402
@@ -164,7 +172,7 @@ def test_TODA_ESPECIE_ESTA_DOCUMENTADA():
     E documento que envelhece é o defeito que este projeto mais conhece — aqui
     o guarda é barato: espécie nova sem linha no documento fica vermelha.
     """
-    doc = (RAIZ / "DOCUMENTACAO" / "PADRAO_DE_IMPORTACAO.md").read_text(
+    doc = _documento("PADRAO_DE_IMPORTACAO.md").read_text(
         encoding="utf-8")
     faltando = [k for k in IP.MODELOS if k not in doc]
     assert not faltando, (
@@ -179,7 +187,7 @@ def test_o_documento_NAO_LISTA_OS_CAMPOS_de_cada_especie():
     A régua é frouxa de propósito: proíbe a TABELA de campos, e não a menção a
     um campo no meio de uma frase.
     """
-    doc = (RAIZ / "DOCUMENTACAO" / "PADRAO_DE_IMPORTACAO.md").read_text(
+    doc = _documento("PADRAO_DE_IMPORTACAO.md").read_text(
         encoding="utf-8")
     assert "medidos do esquema" in doc, (
         "o documento tem de dizer que os campos se medem, e não se escrevem")

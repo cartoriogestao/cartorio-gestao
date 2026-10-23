@@ -52,3 +52,10 @@ cryptography>=41,<51
 # avisam e o resto do sistema segue.
 PyMuPDF>=1.24,<2
 psycopg[binary]>=3.1,<4
+# Leem o QR das folhas nas intimacoes em lote do Protesto
+# (`protesto_intimacoes_lote`) e limpam as imagens enviadas ao ONR
+# (`gestor_cargas_ri`). Importadas so na hora do uso, mas a producao as tem e
+# nenhum requirements as declarava (23/10/2026) - uma instalacao nova ficava
+# sem essas duas funcoes sem saber por que.
+numpy>=1.26,<3
+opencv-python-headless>=4.8,<6

@@ -96,6 +96,9 @@ class SeladorFalso:
         self.expires_in = expires_in
         self.selos_por_sid: dict[str, str] = {}
         self.recusar_com: tuple[int, dict] | None = None
+        # O que o aparelho de verdade devolve além do contrato de 2017 (o
+        # código de validação, 23/10/2026): vai junto no resumo, como veio.
+        self.campos_a_mais: dict = {}
         self.primeira_chamada_401 = False
         self._ja_deu_401 = False
         self._contador = 0
@@ -156,7 +159,8 @@ class SeladorFalso:
                     "numeroSelo": numero,
                     "textoSelo": f"Poder Judiciário – TJMA. Selo: {numero}",
                     "dataGeracao": "2026-08-24T12:00:00",
-                    "saldoRemanescente": 1234.0}]})
+                    "saldoRemanescente": 1234.0,
+                    **servidor.campos_a_mais}]})
 
         contexto = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         contexto.load_cert_chain(PEM)

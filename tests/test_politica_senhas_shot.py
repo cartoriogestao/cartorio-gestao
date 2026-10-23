@@ -2,7 +2,8 @@
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import sync_playwright
+# Sem o playwright o modulo PULA, em vez de quebrar a coleta (23/10/2026).
+sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("CG_SHOT_POLITICA_SENHAS") != "1",

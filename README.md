@@ -42,6 +42,9 @@ backups ficam na casa.
 - Um computador **Windows 10/11** como servidor (Windows PowerShell 5.1).
 - **Python 3.11 ou superior** no servidor — o instalador tenta instalar o
   Python 3.12 pelo `winget` quando ele não existe.
+- **PostgreSQL** no servidor — o banco de dados desde a versão 3.7.0 (o
+  instalador ainda não o instala; ver
+  [`docs/REQUISITOS.md`](docs/REQUISITOS.md#o-banco-de-dados-postgresql)).
 - Os computadores do balcão só precisam de um navegador.
 - LibreOffice no servidor, para os papéis saírem em PDF, e Chrome ou Edge,
   para alguns papéis desenhados em HTML.
@@ -53,6 +56,10 @@ A lista completa, com o motivo de cada item, está em
 [`docs/REQUISITOS.md`](docs/REQUISITOS.md), e o
 **[manual geral](docs/MANUAL.md)** cobre instalação, configuração e o
 panorama de todas as telas.
+
+Para quem vai implantar ou consertar: a documentação técnica da construção —
+formatos das Centrais medidos, decisões de desenho e o roteiro de cada versão —
+está em [`docs/tecnico/`](docs/tecnico/README.md).
 
 ## Instalação rápida
 

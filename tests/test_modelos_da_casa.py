@@ -4541,7 +4541,69 @@ def _ouro_com_as_mudancas_explicadas(grupo: str, funcoes: dict) -> dict:
             assert _LT01_ANTES in antes, nome
             novo = json.loads(antes.replace(_LT01_ANTES, _LT01_DEPOIS))
         saida[nome] = novo
-    return _ld22_no_ouro(grupo, _lh05_no_ouro(grupo, _ld01_no_ouro(grupo, saida)))
+    return _hab22_no_ouro(grupo, _ld22_no_ouro(grupo, _lh05_no_ouro(
+        grupo, _ld01_no_ouro(grupo, saida))))
+
+
+# ------------------------------- 22/10/2026 — a «Conferência» saiu da habilitação
+#
+#   «verificar também pq saiu um número de conferência no final da certidão de
+#   habilitação» — o oficial. A linha `Conferência: <hash>` foi tirada da
+#   certidão e do edital (`habilitacao_web`). Nas saídas do ouro ela some do
+#   HTML; o hash do `.odt` e do corpo mudam por causa disso e só por isso — o
+#   HTML sem a linha tem de sair IGUAL, e é o HTML que diz o que o papel traz.
+import re as _re_hab  # noqa: E402
+
+_HAB22_LINHA = _re_hab.compile(r'<p></p><p class="small">Conferência: [^<]*</p>')
+_HAB22_HASHES = ("content_xml_sha256", "corpo_sha256")
+
+
+def _hab22_sem_hashes(valor):
+    if isinstance(valor, dict):
+        return {k: _hab22_sem_hashes(v) for k, v in valor.items() if k not in _HAB22_HASHES}
+    if isinstance(valor, list):
+        return [_hab22_sem_hashes(v) for v in valor]
+    return valor
+
+
+def _hab22_no_ouro(grupo: str, saida: dict) -> dict:
+    import json as _json
+    if grupo != "habilitacao":
+        return saida
+    saida = dict(saida)
+    for nome, valor in list(saida.items()):
+        if callable(valor):
+            continue
+        texto = _json.dumps(valor, ensure_ascii=False)
+        if "Conferência:" not in texto:
+            continue
+        limpo = _json.loads(texto)
+        _hab22_tirar_linha(limpo)
+        esperado = _hab22_sem_hashes(limpo)
+        saida[nome] = (lambda depois, esperado=esperado:
+                       _hab22_sem_hashes(depois) == esperado)
+    return saida
+
+
+def _hab22_tirar_linha(valor):
+    """Tira a linha da Conferência de todo texto dentro do valor, no lugar."""
+    if isinstance(valor, dict):
+        for k, v in valor.items():
+            if isinstance(v, str):
+                valor[k] = _HAB22_LINHA.sub("", v)
+            else:
+                _hab22_tirar_linha(v)
+    elif isinstance(valor, list):
+        novos = []
+        for v in valor:
+            if isinstance(v, str):
+                limpo = _HAB22_LINHA.sub("", v)
+                if limpo or not v:      # o trecho que era SÓ a linha sai inteiro
+                    novos.append(limpo)
+            else:
+                _hab22_tirar_linha(v)
+                novos.append(v)
+        valor[:] = novos
 
 
 # ------------------------------------------------ LD01 — de propósito, regra a regra

@@ -372,3 +372,86 @@ def test_rota_editar_obito_grava_as_quatro_marcas(tmp_path):
     c.close()
     assert bens == "SIM"
     assert eleitor == "NAO"
+
+
+# ===================================== as duas testemunhas (termo 1214, 23/10/2026)
+#
+# A correção gravava a pessoa pelo PAPEL com `LIMIT 1`, e a tela pré-enchia
+# as duas testemunhas na mesma gaveta: corrigir a nacionalidade de um
+# casamento pôs a segunda testemunha por cima da primeira. A n-ésima do
+# formulário é a n-ésima gravada.
+
+def _duas_testemunhas(con) -> int:
+    r = RC.lavrar_assento(
+        con, especie="OBITO", nome="JOAO FALECIDO TESTE", sv=SV,
+        agora=AGORA, data_extenso=EXTENSO, data_fato="2026-09-01",
+        origem="EOFICIO", origem_chave="ACERVO-OBITO-1214",
+        dados={"sexo": "M"},
+        pessoas=[{"papel": "FALECIDO", "nome": "JOAO FALECIDO TESTE",
+                  "sexo": "M"},
+                 {"papel": "TESTEMUNHA", "nome": "CARLA ENSAIO TESTEMUNHA"},
+                 {"papel": "TESTEMUNHA", "nome": "BEATRIZ ENSAIO TESTEMUNHA"}],
+        usuario="carga",
+    )
+    return r["assento_id"]
+
+
+def _testemunhas(con, aid) -> list[tuple]:
+    return [tuple(x) for x in con.execute(
+        "SELECT nome, nacionalidade FROM rc_pessoas WHERE assento_id=? "
+        "AND papel='TESTEMUNHA' ORDER BY id", (aid,)).fetchall()]
+
+
+def test_corrigir_a_segunda_testemunha_nao_cai_em_cima_da_primeira():
+    con = banco()
+    aid = _duas_testemunhas(con)
+    RC.corrigir_informacoes(
+        con, aid, motivo="Erro na nacionalidade das testemunhas",
+        agora=AGORA, usuario="Escrevente",
+        pessoas=[{"papel": "TESTEMUNHA", "nome": "CARLA ENSAIO TESTEMUNHA",
+                  "nacionalidade": "BRASILEIRA"},
+                 {"papel": "TESTEMUNHA", "nome": "BEATRIZ ENSAIO TESTEMUNHA",
+                  "nacionalidade": "BRASILEIRA"}])
+    assert _testemunhas(con, aid) == [
+        ("CARLA ENSAIO TESTEMUNHA", "BRASILEIRA"),
+        ("BEATRIZ ENSAIO TESTEMUNHA", "BRASILEIRA")]
+
+
+def test_a_tela_de_corrigir_abre_cada_testemunha_na_sua_gaveta(tmp_path):
+    from app import create_app
+    from database import Database
+
+    dados = tmp_path / "dados"
+    dados.mkdir()
+    app = create_app({"DATA_DIR": str(dados)})
+    banco_path = Path(glob.glob(f"{dados}/*.sqlite3")[0])
+    Database(banco_path).create_user(
+        "tabeliao", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    client = app.test_client()
+    client.post("/login", data={
+        "username": "tabeliao", "password": SENHA,
+        "csrf_token": _token(client.get("/login").get_data(as_text=True)),
+    }, follow_redirects=True)
+    con = sqlite3.connect(banco_path)
+    con.row_factory = sqlite3.Row
+    with con:
+        aid = _duas_testemunhas(con)
+    con.close()
+
+    body = client.get(f"/rcpn/{aid}/editar").get_data(as_text=True)
+    assert re.search(r'name="testemunha_nome"[^>]*value="CARLA ENSAIO', body)
+    assert re.search(r'name="testemunha2_nome"[^>]*value="BEATRIZ ENSAIO', body)
+    # O formulário volta como a tela o abriu, mudando só a nacionalidade.
+    client.post(f"/rcpn/{aid}/editar", data={
+        "csrf_token": _token(body),
+        "motivo": "Erro na nacionalidade da testemunha",
+        "nome": "JOAO FALECIDO TESTE", "data_fato": "2026-09-01", "sexo": "M",
+        "testemunha_nome": "CARLA ENSAIO TESTEMUNHA",
+        "testemunha_nacionalidade": "BRASILEIRA",
+        "testemunha2_nome": "BEATRIZ ENSAIO TESTEMUNHA",
+    }, follow_redirects=True)
+    c = sqlite3.connect(banco_path)
+    assert _testemunhas(c, aid) == [
+        ("CARLA ENSAIO TESTEMUNHA", "BRASILEIRA"),
+        ("BEATRIZ ENSAIO TESTEMUNHA", None)]
+    c.close()

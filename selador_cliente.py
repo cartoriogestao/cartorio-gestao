@@ -564,7 +564,28 @@ def selar(con, pasta_de_dados: Any, caminho: str,
                         "numeros_da_resposta": [s.numero
                                                 for s in resposta.selos]},
                 agora=agora, usuario=usuario)
+    _anotar_a_resposta(pasta_de_dados, caminho, chave, resposta.corpo, agora)
     return resposta.selos
+
+
+def _anotar_a_resposta(pasta_de_dados: Any, caminho: str, sid: str,
+                       corpo: Any, agora: str) -> None:
+    """A resposta INTEIRA do aparelho, uma linha por pedido — 23/10/2026. Nunca
+    estoura: anotar não pode derrubar um selo que já saiu e já está no razão.
+
+    O CÓDIGO DE VALIDAÇÃO SE PERDIA AQUI: o leitor guardava quatro campos e o
+    resto da resposta morria nesta função. A linha leva SID, caminho e o corpo
+    como veio, para se saber o que o aparelho disse mesmo quando o contrato
+    não diz."""
+    try:
+        from pathlib import Path as _Path
+        alvo = _Path(str(pasta_de_dados)) / "selador_respostas.jsonl"
+        with open(alvo, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"em": agora, "sid": sid, "caminho": caminho,
+                                "corpo": corpo}, ensure_ascii=False,
+                               default=str) + "\n")
+    except Exception:                                          # noqa: BLE001
+        _LOG.exception("Nao anotei a resposta do selador (sid %s)", sid)
 
 
 def _despachar(con, pasta_de_dados, pedido: dict, token: str, sha256: str,

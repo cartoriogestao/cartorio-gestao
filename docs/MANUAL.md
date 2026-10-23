@@ -118,7 +118,7 @@ fica em `C:\ProgramData\CartorioGestao\logs`.
 
 | | |
 |---|---|
-| `cartorio_gestao.sqlite3` | o banco de dados |
+| `iniciar_servidor_servico.cmd` | o lançador do serviço, com o endereço do banco PostgreSQL |
 | `arquivos\` | documentos anexados e digitalizações |
 | `backups\` | backups automáticos e manuais |
 | `updates\` | pacotes aplicados e cópias para voltar atrás |
@@ -127,6 +127,11 @@ fica em `C:\ProgramData\CartorioGestao\logs`.
 
 Outra pasta de dados pode ser usada pela variável `CARTORIO_GESTAO_DATA`
 (veja `.env.example`).
+
+**O banco de dados é o PostgreSQL** desde a versão 3.7.0, num serviço próprio
+do servidor, e não um arquivo desta pasta. O instalador ainda não o instala:
+veja [`REQUISITOS.md`](REQUISITOS.md#o-banco-de-dados-postgresql) antes do
+primeiro acesso.
 
 ### 2.3 Instalar os computadores do balcão
 

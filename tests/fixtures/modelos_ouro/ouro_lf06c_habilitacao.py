@@ -272,7 +272,7 @@ def _rodar(rota: str, sv: dict, kw: dict):
         app.extensions["usuario_funcao"] = lambda: "Escrevente"
         app.extensions["usuario_id"] = lambda: 1
         ident = lambda f: f  # noqa: E731
-        W.registrar_rotas(app, _Banco(sv), ident, lambda *r: ident,
+        W.registrar_rotas(app, _Banco(sv), ident, lambda *r, **k: ident,
                           lambda *a, **k: None, fmt_date)
         with app.test_request_context():
             r = app.view_functions[rota](1)

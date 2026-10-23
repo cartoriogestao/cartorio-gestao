@@ -467,10 +467,34 @@ def criar_lote(intimacoes: Any, ambiente: Any = None, *, pasta=None) -> Any:
                      "criar o lote de intimações", corpo=lote, pasta=pasta)
 
 
+class ResolveSemPdf(ResolveRecusou):
+    """A Central ainda não tem o PDF — não é recusa nem defeito."""
+
+
+def _pdf(ambiente: str, chave_do_caminho: str, o_que: str, *, pasta=None,
+         **partes) -> Any:
+    """O 404 DO PDF QUER DIZER «AINDA NÃO HÁ», e não «recusei» — 23/10/2026.
+
+    O contrato declara o 404 destas duas rotas como «Nenhum PDF de intimação
+    foi encontrado para este lote» / «Nenhum PDF disponível para esta
+    intimação». Medido no primeiro lote da produção (22/10): a intimação estava
+    ENTREGUE por e-mail às 08:01 de 23/10, sem `dataCiencia` nem
+    `dataIntimacao`, e o balcão leu «A Resolve recusou» como defeito.
+    """
+    r = _bater(ambiente, "GET", _preencher(chave_do_caminho, **partes),
+               pasta=pasta)
+    if int(r.get("status") or 0) == 404:
+        raise ResolveSemPdf(
+            f"A Resolve ainda não tem o PDF para {o_que}. Não é erro do "
+            f"sistema: o comprovante só existe quando a plataforma o gera — "
+            f"confira o andamento da intimação na ficha e tente de novo depois.")
+    return _resposta_ou_erro(r, o_que)
+
+
 def pdfs_do_lote(lote_id: Any, ambiente: Any = None, *, pasta=None) -> Any:
     """As URLs dos PDFs das intimações do lote. SÓ LÊ."""
-    return _listar(_ambiente(ambiente), "lote_pdfs",
-                   "buscar os PDFs do lote", pasta=pasta, id=lote_id)
+    return _pdf(_ambiente(ambiente), "lote_pdfs", "este lote", pasta=pasta,
+                id=lote_id)
 
 
 # ------------------------------------------------------------ as intimações
@@ -559,8 +583,8 @@ def historico_de(qual: Any, ambiente: Any = None, *, completo: bool = False,
 
 def pdf_da_intimacao(qual: Any, ambiente: Any = None, *, pasta=None) -> Any:
     """A URL do PDF daquela intimação. SÓ LÊ."""
-    return _listar(_ambiente(ambiente), "pdf_da_intimacao",
-                   "gerar o link do PDF da intimação", pasta=pasta, id=qual)
+    return _pdf(_ambiente(ambiente), "pdf_da_intimacao", "esta intimação",
+                pasta=pasta, id=qual)
 
 
 def relatorio(inicio: str, fim: str, ambiente: Any = None, *,

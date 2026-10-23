@@ -36,6 +36,15 @@ backups ficam na casa.
 - **Ajuda que lê a instalação.** Uma janela de ajuda em toda tela, que pode
   consultar um provedor de IA escolhido pela serventia — com máscara de dados
   pessoais por padrão e sem poder de praticar ato.
+- **Agente de minutas (RI e Notas).** Lê os documentos do título e prepara o
+  primeiro texto do ato, marcando com `[COMPLETAR: …]` o que não consegue
+  afirmar. Não lavra, não numera, não sela e não cobra: quem pratica o ato é a
+  pessoa.
+- **Máquina não assina ato.** Ato feito em sessão de robô fica com o autor
+  «pendente», e quem selar assina — o sistema nunca põe no ato o nome de quem
+  não o praticou.
+
+O que cada versão trouxe está em [`docs/NOVIDADES.md`](docs/NOVIDADES.md).
 
 ## Requisitos
 
@@ -115,6 +124,14 @@ RODAR_SUITE_RAPIDA.cmd
   `tools/criar_atualizacao.py` e aplicados pela tela **Atualizações** — com
   backup antes, conferência de SHA-256 de cada arquivo e volta automática se o
   servidor não responder.
+
+## Dúvidas e contato
+
+Dúvidas sobre o sistema, a implantação ou a licença:
+**[cartoriogestao.dev@proton.me](mailto:cartoriogestao.dev@proton.me)**.
+
+Para relatar defeito ou propor mudança no código, prefira abrir uma *issue* ou
+um *pull request* aqui no GitHub — sem dado real de serventia ou de pessoa.
 
 ## Estado
 

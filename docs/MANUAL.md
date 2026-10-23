@@ -879,6 +879,27 @@ instalação; **não pratica ato**, não executa programas e mascara dados. Suas
 poucas ações de escrita nascem desligadas, e cada mudança se desfaz com um
 clique.
 
+**Agente de minutas** (RI e Notas, desde a 3.7.4): o quadro **«Agente de
+minutas (IA)»** aparece na ficha da matrícula e no ato em lavratura das Notas.
+
+1. Marque os documentos que fundamentam o ato (os da prenotação e do protocolo
+   geral vêm marcados) ou junte outros na hora — eles ficam arquivados com o ato.
+2. Escreva, se quiser, instruções iniciais («compra e venda de 50%»).
+3. Clique em **Preparar a minuta com o agente** e aguarde alguns minutos.
+4. Confira a versão inteira: o texto, as partes, o que ele não conseguiu
+   afirmar e de que documento e página saiu cada dado. Para mudar algo, use
+   **Instruções de revisão**.
+
+O que falta ou está ilegível sai como `[COMPLETAR: …]`. A minuta vai para a fila
+«Minutas a revisar e lavrar» (RI) ou para o teor do ato (Notas); **lavrar,
+selar e cobrar continuam sendo da pessoa**, pela tela de sempre. Os documentos
+sobem inteiros ao provedor de IA configurado, e há teto diário de pedidos.
+
+**Ato feito por robô fica com o autor pendente** (desde a 3.7.3). Em sessão de
+conta marcada como robô — ou sem ninguém logado —, o campo de quem praticou o
+ato sai **«PENDENTE — assina quem selar»**, e o robô não sela. Quando uma pessoa
+abre o ato e clica em **Selar**, o nome dela entra no lugar da marca.
+
 ---
 
 ## 19. Backup e atualizações
@@ -935,7 +956,10 @@ decisão jurídica pertencem a quem tem atribuição.** O sistema:
   e você marca o que cabe no caso;
 - **não inventa número, data nem teor** — pergunta em «O que falta informar» ou
   deixa em branco, porque campo vazio não afirma nada;
-- **não deixa a IA decidir** — ajuda e agente aconselham, nunca lavram.
+- **não deixa a IA decidir** — ajuda e agentes aconselham e redigem minuta,
+  nunca lavram;
+- **não põe no ato o nome de quem não o praticou** — robô não assina, e ninguém
+  assina por ele.
 
 Práticas que evitam a maior parte dos problemas: confira o original antes de
 lavrar e o papel antes de entregar; corrija pelo caminho próprio, com motivo;

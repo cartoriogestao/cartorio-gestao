@@ -99,6 +99,12 @@
   {% endif %}
 </div>
 
+{# O AGENTE DE MINUTAS É O PRIMEIRO QUADRO DA TELA — ordem do oficial em
+   23/10/2026 («a parte do agente de minutas tem que ser a primeira da tela»).
+   Acima dele ficam só o alerta de fraude (que só aparece quando há) e os
+   botões de voltar. Só aparece nas espécies que ele prepara e em lavratura. #}
+{% if agente_minutas is defined %}{% include '_agente_de_minuta.html' %}{% endif %}
+
 {# A ANOTAÇÃO ANTES DA LAVRATURA — 17/09/2026, pedido do oficial:
    «acrescenta o campo de anotações antes da lavratura também para as
    escrituras e atas notariais».

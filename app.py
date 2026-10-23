@@ -66,7 +66,7 @@ APP_NAME = "Gestão Integrada da Serventia"
 # servidor avisou «quem respondeu está na versão 3.6.137, e a instalada é
 # 3.6.138» sobre uma atualização que tinha funcionado (504 de 505 arquivos
 # batendo byte a byte). `tests/test_os_dois_carimbos_da_versao.py` guarda isso.
-VERSION = "3.7.3"
+VERSION = "3.7.4"
 # 3.6.286 - 06/10/2026 Release do sandbox para o oficial: centrais (fila/log/trava), A3, editor/motor de modelos, produtividade, selo robo, F10-F12 do RI, SIRC (cancelados)
 # 3.6.285 - CENPROT: POST /token com form usuario/senha (x-www-form-urlencoded)
 # 3.6.284 - Projetos lista: coluna Atualizado (DD/MM/AA - HH:MM, fuso local)
@@ -2982,6 +2982,11 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     import notas_web
     notas_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
+    # O AGENTE DE MINUTAS DO RI E DAS NOTAS (23/10/2026) — o quadro na ficha da
+    # matrícula e no ato em lavratura; prepara a minuta, não lavra.
+    import minuta_ia_web
+    minuta_ia_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     # O CADASTRO NO CCN (13/10/2026) — o lote e a ponte com a extensão.
     import ccn_web

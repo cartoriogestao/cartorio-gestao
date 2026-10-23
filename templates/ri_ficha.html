@@ -27,6 +27,10 @@
   {% if minutas %}<span> · </span><a style="color:#fff;text-decoration:underline;font-weight:bold" href="#minutas-para-lavrar">Revisar minutas desta matrícula</a>{% endif %}
 </section>
 {% endif %}
+{# O AGENTE DE MINUTAS É O PRIMEIRO QUADRO DA FICHA — ordem do oficial em
+   23/10/2026 («a parte do agente de minutas tem que ser a primeira da tela»).
+   Acima dele fica só o alerta da CNIB, que só aparece quando há ocorrência. #}
+{% if agente_minutas is defined %}{% include '_agente_de_minuta.html' %}{% endif %}
 
 
 

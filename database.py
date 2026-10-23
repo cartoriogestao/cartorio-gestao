@@ -94,6 +94,7 @@ from rc_leitura_documentos import init_schema as init_rc_leitura_schema
 from ri_onus_ia import init_schema as init_ri_onus_ia_schema
 from revisao_previa import init_schema as init_revisao_schema
 from revisao_anexos import init_schema as init_revisao_anexos_schema
+from minuta_ia import init_schema as init_minuta_ia_schema
 from revisao_transcricao_lote import init_schema as init_revisao_transcricao_schema
 from bd_nativo import banco
 
@@ -868,6 +869,9 @@ class Database:
         init_ri_onus_ia_schema(con)
         init_revisao_schema(con)
         init_revisao_anexos_schema(con)
+        # O AGENTE DE MINUTAS (23/10/2026) — `mi_pedidos`, os pedidos e as
+        # versões de cada minuta. Não aponta para tabela nenhuma.
+        init_minuta_ia_schema(con)
         # A REVISÃO DAS TRANSCRIÇÕES DO RI (LH11) também nasce aqui (LH12): a
         # emissão da certidão de inteiro teor grava em `ri_transcricao_
         # emissoes` dentro da transação que numera, e o DDL ali viria depois do

@@ -86,6 +86,10 @@ CHAMADAS_POR_DIA = {
     "ri_onus_ia": 100,
     "rc_leitura": 400,
     "robo_rascunho": 50,
+    # O AGENTE DE MINUTAS (23/10/2026): cada pedido é UMA chamada ao Opus, com
+    # os documentos inteiros — sessenta minutas e revisões por dia é mais do que
+    # o balcão produz, e segura um laço que engasgue.
+    "minuta_ia": 60,
 }
 
 # ------------------------------------------------------------------ o catálogo
@@ -282,6 +286,34 @@ CATALOGO: tuple[dict[str, Any], ...] = (
         "nao_faz": "não lavra, não numera, não sela e não cobra",
         "teto": ("ia_catalogo", "CHAMADAS_POR_DIA", "chamadas ao provedor por dia",
                  "rc_leitura"),
+        "chave": CHAVE_FORA_DO_BANCO,
+    },
+    {
+        # 23/10/2026, o oficial: «um agente para preparar as minutas dos atos do
+        # RI e do Notas (...) em opus high».
+        "codigo": "minuta_ia",
+        "nome": "Agente de minutas (RI e Notas)",
+        "modulo": "minuta_ia",
+        "onde": "quadro «Agente de minutas» na ficha da matrícula (RI) e na tela "
+                "do ato em lavratura (escritura, procuração e ata notarial)",
+        "finalidade": "ler os documentos escolhidos (prenotação, protocolo geral, "
+                      "anexos do ato) e redigir a minuta do ato, com as partes e a "
+                      "lista do que não se pôde afirmar; revisar a minuta pelas "
+                      "instruções da serventia",
+        "inciso": "I",
+        "enquadramento": "redação",
+        "dado": "os documentos marcados, inteiros (PDF e imagem), a ficha da "
+                "matrícula ou o ato com as partes cadastradas, dois atos da casa "
+                "como exemplo de redação e as instruções digitadas",
+        "mascara": "não: documento digitalizado não se mascara (decisão do oficial "
+                   "de 12/10/2026, a mesma da leitura do RCPN)",
+        "mascarado": False,
+        "revisao_humana": "a minuta pousa como minuta A REVISAR (RI) ou como teor do "
+                          "ato em lavratura (Notas), com [COMPLETAR] no que falta; "
+                          "quem confere com os originais e lavra é a pessoa",
+        "nao_faz": "não lavra, não numera, não sela, não cobra e não lança no livro",
+        "teto": ("ia_catalogo", "CHAMADAS_POR_DIA", "chamadas ao provedor por dia",
+                 "minuta_ia"),
         "chave": CHAVE_FORA_DO_BANCO,
     },
     {

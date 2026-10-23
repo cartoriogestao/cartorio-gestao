@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}Minuta do agente — pedido {{ p.id }}{% endblock %}
+{% block heading %}<h1>Minuta do agente — versão {{ p.versao }}</h1>{% endblock %}
+{% block content %}
+{#
+  A VERSÃO INTEIRA DE UM PEDIDO AO AGENTE DE MINUTAS (`minuta_ia`). Só LÊ: usar
+  a versão e pedir revisão ficam no quadro da tela do ato, onde se trabalha.
+#}
+<p class="small">
+  {% if p.atribuicao == 'RI' %}<a href="{{ url_for('ri_ficha', matricula_id=p.alvo_id) }}#agente-minutas">voltar à ficha da matrícula</a>
+  {% else %}<a href="{{ url_for('notas_ato', ato_id=p.alvo_id) }}#agente-minutas">voltar ao ato</a>{% endif %}
+</p>
+
+<div class="notice warning">
+  <strong>Rascunho preparado por IA ({{ p.modelo or '—' }}, esforço {{ p.esforco or '—' }}).</strong>
+  Confira cada dado com os documentos originais antes de lavrar. O que o agente não conseguiu
+  afirmar está no texto como [COMPLETAR: …].
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Pedido nº {{ p.id }}</span>
+    <span class="small muted">{{ p.situacao }} · {{ (p.pedido_em or '')[:16]|replace('T', ' ') }} · {{ p.pedido_por or '—' }}</span></div>
+  <div style="padding:0 14px 14px" class="small">
+    {% if p.instrucao %}<p><strong>Instruções iniciais:</strong> {{ p.instrucao }}</p>{% endif %}
+    {% if p.revisao %}<p><strong>Revisão pedida:</strong> {{ p.revisao }}</p>{% endif %}
+    <p><strong>Documentos lidos:</strong></p>
+    <ul>{% for d in p.documentos %}<li>{{ d.nome }} <span class="muted">({{ d.origem }})</span> —
+      <a href="{{ url_for('attachment_view', attachment_id=d.anexo_id) }}" target="_blank">ver</a></li>{% endfor %}</ul>
+    {% if p.erro %}<p><strong>Não saiu:</strong> {{ p.erro }}</p>{% endif %}
+    {% if p.nao_aplicado_motivo %}<p><strong>Não foi posta:</strong> {{ p.nao_aplicado_motivo }}</p>{% endif %}
+    <p class="muted">{{ p.tokens_entrada or 0 }} tokens de entrada · {{ p.tokens_saida or 0 }} de saída · {{ p.segundos or 0 }} s</p>
+  </div>
+</section>
+
+{% if p.resultado %}
+{% set r = p.resultado %}
+{% if r.pendencias %}
+<section class="panel">
+  <div class="panel-head"><span>O que o agente não conseguiu afirmar</span><span class="small muted">{{ r.pendencias|length }}</span></div>
+  <ul style="padding:0 30px 14px">{% for x in r.pendencias %}<li>{{ x }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>O texto</span>
+    <span class="small muted">{{ r.tipo_ato or p.tipo_ato }}{% if r.natureza_titulo %} — {{ r.natureza_titulo }}{% endif %}</span></div>
+  <div style="padding:0 14px 14px; white-space:pre-wrap; font-family:serif; line-height:1.5">{{ p.teor }}</div>
+</section>
+
+{% if r.partes %}
+<section class="panel">
+  <div class="panel-head"><span>As partes que o agente achou</span><span class="small muted">{{ r.partes|length }}</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nome</th><th>Documento</th><th>Papel</th><th>Qualificação</th></tr></thead>
+    <tbody>{% for x in r.partes %}<tr><td>{{ x.nome }}</td><td>{{ x.documento }}</td><td>{{ x.papel }}</td>
+      <td class="small">{{ x.qualificacao }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if r.fontes %}
+<section class="panel">
+  <div class="panel-head"><span>De onde saiu cada dado</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Dado</th><th>Documento</th><th>Página</th></tr></thead>
+    <tbody>{% for f in r.fontes %}<tr><td>{{ f.dado }}</td><td>{{ f.documento }}</td><td>{{ f.pagina }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if r.observacoes %}
+<section class="panel">
+  <div class="panel-head"><span>Observações do agente</span></div>
+  <p style="padding:0 14px 14px">{{ r.observacoes }}</p>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

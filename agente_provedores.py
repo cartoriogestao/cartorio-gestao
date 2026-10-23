@@ -383,7 +383,17 @@ def _mensagens_anthropic(conversa: list[dict]) -> list[dict]:
             # A PÁGINA DIGITALIZADA VAI COMO IMAGEM (07/10/2026, a leitura dos
             # anexos na revisão): `imagens` é uma lista de {"mime", "base64"},
             # e elas vão ANTES do texto, que é a pergunta sobre elas.
+            # O DOCUMENTO INTEIRO VAI COMO DOCUMENTO (23/10/2026, o agente de
+            # minutas): `documentos` é uma lista de {"mime", "base64", "titulo"}
+            # — o PDF sobe como está, e o provedor lê o texto e a imagem de cada
+            # página. Vão antes das imagens soltas e do texto, que é o pedido.
             conteudo: list[dict] = [
+                {"type": "document",
+                 "source": {"type": "base64", "media_type": doc["mime"],
+                            "data": doc["base64"]},
+                 **({"title": str(doc["titulo"])[:200]} if doc.get("titulo") else {})}
+                for doc in evento.get("documentos") or []]
+            conteudo += [
                 {"type": "image",
                  "source": {"type": "base64", "media_type": img["mime"],
                             "data": img["base64"]}}
@@ -426,7 +436,7 @@ def _mensagens_openai(conversa: list[dict], sistema: str) -> list[dict]:
     for evento in conversa:
         tipo = evento.get("tipo")
         if tipo == "user":
-            if evento.get("imagens"):
+            if evento.get("imagens") or evento.get("documentos"):
                 # Imagem só se manda pela família da Anthropic; aqui ela sumiria
                 # calada, e a «transcrição» viria de uma página que não subiu.
                 raise AgenteError("Este provedor não recebe imagem pelo sistema; "
@@ -454,17 +464,39 @@ def _mensagens_openai(conversa: list[dict], sistema: str) -> list[dict]:
     return saida
 
 
+#: O QUE QUEM CHAMA PODE ACRESCENTAR AO CORPO, NA FAMÍLIA DA ANTHROPIC — e só
+#: isto (23/10/2026, o agente de minutas). `output_config` leva o esforço e o
+#: formato da resposta; `fallbacks` é o desvio do próprio provedor quando o
+#: modelo recusa. Lista fechada de propósito: chave livre no corpo seria um
+#: jeito de mudar o pedido por fora do que este módulo conhece.
+EXTRAS_ACEITOS = ("output_config", "fallbacks")
+
+
 def montar_pedido(provedor: Any, *, sistema: str, conversa: list[dict],
                   ferramentas: list[dict], modelo: Any = None,
-                  maximo_de_saida: int = 2000) -> dict:
+                  maximo_de_saida: int = 2000, extras: dict | None = None,
+                  betas: list[str] | None = None) -> dict:
     """O pedido inteiro, pronto para ir: endereço, corpo e cabeçalhos.
 
     Devolve o que já está pronto em vez de mandar direto: assim o teste confere
     o que sairia **sem abrir a rede** — a mesma ideia do envelope do selo.
+
+    `extras` e `betas` só valem na família da Anthropic: noutro provedor eles
+    são recusados, e não esquecidos — o esforço pedido que some calado faria a
+    minuta sair de um modelo que pensou menos do que se disse.
     """
     prov = normalizar_provedor(provedor)
     dados = PROVEDORES[prov]
     escolhido = modelo_de(prov, modelo)
+    extras = dict(extras or {})
+    fora = sorted(set(extras) - set(EXTRAS_ACEITOS))
+    if fora:
+        raise AgenteError(f"Campo do pedido que este transporte não conhece: "
+                          f"{', '.join(fora)}.", motivo="extra desconhecido",
+                          recusado=True)
+    if (extras or betas) and dados["familia"] != ANTHROPIC:
+        raise AgenteError("Esforço, formato e desvio do pedido só existem no "
+                          "Claude.", motivo="extra noutro provedor", recusado=True)
 
     if dados["familia"] == ANTHROPIC:
         corpo: dict[str, Any] = {
@@ -475,6 +507,7 @@ def montar_pedido(provedor: Any, *, sistema: str, conversa: list[dict],
         }
         if ferramentas:
             corpo["tools"] = _ferramentas_anthropic(ferramentas)
+        corpo.update(extras)
     else:
         corpo = {
             "model": escolhido,
@@ -489,6 +522,7 @@ def montar_pedido(provedor: Any, *, sistema: str, conversa: list[dict],
             "host": dados["host"], "porta": int(dados["porta"]),
             "caminho": dados["caminho"],
             "cabecalho_de_versao": dados.get("cabecalho_de_versao"),
+            "betas": [str(b) for b in (betas or [])],
             "corpo": corpo}
 
 
@@ -503,6 +537,8 @@ def _cabecalhos(pedido: dict, chave: str) -> dict[str, str]:
     versao = pedido.get("cabecalho_de_versao")
     if versao:
         cabecalhos[versao[0]] = versao[1]
+    if pedido.get("betas"):
+        cabecalhos["anthropic-beta"] = ",".join(pedido["betas"])
     return cabecalhos
 
 
@@ -668,14 +704,22 @@ def _nao_consegui(prov: str, ultimo: str, *, corpo: bytes, prazo: int,
 def _turno(pasta_de_dados: Any, *, provedor: Any, sistema: str,
            conversa: list[dict], ferramentas: list[dict],
            modelo: Any = None, maximo_de_saida: int = 2000,
-           prazo: int = PRAZO_PADRAO) -> dict:
-    """O turno em si, sem o registro — quem chama é `conversar`."""
+           prazo: int = PRAZO_PADRAO, extras: dict | None = None,
+           betas: list[str] | None = None,
+           limite_de_envio: int | None = None) -> dict:
+    """O turno em si, sem o registro — quem chama é `conversar`.
+
+    `limite_de_envio` existe para quem manda DOCUMENTO: um PDF digitalizado em
+    base64 passa fácil dos 900 mil caracteres que bastam a uma conversa, e o
+    teto do provedor é de 32 MB por pedido. Quem o aumenta declara por quê.
+    """
     prov = normalizar_provedor(provedor)
     pedido = montar_pedido(prov, sistema=sistema, conversa=conversa,
                            ferramentas=ferramentas, modelo=modelo,
-                           maximo_de_saida=maximo_de_saida)
+                           maximo_de_saida=maximo_de_saida, extras=extras,
+                           betas=betas)
     corpo = json.dumps(pedido["corpo"], ensure_ascii=False).encode("utf-8")
-    if len(corpo) > LIMITE_DE_ENVIO:
+    if len(corpo) > (limite_de_envio or LIMITE_DE_ENVIO):
         raise AgenteError(
             f"A conversa ficou grande demais ({len(corpo) // 1024} KB). Isso "
             f"quase sempre é engano de quem a montou — reduza o que vai junto "
@@ -739,7 +783,9 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
               modelo: Any = None, maximo_de_saida: int = 2000,
               prazo: int = PRAZO_PADRAO, modulo: str = "",
               finalidade: str = "", usuario: str = "", atribuicao: str = "",
-              referencia: str = "", mascarado: bool | None = None) -> dict:
+              referencia: str = "", mascarado: bool | None = None,
+              extras: dict | None = None, betas: list[str] | None = None,
+              limite_de_envio: int | None = None) -> dict:
     """Um turno. **FALA COM A REDE** e devolve a resposta em forma neutra.
 
     **NÃO RECEBE `con`, E ISSO É DE PROPÓSITO** — a mesma assinatura de
@@ -771,7 +817,8 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
         lida = _turno(pasta_de_dados, provedor=provedor, sistema=sistema,
                       conversa=conversa, ferramentas=ferramentas,
                       modelo=modelo, maximo_de_saida=maximo_de_saida,
-                      prazo=prazo)
+                      prazo=prazo, extras=extras, betas=betas,
+                      limite_de_envio=limite_de_envio)
     except AgenteError as falha:
         USO.registrar(pasta_de_dados, **registro,
                       resultado=USO.RECUSADO if falha.recusado else USO.ERRO,

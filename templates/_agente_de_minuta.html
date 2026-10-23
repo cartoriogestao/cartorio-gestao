@@ -1,0 +1,168 @@
+{#
+  O AGENTE DE MINUTAS — 23/10/2026, o oficial: «um agente para preparar as
+  minutas dos atos do RI e do Notas (...) em opus high», com os documentos
+  escolhidos antes de ligá-lo, os juntados na hora, e espaço para instruções
+  iniciais e de revisão. Um quadro só para as duas telas (a ficha da matrícula
+  e o ato das Notas), como o de `_leitura_dos_anexos.html` no RCPN.
+
+  Quem monta o que ele mostra é `minuta_ia_web._agente_de_minutas_na_tela`.
+#}
+{% set am = agente_minutas %}
+<section class="panel" id="agente-minutas">
+  <div class="panel-head"><span>Agente de minutas (IA)</span>
+    <span class="small muted">{{ am.modelo if am.cabe else '' }}{% if am.cabe %} · esforço {{ am.esforco }}{% endif %}</span></div>
+  <div style="padding:0 14px 14px">
+  {% if not am.cabe %}
+    <p class="muted">{{ am.motivo }}</p>
+  {% else %}
+    <p class="small muted">O agente lê os documentos que você marcar, a {% if am.atribuicao == 'RI' %}ficha da matrícula{% else %}ficha do ato e as partes cadastradas{% endif %}
+      e dois atos desta casa como exemplo de redação, e prepara a minuta.
+      {# Não escrever aqui o título da fila: `test_ri_minuta` confere que ele
+         some da ficha quando a fila está vazia. #}
+      {% if am.atribuicao == 'RI' %}Ela entra na <a href="#minutas-para-lavrar">fila de minutas</a>
+      desta ficha, a revisar.{% else %}Ela entra como o teor deste ato, ainda em lavratura.{% endif %}
+      O que ele não conseguiu afirmar sai como <strong>[COMPLETAR: …]</strong>. <strong>Nada é lavrado,
+      numerado ou selado</strong>: quem confere com os originais e lavra é você. Os documentos sobem
+      inteiros ao Claude, sem máscara.</p>
+
+    {% if not am.ligado %}
+    <div class="notice warning">Esta instalação não tem a chave do Claude: o agente não funciona sem ela.</div>
+    {% endif %}
+
+    {% if am.andamento %}
+    <div class="notice" id="agente-minutas-andamento" data-pedido="{{ am.andamento.id }}">
+      <strong>O agente está preparando a minuta</strong> (pedido nº {{ am.andamento.id }},
+      desde {{ (am.andamento.pedido_em or '')[11:16] }}). Leva alguns minutos; este quadro se atualiza
+      sozinho quando ela ficar pronta.</div>
+    <script>
+    (function () {
+      var caixa = document.getElementById('agente-minutas-andamento');
+      if (!caixa) return;
+      var url = "{{ url_for('minuta_ia_pedido', pedido_id=am.andamento.id) }}?andamento=1";
+      setInterval(function () {
+        fetch(url, {credentials: 'same-origin'}).then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.situacao !== 'PENDENTE' && d.situacao !== 'LENDO') {
+              window.location.hash = 'agente-minutas'; window.location.reload();
+            }
+          }).catch(function () {});
+      }, 10000);
+    })();
+    </script>
+    {% endif %}
+
+    {# ---------------------------------------------------- as versões #}
+    {% for p in am.historico %}
+      {% if loop.first %}<h3 class="small" style="margin-top:12px">Minutas preparadas pelo agente</h3>{% endif %}
+      <div class="notice{% if p.situacao == 'ERRO' %} danger{% elif p.situacao == 'PRONTA' and not p.aplicado_em %} warning{% endif %}" style="margin-bottom:8px">
+        <strong>Versão {{ p.versao }}</strong> — pedido nº {{ p.id }}, {{ (p.pedido_em or '')[:16]|replace('T', ' ') }}
+        por {{ p.pedido_por or '—' }}{% if p.tipo_ato %} · {{ p.tipo_ato }}{% endif %}
+        {% if p.revisao %}<br><span class="small"><strong>Revisão pedida:</strong> {{ p.revisao }}</span>
+        {% elif p.instrucao %}<br><span class="small"><strong>Instruções:</strong> {{ p.instrucao }}</span>{% endif %}
+        <br>
+        {% if p.situacao in ('PENDENTE', 'LENDO') %}
+          <span class="small">preparando…</span>
+        {% elif p.situacao == 'ERRO' %}
+          <span class="small">Não saiu: {{ p.erro }}</span>
+        {% else %}
+          <span class="small">
+          {% if p.aplicado_em %}Posta {% if am.atribuicao == 'RI' %}na minuta nº {{ p.minuta_id }}{% else %}no teor do ato{% endif %}
+            em {{ (p.aplicado_em or '')[:16]|replace('T', ' ') }}.
+          {% else %}<strong>Não foi posta:</strong> {{ p.nao_aplicado_motivo or 'aguardando a sua decisão' }}{% endif %}
+          {{ (p.resultado.pendencias or [])|length }} pendência(s) ·
+          {{ p.modelo }} · {{ p.segundos or 0 }} s</span>
+          {% if p.resultado.pendencias %}
+          <ul class="small" style="margin:4px 0">{% for x in p.resultado.pendencias[:8] %}<li>{{ x }}</li>{% endfor %}
+            {% if p.resultado.pendencias|length > 8 %}<li>… e mais {{ p.resultado.pendencias|length - 8 }}</li>{% endif %}</ul>
+          {% endif %}
+          <span class="small"><a href="{{ url_for('minuta_ia_pedido', pedido_id=p.id) }}" target="_blank">ver a versão inteira, as partes e de onde saiu cada dado</a></span>
+          {% if not p.aplicado_em and user.role in ['ADMIN','MANAGER','USER'] %}
+          <form method="post" action="{{ url_for('minuta_ia_usar', pedido_id=p.id) }}" style="margin-top:6px"
+                onsubmit="return confirm('Trocar o texto atual pela versão {{ p.versao }} do agente?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="small">Usar esta versão</button>
+          </form>
+          {% endif %}
+          {% if loop.first and not am.andamento and user.role in ['ADMIN','MANAGER','USER'] %}
+          <form method="post" enctype="multipart/form-data" class="form-grid" style="margin-top:8px"
+                action="{{ url_for('minuta_ia_revisar', pedido_id=p.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="span2">Instruções de revisão — o que o agente deve mudar
+              <textarea name="revisao" rows="3" required minlength="10"
+                placeholder="ex.: o regime de bens dos vendedores é comunhão parcial; tire a cláusula de usufruto; qualifique o cônjuge da adquirente"></textarea></label>
+            <label class="span2">Juntar mais documentos (opcional — PDF, JPG ou PNG)
+              <input type="file" name="arquivos" multiple accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"></label>
+            {% if am.atribuicao == 'RI' and am.prenotacoes %}
+            <label class="span2">Os documentos juntados ficam guardados na prenotação
+              <select name="prenotacao_destino">{% for pr in am.prenotacoes %}
+                <option value="{{ pr.id }}" {% if pr.id == p.prenotacao_id %}selected{% endif %}>{{ pr.numero }} — {{ pr.natureza_titulo or '' }} ({{ pr.situacao }})</option>{% endfor %}
+              </select></label>
+            {% endif %}
+            <div class="span2"><button>Pedir a revisão ao agente</button>
+              <span class="small muted">A revisão parte do texto como ele está agora — com o que você já corrigiu à mão.</span></div>
+          </form>
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    {# ---------------------------------------------------- o pedido novo #}
+    {% if am.ligado and not am.andamento and user.role in ['ADMIN','MANAGER','USER'] %}
+    <details {% if not am.historico %}open{% endif %} style="margin-top:10px">
+      <summary><strong>{% if am.historico %}Pedir uma minuta nova{% else %}Pedir a minuta ao agente{% endif %}</strong></summary>
+      <form method="post" enctype="multipart/form-data" class="form-grid" style="margin-top:8px"
+            action="{{ url_for('minuta_ia_pedir', atribuicao=am.atribuicao, alvo_id=am.alvo_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% if am.atribuicao == 'RI' %}
+        <label>O ato
+          <select name="tipo_ato" required>
+            <option value="">— escolha —</option>
+            <option value="R">R — registro</option>
+            <option value="AV">AV — averbação</option>
+          </select></label>
+        {% endif %}
+        <div class="span2">
+          <strong class="small">Documentos que o agente vai ler</strong>
+          <span class="small muted">(até {{ am.maximo }} arquivos e {{ am.limite_mb }} MB por pedido)</span>
+          {% if am.disponiveis %}
+          <div class="table-wrap"><table>
+            <thead><tr><th></th><th>Documento</th><th>De onde</th><th></th></tr></thead>
+            <tbody>{% for d in am.disponiveis %}
+              <tr>
+                <td><input type="checkbox" name="anexo" value="{{ d.anexo_id }}" checked style="width:auto"></td>
+                <td>{{ d.nome }}<br><span class="small muted">{{ ((d.tamanho or 0) / 1024)|round(1) }} KB{% if d.tipo %} · {{ d.tipo }}{% endif %}</span></td>
+                <td class="small">{{ d.origem }}</td>
+                <td class="small"><a href="{{ url_for('attachment_view', attachment_id=d.anexo_id) }}" target="_blank">ver</a></td>
+              </tr>{% endfor %}</tbody>
+          </table></div>
+          {% else %}
+          <p class="small muted">{% if am.atribuicao == 'RI' %}Nenhuma prenotação desta matrícula tem documento anexado,
+            nem o protocolo geral ligado a ela.{% else %}Este ato ainda não tem documento anexado, nem protocolo geral
+            ligado com documento.{% endif %} Junte os documentos abaixo.</p>
+          {% endif %}
+        </div>
+        <label class="span2">Juntar documentos agora (PDF, JPG ou PNG) — eles ficam guardados
+          {% if am.atribuicao == 'RI' %}na prenotação escolhida abaixo{% else %}nos documentos deste ato (arquivamento){% endif %}
+          <input type="file" name="arquivos" multiple accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"></label>
+        {% if am.atribuicao == 'RI' %}
+          {% if am.prenotacoes %}
+          <label class="span2">Prenotação do título (onde os documentos juntados ficam guardados)
+            <select name="prenotacao_destino">{% for pr in am.prenotacoes %}
+              <option value="{{ pr.id }}">{{ pr.numero }} — {{ pr.natureza_titulo or '' }}{% if pr.apresentante %} — {{ pr.apresentante }}{% endif %} ({{ pr.situacao }})</option>{% endfor %}
+            </select></label>
+          {% else %}
+          <p class="span2 small muted">Esta matrícula não tem prenotação: para juntar documento aqui, prenote o título
+            com a matrícula informada.</p>
+          {% endif %}
+        {% endif %}
+        <label class="span2">Instruções iniciais (opcional)
+          <textarea name="instrucao" rows="3"
+            placeholder="ex.: compra e venda da parte ideal de 50%; o ITBI é a guia anexa; os vendedores são casados em comunhão universal"></textarea></label>
+        <div class="span2"><button class="button">Preparar a minuta com o agente</button>
+          <span class="small muted">Leva alguns minutos. Você pode continuar trabalhando: o quadro avisa quando terminar.</span></div>
+      </form>
+    </details>
+    {% endif %}
+  {% endif %}
+  </div>
+</section>

@@ -13,7 +13,7 @@ quê**.
 
 ## O que se mediu: os 125 arquivos de 2026
 
-A pasta `8. CRA` do Proton Drive, hidratada antes de medir — os arquivos
+A pasta da CRA na rede da serventia, hidratada antes de medir — os arquivos
 chegam como marcador de nuvem e cada leitura força um download.
 
 | Tipo | Sigla | Arquivos | Títulos | Ocorrência |
@@ -135,7 +135,7 @@ Dois passos do roteiro da tarde ficam de fora, e não por falta de trabalho:
 ### O arquivo de edital do CENPROT e o de emolumentos
 
 **Não existe um único exemplar de nenhum dos dois em lugar nenhum desta
-casa.** Procurado em `C:\ARPNET` inteiro e na pasta `8. CRA`: os arquivos que
+casa.** Procurado em `C:\ARPNET` inteiro e na pasta da CRA: os arquivos que
 há são os quatro da CRA, as desistências, os `.p7s` (instrumentos assinados) e
 os `.zip` de imagem. De edital do CENPROT e de emolumentos, nada.
 

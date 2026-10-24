@@ -36,7 +36,7 @@ imagem/ficha da matrícula sem decisão expressa do cartório.
 ### Prioridade 1 — recentes ainda sem imagem
 
 1. Matrícula 168 — Livro 2-A — abertura 16/07/2026.
-   - Há texto em `IMOVEIS\LIVRO- 2\168.doc`.
+   - Há texto em `<pasta do Livro 2>\168.doc`.
    - Usar o texto para revisar indicadores.
    - Ainda precisa localizar ficha/imagem oficial ou redigitalizar.
 

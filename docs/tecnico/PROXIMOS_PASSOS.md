@@ -109,7 +109,7 @@ precisam entrar aqui, cada um com seu período.
 ## 5. Trazer as matrículas digitadas em Word
 
 `EXTRAIR_MATRICULAS_DOC.cmd`, na pasta Downloads. Roda no Windows porque os arquivos estão no
-Proton Drive e chegam como marcador de nuvem — de dentro do meu ambiente eles não abrem.
+serviço de nuvem e chegam como marcador de nuvem — de dentro do meu ambiente eles não abrem.
 
 São **1.097 matrículas** que existem na pasta e não estão no acervo importado do E-Ofício.
 

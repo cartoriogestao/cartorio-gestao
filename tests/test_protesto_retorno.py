@@ -325,6 +325,41 @@ def test_ato_novo_depois_do_retorno_entra_no_proximo():
     assert len(r["atos"]) == 1
 
 
+def test_titulo_com_dois_devedores_volta_numa_linha_so():
+    # Dois devedores = duas linhas da remessa = dois títulos com o MESMO
+    # protocolo. Duas linhas no retorno a CRA recusa com 9999 «MESMO
+    # PROTOCOLO» (23/10/2026). Vai uma; os dois atos ficam informados.
+    con = banco()
+    a = titulo(con, numero="7/1")
+    b = titulo(con, numero="7/1-B")
+    for tid in (a, b):
+        con.execute("UPDATE pt_titulos SET protocolo='2608250009' WHERE id=?",
+                    (tid,))
+        ate_o_protesto(con, tid)
+    montado = PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
+    lido = PA.ler(montado["conteudo"])
+    assert [str(t["protocolo"]) for t in lido.titulos] == ["2608250009"]
+    assert lido.rodape["quantidade_de_titulos"] == 1
+    assert montado["soma_centavos"] == 131045
+    assert len(montado["atos"]) == 2
+    PR.gerar(con, apresentante_codigo="001", dia=HOJE, agora=AGORA, marca="A")
+    assert PR.pendentes(con) == []
+
+
+def test_o_titulo_da_cenprot_e_contado_a_parte_e_nao_vai_a_cra():
+    # `pendentes_da_cenprot` tinha uma segunda definição, no estilo do SQLite,
+    # que sobrescrevia a desta casa; a conta tem de rodar no banco de hoje.
+    con = banco()
+    ate_o_protesto(con, titulo(con, numero="5/1", origem="CENPROT"))
+    assert PR.pendentes(con) == []
+    assert PR.pendentes_da_cenprot(con) == 1
+    assert PR.pendentes_da_cenprot(con, apresentante_codigo="001") == 1
+    assert PR.pendentes_da_cenprot(con, apresentante_codigo="002") == 0
+    with pytest.raises(PR.RetornoError) as erro:
+        PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
+    assert "XML do CENPROT" in str(erro.value)
+
+
 # ------------------------------------------------- o ida e volta, de novo
 
 

@@ -1553,7 +1553,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     #
     # RELATO #135, 15/10/2026, aberto da tarefa 386: «criar no protocolo geral
     # ou em notas aba de anexar documentos para fim de qualificação». A tarefa
-    # guardava os papéis numa pasta do Proton Drive, fora do backup e fora da
+    # guardava os papéis numa pasta sincronizada, fora do backup e fora da
     # tela de quem qualifica. A regra mora em `protocolo_documentos`; aqui só
     # se ligam os fios.
 

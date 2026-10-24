@@ -71,11 +71,11 @@ def test_selo_pago_e_arquivo_estranho_sao_recusados(tmp_path):
         GC.guardar(con, 1, nome_arquivo="a.exe", conteudo=b"x", pasta=tmp_path, usuario_id=1, agora="t")
 
 
-def test_acha_no_proton_pelo_codigo_no_nome(tmp_path):
+def test_acha_na_pasta_pelo_codigo_no_nome(tmp_path):
     (tmp_path / "2026" / "OUTUBRO").mkdir(parents=True)
     (tmp_path / "2026" / "OUTUBRO" / "AVERBA000000XA66PB40MVB00E35.pdf").write_bytes(b"%PDF")
     (tmp_path / "2026" / "DARLENE.pdf").write_bytes(b"%PDF")
-    achados = GC.no_proton(["AVERBA000000XA66PB40MVB00E35", "AVERBA000000VBKH58VIXU0CLW81"], tmp_path)
+    achados = GC.na_pasta(["AVERBA000000XA66PB40MVB00E35", "AVERBA000000VBKH58VIXU0CLW81"], tmp_path)
     assert list(achados) == ["AVERBA000000XA66PB40MVB00E35"]
 
 
@@ -96,3 +96,9 @@ def test_o_aviso_aparece_em_toda_tela_e_some_ao_guardar(cg_casa_logada):
     # O recado passou a contar os arquivos — HOTFIX-2026-10-13-07 (vários
     # arquivos por envio): «1 comprovante(s) guardado(s).» — 14/10/2026.
     assert "1 comprovante(s) guardado(s)" in r and "ato(s) gratuito(s) sem o comprovante" not in r
+
+
+def test_sem_pasta_configurada_nao_procura_nada():
+    """23/10/2026: sem `settings.gratuidade_pasta`, nada se oferece — o código
+    não procura a pasta dos comprovantes em lugar nenhum."""
+    assert GC.na_pasta(["AVERBA000000XA66PB40MVB00E35"], None) == {}

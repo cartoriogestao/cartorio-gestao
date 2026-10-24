@@ -2602,6 +2602,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                     x.strip() for x in request.form.get("pastas_de_importacao", "").splitlines()
                     if x.strip()),
                 "backup_dir": request.form.get("backup_dir", "").strip(),
+                "malote_pasta": request.form.get("malote_pasta", "").strip(),
+                "gratuidade_pasta": request.form.get("gratuidade_pasta", "").strip(),
                 "network_host": request.form.get("network_host", "0.0.0.0").strip() or "0.0.0.0",
                 "network_port": str(max(1024, min(65535, parse_int(request.form.get("network_port")) or 8765))),
                 "discovery_enabled": "1" if request.form.get("discovery_enabled") else "0",
@@ -2645,6 +2647,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             # régua é a de `pastas_da_casa._rede`, a mesma das importações.
             import pastas_da_casa as PDC
             de_rede = [c.strip() for c in (values["archive_root"], values["backup_dir"],
+                                            values["malote_pasta"], values["gratuidade_pasta"],
                                             *values["pastas_de_importacao"].splitlines())
                        if c and c.strip() and PDC._rede(c.strip())]
             if de_rede:

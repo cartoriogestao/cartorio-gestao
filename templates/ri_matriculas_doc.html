@@ -6,8 +6,8 @@
 {% if not arquivo %}
 <div class="notice">
   <strong>Ainda não li a pasta.</strong>
-  <p class="small">Informe abaixo onde estão os arquivos digitados e mande ler. Enquanto o
-  Proton Drive mantinha os documentos <em>sob demanda</em>, a leitura só funcionava na máquina
+  <p class="small">Informe abaixo onde estão os arquivos digitados e mande ler. Enquanto a
+  pasta sincronizada mantinha os documentos <em>sob demanda</em>, a leitura só funcionava na máquina
   da serventia; com a pasta baixada, funciona daqui.</p>
 </div>
 
@@ -17,7 +17,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label class="span2" style="display:block">Pasta
       <input name="pasta" value="{{ pasta or '' }}" style="width:100%"
-             placeholder="C:\Users\<usuario>\Proton Drive\...\1. RI\LIVRO- 2\MATRICULAS ANTIGAS EM DOC"></label>
+             placeholder="C:\caminho\da\pasta\das\matriculas"></label>
     <div style="margin-top:10px">
       <button class="primary" name="acao" value="extrair">Ler a pasta agora</button>
       <span class="small muted">Só lê: não altera, não move e não apaga nada na origem.
@@ -38,7 +38,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label class="span2" style="display:block">Pasta
       <input name="pasta" value="{{ pasta or '' }}" style="width:100%"
-             placeholder="C:\Users\<usuario>\Proton Drive\...\1. RI\LIVRO- 2\MATRICULAS ANTIGAS EM DOC"></label>
+             placeholder="C:\caminho\da\pasta\das\matriculas"></label>
     <div style="margin-top:10px">
       <button class="primary" name="acao" value="extrair">Ler a pasta agora</button>
       <span class="small muted">Só lê: não altera, não move e não apaga nada na origem.

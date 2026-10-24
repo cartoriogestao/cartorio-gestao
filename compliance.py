@@ -116,7 +116,7 @@ class Contexto:
     #: False no ensaio contra o banco de produção aberto só para leitura: as
     #: regras que fotografam não fotografam.
     gravar: bool = True
-    #: a pasta «6. MALOTE DIGITAL» do Proton; None = a de sempre, e só quando
+    #: a pasta do malote da serventia; None = a configurada, e só quando
     #: há `pasta_dados` (a rodada de produção) — o teste não lê o disco real.
     pasta_malote: Path | None = None
 
@@ -1190,9 +1190,8 @@ def regra_selo_em_dois_atos(ctx: Contexto) -> list[dict]:
 # cadastrou, o expediente que a triagem não leu, e o anexo que não está onde o
 # expediente diz (ou não é o mesmo arquivo).
 
-#: O NOME da pasta do malote no Proton; o caminho até ela é desta casa e não se
-#: escreve no código (relato #111): `settings.malote_pasta_proton`, ou achada.
-NOME_DA_PASTA_DO_MALOTE = "6. MALOTE DIGITAL"
+#: A pasta do malote é configuração da serventia (`settings.malote_pasta`): o
+#: código não sabe onde ela fica nem como se chama (relato #111).
 #: Papel que a casa produziu e guarda junto do expediente cumprido (etiqueta de
 #: selo com o CNS da casa, certidão emitida) — não é recebido. Copiado do
 #: agente, e não importado; o CNS vem de `settings`.
@@ -1206,16 +1205,10 @@ def _setting(con, chave: str) -> str:
     return str((r["value"] if r else "") or "").strip()
 
 
-def _pasta_do_malote_no_proton(con) -> Path | None:
-    configurada = _setting(con, "malote_pasta_proton")
-    if configurada:
-        return Path(configurada)
-    proton = Path.home() / "Proton Drive"
-    if not proton.is_dir():
-        return None
-    achadas = sorted(proton.glob(f"*/Shared with me/*/{NOME_DA_PASTA_DO_MALOTE}")) \
-        or sorted(proton.glob(f"*/{NOME_DA_PASTA_DO_MALOTE}"))
-    return achadas[0] if achadas else None
+def _pasta_do_malote(con) -> Path | None:
+    """`settings.malote_pasta`; sem ela, None — não se procura em lugar nenhum."""
+    configurada = _setting(con, "malote_pasta")
+    return Path(configurada) if configurada else None
 
 
 def _e_papel_da_casa(nome: str, cns: str) -> bool:
@@ -1229,10 +1222,10 @@ def _pastas_de_entrada_do_malote(ctx: Contexto) -> list[Path]:
     pastas = []
     if ctx.pasta_dados:
         pastas.append(Path(ctx.pasta_dados) / "arquivos" / "malote" / "entrada")
-    proton = ctx.pasta_malote if ctx.pasta_malote is not None else (
-        _pasta_do_malote_no_proton(ctx.con) if ctx.pasta_dados else None)
-    if proton is not None:
-        pastas.append(Path(proton) / "PARA CADASTRAR")
+    pasta = ctx.pasta_malote if ctx.pasta_malote is not None else (
+        _pasta_do_malote(ctx.con) if ctx.pasta_dados else None)
+    if pasta is not None:
+        pastas.append(Path(pasta) / "PARA CADASTRAR")
     return [p for p in pastas if p.is_dir()]
 
 
@@ -1366,7 +1359,7 @@ def regra_malote_anexo_confere(ctx: Contexto) -> list[dict]:
                 f"MALOTE_ANEXO:{a['id']}", "AGENTES", "MALOTE_ANEXO_CONFERE", "CRITICO",
                 f"Anexo do expediente {e['internal_protocol']}: {problema}",
                 f"«{a['original_name']}» em {caminho}", evidencia=f"attachments.id={a['id']}",
-                o_que_fazer="Repor o arquivo a partir da cópia do malote (Proton) ou do backup."))
+                o_que_fazer="Repor o arquivo a partir da pasta do malote da serventia ou do backup."))
     return achados
 
 

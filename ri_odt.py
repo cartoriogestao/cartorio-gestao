@@ -2380,8 +2380,8 @@ MARCADOR_DO_MIOLO = "{{ miolo_do_tipo }}"
 
 # A CERTIDÃO DE ÔNUS É POSITIVA OU NEGATIVA, E SÃO DUAS PERGUNTAS — 13/10/2026,
 # pedido do oficial («contemplar tanto a positiva e a negativa»). O texto imita
-# as certidões que a casa emitiu em 2024 (pasta «certidões antigas/ÔNUS» do
-# Proton, 70 positivas e 258 negativas): na positiva, «HÁ ÔNUS REAIS, assim
+# as certidões que a casa emitiu em 2024 (o arquivo de certidões antigas de
+# ônus, 70 positivas e 258 negativas): na positiva, «HÁ ÔNUS REAIS, assim
 # caracterizados: a) R-02/2.914 …» com o ATO TRANSCRITO; na negativa, «LIVRE E
 # DESEMBARAÇADO DE TODOS ÔNUS REAIS, LEGAIS OU CONVENCIONAIS». E a segunda
 # pergunta do mesmo papel, a citação de ações reais ou pessoais

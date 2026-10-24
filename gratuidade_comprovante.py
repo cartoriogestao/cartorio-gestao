@@ -18,8 +18,8 @@ grava com o nome da pessoa). O aviso some quando o comprovante está guardado
 (`attachments`, entidade `SELO_GRATUIDADE`, amarrado ao selo).
 
 DESDE QUANDO: `settings.gratuidade_comprovante_desde`; sem ela, 13/10/2026 —
-o primeiro dia útil depois da ordem. O passado (o que já foi recolhido no
-Proton) não vira aviso sozinho: retroagir é decisão do oficial, na configuração.
+o primeiro dia útil depois da ordem. O passado (o que já foi recolhido na
+pasta da serventia) não vira aviso sozinho: retroagir é decisão do oficial, na configuração.
 
 A COBRANÇA FICOU MAIS INCISIVA (LX16, 19/10/2026), e continua sem travar:
 «geralmente temos o comprovante da gratuidade só depois que o ato é
@@ -36,7 +36,7 @@ natimorto), e a primeira certidão deles. A própria tabela do TJ diz
 «Isento» nesses itens (`ato_selado.MOTIVO_DA_ISENCAO`), e não há
 comprovante a pedir a quem registrou um filho.
 
-O PROTON AJUDA: arquivo da pasta «21-GRATUÍTOS» cujo NOME traz o código do selo
+A PASTA DA SERVENTIA AJUDA: arquivo da pasta dos comprovantes cujo NOME traz o código do selo
 (a equipe já salva assim: «AVERBA000000XA66PB40MVB00E35.pdf») é oferecido para
 trazer com um clique — e só com o clique: quem confere é a pessoa.
 """
@@ -55,10 +55,8 @@ from bd_nativo import banco
 ENTIDADE = "SELO_GRATUIDADE"
 DESDE_PADRAO = "2026-10-13"
 MARCA_DO_SELO_ISENTO = "%Selo Isento%"
-#: O nome da pasta de gratuidades no Proton. O caminho inteiro não se escreve
-#: aqui (traz o nome da conta e da casa): vem de `settings.gratuidade_pasta_proton`
-#: ou é achado sob a pasta do Proton Drive do usuário (`pasta_proton_padrao`).
-NOME_DA_PASTA_NO_PROTON = "21-GRATUÍTOS"
+#: A pasta dos comprovantes é configuração da serventia (`settings.gratuidade_pasta`,
+#: na tela de Configurações): o código não sabe onde ela fica nem como se chama.
 EXTENSOES = (".pdf", ".jpg", ".jpeg", ".png")
 #: Código do selo: 6 letras, o CNS (6 dígitos) e 10 a 16 caracteres (`selo.py`).
 _CODIGO_DO_SELO = re.compile(r"[A-Z]{6}\d{6}[A-Z0-9]{10,16}")
@@ -373,21 +371,9 @@ def guardar_junto(con: sqlite3.Connection, selo_id: int, *,
     return aid
 
 
-def pasta_proton_padrao() -> Path | None:
-    """A primeira pasta «21-GRATUÍTOS» sob o Proton Drive deste usuário."""
-    base = Path.home() / "Proton Drive"
-    if not base.is_dir():
-        return None
-    for nivel in ("*", "*/*", "*/*/*", "*/*/*/*"):
-        for p in base.glob(f"{nivel}/{NOME_DA_PASTA_NO_PROTON}"):
-            if p.is_dir():
-                return p
-    return None
-
-
-def no_proton(codigos: list[str], pasta: Path | None = None) -> dict[str, Path]:
-    """Arquivos da pasta de gratuidades cujo nome traz o código do selo."""
-    pasta = pasta or pasta_proton_padrao()
+def na_pasta(codigos: list[str], pasta: Path | None = None) -> dict[str, Path]:
+    """Arquivos da pasta dos comprovantes (`settings.gratuidade_pasta`) cujo nome
+    traz o código do selo. Sem pasta configurada, nada — não se procura."""
     if not codigos or not pasta or not Path(pasta).is_dir():
         return {}
     procurados = {c.upper() for c in codigos if c}

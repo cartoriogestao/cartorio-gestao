@@ -608,8 +608,15 @@ def procurar_arquivos(nome: str, limite: int = 8) -> list[Path]:
         chega para `CartorioGestao\\MIGRACAO\\EXPORT_X\\arquivo.jsonl` e nao
         varre a maquina inteira.
     """
-    IGNORAR = {"__pycache__", ".git", "node_modules", "AppData", "OneDrive",
-               "Proton Drive", ".venv", "runtime", "backups"}
+    IGNORAR = {"__pycache__", ".git", "node_modules", "AppData", ".venv",
+               "runtime", "backups"}
+
+    def _nuvem(nome: str) -> bool:
+        # Pasta de serviço de nuvem (sincronizada, às vezes «sob demanda»):
+        # varrê-la baixaria os arquivos. Reconhecida pelo nome, de qualquer
+        # serviço, sem o código saber qual a serventia usa.
+        n = nome.lower()
+        return "drive" in n or "dropbox" in n
 
     def procurar(pasta: Path, fundo: int) -> list[Path]:
         saida: list[Path] = []
@@ -622,7 +629,7 @@ def procurar_arquivos(nome: str, limite: int = 8) -> list[Path]:
             if fundo <= 0:
                 return saida
             for cand in pasta.iterdir():
-                if not cand.is_dir() or cand.name in IGNORAR or cand.name.startswith("."):
+                if not cand.is_dir() or cand.name in IGNORAR or _nuvem(cand.name) or cand.name.startswith("."):
                     continue
                 saida += procurar(cand, fundo - 1)
                 if len(saida) >= limite:
@@ -10867,7 +10874,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """Confere as matrículas digitadas em Word contra o acervo.
 
         O arquivo vem do EXTRAIR_MATRICULAS_DOC.cmd, que roda na máquina da
-        serventia — os documentos estão no Proton Drive em modo sob demanda e
+        serventia — os documentos estão numa pasta sincronizada em modo sob demanda e
         não se leem de fora.
         """
         # Fica na pasta de arquivos do sistema, que o backup ja varre.

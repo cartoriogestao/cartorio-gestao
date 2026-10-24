@@ -36,9 +36,9 @@
           <button class="button primary" type="submit">Guardar</button>
         </form>
         {% if achados.get(p.numero|upper) %}
-        <form method="post" action="{{ url_for('gratuidade_comprovante_do_proton', selo_id=p.id) }}" style="display:inline">
+        <form method="post" action="{{ url_for('gratuidade_comprovante_da_pasta', selo_id=p.id) }}" style="display:inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="button" type="submit">Trazer do Proton: {{ achados[p.numero|upper] }}</button>
+          <button class="button" type="submit">Trazer da pasta da serventia: {{ achados[p.numero|upper] }}</button>
         </form>
         {% endif %}
       </td>

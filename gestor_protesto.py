@@ -12,7 +12,7 @@ SÃO DUAS FONTES, E A PRIMEIRA É A QUE HOJE TEM O DIA DE VERDADE
     | `pt_*` do banco do sistema              | só o acervo do E-Ofício: 1.374 títulos,    |
     |                                         | último ato em **10/09/2026**, nenhuma      |
     |                                         | remessa, aviso ou edital lançado aqui      |
-    | a pasta da CRA (`8. CRA`, Proton Drive) | **remessas, confirmações e andamentos de   |
+    | a pasta da CRA da serventia            | **remessas, confirmações e andamentos de   |
     |                                         | 07/10/2026** — o protesto segue vivo, e    |
     |                                         | é praticado fora do sistema                |
 

@@ -16,7 +16,7 @@ POR QUE ELE E UM MODULO A PARTE, E NAO MAIS UM TIPO EM `protesto_arquivo`
 A MEDICAO, e ela esta inteira em `LAYOUT_DESISTENCIA_MEDIDO.md`
     Quatro arquivos, cinco titulos, dois apresentantes, **quatro anos** — de
     26/08/2022 a 05/08/2026 —, e o layout e o mesmo nos quatro. O de 2026 veio
-    da pasta do Proton Drive que o oficial indicou, e foi ele que fechou a
+    da pasta que o oficial indicou, e foi ele que fechou a
     medicao: o numero do titulo dele, `NF-74654-/1`, tem forma inconfundivel e
     prende a fronteira do campo, coisa que `92000001907` e `1  00053603`
     sozinhos nao faziam.
@@ -52,7 +52,7 @@ import protesto as PT
 TAMANHO_DO_REGISTRO = 127
 
 # O nome do arquivo comeca por `DP` nos quatro medidos — mas quem manda e o
-# conteudo, e nao o nome: AS PASTAS DO E-OFICIO MENTEM, e a do Proton Drive
+# conteudo, e nao o nome: AS PASTAS DO E-OFICIO MENTEM, e a da serventia
 # tambem (a pasta `desistencia` dela guarda um arquivo de 600 posicoes).
 PREFIXO_OBSERVADO = "DP"
 

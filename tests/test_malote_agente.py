@@ -25,12 +25,12 @@ def casa(cg_casa, tmp_path):
     cg_casa["db"].create_user("elisa", "Elisa Exemplo Lima", "Senha#12345", "USER")
     cg_casa["db"].set_settings({"serventia_cns": "000000",
                                  "malote_cadastra_em_nome_de": "mario"})
-    proton = tmp_path / "6. MALOTE DIGITAL"
-    (proton / "PARA CADASTRAR").mkdir(parents=True)
-    (proton / "2026" / "CIRCULARES").mkdir(parents=True)
+    pasta_malote = tmp_path / "MALOTE"
+    (pasta_malote / "PARA CADASTRAR").mkdir(parents=True)
+    (pasta_malote / "2026" / "CIRCULARES").mkdir(parents=True)
     con = sqlite3.connect(cg_casa["banco"])
     con.row_factory = sqlite3.Row
-    yield {"con": con, "proton": proton, "dados": cg_casa["dados"], "db": cg_casa["db"]}
+    yield {"con": con, "pasta_malote": pasta_malote, "dados": cg_casa["dados"], "db": cg_casa["db"]}
     con.close()
 
 
@@ -44,8 +44,8 @@ def test_sem_o_usuario_do_oficial_mede_e_nao_cadastra(casa):
     # a configuração diz «mario» (como a produção diz o login do oficial); aqui
     # ele não existe, e o agente não cai
     # para outro usuário: declara em cada grupo e não derruba a rodada
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "DECISAO-COGEx_14102026.pdf", "a")
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True)
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "DECISAO-COGEx_14102026.pdf", "a")
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True)
     assert r["cadastrados"] == 0
     assert r["grupos"][0]["situacao"] == "SEM_RESPONSAVEL"
     assert "mario" in r["grupos"][0]["nota"] and "não existe" in r["grupos"][0]["nota"]
@@ -54,8 +54,8 @@ def test_sem_o_usuario_do_oficial_mede_e_nao_cadastra(casa):
 
 def test_por_padrao_cadastra_em_nome_do_oficial(casa):
     casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "PORTARIA-COGEX_1942026.pdf", "p")
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True)
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "PORTARIA-COGEX_1942026.pdf", "p")
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True)
     assert r["cadastrados"] == 1
     e = casa["con"].execute(
         "SELECT e.category, u.username FROM expedientes e JOIN users u ON u.id = e.created_by").fetchone()
@@ -63,8 +63,8 @@ def test_por_padrao_cadastra_em_nome_do_oficial(casa):
 
 
 def test_cadastra_com_anexo_na_forma_da_tela_e_nao_repete(casa):
-    pdf = _pdf(casa["proton"] / "PARA CADASTRAR" / "CIRC-CSERVCOGEX_2232026.pdf", "circular")
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"],
+    pdf = _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "CIRC-CSERVCOGEX_2232026.pdf", "circular")
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"],
                   confirmar=True, em_nome_de="elisa")
     assert r["cadastrados"] == 1
     e = casa["con"].execute("SELECT * FROM expedientes").fetchone()
@@ -74,50 +74,50 @@ def test_cadastra_com_anexo_na_forma_da_tela_e_nao_repete(casa):
     a = casa["con"].execute("SELECT * FROM attachments WHERE entity_type='EXPEDIENTE'").fetchone()
     assert a["entity_id"] == e["id"] and Path(a["stored_path"]).is_file()
     assert "Expedientes" in a["stored_path"] and e["internal_protocol"] in a["stored_path"]
-    assert pdf.exists(), "o arquivo do Proton não se move"
+    assert pdf.exists(), "o arquivo da pasta do malote não se move"
     log = casa["con"].execute("SELECT * FROM audit_logs WHERE action='EXPEDIENTE_CREATED'").fetchone()
     assert log["username_snapshot"] == MA.QUEM
     # a segunda rodada reconhece pelo sha256 e não abre outro expediente
-    r2 = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"],
+    r2 = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"],
                    confirmar=True, em_nome_de="elisa")
     assert r2["cadastrados"] == 0 and r2["grupos"][0]["situacao"] == "JA_NO_SISTEMA"
     assert casa["con"].execute("SELECT count(*) FROM expedientes").fetchone()[0] == 1
 
 
 def test_subpasta_vira_um_expediente_so(casa):
-    pasta = casa["proton"] / "PARA CADASTRAR" / "MANDADO DE AVERBAÇÃO FULANO"
+    pasta = casa["pasta_malote"] / "PARA CADASTRAR" / "MANDADO DE AVERBAÇÃO FULANO"
     _pdf(pasta / "OFICIO.pdf", "1")
     _pdf(pasta / "DOCUMENTOS.pdf", "2")
-    MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True, em_nome_de="elisa")
+    MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True, em_nome_de="elisa")
     assert casa["con"].execute("SELECT count(*) FROM expedientes").fetchone()[0] == 1
     assert casa["con"].execute("SELECT count(*) FROM attachments").fetchone()[0] == 2
 
 
 def test_papel_da_casa_nao_e_recebido(casa):
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "certidao-rcpn-81-2026.pdf", "x")
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "RECFIR000000D0XB4FK298AWP401.pdf", "y")
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True, em_nome_de="elisa")
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "certidao-rcpn-81-2026.pdf", "x")
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "RECFIR000000D0XB4FK298AWP401.pdf", "y")
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True, em_nome_de="elisa")
     assert {g["situacao"] for g in r["grupos"]} == {"DA_CASA"}
     assert r["cadastrados"] == 0
 
 
-def test_arquivado_no_proton_sem_expediente_so_vai_ao_relatorio(casa):
-    _pdf(casa["proton"] / "2026" / "CIRCULARES" / "CIRC-DAFIC-132026.pdf", "z")
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True, em_nome_de="elisa")
+def test_arquivado_na_pasta_sem_expediente_so_vai_ao_relatorio(casa):
+    _pdf(casa["pasta_malote"] / "2026" / "CIRCULARES" / "CIRC-DAFIC-132026.pdf", "z")
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True, em_nome_de="elisa")
     assert r["cadastrados"] == 0
     assert [a["arquivo"] for a in r["arquivados_sem_expediente"]] == ["CIRC-DAFIC-132026.pdf"]
     assert "CIRC-DAFIC-132026.pdf" in MA.relatorio_html(r, MA.date.today())
 
 
 def test_medir_nao_grava_nada(casa):
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "x.pdf", "m")
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "x.pdf", "m")
     MA.init_schema(casa["con"])
     contar = lambda: [casa["con"].execute(f"SELECT count(*) FROM {t}").fetchone()[0]  # noqa: E731
                       for t in ("mt_execucoes", "mt_arquivos", "expedientes", "attachments", "audit_logs")]
     antes = contar()
     banco = casa["db"].db_path
     ro = sqlite3.connect(f"file:{Path(banco).as_posix()}?mode=ro", uri=True)
-    r = MA.medir(ro, casa["dados"], casa["proton"])
+    r = MA.medir(ro, casa["dados"], casa["pasta_malote"])
     ro.close()
     assert r["so_mediu"] and r["grupos"][0]["situacao"] == "A_CADASTRAR"
     assert contar() == antes
@@ -183,10 +183,10 @@ def test_sem_capa_e_none():
 
 def test_capa_preenche_o_expediente_e_copia_repetida_nao_entra(casa, monkeypatch):
     casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "Recomendacao.pdf", "a")
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "Recomendacao (1).pdf", "b")
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "Recomendacao.pdf", "a")
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "Recomendacao (1).pdf", "b")
     monkeypatch.setattr(MA, "capa_do_pdf", lambda p: MA.ler_capa(CAPA_REAL))
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True)
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True)
     assert r["cadastrados"] == 1
     assert sorted(g["situacao"] for g in r["grupos"]) == ["CADASTRADO", "REPETIDO"]
     e = casa["con"].execute("SELECT * FROM expedientes").fetchone()
@@ -195,7 +195,7 @@ def test_capa_preenche_o_expediente_e_copia_repetida_nao_entra(casa, monkeypatch
     assert e["subject"].endswith("NA ATIVIDADE NOTARIAL E REGISTRAL")
     assert "enviado em 2026-10-09 12:40:11" in e["notes"]
     # e numa rodada seguinte o código basta para reconhecer
-    r2 = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True)
+    r2 = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True)
     assert r2["cadastrados"] == 0
 
 
@@ -203,11 +203,11 @@ def test_o_comando_tira_copia_antes_de_gravar_e_gera_o_relatorio(casa, tmp_path,
     # a cópia vai para a pasta das cópias, LONGE do banco (ordem de 11/10/2026)
     monkeypatch.setenv("CARTORIO_GESTAO_COPIAS", str(tmp_path / "copias"))
     casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "OFC-COGEX_1.pdf", "c")
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "OFC-COGEX_1.pdf", "c")
     dados = tmp_path / "dados"
     saida = tmp_path / "rel.html"
     assert MA.main(["--banco", str(casa["db"].db_path), "--pasta-dados", str(dados),
-                    "--proton", str(casa["proton"]), "--confirmar", "--em-nome-de", "mario",
+                    "--pasta", str(casa["pasta_malote"]), "--confirmar", "--em-nome-de", "mario",
                     "--saida", str(saida)]) == 0
     copias = list((tmp_path / "copias" / "antes_de_mexer").glob("antes_malote_agente_*.sqlite3"))
     assert len(copias) == 1 and copias[0].stat().st_size > 0
@@ -226,9 +226,9 @@ def test_o_comando_chega_ao_banco_fora_do_sistema(casa, tmp_path, monkeypatch, c
         pytest.skip("mede a porta do PostgreSQL (CG_PG_DSN)")
     monkeypatch.setattr(sqlite3, "connect", banco_pg._CONNECT_ORIGINAL)
     casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "OFC-COGEX_2.pdf", "d")
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "OFC-COGEX_2.pdf", "d")
     comum = ["--banco", str(casa["db"].db_path), "--pasta-dados", str(tmp_path / "dados"),
-             "--proton", str(casa["proton"])]
+             "--pasta", str(casa["pasta_malote"])]
     assert MA.main(comum + ["--confirmar", "--sem-copia", "--em-nome-de", "mario"]) == 0
     assert casa["con"].execute("SELECT count(*) FROM expedientes").fetchone()[0] == 1
     capsys.readouterr()
@@ -237,11 +237,11 @@ def test_o_comando_chega_ao_banco_fora_do_sistema(casa, tmp_path, monkeypatch, c
     assert '"situacao": "JA_NO_SISTEMA"' in capsys.readouterr().out
 
 
-def test_a_pasta_do_proton_vem_da_configuracao_e_nao_do_codigo(casa):
+def test_a_pasta_do_malote_vem_da_configuracao_e_nao_do_codigo(casa):
     # relato #111: o caminho até a pasta do malote é desta casa e não se escreve
-    casa["db"].set_settings({"malote_pasta_proton": str(casa["proton"])})
-    assert MA.pasta_proton_padrao(casa["con"]) == casa["proton"]
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "CIRC-X.pdf", "k")
+    casa["db"].set_settings({"malote_pasta": str(casa["pasta_malote"])})
+    assert MA.pasta_do_malote(casa["con"]) == casa["pasta_malote"]
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "CIRC-X.pdf", "k")
     r = MA.rodada(casa["con"], casa["dados"], confirmar=False)
     assert [g["nome"] for g in r["grupos"]] == ["CIRC-X.pdf"]
 
@@ -284,8 +284,8 @@ def test_aviso_que_e_so_imagem_fica_na_pasta_sem_chamar_a_ia(casa, monkeypatch):
     import agente_provedores as AP
     monkeypatch.setattr(AP, "tem_chave", lambda pasta, provedor=None: True)
     chamadas = []
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "Denuncia de fraude.pdf", "w")
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True,
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "Denuncia de fraude.pdf", "w")
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True,
                   em_nome_de="elisa", conversar=_ia([], chamadas=chamadas))
     g = r["grupos"][0]
     assert g["situacao"] == "FRAUDE_PENDENTE" and "imagem" in g["nota"] and chamadas == []
@@ -304,10 +304,10 @@ def test_aviso_de_fraude_vai_a_lista_sem_expediente_e_nao_volta(casa, com_chave,
         "--- arquivo: x.pdf" + chr(10) + TEXTO_DO_AVISO
         + "Escritura lavrada em face de FULANO DE TAL EXEMPLO, sem comparecimento. "))
     chamadas = []
-    pdf = _pdf(casa["proton"] / "PARA CADASTRAR" / "Suspeita de fraude.pdf", "x")
+    pdf = _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "Suspeita de fraude.pdf", "x")
     ia = _ia([{"nome": "FULANO DE TAL EXEMPLO", "papel": "ENVOLVIDO", "trecho": "em face de FULANO"},
               {"nome": "Banco Exemplo S/A", "papel": "VITIMA"}], chamadas=chamadas)
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True,
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True,
                   em_nome_de="elisa", conversar=ia)
     assert r["cadastrados"] == 0 and r["grupos"][0]["situacao"] == "NA_LISTA_DE_FRAUDES"
     c = casa["con"]
@@ -328,23 +328,23 @@ def test_aviso_de_fraude_vai_a_lista_sem_expediente_e_nao_volta(casa, com_chave,
     assert len(r["fraudes"][0]["fora"]) == 1 and "Banco Exemplo" in r["fraudes"][0]["fora"][0]
     assert "FULANO DE TAL EXEMPLO" in MA.relatorio_html(r, MA.date(2026, 10, 13))
     # a segunda rodada reconhece pelo sha256: nem IA, nem alerta repetido
-    r2 = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True,
+    r2 = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True,
                    em_nome_de="elisa", conversar=ia)
     assert r2["grupos"][0]["situacao"] == "NA_LISTA_DE_FRAUDES" and len(chamadas) == 1
     assert c.execute("SELECT count(*) FROM fr_alertas").fetchone()[0] == 1
 
 
 def test_o_que_a_ia_diz_nao_ser_aviso_vira_expediente(casa, com_chave):
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "Orientacao sobre fraudes.pdf", "y")
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True,
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "Orientacao sobre fraudes.pdf", "y")
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True,
                   em_nome_de="elisa", conversar=_ia([], aviso=False))
     assert r["cadastrados"] == 1 and "não é aviso" in r["grupos"][0]["nota"]
     assert casa["con"].execute("SELECT count(*) FROM fr_alertas").fetchone()[0] == 0
 
 
 def test_se_a_ia_nao_le_o_aviso_fica_na_pasta(casa, com_chave):
-    pdf = _pdf(casa["proton"] / "PARA CADASTRAR" / "Golpe com selo.pdf", "z")
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True,
+    pdf = _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "Golpe com selo.pdf", "z")
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True,
                   em_nome_de="elisa", conversar=_ia([], falha=OSError("rede caiu")))
     g = r["grupos"][0]
     assert g["situacao"] == "FRAUDE_PENDENTE" and "rede caiu" in g["nota"]
@@ -357,8 +357,8 @@ def test_se_a_ia_nao_le_o_aviso_fica_na_pasta(casa, com_chave):
 def test_sem_chave_o_aviso_fica_na_pasta(casa, monkeypatch):
     import malote_fraudes as MF
     monkeypatch.setattr(MF, "texto_dos_arquivos", lambda arquivos: TEXTO_DO_AVISO)
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "Golpe com selo.pdf", "z")
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True,
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "Golpe com selo.pdf", "z")
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True,
                   em_nome_de="elisa", conversar=_ia([], chamadas=None))
     assert r["grupos"][0]["situacao"] == "FRAUDE_PENDENTE" and "sem chave" in r["grupos"][0]["nota"]
 
@@ -367,7 +367,14 @@ def test_sem_palavra_de_fraude_a_ia_nem_e_chamada(casa, com_chave, monkeypatch):
     import malote_fraudes as MF
     monkeypatch.setattr(MF, "texto_dos_arquivos", lambda arquivos: "Circular sobre o recesso forense. " * 20)
     chamadas = []
-    _pdf(casa["proton"] / "PARA CADASTRAR" / "CIRC-CSERVCOGEX_2232026.pdf", "c")
-    r = MA.rodada(casa["con"], casa["dados"], pasta_proton=casa["proton"], confirmar=True,
+    _pdf(casa["pasta_malote"] / "PARA CADASTRAR" / "CIRC-CSERVCOGEX_2232026.pdf", "c")
+    r = MA.rodada(casa["con"], casa["dados"], pasta_malote=casa["pasta_malote"], confirmar=True,
                   em_nome_de="elisa", conversar=_ia([], chamadas=chamadas))
     assert r["cadastrados"] == 1 and chamadas == []
+
+
+def test_sem_configuracao_a_pasta_do_malote_nao_e_procurada(casa):
+    """23/10/2026: onde a serventia guarda o malote é configuração dela. Sem
+    `settings.malote_pasta`, não há pasta — o código não procura em lugar nenhum."""
+    casa["db"].set_settings({"malote_pasta": ""})
+    assert MA.pasta_do_malote(casa["con"]) is None

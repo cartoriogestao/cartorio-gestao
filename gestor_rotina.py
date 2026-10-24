@@ -162,6 +162,7 @@ ROTULOS = {
     "CAIXA_DIFERENCA": "Caixas com diferença sem justificativa",
     "CAIXA_ABERTO": "Caixas esquecidos abertos",
     "FECHAMENTO_DO_MES": "Fechamento do mês: selos × caixa",
+    "PLD_COAF": "PLD/COAF — casos que esperam análise ou comunicação",
 }
 # As cargas do RI ao ONR: os rótulos moram com o agente que as faz.
 ROTULOS.update(GCR.ROTULOS)
@@ -211,6 +212,7 @@ REGRAS_SEM_TAREFA = frozenset({
     "CAIXA_PRONTO_PARA_VISTO",
     "FECHAMENTO_DO_MES",
     "DADO_DE_TESTE",
+    "PLD_COAF",               # sigilo do art. 154 do CNN: vai ao despacho do oficial
 }) | GCR.REGRAS_DE_DECISAO   # ONR: credencial, envio desligado, carga inicial, acervo —
 #                              decisões do oficial, que vão ao despacho e não a tarefa
 REGRAS_SEM_TAREFA |= GRC.REGRAS_SEM_TAREFA   # RCPN: dado complementar do assento e
@@ -786,6 +788,15 @@ def despacho_do_oficial(con, hoje: date, resumo: dict,
     def conta(regra):
         return int(bd.valor("SELECT count(*) FROM ge_achados WHERE regra = %s "
                             "AND resolvido_em IS NULL", (regra,)))
+    # O PLD/COAF VEM AQUI, E NÃO EM TAREFA (23/10/2026): o caso é sigiloso
+    # (CNN, art. 154) e a tarefa se vê na lista da equipe. O despacho é do
+    # oficial; ele diz quantos esperam e manda à tela, que é só do ADMIN.
+    pld = conta("PLD_COAF")
+    if pld:
+        if dono is None:
+            linhas.append("1. O QUE SÓ VOCÊ DECIDE")
+        linhas += [f"   PLD/COAF: {pld} caso(s) com prazo vencido ou perto de vencer — "
+                   "Administrativo → PLD/COAF (sigiloso).", ""]
     linhas += ["2. CAIXAS",
                f"   {conta('CAIXA_PRONTO_PARA_VISTO')} fecham e esperam o seu visto; "
                f"{conta('CAIXA_COM_PONTOS')} têm ponto a explicar; "
@@ -1021,6 +1032,17 @@ def rodada_diaria(banco: Path, pasta_dados: Path | None, pasta_relatorio: Path |
         escrever(f"  portal do selo: {GFI.consultar_portal(con, hoje)}")
     except Exception:                                   # noqa: BLE001
         escrever("AVISO: a consulta ao Portal do Selo não rodou (a conferência roda).")
+        escrever(traceback.format_exc())
+    # A SELEÇÃO DO PLD/COAF ANTES DA CONFERÊNCIA (23/10/2026): até aqui ela só
+    # rodava quando alguém clicava «Selecionar» na tela do ADMIN, e o prazo do
+    # art. 151 (30 dias para a espécie, 60 para a análise) corria sem ninguém
+    # olhar. A conferência, logo depois, cobra do oficial o caso que espera.
+    try:
+        import pld_coaf
+        with con:
+            escrever(f"  seleção do PLD/COAF: {pld_coaf.selecionar(con)}")
+    except Exception:                                   # noqa: BLE001
+        escrever("AVISO: a seleção do PLD/COAF não rodou (a conferência roda).")
         escrever(traceback.format_exc())
     try:
         resumo = rodar(con, hoje, pasta_dados=pasta_dados,

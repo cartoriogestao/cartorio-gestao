@@ -1437,6 +1437,48 @@ def regra_fiscal(con, hoje: date) -> list[dict]:
     return gestor_fiscal.conferir(con, hoje)
 
 
+def regra_pld(con, hoje: date) -> list[dict]:
+    """PLD/COAF — o caso selecionado que espera análise ou comunicação (23/10/2026).
+
+    A seleção roda logo antes, na rodada (`pld_coaf.selecionar`); aqui só se lê.
+    O prazo é o do art. 151 do CNN: 30 dias da operação para a comunicação que
+    independe de análise, 60 para a análise. Vencido ou dentro da janela, vira
+    achado; longe, não — alarme que soa sempre é alarme que ninguém ouve.
+
+    SIGILO (CNN, art. 154): o achado vai ao setor do oficial e diz o NÚMERO do
+    caso e a hipótese, nunca o nome de quem está no ato. Quem quiser saber mais
+    abre a tela do PLD, que é só do ADMIN.
+    """
+    import pld_coaf as PLD
+    bd = banco(con)
+    if not bd.tem_tabela("pld_casos"):
+        return []
+    saida = []
+    for c in bd.ler(
+            """SELECT id, atribuicao, hipotese, especie, fundamento, data_operacao,
+                      situacao FROM pld_casos
+                WHERE situacao IN ('A_ANALISAR', 'A_COMUNICAR') ORDER BY id"""):
+        dia = _dia(c["data_operacao"])
+        if dia is None or antes_do_corte(dia):
+            continue
+        dias = (PLD.DIAS_PARA_SELECIONAR if c["especie"] == PLD.AUTOMATICA
+                else PLD.DIAS_PARA_ANALISAR)
+        prazo = dia + timedelta(days=dias)
+        gravidade = _situacao_do_prazo(prazo, hoje)
+        if gravidade is None:
+            continue
+        o_que = ("comunicar ao COAF" if c["situacao"] == "A_COMUNICAR"
+                 else "analisar e decidir")
+        saida.append(_achado(
+            f"PLD:{c['id']}", "PLD_COAF", gravidade, "GESTAO",
+            f"PLD/COAF: caso nº {c['id']} ({c['atribuicao']}) para {o_que}",
+            f"Hipótese {c['hipotese']}, operação de {dia:%d/%m/%Y}. Abra "
+            "Administrativo → PLD/COAF: a análise se registra com fundamentação, "
+            "comunique-se ou não (CNN, art. 141, § 3º).",
+            prazo, c["fundamento"]))
+    return saida
+
+
 def regra_fechamento_do_mes(con, hoje: date) -> list[dict]:
     """Selos usados no mês × entradas do caixa no mês, por atribuição.
 
@@ -1542,6 +1584,8 @@ REGRAS: tuple[tuple[str, Callable], ...] = (
     ("PROTESTO", regra_protesto),
     # o agente financeiro e das gratuidades (09/10/2026)
     ("FISCAL", regra_fiscal),
+    # o PLD/COAF — o caso que espera análise ou comunicação (23/10/2026)
+    ("PLD_COAF", regra_pld),
 )
 
 

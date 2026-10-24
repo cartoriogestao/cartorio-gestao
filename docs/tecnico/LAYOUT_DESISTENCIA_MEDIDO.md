@@ -1,7 +1,7 @@
 # O arquivo de desistência da CRA — o quinto layout, medido
 
 Achado em **25/08/2026**, construindo o aviso de intimação. Fechado em
-**26/08/2026**, quando o oficial apontou a pasta do Proton Drive.
+**26/08/2026**, quando o oficial apontou a pasta de rede da serventia.
 
 O roteiro do oficial põe a desistência nos **três turnos do dia** — é a única
 coisa que aparece nos três —, e o sistema não conseguia nem abrir o arquivo
@@ -80,7 +80,7 @@ motivo para não desenhar a tela em torno dele.
 | `DP0010508.261` | `001` — Banco do Brasil | **05/08/2026** | 1 |
 
 Os três primeiros estavam em `C:\ARPNET\CRA\DESISTENCIA`; o de 2026 veio da
-pasta do Proton Drive (`8. CRA\desistencia`), que o oficial indicou.
+pasta de rede da serventia (a subpasta das desistências da CRA), que o oficial indicou.
 
 **Cinco títulos, dois apresentantes, quatro anos** — e o layout é o mesmo nos
 quatro. Foi o de 2026 que fechou a medição: o número do título dele,

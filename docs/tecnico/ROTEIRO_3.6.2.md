@@ -34,7 +34,7 @@ backup_completo_20260825_120734.zip
 1.038 MB · 17.608 digitalizações · aberto e conferido depois de gravado
 ```
 
-Espelhado no Proton Drive, na pasta do Provimento CN-CNJ 213/2026.
+Espelhado na nuvem da serventia, na pasta do Provimento CN-CNJ 213/2026.
 
 > Se você aplicar a atualização noutro dia, **rode o backup de novo** antes:
 > `FERRAMENTAS\BACKUP_AGORA.cmd`. Não precisa de Administrador e não para o

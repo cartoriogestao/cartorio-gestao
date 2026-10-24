@@ -1,6 +1,6 @@
 # Matrículas antigas digitadas em Word — o que fazer
 
-**14/08/2026.** A pasta do Proton Drive terminou de baixar, e com isso a leitura deixou de
+**14/08/2026.** A pasta de rede da serventia terminou de baixar, e com isso a leitura deixou de
 depender de um script solto: virou um botão dentro do sistema, em **Matrículas em Word**.
 
 ---
@@ -32,7 +32,7 @@ cobertura de teor de **89% para praticamente 100%**.
 
 1. Menu **Matrículas em Word**.
 2. No campo **Pasta**, o caminho fica gravado depois da primeira vez:
-   `C:\Users\<usuario>\Proton Drive\<conta>\Shared with me\Cidade Exemplo\1. RI\LIVRO- 2\MATRICULAS ANTIGAS EM DOC`
+   `C:\caminho\da\pasta\das\matriculas\em\word`
 3. **Ler a pasta agora.** Leva cerca de um minuto. Só lê: não altera, não move e não apaga nada
    na origem.
 4. Conferir os números na tela e **Trazer as marcadas para o sistema**.

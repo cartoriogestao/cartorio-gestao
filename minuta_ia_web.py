@@ -60,11 +60,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 except MI.MinutaIAError as motivo:
                     return {"agente_minutas": {"cabe": False, "motivo": str(motivo),
                                                "atribuicao": atribuicao}}
+                # A PRENOTAÇÃO E O PROTOCOLO ESCOLHIDOS NO QUADRO (23/10/2026,
+                # o oficial): vêm no endereço da própria tela, pelo botão
+                # «Mostrar os documentos», e os documentos deles entram na lista.
+                escolha, erro_da_escolha = _escolha(con, atribuicao)
                 return {"agente_minutas": {
                     "cabe": True, "atribuicao": atribuicao, "alvo_id": alvo_id,
                     "ligado": AP.tem_chave(pasta(), MI.PROVEDOR),
-                    "disponiveis": MI.documentos_disponiveis(con, atribuicao, alvo_id),
-                    "prenotacoes": (MI.prenotacoes_da_matricula(con, alvo_id)
+                    "disponiveis": MI.documentos_disponiveis(
+                        con, atribuicao, alvo_id,
+                        prenotacao_id=(escolha["prenotacao"] or {}).get("id"),
+                        protocolo_id=(escolha["protocolo"] or {}).get("id")),
+                    "escolha": escolha, "erro_da_escolha": erro_da_escolha,
+                    "voltar_a": request.path,
+                    "protocolos_sugeridos": MI.protocolos_recentes(con, atribuicao),
+                    "prenotacoes": (MI.prenotacoes_para_escolher(con, alvo_id)
                                     if atribuicao == MI.RI else []),
                     "andamento": MI.em_andamento(con, atribuicao, alvo_id),
                     "historico": MI.historico(con, atribuicao, alvo_id),
@@ -74,6 +84,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         except Exception as erro:                      # noqa: BLE001 — o quadro some, a tela abre
             app.logger.error("Quadro do agente de minutas não montou.", exc_info=erro)
             return {}
+
+    def _escolha(con, atribuicao: str) -> tuple[dict, str]:
+        """A prenotação (RI) e o protocolo geral pedidos no endereço. Só LÊ."""
+        escolha = {"prenotacao": None, "protocolo": None}
+        erros = []
+        numero = (request.args.get("mi_prenotacao") or "").strip()
+        if numero and atribuicao == MI.RI:
+            try:
+                escolha["prenotacao"] = MI.prenotacao_por_numero(con, numero)
+            except MI.MinutaIAError as erro:
+                erros.append(str(erro))
+        numero = (request.args.get("mi_protocolo") or "").strip()
+        if numero:
+            try:
+                escolha["protocolo"] = MI.protocolo_por_numero(con, numero)
+            except MI.MinutaIAError as erro:
+                erros.append(str(erro))
+        return escolha, " ".join(erros)
+
+    def _id_do_form(nome: str):
+        bruto = (request.form.get(nome) or "").strip()
+        return int(bruto) if bruto.isdigit() else None
 
     def _guardar_os_juntados(atribuicao: str, alvo_id: int) -> list[int]:
         """Grava os arquivos juntados no pedido ONDE O ATO OS ARQUIVA. ESCREVE.
@@ -94,9 +126,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if atribuicao == MI.RI:
             pid = request.form.get("prenotacao_destino") or ""
             with db.connect() as con:
+                # QUALQUER PRENOTAÇÃO DA CASA, e não só as desta matrícula: o
+                # título de matrícula nova ainda não aponta para ficha nenhuma.
                 p = banco(con).um(
-                    "SELECT id, numero FROM ri_protocolos WHERE id = %s AND matricula_id = %s",
-                    (int(pid) if pid.isdigit() else -1, int(alvo_id)))
+                    "SELECT id, numero FROM ri_protocolos WHERE id = %s",
+                    (int(pid) if pid.isdigit() else -1,))
             if not p:
                 raise MI.MinutaIAError(
                     "Escolha a prenotação em que os documentos juntados ficam guardados — "
@@ -148,6 +182,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 pid = MI.pedir(con, atribuicao, alvo_id, anexos_ids=marcados + juntados,
                                tipo_ato=request.form.get("tipo_ato") or "",
                                instrucao=request.form.get("instrucao") or "",
+                               prenotacao_id=(_id_do_form("prenotacao_destino")
+                                              if juntados else None)
+                               or _id_do_form("prenotacao_id"),
+                               protocolo_id=_id_do_form("protocolo_id"),
                                usuario=usuario_nome())
         except ValueError as erro:
             flash(str(erro), "danger")
@@ -168,6 +206,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             with db.transaction() as con:
                 pid = MI.pedir(con, p["atribuicao"], p["alvo_id"],
                                anexos_ids=anteriores + juntados, anterior_id=pedido_id,
+                               # o que se juntou na revisão foi para a prenotação
+                               # escolhida no formulário dela, e é por ela que a
+                               # conferência dos documentos o acha
+                               prenotacao_id=(_id_do_form("prenotacao_destino")
+                                              if juntados else None),
                                revisao=request.form.get("revisao") or "",
                                usuario=usuario_nome())
         except ValueError as erro:

@@ -108,11 +108,38 @@
 
     {# ---------------------------------------------------- o pedido novo #}
     {% if am.ligado and not am.andamento and user.role in ['ADMIN','MANAGER','USER'] %}
-    <details {% if not am.historico %}open{% endif %} style="margin-top:10px">
+    <details {% if not am.historico or am.escolha.prenotacao or am.escolha.protocolo or am.erro_da_escolha %}open{% endif %} style="margin-top:10px">
       <summary><strong>{% if am.historico %}Pedir uma minuta nova{% else %}Pedir a minuta ao agente{% endif %}</strong></summary>
+      {# DE ONDE VÊM OS DOCUMENTOS — 23/10/2026, o oficial: «precisa ter campo de
+         selecionar o protocolo e prenotação no RI para pegar os documentos pelo
+         agente de minutas» e «no notas também». A escolha vai no endereço da
+         própria tela (GET): só mostra os documentos, não grava nada. #}
+      <form method="get" action="{{ am.voltar_a }}#agente-minutas" class="form-grid" style="margin-top:8px">
+        {% if am.atribuicao == 'RI' %}
+        <label>Prenotação
+          <select name="mi_prenotacao">
+            <option value="">— só as desta matrícula —</option>
+            {% for pr in am.prenotacoes %}
+            <option value="{{ pr.numero }}" {% if am.escolha.prenotacao and am.escolha.prenotacao.id == pr.id %}selected{% endif %}>{{ pr.numero }} — {{ pr.natureza_titulo or '' }}{% if pr.apresentante %} — {{ pr.apresentante }}{% endif %} ({{ pr.situacao }}{% if pr.desta_matricula %}, desta matrícula{% elif not pr.matricula_id %}, sem matrícula{% endif %})</option>
+            {% endfor %}
+          </select></label>
+        {% endif %}
+        <label>Protocolo geral
+          <input name="mi_protocolo" list="mi-protocolos-{{ am.alvo_id }}" placeholder="ex.: 2026.10.42"
+                 value="{{ am.escolha.protocolo.numero if am.escolha.protocolo else '' }}">
+          <datalist id="mi-protocolos-{{ am.alvo_id }}">{% for pg in am.protocolos_sugeridos %}
+            <option value="{{ pg.numero }}">{{ pg.interessado or '' }} ({{ pg.situacao }})</option>{% endfor %}
+          </datalist></label>
+        <div class="span2"><button class="small">Mostrar os documentos</button>
+          <span class="small muted">Os documentos da {% if am.atribuicao == 'RI' %}prenotação e do {% endif %}protocolo escolhidos
+            entram na lista abaixo, junto com os que o sistema já liga a {% if am.atribuicao == 'RI' %}esta matrícula{% else %}este ato{% endif %}.</span></div>
+        {% if am.erro_da_escolha %}<div class="notice danger span2">{{ am.erro_da_escolha }}</div>{% endif %}
+      </form>
       <form method="post" enctype="multipart/form-data" class="form-grid" style="margin-top:8px"
             action="{{ url_for('minuta_ia_pedir', atribuicao=am.atribuicao, alvo_id=am.alvo_id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="prenotacao_id" value="{{ am.escolha.prenotacao.id if am.escolha.prenotacao else '' }}">
+        <input type="hidden" name="protocolo_id" value="{{ am.escolha.protocolo.id if am.escolha.protocolo else '' }}">
         {% if am.atribuicao == 'RI' %}
         <label>O ato
           <select name="tipo_ato" required>
@@ -136,9 +163,10 @@
               </tr>{% endfor %}</tbody>
           </table></div>
           {% else %}
-          <p class="small muted">{% if am.atribuicao == 'RI' %}Nenhuma prenotação desta matrícula tem documento anexado,
-            nem o protocolo geral ligado a ela.{% else %}Este ato ainda não tem documento anexado, nem protocolo geral
-            ligado com documento.{% endif %} Junte os documentos abaixo.</p>
+          <p class="small muted">{% if am.atribuicao == 'RI' %}Nenhuma prenotação desta matrícula (nem a escolhida acima) tem
+            documento anexado, nem o protocolo geral ligado a ela.{% else %}Este ato ainda não tem documento anexado, nem o
+            protocolo geral ligado ou escolhido acima.{% endif %} Escolha a prenotação ou o protocolo acima, ou junte os
+            documentos abaixo.</p>
           {% endif %}
         </div>
         <label class="span2">Juntar documentos agora (PDF, JPG ou PNG) — eles ficam guardados
@@ -148,11 +176,11 @@
           {% if am.prenotacoes %}
           <label class="span2">Prenotação do título (onde os documentos juntados ficam guardados)
             <select name="prenotacao_destino">{% for pr in am.prenotacoes %}
-              <option value="{{ pr.id }}">{{ pr.numero }} — {{ pr.natureza_titulo or '' }}{% if pr.apresentante %} — {{ pr.apresentante }}{% endif %} ({{ pr.situacao }})</option>{% endfor %}
+              <option value="{{ pr.id }}" {% if am.escolha.prenotacao and am.escolha.prenotacao.id == pr.id %}selected{% endif %}>{{ pr.numero }} — {{ pr.natureza_titulo or '' }}{% if pr.apresentante %} — {{ pr.apresentante }}{% endif %} ({{ pr.situacao }})</option>{% endfor %}
             </select></label>
           {% else %}
-          <p class="span2 small muted">Esta matrícula não tem prenotação: para juntar documento aqui, prenote o título
-            com a matrícula informada.</p>
+          <p class="span2 small muted">Não há prenotação aberta nem prenotação desta matrícula: para juntar documento aqui,
+            prenote o título antes.</p>
           {% endif %}
         {% endif %}
         <label class="span2">Instruções iniciais (opcional)

@@ -425,6 +425,25 @@
       <label style="grid-column:1/-1">Comprovante / o que aconteceu
         <input name="comprovante" placeholder="AR 123, assinado por João — ou: não encontrado no endereço"></label>
       <label><input type="checkbox" name="digital"> Intimação eletrônica</label>
+    {% elif ato == 'PROTESTO' and triduo %}
+      {# O TRÍDUO (tarefa 56): a conta de `protesto_triduo`, a mesma que a rota confere. #}
+      <div style="grid-column:1/-1"><small>
+      {%- if triduo_situacao == 'SEM_CONTA' %}
+        O sistema não conseguiu contar o tríduo: {{ triduo.sem_conta }}. Para
+        lavrar assim mesmo, escreva o motivo — ele fica gravado no ato.
+      {%- else %}
+        Tríduo: {% if triduo.termo_inicial != triduo.termo_final %}de {{ triduo.termo_inicial_br }} a {% endif %}<strong>{{ triduo.termo_final_br }}</strong>
+        ({{ triduo.regra }}).
+        {% if triduo_situacao == 'ANTES' %}<strong>Ainda não é dia de protestar</strong> — o devedor está no prazo do aviso.
+        {% elif triduo_situacao == 'ATRASADO' %}<strong>O tríduo venceu.</strong> O protesto se lavra com o motivo do atraso, que vai escrito no instrumento (CN-MA art. 913, § 1º).
+        {% else %}É dia de protestar.{% endif %}
+      {%- endif %}
+      </small></div>
+      {% if triduo_situacao in ('ATRASADO', 'SEM_CONTA') %}
+      <label style="grid-column:1/-1">Motivo do atraso
+        <input name="motivo_atraso" required minlength="10"
+               placeholder="Comprovante da intimação devolvido pelo entregador depois do prazo"></label>
+      {% endif %}
     {% elif ato == 'DESISTENCIA' %}
       <label style="grid-column:1/-1">Motivo da desistência
         <input name="motivo" required placeholder="Credor desistiu antes do protesto"></label>

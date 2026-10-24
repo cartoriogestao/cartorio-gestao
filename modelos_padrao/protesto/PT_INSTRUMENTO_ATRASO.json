@@ -1,0 +1,12 @@
+{
+  "chave": "PT_INSTRUMENTO_ATRASO",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto — menção do atraso do tríduo",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: sai no fim do instrumento só quando o protesto foi lavrado depois do termo final do tríduo, com o motivo que quem lavrou escreveu (CN-MA art. 913, § 1º). {data} é o dia da lavratura, {termo_final} o último dia do tríduo e {motivo} o que ficou gravado no ato.",
+  "campos": [
+    "data",
+    "termo_final",
+    "motivo"
+  ]
+}

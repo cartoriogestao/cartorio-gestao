@@ -895,6 +895,26 @@ def test_os_papeis_do_ld04_estao_no_catalogo_e_a_tela_os_confere(casa):
             "Texto {claro_inventado_ld04}."), chave
 
 
+# **EM 23/10/2026 O CATÁLOGO GANHOU 1 LINHA (tarefa 56, o tríduo)**: a menção
+# do atraso no instrumento — CN-MA art. 913, § 1º. Peça que só sai no protesto
+# lavrado depois do termo final; o modelo do instrumento não mudou um byte.
+PAPEIS_DO_TRIDUO = {"PT_INSTRUMENTO_ATRASO"}
+NOVOS_NO_CATALOGO_TRIDUO = 1
+
+
+def test_a_mencao_do_atraso_do_triduo_esta_no_catalogo_e_a_tela_a_confere(casa):
+    assert len(PAPEIS_DO_TRIDUO) == NOVOS_NO_CATALOGO_TRIDUO
+    assert PAPEIS_DO_TRIDUO <= set(MOD.POR_CHAVE)
+    conferidores = casa["app"].extensions.get("conferidores_de_modelo", {})
+    for chave in PAPEIS_DO_TRIDUO:
+        c = MOD.POR_CHAVE[chave]
+        assert c["atribuicao"] == "Protesto" and c["formato"] == MOD.CHAVES, chave
+        assert c["nome"] != chave and c["explica"], chave
+        assert conferidores[chave](MOD.padrao_de(chave)) == "", chave
+        assert "claro_inventado_triduo" in conferidores[chave](
+            "Texto {claro_inventado_triduo}."), chave
+
+
 def test_o_que_mudou_depois_do_ouro_do_protesto_e_chamada_do_ouro(ouro_e):
     """A lista das mudanças de propósito só fala do que o ouro guarda — senão
     ela seria uma porta aberta, e não um registro."""

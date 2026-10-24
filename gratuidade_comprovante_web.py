@@ -89,9 +89,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return "", ""
         return (u["full_name"] or ""), (u["username"] or "")
 
-    def _pasta_proton():
-        valor = str(db.get_setting("gratuidade_pasta_proton", "") or "").strip()
-        return GC.Path(valor) if valor else GC.pasta_proton_padrao()
+    def _pasta_da_serventia():
+        valor = str(db.get_setting("gratuidade_pasta", "") or "").strip()
+        return GC.Path(valor) if valor else None
 
     @app.context_processor
     def _gratuidade_aviso() -> dict:
@@ -124,7 +124,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             lista = GC.pendentes(con, nome=nome, username=username)
             inicio = GC.desde(con)
             feitos = GC.comprovados(con, nome=nome, username=username)  # HOTFIX-2026-10-13-07
-        achados = GC.no_proton([p["numero"] for p in lista], _pasta_proton())
+        achados = GC.na_pasta([p["numero"] for p in lista], _pasta_da_serventia())
         return render_template("gratuidade_comprovantes.html", lista=lista, inicio=inicio, feitos=feitos,
                                achados={k: v.name for k, v in achados.items()},
                                fundamentos=GC.FUNDAMENTOS, o_que_vai=GC.O_QUE_VAI_NO_PDF,
@@ -178,29 +178,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         flash(f"{len(ids)} comprovante(s) guardado(s).", "ok")
         return _voltar()
 
-    @app.route("/gratuidades/comprovantes/<int:selo_id>/proton", methods=["POST"])
+    @app.route("/gratuidades/comprovantes/<int:selo_id>/pasta", methods=["POST"])
     @roles_required(*QUEM)
-    def gratuidade_comprovante_do_proton(selo_id: int):
-        """Traz o arquivo do Proton cujo nome tem o código deste selo."""
+    def gratuidade_comprovante_da_pasta(selo_id: int):
+        """Traz da pasta da serventia o arquivo cujo nome tem o código deste selo."""
         with db.connect() as con:
             row = banco(con).um("SELECT numero FROM sd_selos WHERE id=%s", (selo_id,))
-        achado = (GC.no_proton([row["numero"]], _pasta_proton()).get(row["numero"].upper())
+        achado = (GC.na_pasta([row["numero"]], _pasta_da_serventia()).get(row["numero"].upper())
                   if row else None)
         if not achado:
-            flash("Não achei no Proton um arquivo com o código deste selo no nome.", "danger")
+            flash("Não achei na pasta da serventia um arquivo com o código deste selo no nome.", "danger")
             return _voltar()
         try:
             with db.transaction() as con:
                 aid = GC.guardar(con, selo_id, nome_arquivo=achado.name,
                                  conteudo=achado.read_bytes(),
                                  pasta=archive_root() / "gratuidades", usuario_id=usuario_id(),
-                                 agora=db.now(), origem="Proton")
+                                 agora=db.now(), origem="pasta da serventia")
         except GC.ComprovanteError as erro:
             flash(str(erro), "danger")
             return _voltar()
         audit("GRATUIDADE_COMPROVANTE_GUARDADO", "sd_selos", selo_id,
-              {"anexo": aid, "origem": "Proton", "arquivo": achado.name})
-        flash(f"Comprovante trazido do Proton ({achado.name}).", "ok")
+              {"anexo": aid, "origem": "pasta da serventia", "arquivo": achado.name})
+        flash(f"Comprovante trazido da pasta da serventia ({achado.name}).", "ok")
         return _voltar()
 
 

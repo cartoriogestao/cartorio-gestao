@@ -148,7 +148,7 @@ def test_a_contagem_que_ninguem_explicou_AVISA_e_nao_recusa():
 
 
 def test_arquivo_de_600_posicoes_e_recusado_dizendo_onde_abrir():
-    # AS PASTAS MENTEM: a própria pasta `desistencia` do Proton Drive guarda um
+    # AS PASTAS MENTEM: a própria pasta `desistencia` da serventia guarda um
     # arquivo de 600. A mensagem tem de dizer onde ele se abre.
     with pytest.raises(DS.DesistenciaError) as erro:
         DS.ler(REMESSA)

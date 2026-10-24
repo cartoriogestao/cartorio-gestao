@@ -14,7 +14,7 @@ O QUE SE MEDIU NA PRODUÇÃO ANTES DE ESCREVER (12/10/2026, só leitura)
 |---|---|
 | expedientes | **33**, todos do Malote Digital ou do PJe — circulares, portarias, ofícios. **Nenhum é pedido de cliente**: é por isso que a tela não servia para isto |
 | prenotações abertas | **31** — e **nenhuma** diz se o título está a qualificar, em exigência ou apto |
-| `ri_notas_devolutivas` | **zero** linhas: as notas eram feitas em Word, na pasta 15 do Proton |
+| `ri_notas_devolutivas` | **zero** linhas: as notas eram feitas em Word, numa pasta da serventia |
 | protocolo geral do RI × prenotação | **22** protocolos gerais do RI, **2** ligados; das 31 abertas, **1** com protocolo geral |
 
 AS QUATRO DECISÕES DELE, NO MESMO DIA

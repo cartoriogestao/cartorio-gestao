@@ -443,7 +443,7 @@ def nome_do_arquivo(tipo: str, apresentante_codigo: str, dia: str,
     CORREÇÃO DE 13/10/2026. Até aqui o nome era `<tipo>-<apresentante>-<AAAAMMDD>-
     <remessa>.txt`, e este comentário dizia que «o E-Ofício nomeava de outro jeito
     em cada pasta, e não há padrão a imitar». HÁ, e a CRA o exige: medido nos 125
-    arquivos de 2026 da pasta `8. CRA` (C9871007.261, M3410408.261, R1LV1809.261…),
+    arquivos de 2026 da pasta da CRA (C9871007.261, M3410408.261, R1LV1809.261…),
     e é o que o manual da CRA21 e o layout do andamento da P21 descrevem. Nome fora
     dele a CRA recusa (código 0002, medido em 12/09); com ele, a confirmação
     `C2371609.263` voltou «0000» na homologação em 13/10/2026.

@@ -17,7 +17,7 @@ O QUE ESTAVA ERRADO, MEDIDO
     separar um do outro é leitura, e é para isso que a IA entra.
 
 O PRECEDENTE DA CASA, e é ele que o texto imita
-    A pasta «1. RI/CERTIDÕES/certidões antigas/ÔNUS» do Proton tem 258
+    O arquivo de certidões antigas de ônus da serventia tem 258
     negativas e 70 positivas. As de 2024 (de duas escreventes) dizem:
       «CERTIDÃO DE POSITIVA DE ÔNUS E NEGATIVA DE REGISTRO DE AÇÕES REAIS E
        PESSOAIS REIPERSECUTÓRIAS» … «HÁ ÔNUS REAIS, assim caracterizados:

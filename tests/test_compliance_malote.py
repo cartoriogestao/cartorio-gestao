@@ -66,14 +66,14 @@ def test_o_compliance_nao_importa_o_agente_do_malote():
 
 
 def test_arquivo_parado_aparece_e_o_cadastrado_nao(con, tmp_path):
-    proton = tmp_path / "6. MALOTE DIGITAL"
-    parado = _arquivo(proton / "PARA CADASTRAR" / "divorcio.pdf", b"a", datetime(2026, 9, 23))
-    feito = _arquivo(proton / "PARA CADASTRAR" / "circular.pdf", b"b", datetime(2026, 9, 23))
-    _arquivo(proton / "PARA CADASTRAR" / "certidao-rcpn-81-2026.pdf", b"c", datetime(2026, 9, 23))
-    _arquivo(proton / "PARA CADASTRAR" / "hoje.pdf", b"d", AGORA)
+    pasta_malote = tmp_path / "MALOTE"
+    parado = _arquivo(pasta_malote / "PARA CADASTRAR" / "divorcio.pdf", b"a", datetime(2026, 9, 23))
+    feito = _arquivo(pasta_malote / "PARA CADASTRAR" / "circular.pdf", b"b", datetime(2026, 9, 23))
+    _arquivo(pasta_malote / "PARA CADASTRAR" / "certidao-rcpn-81-2026.pdf", b"c", datetime(2026, 9, 23))
+    _arquivo(pasta_malote / "PARA CADASTRAR" / "hoje.pdf", b"d", AGORA)
     con.execute("INSERT INTO attachments VALUES (1,'EXPEDIENTE',1,'circular.pdf','x',?)",
                 (hashlib.sha256(feito.read_bytes()).hexdigest(),))
-    achados = CP.regra_malote_parado(_ctx(con, pasta_malote=proton))
+    achados = CP.regra_malote_parado(_ctx(con, pasta_malote=pasta_malote))
     assert [a["evidencia"] for a in achados] == [str(parado)]
     assert achados[0]["gravidade"] == "CRITICO"
 
@@ -127,12 +127,12 @@ def test_as_tres_regras_estao_no_catalogo():
 def test_aviso_de_fraude_lido_pela_ia_nao_e_malote_parado(con, tmp_path):
     # ordem de 13/10/2026: aviso de fraude não vira expediente; levado à lista de
     # fraudes (linha FRAUDE do agente), ele está resolvido — e não acusa parado
-    proton = tmp_path / "6. MALOTE DIGITAL"
-    aviso = _arquivo(proton / "PARA CADASTRAR" / "fraude.pdf", b"f", datetime(2026, 9, 23))
-    pendente = _arquivo(proton / "PARA CADASTRAR" / "golpe.pdf", b"g", datetime(2026, 9, 23))
+    pasta_malote = tmp_path / "MALOTE"
+    aviso = _arquivo(pasta_malote / "PARA CADASTRAR" / "fraude.pdf", b"f", datetime(2026, 9, 23))
+    pendente = _arquivo(pasta_malote / "PARA CADASTRAR" / "golpe.pdf", b"g", datetime(2026, 9, 23))
     con.execute("CREATE TABLE mt_arquivos (sha256 TEXT, situacao TEXT)")
     con.execute("INSERT INTO mt_arquivos VALUES (?, 'FRAUDE')", (hashlib.sha256(b"f").hexdigest(),))
     con.execute("INSERT INTO mt_arquivos VALUES (?, 'FRAUDE_PENDENTE')", (hashlib.sha256(b"g").hexdigest(),))
-    achados = CP.regra_malote_parado(_ctx(con, pasta_malote=proton))
+    achados = CP.regra_malote_parado(_ctx(con, pasta_malote=pasta_malote))
     assert [a["evidencia"] for a in achados] == [str(pendente)]
     assert str(aviso) not in str(achados)

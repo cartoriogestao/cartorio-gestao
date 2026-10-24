@@ -141,7 +141,7 @@ CENTRAL_NO_LOG = CRED.CRA
 # **OS CÓDIGOS DO `<relatorio><codigo>`, MEDIDOS CONTRA A HOMOLOGAÇÃO EM
 # 12/09/2026** — o manual não descreve o que volta no `return`; isto é o que
 # a própria Central respondeu, com nomes de arquivo reais desta serventia
-# (achados em `8. CRA/REMESSAS`, `RETORNO`, `desistencia`):
+# (achados nas pastas de remessa, retorno e desistência da serventia):
 #   0002 — nome do arquivo inválido (a FORMA está errada: sem o
 #          apresentante+dia+mês+extensão de 3 dígitos, ou em branco)
 #   0003 — não existe remessa na data informada (a forma está CERTA; não há

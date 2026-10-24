@@ -7,8 +7,7 @@ O RELATO, DE 15/10/2026, ABERTO DA TAREFA 386 PELA ESCREVENTE DO RI E DAS NOTAS:
 
 O QUE A TAREFA 386 MOSTROU. Ela é um parecer de qualificação registral da
 prenotação 11.573 (escritura de inventário), e a descrição dela é um CAMINHO DE
-PASTA no Proton Drive — «15. PROCESSOS PROTOCOLADOS\\RI\\REGISTRO ESCRITURAS\\
-11573-…». Os documentos que sustentam a qualificação moravam fora do sistema,
+PASTA numa pasta compartilhada da serventia. Os documentos que sustentam a qualificação moravam fora do sistema,
 numa pasta compartilhada que o backup da casa não alcança e que nenhuma tela
 mostra a quem qualifica.
 

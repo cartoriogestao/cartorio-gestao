@@ -36,6 +36,10 @@
        pasta de dados, da pasta principal de arquivos ou de uma destas. #}
     <label>Pastas de importação (uma por linha)<textarea name="pastas_de_importacao" rows="3" spellcheck="false" placeholder="vazio = só a pasta de dados e a pasta principal de arquivos">{{s.pastas_de_importacao}}</textarea></label>
     <label>Pasta de backups<input name="backup_dir" value="{{s.backup_dir}}" placeholder="vazio = pasta padrão"></label>
+    {# Onde a serventia guarda o malote baixado e os comprovantes de gratuidade é
+       dela: o código não procura essas pastas, lê daqui (23/10/2026). #}
+    <label>Pasta do malote (onde a equipe salva o que baixa do Malote Digital)<input name="malote_pasta" value="{{s.malote_pasta}}" placeholder="vazio = o agente do malote só olha a pasta de entrada do sistema"></label>
+    <label>Pasta dos comprovantes de gratuidade<input name="gratuidade_pasta" value="{{s.gratuidade_pasta}}" placeholder="vazio = sem o botão de trazer da pasta"></label>
     <label>Dias de antecedência dos alertas<input type="number" name="alert_days" min="1" value="{{s.alert_days}}"></label>
     {# RELATO #34 DO OFICIAL, em 30/08/2026: «colocar o encerrar por
        inatividade para períodos superiores a 12h».

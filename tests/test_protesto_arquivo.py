@@ -382,7 +382,7 @@ def test_arquivo_de_tipo_ainda_nao_medido_traz_a_linha_crua():
 # ------------------------------------- a confirmacao e o andamento
 #
 # Medidos em 24/08/2026: 371 registros de confirmacao e 105 de andamento, do
-# lote de 2026 que o oficial indicou no Proton Drive. Nos dois, a especie de
+# lote de 2026 que o oficial indicou na pasta da serventia. Nos dois, a especie de
 # TODOS os 476 confere com o acervo, casando por numero do titulo.
 
 EXEMPLO_CONFIRMACAO = (Path(__file__).parent

@@ -768,7 +768,7 @@ def test_a_leitura_do_gestor_grava_e_le_o_apontamento(con, bd, sem_esquema_do_mo
 
 def test_o_agente_do_malote_grava_e_le_a_rodada(con, bd, sem_esquema_do_modulo, tmp_path):
     import malote_agente as MA
-    MA.rodada(con, tmp_path, pasta_proton=None, fraudes=False)
+    MA.rodada(con, tmp_path, pasta_malote=None, fraudes=False)
     linha = bd.um("SELECT confirmou, terminada_em, resumo_json, erro FROM mt_execucoes")
     assert linha["confirmou"] == 0 and linha["terminada_em"] and linha["erro"] is None
     assert json.loads(linha["resumo_json"])["cadastrados"] == 0

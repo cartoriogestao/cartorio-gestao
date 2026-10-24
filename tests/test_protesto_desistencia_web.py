@@ -156,7 +156,7 @@ def test_titulo_que_a_casa_nao_tem_aparece_dito(s):
 
 
 def test_arquivo_de_600_avisa_onde_ele_se_abre(s):
-    # A própria pasta `desistencia` do Proton Drive guarda um arquivo de 600.
+    # A própria pasta `desistencia` da serventia guarda um arquivo de 600.
     html = conferir(s, REMESSA).get_data(as_text=True)
     assert "600" in html
     assert "remessa da CRA" in html

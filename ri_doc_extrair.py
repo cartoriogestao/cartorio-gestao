@@ -2,7 +2,7 @@
 Leitura da pasta das matriculas digitadas em Word.
 
 POR QUE ESTE MODULO EXISTE
-    Ate 14/08/2026 os arquivos estavam no Proton Drive em modo "sob demanda":
+    Ate 14/08/2026 os arquivos estavam numa pasta sincronizada em modo "sob demanda":
     de fora da maquina da serventia so o nome e o tamanho apareciam, e a
     extracao tinha de rodar la, por PowerShell. A pasta baixou por inteiro, e
     a leitura passou a ser um processo comum do sistema — um botao, sem script

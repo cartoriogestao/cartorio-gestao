@@ -996,8 +996,8 @@ def test_a_peca_tem_ficha_propria_e_nao_herda_o_fecho_da_atribuicao():
     `elementos_comuns: False`: o encerramento da atribuição no meio de uma
     frase estragaria o papel."""
     # 35 do LF06E; a qualificação do registro e a intimação eletrônica no
-    # instrumento (LD04).
-    assert len(PECAS_DO_PROTESTO) == 35 + 2
+    # instrumento (LD04); a menção do atraso do tríduo (tarefa 56).
+    assert len(PECAS_DO_PROTESTO) == 35 + 2 + NOVOS_NO_CATALOGO_TRIDUO
     for chave in PECAS_DO_PROTESTO:
         c = MOD.POR_CHAVE[chave]
         assert c["atribuicao"] == "Protesto" and c["formato"] == MOD.CHAVES
@@ -1319,6 +1319,16 @@ def test_a_tela_confere_a_peca_com_os_claros_que_o_montador_preenche(casa, monke
                 "apresentante": {"endereco": "Rua de Exemplo, 1, Cidade Exemplo/MA"}})):
         saida = OURO_E.tenta(f)
         assert "ok" in saida and saida["ok"], saida
+    # A CHAMADA DA TAREFA 56 (23/10/2026): o instrumento do protesto lavrado
+    # depois do tríduo, que acrescenta a menção do atraso (CN-MA art. 913, § 1º).
+    saida = OURO_E.tenta(lambda: PTI.montar_teor(
+        serventia="SERVENTIA DE EXEMPLO", praca="Cidade Exemplo",
+        motivo="falta de pagamento", copia_arquivada=False,
+        intimacao={"modo": "PESSOAL", "data": "2026-09-08"},
+        descricao="Título de exemplo.",
+        atraso={"termo_final": "2026-09-10", "lavrado_em": "2026-09-14",
+                "motivo": "Comprovante devolvido depois do prazo"}))
+    assert "ok" in saida and saida["ok"], saida
     medidos: dict = {}
     for (chave, modelo), claros in passados.items():
         if chave not in PECAS.chaves_conferidas():

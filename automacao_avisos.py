@@ -10,8 +10,10 @@ OS QUATRO CANAIS
               'AUTOMACAO'`), que se FECHA SOZINHA quando o processo volta a
               rodar bem. O pedido repetido vira nota na mesma tarefa
               (`create_task` já desduplica) — é o lembrete.
-    EMAIL     pelo SMTP configurado na tela; a SENHA mora no cofre (DPAPI,
-              fora do banco), nunca em `au_config`.
+    EMAIL     pelo SMTP configurado na tela; a SENHA mora em `avisos.cred`
+              (`cofre_cred`: cifrado, fora do banco, só o sistema lê), nunca
+              em `au_config` — e não no cofre da senha-mestra, que trancado
+              calaria o e-mail que avisa que ele está trancado.
     WHATSAPP  declarado e NÃO configurado: nesta fase não existe envio de
               WhatsApp, e inventar uma API seria pior que esperar. O aviso que
               iria fica registrado como PENDENTE_CONFIG — ninguém conclui que
@@ -148,12 +150,32 @@ def mandar_email(cfg: dict, senha: str, *, assunto: str, corpo: str,
         smtp.send_message(msg)
 
 
+def _pasta(pasta_dados: Any):
+    from pathlib import Path
+
+    import automacao_cofre as AC
+    return Path(pasta_dados or AC.pasta_de_dados())
+
+
 def _senha_do_smtp(pasta_dados: Any, cfg: dict) -> str:
     if not cfg["usuario"]:
         return ""
-    import automacao_cofre as COFRE
-    return str(COFRE.ler(SCH.COFRE_SMTP, caminho=COFRE.caminho_do_cofre(pasta_dados), quem="despachante",
-                         processo="EMAIL").get("senha") or "")
+    import cofre_cred
+    return cofre_cred.ler(_pasta(pasta_dados), SCH.ARQUIVO_SMTP).get(SCH.CHAVE_SENHA_SMTP, "")
+
+
+def tem_senha_do_smtp(pasta_dados: Any) -> bool:
+    """Se há senha do SMTP guardada — para a tela dizer, sem devolvê-la."""
+    import cofre_cred
+    return bool(cofre_cred.ler(_pasta(pasta_dados), SCH.ARQUIVO_SMTP).get(SCH.CHAVE_SENHA_SMTP))
+
+
+def gravar_senha_do_smtp(pasta_dados: Any, senha: str) -> None:
+    """Grava a senha do SMTP em `avisos.cred`. ESCREVE EM DISCO. Vazio não grava."""
+    if not (senha or "").strip():
+        return
+    import cofre_cred
+    cofre_cred.gravar(_pasta(pasta_dados), SCH.ARQUIVO_SMTP, {SCH.CHAVE_SENHA_SMTP: senha})
 
 
 #: Quem manda o e-mail. O teste troca por um falso.

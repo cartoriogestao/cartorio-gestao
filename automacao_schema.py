@@ -130,9 +130,14 @@ PADROES: dict[str, str] = {
 }
 CHAVES_CONFIG = tuple(PADROES)
 
-#: O nome, no cofre, da senha do SMTP. Fica no cofre (DPAPI, fora do banco), e
-#: não em `au_config`: o banco vai no backup, e o backup sai da serventia.
-COFRE_SMTP = "smtp"
+#: Onde mora a senha do SMTP: `avisos.cred`, cifrado na pasta de dados
+#: (`cofre_cred`), e não em `au_config` — o banco vai no backup, e o backup sai
+#: da serventia. E também NÃO no cofre da senha-mestra (`automacao_cofre`):
+#: trancado depois de religar a máquina, ele calaria o e-mail que avisa
+#: justamente que está trancado. Um lugar só: nada de «tenta o cofre, senão o
+#: arquivo».
+ARQUIVO_SMTP = "avisos.cred"
+CHAVE_SENHA_SMTP = "smtp_senha"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS au_processos (

@@ -24,9 +24,13 @@
     <label>Segurança <select name="smtp_seguranca">{% for s in seguranca %}<option value="{{ s }}" {% if s == cfg.smtp_seguranca %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
     <label>Usuário <input name="smtp_usuario" value="{{ cfg.smtp_usuario }}" autocomplete="off"></label>
     <label>Senha <input type="password" name="smtp_senha" value="" autocomplete="new-password"
-      placeholder="{{ 'guardada no cofre — digite só para trocar' if senha_no_cofre else 'digite a senha' }}"></label>
-    <p class="small muted">A senha vai para o cofre (cifrada pelo Windows, fora do banco) e não volta para esta tela.
+      placeholder="{{ 'guardada — digite só para trocar' if senha_guardada else 'digite a senha' }}"></label>
+    <p class="small muted">A senha fica guardada cifrada, fora do banco, num arquivo que só o sistema lê, e não volta
+      para esta tela. Ela não depende do cofre da senha-mestra: o e-mail de alerta sai mesmo com o cofre trancado.
       Campo vazio não apaga a senha guardada.</p>
+    <p class="small"><strong>Use uma conta de e-mail só para os alertas</strong>, com senha de app ou token SMTP
+      (no Gmail, «senha de app»; no Proton pago, «token SMTP», servidor smtp.protonmail.ch, porta 587).
+      Nunca a senha do seu e-mail pessoal nem a da serventia: se este arquivo vazar, o estrago fica em mandar e-mail.</p>
     <label>Remetente <input name="smtp_remetente" value="{{ cfg.smtp_remetente }}"></label>
     <label>Mandar para (separe por vírgula) <input name="email_destino" value="{{ cfg.email_destino }}"></label>
   </section>

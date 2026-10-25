@@ -317,6 +317,43 @@ def test_o_email_sem_configuracao_fica_pendente_e_nao_se_da_por_enviado(casa):
     assert email["situacao"] == SCH.PENDENTE_CONFIG
 
 
+def test_a_senha_do_email_mora_fora_do_cofre_e_sai_com_ele_trancado(casa, tmp_path, monkeypatch):
+    """O aviso «o cofre está trancado» precisa sair por e-mail com o cofre trancado."""
+    import automacao_cofre as AC
+    db = casa["db"]
+    AV.gravar_senha_do_smtp(tmp_path, "token-smtp-de-teste")
+    assert b"token-smtp-de-teste" not in (tmp_path / SCH.ARQUIVO_SMTP).read_bytes()   # cifrado
+    assert AV.tem_senha_do_smtp(tmp_path)
+
+    def trancado(*a, **k):
+        raise AC.CofreTrancado("o cofre está trancado")
+    monkeypatch.setattr(AC, "ler", trancado)            # o cofre da senha-mestra não é consultado
+    senhas = []
+    monkeypatch.setitem(AV.ENVIO, "email", lambda cfg, senha, **k: senhas.append(senha))
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_SMTP_HOST, "smtp.exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_SMTP_USUARIO, "alertas@exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_EMAIL_DESTINO, "oficial@exemplo.invalid")
+    r = AV.enviar_teste(db, agora=SEG, pasta_dados=tmp_path, pedido_por="mario")
+    assert senhas == ["token-smtp-de-teste"]
+    assert r["situacao"] == SCH.ENVIADO
+
+
+def test_a_tela_grava_a_senha_do_email_no_arquivo_e_nao_no_cofre(casa):
+    import automacao_cofre as AC
+    c = _entrar(casa, "mario", "ADMIN")
+    html = c.get("/automacao/configuracao").get_data(as_text=True)
+    assert "conta de e-mail só para os alertas" in html
+    r = c.post("/automacao/configuracao", data={
+        "csrf_token": _token(html), SCH.CHAVE_SMTP_HOST: "smtp.exemplo.invalid",
+        SCH.CHAVE_SMTP_SEGURANCA: "STARTTLS", "smtp_senha": "token-pela-tela"})
+    assert r.status_code == 302
+    pasta = Path(str(casa["db"].db_path.parent))
+    assert AV._senha_do_smtp(pasta, {"usuario": "x"}) == "token-pela-tela"
+    assert not AC.tem("smtp", caminho=AC.caminho_do_cofre(pasta))
+    assert "guardada — digite só para trocar" in c.get("/automacao/configuracao").get_data(as_text=True)
+
+
 def test_o_problema_que_piora_avisa_de_novo(casa):
     db = casa["db"]
     _finalizar(db, "CASA_DISCO", SCH.AVISO, SEG)

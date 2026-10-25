@@ -61,6 +61,15 @@ Esforço: **P** (horas), **M** (dias), **G** (semanas).
   Argon2id/scrypt, formato JSON versionado igual nos dois sistemas — o arquivo
   copiado de um servidor para o outro abre com a mesma senha-mestra. A
   permissão restrita tem os dois ramos (ACL no Windows, `chmod 600` no macOS).
+- **A senha do SMTP dos alertas** (`avisos.cred`, via `cofre_cred`): fica
+  FORA do cofre da senha-mestra, para o e-mail «o cofre está trancado» sair
+  com o cofre trancado. No Windows, `permissao_local` deixa o arquivo para
+  SYSTEM, Administradores e a conta que roda o processo — hoje o despachante
+  roda no Agendador com a conta do oficial, sem elevação (achado A12 da
+  revisão de segurança da 3.7.0); se a A12 mudar essa conta, o arquivo precisa
+  ser regravado pela conta nova para a ACL acompanhar. No macOS o equivalente
+  é `chmod 600` com dono = o usuário do LaunchAgent (o ramo já existe em
+  `permissao_local`).
 - **O guardião do cofre** (`automacao_guardiao.py`): Python puro, canal local em
   127.0.0.1, janela em tkinter (vem com o Python do macOS e do Homebrew).
 - **O despachante** (`automacao.py`): `pathlib`, sem `shell=True`; o que é do

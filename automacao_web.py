@@ -14,8 +14,10 @@ QUEM VÊ E QUEM MEXE
 O COFRE NÃO SAI DAQUI
     A tela grava e remove o segredo (pelo guardião, com o cofre aberto); ela
     NUNCA o lê de volta — `automacao_cofre.ler` recusa dentro de requisição
-    web. A senha do SMTP também vai para o cofre: o campo da tela fica vazio
-    sempre, e campo vazio não apaga nada.
+    web. A senha do SMTP NÃO vai para este cofre: vai para `avisos.cred`
+    (`cofre_cred`), que abre sem a senha-mestra — senão o e-mail que avisa «o
+    cofre está trancado» não sairia. O campo da tela fica vazio sempre, e campo
+    vazio não apaga nada.
 
 DESBLOQUEAR PELA TELA SÓ NA PRÓPRIA MÁQUINA
     `/automacao/cofre/desbloquear` é do ADMIN e só atende quem chega de
@@ -32,7 +34,9 @@ from datetime import datetime
 from flask import abort, flash, redirect, render_template, request, session, url_for
 
 import automacao as AU
+import automacao_avisos as AV
 import automacao_cofre as COFRE
+import cofre_cred as CRED
 import automacao_processos as PROC
 import automacao_schema as SCH
 from bd_nativo import banco
@@ -225,7 +229,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             ultimos = banco(con).ler("SELECT * FROM au_avisos ORDER BY id DESC LIMIT 20")
         return render_template("automacao_configuracao.html", cfg=cfg, batida=batida,
                                seguranca=SCH.SEGURANCAS_SMTP, ultimos=ultimos,
-                               senha_no_cofre=COFRE.tem(SCH.COFRE_SMTP, caminho=cofre()),
+                               senha_guardada=AV.tem_senha_do_smtp(pasta()),
                                nome_do_canal=SCH.NOME_DO_CANAL)
 
     @app.route("/automacao/configuracao", methods=["POST"])
@@ -246,15 +250,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         senha = f.get("smtp_senha") or ""
         if senha:
             try:
-                COFRE.gravar(SCH.COFRE_SMTP, {"usuario": (f.get(SCH.CHAVE_SMTP_USUARIO) or "").strip(),
-                                              "senha": senha}, tipo=COFRE.SENHA, por=usuario_nome(),
-                             caminho=cofre())
-            except COFRE.CofreError as erro:
-                flash(str(erro), "danger")
+                AV.gravar_senha_do_smtp(pasta(), senha)
+            except (CRED.CofreError, OSError) as erro:
+                flash(f"A senha do SMTP não foi gravada: {erro}", "danger")
                 return redirect(url_for("automacao_configuracao"))
         audit("AUTOMACAO_CONFIGURADO", "au_config", None,
               {"campos": [c for c in campos if c in f], "senha_smtp_trocada": bool(senha)})
-        flash("Configuração gravada." + (" A senha do SMTP foi para o cofre." if senha else ""), "success")
+        flash("Configuração gravada." + (" A senha do SMTP foi guardada." if senha else ""), "success")
         return redirect(url_for("automacao_configuracao"))
 
     @app.route("/automacao/configuracao/testar-email", methods=["POST"])

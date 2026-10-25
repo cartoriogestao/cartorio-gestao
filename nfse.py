@@ -117,6 +117,24 @@ PADRAO: dict[str, str] = {
     "nfse_serie": "1",
     "nfse_exige_endereco": "1",
     "nfse_inicio": "",                    # só recibos emitidos a partir desta data
+    # cNBS: «1.1304.00.00 — Serviços notariais e de registro», Anexo B v1.01
+    # (lista NBS 2.0) do gov.br/nfse, medido em 24/10/2026.
+    "nfse_codigo_nbs": "113040000",
+    # O CONVÊNIO DO MUNICÍPIO NO SISTEMA NACIONAL: «1» ativo, «0» não, vazio
+    # não conferido. Quem marca é o ADMIN, depois de ler os parâmetros que o
+    # emissor devolve (`conferir_no_emissor`). Ele decide a alíquota: com
+    # convênio ativo e serventia fora do Simples, a regra E0617 do Anexo I
+    # recusa a DPS que informa a alíquota (ela vem do cadastro do município).
+    "nfse_convenio_ativo": "",
+    # O GRUPO DO IBS/CBS (LC 214/2025). Vazios, a nota sai sem o grupo — o
+    # que a NT 004 v2.0 (10/12/2025) manteve aceito. CST e classificação são
+    # decisão de quem responde pelo tributo, e por isso não têm padrão; o
+    # indicador da operação nasce em 100301 (Anexo C: «demais serviços, em
+    # operações onerosas — local do domicílio principal do adquirente»), que
+    # também se confere com o contador.
+    "nfse_ibscbs_cst": "",
+    "nfse_ibscbs_classificacao": "",
+    "nfse_ibscbs_indicador_operacao": "100301",
 }
 
 ROTULOS: dict[str, str] = {
@@ -134,7 +152,14 @@ ROTULOS: dict[str, str] = {
     "nfse_serie": "Série da DPS",
     "nfse_exige_endereco": "Exigir endereço do tomador",
     "nfse_inicio": "Emitir para recibos a partir de",
+    "nfse_codigo_nbs": "Código NBS",
+    "nfse_convenio_ativo": "Convênio do município no emissor nacional",
+    "nfse_ibscbs_cst": "CST do IBS/CBS",
+    "nfse_ibscbs_classificacao": "Classificação tributária do IBS/CBS (cClassTrib)",
+    "nfse_ibscbs_indicador_operacao": "Indicador da operação (cIndOp)",
 }
+
+CONVENIO = {"": "Não conferido", "1": "Ativo", "0": "Não ativo"}
 
 REGIMES_ESPECIAIS = {
     "0": "Nenhum", "1": "Ato cooperado", "2": "Estimativa",
@@ -306,8 +331,19 @@ def conferir_configuracao(valores: Mapping[str, Any]) -> dict[str, str]:
     if novo["nfse_optante_simples"] not in OPCOES_SIMPLES:
         raise NfseError("Opção do Simples Nacional desconhecida.")
     for chave in ("nfse_municipio", "nfse_prestador_documento", "nfse_inscricao_municipal",
-                  "nfse_codigo_tributacao", "nfse_codigo_municipal", "nfse_serie"):
+                  "nfse_codigo_tributacao", "nfse_codigo_municipal", "nfse_serie",
+                  "nfse_codigo_nbs", "nfse_ibscbs_cst", "nfse_ibscbs_classificacao",
+                  "nfse_ibscbs_indicador_operacao"):
         novo[chave] = DPS.digitos(novo[chave])
+    if novo["nfse_convenio_ativo"] not in CONVENIO:
+        raise NfseError("Situação do convênio desconhecida.")
+    if novo["nfse_codigo_nbs"] and len(novo["nfse_codigo_nbs"]) != 9:
+        raise NfseError("O código NBS tem 9 dígitos (1.1304.00.00 = 113040000).")
+    if novo["nfse_ibscbs_cst"] or novo["nfse_ibscbs_classificacao"]:
+        try:
+            DPS.conferir_ibscbs(_ibscbs(novo, exigir=True))
+        except DPS.DpsError as erro:
+            raise NfseError(str(erro)) from erro
     if novo["nfse_municipio"] and len(novo["nfse_municipio"]) != 7:
         raise NfseError("O código IBGE do município tem 7 dígitos.")
     doc = novo["nfse_prestador_documento"]
@@ -422,6 +458,44 @@ def resumo_do_certificado(pasta: Any = None) -> dict | None:
         return _resumo_do_certificado(ler_certificado(pasta))
     except NfseError as erro:
         return {"titular": "", "valido_ate": "", "vencido": True, "erro": str(erro)}
+
+
+def _ibscbs(cfg: Mapping[str, str], *, exigir: bool = False) -> DPS.IbsCbs | None:
+    """O grupo do IBS/CBS da configuração, ou None quando a casa não o preencheu."""
+    cst = DPS.digitos(cfg.get("nfse_ibscbs_cst"))
+    classe = DPS.digitos(cfg.get("nfse_ibscbs_classificacao"))
+    if not (cst or classe) and not exigir:
+        return None
+    return DPS.IbsCbs(cst=cst, classificacao=classe,
+                      indicador_operacao=DPS.digitos(cfg.get("nfse_ibscbs_indicador_operacao")))
+
+
+def aliquota_para_a_dps(cfg: Mapping[str, str]) -> str:
+    """A alíquota que VAI na DPS — que nem sempre é a configurada.
+
+    Regra E0617 do Anexo I v1.01: prestador fora do Simples (opSimpNac = 1)
+    com o convênio do município ATIVO não pode informar `pAliq` — a Sefin a
+    tira do cadastro do município. A configurada continua servindo à
+    estimativa do ISS na fila; na nota, a que vale é a da Sefin.
+    """
+    if (str(cfg.get("nfse_optante_simples") or "1") == "1"
+            and str(cfg.get("nfse_convenio_ativo") or "") == "1"):
+        return ""
+    return cfg.get("nfse_aliquota") or ""
+
+
+def avisos_da_configuracao(cfg: Mapping[str, str]) -> list[str]:
+    """O que não impede a nota, mas o ADMIN precisa saber. Só calcula."""
+    avisos = []
+    if not str(cfg.get("nfse_convenio_ativo") or ""):
+        avisos.append("O convênio do município no emissor nacional não foi conferido: "
+                      "use «Consultar os parâmetros do município» e marque a situação. "
+                      "Ele decide se a alíquota pode ir na nota (regra E0617).")
+    if _ibscbs(cfg) is None:
+        avisos.append("A nota sai sem o grupo do IBS/CBS da reforma tributária (aceito "
+                      "pela NT 004 v2.0 enquanto as validações dele estão suspensas). "
+                      "Preencha o CST e a classificação tributária com o contador.")
+    return avisos
 
 
 def pendencias_da_configuracao(cfg: Mapping[str, str], pasta: Any = None) -> list[str]:
@@ -780,12 +854,14 @@ def preparar(con, recibo_id: int, *, cfg: Mapping[str, str],
     servico = DPS.Servico(codigo_tributacao=cfg["nfse_codigo_tributacao"],
                           codigo_municipal=cfg.get("nfse_codigo_municipal") or "",
                           descricao=descricao_do_servico(r, item["base"]),
-                          valor_centavos=item["base"], aliquota=cfg.get("nfse_aliquota") or "")
+                          valor_centavos=item["base"], aliquota=aliquota_para_a_dps(cfg),
+                          codigo_nbs=cfg.get("nfse_codigo_nbs") or "")
     prestador = _prestador(cfg)
     try:
         xml = DPS.assinar(DPS.montar_dps(
             ambiente=cfg["nfse_ambiente"], emitida_em=quando, serie=serie, numero=numero,
-            prestador=prestador, tomador=item["tomador"], servico=servico), certificado)
+            prestador=prestador, tomador=item["tomador"], servico=servico,
+            ibscbs=_ibscbs(cfg)), certificado)
     except DPS.DpsError as erro:
         raise NfseError(str(erro)) from erro
     # CONFERIR O QUE VAI SAIR ANTES DE SAIR: certificado trocado pela metade
@@ -1060,25 +1136,71 @@ def cancelar(db, nota_id: int, *, provedor, certificado: DPS.CertificadoA1,
                       situacao=CANCELADA, visto=n)
 
 
-def danfse(db, nota_id: int, provedor, *, usuario: str) -> bytes:
-    """O PDF da nota. Baixa uma vez do ADN e guarda; a segunda via não depende da rede."""
+def nomes_de_municipio(con):
+    """`codigo IBGE -> (nome, UF)` de `ib_municipios`, para o DANFSe. Só LÊ."""
+    bd = banco(con)
+
+    def nome(codigo: str) -> tuple[str, str]:
+        if not DPS.digitos(codigo):
+            return "", ""
+        try:
+            r = bd.um("SELECT nome, uf FROM ib_municipios WHERE codigo_ibge = %s",
+                      (int(DPS.digitos(codigo)),))
+        except Exception:      # instalação sem a tabela do IBGE: o código fica
+            return "", ""
+        return (r["nome"], r["uf"]) if r else ("", "")
+    return nome
+
+
+def danfse(db, nota_id: int, *, usuario: str, provedor=None,
+           formato: str = "pdf") -> bytes | str:
+    """O DANFSe v2.0 da nota, montado aqui do XML dela (NT 008/2026). Não guarda o PDF.
+
+    CORREÇÃO DE 24/10/2026: até aqui o PDF vinha do ADN e ficava guardado em
+    `nfse_notas.danfse`. A NT SE/CGNFS-e 008/2026 suspendeu aquela API em
+    1º/07/2026 e passou o DANFSe ao sistema emissor. Ele sai agora do XML da
+    nota, a cada pedido — e por isso a nota cancelada sai com a marca
+    «CANCELADA», o que o PDF guardado antes do cancelamento não teria. A
+    coluna `danfse` fica (dado já gravado é dado), mas não é mais lida.
+
+    Sem o XML gravado e com o `provedor` à mão, a nota é consultada na Sefin
+    pela chave e o XML fica gravado — é a única ida à rede daqui.
+    """
+    import nfse_danfse as DAN
     with db.connect() as con:
         n = nota(con, nota_id)
     if not n or not n["chave"]:
         raise NfseError("Esta nota ainda não tem chave: não há DANFSe.")
-    if n["danfse"]:
-        return bytes(n["danfse"])
-    _mesmo_ambiente(n, provedor)
-    try:
-        pdf = provedor.danfse(n["chave"])
-    except PROV.ProvedorError as erro:
-        raise NfseError(f"O DANFSe não veio do emissor: {erro}") from erro
-    with db.transaction() as con:
-        bd = banco(con)
-        bd.escrever("UPDATE nfse_notas SET danfse = %s WHERE id = %s AND danfse IS NULL",
-                    (pdf, int(nota_id)))
-        _evento(bd, nota_id, "DANFSE", "ok", "", usuario, _carimbo(_agora()))
-    return pdf
+    xml = n.get("xml_nfse") or ""
+    if not xml:
+        if provedor is None:
+            raise NfseError("O XML desta NFS-e não está gravado. Consulte a nota no "
+                            "emissor (ADMIN) para gravá-lo e imprimir o DANFSe.")
+        _mesmo_ambiente(n, provedor)
+        try:
+            xml = provedor.consultar(n["chave"]).xml
+        except PROV.ProvedorError as erro:
+            raise NfseError(f"Não consegui trazer o XML da nota do emissor: {erro}") from erro
+        if not xml:
+            raise NfseError("O emissor não devolveu o XML desta NFS-e.")
+        with db.transaction() as con:
+            bd = banco(con)
+            bd.escrever("UPDATE nfse_notas SET xml_nfse = %s WHERE id = %s "
+                        "AND xml_nfse IS NULL", (xml, int(nota_id)))
+            _evento(bd, nota_id, "CONSULTAR", "ok", "XML da nota gravado para o DANFSe",
+                    usuario, _carimbo(_agora()))
+    with db.connect() as con:
+        municipios = nomes_de_municipio(con)
+        try:
+            if formato == "html":
+                return DAN.html_da_nota(xml, cancelada=n["situacao"] == CANCELADA,
+                                        nome_do_municipio=municipios)
+            return DAN.pdf_da_nota(xml, cancelada=n["situacao"] == CANCELADA,
+                                   nome_do_municipio=municipios,
+                                   nome=f"danfse-{n.get('numero_nfse') or nota_id}",
+                                   get_setting=getattr(db, "get_setting", None))
+        except DAN.DanfseError as erro:
+            raise NfseError(str(erro)) from erro
 
 
 def provedor_da_casa(cfg: Mapping[str, str], certificado: DPS.CertificadoA1):
@@ -1092,6 +1214,179 @@ def provedor_da_casa(cfg: Mapping[str, str], certificado: DPS.CertificadoA1):
         # O nome do erro, e não a mensagem: a do `ssl` traz o caminho da chave.
         raise NfseError(f"Não consegui preparar a conexão segura com o certificado "
                         f"A1 ({type(erro).__name__}).") from erro
+
+
+# ------------------------------------------- os parâmetros do município no emissor
+
+CHAVE_DOS_PARAMETROS = "nfse_parametros_municipais"
+
+
+def conferir_no_emissor(provedor, cfg: Mapping[str, str], *,
+                        agora: datetime | None = None) -> dict:
+    """Pergunta ao emissor o convênio, o serviço e o contribuinte. NÃO GRAVA.
+
+    Devolve o que veio, como veio: a forma do corpo dessas respostas não está
+    no manual do contribuinte, e ler nelas um «ativo» por palpite seria a
+    máquina decidindo a alíquota da nota. Quem lê e marca o convênio é o
+    ADMIN, na tela.
+    """
+    mun = DPS.digitos(cfg.get("nfse_municipio"))
+    if len(mun) != 7:
+        raise NfseError("Informe o código IBGE do município antes de consultar.")
+    perguntas = {
+        "convenio": lambda: provedor.convenio(mun),
+        "servico": lambda: provedor.parametros_do_servico(
+            mun, cfg.get("nfse_codigo_tributacao") or ""),
+        "contribuinte": lambda: provedor.parametros_do_contribuinte(
+            mun, cfg.get("nfse_prestador_documento") or ""),
+    }
+    respostas: dict[str, Any] = {}
+    for nome, pergunta in perguntas.items():
+        try:
+            respostas[nome] = pergunta()
+        except PROV.ProvedorError as erro:
+            respostas[nome] = {"erro": str(erro)}
+    return {"consultado_em": _carimbo(agora or _agora()), "ambiente": cfg.get("nfse_ambiente"),
+            "municipio": mun, "respostas": respostas}
+
+
+def gravar_parametros(con, consulta: Mapping[str, Any]) -> None:
+    """Guarda a última consulta, para a tela e o relatório. ESCREVE em `settings`."""
+    banco(con).escrever(
+        "INSERT INTO settings (key, value) VALUES (%s, %s) "
+        "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        (CHAVE_DOS_PARAMETROS, json.dumps(consulta, ensure_ascii=False)))
+
+
+def parametros_gravados(con) -> dict | None:
+    r = banco(con).um("SELECT value FROM settings WHERE key = %s", (CHAVE_DOS_PARAMETROS,))
+    if not r or not r["value"]:
+        return None
+    try:
+        return json.loads(r["value"])
+    except ValueError:
+        return None
+
+
+# ------------------------------------------------------- a apuração do mês
+
+def _valor_xml(raiz, caminho: str) -> int | None:
+    """Um valor em reais do XML da nota, em centavos; None se não há."""
+    el = raiz.find(caminho, {"n": DPS.NS})
+    if el is None or not (el.text or "").strip():
+        return None
+    try:
+        return round(float(el.text) * 100)
+    except ValueError:
+        return None
+
+
+def _do_xml(n: Mapping[str, Any]) -> dict:
+    """Competência, ISS e IBS/CBS lidos do XML da nota (o da Sefin, se houver)."""
+    from lxml import etree
+    saida = {"competencia": "", "iss": None, "aliquota": "", "ibs": None, "cbs": None}
+    for coluna in ("xml_nfse", "xml_dps"):
+        texto = n.get(coluna) or ""
+        if not texto:
+            continue
+        try:
+            raiz = etree.fromstring(texto.encode("utf-8"))
+        except etree.XMLSyntaxError:
+            continue
+        if not saida["competencia"]:
+            el = raiz.find(".//n:dCompet", {"n": DPS.NS})
+            saida["competencia"] = (el.text or "").strip() if el is not None else ""
+        if coluna == "xml_nfse":
+            saida["iss"] = _valor_xml(raiz, "n:infNFSe/n:valores/n:vISSQN")
+            el = raiz.find("n:infNFSe/n:valores/n:pAliqAplic", {"n": DPS.NS})
+            saida["aliquota"] = (el.text or "").strip() if el is not None else ""
+            saida["ibs"] = _valor_xml(raiz, "n:infNFSe/n:IBSCBS/n:totCIBS/n:gIBS/n:vIBSTot")
+            saida["cbs"] = _valor_xml(raiz, "n:infNFSe/n:IBSCBS/n:totCIBS/n:gCBS/n:vCBS")
+    return saida
+
+
+def apuracao_do_mes(con, mes: str, *, ambiente: str = "producao") -> dict:
+    """O ISS do mês (AAAA-MM), nota por nota, pelo que a Sefin calculou. Só LÊ.
+
+    A competência sai do `dCompet` da DPS, e o ISS do `vISSQN` do XML da NFS-e
+    — o valor que a Sefin apurou, e não a estimativa da fila. Nota sem o XML
+    da Sefin entra com o ISS estimado e a marca «estimado», para quem confere
+    saber de onde veio cada número. Cancelada aparece à parte e não soma.
+
+    Isto NÃO é a guia: a guia do ISS sai de quem cobra o imposto (o Módulo de
+    Apuração Nacional, se o município aderiu, ou o sistema da prefeitura).
+    O que este quadro faz é dizer quanto ela deve dar, e de quais notas.
+    """
+    try:
+        inicio = datetime.strptime(mes, "%Y-%m")
+    except ValueError as erro:
+        raise NfseError("O mês é AAAA-MM.") from erro
+    fim = datetime(inicio.year + (inicio.month == 12), inicio.month % 12 + 1, 1)
+    # Uma folga de dois dias de cada lado no filtro do banco; quem decide a
+    # competência é o `dCompet`, lido em Python logo abaixo.
+    de = (inicio.replace(day=1)).isoformat()[:10]
+    ate = fim.isoformat()[:10]
+    linhas = banco(con).ler(
+        """SELECT id, recibo_id, situacao, serie, numero_dps, numero_nfse, chave,
+                  tomador_documento, tomador_nome, valor_servico, valor_iss, aliquota,
+                  emitida_em, cancelada_em, xml_dps, xml_nfse
+             FROM nfse_notas
+            WHERE ambiente = %s AND situacao IN ('EMITIDA', 'CANCELADA')
+              AND emitida_em >= %s AND emitida_em < %s
+            ORDER BY emitida_em, id""",
+        (ambiente, _deslocar(de, -2), _deslocar(ate, 2)))
+    notas, canceladas = [], []
+    soma = {"base": 0, "iss": 0, "ibs": 0, "cbs": 0, "estimadas": 0}
+    for n in linhas:
+        x = _do_xml(n)
+        if not x["competencia"].startswith(mes):
+            continue
+        estimado = x["iss"] is None
+        iss = x["iss"] if not estimado else (n["valor_iss"] or 0)
+        item = {"id": n["id"], "recibo_id": n["recibo_id"], "numero": n["numero_nfse"] or "",
+                "dps": f"{n['serie']}/{n['numero_dps']}", "chave": n["chave"] or "",
+                "competencia": x["competencia"],
+                "tomador": n["tomador_nome"],
+                "tomador_documento": mascarar_documento(n["tomador_documento"]),
+                "base": int(n["valor_servico"] or 0), "iss": int(iss or 0),
+                "aliquota": x["aliquota"] or n["aliquota"] or "", "estimado": estimado,
+                "ibs": x["ibs"] or 0, "cbs": x["cbs"] or 0,
+                "cancelada_em": n["cancelada_em"] or ""}
+        if n["situacao"] == CANCELADA:
+            canceladas.append(item)
+            continue
+        notas.append(item)
+        soma["base"] += item["base"]
+        soma["iss"] += item["iss"]
+        soma["ibs"] += item["ibs"]
+        soma["cbs"] += item["cbs"]
+        soma["estimadas"] += 1 if estimado else 0
+    return {"mes": mes, "ambiente": ambiente, "notas": notas, "canceladas": canceladas,
+            "total": soma, "quantidade": len(notas)}
+
+
+def _deslocar(dia: str, dias: int) -> str:
+    from datetime import timedelta
+    return (datetime.strptime(dia, "%Y-%m-%d") + timedelta(days=dias)).date().isoformat()
+
+
+def apuracao_csv(apuracao: Mapping[str, Any]) -> str:
+    """A apuração em CSV (separador «;», decimal com vírgula), para o contador."""
+    linhas = ["competencia;numero_nfse;dps;chave;tomador;documento;base;aliquota;iss;"
+              "iss_estimado;ibs;cbs"]
+
+    def r(c: int) -> str:
+        return DPS.valor_decimal(c).replace(".", ",") if c is not None else ""
+    for n in apuracao["notas"]:
+        nome = str(n["tomador"]).replace(";", ",")
+        linhas.append(";".join((n["competencia"], n["numero"], n["dps"], n["chave"], nome,
+                                n["tomador_documento"], r(n["base"]),
+                                str(n["aliquota"]).replace(".", ","), r(n["iss"]),
+                                "sim" if n["estimado"] else "nao", r(n["ibs"]), r(n["cbs"]))))
+    t = apuracao["total"]
+    linhas.append(";".join(("TOTAL", "", "", "", "", "", r(t["base"]), "", r(t["iss"]),
+                            str(t["estimadas"]), r(t["ibs"]), r(t["cbs"]))))
+    return "\r\n".join(linhas) + "\r\n"
 
 
 def para_o_rastro(n: Mapping[str, Any]) -> dict:

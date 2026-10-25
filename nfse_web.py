@@ -19,6 +19,7 @@ O QUE VAI AO RASTRO
 """
 from __future__ import annotations
 
+import json
 from datetime import date
 
 from flask import Response, abort, flash, redirect, render_template, request, url_for
@@ -220,19 +221,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @login_required
     @roles_required(*QUEM_VE)
     def nfse_danfse(nota_id):
-        """O DANFSe em PDF. A segunda via sai do banco, sem rede."""
+        """O DANFSe v2.0 (NT 008/2026), montado do XML da nota. `?formato=html`
+        mostra a folha para imprimir no navegador quando o PDF não sair."""
         n = _nota_ou_404(nota_id)
+        formato = "html" if request.args.get("formato") == "html" else "pdf"
         try:
-            if n["danfse"]:
-                pdf = bytes(n["danfse"])
-            else:
+            provedor = None
+            if not n.get("xml_nfse"):
                 provedor, _certificado = _abrir_o_emissor(_cfg())
-                pdf = NFSE.danfse(db, nota_id, provedor, usuario=usuario_nome())
+            saida = NFSE.danfse(db, nota_id, usuario=usuario_nome(), provedor=provedor,
+                                formato=formato)
         except NFSE.NfseError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("nfse_recibo", recibo_id=n["recibo_id"]))
-        audit("NFSE_DANFSE_BAIXADO", "nfse_notas", nota_id, {"chave": n["chave"]})
-        return Response(pdf, mimetype="application/pdf", headers={
+        audit("NFSE_DANFSE_BAIXADO", "nfse_notas", nota_id,
+              {"chave": n["chave"], "formato": formato})
+        if formato == "html":
+            return Response(saida, mimetype="text/html")
+        return Response(saida, mimetype="application/pdf", headers={
             "Content-Disposition": f'inline; filename="danfse-{n["numero_nfse"] or nota_id}.pdf"'})
 
     @app.route("/caixa/nfse/nota/<int:nota_id>/xml")
@@ -276,15 +282,60 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     NFSE.apagar_certificado()
                     audit("NFSE_CERTIFICADO_APAGADO", "settings", None, {})
                     flash("Certificado apagado desta máquina.", "success")
+                elif acao == "parametros":
+                    cfg = _cfg()
+                    provedor, _certificado = _abrir_o_emissor(cfg)
+                    consulta = NFSE.conferir_no_emissor(provedor, cfg)
+                    with db.transaction() as con:
+                        NFSE.gravar_parametros(con, consulta)
+                    audit("NFSE_PARAMETROS_CONSULTADOS", "settings", None,
+                          {"municipio": consulta["municipio"],
+                           "ambiente": consulta["ambiente"]})
+                    flash("Parâmetros do município consultados. Leia a resposta do "
+                          "convênio abaixo e marque a situação dele.", "success")
                 else:
                     abort(400)
             except NFSE.NfseError as erro:
                 flash(str(erro), "danger")
             return redirect(url_for("nfse_gestor"))
         cfg = _cfg()
+        with db.connect() as con:
+            parametros = NFSE.parametros_gravados(con)
         return render_template(
             "nfse_gestor.html", cfg=cfg, rotulos=NFSE.ROTULOS,
             certificado=NFSE.resumo_do_certificado(),
             faltas=NFSE.pendencias_da_configuracao(cfg), ambientes=NFSE.AMBIENTES,
+            avisos=NFSE.avisos_da_configuracao(cfg), convenios=NFSE.CONVENIO,
+            parametros=parametros,
+            parametros_texto=(json.dumps(parametros, ensure_ascii=False, indent=2)
+                              if parametros else ""),
             regimes=NFSE.REGIMES_ESPECIAIS, opcoes_simples=NFSE.OPCOES_SIMPLES,
             provedores=sorted(NFSE.PROV.PROVEDORES))
+
+    # ------------------------------------------------------ a apuração do mês
+
+    @app.route("/caixa/nfse/apuracao")
+    @login_required
+    @roles_required("ADMIN", "MANAGER", "AUDITOR")
+    def nfse_apuracao():
+        """O ISS do mês, nota por nota — o número que a guia deve dar."""
+        mes = (request.args.get("mes") or date.today().isoformat()[:7]).strip()
+        cfg = _cfg()
+        ambiente = request.args.get("ambiente") or cfg["nfse_ambiente"]
+        if ambiente not in NFSE.AMBIENTES:
+            abort(400)
+        try:
+            with db.connect() as con:
+                apuracao = NFSE.apuracao_do_mes(con, mes, ambiente=ambiente)
+        except NFSE.NfseError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("nfse_apuracao"))
+        if request.args.get("formato") == "csv":
+            audit("NFSE_APURACAO_EXPORTADA", "nfse_notas", None,
+                  {"mes": mes, "ambiente": ambiente, "notas": apuracao["quantidade"]})
+            return Response(NFSE.apuracao_csv(apuracao).encode("utf-8-sig"),
+                            mimetype="text/csv", headers={
+                                "Content-Disposition":
+                                    f'attachment; filename="apuracao-iss-{mes}.csv"'})
+        return render_template("nfse_apuracao.html", a=apuracao, mes=mes,
+                               ambientes=NFSE.AMBIENTES, reais=NFSE.reais)

@@ -3359,6 +3359,13 @@ def create_app(test_config: dict | None = None) -> Flask:
     agente_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                fmt_date)
 
+    # A AUTOMAÇÃO (24/10/2026) — a central única das rotinas: o cadastro, o
+    # relatório de cada rodada, a configuração dos avisos e o cofre. A tela
+    # não roda nada; quem roda é o despachante, fora do servidor.
+    import automacao_web
+    automacao_web.registrar_rotas(app, db, login_required, roles_required, audit,
+                                  fmt_date)
+
     import acervo_correcao_web
     acervo_correcao_web.registrar_rotas(app, db, login_required,
                                         roles_required, audit, fmt_date)

@@ -31,19 +31,32 @@
           {% else %}<span class="badge critica">Reingresso fora do prazo</span>{% endif %}</span>
   </div>
   <div style="padding:12px 16px">
+    {% set lista = exigencias_da(n) %}
+    {% if lista %}
     <ol class="small">
-      {% for e in n.exigencias|fromjson %}<li>{{ e }}</li>{% endfor %}
+      {% for e in lista %}<li>{{ e }}</li>{% endfor %}
     </ol>
+    {% else %}
+    <p class="small">As exigências constam da nota assinada, anexada ao protocolo.</p>
+    {% endif %}
+    {% set arquivos = anexos_da_nota(n.numero) %}
+    {% if arquivos %}
+    <p class="small"><strong>Arquivo da nota:</strong>
+      {% for d in arquivos %}<a href="{{ url_for('attachment_view', attachment_id=d.id) }}" target="_blank">{{ d.original_name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+    {% endif %}
     {% if n.fundamentacao %}<p class="small muted"><strong>Fundamentação:</strong> {{ n.fundamentacao }}</p>{% endif %}
     <div class="actions">
       <a class="button" href="{{ url_for('ri_nota_odt', nota_id=n.id) }}">Imprimir nota (PDF)</a>
       <a class="button" href="{{ url_for('ri_nota_odt', nota_id=n.id, formato='odt') }}">.odt</a>
     </div>
     {% if n.situacao == 'ABERTA' %}
-    <form method="post" action="{{ url_for('ri_reingresso', nota_id=n.id) }}" class="form-grid">
+    <form method="post" action="{{ url_for('ri_reingresso', nota_id=n.id) }}" class="form-grid"
+          enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>Data do reingresso<input type="date" name="data_reingresso" value="{{ hoje }}"></label>
       <label>Observação<input name="observacao"></label>
+      <label class="span2">Documentos que o interessado trouxe (opcional)
+        <input type="file" name="documento" multiple></label>
       <div class="span2"><button class="primary">Registrar reingresso do título</button></div>
     </form>
     {% endif %}
@@ -51,16 +64,22 @@
 </section>
 {% endfor %}
 
+{% if por_que_nao_emite %}
+<div class="notice small">{{ por_que_nao_emite }}</div>
+{% else %}
 <details class="panel" {% if not notas %}open{% endif %}>
-  <summary><strong>Emitir nova nota devolutiva</strong></summary>
-  <form method="post" class="form-grid">
+  <summary><strong>Emitir ou cadastrar nova nota devolutiva</strong></summary>
+  <form method="post" class="form-grid" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Data<input type="date" name="data_nota" value="{{ hoje }}"></label>
-    <label class="span2">Exigências — <strong>uma por linha</strong>
-      <textarea name="exigencias" rows="8" required placeholder="Apresentar certidão de quitação de tributos municipais.&#10;Regularizar a qualificação do adquirente, com estado civil e regime de bens.&#10;Juntar procuração com poderes específicos."></textarea>
+    <label>Arquivo da nota já redigida e assinada (Word ou PDF)
+      <input type="file" name="arquivo_nota" multiple></label>
+    <label class="span2">Exigências — <strong>uma por linha</strong>; opcional quando o arquivo da nota vai anexado
+      <textarea name="exigencias" rows="8" placeholder="Apresentar certidão de quitação de tributos municipais.&#10;Regularizar a qualificação do adquirente, com estado civil e regime de bens.&#10;Juntar procuração com poderes específicos."></textarea>
     </label>
     <label class="span2">Fundamentação<textarea name="fundamentacao" rows="3"></textarea></label>
     <div class="span2"><button class="primary">Emitir nota devolutiva</button></div>
   </form>
 </details>
+{% endif %}
 {% endblock %}

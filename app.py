@@ -3167,6 +3167,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     import onr_certidoes_web
     onr_certidoes_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                       fmt_date)
+    # A APROVAÇÃO DO QUE O ROBÔ PREPAROU (25/10/2026): o clique «Aprovar» é a
+    # emissão, pela rota da casa (`onr_certidoes_auto_web`).
+    import onr_certidoes_auto_web
+    onr_certidoes_auto_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     # A CONFERENCIA DO ENDERECO QUE VAI AO ONR — o que o teor da ficha diz,
     # ao lado do que a ficha tem, com a frase de onde cada campo saiu.

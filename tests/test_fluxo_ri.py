@@ -1148,6 +1148,144 @@ def test_a_certidao_negativa_diz_o_que_se_buscou_e_que_nada_consta(casa, modo):
     assert busca_selada, "a busca paga não saiu com o selo próprio (16.25.7)"
 
 
+def test_a_certidao_positiva_por_pessoa_lista_os_imoveis_atuais(casa):
+    """A positiva por pessoa (25/10/2026, o oficial: «relação dos imóveis
+    atuais»): a pessoa ESCOLHIDA, a matrícula em que ela é dona hoje, o selo da
+    certidão (16.24.1) — pela mesma rota, número e hash da negativa."""
+    _compra_e_venda(casa)
+    cx = _protocolo_geral(casa, interessado=COMPRADORA,
+                          itens=[("16.24.1", 1), ("16.24.2", 9)])
+    c = casa["balcao"]
+    tela = f"/registro-imoveis/indicador-pessoal?busca={COMPRADORA['cpf']}"
+    assert "Emitir certidão positiva" in c.get(tela).get_data(as_text=True)
+    mid = _um(casa, "SELECT id FROM ri_matriculas WHERE numero=%s",
+              (str(PRIMEIRA_MATRICULA),))["id"]
+    # SEM MARCAR NENHUMA MATRÍCULA, NÃO SAI (o oficial, 25/10/2026): o
+    # escrevente confere uma a uma.
+    antes = _um(casa, "SELECT COUNT(*) n FROM ri_certidoes")["n"]
+    _clicar_sem_seguir(c, tela, "/registro-imoveis/certidao-negativa",
+                       modo="PESSOA", resultado="POSITIVA", busca=COMPRADORA["cpf"],
+                       pessoa_chave=COMPRADORA["cpf"])
+    assert _um(casa, "SELECT COUNT(*) n FROM ri_certidoes")["n"] == antes
+    r = _clicar_sem_seguir(c, tela, "/registro-imoveis/certidao-negativa",
+                           modo="PESSOA", resultado="POSITIVA", busca=COMPRADORA["cpf"],
+                           matricula_marcada=str(mid),
+                           pessoa_chave=COMPRADORA["cpf"], requerente=COMPRADORA["nome"],
+                           requerente_documento=COMPRADORA["cpf_fmt"],
+                           finalidade="Para fins de financiamento", protocolo=cx["numero"])
+    linha = _um(casa, "SELECT * FROM ri_certidoes WHERE tipo='POSITIVA_PESSOA' ORDER BY id DESC LIMIT 1")
+    assert linha and not linha["cancelada"], f"a positiva não saiu: {_destino_em_texto(c, r)}"
+    destino = f"/registro-imoveis/certidoes/{linha['id']}.odt"
+    assert r.status_code == 302 and urlsplit(r.location).path == destino
+    papel = _papel(c, destino)
+    _confere(papel, [
+        ("CERTIDÃO DE PROPRIEDADE — BUSCA POR PESSOA", "a forma"),
+        ("CONSTA", "o resultado"),
+        (COMPRADORA["nome"], "a pessoa escolhida"),
+        (str(PRIMEIRA_MATRICULA), "a matrícula de que ela é dona hoje"),
+        ("Relação conferida por", "quem conferiu a relação"),
+    ] + _identifica_a_serventia_e_o_selo({"linha": linha, "papel": papel}, emol="Emol R$ 47,84"),
+        "certidão positiva por pessoa")
+    _sem_sobra(papel, "certidão positiva por pessoa")
+
+
+def test_a_positiva_recusa_quem_nao_e_dono_e_nao_grava(casa):
+    """O vendedor deixou de ser dono: a positiva recusa ANTES de numerar."""
+    _compra_e_venda(casa)
+    c = casa["balcao"]
+    antes = _um(casa, "SELECT COUNT(*) n FROM ri_certidoes")["n"]
+    tela = f"/registro-imoveis/indicador-pessoal?busca={VENDEDOR['cpf']}"
+    _clicar_sem_seguir(c, tela, "/registro-imoveis/certidao-negativa",
+                       modo="PESSOA", resultado="POSITIVA", busca=VENDEDOR["cpf"],
+                       pessoa_chave=VENDEDOR["cpf"])
+    assert _um(casa, "SELECT COUNT(*) n FROM ri_certidoes")["n"] == antes
+
+
+def _pedido_do_onr(casa, *, status="Em aberto", custas_em="2026-01-01T00:00:00",
+                   cobranca="1") -> int:
+    """Um pedido do ONR pago, por matrícula, já com o orçamento desta casa."""
+    import onr_certidoes as OC
+    import onr_certidoes_auto as AUTO
+    mid = _um(casa, "SELECT id FROM ri_matriculas WHERE numero=%s",
+              (str(PRIMEIRA_MATRICULA),))["id"]
+    db = casa["db"]
+    with db.transaction() as con:
+        OC.init_schema(con)
+        AUTO.init_schema(con)
+        pid = banco(con).escrever(
+            """INSERT INTO onr_cert_pedidos(ambiente, protocolo, tipo_certidao, data_pedido,
+                   valor, pesquisa_por, status_onr, solicitante, matricula_numero,
+                   matricula_id, dados_json, xml_pedido, situacao, custas_informadas,
+                   custas_em, custas_por, recebido_em, atualizado_em)
+               VALUES ('PRODUCAO','S99000000001D','3','2026-01-01T00:00:00','90.00','4',%s,
+                       %s,%s,%s,%s,'<x/>','NOVO','90.00',%s,'mario',%s,%s) RETURNING id""",
+            (status, COMPRADORA["nome"], str(PRIMEIRA_MATRICULA), mid,
+             json.dumps({"TIPO_COBRANCA": cobranca}), custas_em, db.now(), db.now()))[0]["id"]
+        AUTO.sincronizar(con, "PRODUCAO", db.now())
+    return int(pid)
+
+
+def _onr_responde(monkeypatch, status="Em aberto"):
+    import onr_wsoficio as WS
+    xml = ("<ROOT><PEDIDO_CERTIDAO><PROTOCOLO_SOLICITACAO>S99000000001D</PROTOCOLO_SOLICITACAO>"
+           f"<STATUS_SOLICITACAO>{status}</STATUS_SOLICITACAO></PEDIDO_CERTIDAO></ROOT>")
+
+    class SessaoFalsa:
+        def __init__(self, **_):
+            pass
+
+        def certidoes_a_emitir(self, **_):
+            return {"RETORNO": True, "XML": xml}
+    monkeypatch.setattr(WS, "Sessao", SessaoFalsa)
+
+
+def test_o_pedido_do_onr_aprovado_emite_pela_rota_da_casa_e_sela_pago_no_onr(casa, monkeypatch):
+    """O clique «Aprovar» (25/10/2026) emite pela MESMA rota do balcão, no nome
+    de quem clicou, e o selo sai pela forma CENTRAL_ONR — sem protocolo pago no
+    caixa, que é o que a trava exigiria do balcão."""
+    import onr_certidoes_auto as AUTO
+    _compra_e_venda(casa)
+    pid = _pedido_do_onr(casa)
+    _onr_responde(monkeypatch)
+    c = casa["balcao"]
+    tela = f"/ri/onr/certidoes/{pid}/automacao"
+    html = c.get(tela).get_data(as_text=True)
+    assert "Aprovar e emitir" in html, html[:2000]
+    r = c.post(f"{tela}/aprovar", data={"csrf_token": _token(html), "tipo_ri": "INTEIRO_TEOR"})
+    assert r.status_code == 302
+    a = _um(casa, "SELECT * FROM onr_cert_auto WHERE pedido_id=%s", (pid,))
+    assert a["certidao_id"], f"a certidão não saiu: {_destino_em_texto(c, r)}"
+    assert a["etapa"] == AUTO.A_ASSINAR, (a["etapa"], a["erro"])
+    cert = _um(casa, "SELECT * FROM ri_certidoes WHERE id=%s", (a["certidao_id"],))
+    assert cert["finalidade"] == "Pedido ONR S99000000001D" and not cert["cancelada"]
+    assert cert["emitida_por_nome"] == ESCREVENTE["nome"]           # quem clicou
+    cobertura = _um(casa, "SELECT forma FROM cx_selo_coberturas WHERE tabela='ri_certidoes' "
+                          "AND ato_id=%s ORDER BY id LIMIT 1", (a["certidao_id"],))
+    assert cobertura and cobertura["forma"] == "CENTRAL_ONR"
+    assert _um(casa, "SELECT 1 x FROM audit_logs WHERE action='ONR_CERTIDAO_APROVADA' "
+                     "AND entity_id=%s", (pid,))
+    # o segundo clique não emite outra
+    html = c.get(tela).get_data(as_text=True)
+    c.post(f"{tela}/aprovar", data={"csrf_token": _token(html), "tipo_ri": "INTEIRO_TEOR"})
+    assert _um(casa, "SELECT COUNT(*) n FROM ri_certidoes WHERE finalidade=%s",
+               ("Pedido ONR S99000000001D",))["n"] == 1
+
+
+def test_o_pedido_sem_orcamento_da_casa_nao_emite(casa, monkeypatch):
+    """«o pedido chega no protocolo para darmos orçamento» (o oficial): pago
+    sem o nosso orçamento vai à mão, e a aprovação não emite."""
+    _compra_e_venda(casa)
+    pid = _pedido_do_onr(casa, custas_em=None)
+    _onr_responde(monkeypatch)
+    assert _um(casa, "SELECT etapa FROM onr_cert_auto WHERE pedido_id=%s", (pid,))["etapa"] == "A_MAO"
+    c = casa["balcao"]
+    tela = f"/ri/onr/certidoes/{pid}/automacao"
+    html = c.get(tela).get_data(as_text=True)
+    c.post(f"{tela}/aprovar", data={"csrf_token": _token(html), "tipo_ri": "INTEIRO_TEOR"})
+    assert not _um(casa, "SELECT 1 x FROM ri_certidoes WHERE finalidade=%s",
+                   ("Pedido ONR S99000000001D",))
+
+
 # =============================================== a gratuidade, com o PDF
 
 MOTIVO_REURB = ("O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS PREVISTO NA "

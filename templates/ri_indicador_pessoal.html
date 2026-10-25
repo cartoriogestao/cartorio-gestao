@@ -52,6 +52,47 @@
           </tbody>
         </table>
       </div>
+      {# A POSITIVA POR PESSOA — 25/10/2026, o oficial: «relação dos imóveis
+         atuais». Só aparece para quem é proprietário atual de matrícula aberta;
+         a pessoa vai escolhida (pessoa_chave), e não deduzida da busca. #}
+      {% if item.pessoa.candidatas %}
+      <details style="padding:0 14px 12px">
+        <summary>Emitir certidão de propriedade (positiva) desta pessoa</summary>
+        <form method="post" action="{{ url_for('ri_emitir_certidao_negativa') }}" class="form-grid">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="modo" value="PESSOA">
+          <input type="hidden" name="resultado" value="POSITIVA">
+          <input type="hidden" name="busca" value="{{ busca }}">
+          <input type="hidden" name="pessoa_chave" value="{{ item.pessoa.chave }}">
+          <div class="span2"><p class="small">Marque, uma a uma, as matrículas que são desta pessoa.
+            Entram também as de nomes iguais (homônimos sem documento, ou a mesma pessoa com e sem CPF):
+            a certidão sai só com as marcadas.</p>
+            {% for m in item.pessoa.candidatas %}
+            <label class="check"><input type="checkbox" name="matricula_marcada" value="{{ m.id }}">
+              Matrícula <strong>{{ m.numero }}</strong> — proprietário(s) na ficha:
+              {% for d in m.donos %}{{ d.nome }}{% if d.documento_numero %} ({{ d.documento_numero }}){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}
+              {% if not m.da_pessoa %}<span class="badge alta">outro cadastro, mesmo nome</span>{% endif %}</label><br>
+            {% endfor %}</div>
+          {% set _ps_pos = protocolos_do_selo_ri('ri_certidoes', '16.24.1') %}
+          <div class="span2">{{ protocolo_do_selo(_ps_pos.candidatos, _ps_pos.pedidos, atendendo=_ps_pos.atendendo) }}</div>
+          <label>Requerente
+            <input name="requerente" placeholder="Quem pede a certidão" size="40"></label>
+          <label>Documento do requerente
+            <input name="requerente_documento" placeholder="CPF/CNPJ" size="22"></label>
+          <label>Finalidade
+            <input name="finalidade" placeholder="Ex.: fins de direito" size="40"></label>
+          <label>Protocolo / prenotação
+            <input name="protocolo" placeholder="Se houver" size="22"></label>
+          <label class="check span2"><input type="checkbox" name="isento" value="1">
+            Selo gratuito / isento</label>
+          <label class="span2">Motivo da gratuidade (obrigatório se isento)
+            <input name="motivo_isencao" maxlength="500" size="60"></label>
+          {% from '_busca.html' import campo_busca %}
+          <div class="span2">{{ campo_busca(busca_da_certidao('IMOVEL')) }}</div>
+          <div class="span2"><button class="primary">Emitir certidão positiva</button></div>
+        </form>
+      </details>
+      {% endif %}
     </section>
     {% endfor %}
   {% else %}

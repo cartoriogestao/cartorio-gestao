@@ -761,7 +761,7 @@ SEMENTES: tuple[dict, ...] = (
 #: e opcionalmente descricao, agenda e timeout_s}. O primeiro é o das despesas
 #: e do Banco Inter (agente financeiro, 24/10/2026). O import é protegido:
 #: o PR de um pode entrar antes do outro, e módulo ausente só não semeia.
-MODULOS_COM_PROCESSOS = ("despesas_automacao",)
+MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.

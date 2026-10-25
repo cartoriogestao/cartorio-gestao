@@ -827,7 +827,8 @@
         {# A NFS-e DOS RECIBOS (LG01) — a fila do que falta e do que ficou no
            meio. Ao lado do caixa, porque é do recibo pago que a nota nasce. #}
         <a href="{{ url_for('nfse_fila') }}">NFS-e</a>
-        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('caixa_recibos') }}">Recibos</a>
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('despesas_lista') }}">Despesas</a>
+        <a href="{{ url_for('caixa_recibos') }}">Recibos</a>
         <a href="{{ url_for('caixa_emolumentos') }}">Emolumentos</a>
         {# O RAZAO DOS SELOS — relato #33. Fica no dinheiro porque selo se
            compra. **É UM LINK SÓ desde 15/09/2026**: havia dois com este mesmo

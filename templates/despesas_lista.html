@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}Despesas{% endblock %}
+{% block heading %}<h1>Despesas</h1>{% endblock %}
+{% block content %}
+{# O CICLO: cadastrar → o oficial autoriza → o Inter paga → o extrato confirma
+   → a despesa entra no Livro Diário. A guia de fundo é repasse: paga e
+   conferida, mas fora do livro (decisão do oficial, 24/10/2026). #}
+<div class="actions">
+  {% if papel in ['ADMIN', 'MANAGER'] %}<a class="button" href="{{ url_for('despesas_nova') }}">Nova despesa</a>{% endif %}
+  <a class="button" href="{{ url_for('despesas_relatorio') }}">Relatório do mês e SIAFERJ</a>
+  {% if papel == 'ADMIN' %}<a class="button" href="{{ url_for('despesas_configuracao') }}">Configuração e Banco Inter</a>{% endif %}
+</div>
+
+{% if cfg.despesas_pagamento_ligado != '1' %}
+<div class="notice">O pagamento automático está <strong>desligado</strong>: as despesas autorizadas
+  esperam. Quem liga é o oficial, na configuração.</div>
+{% elif cfg.despesas_ambiente != 'producao' %}
+<div class="notice">Ambiente de <strong>teste</strong> do Inter: nenhum pagamento é de verdade.</div>
+{% endif %}
+
+<p class="filters">
+  <a href="{{ url_for('despesas_lista') }}">Todas</a>
+  {% for k, v in situacoes.items() %} · <a href="{{ url_for('despesas_lista', situacao=k) }}"{% if k == situacao %} class="ativo"{% endif %}>{{ v.split(' —')[0] }} ({{ contagem.get(k, 0) }})</a>{% endfor %}
+</p>
+
+{% if papel == 'ADMIN' %}
+<form method="post" action="{{ url_for('despesas_conciliar') }}" class="inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Conferir o extrato do Inter agora</button>
+</form>
+<form method="post" action="{{ url_for('despesas_pagar_autorizadas') }}" class="inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Pagar agora as autorizadas</button>
+</form>
+{% endif %}
+
+{% if linhas %}
+<div class="table-wrap"><table>
+  <thead><tr><th>#</th><th>Vencimento</th><th>Favorecido</th><th>Categoria</th><th>Valor</th><th>Situação</th><th></th></tr></thead>
+  <tbody>{% for d in linhas %}<tr>
+    <td>{{ d.id }}</td><td>{{ d.vencimento }}</td><td>{{ d.beneficiario_nome }}</td>
+    <td>{{ categorias[d.categoria][0] if d.categoria in categorias else d.categoria }}</td>
+    <td>R$ {{ reais(d.valor) }}</td>
+    <td>{{ situacoes[d.situacao].split(' —')[0] }}{% if d.divergencia %} <span class="badge alta">valor divergente</span>{% endif %}</td>
+    <td><a class="small" href="{{ url_for('despesas_ficha', despesa_id=d.id) }}">abrir</a></td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="muted">Nenhuma despesa {% if situacao %}nesta situação{% else %}cadastrada{% endif %}.</p>{% endif %}
+{% endblock %}

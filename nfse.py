@@ -20,8 +20,13 @@ A BASE DO ISS É O EMOLUMENTO, E SÓ ELE — A ESCOLHA, E POR QUÊ
     discriminado dos emolumentos», «do FERJ» e «do ISSQN» em colunas próprias
     (art. 190, I, j a l).
 
-    Por isso o valor do serviço na DPS é a SOMA DOS EMOLUMENTOS dos
-    lançamentos do recibo, e os fundos ficam fora — ditos na descrição, para
+    **NO MARANHÃO, A BASE É O EMOLUMENTO MENOS O FERJ** (o oficial, em
+    25/10/2026: «no Maranhão a base de cálculo do tributo deve ser
+    Emolumentos − FERJ»). O FERJ é a coluna `ferc` do caixa — o FERC do
+    selo, 3% do emolumento (`atribuicoes.FUNDOS`).
+
+    Por isso o valor do serviço na DPS é a SOMA DOS EMOLUMENTOS MENOS O FERJ
+    dos lançamentos do recibo, e os fundos ficam fora — ditos na descrição, para
     quem ler a nota saber que o cliente pagou mais do que o serviço. Repasse
     a terceiro não é receita do prestador, e tributá-lo seria pagar ISS sobre
     dinheiro do Tribunal, do MP e da Defensoria. **Se a lei do município
@@ -529,8 +534,9 @@ def base_do_recibo(recibo: Mapping[str, Any],
                    lancamentos: Iterable[Mapping[str, Any]]) -> tuple[int, list[str]]:
     """O valor do serviço (em centavos) e o que impede de calculá-lo. Só calcula.
 
-    A SOMA DOS EMOLUMENTOS dos lançamentos do recibo — e não o total, que leva
-    os fundos (ver o topo deste módulo). Estornado, excluído e saída não
+    A SOMA DOS EMOLUMENTOS MENOS O FERJ dos lançamentos do recibo — e não o
+    total, que leva os fundos (ver o topo deste módulo). O FERJ é a coluna
+    `ferc` do caixa (o FERC do selo, 3% do emolumento). Estornado, excluído e saída não
     contam. Lançamento sem parcela nenhuma separada é pendência: adivinhar a
     base é declarar ao fisco um número que ninguém conferiu.
     """
@@ -547,7 +553,11 @@ def base_do_recibo(recibo: Mapping[str, Any],
                     f"O lançamento {numero} não separa o emolumento dos fundos: "
                     f"corrija-o no caixa antes de emitir.")
                 continue
-            base += centavos(l.get("emolumentos"))
+            base += centavos(l.get("emolumentos")) - centavos(l.get("ferc"))
+        if base < 0:
+            pendencias.append("O FERJ lançado passa do emolumento: confira os lançamentos "
+                              "do recibo no caixa.")
+            base = 0
         return base, pendencias
     # Recibo sem lançamento ligado (o que veio de carga antiga): vale a
     # discriminação congelada nele, se ela disser o emolumento.
@@ -556,7 +566,7 @@ def base_do_recibo(recibo: Mapping[str, Any],
     except ValueError:
         fundos = {}
     if "emolumentos" in fundos:
-        return centavos(fundos["emolumentos"]), []
+        return max(0, centavos(fundos["emolumentos"]) - centavos(fundos.get("ferc"))), []
     return 0, ["O recibo não diz quanto do valor é emolumento."]
 
 
@@ -596,8 +606,9 @@ def descricao_do_servico(recibo: Mapping[str, Any], base: int) -> str:
             # Sem a lista fechada de fundos: o lançamento também tem `fermoju`
             # e `outros` (caixa_schema.FUNDOS), e a frase não pode deixá-los de fora.
             f"Valor total do recibo R$ {reais(total)}, dos quais R$ {reais(total - base)} "
-            f"não são emolumento — fundos e taxas (como FERC, FADEP, FEMP e FERRFIS) "
-            f"cobrados por força de lei —, e não integram o preço do serviço.")
+            f"não integram a base do serviço: fundos e taxas cobrados por força de lei "
+            f"(como FERJ/FERC, FADEP, FEMP e FERRFIS); no Maranhão, a base é o "
+            f"emolumento menos o FERJ.")
     return " ".join(partes)
 
 

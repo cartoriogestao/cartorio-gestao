@@ -50,6 +50,8 @@
     <label><input type="checkbox" name="nfse_exige_endereco" value="1" {% if cfg.nfse_exige_endereco == '1' %}checked{% endif %}>
       {{ rotulos.nfse_exige_endereco }}</label>
     <label>{{ rotulos.nfse_inicio }} <input type="date" name="nfse_inicio" value="{{ cfg.nfse_inicio }}"></label>
+    <label>{{ rotulos.nfse_percentual_ferj }} <input name="nfse_percentual_ferj" value="{{ cfg.nfse_percentual_ferj }}" size="6">
+      <span class="muted small">no Maranhão, 12% (LC 48/2000, art. 3º, V): a base é o emolumento menos o FERJ; o FERC não se desconta</span></label>
     <label>{{ rotulos.nfse_codigo_nbs }} <input name="nfse_codigo_nbs" value="{{ cfg.nfse_codigo_nbs }}" size="11">
       <span class="muted small">113040000 = 1.1304.00.00, serviços notariais e de registro (Anexo B do emissor)</span></label>
     <label>{{ rotulos.nfse_convenio_ativo }}

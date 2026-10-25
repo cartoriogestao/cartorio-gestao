@@ -22,8 +22,14 @@ A BASE DO ISS É O EMOLUMENTO, E SÓ ELE — A ESCOLHA, E POR QUÊ
 
     **NO MARANHÃO, A BASE É O EMOLUMENTO MENOS O FERJ** (o oficial, em
     25/10/2026: «no Maranhão a base de cálculo do tributo deve ser
-    Emolumentos − FERJ»). O FERJ é a coluna `ferc` do caixa — o FERC do
-    selo, 3% do emolumento (`atribuicoes.FUNDOS`).
+    Emolumentos − FERJ»). O FERJ NÃO é o FERC — correção do mesmo dia, do
+    oficial: «ferj e ferc são diferentes; ferj é uns 12%, ferc é 3%, mas não
+    abate dos emolumentos». O FERJ é a taxa de fiscalização de 12% «sobre os
+    valores efetivamente devidos de emolumentos» (LC estadual 48/2000, art.
+    3º, V), que a serventia recolhe toda semana ao Tribunal: sai de DENTRO do
+    emolumento, e não é coluna do caixa. O FERC (3%) é cobrado por cima e
+    não se desconta. O percentual é configuração (`nfse_percentual_ferj`,
+    12,00 por padrão), porque lei muda e outra unidade da federação não o tem.
 
     Por isso o valor do serviço na DPS é a SOMA DOS EMOLUMENTOS MENOS O FERJ
     dos lançamentos do recibo, e os fundos ficam fora — ditos na descrição, para
@@ -125,6 +131,9 @@ PADRAO: dict[str, str] = {
     # cNBS: «1.1304.00.00 — Serviços notariais e de registro», Anexo B v1.01
     # (lista NBS 2.0) do gov.br/nfse, medido em 24/10/2026.
     "nfse_codigo_nbs": "113040000",
+    # O FERJ (Maranhão): 12% «sobre os valores efetivamente devidos de
+    # emolumentos» (LC estadual 48/2000, art. 3º, V). Sai da base da nota.
+    "nfse_percentual_ferj": "12,00",
     # O CONVÊNIO DO MUNICÍPIO NO SISTEMA NACIONAL: «1» ativo, «0» não, vazio
     # não conferido. Quem marca é o ADMIN, depois de ler os parâmetros que o
     # emissor devolve (`conferir_no_emissor`). Ele decide a alíquota: com
@@ -158,6 +167,7 @@ ROTULOS: dict[str, str] = {
     "nfse_exige_endereco": "Exigir endereço do tomador",
     "nfse_inicio": "Emitir para recibos a partir de",
     "nfse_codigo_nbs": "Código NBS",
+    "nfse_percentual_ferj": "Percentual do FERJ descontado da base (%)",
     "nfse_convenio_ativo": "Convênio do município no emissor nacional",
     "nfse_ibscbs_cst": "CST do IBS/CBS",
     "nfse_ibscbs_classificacao": "Classificação tributária do IBS/CBS (cClassTrib)",
@@ -342,6 +352,7 @@ def conferir_configuracao(valores: Mapping[str, Any]) -> dict[str, str]:
         novo[chave] = DPS.digitos(novo[chave])
     if novo["nfse_convenio_ativo"] not in CONVENIO:
         raise NfseError("Situação do convênio desconhecida.")
+    percentual_ferj(novo)
     if novo["nfse_codigo_nbs"] and len(novo["nfse_codigo_nbs"]) != 9:
         raise NfseError("O código NBS tem 9 dígitos (1.1304.00.00 = 113040000).")
     if novo["nfse_ibscbs_cst"] or novo["nfse_ibscbs_classificacao"]:
@@ -530,15 +541,34 @@ def _vazio(valor: Any) -> bool:
     return valor is None or not str(valor).strip()
 
 
+def percentual_ferj(cfg: Mapping[str, Any]) -> int:
+    """O percentual do FERJ em centésimos de ponto (12,00% → 1200). Só calcula."""
+    texto = str(cfg.get("nfse_percentual_ferj") or "0").strip().replace("%", "").replace(",", ".")
+    try:
+        numero = float(texto or "0")
+    except ValueError as erro:
+        raise NfseError(f"Percentual do FERJ ilegível: «{texto}».") from erro
+    if not 0 <= numero < 100:
+        raise NfseError("O percentual do FERJ fica entre 0 e 100.")
+    return round(numero * 100)
+
+
+def ferj_do_emolumento(emolumento: int, pct_centesimos: int) -> int:
+    """O FERJ que sai de dentro do emolumento, em centavos, arredondado ao centavo."""
+    return (int(emolumento) * int(pct_centesimos) + 5000) // 10000
+
+
 def base_do_recibo(recibo: Mapping[str, Any],
-                   lancamentos: Iterable[Mapping[str, Any]]) -> tuple[int, list[str]]:
+                   lancamentos: Iterable[Mapping[str, Any]],
+                   pct_ferj: int = 0) -> tuple[int, list[str]]:
     """O valor do serviço (em centavos) e o que impede de calculá-lo. Só calcula.
 
-    A SOMA DOS EMOLUMENTOS MENOS O FERJ dos lançamentos do recibo — e não o
-    total, que leva os fundos (ver o topo deste módulo). O FERJ é a coluna
-    `ferc` do caixa (o FERC do selo, 3% do emolumento). Estornado, excluído e saída não
-    contam. Lançamento sem parcela nenhuma separada é pendência: adivinhar a
-    base é declarar ao fisco um número que ninguém conferiu.
+    A SOMA DOS EMOLUMENTOS dos lançamentos do recibo, MENOS O FERJ — e não o
+    total, que leva os fundos (ver o topo deste módulo). O FERJ não é coluna
+    do caixa: é um percentual do emolumento que a serventia recolhe ao
+    Tribunal (`pct_ferj`, em centésimos de ponto). Estornado, excluído e saída
+    não contam. Lançamento sem parcela nenhuma separada é pendência: adivinhar
+    a base é declarar ao fisco um número que ninguém conferiu.
     """
     vivos = [l for l in lancamentos
              if not l.get("estornado") and not l.get("excluido")
@@ -553,12 +583,8 @@ def base_do_recibo(recibo: Mapping[str, Any],
                     f"O lançamento {numero} não separa o emolumento dos fundos: "
                     f"corrija-o no caixa antes de emitir.")
                 continue
-            base += centavos(l.get("emolumentos")) - centavos(l.get("ferc"))
-        if base < 0:
-            pendencias.append("O FERJ lançado passa do emolumento: confira os lançamentos "
-                              "do recibo no caixa.")
-            base = 0
-        return base, pendencias
+            base += centavos(l.get("emolumentos"))
+        return base - ferj_do_emolumento(base, pct_ferj), pendencias
     # Recibo sem lançamento ligado (o que veio de carga antiga): vale a
     # discriminação congelada nele, se ela disser o emolumento.
     try:
@@ -566,7 +592,8 @@ def base_do_recibo(recibo: Mapping[str, Any],
     except ValueError:
         fundos = {}
     if "emolumentos" in fundos:
-        return max(0, centavos(fundos["emolumentos"]) - centavos(fundos.get("ferc"))), []
+        emolumento = centavos(fundos["emolumentos"])
+        return emolumento - ferj_do_emolumento(emolumento, pct_ferj), []
     return 0, ["O recibo não diz quanto do valor é emolumento."]
 
 
@@ -607,8 +634,8 @@ def descricao_do_servico(recibo: Mapping[str, Any], base: int) -> str:
             # e `outros` (caixa_schema.FUNDOS), e a frase não pode deixá-los de fora.
             f"Valor total do recibo R$ {reais(total)}, dos quais R$ {reais(total - base)} "
             f"não integram a base do serviço: fundos e taxas cobrados por força de lei "
-            f"(como FERJ/FERC, FADEP, FEMP e FERRFIS); no Maranhão, a base é o "
-            f"emolumento menos o FERJ.")
+            f"(como FERC, FADEP, FEMP e FERRFIS) e o FERJ, que sai do emolumento; no "
+            f"Maranhão, a base é o emolumento menos o FERJ.")
     return " ".join(partes)
 
 
@@ -691,7 +718,7 @@ def avaliar(con, recibos: list[Mapping[str, Any]], cfg: Mapping[str, str]) -> li
     saida = []
     for r in recibos:
         rid = int(r["id"])
-        base, pend = base_do_recibo(r, lancamentos[rid])
+        base, pend = base_do_recibo(r, lancamentos[rid], percentual_ferj(cfg))
         tomador = tomadores[rid]
         pendencias = []
         if r.get("cancelado"):

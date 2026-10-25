@@ -112,7 +112,7 @@ def _assinatura_confere(raiz) -> bool:
 def _nfse_falsa(dps, chave: str, numero: int) -> bytes:
     """A NFS-e 1.01 que a Sefin devolveria em volta da DPS — sem a assinatura dela.
 
-    Os valores do ISS e do IBS/CBS são os de uma nota de R$ 116,43 a 5%, com a
+    Os valores do ISS e do IBS/CBS são os de uma nota de R$ 105,63 a 5%, com a
     alíquota-teste de 2026 (CBS 0,9% e IBS UF 0,1%). Ela passa no esquema
     oficial da NFS-e em tudo menos na `Signature`, que é da Sefin.
     """
@@ -424,7 +424,8 @@ def test_senha_errada_do_a1_nao_abre_e_a_frase_nao_traz_a_senha(pfx):
 # ---------------------------------------------------- a base e a pendência
 
 def test_a_base_e_o_emolumento_menos_o_ferj_e_os_fundos_ficam_fora_da_nota(casa):
-    """No Maranhão, a base é o emolumento menos o FERJ (o oficial, 25/10/2026)."""
+    """No Maranhão, a base é o emolumento menos o FERJ de 12% (LC 48/2000, art. 3º, V);
+    o FERC (3%) é cobrado por cima e NÃO se desconta (o oficial, 25/10/2026)."""
     db = casa["db"]
     rid = _recibo(db, numero=101)
     _endereco(db)
@@ -432,12 +433,13 @@ def test_a_base_e_o_emolumento_menos_o_ferj_e_os_fundos_ficam_fora_da_nota(casa)
     assert resposta.status_code == 200
     nota = _nota_do_recibo(db, rid)
     assert nota["situacao"] == NFSE.EMITIDA, nota["mensagem"]
-    assert nota["valor_servico"] == 11643          # 120,03 − 3,60 de FERJ; não os 134,43
-    assert nota["valor_iss"] == 582                # 5% de 116,43 = 5,8215 → 5,82
+    assert nota["valor_servico"] == 10563          # 120,03 − 14,40 (12% de FERJ); não os 134,43
+    assert nota["valor_iss"] == 528                # 5% de 105,63 = 5,2815 → 5,28
     dps = casa["sefin"].emitidas[nota["id_dps"]]["dps"]
-    assert dps.findtext("n:infDPS/n:valores/n:vServPrest/n:vServ", namespaces=NS) == "116.43"
+    assert dps.findtext("n:infDPS/n:valores/n:vServPrest/n:vServ", namespaces=NS) == "105.63"
     descricao = dps.findtext("n:infDPS/n:serv/n:cServ/n:xDescServ", namespaces=NS)
-    assert "R$ 18,00" in descricao and "emolumento menos o FERJ" in descricao
+    assert "R$ 28,80" in descricao and "emolumento menos o FERJ" in descricao
+    assert NFSE.ferj_do_emolumento(12003, 1200) == 1440   # e o FERC de 3,60 não entra
     assert "TOMADORA" not in descricao             # a descrição não leva o nome
 
 
@@ -775,7 +777,7 @@ def test_danfse_sai_do_xml_da_nota_sem_rede_e_sem_a_api_suspensa(casa, monkeypat
     assert paginas and "DANFSe v2.0" in paginas[0]
     for esperado in ("DANFSe v2.0", "Documento Auxiliar da NFS-e", nota["chave"],
                      "NFS-e SEM VALIDADE JURÍDICA",            # homologação (item 2.4.3)
-                     "Notário ou Registrador", "R$ 5,82",       # ISS que a Sefin apurou
+                     "Notário ou Registrador", "R$ 5,28",       # ISS que a Sefin apurou
                      "000 / 000001", "1.1304.00.00",
                      "O DESTINATÁRIO É O PRÓPRIO TOMADOR/ADQUIRENTE DA OPERAÇÃO",
                      "Totais Aproximados dos Tributos cfe. Lei nº 12.741/2012",

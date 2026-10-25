@@ -29,6 +29,7 @@ from flask import abort, flash, redirect, render_template, request, session, url
 import onr_certidoes as OC
 import onr_certidoes_auto as AUTO
 import onr_wsoficio as WS
+import ri_onus_ia as RONIA
 from bd_nativo import banco
 
 QUEM = ("ADMIN", "MANAGER", "USER")
@@ -151,8 +152,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                     pessoas.append({"grupo": g,
                                     "imoveis": RINEG.candidatas_da_positiva(con, g["chave"])})
         tipo_ri = request.args.get("tipo_ri") or a.get("tipo_ri")
-        previa, previa_erro = "", ""
-        if (a["etapa"] == AUTO.A_REVISAR and a.get("via") == "MATRICULA"
+        previa, previa_erro, onus_painel, matricula = "", "", None, None
+        if (a["etapa"] == AUTO.A_REVISAR and tipo_ri == "ONUS" and p.get("matricula_id")):
+            # O MESMO QUADRO DA FICHA (`_onus_decisao.html`): a leitura da IA, o
+            # proprietário conferido, o que se transcreve. A prévia não se monta
+            # antes da decisão — o teor da certidão de ônus É a decisão.
+            try:
+                onus_painel = EMISSAO.painel_do_onus_no_app_vivo(
+                    p["matricula_id"], app.config["DATA_DIR"])
+                matricula = {"id": p["matricula_id"]}
+            except Exception as erro:                       # noqa: BLE001 — a tela não cai
+                app.logger.warning("Quadro do ônus do pedido %s falhou.", pedido_id,
+                                   exc_info=True)
+                previa_erro = type(erro).__name__
+        elif (a["etapa"] == AUTO.A_REVISAR and a.get("via") == "MATRICULA"
                 and p.get("matricula_id") and tipo_ri in AUTO.TIPOS_RI_DA_APROVACAO):
             try:
                 previa = teor_seguro(EMISSAO.previa_no_app_vivo(p["matricula_id"], tipo_ri), "html")
@@ -163,6 +176,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         return render_template("onr_auto_pedido.html", p=p, a=a, dados=dados,
                                certidao=certidao, pessoas=pessoas, tipo_ri=tipo_ri,
                                previa=previa, previa_erro=previa_erro,
+                               onus_painel=onus_painel, m=matricula,
+                               RESULTADOS_ONUS=RONIA.RESULTADOS,
                                tipos=AUTO.TIPOS_RI_DA_APROVACAO,
                                nome_da_etapa=AUTO.NOME_DA_ETAPA,
                                rotulo_do_tipo=OC.rotulo_do_tipo,
@@ -208,7 +223,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             else:
                 raise AUTO.AutoError("Este pedido não tem caminho automático: faça à mão.")
             status = status_ao_vivo(p["protocolo"])            # rede, fora de transação
-            formulario = {"tipo_ri": tipo_ri,
+            onus = {}
+            if tipo_ri == "ONUS":
+                onus = {c: (f.get(c) or "").strip() for c in AUTO.CAMPOS_DO_ONUS if f.get(c)}
+                onus["onus_formulario"] = "1"
+                onus["onus_item"] = f.getlist("onus_item")
+            formulario = {"tipo_ri": tipo_ri, "onus": onus,
                           "pessoa_chave": (f.get("pessoa_chave") or "").strip(),
                           "matriculas_marcadas": f.getlist("matricula_marcada"),
                           "transcricao_justificativa": (f.get("transcricao_justificativa") or "").strip(),
@@ -224,7 +244,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         comum = {"requerente": p.get("solicitante") or "", "finalidade": marca["marca"],
                  "protocolo": p["protocolo"]}
         if a.get("via") == "MATRICULA":
-            dados = {**comum, "tipo": tipo_ri}
+            dados = {**comum, "tipo": tipo_ri, **formulario["onus"]}
             for campo in ("transcricao_justificativa", "anos", "origens"):
                 if formulario[campo]:
                     dados[campo] = formulario[campo]

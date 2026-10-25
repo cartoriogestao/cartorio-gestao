@@ -182,12 +182,13 @@ def test_a_sincronizacao_poe_cada_pedido_na_etapa_do_status():
     assert "orçamento" in AUTO.preparo(con, d)["motivo"]
 
 
-def test_onus_e_matricula_fora_do_sistema_vao_a_mao():
+def test_onus_vai_a_revisar_e_matricula_fora_do_sistema_vai_a_mao():
+    """Ônus é semiautomático (25/10/2026): o escrevente decide no quadro."""
     con = _con()
     onus = _pedido(con, protocolo="O", tipo="6")
     fora = _pedido(con, protocolo="F", matricula_id=None)
     AUTO.sincronizar(con, "PRODUCAO", AGORA)
-    assert AUTO.preparo(con, onus)["etapa"] == AUTO.A_MAO
+    assert (AUTO.preparo(con, onus)["etapa"], AUTO.preparo(con, onus)["tipo_ri"]) ==         (AUTO.A_REVISAR, "ONUS")
     assert AUTO.preparo(con, fora)["etapa"] == AUTO.A_MAO
 
 

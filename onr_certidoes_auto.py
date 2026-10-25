@@ -139,11 +139,17 @@ def init_schema(con) -> None:
 TIPO_RI_POR_TIPO_ONR = {"3": "INTEIRO_TEOR", "12": "INTEIRO_TEOR", "21": "INTEIRO_TEOR",
                         "1": "PROPRIEDADE", "17": "PROPRIEDADE",
                         "2": "VINTENARIA", "18": "DOMINIAL"}
-#: Ônus pede a decisão do escrevente sobre o que transcrever (`ri_onus_ia.
-#: decidir`), e esse formulário ainda não está na tela de aprovação.
+#: Ônus: SEMIAUTOMÁTICA também (o oficial, 25/10/2026: «arrume para certidao
+#: de onus tbm ir semiautomatica»). A decisão do que se transcreve continua
+#: sendo do escrevente, no MESMO quadro da ficha (`_onus_decisao.html`), e a
+#: rota a confere (`ri_onus_ia.decidir`) — o robô não decide ônus.
 TIPOS_ONR_DE_ONUS = {"6", "15", "19", "20"}
 #: Os tipos do RI que a tela de aprovação oferece por matrícula.
-TIPOS_RI_DA_APROVACAO = ("INTEIRO_TEOR", "PROPRIEDADE", "VINTENARIA", "DOMINIAL")
+TIPOS_RI_DA_APROVACAO = ("INTEIRO_TEOR", "ONUS", "PROPRIEDADE", "VINTENARIA", "DOMINIAL")
+#: Os campos do quadro do ônus que a aprovação repassa à rota de emissão.
+CAMPOS_DO_ONUS = ("resultado_onus", "resultado_acoes", "onus_transcricao",
+                  "acao_transcricao", "onus_justificativa", "proprietario_conferido",
+                  "proprietario_justificativa")
 PESQUISA_POR_MATRICULA = {"4", "13", "matrícula", "matricula", "matrícula com complemento"}
 PESQUISA_POR_PESSOA = {"6", "pessoa"}
 
@@ -248,9 +254,7 @@ def sugerir(con, pedido: dict) -> dict:
                     "motivo": f"a matrícula {pedido.get('matricula_numero') or '(sem número)'} "
                               "não está no sistema"}
         if tipo_onr in TIPOS_ONR_DE_ONUS:
-            return {"via": "MATRICULA", "tipo_ri": "ONUS", "etapa": A_MAO,
-                    "motivo": "certidão de ônus: a escolha do que se transcreve se faz na "
-                              "ficha da matrícula (a tela de aprovação ainda não a tem)"}
+            return {"via": "MATRICULA", "tipo_ri": "ONUS", "etapa": A_REVISAR, "motivo": None}
         tipo_ri = TIPO_RI_POR_TIPO_ONR.get(tipo_onr)
         if not tipo_ri:
             return {"via": "MATRICULA", "tipo_ri": None, "etapa": A_MAO,

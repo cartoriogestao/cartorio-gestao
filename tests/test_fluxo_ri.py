@@ -1202,7 +1202,7 @@ def test_a_positiva_recusa_quem_nao_e_dono_e_nao_grava(casa):
 
 
 def _pedido_do_onr(casa, *, status="Em aberto", custas_em="2026-01-01T00:00:00",
-                   cobranca="1") -> int:
+                   cobranca="1", tipo="3") -> int:
     """Um pedido do ONR pago, por matrícula, já com o orçamento desta casa."""
     import onr_certidoes as OC
     import onr_certidoes_auto as AUTO
@@ -1217,9 +1217,9 @@ def _pedido_do_onr(casa, *, status="Em aberto", custas_em="2026-01-01T00:00:00",
                    valor, pesquisa_por, status_onr, solicitante, matricula_numero,
                    matricula_id, dados_json, xml_pedido, situacao, custas_informadas,
                    custas_em, custas_por, recebido_em, atualizado_em)
-               VALUES ('PRODUCAO','S99000000001D','3','2026-01-01T00:00:00','90.00','4',%s,
+               VALUES ('PRODUCAO','S99000000001D',%s,'2026-01-01T00:00:00','90.00','4',%s,
                        %s,%s,%s,%s,'<x/>','NOVO','90.00',%s,'mario',%s,%s) RETURNING id""",
-            (status, COMPRADORA["nome"], str(PRIMEIRA_MATRICULA), mid,
+            (tipo, status, COMPRADORA["nome"], str(PRIMEIRA_MATRICULA), mid,
              json.dumps({"TIPO_COBRANCA": cobranca}), custas_em, db.now(), db.now()))[0]["id"]
         AUTO.sincronizar(con, "PRODUCAO", db.now())
     return int(pid)
@@ -1269,6 +1269,39 @@ def test_o_pedido_do_onr_aprovado_emite_pela_rota_da_casa_e_sela_pago_no_onr(cas
     c.post(f"{tela}/aprovar", data={"csrf_token": _token(html), "tipo_ri": "INTEIRO_TEOR"})
     assert _um(casa, "SELECT COUNT(*) n FROM ri_certidoes WHERE finalidade=%s",
                ("Pedido ONR S99000000001D",))["n"] == 1
+
+
+def test_o_pedido_de_onus_do_onr_e_semiautomatico_pelo_quadro_da_ficha(casa, monkeypatch):
+    """Ônus também (o oficial, 25/10/2026: «arrume para certidao de onus tbm ir
+    semiautomatica»): o robô prepara, a tela de aprovação mostra o MESMO quadro
+    da ficha, e a escolha do escrevente — positiva, com a hipoteca R-2 marcada
+    — vai à rota de emissão, que a confere (`ri_onus_ia.decidir`)."""
+    import onr_certidoes_auto as AUTO
+    f = _com_hipoteca(casa)
+    pid = _pedido_do_onr(casa, tipo="6")
+    _onr_responde(monkeypatch)
+    a = _um(casa, "SELECT * FROM onr_cert_auto WHERE pedido_id=%s", (pid,))
+    assert (a["etapa"], a["tipo_ri"]) == (AUTO.A_REVISAR, "ONUS")
+    c = casa["balcao"]
+    tela = f"/ri/onr/certidoes/{pid}/automacao"
+    html = c.get(tela).get_data(as_text=True)
+    assert "Certidão de ônus — positiva ou negativa" in html and "form-onus-ia" in html
+    # sem decidir o ônus, a rota recusa e nada sai
+    c.post(f"{tela}/aprovar", data={"csrf_token": _token(html), "tipo_ri": "ONUS"})
+    assert _um(casa, "SELECT etapa FROM onr_cert_auto WHERE pedido_id=%s", (pid,))["etapa"]         == AUTO.A_REVISAR
+    html = c.get(tela).get_data(as_text=True)
+    r = c.post(f"{tela}/aprovar", data={
+        "csrf_token": _token(html), "tipo_ri": "ONUS", "resultado_onus": "positiva",
+        "resultado_acoes": "negativa", "onus_item": f"ATO:{f['r2']['id']}",
+        "proprietario_conferido": "1"})
+    a = _um(casa, "SELECT * FROM onr_cert_auto WHERE pedido_id=%s", (pid,))
+    assert a["certidao_id"], f"a certidão de ônus não saiu: {_destino_em_texto(c, r)}"
+    cert = _um(casa, "SELECT * FROM ri_certidoes WHERE id=%s", (a["certidao_id"],))
+    assert (cert["tipo"], cert["resultado_onus"]) == ("ONUS", "POSITIVA")
+    assert cert["onus_escolhido_por"] == "BALCAO"
+    cobertura = _um(casa, "SELECT forma FROM cx_selo_coberturas WHERE tabela='ri_certidoes' "
+                          "AND ato_id=%s ORDER BY id LIMIT 1", (a["certidao_id"],))
+    assert cobertura and cobertura["forma"] == "CENTRAL_ONR"
 
 
 def test_o_pedido_sem_orcamento_da_casa_nao_emite(casa, monkeypatch):

@@ -585,3 +585,33 @@ def test_desbloquear_pela_tela_so_da_propria_maquina(casa):
     c = _entrar(casa, "mario", "ADMIN")
     assert c.get("/automacao/cofre/desbloquear").status_code == 200
     assert c.get("/automacao/cofre/desbloquear", environ_base={"REMOTE_ADDR": "192.0.2.10"}).status_code == 403
+
+
+def test_outro_modulo_traz_processos_e_ausente_nao_quebra(monkeypatch):
+    """O módulo das despesas (outro PR) traz DESPESAS_PAGAR e DESPESAS_CONCILIAR
+    pelo `CATALOGO` dele; se ele não estiver instalado, nada é semeado."""
+    import sys
+    import types
+    import automacao_processos as PROC
+
+    monkeypatch.setattr(PROC, "MODULOS_COM_PROCESSOS", ("modulo_que_nao_existe_xyz",))
+    assert PROC.sementes_de_outros_modulos() == []
+
+    falso = types.ModuleType("despesas_falso_teste")
+    falso.CATALOGO = [
+        {"codigo": "DESPESAS_PAGAR", "nome": "Pagar", "setor": "GESTAO",
+         "funcao": "despesas_falso_teste.pagar"},
+        {"codigo": "PROTESTO_CRA", "nome": "repetido", "funcao": "x.y"},
+        {"codigo": "", "funcao": "sem.codigo"},
+    ]
+    monkeypatch.setitem(sys.modules, "despesas_falso_teste", falso)
+    monkeypatch.setattr(PROC, "MODULOS_COM_PROCESSOS", ("despesas_falso_teste",))
+    trazidas = PROC.sementes_de_outros_modulos()
+    assert [s["codigo"] for s in trazidas] == ["DESPESAS_PAGAR", "PROTESTO_CRA"]
+    assert trazidas[0]["alvo"] == "despesas_falso_teste:pagar"
+    assert trazidas[0]["agenda"]["intervalo_min"] == 15
+
+    todas = PROC.todas_as_sementes()
+    codigos = [s["codigo"] for s in todas]
+    assert codigos.count("PROTESTO_CRA") == 1
+    assert "DESPESAS_PAGAR" in codigos

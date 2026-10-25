@@ -752,3 +752,62 @@ SEMENTES: tuple[dict, ...] = (
      "descricao": "ESTE ENVIA à CENSEC — o mesmo envio da tarefa «CENSEC-Envio» do Agendador. NÃO ligue "
                   "aqui enquanto a tarefa do Agendador estiver ligada."},
 )
+
+
+# -------------------------------------------- processos que outros módulos trazem
+
+#: Módulos que trazem processos próprios para a central: cada um expõe
+#: `CATALOGO`, uma lista de {codigo, nome, setor, funcao («modulo.funcao»),
+#: e opcionalmente descricao, agenda e timeout_s}. O primeiro é o das despesas
+#: e do Banco Inter (agente financeiro, 24/10/2026). O import é protegido:
+#: o PR de um pode entrar antes do outro, e módulo ausente só não semeia.
+MODULOS_COM_PROCESSOS = ("despesas_automacao",)
+
+#: A agenda sugerida por quem escreveu o processo, para quando o catálogo
+#: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.
+AGENDA_SUGERIDA = {
+    "DESPESAS_PAGAR": {"dias": _UTEIS, "intervalo_min": 15, "janela": ["08:00", "17:00"]},
+    "DESPESAS_CONCILIAR": {"dias": _UTEIS, "horarios": ["09:00", "16:00"]},
+}
+
+
+def _alvo_de(funcao: str) -> str:
+    """«despesas_automacao.pagar» → «despesas_automacao:pagar», a forma do `alvo`."""
+    funcao = str(funcao or "").strip()
+    if ":" in funcao:
+        return funcao
+    modulo, _, nome = funcao.rpartition(".")
+    return f"{modulo}:{nome}" if modulo else funcao
+
+
+def sementes_de_outros_modulos() -> list[dict]:
+    """As sementes que os módulos de `MODULOS_COM_PROCESSOS` declaram, se instalados."""
+    import importlib
+    saida: list[dict] = []
+    for nome_modulo in MODULOS_COM_PROCESSOS:
+        try:
+            modulo = importlib.import_module(nome_modulo)
+        except ImportError:
+            continue
+        for item in getattr(modulo, "CATALOGO", None) or ():
+            codigo = str(item.get("codigo") or "").strip()
+            alvo = _alvo_de(item.get("funcao") or item.get("alvo") or "")
+            if not codigo or ":" not in alvo:
+                continue
+            saida.append({
+                "codigo": codigo,
+                "nome": item.get("nome") or codigo,
+                "setor": item.get("setor") or "GESTAO",
+                "alvo": alvo,
+                "descricao": item.get("descricao") or f"Processo trazido por «{nome_modulo}».",
+                "agenda": item.get("agenda") or AGENDA_SUGERIDA.get(codigo)
+                          or {"dias": _UTEIS, "horarios": ["09:00"]},
+                "timeout_s": int(item.get("timeout_s") or 600),
+            })
+    return saida
+
+
+def todas_as_sementes() -> list[dict]:
+    """As de fábrica mais as dos outros módulos, sem repetir código."""
+    vistas = {s["codigo"] for s in SEMENTES}
+    return list(SEMENTES) + [s for s in sementes_de_outros_modulos() if s["codigo"] not in vistas]

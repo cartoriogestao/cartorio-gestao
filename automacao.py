@@ -303,7 +303,7 @@ def semear(con, agora: datetime | None = None) -> int:
     bd = banco(con)
     agora_txt = _iso(agora or datetime.now())
     novos = 0
-    for s in PROC.SEMENTES:
+    for s in PROC.todas_as_sementes():
         bd.escrever(
             """INSERT INTO au_processos (codigo, nome, descricao, setor, tipo, alvo,
                    parametros, agenda, ativo, pode_agir, timeout_s, max_tentativas,

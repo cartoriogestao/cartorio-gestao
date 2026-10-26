@@ -108,8 +108,11 @@ def rota_permitida_ao_robo(endpoint: Any) -> bool:
 #: alcança (`rotas_do_robo`): os que DESFAZEM ou SUSPENDEM ato — o
 #: cancelamento (RCPJ/RTD, Livro 3, Protesto) e as ordens judiciais do
 #: Protesto. Revisão de segurança de 26/10/2026: cancelar é decisão de gente.
+#: E, por ordem do oficial no mesmo dia, a DESISTÊNCIA (encerra o título) e o
+#: PAGAMENTO (é dinheiro) do Protesto também ficam com gente.
 LANCAMENTOS_VEDADOS_AO_ROBO = ("CANCELAMENTO", "SUSTACAO", "EFEITO_SUSPENSIVO",
-                               "REVOGACAO_EFEITO_SUSPENSIVO")
+                               "REVOGACAO_EFEITO_SUSPENSIVO", "DESISTENCIA",
+                               "PAGAMENTO")
 
 
 def lancamento_vedado_ao_robo(tipo: Any, user: Any = None) -> bool:

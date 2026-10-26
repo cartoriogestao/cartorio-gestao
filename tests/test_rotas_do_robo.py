@@ -233,6 +233,10 @@ def test_lancamento_vedado_so_vale_para_robo():
     assert SR.lancamento_vedado_ao_robo("cancelamento", robo) is True
     assert SR.lancamento_vedado_ao_robo("AVERBACAO", robo) is False
     assert SR.lancamento_vedado_ao_robo("CANCELAMENTO", gente) is False
+    # Ordem do oficial (26/10/2026): desistência e pagamento do Protesto são de gente.
+    for tipo in ("DESISTENCIA", "PAGAMENTO"):
+        assert SR.lancamento_vedado_ao_robo(tipo, robo) is True
+        assert SR.lancamento_vedado_ao_robo(tipo, gente) is False
 
 
 def test_as_vedadas_continuam_403(cg_casa):

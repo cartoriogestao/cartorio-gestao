@@ -1,9 +1,13 @@
 """O CARNÊ-LEÃO E O LIVRO-CAIXA DO TITULAR — regime de caixa, dedutíveis e a tabela.
 
-A TABELA DESTES TESTES É FICTÍCIA, de propósito: faixas redondas (até 1.000
-isento; até 2.000 a 10% menos 100; acima, 20% menos 300) que ninguém confunde
-com a tabela da Receita. O sistema não traz tabela escrita, e o teste não pode
-trazer uma que pareça verdadeira.
+A TABELA DA MAIOR PARTE DESTES TESTES É FICTÍCIA, de propósito: faixas
+redondas (até 1.000 isento; até 2.000 a 10% menos 100; acima, 20% menos 300)
+que ninguém confunde com a da Receita. A NACIONAL (`TABELAS_NACIONAIS`, ordem do
+oficial de 26/10/2026) tem teste próprio, contra o exemplo da Receita.
+
+As respostas do oficial de 26/10/2026 têm teste cada uma: depósito só no ato,
+prazo no último dia do mês seguinte, excesso levado até dezembro, «outra
+entrada» respondida por quem lança, e os fundos tirados pela configuração.
 
 Pessoas e documentos fictícios (mario, beatriz, carla).
 """
@@ -48,14 +52,15 @@ def _tabela(db, vigencia="2026-01-01", faixas=FAIXAS_FICTICIAS, descricao="Fict�
 
 def _lancamento(db, dia, valor, *, natureza="RECEBIMENTO", forma="DINHEIRO",
                 descricao="Certidão", emolumentos=None, ferc=None, estornado=0,
-                sentido="ENTRADA"):
+                sentido="ENTRADA", receita_do_titular=None):
     with db.transaction() as con:
-        banco(con).escrever(
+        return banco(con).escrever(
             """INSERT INTO cx_lancamentos (data, natureza, sentido, forma_pagamento,
-                   descricao, valor, emolumentos, ferc, estornado, criado_em)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   descricao, valor, emolumentos, ferc, estornado, criado_em,
+                   receita_do_titular)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
             (dia, natureza, sentido, forma, descricao, valor, emolumentos, ferc,
-             estornado, AGORA))
+             estornado, AGORA, receita_do_titular))[0]["id"]
 
 
 def _despesa_ld(db, dia, valor, descricao="Energia elétrica da serventia"):
@@ -138,7 +143,7 @@ def test_a_receita_do_caixa_e_so_o_emolumento_e_deixa_de_fora_o_que_nao_e_receit
     db = casa["db"]
     _lancamento(db, "2026-09-02", "130,00", emolumentos="100,00", ferc="30,00")
     _lancamento(db, "2026-09-03", "50,00", ferc="10,00")              # emolumento = 40
-    _lancamento(db, "2026-09-04", "80,00")                            # sem separação
+    _lancamento(db, "2026-09-04", "80,00")         # sem separação: 80 ÷ 1,12 = 71,43
     _lancamento(db, "2026-09-05", "999,00", forma="DEPOSITO_PREVIO",
                 descricao="Uso do depósito prévio nº 1")              # entrou antes
     _lancamento(db, "2026-09-05", "777,00", estornado=1)              # estornado
@@ -150,14 +155,14 @@ def test_a_receita_do_caixa_e_so_o_emolumento_e_deixa_de_fora_o_que_nao_e_receit
                 descricao="Depósito prévio nº DP2026.09.1")         # o livro dele conta
     _lancamento(db, "2026-10-01", "1.000,00", emolumentos="1.000,00")  # outro mês
     a = _apurar(db, "2026-09")
-    assert a["caixa"] == 10000 + 4000 + 8000
-    assert a["sem_discriminacao"] == 8000
+    assert a["caixa"] == 10000 + 4000 + 7143
+    assert a["sem_discriminacao"] == 8000 and a["fundos_estimados"] == 857
     assert [o["valor"] for o in a["outras_entradas"]] == [6000]
     assert any("sem a separação dos fundos" in x for x in a["avisos"])
     assert any("outra entrada" in x for x in a["avisos"])
 
 
-def test_o_deposito_previo_muda_de_mes_conforme_a_configuracao(casa):
+def test_o_deposito_previo_so_vira_receita_quando_o_ato_e_praticado(casa):
     db = casa["db"]
     with db.transaction() as con:
         DEP.init_usos_schema(con)
@@ -166,17 +171,14 @@ def test_o_deposito_previo_muda_de_mes_conforme_a_configuracao(casa):
         DEP.debitar(con, d["id"] if "id" in d else d["deposito_id"], 30000,
                     agora="2026-10-05T09:00:00", quem="carla",
                     motivo="Quitação do item pelo depósito prévio (selo)")
-    # Padrão: no uso (CN-MA art. 202), o mês da conversão.
+    # Decisão do oficial (26/10/2026): só no mês da conversão, e sem os fundos
+    # (300 ÷ 1,12 = 267,86, pela configuração padrão).
     assert _apurar(db, "2026-09")["deposito_na_conta"] == 0
     outubro = _apurar(db, "2026-10")
-    assert outubro["deposito_na_conta"] == 30000 and outubro["deposito"]["convertido"] == 30000
-    # As duas formas aparecem sempre, qualquer que seja a escolhida.
+    assert outubro["deposito_na_conta"] == 26786 and outubro["deposito"]["convertido"] == 30000
     setembro = _apurar(db, "2026-09")
     assert setembro["deposito"]["recebido"] == 50000 and setembro["deposito"]["convertido"] == 0
-    with db.transaction() as con:
-        CL.gravar_configuracao(con, {"carne_leao_deposito_previo": CL.NO_RECEBIMENTO})
-    assert _apurar(db, "2026-09")["deposito_na_conta"] == 50000
-    assert _apurar(db, "2026-10")["deposito_na_conta"] == 0
+    assert not hasattr(CL, "NO_RECEBIMENTO")
 
 
 def test_receita_pelo_selo_e_pelo_caixa_aparecem_lado_a_lado(casa):
@@ -257,7 +259,7 @@ def test_despesa_anulada_nao_se_marca(casa):
                           por="mario", agora=AGORA)
 
 
-def test_base_e_imposto_e_o_excesso_que_nao_anda_sozinho(casa):
+def test_o_excesso_de_despesa_vai_para_o_mes_seguinte_ate_dezembro(casa):
     db = casa["db"]
     _tabela(db)
     _lancamento(db, "2026-09-02", "3.000,00", emolumentos="3.000,00")
@@ -280,6 +282,22 @@ def test_base_e_imposto_e_o_excesso_que_nao_anda_sozinho(casa):
                          dedutivel="1", hoje=HOJE, agora=AGORA, por="mario")
     outubro = _apurar(db, "2026-10")
     assert (outubro["base"], outubro["excesso"], outubro["imposto"]) == (0, 30000, 0)
+    # Novembro: os 300 de outubro somam às deduções. 2.000 − 300 = 1.700.
+    _lancamento(db, "2026-11-03", "2.000,00", emolumentos="2.000,00")
+    novembro = _apurar(db, "2026-11")
+    assert (novembro["excesso_anterior"], novembro["base"], novembro["excesso"]) == (30000, 170000, 0)
+    assert novembro["imposto"] == 7000                 # 1.700 × 10% − 100
+    with db.connect() as con:
+        ano = CL.resumo_do_ano(con, 2026, ate="2026-11")
+    assert [m["excesso_anterior"] for m in ano][-2:] == [0, 30000]
+    # Janeiro recomeça: o excesso não passa de um ano para o outro.
+    _lancamento(db, "2026-12-03", "10,00", emolumentos="10,00")
+    with db.transaction() as con:
+        CL.lancar_avulso(con, tipo="DESPESA", data="2026-12-04", valor="900,00",
+                         descricao="Conserto do telhado da serventia", categoria_fiscal="CUSTEIO",
+                         dedutivel="1", hoje="2026-12-31", agora=AGORA, por="mario")
+    assert _apurar(db, "2026-12")["excesso"] == 89000
+    assert _apurar(db, "2027-01")["excesso_anterior"] == 0
 
 
 def test_lancamento_avulso_se_anula_com_motivo_e_nao_conta(casa):
@@ -316,13 +334,19 @@ def test_o_csv_diz_que_nao_e_o_leiaute_oficial_e_nao_traz_codigo_de_barras(casa)
 
 # ------------------------------------------------------------ a agenda
 
-def test_sem_regra_cadastrada_o_carne_leao_continua_pergunta(casa):
+def test_o_prazo_ja_vem_no_ultimo_dia_util_e_sem_regra_volta_a_ser_pergunta(casa):
+    # Decisão do oficial (26/10/2026): último dia do mês seguinte, já na agenda.
     with casa["db"].connect() as con:
-        assert CL.obrigacao_da_agenda(con) is None
-    assert "Carnê-leão" in OO.pergunta_das_nao_medidas()["contexto"]
+        ob = CL.obrigacao_da_agenda(con)
+    assert ob and ob["ultimo_dia_util"] and ob["fonte"] == CL.FONTE_DO_PRAZO
     with casa["db"].transaction() as con, pytest.raises(CL.CarneLeaoError, match="fonte"):
         CL.gravar_configuracao(con, {"carne_leao_prazo_regra": CL.ULTIMO_DIA_UTIL,
                                      "carne_leao_prazo_fonte": ""})
+    with casa["db"].transaction() as con:
+        CL.gravar_configuracao(con, {"carne_leao_prazo_regra": ""})
+    with casa["db"].connect() as con:
+        assert CL.obrigacao_da_agenda(con) is None
+    assert "Carnê-leão" in OO.pergunta_das_nao_medidas()["contexto"]
 
 
 def test_com_a_regra_e_a_fonte_o_prazo_entra_na_agenda_e_sai_da_pergunta(casa):
@@ -347,6 +371,68 @@ def test_com_a_regra_e_a_fonte_o_prazo_entra_na_agenda_e_sai_da_pergunta(casa):
     with db.connect() as con:
         ob = CL.obrigacao_da_agenda(con)
     assert OO.proximo_vencimento(ob, date(2027, 2, 2))[0] == date(2027, 2, 28)
+
+
+# ------------------------------------------- a tabela nacional e a redução
+
+def test_a_tabela_nacional_entra_com_um_clique_e_aplica_a_reducao_da_lei_15270(casa):
+    db = casa["db"]
+    # As faixas guardadas são as que a tela leria da Receita, digitadas.
+    lidas = CL.ler_faixas("2.428,80; 0; 0\n2.826,65; 7,5; 182,16\n3.751,05; 15; 394,16\n"
+                          "4.664,68; 22,5; 675,49\n; 27,5; 908,73")
+    assert all(lidas == [dict(f) for f in t["faixas"]] for t in CL.TABELAS_NACIONAIS)
+    with db.transaction() as con:
+        feito = CL.cadastrar_tabelas_nacionais(con, por="mario", agora=AGORA)
+    assert len(feito) == 2 and all("cadastrada" in x for x in feito)
+    with db.transaction() as con:
+        assert all("já havia" in x for x in CL.cadastrar_tabelas_nacionais(
+            con, por="mario", agora=AGORA))
+    # O exemplo da Receita: R$ 6.000,00 → redução de R$ 179,75.
+    _lancamento(db, "2026-09-02", "6.000,00", emolumentos="6.000,00")
+    a = _apurar(db, "2026-09")
+    assert a["calculo"]["imposto_da_tabela"] == 74127 and a["calculo"]["reducao"] == 17975
+    assert a["imposto"] == 56152
+    assert any("Lei 15.270" in x for x in a["avisos"])
+    # Até R$ 5.000,00 a redução vai a R$ 312,89, sem passar do imposto.
+    _lancamento(db, "2026-10-02", "4.000,00", emolumentos="4.000,00")
+    assert _apurar(db, "2026-10")["imposto"] == 0
+    # Antes de 2026, a tabela de maio de 2025 vale sem redução.
+    _lancamento(db, "2025-09-02", "6.000,00", emolumentos="6.000,00")
+    assert _apurar(db, "2025-09")["imposto"] == 74127
+
+
+def test_a_parte_dos_fundos_segue_a_configuracao_do_delegatario(casa):
+    db = casa["db"]
+    _lancamento(db, "2026-09-04", "100,00")
+    assert _apurar(db, "2026-09")["caixa"] == 8929               # 100 ÷ 1,12
+    with db.transaction() as con:
+        CL.gravar_configuracao(con, {"carne_leao_fundos_forma": CL.FUNDOS_DENTRO_DO_VALOR,
+                                     "carne_leao_fundos_percentual": "10"})
+    assert _apurar(db, "2026-09")["caixa"] == 9000               # 100 − 10%
+    with db.transaction() as con:
+        CL.gravar_configuracao(con, {"carne_leao_fundos_percentual": "0"})
+    assert _apurar(db, "2026-09")["caixa"] == 10000
+    with db.transaction() as con, pytest.raises(CL.CarneLeaoError, match="100%"):
+        CL.gravar_configuracao(con, {"carne_leao_fundos_percentual": "100"})
+
+
+def test_a_outra_entrada_conta_conforme_a_resposta_de_quem_lancou(casa):
+    db = casa["db"]
+    _lancamento(db, "2026-09-08", "60,00", natureza="OUTRA_ENTRADA",
+                descricao="Ressarcimento de gratuidade", receita_do_titular=1)
+    _lancamento(db, "2026-09-08", "40,00", natureza="OUTRA_ENTRADA",
+                descricao="Reembolso de cópia a terceiro", receita_do_titular=0)
+    antiga = _lancamento(db, "2026-09-09", "25,00", natureza="OUTRA_ENTRADA",
+                         descricao="Entrada antiga sem resposta")
+    a = _apurar(db, "2026-09")
+    assert [(r["origem"], r["valor"]) for r in a["receitas"]] == [("Outra entrada", 6000)]
+    assert [o["valor"] for o in a["outras_entradas"]] == [2500]
+    with db.transaction() as con:
+        CL.marcar_outra_entrada(con, antiga, receita="1")
+    assert _apurar(db, "2026-09")["receita"] == 8500
+    recebimento = _lancamento(db, "2026-09-10", "10,00", emolumentos="10,00")
+    with db.transaction() as con, pytest.raises(CL.CarneLeaoError, match="outra entrada"):
+        CL.marcar_outra_entrada(con, recebimento, receita="1")
 
 
 # ------------------------------------------------------------ as telas

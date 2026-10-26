@@ -19,11 +19,14 @@ O QUE ESTE MÓDULO NÃO AFIRMA (e a tela diz o mesmo)
     (procurado em FONTES_EXTERNAS/ e docs/ em 26/10/2026 — nada). Por isso:
     - a lista de categorias DEDUTÍVEIS é SUGESTÃO, «a conferir com o contador»,
       e quem marca cada despesa é o oficial;
-    - a TABELA PROGRESSIVA não está escrita no código: é cadastrada na tela, com
-      a vigência e a fonte. Sem tabela cadastrada não há imposto calculado — e a
-      tela diz isso em vez de mostrar zero;
-    - o PRAZO do carnê-leão só entra na agenda do oficial quando ele cadastra a
-      regra e a fonte (configuração). Até lá continua a pergunta de sempre;
+    - a TABELA PROGRESSIVA é nacional, e por ordem do oficial (26/10/2026,
+      «pegue a tabela progressiva na internet, é nacional») o sistema a traz
+      pronta em `TABELAS_NACIONAIS`, lida na página da Receita Federal em
+      26/10/2026. Ela entra com um clique na configuração, com a vigência e a
+      fonte, e se anula como qualquer outra. Sem tabela cadastrada não há
+      imposto calculado — e a tela diz isso em vez de mostrar zero;
+    - o PRAZO é o último dia (útil) do mês seguinte ao do recebimento, decisão
+      do oficial em 26/10/2026, e já vem na configuração;
     - a EXPORTAÇÃO é CSV legível, e não o arquivo de importação do Carnê-Leão
       Web, cujo leiaute falta nesta casa. O DARF sai pelo Carnê-Leão Web ou pelo
       Sicalc — este módulo NÃO gera código de barras.
@@ -35,10 +38,10 @@ AS DUAS RECEITAS DO MÊS, E POR QUE ELAS DIFEREM
     contas mudam de mês em dois casos, e a tela mostra os dois números lado a
     lado com a diferença:
     - o DEPÓSITO PRÉVIO entra antes do ato. O CN-MA art. 202 manda baixá-lo e
-      lançá-lo «como receita» quando o ato é praticado — é a regra do Livro
-      Diário, e é o PADRÃO desta conta (`NO_USO`). Se o contador entender que,
-      para o imposto, ele conta no mês em que o dinheiro entrou, a configuração
-      muda para `NO_RECEBIMENTO`. Os dois números aparecem sempre.
+      lançá-lo «como receita» quando o ato é praticado, e é assim que esta
+      conta o trata (`NO_USO`): decisão do oficial em 26/10/2026, «depósito só
+      vira receita quando pratica o ato». A opção de contá-lo no recebimento
+      saiu; o recebido, o convertido e o devolvido continuam à vista.
     - o emolumento DIFERIDO: o ato sai no mês (o selo marca «Diferido» e o
       Livro Diário não o soma), e o dinheiro entra quando o interessado paga —
       no caixa, num mês seguinte.
@@ -50,14 +53,20 @@ DE ONDE SAI CADA NÚMERO
       depósito). Só o EMOLUMENTO é receita do titular: os fundos são repasse
       (CN-MA art. 191). Quando o lançamento não discrimina os fundos — e no
       lançamento manual quase nunca discrimina (`gestor_financeiro`, medido em
-      06/10/2026) —, o valor inteiro entra e a linha fica MARCADA «sem
-      discriminação», com a soma à vista: ninguém inventa a parte dos fundos.
+      06/10/2026) —, a parte dos fundos sai da CONFIGURAÇÃO DO DELEGATÁRIO
+      (percentual e forma de cálculo; o padrão é a soma dos fundos cobrados em
+      `custas.PERCENTUAIS`, sobre o emolumento). Ordem do oficial em
+      26/10/2026: «precisa tirar a parte dos fundos, mas a configuração da
+      retirada varia conforme configuração do delegatário». A linha fica
+      marcada «sem discriminação», com os fundos estimados à vista.
     - Depósito prévio: o Livro de Controle de Depósito Prévio
       (`livro_deposito_previo.livro`) — depósitos do mês, conversões e
-      devoluções pelas datas do rastro. O valor convertido inclui os fundos, e
-      fica marcado como tal.
-    - «Outra entrada» do caixa não entra na conta: aparece à parte, para o
-      contador dizer o que é.
+      devoluções pelas datas do rastro. O valor convertido inclui os fundos; a
+      parte deles sai pela mesma configuração.
+    - «Outra entrada» do caixa: quem a lança responde, no caixa, se ela é
+      receita do titular (ordem do oficial, 26/10/2026: «pergunta pra quem
+      cadastra dizer se é ou não»). «Sim» entra inteira; «não» fica fora; a
+      antiga, sem resposta, aparece à parte para o ADMIN responder.
     - Lançamento avulso do livro-caixa (`cl_lancamentos`): o que entrou ou saiu
       fora do sistema (ressarcimento de gratuidade, despesa paga do bolso),
       lançado pelo oficial com documento.
@@ -66,10 +75,11 @@ DE ONDE SAI CADA NÚMERO
       NÃO É DESPESA (decisão do oficial, 24/10/2026) e não chega aqui — fundo
       não é receita, e repassá-lo não é gasto do titular.
 
-O EXCESSO DE DESPESA NÃO É LEVADO SOZINHO AO MÊS SEGUINTE
-    Quando as despesas dedutíveis passam da receita, a base do mês é zero e o
-    excesso aparece escrito. Se ele se compensa nos meses seguintes é regra
-    fiscal que não está nesta casa: a conferir com o contador.
+O EXCESSO DE DESPESA VAI PARA O MÊS SEGUINTE, ATÉ DEZEMBRO
+    Decisão do oficial em 26/10/2026. Quando as despesas dedutíveis passam da
+    receita, a base do mês é zero e o excesso se soma às deduções do mês
+    seguinte (Lei 8.134/1990, art. 6º, § 3º: «até dezembro»). Em janeiro a
+    conta recomeça: o que sobrar em dezembro não passa para o ano seguinte.
 
 PostgreSQL nativo, pelo `bd_nativo`. Dinheiro em centavos, `bigint`. Data e
 hora se calculam no Python (regra da casa).
@@ -82,6 +92,7 @@ from collections.abc import Mapping
 from datetime import date
 from typing import Any
 
+import custas
 import livro_diario as LD
 from bd_nativo import banco
 from caixa_schema import centavos, reais
@@ -123,9 +134,10 @@ SUGESTAO_POR_CATEGORIA: dict[str, str] = {
     "TARIFAS": "CUSTEIO", "OUTRAS": "OUTRAS",
 }
 
-AVISO_DA_LISTA = ("A lista de categorias dedutíveis é SUGESTÃO do sistema e não foi "
-                  "conferida em norma desta casa: a conferir com o contador antes de "
-                  "usar o número no Carnê-Leão Web.")
+AVISO_DA_LISTA = ("A lista de categorias dedutíveis foi aprovada pelo oficial em "
+                  "26/10/2026 («parece estar certa»); a marcação continua sendo "
+                  "despesa por despesa, e a conferência com o contador pode ser "
+                  "registrada na configuração.")
 
 AVISO_DO_LEIAUTE = ("O leiaute de importação do Carnê-Leão Web não está nesta casa "
                     "(procurado em FONTES_EXTERNAS/ e docs/ em 26/10/2026). Este arquivo "
@@ -134,11 +146,10 @@ AVISO_DO_LEIAUTE = ("O leiaute de importação do Carnê-Leão Web não está ne
 
 # --------------------------------------------------------- a configuração
 
-NO_USO, NO_RECEBIMENTO = "NO_USO", "NO_RECEBIMENTO"
+NO_USO = "NO_USO"
 MODOS_DO_DEPOSITO = {
-    NO_USO: "No mês em que o ato é praticado e o depósito é convertido (CN-MA art. 202 "
-            "— a regra do Livro Diário)",
-    NO_RECEBIMENTO: "No mês em que o dinheiro do depósito entrou (menos as devoluções do mês)",
+    NO_USO: "No mês em que o ato é praticado e o depósito é convertido (decisão do "
+            "oficial em 26/10/2026; CN-MA art. 202)",
 }
 
 ULTIMO_DIA_UTIL, DIA_DO_MES = "ULTIMO_DIA_UTIL", "DIA_DO_MES"
@@ -148,13 +159,65 @@ REGRAS_DO_PRAZO = {
     DIA_DO_MES: "Um dia fixo do mês seguinte ao do recebimento",
 }
 
-PADRAO: dict[str, str] = {
-    "carne_leao_deposito_previo": NO_USO,
-    "carne_leao_prazo_regra": "",
-    "carne_leao_prazo_dia": "",
-    "carne_leao_prazo_fonte": "",
-    "carne_leao_lista_conferida": "",
+FONTE_DO_PRAZO = ("Decisão do oficial em 26/10/2026: o carnê-leão vence no último dia do "
+                  "mês seguinte ao do recebimento (o DARF vence no último dia ÚTIL).")
+
+# A PARTE DOS FUNDOS NO LANÇAMENTO SEM SEPARAÇÃO — configuração do delegatário
+# (26/10/2026). Sobre o emolumento: valor = emolumento × (1 + percentual). Dentro
+# do valor: fundos = valor × percentual.
+FUNDOS_SOBRE_O_EMOLUMENTO, FUNDOS_DENTRO_DO_VALOR = "SOBRE_O_EMOLUMENTO", "DENTRO_DO_VALOR"
+FORMAS_DOS_FUNDOS = {
+    FUNDOS_SOBRE_O_EMOLUMENTO: "Os fundos são calculados sobre o emolumento (o valor "
+                               "recebido é o emolumento mais o percentual)",
+    FUNDOS_DENTRO_DO_VALOR: "Os fundos são um percentual do valor recebido",
 }
+
+
+def _percentual_padrao_dos_fundos() -> str:
+    """A soma dos fundos COBRADOS da tabela da casa (o ISS fica: é tributo do
+    titular, e entra como despesa quando pago)."""
+    bp = sum(int(custas.PERCENTUAIS.get(c, 0)) * 100 for c in custas.CAMPOS_NO_TOTAL)
+    inteiro, resto = divmod(bp, 100)
+    return f"{inteiro}" + (f",{resto:02d}".rstrip("0") if resto else "")
+
+
+PADRAO: dict[str, str] = {
+    "carne_leao_prazo_regra": "ULTIMO_DIA_UTIL",
+    "carne_leao_prazo_dia": "",
+    "carne_leao_prazo_fonte": FONTE_DO_PRAZO,
+    "carne_leao_lista_conferida": "",
+    "carne_leao_fundos_forma": FUNDOS_SOBRE_O_EMOLUMENTO,
+    "carne_leao_fundos_percentual": _percentual_padrao_dos_fundos(),
+}
+
+# A TABELA NACIONAL, lida em 26/10/2026 na página da Receita Federal
+# (gov.br/receitafederal → Meu Imposto de Renda → Tabelas → 2026). As faixas
+# são as da MP 1.294/2025, convertida na Lei 15.191/2025 (desde maio de 2025);
+# a de 2026 traz a REDUÇÃO MENSAL da Lei 15.270/2025: até R$ 312,89 para
+# rendimentos até R$ 5.000,00, e R$ 978,62 − 0,133145 × rendimentos entre
+# R$ 5.000,01 e R$ 7.350,00 — sempre limitada ao imposto da tabela.
+_FAIXAS_DESDE_MAIO_2025 = (
+    {"ate": 242880, "aliquota_bp": 0, "deduzir": 0},
+    {"ate": 282665, "aliquota_bp": 750, "deduzir": 18216},
+    {"ate": 375105, "aliquota_bp": 1500, "deduzir": 39416},
+    {"ate": 466468, "aliquota_bp": 2250, "deduzir": 67549},
+    {"ate": None, "aliquota_bp": 2750, "deduzir": 90873},
+)
+REDUCAO_LEI_15270 = {"isento_ate": 500000, "reducao_maxima": 31289, "teto": 735000,
+                     "constante": 97862, "coeficiente_milionesimos": 133145}
+_PAGINA_DA_RECEITA = ("tabela publicada pela Receita Federal em gov.br/receitafederal "
+                      "(Meu Imposto de Renda → Tabelas), lida em 26/10/2026")
+TABELAS_NACIONAIS: tuple[dict, ...] = (
+    {"vigencia_inicio": "2025-05-01",
+     "descricao": "Tabela progressiva mensal — MP 1.294/2025 e Lei 15.191/2025",
+     "fonte": f"MP nº 1.294/2025, convertida na Lei nº 15.191, de 11/08/2025; {_PAGINA_DA_RECEITA}",
+     "faixas": _FAIXAS_DESDE_MAIO_2025, "reducao": None},
+    {"vigencia_inicio": "2026-01-01",
+     "descricao": "Tabela progressiva mensal de 2026, com a redução da Lei 15.270/2025",
+     "fonte": (f"Lei nº 15.191, de 11/08/2025 (faixas) e Lei nº 15.270, de 26/11/2025 "
+               f"(redução mensal); {_PAGINA_DA_RECEITA}"),
+     "faixas": _FAIXAS_DESDE_MAIO_2025, "reducao": REDUCAO_LEI_15270},
+)
 
 MINIMO_DO_TEXTO = 10
 LIMITE = 300
@@ -314,20 +377,24 @@ def _gravar(bd, valores: Mapping[str, str]) -> None:
 
 
 def gravar_configuracao(con, valores: Mapping[str, Any]) -> dict[str, tuple[str, str]]:
-    """O modo do depósito prévio e a regra do prazo. ESCREVE. Devolve o que mudou.
+    """A regra do prazo e a parte dos fundos. ESCREVE. Devolve o que mudou.
 
-    O PRAZO SÓ ENTRA COM A FONTE: «último dia útil do mês seguinte» sem dizer
-    onde se leu seria o prazo escrito de memória que a agenda recusa.
+    Chave que não veio continua como está. O PRAZO SÓ ENTRA COM A FONTE:
+    «último dia útil do mês seguinte» sem dizer onde se leu seria o prazo
+    escrito de memória que a agenda recusa.
     """
-    modo = str(valores.get("carne_leao_deposito_previo") or NO_USO)
-    if modo not in MODOS_DO_DEPOSITO:
-        raise CarneLeaoError("Escolha quando o depósito prévio conta como receita.")
-    regra = str(valores.get("carne_leao_prazo_regra") or "")
+    bd = banco(con)
+    antes = configuracao(bd)
+
+    def valor(chave: str) -> str:
+        return str(valores[chave]) if valores.get(chave) is not None else antes[chave]
+
+    regra = valor("carne_leao_prazo_regra")
     if regra not in REGRAS_DO_PRAZO:
         raise CarneLeaoError("Regra de prazo desconhecida.")
-    dia, fonte = "", _texto(valores.get("carne_leao_prazo_fonte"), 500)
+    dia, fonte = "", _texto(valor("carne_leao_prazo_fonte"), 500)
     if regra == DIA_DO_MES:
-        texto = str(valores.get("carne_leao_prazo_dia") or "").strip()
+        texto = valor("carne_leao_prazo_dia").strip()
         if not texto.isascii() or not texto.isdigit() or not 1 <= int(texto) <= 31:
             raise CarneLeaoError("Informe o dia do mês do prazo (1 a 31).")
         dia = str(int(texto))
@@ -335,10 +402,16 @@ def gravar_configuracao(con, valores: Mapping[str, Any]) -> dict[str, tuple[str,
         raise CarneLeaoError(
             "Diga de onde vem a regra do prazo (a norma da Receita, ou a orientação "
             "escrita do contador): prazo sem fonte não entra na agenda do oficial.")
-    novo = {"carne_leao_deposito_previo": modo, "carne_leao_prazo_regra": regra,
-            "carne_leao_prazo_dia": dia, "carne_leao_prazo_fonte": fonte if regra else ""}
-    bd = banco(con)
-    antes = configuracao(bd)
+    forma = valor("carne_leao_fundos_forma")
+    if forma not in FORMAS_DOS_FUNDOS:
+        raise CarneLeaoError("Escolha como os fundos são calculados no lançamento sem "
+                             "separação.")
+    bp = _percentual_em_bp(valor("carne_leao_fundos_percentual"))
+    if bp >= 10000:
+        raise CarneLeaoError("O percentual dos fundos tem de ser menor que 100%.")
+    novo = {"carne_leao_prazo_regra": regra, "carne_leao_prazo_dia": dia,
+            "carne_leao_prazo_fonte": fonte if regra else "",
+            "carne_leao_fundos_forma": forma, "carne_leao_fundos_percentual": percentual(bp)}
     _gravar(bd, novo)
     return {k: (antes[k], v) for k, v in novo.items() if antes[k] != v}
 
@@ -582,11 +655,44 @@ def anular_tabela(con, tabela_id: int, *, motivo: Any, por: str, agora: str) -> 
                 (agora, _texto(por, 120) or "?", motivo, int(tabela_id)))
 
 
+def cadastrar_tabelas_nacionais(con, *, por: str, agora: str) -> list[str]:
+    """Cadastra as `TABELAS_NACIONAIS` que faltam. ESCREVE. Devolve o que fez.
+
+    Vigência que já tem tabela ativa não é tocada: quem a cadastrou à mão
+    decide, anulando-a, se quer a nacional no lugar.
+    """
+    bd = banco(con)
+    bd.travar("cl_tabelas.vigencia")
+    feito = []
+    for t in TABELAS_NACIONAIS:
+        if bd.um("SELECT id FROM cl_tabelas WHERE vigencia_inicio = %s AND anulada_em IS NULL",
+                 (t["vigencia_inicio"],)):
+            feito.append(f"{t['vigencia_inicio']}: já havia tabela ativa — não mexi.")
+            continue
+        faixas = [dict(f) for f in t["faixas"]]
+        guardar = {"faixas": faixas, "reducao": dict(t["reducao"])} if t["reducao"] else faixas
+        bd.escrever(
+            """INSERT INTO cl_tabelas (vigencia_inicio, descricao, fonte, faixas,
+                   cadastrada_em, cadastrada_por) VALUES (%s, %s, %s, %s, %s, %s)""",
+            (t["vigencia_inicio"], t["descricao"], t["fonte"], json.dumps(guardar), agora,
+             _texto(por, 120) or "?"))
+        feito.append(f"{t['vigencia_inicio']}: «{t['descricao']}» cadastrada.")
+    return feito
+
+
 def tabelas(con) -> list[dict]:
-    """As tabelas cadastradas, a mais nova primeiro, com as faixas lidas. Só LÊ."""
+    """As tabelas cadastradas, a mais nova primeiro, com as faixas lidas. Só LÊ.
+
+    A coluna `faixas` guarda a lista das faixas ou, quando a tabela tem a
+    redução da Lei 15.270/2025, `{"faixas": [...], "reducao": {...}}`.
+    """
     saida = []
     for t in banco(con).ler("SELECT * FROM cl_tabelas ORDER BY vigencia_inicio DESC, id DESC"):
-        t["faixas"] = json.loads(t["faixas"])
+        bruto = json.loads(t["faixas"])
+        if isinstance(bruto, dict):
+            t["faixas"], t["reducao"] = bruto["faixas"], bruto.get("reducao")
+        else:
+            t["faixas"], t["reducao"] = bruto, None
         saida.append(t)
     return saida
 
@@ -615,20 +721,83 @@ def calcular_imposto(base: int, faixas: list[dict]) -> dict:
     raise CarneLeaoError("A tabela não tem faixa para esta base.")
 
 
+def reducao_mensal(rendimentos: int, imposto: int, regra: Mapping[str, Any] | None) -> int:
+    """A redução da Lei 15.270/2025 sobre o imposto da tabela. Só calcula.
+
+    Até `isento_ate`, até `reducao_maxima`; até `teto`, `constante` menos
+    `coeficiente` × rendimentos; acima, nada. Nunca passa do imposto.
+    OS RENDIMENTOS SÃO A RECEITA DO MÊS, antes das despesas do livro-caixa: é
+    a leitura literal de «rendimentos tributáveis sujeitos à incidência
+    mensal» — a conferir com o contador (a tela avisa).
+    """
+    if not regra or imposto <= 0:
+        return 0
+    rend = max(0, int(rendimentos))
+    if rend <= int(regra["isento_ate"]):
+        valor = int(regra["reducao_maxima"])
+    elif rend <= int(regra["teto"]):
+        valor = int(regra["constante"]) - (
+            rend * int(regra["coeficiente_milionesimos"]) + 500000) // 1000000
+    else:
+        valor = 0
+    return max(0, min(int(imposto), valor))
+
+
+def tirar_os_fundos(valor: int, forma: str, bp: int) -> int:
+    """O emolumento contido no `valor` de um lançamento sem a separação dos
+    fundos, pela configuração do delegatário. Só calcula."""
+    valor = max(0, int(valor))
+    if bp <= 0:
+        return valor
+    if forma == FUNDOS_DENTRO_DO_VALOR:
+        return valor - (valor * bp + 5000) // 10000
+    return (valor * 10000 + (10000 + bp) // 2) // (10000 + bp)
+
+
+def _fundos_da_configuracao(cfg: Mapping[str, str]) -> tuple[str, int]:
+    forma = cfg.get("carne_leao_fundos_forma") or FUNDOS_SOBRE_O_EMOLUMENTO
+    try:
+        bp = _percentual_em_bp(cfg.get("carne_leao_fundos_percentual") or "0")
+    except CarneLeaoError:
+        bp = 0
+    return forma, min(bp, 9999)
+
+
+# ------------------------------------------------- a outra entrada do caixa
+
+def marcar_outra_entrada(con, lancamento_id: int, *, receita: Any) -> None:
+    """Responde, pelo ADMIN, se a «outra entrada» antiga é receita do titular.
+    ESCREVE. As novas já nascem com a resposta de quem as lançou no caixa."""
+    if str(receita) not in ("0", "1"):
+        raise CarneLeaoError("Diga se esta entrada é receita do titular ou não.")
+    bd = banco(con)
+    bd._escrita()
+    lan = bd.um("SELECT id, natureza FROM cx_lancamentos WHERE id = %s FOR UPDATE",
+                (int(lancamento_id),))
+    if not lan or lan["natureza"] != "OUTRA_ENTRADA":
+        raise CarneLeaoError("Lançamento não encontrado, ou não é «outra entrada».")
+    bd.escrever("UPDATE cx_lancamentos SET receita_do_titular = %s WHERE id = %s",
+                (int(str(receita)), int(lancamento_id)))
+
+
 # ---------------------------------------------------------------- receitas
 
 _TROCO = ("SALDO INICIAL",)
 _FUNDOS_DO_LANCAMENTO = ("ferc", "fadep", "femp", "ferrfis", "fermoju")
 
 
-def _recebido_no_caixa(bd, comp: str) -> tuple[list[dict], list[dict]]:
-    """Os recebimentos do caixa no mês (só o emolumento), e as «outras entradas»."""
+def _recebido_no_caixa(bd, comp: str, forma: str, bp: int
+                       ) -> tuple[list[dict], list[dict], list[dict]]:
+    """Os recebimentos do caixa no mês (só o emolumento), as «outras entradas»
+    que quem lançou disse serem receita do titular, e as sem resposta."""
     inicio, fim = _limites(comp)
-    recebidos, outras = [], []
+    recebidos, outras, outras_receitas = [], [], []
+    resposta = ("receita_do_titular" if bd.tem_coluna("cx_lancamentos", "receita_do_titular")
+                else "NULL AS receita_do_titular")
     for lan in bd.ler(
-            """SELECT id, data, natureza, sentido, forma_pagamento, descricao, valor,
+            f"""SELECT id, data, natureza, sentido, forma_pagamento, descricao, valor,
                       emolumentos, ferc, fadep, femp, ferrfis, fermoju, estornado,
-                      COALESCE(excluido, 0) AS excluido
+                      COALESCE(excluido, 0) AS excluido, {resposta}
                  FROM cx_lancamentos WHERE data >= %s AND data < %s
                 ORDER BY data, id""", (inicio, fim)):
         if int(lan["excluido"] or 0) or int(lan["estornado"] or 0) \
@@ -639,8 +808,12 @@ def _recebido_no_caixa(bd, comp: str) -> tuple[list[dict], list[dict]]:
             continue                      # gratuidade: valor zero
         descricao = str(lan["descricao"] or "")
         if lan["natureza"] == "OUTRA_ENTRADA":
-            outras.append({"dia": str(lan["data"])[:10], "descricao": descricao,
-                           "valor": valor})
+            item = {"id": int(lan["id"]), "dia": str(lan["data"])[:10],
+                    "descricao": descricao, "valor": valor}
+            if lan["receita_do_titular"] is None:
+                outras.append(item)
+            elif int(lan["receita_do_titular"]):
+                outras_receitas.append(item)
             continue
         if lan["natureza"] != "RECEBIMENTO" or any(t in descricao.upper() for t in _TROCO):
             continue                      # depósito (o livro dele conta), troco, saída
@@ -654,10 +827,10 @@ def _recebido_no_caixa(bd, comp: str) -> tuple[list[dict], list[dict]]:
         elif fundos > 0:
             receita, discriminado = max(0, valor - fundos), True
         else:
-            receita, discriminado = valor, False
+            receita, discriminado = tirar_os_fundos(valor, forma, bp), False
         recebidos.append({"dia": str(lan["data"])[:10], "bruto": valor,
                           "receita": receita, "discriminado": discriminado})
-    return recebidos, outras
+    return recebidos, outras, outras_receitas
 
 
 def _deposito_do_mes(livro: dict, comp: str) -> dict:
@@ -692,9 +865,10 @@ def _livro_do_deposito(bd) -> dict:
 # --------------------------------------------------------------- apuração
 
 def _apurar(bd, comp: str, cfg: Mapping[str, str], livro_dep: dict,
-            lista_tabelas: list[dict]) -> dict:
-    modo = cfg.get("carne_leao_deposito_previo") or NO_USO
-    recebidos, outras = _recebido_no_caixa(bd, comp)
+            lista_tabelas: list[dict], excesso_anterior: int = 0) -> dict:
+    modo = NO_USO
+    forma, bp = _fundos_da_configuracao(cfg)
+    recebidos, outras, outras_receitas = _recebido_no_caixa(bd, comp, forma, bp)
     dep = _deposito_do_mes(livro_dep, comp)
     avulsos = _avulsos_do_mes(bd, comp)
 
@@ -702,31 +876,36 @@ def _apurar(bd, comp: str, cfg: Mapping[str, str], livro_dep: dict,
     por_dia: dict[str, dict] = {}
     for r in recebidos:
         dia = por_dia.setdefault(r["dia"], {"receita": 0, "bruto": 0, "n": 0,
-                                            "sem_discriminacao": 0})
+                                            "sem_discriminacao": 0, "fundos_estimados": 0})
         dia["receita"] += r["receita"]
         dia["bruto"] += r["bruto"]
         dia["n"] += 1
-        dia["sem_discriminacao"] += 0 if r["discriminado"] else r["receita"]
+        if not r["discriminado"]:
+            dia["sem_discriminacao"] += r["bruto"]
+            dia["fundos_estimados"] += r["bruto"] - r["receita"]
     for dia, v in sorted(por_dia.items()):
         receitas.append({"dia": dia, "origem": "Caixa",
                          "descricao": f"Emolumentos recebidos no caixa ({v['n']} lançamento(s))",
-                         "valor": v["receita"], "sem_discriminacao": v["sem_discriminacao"]})
-    chave_dep = "convertido" if modo == NO_USO else None
+                         "valor": v["receita"], "sem_discriminacao": v["sem_discriminacao"],
+                         "fundos_estimados": v["fundos_estimados"]})
+    for o in outras_receitas:
+        receitas.append({"dia": o["dia"], "origem": "Outra entrada",
+                         "descricao": o["descricao"] or "Outra entrada do caixa",
+                         "valor": o["valor"], "sem_discriminacao": 0, "fundos_estimados": 0})
     for dia, v in dep["por_dia"].items():
-        if chave_dep:
-            valor = v["convertido"]
-            texto = "Depósito prévio convertido em emolumentos (inclui fundos)"
-        else:
-            valor = v["recebido"] - v["devolvido"]
-            texto = "Depósito prévio recebido, menos devoluções (inclui fundos)"
-        if valor:
-            receitas.append({"dia": dia, "origem": "Depósito prévio", "descricao": texto,
-                             "valor": valor, "sem_discriminacao": valor})
+        bruto = v["convertido"]
+        if bruto:
+            valor = tirar_os_fundos(bruto, forma, bp)
+            receitas.append({"dia": dia, "origem": "Depósito prévio",
+                             "descricao": "Depósito prévio convertido em emolumentos",
+                             "valor": valor, "sem_discriminacao": bruto,
+                             "fundos_estimados": bruto - valor})
     for a in avulsos:
         if a["tipo"] == "RECEITA":
             receitas.append({"dia": a["data"], "origem": "Avulso", "id": int(a["id"]),
                              "descricao": a["descricao"], "documento": a["documento"],
-                             "valor": int(a["valor"]), "sem_discriminacao": 0})
+                             "valor": int(a["valor"]), "sem_discriminacao": 0,
+                             "fundos_estimados": 0})
     receitas.sort(key=lambda x: (x["dia"], x["origem"]))
     total_receita = sum(x["valor"] for x in receitas)
 
@@ -745,21 +924,35 @@ def _apurar(bd, comp: str, cfg: Mapping[str, str], livro_dep: dict,
     a_classificar = [d for d in despesas if d["dedutivel"] is None]
 
     selo = LD.apurar(bd, comp)
-    base = max(0, total_receita - dedutiveis)
+    deducoes = dedutiveis + int(excesso_anterior)
+    base = max(0, total_receita - deducoes)
     tabela, avisos = _tabela_do_mes(lista_tabelas, comp)
     calculo = calcular_imposto(base, tabela["faixas"]) if tabela else None
+    if calculo:
+        calculo["imposto_da_tabela"] = calculo["imposto"]
+        calculo["reducao"] = reducao_mensal(total_receita, calculo["imposto"],
+                                            tabela.get("reducao"))
+        calculo["imposto"] -= calculo["reducao"]
+        if tabela.get("reducao") and total_receita <= int(tabela["reducao"]["teto"]):
+            avisos.append("A redução da Lei 15.270/2025 foi calculada sobre a receita do mês, "
+                          "antes das despesas do livro-caixa — a conferir com o contador.")
     if a_classificar:
         avisos.append(f"{len(a_classificar)} despesa(s) do mês ainda sem marcação "
                       f"(R$ {reais(sum(d['valor'] for d in a_classificar))}): não foram "
                       f"deduzidas.")
     sem_disc = sum(x["sem_discriminacao"] for x in receitas)
+    fundos_est = sum(x["fundos_estimados"] for x in receitas)
     if sem_disc:
-        avisos.append(f"R$ {reais(sem_disc)} da receita vieram sem a separação dos fundos "
-                      f"e entraram inteiros como emolumento: conferir com o contador.")
+        avisos.append(f"R$ {reais(sem_disc)} da receita vieram sem a separação dos fundos: "
+                      f"R$ {reais(fundos_est)} saíram como fundos pela configuração "
+                      f"({percentual(bp)}%, {FORMAS_DOS_FUNDOS[forma].lower()}).")
     if outras:
         avisos.append(f"{len(outras)} «outra entrada» no caixa (R$ "
-                      f"{reais(sum(o['valor'] for o in outras))}) ficou fora da conta: "
-                      f"o contador diz se é receita.")
+                      f"{reais(sum(o['valor'] for o in outras))}) sem a resposta de quem a "
+                      f"lançou: ficou fora da conta até alguém dizer se é receita do titular.")
+    if excesso_anterior:
+        avisos.append(f"R$ {reais(int(excesso_anterior))} de despesas que passaram da receita "
+                      f"nos meses anteriores do ano foram somados às deduções deste mês.")
     if not tabela:
         avisos.append("Não há tabela progressiva cadastrada para este mês: o imposto não "
                       "foi calculado.")
@@ -771,13 +964,16 @@ def _apurar(bd, comp: str, cfg: Mapping[str, str], livro_dep: dict,
         "caixa": caixa, "deposito_na_conta": deposito,
         "avulsas": sum(x["valor"] for x in receitas if x["origem"] == "Avulso"),
         "receita": total_receita, "sem_discriminacao": sem_disc,
+        "fundos_estimados": fundos_est,
+        "fundos": {"forma": forma, "percentual": percentual(bp)},
         "deposito": {k: dep[k] for k in ("recebido", "convertido", "devolvido")},
         "selo": {"receita": int(selo["receita_bruta"]), "atos": selo["atos"],
                  "diferidos": selo["diferidos"], "isentos": selo["isentos"],
                  "sem_valor": selo["sem_valor"]},
         "despesas": despesas, "dedutiveis": dedutiveis, "nao_dedutiveis": nao_dedutiveis,
         "a_classificar": sum(d["valor"] for d in a_classificar),
-        "base": base, "excesso": max(0, dedutiveis - total_receita),
+        "excesso_anterior": int(excesso_anterior),
+        "base": base, "excesso": max(0, deducoes - total_receita),
         "tabela": ({"id": int(tabela["id"]), "descricao": tabela["descricao"],
                     "vigencia_inicio": tabela["vigencia_inicio"], "fonte": tabela["fonte"]}
                    if tabela else None),
@@ -787,32 +983,47 @@ def _apurar(bd, comp: str, cfg: Mapping[str, str], livro_dep: dict,
     }
 
 
-def apurar(con, comp: Any) -> dict:
-    """O livro-caixa do mês: receita no regime de caixa, despesas dedutíveis
-    pagas, a base e o imposto pela tabela cadastrada. Só LÊ."""
-    comp = competencia(comp)
-    bd = banco(con)
-    return _apurar(bd, comp, configuracao(bd), _livro_do_deposito(bd), tabelas(bd))
-
-
-def resumo_do_ano(con, ano: int, *, ate: str) -> list[dict]:
-    """Os meses do ano até `ate` (AAAA-MM), com os totais de cada um. Só LÊ.
-
-    Lê o livro do depósito e as tabelas uma vez só, para os doze meses.
-    """
-    bd = banco(con)
+def _meses_do_ano(bd, ano: int, ate: str) -> list[dict]:
+    """Janeiro até `ate` (AAAA-MM), levando o excesso de despesa de um mês para o
+    seguinte. Lê o livro do depósito e as tabelas uma vez só."""
     cfg, livro_dep, lista = configuracao(bd), _livro_do_deposito(bd), tabelas(bd)
-    saida = []
+    saida, excesso = [], 0
     for mes in range(1, 13):
         comp = f"{int(ano):04d}-{mes:02d}"
         if comp > ate:
             break
-        a = _apurar(bd, comp, cfg, livro_dep, lista)
-        saida.append({"competencia": comp, "receita": a["receita"],
-                      "selo": a["selo"]["receita"], "dedutiveis": a["dedutiveis"],
-                      "a_classificar": a["a_classificar"], "base": a["base"],
-                      "imposto": a["imposto"]})
+        a = _apurar(bd, comp, cfg, livro_dep, lista, excesso_anterior=excesso)
+        excesso = a["excesso"]
+        saida.append(a)
     return saida
+
+
+def _resumo(a: Mapping[str, Any]) -> dict:
+    return {"competencia": a["competencia"], "receita": a["receita"],
+            "selo": a["selo"]["receita"], "dedutiveis": a["dedutiveis"],
+            "excesso_anterior": a["excesso_anterior"], "a_classificar": a["a_classificar"],
+            "base": a["base"], "excesso": a["excesso"], "imposto": a["imposto"]}
+
+
+def apurar(con, comp: Any) -> dict:
+    """O livro-caixa do mês: receita no regime de caixa, despesas dedutíveis
+    pagas (mais o excesso que veio dos meses anteriores do ano), a base e o
+    imposto pela tabela cadastrada. Só LÊ."""
+    comp = competencia(comp)
+    return _meses_do_ano(banco(con), int(comp[:4]), comp)[-1]
+
+
+def resumo_do_ano(con, ano: int, *, ate: str) -> list[dict]:
+    """Os meses do ano até `ate` (AAAA-MM), com os totais de cada um. Só LÊ."""
+    return [_resumo(a) for a in _meses_do_ano(banco(con), int(ano), ate)]
+
+
+def apurar_com_o_ano(con, comp: Any, *, ate: str) -> tuple[dict, list[dict]]:
+    """O mês e o resumo do ano numa passada só — é o que a tela pede. Só LÊ."""
+    comp = competencia(comp)
+    meses = _meses_do_ano(banco(con), int(comp[:4]), max(comp, ate))
+    mes = next(a for a in meses if a["competencia"] == comp)
+    return mes, [_resumo(a) for a in meses]
 
 
 # --------------------------------------------------------------- exportação
@@ -831,7 +1042,8 @@ def livro_caixa_csv(a: Mapping[str, Any]) -> str:
               f"# {AVISO_DA_LISTA}",
               "data;tipo;origem;descricao;documento;valor;dedutivel;categoria_fiscal;observacao"]
     for r in a["receitas"]:
-        obs = "sem separação dos fundos" if r.get("sem_discriminacao") else ""
+        obs = (f"sem separação dos fundos; R$ {reais(r['fundos_estimados'])} de fundos "
+               f"tirados pela configuração" if r.get("sem_discriminacao") else "")
         linhas.append(";".join(campo(x) for x in (
             r["dia"], "RECEITA", r["origem"], r["descricao"], r.get("documento", ""),
             reais(r["valor"]).replace(".", ""), "", "", obs)))
@@ -844,6 +1056,7 @@ def livro_caixa_csv(a: Mapping[str, Any]) -> str:
     imposto = "" if a["imposto"] is None else reais(a["imposto"]).replace(".", "")
     for rotulo, valor in (("TOTAL RECEITA", reais(a["receita"])),
                           ("TOTAL DESPESAS DEDUTIVEIS", reais(a["dedutiveis"])),
+                          ("EXCESSO DOS MESES ANTERIORES", reais(a["excesso_anterior"])),
                           ("BASE", reais(a["base"])),
                           ("IMPOSTO PELA TABELA CADASTRADA", imposto or "sem tabela")):
         linhas.append(f"# {rotulo};{valor.replace('.', '') if valor[:1].isdigit() else valor}")

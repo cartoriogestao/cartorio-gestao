@@ -423,6 +423,10 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # recibo tem de dizer isso com todas as letras, para nao ser confundido
     # com pagamento de ato.
     ("cx_protocolos", "tipo", "TEXT NOT NULL DEFAULT 'SERVICO'"),
+    # «OUTRA ENTRADA» DIZ SE É RECEITA DO TITULAR (26/10/2026, ordem do oficial:
+    # «pergunta pra quem cadastra dizer se é ou não»). 1 entra no carnê-leão, 0
+    # fica fora, NULL é a antiga, sem resposta.
+    ("cx_lancamentos", "receita_do_titular", "INTEGER"),
     # Quitacao item a item. Um protocolo pode ter tres atos e so um pago; sem
     # isto, "a pagar" e "pago" so existem no protocolo inteiro, e o balcao
     # perde a conta do que falta.

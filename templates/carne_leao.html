@@ -15,7 +15,7 @@
   <p class="small"><strong>O que esta conta é, e o que ela não é.</strong> A apuração é no regime de caixa — o que
     entrou e o que foi pago no mês. {{ aviso_lista }} A tabela progressiva é a que o oficial cadastrou, com a fonte.
     {{ aviso_leiaute }}</p>
-  {% if not cfg.carne_leao_lista_conferida %}<p class="badge alta">A lista de dedutíveis ainda não foi conferida com o contador.</p>
+  {% if not cfg.carne_leao_lista_conferida %}<p class="small muted">A conferência da lista de dedutíveis com o contador ainda não foi registrada.</p>
   {% else %}<p class="small muted">Lista de dedutíveis: {{ cfg.carne_leao_lista_conferida }}</p>{% endif %}
   {% if prazo %}<p>Próximo prazo cadastrado: <strong>{{ prazo[0].strftime('%d/%m/%Y') }}</strong> ({{ prazo[1] }}).</p>
   {% else %}<p class="small muted">O prazo do carnê-leão não está cadastrado: ele continua como pergunta na agenda do oficial.
@@ -27,18 +27,21 @@
     <tbody>
       <tr><td>Receita no regime de caixa</td><td><strong>R$ {{ reais(a.receita) }}</strong></td></tr>
       <tr><td>— recebida no caixa (só o emolumento)</td><td>R$ {{ reais(a.caixa) }}</td></tr>
-      <tr><td>— depósito prévio, contado {{ 'no uso' if a.modo_deposito == 'NO_USO' else 'no recebimento' }}</td><td>R$ {{ reais(a.deposito_na_conta) }}</td></tr>
+      <tr><td>— depósito prévio convertido no mês (só o emolumento)</td><td>R$ {{ reais(a.deposito_na_conta) }}</td></tr>
+      {% if a.fundos_estimados %}<tr><td class="small">— fundos tirados pela configuração ({{ a.fundos.percentual }}%) do que veio sem separação</td><td class="small">R$ {{ reais(a.fundos_estimados) }}</td></tr>{% endif %}
       <tr><td>— lançamentos avulsos</td><td>R$ {{ reais(a.avulsas) }}</td></tr>
       <tr><td>Despesas dedutíveis pagas</td><td>R$ {{ reais(a.dedutiveis) }}</td></tr>
+      {% if a.excesso_anterior %}<tr><td>Excesso de despesas dos meses anteriores do ano</td><td>R$ {{ reais(a.excesso_anterior) }}</td></tr>{% endif %}
       <tr><td>Despesas marcadas como não dedutíveis</td><td>R$ {{ reais(a.nao_dedutiveis) }}</td></tr>
       <tr><td>Despesas ainda sem marcação (não deduzidas)</td><td>R$ {{ reais(a.a_classificar) }}</td></tr>
       <tr><td><strong>Base do mês</strong></td><td><strong>R$ {{ reais(a.base) }}</strong></td></tr>
-      {% if a.excesso %}<tr><td>Excesso de despesas sobre a receita</td><td>R$ {{ reais(a.excesso) }} <span class="small muted">— não é levado sozinho ao mês seguinte: a conferir com o contador</span></td></tr>{% endif %}
+      {% if a.excesso %}<tr><td>Excesso de despesas sobre a receita</td><td>R$ {{ reais(a.excesso) }} <span class="small muted">— vai para o mês seguinte, até dezembro (Lei 8.134/1990, art. 6º, § 3º)</span></td></tr>{% endif %}
       <tr><td><strong>Imposto pela tabela cadastrada</strong></td><td>
         {% if a.imposto is none %}<span class="badge alta">não calculado — sem tabela cadastrada para o mês</span>
         {% else %}<strong>R$ {{ reais(a.imposto) }}</strong>
           <span class="small muted">— «{{ a.tabela.descricao }}» (vigência desde {{ a.tabela.vigencia_inicio }}), faixa {{ a.calculo.faixa }},
-            alíquota {{ percentual(a.calculo.aliquota_bp) }}%, parcela a deduzir R$ {{ reais(a.calculo.deduzir) }}. Fonte: {{ a.tabela.fonte }}</span>{% endif %}</td></tr>
+            alíquota {{ percentual(a.calculo.aliquota_bp) }}%, parcela a deduzir R$ {{ reais(a.calculo.deduzir) }}{% if a.calculo.reducao %},
+            imposto da tabela R$ {{ reais(a.calculo.imposto_da_tabela) }} menos a redução da Lei 15.270/2025 de R$ {{ reais(a.calculo.reducao) }}{% endif %}. Fonte: {{ a.tabela.fonte }}</span>{% endif %}</td></tr>
     </tbody>
   </table></div>
   <p class="small muted">Outras deduções (dependentes, pensão, previdência do titular) e o DARF ficam no Carnê-Leão Web:
@@ -61,22 +64,26 @@
       <tr><td>Depósito prévio devolvido no mês</td><td>R$ {{ reais(a.deposito.devolvido) }}</td></tr>
     </tbody>
   </table></div>
-  <p class="small muted">O depósito prévio conta: {{ modos[a.modo_deposito] }}. A outra forma está na configuração — a escolha é do contador.</p>
+  <p class="small muted">O depósito prévio conta: {{ modos[a.modo_deposito] }}.</p>
 </section>
 
-<section class="panel"><h2>Receitas do mês</h2>
+<section class="panel" id="receitas"><h2>Receitas do mês</h2>
   {% if a.receitas %}
   <div class="table-wrap"><table>
     <thead><tr><th>Dia</th><th>Origem</th><th>Descrição</th><th>Valor</th><th>Observação</th><th></th></tr></thead>
     <tbody>{% for r in a.receitas %}<tr><td>{{ r.dia }}</td><td>{{ r.origem }}</td><td>{{ r.descricao }}{% if r.documento %} — {{ r.documento }}{% endif %}</td>
-      <td>R$ {{ reais(r.valor) }}</td><td class="small">{% if r.sem_discriminacao %}R$ {{ reais(r.sem_discriminacao) }} sem separação dos fundos{% endif %}</td>
+      <td>R$ {{ reais(r.valor) }}</td><td class="small">{% if r.sem_discriminacao %}R$ {{ reais(r.sem_discriminacao) }} sem separação dos fundos; R$ {{ reais(r.fundos_estimados) }} tirados como fundos{% endif %}</td>
       <td>{% if r.origem == 'Avulso' %}<form method="post" action="{{ url_for('carne_leao_anular', lancamento_id=r.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="mes" value="{{ mes }}">
         <input name="motivo" placeholder="motivo da anulação" size="18" required><button type="submit">Anular</button></form>{% endif %}</td></tr>{% endfor %}</tbody>
   </table></div>
   {% else %}<p class="muted">Nada recebido neste mês.</p>{% endif %}
-  {% if a.outras_entradas %}<p class="small">Fora da conta («outra entrada» do caixa — o contador diz se é receita):</p>
-  <ul class="small">{% for o in a.outras_entradas %}<li>{{ o.dia }} — {{ o.descricao }} — R$ {{ reais(o.valor) }}</li>{% endfor %}</ul>{% endif %}
+  {% if a.outras_entradas %}<p class="small">Fora da conta: «outra entrada» do caixa lançada sem a resposta de quem a
+    lançou. Diga se é receita do titular:</p>
+  <ul class="small">{% for o in a.outras_entradas %}<li>{{ o.dia }} — {{ o.descricao }} — R$ {{ reais(o.valor) }}
+    <form method="post" action="{{ url_for('carne_leao_outra_entrada', lancamento_id=o.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="mes" value="{{ mes }}">
+      <button name="receita" value="1">É receita do titular</button> <button name="receita" value="0">Não é</button></form></li>{% endfor %}</ul>{% endif %}
 </section>
 
 <section class="panel" id="despesas"><h2>Despesas pagas no mês</h2>
@@ -118,9 +125,9 @@
 
 <section class="panel"><h2>O ano de {{ mes[:4] }}</h2>
   <div class="table-wrap"><table>
-    <thead><tr><th>Mês</th><th>Receita (caixa)</th><th>Receita (selo)</th><th>Dedutíveis</th><th>Sem marcação</th><th>Base</th><th>Imposto</th></tr></thead>
+    <thead><tr><th>Mês</th><th>Receita (caixa)</th><th>Receita (selo)</th><th>Dedutíveis</th><th>Excesso trazido</th><th>Sem marcação</th><th>Base</th><th>Imposto</th></tr></thead>
     <tbody>{% for m in ano %}<tr><td><a href="{{ url_for('carne_leao', mes=m.competencia) }}">{{ m.competencia[5:7] }}/{{ m.competencia[:4] }}</a></td>
-      <td>R$ {{ reais(m.receita) }}</td><td>R$ {{ reais(m.selo) }}</td><td>R$ {{ reais(m.dedutiveis) }}</td><td>R$ {{ reais(m.a_classificar) }}</td>
+      <td>R$ {{ reais(m.receita) }}</td><td>R$ {{ reais(m.selo) }}</td><td>R$ {{ reais(m.dedutiveis) }}</td><td>R$ {{ reais(m.excesso_anterior) }}</td><td>R$ {{ reais(m.a_classificar) }}</td>
       <td>R$ {{ reais(m.base) }}</td><td>{% if m.imposto is none %}sem tabela{% else %}R$ {{ reais(m.imposto) }}{% endif %}</td></tr>{% endfor %}</tbody>
   </table></div>
 </section>

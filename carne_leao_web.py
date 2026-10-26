@@ -45,16 +45,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         mes = _mes()
         hoje = date.today()
         with db.connect() as con:
-            a = CL.apurar(con, mes)
-            ano = CL.resumo_do_ano(con, int(mes[:4]), ate=max(mes, hoje.isoformat()[:7]))
+            a, ano = CL.apurar_com_o_ano(con, mes, ate=hoje.isoformat()[:7])
             cfg = CL.configuracao(con)
             ob = CL.obrigacao_da_agenda(con)
         prazo = OO.proximo_vencimento(ob, hoje) if ob else None
         return render_template(
             "carne_leao.html", a=a, mes=mes, ano=ano, cfg=cfg, prazo=prazo,
             categorias=CL.CATEGORIAS_FISCAIS, modos=CL.MODOS_DO_DEPOSITO,
+            formas_fundos=CL.FORMAS_DOS_FUNDOS,
             aviso_lista=CL.AVISO_DA_LISTA, aviso_leiaute=CL.AVISO_DO_LEIAUTE,
             reais=reais, percentual=CL.percentual, hoje=hoje.isoformat())
+
+    @app.route("/administrativo/carne-leao/outra-entrada/<int:lancamento_id>",
+               methods=["POST"])
+    @login_required
+    @roles_required("ADMIN")
+    def carne_leao_outra_entrada(lancamento_id: int):
+        mes, resposta = _mes(), request.form.get("receita")
+        try:
+            with db.transaction() as con:
+                CL.marcar_outra_entrada(con, lancamento_id, receita=resposta)
+        except CL.CarneLeaoError as erro:
+            flash(str(erro), "danger")
+            return _volta(mes, "receitas")
+        audit("CARNE_LEAO_OUTRA_ENTRADA_RESPONDIDA", "cx_lancamentos", lancamento_id,
+              {"receita_do_titular": resposta})
+        flash("Resposta gravada.", "success")
+        return _volta(mes, "receitas")
 
     @app.route("/administrativo/carne-leao/despesa/<int:ld_despesa_id>/marcar",
                methods=["POST"])
@@ -141,6 +158,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                             faixas_texto=f.get("faixas"), por=usuario_nome(), agora=_agora())
                         detalhe = {"tabela": novo, "vigencia": f.get("vigencia_inicio")}
                         recado = "Tabela cadastrada."
+                    elif acao == "tabelas_nacionais":
+                        feito = CL.cadastrar_tabelas_nacionais(con, por=usuario_nome(),
+                                                               agora=_agora())
+                        detalhe, recado = {"feito": feito}, " ".join(feito)
                     elif acao == "anular_tabela":
                         CL.anular_tabela(con, int(f.get("tabela_id") or 0), motivo=f.get("motivo"),
                                          por=usuario_nome(), agora=_agora())
@@ -167,5 +188,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return render_template(
             "carne_leao_configuracao.html", cfg=cfg, tabelas=lista,
             modos=CL.MODOS_DO_DEPOSITO, regras=CL.REGRAS_DO_PRAZO,
+            formas_fundos=CL.FORMAS_DOS_FUNDOS, nacionais=CL.TABELAS_NACIONAIS,
             categorias=CL.CATEGORIAS_FISCAIS, aviso_lista=CL.AVISO_DA_LISTA,
             reais=reais, percentual=CL.percentual)

@@ -2,28 +2,30 @@
 {% block title %}Carnê-leão — configuração{% endblock %}
 {% block heading %}<h1>Carnê-leão — configuração e tabela progressiva</h1>{% endblock %}
 {% block content %}
-{# SÓ DO ADMIN. Nada aqui vem preenchido como verdade fiscal: o modo do
-   depósito prévio tem padrão (o do Livro Diário, CN-MA art. 202) e a tela diz
-   que é escolha do contador; o prazo e a tabela só existem quando o oficial os
-   cadastra, com a fonte. #}
+{# SÓ DO ADMIN. Decisões do oficial em 26/10/2026: o depósito prévio só vira
+   receita no ato (sem opção), o prazo é o último dia do mês seguinte, a tabela
+   nacional entra com um clique, e a parte dos fundos do lançamento sem
+   separação sai desta configuração, que é de cada delegatário. #}
 <div class="actions"><a class="button" href="{{ url_for('carne_leao') }}">&larr; Carnê-leão</a></div>
 
-<section class="panel"><h2>Depósito prévio e prazo</h2>
+<section class="panel"><h2>Prazo e fundos</h2>
+  <p class="small">O depósito prévio conta como receita {{ modos['NO_USO']|lower }}.</p>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="acao" value="geral">
-    <label>O depósito prévio conta como receita
-      <select name="carne_leao_deposito_previo">{% for k, v in modos.items() %}<option value="{{ k }}" {% if k == cfg.carne_leao_deposito_previo %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
     <label>Prazo do carnê-leão na agenda do oficial
       <select name="carne_leao_prazo_regra">{% for k, v in regras.items() %}<option value="{{ k }}" {% if k == cfg.carne_leao_prazo_regra %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
     <label>Dia (só para «dia fixo») <input name="carne_leao_prazo_dia" value="{{ cfg.carne_leao_prazo_dia }}" size="3"></label>
     <label>De onde vem a regra do prazo (norma ou orientação escrita do contador)
       <input name="carne_leao_prazo_fonte" value="{{ cfg.carne_leao_prazo_fonte }}" size="60"></label>
+    <label>Lançamento do caixa sem a separação dos fundos: como os fundos são calculados
+      <select name="carne_leao_fundos_forma">{% for k, v in formas_fundos.items() %}<option value="{{ k }}" {% if k == cfg.carne_leao_fundos_forma %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+    <label>Percentual dos fundos (%) <input name="carne_leao_fundos_percentual" value="{{ cfg.carne_leao_fundos_percentual }}" size="6"></label>
     <button type="submit">Gravar</button>
   </form>
-  <p class="small muted">O padrão do depósito é o do Livro Diário (CN-MA art. 202: o depósito vira receita quando o ato é
-    praticado). Para o imposto de renda, qual dos dois vale é pergunta para o contador. Sem a fonte, o prazo não entra na
-    agenda — prazo escrito de memória seria o carimbo que mente na agenda de quem responde por ele.</p>
+  <p class="small muted">Sem a fonte, o prazo não entra na agenda. O percentual dos fundos vale só para o lançamento que não
+    traz emolumento e fundos separados (e para o depósito prévio convertido): o padrão é a soma dos fundos cobrados na
+    tabela da casa. Ajuste à configuração da sua serventia.</p>
 </section>
 
 <section class="panel"><h2>Lista de categorias dedutíveis (sugestão)</h2>
@@ -48,6 +50,9 @@
   <div class="panel">
     <p><strong>{{ t.descricao }}</strong> — vigência desde {{ t.vigencia_inicio }}{% if t.anulada_em %} — <span class="badge">anulada em {{ t.anulada_em[:10] }}: {{ t.motivo_anulacao }}</span>{% endif %}</p>
     <p class="small muted">Fonte: {{ t.fonte }} · cadastrada por {{ t.cadastrada_por }} em {{ t.cadastrada_em[:10] }}</p>
+    {% if t.reducao %}<p class="small">Com a redução mensal da Lei 15.270/2025: até R$ {{ reais(t.reducao.reducao_maxima) }}
+      para rendimentos até R$ {{ reais(t.reducao.isento_ate) }}; de lá até R$ {{ reais(t.reducao.teto) }}, R$ {{ reais(t.reducao.constante) }}
+      menos 0,133145 × rendimentos; sempre limitada ao imposto da tabela.</p>{% endif %}
     <div class="table-wrap"><table>
       <thead><tr><th>Faixa</th><th>Até (R$)</th><th>Alíquota</th><th>Parcela a deduzir (R$)</th></tr></thead>
       <tbody>{% for f in t.faixas %}<tr><td>{{ loop.index }}</td><td>{% if f.ate is none %}acima{% else %}{{ reais(f.ate) }}{% endif %}</td>
@@ -63,9 +68,21 @@
   {% else %}<p class="badge alta">Nenhuma tabela cadastrada: o imposto não é calculado em mês nenhum.</p>{% endif %}
 </section>
 
+<section class="panel"><h2>A tabela nacional da Receita Federal</h2>
+  <p class="small">A tabela progressiva é nacional. O sistema a traz lida na página da Receita Federal em 26/10/2026:</p>
+  <ul class="small">{% for t in nacionais %}<li><strong>{{ t.descricao }}</strong>, desde {{ t.vigencia_inicio }} — {{ t.fonte }}</li>{% endfor %}</ul>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="tabelas_nacionais">
+    <button type="submit">Cadastrar a tabela nacional</button>
+  </form>
+  <p class="small muted">Vigência que já tem tabela ativa não é tocada. Quando a Receita publicar tabela nova, ela entra
+    abaixo, à mão, ou com uma versão nova do sistema.</p>
+</section>
+
 <section class="panel"><h2>Cadastrar uma tabela</h2>
-  <p class="small">Copie as faixas da tabela progressiva MENSAL vigente, da norma da Receita ou da orientação do contador —
-    o sistema não traz tabela nenhuma escrita. Uma faixa por linha: <code>até; alíquota %; parcela a deduzir</code>.
+  <p class="small">Copie as faixas da tabela progressiva MENSAL vigente, da norma da Receita ou da orientação do contador.
+    Uma faixa por linha: <code>até; alíquota %; parcela a deduzir</code>.
     A última linha fica com o «até» vazio (acima da anterior). O exemplo abaixo é fictício.</p>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

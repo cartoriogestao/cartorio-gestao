@@ -813,6 +813,16 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
         registro["modelo"] = modelo_de(provedor, modelo)
     except AgenteError:
         pass
+    # A COTA DO DIA SE RESERVA AQUI, ANTES DA REDE (26/10/2026, achado
+    # transversal 3 da revisão de segurança): o chamador que esqueceu de
+    # conferir o teto também para, e duas chamadas ao mesmo tempo não passam
+    # pela última vaga. A chamada que falhar devolve a vaga.
+    try:
+        reserva = USO.reservar(pasta_de_dados, finalidade)
+    except USO.TetoAtingido as teto:
+        USO.registrar(pasta_de_dados, **registro, resultado=USO.RECUSADO,
+                      erro="teto do dia")
+        raise AgenteError(str(teto), motivo="teto do dia", recusado=True) from teto
     try:
         lida = _turno(pasta_de_dados, provedor=provedor, sistema=sistema,
                       conversa=conversa, ferramentas=ferramentas,
@@ -820,11 +830,13 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
                       prazo=prazo, extras=extras, betas=betas,
                       limite_de_envio=limite_de_envio)
     except AgenteError as falha:
+        USO.devolver(pasta_de_dados, reserva)
         USO.registrar(pasta_de_dados, **registro,
                       resultado=USO.RECUSADO if falha.recusado else USO.ERRO,
                       erro=falha.motivo or "falha do transporte")
         raise
     except Exception as falha:
+        USO.devolver(pasta_de_dados, reserva)
         USO.registrar(pasta_de_dados, **registro, resultado=USO.ERRO,
                       erro=type(falha).__name__)
         raise

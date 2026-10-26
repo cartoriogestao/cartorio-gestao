@@ -41,6 +41,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -101,6 +102,16 @@ SCHEMA: tuple[tuple[str, str], ...] = (
         )"""),
     ("ix_ia_incidentes_data",
      "CREATE INDEX IF NOT EXISTS ix_ia_incidentes_data ON ia_incidentes (data, id)"),
+    # A COTA DO DIA, RESERVADA ANTES DA REDE (26/10/2026, achado transversal 3
+    # da revisão de segurança). Uma linha por finalidade e dia; `reservadas` é
+    # quantas chamadas tomaram vaga. Ver `reservar`.
+    ("ia_cota", """
+        CREATE TABLE IF NOT EXISTS ia_cota (
+            finalidade TEXT NOT NULL,
+            dia TEXT NOT NULL,
+            reservadas bigint NOT NULL DEFAULT 0 CHECK (reservadas >= 0),
+            PRIMARY KEY (finalidade, dia)
+        )"""),
     ("ia_fornecedores", """
         CREATE TABLE IF NOT EXISTS ia_fornecedores (
             provedor TEXT PRIMARY KEY,
@@ -222,26 +233,175 @@ def usos_do_dia(con, finalidade: str, dia: str) -> int:
               AND resultado <> %s""", (finalidade, dia[:10], seguinte, RECUSADO)) or 0)
 
 
+def reservadas_do_dia(con, finalidade: str, dia: str) -> int | None:
+    """Quantas vagas a finalidade já reservou no dia, ou None se não há linha
+    de cota (o dia ainda não chamou ninguém, ou o banco é de antes da cota).
+    SÓ LÊ."""
+    bd = banco(con)
+    if not bd.tem_tabela("ia_cota"):
+        return None
+    valor = bd.valor("SELECT reservadas FROM ia_cota WHERE finalidade = %s AND dia = %s",
+                     (finalidade, dia[:10]))
+    return None if valor is None else int(valor)
+
+
+def _frase_do_teto(finalidade: str, feitos: int, teto: int) -> str:
+    import ia_catalogo as CAT
+    return (f"O teto de uso de IA de hoje para «{CAT.nome_da_finalidade(finalidade)}» "
+            f"já foi atingido ({feitos} de {teto} chamadas ao provedor). Nada foi "
+            "enviado. O teto volta amanhã; se o dia pede mais, fale com o "
+            "administrador — o número está no catálogo de IA (ia_catalogo).")
+
+
 def passou_do_teto(con, finalidade: str, *, agora: str | None = None) -> str | None:
     """A frase de recusa quando a finalidade já gastou o teto do dia, ou None.
 
-    O TETO É DO CATÁLOGO (`ia_catalogo.CHAMADAS_POR_DIA`), e quem chama o
-    transporte confere ANTES da rede: o registro só conta o que já foi, e o
-    que se quer é que a chamada de número 401 não saia. Finalidade sem teto
+    O TETO É DO CATÁLOGO (`ia_catalogo.CHAMADAS_POR_DIA`). Finalidade sem teto
     diário no catálogo (o teto dela é por rodada ou por ato, no módulo) passa.
     SÓ LÊ.
+
+    DESDE 26/10/2026 ESTA É A CONFERÊNCIA DE CORTESIA, E NÃO A TRAVA. Ela serve
+    à tela e a quem quer recusar cedo (antes de abrir a linha, antes de ler o
+    documento); a trava de verdade é `reservar`, que o TRANSPORTE chama antes
+    da rede — e que pega também o chamador que esqueceu de conferir. Por isso a
+    conta é a mesma das duas: a cota reservada do dia, quando já existe, e o
+    registro de uso, antes de a cota do dia nascer.
     """
     import ia_catalogo as CAT
     teto = CAT.teto_diario(finalidade)
     if teto is None:
         return None
-    feitos = usos_do_dia(con, finalidade, (agora or _agora())[:10])
+    dia = (agora or _agora())[:10]
+    feitos = reservadas_do_dia(con, finalidade, dia)
+    if feitos is None:
+        feitos = usos_do_dia(con, finalidade, dia)
     if feitos < teto:
         return None
-    return (f"O teto de uso de IA de hoje para «{CAT.nome_da_finalidade(finalidade)}» "
-            f"já foi atingido ({feitos} de {teto} chamadas ao provedor). Nada foi "
-            "enviado. O teto volta amanhã; se o dia pede mais, fale com o "
-            "administrador — o número está no catálogo de IA (ia_catalogo).")
+    return _frase_do_teto(finalidade, feitos, teto)
+
+
+# ------------------------------------- a reserva da cota (26/10/2026)
+#
+# O TETO SE RESERVA ANTES DA REDE (revisão de segurança dos PRs abertos,
+# achado transversal 3). Até aqui `passou_do_teto` contava o que JÁ estava em
+# `ia_uso`, e `registrar` só grava DEPOIS da resposta: duas chamadas ao mesmo
+# tempo passavam as duas pela conferência, e o chamador que esquecia de
+# conferir não tinha freio nenhum (a transcrição de áudio do #25 é esse caso).
+#
+# Agora os DOIS TRANSPORTES (`agente_provedores.conversar` e
+# `robo_llm.chamar_provedor`) chamam `reservar` antes de mandar qualquer byte.
+# A vaga se toma num único `UPDATE ... WHERE reservadas < teto RETURNING`: o
+# PostgreSQL tranca a linha, e a segunda chamada simultânea espera a primeira
+# e relê a condição — não há como as duas passarem pela última vaga. A chamada
+# que FALHA (rede, prazo, recusa do provedor) devolve a vaga com `devolver`:
+# falha não gasta o teto para sempre. O uso real continua indo para `ia_uso`
+# por `registrar`, depois da resposta, como sempre.
+#
+# BANCO FORA DO AR NÃO TRAVA O ATENDIMENTO. Se a reserva não consegue falar
+# com o banco, ela vai para o log e a chamada segue — a mesma troca de
+# `registrar` e da auditoria: entre perder a contagem e perder o atendimento,
+# a serventia precisa do atendimento. O que trava é o teto ATINGIDO.
+
+#: A espera pela trava da linha da cota. Maior que a do registro: aqui duas
+#: chamadas disputam a MESMA linha de propósito, e a segunda tem de esperar a
+#: primeira, e não desistir.
+ESPERA_DA_RESERVA_MS = 3000
+
+
+class TetoAtingido(RuntimeError):
+    """A cota do dia daquela finalidade já está toda reservada. A mensagem é
+    a frase pronta para a tela; nada foi enviado ao provedor."""
+
+
+@dataclass(frozen=True)
+class Reserva:
+    """A vaga tomada por uma chamada — o que `devolver` precisa para soltá-la."""
+    finalidade: str
+    dia: str
+    teto: int
+
+
+def _conexao_propria(pasta_de_dados: Any):
+    """A conexão curta da instalação, a mesma que `registrar` abre."""
+    if pasta_de_dados in (None, ""):
+        raise ValueError("quem chamou não disse a pasta de dados")
+    if not banco_pg.ativo():
+        raise RuntimeError("o PostgreSQL não está ligado (CG_PG_DSN)")
+    return banco_pg.conectar(Path(pasta_de_dados) / banco_pg.NOME_DO_BANCO_PRINCIPAL)
+
+
+def reservar(pasta_de_dados: Any, finalidade: str, *,
+             agora: str | None = None) -> Reserva | None:
+    """Toma UMA vaga da cota do dia, ANTES da rede. **ESCREVE** (conexão própria).
+
+    Devolve a `Reserva` (para `devolver`, se a chamada falhar), ou None quando
+    a finalidade não tem teto diário no catálogo — ou quando o banco não
+    respondeu (vai para o log, e a chamada segue; ver o comentário acima).
+    Levanta `TetoAtingido` quando a cota acabou: aí NADA deve subir.
+
+    A primeira reserva do dia semeia a cota com o que `ia_uso` já registrou
+    hoje — o uso de antes desta versão, ou o de um transporte que não reservou.
+    """
+    import ia_catalogo as CAT
+    teto = CAT.teto_diario(finalidade)
+    if teto is None:
+        return None
+    dia = (agora or _agora())[:10]
+    tomada = None
+    try:
+        con = _conexao_propria(pasta_de_dados)
+        try:
+            bd = banco(con)
+            bd.ler(f"SET lock_timeout = '{int(ESPERA_DA_RESERVA_MS)}ms'")
+            if not bd.tem_tabela("ia_cota") or not bd.tem_tabela("ia_uso"):
+                init_ia_schema(con)
+            bd.escrever(
+                """INSERT INTO ia_cota (finalidade, dia, reservadas) VALUES (%s, %s, %s)
+                   ON CONFLICT (finalidade, dia) DO NOTHING""",
+                (finalidade, dia, usos_do_dia(con, finalidade, dia)))
+            tomada = bd.escrever(
+                """UPDATE ia_cota SET reservadas = reservadas + 1
+                    WHERE finalidade = %s AND dia = %s AND reservadas < %s
+                RETURNING reservadas""", (finalidade, dia, int(teto)))
+            con.commit()
+        finally:
+            con.close()
+    except Exception as falha:  # noqa: BLE001 — banco fora do ar não trava a chamada
+        LOG.error("RESERVA DE IA NAO FEITA (%s: %s): finalidade=%s dia=%s — a "
+                  "chamada segue sem a trava do teto", type(falha).__name__,
+                  _curto(falha, 200), _curto(finalidade), dia)
+        return None
+    if not tomada:
+        raise TetoAtingido(_frase_do_teto(finalidade, int(teto), int(teto)))
+    return Reserva(finalidade=finalidade, dia=dia, teto=int(teto))
+
+
+def devolver(pasta_de_dados: Any, reserva: Reserva | None) -> bool:
+    """Solta a vaga de uma chamada que FALHOU. **ESCREVE, e NUNCA levanta.**
+
+    Sem reserva (finalidade sem teto, ou banco que não respondeu na reserva)
+    não há o que soltar. Devolve se soltou.
+    """
+    if reserva is None:
+        return False
+    try:
+        con = _conexao_propria(pasta_de_dados)
+        try:
+            bd = banco(con)
+            bd.ler(f"SET lock_timeout = '{int(ESPERA_DA_RESERVA_MS)}ms'")
+            bd.escrever(
+                """UPDATE ia_cota SET reservadas = reservadas - 1
+                    WHERE finalidade = %s AND dia = %s AND reservadas > 0""",
+                (reserva.finalidade, reserva.dia))
+            con.commit()
+        finally:
+            con.close()
+        return True
+    except Exception as falha:  # noqa: BLE001 — devolver não derruba quem falhou
+        LOG.error("VAGA DE IA NAO DEVOLVIDA (%s: %s): finalidade=%s dia=%s",
+                  type(falha).__name__, _curto(falha, 200),
+                  _curto(reserva.finalidade), reserva.dia)
+        return False
 
 
 # ------------------------------------------------------------ o que se lê

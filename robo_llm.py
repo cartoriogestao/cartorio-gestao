@@ -193,9 +193,20 @@ def chamar_provedor(
                 "mascarado": mascarado,
                 "provedor": (provedor or "").strip().lower(),
                 "modelo": MODELOS_PADRAO.get((provedor or "").strip().lower(), "")}
+    # A COTA DO DIA SE RESERVA ANTES DA REDE (26/10/2026, achado transversal
+    # 3 da revisão de segurança) — a mesma regra de `agente_provedores.
+    # conversar`. Teto atingido: nada sobe, e o registro diz por quê. A chamada
+    # que falhar devolve a vaga.
+    try:
+        reserva = USO.reservar(pasta_de_dados, finalidade)
+    except USO.TetoAtingido:
+        USO.registrar(pasta_de_dados, **registro, resultado=USO.RECUSADO,
+                      erro="teto do dia")
+        raise
     try:
         lida = _pedir(provedor, api_key, system, user, timeout=timeout)
     except Exception as erro:
+        USO.devolver(pasta_de_dados, reserva)
         resultado, motivo = _motivo(erro)
         USO.registrar(pasta_de_dados, **registro, resultado=resultado, erro=motivo)
         raise
@@ -249,6 +260,14 @@ def rascunhar(
             "texto": texto,
             "modo": SCH.MODO_API,
             "aviso": "",
+        }
+    except USO.TetoAtingido as teto:
+        # O TETO DO DIA NÃO É FALHA DA API: a tela diz a frase dele, e não
+        # «falha na API (TetoAtingido)». Nada subiu.
+        return {
+            "texto": rascunho_local(prompt, user, ex_list),
+            "modo": SCH.MODO_LOCAL,
+            "aviso": str(teto),
         }
     except Exception as exc:  # noqa: BLE001 — cai no local com aviso
         return {

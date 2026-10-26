@@ -545,65 +545,52 @@ def create_app(test_config: dict | None = None) -> Flask:
                                 senha_da_cifra=BKP.senha_da_cifra(data_dir) or None)
 
     def automatic_backup_once():
-        """Backup diario do banco e backup completo semanal.
+        """Backup diario do banco e backup completo semanal — a RESERVA da automação.
 
         Racional: o banco muda todo dia e comprime bem; as digitalizacoes nao
         mudam nunca. Guardar 30 copias identicas de 161 MB gastaria ~4,8 GB
         para proteger exatamente o mesmo conteudo que uma copia ja protege.
+
+        DESDE 26/10/2026 QUEM FAZ O BACKUP NO HORARIO E A AUTOMACAO (processo
+        `BACKUP_DIARIO`, `backup_automacao.rodar_backup`), que independe de
+        alguem abrir o sistema e avisa quando falha. Isto aqui ficou como
+        reserva, e chama a MESMA rodada (`backup_rotina.rodada`): o pacote que
+        a automacao ja gerou hoje nao se repete, e a trava impede os dois ao
+        mesmo tempo.
+
+        E A MARCA PASSOU A SER DO DIA. Era `True` uma vez por PROCESSO: com o
+        servidor de pe tres dias seguidos, so o primeiro dia tinha backup.
+        `True` continua querendo dizer «nao rode» — e como os testes que nao
+        tratam de backup o desligam.
         """
-        if app.extensions.get("backup_checked"):
+        hoje = date.today()
+        marca = app.extensions.get("backup_checked")
+        if marca is True or marca == hoje:
             return
-        app.extensions["backup_checked"] = True
+        app.extensions["backup_checked"] = hoje
         if db.get_setting("auto_backup", "1") != "1":
             return
 
-        hoje = date.today()
-        pasta = backup_dir()
-
-        diario = pasta / f"backup_banco_{hoje.isoformat()}.zip"
-        if not diario.exists():
-            try:
-                full_backup(diario, com_arquivos=False)
-                db.log(None, "SISTEMA", "AUTO_BACKUP_BANCO", "BACKUP", None,
-                       {"path": str(diario), "bytes": diario.stat().st_size,
-                        "cifrado": BKP.e_cifrado(diario)})
-            except Exception as exc:
-                db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
-                       {"error": str(exc), "tipo": "banco"})
-
-        # Completo no dia da semana configurado (padrao: domingo), uma vez por semana.
+        import backup_rotina
         try:
-            dia_semana = int(db.get_setting("backup_completo_dia", "6"))
-        except ValueError:
-            dia_semana = 6
-        ja_tem_semana = any(
-            datetime.fromtimestamp(p.stat().st_mtime).date() >= hoje - timedelta(days=6)
-            for p in pasta.glob("backup_completo_*.zip")
-        )
-        if hoje.weekday() == dia_semana and not ja_tem_semana:
-            completo = pasta / f"backup_completo_{hoje.isoformat()}.zip"
-            try:
-                full_backup(completo, com_arquivos=True)
-                db.log(None, "SISTEMA", "AUTO_BACKUP_COMPLETO", "BACKUP", None,
-                       {"path": str(completo), "bytes": completo.stat().st_size,
-                        "cifrado": BKP.e_cifrado(completo)})
-            except Exception as exc:
-                db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
-                       {"error": str(exc), "tipo": "completo"})
-
-        def expurgar(padrao: str, manter: int):
-            achados = sorted(pasta.glob(padrao), key=lambda p: p.stat().st_mtime, reverse=True)
-            for velho in achados[max(1, manter):]:
-                velho.unlink(missing_ok=True)
-
-        try:
-            expurgar("backup_banco_*.zip", max(3, int(db.get_setting("backup_retention", "30"))))
-            expurgar("backup_completo_*.zip",
-                     max(2, int(db.get_setting("backup_completo_retencao", "8"))))
-            # Formato antigo: um unico arquivo com tudo. Some por retencao.
-            expurgar("backup_automatico_*.zip", 2)
-        except Exception:
-            pass
+            r = backup_rotina.rodada(
+                backup_dir(), full_backup, hoje=hoje,
+                **backup_rotina.parametros_da_casa(db.get_setting))
+        except backup_rotina.RodadaOcupada:
+            return                      # a automacao esta gerando agora
+        except Exception as exc:
+            db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
+                   {"error": str(exc), "tipo": "rodada"})
+            return
+        for feito in r["feitos"]:
+            db.log(None, "SISTEMA",
+                   "AUTO_BACKUP_COMPLETO" if feito["tipo"] == "completo" else "AUTO_BACKUP_BANCO",
+                   "BACKUP", None,
+                   {"path": str(backup_dir() / feito["arquivo"]), "bytes": feito["bytes"],
+                    "cifrado": feito["cifrado"]})
+        for falha in r["falhas"]:
+            db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
+                   {"error": falha["erro"], "tipo": falha["tipo"]})
 
     def papel_de_quem_esta_logado():
         """O papel do usuario da sessao, ou None. So LE.

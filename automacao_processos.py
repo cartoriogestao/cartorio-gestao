@@ -758,10 +758,13 @@ SEMENTES: tuple[dict, ...] = (
 
 #: Módulos que trazem processos próprios para a central: cada um expõe
 #: `CATALOGO`, uma lista de {codigo, nome, setor, funcao («modulo.funcao»),
-#: e opcionalmente descricao, agenda e timeout_s}. O primeiro é o das despesas
+#: e opcionalmente descricao, agenda, timeout_s e parametros}. O primeiro é o das despesas
 #: e do Banco Inter (agente financeiro, 24/10/2026). O import é protegido:
 #: o PR de um pode entrar antes do outro, e módulo ausente só não semeia.
-MODULOS_COM_PROCESSOS = ("despesas_automacao",)
+#: O segundo é o do backup (26/10/2026): o pacote no horário e o teste de
+#: restauração (`backup_automacao`) — que não substituem o `CASA_BACKUP` daqui,
+#: o leitor do estado de uma rotina de backup que roda FORA do pacote.
+MODULOS_COM_PROCESSOS = ("despesas_automacao", "backup_automacao")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.
@@ -803,6 +806,10 @@ def sementes_de_outros_modulos() -> list[dict]:
                 "agenda": item.get("agenda") or AGENDA_SUGERIDA.get(codigo)
                           or {"dias": _UTEIS, "horarios": ["09:00"]},
                 "timeout_s": int(item.get("timeout_s") or 600),
+                # Os parâmetros de fábrica que o módulo declarar (26/10/2026, o
+                # limite de idade do teste de restauração). Sem eles a semente
+                # nascia com `{}` e o processo dependia só do padrão do código.
+                "parametros": dict(item.get("parametros") or {}),
             })
     return saida
 

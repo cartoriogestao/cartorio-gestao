@@ -148,7 +148,8 @@ def test_os_processos_de_fabrica_nascem_desligados_e_nao_duplicam(casa):
     with db.transaction() as con:
         assert AU.semear(con, SEG) == 0
         todos = AU.listar(con)
-    assert len(todos) == len(PROC.SEMENTES)
+    # As de fábrica MAIS as que outros módulos trazem (o backup, 26/10/2026).
+    assert len(todos) == len(PROC.todas_as_sementes())
     assert not any(p["ativo"] or p["pode_agir"] for p in todos)
     codigos = {p["codigo"] for p in todos}
     assert {"PROTESTO_CRA", "PROTESTO_CENPROT", "RI_ONR_FILA", "RI_WSOFICIO", "RI_CNIB", "RCPN_SIRC",
@@ -156,7 +157,14 @@ def test_os_processos_de_fabrica_nascem_desligados_e_nao_duplicam(casa):
             "ROTINA_CONFERENCIA_DIARIA", "ROTINA_COMPLIANCE", "ROTINA_CENSEC_ENVIO"} <= codigos
     cra = next(p for p in todos if p["codigo"] == "PROTESTO_CRA")
     assert cra["agenda"]["horarios"] == ["11:30", "14:10"]
-    assert all(p["alvo"] in PROC.CATALOGO for p in todos if p["tipo"] == SCH.FUNCAO)
+    de_fora = {s["alvo"] for s in PROC.sementes_de_outros_modulos()}
+    assert all(p["alvo"] in PROC.CATALOGO or p["alvo"] in de_fora
+               for p in todos if p["tipo"] == SCH.FUNCAO)
+    # O alvo de quem vem de fora tem de existir — senão o processo nasce quebrado.
+    import importlib
+    for alvo in de_fora:
+        modulo, nome = alvo.split(":", 1)
+        assert callable(getattr(importlib.import_module(modulo), nome)), alvo
 
 
 def test_o_tique_lanca_o_que_venceu_e_so_uma_vez(casa):

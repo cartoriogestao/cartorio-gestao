@@ -12,7 +12,7 @@
 | Dentro do zip | O que é |
 |---|---|
 | `banco/cartorio_gestao.sqlite3` | o banco. **Desde a migração para o PostgreSQL, é um `pg_dump -Fc` do schema da casa**, e não um arquivo SQLite — o nome ficou o de sempre para a conferência e as ferramentas antigas acharem. Os backups de antes da migração trazem, nesse nome, o SQLite de verdade. |
-| `banco/cartorio_gestao.sqlite3.sha256` e `manifesto.json` | o SHA-256 do banco e o inventário; a conferência compara os dois |
+| `banco/cartorio_gestao.sqlite3.sha256` e `manifesto.json` | o SHA-256 do banco e o inventário; a conferência compara os dois. Desde 26/10/2026 o manifesto também diz o formato do banco (`banco_formato`) e **quantas linhas cada tabela tinha no mesmo instantâneo do `pg_dump`** (`banco_contagens`) — é contra elas que o teste de restauração confere (seção 7) |
 | `arquivos/…` | as digitalizações (só no **completo**) |
 | `acervo/acervo_eoficio.sqlite3` | o acervo do E-Ofício (só no **completo**, e só se a opção abaixo não o tirar) |
 
@@ -114,6 +114,15 @@ python backup.py abrir C:\CartorioGestao_Copias\backups\backup_banco_2026-10-19.
   `pg_dump -Fc`): `pg_restore` dele no banco da casa, com o serviço parado e o
   binário de `CG_PG_BIN` (por exemplo `pg_restore --clean --if-exists -d
   "<CG_PG_DSN>" banco\cartorio_gestao.sqlite3`). Ensaie antes numa cópia.
+- **Num servidor NOVO (banco vazio), prepare o `public` antes.** O `pg_dump`
+  leva só o schema da casa, e o schema usa coisas que moram no `public`: a
+  collation `cg_nocase`, as extensões `pg_trgm` e `unaccent` e as funções de
+  `banco_pg_funcoes.sql`. Sem elas o `pg_restore` para na primeira tabela
+  (medido em 26/10/2026). O caminho ensaiado é o do teste de restauração:
+  `banco_pg.preparar_banco_vazio(cursor)` com um cursor ligado ao banco vazio,
+  e então `pg_restore --no-owner --no-privileges --exit-on-error -d <banco>`.
+  É o que `backup_automacao.py --testar-restauracao` faz toda vez, num banco
+  descartável.
 - Backup **de antes da migração** (o arquivo é SQLite de verdade): ele entra
   pela mesma carga da migração para o PostgreSQL, e não pelo `pg_restore`.
 
@@ -126,3 +135,67 @@ sozinha (`init_robo_schema`, `init_wa_schema`): se o cofre já tem aquele
 segredo, **fica o do cofre** (é o mais novo) e a coluna só é esvaziada; se não
 tem, o da coluna vai para o cofre. Nada impede a restauração, e a chave nova
 não é trocada pela velha.
+
+## 7. O backup no horário e o teste de restauração (26/10/2026)
+
+Provimento CN/CNJ 213/2026, art. 12, § 3º, I (a cópia na periodicidade da
+classe) e § 10 (o alerta ao responsável quando ela falha).
+
+**Até esta versão o backup automático só saía no primeiro acesso ao sistema** —
+e, pior, uma vez por *processo* do servidor: com o servidor de pé três dias, só
+o primeiro dia tinha backup. A falha virava só uma linha `AUTO_BACKUP_FAILURE`
+na auditoria. Agora são dois processos da **central de automação** (Automação →
+processos), que **nascem desligados** — quem liga é o oficial:
+
+| Processo | Agenda de fábrica | O que faz |
+|---|---|---|
+| `BACKUP_DIARIO` — «Backup do banco no horário» | todo dia, 01:30 | o pacote do banco do dia, o completo quando devido (dia da semana de Configurações; o completo perdido sai no dia seguinte) e a retenção. Não depende de alguém abrir o sistema |
+| `BACKUP_TESTE_RESTAURACAO` — «Teste de restauração do backup» | domingo, 04:00 | restaura o pacote mais novo num banco **descartável**, confere as contagens, apaga o banco descartável e registra a rodada em `bk_restauracoes` |
+
+- **O alerta é o da automação:** terminou em AVISO ou ERRO, aparece no painel,
+  vira tarefa do responsável e vai por e-mail (se configurado em Automação →
+  Configuração), e é lembrado enquanto seguir. Não há outro canal.
+- **O primeiro acesso do dia continua como reserva** (a opção «backup
+  automático» de Configurações governa só ele) e chama a mesma rodada: o pacote
+  que a automação já gerou hoje não se repete, e uma trava na pasta dos backups
+  (`backup_rodada.trava`) impede os dois ao mesmo tempo.
+- **O teste nunca restaura por cima do banco da casa.** Ele cria um banco novo
+  `cg_restauro_<data e hora>_<sorteio>`, restaura nele e o apaga; só aceita
+  criar e apagar banco com esse formato de nome. O banco nasce no mesmo servidor
+  do banco da casa, salvo se `CG_PG_DSN_RESTAURACAO` apontar outro (por exemplo,
+  o servidor de teste). **A conta do banco precisa do privilégio CREATEDB**, e o
+  servidor precisa de espaço para uma cópia do banco enquanto o teste roda.
+- **O que ele confere:** cada tabela que voltou, contra a contagem que o
+  manifesto gravou no mesmo instantâneo do `pg_dump`; e que as tabelas
+  principais (usuários, configurações, auditoria, anexos, protocolo, caixa,
+  selos, matrículas e atos do RI, assentos do RCPN, atos de Notas, títulos do
+  Protesto) voltaram. Pacote de antes desta versão (sem contagens) restaura e
+  sai como AVISO, por não ter contra o que conferir.
+- **Para a correição:** cada rodada fica em `bk_restauracoes` (data, pacote,
+  SHA-256 do pacote, tipo, contagens, divergências, tempo). Pela linha de
+  comando, na pasta do sistema e com as variáveis do servidor:
+  `python backup_automacao.py --testar-restauracao` (roda agora) e
+  `python backup_automacao.py --historico` (as últimas 20).
+
+## 8. A cópia imutável fora da casa — AINDA NÃO
+
+O espelho fora do servidor, imutável, é exigência do mesmo provimento, e **o
+oficial ainda vai escolher o armazenamento** (26/10/2026). Nada foi construído
+para ela, e nenhum serviço foi escolhido. O lugar onde ela entra está marcado
+em `backup_rotina.rodada` («A CÓPIA IMUTÁVEL FORA DA CASA»): depois de o pacote
+passar na conferência, e só do pacote conferido; a falha dela vira item de
+`falhas`, e a automação avisa como avisa a falha do pacote.
+
+## 9. Um descompasso declarado: a regra do gestor e o completo semanal
+
+A conferência diária do gestor (`gestor_conferencia.regra_backup`) acusa
+**CRÍTICO** quando o último `backup_completo_*.zip` tem mais de **1 dia**
+(`BACKUP_DIAS_TOLERADOS = 1`). O completo que **o sistema** gera é
+**semanal**. Com só o sistema gerando backup, a regra acusa seis dias em sete.
+O remédio que ela aponta é a rotina de fora do sistema (`BACKUP_AGORA.cmd`);
+se essa rotina gera o completo todo dia na mesma pasta, a regra fica satisfeita
+por ela — isso **não foi conferido aqui**. **A regra não foi mexida**: qual
+é a periodicidade da cópia completa «da classe» (art. 12, § 3º, I) é decisão do
+oficial — ou a regra passa a aceitar o diário do banco mais o completo semanal,
+ou o completo do sistema passa a ser diário (com o custo de disco de um completo
+por dia na retenção).

@@ -900,6 +900,10 @@
            ter, e onde cada livro está — com os três administrativos do art.
            188. É o que a correição pergunta primeiro. #}
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('livros_obrigatorios') }}">Livros obrigatórios</a>{% endif %}
+        {# A OUVIDORIA E A PESQUISA DE SATISFAÇÃO (26/10/2026): registrar é do
+           balcão; o relatório da pesquisa é de quem responde pela casa. #}
+        <a href="{{ url_for('ouvidoria_lista') }}">Ouvidoria</a>
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('satisfacao_relatorio') }}">Pesquisa de satisfação</a>{% else %}<a href="{{ url_for('satisfacao_convite') }}">Convite para avaliar</a>{% endif %}
         <a href="{{ url_for('lgpd') }}">LGPD e governança</a>
         <a href="{{ url_for('assets') }}">TI e infraestrutura</a>
         {% if user.role in ['ADMIN','AUDITOR'] %}<a href="{{ url_for('audit_logs') }}">Auditoria</a>

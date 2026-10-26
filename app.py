@@ -3296,6 +3296,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     import relatos_diarios_web
     relatos_diarios_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # A OUVIDORIA E A PESQUISA DE SATISFAÇÃO (26/10/2026): as manifestações com
+    # prazo e tarefa, e a nota do balcão — esta numa página sem login, só na rede
+    # da casa, que nasce fechada.
+    import ouvidoria_web
+    ouvidoria_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     # A PASTA DO PROCESSO e o rascunho que vira processo (12/10/2026) — fase 1
     # do módulo único de Processos.
     import processo_pasta_web

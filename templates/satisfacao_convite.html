@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Convite para avaliar{% endblock %}
+{% block heading %}<h1>Convite para avaliar o atendimento</h1>{% endblock %}
+{% block content %}
+{# O CONVITE (26/10/2026): o QR leva a pessoa à página da pesquisa NA REDE DA
+   CASA. O link carrega, assinado, quem atendeu e o protocolo — e o protocolo
+   não volta ao relatório: só impede a mesma ida ao balcão de ser avaliada
+   duas vezes. #}
+{% if not aberta %}
+<div class="notice critical">A página da pesquisa está <strong>fechada</strong>. O QR só funciona depois que o oficial a abrir em
+Administrativo → Pesquisa de satisfação.</div>
+{% endif %}
+{% if local %}
+<div class="notice critical">Você abriu o sistema pelo endereço da própria máquina (localhost). O QR gerado assim
+<strong>não abre no celular</strong>: abra o sistema pelo nome ou pelo IP do servidor na rede e gere o convite de novo.</div>
+{% endif %}
+<section class="panel">
+  <div class="grid2">
+    <form method="get" class="stack">
+      <label>Número do protocolo do atendimento <input type="text" name="protocolo" value="{{ numero }}" maxlength="40" placeholder="ex.: 2026.10.155"></label>
+      <button type="submit">Gerar o convite deste atendimento</button>
+      <p class="small muted">Uma avaliação por protocolo. O convite vale {{ dias }} dias e leva o seu nome como atendente.</p>
+    </form>
+    <form method="get" class="stack">
+      <input type="hidden" name="balcao" value="1">
+      <button type="submit">Gerar o link do tablet do balcão (comigo como atendente)</button>
+      <p class="small muted">Para deixar aberto num tablet da casa no seu guichê. Sem protocolo: cada pessoa avalia ao sair.
+      Para o tablet sem atendente, abra <a href="{{ url_for('satisfacao_pagina') }}" target="_blank">a página sem convite</a>.</p>
+    </form>
+  </div>
+</section>
+{% if endereco %}
+<section class="panel" style="text-align:center">
+  <h2>{% if protocolo %}Avalie o atendimento — protocolo {{ protocolo.numero }}{% else %}Avalie o nosso atendimento{% endif %}</h2>
+  {% if qr %}<div>{{ qr }}</div>{% else %}<p class="muted">O desenho do QR não está disponível nesta instalação; use o link.</p>{% endif %}
+  <p>Aponte a câmera do celular (conectado ao Wi-Fi da serventia) ou abra o link:</p>
+  <p style="word-break:break-all"><a href="{{ endereco }}" target="_blank">{{ endereco }}</a></p>
+  <button type="button" onclick="window.print()">Imprimir o convite</button>
+</section>
+{% endif %}
+{% endblock %}

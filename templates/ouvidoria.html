@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}Ouvidoria{% endblock %}
+{% block heading %}<h1>Ouvidoria</h1>{% endblock %}
+{% block content %}
+{# A OUVIDORIA DA CASA (26/10/2026) — reclamação, sugestão, elogio, denúncia e
+   pedido de informação. A lista NÃO traz a identificação de quem se
+   manifestou: ela só abre na ficha, para quem pode, e fica na auditoria. #}
+<section class="panel">
+  <p>Registre aqui o que a pessoa veio dizer sobre o serviço — pelo balcão, telefone, e-mail, WhatsApp ou carta.
+  Cada manifestação ganha um número próprio, um prazo de resposta e uma <strong>tarefa para o responsável</strong>.
+  A manifestação pode ser <strong>anônima</strong>: aí nenhum dado de quem se manifestou é gravado.</p>
+  <p class="small muted">Prazo de resposta em uso: <strong>{{ prazo_dias }} dias corridos</strong>.
+  Este número é configuração da casa (padrão de fábrica {{ prazo_padrao }}), <strong>não é prazo de norma</strong>:
+  qual é o prazo legal da ouvidoria da serventia é pergunta ao oficial.
+  {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}· <a href="{{ url_for('ouvidoria_relatorio') }}">Relatório por período</a>
+  · <a href="{{ url_for('satisfacao_relatorio') }}">Pesquisa de satisfação</a>{% endif %}
+  {% if pode_registrar %}· <a href="{{ url_for('satisfacao_convite') }}">Convite para avaliar o atendimento</a>{% endif %}</p>
+</section>
+
+{% if pode_registrar %}
+<section class="panel">
+  <details>
+    <summary>Registrar manifestação</summary>
+    <form method="post" action="{{ url_for('ouvidoria_registrar') }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Tipo
+        <select name="tipo" required>
+          <option value="">— escolha —</option>
+          {% for k, v in tipos.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+        </select></label>
+      <label>Canal de entrada
+        <select name="canal" required>
+          <option value="">— escolha —</option>
+          {% for k, v in canais.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+        </select></label>
+      <label>Setor
+        <select name="setor">
+          {% for k, v in setores.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+        </select></label>
+      <label>Responsável pela resposta
+        <select name="responsavel_id" required>
+          {% for u in usuarios %}<option value="{{ u.id }}" {% if u.id == responsavel_padrao %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+        </select></label>
+      <label>Recebida em <input type="date" name="recebida_em" value="{{ hoje }}" max="{{ hoje }}"></label>
+      <label>Protocolo de atendimento relacionado (se houver) <input type="text" name="protocolo_ref" maxlength="40"></label>
+      <label class="span2">Assunto, em poucas palavras <input type="text" name="assunto" maxlength="200" required></label>
+      <label class="span2">Relato — com as palavras da pessoa, o mais fiel possível
+        <textarea name="relato" rows="5" required></textarea></label>
+      <label class="checkbox-label span2"><input type="checkbox" name="anonima" value="1" id="ou-anonima"> Manifestação anônima — não gravar nome, documento nem contato</label>
+      <fieldset class="span2" id="ou-identificacao" style="border:1px solid #e3e8ec;border-radius:8px;padding:10px">
+        <legend class="small muted">Identificação (protegida: só o oficial, o gerente e o responsável a veem)</legend>
+        <div class="form-grid">
+          <label>Nome <input type="text" name="nome" maxlength="200" autocomplete="off"></label>
+          <label>CPF ou documento <input type="text" name="documento" maxlength="40" autocomplete="off"></label>
+          <label>Telefone ou e-mail para a resposta <input type="text" name="contato" maxlength="200" autocomplete="off"></label>
+          <label>Como quer receber a resposta <input type="text" name="forma_resposta" maxlength="200" placeholder="ex.: por WhatsApp, no balcão"></label>
+        </div>
+      </fieldset>
+      <div class="span2"><button class="primary" type="submit">Registrar e abrir a tarefa</button></div>
+    </form>
+  </details>
+</section>
+<script>
+(function(){var c=document.getElementById('ou-anonima'),f=document.getElementById('ou-identificacao');
+ if(!c||!f)return;function t(){f.style.display=c.checked?'none':'';}c.addEventListener('change',t);t();})();
+</script>
+{% endif %}
+
+<section class="panel">
+  <form method="get" class="inline-form" style="margin-bottom:12px">
+    <label>Situação <select name="situacao">
+      <option value="EM_ABERTO" {% if f.situacao == 'EM_ABERTO' %}selected{% endif %}>Em aberto (aberta ou em análise)</option>
+      <option value="TODAS" {% if f.situacao == 'TODAS' %}selected{% endif %}>Todas</option>
+      {% for k, v in situacoes.items() %}<option value="{{ k }}" {% if f.situacao == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+    </select></label>
+    <label>Tipo <select name="tipo"><option value="">Todos</option>
+      {% for k, v in tipos.items() %}<option value="{{ k }}" {% if f.tipo == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+    </select></label>
+    <label>Recebidas de <input type="date" name="de" value="{{ f.de }}"></label>
+    <label>até <input type="date" name="ate" value="{{ f.ate }}"></label>
+    <button type="submit">Filtrar</button>
+  </form>
+  {% if linhas %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Número</th><th>Recebida</th><th>Tipo</th><th>Canal</th><th>Setor</th><th>Assunto</th><th>Responsável</th><th>Prazo</th><th>Situação</th></tr></thead>
+    <tbody>
+    {% for x in linhas %}
+    <tr {% if x.vencida %}class="danger"{% endif %}>
+      <td><a href="{{ url_for('ouvidoria_ficha', manifestacao_id=x.id) }}">{{ x.numero }}</a>{% if x.anonima %} <span class="badge">anônima</span>{% endif %}</td>
+      <td>{{ fmt_date(x.recebida_em) }}</td>
+      <td>{{ x.tipo_nome }}</td>
+      <td>{{ x.canal_nome }}</td>
+      <td>{{ x.setor_nome }}</td>
+      <td>{{ x.assunto }}</td>
+      <td>{{ x.responsavel_nome or '—' }}</td>
+      <td>{{ fmt_date(x.prazo) }}{% if x.vencida %} <span class="badge critica">vencida</span>{% endif %}</td>
+      <td>{{ x.situacao_nome }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted">Nenhuma manifestação com esse filtro.</p>{% endif %}
+</section>
+
+{% if e_admin %}
+<section class="panel">
+  <details>
+    <summary>Configuração da ouvidoria (só o oficial)</summary>
+    <form method="post" action="{{ url_for('ouvidoria_configurar') }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Prazo de resposta, em dias corridos <input type="number" name="prazo_dias" min="1" max="180" value="{{ prazo_dias }}" required></label>
+      <label>Responsável padrão (vem marcado no registro)
+        <select name="responsavel_padrao">
+          <option value="">— o primeiro oficial —</option>
+          {% for u in usuarios %}<option value="{{ u.id }}" {% if u.id == responsavel_padrao %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+        </select></label>
+      <p class="span2 small muted">O prazo vale para as manifestações registradas depois da mudança; as que já existem guardam o prazo com que nasceram.</p>
+      <div class="span2"><button type="submit">Gravar</button></div>
+    </form>
+  </details>
+</section>
+{% endif %}
+{% endblock %}

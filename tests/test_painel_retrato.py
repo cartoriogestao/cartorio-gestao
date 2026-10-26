@@ -291,3 +291,55 @@ def test_o_post_do_retrato_pelo_wsgi(casa, vps):
     assert s.startswith("204")
     s, *_ = _chamar("POST", "/painel/retrato", b"x" * (VPS.TETO_DO_CORPO + 1))
     assert s.startswith("413")
+
+
+# ------------------------------------------------------------ correções de segurança de 26/10/2026
+
+
+def test_x_forwarded_for_vale_pelo_fim_e_so_quando_vem_do_servidor_web(monkeypatch):
+    """O começo da lista é o que o cliente mandou; o fim é o que o servidor web
+    acrescentou. E o cabeçalho de quem não é o servidor web não vale nada."""
+    monkeypatch.setenv("PAINEL_VPS_CONFIA_PROXY", "1")
+    forjado = {"REMOTE_ADDR": "127.0.0.1",
+               "HTTP_X_FORWARDED_FOR": "10.0.0.1, 203.0.113.9"}
+    assert VPS._ip(forjado) == "203.0.113.9"
+    de_fora = {"REMOTE_ADDR": "198.51.100.7", "HTTP_X_FORWARDED_FOR": "10.0.0.1"}
+    assert VPS._ip(de_fora) == "198.51.100.7"
+    monkeypatch.delenv("PAINEL_VPS_CONFIA_PROXY")
+    assert VPS._ip(forjado) == "127.0.0.1"
+
+
+def test_variar_o_x_forwarded_for_nao_escapa_da_espera(vps, usuario, monkeypatch):
+    """Cinco erros vindos do servidor web com começos diferentes no cabeçalho
+    são cinco erros do MESMO endereço."""
+    monkeypatch.setenv("PAINEL_VPS_CONFIA_PROXY", "1")
+    agora = time.time()
+    for n in range(5):
+        ip = VPS._ip({"REMOTE_ADDR": "127.0.0.1",
+                      "HTTP_X_FORWARDED_FOR": f"10.0.0.{n}, 203.0.113.9"})
+        VPS.anotar_erro(f"outro{n}", ip, agora)
+    ip = VPS._ip({"REMOTE_ADDR": "127.0.0.1",
+                  "HTTP_X_FORWARDED_FOR": "10.0.0.99, 203.0.113.9"})
+    assert VPS.em_espera("mais-um", ip, agora)
+
+
+def test_tentativas_velhas_saem_do_arquivo(vps):
+    agora = time.time()
+    velho = agora - (VPS.JANELA_DOS_ERROS_S + VPS.ESPERA_S + 60)
+    for n in range(50):
+        VPS.anotar_erro(f"velho{n}", f"192.0.2.{n}", velho)
+    VPS.anotar_erro("beatriz", "198.51.100.8", agora)
+    erros = VPS.ler_json("tentativas.json", {})
+    assert len(erros) == 2                       # só o usuário e o endereço de agora
+    assert all(max(v) == agora for v in erros.values())
+
+
+def test_tentativas_tem_teto_de_chaves(vps, monkeypatch):
+    monkeypatch.setattr(VPS, "TETO_DE_CHAVES_DA_ESPERA", 10)
+    agora = time.time()
+    for n in range(30):
+        VPS.anotar_erro(f"u{n}", f"192.0.2.{n}", agora - 30 + n)
+    erros = VPS.ler_json("tentativas.json", {})
+    assert len(erros) <= 10
+    # a mais nova fica, e a espera dela continua contando
+    assert any(max(v) == agora - 1 for v in erros.values())

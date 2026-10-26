@@ -48,7 +48,8 @@ O QUE SE FAZ NA VPS (ninguém fez ainda — não houve deploy)
        para teste com `python painel_vps.py servir --porta 8790`; em produção,
        mod_wsgi ou gunicorn apontando para `painel_vps:application`), com
        HTTPS no servidor web. Atrás de proxy, PAINEL_VPS_CONFIA_PROXY=1 faz a
-       espera do login contar pelo X-Forwarded-For.
+       espera do login contar pelo ÚLTIMO endereço do X-Forwarded-For (o que
+       o servidor web acrescentou), e só quando o pedido vem de 127.0.0.1.
     7. Na tela /painel/retrato do sistema, gravar o endereço
        https://<a vps>/<prefixo>/retrato e enviar um retrato de teste.
 """
@@ -79,6 +80,7 @@ SESSAO_VIDA_S = 12 * 3600
 ERROS_ATE_ESPERAR = 5
 JANELA_DOS_ERROS_S = 15 * 60
 ESPERA_S = 15 * 60
+TETO_DE_CHAVES_DA_ESPERA = 5000   # usuários + endereços lembrados em tentativas.json
 SENHA_MINIMA = 14
 COOKIE_SESSAO = "painel_sessao"
 COOKIE_CSRF = "painel_csrf"
@@ -208,12 +210,37 @@ def em_espera(usuario: str, ip: str, agora: float) -> bool:
     return False
 
 
+def _podar(erros: dict, agora: float) -> dict:
+    """Tira do arquivo o que já não pesa em espera nenhuma, e põe teto.
+
+    Correção de segurança de 26/10/2026 (revisão do PR #28): a primeira
+    versão só podava a lista da chave que estava sendo tocada, e nenhuma
+    chave saía do arquivo — cada nome de usuário tentado e cada endereço
+    viravam uma linha para sempre, e o arquivo inteiro era lido e regravado
+    a cada erro. Quem não tem conta podia fazê-lo crescer sem fim, e o login
+    de quem tem ficava cada vez mais lento.
+    """
+    vivo = JANELA_DOS_ERROS_S + ESPERA_S
+    podado = {}
+    for chave, lista in erros.items():
+        if not isinstance(lista, list):
+            continue
+        recentes = [t for t in lista if isinstance(t, (int, float)) and agora - t < vivo]
+        if recentes:
+            podado[chave] = recentes[-20:]
+    if len(podado) > TETO_DE_CHAVES_DA_ESPERA:
+        # Descarta as mais velhas (pelo último erro de cada uma). A chave que
+        # acabou de errar é a mais nova, e por isso fica.
+        ordem = sorted(podado, key=lambda c: max(podado[c]), reverse=True)
+        podado = {c: podado[c] for c in ordem[:TETO_DE_CHAVES_DA_ESPERA]}
+    return podado
+
+
 def anotar_erro(usuario: str, ip: str, agora: float) -> None:
-    erros = ler_json("tentativas.json", {})
+    erros = _podar(ler_json("tentativas.json", {}), agora)
     for chave in _chaves_da_espera(usuario, ip):
-        lista = [t for t in erros.get(chave, []) if agora - t < JANELA_DOS_ERROS_S + ESPERA_S]
-        erros[chave] = (lista + [agora])[-20:]
-    gravar_json("tentativas.json", erros)
+        erros[chave] = (erros.get(chave, []) + [agora])[-20:]
+    gravar_json("tentativas.json", _podar(erros, agora))
 
 
 def zerar_erros(usuario: str, ip: str) -> None:
@@ -446,9 +473,24 @@ def _cookie(nome: str, valor: str, apagar: bool = False) -> tuple[str, str]:
 
 
 def _ip(environ) -> str:
-    if os.environ.get("PAINEL_VPS_CONFIA_PROXY") == "1" and environ.get("HTTP_X_FORWARDED_FOR"):
-        return environ["HTTP_X_FORWARDED_FOR"].split(",")[0].strip()
-    return environ.get("REMOTE_ADDR") or "?"
+    """O endereço que conta para a espera do login.
+
+    Correção de segurança de 26/10/2026 (revisão do PR #28): a primeira
+    versão lia o COMEÇO do X-Forwarded-For, e o começo é o que o próprio
+    cliente mandou — variando o cabeçalho a cada pedido, a espera por
+    endereço nunca pegava. O servidor web ACRESCENTA o endereço de quem
+    chegou no FIM da lista; e o cabeçalho só vale quando quem nos entregou o
+    pedido é o próprio servidor web, na mesma máquina. É a regra do portal
+    (`vps/portal/portal_vps.py`, `Atendente._ip`).
+    """
+    par = environ.get("REMOTE_ADDR") or "?"
+    encaminhado = environ.get("HTTP_X_FORWARDED_FOR") or ""
+    if (os.environ.get("PAINEL_VPS_CONFIA_PROXY") == "1" and encaminhado
+            and par in ("127.0.0.1", "::1")):
+        ultimo = encaminhado.split(",")[-1].strip()[:64]
+        if ultimo:
+            return ultimo
+    return par
 
 
 def _corpo(environ, teto: int) -> bytes:

@@ -4,7 +4,7 @@
 
 O QUE ELE DEVOLVE
     Um dicionário de CONTAGENS e SOMAS — nada mais. Atos por atribuição (pelos
-    selos usados), receita do caixa, selos usados e cancelados, protocolos em
+    selos usados), emolumentos líquidos do FERJ, selos usados e cancelados, protocolos em
     andamento e atrasados, prenotações vencidas e a vencer, tarefas, fila do
     atendimento e os alertas da casa. Para três janelas: o DIA, a SEMANA (de
     segunda até hoje) e o MÊS (do dia 1º até hoje).
@@ -24,12 +24,17 @@ A MESMA RÉGUA DAS OUTRAS TELAS
     vencida ou a vencer é a da conferência diária do gestor; as tarefas são as
     de `db.dashboard_stats`; o protocolo sem item é `caixa_protocolo`.
 
-    A RECEITA É A EXCEÇÃO DECLARADA. `gestor_financeiro.apurar_mes` soma como
-    receita todo lançamento que não é troco, estorno, excluído, gratuito ou
-    depósito — e com isso também a SAÍDA (devolução, sangria, despesa), que
-    tem `sentido = 'SAIDA'`. Aqui a receita é só `sentido = 'ENTRADA'` de
-    RECEBIMENTO e OUTRA_ENTRADA. A diferença fica anotada no PR para o oficial
-    decidir qual das duas réguas é a da casa; não consertei por cima.
+    A RECEITA É «EMOLUMENTOS LÍQUIDOS DO FERJ» — decisão do oficial em
+    26/10/2026: «apenas emolumentos abatidos do FERJ». Não sai do caixa: sai
+    do SELO, que é onde o emolumento de cada ato está declarado (o lançamento
+    manual quase nunca separa emolumento de fundo — `gestor_financeiro`, na
+    docstring). Por ato pago (selo usado, de produção, sem marca de isento
+    nem de diferido): o emolumento que o selo declara MENOS o FERJ que sai de
+    dentro dele, com a régua de `custas` (`percentual_ferj_da_casa` e
+    `ferj_do_emolumento`, a mesma do Livro Diário e da NFS-e). Fica de fora
+    tudo o que não é da serventia: FERC, FADEP, FEMP, FERRFIS — cobrados por
+    cima do emolumento — e o ISS. O FERJ NÃO é o FERC: o FERC são os 3% que o
+    selo declara por cima; o FERJ são os 12% que saem de dentro.
 
 BLOCO QUE QUEBRA NÃO VIRA ZERO
     Cada bloco é medido numa conexão própria. O que falhar (tabela que ainda
@@ -63,11 +68,6 @@ OUTRAS = "Outras"
 #: ela não conhece vai para «OUTRA», contada à parte e não escondida.
 OUTRA_GRAVIDADE = "OUTRA"
 
-# O DIA INTEIRO na comparação de texto: «2026-10-26» <= «2026-10-26T15:00»
-# é falso; com o «z» fecha o dia (a mesma `FECHA_O_DIA` do razão dos selos).
-_FECHA_O_DIA = "z"
-
-
 # ------------------------------------------------------------------ janelas
 
 
@@ -91,16 +91,6 @@ def _janelas_do_dia(dia: str, jan: dict[str, tuple[date, date]]) -> list[str]:
         return []
     return [nome for nome, (ini, fim) in jan.items()
             if ini.isoformat() <= d <= fim.isoformat()]
-
-
-def _reais(v: Any) -> float:
-    """O valor do caixa como o caixa o grava. A mesma leitura do relatório
-    financeiro (`gestor_conferencia._reais`), importada e não copiada."""
-    from gestor_conferencia import _reais as ler
-    try:
-        return ler(v)
-    except (TypeError, ValueError):
-        return 0.0
 
 
 # ------------------------------------------------------------------ blocos
@@ -131,37 +121,54 @@ def _atos_e_selos(con, jan, desde: str) -> dict:
                 "selos_cancelados": cancelados[p]} for p in PERIODOS}
 
 
-def _receita(con, jan, desde: str, ate: str) -> dict:
-    """Receita do caixa (entradas de ato), em centavos, e gratuidades."""
-    from gestor_financeiro import TROCO
+def _receita(con, jan, desde: str, pct_ferj: int) -> dict:
+    """Emolumentos líquidos do FERJ, em centavos, por janela. Só lê.
+
+    Um selo usado por linha — a mesma seleção dos «atos praticados» deste
+    painel, mais o filtro do ambiente: selo de homologação não é ato
+    praticado e não é receita (a régua do Livro Diário, PR #15). O selo
+    ISENTO e o DIFERIDO não somam: o isento não se cobrou, e o diferido entra
+    como receita no pagamento, que o selo não diz quando foi. Selo sem
+    emolumento legível também não soma — e é contado à parte, para o «zero»
+    não esconder o que não deu para ler.
+    """
+    import selo as SL
+    import selos_emitidos as SE
+    # A RÉGUA DO FERJ É A DE `custas` — a mesma do Livro Diário e da NFS-e.
+    # Ela entrou no `custas.py` deste ramo como CÓPIA BYTE A BYTE do bloco do
+    # PR #15 (`livro-diario-ferj-e-ferc`), na mesma posição, para o merge dos
+    # dois sair limpo; a máquina do merge confere que ficou uma definição só.
+    from custas import ferj_do_emolumento
     bd = banco(con)
-    soma = {p: 0 for p in PERIODOS}
-    lancamentos = {p: 0 for p in PERIODOS}
-    gratuitos = {p: 0 for p in PERIODOS}
-    for lan in bd.ler(
-            """SELECT data, valor, emolumentos, natureza, descricao
-                 FROM cx_lancamentos
-                WHERE data >= %s AND data <= %s
-                  AND sentido = 'ENTRADA'
-                  AND natureza IN ('RECEBIMENTO', 'OUTRA_ENTRADA')
-                  AND COALESCE(excluido, 0) = 0
-                  AND COALESCE(estornado, 0) = 0
-                ORDER BY id""", (desde, ate + _FECHA_O_DIA)):
-        # O troco não é receita de nada (a mesma regra de `_e_troco`).
-        if any(t in str(lan["descricao"] or "").upper() for t in TROCO):
+    quando = "COALESCE(NULLIF(TRIM(COALESCE(usado_em,'')),''), obtido_em)"
+    vazio = {"receita_centavos": 0, "atos_cobrados": 0, "isentos": 0,
+             "diferidos": 0, "sem_valor": 0}
+    por = {p: dict(vazio) for p in PERIODOS}
+    for linha in bd.ler(
+            f"""SELECT texto, {quando} AS quando FROM sd_selos
+                 WHERE {SE.USADO} AND {quando} >= %s
+                   AND COALESCE(ambiente, 'PRODUCAO') = 'PRODUCAO'
+                 ORDER BY id""", (desde,)):
+        dentro = _janelas_do_dia(linha["quando"], jan)
+        if not dentro:
             continue
-        valor = _reais(lan["valor"])
-        dentro = _janelas_do_dia(lan["data"], jan)
-        if valor == 0 and _reais(lan["emolumentos"]) > 0:
-            for p in dentro:
-                gratuitos[p] += 1
-            continue
-        centavos = int(round(valor * 100))
+        lido = SL.ler_texto(linha["texto"] or "")
+        marcas = " ".join(lido.get("marcas") or []).upper()
+        emol = lido.get("emolumentos")
+        if "ISENT" in marcas:
+            chave, liquido = "isentos", 0
+        elif "DIFERID" in marcas:
+            chave, liquido = "diferidos", 0
+        elif emol is None:
+            chave, liquido = "sem_valor", 0
+        else:
+            centavos = int(round(float(emol) * 100))
+            chave = "atos_cobrados"
+            liquido = centavos - ferj_do_emolumento(centavos, pct_ferj)
         for p in dentro:
-            soma[p] += centavos
-            lancamentos[p] += 1
-    return {p: {"receita_centavos": soma[p], "lancamentos": lancamentos[p],
-                "gratuidades": gratuitos[p]} for p in PERIODOS}
+            por[p][chave] += 1
+            por[p]["receita_centavos"] += liquido
+    return por
 
 
 def _atendimento_periodos(con, jan, desde: str, ate: str) -> dict:
@@ -320,7 +327,12 @@ def montar(db, hoje: date | None = None, agora: datetime | None = None) -> dict:
             return None
 
     selos = medir("selos", lambda con: _atos_e_selos(con, jan, desde))
-    receita = medir("receita", lambda con: _receita(con, jan, desde, ate))
+    # O percentual do FERJ é configuração (`custas.CHAVE_PERCENTUAL_FERJ`);
+    # ilegível é recusa, e a receita sai como «—», nunca calculada com zero.
+    from custas import percentual_ferj_da_casa
+    pct_ferj = medir("ferj", lambda con: percentual_ferj_da_casa(con))
+    receita = (medir("receita", lambda con: _receita(con, jan, desde, pct_ferj))
+               if pct_ferj is not None else None)
     senhas = medir("atendimento", lambda con: _atendimento_periodos(con, jan, desde, ate))
     periodos: dict[str, dict] = {}
     for p in PERIODOS:
@@ -333,8 +345,10 @@ def montar(db, hoje: date | None = None, agora: datetime | None = None) -> dict:
                                          "selos_usados": None,
                                          "selos_cancelados": None}),
             **((receita or {}).get(p) or {"receita_centavos": None,
-                                           "lancamentos": None,
-                                           "gratuidades": None}),
+                                           "atos_cobrados": None,
+                                           "isentos": None,
+                                           "diferidos": None,
+                                           "sem_valor": None}),
             **((senhas or {}).get(p) or {"senhas": None,
                                           "senhas_prioritarias": None,
                                           "espera_media_min": None}),
@@ -358,6 +372,9 @@ def montar(db, hoje: date | None = None, agora: datetime | None = None) -> dict:
         "formato": FORMATO,
         "gerado_em": agora.isoformat(timespec="seconds"),
         "hoje": hoje.isoformat(),
+        # Com que percentual o FERJ foi abatido (centésimos de ponto: 1200 =
+        # 12,00%) — a tela o mostra ao lado do número, como o Livro Diário.
+        "ferj_percentual_centesimos": pct_ferj,
         "periodos": periodos,
         "agora": {
             "protocolos": protocolos,

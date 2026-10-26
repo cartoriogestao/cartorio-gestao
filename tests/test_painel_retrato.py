@@ -39,14 +39,24 @@ RETRATO = {
 
 
 class BancoDeMentira:
-    def __init__(self):
-        self.s = {}
+    """O mínimo de `Database` que o envio usa. Já nasce com o titular do
+    painel escolhido (o usuário 1, ADMIN ativo): sem titular, nada sai
+    («apenas eu», 26/10/2026)."""
+
+    def __init__(self, com_titular=True):
+        self.s = {PR.CHAVE_TITULAR: "1"} if com_titular else {}
 
     def get_setting(self, chave, padrao=""):
         return self.s.get(chave, padrao)
 
     def set_settings(self, valores):
         self.s.update(valores)
+
+    def get_user(self, uid):
+        if int(uid) != 1:
+            return None
+        return {"id": 1, "username": "mario", "full_name": "MARIO EXEMPLO DOS SANTOS",
+                "role": "ADMIN", "active": 1, "eh_robo": 0}
 
 
 @pytest.fixture
@@ -343,3 +353,60 @@ def test_tentativas_tem_teto_de_chaves(vps, monkeypatch):
     assert len(erros) <= 10
     # a mais nova fica, e a espera dela continua contando
     assert any(max(v) == agora - 1 for v in erros.values())
+
+
+# ------------------------------------------------------------ «apenas eu» (26/10/2026)
+#
+# O painel é só do oficial titular. Na casa, isso é o titular guardado em
+# configuração (`painel_retrato.titular`); no ENVIO, nada sai sem ele; na VPS,
+# é UM usuário só.
+
+
+def test_sem_titular_o_envio_nao_sai(casa, monkeypatch):
+    monkeypatch.setattr(PN, "montar", lambda db, agora=None: RETRATO)
+    db = BancoDeMentira(com_titular=False)
+    PR.salvar_configuracao(db, url="https://vps.exemplo.invalid/painel/retrato", ligado=True)
+    enviados = []
+    feito = PR.empurrar(db, casa, forcar=True,
+                        http_post=lambda u, c: enviados.append(c) or (204, ""))
+    assert feito["ok"] is False and "titular" in feito["motivo"]
+    assert enviados == []
+
+
+def test_a_vps_conhece_um_usuario_so(vps):
+    assert VPS.usuario_unico({"usuarios": {}}) is None
+    assert VPS.usuario_unico({"usuarios": {"mario": {}}}) == "mario"
+    assert VPS.usuario_unico({"usuarios": {"mario": {}, "carla": {}}}) is None
+
+
+def test_a_linha_de_comando_recusa_o_segundo_usuario(vps, usuario, monkeypatch, capsys):
+    monkeypatch.setattr(VPS.getpass, "getpass", lambda *a, **k: "frase-longa-de-teste-456")
+    assert VPS._criar_usuario("carla") == 1
+    assert "só do oficial titular" in capsys.readouterr().out
+    assert set(VPS.configuracao()["usuarios"]) == {"mario"}
+    # o mesmo nome troca a senha e o código — não é um segundo usuário
+    assert VPS._criar_usuario("mario") == 0
+    assert set(VPS.configuracao()["usuarios"]) == {"mario"}
+
+
+def test_com_dois_usuarios_no_arquivo_ninguem_entra(casa, vps, usuario):
+    s, cookies, _ = _entrar(usuario)
+    assert s.startswith("303")
+    conf = VPS.configuracao()
+    conf["usuarios"]["carla"] = dict(conf["usuarios"]["mario"])
+    VPS.gravar_json("config.json", conf)
+    # a sessão aberta deixa de valer, e o login novo também não entra
+    s, _, _, html = _chamar("GET", "/painel/", cookies=cookies)
+    assert "Código de 6 dígitos" in html
+    assert _entrar(usuario, passo_extra=1)[0].startswith("401")
+
+
+def test_a_pagina_da_vps_diz_emolumentos_liquidos_do_ferj(casa, vps, usuario):
+    retrato = json.loads(json.dumps(RETRATO))
+    retrato["periodos"]["dia"].update(atos_cobrados=2, isentos=1, diferidos=0)
+    VPS.receber_retrato(json.dumps(PR.envelope(retrato, casa)).encode("ascii"))
+    s, cookies, _ = _entrar(usuario)
+    s, _, _, html = _chamar("GET", "/painel/", cookies=cookies)
+    assert "Emolumentos líquidos do FERJ" in html
+    assert "2 atos cobrados" in html and "sem ISS" in html
+    assert "Receita do caixa" not in html

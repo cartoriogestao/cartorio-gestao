@@ -165,10 +165,7 @@ EXPEDIENT_STAGES = ["RECEBIDO", "TRIADO", "DISTRIBUIDO", "EM_CUMPRIMENTO", "AGUA
 # Medido em 29/08/2026: 13 expedientes, TODOS em RECEBIDO, nenhum com data de
 # conclusao — e o expediente 6 com a tarefa dele ja CONCLUIDA.
 import expediente_tarefa as EXPT
-# O QUINTO PAPEL, «PAINEL» (26/10/2026): só os números agregados, no celular.
-# Ele não alcança tela nenhuma além das de `painel_celular_web.ROTAS_DO_PAINEL`
-# — a trava é a do `before_request`, e fecha por padrão.
-ROLES = ["ADMIN", "MANAGER", "USER", "AUDITOR", "PAINEL"]
+ROLES = ["ADMIN", "MANAGER", "USER", "AUDITOR"]
 FREQUENCIES = ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "SEMIANNUAL", "ANNUAL"]
 
 
@@ -715,18 +712,6 @@ def create_app(test_config: dict | None = None) -> Flask:
             _quem = current_user()
             if _quem is not None and SR.usuario_e_robo(_quem) and \
                     SR.rota_vedada_ao_robo(request.endpoint):
-                abort(403)
-            # O PAPEL «PAINEL» SÓ VÊ O PAINEL (26/10/2026). Fecha por padrão:
-            # metade das telas é só `login_required`, e a lista do que ele
-            # alcança mora em `painel_celular_web.ROTAS_DO_PAINEL`. O GET
-            # volta para o painel; o POST não grava nada.
-            import painel_celular_web as PCW
-            _destino = PCW.destino_do_papel_painel(
-                _quem["role"] if _quem is not None else None,
-                request.endpoint, request.method)
-            if _destino == "painel":
-                return redirect(url_for("painel_celular"))
-            if _destino == "recusa":
                 abort(403)
         # Isentas do token de formulário: quem as chama não tem a sessão, e
         # cada uma se autentica por conta própria — o webhook pela assinatura
@@ -3283,8 +3268,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     import gestor_web
     gestor_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
-    # O PAINEL NO CELULAR (26/10/2026): só números agregados, o papel PAINEL
-    # que só entra nele, e o retrato assinado que o servidor empurra à VPS.
+    # O PAINEL NO CELULAR (26/10/2026): só números agregados, só do oficial
+    # titular («apenas eu»), e o retrato assinado que o servidor empurra à VPS.
     import painel_celular_web
     painel_celular_web.registrar_rotas(app, db, login_required, roles_required, audit)
 

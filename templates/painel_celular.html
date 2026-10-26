@@ -1,11 +1,10 @@
 {#
   O PAINEL NO CELULAR — 26/10/2026, `painel_celular_web`.
 
-  Página PRÓPRIA, e não do `base.html`, de propósito: o `base` traz o menu
-  inteiro da casa, com os nomes de todas as telas, e quem tem o papel PAINEL
-  não entra em nenhuma delas — mostrar a porta que não abre é ruído numa tela
-  de celular. Só números: o que chega aqui é o dicionário de `painel_numeros`,
-  sem nome, sem CPF e sem teor.
+  Página PRÓPRIA, e não do `base.html`, de propósito: numa tela de celular o
+  menu inteiro da casa é ruído. Só números: o que chega aqui é o dicionário de
+  `painel_numeros`, sem nome, sem CPF e sem teor. Quem a vê é só o oficial
+  titular (decisão de 26/10/2026, «apenas eu»).
 #}
 <!doctype html>
 <html lang="pt-BR">
@@ -65,10 +64,14 @@
   <section class="aviso"><p>Não deu para medir: {{ n.nao_mediu|join(', ') }}. Esses números aparecem como «—», e não como zero.</p></section>
   {% endif %}
 
+  {# A RECEITA DO PAINEL (26/10/2026, «apenas emolumentos abatidos do FERJ»):
+     o emolumento que cada selo pago declara, menos o FERJ que sai de dentro
+     dele. Sem FERC, FADEP, FEMP, FERRFIS e sem ISS. #}
   <section>
-    <h2>Receita do caixa — {{ rotulos[periodo]|lower }}</h2>
+    <h2>Emolumentos líquidos do FERJ — {{ rotulos[periodo]|lower }}</h2>
     <div class="grande">{{ reais(p.receita_centavos) }}</div>
-    <div class="sub">{{ p.lancamentos if p.lancamentos is not none else '—' }} recebimentos · {{ p.gratuidades if p.gratuidades is not none else '—' }} gratuidades</div>
+    <div class="sub">{{ p.atos_cobrados if p.atos_cobrados is not none else '—' }} atos cobrados · {{ p.isentos if p.isentos is not none else '—' }} isentos · {{ p.diferidos if p.diferidos is not none else '—' }} diferidos{% if p.sem_valor %} · {{ p.sem_valor }} selo(s) sem valor legível{% endif %}</div>
+    <div class="sub">Sem fundos (FERC, FADEP, FEMP, FERRFIS) e sem ISS{% if n.ferj_percentual_centesimos is not none %}; FERJ de {{ '%.2f'|format(n.ferj_percentual_centesimos / 100)|replace('.', ',') }}% abatido de cada emolumento{% endif %}.</div>
   </section>
 
   <section>
@@ -151,8 +154,8 @@
   </section>
 </main>
 <footer>
-  {% if not so_agregados %}<a href="{{ url_for('dashboard') }}">Sistema completo</a>{% endif %}
-  {% if user and user.role == 'ADMIN' %}<a href="{{ url_for('painel_retrato_tela') }}">Retrato para fora</a>{% endif %}
+  <a href="{{ url_for('dashboard') }}">Sistema completo</a>
+  <a href="{{ url_for('painel_retrato_tela') }}">Retrato para fora</a>
   <a href="{{ url_for('minha_senha') }}">Trocar senha</a>
   <form method="post" action="{{ url_for('logout') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

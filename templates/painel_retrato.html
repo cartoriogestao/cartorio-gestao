@@ -9,11 +9,39 @@
   como a caixa-postal do WhatsApp. A cópia vai <strong>assinada</strong>: a VPS
   guarda só a chave pública e recusa retrato que não tenha saído daqui, que seja
   mais velho que o último ou que tenha mais de quinze minutos.</p>
-  <p class="muted">Dentro da casa, o painel está em
-  <a href="{{ url_for('painel_celular') }}">{{ url_for('painel_celular') }}</a>.
-  Para alguém que só deve ver os números, crie o usuário com o perfil
-  <strong>PAINEL</strong> em Usuários: ele não alcança nenhuma outra tela.</p>
+  <p class="muted">O painel é <strong>só do oficial titular</strong> (decisão de
+  26/10/2026, «apenas eu»): só ele abre o painel, configura e envia o retrato.
+  Nenhum outro usuário — nem outro ADMIN, nem o gerente — tem acesso.</p>
 </section>
+
+<section class="panel">
+  <h2>O titular do painel</h2>
+  {% if titular %}
+  <p>Titular: <strong>{{ titular.full_name }}</strong> ({{ titular.username }}).</p>
+  {% else %}
+  <p>Ainda não há titular. Escolha o oficial titular: só ele terá o painel.</p>
+  {% endif %}
+  {% if pode_escolher %}
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="titular">
+    <label class="span2">{% if titular %}Passar o painel a outro ADMIN{% else %}Titular do painel{% endif %}
+      <select name="usuario_id">
+        {% for u in candidatos %}<option value="{{ u.id }}" {% if titular and u.id == titular.id %}selected{% endif %}>{{ u.full_name }} ({{ u.username }})</option>{% endfor %}
+      </select></label>
+    <div class="span2"><button type="submit">Guardar o titular</button></div>
+  </form>
+  <p class="muted">Só usuários ADMIN ativos (e pessoas, nunca conta de robô) podem ser
+  titulares. Depois de escolhido, só o próprio titular passa o painel a outro ADMIN.
+  A escolha fica na auditoria.</p>
+  {% else %}
+  <p class="muted">Só o titular passa o painel a outro ADMIN. Esta tela, para você,
+  mostra só quem é o titular.</p>
+  {% endif %}
+</section>
+
+{% if sou_eu %}
+<p class="muted">O seu painel: <a href="{{ url_for('painel_celular') }}">{{ url_for('painel_celular') }}</a>.</p>
 
 <section class="panel">
   <h2>1. A chave que assina</h2>
@@ -65,5 +93,6 @@
   {% else %}<p class="muted">Nenhum envio ainda.</p>{% endif %}
   {% if previa %}<pre style="max-height:60vh;overflow:auto">{{ previa }}</pre>{% endif %}
 </section>
+{% endif %}
 
 {% endblock %}

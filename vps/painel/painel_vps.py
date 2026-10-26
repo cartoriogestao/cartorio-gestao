@@ -41,8 +41,9 @@ O QUE SE FAZ NA VPS (ninguém fez ainda — não houve deploy)
            export PAINEL_VPS_DADOS=/caminho/para/dados_do_painel
     4. Colar a chave pública que a tela /painel/retrato do sistema mostra:
            python painel_vps.py chave-publica <a chave em base64>
-    5. Criar quem pode entrar (pede a senha duas vezes, sem eco, e mostra o
-       endereço otpauth:// para o aplicativo autenticador):
+    5. Criar o ÚNICO usuário — o do oficial titular («apenas eu», 26/10/2026;
+       um segundo é recusado). Pede a senha duas vezes, sem eco, e mostra o
+       endereço otpauth:// para o aplicativo autenticador:
            python painel_vps.py criar-usuario <nome>
     6. Rodar atrás do servidor web, só em 127.0.0.1 (o próprio arquivo serve
        para teste com `python painel_vps.py servir --porta 8790`; em produção,
@@ -134,6 +135,17 @@ def gravar_json(nome: str, dados: Any) -> None:
 
 def configuracao() -> dict:
     return ler_json("config.json", {})
+
+
+# «APENAS EU» — o oficial, 26/10/2026. O painel é só do oficial titular, e na
+# VPS isso quer dizer UM usuário só. A linha de comando recusa criar o
+# segundo, e o login e a sessão não valem enquanto o arquivo tiver mais de um
+# (cadastro editado à mão, ou de antes desta regra): é a mesma recusa, dita
+# nos dois lugares por onde se entra.
+def usuario_unico(conf: dict | None = None) -> str | None:
+    """O único usuário cadastrado, ou None se não há nenhum ou há mais de um."""
+    usuarios = (conf if conf is not None else configuracao()).get("usuarios") or {}
+    return next(iter(usuarios)) if len(usuarios) == 1 else None
 
 
 # ================================================================ a senha
@@ -277,7 +289,7 @@ def sessao_valida(token: str | None, agora: float) -> str | None:
         sessoes.pop(_h(token), None)
         gravar_json("sessoes.json", sessoes)
         return None
-    if s["usuario"] not in (configuracao().get("usuarios") or {}):
+    if s["usuario"] != usuario_unico():
         return None
     s["ultimo"] = agora
     gravar_json("sessoes.json", sessoes)
@@ -404,8 +416,11 @@ def pagina_do_painel(retrato: dict | None, periodo: str, csrf: str, agora: float
         f"<a class='{'at' if q == periodo else ''}' href='{prefixo()}/?p={q}'>{r}</a>" for q, r in PERIODOS) + "</nav>")
     if retrato.get("nao_mediu"):
         partes.append(f"<section><p class='r'>Não deu para medir: {_e(', '.join(retrato['nao_mediu']))}.</p></section>")
-    partes.append(f"<section><h2>Receita do caixa</h2><div class='g'>{_e(_reais(p.get('receita_centavos')))}</div>"
-                  f"<p class='q'>{_e(p.get('lancamentos'))} recebimentos · {_e(p.get('gratuidades'))} gratuidades</p></section>")
+    # «APENAS EMOLUMENTOS ABATIDOS DO FERJ» (26/10/2026): o número é o
+    # emolumento dos selos pagos menos o FERJ — sem fundos e sem ISS.
+    partes.append(f"<section><h2>Emolumentos líquidos do FERJ</h2><div class='g'>{_e(_reais(p.get('receita_centavos')))}</div>"
+                  f"<p class='q'>{_e(p.get('atos_cobrados'))} atos cobrados · {_e(p.get('isentos'))} isentos · "
+                  f"{_e(p.get('diferidos'))} diferidos — sem fundos (FERC, FADEP, FEMP, FERRFIS) e sem ISS</p></section>")
     atos = p.get("atos_por_atribuicao") or {}
     linhas = "".join(f"<dt>{_e(a)}</dt><dd>{_e(atos.get(a))}</dd>" for a in ATRIBUICOES if a in atos)
     partes.append(f"<section><h2>Atos praticados (selos usados)</h2><div class='g'>{_e(p.get('selos_usados'))}</div>"
@@ -543,7 +558,11 @@ def application(environ, start_response: Callable):
                 if em_espera(usuario, ip, agora):
                     return responder("429 Too Many Requests", pagina_de_login(
                         csrf, "Muitas tentativas erradas. Espere quinze minutos."))
-                cadastro = (configuracao().get("usuarios") or {}).get(usuario) or {}
+                conf = configuracao()
+                # Só o único usuário entra; com dois cadastrados, ninguém (e o
+                # scrypt se gasta igual, para o tempo não dizer nada).
+                cadastro = ((conf.get("usuarios") or {}).get(usuario) or {}
+                            if usuario == usuario_unico(conf) else {})
                 ok_senha = senha_confere(senha, cadastro.get("senha"))
                 ok = ok_senha and codigo_confere(usuario, cadastro.get("totp"), codigo, agora)
                 if not ok:
@@ -583,6 +602,12 @@ def _criar_usuario(nome: str) -> int:
     segredo = base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
     with trava("login"):
         conf = configuracao()
+        outros = [u for u in (conf.get("usuarios") or {}) if u != nome]
+        if outros:
+            print("O painel é só do oficial titular: já há o usuário "
+                  f"«{outros[0]}». Remova-o antes (remover-usuario {outros[0]}) "
+                  "ou use o mesmo nome para trocar a senha e o código.")
+            return 1
         conf.setdefault("usuarios", {})[nome] = {"senha": hash_da_senha(senha), "totp": segredo}
         gravar_json("config.json", conf)
     rotulo = urllib.parse.quote(f"Painel:{nome}")

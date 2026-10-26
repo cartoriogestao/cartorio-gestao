@@ -33,7 +33,7 @@ A ASSINATURA, E POR QUE Ed25519 E NÃO UM SEGREDO DIVIDIDO
     quinze minutos. Um retrato copiado no caminho não volta a valer depois.
 
 O QUE NÃO ESTÁ AQUI, DE PROPÓSITO
-    Quem chama `empurrar` de tempos em tempos. A rota do ADMIN manda um agora,
+    Quem chama `empurrar` de tempos em tempos. A rota do titular manda um agora,
     e `tools/painel_empurrar.py` é o que o Agendador do Windows chamaria — mas
     agendar é decisão do oficial, e nada aqui agenda.
 """
@@ -58,6 +58,10 @@ FORMATO_DO_ENVELOPE = "cg-painel-retrato-1"
 CHAVE_URL = "painel_vps_url"
 CHAVE_LIGADO = "painel_vps_ligado"
 CHAVE_ULTIMO_ENVIO = "painel_vps_ultimo_envio"
+# QUEM É O TITULAR DO PAINEL — o id de UM usuário ADMIN. Decisão do oficial
+# em 26/10/2026, «apenas eu»: o painel e o retrato são só do oficial titular.
+# Não é papel que se distribui: é UM nome, guardado aqui.
+CHAVE_TITULAR = "painel_titular_id"
 
 # No cofre (`painel.cred`): a chave privada, em base64 dos 32 bytes crus.
 SEGREDO_DA_CHAVE = "chave_privada_ed25519"
@@ -69,6 +73,78 @@ TETO_DO_RETRATO = 64 * 1024
 
 class RetratoError(ValueError):
     """Regra do retrato, com a frase pronta para a tela."""
+
+
+# ------------------------------------------------------------- o titular
+#
+# «APENAS EU» — o oficial, 26/10/2026. O painel do celular, o retrato que
+# sai para a VPS e a tela que os configura são de UMA pessoa: o oficial
+# titular. Nem outro ADMIN, nem o gerente, nem o auditor. O sistema guarda o
+# id dele em `settings` (`CHAVE_TITULAR`) e confere, a cada pedido, que ele
+# continua ATIVO, ADMIN e pessoa (robô nunca é titular).
+#
+# QUEM ESCOLHE: enquanto não há titular válido, qualquer ADMIN o escolhe na
+# tela /painel/retrato (o primeiro uso). Depois disso, SÓ O PRÓPRIO TITULAR
+# passa o painel a outro ADMIN — sem essa trava, «só ele» valeria até o
+# primeiro outro ADMIN abrir a tela e se escolher. Se o titular for
+# desativado ou deixar de ser ADMIN, a escolha volta a qualquer ADMIN: a
+# casa não fica sem saída por um cadastro desligado.
+
+
+def _usuario_valido_para_titular(usuario) -> bool:
+    if not usuario:
+        return False
+    try:
+        robo = int(usuario["eh_robo"] or 0) == 1
+    except (KeyError, IndexError, TypeError, ValueError):
+        robo = False
+    return (bool(usuario["active"]) and str(usuario["role"] or "").upper() == "ADMIN"
+            and not robo)
+
+
+def titular(db) -> dict | None:
+    """O titular do painel, se o gravado ainda é ADMIN ativo e pessoa. Só lê."""
+    bruto = str(db.get_setting(CHAVE_TITULAR, "") or "").strip()
+    if not bruto.isdigit():
+        return None
+    usuario = db.get_user(int(bruto))
+    return usuario if _usuario_valido_para_titular(usuario) else None
+
+
+def e_o_titular(db, usuario) -> bool:
+    """Este usuário é o titular do painel? Só lê."""
+    dono = titular(db)
+    return bool(dono and usuario and int(dono["id"]) == int(usuario["id"])
+                and _usuario_valido_para_titular(usuario))
+
+
+def definir_titular(db, *, novo_id: int, quem) -> dict:
+    """Grava QUEM é o titular do painel. ESCREVE em `settings`.
+
+    `quem` é o usuário logado que escolhe. Recusa (com a frase para a tela):
+    quem escolhe não é ADMIN ativo; o escolhido não é ADMIN ativo e pessoa;
+    e, havendo titular válido, quem escolhe não é ele. Quem audita é a rota.
+    """
+    if not _usuario_valido_para_titular(quem):
+        raise RetratoError("Só um ADMIN ativo escolhe o titular do painel.")
+    atual = titular(db)
+    if atual is not None and int(atual["id"]) != int(quem["id"]):
+        raise RetratoError(
+            f"O painel é de {atual['full_name']}, o titular. Só ele passa o "
+            "painel a outro ADMIN.")
+    novo = db.get_user(int(novo_id))
+    if not _usuario_valido_para_titular(novo):
+        raise RetratoError(
+            "O titular do painel tem de ser um usuário ADMIN ativo, e pessoa "
+            "(conta de robô não).")
+    db.set_settings({CHAVE_TITULAR: str(int(novo["id"]))})
+    return novo
+
+
+def candidatos_a_titular(db) -> list[dict]:
+    """Os ADMIN ativos e pessoas — os únicos que a tela oferece. Só lê."""
+    return [u for u in db.list_users(active_only=True)
+            if _usuario_valido_para_titular(u)]
 
 
 # ------------------------------------------------------------- a chave
@@ -251,6 +327,11 @@ def empurrar(db, pasta: Any, *, http_post: Callable | None = None,
     O resultado fica em `settings` — status, hora e o tamanho, nunca o corpo.
     """
     conf = configuracao(db)
+    # SEM TITULAR, NADA SAI (26/10/2026, «apenas eu»): o retrato é do
+    # oficial titular, e um painel sem dono escolhido não tem para quem ir.
+    if titular(db) is None:
+        return {"ok": False,
+                "motivo": "o painel não tem titular escolhido (tela /painel/retrato)"}
     if not conf["ligado"] and not forcar:
         return {"ok": False, "motivo": "o envio do painel está desligado"}
     url = conf["url"]

@@ -106,6 +106,61 @@ CAMPOS_NO_TOTAL: tuple[str, ...] = tuple(
 
 PERCENTUAIS: dict[str, int] = {f["campo"]: f["percentual"] for f in FUNDOS}
 
+
+# -------------------------------------------------------------------- FERJ
+#
+# O FERJ NAO E FUNDO DA LISTA ACIMA, E NAO E O FERC. Os quatro de cima sao
+# cobrados POR CIMA do emolumento e saem na linha do selo. O FERJ (Fundo
+# Especial de Modernizacao e Reaparelhamento do Judiciario) e a taxa de
+# fiscalizacao de 12% «sobre os valores efetivamente devidos de emolumentos»
+# (LC estadual MA 48/2000, art. 3o, V; Resolucao TJMA 02/2001): sai de DENTRO
+# do emolumento, a serventia o recolhe por guia, e ele nao e coluna do caixa
+# nem do texto do selo. Quem o pede e o Livro Diario Auxiliar (art. 190, I, k,
+# e III, e, do Codigo de Normas) e a base da NFS-e (emolumento menos o FERJ).
+#
+# UMA REGUA SO. O percentual e configuracao, e a chave e a que a NFS-e grava
+# (`nfse_percentual_ferj`, PR #10): o nome diz onde ela nasceu, e o valor e o
+# mesmo para o livro e para a nota — duas chaves deixariam o oficial mudar o
+# FERJ num lugar e esquecer o outro.
+
+CHAVE_PERCENTUAL_FERJ = "nfse_percentual_ferj"
+PERCENTUAL_FERJ_PADRAO = "12,00"
+
+
+def percentual_ferj(cfg: Any) -> int:
+    """O percentual do FERJ em centesimos de ponto (12,00% -> 1200). So calcula.
+
+    `cfg` e um mapeamento com a chave `CHAVE_PERCENTUAL_FERJ`; sem ela, vale o
+    padrao. Texto ilegivel ou fora de 0 a 100 e recusa, e nao zero: zero diria
+    que nao ha FERJ."""
+    bruto = (cfg or {}).get(CHAVE_PERCENTUAL_FERJ)
+    if bruto is None or not str(bruto).strip():
+        bruto = PERCENTUAL_FERJ_PADRAO
+    texto = str(bruto).strip().replace("%", "").replace(",", ".")
+    try:
+        numero = float(texto)
+    except ValueError as erro:
+        raise CustasError(f"Percentual do FERJ ilegível: «{bruto}».") from erro
+    if not 0 <= numero < 100:
+        raise CustasError("O percentual do FERJ fica entre 0 e 100.")
+    return round(numero * 100)
+
+
+def ferj_do_emolumento(emolumento: int, pct_centesimos: int) -> int:
+    """O FERJ que sai de dentro do emolumento, em centavos, arredondado ao
+    centavo (meio centavo sobe). So calcula."""
+    return (int(emolumento) * int(pct_centesimos) + 5000) // 10000
+
+
+def percentual_ferj_da_casa(con) -> int:
+    """O percentual do FERJ gravado em `settings`, ou o padrao. So LE."""
+    bd = banco(con)
+    if not bd.tem_tabela("settings"):
+        return percentual_ferj({})
+    valor = bd.valor("SELECT value FROM settings WHERE key = %s",
+                     (CHAVE_PERCENTUAL_FERJ,))
+    return percentual_ferj({CHAVE_PERCENTUAL_FERJ: valor})
+
 # O que a origem arredondou e nao vale reportar como novidade todo dia.
 DIVERGENCIAS_CONHECIDAS: tuple[dict, ...] = (
     {"codigo_tj": "15.17", "servico": 640, "campo": "ferc",

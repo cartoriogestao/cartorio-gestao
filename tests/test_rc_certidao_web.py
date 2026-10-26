@@ -82,9 +82,13 @@ def _sessao(cg_casa, papel: str = "ADMIN"):
     dados = cg_casa['dados']
     cg_casa['db'].create_user("tabeliao", "MARIO EXEMPLO DOS SANTOS",
                                 SENHA, papel)
-    # A TRAVA DO SELO PAGO (3.7.0) desliga aqui, a vista: estes testes medem a
-    # certidao e o selo digitado no razao, e nao a trava (`test_selo_e_caixa`).
-    cg_casa['db'].set_settings({"selo_trava_caixa": "DESLIGADA"})
+    # A `_sessao` NAO MEXE NA TRAVA DO SELO PAGO (revisao de seguranca de
+    # 26/10/2026, achado MEDIO do PR #24). Ela e importada por outros arquivos
+    # — `test_certidao_eletronica_crc_selo` e, com o PR #16,
+    # `test_rc_materializacao_selo` — que medem justamente a trava com o
+    # aparelho «sem protocolo pago»; desligada aqui, aqueles testes deixavam de
+    # guardar a trava sem ninguem ver. Quem desliga e o fixture `s` deste
+    # arquivo, a vista, por `_sem_a_trava`.
     c = app.test_client()
     c.post("/login",
            data={"username": "tabeliao", "password": SENHA,
@@ -93,8 +97,17 @@ def _sessao(cg_casa, papel: str = "ADMIN"):
     return {"app": app, "c": c, "banco": banco}
 
 
+def _sem_a_trava(cg_casa) -> None:
+    """A TRAVA DO SELO PAGO (3.7.0) desliga aqui, a vista: os testes DESTE
+    arquivo medem a certidao e o selo digitado no razao, e nao a trava, que tem
+    teste proprio (`test_selo_e_caixa`). So para quem chama — nunca dentro da
+    `_sessao`, que outros arquivos importam."""
+    cg_casa['db'].set_settings({"selo_trava_caixa": "DESLIGADA"})
+
+
 @pytest.fixture()
 def s(cg_casa):
+    _sem_a_trava(cg_casa)
     return _sessao(cg_casa)
 
 
@@ -490,6 +503,7 @@ def test_cancelar_com_motivo_curto_e_recusado(s):
 
 def test_escrevente_pode_cancelar_certidao_com_declaracao(cg_casa):
     """Quem emitiu no balcão consegue corrigir o erro sem chamar o admin."""
+    _sem_a_trava(cg_casa)
     s = _sessao(cg_casa, papel="USER")
     assento_id = _semear(s)
     _emitir(s, assento_id)
@@ -670,3 +684,15 @@ def test_a_confirmacao_fica_na_auditoria(s):
     ).fetchone()
     con.close()
     assert linha is not None
+
+
+def test_a_sessao_compartilhada_nao_desliga_a_trava_do_selo(cg_casa):
+    """Revisao de seguranca de 26/10/2026, achado MEDIO do PR #24: a `_sessao`
+    deste arquivo e importada por testes que MEDEM a trava do selo pago
+    (`test_certidao_eletronica_crc_selo` e, com o PR #16, o do 14.5.1). Se ela
+    voltar a desligar a trava, esses testes passam sem guardar nada — e e
+    este que fica vermelho."""
+    import ato_selado as AS
+    _sessao(cg_casa)
+    valor = cg_casa["db"].get_setting(AS.CHAVE_DA_TRAVA, "")
+    assert str(valor or "").strip().upper() != AS.TRAVA_DESLIGADA

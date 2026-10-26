@@ -100,6 +100,7 @@ import revisao_transcricao as RTRANS
 import ri_dominial as RIDOM
 import ri_certidao_negativa as RINEG
 import ri_prenotacao_prazo as PRAZO
+import onr_acompanhamento as ACOMP  # o andamento no ONR (26/10/2026)
 import ri_pedidos as PED
 import ri_rascunho as RASC
 import ri_cnm as CNM
@@ -3111,6 +3112,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         criado_por=app.extensions["usuario_id"](),
                         ri_protocolo_id=novo)
                     geral_numero = geral["numero"]
+                # O ANDAMENTO NO ONR («Título prenotado») se anota NA MESMA
+                # transação: prenotação que não entra não deixa andamento na
+                # fila. O envio é outra rotina, fora de transação — e o gancho
+                # nunca derruba a prenotação (`onr_acompanhamento`).
+                ACOMP.anotar_prenotacao(con, novo, agora=db.now())
             # O SELO SAI AGORA, FORA DA TRANSACAO — «o selo deve ser emitido
             # quando praticado o ato». A prenotacao E ato: tem livro, numero,
             # custas e selo proprio, e 829 dela estao no acervo.
@@ -3448,7 +3454,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             with db.connect() as _pd:
                 docs_protocolo_geral = PDOC.documentos(
                     _pd, int(caixa_protocolo_id))["ativos"]
+        # O QUE ESTE TÍTULO JÁ DISSE AO ONR (Acompanhamento de Títulos) — só lê.
+        with db.connect() as _ac:
+            acompanhamento_onr = ACOMP.da_prenotacao(_ac, protocolo_id)
         return render_template("ri_protocolo_ver.html", p=dict(p),
+                               acompanhamento_onr=acompanhamento_onr,
                                documentos=documentos, e_imagem=RDOC.e_imagem,
                                docs_protocolo_geral=docs_protocolo_geral,
                                depositos=depositos, saldo=reais(saldo),
@@ -3524,7 +3534,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER")
     def ri_protocolo_prazo(protocolo_id):
         """Suspende ou retoma o prazo da prenotacao (TJMA 452, § 3º)."""
-        _protocolo_ou_404(protocolo_id)
+        antes = _protocolo_ou_404(protocolo_id)
         acao = request.form.get("acao")
         quem = (app.extensions["usuario_nome"]() or "").strip() or None
         try:
@@ -3534,10 +3544,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     PRAZO.suspender(con, protocolo_id, motivo=motivo,
                                     quem=quem, hoje=date.today())
                     feito = {"acao": "suspender", "motivo": motivo}
+                    # Suspensão por DÚVIDA é a «Suscitação de dúvida» do ONR;
+                    # as outras hipóteses não têm status lá (o gancho confere).
+                    ACOMP.anotar_duvida(con, protocolo_id, agora=db.now())
                 elif acao == "retomar":
                     feito = {"acao": "retomar"} | PRAZO.retomar(
                         con, protocolo_id, quem=quem, hoje=date.today(),
                         feriados=_feriados())
+                    # A retomada empurra o limite: é o «Prorrogado o prazo da
+                    # prenotação» do ONR (sem dia a mais, nada se anota).
+                    ACOMP.anotar_prorrogacao(
+                        con, protocolo_id, de=antes["data_limite"],
+                        para=feito["data_limite"], dias=feito["dias"], agora=db.now())
                 else:
                     raise PRAZO.PrazoError("Ação desconhecida.")
         except PRAZO.PrazoError as erro:
@@ -8136,6 +8154,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 fundamentacao=(request.form.get("fundamentacao") or "").strip() or None,
                 quem=(app.extensions["usuario_nome"]() or "").strip() or None,
                 usuario_id=app.extensions["usuario_id"](), agora=db.now())
+            # «Nota de exigência» no Acompanhamento do ONR, com o texto da nota
+            # (o manual manda a nota de devolução nesse campo) — na transação dela.
+            ACOMP.anotar_nota_de_exigencia(con, nota_id, agora=db.now())
 
         audit("RI_NOTA_DEVOLUTIVA", "RI_NOTA", nota_id,
               {"protocolo": p["numero"], "numero": numero, "exigencias": len(exigencias)})
@@ -8218,6 +8239,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if dentro_do_prazo:
                 bd.escrever("""UPDATE ri_protocolos SET situacao='ABERTO', data_reingresso=%s
                                WHERE id=%s""", (quando, p["id"]))
+                # «Título com reingresso» no ONR — só o reingresso no prazo, que
+                # é o único que volta à mesma prenotação.
+                ACOMP.anotar_reingresso(con, nota_id, agora=db.now())
 
         audit("RI_REINGRESSO", "RI_NOTA", nota_id,
               {"protocolo": p["numero"], "data": quando, "no_prazo": dentro_do_prazo})
@@ -10580,6 +10604,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 (procurado,))
         if linha is None:
             return {"achou": False, "numero": numero}
+        # «Título registrado» no Acompanhamento do ONR: o ato que citou esta
+        # prenotação ABERTA (o gancho confere a situação), na transação do ato.
+        # Sobe só depois do selo — `onr_acompanhamento.conferir_o_fato`.
+        ACOMP.anotar_registro(bd, int(linha["id"]), ato_id=int(ato_id), agora=db.now())
         if linha["ato_id"]:
             return {"achou": True, "numero": numero, "ja_tinha_ato": True}
         if str(linha["situacao"] or "") != "ABERTO":

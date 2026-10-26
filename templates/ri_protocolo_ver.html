@@ -395,6 +395,32 @@
 </section>
 {% endif %}
 
+{% if acompanhamento_onr and acompanhamento_onr.eventos %}
+<section class="panel" id="acompanhamento-onr">
+  {# O QUE ESTE TITULO JA DISSE A CENTRAL (26/10/2026). O andamento so entra
+     na fila quando o fato foi gravado; aqui se ve o que subiu, o que espera e
+     por que — e o que subiu e depois deixou de ser verdade aqui. #}
+  <div class="panel-head"><span>Acompanhamento no ONR</span>
+    <span class="small muted"><a href="{{ url_for('onr_acompanhamento') }}">a fila inteira</a></span></div>
+  {% for t in acompanhamento_onr.titulos %}
+    <p class="small">Título nº {{ t.id_titulo_onr }} no ONR ({{ t.ambiente|lower }}),
+      {{ 'cadastrado' if t.como == 'CADASTRADO' else 'que já existia lá' }} em {{ (t.cadastrado_em or '')[:16]|replace('T', ' ') }}.</p>
+  {% endfor %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Andamento</th><th>Data</th><th>Texto</th><th>Situação</th><th>Observação</th></tr></thead>
+    <tbody>
+    {% for e in acompanhamento_onr.eventos %}
+      <tr><td class="small">{{ e.rotulo }}</td><td class="small">{{ e.data_status }}</td>
+          <td class="small" style="white-space:pre-line">{{ e.descricao }}</td>
+          <td class="small">{{ e.situacao|lower }}{% if e.ambiente %} ({{ e.ambiente|lower }}){% endif %}</td>
+          <td class="small">{% if e.fato_sumiu %}<strong class="danger">Enviado, mas {{ e.fato_sumiu }}: corrija no ONR.</strong>
+            {% else %}{{ e.ultimo_erro or e.motivo_fim or '' }}{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
 <details class="panel">
   <summary>Corrigir os dados do título</summary>
   <div class="notice small">

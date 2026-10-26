@@ -3168,6 +3168,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     onr_certidoes_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                       fmt_date)
 
+    # O ANDAMENTO DAS PRENOTAÇÕES NO ACOMPANHAMENTO DE TÍTULOS DO ONR (26/10/2026)
+    # — a fila de fatos gravados e o botão que a manda; o envio nasce desligado.
+    import onr_acompanhamento_web
+    onr_acompanhamento_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
     # A CONFERENCIA DO ENDERECO QUE VAI AO ONR — o que o teor da ficha diz,
     # ao lado do que a ficha tem, com a frase de onde cada campo saiu.
     # **Vem logo depois de `ri_onr_web`** porque e o passo anterior dele:

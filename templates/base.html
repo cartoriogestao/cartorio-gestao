@@ -323,6 +323,7 @@
            deste livro: uma matricula e um processo. #}
         <a href="{{ url_for('ri_onr_painel') }}">ONR — índice real e editais</a>
         {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('onr_certidoes') }}">ONR — certidões a emitir</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER','USER','AUDITOR'] %}<a href="{{ url_for('onr_acompanhamento') }}">ONR — acompanhamento de títulos</a>{% endif %}
         {#
           A CONFERENCIA DO ENDERECO VEM AO LADO, E ANTES — e a ordem nao e por
           acaso: e o passo anterior ao envio. O indicador real exige cep, tipo

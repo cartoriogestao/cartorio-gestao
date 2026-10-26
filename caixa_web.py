@@ -1919,6 +1919,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                DIAS_DEPOIS_DE_ENCERRADO=PORTAL.DIAS_DEPOIS_DE_ENCERRADO,
                                DIAS_DO_ABERTO=PORTAL.DIAS_DO_ABERTO,
                                SEM_RECIBO=sorted(PORTAL.SEM_RECIBO_NO_PORTAL),
+                               LIBERADO=sorted(PORTAL.RECIBO_LIBERADO_NO_PORTAL),
                                FORA=sorted(ACOMP.FORA_DO_ACOMPANHAMENTO))
 
     # ------------------------------------------------- itens e orçamento

@@ -321,7 +321,8 @@ def test_o_envio_leva_so_o_retrato_e_nao_repete(casa):
     for proibido in (codigo, ACOMP.formatar_codigo(codigo), "CARLA", "000.000.001-91",
                      "98888", "ESCRITURA"):
         assert proibido not in texto
-    assert len(retratos[numero]["recibos"]) == 1
+    # 26/10/2026: de fábrica nenhum recibo sobe — o portal mostra só a situação
+    assert retratos[numero]["recibos"] == []
     assert retratos[numero_rc]["recibos"] == []       # civil: sem recibo
     # a segunda rodada não manda o que não mudou
     corpos.clear()
@@ -341,8 +342,44 @@ def test_vps_fora_do_ar_nao_marca_nada(casa):
                        (pid,)).fetchone()[0] is None
 
 
-def test_o_que_o_servidor_manda_a_vps_aceita_e_o_codigo_abre(casa, tmp_path):
+def test_o_recibo_nao_sobe_de_fabrica():
+    """Correção de segurança de 26/10/2026 (revisão do PR #29): o PDF do recibo
+    leva nome do pagador, atos e valores. Liberar é decisão do oficial, e vem
+    com o PDF do portal sem o nome em claro — este teste fica vermelho no dia
+    em que alguém mudar a lista, para a mudança ser de propósito."""
+    assert PORTAL.RECIBO_LIBERADO_NO_PORTAL == frozenset()
+    for sigla in ("RI", "NOTAS", "RTD", "RCPJ", "RCPN", "PROTESTO", "", None):
+        assert not PORTAL.recibo_sobe(sigla)
+
+
+def test_liberado_sobe_so_o_da_atribuicao_e_nunca_o_do_civil(casa, monkeypatch):
+    monkeypatch.setattr(PORTAL, "RECIBO_LIBERADO_NO_PORTAL", frozenset({"RI", "RCPN"}))
+    assert PORTAL.recibo_sobe("ri") and not PORTAL.recibo_sobe("NOTAS")
+    assert not PORTAL.recibo_sobe("RCPN")             # o civil não sobe nem liberado
+    con = _configurar(casa)
+    with con:
+        pid, numero = _protocolo(con)
+        ACOMP.codigo_do_protocolo(con, pid)
+        _recibo(con, pid, numero)
+        pid_rc, numero_rc = _protocolo(con, atribuicao="RCPN")
+        ACOMP.codigo_do_protocolo(con, pid_rc)
+        _recibo(con, pid_rc, numero_rc)
+    corpos = []
+
+    def post(url, token, corpo):
+        corpos.append(json.loads(corpo))
+        return 200, '{"ok": true}'
+
+    assert PORTAL.enviar(casa["db"], hoje=HOJE, http_post=post, gerar_pdf=_pdf_falso)["ok"]
+    retratos = {r["numero"]: r for c in corpos for r in c["retratos"]}
+    assert len(retratos[numero]["recibos"]) == 1
+    assert retratos[numero_rc]["recibos"] == []
+
+
+def test_o_que_o_servidor_manda_a_vps_aceita_e_o_codigo_abre(casa, tmp_path, monkeypatch):
     """As duas pontas do hash, de verdade: o pacote vai ao `Portal.receber` da VPS."""
+    # o recibo só sobe liberado (26/10/2026); aqui se libera para provar o PDF
+    monkeypatch.setattr(PORTAL, "RECIBO_LIBERADO_NO_PORTAL", frozenset({"RI"}))
     vps = _vps()
     portal = vps.Portal(str(tmp_path / "portal.sqlite3"), TOKEN, exigir_https=False)
     con = _configurar(casa)

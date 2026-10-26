@@ -24,10 +24,13 @@ quando houver, baixa o recibo em PDF.
 - A VPS **nunca** alcança o servidor da serventia: é o desenho da caixa-postal
   do WhatsApp (`wa_puxar.py`) pelo outro lado.
 - O que sobe é o **retrato mínimo**: número, *hash* do código (nunca o código),
-  situação em linguagem simples, previsão, última movimentação, atribuição — e
-  o recibo em PDF (que leva o nome do pagador, o documento mascarado e os
-  valores, como o papel). O **Protesto** não sobe nada; o **Registro Civil**
-  sobe sem o recibo.
+  situação em linguagem simples, previsão, última movimentação, atribuição. O
+  **Protesto** não sobe nada.
+- **O recibo em PDF não sobe de fábrica** (correção de segurança de
+  26/10/2026): ele leva o nome do pagador, os atos pedidos e os valores. Só
+  sobe o da atribuição que o oficial liberar (`RECIBO_LIBERADO_NO_PORTAL`, em
+  `portal_cliente.py`, vazia), e o do **Registro Civil** não sobe nem liberado.
+  Enquanto nada for liberado, a página do portal mostra só a situação.
 - A lista de campos é **fechada nas duas pontas**: o portal recusa o lote
   inteiro se vier um campo que ele não guarda.
 - O protocolo encerrado sai do portal 90 dias depois; o aberto, um ano depois

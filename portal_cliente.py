@@ -17,18 +17,19 @@ A REGRA DE ARQUITETURA QUE ESTE MÓDULO NÃO FURA
 O QUE SOBE, E O QUE NÃO SOBE
     Sobe, por protocolo: o número, o HASH do código (nunca o código), a
     situação em linguagem simples, a previsão, a última movimentação, a
-    atribuição — o mesmo dicionário de `acompanhamento_cliente.retrato` — e o
-    recibo em PDF quando houver. NÃO sobe: nome, CPF, telefone, valor por ato,
-    assunto, teor. O PROTESTO não sobe nada (sigilo; não ganha código). E o
-    recibo do REGISTRO CIVIL não sobe (`SEM_RECIBO_NO_PORTAL`): a
-    discriminação diria qual ato foi pedido — uma averbação de reconhecimento de
-    paternidade, por exemplo —, e isso não é dado para ficar numa máquina fora
-    da casa. É decisão para o oficial confirmar (ver o PR).
+    atribuição — o mesmo dicionário de `acompanhamento_cliente.retrato`. NÃO
+    sobe: nome, CPF, telefone, valor por ato, assunto, teor. O PROTESTO não
+    sobe nada (sigilo; não ganha código).
 
-    O RECIBO EM PDF LEVA O QUE O PAPEL LEVA: o nome do pagador, o documento
-    mascarado e os valores. É o papel que o próprio cliente já tem, e só sai
-    para quem digita número e código — mas é dado pessoal numa VPS, e por isso
-    a caixa de configuração diz isso com todas as letras.
+    O RECIBO EM PDF NÃO SOBE DE FÁBRICA (correção de segurança de 26/10/2026).
+    Ele leva o que o papel leva — o nome do pagador, a lista dos atos e os
+    valores —, e numa VPS pública e compartilhada isso vira um acervo de dado
+    pessoal. Só sobe o recibo da atribuição que o oficial LIBERAR
+    (`RECIBO_LIBERADO_NO_PORTAL`, vazia), e o do REGISTRO CIVIL não sobe nem
+    liberado (`SEM_RECIBO_NO_PORTAL`): a discriminação diria qual ato foi
+    pedido — uma averbação de reconhecimento de paternidade, por exemplo.
+    Antes de liberar, o PDF do portal tem de sair sem o nome do pagador em
+    claro e sem a observação (ver o PR).
 
 QUANDO SOBE, E QUANDO SAI DE LÁ
     Sobe só o que mudou: a impressão digital do retrato (`portal_marca`) fica
@@ -82,8 +83,19 @@ LOTE = 20
 TIMEOUT = 30
 #: A marca de quem já saiu do portal: não se recalcula a cada rodada.
 REMOVIDO = "REMOVIDO"
-#: Atribuições em que o protocolo sobe sem o recibo. Ver o cabeçalho.
+#: Atribuições em que o recibo NUNCA sobe, nem liberado. Ver o cabeçalho.
 SEM_RECIBO_NO_PORTAL = frozenset({"RCPN"})
+#: Atribuições cujo recibo em PDF o oficial LIBEROU para o portal — e ela nasce
+#: VAZIA: de fábrica, o portal mostra só a situação e nenhum recibo sobe.
+#: Correção de segurança de 26/10/2026 (revisão do PR #29): o padrão era
+#: «sobe», e o PDF do recibo leva o nome completo do pagador, a lista dos atos
+#: pedidos e os valores — numa VPS pública e compartilhada, por até um ano,
+#: isso vira um acervo de «quem pediu o quê». Liberar é decisão do oficial,
+#: por atribuição, e se faz por pull request que mude esta lista E traga junto
+#: o PDF do portal sem o nome do pagador em claro e sem a observação
+#: (`tests/test_acompanhamento_cliente.py` fica vermelho até alguém fazer as
+#: duas coisas de propósito).
+RECIBO_LIBERADO_NO_PORTAL: frozenset[str] = frozenset()
 #: Recibos por protocolo que sobem — o atendimento normal tem um.
 RECIBOS_POR_PROTOCOLO = 5
 CAMINHO_DA_API = "/api/retratos"
@@ -205,8 +217,14 @@ def expira_em(protocolo: Mapping, hoje: date) -> date:
     return base + timedelta(days=DIAS_DO_ABERTO)
 
 
+def recibo_sobe(atribuicao: Any) -> bool:
+    """O recibo desta atribuição vai à VPS? Só calcula. Fecha por padrão."""
+    sigla = str(atribuicao or "").strip().upper()
+    return sigla in RECIBO_LIBERADO_NO_PORTAL and sigla not in SEM_RECIBO_NO_PORTAL
+
+
 def _recibos(con, protocolo: Mapping) -> list[dict]:
-    if str(protocolo.get("atribuicao") or "").upper() in SEM_RECIBO_NO_PORTAL:
+    if not recibo_sobe(protocolo.get("atribuicao")):
         return []
     return [dict(r) for r in banco(con).ler(
         """SELECT * FROM cx_recibos

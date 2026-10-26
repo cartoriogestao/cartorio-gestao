@@ -101,6 +101,8 @@ import ri_dominial as RIDOM
 import ri_certidao_negativa as RINEG
 import ri_prenotacao_prazo as PRAZO
 import ri_pedidos as PED
+import ri_busca_acervo as BUSCA  # busca em texto livre no teor (26/10/2026)
+import ri_situacao_juridica as SITJ  # o resumo da situacao juridica (26/10/2026)
 import ri_rascunho as RASC
 import ri_cnm as CNM
 import ri_correcoes as RC
@@ -8482,6 +8484,79 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return render_template("ri_indicador_pessoal.html", pessoas=pessoas,
                                busca=busca, total=total, so_proprietarios=so_proprietarios,
                                lancamentos=lancamentos)
+
+    # ------------------------------------------- busca em texto livre no acervo
+    #
+    # Pedido do oficial, 26/10/2026: procurar no TEOR de todas as fichas — e
+    # nao so no numero, no endereco e nas partes cadastradas, que e o que a
+    # lista e os dois indicadores olham. O desenho, a escolha do indice e o que
+    # se mediu estao em `ri_busca_acervo`.
+    #
+    # E BUSCA SENSIVEL, E POR ISSO TEM TRES GUARDAS, na forma da busca do
+    # devedor do Protesto (`protesto_devedores_buscar`):
+    #   · SO QUEM PRATICA ATO (`PRATICA`: ADMIN, MANAGER, USER). Nome e CPF de
+    #     qualquer pessoa no acervo inteiro e o que o balcao precisa para achar a
+    #     ficha; o AUDITOR confere ficha por ficha, pela lista e pela ficha, e
+    #     nao varre o acervo por pessoa;
+    #   · O TERMO NAO VAI NO ENDERECO: a busca e POST, como a do devedor — CPF
+    #     em `?busca=` fica no historico do navegador e no log de quem estiver
+    #     no meio;
+    #   · TODA BUSCA VAI A AUDITORIA, com quem, quando, o tipo do termo, quantas
+    #     fichas e quais (as cinquenta primeiras) — e, NO LUGAR DO TERMO, a
+    #     impressao dele (`BUSCA.impressao_da_busca`): quem audita confere se
+    #     alguem procurou um CPF calculando a impressao do CPF, sem que o rastro
+    #     guarde o CPF escrito. Gravar o termo em claro e decisao do oficial.
+
+    @app.route("/registro-imoveis/busca-no-acervo", methods=["GET", "POST"])
+    @roles_required(*PRATICA)
+    def ri_busca_no_acervo():
+        """Procura no teor das fichas e dos atos. SO LE (grava so a auditoria)."""
+        termo = (request.form.get("termo") or "").strip() if request.method == "POST" else ""
+        modo = (request.form.get("modo") or "FRASE").strip().upper()
+        resultado, erro = None, None
+        if request.method == "POST":
+            try:
+                with db.connect() as con:
+                    resultado = BUSCA.buscar(con, termo, modo=modo)
+            except BUSCA.BuscaError as e:
+                erro = str(e)
+            if resultado is not None:
+                audit("RI_BUSCA_NO_ACERVO", "RI_MATRICULA", None, {
+                    "tipos": [p.tipo for p in resultado.termos],
+                    "modo": resultado.modo,
+                    "impressao": BUSCA.impressao_da_busca(termo),
+                    "fichas": resultado.total,
+                    "ids": [f["id"] for f in resultado.fichas][:50],
+                })
+        return render_template("ri_busca_acervo.html", termo=termo, modo=modo,
+                               resultado=resultado, erro=erro,
+                               limite=BUSCA.LIMITE_DE_FICHAS)
+
+    # ------------------------------------- a situacao juridica, num clique
+    #
+    # Pedido do oficial, 26/10/2026. O que se junta e de onde vem esta em
+    # `ri_situacao_juridica`. A guarda e a da FICHA (`ri_ficha`, login): o
+    # resumo nao mostra nada que a ficha nao mostre, so junta — e quem le a
+    # ficha precisa ler o resumo dela. A consulta fica no rastro, como a da
+    # ficha (`RI_FICHA_CONSULTADA`).
+    #   NAO E CERTIDAO, e a tela diz isso no alto; e NAO GRAVA nada alem da
+    #   linha de auditoria.
+
+    @app.route("/registro-imoveis/<int:matricula_id>/situacao-juridica")
+    @login_required
+    def ri_situacao_juridica(matricula_id):
+        base_data, base_n = cnib_referencia()
+        with db.connect() as con:
+            s = SITJ.montar(con, matricula_id, hoje=date.today(),
+                            cnib_base=base_data, cnib_ordens=base_n)
+        if s is None:
+            abort(404)
+        audit("RI_SITUACAO_JURIDICA_CONSULTADA", "RI_MATRICULA", matricula_id,
+              {"numero": s["m"]["numero"], "onus": len(s["onus"]),
+               "onus_no_teor": len(s["teor"]["onus"]),
+               "cnib": len(s["cnib"]["ordens"])})
+        return render_template("ri_situacao_juridica.html", s=s,
+                               agora=db.now(), quem=app.extensions["usuario_nome"]())
 
 
     # ------------------------------------------- certidao negativa de imovel

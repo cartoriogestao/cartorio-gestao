@@ -38,6 +38,8 @@
   <a class="button primary" href="{{ url_for('ri_nova_matricula') }}">Abrir matrícula</a>
   {% if user.role in ['ADMIN','MANAGER'] %}<a class="button" href="{{ url_for('ri_numeracao') }}">Numeração</a>{% endif %}
   <a class="button" href="{{ url_for('ri_importacoes') }}">Importações</a>
+  {# A BUSCA NO TEOR (26/10/2026) e de quem pratica ato — a rota recusa o resto. #}
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}<a class="button" href="{{ url_for('ri_busca_no_acervo') }}">Procurar no teor</a>{% endif %}
 </form>
 
 <section class="panel">

@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block title %}Procurar no teor — Registro de Imóveis{% endblock %}
+{% block heading %}<h1>Procurar no teor das matrículas</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
+  <a class="button" href="{{ url_for('ri_indicador_pessoal') }}">Indicador Pessoal</a>
+  <a class="button" href="{{ url_for('ri_indicador_real') }}">Indicador Real</a>
+</div>
+
+<div class="notice">
+  Procura no <strong>texto</strong> de todas as fichas e dos atos lavrados no sistema — onde
+  o acervo escreve partes, documentos e atos que não estão cadastrados um a um.
+  Acento e maiúsculas não importam; o CPF/CNPJ se acha com ou sem pontuação, e um número
+  só se acha inteiro («3110» acha «3.110», e não o CPF que tem esses dígitos dentro).
+  <br><strong>Toda busca fica registrada na auditoria</strong>, com quem procurou e o que achou.
+</div>
+
+{# A busca e POST de proposito: nome e CPF nao vao no endereco da pagina. #}
+<form class="filters" method="post" action="{{ url_for('ri_busca_no_acervo') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input name="termo" value="{{ termo }}" placeholder="Nome, CPF/CNPJ, lugar, frase do teor" size="44" autofocus>
+  <label class="check"><input type="radio" name="modo" value="FRASE" {% if modo != 'TODAS' %}checked{% endif %}> Trecho exato</label>
+  <label class="check"><input type="radio" name="modo" value="TODAS" {% if modo == 'TODAS' %}checked{% endif %}> Todas as palavras, em qualquer ordem</label>
+  <button class="primary">Procurar</button>
+</form>
+
+{% if erro %}
+<div class="notice warning">{{ erro }}</div>
+{% endif %}
+
+{% if resultado is not none %}
+  {% if resultado.sem_teor %}
+  <p class="muted small">{{ resultado.sem_teor }} ficha(s) do acervo não têm teor transcrito e
+    <strong>não podem ser achadas por texto</strong> — para elas, só a digitalização ou o livro físico.</p>
+  {% endif %}
+  {% if not resultado.fichas %}
+    <div class="notice">Nenhuma ficha tem esse texto no teor nem nos atos lavrados no sistema.
+      Isso <strong>não</strong> é certidão negativa: ficha sem teor transcrito não entra nesta busca,
+      e o texto pode estar escrito de outro jeito no livro.</div>
+  {% else %}
+    <p class="muted small">{{ resultado.total }} matrícula(s) com o texto.
+      {% if resultado.cortado %}<strong>A tela mostra as {{ limite }} primeiras, pela ordem do número — escreva um termo mais preciso.</strong>{% endif %}</p>
+    {% for f in resultado.fichas %}
+    <section class="panel">
+      <div class="panel-head">
+        <span><a href="{{ url_for('ri_ficha', matricula_id=f.id) }}"><strong>Matrícula {{ f.numero }}{% if f.complemento %}-{{ f.complemento }}{% endif %}</strong></a>
+          {% if f.livro_norm %}<span class="muted">· Livro {{ f.livro_norm }}</span>{% endif %}
+          {% if f.tipo_ficha == 'ACERVO' %}<span class="badge media">acervo</span>{% endif %}
+          {% if f.encerrada %}<span class="badge critica">encerrada</span>{% endif %}
+          {% if not f.conferido %}<span class="badge alta">não conferida</span>{% endif %}
+        </span>
+        <span class="muted small">{{ (f.logradouro or '')[:60] }}{% if f.bairro %} — {{ f.bairro }}{% endif %}
+          · <a href="{{ url_for('ri_situacao_juridica', matricula_id=f.id) }}">situação jurídica</a></span>
+      </div>
+      <div style="padding:6px 14px 10px">
+      {% if f.no_teor %}
+        <div class="small muted">No teor da ficha — {{ f.achados }} ocorrência(s){% if f.achados > f.trechos|length %}, mostrando {{ f.trechos|length }}{% endif %}:</div>
+        {% for t in f.trechos %}<p class="small" style="margin:4px 0">{{ t|safe }}</p>{% endfor %}
+      {% endif %}
+      {% for a in f.atos %}
+        <div class="small muted">No ato {{ a.tipo }}-{{ a.numero }} lavrado no sistema{% if a.cancelado %} <span class="badge">cancelado</span>{% endif %}:</div>
+        {% for t in a.trechos %}<p class="small" style="margin:4px 0">{{ t|safe }}</p>{% endfor %}
+      {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  {% endif %}
+{% endif %}
+{% endblock %}

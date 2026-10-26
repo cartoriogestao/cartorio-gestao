@@ -464,3 +464,45 @@ def ato_transcrito_no_teor(teor_da_ficha, ato, numero_da_matricula, cnm=None,
     do_teor = (_blocos_do_teor if _blocos_do_teor is not None
                else _blocos(teor_da_ficha))
     return len(do_ato & do_teor) / len(do_ato) >= LIMIAR_TEXTO_TRANSCRITO
+
+
+def paragrafos_dos_atos_no_teor(numero_da_matricula, teor, cnm=None) -> list[dict]:
+    """O teor da ficha partido nos atos que ele escreve. SO LE.
+
+    Devolve `[{tipo, numero, rotulo, texto}]`, na ordem do papel: cada ato vai
+    do paragrafo que ABRE com o rotulo desta matricula (`R-3/1.234 - ...`,
+    pela mesma `ROTULO_CABECA` de `cabecas_no_teor`) ate o paragrafo antes do
+    proximo rotulo de cabeca. O que vem antes do primeiro rotulo e a abertura
+    da matricula (a descricao do imovel) e nao entra.
+
+    NASCEU PARA A SITUACAO JURIDICA DO IMOVEL (26/10/2026). Na ficha do
+    ACERVO o ato mora aqui dentro, e nao em `ri_atos` — e o resumo que so
+    olhasse `ri_atos` diria «nenhum onus» sobre uma ficha cujo texto traz a
+    hipoteca. Este recorte deixa quem resume perguntar a cada ato do texto o
+    que `ri_onus` pergunta aos atos lavrados — e mostrar a frase, para uma
+    pessoa conferir.
+
+    **Nao cria ato**, pela mesma razao do resto do modulo: o recorte e uma
+    leitura, e pode errar a fronteira (rotulo de cabeca que o OCR quebrou, ato
+    que nao abre paragrafo). Quem le o resultado le «o texto diz», e nao «a
+    ficha tem».
+    """
+    meu = _so_digitos(numero_da_matricula)
+    if not meu:
+        return []
+    meu_cnm = _so_digitos(cnm) or meu
+    saida: list[dict] = []
+    atual: dict | None = None
+    for ln in _linhas_do_teor(teor):
+        cabeca = re.sub(r"^[\s\-\u2013\u2014.:*]*", "", ln)
+        m = ROTULO_CABECA.match(cabeca)
+        if m and _so_digitos(m.group(3)) in (meu, meu_cnm):
+            tipo, numero = m.group(1).upper(), int(m.group(2))
+            atual = {"tipo": tipo, "numero": numero,
+                     "rotulo": f"{tipo}-{numero}", "linhas": [cabeca]}
+            saida.append(atual)
+        elif atual is not None and ln:
+            atual["linhas"].append(ln)
+    for a in saida:
+        a["texto"] = " ".join(" ".join(a.pop("linhas")).split())
+    return saida

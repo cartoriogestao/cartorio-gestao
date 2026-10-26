@@ -198,6 +198,8 @@
   <a class="button" href="{{ url_for('ri_ficha_odt', matricula_id=m.id, formato='pdf') }}">Imprimir ficha (PDF)</a>
   <a class="button" href="{{ url_for('ri_ficha_odt', matricula_id=m.id, formato='odt') }}">.odt</a>
   <a class="button" href="{{ url_for('ri_conferir_ficha', matricula_id=m.id) }}">Conferir com a digitalização</a>
+  {# O RESUMO DA SITUACAO JURIDICA (26/10/2026): consulta interna, nao certidao. #}
+  <a class="button" href="{{ url_for('ri_situacao_juridica', matricula_id=m.id) }}">Situação jurídica (resumo)</a>
   {# A rota aceita o balcão (USER) desde a 3.6.160, e a tela não mostrava o
      botão a ele: tests/test_ri_retificacao_cadastral.py (28/09/2026). Só
      cadastro — teor e atos não se editam; o motivo fica na auditoria. #}

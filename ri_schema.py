@@ -1193,6 +1193,23 @@ def init_ri_schema(con) -> None:
     bd.escrever("CREATE INDEX IF NOT EXISTS ix_ri_mat_imovel_norm "
                 "ON ri_matriculas USING gin (imovel_norm public.gin_trgm_ops)")
 
+    # O TEOR INTEIRO TAMBEM E DE TRIGRAMAS, E SOBRE A COLUNA CRUA (26/10/2026,
+    # busca em texto livre no acervo — `ri_busca_acervo`). Medido na producao,
+    # so leitura: 29,9 MB de teor em 4.007 fichas. Normalizar no banco (a
+    # `nome_da_casa`, o `unaccent`, o `to_tsvector`) custou de 14 a 84 s sobre o
+    # acervo, e indice de EXPRESSAO recalcula a expressao em cada ficha
+    # candidata — a busca por «silva» levaria dezenas de segundos. Sobre a
+    # coluna crua o recheck e o proprio texto; o acento e a caixa ficam na
+    # expressao regular que `ri_busca_acervo.padrao_do_termo` monta, e o
+    # `pg_trgm` usa o indice para `~`.
+    #   A PRIMEIRA SUBIDA DEPOIS DA ATUALIZACAO DEMORA MAIS: construir o
+    #   indice sobre ~30 MB levou cerca de um minuto no banco de ensaio (44 MB
+    #   de texto sintetico). Depois, `IF NOT EXISTS` nao custa nada.
+    #   `teor` e coluna do SCHEMA, e nao de migracao; o indice mora aqui, ao
+    #   lado do irmao, porque a extensao `pg_trgm` e garantida logo acima.
+    bd.escrever("CREATE INDEX IF NOT EXISTS ix_ri_mat_teor_trgm "
+                "ON ri_matriculas USING gin (teor public.gin_trgm_ops)")
+
     # O ATUALIZADOR DO CNIB PRECISA DESTA TRAVA, e ela e MEDIDA ANTES de
     # nascer — nao se cria indice que estoura na abertura do banco.
     #

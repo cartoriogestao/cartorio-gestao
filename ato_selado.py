@@ -3051,6 +3051,11 @@ def assinar_o_que_ficou_pendente(con: Any, *, tabela: Any, ato_id: Any,
         """SELECT column_name FROM information_schema.columns
             WHERE table_schema = current_schema() AND table_name = %s
               AND data_type IN ('text', 'character varying')""", (tabela,))]
+    # SEM COLUNA, SEM TABELA: banco que não tem a tabela daquele ato (instalação
+    # parcial, banco de ensaio) não tem marca a assinar — ler a tabela daria
+    # «relation does not exist» dentro da transação do selo.
+    if not colunas:
+        return []
     linha = bd.um(f"SELECT * FROM {tabela} WHERE id = %s", (int(ato_id),)) or {}
     trocadas = [c for c in colunas if linha.get(c) == NOMEHUM.MARCA_PENDENTE]
     for c in trocadas:

@@ -82,6 +82,9 @@ def _sessao(cg_casa, papel: str = "ADMIN"):
     dados = cg_casa['dados']
     cg_casa['db'].create_user("tabeliao", "MARIO EXEMPLO DOS SANTOS",
                                 SENHA, papel)
+    # A TRAVA DO SELO PAGO (3.7.0) desliga aqui, a vista: estes testes medem a
+    # certidao e o selo digitado no razao, e nao a trava (`test_selo_e_caixa`).
+    cg_casa['db'].set_settings({"selo_trava_caixa": "DESLIGADA"})
     c = app.test_client()
     c.post("/login",
            data={"username": "tabeliao", "password": SENHA,

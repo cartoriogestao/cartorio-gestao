@@ -1360,6 +1360,16 @@ def create_app(test_config: dict | None = None) -> Flask:
         sectors = json_list(s.get("sectors", "[]"), [])
         users = db.list_users(active_only=True)
         if request.method == "POST":
+            # A TAREFA QUE NASCE DE UMA PEÇA — 26/10/2026, o oficial: «precisamos
+            # poder criar uma tarefa a partir do protocolo». O protocolo manda o
+            # mesmo formulário para cá (uma regra só de criar) com a peça a ligar
+            # e a tela para onde voltar; a recusa volta para lá, e não para a
+            # lista de tarefas, onde o que se digitou se perderia.
+            import processo_pasta as PASTA
+            from seguranca_web import destino_interno
+            voltar = destino_interno(request.form.get("voltar"), "")
+            vincular_tabela = (request.form.get("vincular_tabela") or "").strip()
+            vincular_ref = (request.form.get("vincular_referencia") or "").strip()
             start_date = parse_date(request.form.get("start_date"))
             due_days = parse_int(request.form.get("due_days"))
             due_date = parse_date(request.form.get("due_date")) or calc_deadline(start_date, due_days)
@@ -1367,8 +1377,14 @@ def create_app(test_config: dict | None = None) -> Flask:
             backup = parse_int(request.form.get("backup_user_id"))
             if db.get_setting("require_backup_assignee", "1") == "1" and assigned and not backup:
                 flash("Defina um responsável substituto.", "danger")
+                if voltar:
+                    return redirect(voltar)
             elif not request.form.get("title", "").strip():
                 flash("Informe o título da tarefa.", "danger")
+                if voltar:
+                    return redirect(voltar)
+            elif vincular_ref and vincular_tabela not in PASTA.TIPOS:
+                flash("Essa peça não pode entrar na pasta de uma tarefa.", "danger")
             else:
                 user = current_user()
                 task_id = db.create_task({
@@ -1394,6 +1410,22 @@ def create_app(test_config: dict | None = None) -> Flask:
                         with db.transaction() as _c:
                             ESP.definir(_c, task_id, especie, agora=db.now(), por=int(user["id"]))
                 flash("Tarefa criada.", "success")
+                if vincular_ref:
+                    try:
+                        with db.transaction() as _c:
+                            PASTA.vincular(_c, task_id, vincular_tabela, vincular_ref,
+                                           agora=db.now(), por=int(user["id"]))
+                    except PASTA.PastaError as erro:
+                        flash(f"A tarefa #{task_id} foi criada, mas a peça não entrou na pasta "
+                              f"dela: {erro}", "warning")
+                    else:
+                        audit("PROCESSO_PASTA_VINCULOU", "TASK", task_id,
+                              {"tabela": vincular_tabela, "via": "criação"})
+                        flash(f"A tarefa #{task_id} ficou ligada a "
+                              f"{PASTA.TIPOS[vincular_tabela]['nome'].lower()} {vincular_ref}.",
+                              "success")
+                if voltar:
+                    return redirect(voltar)
                 return redirect(url_for("task_detail", task_id=task_id))
         status = request.args.get("status", "ABERTAS")
         sector = request.args.get("sector") or None

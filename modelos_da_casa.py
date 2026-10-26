@@ -546,6 +546,10 @@ def texto_do_papel(con: sqlite3.Connection, chave: str) -> str:
 #   este, não. Por isso a regra deles é declarada AQUI, ao lado do catálogo, e
 #   não só na lista geral das telas: se um dia a gravação dos modelos voltar a
 #   abrir ao escrevente, estes continuam fechados.
+#
+#   CONFIRMADO PELO OFICIAL EM 26/10/2026 («quem grava o texto: ADMIN e
+#   gerente») — e os textos de fábrica do CAIXA_AVISO_ANDAMENTO foram
+#   aprovados por ele no mesmo dia.
 PAPEIS_SO_DO_GESTOR: frozenset[str] = frozenset({"CAIXA_AVISO_ANDAMENTO"})
 QUEM_GRAVA_PAPEL_DO_GESTOR: tuple[str, ...] = ("ADMIN", "MANAGER")
 

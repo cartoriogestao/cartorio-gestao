@@ -313,6 +313,25 @@ def test_o_processo_vem_pelo_catalogo_e_nasce_desligado(casa):
     assert p["agenda"]["intervalo_min"] == 15
 
 
+def test_o_padrao_de_fabrica_avisa_com_7_dias_uteis(casa):
+    """«Avisar com 7 dias de antecedência» — decisão do oficial em 26/10/2026 (era 5).
+
+    Escrito e NÃO executado nesta máquina (sobrecarga, ordem do oficial).
+    """
+    from ri_schema import soma_dias_uteis
+    assert AA.DIAS_ANTES_PADRAO == 7
+    hoje = SEG.date()
+    a_7 = _prenotacao(casa["db"], numero=900011,
+                      limite=soma_dias_uteis(hoje, 7).isoformat())
+    a_8 = _prenotacao(casa["db"], numero=900012,
+                      limite=soma_dias_uteis(hoje, 8).isoformat())
+    with casa["db"].connect() as con:
+        vig = AA.eventos_vigentes(con, hoje=hoje, eventos=[AS.PRAZO])     # sem dias_antes
+    ids = {v["origem_id"] for v in vig.values()}
+    assert a_7 in ids and a_8 not in ids
+    assert AA._parametros({})[0] == 7
+
+
 def test_o_texto_da_casa_vale_e_o_ajuste_torto_cai_no_padrao(casa):
     import modelos_da_casa as MOD
     assert AA.conferir(MOD.padrao_de(AA.MODELO)) == ""

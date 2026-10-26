@@ -11,7 +11,8 @@ OS TRÊS ANDAMENTOS, E SÓ O STATUS
     PRONTO     o protocolo geral foi marcado «pronto para retirar»
                (`cx_protocolos.pronto_retirar_em`) e não foi entregue;
     PRAZO      a prenotação vence em N dias úteis ou menos (N no processo da
-               automação; 5 de fábrica), fora de suspensão.
+               automação; 7 de fábrica — decisão do oficial em 26/10/2026,
+               «avisar com 7 dias de antecedência»), fora de suspensão.
     A mensagem diz o número do protocolo e o andamento. **Não leva CPF, nome,
     valor nem o teor do ato ou da nota** — a regra da casa para o que sai
     sozinho (docs/decisoes/02_modelos_ia_privacidade.md). O cliente sabe o que
@@ -63,6 +64,12 @@ OS TEXTOS SÃO DA CASA
     Papel CAIXA_AVISO_ANDAMENTO do catálogo (`modelos_padrao/caixa/`), uma
     parte por andamento, editável em Administrativo → Modelos. O ajuste torto
     não cala o aviso: sai o padrão, e o log diz por quê.
+    **Os textos de fábrica (`modelos_padrao/caixa/CAIXA_AVISO_ANDAMENTO.txt`)
+    foram APROVADOS pelo oficial em 26/10/2026** («Textos aprovados»). Quem
+    mudar o padrão de fábrica muda um texto aprovado: o ajuste da casa vai pela
+    tela de Modelos, e quem grava lá é só o ADMIN e o gerente
+    (`modelos_da_casa.QUEM_GRAVA_PAPEL_DO_GESTOR` — também confirmado por ele
+    no mesmo dia).
 """
 from __future__ import annotations
 
@@ -85,7 +92,10 @@ CLAROS = {"ASSINATURA": ("serventia", "telefone", "email"),
           **{p: _CLAROS_DO_EVENTO for p in PARTES[1:]}}
 
 #: Quantos dias úteis antes do vencimento da prenotação o cliente é avisado.
-DIAS_ANTES_PADRAO = 5
+#: 7 de fábrica: decisão do oficial em 26/10/2026 («avisar com 7 dias de
+#: antecedência»); era 5. Conta em dias ÚTEIS, a mesma régua do prazo da
+#: prenotação. Muda-se nos parâmetros do processo, sem versão nova.
+DIAS_ANTES_PADRAO = 7
 DIAS_ANTES_LIMITES = (1, 30)
 #: Quantas vezes um e-mail que falhou é tentado de novo, uma por rodada.
 MAX_TENTATIVAS_PADRAO = 3
@@ -643,7 +653,8 @@ CATALOGO = (
                     "eventos": list(AS.EVENTOS)},
      "descricao": "De 15 em 15 minutos, em dia útil: avisa o cliente que pediu (consentimento "
                   "gravado no protocolo) da exigência na prenotação, do protocolo pronto para "
-                  "retirar e da prenotação a N dias úteis de vencer. Só o status — sem CPF, "
+                  "retirar e da prenotação a N dias úteis de vencer (7 de fábrica). Só o "
+                  "status — sem CPF, "
                   "valor nem teor. E-mail pelo SMTP da automação; WhatsApp fica registrado e "
                   "PENDENTE_CONFIG até haver modelo aprovado pela Meta. Protesto fica de fora."},
 )

@@ -604,6 +604,55 @@ ACHADAS_EM_20_10_2026: dict[str, str] = {
 }
 
 
+# ACHADAS EM 26/10/2026, NA ORDEM DO OFICIAL «não deixar nenhuma falha antiga
+# sem correção». Eram 33 e este teste estava vermelho no `main` desde a virada
+# para o PostgreSQL. Medido quem chama cada uma, na raiz, em `tests/`, em
+# `tools/` e nos roteiros do SANDBOX:
+#   - **uma não tinha chamador em lugar nenhum** (`banco_pg.apagar_reservas`) e
+#     foi APAGADA, e não declarada;
+#   - as outras têm porta de verdade, que este varredor não enxerga porque só
+#     lê os módulos da raiz: o banco de teste (`tests/conftest.py`,
+#     `tests/banco_de_teste.py`), o serviço A3 — processo próprio, porta 8766 —
+#     e o cliente dele, os roteiros de ensaio chamados por
+#     `tools/carga_de_demonstracao.py`, e auxiliares testadas.
+_BANCO_DE_TESTE = ("banco_pg — infraestrutura do PostgreSQL de teste: quem a chama "
+                   "é `tests/conftest.py`/`tests/banco_de_teste.py`, ou outra "
+                   "função dela mesma a partir dali")
+_A3 = ("serviço A3 local (processo próprio, porta 8766) e o cliente dele "
+       "(`assinar_com_a3`): a porta é o HTTP do serviço e `tools/a3_ensaio_cli.py`")
+_ENSAIO = ("roteiro de ensaio do sandbox — a porta é "
+           "`tools/carga_de_demonstracao.py` (ou outra função do mesmo roteiro)")
+ACHADAS_EM_26_10_2026: dict[str, str] = {
+    "guardar_semente": _BANCO_DE_TESTE, "marca_do_codigo": _BANCO_DE_TESTE,
+    "devolver_schema": _BANCO_DE_TESTE, "apagar_lixo": _BANCO_DE_TESTE,
+    "tomar_da_reserva": _BANCO_DE_TESTE, "instalar_desvio": _BANCO_DE_TESTE,
+    "schema_existe": _BANCO_DE_TESTE, "comecar_gravacao": _BANCO_DE_TESTE,
+    "terminar_gravacao": _BANCO_DE_TESTE, "criar_por_reproducao": _BANCO_DE_TESTE,
+    "descartar_schema": _BANCO_DE_TESTE, "schemas_criados": _BANCO_DE_TESTE,
+    "registrar_banco": _BANCO_DE_TESTE, "esvaziar_reservatorio": _BANCO_DE_TESTE,
+    "listar_certificados": _A3, "assinar_pdf": _A3, "status_do_servico": _A3,
+    "garantir_certidao": "rcpn_*_ensaio — " + _ENSAIO,
+    "garantir_assento": "rcpn_*_ensaio — " + _ENSAIO,
+    "assento_precisa_remontar": "rcpn_*_ensaio — " + _ENSAIO,
+    "certidao_precisa_remontar": "rcpn_*_ensaio — " + _ENSAIO,
+    "montar_teor_certidao": "rcpn_*_ensaio — " + _ENSAIO,
+    "teor_precisa_remontar": "notas_*_ensaio — " + _ENSAIO,
+    "garantir_registrado": "ri_certidao_emissao — " + _TESTE + " (ponte fora do request)",
+    "montar_corpo": "ri_certidao_emissao — " + _TESTE + " (ponte fora do request)",
+    "teor_precisa_remontar_modelo": "ri_certidao_emissao — " + _TESTE,
+    # REESCREVE O CORPO DE CERTIDÃO JÁ EMITIDA: só o roteiro de ensaio do
+    # SANDBOX (`ensaio_revisao_modular.py`, fora do repositório) a chama, e ela
+    # não deve ganhar botão — certidão emitida não se remonta no balcão.
+    "remontar_corpo_gravado": ("ri_certidao_emissao — só o roteiro de ensaio do "
+                               "SANDBOX a chama; não deve ganhar tela"),
+    "pagamentos_pendentes": "ato_selado — " + _TESTE,
+    "certidao_livro3_teor_precisa_modelo_novo": "atrib_certidao — " + _TESTE,
+    "remontar_teor_certidao_livro3": "atrib_certidao — " + _TESTE,
+    "novo_caminho": "pastas_da_casa — " + _TESTE,
+    "registrar_cancelamento": "selador_cliente — " + _TESTE + " (cancelamento de selo no aparelho)",
+}
+
+
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
     return (set(JA_SABIDAS) | set(NASCIDAS_DEPOIS_DA_3_6_51)
@@ -617,7 +666,8 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_13_10_2026)
             | set(ACHADAS_EM_14_10_2026)
             | set(ACHADAS_EM_19_10_2026)
-            | set(ACHADAS_EM_20_10_2026))
+            | set(ACHADAS_EM_20_10_2026)
+            | set(ACHADAS_EM_26_10_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

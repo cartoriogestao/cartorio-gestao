@@ -1282,17 +1282,6 @@ def tomar_da_reserva(db_path: Any) -> bool:
     return False
 
 
-def apagar_reservas() -> None:
-    nomes = list(_RESERVA) + ([_SEMENTE["schema"]] if _SEMENTE["schema"] else [])
-    _RESERVA.clear()
-    for nome in nomes:
-        try:
-            with psycopg.connect(dsn(), autocommit=True) as pg, pg.cursor() as c:
-                c.execute(f'DROP SCHEMA IF EXISTS "{nome}" CASCADE')
-        except psycopg.Error:
-            pass
-
-
 _PREPARO_DO_SCHEMA = """
 CREATE TABLE IF NOT EXISTS cg_meta (chave TEXT PRIMARY KEY, valor TEXT);
 CREATE TABLE IF NOT EXISTS cg_ddl (nome TEXT PRIMARY KEY, tipo TEXT, tabela TEXT, sql TEXT);

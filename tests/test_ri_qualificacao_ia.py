@@ -442,3 +442,101 @@ def test_prenotacao_sem_ficha_aceita_a_matricula_digitada(casa):
         QIA.matricula_da_prenotacao(con, {"matricula_id": None}, "999999")
     assert QIA.mostrar(con, pedido)["matricula_id"]
     con.close()
+
+
+# ------------------------------------------- revisão de segurança (26/10/2026)
+#
+# O teto do dia contava só `ia_uso`, que grava DEPOIS da resposta: pedidos ao
+# mesmo tempo passavam todos. Agora a vaga se reserva no pedido, e o que está
+# em voo conta; e o robô não pede nem leva.
+
+
+def _teto(monkeypatch, n):
+    import ia_catalogo as CAT
+    monkeypatch.setitem(CAT.CHAMADAS_POR_DIA, QIA.FINALIDADE, n)
+
+
+def test_o_teto_conta_os_pedidos_em_voo_e_recusa_antes_de_gravar(casa, monkeypatch):
+    _teto(monkeypatch, 2)
+    con = _con(casa)
+    for numero in (11810, 11811):
+        _, pid = _prenotacao(casa, numero=numero)
+        escritura, _ = _titulo_e_itbi(casa, pid)
+        with con:
+            QIA.pedir(con, pid, anexos_ids=[escritura])      # ficam PENDENTE
+    _, pid = _prenotacao(casa, numero=11812)
+    escritura, _ = _titulo_e_itbi(casa, pid)
+    with pytest.raises(QIA.QualificacaoIAError, match="0 leitura.*2 em andamento, de 2"):
+        with con:
+            QIA.pedir(con, pid, anexos_ids=[escritura])
+    n = con.execute("SELECT COUNT(*) FROM ri_qualificacao_ia WHERE protocolo_id = ?",
+                    (pid,)).fetchone()[0]
+    con.close()
+    assert n == 0                            # a recusa não deixou pedido gravado
+
+
+def test_o_teto_soma_o_que_ia_uso_ja_registrou(casa, monkeypatch):
+    import ia_uso as USO
+    _teto(monkeypatch, 3)
+    monkeypatch.setattr(USO, "usos_do_dia",
+                        lambda con, fin, dia: 3 if fin == QIA.FINALIDADE else 0)
+    _, pid = _prenotacao(casa)
+    escritura, _ = _titulo_e_itbi(casa, pid)
+    con = _con(casa)
+    with pytest.raises(QIA.QualificacaoIAError, match="3 leitura"):
+        with con:
+            QIA.pedir(con, pid, anexos_ids=[escritura])
+    con.close()
+
+
+def test_executar_confere_o_teto_antes_da_rede_sem_contar_o_proprio(casa, monkeypatch):
+    _teto(monkeypatch, 2)
+    con = _con(casa)
+    pedidos = []
+    for numero in (11820, 11821):
+        _, pid = _prenotacao(casa, numero=numero)
+        escritura, _ = _titulo_e_itbi(casa, pid)
+        with con:
+            pedidos.append(QIA.pedir(con, pid, anexos_ids=[escritura]))
+    con.close()
+    # com teto 2 e um outro em voo, o próprio passa (1 < 2) e a IA é chamada
+    ia = IA()
+    QIA.executar(casa["banco"], casa["dados"], pedidos[0], conversar=ia)
+    assert len(ia.pedidos) == 1 and _pedido(casa, pedidos[0])["situacao"] == QIA.PRONTA
+    # o teto baixou (o catálogo mudou, ou outra porta gastou): o segundo para
+    # ANTES da rede, com a frase, e a IA não é chamada
+    _teto(monkeypatch, 0)
+    ia2 = IA()
+    QIA.executar(casa["banco"], casa["dados"], pedidos[1], conversar=ia2)
+    p = _pedido(casa, pedidos[1])
+    assert ia2.pedidos == [] and p["situacao"] == QIA.ERRO and "teto" in p["erro"]
+
+
+def test_o_robo_nao_pede_nao_le_e_nao_leva(casa, monkeypatch):
+    import selo_robo as SR
+    from conftest import cg_login
+    for rota in ("ri_qualificacao_ia_pedir", "ri_qualificacao_ia_ver",
+                 "ri_qualificacao_ia_levar"):
+        assert SR.rota_vedada_ao_robo(rota), rota
+    assert not SR.rota_vedada_ao_robo("ri_qualificar")
+    monkeypatch.setattr(AP, "tem_chave", lambda *a, **k: True)
+    comecados = []
+    monkeypatch.setattr(QIA, "preparar_em_segundo_plano",
+                        lambda banco, pasta, pid: comecados.append(pid))
+    _, pid = _prenotacao(casa)
+    escritura, itbi = _titulo_e_itbi(casa, pid)
+    casa["db"].create_user("robo_ri", "Robo de Exemplo RI", "Senha#12345", "USER",
+                           eh_robo=1)
+    c = casa["app"].test_client()
+    cg_login(c, "robo_ri", "Senha#12345")
+    tok = _token(c.get("/").get_data(as_text=True))
+    r = c.post(f"/registro-imoveis/protocolo/{pid}/qualificacao-ia/pedir", data={
+        "csrf_token": tok, "anexo": [str(escritura), str(itbi)]})
+    assert r.status_code == 403 and comecados == []
+    assert c.get("/registro-imoveis/qualificacao-ia/1").status_code == 403
+    assert c.post("/registro-imoveis/qualificacao-ia/1/levar",
+                  data={"csrf_token": tok}).status_code == 403
+    con = _con(casa)
+    n = con.execute("SELECT COUNT(*) FROM ri_qualificacao_ia").fetchone()[0]
+    con.close()
+    assert n == 0

@@ -369,6 +369,53 @@ def em_andamento(con, protocolo_id: int) -> dict | None:
     return None
 
 
+# O TETO DO DIA CONTA O QUE ESTÁ EM VOO (revisão de segurança de 26/10/2026,
+# PR #22). `ia_uso` só grava a chamada DEPOIS da resposta do provedor; quem
+# conferisse só ele deixaria passar todos os pedidos disparados no mesmo minuto
+# — cem cliques em cem prenotações liam «0 de 40» ao mesmo tempo e subiam cem
+# títulos inteiros ao Opus. Aqui a conta é o que já foi (`ia_uso`) MAIS os
+# pedidos desta finalidade ainda PENDENTE ou LENDO hoje, e ela se faz:
+#   · em `pedir`, debaixo de uma trava da transação — dois pedidos ao mesmo
+#     tempo não leem a mesma vaga; o pedido que entra É a reserva da vaga;
+#   · em `executar`, de novo, ANTES da rede, sem contar o próprio pedido.
+# O PEDIDO PARADO CONTA O DIA TODO, de propósito: o que ficou LENDO porque o
+# servidor caiu pode ter chegado ao provedor, e a casa não sabe. Contar a mais
+# recusa uma leitura; contar a menos manda documento e gasta sem freio. A conta
+# é só desta finalidade e só do dia — amanhã a vaga volta.
+CHAVE_DA_TRAVA_DO_TETO = "ri_qualificacao_ia.teto_do_dia"
+
+
+def passou_do_teto_do_dia(con, *, agora: str | None = None,
+                          sem_o_pedido: int | None = None) -> str | None:
+    """A frase de recusa quando o dia já gastou (ou reservou) o teto, ou None.
+
+    SÓ LÊ. Conta `ia_uso` do dia mais os pedidos PENDENTE/LENDO de hoje, menos
+    `sem_o_pedido` (o que `executar` está para mandar). Sem teto no catálogo,
+    passa.
+    """
+    import ia_catalogo as CAT
+    import ia_uso as USO
+    teto = CAT.teto_diario(FINALIDADE)
+    if teto is None:
+        return None
+    bd = banco(con)
+    hoje = (agora or _agora())[:10]
+    feitas = USO.usos_do_dia(bd, FINALIDADE, hoje)
+    em_voo = 0
+    if bd.tem_tabela("ri_qualificacao_ia"):
+        em_voo = int(bd.valor(
+            """SELECT count(*) AS n FROM ri_qualificacao_ia
+                WHERE situacao IN ('PENDENTE','LENDO') AND pedido_em >= %s
+                  AND id <> %s""", (hoje, int(sem_o_pedido or 0))) or 0)
+    if feitas + em_voo < teto:
+        return None
+    return (f"O teto de hoje da qualificação assistida já foi atingido: {feitas} "
+            f"leitura(s) feita(s) e {em_voo} em andamento, de {teto} por dia. Nada foi "
+            "enviado à IA. Qualifique este título à mão, ou espere: o teto volta "
+            "amanhã. Se o dia pede mais, fale com o administrador — o número está no "
+            "catálogo de IA (ia_catalogo).")
+
+
 def pedir(con, protocolo_id: int, *, anexos_ids, especie: str = "",
           matricula_numero: str = "", instrucao: str = "", usuario: str = "") -> int:
     """Guarda o pedido e devolve o id. ESCREVE (só `ri_qualificacao_ia`).
@@ -412,6 +459,14 @@ def pedir(con, protocolo_id: int, *, anexos_ids, especie: str = "",
             f"Os documentos marcados somam {total / 1048576:.1f} MB, e a IA lê até "
             f"{LIMITE_DOS_DOCUMENTOS / 1048576:.0f} MB por pedido. Desmarque o que não "
             "fundamenta o título (comprovante de pagamento, cópia repetida).")
+
+    # A VAGA DO TETO SE RESERVA AQUI, debaixo da trava: quem chega junto espera
+    # este pedido gravar (ou desistir) e conta com ele. Ver
+    # `passou_do_teto_do_dia`.
+    bd.travar(CHAVE_DA_TRAVA_DO_TETO)
+    passou = passou_do_teto_do_dia(bd)
+    if passou:
+        raise QualificacaoIAError(passou)
 
     anterior = bd.um("""SELECT id, versao FROM ri_qualificacao_ia WHERE protocolo_id = %s
                          ORDER BY id DESC LIMIT 1""", (int(protocolo_id),))
@@ -617,7 +672,6 @@ def executar(banco_caminho, pasta_dados: Path, pedido_id: int, conversar=None) -
     de escrita — e grava o rascunho. Não toca em nota, qualificação nem
     prenotação."""
     import agente_provedores as AP
-    import ia_uso as USO
     conversar = conversar or AP.conversar
     con = banco_pg.conectar(str(banco_caminho), timeout=30)
     inicio = datetime.now()
@@ -632,7 +686,10 @@ def executar(banco_caminho, pasta_dados: Path, pedido_id: int, conversar=None) -
                     (pedido_id,))
         con.commit()
         try:
-            passou = USO.passou_do_teto(bd, FINALIDADE)
+            # O TETO DE NOVO, ANTES DA REDE, contando os outros pedidos em voo
+            # (revisão de segurança de 26/10/2026) — e não só `ia_uso`, que
+            # grava depois da resposta.
+            passou = passou_do_teto_do_dia(bd, sem_o_pedido=pedido_id)
             if passou:
                 raise RuntimeError(passou)
             conversa, fora, contexto = _montar_conversa(bd, pedido)

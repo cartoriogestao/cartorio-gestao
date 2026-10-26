@@ -81,6 +81,16 @@ def rota_vedada_ao_robo(endpoint: Any) -> bool:
     return bool(nome) and nome.startswith(ROTAS_VEDADAS_AO_ROBO)
 
 
+# A QUALIFICAÇÃO ASSISTIDA É PEDIDO DE GENTE (revisão de segurança de
+# 26/10/2026, PR #22): pedir sobe o título, a guia do ITBI e a ficha (com o CPF
+# dos proprietários) à IA e gasta o teto do dia; levar preenche a nota
+# devolutiva. A credencial do robô mora num script. O prefixo veda também a
+# tela do rascunho (`ri_qualificacao_ia_ver`) — o robô não tem o que ler nela.
+# Em linha própria, e não dentro da tupla, para não colidir com os acréscimos
+# dos PRs #21 e #30 quando os três forem juntados.
+ROTAS_VEDADAS_AO_ROBO += ("ri_qualificacao_ia",)
+
+
 def exige_humano_para_selar(user: Any = None) -> bool:
     """True = a rota do botao Selar deve responder 403."""
     return usuario_e_robo(user)

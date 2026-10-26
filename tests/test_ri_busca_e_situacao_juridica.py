@@ -3,8 +3,10 @@ A busca em texto livre no acervo do RI e o resumo da situacao juridica.
 
 O PEDIDO (o oficial, 26/10/2026)
     1. procurar no TEOR de todas as fichas — nome, CPF, lugar, frase —, com o
-       trecho destacado e o link para a ficha; busca sensivel, restrita por
-       perfil e registrada na auditoria;
+       trecho destacado e o link para a ficha; busca sensivel, registrada
+       na auditoria — e, por decisao do oficial no mesmo dia («todos podem
+       usar»), aberta a todo usuario humano logado: ADMIN, MANAGER, USER e
+       AUDITOR (ler e o papel do auditor). O robo continua vedado;
     2. na ficha, o resumo da situacao juridica em um clique — proprietarios,
        onus, cadeia dominial, CNIB, prenotacoes, notas devolutivas e os atos
        do teor —, sem IA, com a marca «Não é certidão» bem visivel, e sem
@@ -13,8 +15,12 @@ O PEDIDO (o oficial, 26/10/2026)
 POR QUE TESTE DE TELA
     O que o balcao usa e a tela. Os testes de dominio provam a regra (o termo
     vira expressao regular, o trecho sai escapado); os de tela provam que a
-    rota recusa quem nao pode, nao poe o termo no endereco, grava a auditoria
-    sem o termo em claro, e que a marca e a frase do onus chegam ao HTML.
+    rota recusa o robo e aceita os quatro papeis humanos, nao poe o termo no
+    endereco, grava a auditoria sem o termo em claro (impressao com a chave do
+    servidor e o CPF mascarado), e que a marca e a frase do onus chegam ao HTML.
+
+Testes escritos e NAO executados na maquina de desenvolvimento (sobrecarga),
+por ordem do oficial em 26/10/2026; a suite completa roda na maquina do merge.
 
 Os nomes e documentos sao ficticios (mario, beatriz, carla; CPF de teste).
 """
@@ -25,6 +31,8 @@ import re
 import sqlite3
 import sys
 from pathlib import Path
+
+import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
@@ -180,16 +188,49 @@ def test_a_busca_vai_a_auditoria_sem_o_termo_em_claro(cg_casa_logada):
     detalhes = str(linha["details"])
     assert CPF not in detalhes and CPF_COM_MASCARA not in detalhes
     dados = json.loads(detalhes)
-    assert dados["impressao"] == BUSCA.impressao_da_busca(CPF_COM_MASCARA)
+    # a impressao leva a chave do servidor: o sha256 puro de um CPF se desfaz
+    # percorrendo os CPFs possiveis (conferencia de 26/10/2026)
+    chave = s["app"].secret_key
+    assert dados["impressao"] == BUSCA.impressao_da_busca(CPF_COM_MASCARA, chave=chave)
+    assert dados["impressao"] != BUSCA.impressao_da_busca(CPF_COM_MASCARA)
+    assert dados["documentos_mascarados"] == ["*********91"]
     assert dados["fichas"] == 1 and dados["ids"] == [mid]
     assert dados["tipos"] == ["DOCUMENTO"]
+    assert dados["agente"] and dados["a_mando_de"]
 
 
-def test_o_auditor_nao_varre_o_acervo(cg_casa):
+@pytest.mark.parametrize("papel", ["AUDITOR", "MANAGER", "USER"])
+def test_todo_usuario_humano_procura_no_acervo(cg_casa, papel):
+    """«todos podem usar» — o oficial, 26/10/2026. A primeira versao recusava
+    o AUDITOR; ler o acervo e justamente o papel dele."""
     s = cg_casa
-    s["db"].create_user("carla", "CARLA EXEMPLO DE SOUSA", "Senha#12345", "AUDITOR")
+    s["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
+    mid = _ficha(s, 1234, TEOR_COM_HIPOTECA)
+    s["db"].create_user("carla", "CARLA EXEMPLO DE SOUSA", "Senha#12345", papel)
     cg_login(s["c"], "carla", "Senha#12345")
-    assert s["c"].get("/registro-imoveis/busca-no-acervo").status_code == 403
+    assert s["c"].get("/registro-imoveis/busca-no-acervo").status_code == 200
+    r = _buscar(s, CPF_COM_MASCARA)
+    assert r.status_code == 200
+    assert f'"/registro-imoveis/{mid}"' in r.get_data(as_text=True)
+    con = _banco(s)
+    linha = con.execute("SELECT username_snapshot FROM audit_logs "
+                        "WHERE action='RI_BUSCA_NO_ACERVO' ORDER BY id DESC LIMIT 1").fetchone()
+    con.close()
+    assert linha is not None and linha["username_snapshot"] == "carla"
+    # o resumo da situacao juridica tambem e de todos
+    assert s["c"].get(f"/registro-imoveis/{mid}/situacao-juridica").status_code == 200
+    # e o botao «Procurar no teor» aparece na lista para qualquer papel
+    html = s["c"].get("/registro-imoveis").get_data(as_text=True)
+    assert "Procurar no teor" in html
+
+
+def test_a_impressao_com_chave_nao_e_a_do_sha256_puro():
+    sem = BUSCA.impressao_da_busca(CPF)
+    com = BUSCA.impressao_da_busca(CPF, chave="segredo-de-teste")
+    assert com != sem and len(com) == 16
+    assert com == BUSCA.impressao_da_busca(CPF, chave=b"segredo-de-teste")
+    assert BUSCA.documento_mascarado(CPF_COM_MASCARA) == "*********91"
+    assert BUSCA.documento_mascarado("11.111.111/1111-11") == "************11"
 
 
 def test_o_robo_nao_varre_o_acervo(cg_casa):

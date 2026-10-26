@@ -62,6 +62,7 @@ O QUE ESTE MODULO NAO FAZ
 from __future__ import annotations
 
 import hashlib
+import hmac
 import html as _html
 import re
 import unicodedata
@@ -245,14 +246,33 @@ def termos_da_busca(texto: str, modo: str = "FRASE") -> list[Padrao]:
     return [padrao_do_termo(p) for p in pedacos]
 
 
-def impressao_da_busca(texto: str) -> str:
+def impressao_da_busca(texto: str, chave: bytes | str | None = None) -> str:
     """O que vai para a auditoria NO LUGAR do termo — ver a rota.
 
     Mesma busca, mesma impressao: quem audita confere se alguem procurou um
     CPF calculando a impressao dele, sem que o CPF fique escrito no rastro.
+
+    COM CHAVE, E NAO SHA-256 PURO (conferencia de 26/10/2026, PR #30): o CPF
+    tem onze digitos, e o sha256 sem chave de um CPF se desfaz percorrendo os
+    CPFs possiveis numa tarde de computador comum — na pratica, o CPF estaria
+    no rastro. A rota passa a chave secreta do servidor (a mesma que nao sai
+    da pasta de dados); quem audita confere a impressao NO SERVIDOR, com esta
+    funcao. Sem chave (teste de dominio) continua o sha256 de antes.
     """
     norma = " ".join(_sem_acento(str(texto or "")).upper().split())
+    if chave:
+        k = chave.encode("utf-8") if isinstance(chave, str) else bytes(chave)
+        return hmac.new(k, b"ri-busca-no-acervo:" + norma.encode("utf-8"),
+                        hashlib.sha256).hexdigest()[:16]
     return hashlib.sha256(norma.encode("utf-8")).hexdigest()[:16]
+
+
+def documento_mascarado(termo: str) -> str:
+    """CPF/CNPJ procurado, como a auditoria da casa o guarda: so os dois
+    ultimos digitos (`centrais_log.mascarar_texto`, revisao M9 de 22/10).
+    Diz a quem audita que se procurou UM DOCUMENTO, sem dizer qual."""
+    d = re.sub(r"\D", "", str(termo or ""))
+    return "*" * max(len(d) - 2, 0) + d[-2:]
 
 
 # ------------------------------------------------------------------ o trecho

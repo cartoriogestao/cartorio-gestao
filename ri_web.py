@@ -8492,23 +8492,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     # lista e os dois indicadores olham. O desenho, a escolha do indice e o que
     # se mediu estao em `ri_busca_acervo`.
     #
-    # E BUSCA SENSIVEL, E POR ISSO TEM TRES GUARDAS, na forma da busca do
-    # devedor do Protesto (`protesto_devedores_buscar`):
-    #   · SO QUEM PRATICA ATO (`PRATICA`: ADMIN, MANAGER, USER). Nome e CPF de
-    #     qualquer pessoa no acervo inteiro e o que o balcao precisa para achar a
-    #     ficha; o AUDITOR confere ficha por ficha, pela lista e pela ficha, e
-    #     nao varre o acervo por pessoa;
+    # QUEM USA: TODO USUARIO HUMANO LOGADO — decisao do oficial em 26/10/2026,
+    # «todos podem usar». ADMIN, MANAGER, USER e tambem o AUDITOR: ler o
+    # acervo e o papel dele, e a busca so le (a primeira versao deste PR a
+    # restringia a quem pratica ato). O ROBO CONTINUA VEDADO, pela lista de
+    # `selo_robo.ROTAS_VEDADAS_AO_ROBO` (revisao de seguranca de 26/10), que
+    # nao mudou. As outras duas guardas, na forma da busca do devedor do
+    # Protesto (`protesto_devedores_buscar`), ficam:
     #   · O TERMO NAO VAI NO ENDERECO: a busca e POST, como a do devedor — CPF
     #     em `?busca=` fica no historico do navegador e no log de quem estiver
     #     no meio;
     #   · TODA BUSCA VAI A AUDITORIA, com quem, quando, o tipo do termo, quantas
     #     fichas e quais (as cinquenta primeiras) — e, NO LUGAR DO TERMO, a
-    #     impressao dele (`BUSCA.impressao_da_busca`): quem audita confere se
-    #     alguem procurou um CPF calculando a impressao do CPF, sem que o rastro
-    #     guarde o CPF escrito. Gravar o termo em claro e decisao do oficial.
+    #     impressao dele (`BUSCA.impressao_da_busca`), agora COM A CHAVE do
+    #     servidor: o sha256 puro de um CPF se desfaz percorrendo os CPFs
+    #     possiveis, e entao o CPF estaria no rastro. O CPF/CNPJ procurado vai
+    #     MASCARADO (so os dois ultimos digitos, a regua da auditoria da casa),
+    #     para quem audita ver que se procurou um documento sem ver qual.
+    #     Gravar o termo em claro e decisao do oficial.
+    QUEM_LE_O_ACERVO = ("ADMIN", "MANAGER", "USER", "AUDITOR")
 
     @app.route("/registro-imoveis/busca-no-acervo", methods=["GET", "POST"])
-    @roles_required(*PRATICA)
+    @roles_required(*QUEM_LE_O_ACERVO)
     def ri_busca_no_acervo():
         """Procura no teor das fichas e dos atos. SO LE (grava so a auditoria)."""
         termo = (request.form.get("termo") or "").strip() if request.method == "POST" else ""
@@ -8524,9 +8529,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 audit("RI_BUSCA_NO_ACERVO", "RI_MATRICULA", None, {
                     "tipos": [p.tipo for p in resultado.termos],
                     "modo": resultado.modo,
-                    "impressao": BUSCA.impressao_da_busca(termo),
+                    "impressao": BUSCA.impressao_da_busca(termo, chave=app.secret_key),
+                    "documentos_mascarados": [
+                        BUSCA.documento_mascarado(p.termo)
+                        for p in resultado.termos if p.tipo == "DOCUMENTO"],
                     "fichas": resultado.total,
                     "ids": [f["id"] for f in resultado.fichas][:50],
+                    "agente": "pessoa — tela de busca no acervo do RI",
+                    "a_mando_de": app.extensions["usuario_nome"](),
                 })
         return render_template("ri_busca_acervo.html", termo=termo, modo=modo,
                                resultado=resultado, erro=erro,
@@ -8535,15 +8545,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     # ------------------------------------- a situacao juridica, num clique
     #
     # Pedido do oficial, 26/10/2026. O que se junta e de onde vem esta em
-    # `ri_situacao_juridica`. A guarda e a da FICHA (`ri_ficha`, login): o
-    # resumo nao mostra nada que a ficha nao mostre, so junta — e quem le a
-    # ficha precisa ler o resumo dela. A consulta fica no rastro, como a da
-    # ficha (`RI_FICHA_CONSULTADA`).
+    # `ri_situacao_juridica`. QUEM USA: todo usuario humano logado («todos
+    # podem usar», 26/10) — os mesmos quatro papeis da busca, declarados na
+    # rota; e o resumo nao mostra nada que a ficha nao mostre, so junta. A
+    # consulta fica no rastro, como a da ficha (`RI_FICHA_CONSULTADA`). A
+    # lista do robo (`selo_robo`) nao foi tocada: hoje ela veda a busca e nao
+    # o resumo, como nao veda a ficha.
     #   NAO E CERTIDAO, e a tela diz isso no alto; e NAO GRAVA nada alem da
     #   linha de auditoria.
 
     @app.route("/registro-imoveis/<int:matricula_id>/situacao-juridica")
     @login_required
+    @roles_required(*QUEM_LE_O_ACERVO)
     def ri_situacao_juridica(matricula_id):
         base_data, base_n = cnib_referencia()
         with db.connect() as con:
@@ -8554,7 +8567,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         audit("RI_SITUACAO_JURIDICA_CONSULTADA", "RI_MATRICULA", matricula_id,
               {"numero": s["m"]["numero"], "onus": len(s["onus"]),
                "onus_no_teor": len(s["teor"]["onus"]),
-               "cnib": len(s["cnib"]["ordens"])})
+               "cnib": len(s["cnib"]["ordens"]),
+               "agente": "pessoa — tela do resumo da situação jurídica do RI",
+               "a_mando_de": app.extensions["usuario_nome"]()})
         return render_template("ri_situacao_juridica.html", s=s,
                                agora=db.now(), quem=app.extensions["usuario_nome"]())
 

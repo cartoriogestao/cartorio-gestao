@@ -377,3 +377,112 @@ def test_a_tela_da_prenotacao_abre_e_o_auditor_nao_grava(casa):
     with db.connect() as con:
         assert AA.ativos(con, AS.PRENOTACAO, ri) == {}
     assert c.get("/andamento").status_code == 403
+
+
+# ------------------------------------------- revisão de segurança de 26/10/2026 (M1)
+#
+# O texto do aviso sai sozinho ao cliente, do remetente da serventia, sem
+# ninguém ler antes. Duas travas: só o gestor grava o papel, e o texto não pode
+# trazer pagamento, valor, endereço de internet, telefone nem e-mail à mão.
+
+
+@pytest.mark.parametrize("trecho", [
+    "acesse https://exemplo.invalid/pague",
+    "veja em www.exemplo.invalid",
+    "visite golpe-exemplo.com agora",
+    "pague antes no PIX",
+    "faça o pagamento antes de retirar",
+    "o valor é R$ 50,00",
+    "segue o boleto",
+    "faça um depósito na conta",
+    "faça um deposito na conta",
+    "faça uma transferência",
+    "ligue (99) 99999-0000",
+    "ligue 9999990000",
+    "escreva para golpe@exemplo.invalid",
+])
+def test_o_texto_que_sai_sozinho_nao_traz_pagamento_nem_contato_a_mao(trecho):
+    erro = AA.conferir(f"===PRONTO===\nOlá. {trecho}\n{{assinatura}}")
+    assert "sai sozinho ao cliente" in erro, trecho
+
+
+def test_o_padrao_e_os_claros_da_serventia_continuam_valendo():
+    import modelos_da_casa as MOD
+    assert AA.conferir(MOD.padrao_de(AA.MODELO)) == ""
+    assert AA.conferir("===ASSINATURA===\n{serventia}\nTelefone: {telefone} - "
+                       "E-mail: {email}") == ""
+
+
+def test_claro_com_atributo_e_recusado():
+    """B3: o `str.format` resolveria `{numero.__class__}`; a régua da casa não deixa."""
+    assert AA.conferir("===PRONTO===\nOla {numero.__class__}") != ""
+
+
+def test_o_ajuste_torto_ja_gravado_nao_sai(casa):
+    """O que entrou por fora da conferência é medido de novo na hora de mandar."""
+    db = casa["db"]
+    with db.transaction() as con:
+        banco(con).escrever(
+            """INSERT INTO mo_elementos (atribuicao, ato, parte, corpo, ativo,
+                   atualizado_em, atualizado_por)
+               VALUES ('CAIXA', %s, 'CORPO', %s, 1, '2026-10-26T09:00:00', 'teste')""",
+            (AA.MODELO, "===PRONTO===\nPara retirar, pague antes no PIX.\n{assinatura}"))
+    info = {"numero": "2026.10.009", "data_limite": None, "dias": None}
+    with db.connect() as con:
+        _, corpo = AA.textos(AS.PRONTO, info, {"unit_name": "SERVENTIA DE EXEMPLO"}, con)
+    assert "PIX" not in corpo and "pronto para ser retirado" in corpo
+
+
+def test_so_o_gestor_grava_o_papel_que_vai_sozinho_ao_cliente():
+    import modelos_da_casa as MOD
+    assert AA.MODELO in MOD.PAPEIS_SO_DO_GESTOR
+    assert MOD.recusa_ao_gravar("USER", [AA.MODELO])
+    assert MOD.recusa_ao_gravar("AUDITOR", [AA.MODELO])
+    assert MOD.recusa_ao_gravar("MANAGER", [AA.MODELO]) == ""
+    assert MOD.recusa_ao_gravar("ADMIN", [AA.MODELO]) == ""
+    assert MOD.recusa_ao_gravar("USER", ["RI_CABECALHO"]) == ""   # os outros: a régua geral
+
+
+def _csrf(cliente) -> str:
+    with cliente.session_transaction() as s:
+        return s["csrf_token"]
+
+
+def _ajuste_gravado(db) -> str | None:
+    with db.connect() as con:
+        linha = banco(con).um(
+            "SELECT corpo FROM mo_elementos WHERE ato=%s AND parte='CORPO' AND ativo=1",
+            (AA.MODELO,))
+    return linha["corpo"] if linha else None
+
+
+def test_o_escrevente_recebe_403_mesmo_se_a_regra_geral_abrir(casa, monkeypatch):
+    """A trava do papel vale sozinha: abrir `QUEM_GRAVA` ao USER não a desliga."""
+    import modelos_da_casa as MOD
+    import modelos_elementos_web as MEW
+    import modelos_web as MW
+    monkeypatch.setattr(MW, "QUEM_GRAVA", ("ADMIN", "MANAGER", "USER"))
+    monkeypatch.setattr(MEW, "QUEM_GRAVA", ("ADMIN", "MANAGER", "USER"))
+    c = _entrar(casa, "beatriz", "USER")
+    c.get("/modelos")
+    corpo = MOD.padrao_de(AA.MODELO).replace("Olá.", "Bom dia.")
+    r = c.post("/modelos", data={"csrf_token": _csrf(c), "chave": AA.MODELO,
+                                 "corpo": corpo, "acao": "salvar"})
+    assert r.status_code == 403 and "só o oficial ou o gerente" in r.get_data(as_text=True)
+    # nem pelo submódulo do Caixa, no papel ou na atribuição inteira
+    for ato in (AA.MODELO, ""):
+        r = c.post("/caixa/modelos", data={"csrf_token": _csrf(c), "ato": ato,
+                                           "parte": "ENCERRAMENTO", "corpo": "pague no pix"})
+        assert r.status_code == 403
+    assert _ajuste_gravado(casa["db"]) is None
+
+
+def test_o_gerente_grava_o_papel(casa):
+    import modelos_da_casa as MOD
+    c = _entrar(casa, "carla", "MANAGER")
+    c.get("/modelos")
+    corpo = MOD.padrao_de(AA.MODELO).replace("Olá.", "Bom dia.")
+    r = c.post("/modelos", data={"csrf_token": _csrf(c), "chave": AA.MODELO,
+                                 "corpo": corpo, "acao": "salvar"})
+    assert r.status_code == 302
+    assert "Bom dia." in (_ajuste_gravado(casa["db"]) or "")

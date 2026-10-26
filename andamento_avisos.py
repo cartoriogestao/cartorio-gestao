@@ -369,6 +369,58 @@ def _partir(corpo: str) -> dict[str, str]:
             for nome, valor in zip(pedacos[1::2], pedacos[2::2])}
 
 
+# O QUE NÃO PODE ESTAR NO TEXTO QUE SAI SOZINHO — revisão de segurança de
+# 26/10/2026 (PR #26, achado M1).
+#
+#   O e-mail do aviso sai do remetente da serventia sem ninguém ler antes. Um
+#   ajuste que trouxesse «pague antes R$ X no PIX <chave>» seria o golpe com o
+#   nome da casa em cima. O aviso só diz o andamento: endereço de internet,
+#   pedido de pagamento, valor, telefone e e-mail escritos à mão não cabem
+#   nele — o telefone e o e-mail da serventia entram pelos claros {telefone} e
+#   {email}, que vêm da configuração, e não do texto. A comparação é sem acento
+#   e sem caixa, para «depósito» e «deposito» serem a mesma palavra.
+_PROIBIDO_NO_AVISO = (
+    (re.compile(r"https?://|www\.|\b[a-z0-9-]+\.(?:com|net|org|br|io|me|ly|app)\b"),
+     "endereço de internet"),
+    (re.compile(r"\bpix\b"), "a palavra «pix»"),
+    (re.compile(r"\bpag(?:ar|ue|uem|amento|amentos|to)\b"), "pedido de pagamento"),
+    (re.compile(r"r\$"), "valor em reais («R$»)"),
+    (re.compile(r"\bboleto"), "a palavra «boleto»"),
+    (re.compile(r"\bdeposit"), "a palavra «depósito»"),
+    (re.compile(r"\btransfer"), "a palavra «transferência»"),
+    (re.compile(r"[^\s@{}]+@[^\s@{}]+\.[^\s@{}]+"), "endereço de e-mail escrito à mão"),
+)
+_TELEFONE_A_MAO = re.compile(r"\+?\d[\d\s().-]{6,}\d")
+
+
+def _sem_acento(texto: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", str(texto or "").lower())
+                   if not unicodedata.combining(c))
+
+
+def _torto(texto: str) -> str:
+    """O que o texto traz que não pode ir sozinho ao cliente, ou ``""``. Só calcula."""
+    limpo = _sem_acento(texto)
+    for padrao, o_que in _PROIBIDO_NO_AVISO:
+        if padrao.search(limpo):
+            return o_que
+    for achado in _TELEFONE_A_MAO.finditer(limpo):
+        if sum(c.isdigit() for c in achado.group(0)) >= 8:
+            return "número de telefone escrito à mão"
+    return ""
+
+
+def _claros_ruins(parte: str, texto: str) -> str:
+    """Claro que a parte não tem, ou claro com atributo/índice (`{numero.x}`). Só calcula.
+
+    B3 da revisão de 26/10/2026: o `str.format` resolve `{numero.__class__}`, e
+    a régua da casa (`modelos_da_casa.conferir_claros`, LF06G) só aceita NOME.
+    """
+    import modelos_da_casa as CASA
+    return CASA.conferir_claros(texto, CLAROS.get(parte, ()))
+
+
 def _montar(parte: str, claros: dict, con: Any = None) -> str:
     import modelos_da_casa as CASA
     padrao = _partir(CASA.padrao_de(MODELO))
@@ -378,6 +430,14 @@ def _montar(parte: str, claros: dict, con: Any = None) -> str:
             texto = _partir(CASA.texto_do_papel(con, MODELO)).get(parte) or texto
         except Exception as erro:                    # noqa: BLE001 — vai ao log
             _LOG.warning("Aviso de andamento sem o ajuste da casa: %s", erro)
+    # O AJUSTE TORTO NÃO SAI (26/10/2026): o que já estava gravado antes desta
+    # régua, ou o que entrou pelo encerramento/rodapé da atribuição — que a
+    # tela não confere com `conferir` —, é medido aqui, na hora de mandar.
+    ruim = _torto(texto) or _claros_ruins(parte, texto)
+    if ruim:
+        _LOG.warning("A parte ===%s=== do %s ajustado foi descartada (%s); saiu o padrão.",
+                     parte, MODELO, ruim)
+        texto = padrao.get(parte, "")
     try:
         return texto.format(**claros)
     except (KeyError, ValueError, IndexError, AttributeError) as erro:
@@ -414,6 +474,18 @@ def conferir(corpo: str) -> str:
         except (KeyError, ValueError, IndexError, AttributeError) as erro:
             return (f"A parte ==={parte}=== usa um claro que o aviso não tem ({erro}). Os que "
                     "ela tem: " + ", ".join("{" + c + "}" for c in CLAROS[parte]) + ".")
+        ruim = _claros_ruins(parte, texto)
+        if ruim:
+            return f"A parte ==={parte}===: {ruim}"
+        # 26/10/2026 (PR #26, M1): o texto sai sozinho ao cliente — ver
+        # `_PROIBIDO_NO_AVISO`.
+        o_que = _torto(texto)
+        if o_que:
+            return (f"A parte ==={parte}=== traz {o_que}. Este e-mail sai sozinho ao "
+                    "cliente, sem ninguém conferir: ele só diz o andamento do "
+                    "protocolo. Telefone e e-mail da serventia entram pelos claros "
+                    "{telefone} e {email}; pagamento, valor e endereço de internet não "
+                    "cabem nele.")
     return ""
 
 

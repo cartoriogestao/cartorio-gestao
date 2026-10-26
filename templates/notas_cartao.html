@@ -245,7 +245,9 @@
     {# A CIENCIA DO TITULAR (correcao de seguranca de 26/10/2026, revisao do
        PR #31): a finalidade na tela nao prova nada; a marca no cartao prova
        que ela foi lida para a pessoa, por quem e quando. Sem ela, nenhuma
-       digital se colhe (o servidor recusa; a tela nem oferece). #}
+       digital se colhe (o servidor recusa; a tela nem oferece). Desde a
+       decisao do oficial de 26/10/2026 a hipotese e o art. 11, II, «g», e a
+       ciencia e TRANSPARENCIA (art. 9), e nao consentimento. #}
     {% if ciencia_bio %}
     <p class="small muted">Ciência da pessoa registrada em
       {{ fmt_dt(ciencia_bio.em) }} por {{ ciencia_bio.por }}.</p>
@@ -256,8 +258,9 @@
       <label><input type="checkbox" name="confirmo" value="1" required>
         {{ texto_da_ciencia }}</label>
       <button class="small primary">Registrar a ciência</button>
-      <div class="small muted">Sem a ciência registrada, as digitais não se colhem
-        ({{ base_legal.hipotese }} — {{ base_legal.situacao }})</div>
+      <div class="small muted">Sem a ciência registrada, as digitais não se colhem.
+        Base legal: {{ base_legal.hipotese }} ({{ base_legal.decisao }}).
+        {{ base_legal.situacao }}</div>
     </form>
     {% else %}
     <p class="small muted">Sem ciência da pessoa registrada — nenhuma digital colhida
@@ -276,6 +279,12 @@
       DigitalPersona no computador do balcão.
     </p>
     {% endif %}
+    {# 26/10/2026 - decisao do oficial («esse mesmo»): o modelo e o U.are.U 4500. #}
+    <p class="small muted" data-leitor-modelo>
+      Modelo esperado: <strong>{{ leitor.modelo }}</strong>. O TI instala, em cada
+      computador do balcão, o {{ leitor.cliente }} (traz o driver do aparelho), e os
+      arquivos do {{ leitor.sdk_nome }} na pasta <code>{{ leitor.sdk.pasta }}</code>.
+    </p>
     <noscript><p class="small muted">Sem JavaScript o leitor não é usado:
       envie a imagem pelo campo de cada dedo.</p></noscript>
     <div class="envio-recado small" data-leitor-recado hidden></div>

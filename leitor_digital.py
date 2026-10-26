@@ -3,12 +3,18 @@ O leitor de digital da casa — HID DigitalPersona, pelo navegador.
 
 O QUE ESTE MÓDULO DECIDE (26/10/2026, decisão do oficial)
     A casa tem o leitor no padrão do e-Notariado, da família HID
-    DigitalPersona U.are.U. O oficial o chamou de «DigitalPersona U 7500»; o
-    nome comercial exato NÃO se confirmou nesta máquina de desenvolvimento —
-    não há driver, serviço nem programa da HID instalado aqui (medido com
-    `Get-PnpDevice`, `Get-Service` e as pastas de programas, só leitura). A
-    decisão de 31/08/2026 registrada no projeto do relato #39 fala em
-    U.are.U 4500/4000b. Quem confere a etiqueta do aparelho é o balcão.
+    DigitalPersona U.are.U. O pedido falava em «DigitalPersona U 7500», e a
+    decisão de 31/08/2026 do projeto do relato #39 em U.are.U 4500/4000b;
+    perguntado, o oficial respondeu «esse mesmo» (26/10/2026): O MODELO É O
+    HID DigitalPersona U.are.U 4500 (`MODELO_ESPERADO`). Nesta máquina de
+    desenvolvimento não há driver, serviço nem programa da HID (medido só
+    leitura); a confirmação é a decisão dele, e não a etiqueta lida aqui.
+
+    O SDK/driver que este ramo usa para o U.are.U 4500 é o do próprio
+    fabricante: o cliente local «HID DigitalPersona Lite Client» (também
+    chamado «Authentication Device Client», que traz o driver do aparelho) e o
+    DigitalPersona WebSDK — os dois arquivos JavaScript de `ARQUIVOS_DO_SDK`
+    (`SDK_DO_LEITOR`). Nenhuma DLL do fabricante é carregada por processo nosso.
 
 O CAMINHO ESCOLHIDO: O SDK WEB DO FABRICANTE, NO PRÓPRIO NAVEGADOR
     O fabricante instala no Windows do balcão o cliente local dele («HID
@@ -50,10 +56,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-# O nome que a tela mostra. É a FAMÍLIA, de propósito: o modelo exato não se
-# confirmou (ver o docstring), e escrever um número de modelo que ninguém
-# conferiu seria o carimbo que mente.
-NOME_DO_LEITOR = "HID DigitalPersona (família U.are.U)"
+# O MODELO DO LEITOR — decisão do oficial em 26/10/2026 («esse mesmo»). Até
+# então a tela dizia só a família («HID DigitalPersona (família U.are.U)»),
+# porque o modelo não estava confirmado; agora está, e é o que a tela mostra.
+MODELO_ESPERADO = "HID DigitalPersona U.are.U 4500"
+NOME_DO_LEITOR = MODELO_ESPERADO
+# O que o TI instala no computador do balcão para este modelo, como a tela e
+# a documentação o dizem: o cliente do fabricante (com o driver) e o WebSDK.
+CLIENTE_DO_FABRICANTE = "HID DigitalPersona Lite Client (Authentication Device Client)"
+SDK_DO_LEITOR = "DigitalPersona WebSDK (JavaScript)"
 
 # Os dois arquivos do SDK web do fabricante, na ordem em que carregam: o
 # primeiro é o canal com o cliente local (o objeto `WebSdk`), o segundo é a
@@ -88,42 +99,56 @@ ORIGENS = (ORIGEM_LEITOR, ORIGEM_ARQUIVO)
 # biométrico é dado pessoal SENSÍVEL (LGPD art. 5º, II, e art. 11): a pessoa
 # tem de saber para que ele serve antes de pôr o dedo no leitor.
 FINALIDADE = (
-    "Finalidade da coleta (LGPD, art. 11): as digitais servem para "
-    "identificar quem abre a ficha de firma neste cartório e quem volta para "
-    "reconhecer firma, e para compor o Cadastro de Clientes do Notariado "
-    "(CCN). Dado biométrico é dado pessoal sensível: fica só no cadastro desta "
-    "serventia, não vai para relatório, auditoria nem para a ajuda, e não se "
-    "usa para outra finalidade."
+    "Finalidade da coleta (LGPD, art. 11, II, «g» — prevenção à fraude e "
+    "segurança do titular na identificação e na autenticação de cadastro): as "
+    "digitais servem para identificar quem abre a ficha de firma neste cartório "
+    "e quem volta para reconhecer firma, e para compor o Cadastro de Clientes "
+    "do Notariado (CCN). Dado biométrico é dado pessoal sensível: fica só no "
+    "cadastro desta serventia, não vai para relatório, auditoria nem para a "
+    "ajuda, e não se usa para outra finalidade."
 )
 
-# A HIPÓTESE LEGAL, E A CIÊNCIA REGISTRADA — correção de segurança de
-# 26/10/2026 (revisão do PR #31). A primeira versão mostrava a finalidade na
-# tela e não guardava nada: a casa não conseguiria demonstrar que a pessoa foi
-# informada, nem quem a informou, nem quando. Dado biométrico é sensível; se a
-# hipótese for o consentimento (art. 11, I), ele tem de ser específico,
-# destacado e DEMONSTRÁVEL.
+# A HIPÓTESE LEGAL — DECISÃO DO OFICIAL EM 26/10/2026, por recomendação;
+# conferir com o encarregado de dados. A coleta se apoia na LGPD, art. 11,
+# II, «g»: garantia da prevenção à fraude e da segurança do titular nos
+# processos de identificação e autenticação de cadastro. DEIXOU DE SER
+# CONSENTIMENTO (art. 11, I), que era a opção mais fechada enquanto a
+# hipótese estava A CONFERIR (correção de segurança de 26/10/2026, revisão do
+# PR #31).
 #
-# A escolha da hipótese é do oficial e NÃO foi feita. Até ele decidir, vale a
-# opção mais fechada: trata-se como consentimento, e SEM A CIÊNCIA REGISTRADA
-# NO CARTÃO (`nt_cartoes.biometria_ciencia_em/_por`) NENHUMA DIGITAL SE COLHE —
-# nem do leitor, nem de arquivo. Se o oficial escolher outra hipótese (art. 11,
-# II, «a» — cumprimento de obrigação regulatória, pelo CCN), muda-se aqui, com
-# a data, e a marca continua sendo o registro de que a pessoa foi informada
-# (art. 9º).
+# A CIÊNCIA DO TITULAR CONTINUA OBRIGATÓRIA ANTES DE COLHER — agora como
+# TRANSPARÊNCIA (LGPD, art. 9º: o titular tem direito à informação clara
+# sobre a finalidade), e não como consentimento: a marca no cartão
+# (`nt_cartoes.biometria_ciencia_em/_por`) registra que a finalidade foi lida
+# para a pessoa, por quem e quando. Sem ela NENHUMA DIGITAL SE COLHE — nem do
+# leitor, nem de arquivo. A marca não é pedido de licença: a recusa da pessoa
+# não se registra aqui, e o que fazer com ela é do balcão.
 BASE_LEGAL = {
     "data": "26/10/2026",
-    "hipotese": "LGPD, art. 11, I — consentimento específico e destacado do titular",
-    "situacao": ("A CONFERIR pelo oficial. Até a decisão, a casa trata a coleta como "
-                 "consentimento, e nenhuma digital se colhe sem a ciência registrada "
-                 "no cartão (quem informou e quando)."),
+    "hipotese": ("LGPD, art. 11, II, «g» — garantia da prevenção à fraude e da "
+                 "segurança do titular nos processos de identificação e "
+                 "autenticação de cadastro"),
+    "decisao": ("decisão do oficial em 26/10/2026, por recomendação; conferir com o "
+                "encarregado de dados"),
+    "situacao": ("A ciência do titular é obrigatória antes de colher, como "
+                 "transparência (art. 9º), e não como consentimento: nenhuma digital "
+                 "se colhe sem ela registrada no cartão (quem informou e quando)."),
 }
 
 # O texto da caixa que o balcão marca, com a pessoa na frente. É o que fica
-# provado: que a finalidade foi lida para ela e que ela concordou.
+# provado: que a finalidade foi lida para ela — TRANSPARÊNCIA, e não
+# consentimento (decisão de 26/10/2026, acima).
 TEXTO_DA_CIENCIA = (
-    "Li para a pessoa a finalidade acima, e ela concordou com a coleta das "
-    "suas digitais para este cadastro."
+    "Li para a pessoa a finalidade acima e a informei de que as suas digitais "
+    "serão colhidas para este cadastro, para a prevenção à fraude e a segurança "
+    "dela na identificação."
 )
+
+# A IMAGEM DA DIGITAL NO DISCO: não cifrar a imagem da digital, decisão do
+# oficial em 26/10/2026. O PNG fica em claro na pasta de arquivos (a pendência
+# estava em `docs/tecnico/PROJETO_39_CADASTRO_CCN.md`, fatia 2b); o que
+# protege a cópia externa é a cifra do backup (`backup.cred`).
+IMAGEM_CIFRADA_NO_DISCO = False
 
 # A assinatura do PNG. O SDK entrega PNG quando se pede `PngImage`; o que
 # chegar marcado como do leitor e não for PNG não veio do leitor.

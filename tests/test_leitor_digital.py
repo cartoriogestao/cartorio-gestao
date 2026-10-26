@@ -297,6 +297,81 @@ def test_a_documentacao_registra_a_finalidade_e_a_proxima_etapa():
     assert "leitor_digital.py" in doc
 
 
+# ============================================== decisões do oficial de 26/10/2026
+
+
+def test_o_modelo_do_leitor_e_o_U_are_U_4500_no_codigo_na_tela_e_no_doc(casa):
+    """«esse mesmo» — o oficial, 26/10/2026: o modelo é o HID DigitalPersona
+    U.are.U 4500, com o cliente e o WebSDK do fabricante."""
+    assert LD.MODELO_ESPERADO == "HID DigitalPersona U.are.U 4500"
+    assert LD.NOME_DO_LEITOR == LD.MODELO_ESPERADO
+    assert "Lite Client" in LD.CLIENTE_DO_FABRICANTE and "WebSDK" in LD.SDK_DO_LEITOR
+    html = _texto(casa["c"].get(f"/notas/cartoes/{casa['cartao']}"))
+    assert f"Leitor {LD.MODELO_ESPERADO}:" in html
+    assert f"Modelo esperado: <strong>{LD.MODELO_ESPERADO}</strong>" in html
+    assert LD.CLIENTE_DO_FABRICANTE in html and LD.SDK_DO_LEITOR in html
+    assert "família U.are.U)" not in html
+    doc = (RAIZ / "docs" / "tecnico" / "PROJETO_39_CADASTRO_CCN.md").read_text(
+        encoding="utf-8")
+    assert "HID DigitalPersona U.are.U 4500" in doc and "esse mesmo" in doc
+    for peca in ("HID DigitalPersona Lite Client", "DigitalPersona WebSDK",
+                 *LD.ARQUIVOS_DO_SDK):
+        assert peca in doc, peca
+
+
+def test_a_base_legal_e_o_art_11_II_g_e_a_ciencia_e_transparencia():
+    """Decisão do oficial em 26/10/2026, por recomendação; conferir com o
+    encarregado de dados. Deixa de ser consentimento (art. 11, I)."""
+    assert "art. 11, II, «g»" in LD.BASE_LEGAL["hipotese"]
+    assert "prevenção à fraude" in LD.BASE_LEGAL["hipotese"]
+    assert "consentimento" not in LD.BASE_LEGAL["hipotese"]
+    assert "art. 11, I " not in LD.BASE_LEGAL["hipotese"]
+    assert LD.BASE_LEGAL["decisao"] == ("decisão do oficial em 26/10/2026, por "
+                                        "recomendação; conferir com o encarregado "
+                                        "de dados")
+    assert "transparência" in LD.BASE_LEGAL["situacao"]
+    assert "art. 11, II, «g»" in LD.FINALIDADE
+    # a caixa registra que a pessoa foi INFORMADA, e não que concordou
+    assert "concordou" not in LD.TEXTO_DA_CIENCIA
+    assert "informei" in LD.TEXTO_DA_CIENCIA
+
+
+def test_a_tela_da_ciencia_diz_a_base_e_a_decisao(cg_casa_logada):
+    db, c = cg_casa_logada["db"], cg_casa_logada["c"]
+    with db.transaction() as con:
+        cid = int(criar_cartao(con, {"nome": "MARIO EXEMPLO",
+                                     "documento": "00000000191"}, agora=AGORA))
+    html = _texto(c.get(f"/notas/cartoes/{cid}"))
+    assert " ".join(LD.BASE_LEGAL["hipotese"].split()) in html
+    assert LD.BASE_LEGAL["decisao"] in html
+    assert "consentimento" in html and "transparência" in html   # «e não como consentimento»
+    assert "concordou" not in html
+
+
+def test_a_ciencia_vai_a_auditoria_com_a_base_nova(cg_casa_logada):
+    db, c = cg_casa_logada["db"], cg_casa_logada["c"]
+    with db.transaction() as con:
+        cid = int(criar_cartao(con, {"nome": "BEATRIZ EXEMPLO",
+                                     "documento": "00000000191"}, agora=AGORA))
+    token = _token(c.get(f"/notas/cartoes/{cid}").get_data(as_text=True))
+    c.post(f"/notas/cartoes/{cid}/biometria/ciencia",
+           data={"csrf_token": token, "confirmo": "1"}, follow_redirects=True)
+    with db.connect() as con:
+        linhas = banco(con).ler("SELECT * FROM audit_logs WHERE action=%s",
+                                ("NT_CADASTRO_BIOMETRIA_CIENCIA",))
+    tudo = " ".join(str(dict(x)) for x in linhas)
+    assert "11, II" in tudo and "encarregado de dados" in tudo
+
+
+def test_a_imagem_da_digital_nao_se_cifra_por_decisao_do_oficial():
+    """«não cifrar a imagem da digital, decisão do oficial em 26/10/2026» —
+    registrado no doc onde estava a pendência, e no código."""
+    assert LD.IMAGEM_CIFRADA_NO_DISCO is False
+    doc = (RAIZ / "docs" / "tecnico" / "PROJETO_39_CADASTRO_CCN.md").read_text(
+        encoding="utf-8")
+    assert "não cifrar a imagem da digital, decisão do oficial em 26/10/2026" in doc
+
+
 # ============================================== correções de segurança de 26/10/2026
 
 

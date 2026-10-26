@@ -221,8 +221,9 @@ def ciencia(con: Any, cartao_id: int) -> dict | None:
 
 def registrar_ciencia(con: Any, cartao_id: int, agora: str,
                       por: str | None) -> dict:
-    """Registra que a finalidade foi lida para a pessoa e que ela concordou.
-    ESCREVE só a marca do cartão.
+    """Registra que a finalidade foi lida para a pessoa — ciência como
+    TRANSPARÊNCIA (LGPD art. 9º), e não consentimento: a hipótese é o art. 11,
+    II, «g» (decisão do oficial em 26/10/2026). ESCREVE só a marca do cartão.
 
     A primeira marca FICA: registrar de novo não regrava quem informou nem
     quando — o fato é o do dia em que aconteceu.

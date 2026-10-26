@@ -918,6 +918,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """O que a tela do cartao precisa para falar do leitor. SO LE."""
         return {
             "nome": LD.NOME_DO_LEITOR,
+            # 26/10/2026, decisão do oficial («esse mesmo»): o modelo esperado,
+            # e o cliente/SDK do fabricante que o TI instala para ele
+            "modelo": LD.MODELO_ESPERADO,
+            "cliente": LD.CLIENTE_DO_FABRICANTE,
+            "sdk_nome": LD.SDK_DO_LEITOR,
             "finalidade": LD.FINALIDADE,
             "sdk": LD.estado_do_sdk(pasta_do_sdk_digital()),
             "arquivos_do_sdk": LD.ARQUIVOS_DO_SDK,
@@ -974,8 +979,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/notas/cartoes/<int:cartao_id>/biometria/ciencia", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_cartao_biometria_ciencia(cartao_id):
-        """Registra que a finalidade da coleta foi lida para a pessoa e que ela
-        concordou. **ESCREVE** só a marca do cartão.
+        """Registra que a finalidade da coleta foi lida para a pessoa (ciência
+        como TRANSPARÊNCIA, LGPD art. 9º — a hipótese é o art. 11, II, «g», por
+        decisão do oficial em 26/10/2026). **ESCREVE** só a marca do cartão.
 
         Correcao de seguranca de 26/10/2026 (revisao do PR #31): a tela
         mostrava a finalidade e nada guardava. A caixa e obrigatoria — marcar
@@ -996,7 +1002,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("notas_cartao", cartao_id=cartao_id))
         audit("NT_CADASTRO_BIOMETRIA_CIENCIA", "NT_CARTAO", cartao_id,
               {"em": marca["em"], "hipotese": LD.BASE_LEGAL["hipotese"],
-               "texto": LD.TEXTO_DA_CIENCIA})
+               "decisao": LD.BASE_LEGAL["decisao"], "texto": LD.TEXTO_DA_CIENCIA})
         flash("Ciência da pessoa registrada. Pode colher as digitais.", "success")
         return redirect(url_for("notas_cartao", cartao_id=cartao_id))
 

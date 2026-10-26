@@ -74,7 +74,7 @@ def test_a_senha_leva_a_letra_da_fila_e_a_numeracao_do_dia(casa):
     assert c["senha"] == "N001", "a numeração é por dia"
 
 
-def test_chamar_a_proxima_atende_a_preferencial_primeiro_e_exige_o_guiche(casa):
+def test_chamar_a_proxima_comeca_pela_preferencial_e_exige_o_guiche(casa):
     db, uid = casa["db"], casa["ids"]["beatriz"]
     with db.transaction() as con:
         SEN.emitir(con, preferencial=False, tipo=None, agora=_hora(8, 0))
@@ -90,6 +90,38 @@ def test_chamar_a_proxima_atende_a_preferencial_primeiro_e_exige_o_guiche(casa):
     assert (primeira["senha"], primeira["guiche"]) == ("P002", "3")
     assert segunda["senha"] == "N001"
     assert terceira is None
+
+
+def test_preferencial_e_normal_se_alternam_e_o_lado_vazio_nao_trava_a_fila(casa):
+    """Decisão do oficial em 26/10/2026: «preferencial alternada»."""
+    db, uid = casa["db"], casa["ids"]["beatriz"]
+    with db.transaction() as con:
+        for minuto, pref in ((0, True), (1, True), (2, True), (3, True), (4, False)):
+            SEN.emitir(con, preferencial=pref, tipo=None, agora=_hora(8, minuto))
+        SEN.gravar_guiche(con, uid, "1", agora=_hora(8, 5))
+    chamadas = []
+    for minuto in range(10, 16):
+        with db.transaction() as con:
+            r = SEN.chamar_proxima(con, user_id=uid, agora=_hora(8, minuto), dia=HOJE)
+        chamadas.append(r["senha"] if r else None)
+    # Uma de cada enquanto há das duas; acabada a normal, a preferencial não espera.
+    assert chamadas == ["P001", "N005", "P002", "P003", "P004", None]
+
+
+def test_o_papel_e_a_tela_seguem_a_mesma_alternancia_do_botao(casa):
+    db, uid = casa["db"], casa["ids"]["beatriz"]
+    with db.transaction() as con:
+        n1 = SEN.emitir(con, preferencial=False, tipo=None, agora=_hora(8, 0))
+        n2 = SEN.emitir(con, preferencial=False, tipo=None, agora=_hora(8, 1))
+        p3 = SEN.emitir(con, preferencial=True, tipo=None, agora=_hora(8, 2))
+        p4 = SEN.emitir(con, preferencial=True, tipo=None, agora=_hora(8, 3))
+    with db.transaction() as con:
+        # Ninguém chamado ainda: P003, N001, P004, N002.
+        assert SEN.ordem_de_chamada(con, HOJE) == [p3["id"], n1["id"], p4["id"], n2["id"]]
+        assert SEN.a_frente(con, SEN.senha(con, n2["id"])) == 3
+        assert SEN.a_frente(con, SEN.senha(con, p4["id"])) == 2
+        fila = [r["senha"] for r in SEN.fila_do_dia(con, HOJE) if r["status"] == "AGUARDANDO"]
+    assert fila == ["P003", "N001", "P004", "N002"]
 
 
 def test_a_mesma_senha_nao_se_chama_duas_vezes_nem_se_finaliza_sem_comecar(casa):

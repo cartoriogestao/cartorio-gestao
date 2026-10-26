@@ -20,7 +20,7 @@
   <form method="post" action="{{ url_for('senhas_chamar_proxima') }}" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button class="primary">Chamar a próxima</button>
-    <span class="small muted">Preferencial primeiro; depois a ordem de chegada.</span>
+    <span class="small muted">Alterna preferencial e normal (uma de cada); dentro de cada uma, a ordem de chegada.</span>
   </form>
 </section>
 

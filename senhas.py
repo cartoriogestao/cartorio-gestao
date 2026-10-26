@@ -266,23 +266,47 @@ def senha(con, ticket_id: int) -> dict | None:
     return r
 
 
+def ordem_de_chamada(con, dia: str) -> list[int]:
+    """Os ids das senhas AGUARDANDO na ordem em que `chamar_proxima` as
+    chamaria hoje, alternando preferencial e normal. Só LÊ.
+
+    É a mesma régua de `chamar_proxima`, simulada até o fim da fila — o
+    número do papel e a ordem da tela não podem dizer outra coisa que o
+    botão faz.
+    """
+    bd = banco(con)
+    ultima = bd.um(
+        """SELECT priority FROM service_tickets
+            WHERE ticket_date = %s AND called_at IS NOT NULL
+            ORDER BY called_at DESC, id DESC LIMIT 1""", (dia,))
+    esperando = bd.ler(
+        """SELECT id, priority FROM service_tickets
+            WHERE ticket_date = %s AND status = 'AGUARDANDO' ORDER BY ticket_no""", (dia,))
+    pref = [int(r["id"]) for r in esperando if int(r["priority"] or 0)]
+    norm = [int(r["id"]) for r in esperando if not int(r["priority"] or 0)]
+    a_vez = 0 if ultima and int(ultima["priority"] or 0) else 1
+    ordem: list[int] = []
+    while pref or norm:
+        lado = pref if (a_vez == 1 and pref) or not norm else norm
+        ordem.append(lado.pop(0))
+        a_vez = 0 if lado is pref else 1
+    return ordem
+
+
 def a_frente(con, ticket: dict) -> int:
     """Quantas senhas AGUARDANDO serão chamadas antes desta, pela ordem de
     `chamar_proxima`. Só LÊ — é o número que sai no papel."""
     if ticket.get("status") != AGUARDANDO:
         return 0
-    if int(ticket.get("priority") or 0):
-        sql = ("SELECT COUNT(*) AS n FROM service_tickets WHERE ticket_date = %s "
-               "AND status = 'AGUARDANDO' AND priority = 1 AND ticket_no < %s")
-    else:
-        sql = ("SELECT COUNT(*) AS n FROM service_tickets WHERE ticket_date = %s "
-               "AND status = 'AGUARDANDO' AND (priority = 1 OR ticket_no < %s)")
-    return int(banco(con).valor(sql, (ticket["ticket_date"], int(ticket["ticket_no"]))) or 0)
+    ordem = ordem_de_chamada(con, ticket["ticket_date"])
+    tid = int(ticket["id"])
+    return ordem.index(tid) if tid in ordem else 0
 
 
 def fila_do_dia(con, dia: str) -> list[dict]:
     """As senhas do dia, na ordem do balcão: chamadas e em atendimento no
-    alto, depois a fila (preferencial primeiro), depois as encerradas. Só LÊ."""
+    alto, depois a fila na ordem em que serão chamadas (preferencial e normal
+    alternadas, `ordem_de_chamada`), depois as encerradas. Só LÊ."""
     linhas = banco(con).ler(
         """SELECT s.*, u.full_name AS attendant_name, p.numero AS protocolo_numero
              FROM service_tickets s
@@ -291,8 +315,11 @@ def fila_do_dia(con, dia: str) -> list[dict]:
             WHERE s.ticket_date = %s
             ORDER BY CASE s.status WHEN 'CHAMADO' THEN 0 WHEN 'EM_ATENDIMENTO' THEN 1
                                    WHEN 'AGUARDANDO' THEN 2 ELSE 3 END,
-                     CASE WHEN s.status = 'AGUARDANDO' THEN s.priority ELSE 0 END DESC,
                      s.ticket_no""", (dia,))
+    posicao = {tid: i for i, tid in enumerate(ordem_de_chamada(con, dia))}
+    linhas.sort(key=lambda r: (
+        {"CHAMADO": 0, "EM_ATENDIMENTO": 1, "AGUARDANDO": 2}.get(r["status"], 3),
+        posicao.get(int(r["id"]), 0) if r["status"] == AGUARDANDO else 0))
     for r in linhas:
         r["senha"] = rotulo(r)
         r["situacao"] = NOME_DA_SITUACAO.get(r["status"], r["status"])
@@ -364,13 +391,15 @@ def agir(con, ticket_id: int, acao: str, *, user_id: int, agora: str) -> dict:
 
 
 def chamar_proxima(con, *, user_id: int, agora: str, dia: str) -> dict | None:
-    """Chama a próxima da fila: a preferencial mais antiga, e depois a normal
-    mais antiga. ESCREVE. None quando a fila está vazia.
+    """Chama a próxima da fila, ALTERNANDO preferencial e normal. ESCREVE.
+    None quando a fila está vazia.
 
-    A PREFERÊNCIA É ABSOLUTA, por ora (Lei 10.048/2000): enquanto houver
-    preferencial esperando, ela vem primeiro. Alternar (uma de cada) é decisão
-    do oficial, e a tela continua deixando chamar qualquer senha pelo botão
-    da linha.
+    Decisão do oficial em 26/10/2026: «preferencial alternada». A régua é a
+    última senha chamada no dia, em qualquer guichê: se ela foi preferencial,
+    vem agora a normal mais antiga; se foi normal (ou é a primeira do dia),
+    vem a preferencial mais antiga. Quando o lado da vez não tem ninguém
+    esperando, chama-se o outro: a fila nunca fica parada por causa da regra.
+    A tela continua deixando chamar qualquer senha pelo botão da linha.
     """
     guiche = guiche_de(con, user_id)
     if not guiche:
@@ -379,10 +408,16 @@ def chamar_proxima(con, *, user_id: int, agora: str, dia: str) -> dict | None:
     bd = banco(con)
     bd.travar("service_tickets.chamada")
     for _ in range(3):
+        ultima = bd.um(
+            """SELECT priority FROM service_tickets
+                WHERE ticket_date = %s AND called_at IS NOT NULL
+                ORDER BY called_at DESC, id DESC LIMIT 1""", (dia,))
+        a_vez = 0 if ultima and int(ultima["priority"] or 0) else 1
         prox = bd.um(
             """SELECT id FROM service_tickets
                 WHERE ticket_date = %s AND status = 'AGUARDANDO'
-                ORDER BY priority DESC, ticket_no LIMIT 1""", (dia,))
+                ORDER BY CASE WHEN priority = %s THEN 0 ELSE 1 END, ticket_no
+                LIMIT 1""", (dia, a_vez))
         if not prox:
             return None
         feito = _chamar(bd, prox["id"], user_id=user_id, guiche=guiche, agora=agora,

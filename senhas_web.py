@@ -78,7 +78,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @login_required
     @roles_required(*PRATICA)
     def senhas_chamar_proxima():
-        """Chama a próxima da fila (preferencial primeiro)."""
+        """Chama a próxima da fila (preferencial e normal alternadas)."""
         try:
             with db.transaction() as con:
                 feito = SEN.chamar_proxima(con, user_id=usuario_id(), agora=db.now(),

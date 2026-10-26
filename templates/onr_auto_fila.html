@@ -9,6 +9,28 @@
     <strong>a revisar e aprovar</strong> espera você: abra, confira o resumo e a prévia, e
     clique em <strong>Aprovar</strong> — a certidão é emitida nesse clique, com o selo, e o robô
     a assina com o A3 do oficial e a envia ao ONR na rodada seguinte.</p>
+  {% if selo_pago_ligado %}
+  <p class="notice small">O <strong>selo pago no ONR</strong> está LIGADO: a certidão aprovada aqui sai
+    com o selo coberto pelo pagamento feito no ONR (sem lançamento no caixa).</p>
+  {% else %}
+  <p class="warning small">O <strong>selo pago no ONR</strong> está DESLIGADO (o padrão, até o oficial
+    medir o primeiro pedido pago de verdade): o robô busca os pedidos e informa as custas aprovadas,
+    mas o pedido pago vai <strong>à mão</strong> — a certidão segue a trava normal do selo pago, pela
+    tela de sempre.</p>
+  {% endif %}
+  {% if e_admin %}
+  <details class="small"><summary>Ligar ou desligar o selo pago no ONR (só o oficial)</summary>
+    <form method="post" action="{{ url_for('onr_auto_selo_pago') }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="span2">Justificativa (para ligar: o pedido pago que você conferiu passar de
+        «Aguardando pagamento» para «Em aberto») <input name="justificativa" size="70"></label>
+      <div class="span2">
+        {% if selo_pago_ligado %}<button name="acao" value="desligar">Desligar</button>
+        {% else %}<button class="primary" name="acao" value="ligar">Ligar</button>{% endif %}
+      </div>
+    </form>
+  </details>
+  {% endif %}
   <p class="small">
   {% for e, n in contas.items() %}{% if n %}<span class="badge {{ 'alta' if e in esperam_gente else '' }}">{{ nome_da_etapa.get(e, e) }}: {{ n }}</span> {% endif %}{% endfor %}
   </p>

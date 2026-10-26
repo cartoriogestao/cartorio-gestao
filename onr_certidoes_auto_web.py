@@ -39,6 +39,7 @@ RECUSAS = (OC.CertidaoOnrError, WS.WSOficioError, AUTO.AutoError)
 def registrar_rotas(app, db, login_required, roles_required, audit):
     usuario_nome = app.extensions["usuario_nome"]
     usuario_id = app.extensions["usuario_id"]
+    usuario_papel = app.extensions["usuario_papel"]
     archive_root = app.extensions["archive_root"]
 
     with db.connect() as con:
@@ -98,15 +99,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 raise AUTO.AutoError("a tela do papel não devolveu a certidão "
                                      f"(HTTP {saida['status']}).")
             with db.transaction() as con:
-                AUTO.guardar_pdf(con, pedido_id, saida["dados"],
-                                 pasta=archive_root() / "ri" / "onr" / "certidoes" / "pdf",
-                                 usuario_id=usuario_id(), agora=agora())
+                sha = AUTO.guardar_pdf(con, pedido_id, saida["dados"],
+                                       pasta=archive_root() / "ri" / "onr" / "certidoes" / "pdf",
+                                       usuario_id=usuario_id(), agora=agora())
         except AUTO.AutoError as erro:
             with db.transaction() as con:
                 AUTO._gravar(banco(con), pedido_id, agora(),
                              erro=f"PDF: {erro}")
             flash(f"A certidão foi emitida, mas o PDF não: {erro}", "warning")
             return False
+        # A PROVA DO PAPEL FICA FORA DA LINHA DO PEDIDO (26/10/2026, M2): o robô
+        # só assina o PDF cujo sha está AQUI, com o número da certidão.
+        audit(AUTO.ACAO_PDF_GERADO, "onr_cert_pedidos", pedido_id,
+              {"certidao_id": int(certidao_id), "sha256": sha})
         return True
 
     def _voltar(pedido_id: int):
@@ -117,12 +122,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     @app.route("/ri/onr/certidoes/automacao")
     @roles_required(*QUEM)
     def onr_auto_fila():
+        import ato_selado as AS
         with db.connect() as con:
             AUTO.init_schema(con)
             lista = AUTO.fila(con)
             contas = AUTO.contar(con)
+            selo_pago_ligado = AS.selo_pago_no_onr_ligado(con)
         abertas = [a for a in lista if a["etapa"] not in (AUTO.RESPONDIDO, AUTO.FECHADO)]
         return render_template("onr_auto_fila.html", lista=abertas, contas=contas,
+                               selo_pago_ligado=selo_pago_ligado,
+                               e_admin=str(usuario_papel() or "").upper() == "ADMIN",
                                nome_da_etapa=AUTO.NOME_DA_ETAPA,
                                esperam_gente=AUTO.ESPERAM_GENTE,
                                rotulo_do_tipo=OC.rotulo_do_tipo,
@@ -131,6 +140,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     @app.route("/ri/onr/certidoes/<int:pedido_id>/automacao")
     @roles_required(*QUEM)
     def onr_auto_pedido(pedido_id: int):
+        import ato_selado as AS
         import ri_certidao_emissao as EMISSAO
         import ri_certidao_negativa as RINEG
         from ri_web import teor_seguro
@@ -140,6 +150,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             except RECUSAS as erro:
                 flash(str(erro), "danger")
                 return redirect(url_for("onr_certidao_ficha", pedido_id=pedido_id))
+            selo_pago_ligado = AS.selo_pago_no_onr_ligado(con)
             dados = json.loads(p.get("dados_json") or "{}")
             certidao = None
             if a.get("certidao_id"):
@@ -175,6 +186,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 previa_erro = type(erro).__name__
         return render_template("onr_auto_pedido.html", p=p, a=a, dados=dados,
                                certidao=certidao, pessoas=pessoas, tipo_ri=tipo_ri,
+                               selo_pago_ligado=selo_pago_ligado,
+                               pode_gerar_pdf=AUTO.pode_gerar_o_pdf(a, usuario_papel()),
                                previa=previa, previa_erro=previa_erro,
                                onus_painel=onus_painel, m=matricula,
                                RESULTADOS_ONUS=RONIA.RESULTADOS,
@@ -300,12 +313,38 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def onr_auto_pdf(pedido_id: int):
         with db.connect() as con:
             a = AUTO.preparo(con, pedido_id)
-        if not a or a["etapa"] != AUTO.A_ASSINAR or not a.get("certidao_id"):
-            flash("Só a certidão emitida e esperando o envio tem PDF a gerar.", "danger")
+        if not AUTO.pode_gerar_o_pdf(a, usuario_papel()):
+            flash("Só a certidão emitida e esperando o envio tem PDF a gerar (com o pedido em "
+                  "erro, só o oficial).", "danger")
             return _voltar(pedido_id)
         if _gerar_pdf(pedido_id, a["certidao_id"]):
+            if a["etapa"] == AUTO.ERRO:
+                # O oficial conferiu e gerou de novo: o pedido volta a esperar o robô.
+                with db.transaction() as con:
+                    AUTO._gravar(banco(con), pedido_id, agora(), etapa=AUTO.A_ASSINAR, erro=None)
             flash("PDF gerado. O robô assina e envia na próxima rodada.", "ok")
         return _voltar(pedido_id)
+
+    @app.route("/ri/onr/certidoes/automacao/selo-pago", methods=["POST"])
+    @roles_required("ADMIN")
+    def onr_auto_selo_pago():
+        """Liga ou desliga a forma CENTRAL_ONR (26/10/2026, M5). Só o oficial;
+        ligar pede a frase da medição, e os dois ficam na auditoria."""
+        import ato_selado as AS
+        ligar = request.form.get("acao") == "ligar"
+        try:
+            with db.transaction() as con:
+                AS.ligar_selo_pago_no_onr(con, ligado=ligar, papel=usuario_papel(),
+                                          usuario=usuario_nome(), usuario_id=usuario_id(),
+                                          justificativa=request.form.get("justificativa"),
+                                          agora=agora())
+        except AS.AtoError as erro:
+            flash(str(erro), "danger")
+        else:
+            flash("Selo pago no ONR LIGADO." if ligar else
+                  "Selo pago no ONR desligado: as certidões pedidas pelo ONR seguem a trava "
+                  "normal do selo pago.", "ok")
+        return redirect(url_for("onr_auto_fila"))
 
     @app.route("/ri/onr/certidoes/<int:pedido_id>/automacao/a-mao", methods=["POST"])
     @roles_required(*QUEM)

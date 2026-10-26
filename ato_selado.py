@@ -3695,6 +3695,14 @@ STATUS_ONR_PAGO = frozenset({"1", "2", "13", "em aberto", "processando",
 JANELA_DO_STATUS_ONR_EM_MINUTOS = 15
 PREFIXO_DA_FINALIDADE_ONR = "Pedido ONR "
 COBRANCA_INTEGRAL_ONR = frozenset({"1", "integral"})
+#: A FORMA CENTRAL_ONR NASCE DESLIGADA (revisão de segurança dos PRs abertos,
+#: 26/10/2026, PR #13, achado M5). O mapa de status acima é leitura do manual,
+#: e não medição: se o ONR puser um pedido em «Em aberto» antes do pagamento,
+#: o selo sairia sem o emolumento entrar. Até o oficial medir o primeiro pedido
+#: pago de verdade passar de 11 para um dos três, a forma não cobre nada — a
+#: certidão segue a trava normal do selo pago e o pedido vai à mão. Só o ADMIN
+#: liga (`ligar_selo_pago_no_onr`), com justificativa e auditoria; vale «1».
+CHAVE_SELO_PAGO_NO_ONR = "onr_certidoes_selo_pago_no_onr"
 
 
 def envelope_da_certidao_eletronica_crc(*, nome_parte: Any, documento: Any,
@@ -3938,8 +3946,13 @@ def _dentro_da_janela_onr(conferido_em: Any, agora: Any) -> bool:
 
 
 def e_certidao_paga_no_onr(bd, tabela: Any, ato_id: Any, dados: Any, agora: Any) -> bool:
-    """O selo é o da certidão do RI paga no ONR (ver `FORMA_CENTRAL_ONR`)? SÓ LÊ."""
+    """O selo é o da certidão do RI paga no ONR (ver `FORMA_CENTRAL_ONR`)? SÓ LÊ.
+
+    Com o ajuste `CHAVE_SELO_PAGO_NO_ONR` desligado (o de fábrica), NUNCA
+    (26/10/2026, M5)."""
     if tabela != "ri_certidoes" or ato_id is None:
+        return False
+    if _ler_setting(bd, CHAVE_SELO_PAGO_NO_ONR).strip() != "1":
         return False
     if not str(codigo_do_envelope(dados) or "").startswith("16.24"):
         return False
@@ -4115,6 +4128,34 @@ def ligar_trava(con, *, ligada: bool, papel: Any, usuario: Any,
              usuario=usuario, usuario_id=usuario_id, entidade="SETTINGS",
              entidade_id=None, detalhes={"justificativa": motivo}, agora=agora)
     return {"ligada": bool(ligada)}
+
+
+def selo_pago_no_onr_ligado(con) -> bool:
+    """A forma CENTRAL_ONR está ligada pelo oficial? Só LÊ. Desligada por
+    padrão (26/10/2026, M5) — ver `CHAVE_SELO_PAGO_NO_ONR`."""
+    return _ler_setting(banco(con), CHAVE_SELO_PAGO_NO_ONR).strip() == "1"
+
+
+def ligar_selo_pago_no_onr(con, *, ligado: bool, papel: Any, usuario: Any,
+                           usuario_id: Any, justificativa: Any, agora: str) -> dict:
+    """Liga ou desliga a forma CENTRAL_ONR. ESCREVE. Só ADMIN.
+
+    O contrário da trava: aqui é LIGAR que abre a porta (o selo sai sem o
+    caixa ver o dinheiro), e por isso é ligar que pede justificativa — a
+    medição do primeiro pedido pago de verdade, nas palavras de quem mediu.
+    Desligar é sempre permitido ao ADMIN, sem frase mínima."""
+    _so_admin(papel, "ligar ou desligar o selo pago no ONR")
+    motivo = _justificativa(justificativa) if ligado else " ".join(
+        str(justificativa or "").split())
+    bd = banco(con)
+    bd.escrever(
+        """INSERT INTO settings (key, value) VALUES (%s, %s)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""",
+        (CHAVE_SELO_PAGO_NO_ONR, "1" if ligado else "0"))
+    _auditar(bd, acao="ONR_SELO_PAGO_LIGADO" if ligado else "ONR_SELO_PAGO_DESLIGADO",
+             usuario=usuario, usuario_id=usuario_id, entidade="SETTINGS",
+             entidade_id=None, detalhes={"justificativa": motivo}, agora=agora)
+    return {"ligado": bool(ligado)}
 
 
 def barra_da_trava(con) -> str | None:

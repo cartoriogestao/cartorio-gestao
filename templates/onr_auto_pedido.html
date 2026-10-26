@@ -21,6 +21,9 @@
     {% if a.pessoa_busca %}<p><strong>Pessoa pesquisada:</strong> {{ a.pessoa_busca }}</p>{% endif %}
     {% if a.motivo %}<p class="notice small">{{ a.motivo }}</p>{% endif %}
     {% if a.erro %}<p class="warning small">{{ a.erro }}</p>{% endif %}
+    {% if not selo_pago_ligado and a.etapa in ('A_REVISAR', 'A_MAO', 'AGUARDANDO_PAGAMENTO') %}<p class="warning small">O selo pago no ONR está DESLIGADO (só o
+      oficial liga): este pedido não é emitido por aqui — a certidão segue a trava normal do selo
+      pago, pela tela de sempre.</p>{% endif %}
     <details><summary class="small">Tudo o que o ONR mandou</summary>
       <table class="small">{% for k, v in dados.items() %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}</table>
     </details>
@@ -118,7 +121,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="primary">Selar (confere o pagamento no ONR)</button></form>
     {% endif %}
-    {% if a.etapa == 'A_ASSINAR' and not a.pdf_caminho %}
+    {% if pode_gerar_pdf and (a.etapa == 'ERRO' or not a.pdf_caminho) %}
     <form method="post" action="{{ url_for('onr_auto_pdf', pedido_id=p.id) }}" style="display:inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button>Gerar o PDF de novo</button></form>

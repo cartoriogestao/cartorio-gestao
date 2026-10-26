@@ -80,6 +80,12 @@ CREATE TABLE IF NOT EXISTS onr_cert_auto (
 );
 """
 
+#: As colunas que nasceram depois da tabela — só `ALTER TABLE ADD COLUMN`.
+#: O `.p7s` que o PRÓPRIO robô assinou e guardou (revisão de segurança dos PRs
+#: abertos, 26/10/2026, M3): é só ele que vai ao ONR, e não «o que estiver
+#: anexado ao pedido».
+MIGRACOES = (("p7s_anexo_id", "bigint"), ("p7s_sha256", "TEXT"))
+
 # ---------------------------------------------------------------- as etapas
 #
 #   CUSTAS_A_APROVAR → CUSTAS_APROVADAS → (robô informa) → AGUARDANDO_PAGAMENTO
@@ -126,8 +132,18 @@ class AutoError(ValueError):
     """Recusa com a frase pronta para o balcão."""
 
 
+class RecusaDoRobo(AutoError):
+    """O robô achou algo que NÃO é dele decidir (o PDF não é o aprovado, um
+    anexo que ele não guardou): o pedido vai a ERRO, para o oficial — e não
+    fica tentando a cada rodada (26/10/2026, M2 e M3)."""
+
+
 def init_schema(con) -> None:
-    banco(con).escrever(SCHEMA)
+    bd = banco(con)
+    bd.escrever(SCHEMA)
+    for coluna, tipo in MIGRACOES:
+        if not bd.tem_coluna("onr_cert_auto", coluna):
+            bd.escrever(f"ALTER TABLE onr_cert_auto ADD COLUMN {coluna} {tipo}")
 
 
 # ---------------------------------------------------------------- o que o ONR pede
@@ -225,13 +241,21 @@ def conferir_negativa_do_pedido(con, dados: dict) -> None:
             "marcando as matrículas, ou faça à mão.")
 
 
-def motivo_sem_selo_pago_no_onr(pedido: dict) -> str | None:
+def motivo_sem_selo_pago_no_onr(pedido: dict, *, ligado: bool = True) -> str | None:
     """Por que o selo pago no ONR não cobriria este pedido — ou None. Só calcula.
 
     A régua é a de `ato_selado.e_certidao_paga_no_onr`, dita antes de emitir:
     «o pedido chega no protocolo para darmos orçamento; depois volta pro
-    cliente, ele paga e recebemos o encaminhamento» (o oficial, 25/10/2026)."""
+    cliente, ele paga e recebemos o encaminhamento» (o oficial, 25/10/2026).
+
+    `ligado` é o ajuste do oficial (`ato_selado.selo_pago_no_onr_ligado`),
+    desligado de fábrica (26/10/2026, M5): desligado, nenhum pedido pago é
+    preparado para a aprovação — vai à mão, pela trava normal do selo."""
     import ato_selado as AS
+    if not ligado:
+        return ("o selo pago no ONR está DESLIGADO (só o oficial liga, depois de medir o "
+                "primeiro pedido pago de verdade): a certidão segue a trava normal do selo "
+                "pago — faça pela tela de sempre")
     if not AS.cobranca_integral_do_pedido_onr(pedido.get("dados_json")):
         return ("a cobrança do pedido não é INTEGRAL (prefeitura ou isenção): o selo "
                 "pago no ONR não vale para ela — o oficial decide como selar")
@@ -360,6 +384,7 @@ def sincronizar(con, ambiente: str, agora: str) -> dict:
     init_schema(con)
     bd = banco(con)
     contas = {"novos": 0, "mudaram": 0}
+    ligado = AS.selo_pago_no_onr_ligado(con)
     for p in bd.ler("SELECT * FROM onr_cert_pedidos WHERE ambiente=%s ORDER BY id", (ambiente,)):
         p = dict(p)
         atual = preparo(con, p["id"])
@@ -401,7 +426,7 @@ def sincronizar(con, ambiente: str, agora: str) -> dict:
             if etapa in (A_REVISAR, A_MAO, ERRO) and atual.get("via"):
                 continue                       # já preparado; não refaz a decisão
             sug = sugerir(con, p)
-            barra = motivo_sem_selo_pago_no_onr(p)
+            barra = motivo_sem_selo_pago_no_onr(p, ligado=ligado)
             if barra and sug["etapa"] == A_REVISAR:
                 sug = sug | {"etapa": A_MAO, "motivo": barra}
             _gravar(bd, p["id"], agora, etapa=sug["etapa"], via=sug["via"],
@@ -471,7 +496,7 @@ def marcar_emitindo(con, pedido_id: int, *, user_id: int, nome: str, status_onr:
                         "a certidão só sai com o pedido pago (Em aberto, Processando ou "
                         "Pendente de resposta). Nada foi emitido.")
     p = dict(banco(con).um("SELECT * FROM onr_cert_pedidos WHERE id=%s", (int(pedido_id),)))
-    barra = motivo_sem_selo_pago_no_onr(p)
+    barra = motivo_sem_selo_pago_no_onr(p, ligado=AS.selo_pago_no_onr_ligado(con))
     if barra:
         raise AutoError(f"Não dá para emitir por aqui: {barra}. Nada foi emitido.")
     marca = finalidade_do_pedido(p["protocolo"])
@@ -557,8 +582,12 @@ def voltar_a_assinar_depois_do_selo(con, pedido_id: int, *, agora: str) -> str:
 
 
 def guardar_pdf(con, pedido_id: int, pdf: bytes, *, pasta: Path, usuario_id: int | None,
-                agora: str) -> None:
-    """O papel da certidão, ANTES da assinatura (não vai ao ONR). ESCREVE."""
+                agora: str) -> str:
+    """O papel da certidão, ANTES da assinatura (não vai ao ONR). ESCREVE.
+
+    Devolve o sha256, que a rota grava na auditoria (`ACAO_PDF_GERADO`) — é
+    contra ESSE registro, e não contra a linha que esta função escreve, que o
+    robô reconfere antes de assinar (26/10/2026, M2)."""
     import hashlib
     if not pdf[:5].startswith(b"%PDF"):
         raise AutoError("O papel da certidão não saiu em PDF (o LibreOffice está instalado "
@@ -568,6 +597,91 @@ def guardar_pdf(con, pedido_id: int, pdf: bytes, *, pasta: Path, usuario_id: int
     destino = pasta / f"{sha[:16]}_certidao.pdf"
     destino.write_bytes(pdf)
     _gravar(banco(con), pedido_id, agora, pdf_caminho=str(destino), pdf_sha256=sha)
+    return sha
+
+
+# O ROBÔ ASSINA O QUE FOI APROVADO, E NÃO O QUE O BANCO APONTA (revisão de
+# segurança dos PRs abertos, 26/10/2026, PR #13, achado M2). Até aqui a única
+# conferência era o sha do arquivo contra o `pdf_sha256` da MESMA linha que
+# `guardar_pdf` escreveu: quem escrevesse na linha (SQL direto, script de
+# agente, restauração torta) apontava qualquer PDF do disco, com o sha dele, e
+# o robô o assinava com o A3 do oficial. É o precedente de
+# `update_manager.reconferir_contra_o_pacote` — «a preparação não é prova»: a
+# prova fica FORA do que o preparador escreveu. Aqui ela é a linha da
+# auditoria (corrente de hash) que a TELA grava ao gerar o PDF da certidão
+# aprovada, com o número da certidão; e o arquivo tem de morar na pasta dos
+# PDFs das certidões do ONR.
+#
+#   O QUE NÃO SE CONFERE: que o texto do PDF seja o da certidão `certidao_id`
+#   (número e ano lidos dentro do PDF). O PDF sai do LibreOffice com o texto
+#   comprimido, e ler isso exigiria uma biblioteca que a casa não tem. O
+#   vínculo é o da rota: a tela gera o PDF de `ri_certidao_odt(certidao_id)`
+#   e grava os dois juntos na auditoria.
+ACAO_PDF_GERADO = "ONR_CERTIDAO_PDF_GERADO"
+
+
+def sha_do_pdf_na_auditoria(con, pedido_id: int, certidao_id: int) -> str | None:
+    """O sha256 do último PDF que a tela gerou para esta certidão deste pedido,
+    pela auditoria — ou None. Só LÊ."""
+    bd = banco(con)
+    if not bd.tem_tabela("audit_logs"):
+        return None
+    linha = bd.um("SELECT details FROM audit_logs WHERE action=%s AND entity_type=%s "
+                  "AND entity_id=%s ORDER BY id DESC LIMIT 1",
+                  (ACAO_PDF_GERADO, "onr_cert_pedidos", int(pedido_id)))
+    try:
+        dados = json.loads((linha or {}).get("details") or "{}")
+    except (TypeError, ValueError):
+        return None
+    if str(dados.get("certidao_id") or "") != str(int(certidao_id)):
+        return None
+    sha = str(dados.get("sha256") or "").strip().lower()
+    return sha if re.fullmatch(r"[0-9a-f]{64}", sha) else None
+
+
+def pdf_conferido(con, a: dict, pasta_dos_pdfs: Path) -> bytes:
+    """O PDF que o robô vai assinar — só se for o aprovado. Só LÊ.
+
+    Recusa (`RecusaDoRobo`, o pedido vai a ERRO): sem certidão amarrada, fora
+    da pasta dos PDFs, sumido, mudado depois de guardado, ou diferente do que a
+    auditoria registra para esta certidão."""
+    import hashlib
+    caminho = str(a.get("pdf_caminho") or "").strip()
+    if not caminho or not a.get("certidao_id"):
+        raise RecusaDoRobo("não há PDF da certidão aprovada para assinar")
+    try:
+        Path(caminho).resolve().relative_to(Path(pasta_dos_pdfs).resolve())
+    except (ValueError, OSError):
+        raise RecusaDoRobo("o PDF apontado está fora da pasta das certidões do ONR — o robô "
+                           "não assina arquivo de outro lugar; o oficial confere") from None
+    try:
+        pdf = Path(caminho).read_bytes()
+    except OSError:
+        raise RecusaDoRobo("o PDF guardado na aprovação sumiu — o oficial gera de novo na "
+                           "tela do pedido") from None
+    sha = hashlib.sha256(pdf).hexdigest()
+    if not pdf[:5].startswith(b"%PDF") or sha != str(a.get("pdf_sha256") or ""):
+        raise RecusaDoRobo("o PDF mudou depois de guardado — nada foi assinado; o oficial "
+                           "confere e gera de novo na tela do pedido")
+    if sha != sha_do_pdf_na_auditoria(con, int(a["pedido_id"]), int(a["certidao_id"])):
+        raise RecusaDoRobo("o PDF não é o que a tela gerou da certidão aprovada (a auditoria "
+                           "registra outro, ou nenhum) — nada foi assinado; o oficial confere")
+    return pdf
+
+
+def pode_gerar_o_pdf(a: dict | None, papel: Any) -> bool:
+    """Quem pode pedir o PDF da certidão de novo. Só calcula.
+
+    Esperando o envio, qualquer um da casa (o PDF sai da própria certidão).
+    Em ERRO — o robô recusou o PDF (M2, 26/10/2026) —, só o oficial, e só
+    enquanto o robô não assinou nada: o PDF novo ganha linha nova na
+    auditoria e o pedido volta a esperar o robô."""
+    if not a or not a.get("certidao_id"):
+        return False
+    if a.get("etapa") == A_ASSINAR:
+        return True
+    return (a.get("etapa") == ERRO and not a.get("p7s_anexo_id")
+            and str(papel or "").upper() == "ADMIN")
 
 
 def marcar_a_mao(con, pedido_id: int, motivo: str, *, usuario: str, agora: str) -> None:
@@ -605,49 +719,141 @@ def _pasta_dos_arquivos(ctx) -> Path:
         / "ri" / "onr" / "certidoes"
 
 
-def assinar(pdf: bytes, *, pin: str, thumbprint: str | None = None) -> bytes:
+def assinar(pdf: bytes, *, pin: str, thumbprint: str | None = None) -> tuple[bytes, dict]:
     """O `.p7s` (CAdES anexado) pelo serviço A3 local — o driver nunca é
-    carregado neste processo. Rede local; ESCREVE nada."""
+    carregado neste processo. Rede local; ESCREVE nada. Devolve o `.p7s` e o
+    que o serviço disse do certificado (`subject`, `thumbprint`), para a
+    auditoria do robô (26/10/2026, M4)."""
     import assinar_com_a3 as A3
     dados = A3.assinar_pdf(pdf, pin, thumbprint=thumbprint or None)
     cms = dados.get("cms_b64")
     if not cms:
         raise AutoError("O serviço do A3 assinou, mas não devolveu o envelope .p7s.")
-    return base64.b64decode(cms)
+    return base64.b64decode(cms), {"thumbprint": dados.get("thumbprint"),
+                                   "subject": dados.get("subject")}
+
+
+# QUEM FEZ É O ROBÔ, E A AUDITORIA DIZ ISSO (revisão de segurança dos PRs
+# abertos, 26/10/2026, PR #13, achado M4). Até aqui o envio, a finalização e
+# as custas informadas iam para o banco no NOME do escrevente que aprovou, e
+# nenhuma das quatro ações do robô entrava em `audit_logs`: numa inspeção,
+# «quem enviou ao ONR?» respondia errado. Agora as colunas dizem «automação
+# (aprovado por …)» e cada ação tem a sua linha de auditoria, no usuário
+# `automacao` (o mesmo que o agente da central usa).
+USUARIO_DA_AUDITORIA = "automacao"
+ACAO_ASSINADA = "ONR_CERTIDAO_ASSINADA_PELO_ROBO"
+ACAO_ENVIADA = "ONR_CERTIDAO_ENVIADA_PELO_ROBO"
+ACAO_FINALIZADA = "ONR_CERTIDAO_FINALIZADA_PELO_ROBO"
+ACAO_CUSTAS = "ONR_CERTIDAO_CUSTAS_INFORMADAS_PELO_ROBO"
+
+
+def rotulo_do_robo(quem_aprovou: Any, o_que: str = "aprovado") -> str:
+    """O que vai em `enviado_por`/`finalizado_por`/`custas_por`. Só calcula."""
+    nome = str(quem_aprovou or "").strip()
+    return f"automação ({o_que} por {nome})" if nome else "automação"
+
+
+def _auditar_robo(ctx, acao: str, pedido_id: int, detalhes: dict) -> None:
+    """Uma linha de auditoria por ação do robô. FORA de transação: `log` abre
+    a sua (a regra de `audit()` da casa)."""
+    ctx.db.log(None, USUARIO_DA_AUDITORIA, acao, "onr_cert_pedidos", int(pedido_id), detalhes)
+
+
+# O ROBÔ SÓ ENVIA O `.p7s` QUE ELE MESMO ASSINOU (revisão de segurança dos PRs
+# abertos, 26/10/2026, PR #13, achado M3). Até aqui, se o pedido já tivesse
+# anexo, o `.p7s` recém-assinado (gastando o PIN) era descartado e ia ao ONR o
+# que estivesse em `attachments` — e qualquer USER anexa pela ficha manual. A
+# decisão vem ANTES de assinar: anexo que o robô não guardou leva o pedido a
+# ERRO, sem gastar o PIN e sem enviar nada.
+def _conferir_anexos(p: dict, presentes: list[dict], a: dict) -> None:
+    meu = int(a.get("p7s_anexo_id") or 0)
+    alheios = [x for x in presentes if int(x["id"]) != meu]
+    if alheios:
+        nomes = ", ".join(str(x.get("original_name") or "?") for x in alheios)[:200]
+        raise RecusaDoRobo(
+            f"o pedido tem anexo que o robô não guardou ({nomes}): ele só envia o .p7s que "
+            "ele mesmo assinou. Nada foi assinado nem enviado; o oficial confere na ficha "
+            "do pedido (tire o anexo alheio ou faça à mão)")
+    if meu and not any(int(x["id"]) == meu for x in presentes):
+        raise RecusaDoRobo("o .p7s que o robô assinou sumiu dos anexos do pedido — nada foi "
+                           "enviado; o oficial confere")
+    if p.get("situacao") == "ENVIADO" and not a.get("enviado_em"):
+        raise RecusaDoRobo("o pedido consta como ENVIADO ao ONR, mas não pelo robô — ele não "
+                           "finaliza o que não enviou; o oficial confere")
+
+
+def _so_o_que_o_robo_assinou(con, pedido_id: int, a: dict) -> list[dict]:
+    """A lista de envio, com o `.p7s` do robô e nada mais. Só LÊ."""
+    import hashlib
+    import onr_certidoes as OC
+    lista = OC.anexos_para_enviar(con, pedido_id)      # confere o sha do disco
+    presentes = OC.anexos(con, pedido_id)
+    if (len(lista) != 1 or len(presentes) != 1
+            or int(presentes[0]["id"]) != int(a.get("p7s_anexo_id") or 0)
+            or hashlib.sha256(base64.b64decode(lista[0]["ArquivoBase64"])).hexdigest()
+            != str(a.get("p7s_sha256") or "")):
+        raise RecusaDoRobo("os anexos do pedido não são só o .p7s que o robô assinou — nada "
+                           "foi enviado; o oficial confere")
+    return lista
 
 
 def _enviar_um(ctx, sessao, a: dict, campos_a3: dict, agora: str) -> dict:
-    """Assina, guarda, envia e finaliza UM pedido aprovado. Rede fora das transações."""
+    """Assina, guarda, envia e finaliza UM pedido aprovado. Rede fora das transações.
+
+    Antes de gastar o PIN, as duas conferências da revisão de 26/10/2026: os
+    anexos do pedido (M3) e o PDF contra a auditoria (M2). O `.p7s` já assinado
+    numa rodada que caiu no envio não se assina de novo: vai o mesmo."""
+    import hashlib
     import onr_certidoes as OC
     pid = int(a["pedido_id"])
-    pdf = Path(a["pdf_caminho"] or "").read_bytes() if a.get("pdf_caminho") else b""
-    import hashlib
-    if not pdf or hashlib.sha256(pdf).hexdigest() != a.get("pdf_sha256"):
-        raise AutoError("o PDF guardado na aprovação sumiu ou mudou — gere o PDF de novo na "
-                        "tela do pedido")
-    p7s = assinar(pdf, pin=campos_a3.get("pin") or "", thumbprint=campos_a3.get("thumbprint"))
-    usuario = a.get("aprovado_por_nome") or "automação"
-    with ctx.db.transaction() as con:
+    rotulo = rotulo_do_robo(a.get("aprovado_por_nome"))
+    base = {"certidao_id": a.get("certidao_id"), "aprovado_por": a.get("aprovado_por_nome")}
+    with ctx.db.connect() as con:
         p = OC.pedido(con, pid)
-        if p["situacao"] in ("NOVO", "PRONTO") and not OC.anexos(con, pid):
-            OC.guardar_anexo(con, pid, nome=f"certidao_{p['protocolo']}.p7s", conteudo=p7s,
-                             pasta=_pasta_dos_arquivos(ctx),
-                             usuario_id=a.get("aprovado_por_user_id"), agora=agora)
-        _gravar(banco(con), pid, agora, assinado_em=agora)
+        presentes = [dict(x) for x in OC.anexos(con, pid)]
+    _conferir_anexos(p, presentes, a)
+    if not a.get("p7s_anexo_id"):
+        with ctx.db.connect() as con:
+            pdf = pdf_conferido(con, a, _pasta_dos_arquivos(ctx) / "pdf")
+        p7s, certificado = assinar(pdf, pin=campos_a3.get("pin") or "",
+                                   thumbprint=campos_a3.get("thumbprint"))
+        sha_p7s = hashlib.sha256(p7s).hexdigest()
+        with ctx.db.transaction() as con:
+            bd = banco(con)
+            bd.travar(f"onr_cert_auto:{pid}")
+            if OC.anexos(con, pid):
+                raise RecusaDoRobo("apareceu um anexo no pedido enquanto o robô assinava — "
+                                   "nada foi enviado; o oficial confere")
+            anexo_id = OC.guardar_anexo(con, pid, nome=f"certidao_{p['protocolo']}.p7s",
+                                        conteudo=p7s, pasta=_pasta_dos_arquivos(ctx),
+                                        usuario_id=None, agora=agora)
+            _gravar(bd, pid, agora, assinado_em=agora, p7s_anexo_id=anexo_id,
+                    p7s_sha256=sha_p7s)
+        a = {**a, "p7s_anexo_id": anexo_id, "p7s_sha256": sha_p7s}
+        _auditar_robo(ctx, ACAO_ASSINADA, pid, {
+            **base, "protocolo": p["protocolo"], "pdf_sha256": a.get("pdf_sha256"),
+            "p7s_sha256": sha_p7s, "thumbprint": certificado.get("thumbprint"),
+            "certificado": certificado.get("subject")})
     with ctx.db.connect() as con:
         p = OC.pedido(con, pid)
     if p["situacao"] != "ENVIADO":
         with ctx.db.connect() as con:
-            lista = OC.anexos_para_enviar(con, pid)
+            lista = _so_o_que_o_robo_assinou(con, pid, a)
         sessao.enviar_anexos_da_certidao(p["protocolo"], lista)
         with ctx.db.transaction() as con:
-            OC.registrar_envio(con, pid, [x["NomeArquivo"] for x in lista], usuario, agora)
+            OC.registrar_envio(con, pid, [x["NomeArquivo"] for x in lista], rotulo, agora)
             _gravar(banco(con), pid, agora, enviado_em=agora)
+        _auditar_robo(ctx, ACAO_ENVIADA, pid, {
+            **base, "protocolo": p["protocolo"], "p7s_sha256": a.get("p7s_sha256"),
+            "arquivos": [x["NomeArquivo"] for x in lista]})
     social = str(ctx.parametros.get("interesse_social", "")).strip() == "1"
     sessao.finalizar_certidao(p["protocolo"], interesse_social=social)
     with ctx.db.transaction() as con:
-        OC.registrar_finalizacao(con, pid, social, usuario, agora)
+        OC.registrar_finalizacao(con, pid, social, rotulo, agora)
         _gravar(banco(con), pid, agora, etapa=RESPONDIDO, finalizado_em=agora, erro=None)
+    _auditar_robo(ctx, ACAO_FINALIZADA, pid, {
+        **base, "protocolo": p["protocolo"], "interesse_social": social,
+        "p7s_sha256": a.get("p7s_sha256")})
     return {"acao": "assinou, enviou e finalizou", "protocolo": p["protocolo"]}
 
 
@@ -689,9 +895,14 @@ def rodada(ctx) -> dict:
             try:
                 sessao.informar_custas_da_certidao(a["protocolo"], a["custas_aprovadas"])
                 with ctx.db.transaction() as con:
-                    registrar_custas_informadas(con, a["pedido_id"],
-                                                usuario=a.get("custas_aprovadas_por") or "automação",
-                                                agora=agora)
+                    registrar_custas_informadas(
+                        con, a["pedido_id"],
+                        usuario=rotulo_do_robo(a.get("custas_aprovadas_por"),
+                                               "custas aprovadas"),
+                        agora=agora)
+                _auditar_robo(ctx, ACAO_CUSTAS, a["pedido_id"], {
+                    "protocolo": a["protocolo"], "valor": a["custas_aprovadas"],
+                    "aprovadas_por": a.get("custas_aprovadas_por")})
                 acoes.append({"acao": "informou as custas", "protocolo": a["protocolo"],
                               "valor": a["custas_aprovadas"]})
             except (WS.WSOficioError, OC.CertidaoOnrError) as erro:
@@ -705,8 +916,13 @@ def rodada(ctx) -> dict:
                     except Exception as erro:          # noqa: BLE001 — um não derruba os outros
                         motivo = f"{type(erro).__name__}: {erro}"[:400]
                         falhas.append(f"envio do {a['protocolo']}: {motivo}")
+                        # A recusa do robô (M2/M3) é para o oficial: ERRO, e
+                        # não nova tentativa a cada rodada.
+                        campos = {"erro": motivo}
+                        if isinstance(erro, RecusaDoRobo):
+                            campos["etapa"] = ERRO
                         with ctx.db.transaction() as con:
-                            _gravar(banco(con), a["pedido_id"], agora, erro=motivo)
+                            _gravar(banco(con), a["pedido_id"], agora, **campos)
     with ctx.db.connect() as con:
         n = contar(con)
     esperando = {e: n.get(e, 0) for e in ESPERAM_GENTE if n.get(e)}

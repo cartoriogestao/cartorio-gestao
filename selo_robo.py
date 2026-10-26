@@ -75,6 +75,20 @@ ROTAS_VEDADAS_AO_ROBO = ("users", "usuarios", "updates", "atualizacoes", "settin
                          "nucleo_", "implantacao")
 
 
+# AS CERTIDÕES DO ONR NO AUTOMÁTICO TAMBÉM SÃO DE GENTE (revisão de segurança
+# dos PRs abertos, 26/10/2026, PR #13, achado M1). A aprovação de um pedido
+# (`onr_auto_aprovar`) EMITE a certidão com selo pela rota da casa, e na rodada
+# seguinte o robô a assina com o A3 do oficial e a envia: com a credencial da
+# conta-robô (papel USER) o laço fecharia sem ninguém da casa ter olhado. Todas
+# as rotas de `onr_certidoes_auto_web` começam por «onr_auto» — as de ação e as
+# duas telas, que o robô também não tem por que abrir.
+#
+# Bloco À PARTE, e não a tupla acima, de propósito: o PR #11 (a central da
+# automação, base deste) acrescenta «automacao» na própria tupla, e as duas
+# mudanças na mesma linha dariam conflito ao juntar.
+ROTAS_VEDADAS_AO_ROBO = ROTAS_VEDADAS_AO_ROBO + ("onr_auto",)
+
+
 def rota_vedada_ao_robo(endpoint: Any) -> bool:
     """A rota é das que o robô não entra? Só calcula."""
     nome = str(endpoint or "").strip()

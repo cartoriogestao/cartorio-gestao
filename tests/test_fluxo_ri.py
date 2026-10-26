@@ -1202,8 +1202,12 @@ def test_a_positiva_recusa_quem_nao_e_dono_e_nao_grava(casa):
 
 
 def _pedido_do_onr(casa, *, status="Em aberto", custas_em="2026-01-01T00:00:00",
-                   cobranca="1", tipo="3") -> int:
-    """Um pedido do ONR pago, por matrícula, já com o orçamento desta casa."""
+                   cobranca="1", tipo="3", selo_pago_no_onr=True) -> int:
+    """Um pedido do ONR pago, por matrícula, já com o orçamento desta casa.
+
+    O selo pago no ONR nasce DESLIGADO (revisão de 26/10/2026, M5); estes
+    testes o ligam, salvo o que prova o desligado."""
+    import ato_selado as AS
     import onr_certidoes as OC
     import onr_certidoes_auto as AUTO
     mid = _um(casa, "SELECT id FROM ri_matriculas WHERE numero=%s",
@@ -1212,6 +1216,10 @@ def _pedido_do_onr(casa, *, status="Em aberto", custas_em="2026-01-01T00:00:00",
     with db.transaction() as con:
         OC.init_schema(con)
         AUTO.init_schema(con)
+        banco(con).escrever(
+            """INSERT INTO settings (key, value) VALUES (%s, %s)
+               ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""",
+            (AS.CHAVE_SELO_PAGO_NO_ONR, "1" if selo_pago_no_onr else "0"))
         pid = banco(con).escrever(
             """INSERT INTO onr_cert_pedidos(ambiente, protocolo, tipo_certidao, data_pedido,
                    valor, pesquisa_por, status_onr, solicitante, matricula_numero,
@@ -1314,6 +1322,24 @@ def test_o_pedido_sem_orcamento_da_casa_nao_emite(casa, monkeypatch):
     c = casa["balcao"]
     tela = f"/ri/onr/certidoes/{pid}/automacao"
     html = c.get(tela).get_data(as_text=True)
+    c.post(f"{tela}/aprovar", data={"csrf_token": _token(html), "tipo_ri": "INTEIRO_TEOR"})
+    assert not _um(casa, "SELECT 1 x FROM ri_certidoes WHERE finalidade=%s",
+                   ("Pedido ONR S99000000001D",))
+
+
+def test_com_o_selo_pago_no_onr_desligado_o_pedido_vai_a_mao_e_nada_e_emitido(casa, monkeypatch):
+    """O ajuste de fábrica (revisão de segurança de 26/10/2026, M5): o mapa de
+    status «pago» não foi medido, e até o oficial medir e ligar a certidão
+    pedida pelo ONR não sai pelo robô — vai à mão, pela trava normal."""
+    _compra_e_venda(casa)
+    pid = _pedido_do_onr(casa, selo_pago_no_onr=False)
+    _onr_responde(monkeypatch)
+    a = _um(casa, "SELECT etapa, motivo FROM onr_cert_auto WHERE pedido_id=%s", (pid,))
+    assert a["etapa"] == "A_MAO" and "DESLIGADO" in a["motivo"]
+    c = casa["balcao"]
+    tela = f"/ri/onr/certidoes/{pid}/automacao"
+    html = c.get(tela).get_data(as_text=True)
+    assert "DESLIGADO" in html
     c.post(f"{tela}/aprovar", data={"csrf_token": _token(html), "tipo_ri": "INTEIRO_TEOR"})
     assert not _um(casa, "SELECT 1 x FROM ri_certidoes WHERE finalidade=%s",
                    ("Pedido ONR S99000000001D",))

@@ -1064,6 +1064,15 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # Cartao aberto antes disto fica sem: nao se deduz quem conferiu.
     ("nt_cartoes", "conferente_nome", "TEXT"),
     ("nt_cartoes", "conferente_funcao", "TEXT"),
+    # DE ONDE VEIO A DIGITAL — 26/10/2026, o leitor HID DigitalPersona ligado
+    # a tela pelo SDK web do fabricante. `origem` e LEITOR (capturada no
+    # balcao) ou ARQUIVO (o envio manual, que continua como reserva);
+    # `dispositivo` e o identificador do aparelho que o SDK informou. A
+    # conferencia pergunta «isto saiu do leitor, ou alguem mandou um
+    # arquivo?», e sem a coluna a resposta seria adivinhada. Linha antiga
+    # fica NULL: nao se deduz de onde veio o que foi colhido antes.
+    ("nt_cadastro_imagens", "origem", "TEXT"),
+    ("nt_cadastro_imagens", "dispositivo", "TEXT"),
 )
 
 

@@ -50,6 +50,7 @@ import tetos_de_entrada as TETOS
 import ri_imagens as RIMG
 import notas_partes as NP
 import cadastro_biometria as CB
+import leitor_digital as LD
 import ato_selado as AS
 import etiqueta as ETQ
 import notas_selo as NSELO
@@ -809,11 +810,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # POST /notas/cartoes/<id>/foto. Pasta nao se cria aqui.
         with db.connect() as con_bio:
             bio = CB.estado(con_bio, cartao_id)
+            # De onde veio cada digital (leitor ou arquivo), para a tela dizer.
+            bio_por_dedo = {
+                int(i["dedo"]): dict(i)
+                for i in CB.imagens_do_cadastro(con_bio, cartao_id)
+                if i["especie"] == CB.ESPECIE_DIGITAL and i["dedo"] is not None}
         return render_template("notas_cartao.html", c=dados, imagens=imagens,
                                avisos=NP.avisos_do_cartao(dados), recentes=recentes,
                                atos=atos, total_rec=total_rec,
                                faltando=NP.campos_faltantes(dados, "ATO"),
-                               bio=bio,
+                               bio=bio, bio_por_dedo=bio_por_dedo,
+                               leitor=estado_do_leitor(),
                                # OS NOMES DOS DEDOS SAEM DO DOMINIO, e nao da
                                # tela: quem decide quais quatro a casa colhe e'
                                # `DEDOS_DA_CASA`, e uma lista escrita aqui
@@ -889,6 +896,44 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     # **E O APARELHO NAO E' ESTE SISTEMA.** O leitor de digital entrega uma
     # imagem; o que esta rota faz e' receber a imagem e guarda-la no cadastro.
     # Dizer que o sistema «le a digital» seria prometer driver que ele nao tem.
+    #
+    # **O LEITOR CHEGOU PELO NAVEGADOR — 26/10/2026.** Quem fala com o leitor
+    # HID DigitalPersona e' o cliente do fabricante, no Windows do balcao; o
+    # SDK web dele, carregado na tela do cartao, devolve a imagem PNG e a tela
+    # a manda para ESTA MESMA ROTA, com `origem=LEITOR`. Uma porta so para
+    # gravar: duas rotas (leitor e arquivo) divergiriam no primeiro conserto.
+    # Os arquivos do SDK sao do fabricante e o TI os instala; a rota abaixo so
+    # os serve, da lista fechada de `leitor_digital.ARQUIVOS_DO_SDK`.
+
+    def pasta_do_sdk_digital() -> Path:
+        dados = app.config.get("DATA_DIR") or Path(db.db_path).parent
+        return LD.pasta_do_sdk(db.get_setting(LD.CHAVE_DA_PASTA, ""), dados)
+
+    def estado_do_leitor() -> dict:
+        """O que a tela do cartao precisa para falar do leitor. SO LE."""
+        return {
+            "nome": LD.NOME_DO_LEITOR,
+            "finalidade": LD.FINALIDADE,
+            "sdk": LD.estado_do_sdk(pasta_do_sdk_digital()),
+            "arquivos_do_sdk": LD.ARQUIVOS_DO_SDK,
+            "origem_leitor": LD.ORIGEM_LEITOR,
+            "origem_arquivo": LD.ORIGEM_ARQUIVO,
+        }
+
+    @app.route("/notas/leitor-digital/sdk/<nome>")
+    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    def notas_leitor_digital_sdk(nome):
+        """Um arquivo do SDK web do fabricante, da lista fechada. **SO LE.**
+
+        O nome da URL nunca vira caminho: fora da lista, ou sem o arquivo na
+        pasta, e 404. Quem instala os arquivos e o TI.
+        """
+        arquivo = LD.arquivo_do_sdk(pasta_do_sdk_digital(), nome)
+        if arquivo is None:
+            abort(404)
+        return Response(arquivo.read_bytes(),
+                        mimetype="application/javascript",
+                        headers={"Cache-Control": "private, max-age=3600"})
 
     @app.route("/notas/cartoes/<int:cartao_id>/digital/<int:dedo>")
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
@@ -927,15 +972,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             dedo = 0
         arquivo = request.files.get("digital")
         dados = arquivo.read() if arquivo else b""
+        origem = (request.form.get("origem") or LD.ORIGEM_ARQUIVO).strip().upper()
         try:
             with db.transaction() as con:
                 CB.colher_digital(con, cartao_id, dedo, dados, db.now(),
-                                  usuario_nome(), pasta_assinaturas_internas())
+                                  usuario_nome(), pasta_assinaturas_internas(),
+                                  origem=origem,
+                                  dispositivo=request.form.get("dispositivo"))
         except CB.CadastroBioError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("notas_cartao", cartao_id=cartao_id))
-        audit("NT_CADASTRO_DIGITAL", "NT_CARTAO", cartao_id, {"dedo": dedo})
-        flash(f"Digital do {CB.nome_do_dedo(dedo)} colhida.", "success")
+        # A AUDITORIA LEVA O FATO, E NUNCA A IMAGEM: dedo e origem. Dado
+        # biometrico nao vai para log (LGPD art. 11).
+        audit("NT_CADASTRO_DIGITAL", "NT_CARTAO", cartao_id,
+              {"dedo": dedo, "origem": origem})
+        no_leitor = " no leitor" if origem == LD.ORIGEM_LEITOR else ""
+        flash(f"Digital do {CB.nome_do_dedo(dedo)} colhida{no_leitor}.",
+              "success")
         return redirect(url_for("notas_cartao", cartao_id=cartao_id))
 
     # Que formato o navegador desenha sozinho dentro de um <img>, e qual

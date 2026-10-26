@@ -1,3 +1,92 @@
 {% extends 'base.html' %}
 {% block title %}Atendimento / senhas — Administrativo{% endblock %}
-{% block heading %}<h1>Atendimento / senhas</h1>{% endblock %}{% block content %}<section class="panel"><form method="post" class="inline-form"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="new"><input name="service_type" placeholder="Tipo de atendimento"><label class="check"><input type="checkbox" name="priority"> Preferencial</label><button class="primary">Gerar senha</button></form></section><section class="panel"><table><thead><tr><th>Senha</th><th>Tipo</th><th>Prioridade</th><th>Status</th><th>Chegada</th><th>Atendente</th><th>Ações</th></tr></thead><tbody>{% for r in rows %}<tr><td class="ticket">{{'%03d'|format(r.ticket_no)}}</td><td>{{r.service_type or 'Geral'}}</td><td>{{'PREFERENCIAL' if r.priority else 'NORMAL'}}</td><td>{{r.status}}</td><td>{{fmt_dt(r.created_at)}}</td><td>{{r.attendant_name or '—'}}</td><td class="actions-cell">{% if r.status=='AGUARDANDO' %}<form method="post" action="{{url_for('ticket_action',ticket_id=r.id,action='call')}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button>Chamar</button></form>{% elif r.status=='CHAMADO' %}<form method="post" action="{{url_for('ticket_action',ticket_id=r.id,action='start')}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button>Iniciar</button></form>{% elif r.status=='EM_ATENDIMENTO' %}<form method="post" action="{{url_for('ticket_action',ticket_id=r.id,action='finish')}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button>Finalizar</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="7">Nenhuma senha emitida hoje.</td></tr>{% endfor %}</tbody></table></section>{% endblock %}
+{% block heading %}<h1>Atendimento / senhas</h1>{% endblock %}
+{% block content %}
+{# O PAINEL DE SENHAS (26/10/2026). A fila mora em `senhas.py`; a TV da
+   recepção mostra só senha e guichê, e o guichê é o que cada um grava aqui. #}
+<section class="panel">
+  <div class="panel-head"><h2>Seu guichê</h2>
+    <span>
+      {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('senhas_relatorio') }}">relatório do período</a>{% endif %}
+      {% if user.role == 'ADMIN' %} · <a href="{{ url_for('senhas_painel_config') }}">painel da TV</a>{% endif %}
+    </span>
+  </div>
+  <form method="post" action="{{ url_for('senhas_guiche') }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Guichê ou mesa <input name="guiche" value="{{ guiche }}" maxlength="12" placeholder="ex.: 2" required></label>
+    <button>Gravar</button>
+    {% if not guiche %}<span class="small danger">Grave o seu guichê antes de chamar: é ele que aparece na TV.</span>{% endif %}
+  </form>
+  <form method="post" action="{{ url_for('senhas_chamar_proxima') }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="primary">Chamar a próxima</button>
+    <span class="small muted">Preferencial primeiro; depois a ordem de chegada.</span>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Emitir senha</h2>
+  <form method="post" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="new">
+    <label>Tipo de atendimento
+      <select name="service_type">{% for t in tipos %}<option>{{ t }}</option>{% endfor %}</select>
+    </label>
+    <label class="check"><input type="checkbox" name="priority"> Preferencial</label>
+    <button name="imprimir" value="1" class="primary">Gerar e imprimir</button>
+    <button>Só gerar</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Senha</th><th>Tipo</th><th>Prioridade</th><th>Situação</th><th>Chegada</th><th>Espera</th><th>Guichê</th><th>Atendente</th><th>Protocolo</th><th>Ações</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td class="ticket">{{ r.senha }}</td>
+        <td>{{ r.service_type or 'Geral' }}</td>
+        <td>{{ 'PREFERENCIAL' if r.priority else 'NORMAL' }}</td>
+        <td>{{ r.situacao }}{% if r.chamadas and r.chamadas > 1 %} <span class="small muted">({{ r.chamadas }} chamadas)</span>{% endif %}</td>
+        <td>{{ fmt_dt(r.created_at) }}</td>
+        <td>{{ minutos(r.espera_seg) }}</td>
+        <td>{{ r.guiche or '—' }}</td>
+        <td>{{ r.attendant_name or '—' }}</td>
+        <td>
+          {% if r.protocolo_numero %}
+            {{ r.protocolo_numero }}
+            <form method="post" action="{{ url_for('senhas_protocolo', ticket_id=r.id) }}" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="acao" value="desligar">
+              <button class="small">desfazer</button>
+            </form>
+          {% elif r.status in ['EM_ATENDIMENTO', 'FINALIZADO'] %}
+            <form method="post" action="{{ url_for('senhas_protocolo', ticket_id=r.id) }}" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input name="protocolo" size="11" placeholder="ano.mês.nº" value="{{ atendendo.numero if atendendo else '' }}">
+              <button class="small">Ligar</button>
+            </form>
+          {% else %}—{% endif %}
+        </td>
+        <td class="actions-cell">
+          {% if r.status == 'AGUARDANDO' %}
+            <form method="post" action="{{ url_for('ticket_action', ticket_id=r.id, action='call') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Chamar</button></form>
+            <form method="post" action="{{ url_for('ticket_action', ticket_id=r.id, action='giveup') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Desistiu</button></form>
+          {% elif r.status == 'CHAMADO' %}
+            <form method="post" action="{{ url_for('ticket_action', ticket_id=r.id, action='start') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="primary">Iniciar</button></form>
+            <form method="post" action="{{ url_for('ticket_action', ticket_id=r.id, action='recall') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Chamar de novo</button></form>
+            <form method="post" action="{{ url_for('ticket_action', ticket_id=r.id, action='giveup') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Não compareceu</button></form>
+          {% elif r.status == 'EM_ATENDIMENTO' %}
+            <form method="post" action="{{ url_for('ticket_action', ticket_id=r.id, action='finish') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="primary">Finalizar</button></form>
+          {% endif %}
+          <a href="{{ url_for('senhas_imprimir', ticket_id=r.id) }}" target="_blank">imprimir</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="10">Nenhuma senha emitida hoje.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if atendendo %}<p class="small muted">O campo do protocolo já vem com o que você está atendendo no caixa ({{ atendendo.numero }}); troque se for outro.</p>{% endif %}
+</section>
+{% endblock %}

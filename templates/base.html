@@ -856,6 +856,7 @@
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('livro_diario') }}">Livro Diário Auxiliar</a>{% endif %}
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Atendimento</div>
         <a href="{{ url_for('service_queue') }}">Atendimento / senhas</a>
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('senhas_relatorio') }}">Senhas: espera e atendimento</a>{% endif %}
         <a href="{{ url_for('whatsapp_lista') }}">WhatsApp</a>
         <a href="{{ url_for('robos_lista') }}">Robôs</a>
         {# A LISTA E DE TODOS, e ela atravessa as seis atribuicoes: e o unico

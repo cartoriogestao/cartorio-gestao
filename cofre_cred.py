@@ -56,7 +56,10 @@ NOME_DA_CHAVE = "cofre.key"
 ROBOS = "robos.cred"
 WHATSAPP = "whatsapp.cred"
 BACKUP = "backup.cred"
-ARQUIVOS = (ROBOS, WHATSAPP, BACKUP)
+# A CHAVE DO ENDEREÇO DA TV DO PAINEL DE SENHAS (26/10/2026, `senhas_web`):
+# quem a tem abre a TV sem login, e por isso ela é segredo e mora aqui.
+PAINEL = "painel.cred"
+ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, PAINEL)
 
 FORMATO = "cg-cofre-1"
 CODIFICACAO = "utf-8-sig"

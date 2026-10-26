@@ -114,6 +114,15 @@ PRESO_MINUTOS = 15         # «processando» mais velho que isso é rodada que c
 CONVERSAS_POR_RODADA = 20
 CONVERSAS_NA_TELA = 5      # o botão do balcão não espera a fila inteira
 TAMANHO_DA_RESPOSTA = 1200
+# O QUE SOBE AO MODELO TEM TETO DE TAMANHO (26/10/2026, revisão de segurança,
+# MÉDIA). As mensagens pendentes da conversa sobem juntas, e o único freio era o
+# `LIMITE_DE_ENVIO` de 900 mil caracteres do transporte — teto de engano, e não
+# de custo: um cliente anônimo que mandasse dezenas de mensagens longas antes
+# da rodada faria cada chamada levar centenas de milhares de tokens. Pergunta
+# de balcão cabe em dois mil caracteres; acima disso a conversa vai para uma
+# pessoa, sem subir. O pedido inteiro leva, além da pergunta, só a instrução.
+TAMANHO_DA_PERGUNTA = 2000
+FOLGA_DO_PEDIDO = 16_384   # bytes além da instrução: a pergunta (até ~8 KB em UTF-8) e o envelope
 CONTEXTO_ANTERIOR = 4
 
 RODAPE = ("\n\n— Resposta automática do atendimento. Para falar com uma "
@@ -533,6 +542,11 @@ def decidir(db: Any, conversa: dict, texto: str, cfg: dict, *, agora: str,
     if sensivel:
         return {**base, "passar": sensivel[0], "motivo": sensivel[1],
                 "lido": "(assunto sensível — não subiu à IA)"}
+    if len(texto) > TAMANHO_DA_PERGUNTA:
+        return {**base, "passar": setor_atual,
+                "motivo": f"mensagem longa demais para a resposta automática "
+                          f"({len(texto)} caracteres; o teto é {TAMANHO_DA_PERGUNTA})",
+                "lido": "(mensagem longa — não subiu à IA)"}
 
     try:
         pacote = PRIV.preparar_saida(instrucao="", pergunta=texto)
@@ -556,13 +570,15 @@ def decidir(db: Any, conversa: dict, texto: str, cfg: dict, *, agora: str,
 
     fn = conversar or PROV.conversar
     numeros = {"provedor": cfg["provedor"], "modelo": cfg["modelo"]}
+    sistema = instrucao(cfg)
     try:
-        lida = fn(pasta_de_dados, provedor=cfg["provedor"], sistema=instrucao(cfg),
+        lida = fn(pasta_de_dados, provedor=cfg["provedor"], sistema=sistema,
                   conversa=[{"tipo": "user", "texto": lido}], ferramentas=[],
                   modelo=cfg["modelo"], maximo_de_saida=600, prazo=PRAZO_IA,
                   modulo="wa_atendente", finalidade="wa_atendente",
                   usuario=AUTOR_IA, referencia=f"wa_conversa:{conversa['id']}",
-                  mascarado=True)
+                  mascarado=True,
+                  limite_de_envio=len(sistema.encode("utf-8")) + FOLGA_DO_PEDIDO)
     except Exception as falha:                          # noqa: BLE001
         return {**base, **numeros, "passar": setor_atual, "lido": lido,
                 "motivo": "a IA não respondeu",
@@ -669,7 +685,17 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
                           transcrever: Callable | None = None) -> int:
     """Baixa e transcreve os áudios das últimas 24 h. **FALA COM A REDE**, fora
     de transação. A mensagem é marcada antes (transcrição "" = pega), e por
-    isso duas rodadas não transcrevem o mesmo áudio."""
+    isso duas rodadas não transcrevem o mesmo áudio.
+
+    O TETO DO DIA SE CONFERE ANTES DE CADA ÁUDIO (26/10/2026, revisão de
+    segurança, ALTA). O catálogo declarava `wa_audio` com 200 por dia e nada o
+    aplicava: com a transcrição ligada e a rodada em laço, qualquer número de
+    WhatsApp mandava áudios à vontade, e cada um era um download na Graph e
+    um POST pago à OpenAI. Agora `ia_uso.passou_do_teto` é perguntado antes de
+    pegar cada mensagem — uma rodada de 20 pode cruzar o teto no meio. Passado
+    o teto, o áudio não é pego nem baixado: a mensagem segue sem transcrição
+    (vai para uma pessoa, como o áudio com a transcrição desligada), e o
+    motivo vai ao log."""
     if not cfg["audio_ligado"]:
         return 0
     inicio = ((FILA._dt(agora) or datetime.now()) - timedelta(hours=JANELA_HORAS)
@@ -685,6 +711,11 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
     feitos = 0
     fn = transcrever or TRANSC.transcrever
     for m in candidatos:
+        with db.connect() as con:
+            teto = USO.passou_do_teto(con, FINALIDADE_AUDIO, agora=agora)
+        if teto:
+            LOG.warning("ÁUDIOS DO WHATSAPP SEM TRANSCRIÇÃO NESTA RODADA: %s", teto)
+            break
         with db.transaction() as con:
             pegou = banco(con).escrever(
                 "UPDATE wa_mensagem SET transcricao='' WHERE id=%s "
@@ -699,7 +730,7 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
             audio, mime = TRANSC.baixar_audio(token, m["midia_id"], https=https)
             r = fn(pasta_de_dados, audio, mime, modelo=cfg["audio_modelo"],
                    preco_por_minuto=cfg["audio_preco_minuto"],
-                   modulo="wa_atendente", finalidade="wa_audio",
+                   modulo="wa_atendente", finalidade=FINALIDADE_AUDIO,
                    usuario=AUTOR_IA, referencia=f"wa_mensagem:{m['id']}",
                    https=https)
             texto = r["texto"]

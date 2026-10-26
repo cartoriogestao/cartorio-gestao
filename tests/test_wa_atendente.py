@@ -615,3 +615,86 @@ def test_a_tela_nao_mostra_pedaco_da_chave(casa):
     PROV.gravar_chave(casa["pasta"], "claude", "sk-ant-segredo-XYZW9876")
     html = _entrar(app, "mario").get("/whatsapp/atendente").get_data(as_text=True)
     assert "9876" not in html and "segredo" not in html
+
+
+# ------------------------------- o teto e o tamanho (revisão de segurança, 26/10/2026)
+
+
+def _usos_do_audio(db, quantos):
+    """`quantos` transcrições já registradas hoje (o dia de AGORA)."""
+    import ia_uso as USO
+    with db.transaction() as con:
+        USO.init_ia_schema(con)
+        banco(con).escrever(
+            """INSERT INTO ia_uso (quando, modulo, finalidade, resultado)
+               SELECT %s, 'wa_atendente', %s, 'ok' FROM generate_series(1, %s)""",
+            (AGORA, AT.FINALIDADE_AUDIO, int(quantos)))
+
+
+def _https_do_audio(chamadas):
+    def https(host, metodo, caminho, corpo=None, cabecalhos=None, prazo=60):
+        chamadas.append(host)
+        if host == "graph.facebook.com":
+            return 200, json.dumps({"url": "https://lookaside.fbsbx.com/media?mid=1",
+                                    "mime_type": "audio/ogg; codecs=opus"}).encode()
+        if host == "lookaside.fbsbx.com":
+            return 200, b"OggS-audio-falso"
+        raise AssertionError(host)
+    return https
+
+
+def test_audio_passado_o_teto_do_dia_nao_e_baixado_nem_transcrito(casa):
+    """O achado ALTA: `wa_audio` já em 200 hoje → nenhum `https` chamado."""
+    import ia_catalogo as CAT
+    db = casa["db"]
+    _cfg(db, **{SCH.CHAVE_AUDIO_LIGADO: "1"})
+    _usos_do_audio(db, CAT.teto_diario(AT.FINALIDADE_AUDIO))
+    _entrada(db, "", meta_id="wamid.au7", msg=_audio("5599900000057", "wamid.au7"))
+    chamadas, transcritos = [], []
+    r = _rodar(db, casa["pasta"], https=_https_do_audio(chamadas),
+               transcrever=lambda *a, **k: transcritos.append(a) or {})
+    assert r["audios"] == 0 and chamadas == [] and transcritos == []
+    m = _um(db, "SELECT transcricao FROM wa_mensagem WHERE meta_id='wamid.au7'")
+    assert m["transcricao"] is None                     # nem chegou a ser pego
+
+
+def test_o_teto_do_audio_vale_no_meio_da_rodada(casa, monkeypatch):
+    import ia_catalogo as CAT
+    db = casa["db"]
+    monkeypatch.setitem(CAT.CHAMADAS_POR_DIA, AT.FINALIDADE_AUDIO, 1)
+    _cfg(db, **{SCH.CHAVE_AUDIO_LIGADO: "1"})
+    _entrada(db, "", meta_id="wamid.au8", msg=_audio("5599900000058", "wamid.au8"))
+    _entrada(db, "", meta_id="wamid.au9", msg=_audio("5599900000059", "wamid.au9"))
+    chamadas = []
+
+    def transcrever(pasta, audio, mime, **k):
+        _usos_do_audio(db, 1)                # o transporte de verdade registra o uso
+        return {"texto": "qual o horário?", "segundos": 10, "custo_usd": 0.001,
+                "modelo": "falso-1"}
+    r = _rodar(db, casa["pasta"], https=_https_do_audio(chamadas), transcrever=transcrever)
+    assert r["audios"] == 1
+    assert chamadas == ["graph.facebook.com", "lookaside.fbsbx.com"]
+
+
+def test_mensagem_longa_demais_vai_para_pessoa_sem_subir(casa):
+    db = casa["db"]
+    _cfg(db)
+    longa = "Bom dia, tenho uma dúvida sobre o atendimento. " * 60
+    assert len(longa) > AT.TAMANHO_DA_PERGUNTA
+    _entrada(db, longa, meta_id="wamid.longa1", wa_id="5599900000060")
+    modelo = Modelo({"acao": "responder", "tipo": "duvida", "resposta": "Das 8 às 17."})
+    _rodar(db, casa["pasta"], conversar=modelo)
+    assert modelo.chamadas == []
+    reg = _um(db, "SELECT motivo, enviado FROM wa_ia_registro ORDER BY id DESC LIMIT 1")
+    assert "longa demais" in reg["motivo"] and not reg["enviado"]
+
+
+def test_o_pedido_ao_modelo_leva_um_limite_de_envio_proprio(casa):
+    db = casa["db"]
+    _cfg(db)
+    _entrada(db, "qual o horário de vocês?", meta_id="wamid.lim1", wa_id="5599900000061")
+    modelo = Modelo({"acao": "responder", "tipo": "duvida", "resposta": "Das 8 às 17."})
+    _rodar(db, casa["pasta"], conversar=modelo)
+    limite = modelo.chamadas[0]["limite_de_envio"]
+    assert limite < PROV.LIMITE_DE_ENVIO
+    assert limite == len(modelo.chamadas[0]["sistema"].encode("utf-8")) + AT.FOLGA_DO_PEDIDO

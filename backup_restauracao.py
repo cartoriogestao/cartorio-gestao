@@ -326,6 +326,25 @@ def registrar_pacotes_gerados(db, feitos: list[dict], *, origem: str,
     return n
 
 
+def nomes_registrados(db) -> set[str]:
+    """Os nomes de pacote que a rodada gravou em `bk_pacotes`. Só LÊ.
+
+    Serve à retenção (26/10/2026): ela só apaga pacote recente que esteja
+    aqui. Se a tabela não existe ou a leitura falha, devolve o conjunto VAZIO,
+    e não None — o lado seguro: sem registro legível, nada recente se apaga
+    (o pacote de antes do registro continua reconhecido pelo nome).
+    """
+    from bd_nativo import banco
+    try:
+        with db.connect() as con:
+            bd = banco(con)
+            if not bd.tem_tabela("bk_pacotes"):
+                return set()
+            return {str(r["arquivo"]) for r in bd.ler("SELECT DISTINCT arquivo FROM bk_pacotes")}
+    except Exception:                          # noqa: BLE001 — o lado seguro é não apagar
+        return set()
+
+
 def _conferir_que_a_casa_gerou(db, pacote: Path, sha256: str | None) -> None:
     """Recusa o pacote cujo nome e SHA-256 a rodada do backup não gravou. Só LÊ."""
     from bd_nativo import banco

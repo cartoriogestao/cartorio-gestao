@@ -149,7 +149,7 @@ processos), que **nascem desligados** — quem liga é o oficial:
 
 | Processo | Agenda de fábrica | O que faz |
 |---|---|---|
-| `BACKUP_DIARIO` — «Backup do banco no horário» | todo dia, 01:30 | o pacote do banco do dia, o completo quando devido (dia da semana de Configurações; o completo perdido sai no dia seguinte) e a retenção. Não depende de alguém abrir o sistema |
+| `BACKUP_DIARIO` — «Backup do banco no horário» | todo dia, **18:00** (decisão do oficial, 26/10/2026) | o pacote do banco do dia, o completo quando devido (uma vez por semana, no dia de Configurações; o completo perdido sai no dia seguinte) e a retenção de 5 dias (seção 7.1). Não depende de alguém abrir o sistema |
 | `BACKUP_TESTE_RESTAURACAO` — «Teste de restauração do backup» | domingo, 04:00 | restaura o pacote mais novo num banco **descartável**, confere as contagens, apaga o banco descartável e registra a rodada em `bk_restauracoes` |
 
 - **O alerta é o da automação:** terminou em AVISO ou ERRO, aparece no painel,
@@ -201,6 +201,41 @@ processos), que **nascem desligados** — quem liga é o oficial:
   `python backup_automacao.py --testar-restauracao` (roda agora) e
   `python backup_automacao.py --historico` (as últimas 20).
 
+### 7.1 A retenção: 5 dias, e o completo-base fica (decisão do oficial, 26/10/2026)
+
+«Salva os últimos 5 dias, apaga os mais antigos» e «completo uma vez por
+semana». O diário traz o banco inteiro, mas **as digitalizações e o acervo só
+existem no completo** — por isso, a cada rodada (`backup_rotina.aplicar_retencao`):
+
+- **ficam** todos os pacotes dos últimos 5 dias (hoje inclusive);
+- **ficam** o pacote mais novo e o **completo-base** dele (o completo mais
+  recente com data igual ou anterior), **mesmo com mais de 5 dias** — sem ele,
+  o mais novo não devolve a casa inteira. Se o backup parar de sair, a pasta não
+  se esvazia: o último pacote e a base dele continuam lá;
+- **sai** o resto.
+
+O que ela apaga, e o que nunca:
+
+- só arquivo com o nome que a rodada dá — `backup_banco_AAAA-MM-DD.zip` e
+  `backup_completo_AAAA-MM-DD.zip` —, direto na pasta dos backups (nem
+  subpasta, nem atalho). Backup manual, o completo de outra rotina
+  (`backup_completo_AAAAMMDD_HHMMSS.zip`), o formato antigo
+  `backup_automatico_*.zip` e os `.parcial` não são tocados;
+- a data é a do **nome**, e não a da gravação (uma cópia muda a gravação);
+- pacote com data a partir de 26/10/2026 só sai se estiver em `bk_pacotes`; o
+  que não está fica, e vira aviso na automação para alguém conferir;
+- **o espelho fora do servidor e o Proton não são tocados**: a retenção só
+  conhece a pasta dos backups;
+- cada rodada que apagou alguma coisa grava `AUTO_BACKUP_RETENCAO` na
+  auditoria, com a lista, o completo-base que ficou fora da janela, o
+  **agente** (o processo da automação ou a reserva do primeiro acesso) e **a
+  mando de quem** (a retenção decidida pelo oficial).
+
+O número de dias é **Configurações → Retenção dos backups automáticos (dias)**
+(`backup_retencao_dias`, 5 de fábrica, mínimo 3). As chaves antigas
+(`backup_retention`, 30 pacotes; `backup_completo_retencao`, 8 completos)
+contavam arquivos por tipo e não governam mais nada.
+
 ## 8. A cópia imutável fora da casa — AINDA NÃO
 
 O espelho fora do servidor, imutável, é exigência do mesmo provimento, e **o
@@ -210,16 +245,20 @@ em `backup_rotina.rodada` («A CÓPIA IMUTÁVEL FORA DA CASA»): depois de o pac
 passar na conferência, e só do pacote conferido; a falha dela vira item de
 `falhas`, e a automação avisa como avisa a falha do pacote.
 
-## 9. Um descompasso declarado: a regra do gestor e o completo semanal
+## 9. A regra do gestor e o completo semanal — decidido em 26/10/2026
 
-A conferência diária do gestor (`gestor_conferencia.regra_backup`) acusa
-**CRÍTICO** quando o último `backup_completo_*.zip` tem mais de **1 dia**
-(`BACKUP_DIAS_TOLERADOS = 1`). O completo que **o sistema** gera é
-**semanal**. Com só o sistema gerando backup, a regra acusa seis dias em sete.
-O remédio que ela aponta é a rotina de fora do sistema (`BACKUP_AGORA.cmd`);
-se essa rotina gera o completo todo dia na mesma pasta, a regra fica satisfeita
-por ela — isso **não foi conferido aqui**. **A regra não foi mexida**: qual
-é a periodicidade da cópia completa «da classe» (art. 12, § 3º, I) é decisão do
-oficial — ou a regra passa a aceitar o diário do banco mais o completo semanal,
-ou o completo do sistema passa a ser diário (com o custo de disco de um completo
-por dia na retenção).
+Até esta versão a conferência diária do gestor
+(`gestor_conferencia.regra_backup`) acusava **CRÍTICO** quando o último
+`backup_completo_*.zip` tinha mais de **1 dia** — e o completo que o sistema
+gera é semanal: com só o sistema gerando backup, a regra acusaria seis dias em
+sete. **O oficial decidiu: «completo uma vez por semana».** A regra passou a
+fazer duas cobranças:
+
+| Achado | Quando | Limite |
+|---|---|---|
+| `BACKUP:completo` | o último completo tem mais de **7 dias** (`BACKUP_COMPLETO_DIAS_TOLERADOS`) | uma vez por semana |
+| `BACKUP:diario` | o pacote mais novo — diário do banco **ou** completo, que também leva o banco — tem mais de **1 dia** (`BACKUP_DIAS_TOLERADOS`) | o do dia |
+
+A folga de um dia no diário é porque a conferência roda de manhã (07h30) e o
+backup no horário sai às 18h: de manhã, o «do dia» é o da noite anterior. Sem
+backup nenhum na pasta, sai um achado só («Nenhum backup encontrado»).

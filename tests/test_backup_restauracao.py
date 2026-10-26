@@ -390,9 +390,51 @@ def test_o_processo_de_backup_gera_uma_vez_e_a_falha_vira_aviso_da_central(cg_ca
     assert {SCH.PAINEL, SCH.TAREFA} <= canais
 
 
+def test_a_retencao_do_processo_apaga_o_velho_e_vai_a_auditoria(cg_casa, tmp_path, monkeypatch):
+    """5 dias, o completo-base fica, e a auditoria diz o agente e a mando de quem."""
+    import os
+    db = cg_casa["db"]
+    pasta = tmp_path / "backups"
+    pasta.mkdir()
+    db.set_settings({"backup_dir": str(pasta)})
+
+    def velho(nome, dia):
+        p = pasta / nome
+        p.write_bytes(b"PK velho")
+        t = datetime.combine(dia, datetime.min.time()).timestamp() + 3600
+        os.utime(p, (t, t))
+        return p
+
+    # de antes do registro (bk_pacotes nasceu em 26/10/2026): o nome basta
+    velhos = [velho("backup_banco_2026-09-01.zip", date(2026, 9, 1)),
+              velho("backup_banco_2026-09-02.zip", date(2026, 9, 2)),
+              velho("backup_completo_2026-09-01.zip", date(2026, 9, 1))]
+    de_fora = velho("backup_completo_20260901_010000.zip", date(2026, 9, 1))
+    monkeypatch.setattr(BKP, "gerar_pacote", _gerar_de_mentira([]))
+    ctx = PROC.Contexto(db=db, agora=datetime.now(), pasta_dados=tmp_path, raiz=RAIZ,
+                        processo={"codigo": "BACKUP_DIARIO", "parametros": {}})
+    r = BA.rodar_backup(ctx)
+    assert r["situacao"] == "OK", r["relato"]
+    assert not any(p.exists() for p in velhos)
+    assert de_fora.exists(), "arquivo que não tem o nome da rodada não se apaga"
+    assert ROT.pacote_diario(pasta, ctx.hoje).exists()
+    assert ROT.pacote_completo(pasta, ctx.hoje).exists()      # o completo devido saiu hoje
+    assert any(a.get("acao") == "apagou pela retenção" for a in r["acoes"])
+    with db.connect() as con:
+        linhas = banco(con).ler(
+            "SELECT details FROM audit_logs WHERE action = 'AUTO_BACKUP_RETENCAO' ORDER BY id")
+    assert linhas, "o que a retenção apagou vai à auditoria"
+    det = json.loads(linhas[-1]["details"])
+    assert sorted(a["arquivo"] for a in det["apagados"]) == sorted(p.name for p in velhos)
+    assert det["dias"] == 5 and det["origem"] == "automação"
+    assert "BACKUP_DIARIO" in det["agente"] and "oficial" in det["a_mando_de"]
+
+
 def test_as_sementes_do_backup_chegam_a_central_com_os_parametros():
     trazidas = {s["codigo"]: s for s in PROC.sementes_de_outros_modulos()}
     assert trazidas["BACKUP_DIARIO"]["alvo"] == "backup_automacao:rodar_backup"
+    # «roda 18h» — decisão do oficial em 26/10/2026; nasce desligado como os outros
+    assert trazidas["BACKUP_DIARIO"]["agenda"]["horarios"] == ["18:00"]
     teste = trazidas["BACKUP_TESTE_RESTAURACAO"]
     assert teste["alvo"] == "backup_automacao:rodar_teste_de_restauracao"
     assert teste["parametros"] == {"idade_maxima_h": 48}

@@ -572,9 +572,11 @@ def create_app(test_config: dict | None = None) -> Flask:
             return
 
         import backup_rotina
+        import backup_restauracao
         try:
             r = backup_rotina.rodada(
                 backup_dir(), full_backup, hoje=hoje,
+                registrados=backup_restauracao.nomes_registrados(db),
                 **backup_rotina.parametros_da_casa(db.get_setting))
         except backup_rotina.RodadaOcupada:
             return                      # a automacao esta gerando agora
@@ -593,6 +595,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         if aviso:
             db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
                    {"error": aviso, "tipo": "registro"})
+        # O QUE A RETENCAO DE 5 DIAS APAGOU vai a auditoria, com o agente e a
+        # mando de quem (decisao do oficial de 26/10/2026).
+        backup_automacao.registrar_a_retencao(
+            db, r.get("retencao"), origem="primeiro acesso do dia", pasta=backup_dir())
         for falha in r["falhas"]:
             db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
                    {"error": falha["erro"], "tipo": falha["tipo"]})
@@ -2587,7 +2593,12 @@ def create_app(test_config: dict | None = None) -> Flask:
                 # isso nunca chegava — e cada «salvar» gravava «0» por cima,
                 # desligando o envio que o oficial tentava ligar. Ela tem rota
                 # própria agora: `configuracoes_cra_envio`.
-                "backup_retention": str(max(3, parse_int(request.form.get("backup_retention")) or 30)),
+                # A RETENCAO E EM DIAS desde 26/10/2026 (decisao do oficial: 5
+                # dias), numa chave nova — `backup_retention` contava pacotes.
+                # Campo que nao veio nao se grava por cima.
+                **({"backup_retencao_dias": str(max(3, parse_int(
+                    request.form.get("backup_retencao_dias")) or 5))}
+                   if "backup_retencao_dias" in request.form else {}),
                 "archive_root": request.form.get("archive_root", "").strip(),
                 # Uma por linha, sem linha vazia (LX12): ver `pastas_da_casa`.
                 "pastas_de_importacao": "\n".join(

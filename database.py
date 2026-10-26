@@ -149,11 +149,15 @@ DEFAULT_SETTINGS = {
     "session_absolute_hours": "12",
     "require_backup_assignee": "1",
     "auto_backup": "1",
-    "backup_retention": "30",
+    # A RETENCAO DOS BACKUPS AUTOMATICOS, EM DIAS (decisao do oficial em
+    # 26/10/2026: «salva os ultimos 5 dias»), e sem nunca apagar o completo-base
+    # — ver `backup_rotina.aplicar_retencao`. Substitui `backup_retention` (30
+    # pacotes) e `backup_completo_retencao` (8 completos), que contavam arquivos
+    # por tipo; as linhas antigas ficam na tabela, sem uso.
+    "backup_retencao_dias": "5",
     # Backup completo (banco + digitalizacoes) uma vez por semana. As imagens
     # sao imutaveis: repeti-las todo dia gastaria disco sem proteger mais nada.
     "backup_completo_dia": "6",
-    "backup_completo_retencao": "8",
     "archive_root": "",
     # AS PASTAS DE ONDE O BALCÃO IMPORTA, uma por linha (LX12, 19/10/2026).
     # Caminho digitado nas telas de importação (acervo, Livro 3, matrículas

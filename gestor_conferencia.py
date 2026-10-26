@@ -47,8 +47,14 @@ JANELA_DE_AVISO = 10
 #: A cópia local do CNIB é tida como parada quando a ordem mais nova é mais
 #: velha que isto. O CNIB nacional recebe dezenas de milhares de ordens por mês.
 CNIB_DIAS_TOLERADOS = 3
-#: Backup fora do servidor: o Provimento pede cópia diária.
+#: O pacote do dia (o diário do banco, ou um completo): o Provimento pede cópia
+#: diária. Um dia de folga porque a conferência roda de manhã (07h30) e o
+#: backup no horário sai às 18h: de manhã, o «do dia» é o da noite anterior.
 BACKUP_DIAS_TOLERADOS = 1
+#: O completo (banco + digitalizações + acervo): UMA VEZ POR SEMANA — decisão
+#: do oficial em 26/10/2026 («completo uma vez por semana»). Antes a regra
+#: cobrava o completo com a folga do diário, e acusava seis dias em sete.
+BACKUP_COMPLETO_DIAS_TOLERADOS = 7
 
 GRAVIDADES = ("CRITICO", "VENCIDO", "NAO_MEDIU", "PRAZO", "ATENCAO")
 
@@ -746,23 +752,43 @@ def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]
         configurada = ""
     pastas = {pasta_das_copias.pasta_de_backups(Path(pasta_dados), configurada),
               Path(pasta_dados) / "backups"}
-    arquivos = sorted((p for pasta in pastas if pasta.is_dir()
-                       for p in pasta.glob("backup_completo_*.zip")),
-                      key=lambda p: p.stat().st_mtime)
-    if arquivos:
-        ultimo = datetime.fromtimestamp(arquivos[-1].stat().st_mtime).date()
-        if (hoje - ultimo).days <= BACKUP_DIAS_TOLERADOS:
-            return []
-        titulo = f"Último backup completo é de {ultimo:%d/%m/%Y}"
-    else:
-        titulo = "Nenhum backup completo encontrado"
+
+    def dia_do_mais_novo(*padroes: str):
+        achados = [p for pasta in pastas if pasta.is_dir()
+                   for padrao in padroes for p in pasta.glob(padrao)]
+        return (datetime.fromtimestamp(max(p.stat().st_mtime for p in achados)).date()
+                if achados else None)
+
     # O FUNDAMENTO MUDOU DE NORMA, NÃO DE REGRA: o 213/2026 revogou o 74/2018
     # (art. 26). A cópia completa em periodicidade da classe é o art. 12,
     # § 3º, I; o alerta ao responsável quando o backup falha, o § 10.
-    return [_achado(
-        "BACKUP:completo", "BACKUP", "CRITICO", "TI", titulo,
-        "Rodar FERRAMENTAS/BACKUP_AGORA.cmd, que também espelha fora do servidor.",
-        None, "Provimento CN/CNJ 213/2026, art. 12, § 3º, I, e § 10")]
+    fundamento = "Provimento CN/CNJ 213/2026, art. 12, § 3º, I, e § 10"
+    remedio = "Rodar FERRAMENTAS/BACKUP_AGORA.cmd, que também espelha fora do servidor."
+    # AS DUAS COBRANÇAS (decisão do oficial em 26/10/2026, «completo uma vez
+    # por semana»): o completo na SEMANA e o pacote do DIA. Até aqui a regra
+    # cobrava só o completo, com a folga de um dia — e o sistema gera o
+    # completo uma vez por semana, então acusava seis dias em sete. O pacote do
+    # dia é o diário do banco ou um completo (que também leva o banco).
+    completo = dia_do_mais_novo("backup_completo_*.zip")
+    do_dia = dia_do_mais_novo("backup_banco_*.zip", "backup_completo_*.zip")
+    if do_dia is None:
+        return [_achado("BACKUP:completo", "BACKUP", "CRITICO", "TI",
+                        "Nenhum backup encontrado", remedio, None, fundamento)]
+    saida = []
+    if completo is None or (hoje - completo).days > BACKUP_COMPLETO_DIAS_TOLERADOS:
+        saida.append(_achado(
+            "BACKUP:completo", "BACKUP", "CRITICO", "TI",
+            f"Último backup completo é de {completo:%d/%m/%Y}" if completo
+            else "Nenhum backup completo encontrado",
+            f"O completo (banco, digitalizações e acervo) sai uma vez por semana; o "
+            f"limite é {BACKUP_COMPLETO_DIAS_TOLERADOS} dias. " + remedio, None, fundamento))
+    if (hoje - do_dia).days > BACKUP_DIAS_TOLERADOS:
+        saida.append(_achado(
+            "BACKUP:diario", "BACKUP", "CRITICO", "TI",
+            f"Último backup do banco é de {do_dia:%d/%m/%Y}",
+            "O pacote do banco sai todo dia (o processo BACKUP_DIARIO, às 18h). " + remedio,
+            None, fundamento))
+    return saida
 
 
 #: abaixo disto o disco do servidor vira achado (em GB)

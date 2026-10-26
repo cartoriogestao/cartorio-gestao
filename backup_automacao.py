@@ -10,6 +10,10 @@ OS DOIS PROCESSOS (26/10/2026 — Provimento CN/CNJ 213/2026, art. 12, § 3º, I
                                 pacote do banco do dia, o completo quando devido
                                 e a retenção. Roda no horário pelo Agendador, e
                                 por isso **não depende de alguém abrir o sistema**.
+                                O horário de fábrica é **18h** (decisão do
+                                oficial, 26/10/2026: «roda 18h»); a retenção é
+                                de 5 dias e nunca apaga o completo-base
+                                (`backup_rotina.aplicar_retencao`).
     BACKUP_TESTE_RESTAURACAO  — restaura o pacote mais novo num banco
                                 DESCARTÁVEL, confere as contagens contra o
                                 manifesto e apaga (`backup_restauracao`). Grava
@@ -109,6 +113,42 @@ def registrar_os_feitos(db, feitos: list[dict], *, origem: str, agora: datetime,
     return ""
 
 
+#: Quem age em cada porta da rodada, para a auditoria (regra da casa de
+#: 26/10/2026: toda gravação sem usuário diz o agente e a mando de quem).
+AGENTE_DA_PORTA = {
+    "automação": "processo BACKUP_DIARIO da central de automação (backup_automacao.rodar_backup)",
+    "primeiro acesso do dia": "reserva do primeiro acesso do dia (app.automatic_backup_once)",
+}
+
+
+def registrar_a_retencao(db, retencao: dict | None, *, origem: str, pasta: Path) -> None:
+    """Grava na auditoria o que a retenção apagou (e o que ficou de fora dela).
+
+    Uma linha `AUTO_BACKUP_RETENCAO` por rodada que apagou alguma coisa, ou
+    que deixou pacote velho por falta de registro, ou que não conseguiu
+    apagar. `db.log` não tem campo próprio de agente: `agente` e `a_mando_de`
+    vão no detalhe. A auditoria nunca derruba o backup.
+    """
+    if not retencao or not (retencao.get("apagados") or retencao.get("sem_registro")
+                            or retencao.get("falhas")):
+        return
+    fora_da_janela = {a: m for a, m in (retencao.get("mantidos") or {}).items()
+                      if not m.startswith("dos últimos")}
+    try:
+        db.log(None, "SISTEMA", "AUTO_BACKUP_RETENCAO", "BACKUP", None,
+               {"pasta": str(pasta), "dias": retencao.get("dias"),
+                "apagados": retencao.get("apagados") or [],
+                "mantidos_fora_da_janela": fora_da_janela,
+                "sem_registro_nao_apagados": retencao.get("sem_registro") or [],
+                "falhas": retencao.get("falhas") or [], "origem": origem,
+                "agente": AGENTE_DA_PORTA.get(origem, origem),
+                "a_mando_de": ("oficial — retenção local de "
+                               f"{retencao.get('dias')} dias decidida em 26/10/2026 "
+                               "(Configurações → backup_retencao_dias)")})
+    except Exception:                          # noqa: BLE001 — a auditoria não derruba o backup
+        pass
+
+
 def rodar_backup(ctx) -> dict:
     """A rodada do backup, no horário. ESCREVE na pasta dos backups."""
     pasta_dados = Path(ctx.pasta_dados)
@@ -129,6 +169,7 @@ def rodar_backup(ctx) -> dict:
 
     try:
         r = ROT.rodada(pasta, gerar, hoje=ctx.hoje, agora=ctx.agora,
+                       registrados=REST.nomes_registrados(ctx.db),
                        **ROT.parametros_da_casa(ctx.setting))
     except ROT.RodadaOcupada as erro:
         return _resultado("AVISO", f"O backup não rodou agora: {erro}. A próxima rodada tenta de novo.",
@@ -140,6 +181,7 @@ def rodar_backup(ctx) -> dict:
     # primeiro acesso do dia já fazia, agora com o SHA-256.
     aviso_do_registro = registrar_os_feitos(ctx.db, r["feitos"], origem="automação",
                                              agora=ctx.agora, pasta=pasta)
+    registrar_a_retencao(ctx.db, r.get("retencao"), origem="automação", pasta=pasta)
     achados = ([{"feito": f} for f in r["feitos"]] + [{"ja_existia": j} for j in r["ja_existiam"]]
                + [{"falha": f} for f in r["falhas"]])
     acoes = [{"acao": f"gerou o pacote {f['arquivo']}", "bytes": f["bytes"], "sha256": f["sha256"]}
@@ -241,10 +283,14 @@ def _relato_do_teste(r: dict, numero: int, pacote: Path, agora: datetime, idade_
 CATALOGO = (
     {"codigo": "BACKUP_DIARIO", "nome": "Backup do banco no horário (e o completo semanal)",
      "setor": "TI", "funcao": f"backup_automacao.{rodar_backup.__name__}", "timeout_s": 3 * 3600,
-     "agenda": {"dias": _TODOS, "horarios": ["01:30"]},
-     "descricao": "Gera o pacote do banco do dia (e o completo no dia da semana configurado), "
-                  "confere, e aplica a retenção. Não depende de alguém abrir o sistema; falhou, "
-                  "a central avisa. Provimento CN/CNJ 213/2026, art. 12, § 3º, I, e § 10."},
+     # 18h: decisão do oficial em 26/10/2026 («roda 18h»). Nasce desligado
+     # como todo processo da central; o horário é o de fábrica, e se ajusta
+     # na tela da Automação.
+     "agenda": {"dias": _TODOS, "horarios": ["18:00"]},
+     "descricao": "Gera o pacote do banco do dia (e o completo uma vez por semana, no dia "
+                  "configurado), confere, e aplica a retenção de 5 dias — que nunca apaga o "
+                  "completo-base do pacote mais novo. Não depende de alguém abrir o sistema; "
+                  "falhou, a central avisa. Provimento CN/CNJ 213/2026, art. 12, § 3º, I, e § 10."},
     {"codigo": "BACKUP_TESTE_RESTAURACAO", "nome": "Teste de restauração do backup",
      "setor": "TI", "funcao": f"backup_automacao.{rodar_teste_de_restauracao.__name__}",
      "timeout_s": 3 * 3600, "agenda": {"dias": [6], "horarios": ["04:00"]},

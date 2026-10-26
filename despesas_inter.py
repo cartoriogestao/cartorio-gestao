@@ -33,21 +33,49 @@ O QUE ESTE MÓDULO NUNCA FAZ
     Não autoriza: só paga despesa AUTORIZADA (`despesas`). Não segura
     transação do banco de dados durante a rede: marca ENVIADA antes, fala com
     o Inter, e grava a resposta depois — se a resposta se perder, a
-    `atualizar` pergunta ao banco antes de mandar de novo, e o Pix reenvia
-    com a MESMA chave de idempotência. Não lança no Livro Diário o que o
-    extrato não mostrou.
+    `atualizar` pergunta ao banco; só o Pix se reenvia, uma vez, com a MESMA
+    chave de idempotência. Não lança no Livro Diário o que o extrato não
+    mostrou.
 
 A CREDENCIAL
     Client ID, Client Secret, o certificado (.crt) e a chave (.key) que o
     Inter entrega na integração. Moram FORA do banco: no cofre da automação
-    (`automacao_cofre`, item «banco_inter»), quando ele existe; até lá, num
-    arquivo da pasta de dados, só do serviço, como o A1 da NFS-e. O cofre
-    trancado (ninguém digitou a senha-mestra depois de a máquina reiniciar)
-    não é erro do banco: o pagamento espera, e a despesa não muda.
+    (`automacao_cofre`, item «banco_inter»), quando ele existe; senão, no
+    `banco_inter.cred` da pasta de dados, CIFRADO pelo `cofre_cred` — o mesmo
+    caminho das chaves dos robôs e do token do WhatsApp. O cofre trancado
+    (ninguém digitou a senha-mestra depois de a máquina reiniciar) não é erro
+    do banco: o pagamento espera, e a despesa não muda.
+
+    Correção de 26/10/2026 (revisão de segurança dos PRs abertos, MÉDIA): a
+    primeira versão deste ramo gravava `banco_inter.json` em TEXTO CLARO — o
+    Client Secret e a chave privada do banco ficariam legíveis por qualquer
+    conta da máquina se o `icacls` falhasse, e o `.json` está fora dos padrões
+    que a subida reaperta (`permissao_local.SEGREDOS_DA_PASTA`). O arquivo
+    antigo ainda se lê: na primeira leitura ele vai para o `.cred` cifrado e é
+    apagado — e também ao gravar a credencial pela tela.
+
+O REENVIO DE QUEM FICOU SEM RESPOSTA (26/10/2026, revisão de segurança, ALTA)
+    `atualizar` reenviava a despesa ENVIADA/SEM_RESPOSTA sem conferir o
+    interruptor nem o ambiente — e `pagar_autorizadas` roda `atualizar` em
+    toda ENVIADA. Um boleto de TESTE do sandbox com a resposta perdida, depois
+    de o oficial trocar para a produção e ligar o pagamento, sairia na conta
+    de verdade, sem teto e sem autorização em produção. Agora:
+      - despesa enviada noutro ambiente NUNCA vai ao banco de agora, nem para
+        consulta: a que ficou sem resposta vira FALHOU, com a frase;
+      - o reenvio passa pelas travas de `pagar` (pagamento ligado, mesmo
+        ambiente) e é decidido com a linha presa (FOR UPDATE), regravando
+        `banco_status` para REENVIANDO antes de soltar a trava: o botão da
+        ficha e o despachante no mesmo minuto não reenviam os dois;
+      - só o Pix se reenvia, e uma vez só (`tentativas` vai a 2): ele leva
+        `x-id-idempotente`, e o Inter devolve a mesma solicitação. O boleto
+        NÃO tem chave de idempotência: sem resposta e sem rastro na consulta
+        depois de PRAZO_DE_ESPERA, vira FALHOU, e o oficial confere no
+        Internet Banking antes de devolver à autorização.
 """
 from __future__ import annotations
 
 import json
+import logging
 import re
 import ssl
 import tempfile
@@ -71,10 +99,25 @@ ENDERECOS = {
 }
 ESCOPOS = "extrato.read pagamento-boleto.write pagamento-boleto.read pagamento-pix.write pagamento-pix.read"
 NOME_NO_COFRE = "banco_inter"
-ARQUIVO_DA_CREDENCIAL = "banco_inter.json"
+# O `.cred` cifrado pelo `cofre_cred` (26/10/2026). O `.json` é o arquivo em
+# texto claro da primeira versão: só se lê, para migrar, e então se apaga.
+ARQUIVO_DA_CREDENCIAL = "banco_inter.cred"
+ARQUIVO_ANTIGO = "banco_inter.json"
 CAMPOS_DA_CREDENCIAL = ("client_id", "client_secret", "crt_pem", "key_pem")
+CAMPOS_GUARDADOS = (*CAMPOS_DA_CREDENCIAL, "conta_corrente")
 PRAZO_SEGUNDOS = 30
 DIAS_DE_EXTRATO = 10
+# O REENVIO (26/10/2026): um envio e UM reenvio, e só do Pix. PRAZO_DE_ESPERA é
+# quanto a casa espera a consulta do Inter mostrar o boleto que ficou sem
+# resposta, e quanto um reenvio «em curso» pode durar antes de ser tido por
+# interrompido — cada ida ao Inter tem PRAZO_SEGUNDOS, e quinze minutos sobram.
+MAXIMO_DE_ENVIOS = 2
+PRAZO_DE_ESPERA = timedelta(minutes=15)
+SEM_RESPOSTA = "SEM_RESPOSTA"
+REENVIANDO = "REENVIANDO"
+REENVIAR = "REENVIAR"
+
+LOG = logging.getLogger("cartorio.despesas")
 
 # O status do Inter → a situação da despesa. O que não está nas listas fica
 # ENVIADA: situação de banco desconhecida não vira «pago» nem «falhou».
@@ -135,8 +178,57 @@ def _cofre():
     return automacao_cofre
 
 
+def _do_arquivo_antigo(base: Path) -> dict | None:
+    """O `banco_inter.json` em texto claro da primeira versão deste ramo, se existir."""
+    antigo = base / ARQUIVO_ANTIGO
+    if not antigo.is_file():
+        return None
+    try:
+        campos = json.loads(antigo.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as erro:
+        raise CredencialAusente("O arquivo antigo da credencial do Inter está ilegível. "
+                                "Cadastre-a de novo (Despesas → Configuração).") from erro
+    if not isinstance(campos, dict):
+        return None
+    limpos = {c: str(campos.get(c) or "").strip() for c in CAMPOS_GUARDADOS}
+    return limpos if any(limpos.values()) else None
+
+
+def _gravar_cifrado(base: Path, campos: dict) -> None:
+    """Grava no `.cred` cifrado e LÊ DE VOLTA. ESCREVE EM DISCO.
+
+    Campo vazio sai do arquivo (é a regra do `cofre_cred.gravar`): a credencial
+    nova não herda a conta corrente da antiga. Falha vira `CofreError`.
+    """
+    import cofre_cred
+    valores = {c: str(campos.get(c) or "").strip() for c in CAMPOS_GUARDADOS}
+    try:
+        cofre_cred.gravar(base, ARQUIVO_DA_CREDENCIAL, valores)
+    except OSError as erro:
+        raise cofre_cred.CofreError(f"não consegui gravar em «{base}»: {erro}") from erro
+    conferido = cofre_cred.ler(base, ARQUIVO_DA_CREDENCIAL)
+    if any(conferido.get(k, "") != v for k, v in valores.items()):
+        raise cofre_cred.CofreError("o arquivo cifrado não voltou igual na conferência")
+
+
+def _apagar_o_antigo(base: Path) -> None:
+    """Apaga o `.json` em texto claro. Não derruba nada: a falha fica no log."""
+    try:
+        (base / ARQUIVO_ANTIGO).unlink(missing_ok=True)
+    except OSError as erro:
+        LOG.warning("CREDENCIAL DO INTER EM TEXTO CLARO NAO FOI APAGADA (%s): %s",
+                    base / ARQUIVO_ANTIGO, erro)
+
+
 def credencial(pasta: Any = None) -> dict:
-    """A credencial do Inter. Cofre primeiro; o arquivo é o caminho provisório."""
+    """A credencial do Inter. O cofre da automação primeiro; senão, o `.cred` cifrado.
+
+    O `banco_inter.json` em texto claro da primeira versão deste ramo ainda se
+    lê: na primeira leitura ele vai para o `.cred` cifrado, que é LIDO DE
+    VOLTA, e só então é apagado (a ordem de `cofre_cred.migrar_da_tabela`). Se
+    a migração falhar, o pagamento não para — a credencial vem do arquivo
+    antigo, o log avisa, e a leitura seguinte tenta de novo.
+    """
     cofre = _cofre()
     if cofre is not None:
         try:
@@ -148,15 +240,27 @@ def credencial(pasta: Any = None) -> dict:
             campos = None
         if campos:
             return dict(campos)
-    arquivo = _pasta(pasta) / ARQUIVO_DA_CREDENCIAL
-    if not arquivo.is_file():
-        raise CredencialAusente("A credencial do Banco Inter não foi cadastrada "
-                                "(Despesas → Configuração).")
-    try:
-        return json.loads(arquivo.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError) as erro:
-        raise CredencialAusente("O arquivo da credencial do Inter está ilegível. "
-                                "Cadastre-a de novo.") from erro
+    import cofre_cred
+    base = _pasta(pasta)
+    campos = cofre_cred.ler(base, ARQUIVO_DA_CREDENCIAL)
+    if campos:
+        return dict(campos)
+    antigo = _do_arquivo_antigo(base)
+    if antigo:
+        try:
+            _gravar_cifrado(base, antigo)
+        except cofre_cred.CofreError as erro:
+            LOG.warning("CREDENCIAL DO INTER FICOU NO ARQUIVO EM TEXTO CLARO: o cofre "
+                        "não gravou (%s)", erro)
+        else:
+            _apagar_o_antigo(base)
+        return {k: v for k, v in antigo.items() if v}
+    if cofre_cred.situacao(base, ARQUIVO_DA_CREDENCIAL) == "nao_abre":
+        raise CredencialAusente("O arquivo cifrado da credencial do Inter não abre nesta "
+                                "máquina (a chave do cofre não é a mesma). Cadastre-a de "
+                                "novo (Despesas → Configuração).")
+    raise CredencialAusente("A credencial do Banco Inter não foi cadastrada "
+                            "(Despesas → Configuração).")
 
 
 def conferir_credencial(campos: dict) -> dict:
@@ -181,28 +285,32 @@ def conferir_credencial(campos: dict) -> dict:
 
 
 def gravar_credencial(campos: dict, pasta: Any = None) -> dict:
-    """Grava no cofre, se existir; senão, no arquivo só do serviço. ESCREVE EM DISCO."""
+    """Grava no cofre da automação, se existir; senão, no `.cred` cifrado. ESCREVE EM DISCO.
+
+    Nos dois caminhos, o `banco_inter.json` em texto claro da primeira versão
+    deste ramo é apagado depois de a credencial nova estar gravada. A ACL do
+    `.cred` é a do `cofre_cred` (restrita na hora, e reapertada na subida pelo
+    padrão `*.cred`); se o `icacls` falhar, o arquivo continua CIFRADO — é o
+    que «falhar é aviso» de `permissao_local` tolera, e o texto claro não.
+    """
     resumo = conferir_credencial(campos)
-    limpos = {c: str(campos.get(c) or "").strip() for c in (*CAMPOS_DA_CREDENCIAL,
-                                                            "conta_corrente")}
+    limpos = {c: str(campos.get(c) or "").strip() for c in CAMPOS_GUARDADOS}
+    base = _pasta(pasta)
     cofre = _cofre()
     if cofre is not None:
         cofre.gravar(NOME_NO_COFRE, {k: v for k, v in limpos.items() if v},
                      tipo="CERTIFICADO", validade=resumo["valido_ate"], por="despesas")
-        return {**resumo, "onde": "cofre"}
-    destino = _pasta(pasta)
-    destino.mkdir(parents=True, exist_ok=True)
-    alvo = destino / ARQUIVO_DA_CREDENCIAL
-    provisorio = alvo.with_suffix(".novo")
-    provisorio.write_text(json.dumps(limpos), encoding="utf-8")
-    import os
-    os.replace(provisorio, alvo)
-    try:
-        import centrais_cred
-        centrais_cred._so_do_servico(alvo)
-    except (ImportError, AttributeError, OSError):
-        pass
-    return {**resumo, "onde": "arquivo"}
+        onde = "cofre"
+    else:
+        import cofre_cred
+        base.mkdir(parents=True, exist_ok=True)
+        try:
+            _gravar_cifrado(base, limpos)
+        except cofre_cred.CofreError as erro:
+            raise DP.DespesaError(f"A credencial do Inter não foi gravada: {erro}.") from erro
+        onde = "arquivo cifrado da pasta de dados"
+    _apagar_o_antigo(base)
+    return {**resumo, "onde": onde}
 
 
 def resumo_da_credencial(pasta: Any = None) -> dict | None:
@@ -475,9 +583,12 @@ def pagar(db, despesa_id: int, *, cliente: ClienteInter, por: str,
             DP._evento(bd, despesa_id, "PAGAR", "vencida", "vencida antes de sair", por,
                        DP._carimbo(quando))
             return {"situacao": DP.FALHOU, "mensagem": "Vencida antes de sair."}
+        # `tentativas` conta os envios DESTA autorização (26/10/2026): começa em 1
+        # aqui, e o único reenvio do Pix (`_reenviar_pix`) a leva a 2. Devolvida e
+        # autorizada de novo, a despesa recomeça a conta.
         bd.escrever(
             """UPDATE dp_despesas SET situacao = 'ENVIADA', enviada_em = %s, ambiente = %s,
-                      tentativas = tentativas + 1, banco_status = 'SEM_RESPOSTA', mensagem = ''
+                      tentativas = 1, banco_status = 'SEM_RESPOSTA', mensagem = ''
                 WHERE id = %s""", (DP._carimbo(quando), cliente.ambiente, int(despesa_id)))
         d = DP.despesa(bd, despesa_id)
     return _enviar(db, d, cliente=cliente, por=por, hoje=hoje)
@@ -509,20 +620,133 @@ def _enviar(db, d: dict, *, cliente: ClienteInter, por: str, hoje: str) -> dict:
         nova = _gravar(db, d["id"], situacao=DP.FALHOU, status="RECUSADO", codigo=None,
                        mensagem=f"O Inter recusou: {erro}", usuario=por, operacao="PAGAR")
     except Indisponivel as erro:
-        # A despesa fica ENVIADA/SEM_RESPOSTA: `atualizar` pergunta antes de mandar de novo.
+        # A despesa fica ENVIADA/SEM_RESPOSTA: `atualizar` pergunta ao banco, e só
+        # o Pix se reenvia (uma vez, com a mesma chave de idempotência).
         nova = _gravar(db, d["id"], situacao=DP.ENVIADA, status="SEM_RESPOSTA", codigo=None,
                        mensagem=str(erro), usuario=por, operacao="PAGAR")
     return {"situacao": nova["situacao"], "mensagem": nova["mensagem"]}
 
 
+def _em_curso(desde: Any, quando: datetime) -> bool:
+    """A ida ao banco que começou em `desde` (carimbo da casa) ainda pode estar no ar?"""
+    return bool(desde) and str(desde) > DP._carimbo(quando - PRAZO_DE_ESPERA)
+
+
+def _falhou(bd, d: dict, *, mensagem: str, por: str, quando: datetime) -> dict:
+    """Marca FALHOU com a frase, na transação (e com a linha presa) de quem chama."""
+    bd.escrever("UPDATE dp_despesas SET situacao = 'FALHOU', mensagem = %s WHERE id = %s",
+                (mensagem[:500], int(d["id"])))
+    DP._evento(bd, d["id"], "ATUALIZAR", "falhou", mensagem, por, DP._carimbo(quando))
+    return {"situacao": DP.FALHOU, "mensagem": mensagem}
+
+
+def _outro_ambiente(db, despesa_id: int, *, cliente: ClienteInter, por: str,
+                    quando: datetime) -> dict:
+    """A despesa foi enviada noutro ambiente: nada vai ao banco de agora.
+
+    A que ficou sem resposta (sem código do banco) vira FALHOU — reenviá-la
+    aqui seria mandar à conta de verdade o boleto de teste do sandbox. A que
+    tem resposta fica como está: a consulta dela é com o ambiente dela.
+    """
+    with db.transaction() as con:
+        bd = banco(con)
+        d = DP._prender(bd, despesa_id)
+        de_la = d["ambiente"] or "desconhecido"
+        if d["situacao"] == DP.ENVIADA and not d["banco_codigo"]:
+            return _falhou(bd, d, por=por, quando=quando, mensagem=(
+                f"Enviada ao banco no ambiente «{de_la}» e sem resposta; o ambiente "
+                f"configurado agora é «{cliente.ambiente}». Não reenvio noutro ambiente: "
+                f"confira no banco de «{de_la}» e, se precisar, cadastre de novo."))
+    return {"situacao": d["situacao"], "mensagem": (
+        f"Enviada no ambiente «{de_la}»; o banco configurado agora é «{cliente.ambiente}». "
+        f"A consulta desta despesa só se faz com o ambiente em que ela saiu.")}
+
+
+def _reenviar_pix(db, despesa_id: int, *, cliente: ClienteInter, por: str,
+                  quando: datetime) -> dict:
+    """O Pix sem resposta: reenvia UMA vez, com a mesma chave e as travas de `pagar`.
+
+    A decisão é tomada com a linha presa (FOR UPDATE) e grava REENVIANDO antes
+    de soltar a trava — a segunda rodada do mesmo minuto acha o reenvio em
+    curso e não manda de novo. O reenvio interrompido (o processo caiu no meio)
+    deixa de contar como «em curso» depois de PRAZO_DE_ESPERA, e aí a despesa
+    vira FALHOU como a que não respondeu duas vezes.
+    """
+    with db.transaction() as con:
+        bd = banco(con)
+        d = DP._prender(bd, despesa_id)
+        if d["situacao"] != DP.ENVIADA or d["banco_codigo"]:
+            return {"situacao": d["situacao"], "mensagem": "Outra rodada já tratou desta "
+                    "despesa."}
+        status = d["banco_status"]
+        if status == REENVIANDO and _em_curso(bd.valor(
+                "SELECT max(quando) FROM dp_eventos WHERE despesa_id = %s AND operacao = %s",
+                (int(despesa_id), REENVIAR)), quando):
+            return {"situacao": DP.ENVIADA, "mensagem": "Um reenvio deste Pix ao Inter está "
+                    "em curso."}
+        if status not in (SEM_RESPOSTA, REENVIANDO):
+            return {"situacao": DP.ENVIADA, "mensagem": f"Inter: {status}"}
+        if int(d["tentativas"] or 0) >= MAXIMO_DE_ENVIOS:
+            return _falhou(bd, d, por=por, quando=quando, mensagem=(
+                "O Inter não respondeu ao envio nem ao reenvio do Pix, e não mando uma "
+                "terceira vez. Confira no Internet Banking se o Pix saiu ANTES de devolver "
+                "à autorização: a nova autorização muda a chave de idempotência, e o Inter "
+                "não reconheceria o Pix repetido. Se saiu, registre como pago fora do banco."))
+        cfg = DP.configuracao(bd)
+        if cfg.get("despesas_pagamento_ligado") != "1":
+            return {"situacao": DP.ENVIADA, "mensagem": "O Pix ficou sem resposta do Inter e o "
+                    "pagamento automático está desligado: não reenvio. Ligue o pagamento "
+                    "para a rodada reenviar, ou confira no Internet Banking."}
+        if cfg.get("despesas_ambiente") != cliente.ambiente:
+            return {"situacao": DP.ENVIADA, "mensagem": "O ambiente do banco mudou; não "
+                    "reenvio."}
+        bd.escrever("""UPDATE dp_despesas SET tentativas = tentativas + 1, banco_status = %s,
+                              mensagem = '' WHERE id = %s""", (REENVIANDO, int(despesa_id)))
+        DP._evento(bd, despesa_id, REENVIAR, "em curso", "Pix sem resposta: reenvio com a "
+                   "mesma chave de idempotência", por, DP._carimbo(quando))
+        d = DP.despesa(bd, despesa_id)
+    return _enviar(db, d, cliente=cliente, por=por, hoje=quando.date().isoformat())
+
+
+def _boleto_sem_rastro(db, despesa_id: int, *, por: str, quando: datetime) -> dict:
+    """O boleto sem resposta que a consulta não mostra: NUNCA se reenvia sozinho.
+
+    O POST do boleto não tem chave de idempotência: se o Inter aceitou e a
+    resposta se perdeu, mandar de novo paga duas vezes. A casa espera
+    PRAZO_DE_ESPERA (a consulta pode demorar a mostrar), e depois marca
+    FALHOU — o oficial confere no Internet Banking antes de devolver.
+    """
+    with db.transaction() as con:
+        bd = banco(con)
+        d = DP._prender(bd, despesa_id)
+        if (d["situacao"] != DP.ENVIADA or d["banco_codigo"]
+                or d["banco_status"] != SEM_RESPOSTA):
+            return {"situacao": d["situacao"], "mensagem": "O Inter não achou o pagamento."}
+        if _em_curso(d["enviada_em"], quando):
+            return {"situacao": DP.ENVIADA, "mensagem": "Sem resposta do Inter, e a consulta "
+                    "ainda não mostra o pagamento: pergunto de novo na próxima rodada. Boleto "
+                    "não se reenvia sozinho."}
+        return _falhou(bd, d, por=por, quando=quando, mensagem=(
+            "O Inter não respondeu ao envio do boleto e a consulta não mostra o pagamento. "
+            "Boleto não se reenvia sozinho (não tem chave de idempotência): confira no "
+            "Internet Banking. Se não saiu, devolva à autorização; se saiu, registre como "
+            "pago fora do banco."))
+
+
 def atualizar(db, despesa_id: int, *, cliente: ClienteInter, por: str,
               agora: datetime | None = None) -> dict:
-    """Pergunta ao Inter como está a despesa ENVIADA. Reenvia só o que nunca chegou."""
+    """Pergunta ao Inter como está a despesa ENVIADA. Reenvia só o Pix que nunca chegou.
+
+    (26/10/2026) Nada vai ao banco de outro ambiente, e o reenvio passa pelas
+    travas de `pagar` — ver «O REENVIO DE QUEM FICOU SEM RESPOSTA», no alto.
+    """
     quando = agora or _agora()
     with db.connect() as con:
         d = DP.despesa(con, despesa_id)
     if not d or d["situacao"] not in (DP.ENVIADA, DP.PAGA):
         return {"situacao": d["situacao"] if d else None, "mensagem": ""}
+    if (d["ambiente"] or "") != cliente.ambiente:
+        return _outro_ambiente(db, despesa_id, cliente=cliente, por=por, quando=quando)
     eh_pix = d["forma"] in (DP.PIX_COPIA_E_COLA, DP.PIX_CHAVE)
     try:
         if eh_pix and d["banco_codigo"]:
@@ -536,7 +760,7 @@ def atualizar(db, despesa_id: int, *, cliente: ClienteInter, por: str,
         if eh_pix:
             # A resposta do primeiro envio se perdeu: o mesmo x-id-idempotente
             # não paga duas vezes — o Inter devolve a mesma solicitação.
-            return _enviar(db, d, cliente=cliente, por=por, hoje=quando.date().isoformat())
+            return _reenviar_pix(db, despesa_id, cliente=cliente, por=por, quando=quando)
         inicio = (date.fromisoformat(d["enviada_em"][:10]) - timedelta(days=1)).isoformat()
         fim = max(d["vencimento"], quando.date().isoformat())
         achados = cliente.pagamentos(d["codigo_barras"] or d["codigo"], inicio, fim)
@@ -544,9 +768,7 @@ def atualizar(db, despesa_id: int, *, cliente: ClienteInter, por: str,
         escolhido = next((a for a in vivos if a.get("codigoTransacao") == d["banco_codigo"]),
                          vivos[0] if vivos else (achados[0] if achados else None))
         if escolhido is None:
-            if d["banco_status"] == "SEM_RESPOSTA":
-                return _enviar(db, d, cliente=cliente, por=por, hoje=quando.date().isoformat())
-            return {"situacao": d["situacao"], "mensagem": "O Inter não achou o pagamento."}
+            return _boleto_sem_rastro(db, despesa_id, por=por, quando=quando)
         status = str(escolhido.get("statusPagamento") or "")
         nova = _gravar(db, despesa_id, situacao=_situacao_do_boleto(status), status=status,
                        codigo=str(escolhido.get("codigoTransacao") or "") or None,

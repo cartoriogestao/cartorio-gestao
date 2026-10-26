@@ -29,8 +29,8 @@
   {% else %}<p class="muted">Nenhuma credencial cadastrada.</p>{% endif %}
   <p class="small muted">No Internet Banking PJ: Integrar → Nova integração, com os escopos de extrato, pagamento de
     boleto e pagamento Pix. O Inter analisa o pedido e libera o Client ID, o Client Secret, o certificado (.crt) e a
-    chave (.key). Eles ficam fora do banco de dados (no cofre da automação, quando instalado) e não aparecem em tela
-    nem no rastro.</p>
+    chave (.key). Eles ficam fora do banco de dados — no cofre da automação, quando instalado; senão, num arquivo
+    cifrado da pasta de dados — e não aparecem em tela nem no rastro.</p>
   <form method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="acao" value="credencial">

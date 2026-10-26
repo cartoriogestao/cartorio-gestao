@@ -73,6 +73,12 @@ ROTAS_VEDADAS_AO_ROBO = ("users", "usuarios", "updates", "atualizacoes", "settin
                          "configuracoes", "backup", "caixa_", "caixa", "selador",
                          "modelos", "agente", "robos", "dois_fatores", "permiss",
                          "nucleo_", "implantacao")
+# A BUSCA NO TEOR DO ACERVO TAMBÉM É DE GENTE (revisão de segurança de
+# 26/10/2026, PR #30): ela acha as fichas de uma pessoa pelo nome ou pelo CPF
+# no acervo inteiro — o que o AUDITOR já não alcança —, e a credencial do robô
+# mora num script. Em linha própria, e não dentro da tupla, para não colidir
+# com os acréscimos dos PRs #21 e #22 quando os três forem juntados.
+ROTAS_VEDADAS_AO_ROBO += ("ri_busca_no_acervo",)
 
 
 def rota_vedada_ao_robo(endpoint: Any) -> bool:

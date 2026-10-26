@@ -192,6 +192,32 @@ def test_o_auditor_nao_varre_o_acervo(cg_casa):
     assert s["c"].get("/registro-imoveis/busca-no-acervo").status_code == 403
 
 
+def test_o_robo_nao_varre_o_acervo(cg_casa):
+    """Revisão de segurança de 26/10/2026 (PR #30): a conta de robô com papel
+    USER — que a busca aceitaria pelo papel — recebe 403 no GET e no POST, e o
+    POST com um CPF não chega à auditoria (nada foi procurado)."""
+    import selo_robo as SR
+    s = cg_casa
+    assert SR.rota_vedada_ao_robo("ri_busca_no_acervo")
+    s["db"].create_user("robo_ri", "Robo de Exemplo RI", "Senha#12345", "USER",
+                        eh_robo=1)
+    cg_login(s["c"], "robo_ri", "Senha#12345")
+    assert s["c"].get("/registro-imoveis/busca-no-acervo").status_code == 403
+    html = s["c"].get("/").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    r = s["c"].post("/registro-imoveis/busca-no-acervo",
+                   data={"csrf_token": token, "termo": CPF_COM_MASCARA})
+    assert r.status_code == 403
+    con = _banco(s)
+    linha = con.execute("SELECT id FROM audit_logs "
+                        "WHERE action='RI_BUSCA_NO_ACERVO'").fetchone()
+    con.close()
+    assert linha is None
+    # a ficha, que o robô já lia, continua com a guarda de sempre — o que se
+    # fecha é a varredura barata do acervo por pessoa
+    assert not SR.rota_vedada_ao_robo("ri_ficha")
+
+
 def test_o_indice_de_trigramas_do_teor_existe(cg_casa_logada):
     con = _banco(cg_casa_logada)
     linha = con.execute(

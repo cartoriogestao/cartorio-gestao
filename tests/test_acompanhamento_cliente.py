@@ -405,6 +405,131 @@ def test_o_que_o_servidor_manda_a_vps_aceita_e_o_codigo_abre(casa, tmp_path, mon
     assert portal.consultar(numero, codigo, "203.0.113.10")[0] == "nao_confere"
 
 
+# ------------------------------------------- o comprovante (26/10/2026)
+
+def test_o_texto_para_o_cliente_mascara_documento_valor_contato_e_nome():
+    nomes = ["BEATRIZ EXEMPLO DE SOUZA", "Mário Exemplo"]
+    t = ACOMP.texto_para_o_cliente(
+        "Trazer o RG de Beatriz Exemplo de Souza (CPF 000.000.001-91) e de MARIO, "
+        "pagar R$ 1.234,56 e 57,30; CNPJ 00.000.000/0001-00; falar com "
+        "mario@exemplo.org ou (99) 98888-7777 <urgente>", nomes)
+    for proibido in ("Beatriz", "BEATRIZ", "Souza", "MARIO", "Mário", "000.000.001-91",
+                     "1.234,56", "57,30", "R$", "00.000.000/0001-00", "@", "98888", "<"):
+        assert proibido not in t, proibido
+    assert "[nome]" in t and "[documento]" in t and "[valor]" in t and "[contato]" in t
+    assert "Trazer o RG de" in t                       # o que importa continua legível
+    assert len(ACOMP.texto_para_o_cliente("a " * 500, teto=400)) <= 400
+
+
+def _texto_do_pdf(pdf: bytes) -> str:
+    pedacos = []
+    for m in re.finditer(rb"\(((?:\\.|[^\\)])*)\) Tj", pdf):
+        pedacos.append(re.sub(rb"\\(.)", rb"\1", m.group(1)).decode("cp1252"))
+    return "\n".join(pedacos)
+
+
+def test_o_comprovante_nao_leva_cpf_valor_nem_nome_do_pagador(casa, tmp_path):
+    """Decisão do oficial em 26/10/2026: o PDF que o cliente baixa é um
+    comprovante com o essencial — e NÃO leva CPF/CNPJ, nome de pagador ou de
+    parte, valores nem observações internas. O teste varre o RETRATO que sobe
+    e o PDF que a VPS desenha, com dado pessoal plantado em todo lugar onde o
+    balcão escreve: interessado, observação, assunto, item, recibo, natureza
+    do título e a própria nota de exigência."""
+    vps = _vps()
+    portal = vps.Portal(str(tmp_path / "portal.sqlite3"), TOKEN, exigir_https=False,
+                        serventia="Serventia de Exemplo", contato="(00) 0000-0000, balcão")
+    con = _configurar(casa)
+    with con:
+        prenot = int(con.execute(
+            """INSERT INTO ri_protocolos (numero, data_prenotacao, situacao, data_limite,
+                   criado_em, apresentante, natureza_titulo)
+               VALUES (?, '2026-10-20', 'DEVOLVIDO', '2026-12-31', '2026-10-20T09:00',
+                       'MARIO EXEMPLO DOS SANTOS',
+                       'Compra e venda de CARLA EXEMPLO PEREIRA por R$ 150.000,00')""",
+            (next(_SEQ),)).lastrowid)
+        con.execute(
+            """INSERT INTO ri_notas_devolutivas (protocolo_id, numero, data_nota,
+                   exigencias, situacao, emitida_em)
+               VALUES (?, 1, '2026-10-22', ?, 'ABERTA', '2026-10-22T16:00')""",
+            (prenot, json.dumps([
+                "Apresentar a certidão de casamento de Beatriz Exemplo de Souza, "
+                "CPF 000.000.001-91.",
+                "Recolher o ITBI de R$ 3.000,00 em nome de CARLA EXEMPLO PEREIRA."])))
+        pid, numero = _protocolo(con, situacao="PAGO", itens=((1, 0),),
+                                 interessado="BEATRIZ EXEMPLO DE SOUZA")
+        con.execute("""UPDATE cx_protocolos SET ri_protocolo_id=?, valor_total='57,30',
+                           observacao='cliente insistente, ligar 98888-7777'
+                        WHERE id=?""", (prenot, pid))
+        con.execute(
+            """INSERT INTO cx_recibos (numero, ano, data_emissao, protocolo_id,
+                   protocolo_numero, pagador, pagador_documento, valor_total,
+                   discriminacao, corpo, hash_recibo, criado_em)
+               VALUES (?, 2026, '2026-10-21', ?, ?, 'CARLA EXEMPLO PEREIRA',
+                       '000.000.002-72', '57,30', '{}', '{}', ?, '2026-10-21T10:00')""",
+            (next(_SEQ), pid, numero, "cd" * 32))
+        codigo = ACOMP.codigo_do_protocolo(con, pid)
+    corpos = []
+
+    def post(url, token, corpo):
+        corpos.append(corpo)
+        return 200, json.dumps(portal.receber(corpo))
+
+    assert PORTAL.enviar(casa["db"], hoje=HOJE, http_post=post)["ok"]
+    retrato_que_subiu = b"".join(corpos).decode("utf-8")
+    estado, r = portal.consultar(numero, codigo, "203.0.113.20")
+    assert estado == "ok"
+    pdf = vps.comprovante_pdf(portal, r, codigo)
+    texto = _texto_do_pdf(pdf)
+    junto = texto.replace("\n", "")
+    proibidos = ("BEATRIZ", "Beatriz", "SOUZA", "Souza", "CARLA", "PEREIRA", "MARIO",
+                 "SANTOS", "000.000.001-91", "00000000191", "000.000.002-72", "R$",
+                 "150.000,00", "3.000,00", "57,30", "98888", "insistente",
+                 "ESCRITURA DE COMPRA", codigo, ACOMP.formatar_codigo(codigo))
+    for onde, conteudo in (("retrato", retrato_que_subiu), ("pdf", texto), ("pdf", junto)):
+        for proibido in proibidos:
+            assert proibido not in conteudo, (onde, proibido)
+    # e o essencial está lá
+    for esperado in ("COMPROVANTE DE ACOMPANHAMENTO", f"Protocolo: {numero}",
+                     "••••-••" + codigo[-2:], "Data de entrada: 20/10/2026",
+                     "Atribuição: Registro de Imóveis", "Registro do título: Compra e venda",
+                     "Situação atual: aguardando documento/exigência",
+                     "Prazo previsto: 05/11/2026", "Pronto para retirar: Ainda não",
+                     "Apresentar a certidão de casamento de [nome]",
+                     "Recolher o ITBI de [valor]",
+                     "Contato da serventia: (00) 0000-0000, balcão"):
+        assert esperado in texto, esperado
+
+
+def test_o_registro_civil_nao_discrimina_o_servico_no_comprovante(casa):
+    con = _con(casa)
+    with con:
+        pid, _ = _protocolo(con, atribuicao="RCPN")
+        con.execute("""INSERT INTO cx_protocolo_atos (protocolo_id, codigo_ato, descricao,
+                           quantidade, quitado, quantidade_usada, valor_total, origem)
+                       VALUES (?, '14.4', 'Averbação de reconhecimento de paternidade',
+                               1, 0, 0, '0,00', 'MANUAL')""", (pid,))
+    p = dict(con.execute("SELECT * FROM cx_protocolos WHERE id=?", (pid,)).fetchone())
+    dados = ACOMP.dados_do_comprovante(con, p, hoje="2026-10-26")
+    assert dados["servico"] == ACOMP.SERVICO_SO_PELA_ATRIBUICAO["RCPN"]
+    assert "paternidade" not in json.dumps(dados, ensure_ascii=False)
+    assert set(dados) == {"entrada", "servico", "exigencias", "pronto"}
+
+
+def test_o_contrato_do_whatsapp_nao_mudou_com_o_comprovante(casa):
+    """O comprovante vai à VPS por `retrato_para_a_vps`; `consultar` (o que o
+    atendente do WhatsApp lê) continua com as mesmas cinco chaves."""
+    con = _con(casa)
+    with con:
+        pid, numero = _protocolo(con)
+        codigo = ACOMP.codigo_do_protocolo(con, pid)
+    assert set(ACOMP.consultar(con, numero, codigo)) == {
+        "numero", "situacao_publica", "previsao", "atualizado_em", "atribuicao"}
+    p = dict(con.execute("SELECT * FROM cx_protocolos WHERE id=?", (pid,)).fetchone())
+    pacote = PORTAL.retrato_para_a_vps(con, p, hoje=HOJE)
+    assert {"entrada", "servico", "exigencias", "pronto"} <= set(pacote)
+    assert PORTAL.RECIBO_LIBERADO_NO_PORTAL == frozenset()      # o recibo continua fora
+
+
 # ------------------------------------------------------------ as telas
 
 def _odt_texto(resposta) -> str:

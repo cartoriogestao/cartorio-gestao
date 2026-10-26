@@ -556,6 +556,175 @@ def retrato(con, protocolo: Mapping, *, hoje: str | None = None) -> dict:
     }
 
 
+# ============================================================ o comprovante
+#
+# «PDF que o cliente baixa: informações essenciais de interesse do cliente» —
+# o oficial, 26/10/2026. O PDF do portal passou a ser um COMPROVANTE DE
+# ACOMPANHAMENTO, e não o recibo (que continua não subindo:
+# `portal_cliente.RECIBO_LIBERADO_NO_PORTAL` vazia). Quem desenha o PDF é a
+# VPS (`vps/portal/portal_vps.py::comprovante_pdf`), com o que está NESTE
+# dicionário e mais nada; por isso tudo o que entra aqui sai já limpo:
+#   - data de entrada, serviço pedido, exigências pendentes, se está pronto;
+#   - NUNCA CPF/CNPJ, nome de pagador ou de parte, valor, telefone, e-mail,
+#     observação interna ou o assunto digitado no balcão.
+# O serviço e as exigências são TEXTO DE GENTE (a descrição do item, a
+# natureza do título, a nota devolutiva), e por isso passam por
+# `texto_para_o_cliente`, que mascara documento, valor, contato e os nomes que
+# o protocolo conhece (interessado, pagador, apresentante). O nome de uma
+# parte que só aparece dentro do texto da exigência, sem estar em campo
+# nenhum, não se reconhece — está declarado no PR como ponto do oficial.
+
+#: Atribuições em que o serviço pedido NÃO se discrimina no comprovante: o
+#: nome do ato já diz demais (uma averbação de reconhecimento de paternidade,
+#: uma alteração de nome). É a mesma razão de `SEM_RECIBO_NO_PORTAL`.
+SERVICO_SO_PELA_ATRIBUICAO: dict[str, str] = {
+    "RCPN": "Serviço do Registro Civil (o detalhe fica no cartório)",
+}
+#: Tetos do que vai à VPS — a VPS confere os mesmos (`portal_vps.py`).
+EXIGENCIAS_NO_COMPROVANTE = 10
+TAMANHO_DA_EXIGENCIA = 400
+TAMANHO_DO_SERVICO = 200
+
+_RE_CNPJ = re.compile(r"(?<!\d)\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}(?!\d)")
+_RE_CPF = re.compile(r"(?<!\d)\d{3}\.?\d{3}\.?\d{3}-?\d{2}(?!\d)")
+_RE_DINHEIRO = re.compile(r"R\$\s*\d[\d.]*(?:,\d{1,2})?|(?<![\d.,])\d{1,3}(?:\.\d{3})*,\d{2}(?![\d,])",
+                          re.IGNORECASE)
+_RE_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_RE_TELEFONE = re.compile(r"(?<!\d)(?:\(?\d{2}\)?\s*)?9?\d{4}[-\s]?\d{4}(?!\d)")
+#: As partículas que não se mascaram sozinhas (mascarar «de» apagaria o texto).
+_PARTICULAS = frozenset({"DE", "DA", "DO", "DAS", "DOS", "E", "DI", "DU"})
+
+
+def _sem_acento(texto: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", texto)
+                   if unicodedata.category(c) != "Mn")
+
+
+def nomes_do_protocolo(con, protocolo: Mapping) -> list[str]:
+    """Os nomes que este protocolo conhece — interessado, pagadores e o
+    apresentante da prenotação. SÓ LÊ. É a lista do que se mascara no texto
+    que vai ao comprovante."""
+    bd = banco(con)
+    nomes = [protocolo.get("interessado")]
+    if protocolo.get("id"):
+        pid = int(protocolo["id"])
+        nomes += [r["pagador"] for r in bd.ler(
+            "SELECT DISTINCT pagador FROM cx_recibos WHERE protocolo_id = %s", (pid,))]
+        if bd.tem_coluna("cx_lancamentos", "pagador"):
+            nomes += [r["pagador"] for r in bd.ler(
+                "SELECT DISTINCT pagador FROM cx_lancamentos WHERE protocolo_id = %s",
+                (pid,))]
+    if protocolo.get("ri_protocolo_id") and bd.tem_coluna("ri_protocolos", "apresentante"):
+        nomes.append(bd.valor("SELECT apresentante FROM ri_protocolos WHERE id = %s",
+                              (int(protocolo["ri_protocolo_id"]),)))
+    return [str(n).strip() for n in nomes if str(n or "").strip()]
+
+
+def texto_para_o_cliente(texto: Any, nomes: Any = (), *, teto: int = 400) -> str:
+    """Texto livre do balcão → texto que pode ir ao comprovante. Só calcula.
+
+    Mascara CPF, CNPJ, valor em dinheiro, e-mail, telefone e cada palavra dos
+    nomes conhecidos (com e sem acento, sem distinguir maiúscula), tira o «<»
+    (a VPS recusa) e corta no teto. Mascarar é trocar por um marcador que diz
+    o que havia ali — o cliente entende «[nome]», e o dado não sai.
+    """
+    t = re.sub(r"\s+", " ", str(texto or "")).strip()
+    t = _RE_EMAIL.sub("[contato]", t)
+    t = _RE_CNPJ.sub("[documento]", t)
+    t = _RE_CPF.sub("[documento]", t)
+    t = _RE_DINHEIRO.sub("[valor]", t)
+    t = _RE_TELEFONE.sub("[contato]", t)
+    palavras: set[str] = set()
+    for nome in nomes or ():
+        for p in re.split(r"[\s,;/]+", str(nome or "")):
+            p = p.strip(".-")
+            if len(p) >= 3 and _sem_acento(p).upper() not in _PARTICULAS:
+                palavras.add(p)
+                palavras.add(_sem_acento(p))
+    for p in sorted(palavras, key=len, reverse=True):
+        t = re.sub(rf"(?<!\w){re.escape(p)}(?!\w)", "[nome]", t, flags=re.IGNORECASE)
+    t = re.sub(r"(?:\[nome\]\s*){2,}", "[nome] ", t).replace("<", "(").replace(">", ")")
+    t = t.strip()
+    if len(t) > teto:
+        t = t[:teto - 1].rstrip() + "…"
+    return t
+
+
+def servico_pedido(con, protocolo: Mapping, nomes: Any = ()) -> str | None:
+    """O serviço pedido, como o cliente o reconhece. SÓ LÊ.
+
+    No RI com prenotação, a natureza do título («Registro do título:
+    escritura de compra e venda»); nos demais, a descrição dos itens do
+    protocolo (até três). No Registro Civil, só a atribuição
+    (`SERVICO_SO_PELA_ATRIBUICAO`). O assunto digitado no balcão NÃO entra:
+    é texto livre de uso interno.
+    """
+    atribuicao = str(protocolo.get("atribuicao") or "").strip().upper()
+    if atribuicao in SERVICO_SO_PELA_ATRIBUICAO:
+        return SERVICO_SO_PELA_ATRIBUICAO[atribuicao]
+    bd = banco(con)
+    if protocolo.get("ri_protocolo_id") and bd.tem_coluna("ri_protocolos", "natureza_titulo"):
+        natureza = bd.valor("SELECT natureza_titulo FROM ri_protocolos WHERE id = %s",
+                            (int(protocolo["ri_protocolo_id"]),))
+        limpa = texto_para_o_cliente(natureza, nomes, teto=TAMANHO_DO_SERVICO - 22)
+        if limpa:
+            return f"Registro do título: {limpa}"
+    vistos: list[str] = []
+    for item in (_itens(con, int(protocolo["id"])) if protocolo.get("id") else []):
+        d = texto_para_o_cliente(item.get("descricao"), nomes, teto=90)
+        if d and d.lower() not in (v.lower() for v in vistos):
+            vistos.append(d)
+    if not vistos:
+        return None
+    texto = "; ".join(vistos[:3]) + (" e outros" if len(vistos) > 3 else "")
+    return texto[:TAMANHO_DO_SERVICO]
+
+
+def exigencias_pendentes(con, protocolo: Mapping, nomes: Any = ()) -> list[str]:
+    """O que falta o cliente trazer: as exigências da nota devolutiva ABERTA
+    da prenotação do RI, limpas. SÓ LÊ. Fora do RI (ou sem nota gravada no
+    sistema) a lista é vazia — e o comprovante diz «procure o cartório»
+    quando a situação é de exigência e a lista não diz o quê."""
+    import json
+    if not protocolo.get("ri_protocolo_id"):
+        return []
+    bd = banco(con)
+    if not bd.tem_coluna("ri_notas_devolutivas", "exigencias"):
+        return []
+    saida: list[str] = []
+    for nota in bd.ler(
+            """SELECT exigencias FROM ri_notas_devolutivas
+                WHERE protocolo_id = %s AND situacao = 'ABERTA' ORDER BY id""",
+            (int(protocolo["ri_protocolo_id"]),)):
+        try:
+            lista = json.loads(nota["exigencias"] or "[]")
+        except (TypeError, ValueError):
+            lista = [nota["exigencias"]]
+        for e in (lista if isinstance(lista, list) else [lista]):
+            limpa = texto_para_o_cliente(e, nomes, teto=TAMANHO_DA_EXIGENCIA)
+            if limpa:
+                saida.append(limpa)
+    return saida[:EXIGENCIAS_NO_COMPROVANTE]
+
+
+def dados_do_comprovante(con, protocolo: Mapping, *, hoje: str | None = None) -> dict:
+    """O que o comprovante de acompanhamento leva ALÉM do `retrato`. SÓ LÊ.
+
+    `{"entrada", "servico", "exigencias", "pronto"}` — a lista é fechada aqui
+    e na VPS. Não mexe em `retrato` nem em `consultar`, que são contrato do
+    atendente do WhatsApp.
+    """
+    nomes = nomes_do_protocolo(con, protocolo)
+    entrada = str(protocolo.get("data_abertura") or "")[:10]
+    return {
+        "entrada": entrada if re.match(r"^\d{4}-\d{2}-\d{2}$", entrada) else None,
+        "servico": servico_pedido(con, protocolo, nomes) or None,
+        "exigencias": exigencias_pendentes(con, protocolo, nomes),
+        "pronto": chave_da_situacao(con, protocolo, hoje=hoje) == "PRONTO",
+    }
+
+
 # ============================================================ a consulta
 
 

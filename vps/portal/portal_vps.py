@@ -10,7 +10,20 @@ O QUE ESTE PROGRAMA FAZ, E SÓ ISTO
        código, situação, previsão, última movimentação, atribuição, recibo em
        PDF) e o guarda num SQLite local.
     2. Serve a página pública: o cliente digita número + código e vê a
-       situação; baixa o recibo.
+       situação; baixa o COMPROVANTE DE ACOMPANHAMENTO em PDF (e o recibo,
+       se um dia o oficial o liberar — de fábrica ele não sobe).
+
+O COMPROVANTE DE ACOMPANHAMENTO (decisão do oficial em 26/10/2026: «PDF que
+o cliente baixa: informações essenciais de interesse do cliente»)
+    É desenhado AQUI, na hora do download (`comprovante_pdf`), só com os
+    campos da lista fechada: número, código MASCARADO (só os dois últimos
+    caracteres — o código inteiro é a senha da consulta, e o PDF baixado vai
+    parar em pasta, e-mail e impressora), data de entrada, atribuição, serviço
+    pedido, situação com a data, prazo previsto, exigências pendentes, se está
+    pronto para retirar e o contato da serventia (`PORTAL_CONTATO`). Não leva
+    CPF/CNPJ, nome de pagador ou de parte, valor, nem observação interna: o
+    servidor manda o texto já limpo, e esta ponta RECUSA o lote em que o
+    serviço ou a exigência tragam cara de CPF/CNPJ ou de valor.
 
     Ele NÃO alcança o servidor da serventia — quem fala é o servidor, de
     saída. E não sabe o código de ninguém: guarda só o hash (PBKDF2 com sal e
@@ -84,6 +97,18 @@ RE_DATA = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 RE_MOMENTO = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}([T ][0-9]{2}:[0-9]{2})?$")
 RE_RECIBO = re.compile(r"^recibo-[0-9]{1,9}-[0-9]{4}\.pdf$")
 
+#: O comprovante de acompanhamento (26/10/2026). Os tetos são os de
+#: `acompanhamento_cliente` (EXIGENCIAS_NO_COMPROVANTE, TAMANHO_DA_EXIGENCIA,
+#: TAMANHO_DO_SERVICO), e as duas pontas têm de concordar.
+EXIGENCIAS_MAXIMAS = 10
+TAMANHO_DA_EXIGENCIA = 400
+TAMANHO_DO_SERVICO = 200
+#: A segunda tranca: texto do comprovante com cara de documento ou de valor
+#: recusa o lote (o servidor já mascara — isto pega o servidor que errar).
+RE_DOCUMENTO = re.compile(r"(?<!\d)(?:\d{3}\.?\d{3}\.?\d{3}-?\d{2}|"
+                          r"\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})(?!\d)")
+RE_VALOR = re.compile(r"R\$\s*\d|(?<![\d.,])\d{1,3}(?:\.\d{3})*,\d{2}(?![\d,])")
+
 MENSAGEM_NAO_CONFERE = ("Número do protocolo ou código não conferem. Confira no "
                         "recibo ou no protocolo de recepção e tente de novo.")
 MENSAGEM_MUITAS = ("Muitas tentativas sem acerto. Por segurança, a consulta deste "
@@ -136,7 +161,11 @@ CREATE TABLE IF NOT EXISTS retratos (
     atualizado_em TEXT,
     atribuicao TEXT,
     expira_em TEXT NOT NULL,
-    recebido_em TEXT NOT NULL
+    recebido_em TEXT NOT NULL,
+    entrada TEXT,
+    servico TEXT,
+    exigencias TEXT,
+    pronto INTEGER
 );
 CREATE TABLE IF NOT EXISTS recibos (
     numero TEXT NOT NULL,
@@ -151,6 +180,8 @@ CREATE TABLE IF NOT EXISTS tentativas (
     erros INTEGER NOT NULL
 );
 """
+COLUNAS_DO_COMPROVANTE = (("entrada", "TEXT"), ("servico", "TEXT"),
+                          ("exigencias", "TEXT"), ("pronto", "INTEGER"))
 
 
 class Portal:
@@ -172,6 +203,11 @@ class Portal:
         self._mentira = _hash_de_mentira()
         with self._con() as con:
             con.executescript(ESQUEMA)
+            # As colunas do comprovante (26/10/2026) num banco que já existia.
+            tem = {r["name"] for r in con.execute("PRAGMA table_info(retratos)")}
+            for coluna, tipo in COLUNAS_DO_COMPROVANTE:
+                if coluna not in tem:
+                    con.execute(f"ALTER TABLE retratos ADD COLUMN {coluna} {tipo}")
 
     def _con(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.banco, timeout=30)
@@ -242,6 +278,11 @@ class Portal:
         with self._con() as con:
             retrato["recibos"] = [r["nome"] for r in con.execute(
                 "SELECT nome FROM recibos WHERE numero = ? ORDER BY nome", (numero,))]
+        try:
+            exigencias = json.loads(retrato.get("exigencias") or "[]")
+        except ValueError:
+            exigencias = []
+        retrato["exigencias"] = [str(e) for e in exigencias] if isinstance(exigencias, list) else []
         return "ok", retrato
 
     def recibo(self, numero: str, nome: str) -> bytes | None:
@@ -273,11 +314,14 @@ class Portal:
                 con.execute(
                     """INSERT OR REPLACE INTO retratos
                        (numero, codigo_hash, situacao, previsao, atualizado_em,
-                        atribuicao, expira_em, recebido_em)
-                       VALUES (?,?,?,?,?,?,?,?)""",
+                        atribuicao, expira_em, recebido_em,
+                        entrada, servico, exigencias, pronto)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (r["numero"], r["codigo_hash"], r["situacao_publica"],
                      r["previsao"], r["atualizado_em"], r["atribuicao"],
-                     r["expira_em"], agora))
+                     r["expira_em"], agora, r["entrada"], r["servico"],
+                     json.dumps(r["exigencias"], ensure_ascii=False),
+                     None if r["pronto"] is None else int(r["pronto"])))
                 for rec in r["recibos"]:
                     con.execute("INSERT INTO recibos VALUES (?,?,?,?)",
                                 (r["numero"], rec["nome"], rec["sha256"], rec["pdf"]))
@@ -307,7 +351,9 @@ class Portal:
         # desconhecido recusa o lote — é o que impede o servidor de mandar, por
         # engano, um nome ou um CPF que a página mostraria.
         permitidos = {"numero", "codigo_hash", "situacao_publica", "previsao",
-                      "atualizado_em", "atribuicao", "expira_em", "recibos"}
+                      "atualizado_em", "atribuicao", "expira_em", "recibos",
+                      # o comprovante de acompanhamento (26/10/2026)
+                      "entrada", "servico", "exigencias", "pronto"}
         sobra = set(r) - permitidos
         if sobra:
             raise Recusa(f"campos que o portal não guarda: {sorted(sobra)}")
@@ -339,12 +385,31 @@ class Portal:
             if hashlib.sha256(pdf).hexdigest() != rec.get("sha256"):
                 raise Recusa(f"{numero}: o PDF chegou diferente do que saiu")
             recibos.append({"nome": rec["nome"], "sha256": rec["sha256"], "pdf": pdf})
+        # -- o comprovante (26/10/2026): tudo opcional, para o servidor antigo
+        entrada = self._texto(r.get("entrada"), 10)
+        if entrada and not RE_DATA.match(entrada):
+            raise Recusa(f"{numero}: entrada fora do formato AAAA-MM-DD")
+        servico = self._texto(r.get("servico"), TAMANHO_DO_SERVICO)
+        lista_ex = r.get("exigencias") or []
+        if not isinstance(lista_ex, list) or len(lista_ex) > EXIGENCIAS_MAXIMAS:
+            raise Recusa(f"{numero}: exigências demais (até {EXIGENCIAS_MAXIMAS})")
+        exigencias = [self._texto(e, TAMANHO_DA_EXIGENCIA, obrigatorio=True)
+                      for e in lista_ex]
+        pronto = r.get("pronto")
+        if pronto is not None and not isinstance(pronto, bool):
+            raise Recusa(f"{numero}: «pronto» tem de ser verdadeiro ou falso")
+        for texto in [servico or ""] + exigencias:
+            if RE_DOCUMENTO.search(texto) or RE_VALOR.search(texto):
+                raise Recusa(f"{numero}: texto do comprovante com cara de CPF/CNPJ "
+                             "ou de valor — o comprovante não leva isso")
         return {"numero": numero, "codigo_hash": codigo_hash,
                 "situacao_publica": self._texto(r.get("situacao_publica"), 60,
                                                 obrigatorio=True),
                 "previsao": previsao, "atualizado_em": atualizado,
                 "atribuicao": self._texto(r.get("atribuicao"), 60),
-                "expira_em": expira, "recibos": recibos}
+                "expira_em": expira, "recibos": recibos,
+                "entrada": entrada, "servico": servico, "exigencias": exigencias,
+                "pronto": pronto}
 
     def contar(self) -> int:
         with self._con() as con:
@@ -411,16 +476,159 @@ def _data(valor) -> str:
         return "—"
 
 
+def codigo_mascarado(codigo) -> str:
+    """O código como sai no comprovante: só os dois últimos caracteres. O
+    código inteiro é a senha da consulta, e o PDF baixado circula."""
+    c = normalizar_codigo(codigo)
+    fim = c[-2:] if len(c) == TAMANHO_DO_CODIGO and all(x in ALFABETO for x in c) else "••"
+    return "••••-••" + fim
+
+
+def _pronto(r: dict) -> bool:
+    if r.get("pronto") is not None:
+        return bool(r["pronto"])
+    return str(r.get("situacao") or "") == "pronto para retirar"
+
+
+def _linhas_do_comprovante(portal: Portal, r: dict, codigo: str) -> list[tuple[int, bool, str]]:
+    """(corpo, negrito, texto) de cada linha. A LISTA É FECHADA: só os campos do
+    retrato e a configuração da página — nada de fora entra no PDF."""
+    linhas: list[tuple[int, bool, str]] = [(15, True, "COMPROVANTE DE ACOMPANHAMENTO")]
+    if portal.serventia:
+        linhas.append((11, False, portal.serventia))
+    linhas.append((10, False, ""))
+    situacao = str(r.get("situacao") or "")
+    desde = _data(r["atualizado_em"]) if r.get("atualizado_em") else ""
+    campos = [
+        ("Protocolo", r["numero"]),
+        ("Código de acompanhamento", f"{codigo_mascarado(codigo)} (só os dois últimos "
+                                     "caracteres: o código inteiro é a senha da consulta)"),
+        ("Data de entrada", _data(r["entrada"]) if r.get("entrada") else "não informada"),
+        ("Atribuição", r.get("atribuicao") or "—"),
+        ("Serviço pedido", r.get("servico") or "conforme o protocolo no cartório"),
+        ("Situação atual", situacao + (f" (última movimentação em {desde})" if desde else "")),
+        ("Prazo previsto", _data(r["previsao"]) if r.get("previsao") else "não informado"),
+        ("Pronto para retirar", "Sim" if _pronto(r) else "Ainda não"),
+    ]
+    for rotulo, valor in campos:
+        linhas.append((10, False, f"{rotulo}: {valor}"))
+    linhas.append((10, False, ""))
+    linhas.append((10, True, "Exigências pendentes (o que falta o cliente trazer):"))
+    exigencias = r.get("exigencias") or []
+    if exigencias:
+        linhas += [(10, False, f"{i}. {e}") for i, e in enumerate(exigencias, 1)]
+    elif situacao == "aguardando documento/exigência":
+        linhas.append((10, False, "Há exigência pendente — procure o cartório para saber o "
+                                  "que falta."))
+    else:
+        linhas.append((10, False, "Nenhuma."))
+    linhas.append((10, False, ""))
+    linhas.append((10, False, "Contato da serventia: "
+                   + (portal.contato or "procure o cartório pessoalmente.")))
+    linhas.append((10, False, ""))
+    linhas.append((8, False, "Emitido em " + datetime.now().strftime("%d/%m/%Y %H:%M")
+                   + " pelo portal do cliente. Este comprovante não é recibo nem certidão "
+                   "e não leva dados pessoais nem valores; os dados completos ficam no "
+                   "cartório."))
+    return linhas
+
+
+def _quebrar(texto: str, largura: int) -> list[str]:
+    palavras, saida, atual = texto.split(" "), [], ""
+    for p in palavras:
+        while len(p) > largura:
+            if atual:
+                saida.append(atual)
+                atual = ""
+            saida.append(p[:largura])
+            p = p[largura:]
+        if atual and len(atual) + 1 + len(p) > largura:
+            saida.append(atual)
+            atual = p
+        else:
+            atual = f"{atual} {p}" if atual else p
+    saida.append(atual)
+    return saida
+
+
+def _pdf_texto(texto: str) -> bytes:
+    bruto = texto.encode("cp1252", "replace")
+    return bruto.replace(b"\\", b"\\\\").replace(b"(", b"\\(").replace(b")", b"\\)")
+
+
+def comprovante_pdf(portal: Portal, r: dict, codigo: str) -> bytes:
+    """O comprovante de acompanhamento em PDF, desenhado aqui, só com a
+    biblioteca padrão (A4, Helvetica, WinAnsi). O texto vai SEM compressão —
+    é o que deixa o teste ler o PDF e provar o que ele não leva."""
+    largura_pagina, altura_pagina, margem = 595, 842, 50
+    paginas: list[list[bytes]] = [[]]
+    y = altura_pagina - margem
+    for corpo, negrito, texto in _linhas_do_comprovante(portal, r, codigo):
+        por_linha = max(20, int((largura_pagina - 2 * margem) / (corpo * 0.52)))
+        for pedaco in (_quebrar(texto, por_linha) if texto else [""]):
+            altura = corpo * 1.45
+            if y - altura < margem:
+                paginas.append([])
+                y = altura_pagina - margem
+            y -= altura
+            if pedaco:
+                fonte = b"/F2" if negrito else b"/F1"
+                paginas[-1].append(b"BT " + fonte + b" %d Tf %d %d Td (" % (corpo, margem, int(y))
+                                   + _pdf_texto(pedaco) + b") Tj ET")
+    objetos: list[bytes] = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"",                                                    # as páginas, abaixo
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+        b"/Encoding /WinAnsiEncoding >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold "
+        b"/Encoding /WinAnsiEncoding >>",
+    ]
+    filhos = []
+    for conteudo in paginas:
+        fluxo = b"\n".join(conteudo)
+        objetos.append(b"<< /Length %d >>\nstream\n" % len(fluxo) + fluxo + b"\nendstream")
+        n_conteudo = len(objetos)
+        objetos.append(b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] "
+                       b"/Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> "
+                       b"/Contents %d 0 R >>" % (largura_pagina, altura_pagina, n_conteudo))
+        filhos.append(len(objetos))
+    objetos[1] = (b"<< /Type /Pages /Kids [" + b" ".join(b"%d 0 R" % f for f in filhos)
+                  + b"] /Count %d >>" % len(filhos))
+    saida = bytearray(b"%PDF-1.4\n")
+    posicoes = []
+    for i, obj in enumerate(objetos, 1):
+        posicoes.append(len(saida))
+        saida += b"%d 0 obj\n" % i + obj + b"\nendobj\n"
+    xref = len(saida)
+    saida += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objetos) + 1)
+    for p in posicoes:
+        saida += b"%010d 00000 n \n" % p
+    saida += (b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n"
+              % (len(objetos) + 1, xref))
+    return bytes(saida)
+
+
 def _resultado(portal: Portal, r: dict, codigo: str) -> bytes:
     linhas = [("Protocolo", r["numero"])]
+    if r.get("entrada"):
+        linhas.append(("Entrada", _data(r["entrada"])))
     if r.get("atribuicao"):
-        linhas.append(("Serviço", r["atribuicao"]))
+        linhas.append(("Atribuição", r["atribuicao"]))
+    if r.get("servico"):
+        linhas.append(("Serviço", r["servico"]))
     if r.get("previsao"):
         linhas.append(("Previsão", _data(r["previsao"])))
     if r.get("atualizado_em"):
         linhas.append(("Última movimentação", _data(r["atualizado_em"])))
+    linhas.append(("Pronto para retirar", "Sim" if _pronto(r) else "Ainda não"))
+    for i, e in enumerate(r.get("exigencias") or [], 1):
+        linhas.append((f"Exigência {i}", e))
     dl = "".join(f"<dt>{html.escape(a)}</dt><dd>{html.escape(str(b))}</dd>"
                  for a, b in linhas)
+    comprovante = f"""<form method="post" action="{portal.prefixo}/comprovante">
+<input type="hidden" name="numero" value="{html.escape(r['numero'])}">
+<input type="hidden" name="codigo" value="{html.escape(normalizar_codigo(codigo))}">
+<button type="submit">Baixar o comprovante de acompanhamento (PDF)</button></form>"""
     recibos = "".join(f"""<form method="post" action="{portal.prefixo}/recibo">
 <input type="hidden" name="numero" value="{html.escape(r['numero'])}">
 <input type="hidden" name="codigo" value="{html.escape(normalizar_codigo(codigo))}">
@@ -429,7 +637,7 @@ def _resultado(portal: Portal, r: dict, codigo: str) -> bytes:
                       for nome in r.get("recibos") or [])
     return _pagina(portal, f"""<div class="cartao">
 <div>Situação do pedido</div><div class="situacao">{html.escape(r['situacao'])}</div>
-<dl>{dl}</dl>{recibos}</div>
+<dl>{dl}</dl>{comprovante}{recibos}</div>
 <p class="rodape"><a href="{portal.prefixo}/">Consultar outro protocolo</a></p>""")
 
 
@@ -535,7 +743,7 @@ class Atendente(BaseHTTPRequestHandler):
                 return self._json(self.portal.receber(corpo))
             except Recusa as erro:
                 return self._json({"ok": False, "motivo": str(erro)}, 400)
-        if caminho in ("/consultar", "/recibo"):
+        if caminho in ("/consultar", "/recibo", "/comprovante"):
             corpo = self._ler(CORPO_MAXIMO_FORM)
             if corpo is None:
                 return self._html(_formulario(self.portal, MENSAGEM_NAO_CONFERE), 400)
@@ -551,6 +759,13 @@ class Atendente(BaseHTTPRequestHandler):
                                               numero=numero[:20]))
             if caminho == "/consultar":
                 return self._html(_resultado(self.portal, retrato, campos.get("codigo")))
+            if caminho == "/comprovante":
+                pdf = comprovante_pdf(self.portal, retrato, campos.get("codigo", ""))
+                nome = "comprovante-" + retrato["numero"].replace(".", "-") + ".pdf"
+                self._cabecalhos("application/pdf", len(pdf), extra={
+                    "Content-Disposition": f'attachment; filename="{nome}"'})
+                self.wfile.write(pdf)
+                return None
             nome = campos.get("nome", "")
             pdf = self.portal.recibo(retrato["numero"], nome) \
                 if nome in (retrato.get("recibos") or []) else None

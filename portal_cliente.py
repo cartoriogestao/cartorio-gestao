@@ -17,9 +17,15 @@ A REGRA DE ARQUITETURA QUE ESTE MÓDULO NÃO FURA
 O QUE SOBE, E O QUE NÃO SOBE
     Sobe, por protocolo: o número, o HASH do código (nunca o código), a
     situação em linguagem simples, a previsão, a última movimentação, a
-    atribuição — o mesmo dicionário de `acompanhamento_cliente.retrato`. NÃO
-    sobe: nome, CPF, telefone, valor por ato, assunto, teor. O PROTESTO não
-    sobe nada (sigilo; não ganha código).
+    atribuição — o mesmo dicionário de `acompanhamento_cliente.retrato` —, e
+    o que o COMPROVANTE DE ACOMPANHAMENTO leva além disso (decisão do oficial
+    em 26/10/2026, «PDF que o cliente baixa: informações essenciais de
+    interesse do cliente»): a data de entrada, o serviço pedido, as exigências
+    pendentes e se está pronto para retirar
+    (`acompanhamento_cliente.dados_do_comprovante`, já limpos). Quem desenha
+    o PDF é a VPS, com esses campos e mais nada. NÃO sobe: nome, CPF,
+    telefone, valor, assunto, observação, teor. O PROTESTO não sobe nada
+    (sigilo; não ganha código).
 
     O RECIBO EM PDF NÃO SOBE DE FÁBRICA (correção de segurança de 26/10/2026).
     Ele leva o que o papel leva — o nome do pagador, a lista dos atos e os
@@ -239,6 +245,9 @@ def retrato_para_a_vps(con, protocolo: Mapping, *, hoje: date) -> dict:
     base = ACOMP.retrato(con, protocolo, hoje=hoje.isoformat())
     return {
         **base,
+        # o comprovante de acompanhamento (26/10/2026): entrada, serviço,
+        # exigências pendentes e se está pronto — já limpos de dado pessoal
+        **ACOMP.dados_do_comprovante(con, protocolo, hoje=hoje.isoformat()),
         "codigo_hash": protocolo["acompanhamento_hash"],
         "expira_em": expira_em(protocolo, hoje).isoformat(),
         "recibos": [{"nome": f"recibo-{r['numero']}-{r['ano']}.pdf",

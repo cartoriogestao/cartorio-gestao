@@ -12,14 +12,24 @@
   <p class="small">
     Cada protocolo ganha um <strong>código de acompanhamento</strong>, impresso no
     recibo e no protocolo de recepção. Com o <strong>número do protocolo e o
-    código</strong>, o cliente vê a situação do pedido no portal e baixa o recibo.
+    código</strong>, o cliente vê a situação do pedido no portal e baixa o
+    <strong>comprovante de acompanhamento</strong> em PDF.
     Quem não tem o papel não consulta o protocolo de outra pessoa.
+  </p>
+  <p class="small">
+    O comprovante (decisão do oficial em 26/10/2026) leva só o essencial: o número do
+    protocolo, o código mascarado (só os dois últimos caracteres), a data de entrada, a
+    atribuição e o serviço pedido, a situação com a data, o prazo previsto, as exigências
+    pendentes, se está pronto para retirar e o contato da serventia. Não leva CPF/CNPJ,
+    nome de pagador ou de parte, valores nem observações internas — documento, valor,
+    contato e os nomes que o protocolo conhece saem mascarados antes de subir.
   </p>
   <p class="small muted">
     O servidor desta casa <strong>não</strong> fica na internet: ele manda para a VPS,
     por HTTPS de saída, só o número, o <em>hash</em> do código (nunca o código), a
-    situação em linguagem simples, a previsão, a última movimentação e a atribuição.
-    Nada de nome, CPF, assunto ou teor.
+    situação em linguagem simples, a previsão, a última movimentação e a atribuição,
+    e o que o comprovante leva além disso, já limpo.
+    Nada de nome, CPF, valor, assunto, observação ou teor.
     {% for a in FORA %}<strong>{{ a }}</strong>{% endfor %} não entra no portal (sigilo).
   </p>
   <p class="small">
@@ -29,7 +39,7 @@
     {% else %}
     <strong>O recibo em PDF não sobe.</strong> Ele leva o nome do pagador, os atos
     pedidos e os valores, e numa máquina fora da casa isso é dado pessoal guardado
-    longe da serventia. O portal mostra só a situação do pedido. Liberar o recibo é
+    longe da serventia. O portal mostra a situação e o comprovante. Liberar o recibo é
     decisão do oficial, por atribuição, e vem numa atualização do sistema.
     {% endif %}
     {% for a in SEM_RECIBO %}<strong>{{ a }}</strong>{% endfor %} nunca sobe com o

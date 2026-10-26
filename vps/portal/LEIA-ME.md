@@ -4,8 +4,17 @@
 > baixar o recibo», no mesmo VPS do WhatsApp, com «código no recibo».
 
 O cliente digita o **número do protocolo** e o **código de acompanhamento**
-(os dois saem no recibo e no protocolo de recepção) e vê a situação do pedido;
-quando houver, baixa o recibo em PDF.
+(os dois saem no recibo e no protocolo de recepção), vê a situação do pedido e
+baixa o **comprovante de acompanhamento** em PDF.
+
+> Decisão do oficial, 26/10/2026: «PDF que o cliente baixa: informações
+> essenciais de interesse do cliente». O comprovante é desenhado na própria
+> VPS, só com: número do protocolo, código **mascarado** (só os dois últimos
+> caracteres — o código inteiro é a senha da consulta), data de entrada,
+> atribuição, serviço pedido, situação com a data, prazo previsto, exigências
+> pendentes, se está pronto para retirar e o contato da serventia
+> (`PORTAL_CONTATO`). **Não leva** CPF/CNPJ, nome de pagador ou de parte,
+> valores nem observações internas.
 
 ## Como as peças se falam
 
@@ -24,8 +33,12 @@ quando houver, baixa o recibo em PDF.
 - A VPS **nunca** alcança o servidor da serventia: é o desenho da caixa-postal
   do WhatsApp (`wa_puxar.py`) pelo outro lado.
 - O que sobe é o **retrato mínimo**: número, *hash* do código (nunca o código),
-  situação em linguagem simples, previsão, última movimentação, atribuição. O
-  **Protesto** não sobe nada.
+  situação em linguagem simples, previsão, última movimentação, atribuição — e,
+  para o comprovante, a data de entrada, o serviço pedido, as exigências
+  pendentes e se está pronto, **já limpos** no servidor (documento, valor,
+  contato e os nomes que o protocolo conhece saem mascarados). O portal
+  **recusa o lote** se o serviço ou uma exigência vier com cara de CPF/CNPJ ou
+  de valor. O **Protesto** não sobe nada.
 - **O recibo em PDF não sobe de fábrica** (correção de segurança de
   26/10/2026): ele leva o nome do pagador, os atos pedidos e os valores. Só
   sobe o da atribuição que o oficial liberar (`RECIBO_LIBERADO_NO_PORTAL`, em

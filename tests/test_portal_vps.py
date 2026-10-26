@@ -203,6 +203,109 @@ def test_o_formulario_manda_por_post_e_nao_na_url(vps):
     assert status == 404
 
 
+# ------------------------------------------------- o comprovante (26/10/2026)
+
+def texto_do_pdf(pdf: bytes) -> str:
+    """O texto que o PDF desenha (as strings dos `Tj`), na ordem. O comprovante
+    sai sem compressão de propósito: é o que deixa o teste ler o que ele leva."""
+    import re
+    pedacos = []
+    for m in re.finditer(rb"\(((?:\\.|[^\\)])*)\) Tj", pdf):
+        bruto = re.sub(rb"\\(.)", rb"\1", m.group(1))
+        pedacos.append(bruto.decode("cp1252"))
+    return "\n".join(pedacos)
+
+
+def _com_comprovante(**extra):
+    base = {"entrada": "2026-10-20", "servico": "Registro do título: compra e venda",
+            "exigencias": ["Apresentar a certidão de casamento atualizada.",
+                           "Recolher o ITBI."],
+            "pronto": False}
+    base.update(extra)
+    return _retrato(**base)
+
+
+def test_o_comprovante_sai_em_pdf_com_o_essencial_e_o_codigo_mascarado(vps):
+    """Decisão do oficial em 26/10/2026: o PDF que o cliente baixa é um
+    comprovante com as informações essenciais — e o código vai mascarado."""
+    assert _subir(vps, _com_comprovante())[0] == 200
+    status, cab, pagina = _pedir(vps["base"] + "/consultar",
+                                 dados={"numero": NUMERO, "codigo": "ABCDEFGH"})
+    assert status == 200 and "comprovante de acompanhamento" in pagina.decode()
+    assert "Recolher o ITBI." in pagina.decode()
+    status, cab, pdf = _pedir(vps["base"] + "/comprovante",
+                              dados={"numero": NUMERO, "codigo": "abcd-efgh"})
+    assert status == 200 and pdf.startswith(b"%PDF-1.4") and pdf.rstrip().endswith(b"%%EOF")
+    assert cab["Content-Type"] == "application/pdf"
+    assert "comprovante-2026-10-123.pdf" in cab["Content-Disposition"]
+    texto = texto_do_pdf(pdf)
+    for esperado in ("COMPROVANTE DE ACOMPANHAMENTO", "Serventia de Exemplo",
+                     f"Protocolo: {NUMERO}", "••••-••GH", "Data de entrada: 20/10/2026",
+                     "Atribuição: Registro de Imóveis",
+                     "Serviço pedido: Registro do título: compra e venda",
+                     "Situação atual: aguardando documento/exigência",
+                     "25/10/2026 14:30", "Prazo previsto: 05/11/2026",
+                     "Pronto para retirar: Ainda não",
+                     "1. Apresentar a certidão de casamento atualizada.",
+                     "2. Recolher o ITBI.", "Contato da serventia: Fale conosco"):
+        assert esperado in texto, esperado
+    # o código inteiro é a senha da consulta: não vai no PDF, em forma nenhuma
+    for codigo in ("ABCDEFGH", "ABCD-EFGH", "abcdefgh", "ABCD"):
+        assert codigo not in texto
+
+
+def test_o_comprovante_nao_sai_sem_o_codigo_certo(vps):
+    _subir(vps, _com_comprovante())
+    _, _, corpo = _pedir(vps["base"] + "/comprovante",
+                         dados={"numero": NUMERO, "codigo": "ZZZZZZZZ"})
+    assert not corpo.startswith(b"%PDF")
+
+
+def test_o_retrato_antigo_sem_os_campos_do_comprovante_ainda_entra(vps):
+    """O servidor de antes não manda os campos novos: o portal aceita, e o
+    comprovante diz o que não sabe em vez de inventar."""
+    assert _subir(vps, _retrato(situacao_publica="pronto para retirar"))[0] == 200
+    _, _, pdf = _pedir(vps["base"] + "/comprovante",
+                       dados={"numero": NUMERO, "codigo": "ABCDEFGH"})
+    texto = texto_do_pdf(pdf)
+    assert "Data de entrada: não informada" in texto
+    assert "Pronto para retirar: Sim" in texto and "Nenhuma." in texto
+
+
+@pytest.mark.parametrize("campo, valor", [
+    ("servico", "Escritura de BEATRIZ, CPF 000.000.001-91"),
+    ("servico", "Registro com valor de R$ 120.000,00"),
+    ("exigencias", ["Pagar a diferença de 57,30 no balcão."]),
+    ("exigencias", ["Trazer o contrato social do CNPJ 00.000.000/0001-00."]),
+    ("exigencias", ["x" * 401]),
+    ("exigencias", ["uma"] * 11),
+    ("pronto", "sim"),
+    ("entrada", "20/10/2026"),
+])
+def test_texto_do_comprovante_com_cara_de_documento_ou_valor_recusa_o_lote(vps, campo, valor):
+    status, _, corpo = _subir(vps, _com_comprovante(**{campo: valor}))
+    assert status == 400, corpo
+    assert vps["portal"].contar() == 0
+
+
+def test_o_banco_que_ja_existia_ganha_as_colunas_do_comprovante(tmp_path):
+    import sqlite3
+    m = _modulo()
+    caminho = tmp_path / "antigo.sqlite3"
+    con = sqlite3.connect(caminho)
+    con.executescript("""CREATE TABLE retratos (numero TEXT PRIMARY KEY,
+        codigo_hash TEXT NOT NULL, situacao TEXT NOT NULL, previsao TEXT,
+        atualizado_em TEXT, atribuicao TEXT, expira_em TEXT NOT NULL,
+        recebido_em TEXT NOT NULL);""")
+    con.close()
+    portal = m.Portal(str(caminho), TOKEN, exigir_https=False)
+    portal.receber(json.dumps({"retratos": [_com_comprovante()]}).encode())
+    estado, r = portal.consultar(NUMERO, "ABCDEFGH", "198.51.100.1")
+    assert estado == "ok" and r["entrada"] == "2026-10-20"
+    assert r["exigencias"] == ["Apresentar a certidão de casamento atualizada.",
+                               "Recolher o ITBI."]
+
+
 def test_o_formato_do_hash_e_o_mesmo_nas_duas_pontas():
     m = _modulo()
     for _ in range(3):

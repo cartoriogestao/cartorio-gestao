@@ -228,15 +228,21 @@ def test_a_data_do_reingresso_nem_antes_da_nota_nem_depois_de_hoje():
     assert _conferir("2026-11-25") == "2026-11-25"
 
 
-def test_data_passada_que_salva_a_prioridade_so_o_oficial_e_com_motivo():
-    # o cenário da revisão: venceu em 17/11, voltou em 25/11, digitaram 10/11
-    for papel in ("USER", "MANAGER"):
-        with pytest.raises(RND.NotaError, match="só o oficial registra"):
+def test_data_passada_que_salva_a_prioridade_so_oficial_ou_gerente_e_com_motivo():
+    # o cenário da revisão: venceu em 17/11, voltou em 25/11, digitaram 10/11.
+    # DECISÃO DO OFICIAL EM 26/10/2026, «abre gerente»: ADMIN e MANAGER
+    # registram, sempre com a justificativa; o escrevente e o auditor, não.
+    assert set(RND.PAPEIS_QUE_RETROAGEM) == {"ADMIN", "MANAGER"}
+    for papel in ("USER", "AUDITOR", None):
+        with pytest.raises(RND.NotaError, match="só o oficial ou o gerente registram"):
             _conferir("2026-11-10", papel=papel, observacao="recibo de entrega nº 12")
-    with pytest.raises(RND.NotaError, match="Escreva na observação"):
-        _conferir("2026-11-10", papel="ADMIN", observacao="ok")
-    assert _conferir("2026-11-10", papel="ADMIN",
-                     observacao="recibo de entrega nº 12, de 10/11") == "2026-11-10"
+    for papel in ("ADMIN", "MANAGER", "manager"):
+        with pytest.raises(RND.NotaError, match="Escreva na observação"):
+            _conferir("2026-11-10", papel=papel, observacao="ok")
+        with pytest.raises(RND.NotaError, match="Escreva na observação"):
+            _conferir("2026-11-10", papel=papel, observacao=None)
+        assert _conferir("2026-11-10", papel=papel,
+                         observacao="recibo de entrega nº 12, de 10/11") == "2026-11-10"
     # com a prenotação ainda viva, ou suspensa, a data passada não decide nada
     assert _conferir("2026-11-10", hoje="2026-11-15") == "2026-11-10"
     suspensa = dict(VENCIDA_EM_17_11, prazo_suspenso_desde="2026-11-12")
@@ -270,7 +276,7 @@ def test_o_escrevente_nao_retrodata_o_reingresso_pela_tela(casa):
         "data_reingresso": (hoje - timedelta(days=5)).isoformat(),
         "documento": (io.BytesIO(PDF), "documentos.pdf")},
         content_type="multipart/form-data", follow_redirects=True)
-    assert "só o oficial registra" in resp.get_data(as_text=True)
+    assert "só o oficial ou o gerente registram" in resp.get_data(as_text=True)
     nota = _um(casa, "SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=?", p["id"])
     assert nota["situacao"] == "ABERTA" and not nota["data_reingresso"]
     assert _um(casa, "SELECT situacao FROM ri_protocolos WHERE id=?", p["id"])[0] == "DEVOLVIDO"
@@ -278,3 +284,88 @@ def test_o_escrevente_nao_retrodata_o_reingresso_pela_tela(casa):
         casa, "SELECT documento_tipo FROM attachments WHERE entity_type='RI_PROTOCOLO' "
               "AND entity_id=? ORDER BY id", p["id"])]
     assert tipos == ["NOTA_DEVOLUTIVA"]
+
+
+def _prenotacao_vencida_com_nota_aberta(casa):
+    """Prenotação vencida há 3 dias, com a nota devolutiva aberta há 10."""
+    from datetime import date, timedelta
+    p = _prenotar(casa)
+    _anexar(casa, p, "NOTA_DEVOLUTIVA")
+    hoje = date.today()
+    con = sqlite3.connect(casa["banco"])
+    with con:
+        con.execute("UPDATE ri_protocolos SET data_limite=? WHERE id=?",
+                    ((hoje - timedelta(days=3)).isoformat(), p["id"]))
+        con.execute("UPDATE ri_notas_devolutivas SET data_nota=? WHERE protocolo_id=?",
+                    ((hoje - timedelta(days=10)).isoformat(), p["id"]))
+    con.close()
+    return p, hoje
+
+
+def _entrar(casa, usuario, papel):
+    casa["db"].create_user(usuario, f"{usuario.upper()} EXEMPLO", SENHA, papel)
+    c = casa["app"].test_client()
+    c.post("/login", data={"username": usuario, "password": SENHA,
+                           "csrf_token": _token(c.get("/login").get_data(as_text=True))},
+           follow_redirects=True)
+    return c
+
+
+def test_o_gerente_registra_o_reingresso_retroativo_com_a_justificativa(casa):
+    """«Abre gerente» (26/10/2026): o MANAGER registra a data passada que mantém
+    a prioridade — com a justificativa —, a nota fica CUMPRIDA, o protocolo
+    volta a ABERTO e a auditoria guarda a data, o papel e que foi retroativo."""
+    import json
+    from datetime import timedelta
+    p, hoje = _prenotacao_vencida_com_nota_aberta(casa)
+    c = _entrar(casa, "carla", "MANAGER")
+    retroativa = (hoje - timedelta(days=5)).isoformat()
+
+    # sem a justificativa, recusa e nada muda
+    tela = c.get(f"/registro-imoveis/protocolo/{p['id']}").get_data(as_text=True)
+    resp = c.post(f"/registro-imoveis/prenotacao/{p['id']}/documento", data={
+        "tipo": "CUMPRIMENTO_EXIGENCIA", "csrf_token": _token(tela),
+        "data_reingresso": retroativa, "observacao": "ok",
+        "documento": (io.BytesIO(PDF), "documentos.pdf")},
+        content_type="multipart/form-data", follow_redirects=True)
+    assert "Escreva na observação" in resp.get_data(as_text=True)
+    nota = _um(casa, "SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=?", p["id"])
+    assert nota["situacao"] == "ABERTA" and not nota["data_reingresso"]
+
+    # com a justificativa, registra
+    tela = c.get(f"/registro-imoveis/protocolo/{p['id']}").get_data(as_text=True)
+    resp = c.post(f"/registro-imoveis/prenotacao/{p['id']}/documento", data={
+        "tipo": "CUMPRIMENTO_EXIGENCIA", "csrf_token": _token(tela),
+        "data_reingresso": retroativa,
+        "observacao": "recibo de entrega nº 12 assinado no balcão",
+        "documento": (io.BytesIO(PDF), "documentos.pdf")},
+        content_type="multipart/form-data", follow_redirects=True)
+    assert resp.status_code == 200
+    nota = _um(casa, "SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=?", p["id"])
+    assert nota["situacao"] == "CUMPRIDA"
+    assert str(nota["data_reingresso"])[:10] == retroativa
+    assert "recibo de entrega" in (nota["observacao_reingresso"] or "")
+    assert _um(casa, "SELECT situacao FROM ri_protocolos WHERE id=?", p["id"])[0] == "ABERTO"
+    linha = _um(casa, "SELECT details FROM audit_logs WHERE action='RI_REINGRESSO' "
+                      "ORDER BY id DESC LIMIT 1")
+    detalhes = json.loads(linha["details"])
+    assert detalhes["papel"] == "MANAGER" and detalhes["retroativo"] is True
+    assert detalhes["data"] == retroativa
+
+
+def test_o_auditor_nem_chega_a_registrar_o_reingresso(casa):
+    """O AUDITOR só lê: a rota do documento não aceita o POST dele, e a nota
+    continua aberta."""
+    from datetime import timedelta
+    p, hoje = _prenotacao_vencida_com_nota_aberta(casa)
+    c = _entrar(casa, "carla", "AUDITOR")
+    tela = c.get(f"/registro-imoveis/protocolo/{p['id']}").get_data(as_text=True)
+    resp = c.post(f"/registro-imoveis/prenotacao/{p['id']}/documento", data={
+        "tipo": "CUMPRIMENTO_EXIGENCIA", "csrf_token": _token(tela),
+        "data_reingresso": (hoje - timedelta(days=5)).isoformat(),
+        "observacao": "recibo de entrega nº 12 assinado no balcão",
+        "documento": (io.BytesIO(PDF), "documentos.pdf")},
+        content_type="multipart/form-data")
+    assert resp.status_code == 403
+    nota = _um(casa, "SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=?", p["id"])
+    assert nota["situacao"] == "ABERTA" and not nota["data_reingresso"]

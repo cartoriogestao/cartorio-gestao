@@ -190,13 +190,17 @@ def emitir(con: Any, p: Any, *, exigencias: list[str], fundamentacao: str | None
 #   · nem antes da nota, nem depois de hoje — o reingresso é um fato que já
 #     aconteceu, e depois de a nota existir;
 #   · DATA PASSADA QUE SALVA A PRIORIDADE (a prenotação já venceu hoje, e a data
-#     informada cai dentro da vigência) SÓ O OFICIAL REGISTRA, e com a
-#     observação dizendo de onde vem a data. É a opção mais fechada: o caso
-#     legítimo existe (o título voltou no prazo e o lançamento atrasou), mas
-#     decidir que ele voltou no prazo é decidir a prioridade, e isso é de quem
-#     responde pela serventia. O escrevente, nesse caso, registra a data de hoje
-#     — e a nota fica fora do prazo, que é o que o sistema sabe.
-PAPEIS_QUE_RETROAGEM = ("ADMIN",)
+#     informada cai dentro da vigência) SÓ O OFICIAL OU O GERENTE REGISTRAM, e
+#     sempre com a observação dizendo de onde vem a data. O caso legítimo existe
+#     (o título voltou no prazo e o lançamento atrasou), mas decidir que ele
+#     voltou no prazo é decidir a prioridade. O escrevente, nesse caso, registra
+#     a data de hoje — e a nota fica fora do prazo, que é o que o sistema sabe.
+#
+#     DECISÃO DO OFICIAL EM 26/10/2026, «abre gerente»: a revisão de segurança
+#     tinha fechado só no ADMIN (a opção mais fechada); o oficial abriu ao
+#     MANAGER. A justificativa continua obrigatória para os dois, e o papel de
+#     quem registrou fica na auditoria do reingresso (`RI_REINGRESSO`).
+PAPEIS_QUE_RETROAGEM = ("ADMIN", "MANAGER")
 MINIMO_DA_JUSTIFICATIVA = 10
 
 
@@ -237,8 +241,8 @@ def conferir_data_do_reingresso(nota: Any, p: Any, *, quando: str, hoje: str,
             raise NotaError(
                 f"A prenotação venceu em {_br(limite)}. Registrar o reingresso em {_br(data)} "
                 "manteria a prioridade do título (LRP art. 186; CN-MA art. 44) — e isso "
-                "só o oficial registra, na tela da nota, dizendo na observação de onde "
-                "vem a data. Se o título voltou hoje, registre a data de hoje: a nota "
+                "só o oficial ou o gerente registram, na tela da nota, dizendo na "
+                "observação de onde vem a data. Se o título voltou hoje, registre a data de hoje: a nota "
                 "fica fora do prazo e o título precisa de protocolo novo.")
         letras = sum(1 for ch in (observacao or "") if ch.isalnum())
         if letras < MINIMO_DA_JUSTIFICATIVA:

@@ -47,9 +47,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         todos = request.args.get("todos") == "1"
         with db.connect() as con:
             dados = ACOMP.painel(con, todos=todos)
+        amb = _amb()
+        # 26/10/2026 — decisão do oficial: produção de fábrica. A tela diz o
+        # ambiente E o endereço para onde o clique vai, porque «ligar» em
+        # produção é publicar ao apresentante de verdade.
         return render_template("onr_acompanhamento.html", todos=todos,
-                               ambiente=_amb(), ligado=ACOMP.ligado(db.get_setting),
-                               credencial=WS.situacao(_amb()), **dados)
+                               ambiente=amb, producao=(amb == WS.PRODUCAO),
+                               endereco=WS.BASE[amb],
+                               de_fabrica=(amb == ACOMP.AMBIENTE_DE_FABRICA),
+                               nota_sem_anexo=ACOMP.NOTA_SEM_ANEXO,
+                               ligado=ACOMP.ligado(db.get_setting),
+                               credencial=WS.situacao(amb), **dados)
 
     @app.route("/ri/onr/acompanhamento/enviar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER")
@@ -84,7 +92,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         db.set_settings({ACOMP.CHAVE_LIGADO: valor})
         audit("ONR_ACOMPANHAMENTO_LIGADO" if valor == "1" else "ONR_ACOMPANHAMENTO_DESLIGADO",
               "settings", None, {"ambiente": _amb()})
-        flash("Envio do andamento ao ONR LIGADO." if valor == "1" else
+        flash(f"Envio do andamento ao ONR LIGADO, no ambiente de "
+              f"{'PRODUÇÃO — o apresentante passa a ver o andamento na Central' if _amb() == WS.PRODUCAO else _amb().lower()}."
+              if valor == "1" else
               "Envio do andamento ao ONR desligado. A fila continua se anotando.", "ok")
         return redirect(url_for("onr_acompanhamento"))
 

@@ -11,8 +11,16 @@
     mesma hora em que se gravou — e, na hora de subir, o sistema confere de novo:
     o que foi desfeito sai como <em>anulado</em>, e o registro só sobe depois do selo.
   </p>
-  <p>Ambiente: <strong>{{ ambiente|lower }}</strong> (o mesmo das certidões do ONR).
-    Envio: <strong>{{ 'LIGADO' if ligado else 'desligado' }}</strong>.</p>
+  {# 26/10/2026 — decisão do oficial: produção de fábrica; o ambiente fica à vista. #}
+  <p class="{{ 'warning' if producao else '' }}" style="font-size:1.1em">
+    Ambiente: <strong>{{ 'PRODUÇÃO' if producao else 'HOMOLOGAÇÃO (teste)' }}</strong>
+    — {{ endereco }}{% if de_fabrica %} (padrão de fábrica){% endif %}.
+    {% if producao %}O que for enviado aparece de verdade ao apresentante na Central do ONR.{% endif %}
+    <br>Envio: <strong>{{ 'LIGADO' if ligado else 'desligado' }}</strong>{% if not ligado %}
+    — nasce desligado; quem liga é o oficial, nesta tela{% endif %}.</p>
+  <p class="small muted">Nota de exigência: sobe com o texto inteiro (as exigências, a
+    fundamentação e o prazo), e o apresentante a lê na Central — decisão do oficial em
+    26/10/2026. {{ nota_sem_anexo }}.</p>
   {% if not credencial.tem_chave %}
   <p class="warning">Falta a credencial do Ofício Eletrônico (wsoficio.cred) neste ambiente.</p>
   {% endif %}
@@ -31,7 +39,8 @@
   <form method="post" action="{{ url_for('onr_acompanhamento_ligar') }}" style="display:inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="ligar" value="{{ '0' if ligado else '1' }}">
-    <button class="button" type="submit">{{ 'Desligar o envio' if ligado else 'Ligar o envio' }}</button>
+    <button class="button" type="submit">{{ 'Desligar o envio' if ligado else 'Ligar o envio' }}
+      ({{ 'produção' if producao else 'homologação' }})</button>
   </form>
   {% endif %}
   {% if todos %}

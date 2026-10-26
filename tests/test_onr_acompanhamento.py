@@ -412,13 +412,75 @@ def test_a_ficha_mostra_o_enviado_cujo_fato_sumiu(con, pasta):
     assert ev["rotulo"] == "Título registrado"
 
 
-def test_o_envio_nasce_desligado_e_o_ambiente_e_o_das_certidoes():
-    vazio = {}
-    assert A.ligado(lambda k, d=None: vazio.get(k, d)) is False
-    assert A.ligado(lambda k, d=None: {"onr_acompanhamento_ligado": "1"}.get(k, d)) is True
-    assert A.ambiente(lambda k, d=None: {"onr_certidoes_ambiente": "HOMOLOGACAO"}.get(k, d)) \
-        == W.HOMOLOGACAO
-    assert A.CHAVE_AMBIENTE == "onr_certidoes_ambiente"
+def test_o_envio_nasce_desligado_e_o_ambiente_de_fabrica_e_a_producao():
+    """Decisão do oficial em 26/10/2026: «acho que podemos ir direto pra
+    produção». O ambiente tem chave própria, vazia = PRODUÇÃO, e a chave das
+    certidões não manda mais nele. O envio continua nascendo desligado."""
+    def cfg(d):
+        return lambda k, padrao=None: d.get(k, padrao)
+    assert A.ligado(cfg({})) is False
+    assert A.ligado(cfg({"onr_acompanhamento_ligado": "1"})) is True
+    assert A.CHAVE_AMBIENTE == "onr_acompanhamento_ambiente"
+    assert A.AMBIENTE_DE_FABRICA == W.PRODUCAO
+    assert A.ambiente(cfg({})) == W.PRODUCAO
+    assert A.ambiente(cfg({"onr_acompanhamento_ambiente": ""})) == W.PRODUCAO
+    assert A.ambiente(cfg({"onr_acompanhamento_ambiente": "qualquer coisa"})) == W.PRODUCAO
+    # a escolha das certidões não muda o destino do acompanhamento
+    assert A.ambiente(cfg({"onr_certidoes_ambiente": "HOMOLOGACAO"})) == W.PRODUCAO
+    # e quem quiser testar antes ainda pode escolher a homologação
+    assert A.ambiente(cfg({"onr_acompanhamento_ambiente": "homologacao"})) == W.HOMOLOGACAO
+
+
+def test_a_nota_de_exigencia_sobe_inteira_no_status_7(con, pasta):
+    """Decisão do oficial em 26/10/2026 («sim»): a nota de exigência é
+    publicada ao interessado. O texto inteiro — cada exigência, a
+    fundamentação e o prazo — vai no `DescricaoStatus`, que é o campo que o
+    manual manda usar, e NÃO é cortado (o campo é `text`)."""
+    longa = "Apresentar a certidão de ônus reais atualizada, " * 40       # ~2 mil letras
+    banco(con).escrever(
+        "INSERT INTO ri_notas_devolutivas VALUES (5, 10, 3, '2026-10-22', %s, %s, "
+        "'2026-11-17', 'ABERTA', NULL, '2026-10-22T16:00:00')",
+        (f'["{longa.strip()}", "Recolher o ITBI & a taxa <judiciária>."]',
+         "Lei 6.015/1973, art. 198"))
+    # a prenotação já subiu: a nota vai como status do título que existe
+    A.anotar_prenotacao(con, 10, agora=AGORA)
+    A.anotar_nota_de_exigencia(con, 5, agora=AGORA)
+    con.commit()
+    onr = ONRDeMentira()
+    assert _enviar(con, pasta, onr)["enviados"] == 2
+    (status,) = onr.de("InsertStatusAT")
+    assert "<IDTipoStatus>7</IDTipoStatus>" in status
+    descricao = re.search(r"<DescricaoStatus>(.*)</DescricaoStatus>", status, re.S).group(1)
+    assert "Nota de exigência nº 3, de 22/10/2026." in descricao
+    assert longa.strip() in descricao                                   # inteira, sem corte
+    assert "Recolher o ITBI &amp; a taxa &lt;judiciária&gt;." in descricao   # escapado
+    assert "Fundamentação: Lei 6.015/1973, art. 198" in descricao
+    assert "Prazo da prenotação: 17/11/2026." in descricao
+    assert "…" not in descricao
+
+
+def test_a_nota_sozinha_cadastra_o_titulo_com_ela_de_status_inicial(con, pasta):
+    """Sem a prenotação na fila (o acervo, ou o envio ligado depois), a nota
+    é o primeiro andamento: vai no `InsertTituloAT`, com o texto dela."""
+    banco(con).escrever("""INSERT INTO ri_notas_devolutivas VALUES (5, 10, 1, '2026-10-22',
+        '["Recolher o ITBI."]', NULL, NULL, 'ABERTA', NULL, '2026-10-22T16:00:00')""")
+    A.anotar_nota_de_exigencia(con, 5, agora=AGORA)
+    con.commit()
+    onr = ONRDeMentira()
+    assert _enviar(con, pasta, onr)["enviados"] == 1
+    (titulo,) = onr.de("InsertTituloAT")
+    assert "<IDTipoStatus>7</IDTipoStatus>" in titulo
+    assert "1. Recolher o ITBI." in titulo
+
+
+def test_o_contrato_do_acompanhamento_nao_tem_anexo_e_isso_fica_declarado():
+    """O que falta medir: nenhum método do Acompanhamento (cap. 3.2) tem campo
+    de anexo — o PDF da nota não sobe. Se o contrato ganhar um, este teste
+    fica vermelho e a nota passa a poder levar o arquivo."""
+    for metodo in METODOS_AT:
+        assert not [c for c in W.CAMPOS[metodo] if re.search(r"anexo|arquivo|url", c, re.I)], \
+            metodo
+    assert "anexo" in A.NOTA_SEM_ANEXO and "PDF" in A.NOTA_SEM_ANEXO
 
 
 # ------------------------------------------------------------------ as telas
@@ -448,6 +510,10 @@ def test_telas_do_balcao_ao_onr(cg_casa_logada, monkeypatch):
 
     tela = c.get("/ri/onr/acompanhamento").get_data(as_text=True)
     assert "Título prenotado" in tela and "Ligar o envio" in tela and "Recolher o ITBI." in tela
+    # 26/10/2026: produção de fábrica, e a tela diz isso com o endereço
+    assert "PRODUÇÃO" in tela and "https://wsoficio.onr.org.br" in tela
+    assert "padrão de fábrica" in tela and re.search(r"Ligar o envio\s+\(produção\)", tela)
+    assert "o PDF não sobe" in tela
     tok = _token(tela)
     r = c.post("/ri/onr/acompanhamento/enviar", data={"csrf_token": tok},
                follow_redirects=True).get_data(as_text=True)

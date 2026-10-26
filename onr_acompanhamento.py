@@ -33,6 +33,25 @@ O RISCO QUE GOVERNA O DESENHO
        ainda não está no `main`): `enviar_pendentes` já é a função que ela
        chama — ver `onr_acompanhamento_web`.
 
+DECISÕES DO OFICIAL, 26/10/2026
+    - **O ambiente de fábrica é a PRODUÇÃO** («acho que podemos ir direto pra
+      produção»): o WSOficio já responde em produção nesta casa (certidões,
+      ofícios, penhora). O ambiente do acompanhamento passou a ter chave
+      PRÓPRIA (`onr_acompanhamento_ambiente`) — antes ele seguia a das
+      certidões, e uma casa com as certidões em homologação mandaria o
+      andamento para lá sem ninguém ter escolhido isso. O ENVIO continua
+      nascendo DESLIGADO: quem liga é o oficial, na tela, que mostra em letras
+      grandes em que ambiente o clique vai cair.
+    - **A nota de exigência é publicada ao interessado** («sim»): o texto
+      inteiro da nota — o número, a data, cada exigência, a fundamentação e o
+      prazo — vai no `DescricaoStatus` do status 7, que é o campo que o manual
+      manda usar («a nota de devolução deve ser informada nesse campo», 3.2.8
+      e 3.2.12) e que é `text`, sem teto. Ver `descricao_da_nota`.
+      **O PDF da nota NÃO sobe**: nenhum dos nove métodos do Acompanhamento
+      (3.2) tem campo de anexo, e os serviços de anexo do WSOficio são de
+      outros pedidos (certidão, BDLight) e recebem um LINK — esta casa não tem
+      endereço público. O que falta medir está em `NOTA_SEM_ANEXO`.
+
 O QUE NÃO SE ACOMPANHA, E POR QUÊ (declarado, e não esquecido)
     - **Título entregue (8)**: o sistema não grava a entrega do título ao
       apresentante. O `ENTREGUE` do protocolo geral (`caixa_protocolo`) é o
@@ -117,8 +136,21 @@ SITUACOES = ("PENDENTE", "ENVIADO", "ANULADO", "DESCARTADO")
 
 #: Liga e desliga o ENVIO (a fila se anota sempre: é local). Desligado de fábrica.
 CHAVE_LIGADO = "onr_acompanhamento_ligado"
-#: O ambiente é o MESMO dos outros serviços do WSOficio nesta casa.
-CHAVE_AMBIENTE = "onr_certidoes_ambiente"
+#: O ambiente do acompanhamento — chave PRÓPRIA desde 26/10/2026 (decisão do
+#: oficial: «ir direto pra produção»). Vazia, é a PRODUÇÃO. Até essa data
+#: era a chave das certidões (`onr_certidoes_ambiente`), e ela não manda
+#: mais aqui: a escolha de um serviço não pode mudar o destino do outro.
+CHAVE_AMBIENTE = "onr_acompanhamento_ambiente"
+#: O ambiente de fábrica (decisão do oficial em 26/10/2026).
+AMBIENTE_DE_FABRICA = WS.PRODUCAO
+
+#: O que o contrato do Acompanhamento NÃO oferece para a nota, e fica a medir
+#: na primeira chamada de produção: (1) campo de anexo — nenhum dos nove
+#: métodos do cap. 3.2 tem; o PDF da nota fica no balcão; (2) teto real do
+#: `DescricaoStatus` — o manual diz `text`, sem tamanho, e o WSDL do serviço
+#: não está na casa para confirmar.
+NOTA_SEM_ANEXO = ("O Acompanhamento de Títulos (manual 4.43, cap. 3.2) não tem campo de "
+                  "anexo: sobe o status 7 com o texto inteiro da nota; o PDF não sobe")
 
 #: Tamanhos do manual (3.2.8) — o que passa é cortado com reticências, e não
 #: recusado: o nome inteiro está no livro; a Central mostra o começo.
@@ -228,7 +260,12 @@ def _exigencias(texto: Any) -> list[str]:
 
 def descricao_da_nota(nota: dict) -> str:
     """O texto da nota de exigência como vai à Central. O manual manda: «a
-    nota de devolução deve ser informada nesse campo» (3.2.8 e 3.2.12)."""
+    nota de devolução deve ser informada nesse campo» (3.2.8 e 3.2.12).
+
+    PUBLICADA AO INTERESSADO por decisão do oficial em 26/10/2026 («sim»):
+    vai INTEIRA, sem corte — o campo é
+    `text` —, porque nota pela metade na Central faria o apresentante voltar
+    ao balcão sem a exigência que faltou ler."""
     linhas = [f"Nota de exigência nº {nota['numero']}, de {_data_br(nota['data_nota'])}."]
     linhas += [f"{i}. {e}" for i, e in enumerate(_exigencias(nota.get("exigencias")), 1)]
     if str(nota.get("fundamentacao") or "").strip():
@@ -477,8 +514,11 @@ def ligado(get_setting) -> bool:
 
 
 def ambiente(get_setting) -> str:
-    valor = str(get_setting(CHAVE_AMBIENTE, WS.PRODUCAO) or WS.PRODUCAO)
-    return valor if valor in WS.BASE else WS.PRODUCAO
+    """O ambiente do acompanhamento. Vazio ou desconhecido é a PRODUÇÃO —
+    o padrão de fábrica que o oficial escolheu em 26/10/2026."""
+    valor = str(get_setting(CHAVE_AMBIENTE, AMBIENTE_DE_FABRICA) or AMBIENTE_DE_FABRICA)
+    valor = valor.strip().upper()
+    return valor if valor in WS.BASE else AMBIENTE_DE_FABRICA
 
 
 def _pendentes(con, limite: int) -> list[dict]:

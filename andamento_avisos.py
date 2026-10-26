@@ -10,9 +10,9 @@ OS TRÊS ANDAMENTOS, E SÓ O STATUS
                ABERTA) e ainda está correndo;
     PRONTO     o protocolo geral foi marcado «pronto para retirar»
                (`cx_protocolos.pronto_retirar_em`) e não foi entregue;
-    PRAZO      a prenotação vence em N dias úteis ou menos (N no processo da
-               automação; 7 de fábrica — decisão do oficial em 26/10/2026,
-               «avisar com 7 dias de antecedência»), fora de suspensão.
+    PRAZO      a prenotação vence em N dias CORRIDOS ou menos (N no processo
+               da automação; 7 de fábrica — decisão do oficial em 26/10/2026,
+               «7 dias corridos»), fora de suspensão.
     A mensagem diz o número do protocolo e o andamento. **Não leva CPF, nome,
     valor nem o teor do ato ou da nota** — a regra da casa para o que sai
     sozinho (docs/decisoes/02_modelos_ia_privacidade.md). O cliente sabe o que
@@ -91,10 +91,11 @@ _CLAROS_DO_EVENTO = ("numero", "serventia", "data_limite", "dias", "assinatura")
 CLAROS = {"ASSINATURA": ("serventia", "telefone", "email"),
           **{p: _CLAROS_DO_EVENTO for p in PARTES[1:]}}
 
-#: Quantos dias úteis antes do vencimento da prenotação o cliente é avisado.
-#: 7 de fábrica: decisão do oficial em 26/10/2026 («avisar com 7 dias de
-#: antecedência»); era 5. Conta em dias ÚTEIS, a mesma régua do prazo da
-#: prenotação. Muda-se nos parâmetros do processo, sem versão nova.
+#: Quantos dias CORRIDOS antes do vencimento da prenotação o cliente é avisado.
+#: 7 de fábrica: decisão do oficial em 26/10/2026 («7 dias corridos»; era 5
+#: dias úteis). Conta em dias de calendário, com sábado, domingo e feriado —
+#: o prazo da prenotação continua em dias úteis, e só a antecedência do aviso
+#: é corrida. Muda-se nos parâmetros do processo, sem versão nova.
 DIAS_ANTES_PADRAO = 7
 DIAS_ANTES_LIMITES = (1, 30)
 #: Quantas vezes um e-mail que falhou é tentado de novo, uma por rodada.
@@ -283,7 +284,6 @@ def eventos_vigentes(con, *, hoje: date, feriados: set | None = None,
     vez só. A da exigência leva a nota (uma segunda nota é outro aviso); a do
     prazo leva a data-limite (a prenotação que retomou o prazo ganhou outra).
     """
-    from ri_schema import dias_uteis_entre
     bd = banco(con)
     eventos = set(eventos)
     hoje_txt = hoje.isoformat()
@@ -321,7 +321,7 @@ def eventos_vigentes(con, *, hoje: date, feriados: set | None = None,
             limite = _vencimento(p["data_limite"])
             if limite is None:
                 continue
-            dias = dias_uteis_entre(hoje, limite, feriados)
+            dias = (limite - hoje).days          # dias CORRIDOS (decisão de 26/10/2026)
             if not 0 <= dias <= int(dias_antes):
                 continue
             chave = f"{AS.PRAZO}:{AS.PRENOTACAO}:{p['id']}:{limite.isoformat()}"
@@ -623,7 +623,7 @@ def rodar(ctx) -> dict:
     por_evento = {e: sum(1 for v in vigentes.values() if v["evento"] == e) for e in eventos}
     relato = (f"Andamentos vigentes: {por_evento.get(AS.EXIGENCIA, 0)} exigência(s), "
               f"{por_evento.get(AS.PRONTO, 0)} pronto(s) para retirar, "
-              f"{por_evento.get(AS.PRAZO, 0)} prenotação(ões) a até {dias} dia(s) útil(eis) do "
+              f"{por_evento.get(AS.PRAZO, 0)} prenotação(ões) a até {dias} dia(s) corrido(s) do "
               f"vencimento. Avisos novos na fila: {novos}. Nesta rodada: "
               f"{conta[AS.ENVIADO]} enviado(s), {conta[AS.FALHOU]} falha(s), "
               f"{conta[AS.DESCARTADO]} descartado(s). Esperando configuração: "
@@ -653,7 +653,7 @@ CATALOGO = (
                     "eventos": list(AS.EVENTOS)},
      "descricao": "De 15 em 15 minutos, em dia útil: avisa o cliente que pediu (consentimento "
                   "gravado no protocolo) da exigência na prenotação, do protocolo pronto para "
-                  "retirar e da prenotação a N dias úteis de vencer (7 de fábrica). Só o "
+                  "retirar e da prenotação a N dias corridos de vencer (7 de fábrica). Só o "
                   "status — sem CPF, "
                   "valor nem teor. E-mail pelo SMTP da automação; WhatsApp fica registrado e "
                   "PENDENTE_CONFIG até haver modelo aprovado pela Meta. Protesto fica de fora."},

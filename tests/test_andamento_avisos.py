@@ -262,10 +262,10 @@ def test_a_exigencia_chega_a_quem_consentiu_no_protocolo_ligado(casa, tmp_path):
     assert "certidão de ônus" not in casa["enviados"][0]["corpo"]      # o teor não sai
 
 
-def test_o_prazo_avisa_a_n_dias_uteis_e_respeita_a_suspensao(casa, tmp_path):
+def test_o_prazo_avisa_a_n_dias_corridos_e_respeita_a_suspensao(casa, tmp_path):
     db = casa["db"]
     _smtp(db)
-    perto = _prenotacao(db, numero=900002, limite="2026-10-29")        # 3 dias úteis
+    perto = _prenotacao(db, numero=900002, limite="2026-10-29")        # 3 dias corridos
     longe = _prenotacao(db, numero=900003, limite="2026-11-27")
     suspensa = _prenotacao(db, numero=900004, limite="2026-10-28")
     with db.transaction() as con:
@@ -313,18 +313,18 @@ def test_o_processo_vem_pelo_catalogo_e_nasce_desligado(casa):
     assert p["agenda"]["intervalo_min"] == 15
 
 
-def test_o_padrao_de_fabrica_avisa_com_7_dias_uteis(casa):
-    """«Avisar com 7 dias de antecedência» — decisão do oficial em 26/10/2026 (era 5).
+def test_o_padrao_de_fabrica_avisa_com_7_dias_corridos(casa):
+    """«7 dias corridos» — decisão do oficial em 26/10/2026 (era 5 dias úteis).
 
     Escrito e NÃO executado nesta máquina (sobrecarga, ordem do oficial).
     """
-    from ri_schema import soma_dias_uteis
+    from datetime import timedelta
     assert AA.DIAS_ANTES_PADRAO == 7
     hoje = SEG.date()
     a_7 = _prenotacao(casa["db"], numero=900011,
-                      limite=soma_dias_uteis(hoje, 7).isoformat())
+                      limite=(hoje + timedelta(days=7)).isoformat())
     a_8 = _prenotacao(casa["db"], numero=900012,
-                      limite=soma_dias_uteis(hoje, 8).isoformat())
+                      limite=(hoje + timedelta(days=8)).isoformat())
     with casa["db"].connect() as con:
         vig = AA.eventos_vigentes(con, hoje=hoje, eventos=[AS.PRAZO])     # sem dias_antes
     ids = {v["origem_id"] for v in vig.values()}

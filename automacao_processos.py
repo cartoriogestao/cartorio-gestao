@@ -761,7 +761,9 @@ SEMENTES: tuple[dict, ...] = (
 #: e opcionalmente descricao, agenda e timeout_s}. O primeiro é o das despesas
 #: e do Banco Inter (agente financeiro, 24/10/2026). O import é protegido:
 #: o PR de um pode entrar antes do outro, e módulo ausente só não semeia.
-MODULOS_COM_PROCESSOS = ("despesas_automacao",)
+#: O segundo é o dos avisos de andamento ao cliente (26/10/2026), que traz
+#: também os `parametros` de fábrica (os dias antes do vencimento).
+MODULOS_COM_PROCESSOS = ("despesas_automacao", "andamento_avisos")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.
@@ -803,6 +805,7 @@ def sementes_de_outros_modulos() -> list[dict]:
                 "agenda": item.get("agenda") or AGENDA_SUGERIDA.get(codigo)
                           or {"dias": _UTEIS, "horarios": ["09:00"]},
                 "timeout_s": int(item.get("timeout_s") or 600),
+                "parametros": dict(item.get("parametros") or {}),
             })
     return saida
 

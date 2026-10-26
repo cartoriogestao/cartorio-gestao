@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block title %}Avisos ao cliente{% endblock %}
+{% block heading %}<h1>Avisos de andamento ao cliente</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head"><span>Como funciona</span></div>
+  <div style="padding:14px">
+    <p class="small">Quando o cliente pede, o balcão marca o consentimento na tela do protocolo geral ou da prenotação
+      («Avisos ao cliente»). A rotina <strong>Avisos de andamento ao cliente</strong> da automação mede, a cada rodada,
+      quais andamentos são verdade hoje — <strong>{{ AS.NOME_DO_EVENTO[AS.EXIGENCIA] }}</strong>,
+      <strong>{{ AS.NOME_DO_EVENTO[AS.PRONTO] }}</strong> e <strong>prenotação a até {{ dias_antes }} dia(s) útil(eis)
+      do vencimento</strong> — e manda um aviso por andamento, uma vez só. Só o status: sem nome, documento, valor nem teor.
+      O Protesto fica de fora.</p>
+    <p class="small">
+      {% if processo %}
+        Rotina: <a href="{{ url_for('automacao_processo', processo_id=processo.id) }}">{{ processo.nome }}</a>
+        {% if processo.ativo %}<span class="badge ok">ligada</span>{% else %}<span class="badge media">desligada — nada sai até o oficial ligar</span>{% endif %}
+        · andamentos avisados: {% for e in eventos %}{{ AS.NOME_DO_EVENTO[e] }}{% if not loop.last %}, {% endif %}{% else %}nenhum{% endfor %}
+        (os dias e os andamentos se mudam nos parâmetros da rotina).
+      {% else %}
+        <span class="badge critica">a rotina ainda não está no cadastro da automação</span>
+      {% endif %}
+    </p>
+    <p class="small">E-mail:
+      {% if email_configurado %}<span class="badge ok">configurado</span> — sai pelo mesmo SMTP dos alertas da automação.
+      {% else %}<span class="badge media">não configurado</span> — os avisos por e-mail esperam na fila (Automação → Configuração).{% endif %}</p>
+    <p class="small">WhatsApp: <span class="badge media">registrado, envio desligado</span> {{ SEM_MODELO_DA_META }}</p>
+    <p class="small muted">Clientes que pediram aviso hoje: {{ consentidos.get(AS.EMAIL, 0) }} por e-mail, {{ consentidos.get(AS.WHATSAPP, 0) }} por WhatsApp.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>A fila</span>
+    <span class="small">
+      <a href="{{ url_for('andamento_fila') }}">todos</a>
+      {% for s in AS.SITUACOES %} · <a href="{{ url_for('andamento_fila', situacao=s) }}">{{ selo(s).texto }} ({{ contagem.get(s, 0) }})</a>{% endfor %}
+    </span></div>
+  <div class="table-wrap"><table><thead><tr><th>Criado</th><th>Andamento</th><th>Registro</th><th>Canal</th><th>Para onde</th><th>Situação</th><th>Tentativas</th><th>Detalhe</th></tr></thead><tbody>
+  {% for a in ultimos %}{% set s = selo(a.situacao) %}
+    <tr><td class="small">{{ (a.criado_em or '')[:16]|replace('T', ' ') }}</td>
+      <td>{{ AS.NOME_DO_EVENTO.get(a.evento, a.evento) }}</td>
+      <td class="small"><a href="{{ url_for('andamento_prenotacao' if a.origem == AS.PRENOTACAO else 'andamento_protocolo_geral', protocolo_id=a.origem_id) }}">{{ AS.NOME_DA_ORIGEM.get(a.origem, a.origem) }} #{{ a.origem_id }}</a></td>
+      <td>{{ AS.NOME_DO_CANAL.get(a.canal, a.canal) }}</td>
+      <td class="small">{{ mascarar(a.canal, a.destino) }}</td>
+      <td><span class="badge {{ s.classe }}">{{ s.texto }}</span>{% if a.enviado_em %}<div class="small">{{ a.enviado_em[:16]|replace('T', ' ') }}</div>{% endif %}</td>
+      <td class="small">{{ a.tentativas }}</td>
+      <td class="small">{{ a.erro or '' }}</td></tr>
+  {% else %}<tr><td colspan="8">Nenhum aviso{% if situacao %} nesta situação{% endif %}.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Como o e-mail sai hoje</span>
+    <span class="small"><a href="{{ url_for('modelos') }}">editar em Modelos (Caixa e protocolo → Avisos de andamento ao cliente)</a></span></div>
+  <div style="padding:14px">
+  {% for e in AS.EVENTOS %}{% set assunto, corpo = previas[e] %}
+    <h3 class="small">{{ AS.NOME_DO_EVENTO[e]|capitalize }}</h3>
+    <p class="small"><strong>Assunto:</strong> {{ assunto }}</p>
+    <pre class="small" style="white-space:pre-wrap">{{ corpo }}</pre>
+  {% endfor %}
+  <p class="small muted">Exemplo com o protocolo fictício nº 0000.</p>
+  </div>
+</section>
+{% endblock %}

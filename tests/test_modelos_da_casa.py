@@ -5080,3 +5080,32 @@ def test_na_lavratura_o_termo_le_a_qualificacao_ajustada_pela_casa(casa):
             "MARIA DE EXEMPLO, inscrita no CPF n.º 000.000.001-91")
     assert LIVRO.qualificacao_inteira(maria) == (
         "MARIA DE EXEMPLO, brasileira, inscrita no CPF n.º 000.000.001-91")
+
+
+# ------------------------------------- 26/10/2026 — o aviso de andamento ao cliente
+#
+# **O CATÁLOGO GANHOU 1 PAPEL**: o e-mail que avisa o cliente, quando ele
+# pediu, da exigência, do pronto para retirar e da prenotação perto de vencer
+# (`andamento_avisos`). Texto da casa, sem precedente no E-Ofício, e por isso
+# no catálogo, editável — em chaves, uma parte por andamento, como o
+# CAIXA_WHATSAPP. Nenhum papel antigo mudou de texto.
+PAPEIS_DO_ANDAMENTO = {"CAIXA_AVISO_ANDAMENTO"}
+NOVOS_NO_CATALOGO_ANDAMENTO = 1
+
+
+def test_o_aviso_de_andamento_esta_no_catalogo_e_a_tela_o_confere(casa):
+    """A contagem bate com a lista; o conferidor próprio aceita o padrão e
+    recusa o claro que o aviso não preenche; e o padrão não pede dado de
+    pessoa — só número, serventia, datas e a assinatura."""
+    import modelos_elementos as ELEM
+    assert len(PAPEIS_DO_ANDAMENTO) == NOVOS_NO_CATALOGO_ANDAMENTO
+    assert PAPEIS_DO_ANDAMENTO <= set(MOD.POR_CHAVE)
+    for chave in PAPEIS_DO_ANDAMENTO:
+        assert MOD.formato_de(chave) == MOD.CHAVES
+        assert MOD.POR_CHAVE[chave]["elementos_comuns"] is False
+        assert ELEM.CONFERIDORES[chave](MOD.padrao_de(chave)) == ""
+        assert ELEM.CONFERIDORES[chave]("===PRONTO===\nOla {cpf}")
+        assert casa["app"].extensions["conferidores_de_modelo"][chave](
+            MOD.padrao_de(chave)) == ""
+        for proibido in ("{cpf}", "{nome_", "{valor", "{teor"):
+            assert proibido not in MOD.padrao_de(chave), proibido

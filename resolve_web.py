@@ -49,6 +49,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         """
         return CENTCRED.PRODUCAO
 
+    def _guardar_historico(intimacao_id: int, item: dict) -> None:
+        """Traz o histórico da Central e o guarda na intimação. Recusa com as
+        `RECUSAS_DO_BALCAO` — quem chama transforma em frase."""
+        # A INTIMAÇÃO DE HOMOLOGAÇÃO OU TESTES NÃO SE CONSULTA MAIS
+        # (14/10/2026) — `ambiente_de_uso` recusa com a frase.
+        historico = API.historico_de(
+            item["intimacao_id"],
+            CENTCRED.ambiente_de_uso(CENTCRED.RESOLVE, item["ambiente"]))
+        with db.transaction() as con:
+            banco(con).escrever(
+                "UPDATE rs_intimacoes SET historico = %s WHERE id = %s",
+                (json.dumps(historico, ensure_ascii=False)[:4000],
+                 intimacao_id))
+
     # ---------------------------------------------------------- a lista
 
     @app.route("/protesto/resolve")
@@ -145,20 +159,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             flash("Essa intimação não tem número na Central.", "warning")
             return redirect(url_for("protesto_resolve"))
         try:
-            # A INTIMAÇÃO DE HOMOLOGAÇÃO OU TESTES NÃO SE CONSULTA MAIS
-            # (14/10/2026) — `ambiente_de_uso` recusa com a frase.
-            historico = API.historico_de(
-                item["intimacao_id"],
-                CENTCRED.ambiente_de_uso(CENTCRED.RESOLVE, item["ambiente"]))
+            _guardar_historico(intimacao_id, item)
         except RECUSAS_DO_BALCAO as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_resolve_ficha",
                                     intimacao_id=intimacao_id))
-        with db.transaction() as con:
-            banco(con).escrever(
-                "UPDATE rs_intimacoes SET historico = %s WHERE id = %s",
-                (json.dumps(historico, ensure_ascii=False)[:4000],
-                 intimacao_id))
         flash("Histórico atualizado.", "success")
         return redirect(url_for("protesto_resolve_ficha",
                                 intimacao_id=intimacao_id))
@@ -177,18 +182,41 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         if item is None or not (item.get("intimacao_id") or "").strip():
             flash("Essa intimação não tem número na Central.", "warning")
             return redirect(url_for("protesto_resolve"))
+        ficha = redirect(url_for("protesto_resolve_ficha",
+                                 intimacao_id=intimacao_id))
         try:
             r = API.pdf_da_intimacao(
                 item["intimacao_id"],
                 CENTCRED.ambiente_de_uso(CENTCRED.RESOLVE, item["ambiente"]))
+        except API.ResolveSemPdf:
+            # «DIZ QUE TEM COMPROVANTE DE ENTREGA, MAS NÃO APARECE» — problema
+            # #142, 26/10/2026. A intimação ENTREGUE por e-mail não tinha PDF
+            # na Resolve, e a tela parava no «ainda não tem». A prova que a
+            # Central dá dessa entrega é o HISTÓRICO (canal, destinatário, data
+            # e assinatura de cada tentativa): ele vem agora no mesmo clique.
+            try:
+                _guardar_historico(intimacao_id, item)
+            except RECUSAS_DO_BALCAO as erro:
+                flash(f"A Resolve não tem PDF desta intimação, e o histórico "
+                      f"também não veio: {erro}", "danger")
+                return ficha
+            flash("A Resolve não tem PDF desta intimação. A prova da entrega "
+                  "que ela dá é o histórico, que está logo abaixo, em «A "
+                  "prova»: o canal, o destinatário, a data e a assinatura de "
+                  "cada tentativa.", "warning")
+            return ficha
         except RECUSAS_DO_BALCAO as erro:
-            flash(str(erro), "warning" if isinstance(erro, API.ResolveSemPdf)
-                  else "danger")
-            return redirect(url_for("protesto_resolve_ficha",
-                                    intimacao_id=intimacao_id))
+            flash(str(erro), "danger")
+            return ficha
         link = ""
         if isinstance(r, dict):
             link = str(r.get("link") or r.get("url") or "").strip()
+        if link.startswith("https://"):
+            # O PDF ABRE, em vez de o endereço sair como texto num aviso que
+            # não se clica (#142).
+            audit("PROTESTO_RESOLVE_COMPROVANTE", "rs_intimacoes",
+                  intimacao_id, {"link": link[:300]})
+            return redirect(link)
         if link:
             flash(f"O comprovante está em: {link}", "success")
         else:
@@ -224,11 +252,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             flash(str(erro), "warning" if isinstance(erro, API.ResolveSemPdf)
                   else "danger")
             return redirect(url_for("protesto_resolve", ambiente=ambiente))
-        links = (r or {}).get("links") or []
-        flash(f"O lote tem {len(links)} comprovante(s): "
-              + " · ".join(str(x) for x in links[:5])
-              + (" …" if len(links) > 5 else ""), "success")
-        return redirect(url_for("protesto_resolve", ambiente=ambiente))
+        links = [str(x) for x in ((r or {}).get("links") or [])
+                 if str(x).startswith("https://")]
+        if not links:
+            flash("A Resolve respondeu sem nenhum link de comprovante para "
+                  "este lote. A prova de cada entrega está no histórico da "
+                  "intimação — abra a ficha dela.", "warning")
+            return redirect(url_for("protesto_resolve", ambiente=ambiente))
+        # OS LINKS VÃO NUMA PÁGINA, CLICÁVEIS (#142): num aviso eles eram texto.
+        return render_template("protesto_resolve_comprovantes.html",
+                               lote_id=lote_id, links=links)
 
     # ------------------------------------------------------ o diagnóstico
 

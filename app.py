@@ -2868,6 +2868,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         "USUCAPIAO_PECA": ("usucapiao_processo",),
         "RT_PECA": ("ri_retificacao",),
         "PT_AVISO": ("protesto_avisos",),
+        "PT_EDITAL_CENPROT": ("protesto_avisos",),
         "PT_TITULO": ("protesto_imagem",),
         "SELO_GRATUIDADE": ("gratuidade_comprovantes", "selo_gratuidades_portal"),
         "SELO_GRATUIDADE_CERTIDAO": ("selo_gratuidades_portal",),

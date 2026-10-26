@@ -669,9 +669,10 @@ class Database:
         # oficial, 26/10/2026): `audit_logs.agente`, `audit_logs.a_mando_de` e
         # `users.robo_responsavel_id`. So ADD COLUMN; quem preenche e
         # `identidade_do_robo.registrar`, por onde passa o `log` daqui de baixo.
-        # As duas colunas ficam FORA do hash da corrente (o gatilho e o lado
-        # Python continuam com os oito campos): mudar a conta agora faria as
-        # linhas antigas acusarem «conteudo mudou». Decisao declarada no PR.
+        # E `audit_logs.hash_versao`: desde a revisao de seguranca de 26/10 as
+        # duas colunas ENTRAM no hash da corrente (formula 2), e a versao por
+        # linha deixa as antigas conferirem pela formula de 22/10
+        # (`cg_auditoria_encadear` e `auditoria_cadeia.hash_da_linha`).
         init_identidade_schema(con)
         gatilho = ("CREATE OR REPLACE TRIGGER audit_logs_cadeia BEFORE INSERT ON audit_logs "
                    "FOR EACH ROW EXECUTE FUNCTION public.cg_auditoria_encadear()")

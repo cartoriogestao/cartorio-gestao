@@ -56,6 +56,13 @@ ROBO_SEM_RESPONSAVEL = "ROBO_SEM_RESPONSAVEL"  # conta de robô sem responsável
 AGENTE = "AGENTE"                              # rotina/agente que se declarou
 AGENTE_SEM_MANDANTE = "AGENTE_SEM_MANDANTE"    # declarou o nome, não a ordem
 SEM_IDENTIFICACAO = "SEM_IDENTIFICACAO"        # sem usuário e sem agente
+#: O próprio servidor registrando um fato que ninguém mandou acontecer — o
+#: login recusado, a requisição sem ninguém logado. `agente` = o servidor e
+#: `a_mando_de` VAZIO, de propósito: ninguém mandou um login falhar (revisão
+#: de segurança, 26/10/2026). Não é falta: grava sem aviso e não entra na
+#: conferência. Rotina de verdade (backup, CNIB, CENSEC) não é isto: ela tem
+#: mandante, e usa `PELO_RESPONSAVEL`.
+EVENTO_DO_SERVIDOR = "EVENTO_DO_SERVIDOR"
 
 #: O que FALTA — avisa na etapa 1, recusa na etapa 2.
 EM_FALTA = frozenset({ROBO_SEM_RESPONSAVEL, AGENTE_SEM_MANDANTE, SEM_IDENTIFICACAO})
@@ -89,7 +96,19 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("users", "robo_responsavel_id", "INTEGER REFERENCES users(id)"),
     ("audit_logs", "agente", "TEXT"),
     ("audit_logs", "a_mando_de", "TEXT"),
+    # A VERSÃO DA FÓRMULA DO HASH DA CORRENTE, por linha (revisão de segurança,
+    # 26/10/2026): quem a escreve é o gatilho `cg_auditoria_encadear`. NULL é a
+    # fórmula de 22/10 (oito campos); 2 acrescenta `agente` e `a_mando_de` —
+    # assim as linhas de antes conferem pela velha e as de depois, pela nova.
+    ("audit_logs", "hash_versao", "INTEGER"),
 )
+
+#: Quem pode responder pelas ROTINAS automáticas (revisão de 26/10/2026): só
+#: quem administra a casa.
+PAPEIS_DAS_ROTINAS = ("ADMIN", "MANAGER")
+#: Quem pode responder por um ROBÔ: pessoa de qualquer papel, menos o AUDITOR —
+#: quem confere não manda.
+PAPEIS_QUE_NAO_RESPONDEM_POR_ROBO = ("AUDITOR",)
 
 #: A configuração «responsável pelas rotinas automáticas» (id de `users`).
 #: Vazia — ou apontando para quem não é pessoa ativa — vale o primeiro ADMIN
@@ -150,8 +169,9 @@ def _limpo(texto: Any) -> str | None:
 def responsavel_das_rotinas(con) -> dict | None:
     """Quem responde pelas rotinas automáticas: {"id", "nome", "configurado"}.
 
-    A configurada em `settings`, se for pessoa ativa (não robô); senão o
-    primeiro ADMIN ativo que não é robô. None só num banco sem ADMIN.
+    A configurada em `settings`, se for pessoa ativa (não robô) e ADMIN ou
+    MANAGER; senão o primeiro ADMIN ativo que não é robô. None só num banco
+    sem ADMIN.
     """
     bd = banco(con)
     if not bd.tem_tabela("users"):
@@ -162,7 +182,8 @@ def responsavel_das_rotinas(con) -> dict | None:
              if bd.tem_tabela("settings") else None)
     if str(valor or "").strip().isdigit():
         r = bd.um(f"SELECT id, username, full_name FROM users "
-                  f"WHERE id=%s AND active=1{pessoa}", (int(str(valor).strip()),))
+                  f"WHERE id=%s AND active=1 AND role IN ('ADMIN','MANAGER'){pessoa}",
+                  (int(str(valor).strip()),))
         if r:
             return {"id": int(r["id"]), "nome": _nome(r), "configurado": True}
     r = bd.um(f"SELECT id, username, full_name FROM users "
@@ -182,13 +203,17 @@ def nome_da_pessoa(con, user_id: Any) -> str | None:
     return _limpo(_nome(r)) if r else None
 
 
-def pessoas_que_podem_responder(con) -> list[dict]:
-    """As pessoas ativas (não robôs) — quem pode responder por um robô ou
-    pelas rotinas. Só lê."""
+def pessoas_que_podem_responder(con, por: str = "robo") -> list[dict]:
+    """Quem pode responder — `por="robo"` (pessoa ativa, menos AUDITOR) ou
+    `por="rotinas"` (ADMIN ou MANAGER ativo). Nunca um robô. Só lê."""
     bd = banco(con)
     pessoa = " AND COALESCE(eh_robo,0)=0" if bd.tem_coluna("users", "eh_robo") else ""
+    if por == "rotinas":
+        papel = " AND role IN ('ADMIN','MANAGER')"
+    else:
+        papel = " AND role <> 'AUDITOR'"
     return bd.ler(f"SELECT id, username, full_name, role FROM users "
-                  f"WHERE active=1{pessoa} ORDER BY full_name, id")
+                  f"WHERE active=1{papel}{pessoa} ORDER BY full_name, id")
 
 
 def definir_responsavel_do_robo(con, robo_id: int, responsavel_id: int | None) -> None:
@@ -207,25 +232,36 @@ def definir_responsavel_do_robo(con, robo_id: int, responsavel_id: int | None) -
             raise ValueError("Só conta de robô tem responsável: a pessoa responde por si.")
         if int(responsavel_id) == int(robo_id):
             raise ValueError("O robô não responde por si mesmo — escolha uma pessoa.")
-        resp = bd.um("SELECT id, active, COALESCE(eh_robo,0) AS eh_robo FROM users "
-                     "WHERE id=%s", (int(responsavel_id),))
-        if not resp or not int(resp["active"] or 0) or int(resp["eh_robo"] or 0):
-            raise ValueError("O responsável pelo robô tem de ser uma pessoa com "
-                             "cadastro ativo, e não outro robô.")
+        validar_responsavel_de_robo(bd, responsavel_id)
     bd.escrever("UPDATE users SET robo_responsavel_id=%s WHERE id=%s",
                 (int(responsavel_id) if responsavel_id is not None else None, int(robo_id)))
 
 
+def validar_responsavel_de_robo(con, user_id: int) -> None:
+    """Quem responde por um robô: pessoa ativa, não robô, e não AUDITOR."""
+    bd = banco(con)
+    resp = bd.um("SELECT id, active, role, COALESCE(eh_robo,0) AS eh_robo FROM users "
+                 "WHERE id=%s", (int(user_id),))
+    if not resp or not int(resp["active"] or 0) or int(resp["eh_robo"] or 0):
+        raise ValueError("O responsável pelo robô tem de ser uma pessoa com "
+                         "cadastro ativo, e não outro robô.")
+    if str(resp["role"] or "").upper() in PAPEIS_QUE_NAO_RESPONDEM_POR_ROBO:
+        raise ValueError("Quem tem o perfil AUDITOR confere, e não manda: "
+                         "escolha outra pessoa para responder pelo robô.")
+
+
 def validar_responsavel_das_rotinas(con, user_id: int | None) -> None:
-    """A configuração aceita vazio (vale o primeiro ADMIN) ou pessoa ativa."""
+    """A configuração aceita vazio (vale o primeiro ADMIN) ou ADMIN/MANAGER ativo."""
     if user_id is None:
         return
     bd = banco(con)
-    r = bd.um("SELECT active, COALESCE(eh_robo,0) AS eh_robo FROM users WHERE id=%s",
+    r = bd.um("SELECT active, role, COALESCE(eh_robo,0) AS eh_robo FROM users WHERE id=%s",
               (int(user_id),))
-    if not r or not int(r["active"] or 0) or int(r["eh_robo"] or 0):
+    if (not r or not int(r["active"] or 0) or int(r["eh_robo"] or 0)
+            or str(r["role"] or "").upper() not in PAPEIS_DAS_ROTINAS):
         raise ValueError("O responsável pelas rotinas automáticas tem de ser uma "
-                         "pessoa com cadastro ativo, e não um robô.")
+                         "pessoa com cadastro ativo e perfil ADMIN ou MANAGER, e "
+                         "não um robô.")
 
 
 # ------------------------------------------------------------ a identidade
@@ -240,6 +276,8 @@ def identidade(con, user_id: Any = None, *, agente: Any = None,
     - conta de pessoa com `agente=` declarado (o agente que age em nome de
       alguém): `a_mando_de` = o declarado, ou a própria pessoa;
     - conta de pessoa sem agente: a pessoa age por si; nada a preencher;
+    - sem conta e com `agente=AGENTE_SERVIDOR` sem mandante: EVENTO_DO_SERVIDOR
+      (o login recusado, a tela sem ninguém logado), que não é falta;
     - sem conta: o que foi declarado; sem nada, SEM_IDENTIFICACAO.
     """
     bd = banco(con)
@@ -277,6 +315,8 @@ def identidade(con, user_id: Any = None, *, agente: Any = None,
             return {"agente": agente, "a_mando_de": a_mando_de or _limpo(_nome(conta)),
                     "situacao": AGENTE}
         return {"agente": None, "a_mando_de": None, "situacao": PESSOA}
+    if agente == AGENTE_SERVIDOR and not a_mando_de:
+        return {"agente": agente, "a_mando_de": None, "situacao": EVENTO_DO_SERVIDOR}
     if agente:
         return {"agente": agente, "a_mando_de": a_mando_de,
                 "situacao": AGENTE if a_mando_de else AGENTE_SEM_MANDANTE}
@@ -339,6 +379,8 @@ def frase(agente: Any, a_mando_de: Any) -> str:
     agente, a_mando_de = _limpo(agente), _limpo(a_mando_de)
     if not agente:
         return ""
+    if agente == AGENTE_SERVIDOR and not a_mando_de:
+        return "registrado pelo próprio servidor (ninguém mandou)"
     if not a_mando_de:
         return f"praticado pelo agente {agente}, sem dizer a mando de quem"
     return f"praticado pelo agente {agente}, a mando de {a_mando_de}"
@@ -390,8 +432,8 @@ def conferencia(con, hoje: date | None = None, dias: int = DIAS_DO_AVISO) -> dic
     sem_mandante = bd.ler(
         """SELECT agente, count(*) AS n FROM audit_logs
             WHERE ts >= %s AND user_id IS NULL AND agente IS NOT NULL
-              AND a_mando_de IS NULL
-            GROUP BY agente ORDER BY count(*) DESC, agente""", (desde,))
+              AND a_mando_de IS NULL AND agente <> %s
+            GROUP BY agente ORDER BY count(*) DESC, agente""", (desde, AGENTE_SERVIDOR))
     robos: list[dict] = []
     if {"users.eh_robo", "users.robo_responsavel_id"} <= cols:
         for r in bd.ler(

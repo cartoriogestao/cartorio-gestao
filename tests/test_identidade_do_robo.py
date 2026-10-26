@@ -10,7 +10,12 @@ está agindo», sem «marca contra robô». Guarda-se:
 - o VARREDOR: nenhum `INSERT INTO audit_logs` do repositório fica fora da
   função da casa, e nenhum `db.log(None, ...)` grava sem dizer quem é;
 - a tela de usuários escolhe o responsável; a conferência do gestor avisa;
-- a corrente de hash continua fechando com as colunas novas.
+- a corrente de hash continua fechando com as colunas novas — e, desde a
+  revisão de segurança de 26/10/2026, `agente` e `a_mando_de` ENTRAM no hash
+  (fórmula 2, marcada por linha em `hash_versao`): mexer neles acusa, e a
+  linha de antes da migração continua conferindo pela fórmula de 22/10;
+- o login recusado é EVENTO DO SERVIDOR, sem mandante e sem aviso;
+- rotinas respondem por ADMIN/MANAGER; robô, por qualquer pessoa menos AUDITOR.
 
 Testes escritos e NÃO executados na máquina do balcão (sobrecarga, ordem do
 oficial de 26/10/2026); a suíte roda na máquina do merge. Nomes fictícios:
@@ -39,7 +44,7 @@ SENHA = "Senha#12345"
 
 def test_a_regra_avisar_ou_recusar_mora_num_lugar_so():
     assert IDR.MODO == IDR.MODO_AVISAR, "etapa 1: o banco só avisa"
-    for situacao in (IDR.PESSOA, IDR.ROBO, IDR.AGENTE):
+    for situacao in (IDR.PESSOA, IDR.ROBO, IDR.AGENTE, IDR.EVENTO_DO_SERVIDOR):
         assert IDR.decidir(situacao) == IDR.GRAVAR
         assert IDR.decidir(situacao, IDR.MODO_RECUSAR) == IDR.GRAVAR
     for situacao in IDR.EM_FALTA:
@@ -54,7 +59,7 @@ def test_a_migracao_so_acrescenta_coluna():
         assert "PRIMARY KEY" not in t and "UNIQUE" not in t
     assert {(t, c) for t, c, _ in IDR.MIGRACOES} == {
         ("users", "robo_responsavel_id"), ("audit_logs", "agente"),
-        ("audit_logs", "a_mando_de")}
+        ("audit_logs", "a_mando_de"), ("audit_logs", "hash_versao")}
 
 
 def test_a_frase_da_tela():
@@ -62,6 +67,7 @@ def test_a_frase_da_tela():
     assert IDR.frase("robo_exemplo", "BEATRIZ") == \
         "praticado pelo agente robo_exemplo, a mando de BEATRIZ"
     assert "sem dizer a mando de quem" in IDR.frase("robo_exemplo", None)
+    assert "próprio servidor" in IDR.frase(IDR.AGENTE_SERVIDOR, None)
 
 
 def test_o_modulo_nao_le_texto_procurando_robo():
@@ -124,7 +130,9 @@ def test_todo_insert_em_audit_logs_passa_pela_funcao_da_casa():
 
 
 def test_quem_grava_sem_usuario_pelo_db_log_diz_quem_e():
-    """`db.log(None, ...)` sem `agente=` é a linha que a etapa 2 vai recusar."""
+    """`db.log(None, ...)` sem `agente=` é a linha que a etapa 2 vai recusar.
+    `a_mando_de=` não se cobra aqui: o evento do servidor (login recusado) não
+    tem mandante, de propósito; a rotina sem mandante aparece na conferência."""
     achados = []
     for rel, texto in _fontes():
         try:
@@ -137,9 +145,9 @@ def test_quem_grava_sem_usuario_pelo_db_log_diz_quem_e():
                     and isinstance(no.args[0], ast.Constant) and no.args[0].value is None):
                 nomes = {k.arg for k in no.keywords}
                 tem_desembrulho = any(k.arg is None for k in no.keywords)
-                if not ({"agente", "a_mando_de"} <= nomes or tem_desembrulho):
+                if not ("agente" in nomes or tem_desembrulho):
                     achados.append(f"{rel}:{no.lineno}")
-    assert not achados, "db.log(None, ...) sem agente/a_mando_de: " + ", ".join(achados)
+    assert not achados, "db.log(None, ...) sem agente=: " + ", ".join(achados)
 
 
 # ------------------------------------------------------------- no banco
@@ -147,7 +155,7 @@ def test_quem_grava_sem_usuario_pelo_db_log_diz_quem_e():
 def _pessoas(db):
     mario = db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     beatriz = db.create_user("beatriz", "BEATRIZ EXEMPLO", SENHA, "USER")
-    carla = db.create_user("carla", "CARLA EXEMPLO", SENHA, "USER")
+    carla = db.create_user("carla", "CARLA EXEMPLO", SENHA, "MANAGER")
     robo = db.create_user("robo_exemplo", "Robo Exemplo", SENHA, "USER", eh_robo=1)
     return mario, beatriz, carla, robo
 
@@ -201,13 +209,18 @@ def test_o_responsavel_configurado_vale_e_robo_nao_responde(cg_casa):
     with db.connect() as con:
         r = IDR.responsavel_das_rotinas(con)
     assert r == {"id": carla, "nome": "CARLA EXEMPLO", "configurado": True}
-    # um robô gravado à mão na configuração não responde: volta o primeiro ADMIN
-    db.set_settings({IDR.CHAVE_RESPONSAVEL: str(robo)})
+    # um robô — ou um USER — gravado à mão na configuração não responde: volta
+    # o primeiro ADMIN (só ADMIN ou MANAGER responde pelas rotinas, 26/10)
+    for quem in (robo, beatriz):
+        db.set_settings({IDR.CHAVE_RESPONSAVEL: str(quem)})
+        with db.connect() as con:
+            r = IDR.responsavel_das_rotinas(con)
+            assert r["id"] == mario and not r["configurado"]
+            with pytest.raises(ValueError):
+                IDR.validar_responsavel_das_rotinas(con, quem)
     with db.connect() as con:
-        r = IDR.responsavel_das_rotinas(con)
-        assert r["id"] == mario and not r["configurado"]
-        with pytest.raises(ValueError):
-            IDR.validar_responsavel_das_rotinas(con, robo)
+        quem_pode = {p["id"] for p in IDR.pessoas_que_podem_responder(con, por="rotinas")}
+    assert quem_pode == {mario, carla}
 
 
 def test_conta_de_robo_sai_com_o_nome_dele_e_o_do_responsavel(cg_casa):
@@ -255,14 +268,19 @@ def test_o_responsavel_do_robo_e_pessoa_ativa(cg_casa):
     db = cg_casa["db"]
     mario, beatriz, carla, robo = _pessoas(db)
     outro = db.create_user("robo_dois", "Robo Dois", SENHA, "USER", eh_robo=1)
+    auditora = db.create_user("auditora", "AUDITORA EXEMPLO", SENHA, "AUDITOR")
+    with db.connect() as con:
+        quem_pode = {p["id"] for p in IDR.pessoas_que_podem_responder(con, por="robo")}
+    assert quem_pode == {mario, beatriz, carla}     # sem robô e sem AUDITOR
     db.set_user_active(carla, False)
     with db.transaction() as con:
-        for resp in (outro, carla, robo):
+        for resp in (outro, carla, robo, auditora):
             with pytest.raises(ValueError), banco(con).ponto_de_retorno("t_resp"):
                 IDR.definir_responsavel_do_robo(con, robo, resp)
         with pytest.raises(ValueError), banco(con).ponto_de_retorno("t_pessoa"):
             IDR.definir_responsavel_do_robo(con, beatriz, mario)  # pessoa responde por si
         IDR.definir_responsavel_do_robo(con, robo, mario)
+        IDR.definir_responsavel_do_robo(con, robo, beatriz)       # USER responde
         IDR.definir_responsavel_do_robo(con, robo, None)          # limpar vale
 
 
@@ -286,11 +304,60 @@ def test_a_corrente_de_hash_fecha_com_as_colunas_novas(cg_casa):
     db.log(None, "SISTEMA", "CADEIA_COM_AGENTE", "TESTE", None, {"y": 1},
            agente="rotina", a_mando_de=IDR.PELO_RESPONSAVEL)
     with db.connect() as con:
-        linhas = banco(con).ler(
-            """SELECT id, ts, user_id, username_snapshot, action, entity_type, entity_id,
-                      details, ip_address, hash_anterior, hash_linha
-                 FROM audit_logs ORDER BY id""")
+        linhas = banco(con).ler("SELECT * FROM audit_logs ORDER BY id")
     assert AC.divergencias(linhas) == []
+    nova = [l for l in linhas if l["action"] == "CADEIA_COM_AGENTE"][0]
+    assert nova["hash_versao"] == 2, "o gatilho marca a fórmula nova"
+    assert AC.hash_da_linha(nova, nova["hash_anterior"]) == nova["hash_linha"]
+
+
+def test_mexer_no_mandante_a_mao_e_acusado(cg_casa):
+    """Revisão de segurança, 26/10/2026: `a_mando_de` entra no hash."""
+    import auditoria_cadeia as AC
+    db = cg_casa["db"]
+    _pessoas(db)
+    db.log(None, "SISTEMA", "MANDANTE_ORIGINAL", "TESTE", None, None,
+           agente="rotina", a_mando_de=IDR.PELO_RESPONSAVEL)
+    db.log(None, "SISTEMA", "DEPOIS_DO_MANDANTE", "TESTE", None, None,
+           agente="rotina", a_mando_de=IDR.PELO_RESPONSAVEL)
+    with db.connect() as con:
+        bd = banco(con)
+        bd.escrever("UPDATE audit_logs SET a_mando_de=%s WHERE action=%s",
+                    ("CARLA EXEMPLO", "MANDANTE_ORIGINAL"))
+        con.commit()
+        linhas = bd.ler("SELECT * FROM audit_logs ORDER BY id")
+    fora = AC.divergencias(linhas)
+    assert [(f["action"], f["motivo"]) for f in fora] == [
+        ("MANDANTE_ORIGINAL", "conteúdo mudou")]
+
+
+def test_a_linha_velha_continua_conferindo_pela_formula_de_22_10():
+    """Sem `hash_versao` (as linhas de antes da migração) vale a fórmula velha;
+    a corrente atravessa a troca sem acusar nada."""
+    import auditoria_cadeia as AC
+
+    def linha(i, anterior, **k):
+        l = {"id": i, "ts": f"2026-10-26T10:0{i}:00", "user_id": None,
+             "username_snapshot": "SISTEMA", "action": f"A{i}", "entity_type": "T",
+             "entity_id": None, "details": "{}", "ip_address": None,
+             "hash_anterior": anterior}
+        l.update(k)
+        l["hash_linha"] = AC.hash_da_linha(l, anterior)
+        return l
+
+    velha = linha(1, None)                                   # sem hash_versao
+    assert AC.versao_da_linha(velha) == 1
+    nova = linha(2, velha["hash_linha"], hash_versao=2, agente="rotina",
+                 a_mando_de="MARIO EXEMPLO DOS SANTOS")
+    sem_agente = linha(3, nova["hash_linha"], hash_versao=2)
+    assert AC.divergencias([velha, nova, sem_agente]) == []
+    # a fórmula 2 não é a 1: o agente pesa, e apagar a versão também acusa
+    trocada = dict(nova, a_mando_de="CARLA EXEMPLO")
+    assert [f["motivo"] for f in AC.divergencias([velha, trocada, sem_agente])] == [
+        "conteúdo mudou"]
+    rebaixada = dict(sem_agente, hash_versao=None)
+    assert [f["motivo"] for f in AC.divergencias([velha, nova, rebaixada])] == [
+        "conteúdo mudou"]
 
 
 def test_login_recusado_e_gravado_pelo_servidor(cg_casa):
@@ -303,8 +370,13 @@ def test_login_recusado_e_gravado_pelo_servidor(cg_casa):
             "SELECT * FROM audit_logs WHERE user_id IS NULL AND action ILIKE %s "
             "ORDER BY id DESC LIMIT 1", ("%LOGIN%",))
     assert linha is not None
+    # EVENTO DO SERVIDOR (revisão de 26/10): ninguém mandou um login falhar
     assert linha["agente"] == IDR.AGENTE_SERVIDOR
-    assert linha["a_mando_de"] == "MARIO EXEMPLO DOS SANTOS"
+    assert linha["a_mando_de"] is None
+    with db.connect() as con:
+        c = IDR.conferencia(con, date.today())
+    assert not any(s["action"] == linha["action"] for s in c["sem_identificacao"])
+    assert not any(s["agente"] == IDR.AGENTE_SERVIDOR for s in c["agentes_sem_mandante"])
 
 
 def test_o_robo_logado_pratica_com_a_identidade_da_conta(cg_casa):
@@ -361,8 +433,14 @@ def test_a_tela_de_usuarios_recusa_robo_como_responsavel(cg_casa_logada):
 
 def test_a_tela_grava_o_responsavel_pelas_rotinas(cg_casa_logada):
     db, c = cg_casa_logada["db"], cg_casa_logada["c"]
-    carla = db.create_user("carla", "CARLA EXEMPLO", SENHA, "USER")
+    beatriz = db.create_user("beatriz", "BEATRIZ EXEMPLO", SENHA, "USER")
+    carla = db.create_user("carla", "CARLA EXEMPLO", SENHA, "MANAGER")
     tela = c.get("/usuarios").get_data(as_text=True)
+    # USER não responde pelas rotinas (revisão de 26/10): recusa e nada grava
+    c.post("/usuarios", data={"csrf_token": _token(tela),
+                              "action": "responsavel_rotinas",
+                              "responsavel_rotinas": str(beatriz)})
+    assert db.get_setting(IDR.CHAVE_RESPONSAVEL, "") == ""
     c.post("/usuarios", data={"csrf_token": _token(tela),
                               "action": "responsavel_rotinas",
                               "responsavel_rotinas": str(carla)})

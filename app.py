@@ -444,10 +444,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     def audit(action: str, entity_type: str | None = None, entity_id: int | None = None, details=None):
         user = current_user()
         # QUEM GRAVA SEM NINGUEM LOGADO E O PROPRIO SERVIDOR (26/10/2026, ordem
-        # do oficial: todo robo diz quem e e a mando de quem age). Com conta de
-        # robo, a identidade sai da conta (`identidade_do_robo.registrar`).
-        ident = {} if user else {"agente": IDR.AGENTE_SERVIDOR,
-                                 "a_mando_de": IDR.PELO_RESPONSAVEL}
+        # do oficial: todo robo diz quem e e a mando de quem age). E um EVENTO
+        # DO SERVIDOR: sem mandante, porque ninguem mandou a requisicao
+        # anonima (revisao de seguranca, 26/10). Com conta de robo, a
+        # identidade sai da conta (`identidade_do_robo.registrar`).
+        ident = {} if user else {"agente": IDR.AGENTE_SERVIDOR}
         db.log(user["id"] if user else None, user["username"] if user else None, action, entity_type, entity_id, details, request.remote_addr if request else None, **ident)
 
     def login_required(view):
@@ -1096,7 +1097,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     # Em espera, a senha nem é conferida — e a tentativa não conta.
                     db.log(None, rastro, LESP.EM_ESPERA, "SESSION", None,
                            LESP.detalhes(chave, ate=fim.isoformat()), ip,
-                           agente=IDR.AGENTE_SERVIDOR, a_mando_de=IDR.PELO_RESPONSAVEL)
+                           agente=IDR.AGENTE_SERVIDOR)   # evento: ninguém mandou
                     row = None
                 else:
                     # `authenticate` gasta o mesmo PBKDF2 para o usuário que
@@ -1108,7 +1109,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                         # carga a espera fica mais branda, nunca mais dura.
                         db.log(None, rastro, LESP.FALHA, "SESSION", None,
                                LESP.detalhes(chave), ip,
-                               agente=IDR.AGENTE_SERVIDOR, a_mando_de=IDR.PELO_RESPONSAVEL)
+                               agente=IDR.AGENTE_SERVIDOR)   # evento: ninguém mandou
                         depois = LESP.espera(con, chave, ip, uid_alvo)
             if fim:
                 flash(LESP.recado(fim), "danger")
@@ -2165,7 +2166,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                         resp_id = parse_int(request.form.get("robo_responsavel_id"))
                         if request.form.get("eh_robo") == "1" and resp_id:
                             with db.connect() as con:
-                                IDR.validar_responsavel_das_rotinas(con, resp_id)
+                                IDR.validar_responsavel_de_robo(con, resp_id)
                         uid = db.create_user(request.form.get("username", ""), request.form.get("full_name", ""), password, request.form.get("role", "USER"), int(current_user()["id"]), eh_robo=1 if request.form.get("eh_robo") == "1" else 0)
                         audit("USER_CREATED", "USER", uid)
                         criado = db.get_user(uid)
@@ -2243,8 +2244,9 @@ def create_app(test_config: dict | None = None) -> Flask:
                         flash("Marca de robô atualizada.", "success")
             elif action == "responsavel_rotinas":
                 # QUEM RESPONDE PELAS ROTINAS AUTOMATICAS (26/10/2026): backup,
-                # CNIB, malote, envio a CENSEC, scripts. Vazio = o primeiro ADMIN
-                # ativo que nao e robo.
+                # CNIB, malote, envio a CENSEC, scripts. So ADMIN ou MANAGER
+                # (revisao de seguranca, 26/10). Vazio = o primeiro ADMIN ativo
+                # que nao e robo.
                 resp_id = parse_int(request.form.get("responsavel_rotinas"))
                 try:
                     with db.connect() as con:
@@ -2328,13 +2330,15 @@ def create_app(test_config: dict | None = None) -> Flask:
             em_espera = LESP.em_espera_na_casa(con, linhas, secret_key)
             # A IDENTIDADE DOS ROBOS (26/10/2026): quem pode responder, quem
             # responde pelas rotinas, e o aviso do que grava sem dizer quem e.
-            pessoas = IDR.pessoas_que_podem_responder(con)
+            pessoas = IDR.pessoas_que_podem_responder(con, por="robo")
+            pessoas_rotinas = IDR.pessoas_que_podem_responder(con, por="rotinas")
             resp_rotinas = IDR.responsavel_das_rotinas(con)
             identidade = IDR.conferencia(con)
         return render_template(
             "users.html", rows=linhas, roles=ROLES, em_espera=em_espera,
             funcoes=json_list(db.get_setting("funcoes_cargos", ""), list(FUNCOES)),
-            pessoas=pessoas, resp_rotinas=resp_rotinas, identidade=identidade)
+            pessoas=pessoas, pessoas_rotinas=pessoas_rotinas,
+            resp_rotinas=resp_rotinas, identidade=identidade)
 
     @app.route("/saude")
     def health():
@@ -2617,7 +2621,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     @roles_required("ADMIN", "AUDITOR")
     def audit_logs():
-        return render_template("audit.html", rows=db.list_logs(2000))
+        return render_template("audit.html", rows=db.list_logs(2000),
+                               agente_servidor=IDR.AGENTE_SERVIDOR)
 
     @app.route("/configuracoes", methods=["GET", "POST"])
     @login_required

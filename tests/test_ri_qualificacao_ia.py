@@ -540,3 +540,77 @@ def test_o_robo_nao_pede_nao_le_e_nao_leva(casa, monkeypatch):
     n = con.execute("SELECT COUNT(*) FROM ri_qualificacao_ia").fetchone()[0]
     con.close()
     assert n == 0
+
+
+# ------------------------------------------------------------- quem pode pedir
+
+
+@pytest.mark.parametrize("papel", ["USER", "MANAGER"])
+def test_todo_humano_que_pratica_ato_pede_a_qualificacao(casa, monkeypatch, papel):
+    """DECISÃO DO OFICIAL EM 26/10/2026, «todos podem»: o escrevente (USER) e
+    o gerente (MANAGER) pedem a qualificação assistida e veem o botão, como o
+    ADMIN. A régua é a da casa (`seguranca_web.PRATICA`)."""
+    import ri_qualificacao_ia_web as QWEB
+    import seguranca_web as SEGWEB
+    from conftest import cg_login
+    assert set(QWEB.PAPEIS_QUE_PEDEM) == {"ADMIN", "MANAGER", "USER"}
+    assert tuple(QWEB.PAPEIS_QUE_PEDEM) == tuple(SEGWEB.PRATICA)
+    monkeypatch.setattr(AP, "tem_chave", lambda *a, **k: True)
+    comecados = []
+    monkeypatch.setattr(QIA, "preparar_em_segundo_plano",
+                        lambda banco, pasta, pid: comecados.append(pid))
+    _, pid = _prenotacao(casa)
+    escritura, itbi = _titulo_e_itbi(casa, pid)
+    casa["db"].create_user("beatriz", "BEATRIZ EXEMPLO", "Senha#12345", papel)
+    c = casa["app"].test_client()
+    cg_login(c, "beatriz", "Senha#12345")
+    # leva à nota: o botão aparece no rascunho pronto
+    pedido = _pedir_e_executar(casa, pid, [escritura, itbi], IA())
+    pagina = c.get(f"/registro-imoveis/qualificacao-ia/{pedido}").get_data(as_text=True)
+    assert "Levar para a nota devolutiva" in pagina
+    # e pede uma qualificação nova pela tela da nota
+    html = c.get(f"/registro-imoveis/protocolo/{pid}/nota").get_data(as_text=True)
+    assert "Pedir a qualificação assistida" in html
+    r = c.post(f"/registro-imoveis/protocolo/{pid}/qualificacao-ia/pedir", data={
+        "csrf_token": _token(html), "anexo": [str(escritura), str(itbi)],
+        "especie": "R-COMPRA-VENDA"})
+    assert r.status_code == 302
+    con = _con(casa)
+    linha = con.execute("SELECT * FROM ri_qualificacao_ia WHERE protocolo_id = ? "
+                        "ORDER BY id DESC", (pid,)).fetchone()
+    con.close()
+    assert linha and linha["id"] != pedido and comecados == [linha["id"]]
+    assert "BEATRIZ" in (linha["pedido_por"] or "")
+
+
+def test_o_auditor_le_o_rascunho_mas_nao_pede_nem_leva(casa, monkeypatch):
+    """O AUDITOR só lê (decisão de 26/10/2026): vê o rascunho, sem o botão de
+    levar; pedir e levar respondem 403 e nada é gravado."""
+    from conftest import cg_login
+    monkeypatch.setattr(AP, "tem_chave", lambda *a, **k: True)
+    comecados = []
+    monkeypatch.setattr(QIA, "preparar_em_segundo_plano",
+                        lambda banco, pasta, pid: comecados.append(pid))
+    _, pid = _prenotacao(casa)
+    escritura, itbi = _titulo_e_itbi(casa, pid)
+    pedido = _pedir_e_executar(casa, pid, [escritura, itbi], IA())
+    casa["db"].create_user("carla", "CARLA EXEMPLO", "Senha#12345", "AUDITOR")
+    c = casa["app"].test_client()
+    cg_login(c, "carla", "Senha#12345")
+    pagina = c.get(f"/registro-imoveis/qualificacao-ia/{pedido}")
+    assert pagina.status_code == 200
+    texto = pagina.get_data(as_text=True)
+    assert "Levar para a nota devolutiva" not in texto
+    tok = _token(c.get("/").get_data(as_text=True))
+    r = c.post(f"/registro-imoveis/protocolo/{pid}/qualificacao-ia/pedir", data={
+        "csrf_token": tok, "anexo": [str(escritura), str(itbi)]})
+    assert r.status_code == 403 and comecados == []
+    r = c.post(f"/registro-imoveis/qualificacao-ia/{pedido}/levar", data={
+        "csrf_token": tok, "escolhida": ["0"], "texto_0": "x"})
+    assert r.status_code == 403
+    con = _con(casa)
+    n = con.execute("SELECT COUNT(*) FROM ri_qualificacao_ia").fetchone()[0]
+    levado = con.execute("SELECT levado_em, nota_id FROM ri_qualificacao_ia WHERE id = ?",
+                         (pedido,)).fetchone()
+    con.close()
+    assert n == 1 and levado["levado_em"] is None and levado["nota_id"] is None

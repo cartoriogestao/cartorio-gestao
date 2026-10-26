@@ -13,10 +13,18 @@ from pathlib import Path
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 
 import ri_qualificacao_ia as QIA
+import seguranca_web as SEGWEB
 from bd_nativo import banco
 
-#: Quem pode pedir e levar à nota: os mesmos papéis da rota da nota devolutiva.
-PAPEIS_QUE_PEDEM = ("ADMIN", "MANAGER", "USER")
+#: Quem pode pedir e levar à nota — DECISÃO DO OFICIAL EM 26/10/2026, «todos
+#: podem»: todo usuário humano que pratica ato (ADMIN, MANAGER e USER), os
+#: mesmos papéis da rota da nota devolutiva. Fora ficam o AUDITOR, que só lê
+#: (vê o rascunho, não pede nem leva), e o robô, cuja conta é recusada antes
+#: de chegar aqui (`selo_robo.ROTAS_VEDADAS_AO_ROBO`, prefixo
+#: `ri_qualificacao_ia`). A régua é a da casa (`seguranca_web.PRATICA`), e não
+#: uma lista escrita de novo: as duas divergiriam no primeiro conserto. As
+#: telas leem esta mesma tupla para mostrar ou esconder os botões.
+PAPEIS_QUE_PEDEM = tuple(SEGWEB.PRATICA)
 
 #: A tela que mostra o quadro (e recebe o preenchimento).
 TELA_DA_NOTA = "ri_nota_devolutiva"
@@ -50,6 +58,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          "historico": QIA.historico(con, protocolo_id),
                          "preenche": QIA.preenchimento(
                              con, request.args.get("qualificacao"), protocolo_id),
+                         "papeis": PAPEIS_QUE_PEDEM,
                          "modelo": QIA.MODELO, "esforco": QIA.ESFORCO,
                          "maximo": QIA.MAXIMO_DE_DOCUMENTOS,
                          "limite_mb": QIA.LIMITE_DOS_DOCUMENTOS // 1048576}
@@ -118,7 +127,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         linhas = [QIA.linha_da_exigencia(x)
                   for x in (p["resultado"] or {}).get("exigencias") or []]
         return render_template("ri_qualificacao_ia.html", p=p, linhas=linhas,
-                               prenotacao_numero=prenot or "")
+                               prenotacao_numero=prenot or "",
+                               papeis_que_pedem=PAPEIS_QUE_PEDEM)
 
     @app.route("/registro-imoveis/qualificacao-ia/<int:pedido_id>/levar", methods=["POST"])
     @roles_required(*PAPEIS_QUE_PEDEM)

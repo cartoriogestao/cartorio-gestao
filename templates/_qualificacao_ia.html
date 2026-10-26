@@ -62,7 +62,7 @@
       </div>
     {% endfor %}
 
-    {% if qa.cabe and not qa.bloqueio and not qa.andamento and user.role in ['ADMIN','MANAGER','USER'] %}
+    {% if qa.cabe and not qa.bloqueio and not qa.andamento and user.role in qa.papeis %}
     <details {% if not qa.historico %}open{% endif %} style="margin-top:10px">
       <summary><strong>{% if qa.historico %}Pedir uma qualificação assistida nova{% else %}Pedir a qualificação assistida{% endif %}</strong></summary>
       <form method="post" class="form-grid" style="margin-top:8px"

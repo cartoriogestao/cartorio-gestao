@@ -60,7 +60,7 @@
           <textarea name="texto_{{ loop.index0 }}" rows="2">{{ linhas[loop.index0] }}</textarea></label>
       </div>
       {% endfor %}
-      {% if p.situacao == 'PRONTA' and not p.nota_id and user.role in ['ADMIN','MANAGER','USER'] %}
+      {% if p.situacao == 'PRONTA' and not p.nota_id and user.role in papeis_que_pedem %}
       <button class="primary">Levar para a nota devolutiva</button>
       <span class="small muted">Preenche o formulário da nota com as marcadas; a nota só existe depois do botão «Emitir» de lá.</span>
       {% endif %}

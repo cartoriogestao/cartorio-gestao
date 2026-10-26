@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block title %}Carnê-leão — livro-caixa{% endblock %}
+{% block heading %}<h1>Carnê-leão e livro-caixa do titular — {{ mes[5:7] }}/{{ mes[:4] }}</h1>{% endblock %}
+{% block content %}
+{# SÓ DO ADMIN: é o imposto de renda pessoal do delegatário. Nada aqui é
+   regra fiscal conferida em norma desta casa — a tela diz isso no alto. #}
+<div class="actions">
+  <a class="button" href="{{ url_for('carne_leao_exportar', mes=mes) }}">Baixar o livro-caixa do mês (CSV)</a>
+  <a class="button" href="{{ url_for('carne_leao_configuracao') }}">Configuração e tabela progressiva</a>
+  <a class="button" href="{{ url_for('livro_diario', mes=mes) }}">Livro Diário do mês</a>
+</div>
+<form method="get" class="filters"><label>Mês <input type="month" name="mes" value="{{ mes }}"></label><button type="submit">Ver</button></form>
+
+<section class="panel">
+  <p class="small"><strong>O que esta conta é, e o que ela não é.</strong> A apuração é no regime de caixa — o que
+    entrou e o que foi pago no mês. {{ aviso_lista }} A tabela progressiva é a que o oficial cadastrou, com a fonte.
+    {{ aviso_leiaute }}</p>
+  {% if not cfg.carne_leao_lista_conferida %}<p class="badge alta">A lista de dedutíveis ainda não foi conferida com o contador.</p>
+  {% else %}<p class="small muted">Lista de dedutíveis: {{ cfg.carne_leao_lista_conferida }}</p>{% endif %}
+  {% if prazo %}<p>Próximo prazo cadastrado: <strong>{{ prazo[0].strftime('%d/%m/%Y') }}</strong> ({{ prazo[1] }}).</p>
+  {% else %}<p class="small muted">O prazo do carnê-leão não está cadastrado: ele continua como pergunta na agenda do oficial.
+    Cadastre a regra, com a fonte, na configuração.</p>{% endif %}
+</section>
+
+<section class="panel"><h2>O mês em números</h2>
+  <div class="table-wrap"><table>
+    <tbody>
+      <tr><td>Receita no regime de caixa</td><td><strong>R$ {{ reais(a.receita) }}</strong></td></tr>
+      <tr><td>— recebida no caixa (só o emolumento)</td><td>R$ {{ reais(a.caixa) }}</td></tr>
+      <tr><td>— depósito prévio, contado {{ 'no uso' if a.modo_deposito == 'NO_USO' else 'no recebimento' }}</td><td>R$ {{ reais(a.deposito_na_conta) }}</td></tr>
+      <tr><td>— lançamentos avulsos</td><td>R$ {{ reais(a.avulsas) }}</td></tr>
+      <tr><td>Despesas dedutíveis pagas</td><td>R$ {{ reais(a.dedutiveis) }}</td></tr>
+      <tr><td>Despesas marcadas como não dedutíveis</td><td>R$ {{ reais(a.nao_dedutiveis) }}</td></tr>
+      <tr><td>Despesas ainda sem marcação (não deduzidas)</td><td>R$ {{ reais(a.a_classificar) }}</td></tr>
+      <tr><td><strong>Base do mês</strong></td><td><strong>R$ {{ reais(a.base) }}</strong></td></tr>
+      {% if a.excesso %}<tr><td>Excesso de despesas sobre a receita</td><td>R$ {{ reais(a.excesso) }} <span class="small muted">— não é levado sozinho ao mês seguinte: a conferir com o contador</span></td></tr>{% endif %}
+      <tr><td><strong>Imposto pela tabela cadastrada</strong></td><td>
+        {% if a.imposto is none %}<span class="badge alta">não calculado — sem tabela cadastrada para o mês</span>
+        {% else %}<strong>R$ {{ reais(a.imposto) }}</strong>
+          <span class="small muted">— «{{ a.tabela.descricao }}» (vigência desde {{ a.tabela.vigencia_inicio }}), faixa {{ a.calculo.faixa }},
+            alíquota {{ percentual(a.calculo.aliquota_bp) }}%, parcela a deduzir R$ {{ reais(a.calculo.deduzir) }}. Fonte: {{ a.tabela.fonte }}</span>{% endif %}</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Outras deduções (dependentes, pensão, previdência do titular) e o DARF ficam no Carnê-Leão Web:
+    este número é só o do livro-caixa.</p>
+  {% if a.avisos %}<ul>{% for x in a.avisos %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+</section>
+
+<section class="panel"><h2>As duas receitas: pelo selo e pelo caixa</h2>
+  <p class="small">O Livro Diário lança a receita pelo selo, no dia do ato (competência). O livro-caixa do imposto conta
+    o que entrou no mês. As duas mudam de mês no depósito prévio (o dinheiro entra antes do ato) e no emolumento
+    diferido (o ato sai no mês e o dinheiro entra depois).</p>
+  <div class="table-wrap"><table>
+    <tbody>
+      <tr><td>Receita pelo selo (Livro Diário, emolumentos dos {{ a.selo.atos }} selo(s) do mês)</td><td>R$ {{ reais(a.selo.receita) }}</td></tr>
+      <tr><td>Receita no regime de caixa (acima)</td><td>R$ {{ reais(a.receita) }}</td></tr>
+      <tr><td>Diferença</td><td>R$ {{ reais(a.receita - a.selo.receita) }}</td></tr>
+      <tr><td>Selos diferidos no mês (fora da receita pelo selo; entram no caixa quando pagos)</td><td>{{ a.selo.diferidos }}</td></tr>
+      <tr><td>Depósito prévio recebido no mês</td><td>R$ {{ reais(a.deposito.recebido) }}</td></tr>
+      <tr><td>Depósito prévio convertido no mês (ato praticado)</td><td>R$ {{ reais(a.deposito.convertido) }}</td></tr>
+      <tr><td>Depósito prévio devolvido no mês</td><td>R$ {{ reais(a.deposito.devolvido) }}</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">O depósito prévio conta: {{ modos[a.modo_deposito] }}. A outra forma está na configuração — a escolha é do contador.</p>
+</section>
+
+<section class="panel"><h2>Receitas do mês</h2>
+  {% if a.receitas %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Dia</th><th>Origem</th><th>Descrição</th><th>Valor</th><th>Observação</th><th></th></tr></thead>
+    <tbody>{% for r in a.receitas %}<tr><td>{{ r.dia }}</td><td>{{ r.origem }}</td><td>{{ r.descricao }}{% if r.documento %} — {{ r.documento }}{% endif %}</td>
+      <td>R$ {{ reais(r.valor) }}</td><td class="small">{% if r.sem_discriminacao %}R$ {{ reais(r.sem_discriminacao) }} sem separação dos fundos{% endif %}</td>
+      <td>{% if r.origem == 'Avulso' %}<form method="post" action="{{ url_for('carne_leao_anular', lancamento_id=r.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="mes" value="{{ mes }}">
+        <input name="motivo" placeholder="motivo da anulação" size="18" required><button type="submit">Anular</button></form>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="muted">Nada recebido neste mês.</p>{% endif %}
+  {% if a.outras_entradas %}<p class="small">Fora da conta («outra entrada» do caixa — o contador diz se é receita):</p>
+  <ul class="small">{% for o in a.outras_entradas %}<li>{{ o.dia }} — {{ o.descricao }} — R$ {{ reais(o.valor) }}</li>{% endfor %}</ul>{% endif %}
+</section>
+
+<section class="panel" id="despesas"><h2>Despesas pagas no mês</h2>
+  <p class="small muted">As do Livro Diário (no dia do pagamento), que já incluem as despesas conferidas no extrato.
+    Guia de fundo não chega aqui: fundo não é despesa. A sugestão vem da categoria da despesa e é só sugestão.</p>
+  {% if a.despesas %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Dia</th><th>Descrição</th><th>Documento</th><th>Valor</th><th>Sugestão</th><th>Marcação</th></tr></thead>
+    <tbody>{% for d in a.despesas %}<tr>
+      <td>{{ d.dia }}</td><td>{{ d.descricao }}{% if d.origem == 'Avulso' %} <span class="small muted">(avulso)</span>{% endif %}</td><td>{{ d.documento }}</td><td>R$ {{ reais(d.valor) }}</td>
+      <td class="small">{% if d.sugerida %}{{ categorias[d.sugerida][0] }} — {{ {True: 'dedutível', False: 'não dedutível', None: 'sem sugestão'}[d.sugere_dedutivel] }}{% else %}—{% endif %}</td>
+      <td>{% if d.origem == 'Avulso' %}{{ categorias[d.categoria_fiscal][0] if d.categoria_fiscal in categorias else '—' }} — {{ 'dedutível' if d.dedutivel else 'não dedutível' }}
+        {% else %}{% if d.dedutivel is not none %}<span class="small">{{ categorias[d.categoria_fiscal][0] if d.categoria_fiscal in categorias else d.categoria_fiscal }} — <strong>{{ 'dedutível' if d.dedutivel else 'não dedutível' }}</strong> ({{ d.marcado_por }})</span>{% else %}<span class="badge alta">a classificar</span>{% endif %}
+        <form method="post" action="{{ url_for('carne_leao_marcar', ld_despesa_id=d.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="mes" value="{{ mes }}">
+          <select name="categoria_fiscal">{% for k, v in categorias.items() %}<option value="{{ k }}" {% if k == (d.categoria_fiscal or d.sugerida) %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}</select>
+          <select name="dedutivel"><option value="1" {% if d.dedutivel or (d.dedutivel is none and d.sugere_dedutivel) %}selected{% endif %}>dedutível</option>
+            <option value="0" {% if d.dedutivel is sameas false or (d.dedutivel is none and d.sugere_dedutivel is sameas false) %}selected{% endif %}>não dedutível</option></select>
+          <button type="submit">Marcar</button></form>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="muted">Nenhuma despesa paga neste mês.</p>{% endif %}
+</section>
+
+<section class="panel" id="avulso"><h2>Lançar no livro-caixa o que ficou fora do sistema</h2>
+  <p class="small muted">Receita recebida fora do caixa (ressarcimento de gratuidade, por exemplo) ou despesa paga sem passar
+    pelo Livro Diário. Não se edita nem se apaga: anula-se com o motivo.</p>
+  <form method="post" action="{{ url_for('carne_leao_lancar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="mes" value="{{ mes }}">
+    <label>Tipo <select name="tipo"><option value="RECEITA">Receita</option><option value="DESPESA">Despesa</option></select></label>
+    <label>Data <input type="date" name="data" max="{{ hoje }}" required></label>
+    <label>Descrição <input name="descricao" size="40" required></label>
+    <label>Documento <input name="documento" size="20"></label>
+    <label>Valor (R$) <input name="valor" size="12" required></label>
+    <label>Categoria fiscal (despesa) <select name="categoria_fiscal"><option value="">—</option>{% for k, v in categorias.items() %}<option value="{{ k }}">{{ v[0] }}</option>{% endfor %}</select></label>
+    <label>Dedutível (despesa) <select name="dedutivel"><option value="0">não</option><option value="1">sim</option></select></label>
+    <button type="submit">Lançar</button>
+  </form>
+</section>
+
+<section class="panel"><h2>O ano de {{ mes[:4] }}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Mês</th><th>Receita (caixa)</th><th>Receita (selo)</th><th>Dedutíveis</th><th>Sem marcação</th><th>Base</th><th>Imposto</th></tr></thead>
+    <tbody>{% for m in ano %}<tr><td><a href="{{ url_for('carne_leao', mes=m.competencia) }}">{{ m.competencia[5:7] }}/{{ m.competencia[:4] }}</a></td>
+      <td>R$ {{ reais(m.receita) }}</td><td>R$ {{ reais(m.selo) }}</td><td>R$ {{ reais(m.dedutiveis) }}</td><td>R$ {{ reais(m.a_classificar) }}</td>
+      <td>R$ {{ reais(m.base) }}</td><td>{% if m.imposto is none %}sem tabela{% else %}R$ {{ reais(m.imposto) }}{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}

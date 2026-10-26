@@ -815,7 +815,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 int(i["dedo"]): dict(i)
                 for i in CB.imagens_do_cadastro(con_bio, cartao_id)
                 if i["especie"] == CB.ESPECIE_DIGITAL and i["dedo"] is not None}
+            ciencia_bio = CB.ciencia(con_bio, cartao_id)
         return render_template("notas_cartao.html", c=dados, imagens=imagens,
+                               ciencia_bio=ciencia_bio,
+                               texto_da_ciencia=LD.TEXTO_DA_CIENCIA,
+                               base_legal=LD.BASE_LEGAL,
+                               ve_a_digital=usuario_papel() in QUEM_VE_A_DIGITAL,
                                avisos=NP.avisos_do_cartao(dados), recentes=recentes,
                                atos=atos, total_rec=total_rec,
                                faltando=NP.campos_faltantes(dados, "ATO"),
@@ -935,10 +940,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         mimetype="application/javascript",
                         headers={"Cache-Control": "private, max-age=3600"})
 
+    # QUEM VE A IMAGEM DA DIGITAL — correcao de seguranca de 26/10/2026
+    # (revisao do PR #31). A imagem e o dado biometrico inteiro (nao e
+    # template, nao e hash: e reversivel por definicao), e o AUDITOR a lia como
+    # le a auditoria. Agora so quem colhe e confere no balcao a ve; a ficha do
+    # AUDITOR diz «digital colhida em <data>», sem a imagem. E cada vez que a
+    # imagem sai, fica na auditoria — o precedente e o ATTACHMENT_VIEWED.
+    QUEM_VE_A_DIGITAL = ("ADMIN", "MANAGER", "USER")
+
     @app.route("/notas/cartoes/<int:cartao_id>/digital/<int:dedo>")
-    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    @roles_required(*QUEM_VE_A_DIGITAL)
     def notas_cartao_digital(cartao_id, dedo):
-        """A digital de um dedo, como está no disco. **SÓ LÊ.**"""
+        """A digital de um dedo, como está no disco. **SÓ LÊ** (e anota na
+        auditoria que a imagem foi vista — o fato, nunca a imagem)."""
         try:
             with db.connect() as con:
                 imgs = CB.imagens_do_cadastro(con, cartao_id)
@@ -952,8 +966,39 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         caminho = Path(achada["caminho"])
         if not _e_arquivo(caminho):
             abort(404)
+        audit("NT_CADASTRO_DIGITAL_VISTA", "NT_CARTAO", cartao_id,
+              {"dedo": int(dedo)})
         return Response(caminho.read_bytes(), mimetype="image/png",
-                        headers={"Cache-Control": "private, no-cache"})
+                        headers={"Cache-Control": "private, no-store"})
+
+    @app.route("/notas/cartoes/<int:cartao_id>/biometria/ciencia", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def notas_cartao_biometria_ciencia(cartao_id):
+        """Registra que a finalidade da coleta foi lida para a pessoa e que ela
+        concordou. **ESCREVE** só a marca do cartão.
+
+        Correcao de seguranca de 26/10/2026 (revisao do PR #31): a tela
+        mostrava a finalidade e nada guardava. A caixa e obrigatoria — marcar
+        e o ato de quem esta no balcao com a pessoa na frente.
+        """
+        if not q1("SELECT id FROM nt_cartoes WHERE id=%s", (cartao_id,)):
+            abort(404)
+        if request.form.get("confirmo") != "1":
+            flash("Marque a caixa depois de ler a finalidade para a pessoa — "
+                  "sem ela a ciência não se registra.", "danger")
+            return redirect(url_for("notas_cartao", cartao_id=cartao_id))
+        try:
+            with db.transaction() as con:
+                marca = CB.registrar_ciencia(con, cartao_id, db.now(),
+                                             usuario_nome())
+        except CB.CadastroBioError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("notas_cartao", cartao_id=cartao_id))
+        audit("NT_CADASTRO_BIOMETRIA_CIENCIA", "NT_CARTAO", cartao_id,
+              {"em": marca["em"], "hipotese": LD.BASE_LEGAL["hipotese"],
+               "texto": LD.TEXTO_DA_CIENCIA})
+        flash("Ciência da pessoa registrada. Pode colher as digitais.", "success")
+        return redirect(url_for("notas_cartao", cartao_id=cartao_id))
 
     @app.route("/notas/cartoes/<int:cartao_id>/digital", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -973,6 +1018,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         arquivo = request.files.get("digital")
         dados = arquivo.read() if arquivo else b""
         origem = (request.form.get("origem") or LD.ORIGEM_ARQUIVO).strip().upper()
+        # A ORIGEM E DECLARADA PELO NAVEGADOR (correcao de seguranca de
+        # 26/10/2026): «do leitor» sem o SDK instalado neste servidor nao pode
+        # ser verdade, e se recusa. O que sobra nao se distingue daqui — ver
+        # `leitor_digital.ORIGEM_LEITOR`.
+        recusa = LD.recusa_da_origem(
+            origem, LD.estado_do_sdk(pasta_do_sdk_digital())["instalado"])
+        if recusa:
+            flash(recusa, "danger")
+            return redirect(url_for("notas_cartao", cartao_id=cartao_id))
         try:
             with db.transaction() as con:
                 CB.colher_digital(con, cartao_id, dedo, dados, db.now(),
@@ -985,8 +1039,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # A AUDITORIA LEVA O FATO, E NUNCA A IMAGEM: dedo e origem. Dado
         # biometrico nao vai para log (LGPD art. 11).
         audit("NT_CADASTRO_DIGITAL", "NT_CARTAO", cartao_id,
-              {"dedo": dedo, "origem": origem})
-        no_leitor = " no leitor" if origem == LD.ORIGEM_LEITOR else ""
+              {"dedo": dedo, "origem": origem,
+               "origem_declarada_pelo_navegador": True})
+        no_leitor = (" (informada pela tela como do leitor)"
+                     if origem == LD.ORIGEM_LEITOR else "")
         flash(f"Digital do {CB.nome_do_dedo(dedo)} colhida{no_leitor}.",
               "success")
         return redirect(url_for("notas_cartao", cartao_id=cartao_id))

@@ -71,6 +71,15 @@ CHAVE_DA_PASTA = "leitor_digital_sdk_pasta"
 
 # De onde veio a imagem do dedo. Fica gravado na linha, porque a conferência
 # pergunta: «isto saiu do leitor no balcão, ou alguém mandou um arquivo?»
+#
+# E O QUE A LINHA PROVA TEM LIMITE — correção de segurança de 26/10/2026
+# (revisão do PR #31). A origem é DECLARADA PELO NAVEGADOR: é um campo do
+# formulário, e quem edita o campo manda um PNG qualquer como «do leitor».
+# Sem canal assinado com o cliente do fabricante não há como provar a origem.
+# O que o servidor faz: (1) recusa `LEITOR` quando o SDK nem está instalado
+# nele — sem SDK, nenhuma tela poderia ter colhido no leitor; (2) a auditoria
+# grava que a origem foi declarada pelo navegador; (3) a tela diz «informada
+# como do leitor», e não «do leitor» como fato.
 ORIGEM_LEITOR = "LEITOR"
 ORIGEM_ARQUIVO = "ARQUIVO"
 ORIGENS = (ORIGEM_LEITOR, ORIGEM_ARQUIVO)
@@ -85,6 +94,35 @@ FINALIDADE = (
     "(CCN). Dado biométrico é dado pessoal sensível: fica só no cadastro desta "
     "serventia, não vai para relatório, auditoria nem para a ajuda, e não se "
     "usa para outra finalidade."
+)
+
+# A HIPÓTESE LEGAL, E A CIÊNCIA REGISTRADA — correção de segurança de
+# 26/10/2026 (revisão do PR #31). A primeira versão mostrava a finalidade na
+# tela e não guardava nada: a casa não conseguiria demonstrar que a pessoa foi
+# informada, nem quem a informou, nem quando. Dado biométrico é sensível; se a
+# hipótese for o consentimento (art. 11, I), ele tem de ser específico,
+# destacado e DEMONSTRÁVEL.
+#
+# A escolha da hipótese é do oficial e NÃO foi feita. Até ele decidir, vale a
+# opção mais fechada: trata-se como consentimento, e SEM A CIÊNCIA REGISTRADA
+# NO CARTÃO (`nt_cartoes.biometria_ciencia_em/_por`) NENHUMA DIGITAL SE COLHE —
+# nem do leitor, nem de arquivo. Se o oficial escolher outra hipótese (art. 11,
+# II, «a» — cumprimento de obrigação regulatória, pelo CCN), muda-se aqui, com
+# a data, e a marca continua sendo o registro de que a pessoa foi informada
+# (art. 9º).
+BASE_LEGAL = {
+    "data": "26/10/2026",
+    "hipotese": "LGPD, art. 11, I — consentimento específico e destacado do titular",
+    "situacao": ("A CONFERIR pelo oficial. Até a decisão, a casa trata a coleta como "
+                 "consentimento, e nenhuma digital se colhe sem a ciência registrada "
+                 "no cartão (quem informou e quando)."),
+}
+
+# O texto da caixa que o balcão marca, com a pessoa na frente. É o que fica
+# provado: que a finalidade foi lida para ela e que ela concordou.
+TEXTO_DA_CIENCIA = (
+    "Li para a pessoa a finalidade acima, e ela concordou com a coleta das "
+    "suas digitais para este cadastro."
 )
 
 # A assinatura do PNG. O SDK entrega PNG quando se pede `PngImage`; o que
@@ -132,6 +170,22 @@ def arquivo_do_sdk(pasta: Any, nome: str) -> Path | None:
         return None
     caminho = Path(pasta) / nome
     return caminho if caminho.is_file() else None
+
+
+def recusa_da_origem(origem: Any, sdk_instalado: bool) -> str | None:
+    """A frase de recusa quando a origem declarada não pode ser verdade; senão
+    `None`. Só calcula.
+
+    `LEITOR` sem o SDK instalado no servidor é impossível: a tela não teria
+    como ter falado com o aparelho. O que sobra (o SDK instalado e o campo
+    editado à mão) não se distingue daqui — ver `ORIGEM_LEITOR`.
+    """
+    if str(origem or "").strip().upper() == ORIGEM_LEITOR and not sdk_instalado:
+        return ("A digital veio marcada como colhida no leitor, mas o SDK do "
+                "leitor não está instalado neste servidor — nenhuma tela poderia "
+                "ter falado com o aparelho. Nada foi gravado. Envie a imagem pelo "
+                "campo de arquivo do dedo.")
+    return None
 
 
 def e_png(dados: bytes) -> bool:

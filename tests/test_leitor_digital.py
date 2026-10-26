@@ -74,6 +74,9 @@ def casa(cg_casa_logada, tmp_path):
     with db.transaction() as con:
         cid = criar_cartao(con, {"nome": "BEATRIZ EXEMPLO",
                                  "documento": "00000001082"}, agora=AGORA)
+        # Sem a ciência do titular nenhuma digital se colhe (correção de
+        # segurança de 26/10/2026); os testes de colher partem dela registrada.
+        CB.registrar_ciencia(con, cid, AGORA, "MARIO EXEMPLO DOS SANTOS")
     # A pasta do SDK vai para um lugar do teste, pela configuração — o app é
     # compartilhado entre testes, e a pasta de dados dele não se suja.
     sdk = tmp_path / "sdk_fabricante"
@@ -91,6 +94,14 @@ def _mandar(casa, dedo, dados, origem, dispositivo=""):
               "origem": origem, "dispositivo": dispositivo,
               "digital": (BytesIO(dados), f"digital_{dedo}.png")},
         content_type="multipart/form-data", follow_redirects=True)
+
+
+def _instalar_sdk(casa):
+    """Os dois arquivos do fabricante na pasta do teste: sem eles, «do leitor»
+    é impossível e se recusa (correção de segurança de 26/10/2026)."""
+    casa["sdk"].mkdir(exist_ok=True)
+    for nome in LD.ARQUIVOS_DO_SDK:
+        (casa["sdk"] / nome).write_text(f"/* {nome} */", encoding="utf-8")
 
 
 def _linha(casa, dedo):
@@ -139,19 +150,22 @@ def test_e_png():
 
 
 def test_A_DIGITAL_DO_LEITOR_entra_com_a_origem_e_o_aparelho(casa):
+    _instalar_sdk(casa)
     r = _mandar(casa, 2, PNG_DO_LEITOR, LD.ORIGEM_LEITOR, APARELHO)
     assert r.status_code == 200
-    assert "Digital do indicador direito colhida no leitor" in _texto(r)
+    assert ("Digital do indicador direito colhida (informada pela tela como do "
+            "leitor)") in _texto(r)
     linha = _linha(casa, 2)
     assert linha["origem"] == LD.ORIGEM_LEITOR
     assert linha["dispositivo"] == APARELHO
     assert Path(linha["caminho"]).read_bytes() == PNG_DO_LEITOR
-    # e a tela diz de onde veio
+    # e a tela diz de onde veio — como DECLARAÇÃO, e não como fato
     html = _texto(casa["c"].get(f"/notas/cartoes/{casa['cartao']}"))
-    assert "do leitor" in html
+    assert "informada como do leitor" in html
 
 
 def test_o_que_chega_DO_LEITOR_e_nao_e_PNG_se_recusa(casa):
+    _instalar_sdk(casa)
     r = _mandar(casa, 1, JPEG, LD.ORIGEM_LEITOR, APARELHO)
     assert r.status_code == 200
     assert "não chegou como imagem do leitor" in _texto(r)
@@ -175,6 +189,7 @@ def test_origem_desconhecida_e_erro_de_regra_e_nao_500(casa):
 
 
 def test_recolher_no_leitor_SUBSTITUI_a_de_arquivo(casa):
+    _instalar_sdk(casa)
     _mandar(casa, 1, JPEG, LD.ORIGEM_ARQUIVO)
     _mandar(casa, 1, PNG_DO_LEITOR, LD.ORIGEM_LEITOR, APARELHO)
     with casa["db"].connect() as con:
@@ -184,6 +199,7 @@ def test_recolher_no_leitor_SUBSTITUI_a_de_arquivo(casa):
 
 
 def test_A_AUDITORIA_LEVA_O_FATO_e_nunca_a_imagem(casa):
+    _instalar_sdk(casa)
     _mandar(casa, 2, PNG_DO_LEITOR, LD.ORIGEM_LEITOR, APARELHO)
     with casa["db"].connect() as con:
         linhas = banco(con).ler(
@@ -191,7 +207,7 @@ def test_A_AUDITORIA_LEVA_O_FATO_e_nunca_a_imagem(casa):
             ("NT_CADASTRO_DIGITAL",))
     assert linhas, "colher a digital tem de ficar na auditoria"
     tudo = " ".join(str(dict(x)) for x in linhas)
-    assert "LEITOR" in tudo
+    assert "LEITOR" in tudo and "origem_declarada_pelo_navegador" in tudo
     assert base64.b64encode(PNG_DO_LEITOR).decode()[:20] not in tudo
     assert "LEITOR-SIMULADO-DIGITAL" not in tudo
 
@@ -217,9 +233,7 @@ def test_sem_o_SDK_a_tela_diz_o_que_falta_e_o_manual_continua(casa):
 
 
 def test_com_o_SDK_a_tela_carrega_os_dois_e_a_rota_os_serve(casa):
-    casa["sdk"].mkdir()
-    for nome in LD.ARQUIVOS_DO_SDK:
-        (casa["sdk"] / nome).write_text(f"/* {nome} */", encoding="utf-8")
+    _instalar_sdk(casa)
     html = casa["c"].get(f"/notas/cartoes/{casa['cartao']}").get_data(
         as_text=True)
     posicoes = [html.index(f"/notas/leitor-digital/sdk/{n}")
@@ -281,3 +295,72 @@ def test_a_documentacao_registra_a_finalidade_e_a_proxima_etapa():
     assert "LGPD" in doc and "art. 11" in doc
     assert "1:1" in doc and "ALERTA" in doc
     assert "leitor_digital.py" in doc
+
+
+# ============================================== correções de segurança de 26/10/2026
+
+
+def test_DO_LEITOR_sem_o_SDK_no_servidor_e_impossivel_e_se_recusa(casa):
+    """A origem é declarada pelo navegador. Sem o SDK instalado, nenhuma tela
+    poderia ter colhido no leitor: «do leitor» aí é campo editado à mão."""
+    r = _mandar(casa, 2, PNG_DO_LEITOR, LD.ORIGEM_LEITOR, APARELHO)
+    assert r.status_code == 200
+    assert "o SDK do leitor não está instalado neste servidor" in _texto(r)
+    assert _linha(casa, 2) is None
+    assert LD.recusa_da_origem("leitor", False)
+    assert LD.recusa_da_origem(LD.ORIGEM_LEITOR, True) is None
+    assert LD.recusa_da_origem(LD.ORIGEM_ARQUIVO, False) is None
+
+
+def test_sem_a_ciencia_a_tela_pede_a_caixa_e_o_servidor_recusa_colher(cg_casa_logada):
+    db = cg_casa_logada["db"]
+    c = cg_casa_logada["c"]
+    with db.transaction() as con:
+        cid = int(criar_cartao(con, {"nome": "CARLA EXEMPLO",
+                                     "documento": "00000000191"}, agora=AGORA))
+    html = _texto(c.get(f"/notas/cartoes/{cid}"))
+    assert " ".join(LD.TEXTO_DA_CIENCIA.split()) in html
+    assert "Registrar a ciência" in html
+    assert "de arquivo</button>" not in c.get(f"/notas/cartoes/{cid}").get_data(as_text=True)
+    token = _token(c.get(f"/notas/cartoes/{cid}").get_data(as_text=True))
+    r = c.post(f"/notas/cartoes/{cid}/digital",
+               data={"csrf_token": token, "dedo": "1", "origem": LD.ORIGEM_ARQUIVO,
+                     "digital": (BytesIO(PNG_DO_LEITOR), "d.png")},
+               content_type="multipart/form-data", follow_redirects=True)
+    assert "registre a ciência" in _texto(r)
+    # sem marcar a caixa, não se registra
+    r = c.post(f"/notas/cartoes/{cid}/biometria/ciencia",
+               data={"csrf_token": token}, follow_redirects=True)
+    assert "Marque a caixa" in _texto(r)
+    with db.connect() as con:
+        assert CB.ciencia(con, cid) is None
+    # marcada, fica com quem e quando, e vai à auditoria
+    r = c.post(f"/notas/cartoes/{cid}/biometria/ciencia",
+               data={"csrf_token": token, "confirmo": "1"}, follow_redirects=True)
+    assert "Ciência da pessoa registrada" in _texto(r)
+    with db.connect() as con:
+        marca = CB.ciencia(con, cid)
+        auditoria = banco(con).ler("SELECT * FROM audit_logs WHERE action=%s",
+                                   ("NT_CADASTRO_BIOMETRIA_CIENCIA",))
+    assert marca and marca["por"]
+    assert auditoria
+
+
+def test_o_AUDITOR_nao_ve_a_imagem_da_digital_e_quem_ve_fica_na_auditoria(casa):
+    _mandar(casa, 6, JPEG, LD.ORIGEM_ARQUIVO)
+    assert _linha(casa, 6)
+    endereco = f"/notas/cartoes/{casa['cartao']}/digital/6"
+    assert casa["c"].get(endereco).status_code == 200            # ADMIN vê
+    with casa["db"].connect() as con:
+        vistas = banco(con).ler("SELECT * FROM audit_logs WHERE action=%s",
+                                ("NT_CADASTRO_DIGITAL_VISTA",))
+    assert vistas and "6" in str(dict(vistas[-1]))
+    from conftest import cg_login
+    casa["db"].create_user("corregedor", "CORREGEDORIA EXEMPLO", "Senha#12345",
+                           "AUDITOR")
+    auditor = casa["app"].test_client()
+    cg_login(auditor, "corregedor", "Senha#12345")
+    assert auditor.get(endereco).status_code == 403
+    html = auditor.get(f"/notas/cartoes/{casa['cartao']}").get_data(as_text=True)
+    assert endereco not in html
+    assert "digital colhida em" in html

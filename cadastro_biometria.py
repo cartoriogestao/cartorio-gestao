@@ -29,6 +29,12 @@ QUEM FALA COM OS APARELHOS — corrigido em 26/10/2026
     A digital guarda DE ONDE VEIO (`origem`: LEITOR ou ARQUIVO) e, se veio do
     leitor, o identificador do aparelho que o SDK informou (`dispositivo`).
     O que chega marcado como do leitor tem de ser PNG — é o que o SDK entrega.
+    A origem é DECLARADA PELO NAVEGADOR, e não provada (ver
+    `leitor_digital.ORIGEM_LEITOR`).
+
+    E ANTES DA PRIMEIRA DIGITAL, A CIÊNCIA DO TITULAR (26/10/2026): o cartão
+    guarda quando e por quem a finalidade foi lida para a pessoa
+    (`registrar_ciencia`); sem essa marca, `colher_digital` recusa.
 
 O QUE ELE NÃO FAZ
     Não fala com o CCN. Não compara digitais (a comparação 1:1 no
@@ -197,6 +203,45 @@ def colher_foto(con: Any, cartao_id: int, jpeg_bytes: bytes,
     )
 
 
+def ciencia(con: Any, cartao_id: int) -> dict | None:
+    """A ciência do titular registrada no cartão, ou `None`. Só LÊ.
+
+    Correção de segurança de 26/10/2026 (revisão do PR #31): ver
+    `leitor_digital.BASE_LEGAL`.
+    """
+    _cartao(con, cartao_id)
+    linha = banco(con).um(
+        """SELECT biometria_ciencia_em, biometria_ciencia_por
+             FROM nt_cartoes WHERE id=%s""", (int(cartao_id),))
+    if not linha or not linha["biometria_ciencia_em"]:
+        return None
+    return {"em": linha["biometria_ciencia_em"],
+            "por": linha["biometria_ciencia_por"]}
+
+
+def registrar_ciencia(con: Any, cartao_id: int, agora: str,
+                      por: str | None) -> dict:
+    """Registra que a finalidade foi lida para a pessoa e que ela concordou.
+    ESCREVE só a marca do cartão.
+
+    A primeira marca FICA: registrar de novo não regrava quem informou nem
+    quando — o fato é o do dia em que aconteceu.
+    """
+    ja = ciencia(con, cartao_id)
+    if ja:
+        return ja
+    quem = (por or "").strip()
+    if not quem:
+        raise CadastroBioError(
+            "Não sei quem está registrando a ciência. Entre de novo no sistema "
+            "e registre outra vez.")
+    banco(con).escrever(
+        """UPDATE nt_cartoes SET biometria_ciencia_em=%s, biometria_ciencia_por=%s
+            WHERE id=%s AND biometria_ciencia_em IS NULL""",
+        (agora, quem, int(cartao_id)))
+    return ciencia(con, cartao_id) or {"em": agora, "por": quem}
+
+
 def colher_digital(con: Any, cartao_id: int, dedo: int,
                    png_bytes: bytes, agora: str, por: str | None,
                    pasta_base: Any, origem: str = LD.ORIGEM_ARQUIVO,
@@ -212,8 +257,16 @@ def colher_digital(con: Any, cartao_id: int, dedo: int,
     chega marcado como do leitor e não é PNG não veio dele, e se recusa.
     `dispositivo` é o identificador do aparelho que o SDK informou; só se
     guarda quando a origem é o leitor.
+
+    E SEM A CIÊNCIA DO TITULAR REGISTRADA NO CARTÃO NÃO SE COLHE (correção de
+    segurança de 26/10/2026): ver `ciencia` e `leitor_digital.BASE_LEGAL`.
     """
     _cartao(con, cartao_id)
+    if not ciencia(con, cartao_id):
+        raise CadastroBioError(
+            "Antes de colher a digital, leia para a pessoa a finalidade da "
+            "coleta e registre a ciência dela no quadro «Digitais» do cartão. "
+            "Nada foi gravado.")
     origem = str(origem or LD.ORIGEM_ARQUIVO).strip().upper()
     if origem not in LD.ORIGENS:
         raise CadastroBioError(

@@ -1073,6 +1073,13 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # fica NULL: nao se deduz de onde veio o que foi colhido antes.
     ("nt_cadastro_imagens", "origem", "TEXT"),
     ("nt_cadastro_imagens", "dispositivo", "TEXT"),
+    # A CIENCIA DO TITULAR ANTES DA DIGITAL — correcao de seguranca de
+    # 26/10/2026 (revisao do PR #31). A tela mostrava a finalidade e nada
+    # guardava que a pessoa foi informada. Uma marca por cartao: quando e quem
+    # informou; sem ela, `cadastro_biometria.colher_digital` recusa. Cartao
+    # antigo fica NULL: nao se deduz ciencia que ninguem registrou.
+    ("nt_cartoes", "biometria_ciencia_em", "TEXT"),
+    ("nt_cartoes", "biometria_ciencia_por", "TEXT"),
 )
 
 

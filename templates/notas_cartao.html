@@ -242,6 +242,27 @@
     <p class="small" style="border-left:3px solid #888;padding-left:8px">
       {{ leitor.finalidade }}
     </p>
+    {# A CIENCIA DO TITULAR (correcao de seguranca de 26/10/2026, revisao do
+       PR #31): a finalidade na tela nao prova nada; a marca no cartao prova
+       que ela foi lida para a pessoa, por quem e quando. Sem ela, nenhuma
+       digital se colhe (o servidor recusa; a tela nem oferece). #}
+    {% if ciencia_bio %}
+    <p class="small muted">Ciência da pessoa registrada em
+      {{ fmt_dt(ciencia_bio.em) }} por {{ ciencia_bio.por }}.</p>
+    {% elif ve_a_digital %}
+    <form method="post" class="small" style="margin:8px 0"
+          action="{{ url_for('notas_cartao_biometria_ciencia', cartao_id=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label><input type="checkbox" name="confirmo" value="1" required>
+        {{ texto_da_ciencia }}</label>
+      <button class="small primary">Registrar a ciência</button>
+      <div class="small muted">Sem a ciência registrada, as digitais não se colhem
+        ({{ base_legal.hipotese }} — {{ base_legal.situacao }})</div>
+    </form>
+    {% else %}
+    <p class="small muted">Sem ciência da pessoa registrada — nenhuma digital colhida
+      depois de 26/10/2026 pode estar neste cartão sem ela.</p>
+    {% endif %}
     <p class="small">
       <strong>Leitor {{ leitor.nome }}:</strong>
       <span data-leitor-estado data-situacao="">{% if leitor.sdk.instalado %}verificando o leitor…{% else %}o SDK web do fabricante não está instalado no servidor — use o envio manual abaixo de cada dedo.{% endif %}</span>
@@ -270,7 +291,14 @@
       {% for dedo, nome in dedos.items() %}
       <div style="text-align:center">
         <div class="small muted" style="margin-bottom:4px">{{ nome }}</div>
-        {% if bio and dedo in bio.dedos %}
+        {% if bio and dedo in bio.dedos and not ve_a_digital %}
+          {# O AUDITOR sabe que ha digital, e quando foi colhida — sem a imagem
+             (correcao de seguranca de 26/10/2026, revisao do PR #31). #}
+          <div style="height:150px;width:120px;border:1px solid #bbb;
+                      display:flex;align-items:center;justify-content:center"
+               class="small muted">digital colhida em
+            {{ fmt_dt(bio_por_dedo.get(dedo).colhido_em) if bio_por_dedo.get(dedo) else '—' }}</div>
+        {% elif bio and dedo in bio.dedos %}
           <img src="{{ url_for('notas_cartao_digital', cartao_id=c.id, dedo=dedo) }}"
                alt="Digital do {{ nome }} de {{ c.nome }}"
                style="height:150px;border:1px solid #bbb;background:#fff">
@@ -281,8 +309,9 @@
         {% endif %}
         {% set colhida = bio_por_dedo.get(dedo) %}
         {% if colhida %}
-          <div class="small muted">{% if colhida.origem == leitor.origem_leitor %}do leitor{% elif colhida.origem %}de arquivo{% else %}origem não registrada{% endif %}</div>
+          <div class="small muted">{% if colhida.origem == leitor.origem_leitor %}informada como do leitor{% elif colhida.origem %}de arquivo{% else %}origem não registrada{% endif %}</div>
         {% endif %}
+        {% if ciencia_bio and ve_a_digital %}
         <button type="button" class="small primary" style="margin-top:6px"
                 data-leitor-colher data-dedo="{{ dedo }}" data-nome="{{ nome }}"
                 disabled>Colher no leitor</button>
@@ -296,6 +325,7 @@
           <button class="small" style="margin-top:4px">
             {% if bio and dedo in bio.dedos %}Recolher{% else %}Colher{% endif %} de arquivo</button>
         </form>
+        {% endif %}
       </div>
       {% endfor %}
     </div>

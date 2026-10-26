@@ -333,3 +333,46 @@ def test_a_leitura_de_outra_pessoa_nao_preenche_a_tela(cg_casa_logada, monkeypat
     cg_login(c, "beatriz", "Senha#12345")
     tela = c.get(f"/notas/cartoes?leitura_id={lid}").get_data(as_text=True)
     assert "RASCUNHO preenchido" not in tela and CPF_BEATRIZ not in tela
+
+
+def test_o_rg_anexado_a_leitura_nao_abre_pelo_numero_para_outra_mesa(cg_casa_logada, monkeypatch):
+    """Correção de segurança de 26/10/2026 (revisão do PR #33): a ficha recusa a
+    leitura de outra pessoa, e o anexo dela (o RG/CNH inteiro) também — pelo
+    número trocado na barra, `/arquivo/<id>` e `/arquivo/<id>/ver` respondem
+    como o anexo que não existe. Quem responde pela casa continua vendo."""
+    casa = cg_casa_logada
+    r = _ler(casa["c"], "CARTAO", IA(["IDENTIDADE"]), monkeypatch)      # mario, ADMIN
+    assert r.status_code == 302
+    with casa["db"].connect() as con:
+        anexo = banco(con).valor(
+            "SELECT max(id) FROM attachments WHERE entity_type = 'NT_LEITURA'")
+    assert anexo
+    from conftest import cg_login
+    casa["db"].create_user("beatriz", "BEATRIZ TESTE LIMA", "Senha#12345", "USER")
+    casa["db"].create_user("carla", "CARLA TESTE SOUSA", "Senha#12345", "MANAGER")
+    outra_mesa = casa["app"].test_client()
+    cg_login(outra_mesa, "beatriz", "Senha#12345")
+    assert outra_mesa.get(f"/arquivo/{anexo}").status_code == 404
+    assert outra_mesa.get(f"/arquivo/{anexo}/ver").status_code == 404
+    gerente = casa["app"].test_client()
+    cg_login(gerente, "carla", "Senha#12345")
+    assert gerente.get(f"/arquivo/{anexo}/ver").status_code == 200
+    assert casa["c"].get(f"/arquivo/{anexo}/ver").status_code == 200       # o dono
+    # e a de quem leu é dela: beatriz lê, e beatriz abre o anexo
+    r = _ler(outra_mesa, "CARTAO", IA(["IDENTIDADE"]), monkeypatch)
+    assert r.status_code == 302
+    with casa["db"].connect() as con:
+        dela = banco(con).valor(
+            "SELECT max(id) FROM attachments WHERE entity_type = 'NT_LEITURA'")
+    assert dela != anexo
+    assert outra_mesa.get(f"/arquivo/{dela}/ver").status_code == 200
+
+
+def test_o_tipo_com_dono_por_linha_esta_declarado():
+    """As leituras por IA (Notas e RCPN) não abrem só pelo papel: o dono da
+    linha também é conferido em `_conferir_o_dono`."""
+    import app as APP
+    fonte = Path(APP.__file__).read_text(encoding="utf-8")
+    assert '"NT_LEITURA": _leitura_das_notas_e_de_quem_pede' in fonte
+    assert '"RC_LEITURA": _leitura_do_rcpn_e_de_quem_pede' in fonte
+    assert "dono = DONO_DO_ANEXO.get(row[\"entity_type\"])" in fonte

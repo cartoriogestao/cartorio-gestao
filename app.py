@@ -2892,9 +2892,44 @@ def create_app(test_config: dict | None = None) -> Flask:
         return MODLIG.pode_entrar(db.get_setting, MOD.modulo_da_tela(endpoint),
                                   papel, funcao)
 
+    # O DONO DA LINHA, ALÉM DA TELA (correção de segurança de 26/10/2026,
+    # revisão do PR #33). `TELA_DO_ANEXO` pergunta se o PAPEL abre a tela; para
+    # a leitura por IA isso não basta: a ficha recusa a leitura de outra pessoa
+    # («responde como a que não existe»), mas pelo número do anexo trocado na
+    # barra um USER de outra mesa abria o RG/CNH inteiro — foto, filiação,
+    # CPF — de uma leitura que não é dele. Aqui vale a MESMA regra da ficha,
+    # lida do módulo dela (`QUEM_VE_TODAS` e `e_de`), e não copiada. O RCPN
+    # (DNV e DO inteiras) tinha o mesmo buraco, e fecha junto.
+    def _leitura_das_notas_e_de_quem_pede(row) -> bool:
+        import nt_leitura_documentos as NTL
+        import nt_leitura_web as NTLW
+        if usuario_papel() in NTLW.QUEM_VE_TODAS:
+            return True
+        with db.connect() as con:
+            leitura = NTL.uma(con, row["entity_id"])
+        return leitura is not None and NTL.e_de(leitura, user_id=usuario_id())
+
+    def _leitura_do_rcpn_e_de_quem_pede(row) -> bool:
+        import rc_leitura_documentos as RCL
+        import rc_leitura_web as RCLW
+        if usuario_papel() in RCLW.QUEM_VE_TODAS:
+            return True
+        with db.connect() as con:
+            leitura = RCL.uma(con, int(row["entity_id"]))
+            return leitura is not None and RCL.e_de(
+                con, leitura, nome=usuario_nome(), user_id=usuario_id() or 0)
+
+    DONO_DO_ANEXO = {
+        "NT_LEITURA": _leitura_das_notas_e_de_quem_pede,
+        "RC_LEITURA": _leitura_do_rcpn_e_de_quem_pede,
+    }
+    app.extensions["dono_do_anexo"] = DONO_DO_ANEXO
+
     def _conferir_o_dono(row) -> None:
         """404 se quem pede não abre a tela que oferece este anexo. Ver
-        `TELA_DO_ANEXO`. 404, e não 403, pela razão do `_sigilo_do_coaf`."""
+        `TELA_DO_ANEXO`. 404, e não 403, pela razão do `_sigilo_do_coaf`. E,
+        quando o tipo tem dono por linha (`DONO_DO_ANEXO`), 404 também se a
+        linha não é de quem pede."""
         _sigilo_do_coaf(row)
         papel = usuario_papel()
         telas = TELA_DO_ANEXO.get(row["entity_type"])
@@ -2904,6 +2939,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             return
         funcao = funcao_de_quem_esta_logado()
         if not any(_abre_pela_tela(t, papel, funcao) for t in telas):
+            abort(404)
+        dono = DONO_DO_ANEXO.get(row["entity_type"])
+        if dono is not None and not dono(row):
             abort(404)
 
     @app.route("/arquivo/<int:attachment_id>")

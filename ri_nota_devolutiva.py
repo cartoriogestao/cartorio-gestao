@@ -178,16 +178,92 @@ def emitir(con: Any, p: Any, *, exigencias: list[str], fundamentacao: str | None
             "anexos": anexos}
 
 
+# A DATA DO REINGRESSO DECIDE A PRIORIDADE, e por isso não é livre (revisão de
+# segurança de 26/10/2026, PR #14). Ela vem do formulário, e dentro ou fora da
+# vigência da prenotação é ela quem diz: dentro, o título volta ao MESMO número
+# de ordem (LRP art. 186; CN-MA art. 44); fora, a nota fica «fora do prazo» e o
+# título precisa de protocolo novo, com emolumentos. Sem limite, a prenotação
+# vencida em 17/11 e reapresentada em 25/11 com a data «10/11» guardaria a
+# prioridade antiga sem ninguém ver.
+#
+# As réguas, num lugar só (as três portas chamam esta função):
+#   · nem antes da nota, nem depois de hoje — o reingresso é um fato que já
+#     aconteceu, e depois de a nota existir;
+#   · DATA PASSADA QUE SALVA A PRIORIDADE (a prenotação já venceu hoje, e a data
+#     informada cai dentro da vigência) SÓ O OFICIAL REGISTRA, e com a
+#     observação dizendo de onde vem a data. É a opção mais fechada: o caso
+#     legítimo existe (o título voltou no prazo e o lançamento atrasou), mas
+#     decidir que ele voltou no prazo é decidir a prioridade, e isso é de quem
+#     responde pela serventia. O escrevente, nesse caso, registra a data de hoje
+#     — e a nota fica fora do prazo, que é o que o sistema sabe.
+PAPEIS_QUE_RETROAGEM = ("ADMIN",)
+MINIMO_DA_JUSTIFICATIVA = 10
+
+
+def _br(dia: str) -> str:
+    return f"{dia[8:10]}/{dia[5:7]}/{dia[:4]}" if len(dia) >= 10 else dia
+
+
+def _campo(linha: Any, chave: str) -> Any:
+    try:
+        return linha[chave]
+    except (KeyError, IndexError):
+        return None
+
+
+def conferir_data_do_reingresso(nota: Any, p: Any, *, quando: str, hoje: str,
+                                papel: str | None = None,
+                                observacao: str | None = None) -> str:
+    """A data do reingresso conferida (AAAA-MM-DD), ou NotaError. SÓ CONFERE."""
+    from datetime import date
+    try:
+        data = date.fromisoformat(str(quando or "").strip()[:10]).isoformat()
+    except ValueError:
+        raise NotaError("A data do reingresso não é uma data válida. Informe o dia em "
+                        "que o interessado trouxe o título de volta.") from None
+    hoje = str(hoje)[:10]
+    if data > hoje:
+        raise NotaError("A data do reingresso não pode ser depois de hoje: o reingresso "
+                        "é o dia em que o título voltou ao balcão.")
+    inicio = str(_campo(nota, "data_nota") or "")[:10] or         str(_campo(nota, "emitida_em") or "")[:10]
+    if inicio and data < inicio:
+        raise NotaError(f"A data do reingresso ({_br(data)}) é anterior à própria nota "
+                        f"devolutiva nº {nota['numero']} ({_br(inicio)}). Confira a data.")
+    limite = str(p["data_limite"] or "")[:10]
+    salva_a_prioridade = (not PRAZO.suspensa(p) and bool(limite)
+                          and data <= limite < hoje)
+    if salva_a_prioridade:
+        if (papel or "").upper() not in PAPEIS_QUE_RETROAGEM:
+            raise NotaError(
+                f"A prenotação venceu em {_br(limite)}. Registrar o reingresso em {_br(data)} "
+                "manteria a prioridade do título (LRP art. 186; CN-MA art. 44) — e isso "
+                "só o oficial registra, na tela da nota, dizendo na observação de onde "
+                "vem a data. Se o título voltou hoje, registre a data de hoje: a nota "
+                "fica fora do prazo e o título precisa de protocolo novo.")
+        letras = sum(1 for ch in (observacao or "") if ch.isalnum())
+        if letras < MINIMO_DA_JUSTIFICATIVA:
+            raise NotaError(
+                f"A prenotação venceu em {_br(limite)} e o reingresso está sendo registrado "
+                f"em {_br(data)}, o que mantém a prioridade do título. Escreva na observação "
+                "de onde vem essa data (o recibo de entrega, o livro de protocolo) — ela "
+                "fica no rastro.")
+    return data
+
+
 def reingresso(con: Any, nota: Any, p: Any, *, quando: str, observacao: str | None,
+               hoje: str, papel: str | None = None,
                anexos: Iterable[int] = ()) -> bool:
     """Registra o reingresso do título com as exigências cumpridas. GRAVA.
 
     Devolve se foi dentro da vigência da prenotação (CN-MA, art. 44): dentro,
     o título volta ao MESMO protocolo; fora, a nota fica «fora do prazo» e é
-    preciso protocolo novo, com os emolumentos correspondentes.
+    preciso protocolo novo, com os emolumentos correspondentes. A data passa
+    antes por `conferir_data_do_reingresso` (revisão de segurança de 26/10).
     """
     if nota["situacao"] != "ABERTA":
         raise NotaError(f"A nota nº {nota['numero']} não está aguardando cumprimento.")
+    quando = conferir_data_do_reingresso(nota, p, quando=quando, hoje=hoje, papel=papel,
+                                         observacao=observacao)
     dentro = PRAZO.suspensa(p) or (bool(p["data_limite"]) and quando <= p["data_limite"])
     bd = banco(con)
     bd.escrever("""UPDATE ri_notas_devolutivas SET situacao=%s, data_reingresso=%s,

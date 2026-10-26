@@ -199,3 +199,82 @@ def test_o_modulo_nao_lavra_nem_sela_nem_cobra():
     nomes = [n for n in dir(RND) if not n.startswith("_")]
     for proibido in ("lavrar", "selar", "cobrar", "encerrar"):
         assert not any(proibido in n for n in nomes), proibido
+
+
+# ------------------------------- a data do reingresso (revisão de 26/10/2026)
+#
+# Ela decide a prioridade: dentro da vigência, o título volta ao mesmo número
+# de ordem (LRP art. 186; CN-MA art. 44). Retrodatar uma prenotação vencida
+# guardava a prioridade antiga sem ninguém ver.
+
+NOTA_ABERTA = {"id": 1, "numero": 1, "situacao": "ABERTA", "data_nota": "2026-11-05",
+               "emitida_em": "2026-11-05T10:00:00"}
+VENCIDA_EM_17_11 = {"id": 1, "data_limite": "2026-11-17", "prazo_suspenso_desde": None}
+
+
+def _conferir(quando, hoje="2026-11-25", papel="USER", observacao=None, p=None):
+    return RND.conferir_data_do_reingresso(NOTA_ABERTA, p or VENCIDA_EM_17_11,
+                                           quando=quando, hoje=hoje, papel=papel,
+                                           observacao=observacao)
+
+
+def test_a_data_do_reingresso_nem_antes_da_nota_nem_depois_de_hoje():
+    with pytest.raises(RND.NotaError, match="anterior à própria nota"):
+        _conferir("2026-11-04", papel="ADMIN", observacao="recibo de entrega nº 12")
+    with pytest.raises(RND.NotaError, match="depois de hoje"):
+        _conferir("2026-11-26")
+    with pytest.raises(RND.NotaError, match="não é uma data válida"):
+        _conferir("25/11/2026")
+    assert _conferir("2026-11-25") == "2026-11-25"
+
+
+def test_data_passada_que_salva_a_prioridade_so_o_oficial_e_com_motivo():
+    # o cenário da revisão: venceu em 17/11, voltou em 25/11, digitaram 10/11
+    for papel in ("USER", "MANAGER"):
+        with pytest.raises(RND.NotaError, match="só o oficial registra"):
+            _conferir("2026-11-10", papel=papel, observacao="recibo de entrega nº 12")
+    with pytest.raises(RND.NotaError, match="Escreva na observação"):
+        _conferir("2026-11-10", papel="ADMIN", observacao="ok")
+    assert _conferir("2026-11-10", papel="ADMIN",
+                     observacao="recibo de entrega nº 12, de 10/11") == "2026-11-10"
+    # com a prenotação ainda viva, ou suspensa, a data passada não decide nada
+    assert _conferir("2026-11-10", hoje="2026-11-15") == "2026-11-10"
+    suspensa = dict(VENCIDA_EM_17_11, prazo_suspenso_desde="2026-11-12")
+    assert _conferir("2026-11-10", p=suspensa) == "2026-11-10"
+    # e a data de hoje, numa prenotação vencida, passa — e a nota fica fora do prazo
+    assert _conferir("2026-11-25") == "2026-11-25"
+
+
+def test_o_escrevente_nao_retrodata_o_reingresso_pela_tela(casa):
+    """Pelo anexo «cumprimento de exigência», com a prenotação já vencida: a
+    data passada é recusada, a nota continua aberta e o arquivo não fica."""
+    from datetime import date, timedelta
+    p = _prenotar(casa)
+    _anexar(casa, p, "NOTA_DEVOLUTIVA")
+    hoje = date.today()
+    con = sqlite3.connect(casa["banco"])
+    with con:
+        con.execute("UPDATE ri_protocolos SET data_limite=? WHERE id=?",
+                    ((hoje - timedelta(days=3)).isoformat(), p["id"]))
+        con.execute("UPDATE ri_notas_devolutivas SET data_nota=? WHERE protocolo_id=?",
+                    ((hoje - timedelta(days=10)).isoformat(), p["id"]))
+    con.close()
+    casa["db"].create_user("beatriz", "BEATRIZ EXEMPLO DE SOUZA", SENHA, "USER")
+    c = casa["app"].test_client()
+    c.post("/login", data={"username": "beatriz", "password": SENHA,
+                           "csrf_token": _token(c.get("/login").get_data(as_text=True))},
+           follow_redirects=True)
+    tela = c.get(f"/registro-imoveis/protocolo/{p['id']}").get_data(as_text=True)
+    resp = c.post(f"/registro-imoveis/prenotacao/{p['id']}/documento", data={
+        "tipo": "CUMPRIMENTO_EXIGENCIA", "csrf_token": _token(tela),
+        "data_reingresso": (hoje - timedelta(days=5)).isoformat(),
+        "documento": (io.BytesIO(PDF), "documentos.pdf")},
+        content_type="multipart/form-data", follow_redirects=True)
+    assert "só o oficial registra" in resp.get_data(as_text=True)
+    nota = _um(casa, "SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=?", p["id"])
+    assert nota["situacao"] == "ABERTA" and not nota["data_reingresso"]
+    assert _um(casa, "SELECT situacao FROM ri_protocolos WHERE id=?", p["id"])[0] == "DEVOLVIDO"
+    tipos = [r["documento_tipo"] for r in _todos(
+        casa, "SELECT documento_tipo FROM attachments WHERE entity_type='RI_PROTOCOLO' "
+              "AND entity_id=? ORDER BY id", p["id"])]
+    assert tipos == ["NOTA_DEVOLUTIVA"]

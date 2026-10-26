@@ -53,8 +53,12 @@
     <form method="post" action="{{ url_for('ri_reingresso', nota_id=n.id) }}" class="form-grid"
           enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Data do reingresso<input type="date" name="data_reingresso" value="{{ hoje }}"></label>
+      <label>Data do reingresso<input type="date" name="data_reingresso" value="{{ hoje }}"
+             max="{{ hoje }}"></label>
       <label>Observação<input name="observacao"></label>
+      <p class="small muted span2">A data é o dia em que o título voltou ao balcão — nem antes
+        da nota, nem depois de hoje. Data passada que mantém a prioridade de uma prenotação
+        já vencida só o oficial registra, escrevendo na observação de onde vem a data.</p>
       <label class="span2">Documentos que o interessado trouxe (opcional)
         <input type="file" name="documento" multiple></label>
       <div class="span2"><button class="primary">Registrar reingresso do título</button></div>

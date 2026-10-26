@@ -8260,19 +8260,37 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     def _registrar_reingresso(n, p, *, arquivos, descricao=None):
         """O reingresso, pela tela da nota ou pelo anexo «cumprimento de exigência»."""
-        quando = (request.form.get("data_reingresso") or "").strip() or db.now()[:10]
+        hoje = db.now()[:10]
+        quando = (request.form.get("data_reingresso") or "").strip() or hoje
+        observacao = request.form.get("observacao")
+        papel = app.extensions["usuario_papel"]()
         if n["situacao"] != "ABERTA":
             flash(f"A nota nº {n['numero']} não está aguardando cumprimento.", "danger")
             return redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
+        # A DATA SE CONFERE ANTES DE GUARDAR O ARQUIVO (revisão de segurança de
+        # 26/10/2026): ela decide a prioridade, e a recusa não pode deixar o
+        # documento do interessado gravado sem reingresso. A regra mora em
+        # `RND.conferir_data_do_reingresso`, e `RND.reingresso` a repete.
+        try:
+            quando = RND.conferir_data_do_reingresso(n, p, quando=quando, hoje=hoje,
+                                                     papel=papel, observacao=observacao)
+        except RND.NotaError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
         anexos = _anexar_ao_protocolo(p, arquivos, descricao)[0] if arquivos else []
-        with db.transaction() as con:
-            dentro_do_prazo = RND.reingresso(
-                con, n, p, quando=quando, observacao=request.form.get("observacao"),
-                anexos=anexos)
+        try:
+            with db.transaction() as con:
+                dentro_do_prazo = RND.reingresso(
+                    con, n, p, quando=quando, observacao=observacao, hoje=hoje,
+                    papel=papel, anexos=anexos)
+        except RND.NotaError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
         nota_id = n["id"]
 
         audit("RI_REINGRESSO", "RI_NOTA", nota_id,
               {"protocolo": p["numero"], "data": quando, "no_prazo": dentro_do_prazo,
+               "registrado_em": hoje, "retroativo": quando < hoje, "papel": papel,
                "anexos": anexos})
         if dentro_do_prazo:
             flash(f"Reingresso registrado no protocolo {p['numero']}, dentro da vigência "

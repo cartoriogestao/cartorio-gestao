@@ -17,13 +17,13 @@ O QUE ELA FAZ
     - guarda o andamento (encaminhou, respondeu, encerrou) e a resposta;
     - conta por período, para o relatório e para o painel.
 
-O PRAZO NÃO É ARTIGO DE LEI AQUI
+O PRAZO É DE 30 DIAS — DECISÃO DO OFICIAL EM 26/10/2026
     Procurado no repositório e na documentação da casa em 26/10/2026: nenhum
     texto do Código de Normas do MA nem do CNJ citado aqui fixa o prazo de
-    resposta da ouvidoria de uma serventia. O número de dias é CONFIGURÁVEL
-    (`ouvidoria_prazo_dias`), em dias corridos, e o padrão de fábrica é da
-    casa, não de norma. Qual é o prazo legal é pergunta ao oficial — e a tela
-    diz isso, para ninguém ler o padrão como se fosse lei.
+    resposta da ouvidoria de uma serventia. A pergunta foi ao oficial, e ele
+    respondeu «30 dias». O número continua CONFIGURÁVEL
+    (`ouvidoria_prazo_dias`), em dias corridos, e só o oficial o muda; a tela
+    diz de onde vem o padrão.
 
 OS DADOS DE QUEM SE MANIFESTA SÃO PROTEGIDOS
     - a manifestação pode ser ANÔNIMA: nenhum dado de identificação é gravado;
@@ -79,7 +79,7 @@ SITUACOES: dict[str, str] = {
 #: As que ainda pedem resposta — e são as que vencem.
 EM_ABERTO = ("ABERTA", "EM_ANALISE")
 
-#: Dias corridos. PADRÃO DA CASA, e não prazo de norma (ver o cabeçalho).
+#: Dias corridos. DECISÃO DO OFICIAL EM 26/10/2026 («30 dias»); ver o cabeçalho.
 PRAZO_PADRAO_DIAS = 30
 PRAZO_MINIMO_DIAS = 1
 PRAZO_MAXIMO_DIAS = 180

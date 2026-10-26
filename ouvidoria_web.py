@@ -278,7 +278,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         de, ate = _periodo()
         with db.connect() as con:
             r = SAT.relatorio(con, de=de, ate=ate)
-        return render_template("satisfacao_relatorio.html", r=r,
+            fila = SAT.resumo_da_fila(con)
+        return render_template("satisfacao_relatorio.html", r=r, fila=fila,
                                aberta=SAT.pagina_aberta(db.get_setting),
                                e_admin=current_user()["role"] == "ADMIN")
 
@@ -292,57 +293,88 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
               else "A página da pesquisa está FECHADA.", "success")
         return redirect(url_for("satisfacao_relatorio"))
 
-    @app.route("/administrativo/satisfacao/convite")
+    @app.route("/administrativo/satisfacao/convite", methods=["GET", "POST"])
     @roles_required(*PRATICA)
     def satisfacao_convite():
-        """O QR do convite: do protocolo (uma avaliação por ida ao balcão), ou
-        o da página do tablet do balcão, sem atendente.
+        """O convite de um protocolo, que vai SÓ AO CLIENTE, ou o link do
+        tablet do balcão, sem atendente.
 
         QUEM VAI COMO ATENDENTE (revisão de segurança de 26/10/2026, achado
         MÉDIO do PR #23): quem ABRIU o protocolo (`cx_protocolos.criado_por`),
-        nunca quem gera o convite. Antes, qualquer escrevente gerava o convite
-        de qualquer protocolo com ELE como atendente — avaliava a si mesmo e,
-        como a chave do protocolo é única, tomava o lugar da avaliação do
-        cliente. Agora o escrevente gera só o dos protocolos que ele abriu, e o
-        de outrem é do gerente e do oficial (`SAT.atendente_do_protocolo`). E o
-        link do tablet não leva atendente: «comigo como atendente» aberto no
-        guichê era uma urna em que o próprio avaliado votava."""
-        numero = (request.args.get("protocolo") or "").strip()[:40]
+        nunca quem gera o convite; o escrevente pede o dos protocolos que ele
+        abriu, e o de outrem é do gerente e do oficial
+        (`SAT.atendente_do_protocolo`).
+
+        O LINK VAI SÓ AO CLIENTE (decisão do oficial de 26/10/2026): esta tela
+        não mostra mais o link nem o QR do convite de protocolo, a ninguém. O
+        POST põe o convite na fila de envio ao telefone e ao e-mail do próprio
+        protocolo (`SAT.enfileirar_convite`), e a tela diz só quando ele foi
+        registrado e por quais canais. O GET não grava nada. O tablet do balcão
+        (a página sem convite) continua com link e QR."""
+        numero = (request.values.get("protocolo") or "").strip()[:40]
         balcao = request.args.get("balcao") == "1"
-        token = endereco = qr = ""
+        endereco = qr = ""
         protocolo = None
+        atendente = None
         atendente_nome = ""
+        na_fila: list = []
+        sem_contato = False
+        recusa = ""
         if numero:
             with db.connect() as con:
                 protocolo = SAT.protocolo_por_numero(con, numero)
             if not protocolo:
-                flash(f"Não achei o protocolo «{numero}». Confira o número no caixa.", "danger")
+                recusa = f"Não achei o protocolo «{numero}». Confira o número no caixa."
             else:
                 try:
                     atendente = SAT.atendente_do_protocolo(
                         protocolo, usuario_id=usuario_id(), papel=current_user()["role"])
                 except SAT.SatisfacaoError as erro:
-                    flash(str(erro), "danger")
+                    recusa = str(erro)
                     protocolo = None
+        if request.method == "POST":
+            # O POST sempre volta ao GET, que diz a recusa (uma vez só).
+            if not protocolo:
+                return redirect(url_for("satisfacao_convite", protocolo=numero))
+            try:
+                with db.transaction() as con:
+                    antes = SAT.convite_do_protocolo(con, int(protocolo["id"]))
+                    linhas = SAT.enfileirar_convite(con, protocolo, atendente_id=atendente,
+                                                    criado_por=usuario_id(), agora=db.now())
+            except SAT.SatisfacaoError as erro:
+                flash(str(erro), "danger")
+            else:
+                if antes:
+                    flash("O convite deste protocolo já estava registrado para o cliente.", "info")
                 else:
-                    token = SAT.assinar_convite(segredo, atendente_id=atendente,
-                                                protocolo_id=protocolo["id"],
-                                                atribuicao=protocolo["atribuicao"] or "")
-                    atendente_nome = next((u["full_name"] for u in _usuarios()
-                                           if atendente and int(u["id"]) == atendente), "")
-        if token:
-            endereco = url_for("satisfacao_pagina", t=token, _external=True)
-        elif balcao:
+                    # A auditoria leva o protocolo e os canais — nunca o
+                    # telefone nem o e-mail do cliente, nem o link.
+                    audit("SATISFACAO_CONVITE_NA_FILA", "cx_protocolos", int(protocolo["id"]),
+                          {"canais": [x["canal"] for x in linhas],
+                           "atendente_id": atendente})
+                    flash("Convite registrado para o cliente, pelo contato do protocolo.",
+                          "success")
+            return redirect(url_for("satisfacao_convite", protocolo=numero))
+        if recusa:
+            flash(recusa, "danger")
+        if protocolo:
+            with db.connect() as con:
+                na_fila = SAT.convite_do_protocolo(con, int(protocolo["id"]))
+            sem_contato = not na_fila and not SAT.contatos_do_protocolo(protocolo)
+            atendente_nome = next((u["full_name"] for u in _usuarios()
+                                   if atendente and int(u["id"]) == atendente), "")
+        if balcao:
             # O tablet do balcão: a página sem convite — sem atendente, e
-            # cada pessoa avalia ao sair.
+            # cada pessoa avalia ao sair. É o único link que esta tela mostra.
             endereco = url_for("satisfacao_pagina", _external=True)
-        if endereco:
             qr = Markup(_qr_em_svg(endereco))
         # QR com «localhost» só abre na própria máquina do servidor.
         local = request.host.split(":")[0] in ("localhost", "127.0.0.1", "[::1]")
         return render_template("satisfacao_convite.html", numero=numero, protocolo=protocolo,
                                balcao=balcao, endereco=endereco, qr=qr, local=local,
-                               atendente_nome=atendente_nome,
+                               atendente_nome=atendente_nome, na_fila=na_fila,
+                               sem_contato=sem_contato, canais=SAT.CANAIS_DO_CONVITE,
+                               situacoes=SAT.SITUACOES_DO_ENVIO,
                                aberta=SAT.pagina_aberta(db.get_setting),
                                dias=SAT.DIAS_DO_CONVITE)
 

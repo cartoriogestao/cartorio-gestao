@@ -10,8 +10,8 @@
   Cada manifestação ganha um número próprio, um prazo de resposta e uma <strong>tarefa para o responsável</strong>.
   A manifestação pode ser <strong>anônima</strong>: aí nenhum dado de quem se manifestou é gravado.</p>
   <p class="small muted">Prazo de resposta em uso: <strong>{{ prazo_dias }} dias corridos</strong>.
-  Este número é configuração da casa (padrão de fábrica {{ prazo_padrao }}), <strong>não é prazo de norma</strong>:
-  qual é o prazo legal da ouvidoria da serventia é pergunta ao oficial.
+  O padrão é de {{ prazo_padrao }} dias corridos, <strong>decisão do oficial em 26/10/2026</strong>; só o oficial o muda,
+  e a manifestação guarda o prazo com que nasceu.
   {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}· <a href="{{ url_for('ouvidoria_relatorio') }}">Relatório por período</a>
   · <a href="{{ url_for('satisfacao_relatorio') }}">Pesquisa de satisfação</a>{% endif %}
   {% if pode_registrar %}· <a href="{{ url_for('satisfacao_convite') }}">Convite para avaliar o atendimento</a>{% endif %}</p>

@@ -4,8 +4,12 @@
 {% block content %}
 <section class="panel">
   <p>A pessoa dá uma nota de 1 a 5 e, se quiser, um comentário — sem se identificar. A página abre num tablet ou
-  celular <strong>da rede da casa</strong>, ou pelo QR do <a href="{{ url_for('satisfacao_convite') }}">convite</a>
-  que o atendente mostra ou imprime. O servidor não é exposto à internet: o QR só abre para quem está no Wi-Fi da serventia.</p>
+  celular <strong>da rede da casa</strong> (o tablet do balcão), ou pelo <a href="{{ url_for('satisfacao_convite') }}">convite</a>
+  de um protocolo, que vai <strong>só ao cliente</strong>, pelo telefone e pelo e-mail do protocolo (decisão do oficial em 26/10/2026)
+  — o balcão não vê o link. O servidor não é exposto à internet: o link só abre para quem está no Wi-Fi da serventia.</p>
+  <p>Convites na fila de envio ao cliente: <strong>{{ fila.NA_FILA }}</strong>{% if fila.ENVIADO %} · enviados: {{ fila.ENVIADO }}{% endif %}{% if fila.FALHOU %} · com falha: {{ fila.FALHOU }}{% endif %}.
+  <span class="small muted">O sistema ainda não tem o canal que envia o convite sozinho (e-mail ou modelo de WhatsApp): os convites
+  esperam na fila, e nada é enviado a ninguém até esse canal existir.</span></p>
   <p>Página da pesquisa: {% if aberta %}<span class="badge ok">ABERTA</span> — <a href="{{ url_for('satisfacao_pagina') }}" target="_blank">abrir a página</a>{% else %}<span class="badge critica">FECHADA</span>{% endif %}</p>
   {% if e_admin %}
   <form method="post" action="{{ url_for('satisfacao_abrir_pagina') }}" class="inline-form">

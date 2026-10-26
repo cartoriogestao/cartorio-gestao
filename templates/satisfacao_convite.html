@@ -2,26 +2,29 @@
 {% block title %}Convite para avaliar{% endblock %}
 {% block heading %}<h1>Convite para avaliar o atendimento</h1>{% endblock %}
 {% block content %}
-{# O CONVITE (26/10/2026): o QR leva a pessoa à página da pesquisa NA REDE DA
-   CASA. O link carrega, assinado, quem atendeu e o protocolo — e o protocolo
-   não volta ao relatório: só impede a mesma ida ao balcão de ser avaliada
-   duas vezes. #}
+{# O CONVITE (26/10/2026): vai SÓ AO CLIENTE — decisão do oficial, «link vai só
+   ao cliente». Esta tela não mostra o link nem o QR do convite de protocolo a
+   ninguém: ela põe o convite na fila de envio ao telefone e ao e-mail do
+   próprio protocolo e diz só quando foi registrado. O link carrega, assinado,
+   quem atendeu e o protocolo, e se monta na hora do envio. O único link que
+   aparece aqui é o do tablet do balcão, sem convite e sem atendente. #}
 {% if not aberta %}
-<div class="notice critical">A página da pesquisa está <strong>fechada</strong>. O QR só funciona depois que o oficial a abrir em
-Administrativo → Pesquisa de satisfação.</div>
+<div class="notice critical">A página da pesquisa está <strong>fechada</strong>. O convite e o tablet só funcionam depois que o
+oficial a abrir em Administrativo → Pesquisa de satisfação.</div>
 {% endif %}
-{% if local %}
+{% if local and endereco %}
 <div class="notice critical">Você abriu o sistema pelo endereço da própria máquina (localhost). O QR gerado assim
-<strong>não abre no celular</strong>: abra o sistema pelo nome ou pelo IP do servidor na rede e gere o convite de novo.</div>
+<strong>não abre no tablet</strong>: abra o sistema pelo nome ou pelo IP do servidor na rede e gere o link de novo.</div>
 {% endif %}
 <section class="panel">
   <div class="grid2">
     <form method="get" class="stack">
       <label>Número do protocolo do atendimento <input type="text" name="protocolo" value="{{ numero }}" maxlength="40" placeholder="ex.: 2026.10.155"></label>
-      <button type="submit">Gerar o convite deste atendimento</button>
-      <p class="small muted">Uma avaliação por protocolo. O convite vale {{ dias }} dias e leva como atendente
-      <strong>quem abriu o protocolo no balcão</strong> — não quem gera o convite. Você gera o dos protocolos que
-      abriu; o de outro atendente, só o gerente ou o oficial.</p>
+      <button type="submit">Ver o convite deste atendimento</button>
+      <p class="small muted">O convite vai <strong>só ao cliente</strong>, pelo telefone (WhatsApp) e pelo e-mail que estão no
+      protocolo — você não vê o link. Uma avaliação por protocolo; o convite vale {{ dias }} dias e leva como atendente
+      <strong>quem abriu o protocolo no balcão</strong>. Você pede o dos protocolos que abriu; o de outro atendente, só o
+      gerente ou o oficial.</p>
     </form>
     <form method="get" class="stack">
       <input type="hidden" name="balcao" value="1">
@@ -31,14 +34,38 @@ Administrativo → Pesquisa de satisfação.</div>
     </form>
   </div>
 </section>
+{% if protocolo %}
+<section class="panel" id="convite-do-protocolo">
+  <h2>Convite do protocolo {{ protocolo.numero }}</h2>
+  <p class="small muted">Atendente no convite: {{ atendente_nome or 'nenhum — o protocolo não registra quem o abriu' }}.</p>
+  {% if na_fila %}
+    {% set primeiro = na_fila[0] %}
+    <p><strong>Convite para o cliente registrado em {{ fmt_dt(primeiro.criado_em) }}</strong>,
+    pelo contato do protocolo:
+    {% for x in na_fila %}{{ canais.get(x.canal, x.canal) }} ({{ situacoes.get(x.situacao, x.situacao) }}){% if not loop.last %}, {% endif %}{% endfor %}.</p>
+    <p class="small muted">O sistema ainda não tem o canal que envia o convite sozinho: ele espera na fila de envio ao
+    cliente, e o oficial vê quantos esperam no relatório da pesquisa. O link não aparece nesta tela.</p>
+  {% elif sem_contato %}
+    <div class="notice critical">Este protocolo não tem telefone nem e-mail do cliente, e o convite só vai ao cliente:
+    <strong>não se gera convite para ele</strong>. Se o cliente quiser avaliar, cadastre o telefone ou o e-mail no
+    protocolo, ou indique o tablet do balcão.</div>
+  {% else %}
+    <form method="post" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="protocolo" value="{{ protocolo.numero }}">
+      <button type="submit">Enviar o convite ao cliente</button>
+      <span class="small muted">Vai para o telefone e o e-mail do protocolo. Você não vê o link.</span>
+    </form>
+  {% endif %}
+</section>
+{% endif %}
 {% if endereco %}
 <section class="panel" style="text-align:center">
-  <h2>{% if protocolo %}Avalie o atendimento — protocolo {{ protocolo.numero }}{% else %}Avalie o nosso atendimento{% endif %}</h2>
-  {% if protocolo %}<p class="small muted">Atendente no convite: {{ atendente_nome or 'nenhum — o protocolo não registra quem o abriu' }}.</p>{% endif %}
+  <h2>Avalie o nosso atendimento</h2>
   {% if qr %}<div>{{ qr }}</div>{% else %}<p class="muted">O desenho do QR não está disponível nesta instalação; use o link.</p>{% endif %}
-  <p>Aponte a câmera do celular (conectado ao Wi-Fi da serventia) ou abra o link:</p>
+  <p>Para o tablet do balcão (conectado ao Wi-Fi da serventia):</p>
   <p style="word-break:break-all"><a href="{{ endereco }}" target="_blank">{{ endereco }}</a></p>
-  <button type="button" onclick="window.print()">Imprimir o convite</button>
+  <button type="button" onclick="window.print()">Imprimir</button>
 </section>
 {% endif %}
 {% endblock %}

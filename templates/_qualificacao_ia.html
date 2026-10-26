@@ -24,6 +24,8 @@
     {% elif qa.bloqueio %}
       <div class="notice warning" id="qualificacao-ia-bloqueio">{{ qa.bloqueio }}</div>
     {% endif %}
+    {% if qa.teto %}<p class="small muted">Teto: {{ qa.teto }} leitura(s) por dia na casa inteira.
+      {% if user.role == 'ADMIN' %}<a href="{{ url_for('ri_qualificacao_ia_configuracao') }}">mudar o teto</a>{% endif %}</p>{% endif %}
 
     {% if qa.andamento %}
     <div class="notice" id="qualificacao-ia-andamento">

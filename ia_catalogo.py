@@ -91,9 +91,11 @@ CHAMADAS_POR_DIA = {
     # o balcão produz, e segura um laço que engasgue.
     "minuta_ia": 60,
     # A QUALIFICAÇÃO ASSISTIDA DO RI (26/10/2026): uma chamada ao Opus por
-    # pedido, com o título e o ITBI inteiros. Quarenta por dia é mais do que as
-    # prenotações que a casa qualifica num dia cheio, e segura o clique repetido.
-    "ri_qualificacao_ia": 40,
+    # pedido, com o título e o ITBI inteiros. VINTE POR DIA — decisão do oficial
+    # em 26/10/2026 (a proposta era 40). É o PADRÃO DE FÁBRICA: o ADMIN muda o
+    # número na configuração da qualificação assistida, com auditoria
+    # (`ri_qualificacao_ia.teto_do_dia`, `settings.qualificacao_ia_teto_dia`).
+    "ri_qualificacao_ia": 20,
 }
 
 # ------------------------------------------------------------------ o catálogo

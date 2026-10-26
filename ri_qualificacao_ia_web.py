@@ -59,6 +59,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          "preenche": QIA.preenchimento(
                              con, request.args.get("qualificacao"), protocolo_id),
                          "papeis": PAPEIS_QUE_PEDEM,
+                         "teto": QIA.teto_do_dia(con),
                          "modelo": QIA.MODELO, "esforco": QIA.ESFORCO,
                          "maximo": QIA.MAXIMO_DE_DOCUMENTOS,
                          "limite_mb": QIA.LIMITE_DOS_DOCUMENTOS // 1048576}
@@ -152,3 +153,35 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         flash(f"{len(linhas)} exigência(s) no formulário da nota. Confira, edite o que "
               "precisar e emita — a nota só existe depois do botão «Emitir».", "success")
         return volta(p["protocolo_id"], ancora="emitir-nota", qualificacao=pedido_id)
+
+    @app.route("/registro-imoveis/qualificacao-ia/configuracao", methods=["GET", "POST"])
+    @roles_required("ADMIN")
+    def ri_qualificacao_ia_configuracao():
+        """O TETO DIÁRIO — decisão do oficial em 26/10/2026: 20 leituras por dia
+        de fábrica, e o ADMIN o muda aqui. Cada mudança fica na auditoria
+        (`RI_QUALIFICACAO_IA_TETO`, com o antes e o depois). Vazio volta ao
+        padrão do catálogo de IA."""
+        if request.method == "POST":
+            try:
+                novo = QIA.validar_teto(request.form.get("teto"))
+            except QIA.QualificacaoIAError as erro:
+                flash(str(erro), "danger")
+                return redirect(url_for("ri_qualificacao_ia_configuracao"))
+            with db.connect() as con:
+                antes = QIA.teto_do_dia(con)
+            db.set_settings({QIA.CHAVE_DO_TETO: "" if novo is None else str(novo)})
+            with db.connect() as con:
+                depois = QIA.teto_do_dia(con)
+            audit("RI_QUALIFICACAO_IA_TETO", "settings", None,
+                  {"antes": antes, "depois": depois, "padrao": novo is None})
+            flash(f"Teto da qualificação assistida: {depois} leitura(s) por dia"
+                  + (" (o padrão de fábrica)." if novo is None else "."), "success")
+            return redirect(url_for("ri_qualificacao_ia_configuracao"))
+        import ia_uso as USO
+        with db.connect() as con:
+            teto = QIA.teto_do_dia(con)
+            feitas = USO.usos_do_dia(banco(con), QIA.FINALIDADE, db.now()[:10])
+        return render_template("ri_qualificacao_ia_config.html", teto=teto,
+                               padrao=QIA.teto_padrao(), feitas=feitas,
+                               gravado=db.get_setting(QIA.CHAVE_DO_TETO, "") or "",
+                               minimo=QIA.TETO_MINIMO, maximo=QIA.TETO_MAXIMO)

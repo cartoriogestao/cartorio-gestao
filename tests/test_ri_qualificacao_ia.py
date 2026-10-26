@@ -614,3 +614,72 @@ def test_o_auditor_le_o_rascunho_mas_nao_pede_nem_leva(casa, monkeypatch):
                          (pedido,)).fetchone()
     con.close()
     assert n == 1 and levado["levado_em"] is None and levado["nota_id"] is None
+
+
+# ------------------------------------------------- o teto do dia (26/10/2026)
+
+
+def test_o_teto_padrao_e_20_por_dia(casa):
+    """DECISÃO DO OFICIAL EM 26/10/2026: 20 leituras por dia (era 40)."""
+    import ia_catalogo as CAT
+    assert CAT.CHAMADAS_POR_DIA[QIA.FINALIDADE] == 20
+    assert QIA.teto_padrao() == 20
+    con = _con(casa)
+    assert QIA.teto_do_dia(con) == 20
+    con.close()
+    # o quadro e a tela de configuração dizem o número
+    tela = casa["c"].get("/registro-imoveis/qualificacao-ia/configuracao").get_data(as_text=True)
+    assert "20 leitura(s) por dia" in tela
+
+
+def test_o_admin_muda_o_teto_para_5_e_o_sexto_pedido_e_recusado(casa):
+    """O ADMIN grava 5 na tela (com auditoria); cinco pedidos em voo ocupam o
+    dia e o sexto é recusado antes de gravar. O gerente não muda o teto."""
+    from conftest import cg_login
+    pagina = casa["c"].get("/registro-imoveis/qualificacao-ia/configuracao").get_data(as_text=True)
+    r = casa["c"].post("/registro-imoveis/qualificacao-ia/configuracao",
+                       data={"csrf_token": _token(pagina), "teto": "5"})
+    assert r.status_code == 302
+    con = _con(casa)
+    assert QIA.teto_do_dia(con) == 5
+    auditoria = con.execute("SELECT details FROM audit_logs WHERE action = ? "
+                            "ORDER BY id DESC", ("RI_QUALIFICACAO_IA_TETO",)).fetchone()
+    detalhes = json.loads(auditoria[0])
+    assert detalhes["depois"] == 5 and detalhes["antes"] == 20
+    for numero in range(11830, 11835):
+        _, pid = _prenotacao(casa, numero=numero)
+        escritura, _ = _titulo_e_itbi(casa, pid)
+        with con:
+            QIA.pedir(con, pid, anexos_ids=[escritura])      # ficam PENDENTE
+    _, pid = _prenotacao(casa, numero=11835)
+    escritura, _ = _titulo_e_itbi(casa, pid)
+    with pytest.raises(QIA.QualificacaoIAError, match="5 em andamento, de 5"):
+        with con:
+            QIA.pedir(con, pid, anexos_ids=[escritura])
+    n = con.execute("SELECT COUNT(*) FROM ri_qualificacao_ia WHERE protocolo_id = ?",
+                    (pid,)).fetchone()[0]
+    con.close()
+    assert n == 0
+    # fora da faixa é recusado e não muda nada; vazio volta ao padrão
+    pagina = casa["c"].get("/registro-imoveis/qualificacao-ia/configuracao").get_data(as_text=True)
+    casa["c"].post("/registro-imoveis/qualificacao-ia/configuracao",
+                   data={"csrf_token": _token(pagina), "teto": "0"})
+    con = _con(casa)
+    assert QIA.teto_do_dia(con) == 5
+    con.close()
+    casa["c"].post("/registro-imoveis/qualificacao-ia/configuracao",
+                   data={"csrf_token": _token(pagina), "teto": ""})
+    con = _con(casa)
+    assert QIA.teto_do_dia(con) == 20
+    con.close()
+    # o gerente não muda o teto
+    casa["db"].create_user("beatriz", "BEATRIZ EXEMPLO", "Senha#12345", "MANAGER")
+    c = casa["app"].test_client()
+    cg_login(c, "beatriz", "Senha#12345")
+    assert c.get("/registro-imoveis/qualificacao-ia/configuracao").status_code == 403
+    tok = _token(c.get("/").get_data(as_text=True))
+    assert c.post("/registro-imoveis/qualificacao-ia/configuracao",
+                  data={"csrf_token": tok, "teto": "50"}).status_code == 403
+    con = _con(casa)
+    assert QIA.teto_do_dia(con) == 20
+    con.close()

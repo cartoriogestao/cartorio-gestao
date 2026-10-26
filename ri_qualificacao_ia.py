@@ -384,21 +384,69 @@ def em_andamento(con, protocolo_id: int) -> dict | None:
 # é só desta finalidade e só do dia — amanhã a vaga volta.
 CHAVE_DA_TRAVA_DO_TETO = "ri_qualificacao_ia.teto_do_dia"
 
+# O NÚMERO DO TETO — DECISÃO DO OFICIAL EM 26/10/2026: 20 leituras por dia
+# (era 40), e o ADMIN o muda na tela de configuração da qualificação assistida
+# (`ri_qualificacao_ia_web`, com auditoria). O padrão de fábrica continua no
+# catálogo de IA (`ia_catalogo.CHAMADAS_POR_DIA`, que agora diz 20); a
+# configuração gravada (`settings.qualificacao_ia_teto_dia`) ganha dele. Valor
+# fora da faixa, ou vazio, volta ao padrão — um número torto na tabela não pode
+# virar «sem teto».
+CHAVE_DO_TETO = "qualificacao_ia_teto_dia"
+TETO_MINIMO = 1
+TETO_MAXIMO = 200
+
+
+def teto_padrao() -> int | None:
+    """O teto de fábrica, do catálogo de IA. SÓ LÊ."""
+    import ia_catalogo as CAT
+    return CAT.teto_diario(FINALIDADE)
+
+
+def teto_do_dia(con) -> int | None:
+    """Quantas leituras por dia: o que o ADMIN gravou, ou o padrão do
+    catálogo. SÓ LÊ."""
+    bd = banco(con)
+    if bd.tem_tabela("settings"):
+        linha = bd.um("SELECT value FROM settings WHERE key = %s", (CHAVE_DO_TETO,))
+        try:
+            gravado = int(str(linha["value"]).strip()) if linha else None
+        except (TypeError, ValueError):
+            gravado = None
+        if gravado is not None and TETO_MINIMO <= gravado <= TETO_MAXIMO:
+            return gravado
+    return teto_padrao()
+
+
+def validar_teto(valor: object) -> int | None:
+    """O número que a tela mandou; vazio = voltar ao padrão (None). Fora da
+    faixa, a frase do porquê não."""
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+    try:
+        n = int(texto)
+    except ValueError:
+        raise QualificacaoIAError("O teto é um número inteiro de leituras por dia.") from None
+    if not TETO_MINIMO <= n <= TETO_MAXIMO:
+        raise QualificacaoIAError(
+            f"O teto vai de {TETO_MINIMO} a {TETO_MAXIMO} leituras por dia.")
+    return n
+
 
 def passou_do_teto_do_dia(con, *, agora: str | None = None,
                           sem_o_pedido: int | None = None) -> str | None:
     """A frase de recusa quando o dia já gastou (ou reservou) o teto, ou None.
 
     SÓ LÊ. Conta `ia_uso` do dia mais os pedidos PENDENTE/LENDO de hoje, menos
-    `sem_o_pedido` (o que `executar` está para mandar). Sem teto no catálogo,
-    passa.
+    `sem_o_pedido` (o que `executar` está para mandar). O teto é o de
+    `teto_do_dia` (o que o ADMIN gravou, ou o padrão do catálogo); sem teto
+    nenhum, passa.
     """
-    import ia_catalogo as CAT
     import ia_uso as USO
-    teto = CAT.teto_diario(FINALIDADE)
+    bd = banco(con)
+    teto = teto_do_dia(bd)
     if teto is None:
         return None
-    bd = banco(con)
     hoje = (agora or _agora())[:10]
     feitas = USO.usos_do_dia(bd, FINALIDADE, hoje)
     em_voo = 0
@@ -412,8 +460,8 @@ def passou_do_teto_do_dia(con, *, agora: str | None = None,
     return (f"O teto de hoje da qualificação assistida já foi atingido: {feitas} "
             f"leitura(s) feita(s) e {em_voo} em andamento, de {teto} por dia. Nada foi "
             "enviado à IA. Qualifique este título à mão, ou espere: o teto volta "
-            "amanhã. Se o dia pede mais, fale com o administrador — o número está no "
-            "catálogo de IA (ia_catalogo).")
+            "amanhã. Se o dia pede mais, fale com o administrador — ele muda o teto na "
+            "configuração da qualificação assistida.")
 
 
 def pedir(con, protocolo_id: int, *, anexos_ids, especie: str = "",

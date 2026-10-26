@@ -185,7 +185,10 @@ def test_botao_selar_cartao_humano_apos_robo_e_403_no_robo(casa):
         cid = _con(casa).execute(
             "SELECT id FROM nt_cartoes WHERE nome=?",
             ("ANA PENDENTE",)).fetchone()["id"]
-        html2 = c.get(f"/notas/cartoes/{cid}").get_data(as_text=True)
+        # A FICHA DO CARTÃO (`notas_cartao`) NÃO ESTÁ NA LISTA DO ROBÔ desde
+        # 26/10/2026 (`rotas_do_robo`): o token vem da tela dos cartões, e o
+        # 403 do «Selar» continua sendo o que se prova.
+        html2 = c.get("/notas/cartoes").get_data(as_text=True)
         r403 = c.post(
             f"/notas/cartoes/{cid}/selar",
             data={"csrf_token": _token(html2)},

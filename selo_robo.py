@@ -104,6 +104,22 @@ def rota_permitida_ao_robo(endpoint: Any) -> bool:
     return nome in RR.ROTAS_PERMITIDAS_AO_ROBO
 
 
+#: Os LANÇAMENTOS que o robô não faz, mesmo nas rotas de lançar que ele
+#: alcança (`rotas_do_robo`): os que DESFAZEM ou SUSPENDEM ato — o
+#: cancelamento (RCPJ/RTD, Livro 3, Protesto) e as ordens judiciais do
+#: Protesto. Revisão de segurança de 26/10/2026: cancelar é decisão de gente.
+LANCAMENTOS_VEDADOS_AO_ROBO = ("CANCELAMENTO", "SUSTACAO", "EFEITO_SUSPENSIVO",
+                               "REVOGACAO_EFEITO_SUSPENSIVO")
+
+
+def lancamento_vedado_ao_robo(tipo: Any, user: Any = None) -> bool:
+    """True = a rota de lançar deve responder 403: é robô pedindo um dos
+    `LANCAMENTOS_VEDADOS_AO_ROBO`. Só calcula."""
+    if str(tipo or "").strip().upper() not in LANCAMENTOS_VEDADOS_AO_ROBO:
+        return False
+    return usuario_e_robo(user)
+
+
 def exige_humano_para_selar(user: Any = None) -> bool:
     """True = a rota do botao Selar deve responder 403."""
     return usuario_e_robo(user)

@@ -11,6 +11,7 @@ lembrar de escrever teste para ela.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -72,6 +73,56 @@ def test_a_lista_e_fechada_e_nao_um_prefixo():
     assert SR.rota_permitida_ao_robo("notas_reconhecimento_que_nao_existe") is False
 
 
+# ------------------------------------------------------ a lista negra
+
+#: Palavras que, no nome de uma rota, dizem que ela desfaz, manda para fora,
+#: traz acervo ou mexe na configuração — o que o robô não faz (revisão de
+#: segurança de 26/10/2026, sobre a primeira versão desta lista, que trazia
+#: `ri_cancelar_ato` e `ri_expurgar_ato`).
+LISTA_NEGRA = re.compile(r"cancel|expurg|apagar|excluir|enviar|importar|configuracao|modelo")
+
+#: Exceção à lista negra: rota -> por que o robô precisa dela E qual teste
+#: prova que ela recusa o robô por dentro no que é perigoso. Vazia hoje.
+EXCECOES_DA_LISTA_NEGRA: dict[str, str] = {}
+
+
+def test_nenhuma_permitida_cai_na_lista_negra_sem_excecao_declarada():
+    import rotas_do_robo as RR
+    caem = sorted(n for n in RR.ROTAS_PERMITIDAS_AO_ROBO
+                  if LISTA_NEGRA.search(n) and n not in EXCECOES_DA_LISTA_NEGRA)
+    assert caem == [], f"rotas da lista negra sem exceção declarada: {caem}"
+
+
+def test_toda_excecao_da_lista_negra_esta_justificada_e_em_uso():
+    import rotas_do_robo as RR
+    for nome, motivo in EXCECOES_DA_LISTA_NEGRA.items():
+        assert LISTA_NEGRA.search(nome), f"{nome} não precisa de exceção"
+        assert nome in RR.ROTAS_PERMITIDAS_AO_ROBO, f"{nome} não está na lista"
+        assert len(motivo.split()) >= 8 and "test" in motivo, (
+            f"{nome}: a exceção diz por quê e cita o teste da recusa por dentro")
+
+
+@pytest.mark.parametrize("nome", ["ri_cancelar_ato", "ri_expurgar_ato", "ri_expurgo_ata",
+                                  "ri_expurgos", "notas_publica_forma_cancelar",
+                                  "rascunho_apagar", "notas_ato_apagar_rascunho",
+                                  "rcpn_crc_enviar", "protesto_retorno_enviar",
+                                  "livro3_importar_acervo", "ri_importacoes",
+                                  "notas_veiculo_configuracao", "ri_modelos",
+                                  "ri_aplicar_modelo", "ri_preencher_modelo",
+                                  "nu_avisos_dispensar_importantes_faixa"])
+def test_as_rotas_apontadas_pela_revisao_estao_fora(nome):
+    import selo_robo as SR
+    assert SR.rota_permitida_ao_robo(nome) is False
+
+
+def test_a_lista_nao_volta_a_ser_o_modulo_inteiro():
+    """A primeira versão listava 357 rotas — todas as dos módulos que citavam
+    o robô. A medida é o que ele FAZ; crescer muito é sinal de que voltou a
+    ser o módulo inteiro, e quem crescer revê este número com o motivo."""
+    import rotas_do_robo as RR
+    assert len(RR.ROTAS_PERMITIDAS_AO_ROBO) <= 60, len(RR.ROTAS_PERMITIDAS_AO_ROBO)
+
+
 # ------------------------------------------------- contra o app de verdade
 
 
@@ -130,8 +181,8 @@ def test_toda_rota_fora_da_lista_e_403_para_o_robo(cg_casa):
             abertas.append(f"{regra.endpoint} {metodo.upper()} {endereco} "
                            f"-> {resposta.status_code}")
     # PISO: varredor que deixa de achar passa calado. No main de 26/10/2026
-    # havia ~890 rotas e 357 permitidas: sobram mais de 400 fechadas.
-    assert vistas >= 400, vistas
+    # havia ~890 rotas e 50 permitidas: sobram mais de 800 fechadas.
+    assert vistas >= 700, vistas
     assert abertas == [], "rotas fora da lista que o robô alcança:\n" + "\n".join(abertas)
 
 
@@ -141,6 +192,47 @@ def test_o_robo_continua_trabalhando_no_que_e_dele(cg_casa):
     c = _robo_logado(cg_casa)
     for rota in ("/", "/notas/reconhecimento", "/notas/autenticacao", "/notas/cartoes"):
         assert c.get(rota).status_code != 403, rota
+
+
+@pytest.mark.parametrize("rota,campo,valor", [
+    ("/rcpj-rtd/1/lancar", "tipo", "CANCELAMENTO"),
+    ("/livro3/1/lancar", "tipo", "CANCELAMENTO"),
+    ("/protesto/1/lancar", "ato", "CANCELAMENTO"),
+    ("/protesto/1/lancar", "ato", "SUSTACAO"),
+    ("/protesto/1/lancar", "ato", "EFEITO_SUSPENSIVO"),
+    ("/protesto/1/lancar", "ato", "REVOGACAO_EFEITO_SUSPENSIVO"),
+])
+def test_o_robo_alcanca_a_rota_de_lancar_mas_nao_cancela(cg_casa, rota, campo, valor):
+    """A RECUSA POR DENTRO: o robô entra na rota de lançar (para averbar,
+    apontar, intimar), e o cancelamento e as ordens judiciais respondem 403
+    antes de abrir transação — o registro nem precisa existir."""
+    import re as _re
+    c = _robo_logado(cg_casa)
+    html = c.get("/").get_data(as_text=True)
+    token = _re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    r = c.post(rota, data={"csrf_token": token, campo: valor})
+    assert r.status_code == 403, (rota, valor)
+
+
+def test_o_robo_averba_pela_mesma_rota(cg_casa):
+    """O controle do de cima: AVERBACAO não é recusada pela régua (o registro
+    inexistente volta com aviso, e não com 403)."""
+    import re as _re
+    c = _robo_logado(cg_casa)
+    html = c.get("/").get_data(as_text=True)
+    token = _re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    r = c.post("/rcpj-rtd/1/lancar", data={"csrf_token": token, "tipo": "AVERBACAO"})
+    assert r.status_code != 403
+
+
+def test_lancamento_vedado_so_vale_para_robo():
+    import selo_robo as SR
+    robo = {"eh_robo": 1, "full_name": "Robo Exemplo", "username": "robo_x"}
+    gente = {"eh_robo": 0, "full_name": "MARIO EXEMPLO", "username": "mario"}
+    assert SR.lancamento_vedado_ao_robo("CANCELAMENTO", robo) is True
+    assert SR.lancamento_vedado_ao_robo("cancelamento", robo) is True
+    assert SR.lancamento_vedado_ao_robo("AVERBACAO", robo) is False
+    assert SR.lancamento_vedado_ao_robo("CANCELAMENTO", gente) is False
 
 
 def test_as_vedadas_continuam_403(cg_casa):

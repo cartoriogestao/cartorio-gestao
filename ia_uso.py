@@ -292,15 +292,22 @@ def passou_do_teto(con, finalidade: str, *, agora: str | None = None) -> str | N
 # `robo_llm.chamar_provedor`) chamam `reservar` antes de mandar qualquer byte.
 # A vaga se toma num único `UPDATE ... WHERE reservadas < teto RETURNING`: o
 # PostgreSQL tranca a linha, e a segunda chamada simultânea espera a primeira
-# e relê a condição — não há como as duas passarem pela última vaga. A chamada
-# que FALHA (rede, prazo, recusa do provedor) devolve a vaga com `devolver`:
-# falha não gasta o teto para sempre. O uso real continua indo para `ia_uso`
-# por `registrar`, depois da resposta, como sempre.
+# e relê a condição — não há como as duas passarem pela última vaga. O uso
+# real continua indo para `ia_uso` por `registrar`, depois da resposta.
 #
-# BANCO FORA DO AR NÃO TRAVA O ATENDIMENTO. Se a reserva não consegue falar
-# com o banco, ela vai para o log e a chamada segue — a mesma troca de
-# `registrar` e da auditoria: entre perder a contagem e perder o atendimento,
-# a serventia precisa do atendimento. O que trava é o teto ATINGIDO.
+# A VAGA SÓ VOLTA QUANDO O PEDIDO NÃO SAIU (reconferência de 26/10/2026): erro
+# de conexão ANTES do envio (sem rede, conexão recusada, chave que falta)
+# devolve com `devolver`. Prazo esgotado e erro DEPOIS do envio (HTTP do
+# provedor, resposta ilegível) deixam a vaga consumida — o provedor pode ter
+# processado, e cobrado — e isso vai ao log (`consumida_sem_resposta`).
+#
+# E A RESERVA FALHA FECHADA (reconferência de 26/10/2026). A primeira versão
+# deixava a chamada seguir quando o banco não respondia — e uma trava
+# demorada (`LockNotAvailable`) virava «chamada sem teto», que é exatamente o
+# caso da disputa que a reserva existe para resolver. Agora qualquer erro na
+# reserva levanta `ReservaIndisponivel` e NADA sobe ao provedor. A única folga
+# é a instalação velha em que a tabela `ia_cota` falta e não pode ser criada:
+# ali vale a conta do registro de uso, como antes desta versão.
 
 #: A espera pela trava da linha da cota. Maior que a do registro: aqui duas
 #: chamadas disputam a MESMA linha de propósito, e a segunda tem de esperar a
@@ -311,6 +318,18 @@ ESPERA_DA_RESERVA_MS = 3000
 class TetoAtingido(RuntimeError):
     """A cota do dia daquela finalidade já está toda reservada. A mensagem é
     a frase pronta para a tela; nada foi enviado ao provedor."""
+
+
+class ReservaIndisponivel(TetoAtingido):
+    """A cota não pôde ser conferida (banco fora do ar, trava que não veio a
+    tempo). FALHA FECHADA: nada foi enviado ao provedor. É `TetoAtingido` para
+    quem chama, de propósito — o caminho de recusa é o mesmo."""
+
+
+FRASE_RESERVA_INDISPONIVEL = (
+    "Não foi possível conferir a cota de uso de IA de hoje — o banco não "
+    "respondeu a tempo. Por segurança, nada foi enviado ao provedor. Tente de "
+    "novo em instantes; se continuar, avise o administrador.")
 
 
 @dataclass(frozen=True)
@@ -334,10 +353,12 @@ def reservar(pasta_de_dados: Any, finalidade: str, *,
              agora: str | None = None) -> Reserva | None:
     """Toma UMA vaga da cota do dia, ANTES da rede. **ESCREVE** (conexão própria).
 
-    Devolve a `Reserva` (para `devolver`, se a chamada falhar), ou None quando
-    a finalidade não tem teto diário no catálogo — ou quando o banco não
-    respondeu (vai para o log, e a chamada segue; ver o comentário acima).
-    Levanta `TetoAtingido` quando a cota acabou: aí NADA deve subir.
+    Devolve a `Reserva` (para `devolver`, se o pedido não chegar a sair), ou
+    None quando a finalidade não tem teto diário no catálogo.
+    Levanta `TetoAtingido` quando a cota acabou, e `ReservaIndisponivel`
+    (que é um `TetoAtingido`) quando não deu para conferir: nos dois, NADA
+    deve subir. A única folga é a tabela da cota que falta e não pode ser
+    criada (instalação velha): vale a conta do registro de uso.
 
     A primeira reserva do dia semeia a cota com o que `ia_uso` já registrou
     hoje — o uso de antes desta versão, ou o de um transporte que não reservou.
@@ -347,37 +368,71 @@ def reservar(pasta_de_dados: Any, finalidade: str, *,
     if teto is None:
         return None
     dia = (agora or _agora())[:10]
-    tomada = None
+
+    def indisponivel(falha: BaseException) -> ReservaIndisponivel:
+        LOG.error("RESERVA DE IA NAO FEITA (%s: %s): finalidade=%s dia=%s — NADA "
+                  "foi enviado ao provedor", type(falha).__name__,
+                  _curto(falha, 200), _curto(finalidade), dia)
+        return ReservaIndisponivel(FRASE_RESERVA_INDISPONIVEL)
+
     try:
         con = _conexao_propria(pasta_de_dados)
-        try:
-            bd = banco(con)
-            bd.ler(f"SET lock_timeout = '{int(ESPERA_DA_RESERVA_MS)}ms'")
-            if not bd.tem_tabela("ia_cota") or not bd.tem_tabela("ia_uso"):
+    except Exception as falha:  # noqa: BLE001 — sem banco, FALHA FECHADA
+        raise indisponivel(falha) from falha
+    try:
+        bd = banco(con)
+        bd.ler(f"SET lock_timeout = '{int(ESPERA_DA_RESERVA_MS)}ms'")
+        if not bd.tem_tabela("ia_cota"):
+            try:
                 init_ia_schema(con)
-            bd.escrever(
-                """INSERT INTO ia_cota (finalidade, dia, reservadas) VALUES (%s, %s, %s)
-                   ON CONFLICT (finalidade, dia) DO NOTHING""",
-                (finalidade, dia, usos_do_dia(con, finalidade, dia)))
-            tomada = bd.escrever(
-                """UPDATE ia_cota SET reservadas = reservadas + 1
-                    WHERE finalidade = %s AND dia = %s AND reservadas < %s
-                RETURNING reservadas""", (finalidade, dia, int(teto)))
-            con.commit()
-        finally:
-            con.close()
-    except Exception as falha:  # noqa: BLE001 — banco fora do ar não trava a chamada
-        LOG.error("RESERVA DE IA NAO FEITA (%s: %s): finalidade=%s dia=%s — a "
-                  "chamada segue sem a trava do teto", type(falha).__name__,
-                  _curto(falha, 200), _curto(finalidade), dia)
-        return None
+                con.commit()
+            except Exception as falha:  # noqa: BLE001 — a única folga, ver acima
+                con.rollback()
+                LOG.warning("COTA DE IA SEM A TABELA ia_cota (%s: %s): finalidade=%s "
+                            "— vale a conta do registro de uso", type(falha).__name__,
+                            _curto(falha, 200), _curto(finalidade))
+                feitos = usos_do_dia(con, finalidade, dia)
+                if feitos >= int(teto):
+                    raise TetoAtingido(_frase_do_teto(finalidade, feitos, int(teto))) \
+                        from None
+                return None
+        bd.escrever(
+            """INSERT INTO ia_cota (finalidade, dia, reservadas) VALUES (%s, %s, %s)
+               ON CONFLICT (finalidade, dia) DO NOTHING""",
+            (finalidade, dia, usos_do_dia(con, finalidade, dia)))
+        tomada = bd.escrever(
+            """UPDATE ia_cota SET reservadas = reservadas + 1
+                WHERE finalidade = %s AND dia = %s AND reservadas < %s
+            RETURNING reservadas""", (finalidade, dia, int(teto)))
+        con.commit()
+    except TetoAtingido:
+        raise
+    except Exception as falha:  # noqa: BLE001 — trava demorada, banco caído: FECHADA
+        try:
+            con.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        raise indisponivel(falha) from falha
+    finally:
+        con.close()
     if not tomada:
         raise TetoAtingido(_frase_do_teto(finalidade, int(teto), int(teto)))
     return Reserva(finalidade=finalidade, dia=dia, teto=int(teto))
 
 
+def consumida_sem_resposta(reserva: Reserva | None, motivo: str) -> None:
+    """A vaga fica gasta: o pedido saiu (ou o prazo esgotou) e não houve
+    resposta boa. SÓ ESCREVE NO LOG — o provedor pode ter processado e cobrado,
+    e a conta do dia tem de dizer isso."""
+    if reserva is None:
+        return
+    LOG.warning("VAGA DE IA CONSUMIDA SEM RESPOSTA: finalidade=%s dia=%s motivo=%s",
+                _curto(reserva.finalidade), reserva.dia, _curto(motivo))
+
+
 def devolver(pasta_de_dados: Any, reserva: Reserva | None) -> bool:
-    """Solta a vaga de uma chamada que FALHOU. **ESCREVE, e NUNCA levanta.**
+    """Solta a vaga de uma chamada cujo pedido NÃO SAIU. **ESCREVE, e NUNCA
+    levanta.**
 
     Sem reserva (finalidade sem teto, ou banco que não respondeu na reserva)
     não há o que soltar. Devolve se soltou.

@@ -169,13 +169,19 @@ class AgenteError(ValueError):
     (`ia_uso`, LF01) — e só ele vai: a mensagem pode trazer de volta um pedaço
     do que o provedor recebeu. `recusado` separa o pedido que não chegou a sair
     (ou que o provedor recusou) da falha de rede ou de serviço.
+
+    `enviado` diz se o pedido CHEGOU A SAIR (26/10/2026, para a cota do dia):
+    False = falhou antes do envio (chave, tamanho, conexão recusada) e a vaga
+    volta; True = saiu (o provedor respondeu, ou o prazo esgotou depois); None
+    = não se sabe, e conta como saiu.
     """
 
     def __init__(self, mensagem: object = "", *, motivo: str = "",
-                 recusado: bool = False) -> None:
+                 recusado: bool = False, enviado: bool | None = None) -> None:
         super().__init__(_sem_segredo(str(mensagem or "")))
         self.motivo = motivo
         self.recusado = recusado
+        self.enviado = enviado
 
 
 # ----------------------------------------------------------- as credenciais
@@ -713,21 +719,26 @@ def _turno(pasta_de_dados: Any, *, provedor: Any, sistema: str,
     base64 passa fácil dos 900 mil caracteres que bastam a uma conversa, e o
     teto do provedor é de 32 MB por pedido. Quem o aumenta declara por quê.
     """
-    prov = normalizar_provedor(provedor)
-    pedido = montar_pedido(prov, sistema=sistema, conversa=conversa,
-                           ferramentas=ferramentas, modelo=modelo,
-                           maximo_de_saida=maximo_de_saida, extras=extras,
-                           betas=betas)
-    corpo = json.dumps(pedido["corpo"], ensure_ascii=False).encode("utf-8")
-    if len(corpo) > (limite_de_envio or LIMITE_DE_ENVIO):
-        raise AgenteError(
-            f"A conversa ficou grande demais ({len(corpo) // 1024} KB). Isso "
-            f"quase sempre é engano de quem a montou — reduza o que vai junto "
-            f"e comece uma sessão nova.", motivo="conversa grande demais",
-            recusado=True)
-    # A CREDENCIAL É PEDIDA AQUI, e não antes: assim uma sessão que só lê o
-    # histórico não precisa de chave nenhuma para existir.
-    cabecalhos = _cabecalhos(pedido, credencial(pasta_de_dados, prov))
+    try:
+        prov = normalizar_provedor(provedor)
+        pedido = montar_pedido(prov, sistema=sistema, conversa=conversa,
+                               ferramentas=ferramentas, modelo=modelo,
+                               maximo_de_saida=maximo_de_saida, extras=extras,
+                               betas=betas)
+        corpo = json.dumps(pedido["corpo"], ensure_ascii=False).encode("utf-8")
+        if len(corpo) > (limite_de_envio or LIMITE_DE_ENVIO):
+            raise AgenteError(
+                f"A conversa ficou grande demais ({len(corpo) // 1024} KB). Isso "
+                f"quase sempre é engano de quem a montou — reduza o que vai junto "
+                f"e comece uma sessão nova.", motivo="conversa grande demais",
+                recusado=True)
+        # A CREDENCIAL É PEDIDA AQUI, e não antes: assim uma sessão que só lê o
+        # histórico não precisa de chave nenhuma para existir.
+        cabecalhos = _cabecalhos(pedido, credencial(pasta_de_dados, prov))
+    except AgenteError as falha:
+        # NADA SAIU AINDA: a recusa aqui é antes de qualquer conexão.
+        falha.enviado = False
+        raise
 
     # O RELÓGIO COMEÇA AQUI, E ELE EXISTE PARA A MENSAGEM DO FIM — problema #74.
     # «Não consegui falar com o provedor» não dizia se o problema foi a rede ou o
@@ -736,6 +747,9 @@ def _turno(pasta_de_dados: Any, *, provedor: Any, sistema: str,
     # pergunta olhando a tela, em vez de ir medir de novo.
     inicio = time.time()
     ultimo = ""
+    # O PEDIDO SAIU? `request` só volta depois de mandar o corpo inteiro; se
+    # qualquer tentativa chegou até ali, o provedor pode ter processado.
+    saiu = False
     for tentativa in range(1, TENTATIVAS + 1):
         try:
             conexao = http.client.HTTPSConnection(
@@ -744,6 +758,7 @@ def _turno(pasta_de_dados: Any, *, provedor: Any, sistema: str,
             try:
                 conexao.request("POST", pedido["caminho"], body=corpo,
                                 headers=cabecalhos)
+                saiu = True
                 resposta = conexao.getresponse()
                 bruto = resposta.read()
                 situacao = int(resposta.status)
@@ -762,7 +777,7 @@ def _turno(pasta_de_dados: Any, *, provedor: Any, sistema: str,
         if situacao and situacao not in (429, 500, 502, 503, 504):
             raise AgenteError(_explicar(prov, situacao, bruto),
                               motivo=f"HTTP {situacao}",
-                              recusado=400 <= situacao < 500)
+                              recusado=400 <= situacao < 500, enviado=True)
         ultimo = ultimo or _explicar(prov, situacao, bruto)
         if tentativa < TENTATIVAS:
             time.sleep(2 * tentativa)
@@ -773,9 +788,12 @@ def _turno(pasta_de_dados: Any, *, provedor: Any, sistema: str,
         motivo = "sem resposta no prazo"
     else:
         motivo = "sem rede"
+    # PRAZO ESGOTADO CONTA COMO ENVIADO, mesmo na conexão: não se sabe se o
+    # provedor recebeu, e a vaga fica gasta (reconferência de 26/10/2026).
     raise AgenteError(_nao_consegui(prov, ultimo, corpo=corpo, prazo=prazo,
                                     segundos=time.time() - inicio),
-                      motivo=motivo)
+                      motivo=motivo,
+                      enviado=saiu or motivo == "sem resposta no prazo")
 
 
 def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
@@ -816,13 +834,17 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
     # A COTA DO DIA SE RESERVA AQUI, ANTES DA REDE (26/10/2026, achado
     # transversal 3 da revisão de segurança): o chamador que esqueceu de
     # conferir o teto também para, e duas chamadas ao mesmo tempo não passam
-    # pela última vaga. A chamada que falhar devolve a vaga.
+    # pela última vaga. Reserva que não pôde ser conferida também para (falha
+    # fechada). A vaga só volta se o pedido NÃO SAIU (`AgenteError.enviado`).
     try:
         reserva = USO.reservar(pasta_de_dados, finalidade)
     except USO.TetoAtingido as teto:
+        motivo = ("cota indisponível" if isinstance(teto, USO.ReservaIndisponivel)
+                  else "teto do dia")
         USO.registrar(pasta_de_dados, **registro, resultado=USO.RECUSADO,
-                      erro="teto do dia")
-        raise AgenteError(str(teto), motivo="teto do dia", recusado=True) from teto
+                      erro=motivo)
+        raise AgenteError(str(teto), motivo=motivo, recusado=True,
+                          enviado=False) from teto
     try:
         lida = _turno(pasta_de_dados, provedor=provedor, sistema=sistema,
                       conversa=conversa, ferramentas=ferramentas,
@@ -830,13 +852,17 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
                       prazo=prazo, extras=extras, betas=betas,
                       limite_de_envio=limite_de_envio)
     except AgenteError as falha:
-        USO.devolver(pasta_de_dados, reserva)
+        if falha.enviado is False:
+            USO.devolver(pasta_de_dados, reserva)
+        else:
+            USO.consumida_sem_resposta(reserva, falha.motivo or "falha do transporte")
         USO.registrar(pasta_de_dados, **registro,
                       resultado=USO.RECUSADO if falha.recusado else USO.ERRO,
                       erro=falha.motivo or "falha do transporte")
         raise
     except Exception as falha:
-        USO.devolver(pasta_de_dados, reserva)
+        # Falha que não se sabe onde aconteceu conta como enviada.
+        USO.consumida_sem_resposta(reserva, type(falha).__name__)
         USO.registrar(pasta_de_dados, **registro, resultado=USO.ERRO,
                       erro=type(falha).__name__)
         raise

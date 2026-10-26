@@ -162,6 +162,28 @@ def _motivo(erro: BaseException) -> tuple[str, str]:
     return USO.ERRO, type(erro).__name__
 
 
+def _pedido_nao_saiu(erro: BaseException) -> bool:
+    """O pedido falhou ANTES de sair? Só aí a vaga da cota volta (26/10/2026).
+
+    - recusa antes da rede (provedor desconhecido, chave vazia): não saiu;
+    - `URLError` é o que o `urllib` levanta quando a CONEXÃO ou o ENVIO falham
+      (ele embrulha só o `request`, e não a leitura da resposta): não saiu —
+      salvo se a razão for prazo esgotado, que conta como enviado;
+    - `HTTPError` (o provedor respondeu), prazo esgotado na leitura, resposta
+      ilegível ou vazia: saiu, e a vaga fica gasta.
+    """
+    if isinstance(erro, urllib.error.HTTPError):
+        return False
+    if isinstance(erro, ValueError) and not isinstance(erro, json.JSONDecodeError):
+        return True
+    if isinstance(erro, urllib.error.URLError):
+        razao = erro.reason
+        if isinstance(razao, TimeoutError) or "timed out" in str(razao).lower():
+            return False
+        return True
+    return False
+
+
 def chamar_provedor(
     provedor: str,
     api_key: str,
@@ -195,19 +217,24 @@ def chamar_provedor(
                 "modelo": MODELOS_PADRAO.get((provedor or "").strip().lower(), "")}
     # A COTA DO DIA SE RESERVA ANTES DA REDE (26/10/2026, achado transversal
     # 3 da revisão de segurança) — a mesma regra de `agente_provedores.
-    # conversar`. Teto atingido: nada sobe, e o registro diz por quê. A chamada
-    # que falhar devolve a vaga.
+    # conversar`. Teto atingido ou cota que não pôde ser conferida: nada sobe,
+    # e o registro diz por quê. A vaga só volta se o pedido NÃO SAIU.
     try:
         reserva = USO.reservar(pasta_de_dados, finalidade)
-    except USO.TetoAtingido:
+    except USO.TetoAtingido as teto:
         USO.registrar(pasta_de_dados, **registro, resultado=USO.RECUSADO,
-                      erro="teto do dia")
+                      erro=("cota indisponível"
+                            if isinstance(teto, USO.ReservaIndisponivel)
+                            else "teto do dia"))
         raise
     try:
         lida = _pedir(provedor, api_key, system, user, timeout=timeout)
     except Exception as erro:
-        USO.devolver(pasta_de_dados, reserva)
         resultado, motivo = _motivo(erro)
+        if _pedido_nao_saiu(erro):
+            USO.devolver(pasta_de_dados, reserva)
+        else:
+            USO.consumida_sem_resposta(reserva, motivo)
         USO.registrar(pasta_de_dados, **registro, resultado=resultado, erro=motivo)
         raise
     registro["modelo"] = lida["modelo"] or registro["modelo"]

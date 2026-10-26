@@ -4060,7 +4060,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     # commit — gravadas depois, ela as acharia sempre vazias.
                     marcas_do_obito=(
                         {k: _campo(k) for k in MARCA.CHAVES if _campo(k)}
-                        if especie == "OBITO" else None))
+                        if especie == "OBITO" else None),
+                    # O TERMO DE PATERNIDADE DO NASCIMENTO SEM O PAI (23/10/2026):
+                    # a lavratura recusa sem ele, e o gera junto.
+                    paternidade=({c: _campo(c) for c in (
+                        "paternidade_tipo", "suposto_pai_nome",
+                        "suposto_pai_profissao", "suposto_pai_documento",
+                        "suposto_pai_residencia")}
+                        if especie == "NASCIMENTO" else None))
                 # O TERMO VAZIO SE ESCREVE PELO MODELO DA CASA (11/10/2026). É
                 # o caminho da importação sem robô: o arquivo traz os CAMPOS, e
                 # o texto que vai ao livro sai deles, pelo mesmo `congelar` da
@@ -4672,6 +4679,60 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def rcpn_retificar(assento_id: int):
         return _rcpn_tela_lancamento(assento_id, "RETIFICACAO")
 
+    # ------------------------- o termo de paternidade (23/10/2026)
+
+    @app.route("/rcpn/<int:assento_id>/paternidade/termo")
+    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    def rcpn_paternidade_termo(assento_id: int):
+        """O termo de alegação (ou negativo) em .odt, para a mãe e o oficial
+        assinarem e a serventia arquivar. O texto é o que foi gravado na
+        lavratura — não se remonta."""
+        import rc_paternidade as RP
+        from ri_odt import gerar_odt, html_para_odf
+        with db.connect() as con:
+            termo = RP.do_assento(con, assento_id)
+        if not termo:
+            flash("Este assento não tem termo de paternidade.", "warning")
+            return redirect(url_for("rcpn_assento", assento_id=assento_id))
+        from markupsafe import escape as esc
+        s = sv()
+        html = (f'<p align="center"><b>{esc(s.get("unit_name", ""))}</b></p>'
+                f'<p align="center">CNS {esc(s.get("ri_cns", ""))}</p><p></p>'
+                f'<p>{esc(termo["teor"])}</p><p></p><p></p>'
+                f'<p align="center">_________________________________</p>'
+                f'<p align="center">{esc(termo.get("mae_nome") or "a declarante")}</p>'
+                f'<p></p><p align="center">_________________________________</p>'
+                f'<p align="center">{esc(s.get("serventia_titular", ""))}</p>'
+                f'<p align="center">{esc(s.get("serventia_titulo", ""))}</p>')
+        arquivo = gerar_odt(html_para_odf(html), titulo=termo["nome_do_tipo"])
+        audit("RCPN_TERMO_PATERNIDADE_IMPRESSO", "rc_termos_paternidade",
+              termo["id"], {"assento_id": assento_id, "tipo": termo["tipo"]})
+        return Response(arquivo,
+                        mimetype="application/vnd.oasis.opendocument.text",
+                        headers={"Content-Disposition":
+                                 f'attachment; filename="termo-paternidade-{assento_id}.odt"'})
+
+    @app.route("/rcpn/<int:assento_id>/paternidade/remessa", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def rcpn_paternidade_remessa(assento_id: int):
+        """Grava a remessa do termo de alegação ao juiz (PJe). ESCREVE."""
+        import rc_paternidade as RP
+        try:
+            with db.transaction() as con:
+                r = RP.registrar_remessa(
+                    con, assento_id, processo=_campo("remessa_processo"),
+                    data=_campo("remessa_data"), agora=agora(),
+                    usuario=usuario_nome())
+        except RP.PaternidadeError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("rcpn_assento", assento_id=assento_id))
+        audit("RCPN_TERMO_PATERNIDADE_REMETIDO", "rc_termos_paternidade", None,
+              {"assento_id": assento_id, "processo": r["processo"],
+               "remetido_em": r["remetido_em"]})
+        flash(f"Remessa ao juiz registrada: processo {r['processo']}, em "
+              f"{r['remetido_em']}.", "success")
+        return redirect(url_for("rcpn_assento", assento_id=assento_id))
+
     @app.route("/rcpn/<int:assento_id>")
     @login_required
     def rcpn_assento(assento_id: int):
@@ -4749,6 +4810,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                                assento["especie"])
             habilitacao_vinculo = HAB.habilitacao_relacionada_ao_assento(
                 con, assento_id)
+            import rc_paternidade as RP
+            termo_paternidade = RP.do_assento(con, assento_id)
         # Os tres blocos que a inspecao cobra, cada um no seu lugar.
         blocos = {t: [a for a in atos if a["tipo"] == t]
                   for t in ("REGISTRO", "AVERBACAO", "ANOTACAO", "RETIFICACAO")}
@@ -4761,6 +4824,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                          especie=assento["especie"])
         return render_template("atrib_rcpn_ficha.html", assento=dict(assento),
                                habilitacao_vinculo=habilitacao_vinculo,
+                               termo_paternidade=termo_paternidade,
                                SITUACOES=HC.SITUACOES,
                                selagem=selagem,
                                blocos=blocos, dados=dados, receitas=receitas,

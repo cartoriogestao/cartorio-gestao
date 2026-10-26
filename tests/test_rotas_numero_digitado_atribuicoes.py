@@ -293,6 +293,7 @@ NASCIMENTO = {"especie": "NASCIMENTO", "nome": "ANA DE EXEMPLO",
               "data_fato": "2026-08-20", "local_fato_nome": "Hospital de Exemplo",
               "ibge_local": "1", "filiacao1_nome": "MARIA DE EXEMPLO",
               "filiacao2_nome": "IGNORADO", "declarante_nome": "MARIA DE EXEMPLO",
+              "paternidade_tipo": "NEGATIVO",   # pai ignorado: termo (23/10/2026)
               "acao": "lavrar", "folha_seguranca": "{folha}",
               "selo": "{selo}"}
 

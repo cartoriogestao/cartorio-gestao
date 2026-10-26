@@ -292,6 +292,7 @@ def _minimo_legal(especie="NASCIMENTO"):
             d["numero_do"] = "12345"
         else:
             d["ibge_local"] = "1"     # relato #130: o SIRC exige «onde nasceu»
+            d["paternidade_tipo"] = "NEGATIVO"   # pai ignorado: termo (23/10/2026)
         return d
     if especie in ("CASAMENTO", "CASAMENTO_RELIGIOSO"):
         return {"data_fato": "2026-08-20",
@@ -388,6 +389,7 @@ def test_a_url_fixa_a_especie_mesmo_se_o_post_for_adulterado(casa):
         "filiacao1_nome": "MARIA DA SILVA",
         "filiacao2_nome": "IGNORADO",
         "declarante_nome": "MARIA DA SILVA",
+        "paternidade_tipo": "NEGATIVO",   # pai ignorado: termo (23/10/2026)
     }, follow_redirects=True)
     assert "Assento lavrado" in r.get_data(as_text=True)
     a = _con(casa).execute("SELECT especie, serie FROM rc_assentos").fetchone()

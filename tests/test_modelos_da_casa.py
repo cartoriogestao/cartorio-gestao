@@ -1724,6 +1724,34 @@ MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"] = {
          "requerido (CN-MA art. 197)</b></p>"),
     ),
 }
+# O CÓDIGO DE ACOMPANHAMENTO NO RECIBO E NA RECEPÇÃO — portal do cliente,
+# 26/10/2026 («código no recibo», o oficial). Uma linha nova em cada papel,
+# antes da data: o número do protocolo, o código e como consultar. Sem o bloco
+# no contexto (o recibo sem protocolo, o protesto), o papel é o de antes. Na
+# prévia o boneco não tem amostra do bloco, e ele sai «[acompanhamento]».
+_ACOMPANHAMENTO = ("{% if acompanhamento %}<p><b>ACOMPANHE O SEU PEDIDO:</b> protocolo nº "
+                   "{{ acompanhamento.numero }}, código de acompanhamento <b>"
+                   "{{ acompanhamento.codigo }}</b>. {{ acompanhamento.como_consultar }}"
+                   "</p>{% endif %}\n")
+_ACOMPANHAMENTO_NA_PREVIA = ("<p><b>ACOMPANHE O SEU PEDIDO:</b> protocolo nº [acompanhamento], "
+                             "código de acompanhamento <b>[acompanhamento]</b>. "
+                             "[acompanhamento]</p>\n")
+_FIM_DA_OBSERVACAO_DO_RECIBO = "{% if r.observacao %}<p>{{ observacao }}</p>{% endif %}\n"
+MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"] = {
+    "texto": MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"]["texto"] + (
+        (_FIM_DA_OBSERVACAO_DO_RECIBO, _FIM_DA_OBSERVACAO_DO_RECIBO + _ACOMPANHAMENTO),),
+    "papel": MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"]["papel"] + (
+        ("<p>[observacao]</p>\n<p>None, ",
+         "<p>[observacao]</p>\n" + _ACOMPANHAMENTO_NA_PREVIA + "<p>None, "),),
+}
+_FIM_DA_OBSERVACAO_DA_RECEPCAO = ("{% if p.observacao %}<p><b>Observação:</b> "
+                                  "{{ observacao }}</p>{% endif %}\n")
+MUDOU_DEPOIS_DO_OURO["CAIXA_RECEPCAO"] = {
+    "texto": ((_FIM_DA_OBSERVACAO_DA_RECEPCAO,
+               _FIM_DA_OBSERVACAO_DA_RECEPCAO + _ACOMPANHAMENTO),),
+    "papel": (("</p>\n\n\n<p>A retirada",
+               "</p>\n\n\n" + _ACOMPANHAMENTO_NA_PREVIA + "<p>A retirada"),),
+}
 MONTADORES_MUDADOS_DEPOIS_DO_OURO = {
     "notas_certidao.montar_teor(INTEIRO_TEOR)": (
         ("nele encontrei procuração lavrada em",

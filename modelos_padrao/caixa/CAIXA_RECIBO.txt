@@ -21,6 +21,7 @@ FERC R$ {{ fundos.ferc }}; FADEP R$ {{ fundos.fadep }}; FEMP R$ {{ fundos.femp }
 FERRFIS R$ {{ fundos.ferrfis }}.</p>{% endif %}
 {% if r.forma_pagamento %}<p><b>Forma de pagamento:</b> {{ r.forma_pagamento }}.</p>{% endif %}
 {% if r.observacao %}<p>{{ observacao }}</p>{% endif %}
+{% if acompanhamento %}<p><b>ACOMPANHE O SEU PEDIDO:</b> protocolo nº {{ acompanhamento.numero }}, código de acompanhamento <b>{{ acompanhamento.codigo }}</b>. {{ acompanhamento.como_consultar }}</p>{% endif %}
 <p>{{ sv.cidade_uf }}, {{ data_extenso }}.</p>
 <p align="center">_______________________________________</p>
 <p align="center">{{ emitido_por }}{% if funcao %}<br>{{ funcao }}{% endif %}</p>

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Portal do cliente — Administrativo{% endblock %}
+{% block heading %}<h1>Portal do cliente</h1>{% endblock %}
+{% block content %}
+{#
+  O PORTAL DO CLIENTE — o oficial, 26/10/2026: «portal do cliente para
+  acompanhar o pedido e baixar o recibo», no VPS do WhatsApp, com «código no
+  recibo». Esta tela configura o ENVIO: o servidor empurra para a VPS o
+  retrato mínimo de cada protocolo. A VPS nunca alcança o servidor.
+#}
+<div class="card">
+  <p class="small">
+    Cada protocolo ganha um <strong>código de acompanhamento</strong>, impresso no
+    recibo e no protocolo de recepção. Com o <strong>número do protocolo e o
+    código</strong>, o cliente vê a situação do pedido no portal e baixa o recibo.
+    Quem não tem o papel não consulta o protocolo de outra pessoa.
+  </p>
+  <p class="small muted">
+    O servidor desta casa <strong>não</strong> fica na internet: ele manda para a VPS,
+    por HTTPS de saída, só o número, o <em>hash</em> do código (nunca o código), a
+    situação em linguagem simples, a previsão, a última movimentação e a atribuição —
+    e o recibo em PDF, que leva o nome do pagador, o documento mascarado e os valores,
+    como o papel que o cliente já tem. Nada de nome no retrato, CPF, assunto ou teor.
+    {% for a in FORA %}<strong>{{ a }}</strong>{% endfor %} não entra no portal (sigilo).
+    {% for a in SEM_RECIBO %}<strong>{{ a }}</strong>{% endfor %} entra sem o recibo:
+    a discriminação diria qual ato foi pedido.
+  </p>
+  <p class="small muted">
+    O protocolo encerrado fica no portal por {{ DIAS_DEPOIS_DE_ENCERRADO }} dias; o
+    aberto, por até {{ DIAS_DO_ABERTO }} dias desde a abertura. Depois a VPS apaga.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Situação</h2>
+  <table>
+    <tr><td>Envio</td><td>{% if cfg.ligado %}<strong>ligado</strong>{% else %}desligado{% endif %}</td></tr>
+    <tr><td>Endereço do portal</td><td>{{ cfg.url or '— não informado' }}</td></tr>
+    <tr><td>Token da VPS</td><td>{% if cfg.tem_token %}gravado (não aparece){% else %}não gravado{% endif %}</td></tr>
+    <tr><td>Protocolos com código</td><td>{{ cfg.com_codigo }}</td></tr>
+    <tr><td>Protocolos no portal agora</td><td>{{ cfg.no_portal }}</td></tr>
+    <tr><td>Último envio</td><td>
+      {% if cfg.ultimo and cfg.ultimo.em %}{{ cfg.ultimo.em }} —
+        {% if cfg.ultimo.ok %}{{ cfg.ultimo.enviados }} enviado(s), {{ cfg.ultimo.removidos }} retirado(s){% if cfg.ultimo.incompletos %}, {{ cfg.ultimo.incompletos }} sem o PDF do recibo{% endif %}
+        {% else %}nada subiu: {{ cfg.ultimo.motivo }}{% endif %}
+      {% else %}nenhum ainda{% endif %}</td></tr>
+  </table>
+  {% if pode_gravar %}
+  <form method="post" action="{{ url_for('caixa_portal_cliente') }}" style="margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button primary" name="acao" value="enviar">Enviar agora</button>
+    <span class="small muted"> — a tarefa do Agendador faz o mesmo a cada 15 minutos.</span>
+  </form>
+  {% endif %}
+</div>
+
+{% if pode_gravar %}
+<form method="post" action="{{ url_for('caixa_portal_cliente') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="acao" value="gravar">
+  <div class="card">
+    <h2>Configuração</h2>
+    <p>
+      <label>Endereço público do portal (https://…)<br>
+        <input type="text" name="url" value="{{ cfg.url or '' }}" autocomplete="off"
+               style="width:100%" placeholder="https://servidor-da-vps/portal">
+      </label>
+    </p>
+    <p class="small muted">É o endereço que sai impresso no recibo. O envio vai para o
+      mesmo endereço, em <code>/api/retratos</code>. Só HTTPS: o token não viaja em claro.</p>
+    <p>
+      <label>Token da VPS<br>
+        <input type="password" name="token" value="" autocomplete="new-password"
+               style="width:100%" placeholder="vazio = não altera">
+      </label>
+    </p>
+    <p class="small muted">O mesmo token gravado na VPS (pelo menos 32 caracteres). Ele
+      fica fora do banco, num arquivo cifrado da pasta de dados (<code>portal.cred</code>).
+      {% if cfg.tem_token %}<label><input type="checkbox" name="apagar_token" value="1">
+        apagar o token gravado</label>{% endif %}</p>
+    <p>
+      <label class="check"><input type="checkbox" name="ligado" value="1"
+             {% if cfg.ligado %}checked{% endif %}>
+        Envio ligado</label>
+    </p>
+    <p><button class="button primary">Gravar</button></p>
+  </div>
+</form>
+{% else %}
+<p class="small muted">Só o oficial grava a configuração do portal.</p>
+{% endif %}
+{% endblock %}

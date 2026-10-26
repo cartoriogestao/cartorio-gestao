@@ -857,6 +857,11 @@
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Atendimento</div>
         <a href="{{ url_for('service_queue') }}">Atendimento / senhas</a>
         <a href="{{ url_for('whatsapp_lista') }}">WhatsApp</a>
+        {# O PORTAL DO CLIENTE (26/10/2026): o cliente acompanha o pedido com o
+           número e o código do recibo, numa página na VPS do WhatsApp. Ao lado
+           do WhatsApp porque mora no mesmo VPS e responde à mesma pergunta —
+           «em que pé está o meu pedido?». #}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('caixa_portal_cliente') }}">Portal do cliente</a>{% endif %}
         <a href="{{ url_for('robos_lista') }}">Robôs</a>
         {# A LISTA E DE TODOS, e ela atravessa as seis atribuicoes: e o unico
            lugar onde o que comecou e nao terminou aparece junto. Sem ela sao

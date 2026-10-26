@@ -543,6 +543,23 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     #   que o orçamento tinha de sair.
     ("cx_depositos", "orcamento", "TEXT"),
     ("cx_depositos", "lancamento_id", "bigint"),
+    # **O PORTAL DO CLIENTE — «código no recibo» (o oficial, 26/10/2026).**
+    #
+    #   Cada protocolo ganha um código de acompanhamento aleatório, impresso no
+    #   recibo e no protocolo de recepção; com NÚMERO + CÓDIGO o cliente vê o
+    #   andamento sem entrar no servidor da casa. O código é senha do cliente:
+    #   `acompanhamento_hash` é o hash que confere (PBKDF2, e é ele que vai à
+    #   VPS); `acompanhamento_cifra` é o código cifrado com a chave do cofre,
+    #   FORA do banco, para reimprimir. Em claro, ele não fica em lugar nenhum.
+    #   Ver `acompanhamento_cliente.py`.
+    ("cx_protocolos", "acompanhamento_hash", "TEXT"),
+    ("cx_protocolos", "acompanhamento_cifra", "TEXT"),
+    ("cx_protocolos", "acompanhamento_em", "TEXT"),
+    #   O que já foi empurrado para a VPS (`portal_cliente.py`): a impressão
+    #   digital do último retrato aceito, para o mesmo retrato não subir de novo
+    #   a cada rodada, e quando subiu.
+    ("cx_protocolos", "portal_marca", "TEXT"),
+    ("cx_protocolos", "portal_enviado_em", "TEXT"),
 )
 
 # Funcoes possiveis de quem atende ao balcao, na nomenclatura da Lei 8.935/94

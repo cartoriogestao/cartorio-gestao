@@ -103,6 +103,43 @@
   </div>
 </section>
 
+{#
+  O CÓDIGO DE ACOMPANHAMENTO — portal do cliente, 26/10/2026. Com o número e
+  este código o cliente vê a situação no portal (ou pergunta no WhatsApp). O
+  código é a senha DELE: só aparece para quem pratica ato, e não vai à
+  auditoria. «Trocar» invalida o de antes.
+#}
+{% if acompanhamento and acompanhamento.elegivel %}
+<section class="panel">
+  <div class="panel-head"><span>Acompanhamento pelo cliente</span>
+    <span class="small muted">o cliente vê: «{{ acompanhamento.situacao }}»</span></div>
+  <div style="padding:14px">
+    {% if acompanhamento.codigo %}
+    <p>Código: <strong style="font-family:monospace;font-size:1.2em">{{ acompanhamento.codigo }}</strong>
+      <span class="small muted"> — sai no recibo e no protocolo de recepção.</span></p>
+    {% elif acompanhamento.tem %}
+    <p class="small muted">O protocolo tem código, e ele não pôde ser lido do cofre da
+      casa{% if user.role not in ['ADMIN','MANAGER','USER'] %} (ou o seu perfil não o mostra){% endif %}.
+      Para o cliente voltar a consultar, troque o código e imprima o papel de novo.</p>
+    {% else %}
+    <p class="small muted">Ainda sem código: ele nasce quando o recibo ou o protocolo de
+      recepção é impresso, ou pelo botão abaixo.</p>
+    {% endif %}
+    {% if user.role in ['ADMIN','MANAGER','USER'] %}
+    <form method="post" action="{{ url_for('caixa_protocolo', protocolo_id=p.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if acompanhamento.tem %}
+      <button class="button" name="acao" value="acompanhamento_trocar"
+              onclick="return confirm('O código de antes deixa de valer. Trocar?')">Trocar o código</button>
+      {% else %}
+      <button class="button" name="acao" value="acompanhamento_gerar">Gerar o código</button>
+      {% endif %}
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 {% if p.ri_protocolo_id or (p.atribuicao or '')|upper == 'RI' %}
 <section class="panel">
   <div class="panel-head"><span>Vínculo com a prenotação (Livro 1)</span></div>

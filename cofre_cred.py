@@ -56,7 +56,11 @@ NOME_DA_CHAVE = "cofre.key"
 ROBOS = "robos.cred"
 WHATSAPP = "whatsapp.cred"
 BACKUP = "backup.cred"
-ARQUIVOS = (ROBOS, WHATSAPP, BACKUP)
+# O PORTAL DO CLIENTE (26/10/2026): a chave que cifra os códigos de
+# acompanhamento dos protocolos (`acompanhamento_cliente`) e o token com que o
+# servidor empurra o retrato dos protocolos para a VPS (`portal_cliente`).
+PORTAL = "portal.cred"
+ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, PORTAL)
 
 FORMATO = "cg-cofre-1"
 CODIFICACAO = "utf-8-sig"

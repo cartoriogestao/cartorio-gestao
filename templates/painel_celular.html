@@ -1,0 +1,163 @@
+{#
+  O PAINEL NO CELULAR — 26/10/2026, `painel_celular_web`.
+
+  Página PRÓPRIA, e não do `base.html`, de propósito: o `base` traz o menu
+  inteiro da casa, com os nomes de todas as telas, e quem tem o papel PAINEL
+  não entra em nenhuma delas — mostrar a porta que não abre é ruído numa tela
+  de celular. Só números: o que chega aqui é o dicionário de `painel_numeros`,
+  sem nome, sem CPF e sem teor.
+#}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta http-equiv="refresh" content="300">
+  <title>Painel da casa - {{ APP_NAME }}</title>
+  <style>
+    :root { --fundo:#f4f5f7; --cartao:#fff; --texto:#1d2330; --apagado:#5d6677;
+            --linha:#e2e5ea; --destaque:#1f5fa8; --alerta:#a3261f; --ok:#22703a; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fundo:#14171c; --cartao:#1e232b; --texto:#e8ebf0; --apagado:#9aa3b2;
+              --linha:#2e3440; --destaque:#7fb0ef; --alerta:#f08a83; --ok:#7fd08f; }
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--fundo); color:var(--texto);
+           font:16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    header, main { max-width:560px; margin:0 auto; padding:0 16px; }
+    header { padding-top:14px; }
+    h1 { font-size:1.15rem; margin:0; }
+    .quando { color:var(--apagado); font-size:.85rem; margin:2px 0 10px; }
+    nav.periodos { display:flex; gap:6px; margin:0 0 12px; }
+    nav.periodos a { flex:1; text-align:center; padding:10px 0; border-radius:10px;
+                     background:var(--cartao); border:1px solid var(--linha);
+                     color:var(--texto); text-decoration:none; font-weight:600; }
+    nav.periodos a.ativo { background:var(--destaque); border-color:var(--destaque); color:#fff; }
+    section { background:var(--cartao); border:1px solid var(--linha); border-radius:12px;
+              padding:12px 14px; margin:0 0 12px; }
+    h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.04em;
+         color:var(--apagado); margin:0 0 8px; }
+    .grande { font-size:1.8rem; font-weight:700; font-variant-numeric:tabular-nums; }
+    .sub { color:var(--apagado); font-size:.85rem; }
+    dl { display:grid; grid-template-columns:1fr auto; gap:6px 12px; margin:6px 0 0; }
+    dt { color:var(--apagado); }
+    dd { margin:0; text-align:right; font-weight:600; font-variant-numeric:tabular-nums; }
+    dd.ruim { color:var(--alerta); }
+    .aviso { border-color:var(--alerta); }
+    .aviso p { margin:0; color:var(--alerta); }
+    footer { max-width:560px; margin:0 auto; padding:4px 16px 24px; display:flex;
+             gap:10px; flex-wrap:wrap; align-items:center; font-size:.9rem; }
+    footer a, footer button { color:var(--destaque); background:none; border:0;
+                              padding:6px 0; font:inherit; cursor:pointer; text-decoration:underline; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>{{ unit_name }}</h1>
+  <p class="quando">Números agregados · medidos em {{ n.gerado_em[8:10] }}/{{ n.gerado_em[5:7] }} às {{ n.gerado_em[11:16] }}</p>
+  <nav class="periodos">
+    {% for q in periodos %}<a href="{{ url_for('painel_celular', p=q) }}" class="{{ 'ativo' if q == periodo else '' }}">{{ rotulos[q] }}</a>{% endfor %}
+  </nav>
+</header>
+<main>
+  {% if n.nao_mediu %}
+  <section class="aviso"><p>Não deu para medir: {{ n.nao_mediu|join(', ') }}. Esses números aparecem como «—», e não como zero.</p></section>
+  {% endif %}
+
+  <section>
+    <h2>Receita do caixa — {{ rotulos[periodo]|lower }}</h2>
+    <div class="grande">{{ reais(p.receita_centavos) }}</div>
+    <div class="sub">{{ p.lancamentos if p.lancamentos is not none else '—' }} recebimentos · {{ p.gratuidades if p.gratuidades is not none else '—' }} gratuidades</div>
+  </section>
+
+  <section>
+    <h2>Atos praticados (selos usados)</h2>
+    <div class="grande">{{ p.selos_usados if p.selos_usados is not none else '—' }}</div>
+    {% if p.atos_por_atribuicao %}
+    <dl>
+      {% for a in atribuicoes %}<dt>{{ a }}</dt><dd>{{ p.atos_por_atribuicao[a] }}</dd>{% endfor %}
+      {% if p.atos_por_atribuicao[outras] %}<dt>{{ outras }}</dt><dd>{{ p.atos_por_atribuicao[outras] }}</dd>{% endif %}
+      <dt>Selos cancelados</dt><dd>{{ p.selos_cancelados }}</dd>
+    </dl>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Balcão — {{ rotulos[periodo]|lower }}</h2>
+    <dl>
+      <dt>Protocolos abertos</dt><dd>{{ p.protocolos_abertos if p.protocolos_abertos is not none else '—' }}</dd>
+      <dt>Senhas emitidas</dt><dd>{{ p.senhas if p.senhas is not none else '—' }}</dd>
+      <dt>· prioritárias</dt><dd>{{ p.senhas_prioritarias if p.senhas_prioritarias is not none else '—' }}</dd>
+      <dt>Espera média</dt><dd>{{ (p.espera_media_min ~ ' min') if p.espera_media_min is not none else '—' }}</dd>
+    </dl>
+  </section>
+
+  {% set ag = n.agora %}
+  <section>
+    <h2>Agora — atendimento</h2>
+    {% if ag.atendimento %}
+    <dl>
+      <dt>Esperando</dt><dd>{{ ag.atendimento.aguardando }}</dd>
+      <dt>Em atendimento</dt><dd>{{ ag.atendimento.em_atendimento }}</dd>
+      <dt>Atendidos hoje</dt><dd>{{ ag.atendimento.finalizados }}</dd>
+    </dl>
+    {% else %}<p class="sub">—</p>{% endif %}
+  </section>
+
+  <section>
+    <h2>Agora — protocolos e prenotações</h2>
+    <dl>
+      {% if ag.protocolos %}
+      <dt>Protocolos em andamento</dt><dd>{{ ag.protocolos.em_andamento }}</dd>
+      <dt>· atrasados (previsão vencida)</dt><dd class="{{ 'ruim' if ag.protocolos.atrasados else '' }}">{{ ag.protocolos.atrasados }}</dd>
+      <dt>· sem item (a encerrar)</dt><dd>{{ ag.protocolos.sem_item }}</dd>
+      {% endif %}
+      {% if ag.prenotacoes %}
+      <dt>Prenotações abertas</dt><dd>{{ ag.prenotacoes.abertas }}</dd>
+      <dt>· vencidas</dt><dd class="{{ 'ruim' if ag.prenotacoes.vencidas else '' }}">{{ ag.prenotacoes.vencidas }}</dd>
+      <dt>· vencendo em {{ ag.prenotacoes.a_vencer_dias_uteis }} dias úteis</dt><dd class="{{ 'ruim' if ag.prenotacoes.a_vencer else '' }}">{{ ag.prenotacoes.a_vencer }}</dd>
+      <dt>· prazo suspenso</dt><dd>{{ ag.prenotacoes.prazo_suspenso }}</dd>
+      {% endif %}
+    </dl>
+  </section>
+
+  <section>
+    <h2>Agora — tarefas</h2>
+    {% if ag.tarefas %}
+    <dl>
+      <dt>Atrasadas</dt><dd class="{{ 'ruim' if ag.tarefas.atrasadas else '' }}">{{ ag.tarefas.atrasadas }}</dd>
+      <dt>Vencendo</dt><dd>{{ ag.tarefas.vencendo }}</dd>
+      <dt>Abertas</dt><dd>{{ ag.tarefas.abertas }}</dd>
+      <dt>Aguardando terceiro</dt><dd>{{ ag.tarefas.aguardando_terceiro }}</dd>
+      <dt>Suspensas</dt><dd>{{ ag.tarefas.suspensas }}</dd>
+      <dt>Expedientes ativos</dt><dd>{{ ag.tarefas.expedientes_ativos }}</dd>
+    </dl>
+    {% else %}<p class="sub">—</p>{% endif %}
+  </section>
+
+  <section>
+    <h2>Alertas da casa</h2>
+    {% if ag.alertas %}
+    <dl>
+      <dt>Achados abertos do gestor</dt><dd class="{{ 'ruim' if ag.alertas.achados_abertos else '' }}">{{ ag.alertas.achados_abertos }}</dd>
+      {% for g, q in ag.alertas.achados_por_gravidade.items() if q %}<dt>· {{ g|lower|replace('_', ' ') }}</dt><dd>{{ q }}</dd>{% endfor %}
+      <dt>Última rodada do gestor</dt><dd class="{{ 'ruim' if ag.alertas.gestor_ultima_rodada_com_erro else '' }}">{% if ag.alertas.gestor_ultima_rodada %}{{ ag.alertas.gestor_ultima_rodada[8:10] }}/{{ ag.alertas.gestor_ultima_rodada[5:7] }} {{ ag.alertas.gestor_ultima_rodada[11:16] }}{% if ag.alertas.gestor_ultima_rodada_com_erro %} (com erro){% endif %}{% else %}nunca{% endif %}</dd>
+      {% if ag.alertas.manutencao_diaria_com_erro %}<dt>Manutenção diária</dt><dd class="ruim">com erro</dd>{% endif %}
+      {% if ag.alertas.disputas_de_escrita %}<dt>Disputas de escrita no banco</dt><dd class="ruim">{{ ag.alertas.disputas_de_escrita }}</dd>{% endif %}
+      {% if ag.alertas.implantacao_abertas %}<dt>O que só o oficial informa</dt><dd>{{ ag.alertas.implantacao_abertas }}</dd>{% endif %}
+    </dl>
+    {% else %}<p class="sub">—</p>{% endif %}
+  </section>
+</main>
+<footer>
+  {% if not so_agregados %}<a href="{{ url_for('dashboard') }}">Sistema completo</a>{% endif %}
+  {% if user and user.role == 'ADMIN' %}<a href="{{ url_for('painel_retrato_tela') }}">Retrato para fora</a>{% endif %}
+  <a href="{{ url_for('minha_senha') }}">Trocar senha</a>
+  <form method="post" action="{{ url_for('logout') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Sair</button>
+  </form>
+</footer>
+</body>
+</html>

@@ -33,7 +33,7 @@ from security import new_csrf_token
 
 # OS PAPÉIS DA CASA — os mesmos de `app.ROLES` e de `database.create_user`. Não
 # se importa de `app` porque `app` importa este módulo; há teste que compara.
-PAPEIS = ("ADMIN", "MANAGER", "USER", "AUDITOR")
+PAPEIS = ("ADMIN", "MANAGER", "USER", "AUDITOR", "PAINEL")
 
 _CHAVES_DA_MEIA_SESSAO = ("df_uid", "df_desde", "df_next", "df_cadastro")
 

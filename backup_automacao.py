@@ -82,6 +82,33 @@ def _mb(n: Any) -> str:
 # ------------------------------------------------------------- o backup
 
 
+def registrar_os_feitos(db, feitos: list[dict], *, origem: str, agora: datetime,
+                         pasta: Path) -> str:
+    """Grava os pacotes gerados em `bk_pacotes` e na auditoria. Devolve o aviso, ou ``""``.
+
+    As DUAS portas da rodada chamam isto (a automação e o primeiro acesso do
+    dia, em `app.automatic_backup_once`): pacote que só uma delas registrasse
+    seria recusado pelo teste de restauração conforme quem o gerou.
+    """
+    if not feitos:
+        return ""
+    try:
+        REST.registrar_pacotes_gerados(db, feitos, origem=origem, agora=agora)
+    except Exception as erro:                  # noqa: BLE001 — vira aviso com a frase
+        return (f"o pacote saiu, mas o registro do SHA-256 dele falhou ({type(erro).__name__}: "
+                f"{erro}) — o teste de restauração vai recusá-lo")[:400]
+    for f in feitos:
+        try:
+            db.log(None, "SISTEMA",
+                   "AUTO_BACKUP_COMPLETO" if f["tipo"] == "completo" else "AUTO_BACKUP_BANCO",
+                   "BACKUP", None,
+                   {"path": str(Path(pasta) / f["arquivo"]), "bytes": f["bytes"],
+                    "sha256": f["sha256"], "cifrado": f["cifrado"], "origem": origem})
+        except Exception:                      # noqa: BLE001 — a auditoria não derruba o backup
+            pass
+    return ""
+
+
 def rodar_backup(ctx) -> dict:
     """A rodada do backup, no horário. ESCREVE na pasta dos backups."""
     pasta_dados = Path(ctx.pasta_dados)
@@ -107,6 +134,12 @@ def rodar_backup(ctx) -> dict:
         return _resultado("AVISO", f"O backup não rodou agora: {erro}. A próxima rodada tenta de novo.",
                           [{"pasta": str(pasta)}])
 
+    # O PACOTE GERADO FICA REGISTRADO, COM O SHA-256 (26/10/2026, PR #27 M1): é
+    # a lista que o teste de restauração confere antes de rodar o pg_restore —
+    # pacote que não está nela não se restaura. E vai à auditoria, como o
+    # primeiro acesso do dia já fazia, agora com o SHA-256.
+    aviso_do_registro = registrar_os_feitos(ctx.db, r["feitos"], origem="automação",
+                                             agora=ctx.agora, pasta=pasta)
     achados = ([{"feito": f} for f in r["feitos"]] + [{"ja_existia": j} for j in r["ja_existiam"]]
                + [{"falha": f} for f in r["falhas"]])
     acoes = [{"acao": f"gerou o pacote {f['arquivo']}", "bytes": f["bytes"], "sha256": f["sha256"]}
@@ -118,6 +151,8 @@ def rodar_backup(ctx) -> dict:
         return _resultado("ERRO", f"O BACKUP FALHOU — {partes}", achados, acoes,
                           erro=r["falhas"][0]["erro"][:500])
     avisos = list(r["avisos"])
+    if aviso_do_registro:
+        avisos.append(aviso_do_registro)
     if cifra == "perdida":
         avisos.append("a senha da cifra do backup está no cofre e não abre (a chave do cofre "
                       "sumiu): o pacote saiu SEM cifra — reconfigure a cifra em Configurações")
@@ -153,7 +188,7 @@ def rodar_teste_de_restauracao(ctx) -> dict:
                           "testar a restauração — o backup não está saindo.", [{"pasta": str(pasta)}],
                           erro="nenhum pacote")
     senha = (BKP.senha_da_cifra(pasta_dados) or None) if BKP.e_cifrado(pacote) else None
-    r = REST.testar(pacote, senha=senha, agora=ctx.agora)
+    r = REST.testar(pacote, db=ctx.db, pasta_dados=pasta_dados, senha=senha, agora=ctx.agora)
     numero = REST.registrar(ctx.db, r)
     return _relato_do_teste(r, numero, pacote, ctx.agora,
                             int(ctx.parametros.get("idade_maxima_h", 48)))
@@ -246,13 +281,17 @@ def main(argv: list[str] | None = None) -> int:
             from bd_nativo import banco
             linha = banco(con).um("SELECT value FROM settings WHERE key = 'backup_dir'")
         pasta = pasta_das_copias.pasta_de_backups(pasta_dados, (linha or {}).get("value") or "")
+        # O PACOTE ESCOLHIDO À MÃO TAMBÉM PASSA PELA LISTA (26/10/2026, PR #27):
+        # `testar` recusa o que a casa não gerou, venha de onde vier. Quem
+        # precisa restaurar pacote de fora faz isso à mão, num servidor de
+        # teste — não por esta porta, que roda como o papel do sistema.
         pacote = Path(argv[1]) if len(argv) > 1 else ROT.ultimo_pacote(pasta)
         if pacote is None:
             print("Nenhum pacote automático na pasta dos backups.", file=sys.stderr)
             return 1
         senha = (BKP.senha_da_cifra(pasta_dados) or None) if BKP.e_cifrado(pacote) else None
         agora = datetime.now()
-        r = REST.testar(pacote, senha=senha, agora=agora)
+        r = REST.testar(pacote, db=db, pasta_dados=pasta_dados, senha=senha, agora=agora)
         numero = REST.registrar(db, r, quem="linha de comando")
         resultado = _relato_do_teste(r, numero, pacote, agora, 10 ** 6)
         print(f"[{resultado['situacao']}] {resultado['relato']}")

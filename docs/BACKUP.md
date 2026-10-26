@@ -165,6 +165,30 @@ processos), que **nascem desligados** — quem liga é o oficial:
   do banco da casa, salvo se `CG_PG_DSN_RESTAURACAO` apontar outro (por exemplo,
   o servidor de teste). **A conta do banco precisa do privilégio CREATEDB**, e o
   servidor precisa de espaço para uma cópia do banco enquanto o teste roda.
+- **E a conta NÃO pode ser superusuário** (revisão de segurança de 26/10/2026).
+  O `pg_restore` executa o que o pacote traz com o papel da conexão; o banco
+  descartável isola os dados, não os privilégios. O teste recusa (ERRO, nada
+  restaurado) papel superusuário, membro de superusuário ou de
+  `pg_execute_server_program`/`pg_write_server_files`/`pg_read_server_files`,
+  ou com CREATEROLE, REPLICATION ou BYPASSRLS. **A conta `cg` da instalação é
+  superusuário** — então, para o teste rodar, crie um papel só para ele e
+  aponte `CG_PG_DSN_RESTAURACAO` para ele (sem a senha no DSN: ela vai no
+  `pgpass` da conta do serviço, como a do `cg`):
+
+  ```sql
+  CREATE ROLE cg_restauro LOGIN CREATEDB PASSWORD '<senha forte>';
+  ```
+
+  `CG_PG_DSN_RESTAURACAO=host=127.0.0.1 port=<porta> user=cg_restauro dbname=postgres`
+- **Só se restaura pacote que o sistema gerou.** A rodada do backup grava o
+  nome e o SHA-256 de cada pacote em `bk_pacotes` (e na auditoria
+  `AUTO_BACKUP_*`); o teste recusa o pacote que não está lá — inclusive pela
+  linha de comando. Pacote gerado antes de 26/10/2026 é recusado até o próximo
+  backup sair.
+- **O pacote é aberto na pasta de dados do servidor** (`restauracao_tmp`,
+  restrita), e não na pasta dos backups: o pacote decifrado e o dump em claro
+  nunca ficam na pasta que sai da serventia. Ela precisa de espaço para uma
+  cópia do pacote e do dump enquanto o teste roda.
 - **O que ele confere:** cada tabela que voltou, contra a contagem que o
   manifesto gravou no mesmo instantâneo do `pg_dump`; e que as tabelas
   principais (usuários, configurações, auditoria, anexos, protocolo, caixa,

@@ -12,7 +12,11 @@ O QUE ESTES TESTES PROVAM (26/10/2026)
     - o processo de backup gera o pacote do dia, não repete, e a falha vira ERRO
       — que a central da automação transforma em aviso no painel e tarefa;
     - o primeiro acesso do dia continua como reserva, uma vez por DIA, e não
-      repete o pacote que a automação já gerou.
+      repete o pacote que a automação já gerou;
+    - (revisão de segurança, 26/10/2026) só se restaura pacote que a casa gerou
+      (nome e SHA-256 em `bk_pacotes`), nunca com papel que tenha poder no
+      servidor, e o pacote é aberto na pasta de dados — não na dos backups.
+      As restaurações de verdade usam um papel só com LOGIN CREATEDB.
 
     Os de PostgreSQL são lentos (pg_dump e pg_restore de um schema inteiro no
     servidor de teste, que é compartilhado): UM pacote para o módulo e DUAS
@@ -68,6 +72,42 @@ def pacote(_cg_boot, tmp_path_factory):
     return destino
 
 
+@pytest.fixture
+def papel_restrito(monkeypatch):
+    """Um papel só com LOGIN CREATEDB para o pg_restore — o que a casa deve configurar.
+
+    Desde 26/10/2026 (revisão de segurança, PR #27) o teste de restauração
+    RECUSA papel superusuário, e o `cg` do servidor de teste é superusuário:
+    sem este papel, as restaurações de verdade terminariam em FALHOU.
+    """
+    import secrets
+
+    import psycopg
+    from psycopg import sql
+    from psycopg.conninfo import make_conninfo
+    base = banco_pg.dsn()
+    nome = f"cg_restauro_teste_{secrets.token_hex(3)}"
+    senha = secrets.token_urlsafe(18)
+    try:
+        with psycopg.connect(base, autocommit=True) as pg, pg.cursor() as c:
+            c.execute(sql.SQL("CREATE ROLE {} LOGIN CREATEDB PASSWORD {}").format(
+                sql.Identifier(nome), sql.Literal(senha)))
+    except psycopg.Error as erro:
+        pytest.skip(f"sem como criar o papel restrito do teste ({erro})")
+    monkeypatch.setenv("CG_PG_DSN_RESTAURACAO", make_conninfo(base, user=nome, password=senha))
+    yield nome
+    try:
+        with psycopg.connect(base, autocommit=True) as pg, pg.cursor() as c:
+            c.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(nome)))
+    except psycopg.Error:
+        pass
+
+
+def _registrar(db, p: Path) -> None:
+    """O pacote entra na lista dos que a casa gerou — como a rodada do backup faz."""
+    REST.registrar_pacotes_gerados(db, [ROT._descrever(p, "banco")], origem="teste")
+
+
 def _manifesto(p: Path) -> dict:
     with zipfile.ZipFile(p) as zf:
         return json.loads(zf.read(BKP.NOME_MANIFESTO).decode("utf-8"))
@@ -101,11 +141,13 @@ def test_o_manifesto_leva_as_contagens_do_mesmo_instantaneo(pacote):
 # ------------------------------------------------------------- a restauração, de verdade
 
 
-def test_o_pacote_volta_pela_automacao_e_a_origem_nao_e_tocada(cg_casa, pacote, tmp_path):
+def test_o_pacote_volta_pela_automacao_e_a_origem_nao_e_tocada(cg_casa, pacote, tmp_path,
+                                                               papel_restrito):
     db = cg_casa["db"]
     db.set_settings({"backup_dir": str(pacote.parent)})
     with db.transaction() as con:
         AU.semear(con)
+    _registrar(db, pacote)
     antes = _contagens_da_origem(db)
     ctx = PROC.Contexto(db=db, agora=datetime.now(), pasta_dados=tmp_path, raiz=RAIZ,
                         processo={"codigo": "BACKUP_TESTE_RESTAURACAO",
@@ -134,11 +176,13 @@ def test_o_pacote_volta_pela_automacao_e_a_origem_nao_e_tocada(cg_casa, pacote, 
     assert gravada["duracao_s"] > 0
 
 
-def test_contagem_que_nao_bate_e_divergencia_e_nao_ok(pacote, tmp_path):
+def test_contagem_que_nao_bate_e_divergencia_e_nao_ok(cg_casa, pacote, tmp_path, papel_restrito):
     def mais_um(m):
         m["banco_contagens"]["users"] += 1
     adulterado = _com_outro_manifesto(pacote, tmp_path / "backup_banco_2026-10-26.zip", mais_um)
-    r = REST.testar(adulterado)
+    # a casa «gerou» este pacote (o que se testa aqui é a contagem, não a origem)
+    _registrar(cg_casa["db"], adulterado)
+    r = REST.testar(adulterado, db=cg_casa["db"], pasta_dados=tmp_path / "dados")
     assert r["situacao"] == REST.DIVERGENTE
     assert {"tabela": "users", "problema": "contagem diferente",
             "esperado": r["contagens"]["users"] + 1,
@@ -151,24 +195,111 @@ def test_contagem_que_nao_bate_e_divergencia_e_nao_ok(pacote, tmp_path):
 # ------------------------------------------------------------- as recusas (sem criar banco)
 
 
-def test_pacote_de_antes_da_migracao_e_recusado_sem_criar_banco(tmp_path, monkeypatch):
-    class SqliteFalso:
-        def backup_database(self, destino):
-            con = sqlite3.connect(destino)
-            con.execute("CREATE TABLE t (id INTEGER)")
-            con.commit()
-            con.close()
-            return destino
+class SqliteFalso:
+    def backup_database(self, destino):
+        con = sqlite3.connect(destino)
+        con.execute("CREATE TABLE t (id INTEGER)")
+        con.commit()
+        con.close()
+        return destino
 
+
+def test_pacote_de_antes_da_migracao_e_recusado_sem_criar_banco(cg_casa, tmp_path, monkeypatch):
     p = BKP.gerar_pacote(SqliteFalso(), tmp_path / "backup_banco_2026-09-01.zip", tmp_path / "a",
                          com_arquivos=False)
+    _registrar(cg_casa["db"], p)
+    monkeypatch.setattr(REST, "conferir_o_papel", lambda base: None)
     criados = []
     monkeypatch.setattr(REST, "_criar_banco", lambda base, nome: criados.append(nome))
-    r = REST.testar(p)
+    r = REST.testar(p, db=cg_casa["db"], pasta_dados=tmp_path / "dados")
     assert r["situacao"] == REST.FALHOU
     assert "antes da migração" in r["erro"] and criados == []
     relato = BA._relato_do_teste(r, 0, p, datetime.now(), 48)
     assert relato["situacao"] == "ERRO" and "NÃO VOLTOU" in relato["relato"]
+
+
+# ---------------------------- as recusas da revisão de segurança de 26/10/2026 (PR #27)
+
+
+def _sem_criar(monkeypatch) -> list:
+    criados = []
+    monkeypatch.setattr(REST, "_criar_banco", lambda base, nome: criados.append(nome))
+    return criados
+
+
+def test_pacote_que_a_casa_nao_gerou_e_recusado_sem_criar_banco(cg_casa, pacote, tmp_path,
+                                                                monkeypatch):
+    """O manifesto de dentro do zip não é prova: quem fabrica o pacote fabrica o manifesto."""
+    criados = _sem_criar(monkeypatch)
+    de_fora = tmp_path / "backups" / "backup_banco_2026-01-01.zip"
+    de_fora.parent.mkdir()
+    de_fora.write_bytes(pacote.read_bytes())
+    r = REST.testar(de_fora, db=cg_casa["db"], pasta_dados=tmp_path / "dados")
+    assert r["situacao"] == REST.FALHOU and "não consta entre os que o sistema gerou" in r["erro"]
+    assert criados == [] and r["destino"] is None
+
+
+def test_pacote_trocado_depois_de_registrado_e_recusado(cg_casa, pacote, tmp_path, monkeypatch):
+    criados = _sem_criar(monkeypatch)
+    trocado = tmp_path / "backups" / "backup_banco_2026-01-02.zip"
+    trocado.parent.mkdir()
+    trocado.write_bytes(pacote.read_bytes())
+    _registrar(cg_casa["db"], trocado)
+    _com_outro_manifesto(pacote, trocado, lambda m: m.update({"tipo": "forjado"}))
+    r = REST.testar(trocado, db=cg_casa["db"], pasta_dados=tmp_path / "dados")
+    assert r["situacao"] == REST.FALHOU and "não consta" in r["erro"] and criados == []
+
+
+def test_papel_com_poder_no_servidor_e_recusado_sem_criar_banco(cg_casa, pacote, tmp_path,
+                                                                 monkeypatch):
+    criados = _sem_criar(monkeypatch)
+    _registrar(cg_casa["db"], pacote)
+    monkeypatch.setattr(REST, "_poder_do_papel", lambda base: ["cg: SUPERUSER"])
+    r = REST.testar(pacote, db=cg_casa["db"], pasta_dados=tmp_path / "dados")
+    assert r["situacao"] == REST.FALHOU
+    assert "poder demais" in r["erro"] and "CG_PG_DSN_RESTAURACAO" in r["erro"]
+    assert criados == []
+
+
+def test_o_papel_restrito_passa_na_conferencia(papel_restrito):
+    import os
+    assert REST._poder_do_papel(os.environ["CG_PG_DSN_RESTAURACAO"]) == []
+
+
+def test_o_pacote_aberto_nasce_na_pasta_de_dados_e_o_zip_decifrado_some(cg_casa, tmp_path,
+                                                                        monkeypatch):
+    """O decifrado e o dump nunca ficam na pasta dos backups, que sai da serventia."""
+    pasta = tmp_path / "backups"
+    pasta.mkdir()
+    p = BKP.gerar_pacote(SqliteFalso(), pasta / "backup_banco_2026-09-01.zip", tmp_path / "a",
+                         com_arquivos=False, senha_da_cifra="cifra-de-teste-123")
+    assert BKP.e_cifrado(p)
+    _registrar(cg_casa["db"], p)
+    monkeypatch.setattr(REST, "conferir_o_papel", lambda base: None)
+    _sem_criar(monkeypatch)
+    vistos = []
+    original = REST._tirar_o_dump
+
+    def espiao(pacote, tmp, senha):
+        try:
+            return original(pacote, tmp, senha)
+        finally:
+            vistos.append((Path(tmp), sorted(x.name for x in Path(tmp).iterdir())))
+    monkeypatch.setattr(REST, "_tirar_o_dump", espiao)
+    dados = tmp_path / "dados"
+    r = REST.testar(p, db=cg_casa["db"], pasta_dados=dados, senha="cifra-de-teste-123")
+    assert r["situacao"] == REST.FALHOU and "antes da migração" in r["erro"]
+    (tmp, nomes), = vistos
+    assert (dados / REST.NOME_DA_PASTA_DE_TRABALHO).resolve() in tmp.resolve().parents
+    assert pasta.resolve() not in tmp.resolve().parents
+    assert "pacote.zip" not in nomes                     # o decifrado já saiu
+    assert sorted(x.name for x in pasta.iterdir()) == [p.name]   # nada novo ao lado do pacote
+
+
+def test_a_pasta_de_dados_dentro_da_dos_backups_e_recusada(tmp_path):
+    pacote = tmp_path / "backups" / "backup_banco_2026-10-26.zip"
+    with pytest.raises(REST.RestauracaoRecusada, match="dentro da pasta dos backups"):
+        REST._pasta_de_trabalho(tmp_path / "backups" / "dados", pacote)
 
 
 def test_so_banco_descartavel_se_cria_ou_se_apaga():
@@ -230,6 +361,12 @@ def test_o_processo_de_backup_gera_uma_vez_e_a_falha_vira_aviso_da_central(cg_ca
     assert r["situacao"] == "OK", r["relato"]
     assert ROT.pacote_diario(pasta, ctx.hoje).exists()
     assert "Backup conferido" in r["relato"]
+    # o pacote gerado entrou na lista que o teste de restauração confere (PR #27)
+    diario = ROT.pacote_diario(pasta, ctx.hoje)
+    with db.connect() as con:
+        reg = banco(con).ler("SELECT sha256, origem FROM bk_pacotes WHERE arquivo = %s",
+                             (diario.name,))
+    assert reg and reg[-1]["sha256"] == BKP._sha256(diario) and reg[-1]["origem"] == "automação"
     r2 = BA.rodar_backup(ctx)
     assert r2["situacao"] == "OK" and "já existia" in r2["relato"]
     assert sum(1 for nome, _ in chamadas if nome.startswith("backup_banco_")) == 1
@@ -276,6 +413,12 @@ def test_o_primeiro_acesso_e_reserva_uma_vez_por_dia_e_nao_repete(cg_casa, tmp_p
     c.get("/login")
     diarios = [n for n, _ in chamadas if n.startswith("backup_banco_")]
     assert diarios == [f"backup_banco_{date.today().isoformat()}.zip"]
+    # a reserva também registra o SHA-256 do que gerou (PR #27)
+    with db.connect() as con:
+        reg = banco(con).ler("SELECT sha256, origem FROM bk_pacotes WHERE arquivo = %s",
+                             (diarios[0],))
+    assert reg and reg[-1]["origem"] == "primeiro acesso do dia"
+    assert reg[-1]["sha256"] == BKP._sha256(ROT.pacote_diario(pasta, date.today()))
     # um dia depois a marca vence; o pacote de hoje (que a automação poderia
     # ter gerado) já existe, e não se repete
     app.extensions["backup_checked"] = date.today() - timedelta(days=1)

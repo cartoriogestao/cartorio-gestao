@@ -582,12 +582,17 @@ def create_app(test_config: dict | None = None) -> Flask:
             db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
                    {"error": str(exc), "tipo": "rodada"})
             return
-        for feito in r["feitos"]:
-            db.log(None, "SISTEMA",
-                   "AUTO_BACKUP_COMPLETO" if feito["tipo"] == "completo" else "AUTO_BACKUP_BANCO",
-                   "BACKUP", None,
-                   {"path": str(backup_dir() / feito["arquivo"]), "bytes": feito["bytes"],
-                    "cifrado": feito["cifrado"]})
+        # O PACOTE GERADO FICA REGISTRADO, COM O SHA-256 (revisao de seguranca de
+        # 26/10/2026, PR #27 M1): a mesma funcao da automacao grava em
+        # `bk_pacotes` (a lista que o teste de restauracao confere antes do
+        # pg_restore) e na auditoria `AUTO_BACKUP_*`, agora com o SHA-256.
+        import backup_automacao
+        aviso = backup_automacao.registrar_os_feitos(
+            db, r["feitos"], origem="primeiro acesso do dia", agora=datetime.now(),
+            pasta=backup_dir())
+        if aviso:
+            db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
+                   {"error": aviso, "tipo": "registro"})
         for falha in r["falhas"]:
             db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
                    {"error": falha["erro"], "tipo": falha["tipo"]})

@@ -342,3 +342,46 @@ def test_os_tipos_de_atendimento_sao_do_oficial(casa):
                data={"csrf_token": token, "acao": "tipos", "tipos": "Balcão A\n\n  Balcão   B \n"})
     assert SEN.tipos_de_atendimento(db.get_setting) == ["Balcão A", "Balcão B"]
     assert "Balcão B" in admin.get("/atendimento").get_data(as_text=True)
+
+
+def test_os_tipos_de_fabrica_tem_uma_entrada_por_atribuicao(casa):
+    """DECISÃO DO OFICIAL EM 26/10/2026, «tipos: todas as atribuições»: a lista
+    de fábrica traz uma entrada por atribuição da casa, com o nome do
+    vocabulário (`atribuicoes.ATRIBUICOES`), na ordem do balcão, e os tipos
+    genéricos em volta. RTD e RCPJ são duas entradas, e não uma."""
+    import atribuicoes as ATR
+    nomes = [a["nome"] for a in ATR.ATRIBUICOES.values()]
+    fabrica = list(SEN.TIPOS_DE_FABRICA)
+    # toda atribuição do vocabulário está lá, uma vez só, e com o nome dele
+    for nome in nomes:
+        assert fabrica.count(nome) == 1, nome
+    por_sigla = {a["sigla"]: a["nome"] for a in ATR.ATRIBUICOES.values()}
+    assert set(SEN.ORDEM_DAS_ATRIBUICOES) == set(por_sigla)
+    assert por_sigla["RTD"] != por_sigla["RCPJ"]
+    # a ordem que o oficial ditou: Notas, RI, Registro Civil, RTD, RCPJ, Protesto
+    assert list(SEN.tipos_das_atribuicoes()) == [
+        por_sigla[s] for s in ("NOTAS", "RI", "RCPN", "RTD", "RCPJ", "PROTESTO")]
+    # os genéricos que já existiam continuam, em volta das atribuições
+    assert fabrica[0] == "Geral"
+    for generico in ("Certidão", "Retirada de documento", "Pagamento / caixa"):
+        assert generico in fabrica
+    assert "Títulos e Documentos / Pessoa Jurídica" not in fabrica
+    assert len(fabrica) == len(set(fabrica)) == len(nomes) + 4
+    # é a lista que a tela oferece quando o oficial não gravou a dele
+    app, db = casa["app"], casa["db"]
+    assert SEN.tipos_de_atendimento(db.get_setting) == fabrica
+    admin, _ = _entrar(app, "mario")
+    tela = admin.get("/atendimento").get_data(as_text=True)
+    for nome in nomes:
+        assert nome in tela, nome
+
+
+def test_atribuicao_nova_no_vocabulario_nao_some_da_lista(monkeypatch):
+    """A ordem do balcão é só ordem: atribuição que entrar no vocabulário e não
+    estiver nela vai para o fim, em vez de sumir da lista de tipos."""
+    import atribuicoes as ATR
+    novas = dict(ATR.ATRIBUICOES)
+    novas[99] = {"sigla": "NOVA", "nome": "Atribuição de Exemplo"}
+    monkeypatch.setattr(ATR, "ATRIBUICOES", novas)
+    tipos = SEN.tipos_das_atribuicoes()
+    assert tipos[-1] == "Atribuição de Exemplo" and len(tipos) == 7

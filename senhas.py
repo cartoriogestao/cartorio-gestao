@@ -133,17 +133,36 @@ ACOES = ("call", "recall", "start", "finish", "giveup")
 #: «Painel da TV» (configuração `senhas_tipos_de_atendimento`, um por linha).
 #: O tipo é o que agrupa o relatório do período; escrito à mão, «Certidão»,
 #: «certidao» e «Certidões» seriam três linhas da mesma coisa.
-TIPOS_DE_FABRICA: tuple[str, ...] = (
-    "Geral",
-    "Registro de Imóveis",
-    "Tabelionato de Notas",
-    "Registro Civil",
-    "Protesto",
-    "Títulos e Documentos / Pessoa Jurídica",
+#:
+#: UMA ENTRADA POR ATRIBUIÇÃO DA CASA — decisão do oficial em 26/10/2026,
+#: «tipos: todas as atribuições». Os nomes saem de `atribuicoes.ATRIBUICOES`
+#: (o vocabulário gerado do acervo), e não são escritos de novo aqui: a
+#: primeira versão tinha «Títulos e Documentos / Pessoa Jurídica» numa linha
+#: só, e o oficial pediu RTD e RCPJ separados. `ORDEM_DAS_ATRIBUICOES` é só a
+#: ordem do balcão, a que o oficial ditou; atribuição que entrar no
+#: vocabulário e não estiver nela vai para o fim, e não some da lista.
+#: Em volta ficam os tipos genéricos que já existiam (o geral, a certidão, a
+#: retirada e o caixa).
+ORDEM_DAS_ATRIBUICOES: tuple[str, ...] = ("NOTAS", "RI", "RCPN", "RTD", "RCPJ", "PROTESTO")
+TIPOS_GENERICOS_ANTES: tuple[str, ...] = ("Geral",)
+TIPOS_GENERICOS_DEPOIS: tuple[str, ...] = (
     "Certidão",
     "Retirada de documento",
     "Pagamento / caixa",
 )
+
+
+def tipos_das_atribuicoes() -> tuple[str, ...]:
+    """Um tipo por atribuição, com o nome do vocabulário da casa. Só LÊ."""
+    import atribuicoes as ATR
+    por_sigla = {a["sigla"]: a["nome"] for a in ATR.ATRIBUICOES.values()}
+    siglas = [s for s in ORDEM_DAS_ATRIBUICOES if s in por_sigla]
+    siglas += [s for s in por_sigla if s not in siglas]
+    return tuple(por_sigla[s] for s in siglas)
+
+
+TIPOS_DE_FABRICA: tuple[str, ...] = (
+    TIPOS_GENERICOS_ANTES + tipos_das_atribuicoes() + TIPOS_GENERICOS_DEPOIS)
 
 CHAVE_DOS_TIPOS = "senhas_tipos_de_atendimento"
 
@@ -171,6 +190,7 @@ def rotulo(ticket: dict) -> str:
 
     A numeração é UMA só no dia — a letra diz a fila, o número diz a ordem de
     chegada. É o que se lê em voz alta e o que a pessoa confere no papel.
+    O formato foi confirmado pelo oficial em 26/10/2026 («P001/N001: mantém»).
     """
     letra = "P" if int(ticket.get("priority") or 0) else "N"
     return f"{letra}{int(ticket.get('ticket_no') or 0):03d}"

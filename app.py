@@ -45,6 +45,7 @@ from security import new_csrf_token, new_secret_key
 import arquivo_visivel as ARQVIS
 import html_sem_script as HSS
 import login_espera as LESP
+import identidade_do_robo as IDR
 import seguranca_web as SEGWEB
 from storage import hash_file, safe_component, save_upload
 from network_discovery import DiscoveryResponder, best_local_ip_for, lan_ipv4_addresses
@@ -442,7 +443,12 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     def audit(action: str, entity_type: str | None = None, entity_id: int | None = None, details=None):
         user = current_user()
-        db.log(user["id"] if user else None, user["username"] if user else None, action, entity_type, entity_id, details, request.remote_addr if request else None)
+        # QUEM GRAVA SEM NINGUEM LOGADO E O PROPRIO SERVIDOR (26/10/2026, ordem
+        # do oficial: todo robo diz quem e e a mando de quem age). Com conta de
+        # robo, a identidade sai da conta (`identidade_do_robo.registrar`).
+        ident = {} if user else {"agente": IDR.AGENTE_SERVIDOR,
+                                 "a_mando_de": IDR.PELO_RESPONSAVEL}
+        db.log(user["id"] if user else None, user["username"] if user else None, action, entity_type, entity_id, details, request.remote_addr if request else None, **ident)
 
     def login_required(view):
         @wraps(view)
@@ -566,10 +572,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                 full_backup(diario, com_arquivos=False)
                 db.log(None, "SISTEMA", "AUTO_BACKUP_BANCO", "BACKUP", None,
                        {"path": str(diario), "bytes": diario.stat().st_size,
-                        "cifrado": BKP.e_cifrado(diario)})
+                        "cifrado": BKP.e_cifrado(diario)}, agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
             except Exception as exc:
                 db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
-                       {"error": str(exc), "tipo": "banco"})
+                       {"error": str(exc), "tipo": "banco"}, agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
 
         # Completo no dia da semana configurado (padrao: domingo), uma vez por semana.
         try:
@@ -586,10 +592,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                 full_backup(completo, com_arquivos=True)
                 db.log(None, "SISTEMA", "AUTO_BACKUP_COMPLETO", "BACKUP", None,
                        {"path": str(completo), "bytes": completo.stat().st_size,
-                        "cifrado": BKP.e_cifrado(completo)})
+                        "cifrado": BKP.e_cifrado(completo)}, agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
             except Exception as exc:
                 db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
-                       {"error": str(exc), "tipo": "completo"})
+                       {"error": str(exc), "tipo": "completo"}, agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
 
         def expurgar(padrao: str, manter: int):
             achados = sorted(pasta.glob(padrao), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -1089,7 +1095,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                 if fim:
                     # Em espera, a senha nem é conferida — e a tentativa não conta.
                     db.log(None, rastro, LESP.EM_ESPERA, "SESSION", None,
-                           LESP.detalhes(chave, ate=fim.isoformat()), ip)
+                           LESP.detalhes(chave, ate=fim.isoformat()), ip,
+                           agente=IDR.AGENTE_SERVIDOR, a_mando_de=IDR.PELO_RESPONSAVEL)
                     row = None
                 else:
                     # `authenticate` gasta o mesmo PBKDF2 para o usuário que
@@ -1100,7 +1107,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                         # não vier, e aí este erro não entra na contagem: sob
                         # carga a espera fica mais branda, nunca mais dura.
                         db.log(None, rastro, LESP.FALHA, "SESSION", None,
-                               LESP.detalhes(chave), ip)
+                               LESP.detalhes(chave), ip,
+                               agente=IDR.AGENTE_SERVIDOR, a_mando_de=IDR.PELO_RESPONSAVEL)
                         depois = LESP.espera(con, chave, ip, uid_alvo)
             if fim:
                 flash(LESP.recado(fim), "danger")
@@ -2151,9 +2159,28 @@ def create_app(test_config: dict | None = None) -> Flask:
                     flash(msg, "danger")
                 else:
                     try:
+                        # O ROBO TEM RESPONSAVEL (ordem do oficial, 26/10/2026):
+                        # a pessoa que responde por ele se escolhe na criacao, e
+                        # se confere ANTES de criar — conta pela metade nao fica.
+                        resp_id = parse_int(request.form.get("robo_responsavel_id"))
+                        if request.form.get("eh_robo") == "1" and resp_id:
+                            with db.connect() as con:
+                                IDR.validar_responsavel_das_rotinas(con, resp_id)
                         uid = db.create_user(request.form.get("username", ""), request.form.get("full_name", ""), password, request.form.get("role", "USER"), int(current_user()["id"]), eh_robo=1 if request.form.get("eh_robo") == "1" else 0)
                         audit("USER_CREATED", "USER", uid)
-                        flash("Usuário criado.", "success")
+                        criado = db.get_user(uid)
+                        if criado and int(criado["eh_robo"] or 0) and resp_id:
+                            with db.transaction() as con:
+                                IDR.definir_responsavel_do_robo(con, uid, resp_id)
+                            audit("USER_ROBO_RESPONSAVEL_ALTERADO", "USER", uid,
+                                  {"robo_responsavel_id": resp_id})
+                        if criado and int(criado["eh_robo"] or 0) and not resp_id:
+                            flash("Usuário criado. É conta de robô SEM responsável: o "
+                                  "login funciona, e toda ação dele fica com o aviso "
+                                  "«robô sem responsável» até alguém ser escolhido "
+                                  "na coluna Robô.", "warning")
+                        else:
+                            flash("Usuário criado.", "success")
                     except ValueError as exc:
                         flash(str(exc), "danger")
             elif action == "editar":
@@ -2195,11 +2222,40 @@ def create_app(test_config: dict | None = None) -> Flask:
                         flash("Robô só pode ter o perfil USER ou AUDITOR. Troque o "
                               "perfil antes de marcar como robô.", "danger")
                         return redirect(url_for("users"))
-                    with db.transaction() as con:
-                        banco(con).escrever("UPDATE users SET eh_robo=%s WHERE id=%s",
-                                            (marca, uid))
-                    audit("USER_EH_ROBO_ALTERADO", "USER", uid, {"eh_robo": marca})
-                    flash("Marca de robô atualizada.", "success")
+                    # O RESPONSAVEL VAI JUNTO COM A MARCA (26/10/2026): robo
+                    # diz a mando de quem age. Desmarcar limpa o responsavel —
+                    # a pessoa responde por si.
+                    resp_id = parse_int(request.form.get("robo_responsavel_id")) if marca else None
+                    try:
+                        with db.transaction() as con:
+                            banco(con).escrever("UPDATE users SET eh_robo=%s WHERE id=%s",
+                                                (marca, uid))
+                            IDR.definir_responsavel_do_robo(con, uid, resp_id)
+                    except ValueError as exc:
+                        flash(str(exc), "danger")
+                        return redirect(url_for("users"))
+                    audit("USER_EH_ROBO_ALTERADO", "USER", uid,
+                          {"eh_robo": marca, "robo_responsavel_id": resp_id})
+                    if marca and not resp_id:
+                        flash("Marca de robô gravada, SEM responsável: toda ação dele "
+                              "fica com o aviso «robô sem responsável».", "warning")
+                    else:
+                        flash("Marca de robô atualizada.", "success")
+            elif action == "responsavel_rotinas":
+                # QUEM RESPONDE PELAS ROTINAS AUTOMATICAS (26/10/2026): backup,
+                # CNIB, malote, envio a CENSEC, scripts. Vazio = o primeiro ADMIN
+                # ativo que nao e robo.
+                resp_id = parse_int(request.form.get("responsavel_rotinas"))
+                try:
+                    with db.connect() as con:
+                        IDR.validar_responsavel_das_rotinas(con, resp_id)
+                except ValueError as exc:
+                    flash(str(exc), "danger")
+                    return redirect(url_for("users"))
+                db.set_settings({IDR.CHAVE_RESPONSAVEL: str(resp_id) if resp_id else ""})
+                audit("RESPONSAVEL_ROTINAS_ALTERADO", "SETTINGS", None,
+                      {"user_id": resp_id})
+                flash("Responsável pelas rotinas automáticas gravado.", "success")
             elif action == "funcao":
                 # Em que qualidade a pessoa assina. Vai impressa embaixo da
                 # assinatura no orcamento, no protocolo de recepcao e no
@@ -2270,9 +2326,15 @@ def create_app(test_config: dict | None = None) -> Flask:
         linhas = db.list_users()
         with db.connect() as con:
             em_espera = LESP.em_espera_na_casa(con, linhas, secret_key)
+            # A IDENTIDADE DOS ROBOS (26/10/2026): quem pode responder, quem
+            # responde pelas rotinas, e o aviso do que grava sem dizer quem e.
+            pessoas = IDR.pessoas_que_podem_responder(con)
+            resp_rotinas = IDR.responsavel_das_rotinas(con)
+            identidade = IDR.conferencia(con)
         return render_template(
             "users.html", rows=linhas, roles=ROLES, em_espera=em_espera,
-            funcoes=json_list(db.get_setting("funcoes_cargos", ""), list(FUNCOES)))
+            funcoes=json_list(db.get_setting("funcoes_cargos", ""), list(FUNCOES)),
+            pessoas=pessoas, resp_rotinas=resp_rotinas, identidade=identidade)
 
     @app.route("/saude")
     def health():

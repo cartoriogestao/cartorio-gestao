@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import banco_pg  # noqa: E402
+import identidade_do_robo as IDR  # noqa: E402
 from bd_nativo import banco as abrir_banco  # noqa: E402
 
 
@@ -105,9 +106,13 @@ def main(argv=None) -> int:
             bd.escrever("""UPDATE expedientes SET stage='ARQUIVADO', completed_at=%s, completed_by=%s, updated_at=%s,
                            notes=TRIM(COALESCE(notes,'') || ' ' || %s) WHERE id=%s""",
                         (agora, quem["id"], agora, nota, eid))
-            bd.escrever("INSERT INTO audit_logs(ts,user_id,username_snapshot,action,entity_type,entity_id,details) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-                        (agora, quem["id"], quem["username"], "EXPEDIENTE_STAGE", "EXPEDIENTE", eid,
-                         json.dumps({"stage": "ARQUIVADO", "origem": "AGENTE MALOTE", "motivo": nota}, ensure_ascii=False)))
+            # O agente do malote age com a conta de quem o oficial designou: a
+            # linha diz isso (agente + a mando da pessoa), em vez de parecer
+            # gesto dela (26/10/2026).
+            IDR.registrar(bd, ts=agora, user_id=quem["id"], username=quem["username"],
+                          action="EXPEDIENTE_STAGE", entity_type="EXPEDIENTE", entity_id=eid,
+                          details=json.dumps({"stage": "ARQUIVADO", "origem": "AGENTE MALOTE", "motivo": nota}, ensure_ascii=False),
+                          agente="agente do malote (tools/malote_ciencia.py)")
         for eid, tid in ligar:
             bd.escrever("UPDATE tasks SET linked_expediente_id=%s, updated_at=%s WHERE id=%s", (eid, agora, tid))
             bd.escrever("INSERT INTO task_history(task_id,ts,user_id,action,new_value,note) VALUES (%s,%s,%s,%s,%s,%s)",

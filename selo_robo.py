@@ -69,10 +69,13 @@ def reconhecimento_pendente() -> dict:
 #: 22/10/2026, achado A6): usuários, atualizações, backup, configurações, caixa,
 #: selador, modelos, agente, os próprios robôs, livros do núcleo e implantação.
 #: O robô gera minuta e lavra o que o seu papel deixa; o que é de gente é de gente.
+#: «automacao» entrou em 26/10/2026 (revisão de segurança dos PRs abertos, PR #11,
+#: M4): a central edita o que roda, libera «pode agir», mexe no cofre e no destino
+#: dos e-mails — com a credencial do robô, nada disso.
 ROTAS_VEDADAS_AO_ROBO = ("users", "usuarios", "updates", "atualizacoes", "settings",
                          "configuracoes", "backup", "caixa_", "caixa", "selador",
                          "modelos", "agente", "robos", "dois_fatores", "permiss",
-                         "nucleo_", "implantacao")
+                         "nucleo_", "implantacao", "automacao")
 
 
 def rota_vedada_ao_robo(endpoint: Any) -> bool:

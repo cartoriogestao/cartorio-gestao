@@ -330,6 +330,47 @@ EDITAVEIS = ("nome", "descricao", "setor", "tipo", "alvo", "parametros", "agenda
              "canais", "lembrar_a_cada_h", "robo_oficial")
 
 
+# O QUE A TELA PODE MANDAR RODAR É UMA LISTA FECHADA (revisão de segurança de
+# 26/10/2026, PR #11, achado M2). Até aqui `_validar_alvo` aceitava QUALQUER
+# «modulo:funcao» cujo arquivo existisse e QUALQUER .py/.cmd/.bat/.ps1/.sh da
+# pasta do programa, com argumentos livres — o ADMIN da tela (ou um cookie de
+# ADMIN roubado) ganhava execução de código no sistema operacional, fora de
+# qualquer trilha, com scripts que já existem no pacote e aceitam argumentos
+# (migrar banco, limpar teor, gerar chave de atualização…). Agora:
+#   - FUNÇÃO: só as do catálogo das verificações e as que os processos de
+#     fábrica (inclusive os trazidos por outros módulos) declaram;
+#   - SCRIPT: só os da pasta própria `automacao_scripts/`, que só o pacote
+#     (pull request) põe lá, e só .py ou .sh — .ps1/.cmd/.bat ficam de fora
+#     (`-ExecutionPolicy Bypass` e `cmd /c` não entram pela tela);
+#   - a mesma régua vale NA HORA DE RODAR (`_comando` e `trabalho`): processo
+#     gravado por fora da tela também não passa.
+PASTA_DOS_SCRIPTS = "automacao_scripts"
+SUFIXOS_DE_SCRIPT = (".py", ".sh")
+
+
+def funcoes_permitidas() -> set[str]:
+    """Os `alvo` de FUNÇÃO que a central aceita: o catálogo e as sementes declaradas."""
+    import automacao_processos as PROC
+    return set(PROC.CATALOGO) | {s["alvo"] for s in PROC.todas_as_sementes()
+                                 if s.get("tipo", SCH.FUNCAO) == SCH.FUNCAO}
+
+
+def _script_permitido(alvo: str, raiz: Path) -> Path:
+    """O caminho do script, se ele está na pasta própria e tem sufixo aceito. Senão, recusa."""
+    pasta = (Path(raiz) / PASTA_DOS_SCRIPTS).resolve()
+    caminho = (Path(raiz) / str(alvo or "").strip()).resolve()
+    try:
+        caminho.relative_to(pasta)
+    except ValueError as erro:
+        raise AutomacaoError(f"O script tem de estar na pasta «{PASTA_DOS_SCRIPTS}» do programa "
+                             "(caminho relativo, sem «..»). Script novo entra por atualização do "
+                             "sistema, e não pela tela.") from erro
+    if caminho.suffix.lower() not in SUFIXOS_DE_SCRIPT:
+        raise AutomacaoError("O script tem de ser .py (ou .sh no macOS). .ps1, .cmd e .bat não "
+                             "rodam pela central.")
+    return caminho
+
+
 def _validar_alvo(tipo: str, alvo: str, raiz: Path) -> str:
     alvo = str(alvo or "").strip()
     if not alvo:
@@ -337,18 +378,16 @@ def _validar_alvo(tipo: str, alvo: str, raiz: Path) -> str:
     if tipo == SCH.FUNCAO:
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*:[A-Za-z_][A-Za-z0-9_]*", alvo):
             raise AutomacaoError("A função se escreve «modulo:funcao» (ex.: automacao_processos:verificar_disco).")
+        if alvo not in funcoes_permitidas():
+            raise AutomacaoError(f"A função «{alvo}» não está na lista das verificações da central. "
+                                 "Só as funções do catálogo (e as que os módulos instalados declaram) "
+                                 "rodam por aqui.")
         modulo = alvo.split(":", 1)[0]
         if not (raiz / f"{modulo}.py").is_file():
             raise AutomacaoError(f"O módulo «{modulo}» não existe nesta instalação.")
     elif tipo == SCH.SCRIPT:
-        caminho = (raiz / alvo).resolve()
-        try:
-            caminho.relative_to(raiz.resolve())
-        except ValueError as erro:
-            raise AutomacaoError("O script tem de estar dentro da pasta do programa "
-                                 "(caminho relativo, sem «..»).") from erro
-        if caminho.suffix.lower() not in (".py", ".cmd", ".bat", ".ps1", ".sh"):
-            raise AutomacaoError("O script tem de ser .py, .sh (macOS), ou .cmd, .bat, .ps1 (Windows).")
+        if not _script_permitido(alvo, raiz).is_file():
+            raise AutomacaoError(f"O script «{alvo}» não existe na pasta «{PASTA_DOS_SCRIPTS}».")
     return alvo
 
 
@@ -932,8 +971,9 @@ def rodar_com_prazo(comando: list[str], *, timeout_s: int, cwd: Any = None,
 def _comando(processo: dict, execucao_id: int, raiz: Path) -> list[str]:
     if processo["tipo"] != SCH.SCRIPT:
         return [sys.executable, str(raiz / "automacao.py"), "--trabalho", str(int(execucao_id))]
-    alvo = (raiz / processo["alvo"]).resolve()
-    alvo.relative_to(raiz.resolve())          # recusa o que saiu da pasta do programa
+    # A mesma régua da tela (`_script_permitido`, 26/10/2026): processo gravado
+    # por fora dela também só roda script da pasta própria, .py ou .sh.
+    alvo = _script_permitido(processo["alvo"], raiz)
     params = processo.get("parametros") or {}
     args = [str(a) for a in (params.get("argumentos") or [])]
     sufixo = alvo.suffix.lower()
@@ -1018,6 +1058,14 @@ def executar(db, execucao_id: int, *, raiz: Path = RAIZ, pasta_dados: Any = None
         raise AutomacaoError(f"A rodada #{execucao_id} não existe.")
     if e["situacao"] != SCH.RODANDO:
         return e                              # já foi fechada (recuperação ou duplicata)
+    if processo["tipo"] == SCH.SCRIPT:
+        # Antes de ler o cofre: script fora da lista não roda nem recebe segredo (26/10/2026, M2).
+        try:
+            _script_permitido(processo["alvo"], raiz)
+        except AutomacaoError as erro:
+            return finalizar(db, execucao_id, {"situacao": SCH.ERRO, "relato": f"Não rodou: {erro}"[:600],
+                                               "erro": "script fora da pasta própria"},
+                             pasta_dados=pasta_dados)
     entrada, segredos = None, []
     if processo.get("usa_credencial") and processo["tipo"] == SCH.SCRIPT:
         import automacao_cofre as COFRE
@@ -1068,6 +1116,13 @@ def trabalho(db, execucao_id: int, *, raiz: Path = RAIZ, pasta_dados: Any = None
         if processo["tipo"] == SCH.AGENTE_IA:
             bruto = PROC.rodar_agente(ctx)
         else:
+            # Só função da lista fechada (26/10/2026, PR #11, M2): o `alvo`
+            # gravado por fora da tela não importa módulo nenhum.
+            if processo["alvo"] not in funcoes_permitidas():
+                return {"situacao": SCH.ERRO,
+                        "relato": f"A função «{processo['alvo']}» não está na lista das verificações "
+                                  "da central — não rodou.",
+                        "erro": "função fora da lista"}
             modulo, nome = processo["alvo"].split(":", 1)
             funcao = getattr(importlib.import_module(modulo), nome)
             bruto = funcao(ctx)

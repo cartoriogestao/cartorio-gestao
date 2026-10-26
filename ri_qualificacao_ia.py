@@ -1,0 +1,814 @@
+"""A QUALIFICAÇÃO ASSISTIDA NO REGISTRO DE IMÓVEIS — ordem do oficial em 26/10/2026.
+
+O PEDIDO
+    A IA cruza o TÍTULO apresentado (escritura, formal, carta, contrato), a
+    GUIA ou CERTIDÃO DE ITBI e a MATRÍCULA, e RASCUNHA a nota devolutiva: as
+    exigências, cada uma com o fundamento e com o trecho do documento de onde
+    ela saiu, para o oficial ou o escrevente revisar, editar e assinar.
+
+O QUE ELA É, E O QUE NÃO É
+    A qualificação é ato privativo do oficial (Código de Normas do MA, arts.
+    169, I, 171 e 176 — os mesmos que `minuta_ia` cita: a IA redige e revisa;
+    quem pratica o ato é a pessoa). Por isso este módulo:
+
+      • NÃO DECIDE: não grava qualificação positiva nem negativa
+        (`ri_qualificacoes` é de `ri_pedidos`, pela rota da nota);
+      • NÃO EMITE NOTA: não escreve em `ri_notas_devolutivas`;
+      • NÃO DEVOLVE TÍTULO: não muda a situação da prenotação.
+
+    O resultado nasce como RASCUNHO, numa tabela própria
+    (`ri_qualificacao_ia`). O botão «Levar para a nota devolutiva» só
+    PREENCHE o formulário da nota com as exigências que a pessoa marcou e
+    editou — quem emite continua sendo `ri_web.ri_nota_devolutiva`, a rota de
+    sempre, com o número, a qualificação negativa e a auditoria dela.
+
+A MESMA INFRAESTRUTURA DO AGENTE DE MINUTAS
+    Provedor, modelo e esforço (Opus, esforço alto), o desvio do próprio
+    provedor quando o modelo recusa, a leitura dos arquivos
+    (`minuta_ia._ler_arquivo`: o PDF sobe inteiro, como documento), os
+    documentos da prenotação e do protocolo geral ligado a ela
+    (`minuta_ia._da_prenotacao`), o contexto da ficha (`minuta_ia.contexto_ri`)
+    e o segundo plano. O que muda é o ESQUEMA DA RESPOSTA: exigências com
+    fundamento e trecho, o que foi conferido sem problema, as dúvidas e o que
+    não se conseguiu ler.
+
+    E os documentos sobem SEM MÁSCARA, pela mesma decisão do oficial de
+    12/10/2026 que o agente de minutas segue (`minuta_ia`, docstring): documento
+    digitalizado não se mascara. A tela diz isso antes do botão. A chave do
+    provedor fica em `agente.cred` (`agente_provedores`), fora do banco.
+
+A RÉGUA LITERAL DAS CITAÇÕES
+    Trecho que a IA diz ter tirado do documento tem de estar ESCRITO lá — a
+    régua de `ri_onus_ia.esta_escrito` (só espaço e caixa se ignoram). O que
+    se confere aqui, de graça e sem rede:
+
+      • o texto digital do PDF (`revisao_anexos.paginas_do_arquivo`) e o texto
+        do .docx/.odt;
+      • a leitura que a revisão prévia JÁ GUARDOU daquele arquivo
+        (`rv_anexos_lidos`, pela impressão digital) — o digitalizado que já foi
+        transcrito uma vez não se paga de novo;
+      • o contexto da ficha que subiu ao modelo (teor e atos da matrícula).
+
+    Cada citação sai com uma marca: ESCRITO (achado), NAO_ACHADO (o documento
+    tem texto e o trecho não está nele — não leve à nota sem conferir),
+    SEM_TEXTO (o documento é digitalizado e não há leitura guardada: confira
+    no papel) e FALTA (a exigência é pela AUSÊNCIA de algo, e ausência não se
+    cita). Quem decide continua sendo a pessoa: a marca só diz o que a máquina
+    conseguiu conferir.
+
+NO SANDBOX, NÃO — ordem do oficial em 13/10/2026 («nao quero ia na
+sandbox»), a mesma régua de `ri_onus_ia.ligada`. Desligada (`settings.
+qualificacao_ia = '0'`), sem chave, ou no SANDBOX, o botão diz por quê e o
+balcão segue manual, pela nota de sempre.
+"""
+from __future__ import annotations
+
+import json
+import re
+import threading
+import unicodedata
+from datetime import datetime
+from pathlib import Path
+
+import banco_pg
+import minuta_ia as MI
+from bd_nativo import Banco, banco
+
+# ------------------------------------------------------------------ o modelo
+#
+# O MESMO DO AGENTE DE MINUTAS, e de propósito importado de lá: «claude em opus
+# high» é a escolha do oficial para ler documento de ato, e duas constantes
+# divergiriam no primeiro ajuste.
+PROVEDOR = MI.PROVEDOR
+MODELO = MI.MODELO
+ESFORCO = MI.ESFORCO
+MAXIMO_DE_SAIDA = MI.MAXIMO_DE_SAIDA
+PRAZO = MI.PRAZO
+BETA_DO_DESVIO = MI.BETA_DO_DESVIO
+LIMITE_DE_ENVIO = MI.LIMITE_DE_ENVIO
+LIMITE_DOS_DOCUMENTOS = MI.LIMITE_DOS_DOCUMENTOS
+MAXIMO_DE_DOCUMENTOS = MI.MAXIMO_DE_DOCUMENTOS
+MINUTOS_PARA_DESISTIR = MI.MINUTOS_PARA_DESISTIR
+
+FINALIDADE = "ri_qualificacao_ia"
+#: `settings.qualificacao_ia = '0'` desliga sem versão nova.
+CHAVE_LIGADA = "qualificacao_ia"
+
+PENDENTE, LENDO, PRONTA, ERRO = MI.PENDENTE, MI.LENDO, MI.PRONTA, MI.ERRO
+
+#: As marcas da régua literal (ver o docstring).
+ESCRITO, NAO_ACHADO, SEM_TEXTO, FALTA = "ESCRITO", "NAO_ACHADO", "SEM_TEXTO", "FALTA"
+
+#: Prenotação nestas situações não se qualifica mais.
+SITUACOES_ENCERRADAS = ("CANCELADO", "CANCELADA")
+
+#: Uma exigência levada à nota é UMA LINHA (a nota é «uma por linha»).
+MAXIMO_DA_LINHA = 1500
+
+SCHEMA = (
+    ("ri_qualificacao_ia", """
+CREATE TABLE IF NOT EXISTS ri_qualificacao_ia (
+    id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    protocolo_id bigint NOT NULL,          -- ri_protocolos.id: a prenotação do título
+    matricula_id bigint,                   -- a ficha cruzada com o título (pode faltar)
+    anterior_id bigint,                    -- o pedido anterior da mesma prenotação
+    versao INTEGER NOT NULL DEFAULT 1,
+    especie TEXT,                          -- ri_modelos_atos.codigo: a lista de conferência
+    instrucao TEXT,
+    documentos_json TEXT NOT NULL,         -- [{anexo_id, nome, sha256, origem}]
+    situacao TEXT NOT NULL DEFAULT 'PENDENTE',  -- PENDENTE | LENDO | PRONTA | ERRO
+    pedido_em TEXT NOT NULL,
+    pedido_por TEXT,
+    terminado_em TEXT,
+    modelo TEXT,
+    esforco TEXT,
+    resultado_json TEXT,                   -- exigências, conferidos, dúvidas, não lidos
+    tokens_entrada bigint,
+    tokens_saida bigint,
+    segundos INTEGER,
+    erro TEXT,
+    levado_json TEXT,                      -- as exigências que a pessoa levou à nota
+    levado_em TEXT,
+    levado_por TEXT,
+    nota_id bigint                         -- a nota que a rota de sempre emitiu com elas
+)"""),
+    ("ix_ri_qualificacao_ia_protocolo", """
+CREATE INDEX IF NOT EXISTS ix_ri_qualificacao_ia_protocolo
+    ON ri_qualificacao_ia (protocolo_id, id)"""),
+)
+
+
+class QualificacaoIAError(ValueError):
+    """Erro de regra, com a frase pronta para o balcão."""
+
+
+def init_schema(con) -> None:
+    bd = banco(con)
+    for nome, comando in SCHEMA:
+        if not bd.tem_tabela(nome):
+            bd.escrever(comando)
+
+
+def _agora() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def _texto(v) -> str:
+    return str(v or "").strip()
+
+
+def _sem_acento(texto: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", texto or "")
+                   if unicodedata.category(c) != "Mn").upper()
+
+
+# ------------------------------------------------------------------ o portão
+
+
+def por_que_nao(con, pasta_dados) -> str | None:
+    """A frase que diz por que o botão não funciona aqui, ou None. Só LÊ.
+
+    Na ordem em que a pessoa pode fazer algo: o SANDBOX (ordem do oficial,
+    nada a fazer), o interruptor da casa e a chave do provedor.
+    """
+    import agente_provedores as AP
+    import ri_onus_ia as RONIA
+    if RONIA.no_sandbox(con):
+        return ("No sistema de teste (SANDBOX) a IA fica desligada — ordem do oficial "
+                "de 13/10/2026. Faça a qualificação à mão e emita a nota abaixo.")
+    bd = banco(con)
+    if bd.tem_tabela("settings"):
+        linha = bd.um("SELECT value FROM settings WHERE key = %s", (CHAVE_LIGADA,))
+        if linha and str(linha["value"]).strip() == "0":
+            return ("A qualificação assistida está desligada nesta instalação "
+                    f"(configuração «{CHAVE_LIGADA}»). Qualifique à mão e emita a "
+                    "nota abaixo.")
+    if not AP.tem_chave(pasta_dados, PROVEDOR):
+        return ("Esta instalação não tem a chave do Claude (Administrativo → Agente do "
+                "sistema): sem ela a qualificação assistida não funciona. Qualifique à "
+                "mão e emita a nota abaixo.")
+    return None
+
+
+# ------------------------------------------------------------------ o alvo
+
+
+def prenotacao(con, protocolo_id: int) -> dict:
+    """A prenotação, conferida para receber a qualificação assistida. Só LÊ."""
+    p = banco(con).um("""SELECT id, numero, livro, data_prenotacao, natureza_titulo,
+                                apresentante, objeto, matricula_id, matricula_numero,
+                                data_limite, situacao, ato_id
+                           FROM ri_protocolos WHERE id = %s""", (int(protocolo_id),))
+    if not p:
+        raise QualificacaoIAError("Prenotação não encontrada.")
+    p = dict(p)
+    if (p["situacao"] or "").upper() in SITUACOES_ENCERRADAS:
+        raise QualificacaoIAError(
+            f"A prenotação {p['numero']} está cancelada: o título não se qualifica mais.")
+    if p["ato_id"]:
+        raise QualificacaoIAError(
+            f"O título da prenotação {p['numero']} já virou ato no livro: a "
+            "qualificação dele está feita.")
+    return p
+
+
+def matricula_da_prenotacao(con, p: dict, numero_digitado: str = "") -> dict | None:
+    """A ficha que se cruza com o título: a que a prenotação aponta, ou a que a
+    pessoa digitou (metade das prenotações abertas não aponta para ficha
+    nenhuma — medido na produção em 23/10/2026, `minuta_ia`). Só LÊ."""
+    bd = banco(con)
+    if p.get("matricula_id"):
+        m = bd.um("SELECT id, numero, livro, encerrada FROM ri_matriculas WHERE id = %s",
+                  (int(p["matricula_id"]),))
+        return dict(m) if m else None
+    numero = _texto(numero_digitado) or _texto(p.get("matricula_numero"))
+    numero = re.sub(r"[^\dA-Za-z-]", "", numero)
+    if not numero:
+        return None
+    m = bd.um("""SELECT id, numero, livro, encerrada FROM ri_matriculas
+                  WHERE numero = %s ORDER BY id DESC LIMIT 1""", (numero,))
+    if not m:
+        raise QualificacaoIAError(f"Não há matrícula nº {numero_digitado or numero}.")
+    return dict(m)
+
+
+def documentos(con, p: dict) -> list[dict]:
+    """Os documentos do TÍTULO: os da prenotação e os do protocolo geral ligado a
+    ela — a mesma leitura do agente de minutas, e sem os das outras
+    prenotações da ficha (que são outros títulos). Só LÊ."""
+    vistos, unicos = set(), []
+    for d in MI._da_prenotacao(con, {"id": p["id"], "numero": p["numero"]}):
+        chave = d["sha256"] or f"id:{d['anexo_id']}"
+        if chave not in vistos:
+            vistos.add(chave)
+            unicos.append(d)
+    return unicos
+
+
+# ------------------------------------------------------- a lista de conferência
+
+
+def especies() -> list[dict]:
+    """As espécies de ato com lista de requisitos (`ri_modelos_atos`). Só LÊ."""
+    import ri_modelos_atos as RMA
+    return [{"codigo": m["codigo"], "nome": f"{m['tipo']} — {m['nome']}"}
+            for m in RMA.MODELOS if m.get("requisitos")]
+
+
+def sugerir_especie(natureza_titulo: str) -> str:
+    """O código da espécie cuja natureza aparece na natureza do título, ou "".
+
+    Só SUGESTÃO para a lista da tela: quem escolhe é a pessoa, e na dúvida não
+    se escolhe nada (uma lista de conferência errada é pior que nenhuma).
+    """
+    import ri_modelos_atos as RMA
+    alvo = _sem_acento(natureza_titulo)
+    if not alvo:
+        return ""
+    achados = [m["codigo"] for m in RMA.MODELOS if m.get("requisitos")
+               and _sem_acento(m.get("natureza") or m["nome"]) in alvo]
+    return achados[0] if len(achados) == 1 else ""
+
+
+def lista_de_conferencia(codigo: str) -> str:
+    """Os requisitos da espécie, em texto, para o modelo usar como roteiro."""
+    import ri_modelos_atos as RMA
+    m = RMA.por_codigo(_texto(codigo)) if codigo else None
+    if not m:
+        return ""
+    linhas = [f"=== LISTA DE CONFERÊNCIA DA CASA — {m['tipo']} {m['nome']} "
+              f"({m.get('fundamentacao') or 'sem fundamentação declarada'}) ===",
+              "Roteiro mínimo, NÃO exaustivo: a ausência de um item aqui não dispensa a "
+              "análise, e um item daqui que não se aplique ao título não vira exigência."]
+    linhas += [f"- {r}" for r in m["requisitos"]]
+    return "\n".join(linhas)
+
+
+# ------------------------------------------------------- a instrução
+
+INSTRUCAO = """Você auxilia a QUALIFICAÇÃO REGISTRAL de um título apresentado ao \
+Registro de Imóveis desta serventia (Lei 6.015/1973 e Código de Normas do Foro \
+Extrajudicial do Maranhão). A qualificação é ato privativo do oficial: você NÃO \
+decide se o título se registra, NÃO emite a nota devolutiva e NÃO dispensa exigência. \
+Você prepara um RASCUNHO para o oficial ou o escrevente revisar, editar e assinar.
+
+O QUE FAZER
+Cruze os documentos recebidos entre si e com a ficha da matrícula:
+- o TÍTULO (escritura, formal, carta, contrato, mandado) contra a MATRÍCULA: \
+continuidade (quem transmite é o titular de hoje), descrição e área do imóvel \
+(especialidade), número da matrícula, ônus e indisponibilidades na ficha, \
+qualificação completa das partes, estado civil e outorga do cônjuge;
+- o TÍTULO contra a GUIA ou CERTIDÃO DE ITBI (ou ITCMD): o mesmo imóvel, as mesmas \
+partes, o valor, a natureza da transmissão, o número e a data da guia, a quitação;
+- o ITBI contra a MATRÍCULA: inscrição, endereço e área do imóvel;
+- a lista de conferência da casa, quando vier, como roteiro mínimo.
+
+REGRAS QUE NÃO SE QUEBRAM
+1. Cada EXIGÊNCIA diz o que o apresentante precisa fazer, em uma frase de nota \
+devolutiva («Apresentar…», «Retificar…», «Esclarecer…»), com o FUNDAMENTO legal ou \
+normativo. Cite só dispositivo de que você tem certeza; se não tiver, escreva \
+«fundamento a conferir pelo oficial» — nunca invente número de artigo.
+2. O TRECHO é copiado EXATAMENTE como está escrito no documento ou na ficha (até \
+300 caracteres, sem corrigir grafia, sem resumir): é ele que prova de onde a \
+exigência saiu, e o sistema confere letra por letra. Em «documento» ponha o nome do \
+arquivo (ou «matrícula» quando o trecho é da ficha) e em «pagina» a página, quando \
+houver. Quando a exigência é pela AUSÊNCIA de algo (documento que não veio, dado \
+que nenhum papel traz), deixe o trecho vazio e diga na exigência o que falta.
+3. Não transforme dúvida em exigência. O que depende de consulta que você não fez \
+(CNIB, certidões de tributos, situação cadastral) ou de juízo do oficial vai em \
+«duvidas».
+4. Em «conferidos», os pontos que você cruzou e que BATEM, cada um com o trecho que \
+prova — é o que poupa o oficial de refazer a conta.
+5. Em «nao_lidos», cada documento ou página que você não conseguiu ler (ilegível, \
+cortado, em branco, outro formato), com o motivo.
+6. Escreva em português formal de cartório, sem markdown e sem asteriscos.
+7. As instruções da serventia valem sobre a sua ordem de análise, mas não sobre as \
+regras 1 e 2."""
+
+ESQUEMA_DA_RESPOSTA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["especie_do_titulo", "exigencias", "conferidos", "duvidas",
+                 "nao_lidos", "observacoes"],
+    "properties": {
+        "especie_do_titulo": {"type": "string"},
+        "exigencias": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["exigencia", "fundamento", "documento", "pagina", "trecho"],
+            "properties": {"exigencia": {"type": "string"},
+                           "fundamento": {"type": "string"},
+                           "documento": {"type": "string"},
+                           "pagina": {"type": "string"},
+                           "trecho": {"type": "string"}}}},
+        "conferidos": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["item", "documento", "trecho"],
+            "properties": {"item": {"type": "string"},
+                           "documento": {"type": "string"},
+                           "trecho": {"type": "string"}}}},
+        "duvidas": {"type": "array", "items": {"type": "string"}},
+        "nao_lidos": {"type": "array", "items": {"type": "string"}},
+        "observacoes": {"type": "string"},
+    },
+}
+
+
+# ------------------------------------------------------- o pedido
+
+
+def em_andamento(con, protocolo_id: int) -> dict | None:
+    """O pedido ainda em leitura naquela prenotação, ou None. Só LÊ."""
+    bd = banco(con)
+    if not bd.tem_tabela("ri_qualificacao_ia"):
+        return None
+    r = bd.um("""SELECT id, situacao, pedido_em FROM ri_qualificacao_ia
+                  WHERE protocolo_id = %s AND situacao IN ('PENDENTE','LENDO')
+                  ORDER BY id DESC LIMIT 1""", (int(protocolo_id),))
+    if r and MI._situacao_viva(r["situacao"], r["pedido_em"]) in (PENDENTE, LENDO):
+        return dict(r)
+    return None
+
+
+def pedir(con, protocolo_id: int, *, anexos_ids, especie: str = "",
+          matricula_numero: str = "", instrucao: str = "", usuario: str = "") -> int:
+    """Guarda o pedido e devolve o id. ESCREVE (só `ri_qualificacao_ia`).
+
+    Aqui só se confere o que o balcão pode corrigir na hora: a prenotação, a
+    ficha, a espécie e os documentos. A rede é depois (`executar`).
+    """
+    bd = banco(con)
+    init_schema(bd)
+    p = prenotacao(bd, protocolo_id)
+    ja = em_andamento(bd, protocolo_id)
+    if ja:
+        raise QualificacaoIAError(
+            f"A IA ainda está lendo o pedido nº {ja['id']} desta prenotação. Espere "
+            "ele terminar antes de pedir outro.")
+    m = matricula_da_prenotacao(bd, p, matricula_numero)
+    especie = _texto(especie).upper()
+    if especie:
+        import ri_modelos_atos as RMA
+        if not RMA.por_codigo(especie):
+            raise QualificacaoIAError("A espécie escolhida não está na lista de atos.")
+
+    disponiveis = {d["anexo_id"]: d for d in documentos(bd, p)}
+    escolhidos = [int(x) for x in (anexos_ids or [])]
+    if any(x not in disponiveis for x in escolhidos):
+        raise QualificacaoIAError(
+            "Um dos documentos marcados não é desta prenotação (nem do protocolo geral "
+            "ligado a ela). Atualize a tela e marque de novo.")
+    if not escolhidos:
+        raise QualificacaoIAError(
+            "Marque ao menos um documento — o título e a guia do ITBI. Sem documento "
+            "não há o que qualificar; para juntar, anexe-os à prenotação.")
+    if len(escolhidos) > MAXIMO_DE_DOCUMENTOS:
+        raise QualificacaoIAError(
+            f"São {len(escolhidos)} documentos marcados; a IA lê até "
+            f"{MAXIMO_DE_DOCUMENTOS} por pedido. Marque os que o título precisa.")
+    docs = [disponiveis[x] for x in escolhidos]
+    total = sum(int(d["tamanho"] or 0) for d in docs)
+    if total > LIMITE_DOS_DOCUMENTOS:
+        raise QualificacaoIAError(
+            f"Os documentos marcados somam {total / 1048576:.1f} MB, e a IA lê até "
+            f"{LIMITE_DOS_DOCUMENTOS / 1048576:.0f} MB por pedido. Desmarque o que não "
+            "fundamenta o título (comprovante de pagamento, cópia repetida).")
+
+    anterior = bd.um("""SELECT id, versao FROM ri_qualificacao_ia WHERE protocolo_id = %s
+                         ORDER BY id DESC LIMIT 1""", (int(protocolo_id),))
+    novo = bd.escrever(
+        """INSERT INTO ri_qualificacao_ia (protocolo_id, matricula_id, anterior_id, versao,
+               especie, instrucao, documentos_json, situacao, pedido_em, pedido_por,
+               modelo, esforco)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (int(protocolo_id), int(m["id"]) if m else None,
+         int(anterior["id"]) if anterior else None,
+         (int(anterior["versao"]) + 1) if anterior else 1,
+         especie or None, _texto(instrucao) or None,
+         json.dumps([{k: d[k] for k in ("anexo_id", "nome", "sha256", "origem")}
+                     for d in docs], ensure_ascii=False),
+         PENDENTE, _agora(), usuario or None, MODELO, ESFORCO))
+    return int(novo[0]["id"])
+
+
+# ------------------------------------------------------- a execução
+
+
+def _contexto(bd, pedido: dict) -> str:
+    """O que sobe ao modelo além dos documentos: a ficha, a prenotação, a lista
+    de conferência e as instruções. É também a fonte em que se conferem os
+    trechos tirados «da matrícula»."""
+    p = bd.um("""SELECT numero, data_prenotacao, natureza_titulo, apresentante, objeto,
+                        data_limite FROM ri_protocolos WHERE id = %s""",
+              (int(pedido["protocolo_id"]),))
+    partes = ["=== A PRENOTAÇÃO ===",
+              f"Prenotação nº {p['numero']}, de {p['data_prenotacao']}; natureza do título: "
+              f"{p['natureza_titulo'] or 'não informada'}; apresentante: "
+              f"{p['apresentante'] or '—'}; objeto: {p['objeto'] or '—'}; "
+              f"prazo da prenotação: {p['data_limite'] or '—'}.", ""]
+    if pedido.get("matricula_id"):
+        # Sem a espécie, `contexto_ri` não junta exemplos de redação: aqui não
+        # se redige ato, e eles só gastariam leitura.
+        partes += ["=== A FICHA DA MATRÍCULA (sistema) ===",
+                   MI.contexto_ri(bd, pedido["matricula_id"], "", None)]
+    else:
+        partes += ["=== A FICHA DA MATRÍCULA ===",
+                   "(nenhuma matrícula foi indicada: o título pode ser de abertura de "
+                   "matrícula, ou a prenotação não aponta para ficha. Diga em «duvidas» "
+                   "se o título precisa de uma ficha que não veio.)"]
+    lista = lista_de_conferencia(pedido.get("especie") or "")
+    if lista:
+        partes += ["", lista]
+    return "\n".join(partes)
+
+
+def _montar_conversa(bd, pedido: dict) -> tuple[list[dict], list[str], str]:
+    """(o turno do usuário, o que ficou de fora, o contexto que subiu)."""
+    documentos_pdf: list[dict] = []
+    imagens: list[dict] = []
+    textos: list[str] = []
+    fora: list[str] = []
+    for d in json.loads(pedido["documentos_json"]):
+        linha = bd.um("SELECT original_name, stored_path FROM attachments WHERE id = %s",
+                      (int(d["anexo_id"]),))
+        caminho = Path((linha or {}).get("stored_path") or "")
+        if not linha or not caminho.is_file():
+            fora.append(f"{d['nome']}: o arquivo não está mais no disco")
+            continue
+        try:
+            lido = MI._ler_arquivo(caminho, linha["original_name"] or caminho.name)
+        except Exception as erro:                     # noqa: BLE001 — vira linha na tela
+            fora.append(f"{d['nome']}: {erro}")
+            continue
+        documentos_pdf += lido.get("documentos", [])
+        imagens += lido.get("imagens", [])
+        if lido.get("texto"):
+            textos.append(lido["texto"])
+    contexto = _contexto(bd, pedido)
+    blocos = [contexto]
+    if textos:
+        blocos += ["", *textos]
+    nomes = [d["nome"] for d in json.loads(pedido["documentos_json"])]
+    blocos += ["", "=== O PEDIDO ===",
+               "Documentos apresentados com o título: " + "; ".join(nomes) + "."]
+    if pedido.get("instrucao"):
+        blocos += ["", "INSTRUÇÕES DA SERVENTIA:", pedido["instrucao"]]
+    blocos += ["", "Faça a qualificação assistida e devolva o rascunho no formato "
+                   "combinado."]
+    return ([{"tipo": "user", "texto": "\n".join(blocos), "documentos": documentos_pdf,
+              "imagens": imagens}], fora, contexto)
+
+
+def _lista_de(d: dict, chave: str, campos: tuple[str, ...], limite: int) -> list[dict]:
+    saida = []
+    for x in (d.get(chave) or [])[:limite]:
+        if isinstance(x, dict):
+            item = {c: _texto(x.get(c)) for c in campos}
+            if item[campos[0]]:
+                saida.append(item)
+    return saida
+
+
+def _ler_resposta(texto: str) -> dict:
+    """O JSON da resposta, conferido. O formato vem travado do provedor; esta
+    leitura existe para a resposta do modelo de reserva, que pode vir sem ele."""
+    m = re.search(r"\{.*\}", texto or "", re.S)
+    if not m:
+        raise ValueError("a resposta não trouxe a qualificação no formato combinado")
+    d = json.loads(m.group(0))
+    if not isinstance(d.get("exigencias"), list) or not isinstance(d.get("conferidos"), list):
+        raise ValueError("a resposta veio sem as listas de exigências e de conferidos")
+    return {
+        "especie_do_titulo": _texto(d.get("especie_do_titulo"))[:200],
+        "exigencias": _lista_de(d, "exigencias",
+                                ("exigencia", "fundamento", "documento", "pagina", "trecho"),
+                                60),
+        "conferidos": _lista_de(d, "conferidos", ("item", "documento", "trecho"), 80),
+        "duvidas": [_texto(x) for x in (d.get("duvidas") or []) if _texto(x)][:40],
+        "nao_lidos": [_texto(x) for x in (d.get("nao_lidos") or []) if _texto(x)][:40],
+        "observacoes": _texto(d.get("observacoes"))[:3000],
+    }
+
+
+# ------------------------------------------------------- a régua literal
+
+
+def _texto_local(bd, anexo_id: int) -> tuple[str, str]:
+    """(texto, de onde) de um anexo, SEM REDE: o texto digital do arquivo e a
+    leitura que a revisão prévia já guardou dele. Vazio quando não há nenhum."""
+    import revisao_anexos as RA
+    linha = bd.um("SELECT original_name, stored_path, sha256 FROM attachments WHERE id = %s",
+                  (int(anexo_id),))
+    if not linha:
+        return "", ""
+    partes, fontes = [], []
+    caminho = Path(linha["stored_path"] or "")
+    nome = linha["original_name"] or caminho.name
+    if caminho.is_file():
+        ext = Path(nome).suffix.lower()
+        try:
+            if ext in (".docx", ".odt"):
+                partes.append(RA.texto_de_editor(caminho, ext))
+            elif ext == ".pdf":
+                partes.append(" ".join(pg["texto"] for pg in
+                                       RA.paginas_do_arquivo(caminho, nome)))
+        except Exception:                             # noqa: BLE001 — sem texto, só isso
+            pass
+        if any(x.strip() for x in partes):
+            fontes.append("texto do arquivo")
+    if linha["sha256"] and bd.tem_tabela("rv_anexos_lidos"):
+        lido = bd.um("""SELECT transcricao FROM rv_anexos_lidos
+                         WHERE sha256 = %s AND transcricao IS NOT NULL""", (linha["sha256"],))
+        if lido and _texto(lido["transcricao"]):
+            partes.append(lido["transcricao"])
+            fontes.append("leitura já guardada pela revisão")
+    texto = " ".join(x for x in partes if x and x.strip())
+    return texto, " e ".join(fontes)
+
+
+def _mesmo_documento(citado: str, nome: str) -> bool:
+    a, b = _sem_acento(citado).strip(), _sem_acento(nome).strip()
+    if not a or not b:
+        return False
+    sem_ext = re.sub(r"\.[A-Z0-9]{2,4}$", "", b)
+    return a in b or b in a or (len(sem_ext) >= 4 and sem_ext in a)
+
+
+def conferir_citacoes(resultado: dict, fontes: list[dict], texto_da_ficha: str) -> None:
+    """Marca cada trecho citado (exigências e conferidos) pela régua literal.
+
+    `fontes` é [{nome, texto, de_onde}] por documento. Grava em cada item
+    `citacao` (ESCRITO | NAO_ACHADO | SEM_TEXTO | FALTA) e `conferido_em` (onde
+    o trecho foi achado). Só mexe no dicionário recebido.
+    """
+    import ri_onus_ia as RONIA
+    ficha = {"nome": "matrícula", "texto": texto_da_ficha or "", "de_onde": "ficha"}
+
+    def marcar(item: dict) -> None:
+        trecho = item.get("trecho") or ""
+        if not trecho.strip():
+            item.update(citacao=FALTA, conferido_em="")
+            return
+        citado = item.get("documento") or ""
+        nomeados = [f for f in fontes if _mesmo_documento(citado, f["nome"])]
+        if not nomeados and re.search(r"MATR|FICHA", _sem_acento(citado)):
+            nomeados = [ficha]
+        candidatos = nomeados or (fontes + [ficha])
+        # Achado em QUALQUER fonte vale — o modelo às vezes erra o nome do
+        # arquivo e acerta o trecho; o que importa é estar escrito. Mas a fonte
+        # que ele NOMEOU se procura primeiro: o mesmo trecho pode estar no título
+        # e na ficha, e «onde» tem de ser o lugar que ele disse.
+        for f in nomeados + [f for f in fontes + [ficha] if f not in nomeados]:
+            if f["texto"] and RONIA.esta_escrito(trecho, f["texto"]):
+                item.update(citacao=ESCRITO, conferido_em=f["nome"])
+                return
+        if any(not f["texto"].strip() for f in candidatos):
+            item.update(citacao=SEM_TEXTO, conferido_em="")
+        else:
+            item.update(citacao=NAO_ACHADO, conferido_em="")
+
+    for item in resultado.get("exigencias") or []:
+        marcar(item)
+    for item in resultado.get("conferidos") or []:
+        marcar(item)
+
+
+def executar(banco_caminho, pasta_dados: Path, pedido_id: int, conversar=None) -> None:
+    """Lê e qualifica. FALA COM A REDE, com conexão própria e fora de transação
+    de escrita — e grava o rascunho. Não toca em nota, qualificação nem
+    prenotação."""
+    import agente_provedores as AP
+    import ia_uso as USO
+    conversar = conversar or AP.conversar
+    con = banco_pg.conectar(str(banco_caminho), timeout=30)
+    inicio = datetime.now()
+    try:
+        bd = Banco(con)
+        init_schema(bd)
+        pedido = bd.um("SELECT * FROM ri_qualificacao_ia WHERE id = %s", (int(pedido_id),))
+        if pedido is None or pedido["situacao"] != PENDENTE:
+            return
+        pedido = dict(pedido)
+        bd.escrever("UPDATE ri_qualificacao_ia SET situacao = 'LENDO' WHERE id = %s",
+                    (pedido_id,))
+        con.commit()
+        try:
+            passou = USO.passou_do_teto(bd, FINALIDADE)
+            if passou:
+                raise RuntimeError(passou)
+            conversa, fora, contexto = _montar_conversa(bd, pedido)
+            if not conversa[0]["documentos"] and not conversa[0]["imagens"] and \
+                    "=== DOCUMENTO" not in conversa[0]["texto"]:
+                raise RuntimeError("nenhum dos documentos marcados pôde ser lido: "
+                                   + "; ".join(fora))
+            resposta = conversar(
+                pasta_dados, provedor=PROVEDOR, sistema=INSTRUCAO,
+                conversa=conversa, ferramentas=[], modelo=MODELO,
+                maximo_de_saida=MAXIMO_DE_SAIDA, prazo=PRAZO,
+                extras={"output_config": {"effort": ESFORCO,
+                                          "format": {"type": "json_schema",
+                                                     "schema": ESQUEMA_DA_RESPOSTA}},
+                        "fallbacks": "default"},
+                betas=[BETA_DO_DESVIO], limite_de_envio=LIMITE_DE_ENVIO,
+                # A FINALIDADE VAI ESCRITA, e não pela constante: o varredor do
+                # catálogo de IA (tests/test_ia_uso.py) lê o literal da chamada.
+                modulo="ri_qualificacao_ia", finalidade="ri_qualificacao_ia",
+                atribuicao="RI", usuario=pedido.get("pedido_por") or "",
+                referencia=f"ri_qualificacao_ia:{pedido_id}", mascarado=False)
+            parou = resposta.get("parou") or ""
+            if "[SIMULADOR DO SANDBOX]" in str(resposta.get("texto") or ""):
+                raise RuntimeError("no sistema de teste a IA é simulada e não lê "
+                                   "documento: a qualificação assistida só funciona na "
+                                   "produção")
+            if parou == "refusal":
+                raise RuntimeError("o modelo recusou ler este título (e o desvio também); "
+                                   "qualifique à mão")
+            if parou == "max_tokens":
+                raise RuntimeError("a resposta passou do tamanho que a IA escreve de uma "
+                                   "vez e veio cortada; peça de novo com menos documentos")
+            r = _ler_resposta(resposta.get("texto") or "")
+            # A RÉGUA LITERAL, sem rede: o que se lê aqui de cada documento.
+            fontes, sem_texto = [], []
+            for d in json.loads(pedido["documentos_json"]):
+                texto, de_onde = _texto_local(bd, d["anexo_id"])
+                fontes.append({"nome": d["nome"], "texto": texto, "de_onde": de_onde})
+                if not texto.strip():
+                    sem_texto.append(d["nome"])
+            conferir_citacoes(r, fontes, contexto)
+            r["nao_lidos"] = [f"Não foi lido: {x}" for x in fora] + r["nao_lidos"]
+            r["sem_texto_para_conferir"] = sem_texto
+            bd.escrever(
+                """UPDATE ri_qualificacao_ia SET situacao='PRONTA', terminado_em=%s,
+                       resultado_json=%s, modelo=%s, tokens_entrada=%s, tokens_saida=%s,
+                       segundos=%s WHERE id=%s""",
+                (_agora(), json.dumps(r, ensure_ascii=False),
+                 resposta.get("modelo") or MODELO, resposta.get("entrada"),
+                 resposta.get("saida"), int((datetime.now() - inicio).total_seconds()),
+                 pedido_id))
+            con.commit()
+            return
+        except Exception as erro:                     # noqa: BLE001 — vai à tabela
+            con.rollback()
+            bd.escrever("""UPDATE ri_qualificacao_ia SET situacao='ERRO', terminado_em=%s,
+                               erro=%s, segundos=%s WHERE id=%s""",
+                        (_agora(), f"{str(erro)[:400]}",
+                         int((datetime.now() - inicio).total_seconds()), pedido_id))
+        con.commit()
+    finally:
+        con.close()
+
+
+def preparar_em_segundo_plano(banco_caminho, pasta_dados: Path, pedido_id: int) -> None:
+    threading.Thread(target=executar, args=(banco_caminho, Path(pasta_dados), pedido_id),
+                     daemon=True, name=f"qualificacao-ia-{pedido_id}").start()
+
+
+# ------------------------------------------------------- a tela
+
+
+def mostrar(con, pedido_id: int) -> dict | None:
+    """Um pedido, como a tela o mostra. Só LÊ."""
+    bd = banco(con)
+    if not bd.tem_tabela("ri_qualificacao_ia"):
+        return None
+    p = bd.um("SELECT * FROM ri_qualificacao_ia WHERE id = %s", (int(pedido_id),))
+    if not p:
+        return None
+    d = dict(p)
+    d["situacao"] = MI._situacao_viva(d["situacao"], d["pedido_em"])
+    if d["situacao"] == ERRO and not d.get("erro"):
+        d["erro"] = (f"a IA não terminou em {MINUTOS_PARA_DESISTIR} minutos (o sistema "
+                     "pode ter sido reiniciado); peça de novo")
+    d["documentos"] = json.loads(d["documentos_json"] or "[]")
+    d["resultado"] = json.loads(d["resultado_json"]) if d.get("resultado_json") else {}
+    d["levado"] = json.loads(d["levado_json"]) if d.get("levado_json") else []
+    return d
+
+
+def historico(con, protocolo_id: int, limite: int = 10) -> list[dict]:
+    """Os pedidos daquela prenotação, do mais novo ao mais velho. Só LÊ."""
+    bd = banco(con)
+    if not bd.tem_tabela("ri_qualificacao_ia"):
+        return []
+    ids = bd.ler("""SELECT id FROM ri_qualificacao_ia WHERE protocolo_id = %s
+                     ORDER BY id DESC LIMIT %s""", (int(protocolo_id), int(limite)))
+    return [mostrar(bd, x["id"]) for x in ids]
+
+
+# ------------------------------------------------------- levar à nota
+
+
+def linha_da_exigencia(item: dict) -> str:
+    """A exigência como ela vai à nota: uma linha, com o fundamento no fim."""
+    texto = " ".join(_texto(item.get("exigencia")).split())
+    fundamento = " ".join(_texto(item.get("fundamento")).split())
+    if fundamento and fundamento.casefold() not in texto.casefold():
+        texto = f"{texto.rstrip('.')}. Fundamento: {fundamento.rstrip('.')}."
+    return texto
+
+
+def levar(con, pedido_id: int, escolhidas: list[tuple[int, str]], *, usuario: str) -> list[str]:
+    """Guarda as exigências que a pessoa marcou (com o texto como ela editou) para
+    PREENCHER o formulário da nota. ESCREVE (só `ri_qualificacao_ia`).
+
+    Não emite nada: quem emite é a rota da nota devolutiva, quando a pessoa
+    conferir o formulário e clicar em «Emitir».
+    """
+    bd = banco(con)
+    p = mostrar(bd, pedido_id)
+    if not p:
+        raise QualificacaoIAError("Pedido não encontrado.")
+    if p["situacao"] != PRONTA:
+        raise QualificacaoIAError("A qualificação assistida ainda não terminou.")
+    if p.get("nota_id"):
+        raise QualificacaoIAError(
+            "Estas exigências já foram para uma nota emitida. Para outra nota, peça "
+            "uma qualificação nova ou escreva a nota à mão.")
+    exigencias = (p["resultado"] or {}).get("exigencias") or []
+    linhas, levadas = [], []
+    for indice, texto in escolhidas:
+        if not 0 <= int(indice) < len(exigencias):
+            raise QualificacaoIAError("Uma das exigências marcadas não é deste pedido.")
+        original = linha_da_exigencia(exigencias[int(indice)])
+        final = " ".join(_texto(texto).split())[:MAXIMO_DA_LINHA] or original
+        linhas.append(final)
+        levadas.append({"indice": int(indice), "texto": final, "original": original,
+                        "editada": final != original,
+                        "citacao": exigencias[int(indice)].get("citacao") or ""})
+    if not linhas:
+        raise QualificacaoIAError(
+            "Marque ao menos uma exigência para levar à nota — ou escreva a nota à mão.")
+    bd.escrever("""UPDATE ri_qualificacao_ia SET levado_json=%s, levado_em=%s, levado_por=%s
+                    WHERE id=%s""",
+                (json.dumps(levadas, ensure_ascii=False), _agora(), usuario or None,
+                 int(pedido_id)))
+    return linhas
+
+
+def preenchimento(con, pedido_id, protocolo_id: int) -> dict | None:
+    """O que vai no formulário da nota: as exigências levadas, uma por linha.
+    Só para a MESMA prenotação, e só o que ainda não virou nota. Só LÊ."""
+    bruto = _texto(pedido_id)
+    if not bruto.isdigit():
+        return None
+    p = mostrar(con, int(bruto))
+    if not p or int(p["protocolo_id"]) != int(protocolo_id) or not p["levado"] \
+            or p.get("nota_id"):
+        return None
+    return {"id": p["id"], "versao": p["versao"],
+            "texto": "\n".join(x["texto"] for x in p["levado"]),
+            "quantas": len(p["levado"])}
+
+
+def ligar_a_nota(con, pedido_id, protocolo_id: int, nota_id: int) -> bool:
+    """Anota no pedido a nota que a rota de sempre emitiu com as exigências dele.
+    ESCREVE (só `ri_qualificacao_ia`). Chamada DENTRO da transação da nota."""
+    bruto = _texto(pedido_id)
+    bd = banco(con)
+    if not bruto.isdigit() or not bd.tem_tabela("ri_qualificacao_ia"):
+        return False
+    feito = bd.escrever(
+        """UPDATE ri_qualificacao_ia SET nota_id = %s
+            WHERE id = %s AND protocolo_id = %s AND nota_id IS NULL
+              AND levado_json IS NOT NULL RETURNING id""",
+        (int(nota_id), int(bruto), int(protocolo_id)))
+    return bool(feito)

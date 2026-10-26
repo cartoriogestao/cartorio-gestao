@@ -8136,9 +8136,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 fundamentacao=(request.form.get("fundamentacao") or "").strip() or None,
                 quem=(app.extensions["usuario_nome"]() or "").strip() or None,
                 usuario_id=app.extensions["usuario_id"](), agora=db.now())
+            # A NOTA QUE NASCEU DA QUALIFICAÇÃO ASSISTIDA (26/10/2026): o
+            # rascunho da IA guarda qual nota a rota de sempre emitiu com as
+            # exigências dele — na mesma transação, para a ligação não ficar
+            # pela metade. Sem o campo (a nota escrita à mão), não faz nada.
+            import ri_qualificacao_ia as QIA
+            ligada_a_ia = QIA.ligar_a_nota(con, request.form.get("qualificacao_ia_id"),
+                                           protocolo_id, nota_id)
 
         audit("RI_NOTA_DEVOLUTIVA", "RI_NOTA", nota_id,
-              {"protocolo": p["numero"], "numero": numero, "exigencias": len(exigencias)})
+              {"protocolo": p["numero"], "numero": numero, "exigencias": len(exigencias),
+               "qualificacao_ia": (int(request.form["qualificacao_ia_id"])
+                                   if ligada_a_ia else None)})
         flash(f"Nota devolutiva nº {numero} emitida com {len(exigencias)} exigência(s). "
               f"O protocolo passou a devolvido; a prenotação continua correndo.", "success")
         return redirect(url_for("ri_nota_odt", nota_id=nota_id))

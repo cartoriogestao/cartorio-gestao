@@ -2991,6 +2991,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     import minuta_ia_web
     minuta_ia_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # A QUALIFICAÇÃO ASSISTIDA DO RI (26/10/2026) — o quadro na tela da nota
+    # devolutiva; rascunha as exigências, não emite a nota.
+    import ri_qualificacao_ia_web
+    ri_qualificacao_ia_web.registrar_rotas(app, db, login_required, roles_required, audit,
+                                           fmt_date)
+
     # O CADASTRO NO CCN (13/10/2026) — o lote e a ponte com a extensão.
     import ccn_web
     ccn_web.registrar_rotas(app, db, login_required, roles_required, audit)

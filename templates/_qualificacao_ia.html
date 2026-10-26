@@ -1,0 +1,105 @@
+{#
+  A QUALIFICAÇÃO ASSISTIDA — 26/10/2026, ordem do oficial: a IA cruza o título,
+  a guia do ITBI e a matrícula e RASCUNHA as exigências da nota devolutiva, para
+  o oficial ou o escrevente revisar, editar e assinar. Quem monta o que este
+  quadro mostra é `ri_qualificacao_ia_web._qualificacao_ia_na_tela`.
+
+  O quadro NÃO emite nada: a nota sai pelo formulário de sempre, logo abaixo.
+#}
+{% set qa = qualificacao_ia %}
+<section class="panel" id="qualificacao-ia">
+  <div class="panel-head"><span>Qualificação assistida (IA) — rascunho da nota devolutiva</span>
+    <span class="small muted">{{ qa.modelo }} · esforço {{ qa.esforco }}</span></div>
+  <div style="padding:0 14px 14px">
+    <p class="small muted">A IA lê o título, a guia ou certidão do ITBI e a ficha da matrícula, cruza os três e
+      <strong>rascunha</strong> as exigências — cada uma com o fundamento e com o trecho do documento de onde saiu.
+      <strong>Ela não decide, não emite a nota e não devolve o título</strong>: a qualificação é ato do oficial
+      (Código de Normas do MA, arts. 169, 171 e 176). Você marca as exigências que aceita, edita e leva ao
+      formulário da nota; quem emite continua sendo o botão de sempre.
+      <strong>Os documentos sobem inteiros ao Claude, sem máscara</strong> — a mesma decisão do oficial de
+      12/10/2026 que o agente de minutas segue; a chave do provedor fica fora do banco (agente.cred).</p>
+
+    {% if not qa.cabe %}
+      <p class="muted">{{ qa.motivo }}</p>
+    {% elif qa.bloqueio %}
+      <div class="notice warning" id="qualificacao-ia-bloqueio">{{ qa.bloqueio }}</div>
+    {% endif %}
+
+    {% if qa.andamento %}
+    <div class="notice" id="qualificacao-ia-andamento">
+      <strong>A IA está lendo o título</strong> (pedido nº {{ qa.andamento.id }}, desde
+      {{ (qa.andamento.pedido_em or '')[11:16] }}). Leva alguns minutos; este quadro se atualiza sozinho.</div>
+    <script>
+    (function () {
+      var url = "{{ url_for('ri_qualificacao_ia_ver', pedido_id=qa.andamento.id) }}?andamento=1";
+      setInterval(function () {
+        fetch(url, {credentials: 'same-origin'}).then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.situacao !== 'PENDENTE' && d.situacao !== 'LENDO') {
+              window.location.hash = 'qualificacao-ia'; window.location.reload();
+            }
+          }).catch(function () {});
+      }, 10000);
+    })();
+    </script>
+    {% endif %}
+
+    {% for h in qa.historico %}
+      {% if loop.first %}<h3 class="small" style="margin-top:12px">Rascunhos desta prenotação</h3>{% endif %}
+      <div class="notice{% if h.situacao == 'ERRO' %} danger{% elif h.situacao == 'PRONTA' and not h.levado_em %} warning{% endif %}" style="margin-bottom:8px">
+        <strong>Versão {{ h.versao }}</strong> — pedido nº {{ h.id }}, {{ (h.pedido_em or '')[:16]|replace('T', ' ') }}
+        por {{ h.pedido_por or '—' }}{% if h.especie %} · lista: {{ h.especie }}{% endif %}<br>
+        {% if h.situacao in ('PENDENTE', 'LENDO') %}<span class="small">lendo…</span>
+        {% elif h.situacao == 'ERRO' %}<span class="small">Não saiu: {{ h.erro }}</span>
+        {% else %}
+          <span class="small">{{ (h.resultado.exigencias or [])|length }} exigência(s) ·
+            {{ (h.resultado.conferidos or [])|length }} ponto(s) conferido(s) ·
+            {{ (h.resultado.duvidas or [])|length }} dúvida(s)
+            {% if h.nota_id %} · <strong>levada à nota emitida</strong>
+            {% elif h.levado_em %} · levada ao formulário em {{ (h.levado_em or '')[:16]|replace('T', ' ') }}{% endif %}</span><br>
+          <a class="small" href="{{ url_for('ri_qualificacao_ia_ver', pedido_id=h.id) }}">ver o rascunho e escolher as exigências</a>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    {% if qa.cabe and not qa.bloqueio and not qa.andamento and user.role in ['ADMIN','MANAGER','USER'] %}
+    <details {% if not qa.historico %}open{% endif %} style="margin-top:10px">
+      <summary><strong>{% if qa.historico %}Pedir uma qualificação assistida nova{% else %}Pedir a qualificação assistida{% endif %}</strong></summary>
+      <form method="post" class="form-grid" style="margin-top:8px"
+            action="{{ url_for('ri_qualificacao_ia_pedir', protocolo_id=qa.protocolo_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Matrícula cruzada com o título
+          {% if qa.matricula %}<input value="{{ qa.matricula.numero }}" disabled>
+          {% else %}<input name="matricula_numero" placeholder="nº da matrícula (opcional)">{% endif %}</label>
+        <label>Lista de conferência (espécie do ato)
+          <select name="especie">
+            <option value="">— sem lista —</option>
+            {% for e in qa.especies %}<option value="{{ e.codigo }}" {% if e.codigo == qa.sugerida %}selected{% endif %}>{{ e.nome }}</option>{% endfor %}
+          </select></label>
+        <div class="span2">
+          <strong class="small">Documentos que a IA vai ler</strong>
+          <span class="small muted">(o título e a guia do ITBI; até {{ qa.maximo }} arquivos e {{ qa.limite_mb }} MB)</span>
+          {% if qa.disponiveis %}
+          <div class="table-wrap"><table>
+            <thead><tr><th></th><th>Documento</th><th>De onde</th><th></th></tr></thead>
+            <tbody>{% for d in qa.disponiveis %}
+              <tr><td><input type="checkbox" name="anexo" value="{{ d.anexo_id }}" checked style="width:auto"></td>
+                <td>{{ d.nome }}<br><span class="small muted">{{ ((d.tamanho or 0) / 1024)|round(1) }} KB</span></td>
+                <td class="small">{{ d.origem }}</td>
+                <td class="small"><a href="{{ url_for('attachment_view', attachment_id=d.anexo_id) }}" target="_blank">ver</a></td></tr>
+            {% endfor %}</tbody>
+          </table></div>
+          {% else %}
+          <p class="small muted">Esta prenotação não tem documento anexado, nem o protocolo geral ligado a ela. Anexe o
+            título e a guia do ITBI à prenotação e volte aqui.</p>
+          {% endif %}
+        </div>
+        <label class="span2">Instruções (opcional)
+          <textarea name="instrucao" rows="2" placeholder="ex.: compra e venda da parte ideal de 50%; confira a outorga da esposa do vendedor"></textarea></label>
+        <div class="span2"><button class="button" {% if not qa.disponiveis %}disabled{% endif %}>Pedir a qualificação assistida</button>
+          <span class="small muted">Leva alguns minutos. O resultado é um rascunho para conferir com os originais.</span></div>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+</section>

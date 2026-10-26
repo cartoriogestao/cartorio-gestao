@@ -255,8 +255,9 @@ def test_convite_do_protocolo_vincula_e_vale_uma_vez(cg_casa):
     _abrir_pagina(cg_casa, oficial)
     with cg_casa["db"].transaction() as con:
         banco(con).escrever(
-            "INSERT INTO cx_protocolos (numero, data_abertura, atribuicao, criado_em) "
-            "VALUES ('2026.10.900', %s, 'RCPN', %s)", (date.today().isoformat(), cg_casa["db"].now()))
+            "INSERT INTO cx_protocolos (numero, data_abertura, atribuicao, criado_em, criado_por) "
+            "VALUES ('2026.10.900', %s, 'RCPN', %s, %s)",
+            (date.today().isoformat(), cg_casa["db"].now(), _id(cg_casa, "beatriz")))
     tela = balcao.get("/administrativo/satisfacao/convite?protocolo=2026.10.900").get_data(as_text=True)
     token = re.search(r"/satisfacao\?t=([^\"&<]+)", tela).group(1)
     c = _anonimo(cg_casa)
@@ -304,3 +305,94 @@ def test_numeros_no_painel_do_oficial_e_nao_do_balcao(cg_casa):
     assert "Ouvidoria e satisfação" in oficial.get("/").get_data(as_text=True)
     assert "Ouvidoria e satisfação" not in balcao.get("/").get_data(as_text=True)
     assert "Ouvidoria e satisfação" in oficial.get("/relatorios").get_data(as_text=True)
+
+
+# ---------------------------------- o avaliado não avalia a si mesmo (26/10)
+#
+# Revisão de segurança de 26/10/2026, achado MÉDIO do PR #23: o escrevente
+# gerava o convite de QUALQUER protocolo com ele mesmo como atendente — e o
+# link do tablet «comigo como atendente» —, e assim avaliava a si mesmo e
+# tomava o lugar da avaliação do cliente.
+
+
+def _protocolo(casa, numero: str, criado_por: int | None):
+    with casa["db"].transaction() as con:
+        banco(con).escrever(
+            "INSERT INTO cx_protocolos (numero, data_abertura, atribuicao, criado_em, criado_por) "
+            "VALUES (%s, %s, 'RCPN', %s, %s)",
+            (numero, date.today().isoformat(), casa["db"].now(), criado_por))
+
+
+def _token_da_tela(html: str) -> str | None:
+    achado = re.search(r"/satisfacao\?t=([^\"&<]+)", html)
+    return achado.group(1) if achado else None
+
+
+def test_escrevente_nao_gera_convite_do_protocolo_de_outro(cg_casa):
+    oficial, balcao, _ = _equipe(cg_casa)
+    _abrir_pagina(cg_casa, oficial)
+    _protocolo(cg_casa, "2026.10.901", _id(cg_casa, "mario"))
+    tela = balcao.get("/administrativo/satisfacao/convite?protocolo=2026.10.901",
+                      follow_redirects=True).get_data(as_text=True)
+    assert _token_da_tela(tela) is None
+    assert "aberto por outro atendente" in tela
+
+
+def test_escrevente_nao_gera_convite_de_protocolo_sem_quem_o_abriu(cg_casa):
+    oficial, balcao, _ = _equipe(cg_casa)
+    _abrir_pagina(cg_casa, oficial)
+    _protocolo(cg_casa, "2026.10.902", None)
+    tela = balcao.get("/administrativo/satisfacao/convite?protocolo=2026.10.902").get_data(as_text=True)
+    assert _token_da_tela(tela) is None
+    assert "não registra quem o atendeu" in tela
+
+
+def test_oficial_gera_o_convite_de_outrem_com_quem_atendeu_e_nao_com_ele(cg_casa):
+    oficial, _, _ = _equipe(cg_casa)
+    _abrir_pagina(cg_casa, oficial)
+    _protocolo(cg_casa, "2026.10.903", _id(cg_casa, "beatriz"))
+    _protocolo(cg_casa, "2026.10.904", None)
+    tela = oficial.get("/administrativo/satisfacao/convite?protocolo=2026.10.903").get_data(as_text=True)
+    assert "BEATRIZ EXEMPLO" in tela
+    c = _anonimo(cg_casa)
+    assert _post(c, "/satisfacao", nota="4", t=_token_da_tela(tela)).status_code == 200
+    s = _uma(cg_casa, "SELECT * FROM ou_satisfacao ORDER BY id DESC LIMIT 1")
+    assert s["atendente_id"] == _id(cg_casa, "beatriz") and s["protocolo_chave"]
+    # o do acervo, sem quem o abriu: sai sem atendente
+    tela = oficial.get("/administrativo/satisfacao/convite?protocolo=2026.10.904").get_data(as_text=True)
+    assert _post(c, "/satisfacao", nota="2", t=_token_da_tela(tela)).status_code == 200
+    s = _uma(cg_casa, "SELECT * FROM ou_satisfacao ORDER BY id DESC LIMIT 1")
+    assert s["atendente_id"] is None and s["protocolo_chave"]
+
+
+def test_link_do_tablet_nao_leva_atendente(cg_casa):
+    oficial, balcao, _ = _equipe(cg_casa)
+    _abrir_pagina(cg_casa, oficial)
+    tela = balcao.get("/administrativo/satisfacao/convite?balcao=1").get_data(as_text=True)
+    assert _token_da_tela(tela) is None and "/satisfacao" in tela
+    assert "comigo como atendente" not in tela
+
+
+def test_relatorio_por_atendente_so_conta_o_convite_de_protocolo(cg_casa):
+    """O link «com atendente» gerado antes do conserto continua válido por 30
+    dias; a avaliação dele não pode entrar na média de ninguém."""
+    oficial, _, _ = _equipe(cg_casa)
+    _abrir_pagina(cg_casa, oficial)
+    antigo = SAT.assinar_convite(cg_casa["app"].config["SECRET_KEY"],
+                                 atendente_id=_id(cg_casa, "beatriz"))
+    c = _anonimo(cg_casa)
+    assert _post(c, "/satisfacao", nota="5", t=antigo).status_code == 200
+    with cg_casa["db"].connect() as con:
+        r = SAT.relatorio(con, de=date.today().isoformat(), ate=date.today().isoformat())
+    assert [a["atendente_id"] for a in r["por_atendente"]] == [None]
+    assert "sem vínculo" in r["por_atendente"][0]["nome"]
+
+
+def test_protocolo_aberto_no_balcao_grava_quem_o_abriu(cg_casa):
+    _, balcao, _ = _equipe(cg_casa)
+    r = _post(balcao, "/caixa/protocolos", acao="novo", interessado="FULANO DE TAL EXEMPLO",
+              telefone="(00) 0000-0000", atribuicao="RCPN")
+    assert r.status_code in (302, 303)
+    p = _uma(cg_casa, "SELECT criado_por FROM cx_protocolos WHERE interessado = %s",
+             ("FULANO DE TAL EXEMPLO",))
+    assert p["criado_por"] == _id(cg_casa, "beatriz")

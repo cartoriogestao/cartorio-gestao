@@ -7,8 +7,10 @@ QUEM VÊ O QUÊ
       vê a lista e o relatório e não grava. A identificação de quem se
       manifestou só abre na ficha, para o oficial, o gerente e o responsável
       — e cada abertura fica na auditoria (`OUVIDORIA_IDENTIFICACAO_VISTA`).
-    - Pesquisa: o convite (o QR) é de quem atende; o relatório é do oficial,
-      do gerente e do auditor; abrir a página sem login é SÓ do oficial.
+    - Pesquisa: o convite (o QR) de um protocolo leva como atendente quem
+      ABRIU o protocolo, e o escrevente só o gera para os protocolos dele (o
+      de outrem é do gerente e do oficial); o relatório é do oficial, do
+      gerente e do auditor; abrir a página sem login é SÓ do oficial.
 
 A PÁGINA SEM LOGIN
     `/satisfacao` é a única rota deste módulo que não pede login, e por isso
@@ -294,29 +296,53 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required(*PRATICA)
     def satisfacao_convite():
         """O QR do convite: do protocolo (uma avaliação por ida ao balcão), ou
-        do tablet do balcão, com quem está atendendo."""
+        o da página do tablet do balcão, sem atendente.
+
+        QUEM VAI COMO ATENDENTE (revisão de segurança de 26/10/2026, achado
+        MÉDIO do PR #23): quem ABRIU o protocolo (`cx_protocolos.criado_por`),
+        nunca quem gera o convite. Antes, qualquer escrevente gerava o convite
+        de qualquer protocolo com ELE como atendente — avaliava a si mesmo e,
+        como a chave do protocolo é única, tomava o lugar da avaliação do
+        cliente. Agora o escrevente gera só o dos protocolos que ele abriu, e o
+        de outrem é do gerente e do oficial (`SAT.atendente_do_protocolo`). E o
+        link do tablet não leva atendente: «comigo como atendente» aberto no
+        guichê era uma urna em que o próprio avaliado votava."""
         numero = (request.args.get("protocolo") or "").strip()[:40]
         balcao = request.args.get("balcao") == "1"
         token = endereco = qr = ""
         protocolo = None
+        atendente_nome = ""
         if numero:
             with db.connect() as con:
                 protocolo = SAT.protocolo_por_numero(con, numero)
             if not protocolo:
                 flash(f"Não achei o protocolo «{numero}». Confira o número no caixa.", "danger")
             else:
-                token = SAT.assinar_convite(segredo, atendente_id=usuario_id(),
-                                            protocolo_id=protocolo["id"],
-                                            atribuicao=protocolo["atribuicao"] or "")
-        elif balcao:
-            token = SAT.assinar_convite(segredo, atendente_id=usuario_id())
+                try:
+                    atendente = SAT.atendente_do_protocolo(
+                        protocolo, usuario_id=usuario_id(), papel=current_user()["role"])
+                except SAT.SatisfacaoError as erro:
+                    flash(str(erro), "danger")
+                    protocolo = None
+                else:
+                    token = SAT.assinar_convite(segredo, atendente_id=atendente,
+                                                protocolo_id=protocolo["id"],
+                                                atribuicao=protocolo["atribuicao"] or "")
+                    atendente_nome = next((u["full_name"] for u in _usuarios()
+                                           if atendente and int(u["id"]) == atendente), "")
         if token:
             endereco = url_for("satisfacao_pagina", t=token, _external=True)
+        elif balcao:
+            # O tablet do balcão: a página sem convite — sem atendente, e
+            # cada pessoa avalia ao sair.
+            endereco = url_for("satisfacao_pagina", _external=True)
+        if endereco:
             qr = Markup(_qr_em_svg(endereco))
         # QR com «localhost» só abre na própria máquina do servidor.
         local = request.host.split(":")[0] in ("localhost", "127.0.0.1", "[::1]")
         return render_template("satisfacao_convite.html", numero=numero, protocolo=protocolo,
                                balcao=balcao, endereco=endereco, qr=qr, local=local,
+                               atendente_nome=atendente_nome,
                                aberta=SAT.pagina_aberta(db.get_setting),
                                dias=SAT.DIAS_DO_CONVITE)
 

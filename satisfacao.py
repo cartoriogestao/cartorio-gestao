@@ -30,6 +30,17 @@ O CONVITE É ASSINADO
     um na rede poria avaliação na conta de qualquer atendente. Token vencido ou
     adulterado não derruba a avaliação: ela entra sem vínculo.
 
+O ATENDENTE É QUEM ABRIU O PROTOCOLO (revisão de segurança, 26/10/2026)
+    Até aqui o convite levava como atendente QUEM O GERAVA, de qualquer
+    protocolo: o escrevente abria o convite dos protocolos do dia — inclusive
+    os dos colegas —, dava nota 5 pelo celular e, como a chave do protocolo é
+    única, o QR que o cliente recebesse dizia «já foi avaliado». Agora o
+    atendente é `cx_protocolos.criado_por`, nunca quem gera; o escrevente só
+    gera o convite dos protocolos que ele abriu, e o de outrem é do gerente e
+    do oficial (`atendente_do_protocolo`). O link do tablet do balcão não leva
+    atendente, e o relatório por atendente só conta a avaliação que veio do
+    convite de um PROTOCOLO (`_vinculada`).
+
 PostgreSQL nativo, pelo `bd_nativo`. Data calculada no Python.
 """
 from __future__ import annotations
@@ -140,8 +151,37 @@ def protocolo_por_numero(con, numero: str) -> dict[str, Any] | None:
     numero = " ".join(str(numero or "").split())[:40]
     if not numero:
         return None
-    return banco(con).um("SELECT id, numero, atribuicao FROM cx_protocolos WHERE numero = %s",
-                         (numero,))
+    return banco(con).um("SELECT id, numero, atribuicao, criado_por FROM cx_protocolos "
+                         "WHERE numero = %s", (numero,))
+
+
+#: Quem gera o convite do protocolo que OUTRO atendente abriu.
+GERAM_CONVITE_DE_OUTREM = ("ADMIN", "MANAGER")
+
+
+def atendente_do_protocolo(protocolo, *, usuario_id: int | None, papel: str | None) -> int | None:
+    """Quem vai como atendente no convite deste protocolo: quem o ABRIU no
+    balcão (`cx_protocolos.criado_por`), e nunca quem gera o convite.
+
+    O escrevente gera o convite só dos protocolos que ele abriu; o gerente e o
+    oficial geram o de qualquer um — e, no protocolo que não registra quem o
+    abriu (o do acervo, ou o anterior a 26/10/2026), o convite sai SEM
+    atendente: a avaliação conta para a casa, e não para ninguém."""
+    try:
+        dono = int(protocolo["criado_por"] or 0) or None
+    except (KeyError, TypeError, ValueError):
+        dono = None
+    if papel in GERAM_CONVITE_DE_OUTREM:
+        return dono
+    if dono is None:
+        raise SatisfacaoError(
+            "Este protocolo não registra quem o atendeu (é do acervo ou anterior ao registro). "
+            "O convite dele só o gerente ou o oficial gera — e ele sai sem atendente.")
+    if dono != int(usuario_id or 0):
+        raise SatisfacaoError(
+            "Este protocolo foi aberto por outro atendente. O convite leva quem ATENDEU: "
+            "gere o dos protocolos que você abriu, ou peça ao gerente ou ao oficial.")
+    return dono
 
 
 def ja_avaliado(con, protocolo_chave: str | None) -> bool:
@@ -192,21 +232,30 @@ def _media(notas: list[int]) -> float | None:
     return round(sum(notas) / len(notas), 2) if notas else None
 
 
+def _vinculada(x: dict[str, Any]) -> bool:
+    """A avaliação que entra na conta do atendente: a do convite de um
+    PROTOCOLO, com o atendente dentro. A do tablet — inclusive a de um link
+    «com atendente» gerado antes de 26/10/2026, que o próprio avaliado podia
+    deixar aberto no guichê — fica «sem vínculo»."""
+    return bool(x["origem"] == "CONVITE" and x["protocolo_chave"] and x["atendente_id"])
+
+
 def relatorio(con, *, de: str, ate: str) -> dict[str, Any]:
     linhas = banco(con).ler(
         """SELECT s.dia, s.nota, s.comentario, s.origem, s.atendente_id, s.atribuicao,
-                  u.full_name AS atendente_nome
+                  s.protocolo_chave, u.full_name AS atendente_nome
              FROM ou_satisfacao s LEFT JOIN users u ON u.id = s.atendente_id
             WHERE s.dia >= %s AND s.dia <= %s
             ORDER BY s.dia DESC, s.id DESC""", (str(de)[:10], str(ate)[:10]))
     notas = [int(x["nota"]) for x in linhas]
     por_atendente: dict[Any, dict[str, Any]] = {}
     for x in linhas:
-        chave = x["atendente_id"] or 0
+        vinculada = _vinculada(x)
+        chave = x["atendente_id"] if vinculada else 0
         item = por_atendente.setdefault(chave, {
-            "atendente_id": x["atendente_id"],
-            "nome": x["atendente_nome"] or ("— sem vínculo (tablet do balcão)"
-                                            if not x["atendente_id"] else f"usuário #{x['atendente_id']}"),
+            "atendente_id": x["atendente_id"] if vinculada else None,
+            "nome": ((x["atendente_nome"] or f"usuário #{x['atendente_id']}") if vinculada
+                     else "— sem vínculo a protocolo (tablet do balcão)"),
             "notas": []})
         item["notas"].append(int(x["nota"]))
     atendentes = sorted(
@@ -225,7 +274,8 @@ def relatorio(con, *, de: str, ate: str) -> dict[str, Any]:
         "por_atribuicao": [{"atribuicao": k, "total": len(v), "media": _media(v)}
                            for k, v in sorted(por_atribuicao.items())],
         "comentarios": [{"dia": x["dia"], "nota": x["nota"], "comentario": x["comentario"],
-                         "atendente_nome": x["atendente_nome"] or "", "atribuicao": x["atribuicao"]}
+                         "atendente_nome": (x["atendente_nome"] or "") if _vinculada(x) else "",
+                         "atribuicao": x["atribuicao"]}
                         for x in linhas if x["comentario"]],
     }
 

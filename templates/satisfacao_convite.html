@@ -19,19 +19,22 @@ Administrativo → Pesquisa de satisfação.</div>
     <form method="get" class="stack">
       <label>Número do protocolo do atendimento <input type="text" name="protocolo" value="{{ numero }}" maxlength="40" placeholder="ex.: 2026.10.155"></label>
       <button type="submit">Gerar o convite deste atendimento</button>
-      <p class="small muted">Uma avaliação por protocolo. O convite vale {{ dias }} dias e leva o seu nome como atendente.</p>
+      <p class="small muted">Uma avaliação por protocolo. O convite vale {{ dias }} dias e leva como atendente
+      <strong>quem abriu o protocolo no balcão</strong> — não quem gera o convite. Você gera o dos protocolos que
+      abriu; o de outro atendente, só o gerente ou o oficial.</p>
     </form>
     <form method="get" class="stack">
       <input type="hidden" name="balcao" value="1">
-      <button type="submit">Gerar o link do tablet do balcão (comigo como atendente)</button>
-      <p class="small muted">Para deixar aberto num tablet da casa no seu guichê. Sem protocolo: cada pessoa avalia ao sair.
-      Para o tablet sem atendente, abra <a href="{{ url_for('satisfacao_pagina') }}" target="_blank">a página sem convite</a>.</p>
+      <button type="submit">Gerar o link do tablet do balcão (sem atendente)</button>
+      <p class="small muted">Para deixar aberto num tablet da casa. Sem protocolo e sem atendente: cada pessoa avalia
+      ao sair, e a avaliação conta para a casa — não entra na média de ninguém.</p>
     </form>
   </div>
 </section>
 {% if endereco %}
 <section class="panel" style="text-align:center">
   <h2>{% if protocolo %}Avalie o atendimento — protocolo {{ protocolo.numero }}{% else %}Avalie o nosso atendimento{% endif %}</h2>
+  {% if protocolo %}<p class="small muted">Atendente no convite: {{ atendente_nome or 'nenhum — o protocolo não registra quem o abriu' }}.</p>{% endif %}
   {% if qr %}<div>{{ qr }}</div>{% else %}<p class="muted">O desenho do QR não está disponível nesta instalação; use o link.</p>{% endif %}
   <p>Aponte a câmera do celular (conectado ao Wi-Fi da serventia) ou abra o link:</p>
   <p style="word-break:break-all"><a href="{{ endereco }}" target="_blank">{{ endereco }}</a></p>

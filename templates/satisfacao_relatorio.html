@@ -34,7 +34,8 @@
     {% if r.por_atendente %}<table><thead><tr><th>Atendente</th><th>Avaliações</th><th>Média</th></tr></thead><tbody>
     {% for a in r.por_atendente %}<tr><td>{{ a.nome }}</td><td>{{ a.total }}</td><td>{{ '%.2f'|format(a.media) }}</td></tr>{% endfor %}
     </tbody></table>
-    <p class="small muted">Só entra no atendente a avaliação que veio pelo convite dele; a do tablet sem convite fica «sem vínculo».</p>
+    <p class="small muted">Só entra no atendente a avaliação que veio pelo convite de um <strong>protocolo</strong> — e o
+    atendente é quem abriu o protocolo. A do tablet do balcão fica «sem vínculo».</p>
     {% else %}<p class="muted">Nenhuma avaliação no período.</p>{% endif %}
   </section>
   <section class="panel"><h2>Por atribuição</h2>
